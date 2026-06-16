@@ -3443,6 +3443,25 @@ def _instantiate_role_from_library(role_name, dept_id, interview_answers):
             print(f"[ROLE-LIBRARY WARNING] token backstop failed: {e}",
                   file=sys.stderr)
 
+    # BUG 1 FIX: only stamp the instantiation marker AFTER confirming the filled
+    # content is substantive (>= 3072 bytes — the same floor that verify-wiring.sh
+    # and qc-completeness.sh enforce).  A prior bug allowed the marker to be placed
+    # on thin stubs (e.g. 156 B), causing the library gate to pass (it trusted the
+    # marker) while the wiring gate failed (it checked real size).  Returning None
+    # here causes the caller to fall back to the PENDING-stub path, which is
+    # correctly flagged as unfilled by every subsequent gate.
+    _LIBRARY_FILL_MIN_BYTES = 3072  # matches HOW_TO_MIN_BYTES in verify-wiring.sh
+    out_bytes = len(out.encode("utf-8"))
+    if out_bytes < _LIBRARY_FILL_MIN_BYTES:
+        print(
+            f"[ROLE-LIBRARY WARNING] _instantiate_role_from_library: filled content "
+            f"for '{role_name}' ({dept_id}) is {out_bytes} bytes — below "
+            f"{_LIBRARY_FILL_MIN_BYTES}B floor.  Returning None so caller uses "
+            f"PENDING-stub path instead of stamping thin output as 'done'.",
+            file=sys.stderr,
+        )
+        return None
+
     header = (f"<!-- WS-2: instantiated from role-library "
               f"v{role_entry.get('version', '?') if role_entry else '?'} "
               f"({role_entry.get('slug', '?') if role_entry else '?'}) on "

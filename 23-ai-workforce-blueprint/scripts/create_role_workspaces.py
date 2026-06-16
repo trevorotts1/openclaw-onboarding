@@ -589,7 +589,26 @@ def try_library_fill(role_name, dept_path, is_ceo):
     dept_name = dept_path.name.replace("-dept", "").replace("-", " ").title()
     filled = fill_tokens(raw, role_name, dept_name, is_ceo, role_entry=role_entry)
 
-    # Stamp the front so reviewers can tell at a glance this came from library
+    # BUG 1 FIX: only stamp the "Filled from role-library" marker AFTER confirming
+    # that the filled content is substantive (>= 3072 bytes — same floor that
+    # verify-wiring.sh and qc-completeness.sh enforce).  A stub that received the
+    # marker was passing the library gate while failing the wiring gate because the
+    # gate trusted the marker rather than checking real content size.  If the filled
+    # string is below the floor, return None so the caller falls back to the
+    # PENDING-stub path (which is correctly flagged as unfilled) instead of
+    # rubber-stamping thin output as "done".
+    LIBRARY_FILL_MIN_BYTES = 3072  # matches HOW_TO_MIN_BYTES in verify-wiring.sh
+    if len(filled.encode("utf-8")) < LIBRARY_FILL_MIN_BYTES:
+        print(
+            f"  [Wave 5b] WARN: library fill for '{role_name}' ({dept_path.name}) "
+            f"produced {len(filled.encode('utf-8'))} bytes — below {LIBRARY_FILL_MIN_BYTES}B "
+            f"floor; treating as NO MATCH so stub path is used instead.",
+            file=sys.stderr,
+        )
+        return None
+
+    # Stamp the front so reviewers can tell at a glance this came from library.
+    # Marker is written ONLY when content size >= floor (enforced above).
     header = (f"<!-- Filled from role-library v{role_entry.get('version', '?')} on "
               f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')} -->\n")
     return header + filled

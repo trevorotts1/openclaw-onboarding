@@ -1,3 +1,22 @@
+## [v12.16.2] - 2026-06-15 - fix: library gate checks content not marker; department-floor sys.path resolver (fleet-critical)
+
+### Changes
+
+**Bug 1 — library gate trusted a marker instead of verifying content (fleet-critical):**
+`qc-completeness.sh` incremented `library_filled_count` based solely on the `<!-- Filled from role-library v... -->` marker in the first 4096 bytes, without checking file size. A thin stub (e.g. 156 bytes) incorrectly stamped with the marker passed `rfilled=True` at the library gate while `verify-wiring.sh` (which checks `HOW_TO_MIN_BYTES=3072`) failed the same file. Fix: gate now requires marker AND file size >= `LIBRARY_MIN_BYTES` (3072 B). The fill scripts (`build-workforce.py` `_instantiate_role_from_library` and `create_role_workspaces.py` `try_library_fill`) now refuse to stamp the marker on thin output, returning `None` so the caller uses the PENDING-stub path.
+
+**Bug 2 — department-floor.py resolver false rc=7 (fleet-wide; breaks standard Mac installs):**
+`department-floor.py` `resolve_departments_dir()` used `sys.path.insert(0, ...)` in a loop over `(lib/, shared-utils-parent, shared-utils)`. Last insert wins — so `shared-utils/detect_platform.py` (which returns `company_dir=None` on the `~/clawd` layout) shadowed `lib/detect_platform.py` (which resolves correctly). Result: false `rc=7` on standard Mac installs. Fix: reversed loop order so `lib/` is inserted last (position 0), matching how `qc-completeness.sh` resolves `detect_platform` successfully.
+
+- `23-ai-workforce-blueprint/scripts/qc-completeness.sh` — `LIBRARY_MIN_BYTES=3072` constant; size check alongside marker check; extended `LIBRARY_MARKER` regex.
+- `23-ai-workforce-blueprint/scripts/build-workforce.py` — size guard before stamping `WS-2:` marker.
+- `23-ai-workforce-blueprint/scripts/create_role_workspaces.py` — size guard before stamping `Filled from` marker.
+- `23-ai-workforce-blueprint/scripts/department-floor.py` — loop order reversed so `lib/` wins at position 0.
+- `tests/unit/library-gate-content.test.py` — NEW: 20 unit tests covering both bugs.
+- All 9 version markers bumped to v12.16.2 via `scripts/bump-version.sh`. `cc-compat.json` onboardingVersion updated to v12.16.2.
+
+---
+
 ## [v12.16.1] - 2026-06-15 - fix(skill-35): cron auto-install fail-loud wiring + deduplication + QC assertion (skill v2.9.0)
 
 ### Changes
@@ -94,6 +113,7 @@ Root cause: `register-weekly-cron.sh` existed but had zero callers in any instal
 
 **Version bumped:** all 9 markers + `cc-compat.json` onboardingVersion v12.14.5 → v12.14.6.
 Zero client names in diff (grep verified).
+
 
 ---
 

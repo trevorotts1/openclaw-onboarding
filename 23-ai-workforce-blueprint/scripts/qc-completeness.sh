@@ -138,8 +138,18 @@ LOG_FILE = Path(os.environ["LOG_FILE"])
 JSON_FILE = Path(os.environ["JSON_FILE"])
 TS = os.environ["TS"]
 
-LIBRARY_MARKER = re.compile(r"<!--\s*Filled from role-library v", re.IGNORECASE)
+LIBRARY_MARKER = re.compile(r"<!--\s*(?:WS-2: instantiated|Filled) from role-library v", re.IGNORECASE)
 STUB_PATTERN = re.compile(r"to be personalized based on research", re.IGNORECASE)
+# BUG 1 FIX (v12.14.6): the library gate used to count a how-to.md as "filled"
+# based solely on the presence of the <!-- Filled from role-library v... --> marker
+# in the first 4096 bytes, WITHOUT checking actual file size.  A prior run could
+# stamp the marker onto a thin hand-written stub (e.g. 156 bytes) and the gate
+# would report library_pct=100% while the wiring gate (HOW_TO_MIN_BYTES=3072)
+# simultaneously failed the same file.  Fix: a role only counts as library-filled
+# when the marker is present AND the file is >= LIBRARY_MIN_BYTES (same 3 KB
+# floor that verify-wiring.sh enforces).  The marker is now a necessary but
+# insufficient condition; real content size is the authoritative check.
+LIBRARY_MIN_BYTES = 3072  # must match HOW_TO_MIN_BYTES in verify-wiring.sh
 
 # v10.15.18 SUBSTANCE GATE. A SOP file counts as "substantive" ONLY if it is a
 # real, authored DMAIC SOP — not a thin/hollow file and not a placeholder stub.
@@ -325,8 +335,12 @@ for dept_dir in on_disk_depts:
         howto_embedded = 0
         if howto.is_file():
             try:
+                howto_size = howto.stat().st_size
                 head = howto.open().read(4096)
-                if LIBRARY_MARKER.search(head):
+                # BUG 1 FIX: marker alone is not sufficient — the file must also
+                # meet the 3 KB content floor so a thin stub that was incorrectly
+                # stamped with the marker cannot pass as "filled".
+                if LIBRARY_MARKER.search(head) and howto_size >= LIBRARY_MIN_BYTES:
                     library_filled_count += 1
             except Exception:
                 pass
