@@ -151,14 +151,86 @@ A tool NAME in this roster is not an invocation; the literal invocations live in
 
 ## 9. Standard Operating Procedures (Numbered)
 
-The four procedures this Director owns are mirrored in full in `sops/`:
+The four core procedures this Director owns are detailed below and also mirrored in `sops/` for reference:
 
-- **Q-9.1 -- Audit a Department's Procedures** (`sops/audit-a-departments-procedures-sops.md`)
-- **Q-9.2 -- Audit a Department's Roles** (`sops/audit-a-departments-roles-sops.md`)
-- **Q-9.3 -- System-Wide Quality Rollup** (`sops/system-wide-quality-rollup-sops.md`)
-- **Q-9.4 -- Maintain the Standard** (`sops/maintain-the-standard-sops.md`)
+- **Q-9.1 -- Audit a Department's Procedures** (Procedure Auditor executes; Director receives scorecard, routes failures to Healer)
+- **Q-9.2 -- Audit a Department's Roles** (Role Auditor executes; Director receives scorecard, routes failures to Healer)
+- **Q-9.3 -- System-Wide Quality Rollup** (Director owns and signs)
+- **Q-9.4 -- Maintain the Standard** (Director owns)
 
-Each procedure carries its purpose, the hard rule, the enforcement check, generic pass-versus-fail examples, and escalation to the Healer. The role file is authoritative; the `sops/` mirror is regenerated from it and never edited directly. The full text of each procedure is in the mirror file named above; the Role Auditor and Procedure Auditor execute Q-9.2 and Q-9.1 respectively, and this Director owns Q-9.3 and Q-9.4 and signs every ship-or-hold decision.
+### SOP 9.1 -- Q-9.1 Audit a Department's Procedures (Director Responsibility)
+
+**When to run:** When a department enters the audit rotation, when a department is rebuilt, or when the Healer marks one of the department's procedures fixed (triggering a re-audit). The Procedure Auditor executes the audit; the Director dispatches, receives, routes, and signs.
+**Frequency:** On the audit rotation cadence (every department audited at least once per quarter; mandatory departments audited monthly); additionally on-demand after any department rebuild or Healer-confirmed fix.
+**Inputs:** The department to audit (department ID and list of procedure files), the Procedure Auditor role, and the analyzer standard in `working/quality-control/standard/`.
+
+**Steps:**
+1. **Define -- Select the department for audit and dispatch the Procedure Auditor.** Pull the audit rotation schedule. Identify the next department due. Confirm the Procedure Auditor is available (not currently mid-audit on another department). Dispatch the Procedure Auditor with: the department ID, the list of procedure files to audit, and the current analyzer standard path. Record the dispatch timestamp and the expected completion time.
+2. **Measure -- Receive the Procedure Auditor's scorecard.** The scorecard must include: per-procedure specificity scores (eight dimensions), the seven mechanical auto-flag results (all seven must be recorded, not just the ones that fired), and the per-procedure specificity class (one of four defined classes). The QC Specialist gates the scorecard before you receive it. If the QC Specialist returns the scorecard to the Procedure Auditor for revision: update the dispatch log and note the revision reason.
+3. **Analyze -- Review the scorecard for routing.** From the QC-cleared scorecard: identify all procedures below the specificity floor (the specificity class is CONCEPTUAL-ONLY or UNDER-SPECIFIED). For each failing procedure: confirm the evidence citation is file-and-line (not file-only). If any citation is not file-and-line: return the scorecard to the Procedure Auditor via the QC Specialist for a single targeted revision.
+4. **Improve -- File a Bug Ticket for each failing procedure.** For each procedure that is below the specificity floor or that triggered a mechanical auto-flag: file a Bug Ticket to the Bugs Department using the universal intake schema. Fields: component = the audited department and procedure ID, description = the audit finding (specificity class, the single highest-leverage fix identified in the scorecard), severity = P2 (under-specified procedure) or P1 (auto-flag triggered), evidence = the scorecard section with the file-and-line citation. Record the returned bug_id in `working/quality-control/routed/`.
+5. **Control -- Sign the ship-or-hold decision.** For the department overall: if all procedures are at SPECIFIC or EXEMPLARY class: SHIP (the department's QC status is current). If any procedure is UNDER-SPECIFIED or CONCEPTUAL-ONLY: HOLD (Bug Tickets filed; re-audit after Healer confirmation). Record the decision in `working/quality-control/status/` with the audit date, the scorecard summary, and the bug_ids filed. Deliver the audit summary to the operator (via the system-wide rollup Q-9.3, not as a standalone report per department).
+
+**Outputs:** Dispatched Procedure Auditor, received and routed QC-cleared scorecard, Bug Tickets filed for all failing procedures, ship-or-hold decision recorded.
+**Hand to:** Procedure Auditor (dispatch). QC Specialist (scorecard gate). Bugs Department (Bug Tickets). Working directory `working/quality-control/status/` (decision record).
+**Failure mode:** If the Bugs board is unreachable when Bug Tickets must be filed: write the pending Bug Tickets to `working/quality-control/routed/pending.json` with all required fields, escalate to the Master Orchestrator and Rescue Rangers channel, and re-file when the Bugs board returns. A failing procedure with no Bug Ticket is the one thing this department must never produce. The decision is still HOLD pending Healer confirmation.
+
+---
+
+### SOP 9.2 -- Q-9.2 Audit a Department's Roles (Director Responsibility)
+
+**When to run:** Same triggers as Q-9.1: audit rotation, department rebuild, Healer-confirmed fix. The Role Auditor executes; the Director dispatches, receives, routes, and signs.
+**Frequency:** Same cadence as Q-9.1 (typically run on the same department at the same time as Q-9.1 to produce a complete department report).
+**Inputs:** The department to audit, the Role Auditor, and the role index `_index.json` and materialization scripts.
+
+**Steps:**
+1. **Define -- Dispatch the Role Auditor.** Dispatch with: the department ID, the list of role files to audit, and the current role-document overlay standard path. Record the dispatch timestamp.
+2. **Measure -- Receive the Role Auditor's scorecard.** The scorecard must include: per-role reality verdict (B-dimensions: FILE-ONLY, DORMANT, or ACTIVE), per-role specificity class (one of four defined classes), summarized-away pass result (must be recorded even if "none found"), and phantom-dependency check result for all named hand-to targets and sub-specialists. The QC Specialist gates the scorecard before delivery.
+3. **Analyze -- Review for routing.** Identify all roles that are FILE-ONLY (no agent row in materialization scripts), DORMANT (no real trigger fires them), or below the specificity floor. For each: confirm the evidence is a specific grep result or a specific file path, not prose assertion.
+4. **Improve -- File Bug Tickets for failing roles.** Same procedure as Q-9.1, Step 4. Severity: P2 for under-specified roles, P1 for FILE-ONLY roles in mandatory departments, P0 for a role that is actively producing wrong outputs (a role that runs but produces fabricated outputs).
+5. **Control -- Sign the ship-or-hold decision.** Same procedure as Q-9.1, Step 5. Record in `working/quality-control/status/` alongside the Q-9.1 decision for the same department -- both axes must pass for the department to SHIP.
+
+**Outputs:** Dispatched Role Auditor, received and routed QC-cleared scorecard, Bug Tickets filed, ship-or-hold decision recorded.
+**Hand to:** Role Auditor (dispatch). QC Specialist (scorecard gate). Bugs Department (Bug Tickets). `working/quality-control/status/` (decision record).
+**Failure mode:** Same as Q-9.1: if Bugs board is unreachable, write to `pending.json` and escalate.
+
+---
+
+### SOP 9.3 -- System-Wide Quality Rollup (Director Executes)
+
+**When to run:** Monthly (or on the operator's requested cadence). Produces the system-wide quality picture for the operator.
+**Frequency:** Monthly.
+**Inputs:** All department-level ship-or-hold decisions and bug_ids in `working/quality-control/status/`, the department floor (list of mandatory departments), and the bug statuses from the Bugs department for all filed bug_ids.
+
+**Steps:**
+1. **Define -- Confirm all departments have a current status record.** Pull `working/quality-control/status/`. Every mandatory department must have a status record dated within the current rollup period. If any mandatory department has no record: note as "NOT YET AUDITED" in the rollup (do not fabricate a status).
+2. **Measure -- Compile the department-level summary.** For each department: record the Q-9.1 (procedure) ship-or-hold decision, the Q-9.2 (role) ship-or-hold decision, the count of open Bug Tickets routed from this department (from `working/quality-control/routed/`), and the status of those Bug Tickets (open, in-healing, healed, closed). The rollup is not a score average -- it is a status matrix.
+3. **Analyze -- Identify the critical items.** From the status matrix: which departments are in HOLD? Which have open P0 or P1 Bug Tickets? Which have the most Bug Tickets open for more than 14 days (potential SLA breach on the Healer's side)? Present the critical items at the top of the rollup, not buried in the department list.
+4. **Improve -- Draft the rollup for QC Specialist review.** The rollup format: executive summary (3-5 sentences: how many departments SHIP, how many HOLD, how many NOT YET AUDITED, how many open Bug Tickets total, what the single most important quality finding is), department status matrix (one row per mandatory department: department name, Q-9.1 status, Q-9.2 status, open Bug Tickets, oldest open Bug Ticket age), critical items section (departments in HOLD with their top finding and the bug_id), and next actions (what the Director will do in the next 30 days to move HOLD departments to SHIP).
+5. **Control -- Submit to QC Specialist, then deliver to operator.** Submit the rollup draft to the QC Specialist for gate review. After QC clearance: deliver to the operator via the designated channel. Archive to `working/quality-control/rollups/` with the rollup date as the filename suffix.
+
+**Outputs:** System-wide quality rollup (QC-cleared, delivered to operator, archived).
+**Hand to:** QC Specialist (for gate review). Operator (after QC clearance). `working/quality-control/rollups/` (archive).
+**Failure mode:** If a mandatory department has no status record and the audit has not been run (not just late, but genuinely never run), the rollup must flag this as a gap, not silently omit the department. "Department X: NOT YET AUDITED -- no audit record found" is a required entry.
+
+---
+
+### SOP 9.4 -- Maintain the Standard (Director Executes)
+
+**When to run:** When the analyzer standard in `working/quality-control/standard/` is found to be missing, stale, or internally inconsistent; or on a scheduled review (every 6 months) to confirm the standard is current with any changes to the role-library format or the build process.
+**Frequency:** On-demand (when the standard is flagged as missing or stale) and every 6 months for scheduled review.
+**Inputs:** The current analyzer standard (or the finding that it is missing), any flagged inconsistencies from the Procedure Auditor or Role Auditor, and the current role-library version as the ground truth.
+
+**Steps:**
+1. **Define -- Determine whether the standard is missing, stale, or inconsistent.** Missing: the file at `working/quality-control/standard/` does not exist. Stale: the standard references role-library schema elements that have been changed or removed in the current version. Inconsistent: the standard contains two sections that give conflicting instructions for the same scoring scenario. Identify which condition applies before taking action.
+2. **Measure -- For stale or inconsistent standards: identify the specific discrepancies.** Pull the current role-library version from `_index.json`. Compare the standard's schema references to the current role-library schema. For each discrepancy: record the specific section in the standard, the current correct value from the role-library, and the incorrect value currently in the standard.
+3. **Analyze -- Draft the correction.** For a missing standard: restore from the most recent backup in `working/quality-control/standard/backups/`. If no backup exists: reconstruct the standard from the role-library schema and the audit procedures Q-9.1 and Q-9.2. For stale or inconsistent: draft the specific corrections (replace each incorrect value with the current correct value from the role-library).
+4. **Improve -- Apply the correction and version-bump.** Apply the correction to the standard file. Increment the standard version number. Add a changelog entry: date, what changed, and why. Archive the previous version to `working/quality-control/standard/backups/` before overwriting.
+5. **Control -- Notify all auditing roles and resume audits.** Notify the Role Auditor and Procedure Auditor that the standard has been updated and provide the new version number. Any audit that was paused pending standard restoration resumes immediately. Record the standard restoration in the QC department's maintenance log.
+
+**Outputs:** Restored or corrected analyzer standard (versioned and backed up). Notification to auditing roles. Maintenance log entry.
+**Hand to:** Role Auditor and Procedure Auditor (standard update notification). `working/quality-control/standard/` (updated file). `working/quality-control/standard/backups/` (archived previous version).
+**Failure mode:** If the standard cannot be reconstructed from backups or from the role-library schema alone (schema is also missing or corrupted), escalate to the Master Orchestrator immediately. The QC department cannot run any audits without a valid standard. This is a P0-severity system failure for the QC department.
 
 ---
 
