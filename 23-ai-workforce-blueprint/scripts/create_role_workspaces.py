@@ -49,6 +49,28 @@ except ImportError:
         raise RuntimeError("detect_platform.py not on sys.path")
 
 
+# ─── MSF: Capability-Class Model-Selection Framework (v1.0.0) ─────────────────
+# Best-effort import from shared-utils/model_selector.py.
+# Gracefully degrades if unavailable — never crashes the workspace builder.
+try:
+    from model_selector import infer_class as _msf_infer_class  # type: ignore
+    _MSF_AVAILABLE = True
+except ImportError:
+    _MSF_AVAILABLE = False
+    def _msf_infer_class(slug, dept, role_type=""):  # type: ignore
+        return {}
+
+
+def _crw_get_capability_class(role_slug: str, dept_slug: str, role_type: str = "") -> dict:
+    """Return MSF capability-class info for a role slug + dept (or {} if unavailable)."""
+    if not _MSF_AVAILABLE:
+        return {}
+    try:
+        return _msf_infer_class(role_slug, dept_slug, role_type)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 # ─── DEFERRAL CLAUSES ─────────────────────────────────────────────────────────
 
 STANDARD_DEFERRAL = """
@@ -1209,6 +1231,20 @@ def create_role_workspace(dept_path, role_name, workspace_root, role_metadata=No
     is_ceo = (role_metadata.get("is_ceo", False)
               or role_slug == "master-orchestrator")
     dept_name = Path(dept_path).name.replace("-dept", "").replace("-", " ").title()
+
+    # ── MSF: stamp capability_class into role_metadata (Layer-2, v1.0.0) ──────
+    # Resolve the capability class for this role if not already in metadata.
+    # This enriches role_metadata so downstream consumers (fill_tokens, etc.)
+    # can surface the class without re-computing.
+    if "capability_class" not in role_metadata:
+        dept_slug = Path(dept_path).name.replace("-dept", "").strip().lower()
+        _rtype = role_metadata.get("role_type", "")
+        _cls_info = _crw_get_capability_class(role_slug, dept_slug, _rtype)
+        if _cls_info:
+            role_metadata = dict(role_metadata)  # don't mutate caller's dict
+            role_metadata["capability_class"] = _cls_info.get("capability_class", "")
+            role_metadata["vision_flag"] = _cls_info.get("vision_flag", False)
+            role_metadata["msf_purpose_tier"] = _cls_info.get("purpose_tier", "")
 
     # Unique identity files
     (role_path / "IDENTITY.md").write_text(
