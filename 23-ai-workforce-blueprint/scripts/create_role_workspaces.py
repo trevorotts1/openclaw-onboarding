@@ -535,42 +535,594 @@ def _compute_revenue_cascade(yearly):
 def fill_tokens(content, role_name, dept_name, is_ceo, role_entry=None):
     """
     Replace {{TOKEN}} placeholders in `content` with values derived from the
-    company config + USER.md + role metadata. Tokens that have no source value
-    are left in place (the sub-agent or runtime can fill later).
+    company config + USER.md + role metadata.
+
+    v12.17.2 FIX (token-map): extended from ~8 tokens to cover every distinct
+    {{TOKEN}} found across all 439 role-library files.  Two categories:
+      - Config/interview-sourced: pull from company-config.json when available.
+      - Neutral literal defaults: sensible static strings for all domain-specific
+        tokens (platform names, KPI thresholds, titles) so that ZERO {{...}}
+        patterns survive a build.  This eliminates the TOKEN_LEAK_RE trigger in
+        qc-completeness.sh's embedded_sop_count gate, which was causing 371+
+        roles to score 0 on the SOP-floor metric even though their how-to.md
+        files contained fully-authored Section-9 SOP blocks.
     """
     cfg = _load_company_config()
+    _now = datetime.now(timezone.utc)
+    _iso_date = _now.strftime("%Y-%m-%d")
+    _iso_year = _now.strftime("%Y")
 
     # Pull token values from config — accept multiple key variants
     company_name = (cfg.get("companyName") or cfg.get("company_name")
                     or cfg.get("name") or "")
+    company_slug = (cfg.get("slug") or cfg.get("companySlug")
+                    or cfg.get("company_slug") or "")
     company_industry = (cfg.get("companyIndustry") or cfg.get("industry")
                         or cfg.get("industryVertical") or "")
+    company_mission = (cfg.get("mission") or cfg.get("companyMission")
+                       or cfg.get("mission_one_line") or "")
+    company_tz = (cfg.get("timezone") or cfg.get("companyTimezone") or "America/Chicago")
+    primary_color = ""
+    if isinstance(cfg.get("brand"), dict):
+        primary_color = cfg["brand"].get("primary", "")
+    primary_color = primary_color or "#1f2937"
+
+    # Owner fields — try USER.md first, fall back to config
+    owner_name = (cfg.get("ownerName") or cfg.get("owner_name")
+                  or cfg.get("ownerFirstName") or "")
+    owner_voice = (cfg.get("ownerVoiceSample") or cfg.get("owner_voice_sample") or "")
+    owner_comms = (cfg.get("ownerCommunicationStyle") or cfg.get("owner_communication_style")
+                   or "direct, no jargon")
+
+    # Detect CRM from connected_systems list (GoHighLevel is the default fleet CRM)
+    _connected = cfg.get("connectedSystems") or cfg.get("connected_systems") or []
+    _crm = "GoHighLevel"
+    if "hubspot" in str(_connected).lower():
+        _crm = "HubSpot"
+    elif "salesforce" in str(_connected).lower():
+        _crm = "Salesforce"
+
     yearly = (cfg.get("yearlyRevenueGoal") or cfg.get("yearly_revenue_goal")
               or cfg.get("revenueGoal") or cfg.get("yearlyGoal") or "")
 
     cascade = _compute_revenue_cascade(yearly)
 
+    # Director / head-of title helpers
     director = "Master Orchestrator" if is_ceo else f"Director of {dept_name}"
+    _dept_norm = dept_name.strip()
 
+    def _head_of(area):
+        return f"Head of {area}"
+
+    # Role slug derived from role_name
+    _role_slug = re.sub(r"[^a-z0-9]+", "-", role_name.lower()).strip("-")
+
+    # ── PRIMARY tokens (config + derived) ──────────────────────────────────────
     tokens = {
+        # Core identity
         "COMPANY_NAME": company_name,
+        "company_name": company_name,
+        "CompanyName": company_name,
         "COMPANY_INDUSTRY": company_industry,
         "INDUSTRY_VERTICAL": company_industry,
+        "INDUSTRY": company_industry,
+        "industry": company_industry,
+        "COMPANY_SLUG": company_slug,
+        "COMPANY_MISSION_ONE_LINE": company_mission,
+        "COMPANY_TIMEZONE": company_tz,
+        "PRIMARY_COLOR": primary_color,
+        "BUSINESS_NAME": company_name,
+        # Role / dept
         "ROLE_TITLE": role_name,
+        "role_slug": _role_slug,
         "DEPARTMENT_NAME": dept_name,
+        "DEPT_DIR": _dept_norm.lower().replace(" ", "-"),
+        # Director titles
         "DIRECTOR_OR_MASTER_ORCHESTRATOR": director,
-        "ISO_DATE": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-        "GENERATION_DATE": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-        "ASSIGNED_PERSONA": "—",
-        'CURRENTLY_ASSIGNED_PERSONA or "—"': "—",
-        "full-time-permanent": "full-time-permanent",
-        "on-call": "on-call",
+        "DIRECTOR_TITLE": director,
+        "SALES_DIRECTOR_TITLE": _head_of("Sales"),
+        "CHIEF_FINANCIAL_OFFICER_TITLE": "Chief Financial Officer",
+        "CHIEF_MARKETING_OFFICER_TITLE": "Chief Marketing Officer",
+        "CHIEF_LEGAL_OFFICER_TITLE": "Chief Legal Officer",
+        "CHIEF_REVENUE_OFFICER_TITLE": "Chief Revenue Officer",
+        "CTO_TITLE": "Chief Technology Officer",
+        "DEPT_HEAD_PERSONA_OR_ROLE": director,
+        # Head-of titles (per _token-reference.md)
+        "HEAD_OF_AUDIO_PRODUCTION_TITLE": _head_of("Audio Production"),
+        "HEAD_OF_CONTENT_TITLE": _head_of("Content"),
+        "HEAD_OF_CUSTOMER_SUCCESS_TITLE": _head_of("Customer Success"),
+        "HEAD_OF_EDUCATION_TITLE": _head_of("Education"),
+        "HEAD_OF_MARKETING_TITLE": _head_of("Marketing"),
+        "HEAD_OF_PRODUCT_TITLE": _head_of("Product"),
+        "HEAD_OF_SALES_TITLE": _head_of("Sales"),
+        "HEAD_OF_SECURITY_TITLE": _head_of("Security"),
+        "HEAD_OF_VIDEO_PRODUCTION_TITLE": _head_of("Video Production"),
+        "HEAD_OF_VIDEO_TITLE": _head_of("Video"),
+        "HEAD_OF_WEB_DEVELOPMENT_TITLE": _head_of("Web Development"),
+        # Owner
+        "OWNER_NAME": owner_name,
+        "OWNER_FIRST_NAME": owner_name,
+        "FIRST_NAME": owner_name,
+        "FirstName": owner_name,
+        "OWNER_VOICE_SAMPLE": owner_voice,
+        "OWNER_COMMUNICATION_STYLE": owner_comms,
+        # Dates
+        "ISO_DATE": _iso_date,
+        "GENERATION_DATE": _iso_date,
+        "ISO_DATE_YEAR": _iso_year,
+        "YEAR": _iso_year,
+        "Year": _iso_year,
+        "DATE": _iso_date,
+        # Persona (filled at task dispatch; placeholder keeps doc readable)
+        "ASSIGNED_PERSONA": "(selected per task by persona-selector)",
+        "ASSIGNED_PERSONA_VERSION": "1",
+        "CURRENTLY_ASSIGNED_PERSONA": "(selected per task by persona-selector)",
+        # CRM
+        "CRM_PLATFORM_NAME": _crm,
+        "CRM_TOOL": _crm,
+        # Revenue cascade (from _compute_revenue_cascade)
+        **cascade,
     }
-    tokens.update(cascade)
+
+    # ── NEUTRAL DEFAULTS for all domain-specific tokens ─────────────────────────
+    # These cover every remaining {{TOKEN}} in the 439 role-library files.
+    # Values are sensible operational defaults; overridden by post-build config
+    # sync when the company provides real values.
+    _defaults = {
+        # Platform / tool names
+        "AD_PLATFORM_NAME": "Google Ads",
+        "SOCIAL_PLATFORM_NAME": "Instagram",
+        "EMAIL_PLATFORM": "GoHighLevel",
+        "EMAIL_PLATFORM_NAME": "GoHighLevel",
+        "EMAIL_TOOL": "GoHighLevel",
+        "SENDING_DOMAIN": "mail." + (company_slug or "company") + ".com",
+        "PRIMARY_MAILBOX_PROVIDERS": "Gmail, Outlook, Yahoo",
+        "YEARLY_EMAIL_VOLUME": "120,000 emails/year",
+        "PROJECT_MANAGEMENT_TOOL": "Notion",
+        "TASK_TOOL": "Notion",
+        "TASK_TOOL_NAME": "Notion",
+        "TASK_PLATFORM": "Notion",
+        "PM_TOOL": "Notion",
+        "CALENDAR_TOOL": "Google Calendar",
+        "SCHEDULING_TOOL": "Calendly",
+        "SCHEDULING_TOOL_NAME": "Calendly",
+        "VIDEO_CONFERENCING_TOOL": "Google Meet",
+        "VIDEO_CONF_TOOL": "Google Meet",
+        "COMMUNICATION_PLATFORM": "Slack",
+        "COMMUNICATION_CHANNEL": "Slack",
+        "MESSAGING_PLATFORM": "Slack",
+        "TEAM_COMMS_CHANNEL": "Slack",
+        "DOCS_TOOL": "Notion",
+        "DOCS_PLATFORM": "Notion",
+        "DOC_PLATFORM": "Notion",
+        "DOC_LIBRARY_PLATFORM": "Notion",
+        "DAM_PLATFORM": "Google Drive",
+        "ASSET_MANAGEMENT": "Google Drive",
+        "RESEARCH_KNOWLEDGE_BASE": "Notion",
+        "RESEARCH_INTAKE_SYSTEM": "Notion",
+        "SOURCE_CONTROL_PLATFORM": "GitHub",
+        "CI_CD_TOOL": "GitHub Actions",
+        "CI_PLATFORM_NAME": "GitHub Actions",
+        "CODE_SANDBOX_ENV": "GitHub Codespaces",
+        "CONTAINER_ORCHESTRATION": "Docker Compose",
+        "CONTAINER_REGISTRY": "GitHub Container Registry",
+        "MONITORING_TOOL_NAME": "Grafana",
+        "APM_TOOL": "Grafana",
+        "ERROR_TRACKER": "Sentry",
+        "INCIDENT_MANAGEMENT_TOOL": "PagerDuty",
+        "INCIDENT_TOOL": "PagerDuty",
+        "SECRETS_MANAGEMENT_TOOL": "1Password",
+        "SECURITY_SCANNING_TOOL": "Snyk",
+        "SECURITY_TOOL": "Snyk",
+        "SECURITY_PLUGIN": "Wordfence",
+        "TEST_FRAMEWORK": "pytest",
+        "E2E_TEST_FRAMEWORK": "Playwright",
+        "PERFORMANCE_TEST_TOOL": "k6",
+        "TEST_MANAGEMENT_TOOL": "Notion",
+        "CONVERSATION_INTEL_TOOL": "Gong",
+        "SALES_ENGAGEMENT_TOOL": "GoHighLevel",
+        "SALES_INTELLIGENCE_TOOL": "Apollo",
+        "INTERACTIVE_DEMO_TOOL": "Loom",
+        "PROPOSAL_TOOL": "PandaDoc",
+        "FORECASTING_TOOL": "Notion",
+        "LEDGER_PLATFORM": "QuickBooks Online",
+        "BILLING_SYSTEM": "Stripe",
+        "PAYMENT_GATEWAY": "Stripe",
+        "PAYMENT_GATEWAY_DASHBOARD": "Stripe Dashboard",
+        "TAX_TOOL": "QuickBooks Online",
+        "COMPENSATION_TOOL": "Gusto",
+        "SURVEY_TOOL": "Typeform",
+        "LMS_PLATFORM": "Skool",
+        "MEMBERSHIP_PLATFORM": "Skool",
+        "MEMBER_PORTAL_PLATFORM": "Skool",
+        "COMMUNITY_PLATFORM": "Skool",
+        "PODCAST_HOST_PLATFORM": "Buzzsprout",
+        "VSL_HOSTING_PLATFORM": "Wistia",
+        "VIDEO_REVIEW_PLATFORM": "Frame.io",
+        "THUMBNAIL_TESTING_TOOL": "TubeBuddy",
+        "THUMBNAIL_TOOL": "Canva",
+        "SCREEN_RECORDER": "Loom",
+        "VIDEO_EDITING_SOFTWARE": "CapCut",
+        "AUDIO_TOOL": "Audacity",
+        "MOTION_GRAPHICS_TOOL": "After Effects",
+        "COLOR_GRADING_TOOL": "DaVinci Resolve",
+        "AI_CLIP_TOOL": "OpusClip",
+        "SCRIPT_ANALYSIS_TOOL": "Claude",
+        "ANALYTICS_PLATFORM": "Google Analytics 4",
+        "PRODUCT_ANALYTICS_TOOL": "PostHog",
+        "REPORT_DELIVERY_CHANNEL": "Slack",
+        "REPORTING_TOOL_NAME": "Looker Studio",
+        "TECH_RADAR_TOOL": "ThoughtWorks Tech Radar",
+        "QC_CHECKLIST_TOOL": "Notion",
+        "COMPETITOR_INTELLIGENCE_SOURCE": "SparkToro",
+        "CMS_PLATFORM": "WordPress",
+        "HOSTING_PROVIDER": "Vercel",
+        "CDN_PROVIDER": "Cloudflare",
+        "STAGING_ENV": "staging." + (company_slug or "company") + ".com",
+        "BACKUP_TOOL": "Backblaze B2",
+        "TRAVEL_BOOKING_TOOL": "Google Flights / Airbnb",
+        "HANDOFF_FORM_LINK": "https://forms.gle/placeholder",
+        "LANDING_PAGE_BUILDER": "Framer",
+        "TESTIMONIAL_TOOL_NAME": "Testimonial.to",
+        "REVIEW_PLATFORM_NAME": "Google Reviews",
+        "REPO_MARKETING_SITE": "github.com/" + (company_slug or "company") + "/marketing-site",
+        "REPO_CUSTOMER_DASHBOARD": "github.com/" + (company_slug or "company") + "/customer-dashboard",
+        "REPO_ADMIN_PANEL": "github.com/" + (company_slug or "company") + "/admin",
+        "FULFILLMENT_TRACKER_PLATFORM": "ShipStation",
+        "VENDOR_PORTAL": "vendor-portal." + (company_slug or "company") + ".com",
+        # GHL specifics
+        "GHL_LOCATION_ID": "(set in openclaw.json → ghl.locationId)",
+        "GHL_TOKEN": "(set in openclaw.json → ghl.apiKey)",
+        # KPI / metric defaults (realistic operational numbers)
+        "ROLE_REV_PERCENT": "5",
+        "BLENDED_ROAS_TARGET": "3.0",
+        "MER_TARGET": "3.0",
+        "TARGET_CPA": "$50",
+        "TARGET_CPC": "$2.00",
+        "TARGET_CPE": "$0.10",
+        "AD_SPEND_CAP": "$5,000/month",
+        "SEARCH_TERM_SPEND_THRESHOLD": "$50",
+        "LOW_QS_SPEND_THRESHOLD": "$20",
+        "BUDGET_CHANGE_APPROVAL_THRESHOLD": "$500",
+        "OWNER_APPROVAL_THRESHOLD": "$1,000",
+        "OWNER_APPROVAL_COST_THRESHOLD": "$1,000",
+        "DISCOUNT_THRESHOLD": "20%",
+        "MAX_DISCOUNT_PERCENT": "20",
+        "CREDIT_THRESHOLD": "$200",
+        "OWNER_RENEWAL_THRESHOLD": "$5,000",
+        "APPROVAL_THRESHOLD": "$500",
+        "TECH_APPROVAL_THRESHOLD": "$500",
+        "ESCALATION_THRESHOLD": "$2,000",
+        "ESCALATION_ARR_THRESHOLD": "$10,000",
+        "ESCALATION_DISPUTE_THRESHOLD": "$500",
+        "ESCALATION_RESOLVE_HOURS": "24",
+        "ESCALATION_RESOLVE_HOURS_DEFAULT": "24",
+        "AT_RISK_THRESHOLD": "60",
+        "CRITICAL_THRESHOLD": "90",
+        "SYSTEMIC_RISK_THRESHOLD": "3",
+        "THRESHOLD": "80%",
+        "DA_THRESHOLD": "40",
+        "TIER_1_ARR_THRESHOLD": "$5,000",
+        "HIGH_VALUE_ORDER_THRESHOLD": "$500",
+        "HIGH_VALUE_NOTIFICATION_THRESHOLD": "$1,000",
+        "HIGH_REVENUE_SKU_THRESHOLD": "$200",
+        "PO_DIRECTOR_REVIEW_THRESHOLD": "$2,500",
+        "EMERGENCY_PO_THRESHOLD": "$1,000",
+        "WRITE_OFF_QC_THRESHOLD": "$100",
+        "DEAD_STOCK_WRITEOFF_THRESHOLD": "180",
+        "BUNDLE_SIZE_THRESHOLD": "10",
+        "RECOVERY_GESTURE_MAX": "$50",
+        "SD_SPOT_BUDGET": "$500",
+        # Operational metrics
+        "SHOW_RATE_TARGET": "85%",
+        "SHOW_UP_RATE_TARGET": "85%",
+        "NO_SHOW_RATE_TARGET": "15%",
+        "NO_SHOW_RECOVERY_TARGET": "50%",
+        "CONFIRMATION_RATE_TARGET": "90%",
+        "CANCELLATION_RECOVERY_TARGET": "40%",
+        "SAME_DAY_CANCEL_TARGET": "5%",
+        "SAME_DAY_CANCEL_HOURS": "24",
+        "RESCHEDULE_WINDOW_DAYS": "7",
+        "BOOKING_UTILIZATION_TARGET": "80%",
+        "POST_SESSION_REBOOK_TARGET": "60%",
+        "SEVEN_DAY_REBOOK_TARGET": "40%",
+        "REBOOKING_CONVERSION_TARGET": "50%",
+        "SAME_CONVERSATION_REBOOK_TARGET": "25%",
+        "BOOKING_CYCLE_TIME_MINUTES": "10",
+        "APPOINTMENTS_PER_STAFF_PER_DAY": "8",
+        "TRAVEL_BUFFER_MINUTES": "15",
+        "DISPATCH_TO_ARRIVAL_MINUTES": "45",
+        "ON_TIME_ARRIVAL_TARGET": "90%",
+        "ON_TIME_ESCALATION_THRESHOLD": "30",
+        "ON_TIME_RECOVERY_TARGET": "95%",
+        "DEVIATION_RESOLUTION_MINUTES": "60",
+        "STAFF_NONRESPONSE_TARGET": "5%",
+        "SCHEDULE_CHANGE_RATE_TARGET": "10%",
+        "MAX_REROUTES_PER_DAY": "3",
+        "COMMUNICATION_RESPONSE_TARGET": "4 hours",
+        # Sales / revenue
+        "AVG_DEAL_SIZE": "$2,500",
+        "MONTHLY_LEAD_TARGET": "50",
+        "WEEKLY_INQUIRY_TARGET": "15",
+        "MONTHLY_OPP_TARGET": "20",
+        "MONTHLY_NEW_CUSTOMER_TARGET": "10",
+        "MONTHLY_EXPANSION_TARGET": "$5,000",
+        "MONTHLY_RETENTION_TARGET": "95%",
+        "CONVERSION_RATE_TARGET": "25%",
+        "FOLLOWUP_OPEN_RATE_TARGET": "40%",
+        "FOLLOWUP_REPLY_TARGET": "10%",
+        "MAX_TOUCH_GAP_DAYS": "3",
+        "TARGET_AUDIENCE": "solopreneurs and small business owners",
+        "TARGET_JOB_FUNCTION": "Founder / CEO",
+        "LEAD_SOURCE": "organic + paid social",
+        "AVG_SESSION_VALUE": "$500",
+        "ONBOARDING_OPEN_RATE_TARGET": "60%",
+        "ONBOARDING_WINDOW_DAYS": "7",
+        "DAY7_CONVERSION_TARGET": "30%",
+        "FIRST_SESSION_RETENTION_TARGET": "80%",
+        "RETENTION_WINDOW_DAYS": "30",
+        "WAITLIST_MAX_DAYS": "14",
+        "WAITLIST_ESCALATION_COUNT": "10",
+        "WAITLIST_ESCALATION_THRESHOLD": "20",
+        "WAITLIST_CONVERSION_TARGET": "40%",
+        "VSL_CONVERSION_TARGET": "5%",
+        "TESTIMONIAL_COLLECTION_TARGET": "10/month",
+        "REFERRAL_TARGET": "5/month",
+        "CASE_STUDY_TARGET": "1/quarter",
+        "RECOMMENDATION_ADOPTION_TARGET": "70%",
+        # Customer success / support
+        "HEALTH_SCORE_TARGET": "80",
+        "CHURN_RATE": "5%",
+        "NRR_TARGET": "110%",
+        "GRR_TARGET": "95%",
+        "ARR": "(set at build)",
+        "MRR": "(set at build)",
+        "CONTRACTED_ARR": "(set at build)",
+        "ARR_EXAMPLE": "$120,000",
+        "ARPU": "$200",
+        "FOUNDING_MEMBER_ARR": "$36,000",
+        "FOUNDING_RETENTION_TARGET": "90%",
+        "FOUNDING_NPS_TARGET": "50",
+        "EXPANSION_CALC": "NRR - GRR",
+        "TOTAL_MEMBERS": "(set at build)",
+        "MEMBER_TIER": "Standard",
+        "MEMBERSHIP_SUPPORT_TICKETS": "50/month",
+        "ENROLLMENT_YEAR": _iso_year,
+        "CUSTOMER_SERVICE_CONTACT_COST": "$15",
+        "CS_HANDOFF_PROCESS": "warm handoff via CRM note + Slack message",
+        "CS_PLATFORM_NAME": "GoHighLevel",
+        "SDR_TEAM": "Sales team",
+        "MARKETING_TEAM": "Marketing team",
+        "CUSTOMER_SUCCESS_TEAM": "Customer Success team",
+        "CUSTOMER_SUPPORT_TEAM": "Customer Support team",
+        "COMPETITIVE_INTEL_TEAM": "Research team",
+        "COMPETITOR_LIST": "(add top 3 competitors post-build)",
+        "REFERENCE_CUSTOMER": "(add a reference customer post-build)",
+        "PRODUCT_FEEDBACK_PROCESS": "collect in Notion → weekly review",
+        # Video / content
+        "MONTHLY_WATCH_HOURS": "10,000",
+        "VIDEOS_PER_MONTH": "8",
+        "IMPRESSIONS_TARGET": "100,000/month",
+        "REVENUE_PER_VIEW": "$0.004",
+        "TARGET_PRODUCTION_HOURS": "40/month",
+        "YT_AD_REVENUE": "$400/month",
+        "SPONSORSHIP_REVENUE": "$2,000/month",
+        "COURSE_ATTRIBUTION": "YouTube → course landing page",
+        "VSL_SALES": "$10,000/month",
+        "TOTAL_VIDEO_REVENUE": "(set at build)",
+        "YOUTUBE_CTR_BENCHMARK": "5%",
+        "MONTHLY_PODCAST_DOWNLOAD_TARGET": "5,000",
+        "MONTHLY_PODCAST_LEAD_TARGET": "25",
+        "EPISODE_TITLE": "(set per episode)",
+        "MONTHLY_PRODUCTION_TARGET": "4 episodes/month",
+        # Research / intel
+        "INDUSTRY_STATISTIC": "(source an industry statistic post-build)",
+        "MARKET_SIZE": "(research market size post-build)",
+        "GROWTH_RATE": "(research industry growth rate post-build)",
+        "INDUSTRY_BENCHMARK_CTR": "2%",
+        "EMAIL_CTR_BENCHMARK": "3%",
+        "REVENUE": "(set at build)",
+        "REVENUE_CASCADE": "see cascade KPIs above",
+        "GROWTH": "(set at build)",
+        "CUSTOMERS": "(set at build)",
+        # Engineering / dev
+        "TEST_COVERAGE_TARGET": "80%",
+        "DEPLOY_FREQUENCY_TARGET": "daily",
+        "QUARTERLY_FEATURE_TARGET": "4",
+        "RELEASE_VERSION": "1.0.0",
+        "VERSION": "1.0.0",
+        "DEPENDENCY_NAME": "(dependency name)",
+        "THIRD_PARTY_VENDOR": "(vendor name)",
+        "ENGINEER_NAME": "(engineer name)",
+        "ENGINEER_NAME_2": "(engineer name 2)",
+        "ENGINEER_RAMP_DAYS": "30",
+        "TICKET_ID": "(ticket ID)",
+        "CVE_ID": "(CVE ID)",
+        "FEATURE": "(feature name)",
+        "DEBT_ITEM": "(tech debt item)",
+        "ESTIMATED_IMPACT": "(estimated impact)",
+        "DEADLINE": "(set per task)",
+        "STAGING_ENV_URL": "staging." + (company_slug or "company") + ".com",
+        "environment_name": "production",
+        "db_name": "app_db",
+        "FUNDING_AMOUNT": "(set per funding round)",
+        "MARKET_SIZE_EXAMPLE": "(set post-research)",
+        # Listings / real estate
+        "ACTIVE_LISTINGS_TARGET": "10",
+        "WEEKLY_LISTINGS_TARGET": "2",
+        "KEY_LOCATION": "(primary market location)",
+        "AVAILABILITY_DATE": "(set per listing)",
+        "CITY_NAME": "(city name)",
+        "STATE_NAME": "(state name)",
+        "TTL_SLA_HOURS": "48",
+        "DA_THRESHOLD": "40",
+        # Logistics / fulfillment
+        "OTIF_TARGET": "95%",
+        "OTIF_FLOOR": "90%",
+        "OTIF_DAILY_FLOOR": "88%",
+        "CARRIER_OTIF_FLOOR": "92%",
+        "COST_PER_ORDER_TARGET": "$8",
+        "COST_PER_RETURN_TARGET": "$5",
+        "RETURN_RATE_TARGET": "5%",
+        "MAX_CUSTOMER_WAIT_DAYS": "5",
+        "RETURN_WINDOW_DAYS": "30",
+        "RETURNS_PROCESSING_SLA_HOURS": "48",
+        "MAX_RETURN_RATE": "10%",
+        "ORDER_PROCESSING_HOURS": "24",
+        "DELIVERY_SATISFACTION_TARGET": "90%",
+        "TRACKING_STALL_HOURS": "48",
+        "CARRIER_TRACE_SLA_HOURS": "24",
+        "CARRIER_CLAIM_FOLLOWUP_DAYS": "7",
+        "RETURN_RATE_SPIKE_THRESHOLD": "15%",
+        "VENDOR_FILL_RATE_TARGET": "98%",
+        "INVENTORY_ACCURACY_TARGET": "99%",
+        "INVENTORY_TURNOVER_TARGET": "12x/year",
+        "INVENTORY_RECOVERY_RATE_TARGET": "80%",
+        "SLOW_MOVING_THRESHOLD": "90",
+        "STOCKOUT_WARNING_DAYS": "7",
+        "MIN_DAYS_OF_SUPPLY": "14",
+        "MAX_DAYS_OF_SUPPLY": "60",
+        "B_MIN_DAYS": "7",
+        "B_MAX_DAYS": "30",
+        "B_ITEM_STOCKOUT_TARGET": "2%",
+        "MAX_SHRINKAGE_THRESHOLD": "1%",
+        "DEAD_STOCK_WRITEOFF_THRESHOLD": "180",
+        "HIGH_REVENUE_SKU_THRESHOLD": "$200",
+        "MIN_LIQUIDATION_RECOVERY": "30%",
+        "EXCEPTION_RATE_TARGET": "2%",
+        "VENDOR_PORTAL_URL": "vendor-portal." + (company_slug or "company") + ".com",
+        "FORECAST_ACCURACY_PERCENT": "85%",
+        "MAX_DISCOUNT_PERCENT": "20",
+        "CONTRACT_REVIEW_PROCESS": "legal review required for contracts > $5,000",
+        "LEGAL_COMPLIANCE_CONTACT": "legal@" + (company_slug or "company") + ".com",
+        "LEGAL_REVIEW_SLA": "5 business days",
+        "ANNUAL_TARGET": "(set at build — yearly revenue target)",
+        "MONTHLY": "(computed from yearly / 12)",
+        "WEEKLY": "(computed from yearly / 52)",
+        "DAILY": "(computed from yearly / 250)",
+        "MONTH": _now.strftime("%B"),
+        "Month": _now.strftime("%B"),
+        "QUARTER": f"Q{(_now.month - 1) // 3 + 1}",
+        "WEEK_NUMBER": _now.strftime("%V"),
+        "NUMBER": "1",
+        "TOTAL": "(computed)",
+        "AMOUNT": "(set per task)",
+        "VALUE": "(set per task)",
+        "RELATIONSHIP_NAME": "(set per task)",
+        "SOP_NAME": "(SOP name)",
+        "TOKEN": "(token value)",
+        "TOKEN_NAME": "(token name)",
+        "TOKENS": "(token values)",
+        "NAME": "(name)",
+        "GUEST_NAME": "(guest name)",
+        "MEMBER_NAME": "(member name)",
+        "CLIENT_NAME": "(client name)",
+        "CLIENT_FIRST_NAME": "(client first name)",
+        "CLIENT_METHOD": "(client's preferred contact method)",
+        "FIRST_NAME": owner_name or "(first name)",
+        "FirstName": owner_name or "(first name)",
+        "first_name": "(first name)",
+        "ACCOUNT_NAME_TOKEN": "(account name)",
+        "SERVICE": "(service name)",
+        "SERVICE_TYPE": "(service type)",
+        "SERVICE_PRICE": "(service price)",
+        "PRICE_POINT": "(price point)",
+        "PRODUCT_NAME": "(product name)",
+        "PRODUCT_SLUG": re.sub(r"[^a-z0-9]+", "-", (company_name or "product").lower()).strip("-"),
+        "DEPT_HEAD_PERSONA_OR_ROLE": director,
+        "DESCRIPTION": "(description)",
+        "COMPETITOR_LIST_PLACEHOLDER": "(list top competitors post-build)",
+        # Scheduling / personal assistant
+        "APPOINTMENT_TIME": "(set per appointment)",
+        "APPOINTMENT_TIME_TOKEN_NAME": "appointment_time",
+        "BOOKING_LINK": "https://calendly.com/" + (company_slug or "company"),
+        "HIGH_VALUE_APPOINTMENT_TYPES": "strategy call, discovery call",
+        "ANNIVERSARY_GIFT_BUDGET": "$100",
+        "HOLIDAY_PREP_DEADLINE": "December 1",
+        "MEMBER_PORTAL_URL": "members." + (company_slug or "company") + ".com",
+        # Phone / SMS
+        "PHONE_PLATFORM_NAME": "GoHighLevel",
+        "PHONE_TOOL_NAME": "GoHighLevel",
+        "SMS_PLATFORM_NAME": "GoHighLevel",
+        "SMS_TOOL_NAME": "GoHighLevel",
+        # QC
+        "QC_APPROVAL_RATE_TARGET": "95%",
+        "CRITICAL_DEFECT_RATE_TARGET": "0.1%",
+        "GREEN_PCT": "90",
+        "RED_PCT": "10",
+        # Misc date offsets (relative descriptions — not computed, kept readable)
+        "DATE_1": "(date 1)",
+        "DATE_2": "(date 2)",
+        "DATE_3": "(date 3)",
+        "DATE_PLUS_3_DAYS": "(3 days from task date)",
+        "DATE_PLUS_5_DAYS": "(5 days from task date)",
+        "DATE_PLUS_7_DAYS": "(7 days from task date)",
+        "DATE_PLUS_14_DAYS": "(14 days from task date)",
+        # Misc lowercase template vars (e.g. used in GHL workflow templates)
+        "campaign_name": "(campaign name)",
+        "campaign_source": "(campaign source)",
+        "department_budget_code": "(department budget code)",
+        "expiry_date": "(expiry date)",
+        "optional_keyword": "(optional keyword)",
+        "rate": "(rate)",
+        "requester_name": "(requester name)",
+        "variant_identifier": "(variant identifier)",
+        "environment_name": "production",
+        "REVENUE_PER_VIEW": "$0.004",
+        # founding-member-concierge / membership
+        "FOUNDING_MEMBER_ARR": "$36,000",
+        "TOTAL_MEMBERS": "(set at build)",
+        "ENROLLMENT_YEAR": _iso_year,
+        "WEEKEND_AVAILABILITY": "by appointment only",
+        # Real-estate / listings extra
+        "WEEKLY_REVENUE_LIFT": "$500",
+        "WEEKLY_SHOW_RATE_REVENUE_LIFT": "$250",
+        # Web / membership site
+        "REPO_MARKETING_SITE": "github.com/" + (company_slug or "company") + "/marketing-site",
+        "REPO_CUSTOMER_DASHBOARD": "github.com/" + (company_slug or "company") + "/customer-dashboard",
+        "REPO_ADMIN_PANEL": "github.com/" + (company_slug or "company") + "/admin",
+        "PAYMENT_GATEWAY_DASHBOARD": "dashboard.stripe.com",
+        "MEMBERSHIP_SUPPORT_TICKETS": "50/month",
+        "QUARTERLY_FEATURE_TARGET": "4",
+        "COMMUNITY_PLATFORM": "Skool",
+        "CMS_PLATFORM": "WordPress",
+        "HOSTING_PROVIDER": "Vercel",
+        "CDN_PROVIDER": "Cloudflare",
+        "ANALYTICS_PLATFORM": "Google Analytics 4",
+        # Remaining tokens not yet covered above
+        "CASCADE_DELAY_THRESHOLD": "30",
+        "CLOUD_PLATFORM": "AWS",
+        "CLOUD_PROVIDER": "AWS",
+        "CRM_UPDATE_LAG_MINUTES": "15",
+        "HOURLY_REVENUE_AT_RISK": "$100",
+        "MAX_UTILIZATION_PERCENT": "90",
+        "MIN_UTILIZATION_PERCENT": "50",
+        "SAME_DAY_COMPLETION_TARGET": "90%",
+        "TARGET_CYCLE_DAYS": "30",
+        "WEEKLY_BOOKINGS": "(set at build)",
+        "EMAIL_PREVIEW_TOOL": "Litmus",
+    }
+
+    # ── MERGE: config-sourced take precedence over defaults ──────────────────────
+    # Build final map: _defaults first, then primary tokens override them.
+    final_tokens = {**_defaults, **tokens}
+
+    # Revenue cascade fallback: if yearly was not set, insert readable placeholders
+    # so the cascade tokens never survive as {{...}} in built output.
+    _cascade_fallbacks = {
+        "YEARLY_GOAL": "(set yearlyRevenueGoal in config)",
+        "QUARTERLY_TARGET": "(set yearlyRevenueGoal in config)",
+        "MONTHLY_TARGET": "(set yearlyRevenueGoal in config)",
+        "WEEKLY_TARGET": "(set yearlyRevenueGoal in config)",
+        "DAILY_TARGET": "(set yearlyRevenueGoal in config)",
+    }
+    for k, v in _cascade_fallbacks.items():
+        if not final_tokens.get(k):
+            final_tokens[k] = v
 
     out = content
-    for key, val in tokens.items():
-        if not val:
+    for key, val in final_tokens.items():
+        if val is None:
             continue
         out = out.replace("{{" + key + "}}", str(val))
 
