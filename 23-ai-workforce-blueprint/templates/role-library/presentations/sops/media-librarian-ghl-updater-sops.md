@@ -10,6 +10,35 @@
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
+> **REQUIRED, GATED — THE GHL MEDIA UPLOAD IS NOT OPTIONAL.**
+> For every deck whose client has GHL (`intake.json` does NOT set `has_ghl: false`),
+> all three GHL actions below are MANDATORY and GATED — a deck is NOT done until each
+> is recorded in `working/checkpoints/media_library.json`:
+> 1. **GHL folder creation** (SOP 9.3, run-once) — `ghl_folder_id` set to a real id
+>    (or `"root_fallback"` only after a logged API failure). A null/empty `ghl_folder_id`
+>    is the unset Step-0 seed and does NOT satisfy the gate.
+> 2. **Per-slide PNG upload** (SOP 9.3) — every passed slide carries a real
+>    `ghl_media_id` and `ghl_upload_status: "complete"`.
+> 3. **Final PPTX upload** (SOP 9.6) — the assembled deck is uploaded with
+>    `pptx_ghl_media_id` recorded.
+>
+> The ONLY exception is the explicit carve-out in the role file §17: `intake.json`
+> shows `has_ghl: false`, in which case you MUST write `ghl_delivery_skipped: true`
+> (the gate then reads that field instead of the upload records). There is no other
+> way to skip GHL upload — a deck that simply omits these records is INCOMPLETE.
+>
+> **THE SINGLE CANONICAL ENTRY-POINT — NO SHORTCUT PATH.**
+> A deck build runs through ONE flow only: the Director-orchestrated pipeline
+> documented in `universal-sops/CLIENT-WEBINAR-DECK-SOP.md`, in which THIS role's
+> SOP 9.1 → 9.2 → 9.3 → 9.4 → 9.6 are mandatory phases. `scripts/build_deck.py` is
+> ONLY the Phase-4 image renderer + Phase-8 bare-`.pptx` assembler — it is NOT an
+> entry-point and produces NO research, NO QC records, and NO GHL upload. Running
+> `build_deck.py` against a hand-fed `slides.json` is the bypass this gate exists to
+> catch: such a deck has no GHL media-upload record and is therefore NOT done. The
+> Command Center QC scorer enforces this independently as **AF-PIPELINE-COMPLETE**
+> (blocks review→Done when the research brief, copy/image QC log, or GHL
+> media-upload record are absent).
+
 ### SOP 9.1 -- Step-0 Landing Zone Creation
 
 **When to run:** At the very start of every new deck run -- before discovery interview, before any other action.
@@ -111,7 +140,13 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ---
 
-### SOP 9.3 -- GHL-Drive Upload
+### SOP 9.3 -- GHL-Drive Upload (REQUIRED, GATED)
+
+**Status:** MANDATORY for every GHL-enabled client. This SOP is a hard gate: the GHL
+folder MUST be created and every passed slide PNG MUST be uploaded, with `ghl_folder_id`
+and each `ghl_media_id` recorded in media_library.json. Skipping this step is only
+permitted under the `has_ghl: false` carve-out (write `ghl_delivery_skipped: true`).
+A deck that omits these records is NOT done — enforced as AF-PIPELINE-COMPLETE.
 
 **When to run:** Immediately after each image is intaked (SOP 9.2), and after SOP 9.1 creates the GHL folder.
 
@@ -244,10 +279,13 @@ Note: if a ROLE-13 Delivery Concierge role is added to this department in a futu
       - Record the exact path.
    b. **Non-Mac or environment unclear:** do NOT assume a delivery location. Ask the client explicitly: "Where would you like the PowerPoint delivered: email, Google Drive, GHL, or somewhere else?" Then deliver to their stated destination. Record the destination.
 
-3. Upload the final PPTX to the client's GHL media library:
+3. Upload the final PPTX to the client's GHL media library (REQUIRED, not optional for GHL-enabled clients):
    - Upload to the same GHL folder used for the slide images (ghl_folder_id from media_library.json).
    - Remote name: `[Deck Title] FINAL v<N>.pptx`.
    - Record the returned GHL media_id and URL in media_library.json: `"pptx_ghl_media_id": "...", "pptx_ghl_url": "..."`.
+   - The deck is NOT delivered until `pptx_ghl_media_id` is recorded (or the `has_ghl: false`
+     carve-out applies and `ghl_delivery_skipped: true` is set). A self-report without the
+     recorded media_id is not ground truth.
 
 4. Verify every destination before reporting done:
    - Mac download: `ls -lh ~/Downloads/[DECK_SLUG]_final.pptx` (non-empty file must exist).

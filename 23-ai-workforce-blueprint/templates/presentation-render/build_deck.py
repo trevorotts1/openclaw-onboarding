@@ -26,7 +26,10 @@ WHAT IT DOES (zero AI judgement at runtime):
          POST https://api.kie.ai/api/v1/jobs/createTask  -> data.taskId
          GET  https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>  -> data.state
          on success: parse data.resultJson (JSON string) -> resultUrls[0]
-       Poll every ~8s up to ~3 minutes. On HTTP 429, sleep 20s and retry.
+       Poll every ~8s up to ~7 minutes. Heavy gpt-image-2 renders (split scenes,
+       multiple photoreal zones) routinely run past 3 minutes; a slide that is still
+       actively 'generating' is given the full ceiling (plus a bounded grace window)
+       before it is declared a timeout. On HTTP 429, sleep 20s and retry.
     4. Downloads resultUrls[0] UNAUTHENTICATED to <renders_dir>/slide-NN.png.
     5. VERIFIES each PNG: real PNG magic bytes AND non-zero size.
     6. Retries a failing slide up to 3 times (re-submit from scratch).
@@ -43,14 +46,39 @@ HARD CONTRACTS:
       LOUDLY with a non-zero exit code. It NEVER silently substitutes a placeholder image.
 
 USAGE:
-    python3 build_deck.py <slides.json> <out.pptx> [renders_dir]
+    python3 build_deck.py <slides.json> <out.pptx> [renders_dir] [--run-dir DIR] [--adhoc-no-process]
 
     renders_dir defaults to "<out.pptx dir>/renders".
+
+PROCESS PREFLIGHT (un-bypassable by default):
+    Before ANY render or assembly, build_deck.py REQUIRES that the upstream
+    department process artifacts already exist on disk in the run/working dir.
+    build_deck.py is ONLY the deterministic Phase-4 renderer + a stripped Phase-8
+    assembler; it carries none of the upstream intelligence (research, copy,
+    human approvals) or QC gates. Running it on a hand-fed slides.json with no
+    upstream chain produces a technically-valid .pptx that NEVER went through the
+    department flow — exactly the shortcut this preflight exists to refuse.
+
+    The run dir is the directory that contains a `working/` subtree. It is found
+    by --run-dir if given, else by walking UP from slides.json (then from the
+    out.pptx dir) until a `working/` dir is found, else slides.json's parent.
+
+    Required artifacts (each annotated with the dept phase/role that produces it)
+    are listed in PREFLIGHT_REQUIRED below. If ANY is missing or incomplete, the
+    script FAILS LOUD (exit 3), prints exactly which artifacts are missing and who
+    produces each, and renders/assembles NOTHING.
+
+    --adhoc-no-process  — DELIBERATE standalone-testing override ONLY. Skips the
+        process preflight, prints a loud banner that the output is NOT a
+        process-compliant deliverable, and proceeds. NEVER use for client work.
 
 EXIT CODES:
     0 — every slide rendered and the .pptx was written.
     1 — one or more slides failed after retries (NO .pptx written), or assembly failed.
     2 — fatal config error (no API key, bad slides.json, missing python-pptx, etc.).
+    3 — process preflight FAILED: required upstream dept artifacts are missing
+        (NO render, NO .pptx). Run the real dept pipeline, or pass
+        --adhoc-no-process for explicit non-deliverable standalone testing.
 
 ENVIRONMENT:
     KIE_API_KEY — the CLIENT's own KIE.ai key (never the operator's, never shared).
@@ -84,10 +112,15 @@ RESOLUTION   = "2K"
 # DEAD endpoint — refuse to ever touch it.
 DEAD_ENDPOINT_FRAGMENT = "/api/v1/image/gpt-image"
 
-# Poll cadence per the recipe: ~8s interval, up to ~3 minutes total.
+# Poll cadence per the recipe: ~8s interval, up to ~7 minutes total.
+# Heavy gpt-image-2 renders (e.g. a split then-vs-now band with two photoreal scenes
+# and multiple text zones) regularly exceed 3 minutes of pure render latency. 180s was
+# too low and made merely-slow slides time out and fail loud with outputPath=null. 420s
+# gives slow-but-healthy renders room to finish; genuine terminal failures still fail
+# immediately (see poll_task: 'fail'/'error'/'cancelled' short-circuit).
 POLL_INTERVAL_S = 8
-POLL_MAX_SECONDS = 180
-POLL_MAX_PASSES = POLL_MAX_SECONDS // POLL_INTERVAL_S  # ~22 passes
+POLL_MAX_SECONDS = 420
+POLL_MAX_PASSES = POLL_MAX_SECONDS // POLL_INTERVAL_S  # ~52 passes
 
 # 429 backoff.
 RATE_LIMIT_SLEEP_S = 20
@@ -356,11 +389,43 @@ def submit_task(prompt: str, api_key: str) -> str:
 
 
 def poll_task(task_id: str, api_key: str) -> str:
-    """Poll recordInfo every ~8s up to ~3 min. Returns resultUrls[0] on success."""
+    """Poll recordInfo every ~8s up to ~7 min. Returns resultUrls[0] on success.
+
+    A genuinely failed/garbled render still fails loud: any terminal state
+    ('fail'/'failed'/'error'/'cancelled') short-circuits immediately. The extra
+    patience is ONLY for slides that keep reporting a healthy non-terminal state
+    ('generating'/'waiting'/'queuing'/'processing'/'running') — those are merely
+    slow, so if we reach the ceiling while the slide is still actively making
+    progress we grant a bounded grace window rather than killing a healthy render.
+    """
     url = f"{POLL_URL}?taskId={task_id}"
+
+    # States KIE reports while a slide is healthily in-flight (not yet done, not failed).
+    HEALTHY_INFLIGHT = ("generating", "waiting", "queuing", "queued", "processing", "running", "pending")
+
+    # Grace: if the slide is STILL actively generating when the normal ceiling is hit,
+    # allow up to this many extra passes (~25% more time) before declaring a timeout.
+    # This only ever fires for slides that never reached a terminal-failure state.
+    GRACE_PASSES = POLL_MAX_PASSES // 4  # ~13 extra passes (~104s) for slow renders
+
     deadline = time.time() + POLL_MAX_SECONDS
     passes = 0
-    while time.time() < deadline and passes < POLL_MAX_PASSES + 2:
+    grace_used = 0
+    last_state = ""
+    # +2 normal slack passes, plus the grace passes so a healthy-but-slow render is
+    # not cut short by the pass cap before its grace window is exhausted.
+    while passes < POLL_MAX_PASSES + 2 + GRACE_PASSES:
+        # Past the wall-clock deadline: only keep going if the slide is still a
+        # healthy in-flight render AND we have grace passes left. Otherwise stop.
+        if time.time() >= deadline:
+            if last_state in HEALTHY_INFLIGHT and grace_used < GRACE_PASSES:
+                grace_used += 1
+                print(
+                    f"    [poll grace {grace_used}/{GRACE_PASSES}] taskId={task_id} "
+                    f"still {last_state!r} past {POLL_MAX_SECONDS}s; extending", flush=True
+                )
+            else:
+                break
         passes += 1
         try:
             resp = _http_json("GET", url, api_key)
@@ -370,6 +435,7 @@ def poll_task(task_id: str, api_key: str) -> str:
             continue
         data = resp.get("data") or {}
         state = str(data.get("state", "")).lower()
+        last_state = state
 
         if state == "success":
             result_json_str = data.get("resultJson")
@@ -390,7 +456,10 @@ def poll_task(task_id: str, api_key: str) -> str:
         print(f"    [poll {passes}] taskId={task_id} state={state!r}; sleep {POLL_INTERVAL_S}s", flush=True)
         time.sleep(POLL_INTERVAL_S)
 
-    raise RuntimeError(f"taskId {task_id}: not complete within {POLL_MAX_SECONDS}s.")
+    raise RuntimeError(
+        f"taskId {task_id}: not complete within {POLL_MAX_SECONDS}s "
+        f"(+{grace_used * POLL_INTERVAL_S}s grace; last state {last_state!r})."
+    )
 
 
 def download_unauthenticated(url: str, dest: Path) -> None:
@@ -485,17 +554,199 @@ def assemble_pptx(rendered: list, out_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# PROCESS PREFLIGHT GATE — refuse to render without the upstream dept artifacts
+# ---------------------------------------------------------------------------
+#
+# build_deck.py is ONLY the deterministic Phase-4 renderer + a stripped Phase-8
+# assembler. The real department flow wraps it in research, copy, two human gates,
+# and four QC gates (see the Presentations dept SOPs). A hand-fed slides.json that
+# skips all of that produces a .pptx that is technically valid but is NOT a
+# process-compliant deliverable. This preflight makes that bypass fail LOUD.
+#
+# Each entry: (relative-glob-under-run-dir, human label, producing phase/role,
+#              completeness-check callable). The completeness check receives the
+# resolved Path (or None when the file is absent) and returns "" when satisfied
+# or a short reason string when the artifact exists but is not complete.
+
+def _read_json(path: Path):
+    try:
+        return json.loads(path.read_text())
+    except Exception as exc:  # noqa: BLE001
+        return {"__parse_error__": str(exc)}
+
+
+def _chk_intake(path: Optional[Path]) -> str:
+    if path is None:
+        return "file absent"
+    obj = _read_json(path)
+    if "__parse_error__" in obj:
+        return f"not valid JSON ({obj['__parse_error__']})"
+    if obj.get("interview_confirmed") is not True:
+        return "interview_confirmed is not true"
+    mode = str(obj.get("presentation_mode", "")).strip().lower()
+    if mode not in ("one-person", "general"):
+        return f"presentation_mode must be 'one-person' or 'general' (got {obj.get('presentation_mode')!r})"
+    return ""
+
+
+def _chk_research_brief(path: Optional[Path]) -> str:
+    if path is None:
+        return "no working/research/brief-*.md found"
+    text = path.read_text(errors="replace")
+    low = text.lower()
+    if "research_complete:true" not in low.replace(" ", ""):
+        # tolerate 'research_complete: true' spacing
+        if "research_complete" not in low or "true" not in low.split("research_complete", 1)[1][:40].lower():
+            return "research_complete:true not present"
+    return ""
+
+
+def _chk_copy_qc(path: Optional[Path]) -> str:
+    if path is None:
+        return "file absent"
+    obj = _read_json(path)
+    if "__parse_error__" in obj:
+        return f"not valid JSON ({obj['__parse_error__']})"
+    gate = str(obj.get("gate", "")).strip()
+    if gate and gate != "Phase 1Q":
+        return f"gate is {gate!r}, expected 'Phase 1Q'"
+    avg = obj.get("average", obj.get("average_score"))
+    try:
+        if avg is None or float(avg) < 8.5:
+            return f"average score {avg!r} is below the 8.5 pass threshold"
+    except (TypeError, ValueError):
+        return f"average score {avg!r} is not numeric"
+    # any triggered autofail blocks
+    triggered = obj.get("triggered_autofails") or obj.get("autofails_triggered") or []
+    if triggered:
+        return f"triggered autofails present: {triggered}"
+    if obj.get("pass") is False:
+        return "report explicitly marks pass:false"
+    return ""
+
+
+# The MANDATORY pre-render artifact set. The first three are the minimum the
+# operator task names explicitly; the rest are the broader mandatory upstream set
+# from the dept-pipeline analysis. All must exist + be complete before any render.
+PREFLIGHT_REQUIRED = [
+    ("working/copy/intake.json",
+     "intake.json (interview_confirmed:true, presentation_mode one-person|general)",
+     "Phase 0a — Director SOP 9.1 / Content-to-Presentation Architect SOP 9.1",
+     _chk_intake),
+    ("working/research/brief-*.md",
+     "research brief (research_complete:true)",
+     "Phase -0.5 — Deep Research Specialist SOP 9.1/9.4 (AF-RESEARCH-GATE)",
+     _chk_research_brief),
+    ("working/qc/copy_qc_report.json",
+     "copy QC report (gate Phase 1Q, average >= 8.5, no AF-* triggered)",
+     "Phase 1Q — QC Specialist SOP 9.1 / SOP-SLIDE-00",
+     _chk_copy_qc),
+]
+
+
+def find_run_dir(explicit: Optional[str], slides_path: Path, out_path: Path) -> Path:
+    """Resolve the run/working dir: --run-dir, else first ancestor containing a
+    `working/` subtree (searched from slides.json then out.pptx dir), else
+    slides.json's parent."""
+    if explicit:
+        return Path(explicit).resolve()
+    for start in (slides_path.resolve().parent, out_path.resolve().parent):
+        cur = start
+        for _ in range(8):  # bounded upward walk
+            if (cur / "working").is_dir():
+                return cur
+            if cur.parent == cur:
+                break
+            cur = cur.parent
+    return slides_path.resolve().parent
+
+
+def run_preflight(run_dir: Path) -> None:
+    """Refuse (exit 3) unless every required upstream dept artifact exists AND is
+    complete. Lists exactly what is missing and which dept phase/role produces it."""
+    print(f"=== PROCESS PREFLIGHT — run dir: {run_dir} ===", flush=True)
+    problems = []
+    for rel, label, phase, check in PREFLIGHT_REQUIRED:
+        if "*" in rel:
+            matches = sorted(run_dir.glob(rel))
+            found = matches[0] if matches else None
+        else:
+            p = run_dir / rel
+            found = p if p.exists() else None
+        reason = check(found)
+        if reason:
+            problems.append((rel, label, phase, reason))
+        else:
+            print(f"  OK   {rel}", flush=True)
+
+    if problems:
+        print("\nFATAL: PROCESS PREFLIGHT FAILED — refusing to render or assemble.", file=sys.stderr)
+        print("build_deck.py is only the deterministic renderer/assembler; it cannot", file=sys.stderr)
+        print("produce a compliant deliverable without the upstream department artifacts.\n", file=sys.stderr)
+        print(f"Run/working dir checked: {run_dir}", file=sys.stderr)
+        print("Missing or incomplete required artifacts:\n", file=sys.stderr)
+        for rel, label, phase, reason in problems:
+            print(f"  - {rel}", file=sys.stderr)
+            print(f"      what:    {label}", file=sys.stderr)
+            print(f"      reason:  {reason}", file=sys.stderr)
+            print(f"      produced by: {phase}", file=sys.stderr)
+        print("\nFix: run the real Presentations department pipeline (which produces these),", file=sys.stderr)
+        print("or, for deliberate standalone testing ONLY, re-run with --adhoc-no-process", file=sys.stderr)
+        print("(its output is explicitly NOT a process-compliant deliverable).", file=sys.stderr)
+        sys.exit(3)
+
+    print("=== PREFLIGHT PASSED — upstream dept artifacts present ===\n", flush=True)
+
+
+def print_adhoc_banner() -> None:
+    bar = "!" * 78
+    print(bar, flush=True)
+    print("!! ADHOC MODE (--adhoc-no-process): PROCESS PREFLIGHT SKIPPED.", flush=True)
+    print("!! The output of this run is NOT a process-compliant deliverable.", flush=True)
+    print("!! No research / copy / QC / human-approval artifacts were verified.", flush=True)
+    print("!! Use for standalone testing ONLY — never for client work.", flush=True)
+    print(bar + "\n", flush=True)
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
 def main():
-    if len(sys.argv) not in (3, 4):
-        print("Usage: python3 build_deck.py <slides.json> <out.pptx> [renders_dir]", file=sys.stderr)
+    argv = sys.argv[1:]
+
+    # Pull out the flags (any position) before reading positional args.
+    adhoc = False
+    run_dir_arg = None
+    positional = []
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok == "--adhoc-no-process":
+            adhoc = True
+        elif tok == "--run-dir":
+            i += 1
+            if i >= len(argv):
+                print("FATAL: --run-dir requires a directory argument.", file=sys.stderr)
+                sys.exit(2)
+            run_dir_arg = argv[i]
+        elif tok.startswith("--run-dir="):
+            run_dir_arg = tok[len("--run-dir="):]
+        elif tok.startswith("--"):
+            print(f"FATAL: unknown flag {tok!r}.", file=sys.stderr)
+            sys.exit(2)
+        else:
+            positional.append(tok)
+        i += 1
+
+    if len(positional) not in (2, 3):
+        print("Usage: python3 build_deck.py <slides.json> <out.pptx> [renders_dir] "
+              "[--run-dir DIR] [--adhoc-no-process]", file=sys.stderr)
         sys.exit(2)
 
-    slides_path = Path(sys.argv[1])
-    out_path = Path(sys.argv[2])
-    renders_dir = Path(sys.argv[3]) if len(sys.argv) == 4 else out_path.parent / "renders"
+    slides_path = Path(positional[0])
+    out_path = Path(positional[1])
+    renders_dir = Path(positional[2]) if len(positional) == 3 else out_path.parent / "renders"
 
     if not slides_path.exists():
         print(f"FATAL: slides.json not found: {slides_path}", file=sys.stderr)
@@ -529,6 +780,14 @@ def main():
             print(f"FATAL: slide ordinal must be a unique integer: {ordn}", file=sys.stderr)
             sys.exit(2)
         seen.add(ordn)
+
+    # PROCESS PREFLIGHT (un-bypassable unless --adhoc-no-process). Runs BEFORE any
+    # API key load, render, or assembly so a bypass costs zero KIE renders.
+    if adhoc:
+        print_adhoc_banner()
+    else:
+        run_dir = find_run_dir(run_dir_arg, slides_path, out_path)
+        run_preflight(run_dir)
 
     api_key = load_api_key()
     renders_dir.mkdir(parents=True, exist_ok=True)

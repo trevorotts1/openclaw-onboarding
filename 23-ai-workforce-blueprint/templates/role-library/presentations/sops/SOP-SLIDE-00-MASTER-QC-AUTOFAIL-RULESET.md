@@ -194,7 +194,7 @@ These ten codes close the remaining gaps found in the Presentation Department V2
 | `AF-C10` | Deck-quality / no-transcript | Phase 1Q copy QC | slide | verbatim / near-verbatim spoken-transcript line used as slide copy |
 | `AF-C11` | Deck-quality / persuasion-arc | Phase 1Q | DECK | missing one or more required arc beats (hook / stakes / promise / proof) OR no explicit CTA |
 | `AF-DH1` | Deliverable hygiene | Closeout / pre-delivery | package (DECK) | dev artifacts in the client package / file not in the allowed five-file set / presenter guide or speech as .md instead of .pdf |
-| `AF-RESEARCH-GATE` | Research mandate | Phase 1Q | DECK | Research Brief absent / `research_complete: false` / missing required categories A, C, D, or F |
+| `AF-RESEARCH-GATE` | Research mandate | Phase 1Q | DECK | Research Brief absent / `research_complete: false` / missing required categories A, C, D, F, G, H, I, K, or L (J condensed-OK) / fact-validation ledger absent when slide-bound figures exist |
 
 ---
 
@@ -328,10 +328,12 @@ These ten codes close the remaining gaps found in the Presentation Department V2
 
 **Doctrine:** A deck that reaches Phase 1Q without a complete Research Brief from the Deep Research Specialist (ROLE-04) is blocked. The Research Phase (-0.5) is mandatory on EVERY deck run -- personal or general, webinar or content-to-presentation. The gate fires at Phase 1Q so the block is caught before copy is approved and resources are committed to prompt and image generation.
 
-**Detection (all three conditions must be satisfied for PASS; any failure triggers the gate):**
+**Detection (all conditions must be satisfied for PASS; any failure triggers the gate):**
 1. `working/research/brief-[DECK_SLUG].md` exists on disk at Phase 1Q.
 2. The file's header records `research_complete: true`.
-3. The file contains all four required category sections: Category A (Niche Deck Structures), Category C (Proof Statistics), Category D (External Corroboration), and Category F (Design Styles and Typography).
+3. The file contains the four ALWAYS-REQUIRED category sections: Category A (Niche Deck Structures), Category C (Supporting Statistics / Studies / White Papers), Category D (External Corroboration), and Category F (Design + Hook + Pacing Best-Practices).
+4. The file contains the VALIDATION + PERSUASION category sections added by the 2026-06-16 ROLE-04 mandate overhaul: Category G (Credible Attributable Quotes), Category H (Fact-Validation -- Slide-Claim Verification Ledger), Category I (Objection Research), Category K (Persuasion-Framework Validation), and Category L (Compliance Flags). Category J (Social-Proof Patterns) is required-but-may-be-condensed and is not a hard gate condition. Category B (Pricing & Value Benchmarking) and Category E (Grounded Image Context) are checked by their own role gates (Offer Price Strategist and Gate 5 respectively) and the AF-CONVERTER-PARITY gate for converter runs.
+5. When Category H records any slide-bound figure, the ledger `working/research/fact-validation-[DECK_SLUG].md|json` must exist and carry `verified_count` / `flagged_count` / `kill_count` (the upstream partner to AF-C3 / AF-C4 / AF-PRICE-FACE -- no invented figure reaches a slide).
 
 **Failure response:** QC notifies the Director: "AF-RESEARCH-GATE: Phase 1Q blocked. Research Brief absent or incomplete. ROLE-04 must complete Phase -0.5 before copy QC can proceed." Record `af_research_gate_triggered: true` in `copy_qc_report.json`. The Director cannot advance to owner approval (Phase 1A) until the brief is on disk and complete.
 
@@ -339,7 +341,7 @@ These ten codes close the remaining gaps found in the Presentation Department V2
 
 **Producing-role requirement (Content-to-Presentation Architect):** The Director MUST dispatch ROLE-04 as Phase -0.5 unconditionally on ALL content-to-presentation builds, regardless of `proof_flags`.
 
-**Failure message:** `AF-RESEARCH-GATE: DECK FAIL at Phase 1Q -- Research Brief missing or incomplete. Brief path: working/research/brief-{DECK_SLUG}.md. Required: exists + research_complete: true + sections A, C, D, F present. Dispatch ROLE-04 Phase -0.5 and complete the brief before re-running Phase 1Q.`
+**Failure message:** `AF-RESEARCH-GATE: DECK FAIL at Phase 1Q -- Research Brief missing or incomplete. Brief path: working/research/brief-{DECK_SLUG}.md. Required: exists + research_complete: true + sections A, C, D, F, G, H, I, K, L present (J condensed-OK); and the fact-validation ledger present when any slide-bound figure exists. Dispatch ROLE-04 Phase -0.5 and complete the brief before re-running Phase 1Q.`
 
 ---
 
