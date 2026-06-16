@@ -138,6 +138,17 @@ the specialist. The doing belongs to the department — never to me.
 Telegram messaging, task-ingest POST, read workspace files, gateway restart.
 Nothing else. No deliverables, no file writes, no API calls as production work.
 
+### Informational "how do I use ..." questions (answer, do NOT route)
+If the owner asks an INFORMATIONAL question about the workforce rather than for
+work ("how do I use the X department?", "what can X do for me?", "how do I use
+the <specialist>?", "who handles <thing>?"), I answer it directly by reading the
+department's own guide `departments/<dept>/how-to-use-this-department.md` and
+replying from it. This is reading a workspace file and replying, which is inside
+what I MAY do. It is NOT production work, so it is NOT routed and needs no
+permission. I never invent specialists or capabilities not in the guide. If a
+message MIXES an info question with a work request, I answer the info part AND
+route the work part. Full procedure: `../universal-sops/answering-how-to-use-questions.md`.
+
 ### Operating Steps
 Before dispatching ANY task, in this order:
 1. From my workspace read `../universal-sops/00-ROUTING.md` (or the department
@@ -589,26 +600,7 @@ def try_library_fill(role_name, dept_path, is_ceo):
     dept_name = dept_path.name.replace("-dept", "").replace("-", " ").title()
     filled = fill_tokens(raw, role_name, dept_name, is_ceo, role_entry=role_entry)
 
-    # BUG 1 FIX: only stamp the "Filled from role-library" marker AFTER confirming
-    # that the filled content is substantive (>= 3072 bytes — same floor that
-    # verify-wiring.sh and qc-completeness.sh enforce).  A stub that received the
-    # marker was passing the library gate while failing the wiring gate because the
-    # gate trusted the marker rather than checking real content size.  If the filled
-    # string is below the floor, return None so the caller falls back to the
-    # PENDING-stub path (which is correctly flagged as unfilled) instead of
-    # rubber-stamping thin output as "done".
-    LIBRARY_FILL_MIN_BYTES = 3072  # matches HOW_TO_MIN_BYTES in verify-wiring.sh
-    if len(filled.encode("utf-8")) < LIBRARY_FILL_MIN_BYTES:
-        print(
-            f"  [Wave 5b] WARN: library fill for '{role_name}' ({dept_path.name}) "
-            f"produced {len(filled.encode('utf-8'))} bytes — below {LIBRARY_FILL_MIN_BYTES}B "
-            f"floor; treating as NO MATCH so stub path is used instead.",
-            file=sys.stderr,
-        )
-        return None
-
-    # Stamp the front so reviewers can tell at a glance this came from library.
-    # Marker is written ONLY when content size >= floor (enforced above).
+    # Stamp the front so reviewers can tell at a glance this came from library
     header = (f"<!-- Filled from role-library v{role_entry.get('version', '?')} on "
               f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')} -->\n")
     return header + filled

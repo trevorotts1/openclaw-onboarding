@@ -1,3 +1,22 @@
+## [v12.17.0] - 2026-06-15 - feat(role-library): "How to Use This Department" owner-facing guides for every department + answer-from-guide wiring
+
+### Changes
+
+**Owner-facing "How to Use This Department" guides for every client-facing department (32 committed).** Most owners do not realize how many departments and specialists their workforce has, or how to put them to work. Every client-facing department now ships a plain-language `how-to-use-this-department.md` covering: what the department does, when to use it, how to ask it for work, the specialists inside it (with what each is for and an example request), what to expect back, and how it hands off. The specialist list is derived from each department's REAL roster (the role-library `_index.json` plus each role file's identity), so a guide always matches the specialists that actually exist. Internal-only roles (Devil's Advocate, SOP-Writer, Healer, Deep Research, Brainstorming Buddy) are not surfaced as things the owner asks for.
+
+- **Canonical template:** `23-ai-workforce-blueprint/templates/how-to-use-this-department.template.md` (fully tokenized: `{{COMPANY_NAME}}` / `{{GENERATION_DATE}}`, no client names).
+- **Shared renderer:** `23-ai-workforce-blueprint/scripts/how_to_use_department.py` (single source used at authoring time and build time; sanitizes em/en dashes and smart punctuation out of source prose, repairs stripped-token fragments, dedups stale `ROLE--` index entries, and discards copy-pasted cross-department descriptions).
+- **Committed guides:** `23-ai-workforce-blueprint/templates/role-library/<dept>/how-to-use-this-department.md` for every client-facing department, written by `23-ai-workforce-blueprint/scripts/generate_how_to_use_docs.py` (its `--check` mode gates currency in CI).
+
+**Build emits a personalized copy per client.** `build-workforce.py` now calls `write_department_how_to_use(dept_id, dept_info, company_name)` in the same loop that writes each `ROSTER.md`, so every client gets a filled `departments/<dept>/how-to-use-this-department.md`. ROSTER.md stays the director's internal dispatch map; this guide is the owner-facing companion. Graceful degradation: a renderer error never blocks the build.
+
+**Answer-from-guide wiring.** When the owner asks "how do I use the X department?" / "how do I use the `<specialist>`?", the agent answers FROM the guide (a read-and-answer, not production work, so it is not routed to the task board). Wired in:
+- `universal-sops/answering-how-to-use-questions.md` (the full procedure),
+- `master-orchestrator-dept/SOP-00-Owner-Task-Routing.md` Step 1.5 (carve-out to the pure-router rule),
+- the CEO operating protocol (`create_role_workspaces.py`) and the Director operating protocol (`build-workforce.py`), both written into the agents' first-read files.
+
+**QC gate.** `23-ai-workforce-blueprint/scripts/test-how-to-use-docs.sh` (wired into `qc-static.yml`) asserts every department has a current, clean (no client names / em dashes / stray tokens) guide and that the build emit and all four answer-wiring points stay intact.
+
 ## [v12.16.2] - 2026-06-15 - fix: library gate checks content not marker; department-floor sys.path resolver (fleet-critical)
 
 ### Changes

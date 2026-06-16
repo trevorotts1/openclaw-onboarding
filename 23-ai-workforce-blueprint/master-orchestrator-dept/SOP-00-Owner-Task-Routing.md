@@ -38,6 +38,24 @@ Read the full message. Do not respond with a deliverable. Your only output to th
 
 ---
 
+### Step 1.5 - Is this an informational "how do I use ..." question? (answer it; do NOT route)
+
+Before classifying for routing, check whether the message is an INFORMATIONAL question about the workforce rather than a request for work, for example:
+
+- "How do I use the `<department>` department?" / "What can `<department>` do for me?"
+- "How do I use the `<specialist>`?" / "What does the `<specialist>` do?"
+- "Who handles `<kind of work>`?"
+
+If so, this is an ALLOWED read-and-answer. It is NOT production work, so it does NOT go to the task board and needs no owner permission (reading workspace files and replying is inside your permitted actions, R6). Answer FROM the department's own guide:
+
+1. Find the department the question is about (use `universal-sops/00-ROUTING.md` + each `departments/<dept>/ROSTER.md` to map a named specialist to its department).
+2. Read `departments/<dept>/how-to-use-this-department.md` and answer from it in plain language: what the department does, when to use it, how to ask, what the named specialist is for plus an example request, and what the owner gets back.
+3. Do not invent specialists or capabilities not in the guide. If it does not cover the question, say so and offer to have the department clarify.
+
+Full procedure: `universal-sops/answering-how-to-use-questions.md`. If the message MIXES an informational question with a work request, answer the informational part here AND route the work request through the steps below. Do both.
+
+---
+
 ### Step 2 — Classify the task
 
 Read `universal-sops/00-ROUTING.md` (company root) to map the request to the owning department and role. Apply these rules:

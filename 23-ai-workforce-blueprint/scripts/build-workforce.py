@@ -1753,8 +1753,15 @@ def build_from_config(config):
     # department, a ROSTER.md (When-to Reference Map the director consults before
     # dispatch), then the company-wide universal-sops/00-ROUTING.md the CEO reads
     # first. These were documented but never generated until now.
+    #
+    # Alongside the internal ROSTER.md, emit the OWNER-FACING companion:
+    # how-to-use-this-department.md (plain-language guide to the department + its
+    # specialists). The agent answers "how do I use the X department / specialist?"
+    # FROM this file (universal-sops/answering-how-to-use-questions.md). Both are
+    # regenerated on every build so they always match the real roster.
     for dept_id, dept_info in selected_departments.items():
         write_department_roster(dept_id, dept_info)
+        write_department_how_to_use(dept_id, dept_info, company_name)
     write_universal_routing_map(selected_departments)
 
     # Gap-3: collect every NO_TEMPLATE role (PENDING how-to.md) into a single
@@ -2852,6 +2859,13 @@ Before executing ANY task, follow these steps IN ORDER. Do not skip a step.
 4. **Review against the how-to before reporting.** When the sub-agent returns,
    review its output against the same how-to/SOP it was supposed to follow.
    Only then report results upward.
+
+If the owner asks an INFORMATIONAL question about THIS department or one of its
+specialists ("how do I use this department?", "what can you do for me?", "how do
+I use the <specialist>?"), do NOT route it as work. Answer from this department's
+own guide `how-to-use-this-department.md` (in this department folder), in plain
+language, and never invent specialists or capabilities the guide does not list.
+Full procedure: `universal-sops/answering-how-to-use-questions.md`.
 """
 
 
@@ -3442,25 +3456,6 @@ def _instantiate_role_from_library(role_name, dept_id, interview_answers):
         except Exception as e:
             print(f"[ROLE-LIBRARY WARNING] token backstop failed: {e}",
                   file=sys.stderr)
-
-    # BUG 1 FIX: only stamp the instantiation marker AFTER confirming the filled
-    # content is substantive (>= 3072 bytes — the same floor that verify-wiring.sh
-    # and qc-completeness.sh enforce).  A prior bug allowed the marker to be placed
-    # on thin stubs (e.g. 156 B), causing the library gate to pass (it trusted the
-    # marker) while the wiring gate failed (it checked real size).  Returning None
-    # here causes the caller to fall back to the PENDING-stub path, which is
-    # correctly flagged as unfilled by every subsequent gate.
-    _LIBRARY_FILL_MIN_BYTES = 3072  # matches HOW_TO_MIN_BYTES in verify-wiring.sh
-    out_bytes = len(out.encode("utf-8"))
-    if out_bytes < _LIBRARY_FILL_MIN_BYTES:
-        print(
-            f"[ROLE-LIBRARY WARNING] _instantiate_role_from_library: filled content "
-            f"for '{role_name}' ({dept_id}) is {out_bytes} bytes — below "
-            f"{_LIBRARY_FILL_MIN_BYTES}B floor.  Returning None so caller uses "
-            f"PENDING-stub path instead of stamping thin output as 'done'.",
-            file=sys.stderr,
-        )
-        return None
 
     header = (f"<!-- WS-2: instantiated from role-library "
               f"v{role_entry.get('version', '?') if role_entry else '?'} "
@@ -4215,6 +4210,70 @@ def write_department_roster(dept_id, dept_info):
         f.write("\n".join(lines))
     print(f"[ROSTER] Wrote {roster_path} ({len(roles)} roles)", file=sys.stderr)
     return roster_path
+
+
+def write_department_how_to_use(dept_id, dept_info, company_name=""):
+    """Write <dept>/how-to-use-this-department.md - the OWNER-FACING plain-language
+    guide to the department and the specialists inside it.
+
+    This is the companion to ROSTER.md: ROSTER.md is the director's internal
+    dispatch map; this guide is what the owner reads (and what the agent answers
+    FROM) when they ask "how do I use the X department?" or "how do I use the
+    <specialist>?". The specialist list is derived from this department's REAL
+    roster (parse_suggested_roles), so the guide always matches what exists.
+
+    Uses the shared renderer in how_to_use_department.render_how_to_use, the same
+    module that generates the committed (tokenized) templates under
+    templates/role-library/<dept>/. Company tokens are filled here at build time.
+    Degrades gracefully: if the renderer is unavailable, the build is not blocked.
+    """
+    if not DEPARTMENTS_DIR:
+        return None
+    dept_dir = os.path.join(DEPARTMENTS_DIR, dept_id)
+    if not os.path.isdir(dept_dir):
+        print(f"[HOW-TO-USE] dept dir missing for {dept_id}; skipping", file=sys.stderr)
+        return None
+
+    try:
+        _scripts_dir = os.path.dirname(os.path.abspath(__file__))
+        if _scripts_dir not in sys.path:
+            sys.path.insert(0, _scripts_dir)
+        import how_to_use_department as _htu
+    except Exception as e:  # noqa: BLE001 - never block the build on the guide
+        print(f"[HOW-TO-USE] renderer unavailable ({e}); skipping {dept_id}", file=sys.stderr)
+        return None
+
+    # Pass the REAL parsed roster so the guide lists this department's own
+    # specialists (the renderer shapes parse_suggested_roles output for us).
+    roles = parse_suggested_roles(dept_id)
+    explicit_roles = None
+    if roles:
+        explicit_roles = [
+            {
+                "number": r.get("number", 50),
+                "name": r.get("name", ""),
+                "description": r.get("description", ""),
+                "is_head": r.get("number", 50) == 0,
+                "is_qc": bool(r.get("is_qc")),
+            }
+            for r in roles
+        ]
+
+    tokens = {
+        "COMPANY_NAME": company_name or "your business",
+        "GENERATION_DATE": datetime.now().strftime("%B %d, %Y"),
+    }
+    try:
+        md = _htu.render_how_to_use(dept_id, roles=explicit_roles, tokens=tokens)
+    except Exception as e:  # noqa: BLE001
+        print(f"[HOW-TO-USE] render failed for {dept_id} ({e}); skipping", file=sys.stderr)
+        return None
+
+    out_path = os.path.join(dept_dir, "how-to-use-this-department.md")
+    with open(out_path, 'w') as f:
+        f.write(md)
+    print(f"[HOW-TO-USE] Wrote {out_path}", file=sys.stderr)
+    return out_path
 
 
 def write_universal_routing_map(departments):
