@@ -1,5 +1,5 @@
 # QC Checklist - Skill 15: BlackCEO Team Management
-**Version:** v6.6.0
+**Version:** v6.7.0
 
 Run this after installation. Every section must pass before you mark team management complete.
 
@@ -112,18 +112,44 @@ openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID
 
 ---
 
-## 7. Remote Rescue agent check
+## 7. Remote Rescue agent + OPERATOR/OWNER SESSION ISOLATION (HARD gates)
+
+These gates are auto-failed by `qc-blackceo-team-management.sh`. Per enforcement doctrine, a rule not auto-failed at the gate does not exist.
 
 ```bash
-openclaw config get agents.list | grep -A2 remote-rescue
+bash 15-blackceo-team-management/qc-blackceo-team-management.sh
+```
+
+### 7A. Agent presence and binding
+
+```bash
+openclaw config get agents.list | grep -A15 "remote-rescue"
 openclaw config validate
 ```
 
-- [ ] `agents.list` contains a `remote-rescue` entry with `subagents.allowAgents: ["*"]`
-- [ ] `openclaw config validate` returns `Config valid`
-- [ ] Bootstrap message was sent to the operator chat (or `SKIP_BOOTSTRAP_MSG=1` was explicitly set)
+- [ ] `agents.list` contains a `remote-rescue` entry
+- [ ] `remote-rescue` has `subagents.allowAgents: ["*"]`
+- [ ] `remote-rescue` has `workspace` field (dedicated dir, not shared with `main`)
+- [ ] `remote-rescue` has `telegram.allowFrom` listing the operator chat IDs
+- [ ] `openclaw config validate` returns Config valid
+- [ ] Bootstrap message was sent (or `SKIP_BOOTSTRAP_MSG=1` was explicitly set)
 
----
+### 7B. Group-session collision gate (HARD FAIL if violated)
+
+- [ ] `channels.telegram.groupAllowFrom` does NOT contain `5252140759`, `6663821679`, or `6771245262`
+  - If any are present: run `bash scripts/install-remote-rescue.sh --repair` then re-validate
+
+### 7C. AgentId collision gate (HARD FAIL if violated)
+
+- [ ] The `main` agent's `telegram.allowFrom` (if set) does NOT include operator IDs
+- [ ] Operator IDs are bound exclusively to `remote-rescue`
+- [ ] Resulting session keys are disjoint: `agent:remote-rescue:telegram:<operatorChatId>` vs `agent:main:telegram:<ownerChatId>`
+
+### 7D. Live-turn verification (cannot be substituted by config check alone)
+
+- [ ] An operator DM'd the bot and received a reply from the `remote-rescue` context
+- [ ] The operator's message did NOT appear in the owner's chat
+
 
 ## 8. Failure conditions
 
@@ -137,8 +163,12 @@ Fail this skill if any of these happen:
 - [ ] Core files only store IDs in `WORKFLOW_AUTO.md` and nowhere else
 - [ ] `env.vars.OPERATOR_TELEGRAM_CHAT_ID` is missing
 - [ ] Remote Rescue agent is missing from `agents.list`
+- [ ] `remote-rescue` exists WITHOUT `telegram.allowFrom` binding (unbound stub falls through to `main`)
+- [ ] `remote-rescue` exists WITHOUT a `workspace` field (sessions could bleed into `main`)
+- [ ] Any operator ID appears in `channels.telegram.groupAllowFrom`
+- [ ] Operator and owner resolve to the same `agentId`
+- [ ] `qc-blackceo-team-management.sh` exits non-zero
 
----
 
 ## Final pass rule
 
@@ -150,9 +180,10 @@ Pass only if all of the following are true:
 - [ ] Core docs preserve the dispatcher rules and team memory
 - [ ] Allowed, blocked, isolation, and directed-send tests all pass
 - [ ] Operator received the required completion confirmation
-- [ ] Remote Rescue agent is present and config validates
+- [ ] Remote Rescue agent is present, has `workspace` + `telegram.allowFrom` binding, and config validates
+- [ ] `qc-blackceo-team-management.sh` exits 0 (all HARD gates green)
+- [ ] Live-turn operator isolation test passed (section 7D)
 
----
 
 ## 🔴 INSTALL-TIME QC RUBRIC (v9.3.0+ standard — added automatically)
 

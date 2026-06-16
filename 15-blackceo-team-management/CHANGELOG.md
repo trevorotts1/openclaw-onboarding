@@ -4,6 +4,33 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v6.7.0] - 2026-06-15
+
+### Added - OPERATOR/OWNER SESSION ISOLATION
+
+Root cause: `install-remote-rescue.sh` was adding operator IDs to both `allowFrom` AND `groupAllowFrom`, and the `remote-rescue` agent had no `telegram.allowFrom` binding or `workspace` field. This caused operator and owner messages to share the same OpenClaw session (`agent:main:telegram:<chatId>`), so each could see the other's private messages.
+
+**Fix -- three changes to `install-remote-rescue.sh`:**
+1. Operator IDs are now STRIPPED from `channels.telegram.groupAllowFrom` (the group-session collision vector). Previous installs are repaired via `--repair` flag.
+2. The `remote-rescue` agent now gets a `telegram.allowFrom` binding (listing operator chat IDs) so OpenClaw routes operator DMs to `remote-rescue` before falling back to `main`.
+3. The `remote-rescue` agent now gets a dedicated `workspace` path, physically separating its session storage from the `main` agent.
+
+**Resulting session keys (fully disjoint):**
+- Owner: `agent:main:telegram:<ownerChatId>`
+- Each operator: `agent:remote-rescue:telegram:<operatorChatId>`
+
+**QC enforcement (`qc-blackceo-team-management.sh` v2.0.0):**
+Added 5 HARD auto-fail gates that fail QC if:
+- `remote-rescue` has no `telegram.allowFrom` binding (unbound stub falls through to `main`)
+- `remote-rescue` has no `workspace` field (session storage not isolated)
+- Operator IDs are in `groupAllowFrom` (group-session collision)
+- Operator IDs are bound to the `main` agent's `telegram.allowFrom`
+- `remote-rescue` is missing from `agents.list`
+
+**INSTALL.md, QC.md, SKILL.md:** Updated with isolation verification steps, live-turn test requirement, and documentation of the two-layer isolation model (intra-owner dispatcher/worker vs. operator/owner cross-session).
+
+---
+
 ## [v2.0.0] - March 8, 2026
 
 ### Changed - STRUCTURAL REWRITE (Template System)

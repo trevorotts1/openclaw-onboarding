@@ -74,3 +74,38 @@ This is the team management protocol - built as a configurable template that wor
 7. **Client sub-agents are different from worker sub-agents.** Workers receive instructions and execute tasks. Clients are served respectfully - the AI never assigns them tasks or bosses them around. Mark clients clearly in the routing table.
 
 8. **The sub-agent model must support tool calls.** Models that only do reasoning (no tool calls) will fail silently as workers. Use MiniMax M2.5, Codex, or Sonnet as defaults.
+
+---
+
+## OPERATOR / OWNER SESSION ISOLATION (Two Distinct Isolation Layers)
+
+This skill enforces two separate isolation layers that must not be conflated:
+
+### Layer 1: Intra-owner dispatcher/worker isolation
+
+The dispatcher (main session) routes each owner-side sender to their own worker sub-agent. This gives each person separate context windows on the same box. This is what the WORKFLOW_AUTO.md routing table controls.
+
+### Layer 2: Operator/owner session isolation (cross-box management path)
+
+When Trevor, Spaulding, or LeAnne DM the client's bot to manage the box, they must land in a DIFFERENT session from the client-owner's session. OpenClaw keys sessions as `agent:<agentId>:telegram:<chatId>`. Isolation requires a distinct `agentId`.
+
+**How this skill achieves it (as of v6.7.0):**
+
+The `remote-rescue` agent in `agents.list` is a BOUND management agent, not an unbound stub. It has:
+- `workspace`: a dedicated directory (physically separate from the `main` agent's session storage)
+- `telegram.allowFrom`: lists the operator chat IDs, so OpenClaw routes their DMs to `remote-rescue` before falling back to `main`
+- Operator IDs are in `channels.telegram.allowFrom` (bot accepts their DMs) but NOT in `channels.telegram.groupAllowFrom`
+
+**Resulting session keys:**
+- Owner: `agent:main:telegram:<ownerChatId>`
+- Each operator: `agent:remote-rescue:telegram:<operatorChatId>`
+
+These are fully disjoint. No `/agent` switch needed. No message can leak between operator and owner.
+
+**What breaks isolation (never do these):**
+- Adding operator IDs to `groupAllowFrom` (group-session collision vector)
+- Adding `remote-rescue` to `agents.list` WITHOUT `telegram.allowFrom` (falls through to `main`)
+- Adding `remote-rescue` WITHOUT a `workspace` field (session storage not isolated)
+- Relying on the per-message `/agent remote-rescue` toggle (not sticky, not reliable)
+
+**QC enforcement:** `qc-blackceo-team-management.sh` hard-fails if any of these conditions are violated. The QC script must exit 0 before calling this skill complete.

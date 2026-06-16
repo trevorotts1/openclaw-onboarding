@@ -191,9 +191,19 @@ If TEAM_CONFIG.md has placeholders, the team data is:
 
 Why it exists: every escalation in skills 15/23/35/37 + cron-prompt previously hardcoded `5252140759`. That broke on every box that wasn't Trevor's. The single config key `env.vars.OPERATOR_TELEGRAM_CHAT_ID` is now the source of truth, resolved at runtime via `shared-utils/operator-chat-id.sh` (triple-fallback: config -> env var -> hardcoded default of `5252140759`).
 
-### Interactive install (default)
+### ISOLATION GUARANTEE
 
-Run from the skill directory (the script auto-locates openclaw.json):
+OpenClaw keys every conversation as `agent:<agentId>:telegram:<chatId>`. For operators and the owner to have fully separate sessions the routing must resolve to a different `agentId`. This step achieves that by:
+
+- Giving `remote-rescue` its own `workspace` directory (physically separate session storage from `main`).
+- Binding operator chat IDs to `remote-rescue` via `agents.list[remote-rescue].telegram.allowFrom`. OpenClaw checks per-agent `allowFrom` before falling back to the default agent.
+- Adding operator IDs to `channels.telegram.allowFrom` (bot must accept their messages) but NOT to `channels.telegram.groupAllowFrom` (the owner's Command Center group stays owner-only).
+
+Resulting session keys (fully disjoint):
+- Owner: `agent:main:telegram:<ownerChatId>`
+- Each operator: `agent:remote-rescue:telegram:<operatorChatId>`
+
+### Interactive install (default)
 
 ```bash
 bash 15-blackceo-team-management/scripts/install-remote-rescue.sh
@@ -202,33 +212,44 @@ bash 15-blackceo-team-management/scripts/install-remote-rescue.sh
 The script will:
 1. Prompt for the operator Telegram chat ID (default `5252140759`).
 2. Write it to `env.vars.OPERATOR_TELEGRAM_CHAT_ID` via `openclaw config set ... --strict-json`.
-3. Add operator chat ID + `6663821679` + `6771245262` to `channels.telegram.allowFrom` and `groupAllowFrom` if not already present.
-4. Append a `remote-rescue` entry to `agents.list` with `subagents.allowAgents: ["*"]` (idempotent — no-op if already present).
-5. Send a one-time bootstrap message from the bot to the operator's chat with: client name, persona name, bot username, container name, host info.
+3. Add operator IDs to `channels.telegram.allowFrom` and STRIP them from `channels.telegram.groupAllowFrom`.
+4. Append or update `remote-rescue` in `agents.list` with `workspace`, `telegram.allowFrom` binding, and `subagents.allowAgents: ["*"]` (idempotent).
+5. Create the workspace directory at `~/.openclaw/workspaces/remote-rescue`.
+6. Send a bootstrap message to the operator explaining the isolated routing (no `/agent` switch needed).
 
 ### Non-interactive install (rollout automation)
 
 ```bash
-NONINTERACTIVE=1 \
-OPERATOR_TELEGRAM_CHAT_ID=5252140759 \
-CLIENT_NAME="<Client Name>" \
-PERSONA="<Persona>" \
-CLIENT_BOT_USERNAME="<bot_username>" \
-CONTAINER_NAME="$(hostname)" \
+NONINTERACTIVE=1 OPERATOR_TELEGRAM_CHAT_ID=5252140759 \
+CLIENT_NAME="<Client Name>" PERSONA="<Persona>" \
+CLIENT_BOT_USERNAME="<bot_username>" HOST_NAME="$(hostname)" \
 bash 15-blackceo-team-management/scripts/install-remote-rescue.sh
 ```
 
-Set `SKIP_BOOTSTRAP_MSG=1` to skip the Telegram bootstrap message (for example, when the bot is paired but the operator hasn't DM'd it yet).
+For repair/re-apply on previously installed boxes:
 
-### Verification
+```bash
+NONINTERACTIVE=1 bash 15-blackceo-team-management/scripts/install-remote-rescue.sh --repair
+```
+
+### Verification (MANDATORY before proceeding to Step 1)
 
 ```bash
 openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID
-openclaw config get agents.list | grep -A2 remote-rescue
+openclaw config get agents.list | grep -A15 "remote-rescue"
+python3 -c "
+import json, os
+cfg=json.load(open(next(p for p in ['$HOME/.openclaw/openclaw.json','/data/.openclaw/openclaw.json'] if os.path.exists(p))))
+op_ids={'5252140759','6663821679','6771245262'}
+leak=op_ids & set(cfg.get('channels',{}).get('telegram',{}).get('groupAllowFrom') or [])
+print('FAIL groupAllowFrom leak:',leak) if leak else print('PASS groupAllowFrom clean')
+rr=next((a for a in cfg.get('agents',{}).get('list',[]) if a.get('id')=='remote-rescue'),None)
+print('PASS' if rr and rr.get('workspace') and rr.get('telegram',{}).get('allowFrom') else 'FAIL remote-rescue binding missing')
+"
 openclaw config validate
 ```
 
-All three must succeed before proceeding to Step 1.
+All four checks must pass. Then verify with a live DM from an operator account (config check alone is a false pass).
 
 ---
 
@@ -497,14 +518,44 @@ Observe: Dispatcher creates dedicated worker for each sender.
 
 ## Step 13: Verify Message Isolation
 
+### 13A: Intra-owner isolation (dispatcher/worker layer)
+
 Confirm:
 - Each sender receives response ONLY in their own DM
 - No messages leak between senders
 - Workers created with correct labels
 - No cross-posting between DMs
 
----
+### 13B: Operator-owner session isolation (HARD gate -- must pass before calling skill complete)
 
+```bash
+python3 - <<'EOF'
+import json, os
+cfg_candidates = [os.path.expanduser("~/.openclaw/openclaw.json"), "/data/.openclaw/openclaw.json"]
+cfg_path = next((p for p in cfg_candidates if os.path.exists(p)), None)
+if not cfg_path:
+    print("FAIL -- cannot locate openclaw.json"); raise SystemExit(1)
+cfg = json.load(open(cfg_path))
+op_ids = {"5252140759", "6663821679", "6771245262"}
+group_allow = set(cfg.get("channels", {}).get("telegram", {}).get("groupAllowFrom") or [])
+leak = op_ids & group_allow
+if leak:
+    print(f"ISOLATION FAIL -- operator IDs in groupAllowFrom: {leak}"); raise SystemExit(1)
+agents = cfg.get("agents", {}).get("list", [])
+rr = next((a for a in agents if a.get("id") == "remote-rescue"), None)
+if not rr or not rr.get("workspace") or not rr.get("telegram", {}).get("allowFrom"):
+    print("ISOLATION FAIL -- remote-rescue missing workspace or telegram.allowFrom"); raise SystemExit(1)
+main_agent = next((a for a in agents if a.get("id") == "main"), None)
+main_bound = set((main_agent or {}).get("telegram", {}).get("allowFrom") or [])
+if op_ids & main_bound:
+    print(f"ISOLATION FAIL -- operator IDs bound to main agent"); raise SystemExit(1)
+print("PASS -- operator/owner session isolation verified")
+EOF
+```
+
+HARD FAIL: if this gate fails, the operator/owner session isolation is broken. Fix via `--repair` before proceeding.
+
+---
 ## Step 14: Send Completion Confirmation to the Operator
 
 **This step is MANDATORY. Do NOT skip. Do NOT mark skill complete without doing this.**
