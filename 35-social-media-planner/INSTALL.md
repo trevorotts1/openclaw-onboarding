@@ -372,19 +372,45 @@ cp ~/.openclaw/skills/35-social-media-planner/scripts/content-calendar.example.j
 | `platforms` | yes | Same list `run-publishing-cycle.sh --platforms` accepts. |
 | `schedule` | no  | `"auto"`, `"now"`, or ISO 8601 timestamp. |
 
-### Step 9: Register the weekly theme cron (do NOT write to HEARTBEAT.md)
+### Step 9: Register the weekly theme cron (AUTOMATED — FAIL-LOUD)
 
-> **FURNACE RULE — HARD BLOCK:** Do NOT add the Saturday theme-request task to HEARTBEAT.md. The agent reads HEARTBEAT.md on every heartbeat tick. Any recurring real-work task written there fires on every tick (potentially every 5–30 minutes) with no day-of-week gate, burning the metered model continuously. This is the proven root cause of the fleet-wide heartbeat token furnace (v12.14.0 fix).
->
-> The correct mechanism is a hard cron registered via `openclaw cron add`. The cron runs `0 8 * * 6` (Saturdays 8 AM only) and includes an idempotency marker so it cannot double-fire. See INSTRUCTIONS.md §"Weekly trigger — CRON, not heartbeat (enforcement)" for the exact `openclaw cron add` command.
+> **FURNACE RULE — HARD BLOCK:** Do NOT add the Saturday theme-request task to HEARTBEAT.md. The agent reads HEARTBEAT.md on every heartbeat tick. Any recurring real-work task written there fires on every tick (potentially every 5–30 minutes) with no day-of-week gate, burning the metered model continuously. This is the proven root cause of the fleet-wide heartbeat token furnace. The correct enforcement mechanism is a hard cron.
 
-Run the activation block from INSTRUCTIONS.md §"Activation — install the weekly theme cron" now. It is idempotent — safe to re-run.
+Run the bundled registration script now. It is **fail-loud** — it exits non-zero if registration fails and the install MUST NOT proceed to Step 10 until exit 0 is confirmed.
+
+```bash
+# Resolve the skill directory (handles both Mac and VPS canonical paths)
+SKILL35_DIR="${HOME}/.openclaw/skills/35-social-media-planner"
+if [ ! -d "$SKILL35_DIR" ]; then
+  SKILL35_DIR="/data/.openclaw/skills/35-social-media-planner"
+fi
+
+REGISTER_SCRIPT="${SKILL35_DIR}/scripts/register-weekly-cron.sh"
+if [ ! -f "$REGISTER_SCRIPT" ]; then
+  echo "ERROR: register-weekly-cron.sh not found at $REGISTER_SCRIPT" >&2
+  echo "Skill 35 may not be installed at the expected path. Verify skill installation." >&2
+  exit 1
+fi
+
+bash "$REGISTER_SCRIPT" || {
+  echo "HARD FAIL: register-weekly-cron.sh exited non-zero." >&2
+  echo "Skill 35 install INCOMPLETE — cron not registered. Fix the error above and re-run Step 9." >&2
+  exit 1
+}
+```
+
+The script:
+- Is idempotent — skips if a healthy `skill35-weekly-theme` main-target cron already exists.
+- Deduplicates — removes stale/erroring duplicate entries before registering a clean single entry.
+- Asserts exactly 1 entry post-registration (hard-fail if count != 1).
+- Pins the schedule to `0 8 * * 6` (Saturday 8:00 AM weekly only — furnace-safe).
+- Uses `sessionTarget=main` (isolated + channel-deliver is rejected by the gateway).
+- Marker path: `~/.openclaw/data/skill35/weekly-theme-last-run.json` (persistent across reboots; written by the cron on each fire to skip double-fires within the same ISO week).
+- Model: cheap/free (flash or free OpenRouter fallback) — NOT the metered primary pro model.
 
 **If the client's HEARTBEAT.md already contains the Saturday theme-request block** (from a prior install of this skill), remove it:
 
 ```bash
-# Remove the ungated Saturday theme block from the client's live HEARTBEAT.md.
-# Run on the client box. Path is the agent's resolved workspace HEARTBEAT.md.
 WORKSPACE_HEARTBEAT="${HOME}/.openclaw/workspace/HEARTBEAT.md"
 if [ -f "$WORKSPACE_HEARTBEAT" ] && grep -q "Saturday 8:00 AM" "$WORKSPACE_HEARTBEAT"; then
   cp "$WORKSPACE_HEARTBEAT" "${WORKSPACE_HEARTBEAT}.bak-$(date +%Y%m%d%H%M%S)"
@@ -392,13 +418,7 @@ if [ -f "$WORKSPACE_HEARTBEAT" ] && grep -q "Saturday 8:00 AM" "$WORKSPACE_HEART
 import re, pathlib, os
 p = pathlib.Path(os.environ['HOME'] + '/.openclaw/workspace/HEARTBEAT.md')
 txt = p.read_text()
-# Strip the ungated Saturday block (### Saturday 8:00 AM ... up to next ### or end)
-txt = re.sub(
-    r'###\s+Saturday 8:00 AM.*?(?=\n###|\Z)',
-    '',
-    txt,
-    flags=re.DOTALL
-).strip() + '\n'
+txt = re.sub(r'###\s+Saturday 8:00 AM.*?(?=\n###|\Z)', '', txt, flags=re.DOTALL).strip() + '\n'
 p.write_text(txt)
 print("Removed ungated Saturday block from HEARTBEAT.md")
 PYEOF
@@ -454,7 +474,9 @@ Send the client this exact summary:
 - [ ] Agent can answer "what is my social media planner link?" without error
 - [ ] Finished media delivery verified: upload to GHL Media Library → return CDN link → no raw Telegram file attachment for files >10 MB
 - [ ] CORE_UPDATES.md applied surgically to AGENTS.md / TOOLS.md / MEMORY.md
-- [ ] `skill35-weekly-theme` cron registered via `openclaw cron add` (NOT written to HEARTBEAT.md — see Step 9)
+- [ ] `register-weekly-cron.sh` exited 0 (Step 9 — hard fail if not)
+- [ ] QC assert: `openclaw cron list | grep -c skill35-weekly-theme` == 1 (exactly one entry, main target, `0 8 * * 6`)
+- [ ] HEARTBEAT.md does NOT contain the Saturday 8:00 AM theme-request block (ungated block removed if present)
 - [ ] QC.md run with score 8.5/10+ (or loop completed)
 - [ ] `qc-skill35.sh` exit 0 (if present)
 - [ ] Client confirmation message sent

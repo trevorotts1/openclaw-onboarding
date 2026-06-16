@@ -1,5 +1,61 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.9.0 - 2026-06-15 — cron auto-install: fail-loud wiring + deduplication + QC assertion
+
+### Root cause fixed
+The `skill35-weekly-theme` cron was a MANUAL agent step that could be silently skipped.
+`register-weekly-cron.sh` existed but had zero callers in any installer path. On any box
+where the install agent skipped the INSTRUCTIONS.md activation block, the weekly trigger
+was absent — discovered on a client box where the agent self-reported the gap in conversation.
+
+### Changes
+- `scripts/register-weekly-cron.sh` — hardened (was: basic idempotency guard + registration):
+  - DEDUPLICATION: reads `openclaw cron list`, detects stale/erroring/duplicate entries for
+    `skill35-weekly-theme`, deletes them all before registering a clean single entry. Handles
+    a live duplicate situation (two entries: one erroring isolated, one new idle main).
+  - FAIL-LOUD: exits non-zero on any registration failure; callers must check exit code.
+  - POST-REGISTRATION QC ASSERTION: asserts exactly 1 entry, `sessionTarget=main`, after
+    registration. Hard-fails with exit 3/4 if count != 1 or main target not confirmed.
+  - MARKER PATH UNIFIED: `~/.openclaw/data/skill35/weekly-theme-last-run.json` only.
+    Removed the `/tmp/skill35-weekly-theme-$(date +%Y%U).done` reference (not persistent
+    across reboots — /tmp is cleared on restart, making idempotency unreliable Saturday-to-
+    Saturday).
+  - SESSION TARGET: `main` only (`isolated` + `--channel` is gateway-rejected — confirmed
+    a client box 2026-06-15).
+  - MODEL: cheap/free (flash or free OpenRouter fallback) — never the metered pro model.
+    Documented via `SKILL35_CRON_AGENT` env var override.
+- `INSTALL.md` Step 9 — replaced manual HEARTBEAT.md prose with automated, fail-loud call to
+  `register-weekly-cron.sh`. Install MUST NOT proceed to Step 10 unless exit 0 confirmed.
+  Added HEARTBEAT.md cleanup block (remove stale Saturday ungated entry if present).
+- `INSTALL.md` Completion Checklist — replaced stale "HEARTBEAT.md updated with Saturday
+  theme-request schedule" with:
+  - `register-weekly-cron.sh` exited 0 (hard fail if not)
+  - QC assert: exactly 1 cron entry, main target, `0 8 * * 6`
+  - HEARTBEAT.md does NOT contain the ungated Saturday block
+- `QC.md` — rubric row "Heartbeat scheduled" replaced with "Weekly theme cron registered
+  (AUTO-FAIL)": programmatic check `openclaw cron list | grep -c skill35-weekly-theme == 1`.
+  Hard-fails QC regardless of total score if absent/wrong. Added cron assertion bash block
+  under "Cron presence assertion (AUTO-FAIL gate)" section.
+- `INSTRUCTIONS.md` §"Activation — install the weekly theme cron" — replaced inline manual
+  bash block with pointer to the script + break-glass inline for when script path unavailable.
+  Documented the `--announce --channel last` rejection on main-target crons (confirmed live).
+  Unified marker path in all documentation to `~/.openclaw/data/skill35/weekly-theme-last-run.json`.
+- `skill-version.txt` — v2.7.1 → v2.9.0.
+
+### Furnace safety confirmation
+- Schedule: `0 8 * * 6` (Saturdays 8 AM only — weekly, never sub-daily).
+- No retry loop on failure (single registration attempt, fail-loud).
+- Model: cheap/free (cron message instructs the agent to use flash/free OpenRouter).
+- Idempotency: marker file prevents double-fire within same ISO week.
+- Fleet-wide: every new Skill 35 install now auto-registers the cron as a hard step.
+
+### Coordination with PR #250 (fix/skill35-heartbeat-furnace)
+PR #250 removes the ungated HEARTBEAT.md entry. This PR wires the cron registration as
+the automated replacement. Together: HEARTBEAT entry gone + cron auto-installs = correct
+weekly trigger, no furnace, no silent-skip.
+
+---
+
 ## v2.8.1 - 2026-06-15 — complete-answer fix: enabled-channels model + Owner Q&A Playbook
 
 ### Problem
@@ -53,6 +109,7 @@ Low-to-medium. All changes are additive documentation and a new QC gate. No GHL 
 - **INSTRUCTIONS.md §Guard pattern** — New section: reusable HEARTBEAT guard pattern (day-of-week gate + idempotency marker) for any future recurring task.
 - **qc-skill35.sh / qc-social-media-planner.sh Section I** — Fix #3 hard-fail: INSTALL.md must not contain the ungated Saturday block.
 - **skill-version.txt** — Bumped to v2.8.0.
+
 
 ## v2.7.1 - 2026-06-11 — route social posting through Skill 44 (Tier 0) first
 

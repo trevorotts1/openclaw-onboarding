@@ -1,3 +1,19 @@
+## [v12.16.1] - 2026-06-15 - fix(skill-35): cron auto-install fail-loud wiring + deduplication + QC assertion (skill v2.9.0)
+
+### Changes
+
+**Skill 35 (social-media-planner) — weekly-theme cron now auto-installs as a fail-loud step.**
+
+Root cause: `register-weekly-cron.sh` existed but had zero callers in any installer path. The cron was a manual INSTRUCTIONS.md agent step that could be silently skipped. Discovered on a client box — agent found the cron absent mid-conversation and self-installed it, leaving a duplicate (old erroring isolated entry + new idle main entry).
+
+- `35-social-media-planner/scripts/register-weekly-cron.sh` — hardened: deduplication, fail-loud, post-registration QC assertion (exactly 1 entry, main target), unified marker path (`~/.openclaw/data/skill35/weekly-theme-last-run.json`), cheap/free model pinned, sessionTarget=main enforced.
+- `35-social-media-planner/INSTALL.md` Step 9 — automated fail-loud call to `register-weekly-cron.sh`. Install hard-blocks Step 10 until exit 0. Includes HEARTBEAT.md ungated-block cleanup.
+- `35-social-media-planner/QC.md` — "Weekly theme cron registered (AUTO-FAIL)" gate with programmatic bash check.
+- `35-social-media-planner/INSTRUCTIONS.md` — activation section updated to script pointer; marker path unified.
+- All 9 version markers bumped to v12.16.1 via `scripts/bump-version.sh`. `cc-compat.json` onboardingVersion updated to v12.16.1.
+
+---
+
 ## [v12.16.0] - 2026-06-15 - feat(role-library): 5 new departments + Blocked-vs-Return doctrine + Intelligent Model Selector gate (N35)
 
 ### Changes
@@ -258,6 +274,7 @@ Zero client names in diff (grep verified).
 - **`version`**, **`cc-compat.json`**, **`install.sh` ONBOARDING_VERSION** — All bumped to v12.14.0.
 
 **Per-box fleet sweep (deployed HEARTBEAT.md cleanup for existing boxes) is the SEPARATE gated step.** This PR fixes the repo/scaffolding only. Running the removal script in Step 9 on each client box is the fleet sweep, gated on testing this PR first.
+
 
 ---
 

@@ -200,7 +200,7 @@ The checks above are CONTENT QC — they run weekly during content production. T
 | Software present | 1.0 | FFmpeg ≥4.0, ImageMagick, python3 all working. |
 | First-Run Protocol complete | 1.0 | Brand info extracted from core files. Google Sheet created via webhook. Action link stored. Video preference stored. Notification channel stored. Podcast question answered. |
 | Core .md updates applied surgically | 1.0 | AGENTS.md + TOOLS.md + MEMORY.md got the labeled CORE_UPDATES sections. SOUL.md / IDENTITY.md / USER.md / HEARTBEAT.md NOT touched by this skill. |
-| Heartbeat scheduled | 0.5 | HEARTBEAT.md has Saturday 8 AM theme request entry. |
+| Weekly theme cron registered (AUTO-FAIL) | 0.5 | `register-weekly-cron.sh` exited 0. Programmatic check: `openclaw cron list \| grep -c skill35-weekly-theme` == 1 (exactly one entry). Entry shows `main` sessionTarget and schedule `0 8 * * 6`. HEARTBEAT.md does NOT contain the ungated Saturday 8:00 AM block. If this check fails, QC HARD-FAILS regardless of total score — the weekly trigger is non-negotiable. |
 | Client confirmation sent | 0.5 | The owner-facing summary message was sent (Telegram or whichever channel they use). |
 
 ### Pass / Fail / Loop
@@ -221,6 +221,26 @@ The checks above are CONTENT QC — they run weekly during content production. T
 3. Re-run the relevant checks (don't re-do the whole skill — just the failed sections).
 4. Re-score. If still below 8.5, count this as a loop iteration.
 5. After 5 loops, stop and escalate. Don't keep looping silently.
+
+### Cron presence assertion (AUTO-FAIL gate)
+
+Run this check as part of QC. If it fails, QC hard-fails regardless of total score — the weekly trigger is non-negotiable.
+
+```bash
+# AUTO-FAIL: Skill 35 must have exactly 1 skill35-weekly-theme cron, main target, 0 8 * * 6.
+_count="$(openclaw cron list 2>/dev/null | grep -c "skill35-weekly-theme" || true)"
+if [ "$_count" -ne 1 ]; then
+  echo "QC AUTO-FAIL: expected exactly 1 skill35-weekly-theme cron, found $_count." >&2
+  echo "Run: bash ~/.openclaw/skills/35-social-media-planner/scripts/register-weekly-cron.sh" >&2
+  exit 1
+fi
+_main_count="$(openclaw cron list 2>/dev/null | grep "skill35-weekly-theme" | grep -c "main" || true)"
+if [ "$_main_count" -lt 1 ]; then
+  echo "QC AUTO-FAIL: skill35-weekly-theme cron does not have sessionTarget=main." >&2
+  exit 1
+fi
+echo "QC PASS: skill35-weekly-theme cron present (1 entry, main target)."
+```
 
 ### Bundled validation script
 
