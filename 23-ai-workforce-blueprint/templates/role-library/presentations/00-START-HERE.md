@@ -1,5 +1,12 @@
 # 00 -- START HERE -- Presentations Department
-**Version:** 1.3 | 2026-06-12
+
+> **SOP-LOCKED DEPARTMENT:** if you add/modify any SOP, role, or gate, you MUST update
+> `PIPELINE-MANIFEST.json` + `build_deck.py` + a test. Run `scripts/sync_check.py` — it fails
+> the gate if the Python and the SOP stack drift. Single source of truth:
+> `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json`. Procedure:
+> `universal-sops/presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md`.
+
+**Version:** 1.4 | 2026-06-14 (density-floor overhaul: +5 roles, Phase 1.5, the slide-craft / design-system / image-library SOP clusters, and the enforcement-gate auto-fail batteries)
 **Role library path:** 23-ai-workforce-blueprint/templates/role-library/presentations/
 **SOP mirror path:** 23-ai-workforce-blueprint/templates/role-library/presentations/sops/
 
@@ -11,7 +18,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ---
 
-## Role Roster (17 roles)
+## Role Roster (22 roles)
 
 | ROLE | Slug | Role type | File |
 |------|------|-----------|------|
@@ -32,19 +39,28 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 | ROLE-14 | presenter-coach | specialist | presenter-coach.md |
 | ROLE-15 | hook-strategist | specialist | hook-strategist.md |
 | ROLE-16 | healer-presentations | healer | healer-presentations.md |
+| ROLE-18 | typography-architect | specialist | typography-architect.md |
+| ROLE-19 | presenters-guide-specialist | specialist | presenters-guide-specialist.md |
+| ROLE-20 | presenters-speech-writer | specialist | presenters-speech-writer.md |
+| ROLE-21 | fish-audio-expression-specialist | specialist | fish-audio-expression-specialist.md |
+| ROLE-22 | first-time-onboarding-presentations | specialist | first-time-onboarding-presentations.md |
+
+**New in the density-floor overhaul (2026-06-14):** ROLE-18 Typography Architect (locks the type/layout/treatment system in Phase 1.5, before any prompt), ROLE-19 Presenter's Guide Specialist (speaker-facing outline PDF + Notion), ROLE-20 Presenter's Speech Writer (word-for-word script at 130 wpm + audio demo via Fish > ElevenLabs > local + ffmpeg chunk/stitch), ROLE-21 Fish Audio / Expression Specialist (expression-tags the speech), ROLE-22 First-Time-User Onboarding (orients a newcomer once, then hands to the Brainstorming Buddy).
 
 ---
 
 ## Pipeline Sequence (phase order)
 
--1. **Step -1** -- ROLE-17 Brainstorming Buddy brainstorms with the owner (SIMPLE or EXTENSIVE interview), confirms, and locks working/brainstorm/presentations/<slug>/brief.json; then hands the locked brief to the Director.
-1. **Step 0** -- ROLE-06 Media Librarian creates the landing zone and acquires client assets (LOGO_URL, FOUNDER_PORTRAIT_URL).
+-2. **Step -2 (first use only)** -- ROLE-22 First-Time-User Onboarding orients a brand-new user once (what the dept does, the roles, the AUDIENCE-vs-SPEAKER surface distinction, how to start), sets the first-time flag, then hands to the Brainstorming Buddy. Skipped for returning users.
+-1. **Step -1** -- ROLE-17 Brainstorming Buddy brainstorms with the owner (SIMPLE or EXTENSIVE interview, incl. the SOP-IMG-03 style branch that sets STYLE_SOURCE), confirms, and locks working/brainstorm/presentations/<slug>/brief.json; then hands the locked brief to the Director.
+1. **Step 0** -- ROLE-06 Media Librarian creates the landing zone and acquires client assets (the single locked LOGO_URL, FOUNDER_PORTRAIT_URL).
 2. **Step 0.5** -- ROLE-03 Capacity and Reliability Engineer probes the box and writes capacity_plan.json.
 3. **Phase B+** -- ROLE-15 Hook Strategist runs the Hook Lab; outputs hook_package.json.
 4. **Phase 1** -- ROLE-10 Slide Copywriter (concurrent: ROLE-07 Offer and Price Strategist). Output: slides_copy.md + price_ladder.json.
 5. **Phase 1Q** -- ROLE-09 QC Specialist runs copy QC gate (score >= 8.5).
 6. **Phase 1A** -- Owner approval gate (Director-managed). No prompts until YES.
-7. **Phase 2** -- ROLE-11 Slide Image Creator writes prompts (requires STYLE BLOCK from ROLE-02).
+6.5. **Phase 1.5 (density-floor overhaul)** -- ROLE-18 Typography Architect locks type_system + layout_map + treatment_table and runs the self-audit; ROLE-02 Brand Steward locks the single LOGO_URL in parallel. Phase 2 is BLOCKED until these exist. Typography and layout are DECIDED before any prompt is written.
+7. **Phase 2** -- ROLE-11 Slide Image Creator writes prompts TO the treatment table (requires the STYLE BLOCK from ROLE-02 and the three ROLE-18 artifacts). Logo via image-to-image (Mode B); hook slides pure-type; no footer hook; render only the approved copy blocks.
 8. **Phase 3** -- ROLE-09 QC Specialist runs prompt QC gate (dual-scored).
 9. **Phase 4** -- ROLE-12 Slide Submitter submits to Kie.ai (2 RPS cap, smoke test first).
 10. **Phase 4 concurrent** -- ROLE-03 watchdog cron runs.
@@ -52,8 +68,8 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 12. **Phase 5 passed** -- ROLE-06 Media Librarian intakes passed images to GHL.
 13. **Phase 6** -- ROLE-08 PPTX Assembly Specialist assembles the deck.
 14. **Phase 6 QC** -- ROLE-09 QC Specialist runs final deck QC (score >= 8.5).
-15. **Post-Phase 6** -- ROLE-14 Presenter Coach writes talk track and runs rehearsal gate.
-16. **Delivery** -- ROLE-13 Delivery Concierge delivers to all destinations and verifies.
+15. **Post-Phase 6** -- ROLE-19 Presenter's Guide Specialist builds the speaker-facing outline (PDF + Notion, font >= 12); ROLE-20 Presenter's Speech Writer writes the word-for-word script (130 wpm) and renders the audio demo (Fish > ElevenLabs > local + ffmpeg), with ROLE-21 Fish Audio / Expression Specialist tagging the script; ROLE-14 Presenter Coach writes the timed talk track and runs the rehearsal gate. The deck is the AUDIENCE surface; the Guide, Speech, and audio are the SPEAKER surface (the cardinal separation the reference failure case broke).
+16. **Delivery** -- ROLE-13 Delivery Concierge delivers to all destinations and verifies (deliverables Trevor opens go to Downloads, clearly labeled).
 
 On-call throughout: ROLE-05 Devil's Advocate (high-stakes reviews), ROLE-04 Deep Research Specialist.
 
@@ -84,6 +100,11 @@ Each role's Section 9 (Standard Operating Procedures) is mirrored verbatim in so
 | sops/slide-image-creator-sops.md | slide-image-creator.md | 9.1 15-Element Prompt, 9.2 Archetypes+Composition, 9.3 White-Base+Palette, 9.4 Engines+Overlays, 9.5 Strikethrough |
 | sops/slide-submitter-sops.md | slide-submitter.md | 9.1 Model Manifest, 9.2 KIE Submit, 9.3 Poll+Download, 9.3a API Contract, 9.4 Budget Discipline, 9.5 Smoke Test |
 | sops/healer-presentations-sops.md | healer-presentations.md | 9.1 Intake+Triage, 9.2 Diagnosis, 9.3 Fix Forward, 9.4 SOP Surgery, 9.5 Gap Detection, 9.6 Model Census, 9.7 Healing Report, 9.8 Regression Watch, 9.9 Core-File Surgery, 9.10 Settings Repair, 9.11 Teacher-Self, 9.12 Embedding Refresh |
+| sops/typography-architect-sops.md | typography-architect.md | 9.1 Weight Ladder + Type Tokens, 9.2 Five-Archetype Layout Rotation, 9.3 Price-Typography System, 9.4 Per-Slide Type Plan + Anti-Cookie-Cutter Audit |
+| sops/presenters-guide-specialist-sops.md | presenters-guide-specialist.md | 9.1 Build the Speaker Outline, 9.2 Beautiful PDF (font >= 12), 9.3 Notion, 9.4 Surface-Boundary Audit + Delivery |
+| sops/presenters-speech-writer-sops.md | presenters-speech-writer.md | 9.1 Word-for-Word Speech at 130 wpm, 9.2 PDF + Notion, 9.3 Expression-Tag Handoff, 9.4 Audio Demo (TTS fallback chain + ffmpeg), 9.5 Surface-Boundary Audit + Delivery |
+| sops/fish-audio-expression-specialist-sops.md | fish-audio-expression-specialist.md | 9.1 Tag for the Tier, 9.2 Word-Fidelity + Tag-Discipline Audit, 9.3 Cross-Tier Translation Guidance |
+| sops/first-time-onboarding-presentations-sops.md | first-time-onboarding-presentations.md | 9.1 First-Time Orientation, 9.2 Roles Tour + Surface Explainer, 9.3 Hand to Buddy + Set Flag, 9.4 On-Demand Refresher |
 
 **Mirror rule:** role file is authoritative. If a sops/ file diverges from the role file's Section 9, the role file wins and the mirror must be regenerated immediately. Never edit the sops/ file directly.
 
@@ -100,6 +121,16 @@ The Graphics department's Design Intelligence Unit (DIU) -- Style Analyst, Deck 
 ## Master SOP Authority
 
 All roles defer to: `universal-sops/CLIENT-WEBINAR-DECK-SOP.md`
+
+### density-floor-overhaul SOP clusters (2026-06-14) -- these EXTEND the master SOP and are enforced as auto-fails by ROLE-09 QC
+
+- **Slide-craft** (`universal-sops/presentation-slide-craft/`): SOP-SLIDE-01 One Big Idea, SOP-SLIDE-02 Audience-Facing Only, SOP-SLIDE-03 Hook Doctrine (ceiling + anti-footer), SOP-SLIDE-04 Deck Density and Pacing, MASTER-QC-AUTOFAIL-RULESET (the machine-checkable spec the QC gate is wired from).
+- **Design-system** (`universal-sops/presentation-design-system/`): Creative Typography Guide, Pure-Typography Hook Slides, Variable Layout / Anti-Template, Logo Consistency. Owned at write time by ROLE-18 Typography Architect + ROLE-02 Brand Steward.
+- **Image-library** (`universal-sops/presentation-image-library/`): SOP-IMG-01 Kie call mechanics per mode, SOP-IMG-02 DIU integration + library seeding, SOP-IMG-03 style branch + NAMED-STYLES seed, SOP-IMG-04 signature-style recall + DIU logo-as-I2I.
+
+### The enforcement gate (why this overhaul exists)
+
+The 77 prior auto-fails did NOT catch the reference failure case (hook on 40 slides, speaker/doctrine/meta/"webinar"/placeholder text on the face, a misspelled/mutated hook, multi-idea slides, a crammed offer, a drifting logo). ROLE-09 QC now blocks a deck that trips ANY of: AF-HOOK (hook on >4 slides, footer-stamped, zero dedicated, doubled, mutated, misspelled, or conflated with the signature quote), AF-AUD (speaker line, internal pitch doctrine, image narration, "webinar"/meta, credential dump, or a bracket/placeholder token on a rendered slide), AF-OBI (multi-idea slide, value trio on one slide, pain list, oversized table), AF-DEN (price beats <8 slides apart, anchor not near one-third, missing BUILDUP/value-stack/promises/re-pitch, Wall of Wins mis-spaced, section below floor), AF-D1/D2/D3 + AF-I11 (single-device typography, layout never varies, no dedicated hook slide, logo drift). A description-only rule does not stop a defect; every rule is a binary trigger checked before scoring with a deck/slide-level veto, and is promoted into the PRODUCING role's write/render-time constraint as well as the gate.
 
 ---
 

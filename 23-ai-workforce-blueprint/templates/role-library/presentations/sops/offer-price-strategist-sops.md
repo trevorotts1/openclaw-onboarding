@@ -21,13 +21,15 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Steps:**
 1. Read FINAL_PRICE from intake.json. If no FINAL_PRICE is present, stop immediately and notify the Director. Do NOT invent a price.
 2. Set the ANCHOR. The ANCHOR is a VALUE anchor, not a price, and it is NOT a drop. It is a value plant placed mid-teach inside Secret #1 or #2 (around the 32% mark of the deck), establishing what a system like this is WORTH, and it carries the explicit memory hook in copy and presenter note: "Remember this number. Hold onto it. Keep watching." Rule: ANCHOR_VALUE must be >= 3x the FINAL real buy price and must sit above the highest value-ladder rung. If the client has stated an anchor in intake.json, use it IF it satisfies this rule. If the stated anchor is < 3x FINAL_PRICE, flag the discrepancy to the Director and propose a compliant anchor. Record the source: `anchor_source: "client_stated"` or `anchor_source: "strategist_proposed"`.
-3. Build the SPREAD VALUE LADDER. The proven structure (Lyric 75-slide deck) walks a VALUE ladder down -- $5,000 -> $2,500 -> $1,000 -> $500 -- spread across the deck, then SHATTERS it with the real price reveal. The rungs sit at approximately these percentages of the total deck slide count:
+3. Build the SPREAD VALUE LADDER. The proven structure (the proven 75-slide reference run) walks a VALUE ladder down -- $[ANCHOR] -> $[DROP1] -> $[DROP2] -> $[DROP3] (illustrative round rungs -- substitute your DISCOVERY VARIABLES) -- spread across the deck, then SHATTERS it with the real price reveal. The rungs sit at approximately these percentages of the total deck slide count:
    - ANCHOR: ~32% mark (value plant with memory hook, mid-teach, NOT a drop)
    - DROP1: ~47% mark ("because you showed up live")
    - DROP2: ~68% mark ("because you believed")
    - DROP3: ~87% mark ("because you stayed")
    - FINAL: ~97% mark (the real buy price, below the entire ladder, before the CTA)
    Calculate the target slide numbers using the formula: target_slide = round(slide_count_final x percentage).
+   **(Density-floor overhaul) The 8-slide MINIMUM-GAP FLOOR overrides the percentages.** After computing the percentage-based target slides, verify every ADJACENT pair (ANCHOR->DROP1, DROP1->DROP2, DROP2->DROP3, DROP3->FINAL) is at least 8 slides apart, computed against the FULL deck count. If any gap is under 8 (the reference failure case defect: $[ANCHOR] s32 -> $[DROP1] s34 -> an off-ladder rung s37, gaps of 2 and 3), the percentages have crammed the ladder; flag the Director to lengthen the offer window or the deck and re-space. The floor wins over the percentages. The proven reference run's gaps are 11/16/14/8 (the AF-DEN-1 reference). The ANCHOR must land in the 25-45% depth band (AF-DEN-2), never the back third.
+   **(Density-floor overhaul) Use round doctrinal numbers; flag off-ladder rungs.** The doctrinal five-rung ladder is $[ANCHOR] / $[DROP1] / $[DROP2] / $[DROP3] / FINAL with ROUND numbers. An off-ladder, non-round number (the exact defect carried over in the reference failure case; it should snap to the nearest round rung) is flagged to the Director, not silently shipped. Scale the rungs to the client's real anchor, keeping them round and strictly decreasing. Never fabricate the client's prices; if the client has not set them, mark `[CLIENT TO SUPPLY]` and re-sequence the doctrine onto their real numbers when supplied.
 4. Assign a value to each rung and the real price at FINAL. Rules:
    - ANCHOR value > DROP1 value (the anchor is the ceiling the ladder descends from)
    - DROP1 value > DROP2 value > DROP3 value (the VALUE ladder is strictly decreasing)
@@ -98,7 +100,11 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    Record this in offer_stack.json under `value_additions_by_drop`.
 6. Stripping value to justify a discount is a VIOLATION. A DROP slide must never REMOVE a component to "explain" the lower price. If the run ever shows a component disappearing from the table as the price falls, flag it to the Director as a doctrine violation and refuse to ship the ladder until it is corrected.
 7. Verify: a BUILDUP slide must always precede every DROP slide (per SOP 9.1 step 5). If a DROP slide exists without a preceding BUILDUP, flag it so the Copywriter inserts one before it.
-8. Write the offer_stack.json to working/copy/offer_stack.json. Structure:
+8. **(Density-floor overhaul) Reserve the three mandatory pacing beats and record their slots** so they cannot be omitted (the reference failure case had none of them):
+   - **PROMISES beat BEFORE the anchor** (`promises_slide`): plant the promise set (the transformations the program delivers) before the first number. People buy promises, not products. (AF-DEN-5.)
+   - **A dedicated itemized VALUE-STACK slide BEFORE Drop 1** (`value_stack_slide`): the full stack listed with each component value, summed to a TOTAL that EXCEEDS the anchor, shown before the cheapest prices appear (the proven reference run s57 -> s58 "add it all up"). For a non-monetary offer, the stack is the deliverables list and the frame is the PRICELESS pitch (SOP 9.6), never fabricated dollar values. (AF-DEN-4.)
+   - **A 4-to-7-slide RE-PITCH block AFTER the FINAL price** (`re_pitch_slide_range`): recap the full stack, restate the promises, reset the urgency ("next 15 minutes, FINAL_PRICE"), before the send-off (the proven reference run s74-75). A deck that closes on a plain thank-you fails. (AF-DEN-7.)
+9. Write the offer_stack.json to working/copy/offer_stack.json. Structure:
    ```json
    {
      "components": [
@@ -106,6 +112,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
      ],
      "total_stack_value": 0,
      "buildup_slide_range": [start_slide, end_slide],
+     "promises_slide": N,
+     "value_stack_slide": N,
+     "re_pitch_slide_range": [start_slide, end_slide],
      "value_additions_by_drop": [
        {"drop": "DROP1", "added_component": "...", "added_value": 0},
        {"drop": "DROP2", "added_component": "...", "added_value": 0},
@@ -234,7 +243,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Steps:**
 1. Determine whether the offer outcome is MONETARY (produces measurable money for the buyer, e.g. enrollments, revenue) or NON-MONETARY (a transformation, peace, confidence, a better relationship).
 2. Every deck must explicitly answer BOTH questions in the offer section: what is the COST of NOT taking action (cost of inaction), and what is the VALUE of taking action.
-3. **If MONETARY:** do the math on screen. Run cost-of-inaction vs value-of-action with real figures (e.g. LTV: 1 family = $9,600/yr; 3 = $28,800; payback period). These figures come from intake.json or client-supplied numbers, never invented.
+3. **If MONETARY:** do the math on screen. Run cost-of-inaction vs value-of-action with real figures (illustrative -- substitute your DISCOVERY VARIABLES: LTV: 1 client = $[ANNUAL_VALUE]/yr; 3 = 3x that; payback period). These figures come from intake.json or client-supplied numbers, never invented.
 4. **If NON-MONETARY:** NEVER fabricate dollar values for the outcome. Run the cost-of-inaction vs value-of-action contrast in real terms, then run the AmEx-style PRICELESS elevation (master rule 6): name the small real costs (the "hot dog $5, parking $20" frame) and then elevate the actual outcome ABOVE money -- "priceless." Elevate the outcome above money; do not slap a fake dollar figure on it.
 5. Record the cost-vs-value treatment in price_ladder.json:
    ```json

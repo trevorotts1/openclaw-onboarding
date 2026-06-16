@@ -49,9 +49,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 6. Present the top 3 to the owner with scores. The owner picks. Record the pick as HOOK in mission_prd.json with its hook_score.
 
-7. Hand to the Copywriter variant system (this is SOP 9.2): 7 to 10 variants, placement map, first occurrence inside the first 10 to 15%, dedicated A4 hook slide, refrains after proof slides, reprise as the FINAL substantive slide.
+7. **(Density-floor overhaul) Hand to the Copywriter the ANCHOR MAP + HOOK-ABSENT list (this is SOP 9.2):** name the 3 to 4 DEDICATED pure-typography hook slides at the natural beats (born after the core contrast; after the proving story; at the payoff; late into the close), and produce the explicit HOOK-ABSENT list (every other slide, where the hook does NOT appear). The hook line is the CANONICAL verbatim string. Do NOT build a "7 to 10 variant" ladder of reworded refrains and do NOT instruct footer refrains or "refrains after proof slides" (that floor produced the 40-slide stamping). The hook is one exact line on 3 to 4 dedicated slides and nowhere else.
 
-8. Post-deck Hook Audit (this is SOP 9.2): count occurrences mechanically, verify distribution (no section without a refrain candidate, never more than 2 consecutive ladder/close slides without the hook nearby), verify the closing slide carries it.
+8. **Post-deck Hook Audit (this is SOP 9.2):** count the hook-carrying slides mechanically and verify ALL of: `hook_carrying_slides` is 3 to 4 (more than 4 = AF-HOOK-1 fail); `footer_occurrences` = 0 (any footer = AF-HOOK-2 fail); `dedicated_slide_count` is 3 to 4 (zero = AF-HOOK-3 fail); no slide prints the hook twice (AF-HOOK-4); every occurrence is character-exact to the canonical string (AF-HOOK-5); the signature-quote slide does not carry the main hook (AF-HOOK-7); the late reprise into the close is present. If the audit fails any of these or is missing, Phase 1Q fails before scoring.
 
 **Outputs:**
 - working/copy/hook_package.json (the candidates block, the scores block, and the owner selection block)
@@ -74,19 +74,19 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Steps:**
 
-1. Hand the owner-selected hook to the Copywriter variant system: build 7 to 10 variants of the hook. Each variant says the same thing reframed for the section it appears in. Variants may be shorter, punchier, or reframed, but each must still pass the three qualities and avoid every anti-pattern.
+1. Hand the owner-selected hook to the Copywriter as the SINGLE CANONICAL verbatim string. Do NOT build a "7 to 10 variant" ladder of reworded refrains (the RETIRED floor engine that produced the 40-slide footer-stamping). The hook is one exact line, character-stable, that must pass the three qualities and avoid every anti-pattern.
 
-2. Draw the placement map. First occurrence lands inside the first 10 to 15% of the deck (sing it early; nobody waits to the end of the song to sing Purple Rain). Include: a dedicated A4 hook slide (type-dominant); refrains placed AFTER proof slides (the proof just earned the hook); a reprise as the FINAL substantive slide of the deck.
+2. Draw the placement map under the banded CEILING (the live gate, AF-C2/AF-HOOK-1): the verbatim hook stands on 3-4 DEDICATED pure-typography A4 slides, total appearances ~4-5 max, NEVER 2 consecutive, never a footer on every slide. The first dedicated occurrence lands inside the first 10 to 15% of the deck; the remaining dedicated beats sit at the natural payoffs (after the core contrast, after the proving story, at the payoff); one reprise lands late into the close. Over-stamping is the #1 defect; STRIP excess rather than pad.
 
-3. Distribution rule: no section without a refrain candidate, and never more than 2 consecutive ladder or close slides without the hook nearby. Record each placement as `{ "slide": N, "section": "...", "variant_used": "...", "after_proof": true|false }`.
+3. Distribution rule (ceiling, not floor): never 2 consecutive slides carry the hook; the hook is never stamped as a footer on proof or content slides. Record each placement as `{ "slide": N, "section": "...", "dedicated": true, "after_proof": true|false }`, plus the explicit HOOK-ABSENT list (every other slide, where the hook does NOT appear).
 
-4. Write the variants and the placement map into hook_package.json. The Copywriter reads this and places the variants; you own the map, the Copywriter owns the surrounding slide copy.
+4. Write the canonical string, the placement map, and the HOOK-ABSENT list into hook_package.json. The Copywriter reads this and places the hook only on the named dedicated slides; you own the map, the Copywriter owns the surrounding slide copy.
 
-5. Post-deck Hook Audit (run on the completed slides_copy.md): count occurrences MECHANICALLY (do not estimate; count). Verify the total is >= 7.
+5. Post-deck Hook Audit (run on the completed slides_copy.md): count occurrences MECHANICALLY (do not estimate; count). Verify the total is WITHIN the ceiling -- the hook appears on at most 4 dedicated slides (more than 4 = AF-HOOK-1 fail), with ~4-5 total appearances max. (This REPLACES the RETIRED "verify the total is >= 7" floor; never re-introduce a hook floor.)
 
-6. Verify distribution mechanically: no section is missing a refrain candidate; there are never more than 2 consecutive ladder or close slides without the hook nearby; the first occurrence is inside the first 10 to 15%; a dedicated A4 hook slide exists.
+6. Verify distribution mechanically: the hook stands on 3-4 dedicated slides only; no slide prints the hook twice; no footer-stamped hook on any slide; never more than 2 consecutive slides carry the hook; the first occurrence is inside the first 10 to 15%; at least one dedicated A4 hook slide exists.
 
-7. Verify the closing slide carries the hook (the reprise as the final substantive slide).
+7. Verify the closing slide carries the hook (the single late reprise into the close, counted within the 3-4 dedicated total).
 
 8. Write the audit result into hook_package.json: `{ "occurrence_count": N, "first_occurrence_pct": ..., "dedicated_slide": true|false, "closing_carries_hook": true|false, "sections_without_refrain": [...], "max_consecutive_gap": N, "verdict": "PASS|FAIL" }`. If the audit fails, return the specific gap to the Copywriter for a refrain insertion and re-audit.
 

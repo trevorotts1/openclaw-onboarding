@@ -409,15 +409,15 @@ local_count == ghl_count == slide_count_final before delivery_verified is set to
 ### Example A -- media_library.json at Step 0 Completion
 ```json
 {
-  "client_slug": "coach-janelle",
-  "deck_slug": "enrollment-on-autopilot",
-  "run_date": "2026-06-11",
+  "client_slug": "[CLIENT_SLUG]",
+  "deck_slug": "[DECK_SLUG]",
+  "run_date": "[DATE]",
   "version_number": 1,
-  "local_workdir": "/Users/janellecarter/webinar-decks/coach-janelle/enrollment-on-autopilot/2026-06-11/",
-  "local_media_library": "/Users/janellecarter/webinar-decks/coach-janelle/enrollment-on-autopilot/2026-06-11/media-library/",
-  "ghl_folder_name": "Coach Janelle Enrollment on Autopilot v1",
+  "local_workdir": "~/webinar-decks/[CLIENT_SLUG]/[DECK_SLUG]/[DATE]/",
+  "local_media_library": "~/webinar-decks/[CLIENT_SLUG]/[DECK_SLUG]/[DATE]/media-library/",
+  "ghl_folder_name": "[CLIENT_NAME] [DECK_TITLE] v1",
   "ghl_folder_id": null,
-  "created_at": "2026-06-11T09:00:00Z"
+  "created_at": "[DATE]T09:00:00Z"
 }
 ```
 

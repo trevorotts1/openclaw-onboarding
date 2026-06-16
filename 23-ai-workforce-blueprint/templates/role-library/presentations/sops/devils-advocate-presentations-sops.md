@@ -35,7 +35,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    DA Review Date: [YYYY-MM-DD]
    Reviewer: Devil's Advocate -- Presentations
 
-   ## Doctrine Point 1: The Hook Doctrine (hook sings >= 7 times)
+   ## Doctrine Point 1: The Hook Doctrine (banded ceiling: hook on 3-4 dedicated slides, ~4-5 appearances max)
    STATUS: PASS/FLAG
    [If FLAG: Slide(s): N, M. Violation: [exact text]. Fix: [exact instruction].]
 
@@ -61,13 +61,13 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **The 24-Point Pitch Doctrine. Points 1-18 are transcribed VERBATIM from master SOP Section 4.3 (the master is the authority; if this list ever diverges from the master, the master wins and this list is wrong). Points 19-24 are department-specific extensions this role has earned through review experience; they sharpen the master doctrine into testable failure modes and never contradict it.**
 
-**1. THE HOOK DOCTRINE (the Purple Rain rule).** A presentation is written like a song: there is a rhythm, and there is a hook. A 5-minute song sings its hook 10 times so you remember a 5-minute song; most presenters give a 30-minute presentation and say their hook once. This system writes the hook and SINGS it.
-- The hook is the strongest part of the promise, the one thing the audience wants most, compressed into one singable line (proven deck: "30 Kids. 30 Days."; another client: "There is a difference between parenting by control and parenting through clarity.").
+**1. THE HOOK DOCTRINE (the Purple Rain rule).** A presentation is written like a song: there is a rhythm, and there is a hook. Most presenters give a 30-minute presentation and say their hook once; this system writes the hook and STANDS it on its own dedicated slides. (NOTE: the historical ">= 7 times" FLOOR has been RETIRED. The live gate is a banded CEILING -- see below.)
+- The hook is the strongest part of the promise, the one thing the audience wants most, compressed into one singable line (illustrative examples -- substitute your DISCOVERY VARIABLES: "[PROMISE]. [TIMEFRAME]."; or a contrast line like "There is a difference between parenting by control and parenting through clarity.").
 - Phase 1 derives the hook from `BIG_PROMISE` + `OFFER_STACK`, records it as `HOOK` in intake.json, and the owner confirms it at the approval gate.
-- **The hook appears AT LEAST 7 TIMES across the deck** (scale up on longer decks: roughly one occurrence per 8 to 10 slides, never fewer than 7). Each occurrence is tied back to the content on that slide; it is a refrain, not wallpaper.
-- The hook gets at least one DEDICATED slide of its own (A4 type-dominant treatment).
-- **Sing it early.** Nobody waits until the end of the song to sing Purple Rain. First occurrence lands inside the first 10 to 15% of the deck, then recurs through every section, and reprises in the close.
-- **Refrain after proof.** When a story or case study proves the point, the hook is run again at the bottom of that slide, because the proof just earned it.
+- **Banded CEILING (the live gate, AF-C2/AF-HOOK-1).** The verbatim hook stands on 3-4 DEDICATED pure-typography A4 slides, total appearances ~4-5 max, NEVER 2 consecutive, and is never a footer on every slide. Over-stamping is the #1 defect; STRIP excess rather than pad. (This REPLACES the RETIRED ">= 7 times" floor that produced the 40-slide footer-stamping. Do not re-introduce a hook floor.)
+- The hook lives on 3-4 DEDICATED slides of its own (A4 type-dominant treatment); it is a refrain, not wallpaper.
+- **Place it early.** First dedicated occurrence lands inside the first 10 to 15% of the deck, then recurs only at the named dedicated beats, and reprises once into the close -- within the ~4-5 ceiling, never on every slide.
+- **Earn it after proof.** When a story or case study proves the point, a dedicated hook slide may follow -- counted within the 3-4 dedicated total, never stamped as a footer on the proof slide itself.
 - A strong hook can graduate into the client's signature quote and hashtag. Quote slides carry the client's NAME ONLY, no credentials (the T.D. Jakes rule: we quote the name, not the resume).
 
 **2. PEOPLE BUY PROMISES, NOT PRODUCTS.** They do not buy the product; the product is just a reflection of the promise they want. Every teach and offer slide pitches the PROMISE. If the promise is strong enough, the product sells itself. Phase 1 maintains a running promise inventory: what is this product promising, slide by slide?
@@ -78,7 +78,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **5. EMOTION BUYS. LOGIC JUSTIFIES.** People buy on emotion and justify with logic, and in couples the two roles usually split: one partner is emotionally ready, the other needs the logical case. The deck must serve BOTH in every offer section: emotionally driven imagery and future-pacing for the heart, and explicit math (LTV, cost of inaction, payback) for the justifier. A deck that only inspires loses the justifier; a deck that only calculates loses the buyer.
 
-**6. COST VERSUS VALUE.** Every pitch explicitly answers two questions: what is the COST of not taking action, and what is the VALUE of taking action? If the offer produces money, do the math on screen (1 family = $9,600/yr; 3 = $28,800). If the offer does not produce money, run the PRICELESS PITCH (the American Express frame): hot dog $5, parking $20, the outcome they actually want: priceless. Never fabricate dollar values for non-monetary outcomes; elevate them above money instead.
+**6. COST VERSUS VALUE.** Every pitch explicitly answers two questions: what is the COST of not taking action, and what is the VALUE of taking action? If the offer produces money, do the math on screen (illustrative -- substitute your DISCOVERY VARIABLES: 1 client = $[ANNUAL_VALUE]/yr; 3 = 3x that). If the offer does not produce money, run the PRICELESS PITCH (the American Express frame): hot dog $5, parking $20, the outcome they actually want: priceless. Never fabricate dollar values for non-monetary outcomes; elevate them above money instead.
 
 **7. LIGHT PITCHES, WOVEN.** Do not save the pitch for the end. Softly sing the song of the program throughout: "when you work with us," "inside our program," "when you attend this workshop." Every named piece of the client's methodology (their identity development structure, their guided development system, their frameworks) is a named SYSTEM, and every named system is a light sales point planted inside the teaching.
 

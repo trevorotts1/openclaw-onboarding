@@ -1,0 +1,256 @@
+{
+  "manifest_version": 1,
+  "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
+
+  "phases": [
+    {
+      "id": "P-0.5-RESEARCH",
+      "order": -0.5,
+      "name": "Deep Research",
+      "owning_role": "deep-research-specialist-presentations",
+      "sop_refs": ["deep-research-specialist-presentations-sops.md"],
+      "produces_artifact": "working/research/brief-*.md",
+      "gate_codes": ["AF-RESEARCH-GATE"],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_research_brief",
+        "label": "research brief (research_complete:true)"
+      }
+    },
+    {
+      "id": "P0A-INTAKE",
+      "order": 0.1,
+      "name": "Intake / Interview Confirm",
+      "owning_role": "director-of-presentations",
+      "sop_refs": ["director-of-presentations-sops.md"],
+      "produces_artifact": "working/copy/intake.json",
+      "gate_codes": [],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_intake",
+        "label": "intake.json (interview_confirmed:true, presentation_mode one-person|general)"
+      }
+    },
+    {
+      "id": "P1Q-COPY-QC",
+      "order": 1.5,
+      "name": "Copy QC (Phase 1Q)",
+      "owning_role": "qc-specialist-presentations",
+      "sop_refs": ["qc-specialist-presentations-sops.md"],
+      "produces_artifact": "working/qc/copy_qc_report.json",
+      "gate_codes": [
+        "AF-HOOK-1", "AF-HOOK-2", "AF-HOOK-3", "AF-HOOK-4", "AF-HOOK-5", "AF-HOOK-7",
+        "AF-AUD-1", "AF-AUD-2", "AF-AUD-3", "AF-AUD-4", "AF-AUD-5",
+        "AF-OBI-1", "AF-OBI-2", "AF-OBI-3", "AF-OBI-4", "AF-OBI-5",
+        "AF-DEN-1", "AF-DEN-2", "AF-DEN-3", "AF-DEN-4", "AF-DEN-5", "AF-DEN-6", "AF-DEN-7", "AF-DEN-8"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_copy_qc",
+        "label": "copy QC report (gate Phase 1Q, average >= 8.5, no AF-* triggered)"
+      }
+    },
+    {
+      "id": "P3-ARC",
+      "order": 3,
+      "name": "Converting Arc Allocation",
+      "owning_role": "offer-price-strategist",
+      "sop_refs": ["offer-price-strategist-sops.md"],
+      "produces_artifact": "working/copy/arc_allocation.json",
+      "gate_codes": ["AF-COVERAGE-1"],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_arc",
+        "label": "converting arc — per-slide arc-section allocation"
+      }
+    },
+    {
+      "id": "P4-COPY",
+      "order": 4,
+      "name": "Slide Copy",
+      "owning_role": "slide-copywriter",
+      "sop_refs": ["slide-copywriter-sops.md"],
+      "produces_artifact": "working/copy/slides_copy.md",
+      "gate_codes": ["AF-OBI-6"],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_slides_copy",
+        "label": "slide copy authored per doctrine (hook >=7x, 10 components)"
+      }
+    },
+    {
+      "id": "PF-DESIGN",
+      "order": 4.5,
+      "name": "Typography / Design Brief",
+      "owning_role": "typography-architect",
+      "sop_refs": ["typography-architect-sops.md"],
+      "produces_artifact": "working/research/design-brief-*.md",
+      "gate_codes": [],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_design_brief",
+        "label": "typography/design brief — per-slide creative art direction"
+      }
+    },
+    {
+      "id": "P4-RENDER",
+      "order": 4.9,
+      "name": "Deterministic Render (build_deck.py — this script)",
+      "owning_role": "slide-image-creator",
+      "sop_refs": ["slide-image-creator-sops.md"],
+      "produces_artifact": "renders/slide-*.png",
+      "gate_codes": ["AF-P1", "AF-P2", "AF-R3", "AF-PLACEHOLDER", "AF-RENDERER", "AF-MODEL-SOVEREIGNTY", "AF-NO-VISION-QC"],
+      "preflight": null,
+      "emits": {
+        "self": true,
+        "checks": ["PROMPT_CHAR_FLOOR", "PROMPT_CHAR_CEILING", "FORBIDDEN_DEMOGRAPHIC_DEFAULTS"]
+      }
+    },
+    {
+      "id": "P8-ASSEMBLE",
+      "order": 8,
+      "name": "PPTX Assembly",
+      "owning_role": "pptx-assembly-specialist",
+      "sop_refs": ["pptx-assembly-specialist-sops.md"],
+      "produces_artifact": "*-FINAL.pptx",
+      "gate_codes": ["AF-CONVERTER-PARITY"],
+      "preflight": null,
+      "emits": { "self": true }
+    },
+    {
+      "id": "P9-DELIVER",
+      "order": 9,
+      "name": "Delivery Interlock",
+      "owning_role": "delivery-concierge",
+      "sop_refs": ["delivery-concierge-sops.md"],
+      "produces_artifact": "working/delivery/PRESENTER-AUDIO.mp3",
+      "gate_codes": ["AF-DELIVER", "AF-DH1", "AF-DELIVERY-COMPLETE"],
+      "preflight": null
+    }
+  ],
+
+  "autofails": [
+    { "code": "AF-P1", "stage": "Render", "level": "slide", "in_ruleset": false,
+      "trigger": "composed prompt under the floor",
+      "enforced_by": "build_deck", "py_symbol": "PROMPT_CHAR_FLOOR" },
+    { "code": "AF-P2", "stage": "Render", "level": "slide", "in_ruleset": false,
+      "trigger": "composed prompt over the 18000 ceiling",
+      "enforced_by": "build_deck", "py_symbol": "PROMPT_CHAR_CEILING" },
+    { "code": "AF-R3", "stage": "Render", "level": "slide", "in_ruleset": false,
+      "trigger": "hardcoded demographic default in the slide spec (60/30/10 landmine)",
+      "enforced_by": "build_deck", "py_symbol": "FORBIDDEN_DEMOGRAPHIC_DEFAULTS" },
+    { "code": "AF-RESEARCH-GATE", "stage": "1Q", "level": "DECK", "in_ruleset": false,
+      "trigger": "research_complete not true",
+      "enforced_by": "build_deck", "py_symbol": "_chk_research_brief" },
+    { "code": "AF-COVERAGE-1", "stage": "1Q/6", "level": "DECK", "in_ruleset": true,
+      "trigger": "output deck has fewer slides than the client source deck (Mode B add-only)",
+      "enforced_by": "build_deck", "py_symbol": "_chk_coverage" },
+    { "code": "AF-DELIVER", "stage": "Done", "level": "DECK", "in_ruleset": false,
+      "trigger": "delivery interlock — five-file bundle not assembled",
+      "enforced_by": "closeout_gate", "py_symbol": null },
+    { "code": "AF-DH1", "stage": "Done", "level": "DECK", "in_ruleset": false,
+      "trigger": "delivery human-handoff gate not satisfied",
+      "enforced_by": "closeout_gate", "py_symbol": null },
+    { "code": "AF-DELIVERY-COMPLETE", "stage": "Done", "level": "DECK", "in_ruleset": false,
+      "trigger": "five-file bundle / infographic / GHL upload incomplete",
+      "enforced_by": "closeout_gate", "py_symbol": null },
+
+    { "code": "AF-HOOK-1", "stage": "1Q/5/6", "level": "DECK", "in_ruleset": true,
+      "trigger": "hook on > 4 slides", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-HOOK-2", "stage": "1Q/5/6", "level": "slide", "in_ruleset": true,
+      "trigger": "hook in a footer/band position", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-HOOK-3", "stage": "1Q", "level": "DECK", "in_ruleset": true,
+      "trigger": "zero dedicated hook slides", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-HOOK-4", "stage": "1Q/5", "level": "slide", "in_ruleset": true,
+      "trigger": "hook printed 2+ times on one slide", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-HOOK-5", "stage": "1Q/5/6", "level": "slide", "in_ruleset": true,
+      "trigger": "hook mutated/extended/reworded", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-HOOK-6", "stage": "5/6", "level": "slide", "in_ruleset": true,
+      "trigger": "hook misspelled/garbled on render", "enforced_by": "agent", "py_symbol": null },
+    { "code": "AF-HOOK-7", "stage": "1Q/5", "level": "slide", "in_ruleset": true,
+      "trigger": "signature quote conflated with main hook", "enforced_by": "qc_check", "py_symbol": null },
+
+    { "code": "AF-AUD-1", "stage": "1Q/5", "level": "slide", "in_ruleset": true,
+      "trigger": "speaker SAY line on the face", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-AUD-2", "stage": "1Q/5", "level": "slide", "in_ruleset": true,
+      "trigger": "internal pitch doctrine as caption", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-AUD-3", "stage": "1Q/5", "level": "slide", "in_ruleset": true,
+      "trigger": "image-narration caption", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-AUD-4", "stage": "1Q/5", "level": "slide", "in_ruleset": true,
+      "trigger": "meta-telegraph / 'webinar' / technique label", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-AUD-5", "stage": "1Q/5", "level": "slide", "in_ruleset": true,
+      "trigger": "credential/justification dump", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-PLACEHOLDER", "stage": "5/6", "level": "slide", "in_ruleset": true,
+      "trigger": "bracket/placeholder token on a rendered slide (AF-AUD-6)", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-AUD-6", "stage": "5/6", "level": "slide", "in_ruleset": true,
+      "trigger": "placeholder on render — cross-listed audience-facing alias of AF-PLACEHOLDER", "enforced_by": "qc_check", "py_symbol": null },
+
+    { "code": "AF-OBI-1", "stage": "1Q/5", "level": "slide", "in_ruleset": true,
+      "trigger": "> 3 text blocks", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-OBI-2", "stage": "1Q", "level": "slide", "in_ruleset": true,
+      "trigger": "headline > 9 words", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-OBI-3", "stage": "1Q", "level": "slide", "in_ruleset": true,
+      "trigger": "2+ core ideas", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-OBI-4", "stage": "1Q", "level": "slide", "in_ruleset": true,
+      "trigger": "full value trio on one slide", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-OBI-5", "stage": "1Q", "level": "slide", "in_ruleset": true,
+      "trigger": "bulleted pain list", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-OBI-6", "stage": "5", "level": "slide", "in_ruleset": true,
+      "trigger": "comparison table > 2 rows", "enforced_by": "qc_check", "py_symbol": null },
+
+    { "code": "AF-DEN-1", "stage": "1Q/6", "level": "DECK", "in_ruleset": true,
+      "trigger": "price beats < 8 slides apart", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-DEN-2", "stage": "1Q/6", "level": "DECK", "in_ruleset": true,
+      "trigger": "anchor outside 25-45% depth", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-DEN-3", "stage": "1Q/6", "level": "DECK", "in_ruleset": true,
+      "trigger": "DROP with no BUILDUP before it", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-DEN-4", "stage": "1Q/6", "level": "DECK", "in_ruleset": true,
+      "trigger": "no value-stack slide before Drop 1", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-DEN-5", "stage": "1Q/6", "level": "DECK", "in_ruleset": true,
+      "trigger": "no promises beat before anchor", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-DEN-6", "stage": "1Q/6", "level": "DECK", "in_ruleset": true,
+      "trigger": "Wall of Wins not 4-6 before offer", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-DEN-7", "stage": "1Q/6", "level": "DECK", "in_ruleset": true,
+      "trigger": "no 4-7 slide re-pitch after FINAL", "enforced_by": "qc_check", "py_symbol": null },
+    { "code": "AF-DEN-8", "stage": "1Q/6", "level": "DECK", "in_ruleset": true,
+      "trigger": "section below its slide floor", "enforced_by": "qc_check", "py_symbol": null },
+
+    { "code": "AF-RENDERER", "stage": "6", "level": "DECK", "in_ruleset": true,
+      "trigger": "deck not produced by canonical scripts/build_deck.py (or preflight skipped)",
+      "enforced_by": "closeout_gate", "py_symbol": null },
+    { "code": "AF-MODEL-SOVEREIGNTY", "stage": "4/6", "level": "DECK", "in_ruleset": true,
+      "trigger": "generation used a non-manifest model",
+      "enforced_by": "closeout_gate", "py_symbol": null },
+    { "code": "AF-NO-VISION-QC", "stage": "5/6", "level": "DECK", "in_ruleset": true,
+      "trigger": "no multimodal image-QC pass over rendered slides",
+      "enforced_by": "closeout_gate", "py_symbol": null },
+    { "code": "AF-CONVERTER-PARITY", "stage": "6", "level": "DECK", "in_ruleset": true,
+      "trigger": "assembled PPTX page count != QC-passed render count",
+      "enforced_by": "closeout_gate", "py_symbol": null }
+  ],
+
+  "roles": [
+    { "id": "brainstorming-buddy-presentations", "owns_phase": null },
+    { "id": "brand-steward", "owns_phase": null },
+    { "id": "capacity-reliability-engineer", "owns_phase": null },
+    { "id": "deep-research-specialist-presentations", "owns_phase": "P-0.5-RESEARCH" },
+    { "id": "delivery-concierge", "owns_phase": "P9-DELIVER" },
+    { "id": "devils-advocate-presentations", "owns_phase": null },
+    { "id": "director-of-presentations", "owns_phase": "P0A-INTAKE" },
+    { "id": "first-time-onboarding-presentations", "owns_phase": null },
+    { "id": "fish-audio-expression-specialist", "owns_phase": null },
+    { "id": "healer-presentations", "owns_phase": null },
+    { "id": "hook-strategist", "owns_phase": null },
+    { "id": "media-librarian-ghl-updater", "owns_phase": null },
+    { "id": "offer-price-strategist", "owns_phase": "P3-ARC" },
+    { "id": "pptx-assembly-specialist", "owns_phase": "P8-ASSEMBLE" },
+    { "id": "presenter-coach", "owns_phase": null },
+    { "id": "presenters-guide-specialist", "owns_phase": null },
+    { "id": "presenters-speech-writer", "owns_phase": null },
+    { "id": "qc-specialist-presentations", "owns_phase": "P1Q-COPY-QC" },
+    { "id": "slide-copywriter", "owns_phase": "P4-COPY" },
+    { "id": "slide-image-creator", "owns_phase": "P4-RENDER" },
+    { "id": "slide-submitter", "owns_phase": null },
+    { "id": "typography-architect", "owns_phase": "PF-DESIGN" }
+  ]
+}

@@ -2,7 +2,7 @@
 **Standard Operating Procedure: Branded Webinar / Slide Deck, End-to-End**
 **Version 2.3 (2026-06-11)**
 **Audience:** any client's OpenClaw agent (lead agent + sub-agents). This document is self-contained. The executing agent needs NOTHING else to take a client from a blank conversation to a finished, QC-passed, branded, pitch-correct PowerPoint.
-**Provenance:** generalized from the proven Lyric Hawkins "Enrollment on Autopilot" run (75 slides, final QC 9.42). Pitch mechanics are drawn from Alex Hormozi's $100M Offers and $100M Leads, the flow, archetypes, ladder choreography, and exemplar prompt are extracted from the actual Lyric run assets (75 prompts, final deck, execution runbook), and the pitch doctrine in Section 4.3 is transcribed from the operator's live teaching sessions. All client-specific values are DISCOVERY VARIABLES. Nothing client-specific is hardcoded.
+**Provenance:** generalized from the proven 75-slide reference run (final QC 9.42), the gold-standard reference deck this SOP encodes. Pitch mechanics are drawn from Alex Hormozi's $100M Offers and $100M Leads; the flow, archetypes, ladder choreography, and exemplar prompt are extracted from the proven reference run assets (75 prompts, final deck, execution runbook); and the pitch doctrine in Section 4.3 is transcribed from the operator's live teaching sessions. **Every concrete name, niche, price, hook line, logo wordmark, deck title, and number that appears anywhere in this SOP is an ILLUSTRATIVE EXAMPLE, not a fixed value: each is a DISCOVERY VARIABLE the agent substitutes from the live client interview.** Nothing client-specific is hardcoded; the examples teach the SHAPE, the discovery variables supply the content.
 
 ---
 
@@ -11,18 +11,29 @@
 Take a client from "I want a webinar deck" to a delivered PPTX through this exact pipeline:
 
 ```
+STEP -1  First-time-user onboarding (ROLE-22, once per user) then Brainstorming Buddy (ROLE-17)
 STEP 0   Create local + GHL media library folders        (always first)
-PHASE A  Discovery interview (3 to 10 adaptive questions)
-PHASE B  Slide math: duration to slide count cap
-PHASE 1  Write every slide's copy (Hormozi structure + price drop)
-PHASE 1Q Internal copy QC gate (agents, >= 8.5)
+PHASE A  Discovery interview (3 to 10 adaptive questions; incl. the SOP-IMG-03 style branch)
+PHASE B  Slide math: duration to slide count cap (incl. the SOP-SLIDE-04 density floors + ladder spacing)
+PHASE 1  Write every slide's copy (Hormozi structure + price drop; AUDIENCE-vs-SAY tagging pass)
+PHASE 1Q Internal copy QC gate (agents, >= 8.5; + Slide-Craft AF-HOOK/AF-AUD/AF-OBI + Density AF-DEN batteries)
 PHASE 1A OWNER APPROVAL GATE (human says yes before any prompt is written)
-PHASE 2  Write one image prompt per slide (1,500 to 15,000 chars)
-PHASE 3  Prompt QC gate (5 to 10 agents, >= 8.5, auto-loop)
-PHASE 4  Generate on Kie.ai gpt-image-2 (rate-capped, polled, loop-guarded)
-PHASE 5  Image QC gate (>= 8.5, auto-loop, passes upload to GHL immediately)
-PHASE 6  PPTX assembly, final deck QC, speaker notes, delivery
+PHASE 1.5 Typography Architect (ROLE-18): lock type_system + layout_map + treatment_table BEFORE prompts;
+          Brand Steward locks the single LOGO_URL in parallel. (Density-floor overhaul: typography is decided up front.)
+PHASE 2  Write one image prompt per slide (1,500 to 15,000 chars), written TO the treatment table;
+          logo via image-to-image (Mode B, SOP-IMG-01); hook slides pure-type
+PHASE 3  Prompt QC gate (5 to 10 agents, >= 8.5, auto-loop; + design-craft AF-P9..P15)
+PHASE 4  Generate on Kie.ai gpt-image-2 (rate-capped, polled, loop-guarded; logo always I2I)
+PHASE 5  Image QC gate (>= 8.5, auto-loop; + render AF-I8..I16 / AF-PLACEHOLDER; passes upload to GHL)
+PHASE 6  PPTX assembly, final deck QC (+ deck-level AF-D1/D2/D3, cross-slide logo-drift, density re-verify,
+          placeholder re-scan), speaker notes, delivery
+POST-6   Presenter's Guide (ROLE-19), Presenter's Speech + audio demo (ROLE-20 + ROLE-21), Presenter Coach (ROLE-14)
 ```
+
+**Density-floor overhaul SOP clusters (2026-06-14; these EXTEND this master SOP and are enforced as auto-fails by the QC role):**
+- Slide-craft: `universal-sops/presentation-slide-craft/` -- SOP-SLIDE-01 One Big Idea, SOP-SLIDE-02 Audience-Facing Only, SOP-SLIDE-03 Hook Doctrine, SOP-SLIDE-04 Deck Density and Pacing, SOP-SLIDE-05 Process Manifest (the per-run attestation that the full SOP stack ran), and MASTER-QC-AUTOFAIL-RULESET (the machine-checkable auto-fail spec the QC gate is wired from, including AF-COVERAGE-1 and the renderer + process-manifest auto-fails).
+- Design-system: `universal-sops/presentation-design-system/` -- Creative Typography Guide, Pure-Typography Hook Slides, Variable Layout / Anti-Template, Logo Consistency. Owned at write time by the Typography Architect (ROLE-18) and Brand Steward (ROLE-02).
+- Image-library: `universal-sops/presentation-image-library/` -- SOP-IMG-01 Kie call mechanics per mode, SOP-IMG-02 DIU integration + library seeding, SOP-IMG-03 the "do you have a style or should I creatively develop one?" branch + NAMED-STYLES seed, SOP-IMG-04 signature-style recall + DIU logo-as-I2I.
 
 **Non-negotiables (memorize before starting):**
 - Media library folders (local + GHL) are created FIRST, before anything else.
@@ -37,7 +48,7 @@ PHASE 6  PPTX assembly, final deck QC, speaker notes, delivery
 - Client's OWN API keys only (KIE, Ollama Cloud, OpenRouter, GHL, Drive), from the client's own box. Never another client's keys, never the operator's keys.
 - No em dashes anywhere, in any output, ever. The em dash is a dead giveaway of unedited AI output; QC auto-fails it on sight.
 - **NEVER DIE SILENTLY.** Any hiccup (Kie.ai tokens/credits exhausted, a model unavailable, GHL auth failing, a stalled loop) is escalated to the operator IMMEDIATELY. A run that quietly stops is worse than a run that loudly fails.
-- The deck has a HOOK and it is sung at least 7 times (Section 4.3, rule 1). A deck without a singing hook is not done.
+- The deck has a HOOK and it lives on EXACTLY 3 to 4 dedicated pure-typography slides at named beats and NOWHERE ELSE; footer-stamping is banned; the refrain is verbatim (Section 4.3, rule 1). A deck with the hook on more than 4 slides, footer-stamped, doubled on a slide, mutated, or with zero dedicated hook slides is not done. (Density-floor overhaul 2026-06-14: this REPLACES the RETIRED "sung at least 7 times" floor, which produced the 40-slide footer-stamping. See universal-sops/presentation-slide-craft/SOP-SLIDE-03-HOOK-DOCTRINE.md.)
 
 ---
 
@@ -130,7 +141,7 @@ Sub-agent counts in this SOP (writers, 5 to 10 QC agents, submission agent) are 
 7. **Calm Premium** (understated, luxury, scarcity through quietness)
 Variable: `TONE`.
 
-**Q4. PRICE STRUCTURE (always ask).** "Do you want a gradual price drop (we walk the price down from a big anchor, the proven Lyric method) or a straight price (one price, stated once)?" If gradual: collect the full offer stack, each component's standalone value, the anchor, the final price, payment plan. If straight: collect the price and the value stack that justifies it. Variables: `PRICE_MODE` (`drop` | `straight`), `OFFER_STACK`, `PRICE_ANCHOR`, `FINAL_PRICE`, `PAYMENT_PLAN`.
+**Q4. PRICE STRUCTURE (always ask).** "Do you want a gradual price drop (we walk the price down from a big anchor, the proven spread-ladder method) or a straight price (one price, stated once)?" If gradual: collect the full offer stack, each component's standalone value, the anchor, the final price, payment plan. If straight: collect the price and the value stack that justifies it. Variables: `PRICE_MODE` (`drop` | `straight`), `OFFER_STACK`, `PRICE_ANCHOR`, `FINAL_PRICE`, `PAYMENT_PLAN`.
 
 **Q5. VIP LEVEL (always ask).** "Do you want a VIP or premium tier in this pitch?" If yes: what it includes, its price, and how many spots (real scarcity only). Variables: `VIP_TIER`, `VIP_PRICE`, `VIP_SPOTS`.
 
@@ -165,6 +176,9 @@ Before any big project begins, the agent proves it understands the mission. Afte
 **MODE A: FROM SCRATCH.** The full pipeline as written: discovery, slide math, copy, prompts, generation, assembly.
 
 **MODE B: ENHANCEMENT (the client already has a deck).** The client hands over an existing presentation and the rule is absolute: **do not change their intent, do not change their words, do not change their methodology. Add on to, improve upon, never change.** The work in Mode B:
+
+**ANTI-COMPRESSION CAPTURE (mandatory, before any analysis):** count the existing source slides and record the integer as a TOP-LEVEL field `source_slide_count` in BOTH `mission_prd.json` and `enhancement_gap.json`. (Mode A net-new -> `source_slide_count: 0`.) This count becomes the deck's hard FLOOR for the rest of the run: `SLIDE_COUNT_FINAL = max(duration_target, source_slide_count)`. The output deck MUST contain AT LEAST `source_slide_count` slides. **This floor OVERRIDES the HARD MAX and the 90 absolute ceiling.** Never delete a client slide to hit a duration cap. **Mode B is ADD-ONLY: improve and expand, never reduce below `source_slide_count`.** A Mode B deck that ships with fewer slides than the source is an auto-fail (AF-COVERAGE-1; see the MASTER-QC-AUTOFAIL-RULESET).
+
 1. Analyze the existing deck against this SOP: flow, pitch structure, hook presence, pain coverage, proof density, cost-vs-value, one-big-idea compliance.
 2. Report the gap analysis to the owner BEFORE touching anything (this is the Mode B echo): which slides split (one idea per slide), which pain points need their own slides, where the hook will sing, where light pitches weave in, where the ladder and the cost-vs-value math insert, what the missing slides are.
 3. ADD slides: hook slides, pain slides, proof and white-paper slides, ladder slides, roadmap slides, quote slides, cost-vs-value slides. The client's original content slides keep their words verbatim (typo fixes only, flagged).
@@ -185,12 +199,13 @@ Before any big project begins, the agent proves it understands the mission. Afte
 | 45 min | 50 to 58 | 60 |
 | 60 min | 60 to 70 | 75 |
 | 90 min | 70 to 85 | 90 |
-| 120+ min | 80 to 90 | **90 absolute ceiling** |
+| 120+ min | 80 to 90 | 90 (Mode A cap only) |
 
 Rules:
-- The rate is roughly 1.3 to 1.5 slides per minute, tapering as duration grows. A three-hour presentation does NOT mean 300 slides. 90 is the absolute ceiling for any deck.
-- Below 30 minutes, the Hormozi arc compresses: merge the origin story into 2 slides, run ONE secret instead of three, and keep the offer section proportionally intact (the pitch never gets cut).
-- The agent proposes the slide count from this table; the client confirms it during the intake echo. Record `SLIDE_COUNT`.
+- The "Target" and "HARD MAX" columns are the **Mode A (net-new) target and cap only.** The rate is roughly 1.3 to 1.5 slides per minute, tapering as duration grows. A three-hour net-new presentation does NOT mean 300 slides; the Mode A cap tapers to ~90.
+- **The cap yields to the floor in Mode B.** `SLIDE_COUNT_FINAL = max(duration_target, source_slide_count)`. When the client hands over an existing deck, `source_slide_count` is the FLOOR and it OVERRIDES the Mode A HARD MAX and the ~90 cap. A source deck larger than 90 slides is NEVER rejected and is NEVER trimmed to fit a duration cap; Mode B is add-only (improve/expand, never reduce below `source_slide_count`). See Section 3.4 Mode B and AF-COVERAGE-1.
+- Below 30 minutes, the Hormozi arc compresses: merge the origin story into 2 slides, run ONE secret instead of three, and keep the offer section proportionally intact (the pitch never gets cut). This compression applies to Mode A only; in Mode B no client slide is ever removed.
+- The agent proposes the slide count: in Mode A from this table, in Mode B as `max(duration_target, source_slide_count)`; the client confirms it during the intake echo. Record `SLIDE_COUNT`.
 
 ### 4.1 Worked allocation table (apply percentages, then round and reconcile)
 
@@ -220,24 +235,24 @@ Percentages from the arc produce fractions. Use this pre-reconciled allocation f
 The offer section (rows 14 to 17) is never compressed below 10 slides on a 45+ slide deck. If `VIP_TIER` exists, it takes 1 to 2 slides inside row 14 (presented AFTER the core final price).
 
 
-### 4.2 THE PROVEN FLOW (teardown of the Lyric 75-slide deck; the narrative model)
+### 4.2 THE PROVEN FLOW (teardown of the 75-slide reference deck; the narrative model)
 
-The proven deck runs SEVEN sections with on-screen progress labels ("SECTION 3 OF 7"). Study this flow; it is the narrative the allocation table serves.
+The proven reference deck runs SEVEN sections with on-screen progress labels ("SECTION 3 OF 7"). Study this flow; it is the narrative the allocation table serves. **The "Signature moves" below are ILLUSTRATIVE example copy from one reference run (a childcare-niche deck) — substitute your own client's DISCOVERY VARIABLES (their promise, niche, numbers, prices, hook). The teaching is the SHAPE of each section, never the literal words or dollar figures.**
 
-| Section | Slides (of 75) | What it does | Signature moves |
+| Section | Slides (of 75) | What it does | Signature moves (illustrative; substitute DISCOVERY VARIABLES) |
 |---|---|---|---|
-| 1. THE HOOK | 1 to 7 | Promise, future-pace, painful math, reframe, commitment | "30 Seats. 30 Days." promise with objection-killer sub; "This is what FULL looks like" future-pace; "$48,000 a year. Gone." empty-chairs math; "It's not your heart. It's your system." reframe; "Stay. I dare you." commitment dare |
-| 2. AUTHORITY & STORY | 8 to 15 | Origin, receipts, peer proof, identity | "I didn't wake up like this"; "I'm not a coach who read about it. I built it. I run it. I'm you."; then/now split; receipts row (press, revenue, centers); "Women who look like us" representation wall; "If they did it, so can you" closer |
-| 3. SECRET #1 | 16 to 24 | Belief shift on the MESSAGE | Section banner; "They're not ignoring you. Your message is wrong."; old-way/new-way split; the 4 Questions framework; verified result ("47 inquiries, one post, 7 days"); client win; 3-step action plan; vision slide; **slide 24: ANCHOR plant ("worth $5,000+. Remember this number. Keep watching.")** |
-| 4. SECRET #2 | 25 to 35 | Belief shift on SPEED/system | "Fill seats in 7 days. Not 7 months."; silent-leak stat (95%); 72-Hour Rule; 5-step automated journey diagram; live-demo dashboard; sprint proof; doubter testimonial; 7-day roadmap; old/new contrast; **BUILDUP ("Imagine this running tonight") then slide 35: DROP 1 to $2,500 ("because you showed up live; this price does NOT leave this room")** |
-| 5. SECRET #3 | 36 to 43 | Belief shift on ECONOMICS/LTV | "One campaign. $3K to $10K a month."; lifetime-value math ($200/wk x 52 x 3 yrs = $31,200 from ONE family); One Message/One Funnel/One Follow-up; live funnel proof; real revenue testimonial; the Window (12 to 18 months urgency logic); identity slide ("The CEO you're about to become"); recap ("You now know more than 95% of owners") |
-| 6. THE OFFER | 44 to 59 | Choice frame, offer, stack, ladder | "Two Choices" frame; "Go build it" takeaway close; "Stop building. Start owning."; offer reveal with MAGIC name ("30 Kids In 30 Days Challenge"); one-promise slide; stack components one per slide, each named with a benefit and valued ($997, $1,497, $997...); VIP bonuses ($497, $997); full stack recap with checkmarks; **callback slide ("I told you to remember that number. Here it is: $5,282")**; LTV justification ("1 family = $9,600/yr; pays for itself"); **BUILDUP ("This is the part that changes everything") then slide 51: DROP 2 to $1,000 ("because you believed")** |
-| 7. THE CLOSE + FINAL PUSH | 60 to 75 | Objections, drops, guarantee, proof, urgency, welcome | Objection kills ("I'm too busy" = you don't have the system; "Will it scale?"); Day 1 onboarding picture; student proof with compliance line; future-pace Day 31; **BUILDUP ("You didn't leave. That tells me everything.") then slide 65: DROP 3 to $500 on the price-tag motif**; conditional guarantee ("Fill 3 seats. Or I pay. AND I'll personally work with you until you do."); "1,000 times" receipts; Wall of Wins (6 named results); keep-guessing/build-the-system choice; final push ("This isn't just a webinar. This is your moment."); last call with door-closing urgency and join URL; fast-action bonuses that expire; **slide 73: FINAL, the full strikethrough tag ($5,000 / $2,500 / $1,000 / $500 all struck) revealing GA $47 | VIP $97, 15-minute window**; full recap table with both prices; "You made it. Welcome to the family." celebration |
+| 1. THE HOOK | 1 to 7 | Promise, future-pace, painful math, reframe, commitment | "[PROMISE]. [TIMEFRAME]." promise with objection-killer sub; "This is what FULL looks like" future-pace; "$[COST_OF_INACTION] a year. Gone." painful-math; "It's not your heart. It's your system." reframe; "Stay. I dare you." commitment dare |
+| 2. AUTHORITY & STORY | 8 to 15 | Origin, receipts, peer proof, identity | "I didn't wake up like this"; "I'm not a coach who read about it. I built it. I run it. I'm you."; then/now split; receipts row (press, revenue, results); representation wall ("people who look like us"); "If they did it, so can you" closer |
+| 3. SECRET #1 | 16 to 24 | Belief shift on the MESSAGE | Section banner; "They're not ignoring you. Your message is wrong."; old-way/new-way split; the core framework; verified result (a real, specific client number); client win; 3-step action plan; vision slide; **slide 24: ANCHOR plant ("worth $[ANCHOR]+. Remember this number. Keep watching.")** |
+| 4. SECRET #2 | 25 to 35 | Belief shift on SPEED/system | "[OUTCOME] in [SHORT_TIMEFRAME]. Not [LONG_TIMEFRAME]."; silent-leak stat; the speed rule; automated-journey diagram; live-demo dashboard; sprint proof; doubter testimonial; roadmap; old/new contrast; **BUILDUP ("Imagine this running tonight") then slide 35: DROP 1 to $[DROP1] ("because you showed up live; this price does NOT leave this room")** |
+| 5. SECRET #3 | 36 to 43 | Belief shift on ECONOMICS/LTV | "One campaign. $[LOW] to $[HIGH] a month."; lifetime-value math (one customer x retention = $[LTV]); One Message/One Funnel/One Follow-up; live funnel proof; real revenue testimonial; the Window (urgency logic); identity slide ("The CEO you're about to become"); recap ("You now know more than 95% of [PEERS]") |
+| 6. THE OFFER | 44 to 59 | Choice frame, offer, stack, ladder | "Two Choices" frame; "Go build it" takeaway close; "Stop building. Start owning."; offer reveal with a MAGIC name ("[OFFER_NAME] Challenge"); one-promise slide; stack components one per slide, each named with a benefit and valued ($[ITEM_VALUE] each); VIP bonuses ($[ITEM_VALUE]); full stack recap with checkmarks; **callback slide ("I told you to remember that number. Here it is: $[STACK_TOTAL]")**; LTV justification ("1 customer = $[ITEM_VALUE]/yr; pays for itself"); **BUILDUP ("This is the part that changes everything") then slide 51: DROP 2 to $[DROP2] ("because you believed")** |
+| 7. THE CLOSE + FINAL PUSH | 60 to 75 | Objections, drops, guarantee, proof, urgency, welcome | Objection kills ("I'm too busy" = you don't have the system; "Will it scale?"); Day 1 onboarding picture; client proof with compliance line; future-pace Day 31; **BUILDUP ("You didn't leave. That tells me everything.") then slide 65: DROP 3 to $[DROP3] on the price-tag motif**; conditional guarantee ("Hit [MILESTONE]. Or I pay. AND I'll personally work with you until you do."); "1,000 times" receipts; Wall of Wins (real named results); keep-guessing/build-the-system choice; final push ("This isn't just a presentation. This is your moment."); last call with door-closing urgency and join URL; fast-action bonuses that expire; **slide 73: FINAL, the full strikethrough tag ($[ANCHOR] / $[DROP1] / $[DROP2] / $[DROP3] all struck) revealing GA $[FINAL_PRICE] | VIP $[VIP_PRICE], 15-minute window**; full recap table with both prices; "You made it. Welcome to the family." celebration |
 
 **Flow rules extracted (enforce in Phase 1):**
 1. Every section opens with a banner/progress slide and closes with an emotional punctuation slide.
 2. Each Secret follows: claim -> problem/stat -> framework -> proof -> action plan -> vision.
-3. Proof appears within 2 slides of every claim. Named, located testimonials ("Janelle, Atlanta GA") with compliance disclaimers.
+3. Proof appears within 2 slides of every claim. Named, located testimonials ("[NAME], [CITY]") with compliance disclaimers.
 4. The ladder spreads across sections (rungs near the 32/47/68/87/97% marks), every drop earns its reason, every drop follows a BUILDUP.
 5. Open loops plant early and close on screen with explicit callbacks.
 6. The deck talks TO one person in the client's voice, in second person, with the client's edge (the proven deck: edgy, unapologetic, emotionally poignant). TONE from intake governs every line.
@@ -248,13 +263,14 @@ The proven deck runs SEVEN sections with on-screen progress labels ("SECTION 3 O
 These are the principles the operator teaches live. They are not optional style notes; they are the logic the deck is built on, and copy QC scores against them.
 
 **1. THE HOOK DOCTRINE (the Purple Rain rule).** A presentation is written like a song: there is a rhythm, and there is a hook. A 5-minute song sings its hook 10 times so you remember a 5-minute song; most presenters give a 30-minute presentation and say their hook once. This system writes the hook and SINGS it.
-- The hook is the strongest part of the promise, the one thing the audience wants most, compressed into one singable line (proven deck: "30 Kids. 30 Days."; another client: "There is a difference between parenting by control and parenting through clarity.").
-- Phase 1 derives the hook from `BIG_PROMISE` + `OFFER_STACK`, records it as `HOOK` in intake.json, and the owner confirms it at the approval gate.
-- **The hook appears AT LEAST 7 TIMES across the deck** (scale up on longer decks: roughly one occurrence per 8 to 10 slides, never fewer than 7). Each occurrence is tied back to the content on that slide; it is a refrain, not wallpaper.
-- The hook gets at least one DEDICATED slide of its own (A4 type-dominant treatment).
-- **Sing it early.** Nobody waits until the end of the song to sing Purple Rain. First occurrence lands inside the first 10 to 15% of the deck, then recurs through every section, and reprises in the close.
-- **Refrain after proof.** When a story or case study proves the point, the hook is run again at the bottom of that slide, because the proof just earned it.
-- A strong hook can graduate into the client's signature quote and hashtag. Quote slides carry the client's NAME ONLY, no credentials (the T.D. Jakes rule: we quote the name, not the resume).
+- The hook is the strongest part of the promise, the one thing the audience wants most, compressed into one singable line (illustrative examples, substitute the client's own: "[PROMISE]. [TIMEFRAME]."; or a contrast line like "There is a difference between [OLD_WAY] and [NEW_WAY].").
+- Phase 1 derives the hook from `BIG_PROMISE` + `OFFER_STACK`, records it as `HOOK` in intake.json / mission_prd.json, and the owner confirms it at the approval gate. The canonical HOOK string is locked and is the single source of truth; every occurrence is rendered VERBATIM against it.
+- **The hook appears on EXACTLY 3 to 4 DEDICATED pure-typography slides at named beats, and NOWHERE ELSE.** (Density-floor overhaul 2026-06-14: this REPLACES the RETIRED prior "at least 7 times / one per 8 to 10 slides" floor. That floor produced the reference failure case's 40-slide footer-stamping; a CEILING is now enforced.) A hook-carrying slide is a slide whose one big idea IS the hook (A4 type-dominant, hook line large over a low-opacity image or clean type). More than 4 hook-carrying slides = auto-fail. Zero dedicated hook slides = auto-fail.
+- **The hook is NEVER a footer.** No bottom band, no recurring strip, no stamp at the base of content/proof/offer slides. Footer-stamping the hook is an auto-fail.
+- **The hook is a sacred, exact refrain:** verbatim every time, never reworded, never extended, never abbreviated, never printed twice on one slide, never misspelled.
+- **The natural beats (the 3 to 4 anchors):** (a) when the hook is born, right after the core contrast that produces it; (b) after the story that proves it; (c) at the result/payoff beat; (d) late, as the through-line into the close. The Hook Strategist names these anchors and produces an explicit HOOK-ABSENT list (every other slide). "Sing it early" and "refrain after proof" remain true ONLY as a note that the early statement and the after-proof reprise are TWO of the 3 to 4 dedicated beats, not a license for a footer.
+- **The signature quote is a SEPARATE beat** on its own dedicated slide; the main hook is never stamped on top of it (the reference failure case conflated them on its slide 18). A strong hook can graduate into the client's signature quote and hashtag. Quote slides carry the client's NAME ONLY, no credentials (the T.D. Jakes rule: we quote the name, not the resume).
+- Full doctrine and the enforcement battery (AF-HOOK): universal-sops/presentation-slide-craft/SOP-SLIDE-03-HOOK-DOCTRINE.md; rendered as pure typography per universal-sops/presentation-design-system/03-SOP-pure-typography-hook-slides.md.
 
 **2. PEOPLE BUY PROMISES, NOT PRODUCTS.** They do not buy the product; the product is just a reflection of the promise they want. Every teach and offer slide pitches the PROMISE. If the promise is strong enough, the product sells itself. Phase 1 maintains a running promise inventory: what is this product promising, slide by slide?
 
@@ -264,7 +280,7 @@ These are the principles the operator teaches live. They are not optional style 
 
 **5. EMOTION BUYS. LOGIC JUSTIFIES.** People buy on emotion and justify with logic, and in couples the two roles usually split: one partner is emotionally ready, the other needs the logical case. The deck must serve BOTH in every offer section: emotionally driven imagery and future-pacing for the heart, and explicit math (LTV, cost of inaction, payback) for the justifier. A deck that only inspires loses the justifier; a deck that only calculates loses the buyer.
 
-**6. COST VERSUS VALUE.** Every pitch explicitly answers two questions: what is the COST of not taking action, and what is the VALUE of taking action? If the offer produces money, do the math on screen (1 family = $9,600/yr; 3 = $28,800). If the offer does not produce money, run the PRICELESS PITCH (the American Express frame): hot dog $5, parking $20, the outcome they actually want: priceless. Never fabricate dollar values for non-monetary outcomes; elevate them above money instead.
+**6. COST VERSUS VALUE.** Every pitch explicitly answers two questions: what is the COST of not taking action, and what is the VALUE of taking action? If the offer produces money, do the math on screen (illustrative: 1 customer = $[ITEM_VALUE]/yr; 3 = $[3x_ITEM_VALUE]). If the offer does not produce money, run the PRICELESS PITCH (the American Express frame): hot dog $5, parking $20, the outcome they actually want: priceless. Never fabricate dollar values for non-monetary outcomes; elevate them above money instead.
 
 **7. LIGHT PITCHES, WOVEN.** Do not save the pitch for the end. Softly sing the song of the program throughout: "when you work with us," "inside our program," "when you attend this workshop." Every named piece of the client's methodology (their identity development structure, their guided development system, their frameworks) is a named SYSTEM, and every named system is a light sales point planted inside the teaching.
 
@@ -307,8 +323,8 @@ These limits exist because gpt-image-2 garbles dense text and because one big id
 - **Value stack slides: maximum 6 line items, each `Name + $X value`, 7 words per name.** If the stack has more than 6 components, split across two slides.
 - **Numbers are heroes.** When a number is the idea ($24,997, 38x, 90 days), the number IS the headline and everything else shrinks around it.
 - If a slide's copy cannot fit these limits, the slide has more than one idea. Split it.
-- **THE HOOK (mandatory):** derive `HOOK` per Section 4.3 rule 1 before writing slide 1. Sing it at least 7 times: first occurrence inside the first 10 to 15% of the deck, one dedicated A4 hook slide, refrains at the bottom of proof slides, light occurrences through every section, reprise in the close. Tag every occurrence in the slide entry (`HOOK_REFRAIN: yes`).
-- **THE SLIDE IS NOT THE SCRIPT:** slide text never duplicates the presenter's narration. If the headline says what the PRESENTER NOTE says, rewrite one of them.
+- **THE HOOK (mandatory):** derive `HOOK` per Section 4.3 rule 1 before writing slide 1. Place it on EXACTLY 3 to 4 DEDICATED pure-typography slides at the named anchor beats from the Hook Strategist's map (born after the contrast, after the proving story, at the payoff, late into the close) and NOWHERE ELSE. NEVER as a footer band. NEVER as body copy on a content/proof/offer slide. NEVER twice on one slide. The refrain is verbatim. Tag each dedicated occurrence in the slide entry (`HOOK_REFRAIN: yes`) and confirm every other slide is on the HOOK-ABSENT list. (Density-floor overhaul: this replaces the RETIRED "sing it at least 7 times / refrains at the bottom of proof slides" instruction, which authorized the footer.)
+- **THE SLIDE IS NOT THE SCRIPT (rule 15) -- the AUDIENCE-FACING-ONLY battery:** only audience copy (the one big idea as headline + optional sub + optional one supporting element, plus the hook on its dedicated slides) appears on the face. BANNED on the face and auto-failed: speaker SAY lines, internal pitch-doctrine captions (Section 4.3 is build-logic, never slide copy), image-narration captions, meta-telegraphing including the word "webinar" or any technique self-label, credential/justification dumps, and any bracket/placeholder token on a rendered slide. Spoken words live in the PRESENTER NOTE and route to the Presenter's Speech / Guide. Full doctrine: universal-sops/presentation-slide-craft/SOP-SLIDE-02-AUDIENCE-FACING-ONLY.md.
 - **PAIN POINTS:** one pain per slide, one emotionally driven image per pain, never a bulleted pain list.
 - **TEXT ANCHOR VARIATION:** record each slide's text anchor position (bottom band / left block / right block / center). Never more than 2 consecutive slides with the same anchor.
 
@@ -383,17 +399,17 @@ These are the mechanics from $100M Offers that make the pitch work. The writer a
 
 ### 5.5 The price sequence (both modes, fully specified)
 
-**Mode `drop` (the proven Lyric SPREAD LADDER, the default and strongly recommended):**
+**Mode `drop` (the proven SPREAD LADDER from the gold-standard reference deck, the default and strongly recommended):**
 
 The single most important discovery from the proven run: **the drops are SPREAD ACROSS THE DECK, not stacked at the end.** Each drop is planted inside the content, each is preceded by an emotional BUILDUP slide, and the audience rides the ladder down for the entire webinar. On the 75-slide deck the ladder was: ANCHOR at slide 24, DROP 1 at 35, DROP 2 at 51, DROP 3 at 65, FINAL at 73 (roughly the 32%, 47%, 68%, 87%, and 97% marks; place ladder rungs at those proportional positions on any slide count).
 
 Every ladder slide carries a LADDER tag in slides_copy.md: `ANCHOR`, `BUILDUP`, `DROP1`, `DROP2`, `DROP3`, or `FINAL`.
 
-1. **ANCHOR (plant it mid-teach, inside Secret #1 or #2):** a "value reality check" slide that establishes what the system is WORTH (e.g., "a system like this is worth $5,000+") with an explicit memory hook in the copy and presenter note: "Remember this number. Hold onto it. Keep watching." This is a VALUE anchor, not a price.
+1. **ANCHOR (plant it mid-teach, inside Secret #1 or #2):** a "value reality check" slide that establishes what the system is WORTH (illustrative: "a system like this is worth $[ANCHOR]+") with an explicit memory hook in the copy and presenter note: "Remember this number. Hold onto it. Keep watching." This is a VALUE anchor, not a price.
 2. **BUILDUP before every drop (mandatory):** each drop is immediately preceded by one emotional buildup slide (A1 archetype, future-pacing or recognition: "Imagine this running tonight," "You didn't leave. That tells me everything."). A drop with no buildup is a discount; a drop with a buildup is a reward.
 3. **DROPS, each with a stated earned REASON:** Drop 1 mid-content ("because you showed up live"), Drop 2 in the offer section ("because you believed"), Drop 3 in the close ("because you stayed"). Each drop slide shows the prior price(s) struck through (drawn gold lines per Section 7.4) above the new price, ideally on the price tag motif. Drops are strictly decreasing.
 4. **CALLBACKS:** when the full stack total is revealed in the offer section, the copy explicitly calls back to the anchor: "I told you to remember that number. Here it is." Open loops planted early get closed on screen.
-5. **FINAL (the real price, far below the ladder):** the actual buy price lands at the LAST rung and is dramatically below the value ladder (proven deck: $5,000 value ladder walked to $500, then the real price revealed at GA $47 / VIP $97 with a 15-minute action window). The ladder walks VALUE down; the price reveal then shatters even the lowest rung. The final slide shows the entire strikethrough stack on one tag.
+5. **FINAL (the real price, far below the ladder):** the actual buy price lands at the LAST rung and is dramatically below the value ladder (illustrative: a $[ANCHOR] value ladder walked to $[DROP3], then the real price revealed at GA $[FINAL_PRICE] / VIP $[VIP_PRICE] with a 15-minute action window). The ladder walks VALUE down; the price reveal then shatters even the lowest rung. The final slide shows the entire strikethrough stack on one tag.
 6. **VIP (if `VIP_TIER`):** presented WITH the final price as a two-option close (GA price | VIP price side by side), not after it.
 7. **Post-price sequence:** objection-handling slides (2 to 3, each killing one named objection), guarantee, proof wall, two-choices frame, fast-action bonuses with expiry, final push, last-call urgency with the join URL on screen, welcome/celebration slide.
 
@@ -401,13 +417,34 @@ Every ladder slide carries a LADDER tag in slides_copy.md: `ANCHOR`, `BUILDUP`, 
 1. VALUE STACK (same rules), 2. ANCHOR with memory hook, 3. ONE price reveal slide ("all of that, for `FINAL_PRICE`"), 4. CTA, 5. Bonuses stacked AFTER the price to widen the value gap, 6. VIP as a side-by-side option if applicable, 7. The same post-price sequence (objections, guarantee, proof, choice, urgency, welcome).
 
 **Validation checklist (lead agent writes `working/qc/price_sequence_check.md`, all boxes ticked before Phase 1Q):**
-- [ ] Every stack component has a stated value; stack math sums to the anchor, and THE SAME TOTAL appears identically on every slide that states it (the proven deck shipped with $5,282 on the stack slide and $5,276+ on the recap slide; cross-slide numeric consistency is now a hard check).
+- [ ] Every stack component has a stated value; stack math sums to the anchor, and THE SAME TOTAL appears identically on every slide that states it (a reference run shipped with $[STACK_TOTAL] on the stack slide and a drifted $[STACK_TOTAL] on the recap slide; cross-slide numeric consistency is now a hard check).
 - [ ] Anchor >= 3x the lowest ladder rung; the FINAL real price sits below the ladder for maximum contrast (drop mode).
 - [ ] Ladder rungs placed at the proportional positions; every drop has a BUILDUP slide immediately before it and a stated earned reason; drops strictly decrease and end exactly at the client-approved `FINAL_PRICE`.
 - [ ] Anchor slide contains the explicit memory hook; the offer section contains the callback line.
 - [ ] Guarantee positioned after the final price reveal; bonuses per mode rules; VIP side-by-side with the final price.
 - [ ] Scarcity/urgency claims are TRUE (real spots, real dates, real expiry); results claims carry the compliance disclaimer line.
 - [ ] No fabricated proof; placeholders marked `[CLIENT TO SUPPLY]`.
+- [ ] **(Density-floor overhaul) Minimum gap >= 8 slides between any two adjacent price beats**, computed against the FULL deck count (gold-standard reference run: 11/16/14/8). The anchor lands near the one-third mark (25-45% depth), never the back third (AF-DEN-1, AF-DEN-2).
+- [ ] **A promises beat precedes the anchor** (people buy promises, not products) (AF-DEN-5).
+- [ ] **A mandatory itemized value-stack slide precedes Drop 1**, summed to a total that EXCEEDS the anchor before the cheapest prices appear (reference run: stack proven to $[STACK_TOTAL] before the drops). For non-monetary offers, the stack is the deliverables list and the value frame is the PRICELESS pitch (rule 6), never fabricated dollar values (AF-DEN-4).
+- [ ] **A 4-to-7-slide RE-PITCH block follows the FINAL price** (recap the stack, restate the promises, reset the urgency) before the send-off (reference run: s74-75). A deck that closes on a plain thank-you fails (AF-DEN-7).
+- [ ] **The single Wall of Wins sits 4-6 slides before the offer** with a build-up run between (reference run: s68 -> s73 = 5), never jammed 2 slides against it (AF-DEN-6).
+
+### 5.5.1 THE WALL OF WINS (definition; density-floor overhaul)
+
+A Wall of Wins is an HOMAGE to REAL past clients who got results working with the owner: a growing board of real named people (portrait + name/location chip + result/stat chip) that EXPANDS over time as more clients win (transcript line 709; reference run s68 = a 3x2 grid of real owner portraits with name+stat chips). Hard rules:
+- It is ONE consolidated board, exactly one Wall of Wins slide in the deck (never two confused boards).
+- It is REAL named clients only. It is NOT a future-pace about the prospect's own outcome ("watch what changes" is wrong, the reference failure case's slide-29 defect), and NOT a research/white-paper footnote (that is a separate proof beat).
+- Tiles come from the client's interview. Until supplied, use clean `[CLIENT TO SUPPLY]` placeholder tiles at COPY stage; they must be FILLED with real wins or the slide PULLED before render. A bracket token on a rendered Wall of Wins is an auto-fail (AF-PLACEHOLDER).
+- Spacing: ~5 slides before the final offer with a build-up run between (AF-DEN-6).
+- The hook is NEVER stamped on the Wall of Wins (it is not a dedicated hook slide).
+
+### 5.5.2 PROMISES, VALUE STACK, AND RE-PITCH (mandatory beats; density-floor overhaul)
+
+- **Promises before the anchor:** plant the promise set (the transformations the program delivers) before the first number. People buy promises, not products (rule 2).
+- **Itemized value stack before Drop 1:** each deliverable with its value, summed to a total that exceeds the anchor, shown before the cheapest prices. For a non-monetary offer use the priceless frame, not fabricated dollar values (rule 6).
+- **Re-pitch after FINAL:** a 4-to-7-slide block that recaps the full stack, restates the promises, and resets the urgency ("next 15 minutes, FINAL_PRICE"), before the warm send-off.
+These three beats plus the 8-slide spacing floor are the fix for the reference failure case's "immediate drop" (2/10) failure. Full spacing doctrine and the AF-DEN battery: universal-sops/presentation-slide-craft/SOP-SLIDE-04-DECK-DENSITY-AND-PACING.md.
 
 ---
 
@@ -426,11 +463,11 @@ Every ladder slide carries a LADDER tag in slides_copy.md: `ANCHOR`, `BUILDUP`, 
 6. **Value Equation present:** teach and offer slides identifiably move one of the four variables.
 7. **Pitch rules:** stack/bonus/guarantee/scarcity rules from Section 5.4 followed; price checklist consistent.
 8. **No fabrication:** every proof point traces to `PROOF_ASSETS` or is marked `[CLIENT TO SUPPLY]`.
-8a. **Cross-slide numeric consistency:** every number that appears on more than one slide (stack total, anchor, prices, stats, counts) is IDENTICAL everywhere it appears. The QC agent compiles all repeated numbers and diffs them. The proven deck shipped with $5,282 on one slide and $5,276+ on another; this criterion exists because of that. Any mismatch = auto-fail for both slides.
+8a. **Cross-slide numeric consistency:** every number that appears on more than one slide (stack total, anchor, prices, stats, counts) is IDENTICAL everywhere it appears. The QC agent compiles all repeated numbers and diffs them. A reference run shipped with $[STACK_TOTAL] on one slide and a drifted $[STACK_TOTAL] on another; this criterion exists because of that. Any mismatch = auto-fail for both slides.
 8b. **Ladder integrity:** ANCHOR carries the memory hook, every DROP has a BUILDUP immediately before it and an earned reason, callbacks reference the anchor, FINAL sits below the ladder (drop mode).
 9. **Reads aloud:** the PRESENTER NOTE plus headline flow naturally when spoken.
 10. **No em dashes (auto-fail on sight; the em dash is the dead giveaway), no jargon the audience would not use, seventh-grade clarity on client-facing words.**
-11. **HOOK COUNT (mechanical):** count the hook occurrences across the deck. Fewer than 7 = auto-fail. First occurrence after the 15% mark = fail. No dedicated hook slide = fail. Proof slides without a refrain where the story proves the hook = flag for revision.
+11. **HOOK CEILING + ANTI-FOOTER (mechanical; density-floor overhaul, REPLACES the RETIRED "fewer than 7 = auto-fail" floor):** count the slides carrying the verbatim hook. MORE than 4 hook-carrying slides = auto-fail (AF-HOOK-1, wallpaper). The hook footer-stamped on ANY slide = auto-fail (AF-HOOK-2). Zero dedicated typography hook slides = auto-fail (AF-HOOK-3). The hook printed twice on one slide = auto-fail (AF-HOOK-4). The hook reworded/extended/abbreviated vs the canonical string = auto-fail (AF-HOOK-5). The signature-quote slide also carrying the main hook = auto-fail (AF-HOOK-7). A misspelled hook on a render = auto-fail (AF-HOOK-6, render stage). Full battery: presentation-slide-craft/SOP-SLIDE-03 + the QC role AF-HOOK table.
 12. **Doctrine compliance (Section 4.3):** promises pitched not products; every drop adds value (rule 3); both emotion AND logic served in the offer section (rule 5); cost-vs-value explicitly answered, priceless pitch used where outcomes are non-monetary (rule 6); light pitches woven (rule 7); appetizer not dinner (rule 8: a Secret that hands over the complete HOW = fail); at least one intrigue slide per section (rule 10); compare/contrast device present in every Secret (rule 11); a paid pitch exists (rule 14) unless the owner signed off on free-only.
 13. **Slide-vs-script separation:** slide text does not duplicate the presenter note narration (rule 15).
 14. **Text anchor variation:** no more than 2 consecutive slides share the same TEXT_ANCHOR (rule 16).
@@ -460,7 +497,7 @@ When ALL slides pass copy QC, present the full deck copy to the owner in readabl
 - The Kie.ai GPT Image 2 API hard ceiling is **20,000 characters** in `input.prompt` (roughly 3,000 to 3,300 words). The SOP maximum sits at 15,000 deliberately: a 5,000-character safety margin below the API ceiling so a prompt never gets rejected or truncated by the platform.
 - FRONT-LOAD the critical content anyway: composition, background, verbatim headline, brand colors, logo placement first; mood and negative-space detail last. If KIE ever returns a length error, condense to the front-loaded essentials and LOG the truncation. Never silently drop detail.
 
-### 7.2 Visual archetype library (THE FIVE PROVEN ARCHETYPES, from the Lyric 75-slide run)
+### 7.2 Visual archetype library (THE FIVE PROVEN ARCHETYPES, from the 75-slide reference run)
 
 The proven deck was built on exactly FIVE layout archetypes, rotated across all 75 slides. Every slide in Phase 1 is assigned one archetype (recorded in its slides_copy.md entry), and the prompt declares its archetype in its first line. Rotating five strong layouts beats inventing a new layout per slide: the deck stays coherent AND varied.
 
@@ -508,17 +545,19 @@ People-allocation rule: distribute `PEOPLE: yes` slides so the deck-wide ratio m
 
 ### 7.4 Strikethrough prices and struck-through text (special handling, required)
 
-Image models render strikethrough unreliably. For every DROP/FINAL ladder slide and any struck-through reframe, prompts MUST describe the strike as a drawn object, not a font style: "the old price '$9,997' rendered in muted gray with a single bold straight horizontal line in [BRAND_ACCENT] drawn cleanly through the center of the numerals, the line slightly wider than the text." Image QC checks the strike rendered as a clean single line through the text. If two generation attempts both fail the strike, the fallback is approved: generate the slide WITHOUT the old price text and add the struck-through old price as a native PPTX text box during Phase 6 assembly (logged in `working/checkpoints/pptx_text_overlays.json`). Native text overlay is the documented fallback for ANY slide whose verbatim text fails twice on render.
+Image models render strikethrough unreliably. For every DROP/FINAL ladder slide and any struck-through reframe, prompts MUST describe the strike as a drawn object, not a font style: "the old price '$[ANCHOR]' rendered in muted gray with a single bold straight horizontal line in [BRAND_ACCENT] drawn cleanly through the center of the numerals, the line slightly wider than the text." Image QC checks the strike rendered as a clean single line through the text. If two generation attempts both fail the strike, the fallback is approved: generate the slide WITHOUT the old price text and add the struck-through old price as a native PPTX text box during Phase 6 assembly (logged in `working/checkpoints/pptx_text_overlays.json`). Native text overlay is the documented fallback for ANY slide whose verbatim text fails twice on render.
+
+**(Density-floor overhaul) The native-text fallback covers ALL critical text, not price only.** The HOOK LINE on a dedicated hook slide and the BRAND NAME / TAGLINE inside the LOGO are critical text: if either garbles on render (in the reference failure case, a hook word rendered as "hclarity" and a logo wordmark garbled), apply the same two-attempt rule and composite the hook line (or the logo with its text) as a native PPTX layer at Phase 6 so spelling is GUARANTEED. The hook is a sacred verbatim refrain; a misspelled or mutated hook is an auto-fail (AF-HOOK-5/6), so the native-text guarantee is mandatory for the hook on its dedicated slides. The LOGO itself is always composited image-to-image from the locked LOGO_URL asset (never text-to-image), and if the mark still drifts after two attempts it is placed natively per universal-sops/presentation-design-system/05-SOP-logo-consistency.md.
 
 
 ### 7.5 GOLD-STANDARD EXEMPLAR PROMPT (the REAL Slide 1 from the proven run)
 
-This is the actual prompt that produced the title slide of the QC-9.42 Lyric deck, verbatim. Writer agents read this BEFORE writing. Every prompt produced must match this density, this structure, and this level of art direction, adapted to its own slide, archetype, and brand variables. Note the anatomy: the header block (title, ARCHETYPE / SECTION / LADDER tags, ONE BIG IDEA line), zone percentages, emotionally precise photo direction, exact verbatim copy with per-line font/size/color, the gold rule devices, the logo chip spec, MOOD + LIGHTING, and the closing COLOR VERIFICATION and AVOID blocks.
+This is the title-slide prompt from the QC-9.42 gold-standard reference run, lightly genericized. **It is ILLUSTRATIVE: the niche (a childcare scene here), the headline copy, the method name, the logo wordmark, and every number are DISCOVERY VARIABLES — substitute the client's own. The teaching is the prompt's density, structure, and level of art direction, not the literal scene or words.** Writer agents read this BEFORE writing. Every prompt produced must match this density, this structure, and this level of art direction, adapted to its own slide, archetype, and brand variables. Note the anatomy: the header block (title, ARCHETYPE / SECTION / LADDER tags, ONE BIG IDEA line), zone percentages, emotionally precise photo direction, exact verbatim copy with per-line font/size/color, the gold rule devices, the logo chip spec, MOOD + LIGHTING, and the closing COLOR VERIFICATION and AVOID blocks.
 
 ```
-### SLIDE 1: Fill 30 Seats In 30 Days
+### SLIDE 1: [DECK_TITLE] (illustrative title)
 [ARCHETYPE 4] [SECTION: THE HOOK] [LADDER: none]
-ONE BIG IDEA: An audacious, specific promise - 30 seats, 30 days, zero ad spend.
+ONE BIG IDEA: An audacious, specific promise - [PROMISE], [TIMEFRAME], [DIFFERENTIATOR]. (All bracketed tokens are DISCOVERY VARIABLES; substitute the client's own.)
 PROMPT:
 Archetype 4 - TYPE-DOMINANT PUNCH with supporting image band. 16:9 canvas. Base: warm off-white #FBF7F4 full frame. NO black backgrounds anywhere.
 
@@ -531,8 +570,8 @@ The photo band is separated from the type zone below it by a clean horizontal li
 TYPE ZONE (bottom 42%, warm off-white #FBF7F4 background):
 
 Headline - centered, Montserrat Black, very large (approximately 78–86pt relative to slide height), two lines:
-Line 1: "30 SEATS." - color: charcoal #231F20
-Line 2: "30 DAYS." - color: charcoal #231F20
+Line 1: "[PROMISE]." - color: charcoal #231F20
+Line 2: "[TIMEFRAME]." - color: charcoal #231F20
 The two lines sit tight together, dominating the zone. They are the first thing the eye reads.
 
 Sub-headline directly below, Montserrat ExtraBold, approximately 26–30pt, raspberry-pink #C8104E, centered:
@@ -541,9 +580,9 @@ Sub-headline directly below, Montserrat ExtraBold, approximately 26–30pt, rasp
 A thin horizontal rule in metallic gold #C9A24B (approximately 55% of the slide width, centered) sits between the sub-headline and the tertiary line below it - a premium breathing line.
 
 Tertiary line, Montserrat Medium, approximately 17–19pt, charcoal #231F20, centered, set in italics:
-"- The Enrollment On Autopilot Method -"
+"- The [DECK_TITLE] Method -" (illustrative: a named methodology line)
 
-LOGO: "7 Figure Childcare CEO" logo placed in the bottom-right corner of the type zone, approximately 9% of slide width, on a clean crisp white rectangular chip with a subtle 1px gold border (#C9A24B). Logo never recolored, never distorted, never clipped.
+LOGO: the "[CLIENT_LOGO_NAME]" logo placed in the bottom-right corner of the type zone, approximately 9% of slide width, on a clean crisp white rectangular chip with a subtle 1px gold border (#C9A24B). Logo never recolored, never distorted, never clipped.
 
 MOOD + LIGHTING: Hopeful, electric, big-promise energy. The image says "this is real and it's already happening somewhere." The type says "I will tell you exactly how." Not motivational-poster vague - specific, credible, aspirational.
 
@@ -847,19 +886,22 @@ PHASE A - DISCOVERY (3 to 10 questions, adaptive)
 [ ] A.10 Full intake echoed to client and CONFIRMED; intake.json written
 [ ] A.11 ECHO PROTOCOL complete: mission echoed, PRD + agent's own checklist (list of promises) produced,
          improvement pass listed, operator said GO; operating MODE (A scratch | B enhancement) declared
-[ ] A.12 Mode B only: gap analysis of the existing deck reported and approved BEFORE any change;
-         client's words preserved verbatim throughout
+[ ] A.12 Mode B only: source_slide_count captured as a TOP-LEVEL field in BOTH mission_prd.json and enhancement_gap.json
+         (Mode A -> 0); gap analysis of the existing deck reported and approved BEFORE any change;
+         client's words preserved verbatim throughout; add-only (never reduce below source_slide_count)
 
 PHASE B - SLIDE MATH
-[ ] B.1  SLIDE_COUNT set from the duration table; hard max respected (90 absolute ceiling)
+[ ] B.1  SLIDE_COUNT_FINAL = max(duration_target, source_slide_count). Mode A: set from the duration table (~90 net-new cap).
+         Mode B: the source_slide_count FLOOR overrides the cap; never trim a client slide (AF-COVERAGE-1)
 [ ] B.2  Allocation reconciled to exact SLIDE_COUNT (adjust Secrets, never the offer section)
 [ ] B.3  One big idea per slide confirmed as the governing rule
 
 PHASE 1 - SLIDE COPY
 [ ] 1.1  Every slide written in the Section 5.2 template, incl. PRESENTER NOTE
 [ ] 1.2  Hard copy limits honored (9-word headlines, 18-word subs, <= 3 blocks, bullet/stack caps)
-[ ] 1.2a HOOK derived and sung >= 7 times; first occurrence inside the first 15%; dedicated hook slide;
-         refrains after proof; reprise in the close; occurrences tagged
+[ ] 1.2a HOOK derived and placed on EXACTLY 3 to 4 DEDICATED pure-typography slides at named beats and NOWHERE ELSE;
+         NEVER a footer; verbatim refrain; printed once per slide; late reprise into the close; HOOK-ABSENT list covers
+         every other slide; the 3 to 4 occurrences tagged HOOK_REFRAIN: yes (density-floor overhaul; replaces the RETIRED >= 7 floor)
 [ ] 1.2b Doctrine honored (4.3): promises not products; every drop ADDS value; emotion + logic both served;
          cost-vs-value answered (priceless pitch where non-monetary); light pitches woven; appetizer not dinner;
          one pain per slide with emotional imagery; intrigue slide per section; compare/contrast in every Secret;
@@ -963,9 +1005,9 @@ PHASE 7 - RESILIENCE
 25. **Misnamed files.** Local `slide-NN.png` kebab-case; GHL `Slide NN v<N>`. Mix them and python-pptx assembles in the wrong order.
 26. **Asking questions the agent already knows the answer to.** Discovery is 3 to 10 questions, adaptive. Re-asking brand colors that are on file wastes the client's patience and the question budget.
 27. **Stacking all the drops at the end.** The proven ladder SPREADS across the deck with a buildup before every drop. Drops dumped back-to-back in the close read as desperation, not reward.
-28. **Numbers that drift between slides.** $5,282 on the stack slide, $5,276+ on the recap slide: it shipped. Cross-slide numeric consistency is now a copy QC auto-fail.
+28. **Numbers that drift between slides.** A reference run shipped $[STACK_TOTAL] on the stack slide and a drifted $[STACK_TOTAL] on the recap slide. Cross-slide numeric consistency is now a copy QC auto-fail.
 29. **No watchdog on a long run.** A stalled poll loop at 2am wastes the night. The resilience cron (11.5) resumes stalled stages from checkpoints every 10 minutes.
-30. **Singing the hook once, at the end.** Nobody waits until the end of the song to sing Purple Rain. Seven-plus refrains, starting early, or the audience leaves remembering nothing.
+30. **Singing the hook once, at the end (or wallpapering it).** Nobody waits until the end of the song to sing Purple Rain, but nobody sings it on every bar either. The hook stands on 3-4 DEDICATED pure-typography slides at named beats (born early, after proof, at the payoff, into the close) for ~4-5 appearances total, never two consecutive, never a footer on every slide. Over-stamping is the #1 defect; STRIP the excess rather than pad. (This is the live banded CEILING; the old "at least 7 / one per 8-10 slides" floor is RETIRED.)
 31. **Dropping price by stripping value.** Every drop ADDS to the table. The lower the price, the greater the value.
 32. **Over-teaching.** They got dinner instead of an appetizer, so they left full and bought nothing.
 33. **Putting the script on the slide.** If the slide says what the presenter says, nobody listens; the slide carries the idea, the presenter carries the words.
@@ -974,7 +1016,7 @@ PHASE 7 - RESILIENCE
 36. **Same text position every slide.** Eyes fade out. Move the anchor; keep them hunting.
 37. **Skipping the echo.** An agent that cannot echo the mission and produce its own list of promises has not understood the job, and the run will prove it expensively.
 38. **Dying silently.** Tokens ran out, a model went down, a loop stalled, and nobody said anything. Escalate immediately, every time.
-39. **300 slides for a 3-hour talk.** The cap tapers. 90 is the absolute ceiling. One big idea per slide governs everything.
+39. **300 slides for a 3-hour talk (Mode A).** The Mode A cap tapers; ~90 is the net-new cap. One big idea per slide governs everything. (Mode B is the inverse: never trim a client's source deck to hit a cap — `source_slide_count` is a FLOOR that overrides the cap; add-only.)
 
 ---
 

@@ -366,9 +366,9 @@ watchdog_removed = true in capacity_plan.json after delivery_verified = true.
 ### Example A -- Healthy capacity_plan.json
 ```json
 {
-  "client_slug": "coach-janelle",
-  "deck_slug": "enrollment-on-autopilot",
-  "probe_at": "2026-06-11T09:05:00Z",
+  "client_slug": "[CLIENT_SLUG]",
+  "deck_slug": "[DECK_SLUG]",
+  "probe_at": "[ISO_DATE]T09:05:00Z",
   "free_ram_gb": 9.2,
   "cpu_cores": 8,
   "cpu_load_15min": 1.4,
@@ -387,7 +387,7 @@ watchdog_removed = true in capacity_plan.json after delivery_verified = true.
 ```
 
 ### Example B -- Watchdog Stall Alert
-Telegram message from watchdog: "[enrollment-on-autopilot] watchdog: no new images completed in 15 min (current: 42). Checking Kie.ai status... poll loop appears stalled on task kie-abc-789. Attempting re-poll."
+Telegram message from watchdog: "[DECK_SLUG] watchdog: no new images completed in 15 min (current: 42). Checking Kie.ai status... poll loop appears stalled on task kie-abc-789. Attempting re-poll."
 
 ---
 

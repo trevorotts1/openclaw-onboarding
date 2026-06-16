@@ -141,11 +141,12 @@ small/low-stakes, OR when most context is already on file.
 2. Pull the SIMPLE question set for this department (the question bank below, simple set).
    Ask each one at a time. Skip any whose answer is already on file or already answered
    in the opening.
-3. Reflect each answer back in one line. Capture into brief.json under its field key.
-4. If a critical field is still unknown after the simple set, ask ONE clarifying
+3. **(density-floor overhaul) Ask the STYLE BRANCH verbatim** (SOP-IMG-03 section 2), once, early, before the STYLE BLOCK is built: "For the look of your slides, do you have a particular image style in mind? You can: (1) point me at an existing deck, past designs, or reference images you want me to match; (2) tell me a saved style name from your library if you already have one (like 'Style 1'); or (3) let me creatively develop a signature style for you. Which one?" Set `STYLE_SOURCE` to `match_reference` (+ `STYLE_REFERENCES`, `ANALYZE_REQUEST=true`), `saved_style` (+ `STYLE_ID`), or `creative_develop`. A deck that reaches Phase 2 with `STYLE_SOURCE` unset is a defect (it would invent a look with no client direction, the path that produced the reference failure case cookie-cutter typography). If `creative_develop`, sequence the existing mood/imagery/avoid stems into the short creative-develop micro-interview (<=5 questions; do not re-bank them) per SOP-IMG-03 section 3.
+4. Reflect each answer back in one line. Capture into brief.json under its field key.
+5. If a critical field is still unknown after the simple set, ask ONE clarifying
    follow-up (you may exceed 7 only to close a CRITICAL gap; flag it in the brief as
    `clarifying_followup: true`). Otherwise use the best default and mark `assumed: true`.
-5. Hand to SOP 9.3.
+6. Hand to SOP 9.3.
 
 **Output:** `working/brainstorm/presentations/<project-slug>/brief.json` (draft, `interview_confirmed: false`).
 
