@@ -1,3 +1,28 @@
+## [v12.17.1] - 2026-06-15 - fix(skill-15): operator/owner session isolation -- bound remote-rescue agent, groupAllowFrom collision fix, HARD QC gates
+
+### Changes
+
+**Root cause fixed:** `install-remote-rescue.sh` was adding operator chat IDs to `channels.telegram.groupAllowFrom`, causing operators and the client-owner to share the same OpenClaw session (`agent:main:telegram:<chatId>`). Operator messages appeared in the owner's chat and vice versa.
+
+**Three concrete fixes in `install-remote-rescue.sh` (v2.0.0):**
+1. Operator IDs are STRIPPED from `groupAllowFrom` on every run (and via new `--repair` flag for fleet remediation). Old installs are repaired without box downtime.
+2. The `remote-rescue` agent in `agents.list` now gets a `telegram.allowFrom` binding listing the operator chat IDs. OpenClaw checks per-agent `allowFrom` before falling back to the default agent, so operator DMs resolve to `remote-rescue` not `main`.
+3. The `remote-rescue` agent now gets a dedicated `workspace` path, physically separating its session storage from the `main` agent's.
+
+**Resulting session keys (fully disjoint):**
+- Owner: `agent:main:telegram:<ownerChatId>`
+- Each operator: `agent:remote-rescue:telegram:<operatorChatId>`
+
+No `/agent` switch needed -- routing is config-driven and permanent. Three operators DM-ing the same bot each get their own separate session (`agent:remote-rescue:telegram:5252140759`, `:6663821679`, `:6771245262`).
+
+**QC enforcement (`qc-blackceo-team-management.sh` v2.0.0):** 5 HARD auto-fail gates -- unbound stub, missing workspace, groupAllowFrom leak, main-agent collision, missing allowFrom. Per enforcement doctrine: a rule not auto-failed at the gate does not exist.
+
+**Docs updated:** `INSTALL.md` Step 0.5 (isolation guarantee section + live-turn test), Step 13B (session-key gate), `QC.md` sections 7 and 8, `SKILL.md` operator isolation model, `CHANGELOG.md`.
+
+**Files changed:** `15-blackceo-team-management/scripts/install-remote-rescue.sh`, `15-blackceo-team-management/qc-blackceo-team-management.sh`, `15-blackceo-team-management/skill-version.txt` (v6.6.0 to v6.7.0), `15-blackceo-team-management/INSTALL.md`, `15-blackceo-team-management/QC.md`, `15-blackceo-team-management/SKILL.md`, `15-blackceo-team-management/CHANGELOG.md`. Repo version bumped v12.17.0 -> v12.17.1 across all 9 markers + `cc-compat.json` onboardingVersion (Skill-15 deployment via `--repair` deferred to a later fleet rollout).
+
+---
+
 ## [v12.17.0] - 2026-06-15 - feat(role-library): "How to Use This Department" owner-facing guides for all departments + answer-from-guide wiring
 
 ### Changes
