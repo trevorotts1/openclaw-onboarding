@@ -1,3 +1,19 @@
+## [v12.18.0] - 2026-06-16 - feat(model-selection): capability-class model-selection framework — roles self-select the right model per task from whatever models a box has, no hardcoded brand names
+
+### Changes
+
+Every role maps to a capability CLASS (HEAVY-REASONING, WRITING, JUDGMENT, MECHANICAL, CONVERSATIONAL, VISION-additive, GENERATION); each class maps to a reference model chain; the resolver picks the BEST model a box actually has in that class, with graceful fallback — so clients without the reference Ollama lineup still self-select intelligently instead of defaulting to a dumb model.
+
+- **`shared-utils/model_selector.py` (NEW)** — the resolver: `infer_class()` (Layer A explicit override → B keyword → C VISION-additive → D dept backstop; 424/424 roles, 100%, no blind defaults) + `resolve_model_for_role()`; built-in `--self-test` (14/14 on full + degraded lineups).
+- **`templates/role-library/MODEL-SELECTION-FRAMEWORK.md` (NEW)** — spec of the 7 classes, governing rule, per-class reference ordering, the 4 inference layers, and the fixed GENERATION pipeline (gpt-image-2 / Fish Audio — never an LLM).
+- **`scripts/tag_role_classes.py` (NEW)** — stamps `capability_class` + `vision_flag` onto every role in `_index.json` (idempotent).
+- **`scripts/build-workforce.py`** — WIRED the resolver into the LIVE openclaw.json model-assignment path: `add_agent_to_config` → `resolve_dept_agent_model` (Layer-0 explicit pin → Layer-1 dept-dominant-class cascade → Layer-2 legacy fallback) → `resolve_role_model`. Capability class now drives `model.primary` (was documentation-only / dead code). Class tier → `--difficulty` so HEAVY roles get strong models.
+- **`shared-utils/select_model.py`** — hardened `capabilities_for_model()`: unknown model ids whose name hints generation (image/flux/sora/dalle/diffusion/video/veo/tts/whisper/audio-gen) are no longer text-capable, so a generation model can never be selected for an LLM role.
+- **`templates/role-library/_index.json`** — every role carries `capability_class` + `vision_flag`.
+- **`tests/unit/model-selector-capability-class.test.py` (NEW)** — coverage for infer_class + resolve_model_for_role + the unknown-generation-model gate.
+
+Independently verified 5/5: doc complete · self-test 14/14 ×2 · all 424 roles resolve, no blind default · resolver wired into the live assignment path (not dead code) · explicit per-role/dept overrides honored + reachable.
+
 ## [v12.17.4] - 2026-06-16 - fix(role-library): dedup _index.json roles + restore departments dict schema so qc-completeness.sh counts expected roles correctly (6 false-PARTIAL depts)
 
 ### Changes

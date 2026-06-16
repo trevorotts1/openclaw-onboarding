@@ -3569,6 +3569,15 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
         role_dir = os.path.join(dept_dir, folder_name)
         os.makedirs(role_dir, exist_ok=True)
 
+        # ── MSF Layer-2: resolve capability class for this role (v1.0.0) ────────
+        # Infer the role's capability class from the MSF ruleset. This is a
+        # fast in-process call (no subprocess) — graceful no-op if model_selector
+        # is unavailable. Result is stamped into 00-START-HERE.md and used to
+        # pick the best-available model for this specific role.
+        _msf_cls_info = get_role_capability_class(role_slug, dept_id)
+        _msf_class = _msf_cls_info.get("capability_class", "")
+        _msf_vision = _msf_cls_info.get("vision_flag", False)
+
         # ── WS-2: INSTANTIATE from the pre-written role-library (the fix) ──────
         # Before writing any empty `[Step 1 ...]` SOP stub, try to copy +
         # token-personalize the role's pre-written library template (which
@@ -3636,13 +3645,23 @@ SOP-Writer can author one (INSTRUCTIONS.md Moment 3.7).
             if role['number'] == 0:
                 role_type = "Department Head"
 
+            # MSF: include capability_class so the agent knows its class and
+            # the model selection logic is self-documenting in every role dir.
+            _msf_class_line = ""
+            if _msf_class:
+                _vision_marker = " +VISION" if _msf_vision else ""
+                _msf_class_line = (
+                    f"**Capability Class:** {_msf_class}{_vision_marker}  "
+                    f"*(model selection tier — see MODEL-SELECTION-FRAMEWORK.md)*\n"
+                )
+
             content = f"""# {role['name']}
 
 **Department:** {dept_info['name']} ({dept_info['emoji']})
 **Company:** {company_name}
 **Industry:** {industry}
 **Role Type:** {role_type}
-
+{_msf_class_line}
 ## What This Role Does
 {role['description']}
 
@@ -4849,9 +4868,21 @@ def add_agent_to_config(config, dept_id, dept_info):
     # N31 FIX (v11.1.0): model MUST be an object {primary, fallbacks:[...]},
     # NEVER a bare string. Bare strings bypass all fallback chains - if Ollama
     # Cloud is over-capacity the agent dies silently. See AGENTS.md N31.
-    # Layer-1 dept default (PLAN.md §3): modality-aware, cascade-resolved.
-    _dept_default = _resolve_dept_default_model(dept_id)
-    _primary = (_dept_default or {}).get("model_id") or "ollama/kimi-k2.6:cloud"
+    #
+    # MSF (v12.x): the dept-head model now comes from the capability-class layer.
+    # resolve_dept_agent_model() (a) honors any Layer-0 explicit pin on a seed
+    # entry, (b) infers the dept's DOMINANT capability class and resolves a
+    # concrete model from the box's AVAILABLE models via resolve_role_model(),
+    # and (c) falls straight through to the legacy _resolve_dept_default_model()
+    # cascade when model_selector is unavailable / no class model resolves.
+    # GENERATION roles never pull a dept HEAD off an LLM (the head is a router),
+    # and the per-role GENERATION gate inside resolve_role_model keeps individual
+    # generation roles off LLMs.
+    _seed_entry = next(
+        (a for a in agents_list if isinstance(a, dict) and a.get("id") == agent_id),
+        None,
+    )
+    _primary, _dept_default = resolve_dept_agent_model(dept_id, existing_entry=_seed_entry)
     # Record the dept default so the CC seeding step can write the
     # agent_settings (role_id IS NULL, setting_type='model') row (PLAN.md §3.2).
     _record_dept_default(dept_id, _dept_default, _primary)
@@ -5022,6 +5053,347 @@ def _resolve_director_model(dept_id):
     if data and data.get("model_id"):
         return data["model_id"]
     return None
+
+
+# ── Layer-2: Per-role capability-class model resolution (MSF v1.0.0) ──────────
+# The Capability-Class Model-Selection Framework adds a ROLE-LEVEL layer above
+# the existing department-tier system. Each role's model is resolved by its
+# capability class (HEAVY-REASONING / WRITING / JUDGMENT / MECHANICAL /
+# CONVERSATIONAL / GENERATION) rather than inheriting the dept default blindly.
+#
+# Backward-compatible: if model_selector.py is unreachable, the caller falls
+# through to the existing dept-default path — never crashes the build.
+
+_MSF_SELECTOR_CACHE: dict = {}  # slug+dept -> capability info (avoids re-import per role)
+_MSF_AVAILABLE: bool | None = None  # lazy init
+
+
+def _ensure_msf_available() -> bool:
+    """Import model_selector once; cache availability."""
+    global _MSF_AVAILABLE
+    if _MSF_AVAILABLE is not None:
+        return _MSF_AVAILABLE
+    try:
+        # shared-utils is already on sys.path (inserted at script top)
+        from model_selector import infer_class as _ic  # type: ignore  # noqa: F401
+        _MSF_AVAILABLE = True
+    except ImportError:
+        _MSF_AVAILABLE = False
+    return _MSF_AVAILABLE
+
+
+def get_role_capability_class(role_slug: str, dept_id: str, role_type: str = "") -> dict:
+    """
+    Return capability-class info for a role slug + dept.
+
+    Returns dict with at minimum:
+      capability_class, vision_flag, purpose_tier, required_modality,
+      generation_pipeline, inference_layer
+    Returns {} if model_selector.py is unavailable (caller uses dept default).
+    """
+    cache_key = f"{role_slug}|{dept_id}"
+    if cache_key in _MSF_SELECTOR_CACHE:
+        return _MSF_SELECTOR_CACHE[cache_key]
+    if not _ensure_msf_available():
+        return {}
+    try:
+        from model_selector import infer_class  # type: ignore
+        result = infer_class(role_slug, dept_id, role_type)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[MSF WARN] infer_class failed for '{role_slug}' ({dept_id}): {exc}",
+              file=sys.stderr)
+        result = {}
+    _MSF_SELECTOR_CACHE[cache_key] = result
+    return result
+
+
+def resolve_role_model(
+    role_slug: str,
+    dept_id: str,
+    role_type: str = "",
+    explicit_override: str | None = None,
+    class_info: dict | None = None,
+) -> dict:
+    """
+    Full per-role model resolution (Layer-2 of MSF). THE resolver — both the
+    per-role and dept-head assignment paths route through this function.
+
+    Resolution priority (highest wins):
+      0. explicit_override (from openclaw.json agents.list[].model if already set)
+      1. Capability-class resolution via model_selector.py
+      2. Dept-default fallback (existing _resolve_dept_default_model)
+
+    `class_info` lets a caller INJECT a pre-computed capability-class dict (e.g.
+    the dept's DOMINANT class) instead of inferring from the slug — this is how
+    the dept-head path makes the roster's true demand drive the model. When
+    omitted, the class is inferred from the slug as before.
+
+    Requirement (b) — GENERATION never gets an LLM and vice-versa — is enforced
+    here: a GENERATION class returns ONLY the fixed pipeline (no LLM cascade),
+    and a non-GENERATION class never returns a generation pipeline.
+
+    Returns dict with model_id (str | None), capability_class, vision_flag,
+    purpose_tier, needs_owner_input, prompt_to_owner, source.
+    """
+    # Layer 0 — explicit override wins without touching the cascade
+    if explicit_override:
+        return {
+            "model_id": explicit_override,
+            "capability_class": None,
+            "vision_flag": False,
+            "purpose_tier": None,
+            "needs_owner_input": False,
+            "prompt_to_owner": "",
+            "source": "explicit_override",
+        }
+
+    cls_info = class_info if class_info else get_role_capability_class(role_slug, dept_id, role_type)
+
+    # GENERATION class: fixed pipeline, no LLM
+    if cls_info.get("capability_class") == "GENERATION":
+        pipeline = cls_info.get("generation_pipeline") or "kie-ai/gpt-image-2-image-to-image"
+        return {
+            "model_id": pipeline,
+            "capability_class": "GENERATION",
+            "vision_flag": False,
+            "purpose_tier": None,
+            "needs_owner_input": False,
+            "prompt_to_owner": "",
+            "source": "msf_generation_pipeline",
+        }
+
+    # Layer 1 — call select_model.py via subprocess using the class-derived tier
+    if cls_info.get("purpose_tier"):
+        sel = _select_model_script_path()
+        if sel:
+            # select_model.py --mode task drives its chain off --difficulty
+            # (hard/medium/simple), NOT --purpose-tier. Map the class tier to the
+            # matching difficulty so a HEAVY class actually resolves the HEAVY
+            # chain (deepseek-pro/kimi) instead of defaulting to medium/mid. This
+            # is what makes the capability class genuinely DRIVE model strength.
+            _tier_to_difficulty = {"heavy": "hard", "mid": "medium", "fast": "simple"}
+            _difficulty = _tier_to_difficulty.get(cls_info["purpose_tier"], "medium")
+            try:
+                r = subprocess.run(
+                    [
+                        sys.executable, sel,
+                        "--mode", "task",
+                        "--purpose-tier", cls_info["purpose_tier"],
+                        "--difficulty", _difficulty,
+                        "--required-modality", cls_info.get("required_modality", "text"),
+                        "--format", "json",
+                    ],
+                    capture_output=True, text=True, timeout=15,
+                )
+                if r.stdout.strip():
+                    data = json.loads(r.stdout)
+                    mid = (data.get("model_id") or "").lower()
+                    if mid and "anthropic/" not in mid and "claude-" not in mid:
+                        return {
+                            "model_id": data["model_id"],
+                            "capability_class": cls_info.get("capability_class"),
+                            "vision_flag": cls_info.get("vision_flag", False),
+                            "purpose_tier": cls_info.get("purpose_tier"),
+                            "needs_owner_input": data.get("needs_owner_input", False),
+                            "prompt_to_owner": data.get("prompt_to_owner", ""),
+                            "source": "msf_class_cascade",
+                        }
+            except Exception as exc:  # noqa: BLE001
+                print(f"[MSF WARN] select_model subprocess failed for role "
+                      f"'{role_slug}': {exc}", file=sys.stderr)
+
+    # Layer 2 — dept default fallback (existing path; always worked before MSF)
+    dept_data = _resolve_dept_default_model(dept_id)
+    if dept_data and dept_data.get("model_id"):
+        return {
+            "model_id": dept_data["model_id"],
+            "capability_class": cls_info.get("capability_class"),
+            "vision_flag": cls_info.get("vision_flag", False),
+            "purpose_tier": dept_data.get("tier"),
+            "needs_owner_input": dept_data.get("needs_owner_input", False),
+            "prompt_to_owner": dept_data.get("prompt_to_owner", ""),
+            "source": "msf_dept_fallback",
+        }
+
+    # Terminal fallback — safe known good
+    return {
+        "model_id": "ollama/kimi-k2.6:cloud",
+        "capability_class": cls_info.get("capability_class"),
+        "vision_flag": cls_info.get("vision_flag", False),
+        "purpose_tier": cls_info.get("purpose_tier"),
+        "needs_owner_input": False,
+        "prompt_to_owner": "",
+        "source": "msf_terminal_fallback",
+    }
+
+
+# ── MSF: dept-dominant capability class (drives the dept-head agent model) ────
+# The dept-level agent (`dept-<id>`) is written ONCE per department and must be
+# provisioned for the MOST-DEMANDING role it owns (it is the head/router that
+# fields the hardest work and delegates the rest). So instead of the old static
+# dept-tier lookup, we infer the capability class of EVERY role in the dept's
+# roster and take the max by demand order, OR-ing the vision flag. That tier +
+# modality then drives the SAME class-aware resolver (resolve_role_model) that
+# per-role assignment uses — making the capability-class framework the real,
+# live driver of the model written into openclaw.json.
+#
+# Demand order (highest first). GENERATION is intentionally NOT here: a dept
+# whose roster is purely generation roles still needs an LLM-backed HEAD to
+# route/QC, so generation roles never pull the dept head off an LLM. The
+# per-role GENERATION gate (handled inside resolve_role_model / model_selector)
+# is what keeps individual generation roles off an LLM.
+_MSF_CLASS_DEMAND_ORDER = [
+    "HEAVY-REASONING",
+    "JUDGMENT",
+    "WRITING",
+    "CONVERSATIONAL",
+    "MECHANICAL",
+]
+
+
+def _dept_dominant_class(dept_id: str) -> dict:
+    """Infer the dept's dominant (most-demanding) capability class from its roster.
+
+    Returns a dict shaped like infer_class() output:
+      { capability_class, vision_flag, purpose_tier, required_modality, ... }
+    or {} when model_selector is unavailable OR the roster is empty (caller then
+    falls through to the legacy dept cascade — fully backward-compatible).
+    """
+    if not _ensure_msf_available():
+        return {}
+    try:
+        roles = parse_suggested_roles(dept_id)
+    except Exception:  # noqa: BLE001
+        roles = []
+    if not roles:
+        return {}
+
+    best_class = None
+    best_rank = len(_MSF_CLASS_DEMAND_ORDER)  # higher index = lower demand
+    any_vision = False
+    best_info = {}
+    for role in roles:
+        try:
+            name = (role.get("name") or "").lower()
+        except AttributeError:
+            continue
+        slug = name.replace(" ", "-").replace("(", "").replace(")", "")
+        slug = slug.replace("/", "-").replace("--", "-").strip("-")
+        info = get_role_capability_class(slug, dept_id)
+        cls = info.get("capability_class")
+        if info.get("vision_flag"):
+            any_vision = True
+        if cls in _MSF_CLASS_DEMAND_ORDER:
+            rank = _MSF_CLASS_DEMAND_ORDER.index(cls)
+            if rank < best_rank:
+                best_rank = rank
+                best_class = cls
+                best_info = info
+
+    if best_class is None:
+        return {}
+
+    # Re-derive tier/modality for the winning class, OR-ing in any vision need
+    # from across the roster (a graphics dept head should be vision-capable even
+    # if its single most-demanding role happened to be text-only).
+    purpose_tier = best_info.get("purpose_tier")
+    required_modality = "vision" if any_vision else best_info.get("required_modality", "text")
+    if required_modality == "vision" and not purpose_tier:
+        purpose_tier = "heavy"  # safety: vision needs a real tier
+    return {
+        "capability_class": best_class,
+        "vision_flag": any_vision,
+        "purpose_tier": purpose_tier,
+        "required_modality": required_modality,
+        "generation_pipeline": None,
+        "inference_layer": "dept_dominant",
+    }
+
+
+def resolve_dept_agent_model(dept_id, existing_entry=None):
+    """Class-aware dept-head model resolution (MSF live driver).
+
+    This is the REAL caller that wires the capability-class framework into the
+    agent model written to openclaw.json. Resolution priority:
+
+      0. Layer-0 explicit override — an existing `dept-<id>` entry that already
+         carries an explicit model.primary string (a client/Layer-0 pin) wins
+         outright and is never overwritten.
+      1. Capability-class cascade — infer the dept's dominant class, then run
+         resolve_role_model() with that tier/modality so the model comes from
+         the class layer against the box's AVAILABLE models.
+      2. Legacy dept-default cascade — if model_selector is unavailable, the
+         roster is empty, or the class layer resolves nothing, fall straight
+         through to _resolve_dept_default_model() (unchanged pre-MSF behavior).
+
+    Returns (primary_model_id: str, selector_data: dict|None) where selector_data
+    is the artifact-shaped dict for _record_dept_default (or None on override).
+    """
+    # Layer 0 — honor an explicit pin already on the entry (never clobber it).
+    if isinstance(existing_entry, dict):
+        existing_model = existing_entry.get("model")
+        explicit = None
+        if isinstance(existing_model, dict):
+            explicit = existing_model.get("primary")
+        elif isinstance(existing_model, str):
+            explicit = existing_model
+        if explicit:
+            mid = explicit.strip().lower()
+            # Refuse to honor a forbidden pin; fall through to resolution instead.
+            if mid and "anthropic/" not in mid and "claude-" not in mid and mid not in (
+                "openrouter/free", "free"
+            ):
+                return explicit, None
+
+    # Layer 1 — capability-class cascade. The dept's DOMINANT capability class
+    # (computed from its whole roster) supplies the purpose_tier + required
+    # modality that drive resolution. We resolve via resolve_role_model() — the
+    # SAME live resolver used for per-role assignment — and explicitly seed it
+    # with the dominant class so it never re-classifies the dept head off the
+    # roster's true demand (a dept HEAD is the most-demanding role it owns).
+    dom = _dept_dominant_class(dept_id)
+    if dom.get("purpose_tier"):
+        try:
+            resolved = _resolve_model_for_class(dom, dept_id)
+            mid = (resolved or {}).get("model_id")
+            if mid:
+                low = mid.lower()
+                if "anthropic/" not in low and "claude-" not in low and low not in (
+                    "openrouter/free", "free"
+                ):
+                    selector_data = {
+                        "model_id": mid,
+                        "tier": dom.get("purpose_tier"),
+                        "required_modality": dom.get("required_modality"),
+                        "capability_class": dom.get("capability_class"),
+                        "vision_flag": dom.get("vision_flag"),
+                        "source": resolved.get("source"),
+                    }
+                    return mid, selector_data
+        except Exception as exc:  # noqa: BLE001
+            print(f"[MSF WARN] dept-head class resolution failed for "
+                  f"'{dept_id}': {exc}", file=sys.stderr)
+
+    # Layer 2 — legacy dept-default cascade (unchanged, never crashes a build).
+    _dept_default = _resolve_dept_default_model(dept_id)
+    _primary = (_dept_default or {}).get("model_id") or "ollama/kimi-k2.6:cloud"
+    return _primary, _dept_default
+
+
+def _resolve_model_for_class(cls_info: dict, dept_id: str) -> dict:
+    """Resolve a concrete model from a capability-class info dict.
+
+    Thin bridge that makes the dominant-class tier/modality the REAL driver of
+    the resolved model: it injects the class dict into resolve_role_model() (THE
+    resolver), so the dept-head path and the per-role path share one code path.
+    resolve_role_model enforces requirement (b): GENERATION → fixed pipeline (no
+    LLM); non-GENERATION → text/vision LLM via select_model.py's cascade.
+    """
+    return resolve_role_model(
+        role_slug=f"{dept_id}-department-head",
+        dept_id=dept_id,
+        class_info=cls_info,
+    )
 
 
 # ── Layer-1 dept-default artifact (PLAN.md §3.2 / §6 reconciliation) ──

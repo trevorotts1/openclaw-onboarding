@@ -153,12 +153,58 @@ def _strip_provider(model_id: str) -> str:
     return mid
 
 
+# Generation-hint substrings. An UNKNOWN model id (matching no capability
+# family) whose bare slug contains one of these is almost certainly a media
+# generation / transcription model, NOT a text LLM. Such ids MUST NOT fall
+# through to the ["text"] default — otherwise the cascade could pick an image /
+# video / TTS model for a text LLM role.
+#
+# Adversarial case (the reason this gate exists): a client installs a new model
+# like `replicate/flux-pro-1.1` or `fal/sora-2-hd` or `somevendor/img-gen-xl`.
+# None match a known family, so the old behavior returned ["text"] and the model
+# became eligible for a HEAVY-REASONING / WRITING role — producing an LLM agent
+# backed by an image generator. The hints below classify these as their output
+# modality so model_has_modality(...,"text") returns False for them.
+_GENERATION_HINT_PATTERNS = re.compile(
+    r"(?:^|[-_./])(?:"
+    r"image|img|flux|sora|dalle|diffusion|"   # image generation
+    r"video|veo|kling|"                        # video generation
+    r"tts|whisper|"                            # speech-to-text / text-to-speech
+    r"audio[-_]?gen|"                           # audio generation (audio-gen, audiogen, audio_gen)
+    r"gpt-image"                                # explicit OpenAI image route
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _generation_hint_modality(bare: str) -> Optional[str]:
+    """Classify an UNKNOWN slug by its generation hint, or None if no hint."""
+    low = bare.lower()
+    if re.search(r"(?:^|[-_./])(?:image|img|flux|dalle|diffusion|gpt-image)", low):
+        return "image_generation"
+    if re.search(r"(?:^|[-_./])(?:video|veo|kling|sora)", low):
+        return "video_generation"
+    if re.search(r"(?:^|[-_./])whisper", low):
+        return "audio_transcription"
+    if re.search(r"(?:^|[-_./])(?:tts|audio[-_]?gen)", low):
+        return "audio_generation"
+    return None
+
+
 def capabilities_for_model(model_id: str) -> list:
     """Resolve a model's capability set from the shipped capability map.
 
     Family is matched by the FIRST family whose `match` regex matches the
     provider-stripped slug. More-specific families (e.g. qwen-vl, glm-vision)
     are listed before their broader siblings in the JSON so they win.
+
+    HARDENED (MSF): a slug that matches NO capability family but whose name
+    carries a generation hint (image|img|flux|sora|dalle|diffusion|video|veo|
+    tts|whisper|audio-gen|gpt-image) is classified by its OUTPUT modality and
+    NEVER returned as ["text"]. This guarantees text_ok=False for such ids so
+    they can never be selected for an LLM role (adversarial case above the
+    pattern definition). Recognized text models are unaffected — known families
+    match first and return their declared capabilities verbatim.
     """
     cap_map = load_capability_map()
     families = cap_map.get("families", [])
@@ -174,6 +220,12 @@ def capabilities_for_model(model_id: str) -> list:
                 return list(fam.get("capabilities", []))
         except re.error:
             continue
+    # Unknown family: if the bare slug looks like a generation/transcription
+    # model, report ONLY its generation modality (text_ok=False). Never let a
+    # generation model masquerade as a text LLM via the default.
+    if _GENERATION_HINT_PATTERNS.search(bare):
+        gen_modality = _generation_hint_modality(bare) or "image_generation"
+        return [gen_modality]
     return list(cap_map.get("default_capabilities", ["text"]))
 
 
