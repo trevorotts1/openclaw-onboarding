@@ -30,11 +30,17 @@ DOC_NAME = "how-to-use-this-department.md"
 sys.path.insert(0, HERE)
 import how_to_use_department as htu  # noqa: E402
 
-# Department folders that are internal scaffolding, not client-facing
-# departments, so they do not get a client-facing how-to-use guide.
-SKIP_FOLDERS = {
-    "master-orchestrator",  # the CEO/router is not a "department" the client uses
-    "healer",               # internal hygiene mechanism, never client-surfaced
+# Departments whose how-to-use guide is authored as a static seed file rather
+# than rendered from the specialist index. These departments exist in the role
+# library and MUST have a guide committed (the --check gate enforces this), but
+# their roster is either entirely internal-hygiene roles (healer) or a routing
+# layer rather than a client-facing specialist pool (master-orchestrator), so
+# the renderer's output is degenerate. Their guides are ported from the
+# feat/how-to-use-this-department-docs branch where they were hand-crafted to
+# be accurate and owner-facing. --check verifies EXISTENCE only for these two.
+STATIC_SEED_DEPTS = {
+    "healer",
+    "master-orchestrator",
 }
 
 
@@ -45,8 +51,6 @@ def _dept_folders():
         if not os.path.isdir(full):
             continue
         if entry.startswith("_") or entry.startswith("."):
-            continue
-        if entry in SKIP_FOLDERS:
             continue
         out.append(entry)
     return out
@@ -75,6 +79,16 @@ def main(argv):
             if not os.path.isfile(path):
                 missing.append(dept)
                 continue
+            # Static-seed departments: existence check only. Their guides are
+            # hand-crafted (the renderer produces degenerate specialist sections
+            # for them) and must not be overwritten by --write. A committed file
+            # is considered current as long as it is present and non-empty.
+            if dept in STATIC_SEED_DEPTS:
+                with open(path) as f:
+                    content = f.read()
+                if not content.strip():
+                    missing.append(dept)
+                continue
             expected = htu.render_how_to_use(dept, meta_table=meta_table)
             with open(path) as f:
                 actual = f.read()
@@ -92,12 +106,27 @@ def main(argv):
             print("\nFIX: python3 23-ai-workforce-blueprint/scripts/"
                   "generate_how_to_use_docs.py", file=sys.stderr)
             return 1
-        print(f"OK: all {len(_dept_folders())} departments have a current "
-              f"{DOC_NAME}.")
+        all_depts = _dept_folders()
+        static_count = sum(1 for d in all_depts if d in STATIC_SEED_DEPTS)
+        rendered_count = len(all_depts) - static_count
+        print(f"OK: all {len(all_depts)} departments have a current "
+              f"{DOC_NAME} ({rendered_count} rendered, "
+              f"{static_count} static-seed).")
         return 0
 
     written = 0
     for dept in depts:
+        if dept in STATIC_SEED_DEPTS:
+            path = os.path.join(ROLE_LIBRARY, dept, DOC_NAME)
+            if os.path.isfile(path):
+                print(f"[how-to-use] skipping static-seed dept {dept} "
+                      f"(hand-crafted guide already present)")
+            else:
+                print(f"[how-to-use] WARNING: static-seed dept {dept} has no "
+                      f"guide -- seed it from feat/how-to-use-this-department-docs "
+                      f"or author one; renderer produces degenerate output for it.",
+                      file=sys.stderr)
+            continue
         path, _ = _write_one(dept, meta_table)
         print(f"[how-to-use] wrote {path}")
         written += 1
