@@ -1,3 +1,9 @@
+## [v12.17.2 / skill build] - 2026-06-15 - fix(sop-gate): widen SOP_BLOCK_RE + extend fill_tokens token map (0/406 → 327/406 SOP floor)
+
+See root CHANGELOG.md for full details. Two deterministic fixes: (1) qc-completeness.sh SOP_BLOCK_RE widened to match `### SOP-01:` / `### SOP-AUDIO-001:` / `### SOP-01 —` formats in addition to dotted `### SOP 9.x`; (2) fill_tokens in create_role_workspaces.py extended from ~8 to 400+ tokens, eliminating all TOKEN_LEAK_RE hits in built output.
+
+---
+
 ## [v12.7.0] - 2026-06-14 - feat: Quality Control department (the fleet-wide quality function that owns and runs the system analyzer); mandatory floor raised 28 to 29
 
 New canonical, fleet-wide MANDATORY department shipped to every Zero Human Company. Quality Control owns and operates the ZHC System Analyzer: it reads every OTHER department's roles and standard operating procedures and holds them to the standard on two independent axes, reported side by side: Axis 1 Reality (is each mechanism actually executed at runtime, with file-and-line proof, never from prose) and Axis 2 Specificity / right-sizing (can an autonomous worker who has never seen the business run each procedure end to end without guessing, with the hard allowance that a procedure may run up to roughly 7,500 words when it earns it; brevity is never a merit; artificially thin procedures are flagged). The department diagnoses; it never repairs in place. Every failure it finds is filed to the Bugs Department and routed to the Healer.

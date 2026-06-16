@@ -168,16 +168,28 @@ DMAIC_HEADER_RE = re.compile(r"^#{1,4}\s*(define|measure|analyze|improve|control
 
 # v10.15.25 / v10.16.24 — EMBEDDED-SECTION-9 SOP MODEL (the WS-2 instantiate shape).
 # The WS-2 instantiate path does NOT write standalone sops/NN-*.md files; it embeds
-# SOPs inside how-to.md as a "## 9. ..." section containing "### SOP 9.x" blocks,
+# SOPs inside how-to.md as a "## 9. ..." section containing SOP block headers
+# ("### SOP 9.x", "### SOP-01:", "### SOP-AUDIO-001:", "### SOP B-9.1 --", etc.),
 # each carrying the When-to-run / Frequency / Inputs / Steps / Outputs / Hand-to /
-# Failure-mode structure. The old gate only counted standalone 0[1-9]-*.md files, so
-# fully-instantiated substantive workforces (multiple clients) were marked
+# Failure-mode structure.  The old gate only counted standalone 0[1-9]-*.md files,
+# so fully-instantiated substantive workforces (multiple clients) were marked
 # INCOMPLETE -> the never-stop crons looped forever or fell back to regenerate.
 # We now accept EITHER model as substantive, WITHOUT weakening the gate against real
 # garbage: still FAIL on [Step N...] stubs, {{token}} leaks, <7KB, or a missing
-# Section 9.
+# Section 9.  v12.17.2: SOP_BLOCK_RE widened to also match non-dotted SOP formats.
 SECTION9_HEADER_RE = re.compile(r"^#{1,3}\s*9[\.\)]", re.MULTILINE)         # "## 9." / "### 9)" etc.
-SOP_BLOCK_RE = re.compile(r"^#{2,4}\s*SOP\s*9[\.\)]", re.IGNORECASE | re.MULTILINE)  # "### SOP 9.x"
+# v12.17.2 FIX (gate-regex): the original regex only matched the dotted "### SOP 9.x"
+# format, leaving ~83 roles unscored whose role-library files use the hyphen or
+# em-dash formats ("### SOP-01:", "### SOP-AUDIO-001:", "### SOP-01 —", "### SOP B-9.1",
+# "### SOP 1 --").  The wider pattern below matches BOTH:
+#   - old dotted:  ^#{2,4} SOP 9.   e.g. "### SOP 9.1"
+#   - new formats: ^#{2,4} SOP[-\s][A-Za-z0-9]  e.g. "### SOP-01:", "### SOP AUDIO-001:"
+# Scoping guard (SECTION9_HEADER_RE + TOKEN_LEAK_RE + size >= 7 KB) is UNCHANGED —
+# only the heading shape is widened; the substance bar is identical.
+SOP_BLOCK_RE = re.compile(
+    r"^#{2,4}\s*SOP(?:\s*9[\.\)]|[-\s][A-Za-z0-9])",
+    re.IGNORECASE | re.MULTILINE,
+)  # "### SOP 9.x" OR "### SOP-01" / "### SOP-AUDIO-001" etc.
 TOKEN_LEAK_RE = re.compile(r"\{\{\s*[A-Za-z0-9_]+\s*\}\}")                  # an unfilled {{token}}
 # The structured fields a real embedded SOP block must carry (allow markdown bold,
 # and the When-to-run / Hand-to hyphen/space variants).

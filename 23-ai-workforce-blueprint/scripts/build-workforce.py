@@ -3429,18 +3429,54 @@ def _instantiate_role_from_library(role_name, dept_id, interview_answers):
 
     # Direct, deterministic fill of the canonical PRD tokens first so we never
     # depend on company-config.json existing on disk yet at build time.
+    # v12.17.2: extended with director/head-of titles, persona version, and
+    # ISO_DATE_YEAR so the most-frequent tokens are pre-filled even if the
+    # _crw_fill_tokens backstop is unavailable.
+    _gen_year = gen_date[:4]
+    _dept_director = "Master Orchestrator" if dept_lib == "master-orchestrator" \
+                     else f"Director of {dept_display}"
+    def _head_of_bwpy(area):
+        return f"Head of {area}"
+
     out = raw
     primary_tokens = {
         "COMPANY_NAME": company_name,
+        "company_name": company_name,
+        "CompanyName": company_name,
         "COMPANY_INDUSTRY": industry,
         "INDUSTRY_VERTICAL": industry,
+        "INDUSTRY": industry,
         "ROLE_TITLE": role_name,
         "DEPARTMENT_NAME": dept_display,
         "GENERATION_DATE": gen_date,
         "ISO_DATE": gen_date,
+        "ISO_DATE_YEAR": _gen_year,
+        "YEAR": _gen_year,
+        "Year": _gen_year,
+        "DIRECTOR_OR_MASTER_ORCHESTRATOR": _dept_director,
+        "DIRECTOR_TITLE": _dept_director,
+        "SALES_DIRECTOR_TITLE": _head_of_bwpy("Sales"),
+        "HEAD_OF_AUDIO_PRODUCTION_TITLE": _head_of_bwpy("Audio Production"),
+        "HEAD_OF_CONTENT_TITLE": _head_of_bwpy("Content"),
+        "HEAD_OF_CUSTOMER_SUCCESS_TITLE": _head_of_bwpy("Customer Success"),
+        "HEAD_OF_EDUCATION_TITLE": _head_of_bwpy("Education"),
+        "HEAD_OF_MARKETING_TITLE": _head_of_bwpy("Marketing"),
+        "HEAD_OF_PRODUCT_TITLE": _head_of_bwpy("Product"),
+        "HEAD_OF_SALES_TITLE": _head_of_bwpy("Sales"),
+        "HEAD_OF_SECURITY_TITLE": _head_of_bwpy("Security"),
+        "HEAD_OF_VIDEO_PRODUCTION_TITLE": _head_of_bwpy("Video Production"),
+        "HEAD_OF_VIDEO_TITLE": _head_of_bwpy("Video"),
+        "HEAD_OF_WEB_DEVELOPMENT_TITLE": _head_of_bwpy("Web Development"),
+        "CHIEF_FINANCIAL_OFFICER_TITLE": "Chief Financial Officer",
+        "CHIEF_MARKETING_OFFICER_TITLE": "Chief Marketing Officer",
+        "CHIEF_LEGAL_OFFICER_TITLE": "Chief Legal Officer",
+        "CHIEF_REVENUE_OFFICER_TITLE": "Chief Revenue Officer",
+        "CTO_TITLE": "Chief Technology Officer",
         # ASSIGNED_PERSONA is selected per-task at dispatch by persona-selector;
         # leave a neutral placeholder so the doc reads cleanly until then.
         "ASSIGNED_PERSONA": "(selected per task by persona-selector)",
+        "ASSIGNED_PERSONA_VERSION": "1",
+        "CURRENTLY_ASSIGNED_PERSONA": "(selected per task by persona-selector)",
     }
     for key, val in primary_tokens.items():
         if val:

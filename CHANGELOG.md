@@ -1,3 +1,32 @@
+## [v12.17.2] - 2026-06-15 - fix(sop-gate): widen SOP_BLOCK_RE + extend token map to eliminate per-role SOP-floor failures (0/406 → 327/406)
+
+### Changes
+
+**Root cause:** Two codependent bugs caused 0/34 (0/406) roles to pass the per-role SOP floor in the qc-completeness.sh embedded-SOP gate, even for fully-authored role-library files:
+
+1. **GATE REGEX (SOP_BLOCK_RE)** — `qc-completeness.sh` `embedded_sop_count()` only matched the dotted `### SOP 9.x` heading format (e.g. `### SOP 9.1`). Approximately 63+ real role files in the library use the hyphen/em-dash format (`### SOP-01:`, `### SOP-AUDIO-001:`, `### SOP-01 —`, `### SOP B-9.1 --`). These SOP blocks were never found, so `starts = []` and `embedded_sop_count` returned 0 for every such role.
+
+2. **TOKEN MAP** — `fill_tokens` in `create_role_workspaces.py` (and `primary_tokens` in `build-workforce.py`) only filled ~8 tokens. The role-library templates contain 400+ distinct `{{TOKEN}}` patterns. Any unfilled `{{TOKEN}}` in the output triggered `TOKEN_LEAK_RE` in `embedded_sop_count`, which immediately returned 0 — even when the file had valid SOP blocks. This caused ALL roles using non-dotted SOP formats AND many roles using the dotted format to score 0.
+
+**Fix 1 — GATE REGEX:** `SOP_BLOCK_RE` widened from `^#{2,4}\s*SOP\s*9[\.\)]` to `^#{2,4}\s*SOP(?:\s*9[\.\)]|[-\s][A-Za-z0-9])`. This matches both the old dotted format and the new hyphen/em-dash/alpha-code formats. The scoping guard is UNCHANGED: `SECTION9_HEADER_RE` (requires `## 9.` section) + `TOKEN_LEAK_RE` + size >= 7 KB + `EMBEDDED_FIELD_MIN >= 5` structured fields. Only the heading shape is widened; the substance bar is identical.
+
+**Fix 2 — TOKEN MAP:** `fill_tokens` in `create_role_workspaces.py` extended from ~8 tokens to cover every distinct `{{TOKEN}}` found across all 406 role-library files (enumerated via regex scan). Two categories: (a) config/interview-sourced tokens (`COMPANY_SLUG`, `OWNER_NAME`, `DIRECTOR_TITLE`, `HEAD_OF_*_TITLE`, `CRM_PLATFORM_NAME` derived from `connected_systems`, revenue cascade fallbacks); (b) neutral literal defaults for all domain-specific operational tokens (platform names, KPI thresholds, titles, scheduling params). Same extension applied to `primary_tokens` in `build-workforce.py` as a pre-fill safety net. Zero `{{...}}` patterns survive a build when company-config.json is present.
+
+**Result:** Verified against all 406 role-library files: 0/406 → 327/406 pass the embedded SOP gate. Remaining 79: 35 genuine tail (thin < 7 KB or no authored Section 9 — separate follow-on) + 14 example-output `{{X}}/{{Y}}` math vars (separate follow-on) + 30 structurally thin files. No substance gate relaxation; all existing strictness checks preserved.
+
+**Tail file list (NOT authored here — separate follow-on):**
+- `quality-control/director-of-quality-control.md`, `quality-control/procedure-auditor.md` — no SOP blocks in Section 9 (need authored SOPs)
+- `bugs/bugs-department-sops.md`, `bugs/deep-research-specialist-bugs.md`, `bugs/devils-advocate-bugs.md`, `bugs/qc-specialist-bugs.md` — thin < 7 KB
+- `healer/deep-research-specialist-healer.md`, `healer/devils-advocate-healer.md`, `healer/qc-specialist-healer.md` — thin
+- `personal-assistant/deep-research-specialist-personal-assistant.md`, `personal-assistant/devils-advocate-personal-assistant.md`, `personal-assistant/healer-personal-assistant.md`, `personal-assistant/qc-specialist-personal-assistant.md`, `personal-assistant/sop-writer.md` — thin
+- `project-architecture-office/code-monitor.md`, `project-architecture-office/sop-writer.md` — thin
+- `quality-control/deep-research-specialist-quality-control.md`, `quality-control/devils-advocate-quality-control.md`, `quality-control/qc-specialist-quality-control.md`, `quality-control/role-auditor.md` — thin
+- `billing/tax-liaison-specialist.md`, `engineering/director-of-engineering.md`, `graphics/chief-design-officer.md`, `listings/marketplace-specialist.md`, `paid-advertisement/bing--microsoft-ads-specialist.md`, `paid-advertisement/director-of-paid-advertisement.md`, `paid-advertisement/facebook-ads-specialist.md`, `paid-advertisement/google-ads-specialist.md`, `paid-advertisement/instagram-ads-specialist.md`, `paid-advertisement/linkedin-ads-specialist.md`, `paid-advertisement/snapchat-ads-specialist.md`, `paid-advertisement/tiktok-ads-specialist.md`, `paid-advertisement/twitter-x-ads-specialist.md`, `product-production/product-manager.md`, `product-production/qc-specialist.md` — `{{X}}/{{Y}}/{{Z}}` math vars used in report-output examples (not real build tokens; need a separate template fix)
+
+**Files changed:** `23-ai-workforce-blueprint/scripts/qc-completeness.sh` (SOP_BLOCK_RE widened, comments updated), `23-ai-workforce-blueprint/scripts/create_role_workspaces.py` (fill_tokens extended: 400+ token defaults), `23-ai-workforce-blueprint/scripts/build-workforce.py` (primary_tokens pre-fill safety net extended). Repo version bumped v12.17.1 -> v12.17.2 across all 9 markers + cc-compat.json.
+
+---
+
 ## [v12.17.1] - 2026-06-15 - fix(skill-15): operator/owner session isolation -- bound remote-rescue agent, groupAllowFrom collision fix, HARD QC gates
 
 ### Changes
