@@ -1,7 +1,7 @@
 {
   "generated_at": "2026-06-15T00:00:00Z",
   "version": "12.17.4",
-  "total_roles": 425,
+  "total_roles": 424,
   "total_departments": 34,
   "departments": {
     "account-management": {
@@ -267,7 +267,7 @@
       ]
     },
     "legal-compliance": {
-      "count": 17,
+      "count": 16,
       "roles": [
         "affiliate-agreement-specialist",
         "chief-legal-officer",
@@ -281,7 +281,6 @@
         "healer-legal-compliance",
         "industry-specific-regulatory-specialist",
         "ip--trademark-specialist",
-        "qc-specialist---legal",
         "qc-specialist-legal",
         "sop-writer",
         "terms--privacy-policy-specialist",
@@ -2590,16 +2589,6 @@
       "sop_count": 0,
       "sop_min": 0,
       "path": "templates/role-library/legal-compliance/ip--trademark-specialist.md"
-    },
-    {
-      "slug": "qc-specialist---legal",
-      "dept": "legal-compliance",
-      "title": "Qc Specialist Legal",
-      "role_type": "specialist",
-      "word_count": 8389,
-      "sop_count": 0,
-      "sop_min": 0,
-      "path": "templates/role-library/legal-compliance/qc-specialist---legal.md"
     },
     {
       "slug": "qc-specialist-legal",
