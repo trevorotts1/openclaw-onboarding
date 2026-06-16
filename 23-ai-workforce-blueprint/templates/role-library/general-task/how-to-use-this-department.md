@@ -1,0 +1,136 @@
+# How to Use the General Task Department 🗂️
+
+**Department:** General Task
+**Department head:** Head of General Task
+**Folder:** `departments/general-task/`
+**Generated for:** {{COMPANY_NAME}}
+**Last updated:** {{GENERATION_DATE}}
+
+> This is the plain-language guide to the General Task department. Most
+> people never realize this department exists or know how to put it to work.
+> This document fixes that. When you ask "how do I use the General Task
+> department?" or "how do I use the Generalist Operator?", this is the
+> document your agent reads to answer you.
+
+---
+
+## 1. What This Department Does (in plain language)
+
+Catches any task that doesn't fit a dedicated department, so nothing is ever dropped. Re-classifies low-confidence routing fallbacks, executes well-scoped one-off tasks, logs recurrence patterns, and recommends new standing departments when a task type recurs ≥4/month.
+
+In one sentence: **Catches any task that doesn't fit a dedicated department, so nothing is ever dropped**
+
+You do not need to know which specialist does what. You just tell the department
+what you want in plain English, and the department head (Head of General Task)
+figures out who handles it and routes it for you.
+
+---
+
+## 2. When to Use It
+
+Reach for this department when you want any of the following:
+
+- Generalist Operator for the company's General Task department - the execution arm for well-scoped.
+- Triage Classifier for the company's General Task department - a specialist sub-agent spawned when the Head.
+
+If you are not sure whether a request belongs here, ask anyway. The department
+head will either take it or hand it to the right department. You never have to
+get the routing right yourself.
+
+---
+
+## 3. How to Ask It for Work
+
+You have three ways to put this department to work. All of them are fine.
+
+1. **Just say it in plain English.** Message your agent like you would a
+   teammate: "I need help with something from the general task team." That is enough to start.
+2. **Name the department if you want to be specific.** "Have the
+   General Task department handle something from the general task team." This routes
+   it straight to Head of General Task.
+3. **Name a specialist if you know exactly who you want.** See the specialist
+   list in Section 4 and ask for them by role: "Get the Generalist Operator
+   to take on a general task task for you."
+
+A good request includes, where it applies: **what** you want, **who or what it
+is for**, **when you need it**, and any **must-haves or limits**. You do not have
+to provide all of that. If something important is missing, the department will
+ask you one or two quick questions before it starts rather than guess.
+
+---
+
+## 4. The Specialists Inside This Department
+
+Each specialist below is built for one job. You can ask the department as a whole
+and it will pick the right one, or you can ask for a specialist by name.
+
+| Specialist | What it is for |
+| --- | --- |
+| **Generalist Operator** | Generalist Operator for the company's General Task department - the execution arm for well-scoped. |
+| **Triage Classifier** | Triage Classifier for the company's General Task department - a specialist sub-agent spawned when the Head of General. |
+
+### What each specialist is for, with an example request
+
+**Generalist Operator**
+
+- *What it is for:* Generalist Operator for the company's General Task department - the execution arm for well-scoped.
+- *Example request:* "Have the Generalist Operator take this on: Generalist Operator for the company's General Task department - the execution arm."
+
+**Triage Classifier**
+
+- *What it is for:* Triage Classifier for the company's General Task department - a specialist sub-agent spawned when the Head of General.
+- *Example request:* "Have the Triage Classifier take this on: Triage Classifier for the company's General Task department - a specialist sub-agent."
+
+
+---
+
+## 5. What to Expect Back
+
+When you ask this department for something, here is the normal flow:
+
+1. **Acknowledgment.** Head of General Task confirms the request landed and, if
+   anything important is unclear, asks you one or two quick questions.
+2. **Routing.** The work is matched to the right specialist and the relevant
+   procedure (its SOP). Nobody guesses; if there is no procedure for your
+   request, one is written before the work starts.
+3. **The work itself.** The specialist does the job and it is checked by the
+   department's quality-control review before it reaches you.
+4. **Delivery.** You get the finished result: the finished general task work you asked for.
+   Anything that needs your sign-off before it goes live is flagged for your
+   approval first.
+
+Typical turnaround depends on the size of the request. Quick items come back the
+same working session; larger projects come back with a clear estimate up front.
+
+---
+
+## 6. How It Hands Off (to you and to other departments)
+
+- **To you:** finished deliverables arrive in your workspace and you are notified.
+  Anything marked owner-approval-required waits for your yes before it ships.
+- **To other departments:** when your request needs another team, this department
+  coordinates the handoff for you through the company's routing map
+  (`universal-sops/00-ROUTING.md`). You do not have to manage the handoff.
+  
+- **Escalation:** if something is blocked, needs a decision only you can make, or
+  needs a credential or payment, it is escalated to you directly rather than
+  stalling silently.
+
+---
+
+## 7. Quick Questions You Can Ask
+
+You can ask your agent any of these at any time and it will answer from this
+document:
+
+- "How do I use the General Task department?"
+- "What can the General Task department do for me?"
+- "How do I use the Generalist Operator?"
+- "Who handles something from the general task team?"
+- "What do I get back if I ask General Task for something from the general task team?"
+
+---
+
+*This guide is generated for {{COMPANY_NAME}} by the AI Workforce Blueprint
+(Skill 23). It is regenerated whenever the department's roster changes so it
+always matches the specialists you actually have.*

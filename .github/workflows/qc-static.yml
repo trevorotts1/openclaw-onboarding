@@ -761,6 +761,17 @@ jobs:
           #      industry-org-design research manifest.
           bash 23-ai-workforce-blueprint/scripts/test-ws4-departments.sh
 
+      - name: Skill 23 how-to-use-this-department guides present, current, clean + wired
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Every client-facing department ships an owner-facing
+          # how-to-use-this-department.md (committed + current vs the renderer),
+          # carrying NO client names / em dashes / stray tokens, and the answer
+          # mechanism (build emit + SOP-00 carve-out + both operating protocols +
+          # the universal SOP) stays wired so the agent answers "how do I use X?".
+          bash 23-ai-workforce-blueprint/scripts/test-how-to-use-docs.sh
+
       - name: Skill 23 build-workforce.py has a module-level subprocess import (BUG 1)
         shell: bash
         run: |
