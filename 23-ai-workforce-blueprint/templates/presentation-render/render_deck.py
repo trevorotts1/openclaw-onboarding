@@ -9,7 +9,7 @@ Usage:
         slides=[
             {
                 "slide_id": "slide-01",
-                "prompt": "<full 1500-15000 char prompt>",
+                "prompt": "<full 5000-18000 char prompt>",
                 "target_path": "/abs/path/to/slide-01.png"
             },
             ...
@@ -54,8 +54,13 @@ APPROVED_MODELS = [
 # It is NEVER the silent primary. Every invocation is MANDATORY-LOGGED to render_manifest.json.
 FALLBACK_MODEL = "nano-banana-2"
 
-PROMPT_CHAR_FLOOR = 1500
-PROMPT_CHAR_CEILING = 15000
+# Char-count band reconciled to the live QC gate (qc-specialist-presentations.md
+# AF-P1/AF-P2, v12.7.1+): soft minimum 5,000, hard maximum 18,000 (a 2,000-char
+# safety margin below the GPT-Image 2 API ceiling of 20,000, MODEL-SPECS). Raised
+# from the old 1500/15000 so this canonical render module no longer hard-blocks a
+# valid 16,000-char specificity-rich prompt that the QC gate passes.
+PROMPT_CHAR_FLOOR = 5000
+PROMPT_CHAR_CEILING = 18000
 
 # Required structural blocks -- checked case-insensitively
 REQUIRED_STRUCTURAL_BLOCKS = [
@@ -259,7 +264,7 @@ def render_deck(slides: List[Dict[str, Any]], config: Dict[str, Any]) -> List[Di
     ----------
     slides : list of dicts, each with:
         - slide_id   : str  (e.g. "slide-01")
-        - prompt     : str  (1500-15000 chars; must contain [ARCHETYPE, NEGATIVE BLOCK, "Do not ")
+        - prompt     : str  (5000-18000 chars; must contain [ARCHETYPE, NEGATIVE BLOCK, "Do not ")
         - target_path: str  (absolute path where the rendered PNG will be saved)
 
     config : dict with:

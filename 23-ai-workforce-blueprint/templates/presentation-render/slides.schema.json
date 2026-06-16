@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw/presentations/slides.schema.json",
+  "title": "Presentations deck slides.json schema",
+  "description": "DETERMINISTIC deck pipeline input. An AI agent produces THIS file from the source material (transcript/brief). build_deck.py then renders it with ZERO further AI judgement: it composes a KIE.ai prompt per slide (photographic scene + the EXACT English copy + the mandatory English/Latin-only pin), calls KIE.ai gpt-image-2, downloads one full-bleed 16:9 PNG per slide, and assembles a .pptx. The agent NEVER generates images itself. All wording that must appear on a slide must be written, spelled correctly, in the 'copy' array — KIE renders that text INTO the image.",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["slide", "scene", "copy"],
+    "properties": {
+      "slide": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "1-based slide ordinal. Determines slide order in the deck AND the render filename (slide-01.png, slide-02.png, ...). Must be unique and contiguous starting at 1."
+      },
+      "scene": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Photographic scene description for the background image — what is literally in frame (subject, setting, lighting, mood, color palette, camera framing). Describe a PHOTOGRAPH, not a slide. Do NOT put the slide copy here; copy goes in the 'copy' array. Example: 'A confident entrepreneur standing in a sunlit modern office, soft morning light from a large window behind them, warm neutral palette, shallow depth of field, shot on 85mm, professional editorial photography.'"
+      },
+      "copy": {
+        "type": "array",
+        "minItems": 1,
+        "items": { "type": "string" },
+        "description": "The EXACT text that must appear rendered on the slide, in reading order. Index 0 is treated as the HEADLINE; remaining entries are subheads/body lines. Spell every word correctly letter-for-letter; KIE renders these verbatim into the image. Keep lines short (slide copy, not paragraphs). Example: [\"Acme Co\", \"Three moves that doubled our pipeline in 90 days\"]."
+      },
+      "logo": {
+        "type": "string",
+        "description": "Optional brand/logo wordmark to render on the slide (e.g. 'ACME CO'). If present, build_deck.py instructs KIE to place this wordmark as a small clean lockup (typically a corner). Omit if the deck has no per-slide logo. NOTE: this is a TEXT wordmark rendered by KIE, not an image-to-image logo placement; the deterministic t2i pipeline does not pass logo image files. For locked logo-image placement (image-to-image), use kie_generate.py in this same directory per SOP-IMG-01."
+      },
+      "layout": {
+        "type": "string",
+        "description": "Optional human-readable hint for WHERE the text sits and how the composition is arranged, fed into the KIE prompt (e.g. 'headline lower-left over dark gradient, subhead beneath, logo top-right', 'centered hero title, copy stacked in lower third'). If omitted, build_deck.py uses a safe default: headline upper area, subhead/body in the lower third, high-contrast legible placement."
+      },
+      "mode": {
+        "type": "string",
+        "enum": ["t2i"],
+        "description": "Image generation mode. The DETERMINISTIC pipeline uses ONLY 't2i' (gpt-image-2-text-to-image) — the copy is rendered into a freshly generated photographic scene. (Image-to-image logo placement remains available via the separate kie_generate.py helper but is out of scope for build_deck.py.) Defaults to 't2i' if omitted."
+      }
+    }
+  },
+  "examples": [
+    [
+      {
+        "slide": 1,
+        "scene": "A confident entrepreneur standing in a sunlit modern office, soft morning light from a large window behind them, warm neutral palette, shallow depth of field, shot on 85mm lens, professional editorial photography, cinematic.",
+        "copy": ["Acme Co", "Three moves that doubled our pipeline in 90 days"],
+        "logo": "ACME CO",
+        "layout": "headline lower-left over a soft dark gradient, subhead directly beneath the headline, logo wordmark small in the top-right corner"
+      },
+      {
+        "slide": 2,
+        "scene": "An overhead flat-lay of a clean modern desk with a laptop showing a rising line graph, a coffee cup, and a notebook, bright natural daylight, minimalist, lots of negative space on the right side, professional product photography.",
+        "copy": ["The Problem", "Most pipelines leak at the follow-up stage — not the lead stage"],
+        "logo": "ACME CO",
+        "layout": "headline and subhead stacked in the right-side negative space, dark text on the light background, logo wordmark small in the bottom-right corner"
+      }
+    ]
+  ]
+}
