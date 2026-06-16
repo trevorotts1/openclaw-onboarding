@@ -1,44 +1,604 @@
 {
   "generated_at": "2026-06-15T00:00:00Z",
-  "version": "12.17.3",
-  "total_roles": 408,
-  "departments": [
-    "account-management",
-    "app-development",
-    "audio",
-    "billing",
-    "bugs",
-    "client-experience-booking",
-    "communications",
-    "crm",
-    "customer-support",
-    "engineering",
-    "founding-member-concierge",
-    "general-task",
-    "graphics",
-    "healer",
-    "launch-operations",
-    "legal-compliance",
-    "listings",
-    "logistics-fulfillment",
-    "marketing",
-    "master-orchestrator",
-    "openclaw-maintenance",
-    "paid-advertisement",
-    "personal-assistant",
-    "podcast",
-    "presentations",
-    "product-production",
-    "project-architecture-office",
-    "quality-control",
-    "research",
-    "sales",
-    "scheduling-dispatch",
-    "social-media",
-    "video",
-    "web-development"
-  ],
+  "version": "12.17.4",
+  "total_roles": 424,
   "total_departments": 34,
+  "departments": {
+    "account-management": {
+      "count": 6,
+      "roles": [
+        "client-relationship-manager",
+        "deep-research-specialist",
+        "devils-advocate",
+        "director-of-account-management",
+        "qc-specialist",
+        "retention-specialist"
+      ]
+    },
+    "app-development": {
+      "count": 17,
+      "roles": [
+        "android-specialist",
+        "api-backend-specialist",
+        "app-analytics-specialist",
+        "app-store-optimization-aso-specialist",
+        "brainstorming-buddy-app-development",
+        "cloud-infrastructure-specialist",
+        "deep-research-specialist-app-development",
+        "desktop-app-specialist",
+        "devils-advocate--app-development",
+        "head-of-app-development",
+        "healer-app-development",
+        "ios-specialist",
+        "pwa-progressive-web-app-specialist",
+        "qa-tester-app",
+        "qc-specialist-app-development",
+        "sop-writer",
+        "ux-ui-specialist"
+      ]
+    },
+    "audio": {
+      "count": 17,
+      "roles": [
+        "ai-voice-specialist-11-labs-play.ht",
+        "audio-mastering-specialist",
+        "audiobook-production-specialist",
+        "crm-specialist-audio-version",
+        "deep-research-specialist-audio",
+        "devils-advocate--audio",
+        "head-of-audio-production",
+        "healer-audio",
+        "music-and-audio-producer",
+        "podcast-editor",
+        "podcast-producer",
+        "qc-specialist-audio",
+        "sop-writer",
+        "sound-design-sfx-specialist",
+        "speech-writing-specialist",
+        "transcription-specialist",
+        "voice-agent-builder"
+      ]
+    },
+    "billing": {
+      "count": 15,
+      "roles": [
+        "bookkeeping-specialist",
+        "cash-flow-forecasting-specialist",
+        "chief-financial-officer",
+        "collections-specialist",
+        "crm-specialist-billing-version",
+        "deep-research-specialist---billing",
+        "devils-advocate--billing",
+        "financial-reporting-specialist",
+        "fpanda--forecasting-analyst",
+        "healer-billing",
+        "invoicing-and-ar-specialist",
+        "qc-specialist---billing",
+        "sop-writer",
+        "subscription--recurring-revenue-specialist",
+        "tax-liaison-specialist"
+      ]
+    },
+    "bugs": {
+      "count": 7,
+      "roles": [
+        "bug-intake-clerk",
+        "bug-librarian",
+        "bugs-department-sops",
+        "deep-research-specialist-bugs",
+        "devils-advocate-bugs",
+        "qc-specialist-bugs",
+        "triage-dedup-analyst"
+      ]
+    },
+    "client-experience-booking": {
+      "count": 7,
+      "roles": [
+        "booking-coordinator",
+        "client-onboarding-specialist",
+        "deep-research-specialist",
+        "devils-advocate",
+        "director-of-client-experience-booking",
+        "post-session-followup-specialist",
+        "qc-specialist"
+      ]
+    },
+    "communications": {
+      "count": 15,
+      "roles": [
+        "brand-messaging-specialist",
+        "chief-communications-officer",
+        "crisis-communications-specialist",
+        "deep-research-specialist-communications",
+        "devils-advocate--communications",
+        "healer-communications",
+        "internal-communications-manager",
+        "investor--stakeholder-comms-specialist",
+        "media-pitching-specialist",
+        "op-ed-ghostwriter",
+        "pr--media-relations-specialist",
+        "press-release-statement-specialist",
+        "qc-specialist-communications",
+        "sop-writer",
+        "speech--talking-points-specialist"
+      ]
+    },
+    "crm": {
+      "count": 12,
+      "roles": [
+        "automation-workflow-specialist",
+        "crm-platform-administrator",
+        "deep-research-role--crm",
+        "devils-advocate--crm",
+        "director-of-crm",
+        "email-deliverability-optimization-specialist",
+        "healer-crm",
+        "pipeline-stage-specialist",
+        "qc-role--crm",
+        "sms--whatsapp--dm-sequence-specialist",
+        "sop-writer",
+        "tag--segmentation-specialist"
+      ]
+    },
+    "customer-support": {
+      "count": 16,
+      "roles": [
+        "account-health-monitor-proactive",
+        "churn-prevention-specialist",
+        "deep-research-specialist--customer-support",
+        "devils-advocate--customer-support",
+        "head-of-customer-success",
+        "healer-customer-support",
+        "knowledge-base-specialist",
+        "live-chat-specialist",
+        "onboarding-specialist",
+        "qc-specialist--customer-support",
+        "refunds-and-disputes-specialist",
+        "retention-specialist",
+        "sop-writer",
+        "tier-1-support-specialist",
+        "tier-2-support-specialist",
+        "voice--phone-support-specialist"
+      ]
+    },
+    "engineering": {
+      "count": 6,
+      "roles": [
+        "deep-research-specialist",
+        "devils-advocate",
+        "director-of-engineering",
+        "qa-engineer",
+        "qc-specialist",
+        "systems-engineer"
+      ]
+    },
+    "founding-member-concierge": {
+      "count": 6,
+      "roles": [
+        "concierge-lead",
+        "deep-research-specialist",
+        "devils-advocate",
+        "director-of-founding-member-concierge",
+        "membership-specialist",
+        "qc-specialist"
+      ]
+    },
+    "general-task": {
+      "count": 8,
+      "roles": [
+        "deep-research-specialist-general-task",
+        "devils-advocate--general-task",
+        "generalist-operator",
+        "head-of-general-task",
+        "healer-general-task",
+        "qc-specialist-general-task",
+        "sop-writer",
+        "triage-classifier"
+      ]
+    },
+    "graphics": {
+      "count": 44,
+      "roles": [
+        "ROLE--asset-provenance-librarian",
+        "ROLE--brand-systems-specialist",
+        "ROLE--deck-systems-specialist",
+        "ROLE--design-producer",
+        "ROLE--fidelity-tester",
+        "ROLE--generation-operator",
+        "ROLE--likeness-rights-officer",
+        "ROLE--motion-systems-specialist",
+        "ROLE--photo-shoot-director",
+        "ROLE--render-dispatcher",
+        "ROLE--style-analyst",
+        "ROLE--style-librarian",
+        "ROLE--style-steward",
+        "ad-creative-specialist",
+        "ai-image-generator-specialist",
+        "asset-provenance-librarian",
+        "book-cover-designer",
+        "brainstorming-buddy-graphics",
+        "brand-identity-specialist-logo-color-type",
+        "brand-systems-specialist",
+        "chief-design-officer",
+        "course-slide-designer",
+        "deck-systems-specialist",
+        "deep-research-specialist--graphics",
+        "design-producer",
+        "devils-advocate--graphics",
+        "email-designer",
+        "fidelity-tester",
+        "generation-operator",
+        "healer-graphics",
+        "infographic-specialist",
+        "likeness-rights-officer",
+        "motion-systems-specialist",
+        "photo-shoot-director",
+        "presentation-designer-slides-decks",
+        "print--asset-design-specialist",
+        "qc-specialist--graphics",
+        "render-dispatcher",
+        "social-media-graphics-specialist",
+        "sop-writer",
+        "style-analyst",
+        "style-librarian",
+        "style-steward",
+        "thumbnail--cover-designer"
+      ]
+    },
+    "healer": {
+      "count": 5,
+      "roles": [
+        "chief-healer",
+        "deep-research-specialist-healer",
+        "dept-healer-template",
+        "devils-advocate-healer",
+        "qc-specialist-healer"
+      ]
+    },
+    "launch-operations": {
+      "count": 6,
+      "roles": [
+        "deep-research-specialist",
+        "devils-advocate",
+        "director-of-launch-operations",
+        "go-to-market-specialist",
+        "launch-manager",
+        "qc-specialist"
+      ]
+    },
+    "legal-compliance": {
+      "count": 16,
+      "roles": [
+        "affiliate-agreement-specialist",
+        "chief-legal-officer",
+        "compliance-monitor--specialist",
+        "contract-drafter-client-agreements",
+        "customer-agreement-specialist",
+        "deep-research-specialist---legal",
+        "devils-advocate--legal-compliance",
+        "dispute-resolution-specialist",
+        "employment-contract-specialist",
+        "healer-legal-compliance",
+        "industry-specific-regulatory-specialist",
+        "ip--trademark-specialist",
+        "qc-specialist-legal",
+        "sop-writer",
+        "terms--privacy-policy-specialist",
+        "vendor-contract-specialist"
+      ]
+    },
+    "listings": {
+      "count": 5,
+      "roles": [
+        "deep-research-specialist",
+        "director-of-listings",
+        "listing-creator",
+        "marketplace-specialist",
+        "qc-specialist"
+      ]
+    },
+    "logistics-fulfillment": {
+      "count": 4,
+      "roles": [
+        "director-of-logistics-fulfillment",
+        "fulfillment-coordinator",
+        "inventory-manager",
+        "returns-reverse-logistics-specialist"
+      ]
+    },
+    "marketing": {
+      "count": 18,
+      "roles": [
+        "affiliate--referral-specialist",
+        "brainstorming-buddy-marketing",
+        "brand-positioning-specialist",
+        "chief-marketing-officer",
+        "content-marketing-strategist",
+        "content-strategist",
+        "customer-journey-architect",
+        "deep-research-specialist--marketing",
+        "devils-advocate--marketing",
+        "email-campaign-strategist",
+        "funnel-strategist",
+        "healer-marketing",
+        "influencer-marketing-specialist",
+        "lead-magnet-specialist",
+        "marketing-analytics-specialist",
+        "qc-specialist--marketing",
+        "sop-writer",
+        "webinar-event-marketing-specialist"
+      ]
+    },
+    "master-orchestrator": {
+      "count": 2,
+      "roles": [
+        "master-orchestrator",
+        "sop-writer"
+      ]
+    },
+    "openclaw-maintenance": {
+      "count": 19,
+      "roles": [
+        "backup-and-recovery-specialist",
+        "cost-model-optimizer-specialist",
+        "deep-research-role--openclaw-maintenance",
+        "devils-advocate--openclaw-maintenance",
+        "director-of-openclaw-maintenance",
+        "disaster-recovery-specialist",
+        "healer-openclaw-maintenance",
+        "integration--mcp-specialist",
+        "memory-hygiene-specialist",
+        "monitoring--observability-specialist",
+        "performance-tuning-specialist",
+        "qc-role--openclaw-maintenance",
+        "security-and-secrets-specialist",
+        "skill-update-and-patch-specialist",
+        "sop-writer",
+        "system-health--uptime-specialist",
+        "token-manager-furnace-watch-specialist",
+        "uptime-connectivity-watchdog-specialist",
+        "version-and-upgrade-manager-specialist"
+      ]
+    },
+    "paid-advertisement": {
+      "count": 23,
+      "roles": [
+        "audience-research-specialist",
+        "bing--microsoft-ads-specialist",
+        "conversion-tracking-specialist",
+        "creative-testing--a-b-specialist",
+        "cross-platform-attribution-specialist",
+        "deep-research-role--paid-advertisement",
+        "devils-advocate--paid-advertisement",
+        "director-of-paid-advertisement",
+        "facebook-ads-specialist",
+        "google-ads-specialist",
+        "healer-paid-advertisement",
+        "instagram-ads-specialist",
+        "linkedin-ads-specialist",
+        "native-ads-specialist",
+        "pinterest-ads-specialist",
+        "qc-role--paid-advertisement",
+        "retargeting-strategist",
+        "snapchat-ads-specialist",
+        "sop-writer",
+        "spotify-audio-ads-specialist",
+        "tiktok-ads-specialist",
+        "twitter-x-ads-specialist",
+        "youtube-ads-specialist"
+      ]
+    },
+    "personal-assistant": {
+      "count": 12,
+      "roles": [
+        "calendar-scheduling-manager",
+        "daily-briefing-specialist",
+        "deep-research-specialist-personal-assistant",
+        "devils-advocate-personal-assistant",
+        "director-of-personal-assistant",
+        "healer-personal-assistant",
+        "inbox-manager",
+        "personal-coach",
+        "qc-specialist-personal-assistant",
+        "sop-writer",
+        "task-priority-manager",
+        "travel-logistics-specialist"
+      ]
+    },
+    "podcast": {
+      "count": 4,
+      "roles": [
+        "audio-post-producer",
+        "director-of-podcast",
+        "podcast-host",
+        "qc-specialist-podcast"
+      ]
+    },
+    "presentations": {
+      "count": 24,
+      "roles": [
+        "00-START-HERE",
+        "audio-demonstration-specialist",
+        "brainstorming-buddy-presentations",
+        "brand-steward",
+        "capacity-reliability-engineer",
+        "content-to-presentation-architect",
+        "deep-research-specialist-presentations",
+        "delivery-concierge",
+        "devils-advocate-presentations",
+        "director-of-presentations",
+        "first-time-onboarding-presentations",
+        "healer-presentations",
+        "hook-strategist",
+        "media-librarian-ghl-updater",
+        "offer-price-strategist",
+        "pptx-assembly-specialist",
+        "presenter-coach",
+        "presenters-guide-specialist",
+        "presenters-speech-writer",
+        "qc-specialist-presentations",
+        "slide-copywriter",
+        "slide-image-creator",
+        "slide-submitter",
+        "typography-architect"
+      ]
+    },
+    "product-production": {
+      "count": 4,
+      "roles": [
+        "director-of-product-production",
+        "product-manager",
+        "production-coordinator",
+        "qc-specialist"
+      ]
+    },
+    "project-architecture-office": {
+      "count": 9,
+      "roles": [
+        "chief-project-architect",
+        "code-editor",
+        "code-monitor",
+        "deep-research-specialist-project-architecture-office",
+        "devils-advocate--project-architecture-office",
+        "healer-project-architecture-office",
+        "qc-agent",
+        "research-agent",
+        "sop-writer"
+      ]
+    },
+    "quality-control": {
+      "count": 7,
+      "roles": [
+        "00-START-HERE",
+        "deep-research-specialist-quality-control",
+        "devils-advocate-quality-control",
+        "director-of-quality-control",
+        "procedure-auditor",
+        "qc-specialist-quality-control",
+        "role-auditor"
+      ]
+    },
+    "research": {
+      "count": 13,
+      "roles": [
+        "chief-research-officer",
+        "competitive-intelligence-specialist",
+        "customer-research-specialist",
+        "data-analysis-specialist",
+        "deep-research-specialist-research",
+        "devils-advocate--research",
+        "healer-research",
+        "industry-analysis-specialist-mckinsey-style",
+        "market-trends-specialist",
+        "persona-research-specialist",
+        "qc-specialist---research",
+        "sop-writer",
+        "survey-and-polling-specialist"
+      ]
+    },
+    "sales": {
+      "count": 16,
+      "roles": [
+        "account-executive-full-cycle",
+        "account-manager-post-sale",
+        "appointment-setter",
+        "chief-sales-officer",
+        "closer",
+        "crm-specialist-sales-version",
+        "deep-research-specialist-\\342\\200\\224-sales",
+        "devils-advocate--sales",
+        "discovery-call-specialist",
+        "follow-up-sequence-specialist",
+        "healer-sales",
+        "proposal-and-quote-specialist",
+        "qc-specialist-\\342\\200\\224-sales",
+        "sales-operations--pipeline-specialist",
+        "sdr-sales-development-rep",
+        "sop-writer"
+      ]
+    },
+    "scheduling-dispatch": {
+      "count": 4,
+      "roles": [
+        "capacity-planning-specialist",
+        "director-of-scheduling-dispatch",
+        "dispatcher",
+        "scheduler"
+      ]
+    },
+    "social-media": {
+      "count": 19,
+      "roles": [
+        "bluesky-specialist",
+        "community-manager",
+        "deep-research-role--social-media",
+        "devils-advocate--social-media",
+        "director-of-social-media",
+        "discord-community-specialist",
+        "facebook-specialist",
+        "healer-social-media",
+        "instagram-specialist",
+        "linkedin-specialist",
+        "pinterest-specialist",
+        "qc-role--social-media",
+        "quora-specialist",
+        "reddit-specialist",
+        "sop-writer",
+        "threads-specialist",
+        "tiktok-specialist",
+        "twitter-x-specialist",
+        "youtube-channel-specialist-organic-only"
+      ]
+    },
+    "video": {
+      "count": 20,
+      "roles": [
+        "ai-video-generator-specialist",
+        "animation-specialist-2d-3d-whiteboard",
+        "brainstorming-buddy-video",
+        "captioning--subtitling-specialist",
+        "color-grading-specialist",
+        "crm-specialist-video-version",
+        "deep-research-specialist-video",
+        "devils-advocate--video",
+        "head-of-video-production",
+        "healer-video",
+        "live-streaming-specialist",
+        "long-form-video-specialist-youtube-courses-sales-videos",
+        "motion-graphics-specialist",
+        "qc-specialist-video",
+        "short-form-video-specialist-reels-shorts-tiktok",
+        "sop-writer",
+        "storyboard-pre-production-specialist",
+        "video-editor",
+        "video-seo-specialist",
+        "vsl-video-sales-letter-specialist"
+      ]
+    },
+    "web-development": {
+      "count": 18,
+      "roles": [
+        "brainstorming-buddy-web-development",
+        "conversion-rate-optimization-cro-specialist",
+        "deep-research-specialist-web-development",
+        "devils-advocate--web-development",
+        "frontend--javascript--react-specialist",
+        "funnel-builder-specialist",
+        "head-of-web-development",
+        "healer-web-development",
+        "landing-page-specialist",
+        "member-area--membership-site-specialist",
+        "qc-specialist-web-development",
+        "seo-specialist-organic-search",
+        "sop-writer",
+        "technical-seo-specialist",
+        "web-accessibility-a11y-specialist",
+        "web-designer",
+        "web-security-specialist",
+        "wordpress-specialist"
+      ]
+    }
+  },
   "roles": [
     {
       "slug": "client-relationship-manager",
@@ -79,16 +639,6 @@
       "sop_count": 0,
       "sop_min": 0,
       "path": "templates/role-library/account-management/director-of-account-management/how-to.md"
-    },
-    {
-      "slug": "director-of-account-management",
-      "dept": "account-management",
-      "title": "Director Of Account Management",
-      "role_type": "director",
-      "word_count": 9783,
-      "sop_count": 0,
-      "sop_min": 0,
-      "path": "templates/role-library/account-management/director-of-account-management.md"
     },
     {
       "slug": "qc-specialist",
@@ -681,16 +1231,6 @@
       "path": "templates/role-library/client-experience-booking/booking-coordinator/how-to.md"
     },
     {
-      "slug": "booking-coordinator",
-      "dept": "client-experience-booking",
-      "title": "Booking Coordinator",
-      "role_type": "coordinator",
-      "word_count": 6030,
-      "sop_count": 0,
-      "sop_min": 0,
-      "path": "templates/role-library/client-experience-booking/booking-coordinator.md"
-    },
-    {
       "slug": "client-onboarding-specialist",
       "dept": "client-experience-booking",
       "title": "Client Onboarding Specialist",
@@ -699,16 +1239,6 @@
       "sop_count": 0,
       "sop_min": 0,
       "path": "templates/role-library/client-experience-booking/client-onboarding-specialist/how-to.md"
-    },
-    {
-      "slug": "client-onboarding-specialist",
-      "dept": "client-experience-booking",
-      "title": "Client Onboarding Specialist",
-      "role_type": "specialist",
-      "word_count": 7006,
-      "sop_count": 0,
-      "sop_min": 0,
-      "path": "templates/role-library/client-experience-booking/client-onboarding-specialist.md"
     },
     {
       "slug": "deep-research-specialist",
@@ -1221,16 +1751,6 @@
       "path": "templates/role-library/engineering/director-of-engineering/how-to.md"
     },
     {
-      "slug": "director-of-engineering",
-      "dept": "engineering",
-      "title": "Director Of Engineering",
-      "role_type": "director",
-      "word_count": 7968,
-      "sop_count": 0,
-      "sop_min": 0,
-      "path": "templates/role-library/engineering/director-of-engineering.md"
-    },
-    {
       "slug": "qa-engineer",
       "dept": "engineering",
       "title": "Qa Engineer",
@@ -1239,16 +1759,6 @@
       "sop_count": 0,
       "sop_min": 0,
       "path": "templates/role-library/engineering/qa-engineer/how-to.md"
-    },
-    {
-      "slug": "qa-engineer",
-      "dept": "engineering",
-      "title": "Qa Engineer",
-      "role_type": "specialist",
-      "word_count": 7197,
-      "sop_count": 0,
-      "sop_min": 0,
-      "path": "templates/role-library/engineering/qa-engineer.md"
     },
     {
       "slug": "qc-specialist",
@@ -1271,16 +1781,6 @@
       "path": "templates/role-library/engineering/systems-engineer/how-to.md"
     },
     {
-      "slug": "systems-engineer",
-      "dept": "engineering",
-      "title": "Systems Engineer",
-      "role_type": "specialist",
-      "word_count": 6914,
-      "sop_count": 0,
-      "sop_min": 0,
-      "path": "templates/role-library/engineering/systems-engineer.md"
-    },
-    {
       "slug": "concierge-lead",
       "dept": "founding-member-concierge",
       "title": "Concierge Lead",
@@ -1289,16 +1789,6 @@
       "sop_count": 0,
       "sop_min": 0,
       "path": "templates/role-library/founding-member-concierge/concierge-lead/how-to.md"
-    },
-    {
-      "slug": "concierge-lead",
-      "dept": "founding-member-concierge",
-      "title": "Concierge Lead",
-      "role_type": "specialist",
-      "word_count": 6646,
-      "sop_count": 0,
-      "sop_min": 0,
-      "path": "templates/role-library/founding-member-concierge/concierge-lead.md"
     },
     {
       "slug": "deep-research-specialist",
@@ -1331,16 +1821,6 @@
       "path": "templates/role-library/founding-member-concierge/director-of-founding-member-concierge/how-to.md"
     },
     {
-      "slug": "director-of-founding-member-concierge",
-      "dept": "founding-member-concierge",
-      "title": "Director Of Founding Member Concierge",
-      "role_type": "director",
-      "word_count": 7802,
-      "sop_count": 0,
-      "sop_min": 0,
-      "path": "templates/role-library/founding-member-concierge/director-of-founding-member-concierge.md"
-    },
-    {
       "slug": "membership-specialist",
       "dept": "founding-member-concierge",
       "title": "Membership Specialist",
@@ -1349,16 +1829,6 @@
       "sop_count": 0,
       "sop_min": 0,
       "path": "templates/role-library/founding-member-concierge/membership-specialist/how-to.md"
-    },
-    {
-      "slug": "membership-specialist",
-      "dept": "founding-member-concierge",
-      "title": "Membership Specialist",
-      "role_type": "specialist",
-      "word_count": 6533,
-      "sop_count": 0,
-      "sop_min": 0,
-      "path": "templates/role-library/founding-member-concierge/membership-specialist.md"
     },
     {
       "slug": "qc-specialist",
@@ -1971,16 +2441,6 @@
       "path": "templates/role-library/launch-operations/director-of-launch-operations/how-to.md"
     },
     {
-      "slug": "director-of-launch-operations",
-      "dept": "launch-operations",
-      "title": "Director Of Launch Operations",
-      "role_type": "director",
-      "word_count": 9167,
-      "sop_count": 0,
-      "sop_min": 0,
-      "path": "templates/role-library/launch-operations/director-of-launch-operations.md"
-    },
-    {
       "slug": "go-to-market-specialist",
       "dept": "launch-operations",
       "title": "Go To Market Specialist",
@@ -1991,16 +2451,6 @@
       "path": "templates/role-library/launch-operations/go-to-market-specialist/how-to.md"
     },
     {
-      "slug": "go-to-market-specialist",
-      "dept": "launch-operations",
-      "title": "Go To Market Specialist",
-      "role_type": "specialist",
-      "word_count": 7652,
-      "sop_count": 0,
-      "sop_min": 0,
-      "path": "templates/role-library/launch-operations/go-to-market-specialist.md"
-    },
-    {
       "slug": "launch-manager",
       "dept": "launch-operations",
       "title": "Launch Manager",
@@ -2009,16 +2459,6 @@
       "sop_count": 0,
       "sop_min": 0,
       "path": "templates/role-library/launch-operations/launch-manager/how-to.md"
-    },
-    {
-      "slug": "launch-manager",
-      "dept": "launch-operations",
-      "title": "Launch Manager",
-      "role_type": "manager",
-      "word_count": 5649,
-      "sop_count": 0,
-      "sop_min": 0,
-      "path": "templates/role-library/launch-operations/launch-manager.md"
     },
     {
       "slug": "qc-specialist",
@@ -2151,16 +2591,6 @@
       "path": "templates/role-library/legal-compliance/ip--trademark-specialist.md"
     },
     {
-      "slug": "qc-specialist---legal",
-      "dept": "legal-compliance",
-      "title": "Qc Specialist Legal",
-      "role_type": "specialist",
-      "word_count": 8389,
-      "sop_count": 0,
-      "sop_min": 0,
-      "path": "templates/role-library/legal-compliance/qc-specialist---legal.md"
-    },
-    {
       "slug": "qc-specialist-legal",
       "dept": "legal-compliance",
       "title": "Qc Specialist Legal",
@@ -2221,16 +2651,6 @@
       "path": "templates/role-library/listings/director-of-listings/how-to.md"
     },
     {
-      "slug": "director-of-listings",
-      "dept": "listings",
-      "title": "Director Of Listings",
-      "role_type": "director",
-      "word_count": 9785,
-      "sop_count": 0,
-      "sop_min": 0,
-      "path": "templates/role-library/listings/director-of-listings.md"
-    },
-    {
       "slug": "listing-creator",
       "dept": "listings",
       "title": "Listing Creator",
@@ -2239,16 +2659,6 @@
       "sop_count": 0,
       "sop_min": 0,
       "path": "templates/role-library/listings/listing-creator/how-to.md"
-    },
-    {
-      "slug": "listing-creator",
-      "dept": "listings",
-      "title": "Listing Creator",
-      "role_type": "specialist",
-      "word_count": 7686,
-      "sop_count": 0,
-      "sop_min": 0,
-      "path": "templates/role-library/listings/listing-creator.md"
     },
     {
       "slug": "marketplace-specialist",
