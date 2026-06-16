@@ -1020,7 +1020,7 @@ See `23-ai-workforce-blueprint/CHANGELOG.md` for the full per-file detail.
 
 ### Changes
 
-- Genericized all client names (Corey, Lyric, Karen Vaughn, Jocelyn, Cassandra, Kofi, etc.) across role files, scripts, CHANGELOG, INSTRUCTIONS, build-state-schema, and SOP examples.
+- Genericized all leaked client names across role files, scripts, CHANGELOG, INSTRUCTIONS, build-state-schema, and SOP examples.
 - Only names/brands changed; every rule, threshold, auto-fail, model id, token count, config value, and SOP step preserved verbatim.
 - Two documented false-positives left intact: "song lyrics" (copyright rule) and "Sheila Heen" (published book attribution).
 - All 9 version markers bumped from v12.6.1 to v12.6.2.
@@ -1172,7 +1172,7 @@ Encodes the PROFESSIONAL DESIGN-CRAFT + COLOR-THEORY standard into the Presentat
 
 ### Changes
 
-Two complementary bodies of presentation work land together. (A) The LYRIC-TYPOGRAPHY-STANDARD encoding (typography law, standalone-art gate, the Purple Rain hook doctrine, and the gradual spread value ladder), carried forward from the presentation-typography-art-hook-standard branch and reconciled both-sides-forward with the 10-named-components work already on main (v12.4.5). (B) The elevation of the proven flow (Section 4.2), the doctrine (Section 4.3), the 10 named components (Section 4.4), the Signature Presentation Theory (SEE, PSD, care-before-credentials, teach-themselves, expertise-over-charisma), and the typography/art standard into ONE named, canonical slide-by-slide arc, distilled from the live teaching transcript (Trevor Otts, 2026-06-11) read end to end. Nothing in the operator's philosophy is changed: the rule is add-on and improve-upon, never change. No build logic.
+Two complementary bodies of presentation work land together. (A) The SIGNATURE-TYPOGRAPHY-STANDARD encoding (typography law, standalone-art gate, the Purple Rain hook doctrine, and the gradual spread value ladder), carried forward from the presentation-typography-art-hook-standard branch and reconciled both-sides-forward with the 10-named-components work already on main (v12.4.5). (B) The elevation of the proven flow (Section 4.2), the doctrine (Section 4.3), the 10 named components (Section 4.4), the Signature Presentation Theory (SEE, PSD, care-before-credentials, teach-themselves, expertise-over-charisma), and the typography/art standard into ONE named, canonical slide-by-slide arc, distilled from the live teaching transcript (Trevor Otts, 2026-06-11) read end to end. Nothing in the operator's philosophy is changed: the rule is add-on and improve-upon, never change. No build logic.
 
 - `universal-sops/CLIENT-WEBINAR-DECK-SOP.md`: NEW Section 4.2A "THE BLACKCEO SIGNATURE WEBINAR ARC" (ten named arc sections A-J in the operator's revealed order, each mapped to its components, the typography-and-standalone-art standard, the proven section it collapses onto, and its primary QC gate; plus the 12 connective-tissue rules and the three-layers-per-slide bar). This sits alongside Section 4.4 (the 10 required components) and Section 4.3 (the doctrine), tying them into one journey.
 - `presentations/qc-specialist-presentations.md` (v1.2): merged forward the typography/standalone-art/hook/gradual-drop auto-fail gates (AF-P10/AF-I9 designed typography, AF-P11/AF-I10 standalone art, AF-C2 hook doctrine strengthened) with the 10-named-components criteria (c18-c22) already on main. The gradual-drop choreography gate is now AF-C7 (renamed from the branch's AF-C6 to avoid a code collision with the on-main multi-idea AF-C6); all references reconciled to AF-C7. 22 copy criteria retained.
@@ -1272,7 +1272,7 @@ No em dashes in any touched file. No new departments or doctrine changes; this i
 
 ### Changes
 
-Complete surgery on the Presentation Department to take its output from 7.4/10 to the proven Lyric standard (final QC 9.42) by converting Trevor's governing intelligence from prose into enforced machinery.
+Complete surgery on the Presentation Department to take its output from 7.4/10 to the proven reference standard (final QC 9.42) by converting Trevor's governing intelligence from prose into enforced machinery.
 
 **P0 run-breakers:**
 - ROLE-12 Slide Submitter rewritten to the real Kie.ai API: states waiting/success/fail (old complete/in_progress/failed removed from logic), data.resultJson parsed to resultUrls[0], failCode/failMsg logged, master Appendix A pasted verbatim as SOP 9.3a, the input_urls/LOGO_URL image-to-image logo mechanism restored, and the API smoke test added.
@@ -1303,7 +1303,7 @@ Four gaps in the ZHC closeout chain verified from code per WATCHDOG-SPEC-v12.3.1
 
 **Gap A — No operator escalation for stalled interviews:**
 The nudge cron exhausted at 168h and went permanently silent. Zero operator escalation for
-stalled interviews, failed QC, wedged builds, or blocked closeouts. Beverly sat 9 days silent.
+stalled interviews, failed QC, wedged builds, or blocked closeouts. a client sat 9 days silent.
 
 Fix: New `closeout-readiness-watchdog.sh` (every 6h). Detects STUCK_MID_INTERVIEW,
 STUCK_INTERVIEW_NEVER_STARTED, STUCK_QC_FAILED, STUCK_PRE_CLOSEOUT, STUCK_CLOSEOUT_BLOCKED.
@@ -1413,7 +1413,7 @@ The `interview-nudge` cron had a kill-CONDITION (exits 0 when `interviewComplete
 
 **Fix (three layers):**
 - `install.sh install_interview_nudge_cron()`: captures UUID from `openclaw cron add --json` output and persists it to build-state as `.interviewNudgeUuid` + `.interviewNudgeRegisteredAt`.
-- `run-closeout.sh` done-transition: self-removes the nudge cron by UUID (primary) + name-scan fallback for boxes installed before UUID recording (Talaya fleet rescue). Also kills the loop-registry entry.
+- `run-closeout.sh` done-transition: self-removes the nudge cron by UUID (primary) + name-scan fallback for boxes installed before UUID recording (a client fleet rescue). Also kills the loop-registry entry.
 - `interview-nudge-cron.sh` shim: `interviewComplete=true` branch now calls `self_remove_cron("interviewComplete")` before `exit 0`. Guarantees removal even on clients completed before this release, on the next 6h fire.
 - `build-state-schema.json`: adds `interviewNudgeUuid` + `interviewNudgeRegisteredAt` (additive, non-required).
 
@@ -1477,7 +1477,7 @@ The v12.2.1 fix hardened `install.sh`'s five client-delivery crons and the resol
 `update-skills.sh`'s "backfill if absent" branch — which runs every time a box pulls updates —
 was unconditionally regenerating the weekly-onboarding-update cron from a bare `print(allow[0])`
 with no `OPERATOR_CHAT_IDS` rejection and no `case` abort guard. On any box where `allowFrom[0]`
-is an operator ID (e.g. Dr Tola `[5252140759, 8399116757, ...]`), every update sweep silently
+is an operator ID (e.g. a client `[5252140759, 8399116757, ...]`), every update sweep silently
 re-introduced the misroute even after it had been manually corrected.
 
 **Files changed:**
@@ -1528,7 +1528,7 @@ re-introduced the misroute even after it had been manually corrected.
 **Skill 44 — PLAN MODE (Step 0.5) + QC GATE (Step 9) + WF-1..WF-21 Checklist + per-build qc-built-workflow.sh**
 
 Added a binding PLAN→BUILD→QC protocol to Skill 44 (Convert and Flow Operator) that closes
-three gaps: (1) no planning step before builds, (2) trigger-inactive silent failure (the Sheila
+three gaps: (1) no planning step before builds, (2) trigger-inactive silent failure (the a client
 trap), and (3) build agent self-reports accepted as truth without independent verification.
 
 - **Step 0.5 PLAN MODE** — BINDING gate before any `caf workflows build` or Tier 4 build:
@@ -1539,7 +1539,7 @@ trap), and (3) build agent self-reports accepted as truth without independent ve
 
 - **references/workflow-build-checklist-template.md** — new canonical 21-item checklist
   serving agent self-check (PLAN MODE Step D) AND client hand-over (after QC passes). Includes
-  WF-4 trigger-active Sheila gate, WF-12 SMS From-number gate, WF-20 hallucination detector,
+  WF-4 trigger-active a client gate, WF-12 SMS From-number gate, WF-20 hallucination detector,
   WF-21 snapshot gate. Cross-referenced as superset of skill 41's 12-point checklist.
 
 - **Step 9 QC GATE** — BINDING gate before declaring done: announce to client → spawn
@@ -1635,7 +1635,7 @@ TOOLS.md read row notes: "review and triggers engine subcommands are MVP-deferre
 the Tier-0 read for review until shipped." No doc advertises a command the engine lacks.
 
 **B4 — Deferred follow-up (recorded for next release):** add `caf workflows triggers <id>` /
-extend export to merge the trigger bucket so a Tier-0 review returns the whole picture (the Sheila
+extend export to merge the trigger bucket so a Tier-0 review returns the whole picture (the a client
 circular-debug bug: `export` reads only workflowData.templates, cannot show the trigger bucket).
 Until shipped, the docs now make escalation explicit and bounded rather than an open-ended MCP
 free-pick — the routing hole is closed even pre-engine.
@@ -1688,7 +1688,7 @@ total_roles: 335 (unchanged — docs/rule change, no new roles)
 
 **B — AGENTS.md `N33 — Credential Check Protocol` (new section, marker `CREDENTIAL_CHECK_V1`).** Teaches every agent the evidence triad required before "missing" can be claimed: (1) live process env checked, (2) MCP server headers checked, (3) all .env stores checked. DO/DON'T table of common false-negative traps: Docker container env vs host filesystem miss; grep only secrets/.env + openclaw.json; "plugin enabled but key=null" = key IS in MCP headers; trusting a file-grep miss without the live-process-env check. Idempotency marker prevents double-injection by `apply-fleet-standards.sh`.
 
-**Root cause this fixes:** agents falsely reported 3 keys "missing" by checking only `secrets/.env` + `openclaw.json`, skipping the live container process env and MCP server headers where keys actually lived (`~/.openclaw/workspace/.env`, `~/clawd/secrets/.env` confirmed for Jocelyn KIE / Sonatta PIT / Jill GHL).
+**Root cause this fixes:** agents falsely reported 3 keys "missing" by checking only `secrets/.env` + `openclaw.json`, skipping the live container process env and MCP server headers where keys actually lived (`~/.openclaw/workspace/.env`, `~/clawd/secrets/.env` confirmed for a client KIE / a client PIT / a client GHL).
 
 ---
 
@@ -1722,7 +1722,7 @@ Fix: every hardcoded floor-count integer in human-readable output is replaced by
 CI guard added: `scripts/check-floor-count-drift.py` — fails if any string literal in `department-floor.py` contains `NN-department` where NN disagrees with the computed floor, and asserts the live `evaluate_floor()` reason embeds the actual count. Wired into `.github/workflows/qc-static.yml`.
 
 **FIX 2 — INTERVIEW NEVER FALSELY FLAGGED INCOMPLETE AGAIN (`build-workforce.py` + `verify-zhc-standard.sh`).**
-Root cause: `build_from_config()` wrote the owner's real interview answers into `workforce-interview-answers.md` but never set `interviewComplete=true` in `.workforce-build-state.json`. Every downstream check (nudge cron, `verify-zhc-standard.sh`, `resume-workforce-build.sh`) reads that flag and falsely reported "interview not started/incomplete" — this mislabeled Teresa/Talaya/Karen/Sheila/Sonatta all session.
+Root cause: `build_from_config()` wrote the owner's real interview answers into `workforce-interview-answers.md` but never set `interviewComplete=true` in `.workforce-build-state.json`. Every downstream check (nudge cron, `verify-zhc-standard.sh`, `resume-workforce-build.sh`) reads that flag and falsely reported "interview not started/incomplete" — this mislabeled several clients all session.
 
 Fix: two new helpers in `build-workforce.py`:
 - `_write_interview_complete_to_state(answers_path)` — writes `interviewComplete=true`, `interviewCompletedAt`, `interviewProgress.lastQuestionAt`, and `interviewProgress.answersFilePath` (the absolute path of the populated file) into build-state immediately after the answers file is written. Called from `build_from_config()` at the point answers are flushed.
@@ -1744,7 +1744,7 @@ Fix: two new helpers in `build-workforce.py`:
 
 **Auto-provisioned; no new workspace.** Roles register under the existing `openclaw-maintenance` workspace via `seed-workspaces.py` + `materialize-dept-agents.sh` (idempotent). No new CC API surface; `pinnedTag v4.39.0` / `minVersion v4.39.0` unchanged.
 
-**Excludes Jill-style opt-outs.** No client-business-specific dept promoted to mandatory. No force-add to any opted-out box.
+**Excludes a client-style opt-outs.** No client-business-specific dept promoted to mandatory. No force-add to any opted-out box.
 
 ---
 
@@ -1752,7 +1752,7 @@ Fix: two new helpers in `build-workforce.py`:
 
 ### Changes
 
-**Root cause (confirmed on drtola / talaya / jocelyn):** When `install.sh` is run from the operator's Mac (via SSH tunnel), the SSH session inherits the operator's shell env vars, including `TELEGRAM_CHAT_ID=5252140759` (Trevor's operator chat). The `resolve_telegram_target_universal` Python resolver's S20 source (shell env) picked up this value and cached it as `TELEGRAM_TARGET_CACHED`. All 5 cron-creation functions (`install_weekly_cron`, `install_workforce_resume_cron`, `install_onboarding_resume_cron`, `install_watchdog_loop_cron`, `install_interview_nudge_cron`) then registered crons with `--to 5252140759` — routing every onboarding-nudge, watchdog, and weekly-update delivery to the operator instead of the client owner.
+**Root cause (confirmed on several clients):** When `install.sh` is run from the operator's Mac (via SSH tunnel), the SSH session inherits the operator's shell env vars, including `TELEGRAM_CHAT_ID=5252140759` (Trevor's operator chat). The `resolve_telegram_target_universal` Python resolver's S20 source (shell env) picked up this value and cached it as `TELEGRAM_TARGET_CACHED`. All 5 cron-creation functions (`install_weekly_cron`, `install_workforce_resume_cron`, `install_onboarding_resume_cron`, `install_watchdog_loop_cron`, `install_interview_nudge_cron`) then registered crons with `--to 5252140759` — routing every onboarding-nudge, watchdog, and weekly-update delivery to the operator instead of the client owner.
 
 **Fix — three layers:**
 
@@ -1883,7 +1883,7 @@ New `shared-utils/check-skill-prereqs.sh`: per-skill read-only prereq checker; e
 
 **Bug 1 -- register-routing-dept.py:** Fixed one-too-many-dot-dot path overshoot (line 57: `../../` not `../../../`) that caused the naming-map lookup to escape above repo root on all standard install paths. Fixed naming-map schema mismatch (lines 76-90): the real map stores mandatory as a dict keyed by slug (not an array), and vertical_packs as a nested dict; the old code iterated dict keys as strings, crashed with AttributeError, and found zero slugs -- breaking routing registration for bugs/healer/presentations and every vertical-pack dept on every box. New index-builder handles both dict-keyed (mandatory) and list-with-id (vertical_packs.auto_add_departments) section types, with legacy array fallback. Added installed-skill candidate paths ($HOME/.openclaw/skills/ + /data/.openclaw/skills/) so VPS/Docker boxes resolve without --naming-map.
 
-**Bug 2 -- materialize-dept-agents.sh:** Removed invalid `wiki` top-level key from the desired_entry written into every dept agent (lines 202-210) and from the backfill onto pre-existing entries (lines 241-246). The agents.list[] schema is strict (z.core.$strict); `wiki` is not among its allowed keys. The invalid key caused `openclaw config validate` / `openclaw gateway status` / `openclaw agents list` to fail on every box built with this script (24 Aurelia agents confirmed). Any future fleet box running Skill-32 materialization would have gotten the same invalid config. The backfill block now actively strips any stale `wiki` key left by earlier runs, making the next materialize run a remediation pass for pre-existing bad entries. Per-agent doc-search is expressed via the existing memorySearch block.
+**Bug 2 -- materialize-dept-agents.sh:** Removed invalid `wiki` top-level key from the desired_entry written into every dept agent (lines 202-210) and from the backfill onto pre-existing entries (lines 241-246). The agents.list[] schema is strict (z.core.$strict); `wiki` is not among its allowed keys. The invalid key caused `openclaw config validate` / `openclaw gateway status` / `openclaw agents list` to fail on every box built with this script (24 a client agents confirmed). Any future fleet box running Skill-32 materialization would have gotten the same invalid config. The backfill block now actively strips any stale `wiki` key left by earlier runs, making the next materialize run a remediation pass for pre-existing bad entries. Per-agent doc-search is expressed via the existing memorySearch block.
 
 - **Version**: v11.26.0 -> v11.27.0 (all version markers + cc-compat.json).
 
@@ -2080,9 +2080,9 @@ hardened at provision time.
   `$()` command substitution and aborts the WHOLE script with `unexpected EOF while looking
   for matching "` at PARSE time — so every client Mac WITHOUT Homebrew bash had a DEAD QC gate
   (the "are you done?" authority the build / verify-library-gate / never-stop cron all delegate
-  to). Reproduced live on Maria Anderson's Mac mini (`/bin/bash -n qc-completeness.sh` → EOF
+  to). Reproduced live on a client's Mac mini (`/bin/bash -n qc-completeness.sh` → EOF
   error, exit 2; earlier misleading exit codes were pipeline tails, not the script). Fix ported
-  from the on-box Maria repair: the three embedded `python3 - <<PYEOF` snippets that lived inside
+  from the on-box a client repair: the three embedded `python3 - <<PYEOF` snippets that lived inside
   `$()` are externalized to sibling files **`_qc_company_info.py`** (the detect_platform company
   resolver), **`_qc_get.py`** (the JSON getter, replaces three inline `python3 -c`),
   **`_qc_owner_chat.py`** (Telegram owner-chat resolver), **`_qc_summary.py`** (per-dept gap
@@ -3006,7 +3006,7 @@ Verify Mac: exit 0, "funnel" key in JSON. Verify VPS: identical.
 
 ## [v11.3.2]  -  2026-06-09  -  fix(G5-FIX): CEO PRIME DIRECTIVE written to injected workspace/SOUL.md; loopholes closed in AGENTS.md + create_role_workspaces.py
 
-- **ROOT CAUSE FIX — PRIME DIRECTIVE now written to the injected file:** `build-workforce.py` `create_department_workspace()` was writing `CEO_ORCHESTRATOR_RULE_V2` (the PRIME DIRECTIVE) to `DEPARTMENTS_DIR/ceo/SOUL.md` — the `dept-ceo` sub-agent workspace. The gateway injects bootstrap files from the MAIN agent's workspace (`agents.list[main].workspace` → `agents.defaults.workspace` → `~/.openclaw/workspace`), a completely different path. So the directive was on disk but never reached the model context — the CEO saw the plain "personal assistant / handle it yourself" template and self-executed. Proven on Sheila Reynolds' box: hand-writing to `workspace/SOUL.md` stopped self-execution; a build re-run reverted it. **Fix:** new `_resolve_main_agent_workspace()` function resolves the injected path (same 3-step priority as `install.sh`); `create_department_workspace()` now also injects the PRIME DIRECTIVE into `workspace/SOUL.md` (idempotent, V1→V2 upgrade, scrubs the "personal assistant" intro before prepending). `apply-fleet-standards.sh` Step 6 does the same for existing boxes without a rebuild.
+- **ROOT CAUSE FIX — PRIME DIRECTIVE now written to the injected file:** `build-workforce.py` `create_department_workspace()` was writing `CEO_ORCHESTRATOR_RULE_V2` (the PRIME DIRECTIVE) to `DEPARTMENTS_DIR/ceo/SOUL.md` — the `dept-ceo` sub-agent workspace. The gateway injects bootstrap files from the MAIN agent's workspace (`agents.list[main].workspace` → `agents.defaults.workspace` → `~/.openclaw/workspace`), a completely different path. So the directive was on disk but never reached the model context — the CEO saw the plain "personal assistant / handle it yourself" template and self-executed. Proven on a client Reynolds' box: hand-writing to `workspace/SOUL.md` stopped self-execution; a build re-run reverted it. **Fix:** new `_resolve_main_agent_workspace()` function resolves the injected path (same 3-step priority as `install.sh`); `create_department_workspace()` now also injects the PRIME DIRECTIVE into `workspace/SOUL.md` (idempotent, V1→V2 upgrade, scrubs the "personal assistant" intro before prepending). `apply-fleet-standards.sh` Step 6 does the same for existing boxes without a rebuild.
 - **LOOPHOLE CLOSE — `CEO_OPERATING_PROTOCOL` in `create_role_workspaces.py`:** The old `CEO_OPERATING_PROTOCOL` text (step 2) said "OR spawn a sub-agent directly and instruct it to read the chosen role folder... then execute" — that IS the sub-agent bypass violation (CEO self-dispatching a worker to do production work = same as self-executing). Replaced with the "CEO ROUTING — NO LOOPHOLES" operating protocol: explicit statement that the ONLY permitted routing action is `POST /api/tasks/ingest`, no "trivial task / quick API call" exceptions, no spawning workers as a production tool, idempotent awk-injected into `stub_soul()` for the master-orchestrator role.
 - **LOOPHOLE CLOSE — `AGENTS.md` + `apply-fleet-standards.sh`:** Added `<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->` section to `AGENTS.md` immediately after the ROLE DISCIPLINE block. Enumerates every known self-execution loophole as an explicit table of violations (trivial task, quick API call, spawn-a-sub-agent, "I'm telling the sub-agent to call KIE.ai", "I'm unsure which dept", "owner seemed to want a quick answer"). `apply-fleet-standards.sh` Step 4b injects this section on all existing client boxes (awk-based, idempotent).
 - **FLEET ROLLOUT NOTE:** After applying this update on any client box, you MUST: (1) run `scripts/apply-fleet-standards.sh` OR re-run `build-workforce.py` to inject the PRIME DIRECTIVE into `workspace/SOUL.md`; (2) run `openclaw gateway call sessions.reset` on the CEO/main agent's session to flush the stale context (the old "personal assistant" SOUL.md may be cached in the live session); (3) optionally set an idle session-reset policy (`agents.list[main].session.idleResetMinutes`) so the session auto-reloads on inactivity.
@@ -3016,8 +3016,8 @@ Verify Mac: exit 0, "funnel" key in JSON. Verify VPS: identical.
 
 ## [v11.3.1]  -  2026-06-09  -  fix: remove invalid agents.defaults.tools.exec; add per-dept tools.allow for generation depts
 
-- **BUG FIX — remove invalid `agents.defaults.tools.exec` (2026.6.1 schema rejection):** On OpenClaw 2026.6.1+ the schema validator rejects `agents.defaults.tools.exec` with `"agents.defaults: Invalid input"` and `openclaw doctor --fix` auto-reverts it, meaning the v11.3.0 PR1 exec unlock silently did nothing AND could break `config validate`. The key was never valid on 2026.6.1 (it was referenced from testing on the older 2026.5.28). Removed from three locations: `install.sh` Step 0 python block, `build-workforce.py` non-interactive config update, and `scripts/apply-fleet-standards.sh` CANONICAL dict. The top-level `tools.exec = {security: "full", ask: "off"}` (set in `install.sh` Step 8) IS valid and is kept. Verified against docs.openclaw.ai/gateway/security + live Sheila Reynolds Mac mini (2026.6.1). Fleet apply: run `scripts/apply-fleet-standards.sh` on any existing client box to remove the invalid key.
-- **Generation dept `tools.allow` (graphics/video/audio):** Department specialists in graphics, video, and audio now receive an explicit `tools.allow: ["image_generate","video_generate","music_generate","tts","exec","read","write","edit","web_fetch","web_search"]` in `add_agent_to_config()` (`build-workforce.py`). This ensures generation tools survive any parent-deny inheritance (e.g. main agent's `tools.deny: ["image_generate","video_generate","music_generate"]` on Sheila's box). Tool names verified against live config on Sheila Reynolds' Mac mini (2026.6.1) + docs.openclaw.ai/gateway/security.
+- **BUG FIX — remove invalid `agents.defaults.tools.exec` (2026.6.1 schema rejection):** On OpenClaw 2026.6.1+ the schema validator rejects `agents.defaults.tools.exec` with `"agents.defaults: Invalid input"` and `openclaw doctor --fix` auto-reverts it, meaning the v11.3.0 PR1 exec unlock silently did nothing AND could break `config validate`. The key was never valid on 2026.6.1 (it was referenced from testing on the older 2026.5.28). Removed from three locations: `install.sh` Step 0 python block, `build-workforce.py` non-interactive config update, and `scripts/apply-fleet-standards.sh` CANONICAL dict. The top-level `tools.exec = {security: "full", ask: "off"}` (set in `install.sh` Step 8) IS valid and is kept. Verified against docs.openclaw.ai/gateway/security + live a client Reynolds Mac mini (2026.6.1). Fleet apply: run `scripts/apply-fleet-standards.sh` on any existing client box to remove the invalid key.
+- **Generation dept `tools.allow` (graphics/video/audio):** Department specialists in graphics, video, and audio now receive an explicit `tools.allow: ["image_generate","video_generate","music_generate","tts","exec","read","write","edit","web_fetch","web_search"]` in `add_agent_to_config()` (`build-workforce.py`). This ensures generation tools survive any parent-deny inheritance (e.g. main agent's `tools.deny: ["image_generate","video_generate","music_generate"]` on a client's box). Tool names verified against live config on a client Reynolds' Mac mini (2026.6.1) + docs.openclaw.ai/gateway/security.
 - **All changes byte-identical** in `openclaw-onboarding` (Mac) and `openclaw-onboarding-vps` (VPS). All 9 version markers bumped v11.3.0 → v11.3.1 via `scripts/bump-version.sh`.
 
 ---
@@ -3036,7 +3036,7 @@ Verify Mac: exit 0, "funnel" key in JSON. Verify VPS: identical.
 - **G1 — Skill 22 Mac path resolver (URGENT):** `add-persona-from-source.sh` hardcoded VPS paths (`/data/.openclaw/workspace`, `/data/.openclaw/master-files`) with no Mac branch, causing silent failure on every Mac client box. Added platform resolver mirroring `persona-inbox-watcher.sh` and `orchestrator.py`: `OC_ROOT=/data/.openclaw` on VPS, `OC_ROOT=~/.openclaw` on Mac. All downstream paths (PERSONA_DIR, WORKSPACE, ORCHESTRATOR, INDEXER, gemini-search hint) now derived from `$OC_ROOT`.
 - **G2 — sync-extensions.sh orphan fix:** After routing registration and workspace materialization, now calls `add-department.sh --slug <dept> --name "<name>"` (step 2c) to create the SQLite `workspaces` row that `loadDepartments()` reads. Previously every dept registered via sync was an ORPHAN — openclaw.json had the entry but the CC board had no workspace row. Idempotent: `add-department.sh` returns `{"status":"already_exists"}` and exits 0 if row exists.
 - **G3 — add-department.sh dual-gap fix:** (a) Now calls `register_routing_dept()` as step 9 so the manual path also registers routing in `openclaw.json`. Previously the manual path wrote the CC row but never touched routing → messages were never routed to the new dept. (b) Now INSERTs a dedicated QC Specialist agent row (`role_type=QC Specialist`) at step 2b so the per-dept QC gate has an agent to resolve. Idempotency heal: `already_exists` path also backfills routing for depts created before this fix.
-- **G5 — CEO orchestrator injection (Trevor's "make it permanent"):** `build-workforce.py` `create_department_workspace()` now detects CEO depts (`dept_id in ("ceo","master-orchestrator","dept-ceo")`) and PREPENDS the canonical `CEO_ORCHESTRATOR_RULE` to the TOP of MEMORY.md (was empty), SOUL.md, and IDENTITY.md. NOT written to AGENTS.md/TOOLS.md (shared). Rule includes: route-not-execute, sub-agent-bypass clause (spawning a worker = same violation — the Sheila bug), owner-explicit-permission exception, General Tasks fallback. Idempotent via `CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER`. **SOP-00 aligned:** added R7 (sub-agent-bypass), R8 (General Tasks fallback), R9 (owner-permission exception) to `SOP-00-Owner-Task-Routing.md` v1.1.0.
+- **G5 — CEO orchestrator injection (Trevor's "make it permanent"):** `build-workforce.py` `create_department_workspace()` now detects CEO depts (`dept_id in ("ceo","master-orchestrator","dept-ceo")`) and PREPENDS the canonical `CEO_ORCHESTRATOR_RULE` to the TOP of MEMORY.md (was empty), SOUL.md, and IDENTITY.md. NOT written to AGENTS.md/TOOLS.md (shared). Rule includes: route-not-execute, sub-agent-bypass clause (spawning a worker = same violation — the a client bug), owner-explicit-permission exception, General Tasks fallback. Idempotent via `CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER`. **SOP-00 aligned:** added R7 (sub-agent-bypass), R8 (General Tasks fallback), R9 (owner-permission exception) to `SOP-00-Owner-Task-Routing.md` v1.1.0.
 - **G4 — adding-capability-after-build.md v2.0.0:** Full rewrite of the capability-addition SOP. Now covers all 6 events: new book/video/persona, new department, new role/specialist, new SOP, new skill, persona governance update. Each event has a Trigger / ordered Steps / Verification Gate. Dept event verification gate includes `SELECT … FROM workspaces` (not just openclaw.json). Persona events include auto-re-index + governing-personas regen. Replaced sync-extensions-only guidance with dual-path. **EXTENSIBILITY.md Script Reference** updated to include `add-department.sh`, `seed-workspaces.py`, `ingest-sop-library.py`, `generate-governing-personas.sh`, `add-role.sh`.
 - **G6 — add-role.sh (new script):** New `23-ai-workforce-blueprint/scripts/add-role.sh` — post-build single-role add under an existing dept without a full rebuild. Creates role workspace + IDENTITY.md + SOUL.md + MEMORY.md + how-to.md (stub) + governing-personas.md + USER/AGENTS/TOOLS symlinks + CC agent row (`specialist_type=specialist`). Platform resolver matches sibling scripts. Idempotent.
 - **All fixes byte-identical** in `openclaw-onboarding` (Mac) and `openclaw-onboarding-vps` (VPS). All 9 version markers bumped v11.1.0 → v11.2.0 via `scripts/bump-version.sh`.
@@ -3045,7 +3045,7 @@ Verify Mac: exit 0, "funnel" key in JSON. Verify VPS: identical.
 
 ## [v11.0.1]  -  2026-06-09  -  fix: gemini-indexer hang bug — explicit 30 s timeout + bounded 429/quota retry (Skill 22 v6.5.8, Skill 23 v11.0.1)
 
-- **gemini-indexer.py (all 4 copies):** `genai.Client` now constructed with `http_options=types.HttpOptions(timeout=30000)` (30 s, milliseconds per SDK). Without this, a 429/quota-exhausted response stalled the HTTPS socket indefinitely (root cause of Cassandra's 1-hour persona-index hang). Added `_is_quota_or_timeout()` helper that matches 429, quota, rate, resource_exhausted, timed out, timeout in exception text. `get_embedding()` now retries quota/timeout errors up to 2 times with exponential backoff, then calls `sys.exit(2)` with `"ERROR: embedding quota exhausted / request timed out — semantic index not built, keyword fallback in effect"`. All other exceptions follow the existing retry logic. The indexer can never hang indefinitely again.
+- **gemini-indexer.py (all 4 copies):** `genai.Client` now constructed with `http_options=types.HttpOptions(timeout=30000)` (30 s, milliseconds per SDK). Without this, a 429/quota-exhausted response stalled the HTTPS socket indefinitely (root cause of a client's 1-hour persona-index hang). Added `_is_quota_or_timeout()` helper that matches 429, quota, rate, resource_exhausted, timed out, timeout in exception text. `get_embedding()` now retries quota/timeout errors up to 2 times with exponential backoff, then calls `sys.exit(2)` with `"ERROR: embedding quota exhausted / request timed out — semantic index not built, keyword fallback in effect"`. All other exceptions follow the existing retry logic. The indexer can never hang indefinitely again.
 - **SDK param confirmed:** `types.HttpOptions.timeout` is `Optional[int]` in milliseconds. Source: `https://raw.githubusercontent.com/googleapis/python-genai/main/google/genai/types.py`
 - **Skill 22 (book-to-persona):** skill-version.txt bumped v6.5.7 → v6.5.8.
 - **Skill 23 (ai-workforce-blueprint):** skill-version.txt bumped 11.0.0 → 11.0.1 (via umbrella bump).
@@ -3113,7 +3113,7 @@ Low. Additive and non-destructive: no file is ever deleted (real files are backe
 ## [v10.15.50]  -  2026-06-06  -  fix: add safe_json_edit validate/rollback guard on openclaw.json edits (parity with VPS skills.path fix)
 
 ### Why
-The VPS `update-skills.sh` was writing `skills.path` into `openclaw.json` — a key OpenClaw 2026.5.x rejects with "skills Unrecognized key path / skills Invalid input". Under `set -euo pipefail` this aborted the entire VPS updater before writing `.onboarding-version` / running migrate / qc / cron-create, breaking Corey + Maria's updates (hand-fixed per-box). The Mac updater had no `skills.path` write, but equally lacked any validate/rollback harness around future json edits.
+The VPS `update-skills.sh` was writing `skills.path` into `openclaw.json` — a key OpenClaw 2026.5.x rejects with "skills Unrecognized key path / skills Invalid input". Under `set -euo pipefail` this aborted the entire VPS updater before writing `.onboarding-version` / running migrate / qc / cron-create, breaking multiple clients' updates (hand-fixed per-box). The Mac updater had no `skills.path` write, but equally lacked any validate/rollback harness around future json edits.
 
 ### What changed
 - New `safe_json_edit()` helper added: backs up `openclaw.json`, runs the transform function, calls `openclaw config validate`, and rolls back on failure — so one bad key can never abort the Mac updater under `set -e`. No current callers (Mac updater already uses `openclaw mcp set` CLI for all json writes); forward-defense only.
@@ -3307,7 +3307,7 @@ Skill 41 (`41-build-with-ai-playbook`) was already merged to main at v1.3.0, but
 ## [v10.15.38]  -  2026-06-03  -  Preventive safety rule N28: no destructive teardown or kill scripts
 
 ### Why
-Forensic post-mortem (2026-06-03) confirmed a fleet-wide risk: an autonomous agent on Kofi's Mac mini created and scheduled `kofi-sop-build-kill.sh` during Skill 23 to abort a runaway SOP build. The script wiped Homebrew, Node, OpenClaw, and ~/clawd. Attribution confirmed this was a one-off from pre-v10.14 unconstrained agent behavior, not generated by any current tooling. However, no explicit rule existed in the AGENTS.md template to prevent any future agent from doing the same.
+Forensic post-mortem (2026-06-03) confirmed a fleet-wide risk: an autonomous agent on a client's Mac mini created and scheduled `client-sop-build-kill.sh` during Skill 23 to abort a runaway SOP build. The script wiped Homebrew, Node, OpenClaw, and ~/clawd. Attribution confirmed this was a one-off from pre-v10.14 unconstrained agent behavior, not generated by any current tooling. However, no explicit rule existed in the AGENTS.md template to prevent any future agent from doing the same.
 
 ### What changed
 - `AGENTS.md` — added N28 rule to the rules index: agents MUST NOT create or schedule any script or cron that removes core toolchain paths (`~/clawd`, `~/.openclaw`, Homebrew, Node, OpenClaw). Cleanup must be scoped (remove a specific cron by ID), reversible (.QUARANTINED-<ts> rename, never rm), and never cron-scheduled for self-deletion. Any toolchain-touching script requires explicit owner approval.
@@ -3436,11 +3436,11 @@ The fleet-standards commit (bb3fa3f) shipped `apply-fleet-standards.sh` (sub-age
 ### Why
 Two confirmed-in-field bugs in `update-skills.sh`:
 
-**Bug B (Cassandra's Mac):** `get_current_version()` read from `~/Downloads/openclaw-master-files/.onboarding-version`
+**Bug B (a client's Mac):** `get_current_version()` read from `~/Downloads/openclaw-master-files/.onboarding-version`
 (legacy path) first, while the marker WRITE went to `~/.openclaw/skills/.onboarding-version` (active path).
 On legacy installs with a `~/Downloads` marker, the script saw the old version on every invocation and
 re-ran the skill copy, but because `set -euo pipefail` caused the "already up-to-date" flow to exit before
-writing the active-dir marker, the legacy marker never advanced. Field evidence: Cassandra ran update-skills.sh,
+writing the active-dir marker, the legacy marker never advanced. Field evidence: a client ran update-skills.sh,
 skill content updated, but `.onboarding-version` appeared stuck at the old value.
 
 **Bug A label (VPS):** `update-skills.sh` printed "OpenClaw Skills Updater (Mac)" in the VPS repo (copy-paste
@@ -3557,9 +3557,9 @@ edits, no behavior change for already-built workforces until re-run.
 ## [v10.15.26]  -  2026-06-01  -  HARD department/role/SOP FLOOR — kill the seeded-build-state bypass; gates count REAL depts on disk against the 16-mandatory + vertical-pack floor
 
 ### Why
-Clients kept landing with HEAVILY-REDUCED workforces (Cassandra 3 depts, Kofi-style 6, others dept-per-3 / legacy) DESPITE the repo carrying 216 role templates, 16 mandatory canonical departments, and 7 industry vertical packs. Diagnosis of the build + gate pipeline found the floor was applied IN-MEMORY at build time by `reconcile_canonical_floor()` / `apply_vertical_packs()` but NEVER enforced on disk afterward, and THREE layers trusted the build-state JSON as proof of completion instead of counting real department folders:
-1. **Seeded-build-state bypass (PRIME CAUSE).** `verify-zhc-standard.sh` step-2 read `.departments[]` from the build-state JSON (`st.get("departments", [])`), so a hand-seeded build-state (Cassandra's 3-dept fiction) with 16 fake dept entries reported "all canonical present" and PASSED the floor. `run-closeout.sh` preflight only blocked on rc 4/5 (libraries), ignoring rc 3 (floor). `resume-workforce-build.sh` BELT self-removed the never-stop cron purely on JSON `status=done`/`closeoutStatus=done` — so a seeded "done" state ended the build with zero disk verification.
-2. **No floor concept in the disk-QC authority.** `qc-completeness.sh` walked the departments dir and measured per-dept STAFFING, but never compared `depts_on_disk` against the 16-mandatory floor — a 3-dept workforce where those 3 were fully staffed returned PASS (the Cassandra-3 / Kofi-6 bug).
+Clients kept landing with HEAVILY-REDUCED workforces (a client 3 depts, a client-style 6, others dept-per-3 / legacy) DESPITE the repo carrying 216 role templates, 16 mandatory canonical departments, and 7 industry vertical packs. Diagnosis of the build + gate pipeline found the floor was applied IN-MEMORY at build time by `reconcile_canonical_floor()` / `apply_vertical_packs()` but NEVER enforced on disk afterward, and THREE layers trusted the build-state JSON as proof of completion instead of counting real department folders:
+1. **Seeded-build-state bypass (PRIME CAUSE).** `verify-zhc-standard.sh` step-2 read `.departments[]` from the build-state JSON (`st.get("departments", [])`), so a hand-seeded build-state (a client's 3-dept fiction) with 16 fake dept entries reported "all canonical present" and PASSED the floor. `run-closeout.sh` preflight only blocked on rc 4/5 (libraries), ignoring rc 3 (floor). `resume-workforce-build.sh` BELT self-removed the never-stop cron purely on JSON `status=done`/`closeoutStatus=done` — so a seeded "done" state ended the build with zero disk verification.
+2. **No floor concept in the disk-QC authority.** `qc-completeness.sh` walked the departments dir and measured per-dept STAFFING, but never compared `depts_on_disk` against the 16-mandatory floor — a 3-dept workforce where those 3 were fully staffed returned PASS (the a client-3 / a client-6 bug).
 3. **Old-generator drift.** Pre-canonical-floor clients kept whatever the old generator made; nothing re-enforced the floor on update because the gates never knew the floor existed on disk.
 
 ### What changed (BOTH repos, identical logic)
@@ -3577,10 +3577,10 @@ A workforce below (16 mandatory − explicit declines + matched vertical packs) 
 ## [v10.15.25]  -  2026-06-01  -  Skill 23 re-instantiation crons unblocked: build-workforce.py `subprocess` NameError fixed + qc-gate accepts the embedded-Section-9 SOP model (two repo bugs that blocked / false-failed the fleet)
 
 ### Why
-Both bugs were found on live client boxes during the 2026-06-01 fleet rollout (Corey hot-patch, Teresa gate-mismatch) and were verified present in BOTH onboarding mains. They block or false-fail the never-stop re-instantiation crons for every not-yet-completed client build.
+Both bugs were found on live client boxes during the 2026-06-01 fleet rollout (a client hot-patch, a client gate-mismatch) and were verified present in BOTH onboarding mains. They block or false-fail the never-stop re-instantiation crons for every not-yet-completed client build.
 
 1. **`subprocess` NameError crashes every build at the SOP-populate step.** `23-ai-workforce-blueprint/scripts/build-workforce.py` calls bare `subprocess.run(...)` / `except subprocess.TimeoutExpired:` inside `build_from_config()` (the SOP auto-populate step, ~L882/L907), but the ONLY `import subprocess` statements were FUNCTION-LOCAL inside OTHER functions (`import subprocess as _subprocess` ~L993; `import subprocess` ~L3117). So `subprocess` was never bound at module scope and the bare references raised `NameError: name 'subprocess' is not defined`, crashing the build.
-2. **qc-gate false-FAILS fully-instantiated workforces.** `qc-completeness.sh` (and the gates that delegate to it, `verify-library-gate.sh` + `verify-zhc-standard.sh`) only counted a SOP "substantive" when a STANDALONE `0[1-9]-*.md` file was ≥7KB with the five `## DEFINE/MEASURE/ANALYZE/IMPROVE/CONTROL` headers. But the WS-2 instantiate model embeds SOPs in `how-to.md` Section 9 as `### SOP 9.x` blocks (When-to-run / Frequency / Inputs / Steps / Outputs / Hand-to / Failure-mode). So substantive instantiated workforces (Teresa/Corey/Maria/Kofi) were marked INCOMPLETE → the never-stop crons looped forever or fell back to regenerate-from-scratch.
+2. **qc-gate false-FAILS fully-instantiated workforces.** `qc-completeness.sh` (and the gates that delegate to it, `verify-library-gate.sh` + `verify-zhc-standard.sh`) only counted a SOP "substantive" when a STANDALONE `0[1-9]-*.md` file was ≥7KB with the five `## DEFINE/MEASURE/ANALYZE/IMPROVE/CONTROL` headers. But the WS-2 instantiate model embeds SOPs in `how-to.md` Section 9 as `### SOP 9.x` blocks (When-to-run / Frequency / Inputs / Steps / Outputs / Hand-to / Failure-mode). So substantive instantiated workforces (several clients) were marked INCOMPLETE → the never-stop crons looped forever or fell back to regenerate-from-scratch.
 
 ### What
 - **BUG 1 — `build-workforce.py`:** added a single TOP-LEVEL `import subprocess` with the other module imports (after `import shutil`). Every `subprocess.` / `_subprocess.` reference now resolves in scope; the function-local re-imports become harmless. Verified via `ast.parse` + an AST in-scope check (no unresolved `subprocess` attribute access anywhere).
@@ -3652,7 +3652,7 @@ of roles, so even the augmentation pass silently fell through to stub+LLM for ~4
   instantiated-from-library vs LLM-generated counts/percentages per build, plus a
   per-role `[ROLE-LIBRARY] INSTANTIATED / NO TEMPLATE` line.
 - **Deterministic + identical across clients:** same template + same interview context →
-  byte-identical personalized output (this is what makes Kofi == Lyric == everyone).
+  byte-identical personalized output (this is what makes every client == everyone).
   Import is best-effort: if `create_role_workspaces` can't load, the build degrades
   gracefully to the legacy stub+LLM path.
 
@@ -3730,8 +3730,8 @@ be reported as `done`.
 ## [v10.15.18]  -  2026-05-31  -  Role + SOP libraries are now ALWAYS real (no more build-state lie): disk-QC substance gate, hard dept-map assertion, non-skippable SOP population, never-stop resume, GHL media link in closeout
 
 ### Why
-Builds were reporting "done" while the role library / SOP library were empty or thin on disk (Sheila empty,
-Maria 72 thin, Evelyn stubs). Four root causes: (1) the library gate accepted empty/thin SOPs
+Builds were reporting "done" while the role library / SOP library were empty or thin on disk (a client empty,
+a client 72 thin, a client stubs). Four root causes: (1) the library gate accepted empty/thin SOPs
 (`stubs==0 AND avg>0`) — no size/DMAIC/per-role-minimum floor; (2) a stale `DEPT_TO_SUGGESTED_ROLES` map
 keyed on legacy ids (`support`/`operations`/`creative`/`hr`/`it`) that pointed at files that DON'T EXIST,
 so whole departments silently built ZERO roles; (3) SOP population's inline fallback wrote a work file and
@@ -4032,7 +4032,7 @@ placeholder-free `messageTemplate`, no `
 ENFORCED role-library + SOP-library auto-pull: new state fields (`roleLibraryStatus`, `sopLibraryStatus`,
 per-dept `roleLibraryFilled`/`sopLibraryFilled`) + a verify gate (`scripts/verify-library-gate.sh`) + a
 resume gate (`[LIBRARY-RESUME]`) so a workforce is never complete until both libraries are populated
-(last-night Kofi/Teresa/Evelyn/Maria/Lyric incident — scaffolded but libraries never connected).
+(last-night several clients incident — scaffolded but libraries never connected).
 
 ### Version
 - Repo-wide bump v10.15.7 → v10.15.8 via `scripts/bump-version.sh` (all 8 version locations agree).
@@ -4104,7 +4104,7 @@ regression — it makes GHL API replies actually send. Rollback via `git revert 
 
 ### Why
 
-The dashboard's `agents` table has TEXT columns `identity_md`, `soul_md`, `memory_md`, `heartbeat_md`, `how_to_md`. None of skill 32's seeders write them. The dashboard repo has its own `sync-departments-from-build-state.py` (called from Phase 6c), but when that repo is stale or absent the columns stay NULL. Angeleen's audit showed exactly this: agents existed in the table but every content column was NULL, so the dashboard renderer fell back to empty panels.
+The dashboard's `agents` table has TEXT columns `identity_md`, `soul_md`, `memory_md`, `heartbeat_md`, `how_to_md`. None of skill 32's seeders write them. The dashboard repo has its own `sync-departments-from-build-state.py` (called from Phase 6c), but when that repo is stale or absent the columns stay NULL. a client's audit showed exactly this: agents existed in the table but every content column was NULL, so the dashboard renderer fell back to empty panels.
 
 ### How
 
@@ -4130,7 +4130,7 @@ Re-run `bash ~/.openclaw/skills/32-command-center-setup/scripts/run-full-install
 
 ### Why
 
-v10.15.4 made silent failures loud. v10.15.5 ships the mutating remediation operators run after seeing those reports. Three pieces: a legacy-tree reconciler that promotes stranded content from `/data/clawd/departments/` (Angeleen pattern) into the active workspace, a 6-location openclaw binary resolver in populate-sops-from-manifest.py so Kofi-style non-login subprocess PATH gaps stop blocking SOP population, and a one-shot orchestrator that runs the full remediation pipeline against an existing workforce with a `--dry-run` default.
+v10.15.4 made silent failures loud. v10.15.5 ships the mutating remediation operators run after seeing those reports. Three pieces: a legacy-tree reconciler that promotes stranded content from `/data/clawd/departments/` (a client pattern) into the active workspace, a 6-location openclaw binary resolver in populate-sops-from-manifest.py so a client-style non-login subprocess PATH gaps stop blocking SOP population, and a one-shot orchestrator that runs the full remediation pipeline against an existing workforce with a `--dry-run` default.
 
 ### How
 
@@ -4143,11 +4143,11 @@ All three scripts default to dry-run / read-only. Mutation requires `--apply` (r
 
 ### Updated
 
-- `23-ai-workforce-blueprint/scripts/populate-sops-from-manifest.py` — replaced `shutil.which("openclaw")` with a 6-location resolver (`$OPENCLAW_BIN`, `shutil.which`, `/opt/homebrew/bin/openclaw`, `/usr/local/bin/openclaw`, `~/.openclaw/bin/openclaw`, `/data/.npm-global/bin/openclaw`, `/data/linuxbrew/.linuxbrew/bin/openclaw`). Module-level cache (`_OPENCLAW_BIN`) is reused by `spawn_via_openclaw()` so the subprocess invocation no longer relies on the spawning shell's PATH. Closes the macOS non-login-shell PATH gap that left Kofi's SOP queue unconsumed.
+- `23-ai-workforce-blueprint/scripts/populate-sops-from-manifest.py` — replaced `shutil.which("openclaw")` with a 6-location resolver (`$OPENCLAW_BIN`, `shutil.which`, `/opt/homebrew/bin/openclaw`, `/usr/local/bin/openclaw`, `~/.openclaw/bin/openclaw`, `/data/.npm-global/bin/openclaw`, `/data/linuxbrew/.linuxbrew/bin/openclaw`). Module-level cache (`_OPENCLAW_BIN`) is reused by `spawn_via_openclaw()` so the subprocess invocation no longer relies on the spawning shell's PATH. Closes the macOS non-login-shell PATH gap that left a client's SOP queue unconsumed.
 
 ### Migration for existing clients
 
-Run `bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh <client> --dry-run` first to see what would change, then re-run with `--apply` once the dry-run looks safe. Recommended order: Kofi, Maria, Corey, Angeleen, Teresa.
+Run `bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh <client> --dry-run` first to see what would change, then re-run with `--apply` once the dry-run looks safe. Recommended order: several clients.
 
 ### Risk + rollback
 
@@ -4157,7 +4157,7 @@ Run `bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/migrate-existing-
 
 ### Why
 
-Audits across 5 clients (Maria 1/222 roles materialized, Corey 146 thin how-to.md, Angeleen 31 specialists stranded at legacy /data/clawd/departments/, Teresa 0/72 SOPs ever scaffolded, Kofi post-build crashed with missing detect_platform import) revealed the same root cause. Skill 23's build pipeline DID call post-build-role-workspaces.py and populate-sops-from-manifest.py, but both calls were wrapped in capture_output=True + try/except that printed one [v2.1 WARN] line and continued. Operators never knew. No completeness check ran during install OR update, so silent failures persisted across version bumps.
+Audits across 5 clients (a client 1/222 roles materialized, a client 146 thin how-to.md, a client 31 specialists stranded at legacy /data/clawd/departments/, a client 0/72 SOPs ever scaffolded, a client post-build crashed with missing detect_platform import) revealed the same root cause. Skill 23's build pipeline DID call post-build-role-workspaces.py and populate-sops-from-manifest.py, but both calls were wrapped in capture_output=True + try/except that printed one [v2.1 WARN] line and continued. Operators never knew. No completeness check ran during install OR update, so silent failures persisted across version bumps.
 
 ### How
 
@@ -4166,13 +4166,13 @@ Defensive layer first, observability before mutation. Two new scripts plus six p
 ### Added
 
 - `23-ai-workforce-blueprint/scripts/qc-completeness.sh` (NEW) — first-class "are you done?" check. For every dept on disk, reports role-folder count vs role-library expected, library-fill provenance marker count, IDENTITY.md count, average SOPs per role, stub-remaining count, and legacy-tree presence. Emits a JSON artifact at `~/.openclaw/logs/qc-completeness-<ts>.json` plus a human-readable table. Status PASS / PARTIAL / FAIL / NO_WORKFORCE_FOUND. On != PASS the script Telegrams the operator via `openclaw message send` with a per-dept gap breakdown.
-- `23-ai-workforce-blueprint/lib/detect_platform.py` (NEW, vendored from `shared-utils/`) — closes the Kofi root cause. The previously-installed skill folder had no path to `detect_platform`, causing post-build-role-workspaces.py to crash with ModuleNotFoundError. `post-build-role-workspaces.py` and `create_role_workspaces.py` now resolve the import from `lib/` first, with the repo-root `shared-utils/` retained as fallback for in-repo invocation.
+- `23-ai-workforce-blueprint/lib/detect_platform.py` (NEW, vendored from `shared-utils/`) — closes the a client root cause. The previously-installed skill folder had no path to `detect_platform`, causing post-build-role-workspaces.py to crash with ModuleNotFoundError. `post-build-role-workspaces.py` and `create_role_workspaces.py` now resolve the import from `lib/` first, with the repo-root `shared-utils/` retained as fallback for in-repo invocation.
 
 ### Updated
 
 - `23-ai-workforce-blueprint/scripts/build-workforce.py` — Stage 6 post-build and Stage 1 SOP populate calls now stream stdout / stderr live (no capture_output). Both return codes are recorded in a new `[BUILD-RESULT] post_build_role_workspaces_rc=N sop_populate_rc=N` log line. At the end of every build, qc-completeness.sh is invoked automatically. PASS = quiet log-only. Non-PASS = operator Telegram with per-dept breakdown.
 - `23-ai-workforce-blueprint/scripts/verify-v2.1-installation.sh` — fixed stale `create-role-workspaces.py` check (the file was renamed to `create_role_workspaces.py` in v10.6.1, and the check has been failing on every install since). Added check that `lib/detect_platform.py` is bundled.
-- `scripts/qc-system-integrity.sh` — added sections 2.11 (per-dept role-folder count vs `_index.json` expected, WARN below 75%), 2.12 (library-fill provenance marker count), 2.13 (IDENTITY.md per role), 2.14 (legacy `/clawd/departments/` tree detection — Angeleen pattern).
+- `scripts/qc-system-integrity.sh` — added sections 2.11 (per-dept role-folder count vs `_index.json` expected, WARN below 75%), 2.12 (library-fill provenance marker count), 2.13 (IDENTITY.md per role), 2.14 (legacy `/clawd/departments/` tree detection — a client pattern).
 - `update-skills.sh` — after a successful pull, invokes qc-completeness.sh and appends the human-readable STATUS line to the existing "OpenClaw skill update complete" Telegram so the operator sees the workforce posture at every upgrade.
 - `install.sh` — playbook prose updated to direct the agent to invoke qc-completeness.sh after both qc-system-integrity.sh (Phase 3) and the workforce build (Phase 4). On PARTIAL / FAIL the agent must follow the script's remediation hints before declaring install complete.
 
@@ -4282,7 +4282,7 @@ When skill 38's `00-verify-prerequisites.sh` halts on a missing Cloudflare API t
 
 ### Verified live
 
-Just before this patch, on Teresa Pelham's Mac mini install, Keez halted at script 00 with the prior Rule 13 message and Telegram'd the verbatim halt to both Teresa (770524308) and Trevor (5252140759). The protocol worked exactly as designed. This patch makes the next such client-side halt fully self-served by pointing at the in-skill guide.
+Just before this patch, on a client's Mac mini install, Keez halted at script 00 with the prior Rule 13 message and Telegram'd the verbatim halt to both a client (770524308) and Trevor (5252140759). The protocol worked exactly as designed. This patch makes the next such client-side halt fully self-served by pointing at the in-skill guide.
 
 ## [v10.15.1]  -  2026-05-28  -  Skill 38 hardening: Cloudflare API key check + tighter prereq verification + QC-PROTOCOL.md governance file at repo root
 
@@ -4368,7 +4368,7 @@ Three confirmed bugs surfaced during a live 5-client remediation in the ZHC onbo
 
 ### Why
 
-Existing clients (Maria, Evelyn, Lyric, Corey, Teresa) shipped with fewer than the 16 canonical departments because build-workforce.py only built the client's explicitly-selected subset and never injected the mandatory floor. Phase 5 enforcement was prose, not code. Separately, the Command Center dashboard showed a stale hardcoded department template (config/departments.json shipped non-empty), and the closeout had no success-path operator summary and no GHL media-library upload.
+Existing clients (several clients) shipped with fewer than the 16 canonical departments because build-workforce.py only built the client's explicitly-selected subset and never injected the mandatory floor. Phase 5 enforcement was prose, not code. Separately, the Command Center dashboard showed a stale hardcoded department template (config/departments.json shipped non-empty), and the closeout had no success-path operator summary and no GHL media-library upload.
 
 ### Fixed / Added
 
@@ -4405,7 +4405,7 @@ Systemic requirement from Trevor: every ZHC closeout must RATE + QC each deliver
 
 ### Why
 
-The two ZHC closeout infographics were shipping at ~6.5/10 (org chart) and ~7.5/10 (flow). Teresa Pelham's assets were re-graded against a true 10/10 bar. The org chart read as four flat category cards with a single stub line under the CEO node and NO visible reporting hierarchy, so it did not read as an org chart at all. The flow diagram was generic (could have been any business) and its final stage used a gift-box icon, which is wrong for almost every client (a grant firm delivers an approved grant, not a present). Both gaps are now fixed systemically so EVERY future closeout produces 10/10 output, not just Teresa's.
+The two ZHC closeout infographics were shipping at ~6.5/10 (org chart) and ~7.5/10 (flow). a client's assets were re-graded against a true 10/10 bar. The org chart read as four flat category cards with a single stub line under the CEO node and NO visible reporting hierarchy, so it did not read as an org chart at all. The flow diagram was generic (could have been any business) and its final stage used a gift-box icon, which is wrong for almost every client (a grant firm delivers an approved grant, not a present). Both gaps are now fixed systemically so EVERY future closeout produces 10/10 output, not just a client's.
 
 ### What
 
@@ -4419,11 +4419,11 @@ The two ZHC closeout infographics were shipping at ~6.5/10 (org chart) and ~7.5/
 - 37-zhc-closeout/templates/infographic-2-prompt.md
 - 37-zhc-closeout/scripts/generate-infographics.sh
 
-## [v10.14.8]  -  2026-05-27  -  Teresa Pelham ZHC launch fixes: Gemini duration string, nano-banana-2 fallback, google-api.js ENOENT note
+## [v10.14.8]  -  2026-05-27  -  a client ZHC launch fixes: Gemini duration string, nano-banana-2 fallback, google-api.js ENOENT note
 
 ### Why
 
-Three real issues surfaced during Teresa Pelham's ZHC launch. (1) KIE gemini-omni-video rejected the celebration-video request until duration was passed as a quoted STRING rather than a bare integer. (2) nano-banana-2 returned a 422 "model name not supported" on Teresa's KIE account (it works on other accounts), and the closeout fell back to gpt-image-2-text-to-image. (3) the local-only Mac helper google-api.js threw ENOENT looking for a per-user SA file that does not exist; the working path is the Python SA+DWD pattern.
+Three real issues surfaced during a client's ZHC launch. (1) KIE gemini-omni-video rejected the celebration-video request until duration was passed as a quoted STRING rather than a bare integer. (2) nano-banana-2 returned a 422 "model name not supported" on a client's KIE account (it works on other accounts), and the closeout fell back to gpt-image-2-text-to-image. (3) the local-only Mac helper google-api.js threw ENOENT looking for a per-user SA file that does not exist; the working path is the Python SA+DWD pattern.
 
 ### What
 
@@ -4478,7 +4478,7 @@ The 2026-05-26 fleet incident: 6 of 8 clients went silently dark on Telegram. Ho
 
 ### P1 - Workforce org-chart classifier fallback
 
-- `37-zhc-closeout/templates/workforce-org-chart/cluster-classifier.js` rewritten. Adds a keyword substring fallback when a client's department slugs do not match the canonical CLUSTER_MAP (this is what collapsed Evelyn's 7 non-canonical departments into the Technology box), plus a lopsidedness guard that falls back to even distribution when one cluster is crammed while another is empty. Verified against Evelyn's 7 departments.
+- `37-zhc-closeout/templates/workforce-org-chart/cluster-classifier.js` rewritten. Adds a keyword substring fallback when a client's department slugs do not match the canonical CLUSTER_MAP (this is what collapsed a client's 7 non-canonical departments into the Technology box), plus a lopsidedness guard that falls back to even distribution when one cluster is crammed while another is empty. Verified against a client's 7 departments.
 
 ### P2 - Phantom-closeout guard
 
@@ -4497,11 +4497,11 @@ The 2026-05-26 fleet incident: 6 of 8 clients went silently dark on Telegram. Ho
 - `SYSTEM-DIAGNOSTIC-CHECKLIST.md`
 - `KNOWN-ISSUES.md` (new)
 
-## [v10.14.4]  -  2026-05-26  -  Skill 37 closeout v4 (5 production bugs from Evelyn run)
+## [v10.14.4]  -  2026-05-26  -  Skill 37 closeout v4 (5 production bugs from a client run)
 
 ### Why
 
-Mirrors VPS v10.15.4. Five bugs caught when re-firing Evelyn's phantom-completed closeout against Skill 37 v10.14.3. The closeout had marked itself `failed` after celebration-video timed out, even though Notion was buildable and Telegram could have sent text-only. Postmortem against KIE API confirmed model slug and aspect_ratio drift.
+Mirrors VPS v10.15.4. Five bugs caught when re-firing a client's phantom-completed closeout against Skill 37 v10.14.3. The closeout had marked itself `failed` after celebration-video timed out, even though Notion was buildable and Telegram could have sent text-only. Postmortem against KIE API confirmed model slug and aspect_ratio drift.
 
 ### Bugs fixed
 
@@ -4528,7 +4528,7 @@ E. **Notion parent-page discovery had no fallback.** When the BlackCEO / OpenCla
 
 ### Why
 
-Codifies 4 lessons from Maria Anderson / Marico Consulting closeout (2026-05-26). Mirrors VPS v10.15.3.
+Codifies 4 lessons from a client / their consulting firm closeout (2026-05-26). Mirrors VPS v10.15.3.
 
 ### Lessons landed
 
@@ -4559,11 +4559,11 @@ Also: Infographic #2 (How Work Flows) primary model switched from `gpt-image-2` 
 
 Plus the 8 versioned files updated by `scripts/bump-version.sh v10.14.3`.
 
-## [v10.14.2]  -  2026-05-26  -  Skill 37 closeout hot-fix (Maria Anderson run surfaced 4 bugs)
+## [v10.14.2]  -  2026-05-26  -  Skill 37 closeout hot-fix (a client run surfaced 4 bugs)
 
 ### Why
 
-Sir Jordan's closeout run for Maria Anderson 2026-05-25 hit three production
+Sir Jordan's closeout run for a client 2026-05-25 hit three production
 bugs in Skill 37 plus a model-spec drift. All four are fixed here. Mirrors
 VPS v10.15.2.
 
@@ -4580,7 +4580,7 @@ VPS v10.15.2.
    errors no longer get silently retried.
 
 3. **`departments[].name` iteration broke on keyed objects.** Schema declares
-   `departments` as an array, but Maria's state file (22 depts) had it as a
+   `departments` as an array, but a client's state file (22 depts) had it as a
    keyed object. `{{DEPT_LIST}}` rendered empty in the infographic-1 prompt,
    so the org chart came out structured but unlabeled. Iteration now
    detects shape (`jq '.departments | type'`) and normalizes both array
@@ -4605,7 +4605,7 @@ VPS v10.15.2.
 
 ### Why
 
-Maria Anderson's 2026-05-25 box surfaced the bug. Sir Jordan had run 34
+a client's 2026-05-25 box surfaced the bug. Sir Jordan had run 34
 interview questions; `workforce-interview-answers.md` correctly tracked
 all 34, but `.workforce-build-state.json` still reported
 `lastQuestionNumber: 1`. The dashboard counter froze at 1 and the resume
@@ -4639,7 +4639,7 @@ update path into the build-state JSON via a new writer script.
 ### Fleet propagation
 
 The new script was pushed to all 8 client VPS containers via SSH +
-`docker exec` immediately after this tag, and Maria's state file was
+`docker exec` immediately after this tag, and a client's state file was
 patched with a one-time corrective write to align her counter to her
 actual progress (Q34, phase-4-department-customization, 6 phases
 complete). `interviewComplete` was NOT flipped - Phase 5/6 are ahead.
@@ -4655,7 +4655,7 @@ flow apply identically on Mac mini installs as on VPS containers.
 
 ### Why
 
-Maria's 2026-05-23 build is the reference case (9 departments shipped of the
+a client's 2026-05-23 build is the reference case (9 departments shipped of the
 canonical 16). The diagnosis applies to every interview run on either
 runtime: Phase 4's themed bundles can let the owner's current-business
 language override the canonical floor, and there was no reconciliation gate
@@ -4687,8 +4687,8 @@ this change.
 Every escalation path in skills 15/23/35/37 + cron-prompt previously hardcoded
 chat ID `5252140759` (Trevor Otts). On any client box that wasn't Trevor's, the
 "escalate to Trevor on Telegram" rule was effectively broken — the bot DM target
-was wrong, the message never landed. Until today (Monique incident, 2026-05-25)
-this drift was invisible because Monique's bot happened to be Trevor-paired and
+was wrong, the message never landed. Until today (a client incident, 2026-05-25)
+this drift was invisible because a client's bot happened to be Trevor-paired and
 the gateway silently swallowed `chat not found` errors.
 
 The fix is a single canonical config key the whole repo dereferences instead
@@ -4729,7 +4729,7 @@ Trevor approved `notifications.operator.telegram.chatId`. The 2026.5.22 schema
 rejects it (`additionalProperties: false` at root, no `notifications` top-level
 key exists). Per the autonomy rule, picked the schema-compliant home:
 `env.vars.OPERATOR_TELEGRAM_CHAT_ID` (string). Validated end-to-end on
-Monique's box with `openclaw config set ... --strict-json` and
+a client's box with `openclaw config set ... --strict-json` and
 `openclaw config validate`.
 
 ### "Full privileges" in 2026.5.22
@@ -4884,7 +4884,7 @@ full root-cause and risk analysis. Identical 3-layer defense applied:
 ### Bug
 
 Reported 2026-05-24: the resume cron was still firing every 15 min
-on Lyric (25 sessions in 6h) and Evelyn after their builds completed
+on a client (25 sessions in 6h) and a client after their builds completed
 and closed out. Pure prompt advice ("if clean, exit silently") with no
 enforcement. Manually killed both crons before shipping this fix.
 
@@ -5166,7 +5166,7 @@ This is a VPS-side bug. The Mac native install already handles pm2 persistence v
 - `32-command-center-setup/INSTALL.md` — new Phase 6c documents that Mac native installs require no action, and links to the VPS repo for Hostinger Docker VPS operators.
 
 ### Verification
-Tested live on Lyric VPS 2026-05-24 (via VPS repo v10.14.23): applied hook → `docker compose up -d --force-recreate` → at T+60s pm2 had command-center + cloudflare-tunnel both online, external URL = HTTP 200, no manual intervention.
+Tested live on a client VPS 2026-05-24 (via VPS repo v10.14.23): applied hook → `docker compose up -d --force-recreate` → at T+60s pm2 had command-center + cloudflare-tunnel both online, external URL = HTTP 200, no manual intervention.
 
 ### Risk
 None on Mac. The script is a no-op and the doc only adds a link to the VPS repo.
@@ -5209,7 +5209,7 @@ Doc only. No code.
 ## [v10.13.20] — 2026-05-24 — Closeout actually delivers the Command Center URL to clients (mirror of VPS v10.14.21)
 
 ### The bug
-Skill 37's closeout sequence has always included a "Your BlackCEO Command Center → [URL]" Telegram message as message #5 of the 6-message delivery. But Lyric + Evelyn tonight got everything EXCEPT that URL — their `commandCenterUrl` field in state was either null (Lyric) or the fake `http://localhost:4000` placeholder (Evelyn) that v10.13.17's closeout-script lied about. Clients didn't know where their dashboard lived.
+Skill 37's closeout sequence has always included a "Your BlackCEO Command Center → [URL]" Telegram message as message #5 of the 6-message delivery. But multiple clients tonight got everything EXCEPT that URL — their `commandCenterUrl` field in state was either null (a client) or the fake `http://localhost:4000` placeholder (a client) that v10.13.17's closeout-script lied about. Clients didn't know where their dashboard lived.
 
 This compounded a SECOND bug in Trevor's n8n workflow: the workflow created tunnels but never set the ingress config, so even when a URL was delivered it was 503 from CF edge.
 
@@ -5243,7 +5243,7 @@ Low. Skill 37 was already in this code path — we're just adding correctness ar
 ### Why (root cause)
 Skill 32 actually runs now. The 8-phase Command Center install was prose, not code, for 4 versions running. Skill 37 was claiming `commandCenterStatus: done` after only running Phase 4 (the materialize-dept-agents fix from v10.13.18). Phases 6 (dashboard deploy), 6b (n8n webhook + cloudflared tunnel), 7 (verification) never ran. That's why no client's BlackCEO Command Center dashboard came up + why Trevor never got n8n notifications for completed builds.
 
-Plus a proactive `openclaw doctor --fix` hook to defend against the telegram/whatsapp plugin auto-config writing deprecated field names that crash the gateway on restart. Confirmed in the wild tonight on Lyric's VPS — gateway exited with `Invalid config at openclaw.json. messages.groupChat: Unrecognized key: "unmentionedInbound"` after a `docker compose restart`, bot went silent until `openclaw doctor --fix` + restart cleaned it up. This will hit every container/gateway restart whenever a plugin's auto-config appends a stale field — the repo needs proactive defense.
+Plus a proactive `openclaw doctor --fix` hook to defend against the telegram/whatsapp plugin auto-config writing deprecated field names that crash the gateway on restart. Confirmed in the wild tonight on a client's VPS — gateway exited with `Invalid config at openclaw.json. messages.groupChat: Unrecognized key: "unmentionedInbound"` after a `docker compose restart`, bot went silent until `openclaw doctor --fix` + restart cleaned it up. This will hit every container/gateway restart whenever a plugin's auto-config appends a stale field — the repo needs proactive defense.
 
 ### What changed
 - **NEW** `32-command-center-setup/scripts/run-full-install.sh` — the missing 8-phase orchestrator. Runs Phase 1 (pm2 install + `openclaw doctor --fix`), Phase 3 (workspace folders), Phase 4 (materialize-dept-agents from v10.13.18), Phase 5 (logs TODO — Telegram topic creation requires manual phone steps), Phase 6 (dashboard deploy: clone `https://github.com/trevorotts1/blackceo-command-center.git` to `~/projects/command-center`, npm install, npm run db:push, npm run db:seed, pm2 start with **explicit `PORT=4000`** — fixes the EADDRINUSE / random-port bind from PORT env leak), Phase 6b (invoke create-tunnel.sh with client metadata), Phase 7 (verify :4000 + subdomain return 2xx). Each phase idempotent. Atomic state updates. Signature: `run-full-install.sh <client-slug> <company-name> <contact-email>`.
@@ -5327,11 +5327,11 @@ python3 -c "import json; cfg=json.load(open('$HOME/.openclaw/openclaw.json')); p
 ## [v10.13.17] — 2026-05-23 — Skill 37 KIE.AI model-name fix + Cloudflare Tunnel hooks brief (mirror of VPS v10.14.18)
 
 ### Why (root cause)
-Two bugs bit us on Lyric's Mac mini install today. Both root-causes, both fixed here.
+Two bugs bit us on a client's Mac mini install today. Both root-causes, both fixed here.
 
 **Bug 1 — Skill 37 `generate-infographics.sh` default model was wrong.** The default `PRIMARY_MODEL` was hardcoded to `gpt-image-1`. KIE.AI does NOT accept that name. Through live API probing (POST `https://api.kie.ai/api/v1/jobs/createTask`), the correct identifier is `gpt-image-2-text-to-image` (dash format). This was returning errors on closeouts until the `nano-banana-pro` fallback path kicked in. Verified `gpt-image-2-text-to-image` returns HTTP 200 + taskId on closeouts tonight.
 
-**Bug 2 — Cloudflare Tunnel paste-brief told operators to flip `hooks.enabled=true` without first setting `hooks.token`.** OpenClaw's gateway validates at startup: `hooks.enabled=true requires non-empty hooks.token`, AND `hooks.token must be distinct from gateway.auth.token`. Lyric's gateway crash-looped for hours because of this. The brief was a paste-ready operator instruction that lived only in chat history — never in the repo. That ends now.
+**Bug 2 — Cloudflare Tunnel paste-brief told operators to flip `hooks.enabled=true` without first setting `hooks.token`.** OpenClaw's gateway validates at startup: `hooks.enabled=true requires non-empty hooks.token`, AND `hooks.token must be distinct from gateway.auth.token`. a client's gateway crash-looped for hours because of this. The brief was a paste-ready operator instruction that lived only in chat history — never in the repo. That ends now.
 
 ### What changed
 
@@ -5351,7 +5351,7 @@ Two bugs bit us on Lyric's Mac mini install today. Both root-causes, both fixed 
 Mirror of VPS v10.14.17. Same fix: post-build closeout is now state-machine-driven, not documentation-driven.
 
 ### Why (root cause)
-After Skill 23 finished building a client's zero-human workforce (depts + roles), the existing repo had NO enforced mechanism to actually CLOSE THE LOOP with the client. Diagnosed today on Dr. Evelyn Bethune's VPS:
+After Skill 23 finished building a client's zero-human workforce (depts + roles), the existing repo had NO enforced mechanism to actually CLOSE THE LOOP with the client. Diagnosed today on a client's VPS:
 - Build completed at 2026-05-23T20:22 → state file flipped `buildCompletedAt`
 - BUT: Temperance (her bot) never messaged her with the completion announcement
 - Skill 32 (Command Center) was installed but never RAN for her
@@ -5424,7 +5424,7 @@ Pure additive. No existing behavior changes. Skill 37 only runs if `buildComplet
 Mirror of VPS v10.14.16. Same fix: post-interview Skill 23 builds now have an autonomous resume layer.
 
 ### Why
-Post-interview workforce builds had NO autonomous recovery. If a build session ended after writing N of M departments, the remaining departments sat un-built forever. No cron, no state tracker, no resume invocation. Diagnosed on Evelyn Bethune's VPS: 5 of 6 BPH departments built, then 18 hours of silence. Same pattern would hit Mac installs.
+Post-interview workforce builds had NO autonomous recovery. If a build session ended after writing N of M departments, the remaining departments sat un-built forever. No cron, no state tracker, no resume invocation. Diagnosed on a client's VPS: 5 of 6 BPH departments built, then 18 hours of silence. Same pattern would hit Mac installs.
 
 ### What changed (Mac repo parity with VPS)
 - New `23-ai-workforce-blueprint/build-state-schema.json` — schema for `.workforce-build-state.json` (lives at `~/.openclaw/workspace/.workforce-build-state.json` on Mac).
@@ -5491,7 +5491,7 @@ Mirrors VPS v10.14.12. Three install-time changes bundled because they all touch
 
 1. **Auto-kickoff Stage 2** — install.sh now fires the Wave 1-5 kickoff itself, ~3 minutes after install completes. Owner pastes nothing. Three-mechanism fallback chain (A: `openclaw cron create` one-shot; B: direct Telegram ingress-spool write under `$OC_CONFIG/telegram/ingress-spool-default/`; C: existing manual-paste safety net). Failure of A or B does NOT block install completion.
 2. **Dreaming enabled by default** — new Step 7b sets `plugins.entries.memory-core.config.dreaming.enabled = true`. Cadence stays at the doc default `0 3 * * *`.
-3. **Embedding model pinned** — `agents.defaults.memorySearch.model = "gemini-embedding-001"` (fleet-verified standard on Maria/Evelyn/Angela/Corey).
+3. **Embedding model pinned** — `agents.defaults.memorySearch.model = "gemini-embedding-001"` (fleet-verified standard on several clients).
 
 All 5 version files synced via `./scripts/bump-version.sh v10.13.12`.
 
@@ -5507,7 +5507,7 @@ The Mac kickoff message was structurally worse than VPS:
 | Friendly closing after paste block | Yes | None |
 | Owner cognitive load | Low | High (which message? all of it? where does the paste end?) |
 
-VPS owners (Maria, Angela T) got a clear one-message UX. Mac owners (Aurelia, future Mac clients) got a confusing two-message UX with no copy boundaries and no warm closing. **Same orchestration, drastically different presentation.**
+VPS owners (a client, a VPS client) got a clear one-message UX. Mac owners (a client, future Mac clients) got a confusing two-message UX with no copy boundaries and no warm closing. **Same orchestration, drastically different presentation.**
 
 ### Why the Mac UX was worse (the actual reason)
 v10.13.6 measured the Mac kickoff at 4,294 UTF-16 code units, over Telegram's 4,096 limit. I designed a 2-message split (intro + paste block) to avoid Bot API rejection. **But VPS's message is ALSO ~4,305 units** and works fine — its `tg_send_direct` fails on size, then `openclaw message send` (gateway) succeeds because the gateway handles long messages. The same fallback chain exists on Mac; I just didn't trust it.
@@ -5555,7 +5555,7 @@ source ~/.zshrc
 
 ### Per-client install (unchanged)
 ```bash
-OPENCLAW_OWNER_NAME="Aurelia" curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
+OPENCLAW_OWNER_NAME="<OwnerFirstName>" curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 ```
 The env vars set in `~/.zshrc` are inherited automatically.
 
@@ -5592,13 +5592,13 @@ Future shared secrets (Google service account JSON, master OpenRouter provisioni
 ## [v10.13.9] — 2026-05-21 — Clawd is DEAD: stop writing UPDATE PENDING + scripts + workspace to ~/clawd
 
 ### The bug Trevor caught (correctly, with profanity)
-Aurelia's install completed but her agent never saw the UPDATE PENDING flag. Why? install.sh wrote it to `~/clawd/AGENTS.md` (the dead Clawd legacy path) while her agent reads from `~/.openclaw/workspace/AGENTS.md` (the canonical OpenClaw default). Two paths, two files, agent never sees the flag, install looks silently broken.
+a client's install completed but her agent never saw the UPDATE PENDING flag. Why? install.sh wrote it to `~/clawd/AGENTS.md` (the dead Clawd legacy path) while her agent reads from `~/.openclaw/workspace/AGENTS.md` (the canonical OpenClaw default). Two paths, two files, agent never sees the flag, install looks silently broken.
 
 This was on me. I literally have a memory rule that says **"Clawd is dead, OpenClaw replaced it."** I shipped code that preferred `~/clawd` if it existed on disk — explicitly choosing the dead system over the live one. The previous fix (v10.13.8) addressed pipefail killing Step 10 silently; this one addresses Step 10 writing to the wrong file even when it does run.
 
 ### Five places install.sh was writing to the dead ~/clawd path
 
-1. **Step 10 workspace resolver** (the main bug): `if [ -d "$OC_LEGACY_CLAWD" ]; then WORKSPACE_DIR="$OC_LEGACY_CLAWD"` — preferred `~/clawd` if it existed on disk, even on systems where `~/.openclaw/workspace` was the documented OpenClaw default. Aurelia had a stale `~/clawd` directory from a pre-rename install. install.sh saw it, preferred it, wrote there. Agent read from elsewhere.
+1. **Step 10 workspace resolver** (the main bug): `if [ -d "$OC_LEGACY_CLAWD" ]; then WORKSPACE_DIR="$OC_LEGACY_CLAWD"` — preferred `~/clawd` if it existed on disk, even on systems where `~/.openclaw/workspace` was the documented OpenClaw default. a client had a stale `~/clawd` directory from a pre-rename install. install.sh saw it, preferred it, wrote there. Agent read from elsewhere.
 2. **Step 5 post-skills**: `mkdir -p "$OC_LEGACY_CLAWD"` — install.sh actively CREATED `~/clawd` on fresh installs that didn't have it. So even brand-new clients ended up with the dead path.
 3. **Step 6 Gemini scripts**: `SCRIPTS_DIR="$OC_LEGACY_CLAWD/scripts"` — Gemini engine scripts (gemini-indexer.py, gemini-search.py) installed to `~/clawd/scripts` instead of `~/.openclaw/scripts`.
 4. **Agent prompt** (paste block / docs): `python3 ~/clawd/scripts/gemini-indexer.py --status` — pointed the agent at a path that wouldn't exist after this fix.
@@ -5615,12 +5615,12 @@ This was on me. I literally have a memory rule that says **"Clawd is dead, OpenC
 ### What about clients with stale ~/clawd directories?
 They stay inert. install.sh will not read from or write to them. If a client had content there from a pre-rename install, it's untouched — but no longer canonical. The credential walker still includes `~/clawd/secrets/.env` as a READ fallback (so legacy API keys stored there still get discovered), but no writes go to that tree.
 
-### Aurelia's existing damaged install — one-shot recovery
+### a client's existing damaged install — one-shot recovery
 She needs the UPDATE PENDING section from `~/clawd/AGENTS.md` copied to `~/.openclaw/workspace/AGENTS.md`. Two options:
 
 **Option A — re-run install.sh** (recommended; v10.13.9 will write to the right place and the agent will see it):
 ```bash
-OPENCLAW_OWNER_NAME="Aurelia" curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
+OPENCLAW_OWNER_NAME="<OwnerFirstName>" curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 ```
 
 **Option B — one-shot copy** (if she doesn't want to re-run):
@@ -5644,10 +5644,10 @@ This bug was a direct violation of a rule I have in memory ("OpenClaw is the sys
 
 ---
 
-## [v10.13.8] — 2026-05-21 — Fix Step 10 silent kill: pipefail + `openclaw config get` on fresh install (caught by Aurelia's agent)
+## [v10.13.8] — 2026-05-21 — Fix Step 10 silent kill: pipefail + `openclaw config get` on fresh install (caught by a client's agent)
 
 ### The bug
-Aurelia's AI agent diagnosed this from her install logs:
+a client's AI agent diagnosed this from her install logs:
 > *"Script (root): wrap line 2160's pipeline with `|| true` — the script already uses that pattern elsewhere (line 2186); they just missed this one."*
 
 Line 2 of install.sh: `set -euo pipefail`. Step 10's workspace resolver has this pipeline:
@@ -5659,13 +5659,13 @@ WORKSPACE_DIR=$(openclaw config get agents.defaults.workspace 2>/dev/null \
 
 On a fresh install, `agents.defaults.workspace` is not set in `openclaw.json`. `openclaw config get` exits **non-zero**. With `pipefail`, the whole pipeline returns non-zero. With `set -e`, the command substitution exit code propagates and **kills install.sh silently** — no error message, no Telegram, nothing.
 
-### How this explains Aurelia's stuck install
+### How this explains a client's stuck install
 Her Telegram showed every progress message through "Security + backups configured. Almost done — finalizing your agent's playbook now…" (the v10.13.4 message that fires BEFORE Step 10), then went silent. That's because Step 10's first action was the failing pipeline above. install.sh exited at that point. No more steps ran. No kickoff Telegram fired. The agent on her phone never got the new UPDATE PENDING flag — it kept reading stale `[PENDING API KEY]` markers from a previous attempt.
 
 ### Fix
 Three pipelines patched with `|| <var>=""` to neutralize pipefail-triggered errexit. The pattern matches the existing protection at lines 508/510.
 
-1. **`WORKSPACE_DIR=$(openclaw config get agents.defaults.workspace ...) || WORKSPACE_DIR=""`** — primary Aurelia fix. Empty value falls through to the disk fallback (`~/clawd` or `~/.openclaw/workspace`) which is the correct behavior on a fresh install.
+1. **`WORKSPACE_DIR=$(openclaw config get agents.defaults.workspace ...) || WORKSPACE_DIR=""`** — primary a client fix. Empty value falls through to the disk fallback (`~/clawd` or `~/.openclaw/workspace`) which is the correct behavior on a fresh install.
 
 2. **`cli_id=$(openclaw devices list ... | python3 -c "...") || cli_id=""`** — same pattern, fires when devices aren't paired yet.
 
@@ -5685,14 +5685,14 @@ Any `var=$(cmd1 | cmd2 | cmd3)` inside `set -euo pipefail` is a silent-kill haza
 - `README.md` — version reference
 
 ### Credit
-Aurelia's AI agent identified the bug from the install log without needing my prompting. The fix is exactly what it suggested.
+a client's AI agent identified the bug from the install log without needing my prompting. The fix is exactly what it suggested.
 
 ---
 
 ## [v10.13.7] — 2026-05-21 — REAL credential validator (regex + Shannon entropy, gitleaks methodology) — no more fake "Found" reports
 
 ### The fuck-up I've been compounding for 3 hours
-v10.13.3 added a filesystem walker that found `.env.example` files. v10.13.4 added a substring blocklist as a "validator." v10.13.5 / v10.13.6 didn't touch credential discovery. **Each version reported a NEW set of fake keys** because my "validator" was guessed substrings, not real validation. Aurelia's v10.13.6 install reported Fish Audio / Podbean / Brave / Fal / Airtable / Supabase as "Found" — none existed. The previous versions reported Anthropic / DeepSeek etc. similarly. Each fix was a patch on the symptom, not the root cause.
+v10.13.3 added a filesystem walker that found `.env.example` files. v10.13.4 added a substring blocklist as a "validator." v10.13.5 / v10.13.6 didn't touch credential discovery. **Each version reported a NEW set of fake keys** because my "validator" was guessed substrings, not real validation. a client's v10.13.6 install reported Fish Audio / Podbean / Brave / Fal / Airtable / Supabase as "Found" — none existed. The previous versions reported Anthropic / DeepSeek etc. similarly. Each fix was a patch on the symptom, not the root cause.
 
 ### What I should have done from the start
 Real credential scanners (gitleaks, GitGuardian, TruffleHog) use TWO signals together:
@@ -5735,7 +5735,7 @@ If `canonical` maps to a known provider AND the value doesn't match the regex �
 - Sources 5-10 (Python): `env.vars`, `models.providers.*.apiKey`, `plugins.entries.*`, `auth-profiles.json`, `secrets.json`, deep scan — all routed through `emit()` which calls `looks_like_real_key(value, CANONICAL)`
 - Belt-and-suspenders: bash also re-validates AFTER Python returns, in case the Python validator missed something
 
-### Where the fake values are coming from on Aurelia's box
+### Where the fake values are coming from on a client's box
 Best guess: `openclaw skills install <name>` writes default `env.vars` entries for skills that REQUIRE certain keys, populating them with empty strings or template placeholders. The deep-scan source 10 hit those and reported them as "Found" without checking shape. v10.13.7's validator catches them regardless of source — even if I never identify the root cause of WHO writes the placeholders, the user-facing report is now correct.
 
 ### Verification — 16/16 smoke tests pass
@@ -5753,7 +5753,7 @@ Best guess: `openclaw skills install <name>` writes default `env.vars` entries f
 | `sk-xxxxxxxxxxxxxxxxxxxx` | FAIL | ✅ FAIL |
 | `REPLACE_ME` | FAIL | ✅ FAIL |
 | `AIzaXxXxXxX...` (right shape, low entropy) | FAIL | ✅ FAIL |
-| `your-fish-key-here` (Aurelia bug) | FAIL | ✅ FAIL |
+| `your-fish-key-here` (a client bug) | FAIL | ✅ FAIL |
 | `<your-brave-key>` | FAIL | ✅ FAIL |
 | `AKIAIOSFODNN7EXAMPLE` (gitleaks canonical) | FAIL | ✅ FAIL |
 | Unknown var, decent entropy | PASS | ✅ PASS (no provider mapping → entropy decides) |
@@ -5777,9 +5777,9 @@ Mac install.sh had the "triple-trigger" — Telegram message + AGENTS.md flag + 
 
 That's the OLD pattern. The owner has to switch apps (Telegram → terminal), scroll to find the scissor-lines, copy, switch back to Telegram, paste. Two-app flow.
 
-**VPS already fixed this in v10.14.7** (caught live on Maria + Angela T's installs). The VPS message body now CONTAINS the full paste block inline — between scissor-lines, in the Telegram message itself. Owner copies from Telegram, pastes back into Telegram. One app, one round-trip.
+**VPS already fixed this in v10.14.7** (caught live on a client + a VPS client's installs). The VPS message body now CONTAINS the full paste block inline — between scissor-lines, in the Telegram message itself. Owner copies from Telegram, pastes back into Telegram. One app, one round-trip.
 
-The fix never got ported to Mac. Aurelia's kickoff message still pointed her at the terminal. Worse: in v10.13.5 I moved the kickoff fire to *after Step 10*, but the terminal scissor-block doesn't print until *after Steps 10b/11/12*. So if she did go look in the terminal, the block wasn't even printed there yet — the message pointed to nothing.
+The fix never got ported to Mac. a client's kickoff message still pointed her at the terminal. Worse: in v10.13.5 I moved the kickoff fire to *after Step 10*, but the terminal scissor-block doesn't print until *after Steps 10b/11/12*. So if she did go look in the terminal, the block wasn't even printed there yet — the message pointed to nothing.
 
 ### Fix
 Rewrote `build_kickoff_telegram_message` (introduced in v10.13.5) to include the full paste block inline, matching the VPS v10.14.7+ structure:
@@ -5816,7 +5816,7 @@ Per Telegram's `sendMessage` docs: text limit is 4,096 chars. The message here i
 ## [v10.13.5] — 2026-05-21 — Fire kickoff Telegram message after Step 10, not at end of install
 
 ### Problem
-v10.13.4 added per-step progress messages so the owner hears from the bot every 30-60s — that part shipped and works (Aurelia's screenshot confirmed all 6 progress messages landed). But the **kickoff message** — the one that tells the owner "paste this block into me to start" — still fired at the very end of install.sh, AFTER Steps 10, 10b, 11, 12. That left a 30-90 second gap between when the bot was *functionally ready* (Step 10's UPDATE PENDING flag verified written → bot can now execute the paste-block orchestration) and when the owner *learned the bot was ready*. Aurelia sat through Steps 10b/11/12 with no idea what was happening.
+v10.13.4 added per-step progress messages so the owner hears from the bot every 30-60s — that part shipped and works (a client's screenshot confirmed all 6 progress messages landed). But the **kickoff message** — the one that tells the owner "paste this block into me to start" — still fired at the very end of install.sh, AFTER Steps 10, 10b, 11, 12. That left a 30-90 second gap between when the bot was *functionally ready* (Step 10's UPDATE PENDING flag verified written → bot can now execute the paste-block orchestration) and when the owner *learned the bot was ready*. a client sat through Steps 10b/11/12 with no idea what was happening.
 
 ### Fix
 Telegram kickoff now fires immediately after Step 10 verifies the UPDATE PENDING flag wrote successfully. Steps 10b (memory seed), 11 (manifest), and 12 (Sunday cron) are housekeeping and continue in the background — but the owner already has the paste instructions on their phone and can start.
@@ -5842,10 +5842,10 @@ Telegram kickoff now fires immediately after Step 10 verifies the UPDATE PENDING
 
 ## [v10.13.4] — 2026-05-21 — Stop scraping .env.example placeholders + true triple-fire Telegram kickoff + per-step progress messages
 
-Two bugs surfaced live on Aurelia's v10.13.3 install:
+Two bugs surfaced live on a client's v10.13.3 install:
 
 ### Bug 1: v10.13.3 walker pulled placeholder values from `.env.example` / `.env.sample` files and reported them as her real keys
-The walker matched `*.env`, `*.env.*`, `.env.*` — which matches `.env.example`, `.env.sample`, `.env.template`, `.env.dist`. Every npm package / SDK example dir ships with one of those, containing values like `OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxx`, `ANTHROPIC_API_KEY=YOUR_KEY_HERE`, `GHL_API_KEY=<replace-me>`. The walker scraped those and reported them as Aurelia's keys. She knew they weren't real — that's a hallucination, not a discovery.
+The walker matched `*.env`, `*.env.*`, `.env.*` — which matches `.env.example`, `.env.sample`, `.env.template`, `.env.dist`. Every npm package / SDK example dir ships with one of those, containing values like `OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxx`, `ANTHROPIC_API_KEY=YOUR_KEY_HERE`, `GHL_API_KEY=<replace-me>`. The walker scraped those and reported them as a client's keys. She knew they weren't real — that's a hallucination, not a discovery.
 
 **Fix:**
 - `find` exclusions now drop template/sample names: `*.example`, `*.sample`, `*.template`, `*.dist`, `*.test`, `*.spec`, `*.demo`, `*.tmpl`, and dotted variants (`*.example.*`, `*.sample.*`).
@@ -5861,7 +5861,7 @@ Mac install.sh previously had only `"Starting..."` and `"Downloaded onboarding p
 - **`tg_send_direct()` helper added.** Reads `channels.telegram.botToken` and the first `channels.telegram.allowFrom` chat ID from `openclaw.json` directly, then calls `curl https://api.telegram.org/bot$TOKEN/sendMessage` with `--max-time 10`. Bypasses the gateway entirely. Returns 0 on `"ok":true`, 1 otherwise.
 - **`send_telegram_progress` now falls back to `tg_send_direct` on gateway failure** AND on "no openclaw CLI." Result is logged (`sent:direct-bot-api(gateway-fallback)` vs `sent:direct-bot-api(no-cli)`) so the install summary can show which path delivered.
 - **`fire_install_kickoff_triplet` now has a true triple-fire delivery chain** for the Telegram leg: (1) gateway via openclaw CLI, (2) `send-telegram.sh` helper, (3) `tg_send_direct`. The triplet was previously triple-named but single-pathed. Now it's actually three independent paths.
-- **Per-step progress messages added** between Step 3 and the kickoff, so Aurelia (and every Mac client) hears from her bot every ~30-60s instead of a 5-10 minute silent gap:
+- **Per-step progress messages added** between Step 3 and the kickoff, so a client (and every Mac client) hears from her bot every ~30-60s instead of a 5-10 minute silent gap:
   - After Step 4 Extract → "📦 Extracted onboarding package. N skills detected. Installing them now…"
   - After Step 5 Install Skills → "✓ Skills + helpers installed. Setting up your AI engines next…"
   - Before Step 8 → "✓ AI engines configured. Locking down permissions next…"
@@ -5879,14 +5879,14 @@ Mac install.sh previously had only `"Starting..."` and `"Downloaded onboarding p
 - `version` → `v10.13.4`
 
 ### Apology
-v10.13.3 was sold as "bulletproof." It wasn't. I built a filesystem walker without thinking about the entire ecosystem of `.env.example` files that ship in every npm package and SDK example. The right walker excludes templates AND validates value shape. Both are in v10.13.4. Aurelia should not have had to flag "those keys don't exist." That was on me.
+v10.13.3 was sold as "bulletproof." It wasn't. I built a filesystem walker without thinking about the entire ecosystem of `.env.example` files that ship in every npm package and SDK example. The right walker excludes templates AND validates value shape. Both are in v10.13.4. a client should not have had to flag "those keys don't exist." That was on me.
 
 ---
 
-## [v10.13.3] — 2026-05-21 — Bulletproof credential discovery — walk ANY env file under $HOME (Aurelia's agent had to find this for us)
+## [v10.13.3] — 2026-05-21 — Bulletproof credential discovery — walk ANY env file under $HOME (a client's agent had to find this for us)
 
 ### What went wrong (honest diagnosis)
-Aurelia's agent self-diagnosed the v10.13.2 scanner. Findings:
+a client's agent self-diagnosed the v10.13.2 scanner. Findings:
 1. Her API keys were in an env file at a **non-canonical location** (some operator tool's `.env` outside `~/.openclaw/`, `~/clawd/`, and outside any shell-rc file).
 2. `printenv` returned every key (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.) **unset** — the operator never `source`d the file into their shell, so it was invisible to the install subshell.
 3. The 5 keys that **were** found came from openclaw.json (`env.vars` + `models.providers.*.apiKey`) and `auth-profiles.json` — locations the scanner does enumerate.
@@ -5922,13 +5922,13 @@ Planted 5 keys across 5 weird locations: `~/.env`, `~/sequence/.env`, `~/.codex/
 - Credential discovery sub-version → `v10.1.1`
 
 ### Apology
-This bug should not have shipped in v10.13.2. The right scanner was a filesystem walk from day one. Aurelia's agent should not have had to diagnose this — I should have. Fixed now, with explicit visibility (`Candidate env files discovered: N`) so the next failure mode is self-explaining instead of silent.
+This bug should not have shipped in v10.13.2. The right scanner was a filesystem walk from day one. a client's agent should not have had to diagnose this — I should have. Fixed now, with explicit visibility (`Candidate env files discovered: N`) so the next failure mode is self-explaining instead of silent.
 
 ---
 
-## [v10.13.2] — 2026-05-21 — Fix Step 4 extraction hang + credential discovery alias gaps + shell-rc scanning (live-fix from Aurelia's install)
+## [v10.13.2] — 2026-05-21 — Fix Step 4 extraction hang + credential discovery alias gaps + shell-rc scanning (live-fix from a client's install)
 
-Two bugs Trevor caught mid-install on Aurelia's Mac mini:
+Two bugs Trevor caught mid-install on a client's Mac mini:
 
 ### Bug 1: Step 4 hung on em-dash filenames
 `unzip -qo` from Info-ZIP on macOS mangles UTF-8 filenames (e.g. `deep-research-specialist-—-sales.md` displays as `deep-research-role-???-...`), partial-writes the bad file, and then prompts `"Continue? (y/n/^C)"` waiting for input. Owners aren't watching the terminal — the install just sat dead. The 4 affected files are under `23-ai-workforce-blueprint/templates/role-library/*/sales/`.
@@ -5936,7 +5936,7 @@ Two bugs Trevor caught mid-install on Aurelia's Mac mini:
 **Fix:** switched `unzip -qo "$TEMP_ZIP" -d "$TEMP_EXTRACT"` to `ditto -x -k "$TEMP_ZIP" "$TEMP_EXTRACT"`. `ditto` is macOS-native, UTF-8 clean, silent, non-interactive. Reproduced the hang on a real Mac mini using this exact code path; `ditto` extracts all 1,350 files cleanly. Fallback to `unzip -qn` (non-interactive) wired in for the (vanishingly unlikely) case `ditto` is missing.
 
 ### Bug 2: GEMINI_API_KEY reported "Not configured" while GOOGLE_API_KEY was found (same key)
-Aurelia's environment had `GOOGLE_API_KEY` set (Google's Gemini key — they're literally the same credential). Credential discovery found `GOOGLE_API_KEY` from `auth-profiles.google:default.key` ✓ but then reported `GEMINI_API_KEY` as missing ✗ because the alias list for `GEMINI_API_KEY` didn't include `GOOGLE_API_KEY` (or vice versa).
+a client's environment had `GOOGLE_API_KEY` set (Google's Gemini key — they're literally the same credential). Credential discovery found `GOOGLE_API_KEY` from `auth-profiles.google:default.key` ✓ but then reported `GEMINI_API_KEY` as missing ✗ because the alias list for `GEMINI_API_KEY` didn't include `GOOGLE_API_KEY` (or vice versa).
 
 **Fix:** cross-aliased them — `GEMINI_API_KEY` and `GOOGLE_API_KEY` are now mutual aliases (plus `GOOGLE_GEMINI_API_KEY`, `GOOGLE_AI_STUDIO_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `GOOGLE_AI_API_KEY`). Same widening for `OLLAMA_API_KEY` (adds `OLLAMA_CLOUD_API_KEY`, `OLLAMA_KEY`, `OLLAMA_TOKEN`) and `DEEPSEEK_API_KEY` (adds `DEEP_SEEK_API_KEY`).
 
@@ -5964,7 +5964,7 @@ Pure UX changes. No behavior change to install steps, schema writes, or any fall
 ### Changes
 
 - **Personalized greeting** in `install.sh::fire_install_kickoff_triplet`:
-  - New owner-name resolver tries `OPENCLAW_OWNER_NAME` env var → `~/.openclaw/openclaw.json` (`meta.ownerName` / `owner.name` / `wizard.ownerName` / `meta.owner.name` / `owner.firstName`) → falls back to "there". Uses first name only ("Hi Maria!" not "Hi Maria Hernandez Esq.!").
+  - New owner-name resolver tries `OPENCLAW_OWNER_NAME` env var → `~/.openclaw/openclaw.json` (`meta.ownerName` / `owner.name` / `wizard.ownerName` / `meta.owner.name` / `owner.firstName`) → falls back to "there". Uses first name only ("Hi <Owner>!" not "Hi <Owner> Esq.!").
   - Telegram kickoff message rewritten: opens with "Hi {Name}! 👋" and 6 numbered steps explaining exactly how to find the paste block, copy it, and send it to the bot. No technical jargon.
 - **Terminal completion block** completely rewritten:
   - Banner now says `✓ All set, {Name}! Your AI workforce is installed.` instead of "OpenClaw Onboarding Kickoff — Triple-Fire Trigger".
@@ -5986,11 +5986,11 @@ Three options, any one works:
 
 1. **Env var (cleanest):**
    ```
-   OPENCLAW_OWNER_NAME="Maria" curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
+   OPENCLAW_OWNER_NAME="<OwnerFirstName>" curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
    ```
 2. **openclaw.json before install:**
    ```
-   python3 -c "import json; d=json.load(open('$HOME/.openclaw/openclaw.json')); d.setdefault('meta',{})['ownerName']='Maria'; open('$HOME/.openclaw/openclaw.json','w').write(json.dumps(d,indent=2))"
+   python3 -c "import json; d=json.load(open('$HOME/.openclaw/openclaw.json')); d.setdefault('meta',{})['ownerName']='a client'; open('$HOME/.openclaw/openclaw.json','w').write(json.dumps(d,indent=2))"
    ```
 3. **Skip and default to "there"** — works fine, just less personal.
 
@@ -7280,7 +7280,7 @@ Both repos at v10.0.0 mark the canonical split. Versions diverge from here.
 ## v9.7.11 - May 14, 2026 - Smart credential discovery + 4 critical skill fixes
 
 ### Background
-Live SSH probe of Evelyn's Hostinger Docker container revealed:
+Live SSH probe of a client's Hostinger Docker container revealed:
 - No `.env` files anywhere on the system
 - All API keys live as **container env vars** (Hostinger injects them at boot)
 - LLM API keys ALSO inline in `models.providers.<name>.apiKey` in openclaw.json
@@ -7315,7 +7315,7 @@ Live SSH probe of Evelyn's Hostinger Docker container revealed:
 - **Skill 11 superdesign**: superdesign-full.md prescribed `apt-get install nodejs npm`. The Hostinger container has no apt. Added note that container ships with Node v22; skip the apt step entirely on VPS.
 - **Skill 16 summarize-youtube**: The skill is built around the Mac-only `brew install steipete/tap/summarize`. Added a VPS fallback path using `pip3 install --user yt-dlp` for transcript extraction with agent-LLM summarization. Also switched primary yt-dlp install instruction to pip (works on both platforms).
 
-### Evelyn's missing credentials (live audit of her container)
+### a client's missing credentials (live audit of her container)
 What she HAS (verified env-var inspection):
 - OPENROUTER_API_KEY, OLLAMA_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, GOOGLE_API_KEY
 - GHL_PRIVATE_INTEGRATION_TOKEN, GHL_LOCATION_ID
@@ -7340,7 +7340,7 @@ What she's MISSING (will block these skills if not provided):
 ## v9.7.10 - May 14, 2026 - Strategy 5: scan credentials/ for chat IDs (Hostinger Docker schema)
 
 ### The miss
-v9.7.9 platform-aware install correctly detected the Hostinger Docker VPS, used `/data/...` paths, and ran the 4-strategy universal Telegram lookup — but still came up empty on Evelyn's account even though her Telegram is clearly paired (she actively talks to her `main` agent / Temperance over Telegram every day).
+v9.7.9 platform-aware install correctly detected the Hostinger Docker VPS, used `/data/...` paths, and ran the 4-strategy universal Telegram lookup — but still came up empty on a client's account even though her Telegram is clearly paired (she actively talks to her `main` agent / Temperance over Telegram every day).
 
 Live SSH probe of her container revealed: Hostinger Docker stores the chat allowlist in a SEPARATE file `credentials/telegram-<account>-allowFrom.json` — NOT inside `openclaw.json`. Her chat ID `8279177438` lives at `/data/.openclaw/credentials/telegram-default-allowFrom.json` with schema `{"version":1, "allowFrom":["8279177438"]}`. The CLI doesn't expose `credentials/*` via `config get`, the openclaw.json `channels.telegram` block contains only the bot token, and `commands.allowFrom = {}` — so all four lookup strategies returned empty.
 
@@ -7361,7 +7361,7 @@ On Mac/desktop installs where the chat ID DOES live inside openclaw.json, Strate
 
 ### Verified live
 - `/data/.openclaw/credentials/telegram-default-allowFrom.json` exists, contains `{"version":1, "allowFrom":["8279177438"]}`.
-- Evelyn's container has ONE real agent (`main`, Identity: Temperance, model `ollama/deepseek-v4-flash:cloud`). The 3 other agents (`smoke-openrouter`, `smoke-openai`, `smoke-gemini`) ship with the Hostinger image as built-in API smoke tests — not her workflow.
+- a client's container has ONE real agent (`main`, Identity: Temperance, model `ollama/deepseek-v4-flash:cloud`). The 3 other agents (`smoke-openrouter`, `smoke-openai`, `smoke-gemini`) ship with the Hostinger image as built-in API smoke tests — not her workflow.
 - OpenClaw version on her container: 2026.5.6 (Mac dev box is 2026.5.7 — close enough that the v9.7.9 device-rotation logic also works there; both paired devices already have full 5 operator scopes).
 
 ### Why earlier diagnostic missed this

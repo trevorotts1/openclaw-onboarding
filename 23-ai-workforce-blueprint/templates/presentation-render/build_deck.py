@@ -14,6 +14,14 @@ WHAT IT DOES (zero AI judgement at runtime):
          scene description  +  exact English copy (verbatim from slides.json)  +
          optional logo wordmark + layout hint  +  the MANDATORY English/Latin-only pin.
        No model decides wording — the copy is whatever the slides.json author wrote.
+       TWO prompt-side QC gates run on every slide, both FAIL-LOUD (no silent render):
+         (a) FACIAL-INTELLIGENCE / REPRESENTATION gate — refuses any slide whose spec
+             carries a forbidden hardcoded demographic default (the "60/30/10" landmine).
+             Representation comes from the slide spec (the client's captured audience),
+             never a baked-in default split (SOP-CAST-01, AF-R3).
+         (b) CHAR-COUNT gate — the composed prompt length must be within
+             [PROMPT_CHAR_FLOOR, PROMPT_CHAR_CEILING]; the 18,000 ceiling is the
+             universal GPT-Image 2 safety boundary (AF-P1/AF-P2).
     3. Calls KIE.ai (gpt-image-2-text-to-image) per the ONLY-allowed recipe:
          POST https://api.kie.ai/api/v1/jobs/createTask  -> data.taskId
          GET  https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>  -> data.state
@@ -94,6 +102,57 @@ ENGLISH_PIN = (
     "correctly, letter-for-letter. No garbled, misspelled, or invented text."
 )
 
+# ---------------------------------------------------------------------------
+# PROMPT CHAR-COUNT GATE (the prompt-side QC gate, fail-loud)
+# ---------------------------------------------------------------------------
+# Two facts from the standards (qc-specialist-presentations.md AF-P1/AF-P2,
+# 45-design-intelligence-library/library/_system/MODEL-SPECS.md):
+#   * GPT-Image 2 hard ceiling on input.prompt is 20,000 characters on both
+#     endpoints. The HARD MAXIMUM is 18,000 — a 2,000-char safety margin below
+#     that ceiling so a prompt is never rejected or truncated by the platform.
+#     This ceiling is UNIVERSAL: it applies to every prompt path, including this
+#     deterministic one. A prompt over it is an AF-P2 auto-fail.
+#   * The webinar pipeline's specificity FLOOR is 5,000 chars (AF-P1), but that
+#     floor is for the long, specificity-rich prompts the Slide Image Creator
+#     hand-writes (render_deck.py path). This deterministic builder composes a
+#     MINIMAL mechanical prompt (scene + verbatim copy + pin), which is correctly
+#     ~1,000 chars; imposing the 5,000 webinar floor here would reject every
+#     valid deterministic prompt. So this path uses a low non-empty floor that
+#     only catches a degenerate (empty / near-empty) composed prompt, while the
+#     18,000 ceiling is enforced identically to the webinar path.
+PROMPT_CHAR_FLOOR = 200       # deterministic-minimal floor (catches degenerate/empty prompts)
+PROMPT_CHAR_CEILING = 18000   # UNIVERSAL hard maximum (AF-P2; 2,000 under the 20,000 API ceiling)
+
+# ---------------------------------------------------------------------------
+# FACIAL INTELLIGENCE / REPRESENTATION GUARD (the 60/30/10 landmine, fail-loud)
+# ---------------------------------------------------------------------------
+# Doctrine: SOP-CAST-01 ("No inverted default. There is no system default
+# demographic.") and qc-specialist-presentations.md AF-R3 ("No racial or gender
+# default is ever inferred."). Representation in any people-prompt MUST come from
+# the slide spec (the client's captured audience), NEVER from a baked-in default
+# percentage split such as the "60/30/10" ratio. This builder is deterministic
+# and renders the scene VERBATIM from slides.json, so it must NEVER carry a
+# hardcoded demographic default of its own, and it must REJECT a slide whose spec
+# tries to smuggle one in. These patterns (case-insensitive substrings) are the
+# forbidden demographic-default landmines; any of them in a slide's scene/copy/
+# layout/logo text is an immediate fail-loud (the prompt-side representation gate).
+FORBIDDEN_DEMOGRAPHIC_DEFAULTS = [
+    "60/30/10",
+    "60-30-10",
+    "60/30/10 ratio",
+    "default demographic",
+    "default ethnicity",
+    "default race",
+    "default skin tone",
+    "default skin-tone",
+    "standard demographic mix",
+    "standard representation mix",
+    "assume the audience is",
+    "assumed demographic",
+    "inferred demographic",
+    "system default demographic",
+]
+
 # Client's own env stores (HOME-relative — works on any client box).
 SECRETS_CANDIDATES = [
     os.path.expanduser("~/.openclaw/workspace/.env"),
@@ -130,12 +189,54 @@ def load_api_key() -> str:
 # Prompt composition — PURELY MECHANICAL (no AI)
 # ---------------------------------------------------------------------------
 
+def assert_no_forbidden_demographic_default(slide: dict) -> None:
+    """
+    FACIAL-INTELLIGENCE / REPRESENTATION GATE (fail-loud).
+
+    Representation must come from the slide spec (the client's captured audience),
+    never from a baked-in default split. Per SOP-CAST-01 ("there is no system
+    default demographic") and AF-R3 ("no racial or gender default is ever
+    inferred"), this deterministic builder REFUSES any slide whose scene / copy /
+    layout / logo text smuggles a forbidden demographic-default landmine (e.g. the
+    "60/30/10" ratio). Raises ValueError (caller fails the slide loud) on a hit.
+    """
+    # Gather every author-supplied text field on this slide into one haystack.
+    chunks = [str(slide.get("scene", "")), str(slide.get("layout", "")),
+              str(slide.get("logo", ""))]
+    copy_val = slide.get("copy", [])
+    if isinstance(copy_val, list):
+        chunks.extend(str(c) for c in copy_val)
+    else:
+        chunks.append(str(copy_val))
+    haystack = " ".join(chunks).lower()
+
+    for landmine in FORBIDDEN_DEMOGRAPHIC_DEFAULTS:
+        if landmine.lower() in haystack:
+            raise ValueError(
+                f"slide {slide.get('slide')}: forbidden hardcoded demographic "
+                f"default detected ('{landmine}'). Representation must come from "
+                f"the client's captured audience in the slide spec, never a baked-in "
+                f"default split (SOP-CAST-01 / AF-R3). Refusing to render."
+            )
+
+
 def compose_prompt(slide: dict) -> str:
     """
     Deterministically build the KIE prompt for one slide by concatenating, in order:
       scene  ->  exact copy lines (verbatim)  ->  logo  ->  layout  ->  English pin.
     No wording is invented; every text token comes straight from slides.json.
+
+    Two prompt-side QC gates run here, both fail-loud:
+      * FACIAL-INTELLIGENCE gate: reject any forbidden demographic-default landmine
+        (the 60/30/10 split) — representation comes from the slide spec, never a
+        baked-in default (SOP-CAST-01 / AF-R3).
+      * CHAR-COUNT gate: the composed prompt length must be within
+        [PROMPT_CHAR_FLOOR, PROMPT_CHAR_CEILING]; outside = ValueError (AF-P1/AF-P2,
+        18,000 ceiling is the universal GPT-Image 2 safety boundary).
     """
+    # Prompt-side representation gate (before composing anything).
+    assert_no_forbidden_demographic_default(slide)
+
     scene = str(slide["scene"]).strip()
     copy_lines = [str(c).strip() for c in slide["copy"] if str(c).strip()]
     if not copy_lines:
@@ -182,6 +283,23 @@ def compose_prompt(slide: dict) -> str:
         raise ValueError(
             f"slide {slide.get('slide')}: composed prompt contains the dead endpoint "
             f"fragment '{DEAD_ENDPOINT_FRAGMENT}'. Refusing."
+        )
+
+    # PROMPT CHAR-COUNT GATE (fail-loud): never render a degenerate (near-empty)
+    # prompt, and never exceed the universal 18,000 hard ceiling (AF-P1/AF-P2).
+    length = len(prompt)
+    if length < PROMPT_CHAR_FLOOR:
+        raise ValueError(
+            f"slide {slide.get('slide')}: composed prompt is {length} chars, under the "
+            f"floor of {PROMPT_CHAR_FLOOR}. The scene/copy is too thin to render a real "
+            f"slide. Refusing (prompt char-count gate, AF-P1 floor)."
+        )
+    if length > PROMPT_CHAR_CEILING:
+        raise ValueError(
+            f"slide {slide.get('slide')}: composed prompt is {length} chars, over the "
+            f"hard ceiling of {PROMPT_CHAR_CEILING} (2,000 under the 20,000 GPT-Image 2 API "
+            f"ceiling, MODEL-SPECS). The scene/copy is too long; trim slides.json. Refusing "
+            f"(prompt char-count gate, AF-P2 ceiling)."
         )
     return prompt
 

@@ -17,7 +17,7 @@ PHASE B  Slide math: duration to slide count cap
 PHASE 1  Write every slide's copy (Hormozi structure + price drop)
 PHASE 1Q Internal copy QC gate (agents, >= 8.5)
 PHASE 1A OWNER APPROVAL GATE (human says yes before any prompt is written)
-PHASE 2  Write one image prompt per slide (1,500 to 15,000 chars)
+PHASE 2  Write one image prompt per slide (5,000 to 18,000 chars; target 9,000 to 14,000)
 PHASE 3  Prompt QC gate (5 to 10 agents, >= 8.5, auto-loop)
 PHASE 4  Generate on Kie.ai gpt-image-2 (rate-capped, polled, loop-guarded)
 PHASE 5  Image QC gate (>= 8.5, auto-loop, passes upload to GHL immediately)
@@ -165,15 +165,15 @@ Sub-agent counts in this SOP (writers, 5 to 10 QC agents, submission agent) are 
 ```json
 {
   "model_pin": "gpt-image-2-text-to-image",
-  "prompt_char_floor": 1500,
-  "prompt_char_ceiling": 15000,
+  "prompt_char_floor": 5000,
+  "prompt_char_ceiling": 18000,
   "baked_text_only": true,
   "vision_qc_required": true,
   "canonical_render_module": "23-ai-workforce-blueprint/templates/presentation-render/render_deck.py"
 }
 ```
 - `model_pin`: the client's pinned primary image model (default `gpt-image-2-text-to-image`). NEVER overridden by the producing agent without operator sign-off. This is the value the canonical render module validates against (Section 1A sovereignty doctrine).
-- `prompt_char_floor` / `prompt_char_ceiling`: hard limits for all image prompts (1500-15000 chars). The Slide Image Creator must stay within these bounds; the canonical render module hard-blocks anything outside.
+- `prompt_char_floor` / `prompt_char_ceiling`: hard limits for all image prompts. **Reconciled v12.7.1: floor 5000, ceiling 18000** (was 1500/15000). 18000 is a 2000-char safety margin below the GPT-Image 2 ceiling of 20000 on both endpoints (45-design-intelligence-library/library/_system/MODEL-SPECS.md). The Slide Image Creator must stay within these bounds; the canonical render module hard-blocks anything outside, and the values MUST equal the QC gate's AF-P1/AF-P2 floor/ceiling (Section 8 Check 0 and the QC GATE TABLE in Section 10.5) so the render module never hard-blocks a prompt the QC gate would pass. The authoritative source for these two numbers is the live qc-specialist-presentations.md (AF-P1 under 5000 = auto-fail; AF-P2 over 18000 = auto-fail; target band 9000-14000).
 - `baked_text_only`: always `true`. No Pillow overlay path, no black scrim. Typography baked into the image by the model (AF-BAKED auto-fail enforces this).
 - `vision_qc_required`: always `true`. path.exists() is not vision QC. Phase 5 calls the vision API per-image (AF-NO-VISION-QC enforces this).
 - `canonical_render_module`: the path to the shared render module. All producing agents call this module; per-deck renderers are forbidden (AF-RENDERER enforces this).
@@ -613,8 +613,9 @@ When ALL slides pass copy QC, present the full deck copy to the owner in readabl
 **The proven method is ONE complete standalone prompt per slide.** The shared STYLE BLOCK (written once by the lead agent, ~800 to 1,500 chars: white base rule, the three brand hexes and roles, typography system, logo rule, mood keywords, representation rule, 16:9/2K line) is embedded inside every prompt. It supplements the per-slide spec; it never replaces it.
 
 ### 7.1 Length rules (hard limits)
-- **MINIMUM 1,500 characters** (auto-fail under). **SOP MAXIMUM 15,000.** **TARGET 5,000 to 7,500.**
-- The Kie.ai GPT Image 2 API hard ceiling is **20,000 characters** in `input.prompt` (roughly 3,000 to 3,300 words). The SOP maximum sits at 15,000 deliberately: a 5,000-character safety margin below the API ceiling so a prompt never gets rejected or truncated by the platform.
+- **MINIMUM 5,000 characters** (auto-fail under = AF-P1). **SOP MAXIMUM 18,000** (auto-fail over = AF-P2). **TARGET 9,000 to 14,000.** (Reconciled v12.7.1; was 1,500 / 15,000 / target 5,000-7,500. The old short band starved prompts of the per-line spelling-lock, the full eight-class paired negative block, the image-to-image logo language, and the complete people-anatomy / scene direction that prevent the forensic defects. The authoritative source for these numbers is the live qc-specialist-presentations.md AF-P1/AF-P2.)
+- The Kie.ai GPT Image 2 API hard ceiling is **20,000 characters** in `input.prompt` (roughly 3,000 to 3,300 words). The SOP maximum sits at 18,000 deliberately: a 2,000-character safety margin below the API ceiling so a prompt never gets rejected or truncated by the platform.
+- The character budget is for SPECIFICITY, never filler. A prompt at or above 9,000 chars that spends the budget on defect-preventing detail scores high at prompt QC criterion 1; a prompt that pads to the count with boilerplate or repeated adjectives scores low.
 - FRONT-LOAD the critical content anyway: composition, background, verbatim headline, brand colors, logo placement first; mood and negative-space detail last. If KIE ever returns a length error, condense to the front-loaded essentials and LOG the truncation. Never silently drop detail.
 
 ### 7.2 Visual archetype library (THE FIVE PROVEN ARCHETYPES)
@@ -731,9 +732,9 @@ AVOID: Deformed hands or extra fingers. Garbled text elements. Clipart or cartoo
 
 ### PROMPT QC GUIDE (score each criterion 1 to 10)
 
-**CHECK 0, HARD LENGTH GATE (run first, mechanically):** count the characters. Under 1,500 = automatic fail, stop scoring. Over 15,000 = automatic fail. Record the exact count.
+**CHECK 0, HARD LENGTH GATE (run first, mechanically):** count the characters and RECORD the exact integer in the report. Under 5,000 = automatic fail (AF-P1), stop scoring. Over 18,000 = automatic fail (AF-P2). (Reconciled v12.7.1; was 1,500 / 15,000.)
 
-1. **Detail and length in range:** full design spec present (composition, typography, layout, mood, lighting); target 5,000 to 7,500.
+1. **Detail and length in range:** full design spec present (composition, typography, layout, mood, lighting); target 9,000 to 14,000, budget spent on defect-preventing specificity, not filler.
 2. **Brand palette + WHITE BASE:** intake hexes present and correctly assigned; background explicitly white/light AND characterized beyond one word. Any dark-background language without `DARK_OK` = auto-fail.
 3. **Copy verbatim:** headline, sub-copy, and supporting text match the APPROVED slides_copy.md character for character, emphasis words specified. Paraphrase = auto-fail.
 4. **16:9 + 2K stated:** both present. Missing either = auto-fail.
@@ -748,8 +749,11 @@ AVOID: Deformed hands or extra fingers. Garbled text elements. Clipart or cartoo
 13. **Professionalism / typography bar:** reads as art direction; large creative type usage specified; generic "clean text" = fail. (Double weight.)
 14. **Archetype followed:** the prompt declares and matches its assigned A1-A5 archetype (Section 7.2), uses the brand devices (kicker, gold rules, chips, tag motif), and handles strikethrough as drawn lines per Section 7.4 on every drop slide.
 15. **Internal consistency + render safety:** style block embedded, no contradictions, text quantity renderable within Section 5.1 limits.
+16. **English / Latin-only pin present (AF-P-ENGLISH):** the prompt carries the mandatory English / Latin-only pin verbatim (Section 1A): *"All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK or non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter. No garbled, misspelled, or invented text."* Pin missing = auto-fail. (`build_deck.py` appends it automatically; any hand-authored prompt must carry it.)
+17. **Audience-matched representation, NO hardcoded demographic default (AF-P-REP):** people specs match the captured `REPRESENTATION_MIX` group assignment for the slide (Audience Engine). If `REPRESENTATION_MIX` was NOT captured, the prompt specifies NO PEOPLE (people element omitted) plus the operator flag, per the brand-steward NO-PEOPLE-or-flag rule. **A prompt that invents a racial / demographic default the client did not supply -- the 60% Black/Brown, 30% other POC, 10% white "60/30/10" landmine, or ANY invented percentage split -- is an auto-fail.** Never invent percentages the client did not supply (brand-steward.md "Common Mistakes / NEVER" #6).
+18. **Currency correctness (AF-P-CURRENCY):** every price, anchor, struck price, and stack value in the prompt is stated in the client's currency (default `$` US dollars unless intake specifies another) and as a verbatim string locked letter-for-letter (criterion 3). A prompt that renders a price with the wrong currency symbol, no currency symbol where one is required, or a localized/auto-translated currency the client did not specify = auto-fail.
 
-Weighting: criteria 2, 3, 4, 13 count double. Any auto-fail forces FAIL regardless of average.
+Weighting: criteria 2, 3, 4, 13 count double. Any auto-fail forces FAIL regardless of average. The auto-fail layer (criteria 0, 2-paraphrase, 3, 4, 7, 8, 16, 17, 18) is checked FIRST, before any 1-to-10 scoring; a triggered auto-fail forces FAIL on the slide regardless of the average. See the consolidated QC GATE TABLE in Section 10.5 for the binary PASS/FAIL detection of every prompt and image gate.
 
 ---
 
@@ -899,11 +903,58 @@ Total generations for the run are capped at **2x SLIDE_COUNT** (e.g., 120 genera
 9b. **No em dashes rendered in slide text** = auto-fail.
 10. **Object/overlay fidelity:** boxes, plates, rules, strikethrough lines rendered as drawn objects per the prompt; overlays actually overlaid.
 11. **Slide-worthiness:** one idea, bold, consistent with the deck.
+12. **100% English / Latin, zero CJK (AF-I-ENGLISH):** every rendered glyph on the slide is English Latin-alphabet text. ANY Chinese / CJK / non-Latin character anywhere on the slide = auto-fail (the render-side close of the Section 1A pin; pairs with prompt QC criterion 16).
+13. **Rendered text MATCHES intended copy (OCR readback):** read every rendered text element back (headline, sub, every supporting line, kicker, price, struck price, any logo wordmark) and diff it against the intended verbatim string from the approved slides_copy.md. Any mismatch -- a baked typo, a garble, a missing connector, a leaked stage-direction string -- = auto-fail (trusts the pixels, not the prompt; pairs with criterion 5).
+14. **Real KIE GPT-Image-2 render, NOT native (AF-I-NATIVE / AF-BAKED):** the slide is a genuine Kie.ai `gpt-image-2` raster with the typography BAKED INTO the image by the model. A slide produced by a native / built-in image tool (`image_generate`, `openai`, any built-in), a Pillow / PPTX / ImageDraw text overlay composited over a background, a flat solid-fill placeholder, or any stock / hand-edited substitute = auto-fail. (Vision QC confirms text is rendered-as-composition, not overlaid; the canonical render path is the only authorized renderer.)
+15. **Full-bleed 2560x1440 (AF-I-DIMS):** the rendered PNG is full-bleed 16:9 at 2K, i.e. nominal **2560x1440** px (the 2K 16:9 raster), no letterboxing, no pillarboxing, no border / frame / margin, the image fills the entire 13.333x7.5 in slide canvas edge to edge. Wrong aspect ratio, sub-2K resolution, or any non-full-bleed framing = auto-fail (pairs with criterion 7's 16:9 check and criterion 8's 2K check).
+16. **Logo correct (cross-slide identity):** when `LOGO_ON_SLIDES = true`, the rendered logo is the SAME locked mark on EVERY slide -- same lockup, color, scale, crop, chip, corner -- and identical to the locked `LOGO_URL` asset. Any drift (a different lockup / monogram / leaf / mountain / roundel variant on any slide) = auto-fail the deck (the forensic four-plus-marks defect; pairs with criterion 6's single-slide presence check and SOP-IMG-01 check 9).
+17. **Currency rendered correctly (AF-I-CURRENCY):** every rendered price / anchor / struck price / stack value shows the client's currency symbol (default `$` US dollars unless intake specifies otherwise), matching the intended copy letter-for-letter. A wrong currency symbol, a missing symbol where one is required, or a localized / auto-translated currency = auto-fail (pairs with prompt QC criterion 18 and the cross-slide numeric-consistency / offer-price asserts).
+18. **On-brand palette (AF-I-PALETTE):** the rendered slide uses only the intake brand hexes in their assigned roles on the white base; no off-brand color cast, no palette the client did not supply. (Reinforces criteria 2 and 3-4; off-brand cast = auto-fail.)
+19. **Faces match the audience (AF-I-REP):** every person rendered matches the slide's assigned `REPRESENTATION_MIX` group. People rendered when `REPRESENTATION_MIX` was NOT captured = auto-fail (invented demographic, AF-R3). The DECK-WIDE cast tally must land within +/-10 percentage points of every captured `REPRESENTATION_MIX` group, bidirectionally (fails BOTH under-representation of a captured group AND mono-casting against a multicultural mix); run once across the generated images and again on the final assembled deck (AF-R1 / AF-R2). No 60/30/10 or any invented default is ever inferred.
 
-Weighting: 3, 5, 6, 7 double. Any auto-fail forces FAIL.
+Weighting: 3, 5, 6, 7 double. Any auto-fail forces FAIL. The auto-fail layer (criteria 3, 5, 6, 7, 9, 9b, and 12-19) is checked FIRST, before any 1-to-10 scoring; AF-R1/AF-R2/AF-R3 are DECK-level and hard-fail the whole deck regardless of individual image scores. See the consolidated QC GATE TABLE in Section 10.5.
 
 ### 10.4 Passes move immediately
 The moment a pass verdict lands: copy to `media-library/slide-NN.png` AND upload to the client's GHL media library folder as `Slide NN v<N>`. Do not batch-hold passed images. Record GHL file IDs and URLs in `working/checkpoints/ghl_upload_report.md` as they land.
+
+---
+
+## 10.5 CONSOLIDATED QC GATE TABLE (every criterion as an ENFORCED auto-fail + reroute)
+
+**This is enforcement, not guidance.** Every row below is a BINARY PASS / FAIL auto-fail with an exact mechanical detection. Auto-fails are checked FIRST, before any 1-to-10 scoring (the soft layer is the >= 8.5 average with a 7.0 per-item floor). A triggered auto-fail forces FAIL on the slide (or the DECK where marked) regardless of any average; no averaging, no "almost passed". The QC Specialist records the triggered code, the slide, the exact measured value (e.g. the integer char count), and the verbatim failure message, then executes the REROUTE in the last column. Nothing client-specific is hardcoded here: `REPRESENTATION_MIX`, brand hexes, currency, `LOGO_URL`, and the verbatim copy are all read from the client's `intake.json` / approved `slides_copy.md`.
+
+This table is the single index that fuses the Phase 3 prompt gate (Section 8) and the Phase 5 image gate (Section 10) into one wireable list. It covers BOTH the prompt (write-time guard) and the rendered image (read-time verify) for every defect class. The repo-canonical code namespace (AF-P1..AF-P16, AF-I1..AF-I10, AF-F7/F9/F10, AF-R1..AF-R3, AF-BAKED, AF-RENDERER, AF-MODEL-SOVEREIGNTY) is authoritative; the descriptive AF-*-names used in Sections 8 and 10 map onto it in the "Live code" column.
+
+### A. PROMPT GATES (Phase 3, before any createTask call) -- write-time
+
+| Gate | Live code | PASS | AUTO-FAIL (binary detection) | Reroute on fail |
+|---|---|---|---|---|
+| English / Latin pin present | AF-P-ENGLISH (pin per Section 1A) | Prompt carries the mandatory English / Latin-only pin verbatim | Pin string absent from the prompt body | Loop to Slide Image Creator: append the verbatim pin; re-QC the prompt only |
+| Verbatim copy, NO placeholder | AF-P3 + AF-P14 + AF-P16 | Every on-slide string matches approved slides_copy.md letter-for-letter, each carries its spelling-lock, zero bracket / `[...]` / "owner to confirm" / "tbd" / "placeholder" tokens as rendered copy | Any paraphrase; any verbatim string with no spelling-lock; any placeholder/bracket token presented as copy to render | Loop to Copywriter (resolve placeholder with client's real content or pull the slide) then Slide Image Creator |
+| Scene + layout present | AF-P9 + AF-P11 + p8/p15 | Prompt depicts a concrete scene/moment, declares its archetype on line 1, gives zone percentages + thirds placement for every element | "Just a background with text"; no archetype declaration; no thirds/zone layout | Loop to Slide Image Creator: add scene + layout direction; re-QC |
+| Logo text correct (image-to-image) | AF-P15 | On every `LOGO_ON_SLIDES = true` slide the prompt declares `gpt-image-2-image-to-image` with locked `LOGO_URL` as the FIRST `input_urls` reference, carries the verbatim "place, do not redraw" sentence + the "do not invent / redesign any mark" negative twin | Logo in words only (no reference image); text-to-image (Mode A) on a logo slide; missing "place, do not redraw" | Loop to Slide Submitter / Slide Image Creator: switch to Mode B, name the reference, add the directive (SOP-IMG-01 check 1/3) |
+| 16:9 + 2K stated | AF-P (criterion 4, double-weight) | Both "16:9" and "2K" present in the prompt | Either missing | Loop to Slide Image Creator: add the format line |
+| Char count within [MIN, MAX] | AF-P1 / AF-P2 (Check 0, run first) | `5000 <= len(prompt) <= 18000`; record the exact integer; target 9000-14000 | `len < 5000` (AF-P1) OR `len > 18000` (AF-P2) | Loop to Slide Image Creator: expand with defect-preventing specificity (under) or condense front-loaded essentials + log (over) |
+| Audience-matched representation | AF-P-REP (criterion 17) | People specs match the slide's captured `REPRESENTATION_MIX` group; OR NO PEOPLE + operator flag when `REPRESENTATION_MIX` uncaptured | Person specified for a slide with no captured-mix assignment, or against an uncaptured mix | Loop to Brand Steward: re-cast to the captured mix, or set NO PEOPLE + operator flag |
+| NO hardcoded demographic default | AF-P-REP / AF-R3 (the 60/30/10 landmine) | No invented racial / demographic percentage anywhere; uncaptured audience -> NO PEOPLE + flag | The "60% Black/Brown, 30% other POC, 10% white" default OR ANY invented percentage split the client did not supply | Loop to Brand Steward + flag operator: strip the invented default, NO PEOPLE until client confirms (brand-steward.md NEVER #6) |
+| Currency correct | AF-P-CURRENCY (criterion 18) | Every price/anchor/struck/stack value uses the client's currency symbol (default `$`), locked verbatim | Wrong currency symbol; missing symbol where required; localized / auto-translated currency the client did not specify | Loop to Copywriter / Slide Image Creator: correct the currency string, re-lock |
+| Eight-class paired negative block | AF-P8 / AF-P13 | Final-paragraph negative block covers all 8 defect classes as imperative "Do not ..." sentences, each critical negative paired with a positive twin, no contradiction | Block missing; any of the 8 classes missing; any unpaired or contradictory negative | Loop to Slide Image Creator: complete the eight-class paired block (SOP 9.8) |
+
+### B. IMAGE GATES (Phase 5 per-slide + Phase 6 deck-wide) -- read-time verify
+
+| Gate | Live code | PASS | AUTO-FAIL (binary detection) | Reroute on fail |
+|---|---|---|---|---|
+| 100% English / zero CJK | AF-I-ENGLISH (criterion 12) | Every rendered glyph is English Latin-alphabet | ANY Chinese / CJK / non-Latin character anywhere on the slide | Regenerate the slide as-is (render noise) per Section 10.1 |
+| No garbled / misspelled text | AF-I1 (criterion 5) | Every word correct, no duplicated word, no garbled glyph | Any misspelling, duplicated word, or garbled glyph in any text element | Regenerate (render noise); on 2nd garble -> native-text overlay fallback (Section 7.4) |
+| Rendered text MATCHES intended copy | AF-F9 (OCR readback, criterion 13) | OCR of every text element diffs clean against the intended verbatim string | Any baked typo, garble, missing connector, or leaked stage-direction string vs intended copy | Regenerate; persistent -> native-text overlay fallback |
+| Real KIE gpt-image-2 (NOT native) | AF-BAKED / AF-RENDERER (criterion 14) | Genuine Kie.ai `gpt-image-2` raster, typography baked into the image by the model, produced by the canonical render module | Native / built-in tool render; Pillow/PPTX/ImageDraw text overlay; flat solid-fill placeholder; stock / hand-edited substitute; per-deck renderer instead of canonical module | HARD STOP the deck: rebuild via the canonical render path; never fake the deliverable (non-zero exit = NOT built) |
+| Full-bleed 2560x1440 | AF-I-DIMS (criteria 7 + 8 + 15) | PNG is full-bleed 16:9 at 2K, nominal **2560x1440**, fills the 13.333x7.5 canvas edge to edge, no letterbox / pillarbox / border / margin | Wrong aspect ratio; sub-2K resolution; any non-full-bleed framing | Regenerate with the 16:9 / 2K format fields confirmed in the createTask body |
+| Logo correct (cross-slide identity) | AF-I4 (single slide) + AF-F7 (deck identity) | When `LOGO_ON_SLIDES = true`, the SAME locked mark on every slide, identical to `LOGO_URL` (lockup, color, scale, crop, chip, corner) | Logo absent / illegible / distorted / recolored / clipped on a slide (AF-I4); a different lockup / monogram / variant on any slide (AF-F7) | Re-submit affected slides via image-to-image with the locked `LOGO_URL` + "place, do not redraw"; after 2 fails -> native logo overlay (SOP-DESIGN-04) |
+| Currency $ rendered correctly | AF-I-CURRENCY (criterion 17) | Every rendered price shows the client's currency symbol (default `$`), matching intended copy | Wrong currency symbol; missing symbol where required; localized / auto-translated currency | Regenerate; persistent -> native-text overlay fallback for the price |
+| On-brand palette | AF-I-PALETTE (criteria 2 + 18) | Only the intake brand hexes in their assigned roles on the white base | Off-brand color cast; a palette the client did not supply; dark base without `DARK_OK` | Regenerate; if the prompt was the defect, revise the COLOR VERIFICATION block and re-QC |
+| Faces match the audience | AF-R1 / AF-R2 / AF-R3 (deck-wide, criterion 19) | Every person matches the slide's assigned `REPRESENTATION_MIX` group; deck-wide cast tally within +/-10 pts of every captured group, bidirectional | A face off the assigned group; people rendered when `REPRESENTATION_MIX` uncaptured (AF-R3); deck tally outside +/-10 pts under-representing a group OR mono-casting (AF-R1/AF-R2) | DECK-level fail: re-cast the deficient / over-represented slides; run the tally once on generated images and again on the final assembled deck |
+
+**Veto semantics:** a slide-level trigger fails that slide and loops it (max 3 generation attempts per slide, then escalate to the Director); a DECK-level trigger (AF-BAKED/AF-RENDERER deck-wide, AF-F7 logo identity, AF-R1/AF-R2/AF-R3 representation tally, AF-MODEL-SOVEREIGNTY) fails the entire gate and blocks FINAL. The auto-fail is checked before scoring and the failing item receives no score. A non-zero exit from the canonical render module means the deck is NOT built -- fix the input or escalate; never mark a deck done on a faked or partial deliverable.
 
 ---
 
@@ -1046,7 +1097,7 @@ PHASE 2 - PROMPTS
 [ ] 2.1  STYLE BLOCK written once by lead; REAL exemplar (7.5) read by every writer agent;
          every prompt follows the 10-part anatomy incl. ONE BIG IDEA, COLOR VERIFICATION, AVOID blocks
 [ ] 2.2  Parallel writers, non-overlapping ranges; one complete prompt per slide
-[ ] 2.3  Every prompt 1,500 to 15,000 chars (target 5,000 to 7,500); approved copy VERBATIM
+[ ] 2.3  Every prompt 5,000 to 18,000 chars (target 9,000 to 14,000); approved copy VERBATIM
 [ ] 2.4  Every prompt: white base characterized, hexes, thirds grid, font placement,
          object placement, explicit overlays, people spec (hair+clothing+expression),
          logo + plate (or absent per intake), archetype followed, 16:9 + 2K stated

@@ -53,6 +53,29 @@ not fix spelling or reword anything; whatever you write is what appears on the s
 You do **NOT** write KIE prompts, call any API, or pick a model. The script composes the
 KIE prompt mechanically (scene + your exact copy + the mandatory English/Latin-only pin).
 
+### AUDIENCE-MATCHED REPRESENTATION (people in scenes) — MANDATORY
+
+When a `scene` shows people, the demographics MUST come from **the client's captured
+audience composition** (the real audience this deck is for), described directly in that
+slide's `scene` text. There is **NO system default demographic** (SOP-CAST-01) and **no
+racial or gender default is ever inferred** (AF-R3): if you do not know the audience, ask
+— do not invent one, and do not put people in the scene.
+
+**FORBIDDEN — the script fails-loud (non-zero exit) if any slide carries one of these:**
+a hardcoded demographic-default split such as `60/30/10` (or `60-30-10`), or any phrase
+like "default demographic", "default ethnicity / race / skin tone", "standard demographic
+mix", "assume the audience is …", or "inferred / assumed demographic". Representation is the
+client's real audience, written per-slide — never a baked-in ratio.
+
+### PROMPT CHAR-COUNT (the script enforces it)
+
+You do not count characters — but be aware the script applies a fail-loud char-count gate
+to each composed prompt: it refuses a degenerate near-empty prompt (too thin a `scene`/
+`copy`) and refuses anything over the **18,000-character** hard ceiling (a 2,000-char
+safety margin below the GPT-Image 2 API ceiling of 20,000). Keep each slide's `scene` and
+`copy` substantive but not enormous; if a slide fails the gate, trim or flesh out that
+slide's spec and re-run.
+
 The mandatory English/Latin-only pin the script appends to EVERY prompt is, verbatim:
 
 > All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK

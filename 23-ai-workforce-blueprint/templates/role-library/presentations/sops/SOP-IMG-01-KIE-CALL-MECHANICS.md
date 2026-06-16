@@ -207,6 +207,42 @@ Check 9 is the closing of the logo-mutation loop: passing the logo via I2I (chec
 
 ---
 
+## 7A. CONSOLIDATED QC GATE TABLE (full prompt + image, ENFORCED auto-fail + reroute)
+
+Section 7 above gates the CALL MECHANICS (which mode, which references, which fields). This section is the complete content QC gate the Slide Submitter runs at submit (prompt) and the QC Specialist runs at image QC (render), covering BOTH the prompt and the rendered image for every defect class. **Every row is a BINARY PASS / FAIL auto-fail with an exact detection, checked FIRST before any 1-to-10 scoring; a triggered row forces FAIL on the slide (or the DECK where marked) regardless of any average -- no averaging, no "almost passed".** This mirrors the live `qc-specialist-presentations.md` auto-fail tables and the master `CLIENT-WEBINAR-DECK-SOP.md` Section 10.5 gate table; the repo-canonical codes (AF-P1..AF-P16, AF-I1..AF-I10, AF-F7/F9/F10, AF-R1..AF-R3, AF-BAKED, AF-RENDERER) are authoritative. Nothing client-specific is hardcoded: `REPRESENTATION_MIX`, brand hexes, currency, `LOGO_URL`, and the verbatim copy are all read from the client's `intake.json` / approved `slides_copy.md`. The QC Specialist records the triggered code, the slide, the exact measured value (e.g. the integer char count), and the verbatim failure message, then executes the reroute.
+
+### 7A.1 PROMPT GATES (write-time, at submit) -- every prompt, before createTask
+
+| # | Gate | Live code | PASS | AUTO-FAIL (binary) | Reroute |
+|---|---|---|---|---|---|
+| P1 | English / Latin pin present | AF-P-ENGLISH (Section 1A pin) | Prompt carries the verbatim English/Latin-only pin | Pin absent | Append pin; re-QC prompt only |
+| P2 | Exact copy, NO placeholder | AF-P3 + AF-P14 + AF-P16 | Every on-slide string verbatim to slides_copy.md, each spelling-locked, zero `[...]` / "owner to confirm" / "tbd" / "placeholder" tokens as copy | Paraphrase; unlocked string; placeholder/bracket token presented as render copy | Resolve placeholder with client's real content (or pull slide), re-lock, re-QC |
+| P3 | Scene + layout present | AF-P9 + AF-P11 | Concrete scene/moment; archetype declared line 1; zone percentages + thirds placement for every element | "Just a background with text"; no archetype; no layout | Add scene + layout direction; re-QC |
+| P4 | Logo text correct (image-to-image) | AF-P15 (= Section 7 checks 1-3) | `LOGO_ON_SLIDES = true` slide declares Mode B with locked `LOGO_URL` first in `input_urls`, carries "place, do not redraw" + "do not invent any mark" | Logo in words only; Mode A on a logo slide; missing "do not redraw" | Switch to Mode B, name the reference, add directive |
+| P5 | 16:9 + 2K stated | AF-P (format line) | Both "16:9" and "2K" present | Either missing | Add the format line |
+| P6 | Char count within [MIN, MAX] | AF-P1 / AF-P2 (Check 0, run first) | `5000 <= len(prompt) <= 18000`; record exact integer; target 9000-14000 | `len < 5000` (AF-P1) OR `len > 18000` (AF-P2) | Expand with defect-preventing specificity (under) or condense front-loaded + log (over) |
+| P7 | Audience-matched representation | AF-P-REP | People match the slide's captured `REPRESENTATION_MIX` group; OR NO PEOPLE + operator flag when uncaptured | Person specified against no/uncaptured mix assignment | Re-cast to captured mix, or NO PEOPLE + flag |
+| P8 | NO hardcoded demographic default | AF-P-REP / AF-R3 (the 60/30/10 landmine) | No invented racial/demographic percentage; uncaptured -> NO PEOPLE + flag | The "60% Black/Brown, 30% other POC, 10% white" default OR ANY invented split the client did not supply | Strip the default; NO PEOPLE + flag operator until client confirms |
+| P9 | Currency correct | AF-P-CURRENCY | Every price/anchor/struck/stack value uses the client's currency symbol (default `$`), locked verbatim | Wrong symbol; missing symbol where required; localized/auto-translated currency | Correct the currency string, re-lock |
+
+### 7A.2 IMAGE GATES (read-time, at image QC + final deck QC) -- every rendered slide
+
+| # | Gate | Live code | PASS | AUTO-FAIL (binary) | Reroute |
+|---|---|---|---|---|---|
+| I1 | 100% English / zero CJK | AF-I-ENGLISH (= Section 7 check 10 read-half) | Every rendered glyph is English Latin-alphabet | ANY Chinese / CJK / non-Latin character anywhere | Regenerate as-is (render noise, Section 10.1 of master SOP) |
+| I2 | No garbled / misspelled text | AF-I1 | Every word correct, no duplicated word, no garbled glyph | Any misspelling / duplicated word / garbled glyph in any text element | Regenerate; 2nd garble -> native-text overlay fallback |
+| I3 | Rendered text MATCHES intended copy | AF-F9 (OCR readback) | OCR of every text element diffs clean against the intended verbatim string | Any baked typo, garble, missing connector, or leaked stage-direction string vs intended copy | Regenerate; persistent -> native-text overlay fallback |
+| I4 | Real KIE gpt-image-2 (NOT native) | AF-BAKED / AF-RENDERER (= Section 1A FORBIDDEN list) | Genuine Kie.ai `gpt-image-2` raster, typography baked in by the model, from the canonical render path | Native / built-in tool render; Pillow/PPTX/ImageDraw overlay; flat placeholder fill; stock/hand-edited substitute; per-deck renderer | HARD STOP deck: rebuild via canonical path; never fake the deliverable |
+| I5 | Full-bleed 2560x1440 | AF-I-DIMS | Full-bleed 16:9 at 2K, nominal **2560x1440**, fills the canvas edge to edge, no letterbox / pillarbox / border / margin | Wrong aspect ratio; sub-2K; any non-full-bleed framing | Regenerate with 16:9 / 2K confirmed in the createTask body |
+| I6 | Logo correct (cross-slide identity) | AF-I4 (slide) + AF-F7 (deck) (= Section 7 check 9) | `LOGO_ON_SLIDES = true`: SAME locked mark on every slide, identical to `LOGO_URL` (lockup, color, scale, crop, chip, corner) | Logo absent/illegible/distorted/recolored/clipped (AF-I4); a different lockup / monogram / variant on any slide (AF-F7) | Re-submit via Mode B with locked `LOGO_URL` + "place, do not redraw"; after 2 fails -> native logo overlay |
+| I7 | Currency $ rendered correctly | AF-I-CURRENCY | Every rendered price shows the client's currency symbol (default `$`), matching intended copy | Wrong symbol; missing symbol where required; localized/auto-translated currency | Regenerate; persistent -> native-text overlay for the price |
+| I8 | On-brand palette | AF-I-PALETTE | Only the intake brand hexes in their assigned roles on the white base | Off-brand color cast; a palette the client did not supply; dark base without `DARK_OK` | Regenerate; if the prompt was the defect, revise COLOR VERIFICATION block and re-QC |
+| I9 | Faces match the audience | AF-R1 / AF-R2 / AF-R3 (DECK-wide) | Every person matches the slide's assigned `REPRESENTATION_MIX` group; deck-wide cast tally within +/-10 pts of every captured group, bidirectional | Face off the assigned group; people when `REPRESENTATION_MIX` uncaptured (AF-R3); deck tally outside +/-10 pts under-representing a group OR mono-casting (AF-R1/AF-R2) | DECK-level fail: re-cast deficient / over-represented slides; tally once on generated images, again on final deck |
+
+**Veto semantics (identical to the master SOP):** a slide-level trigger fails that slide and loops it (max 3 generation attempts per slide, then escalate to the Director per Section 8); a DECK-level trigger (I4 deck-wide native/renderer, I6 logo identity, I9 representation tally) fails the entire gate and blocks FINAL. The auto-fail is checked before scoring; the failing item receives no score. A non-zero exit from the canonical render path means the deck is NOT built -- fix the input or escalate; never mark a deck done on a faked or partial deliverable.
+
+---
+
 ## 8. ESCALATION / REPAIR PATH
 
 | Condition | First action | If unresolved |
