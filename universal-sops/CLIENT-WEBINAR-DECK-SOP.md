@@ -42,6 +42,23 @@ PHASE 6  PPTX assembly, final deck QC, speaker notes, delivery
 
 ---
 
+## 0.5. THE DETERMINISTIC RENDER PATH IS MANDATORY (the ONE way images are made)
+
+Every slide image in every client deck is rendered by the PROVEN deterministic pipeline. The building agent has **NO image tool** and never generates, edits, fetches, or substitutes a pixel itself. There is exactly ONE renderer, and it is one of the two shipped scripts in `23-ai-workforce-blueprint/templates/presentation-render/` (installed into the client's Presentations scripts directory on a materialized box):
+
+- **`build_deck.py`** — the single-command deterministic path. The agent writes a `slides.json` (its ONLY creative output) per `slides.schema.json`; the script then composes each KIE.ai prompt MECHANICALLY (scene + the agent's EXACT copy, verbatim + optional logo wordmark + layout hint + the mandatory English/Latin-only pin), submits to KIE.ai `gpt-image-2-text-to-image`, polls, downloads + verifies each PNG (3× retry per slide), and assembles a 16:9 `.pptx` (one full-bleed picture per slide, NO text boxes — the copy is baked into the image). Zero AI judgement at runtime.
+- **`kie_generate.py`** — the reference image-to-image / text-to-image submit+poll+download helper for the full webinar pipeline when references (locked logo, founder portrait, style frame) must be passed. Used per SOP-IMG-01.
+
+**The mandated flow is, in order, with NO substitutions:** the builder writes `slides.json` → runs `build_deck.py` → KIE.ai is the ONLY render call (createTask → recordInfo → resultUrls[0]) → the agent registers the `.pptx` the script produced. **NO self-generate. NO native image tool (`image_generate`, `openai`, any built-in). NO inline hand-written HTTP call. NO dead endpoint `/api/v1/image/gpt-image`. NO placeholder/stock substitution.** Any of these is an immediate auto-fail (AF-I14 / AF-RENDERER / AF-BAKED). A non-zero exit from `build_deck.py` means the deck is NOT built — fix `slides.json` or escalate; never fake a deliverable.
+
+**MANDATORY ENGLISH / LATIN-ONLY PIN — appended verbatim to EVERY image prompt (every slide, every mode):**
+
+> All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK or non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter. No garbled, misspelled, or invented text.
+
+`build_deck.py` appends this pin to every prompt automatically; any prompt authored by hand for `kie_generate.py` or the Phase 2/3 prompt-writing stage MUST carry it verbatim. A prompt that omits the pin, or a rendered slide carrying CJK / non-Latin glyphs or garbled/misspelled text, is an auto-fail at prompt QC and image QC.
+
+---
+
 ## 1. MODEL ROUTING AND FALLBACK CHAIN
 
 | Role | Primary | Fallback 1 | Fallback 2 |

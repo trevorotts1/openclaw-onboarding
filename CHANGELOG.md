@@ -1,3 +1,36 @@
+## [v12.18.1] - 2026-06-16 - feat(presentations): port the PROVEN deterministic deck pipeline (build_deck.py) into the Presentations dept template + mandate the deterministic flow and the verbatim English/Latin-only pin across the deck SOPs
+
+### Changes
+
+Ported the proven, zero-AI-at-runtime deterministic deck pipeline into the Presentations department template so every client box materializes it for fleet rollout. The builder agent has NO image tool: it writes a single `slides.json` (its only creative output), runs `build_deck.py`, and registers the `.pptx` the script produces. The script composes each KIE.ai prompt MECHANICALLY (scene + the agent's EXACT copy verbatim + optional logo wordmark + layout hint + the mandatory English/Latin-only pin), submits `gpt-image-2-text-to-image` (createTask → recordInfo → `resultUrls[0]`), downloads + verifies each PNG (PNG magic bytes + non-zero size, 3× retry per slide), and assembles a 16:9 full-bleed `.pptx` (no text boxes — copy is baked into the image). No self-generate, no native image tool, no inline hand-typed HTTP call, no dead endpoint `/api/v1/image/gpt-image`, no placeholder substitution — each is an auto-fail. A non-zero exit means the deck is NOT built (never fake a deliverable).
+
+**The MANDATORY English/Latin-only pin (appended to EVERY image prompt, verbatim):**
+
+> All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK or non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter. No garbled, misspelled, or invented text.
+
+`build_deck.py` appends this pin to every prompt automatically; any hand-authored prompt (the `kie_generate.py` image-to-image flow, or the Phase 2/3 prompt-writing stage) must carry it verbatim. A render carrying CJK / non-Latin glyphs or garbled/misspelled text is an auto-fail at prompt QC and image QC.
+
+**New files (deterministic scripts — placed alongside the canonical `render_deck.py`):**
+- `23-ai-workforce-blueprint/templates/presentation-render/build_deck.py` — the single-command deterministic builder.
+- `23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py` — the image-to-image / text-to-image submit+poll+download helper for the reference (logo/portrait/style-frame) flow.
+- `23-ai-workforce-blueprint/templates/presentation-render/slides.schema.json` — the `slides.json` input contract.
+
+**New files (builder doctrine — placed with the dept/role template):**
+- `23-ai-workforce-blueprint/templates/role-library/presentations/BUILDER-PROMPT.md` — the literal step-by-step builder procedure.
+- `23-ai-workforce-blueprint/templates/role-library/presentations/SOUL.md` — deterministic-pipeline doctrine + absolute prohibitions.
+- `23-ai-workforce-blueprint/templates/role-library/presentations/TOOLS.md` — `build_deck.py` (the only deck tool) + the `slides.json` contract.
+- `23-ai-workforce-blueprint/templates/role-library/presentations/IDENTITY.md` — the Presentations builder ("Slate") identity.
+
+All ported doctrine is GENERIC (fleet-safe): operator-absolute paths were replaced with HOME-relative client env stores and a `<SCRIPTS_DIR>` placeholder, and example brand wording was genericized (Acme Co). KIE_API_KEY is always read from the CLIENT's own env stores, never the operator's.
+
+**SOP updates (mandate the deterministic flow + the verbatim pin):**
+- `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` — added Section 0.5 "THE DETERMINISTIC RENDER PATH IS MANDATORY": one way images are made (write `slides.json` → run `build_deck.py` → KIE-only render → register the `.pptx`), the forbidden-paths list, and the mandatory pin verbatim.
+- `23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-IMG-01-KIE-CALL-MECHANICS.md` — added Section 1A mandating the deterministic render path + the verbatim pin; added the pin to the Mode A and Mode B prompt rules; added enforcement check 10 (English/Latin-only pin present in prompt AND clean-English render at image QC).
+
+**Files changed:** the 8 new pipeline files above, the 2 SOPs, the 9 version markers (via `scripts/bump-version.sh v12.18.1`), and this CHANGELOG entry.
+
+---
+
 ## [v12.17.4] - 2026-06-16 - fix(role-library): dedup _index.json roles + restore departments dict schema so qc-completeness.sh counts expected roles correctly (6 false-PARTIAL depts)
 
 ### Changes
