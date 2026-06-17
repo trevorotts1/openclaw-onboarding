@@ -1,6 +1,6 @@
 {
-  "manifest_version": 2,
-  "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
+  "manifest_version": 3,
+  "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped. v3: the deterministic renderer now renders the Slide Image Creator's RICH per-slide prompt VERBATIM (working/prompts/slide-NN.txt) with a HARD 1,500-char floor (AF-P1) + 18,000 ceiling (AF-P2) and NEVER composes a thin fallback; rich-prompt-required + speech-length (AF-SPEECH-SHORT, target_talk_minutes x 120 wpm) are wired into the preflight lockstep.",
   "phases": [
     {
       "id": "P-0.5-RESEARCH",
@@ -75,6 +75,25 @@
         "required": true,
         "checker": "_chk_copy_qc",
         "label": "copy QC report (gate Phase 1Q, average >= 8.5, no AF-* triggered)"
+      }
+    },
+    {
+      "id": "P2-PROMPTS",
+      "order": 2,
+      "name": "Rich Per-Slide Prompt Authoring (15-element, rendered VERBATIM)",
+      "owning_role": "slide-image-creator",
+      "sop_refs": [
+        "slide-image-creator-sops.md"
+      ],
+      "produces_artifact": "working/prompts/slide-*.txt",
+      "gate_codes": [
+        "AF-P1",
+        "AF-P2"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_rich_prompts",
+        "label": "rich per-slide prompt — every slide has a >=1,500-char prompt in working/prompts/ (rendered VERBATIM, no thin fallback)"
       }
     },
     {
@@ -186,9 +205,14 @@
       "gate_codes": [
         "AF-DELIVER",
         "AF-DH1",
-        "AF-DELIVERY-COMPLETE"
+        "AF-DELIVERY-COMPLETE",
+        "AF-SPEECH-SHORT"
       ],
-      "preflight": null
+      "preflight": {
+        "required": false,
+        "checker": "_chk_speech_length",
+        "label": "speech length — presenter speech words >= target_talk_minutes x 120 wpm (conditional: enforced once the speech exists)"
+      }
     }
   ],
   "autofails": [
@@ -236,6 +260,15 @@
       "trigger": "output deck has fewer slides than the client source deck (Mode B add-only)",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_coverage"
+    },
+    {
+      "code": "AF-SPEECH-SHORT",
+      "stage": "9",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "presenter speech words < target_talk_minutes x 120 wpm (speech too short for the requested duration)",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_speech_length"
     },
     {
       "code": "AF-DELIVER",

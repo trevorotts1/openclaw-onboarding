@@ -38,19 +38,31 @@ creative output) and produces a finished .pptx with no further model judgement.
 
 WHAT IT DOES (zero AI judgement at runtime):
     1. Reads a slides.json (see slides.schema.json) and an output .pptx path.
-    2. For EACH slide, composes a KIE.ai text-to-image prompt MECHANICALLY by concatenating:
-         scene description  +  exact English copy (verbatim from slides.json)  +
-         optional logo wordmark + layout hint  +  the MANDATORY English/Latin-only pin.
-       No model decides wording — the copy is whatever the slides.json author wrote.
-       TWO prompt-side QC gates run on every slide, both FAIL-LOUD (no silent render):
-         (a) FACIAL-INTELLIGENCE / REPRESENTATION gate — refuses any slide whose spec
-             carries a forbidden hardcoded demographic default (the "60/30/10" landmine).
-             Representation comes from the slide spec (the client's captured audience),
-             never a baked-in default split (SOP-CAST-01, AF-R3).
-         (b) CHAR-COUNT gate — the composed prompt length must be within
-             [PROMPT_CHAR_FLOOR, PROMPT_CHAR_CEILING]; the 18,000 ceiling is the
-             universal GPT-Image 2 safety boundary (AF-P1/AF-P2).
-    3. Calls KIE.ai (gpt-image-2-text-to-image) per the ONLY-allowed recipe:
+    2. For EACH slide, LOADS the per-slide RICH prompt VERBATIM from
+         working/prompts/slide-NN.txt  (or the SOP-named  slide-NN-prompt.txt).
+       This is the Slide Image Creator's hand-authored output — a 1,500–18,000-char
+       prompt that already carries the typography (per-line weight + pt size),
+       placement, usage, the logo(s), the scene, the verbatim copy, the negative
+       block, and everything else that appears on the slide. build_deck.py renders
+       THAT prompt verbatim — it does NOT compose its own thin prompt from
+       scene+copy. A whole slide is rendered in ONE gpt-image-2 generation.
+       If a slide has NO rich prompt file, or the prompt is < PROMPT_CHAR_FLOOR
+       (1,500) chars, build_deck.py FAILS LOUD — it NEVER silently falls back to a
+       thin composed prompt. TWO prompt-side QC gates run on every rich prompt,
+       both FAIL-LOUD (no silent render):
+         (a) FACIAL-INTELLIGENCE / REPRESENTATION gate — refuses any prompt that
+             carries a forbidden hardcoded demographic default (the "60/30/10"
+             landmine). Representation comes from the slide spec / casting ledger
+             (the client's captured audience), never a baked-in default split
+             (SOP-CAST-01, AF-R3).
+         (b) CHAR-COUNT gate — the rich prompt length must be within
+             [PROMPT_CHAR_FLOOR, PROMPT_CHAR_CEILING] = [1500, 18000]; the floor is
+             HARD (any prompt under 1,500 chars is not run, not rendered, not
+             updated — AF-P1) and the 18,000 ceiling is the universal GPT-Image 2
+             safety boundary (AF-P2).
+    3. Calls KIE.ai (gpt-image-2-text-to-image, or gpt-image-2-image-to-image when a
+       logo is supplied via input_urls so the WHOLE slide + logo render in ONE
+       generation) per the ONLY-allowed recipe:
          POST https://api.kie.ai/api/v1/jobs/createTask  -> data.taskId
          GET  https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>  -> data.state
          on success: parse data.resultJson (JSON string) -> resultUrls[0]
@@ -85,19 +97,21 @@ USAGE:
     downstream (see the banner above and the DELIVERY INTERLOCK).
 
 OFFICIAL-LOGO COMPOSITING (optional):
-    --logo <png>  — path to the client's REAL, official logo PNG. When supplied
-        (or when working/copy/intake.json carries brand.logo_image_path), the
-        builder does TWO things so the deck wears the client's actual mark, not an
-        AI-hallucinated wordmark:
-          (1) compose_prompt instructs KIE to leave a CLEAN, EMPTY logo zone in the
-              top-right corner and to render NO brand wordmark / logo text at all
-              (the AI wordmark is SUPPRESSED — slides[].logo is ignored for the
-              prompt when a real logo is in play).
-          (2) assemble_pptx composites the EXACT same logo PNG (RGBA, transparency
-              preserved) onto EVERY slide in a consistent top-right corner at a
-              tasteful size (~13% of slide width) with a small margin, layered over
-              the full-bleed background.
+    --logo <png-or-URL>  — the client's REAL, official logo. When supplied
+        (or when working/copy/intake.json carries brand.logo_image_path), the deck
+        wears the client's actual mark, not an AI-hallucinated wordmark:
+          (1) When --logo is a URL: KIE composites the REAL logo via image-to-image
+              (gpt-image-2-image-to-image, input_urls) in the SAME single generation
+              that renders the slide — the rich prompt already carries the
+              "place this exact provided logo, do not redraw/recolor/restyle"
+              instruction (the AI wordmark is suppressed by the prompt itself).
+          (2) When --logo is a local PNG: assemble_pptx composites the EXACT same
+              logo PNG (RGBA, transparency preserved) onto EVERY slide in a
+              consistent top-right corner at a tasteful size (~13% of slide width)
+              with a small margin, layered over the full-bleed background.
         The --logo flag wins over intake.json brand.logo_image_path if both exist.
+        Either way the prompt is the rich verbatim prompt — build_deck.py never
+        rewrites the logo instruction; the Slide Image Creator authored it.
 
 PROCESS PREFLIGHT (un-bypassable by default):
     Before ANY render or assembly, build_deck.py REQUIRES that the upstream
@@ -107,6 +121,13 @@ PROCESS PREFLIGHT (un-bypassable by default):
     human approvals) or QC gates. Running it on a hand-fed slides.json with no
     upstream chain produces a technically-valid .pptx that NEVER went through the
     department flow — exactly the shortcut this preflight exists to refuse.
+
+    The preflight enforces EVERY SOP artifact: intake, research brief, converting
+    arc, slides_copy, design/typography brief, copy QC (pass), anti-compression
+    coverage, AND a >=1,500-char RICH prompt for EVERY slide in working/prompts/
+    (the Slide Image Creator's output). Any missing/short/deviation → refuse to
+    render, exit 3, loud. There is no path past the gate with a thin or absent
+    per-slide prompt.
 
     The run dir is the directory that contains a `working/` subtree. It is found
     by --run-dir if given, else by walking UP from slides.json (then from the
@@ -138,6 +159,7 @@ ENVIRONMENT:
     (paths expanded against the current user's HOME).
 """
 
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -192,6 +214,17 @@ RATE_LIMIT_SLEEP_S = 20
 # Per-slide retries (full re-submit) on any failure.
 SLIDE_MAX_ATTEMPTS = 3
 
+# Parallel render fan-out. Each slide is an independent KIE generation (submit +
+# poll + download + verify), so they run concurrently in a ThreadPoolExecutor.
+# Bounded so the per-task 429 backoff still holds and a client box is not swamped.
+# Overridable via BUILD_DECK_RENDER_WORKERS (clamped to [1, 12]).
+def _render_workers() -> int:
+    try:
+        n = int(os.environ.get("BUILD_DECK_RENDER_WORKERS", "6"))
+    except ValueError:
+        n = 6
+    return max(1, min(12, n))
+
 # The MANDATORY trailing pin appended to EVERY prompt.
 ENGLISH_PIN = (
     "All text rendered in the image MUST be in English, Latin alphabet ONLY. "
@@ -203,21 +236,24 @@ ENGLISH_PIN = (
 # PROMPT CHAR-COUNT GATE (the prompt-side QC gate, fail-loud)
 # ---------------------------------------------------------------------------
 # Two facts from the standards (qc-specialist-presentations.md AF-P1/AF-P2,
-# 45-design-intelligence-library/library/_system/MODEL-SPECS.md):
+# slide-image-creator-sops.md SOP 9.1 step 3, MODEL-SPECS.md):
 #   * GPT-Image 2 hard ceiling on input.prompt is 20,000 characters on both
 #     endpoints. The HARD MAXIMUM is 18,000 — a 2,000-char safety margin below
 #     that ceiling so a prompt is never rejected or truncated by the platform.
-#     This ceiling is UNIVERSAL: it applies to every prompt path, including this
-#     deterministic one. A prompt over it is an AF-P2 auto-fail.
-#   * The webinar pipeline's specificity FLOOR is 5,000 chars (AF-P1), but that
-#     floor is for the long, specificity-rich prompts the Slide Image Creator
-#     hand-writes in the full webinar pipeline. This deterministic builder composes a
-#     MINIMAL mechanical prompt (scene + verbatim copy + pin), which is correctly
-#     ~1,000 chars; imposing the 5,000 webinar floor here would reject every
-#     valid deterministic prompt. So this path uses a low non-empty floor that
-#     only catches a degenerate (empty / near-empty) composed prompt, while the
-#     18,000 ceiling is enforced identically to the webinar path.
-PROMPT_CHAR_FLOOR = 200       # deterministic-minimal floor (catches degenerate/empty prompts)
+#     This ceiling is UNIVERSAL: it applies to every prompt path. A prompt over
+#     it is an AF-P2 auto-fail.
+#   * The FLOOR is 1,500 chars and it is HARD (AF-P1). build_deck.py does NOT
+#     compose its own thin prompt any more — it renders the Slide Image Creator's
+#     hand-authored RICH per-slide prompt VERBATIM (working/prompts/slide-NN.txt).
+#     That prompt carries the full 15-element spec (typography size + per-line
+#     weight, placement, usage, the logo(s), the scene, verbatim copy, the negative
+#     block, everything on the slide); the SOP targets 9,000–14,000 chars. A prompt
+#     under 1,500 chars is, by definition, not a real slide prompt — it is a thin
+#     stub or a truncated file — so it is NOT run, NOT rendered, and NOT updated:
+#     the slide FAILS LOUD (AF-P1). 1,500 is the absolute minimum below which a
+#     prompt cannot possibly carry the mandatory specificity; the SOP's own
+#     soft-minimum of 5,000 lives upstream at the Slide Image Creator / Phase-3 QC.
+PROMPT_CHAR_FLOOR = 1500      # HARD floor (AF-P1): any rich prompt under this is NOT run/rendered/updated — FAIL LOUD
 PROMPT_CHAR_CEILING = 18000   # UNIVERSAL hard maximum (AF-P2; 2,000 under the 20,000 API ceiling)
 
 # ---------------------------------------------------------------------------
@@ -283,23 +319,47 @@ def load_api_key() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Prompt composition — PURELY MECHANICAL (no AI)
+# Rich per-slide prompt loading — VERBATIM, NO AI, NO THIN FALLBACK
 # ---------------------------------------------------------------------------
+# build_deck.py renders the Slide Image Creator's hand-authored RICH per-slide
+# prompt VERBATIM. It NEVER composes its own thin scene+copy prompt. The rich
+# prompt file for slide N lives in the run's working/prompts/ dir under one of
+# these names (the CLIENT-WEBINAR-DECK-SOP convention first, then the
+# slide-image-creator-sops.md convention):
+PROMPT_FILE_PATTERNS = (
+    "working/prompts/slide-{nn:02d}.txt",
+    "working/prompts/slide-{nn:02d}-prompt.txt",
+)
 
-def assert_no_forbidden_demographic_default(slide: dict) -> None:
+
+def resolve_prompt_path(run_dir: Path, ordinal: int) -> Optional[Path]:
+    """Return the rich-prompt file Path for this slide ordinal, or None if no
+    candidate file exists. Tries both the slide-NN.txt and slide-NN-prompt.txt
+    naming conventions under working/prompts/."""
+    for pat in PROMPT_FILE_PATTERNS:
+        p = run_dir / pat.format(nn=ordinal)
+        if p.exists() and p.is_file():
+            return p
+    return None
+
+
+def assert_no_forbidden_demographic_default(slide: dict, prompt_text: str = "") -> None:
     """
     FACIAL-INTELLIGENCE / REPRESENTATION GATE (fail-loud).
 
-    Representation must come from the slide spec (the client's captured audience),
-    never from a baked-in default split. Per SOP-CAST-01 ("there is no system
-    default demographic") and AF-R3 ("no racial or gender default is ever
-    inferred"), this deterministic builder REFUSES any slide whose scene / copy /
-    layout / logo text smuggles a forbidden demographic-default landmine (e.g. the
-    "60/30/10" ratio). Raises ValueError (caller fails the slide loud) on a hit.
+    Representation must come from the slide spec / casting ledger (the client's
+    captured audience), never from a baked-in default split. Per SOP-CAST-01
+    ("there is no system default demographic") and AF-R3 ("no racial or gender
+    default is ever inferred"), this builder REFUSES any slide whose author-supplied
+    spec OR whose rich prompt text smuggles a forbidden demographic-default landmine
+    (e.g. the "60/30/10" ratio). Raises ValueError (caller fails the slide loud) on
+    a hit. prompt_text is the verbatim rich prompt being rendered — scanned too so a
+    landmine in the prompt file (not just the slides.json spec) is also caught.
     """
-    # Gather every author-supplied text field on this slide into one haystack.
+    # Gather every author-supplied text field on this slide into one haystack,
+    # plus the rich prompt text that will actually be sent to KIE.
     chunks = [str(slide.get("scene", "")), str(slide.get("layout", "")),
-              str(slide.get("logo", ""))]
+              str(slide.get("logo", "")), str(prompt_text)]
     copy_val = slide.get("copy", [])
     if isinstance(copy_val, list):
         chunks.extend(str(c) for c in copy_val)
@@ -312,114 +372,73 @@ def assert_no_forbidden_demographic_default(slide: dict) -> None:
             raise ValueError(
                 f"slide {slide.get('slide')}: forbidden hardcoded demographic "
                 f"default detected ('{landmine}'). Representation must come from "
-                f"the client's captured audience in the slide spec, never a baked-in "
+                f"the client's captured audience / casting ledger, never a baked-in "
                 f"default split (SOP-CAST-01 / AF-R3). Refusing to render."
             )
 
 
-def compose_prompt(slide: dict, has_official_logo: bool = False) -> str:
+def load_rich_prompt(slide: dict, run_dir: Path) -> str:
     """
-    Deterministically build the KIE prompt for one slide by concatenating, in order:
-      scene  ->  exact copy lines (verbatim)  ->  logo  ->  layout  ->  English pin.
-    No wording is invented; every text token comes straight from slides.json.
+    Load the Slide Image Creator's RICH per-slide prompt VERBATIM and gate it.
 
-    OFFICIAL-LOGO mode (has_official_logo=True): the client's REAL logo PNG will be
-    composited onto every slide in assemble_pptx. So this prompt MUST NOT ask KIE to
-    render any brand wordmark / logo (the AI wordmark is suppressed — slide['logo']
-    is ignored for the prompt), and instead instructs KIE to keep a CLEAN, EMPTY
-    top-right corner zone so the real logo lands cleanly with nothing behind it.
+    This is the ONLY prompt path. build_deck.py renders the hand-authored rich
+    prompt (working/prompts/slide-NN.txt or slide-NN-prompt.txt) EXACTLY as written
+    — it does NOT compose its own thin scene+copy prompt and NEVER silently falls
+    back to one. The rich prompt already carries the full 15-element spec
+    (typography per-line weight + pt size, placement, usage, the logo(s), the scene,
+    the verbatim copy, the negative block — everything on the slide), and KIE
+    (gpt-image-2) renders the WHOLE slide in ONE generation.
 
-    Two prompt-side QC gates run here, both fail-loud:
-      * FACIAL-INTELLIGENCE gate: reject any forbidden demographic-default landmine
-        (the 60/30/10 split) — representation comes from the slide spec, never a
-        baked-in default (SOP-CAST-01 / AF-R3).
-      * CHAR-COUNT gate: the composed prompt length must be within
-        [PROMPT_CHAR_FLOOR, PROMPT_CHAR_CEILING]; outside = ValueError (AF-P1/AF-P2,
-        18,000 ceiling is the universal GPT-Image 2 safety boundary).
+    FAIL LOUD (ValueError; the caller fails the slide and the run is blocked) when:
+      * no rich prompt file exists for this slide                       → AF-P1
+      * the rich prompt is < PROMPT_CHAR_FLOOR (1,500) chars            → AF-P1
+        (not run, not rendered, not updated)
+      * the rich prompt is > PROMPT_CHAR_CEILING (18,000) chars         → AF-P2
+      * a forbidden demographic-default landmine is present             → AF-R3
+      * the dead endpoint fragment is present
     """
-    # Prompt-side representation gate (before composing anything).
-    assert_no_forbidden_demographic_default(slide)
-
-    scene = str(slide["scene"]).strip()
-    copy_lines = [str(c).strip() for c in slide["copy"] if str(c).strip()]
-    if not copy_lines:
-        raise ValueError(f"slide {slide.get('slide')}: 'copy' has no non-empty lines.")
-
-    headline = copy_lines[0]
-    rest = copy_lines[1:]
-
-    layout = str(slide.get("layout", "")).strip()
-    if not layout:
-        layout = (
-            "headline in the upper area, remaining copy in the lower third, "
-            "high-contrast legible placement against the background"
+    ordinal = int(slide["slide"])
+    prompt_path = resolve_prompt_path(run_dir, ordinal)
+    if prompt_path is None:
+        tried = " or ".join(p.format(nn=ordinal) for p in PROMPT_FILE_PATTERNS)
+        raise ValueError(
+            f"slide {ordinal}: NO rich prompt file found (looked for {tried} under "
+            f"{run_dir}). build_deck.py renders the Slide Image Creator's rich prompt "
+            f"VERBATIM and NEVER composes a thin fallback. Refusing to render "
+            f"(rich-prompt-required, AF-P1)."
         )
 
-    logo = str(slide.get("logo", "")).strip()
+    prompt = prompt_path.read_text(errors="replace")
 
-    parts = []
-    parts.append(f"A 16:9 presentation slide background. SCENE: {scene}")
-    # The copy is rendered AS TEXT into the image — quote it verbatim so the model
-    # spells it exactly.
-    parts.append(f'Render this exact headline text on the slide, spelled exactly: "{headline}".')
-    if rest:
-        joined = " | ".join(f'"{line}"' for line in rest)
-        parts.append(
-            f"Also render this exact supporting copy, each on its own line, "
-            f"spelled exactly: {joined}."
-        )
-    if has_official_logo:
-        # IMAGE-TO-IMAGE: the client's REAL logo is supplied to KIE as a reference
-        # image (input_urls). Instruct the model to place that EXACT provided logo
-        # cleanly in the top-right corner — reproduce it faithfully, never redraw,
-        # recolor, restyle, or invent a wordmark.
-        parts.append(
-            "Incorporate the PROVIDED brand logo (the supplied reference image) into "
-            "the TOP-RIGHT CORNER of the slide, at a small, tasteful size with clear "
-            "margin. Reproduce that exact logo faithfully — do NOT redraw, recolor, "
-            "restyle, distort, or replace it, and do NOT invent any other wordmark, "
-            "brand name, monogram, or emblem anywhere in the image. Only the provided "
-            "logo appears, and only in that corner."
-        )
-    elif logo:
-        parts.append(
-            f'Render a small, clean brand wordmark reading exactly "{logo}" as a logo lockup.'
-        )
-    parts.append(f"LAYOUT: {layout}.")
-    parts.append(
-        "TYPOGRAPHY & DESIGN — make this a striking, magazine-grade EDITORIAL slide, "
-        "NOT flat text on a photo: bold, expressive typography with strong scale "
-        "contrast between the headline and supporting copy; a confident, intentional, "
-        "editorial layout using weight, size, and negative space; the headline is a "
-        "large, dramatic focal element. Premium color and contrast so the text pops "
-        "off the scene. Keep every letter crisp, perfectly legible, fully inside the "
-        "safe area, never cropped."
-    )
-    parts.append(ENGLISH_PIN)
+    # FACIAL-INTELLIGENCE / REPRESENTATION gate over the slide spec AND the verbatim
+    # rich prompt (so a landmine in the prompt file is also caught).
+    assert_no_forbidden_demographic_default(slide, prompt_text=prompt)
 
-    prompt = " ".join(parts)
-
-    # Self-guard: never let the dead endpoint string sneak into a prompt payload.
+    # Self-guard: never let the dead endpoint string ride inside a prompt payload.
     if DEAD_ENDPOINT_FRAGMENT in prompt:
         raise ValueError(
-            f"slide {slide.get('slide')}: composed prompt contains the dead endpoint "
+            f"slide {ordinal}: rich prompt {prompt_path} contains the dead endpoint "
             f"fragment '{DEAD_ENDPOINT_FRAGMENT}'. Refusing."
         )
 
-    # PROMPT CHAR-COUNT GATE (fail-loud): never render a degenerate (near-empty)
-    # prompt, and never exceed the universal 18,000 hard ceiling (AF-P1/AF-P2).
+    # PROMPT CHAR-COUNT GATE (fail-loud). The floor is HARD (1,500): a prompt under
+    # it is a thin stub / truncated file, NOT a real slide prompt — never run it.
     length = len(prompt)
     if length < PROMPT_CHAR_FLOOR:
         raise ValueError(
-            f"slide {slide.get('slide')}: composed prompt is {length} chars, under the "
-            f"floor of {PROMPT_CHAR_FLOOR}. The scene/copy is too thin to render a real "
-            f"slide. Refusing (prompt char-count gate, AF-P1 floor)."
+            f"slide {ordinal}: rich prompt {prompt_path} is {length} chars, UNDER the "
+            f"HARD floor of {PROMPT_CHAR_FLOOR}. A prompt this short cannot carry the "
+            f"mandatory per-slide spec (typography size/placement/usage, logo, scene, "
+            f"verbatim copy, negative block). It is NOT run, NOT rendered, and NOT "
+            f"updated. Re-author the rich prompt to >= {PROMPT_CHAR_FLOOR} chars. "
+            f"Refusing (prompt char-count gate, AF-P1 floor)."
         )
     if length > PROMPT_CHAR_CEILING:
         raise ValueError(
-            f"slide {slide.get('slide')}: composed prompt is {length} chars, over the "
+            f"slide {ordinal}: rich prompt {prompt_path} is {length} chars, over the "
             f"hard ceiling of {PROMPT_CHAR_CEILING} (2,000 under the 20,000 GPT-Image 2 API "
-            f"ceiling, MODEL-SPECS). The scene/copy is too long; trim slides.json. Refusing "
+            f"ceiling, MODEL-SPECS). The prompt is too long; tighten redundant phrasing "
+            f"(never delete the negative block or any spelling-lock). Refusing "
             f"(prompt char-count gate, AF-P2 ceiling)."
         )
     return prompt
@@ -588,16 +607,22 @@ def verify_png(path: Path) -> None:
 # Per-slide render with retry
 # ---------------------------------------------------------------------------
 
-def render_slide(slide: dict, api_key: str, renders_dir: Path,
+def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
                  has_official_logo: bool = False, logo_url: Optional[str] = None) -> dict:
     """
     Render a single slide. Returns {"slide", "file", "taskId"} on success.
     Raises RuntimeError if all SLIDE_MAX_ATTEMPTS fail.
+
+    The prompt is the Slide Image Creator's RICH per-slide prompt, loaded VERBATIM
+    from working/prompts/ (no thin fallback). has_official_logo is accepted for API
+    stability but does NOT mutate the prompt — the rich prompt already carries the
+    full logo instruction; logo_url is what makes KIE composite the real logo via
+    image-to-image (input_urls).
     """
     ordinal = int(slide["slide"])
     name = f"slide-{ordinal:02d}"
     out_path = renders_dir / f"{name}.png"
-    prompt = compose_prompt(slide, has_official_logo=has_official_logo)
+    prompt = load_rich_prompt(slide, run_dir)
 
     last_err = None
     for attempt in range(1, SLIDE_MAX_ATTEMPTS + 1):
@@ -716,6 +741,13 @@ def _read_json(path: Path):
         return {"__parse_error__": str(exc)}
 
 
+# The three DEFINITIVE audience modes (additive to presentation_mode; SOP-CAST /
+# Director intake). STANDARD = net-new from a brainstorm; PERSONAL = built from the
+# client's own content for a NAMED recipient; GENERAL = built from the client's own
+# content but DE-IDENTIFIED. Captured in intake.json as audience_mode (uppercase).
+AUDIENCE_MODES = ("STANDARD", "PERSONAL", "GENERAL")
+
+
 def _chk_intake(path: Optional[Path]) -> str:
     if path is None:
         return "file absent"
@@ -724,9 +756,30 @@ def _chk_intake(path: Optional[Path]) -> str:
         return f"not valid JSON ({obj['__parse_error__']})"
     if obj.get("interview_confirmed") is not True:
         return "interview_confirmed is not true"
+    # Existing presentation_mode (one-person | general) — UNCHANGED, still required.
     mode = str(obj.get("presentation_mode", "")).strip().lower()
     if mode not in ("one-person", "general"):
         return f"presentation_mode must be 'one-person' or 'general' (got {obj.get('presentation_mode')!r})"
+    # Additive: the definitive audience_mode (STANDARD | PERSONAL | GENERAL).
+    audience_mode = str(obj.get("audience_mode", "")).strip().upper()
+    if audience_mode not in AUDIENCE_MODES:
+        return (f"audience_mode must be one of {AUDIENCE_MODES} (got "
+                f"{obj.get('audience_mode')!r}). STANDARD=net-new from brainstorm; "
+                f"PERSONAL=from client content, named recipient; GENERAL=from client "
+                f"content, de-identified.")
+    # PERSONAL is the only NAMED mode — it must carry a recipient_name.
+    if audience_mode == "PERSONAL" and not str(obj.get("recipient_name", "")).strip():
+        return "audience_mode is PERSONAL but recipient_name is empty (PERSONAL is the named mode)."
+    # Additive: target_talk_minutes — the speaking-length target the deck is sized to
+    # (slides/copy/speech sized to target x 130 wpm). Must be a positive number.
+    raw = obj.get("target_talk_minutes")
+    try:
+        if raw is None or float(raw) <= 0:
+            return (f"target_talk_minutes must be a positive number of minutes "
+                    f"(got {raw!r}). The deck/copy/speech are sized to "
+                    f"target_talk_minutes x 130 wpm.")
+    except (TypeError, ValueError):
+        return f"target_talk_minutes is not numeric (got {raw!r})."
     return ""
 
 
@@ -865,6 +918,101 @@ def _chk_coverage(run_dir: Path) -> str:
     return ""
 
 
+def _chk_rich_prompts(run_dir: Path) -> str:
+    """RICH-PROMPT-REQUIRED gate (AF-P1). EVERY slide the system is about to render
+    MUST have a hand-authored RICH per-slide prompt in working/prompts/ that is
+    >= PROMPT_CHAR_FLOOR (1,500) chars. A missing prompt file, or one under the
+    floor, is an AF-P1 auto-fail: build_deck.py renders the rich prompt VERBATIM and
+    NEVER composes a thin fallback, so a thin/absent prompt means the slide cannot be
+    rendered at all. Returns "" on pass, or a fatal AF-P1 message (run_preflight maps
+    a returned reason to exit 3). The 18,000 ceiling (AF-P2) is enforced per-slide at
+    render time in load_rich_prompt (a too-long prompt still passes preflight; it is
+    the floor + presence that are the un-bypassable pre-render gate here)."""
+    n = _count_output_slides(run_dir)
+    if n is None:
+        return ("AF-P1: cannot determine the slide count (no slides.json / "
+                "arc_allocation.json), so the per-slide rich prompts cannot be "
+                "verified. Produce slides.json before render.")
+    problems = []
+    for ordinal in range(1, n + 1):
+        p = resolve_prompt_path(run_dir, ordinal)
+        if p is None:
+            problems.append(f"slide {ordinal:02d}: NO rich prompt file in working/prompts/")
+            continue
+        length = len(p.read_text(errors="replace"))
+        if length < PROMPT_CHAR_FLOOR:
+            problems.append(
+                f"slide {ordinal:02d}: rich prompt {p.name} is {length} chars, "
+                f"under the {PROMPT_CHAR_FLOOR}-char HARD floor")
+    if problems:
+        head = (f"AF-P1: rich-prompt-required gate FAILED for {len(problems)} of {n} "
+                f"slides. build_deck.py renders the Slide Image Creator's rich prompt "
+                f"VERBATIM (working/prompts/slide-NN.txt or slide-NN-prompt.txt) and "
+                f"never composes a thin fallback; each must be >= {PROMPT_CHAR_FLOOR} "
+                f"chars. Offenders:")
+        return head + " | " + "; ".join(problems)
+    return ""
+
+
+# Speech-length gate floor: the presenter speech must carry at least
+# target_talk_minutes x SPEECH_WPM_FLOOR words. 120 wpm is the LOW end of the
+# verified 120-140 absorption band the Presenter Speech Writer cites (the deck is
+# paced at 130 wpm; a script that lands below 120 wpm of content is too SHORT for
+# the chosen duration). This is the floor only — the +/-10% pacing budget around
+# 130 wpm stays with the Presenter Speech Writer / Presenter Coach.
+SPEECH_WPM_FLOOR = 120
+
+
+def _chk_speech_length(run_dir: Path) -> str:
+    """SPEECH-LENGTH gate (AF-SPEECH-SHORT). Once the presenter speech exists, its
+    word count must be >= target_talk_minutes x SPEECH_WPM_FLOOR (120 wpm). A speech
+    shorter than that does not fill the duration the client asked for and FAILS short.
+
+    This gate is CONDITIONAL by design: the speech is written downstream (Phase 9
+    delivery), AFTER the deterministic render. So when no speech artifact exists yet,
+    this returns "" (the render is allowed to proceed — the gate fires at delivery,
+    not at render). When a speech file IS present, it is enforced. Either way the
+    gate is wired into the lockstep so it can never be silently skipped once the
+    speech is written. Returns "" on pass/not-applicable, or a fatal AF message."""
+    # target_talk_minutes comes from intake.json (the field _chk_intake requires).
+    target = None
+    for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
+        p = run_dir / rel
+        if p.exists():
+            obj = _read_json(p)
+            if isinstance(obj, dict) and "__parse_error__" not in obj:
+                raw = obj.get("target_talk_minutes")
+                try:
+                    target = float(raw) if raw is not None else None
+                except (TypeError, ValueError):
+                    target = None
+            break
+    if not target or target <= 0:
+        # No usable target (intake gate handles a missing target). Not applicable here.
+        return ""
+
+    # Locate the speech artifact. Absent => deferred to delivery (pass here).
+    speech = None
+    for rel in ("working/presenter-speech/speech.md",
+                "working/delivery/PRESENTER-SPEECH.md",
+                "working/presenter-speech/PRESENTER-SPEECH.md"):
+        p = run_dir / rel
+        if p.exists():
+            speech = p
+            break
+    if speech is None:
+        return ""  # speech not written yet (pre-delivery render) — gate defers.
+
+    words = len(speech.read_text(errors="replace").split())
+    floor = int(round(target * SPEECH_WPM_FLOOR))
+    if words < floor:
+        return (f"AF-SPEECH-SHORT: presenter speech {speech.name} has {words} words; "
+                f"the floor for a {target:g}-minute talk is {floor} words "
+                f"(target_talk_minutes x {SPEECH_WPM_FLOOR} wpm). The speech is too "
+                f"SHORT to fill the requested duration. Lengthen it.")
+    return ""
+
+
 # The MANDATORY pre-render artifact set. The first three are the minimum the
 # operator task names explicitly; the rest are the broader mandatory upstream set
 # from the dept-pipeline analysis. All must exist + be complete before any render.
@@ -901,6 +1049,21 @@ PREFLIGHT_REQUIRED = [
      "anti-compression coverage — output slides >= client source_slide_count (Mode B ADD-only)",
      "Mission PRD — source_slide_count (Mode A=0 always passes)",
      _chk_coverage),
+    # 8th check — RICH-PROMPT-REQUIRED gate (AF-P1). EVERY slide must have a
+    # hand-authored rich prompt >= 1,500 chars in working/prompts/. Like coverage,
+    # this needs the whole run dir (it counts slides AND reads every prompt file),
+    # so it uses the rel sentinel None.
+    (None,
+     "rich per-slide prompt — every slide has a >=1,500-char prompt in working/prompts/ (rendered VERBATIM)",
+     "Phase 2 — Slide Image Creator SOP 9.1 (15-element rich prompt; rendered verbatim, no thin fallback)",
+     _chk_rich_prompts),
+    # 9th check — SPEECH-LENGTH gate (AF-SPEECH-SHORT). Conditional: enforced only
+    # once the presenter speech exists (it is written downstream at delivery), so it
+    # never blocks the pre-speech render but is wired so it can't be silently skipped.
+    (None,
+     "speech length — presenter speech words >= target_talk_minutes x 120 wpm (fails short)",
+     "Phase 9 — Presenter Speech Writer SOP 9.1 (130 wpm pacing; 120 wpm floor)",
+     _chk_speech_length),
 ]
 
 
@@ -1227,15 +1390,33 @@ def main():
     failures = []
 
     has_official_logo = (logo_path is not None) or (logo_url is not None)
-    for slide in sorted(slides, key=lambda s: s["slide"]):
-        try:
-            result = render_slide(slide, api_key, renders_dir,
-                                  has_official_logo=has_official_logo, logo_url=logo_url)
-            rendered.append(result)
-            task_ids.append(result["taskId"])
-        except Exception as exc:  # noqa: BLE001
-            failures.append({"slide": slide.get("slide"), "error": str(exc)})
-            print(f"  SLIDE FAILED: {exc}", file=sys.stderr, flush=True)
+    ordered = sorted(slides, key=lambda s: s["slide"])
+
+    # PARALLEL RENDER: each slide is an independent KIE generation, so fan them out
+    # across a bounded ThreadPoolExecutor. Per-slide retry / 429 backoff still live
+    # inside render_slide; we just run the slides concurrently.
+    workers = min(_render_workers(), len(ordered))
+    print(f"=== rendering {len(ordered)} slides with {workers} parallel workers ===\n", flush=True)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        future_to_slide = {
+            pool.submit(render_slide, slide, api_key, renders_dir, run_dir,
+                        has_official_logo=has_official_logo, logo_url=logo_url): slide
+            for slide in ordered
+        }
+        for fut in concurrent.futures.as_completed(future_to_slide):
+            slide = future_to_slide[fut]
+            try:
+                result = fut.result()
+                rendered.append(result)
+                task_ids.append(result["taskId"])
+            except Exception as exc:  # noqa: BLE001
+                failures.append({"slide": slide.get("slide"), "error": str(exc)})
+                print(f"  SLIDE FAILED: {exc}", file=sys.stderr, flush=True)
+
+    # Deterministic order for the summary / manifest regardless of completion order.
+    rendered.sort(key=lambda r: r["slide"])
+    task_ids = [r["taskId"] for r in rendered]
+    failures.sort(key=lambda f: (f.get("slide") is None, f.get("slide")))
 
     # FAIL LOUD: never produce a partial deck silently.
     if failures:

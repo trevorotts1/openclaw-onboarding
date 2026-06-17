@@ -164,6 +164,7 @@ These are deck-level and are evaluated against arc_allocation.json and slide ord
 | AF-DEN-6 | 1Q/6 | DECK | Wall of Wins not 4-6 before offer | WoW position vs offer position |
 | AF-DEN-7 | 1Q/6 | DECK | no 4-7 slide re-pitch after FINAL | post-FINAL slide count / content |
 | AF-DEN-8 | 1Q/6 | DECK | section below its slide floor | per-section slide count vs floor |
+| AF-SPEECH-SHORT | 9 | DECK | presenter speech words < target_talk_minutes x 120 wpm (too short for the requested duration) | `word_count(speech.md) < round(intake.target_talk_minutes * 120)`; enforced by build_deck `_chk_speech_length` (conditional: fires once the speech exists) |
 
 
 | AF-RENDERER | Phase 4/6 | DECK | Deck shipped its own renderer instead of calling the canonical render module | render_manifest.json missing OR render script is not the canonical 23-ai-workforce-blueprint/templates/presentation-render/render_deck.py |

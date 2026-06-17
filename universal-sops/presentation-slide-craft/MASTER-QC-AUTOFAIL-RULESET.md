@@ -185,6 +185,7 @@ Every renderer auto-fail above asserts against `working/checkpoints/process_mani
 | AF-DEN-7 | 1Q/6 | DECK | no 4-7 slide re-pitch after FINAL | post-FINAL slide count / content |
 | AF-DEN-8 | 1Q/6 | DECK | section below its slide floor | per-section slide count vs floor |
 | AF-COVERAGE-1 | 1Q/6 | DECK | output deck has fewer slides than the client source deck (Mode B add-only) | `final_slide_count < mission_prd.source_slide_count` (Mode A == 0 always passes) |
+| AF-SPEECH-SHORT | 9 | DECK | presenter speech words < target_talk_minutes x 120 wpm (too short for the requested duration) | `word_count(speech.md) < round(intake.target_talk_minutes * 120)`; enforced by build_deck `_chk_speech_length` (conditional: fires once the speech exists) |
 | AF-RENDERER | 6 | DECK | deck not produced by canonical scripts/build_deck.py (or preflight skipped) | process_manifest.json render phase: role=build_deck, ran=true, not adhoc |
 | AF-MODEL-SOVEREIGNTY | 4/6 | DECK | generation used a non-manifest model | process_manifest.json generation-phase model id vs the GPT-Image-2 manifest |
 | AF-NO-VISION-QC | 5/6 | DECK | no multimodal image-QC pass over rendered slides | process_manifest.json Phase-5 image-QC entry ran=true with render gate_codes_checked |

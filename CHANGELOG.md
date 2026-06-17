@@ -1,3 +1,9 @@
+## v12.20.1 — Presentations renderer enforces the process to the letter
+- build_deck: HARD PROMPT_CHAR_FLOOR=1500 (under 1,500 = fail, not run); renders the Slide Image Creator's RICH prompt verbatim (fail-loud if missing/short); thin self-composed prompt removed; parallel render.
+- 9-check PROCESS PREFLIGHT enforces every SOP phase incl. rich-prompt + coverage; QC loops back / forces redo on any deviation.
+- Audience modes STANDARD/PERSONAL/GENERAL + target_talk_minutes + speech-length gate (AF-SPEECH-SHORT).
+- PIPELINE-MANIFEST v3 + sync_check lockstep green; no existing SOP weakened.
+
 ## [v12.20.0] — 2026-06-16 — feat(presentations): universal scrub + anti-compression hard gate + deterministic build pipeline + SOP↔Python lockstep
 
 Merges the presentations-sop-overhaul (universality + anti-compression) branch with the PR #271 deep-research role-library sync. Highlights:

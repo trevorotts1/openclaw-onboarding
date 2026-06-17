@@ -213,6 +213,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Outputs:**
 - working/prompts/slide-NN-prompt.txt (one file per slide, zero-padded)
 
+**RENDERED VERBATIM (build_deck.py contract -- ADDITIVE, does not change the authoring rules above):** the deterministic renderer (`scripts/build_deck.py`) loads THIS rich prompt file and sends it to KIE (gpt-image-2) **VERBATIM** -- the WHOLE slide (typography sizes and per-line weights, placement, usage, the logo(s) via image-to-image `input_urls`, the scene, the verbatim copy, and the negative block) is rendered in ONE generation. The renderer NEVER composes its own thin scene+copy prompt and NEVER silently falls back to one. The renderer enforces a HARD floor of **1,500 characters** (AF-P1): a slide whose prompt file is absent or under 1,500 chars is NOT run, NOT rendered, and NOT updated -- it fails loud. (The authoring target of 9,000-14,000 and soft minimum of 5,000 above are UNCHANGED and remain the upstream Phase-3 QC standard; 1,500 is only the absolute renderer-side floor below which a prompt cannot be a real slide prompt at all.) The renderer also reads `working/prompts/slide-NN.txt`; either name (`slide-NN.txt` or `slide-NN-prompt.txt`) is accepted.
+
 **Hand to:** QC Specialist -- Presentations (Phase 3 prompt QC gate)
 
 **Failure mode:** If the STYLE BLOCK is missing or incomplete (e.g., no HEX codes), halt. Do not invent brand colors. Notify the Director: "Phase 2 blocked -- STYLE BLOCK is missing [specific fields]. Brand Steward must complete before prompts can be written."
