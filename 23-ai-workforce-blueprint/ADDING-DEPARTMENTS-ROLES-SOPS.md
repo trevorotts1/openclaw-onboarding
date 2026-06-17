@@ -13,12 +13,24 @@ A single gate now makes that **impossible**:
 python3 23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py
 ```
 
-It **HARD-FAILS (exit 5)** on any drift, runs in CI on every PR/commit
-(`.github/workflows/qc-static.yml`), runs in the onboarding QC gate
+The bare invocation runs **TWO gates**:
+
+1. the **5-dimension consistency gate** (floor × roster × library × SOP ×
+   persona, **exit 5** on drift); and
+2. the **artifact-coverage gate** (v12.25.0 — the *complete check for
+   everything*, **exit 6** on drift), which makes sure no floor department, role,
+   skill count, bootstrap file, or version marker can silently drift out of a
+   **downstream artifact**. See ["The artifact-coverage gate"](#the-artifact-coverage-gate-complete-check-for-everything)
+   below.
+
+Both **HARD-FAIL** on any drift, run in CI on every PR/commit
+(`.github/workflows/qc-static.yml`), run in the onboarding QC gate
 (`scripts/qc-system-integrity.sh` CHECK X.12), and a client build **refuses to
-run** against a drifted repo (`lib-onboarding-state.sh` `oc_repo_consistency_ok`).
-If you add/rename a department, role, SOP, or persona and DON'T update every
-related source, your commit fails here until you do.
+run** against a drifted repo (`lib-onboarding-state.sh` `oc_repo_consistency_ok`,
+which fails closed on **any** nonzero rc — 5 *or* 6). If you add/rename a
+department, role, SOP, persona, **skill, bootstrap file, or version marker** and
+DON'T update every related source, your commit fails here until you do. Run the
+sub-gates in isolation with `--only consistency` / `--only artifact`.
 
 ---
 
@@ -37,6 +49,52 @@ The gate resolves these using the **exact same functions the build uses**
 (`parse_roster`, `library_lookup`, `normalize_dept`, `evaluate_floor`,
 `is_canonical_dept`), so a green gate guarantees the build will succeed and a red
 gate is a real build failure, not a lint opinion.
+
+---
+
+## The artifact-coverage gate (complete check for everything)
+
+The 5-dimension gate proves every floor dept is internally consistent. The
+artifact-coverage gate (`--only artifact`, **exit 6** on drift) proves that no
+floor dept, role, skill, bootstrap file, or version can silently fall out of a
+**downstream artifact** — the class of drift the first gate doesn't see.
+
+| Dimension | What it guarantees | How it's checked |
+|-----------|--------------------|------------------|
+| **ORG-CHART** | every floor dept (and its roster roles) is rendered in the org chart | runs the REAL `build-workforce.generate_org_chart` against a synthesized full-floor `selected_departments`, asserts every dept name + roster role appears |
+| **ROUTING** | every floor dept has a row in `universal-sops/00-ROUTING.md` (no unrouted dept silently falling back to `general-task`) | runs the REAL `write_universal_routing_map`, asserts a `departments/<dept>/` row per floor dept |
+| **COMMAND-CENTER** | every floor dept gets a Kanban column / Telegram topic | runs the REAL `generate_departments_json`, asserts every floor dept slug is present (+ CEO column first) |
+| **DREAMING** | every floor dept gets a workspace + `memory/` substrate (the thing dreaming consolidates); dreaming is configured workspace-wide with **no per-dept exclusion list** | asserts `create_department_workspace` is driven by the `selected_departments` loop + creates `memory/`, that `install.sh configure_dreaming` writes the global `memory-core` dreaming config, and that no `DREAMING_DEPARTMENTS`-style per-dept list omits a floor dept |
+| **GENERATOR-WIRING** | the org-chart / routing / command-center generators are actually **called** by the build (not just defined) | static call-site check in `build-workforce.py` |
+| **BOOTSTRAP** | the core/bootstrap files are consistent: the 6 shipped templates (`IDENTITY`/`SOUL`/`AGENTS`/`USER`/`TOOLS`/`HEARTBEAT`.md) exist at repo root, `MEMORY.md` is **not** committed (it's seeded fresh+empty per agent), and the canonical 7-file enumeration in `Start Here.md` names all seven | file existence + `Start Here.md` scan |
+| **SKILLS-COUNT** | `install.sh` active-skill prose == README count == the actual skill-dir tree (active = numbered dirs minus `*-ARCHIVED`), and every active skill has a README inventory row | parse README `**N numbered skill folders**` / `M active + K archived` + inventory rows + `install.sh` `(N active + K archived)` / `The N active skills`, compare to the live tree |
+| **VERSION** | every repo-wide version marker agrees with `/version` — the 9-marker `bump-version.sh` set **plus** `cc-compat.json` `onboardingVersion` | reads each marker, compares the normalized semver to `/version` |
+
+These mirror the build the same way the 5-dimension gate does: ORG-CHART /
+ROUTING / COMMAND-CENTER / DREAMING are all **derived at build time** by iterating
+`selected_departments`, so there is no static per-dept dict to diff. The gate
+SYNTHESIZES a full-floor `selected_departments` (from `load_canonical_floor()` +
+the vertical-pack one-liners — the same metadata the build uses) and runs the
+**real generator functions**, so a generator that drops a dept, hardcodes a
+subset, or is unwired **fails**. The drift you must fix:
+
+- **version drift** → run `./scripts/bump-version.sh vX.Y.Z` (rolls all 9 markers
+  atomically) and update `cc-compat.json` `onboardingVersion` (or use
+  `scripts/release.sh`, which rolls both).
+- **skills-count drift** → after adding/removing/archiving a skill dir, update the
+  two README counts (`**N numbered skill folders**` and `M active + K archived`),
+  add the inventory-table row for a new skill, and update the `install.sh` prose
+  (`(N active + K archived)` and `The N active skills`).
+- **bootstrap drift** → never delete a shipped core template; never commit a
+  `MEMORY.md` at repo root (it must be per-client empty); keep the `Start Here.md`
+  7-file list complete.
+- **org-chart / routing / command-center / dreaming drift** → never replace a
+  generator's `selected_departments` loop with a hardcoded subset, and keep every
+  generator wired into the build.
+
+The adversarial fixtures
+(`scripts/test-artifact-coverage.sh`) plant exactly one drift per dimension and
+prove the gate exits 6 — a green gate that never fails is worthless.
 
 ---
 

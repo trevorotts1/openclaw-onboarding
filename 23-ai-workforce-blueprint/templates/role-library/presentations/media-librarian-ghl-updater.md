@@ -100,6 +100,7 @@ Review the local workdir structure. Are all completed run directories properly a
 | LOGO_URL verified and recorded before Phase 2 ends | 100% |
 | FOUNDER_PORTRAIT_URL verified when A5 slides present | 100% |
 | [PROOF PENDING] items resolved before Phase 1A closes | 100% |
+| Teleprompter public URL recorded in media_library.json + filed in GHL | 100% (SOP 9.7, after the Delivery Concierge publishes it) |
 | Final PPTX delivery verified at every destination before done message | 100% |
 | Delivery notification sent via openclaw message send (never raw API) | 100% |
 
@@ -378,6 +379,31 @@ Note: if a ROLE-13 Delivery Concierge role is added to this department in a futu
 **Hand to:** Director of Presentations (run complete); client (via the delivery notification)
 
 **Failure mode:** If any delivery destination fails verification: do not mark delivery_complete = true. Notify the Director: "Delivery incomplete: [destination] could not be verified. [Specific error]. Local PPTX is at output/[DECK_SLUG].pptx. Awaiting resolution." Never send a "done" message when a destination is unverified.
+
+---
+
+### SOP 9.7 -- Teleprompter Link Filing (GHL)
+
+**When to run:** When the Delivery Concierge (ROLE-13 SOP 9.5) publishes the teleprompter and reports its verified public URL. The teleprompter is delivered to the client as a hosted LINK; that link is a deliverable artifact and must be filed in GHL alongside the deck.
+
+**Inputs:**
+- `<bundle_dir>/teleprompter_publish.json` (written by `build_deck.py`'s `publish_teleprompter()` or by the Delivery Concierge SOP 9.5; `status` must be `published`)
+- `media_library.json` (the run ledger)
+- The CLIENT's GHL credentials (from the client's env stores -- NEVER the operator's)
+
+**Steps:**
+1. Read the verified `public_url` from `<bundle_dir>/teleprompter_publish.json`. Its `status` must be `published` and `verified_http_status` must be 200. If it is not published/verified, do NOT file a link -- hand back to the Delivery Concierge to publish first.
+2. Record the URL in `media_library.json` as `"teleprompter_public_url": "<url>", "teleprompter_published_at": "<ISO>"`, alongside `pptx_ghl_media_id`.
+3. If the client uses GHL: attach the link to the deck's GHL media library folder record (custom field / note) using the CLIENT's GHL credentials -- never the operator's. A URL is filed as a reference, not a file upload (the teleprompter is hosted on the central Cloudflare host, not uploaded into GHL).
+4. **Verify (ground-truth):** the URL recorded in `media_library.json` must match the published URL in `teleprompter_publish.json` EXACTLY. A self-report is not ground truth.
+
+**Outputs:**
+- `media_library.json.teleprompter_public_url` (matches the published URL exactly)
+- The GHL deck folder record carries the teleprompter link
+
+**Hand to:** Delivery Concierge (ROLE-13 SOP 9.3 / 9.4) -- the link is now filed and can be delivered + verified.
+
+**Failure mode:** If `teleprompter_publish.json` is absent or not `published`: do not invent a link. Notify the Delivery Concierge that the teleprompter is not yet published, and do not record a `teleprompter_public_url`. The postflight gate (AF-BUNDLE-COMPLETE / TELEPROMPTER-PUBLISH sub-check) keeps the run from "Done" until the link is live.
 
 ---
 

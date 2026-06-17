@@ -563,11 +563,15 @@ oc_workspace_departments_materialized() {
 #   Six departments once shipped UNBUILDABLE because NOTHING cross-checked floor
 #   vs rosters. A client build must REFUSE to run against a drifted repo rather
 #   than silently produce a half-built workforce. Delegates to the SAME gate CI
-#   runs (qc-assert-repo-consistency.py). Returns:
+#   runs (qc-assert-repo-consistency.py — the BARE invocation runs BOTH the
+#   5-dimension consistency gate AND the v12.25.0 artifact-coverage gate:
+#   org-chart / routing / command-center / dreaming / bootstrap / skills-count /
+#   version). Returns:
 #     0  consistent (gate rc=0)
-#     1  DRIFT (gate rc=5) OR the gate could not run / is missing — FAIL-CLOSED.
-#   Sets OC_REPO_CONSISTENCY_RC so callers can distinguish drift (5) from
-#   could-not-run (2) / missing (127).
+#     1  CONSISTENCY drift (rc=5) OR ARTIFACT drift (rc=6) OR the gate could not
+#        run / is missing — FAIL-CLOSED (any nonzero rc refuses the build).
+#   Sets OC_REPO_CONSISTENCY_RC so callers can distinguish 5-dimension drift (5)
+#   from artifact drift (6) / could-not-run (2) / missing (127).
 # ------------------------------------------------------------
 oc_repo_consistency_ok() {
   OC_REPO_CONSISTENCY_RC=127

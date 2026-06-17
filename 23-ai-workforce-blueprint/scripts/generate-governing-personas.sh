@@ -248,8 +248,11 @@ for DEPT_DIR in "$DEPARTMENTS_DIR"/*/; do
   fi
   [[ -z "$HINT" ]] && HINT="Gary Vaynerchuk (Crushing It) | Alex Hormozi (100M Offers)"
 
-  # Extract first persona from hint for Primary slot
-  PRIMARY_LINE=$(echo "$HINT" | cut -d'|' -f1 | xargs)
+  # Extract first persona from hint for Primary slot.
+  # NOTE: trim with sed, NOT xargs — xargs treats an apostrophe in a persona/book
+  # title (e.g. "The Non-Designer's Design Book", "The Innovator's Dilemma") as an
+  # unmatched quote and aborts, halting the whole persona refresh. sed is quote-safe.
+  PRIMARY_LINE=$(echo "$HINT" | cut -d'|' -f1 | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
   SECONDARY_LINES=$(echo "$HINT" | cut -d'|' -f2- | tr '|' '\n' | sed 's/^ *//; s/ *$//' | grep -v '^$')
 
   DEPT_DISPLAY=$(echo "$DEPT_NAME" | tr '-' ' ' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1))substr($i,2)}1')

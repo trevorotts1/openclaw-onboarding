@@ -22,6 +22,8 @@ You absorb SOP 9.6 (Final Deck Delivery) from ROLE-06 (Media Librarian and GHL U
 
 You are the last checkpoint before a run is called complete. A deck is not "done" until you have verified file existence at every destination -- locally, in GHL, and in Drive (if applicable) -- and sent the delivery notification via `openclaw message send`. Agent self-reports are not ground truth. A "done" message without verified artifacts is a lie.
 
+You also publish the teleprompter web app to its host (the central Cloudflare host -- uniform for every client, Mac and VPS), verify the public URL is live (HTTP 200), deliver that link to the client, and ensure it is filed in GHL (via the Media Librarian, ROLE-06 SOP 9.7). The teleprompter is delivered as a hosted LINK, not a downloaded file copy. See SOP 9.5.
+
 ### What This Role Is NOT
 
 You do not generate images. You do not assemble the PPTX. You do not run QC on the deck. You do not manage the media library upload pipeline (that is ROLE-06). You receive the finished, QC-passed PPTX and deliver it.
@@ -94,6 +96,7 @@ Review the delivery_destinations records across all completed runs. Are all deli
 | Drive upload confirmed via API before notification sent (if applicable) | 100% |
 | media_library.json updated with delivery_complete and all destination records | 100% |
 | Decks delivered below Phase 6 QC threshold (score < 8.5) | 0% |
+| Teleprompter published + public URL verified live (HTTP 200) before notification | 100% (SOP 9.5 / Gate 5) |
 | Delivery destination resolved correctly (Mac vs. ask-the-owner rule honored) | 100% |
 
 ---
@@ -294,6 +297,40 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ---
 
+### SOP 9.5 -- Teleprompter Publish + Link Delivery
+
+**When to run:** During SOP 9.2 (Multi-Destination Upload), as a dedicated destination. The teleprompter is a hosted web app, not a downloaded file -- it is delivered as a LINK, not a copy. The deck is not "done" until the teleprompter link is published, verified live, delivered to the client, and filed in GHL.
+
+**Why this exists:** A self-contained `presenter-teleprompter.html` sitting on disk is NOT a delivered teleprompter. The client needs a hosted URL they can open in any browser to read their speech live. `build_deck.py`'s postflight gate (AF-BUNDLE-COMPLETE, which folds in the TELEPROMPTER-PUBLISH sub-check) hard-fails (exit 5) until the teleprompter is published with a verified live public URL, so this step can never be silently skipped.
+
+**Inputs:**
+- `<bundle_dir>/presenter-teleprompter.html` (the self-contained app; produced by `build_teleprompter.py`, owned by the Presenter's Speech Writer)
+- `<bundle_dir>/teleprompter_publish.json` (written by `build_deck.py`'s `publish_teleprompter()` if it already ran during the render; this SOP re-runs/repairs the publish if absent or unverified)
+- The FLEET Cloudflare token `CLOUDFLARE_ZHW_APPS_API_TOKEN` (operator/fleet infra -- NOT a client key, never printed) for the upload to the central host
+
+**Host (UNIFORM -- every client, Mac and VPS):** the central Cloudflare host at
+`https://teleprompter.zerohumanworkforce.com/<client-slug>/<deck-slug>/teleprompter.html`
+(an R2 bucket fronted by the `zhw-teleprompter` Worker, gated by Cloudflare Access). There is ONE host so the link works identically everywhere. `intake.json` `box_type` is recorded (mac vs vps) for the audit trail only; it does NOT change the host.
+
+**Steps:**
+1. If `build_deck.py` already ran and `teleprompter_publish.json` shows `status: "published"` with a verified `public_url`, this step is already satisfied -- proceed to step 5 (deliver the link). Otherwise continue.
+2. Publish the HTML to the central Cloudflare host (R2 PutObject of the self-contained file). Capture the resulting public URL.
+3. **Ground-truth verify (no self-report):** issue a live HTTP GET on the public URL. It MUST return HTTP 200 with a non-empty body. A 403/404/timeout is a publish failure -- retry once, then escalate to the Director.
+4. Write/refresh `<bundle_dir>/teleprompter_publish.json` with `public_url`, `platform`, `host_target: "cloudflare-central"`, `verified_http_status: 200`, `verified_at`, `status: "published"`.
+5. **File the link in GHL:** hand the verified teleprompter public URL to the Media Librarian (ROLE-06 SOP 9.7) to record in `media_library.json.teleprompter_public_url` and file in the deck's GHL media library record. The link is a deliverable artifact and must live in GHL alongside the deck.
+6. **Deliver the link to the client (Telegram):** include the teleprompter public URL in the SOP 9.3 notification, sent via `openclaw message send` (NEVER raw Telegram API), labeled as the live scrolling teleprompter -- e.g. "(N) Teleprompter (live): <public_url> -- open this link in any browser to read your speech live." The link is one of the verified destinations checked in SOP 9.4.
+
+**Outputs:**
+- `teleprompter_publish.json` (status `published`, verified URL)
+- `media_library.json.teleprompter_public_url` (filed via ROLE-06 SOP 9.7)
+- The teleprompter URL included in the SOP 9.3 client notification
+
+**Hand to:** SOP 9.4 (Ground-Truth Verification -- the teleprompter URL is one of the verified destinations) and SOP 9.3 (Notification -- the link is delivered to the client via `openclaw message send`).
+
+**Failure mode:** If the publish or the live-200 verify fails after one retry: mark `teleprompter_publish.json` `status: "verify_failed"`, do NOT send the notification with a dead link, and notify the Director: "Teleprompter publish unverified: [platform] [error]." The postflight gate (AF-BUNDLE-COMPLETE / TELEPROMPTER-PUBLISH sub-check) and AF-DELIVERY-COMPLETE keep the run from "Done" until the link is live. Never deliver a teleprompter as a local file copy and never deliver a dead/unverified link.
+
+---
+
 ## 10. Quality Gates
 
 ### Gate 1 -- QC Score Gate (Mandatory Pre-Delivery Check)
@@ -307,6 +344,9 @@ Every destination in delivery_plan.json must show `"status": "verified"` (via li
 
 ### Gate 4 -- openclaw message send Only
 The delivery notification is sent exclusively via `openclaw message send`. Raw Telegram API calls are forbidden. This is non-negotiable.
+
+### Gate 5 -- Teleprompter Live-URL Gate
+The teleprompter public URL must return HTTP 200 (ground-truth live GET, not a self-report) before the link is delivered to the client. `teleprompter_publish.json` must show `status: "published"` and `verified_http_status: 200`. A teleprompter delivered as a local file copy, or a dead/unverified link, is a delivery failure. This gate is also enforced mechanically by `build_deck.py`'s postflight gate (the TELEPROMPTER-PUBLISH sub-check of AF-BUNDLE-COMPLETE, exit 5).
 
 ---
 
@@ -368,7 +408,7 @@ The delivery notification is sent exclusively via `openclaw message send`. Raw T
 ```
 
 ### Example C -- Delivery Notification Text
-"Your webinar deck is ready. Final QC score: 9.42/10. File locations: (1) ~/Downloads/[DECK_SLUG]_final.pptx on your Mac, (2) GHL media library folder '[CLIENT_NAME] [DECK_TITLE] v1' as '[DECK_TITLE] FINAL v1.pptx'. Both locations confirmed."
+"Your webinar deck is ready. Final QC score: 9.42/10. File locations: (1) ~/Downloads/[DECK_SLUG]_final.pptx on your Mac, (2) GHL media library folder '[CLIENT_NAME] [DECK_TITLE] v1' as '[DECK_TITLE] FINAL v1.pptx', (3) Teleprompter (live): https://teleprompter.zerohumanworkforce.com/[client-slug]/[deck-slug]/teleprompter.html -- open this link in any browser to read your speech live. All locations confirmed."
 
 ---
 
@@ -384,6 +424,7 @@ The delivery notification is sent exclusively via `openclaw message send`. Raw T
 - Confusing the operator's GHL credentials with the client's -- always use CLIENT env store credentials for GHL and Drive calls.
 - Proceeding to notification when one destination shows `"status": "verification_failed"` -- partial verification is not complete delivery.
 - Not writing delivery_plan.json and going directly to upload -- destination resolution is not optional.
+- Delivering the teleprompter as a local file copy instead of the hosted link, or delivering a dead/unverified teleprompter URL -- the teleprompter is delivered as a LINK to the central Cloudflare host, and the URL must return a live HTTP 200 (SOP 9.5 / Gate 5) before it is sent.
 
 ---
 

@@ -228,3 +228,34 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 3. If verification still fails: mark that destination `"status": "verification_failed"` in delivery_plan.json. Do NOT set `delivery_complete: true`. Notify the Director: "Delivery incomplete: [destination type] could not be verified. Error: [specific error]. Files at other destinations are confirmed. Awaiting resolution." Never send the client a "done" notification when a destination is unverified.
 
 ---
+
+### SOP 9.5 -- Teleprompter Publish + Link Delivery
+
+**When to run:** During SOP 9.2 (Multi-Destination Upload), as a dedicated destination. The teleprompter is a hosted web app, not a downloaded file -- it is delivered as a LINK, not a copy. The deck is not "done" until the teleprompter link is published, verified live, delivered to the client, and filed in GHL.
+
+**Why this exists:** A self-contained `presenter-teleprompter.html` on disk is NOT a delivered teleprompter. The client needs a hosted URL they can open in any browser to read their speech live. `build_deck.py`'s postflight gate (AF-BUNDLE-COMPLETE, which folds in the TELEPROMPTER-PUBLISH sub-check) hard-fails (exit 5) until the teleprompter is published with a verified live public URL, so this step can never be silently skipped.
+
+**Inputs:**
+- `<bundle_dir>/presenter-teleprompter.html` (self-contained app; produced by `build_teleprompter.py`, owned by the Presenter's Speech Writer)
+- `<bundle_dir>/teleprompter_publish.json` (written by `build_deck.py`'s `publish_teleprompter()` if it already ran; this SOP re-runs/repairs the publish if absent or unverified)
+- The FLEET Cloudflare token `CLOUDFLARE_ZHW_APPS_API_TOKEN` (operator/fleet infra -- NOT a client key, never printed) for the upload to the central host
+
+**Host (UNIFORM -- every client, Mac and VPS):** the central Cloudflare host at
+`https://teleprompter.zerohumanworkforce.com/<client-slug>/<deck-slug>/teleprompter.html`
+(an R2 bucket fronted by the `zhw-teleprompter` Worker, gated by Cloudflare Access). There is ONE host so the link works identically everywhere. `intake.json` `box_type` (mac vs vps) is recorded for the audit trail only; it does NOT change the host.
+
+**Steps:**
+1. If `build_deck.py` already ran and `teleprompter_publish.json` shows `status: "published"` with a verified `public_url`, this step is already satisfied -- proceed to step 5. Otherwise continue.
+2. Publish the HTML to the central Cloudflare host (R2 PutObject of the self-contained file). Capture the resulting public URL.
+3. **Ground-truth verify (no self-report):** live HTTP GET on the public URL. It MUST return HTTP 200 with a non-empty body. A 403/404/timeout is a publish failure -- retry once, then escalate to the Director.
+4. Write/refresh `<bundle_dir>/teleprompter_publish.json` with `public_url`, `platform`, `host_target: "cloudflare-central"`, `verified_http_status: 200`, `verified_at`, `status: "published"`.
+5. **File the link in GHL:** hand the verified teleprompter public URL to the Media Librarian (ROLE-06 SOP 9.7) to record in `media_library.json.teleprompter_public_url` and file in the deck's GHL media library record.
+6. **Deliver the link to the client (Telegram):** include the teleprompter public URL in the SOP 9.3 notification, sent via `openclaw message send` (NEVER raw Telegram API), labeled as the live scrolling teleprompter -- "(N) Teleprompter (live): <public_url> -- open this link in any browser to read your speech live." The link is one of the verified destinations checked in SOP 9.4.
+
+**Outputs:** `teleprompter_publish.json` (status `published`, verified URL); `media_library.json.teleprompter_public_url`; the URL included in the SOP 9.3 client notification.
+
+**Hand to:** SOP 9.4 (Ground-Truth Verification -- the teleprompter URL is one of the verified destinations) and SOP 9.3 (Notification -- the link is delivered to the client via `openclaw message send`).
+
+**Failure mode:** If the publish or the live-200 verify fails after one retry: mark `teleprompter_publish.json` `status: "verify_failed"`, do NOT send the notification with a dead link, and notify the Director: "Teleprompter publish unverified: [platform] [error]." The postflight gate (AF-BUNDLE-COMPLETE / TELEPROMPTER-PUBLISH sub-check) and AF-DELIVERY-COMPLETE keep the run from "Done" until the link is live. Never deliver a teleprompter as a local file copy and never deliver a dead/unverified link.
+
+---

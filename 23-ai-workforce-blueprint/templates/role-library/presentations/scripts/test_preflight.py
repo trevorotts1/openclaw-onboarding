@@ -345,10 +345,35 @@ def _valid_bytes_for(key: str, total: int) -> bytes:
     return head + (b"\x00" * pad)
 
 
-def _postflight_bundle_dir(present_keys: set) -> tuple:
+def _write_publish_ledger(bundle_dir: Path, status="published",
+                          verified_http_status=200,
+                          public_url="https://teleprompter.zerohumanworkforce.com/"
+                                     "test-client/test-deck/teleprompter.html") -> None:
+    """Write a teleprompter_publish.json into the bundle dir. The TELEPROMPTER-PUBLISH
+    sub-check of run_postflight_gate keys on this artifact — a full bundle without it
+    now fails (exit 5), so the PASS-path fixtures must include a published record."""
+    import json as _json
+    rec = {
+        "platform": "mac",
+        "host_target": "cloudflare-central",
+        "local_file": str(bundle_dir / "presenter-teleprompter.html"),
+        "public_url": public_url,
+        "published_at": "2026-06-17T00:00:00Z",
+        "verified_http_status": verified_http_status,
+        "verified_at": "2026-06-17T00:00:00Z",
+        "status": status,
+    }
+    (bundle_dir / build_deck.TELEPROMPTER_PUBLISH_LEDGER).write_text(
+        _json.dumps(rec, indent=2))
+
+
+def _postflight_bundle_dir(present_keys: set, with_publish: bool = True) -> tuple:
     """Build a temp bundle dir containing only the artifacts whose keys are in
     present_keys, each at or above their min_bytes threshold AND with the correct
-    leading magic bytes (C2). Returns (bundle_dir, ledger_path, deck_slug)."""
+    leading magic bytes (C2). When with_publish is True (default) AND
+    teleprompter_html is present, also writes a verified teleprompter_publish.json so
+    the TELEPROMPTER-PUBLISH sub-check passes. Returns (bundle_dir, ledger_path,
+    deck_slug)."""
     import tempfile
     bundle_dir = Path(tempfile.mkdtemp(prefix="deck_postflight_test_"))
     deck_slug = "test-deck"
@@ -363,6 +388,8 @@ def _postflight_bundle_dir(present_keys: set) -> tuple:
         if key in present_keys:
             # Write a real-magic file that exceeds the threshold by a comfortable margin.
             fpath.write_bytes(_valid_bytes_for(key, spec["min_bytes"] + 1024))
+    if with_publish and "teleprompter_html" in present_keys:
+        _write_publish_ledger(bundle_dir)
     return bundle_dir, ledger_path, deck_slug
 
 
@@ -474,6 +501,122 @@ def test_postflight_gate():
     print(f"POSTFLIGHT-H (key set exact) -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-H' in f] else 'FAIL'}")
 
     print(f"POSTFLIGHT (gate self-test)  -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_teleprompter_publish_gate():
+    """TELEPROMPTER-PUBLISH sub-check of the postflight bundle gate (folded under
+    AF-BUNDLE-COMPLETE). A generated teleprompter HTML is NOT a delivered teleprompter
+    until it is published to the central host with a verified live public URL.
+
+      (a) Full 9-file bundle, NO teleprompter_publish.json        -> exit 5.
+      (b) Full bundle + status=published + verified_http_status=200
+          + valid http(s) public_url                              -> PASSES (no exit 5).
+      (c) Full bundle + verified_http_status=404                  -> exit 5.
+      (d) Full bundle + status=skipped_adhoc                      -> PASSES (ad-hoc).
+      (e) Full bundle + public_url that is not http(s) (file://)  -> exit 5.
+
+    Returns a list of failure strings ([] = all passed)."""
+    fails = []
+    all_keys = {spec["key"] for spec in build_deck.DELIVERABLES_REQUIRED}
+
+    # (a) No publish ledger at all -> exit 5.
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys, with_publish=False)
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+        fails.append("TELE-A: full bundle with NO teleprompter_publish.json should exit 5 "
+                     "but gate passed")
+    except SystemExit as exc:
+        if exc.code != 5:
+            fails.append(f"TELE-A: expected exit 5, got {exc.code}")
+    print(f"TELE-A (no publish ledger)   -> {'PASS' if not [f for f in fails if 'TELE-A' in f] else 'FAIL'}")
+
+    # (b) status=published + 200 + valid http(s) URL -> PASSES.
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys, with_publish=False)
+    _write_publish_ledger(bundle_dir, status="published", verified_http_status=200)
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+    except SystemExit as exc:
+        fails.append(f"TELE-B: published+200 should PASS, got sys.exit({exc.code})")
+    except Exception as exc:  # noqa: BLE001
+        fails.append(f"TELE-B: unexpected error: {exc}")
+    print(f"TELE-B (published + 200)     -> {'PASS' if not [f for f in fails if 'TELE-B' in f] else 'FAIL'}")
+
+    # (c) verified_http_status=404 -> exit 5.
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys, with_publish=False)
+    _write_publish_ledger(bundle_dir, status="published", verified_http_status=404)
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+        fails.append("TELE-C: verified_http_status=404 should exit 5 but gate passed")
+    except SystemExit as exc:
+        if exc.code != 5:
+            fails.append(f"TELE-C: expected exit 5, got {exc.code}")
+    print(f"TELE-C (status 404)          -> {'PASS' if not [f for f in fails if 'TELE-C' in f] else 'FAIL'}")
+
+    # (d) status=skipped_adhoc -> PASSES (ad-hoc output is not a client deliverable).
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys, with_publish=False)
+    _write_publish_ledger(bundle_dir, status="skipped_adhoc", verified_http_status=None)
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+    except SystemExit as exc:
+        fails.append(f"TELE-D: skipped_adhoc should PASS, got sys.exit({exc.code})")
+    except Exception as exc:  # noqa: BLE001
+        fails.append(f"TELE-D: unexpected error: {exc}")
+    print(f"TELE-D (skipped_adhoc)       -> {'PASS' if not [f for f in fails if 'TELE-D' in f] else 'FAIL'}")
+
+    # (e) public_url not http(s) (file://) -> exit 5 (SSRF/scheme guard).
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys, with_publish=False)
+    _write_publish_ledger(bundle_dir, status="published", verified_http_status=200,
+                          public_url="file:///etc/passwd")
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+        fails.append("TELE-E: file:// public_url should exit 5 but gate passed")
+    except SystemExit as exc:
+        if exc.code != 5:
+            fails.append(f"TELE-E: expected exit 5, got {exc.code}")
+    print(f"TELE-E (non-http url)        -> {'PASS' if not [f for f in fails if 'TELE-E' in f] else 'FAIL'}")
+
+    print(f"TELE-PUBLISH (gate self-test)-> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_detect_platform():
+    """detect_platform(): --platform override wins; intake.json box_type maps
+    'mac'->mac and anything-else->vps; absent intake falls back to the filesystem
+    signal (no /data/.openclaw on a Mac dev box -> 'mac'). The host_target is uniform
+    regardless (cloudflare-central) — this only records the box type for audit.
+
+    Returns a list of failure strings ([] = all passed)."""
+    import tempfile
+    import json as _json
+    fails = []
+    run_dir = Path(tempfile.mkdtemp(prefix="detect_platform_test_"))
+
+    # Override wins regardless of intake.
+    (run_dir / "intake.json").write_text(_json.dumps({"box_type": "mac"}))
+    if build_deck.detect_platform(run_dir, override="vps") != "vps":
+        fails.append("DETECT-1: --platform vps override should win")
+    if build_deck.detect_platform(run_dir, override="mac") != "mac":
+        fails.append("DETECT-2: --platform mac override should win")
+
+    # box_type mac -> mac.
+    (run_dir / "intake.json").write_text(_json.dumps({"box_type": "mac"}))
+    if build_deck.detect_platform(run_dir) != "mac":
+        fails.append("DETECT-3: box_type 'mac' should map to mac")
+
+    # box_type anything-else -> vps.
+    (run_dir / "intake.json").write_text(_json.dumps({"box_type": "hostinger-vps"}))
+    if build_deck.detect_platform(run_dir) != "vps":
+        fails.append("DETECT-4: non-mac box_type should map to vps")
+
+    # No intake -> filesystem fallback. On a dev Mac there is no /data/.openclaw, so
+    # the fallback returns 'mac'. (We only assert it returns a valid value.)
+    run_dir2 = Path(tempfile.mkdtemp(prefix="detect_platform_test2_"))
+    val = build_deck.detect_platform(run_dir2)
+    if val not in ("vps", "mac"):
+        fails.append(f"DETECT-5: fallback should return vps|mac, got {val!r}")
+
+    print(f"DETECT-PLATFORM (unit)       -> {'PASS' if not fails else 'FAIL'}")
     return fails
 
 
@@ -921,6 +1064,15 @@ def main():
     # hard-required (never silently skipped); proves ~/Downloads is the default
     # destination; proves DELIVERABLES_REQUIRED has exactly the 9 required keys.
     failures += test_postflight_gate()
+
+    # Unit test — TELEPROMPTER-PUBLISH sub-check (folded under AF-BUNDLE-COMPLETE):
+    # proves a full bundle with no/unverified teleprompter_publish.json fails (exit 5),
+    # a published+HTTP-200 record passes, a 404 fails, skipped_adhoc passes, and a
+    # non-http(s) public_url fails (SSRF/scheme guard).
+    failures += test_teleprompter_publish_gate()
+
+    # Unit test — detect_platform(): override > intake box_type > filesystem fallback.
+    failures += test_detect_platform()
 
     # Unit test — parse_speech_chunks: maps '## Slide N' AND inline 'SLIDE N' markers
     # to per-slide spoken text (marker/title line stripped); marker-less/empty -> {}.

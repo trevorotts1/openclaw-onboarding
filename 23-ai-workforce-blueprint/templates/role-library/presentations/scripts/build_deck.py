@@ -200,7 +200,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
 
 # ---------------------------------------------------------------------------
 # Constants — the ONLY allowed KIE.ai endpoints/model (verified live 2026-06-16)
@@ -1974,6 +1974,354 @@ def update_deliverable_status(ledger_path: Path, key: str, status: str,
 
 
 # ---------------------------------------------------------------------------
+# TELEPROMPTER PUBLISH — upload the self-contained HTML to its host, capture URL
+# ---------------------------------------------------------------------------
+# The teleprompter is a single self-contained HTML file (inline CSS+JS+speech JSON),
+# so "publishing" is a static-file upload to a host that then serves it at a public
+# URL. FLEET POLICY (uniform): EVERY client — Mac AND VPS — publishes to the central
+# Cloudflare host at
+#     https://teleprompter.zerohumanworkforce.com/<client-slug>/<deck-slug>/teleprompter.html
+# The host is an R2 bucket fronted by a small serving Worker, gated by Cloudflare
+# Access. detect_platform() still records whether the box is a Mac or a VPS for the
+# audit trail, but the host_target is ALWAYS 'cloudflare-central' — there is one
+# uniform host so the link works identically everywhere.
+#
+# The publish record is written to <bundle_dir>/teleprompter_publish.json and is the
+# load-bearing contract read by the postflight gate, the Delivery Concierge (delivers
+# the link), and the Media Librarian (files the link in GHL). FAIL-LOUD by raising;
+# the caller decides whether a publish failure blocks the gate (it does — the gate
+# fails when the publish record is absent or unverified).
+#
+# Credentials: the central host is FLEET infra (the operator's Cloudflare account),
+# so the upload token is the operator/fleet secret CLOUDFLARE_ZHW_APPS_API_TOKEN —
+# NOT a per-client key, and NEVER printed. It is read from the same env stores the
+# rest of the pipeline uses (SECRETS_CANDIDATES), with the live process env winning.
+TELEPROMPTER_PUBLISH_LEDGER = "teleprompter_publish.json"
+
+# Central Cloudflare host constants (fleet infra — see PART B infra build).
+TELEPROMPTER_HOST = "teleprompter.zerohumanworkforce.com"
+TELEPROMPTER_R2_BUCKET = "zhw-teleprompter"
+TELEPROMPTER_HTML_NAME = "teleprompter.html"
+# The R2 PutObject endpoint is the account-scoped REST path. The serving Worker maps
+# https://<host>/<client>/<deck>/teleprompter.html -> the same object key in R2.
+_CF_API_BASE = "https://api.cloudflare.com/client/v4"
+
+
+def _load_secret(name: str) -> str:
+    """Read a secret by name: live process env first (definitive), then the
+    SECRETS_CANDIDATES env files. Returns "" if absent. NEVER prints the value."""
+    val = os.environ.get(name, "").strip()
+    if val:
+        return val.strip("'\"")
+    prefix = name + "="
+    for path in SECRETS_CANDIDATES:
+        p = Path(path)
+        if not p.exists():
+            continue
+        try:
+            for line in p.read_text().splitlines():
+                line = line.strip()
+                if line.startswith(prefix):
+                    value = line[len(prefix):].strip().strip("'\"")
+                    if value:
+                        return value
+        except OSError:
+            continue
+    return ""
+
+
+def _slugify(text: str) -> str:
+    """Lowercase, hyphenate, strip to [a-z0-9-] for URL path segments. Stable and
+    deterministic — never random. Empty input -> 'untitled'."""
+    s = re.sub(r"[^a-z0-9]+", "-", str(text).strip().lower()).strip("-")
+    return s or "untitled"
+
+
+def detect_platform(run_dir: Path, override: Optional[str] = None) -> str:
+    """Return 'vps' | 'mac'. Priority:
+       1. --platform CLI override (explicit operator control).
+       2. intake.json box_type ('mac' -> 'mac'; anything else -> 'vps').
+       3. Filesystem signal: a '/data/.openclaw' tree present -> 'vps'; else 'mac'
+          (the same Mac-vs-VPS workdir split the Media Librarian SOP 9.1 uses).
+    NOTE: this records the box type for the audit trail only. The publish host is
+    UNIFORM (central Cloudflare) for both values — see publish_teleprompter()."""
+    if override:
+        o = str(override).strip().lower()
+        if o in ("vps", "mac"):
+            return o
+    intake = run_dir / "intake.json"
+    if intake.exists():
+        obj = _read_json(intake)
+        if "__parse_error__" not in obj:
+            box_type = str(obj.get("box_type", "")).strip().lower()
+            if box_type == "mac":
+                return "mac"
+            if box_type:
+                return "vps"
+    # Filesystem fallback: a VPS box runs OpenClaw under /data/.openclaw.
+    if Path("/data/.openclaw").is_dir():
+        return "vps"
+    return "mac"
+
+
+def _client_slug_from_run(run_dir: Path, bundle_dir: Path) -> str:
+    """Derive a stable client slug for the URL path. Priority:
+       1. intake.json client_slug / client_name / brand.client_name.
+       2. The bundle dir's parent leaf (clients usually land under ~/Downloads/<client>-<deck>).
+       3. 'client' as a last resort. Always slugified."""
+    intake = run_dir / "intake.json"
+    if intake.exists():
+        obj = _read_json(intake)
+        if "__parse_error__" not in obj:
+            for k in ("client_slug", "client_name", "client"):
+                v = str(obj.get(k, "")).strip()
+                if v:
+                    return _slugify(v)
+            brand = obj.get("brand")
+            if isinstance(brand, dict):
+                v = str(brand.get("client_name", "")).strip()
+                if v:
+                    return _slugify(v)
+    leaf = bundle_dir.name.strip()
+    if leaf:
+        return _slugify(leaf)
+    return "client"
+
+
+def _http_status(url: str, timeout: int = 60) -> int:
+    """Live GET of a public URL; return the HTTP status code. Reuses the C1 SSRF
+    guard (http(s) only). A network/timeout error surfaces as a RuntimeError so the
+    caller records a verify failure rather than a false 200. Behind Cloudflare Access
+    an unauthenticated GET may 302 to the Access login — that is NOT a 200 and is a
+    correct verify-failure signal for an automated check; for the published-object
+    check we GET the object directly through the serving Worker which returns 200 for
+    a present object (Access challenges the human browser, not the object existence
+    probe path). We only need the status code."""
+    assert_url_scheme_allowed(url, what="teleprompter public_url")
+    req = urllib.request.Request(url, headers={"User-Agent": "build_deck-teleprompter-verify/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return int(resp.getcode())
+    except urllib.error.HTTPError as exc:
+        return int(exc.code)
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"teleprompter verify GET failed for {url}: {exc}") from exc
+
+
+def _r2_put_object(token: str, account_id: str, bucket: str, object_key: str,
+                   data: bytes, content_type: str = "text/html; charset=utf-8") -> None:
+    """Upload a single object to R2 via the Cloudflare REST API (PutObject). Raises
+    RuntimeError on non-success. The token is the fleet CLOUDFLARE_ZHW_APPS_API_TOKEN
+    (never printed)."""
+    url = (f"{_CF_API_BASE}/accounts/{account_id}/r2/buckets/{bucket}/objects/"
+           f"{quote(object_key)}")
+    assert_url_scheme_allowed(url, what="R2 PutObject URL")
+    req = urllib.request.Request(
+        url, data=data, method="PUT",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": content_type,
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            code = int(resp.getcode())
+            if code not in (200, 201):
+                raise RuntimeError(f"R2 PutObject returned HTTP {code} for key {object_key!r}")
+    except urllib.error.HTTPError as exc:
+        body_text = exc.read().decode(errors="replace")
+        raise RuntimeError(
+            f"R2 PutObject HTTP {exc.code} for bucket {bucket!r} key {object_key!r}. "
+            f"Response: {body_text}"
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"R2 PutObject network error for {bucket!r}/{object_key!r}: {exc}") from exc
+
+
+def _write_publish_ledger(ledger_path: Path, record: dict) -> None:
+    """Write the teleprompter_publish.json record (pretty JSON)."""
+    ledger_path.write_text(json.dumps(record, indent=2))
+
+
+def publish_teleprompter(bundle_dir: Path, deck_slug: str, run_dir: Path,
+                         platform: str, deliverables_ledger: Path,
+                         adhoc: bool = False) -> dict:
+    """Upload <bundle_dir>/presenter-teleprompter.html to the central Cloudflare host
+    (R2 bucket served by a Worker at teleprompter.zerohumanworkforce.com), capture the
+    public URL, write TELEPROMPTER_PUBLISH_LEDGER, and record the URL on the
+    'teleprompter_html' deliverable entry. Live-GET the URL to confirm HTTP 200.
+
+    FLEET POLICY: the host is UNIFORM (central Cloudflare) for every platform.
+    detect_platform()'s vps/mac value is recorded for audit only.
+
+    Raises RuntimeError on publish/verify failure (after writing a 'verify_failed'
+    record so the postflight gate fails loud). In --adhoc mode, writes a
+    'skipped_adhoc' record and returns it (no host call — ad-hoc output is explicitly
+    not a client deliverable)."""
+    pub_path = bundle_dir / TELEPROMPTER_PUBLISH_LEDGER
+    local_file = bundle_dir / "presenter-teleprompter.html"
+    client_slug = _client_slug_from_run(run_dir, bundle_dir)
+    deck = _slugify(deck_slug)
+    object_key = f"{client_slug}/{deck}/{TELEPROMPTER_HTML_NAME}"
+    public_url = f"https://{TELEPROMPTER_HOST}/{object_key}"
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    if adhoc:
+        record = {
+            "platform": platform,
+            "host_target": "cloudflare-central",
+            "local_file": str(local_file),
+            "public_url": None,
+            "published_at": now,
+            "verified_http_status": None,
+            "verified_at": None,
+            "status": "skipped_adhoc",
+            "note": "ad-hoc standalone render — not a client deliverable; publish skipped.",
+        }
+        _write_publish_ledger(pub_path, record)
+        return record
+
+    if not local_file.exists():
+        record = {
+            "platform": platform, "host_target": "cloudflare-central",
+            "local_file": str(local_file), "public_url": None,
+            "published_at": now, "verified_http_status": None, "verified_at": None,
+            "status": "verify_failed",
+            "note": "presenter-teleprompter.html absent from bundle_dir — nothing to publish.",
+        }
+        _write_publish_ledger(pub_path, record)
+        raise RuntimeError(
+            f"publish_teleprompter: {local_file} absent — generate the teleprompter "
+            f"(build_teleprompter.py) before publishing."
+        )
+
+    # FLEET secret — operator/fleet Cloudflare token, never a client key, never printed.
+    token = _load_secret("CLOUDFLARE_ZHW_APPS_API_TOKEN")
+    account_id = _load_secret("CLOUDFLARE_ACCOUNT_ID")
+    if not token or not account_id:
+        record = {
+            "platform": platform, "host_target": "cloudflare-central",
+            "local_file": str(local_file), "public_url": public_url,
+            "published_at": now, "verified_http_status": None, "verified_at": None,
+            "status": "verify_failed",
+            "note": ("central Cloudflare credentials not found "
+                     "(CLOUDFLARE_ZHW_APPS_API_TOKEN / CLOUDFLARE_ACCOUNT_ID). "
+                     "This is FLEET infra; set the operator/fleet token in the env "
+                     "store. The value is never printed."),
+        }
+        _write_publish_ledger(pub_path, record)
+        raise RuntimeError(
+            "publish_teleprompter: CLOUDFLARE_ZHW_APPS_API_TOKEN and/or "
+            "CLOUDFLARE_ACCOUNT_ID not found in env or secrets stores. The central "
+            "teleprompter host is fleet infra; configure the operator/fleet token."
+        )
+
+    html_bytes = local_file.read_bytes()
+
+    # 1. Upload the self-contained HTML to the R2 bucket (PutObject). On failure,
+    #    record a verify_failed ledger so the gate fails loud with a diagnostic.
+    try:
+        _r2_put_object(token, account_id, TELEPROMPTER_R2_BUCKET, object_key, html_bytes)
+    except RuntimeError as exc:
+        record = {
+            "platform": platform, "host_target": "cloudflare-central",
+            "local_file": str(local_file), "public_url": public_url,
+            "published_at": now, "verified_http_status": None, "verified_at": None,
+            "status": "verify_failed",
+            "note": f"R2 upload failed: {exc}",
+        }
+        _write_publish_ledger(pub_path, record)
+        raise RuntimeError(
+            f"publish_teleprompter: R2 upload of {object_key} failed: {exc}"
+        ) from exc
+
+    # 2. Ground-truth verify: live GET the public URL through the serving Worker. The
+    #    object existence probe path returns 200 for a present object (Access
+    #    challenges the human browser, not this status probe). A non-200 is a publish
+    #    failure.
+    published_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    try:
+        status = _http_status(public_url, timeout=60)
+    except RuntimeError as exc:
+        record = {
+            "platform": platform, "host_target": "cloudflare-central",
+            "local_file": str(local_file), "public_url": public_url,
+            "published_at": published_at, "verified_http_status": None,
+            "verified_at": None, "status": "verify_failed",
+            "note": f"upload succeeded but verify GET errored: {exc}",
+        }
+        _write_publish_ledger(pub_path, record)
+        raise RuntimeError(
+            f"publish_teleprompter: uploaded {object_key} but the live verify GET "
+            f"failed: {exc}"
+        ) from exc
+
+    verified_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    status_ok = (status == 200)
+    record = {
+        "platform": platform,
+        "host_target": "cloudflare-central",
+        "local_file": str(local_file),
+        "public_url": public_url,
+        "published_at": published_at,
+        "verified_http_status": status,
+        "verified_at": verified_at,
+        "status": "published" if status_ok else "verify_failed",
+    }
+    _write_publish_ledger(pub_path, record)
+
+    # Record the URL on the teleprompter_html deliverable entry (additive field).
+    try:
+        entries = json.loads(deliverables_ledger.read_text())
+        for e in entries:
+            if e.get("key") == "teleprompter_html":
+                e["public_url"] = public_url
+                break
+        deliverables_ledger.write_text(json.dumps(entries, indent=2))
+    except Exception:  # noqa: BLE001 — best-effort; the publish ledger is authoritative
+        pass
+
+    if not status_ok:
+        raise RuntimeError(
+            f"publish_teleprompter: {public_url} returned HTTP {status}, not 200. "
+            f"The teleprompter is uploaded but the live URL is not verified."
+        )
+    return record
+
+
+def _check_teleprompter_published(bundle_dir: Path) -> str:
+    """Teleprompter-publish sub-check of the postflight bundle gate (folded under
+    AF-BUNDLE-COMPLETE). Return "" when the teleprompter is published with a verified
+    live URL, else a fail reason. Reads <bundle_dir>/teleprompter_publish.json:
+      * file absent                                  -> fail
+      * status != 'published'                        -> fail (carry the recorded status)
+      * public_url missing / not http(s)             -> fail
+      * verified_http_status != 200                  -> fail
+    The --adhoc standalone path writes status 'skipped_adhoc'; this check PASSES on
+    'skipped_adhoc' ONLY (ad-hoc output is explicitly not a client deliverable)."""
+    pub = bundle_dir / TELEPROMPTER_PUBLISH_LEDGER
+    if not pub.exists():
+        return ("teleprompter_publish.json absent — the teleprompter was never "
+                "published (TELEPROMPTER-PUBLISH). Run publish_teleprompter.")
+    obj = _read_json(pub)
+    if "__parse_error__" in obj:
+        return f"teleprompter_publish.json not valid JSON ({obj['__parse_error__']})"
+    if obj.get("status") == "skipped_adhoc":
+        return ""
+    if obj.get("status") != "published":
+        return f"teleprompter publish status is {obj.get('status')!r}, expected 'published'"
+    url = str(obj.get("public_url", "")).strip()
+    try:
+        assert_url_scheme_allowed(url, what="teleprompter public_url")
+    except ValueError as exc:
+        return f"teleprompter public_url invalid: {exc}"
+    if obj.get("verified_http_status") != 200:
+        return (f"teleprompter public_url not verified live (status="
+                f"{obj.get('verified_http_status')!r}); a live HTTP 200 is required.")
+    return ""
+
+
+# ---------------------------------------------------------------------------
 # C2 — POSTFLIGHT CONTENT-TYPE MAGIC-BYTE VERIFICATION
 # ---------------------------------------------------------------------------
 # The completeness gate used to check only exists() + size, so a symlink pointing
@@ -2102,6 +2450,23 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str) -> 
             continue
         update_deliverable_status(ledger_path, key, "verified", size=actual)
 
+    # --- TELEPROMPTER-PUBLISH sub-check (folded under AF-BUNDLE-COMPLETE) ---
+    # A self-contained HTML on disk is NOT a delivered teleprompter. The bundle is not
+    # complete until the teleprompter is hosted at the central Cloudflare URL and that
+    # URL is live (HTTP 200). This mirrors the AF-BUNDLE-COMPLETE pattern exactly: a
+    # missing/unverified publish URL is a hard exit-5 failure (no new AF code — it is
+    # the teleprompter-publish condition of the existing bundle-completeness gate). The
+    # delivery / ruleset SOPs name this the TELEPROMPTER-PUBLISH auto-fail.
+    tele_pub = _check_teleprompter_published(bundle_dir)
+    if tele_pub:
+        update_deliverable_status(ledger_path, "teleprompter_html", "failed",
+                                  error=tele_pub)
+        missing_or_short.append((
+            "teleprompter_html",
+            _expand_filename("presenter-teleprompter.html", deck_slug),
+            "presenter teleprompter web app (published URL)",
+            0, 0, "UNPUBLISHED"))
+
     # --- Phase 2: read ledger back as the authoritative final state ---
     try:
         ledger_entries = json.loads(ledger_path.read_text())
@@ -2157,6 +2522,18 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str) -> 
                       file=sys.stderr)
                 print(f"           not match the expected type (decoy / wrong-type file).",
                       file=sys.stderr)
+            elif reason == "UNPUBLISHED":
+                print(f"  UNPUBLISHED [{key}] {fname}  ({label})", file=sys.stderr)
+                print(f"           the teleprompter HTML exists locally but was not "
+                      f"published", file=sys.stderr)
+                print(f"           to the central host with a live public URL "
+                      f"(TELEPROMPTER-PUBLISH).", file=sys.stderr)
+                print(f"           Run publish_teleprompter — it uploads to the central "
+                      f"Cloudflare", file=sys.stderr)
+                print(f"           host (teleprompter.zerohumanworkforce.com). The URL "
+                      f"must return", file=sys.stderr)
+                print(f"           HTTP 200. See teleprompter_publish.json.",
+                      file=sys.stderr)
             else:
                 print(f"  TOO SMALL [{key}] {fname}  ({label})", file=sys.stderr)
                 print(f"           actual={actual_b:,} bytes  minimum={min_b:,} bytes",
@@ -2197,6 +2574,7 @@ def main():
     logo_arg = None
     timestamp_arg = None
     out_dir_arg = None   # --out BUNDLE_DIR (default ~/Downloads/<deck-slug>)
+    platform_arg = None  # --platform {vps|mac} override (default None -> auto-detect)
     positional = []
     i = 0
     while i < len(argv):
@@ -2235,6 +2613,14 @@ def main():
             out_dir_arg = argv[i]
         elif tok.startswith("--out="):
             out_dir_arg = tok[len("--out="):]
+        elif tok == "--platform":
+            i += 1
+            if i >= len(argv):
+                print("FATAL: --platform requires a value (vps|mac).", file=sys.stderr)
+                sys.exit(2)
+            platform_arg = argv[i]
+        elif tok.startswith("--platform="):
+            platform_arg = tok[len("--platform="):]
         elif tok.startswith("--"):
             print(f"FATAL: unknown flag {tok!r}.", file=sys.stderr)
             sys.exit(2)
@@ -2245,7 +2631,12 @@ def main():
     if len(positional) not in (2, 3):
         print("Usage: python3 build_deck.py <slides.json> <out.pptx> [renders_dir] "
               "[--run-dir DIR] [--logo PNG] [--out BUNDLE_DIR] "
-              "[--timestamp ISO8601] [--adhoc-no-process]",
+              "[--platform vps|mac] [--timestamp ISO8601] [--adhoc-no-process]",
+              file=sys.stderr)
+        sys.exit(2)
+
+    if platform_arg is not None and str(platform_arg).strip().lower() not in ("vps", "mac"):
+        print(f"FATAL: --platform must be 'vps' or 'mac' (got {platform_arg!r}).",
               file=sys.stderr)
         sys.exit(2)
 
@@ -2458,6 +2849,30 @@ def main():
     print("\n=== SUMMARY (RENDER OK — running postflight completeness gate) ===",
           flush=True)
     print(json.dumps(summary, indent=2))
+
+    # TELEPROMPTER PUBLISH — only meaningful if the teleprompter HTML is already in the
+    # bundle (it is an upstream artifact; build_deck.py does not author it). If it is
+    # present, publish it to the central Cloudflare host and capture the public URL. A
+    # publish failure does NOT abort the render (the .pptx is already built), but it DOES
+    # leave the publish ledger un-verified so the postflight gate fails loud (exit 5).
+    # In --adhoc mode, publish_teleprompter writes a 'skipped_adhoc' record (no host call).
+    platform = detect_platform(run_dir, override=platform_arg)
+    tele_html = bundle_dir / "presenter-teleprompter.html"
+    if tele_html.exists():
+        print(f"=== TELEPROMPTER PUBLISH (platform={platform}, host=cloudflare-central) ===",
+              flush=True)
+        try:
+            rec = publish_teleprompter(bundle_dir, deck_slug, run_dir, platform,
+                                       ledger_path, adhoc=adhoc)
+            if rec.get("status") == "published":
+                print(f"=== TELEPROMPTER PUBLISHED: {rec.get('public_url')} "
+                      f"(HTTP {rec.get('verified_http_status')}) ===", flush=True)
+            elif rec.get("status") == "skipped_adhoc":
+                print("=== TELEPROMPTER PUBLISH skipped (ad-hoc render) ===", flush=True)
+        except Exception as exc:  # noqa: BLE001 — never silently swallow
+            print(f"WARNING: teleprompter publish failed: {exc} — the postflight "
+                  f"gate will fail loud (TELEPROMPTER-PUBLISH) until it is published "
+                  f"and the URL verified.", file=sys.stderr, flush=True)
 
     # POSTFLIGHT COMPLETENESS GATE (Requirement 2 — AF-BUNDLE-COMPLETE).
     # This is the FINAL gate: exit 0 only when ALL nine bundle deliverables are

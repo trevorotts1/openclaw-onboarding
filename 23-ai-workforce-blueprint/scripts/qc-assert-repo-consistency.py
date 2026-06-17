@@ -522,6 +522,517 @@ def evaluate(skill_dir):
             "failures": failures, "summary": summary}
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# ARTIFACT-COVERAGE GATE (v12.25.0) — "complete check for everything"
+# ─────────────────────────────────────────────────────────────────────────────
+# The 5-dimension gate above guarantees every floor dept is consistent across
+# floor/roster/library/SOP/persona. This SECOND gate closes the remaining classes
+# of drift where a floor department / role / version / skill / bootstrap file can
+# silently fall out of a DOWNSTREAM artifact even though the 5-dimension gate is
+# green:
+#
+#   ORG-CHART     every floor dept (and its roster roles) is represented in the
+#                 org-chart generator output.
+#   ROUTING       the universal routing map covers every floor dept (no floor
+#                 dept unrouted -> work falls back to general-task silently).
+#   COMMAND-CENTER the Command Center departments.json generator covers every
+#                 floor dept (else no Kanban column / topic for that dept).
+#   DREAMING      the per-dept workspace scaffolding (DREAMS.md) covers every
+#                 floor dept (none excluded by a hardcoded subset).
+#   BOOTSTRAP     the core/bootstrap template files (IDENTITY/SOUL/AGENTS/USER/
+#                 TOOLS/HEARTBEAT shipped templates + MEMORY runtime-seeded) exist
+#                 and the canonical 7-file enumeration names all seven.
+#   SKILLS-COUNT  install.sh active-skill count == README count == actual skill
+#                 dir tree (the recurring install.sh/README/tree drift).
+#   VERSION       every version marker across the repo agrees (the bump-version
+#                 9-marker set + cc-compat.json onboardingVersion).
+#
+# DESIGN — mirror the build, never re-derive it. ORG-CHART / ROUTING / CC / DREAMING
+# are all DERIVED at build time by iterating `selected_departments`. There is no
+# static per-dept dict to diff; the drift risk is a generator that drops a dept,
+# hardcodes a subset, or is unwired. So this gate SYNTHESIZES a `selected_departments`
+# covering ALL floor depts (using the SAME naming-map metadata the build uses via
+# load_canonical_floor() + the vertical-pack one-liners) and runs the REAL generator
+# functions (generate_org_chart / write_universal_routing_map / generate_departments_json),
+# then asserts every floor dept appears in the output. A generator that silently
+# omits a floor dept FAILS. It also statically asserts each generator is WIRED
+# (called from build_from_config) so a deleted call site FAILS too.
+#
+# EXIT CODES (combined with the 5-dimension gate in main()):
+#   0  every dimension consistent.
+#   6  ARTIFACT DRIFT FOUND (at least one downstream artifact omits a floor dept,
+#      counts disagree, a bootstrap file is missing, or versions drift).
+#   2  could not load the repo to run the artifact checks.
+# ═════════════════════════════════════════════════════════════════════════════
+
+# The 7 OpenClaw bootstrap ("core.md") files. Six ship as repo-root templates;
+# MEMORY.md is intentionally NOT shipped — it is seeded fresh+empty per agent at
+# install time (a committed MEMORY template would leak one client's facts to the
+# next). So MEMORY is required to be REFERENCED as a core file but must NOT be a
+# committed template.
+_BOOTSTRAP_TEMPLATE_FILES = ["IDENTITY.md", "SOUL.md", "AGENTS.md", "USER.md",
+                             "TOOLS.md", "HEARTBEAT.md"]
+_BOOTSTRAP_RUNTIME_FILES = ["MEMORY.md"]
+_BOOTSTRAP_ALL = _BOOTSTRAP_TEMPLATE_FILES + _BOOTSTRAP_RUNTIME_FILES
+
+# Generators that MUST stay wired into the build (call-site presence check).
+_REQUIRED_GENERATOR_CALLS = [
+    "generate_org_chart(",
+    "write_universal_routing_map(",
+    "generate_departments_json(",
+]
+
+
+def _synthesize_full_floor_departments(repo):
+    """Build a `selected_departments` dict covering ALL floor depts, shaped exactly
+    like the dict the real build feeds the generators ({name, emoji, head,
+    description} per dept id). Mandatory depts come from load_canonical_floor()
+    (same source the build uses); the 7 universal-primary verticals are assembled
+    from their naming-map auto_add_departments entry the SAME way apply_vertical_packs
+    does ({name, emoji, head: "Director of <name>", description: one_liner}).
+
+    Returns (selected_departments, floor_ids) or raises on failure.
+    """
+    bw = _load_module("bw_artifact", repo.scripts / "build-workforce.py")
+    # Mandatory floor depts, already in the {name,emoji,head,description} shape.
+    floor = dict(bw.load_canonical_floor())  # {cid: {name,emoji,head,description}}
+    # Universal-primary vertical depts (the 7 not in load_canonical_floor()).
+    ups = repo.floor_mod.universal_primary_vertical_departments(repo.naming_map)
+    vpacks = (repo.naming_map.get("vertical_packs") or {})
+    vmeta = {}
+    for pack in vpacks.values():
+        if not isinstance(pack, dict):
+            continue
+        for dept in pack.get("auto_add_departments", []) or []:
+            if isinstance(dept, dict) and dept.get("id"):
+                vmeta.setdefault(dept["id"], dept)
+    for did in ups:
+        if did in floor:
+            continue
+        meta = vmeta.get(did, {})
+        name = meta.get("name", did.replace("-", " ").title())
+        floor[did] = {
+            "name": name,
+            "emoji": meta.get("emoji", "\U0001f4c1"),
+            "head": f"Director of {name}",
+            "description": meta.get("one_liner", ""),
+        }
+    mandatory = list((repo.naming_map.get("mandatory") or {}).keys())
+    floor_ids = mandatory + list(ups)
+    return bw, floor, floor_ids
+
+
+def evaluate_artifact_coverage(skill_dir):
+    """Run the 7 artifact-coverage dimensions. Returns a verdict dict with rc 0/6/2."""
+    failures = []  # (dimension, detail)
+    rows = []      # (dimension, status, detail)
+
+    def add_row(dim, ok, detail):
+        rows.append((dim, "OK" if ok else "DRIFT", detail))
+        if not ok:
+            failures.append((dim, detail))
+
+    try:
+        repo = Repo(skill_dir)
+    except Exception as e:  # noqa: BLE001
+        return {"rc": 2, "fatal": f"could not load repo: {e}", "rows": [],
+                "failures": [], "summary": {}}
+
+    # ── Synthesize the full floor + load the real build module ────────────────
+    try:
+        bw, floor_depts, floor_ids = _synthesize_full_floor_departments(repo)
+    except Exception as e:  # noqa: BLE001
+        return {"rc": 2, "fatal": f"could not synthesize floor / load build-workforce: {e}",
+                "rows": [], "failures": [], "summary": {}}
+
+    floor_set = set(floor_ids)
+
+    # ── DIMENSION: ORG-CHART ──────────────────────────────────────────────────
+    # Run the REAL generate_org_chart against the full floor; assert every floor
+    # dept's display NAME appears in the rendered org chart. specialists_by_dept
+    # is keyed by the floor roster so role-level coverage is exercised too.
+    try:
+        specialists_by_dept = {}
+        for did in floor_ids:
+            fn, _ = repo.roster_filename_for(did)
+            roles = []
+            if fn and (repo.rosters_dir / fn).is_file():
+                try:
+                    roles = repo.crw.parse_roster(repo.rosters_dir / fn)
+                except Exception:
+                    roles = []
+            specialists_by_dept[did] = [{"name": r["name"], "type": "permanent"} for r in roles]
+        org_md = bw.generate_org_chart(floor_depts, specialists_by_dept)
+        missing_oc = [did for did in floor_ids
+                      if floor_depts[did]["name"] not in org_md]
+        # Role-level: a dept whose roster has roles but none rendered is a gap.
+        role_gap_oc = []
+        for did in floor_ids:
+            specs = specialists_by_dept.get(did, [])
+            if specs:
+                rendered = sum(1 for s in specs if s["name"] in org_md)
+                if rendered < len(specs):
+                    role_gap_oc.append(f"{did}({rendered}/{len(specs)})")
+        if missing_oc:
+            add_row("ORG-CHART", False,
+                    f"floor dept(s) absent from generate_org_chart output: {missing_oc}")
+        elif role_gap_oc:
+            add_row("ORG-CHART", False,
+                    f"roster role(s) absent from org chart for: {role_gap_oc}")
+        else:
+            add_row("ORG-CHART", True,
+                    f"all {len(floor_ids)} floor depts + their roster roles rendered")
+    except Exception as e:  # noqa: BLE001
+        add_row("ORG-CHART", False, f"generate_org_chart raised: {e}")
+
+    # ── DIMENSION: ROUTING ────────────────────────────────────────────────────
+    # write_universal_routing_map writes to COMPANY_DIR. Point COMPANY_DIR at a
+    # temp dir, run the REAL generator, read 00-ROUTING.md, assert every floor
+    # dept has a `departments/<dept>/` routing row. (CEO/orchestrator are
+    # intentionally skipped by the generator and are not floor depts.)
+    try:
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            old_company = getattr(bw, "COMPANY_DIR", None)
+            bw.COMPANY_DIR = td
+            try:
+                routing_path = bw.write_universal_routing_map(floor_depts)
+            finally:
+                bw.COMPANY_DIR = old_company
+            routing_md = Path(routing_path).read_text(encoding="utf-8") if routing_path else ""
+        missing_rt = [did for did in floor_ids
+                      if did not in ("ceo", "master-orchestrator", "dept-ceo")
+                      and f"departments/{did}/" not in routing_md]
+        if missing_rt:
+            add_row("ROUTING", False,
+                    f"floor dept(s) with NO row in 00-ROUTING.md: {missing_rt}")
+        else:
+            add_row("ROUTING", True,
+                    f"all {len(floor_ids)} floor depts routed in 00-ROUTING.md")
+    except Exception as e:  # noqa: BLE001
+        add_row("ROUTING", False, f"write_universal_routing_map raised: {e}")
+
+    # ── DIMENSION: COMMAND-CENTER ─────────────────────────────────────────────
+    # generate_departments_json drives the Command Center Kanban columns + the
+    # SQLite workspaces table + the Telegram topic bindings (one per dept slug).
+    # Assert every floor dept appears as a `slug` in the generated array.
+    try:
+        cc_entries = bw.generate_departments_json(floor_depts)
+        cc_slugs = {e.get("slug") for e in cc_entries}
+        # The generator canonicalizes slugs; compare against canonical floor slugs.
+        canon = getattr(bw, "_canonical_dept_slug", lambda s: s)
+        missing_cc = []
+        for did in floor_ids:
+            if did in ("ceo", "master-orchestrator", "dept-ceo"):
+                continue
+            want = canon(did) or did
+            if want not in cc_slugs and did not in cc_slugs:
+                missing_cc.append(did)
+        if missing_cc:
+            add_row("COMMAND-CENTER", False,
+                    f"floor dept(s) absent from departments.json (no CC column/topic): {missing_cc}")
+        else:
+            add_row("COMMAND-CENTER", True,
+                    f"all {len(floor_ids)} floor depts present in departments.json (+CEO column)")
+    except Exception as e:  # noqa: BLE001
+        add_row("COMMAND-CENTER", False, f"generate_departments_json raised: {e}")
+
+    # ── DIMENSION: DREAMING ───────────────────────────────────────────────────
+    # Dreaming (nightly memory consolidation) operates on the per-dept memory/
+    # substrate that EVERY department workspace carries. Two invariants make
+    # "dreaming covers all departments (none excluded)" TRUE and keep it true:
+    #
+    #   (1) Every floor dept gets a workspace (with a memory/ folder) — the dept
+    #       workspace creator (create_department_workspace) MUST be invoked inside
+    #       the build's `for ... in selected_departments` loop, and must create
+    #       the per-dept memory/ folder. A hardcoded subset (a loop over a fixed
+    #       list instead of selected_departments) would silently exclude a floor
+    #       dept from the dreaming substrate.
+    #   (2) Dreaming is configured WORKSPACE-WIDE (the install.sh configure_dreaming
+    #       step writes plugins.entries.memory-core.config.dreaming), NOT per-dept,
+    #       and there is NO per-dept dreaming allow/exclude list anywhere that
+    #       could drop a floor dept. (A per-dept dreaming list is the drift this
+    #       guards against — none exists today, and this fails if one appears that
+    #       does not enumerate the full floor.)
+    try:
+        bw_src = (repo.scripts / "build-workforce.py").read_text(encoding="utf-8")
+        dream_problems = []
+
+        # (1) create_department_workspace must exist, be called inside the
+        #     selected_departments loop, and create the per-dept memory/ substrate.
+        if "def create_department_workspace(" not in bw_src:
+            dream_problems.append("create_department_workspace() not defined")
+        else:
+            # Find the call (not the def) and confirm a `selected_departments`
+            # iteration precedes it within the same enclosing build function.
+            call_lines = [i for i, ln in enumerate(bw_src.splitlines())
+                          if "create_department_workspace(" in ln
+                          and not ln.lstrip().startswith("def ")]
+            if not call_lines:
+                dream_problems.append("create_department_workspace() defined but never CALLED")
+            else:
+                lines = bw_src.splitlines()
+                wired_in_loop = False
+                for ci in call_lines:
+                    # Walk back up to ~60 lines for the governing for-loop header.
+                    for j in range(ci, max(0, ci - 60), -1):
+                        if re.match(r"\s*for\s+\w+(?:\s*,\s*\w+)?\s+in\s+selected_departments",
+                                    lines[j]):
+                            wired_in_loop = True
+                            break
+                    if wired_in_loop:
+                        break
+                if not wired_in_loop:
+                    dream_problems.append("create_department_workspace() is not driven by the "
+                                          "selected_departments loop (a hardcoded subset could "
+                                          "exclude a floor dept from the dreaming substrate)")
+            # Per-dept memory/ substrate the dreaming engine consolidates.
+            cdw_m = re.search(r"\ndef create_department_workspace\(", bw_src)
+            cdw_body = bw_src[cdw_m.end():] if cdw_m else ""
+            nxt = re.search(r"\ndef \w+\(", cdw_body)
+            cdw_body = cdw_body[:nxt.start()] if nxt else cdw_body
+            if 'os.makedirs(os.path.join(dept_dir, "memory")' not in cdw_body \
+                    and "'memory'" not in cdw_body and '"memory"' not in cdw_body:
+                dream_problems.append("create_department_workspace() does not create the per-dept "
+                                      "memory/ substrate dreaming consolidates")
+
+        # (2) Global dreaming config step + no per-dept dreaming exclusion list.
+        install_sh = repo.repo_root / "install.sh"
+        install_txt = install_sh.read_text(encoding="utf-8", errors="replace") if install_sh.is_file() else ""
+        if "configure_dreaming" not in install_txt:
+            dream_problems.append("install.sh has no configure_dreaming step")
+        elif "memory-core" not in install_txt or "dreaming" not in install_txt:
+            dream_problems.append("install.sh configure_dreaming does not write the "
+                                  "memory-core dreaming config")
+        # A per-dept dreaming allow/exclude list would be the drift. If one is
+        # introduced, it MUST enumerate the full floor — fail if it omits a dept.
+        for var in ("DREAMING_DEPARTMENTS", "DREAMING_DEPTS", "DREAM_DEPARTMENTS"):
+            mm = re.search(re.escape(var) + r"\s*=\s*[\[{]([^\]}]*)[\]}]", bw_src)
+            if mm:
+                listed = set(re.findall(r"['\"]([a-z0-9\-]+)['\"]", mm.group(1)))
+                omitted = [d for d in floor_ids if d not in listed]
+                if omitted:
+                    dream_problems.append(f"per-dept dreaming list {var} omits floor dept(s): {omitted}")
+
+        if dream_problems:
+            add_row("DREAMING", False, "; ".join(dream_problems))
+        else:
+            add_row("DREAMING", True,
+                    f"every floor dept gets a workspace+memory/ substrate via the "
+                    f"selected_departments loop; dreaming configured workspace-wide "
+                    f"(no per-dept exclusion)")
+    except Exception as e:  # noqa: BLE001
+        add_row("DREAMING", False, f"dreaming coverage check raised: {e}")
+
+    # ── DIMENSION: GENERATOR WIRING (org-chart/routing/CC called by the build) ─
+    # A generator can be perfect but unwired. Statically assert each required
+    # generator is CALLED somewhere in build-workforce.py (not just defined).
+    try:
+        bw_src = (repo.scripts / "build-workforce.py").read_text(encoding="utf-8")
+        unwired = []
+        for call in _REQUIRED_GENERATOR_CALLS:
+            # Count call sites that are NOT the `def` line.
+            fn_name = call[:-1]
+            calls = [ln for ln in bw_src.splitlines()
+                     if call in ln and not ln.lstrip().startswith(f"def {fn_name}")]
+            if not calls:
+                unwired.append(fn_name)
+        if unwired:
+            add_row("GENERATOR-WIRING", False,
+                    f"generator(s) defined but never CALLED by build-workforce.py: {unwired}")
+        else:
+            add_row("GENERATOR-WIRING", True,
+                    "org-chart / routing / departments.json generators are wired")
+    except Exception as e:  # noqa: BLE001
+        add_row("GENERATOR-WIRING", False, f"wiring check raised: {e}")
+
+    # ── DIMENSION: BOOTSTRAP ──────────────────────────────────────────────────
+    # The 6 shipped bootstrap templates must EXIST at repo root; MEMORY.md must
+    # NOT be a committed template (seeded fresh per agent) but MUST be referenced
+    # as a core file; the canonical 7-file enumeration (Start Here.md) must name
+    # all seven.
+    try:
+        root = repo.repo_root
+        missing_tmpl = [f for f in _BOOTSTRAP_TEMPLATE_FILES if not (root / f).is_file()]
+        boot_problems = []
+        if missing_tmpl:
+            boot_problems.append(f"missing shipped template(s): {missing_tmpl}")
+        # MEMORY.md must be runtime-seeded, not a committed template.
+        if (root / "MEMORY.md").is_file():
+            boot_problems.append("MEMORY.md is committed at repo root — it must be "
+                                 "seeded fresh+empty per agent (a committed template "
+                                 "leaks one client's facts to the next)")
+        # Canonical 7-file enumeration in Start Here.md names all seven.
+        start_here = root / "Start Here.md"
+        if start_here.is_file():
+            sh = start_here.read_text(encoding="utf-8", errors="replace")
+            unref = [f for f in _BOOTSTRAP_ALL if f not in sh]
+            if unref:
+                boot_problems.append(f"Start Here.md core enumeration omits: {unref}")
+        else:
+            boot_problems.append("Start Here.md not found (canonical core enumeration)")
+        if boot_problems:
+            add_row("BOOTSTRAP", False, "; ".join(boot_problems))
+        else:
+            add_row("BOOTSTRAP", True,
+                    "6 shipped templates exist, MEMORY runtime-seeded, all 7 enumerated")
+    except Exception as e:  # noqa: BLE001
+        add_row("BOOTSTRAP", False, f"bootstrap check raised: {e}")
+
+    # ── DIMENSION: SKILLS-COUNT ───────────────────────────────────────────────
+    # install.sh active-skill prose count == README count == actual skill-dir tree.
+    try:
+        root = repo.repo_root
+        # Actual tree: top-level ^[0-9]+-<name> dirs, minus *-ARCHIVED.
+        all_dirs = sorted(d.name for d in root.iterdir()
+                          if d.is_dir() and re.match(r"^\d+-", d.name))
+        active_dirs = [d for d in all_dirs if not d.endswith("-ARCHIVED")]
+        archived_dirs = [d for d in all_dirs if d.endswith("-ARCHIVED")]
+        actual_active = len(active_dirs)
+        actual_total = len(all_dirs)
+        actual_archived = len(archived_dirs)
+
+        skill_problems = []
+        # README prose: "N numbered skill folders" + "M active ... K archived".
+        readme = root / "README.md"
+        readme_txt = readme.read_text(encoding="utf-8", errors="replace") if readme.is_file() else ""
+        for m in re.finditer(r"\*\*(\d+) numbered skill folders", readme_txt):
+            n = int(m.group(1))
+            if n != actual_total:
+                skill_problems.append(f"README states {n} folders, tree has {actual_total}")
+        for m in re.finditer(r"(\d+) active (?:plus|\+) (\d+) archived", readme_txt):
+            act, arch = int(m.group(1)), int(m.group(2))
+            if act != actual_active:
+                skill_problems.append(f"README states {act} active, tree has {actual_active}")
+            if arch != actual_archived:
+                skill_problems.append(f"README states {arch} archived, tree has {actual_archived}")
+        # README inventory table rows: each ^| NN-<slug> | — must cover every
+        # ACTIVE skill dir (ARCHIVED dirs are intentionally not listed as rows).
+        inv_rows = set(re.findall(r"^\|\s*(\d+-[a-z0-9-]+)\s*\|", readme_txt, re.MULTILINE))
+        inv_missing = [d for d in active_dirs if d not in inv_rows]
+        if inv_missing:
+            skill_problems.append(f"README inventory table missing active-skill row(s): {inv_missing}")
+        # install.sh prose: "(N active + K archived)" and "The N active skills".
+        install_sh = root / "install.sh"
+        install_txt = install_sh.read_text(encoding="utf-8", errors="replace") if install_sh.is_file() else ""
+        for m in re.finditer(r"\((\d+) active \+ (\d+) archived\)", install_txt):
+            act, arch = int(m.group(1)), int(m.group(2))
+            if act != actual_active:
+                skill_problems.append(f"install.sh prose states {act} active, tree has {actual_active}")
+            if arch != actual_archived:
+                skill_problems.append(f"install.sh prose states {arch} archived, tree has {actual_archived}")
+        for m in re.finditer(r"The (\d+) active skills", install_txt):
+            n = int(m.group(1))
+            if n != actual_active:
+                skill_problems.append(f"install.sh 'The N active skills' states {n}, tree has {actual_active}")
+        if skill_problems:
+            add_row("SKILLS-COUNT", False, "; ".join(dict.fromkeys(skill_problems)))
+        else:
+            add_row("SKILLS-COUNT", True,
+                    f"install.sh == README == tree ({actual_active} active, {actual_archived} archived, {actual_total} total)")
+    except Exception as e:  # noqa: BLE001
+        add_row("SKILLS-COUNT", False, f"skills-count check raised: {e}")
+
+    # ── DIMENSION: VERSION-MARKERS ────────────────────────────────────────────
+    # Every place a repo-wide version lives must agree with /version. This is the
+    # 9-marker bump-version.sh set + cc-compat.json onboardingVersion, promoted
+    # from CI-only into the gate so a build refuses to run against a drifted repo.
+    try:
+        root = repo.repo_root
+
+        def _norm_v(v):
+            return (v or "").strip().lstrip("v")
+
+        ver_path = root / "version"
+        v_root = _norm_v(ver_path.read_text(encoding="utf-8").splitlines()[0]) if ver_path.is_file() else None
+        markers = {}  # label -> value
+        markers["/version"] = v_root
+
+        def _grep1(path, pat, group=1):
+            if not path.is_file():
+                return None
+            mm = re.search(pat, path.read_text(encoding="utf-8", errors="replace"), re.MULTILINE)
+            return _norm_v(mm.group(group)) if mm else None
+
+        markers["install.sh ONBOARDING_VERSION"] = _grep1(
+            root / "install.sh", r'^ONBOARDING_VERSION="?(v?[0-9.]+)"?')
+        markers["update-skills.sh ONBOARDING_VERSION"] = _grep1(
+            root / "update-skills.sh", r'^ONBOARDING_VERSION="?(v?[0-9.]+)"?')
+        skv = root / "23-ai-workforce-blueprint" / "skill-version.txt"
+        markers["skill-version.txt"] = _norm_v(skv.read_text(encoding="utf-8").splitlines()[0]) if skv.is_file() else None
+        markers["_index.json version"] = _norm_v(str(repo.index.get("version")))
+        _SEMVER = r"([0-9]+\.[0-9]+\.[0-9]+)"  # anchored: no trailing punctuation
+        markers["_qc-summary.md"] = _grep1(
+            root / "23-ai-workforce-blueprint" / "templates" / "role-library" / "_qc-summary.md",
+            r"Role Library v" + _SEMVER)
+        markers["README this-repo-at"] = _grep1(root / "README.md", r"this repo at v" + _SEMVER)
+        markers["README Current-Version"] = _grep1(root / "README.md", r"Current Version: v" + _SEMVER)
+        markers["DIRECT-TO-AGENT **vX.Y.Z**"] = _grep1(
+            root / "DIRECT-TO-AGENT-UPDATE-MESSAGE.md", r"\*\*v" + _SEMVER + r"\*\*")
+        cc = root / "cc-compat.json"
+        if cc.is_file():
+            try:
+                markers["cc-compat onboardingVersion"] = _norm_v(
+                    json.loads(cc.read_text(encoding="utf-8")).get("onboardingVersion"))
+            except Exception:
+                markers["cc-compat onboardingVersion"] = "UNREADABLE"
+        ver_problems = []
+        if not v_root:
+            ver_problems.append("/version unreadable")
+        else:
+            for label, val in markers.items():
+                if label == "/version":
+                    continue
+                if val != v_root:
+                    ver_problems.append(f"{label}={val or 'MISSING'} (want {v_root})")
+        if ver_problems:
+            add_row("VERSION-MARKERS", False,
+                    f"version drift vs /version={v_root}: " + "; ".join(ver_problems))
+        else:
+            add_row("VERSION-MARKERS", True,
+                    f"all {len(markers)} version markers agree at v{v_root}")
+    except Exception as e:  # noqa: BLE001
+        add_row("VERSION-MARKERS", False, f"version-marker check raised: {e}")
+
+    rc = 0 if not failures else 6
+    summary = {
+        "floor_count": len(floor_ids),
+        "dimensions_ok": sum(1 for r in rows if r[1] == "OK"),
+        "dimensions_drift": sum(1 for r in rows if r[1] == "DRIFT"),
+        "failure_count": len(failures),
+    }
+    return {"rc": rc, "fatal": None, "rows": rows, "failures": failures,
+            "summary": summary}
+
+
+def _print_artifact_table(verdict):
+    s = verdict["summary"]
+    print("=" * 110)
+    print("ARTIFACT COVERAGE GATE — org-chart x routing x command-center x dreaming "
+          "x bootstrap x skills-count x version")
+    print(f"floor = {s.get('floor_count')} departments")
+    print("=" * 110)
+    print(f"{'DIMENSION':<20}{'STATUS':<8}DETAIL")
+    print("-" * 110)
+    for dim, status, detail in verdict["rows"]:
+        d = detail if len(detail) <= 86 else detail[:83] + "..."
+        print(f"{dim:<20}{status:<8}{d}")
+    print("-" * 110)
+    print(f"dimensions: {s['dimensions_ok']} OK, {s['dimensions_drift']} DRIFT   |   "
+          f"failures: {s['failure_count']}")
+    if verdict.get("failures"):
+        print("\nARTIFACT FAILURE DETAIL:")
+        for dim, detail in verdict["failures"]:
+            print(f"  [{dim}] {detail}")
+    print("=" * 110)
+    if verdict["rc"] == 0:
+        print(f"RESULT: PASS — every downstream artifact covers all {s.get('floor_count')} "
+              f"floor departments; skills + versions + bootstrap consistent (rc=0)")
+    else:
+        print(f"RESULT: FAIL — {s['dimensions_drift']} artifact dimension(s) with drift, "
+              f"{s['failure_count']} problem(s) (rc={verdict['rc']})")
+
+
 def _print_table(verdict):
     s = verdict["summary"]
     print("=" * 110)
@@ -570,29 +1081,60 @@ def _print_table(verdict):
 
 def main(argv):
     parser = argparse.ArgumentParser(
-        description="Cross-check floor x roster x library x SOP x persona.")
+        description="Cross-check floor x roster x library x SOP x persona, plus "
+                    "downstream artifact coverage (org-chart/routing/command-center/"
+                    "dreaming/bootstrap/skills-count/version).")
     parser.add_argument("--skill-dir", default=None,
                         help="Path to the 23-ai-workforce-blueprint skill dir "
                              "(default: this script's parent skill dir).")
     parser.add_argument("--json", action="store_true",
                         help="Emit machine-readable JSON instead of the table.")
+    parser.add_argument("--only", choices=["consistency", "artifact"], default=None,
+                        help="Run only one gate (default: BOTH). 'consistency' = the "
+                             "5-dimension floor/roster/library/SOP/persona gate; "
+                             "'artifact' = the 7 downstream-artifact dimensions.")
     args = parser.parse_args(argv)
 
     skill_dir = args.skill_dir or str(Path(__file__).resolve().parent.parent)
-    verdict = evaluate(skill_dir)
 
-    if verdict.get("fatal"):
-        if args.json:
-            print(json.dumps(verdict, indent=2))
-        else:
-            print(f"FATAL: {verdict['fatal']}", file=sys.stderr)
-        return verdict["rc"]
+    run_consistency = args.only in (None, "consistency")
+    run_artifact = args.only in (None, "artifact")
+
+    v_consistency = evaluate(skill_dir) if run_consistency else None
+    v_artifact = evaluate_artifact_coverage(skill_dir) if run_artifact else None
 
     if args.json:
-        print(json.dumps(verdict, indent=2))
+        out = {}
+        if v_consistency is not None:
+            out["consistency"] = v_consistency
+        if v_artifact is not None:
+            out["artifact"] = v_artifact
+        print(json.dumps(out, indent=2))
     else:
-        _print_table(verdict)
-    return verdict["rc"]
+        if v_consistency is not None:
+            if v_consistency.get("fatal"):
+                print(f"FATAL (consistency): {v_consistency['fatal']}", file=sys.stderr)
+            else:
+                _print_table(v_consistency)
+        if v_consistency is not None and v_artifact is not None:
+            print()  # spacer between the two tables
+        if v_artifact is not None:
+            if v_artifact.get("fatal"):
+                print(f"FATAL (artifact): {v_artifact['fatal']}", file=sys.stderr)
+            else:
+                _print_artifact_table(v_artifact)
+
+    # Combined exit code (most-severe wins). Fatal (2) > consistency drift (5) >
+    # artifact drift (6) > clean (0). A fatal/load error from either gate is the
+    # loudest signal that the gate could not be trusted to pass.
+    rcs = [v for v in (v_consistency, v_artifact) if v is not None]
+    if any(v["rc"] == 2 for v in rcs):
+        return 2
+    if any(v["rc"] == 5 for v in rcs):
+        return 5
+    if any(v["rc"] == 6 for v in rcs):
+        return 6
+    return 0
 
 
 if __name__ == "__main__":

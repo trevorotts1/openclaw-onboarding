@@ -783,11 +783,46 @@ jobs:
           # the SAME functions the build uses (parse_roster / library_lookup /
           # normalize_dept / evaluate_floor / is_canonical_dept) so it can never
           # disagree with what the build will do. Exits 5 on ANY drift.
-          python3 23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py
+          # Run the CONSISTENCY gate explicitly (the bare invocation now runs BOTH
+          # gates; --only consistency keeps this step's failure attributable).
+          python3 23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py --only consistency
           # Fixture tests prove the gate BITES (clean PASSes; missing-roster /
           # unresolvable-role / missing-persona-map / corrupt-library-slug all FAIL).
           bash 23-ai-workforce-blueprint/scripts/test-repo-consistency.sh
           echo "✓ Skill 23 repo-consistency: floor x roster x library x SOP x persona all consistent; gate proven to fail on drift"
+
+      - name: Skill 23 artifact-coverage gate (org-chart x routing x command-center x dreaming x bootstrap x skills-count x version)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # v12.25.0 "complete check for everything." The 5-dimension gate above
+          # proves every floor dept is consistent across floor/roster/library/SOP/
+          # persona. This SECOND gate (same script, --only artifact) closes the
+          # remaining classes of drift in DOWNSTREAM artifacts — anything that
+          # iterates the floor and could silently drop a dept, or a count/version/
+          # bootstrap file that could disagree:
+          #   ORG-CHART      — generate_org_chart renders every floor dept + roles
+          #   ROUTING        — write_universal_routing_map routes every floor dept
+          #   COMMAND-CENTER — generate_departments_json has a column/topic per dept
+          #   DREAMING       — every floor dept gets a workspace+memory/ substrate
+          #                    via the selected_departments loop; dreaming is
+          #                    configured workspace-wide (no per-dept exclusion)
+          #   GENERATOR-WIRING — the org-chart/routing/CC generators are CALLED
+          #   BOOTSTRAP      — the 6 shipped core templates exist, MEMORY is
+          #                    runtime-seeded (never committed), all 7 enumerated
+          #   SKILLS-COUNT   — install.sh == README == actual skill-dir tree
+          #   VERSION        — every version marker (the 9-marker set + cc-compat)
+          #                    agrees with /version
+          # It mirrors the build: it SYNTHESIZES a full-floor selected_departments
+          # (load_canonical_floor + the vertical-pack one-liners) and runs the REAL
+          # generators, so it can never disagree with what the build emits. Exits 6
+          # on ANY artifact drift.
+          python3 23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py --only artifact
+          # Adversarial fixtures prove the gate BITES on EACH dimension (clean
+          # PASSes; org-chart/routing/CC/dreaming/wiring/bootstrap/skills-count/
+          # version drift all exit 6).
+          bash 23-ai-workforce-blueprint/scripts/test-artifact-coverage.sh
+          echo "✓ Skill 23 artifact-coverage: every downstream artifact covers all floor depts; skills/versions/bootstrap consistent; gate proven to fail on each drift"
 
       - name: Skill 23 how-to-use-this-department guides present, current, clean + wired
         shell: bash

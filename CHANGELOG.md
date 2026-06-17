@@ -1,3 +1,23 @@
+## [v12.25.0] — 2026-06-17 — feat(consistency): artifact-coverage gate — "complete check for everything" (org-chart × routing × command-center × dreaming × bootstrap × skills-count × version)
+
+Extends the v12.23.0 repo-consistency gate from FLOOR × ROSTER × LIBRARY × SOP × PERSONA to cover **everything** — the remaining classes of drift where a floor department, role, skill, bootstrap file, or version marker can silently fall out of a **downstream artifact** even though the 5-dimension gate is green. Same script (`23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py`); the bare invocation now runs BOTH gates (`--only consistency` / `--only artifact` to isolate). The new gate exits **6** on any artifact drift.
+
+- **Seven new dimensions** (`evaluate_artifact_coverage`):
+  - **ORG-CHART** — runs the REAL `generate_org_chart` against a synthesized full-floor `selected_departments`; every floor dept + its roster roles must render.
+  - **ROUTING** — runs the REAL `write_universal_routing_map`; every floor dept must have a `departments/<dept>/` row in `00-ROUTING.md` (no unrouted dept silently falling back to `general-task`).
+  - **COMMAND-CENTER** — runs the REAL `generate_departments_json`; every floor dept must be present as a slug (Kanban column / Telegram topic), CEO column first.
+  - **DREAMING** — every floor dept gets a workspace + `memory/` substrate via the `selected_departments` loop (no hardcoded subset); `install.sh configure_dreaming` writes the workspace-wide `memory-core` dreaming config; no per-dept dreaming exclusion list may omit a floor dept.
+  - **GENERATOR-WIRING** — the org-chart / routing / command-center generators must be CALLED by the build (not just defined).
+  - **BOOTSTRAP** — the 6 shipped core templates (`IDENTITY`/`SOUL`/`AGENTS`/`USER`/`TOOLS`/`HEARTBEAT`.md) exist at repo root; `MEMORY.md` is NOT committed (seeded fresh+empty per agent); `Start Here.md` enumerates all 7.
+  - **SKILLS-COUNT** — `install.sh` active-skill prose == README count == the actual skill-dir tree, and every active skill has a README inventory row.
+  - **VERSION** — every version marker (the 9-marker `bump-version.sh` set + `cc-compat.json` `onboardingVersion`) agrees with `/version`.
+  It mirrors the build (synthesizes the full floor from `load_canonical_floor()` + the vertical-pack one-liners and runs the real generators), so a generator that drops a dept, hardcodes a subset, or is unwired fails legitimately.
+- **Genuine drift found on the repo and FIXED (the gate now PASSES legitimately — 8/8 artifact dimensions OK, 29/29 floor depts covered):**
+  - **VERSION:** `/version` was `v12.24.0` but the 9 bump-version markers were all stuck at `v12.20.0`/`12.20.1` and `cc-compat.json` at `v12.17.4`. Ran `bump-version.sh v12.25.0` (rolls all 9) + set `cc-compat.json` `onboardingVersion` to `v12.25.0`.
+  - **SKILLS-COUNT:** README said "44 folders / 41 active" (line 39) and "45 folders / 42 active" (line 134); `install.sh` prose said "40 active" (×2); the README inventory table was missing rows for `44-convert-and-flow-operator` and `46-kie-callback-relay`. Actual tree is **46 folders, 43 active, 3 archived** (13/33/34). Corrected all four prose counts and added the two missing inventory rows.
+- **Wired in:** new CI step in `.github/workflows/qc-static.yml` (runs `--only artifact` + the new fixtures); `scripts/qc-system-integrity.sh` **CHECK X.12** extended to hard-fail on rc=6 (artifact drift) with per-dimension detail; build preflight `lib-onboarding-state.sh` `oc_repo_consistency_ok()` already fails closed on any nonzero rc (5 or 6) since it runs the bare gate. Documented in `23-ai-workforce-blueprint/ADDING-DEPARTMENTS-ROLES-SOPS.md` ("The artifact-coverage gate").
+- **New adversarial tests:** `23-ai-workforce-blueprint/scripts/test-artifact-coverage.sh` — plants exactly one drift per dimension in an isolated sandbox and proves the gate exits 6 (clean PASSes; org-chart / routing / command-center / dreaming / generator-wiring / bootstrap-delete / committed-MEMORY / skills-count / version drift all FAIL — 10/10 fixtures pass).
+
 ## [v12.24.0] — 2026-06-17 — fix(ghl-mcp): supervised + reboot-surviving + PORT-pinned autostart (fleet incident: 12/19 boxes down/unsupervised)
 
 Makes it IMPOSSIBLE for a fresh install to ship a GHL Community MCP (Tier 2, skill 36) that dies on teardown or binds a random port. Confirmed fleet-wide today: 12 of 19 boxes had the GHL MCP down/unsupervised. TWO root causes, both now fixed AND enforced at the QC gate:

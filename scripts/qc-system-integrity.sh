@@ -828,17 +828,22 @@ else
   WARNINGS+=("X.11|qc-assert-workspace-departments-built.sh missing|Update openclaw-onboarding to v12.23.0+")
 fi
 
-# ─── CHECK X.12: Repo consistency (floor x roster x library x SOP x persona) ──
+# ─── CHECK X.12: Repo consistency + artifact coverage (complete check) ────────
 # Hard-fail: the INSTALLED skill repo must be internally consistent across its
-# six independent sources of truth (FLOOR / ROSTERS / ROLE LIBRARY / SOP SOURCE /
-# PERSONA DOMAINS / no ORPHANS). A client build must REFUSE to run against an
-# inconsistent repo — six departments once shipped UNBUILDABLE because no gate
-# cross-checked floor vs rosters vs library vs persona maps. This runs the SAME
-# gate as CI (qc-assert-repo-consistency.py) against the installed skill dir, so
-# a drifted repo can never quietly produce a half-built workforce.
-#   rc=0 -> consistent.  rc=5 -> DRIFT (hard fail).  rc=2 -> could not load (warn).
+# six 5-dimension sources of truth (FLOOR / ROSTERS / ROLE LIBRARY / SOP SOURCE /
+# PERSONA DOMAINS / no ORPHANS) AND across its DOWNSTREAM artifacts (org-chart /
+# routing / command-center / dreaming / bootstrap / skills-count / version —
+# v12.25.0). A client build must REFUSE to run against an inconsistent repo — six
+# departments once shipped UNBUILDABLE because no gate cross-checked floor vs
+# rosters; the artifact gate closes the remaining classes (a floor dept silently
+# absent from the org chart / routing map / Command Center columns, a per-dept
+# dreaming exclusion, a missing bootstrap template, a stale skill count, a drifted
+# version marker). This runs the SAME gate as CI (qc-assert-repo-consistency.py,
+# which runs BOTH gates by default) against the installed skill dir.
+#   rc=0 -> consistent.  rc=5 -> CONSISTENCY drift.  rc=6 -> ARTIFACT drift.
+#   rc=2 -> could not load (warn). 5 and 6 are both hard fails.
 echo
-blue "── CHECK X.12: Repo consistency (floor x roster x library x SOP x persona) ──"
+blue "── CHECK X.12: Repo consistency + artifact coverage (floor/roster/library/SOP/persona + org-chart/routing/CC/dreaming/bootstrap/skills/version) ──"
 CONSISTENCY_GATE=""
 for _cg in \
   "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py" \
@@ -849,17 +854,25 @@ done
 if [[ -n "$CONSISTENCY_GATE" ]]; then
   _cg_skill_dir="$(cd "$(dirname "$CONSISTENCY_GATE")/.." && pwd)"
   _cg_tmp=$(mktemp)
+  # Bare invocation runs BOTH the 5-dimension gate and the artifact-coverage gate.
   python3 "$CONSISTENCY_GATE" --skill-dir "$_cg_skill_dir" > "$_cg_tmp" 2>&1
   CONSISTENCY_RC=$?
   case "$CONSISTENCY_RC" in
     0)
-      green "  ✓ X.12 Repo consistent: all floor departments aligned across floor/roster/library/SOP/persona"; PASS=$((PASS+1)) ;;
+      green "  ✓ X.12 Repo consistent: all floor depts aligned across floor/roster/library/SOP/persona AND every downstream artifact (org-chart/routing/CC/dreaming/bootstrap/skills/version)"; PASS=$((PASS+1)) ;;
     5)
-      red "  ✗ X.12 REPO DRIFT — a department/role/SOP/persona is inconsistent; a client build MUST NOT run against this repo"
+      red "  ✗ X.12 REPO DRIFT (5-dimension) — a department/role/SOP/persona is inconsistent; a client build MUST NOT run against this repo"
       FAIL=$((FAIL+1))
-      FAILURES+=("X.12|Repo consistency drift (floor x roster x library x SOP x persona)|Run: python3 $CONSISTENCY_GATE — fix every DRIFT row (missing roster / unresolvable role / missing persona-domain mapping) before building")
+      FAILURES+=("X.12|Repo consistency drift (floor x roster x library x SOP x persona)|Run: python3 $CONSISTENCY_GATE --only consistency — fix every DRIFT row (missing roster / unresolvable role / missing persona-domain mapping) before building")
       while IFS= read -r _cgl; do
         case "$_cgl" in *"[LIBRARY/SOP]"*|*"[ROSTER]"*|*"[PERSONA-DOMAIN]"*|*"[INSTANTIATE]"*|*"[SOP-SOURCE]"*|*"[ORPHAN"*) red "    $_cgl" ;; esac
+      done < "$_cg_tmp" ;;
+    6)
+      red "  ✗ X.12 ARTIFACT DRIFT — a downstream artifact omits a floor dept, or skills/version/bootstrap disagree; a client build MUST NOT run against this repo"
+      FAIL=$((FAIL+1))
+      FAILURES+=("X.12|Artifact-coverage drift (org-chart/routing/command-center/dreaming/bootstrap/skills-count/version)|Run: python3 $CONSISTENCY_GATE --only artifact — fix every DRIFT dimension (run bump-version.sh for version drift; correct the README/install.sh skill count; restore the bootstrap template) before building")
+      while IFS= read -r _cgl; do
+        case "$_cgl" in *"[ORG-CHART]"*|*"[ROUTING]"*|*"[COMMAND-CENTER]"*|*"[DREAMING]"*|*"[GENERATOR-WIRING]"*|*"[BOOTSTRAP]"*|*"[SKILLS-COUNT]"*|*"[VERSION-MARKERS]"*) red "    $_cgl" ;; esac
       done < "$_cg_tmp" ;;
     *)
       yellow "  ⚠ X.12 Repo-consistency gate could not run (rc=$CONSISTENCY_RC)"; WARN=$((WARN+1))
