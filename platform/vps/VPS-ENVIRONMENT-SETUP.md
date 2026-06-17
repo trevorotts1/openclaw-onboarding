@@ -8,7 +8,7 @@ This guide walks you through setting up all required environment variables in Ho
 ## How to Get There
 
 1. Log into **hpanel.hostinger.com**
-2. Click the client's VPS (e.g. `corey.myvps`)
+2. Click the client's VPS (e.g. `<client>.myvps`)
 3. Left sidebar → **Docker Manager**
 4. Find the `openclaw-[id]` project → click **Manage**
 5. Click **Edit** on the container

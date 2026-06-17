@@ -3,7 +3,7 @@
 # verify-ghl-live.sh — Skill 44 fail-loud post-install verify gate
 # ============================================================
 #
-# WHY THIS EXISTS (Evelyn VPS reproduction, 2026-06-11):
+# WHY THIS EXISTS (VPS env-inheritance bug reproduction, 2026-06-11):
 #   The skill-44 installer reported success while `caf` could not reach GHL at
 #   all — the creds were only in secrets/.env (which the gateway process never
 #   loads) and the docker env_file held empty placeholders that masked them. A
@@ -115,7 +115,7 @@ fi
 
 # Both reads failed even though creds are present → wiring/auth/network problem.
 log "FAIL: caf could not reach GHL even though required creds are present."
-log "      This is the Evelyn failure mode (creds not inherited by the process,"
+log "      This is the VPS env-inheritance failure mode (creds not inherited by the process,"
 log "      or empty docker env_file placeholders masking them, or auth rejected)."
 log "      Last caf error:"
 printf '        %s\n' "$LAST_ERR" | sed 's/^/      /' | head -20

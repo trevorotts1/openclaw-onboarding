@@ -145,7 +145,7 @@ Low-to-medium. All changes are additive documentation and a new QC gate. No GHL 
 - **SKILL.md Media Delivery Contract step 4**: rewrote from vague "Log a row" to explicit `social-planner-row-append` curl call with full payload contract. Added clear note: `social-planner-sheet-create` is for first-time creation ONLY.
 - **INSTALL.md Step 7 section 4f**: Clarified the two-webhook architecture — `sheet-create` (once, at install) vs `row-append` (every publish cycle). Explicit payload contract for each. No client Google credentials required — both run via operator service account.
 
-**Verified:** Test row successfully appended to Angeleen's sheet `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c` Row 6 `'Weekly Overview'!A6:T6` — all 20 columns correctly populated.
+**Verified:** Test row successfully appended to a client sheet `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c` Row 6 `'Weekly Overview'!A6:T6` — all 20 columns correctly populated.
 
 **Risk:** Low. Additive webhook + documentation change. No existing publish, schedule, or GHL logic altered.
 
@@ -164,7 +164,7 @@ Low-to-medium. All changes are additive documentation and a new QC gate. No GHL 
 **Why:** Agent responded "gws is not authenticated — can't create the Google Sheet content calendar" and "I don't have the social-media-planner spreadsheet link." Root cause: (a) no stored pointer to the content sheet, and (b) the skill tried to call Google Sheets API directly using an OAuth path it doesn't have credentials for.
 **What:**
 - Added `content_sheet_id` and `content_sheet_url` fields to the skill config contract in SKILL.md. Agent reads these before every run and can answer "what's my social media planner link?" instantly.
-- INSTALL.md Step 7 rewritten: adopt-existing-sheet-first logic (check MEMORY.md → check onboarding-provided ID → create via webhook). Angeleen's existing sheet `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c` adopted if present, never duplicated.
+- INSTALL.md Step 7 rewritten: adopt-existing-sheet-first logic (check MEMORY.md → check onboarding-provided ID → create via webhook). Any pre-existing client sheet adopted if present, never duplicated.
 - Step 7 now records `content_sheet_id` + `content_sheet_url` in MEMORY.md and wires them into `openclaw config env.vars.SKILL35_CONTENT_SHEET_ID/URL` so the agent has them at runtime.
 - Added Step 7 sub-section 4f documenting the auth path: the agent does NOT call Google Sheets API directly and never needs `client_secret.json`. All sheet creation goes through the `https://main.blackceoautomations.com/webhook/social-planner-sheet-create` n8n webhook (BlackCEO Automations service account). If the webhook is unavailable the agent logs to a local `.jsonl` file and queues retry — never dead-ends with "gws is not authenticated."
 - CORE_UPDATES.md MEMORY.md section: `content_sheet_id` and `content_sheet_url` fields added.

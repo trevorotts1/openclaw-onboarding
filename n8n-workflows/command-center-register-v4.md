@@ -72,7 +72,7 @@ for t in json.load(sys.stdin).get("result",[]):
     print(f"  PATCHED {name}")'
 ```
 
-Applied this against Trevor's account on 2026-05-24 — patched 2 broken v3-era tunnels (lyric, evelyn). Both went 503 → 200 after their cloudflared connectors picked up the new remote config.
+Applied this against the operator account on 2026-05-24 — patched 2 broken v3-era tunnels (fleet clients). Both went 503 → 200 after their cloudflared connectors picked up the new remote config.
 
 ---
 

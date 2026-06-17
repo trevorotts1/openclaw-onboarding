@@ -825,7 +825,7 @@ jobs:
           set -uo pipefail
           # The qc gate must count BOTH the standalone-SOP model and the WS-2
           # embedded-Section-9 model as substantive, so fully-instantiated
-          # workforces (Teresa/Corey/Maria/Kofi) are NOT false-FAILED into a
+          # workforces (various fleet clients) are NOT false-FAILED into a
           # regenerate-from-scratch loop — WITHOUT weakening the gate against
           # stubs / {{token}} leaks / <7KB / missing-Section-9 garbage.
           bash 23-ai-workforce-blueprint/scripts/test-sop-substance-models.sh
@@ -1828,3 +1828,107 @@ jobs:
           # and (c) no string literal in the source contains "NN-department" where NN
           # disagrees with the computed floor.
           python3 scripts/check-floor-count-drift.py
+
+      # ── NEW ENFORCEMENT GATES (all rules that existed as prose but had no auto-fail) ──
+
+      - name: CRITICAL-1 — No real client names in tracked files
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fleet-wide privacy invariant: this repo is a generic template; zero real
+          # client first or last names may appear in any committed file. The guard uses
+          # git ls-files (tracked-only) with word-boundary anchors for first names so
+          # inline enforcement scripts that HOLD the names as detection patterns are
+          # correctly self-excluded. Any hit is a hard-fail that blocks merge.
+          # This rule was documented in AGENTS.md N0 + repo memory entry
+          # [repo-is-fleet-wide-no-client-names] but was in NO CI gate or pre-commit
+          # hook. This step closes that gap.
+          bash scripts/qc-assert-no-client-names.sh
+          echo "✓ No real client names found in tracked files"
+
+      - name: FLEET-STANDARDS §3 — WhatsApp permanently disabled (no enabled:true in JSON, no uncommented WHATSAPP_NUMBER in env files)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fleet-wide ban (FLEET-STANDARDS.md §3): WhatsApp MUST NEVER be enabled in
+          # any tracked JSON config or .env file. The Hostinger wrapper auto-installs
+          # WhatsApp on every boot when WHATSAPP_NUMBER is uncommented, causing a
+          # QR-scan crash-loop that takes the entire gateway down. Two checks:
+          #   1. No tracked JSON file has "whatsapp":{..."enabled":true}
+          #   2. No tracked env file has an uncommented WHATSAPP_NUMBER= line
+          fail=0
+
+          # 1. JSON: plugins.entries.whatsapp.enabled must not be true
+          # Use a one-liner to avoid multi-line Python indentation issues in YAML.
+          while IFS= read -r f; do
+            if ! python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(1 if d.get('plugins',{}).get('entries',{}).get('whatsapp',{}).get('enabled') else 0)" "$f" 2>/dev/null; then
+              echo "✗ $f: plugins.entries.whatsapp.enabled is true (fleet ban violation)"
+              fail=1
+            fi
+          done < <(git ls-files -- '*.json' 2>/dev/null || find . -not -path './.git/*' -name '*.json')
+
+          # 2. .env files: no uncommented WHATSAPP_NUMBER=
+          while IFS= read -r f; do
+            if grep -qE '^[[:space:]]*WHATSAPP_NUMBER[[:space:]]*=[^#]' "$f" 2>/dev/null; then
+              echo "✗ $f: contains uncommented WHATSAPP_NUMBER= (fleet ban violation — see FLEET-STANDARDS.md §3)"
+              fail=1
+            fi
+          done < <(git ls-files -- '.env' '*.env' 2>/dev/null || find . -not -path './.git/*' \( -name '.env' -o -name '*.env' \))
+
+          [ $fail -eq 0 ] && echo "✓ WhatsApp fleet ban: no enabled:true in JSON, no uncommented WHATSAPP_NUMBER= in env files"
+          exit $fail
+
+      - name: AGENTS.md N28 — No destructive cron payloads (rm -rf / npm uninstall -g openclaw / brew uninstall)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # N28 invariant (AGENTS.md): cron payloads must NEVER contain destructive
+          # commands that could wipe the client's install. The kill-script incident
+          # (old Skill 23 *-kill cron before v10.14) proved this destroys client boxes
+          # silently. Gate fails on any shell script that:
+          #   - contains 'rm -rf' with a path touching ~/.openclaw or ~/clawd
+          #   - contains 'npm uninstall -g openclaw'
+          #   - contains 'brew uninstall' with openclaw or cloudflared
+          # Scans only .sh files (cron payloads are always shell).
+          fail=0
+          while IFS= read -r f; do
+            # rm -rf targeting install paths
+            if grep -nE 'rm[[:space:]]+-rf[[:space:]].*(\~/.openclaw|~/clawd|\$HOME/.openclaw|\$HOME/clawd|/data/.openclaw)' "$f" 2>/dev/null | grep -v '^[[:space:]]*#'; then
+              echo "✗ $f: contains rm -rf on an OpenClaw install path (N28 violation)"
+              fail=1
+            fi
+            # npm uninstall -g openclaw
+            if grep -nE 'npm[[:space:]]+uninstall[[:space:]]+-g[[:space:]]+openclaw' "$f" 2>/dev/null | grep -v '^[[:space:]]*#'; then
+              echo "✗ $f: contains npm uninstall -g openclaw (N28 violation)"
+              fail=1
+            fi
+            # brew uninstall openclaw or cloudflared
+            if grep -nE 'brew[[:space:]]+uninstall[[:space:]]+(openclaw|cloudflared)' "$f" 2>/dev/null | grep -v '^[[:space:]]*#'; then
+              echo "✗ $f: contains brew uninstall of a fleet component (N28 violation)"
+              fail=1
+            fi
+          done < <(git ls-files -- '*.sh' 2>/dev/null || find . -not -path './.git/*' -name '*.sh')
+          [ $fail -eq 0 ] && echo "✓ N28: no destructive cron payloads found in tracked shell scripts"
+          exit $fail
+
+      - name: chmod-600 coverage — every .sh that writes secrets/.env must also chmod 600
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Security invariant: any shell script that writes to secrets/.env (or
+          # a path containing secrets/.env) MUST also call chmod 600 on that file.
+          # A world-readable secrets file exposes Cloudflare API tokens, HOOKS tokens,
+          # and GHL credentials to any process on the box.
+          fail=0
+          while IFS= read -r f; do
+            # Does this script write to secrets/.env?
+            if grep -qE "(secrets/\.env|SECRETS_ENV_FILE)" "$f" 2>/dev/null; then
+              # It writes to the file — does it also chmod 600 it?
+              if ! grep -qE 'chmod[[:space:]]+600' "$f" 2>/dev/null; then
+                echo "✗ $f: writes secrets/.env but never calls chmod 600 (secrets would be world-readable)"
+                fail=1
+              fi
+            fi
+          done < <(git ls-files -- '*.sh' 2>/dev/null || find . -not -path './.git/*' -name '*.sh')
+          [ $fail -eq 0 ] && echo "✓ chmod-600 coverage: all .sh scripts that write secrets/.env also call chmod 600"
+          exit $fail

@@ -460,7 +460,7 @@ The Google Doc at the link in Rule 13 contains:
     OpenRouter key, etc.)
   - Common gotchas
 
-Christy maintains the doc. The agent does NOT recreate this
+The operator maintains the doc. The agent does NOT recreate this
 information in its own words or duplicate it elsewhere. The link is
 the single source of truth.
 

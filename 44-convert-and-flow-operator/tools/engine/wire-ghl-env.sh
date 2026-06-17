@@ -3,7 +3,7 @@
 # wire-ghl-env.sh — Skill 44 GHL credential env-wiring (single source)
 # ============================================================
 #
-# WHY THIS EXISTS (Evelyn VPS reproduction, 2026-06-11):
+# WHY THIS EXISTS (VPS env-inheritance bug reproduction, 2026-06-11):
 #   The skill-44 installer left the GOHIGHLEVEL_* creds ONLY in
 #   /data/.openclaw/secrets/.env — a file the OpenClaw gateway/agent PROCESS
 #   never loads. When the agent invoked `caf`, the gateway's process env had
@@ -168,7 +168,7 @@ fi
 
 # ─── 2. VPS: populate the host docker-compose env_file, replacing placeholders ─
 # docker-compose injects empty `env_file` values as empty strings into the
-# container process env, which MASK the real value (Evelyn's bug). So any empty
+# container process env, which MASK the real value (VPS env-inheritance bug). So any empty
 # `GOHIGHLEVEL_*=` line MUST be replaced in place, not appended-after.
 wire_docker_env() {
   local envfile="$1"

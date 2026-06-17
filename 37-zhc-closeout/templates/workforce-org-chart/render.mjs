@@ -10,11 +10,11 @@
 //
 // Input JSON shape (any extras are ignored):
 //   {
-//     "companyName":     "Marico Consulting",
-//     "monogramLetter":  "M",                       // optional, falls back to first letter
-//     "ownerName":       "Maria Anderson",
-//     "ceoAgentName":    "Sir Jordan",
-//     "ceoAgentTagline": "Routes all work · Reports to Maria Anderson",
+//     "companyName":     "Sample Company",
+//     "monogramLetter":  "S",                       // optional, falls back to first letter
+//     "ownerName":       "{{ownerName}}",
+//     "ceoAgentName":    "{{agentName}}",
+//     "ceoAgentTagline": "Routes all work · Reports to {{ownerName}}",
 //     "departments": [
 //       { "slug": "marketing", "name": "Marketing",  "roles": 2, "emoji": "📣" },
 //       ...

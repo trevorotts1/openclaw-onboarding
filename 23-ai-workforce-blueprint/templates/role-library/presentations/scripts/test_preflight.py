@@ -320,10 +320,33 @@ def test_chk_speech_length():
     return fails
 
 
+# C2: a legitimate deliverable must now lead with the correct magic bytes (the gate
+# verifies content type). These are the per-key valid leading bytes the test writes
+# so the "all present => PASS" path still passes after the C2 hardening. md has no
+# magic (size-only), so any bytes are fine.
+_VALID_MAGIC_FOR_TEST = {
+    "deck_pptx":       b"PK\x03\x04",
+    "deck_pdf":        b"%PDF-1.7\n",
+    "guide_pdf":       b"%PDF-1.7\n",
+    "speech_pdf":      b"%PDF-1.7\n",
+    "audio_mp3":       b"ID3",
+    "infographic_png": b"\x89PNG\r\n\x1a\n",
+    "speech_md":       b"# speech\n",   # no magic required; arbitrary text
+}
+
+
+def _valid_bytes_for(key: str, total: int) -> bytes:
+    """Return `total` bytes that begin with the correct magic header for `key`, so
+    the file passes both the size gate AND the C2 magic-byte content-type check."""
+    head = _VALID_MAGIC_FOR_TEST.get(key, b"")
+    pad = max(0, total - len(head))
+    return head + (b"\x00" * pad)
+
+
 def _postflight_bundle_dir(present_keys: set) -> tuple:
     """Build a temp bundle dir containing only the artifacts whose keys are in
-    present_keys, each at or above their min_bytes threshold. Returns
-    (bundle_dir, ledger_path, deck_slug) for passing to run_postflight_gate."""
+    present_keys, each at or above their min_bytes threshold AND with the correct
+    leading magic bytes (C2). Returns (bundle_dir, ledger_path, deck_slug)."""
     import tempfile
     bundle_dir = Path(tempfile.mkdtemp(prefix="deck_postflight_test_"))
     deck_slug = "test-deck"
@@ -336,8 +359,8 @@ def _postflight_bundle_dir(present_keys: set) -> tuple:
         fname = build_deck._expand_filename(spec["filename"], deck_slug)
         fpath = bundle_dir / fname
         if key in present_keys:
-            # Write a file that exceeds the threshold by a comfortable margin.
-            fpath.write_bytes(b"\x00" * (spec["min_bytes"] + 1024))
+            # Write a real-magic file that exceeds the threshold by a comfortable margin.
+            fpath.write_bytes(_valid_bytes_for(key, spec["min_bytes"] + 1024))
     return bundle_dir, ledger_path, deck_slug
 
 
@@ -476,8 +499,10 @@ def _claims_citation_run_dir(copy_has_claims: bool, research_url_count: int) -> 
     else:
         copy = '{"copy": ["Families grow stronger together."]}'
     (root / "working" / "copy" / "slides.json").write_text(copy)
-    # Write research brief with the specified number of URLs.
-    urls = [f"https://example-source-{i}.org/article" for i in range(research_url_count)]
+    # Write research brief with the specified number of DISTINCT REAL PUBLIC domains.
+    # (C3 counts distinct public domains and rejects example.* placeholders, so the
+    # fixture must use real-looking distinct domains, not example-source-*.)
+    urls = [f"https://realsource-{i}.org/article" for i in range(research_url_count)]
     lines = ["# Research brief\nresearch_complete: true\n"]
     for url in urls:
         lines.append(f"- Source: {url}\n")
@@ -552,6 +577,92 @@ def test_chk_research_cited():
     return fails
 
 
+def test_chk_research_cited_rejects_junk():
+    """C3 (REQUIRED NEW TEST): the research-citation gate must REJECT junk URLs —
+    localhost / loopback, RFC-1918 private IPs, bare IP literals, .local / reserved
+    TLDs, example.* placeholders, AND duplicate citations of the same domain. None
+    of these count toward the distinct-real-public-domain floor.
+
+    Cases:
+      - 12 distinct LOCALHOST/loopback URLs        -> FAIL (0 real public domains)
+      - 12 distinct RFC-1918 / bare-IP URLs        -> FAIL
+      - 12 distinct example.com/.local URLs        -> FAIL
+      - the SAME real domain cited 20 times        -> FAIL (1 distinct domain < 6)
+      - a MIX: 5 real + a flood of junk + dups      -> FAIL (only 5 distinct < 6)
+      - 6 distinct REAL public domains              -> PASS (floor met)
+    """
+    fails = []
+    chk = build_deck._chk_research_cited
+    floor = build_deck.MIN_DISTINCT_DOMAINS
+    assert floor == 6, f"MIN_DISTINCT_DOMAINS must be 6, got {floor}"
+
+    def _brief(urls):
+        rd = _research_cited_run_dir(urls)
+        return chk(rd / "working" / "research" / "brief-demo.md")
+
+    # localhost / loopback flood -> FAIL
+    localhost_urls = ([f"http://localhost:80{i}/page" for i in range(6)] +
+                      [f"http://127.0.0.{i}/x" for i in range(1, 7)])
+    r = _brief(localhost_urls)
+    if not r or "AF-RESEARCH-UNCITED" not in r:
+        fails.append(f"C3-JUNK-A: localhost/loopback URLs should FAIL, got: {r!r}")
+    print(f"C3-JUNK-A (localhost)        -> {'PASS' if 'C3-JUNK-A' not in str(fails) else 'FAIL'}")
+
+    # RFC-1918 private + bare IP literals -> FAIL
+    private_urls = ([f"https://192.168.1.{i}/a" for i in range(2, 8)] +
+                    [f"https://10.0.0.{i}/b" for i in range(2, 8)] +
+                    ["https://8.8.8.8/c"])  # even a public bare-IP must not count
+    r = _brief(private_urls)
+    if not r or "AF-RESEARCH-UNCITED" not in r:
+        fails.append(f"C3-JUNK-B: RFC-1918 / bare-IP URLs should FAIL, got: {r!r}")
+    print(f"C3-JUNK-B (private/bare-IP)  -> {'PASS' if 'C3-JUNK-B' not in str(fails) else 'FAIL'}")
+
+    # example.* placeholders + .local reserved TLDs -> FAIL
+    placeholder_urls = ([f"https://example.com/p{i}" for i in range(6)] +
+                        [f"https://example.org/q{i}" for i in range(6)] +
+                        ["https://intranet.local/x", "https://thing.internal/y"])
+    r = _brief(placeholder_urls)
+    if not r or "AF-RESEARCH-UNCITED" not in r:
+        fails.append(f"C3-JUNK-C: example.*/.local URLs should FAIL, got: {r!r}")
+    print(f"C3-JUNK-C (example/.local)   -> {'PASS' if 'C3-JUNK-C' not in str(fails) else 'FAIL'}")
+
+    # SAME real domain cited 20 times -> FAIL (only 1 distinct domain)
+    dup_urls = [f"https://nih.gov/article/{i}" for i in range(20)]
+    r = _brief(dup_urls)
+    if not r or "AF-RESEARCH-UNCITED" not in r:
+        fails.append(f"C3-JUNK-D: 20x the SAME domain should FAIL (1 distinct), got: {r!r}")
+    print(f"C3-JUNK-D (dup same domain)  -> {'PASS' if 'C3-JUNK-D' not in str(fails) else 'FAIL'}")
+
+    # MIX: 5 distinct real + lots of junk + dups -> FAIL (only 5 < 6)
+    mix_urls = (
+        [f"https://realsite-{i}.org/x" for i in range(5)] +          # 5 distinct real
+        [f"https://realsite-0.org/dup{i}" for i in range(10)] +      # dups of one
+        [f"http://127.0.0.1/j{i}" for i in range(10)] +              # localhost junk
+        [f"https://example.com/p{i}" for i in range(10)]             # placeholder junk
+    )
+    r = _brief(mix_urls)
+    if not r or "AF-RESEARCH-UNCITED" not in r:
+        fails.append(f"C3-JUNK-E: 5 real + junk/dups should FAIL (5 distinct < 6), got: {r!r}")
+    # Belt-and-braces: prove the underlying domain extractor sees exactly 5.
+    brief_text = "\n".join(mix_urls)
+    n_domains = len(build_deck._distinct_public_domains(brief_text))
+    if n_domains != 5:
+        fails.append(f"C3-JUNK-E: _distinct_public_domains should see 5 real domains, saw {n_domains}")
+    print(f"C3-JUNK-E (mix 5 real+junk)  -> {'PASS' if 'C3-JUNK-E' not in str(fails) else 'FAIL'}")
+
+    # 6 distinct REAL public domains -> PASS (floor met, no junk)
+    real6 = ["https://nih.gov/a", "https://cdc.gov/b", "https://apa.org/c",
+             "https://pewresearch.org/d", "https://researchgate.net/e",
+             "https://jsr.org/f"]
+    r = _brief(real6)
+    if r:
+        fails.append(f"C3-JUNK-F: 6 distinct real domains should PASS, got: {r!r}")
+    print(f"C3-JUNK-F (6 real domains)   -> {'PASS' if 'C3-JUNK-F' not in str(fails) else 'FAIL'}")
+
+    print(f"C3 RESEARCH-JUNK (reject)    -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
 def test_chk_claims_without_citation():
     """CLAIMS-WITHOUT-CITATION gate (AF-RESEARCH-UNCITED) unit tests:
 
@@ -588,6 +699,140 @@ def test_chk_claims_without_citation():
     return fails
 
 
+def test_postflight_rejects_symlink_and_decoy():
+    """C2 (REQUIRED NEW TEST): the postflight completeness gate must reject a SYMLINK
+    (pointing at a large unrelated file) and a DECOY (right size, wrong content type).
+
+    Cases:
+      - All artifacts valid EXCEPT guide_pdf is a SYMLINK to an over-size real file
+        -> exit 5 (symlinks are rejected even when the target is big enough).
+      - All artifacts valid EXCEPT infographic.png is a DECOY: over the size floor but
+        with the WRONG magic bytes (it's actually a PDF header, not PNG) -> exit 5.
+      - Control: all artifacts valid (correct magic + size) -> PASSES (no exit 5),
+        proving the hardening does not break the legitimate path.
+    """
+    fails = []
+    all_keys = {spec["key"] for spec in build_deck.DELIVERABLES_REQUIRED}
+
+    # ---- Control: all valid -> PASS (no SystemExit) ----
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys)
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+    except SystemExit as exc:
+        fails.append(f"C2-CTRL: all-valid bundle should PASS, got sys.exit({exc.code})")
+    print(f"C2-CTRL (all valid)          -> {'PASS' if 'C2-CTRL' not in str(fails) else 'FAIL'}")
+
+    # ---- Symlink decoy: guide_pdf is a symlink to a big real file -> exit 5 ----
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys - {"guide_pdf"})
+    guide_spec = next(s for s in build_deck.DELIVERABLES_REQUIRED if s["key"] == "guide_pdf")
+    guide_name = build_deck._expand_filename(guide_spec["filename"], slug)
+    # A real over-size target file (valid PDF magic + well over the threshold).
+    target = bundle_dir / "_real_big_target.pdf"
+    target.write_bytes(_valid_bytes_for("guide_pdf", guide_spec["min_bytes"] + 4096))
+    link = bundle_dir / guide_name
+    try:
+        os.symlink(str(target), str(link))
+        symlink_made = True
+    except (OSError, NotImplementedError):
+        symlink_made = False
+    if symlink_made:
+        try:
+            build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+            fails.append("C2-SYMLINK: a symlink deliverable should exit 5 but gate passed")
+        except SystemExit as exc:
+            if exc.code != 5:
+                fails.append(f"C2-SYMLINK: symlink should exit 5, got {exc.code}")
+        print(f"C2-SYMLINK (symlink decoy)   -> {'PASS' if 'C2-SYMLINK' not in str(fails) else 'FAIL'}")
+    else:
+        print("C2-SYMLINK (symlink decoy)   -> SKIP (symlinks unsupported on this FS)")
+
+    # ---- Content-type decoy: infographic.png over size but WRONG magic -> exit 5 ----
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys - {"infographic_png"})
+    info_spec = next(s for s in build_deck.DELIVERABLES_REQUIRED if s["key"] == "infographic_png")
+    info_name = build_deck._expand_filename(info_spec["filename"], slug)
+    # Over the 100KB floor, but the bytes are a PDF header — NOT a PNG. Right size,
+    # wrong type: the magic-byte check must catch it.
+    decoy = b"%PDF-1.7\n" + (b"\x00" * (info_spec["min_bytes"] + 2048))
+    (bundle_dir / info_name).write_bytes(decoy)
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+        fails.append("C2-DECOY: a wrong-type (over-size) decoy should exit 5 but gate passed")
+    except SystemExit as exc:
+        if exc.code != 5:
+            fails.append(f"C2-DECOY: wrong-type decoy should exit 5, got {exc.code}")
+    print(f"C2-DECOY (wrong-type decoy)  -> {'PASS' if 'C2-DECOY' not in str(fails) else 'FAIL'}")
+
+    print(f"C2 POSTFLIGHT (symlink/decoy)-> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_h1_whitespace_only_prompt():
+    """H1 (REQUIRED NEW TEST): a whitespace-only rich prompt (and a whitespace-padded
+    one whose NON-whitespace length is under the floor) must FAIL — the floor is
+    measured on prompt.strip(), so blank/padded files can never satisfy it.
+
+    Cases:
+      - a prompt of pure whitespace (spaces/newlines/tabs, > 1,500 raw chars)
+        -> _chk_rich_prompts FAILS and load_rich_prompt RAISES (AF-P1).
+      - a prompt that is a few real words padded with thousands of spaces to exceed
+        1,500 RAW chars -> still FAILS (stripped length is tiny).
+      - control: a genuine >= 1,500 non-whitespace prompt with leading/trailing
+        whitespace -> PASSES and is returned VERBATIM (whitespace preserved).
+    """
+    fails = []
+    floor = build_deck.PROMPT_CHAR_FLOOR
+    slide = {"slide": 1, "scene": "x", "copy": ["y"]}
+
+    # ---- pure whitespace, well over the RAW floor ----
+    whitespace_only = (" \t\n" * 1000)  # ~3,000 raw chars, 0 non-whitespace
+    assert len(whitespace_only) > floor, "fixture must exceed the RAW floor to prove the bug"
+    rd = _rich_prompt_run_dir(whitespace_only)
+    reason = build_deck._chk_rich_prompts(rd)
+    if not reason:
+        fails.append("H1-WS-A: a whitespace-only prompt should FAIL _chk_rich_prompts but passed")
+    elif "AF-P1" not in reason:
+        fails.append(f"H1-WS-A: fail message malformed: {reason!r}")
+    try:
+        build_deck.load_rich_prompt(slide, rd)
+        fails.append("H1-WS-A: load_rich_prompt should RAISE on a whitespace-only prompt")
+    except ValueError as exc:
+        if "AF-P1" not in str(exc):
+            fails.append(f"H1-WS-A: load_rich_prompt whitespace-raise wrong msg: {exc}")
+    print(f"H1-WS-A (whitespace-only)    -> {'PASS' if 'H1-WS-A' not in str(fails) else 'FAIL'}")
+
+    # ---- a few real words padded with spaces past the RAW floor ----
+    padded = "real words here" + (" " * (floor + 500))  # raw > floor, stripped tiny
+    assert len(padded) > floor and len(padded.strip()) < floor
+    rd = _rich_prompt_run_dir(padded)
+    reason = build_deck._chk_rich_prompts(rd)
+    if not reason:
+        fails.append("H1-WS-B: a whitespace-padded sub-floor prompt should FAIL but passed")
+    try:
+        build_deck.load_rich_prompt(slide, rd)
+        fails.append("H1-WS-B: load_rich_prompt should RAISE on a padded sub-floor prompt")
+    except ValueError as exc:
+        if "AF-P1" not in str(exc):
+            fails.append(f"H1-WS-B: load_rich_prompt padded-raise wrong msg: {exc}")
+    print(f"H1-WS-B (padded sub-floor)   -> {'PASS' if 'H1-WS-B' not in str(fails) else 'FAIL'}")
+
+    # ---- control: genuine prompt with surrounding whitespace -> PASS + VERBATIM ----
+    valid_padded = "\n\n" + RICH_PROMPT + "\n\n"
+    assert len(valid_padded.strip()) >= floor
+    rd = _rich_prompt_run_dir(valid_padded)
+    if build_deck._chk_rich_prompts(rd):
+        fails.append("H1-WS-C: a valid prompt with surrounding whitespace should PASS but failed")
+    try:
+        got = build_deck.load_rich_prompt(slide, rd)
+        if got != valid_padded:
+            fails.append("H1-WS-C: load_rich_prompt must return the prompt VERBATIM (whitespace preserved)")
+    except ValueError as exc:
+        fails.append(f"H1-WS-C: load_rich_prompt raised on a valid padded prompt: {exc}")
+    print(f"H1-WS-C (valid + padding)    -> {'PASS' if 'H1-WS-C' not in str(fails) else 'FAIL'}")
+
+    print(f"H1 WHITESPACE-PROMPT         -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
 def main():
     failures = []
 
@@ -605,6 +850,10 @@ def main():
     # 8+ URLs PASSes, and a self-contained 21-URL fixture PASSes.
     failures += test_chk_research_cited()
 
+    # C3 (NEW REQUIRED) — the research gate REJECTS junk/localhost/loopback/RFC-1918/
+    # bare-IP/example.*/dup URLs and counts only DISTINCT REAL PUBLIC domains.
+    failures += test_chk_research_cited_rejects_junk()
+
     # Unit test — CLAIMS-WITHOUT-CITATION (AF-RESEARCH-UNCITED): proves claim markers
     # in copy + 0 research URLs FAILs; claim markers + 8 URLs PASSes; no claim
     # markers + 0 URLs PASSes.
@@ -616,6 +865,16 @@ def main():
     # hard-required (never silently skipped); proves ~/Downloads is the default
     # destination; proves DELIVERABLES_REQUIRED has exactly the 7 required keys.
     failures += test_postflight_gate()
+
+    # C2 (NEW REQUIRED) — the postflight gate REJECTS a symlink deliverable and a
+    # wrong-content-type decoy (right size, wrong magic bytes); legitimate path still
+    # passes.
+    failures += test_postflight_rejects_symlink_and_decoy()
+
+    # H1 (NEW REQUIRED) — a whitespace-only / whitespace-padded rich prompt FAILS the
+    # rich-prompt floor (measured on prompt.strip()); a genuine padded prompt passes
+    # and is returned VERBATIM.
+    failures += test_h1_whitespace_only_prompt()
 
     # CASE 1 — missing artifacts => refused, exit 3, lists what's missing.
     root = make_workdir(with_artifacts=False)

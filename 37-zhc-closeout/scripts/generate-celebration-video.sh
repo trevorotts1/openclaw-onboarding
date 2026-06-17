@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # generate-celebration-video.sh - ZHC celebration video, with local MP4 download.
 #
-# Model strategy (v10.14.3 / v10.15.3, codified from Maria Anderson / Marico
-# Consulting 2026-05-26 closeout lessons):
+# Model strategy (v10.14.3 / v10.15.3, codified from live fleet closeout
+# lessons, 2026-05-26):
 #
 #   DEFAULT for Skill 37 celebration: Gemini Omni Video via KIE.ai
 #     (model slug: gemini-omni-video). Reason: Gemini Omni accepts image
@@ -26,9 +26,9 @@
 #                                (KIE Gemini Omni only supports those two.)
 #   ZHC_VIDEO_POLL_TIMEOUT_SEC   default: 1800 (was 900 in v10.X.3).
 #                                Veo3 jobs commonly take 5-20 min; 900s
-#                                aborted before completion on Evelyn run.
+#                                aborted before completion on a prior run.
 #
-# v10.X.4 fixes (Evelyn 2026-05-26 closeout postmortem):
+# v10.X.4 fixes (2026-05-26 closeout postmortem):
 #   - submit_gemini_omni() now always sets aspect_ratio (KIE 422 fix)
 #   - VEO poll timeout bumped to 1800s + transient 500 retry (max 3)
 #

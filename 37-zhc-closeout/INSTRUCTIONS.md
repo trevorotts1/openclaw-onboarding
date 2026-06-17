@@ -115,7 +115,7 @@ All steps run via `scripts/run-closeout.sh` as the top-level orchestrator. You C
 
 **Goal:** Produce a branded org-chart visualization for the client.
 
-**This step uses local HTML + Playwright Chromium, NOT an AI image model.** Diffusion models cannot reliably render small text labels (Maria Anderson's first two attempts came back with garbled department names). HTML + CSS gives perfect text, is free per render, and is fully deterministic.
+**This step uses local HTML + Playwright Chromium, NOT an AI image model.** Diffusion models cannot reliably render small text labels (early fleet closeout attempts came back with garbled department names). HTML + CSS gives perfect text, is free per render, and is fully deterministic.
 
 1. If `infographic1Url` already set, skip.
 2. Invoke `scripts/generate-infographics.sh structure`. The script:

@@ -105,7 +105,7 @@ non-`none` recovery instead of merely observing the wedge.
 **Symptom:** Skill 37 closeout Infographic #2 (the "How Work Flows" diagram)
 fails on submit with a KIE 422 like `model name not supported` for
 `nano-banana-2`, even though the same slug works on other KIE accounts.
-Seen on Teresa Pelham's KIE account 2026-05-27; it had worked elsewhere in
+Seen on a client KIE account 2026-05-27; it had worked elsewhere in
 a prior release.
 
 **Root cause:** Model availability on KIE is gated per account/region.
@@ -140,7 +140,7 @@ failed to accept QUIC stream: timeout: no recent network activity
 All 4 edge connections drop simultaneously; CF returns error 1033 or 530 for ~6s
 before reconnect. On wired Ethernet the problem is rare or absent.
 
-**Root cause (confirmed: Christy Mac, 287 drops in 22h):**
+**Root cause (confirmed: Mac tunnel keepalive, 287 drops in 22h):**
 cloudflared defaults to `--protocol quic` (UDP/7844). Consumer Wi-Fi routers age out
 idle UDP NAT mappings in minutes. When the mapping expires, QUIC collapses before
 cloudflared can recover it. The root LaunchDaemon also had `KeepAlive = {SuccessfulExit: false}`

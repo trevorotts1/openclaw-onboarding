@@ -3,7 +3,7 @@
 This kit makes every Mac-tunnel connector 24/7 reliable against the QUIC idle-timeout
 drop that causes CF error 1033 / 530 on Wi-Fi boxes.
 
-**Root cause (confirmed on Christy's Mac, 287 drops in 22h):** cloudflared defaults to
+**Root cause (confirmed on a Mac client box, 287 drops in 22h):** cloudflared defaults to
 QUIC (UDP). Consumer routers age out idle UDP NAT mappings in minutes. When the mapping
 dies all four edge connections drop simultaneously, producing a ~6s gap where the tunnel
 has no origin. Fix: force TCP (`--protocol http2`) so NAT-aging no longer applies.
@@ -47,7 +47,7 @@ bash platform/mac/tunnel-hardening/install-keepalive-agent.sh
 bash platform/mac/tunnel-hardening/install-watchdog-agent.sh
 ```
 
-Or use the fleet wave (see `docs/OPERATOR-MAINTENANCE.md`). Christy's pre-existing
+Or use the fleet wave (see `docs/OPERATOR-MAINTENANCE.md`). Pre-existing
 `com.zhc.tunnel-keepalive` is automatically replaced -- no double-run.
 
 Verify keepalive is ticking after ~20s:
@@ -121,5 +121,5 @@ grep 'no recent network activity' \
 - `38-conversational-ai-system/references/cloudflare-tunnel-troubleshooting.md` -- Layer 2 protocol section
 - `docs/OPERATOR-MAINTENANCE.md` -- existing-fleet remediation playbook
 - `mac-mini-onboarding/connect-openclaw-to-cloudflare-tunnel.md` -- Step 7b
-- Source diagnosis: Christy Mac live trace (287 drops, 22h)
+- Source diagnosis: Mac client live trace (287 drops, 22h)
 - CF docs: developers.cloudflare.com/cloudflare-one/connections/connect-networks/configure-tunnels/cloudflared-parameters/run-parameters (`--protocol`)

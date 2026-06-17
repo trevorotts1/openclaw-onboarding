@@ -1746,7 +1746,7 @@ class TestZHCFolderStandingApprovalAndFolderKeyPlan(unittest.TestCase):
         """TEST A: ZHC- folder name builds with no token; folder POST carries it."""
         request_log = []
         result = self._run_build(
-            FIXTURE_PLAN, ["--folder", "ZHC-Evelyn-Onboarding"],
+            FIXTURE_PLAN, ["--folder", "ZHC-Client-Onboarding"],
             request_log=request_log,
         )
         self.assertEqual(
@@ -1766,7 +1766,7 @@ class TestZHCFolderStandingApprovalAndFolderKeyPlan(unittest.TestCase):
             "[Bug2a] No folder-creation POST observed — build did not reach it.",
         )
         self.assertEqual(
-            folder_posts[0]["workflow_name"], "ZHC-Evelyn-Onboarding",
+            folder_posts[0]["workflow_name"], "ZHC-Client-Onboarding",
             "[Bug2a] folder POST must forward folder_name as workflow_name so the "
             "ZHC- standing-approval check sees the ZHC- prefix.",
         )

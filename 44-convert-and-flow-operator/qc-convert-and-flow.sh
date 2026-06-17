@@ -166,7 +166,7 @@ assert "INSTALL.md contains CORE_UPDATES auto-apply action (Action 7)" \
   "grep -q 'skill:44-convert-and-flow-operator:core-update-applied' \"$SKILL44_DIR/INSTALL.md\""
 assert "INSTALL.md Action 3 uses cp (single-source wrapper, no inline heredoc)" \
   "grep -q 'cp.*tools/engine/caf.*CAF_DIR\|cp.*engine.*caf' \"$SKILL44_DIR/INSTALL.md\""
-# v1.0.9 — GHL env-wiring + fail-loud live verify (Evelyn VPS bug reproduction)
+# v1.0.9 — GHL env-wiring + fail-loud live verify (VPS env-inheritance bug reproduction)
 assert "wire-ghl-env.sh present (single-source GHL env wiring)" \
   "[ -f \"$SKILL44_DIR/tools/engine/wire-ghl-env.sh\" ]"
 assert "verify-ghl-live.sh present (fail-loud post-install verify gate)" \
@@ -235,8 +235,8 @@ assert "references/workflow-build-checklist-template.md exists" \
   "[ -f \"$SKILL44_DIR/references/workflow-build-checklist-template.md\" ]"
 assert "checklist template contains WF-1 through WF-21 (21 items)" \
   "for i in \$(seq 1 21); do grep -q \"WF-\$i\" \"$SKILL44_DIR/references/workflow-build-checklist-template.md\" || exit 1; done"
-assert "checklist template WF-4 trigger-active Sheila gate present" \
-  "grep -qi 'WF-4\|SHEILA BUG GATE\|trigger.*active.*publish\|active.*flag' \"$SKILL44_DIR/references/workflow-build-checklist-template.md\""
+assert "checklist template WF-4 trigger-active WF-ACTIVE gate present" \
+  "grep -qi 'WF-4\|WF-ACTIVE GATE\|TRIGGER-ACTIVE-GATE\|trigger.*active.*publish\|active.*flag' \"$SKILL44_DIR/references/workflow-build-checklist-template.md\""
 assert "checklist template WF-12 SMS From-number gate present" \
   "grep -qi 'WF-12\|SMS.*From.*number\|From-number\|from_number' \"$SKILL44_DIR/references/workflow-build-checklist-template.md\""
 assert "checklist template WF-20 hallucinated artifacts detector present" \
@@ -249,8 +249,8 @@ assert "qc-built-workflow.sh is executable" \
   "[ -x \"$SKILL44_DIR/qc-built-workflow.sh\" ]"
 assert "qc-built-workflow.sh takes workflow-id argument and asserts trigger present (WF-3)" \
   "grep -q 'WF-3\|trigger.*present\|TRIGGER PRESENT' \"$SKILL44_DIR/qc-built-workflow.sh\""
-assert "qc-built-workflow.sh asserts trigger active vs publish-intent (WF-4 Sheila gate)" \
-  "grep -q 'WF-4\|SHEILA\|trigger.*active\|PUBLISH_INTENT\|publish_intent' \"$SKILL44_DIR/qc-built-workflow.sh\""
+assert "qc-built-workflow.sh asserts trigger active vs publish-intent (WF-4 WF-ACTIVE gate)" \
+  "grep -q 'WF-4\|WF4_NOTE\|WF-ACTIVE\|trigger.*active\|PUBLISH_INTENT\|publish_intent' \"$SKILL44_DIR/qc-built-workflow.sh\""
 assert "qc-built-workflow.sh asserts SMS From-number non-empty (WF-12)" \
   "grep -q 'WF-12\|fromNumber\|From-number\|SMS.*from' \"$SKILL44_DIR/qc-built-workflow.sh\""
 assert "qc-built-workflow.sh asserts delivery chain linkage (WF-15)" \

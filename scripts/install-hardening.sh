@@ -93,7 +93,7 @@ harden_skill22_media_tools() {
 
 # ─── v10.13.28 #19: Stuck *-resume cron sweep ────────────────────────────────
 # Mac mirror of the VPS v10.14.36 safety net for the workforce-build-resume
-# self-stop bug (Lyric/Evelyn 2026-05-24 incident: cron looped every 15 min
+# self-stop bug (2026-05-24 incident: cron looped every 15 min
 # for 6+ hours burning DeepSeek-V4-Pro tokens on a completed build).
 #
 # Sweeps `openclaw cron list` for any cron whose name ends in `-resume` AND

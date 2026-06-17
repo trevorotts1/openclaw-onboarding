@@ -108,7 +108,7 @@ else
     fi
   fi
   # Heal config before any gateway interaction (defends against the
-  # telegram/whatsapp plugin deprecated-field crash we saw on Lyric's VPS).
+  # telegram/whatsapp plugin deprecated-field crash observed on a client VPS).
   if command -v openclaw >/dev/null 2>&1; then
     openclaw doctor --fix >>"$LOG_FILE" 2>&1 || log "WARN" "phase=1: openclaw doctor --fix returned non-zero (continuing)"
   fi
@@ -212,7 +212,7 @@ else
   fi
 
   # Explicit PORT=4000 is the fix for the EADDRINUSE / random-port bug that
-  # bit Lyric tonight. Some upstream env was leaking a different PORT which
+  # hit a client box. Some upstream env was leaking a different PORT which
   # caused Next.js to bind somewhere unpredictable. Pinning it here makes
   # the bind deterministic and matches Phase 6.6 of INSTALL.md.
   log "INFO" "phase=6: starting dashboard via pm2 on PORT=$DASHBOARD_PORT"
@@ -252,7 +252,7 @@ fi
 
 # ----------------------------------------------------------------------
 # PHASE 6d -- Populate agents.*_md columns from on-disk role folders
-# v10.15.6 / v10.16.6 -- closes the Angeleen gap (DB has NULLs for
+# v10.15.6 / v10.16.6 -- closes the NULL-columns gap (DB has NULLs for
 # identity_md/soul_md/memory_md/how_to_md/heartbeat_md). Fallback for
 # when the dashboard repo's own sync did not seed content columns.
 # Idempotent via content_hash. Safe to re-run on every install/resume.

@@ -184,14 +184,17 @@ ENVIRONMENT:
 
 import concurrent.futures
 import hashlib
+import ipaddress
 import json
 import os
+import re
 import sys
 import time
 import urllib.request
 import urllib.error
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 # ---------------------------------------------------------------------------
 # Constants — the ONLY allowed KIE.ai endpoints/model (verified live 2026-06-16)
@@ -296,6 +299,87 @@ PROMPT_CHAR_CEILING = 18000   # UNIVERSAL hard maximum (AF-P2; 2,000 under the 2
 #   not over-penalising a condensed micro-deck brief (which the SOP allows to be
 #   smaller but still requires real external sources in C and D).
 MIN_CITED_SOURCES = 8   # HARD floor (AF-RESEARCH-UNCITED): fewer real URLs = FAIL LOUD
+
+# C3: counting raw http(s) URL strings is gameable — the same source cited 8 times,
+# or 8 localhost/example.com/RFC-1918/bare-IP "URLs", all pass a naive count. The
+# authoritative measure is DISTINCT REAL PUBLIC DOMAINS. MIN_DISTINCT_DOMAINS is the
+# configurable floor on that count (kept separate from, and additive to,
+# MIN_CITED_SOURCES so both constants stay referenced by sync_check / the manifest).
+# 6 is the conservative floor: a real Deep-Research brief draws on many more, but a
+# self-reported "research_complete" with fewer than 6 distinct public sources is not
+# a research pack. Hosts that are NOT real public sources are excluded entirely:
+#   * localhost / loopback (127.0.0.0/8, ::1)
+#   * RFC-1918 / private + link-local IP ranges
+#   * bare IP literals (a citation should name a source, not an IP)
+#   * .local / .localhost / .internal / .example / .invalid / .test reserved TLDs
+#   * example.* placeholder domains (example.com / example.org / example-source-*)
+MIN_DISTINCT_DOMAINS = 6   # HARD floor on DISTINCT REAL PUBLIC domains (AF-RESEARCH-UNCITED)
+
+# Reserved / non-routable TLD suffixes that are never a real public source.
+_NON_PUBLIC_TLD_SUFFIXES = (
+    ".local", ".localhost", ".internal", ".example", ".invalid", ".test",
+)
+
+
+def _registered_domain(netloc: str) -> Optional[str]:
+    """Reduce a URL netloc to a real PUBLIC host, or None when the host is not a
+    real public source. Strips userinfo + port, lowercases, then REJECTS (returns
+    None) for: empty hosts, localhost/loopback, bare IP literals (any private OR
+    public IP — a citation must name a source, not an address), RFC-1918 / link-local
+    ranges, reserved non-public TLDs, and example.* placeholder domains. The returned
+    value is the host used for de-duplication (distinct registered domains)."""
+    host = (netloc or "").strip().lower()
+    # Drop any userinfo (user:pass@) and port (:443).
+    if "@" in host:
+        host = host.rsplit("@", 1)[1]
+    # Strip a trailing :port (but not the colons inside an IPv6 literal in brackets).
+    if host.startswith("["):
+        # IPv6 literal like [::1]:443 -> ::1
+        host = host[1:].split("]", 1)[0]
+    elif ":" in host:
+        host = host.rsplit(":", 1)[0]
+    host = host.strip(".")
+    if not host:
+        return None
+    # localhost variants.
+    if host == "localhost" or host.endswith(".localhost"):
+        return None
+    # Reserved / non-public TLDs.
+    for suffix in _NON_PUBLIC_TLD_SUFFIXES:
+        if host.endswith(suffix):
+            return None
+    # example.* placeholder domains (example.com, example.org, example-source-*.org…).
+    if host == "example" or host.startswith("example.") or host.startswith("example-"):
+        return None
+    # Bare IP literal? Reject (both private and public — cite a named source).
+    try:
+        ip = ipaddress.ip_address(host)
+        # Any bare IP is not a named public source for our purposes.
+        return None
+    except ValueError:
+        pass  # not an IP literal — it's a hostname, good.
+    # A real public hostname must have at least one dot (a TLD).
+    if "." not in host:
+        return None
+    return host
+
+
+def _distinct_public_domains(text: str) -> set:
+    """Extract every http(s) URL from text and return the set of DISTINCT REAL
+    PUBLIC registered domains (junk/localhost/loopback/RFC-1918/.local/example.*/
+    bare-IP hosts excluded). De-duplication is by host, so the same source cited N
+    times counts once."""
+    url_re = re.compile(r'https?://[^\s\)\]\>,\'"\\]+', re.IGNORECASE)
+    domains = set()
+    for raw in url_re.findall(text):
+        try:
+            netloc = urlparse(raw.rstrip(".")).netloc
+        except ValueError:
+            continue
+        dom = _registered_domain(netloc)
+        if dom:
+            domains.add(dom)
+    return domains
 
 # Factual/statistical claim markers — tokens that signal a claim requiring a citation.
 # When any of these appear in the slide copy and no corresponding cited URL exists in
@@ -567,7 +651,17 @@ def load_rich_prompt(slide: dict, run_dir: Path) -> str:
 
     # PROMPT CHAR-COUNT GATE (fail-loud). The floor is HARD (1,500): a prompt under
     # it is a thin stub / truncated file, NOT a real slide prompt — never run it.
-    length = len(prompt)
+    # H1: measure the STRIPPED length so a file padded with whitespace (or one that is
+    # whitespace-only) can never satisfy the floor. len(prompt) over raw bytes would
+    # let "   \n   ... 1500 spaces ..." pass as a "1,500-char prompt".
+    if not prompt.strip():
+        raise ValueError(
+            f"slide {ordinal}: rich prompt {prompt_path} is empty / whitespace-only. "
+            f"A blank prompt carries none of the mandatory per-slide spec. It is NOT "
+            f"run, NOT rendered, NOT updated. Re-author the rich prompt. Refusing "
+            f"(prompt char-count gate, AF-P1 floor)."
+        )
+    length = len(prompt.strip())
     if length < PROMPT_CHAR_FLOOR:
         raise ValueError(
             f"slide {ordinal}: rich prompt {prompt_path} is {length} chars, UNDER the "
@@ -596,7 +690,32 @@ class RateLimited(Exception):
     pass
 
 
+# C1 (SSRF / local-file read guard): the ONLY URL schemes this pipeline is ever
+# allowed to open. urllib.request.urlopen will happily honour file://, ftp://,
+# data:, etc. — so a KIE result URL, a --logo URL, or any API URL that resolves to
+# anything other than http(s) is an SSRF / arbitrary-local-file-read landmine
+# (e.g. file:///etc/passwd, file:///Users/.../secrets/.env). Every URL we open
+# MUST pass this allowlist FIRST or we refuse, loud.
+ALLOWED_URL_SCHEMES = ("http", "https")
+
+
+def assert_url_scheme_allowed(url: str, what: str = "URL") -> None:
+    """Refuse (ValueError) unless the URL's scheme is http or https. This is the
+    SSRF / local-file-read guard (C1): urlopen honours file://, ftp://, data:, etc.,
+    so before opening ANY fetched URL we enforce a strict http(s) allowlist. Applied
+    to _http_json (the KIE API calls), download_unauthenticated (the KIE result URL),
+    and the --logo URL path."""
+    scheme = (urlparse(str(url)).scheme or "").lower()
+    if scheme not in ALLOWED_URL_SCHEMES:
+        raise ValueError(
+            f"REFUSED: {what} {url!r} has scheme {scheme!r}, which is not in the "
+            f"allowlist {ALLOWED_URL_SCHEMES}. Only http(s) URLs may be opened "
+            f"(file://, ftp://, data:, etc. are blocked — SSRF / local-file-read guard)."
+        )
+
+
 def _http_json(method: str, url: str, api_key: str, body: Optional[dict] = None) -> dict:
+    assert_url_scheme_allowed(url, what="API URL")
     if DEAD_ENDPOINT_FRAGMENT in url:
         raise RuntimeError(
             f"REFUSED: attempted to call the dead endpoint {DEAD_ENDPOINT_FRAGMENT}. "
@@ -729,6 +848,10 @@ def poll_task(task_id: str, api_key: str) -> str:
 
 def download_unauthenticated(url: str, dest: Path) -> None:
     """UNAUTHENTICATED GET of the CDN result URL (Bearer token causes 403)."""
+    # C1 (SSRF / local-file-read guard): the result URL comes back from KIE's API.
+    # Refuse anything that is not http(s) before opening it (a file:// result URL
+    # would otherwise read an arbitrary local file into the slide PNG).
+    assert_url_scheme_allowed(url, what="KIE result URL")
     req = urllib.request.Request(url, headers={"User-Agent": "build_deck/1.0"})
     with urllib.request.urlopen(req, timeout=180) as resp, open(dest, "wb") as f:
         f.write(resp.read())
@@ -945,9 +1068,13 @@ def _chk_copy_qc(path: Optional[Path]) -> str:
     obj = _read_json(path)
     if "__parse_error__" in obj:
         return f"not valid JSON ({obj['__parse_error__']})"
+    # M1: require gate == "Phase 1Q" AFFIRMATIVELY. The old check (`if gate and gate
+    # != "Phase 1Q"`) let an EMPTY/missing gate short-circuit straight past — a QC
+    # report with no gate field would silently pass. The gate must be exactly the
+    # Phase 1Q gate, present and correct.
     gate = str(obj.get("gate", "")).strip()
-    if gate and gate != "Phase 1Q":
-        return f"gate is {gate!r}, expected 'Phase 1Q'"
+    if gate != "Phase 1Q":
+        return f"gate is {gate!r}, expected 'Phase 1Q' (must be present and exactly 'Phase 1Q')"
     avg = obj.get("average", obj.get("average_score"))
     try:
         if avg is None or float(avg) < 8.5:
@@ -958,8 +1085,11 @@ def _chk_copy_qc(path: Optional[Path]) -> str:
     triggered = obj.get("triggered_autofails") or obj.get("autofails_triggered") or []
     if triggered:
         return f"triggered autofails present: {triggered}"
-    if obj.get("pass") is False:
-        return "report explicitly marks pass:false"
+    # M1: require pass IS True affirmatively. The old check only rejected pass:false,
+    # so a report with pass absent / null / a non-True value slipped through. A QC
+    # report must explicitly assert pass:true.
+    if obj.get("pass") is not True:
+        return f"report does not affirmatively mark pass:true (got pass={obj.get('pass')!r})"
     return ""
 
 
@@ -994,21 +1124,42 @@ def _chk_design_brief(path: Optional[Path]) -> str:
     return ""
 
 
-def _count_output_slides(run_dir: Path) -> Optional[int]:
-    """Count the slides the system is about to output. Prefer slides.json (the
-    deterministic renderer's direct input); fall back to arc_allocation.json's
-    per-slide allocation. Returns None when neither can be read."""
+def _count_output_slides(run_dir: Path, slides_path: Optional[Path] = None) -> Optional[int]:
+    """Count the slides the system is about to output. Returns None when no count
+    can be read.
+
+    H3: when slides_path is supplied it is the ACTUAL positional slides.json the
+    renderer will render (main()'s positional[0]). Counting it FIRST means the
+    coverage gate and the rich-prompt gate derive their slide count from the EXACT
+    file that gets rendered — not a different canonical-path slides.json that might
+    have a different slide count (which would let the coverage / rich-prompt gates be
+    bypassed by feeding one file to the gate and rendering another). Only when no
+    explicit path is given (or it can't be read) do we fall back to the canonical
+    working/copy/slides.json spots, then arc_allocation.json."""
+    def _count_from(p: Path) -> Optional[int]:
+        if not p.exists():
+            return None
+        obj = _read_json(p)
+        if isinstance(obj, list):
+            return len(obj)
+        if isinstance(obj, dict) and "__parse_error__" not in obj:
+            slides = obj.get("slides")
+            if isinstance(slides, list):
+                return len(slides)
+        return None
+
+    # 0. The ACTUAL rendered file (positional slides.json), when threaded in.
+    if slides_path is not None:
+        n = _count_from(slides_path)
+        if n is not None:
+            return n
+
     # 1. slides.json — the renderer's direct input. Look in a few canonical spots.
     for rel in ("working/copy/slides.json", "slides.json", "working/slides.json"):
         p = run_dir / rel
-        if p.exists():
-            obj = _read_json(p)
-            if isinstance(obj, list):
-                return len(obj)
-            if isinstance(obj, dict) and "__parse_error__" not in obj:
-                slides = obj.get("slides")
-                if isinstance(slides, list):
-                    return len(slides)
+        n = _count_from(p)
+        if n is not None:
+            return n
     # 2. arc_allocation.json — per-slide arc-section allocation.
     arc = run_dir / "working" / "copy" / "arc_allocation.json"
     if arc.exists():
@@ -1039,35 +1190,36 @@ def _chk_research_cited(path: Optional[Path]) -> str:
     double-report it here).  The check is strictly ADDITIVE — it never weakens the
     existing research_complete:true check.
 
-    Heuristic documented: we extract URLs using a broad https?://[^\\s,)]+ regex and
-    deduplicate before counting.  This counts each distinct URL once regardless of how
-    many times it is cited.  Bare-domain-only strings and markdown image syntax are
-    included (they are still valid authoritative sources).  The count reflects distinct
-    EXTERNAL sources, which is the meaningful measure.
+    Heuristic documented (C3): we extract every http(s) URL, reduce each to its
+    REGISTERED DOMAIN (urlparse(...).netloc), and de-duplicate by domain. Junk hosts
+    are EXCLUDED outright — localhost/loopback, RFC-1918 / link-local IPs, bare IP
+    literals, .local/.internal/.invalid/.test/.example reserved TLDs, and example.*
+    placeholder domains. The gate then requires at least MIN_DISTINCT_DOMAINS (6)
+    DISTINCT REAL PUBLIC domains. This defeats the three ways the old raw-URL count
+    was gamed: (1) the same source cited many times, (2) localhost/RFC-1918/bare-IP
+    "URLs", and (3) example.com placeholders. MIN_CITED_SOURCES stays the named,
+    configurable floor referenced by sync_check / the manifest; the effective gate is
+    the distinct-public-domain count.
     """
-    import re as _re
     if path is None:
         return ""  # file-absent handled by _chk_research_brief; don't double-report
 
     text = path.read_text(errors="replace")
-    # Extract every http(s) URL.  The stop-set (whitespace + punctuation that cannot
-    # appear in a URL) is broad enough to strip trailing markdown formatting chars
-    # (>, ), ], ", '), while still capturing URLs with query strings and fragments.
-    url_re = _re.compile(r'https?://[^\s\)\]\>,\'"\\]+', _re.IGNORECASE)
-    all_urls = url_re.findall(text)
-    distinct_urls = set(u.rstrip(".") for u in all_urls)
-    n = len(distinct_urls)
-    if n < MIN_CITED_SOURCES:
+    domains = _distinct_public_domains(text)
+    n = len(domains)
+    if n < MIN_DISTINCT_DOMAINS:
         return (
-            f"AF-RESEARCH-UNCITED: research pack at {path.name} contains {n} distinct "
-            f"http(s) URL(s), below the HARD floor of {MIN_CITED_SOURCES}. A "
-            f"research_complete:true flag in the header is self-asserted and not "
-            f"proof of real web research. The research pack MUST contain at least "
-            f"{MIN_CITED_SOURCES} real, authoritative cited URLs (one per external "
-            f"source, covering categories A/B/C/D/G/H/I/K/L per the Deep Research "
-            f"SOP). Re-run Phase -0.5 (Deep Research Specialist) and cite every "
-            f"source you find. Do NOT set research_complete:true until "
-            f">= {MIN_CITED_SOURCES} real URLs are present in the brief."
+            f"AF-RESEARCH-UNCITED: research pack at {path.name} cites {n} distinct "
+            f"real public domain(s), below the HARD floor of {MIN_DISTINCT_DOMAINS} "
+            f"(MIN_CITED_SOURCES={MIN_CITED_SOURCES}). Junk hosts (localhost, "
+            f"loopback, RFC-1918 / private IPs, bare IP literals, .local/.internal/"
+            f".example reserved TLDs, and example.* placeholders) are NOT counted — "
+            f"so a research_complete:true flag, the same source cited many times, or "
+            f"a list of localhost/example.com URLs is not proof of real web research. "
+            f"The research pack MUST cite at least {MIN_DISTINCT_DOMAINS} DISTINCT, "
+            f"real, authoritative public sources (covering categories A/B/C/D/G/H/I/K/L "
+            f"per the Deep Research SOP). Re-run Phase -0.5 (Deep Research Specialist) "
+            f"and cite every distinct source you find."
         )
     return ""
 
@@ -1125,22 +1277,29 @@ def _chk_claims_without_citation(run_dir: Path) -> str:
             "Specialist) and cite every source before copy proceeds to render."
         )
 
-    # Read the research pack and count URLs.
-    url_re = _re.compile(r'https?://[^\s\)\]\>,\'"\\]+', _re.IGNORECASE)
-    research_text = brief_matches[0].read_text(errors="replace")
-    distinct_urls = set(u.rstrip(".") for u in url_re.findall(research_text))
-    if not distinct_urls:
+    # H4: union the cited domains across ALL brief-*.md files, not just the
+    # alphabetically-first one (a single deck routinely splits research across
+    # several brief files; reading only brief_matches[0] would miss real citations
+    # in the others and wrongly fail). C3: count DISTINCT REAL PUBLIC domains, not
+    # raw URL strings, so localhost/example.com/RFC-1918/bare-IP/dup "URLs" do not
+    # count as citations here either.
+    all_domains = set()
+    for bm in brief_matches:
+        all_domains |= _distinct_public_domains(bm.read_text(errors="replace"))
+    if not all_domains:
+        names = ", ".join(b.name for b in brief_matches)
         return (
             f"AF-RESEARCH-UNCITED: slide copy contains factual/statistical claim "
-            f"markers but {brief_matches[0].name} contains zero cited http(s) URLs. "
-            f"Every claim in slide copy that cites a percentage, dollar figure, or "
-            f"research finding MUST have a corresponding citation in the research "
-            f"pack. Re-run Phase -0.5 and add real cited sources before render."
+            f"markers but the research pack ({names}) contains zero cited real public "
+            f"http(s) sources (localhost / example.* / RFC-1918 / bare-IP hosts are "
+            f"not counted). Every claim in slide copy that cites a percentage, dollar "
+            f"figure, or research finding MUST have a corresponding citation in the "
+            f"research pack. Re-run Phase -0.5 and add real cited sources before render."
         )
     return ""
 
 
-def _chk_coverage(run_dir: Path) -> str:
+def _chk_coverage(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """ANTI-COMPRESSION (AF-COVERAGE-1). Mode B (working from a client's existing
     deck) is ADD-only: the output deck must NEVER have fewer slides than the source
     deck. Reads mission_prd.json's top-level integer 'source_slide_count' (Mode A =
@@ -1165,7 +1324,8 @@ def _chk_coverage(run_dir: Path) -> str:
     if source <= 0:
         return ""  # Mode A — no client source deck; coverage check does not apply.
 
-    final = _count_output_slides(run_dir)
+    # H3: count the ACTUAL rendered slides.json (positional) when threaded in.
+    final = _count_output_slides(run_dir, slides_path)
     if final is None:
         # We have a source count but cannot read the output count — cannot prove
         # coverage, so fail rather than silently pass a possibly-compressed deck.
@@ -1181,7 +1341,7 @@ def _chk_coverage(run_dir: Path) -> str:
     return ""
 
 
-def _chk_rich_prompts(run_dir: Path) -> str:
+def _chk_rich_prompts(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """RICH-PROMPT-REQUIRED gate (AF-P1). EVERY slide the system is about to render
     MUST have a hand-authored RICH per-slide prompt in working/prompts/ that is
     >= PROMPT_CHAR_FLOOR (1,500) chars. A missing prompt file, or one under the
@@ -1191,7 +1351,9 @@ def _chk_rich_prompts(run_dir: Path) -> str:
     a returned reason to exit 3). The 18,000 ceiling (AF-P2) is enforced per-slide at
     render time in load_rich_prompt (a too-long prompt still passes preflight; it is
     the floor + presence that are the un-bypassable pre-render gate here)."""
-    n = _count_output_slides(run_dir)
+    # H3: count the ACTUAL rendered slides.json (positional) when threaded in, so the
+    # rich-prompt gate verifies a prompt for every slide that will actually render.
+    n = _count_output_slides(run_dir, slides_path)
     if n is None:
         return ("AF-P1: cannot determine the slide count (no slides.json / "
                 "arc_allocation.json), so the per-slide rich prompts cannot be "
@@ -1202,11 +1364,13 @@ def _chk_rich_prompts(run_dir: Path) -> str:
         if p is None:
             problems.append(f"slide {ordinal:02d}: NO rich prompt file in working/prompts/")
             continue
-        length = len(p.read_text(errors="replace"))
+        # H1: measure the STRIPPED length so a whitespace-padded / whitespace-only
+        # prompt file can never satisfy the floor.
+        length = len(p.read_text(errors="replace").strip())
         if length < PROMPT_CHAR_FLOOR:
             problems.append(
-                f"slide {ordinal:02d}: rich prompt {p.name} is {length} chars, "
-                f"under the {PROMPT_CHAR_FLOOR}-char HARD floor")
+                f"slide {ordinal:02d}: rich prompt {p.name} is {length} non-whitespace "
+                f"chars, under the {PROMPT_CHAR_FLOOR}-char HARD floor")
     if problems:
         head = (f"AF-P1: rich-prompt-required gate FAILED for {len(problems)} of {n} "
                 f"slides. build_deck.py renders the Slide Image Creator's rich prompt "
@@ -1418,15 +1582,31 @@ def resolve_logo_path(logo_arg: Optional[str], run_dir: Path) -> Optional[Path]:
     return candidate
 
 
-def run_preflight(run_dir: Path) -> None:
+def run_preflight(run_dir: Path, slides_path: Optional[Path] = None) -> None:
     """Refuse (exit 3) unless every required upstream dept artifact exists AND is
-    complete. Lists exactly what is missing and which dept phase/role produces it."""
+    complete. Lists exactly what is missing and which dept phase/role produces it.
+
+    H3: slides_path is the ACTUAL positional slides.json the renderer will render.
+    Threading it into the run-dir-scoped checks (coverage, rich-prompts) makes those
+    gates count the EXACT file that gets rendered, so the slide-count derived in
+    preflight always matches what main() renders — closing the gate-bypass where
+    preflight counted a different canonical slides.json than the one rendered."""
+    import inspect as _inspect
     print(f"=== PROCESS PREFLIGHT — run dir: {run_dir} ===", flush=True)
     problems = []
     for rel, label, phase, check in PREFLIGHT_REQUIRED:
         if rel is None:
-            # run-dir-scoped check (e.g. _chk_coverage needs the whole run dir).
-            reason = check(run_dir)
+            # run-dir-scoped check (e.g. _chk_coverage needs the whole run dir). Pass
+            # slides_path too when the checker accepts it (H3), so the slide-count
+            # gates derive from the actual rendered file.
+            try:
+                accepts_slides = "slides_path" in _inspect.signature(check).parameters
+            except (TypeError, ValueError):
+                accepts_slides = False
+            if accepts_slides:
+                reason = check(run_dir, slides_path)
+            else:
+                reason = check(run_dir)
             display = "(coverage / anti-compression)"
         else:
             if "*" in rel:
@@ -1646,6 +1826,43 @@ def update_deliverable_status(ledger_path: Path, key: str, status: str,
     ledger_path.write_text(json.dumps(entries, indent=2))
 
 
+# ---------------------------------------------------------------------------
+# C2 — POSTFLIGHT CONTENT-TYPE MAGIC-BYTE VERIFICATION
+# ---------------------------------------------------------------------------
+# The completeness gate used to check only exists() + size, so a symlink pointing
+# at a large unrelated file, or a decoy file of the right size but the wrong type,
+# would PASS. C2 hardens it: reject symlinks outright, size via os.lstat (never
+# follow a link), and verify the file's leading magic bytes match the type implied
+# by its extension. .md stays size-only (plain text has no magic signature).
+#
+# Map of deliverable key -> tuple of acceptable leading-byte signatures. A PPTX is a
+# ZIP (Office Open XML), so it begins with the local-file-header magic 'PK\x03\x04'.
+# An MP3 is either an ID3v2-tagged file ('ID3') or a raw MPEG frame sync ('\xff\xfb'
+# / '\xff\xf3' / '\xff\xf2'). PNG begins with '\x89PNG'. PDF begins with '%PDF'.
+DELIVERABLE_MAGIC = {
+    "deck_pptx":       (b"PK\x03\x04",),                              # PPTX = ZIP (OOXML)
+    "deck_pdf":        (b"%PDF",),
+    "guide_pdf":       (b"%PDF",),
+    "speech_pdf":      (b"%PDF",),
+    "audio_mp3":       (b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"),  # ID3v2 tag or MPEG sync
+    "infographic_png": (b"\x89PNG",),
+    # speech_md: intentionally absent — plain markdown has no magic signature, so md
+    # stays size-only (per spec).
+}
+
+
+def _magic_ok(path: Path, signatures) -> bool:
+    """Return True if the file's leading bytes match ANY of the given signatures.
+    Reads only the bytes needed for the longest signature."""
+    try:
+        want = max(len(s) for s in signatures)
+        with open(path, "rb") as f:
+            head = f.read(want)
+    except OSError:
+        return False
+    return any(head.startswith(s) for s in signatures)
+
+
 def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str) -> None:
     """POSTFLIGHT COMPLETENESS GATE (AF-BUNDLE-COMPLETE, Requirement 2).
 
@@ -1662,27 +1879,61 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str) -> 
     (all entries verified), NOT from in-memory state.
     """
     # --- Phase 1: scan and update each entry ---
+    # C2: reject symlinks (a symlink to a large unrelated file would otherwise pass),
+    # size via os.lstat (NEVER follow a link), and verify the leading magic bytes
+    # match the type implied by the extension (a decoy of the right size but wrong
+    # type is rejected). md stays size-only (plain text has no magic signature).
     missing_or_short = []
     for spec in DELIVERABLES_REQUIRED:
         key = spec["key"]
         fname = _expand_filename(spec["filename"], deck_slug)
         path = bundle_dir / fname
-        if not path.exists():
+        # exists() follows symlinks; use lexists so a broken/dangling symlink is seen
+        # as present-but-rejected rather than silently "absent".
+        if not os.path.lexists(str(path)):
             update_deliverable_status(ledger_path, key, "failed",
                                       error="file absent from bundle_dir")
             missing_or_short.append((key, fname, spec["label"], spec["min_bytes"], 0,
                                      "ABSENT"))
-        else:
-            actual = path.stat().st_size
-            if actual < spec["min_bytes"]:
-                update_deliverable_status(ledger_path, key, "failed",
-                                          size=actual,
-                                          error=f"file too small: {actual} bytes "
-                                                f"(min {spec['min_bytes']})")
-                missing_or_short.append((key, fname, spec["label"], spec["min_bytes"],
-                                         actual, "UNDER_THRESHOLD"))
-            else:
-                update_deliverable_status(ledger_path, key, "verified", size=actual)
+            continue
+        # C2: a symlink (or any non-regular file) is a decoy vector — reject it.
+        if path.is_symlink():
+            update_deliverable_status(ledger_path, key, "failed",
+                                      error="path is a symlink (rejected: a symlink "
+                                            "can point at a large unrelated/decoy file)")
+            missing_or_short.append((key, fname, spec["label"], spec["min_bytes"], 0,
+                                     "SYMLINK"))
+            continue
+        # os.lstat: size of the path itself, never a followed link.
+        st = os.lstat(str(path))
+        if not __import__("stat").S_ISREG(st.st_mode):
+            update_deliverable_status(ledger_path, key, "failed",
+                                      error="path is not a regular file (rejected)")
+            missing_or_short.append((key, fname, spec["label"], spec["min_bytes"], 0,
+                                     "NOT_REGULAR"))
+            continue
+        actual = st.st_size
+        if actual < spec["min_bytes"]:
+            update_deliverable_status(ledger_path, key, "failed",
+                                      size=actual,
+                                      error=f"file too small: {actual} bytes "
+                                            f"(min {spec['min_bytes']})")
+            missing_or_short.append((key, fname, spec["label"], spec["min_bytes"],
+                                     actual, "UNDER_THRESHOLD"))
+            continue
+        # C2: magic-byte content-type check (md is intentionally size-only).
+        signatures = DELIVERABLE_MAGIC.get(key)
+        if signatures is not None and not _magic_ok(path, signatures):
+            sig_disp = "/".join(repr(s) for s in signatures)
+            update_deliverable_status(ledger_path, key, "failed",
+                                      size=actual,
+                                      error=f"wrong content type: leading bytes do not "
+                                            f"match expected magic {sig_disp} for this "
+                                            f"deliverable type (decoy/wrong-type file)")
+            missing_or_short.append((key, fname, spec["label"], spec["min_bytes"],
+                                     actual, "WRONG_TYPE"))
+            continue
+        update_deliverable_status(ledger_path, key, "verified", size=actual)
 
     # --- Phase 2: read ledger back as the authoritative final state ---
     try:
@@ -1719,6 +1970,25 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str) -> 
                 print(f"           infographic → infographic-checklist role;",
                       file=sys.stderr)
                 print(f"           deck PDF → PPTX Assembly Specialist).",
+                      file=sys.stderr)
+            elif reason == "UNDER_THRESHOLD":
+                print(f"  TOO SMALL [{key}] {fname}  ({label})", file=sys.stderr)
+                print(f"           actual={actual_b:,} bytes  minimum={min_b:,} bytes",
+                      file=sys.stderr)
+            elif reason == "SYMLINK":
+                print(f"  SYMLINK  [{key}] {fname}  ({label})", file=sys.stderr)
+                print(f"           path is a symlink — rejected (a symlink can point at",
+                      file=sys.stderr)
+                print(f"           a large unrelated/decoy file to fake the size gate).",
+                      file=sys.stderr)
+            elif reason == "NOT_REGULAR":
+                print(f"  NOT A FILE [{key}] {fname}  ({label})", file=sys.stderr)
+                print(f"           path is not a regular file — rejected.", file=sys.stderr)
+            elif reason == "WRONG_TYPE":
+                print(f"  WRONG TYPE [{key}] {fname}  ({label})", file=sys.stderr)
+                print(f"           actual={actual_b:,} bytes but leading magic bytes do",
+                      file=sys.stderr)
+                print(f"           not match the expected type (decoy / wrong-type file).",
                       file=sys.stderr)
             else:
                 print(f"  TOO SMALL [{key}] {fname}  ({label})", file=sys.stderr)
@@ -1864,13 +2134,28 @@ def main():
     if adhoc:
         print_adhoc_banner()
     else:
-        run_preflight(run_dir)
+        # H3: pass the ACTUAL positional slides.json so the coverage / rich-prompt
+        # gates count the exact file that will be rendered (no gate-bypass via a
+        # different canonical-path slides.json).
+        run_preflight(run_dir, slides_path)
 
     # OFFICIAL-LOGO resolution: --logo wins; else intake.json brand.logo_image_path.
     # IMAGE-TO-IMAGE logo: if --logo is a URL, KIE composites the REAL logo via
     # input_urls (verified gpt-image-2-image-to-image). A local path falls back to a
     # flat overlay in assemble. Never resolve a URL as a local file.
     logo_url = logo_arg if (logo_arg and str(logo_arg).startswith("http")) else None
+    if logo_url:
+        # C1 (SSRF / local-file-read guard): the --logo URL is passed to KIE as an
+        # input_urls reference and is otherwise fetchable. Enforce the http(s)
+        # allowlist up front so a file://, ftp://, or data: --logo is refused before
+        # any render. (startswith("http") already excludes most, but a value like
+        # "httpx://" or "http\tfile://" would slip past a naive prefix check — the
+        # urlparse scheme allowlist is the authoritative gate.)
+        try:
+            assert_url_scheme_allowed(logo_url, what="--logo URL")
+        except ValueError as exc:
+            print(f"FATAL: {exc}", file=sys.stderr)
+            sys.exit(2)
     logo_path = None if logo_url else resolve_logo_path(logo_arg, run_dir)
     if logo_url:
         print(f"=== OFFICIAL LOGO (IMAGE-TO-IMAGE): {logo_url} — KIE composites the REAL "

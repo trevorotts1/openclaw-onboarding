@@ -129,7 +129,7 @@ bash ~/path/to/platform/mac/tunnel-hardening/install-watchdog-agent.sh
 ```
 
 The keepalive installer detects and replaces any existing `com.zhc.tunnel-keepalive`
-(Christy's legacy label) -- no double-run.
+(legacy cron label) -- no double-run.
 
 Per-box verify after install:
 

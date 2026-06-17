@@ -83,7 +83,7 @@ asserted by qc-convert-and-flow.sh Section S and verified by qc-built-workflow.s
 
 - [ ] File exists at references/workflow-build-checklist-template.md
 - [ ] All 21 WF items present (WF-1 through WF-21)
-- [ ] WF-4 trigger active flag (SHEILA GATE) present with explanation
+- [ ] WF-4 trigger active flag (WF-ACTIVE GATE) present with explanation
 - [ ] WF-12 SMS From-number gate present
 - [ ] WF-20 hallucinated artifacts detector present
 - [ ] WF-21 snapshot gate present
@@ -111,7 +111,7 @@ asserted by qc-convert-and-flow.sh Section S and verified by qc-built-workflow.s
 - [ ] --re-entry flag (ONCE/ALLOW-MULTIPLE) documented
 - [ ] --json flag for machine-parseable output documented
 - [ ] WF-3 trigger present asserted
-- [ ] WF-4 trigger active vs publish-intent asserted (SHEILA GATE)
+- [ ] WF-4 trigger active vs publish-intent asserted (WF-ACTIVE GATE)
 - [ ] WF-5 publish status vs publish-intent asserted
 - [ ] WF-6 re-entry/allow-multiple asserted
 - [ ] WF-7 action sequence (>=1 action node) asserted

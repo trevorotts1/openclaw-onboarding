@@ -111,7 +111,7 @@ check "1.4" "interview-handoff.md has a status field" \
   "[ -f \"$COMPANY_DIR/interview-handoff.md\" ] && grep -q 'status' \"$COMPANY_DIR/interview-handoff.md\"" \
   "Handoff file missing or malformed; rerun Skill 23 Option C (Audit/Resume)"
 check "1.5" "MEMORY.md has '## AI Workforce Build' section" \
-  "grep -q '## AI Workforce Build' $WORKSPACE/MEMORY.md" \
+  "grep -q '## AI Workforce Build' \"$WORKSPACE/MEMORY.md\"" \
   "Re-apply Skill 23 CORE_UPDATES.md to your MEMORY.md"
 
 # ─── CHECK 2: AI Workforce Skill Set (build phase) ───────────────────────────
@@ -119,7 +119,8 @@ echo
 blue "── CHECK 2: AI Workforce Skill Set (build phase) ──"
 # 2.1 — dept count match
 if [ -f "$COMPANY_DIR/departments.json" ]; then
-  EXPECTED=$(python3 -c "import json; print(len(json.load(open('$COMPANY_DIR/departments.json'))))" 2>/dev/null)
+  # H2: inject path via env var so a quote in the directory name can't break the Python string literal
+  EXPECTED=$(DEPT_JSON="$COMPANY_DIR/departments.json" python3 -c "import json,os; print(len(json.load(open(os.environ['DEPT_JSON']))))" 2>/dev/null)
   ACTUAL=$(ls -d "$COMPANY_DIR/departments"/*/ 2>/dev/null | wc -l | tr -d ' ')
   if [ -n "$EXPECTED" ] && [ "$EXPECTED" = "$ACTUAL" ]; then
     green "  ✓ 2.1  Department count matches interview ($ACTUAL = $EXPECTED)"; PASS=$((PASS+1))
@@ -154,7 +155,8 @@ else
   yellow "  ⚠ 2.3  No departments folder to check"; WARN=$((WARN+1))
 fi
 # 2.4 — dept directors in agents.list[]
-DIR_AGENTS=$(python3 -c "import json; cfg=json.load(open('$OCJSON')); print(sum(1 for a in cfg.get('agents',{}).get('list',[]) if a.get('id','').startswith('dept-')))" 2>/dev/null)
+# H2: inject via env var — OCJSON path must not be shell-expanded inside a Python string literal
+DIR_AGENTS=$(OC_JSON="$OCJSON" python3 -c "import json,os; cfg=json.load(open(os.environ['OC_JSON'])); print(sum(1 for a in cfg.get('agents',{}).get('list',[]) if a.get('id','').startswith('dept-')))" 2>/dev/null)
 if [ -n "$DIR_AGENTS" ] && [ "$DIR_AGENTS" -gt 0 ]; then
   green "  ✓ 2.4  $DIR_AGENTS department director agents in agents.list[]"; PASS=$((PASS+1))
 else
@@ -218,7 +220,7 @@ check "2.10" "ORG-CHART.md at company root" \
 
 # v10.15.4 / v10.16.4 — sections 2.11-2.14: role-library materialization coverage.
 # These sections close the silent-failure gap discovered during the 5-client audit
-# (Maria 1/222, Corey 146 thin, Angeleen legacy-tree, Teresa 0 SOPs, Kofi crash).
+# (one client 1/222, one client 146 thin, one client legacy-tree, one client 0 SOPs, one client crash).
 # All checks are best-effort — they WARN rather than FAIL so the existing
 # integrity gate is not over-tightened. The dedicated qc-completeness.sh script
 # is the authoritative gate for "are you done?"
@@ -289,7 +291,7 @@ if [ -d "$COMPANY_DIR/departments" ]; then
   fi
 fi
 
-# 2.14 — legacy tree detection (Angeleen pattern)
+# 2.14 — legacy tree detection (misrouted workspace tree pattern)
 LEGACY_FOUND=""
 for cand in /data/clawd/departments "$HOME/clawd/departments"; do
   if [ -d "$cand" ]; then
@@ -405,9 +407,12 @@ if [ -n "$CC_DB" ]; then
   green "  ✓ 7.0  Mission Control DB present at $CC_DB"; PASS=$((PASS+1))
   # 7.1 — dept count in DB matches departments.json
   if [ -f "$COMPANY_DIR/departments.json" ]; then
-    JSON_COUNT=$(python3 -c "import json; print(len(json.load(open('$COMPANY_DIR/departments.json'))))" 2>/dev/null)
+    # H2: inject path via env var
+    JSON_COUNT=$(DEPT_JSON="$COMPANY_DIR/departments.json" python3 -c "import json,os; print(len(json.load(open(os.environ['DEPT_JSON']))))" 2>/dev/null)
     SLUG=$(basename "$COMPANY_DIR")
-    DB_COUNT=$(sqlite3 "$CC_DB" "SELECT COUNT(*) FROM workspaces WHERE company_id='$SLUG'" 2>/dev/null)
+    # H1: escape single-quotes in SLUG before interpolating into sqlite3 query string
+    SLUG_ESC="${SLUG//\'/\'\'}"
+    DB_COUNT=$(sqlite3 "$CC_DB" "SELECT COUNT(*) FROM workspaces WHERE company_id='${SLUG_ESC}'" 2>/dev/null)
     if [ -n "$DB_COUNT" ] && [ "$DB_COUNT" = "$JSON_COUNT" ]; then
       green "  ✓ 7.1  Kanban dept count ($DB_COUNT) matches departments.json ($JSON_COUNT)"; PASS=$((PASS+1))
     else
@@ -415,7 +420,7 @@ if [ -n "$CC_DB" ]; then
       FAILURES+=("7.1|Kanban count mismatch|Re-run python3 32-command-center-setup/scripts/seed-workspaces.py")
     fi
     # 7.2 — brand colors in companies.config
-    BRAND=$(sqlite3 "$CC_DB" "SELECT config FROM companies WHERE slug='$SLUG'" 2>/dev/null)
+    BRAND=$(sqlite3 "$CC_DB" "SELECT config FROM companies WHERE slug='${SLUG_ESC}'" 2>/dev/null)
     if echo "$BRAND" | grep -q '"primary"'; then
       green "  ✓ 7.2  Brand colors present in companies.config"; PASS=$((PASS+1))
     else
@@ -620,7 +625,8 @@ done
 if [ "$LEGACY_WITH_COMPANIES" -eq 0 ]; then
   green "  ✓ X.7  No legacy ZHC company roots with un-migrated companies"; PASS=$((PASS+1))
 elif [ -f "$MIGRATION_LOG" ]; then
-  MIGRATED_COUNT=$(python3 -c "import json; d=json.load(open('$MIGRATION_LOG')); print(len([e for e in d.get('migrations',[]) if e.get('type')=='primary']))" 2>/dev/null || echo "0")
+  # H2: inject path via env var
+  MIGRATED_COUNT=$(MIGRATION_LOG_PATH="$MIGRATION_LOG" python3 -c "import json,os; d=json.load(open(os.environ['MIGRATION_LOG_PATH'])); print(len([e for e in d.get('migrations',[]) if e.get('type')=='primary']))" 2>/dev/null || echo "0")
   WARNINGS+=("X.7|Legacy ZHC roots still contain ${LEGACY_WITH_COMPANIES} folder(s); ${MIGRATED_COUNT} already migrated|Run: bash ~/.openclaw/skills/scripts/migrate-zhc-to-master-files.sh --apply")
   WARN=$((WARN+1))
 else
@@ -729,6 +735,44 @@ else
   yellow "  ⚠ X.9  qc-assert-ollama-provider-platform.sh not found — skipping Ollama platform check"
   WARN=$((WARN+1))
   WARNINGS+=("X.9|qc-assert-ollama-provider-platform.sh missing|Update openclaw-onboarding to v12.21.0+")
+fi
+
+# ─── CHECK X.10: No client names in repo files (v12.22.0) ───────────────────
+# Hard-fail: real client names must NEVER appear in committed repo files.
+# This repo is a fleet-wide generic template. Client-identifying strings are a
+# co-mingling + privacy violation. Delegates to qc-assert-no-client-names.sh.
+echo
+blue "── CHECK X.10: No client names in repo files ──"
+NO_CLIENT_NAMES_SCRIPT=""
+for _ncn_cand in \
+  "$(dirname "${BASH_SOURCE[0]}")/qc-assert-no-client-names.sh" \
+  "$HOME/.openclaw/skills/scripts/qc-assert-no-client-names.sh" \
+  "/data/.openclaw/skills/scripts/qc-assert-no-client-names.sh"; do
+  [[ -f "$_ncn_cand" ]] && NO_CLIENT_NAMES_SCRIPT="$_ncn_cand" && break
+done
+if [[ -n "$NO_CLIENT_NAMES_SCRIPT" ]]; then
+  _ncn_tmp=$(mktemp)
+  bash "$NO_CLIENT_NAMES_SCRIPT" > "$_ncn_tmp" 2>&1
+  NO_CLIENT_NAMES_RC=$?
+  NO_CLIENT_NAMES_OUT=$(cat "$_ncn_tmp"); rm -f "$_ncn_tmp"
+  if [[ "$NO_CLIENT_NAMES_RC" = "0" ]]; then
+    green "  ✓ X.10 No real client names found in tracked repo files"; PASS=$((PASS+1))
+  else
+    red "  ✗ X.10 Client name(s) found in repo — co-mingling/privacy violation"
+    FAIL=$((FAIL+1))
+    FAILURES+=("X.10|Client name(s) found in tracked repo files|Run: bash scripts/qc-assert-no-client-names.sh for the offender list, then genericize each hit")
+    while IFS= read -r _ncnline; do
+      case "$_ncnline" in
+        *"INVARIANT VIOLATED"*) ;;  # already reported above
+        "  "*)
+          red "$_ncnline" ;;  # indented offender lines
+      esac
+    done <<< "$NO_CLIENT_NAMES_OUT"
+  fi
+else
+  yellow "  ⚠ X.10 qc-assert-no-client-names.sh not found — skipping client-name check"
+  WARN=$((WARN+1))
+  WARNINGS+=("X.10|qc-assert-no-client-names.sh missing|Update openclaw-onboarding to v12.22.0+")
 fi
 
 # ─── SUMMARY ─────────────────────────────────────────────────────────────────

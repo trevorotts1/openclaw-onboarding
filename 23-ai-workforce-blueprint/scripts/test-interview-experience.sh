@@ -443,7 +443,7 @@ SHIM
 )
 
 # ── T13: Self-remove on next fire (interviewComplete=true + recorded UUID) ────
-# Acceptance test B: pre-existing boxes like Talaya have interviewComplete=true
+# Acceptance test B: pre-existing boxes (with interviewComplete=true already set)
 # and a recorded .interviewNudgeUuid. On the next 6h fire, the shim must call
 # `openclaw cron rm <uuid>`, NOT just exit 0 silently.
 (

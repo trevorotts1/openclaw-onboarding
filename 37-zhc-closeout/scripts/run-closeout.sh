@@ -245,7 +245,7 @@ if [[ -n "$ZHC_STD_SCRIPT" ]]; then
   # mandatory + industry vertical-pack departments, minus explicit declines -
   # measured against real folders, NOT the build-state JSON). rc 4 = role library
   # not done, rc 5 = SOP library not done. ALL THREE block closeout so a
-  # HEAVILY-REDUCED workforce (Cassandra 3-dept / Kofi-style 6-dept / a seeded
+  # HEAVILY-REDUCED workforce (3-dept / 6-dept / a seeded
   # build-state fiction) can never reach a celebration. The resume cron keeps
   # driving (never-stop) until the floor is instantiated + the libraries fill.
   if [[ "$ZHC_STD_RC" == "3" ]]; then
@@ -458,7 +458,7 @@ fi
 # v10.X.4: step-level idempotency.
 #
 # Through v10.X.3 each step that failed called fail_closeout() and exited
-# immediately, which is what blocked Notion + Telegram on the Evelyn run
+# immediately, which is what blocked Notion + Telegram on a prior client run
 # even though Notion was buildable. Now each step has its own try/catch,
 # records STEP_<NAME>_STATUS = ok|failed|skipped, and run-closeout continues
 # regardless. At the end we evaluate the matrix:
@@ -1004,7 +1004,7 @@ else
 
   # v12.3.10: SELF-REMOVE the interview-nudge cron (interviewComplete=true kill condition).
   # Primary: keyed on .interviewNudgeUuid recorded at install time.
-  # Fallback: name-scan for boxes installed before UUID recording (e.g. Talaya).
+  # Fallback: name-scan for boxes installed before UUID recording was added.
   nudge_cron_uuid=$(state_get '.interviewNudgeUuid')
   if [[ -n "$nudge_cron_uuid" && "$nudge_cron_uuid" != "null" ]] && command -v openclaw >/dev/null 2>&1; then
     log "INFO" "self-removing interview-nudge cron $nudge_cron_uuid (interviewComplete=true, closeout done)"

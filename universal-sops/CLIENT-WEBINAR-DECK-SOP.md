@@ -160,7 +160,7 @@ contiguous from 1, and every `copy[0]` is the intended headline with correct spe
 
 Run exactly (substitute the task's `ARTIFACT_DIR`):
 ```
-python3 /Users/blackceomacmini/.clawdbot/workspace/departments/Presentations/scripts/build_deck.py slides.json <ARTIFACT_DIR>/presentation.pptx
+python3 <WORKSPACE>/departments/Presentations/scripts/build_deck.py slides.json <ARTIFACT_DIR>/presentation.pptx
 ```
 - The script renders every slide, retries up to 3× per slide, verifies each PNG, and
   assembles the `.pptx`. The builder watches the exit code and the JSON summary.

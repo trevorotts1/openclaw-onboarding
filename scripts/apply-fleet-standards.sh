@@ -14,7 +14,7 @@
 #   Per-agent overrides in agents.list[] override global defaults. The schema
 #   validator (2026.5.20+) rejects deep nested keys via CLI. The supported
 #   pattern is direct JSON merge against openclaw.json, then validate. This
-#   script ships the canonical block verified on Sheila Reynolds' Mac (2026.6.1).
+#   script ships the canonical block verified on a Mac mini client box (2026.6.1).
 #
 # Idempotent: re-running is a no-op if config already matches canonical block.
 #
@@ -29,6 +29,15 @@
 # Logs before/after state and reports idempotent status.
 
 set -euo pipefail
+
+# ─── Temp-file cleanup on EXIT ───────────────────────────────────────────────
+_APPLY_TMPFILES=()
+_cleanup_tmpfiles() {
+  for _f in "${_APPLY_TMPFILES[@]+"${_APPLY_TMPFILES[@]}"}"; do
+    [ -f "$_f" ] && rm -f "$_f"
+  done
+}
+trap _cleanup_tmpfiles EXIT
 
 # ─── Path detection ──────────────────────────────────────────────────────────
 if [ -f /data/.openclaw/openclaw.json ]; then
@@ -67,7 +76,7 @@ before_json = json.dumps(cfg, sort_keys=True, indent=2)
 #   - docs.openclaw.ai/tools/subagents (allowAgents wildcard, per-agent override)
 #   - docs.openclaw.ai/gateway/security (exec.security, exec.ask, sandbox)
 #   - docs.openclaw.ai/tools/multi-agent-sandbox-tools (agent-specific policy)
-#   - Live test on OpenClaw 2026.6.1 (Sheila Reynolds' Mac mini, v11.3.1 fix)
+#   - Live test on OpenClaw 2026.6.1 (Mac mini client box, v11.3.1 fix)
 #
 # v11.3.1 FIX: agents.defaults.tools.exec is REMOVED from this block.
 #   On OpenClaw 2026.6.1 the schema validator rejects it with
@@ -333,7 +342,7 @@ else
   echo "[apply-fleet-standards] injecting CEO ROUTING NO LOOPHOLES into $AGENTS_FILE_EARLY"
   # Insert after the ROLE_DISCIPLINE block (after the first --- separator that
   # follows the ROLE_DISCIPLINE marker). Use awk to inject after first --- post-marker.
-  TMPF=$(mktemp)
+  TMPF=$(mktemp); _APPLY_TMPFILES+=("$TMPF")
   awk -v marker="$ROLE_DISC_MARKER" '
     BEGIN { injected=0; in_rd=0 }
     {
@@ -418,7 +427,7 @@ if grep -qF "$CRED_CHECK_V2_MARKER" "$AGENTS_FILE_EARLY"; then
 else
   echo "[apply-fleet-standards] injecting CREDENTIAL_CHECK_V2 (N33+N34) into $AGENTS_FILE_EARLY"
   # Remove any V1 block if present (strip from V1 marker to the next top-level ---\n heading)
-  TMPF2="$(mktemp)"
+  # Note: the python3 script writes directly to sys.argv[1]; no separate temp file needed.
   python3 - "$AGENTS_FILE_EARLY" <<'CCPYEOF'
 import sys, re
 
@@ -569,8 +578,16 @@ elif grep -qF "$BPM_V1_HEADING" "$AGENTS_FILE"; then
   V1_LINE=$(grep -n "^## BIG PROJECT MODE$" "$AGENTS_FILE" | tail -1 | cut -d: -f1)
   if [ -n "$V1_LINE" ]; then
     # Keep lines BEFORE the v1 heading (trim the blank line before it too).
-    head -n "$((V1_LINE - 2))" "$AGENTS_FILE" > "${AGENTS_FILE}.v2tmp"
-    mv "${AGENTS_FILE}.v2tmp" "$AGENTS_FILE"
+    # Guard: head -n 0 or head -n -1 (when V1_LINE <= 2) would wipe the file
+    # under set -e. Only run the head/mv when there are lines to keep.
+    _KEEP_LINES=$(( V1_LINE - 2 ))
+    if [ "$_KEEP_LINES" -gt 0 ]; then
+      head -n "$_KEEP_LINES" "$AGENTS_FILE" > "${AGENTS_FILE}.v2tmp"
+      mv "${AGENTS_FILE}.v2tmp" "$AGENTS_FILE"
+    else
+      # v1 heading is at line 1 or 2 — nothing to keep before it; truncate to empty.
+      : > "$AGENTS_FILE"
+    fi
   fi
   cat >> "$AGENTS_FILE" <<'BPMEOF'
 

@@ -395,7 +395,7 @@ For this role, the authoritative sources are:
 
 **Tier 4 — Role-specific:**
 - "Getting to Yes" by Roger Fisher and William Ury — foundational negotiation methodology (principled negotiation)
-- "Difficult Conversations" by Douglas Stone, Bruce Patton, and Sheila Heen — communication strategies for high-conflict situations
+- "Difficult Conversations" by Stone, Patton, and Heen — communication strategies for high-conflict situations
 - "The Mediation Process" by Christopher Moore — comprehensive mediation theory and practice
 - State court ADR program websites — jurisdiction-specific mediation and arbitration procedures
 

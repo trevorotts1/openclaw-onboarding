@@ -11,9 +11,9 @@ role counts.
 Text-heavy infographics break diffusion-style image models. GPT Image 2 and
 Nano Banana cannot reliably render small labels like "Risk & Compliance"
 or "2 roles" - they hallucinate fake letters, drop punctuation, mangle
-emoji, or omit words entirely. We learned this on Maria Anderson's Marico
-Consulting closeout, where v1 and v2 came back with garbled department
-names and v3 needed a complete pipeline rebuild.
+emoji, or omit words entirely. This was learned from early fleet closeout
+runs where v1 and v2 came back with garbled department names and v3 needed
+a complete pipeline rebuild.
 
 HTML + CSS + a headless Chromium screenshot is:
 
@@ -54,11 +54,11 @@ node render.mjs --input /tmp/inf1-input.json --output /tmp/infographic-1.png
 
 ```json
 {
-  "companyName":     "Marico Consulting",
-  "monogramLetter":  "M",
-  "ownerName":       "Maria Anderson",
-  "ceoAgentName":    "Sir Jordan",
-  "ceoAgentTagline": "Routes all work · Reports to Maria Anderson",
+  "companyName":     "Sample Company",
+  "monogramLetter":  "S",
+  "ownerName":       "{{ownerName}}",
+  "ceoAgentName":    "{{agentName}}",
+  "ceoAgentTagline": "Routes all work · Reports to {{ownerName}}",
   "departments": [
     { "slug": "marketing",   "name": "Marketing",        "roles": 2, "emoji": "📣" },
     { "slug": "sales",       "name": "Sales",            "roles": 2, "emoji": "💰" },

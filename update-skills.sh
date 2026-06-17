@@ -316,7 +316,7 @@ get_current_version() {
 # and ROLL BACK from the backup on failure so one bad key can
 # never abort the updater under set -euo pipefail.
 #
-# The root-cause bug that aborted Corey + Maria's update was
+# The root-cause bug that aborted a multi-client update was
 # skills.path written into openclaw.json on VPS (2026.5.x rejects
 # the key with "skills Unrecognized key path / skills Invalid input").
 # This helper ensures any future json edits are validated before they

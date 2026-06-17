@@ -92,7 +92,7 @@ state_set() {
 
 # ── Self-removal (v12.3.10) ───────────────────────────────────────────────────
 # Find the cron UUID from state (preferred) or by name-scan (fallback for
-# boxes installed before UUID recording was added - e.g. Talaya).
+# boxes installed before UUID recording was added).
 find_nudge_cron_uuid() {
   if [[ -f "${STATE_FILE}" ]] && command -v jq >/dev/null 2>&1; then
     local uuid

@@ -33,9 +33,16 @@ fi
 RESTART_SCRIPT="$HOME/.openclaw/skills/.update-restart-if-needed"
 cat > "$RESTART_SCRIPT" << 'RESTART_EOF'
 #!/bin/bash
-# Run the update script
+# Run the update script — fetch to temp file first so partial downloads do not
+# execute half a script (the classic curl|bash truncation hazard).
 UPDATE_SCRIPT_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/update-skills.sh"
-curl -fsSL "$UPDATE_SCRIPT_URL" | bash >> "$HOME/.openclaw/skills/.update-log" 2>&1
+_UPDATE_TMP="$(mktemp /tmp/openclaw-update-XXXXXX.sh)"
+trap 'rm -f "$_UPDATE_TMP"' EXIT
+if ! curl -fsSL --max-time 60 "$UPDATE_SCRIPT_URL" -o "$_UPDATE_TMP" 2>>"$HOME/.openclaw/skills/.update-log"; then
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: failed to download update-skills.sh — skipping update" >> "$HOME/.openclaw/skills/.update-log"
+  exit 1
+fi
+bash "$_UPDATE_TMP" >> "$HOME/.openclaw/skills/.update-log" 2>&1
 
 # If the update flag exists, an update was staged — restart the gateway so the agent sees it
 if [ -f "$HOME/.openclaw/skills/.update-pending" ]; then

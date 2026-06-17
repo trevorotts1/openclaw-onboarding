@@ -80,7 +80,7 @@ openclaw config set env.vars.PATH "$CAF_DIR:/usr/local/bin:/usr/bin:/bin"
 
 ## Action 5: Wire credentials into the gateway-inherited env (single source)
 
-> **WHY A SCRIPT, NOT INLINE `openclaw config set` (Evelyn VPS bug, 2026-06-11):**
+> **WHY A SCRIPT, NOT INLINE `openclaw config set` (VPS env-inheritance bug, 2026-06-11):**
 > The previous install left the `GOHIGHLEVEL_*` creds **only** in
 > `~/.openclaw/secrets/.env` — a file the OpenClaw gateway/agent **process never
 > loads.** When the agent invoked `caf`, the gateway's process env had no
@@ -223,7 +223,7 @@ WARN (not FAIL) — the skill works for standard ops without it.
 
 ## Action 6b: FAIL-LOUD live verify gate (MANDATORY — never report success on a dead caf)
 
-> **WHY (Evelyn VPS bug, 2026-06-11):** the install reported success while `caf`
+> **WHY (VPS env-inheritance bug, 2026-06-11):** the install reported success while `caf`
 > could not reach GHL at all (creds only in `secrets/.env`, masked by empty docker
 > `env_file` placeholders). A "skill installed" flag is **not** proof the tool
 > works. This gate runs a **real read** against GHL using **only the inherited

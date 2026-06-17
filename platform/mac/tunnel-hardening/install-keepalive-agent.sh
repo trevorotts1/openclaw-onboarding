@@ -5,7 +5,7 @@
 # Cloudflare edge every 20s to keep the UDP/QUIC NAT mapping alive.
 # Works even when the root daemon is still on QUIC (safe net until sudo harden).
 #
-# Replaces com.zhc.tunnel-keepalive (Christy's box) so there is never two
+# Replaces com.zhc.tunnel-keepalive (legacy label) so there is never two
 # simultaneous keepalive agents running.
 #
 # Run as the box's login user (no sudo):

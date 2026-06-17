@@ -58,7 +58,7 @@ For each tag the workflow adds/removes/branches-on:
 - Status: `[ ] PASS  [ ] FAIL`
 - Notes: `[FILL if FAIL]`
 
-### WF-4 — Trigger ACTIVE State (THE SHEILA BUG GATE)
+### WF-4 — Trigger ACTIVE State (THE WF-ACTIVE GATE)
 
 **Critical:** Under CAF_DRAFT_ONLY=true the engine ships the trigger active:false
 (safety_gate.draft_only_active_flag()). If the client chose LIVE/PUBLISH, the trigger MUST be
@@ -139,7 +139,7 @@ For each merge field referencing a custom value:
 
 - Notes: `[FILL if no custom values: "N/A"]`
 
-### WF-12 — SMS From-Number (THE SHEILA BUG GATE — silent fail without this)
+### WF-12 — SMS From-Number (THE WF-SMS-FROM GATE — silent fail without this)
 
 For each SMS node in the workflow:
 
@@ -249,7 +249,7 @@ For every artifact the build agent CLAIMED to have set, independently confirmed 
 | WF-1 Name | `[ ] PASS  [ ] FAIL  [ ] N/A` |
 | WF-2 Tags | `[ ] PASS  [ ] FAIL  [ ] N/A` |
 | WF-3 Trigger Present | `[ ] PASS  [ ] FAIL  [ ] N/A` |
-| WF-4 Trigger Active (SHEILA GATE) | `[ ] PASS  [ ] FAIL` |
+| WF-4 Trigger Active (WF-ACTIVE GATE) | `[ ] PASS  [ ] FAIL` |
 | WF-5 Publish State | `[ ] PASS  [ ] FAIL` |
 | WF-6 Re-Entry | `[ ] PASS  [ ] FAIL` |
 | WF-7 Action Sequence | `[ ] PASS  [ ] FAIL` |

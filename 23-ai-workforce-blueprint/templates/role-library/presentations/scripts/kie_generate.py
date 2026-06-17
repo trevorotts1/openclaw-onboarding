@@ -19,7 +19,10 @@ USAGE:
     renders_dir: path where slide-NN.png files are written (created if absent).
 
 ENVIRONMENT:
-    KIE_API_KEY — must be set (read from env or /Users/blackceomacmini/clawd/secrets/.env)
+    KIE_API_KEY — must be set. Read from the environment first, else from the client's
+                  standard secrets stores ($OPENCLAW_SECRETS if set, then
+                  ~/.openclaw/workspace/.env, ~/clawd/secrets/.env,
+                  ~/.openclaw/secrets/.env — all HOME-relative, no hardcoded path).
 
 RATE CAP: 20 requests / 10 seconds per KIE.ai docs. This script submits in waves of 20
           with a 10-second sleep between waves.
@@ -65,7 +68,28 @@ INITIAL_POLL_WAIT_S = 300   # 5 minutes after final submit
 POLL_INTERVAL_S     = 60
 MAX_POLL_PASSES     = 100
 
-SECRETS_ENV = "/Users/blackceomacmini/clawd/secrets/.env"
+
+# ---------------------------------------------------------------------------
+# Secrets-file resolution (HIGH-3 fix)
+# ---------------------------------------------------------------------------
+# This is a FLEET template that ships to every client box, so it must NEVER embed
+# an operator's literal absolute home path (such a path points at one specific
+# machine and would never exist on a client box). The secrets file is resolved at
+# RUNTIME:
+#   1. $OPENCLAW_SECRETS (explicit override — wins if set), then
+#   2. the client's standard env stores, HOME-relative via os.path.expanduser so the
+#      same template works for whatever user/box it runs on (no literal home path).
+def _secrets_candidates() -> list:
+    candidates = []
+    override = os.environ.get("OPENCLAW_SECRETS", "").strip()
+    if override:
+        candidates.append(os.path.expanduser(override))
+    candidates += [
+        os.path.expanduser("~/.openclaw/workspace/.env"),
+        os.path.expanduser("~/clawd/secrets/.env"),
+        os.path.expanduser("~/.openclaw/secrets/.env"),
+    ]
+    return candidates
 
 # ---------------------------------------------------------------------------
 # Guardrail: REFUSE to run if caller somehow wired the dead endpoint
@@ -75,20 +99,28 @@ DEAD_ENDPOINT_FRAGMENT = "/api/v1/image/gpt-image"
 
 
 def _load_api_key() -> str:
-    """Read KIE_API_KEY from environment, falling back to secrets/.env file."""
+    """Read KIE_API_KEY from environment, falling back to the client's standard
+    secrets stores (resolved at runtime — no hardcoded operator home path; HIGH-3)."""
     key = os.environ.get("KIE_API_KEY", "").strip()
     if key:
-        return key
-    # Try secrets file
-    env_path = Path(SECRETS_ENV)
-    if env_path.exists():
+        return key.strip("'\"")
+    candidates = _secrets_candidates()
+    # Try each candidate secrets file in priority order.
+    for path in candidates:
+        env_path = Path(path)
+        if not env_path.exists():
+            continue
         for line in env_path.read_text().splitlines():
             line = line.strip()
             if line.startswith("KIE_API_KEY="):
                 value = line[len("KIE_API_KEY="):].strip().strip("'\"")
                 if value:
                     return value
-    print("FATAL: KIE_API_KEY not found in environment or in", SECRETS_ENV, file=sys.stderr)
+    print("FATAL: KIE_API_KEY not found in environment or in any of:", file=sys.stderr)
+    for path in candidates:
+        print("   ", path, file=sys.stderr)
+    print("   (set KIE_API_KEY in env, or point $OPENCLAW_SECRETS at the client's .env)",
+          file=sys.stderr)
     sys.exit(2)
 
 

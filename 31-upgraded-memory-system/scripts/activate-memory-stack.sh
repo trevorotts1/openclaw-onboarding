@@ -7,9 +7,9 @@
 #   `openclaw config set` ("Invalid input") because the parent path doesn't
 #   exist yet. The supported pattern is a direct JSON merge against
 #   openclaw.json, then `openclaw config validate`. This script ships the
-#   canonical block verified live on Evelyn + Angeleen.
+#   canonical block verified live on multiple client boxes.
 #
-# What it sets (matches Evelyn's known-good config):
+# What it sets (canonical fleet-verified config):
 #   - agents.defaults.memorySearch       — gemini provider, openai fallback,
 #                                          gemini-embedding-001, hybrid search,
 #                                          session-memory + sync.

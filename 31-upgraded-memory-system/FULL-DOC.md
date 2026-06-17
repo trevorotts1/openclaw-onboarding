@@ -1082,7 +1082,7 @@ You did not tell the agent to remember this. But memory-core auto-captured it. N
 
 ## Example: Session Indexing
 
-You had a conversation two weeks ago about setting up a Zoom meeting with a specific client. Today you ask: "What was that Zoom meeting we set up for Dr. Tola?"
+You had a conversation two weeks ago about setting up a Zoom meeting with a specific client. Today you ask: "What was that Zoom meeting we set up for that client?"
 
 Without session indexing, the agent would have no idea. With it enabled, the agent searches past sessions and finds the exact conversation with meeting details.
 

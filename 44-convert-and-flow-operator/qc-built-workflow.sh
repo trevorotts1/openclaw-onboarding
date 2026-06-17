@@ -19,7 +19,7 @@
 #
 # Mechanically-checkable WF items (asserted here):
 #   WF-3  Trigger present
-#   WF-4  Trigger active flag vs publish-intent (SHEILA BUG GATE)
+#   WF-4  Trigger active flag vs publish-intent (WF-ACTIVE GATE)
 #   WF-5  Publish state (draft/published) vs publish-intent
 #   WF-6  Re-entry/allow-multiple vs re-entry decision
 #   WF-7  Action sequence: at minimum one action node present + delivery chain not empty
@@ -133,7 +133,7 @@ else
   record_fail "WF-3" "no_trigger_found" "trigger present" "No trigger node detected in caf workflows export output"
 fi
 
-# ── WF-4: Trigger active flag vs publish-intent (SHEILA BUG GATE) ─────────────
+# ── WF-4: Trigger active flag vs publish-intent (WF-ACTIVE GATE) ──────────────
 EXPECTED_ACTIVE="false"
 [ "$PUBLISH_INTENT" = "LIVE" ] && EXPECTED_ACTIVE="true"
 
@@ -149,9 +149,9 @@ if [ "$OBSERVED_ACTIVE" = "$EXPECTED_ACTIVE" ]; then
 elif [ "$OBSERVED_ACTIVE" = "unknown" ]; then
   record_pass "WF-4" "unknown_in_export" "$EXPECTED_ACTIVE" "Trigger active state not visible in export — requires escalation per skill 36 for trigger-bucket state (MVP-deferred)"
 else
-  SHEILA_NOTE="SHEILA BUG: publish-intent=$PUBLISH_INTENT but trigger active=$OBSERVED_ACTIVE. Workflow will silently never fire."
+  WF4_NOTE="WF-ACTIVE BUG: publish-intent=$PUBLISH_INTENT but trigger active=$OBSERVED_ACTIVE. Workflow will silently never fire."
   [ "$PUBLISH_INTENT" = "LIVE" ] && \
-    record_fail "WF-4" "$OBSERVED_ACTIVE" "$EXPECTED_ACTIVE" "$SHEILA_NOTE" || \
+    record_fail "WF-4" "$OBSERVED_ACTIVE" "$EXPECTED_ACTIVE" "$WF4_NOTE" || \
     record_pass "WF-4" "$OBSERVED_ACTIVE" "$EXPECTED_ACTIVE" "Client chose DRAFT — inactive trigger is correct"
 fi
 

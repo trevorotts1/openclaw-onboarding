@@ -56,7 +56,7 @@
 # Wired in:
 #   scripts/qc-system-integrity.sh  (CHECK X.9: Ollama provider platform standard)
 
-set -uo pipefail
+set -euo pipefail
 
 QUIET=0
 for _arg in "$@"; do
@@ -124,7 +124,7 @@ try:
         cfg = json.load(f)
 except Exception as e:
     print(f"VIOLATED PARSE could not read/parse {cfg_path}: {e}")
-    sys.exit(0)
+    sys.exit(1)
 
 providers = (cfg.get("models", {}) or {}).get("providers", {}) or {}
 
@@ -148,7 +148,9 @@ api  = (ollama.get("api") or "").strip()
 key  = (ollama.get("apiKey") or ollama.get("api_key") or "").strip()
 
 base_l = base.lower()
-is_loopback = ("127.0.0.1" in base_l) or ("localhost" in base_l) or ("0.0.0.0" in base_l)
+# M1: 0.0.0.0 is NOT treated as loopback — on VPS it must fail the same as loopback;
+# on Mac 0.0.0.0 is also not the canonical signed-in-daemon address (127.0.0.1).
+is_loopback = ("127.0.0.1" in base_l) or ("localhost" in base_l)
 is_cloud    = "ollama.com" in base_l
 
 # ── Invariant P1: baseUrl matches platform ────────────────────────────────
@@ -164,8 +166,8 @@ if platform == "mac":
 else:  # vps
     if is_cloud:
         print(f"OK P1 vps ollama baseUrl is cloud-direct ({base})")
-    elif is_loopback:
-        print(f"VIOLATED P1 VPS ollama baseUrl is a loopback address ({base}); no local daemon runs in the container → ECONNREFUSED on every call. The standard requires baseUrl https://ollama.com + the client's OLLAMA_API_KEY.")
+    elif is_loopback or "0.0.0.0" in base_l:
+        print(f"VIOLATED P1 VPS ollama baseUrl is a loopback/any-interface address ({base}); no local daemon runs in the container → ECONNREFUSED on every call. The standard requires baseUrl https://ollama.com + the client's OLLAMA_API_KEY.")
     elif base:
         print(f"VIOLATED P1 VPS ollama baseUrl is neither ollama.com nor loopback ({base}); expected https://ollama.com")
     else:
@@ -212,16 +214,25 @@ def walk_models(obj, path):
     return found
 
 cloud_hits = walk_models(cfg.get("models", {}), "models")
-bad_tokens = [(p, m, mt) for (p, m, mt) in cloud_hits
-              if isinstance(mt, int) and mt > 64000]
-if bad_tokens:
+# C2/P4: a :cloud model with NO maxTokens key is also a violation — the caller
+# would hit the Ollama Cloud default (unbounded → HTTP 400 on long outputs).
+bad_tokens = []
+missing_tokens = []
+for (p, m, mt) in cloud_hits:
+    if mt is None:
+        missing_tokens.append((p, m))
+    elif isinstance(mt, int) and mt > 64000:
+        bad_tokens.append((p, m, mt))
+if bad_tokens or missing_tokens:
     for (p, m, mt) in bad_tokens:
         print(f"VIOLATED P4 :cloud model {m} at {p} has maxTokens={mt} > 64000 (Ollama Cloud caps output at 65536 → HTTP 400 / silent failure)")
+    for (p, m) in missing_tokens:
+        print(f"VIOLATED P4 :cloud model {m} at {p} has NO maxTokens key (Ollama Cloud hard-cap is 65536; omitting maxTokens risks HTTP 400 on long outputs). Set maxTokens <= 64000.")
 else:
     n = len(cloud_hits)
     print(f"OK P4 no :cloud model exceeds maxTokens 64000 ({n} :cloud model entr{'y' if n==1 else 'ies'} inspected)")
 PYEOF
-)"
+)" || { _fail "python3 evaluator failed (parse error or unexpected exit)"; exit 1; }
 
 # ─── Report findings ─────────────────────────────────────────────────────────
 while IFS= read -r line; do

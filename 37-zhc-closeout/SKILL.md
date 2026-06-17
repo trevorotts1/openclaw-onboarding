@@ -182,7 +182,7 @@ The script also auto-falls-back from `gemini-omni-video` to `veo3_fast` on its t
 
 **Infographic #1** is rendered locally via HTML + CSS + a headless Chromium screenshot (Playwright). It is NOT a diffusion-model call.
 
-Why: diffusion models (GPT Image 2, Nano Banana, Imagen) cannot reliably render small text labels. Maria Anderson's first two attempts came back with garbled department names and missing role counts. HTML + CSS gives perfect text every time, is free per render, and is fully deterministic.
+Why: diffusion models (GPT Image 2, Nano Banana, Imagen) cannot reliably render small text labels. Early fleet closeout attempts came back with garbled department names and missing role counts. HTML + CSS gives perfect text every time, is free per render, and is fully deterministic.
 
 The renderer lives in `templates/workforce-org-chart/`. See its README for details. Infographic #2 (How Work Flows) is stylized enough that AI image gen is still appropriate, and it now uses Nano Banana 2 (`gemini-3-1-flash-image`), which has dramatically better text rendering than the prior `gpt-image-2`.
 

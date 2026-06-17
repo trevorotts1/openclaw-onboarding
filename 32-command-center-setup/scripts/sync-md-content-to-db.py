@@ -2,7 +2,7 @@
 """sync-md-content-to-db.py - v10.15.6 (Mac) / v10.16.6 (VPS)
 
 Populate the dashboard's `agents` table *_md columns from the on-disk role
-folders. Closes the Angeleen gap where the dashboard DB had NULL for
+folders. Closes the NULL-columns gap where the dashboard DB had NULL for
 identity_md / soul_md / memory_md / how_to_md / heartbeat_md columns because
 seed-workspaces.py only writes companies + workspaces (departments).
 

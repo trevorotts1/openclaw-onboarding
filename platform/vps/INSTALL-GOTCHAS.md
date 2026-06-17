@@ -238,7 +238,7 @@ print('Sidecar written:', existing)
 
 ## 13. 🔴 Hostinger image ships TWO openclaw CLIs at different versions — auto-cleanup in v10.14.6+
 
-**Symptom (discovered live during Evelyn's gateway restart):**
+**Symptom (discovered live during a client gateway restart):**
 ```
 gateway connect failed: GatewayClientRequestError: protocol mismatch
 protocol mismatch conn=… client=cli cli v2026.4.21 min=3 max=3 expected=4
@@ -269,7 +269,7 @@ install.sh v10.14.6+ detects the dual install in the auto-detect block (host-sid
 
 Idempotent — re-running is safe; if only one CLI exists, no action.
 
-**For POST-INSTALL clients** (anyone already installed on v10.14.5 or earlier — Evelyn, Maria, Angela T as of 2026-05-21), use the standalone cleanup script:
+**For POST-INSTALL clients** (anyone already installed on v10.14.5 or earlier — use the standalone cleanup script:
 
 ```bash
 # From the host, naming the container:
@@ -321,4 +321,4 @@ Error: apt is not available. Please use brew instead.
 3. File at https://github.com/trevorotts1/openclaw-onboarding/issues with label `hostinger-edge-case`
 4. Add an entry to this file in the same commit as the install.sh fix
 
-**Last updated:** v10.14.3 (2026-05-21). Captured during the live install on client Evelyn Bethune (VPS 1651955) which surfaced 8 of the 10 gotchas above in a single ~25-minute session.
+**Last updated:** v10.14.3 (2026-05-21). Captured during a live client VPS install that surfaced 8 of the 10 gotchas above in a single ~25-minute session.

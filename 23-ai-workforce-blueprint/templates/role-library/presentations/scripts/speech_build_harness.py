@@ -321,8 +321,12 @@ def call_with_retry(
             base = min(BACKOFF_BASE_SEC * (2 ** (attempt - 1)), BACKOFF_CAP_SEC)
             sleep_sec = random.uniform(0, base)
             code_part = f" (HTTP {e.status_code})" if e.status_code else ""
+            # M2: the loop runs `range(1, max_retries + 2)` => max_retries+1 total
+            # attempts (1 initial + max_retries retries). Show the denominator as
+            # max_retries+1 so the log matches the actual attempt budget (the old
+            # `/{max_retries}` was off by one and could print "attempt N/N-ish").
             print(
-                f"[retry] {label} attempt {attempt}/{max_retries}{code_part} — "
+                f"[retry] {label} attempt {attempt}/{max_retries + 1}{code_part} — "
                 f"sleeping {sleep_sec:.1f}s before retry. Error: {e}"
             )
             time.sleep(sleep_sec)
@@ -363,8 +367,7 @@ def _anthropic_generate_once(
     )
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            return data["content"][0]["text"]
+            raw = resp.read().decode("utf-8")
     except urllib.error.HTTPError as e:
         err_body = ""
         try:
@@ -377,8 +380,40 @@ def _anthropic_generate_once(
             )
         raise HardAPIError(f"HTTP {e.code} (permanent): {err_body[:400]}")
     except Exception as exc:
-        # Network timeouts etc. are transient
+        # Network/transport errors (timeouts, reset, etc.) are transient — retry.
+        # NOTE: response-PARSING is done OUTSIDE this try (below) so a malformed but
+        # successful 200 is NOT swallowed here and misclassified as retryable.
         raise RetryableError(str(exc))
+
+    # M2: defensively parse a SUCCESSFUL (HTTP 200) response. A malformed 200 — bad
+    # JSON, no "content" key, an EMPTY content list ("content": []), or a content[0]
+    # with no "text" — is a PERMANENT bad-shape error, NOT a transient one. The old
+    # code did `data["content"][0]["text"]` inside the urlopen try, so an IndexError
+    # / KeyError on a malformed 200 fell into the broad `except Exception` above and
+    # was re-raised as RetryableError — burning the whole retry budget on a response
+    # that will never improve. Raise HardAPIError so the caller fails fast (or falls
+    # back to the secondary model) instead of pointlessly retrying.
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError) as exc:
+        raise HardAPIError(
+            f"200 OK but response body is not valid JSON ({exc}). Body[:200]: {raw[:200]!r}"
+        )
+    content = data.get("content") if isinstance(data, dict) else None
+    if not isinstance(content, list) or not content:
+        raise HardAPIError(
+            f"200 OK but 'content' is missing/empty (got {content!r}). "
+            f"Body[:200]: {raw[:200]!r}. A malformed 200 is a permanent bad-shape "
+            f"error, not a retryable one."
+        )
+    first = content[0]
+    text = first.get("text") if isinstance(first, dict) else None
+    if not isinstance(text, str):
+        raise HardAPIError(
+            f"200 OK but content[0].text is missing/not a string (got {text!r}). "
+            f"Body[:200]: {raw[:200]!r}."
+        )
+    return text
 
 
 def generate_slide_text(

@@ -173,7 +173,7 @@ jobs:
           fi
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # CHECK 3: GHL env-wiring + fail-loud live verify (the Evelyn VPS bug class).
+  # CHECK 3: GHL env-wiring + fail-loud live verify (the VPS env-inheritance bug class).
   # Creds must be wired into the gateway-inherited env (openclaw.json env.vars +,
   # on VPS, the docker env_file with empty placeholders REPLACED), and a fail-loud
   # live verify gate must run a real read so install never reports success on a

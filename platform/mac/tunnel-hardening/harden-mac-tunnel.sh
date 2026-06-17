@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # harden-mac-tunnel.sh
 # Bucket 3 -- one-time sudo hardening for an existing Mac-tunnel connector.
-# Generalized from the Christy-Mac-Tunnel-StayConnected-Fix.
+# Generalized from the Mac-Tunnel-StayConnected-Fix (fleet-hardened).
 #
 # Layers applied:
 #   A  -- force --protocol http2 (TCP, no UDP idle-timeout drops)

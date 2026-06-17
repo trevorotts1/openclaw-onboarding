@@ -10,7 +10,7 @@
 # Usage (from inside the Mac mini's OpenClaw install):
 #   ingest-sop-library.sh <client-slug> [release-tag]
 #
-# - <client-slug>: e.g. "trevor", "lyric". Used to scope
+# - <client-slug>: e.g. "trevor", "sample-client". Used to scope
 #                  client_template_vars rows.
 # - [release-tag]: pin a release (default: latest stable, set in
 #                  ONBOARDING_VERSION below).

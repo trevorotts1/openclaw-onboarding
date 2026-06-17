@@ -30,8 +30,8 @@
 - **references/workflow-build-checklist-template.md** — new canonical 21-item reusable
   checklist serving BOTH the agent self-check (PLAN MODE Step D) AND the client hand-over
   (after QC passes). Covers: name, tags, trigger type+filters, trigger active flag (WF-4
-  Sheila gate), publish state, re-entry/allow-multiple, action sequence, If/Else conditions,
-  wait durations, custom fields, custom values, SMS From-number (WF-12 Sheila trap), email
+  WF-ACTIVE gate), publish state, re-entry/allow-multiple, action sequence, If/Else conditions,
+  wait durations, custom fields, custom values, SMS From-number (WF-12 trigger-active trap), email
   sender, webhooks, delivery chain linkage, advanced settings, edge cases, dependencies,
   TRINITY completeness, hallucination detection (WF-20), and snapshot verification (WF-21).
   Cross-referenced as superset of skill 41's 12-point checklist.
@@ -57,7 +57,7 @@
 - **qc-built-workflow.sh** — new per-build QC script (DISTINCT from install-level
   qc-convert-and-flow.sh). Takes `<workflow-id> [--publish-intent DRAFT|LIVE]
   [--re-entry ONCE|ALLOW-MULTIPLE] [--json]`. Machine-asserts WF-3 (trigger present),
-  WF-4 (trigger active vs publish-intent — Sheila gate), WF-5 (publish status), WF-6
+  WF-4 (trigger active vs publish-intent — WF-ACTIVE gate), WF-5 (publish status), WF-6
   (re-entry setting), WF-7 (action nodes present), WF-12 (SMS From-number non-empty),
   WF-15 (delivery chain linkage), WF-18+WF-21 (snapshot exists). Emits per-item PASS/FAIL
   JSON. Appends to build-events ledger. Exit 0=all-pass, 1=fail, 2=prereq-error.
@@ -65,7 +65,7 @@
 ### Added (qc-convert-and-flow.sh Section S static assertions)
 - 35 new static assertions in Section S covering: Step 0.5 PLAN MODE present + all binding
   rules, Step 9 QC GATE + announce template + MiniMax dispatch + checklist handover, checklist
-  template exists with all 21 WF items + Sheila/SMS gates + hallucination detector + skill 41
+  template exists with all 21 WF items + WF-ACTIVE/SMS gates + hallucination detector + skill 41
   cross-ref, qc-built-workflow.sh present + executable + per-item assertions, CORE_UPDATES
   AGENTS.md block has all 3 new rules (plan-mode, QC-gate, hallucination→reasoning-HIGH).
 
@@ -111,7 +111,7 @@ needed, without blocking work when the owner chooses to proceed.
 
 ---
 
-## [1.0.11] - 2026-06-11 — fix: wire GHL creds into gateway-inherited env + fail-loud live verify (Evelyn VPS reproduction)
+## [1.0.11] - 2026-06-11 — fix: wire GHL creds into gateway-inherited env + fail-loud live verify (VPS env-inheritance bug reproduction)
 
 ### Fixed (install env-wiring gap — root cause of caf dying on a "successful" install)
 - **Creds landed only where the gateway process never reads them.** The installer
@@ -119,7 +119,7 @@ needed, without blocking work when the owner chooses to proceed.
   gateway/agent **process never loads.** When the agent invoked `caf`, the
   gateway's process env had no `GOHIGHLEVEL_LOCATION_ID`, so the engine died at
   `Error: GHL_LOCATION_ID environment variable is not set.` while the install had
-  already reported success. **Reproduced live on Evelyn's VPS, 2026-06-11.**
+  already reported success. **Reproduced live on a client VPS, 2026-06-11.**
 - **Empty docker `env_file` placeholders masked everything (VPS).** The Hostinger
   compose `env_file` (`/docker/<project>/.env`) carried empty placeholder lines
   (`GOHIGHLEVEL_API_KEY=` with no value, no FIREBASE line). docker-compose injects
@@ -152,7 +152,7 @@ needed, without blocking work when the owner chooses to proceed.
   sees): `caf workflows list`, falling back to `caf contacts list --limit 1`
   (PIT-only, since workflow reads can legitimately fail without the Firebase
   token). **FAILS LOUDLY (exit 1)** if creds are present but caf can't reach GHL
-  (the Evelyn failure mode). Exit 2 = installed-with-missing-prereqs (lists the
+  (the VPS env-inheritance failure mode). Exit 2 = installed-with-missing-prereqs (lists the
   vars). Exit 0 = live-verified. The install path NEVER reports skill-44 success
   on exit 1.
 
@@ -209,7 +209,7 @@ bump), the skill version moves `1.0.8` -> `1.0.9` to carry the new doc with the 
 - **`references/fleet-announcement-template.md`** — the ONE canonical owner-facing Skill 44
   announcement, sent fleet-wide once a box has been given Skill 44. Two parts:
   - **The canonical 3-message template** (placeholders `[OWNER_NAME]` / `[AGENT_NAME]`,
-    verbatim from what was sent to Cassandra and Aurelia): Message 1 = 🎉 congratulations +
+    verbatim from what was sent to the first fleet clients): Message 1 = 🎉 congratulations +
     plain-English "what it unlocks" (the agent BUILDS Convert & Flow automation workflows as
     drafts to review — appointment follow-ups, lead-nurture, tag-and-text) + the "one final
     5-minute one-time token setup" framing + the "reach out to Trevor" offer; Message 2 =
@@ -225,7 +225,7 @@ bump), the skill version moves `1.0.8` -> `1.0.9` to carry the new doc with the 
     gateway via `openclaw message send --channel telegram` — never the direct Telegram API;
     one client at a time; substitute the roster names; verify exit code + message id before
     the next; 3 messages in order), RECEIPTS (per-client JSON line appended to the operator
-    ledger), and the already-announced list (cassandra msg ids 12524-12526 / aurelia, both
+    ledger), and the already-announced list (fleet client msg ids / prior announce, both
     2026-06-11) to prevent duplicate sends.
 
 ### Changed
@@ -269,7 +269,7 @@ bump), the skill version moves `1.0.7` -> `1.0.8` to carry the new doc with the 
 
 ## [1.0.7] - 2026-06-11 — fix: ZHC- folder standing approval + top-level `folder` plan-key hardening (both reproduced live on a client box)
 
-Two surgical engine fixes, both confirmed live on a managed client box (Evelyn, VPS)
+Two surgical engine fixes, both confirmed live on a managed client VPS box
 by an Opus diagnostic 2026-06-11. These are NEW bugs — disjoint from the 1.0.3
 400 `corrupted order` fix (already shipped).
 

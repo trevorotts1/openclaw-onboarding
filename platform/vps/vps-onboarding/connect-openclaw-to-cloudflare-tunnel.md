@@ -43,7 +43,8 @@ gateway never sees a partial state:
 
   # 4a. Generate a strong random token (64 hex chars, distinct from gateway.auth.token)
   HOOKS_TOKEN=$(openssl rand -hex 32)
-  echo "$HOOKS_TOKEN" > /tmp/openclaw-hooks-token  # tmp file for retrieval
+  # SECURITY: do NOT write to /tmp/openclaw-hooks-token — /tmp is world-readable.
+  # The token is kept in the shell variable and persisted to a 600-mode file only.
 
   # 4b. Sanity check: must NOT equal the gateway auth token
   GW_TOKEN=$(openclaw config get gateway.auth.token --json 2>/dev/null | tr -d '"')
@@ -52,16 +53,17 @@ gateway never sees a partial state:
     HOOKS_TOKEN=$(openssl rand -hex 32)
   fi
 
-  # 4c. Set token FIRST, then path, then flip enabled to true
-  openclaw config set hooks.token "$HOOKS_TOKEN"
+  # 4c. Persist token to a 600-mode credentials file BEFORE setting it in config,
+  # so we have it saved even if a subsequent step fails.
+  mkdir -p ~/.openclaw/credentials  # VPS: /data/.openclaw/credentials
+  printf '%s' "$HOOKS_TOKEN" > ~/.openclaw/credentials/hooks.token
+  chmod 600 ~/.openclaw/credentials/hooks.token
+
+  # 4d. Set token FIRST (read from file to avoid ps-visible args), then path, then enable.
+  # Reading from the credentials file keeps the value off the process command line.
+  openclaw config set hooks.token "$(cat ~/.openclaw/credentials/hooks.token)"
   openclaw config set hooks.path "/hooks"
   openclaw config set hooks.enabled true
-
-  # 4d. Persist token to a 600-mode credentials file so the operator can
-  # send webhooks later
-  mkdir -p ~/.openclaw/credentials  # VPS: /data/.openclaw/credentials
-  echo "$HOOKS_TOKEN" > ~/.openclaw/credentials/hooks.token
-  chmod 600 ~/.openclaw/credentials/hooks.token
 
 STEP 5 — Reload the gateway so config takes effect
 Run: openclaw gateway reload  (fall back to `openclaw gateway restart`)

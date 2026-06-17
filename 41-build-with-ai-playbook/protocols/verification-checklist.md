@@ -90,7 +90,7 @@ For workflows built via Skill 44's Convert and Flow CLI (`caf workflows build`),
 
 That checklist is a SUPERSET of this 12-point checklist, extended with Skill 44-specific
 gates that are not applicable to Build-with-AI (browser/manual) builds:
-- **WF-4** — trigger active flag vs publish-intent (the "Sheila trap": CAF_DRAFT_ONLY=true
+- **WF-4** — trigger active flag vs publish-intent (the "trigger-active trap": CAF_DRAFT_ONLY=true
   ships triggers inactive by default; a workflow built as LIVE needs active:true or it
   silently never fires).
 - **WF-12** — SMS From-number non-empty on every SMS node (no-From-number = silent send failure).

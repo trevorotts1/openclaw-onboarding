@@ -283,7 +283,7 @@ Read brand info from core files, then ask only what's missing:
 
    **4a. Check MEMORY.md** for an existing `content_sheet_id` or `content_sheet_url`. If found, use it — never create a duplicate. Skip to step 4d.
 
-   **4b. Check if an existing sheet ID was provided during onboarding** (e.g. Angeleen's is `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c`). If yes, adopt it — skip to 4d.
+   **4b. Check if an existing sheet ID was provided during onboarding** (the client may have shared one during their interview). If yes, adopt it — skip to 4d.
 
    **4c. If no existing sheet:** create via n8n webhook (no client credentials required — the webhook uses the BlackCEO Automations service account):
    ```bash
@@ -293,7 +293,7 @@ Read brand info from core files, then ask only what's missing:
    SHEET_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['sheetId'])")
    SHEET_URL=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['sheetUrl'])")
    ```
-   If the webhook fails after 3 retries: use Angeleen's template ID `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c` as a fallback reference — tell the client to go to `https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c/edit`, click File → Make a Copy, rename it, share the link back.
+   If the webhook fails after 3 retries: use the fleet template sheet ID `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c` as a fallback reference — tell the client to go to `https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c/edit`, click File → Make a Copy, rename it, share the link back.
 
    **4d. Record `content_sheet_id` and `content_sheet_url` in MEMORY.md and skill config:**
    ```bash

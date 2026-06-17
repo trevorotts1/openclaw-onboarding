@@ -6,7 +6,7 @@
   1. Reads `.interviewNudgeUuid` from build-state (written by install.sh at install time).
   2. Calls `openclaw cron rm <uuid>` to remove the interview-nudge cron — tolerated non-fatal on failure.
   3. Clears `.interviewNudgeUuid` / nulls `.interviewNudgeRegisteredAt` from build-state.
-  4. Fallback name-scan: scans `openclaw cron list` for any cron named `interview-nudge` and removes it — covers boxes installed before UUID recording was added (Talaya fleet rescue).
+  4. Fallback name-scan: scans `openclaw cron list` for any cron named `interview-nudge` and removes it — covers boxes installed before UUID recording was added (pre-UUID fleet rescue).
   5. Calls `lr_kill "interview-nudge"` via loop-registry.sh for registry hygiene.
 - `scripts/test-closeout-gated-pipeline.sh`: added T11 (static grep asserts nudge cron rm wired at done-transition + fallback scan present) and T12 (schema has interviewNudgeUuid + interviewNudgeRegisteredAt).
 
@@ -117,7 +117,7 @@ generate-infographics.sh header + both success paths reference QUALITY-GATE.md a
 
 ## [1.1.2] - 2026-05-27 - Infographics upgraded to 10/10 (shipped with onboarding v10.14.9 / v10.15.9)
 
-Re-graded the two closeout infographics against a true 10/10 bar after Teresa Pelham's launch.
+Re-graded the two closeout infographics against a true 10/10 bar after a live client launch.
 
 ### A. Org chart: true reporting tree with visible connector lines
 `templates/workforce-org-chart/index.html.template` rebuilt. Previously four flat cluster cards with a single stub line under the CEO; it read as a grid, not an org chart. Now: Owner -> CEO -> horizontal bus -> each cluster header -> per-cluster branch spine down to every department, with junction dots. Lines are drawn by measuring real positions (getBoundingClientRect) so the tree is correct for any dept count. New fitDeptCards() auto-sizes cards so dense clusters (5+ depts) never overflow the canvas. render.mjs / cluster-classifier.js unchanged.
@@ -128,7 +128,7 @@ Re-graded the two closeout infographics against a true 10/10 bar after Teresa Pe
 
 ## [1.1.1] - 2026-05-26 - Skill 37 v4 production bug fixes (shipped with onboarding v10.14.4 / v10.15.4)
 
-Five bugs caught when re-firing Evelyn's phantom-completed closeout against v10.X.3.
+Five bugs caught when re-firing a phantom-completed closeout against v10.X.3.
 
 ### A. Inf #2 model slug
 `gemini-3-1-flash-image` returned 422 from KIE; corrected to `nano-banana-2`. Confirmed accepted against `api.kie.ai/api/v1/jobs/createTask` 2026-05-26. Fallback `gpt-image-2-text-to-image` unchanged.
@@ -148,7 +148,7 @@ Was: env var OR BlackCEO/OpenClaw search; otherwise abort. Now: env var -> Black
 
 ## [1.1.0] - 2026-05-26 - Skill 37 v3 closeout fixes (shipped with onboarding v10.14.3 / v10.15.3)
 
-Codifies 4 lessons from Maria Anderson / Marico Consulting closeout (2026-05-26):
+Codifies 4 lessons from a live ZHC closeout (2026-05-26):
 
 ### 1. Workforce-structure infographic is now HTML + Playwright (no AI image model)
 - New `templates/workforce-org-chart/` directory: `index.html.template`, `render.mjs`, `cluster-classifier.js`, `package.json`, `README.md`.
@@ -191,7 +191,7 @@ Codifies 4 lessons from Maria Anderson / Marico Consulting closeout (2026-05-26)
 - `skill-version.txt = 1.0.0`
 
 ### Why this exists
-Before v10.14.17, the post-build pipeline had NO enforced closeout. Skill 23 wrote `buildCompletedAt`, then nothing — Skill 32 was supposed to fire by documentation, but documentation is not enforcement. Diagnosed today on Evelyn Bethune's VPS: build completed at 20:22, the client heard nothing. No celebration, no infographics, no closeout doc, no Command Center URL.
+Before v10.14.17, the post-build pipeline had NO enforced closeout. Skill 23 wrote `buildCompletedAt`, then nothing — Skill 32 was supposed to fire by documentation, but documentation is not enforcement. Diagnosed today on a client VPS: build completed at 20:22, the client heard nothing. No celebration, no infographics, no closeout doc, no Command Center URL.
 
 This skill is the state-machine-driven closeout layer. Same architectural pattern as the build-resume layer fixed the build-interruption gap in v10.14.16.
 

@@ -123,7 +123,7 @@ class TestLibraryGateContentCheck(unittest.TestCase):
     # — FAIL cases (thin stubs that used to pass) ——————————————————————————
 
     def test_thin_stub_with_filled_marker_fails(self):
-        """A 156-byte file with the 'Filled' marker MUST fail (the Kofi bug)."""
+        """A 156-byte file with the 'Filled' marker MUST fail (thin-stub bug)."""
         content = MARKER_FILLED + "# Director\n\nThin stub.\n"
         self.assertLess(len(content.encode()), LIBRARY_MIN_BYTES,
                         "Precondition: test content is thin")

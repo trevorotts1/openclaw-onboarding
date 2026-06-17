@@ -3,8 +3,8 @@
 #
 # Usage: generate-infographics.sh structure|workflow
 #
-# Model strategy (v10.14.3 / v10.15.3, codified from Maria Anderson / Marico
-# Consulting 2026-05-26 closeout lessons):
+# Model strategy (v10.14.3 / v10.15.3, codified from live fleet closeout
+# lessons, 2026-05-26):
 #
 #   structure (Infographic #1 - Workforce Org Chart)
 #     -> rendered locally via HTML + CSS + Playwright Chromium screenshot.
@@ -20,11 +20,11 @@
 #        not supported) to nano-banana-2. Confirmed accepted by
 #        api.kie.ai/api/v1/jobs/createTask on 2026-05-26.
 #        v10.X.8: nano-banana-2 availability is ACCOUNT/REGION-dependent on
-#        KIE. It returned 422 "model name not supported" on Teresa Pelham's
+#        KIE. It returned 422 "model name not supported" on a client's
 #        KIE account on 2026-05-27 even though it worked on other accounts.
 #        This is expected. nano-banana-2 stays the PRIMARY; the retry loop
 #        falls back to gpt-image-2-text-to-image (the proven safety net) on
-#        attempt 3, which produced Teresa's Inf #2 successfully. Do NOT change
+#        attempt 3, which succeeded. Do NOT change
 #        the primary slug; the fallback chain is the fix. See KNOWN-ISSUES.md.
 #
 # Both shapes of .departments (array AND keyed object) are tolerated, since

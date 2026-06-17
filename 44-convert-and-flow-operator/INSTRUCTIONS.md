@@ -265,7 +265,7 @@ access.
 The QC sub-agent independently inspects the BUILT workflow:
 - Primary: `caf workflows export <id>` (read-only, Tier 0).
 - Escalation per skill 36 ONLY for what export cannot show (e.g. trigger-bucket state — the
-  exact gap that bit Sheila and is the v12.3.6 deferred follow-up).
+  exact gap discovered in a client install and is the v12.3.6 deferred follow-up).
 
 The sub-agent runs `qc-built-workflow.sh <workflow-id>` (in the skill folder) which
 machine-asserts the mechanically-checkable items and returns per-item PASS/FAIL JSON.

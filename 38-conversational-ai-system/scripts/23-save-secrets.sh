@@ -48,5 +48,5 @@ case "$OS_NAME" in
 esac
 
 echo "[23-save-secrets] appended v5.14 block to $SECRETS_ENV_FILE"
-echo "[23-save-secrets] last 15 lines:"
-tail -n 15 "$SECRETS_ENV_FILE"
+# NOTE: the file tail is intentionally NOT echoed here — $SECRETS_ENV_FILE contains
+# Cloudflare and HOOKS tokens that must never appear in the world-readable install log.

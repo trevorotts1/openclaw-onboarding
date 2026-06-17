@@ -462,11 +462,11 @@ else
     fail "T11c: interview-nudge cron rm is NOT in the done-transition block — may not fire at closeout"
   fi
 
-  # 11d: a fallback name-scan is present for pre-UUID boxes (Talaya fleet rescue)
+  # 11d: a fallback name-scan is present for pre-UUID boxes (pre-UUID fleet rescue)
   if grep -q 'interview-nudge' "$run_script" && grep -q 'scan_uuid\|grep.*interview-nudge\|awk.*interview-nudge' "$run_script"; then
     pass "T11d: run-closeout.sh has a fallback name-scan for boxes without a recorded interviewNudgeUuid"
   else
-    fail "T11d: run-closeout.sh missing fallback name-scan for pre-UUID boxes (Talaya)"
+    fail "T11d: run-closeout.sh missing fallback name-scan for pre-UUID boxes"
   fi
 fi
 

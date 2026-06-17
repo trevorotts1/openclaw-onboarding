@@ -104,7 +104,7 @@ Configuration verified against:
 - docs.openclaw.ai/gateway/security
 - docs.openclaw.ai/tools/multi-agent-sandbox-tools
 - docs.openclaw.ai/providers/ollama (Ollama "Cloud + Local" hybrid flow, §5)
-- Live test on OpenClaw 2026.5.28 (Sheila Reynolds' Mac mini, session logs)
+- Live test on OpenClaw 2026.5.28 (a Mac mini client box, session logs)
 
 ## Activation
 

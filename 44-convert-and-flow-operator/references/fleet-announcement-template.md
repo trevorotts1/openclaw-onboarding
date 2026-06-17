@@ -3,7 +3,7 @@
 *This is the ONE canonical owner-facing announcement for Skill 44 (Convert & Flow
 Operator). It is the standard that goes out fleet-wide once a box has been given Skill 44.
 Send it verbatim, substituting only the two placeholders. Do not improvise the wording —
-this is the version sent to the first owners (Cassandra, Aurelia) and it IS the standard.*
+this is the version sent to the first fleet owners and it IS the standard.*
 
 There are two parts to this file:
 
@@ -173,8 +173,7 @@ never double-announce.
 
 | Box | Message ids | Date |
 |---|---|---|
-| `cassandra` | 12524, 12525, 12526 | 2026-06-11 |
-| `aurelia` | (sent) | 2026-06-11 |
+| *(first two fleet boxes — see operator ledger)* | (sent) | 2026-06-11 |
 
 Skip any box already present in this list / the operator ledger.
 

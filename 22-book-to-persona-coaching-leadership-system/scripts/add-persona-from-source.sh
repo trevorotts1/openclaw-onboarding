@@ -560,7 +560,7 @@ fi
 # v10.14.32: bootstrap the file on fresh VPS installs. Pre-v10.14.32 the gate
 # below silently no-op'd when the file was missing, so on a brand-new VPS the
 # FIRST persona produced was never indexed — Track-I forensic root cause for
-# Lyric's "selector returns 0 candidates" symptom.
+# Known symptom: "selector returns 0 candidates" (fleet-observed bug).
 CAT_FILE="$PERSONA_DIR/persona-categories.json"
 if [ ! -f "$CAT_FILE" ]; then
   blue "── Bootstrapping persona-categories.json (first persona on this VPS) ──"

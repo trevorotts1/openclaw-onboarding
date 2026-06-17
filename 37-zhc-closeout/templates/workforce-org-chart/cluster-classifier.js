@@ -12,7 +12,7 @@
 //   1. exact slug match against CLUSTER_MAP
 //   2. keyword fallback (substring scan against KEYWORDS) when a client's
 //      dept slugs do not match the canonical naming map -- this is what
-//      stopped Evelyn's 7 non-canonical depts from all collapsing into the
+//      stopped a client's 7 non-canonical depts from all collapsing into the
 //      Technology box.
 //   3. last resort -> Technology
 //   4. lopsidedness guard: if the result crams >5 depts into one cluster

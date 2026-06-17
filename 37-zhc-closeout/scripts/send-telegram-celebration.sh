@@ -380,9 +380,9 @@ fi
 
 # ---- Message 6: Command Center URL ----
 #
-# Hardened against the v3-era bugs that hit Lyric + Evelyn:
-#   - commandCenterUrl was null (Lyric) → we'd have sent an empty URL line
-#   - commandCenterUrl was the legacy fake http://localhost:4000 (Evelyn) →
+# Hardened against the v3-era bugs (fleet postmortem):
+#   - commandCenterUrl was null → we'd have sent an empty URL line
+#   - commandCenterUrl was the legacy fake http://localhost:4000 →
 #     useless to the client; their dashboard lives at a public CF tunnel URL.
 # Real public URL must start with https:// AND not be localhost.
 cc_url_is_real() {

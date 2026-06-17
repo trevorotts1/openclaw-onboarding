@@ -241,8 +241,8 @@ OC_LOGS = os.path.join(OC_CONFIG, "logs")
 # BUG-FIX (fix/cron-owner-chat-routing): these are OPERATOR chat IDs (Trevor /
 # E.R. Spaulding / LeAnne Dolce).  They must NEVER be returned as a client
 # owner-chat target — doing so routes every cron delivery to the operator
-# instead of the client.  Confirmed live misrouting on drtola / talaya /
-# jocelyn (all 3 crons wired to 5252140759).
+# instead of the client.  Confirmed live misrouting on multiple client boxes
+# (all crons wired to the operator ID instead of the client).
 # The operator's Mac env may export TELEGRAM_CHAT_ID=5252140759 (or equivalent)
 # and the SSH session that runs install.sh inherits it, causing S20 to resolve
 # the operator ID instead of the client owner ID.
@@ -853,7 +853,7 @@ send_telegram_progress() {
 #   # (future: OPENCLAW_GOOGLE_SERVICE_ACCOUNT_JSON, etc.)
 #
 # Per-client install:
-#   OPENCLAW_OWNER_NAME="Aurelia" curl ...install.sh | bash
+#   OPENCLAW_OWNER_NAME="Sample Client" curl ...install.sh | bash
 #   (vars from operator's ~/.zshrc inherited automatically)
 inject_shared_operator_secrets() {
     local injected_count=0
@@ -974,7 +974,7 @@ get_alias_list() {
         TELEGRAM_BOT_TOKEN)
             echo "TELEGRAM_BOT_TOKEN TG_BOT_TOKEN BOT_TOKEN" ;;
         GEMINI_API_KEY)
-            # Google's Gemini API key is the SAME credential as GOOGLE_API_KEY — Aurelia
+            # Google's Gemini API key is the SAME credential as GOOGLE_API_KEY — a client
             # had GOOGLE_API_KEY set and Gemini was reported "Not configured" (10.13.1 bug).
             echo "GEMINI_API_KEY GOOGLE_API_KEY GOOGLE_GEMINI_API_KEY GOOGLE_AI_STUDIO_API_KEY GOOGLE_GENERATIVE_AI_API_KEY GOOGLE_AI_API_KEY GEMINI_KEY" ;;
         GOOGLE_API_KEY)
@@ -1250,7 +1250,7 @@ search_env_var_mac() {
     #   3) plus shell-source common rc files in a subshell so values that arrive
     #      via `source ~/some-other-file` also get caught.
     #
-    # This is the cache-bust answer to Aurelia's bug: keys lived in a file the
+    # This is the cache-bust answer to a client bug: keys lived in a file the
     # v10.13.2 scanner did not enumerate. v10.13.3 enumerates ALL of them.
     local HOME_DIR="${HOME}"
 
@@ -2884,7 +2884,7 @@ try:
     if gemini_key:
         ms.setdefault('provider', "gemini")
         # v10.13.12: Pin the embedding model. gemini-embedding-001 is the
-        # fleet-confirmed standard (verified on Maria, Evelyn, Angela, Corey).
+        # fleet-confirmed standard (verified across multiple Mac and VPS clients).
         ms.setdefault('model', "gemini-embedding-001")
     elif openai_key:
         ms.setdefault('provider', "openai")
@@ -3391,7 +3391,7 @@ step "Step 10: Writing UPDATE PENDING Flag to AGENTS.md"
 # OpenClaw agents read core .md files from agents.defaults.workspace OR a
 # per-agent override at agents.list[*].workspace. Writing to the wrong path
 # means the agent never sees the UPDATE PENDING flag (this was Floyd's bug
-# AND Aurelia's v10.13.8 bug — install.sh wrote to ~/clawd, agent read from
+# AND a v10.13.8 Mac bug — install.sh wrote to ~/clawd, agent read from
 # ~/.openclaw/workspace, install looked silently broken).
 # Resolution priority:
 #   1. agents.list[<main>].workspace (per-agent override — wins if set)
@@ -3419,10 +3419,10 @@ except Exception: pass
 fi
 
 # Step 2: agents.defaults.workspace via CLI
-# v10.13.8 (P0 from Aurelia's v10.13.6 install): `openclaw config get
+# v10.13.8 (P0 from a Mac v10.13.6 install): `openclaw config get
 # agents.defaults.workspace` exits NON-ZERO on a fresh install where the
 # key has never been set. With `set -euo pipefail` at line 2, this kills
-# the whole install silently. The Aurelia symptom: install reached the
+# the whole install silently. The observed symptom: install reached the
 # Step 10 banner via Telegram progress, then no more messages — script
 # died here. Fix: wrap the pipeline-bearing command substitution with
 # `|| WORKSPACE_DIR=""` so a non-zero exit becomes an empty string and
@@ -3440,7 +3440,7 @@ except Exception: pass
 " 2>/dev/null) || WORKSPACE_DIR=""
 fi
 
-# Step 3: disk fallback. v10.13.9 (Aurelia's bug): the previous code preferred
+# Step 3: disk fallback. v10.13.9 (Mac path bug): the previous code preferred
 # ~/clawd if it existed because some clients still had that directory from the
 # Clawd→OpenClaw rename. That made install.sh write UPDATE PENDING to
 # ~/clawd/AGENTS.md while the agent reads from ~/.openclaw/workspace/AGENTS.md
@@ -5180,7 +5180,7 @@ install_skill_40_zhc_public_records_scraper
 # Why: skill 44 ships the `caf` GHL operator CLI. The agent invokes it from the
 # gateway PROCESS, which inherits env from openclaw.json `env.vars` (and, on a
 # Hostinger VPS, from the docker-compose `env_file` /docker/<project>/.env) — NOT
-# from ~/.openclaw/secrets/.env, which the gateway never loads. Evelyn's VPS
+# from ~/.openclaw/secrets/.env, which the gateway never loads. A client VPS
 # (2026-06-11) proved the gap: creds lived only in secrets/.env and the docker
 # env_file had empty `GOHIGHLEVEL_*=` placeholder lines (docker injects those as
 # EMPTY STRINGS, masking everything), so caf died at
@@ -5232,7 +5232,7 @@ install_skill_44_convert_and_flow_operator_env() {
         case "$VERIFY_RC" in
             0) success "Skill 44 LIVE-VERIFIED: caf reached GHL with a real read." ;;
             2) warn "Skill 44 installed-with-missing-prereqs (verify could not run a live read — creds absent). NOT a success; NOT a hard failure." ;;
-            *) warn "Skill 44 LIVE VERIFY FAILED (rc=$VERIFY_RC): caf could NOT reach GHL despite creds present (Evelyn failure mode — env not inherited / empty docker placeholder / auth). Skill 44 is NOT live-verified. See output above; re-run $WIRE then force-recreate (VPS) or restart the gateway (Mac)." ;;
+            *) warn "Skill 44 LIVE VERIFY FAILED (rc=$VERIFY_RC): caf could NOT reach GHL despite creds present (VPS env-inheritance failure mode — env not inherited / empty docker placeholder / auth). Skill 44 is NOT live-verified. See output above; re-run $WIRE then force-recreate (VPS) or restart the gateway (Mac)." ;;
         esac
     fi
     return 0
