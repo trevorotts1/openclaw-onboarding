@@ -154,6 +154,21 @@ Every overlay text box added in this SOP must comply with all six rules of SOP 9
 
 Native text overlay fallback trigger: if two render attempts on any text element both fail Phase 5 image QC (text garbled, struck price not rendered cleanly), the QC Specialist or Slide Image Creator must write the failed element to pptx_text_overlays.json with the correct `strike` flag BEFORE assembly begins. If this role reaches assembly and discovers that a slide's image has a missing text element that is not covered by an overlay entry, halt and notify the Director: the fallback entry was not written.
 
+**Deterministic-renderer path (`scripts/build_deck.py`) -- automatic per-slide speaker notes:**
+
+When the deck is assembled via the deterministic fleet renderer `scripts/build_deck.py` (the zero-AI-at-runtime path) rather than a hand-written `assemble_pptx.py`, the renderer injects per-slide speaker notes AUTOMATICALLY -- you do NOT hand-build a `presenter_notes.json` for this path. The behavior is:
+
+1. **Auto-discovery (non-fatal).** Before assembling, `build_deck.py` searches, in order, for the presenter speech at: `working/presenter-speech/speech.md`, `working/delivery/PRESENTERS-SPEECH.md`, `working/presenter-speech/PRESENTERS-SPEECH.md`, and finally `PRESENTERS-SPEECH.md` in the bundle directory. The FIRST file found wins.
+2. **Phase ordering is tolerated.** The deck render is Phase 4; the presenter speech is a Phase 9 artifact written by the Presenters Speech Writer. So at render time the speech is FREQUENTLY absent. When no speech file is found, the renderer logs a clear "no presenter speech found yet ... rendering WITHOUT per-slide notes (non-fatal)" message and assembles the deck with no notes. **A missing speech NEVER blocks the render.** Per-slide notes are a best-effort enrichment, not a render gate. (The full bundle is still enforced separately by the postflight AF-BUNDLE-COMPLETE gate, which requires the speech artifacts to exist before the run can be reported "done.")
+3. **`parse_speech_chunks` -- the two marker forms.** When a speech IS found, `build_deck.parse_speech_chunks(speech_text)` splits it into `{slide_no: spoken_text}`. It recognises BOTH per-slide marker forms, anchored to the start of a line, case-insensitive:
+   - a markdown heading: `## Slide 7` (1-3 leading `#`s -- `# Slide 7` / `### Slide 7` all match), and
+   - an inline marker: `SLIDE 7` (no heading hashes).
+   For each marker, the spoken text is everything from the END of the marker/title line up to the start of the next marker (or end of file), stripped of surrounding whitespace. The marker line itself (including any slide title after the number) is a structural cue and is NOT spoken text -- it is dropped. If the same slide number appears more than once, the LAST occurrence wins.
+4. **Injection.** For every rendered slide whose ordinal has a non-empty parsed chunk, the renderer sets `slide.notes_slide.notes_text_frame.text` to that chunk. A slide with no chunk gets no notes part at all (never an empty injection).
+5. **Mismatch policy (safe in both directions).** Chunk count and slide count need not match. EXTRA chunks (a slide number in the speech that the deck does not contain) are simply skipped -- they match no slide. Deck slides with NO chunk are left with empty/absent notes. A count mismatch is never an error and never halts assembly.
+
+This path is reconciled by `scripts/sync_check.py`: `parse_speech_chunks` is registered in `PIPELINE-MANIFEST.json` under the `P8-ASSEMBLE` phase `emits.checks`, and `sync_check` fails the lockstep gate (drift A8) if that symbol is renamed or removed from `build_deck.py` without updating the manifest.
+
 ---
 
 ### SOP 9.2 -- Export the Deck to Portable-Document Format (System-Wide Delivery Output + Final QC)

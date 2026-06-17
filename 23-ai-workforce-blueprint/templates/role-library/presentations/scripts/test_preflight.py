@@ -325,13 +325,15 @@ def test_chk_speech_length():
 # so the "all present => PASS" path still passes after the C2 hardening. md has no
 # magic (size-only), so any bytes are fine.
 _VALID_MAGIC_FOR_TEST = {
-    "deck_pptx":       b"PK\x03\x04",
-    "deck_pdf":        b"%PDF-1.7\n",
-    "guide_pdf":       b"%PDF-1.7\n",
-    "speech_pdf":      b"%PDF-1.7\n",
-    "audio_mp3":       b"ID3",
-    "infographic_png": b"\x89PNG\r\n\x1a\n",
-    "speech_md":       b"# speech\n",   # no magic required; arbitrary text
+    "deck_pptx":         b"PK\x03\x04",
+    "deck_pdf":          b"%PDF-1.7\n",
+    "guide_pdf":         b"%PDF-1.7\n",
+    "speech_pdf":        b"%PDF-1.7\n",
+    "audio_mp3":         b"ID3",
+    "infographic_png":   b"\x89PNG\r\n\x1a\n",
+    "speech_md":         b"# speech\n",          # no magic required; arbitrary text
+    "speech_fish_md":    b"# fish-tagged\n",     # no magic required; arbitrary text
+    "teleprompter_html": b"<!DOCTYPE html>\n",   # HTML magic (teleprompter app)
 }
 
 
@@ -367,7 +369,7 @@ def _postflight_bundle_dir(present_keys: set) -> tuple:
 def test_postflight_gate():
     """POSTFLIGHT COMPLETENESS GATE self-test (Requirement 6 / AF-BUNDLE-COMPLETE):
 
-      - When ALL seven required deliverables are present + above threshold:
+      - When ALL nine required deliverables are present + above threshold:
           run_postflight_gate() prints COMPLETE and does NOT sys.exit(5).
       - When ANY required deliverable is missing:
           run_postflight_gate() calls sys.exit(5) — we catch SystemExit(5).
@@ -459,9 +461,10 @@ def test_postflight_gate():
             f"got {build_deck.BUNDLE_DIR_DEFAULT!r}")
     print(f"POSTFLIGHT-G (Downloads def) -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-G' in f] else 'FAIL'}")
 
-    # --- Sub-test H: Verify DELIVERABLES_REQUIRED has exactly the 7 required keys ---
+    # --- Sub-test H: Verify DELIVERABLES_REQUIRED has exactly the 9 required keys ---
     required_keys = {"deck_pptx", "deck_pdf", "guide_pdf", "speech_md",
-                     "speech_pdf", "audio_mp3", "infographic_png"}
+                     "speech_pdf", "speech_fish_md", "audio_mp3", "infographic_png",
+                     "teleprompter_html"}
     actual_keys = {spec["key"] for spec in build_deck.DELIVERABLES_REQUIRED}
     if actual_keys != required_keys:
         fails.append(
@@ -766,6 +769,59 @@ def test_postflight_rejects_symlink_and_decoy():
     return fails
 
 
+def test_parse_speech_chunks():
+    """parse_speech_chunks must map BOTH marker forms to per-slide spoken text:
+        '## Slide 1 ... ## Slide 2 ...'   (markdown heading)
+        'SLIDE 1 ... SLIDE 2 ...'         (inline marker)
+    The marker/title line is stripped; the block runs to the next marker; an absent
+    or marker-less speech yields {} (best-effort, never raises)."""
+    fails = []
+
+    # --- Case A: the spec example — '## Slide 1 ... ## Slide 2 ...' ---
+    speech_a = (
+        "## Slide 1\n"
+        "Welcome everyone to the webinar.\n"
+        "Glad you could make it.\n"
+        "\n"
+        "## Slide 2\n"
+        "Here is the big problem we are solving.\n"
+    )
+    a = build_deck.parse_speech_chunks(speech_a)
+    if set(a.keys()) != {1, 2}:
+        fails.append(f"PARSE-A: expected slide keys {{1,2}}, got {sorted(a.keys())}")
+    if a.get(1) != "Welcome everyone to the webinar.\nGlad you could make it.":
+        fails.append(f"PARSE-A: slide 1 text wrong: {a.get(1)!r}")
+    if a.get(2) != "Here is the big problem we are solving.":
+        fails.append(f"PARSE-A: slide 2 text wrong: {a.get(2)!r}")
+    print(f"PARSE-A (## Slide N form)    -> {'PASS' if not [f for f in fails if 'PARSE-A' in f] else 'FAIL'}")
+
+    # --- Case B: inline 'SLIDE N' marker, mixed case ---
+    speech_b = "Slide 1\nFirst spoken line.\nslide 2\nSecond spoken line."
+    b = build_deck.parse_speech_chunks(speech_b)
+    if b != {1: "First spoken line.", 2: "Second spoken line."}:
+        fails.append(f"PARSE-B: inline marker parse wrong: {b!r}")
+    print(f"PARSE-B (inline SLIDE N)     -> {'PASS' if not [f for f in fails if 'PARSE-B' in f] else 'FAIL'}")
+
+    # --- Case C: marker line carries a title after the number; title is stripped ---
+    speech_c = "### Slide 3 — The Hook\nSpoken hook only.\n# Slide 4: Close\nClose strong."
+    c = build_deck.parse_speech_chunks(speech_c)
+    if c != {3: "Spoken hook only.", 4: "Close strong."}:
+        fails.append(f"PARSE-C: titled-marker parse wrong: {c!r}")
+    print(f"PARSE-C (titled markers)     -> {'PASS' if not [f for f in fails if 'PARSE-C' in f] else 'FAIL'}")
+
+    # --- Case D: no markers / empty / None -> {} (best-effort, never raises) ---
+    if build_deck.parse_speech_chunks("Just prose, no markers at all.") != {}:
+        fails.append("PARSE-D: marker-less speech should yield {}")
+    if build_deck.parse_speech_chunks("") != {}:
+        fails.append("PARSE-D: empty speech should yield {}")
+    if build_deck.parse_speech_chunks(None) != {}:
+        fails.append("PARSE-D: None speech should yield {}")
+    print(f"PARSE-D (no/empty markers)   -> {'PASS' if not [f for f in fails if 'PARSE-D' in f] else 'FAIL'}")
+
+    print(f"PARSE (parse_speech_chunks)  -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
 def test_h1_whitespace_only_prompt():
     """H1 (REQUIRED NEW TEST): a whitespace-only rich prompt (and a whitespace-padded
     one whose NON-whitespace length is under the floor) must FAIL — the floor is
@@ -863,8 +919,12 @@ def main():
     # proves the gate exits 5 when any deliverable is missing/under-threshold and
     # does NOT exit when all are present; proves guide_pdf + infographic_png are
     # hard-required (never silently skipped); proves ~/Downloads is the default
-    # destination; proves DELIVERABLES_REQUIRED has exactly the 7 required keys.
+    # destination; proves DELIVERABLES_REQUIRED has exactly the 9 required keys.
     failures += test_postflight_gate()
+
+    # Unit test — parse_speech_chunks: maps '## Slide N' AND inline 'SLIDE N' markers
+    # to per-slide spoken text (marker/title line stripped); marker-less/empty -> {}.
+    failures += test_parse_speech_chunks()
 
     # C2 (NEW REQUIRED) — the postflight gate REJECTS a symlink deliverable and a
     # wrong-content-type decoy (right size, wrong magic bytes); legitimate path still

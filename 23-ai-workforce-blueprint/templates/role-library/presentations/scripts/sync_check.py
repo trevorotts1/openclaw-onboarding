@@ -28,7 +28,8 @@ DRIFT DIRECTIONS (both fail loud with the exact offending item + the fix verb):
 
   (A) STACK-AHEAD-OF-CODE — a manifest phase / AF code / role / SOP that has no
       matching checker / symbol / registration in build_deck.py (or no Section-5
-      row, or no role/SOP file). The stack moved; the code did not.
+      row, or no role/SOP file). Includes A8: every phase emits.checks entry must be
+      a defined constant/function in build_deck.py. The stack moved; the code did not.
 
   (B) CODE-AHEAD-OF-STACK — an orphan `_chk_*` defined in build_deck.py, or an
       orphan `AF-...` string cited in build_deck.py, that the manifest does not
@@ -301,6 +302,7 @@ EXTENSION_STEP = {
     "A5": "step (i) — declare the role in PIPELINE-MANIFEST.roles",
     "A6": "step (i) — point owning_role at a real role-library file",
     "A7": "step (i) — point sop_refs at a real sops/ file",
+    "A8": "step (i)+(ii) — point emits.checks at a real constant/function in build_deck.py (or remove the entry)",
     "B1": "step (i)+(ii) — declare the phase that uses this checker, or remove the checker",
     "B2": "step (i)+(iii) — register the AF code in PIPELINE-MANIFEST.autofails (and the ruleset)",
     "D1": "step (ii) — add the missing deliverable key to DELIVERABLES_REQUIRED in build_deck.py",
@@ -425,6 +427,22 @@ def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
                 add("A7", f"{ph['id']}:{fname}",
                     f"phase {ph['id']} references SOP {fname!r}, which is not present "
                     f"in the sops dir ({SOPS_DIR}). {EXTENSION_STEP['A7']}.")
+
+    # A8 every phase emits.checks entry must be a defined name (constant or function)
+    # in build_deck.py. A manifest phase that declares it emits a named check whose
+    # symbol does not exist in the renderer is drift — the check moved or was renamed
+    # in the Python but the manifest still advertises the old name (or vice versa).
+    # This is what makes the manifest's emits.checks a REAL guard, not just a label.
+    for ph in phases:
+        emits = ph.get("emits")
+        if not isinstance(emits, dict):
+            continue
+        for chk in emits.get("checks", []) or []:
+            if chk not in defined_names:
+                add("A8", f"{ph['id']}:{chk}",
+                    f"phase {ph['id']} emits.checks names {chk!r}, which is not defined "
+                    f"in build_deck.py (no matching constant or function). "
+                    f"{EXTENSION_STEP['A8']}.")
 
     # -------- (B) CODE-AHEAD-OF-STACK --------
 

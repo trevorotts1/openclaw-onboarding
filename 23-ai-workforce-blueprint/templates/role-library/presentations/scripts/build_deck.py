@@ -18,26 +18,31 @@ A .pptx IS NOT A DELIVERED PRESENTATION. THIS SCRIPT IS ONLY THE PHASE-4 RENDERE
 Producing only a .pptx with this script is NOT a delivered presentation and is NOT
 a complete deliverable. build_deck.py renders slide images and assembles a bare
 .pptx — and NOTHING ELSE. It does NOT produce the presenter guide PDF, the presenter
-speech PDF, the presenter audio (PRESENTER-AUDIO.mp3), the deck PDF export, the
-infographic checklist slide, or the GHL media upload. The FULL deliverable downstream
-is the SIX-FILE bundle —
+speech (PRESENTERS-SPEECH.md/.pdf/-FISH-TAGGED.md), the presenter audio
+(PRESENTER-AUDIO.mp3), the teleprompter app, the deck PDF export, the infographic
+checklist slide, or the GHL media upload. The FULL deliverable downstream is the
+NINE-MEMBER bundle —
     [Deck-Title]-FINAL.pptx, [Deck-Title]-FINAL.pdf, PRESENTER-GUIDE.pdf,
-    PRESENTER-SPEECH.md, PRESENTER-SPEECH.pdf, PRESENTER-AUDIO.mp3
-— PLUS infographic.png (the at-a-glance checklist visual). The .pptx this script emits
-is an INTERMEDIATE artifact. The Director/Delivery flow MUST run the guide / speech /
-audio / PDF / infographic roles, and the run is blocked from "Done" by the POSTFLIGHT
-COMPLETENESS GATE (AF-BUNDLE-COMPLETE) AND the DELIVERY INTERLOCK (AF-DELIVER +
-AF-DH1 + AF-DELIVERY-COMPLETE). Do NOT "finish at a .pptx." See
-sops/CLIENT-WEBINAR-DECK-SOP.md §9a, sops/delivery-concierge-sops.md SOP 9.5, and
+    PRESENTERS-SPEECH.md (pure), PRESENTERS-SPEECH.pdf (teleprompter PDF),
+    PRESENTERS-SPEECH-FISH-TAGGED.md (fish-tagged), PRESENTER-AUDIO.mp3,
+    infographic.png, presenter-teleprompter.html (the teleprompter web app).
+The .pptx this script emits is an INTERMEDIATE artifact. The Director/Delivery flow
+MUST run the guide / speech / audio / PDF / infographic / teleprompter roles, and the
+run is blocked from "Done" by the POSTFLIGHT COMPLETENESS GATE (AF-BUNDLE-COMPLETE)
+AND the DELIVERY INTERLOCK (AF-DELIVER + AF-DH1 + AF-DELIVERY-COMPLETE). Do NOT
+"finish at a .pptx." See sops/CLIENT-WEBINAR-DECK-SOP.md §9a,
+sops/delivery-concierge-sops.md SOP 9.5, and
 sops/SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md (AF-DELIVERY-COMPLETE).
 
 UPSTREAM STEPS THAT PRODUCE THE REQUIRED OUTPUTS:
-    - [Deck-Title]-FINAL.pdf     : produced by PPTX Assembly Specialist (PDF export)
-    - PRESENTER-GUIDE.pdf        : produced by Presenters Guide Specialist
-    - PRESENTER-SPEECH.md+.pdf   : produced by Presenters Speech Writer
-    - PRESENTER-AUDIO.mp3        : produced by Audio Demonstration Specialist
-    - infographic.png            : produced by infographic-checklist role
-The postflight gate enforces that ALL SIX exist and pass their size thresholds. It
+    - [Deck-Title]-FINAL.pdf            : produced by PPTX Assembly Specialist (PDF export)
+    - PRESENTER-GUIDE.pdf               : produced by Presenters Guide Specialist
+    - PRESENTERS-SPEECH.md/.pdf         : produced by Presenters Speech Writer
+    - PRESENTERS-SPEECH-FISH-TAGGED.md  : produced by Presenters Speech Writer / Fish Audio
+    - PRESENTER-AUDIO.mp3               : produced by Audio Demonstration Specialist
+    - infographic.png                   : produced by infographic-checklist role
+    - presenter-teleprompter.html       : produced by build_teleprompter.py (teleprompter role)
+The postflight gate enforces that ALL NINE exist and pass their size thresholds. It
 hard-fails (AF-BUNDLE-COMPLETE, exit 5) if any are missing or under-size, so they
 can NEVER be silently skipped.
 
@@ -111,7 +116,8 @@ USAGE:
 
     NOTE: a successful run (exit 0 + a .pptx at <out.pptx>) means the deck is
     RENDERED, not DELIVERED. The .pptx alone is NOT a delivered presentation — the
-    full six-file bundle + infographic.png are required downstream (see the banner
+    full nine-member bundle (deck .pptx/.pdf, guide PDF, the three speech artifacts,
+    audio, infographic, teleprompter app) is required downstream (see the banner
     above and the POSTFLIGHT COMPLETENESS GATE / DELIVERY INTERLOCK).
 
 OFFICIAL-LOGO COMPOSITING (optional):
@@ -162,7 +168,7 @@ PROCESS PREFLIGHT (un-bypassable by default):
 
 EXIT CODES:
     0 — every slide rendered, the .pptx was written, AND the postflight
-        completeness gate confirmed all six deliverables present + sized.
+        completeness gate confirmed all nine bundle deliverables present + sized.
     1 — one or more slides failed after retries (NO .pptx written), or assembly failed.
     2 — fatal config error (no API key, bad slides.json, missing python-pptx, etc.).
     3 — process preflight FAILED: required upstream dept artifacts are missing
@@ -441,7 +447,7 @@ BUNDLE_DIR_DEFAULT = os.path.expanduser("~/Downloads")
 # ---------------------------------------------------------------------------
 # DELIVERABLES_REQUIRED manifest (Requirement 1)
 # ---------------------------------------------------------------------------
-# The six mandatory output artifacts, their canonical relative paths inside the
+# The nine mandatory output artifacts, their canonical relative paths inside the
 # bundle dir, their per-artifact minimum-size gates, and a human description.
 # Any artifact below its min_bytes threshold (or absent) triggers
 # AF-BUNDLE-COMPLETE (exit 5). Rationale for each threshold:
@@ -493,17 +499,26 @@ DELIVERABLES_REQUIRED = [
     },
     {
         "key": "speech_md",
-        "filename": "PRESENTER-SPEECH.md",
-        "label": "presenter speech markdown source",
+        "filename": "PRESENTERS-SPEECH.md",
+        "label": "presenter speech markdown source (pure)",
         "min_bytes": 2_048,              # 2 KB — word-for-word script stub floor
-        "note": ">2KB; produced by Presenters Speech Writer. REQUIRED UPSTREAM STEP.",
+        "note": ">2KB; produced by Presenters Speech Writer (pure script). REQUIRED UPSTREAM STEP.",
     },
     {
         "key": "speech_pdf",
-        "filename": "PRESENTER-SPEECH.pdf",
-        "label": "presenter speech PDF",
+        "filename": "PRESENTERS-SPEECH.pdf",
+        "label": "presenter speech teleprompter PDF",
         "min_bytes": 20_480,             # 20 KB — PDF of a real multi-page script
-        "note": ">20KB; produced by Presenters Speech Writer (PDF render). REQUIRED UPSTREAM STEP.",
+        "note": ">20KB; produced by Presenters Speech Writer (teleprompter PDF render). REQUIRED UPSTREAM STEP.",
+    },
+    {
+        "key": "speech_fish_md",
+        "filename": "PRESENTERS-SPEECH-FISH-TAGGED.md",
+        "label": "presenter speech (Fish-Audio expression-tagged)",
+        "min_bytes": 2_048,              # 2 KB — fish-tagged variant of the script floor
+        "note": ">2KB; produced by Presenters Speech Writer / Fish Audio Expression "
+                "Specialist (the (break)/(laugh)/emphasis-tagged script that feeds the "
+                "audio render). REQUIRED UPSTREAM STEP.",
     },
     {
         "key": "audio_mp3",
@@ -518,6 +533,17 @@ DELIVERABLES_REQUIRED = [
         "label": "infographic checklist PNG",
         "min_bytes": 102_400,            # 100 KB — real 2K-resolution infographic floor
         "note": ">100KB; produced by infographic-checklist role. REQUIRED UPSTREAM STEP.",
+    },
+    {
+        "key": "teleprompter_html",
+        "filename": "presenter-teleprompter.html",
+        "label": "presenter teleprompter web app",
+        "min_bytes": 10_240,             # 10 KB — a real self-contained scrolling
+                                          # teleprompter app (HTML + inline CSS/JS);
+                                          # < 10KB implies an empty/stub page.
+        "note": ">10KB; the standalone scrolling teleprompter app. Produced by the "
+                "build_teleprompter.py generator (owned by the speech/teleprompter "
+                "role). REQUIRED UPSTREAM STEP.",
     },
 ]
 
@@ -943,7 +969,113 @@ def _logo_dimensions_in(logo_path: Path):
     return width_in, height_in
 
 
-def assemble_pptx(rendered: list, out_path: Path, logo_path: Optional[Path] = None) -> None:
+# ---------------------------------------------------------------------------
+# PER-SLIDE SPEAKER NOTES — parse the presenter speech into per-slide chunks
+# ---------------------------------------------------------------------------
+# The Presenters Speech Writer authors a word-for-word script segmented per slide.
+# Each slide's block is introduced by a SLIDE marker in one of two forms:
+#       ## Slide 7          (a markdown heading, 1-3 '#'s, "Slide" any case)
+#       SLIDE 7             (an inline marker with no heading hashes)
+# parse_speech_chunks splits the speech on those markers and returns
+#   {slide_no: spoken_text}
+# where spoken_text is the block AFTER the marker/title line, up to the next marker
+# (the marker/title line itself is stripped — it is a structural cue, not spoken).
+#
+# This is best-effort and NON-FATAL by contract: a speech with no recognisable
+# markers yields {} and the caller injects no notes. Mismatches are handled by the
+# caller (extra chunks are skipped; deck slides with no chunk get empty notes).
+
+# Matches both "## Slide 7" (markdown heading) and inline "SLIDE 7". The optional
+# leading 1-3 '#'s + whitespace cover the heading form; the marker word is matched
+# case-insensitively (re.I) and anchored to the start of a line (re.M).
+SPEECH_SLIDE_MARKER_RE = re.compile(r"^(?:#{1,3}\s+)?SLIDE\s+(\d+)\b", re.IGNORECASE | re.MULTILINE)
+
+
+def parse_speech_chunks(speech_text: str) -> dict:
+    """Parse a presenter-speech string into {slide_no: spoken_text}.
+
+    Recognises BOTH marker forms (see SPEECH_SLIDE_MARKER_RE):
+        '## Slide N' / '# Slide N' / '### Slide N'  (markdown heading)
+        'SLIDE N'                                    (inline marker)
+    For each marker, captures the text from the END of the marker line up to the
+    start of the NEXT marker (or end of file), then strips surrounding whitespace.
+    The marker/title line is NOT included in the spoken text.
+
+    Returns {} when speech_text is empty/None or contains no recognisable markers
+    (best-effort, never raises). If the same slide number appears more than once,
+    the LAST occurrence wins (a later, fuller block supersedes an earlier stub)."""
+    if not speech_text:
+        return {}
+
+    chunks: dict = {}
+    matches = list(SPEECH_SLIDE_MARKER_RE.finditer(speech_text))
+    if not matches:
+        return {}
+
+    for idx, m in enumerate(matches):
+        try:
+            slide_no = int(m.group(1))
+        except (TypeError, ValueError):
+            continue
+        # Spoken text starts at the END of the marker LINE (skip the rest of the
+        # marker/title line, which may carry a slide title after the number).
+        line_end = speech_text.find("\n", m.end())
+        block_start = (line_end + 1) if line_end != -1 else len(speech_text)
+        # Spoken text ends at the start of the NEXT marker, else end of file.
+        block_end = matches[idx + 1].start() if idx + 1 < len(matches) else len(speech_text)
+        spoken = speech_text[block_start:block_end].strip()
+        # Last occurrence of a slide number wins (supersedes an earlier stub).
+        chunks[slide_no] = spoken
+    return chunks
+
+
+def discover_speech_chunks(run_dir: Path, bundle_dir: Path) -> Optional[dict]:
+    """Auto-discover the presenter speech and parse it into per-slide chunks for
+    PPTX speaker-notes injection. NON-FATAL: this is a phase-4 render and the speech
+    is a phase-9 artifact, so the speech is frequently absent. Returns the parsed
+    {slide_no: spoken_text} dict when a speech file is found, or None when none is
+    present (caller then injects no notes). NEVER raises and NEVER blocks the render.
+
+    Search order (first hit wins): the working-dir locations the speech roles write
+    to, then the delivered bundle copy. Filenames use the standardized possessive
+    (PRESENTERS-SPEECH.md); the legacy speech.md scratch name is also accepted."""
+    candidates = [
+        run_dir / "working/presenter-speech/speech.md",
+        run_dir / "working/delivery/PRESENTERS-SPEECH.md",
+        run_dir / "working/presenter-speech/PRESENTERS-SPEECH.md",
+        bundle_dir / "PRESENTERS-SPEECH.md",
+    ]
+    for path in candidates:
+        try:
+            if not path.is_file():
+                continue
+        except OSError:
+            continue
+        try:
+            text = path.read_text(errors="replace")
+        except OSError as exc:
+            print(f"=== SPEAKER NOTES: found {path} but could not read it ({exc}); "
+                  f"rendering deck WITHOUT per-slide notes (non-fatal) ===", flush=True)
+            return None
+        chunks = parse_speech_chunks(text)
+        if chunks:
+            print(f"=== SPEAKER NOTES: parsed {len(chunks)} per-slide chunk(s) from "
+                  f"{path} — injecting into the deck's notes pane ===", flush=True)
+        else:
+            print(f"=== SPEAKER NOTES: speech found at {path} but no 'Slide N' / "
+                  f"'## Slide N' markers were recognised; rendering deck WITHOUT "
+                  f"per-slide notes (non-fatal) ===", flush=True)
+        return chunks
+    print("=== SPEAKER NOTES: no presenter speech found yet (searched "
+          "working/presenter-speech/, working/delivery/, and the bundle dir). This is "
+          "a phase-4 render; the speech is a phase-9 artifact. Rendering the deck "
+          "WITHOUT per-slide notes (non-fatal — never blocks the render). ===",
+          flush=True)
+    return None
+
+
+def assemble_pptx(rendered: list, out_path: Path, logo_path: Optional[Path] = None,
+                  speech_chunks: Optional[dict] = None) -> None:
     try:
         from pptx import Presentation
         from pptx.util import Inches
@@ -981,6 +1113,16 @@ def assemble_pptx(rendered: list, out_path: Path, logo_path: Optional[Path] = No
                 Inches(left_in), Inches(top_in),
                 width=Inches(w_in), height=Inches(h_in),
             )
+
+        # PER-SLIDE SPEAKER NOTES: if a parsed speech chunk exists for this slide
+        # ordinal, write the spoken text into the slide's notes pane. None/{} =>
+        # no injection (phase-4 render before the speech is written). Touching
+        # notes_slide lazily creates the notes part, so a deck slide with no chunk
+        # is left with no notes part at all — never an empty injection.
+        if speech_chunks:
+            spoken = speech_chunks.get(item["slide"])
+            if spoken:
+                slide.notes_slide.notes_text_frame.text = spoken
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     prs.save(str(out_path))
@@ -1419,8 +1561,13 @@ def _chk_speech_length(run_dir: Path) -> str:
         return ""
 
     # Locate the speech artifact. Absent => deferred to delivery (pass here).
+    # Filenames standardized to the possessive (PRESENTERS-SPEECH.md); the legacy
+    # singular (PRESENTER-SPEECH.md) and scratch speech.md names are still accepted
+    # so the gate keeps finding a speech written by an older flow.
     speech = None
     for rel in ("working/presenter-speech/speech.md",
+                "working/delivery/PRESENTERS-SPEECH.md",
+                "working/presenter-speech/PRESENTERS-SPEECH.md",
                 "working/delivery/PRESENTER-SPEECH.md",
                 "working/presenter-speech/PRESENTER-SPEECH.md"):
         p = run_dir / rel
@@ -1846,21 +1993,41 @@ DELIVERABLE_MAGIC = {
     "speech_pdf":      (b"%PDF",),
     "audio_mp3":       (b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"),  # ID3v2 tag or MPEG sync
     "infographic_png": (b"\x89PNG",),
-    # speech_md: intentionally absent — plain markdown has no magic signature, so md
-    # stays size-only (per spec).
+    # teleprompter_html: a real HTML document leads with a doctype or an <html> /
+    # <!-- ... --> opener. Accept the common case-variant openers so a legitimate
+    # self-contained teleprompter page passes while a decoy of the wrong type fails.
+    "teleprompter_html": (b"<!DOCTYPE", b"<!doctype", b"<!Doctype",
+                          b"<html", b"<HTML", b"<!--"),
+    # speech_md / speech_fish_md: intentionally absent — plain/tagged markdown has no
+    # magic signature, so md stays size-only (per spec).
 }
 
 
 def _magic_ok(path: Path, signatures) -> bool:
     """Return True if the file's leading bytes match ANY of the given signatures.
-    Reads only the bytes needed for the longest signature."""
+    Reads only the bytes needed for the longest signature. HTML may carry a leading
+    UTF-8 BOM (\\xef\\xbb\\xbf) or leading whitespace before the doctype/tag, so the
+    comparison tolerates a BOM + leading whitespace for text-ish (non-binary) types."""
     try:
         want = max(len(s) for s in signatures)
         with open(path, "rb") as f:
-            head = f.read(want)
+            head = f.read(want + 8)  # +8 to cover an optional BOM + a little leading WS
     except OSError:
         return False
-    return any(head.startswith(s) for s in signatures)
+    if any(head.startswith(s) for s in signatures):
+        return True
+    # Tolerate a leading UTF-8 BOM and/or leading ASCII whitespace ONLY for text-ish
+    # signatures (those beginning with '<'); binary magics (PNG/PDF/ZIP/MP3) must be
+    # at byte 0 and are not relaxed.
+    text_sigs = tuple(s for s in signatures if s[:1] == b"<")
+    if text_sigs:
+        trimmed = head
+        if trimmed.startswith(b"\xef\xbb\xbf"):
+            trimmed = trimmed[3:]
+        trimmed = trimmed.lstrip(b" \t\r\n")
+        if any(trimmed.startswith(s) for s in text_sigs):
+            return True
+    return False
 
 
 def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str) -> None:
@@ -2217,10 +2384,19 @@ def main():
         print(json.dumps(summary, indent=2))
         sys.exit(1)
 
+    # PER-SLIDE SPEAKER NOTES: auto-discover + parse the presenter speech (if it
+    # exists yet) so the assembled deck carries word-for-word notes per slide. This
+    # is NON-FATAL — a phase-4 render usually precedes the phase-9 speech, so an
+    # absent speech yields None and the deck is assembled with no notes. The speech
+    # is NEVER required to render. Count mismatches are safe: extra chunks are simply
+    # not matched to any slide; deck slides with no chunk get no notes part.
+    speech_chunks = discover_speech_chunks(run_dir, bundle_dir)
+
     # Assemble.
     try:
         # When image-to-image baked the logo in (logo_url), do NOT also overlay it.
-        assemble_pptx(rendered, out_path, logo_path=(None if logo_url else logo_path))
+        assemble_pptx(rendered, out_path, logo_path=(None if logo_url else logo_path),
+                      speech_chunks=speech_chunks)
     except SystemExit:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -2284,8 +2460,8 @@ def main():
     print(json.dumps(summary, indent=2))
 
     # POSTFLIGHT COMPLETENESS GATE (Requirement 2 — AF-BUNDLE-COMPLETE).
-    # This is the FINAL gate: exit 0 only when ALL six deliverables are present
-    # and sized. Exit 5 (loud failure) when any are missing or under-threshold.
+    # This is the FINAL gate: exit 0 only when ALL nine bundle deliverables are
+    # present and sized. Exit 5 (loud failure) when any are missing or under-threshold.
     # The word "COMPLETE" / "DONE" is printed ONLY from inside run_postflight_gate
     # after reading deliverables.json (not from in-memory state).
     run_postflight_gate(bundle_dir, ledger_path, deck_slug)
