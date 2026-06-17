@@ -192,6 +192,7 @@ This is the single canonical index of the N1–N35 non-negotiables. Every other 
 | N34 | **Provider Detection Protocol — a missing config block is NEVER proof a provider is absent.** "Does box X have provider Y" = "can the gateway resolve Y's API key at runtime" — NOT "is there a models.providers.Y block." Run `check-credential.sh --provider <Y>` (3-state verdict). Missing/empty models.providers block alone NEVER produces absent — only downgrades PRESENT_WITH_BLOCK to NEEDS_BLOCK. GENUINELY-ABSENT only after live-env tier + all stores came up empty. Use SONNET (never Haiku) for credential/provider checks. Write NOT_ASSESSED (never false) for any check that did not run. | This file (N34 section) + `shared-utils/check-credential.sh --provider` mode | `check-credential.sh --self-test` in CI (qc-static.yml); fleet sweeps branch off 3-state verdict |
 | N35 | **AF-MODEL-SOVEREIGNTY — no task dispatches without a resolved, valid, modality-appropriate model.** A resolved model must be (a) non-null and NOT the `openrouter/free` literal nor any bare "free" default, (b) present in the client's available inventory, (c) not forbidden (Anthropic), and (d) modality-appropriate (`capabilities ⊇ required_modality`). The authoritative PREFERENCE CASCADE is **Ollama Cloud → OpenRouter open-source → free (last resort)**; precedence is **SOP pin > task selector > role override > dept default > needs_owner_input** (NEVER a silent free downgrade). A vision/image/video/audio task MUST get a model with that modality. Build-time: every department gets a real, modality-correct dept default (suitability map). Task-time: the selector classifies modality + difficulty and walks the cascade. Failures route to `needs_owner_input`, never a silent free fallback. | This file (N35 section) + `shared-utils/select_model.py` (`select_task_model` / `resolve_dept_default_model`) + `shared-utils/assert_model_sovereignty.py` + `shared-utils/{model-capabilities,dept-model-suitability}.json` | `tests/unit/model-selector.test.py` + `.github/workflows/model-selector-guard.yml` (CI gate) + `scripts/repair-model-sovereignty.sh` (fleet repair sweep). CC runtime half (resolver/dispatcher gate/migration 071/display) lands in `blackceo-command-center` — see N35 section. |
 | N36 | **BLOCKED MEANS HUMAN-ONLY: workers never park in Blocked; broken/stuck work returns to the orchestrator.** A task is `status:blocked` ONLY when a named human must perform a specific human-only action (decision, approval, credential/access, or payment) before work can proceed. EVERYTHING else keeps moving. Worker agents NEVER set status=blocked directly -- they call `POST /api/tasks/{id}/return-to-orchestrator` with a structured handback `{task_id, problem, what_i_tried, what_i_think_it_needs, suggested_department?}`. The Master Orchestrator is the SOLE authority that writes status=blocked, and only after the four-way classifier in SOP-01 passes. After 3 re-route attempts (qc_reroute_attempts cap), the orchestrator escalates to the operator instead of looping. Extends N24 (no silent abandonment): the structured handback is the required replacement for a silent drop. | This file (N36 section) + `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-01-Blocked-vs-Return.md` + `23-ai-workforce-blueprint/references/BLOCKED-IS-GATED.md` | API gate in `src/app/api/tasks/[id]/route.ts` (400 on non-human blocked attempt) + `src/app/api/tasks/[id]/return-to-orchestrator/route.ts` (worker handback endpoint) + stale-task-sweep registered in scheduler.ts + ceo-delegation-sweep extended to sweep returned tasks |
+| N37 | **AF-WORKSPACE-SHELL — "TEMPLATE DEPLOYED" and "WORKSPACE INSTANTIATED" are TWO SEPARATE states; each is verified separately, and never reported as the other.** Copying the role-library TEMPLATE to disk (`/data/.openclaw/skills/.../role-library/<dept>/` — a SKILLS-tree path) is "TEMPLATE DEPLOYED." It does NOT make a client department. A client department is "WORKSPACE INSTANTIATED" only when its WORKSPACE dir (`workspace/zero-human-company/<company>/departments/<dept>/`) is MATERIALIZED: ≥1 numbered role subdir (`00-*`/`01-*`…) AND director `IDENTITY.md` AND `SOUL.md` AND ≥1 real SOP (`how-to.md` ≥3 KB or a substantive standalone `0[1-9]-*.md` ≥7 KB). A dept dir that is only `DREAMS.md` + `memory/` is a SHELL. NEVER report a client/department "done / installed / updated / airtight" without the workspace gate passing **with raw counts** (a template on disk can NEVER satisfy it; a dept-dir symlinked into the template tree is treated as not-materialized). Extends the `lib-onboarding-state.sh` onboarding-honesty philosophy to the workspace layer (N27). | This file (N37 section) + `FLEET-STANDARDS.md §6` + `scripts/qc-assert-workspace-departments-built.sh` (single source of truth; required set = `department-floor.py` floor) | `scripts/qc-system-integrity.sh` CHECK X.11 (rc=3 hard-fail) + `lib-onboarding-state.sh` `oc_overall_goal_check` criterion (iii) `workspaceMaterialized` (overall "done" blocked while any dept is a shell) + watchdog `oc_overall_goal_check` (kill condition) + CI `.github/workflows/qc-static.yml` (runs `scripts/test-workspace-departments-built.sh` + `scripts/test-watchdog-loop.sh` T8/T8b) |
 
 If you invoke a rule by N-number elsewhere, link back to this index. If a rule's status changes (added, deprecated, renumbered), update this table FIRST and port the change to dependent docs.
 
@@ -854,6 +855,63 @@ to write `agent_settings` rows; `scripts/repair-model-defaults.ts` to rewrite
 offending `tasks.model_id` rows (driven by this repo's repair-sweep receipts);
 tier/source/modality display badges. The CC TypeScript reuses THIS repo's
 `model-capabilities.json` + cascade rules verbatim.
+
+---
+
+<!-- N37 -->
+## 🔴 N37 — AF-WORKSPACE-SHELL ("template deployed" is NOT "workspace instantiated")
+
+> A role-library TEMPLATE copied to the skills/ tree is a file copy. It is NOT a
+> built client department. Reporting one as the other was the false-"done" that
+> cost the owner real money: a client's workspace department was left an empty
+> SHELL (only `DREAMS.md` + `memory/`) while "the department is installed /
+> airtight" was reported. This rule makes that report structurally impossible.
+
+### Two separate states — each verified separately, never conflated
+
+- **TEMPLATE DEPLOYED** — the shipped role-library exists on disk under the
+  SKILLS tree: `…/.openclaw/skills/23-ai-workforce-blueprint/templates/role-library/<dept>/`.
+  This is necessary, but it is NOT a client department.
+- **WORKSPACE INSTANTIATED** — the client's WORKSPACE department is materialized:
+  `<workspace>/zero-human-company/<company>/departments/<dept>/` contains
+  **≥1 numbered role subdir** (`00-*`/`01-*`…) **AND** director `IDENTITY.md`
+  **AND** `SOUL.md` **AND ≥1 real SOP** (`how-to.md` ≥ 3072 B, or a substantive
+  standalone `0[1-9]-*.md` ≥ 7168 B).
+
+A dept dir that has 0 role subdirs is a **SHELL**. A dept dir with role subdirs
+but missing `IDENTITY.md`/`SOUL.md` or any real SOP is **PARTIAL**. Both FAIL.
+A workspace dept dir whose real path resolves into the skills/role-library/
+master-files template tree (the "point the workspace at the template" trick) is
+treated as **not materialized**.
+
+### The gate's single assertion (fail-closed)
+
+For EACH required department (required set = the `department-floor.py` floor —
+the same single source of truth that gates the on-disk dept COUNT), the WORKSPACE
+materialization must classify FULL. ANY required dept that is SHELL / PARTIAL /
+MISSING → **AF-WORKSPACE-SHELL** (exit 3). No workspace resolvable, or only a
+template tree resolvable → exit 4 (NOT a silent pass). Gate cannot run → exit 2.
+NEVER report a client/department done/installed/updated/airtight without this
+gate passing **with raw counts** printed per department.
+
+### Install points (this repo)
+
+- `scripts/qc-assert-workspace-departments-built.sh` — the gate (single source of
+  truth; resolves the WORKSPACE departments dir via `department-floor.resolve_departments_dir`,
+  guards template paths via `_is_template_path`, classifies FULL/PARTIAL/SHELL with raw counts).
+- `scripts/qc-system-integrity.sh` — **CHECK X.11** (rc=3 hard-fail; rc=4 warn = not built yet).
+- `lib-onboarding-state.sh` — `oc_workspace_departments_materialized()` +
+  `oc_overall_goal_check()` criterion (iii): overall "done" requires
+  `workspaceMaterialized=true` (a hand-seeded `buildCompletedAt` is no longer sufficient).
+- `scripts/watchdog-onboarding-loop.sh` — the watchdog kill condition runs
+  `oc_overall_goal_check`, so it now refuses to self-remove while any dept is a shell.
+- `FLEET-STANDARDS.md §6` — the doctrine statement.
+
+### CI Gate
+
+`.github/workflows/qc-static.yml` runs `scripts/test-workspace-departments-built.sh`
+(T1 shell FAILS, T2 full PASSES, T3 partial FAILS, T4 template tree never passes)
+and `scripts/test-watchdog-loop.sh` (T8 full-passes, T8b shell-blocks the overall gate).
 
 ---
 

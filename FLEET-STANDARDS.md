@@ -97,6 +97,50 @@ standard + setup + the migration path for legacy Mac clients on cloud-direct:
 branched — Mac uses local `oc-faster-whisper` primary + OpenAI cloud fallback;
 VPS uses cloud-only — see `docs/STT-TRANSCRIPTION.md`.
 
+### 6. "TEMPLATE DEPLOYED" and "WORKSPACE INSTANTIATED" are two separate states (AF-WORKSPACE-SHELL)
+
+Copying the shipped role-library **TEMPLATE** to disk (under the SKILLS tree,
+`…/.openclaw/skills/23-ai-workforce-blueprint/templates/role-library/<dept>/`) is
+**"TEMPLATE DEPLOYED."** It is a file copy. It does NOT make a client department.
+
+A client department is **"WORKSPACE INSTANTIATED"** only when its WORKSPACE
+directory —
+`<workspace>/zero-human-company/<company>/departments/<dept>/` — is MATERIALIZED:
+
+- **≥1 numbered role subdir** (`00-*` / `01-*` …),
+- a director **`IDENTITY.md`**, and a director **`SOUL.md`**, and
+- **≥1 real SOP** — a role `how-to.md` ≥ 3 KB (the same floor `verify-wiring.sh`
+  enforces), or a substantive standalone `0[1-9]-*.md` ≥ 7 KB.
+
+A dept dir that contains only `DREAMS.md` + `memory/` is a **SHELL**. A dept dir
+with role subdirs but no `IDENTITY.md`/`SOUL.md` or no real SOP is **PARTIAL**.
+A workspace dept dir whose real path resolves into the skills/role-library /
+master-files template tree is treated as **not materialized**.
+
+**Fleet rule (hard-fail; the rule that closes the false-"done" that cost real money):**
+
+1. These are TWO SEPARATE STATES. Each is verified separately. **Never report one
+   as the other.**
+2. **Never** report a client / department "done / installed / updated / airtight"
+   without the workspace gate passing **with raw counts** per department. A
+   template on disk can NEVER satisfy the gate.
+3. The required department set is the `department-floor.py` floor — the same
+   single source of truth that gates the on-disk department count. The workspace
+   gate goes one layer deeper: for EACH required dept it classifies FULL /
+   PARTIAL / SHELL using RAW on-disk facts (never a build-state JSON).
+
+This extends the `lib-onboarding-state.sh` onboarding-honesty philosophy
+("installed" is a VERIFIED claim, never a file-copy claim) to the workspace
+layer. See `AGENTS.md` N37.
+
+**Enforced (fail-closed) by** `scripts/qc-assert-workspace-departments-built.sh`
+(single source of truth) via `scripts/qc-system-integrity.sh` **CHECK X.11**
+(rc=3 = `AF-WORKSPACE-SHELL` hard-fail), the onboarding completion gate
+`lib-onboarding-state.sh` `oc_overall_goal_check()` (criterion iii
+`workspaceMaterialized`), the `scripts/watchdog-onboarding-loop.sh` kill
+condition, and CI (`.github/workflows/qc-static.yml` runs
+`scripts/test-workspace-departments-built.sh` + `scripts/test-watchdog-loop.sh`).
+
 ## Source of Truth
 
 Configuration verified against:

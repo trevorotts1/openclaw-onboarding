@@ -3267,12 +3267,87 @@ def assert_dept_map_resolves(dept_ids):
     return resolved
 
 
+def _clean_role_slug(name):
+    """
+    Defensive role-NAME -> folder-slug normalizer.
+
+    Strips the roster decorations the canary found baked into folder slugs:
+      - parentheticals like "(NEW)", "(NEW -- v1.7)", "(renamed from ...)"
+      - trailing version/status tails: "-- v1.7", "NEW -- v11.23.0", "vX.Y"
+      - punctuation that has no place in a slug: apostrophes, "&", "+", "/",
+        em/en dashes
+    so that NO spec, however decorated its `### N.` header, can bake junk like
+    `21-audio-demonstration-+-fish-audio-expression-specialist-new--v1.7` or
+    `11-devil's-advocate--presentations` into a folder name. This is the
+    belt-and-suspenders for defect #1: even when an explicit **Slug:** is
+    missing, the derived slug is clean.
+
+    The canonical/authoritative key is the explicit **Slug:** line in the
+    roster; this helper is only the fallback when that is absent.
+    """
+    import re as _re
+    s = str(name or "")
+    # Drop any parenthetical decoration entirely: "(NEW -- v1.7)", "(renamed ...)"
+    s = _re.sub(r"\([^)]*\)", " ", s)
+    # Normalize ampersand/plus/slash and dashes to spaces/words.
+    s = s.replace("&", " and ").replace("+", " ").replace("/", " ")
+    s = s.replace("—", " ").replace("–", " ")  # em/en dash
+    s = s.lower()
+    # Strip trailing version/status tails like "-- v1.7", "new v11.23.0".
+    s = _re.sub(r"\bnew\b", " ", s)
+    s = _re.sub(r"\bv\d+(?:\.\d+)*\b", " ", s)
+    # Keep only [a-z0-9] runs, collapse to single dashes (drops apostrophes).
+    s = _re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+    s = _re.sub(r"-{2,}", "-", s)
+    return s
+
+
+def _legacy_naive_slug(name):
+    """The EXACT pre-fix slug chain. Preserved verbatim so rosters that do NOT
+    carry an explicit **Slug:** produce byte-identical folder names to what
+    already-built clients have on disk (backward safety: never rename their
+    folders on a re-scan)."""
+    s = str(name or "").lower()
+    s = s.replace(' ', '-').replace('(', '').replace(')', '').replace('/', '-')
+    s = s.replace('--', '-').strip('-')
+    return s
+
+
+def role_folder_basename(role):
+    """
+    Canonical folder basename for a role: `NN-<slug>`.
+
+    Slug precedence (BACKWARD-SAFE):
+      1. explicit role['slug'] from the roster **Slug:** line (authoritative).
+         Passed through _clean_role_slug as a defensive guard so even an
+         explicit slug can never carry decorations — this is the recurrence
+         guard the fix requires for any future spec.
+      2. NO explicit slug -> the EXACT legacy naive slug of role['name'], so
+         existing clients (whose rosters predate **Slug:**) keep byte-identical
+         folder names on any future build/re-scan. New decorated rosters opt
+         into clean slugs by adding a **Slug:** line.
+    Number is zero-padded to 2 digits.
+    """
+    explicit = (role.get('slug') or '').strip()
+    if explicit:
+        slug = _clean_role_slug(explicit) or _clean_role_slug(role.get('name') or '')
+    else:
+        slug = _legacy_naive_slug(role.get('name') or '')
+    num = role.get('number', 0)
+    try:
+        num = int(num)
+    except (TypeError, ValueError):
+        num = 0
+    return f"{num:02d}-{slug}"
+
+
 def parse_suggested_roles(dept_id):
     """
     Read and parse the suggested-roles markdown file for a department.
     Returns a list of role dicts with keys:
       - number: int (role number, 0 = department head)
       - name: str
+      - slug: str (explicit canonical slug from the roster, or '' if absent)
       - description: str ("What it does")
       - sops: list of str (SOP filenames)
       - persona_traits: str
@@ -3342,6 +3417,7 @@ def parse_suggested_roles(dept_id):
             current_role = {
                 'number': number,
                 'name': name.strip(),
+                'slug': '',  # populated below if an explicit **Slug:** line follows
                 'description': '',
                 'sops': [],
                 'persona_traits': '',
@@ -3355,6 +3431,7 @@ def parse_suggested_roles(dept_id):
             current_role = {
                 'number': 99,
                 'name': 'Quality Control Agent',
+                'slug': '',
                 'description': '',
                 'sops': [],
                 'persona_traits': '',
@@ -3363,7 +3440,12 @@ def parse_suggested_roles(dept_id):
 
         elif current_role:
             # Parse role content
-            if line.startswith('**What it does:**'):
+            if line.startswith('**Slug:**'):
+                # Explicit canonical slug. This is the AUTHORITATIVE key for both
+                # the folder name (NN-<slug>/) and the role-library lookup. When
+                # present it removes all ambiguity from decorated role names.
+                current_role['slug'] = line.replace('**Slug:**', '').strip()
+            elif line.startswith('**What it does:**'):
                 current_role['description'] = line.replace('**What it does:**', '').strip()
             elif line.startswith('- ') and current_role['sops'] is not None:
                 # Collect SOP items under "Core SOPs to build:"
@@ -3561,11 +3643,14 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
     created_folders = []
 
     for role in roles:
-        # Build slug folder name: '00-chief-marketing-officer' or '02-social-media-manager'
-        role_slug = role['name'].lower()
-        role_slug = role_slug.replace(' ', '-').replace('(', '').replace(')', '').replace('/', '-')
-        role_slug = role_slug.replace('--', '-').strip('-')
-        folder_name = f"{role['number']:02d}-{role_slug}"
+        # Build slug folder name: '00-chief-marketing-officer' or '02-social-media-manager'.
+        # DEFECT #1 FIX: the bare slug is the explicit roster **Slug:** (authoritative)
+        # or the defensively-cleaned role name — never the raw name. This strips
+        # decorations like "(NEW -- v1.7)", "&", "+", "'" that the old naive
+        # replace-chain baked into folder names. folder_name uses the single
+        # canonical helper so create and re-scan agree byte-for-byte.
+        folder_name = role_folder_basename(role)
+        role_slug = folder_name.split('-', 1)[1] if '-' in folder_name else folder_name
         role_dir = os.path.join(dept_dir, folder_name)
         os.makedirs(role_dir, exist_ok=True)
 
@@ -3585,8 +3670,14 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
         # how-to.md, mark the folder instantiated (so the SOP-research manifest
         # skips it and no LLM regeneration runs), and SKIP the stub loop below.
         # LLM generation is reserved for genuinely missing roles only.
+        # DEFECT #1b FIX: prefer the explicit canonical slug as the library key.
+        # The normalizer resolves a slug or a name, but a decorated name (e.g.
+        # "Offer and Price Strategist (NEW)" or "Devil's Advocate -- Presentations")
+        # missed the library. The clean slug ("offer-price-strategist",
+        # "devils-advocate-presentations") always hits its `.md`.
+        _lib_key = (role.get('slug') or '').strip() or role['name']
         library_how_to = _instantiate_role_from_library(
-            role['name'], dept_id, interview_answers)
+            _lib_key, dept_id, interview_answers)
         if library_how_to is not None:
             how_to_path = os.path.join(role_dir, "how-to.md")
             with open(how_to_path, 'w') as f:
@@ -4199,11 +4290,13 @@ def generate_org_chart(departments, specialists_by_dept):
 
 
 def _role_folder_slug(role):
-    """Reproduce the NN-role-slug/ folder name create_role_workspace() writes."""
-    role_slug = role['name'].lower()
-    role_slug = role_slug.replace(' ', '-').replace('(', '').replace(')', '').replace('/', '-')
-    role_slug = role_slug.replace('--', '-').strip('-')
-    return f"{role.get('number', 0):02d}-{role_slug}"
+    """Reproduce the NN-role-slug/ folder name create_role_workspace() writes.
+
+    Delegates to the single canonical helper so the org-chart / routing docs use
+    the SAME clean, decoration-stripped, explicit-slug-aware name as the folder
+    builder. (Previously this duplicated a naive slug that baked in decorations.)
+    """
+    return role_folder_basename(role)
 
 
 def _when_to_use_line(role):

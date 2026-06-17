@@ -30,13 +30,21 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-# v10.15.4: vendored lib/ ships with the installed skill folder so detect_platform
-# resolves under ~/.openclaw/skills/23-ai-workforce-blueprint/. Repo-root
-# shared-utils/ retained as fallback for in-repo invocation.
-sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared-utils"))
-sys.path.insert(0, str(Path(__file__).parent.parent / "shared-utils"))
+SCRIPT_DIR = Path(__file__).resolve().parent
+SKILL_DIR = SCRIPT_DIR.parent
+
+# BUG-3 FIX (mirrors department-floor.py BUG-2): sys.path.insert(0, ...) order
+# matters — the LAST insert wins (each call pushes the previous down). The old
+# order inserted lib/ first then shared-utils/ LAST, so the shared-utils
+# detect_platform (which returns company_root=~/Downloads/openclaw-master-files/
+# zero-human-company — an EMPTY copy — and never resolves the active company_dir)
+# shadowed the lib/ version that correctly resolves the real workspace. Result:
+# this script scanned 0 departments. Fix: insert shared-utils FIRST (fallbacks),
+# then lib/ LAST so lib/ ends at position 0 — exactly the order qc-completeness.sh
+# and department-floor.py use to get a working company_dir.
+sys.path.insert(0, str(SCRIPT_DIR))
+for _libp in (SKILL_DIR.parent / "shared-utils", SKILL_DIR / "shared-utils", SKILL_DIR / "lib"):
+    sys.path.insert(0, str(_libp))
 
 from detect_platform import get_openclaw_paths  # type: ignore
 from create_role_workspaces import (  # type: ignore
@@ -111,26 +119,42 @@ def main():
     args = parser.parse_args()
 
     paths = get_openclaw_paths()
-    zhc_root = paths["company_root"]
-    if not zhc_root.exists():
-        print(f"ERROR: ZHC root {zhc_root} does not exist. Has any company been built yet?")
-        return 1
 
-    print(f"Platform: {paths['platform']}")
+    # BUG-3 FIX: resolve the REAL active workspace, not the (possibly empty)
+    # company_root copy. Priority mirrors department-floor.py / qc-completeness.sh:
+    #   1. paths["company_dir"] — the already-resolved active company folder
+    #   2. paths["company_root"] — the parent ZHC root (scan its subdirs)
+    # When company_dir resolves, process exactly that one company (its
+    # departments/ are the live ones agents read). This is the fix for "scans 0
+    # departments because it walked an empty /data/openclaw-master-files copy".
+    company_dir = paths.get("company_dir")
+    zhc_root = paths.get("company_root")
+
+    print(f"Platform: {paths.get('platform')}")
+    if company_dir and Path(company_dir).is_dir():
+        print(f"Active company_dir: {company_dir}")
     print(f"ZHC root: {zhc_root}")
     if args.dry_run:
         print("DRY-RUN — no files written")
     print()
 
     companies = []
-    if args.company_slug:
-        target = zhc_root / args.company_slug
+    if args.company_slug and zhc_root and Path(zhc_root).is_dir():
+        target = Path(zhc_root) / args.company_slug
         if target.exists():
             companies.append(target)
         else:
-            print(f"WARN: company slug '{args.company_slug}' not found, scanning all")
+            print(f"WARN: company slug '{args.company_slug}' not found, falling back to active company_dir")
+    if not companies and company_dir and Path(company_dir).is_dir():
+        # Prefer the resolved active company — its departments/ are the live tree.
+        companies = [Path(company_dir)]
+    if not companies and zhc_root and Path(zhc_root).is_dir():
+        companies = [p for p in Path(zhc_root).iterdir() if p.is_dir()]
     if not companies:
-        companies = [p for p in zhc_root.iterdir() if p.is_dir()]
+        print(f"ERROR: no company workspace found "
+              f"(company_dir={company_dir}, company_root={zhc_root}). "
+              f"Has any company been built yet?")
+        return 1
 
     total = {"depts_scanned": 0, "role_folders_augmented": 0, "role_files_written": 0, "ceos": 0}
     for company in companies:

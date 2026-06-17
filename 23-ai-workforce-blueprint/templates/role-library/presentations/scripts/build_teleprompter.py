@@ -44,6 +44,21 @@ The parser is tolerant: the `## Slide N -- Headline  (STAGE)` line and the
 header is read best-effort. If `SECONDS:` is absent, the per-slide countdown is
 computed from the word count at the file's WPM.
 
+ACCEPTED SLIDE HEADER FORMATS (any of these trigger a new slide):
+  ## Slide N -- Headline  (STAGE)        ← canonical contract format
+  ### Slide N -- Headline                ← extra # tolerated
+  [Slide N] Headline                     ← bracket form (agent/client output)
+  [Slide N]: Headline                    ← bracket + colon
+  [Slide N]                              ← bare bracket (headline may follow on same line or be absent)
+  Slide N -- Headline                    ← bare (no ## markers)
+  Slide N: Headline                      ← colon separator
+  Slide N                                ← bare number only (on its own line)
+All forms normalize internally to {no, headline, stage}. Headlines/stages are
+extracted best-effort; absent ones default to empty string. If the file has
+NO slide markers at all, the parser falls back to splitting on `---` horizontal
+rules (treating each section as one slide) with a WARNING printed to stderr
+instead of a hard FATAL crash.
+
 FEATURES (the teleprompter, all client-side)
 - Pre-loaded speech (inline JSON) + a "Load .md" file picker + a "Paste" fallback.
 - Big adjustable font (default ~48px) with +/- controls.
@@ -85,11 +100,43 @@ META_RE = re.compile(
     r"(?:SECONDS:\s*(?P<seconds>\d+)\s*s)?",
     re.IGNORECASE,
 )
-# Slide header, e.g.:  ## Slide 12 -- Management mode  (MANAGEMENT_MODE)
+# Canonical slide header: ## Slide N -- Headline  (STAGE)
+# Also matches ### Slide N ...
 SLIDE_RE = re.compile(
-    r"^##\s+Slide\s+(?P<no>\d+)\s*--\s*(?P<headline>.*?)\s*"
-    r"(?:\((?P<stage>[^)]*)\))?\s*$"
+    r"^#{1,3}\s+Slide\s+(?P<no>\d+)\s*--\s*(?P<headline>.*?)\s*"
+    r"(?:\((?P<stage>[^)]*)\))?\s*$",
+    re.IGNORECASE,
 )
+# Bracket form: [Slide N] optional headline / [Slide N]: headline
+SLIDE_BRACKET_RE = re.compile(
+    r"^\[Slide\s+(?P<no>\d+)\][\s:]*(?P<headline>.*?)\s*"
+    r"(?:\((?P<stage>[^)]*)\))?\s*$",
+    re.IGNORECASE,
+)
+# Bare form (no ## or brackets): "Slide N -- Headline" / "Slide N: Headline" / "Slide N"
+# Must be at the start of the line and followed by optional separator + headline.
+# Guard: bare "Slide N" only triggers on its own line (nothing else on line except
+# an optional headline); it must NOT fire inside body prose like "on this slide ..."
+SLIDE_BARE_RE = re.compile(
+    r"^Slide\s+(?P<no>\d+)"           # "Slide N"
+    r"(?:\s*(?:--|:)\s*(?P<headline>.*?))?"  # optional "-- Headline" or ": Headline"
+    r"\s*(?:\((?P<stage>[^)]*)\))?\s*$",     # optional "(STAGE)"
+    re.IGNORECASE,
+)
+
+
+def _match_slide_header(line):
+    """Try all slide-header patterns. Return (no, headline, stage) on match, else None."""
+    for pattern in (SLIDE_RE, SLIDE_BRACKET_RE, SLIDE_BARE_RE):
+        m = pattern.match(line.strip())
+        if m:
+            no = int(m.group("no"))
+            headline = (m.group("headline") or "").strip()
+            # Remove trailing (STAGE) artifact that sometimes bleeds into headline
+            headline = re.sub(r"\s*\([A-Z_]+\)\s*$", "", headline).strip()
+            stage = (m.group("stage") or "").strip() if "stage" in m.groupdict() else ""
+            return no, headline, stage
+    return None
 # Header key/value lines, e.g.  SPOKEN_RATE_WPM: 130
 HEADER_KV_RE = re.compile(r"^([A-Z_]+):\s*(.+)$")
 # Pacing cues we surface as their own line in the teleprompter (both forms).
@@ -126,17 +173,28 @@ def parse_speech(md_text, default_wpm=130):
     Each slide: {no, headline, stage, kind, budget, actual, seconds, blocks[...]}
     where blocks is an ordered list of {"type": "body"|"cue", "text": ...}.
     Robust to the `---` slide separators and to a missing SECONDS metadatum.
+
+    Accepted slide-header variants (see _match_slide_header):
+      ## Slide N -- Headline (STAGE)   ← canonical
+      ### Slide N -- Headline          ← extra # tolerated
+      [Slide N] Headline               ← bracket form
+      [Slide N]: Headline              ← bracket + colon
+      Slide N: Headline                ← bare with colon
+      Slide N -- Headline              ← bare with dash
+      Slide N                          ← bare number only
+    If NO slide markers exist at all, the text is split on `---` horizontal rules
+    (one section per slide) and a WARNING is printed instead of crashing.
     """
     lines = md_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     meta = {}
     deck_title = "Presenter's Speech"
     wpm = default_wpm
 
-    # Pull the header block (everything before the first "## Slide").
+    # Pull the header block (everything before the first slide marker).
     i = 0
     while i < len(lines):
         line = lines[i]
-        if SLIDE_RE.match(line):
+        if _match_slide_header(line) is not None:
             break
         m_title = re.match(r"^#\s+PRESENTER'?S?\s+SPEECH\s*--\s*(.+)$", line, re.IGNORECASE)
         if m_title:
@@ -192,13 +250,14 @@ def parse_speech(md_text, default_wpm=130):
 
     while i < len(lines):
         line = lines[i]
-        sm = SLIDE_RE.match(line)
-        if sm:
+        slide_match = _match_slide_header(line)
+        if slide_match is not None:
             flush_body()
+            no, headline, stage = slide_match
             cur = {
-                "no": int(sm.group("no")),
-                "headline": (sm.group("headline") or "").strip(),
-                "stage": (sm.group("stage") or "").strip(),
+                "no": no,
+                "headline": headline,
+                "stage": stage,
                 "kind": "normal",
                 "budget": None, "actual": None, "seconds": None,
                 "blocks": [],
@@ -229,6 +288,47 @@ def parse_speech(md_text, default_wpm=130):
             body_lines.append(line)
         i += 1
     flush_body()
+
+    # ------------------------------------------------------------------ #
+    # FALLBACK: no slide markers found at all — split on "---" separators #
+    # (or on paragraph breaks) and synthesize numbered slides with a      #
+    # WARNING instead of crashing.                                         #
+    # ------------------------------------------------------------------ #
+    if not slides:
+        print(
+            "WARNING: no slide markers found in the speech file (tried ## Slide N, "
+            "[Slide N], and bare Slide N forms). Falling back to splitting on '---' "
+            "horizontal rules. Per-slide pacing will be computed from word counts at "
+            f"{wpm} WPM. Add '## Slide N -- Headline' headers for accurate pacing.",
+            file=sys.stderr,
+        )
+        sections = re.split(r"(?m)^---\s*$", md_text)
+        if len(sections) <= 1:
+            # No --- either — split on double newlines (paragraphs as slides)
+            sections = [s for s in re.split(r"\n\s*\n\s*\n", md_text) if s.strip()]
+        for idx, section in enumerate(sections, start=1):
+            section = section.strip()
+            if not section:
+                continue
+            # Use the first non-empty line as the headline if it looks like one
+            first_line = next((ln.strip().lstrip("#").strip()
+                               for ln in section.splitlines() if ln.strip()), "")
+            # If the first line is very long it's body text not a headline; truncate
+            headline = first_line[:80] if first_line else f"Section {idx}"
+            body_text = section
+            blocks = [{"type": "body", "text": re.sub(r"\s+", " ", body_text.strip())}]
+            wc = word_count(body_text)
+            slides.append({
+                "no": idx,
+                "headline": headline,
+                "stage": "",
+                "kind": "normal",
+                "budget": None,
+                "actual": None,
+                "seconds": round(wc / (wpm / 60.0)) if wc else 0,
+                "words": wc,
+                "blocks": blocks,
+            })
 
     return {
         "deck_title": deck_title,
@@ -370,7 +470,12 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <h2>Load a Presenter's Speech</h2>
     <p class="hint">Pick a PRESENTERS-SPEECH.md file, or paste its contents below.</p>
     <input id="fileInput" type="file" accept=".md,.markdown,.txt">
-    <textarea id="pasteArea" placeholder="## Slide 1 -- Welcome  (WELCOME)
+    <textarea id="pasteArea" placeholder="Accepted formats:
+## Slide 1 -- Welcome  (WELCOME)
+[Slide 1] Welcome
+Slide 1: Welcome
+Slide 1 -- Welcome
+
 &gt; STAGE: WELCOME  KIND: normal  BUDGET: 90w  ACTUAL: 88w  SECONDS: 41s
 
 Hello and welcome, everybody. [PAUSE] ..."></textarea>
@@ -402,11 +507,30 @@ function normCue(raw){
 function wordCount(t){ return t.replace(CUE_RE," ").trim().split(/\s+/).filter(Boolean).length; }
 
 // ---- markdown -> data (used only for runtime Load/Paste; build-time uses Python)
+// Accepts all slide-header variants: ## Slide N -- H (STAGE), ### Slide N -- H,
+// [Slide N] H, [Slide N]: H, Slide N -- H, Slide N: H, bare Slide N.
 function parseMarkdown(md){
   const lines = md.replace(/\r\n?/g,"\n").split("\n");
   let wpm = DEFAULT_WPM, deck = "Presenter's Speech";
-  const slideRe = /^##\s+Slide\s+(\d+)\s*--\s*(.*?)\s*(?:\(([^)]*)\))?\s*$/;
+  // Canonical: ## Slide N -- Headline (STAGE) or ### Slide N ...
+  const slideRe  = /^#{1,3}\s+Slide\s+(\d+)\s*--\s*(.*?)\s*(?:\(([^)]*)\))?\s*$/i;
+  // Bracket: [Slide N] Headline or [Slide N]: Headline
+  const slideBrRe = /^\[Slide\s+(\d+)\][\s:]*([^(]*?)\s*(?:\(([^)]*)\))?\s*$/i;
+  // Bare: "Slide N -- Headline" / "Slide N: Headline" / "Slide N" (whole line)
+  const slideBareRe = /^Slide\s+(\d+)(?:\s*(?:--|:)\s*([^(]*?))?\s*(?:\(([^)]*)\))?\s*$/i;
   const metaRe = /^>\s*(?:STAGE:\s*([A-Z_]+))?\s*(?:KIND:\s*(\w+))?\s*(?:BUDGET:\s*(\d+)\s*w)?\s*(?:ACTUAL:\s*(\d+)\s*w)?\s*(?:SECONDS:\s*(\d+)\s*s)?/i;
+
+  function matchSlide(line){
+    for(const re of [slideRe, slideBrRe, slideBareRe]){
+      const m=re.exec(line.trim());
+      if(m){
+        let hl=(m[2]||"").trim().replace(/\s*\([A-Z_]+\)\s*$/,"").trim();
+        return {no:+m[1], headline:hl, stage:(m[3]||"").trim()};
+      }
+    }
+    return null;
+  }
+
   const slides=[]; let cur=null, body=[];
   function flush(){
     if(!cur) return;
@@ -434,10 +558,10 @@ function parseMarkdown(md){
   let inHeader=true;
   for(let i=0;i<lines.length;i++){
     const line=lines[i];
-    const sm=slideRe.exec(line);
+    const sm=matchSlide(line);
     if(sm){
       inHeader=false; flush();
-      cur={no:+sm[1], headline:(sm[2]||"").trim(), stage:(sm[3]||"").trim(),
+      cur={no:sm.no, headline:sm.headline, stage:sm.stage,
            kind:"normal", budget:null, actual:null, seconds:null, blocks:[]};
       slides.push(cur); body=[]; continue;
     }
@@ -458,6 +582,20 @@ function parseMarkdown(md){
     if(cur) body.push(line);
   }
   flush();
+  // Fallback: no slide markers — split on "---" or paragraph breaks
+  if(!slides.length){
+    const secs = md.split(/\n---\n/);
+    const chunks = secs.length > 1 ? secs : md.split(/\n\s*\n\s*\n/);
+    chunks.forEach((chunk,idx)=>{
+      chunk=chunk.trim(); if(!chunk) return;
+      const firstLine=chunk.split("\n").find(l=>l.trim())||"";
+      const hl=firstLine.replace(/^#+\s*/,"").trim().slice(0,80)||"Section "+(idx+1);
+      const wc=wordCount(chunk);
+      slides.push({no:idx+1, headline:hl, stage:"", kind:"normal",
+        budget:null, actual:null, seconds:wc?Math.round(wc/(wpm/60)):0,
+        words:wc, blocks:[{type:"body",text:chunk.replace(/\s+/g," ").trim()}]});
+    });
+  }
   return {deck_title:deck, wpm, slides};
 }
 
@@ -638,7 +776,7 @@ document.getElementById("parsePaste").onclick=()=>{
 function ingest(md){
   const parsed=parseMarkdown(md);
   if(parsed.slides.length){ DATA=parsed; slides=parsed.slides; WPM=parsed.wpm; current=0; render(); goTo(0,false); setPlaying(false); }
-  else alert("No '## Slide N' headers found. Check the file format.");
+  else alert("No slides could be parsed. The file may be empty. Accepted formats: '## Slide N -- Headline', '[Slide N] Headline', 'Slide N: Headline', or use '---' separators for a paragraph fallback.");
 }
 
 // ---- boot
@@ -767,8 +905,18 @@ def main():
 
     data = parse_speech(md)
     if not data["slides"]:
-        print("FATAL: no '## Slide N -- Headline (STAGE)' slides parsed from the speech.",
-              file=sys.stderr)
+        print(
+            "FATAL: no slides could be parsed from the speech file. The file appears\n"
+            "to be empty or contains no recognizable content.\n"
+            "Accepted slide header formats:\n"
+            "  ## Slide N -- Headline  (STAGE)   ← canonical\n"
+            "  [Slide N] Headline                 ← bracket form\n"
+            "  Slide N: Headline                  ← bare with colon\n"
+            "  Slide N -- Headline                ← bare with dash\n"
+            "  Slide N                            ← bare number only\n"
+            "Or separate sections with '---' horizontal rules for the paragraph fallback.",
+            file=sys.stderr,
+        )
         sys.exit(2)
     brand = read_brand_name(args.intake)
     html = build_html(data, brand, data["wpm"])

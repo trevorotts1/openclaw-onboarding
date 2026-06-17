@@ -233,10 +233,45 @@ wf = {
 json.dump(wf, open('$WF_STATE','w'), indent=2)
 " 2>/dev/null
 
+# v12.23.0 WORKSPACE-SHELL HONESTY: the overall goal now ALSO requires the
+# workspace-shell gate to pass. A hand-seeded buildCompletedAt alone is NO LONGER
+# sufficient (that was the exact false-"done"). We materialize a REAL full
+# workspace and pin the gate at it via OC_WORKSPACE_DEPARTMENTS_DIR.
+T8_FLOOR_PY="$REPO_ROOT/23-ai-workforce-blueprint/scripts/department-floor.py"
+T8_DEPTS="$FIXTURE_WS/zero-human-company/acme/departments"
+T8_REQUIRED=$(FLOOR_PY="$T8_FLOOR_PY" python3 - <<'PY' 2>/dev/null
+import importlib.util, os, tempfile, pathlib
+s=importlib.util.spec_from_file_location("df", os.environ["FLOOR_PY"]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m)
+d=pathlib.Path(tempfile.mkdtemp())/"d"; d.mkdir(parents=True)
+print(" ".join(m.evaluate_floor(departments_dir=d, build_state={}, core_answers={"industry":"general business"})["expected_floor"]))
+PY
+)
+T8_SOP="$(python3 -c "print('# how-to\n## 9. SOPs\n### SOP 9.1 run\n' + ('work '*1000))")"
+for d in $T8_REQUIRED; do
+  mkdir -p "$T8_DEPTS/$d/00-head"
+  printf '# id\n'  > "$T8_DEPTS/$d/IDENTITY.md"
+  printf '# soul\n'> "$T8_DEPTS/$d/SOUL.md"
+  printf '%s\n' "$T8_SOP" > "$T8_DEPTS/$d/00-head/how-to.md"
+done
+
 T8_RC=1
-oc_overall_goal_check 2>/dev/null && T8_RC=0
-[[ "$T8_RC" -eq 0 ]] && pass "T8: oc_overall_goal_check passes when all conditions met" \
-  || fail "T8: overall goal check should pass with all waves + workforce state set"
+OC_WORKSPACE_DEPARTMENTS_DIR="$T8_DEPTS" oc_overall_goal_check 2>/dev/null && T8_RC=0
+[[ "$T8_RC" -eq 0 ]] && pass "T8: oc_overall_goal_check passes when all conditions met + workspace materialized" \
+  || fail "T8: overall goal check should pass with all waves + workforce state + FULL workspace"
+
+# ── T8b: overall goal BLOCKED when workspace is a SHELL (the false-"done" bug) ──
+# Same JSON state (all waves + buildCompletedAt + closeout done) but the workspace
+# departments are empty shells (DREAMS.md + memory/ only). The overall goal MUST
+# refuse to pass — a template-on-disk / seeded build-state must never report done.
+T8B_DEPTS="$FIXTURE_WS/zero-human-company/shellco/departments"
+for d in $T8_REQUIRED; do
+  mkdir -p "$T8B_DEPTS/$d/memory"
+  printf '# dreams\n' > "$T8B_DEPTS/$d/DREAMS.md"
+done
+T8B_RC=0
+OC_WORKSPACE_DEPARTMENTS_DIR="$T8B_DEPTS" oc_overall_goal_check 2>/dev/null || T8B_RC=$?
+[[ "$T8B_RC" -ne 0 ]] && pass "T8b: overall goal BLOCKED when workspace is a SHELL (AF-WORKSPACE-SHELL closes seeded-done bypass)" \
+  || fail "T8b: overall goal must FAIL when workspace departments are shells, but it passed"
 
 # ── T9: KILL CONDITION — kill mid-wave, watchdog detects, builds EXACT prompt ──
 # Reset state: wave1 pending, simulate kill mid-wave

@@ -1151,17 +1151,25 @@ def fill_tokens(content, role_name, dept_name, is_ceo, role_entry=None):
     return out
 
 
-def try_library_fill(role_name, dept_path, is_ceo):
+def try_library_fill(role_name, dept_path, is_ceo, lib_key=None):
     """
     Look up the library for a pre-written how-to.md, token-fill it, and return
     the filled content. Returns None if no library match (caller falls back
     to stub_how_to).
+
+    lib_key: optional explicit library lookup key (the canonical role slug). When
+    provided it is tried FIRST so a decorated display name can never defeat the
+    lookup; falls back to role_name if the explicit key misses.
     """
     # WS-2: pass the RAW role name (not the naive slug) so the normalizer can
     # strip decorations / employment qualifiers and reach ~100% match coverage.
     dept_slug = dept_path.name.replace("-dept", "").strip().lower()
 
-    doc_path, role_entry = library_lookup(role_name, dept_slug)
+    doc_path, role_entry = (None, None)
+    if lib_key:
+        doc_path, role_entry = library_lookup(lib_key, dept_slug)
+    if not doc_path:
+        doc_path, role_entry = library_lookup(role_name, dept_slug)
     if not doc_path:
         return None
 
@@ -1224,12 +1232,39 @@ def create_role_workspace(dept_path, role_name, workspace_root, role_metadata=No
     stub otherwise.
     """
     role_metadata = role_metadata or {}
-    role_slug = slugify(role_name)
-    role_path = Path(dept_path) / role_slug
-    role_path.mkdir(parents=True, exist_ok=True)
 
+    # DEFECT #4 FIX: dept-scoped instantiation must produce numbered folders
+    # `NN-<clean-slug>/` that AGREE with build-workforce.py and the role-library.
+    # Precedence for the bare slug:
+    #   1. explicit role_metadata["slug"] (canonical roster slug — authoritative)
+    #   2. slugify(role_name) (legacy fallback for callers that pass only a name)
+    # When a role number is supplied, the folder is zero-padded `NN-<slug>`; the
+    # CEO/master-orchestrator keeps its un-numbered well-known folder name.
+    explicit_slug = (role_metadata.get("slug") or "").strip()
+    base_slug = explicit_slug or slugify(role_name)
     is_ceo = (role_metadata.get("is_ceo", False)
-              or role_slug == "master-orchestrator")
+              or base_slug == "master-orchestrator"
+              or slugify(role_name) == "master-orchestrator")
+
+    role_number = role_metadata.get("number", role_metadata.get("role_number"))
+    if is_ceo:
+        # CEO lives at a stable, un-numbered folder (resolved by name elsewhere).
+        role_slug = base_slug
+        folder_name = base_slug
+    elif role_number is not None and str(role_number).strip() != "":
+        try:
+            _num = int(role_number)
+            folder_name = f"{_num:02d}-{base_slug}"
+        except (TypeError, ValueError):
+            folder_name = base_slug
+        role_slug = base_slug
+    else:
+        # No number supplied: keep legacy un-numbered behavior (backward-safe).
+        role_slug = base_slug
+        folder_name = base_slug
+
+    role_path = Path(dept_path) / folder_name
+    role_path.mkdir(parents=True, exist_ok=True)
     dept_name = Path(dept_path).name.replace("-dept", "").replace("-", " ").title()
 
     # ── MSF: stamp capability_class into role_metadata (Layer-2, v1.0.0) ──────
@@ -1256,11 +1291,13 @@ def create_role_workspace(dept_path, role_name, workspace_root, role_metadata=No
     (role_path / "HEARTBEAT.md").write_text(
         stub_heartbeat(role_name, dept_name), encoding="utf-8")
 
-    # how-to.md: library first, stub fallback
-    filled = try_library_fill(role_name, Path(dept_path), is_ceo)
+    # how-to.md: library first, stub fallback. Feed the explicit canonical slug
+    # as the lookup key so a decorated display name can never defeat the fill.
+    filled = try_library_fill(role_name, Path(dept_path), is_ceo,
+                              lib_key=(explicit_slug or None))
     if filled is not None:
         (role_path / "how-to.md").write_text(filled, encoding="utf-8")
-        print(f"  [library-fill] {role_slug} ← templates/role-library/...")
+        print(f"  [library-fill] {folder_name} ← templates/role-library/...")
     else:
         (role_path / "how-to.md").write_text(
             stub_how_to(role_name, dept_name, is_ceo), encoding="utf-8")
@@ -1681,6 +1718,192 @@ def refresh_all_governing_personas_md(workspace_root: Path) -> int:
     return refreshed
 
 
+# ─── DEPT-SCOPED INSTANTIATION (defect #4: a COMPLETE department) ─────────────
+
+_ROSTER_DECORATION_RE = re.compile(r"\([^)]*\)")
+
+
+def _roster_clean_name(name):
+    """Strip parenthetical decorations from a roster `### N. <name>` header so a
+    name like 'Capacity and Reliability Engineer (NEW)' reads cleanly. The
+    explicit **Slug:** line is the authoritative key; this only tidies display."""
+    s = _ROSTER_DECORATION_RE.sub("", str(name or "")).strip()
+    return re.sub(r"\s{2,}", " ", s)
+
+
+def parse_roster(roster_path):
+    """
+    Parse a suggested-roles markdown roster into a list of role dicts:
+        {"number": int, "name": str, "slug": str, "role_type": str}
+
+    Reads the `### N. Name` headers and the per-role `**Slug:**` / `**Role
+    type:**` lines. The explicit **Slug:** is the canonical key for both folder
+    naming (`NN-<slug>/`) and role-library lookup. Roles without an explicit
+    slug fall back to a decoration-stripped slugify of the name.
+    """
+    roster_path = Path(roster_path)
+    text = roster_path.read_text(encoding="utf-8")
+    roles = []
+    cur = None
+    for line in text.split("\n"):
+        if line.startswith("### "):
+            if cur is not None:
+                roles.append(cur)
+            header = line[4:].strip()
+            parts = header.split(". ", 1)
+            try:
+                number = int(parts[0])
+                name = parts[1] if len(parts) > 1 else header
+            except ValueError:
+                number = len(roles)
+                name = header
+            cur = {
+                "number": number,
+                "name": _roster_clean_name(name),
+                "slug": "",
+                "role_type": "specialist",
+            }
+        elif cur is not None:
+            if line.startswith("**Slug:**"):
+                cur["slug"] = line.replace("**Slug:**", "").strip()
+            elif line.startswith("**Role type:**"):
+                cur["role_type"] = line.replace("**Role type:**", "").strip().lower()
+    if cur is not None:
+        roles.append(cur)
+    # Backfill any missing slug from the cleaned name.
+    for r in roles:
+        if not r["slug"]:
+            r["slug"] = slugify(r["name"])
+    return roles
+
+
+def _resolve_dept_library_dir(dept_slug):
+    """Return the role-library dir for a dept (Path) or None."""
+    skill_dir = _resolve_skill_dir()
+    dept_key = normalize_dept(dept_slug)
+    cand = skill_dir / "templates" / "role-library" / dept_key
+    return cand if cand.is_dir() else None
+
+
+# Dept-level meta files copied (token-filled) into the workspace department root.
+_DEPT_LEVEL_FILES = ["IDENTITY.md", "SOUL.md", "TOOLS.md",
+                     "how-to-use-this-department.md"]
+
+
+def scaffold_department(dept_path, dept_slug, dry_run=False):
+    """
+    ADDITIVE department-level scaffolding (defect #4). Writes, only if missing
+    (never clobbers), the department-level IDENTITY/SOUL/TOOLS/
+    how-to-use-this-department from the role-library (token-filled), plus a
+    `sops/` folder populated from the library's dept `sops/`. Returns a dict of
+    what was written. Writes ONLY under dept_path — never touches siblings.
+    """
+    dept_path = Path(dept_path)
+    written = {"files": [], "sops": 0}
+    lib_dir = _resolve_dept_library_dir(dept_slug)
+    dept_name = dept_path.name.replace("-dept", "").replace("-", " ").title()
+
+    dept_path.mkdir(parents=True, exist_ok=True)
+
+    # Dept-level meta files (token-filled from the library when present).
+    for fname in _DEPT_LEVEL_FILES:
+        target = dept_path / fname
+        if target.exists():
+            continue
+        src = (lib_dir / fname) if lib_dir else None
+        if src and src.exists():
+            raw = src.read_text(encoding="utf-8")
+            content = fill_tokens(raw, dept_name, dept_name, False, role_entry=None)
+        else:
+            content = (f"# {dept_name} — {fname[:-3]}\n\n"
+                       f"Department-level {fname[:-3]} for {dept_name}. "
+                       f"(No role-library template was available at scaffold time.)\n")
+        if not dry_run:
+            target.write_text(content, encoding="utf-8")
+        written["files"].append(fname)
+
+    # sops/ folder — copy the library dept SOP docs (additive, missing-only).
+    sops_target = dept_path / "sops"
+    if not dry_run:
+        sops_target.mkdir(exist_ok=True)
+    if lib_dir and (lib_dir / "sops").is_dir():
+        for sop in sorted((lib_dir / "sops").glob("*.md")):
+            dest = sops_target / sop.name
+            if dest.exists():
+                continue
+            if not dry_run:
+                dest.write_text(sop.read_text(encoding="utf-8"), encoding="utf-8")
+            written["sops"] += 1
+
+    # scripts/ folder — copy any dept-level executable scripts (additive,
+    # missing-only; never clobbers existing files). This deploys role-owned
+    # no-AI generators (e.g. presentations/scripts/build_teleprompter.py,
+    # build_deck.py, etc.) into the client workspace so the role SOPs can run
+    # them with the relative path 'presentations/scripts/build_teleprompter.py'.
+    # Only .py and .sh files are copied; we skip __pycache__ and .pyc.
+    scripts_target = dept_path / "scripts"
+    if lib_dir and (lib_dir / "scripts").is_dir():
+        if not dry_run:
+            scripts_target.mkdir(exist_ok=True)
+        scripts_copied = 0
+        for src_file in sorted((lib_dir / "scripts").iterdir()):
+            if src_file.name.startswith("__") or src_file.suffix == ".pyc":
+                continue
+            if src_file.is_dir():
+                continue  # skip nested dirs (e.g. __pycache__)
+            if src_file.suffix not in (".py", ".sh", ".json"):
+                continue
+            dest_file = scripts_target / src_file.name
+            if dest_file.exists():
+                continue
+            if not dry_run:
+                import shutil as _shutil
+                _shutil.copy2(src_file, dest_file)
+            scripts_copied += 1
+        if scripts_copied:
+            written.setdefault("scripts", 0)
+            written["scripts"] = scripts_copied
+
+    return written
+
+
+def instantiate_department(dept_path, dept_slug, roles, workspace_root,
+                           dry_run=False):
+    """
+    Instantiate a COMPLETE department into dept_path (defect #4). ADDITIVE:
+    only writes under dept_path; never overwrites sibling departments.
+
+    For every role: `NN-<clean-slug>/` folder + library-filled how-to.md
+    (real content) + IDENTITY/SOUL/MEMORY/HEARTBEAT + SOP/ index. PLUS the
+    department-level IDENTITY/SOUL/TOOLS/how-to-use-this-department + sops/.
+
+    Returns a summary dict.
+    """
+    dept_path = Path(dept_path)
+    workspace_root = Path(workspace_root)
+    summary = {"dept": dept_path.name, "roles_created": [], "dept_files": [],
+               "sops_copied": 0, "scripts_copied": 0}
+
+    if dry_run:
+        print(f"[instantiate] DRY-RUN dept={dept_path.name} ({len(roles)} roles)")
+    # Department-level scaffolding first.
+    scaffolded = scaffold_department(dept_path, dept_slug, dry_run=dry_run)
+    summary["dept_files"] = scaffolded["files"]
+    summary["sops_copied"] = scaffolded["sops"]
+    summary["scripts_copied"] = scaffolded.get("scripts", 0)
+
+    for role in roles:
+        if dry_run:
+            print(f"  [DRY-RUN] would create "
+                  f"{int(role.get('number', 0)):02d}-{role['slug']}/")
+            summary["roles_created"].append(f"{int(role.get('number',0)):02d}-{role['slug']}")
+            continue
+        role_path = create_role_workspace(
+            dept_path, role["name"], workspace_root, role_metadata=role)
+        summary["roles_created"].append(role_path.name)
+    return summary
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Create or augment role-level workspaces inside a department.")
@@ -1689,6 +1912,16 @@ def main():
     parser.add_argument("--workspace-root", help="Override workspace root (default: detect)")
     parser.add_argument("--augment", action="store_true",
                         help="Augment all existing role folders in --dept-path")
+    # Dept-scoped, additive instantiation (defect #4). Produces a COMPLETE
+    # department: all roster roles as NN-<slug>/ with library-filled how-to.md,
+    # plus dept-level IDENTITY/SOUL/TOOLS/how-to-use-this-department + sops/.
+    parser.add_argument("--from-roster",
+                        help="Instantiate a complete department from a "
+                             "suggested-roles roster .md into --dept-path "
+                             "(additive; never overwrites siblings).")
+    parser.add_argument("--dept-slug",
+                        help="Department slug for --from-roster library lookup "
+                             "(default: derived from --dept-path name).")
     parser.add_argument("--dry-run", action="store_true")
     # v6.6.0: --refresh-personas-only
     # Called by orchestrator.py Phase 6b after a new persona is added.
@@ -1727,6 +1960,25 @@ def main():
     if not args.dept_path:
         parser.error("--dept-path is required (unless --refresh-personas-only is used)")
     dept_path = Path(args.dept_path)
+
+    # ── --from-roster: complete, additive dept-scoped instantiation ──────────
+    if args.from_roster:
+        roster_path = Path(args.from_roster)
+        if not roster_path.is_file():
+            print(f"ERROR: roster not found: {roster_path}", file=sys.stderr)
+            return 1
+        dept_slug = args.dept_slug or dept_path.name.replace("-dept", "").strip().lower()
+        roles = parse_roster(roster_path)
+        if not roles:
+            print(f"ERROR: no roles parsed from {roster_path}", file=sys.stderr)
+            return 1
+        summary = instantiate_department(dept_path, dept_slug, roles,
+                                         workspace_root, dry_run=args.dry_run)
+        print(f"\n[instantiate] dept={summary['dept']} "
+              f"roles={len(summary['roles_created'])} "
+              f"dept_files={len(summary['dept_files'])} "
+              f"sops_copied={summary['sops_copied']}")
+        return 0
 
     if args.augment:
         results = augment_all_existing_role_folders(dept_path, workspace_root,

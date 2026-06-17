@@ -830,6 +830,36 @@ jobs:
           # stubs / {{token}} leaks / <7KB / missing-Section-9 garbage.
           bash 23-ai-workforce-blueprint/scripts/test-sop-substance-models.sh
 
+      - name: AF-WORKSPACE-SHELL — workspace department materialization gate (fail-closed)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # v12.23.0 false-"done" closer. The onboarding/update path copies the
+          # role-library TEMPLATE to the skills/ tree and that was reported as
+          # "the client is updated / the department is installed / airtight" while
+          # the client's actual WORKSPACE department
+          # (workspace/zero-human-company/<co>/departments/<dept>/) was an empty
+          # SHELL (DREAMS.md + memory/ only). "TEMPLATE DEPLOYED" and "WORKSPACE
+          # INSTANTIATED" are TWO SEPARATE states. This proves the gate
+          # (scripts/qc-assert-workspace-departments-built.sh):
+          #   T1 SHELL workspace FAILS (rc=3 AF-WORKSPACE-SHELL)
+          #   T2 FULL workspace PASSES (rc=0)
+          #   T3 PARTIAL workspace FAILS (rc=3)
+          #   T4 a skills/.../role-library TEMPLATE tree NEVER satisfies it (rc=4)
+          bash scripts/test-workspace-departments-built.sh
+          echo "✓ AF-WORKSPACE-SHELL gate: shell/partial/template FAIL, full PASS"
+
+      - name: AF-WORKSPACE-SHELL — overall onboarding gate blocks on a shell workspace
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Lockstep guard: lib-onboarding-state.sh oc_overall_goal_check MUST
+          # refuse to report "done" when the workspace departments are shells,
+          # even with a hand-seeded buildCompletedAt + closeoutStatus=done. The
+          # watchdog test exercises exactly this (T8 full-passes, T8b shell-blocks).
+          bash scripts/test-watchdog-loop.sh
+          echo "✓ overall onboarding gate requires a materialized workspace (T8b)"
+
       - name: Skill 23 PRD-2.15 interview experience (T1-T13 fixture tests)
         shell: bash
         run: |

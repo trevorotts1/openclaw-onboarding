@@ -775,6 +775,59 @@ else
   WARNINGS+=("X.10|qc-assert-no-client-names.sh missing|Update openclaw-onboarding to v12.22.0+")
 fi
 
+# ─── CHECK X.11: Workspace department materialization (v12.23.0) ────────────
+# Hard-fail: a required department's WORKSPACE must be MATERIALIZED, not a SHELL.
+# This closes the false-"done" class where a role-library TEMPLATE was copied to
+# the skills/ tree (skills/.../role-library/<dept>/) and reported "the client is
+# updated / the department is installed / airtight" while the client's actual
+# workspace department (workspace/zero-human-company/<company>/departments/<dept>/)
+# was left an empty shell (only DREAMS.md + memory/, no role subdirs, no
+# IDENTITY.md/SOUL.md, no real SOPs). "TEMPLATE DEPLOYED" and "WORKSPACE
+# INSTANTIATED" are two separate states; this check verifies the WORKSPACE.
+# Delegates to qc-assert-workspace-departments-built.sh (single source of truth).
+#   rc=3 (AF-WORKSPACE-SHELL: a dept is SHELL/PARTIAL) -> HARD FAIL.
+#   rc=4 (no workspace / not built yet)                -> warn (CHECK 1.1 owns it).
+#   rc=2 (gate could not run)                          -> warn.
+echo
+blue "── CHECK X.11: Workspace department materialization ──"
+WORKSPACE_SHELL_SCRIPT=""
+for _ws_cand in \
+  "$(dirname "${BASH_SOURCE[0]}")/qc-assert-workspace-departments-built.sh" \
+  "$HOME/.openclaw/skills/scripts/qc-assert-workspace-departments-built.sh" \
+  "/data/.openclaw/skills/scripts/qc-assert-workspace-departments-built.sh"; do
+  [[ -f "$_ws_cand" ]] && WORKSPACE_SHELL_SCRIPT="$_ws_cand" && break
+done
+if [[ -n "$WORKSPACE_SHELL_SCRIPT" ]]; then
+  _ws_tmp=$(mktemp)
+  bash "$WORKSPACE_SHELL_SCRIPT" > "$_ws_tmp" 2>&1
+  WORKSPACE_SHELL_RC=$?
+  WORKSPACE_SHELL_OUT=$(cat "$_ws_tmp"); rm -f "$_ws_tmp"
+  case "$WORKSPACE_SHELL_RC" in
+    0)
+      green "  ✓ X.11 All required workspace departments fully materialized (raw counts verified)"; PASS=$((PASS+1)) ;;
+    3)
+      red "  ✗ X.11 AF-WORKSPACE-SHELL — a required department's WORKSPACE is a SHELL/PARTIAL (template-on-disk ≠ workspace built)"
+      FAIL=$((FAIL+1))
+      FAILURES+=("X.11|Workspace department(s) not materialized (SHELL/PARTIAL)|Run: bash scripts/qc-assert-workspace-departments-built.sh for the per-dept raw counts, then run build-workforce.py / post-build-role-workspaces.py to instantiate the workspace")
+      # surface the SHELL/PARTIAL/MISSING summary lines
+      while IFS= read -r _wsline; do
+        case "$_wsline" in
+          *"SHELL ("*|*"PARTIAL ("*|*"MISSING ("*) red "$_wsline" ;;
+        esac
+      done <<< "$WORKSPACE_SHELL_OUT" ;;
+    4)
+      yellow "  ⚠ X.11 No materialized workspace found yet (workforce not built — see CHECK 1.1)"; WARN=$((WARN+1))
+      WARNINGS+=("X.11|No workspace departments dir resolved (workforce not built yet)|Run Skill 23 build; this becomes a hard-fail once a workspace exists") ;;
+    *)
+      yellow "  ⚠ X.11 Workspace-shell gate could not run (rc=$WORKSPACE_SHELL_RC)"; WARN=$((WARN+1))
+      WARNINGS+=("X.11|Workspace-shell gate could not run (rc=$WORKSPACE_SHELL_RC)|Ensure department-floor.py + python3 are present; re-run scripts/qc-assert-workspace-departments-built.sh") ;;
+  esac
+else
+  yellow "  ⚠ X.11 qc-assert-workspace-departments-built.sh not found — skipping workspace-shell check"
+  WARN=$((WARN+1))
+  WARNINGS+=("X.11|qc-assert-workspace-departments-built.sh missing|Update openclaw-onboarding to v12.23.0+")
+fi
+
 # ─── SUMMARY ─────────────────────────────────────────────────────────────────
 echo
 blue "═══════════════════════════════════════════════════"

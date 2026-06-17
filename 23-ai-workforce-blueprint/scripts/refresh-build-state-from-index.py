@@ -111,6 +111,29 @@ def detect_role_library_status(dept_dir: Path) -> str:
     return "done" if filled >= (total * 0.8) else "pending"
 
 
+def count_roles_on_disk(dept_dir: Path) -> int:
+    """
+    DEFECT #5 (build-state honesty): count the role folders that ACTUALLY exist
+    on disk for a department, so rolesDone reflects DISK TRUTH and can never be
+    set to the planned count while the workspace is empty. A role folder is any
+    direct subdir that carries a how-to.md (the role's entry point), excluding
+    department-level helper dirs (sops/, memory/, _archive, etc.).
+    """
+    if not dept_dir or not dept_dir.is_dir():
+        return 0
+    SKIP = {"sops", "memory", "_archive", "_index", "_compliance_audit",
+            "_pending_rewrite", "_stage1_drafts"}
+    n = 0
+    for child in dept_dir.iterdir():
+        if not child.is_dir():
+            continue
+        if child.name in SKIP or child.name.startswith((".", "_")):
+            continue
+        if (child / "how-to.md").is_file():
+            n += 1
+    return n
+
+
 def detect_sop_library_status(dept_dir: Path) -> str:
     """Heuristic: if SOP/ files exist and none are empty stubs, it's done."""
     if not dept_dir or not dept_dir.is_dir():
@@ -206,6 +229,8 @@ def main() -> None:
         dept_on_disk = (depts_dir / slug) if depts_dir else None
         rl_status = detect_role_library_status(dept_on_disk)
         sop_status = detect_sop_library_status(dept_on_disk)
+        # DEFECT #5: rolesDone reflects DISK TRUTH, not the planned count.
+        roles_on_disk = count_roles_on_disk(dept_on_disk)
 
         if slug in existing_depts_dict:
             # Upsert: update role counts and statuses, preserve other fields
@@ -233,11 +258,19 @@ def main() -> None:
             else:
                 new_status = "done"  # legacy/non-strict: count-based
 
+            # DEFECT #5 (honesty hard floor): a dept can NEVER be "done" while 0
+            # roles are on disk, regardless of gate booleans or --strict mode.
+            # status:"done" with rolesDone:0 was the exact fiction the canary hit.
+            if roles_on_disk == 0 and new_status == "done":
+                new_status = entry.get("status", "building")
+                if new_status == "done":
+                    new_status = "building"
+
             if (entry.get("rolesPlanned") != roles_count or
-                    entry.get("rolesDone") != roles_count or
+                    entry.get("rolesDone") != roles_on_disk or
                     entry.get("status") != new_status):
                 entry["rolesPlanned"] = roles_count
-                entry["rolesDone"] = roles_count
+                entry["rolesDone"] = roles_on_disk
                 entry["status"] = new_status
                 entry["roleLibraryFilled"] = gate_rl_filled
                 entry["sopLibraryFilled"] = gate_sop_filled
@@ -245,7 +278,8 @@ def main() -> None:
                 existing_depts_dict[slug] = entry
                 changed = True
                 if args.verbose:
-                    print(f"  updated dept: {slug} (roles={roles_count}, status={new_status})")
+                    print(f"  updated dept: {slug} (planned={roles_count}, "
+                          f"onDisk={roles_on_disk}, status={new_status})")
         else:
             # New dept — add with full shape
             # C2: New depts start as "building" — gates must pass before done
@@ -259,12 +293,16 @@ def main() -> None:
                 _new_status = "building"
             else:
                 _new_status = "done"
+            # DEFECT #5: honesty floor also applies to new depts — never "done"
+            # with 0 roles on disk.
+            if roles_on_disk == 0 and _new_status == "done":
+                _new_status = "building"
             existing_depts_dict[slug] = {
                 "slug": slug,
                 "name": name,
                 "status": _new_status,
                 "rolesPlanned": roles_count,
-                "rolesDone": roles_count,
+                "rolesDone": roles_on_disk,
                 "roleLibraryFilled": _new_rl,
                 "sopLibraryFilled": _new_sop,
                 "wiringStatus": "pending",
@@ -274,7 +312,8 @@ def main() -> None:
             }
             changed = True
             if args.verbose:
-                print(f"  added dept: {slug} (roles={roles_count}, status={_new_status})")
+                print(f"  added dept: {slug} (planned={roles_count}, "
+                      f"onDisk={roles_on_disk}, status={_new_status})")
 
     # Recompute totals
     total_roles = sum(len(d.get("roles", [])) for d in index_depts.values())

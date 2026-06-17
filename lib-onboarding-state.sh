@@ -419,6 +419,7 @@ if "overall" not in wg:
         "allWavesVerified": False,
         "interviewComplete": False,
         "workforceBuilt": False,
+        "workspaceMaterialized": False,
         "closeoutDelivered": False,
     }
 
@@ -509,18 +510,70 @@ PYEOF
 }
 
 # ------------------------------------------------------------
+# oc_workspace_departments_materialized
+#   FAIL-CLOSED workspace-shell gate wrapper. Returns:
+#     0  every required workspace department is FULLY MATERIALIZED (gate rc=0)
+#     1  a required dept is SHELL/PARTIAL (gate rc=3) OR no workspace yet (rc=4)
+#        OR the gate could not run (rc=2 / missing) — when in doubt, FAIL.
+#   This is the workspace-layer extension of the onboarding HONESTY contract:
+#   a role-library TEMPLATE copied to the skills/ tree ("TEMPLATE DEPLOYED") is
+#   NOT a built workspace department ("WORKSPACE INSTANTIATED"). Reporting one as
+#   the other is the exact false-"done" this gate makes impossible. Sets the
+#   global OC_WORKSPACE_GATE_RC so callers can distinguish "shell" (3) from
+#   "no workforce yet" (4).
+# ------------------------------------------------------------
+oc_workspace_departments_materialized() {
+  OC_WORKSPACE_GATE_RC=2
+  # Resolve the gate script: sibling scripts/ in the repo, or the deployed
+  # skills/scripts/ tree on a client box (Mac ~/.openclaw, VPS /data/.openclaw).
+  local _self_dir gate=""
+  _self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+  for _c in \
+    "${_self_dir:+$_self_dir/scripts/qc-assert-workspace-departments-built.sh}" \
+    "$OC_CONFIG/skills/scripts/qc-assert-workspace-departments-built.sh" \
+    "$HOME/.openclaw/skills/scripts/qc-assert-workspace-departments-built.sh" \
+    "/data/.openclaw/skills/scripts/qc-assert-workspace-departments-built.sh"; do
+    [ -n "$_c" ] && [ -f "$_c" ] && { gate="$_c"; break; }
+  done
+  # FAIL-CLOSED: if the gate is missing, we cannot prove materialization → fail.
+  [ -z "$gate" ] && return 1
+  # OC_WORKSPACE_DEPARTMENTS_DIR lets a caller that already resolved the
+  # departments dir (tests; a build step that just wrote it) pin it precisely,
+  # bypassing live detect_platform resolution. Otherwise the gate self-resolves.
+  if [ -n "${OC_WORKSPACE_DEPARTMENTS_DIR:-}" ]; then
+    bash "$gate" --departments-dir "$OC_WORKSPACE_DEPARTMENTS_DIR" >/dev/null 2>&1
+  else
+    bash "$gate" >/dev/null 2>&1
+  fi
+  OC_WORKSPACE_GATE_RC=$?
+  [ "$OC_WORKSPACE_GATE_RC" -eq 0 ] && return 0
+  return 1
+}
+
+# ------------------------------------------------------------
 # oc_overall_goal_check
 #   CHEAP overall goal check (reads two state files, no network):
 #   (i) all 5 waves passed in waveGoals, (ii) interviewComplete in
-#   workforce-build-state.json, (iii) buildCompletedAt set (workforce built),
-#   (iv) closeoutStatus=done.
+#   workforce-build-state.json, (iii) workforce built — buildCompletedAt set AND
+#   the WORKSPACE-SHELL gate passes (workspace departments materialized, NOT just
+#   a template on disk), (iv) closeoutStatus=done.
 #   Returns 0 = all goals met, 1 = incomplete.
+#
+#   v12.23.0: criterion (iii) no longer trusts buildCompletedAt alone. A
+#   hand-seeded buildCompletedAt while the workspace departments are empty shells
+#   was the false-"done" that cost the owner real money. The workspace-shell gate
+#   (qc-assert-workspace-departments-built.sh) must ALSO pass with raw counts.
 # ------------------------------------------------------------
 oc_overall_goal_check() {
   [ -f "$ONBOARDING_STATE_FILE" ] || return 1
   local wf_state="${OC_WORKSPACE_DEFAULT:-$OC_CONFIG/workspace}/.workforce-build-state.json"
 
+  # FAIL-CLOSED workspace-shell gate (raw on-disk verification, not JSON state).
+  local ws_materialized="false"
+  if oc_workspace_departments_materialized; then ws_materialized="true"; fi
+
   STATE_FILE="$ONBOARDING_STATE_FILE" WF_STATE="$wf_state" \
+  WS_MATERIALIZED="$ws_materialized" \
   NOW="$(oc_state_now)" python3 - <<'PYEOF' 2>/dev/null
 import json, os, sys
 sf  = os.environ["STATE_FILE"]
@@ -533,6 +586,7 @@ except Exception: sys.exit(1)
 wg = state.get("waveGoals", {})
 ov = wg.setdefault("overall", {"status":"pending","allWavesVerified":False,
                                 "interviewComplete":False,"workforceBuilt":False,
+                                "workspaceMaterialized":False,
                                 "closeoutDelivered":False})
 
 # (i) all 5 waves passed
@@ -550,12 +604,22 @@ if os.path.isfile(wfs):
 
 # (ii) interview complete
 ov["interviewComplete"] = bool(wf.get("interviewComplete"))
-# (iii) workforce built (proxy: buildCompletedAt is set)
-ov["workforceBuilt"] = bool(wf.get("buildCompletedAt"))
+
+# v12.23.0 WORKSPACE-SHELL HONESTY: "TEMPLATE DEPLOYED" != "WORKSPACE
+# INSTANTIATED". The workspace-shell gate (run by the bash wrapper) verifies the
+# client's WORKSPACE departments are materialized with RAW counts — a template
+# copied to the skills/ tree can never satisfy it. We record it as its own field
+# AND require it for "workforce built": a hand-seeded buildCompletedAt is no
+# longer sufficient.
+ws_materialized = (os.environ.get("WS_MATERIALIZED") == "true")
+ov["workspaceMaterialized"] = ws_materialized
+# (iii) workforce built = buildCompletedAt set AND workspace actually materialized
+ov["workforceBuilt"] = bool(wf.get("buildCompletedAt")) and ws_materialized
 # (iv) closeout delivered
 ov["closeoutDelivered"] = (wf.get("closeoutStatus") == "done")
 
-passed = all_waves and ov["interviewComplete"] and ov["workforceBuilt"] and ov["closeoutDelivered"]
+passed = (all_waves and ov["interviewComplete"] and ov["workforceBuilt"]
+          and ov["workspaceMaterialized"] and ov["closeoutDelivered"])
 if passed:
     ov["status"] = "passed"
 else:
