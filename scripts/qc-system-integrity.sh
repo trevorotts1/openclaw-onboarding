@@ -6,6 +6,8 @@
 #
 # Categories: 1=Interview, 2=Workforce, 3=Book-to-Persona, 4=Gemini, 5=Semantic,
 #             6=Keyword, 7=Tasks/Kanban, 8=Persona, 9=Agent linking, X=Cross-cutting.
+# Cross-cutting (X): X.7=PRD-1.10 migration, X.8=provider-capability invariants,
+#             X.9=Ollama provider platform standard (Mac local daemon vs VPS cloud).
 
 set -u  # NOT -e — we want to keep running after failures, then report all at the end
 
@@ -679,6 +681,54 @@ else
   yellow "  ⚠ X.8  qc-assert-provider-capability-invariants.sh not found — skipping provider invariant check"
   WARN=$((WARN+1))
   WARNINGS+=("X.8|qc-assert-provider-capability-invariants.sh missing|Update openclaw-onboarding to v12.14.0+")
+fi
+
+# ─── CHECK X.9: Ollama provider platform standard (v12.21.0) ────────────────
+# Hard-fail: the Ollama provider MUST match the box type.
+#   Mac client → signed-in LOCAL daemon (baseUrl http://127.0.0.1:11434,
+#                apiKey "ollama-local") which serves BOTH local + :cloud models.
+#   VPS client → cloud-direct (baseUrl https://ollama.com + client OLLAMA_API_KEY).
+#   All boxes  → no :cloud model with maxTokens > 64000.
+# Delegates to qc-assert-ollama-provider-platform.sh (single-source-of-truth).
+echo
+blue "── CHECK X.9: Ollama provider platform standard ──"
+OLLAMA_PLATFORM_SCRIPT=""
+for _op_cand in \
+  "$(dirname "${BASH_SOURCE[0]}")/qc-assert-ollama-provider-platform.sh" \
+  "$HOME/.openclaw/skills/scripts/qc-assert-ollama-provider-platform.sh" \
+  "/data/.openclaw/skills/scripts/qc-assert-ollama-provider-platform.sh"; do
+  [[ -f "$_op_cand" ]] && OLLAMA_PLATFORM_SCRIPT="$_op_cand" && break
+done
+if [[ -n "$OLLAMA_PLATFORM_SCRIPT" ]]; then
+  _op_tmp=$(mktemp)
+  bash "$OLLAMA_PLATFORM_SCRIPT" > "$_op_tmp" 2>&1
+  OLLAMA_PLATFORM_RC=$?
+  OLLAMA_PLATFORM_OUT=$(cat "$_op_tmp"); rm -f "$_op_tmp"
+  if [[ "$OLLAMA_PLATFORM_RC" = "0" ]]; then
+    green "  ✓ X.9  Ollama provider matches the $PLATFORM platform standard (local daemon on Mac / cloud-direct on VPS; :cloud maxTokens ≤ 64000)"; PASS=$((PASS+1))
+  else
+    _X9_FOUND=0
+    while IFS= read -r _opline; do
+      case "$_opline" in
+        *"INVARIANT VIOLATED"*)
+          _opdetail=$(printf '%s' "$_opline" | sed 's/.*INVARIANT VIOLATED — //')
+          red "  ✗ X.9  $_opdetail"
+          FAIL=$((FAIL+1))
+          FAILURES+=("X.9|Ollama provider platform mismatch: $_opdetail|See docs/OLLAMA-PROVIDER-BY-PLATFORM.md — Mac=local daemon 127.0.0.1:11434/ollama-local, VPS=ollama.com+OLLAMA_API_KEY")
+          _X9_FOUND=1
+          ;;
+      esac
+    done <<< "$OLLAMA_PLATFORM_OUT"
+    if [[ "$_X9_FOUND" = "0" ]]; then
+      red "  ✗ X.9  Ollama provider platform check failed (rc=$OLLAMA_PLATFORM_RC)"
+      FAIL=$((FAIL+1))
+      FAILURES+=("X.9|Ollama provider platform check failed|Run: bash scripts/qc-assert-ollama-provider-platform.sh for details")
+    fi
+  fi
+else
+  yellow "  ⚠ X.9  qc-assert-ollama-provider-platform.sh not found — skipping Ollama platform check"
+  WARN=$((WARN+1))
+  WARNINGS+=("X.9|qc-assert-ollama-provider-platform.sh missing|Update openclaw-onboarding to v12.21.0+")
 fi
 
 # ─── SUMMARY ─────────────────────────────────────────────────────────────────

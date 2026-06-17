@@ -1,3 +1,14 @@
+## [v12.21.0] — 2026-06-17 — feat(standards): Ollama provider platform-branch (Mac local daemon vs VPS cloud-direct), enforced
+
+Encodes the CLIENT ONBOARDING STANDARD for the `ollama` model provider, branched by box type, and corrects the pre-existing VPS-only assumption that wrongly treated `127.0.0.1:11434` as a hard violation everywhere.
+
+- **Mac client:** signed-in LOCAL Ollama daemon (`ollama signin`, client's own ollama.com account) + ONE `ollama` provider `baseUrl: http://127.0.0.1:11434`, `api: ollama`, `apiKey: ollama-local`. A signed-in daemon serves BOTH local AND `:cloud` models through that one endpoint (the docs.openclaw.ai/providers/ollama "Cloud + Local" hybrid flow). Loopback baseUrl is REQUIRED on Mac.
+- **VPS client:** ONE `ollama` provider cloud-direct — `baseUrl: https://ollama.com` + client's own `OLLAMA_API_KEY`. Loopback baseUrl → `ECONNREFUSED` (HARD VIOLATION; no daemon in container).
+- **All boxes:** every `:cloud` model `maxTokens ≤ 64000` (Ollama Cloud caps output at 65536). Verify a live PONG, not just config-valid.
+- **New enforcer** `scripts/qc-assert-ollama-provider-platform.sh` (single source of truth; P1 baseUrl/platform, P2 api, P3 apiKey/platform, P4 :cloud maxTokens) wired into `scripts/qc-system-integrity.sh` as hard-fail **CHECK X.9** (runs during install + every update).
+- **New SOP** `docs/OLLAMA-PROVIDER-BY-PLATFORM.md`. Updated `AGENTS.md` N30 (now platform-branched), `platform/README.md` (Ollama + STT rows), `FLEET-STANDARDS.md` §5.
+- **Operator note:** existing Mac clients onboarded under the old rule (currently cloud-direct on `ollama.com`, no local daemon) will FAIL X.9 with an explicit migration message. They keep working until migrated; do NOT auto-migrate a live client.
+
 ## v12.20.1 — Presentations renderer enforces the process to the letter
 - build_deck: HARD PROMPT_CHAR_FLOOR=1500 (under 1,500 = fail, not run); renders the Slide Image Creator's RICH prompt verbatim (fail-loud if missing/short); thin self-composed prompt removed; parallel render.
 - 9-check PROCESS PREFLIGHT enforces every SOP phase incl. rich-prompt + coverage; QC loops back / forces redo on any deviation.

@@ -73,12 +73,37 @@ The full client-universal reference is `BIG-PROJECT-MODE.md` at the repo root.
 agent's `AGENTS.md` idempotently (skipped if the `## BIG PROJECT MODE` heading
 already exists).
 
+### 5. Ollama Provider — Platform-Branched (Mac local daemon vs VPS cloud-direct)
+
+The `ollama` model provider is wired **by box type**. There is exactly ONE
+`ollama` provider per box (never split into `ollama-local` + `ollama-cloud`).
+
+- **Mac client** (Mac mini / laptop / any macOS): the LOCAL Ollama daemon is
+  signed in (`ollama signin`, the client's own ollama.com account) and ONE
+  `ollama` provider points at it — `baseUrl: "http://127.0.0.1:11434"`,
+  `api: "ollama"`, `apiKey: "ollama-local"`. A signed-in daemon serves BOTH local
+  models AND `:cloud` models through that one loopback endpoint (the documented
+  "Cloud + Local" hybrid flow). Loopback baseUrl is REQUIRED on Mac.
+- **VPS client** (Hostinger Docker / any Linux container, no local daemon): ONE
+  `ollama` provider, cloud-direct — `baseUrl: "https://ollama.com"` + the client's
+  own `OLLAMA_API_KEY`. A loopback baseUrl → `ECONNREFUSED` (HARD VIOLATION).
+- **All boxes:** every `:cloud` model carries `maxTokens: 64000` (Ollama Cloud
+  caps output at 65536). Always confirm a live PONG, not just config-valid.
+
+**Enforced (hard-fail) by** `scripts/qc-assert-ollama-provider-platform.sh`
+(single source of truth) via `scripts/qc-system-integrity.sh` CHECK X.9. Full
+standard + setup + the migration path for legacy Mac clients on cloud-direct:
+`docs/OLLAMA-PROVIDER-BY-PLATFORM.md`. Audio transcription (STT) is similarly
+branched — Mac uses local `oc-faster-whisper` primary + OpenAI cloud fallback;
+VPS uses cloud-only — see `docs/STT-TRANSCRIPTION.md`.
+
 ## Source of Truth
 
 Configuration verified against:
 - docs.openclaw.ai/tools/subagents
 - docs.openclaw.ai/gateway/security
 - docs.openclaw.ai/tools/multi-agent-sandbox-tools
+- docs.openclaw.ai/providers/ollama (Ollama "Cloud + Local" hybrid flow, §5)
 - Live test on OpenClaw 2026.5.28 (Sheila Reynolds' Mac mini, session logs)
 
 ## Activation
@@ -105,4 +130,4 @@ present in `AGENTS.md`).
 
 ---
 
-Last verified: 2026-06-15 (OpenClaw 2026.5.x, fleet-wide)
+Last verified: 2026-06-17 (OpenClaw 2026.6.x, fleet-wide; §5 Ollama platform-branch added v12.21.0)

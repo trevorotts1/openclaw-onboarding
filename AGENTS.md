@@ -185,7 +185,7 @@ This is the single canonical index of the N1–N35 non-negotiables. Every other 
 | N27 | **No lying / no shortcuts / proof required.** End-to-end completion is the only completion. Every claimed fix needs a verifiable artifact (commit hash, curl-against-HEAD output, exit code). The 20% not done gets disclosed, not buried. | This file + owner directive | Audit retro on every release |
 | N28 | **No destructive teardown or kill scripts — ever.** Agents MUST NOT create or schedule any script or cron that removes the toolchain (`~/clawd`, `~/.openclaw`, Homebrew, Node, or OpenClaw itself). Cleanup must be scoped (remove a specific cron by ID), reversible (rename to `.QUARANTINED-<ts>` before deleting), and never self-deleting via a cron-scheduled kill script. Applies to build-cleanup, post-build teardown, SOP-backfill abort, and any "clean up after yourself" pattern. Root cause: 2026-05 Kofi incident — autonomous agent created `kofi-sop-build-kill.sh` during Skill 23 to abort a runaway SOP build; script wiped Homebrew/Node/OpenClaw/clawd. No script that touches core toolchain paths may be spawned by an agent without explicit owner approval. | This file + forensic post-mortem 2026-06-03 | Cron audit gate: any cron payload containing `rm -rf`, `brew uninstall`, `npm uninstall -g openclaw`, or paths `~/clawd` / `~/.openclaw` must be rejected |
 | N29 | **Shared core files (Zero-Human-Workforce file model).** On every box, ALL of that account's agents + sub-agents SHARE the box's ONE canonical `AGENTS.md` / `TOOLS.md` / `USER.md` via **symlink** (not duplicated). Per-agent `IDENTITY.md` / `SOUL.md` / `MEMORY.md` / `HEARTBEAT.md` stay each agent's OWN real files. The symlink target is ALWAYS the LOCAL box's own canonical (the default agent workspace resolved from THIS box's `openclaw.json`) — NEVER a hardcoded or cross-box/cross-account path (co-mingling guard, N0). Nested workflow agents (`*/workflows/*/agents/*`) are EXEMPT. Real files are backed up (`*.bak-unify-<ts>`, never deleted) + unique content preserved additively into the agent's own `IDENTITY.md` before linking. Idempotent. | This file (Shared Core Files section) + [`docs/SHARED-CORE-FILES.md`](docs/SHARED-CORE-FILES.md) | `link_shared_core_files()` in `install.sh` (Step 10a) + `update-skills.sh`; QC check 9.9 in `scripts/qc-system-integrity.sh` |
-| N30 | **Ollama Cloud HARD RULE: `OLLAMA_BASE_URL` MUST be `https://ollama.com` for `:cloud` models. NEVER `http://127.0.0.1` or `http://localhost:11434`.** `:cloud`-tagged models (e.g. `deepseek-v4-pro:cloud`, `kimi-k2.6:cloud`) are routed through the Ollama Cloud API, NOT a local daemon. Setting `OLLAMA_BASE_URL` to a loopback address → immediate ECONNREFUSED on every client box (no local Ollama daemon runs there). Any script, config, or install step that writes or defaults `OLLAMA_BASE_URL` to `127.0.0.1` or `localhost` for a cloud model is a HARD VIOLATION. Local Ollama probes (health-checks, model-list queries against a local daemon) are exempt — they must NEVER be confused with the model-routing URL used for actual inference. | This file (N30 section) | `build-workforce.py` provider setup; `install.sh` model config step; `scripts/qc-system-integrity.sh` Ollama-URL check |
+| N30 | **Ollama provider baseUrl is PLATFORM-BRANCHED (Mac vs VPS).** **VPS client** (Hostinger Docker / any Linux container, no local daemon): `baseUrl` MUST be `https://ollama.com` + the client's own `OLLAMA_API_KEY`; a loopback baseUrl → immediate `ECONNREFUSED` (HARD VIOLATION). **Mac client** (Mac mini / laptop / any macOS): the LOCAL Ollama daemon is signed in (`ollama signin`, client's own ollama.com account) and ONE `ollama` provider points at it — `baseUrl: "http://127.0.0.1:11434"`, `api: "ollama"`, `apiKey: "ollama-local"`. A signed-in daemon serves BOTH local AND `:cloud` models through that one loopback endpoint (the "Cloud + Local" hybrid flow). On Mac the loopback baseUrl is REQUIRED for inference, NOT a violation; forcing a Mac onto `https://ollama.com` (HARD VIOLATION on Mac) discards the local-model path. Health-check probes against a local daemon were always loopback-exempt. | This file (N30 section) + `docs/OLLAMA-PROVIDER-BY-PLATFORM.md` | `scripts/qc-assert-ollama-provider-platform.sh` (single source of truth); `scripts/qc-system-integrity.sh` CHECK X.9; `build-workforce.py` provider setup; `install.sh` model config step |
 | N31 | **Agent model field MUST be an object `{primary, fallbacks:[...]}`, NEVER a bare string.** Writing `"model": "ollama/deepseek-v4-pro:cloud"` in `agents.list[]` bypasses all fallback chains — if Ollama Cloud is over-capacity the agent dies silently. Every agent entry written by `build-workforce.py` or any install script MUST use the canonical object form: `{"primary": "ollama/deepseek-v4-pro:cloud", "fallbacks": ["openrouter/deepseek/deepseek-v4-pro", ...]}`. Bare strings are only permissible in temporary draft states during development; NEVER in production `openclaw.json`. | This file (N31 section) + `build-workforce.py add_agent_to_config()` | `scripts/qc-system-integrity.sh` model-object check |
 | N32 | **A model-provider change is NOT complete until `embedding-health` passes on the box.** Switching the generative provider (or any API key rotation) can silently orphan all three embedding consumers: OpenClaw memory search, persona gemini-index, and CC SOP embeddings. The `embedding-health` check (PRD Addendum B.6) MUST pass — all three indexes, three legs each (provider capable + key live + smoke embed + stamp matches config) — before any provider-change task is marked done. Ollama Cloud is NEVER embedding-capable (hard rule). Run: `python3 shared-utils/embedding_health.py --json` on the box after any provider/key change. | This file (N32 section) + `shared-utils/embedding_health.py` | `step_embedding_health()` in `fleet_refresh_runner.py`; Sunday cron `--verify-only` pass in `scripts/fleet-refresh.sh` |
 | N33 | **Credential Check Protocol — never falsely report a key missing.** Use `~/.openclaw/skills/shared-utils/check-credential.sh <KEY>` every time. Evidence triad required before "absent": (1) live process env checked (`docker exec printenv` / `ps eww`), (2) MCP server headers checked, (3) all .env stores checked. Only after all three return empty may a key be called GENUINELY-ABSENT. | This file (N33 section) + `shared-utils/check-credential.sh` | `<!-- CREDENTIAL_CHECK_V2 -->` marker (injected by `apply-fleet-standards.sh`) |
@@ -234,50 +234,59 @@ generalization of **N19** (the ZHC `agents/` layout).
 
 ---
 
-## 🔴 N30 — Ollama Cloud HARD RULE: `OLLAMA_BASE_URL` = `https://ollama.com` for `:cloud` models
+## 🔴 N30 — Ollama provider baseUrl is PLATFORM-BRANCHED (Mac vs VPS)
 
-**`OLLAMA_BASE_URL` MUST be `https://ollama.com` for `:cloud`-tagged models. NEVER `http://127.0.0.1` or `http://localhost:11434`.**
+**The `ollama` provider `baseUrl` depends on the box type. There is exactly ONE `ollama` provider per box (never split into `ollama-local` + `ollama-cloud`).**
 
-Client boxes do NOT run a local Ollama daemon. Setting `OLLAMA_BASE_URL` to a loopback address → immediate `ECONNREFUSED` on every client box. This is a silent model failure, not a retried error.
+Full standard + setup + migration: **`docs/OLLAMA-PROVIDER-BY-PLATFORM.md`**. Verified against **docs.openclaw.ai/providers/ollama** (the "Cloud + Local" hybrid flow).
 
-### What applies vs what is exempt
+| | 🍎 Mac client (Mac mini / laptop / any macOS) | 🟦 VPS client (Hostinger Docker / Linux container) |
+|---|---|---|
+| Local Ollama daemon | **YES** — signed in (`ollama signin`, client's own ollama.com account) | **NO** — none in the container |
+| `baseUrl` | `http://127.0.0.1:11434` (REQUIRED) | `https://ollama.com` (REQUIRED) |
+| `api` | `ollama` | `ollama` |
+| `apiKey` | `ollama-local` (sentinel) | `{{OLLAMA_API_KEY}}` (client's OWN key) |
+| Serves local + `:cloud`? | BOTH, through the one loopback endpoint | `:cloud` only |
 
-| Situation | Rule |
-|-----------|------|
-| Inference call to `:cloud` model (deepseek-v4-pro:cloud, kimi-k2.6:cloud, etc.) | MUST use `https://ollama.com` as base URL |
-| Local daemon health-check (`/api/tags`, `/api/version`, etc.) | May use `127.0.0.1:11434` — it's a probe, not inference routing |
-| Graphify (Skill 43) running on operator's own Mac with local daemon | Exempt — graphify uses local Ollama by design |
-| `generate-role-library.py` pre-flight model availability probe | Exempt — line 183 is a probe, not a routing URL |
+### Why platform-branched (corrects the pre-v12.21 VPS-only assumption)
 
-### HARD VIOLATIONS (any of these = reject the commit)
+The old rule said "client boxes do NOT run a local Ollama daemon; `127.0.0.1:11434` is a HARD VIOLATION for inference." That is TRUE for VPS but WRONG for Mac. A Mac with a **signed-in** daemon routes BOTH local AND `:cloud` inference through `127.0.0.1:11434` — the daemon brokers the cloud calls (it holds `~/.ollama/id_ed25519`). Forcing a Mac onto `https://ollama.com` discards the local-model path and the free local route.
 
-- `OLLAMA_BASE_URL=http://127.0.0.1:11434` in any `.env`, config block, or script that feeds into inference routing
-- `OLLAMA_BASE_URL=http://localhost:11434` in any inference routing path
-- Any `openclaw config set` writing `models.providers.ollama.baseUrl` to a loopback address
-- Any install script that copies a loopback `OLLAMA_BASE_URL` into a client box's env
+### HARD VIOLATIONS (any of these = reject the commit / FAIL the box)
+
+- **VPS:** `baseUrl` (or `OLLAMA_BASE_URL`) set to `127.0.0.1`/`localhost` → `ECONNREFUSED`, no daemon in container.
+- **VPS:** `ollama` provider `apiKey` = `ollama-local` (the local sentinel) instead of the client's real key.
+- **Mac:** `ollama` provider `baseUrl` = `https://ollama.com` (cloud-direct) — discards the signed-in local daemon. (Existing Mac clients on cloud-direct need MIGRATION — see the doc.)
+- **Any box:** a `:cloud` model with `maxTokens > 64000` (Ollama Cloud caps output at 65536 → HTTP 400, silent failure).
+
+### Exempt (always — these are probes, not inference routing)
+
+- Local daemon health-checks (`/api/tags`, `/api/version`) — loopback is fine on any box.
+- Graphify (Skill 43) on the operator's own Mac — uses local Ollama by design.
+- `generate-role-library.py` pre-flight model availability probe.
 
 ### Correct form
 
-```bash
-# In any env file or config block that routes :cloud model calls
-OLLAMA_BASE_URL="https://ollama.com"
+```json
+// MAC — openclaw.json providers block (signed-in local daemon, hybrid Cloud+Local)
+{ "models": { "providers": { "ollama": {
+  "baseUrl": "http://127.0.0.1:11434", "api": "ollama", "apiKey": "ollama-local",
+  "models": [ { "id": "kimi-k2.6:cloud", "maxTokens": 64000 },
+              { "id": "deepseek-v4-pro:cloud", "maxTokens": 64000 },
+              { "id": "gemma4", "maxTokens": 64000 } ] } } } }
 ```
 
 ```json
-// In openclaw.json providers block
-{
-  "models": {
-    "providers": {
-      "ollama": {
-        "baseUrl": "https://ollama.com",
-        "apiKey": "{{OLLAMA_API_KEY}}"
-      }
-    }
-  }
-}
+// VPS — openclaw.json providers block (cloud-direct, client's own key)
+{ "models": { "providers": { "ollama": {
+  "baseUrl": "https://ollama.com", "api": "ollama", "apiKey": "{{OLLAMA_API_KEY}}",
+  "models": [ { "id": "kimi-k2.6:cloud", "maxTokens": 64000 },
+              { "id": "deepseek-v4-pro:cloud", "maxTokens": 64000 } ] } } } }
 ```
 
-Enforced by `scripts/qc-system-integrity.sh` Ollama-URL check. Added v11.1.0.
+Always confirm a live PONG (`openclaw run --model ollama/<m>:cloud "Reply with exactly: PONG"`) — config-valid is not proof the model replies.
+
+Enforced by `scripts/qc-assert-ollama-provider-platform.sh` (single source of truth) via `scripts/qc-system-integrity.sh` CHECK X.9. Platform-branched in v12.21.0 (was VPS-only Ollama-URL check, added v11.1.0).
 
 ---
 
