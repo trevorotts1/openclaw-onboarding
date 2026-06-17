@@ -1540,6 +1540,12 @@ def write_governing_personas_md(dept_path, dept_id, dept_name=None):
             # We use a simple keyword family map below — selector still does
             # the real LLM-evaluated pick per task.
             dept_lower = dept_id.lower().replace("-dept", "").replace("dept-", "")
+            # Valid domain keys (from persona-categories.json domainTags):
+            #   marketing, sales, leadership, finance, operations, communication,
+            #   copywriting, mindset, productivity-systems, coaching,
+            #   strategy-innovation, personal-development
+            # FIX 2 (2026-06-17): added 12 canonical departments that were missing,
+            # causing them to fall back to first-5 personas instead of domain-matched ones.
             DEPT_DOMAIN_HINTS = {
                 "marketing":      ["marketing", "copywriting", "strategy-innovation"],
                 "sales":          ["sales", "communication", "copywriting"],
@@ -1561,6 +1567,19 @@ def write_governing_personas_md(dept_path, dept_id, dept_name=None):
                 "video-production": ["copywriting", "strategy-innovation"],
                 "audio":            ["copywriting", "communication"],
                 "audio-production": ["copywriting", "communication"],
+                # --- FIX 2 additions (2026-06-17) ---
+                "presentations":    ["copywriting", "marketing", "communication"],
+                "bugs":             ["productivity-systems", "strategy-innovation", "operations"],
+                "healer":           ["coaching", "personal-development", "mindset"],
+                "personal-assistant": ["operations", "leadership", "productivity-systems"],
+                "engineering":      ["productivity-systems", "strategy-innovation", "operations"],
+                "listings":         ["marketing", "sales", "copywriting"],
+                "logistics-fulfillment": ["operations", "productivity-systems"],
+                "podcast":          ["copywriting", "communication", "marketing"],
+                "scheduling-dispatch": ["operations", "productivity-systems", "leadership"],
+                "general-task":     ["operations", "productivity-systems", "leadership"],
+                "project-architecture-office": ["strategy-innovation", "leadership", "operations"],
+                "project-management": ["leadership", "strategy-innovation", "productivity-systems"],
             }
             hints = DEPT_DOMAIN_HINTS.get(dept_lower, [])
             ranked = []
@@ -1978,6 +1997,12 @@ def main():
               f"roles={len(summary['roles_created'])} "
               f"dept_files={len(summary['dept_files'])} "
               f"sops_copied={summary['sops_copied']}")
+        # FIX 1 (2026-06-17): generate governing-personas.md for every
+        # instantiated department — the --from-roster path skipped this step,
+        # so incrementally-added departments (presentations, bugs, healer, etc.)
+        # never received it. Idempotent; never overwrites IDENTITY/SOUL/MEMORY.
+        if not args.dry_run:
+            write_governing_personas_md(dept_path, dept_slug)
         return 0
 
     if args.augment:

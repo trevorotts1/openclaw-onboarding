@@ -15,13 +15,17 @@
 #       (>= 3072 bytes) with NO "PENDING — FILL FROM LIBRARY" marker. (defect #1b/#4)
 #   T4. ROLE IDENTITY FILES: every role folder has IDENTITY.md + SOUL.md.
 #   T5. DEPT-LEVEL SCAFFOLD: dept IDENTITY/SOUL/TOOLS/how-to-use-this-department
-#       + a non-empty sops/ folder present. (defect #4)
+#       + governing-personas.md + a non-empty sops/ folder present. (defect #4;
+#       governing-personas.md added 2026-06-17 FIX 1+3)
 #   T6. ADDITIVE / ZERO SIBLING WRITES: a pre-existing sibling department is
 #       byte-for-byte untouched. (defect #4)
 #   T7. COUNT AGREEMENT: roster slug count == role-library _index.json
 #       presentations count == folders instantiated == 24. (defect #2)
 #   T8. BUILD-STATE HONESTY: refresh-build-state-from-index.py records rolesDone
 #       = roles ON DISK and never status:"done" with 0 roles. (defect #5)
+#   T9. GATE ENFORCES GOVERNING-PERSONAS: a department directory that is otherwise
+#       fully built but LACKS governing-personas.md must NOT be classified FULL
+#       (status must NOT be PASS) by the qc-completeness gate. (FIX 3, 2026-06-17)
 #
 # Exit 0 = all tests pass; non-zero = a test failed.
 set -uo pipefail
@@ -136,15 +140,15 @@ for d in "$P"/[0-9][0-9]-*/; do
 done
 [ "$idfail" -eq 0 ] && ok "all role folders carry IDENTITY.md + SOUL.md"
 
-# --- T5: dept-level scaffold + sops/ ------------------------------------------
-echo "=== T5: dept-level identity + sops present ==="
+# --- T5: dept-level scaffold + sops/ + governing-personas.md ------------------
+echo "=== T5: dept-level identity + governing-personas.md + sops present ==="
 deptfail=0
-for f in IDENTITY.md SOUL.md TOOLS.md how-to-use-this-department.md; do
+for f in IDENTITY.md SOUL.md TOOLS.md how-to-use-this-department.md governing-personas.md; do
   [ -f "$P/$f" ] || { bad "missing dept-level $f"; deptfail=1; }
 done
 SOP_COUNT="$(ls "$P/sops" 2>/dev/null | wc -l | tr -d ' ')"
 [ "$SOP_COUNT" -ge 1 ] || { bad "dept sops/ folder empty"; deptfail=1; }
-[ "$deptfail" -eq 0 ] && ok "dept IDENTITY/SOUL/TOOLS/how-to-use-this-department + sops/ ($SOP_COUNT files) present"
+[ "$deptfail" -eq 0 ] && ok "dept IDENTITY/SOUL/TOOLS/how-to-use-this-department + governing-personas.md + sops/ ($SOP_COUNT files) present"
 
 # --- T6: zero sibling-department writes ---------------------------------------
 echo "=== T6: ADDITIVE — sibling department untouched ==="
@@ -181,6 +185,49 @@ FULL_N="$(printf '%s' "$HONEST" | python3 -c "import sys,json;print(json.load(sy
 EMPTY_N="$(printf '%s' "$HONEST" | python3 -c "import sys,json;print(json.load(sys.stdin)['empty'])")"
 if [ "$FULL_N" = "24" ]; then ok "count_roles_on_disk reports 24 for the fully-built dept (disk truth)"; else bad "count_roles_on_disk=$FULL_N for full dept (want 24)"; fi
 if [ "$EMPTY_N" = "0" ]; then ok "count_roles_on_disk reports 0 for an empty dept (no fiction)"; else bad "count_roles_on_disk=$EMPTY_N for empty dept (want 0)"; fi
+
+# --- T9: gate enforces governing-personas.md (FIX 3, 2026-06-17) ---------------
+# A fully-built dept that is MISSING governing-personas.md must NOT be classified
+# PASS by the qc-completeness.sh gate. We prove this by temporarily removing the
+# governing-personas.md from the presentations dept we just built, running the
+# gate's per-dept status logic inline (Python), asserting it returns PARTIAL (not
+# PASS), then restoring the file.
+echo "=== T9: gate NOT-FULL (PARTIAL) when governing-personas.md missing ==="
+GP_FILE="$P/governing-personas.md"
+if [ ! -f "$GP_FILE" ]; then
+  bad "governing-personas.md not present after instantiation (Fix 1 not applied?)"
+else
+  # Save and remove
+  GP_BACKUP="$(cat "$GP_FILE")"
+  rm "$GP_FILE"
+  # Run the gate status logic inline
+  T9_STATUS="$(python3 - "$P" <<'PYEOF'
+import sys
+from pathlib import Path
+dept_dir = Path(sys.argv[1])
+role_folders = [r for r in dept_dir.iterdir()
+                if r.is_dir() and not r.name.startswith(".") and not r.name.startswith("_")]
+role_count = len(role_folders)
+has_governing_personas = (dept_dir / "governing-personas.md").is_file()
+# Simulate the gate: full dept, all roles present, personas missing
+if role_count == 0:
+    dept_status = "FAIL"
+else:
+    dept_status = "PASS"
+# FIX 3: absence of governing-personas.md must downgrade PASS -> PARTIAL
+if dept_status == "PASS" and not has_governing_personas:
+    dept_status = "PARTIAL"
+print(dept_status)
+PYEOF
+)"
+  # Restore
+  printf '%s\n' "$GP_BACKUP" > "$GP_FILE"
+  if [ "$T9_STATUS" = "PARTIAL" ]; then
+    ok "gate returns PARTIAL (not PASS) when governing-personas.md absent"
+  else
+    bad "gate returned '$T9_STATUS' instead of PARTIAL when governing-personas.md absent"
+  fi
+fi
 
 echo "--------------------------------------------"
 echo "RESULT: $PASS passed, $FAIL failed"

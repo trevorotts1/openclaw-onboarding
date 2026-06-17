@@ -4197,7 +4197,13 @@ def create_governing_personas_md(dept_id, dept_info, categories_data):
     Lists the pre-qualified persona pool (passed Layers 1-2 at setup).
     Layers 3-5 run fresh per task at runtime.
     """
-    # Map department IDs to relevant domain tags
+    # Map department IDs to relevant domain tags.
+    # Valid domain keys (from persona-categories.json domainTags):
+    #   marketing, sales, leadership, finance, operations, communication,
+    #   copywriting, mindset, productivity-systems, coaching,
+    #   strategy-innovation, personal-development
+    # FIX 2 (2026-06-17): added 12 canonical departments that were missing,
+    # causing all of them to fall back to the generic ["leadership"] pool.
     dept_to_domains = {
         "marketing": ["marketing", "copywriting", "communication"],
         "sales": ["sales", "communication", "strategy-innovation"],
@@ -4216,6 +4222,19 @@ def create_governing_personas_md(dept_id, dept_info, categories_data):
         "research": ["strategy-innovation", "operations"],
         "comms": ["communication", "leadership", "marketing"],
         "ceo": ["leadership", "strategy-innovation", "coaching", "mindset"],
+        # --- FIX 2 additions (2026-06-17) ---
+        "presentations": ["copywriting", "marketing", "communication"],
+        "bugs": ["productivity-systems", "strategy-innovation", "operations"],
+        "healer": ["coaching", "personal-development", "mindset"],
+        "personal-assistant": ["operations", "leadership", "productivity-systems"],
+        "engineering": ["productivity-systems", "strategy-innovation", "operations"],
+        "listings": ["marketing", "sales", "copywriting"],
+        "logistics-fulfillment": ["operations", "productivity-systems"],
+        "podcast": ["copywriting", "communication", "marketing"],
+        "scheduling-dispatch": ["operations", "productivity-systems", "leadership"],
+        "general-task": ["operations", "productivity-systems", "leadership"],
+        "project-architecture-office": ["strategy-innovation", "leadership", "operations"],
+        "project-management": ["leadership", "strategy-innovation", "productivity-systems"],
     }
 
     domains = dept_to_domains.get(dept_id, ["leadership"])
@@ -4779,7 +4798,13 @@ def generate_persona_matrix(departments, persona_categories, company_name):
     """
     matrix_path = os.path.join(DEPARTMENTS_DIR, "persona-matrix.md")
 
-    # Build department-to-persona mapping
+    # Build department-to-persona mapping.
+    # Valid domain keys (from persona-categories.json domainTags):
+    #   marketing, sales, leadership, finance, operations, communication,
+    #   copywriting, mindset, productivity-systems, coaching,
+    #   strategy-innovation, personal-development
+    # FIX 2 (2026-06-17): added 12 canonical departments that were missing,
+    # causing all of them to fall back to the generic ["leadership"] pool.
     dept_to_domains = {
         "marketing": ["marketing", "copywriting", "communication"],
         "sales": ["sales", "communication", "strategy-innovation"],
@@ -4798,6 +4823,19 @@ def generate_persona_matrix(departments, persona_categories, company_name):
         "research": ["strategy-innovation", "operations"],
         "comms": ["communication", "leadership", "marketing"],
         "ceo": ["leadership", "strategy-innovation", "coaching", "mindset"],
+        # --- FIX 2 additions (2026-06-17) ---
+        "presentations": ["copywriting", "marketing", "communication"],
+        "bugs": ["productivity-systems", "strategy-innovation", "operations"],
+        "healer": ["coaching", "personal-development", "mindset"],
+        "personal-assistant": ["operations", "leadership", "productivity-systems"],
+        "engineering": ["productivity-systems", "strategy-innovation", "operations"],
+        "listings": ["marketing", "sales", "copywriting"],
+        "logistics-fulfillment": ["operations", "productivity-systems"],
+        "podcast": ["copywriting", "communication", "marketing"],
+        "scheduling-dispatch": ["operations", "productivity-systems", "leadership"],
+        "general-task": ["operations", "productivity-systems", "leadership"],
+        "project-architecture-office": ["strategy-innovation", "leadership", "operations"],
+        "project-management": ["leadership", "strategy-innovation", "productivity-systems"],
     }
 
     content = f"""# Persona Matrix - {company_name}

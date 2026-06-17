@@ -385,6 +385,11 @@ for dept_dir in on_disk_depts:
             min_sop_per_role = role_substantive
     if min_sop_per_role is None:
         min_sop_per_role = 0
+    # FIX 3 (2026-06-17): GOVERNING-PERSONAS GATE — a department is NOT FULL
+    # (not classified PASS) unless it has governing-personas.md. Additive: does
+    # not alter any existing role/IDENTITY/SOUL/SOP checks above; only promotes
+    # PASS→PARTIAL when the file is absent. FAIL thresholds are unchanged.
+    has_governing_personas = (dept_dir / "governing-personas.md").is_file()
     materialized_pct = (role_count / expected * 100.0) if expected else 0.0
     library_pct = (library_filled_count / role_count * 100.0) if role_count else 0.0
     identity_pct = (identity_count / role_count * 100.0) if role_count else 0.0
@@ -401,6 +406,10 @@ for dept_dir in on_disk_depts:
         dept_status = "PARTIAL"  # library has no expected count for this dept
     else:
         dept_status = "PASS"
+    # FIX 3: governing-personas.md absence downgrades PASS → PARTIAL (never FAIL).
+    # A PARTIAL or FAIL dept is already below PASS, so no change needed there.
+    if dept_status == "PASS" and not has_governing_personas:
+        dept_status = "PARTIAL"
     if dept_status == "FAIL":
         overall_status = "FAIL"
     elif dept_status == "PARTIAL" and overall_status == "PASS":
@@ -427,6 +436,8 @@ for dept_dir in on_disk_depts:
         "materialized_pct": round(materialized_pct, 1),
         "library_pct": round(library_pct, 1),
         "identity_pct": round(identity_pct, 1),
+        # FIX 3 (2026-06-17): personas gate field
+        "has_governing_personas": has_governing_personas,
         "status": dept_status,
     })
 
@@ -505,13 +516,15 @@ emit(f"On disk: {report['depts_on_disk']} depts ({report['depts_passing']} PASS,
      f"{report['depts_partial']} PARTIAL, {report['depts_failing']} FAIL)")
 emit("")
 emit(f"{'DEPT':<26} {'ROLES':>5} {'EXP':>4} {'LIB%':>5} {'ID%':>5} "
-     f"{'SOP/r':>6} {'SUBST':>6} {'minSOP':>6} {'<min':>5} {'STATUS':>8}")
-emit("-" * 92)
+     f"{'SOP/r':>6} {'SUBST':>6} {'minSOP':>6} {'<min':>5} {'PERSONAS':>8} {'STATUS':>8}")
+emit("-" * 102)
 for d in dept_reports:
+    # FIX 3 (2026-06-17): show personas gate result per dept (Y/N)
+    personas_flag = "Y" if d.get("has_governing_personas", False) else "N"
     emit(f"{d['dept_id']:<26} {d['role_folders']:>5} {d['expected_roles']:>4} "
          f"{d['library_pct']:>5.1f} {d['identity_pct']:>5.1f} "
          f"{d['avg_sop_per_role']:>6.2f} {d.get('substantive_sop_count', 0):>6} "
-         f"{d.get('min_sop_per_role', 0):>6} {d.get('roles_below_min_sops', 0):>5} {d['status']:>8}")
+         f"{d.get('min_sop_per_role', 0):>6} {d.get('roles_below_min_sops', 0):>5} {personas_flag:>8} {d['status']:>8}")
 if legacy_detected:
     emit("")
     emit(f"LEGACY TREE PRESENT (legacy-tree pattern):")
