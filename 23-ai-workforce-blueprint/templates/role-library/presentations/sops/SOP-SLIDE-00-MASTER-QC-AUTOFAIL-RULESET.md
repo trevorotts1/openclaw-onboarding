@@ -164,13 +164,12 @@ These are deck-level and are evaluated against arc_allocation.json and slide ord
 | AF-DEN-6 | 1Q/6 | DECK | Wall of Wins not 4-6 before offer | WoW position vs offer position |
 | AF-DEN-7 | 1Q/6 | DECK | no 4-7 slide re-pitch after FINAL | post-FINAL slide count / content |
 | AF-DEN-8 | 1Q/6 | DECK | section below its slide floor | per-section slide count vs floor |
-| AF-SPEECH-SHORT | 9 | DECK | presenter speech words < target_talk_minutes x 120 wpm (too short for the requested duration) | `word_count(speech.md) < round(intake.target_talk_minutes * 120)`; enforced by build_deck `_chk_speech_length` (conditional: fires once the speech exists) |
 
 
 | AF-RENDERER | Phase 4/6 | DECK | Deck shipped its own renderer instead of calling the canonical render module | render_manifest.json missing OR render script is not the canonical 23-ai-workforce-blueprint/templates/presentation-render/render_deck.py |
 | AF-MODEL-SOVEREIGNTY | Phase 4/6 | DECK | Submitted model does not match client's pinned model with no logged fallback event | render_manifest.json model_used != intake.json model_pin AND no fallback_events entry for that slide |
 | AF-BAKED | Phase 5/6 | slide (blocks FINAL) | Slide text was drawn by Pillow/PPTX/ImageDraw rather than baked by the image model, OR slide is a flat placeholder fill with no Kie render | Vision QC agent confirms: text is overlaid, not rendered; OR image dimensions/size match known placeholder signatures |
-| AF-PROMPT-FLOOR | Phase 3 | slide | Image prompt outside 5000-18000 chars OR missing required structural blocks | len(prompt) < 5000 OR len(prompt) > 18000 OR prompt missing [ARCHETYPE, NEGATIVE BLOCK, "Do not " imperatives] (reconciled v12.7.1 from 1500/15000 to match the live AF-P1/AF-P2 floor/ceiling so the canonical render module never hard-blocks a prompt the QC gate would pass; 18000 = 2000-char safety margin below the 20000 GPT-Image 2 API ceiling, MODEL-SPECS) |
+| AF-PROMPT-FLOOR | Phase 3 | slide | Image prompt outside 1500-15000 chars OR missing required structural blocks | len(prompt) < 1500 OR len(prompt) > 15000 OR prompt missing [ARCHETYPE, NEGATIVE BLOCK, "Do not " imperatives] |
 | AF-NO-VISION-QC | Phase 6 | DECK | Deck submitted without an executed vision-QC log (path.exists() is not vision QC) | working/qc/vision_qc_log.json missing OR empty OR contains only path-existence checks with no vision API call records |
 | AF-CONVERTER-PARITY | Phase 1Q | DECK (converter-origin only) | Converter-origin deck (intake.json source_brief_origin: "role-22") failed the runtime parity gate | Any of: render_manifest.json absent or not canonical; model pin mismatch; vision_qc_log.json missing/empty/path-only; research brief absent or Category E/F missing; persuasion variables (GOAL/CTA_ACTION/TRANSFORMATION_PROMISE/PRIMARY_OBJECTION/TARGET_FEELING/TONE) absent from intake.json without being listed in fields_absent_in_source |
 
@@ -196,6 +195,8 @@ These ten codes close the remaining gaps found in the Presentation Department V2
 | `AF-C11` | Deck-quality / persuasion-arc | Phase 1Q | DECK | missing one or more required arc beats (hook / stakes / promise / proof) OR no explicit CTA |
 | `AF-DH1` | Deliverable hygiene | Closeout / pre-delivery | package (DECK) | dev artifacts in the client package / file not in the allowed five-file set / presenter guide or speech as .md instead of .pdf |
 | `AF-RESEARCH-GATE` | Research mandate | Phase 1Q | DECK | Research Brief absent / `research_complete: false` / missing required categories A, C, D, F, G, H, I, K, or L (J condensed-OK) / fact-validation ledger absent when slide-bound figures exist |
+| `AF-RESEARCH-UNCITED` | Research citation enforcement | Phase -0.5/1Q | DECK | Research pack contains fewer than 8 distinct http(s) URLs (MIN_CITED_SOURCES), OR slide copy contains factual/statistical claim markers (%, $, 'research', 'study', 'studies show', 'statistics', 'data shows') with zero cited URLs in the research pack; self-asserted research_complete:true is not proof of research — real citations are required |
+| `AF-DELIVERY-COMPLETE` | Delivery interlock (DONE gate) | Closeout / review->Done | package (DECK) | the FULL presentation experience was shortcut: the five-file bundle is incomplete / the infographic checklist slide is absent from the deck / the GHL media-upload record is missing. A deck is NOT a delivered presentation until ALL THREE are true. This is the consolidating interlock that fires AFTER AF-DELIVER + AF-DH1 and blocks "Done." |
 
 ---
 
@@ -325,6 +326,42 @@ These ten codes close the remaining gaps found in the Presentation Department V2
 
 ---
 
+### AF-DELIVERY-COMPLETE -- Delivery Interlock / FULL-experience DONE gate (package-level, closeout)
+
+**Doctrine:** A deck is NOT a complete or deliverable presentation until the FULL presentation experience exists on disk and is recorded. Rendering a `.pptx` is the START of delivery, never the end. `build_deck.py` is ONLY the Phase-4 renderer (slide images -> bare `.pptx`); it produces no guide, no speech, no audio, no PDF, no infographic, and no GHL upload. Finishing "at a `.pptx`" is the exact shortcut this gate exists to block. AF-DELIVERY-COMPLETE is the single consolidating DELIVERY INTERLOCK that fires at closeout AFTER AF-DELIVER (three required artifacts exist + non-empty) and AF-DH1 (package contains ONLY the allowed set), and it blocks the review->Done transition until the entire experience is present. AF-DELIVER + AF-DH1 + AF-DELIVERY-COMPLETE are all independent and ALL THREE must pass before any "Done" is permitted.
+
+**THE THREE CONDITIONS (all must be TRUE; any false = block "Done"):**
+
+1. **FIVE-FILE BUNDLE COMPLETE.** The clean package `delivery/[DECK_SLUG]-FINAL/` exists and contains EXACTLY these five files, each present and non-empty:
+   ```
+   [Deck-Title]-FINAL.pptx          # assembled deck (the build_deck.py output, post-processed)
+   [Deck-Title]-FINAL.pdf           # portable-document export of the deck
+   PRESENTER-GUIDE.pdf              # rendered from working/deliverables/PRESENTER-GUIDE.md (PDF, never .md)
+   PRESENTER-SPEECH.pdf             # rendered from working/deliverables/PRESENTER-SPEECH.md (PDF, never .md)
+   PRESENTER-AUDIO.mp3              # Fish Audio S2 full voiced reading (>=100KB; never the stub silence file)
+   ```
+   This re-asserts AF-DELIVER (the three presenter artifacts EXIST) and AF-DH1 (ONLY the five exist) as the bundle precondition of "Done."
+
+2. **INFOGRAPHIC CHECKLIST SLIDE IN THE DECK.** The assembled deck contains the infographic checklist slide (the at-a-glance "what you received / what to do next" visual recap). A deck whose `.pptx` ships without the infographic checklist slide is an incomplete experience and fails this gate. Detection: assert the infographic checklist slide is present in the assembled deck (slide-spec tag / `slides_copy.md` arc tag for the infographic recap beat, cross-checked against the rendered deck).
+
+3. **GHL MEDIA-UPLOAD RECORDED.** `working/checkpoints/media_library.json` carries a live GHL media-upload record for the final deck: `pptx_ghl_media_id` (non-null), `ghl_folder_id`, and `pptx_ghl_remote_name`, and `delivery_plan.json` shows the GHL destination at `"status": "verified"` (a live GHL API confirmation per Delivery Concierge SOP 9.4 -- a self-report is not sufficient). A deck with no GHL media-upload record is NOT done.
+
+**Producing-role requirements:**
+- **Director of Presentations:** owns the DELIVERY INTERLOCK. The Director MUST run the Director/Delivery flow end-to-end -- the Presenters Guide Specialist (guide PDF), the Presenters Speech Writer (speech PDF), the Audio Demonstration Specialist (PRESENTER-AUDIO.mp3), the PPTX Assembly Specialist (deck PDF export + infographic checklist slide), and the Media Librarian / Delivery Concierge (GHL upload + five-file package). The Director may NOT mark a task Done, register a final deliverable, or notify the client off a bare `build_deck.py` `.pptx`.
+- **Delivery Concierge:** SOP 9.0 (AF-DH1 hygiene) -> 9.2 (GHL upload) -> 9.4 (ground-truth verification) must complete; the GHL `pptx_ghl_media_id` and the verified status are the inputs this gate reads.
+- **PPTX Assembly Specialist:** the deck must include the infographic checklist slide and a non-empty PDF export must exist before this gate can pass.
+
+**Detection (closeout, mechanical):**
+1. `delivery/[DECK_SLUG]-FINAL/` exists and the five whitelisted files are each present and non-empty (PRESENTER-AUDIO.mp3 >=100KB). [Condition 1]
+2. The infographic checklist slide is present in the assembled deck. [Condition 2]
+3. `media_library.json.pptx_ghl_media_id` is non-null AND `delivery_plan.json` GHL destination `"status": "verified"`. [Condition 3]
+
+**Failure message:** `AF-DELIVERY-COMPLETE: DONE BLOCKED -- the full presentation experience is incomplete. {details: which of the three conditions failed -- missing bundle file(s) / infographic checklist slide absent from deck / GHL media-upload record missing or unverified}. A rendered .pptx is NOT a delivered presentation. Run the Director/Delivery flow (guide + speech + audio + PDF + infographic + GHL upload) before "Done." build_deck.py is only the Phase-4 renderer.`
+
+**Command Center mirror:** This interlock is enforced independently by the Command Center QC scorer as **AF-DELIVERY-COMPLETE** (the extension of the existing AF-PIPELINE-COMPLETE gate). The CC scorer blocks review->Done when the five deliverable files, the infographic checklist slide, or the GHL media-upload record are absent. See `qc-scorer.ts` and the repo-update spec.
+
+---
+
 ### AF-RESEARCH-GATE -- Research Brief Required (deck-level, Phase 1Q)
 
 **Doctrine:** A deck that reaches Phase 1Q without a complete Research Brief from the Deep Research Specialist (ROLE-04) is blocked. The Research Phase (-0.5) is mandatory on EVERY deck run -- personal or general, webinar or content-to-presentation. The gate fires at Phase 1Q so the block is caught before copy is approved and resources are committed to prompt and image generation.
@@ -387,10 +424,10 @@ These five codes were added after the forensic four-deck failure analysis. Each 
 
 ### AF-BAKED (Fix 4)
 **What failed:** Two of four decks used Pillow ImageDraw plus a black RGBA scrim to composite Helvetica text over Kie images, producing "flat dark slabs." Four to twenty-three slides in the other two decks were rendered entirely in Pillow (no Kie image at all).
-**Detection:** Vision QC (the client's own vision model: `qwen3-vl:235b-cloud` via Ollama Cloud, fallback `qwen/qwen3-vl-235b-a22b-instruct` via OpenRouter) checks each slide. If the vision agent scores text as "overlaid / composited" rather than "rendered as part of image composition," or if the image matches a flat-fill placeholder signature (solid color, tiny file under 50KB), the slide triggers AF-BAKED.
+**Detection:** Vision QC (Haiku 4.5) checks each slide. If the vision agent scores text as "overlaid / composited" rather than "rendered as part of image composition," or if the image matches a flat-fill placeholder signature (solid color, tiny file under 50KB), the slide triggers AF-BAKED.
 
 ### AF-PROMPT-FLOOR (Fix 5)
-**What failed:** 100% of 98 image prompts (across all four decks) were below the 1500-char floor. Median was 277 chars -- 5.4x under floor. Zero prompts had proper archetype declarations or negative blocks. (This forensic record describes the incident at the time the floor was 1500; the floor/ceiling have since been raised to 5000/18000 — see the AF-PROMPT-FLOOR row in the table above and the live AF-P1/AF-P2 gate. The CURRENT gate is 5000-18000, target band 9000-14000.)
+**What failed:** 100% of 98 image prompts (across all four decks) were below the 1500-char floor. Median was 277 chars -- 5.4x under floor. Zero prompts had proper archetype declarations or negative blocks.
 **Detection:** Phase 3 (Prompt QC gate). Count characters in each prompt file. Check for `[ARCHETYPE` on line 1, a dedicated NEGATIVE BLOCK paragraph, and at least three "Do not ..." imperative sentences in the final paragraph. Any miss: slide FAIL, loops back to Slide Image Creator.
 
 ### AF-NO-VISION-QC (Fix 6)

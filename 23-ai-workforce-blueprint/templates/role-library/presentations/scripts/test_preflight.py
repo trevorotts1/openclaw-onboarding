@@ -86,8 +86,22 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
         (root / "working" / "qc").mkdir(parents=True, exist_ok=True)
         (root / "working" / "prompts").mkdir(parents=True, exist_ok=True)
         _write_intake(root)
+        # Research brief with >= MIN_CITED_SOURCES (8) real cited URLs so the
+        # AF-RESEARCH-UNCITED gate passes.  Each URL is on its own line and is a
+        # distinct authoritative source (the gate counts distinct URLs, not lines).
         (root / "working" / "research" / "brief-demo.md").write_text(
-            "# Research brief\nresearch_complete: true\nCategories A,C,D,F,G,H,I,K,L\n")
+            "# Research brief\n"
+            "research_complete: true\n"
+            "Categories A,C,D,F,G,H,I,K,L\n\n"
+            "- Source: https://pmc.ncbi.nlm.nih.gov/articles/PMC12674523/\n"
+            "- Source: https://www.researchgate.net/publication/369670311\n"
+            "- Source: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9135772/\n"
+            "- Source: https://www.jsr.org/hs/index.php/path/article/view/3679\n"
+            "- Source: https://www.ncbi.nlm.nih.gov/books/NBK608531/\n"
+            "- Source: https://www.pewresearch.org/social-trends/2023/01/24/\n"
+            "- Source: https://www.apa.org/topics/parenting/positive-discipline\n"
+            "- Source: https://www.cdc.gov/childrensmentalhealth/data.html\n"
+        )
         (root / "working" / "qc" / "copy_qc_report.json").write_text(json.dumps(
             {"gate": "Phase 1Q", "average": 9.1, "triggered_autofails": [], "pass": True}))
         # Phase 3 — converting arc allocation (Signature Presentation Architect).
@@ -306,6 +320,274 @@ def test_chk_speech_length():
     return fails
 
 
+def _postflight_bundle_dir(present_keys: set) -> tuple:
+    """Build a temp bundle dir containing only the artifacts whose keys are in
+    present_keys, each at or above their min_bytes threshold. Returns
+    (bundle_dir, ledger_path, deck_slug) for passing to run_postflight_gate."""
+    import tempfile
+    bundle_dir = Path(tempfile.mkdtemp(prefix="deck_postflight_test_"))
+    deck_slug = "test-deck"
+
+    # Initialise the ledger (all pending).
+    ledger_path = build_deck.init_deliverables_ledger(bundle_dir, deck_slug)
+
+    for spec in build_deck.DELIVERABLES_REQUIRED:
+        key = spec["key"]
+        fname = build_deck._expand_filename(spec["filename"], deck_slug)
+        fpath = bundle_dir / fname
+        if key in present_keys:
+            # Write a file that exceeds the threshold by a comfortable margin.
+            fpath.write_bytes(b"\x00" * (spec["min_bytes"] + 1024))
+    return bundle_dir, ledger_path, deck_slug
+
+
+def test_postflight_gate():
+    """POSTFLIGHT COMPLETENESS GATE self-test (Requirement 6 / AF-BUNDLE-COMPLETE):
+
+      - When ALL seven required deliverables are present + above threshold:
+          run_postflight_gate() prints COMPLETE and does NOT sys.exit(5).
+      - When ANY required deliverable is missing:
+          run_postflight_gate() calls sys.exit(5) — we catch SystemExit(5).
+      - Specifically, PRESENTER-GUIDE.pdf (guide_pdf) and infographic.png
+          (infographic_png) missing each independently trigger exit 5 — they
+          can NEVER be silently skipped (Requirement 5).
+
+    Returns a list of failure strings ([] = all passed)."""
+    import subprocess
+    import tempfile
+
+    fails = []
+
+    # --- Sub-test A: ALL artifacts present => PASSES (no SystemExit) ---
+    all_keys = {spec["key"] for spec in build_deck.DELIVERABLES_REQUIRED}
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys)
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+        # Must NOT raise SystemExit — gate should pass.
+    except SystemExit as exc:
+        fails.append(f"POSTFLIGHT-A: all artifacts present should PASS, got sys.exit({exc.code})")
+    except Exception as exc:  # noqa: BLE001
+        fails.append(f"POSTFLIGHT-A: unexpected error: {exc}")
+    print(f"POSTFLIGHT-A (all present)   -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-A' in f] else 'FAIL'}")
+
+    # --- Sub-test B: ONE artifact missing (deck_pdf) => exit 5 ---
+    missing_one = all_keys - {"deck_pdf"}
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(missing_one)
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+        fails.append("POSTFLIGHT-B: missing deck_pdf should exit 5 but gate passed")
+    except SystemExit as exc:
+        if exc.code != 5:
+            fails.append(f"POSTFLIGHT-B: missing deck_pdf should exit 5, got {exc.code}")
+    print(f"POSTFLIGHT-B (deck_pdf miss) -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-B' in f] else 'FAIL'}")
+
+    # --- Sub-test C: PRESENTER-GUIDE.pdf missing => exit 5 (hard-required, Req 5) ---
+    missing_guide = all_keys - {"guide_pdf"}
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(missing_guide)
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+        fails.append("POSTFLIGHT-C: missing PRESENTER-GUIDE.pdf should exit 5 but gate passed")
+    except SystemExit as exc:
+        if exc.code != 5:
+            fails.append(f"POSTFLIGHT-C: missing guide_pdf should exit 5, got {exc.code}")
+    print(f"POSTFLIGHT-C (guide_pdf mis) -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-C' in f] else 'FAIL'}")
+
+    # --- Sub-test D: infographic.png missing => exit 5 (hard-required, Req 5) ---
+    missing_infographic = all_keys - {"infographic_png"}
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(missing_infographic)
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+        fails.append("POSTFLIGHT-D: missing infographic.png should exit 5 but gate passed")
+    except SystemExit as exc:
+        if exc.code != 5:
+            fails.append(f"POSTFLIGHT-D: missing infographic_png should exit 5, got {exc.code}")
+    print(f"POSTFLIGHT-D (infog_png mis) -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-D' in f] else 'FAIL'}")
+
+    # --- Sub-test E: artifact present but UNDER the min_bytes threshold => exit 5 ---
+    # Write guide_pdf as a 1-byte file (well under 51,200 threshold).
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(all_keys)
+    under_spec = next(s for s in build_deck.DELIVERABLES_REQUIRED if s["key"] == "guide_pdf")
+    under_name = build_deck._expand_filename(under_spec["filename"], slug)
+    (bundle_dir / under_name).write_bytes(b"\x00")  # 1 byte — far under 51,200
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+        fails.append("POSTFLIGHT-E: under-threshold guide_pdf should exit 5 but gate passed")
+    except SystemExit as exc:
+        if exc.code != 5:
+            fails.append(f"POSTFLIGHT-E: under-threshold guide_pdf should exit 5, got {exc.code}")
+    print(f"POSTFLIGHT-E (under-thresh)  -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-E' in f] else 'FAIL'}")
+
+    # --- Sub-test F: ALL missing => exit 5, ledger all failed ---
+    bundle_dir, ledger_path, slug = _postflight_bundle_dir(set())
+    try:
+        build_deck.run_postflight_gate(bundle_dir, ledger_path, slug)
+        fails.append("POSTFLIGHT-F: all missing should exit 5 but gate passed")
+    except SystemExit as exc:
+        if exc.code != 5:
+            fails.append(f"POSTFLIGHT-F: all missing should exit 5, got {exc.code}")
+    print(f"POSTFLIGHT-F (all missing)   -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-F' in f] else 'FAIL'}")
+
+    # --- Sub-test G: Verify ~/Downloads default destination constant ---
+    import os
+    expected_default = os.path.expanduser("~/Downloads")
+    if build_deck.BUNDLE_DIR_DEFAULT != expected_default:
+        fails.append(
+            f"POSTFLIGHT-G: BUNDLE_DIR_DEFAULT should be {expected_default!r}, "
+            f"got {build_deck.BUNDLE_DIR_DEFAULT!r}")
+    print(f"POSTFLIGHT-G (Downloads def) -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-G' in f] else 'FAIL'}")
+
+    # --- Sub-test H: Verify DELIVERABLES_REQUIRED has exactly the 7 required keys ---
+    required_keys = {"deck_pptx", "deck_pdf", "guide_pdf", "speech_md",
+                     "speech_pdf", "audio_mp3", "infographic_png"}
+    actual_keys = {spec["key"] for spec in build_deck.DELIVERABLES_REQUIRED}
+    if actual_keys != required_keys:
+        fails.append(
+            f"POSTFLIGHT-H: DELIVERABLES_REQUIRED keys mismatch.\n"
+            f"  Expected: {sorted(required_keys)}\n"
+            f"  Got:      {sorted(actual_keys)}")
+    print(f"POSTFLIGHT-H (key set exact) -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-H' in f] else 'FAIL'}")
+
+    print(f"POSTFLIGHT (gate self-test)  -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def _research_cited_run_dir(url_lines: list) -> Path:
+    """Build a temp run dir with a research brief carrying the given URL lines.
+    url_lines is a list of URL strings to embed (each on its own source line)."""
+    root = Path(tempfile.mkdtemp(prefix="deck_research_cited_test_"))
+    (root / "working" / "research").mkdir(parents=True, exist_ok=True)
+    lines = ["# Research brief\nresearch_complete: true\n"]
+    for url in url_lines:
+        lines.append(f"- Source: {url}\n")
+    (root / "working" / "research" / "brief-demo.md").write_text("".join(lines))
+    return root
+
+
+def _claims_citation_run_dir(copy_has_claims: bool, research_url_count: int) -> Path:
+    """Build a temp run dir to test the claims-without-citation gate.
+    copy_has_claims=True writes slide copy with a percentage claim marker.
+    research_url_count sets how many distinct URLs the research brief carries."""
+    root = Path(tempfile.mkdtemp(prefix="deck_claims_test_"))
+    (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    (root / "working" / "research").mkdir(parents=True, exist_ok=True)
+    # Write slide copy with or without a claim marker.
+    if copy_has_claims:
+        copy = '{"copy": ["45% of teens report anxiety (studies show connection matters)"]}'
+    else:
+        copy = '{"copy": ["Families grow stronger together."]}'
+    (root / "working" / "copy" / "slides.json").write_text(copy)
+    # Write research brief with the specified number of URLs.
+    urls = [f"https://example-source-{i}.org/article" for i in range(research_url_count)]
+    lines = ["# Research brief\nresearch_complete: true\n"]
+    for url in urls:
+        lines.append(f"- Source: {url}\n")
+    (root / "working" / "research" / "brief-demo.md").write_text("".join(lines))
+    return root
+
+
+def test_chk_research_cited():
+    """RESEARCH-CITATION GATE (AF-RESEARCH-UNCITED) unit tests:
+
+    Fixture used for PASSING test: a self-contained 21-URL research pack
+    generated in a temp dir (well over the 8-source floor).
+
+    Test cases:
+      - 0 cited URLs in the research pack -> FAILS (AF-RESEARCH-UNCITED)
+      - 3 cited URLs (under the floor of 8) -> FAILS
+      - Exactly 8 cited URLs -> PASSES
+      - 12 cited URLs -> PASSES
+      - A self-contained 21-URL fixture -> PASSES
+      - None path (absent brief) -> PASSES (not double-reporting; _chk_research_brief handles it)
+    """
+    fails = []
+    MIN = build_deck.MIN_CITED_SOURCES
+    assert MIN == 8, f"MIN_CITED_SOURCES must be 8, got {MIN}"
+
+    # 0 URLs -> FAIL
+    rd = _research_cited_run_dir([])
+    reason = build_deck._chk_research_cited(rd / "working" / "research" / "brief-demo.md")
+    if not reason:
+        fails.append("CITED-A: 0 URLs should FAIL but passed")
+    elif "AF-RESEARCH-UNCITED" not in reason or str(MIN) not in reason:
+        fails.append(f"CITED-A: fail message malformed: {reason!r}")
+    print(f"CITED-A (0 URLs)             -> {'PASS' if 'CITED-A' not in str(fails) else 'FAIL'}")
+
+    # 3 URLs (under floor) -> FAIL
+    rd = _research_cited_run_dir([f"https://source-{i}.org/" for i in range(3)])
+    reason = build_deck._chk_research_cited(rd / "working" / "research" / "brief-demo.md")
+    if not reason:
+        fails.append("CITED-B: 3 URLs should FAIL (under floor) but passed")
+    elif "AF-RESEARCH-UNCITED" not in reason:
+        fails.append(f"CITED-B: fail message malformed: {reason!r}")
+    print(f"CITED-B (3 URLs, under floor)-> {'PASS' if 'CITED-B' not in str(fails) else 'FAIL'}")
+
+    # Exactly MIN URLs -> PASS
+    rd = _research_cited_run_dir([f"https://source-{i}.org/" for i in range(MIN)])
+    reason = build_deck._chk_research_cited(rd / "working" / "research" / "brief-demo.md")
+    if reason:
+        fails.append(f"CITED-C: exactly {MIN} URLs should PASS but got: {reason!r}")
+    print(f"CITED-C ({MIN} URLs, at floor) -> {'PASS' if 'CITED-C' not in str(fails) else 'FAIL'}")
+
+    # 12 URLs (comfortably above floor) -> PASS
+    rd = _research_cited_run_dir([f"https://source-{i}.org/article" for i in range(12)])
+    reason = build_deck._chk_research_cited(rd / "working" / "research" / "brief-demo.md")
+    if reason:
+        fails.append(f"CITED-D: 12 URLs should PASS but got: {reason!r}")
+    print(f"CITED-D (12 URLs)            -> {'PASS' if 'CITED-D' not in str(fails) else 'FAIL'}")
+
+    # 21-URL fixture (self-contained, well above floor) -> PASS
+    rd = _research_cited_run_dir([f"https://research-source-{i}.org/study" for i in range(21)])
+    reason = build_deck._chk_research_cited(rd / "working" / "research" / "brief-demo.md")
+    if reason:
+        fails.append(f"CITED-E (21-URL fixture): should PASS but got: {reason!r}")
+    print(f"CITED-E (21-URL fixture)     -> {'PASS' if 'CITED-E' not in str(fails) else 'FAIL'}")
+
+    # None path -> PASS (absent brief handled elsewhere)
+    reason = build_deck._chk_research_cited(None)
+    if reason:
+        fails.append(f"CITED-F: None path should PASS (deferred to _chk_research_brief) but got: {reason!r}")
+    print(f"CITED-F (None path)          -> {'PASS' if 'CITED-F' not in str(fails) else 'FAIL'}")
+
+    print(f"RESEARCH-CITED (gate tests)  -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_chk_claims_without_citation():
+    """CLAIMS-WITHOUT-CITATION gate (AF-RESEARCH-UNCITED) unit tests:
+
+      - Claims in copy + 0 URLs in research pack -> FAILS
+      - Claims in copy + 8 URLs in research pack -> PASSES (citation exists)
+      - No claims in copy + 0 URLs in research pack -> PASSES (no claim markers)
+    """
+    fails = []
+
+    # Claims + zero URLs -> FAIL
+    rd = _claims_citation_run_dir(copy_has_claims=True, research_url_count=0)
+    reason = build_deck._chk_claims_without_citation(rd)
+    if not reason:
+        fails.append("CLAIMS-A: copy with claims + 0 research URLs should FAIL but passed")
+    elif "AF-RESEARCH-UNCITED" not in reason:
+        fails.append(f"CLAIMS-A: fail message malformed: {reason!r}")
+    print(f"CLAIMS-A (claims+0 urls)     -> {'PASS' if 'CLAIMS-A' not in str(fails) else 'FAIL'}")
+
+    # Claims + 8 URLs -> PASS (citation floor met)
+    rd = _claims_citation_run_dir(copy_has_claims=True, research_url_count=8)
+    reason = build_deck._chk_claims_without_citation(rd)
+    if reason:
+        fails.append(f"CLAIMS-B: copy with claims + 8 URLs should PASS but got: {reason!r}")
+    print(f"CLAIMS-B (claims+8 urls)     -> {'PASS' if 'CLAIMS-B' not in str(fails) else 'FAIL'}")
+
+    # No claims + 0 URLs -> PASS (no claim markers, gate not triggered)
+    rd = _claims_citation_run_dir(copy_has_claims=False, research_url_count=0)
+    reason = build_deck._chk_claims_without_citation(rd)
+    if reason:
+        fails.append(f"CLAIMS-C: no claims + 0 URLs should PASS but got: {reason!r}")
+    print(f"CLAIMS-C (no claims, 0 urls) -> {'PASS' if 'CLAIMS-C' not in str(fails) else 'FAIL'}")
+
+    print(f"CLAIMS-WITHOUT-CITATION      -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
 def main():
     failures = []
 
@@ -318,6 +600,22 @@ def main():
 
     # Unit test — speech-length gate (AF-SPEECH-SHORT): below target x 120 wpm fails.
     failures += test_chk_speech_length()
+
+    # Unit test — RESEARCH-CITATION GATE (AF-RESEARCH-UNCITED): proves 0/3 URLs FAILs,
+    # 8+ URLs PASSes, and a self-contained 21-URL fixture PASSes.
+    failures += test_chk_research_cited()
+
+    # Unit test — CLAIMS-WITHOUT-CITATION (AF-RESEARCH-UNCITED): proves claim markers
+    # in copy + 0 research URLs FAILs; claim markers + 8 URLs PASSes; no claim
+    # markers + 0 URLs PASSes.
+    failures += test_chk_claims_without_citation()
+
+    # Unit test — POSTFLIGHT COMPLETENESS GATE (AF-BUNDLE-COMPLETE, Requirements 2-5):
+    # proves the gate exits 5 when any deliverable is missing/under-threshold and
+    # does NOT exit when all are present; proves guide_pdf + infographic_png are
+    # hard-required (never silently skipped); proves ~/Downloads is the default
+    # destination; proves DELIVERABLES_REQUIRED has exactly the 7 required keys.
+    failures += test_postflight_gate()
 
     # CASE 1 — missing artifacts => refused, exit 3, lists what's missing.
     root = make_workdir(with_artifacts=False)

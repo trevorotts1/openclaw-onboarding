@@ -39,7 +39,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    e. For Category D findings: also record the sub-type (D1 / D2 / D3) and a one-sentence "slide use note" explaining which proof slide this corroborates.
 3. Synthesize the findings. Group by category (A, B, C, D). Within each category, rank by confidence (HIGH first). Within Category D, group by sub-type (D1 / D2 / D3).
 4. Count total HIGH + MEDIUM Category D items. Record this as `external_proof_count`. If `external_proof_count` = 0: set a GP-8 ALERT flag in the brief header.
-5. Write the Research Brief to working/research/brief-[DECK_SLUG].md. Structure:
+5. **CITATION FLOOR (AF-RESEARCH-UNCITED, non-negotiable):** Before writing the brief, confirm the findings set contains at least 8 distinct http(s) URLs from authoritative external sources (the `MIN_CITED_SOURCES` floor enforced by build_deck.py). The `research_complete: true` flag in the header is MEANINGLESS without real cited URLs — the mechanical gate in build_deck.py ignores the flag and counts URLs directly. If fewer than 8 distinct authoritative URLs were found, run additional queries before writing. A brief with fewer than 8 real URLs WILL fail the build gate (AF-RESEARCH-UNCITED, exit 3) and block all rendering.
+
+   Write the Research Brief to working/research/brief-[DECK_SLUG].md. Structure:
    ```markdown
    # Research Brief -- [DECK_SLUG]
    Research Date: [YYYY-MM-DD]

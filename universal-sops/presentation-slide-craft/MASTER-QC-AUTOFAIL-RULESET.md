@@ -1,17 +1,29 @@
 # MASTER QC AUTO-FAIL RULESET (SLIDE-CRAFT)
 
-> **SOP-LOCKED DEPARTMENT:** if you add/modify any SOP, role, or gate, you MUST update
-> `PIPELINE-MANIFEST.json` + `build_deck.py` + a test. Run
-> `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/sync_check.py` — it
-> fails the gate if the Python and the SOP stack drift. Every AF code in the Section-5 table
-> below is reconciled against `PIPELINE-MANIFEST.json` by `sync_check.py` (any Section-5 code
-> missing from the manifest is `DRIFT A4`). Procedure: `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`.
-
 **Cluster:** Slide-Craft Rules (the single most important deliverable)
-**Purpose:** the precise, machine-checkable list the integrator wires into qc-specialist-presentations.md so a deck CANNOT pass if it repeats the reference failure case's failures.
+**Purpose:** the precise, machine-checkable list the integrator wires into qc-specialist-presentations.md so a deck CANNOT pass if it repeats the forensic failures.
 **Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **How to use:** every rule below is an AUTO-FAIL. Auto-fails are checked FIRST, before any 1-to-10 scoring, exactly like the existing AF-C / AF-P / AF-I tables in the QC role. A triggered auto-fail forces FAIL on the affected slide (or the whole DECK where marked) regardless of any average. The QC report records the triggered code, the slide, and the failure message verbatim.
-**Status:** DRAFT for integration. These codes are NEW and do not collide with the existing AF-C1..C5, AF-P1..P8, AF-I1..I7. They are added as a fourth and fifth auto-fail layer: the SLIDE-CRAFT auto-fails (copy stage, Phase 1Q) and the RENDER auto-fails (Phase 5/6).
+**Status:** Reference ruleset, RECONCILED with the live gate. This document is the authored slide-craft auto-fail doctrine; the named codes below (AF-HOOK, AF-AUD, AF-OBI, AF-DEN, AF-PLACEHOLDER) are the doctrine's own taxonomy. In the live qc-specialist-presentations.md these protections are ALREADY WIRED under the repo's existing code namespace (the FIX-1 through FIX-8 overhaul). Use the reconciliation map below to find each rule's live equivalent. Do NOT re-add a parallel AF-HOOK/AF-AUD/AF-OBI/AF-DEN namespace to the QC role; that work is done.
+
+---
+
+## RECONCILIATION MAP (this ruleset's codes to the LIVE qc-specialist codes)
+
+The protections this ruleset specifies are already enforced in qc-specialist-presentations.md under these live codes and criteria:
+
+| This ruleset (doctrine code) | LIVE enforcement already in qc-specialist-presentations.md |
+|---|---|
+| RULE 1 hook ceiling + anti-footer (AF-HOOK-1/2/3) | AF-C2 (banded hook cadence, fails BOTH ways: over-stamping on >~5 slides / 2+ consecutive / footer-on-every, AND under the 3-4 dedicated beats) + AF-P12 (prompt-side hook-overlay over-stamping; the literal phrase "present on every slide" is itself AF-P12) + copy QC c1 |
+| RULE 2 audience-facing only (AF-AUD-1..5; "webinar") | AF-C9 (audience-facing forbidden-content battery: presenter narration, AI meta-commentary, image/scene description, telegraphing/stage-direction kickers, the literal word "webinar") + AF-F9 (OCR re-verify on the composed slide) |
+| RULE 3 no bracket/placeholder token on a rendered slide (AF-PLACEHOLDER) | AF-F9 catches a leaked bracket as a copy-vs-pixel diff; the NET-NEW blanket bracket-token ban is added by this overhaul as AF-F10 (see qc-specialist-presentations.md Image/Final auto-fail table) |
+| RULE 4 hook integrity: mutated/misspelled/duplicated/conflated (AF-HOOK-4/5/6/7) | AF-P3 (headline not verbatim to slides_copy.md = auto-fail) + AF-I1 (any misspelling/garbled glyph in rendered text) + AF-F9 (OCR diff) + AF-C2 (banded cadence) |
+| RULE 5 one big idea (AF-OBI-1..6) | AF-C6 (multi-idea slide = auto-fail, "one big idea per slide; a slide that makes more than one point auto-fails") + AF-C8 (30-word total-density ceiling) + copy QC c5 |
+| Section 2 density/pacing (AF-DEN-1..8) | AF-C7 (gradual-drop choreography, 4 sub-conditions: SPREAD / EARNED+BUILT-UP / ADDS-value / FINAL-below-ladder) + copy QC c17 (ladder integrity) + c19 (Wall of Wins framing) + c23 (re-pitch) + c24 (close density and Wall spacing) + the Offer Price Strategist SOP 9.1/9.2/9.9 gates |
+
+The ONE genuinely net-new auto-fail this overhaul adds to the QC role is the blanket bracket-token-on-render ban (AF-F10), because the live AF-F9 caught a bracket only as a copy-vs-pixel diff, not as an unconditional ban that blocks FINAL on any `[...]` token. Everything else in this ruleset is already live; this document is the reference doctrine behind it.
+
+Note on the spacing floor: this ruleset's AF-DEN-1 proposes an absolute "8-slide minimum gap"; the LIVE AF-C7 enforces "no 2 drops within 2 slides" plus the Offer Price Strategist percentage placement (~47/68/87% depth). The 8-slide figure is the gold-standard DOCTRINAL TARGET (gaps 11/16/14/8); the 2-slide minimum is the hard auto-fail floor. See SOP-PITCH-01 Section 2 rule 2 for the reconciliation. Do not introduce a contradictory hard 8-slide auto-fail without the Director adjusting AF-C7.
 
 ---
 
@@ -87,7 +99,7 @@ These five are the spine. A deck that trips any of them is NOT final, full stop.
 
 ## 2. DENSITY / PACING AUTO-FAILS (deck-level veto; from SOP-SLIDE-04)
 
-These are deck-level and are evaluated against arc_allocation.json and slide order. They are auto-fails, not scored, because a crammed offer was the root of the reference failure case's 2/10 pitch.
+These are deck-level and are evaluated against arc_allocation.json and slide order. They are auto-fails, not scored, because a crammed offer was the root of the forensic-deck 2/10 pitch.
 
 - **AF-DEN-1:** any two adjacent price beats < 8 slides apart. `AF-DEN-1: {beatA}@{X} and {beatB}@{Y} are {gap} slides apart (min 8).`
 - **AF-DEN-2:** anchor outside 25-45% depth. `AF-DEN-2: anchor at {pct}% (target ~one-third).`
@@ -97,36 +109,6 @@ These are deck-level and are evaluated against arc_allocation.json and slide ord
 - **AF-DEN-6:** Wall of Wins not 4-6 slides before the offer. `AF-DEN-6: Wall of Wins {gap} slides before offer (target ~5).`
 - **AF-DEN-7:** no 4-7 slide re-pitch block after FINAL. `AF-DEN-7: {N} post-FINAL slides, no re-pitch block (need 4-7).`
 - **AF-DEN-8:** any section below its minimum slide count. `AF-DEN-8: {section} has {N} slides (floor {M}).`
-
----
-
-## 2.5 ANTI-COMPRESSION COVERAGE AUTO-FAIL (deck-level veto; Mode B never compresses the source)
-
-A client who hands over an existing deck (Mode B) must NEVER receive back a deck with fewer slides. Mode B is ADD-ONLY: improve and expand, never reduce below the source slide count. Compressing a client's deck to hit a duration cap is a coverage failure, not an optimization.
-
-- **AF-COVERAGE-1 (deck-level veto; no averaging):**
-  - **Stage:** 1Q (arc_allocation.json vs `mission_prd.source_slide_count`) AND Phase 6 (assembled deck page count).
-  - **Level:** DECK (vetoes the whole gate).
-  - **Check:** `final_slide_count < source_slide_count` -> FAIL. (Mode A, `source_slide_count == 0`, always passes.)
-  - **Message:** `AF-COVERAGE-1: output deck has {final} slides; client source deck had {source}. The system must NEVER output fewer slides than the source (Mode B is ADD-only). Add {source-final} slides; never delete a client slide to hit a duration cap.`
-  - **Source of truth:** `source_slide_count` is captured as a TOP-LEVEL integer field in BOTH `mission_prd.json` and `enhancement_gap.json` at Mode B intake (Mode A -> 0). `SLIDE_COUNT_FINAL = max(duration_target, source_slide_count)`; this floor OVERRIDES the HARD MAX and the 90 absolute ceiling. See CLIENT-WEBINAR-DECK-SOP Section 3.4 (Mode B) and Section 4 (slide math).
-
----
-
-## 2.6 RENDERER + PROCESS-MANIFEST AUTO-FAILS (deck-level veto; the canonical renderer is scripts/build_deck.py)
-
-The single canonical renderer is `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py`. It is the DETERMINISTIC, no-AI Phase-4 renderer + Phase-8 assembler with a built-in process preflight. It is NOT a banned throwaway renderer; it IS the renderer. There is no `render_deck.py`, no `render_manifest.json`, and no `vision_qc_log.json` in this system; any gate that asserts against those non-existent paths is re-keyed below to assert against `working/checkpoints/process_manifest.json` (which `build_deck.py` writes; see SOP-SLIDE-05-PROCESS-MANIFEST).
-
-- **AF-RENDERER (deck-level veto):** the assembled deck was produced by anything other than the canonical `scripts/build_deck.py`, OR `build_deck.py` ran with `--adhoc-no-process` (preflight skipped) on a real deliverable. Detection: `working/checkpoints/process_manifest.json` records the render phase with `role: build_deck` / `artifact_path` pointing at the canonical script and `ran: true`; absence (or an adhoc-skip flag) fails the DECK.
-  - Message: `AF-RENDERER: deck not produced by the canonical scripts/build_deck.py with process preflight (process_manifest.json missing the render phase or marked adhoc). Re-render through build_deck.py.`
-- **AF-MODEL-SOVEREIGNTY (deck-level veto):** generation used a model other than the GPT-Image-2-only manifest (CLIENT-WEBINAR-DECK-SOP §9.0). Detection: the generation phase entry in `process_manifest.json` records a non-manifest model id. Any deviation fails the DECK.
-  - Message: `AF-MODEL-SOVEREIGNTY: generation used a non-manifest model. Only the pinned GPT-Image-2 family is permitted; a model outage means PAUSE and escalate, never substitute.`
-- **AF-NO-VISION-QC (deck-level veto):** the image QC phase (Phase 5) did not run a multimodal vision read of every rendered slide. Detection: `process_manifest.json` lacks a Phase-5 image-QC entry with `ran: true` and `gate_codes_checked` including the AF-I / AF-PLACEHOLDER / AF-HOOK render codes. Missing = fail the DECK.
-  - Message: `AF-NO-VISION-QC: no recorded multimodal image-QC pass over the rendered slides (process_manifest.json Phase-5 entry missing). Every rendered slide must be vision-read before assembly.`
-- **AF-CONVERTER-PARITY (deck-level veto):** the assembled PPTX page count does not match the count of QC-passed rendered slides. Detection: compare the assembled deck page count (recorded by `build_deck.py` in `process_manifest.json` at the assembly phase) against the count of Phase-5-passed `working/renders/slide-NN.png` files. A mismatch fails the DECK.
-  - Message: `AF-CONVERTER-PARITY: assembled deck has {pptx} pages but {passed} QC-passed renders exist. The converter dropped or duplicated slides; re-assemble through build_deck.py.`
-
-Every renderer auto-fail above asserts against `working/checkpoints/process_manifest.json`, the single per-run attestation that the full SOP stack ran (SOP-SLIDE-05-PROCESS-MANIFEST). None reference a render_manifest.json / render_deck.py / vision_qc_log.json (those do not exist).
 
 ---
 
@@ -144,12 +126,10 @@ Every renderer auto-fail above asserts against `working/checkpoints/process_mani
 1. **Add a Slide-Craft auto-fail table** (RULES 1, 2, 4, 5 above) to the Copy QC Auto-Fails section (alongside AF-C1..C5), checked at Phase 1Q before scoring.
 2. **Add a Render auto-fail table** (RULE 1b rendered, RULE 3 placeholder, RULE 4c, RULE 2c/2f, RULE 5a/5f rendered) to the Image QC Auto-Fails section (alongside AF-I1..I7), checked at Phase 5/6 before scoring.
 3. **Add the Density auto-fail table** (Section 2) as a new deck-level gate run at Phase 1Q and re-verified at Phase 6.
-3a. **Add the anti-compression coverage gate** (Section 2.5, AF-COVERAGE-1) as a deck-level gate run at Phase 1Q (arc vs `mission_prd.source_slide_count`) and re-verified at Phase 6 (assembled page count). Mode B is add-only; never trim a client slide.
-3b. **Add the renderer + process-manifest gates** (Section 2.6: AF-RENDERER, AF-MODEL-SOVEREIGNTY, AF-NO-VISION-QC, AF-CONVERTER-PARITY) as a deck-level gate run at Phase 6, all asserted against `working/checkpoints/process_manifest.json`. The canonical renderer is `scripts/build_deck.py`; do not reference render_deck.py / render_manifest.json / vision_qc_log.json (they do not exist), and do not list build_deck.py as a banned renderer. The per-run process manifest spec is SOP-SLIDE-05-PROCESS-MANIFEST.
-4. **Replace AF-C2** (the RETIRED "hook count BELOW 7 = auto-fail" floor) with RULE 1 (the banded ceiling: the verbatim hook stands on 3-4 DEDICATED pure-typography slides, ~4-5 appearances max, never 2 consecutive, never a footer on every slide; over-stamping is the #1 defect, STRIP excess rather than pad). This is the single most important change: the retired floor PRODUCED the 40-slide stamping.
+4. **Replace AF-C2** (the current "hook count BELOW 7 = auto-fail" floor) with RULE 1 (the ceiling). This is the single most important change: the old floor PRODUCED the 40-slide stamping.
 5. **Promote one-big-idea (criterion 1) and audience-facing (criterion 13) from scored criteria to double-weighted auto-fails** via RULE 5 and RULE 2; they no longer average away.
 6. **Add the placeholder-on-render ban as a hard finishing failure that blocks FINAL status** (RULE 3), and extend the native-text fallback from price-only to the hook line (so RULE 4c cannot recur).
-7. **Update the QC role KPI** "Auto-fail detections caught before owner sees work = 100%" to explicitly include the new codes, and add to the weekly QC Trend Report a per-code count for AF-HOOK, AF-AUD, AF-PLACEHOLDER, AF-OBI, AF-DEN, AF-COVERAGE, AF-RENDERER, AF-MODEL-SOVEREIGNTY, AF-NO-VISION-QC, and AF-CONVERTER-PARITY.
+7. **Update the QC role KPI** "Auto-fail detections caught before owner sees work = 100%" to explicitly include the new codes, and add to the weekly QC Trend Report a per-code count for AF-HOOK, AF-AUD, AF-PLACEHOLDER, AF-OBI, and AF-DEN.
 
 ---
 
@@ -184,11 +164,273 @@ Every renderer auto-fail above asserts against `working/checkpoints/process_mani
 | AF-DEN-6 | 1Q/6 | DECK | Wall of Wins not 4-6 before offer | WoW position vs offer position |
 | AF-DEN-7 | 1Q/6 | DECK | no 4-7 slide re-pitch after FINAL | post-FINAL slide count / content |
 | AF-DEN-8 | 1Q/6 | DECK | section below its slide floor | per-section slide count vs floor |
-| AF-COVERAGE-1 | 1Q/6 | DECK | output deck has fewer slides than the client source deck (Mode B add-only) | `final_slide_count < mission_prd.source_slide_count` (Mode A == 0 always passes) |
-| AF-SPEECH-SHORT | 9 | DECK | presenter speech words < target_talk_minutes x 120 wpm (too short for the requested duration) | `word_count(speech.md) < round(intake.target_talk_minutes * 120)`; enforced by build_deck `_chk_speech_length` (conditional: fires once the speech exists) |
-| AF-RENDERER | 6 | DECK | deck not produced by canonical scripts/build_deck.py (or preflight skipped) | process_manifest.json render phase: role=build_deck, ran=true, not adhoc |
-| AF-MODEL-SOVEREIGNTY | 4/6 | DECK | generation used a non-manifest model | process_manifest.json generation-phase model id vs the GPT-Image-2 manifest |
-| AF-NO-VISION-QC | 5/6 | DECK | no multimodal image-QC pass over rendered slides | process_manifest.json Phase-5 image-QC entry ran=true with render gate_codes_checked |
-| AF-CONVERTER-PARITY | 6 | DECK | assembled PPTX page count != QC-passed render count | process_manifest.json assembly page count vs count of Phase-5-passed slide-NN.png |
 
-Every row is a binary trigger with an exact detection method and a verbatim failure message (Sections 1, 2, 2.5, and 2.6). Wire them as auto-fails, checked before scoring. A deck that trips any DECK-level row, or any slide that trips a slide-level row, cannot be marked final. The renderer rows (AF-RENDERER, AF-MODEL-SOVEREIGNTY, AF-NO-VISION-QC, AF-CONVERTER-PARITY) and AF-COVERAGE-1 are verified against `working/checkpoints/process_manifest.json`, the single per-run attestation that the full SOP stack ran (see SOP-SLIDE-05-PROCESS-MANIFEST).
+
+| AF-RENDERER | Phase 4/6 | DECK | Deck shipped its own renderer instead of calling the canonical render module | render_manifest.json missing OR render script is not the canonical 23-ai-workforce-blueprint/templates/presentation-render/render_deck.py |
+| AF-MODEL-SOVEREIGNTY | Phase 4/6 | DECK | Submitted model does not match client's pinned model with no logged fallback event | render_manifest.json model_used != intake.json model_pin AND no fallback_events entry for that slide |
+| AF-BAKED | Phase 5/6 | slide (blocks FINAL) | Slide text was drawn by Pillow/PPTX/ImageDraw rather than baked by the image model, OR slide is a flat placeholder fill with no Kie render | Vision QC agent confirms: text is overlaid, not rendered; OR image dimensions/size match known placeholder signatures |
+| AF-PROMPT-FLOOR | Phase 3 | slide | Image prompt outside 1500-15000 chars OR missing required structural blocks | len(prompt) < 1500 OR len(prompt) > 15000 OR prompt missing [ARCHETYPE, NEGATIVE BLOCK, "Do not " imperatives] |
+| AF-NO-VISION-QC | Phase 6 | DECK | Deck submitted without an executed vision-QC log (path.exists() is not vision QC) | working/qc/vision_qc_log.json missing OR empty OR contains only path-existence checks with no vision API call records |
+| AF-CONVERTER-PARITY | Phase 1Q | DECK (converter-origin only) | Converter-origin deck (intake.json source_brief_origin: "role-22") failed the runtime parity gate | Any of: render_manifest.json absent or not canonical; model pin mismatch; vision_qc_log.json missing/empty/path-only; research brief absent or Category E/F missing; persuasion variables (GOAL/CTA_ACTION/TRANSFORMATION_PROMISE/PRIMARY_OBJECTION/TARGET_FEELING/TONE) absent from intake.json without being listed in fields_absent_in_source |
+
+Every row is a binary trigger with an exact detection method and a verbatim failure message (Section 1 and 2). Wire them as auto-fails, checked before scoring. A deck that trips any DECK-level row, or any slide that trips a slide-level row, cannot be marked final.
+
+---
+
+## 7. NEW AUTO-FAIL CODES -- 2026-06-15 PRESENTATION-DEPT-V2 ENFORCEMENT OVERHAUL
+
+These ten codes close the remaining gaps found in the Presentation Department V2 forensic analysis. Each code is authored as doctrine here and wired as a mechanical check in `qc-specialist-presentations.md` (and its SOP mirror). Every rule is in BOTH the producing role AND the auto-fail gate.
+
+### Code Index
+
+| Code | Workstream | Gate phase | Scope | What it blocks |
+|------|-----------|-----------|-------|----------------|
+| `AF-I11` | Deck-quality / real-image | Phase 5 image QC | slide | image slide ships with no real generated raster (>=1920px) / icon-glyph / clipart / emoji as content art |
+| `AF-I12` | Deck-quality / invisible-asset | Phase 5/6 | slide | invisible / vanishing asset (e.g. white-on-white glyph) -- asset-vs-background contrast near zero |
+| `AF-I13` | Deck-quality / duplicate-glyph | Phase 5/6 | DECK | same md5-identical decorative asset reused as content more than 2x across the deck |
+| `AF-F12` | Deck-quality / font-floor | Phase 6 final deck | slide | rendered body/run text below 18pt-equivalent absolute floor |
+| `AF-F13` | Deck-quality / type-scale | Phase 6 | DECK | more than 4-5 type-scale steps OR platform-default font family (Calibri / Arial / system look) on render |
+| `AF-F14` | Deck-quality / template-uniformity | Phase 6 | DECK | more than 2 structurally identical section-divider slides OR dividers+recap slides exceed ~20% of slide count |
+| `AF-C10` | Deck-quality / no-transcript | Phase 1Q copy QC | slide | verbatim / near-verbatim spoken-transcript line used as slide copy |
+| `AF-C11` | Deck-quality / persuasion-arc | Phase 1Q | DECK | missing one or more required arc beats (hook / stakes / promise / proof) OR no explicit CTA |
+| `AF-DH1` | Deliverable hygiene | Closeout / pre-delivery | package (DECK) | dev artifacts in the client package / file not in the allowed five-file set / presenter guide or speech as .md instead of .pdf |
+| `AF-RESEARCH-GATE` | Research mandate | Phase 1Q | DECK | Research Brief absent / `research_complete: false` / missing required categories A, C, D, F, G, H, I, K, or L (J condensed-OK) / fact-validation ledger absent when slide-bound figures exist |
+| `AF-RESEARCH-UNCITED` | Research citation enforcement | Phase -0.5/1Q | DECK | Research pack contains fewer than 8 distinct http(s) URLs (MIN_CITED_SOURCES), OR slide copy contains factual/statistical claim markers (%, $, 'research', 'study', 'studies show', 'statistics', 'data shows') with zero cited URLs in the research pack; self-asserted research_complete:true is not proof of research — real citations are required |
+| `AF-DELIVERY-COMPLETE` | Delivery interlock (DONE gate) | Closeout / review->Done | package (DECK) | the FULL presentation experience was shortcut: the five-file bundle is incomplete / the infographic checklist slide is absent from the deck / the GHL media-upload record is missing. A deck is NOT a delivered presentation until ALL THREE are true. This is the consolidating interlock that fires AFTER AF-DELIVER + AF-DH1 and blocks "Done." |
+
+---
+
+### AF-I11 -- Real-Image-Present (slide-level, Phase 5)
+
+**Doctrine:** A slide whose archetype or layout template calls for visual content ships with no real generated raster (>=1920px on the long edge), OR ships with a decorative icon-font glyph, a single-color clip-art PNG <=256px, or an emoji standing in for slide art. This is the image-present companion to AF-I6 (which bans clipart/emoji on ANY slide); AF-I11 specifically targets slides where a real raster is REQUIRED by the archetype and was never generated.
+
+**Detection:** Inspect embedded media dimensions. If the nominal "image" element is an icon-font glyph (vector or tiny raster), a single-color PNG under 256px on the long edge, or an emoji character, it is not a real raster. Any image slide whose media element fails the >=1920px test auto-fails.
+
+**Producing-role requirement (Slide Image Creator):** Every non-pure-typography slide must specify a real generated raster (Kie / GPT-Image-2) at >=1920px on the long edge, full-bleed or designed-zone, sourced from the Category E grounded anchor. Decorative icon-font glyphs, single-color clip-art PNGs <=256px, and emoji-as-iconography are forbidden as slide content art.
+
+**Failure message:** `AF-I11: slide {N} carries no real generated raster (>=1920px). The archetype requires an image; a decorative icon/glyph/emoji is not a slide image. Generate a real raster via the canonical render pipeline.`
+
+---
+
+### AF-I12 -- Invisible / Vanishing Asset (slide-level, Phase 5/6)
+
+**Doctrine:** Any embedded image asset whose mean luminance against the pixels directly behind it falls below a visibility delta (the asset effectively disappears into the slide background -- e.g. an all-white glyph on an off-white or white background) auto-fails that slide. This is the asset-side companion to AF-F2 (which covers TEXT contrast only); AF-I12 covers decorative or structural image assets that vanish into the background.
+
+**Detection:** Composite the asset over its slide region at the slide's background color. Compute the asset-vs-background contrast ratio or edge-energy. A near-zero delta (asset is effectively invisible) triggers the fail. A white-on-white asset, a light-grey-on-white asset, or any asset whose edge-energy falls below a perceptible threshold triggers AF-I12.
+
+**Failure message:** `AF-I12: slide {N} contains an invisible / vanishing asset (asset disappears into the background -- near-zero contrast). Remove or replace with a visible, contrast-passing asset. See AF-F2 for the text-contrast companion.`
+
+---
+
+### AF-I13 -- Duplicate-Glyph Filler (deck-level, Phase 5/6)
+
+**Doctrine:** The same md5-identical decorative asset reused as slide content more than 2 times across the deck is the signature of decorative filler rather than genuine content (e.g. the same checkmark or abstract glyph used 12 times across different slides, or used 7 times on a single recap slide). This is a deck-level auto-fail.
+
+**Detection:** Compute the md5 hash of every embedded image asset across all slides. Count occurrences of each unique hash across the deck. Any hash that appears as content on more than 2 slides triggers the deck-level fail.
+
+**Producing-role requirement (Slide Image Creator):** Generate unique, content-appropriate raster art per slide. Decorative filler assets may not stand in for real visual content.
+
+**Failure message:** `AF-I13: DECK FAIL -- md5 asset {hash} appears on {N} slides as slide content (max 2). This is the duplicate-glyph-filler signature. Generate unique raster art for each slide.`
+
+---
+
+### AF-F12 -- Minimum-Font Floor (slide-level, Phase 6)
+
+**Doctrine:** Any rendered body or run text below 18pt-equivalent at the deck's canvas size is a presentation-distance failure. A deck that is effectively a document (with 10-12pt body text) cannot be read from a presentation screen. This is the absolute-pt companion to AF-F3 (fraction-of-height check).
+
+**Detection:** At Phase 6, for each slide in the assembled deck, measure the rendered pt size of every text run. Any run below 18pt-equivalent (computed as the fraction of the slide's total height that corresponds to 18pt in a 1920px-wide render) triggers the fail on that slide.
+
+**Producing-role requirement (Typography Architect):** The type-layout system must declare an absolute minimum body size of 18pt. The system file `working/typography/type_layout_system.md` must record this as a machine-readable token so QC can assert it.
+
+**Failure message:** `AF-F12: slide {N} renders text at {pt}pt-equivalent (minimum 18pt). Revise the type-layout system to enforce the 18pt absolute floor for all body runs.`
+
+---
+
+### AF-F13 -- Type-Scale / Default-Font Discipline (deck-level, Phase 6)
+
+**Doctrine:** A deck that uses more than the declared 4-5 type-scale steps (the "16 random point sizes" defect) OR that renders in a platform-default family (Calibri, Calibri Light, Arial, or any system default look) is a deck-level auto-fail. This is the scale-discipline companion to AF-P10/AF-I9 (which assert designed typography); AF-F13 adds the step-count assert and the assembled-deck default-font scan.
+
+**Detection:** At Phase 6, enumerate all font families and pt sizes in the assembled deck. If the unique-family set includes a platform-default family, or if the count of distinct pt sizes exceeds the declared 4-5 scale steps from `type_layout_system.md`, fail the deck.
+
+**Producing-role requirement (Typography Architect):** Declare exactly 4-5 type-scale steps and a non-default brand font pairing. Record both as machine-readable tokens in `working/typography/type_layout_system.md`.
+
+**Failure message:** `AF-F13: DECK FAIL -- {N} distinct type sizes detected (declared 4-5 scale) OR platform-default font family found ({family}). The Typography Architect must enforce the declared type scale and a designed font pairing.`
+
+---
+
+### AF-F14 -- Template-Uniformity / Empty-Divider Padding (deck-level, Phase 6)
+
+**Doctrine:** More than 2 section-divider slides that are structurally identical (same layout template, only the label text changes) OR a deck where divider plus recap slides exceed approximately 20% of total slide count auto-fails as a deck that pads thin content behind structural repetition.
+
+**Detection:** Compute a structural hash of each divider slide (layout, zone counts, image zone, ignoring text content). If more than 2 divider slides share the same structural hash, fail. Compute the ratio of divider + recap slides to total deck slide count; if it exceeds ~20%, fail.
+
+**Producing-role requirement (Typography Architect + Slide Image Creator):** Section dividers may not be byte-identical with one label swapped. Each archetype template must declare a focal point, whitespace strategy, and a varied composition. The design-brief Category F input from the Deep Research Specialist must be consulted before authoring divider templates.
+
+**Failure message:** `AF-F14: DECK FAIL -- {N} structurally identical section dividers detected (max 2) OR divider+recap slides = {pct}% of deck (max ~20%). Each divider must have a distinct composition. Revise the type-layout system and divider archetype templates.`
+
+---
+
+### AF-C10 -- Verbatim-Transcript Leak (slide-level, Phase 1Q)
+
+**Doctrine:** Slide copy that is a verbatim or near-verbatim spoken-transcript line -- informal spoken cadence, dictation artifacts, conversational asides, coaching dialog -- rather than authored slide copy fails that slide. The transcript is source material, not output. This is distinct from AF-C9 (which bans presenter narration and meta-commentary); AF-C10 bans raw transcript bullets that read as informal "content."
+
+**Detection:** At Phase 1Q, scan each slide's copy for spoken-cadence markers: sentence fragments ending in trailing particles, "you know," "right," "basically," filler words carried from transcription, informal dictation phrasing, or copy that reads as an interrupted spoken sentence rather than a crafted headline/sub.
+
+**Producing-role requirement (Slide Copywriter):** Slide copy must be AUTHORED from the source material. The transcript is input only. Spoken-quote artifacts from a raw coaching/transcript session are forbidden on the slide face.
+
+**Failure message:** `AF-C10: slide {N} carries a verbatim/near-verbatim transcript line as slide copy: "{line}". Author the copy from the source; the transcript is input, not output.`
+
+---
+
+### AF-C11 -- Missing Persuasion Arc / No CTA (deck-level, Phase 1Q)
+
+**Doctrine:** A deck that lacks one or more of the five required arc beats {hook, stakes, promise, proof, explicit CTA} across the deck as a whole fails as structurally incomplete. A deck that is "all telling, no showing" with no CTA is not a complete persuasion vehicle.
+
+**Detection:** At Phase 1Q, assert that each arc beat is tagged or present in `slides_copy.md`. Check for: (1) a dedicated hook slide or opening hook beat, (2) a stakes / problem slide identifying what is at risk, (3) a promise slide or offer-promise beat, (4) a proof slide carrying external corroboration, (5) an explicit CTA slide or closing CTA beat. Any missing beat fails the deck.
+
+**Note:** AF-C11 complements AF-C2 (hook cadence). AF-C2 checks the hook's stamping pattern; AF-C11 checks the structural completeness of all five arc beats as a whole.
+
+**Producing-role requirement (Slide Copywriter):** The deck must carry a complete persuasive architecture: hook -> stakes -> promise -> proof -> CTA. All five beats are required.
+
+**Failure message:** `AF-C11: DECK FAIL -- missing arc beat(s): {missing_beats}. A deck must carry hook + stakes + promise + proof + CTA. Add the missing beat(s) before Phase 1Q can pass.`
+
+---
+
+### AF-DH1 -- Deliverable Hygiene (package-level, pre-delivery closeout)
+
+**Doctrine:** The client-deliverable package must contain EXACTLY the five allowed files and NOTHING ELSE. Any dev artifact, script, log, manifest, QC report, or markdown-format presenter guide reaching the client package is a hygiene failure. AF-DH1 is a file-system enumeration executed mechanically by the Delivery Concierge at SOP 9.0 (Package Assembly and Hygiene Sweep) before any upload. This gate is complementary to AF-DELIVER (which checks the three required artifacts EXIST and are non-empty); AF-DH1 checks the package contains ONLY the allowed set and NO dev artifacts.
+
+**THE FIVE ALLOWED FILES:**
+```
+[DECK_SLUG]-FINAL/
+  [Deck-Title]-FINAL.pptx          # assembled deck
+  [Deck-Title]-FINAL.pdf           # portable-document export
+  PRESENTER-GUIDE.pdf              # rendered from working/deliverables/PRESENTER-GUIDE.md
+  PRESENTER-SPEECH.pdf             # rendered from working/deliverables/PRESENTER-SPEECH.md
+  PRESENTER-AUDIO.mp3              # Fish Audio S2 render
+```
+
+**Blocklist (any match = auto-fail):**
+- File extensions: `*.py`, `*.log`, `*.txt` (prompt files)
+- File name patterns: `*_manifest.json`, `*_qc_log.json`, `*_run.log`, `fix_*.py`, `run_*.py`, `write_*.py`, `validate_*.py`, `assemble_*.py`, `post_render*.py`, `*QC-FINAL.md`, `vision_qc_log.json`, `render_manifest.json`
+- Directories present in the package: `working/`, `prompts/`, `images/`, `renders/`, `qc/`, `scripts/`, `checkpoints/`
+- Any presenter guide or speech as `.md` (must be `.pdf`)
+
+**Whitelist (primary check):** Every file in the package must match one of the five allowed names. The whitelist is the primary gate; the blocklist is belt-and-suspenders.
+
+**Producing-role requirement (Delivery Concierge):** SOP 9.0 (Package Assembly and Hygiene Sweep) creates a clean `delivery/[DECK_SLUG]-FINAL/` directory, copies only the five allowed files into it, runs AF-DH1, and only then proceeds to SOP 9.1.
+
+**Producing-role requirement (PPTX Assembly Specialist):** The assembly script writes the PPTX to `output/[DECK_SLUG].pptx` and ALL intermediates under `working/`. The assembly script at `working/scripts/assemble_pptx.py` must NEVER hard-code the client delivery folder (such as `BUNDLE_DIR = ~/Downloads/<DECK>`) as the working directory or the output path. Dev artifacts do not appear in `output/` or `delivery/` under any circumstance.
+
+**Failure message:** `AF-DH1: DELIVERY BLOCKED -- package hygiene fail. {details: specific file or directory that triggered the fail}. The client package must contain exactly the five allowed files. Remove all dev artifacts before delivery.`
+
+---
+
+### AF-DELIVERY-COMPLETE -- Delivery Interlock / FULL-experience DONE gate (package-level, closeout)
+
+**Doctrine:** A deck is NOT a complete or deliverable presentation until the FULL presentation experience exists on disk and is recorded. Rendering a `.pptx` is the START of delivery, never the end. `build_deck.py` is ONLY the Phase-4 renderer (slide images -> bare `.pptx`); it produces no guide, no speech, no audio, no PDF, no infographic, and no GHL upload. Finishing "at a `.pptx`" is the exact shortcut this gate exists to block. AF-DELIVERY-COMPLETE is the single consolidating DELIVERY INTERLOCK that fires at closeout AFTER AF-DELIVER (three required artifacts exist + non-empty) and AF-DH1 (package contains ONLY the allowed set), and it blocks the review->Done transition until the entire experience is present. AF-DELIVER + AF-DH1 + AF-DELIVERY-COMPLETE are all independent and ALL THREE must pass before any "Done" is permitted.
+
+**THE THREE CONDITIONS (all must be TRUE; any false = block "Done"):**
+
+1. **FIVE-FILE BUNDLE COMPLETE.** The clean package `delivery/[DECK_SLUG]-FINAL/` exists and contains EXACTLY these five files, each present and non-empty:
+   ```
+   [Deck-Title]-FINAL.pptx          # assembled deck (the build_deck.py output, post-processed)
+   [Deck-Title]-FINAL.pdf           # portable-document export of the deck
+   PRESENTER-GUIDE.pdf              # rendered from working/deliverables/PRESENTER-GUIDE.md (PDF, never .md)
+   PRESENTER-SPEECH.pdf             # rendered from working/deliverables/PRESENTER-SPEECH.md (PDF, never .md)
+   PRESENTER-AUDIO.mp3              # Fish Audio S2 full voiced reading (>=100KB; never the stub silence file)
+   ```
+   This re-asserts AF-DELIVER (the three presenter artifacts EXIST) and AF-DH1 (ONLY the five exist) as the bundle precondition of "Done."
+
+2. **INFOGRAPHIC CHECKLIST SLIDE IN THE DECK.** The assembled deck contains the infographic checklist slide (the at-a-glance "what you received / what to do next" visual recap). A deck whose `.pptx` ships without the infographic checklist slide is an incomplete experience and fails this gate. Detection: assert the infographic checklist slide is present in the assembled deck (slide-spec tag / `slides_copy.md` arc tag for the infographic recap beat, cross-checked against the rendered deck).
+
+3. **GHL MEDIA-UPLOAD RECORDED.** `working/checkpoints/media_library.json` carries a live GHL media-upload record for the final deck: `pptx_ghl_media_id` (non-null), `ghl_folder_id`, and `pptx_ghl_remote_name`, and `delivery_plan.json` shows the GHL destination at `"status": "verified"` (a live GHL API confirmation per Delivery Concierge SOP 9.4 -- a self-report is not sufficient). A deck with no GHL media-upload record is NOT done.
+
+**Producing-role requirements:**
+- **Director of Presentations:** owns the DELIVERY INTERLOCK. The Director MUST run the Director/Delivery flow end-to-end -- the Presenters Guide Specialist (guide PDF), the Presenters Speech Writer (speech PDF), the Audio Demonstration Specialist (PRESENTER-AUDIO.mp3), the PPTX Assembly Specialist (deck PDF export + infographic checklist slide), and the Media Librarian / Delivery Concierge (GHL upload + five-file package). The Director may NOT mark a task Done, register a final deliverable, or notify the client off a bare `build_deck.py` `.pptx`.
+- **Delivery Concierge:** SOP 9.0 (AF-DH1 hygiene) -> 9.2 (GHL upload) -> 9.4 (ground-truth verification) must complete; the GHL `pptx_ghl_media_id` and the verified status are the inputs this gate reads.
+- **PPTX Assembly Specialist:** the deck must include the infographic checklist slide and a non-empty PDF export must exist before this gate can pass.
+
+**Detection (closeout, mechanical):**
+1. `delivery/[DECK_SLUG]-FINAL/` exists and the five whitelisted files are each present and non-empty (PRESENTER-AUDIO.mp3 >=100KB). [Condition 1]
+2. The infographic checklist slide is present in the assembled deck. [Condition 2]
+3. `media_library.json.pptx_ghl_media_id` is non-null AND `delivery_plan.json` GHL destination `"status": "verified"`. [Condition 3]
+
+**Failure message:** `AF-DELIVERY-COMPLETE: DONE BLOCKED -- the full presentation experience is incomplete. {details: which of the three conditions failed -- missing bundle file(s) / infographic checklist slide absent from deck / GHL media-upload record missing or unverified}. A rendered .pptx is NOT a delivered presentation. Run the Director/Delivery flow (guide + speech + audio + PDF + infographic + GHL upload) before "Done." build_deck.py is only the Phase-4 renderer.`
+
+**Command Center mirror:** This interlock is enforced independently by the Command Center QC scorer as **AF-DELIVERY-COMPLETE** (the extension of the existing AF-PIPELINE-COMPLETE gate). The CC scorer blocks review->Done when the five deliverable files, the infographic checklist slide, or the GHL media-upload record are absent. See `qc-scorer.ts` and the repo-update spec.
+
+---
+
+### AF-RESEARCH-GATE -- Research Brief Required (deck-level, Phase 1Q)
+
+**Doctrine:** A deck that reaches Phase 1Q without a complete Research Brief from the Deep Research Specialist (ROLE-04) is blocked. The Research Phase (-0.5) is mandatory on EVERY deck run -- personal or general, webinar or content-to-presentation. The gate fires at Phase 1Q so the block is caught before copy is approved and resources are committed to prompt and image generation.
+
+**Detection (all conditions must be satisfied for PASS; any failure triggers the gate):**
+1. `working/research/brief-[DECK_SLUG].md` exists on disk at Phase 1Q.
+2. The file's header records `research_complete: true`.
+3. The file contains the four ALWAYS-REQUIRED category sections: Category A (Niche Deck Structures), Category C (Supporting Statistics / Studies / White Papers), Category D (External Corroboration), and Category F (Design + Hook + Pacing Best-Practices).
+4. The file contains the VALIDATION + PERSUASION category sections added by the 2026-06-16 ROLE-04 mandate overhaul: Category G (Credible Attributable Quotes), Category H (Fact-Validation -- Slide-Claim Verification Ledger), Category I (Objection Research), Category K (Persuasion-Framework Validation), and Category L (Compliance Flags). Category J (Social-Proof Patterns) is required-but-may-be-condensed and is not a hard gate condition. Category B (Pricing & Value Benchmarking) and Category E (Grounded Image Context) are checked by their own role gates (Offer Price Strategist and Gate 5 respectively) and the AF-CONVERTER-PARITY gate for converter runs.
+5. When Category H records any slide-bound figure, the ledger `working/research/fact-validation-[DECK_SLUG].md|json` must exist and carry `verified_count` / `flagged_count` / `kill_count` (the upstream partner to AF-C3 / AF-C4 / AF-PRICE-FACE -- no invented figure reaches a slide).
+
+**Failure response:** QC notifies the Director: "AF-RESEARCH-GATE: Phase 1Q blocked. Research Brief absent or incomplete. ROLE-04 must complete Phase -0.5 before copy QC can proceed." Record `af_research_gate_triggered: true` in `copy_qc_report.json`. The Director cannot advance to owner approval (Phase 1A) until the brief is on disk and complete.
+
+**Producing-role requirement (Director of Presentations):** Step 5a (post-brief-lock, pre-Phase-B+): dispatch ROLE-04 as Phase -0.5. Block Phase B+ (Hook Strategist) until `working/research/brief-[DECK_SLUG].md` exists and records `research_complete: true`.
+
+**Producing-role requirement (Content-to-Presentation Architect):** The Director MUST dispatch ROLE-04 as Phase -0.5 unconditionally on ALL content-to-presentation builds, regardless of `proof_flags`.
+
+**Failure message:** `AF-RESEARCH-GATE: DECK FAIL at Phase 1Q -- Research Brief missing or incomplete. Brief path: working/research/brief-{DECK_SLUG}.md. Required: exists + research_complete: true + sections A, C, D, F, G, H, I, K, L present (J condensed-OK); and the fact-validation ledger present when any slide-bound figure exists. Dispatch ROLE-04 Phase -0.5 and complete the brief before re-running Phase 1Q.`
+
+---
+
+### AF-CONVERTER-PARITY -- Converter-Origin Runtime Parity Gate (deck-level, Phase 1Q)
+
+**Doctrine:** A deck whose `intake.json` carries a `source_brief_origin: "role-22"` field (set by the Director SOP 9.1 step 4a when a `source_brief.json` from the Content-to-Presentation Architect accompanies the brief) MUST have used the IDENTICAL pipeline as a regular deck. No converter-specific image path, renderer, model choice, text-baking path, or QC log is permitted. Per "enforcement, not description -- a rule not auto-failed at the QC gate does not exist," every converter-parity invariant is a binary auto-fail checked at Phase 1Q by the SAME single QC Specialist that scores regular decks.
+
+**Condition (all five must be satisfied for PASS; any failure triggers AF-CONVERTER-PARITY for the DECK):**
+
+1. **Canonical renderer used:** `render_manifest.json` exists AND its `module_version` key proves it was written by the canonical `23-ai-workforce-blueprint/templates/presentation-render/render_deck.py` (re-uses AF-RENDERER logic). No throwaway renderer was used.
+
+2. **Model pin held on a converter run:** `render_manifest.json model_used` per slide == `intake.json model_pin` with no undocumented fallback (re-uses AF-MODEL-SOVEREIGNTY logic). The gpt-image-2 pin applies to converter runs exactly as it applies to regular runs.
+
+3. **Real vision QC executed:** `working/qc/vision_qc_log.json` exists, is non-empty, and carries at minimum one entry per slide with a non-null `vision_api_response` field (re-uses AF-NO-VISION-QC logic). A log that records only path-existence checks with no vision API call records is NOT real vision QC.
+
+4. **Phase -0.5 Research Brief present and complete:** `working/research/brief-[DECK_SLUG].md` exists on disk with `research_complete: true` in its header AND the files `working/research/grounded-content-[DECK_SLUG].json` and `working/research/design-brief-[DECK_SLUG].md` exist (Category E and Category F delivered to the image stage). This proves the Slide Image Creator received grounded scene context specific to this source, not generic stock direction.
+
+5. **Persuasion intelligence propagated into intake:** `intake.json` carries the persuasion variables (GOAL, CTA_ACTION, TRANSFORMATION_PROMISE, PRIMARY_OBJECTION, TARGET_FEELING, TONE) as non-null values (or, for each field, documented as listed in `source_brief.json.persuasion_intelligence.fields_absent_in_source`). When the source contained an offer, OFFER_NAME, PRICE_MODE, and FINAL_PRICE must also be non-null. This proves SOP 9.4B actually ran and Fix-A's persuasion intelligence propagated -- so the deck is persuasive, not a teaching dump.
+
+**Producing-role requirements:**
+- **Content-to-Presentation Architect (ROLE-22):** SOP 9.4B must run and write the `persuasion_intelligence` block to `source_brief.json` before handoff. The brief MUST carry `persuasion_intelligence_complete: true`. No image path, renderer, or model is owned here; all image work routes through the shared pipeline.
+- **Director of Presentations:** SOP 9.1 step 4a must propagate the `persuasion_intelligence` block into `intake.json` AND set `source_brief_origin: "role-22"` so the QC gate can identify converter-origin decks. Must satisfy the mandatory-variable check from `persuasion_intelligence` FIRST before routing gaps to the Brainstorming Buddy.
+- **Deep Research Specialist (ROLE-04):** must run unconditionally as Phase -0.5 on all converter runs and produce `working/research/brief-[DECK_SLUG].md` (`research_complete: true`), `grounded-content-[DECK_SLUG].json`, and `design-brief-[DECK_SLUG].md` before Phase B+ begins.
+
+**QC Specialist run-list addition:** After completing all other Phase 1Q auto-fail checks, the QC Specialist checks `intake.json` for `source_brief_origin: "role-22"`. If present, AF-CONVERTER-PARITY is checked. If the source brief origin key is absent, AF-CONVERTER-PARITY is skipped (it is a converter-specific gate, not a universal gate). Record the outcome in `copy_qc_report.json` as `af_converter_parity_triggered: true|false`.
+
+**Failure message:** `AF-CONVERTER-PARITY: DECK FAIL -- converter-origin deck (source_brief_origin: role-22) failed the runtime parity gate. Failed conditions: {list}. A converter deck must use the identical pipeline as a regular build: canonical renderer + gpt-image-2 model pin + real vision QC + Phase -0.5 Research Brief (Category E + F) + propagated persuasion variables. Correct the failing conditions and re-run QC.`
+
+---
+
+## 6. NEW AUTO-FAIL CODES -- 2026-06-14 ENFORCEMENT OVERHAUL
+
+These five codes were added after the forensic four-deck failure analysis. Each one maps to a specific failure pattern from that analysis:
+
+### AF-RENDERER (Fix 1)
+**What failed:** Each of four test decks wrote its own throwaway renderer (render.py, build_deck.py, gen_and_build.py). No shared standard enforced model, prompt length, text strategy, or QC.
+**Detection:** Phase 4 at dispatch: confirm the producing agent is calling `23-ai-workforce-blueprint/templates/presentation-render/render_deck.py`. At Phase 6: confirm `render_manifest.json` is present and was written by the canonical module (it includes a `module_version` key). If absent: DECK FAIL.
+
+### AF-MODEL-SOVEREIGNTY (Fix 2)
+**What failed:** Two of four decks submitted to `nano-banana-pro` instead of `gpt-image-2-text-to-image`. The wrong model was copy-pasted from example payloads without reading the client's config.
+**Detection:** Compare `render_manifest.json` -> `model_used` per slide against `intake.json` -> `model_pin`. If any slide used a different model AND there is no corresponding entry in `render_manifest.json` -> `fallback_events` with a documented hard API failure: DECK FAIL.
+
+### AF-BAKED (Fix 4)
+**What failed:** Two of four decks used Pillow ImageDraw plus a black RGBA scrim to composite Helvetica text over Kie images, producing "flat dark slabs." Four to twenty-three slides in the other two decks were rendered entirely in Pillow (no Kie image at all).
+**Detection:** Vision QC (Haiku 4.5) checks each slide. If the vision agent scores text as "overlaid / composited" rather than "rendered as part of image composition," or if the image matches a flat-fill placeholder signature (solid color, tiny file under 50KB), the slide triggers AF-BAKED.
+
+### AF-PROMPT-FLOOR (Fix 5)
+**What failed:** 100% of 98 image prompts (across all four decks) were below the 1500-char floor. Median was 277 chars -- 5.4x under floor. Zero prompts had proper archetype declarations or negative blocks.
+**Detection:** Phase 3 (Prompt QC gate). Count characters in each prompt file. Check for `[ARCHETYPE` on line 1, a dedicated NEGATIVE BLOCK paragraph, and at least three "Do not ..." imperative sentences in the final paragraph. Any miss: slide FAIL, loops back to Slide Image Creator.
+
+### AF-NO-VISION-QC (Fix 6)
+**What failed:** All four decks used only `path.exists()` for "verification." No vision API was called on any image. Part1-GENERAL shipped 40 placeholder PNGs because they passed the file-presence check.
+**Detection:** Phase 6 final gate: confirm `working/qc/vision_qc_log.json` exists, is non-empty, and contains at minimum one entry per slide with a non-null `vision_api_response` field. A log that records only `{"slide": N, "exists": true}` entries is NOT a vision QC log and triggers AF-NO-VISION-QC for the DECK.
+

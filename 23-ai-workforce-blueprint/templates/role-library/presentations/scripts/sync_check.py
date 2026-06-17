@@ -107,6 +107,14 @@ MASTER_RULESET = _first_existing([
 
 AF_RE = re.compile(r'AF-[A-Z0-9]+(?:-[A-Z0-9]+)*')
 
+# The canonical deliverable key set (order-independent). Any drift between the
+# manifest deliverables_required list and build_deck.py DELIVERABLES_REQUIRED
+# is an auto-fail (check D1/D2 below).
+_EXPECTED_DELIVERABLE_KEYS = {
+    "deck_pptx", "deck_pdf", "guide_pdf",
+    "speech_md", "speech_pdf", "audio_mp3", "infographic_png",
+}
+
 
 # ---------------------------------------------------------------------------
 # Fatal-input guard
@@ -131,6 +139,10 @@ def load_manifest():
             _fatal(f"PIPELINE-MANIFEST.json missing top-level key {key!r}.")
     if not isinstance(m["manifest_version"], int):
         _fatal("manifest_version must be an integer.")
+    # deliverables_required is optional for backward-compat but required from v4 onward.
+    if m["manifest_version"] >= 4 and "deliverables_required" not in m:
+        _fatal("PIPELINE-MANIFEST.json manifest_version >= 4 requires a "
+               "'deliverables_required' top-level key listing the six required deliverables.")
     return m
 
 
@@ -167,12 +179,43 @@ def parse_build_deck():
 
     af_strings = set(AF_RE.findall(source))
 
+    # --- Extract DELIVERABLES_REQUIRED key set from the AST ---
+    # We look for a module-level assignment `DELIVERABLES_REQUIRED = [...]` and
+    # extract all string values of "key" fields from the list of dicts.
+    # Falls back to the regex approach if the AST walk does not find the list.
+    deliverable_keys = _extract_deliverable_keys_ast(tree)
+
     return {
         "chk_funcs": chk_funcs,
         "module_consts": module_consts,
         "defined_names": defined_names,
         "af_strings": af_strings,
+        "deliverable_keys": deliverable_keys,
     }
+
+
+def _extract_deliverable_keys_ast(tree):
+    """Walk the module-level AST to find DELIVERABLES_REQUIRED = [...] and
+    extract the string values of every 'key' keyword in the list of dicts.
+    Returns a set of key strings, or None if the constant is not found."""
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for tgt in node.targets:
+            if isinstance(tgt, ast.Name) and tgt.id == "DELIVERABLES_REQUIRED":
+                val = node.value
+                if not isinstance(val, ast.List):
+                    return None
+                keys = set()
+                for elt in val.elts:
+                    if not isinstance(elt, ast.Dict):
+                        continue
+                    for k, v in zip(elt.keys, elt.values):
+                        if (isinstance(k, ast.Constant) and k.value == "key"
+                                and isinstance(v, ast.Constant)):
+                            keys.add(v.value)
+                return keys if keys else None
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +303,8 @@ EXTENSION_STEP = {
     "A7": "step (i) — point sop_refs at a real sops/ file",
     "B1": "step (i)+(ii) — declare the phase that uses this checker, or remove the checker",
     "B2": "step (i)+(iii) — register the AF code in PIPELINE-MANIFEST.autofails (and the ruleset)",
+    "D1": "step (ii) — add the missing deliverable key to DELIVERABLES_REQUIRED in build_deck.py",
+    "D2": "step (i) — add the missing deliverable key to deliverables_required in PIPELINE-MANIFEST.json",
 }
 
 
@@ -278,12 +323,16 @@ def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
     chk_funcs = bd["chk_funcs"]
     defined_names = bd["defined_names"]
 
-    # checkers named by manifest phases
+    # checkers named by manifest phases (primary preflight + additional_preflights)
     phase_checkers = set()
     for ph in phases:
         pf = ph.get("preflight")
         if pf and pf.get("checker"):
             phase_checkers.add(pf["checker"])
+        # additional_preflights: list of {checker, required, label} entries (AF-RESEARCH-UNCITED pattern)
+        for ap in ph.get("additional_preflights", []):
+            if ap.get("checker"):
+                phase_checkers.add(ap["checker"])
     # _chk_* names referenced by autofail py_symbols (e.g. _chk_coverage via AF-COVERAGE-1)
     autofail_chk_symbols = {a.get("py_symbol") for a in autofails
                             if a.get("py_symbol", "").__class__ is str and a.get("py_symbol", "").startswith("_chk_")}
@@ -296,19 +345,33 @@ def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
     for ph in phases:
         pf = ph.get("preflight")
         if not pf or not pf.get("required"):
-            continue
-        checker = pf.get("checker")
-        if not checker:
-            add("A1", ph["id"],
-                f"phase {ph['id']} has preflight.required:true but names no checker. "
-                f"{EXTENSION_STEP['A1']}.")
-            continue
-        if checker not in chk_funcs:
-            add("A2", checker,
-                f"manifest phase {ph['id']} names checker {checker!r}, which is not "
-                f"defined as a `def {checker}` in build_deck.py. {EXTENSION_STEP['A2']}.")
+            pass
+        else:
+            checker = pf.get("checker")
+            if not checker:
+                add("A1", ph["id"],
+                    f"phase {ph['id']} has preflight.required:true but names no checker. "
+                    f"{EXTENSION_STEP['A1']}.")
+            elif checker not in chk_funcs:
+                add("A2", checker,
+                    f"manifest phase {ph['id']} names checker {checker!r}, which is not "
+                    f"defined as a `def {checker}` in build_deck.py. {EXTENSION_STEP['A2']}.")
+        # additional_preflights: same A1/A2 check for each extra checker entry
+        for ap in ph.get("additional_preflights", []):
+            if not ap.get("required"):
+                continue
+            ap_checker = ap.get("checker")
+            if not ap_checker:
+                add("A1", ph["id"],
+                    f"phase {ph['id']} additional_preflight has required:true but names no checker. "
+                    f"{EXTENSION_STEP['A1']}.")
+            elif ap_checker not in chk_funcs:
+                add("A2", ap_checker,
+                    f"manifest phase {ph['id']} additional_preflight names checker {ap_checker!r}, "
+                    f"which is not defined as a `def {ap_checker}` in build_deck.py. "
+                    f"{EXTENSION_STEP['A2']}.")
 
-    # A3 AF row enforced_by build_deck -> py_symbol must exist in build_deck.py
+    # A3 AF row enforced_by build_deck -> py_symbol (and any secondary_py_symbols) must exist
     for a in autofails:
         if a.get("enforced_by") == "build_deck":
             sym = a.get("py_symbol")
@@ -321,6 +384,12 @@ def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
                     f"AF {a['code']} is declared build_deck-enforced via {sym!r}, which "
                     f"does not exist in build_deck.py (not a defined _chk_/function/constant). "
                     f"{EXTENSION_STEP['A3']}.")
+            # secondary_py_symbols: additional symbols this AF code depends on (e.g. constants)
+            for sec_sym in a.get("secondary_py_symbols", []):
+                if sec_sym not in defined_names:
+                    add("A3", a["code"],
+                        f"AF {a['code']} secondary_py_symbol {sec_sym!r} does not exist "
+                        f"in build_deck.py. {EXTENSION_STEP['A3']}.")
 
     # A4 every Section-5 ruleset code must be present in manifest.autofails
     for code in sorted(ruleset_codes):
@@ -374,6 +443,32 @@ def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
                 f"build_deck.py cites {code} but it is absent from "
                 f"PIPELINE-MANIFEST.autofails. A renderer must not cite an unregistered "
                 f"AF code. {EXTENSION_STEP['B2']}.")
+
+    # -------- (D) DELIVERABLE-SET DRIFT --------
+    # D1/D2: the key set in manifest.deliverables_required must exactly match
+    # the key set in build_deck.py's DELIVERABLES_REQUIRED list.
+    # This is a bidirectional lockstep on the output artifact set so a deliverable
+    # added to the manifest but missing from the gate (or vice versa) auto-fails.
+    manifest_deliverable_keys = set()
+    for d in manifest.get("deliverables_required", []):
+        if isinstance(d, dict) and "key" in d:
+            manifest_deliverable_keys.add(d["key"])
+
+    bd_deliverable_keys = bd.get("deliverable_keys") or set()
+
+    if manifest_deliverable_keys or bd_deliverable_keys:
+        # D1: key in manifest but not in build_deck.py DELIVERABLES_REQUIRED
+        for key in sorted(manifest_deliverable_keys - bd_deliverable_keys):
+            add("D1", key,
+                f"deliverable key {key!r} is in PIPELINE-MANIFEST.deliverables_required "
+                f"but absent from build_deck.py DELIVERABLES_REQUIRED. "
+                f"{EXTENSION_STEP['D1']}.")
+        # D2: key in build_deck.py DELIVERABLES_REQUIRED but not in manifest
+        for key in sorted(bd_deliverable_keys - manifest_deliverable_keys):
+            add("D2", key,
+                f"deliverable key {key!r} is in build_deck.py DELIVERABLES_REQUIRED "
+                f"but absent from PIPELINE-MANIFEST.deliverables_required. "
+                f"{EXTENSION_STEP['D2']}.")
 
     return drift
 

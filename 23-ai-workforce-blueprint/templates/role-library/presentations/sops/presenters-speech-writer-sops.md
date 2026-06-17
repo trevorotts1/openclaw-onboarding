@@ -6,39 +6,53 @@
 
 ---
 
+## 9A. The Proven Webinar Structure (write to this arc)
+
+This SOP set enforces the proven 11-stage webinar arc defined in Section 9A of the role file: **welcome -> who-this-is-for -> presenter credibility/origin story -> big promise -> teach the framework -> proof/case studies -> offer + value stack -> price drops/anchoring -> scarcity/close -> recap.** The OPEN must be a genuine live webinar welcome (greeting, congratulate them for being here, engagement question into the chat, housekeeping) and the CLOSE must circle back to and end on the hook. Source-backed (Brunson Perfect Webinar; Fladlien; Porterfield; Jim Edwards VSL; Informa TechTarget two-minute opening; ClickMeeting ~70/30 content-to-offer split). Per-stage word coverage is allocated by proportion of DURATION_MIN (see Section 9A table in the role file). The teach and proof stages weave in REAL CITED research; never fabricate a stat or quote. See the role file Section 9A for the full table and citations; the role file is authoritative.
+
+---
+
 ## 9. Standard Operating Procedures (Numbered)
 
-Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; voice authority: 30-fish-audio-api-reference/.
+Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; voice authority: 30-fish-audio-api-reference/. Structure authority: Section 9A.
 
-### SOP 9.1 -- Write the Word-for-Word Speech at 130 wpm
+### SOP 9.1 -- Write the Word-for-Word Webinar Speech at 130 wpm
 
-**Purpose:** Produce the exact, friendly, marketable words the owner says, paced so a human delivering it at 130 wpm with the doctrine's pauses lands the deck inside DURATION_MIN.
+**Purpose:** Produce the exact, prolific, passionate words the owner says as a live WEBINAR HOST, following the proven webinar arc (Section 9A), paced so a human delivering it at 130 wpm with the doctrine's pauses lands the deck inside DURATION_MIN.
 
-**The hard rule:** Every slide has a spoken block written verbatim in the owner's TONE. The total word count is budgeted at 130 words per minute against DURATION_MIN, MINUS the pause budget (count the mandatory pauses: 3 seconds on each DROP and FINAL, 2 to 3 seconds after the anchor and after big emotional lines). The script is spoken language, not written prose. No em dashes.
+**The hard rule:** Every slide has a spoken block written verbatim in the owner's TONE, prolific and passionate, **as spoken live to a room**. The opening is a genuine live welcome (Section 9A); the close circles back to the hook. The total word count is budgeted at 130 words per minute against DURATION_MIN, MINUS the pause budget (count the mandatory pauses: 3 seconds on each DROP and FINAL, 2 to 3 seconds after the anchor and after big emotional lines). The script is spoken language, not written prose. No em dashes.
 
-**Inputs:** slides_copy.md (PRESENTER NOTE, PURPOSE, LADDER, HOOK_REFRAIN), arc_allocation.json, intake.json, talk_track.md if present.
+**Inputs:** slides_copy.md (PRESENTER NOTE, PURPOSE, SECTION, LADDER, HOOK_REFRAIN), arc_allocation.json, intake.json, the Deep Research Specialist's cited sources for this deck, talk_track.md if present.
 
 **Steps:**
-1. Compute the word budget. Pause budget = sum of mandatory pauses in seconds, converted to word-equivalents at 130 wpm (130 wpm = about 2.17 words/second). Net spoken seconds = (DURATION_MIN x 60) minus pause seconds. Target words = net spoken seconds x 2.17. Record the math in the header.
-2. For every slide, write a SPOKEN block: the exact words, in the owner's voice, friendly and marketable, expanding the PRESENTER NOTE into full delivery. The slide carries the one idea; the speech carries the narration; they must NOT duplicate each other (master SOP rule 15).
-3. On HOOK_REFRAIN slides, the spoken block ends on the HOOK line verbatim (the Purple Rain refrain), word for word as recorded in intake.json, never reworded or extended.
-4. On LADDER slides, write the earned-reason line verbatim, then the price, then a written pause cue "(PAUSE 3 seconds)" the owner can see. On the FINAL slide, walk the strikethrough sequence in words and land the real price with the urgency window.
-5. On CTA slides, write the complete spoken CTA: the action, the URL stated aloud, the urgency close.
-6. Carry [CLIENT TO SUPPLY] forward as a spoken-prompt flag: "(OWNER: say your real client win here)". Never fabricate a win, a number, a testimonial, or a price.
-7. Pace-check: total words within +/- 10% of target. If over, tighten teach narration first (appetizer not dinner); never cut the CTA or the drops. Re-balance and re-check.
-8. Write the clean script to working/presenter-speech/speech.md with a header: DECK_TITLE, DURATION_MIN, SLIDE_COUNT, TONE, HOOK, SPOKEN_RATE_WPM = 130, pause budget, target words, actual words.
+1. Compute the word budget AND the per-stage allocation. Pause budget = sum of mandatory pauses in seconds, converted to word-equivalents at 130 wpm (130 wpm = about 2.17 words/second). Net spoken seconds = (DURATION_MIN x 60) minus pause seconds. Target words = net spoken seconds x 2.17. Split the target across the 11 stages using the Section 9A allocation (tuned to arc_allocation.json). Record the math AND the per-stage word targets in the header.
+2. Map every slide to its webinar stage (Section 9A) from its SECTION / LADDER marker. Note the stage on each slide block so the PDF can color and label it.
+3. Write slide 1 as a live welcome following the Section 9A opening pattern: genuine welcome, congratulate them for being here, housekeeping, an engagement question into the chat. Never open as a monologue.
+4. For every slide, write a SPOKEN block: the exact words, in the owner's voice, prolific and passionate, vivid and emotionally engaged, expanding the PRESENTER NOTE into full live delivery. The slide carries the one idea; the speech carries the narration; they must NOT duplicate each other (master SOP rule 15).
+5. In the teach and proof stages, weave in REAL CITED research (facts, figures, quotes) from the deck's research, each tied to a real source. Never invent a stat or quote; flag "(OWNER/RESEARCH: need a real source here)" if missing. Stories before statistics; lead emotional, justify logical.
+6. On HOOK_REFRAIN slides, the spoken block ends on the HOOK line verbatim (the Purple Rain refrain), word for word as recorded in intake.json, never reworded or extended. The closing slide circles back to and ends on the hook.
+7. On LADDER slides, write the earned-reason line verbatim, then the price, then a written pause cue "(PAUSE 3 seconds)" the owner can see. On the FINAL slide, walk the strikethrough sequence in words and land the real price with the urgency window.
+8. On CTA slides, write the complete spoken CTA: the action, the URL stated aloud, the urgency close.
+9. Carry [CLIENT TO SUPPLY] forward as a spoken-prompt flag: "(OWNER: say your real client win here)". Never fabricate a win, a number, a testimonial, or a price.
+10. Record per-slide word coverage and spoken-seconds on every block. Pace-check at the STAGE level too: each stage within +/-15% of its Section 9A allocation; total within +/-10% of target. If over, tighten teach narration first; never cut the CTA, the drops, or the welcome. Re-balance and re-check.
+11. Write the clean script to working/presenter-speech/speech.md with a header: DECK_TITLE, DURATION_MIN, SLIDE_COUNT, TONE, HOOK, SPOKEN_RATE_WPM = 130, pause budget, per-stage word targets, target words, actual words, and a "Sources cited on stage" list.
 
 **Enforcement check (what auto-fails):**
 - Any slide without a spoken block = FAIL.
-- Total words more than 10% off the pause-adjusted 130 wpm budget = FAIL.
+- Slide 1 is not a live webinar welcome (opens as a monologue, no greeting, no room, no engagement) = FAIL.
+- The closing slide does not circle back to the hook = FAIL.
+- Total words more than 10% off the pause-adjusted 130 wpm budget, OR any stage more than 15% off its Section 9A allocation = FAIL.
+- Stiff, written-for-the-eye, corporate prose instead of prolific spoken language = FAIL.
+- A statistic, study, or quote spoken on stage with no real source = FAIL (fabricated research).
 - The hook reworded, extended, or misspelled in any spoken block = FAIL (it is a fixed verbatim refrain).
 - A fabricated win/number/price in place of a [CLIENT TO SUPPLY] flag = FAIL.
 - An em dash anywhere in the spoken script = FAIL.
 - The spoken block duplicates the slide headline word for word = FAIL (slide is not the script).
+- A spoken block with no per-slide word count / spoken-seconds recorded = FAIL.
 
-**PASS example (illustrative -- substitute your DISCOVERY VARIABLES, hook slide):** "...so when I say there is a difference between parenting by control and parenting through clarity, I am not talking about being soft. I am talking about being clear. (PAUSE 2 seconds) There is a difference between parenting by control and parenting through clarity."
+**PASS example (live welcome, slide 1):** "Hello and welcome, everybody. Congratulations on taking the first step just by being here. (PAUSE 2 seconds) Do me a favor and drop in the chat where you are watching from today. Quick housekeeping: stay with me to the very end, the most important part is the last ten minutes."
 
-**FAIL example:** a flat written paragraph ("[Co-Founder Name] is a licensed counselor and [Founder Name] spent years in executive recruitment, which qualifies us to...") that reads like a credentials dump and would also be wrong on the slide.
+**FAIL example:** "Hey, so today I want to talk about parenting..." (a podcast monologue open, no welcome, no room, no engagement). Also a flat written credentials dump that reads like prose and would be wrong on the slide.
 
 **Outputs:** working/presenter-speech/speech.md.
 
@@ -48,27 +62,31 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; voice authority: 30
 
 ---
 
-### SOP 9.2 -- Render the Beautiful PDF + Notion
+### SOP 9.2 -- Render the Beautiful, Labeled PDF + Notion
 
-**Purpose:** Deliver the script as a beautiful, readable PDF and a Notion doc.
+**Purpose:** Deliver the webinar script as a visually-appealing, easy-to-read PDF (and a Notion doc) that a presenter can follow live, stage by stage, slide by slide.
 
-**The hard rule:** No text below 12pt in the PDF (a presenter reads this live). Brand-matched to the deck (design system font and accents). Pause cues, hook refrains, and OWNER prompts visually distinct. Notion mirrors the PDF and the URL is verified.
+**The hard rule:** No text below 12pt anywhere in the PDF (a presenter reads this live). COLORED section headers, one per webinar stage. Every slide is LABELED (slide number + headline + stage) and shows its per-slide word count and spoken-seconds. Pause cues, hook refrains, OWNER prompts, and Fish-Audio expression-tag hints are each visually distinct. Brand-matched where a design system exists. Notion mirrors the PDF and the URL is verified.
 
-**Inputs:** speech.md, design_system.json (optional brand match), Notion credentials.
+**The tool:** Use the department's reusable generator presentations/scripts/presenters_speech_pdf.py (reportlab). It takes a JSON speech spec and enforces the 12pt floor in code, colors each webinar stage with its own header band, labels every slide, prints per-slide word/seconds pacing, and renders a legend. Run with --emit-sample-spec to see the input shape, or --sample to render the reference layout. Do NOT edit build_deck.py / sync_check.py / PIPELINE-MANIFEST.json (other owners).
+
+**Inputs:** speech.md (per-stage/per-slide structure and word counts from SOP 9.1), design_system.json (optional brand match), Notion credentials.
 
 **Steps:**
-1. Convert speech.md to a styled document: cover page ("Presenter's Speech -- Word for Word, Speaker-Facing"), then per-section spoken blocks with the slide number and headline as a marker.
-2. Apply brand; render pause cues and "(OWNER: ...)" prompts in the accent color; hook refrains bold.
-3. Enforce the 12pt floor; verify after render.
-4. Render working/presenter-speech/Presenters_Speech_<DeckTitle>.pdf; confirm it opens.
-5. Publish the Notion page; capture and verify the URL in notion_url.json.
+1. Convert speech.md into the generator's JSON speech spec (deck_title, owner_name, company_name, duration_min, tone, hook, spoken_rate_wpm, optional brand; ordered stages each with slides carrying slide_no, headline, optional purpose, spoken text, and kind).
+2. Run python3 presentations/scripts/presenters_speech_pdf.py --spec <spec.json> --out working/presenter-speech/Presenters_Speech_<DeckTitle>.pdf.
+3. Confirm printed total words and per-slide pacing match speech.md; 12pt floor enforced by the generator; verify visually.
+4. Confirm the PDF opens and is non-zero bytes.
+5. Publish the Notion page mirroring the same stage/slide structure; capture and verify the URL in notion_url.json.
 
 **Enforcement check (what auto-fails):**
 - Any text below 12pt = FAIL.
+- No colored per-stage section headers, or any slide not labeled with its number/headline/stage = FAIL.
+- Per-slide word count / spoken-seconds not shown = FAIL.
 - PDF does not open or is zero bytes = FAIL.
 - notion_url.json missing or URL does not resolve = FAIL.
 
-**Outputs:** the PDF and notion_url.json.
+**Outputs:** the PDF, the speech spec JSON, and notion_url.json.
 
 **Hand to:** SOP 9.5 (delivery).
 
@@ -82,12 +100,14 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; voice authority: 30
 
 **The hard rule:** The audio is rendered from the EXPRESSION-TAGGED script (speech_tagged.md), never the bare script, so the demo carries emphasis and emotion. The plain-language PDF/Notion the owner reads stays clean (no tags); only the audio source carries tags.
 
-**Inputs:** speech.md, intake.json TONE, the selected TTS tier (from SOP 9.4 step 1).
+**Where the tags come from and where they go:** The authoritative inventory is fish-audio/FISH-AUDIO-TAGS-MASTER.md (source-verified catalog: ~150 named markers plus the open-domain S2 free-form space) and fish-audio/FISH-AUDIO-STRATEGIC-PLAN.md (model/strategy). Tags are applied PER WEBINAR STAGE to match the Section 9A emotional arc: welcome/who-for/hook = [warm and welcoming], [smiling while speaking], [building excitement]; origin story = [reflective, looking back], [vulnerable, almost confessional]; big promise = [unshakeable confidence] + a pause; teach = [building excitement], [calm, grounded authority], [emphasis]; proof = [confident and factual], [proud but humble]; offer = [warm and welcoming], [building to a crescendo]; price drops = [measured and deliberate] + [long-break]/(PAUSE 3s); scarcity/close = [urgent but controlled], [direct eye-contact energy]; recap = [calm, grounded authority]. Syntax depends on tier: S2/S2-Pro = [square brackets] (open-domain); S1 = (parentheses) (fixed set); ElevenLabs v3 supports inline bracket cues, v2 does NOT (strip and drive via voice-settings). Sentence-level emotion at the START of its sentence; max ~3 combined emotions per sentence. The PDF/Notion stays clean; tags live only in speech_tagged.md.
+
+**Inputs:** speech.md, intake.json TONE, the per-stage emotional arc (Section 9A), FISH-AUDIO-TAGS-MASTER.md, FISH-AUDIO-STRATEGIC-PLAN.md, the selected TTS tier (from SOP 9.4 step 1).
 
 **Steps:**
-1. Tell ROLE-21 which TTS tier is the target (Fish S2-pro uses [bracket] open-domain tags; ElevenLabs uses its own emotion controls and v2-vs-v3 differences; the local tool may support none). The tag syntax depends on the tier.
-2. Hand speech.md plus the TONE to ROLE-21. ROLE-21 returns working/presenter-speech/speech_tagged.md.
-3. Confirm the tagged script preserves every word of the clean script (tags added, words unchanged) and the hook refrains remain verbatim.
+1. Tell ROLE-21 which TTS tier is the target and point them at FISH-AUDIO-TAGS-MASTER.md for valid markers. The tag syntax depends on the tier.
+2. Hand speech.md plus the TONE and the per-stage tag plan above to ROLE-21. ROLE-21 returns working/presenter-speech/speech_tagged.md with tags applied per stage.
+3. Confirm the tagged script preserves every word of the clean script (tags added, words unchanged), the hook refrains remain verbatim, and tags use the syntax valid for the chosen tier.
 
 **Enforcement check (what auto-fails):**
 - Audio rendered from the untagged script when an expressive tier (Fish/ElevenLabs) is in use = FAIL.

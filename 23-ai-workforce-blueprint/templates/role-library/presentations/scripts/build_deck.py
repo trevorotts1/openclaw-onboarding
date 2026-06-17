@@ -20,16 +20,31 @@ a complete deliverable. build_deck.py renders slide images and assembles a bare
 .pptx — and NOTHING ELSE. It does NOT produce the presenter guide PDF, the presenter
 speech PDF, the presenter audio (PRESENTER-AUDIO.mp3), the deck PDF export, the
 infographic checklist slide, or the GHL media upload. The FULL deliverable downstream
-is the FIVE-FILE bundle —
+is the SIX-FILE bundle —
     [Deck-Title]-FINAL.pptx, [Deck-Title]-FINAL.pdf, PRESENTER-GUIDE.pdf,
-    PRESENTER-SPEECH.pdf, PRESENTER-AUDIO.mp3
-— PLUS the infographic checklist slide IN the deck PLUS a recorded/verified GHL media
-upload. The .pptx this script emits is an INTERMEDIATE artifact. The Director/Delivery
-flow MUST run the guide / speech / audio / PDF / infographic / GHL roles, and the run
-is blocked from "Done" by the DELIVERY INTERLOCK (AF-DELIVER + AF-DH1 +
-AF-DELIVERY-COMPLETE). Do NOT "finish at a .pptx." See
+    PRESENTER-SPEECH.md, PRESENTER-SPEECH.pdf, PRESENTER-AUDIO.mp3
+— PLUS infographic.png (the at-a-glance checklist visual). The .pptx this script emits
+is an INTERMEDIATE artifact. The Director/Delivery flow MUST run the guide / speech /
+audio / PDF / infographic roles, and the run is blocked from "Done" by the POSTFLIGHT
+COMPLETENESS GATE (AF-BUNDLE-COMPLETE) AND the DELIVERY INTERLOCK (AF-DELIVER +
+AF-DH1 + AF-DELIVERY-COMPLETE). Do NOT "finish at a .pptx." See
 sops/CLIENT-WEBINAR-DECK-SOP.md §9a, sops/delivery-concierge-sops.md SOP 9.5, and
 sops/SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md (AF-DELIVERY-COMPLETE).
+
+UPSTREAM STEPS THAT PRODUCE THE REQUIRED OUTPUTS:
+    - [Deck-Title]-FINAL.pdf     : produced by PPTX Assembly Specialist (PDF export)
+    - PRESENTER-GUIDE.pdf        : produced by Presenters Guide Specialist
+    - PRESENTER-SPEECH.md+.pdf   : produced by Presenters Speech Writer
+    - PRESENTER-AUDIO.mp3        : produced by Audio Demonstration Specialist
+    - infographic.png            : produced by infographic-checklist role
+The postflight gate enforces that ALL SIX exist and pass their size thresholds. It
+hard-fails (AF-BUNDLE-COMPLETE, exit 5) if any are missing or under-size, so they
+can NEVER be silently skipped.
+
+DEFAULT OUTPUT DESTINATION — ~/Downloads:
+    The final bundle dir defaults to ~/Downloads/<client-slug>-<deck-slug>/.
+    Use --out <dir> to override. Files NEVER default to a scratch/run dir — they
+    go to ~/Downloads so the client receives them from a predictable, clean location.
 ================================================================================
 
 This is the PROVEN deterministic deck pipeline, generalized for the fleet. It is the
@@ -87,14 +102,17 @@ HARD CONTRACTS:
 
 USAGE:
     python3 build_deck.py <slides.json> <out.pptx> [renders_dir] [--run-dir DIR]
-        [--logo PNG] [--adhoc-no-process]
+        [--logo PNG] [--out BUNDLE_DIR] [--adhoc-no-process]
 
     renders_dir defaults to "<out.pptx dir>/renders".
+    --out BUNDLE_DIR  overrides the default ~/Downloads/<client-slug>-<deck-slug>/
+                      destination for the final deliverable bundle. If not supplied,
+                      the bundle goes to ~/Downloads.
 
     NOTE: a successful run (exit 0 + a .pptx at <out.pptx>) means the deck is
     RENDERED, not DELIVERED. The .pptx alone is NOT a delivered presentation — the
-    full five-file bundle + infographic checklist slide + GHL upload are required
-    downstream (see the banner above and the DELIVERY INTERLOCK).
+    full six-file bundle + infographic.png are required downstream (see the banner
+    above and the POSTFLIGHT COMPLETENESS GATE / DELIVERY INTERLOCK).
 
 OFFICIAL-LOGO COMPOSITING (optional):
     --logo <png-or-URL>  — the client's REAL, official logo. When supplied
@@ -143,12 +161,17 @@ PROCESS PREFLIGHT (un-bypassable by default):
         process-compliant deliverable, and proceeds. NEVER use for client work.
 
 EXIT CODES:
-    0 — every slide rendered and the .pptx was written.
+    0 — every slide rendered, the .pptx was written, AND the postflight
+        completeness gate confirmed all six deliverables present + sized.
     1 — one or more slides failed after retries (NO .pptx written), or assembly failed.
     2 — fatal config error (no API key, bad slides.json, missing python-pptx, etc.).
     3 — process preflight FAILED: required upstream dept artifacts are missing
         (NO render, NO .pptx). Run the real dept pipeline, or pass
         --adhoc-no-process for explicit non-deliverable standalone testing.
+    5 — POSTFLIGHT COMPLETENESS GATE FAILED (AF-BUNDLE-COMPLETE): one or more
+        required deliverables are missing or below their size threshold. The run
+        may NOT be reported as "done" / "complete" until exit 0. The .pptx was
+        written but the bundle is incomplete.
 
 ENVIRONMENT:
     KIE_API_KEY — the CLIENT's own KIE.ai key (never the operator's, never shared).
@@ -257,6 +280,35 @@ PROMPT_CHAR_FLOOR = 1500      # HARD floor (AF-P1): any rich prompt under this i
 PROMPT_CHAR_CEILING = 18000   # UNIVERSAL hard maximum (AF-P2; 2,000 under the 20,000 API ceiling)
 
 # ---------------------------------------------------------------------------
+# RESEARCH-CITATION GATE (AF-RESEARCH-UNCITED) — the minimum cited-URL floor
+# ---------------------------------------------------------------------------
+# A research brief that asserts research_complete:true but carries fewer than
+# MIN_CITED_SOURCES real http(s) URLs is not a research pack — it is a
+# self-reported completion that skipped the actual work.  This constant is the
+# authoritative threshold.  It is intentionally named (not inlined) so sync_check
+# can verify it exists and the PIPELINE-MANIFEST.json py_symbol can point at it.
+#
+# Rationale for 8:
+#   The Deep Research SOP mandates categories A, B, C, D (D1+D2+D3), G, H, I, K, L
+#   for a full brief — that is at minimum 10 categories, each requiring at least one
+#   source URL.  8 is a conservative floor that catches the "zero research" case
+#   (0-2 URLs, or a brief built entirely from intake with no external sources) while
+#   not over-penalising a condensed micro-deck brief (which the SOP allows to be
+#   smaller but still requires real external sources in C and D).
+MIN_CITED_SOURCES = 8   # HARD floor (AF-RESEARCH-UNCITED): fewer real URLs = FAIL LOUD
+
+# Factual/statistical claim markers — tokens that signal a claim requiring a citation.
+# When any of these appear in the slide copy and no corresponding cited URL exists in
+# the research pack, the gate fires.  Documented heuristic: it catches the most common
+# patterns (percentage figures, dollar figures, key research-signal words) without
+# false-positives on purely narrative copy.
+_CLAIM_MARKERS_RE_SRC = (
+    r'\d+\s*%',                        # "45%", "20 %"
+    r'\$\s*\d+',                       # "$5,000", "$ 3 million"
+    r'\b(?:research|study|studies\s+show|statistics|data\s+shows)\b',
+)
+
+# ---------------------------------------------------------------------------
 # FACIAL INTELLIGENCE / REPRESENTATION GUARD (the 60/30/10 landmine, fail-loud)
 # ---------------------------------------------------------------------------
 # Doctrine: SOP-CAST-01 ("No inverted default. There is no system default
@@ -291,6 +343,98 @@ SECRETS_CANDIDATES = [
     os.path.expanduser("~/.openclaw/workspace/.env"),
     os.path.expanduser("~/clawd/secrets/.env"),
     os.path.expanduser("~/.openclaw/secrets/.env"),
+]
+
+# ---------------------------------------------------------------------------
+# OUTPUT DESTINATION — default ~/Downloads (Requirement 4)
+# ---------------------------------------------------------------------------
+# The final bundle dir defaults to ~/Downloads/<client-slug>-<deck-slug>/.
+# --out overrides this. Files NEVER default to a scratch/run dir; they must
+# land in ~/Downloads so the client receives them from a predictable location.
+# The slug is derived from the deck slug (out.pptx stem) at runtime if present.
+BUNDLE_DIR_DEFAULT = os.path.expanduser("~/Downloads")
+
+# ---------------------------------------------------------------------------
+# DELIVERABLES_REQUIRED manifest (Requirement 1)
+# ---------------------------------------------------------------------------
+# The six mandatory output artifacts, their canonical relative paths inside the
+# bundle dir, their per-artifact minimum-size gates, and a human description.
+# Any artifact below its min_bytes threshold (or absent) triggers
+# AF-BUNDLE-COMPLETE (exit 5). Rationale for each threshold:
+#
+#   deck_pptx  > 1 MB  : a real multi-slide rendered deck with 2K images is
+#                         always several MB; < 1 MB implies the pptx is empty
+#                         or contains placeholder content (zero-image shell < 100KB).
+#
+#   deck_pdf   > 50 KB : a minimal 1-slide PDF export is ~20-30KB; 50KB ensures
+#                         at least two slides' worth of rendered content.
+#
+#   guide_pdf  > 50 KB : a minimal guide covers all slides with talking points and
+#                         timing; < 50KB implies only a stub header.
+#
+#   speech_md  > 2 KB  : a word-for-word script for any real webinar talk will be
+#                         thousands of words; 2KB floors an obvious empty or stub.
+#
+#   speech_pdf > 20 KB : a PDF export of a real speech; < 20KB implies a stub.
+#
+#   audio_mp3  > 500KB : a real Fish Audio S2 rendition of a 30-min script is
+#                         typically 50-150MB; 500KB floors the obvious failure case
+#                         (silence stub or failed render < 100KB per SOP-PITCH-05).
+#
+#   infographic_png > 100KB : a real 2K-resolution infographic checklist PNG is
+#                              always several hundred KB; < 100KB implies a blank
+#                              placeholder image or a tiny thumbnail.
+#
+DELIVERABLES_REQUIRED = [
+    {
+        "key": "deck_pptx",
+        "filename": "{deck_slug}-FINAL.pptx",
+        "label": "assembled deck PPTX",
+        "min_bytes": 1_048_576,          # 1 MB — multi-slide 2K-image deck floor
+        "note": ">1MB floor; a sub-1MB pptx implies empty/placeholder content",
+    },
+    {
+        "key": "deck_pdf",
+        "filename": "{deck_slug}-FINAL.pdf",
+        "label": "deck PDF export",
+        "min_bytes": 51_200,             # 50 KB — PDF export of at least 2 slides
+        "note": ">50KB; produced by PPTX Assembly Specialist (LibreOffice/Pandoc export)",
+    },
+    {
+        "key": "guide_pdf",
+        "filename": "PRESENTER-GUIDE.pdf",
+        "label": "presenter guide PDF",
+        "min_bytes": 51_200,             # 50 KB — guide covers all slides with talking points
+        "note": ">50KB; produced by Presenters Guide Specialist. REQUIRED UPSTREAM STEP.",
+    },
+    {
+        "key": "speech_md",
+        "filename": "PRESENTER-SPEECH.md",
+        "label": "presenter speech markdown source",
+        "min_bytes": 2_048,              # 2 KB — word-for-word script stub floor
+        "note": ">2KB; produced by Presenters Speech Writer. REQUIRED UPSTREAM STEP.",
+    },
+    {
+        "key": "speech_pdf",
+        "filename": "PRESENTER-SPEECH.pdf",
+        "label": "presenter speech PDF",
+        "min_bytes": 20_480,             # 20 KB — PDF of a real multi-page script
+        "note": ">20KB; produced by Presenters Speech Writer (PDF render). REQUIRED UPSTREAM STEP.",
+    },
+    {
+        "key": "audio_mp3",
+        "filename": "PRESENTER-AUDIO.mp3",
+        "label": "presenter audio MP3",
+        "min_bytes": 512_000,            # 500 KB — real Fish Audio S2 rendition floor
+        "note": ">500KB; produced by Audio Demonstration Specialist. REQUIRED UPSTREAM STEP.",
+    },
+    {
+        "key": "infographic_png",
+        "filename": "infographic.png",
+        "label": "infographic checklist PNG",
+        "min_bytes": 102_400,            # 100 KB — real 2K-resolution infographic floor
+        "note": ">100KB; produced by infographic-checklist role. REQUIRED UPSTREAM STEP.",
+    },
 ]
 
 
@@ -877,6 +1021,125 @@ def _count_output_slides(run_dir: Path) -> Optional[int]:
     return None
 
 
+def _chk_research_cited(path: Optional[Path]) -> str:
+    """RESEARCH-CITATION GATE (AF-RESEARCH-UNCITED, fail-loud).
+
+    The existing _chk_research_brief gate only checks that research_complete:true
+    appears in the file header — a flag any model can self-assert without doing any
+    research.  This gate is the source of truth: it IGNORES the self-asserted flag
+    and instead counts real authoritative http(s) URLs in the research pack.
+
+    The gate FAILS LOUD when:
+      * The research pack exists but contains fewer than MIN_CITED_SOURCES (8)
+        distinct http(s) URLs.  This proves the brief was built from intake alone,
+        not from real web research.
+
+    When the file is absent, this check returns "" (the existing _chk_research_brief
+    gate already produces a clear "file absent" failure for that case; we do not
+    double-report it here).  The check is strictly ADDITIVE — it never weakens the
+    existing research_complete:true check.
+
+    Heuristic documented: we extract URLs using a broad https?://[^\\s,)]+ regex and
+    deduplicate before counting.  This counts each distinct URL once regardless of how
+    many times it is cited.  Bare-domain-only strings and markdown image syntax are
+    included (they are still valid authoritative sources).  The count reflects distinct
+    EXTERNAL sources, which is the meaningful measure.
+    """
+    import re as _re
+    if path is None:
+        return ""  # file-absent handled by _chk_research_brief; don't double-report
+
+    text = path.read_text(errors="replace")
+    # Extract every http(s) URL.  The stop-set (whitespace + punctuation that cannot
+    # appear in a URL) is broad enough to strip trailing markdown formatting chars
+    # (>, ), ], ", '), while still capturing URLs with query strings and fragments.
+    url_re = _re.compile(r'https?://[^\s\)\]\>,\'"\\]+', _re.IGNORECASE)
+    all_urls = url_re.findall(text)
+    distinct_urls = set(u.rstrip(".") for u in all_urls)
+    n = len(distinct_urls)
+    if n < MIN_CITED_SOURCES:
+        return (
+            f"AF-RESEARCH-UNCITED: research pack at {path.name} contains {n} distinct "
+            f"http(s) URL(s), below the HARD floor of {MIN_CITED_SOURCES}. A "
+            f"research_complete:true flag in the header is self-asserted and not "
+            f"proof of real web research. The research pack MUST contain at least "
+            f"{MIN_CITED_SOURCES} real, authoritative cited URLs (one per external "
+            f"source, covering categories A/B/C/D/G/H/I/K/L per the Deep Research "
+            f"SOP). Re-run Phase -0.5 (Deep Research Specialist) and cite every "
+            f"source you find. Do NOT set research_complete:true until "
+            f">= {MIN_CITED_SOURCES} real URLs are present in the brief."
+        )
+    return ""
+
+
+def _chk_claims_without_citation(run_dir: Path) -> str:
+    """CLAIMS-WITHOUT-CITATION gate (AF-RESEARCH-UNCITED, fail-loud).
+
+    Scans the slide copy (working/copy/slides.json or working/copy/slides_copy.md)
+    for factual/statistical claim markers (a percentage, a dollar figure, the words
+    'research'/'study'/'studies show'/'statistics'/'data shows') and fails if such
+    a marker appears but the research pack contains NO corresponding cited URL.
+
+    Documented heuristic: this is a presence gate, not a semantic match.  If ANY
+    claim marker is found in the copy AND the research pack has zero URLs, the deck
+    is shipping unsupported claims.  If the research pack has >= MIN_CITED_SOURCES
+    URLs (meaning _chk_research_cited already passed), this check passes — the
+    researcher's responsibility is to ensure each claim is supported; the mechanical
+    gate proves a research pack with citations exists.  This prevents the case where
+    zero research was done but the brief self-reports research_complete:true.
+
+    Both checks (this + _chk_research_cited) are wired into PREFLIGHT_REQUIRED so
+    neither can be silently skipped.  When the research pack has no URLs at all AND
+    the copy has claim markers, we return the failure; otherwise we pass.
+    """
+    import re as _re
+
+    # Locate the slide copy (json or markdown).
+    copy_text = ""
+    for rel in ("working/copy/slides.json", "working/copy/slides_copy.md",
+                "slides.json", "working/slides.json"):
+        cp = run_dir / rel
+        if cp.exists():
+            copy_text = cp.read_text(errors="replace")
+            break
+    if not copy_text.strip():
+        return ""  # no copy found — nothing to check
+
+    # Check for factual/statistical claim markers in the copy.
+    claim_re = _re.compile(
+        "|".join(_CLAIM_MARKERS_RE_SRC), _re.IGNORECASE)
+    has_claims = bool(claim_re.search(copy_text))
+    if not has_claims:
+        return ""  # no claim markers — gate not triggered
+
+    # Check whether ANY cited URL exists in the research pack.
+    brief_matches = sorted(run_dir.glob("working/research/brief-*.md"))
+    if not brief_matches:
+        # No research pack at all + claims in copy = fail loud.
+        return (
+            "AF-RESEARCH-UNCITED: slide copy contains factual/statistical claim "
+            "markers (a percentage, a dollar figure, or 'research'/'study'/"
+            "'studies show'/'statistics'/'data shows') but no research pack "
+            "(working/research/brief-*.md) was found. Claims on slides MUST be "
+            "backed by a cited research pack. Run Phase -0.5 (Deep Research "
+            "Specialist) and cite every source before copy proceeds to render."
+        )
+
+    # Read the research pack and count URLs.
+    url_re = _re.compile(r'https?://[^\s\)\]\>,\'"\\]+', _re.IGNORECASE)
+    research_text = brief_matches[0].read_text(errors="replace")
+    distinct_urls = set(u.rstrip(".") for u in url_re.findall(research_text))
+    if not distinct_urls:
+        return (
+            f"AF-RESEARCH-UNCITED: slide copy contains factual/statistical claim "
+            f"markers but {brief_matches[0].name} contains zero cited http(s) URLs. "
+            f"Every claim in slide copy that cites a percentage, dollar figure, or "
+            f"research finding MUST have a corresponding citation in the research "
+            f"pack. Re-run Phase -0.5 and add real cited sources before render."
+        )
+    return ""
+
+
 def _chk_coverage(run_dir: Path) -> str:
     """ANTI-COMPRESSION (AF-COVERAGE-1). Mode B (working from a client's existing
     deck) is ADD-only: the output deck must NEVER have fewer slides than the source
@@ -1025,6 +1288,26 @@ PREFLIGHT_REQUIRED = [
      "research brief (research_complete:true)",
      "Phase -0.5 — Deep Research Specialist SOP 9.1/9.4 (AF-RESEARCH-GATE)",
      _chk_research_brief),
+    # 10th check — RESEARCH-CITATION GATE (AF-RESEARCH-UNCITED). The research pack
+    # must contain >= MIN_CITED_SOURCES (8) distinct http(s) URLs, proving real web
+    # research was done. The self-asserted research_complete:true flag is IGNORED
+    # here — this gate is the source of truth for whether citations exist.
+    # Uses rel glob (same as research brief) so the first matching brief file is
+    # passed to the checker.
+    ("working/research/brief-*.md",
+     f"research pack cited URLs — >= {MIN_CITED_SOURCES} distinct http(s) URLs "
+     f"required (self-asserted research_complete:true flag is not proof of research)",
+     "Phase -0.5 — Deep Research Specialist SOP 9.1/9.4 (AF-RESEARCH-UNCITED)",
+     _chk_research_cited),
+    # 11th check — CLAIMS-WITHOUT-CITATION (AF-RESEARCH-UNCITED). If slide copy
+    # contains factual/statistical claim markers (%, $, 'research', 'study', etc.)
+    # and the research pack has zero cited URLs, the deck is shipping unsupported
+    # claims. Uses rel sentinel None (needs the whole run dir to find both copy
+    # and research pack).
+    (None,
+     "claims-without-citation — slide copy claim markers must have a cited research pack",
+     "Phase -0.5 — Deep Research Specialist SOP 9.1/9.4 (AF-RESEARCH-UNCITED)",
+     _chk_claims_without_citation),
     ("working/qc/copy_qc_report.json",
      "copy QC report (gate Phase 1Q, average >= 8.5, no AF-* triggered)",
      "Phase 1Q — QC Specialist SOP 9.1 / SOP-SLIDE-00",
@@ -1265,6 +1548,206 @@ def write_process_manifest(run_dir: Path, rendered, task_ids, model_used,
 
 
 # ---------------------------------------------------------------------------
+# DELIVERABLES LEDGER — per-run deliverables.json (Requirements 2, 3)
+# ---------------------------------------------------------------------------
+# The ledger is written to <bundle_dir>/deliverables.json incrementally:
+#   * initialised at the start of the run (all entries status=pending)
+#   * updated after each artifact is produced (status=built or verified)
+#   * finalised at the postflight gate (status=verified on pass, or unchanged
+#     + hard-fail AF-BUNDLE-COMPLETE on failure)
+#
+# The final "complete" report is generated by READING deliverables.json
+# (all entries verified), NOT from in-memory state. This survives crashes
+# and supports resume: re-running the script re-reads the ledger and only
+# re-checks artifacts that are not yet verified.
+#
+# IMPORTANT: this script builds only the deck_pptx. The other five artifacts
+# are produced by upstream roles. The ledger records whatever state they are
+# in when the postflight gate runs. If any are absent or below threshold the
+# gate fails loud (AF-BUNDLE-COMPLETE, exit 5).
+
+def _resolve_bundle_dir(out_dir_arg: Optional[str], out_path: Path) -> Path:
+    """Resolve the final bundle dir.
+       Priority: --out CLI arg > ~/Downloads/<deck-slug>/.
+       The <deck-slug> is the stem of the out.pptx path (e.g. 'acme-q1' from
+       'acme-q1.pptx').
+    """
+    if out_dir_arg:
+        d = Path(out_dir_arg).expanduser().resolve()
+    else:
+        slug = out_path.stem or "deck"
+        d = Path(BUNDLE_DIR_DEFAULT) / slug
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _expand_filename(template: str, deck_slug: str) -> str:
+    """Replace {deck_slug} placeholder in a filename template."""
+    return template.replace("{deck_slug}", deck_slug)
+
+
+def init_deliverables_ledger(bundle_dir: Path, deck_slug: str) -> Path:
+    """Create or reset deliverables.json in bundle_dir with all artifacts
+    set to status=pending. Returns the ledger path.
+
+    If a ledger already exists and has verified entries, preserves them
+    (supports resume: only re-checks non-verified artifacts)."""
+    ledger_path = bundle_dir / "deliverables.json"
+    existing = {}
+    if ledger_path.exists():
+        try:
+            data = json.loads(ledger_path.read_text())
+            if isinstance(data, list):
+                existing = {e["key"]: e for e in data if isinstance(e, dict) and "key" in e}
+        except Exception:  # noqa: BLE001
+            existing = {}
+
+    entries = []
+    for spec in DELIVERABLES_REQUIRED:
+        key = spec["key"]
+        fname = _expand_filename(spec["filename"], deck_slug)
+        # Preserve a prior verified entry so resume works.
+        if key in existing and existing[key].get("status") == "verified":
+            entries.append(existing[key])
+        else:
+            entries.append({
+                "key": key,
+                "filename": fname,
+                "path": str(bundle_dir / fname),
+                "label": spec["label"],
+                "min_bytes": spec["min_bytes"],
+                "note": spec["note"],
+                "status": "pending",
+                "size": None,
+                "error": None,
+            })
+    ledger_path.write_text(json.dumps(entries, indent=2))
+    return ledger_path
+
+
+def update_deliverable_status(ledger_path: Path, key: str, status: str,
+                               size: Optional[int] = None,
+                               error: Optional[str] = None) -> None:
+    """Update a single artifact entry in deliverables.json. status must be
+    one of: pending | built | verified | failed.
+    Writes the ledger to disk immediately (incremental, crash-safe)."""
+    try:
+        entries = json.loads(ledger_path.read_text())
+    except Exception:  # noqa: BLE001
+        return  # if the ledger is unreadable, skip silently (gate will catch it)
+    for e in entries:
+        if e.get("key") == key:
+            e["status"] = status
+            if size is not None:
+                e["size"] = size
+            if error is not None:
+                e["error"] = error
+            break
+    ledger_path.write_text(json.dumps(entries, indent=2))
+
+
+def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str) -> None:
+    """POSTFLIGHT COMPLETENESS GATE (AF-BUNDLE-COMPLETE, Requirement 2).
+
+    After assembly, verify EVERY DELIVERABLES_REQUIRED artifact exists in
+    bundle_dir AND passes its min_bytes threshold. Updates deliverables.json
+    with the verified/failed status for each artifact, then reads it back to
+    produce the final report.
+
+    If ANY artifact is missing or below threshold → prints a LOUD failure
+    listing exactly which are missing + sys.exit(5). The script may print
+    COMPLETE/DONE ONLY when all pass.
+
+    The final "complete" report is generated by READING deliverables.json
+    (all entries verified), NOT from in-memory state.
+    """
+    # --- Phase 1: scan and update each entry ---
+    missing_or_short = []
+    for spec in DELIVERABLES_REQUIRED:
+        key = spec["key"]
+        fname = _expand_filename(spec["filename"], deck_slug)
+        path = bundle_dir / fname
+        if not path.exists():
+            update_deliverable_status(ledger_path, key, "failed",
+                                      error="file absent from bundle_dir")
+            missing_or_short.append((key, fname, spec["label"], spec["min_bytes"], 0,
+                                     "ABSENT"))
+        else:
+            actual = path.stat().st_size
+            if actual < spec["min_bytes"]:
+                update_deliverable_status(ledger_path, key, "failed",
+                                          size=actual,
+                                          error=f"file too small: {actual} bytes "
+                                                f"(min {spec['min_bytes']})")
+                missing_or_short.append((key, fname, spec["label"], spec["min_bytes"],
+                                         actual, "UNDER_THRESHOLD"))
+            else:
+                update_deliverable_status(ledger_path, key, "verified", size=actual)
+
+    # --- Phase 2: read ledger back as the authoritative final state ---
+    try:
+        ledger_entries = json.loads(ledger_path.read_text())
+    except Exception as exc:  # noqa: BLE001
+        print(f"FATAL: deliverables.json could not be read for final verification: {exc}",
+              file=sys.stderr)
+        sys.exit(5)
+
+    all_verified = all(e.get("status") == "verified" for e in ledger_entries)
+
+    # --- Phase 3: fail loud on any non-verified artifact ---
+    if missing_or_short or not all_verified:
+        bar = "=" * 78
+        print(f"\n{bar}", file=sys.stderr)
+        print("FATAL: POSTFLIGHT COMPLETENESS GATE FAILED (AF-BUNDLE-COMPLETE)", file=sys.stderr)
+        print("build_deck.py produced the deck PPTX, but the required deliverable bundle",
+              file=sys.stderr)
+        print("is INCOMPLETE. The run may NOT be reported as 'complete' or 'done'.", file=sys.stderr)
+        print(f"Bundle dir: {bundle_dir}", file=sys.stderr)
+        print(f"Ledger:     {ledger_path}", file=sys.stderr)
+        print("\nMissing or under-threshold artifacts:", file=sys.stderr)
+        for (key, fname, label, min_b, actual_b, reason) in missing_or_short:
+            if reason == "ABSENT":
+                print(f"  MISSING  [{key}] {fname}  ({label})", file=sys.stderr)
+                print(f"           Required by DELIVERABLES_REQUIRED; produced by upstream",
+                      file=sys.stderr)
+                print(f"           roles (presenter guide → Presenters Guide Specialist;",
+                      file=sys.stderr)
+                print(f"           speech → Presenters Speech Writer;",
+                      file=sys.stderr)
+                print(f"           audio → Audio Demonstration Specialist;",
+                      file=sys.stderr)
+                print(f"           infographic → infographic-checklist role;",
+                      file=sys.stderr)
+                print(f"           deck PDF → PPTX Assembly Specialist).",
+                      file=sys.stderr)
+            else:
+                print(f"  TOO SMALL [{key}] {fname}  ({label})", file=sys.stderr)
+                print(f"           actual={actual_b:,} bytes  minimum={min_b:,} bytes",
+                      file=sys.stderr)
+        # Also surface any ledger entries that are not verified but not in our scan list
+        # (edge case: previously-failed entries from a prior run).
+        extra_unverified = [e for e in ledger_entries
+                            if e.get("status") != "verified"
+                            and e.get("key") not in {m[0] for m in missing_or_short}]
+        for e in extra_unverified:
+            print(f"  NOT VERIFIED [{e['key']}] {e.get('filename')} — status: {e.get('status')}",
+                  file=sys.stderr)
+        print(f"\n{bar}", file=sys.stderr)
+        sys.exit(5)
+
+    # --- Phase 4: success — print COMPLETE only when ALL verified ---
+    print("\n=== POSTFLIGHT COMPLETENESS GATE PASSED (AF-BUNDLE-COMPLETE) ===", flush=True)
+    print(f"All {len(DELIVERABLES_REQUIRED)} required deliverables present and sized.",
+          flush=True)
+    print(f"Bundle dir: {bundle_dir}", flush=True)
+    for e in ledger_entries:
+        size_str = f"{e.get('size', 0):,} bytes" if e.get("size") else "n/a"
+        print(f"  VERIFIED  [{e['key']}] {e.get('filename')}  ({size_str})", flush=True)
+    print(f"Ledger (all-verified): {ledger_path}", flush=True)
+    print("=== COMPLETE ===\n", flush=True)
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
@@ -1276,6 +1759,7 @@ def main():
     run_dir_arg = None
     logo_arg = None
     timestamp_arg = None
+    out_dir_arg = None   # --out BUNDLE_DIR (default ~/Downloads/<deck-slug>)
     positional = []
     i = 0
     while i < len(argv):
@@ -1306,6 +1790,14 @@ def main():
             timestamp_arg = argv[i]
         elif tok.startswith("--timestamp="):
             timestamp_arg = tok[len("--timestamp="):]
+        elif tok == "--out":
+            i += 1
+            if i >= len(argv):
+                print("FATAL: --out requires a directory path argument.", file=sys.stderr)
+                sys.exit(2)
+            out_dir_arg = argv[i]
+        elif tok.startswith("--out="):
+            out_dir_arg = tok[len("--out="):]
         elif tok.startswith("--"):
             print(f"FATAL: unknown flag {tok!r}.", file=sys.stderr)
             sys.exit(2)
@@ -1315,13 +1807,23 @@ def main():
 
     if len(positional) not in (2, 3):
         print("Usage: python3 build_deck.py <slides.json> <out.pptx> [renders_dir] "
-              "[--run-dir DIR] [--logo PNG] [--timestamp ISO8601] [--adhoc-no-process]",
+              "[--run-dir DIR] [--logo PNG] [--out BUNDLE_DIR] "
+              "[--timestamp ISO8601] [--adhoc-no-process]",
               file=sys.stderr)
         sys.exit(2)
 
     slides_path = Path(positional[0])
     out_path = Path(positional[1])
     renders_dir = Path(positional[2]) if len(positional) == 3 else out_path.parent / "renders"
+
+    # BUNDLE DIR + DELIVERABLES LEDGER (Requirements 3 & 4)
+    # Must be resolved before any render so the ledger exists and can be updated
+    # incrementally (crash-safe). The deck_slug is derived from the out.pptx stem.
+    deck_slug = out_path.stem or "deck"
+    bundle_dir = _resolve_bundle_dir(out_dir_arg, out_path)
+    print(f"=== OUTPUT BUNDLE DIR (default ~/Downloads): {bundle_dir} ===", flush=True)
+    ledger_path = init_deliverables_ledger(bundle_dir, deck_slug)
+    print(f"=== DELIVERABLES LEDGER: {ledger_path} ===", flush=True)
 
     if not slides_path.exists():
         print(f"FATAL: slides.json not found: {slides_path}", file=sys.stderr)
@@ -1462,17 +1964,46 @@ def main():
         print(f"WARNING: render succeeded but process manifest write failed: {exc}",
               file=sys.stderr, flush=True)
 
+    # DELIVERABLES LEDGER — mark the deck_pptx as built now that assembly succeeded.
+    # The other five artifacts are produced by upstream roles; the postflight gate
+    # will check their actual presence on disk.
+    pptx_size = out_path.stat().st_size if out_path.exists() else 0
+    update_deliverable_status(ledger_path, "deck_pptx", "built", size=pptx_size)
+
+    # If the out_path is not inside bundle_dir, copy the pptx into bundle_dir so the
+    # postflight gate finds it at its expected location.
+    bundle_pptx = bundle_dir / f"{deck_slug}-FINAL.pptx"
+    if out_path.resolve() != bundle_pptx.resolve():
+        import shutil
+        try:
+            shutil.copy2(str(out_path), str(bundle_pptx))
+            update_deliverable_status(ledger_path, "deck_pptx", "built",
+                                      size=bundle_pptx.stat().st_size)
+            print(f"=== PPTX copied to bundle dir: {bundle_pptx} ===", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"WARNING: could not copy PPTX to bundle_dir: {exc}", file=sys.stderr)
+
     summary = {
         "slidesRendered": len(rendered),
         "kieTaskIds": task_ids,
         "outputPath": str(out_path),
+        "bundleDir": str(bundle_dir),
+        "deliverables_ledger": str(ledger_path),
         "modelUsed": MODEL_T2I,
         "timestamp": timestamp,
         "processManifest": str(manifest_path) if manifest_path else None,
         "failures": [],
     }
-    print("\n=== SUMMARY (OK) ===", flush=True)
+    print("\n=== SUMMARY (RENDER OK — running postflight completeness gate) ===",
+          flush=True)
     print(json.dumps(summary, indent=2))
+
+    # POSTFLIGHT COMPLETENESS GATE (Requirement 2 — AF-BUNDLE-COMPLETE).
+    # This is the FINAL gate: exit 0 only when ALL six deliverables are present
+    # and sized. Exit 5 (loud failure) when any are missing or under-threshold.
+    # The word "COMPLETE" / "DONE" is printed ONLY from inside run_postflight_gate
+    # after reading deliverables.json (not from in-memory state).
+    run_postflight_gate(bundle_dir, ledger_path, deck_slug)
     sys.exit(0)
 
 

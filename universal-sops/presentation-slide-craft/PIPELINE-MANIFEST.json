@@ -1,6 +1,57 @@
 {
-  "manifest_version": 3,
-  "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped. v3: the deterministic renderer now renders the Slide Image Creator's RICH per-slide prompt VERBATIM (working/prompts/slide-NN.txt) with a HARD 1,500-char floor (AF-P1) + 18,000 ceiling (AF-P2) and NEVER composes a thin fallback; rich-prompt-required + speech-length (AF-SPEECH-SHORT, target_talk_minutes x 120 wpm) are wired into the preflight lockstep.",
+  "manifest_version": 5,
+  "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
+  "deliverables_required": [
+    {
+      "key": "deck_pptx",
+      "filename": "{deck_slug}-FINAL.pptx",
+      "label": "assembled deck PPTX",
+      "min_bytes": 1048576,
+      "note": ">1MB floor; a sub-1MB pptx implies empty/placeholder content"
+    },
+    {
+      "key": "deck_pdf",
+      "filename": "{deck_slug}-FINAL.pdf",
+      "label": "deck PDF export",
+      "min_bytes": 51200,
+      "note": ">50KB; produced by PPTX Assembly Specialist"
+    },
+    {
+      "key": "guide_pdf",
+      "filename": "PRESENTER-GUIDE.pdf",
+      "label": "presenter guide PDF",
+      "min_bytes": 51200,
+      "note": ">50KB; produced by Presenters Guide Specialist. REQUIRED UPSTREAM STEP."
+    },
+    {
+      "key": "speech_md",
+      "filename": "PRESENTER-SPEECH.md",
+      "label": "presenter speech markdown source",
+      "min_bytes": 2048,
+      "note": ">2KB; produced by Presenters Speech Writer. REQUIRED UPSTREAM STEP."
+    },
+    {
+      "key": "speech_pdf",
+      "filename": "PRESENTER-SPEECH.pdf",
+      "label": "presenter speech PDF",
+      "min_bytes": 20480,
+      "note": ">20KB; produced by Presenters Speech Writer (PDF render). REQUIRED UPSTREAM STEP."
+    },
+    {
+      "key": "audio_mp3",
+      "filename": "PRESENTER-AUDIO.mp3",
+      "label": "presenter audio MP3",
+      "min_bytes": 512000,
+      "note": ">500KB; produced by Audio Demonstration Specialist. REQUIRED UPSTREAM STEP."
+    },
+    {
+      "key": "infographic_png",
+      "filename": "infographic.png",
+      "label": "infographic checklist PNG",
+      "min_bytes": 102400,
+      "note": ">100KB; produced by infographic-checklist role. REQUIRED UPSTREAM STEP."
+    }
+  ],
   "phases": [
     {
       "id": "P-0.5-RESEARCH",
@@ -12,13 +63,26 @@
       ],
       "produces_artifact": "working/research/brief-*.md",
       "gate_codes": [
-        "AF-RESEARCH-GATE"
+        "AF-RESEARCH-GATE",
+        "AF-RESEARCH-UNCITED"
       ],
       "preflight": {
         "required": true,
         "checker": "_chk_research_brief",
         "label": "research brief (research_complete:true)"
-      }
+      },
+      "additional_preflights": [
+        {
+          "required": true,
+          "checker": "_chk_research_cited",
+          "label": "research pack cited URLs (>= MIN_CITED_SOURCES distinct http(s) URLs; AF-RESEARCH-UNCITED)"
+        },
+        {
+          "required": true,
+          "checker": "_chk_claims_without_citation",
+          "label": "claims-without-citation (slide copy claim markers must have a cited research pack; AF-RESEARCH-UNCITED)"
+        }
+      ]
     },
     {
       "id": "P0A-INTAKE",
@@ -75,25 +139,6 @@
         "required": true,
         "checker": "_chk_copy_qc",
         "label": "copy QC report (gate Phase 1Q, average >= 8.5, no AF-* triggered)"
-      }
-    },
-    {
-      "id": "P2-PROMPTS",
-      "order": 2,
-      "name": "Rich Per-Slide Prompt Authoring (15-element, rendered VERBATIM)",
-      "owning_role": "slide-image-creator",
-      "sop_refs": [
-        "slide-image-creator-sops.md"
-      ],
-      "produces_artifact": "working/prompts/slide-*.txt",
-      "gate_codes": [
-        "AF-P1",
-        "AF-P2"
-      ],
-      "preflight": {
-        "required": true,
-        "checker": "_chk_rich_prompts",
-        "label": "rich per-slide prompt — every slide has a >=1,500-char prompt in working/prompts/ (rendered VERBATIM, no thin fallback)"
       }
     },
     {
@@ -194,25 +239,39 @@
       }
     },
     {
+      "id": "P9-SPEECH",
+      "order": 8.5,
+      "name": "Presenter Speech (length gate)",
+      "owning_role": "presenters-speech-writer",
+      "sop_refs": [
+        "presenters-speech-writer-sops.md"
+      ],
+      "produces_artifact": "working/presenter-speech/PRESENTER-SPEECH.md",
+      "gate_codes": [
+        "AF-SPEECH-SHORT"
+      ],
+      "preflight": {
+        "required": false,
+        "checker": "_chk_speech_length",
+        "label": "speech length — presenter speech words >= target_talk_minutes x 120 wpm (fails short; defers when speech absent)"
+      }
+    },
+    {
       "id": "P9-DELIVER",
       "order": 9,
-      "name": "Delivery Interlock",
+      "name": "Delivery Interlock + Postflight Completeness Gate",
       "owning_role": "delivery-concierge",
       "sop_refs": [
         "delivery-concierge-sops.md"
       ],
       "produces_artifact": "working/delivery/PRESENTER-AUDIO.mp3",
       "gate_codes": [
+        "AF-BUNDLE-COMPLETE",
         "AF-DELIVER",
         "AF-DH1",
-        "AF-DELIVERY-COMPLETE",
-        "AF-SPEECH-SHORT"
+        "AF-DELIVERY-COMPLETE"
       ],
-      "preflight": {
-        "required": false,
-        "checker": "_chk_speech_length",
-        "label": "speech length — presenter speech words >= target_talk_minutes x 120 wpm (conditional: enforced once the speech exists)"
-      }
+      "preflight": null
     }
   ],
   "autofails": [
@@ -221,9 +280,9 @@
       "stage": "Render",
       "level": "slide",
       "in_ruleset": false,
-      "trigger": "composed prompt under the floor",
+      "trigger": "rich prompt missing or under the 1500-char floor",
       "enforced_by": "build_deck",
-      "py_symbol": "PROMPT_CHAR_FLOOR"
+      "py_symbol": "_chk_rich_prompts"
     },
     {
       "code": "AF-P2",
@@ -253,6 +312,16 @@
       "py_symbol": "_chk_research_brief"
     },
     {
+      "code": "AF-RESEARCH-UNCITED",
+      "stage": "-0.5/1Q",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "research pack contains fewer than MIN_CITED_SOURCES (8) distinct http(s) URLs, OR slide copy contains factual/statistical claim markers with zero cited URLs in the research pack — the self-asserted research_complete:true flag is ignored; real citations are required",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_research_cited",
+      "secondary_py_symbols": ["_chk_claims_without_citation", "MIN_CITED_SOURCES"]
+    },
+    {
       "code": "AF-COVERAGE-1",
       "stage": "1Q/6",
       "level": "DECK",
@@ -262,11 +331,20 @@
       "py_symbol": "_chk_coverage"
     },
     {
+      "code": "AF-BUNDLE-COMPLETE",
+      "stage": "Done",
+      "level": "DECK",
+      "in_ruleset": false,
+      "trigger": "postflight completeness gate \u2014 one or more required deliverables missing or below size threshold",
+      "enforced_by": "build_deck",
+      "py_symbol": "run_postflight_gate"
+    },
+    {
       "code": "AF-SPEECH-SHORT",
       "stage": "9",
       "level": "DECK",
-      "in_ruleset": true,
-      "trigger": "presenter speech words < target_talk_minutes x 120 wpm (speech too short for the requested duration)",
+      "in_ruleset": false,
+      "trigger": "presenter speech word count below target_talk_minutes x 120 wpm floor",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_speech_length"
     },
@@ -275,7 +353,7 @@
       "stage": "Done",
       "level": "DECK",
       "in_ruleset": false,
-      "trigger": "delivery interlock \u2014 five-file bundle not assembled",
+      "trigger": "delivery interlock \u2014 six-file bundle not assembled",
       "enforced_by": "closeout_gate",
       "py_symbol": null
     },
