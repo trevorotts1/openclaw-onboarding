@@ -22,6 +22,20 @@
 #   T4. TEMPLATE-NEVER-PASSES: pointing the gate at a skills/.../role-library
 #       TEMPLATE tree (even a fully-populated one) FAILS as not-a-workspace
 #       (rc=4). A template on disk must NEVER satisfy the gate.
+#   T5. SLUG-NAMED ROLES PASS: a workspace whose role folders are SLUG-named
+#       (chief-marketing-officer/, head-of-sales/) — NOT NN-prefixed — but
+#       otherwise fully built (IDENTITY/SOUL + real SOP) PASSES (rc=0). This is
+#       the false-SHELL bug for legitimately-built workforces.
+#   T6. SOP-SUBDIR PASS: a workspace whose role SOPs live in a SOP/ subdir
+#       (role/SOP/how-to.md), not 0N-*.md directly in the role dir, PASSES
+#       (rc=0). The gate must recognize the SOP-subdir shape as a real SOP.
+#   T7. MASTER-FILES-HOME PASS: a fully-built workspace whose path is UNDER
+#       openclaw-master-files (.../openclaw-master-files/zero-human-company/<co>/
+#       departments) PASSES (rc=0). master-files IS the canonical workspace home;
+#       the old gate wrongly rejected it (false-flagged legitimately-built workforces).
+#   T8. GENUINELY-EMPTY STILL FAILS: a workspace with NO role folders of EITHER
+#       naming (only DREAMS.md + memory/) STILL FAILS (rc=3). The additive
+#       detection must never weaken the real empty-shell check.
 #
 # Exit 0 = all tests pass; non-zero = a test failed.
 # ============================================================
@@ -128,6 +142,75 @@ for d in $REQUIRED; do
 done
 run_gate "$DD4"
 if [ "$RC" -eq 4 ]; then ok "template tree (skills/.../role-library) rejected as not-a-workspace -> rc=4"; else bad "template tree must FAIL rc=4 (never satisfy gate), got rc=$RC"; fi
+
+# ── T5: SLUG-named role folders (no NN prefix) but fully built → PASS (rc=0) ──
+echo "=== T5: SLUG-named role folders PASS (rc=0) ==="
+DD5="$TMP/t5/zero-human-company/acme/departments"
+mkdir -p "$DD5"
+for d in $REQUIRED; do
+  mkdir -p "$DD5/$d/memory"
+  printf '# Dreams\n' > "$DD5/$d/DREAMS.md"
+  printf '# Director identity\n' > "$DD5/$d/IDENTITY.md"
+  printf '# Director soul\n'      > "$DD5/$d/SOUL.md"
+  # SLUG-named role subdirs (NO NN prefix) with role files + a real how-to.md SOP
+  mkdir -p "$DD5/$d/chief-marketing-officer/memory" "$DD5/$d/head-of-sales/memory"
+  printf '# role identity\n' > "$DD5/$d/chief-marketing-officer/IDENTITY.md"
+  printf '# role soul\n'     > "$DD5/$d/chief-marketing-officer/SOUL.md"
+  printf '%s\n' "$SOP_BODY"  > "$DD5/$d/chief-marketing-officer/how-to.md"
+  printf '# role identity\n' > "$DD5/$d/head-of-sales/IDENTITY.md"
+  printf '%s\n' "$SOP_BODY"  > "$DD5/$d/head-of-sales/how-to.md"
+done
+run_gate "$DD5"
+if [ "$RC" -eq 0 ]; then ok "slug-named role folders (chief-marketing-officer/, head-of-sales/) -> rc=0"; else bad "slug-named-role workspace must PASS rc=0, got rc=$RC"; fi
+
+# ── T6: SOPs in a role's SOP/ subdir (not 0N-*.md direct) → PASS (rc=0) ──
+echo "=== T6: SOP-subdir shape PASSES (rc=0) ==="
+DD6="$TMP/t6/zero-human-company/acme/departments"
+mkdir -p "$DD6"
+for d in $REQUIRED; do
+  mkdir -p "$DD6/$d/memory"
+  printf '# Dreams\n' > "$DD6/$d/DREAMS.md"
+  printf '# Director identity\n' > "$DD6/$d/IDENTITY.md"
+  printf '# Director soul\n'      > "$DD6/$d/SOUL.md"
+  # numbered role subdir whose SOPs live in a SOP/ subdir, NOT how-to.md/0N-*.md direct
+  mkdir -p "$DD6/$d/00-head/SOP" "$DD6/$d/00-head/memory"
+  printf '# role identity\n' > "$DD6/$d/00-head/IDENTITY.md"
+  printf '%s\n' "$SOP_BODY" > "$DD6/$d/00-head/SOP/how-to.md"
+done
+run_gate "$DD6"
+if [ "$RC" -eq 0 ]; then ok "role SOPs in a SOP/ subdir (role/SOP/how-to.md) -> rc=0"; else bad "SOP-subdir workspace must PASS rc=0, got rc=$RC"; fi
+
+# ── T7: workspace UNDER openclaw-master-files (canonical home) → PASS (rc=0) ──
+echo "=== T7: master-files-home path PASSES (rc=0) ==="
+DD7="$TMP/t7/Downloads/openclaw-master-files/zero-human-company/acme/departments"
+mkdir -p "$DD7"
+for d in $REQUIRED; do
+  mkdir -p "$DD7/$d/memory"
+  printf '# Dreams\n' > "$DD7/$d/DREAMS.md"
+  printf '# Director identity\n' > "$DD7/$d/IDENTITY.md"
+  printf '# Director soul\n'      > "$DD7/$d/SOUL.md"
+  mkdir -p "$DD7/$d/00-head/memory" "$DD7/$d/01-specialist/memory"
+  printf '%s\n' "$SOP_BODY" > "$DD7/$d/00-head/how-to.md"
+  printf '%s\n' "$SOP_BODY" > "$DD7/$d/01-specialist/how-to.md"
+  printf '# role identity\n' > "$DD7/$d/00-head/IDENTITY.md"
+  printf '# role identity\n' > "$DD7/$d/01-specialist/IDENTITY.md"
+done
+run_gate "$DD7"
+if [ "$RC" -eq 0 ]; then ok "fully-built workspace UNDER openclaw-master-files (canonical home) -> rc=0"; else bad "master-files-home workspace must PASS rc=0 (it is the workspace home, not a template), got rc=$RC"; fi
+
+# ── T8: genuinely-empty dept (no role folders of EITHER naming) STILL FAILS ──
+echo "=== T8: genuinely-empty dept STILL FAILS (rc=3) ==="
+# Same shape as T1 but explicit: ONLY DREAMS.md + memory/ — zero role folders of
+# EITHER naming convention. The additive detection must NOT weaken this.
+DD8="$TMP/t8/zero-human-company/acme/departments"
+mkdir -p "$DD8"
+for d in $REQUIRED; do
+  mkdir -p "$DD8/$d/memory"
+  printf '# Dreams\n' > "$DD8/$d/DREAMS.md"
+  # NO NN-prefixed role folder, NO slug-named role folder, NO IDENTITY/SOUL/SOP.
+done
+run_gate "$DD8"
+if [ "$RC" -eq 3 ]; then ok "genuinely-empty depts (DREAMS.md + memory/ only, zero role folders) STILL -> rc=3"; else bad "genuinely-empty workspace must STILL FAIL rc=3, got rc=$RC"; fi
 
 echo ""
 echo "--------------------------------------------"

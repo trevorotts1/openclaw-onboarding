@@ -39,22 +39,35 @@
 #
 # FULL / SHELL / PARTIAL classification (RAW facts only — no JSON state trusted):
 #   For a workspace department dir <dept>/:
-#     numbered role subdirs  = immediate child dirs matching ^[0-9] (00-*, 01-*…)
-#     director IDENTITY.md    = <dept>/IDENTITY.md present?
-#     director SOUL.md        = <dept>/SOUL.md present?
-#     real SOPs               = a role subdir how-to.md >= SOP_MIN_BYTES (3072,
-#                               the same 3 KB floor verify-wiring.sh enforces),
-#                               OR a standalone substantive SOP file
-#                               (role-subdir 0[1-9]-*.md >= 7168 bytes).
-#   SHELL   = 0 numbered role subdirs  (the DREAMS.md + memory/-only empty shell)
+#     role subdirs  = immediate child dirs that are REAL role folders, in EITHER
+#                     recognized naming shape:
+#                       (a) NN-prefixed (00-*, 01-*…), OR
+#                       (b) slug-named (chief-marketing-officer/, head-of-sales/)
+#                           that carry the role-file fingerprint (IDENTITY.md or
+#                           SOUL.md, OR a real SOP). Structural non-role dirs
+#                           (memory/, devils-advocate/, SOP/) are never counted.
+#     director IDENTITY.md = <dept>/IDENTITY.md present?
+#     director SOUL.md     = <dept>/SOUL.md present?
+#     real SOPs            = a role subdir carries a real SOP in ANY shape:
+#                            how-to.md >= SOP_MIN_BYTES (3072, the same 3 KB floor
+#                            verify-wiring.sh enforces), OR a standalone
+#                            substantive SOP file (role-subdir 0[1-9]-*.md >= 7168
+#                            bytes), OR a populated SOP/ (sops/) subdir holding
+#                            a how-to.md >= 3072 B or a *.md >= 7168 B.
+#   SHELL   = 0 role subdirs of EITHER naming  (the DREAMS.md + memory/-only shell)
 #   PARTIAL = has role subdirs BUT (no director IDENTITY.md OR no SOUL.md OR no
 #             real SOPs in any role)
-#   FULL    = >=1 numbered role subdir AND director IDENTITY.md AND SOUL.md AND
+#   FULL    = >=1 role subdir AND director IDENTITY.md AND SOUL.md AND
 #             >=1 real SOP somewhere in the dept
 #
-# A department dir that is a SYMLINK pointing INTO the skills/role-library
-# template tree (the "I pointed the workspace at the template" trick) is treated
-# as NOT materialized (its real path is a template path) → SHELL/FAIL.
+# The CLIENT WORKSPACE HOME is canonically UNDER openclaw-master-files
+# (<openclaw-master-files>/zero-human-company/<company>/departments/), exactly
+# where department-floor.resolve_departments_dir() resolves it — so a path
+# containing 'openclaw-master-files' is a VALID workspace and is accepted. Only a
+# shipped role-library template subtree (skills/.../templates/role-library) or a
+# deployed skills/ tree is rejected as TEMPLATE-NOT-WORKSPACE. A department dir
+# whose REAL path is such a template tree (the "I pointed the workspace at the
+# template" trick) is treated as NOT materialized → SHELL/FAIL.
 #
 # EXIT CODES (fail-closed):
 #   0  every REQUIRED department is FULL in the WORKSPACE
@@ -129,21 +142,35 @@ except Exception as e:  # noqa: BLE001
 
 
 def _is_template_path(p: Path) -> bool:
-    """A path is a TEMPLATE (never a materialized workspace) if it lives in the
-    master-files template tree OR inside any skills/.../role-library tree. A
-    template on disk must NEVER satisfy this gate."""
+    """A path is a TEMPLATE (never a materialized workspace) if it lives in a
+    shipped role-library template tree OR inside a deployed skills/ tree. A
+    template on disk must NEVER satisfy this gate.
+
+    DETECTION-BUG FIX (master-files IS the workspace home): the canonical
+    architecture places the client's REAL workspace at
+        <openclaw-master-files>/zero-human-company/<company>/departments/<dept>/
+    — see department-floor.resolve_departments_dir(), build-workforce.py and
+    post-build-role-workspaces.py, all of which resolve the workspace UNDER
+    openclaw-master-files. The Zero Human Company lives inside master-files, so
+    rejecting any path merely because it contains 'openclaw-master-files' is a
+    BUG that false-flagged legitimately-built workforces (slug-named or
+    master-files layouts) as SHELL. We therefore do NOT treat openclaw-master-files as a
+    template marker. The genuine TEMPLATE markers are unchanged:
+      * a shipped role-library template subtree (skills/.../templates/role-library)
+      * a path under a deployed skills/ tree that is not itself a workspace
+    A real workspace under master-files passes; a 'role-library' tree does not."""
     try:
         parts = Path(p).resolve().parts
     except Exception:
         return True  # fail-closed: unresolvable → treat as template/non-workspace
-    if "openclaw-master-files" in parts:
-        return True
     # .../skills/<skill>/templates/role-library/...  (the shipped template tree)
     if "role-library" in parts:
         return True
     # any path under a skills/ tree is the deployed template, not the workspace
     if "skills" in parts and "workspace" not in parts:
         return True
+    # NOTE: 'openclaw-master-files' is intentionally NOT a template marker — it is
+    # the canonical workspace HOME (zero-human-company lives inside it).
     return False
 
 
@@ -208,31 +235,119 @@ def find_dept_dir(canonical_id):
     return None
 
 
-def real_sop_present(dept_dir, role_subdirs):
-    """RAW check: does ANY role subdir carry a real SOP? Either an embedded-model
-    how-to.md >= SOP_MIN_BYTES, or a standalone substantive 0[1-9]-*.md file
-    >= STANDALONE_SOP_MIN_BYTES. (Substance depth is qc-completeness's job; this
-    gate only proves SOPs are not absent — the shell case.)"""
-    for r in role_subdirs:
+def _role_has_real_sop(r):
+    """RAW check for ONE role dir: does it carry a real SOP in any recognized
+    shape? Returns True if any of the following holds:
+      * how-to.md >= SOP_MIN_BYTES directly in the role dir, OR
+      * a standalone substantive 0[1-9]-*.md file >= STANDALONE_SOP_MIN_BYTES
+        directly in the role dir, OR
+      * the role keeps its SOPs in a SOP/ subdir (case-insensitive: SOP/ or
+        sops/) containing a substantive SOP file — a how-to.md >= SOP_MIN_BYTES
+        or any 0[1-9]-*.md / *.md >= STANDALONE_SOP_MIN_BYTES.
+    (Substance depth is qc-completeness's job; this gate only proves SOPs are not
+    absent — the shell case.) ADDITIVE: recognizes MORE valid shapes, never
+    weakens the empty-shell check."""
+    # 1. how-to.md directly in the role dir
+    try:
         howto = r / "how-to.md"
-        try:
-            if howto.is_file() and howto.stat().st_size >= SOP_MIN_BYTES:
+        if howto.is_file() and howto.stat().st_size >= SOP_MIN_BYTES:
+            return True
+    except Exception:
+        pass
+    # 2. standalone substantive 0[1-9]-*.md directly in the role dir
+    try:
+        for sf in r.glob("0[1-9]-*.md"):
+            if sf.is_file() and sf.stat().st_size >= STANDALONE_SOP_MIN_BYTES:
                 return True
-        except Exception:
-            pass
-        try:
-            for sf in r.glob("0[1-9]-*.md"):
-                if sf.is_file() and sf.stat().st_size >= STANDALONE_SOP_MIN_BYTES:
+    except Exception:
+        pass
+    # 3. a populated SOP/ (or sops/) subdir — the SOP-subdir shape
+    try:
+        for child in r.iterdir():
+            if not child.is_dir():
+                continue
+            if child.name.lower() not in ("sop", "sops"):
+                continue
+            # a how-to.md inside the SOP subdir
+            try:
+                sub_howto = child / "how-to.md"
+                if sub_howto.is_file() and sub_howto.stat().st_size >= SOP_MIN_BYTES:
                     return True
-        except Exception:
-            pass
+            except Exception:
+                pass
+            # any substantive markdown SOP file inside the SOP subdir
+            try:
+                for sf in child.glob("*.md"):
+                    if sf.is_file() and sf.stat().st_size >= STANDALONE_SOP_MIN_BYTES:
+                        return True
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return False
+
+
+def real_sop_present(dept_dir, role_subdirs):
+    """RAW check: does ANY role subdir carry a real SOP, in any recognized shape
+    (direct how-to.md, direct standalone SOP file, or a populated SOP/ subdir)?"""
+    for r in role_subdirs:
+        if _role_has_real_sop(r):
+            return True
+    return False
+
+
+# Non-role child dirs that exist in EVERY dept and must never be counted as a
+# role folder (they carry no role files). Matched case-insensitively.
+NON_ROLE_DIR_NAMES = {"memory", "devils-advocate", "devil-s-advocate", "sop", "sops"}
+
+
+def _is_role_folder(child):
+    """RAW check: is this immediate child dir a real ROLE folder, regardless of
+    naming convention?
+
+    DETECTION-BUG FIX (slug-named roles): the old gate counted a role folder ONLY
+    if its name started with a digit (NN-prefixed: 00-head, 01-specialist…). But
+    legitimately-built workforces (and the master-files correction) use SLUG-named
+    role folders (chief-marketing-officer/, head-of-sales/…). Those are real roles
+    and must count. We accept a child dir as a role folder if EITHER:
+      (a) it is NN-prefixed (name[:1].isdigit()), OR
+      (b) it is slug-named AND carries the role-file fingerprint of a real role:
+          IDENTITY.md or SOUL.md present, OR a real SOP in any shape
+          (how-to.md / standalone SOP file / a populated SOP/ subdir).
+    The role-file requirement on slug folders is what keeps NON-role dirs
+    (memory/, devils-advocate/) from being miscounted as roles — they carry no
+    IDENTITY/SOUL/SOP. This is ADDITIVE: it recognizes MORE valid role shapes and
+    never weakens the empty-shell check (a dept with ZERO role folders of EITHER
+    naming still classifies SHELL)."""
+    if not child.is_dir():
+        return False
+    name = child.name
+    if name.startswith((".", "_")):
+        return False
+    # (a) NN-prefixed role folder — always a role (legacy/canonical shape).
+    if name[:1].isdigit():
+        return True
+    # Never treat a structural non-role dir as a role, even if it somehow has files.
+    if name.lower() in NON_ROLE_DIR_NAMES:
+        return False
+    # (b) slug-named role folder — only if it carries the role-file fingerprint.
+    try:
+        if (child / "IDENTITY.md").is_file() or (child / "SOUL.md").is_file():
+            return True
+    except Exception:
+        pass
+    try:
+        if _role_has_real_sop(child):
+            return True
+    except Exception:
+        pass
     return False
 
 
 def classify(dept_dir):
     """Return (status, facts) for a workspace dept dir. status ∈ FULL/PARTIAL/SHELL."""
     facts = {
-        "numbered_roles": 0,
+        "numbered_roles": 0,   # count of REAL role folders (NN-prefixed OR slug-named)
         "identity_md": False,
         "soul_md": False,
         "real_sops": False,
@@ -246,21 +361,22 @@ def classify(dept_dir):
     except Exception:
         return "SHELL", facts
 
-    numbered = []
+    # Real role folders — EITHER NN-prefixed OR slug-named-with-role-files.
+    role_dirs = []
     try:
         for child in dept_dir.iterdir():
-            if child.is_dir() and child.name[:1].isdigit():
-                numbered.append(child)
+            if _is_role_folder(child):
+                role_dirs.append(child)
     except Exception:
         return "SHELL", facts
-    facts["numbered_roles"] = len(numbered)
+    facts["numbered_roles"] = len(role_dirs)
     facts["identity_md"] = (dept_dir / "IDENTITY.md").is_file()
     facts["soul_md"] = (dept_dir / "SOUL.md").is_file()
 
-    if not numbered:
+    if not role_dirs:
         return "SHELL", facts          # the DREAMS.md + memory/-only empty shell
 
-    facts["real_sops"] = real_sop_present(dept_dir, numbered)
+    facts["real_sops"] = real_sop_present(dept_dir, role_dirs)
 
     if facts["identity_md"] and facts["soul_md"] and facts["real_sops"]:
         return "FULL", facts
