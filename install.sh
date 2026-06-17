@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v12.25.0"
+ONBOARDING_VERSION="v12.26.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -658,7 +658,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 5 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/46-... (43 active + 3 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/46-... (41 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -3573,7 +3573,7 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 43 active skills install in 5 dependency-aware waves, not by number order.
+The 41 active skills install in 5 dependency-aware waves, not by number order.
 Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
 A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
@@ -3581,7 +3581,7 @@ A wave cannot start until the previous wave's QC has all skills at 8.5+.
 - 01-teach-yourself-protocol  (REQUIRED — every other skill depends on TYP)
 - 02-back-yourself-up-protocol  (REQUIRED — config backup before any other skill modifies config)
 
-**Wave 2 — INDEPENDENT INTEGRATIONS (parallel, up to 20 sub-agents per maxChildrenPerAgent — 11 skills in this wave):**
+**Wave 2 — INDEPENDENT INTEGRATIONS (parallel, up to 20 sub-agents per maxChildrenPerAgent — 10 skills in this wave):**
 - 03-agent-browser
 - 04-superpowers
 - 05-ghl-setup
@@ -3590,18 +3590,16 @@ A wave cannot start until the previous wave's QC has all skills at 8.5+.
 - 08-vercel-setup
 - 09-context7
 - 10-github-setup
-- 11-superdesign
 - 12-openrouter-setup
 - 14-google-workspace-integration
 
-**Wave 3 — CONTENT + SERVICE TOOLS (parallel, up to 20 sub-agents — 15 skills in this wave, all within the maxChildrenPerAgent cap):**
+**Wave 3 — CONTENT + SERVICE TOOLS (parallel, up to 20 sub-agents — 14 skills in this wave, all within the maxChildrenPerAgent cap):**
 - 15-blackceo-team-management
 - 16-summarize-youtube
 - 17-self-improving-agent
 - 18-proactive-agent
 - 19-humanizer
 - 20-youtube-watcher
-- 21-tavily-search
 - 24-storyboard-writer
 - 25-video-creator
 - 26-caption-creator

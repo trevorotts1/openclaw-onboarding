@@ -1,3 +1,13 @@
+## [v12.26.0] — 2026-06-17 — chore(skills): archive Skill 11 (SuperDesign) + Skill 21 (Tavily Search) — 41 active, 5 archived
+
+Both skills archived and removed from install waves. Skills-count gate confirmed green after archive.
+
+- **Skill 11 (SuperDesign) archived.** SuperDesign was a third-party SaaS design tool installed on every client box. Replaced by Skill 45 (Design Intelligence Library / DIU) which ships 13 specialist roles covering style analysis, deck generation, brand systems, and image generation through the client's own Kie.ai endpoint — no external SuperDesign account required. Folder renamed `11-superdesign-ARCHIVED`; `ARCHIVED.md` added per convention.
+- **Skill 21 (Tavily Search) archived.** Tavily was a paid real-time web-search API. Tavily is no longer used in the OpenClaw fleet. Replaced by Agent Browser (Skill 03) for live web research and Context7 (Skill 09) for documentation lookups. Folder renamed `21-tavily-search-ARCHIVED`; `ARCHIVED.md` added per convention.
+- **Install waves updated:** Wave 2 drops from 11 to 10 skills (11-superdesign removed); Wave 3 drops from 15 to 14 skills (21-tavily-search removed). Total: 41 active + 5 archived (11, 13, 21, 33, 34) across 46 numbered folders.
+- **All skills-count markers updated:** `install.sh` active count, README inventory rows (both ARCHIVED rows updated), README/install.sh prose counts.
+- **Convention:** identical to Skills 13, 33, 34 — folder renamed with `-ARCHIVED` suffix, `ARCHIVED.md` added explaining replacement + backward-compat rationale, skill excluded from install loop via existing `*ARCHIVED*` guard.
+
 ## [v12.25.0] — 2026-06-17 — feat(consistency): artifact-coverage gate — "complete check for everything" (org-chart × routing × command-center × dreaming × bootstrap × skills-count × version)
 
 Extends the v12.23.0 repo-consistency gate from FLOOR × ROSTER × LIBRARY × SOP × PERSONA to cover **everything** — the remaining classes of drift where a floor department, role, skill, bootstrap file, or version marker can silently fall out of a **downstream artifact** even though the 5-dimension gate is green. Same script (`23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py`); the bare invocation now runs BOTH gates (`--only consistency` / `--only artifact` to isolate). The new gate exits **6** on any artifact drift.
