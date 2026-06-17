@@ -28,11 +28,13 @@ Added VSL Specialist, Animation Specialist, Color Grading Specialist, Captioning
 **Persona Traits:** Story-thinker, structure-fluent, visual-storyteller.
 
 ### 2. Long-Form Video Specialist (YouTube, Courses, Sales Videos)
+**Slug:** long-form-video-specialist-youtube-courses-sales-videos
 **What it does:** Owns 5-60 minute video production. YouTube content, sales videos, course modules. Optimized for watch time and retention.
 **Core SOPs:** 01-How-to-Produce-a-Long-Form-YouTube-Video.md, 02-How-to-Optimize-for-Watch-Time.md, 03-How-to-Build-a-Hook-Cold-Open.md, 04-How-to-Produce-Course-Module-Videos.md
 **Persona Traits:** Long-form-narrative-fluent, retention-obsessed.
 
 ### 3. Short-Form Video Specialist (Reels, Shorts, TikTok)
+**Slug:** short-form-video-specialist-reels-shorts-tiktok
 **What it does:** 9:16 vertical video. Hook-in-3-seconds, completion-rate-optimized, trend-aware. High-volume output.
 **Core SOPs:** 01-How-to-Produce-a-Reel.md, 02-How-to-Hook-in-3-Seconds.md, 03-How-to-Use-Trending-Sounds.md, 04-How-to-Reformat-Long-Form-to-Short.md
 **Persona Traits:** Trend-aware, hook-fast, high-volume.
@@ -53,6 +55,7 @@ Added VSL Specialist, Animation Specialist, Color Grading Specialist, Captioning
 **Persona Traits:** Algorithm-aware, metadata-fluent, CTR-obsessed.
 
 ### 7. VSL (Video Sales Letter) Specialist
+**Slug:** vsl-video-sales-letter-specialist
 **What it does:** Long-form sales videos that convert cold to customer. Script, hook, story, offer, close. Different cadence from YouTube — sales-driven not entertainment-driven.
 **Core SOPs:** 01-How-to-Write-a-VSL-Script.md, 02-How-to-Structure-a-30-Minute-VSL.md, 03-How-to-Test-Hook-Variants.md, 04-How-to-Measure-VSL-Conversion.md
 **Persona Traits:** Persuasion-fluent, conversion-driven, long-form-storyteller.
@@ -63,6 +66,7 @@ Added VSL Specialist, Animation Specialist, Color Grading Specialist, Captioning
 **Persona Traits:** After Effects-deep, motion-aware, brand-on-brand.
 
 ### 9. Animation Specialist (2D/3D/Whiteboard)
+**Slug:** animation-specialist-2d-3d-whiteboard
 **What it does:** Pure animation work — explainer videos, character animation, whiteboard animation. Different from Motion Graphics (which is post-production overlay).
 **Core SOPs:** 01-How-to-Plan-a-2D-Animated-Explainer.md, 02-How-to-Build-Whiteboard-Animation.md, 03-How-to-Animate-Characters.md, 04-How-to-Coordinate-with-Storyboard.md
 **Persona Traits:** Animator's-eye, timing-fluent, character-design-aware.
@@ -83,6 +87,7 @@ Added VSL Specialist, Animation Specialist, Color Grading Specialist, Captioning
 **Persona Traits:** Real-time-aware, multi-tasker, tech-troubleshooting.
 
 ### 13. CRM Specialist (Video Version)
+**Slug:** crm-specialist-video-version
 **What it does:** Bridges Video and CRM. Auto-attaches videos to email campaigns, sets up video drip sequences, tracks per-video engagement to lead score.
 **Core SOPs:** 01-How-to-Attach-Video-to-Email-Campaign.md, 02-How-to-Build-Video-Drip-Sequence.md, 03-How-to-Track-Video-Engagement-to-Lead-Score.md
 **Persona Traits:** Integration-fluent, video-marketing-aware.

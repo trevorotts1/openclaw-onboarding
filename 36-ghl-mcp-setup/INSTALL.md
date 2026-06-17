@@ -364,6 +364,25 @@ openclaw config set env.vars.GHL_COMMUNITY_MCP_URL "http://localhost:${GHL_MCP_P
 > health-checks `/health`, and registers the MCP. It is idempotent and prints a
 > `STATUS:` line. Run it manually only to re-verify:
 >
+> **v12.24.0 — SUPERVISION HARDENED (fleet incident: 12/19 boxes went down/unsupervised).**
+> Two root causes are now fixed in `scripts/ghl-mcp-autostart.sh` and the VPS
+> overlay `platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh`, and a
+> hard QC gate (`scripts/qc-system-integrity.sh` **CHECK X.13**, backed by
+> `scripts/qc-assert-ghl-mcp-supervised.sh`) blocks any regression from shipping:
+>
+> 1. **PORT IS PINNED EXPLICITLY.** The community MCP's `main.js` reads
+>    `process.env.PORT` **before** `process.env.MCP_SERVER_PORT` (`src/main.ts:55`).
+>    Without an explicit `PORT`, a stray inherited `PORT` made the server bind a
+>    random port (49032/63703) instead of 8765. Every launch surface (launchd
+>    plist, pm2 env, systemd `Environment=`, the server `.env`, the supervisor
+>    loop) now pins **BOTH** `PORT=8765` **and** `MCP_SERVER_PORT=8765`.
+> 2. **NO BARE NOHUP.** A bare `nohup node …` does NOT survive session/exec
+>    teardown and is never restarted on crash. VPS now runs under **pm2**
+>    (`ecosystem.config.js` + `pm2 save` + an `@reboot pm2 resurrect` hook) so it
+>    survives reboot/container restart; systemd is the non-container fallback; a
+>    detached `setsid` **supervised relaunch loop** is the last resort. Mac uses
+>    the launchd `KeepAlive` + `RunAtLoad` plist below (now with `PORT` pinned).
+>
 > ```bash
 > bash ~/.openclaw/onboarding/scripts/ghl-mcp-autostart.sh
 > # STATUS: ghl-mcp-autostart=HEALTHY (server on :8765 healthy + registered ...)
@@ -390,6 +409,10 @@ if [ "$PLATFORM" = "desktop" ]; then
     <key>EnvironmentVariables</key><dict>
         <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
         <key>NODE_ENV</key><string>production</string>
+        <!-- main.js reads PORT before MCP_SERVER_PORT (src/main.ts:55). Pin BOTH
+             to ${GHL_MCP_PORT} so a stray inherited PORT can never bind random. -->
+        <key>PORT</key><string>${GHL_MCP_PORT}</string>
+        <key>MCP_SERVER_PORT</key><string>${GHL_MCP_PORT}</string>
     </dict>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><dict>
@@ -410,35 +433,61 @@ EOF
 fi
 ```
 
-#### 5.6 Install service — Linux/VPS (systemd)
+#### 5.6 Install service — Linux/VPS (pm2 preferred; systemd fallback)
+
+> **v12.24.0:** On a Hostinger Docker VPS there is NO systemd and NO launchd, so
+> the legacy systemd unit never ran and the old fallback was a bare `nohup` that
+> died on teardown — the fleet-killer. The canonical VPS path is now **pm2**
+> (the fleet-standard supervisor) with `pm2 save` + an `@reboot pm2 resurrect`
+> hook (and the Docker `command:` override below for `docker compose restart`).
+> `PORT` and `MCP_SERVER_PORT` are BOTH pinned. `scripts/ghl-mcp-autostart.sh`
+> and `platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh` write the
+> `ecosystem.config.js` and run pm2 for you — these blocks are the reference.
 
 ```bash
 if [ "$PLATFORM" = "vps" ]; then
   mkdir -p /data/logs
-  NODE_PATH=$(which node)
-  sudo tee /etc/systemd/system/ghl-mcp.service > /dev/null <<EOF
-[Unit]
-Description=GHL Community MCP Server
-After=network.target
-
-[Service]
-Type=simple
-User=$(whoami)
-WorkingDirectory=${MCP_DIR}
-ExecStart=${NODE_PATH} ${MCP_DIR}/dist/main.js
-Restart=on-failure
-RestartSec=10
-EnvironmentFile=${MCP_DIR}/.env
-StandardOutput=append:/data/logs/ghl-mcp.log
-StandardError=append:/data/logs/ghl-mcp.err.log
-
-[Install]
-WantedBy=multi-user.target
-EOF
-  sudo systemctl daemon-reload
-  sudo systemctl enable --now ghl-mcp
+  # PORT + MCP_SERVER_PORT BOTH pinned (main.js reads PORT first → random bind otherwise).
+  cat > "${MCP_DIR}/ecosystem.config.js" <<ECO
+module.exports = {
+  apps: [{
+    name: "ghl-community-mcp",
+    cwd: "${MCP_DIR}",
+    script: "dist/main.js",
+    interpreter: "node",
+    autorestart: true,
+    max_restarts: 50,
+    restart_delay: 5000,
+    env: {
+      NODE_ENV: "production",
+      PORT: "${GHL_MCP_PORT}",
+      MCP_SERVER_PORT: "${GHL_MCP_PORT}",
+      GHL_API_KEY: "${GOHIGHLEVEL_API_KEY}",
+      GHL_BASE_URL: "https://services.leadconnectorhq.com",
+      GHL_LOCATION_ID: "${GOHIGHLEVEL_LOCATION_ID}"
+    },
+    out_file: "/data/logs/ghl-mcp.log",
+    error_file: "/data/logs/ghl-mcp.err.log"
+  }]
+};
+ECO
+  cd "${MCP_DIR}" && pm2 startOrReload ecosystem.config.js
+  pm2 save
+  pm2 startup >/dev/null 2>&1 || true
+  # Reboot/container-restart survival: @reboot resurrect + Docker command override.
+  ( crontab -l 2>/dev/null | grep -Fq "pm2 resurrect" ) || \
+    ( crontab -l 2>/dev/null; echo "@reboot $(command -v pm2) resurrect >/data/logs/pm2-resurrect.log 2>&1" ) | crontab -
 fi
 ```
+
+For a Hostinger Docker box, also add a delayed `pm2 resurrect` to the project's
+`command:` override (same pattern the Command Center uses, so the MCP returns
+after `docker compose restart` — see skill 32 INSTALL.md Phase 6c).
+
+> **systemd fallback (non-container VPS only):** if pm2 is genuinely unavailable
+> and the box has systemd, install a unit with `Environment=PORT=${GHL_MCP_PORT}`
+> and `Environment=MCP_SERVER_PORT=${GHL_MCP_PORT}` (the autostart script does
+> this automatically). Never fall back to a bare `nohup`.
 
 #### 5.7 Tier 2 = ON-DEMAND via curl (NO native registration)
 

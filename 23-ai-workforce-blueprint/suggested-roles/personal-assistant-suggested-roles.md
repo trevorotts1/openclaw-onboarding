@@ -19,6 +19,7 @@ Added via the 42-personal-assistant-library (v10.15.40/v10.16.39). 29 personal-l
 ## Roles
 
 ### 0. Director of Personal Assistance
+**Slug:** director-of-personal-assistant
 **What it does:** Strategic oversight for the personal-assistant department. Manages all 29 specialists, runs daily triage, selects the right specialist for each personal task, ensures the owner's personal priorities align with business priorities, and escalates cross-domain conflicts to the CEO. The single intake point for everything the owner does not want to route manually.
 **Core SOPs to build:**
 - 01-How-to-Run-Daily-Personal-Triage.md
@@ -153,6 +154,7 @@ Added via the 42-personal-assistant-library (v10.15.40/v10.16.39). 29 personal-l
 ---
 
 ### 12. Relationships & Important-Dates Concierge
+**Slug:** relationships-dates
 **What it does:** Manages the owner's personal relationship calendar. Tracks birthdays, anniversaries, milestones, and commitments to family and friends. Reminds the owner in advance, suggests meaningful gestures, and drafts personal messages so no important relationship moment is missed.
 **Core SOPs to build:**
 - 01-How-to-Maintain-the-Relationship-Calendar.md

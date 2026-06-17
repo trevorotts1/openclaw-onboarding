@@ -551,6 +551,46 @@ oc_workspace_departments_materialized() {
 }
 
 # ------------------------------------------------------------
+# oc_repo_consistency_ok
+#   BUILD-START PREFLIGHT: the installed Skill 23 repo must be internally
+#   consistent across its SIX independent sources of truth before a client
+#   workforce build is allowed to run:
+#     FLOOR (department-naming-map.json mandatory + universal-primary verticals)
+#     ROSTERS (suggested-roles/*.md)         ROLE LIBRARY (templates/role-library/_index.json)
+#     SOP SOURCE (role-library / Skill-42)   PERSONA DOMAINS (build-workforce dept_to_domains x2
+#                                            + create_role_workspaces DEPT_DOMAIN_HINTS)
+#     no ORPHANS.
+#   Six departments once shipped UNBUILDABLE because NOTHING cross-checked floor
+#   vs rosters. A client build must REFUSE to run against a drifted repo rather
+#   than silently produce a half-built workforce. Delegates to the SAME gate CI
+#   runs (qc-assert-repo-consistency.py). Returns:
+#     0  consistent (gate rc=0)
+#     1  DRIFT (gate rc=5) OR the gate could not run / is missing — FAIL-CLOSED.
+#   Sets OC_REPO_CONSISTENCY_RC so callers can distinguish drift (5) from
+#   could-not-run (2) / missing (127).
+# ------------------------------------------------------------
+oc_repo_consistency_ok() {
+  OC_REPO_CONSISTENCY_RC=127
+  local _self_dir gate=""
+  _self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+  for _c in \
+    "${_self_dir:+$_self_dir/23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py}" \
+    "$OC_CONFIG/skills/23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py" \
+    "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py" \
+    "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py"; do
+    [ -n "$_c" ] && [ -f "$_c" ] && { gate="$_c"; break; }
+  done
+  # FAIL-CLOSED: if the gate is missing, we cannot prove consistency → refuse.
+  [ -z "$gate" ] && return 1
+  local _skill_dir
+  _skill_dir="$(cd "$(dirname "$gate")/.." 2>/dev/null && pwd)"
+  python3 "$gate" --skill-dir "$_skill_dir" >/dev/null 2>&1
+  OC_REPO_CONSISTENCY_RC=$?
+  [ "$OC_REPO_CONSISTENCY_RC" -eq 0 ] && return 0
+  return 1
+}
+
+# ------------------------------------------------------------
 # oc_overall_goal_check
 #   CHEAP overall goal check (reads two state files, no network):
 #   (i) all 5 waves passed in waveGoals, (ii) interviewComplete in

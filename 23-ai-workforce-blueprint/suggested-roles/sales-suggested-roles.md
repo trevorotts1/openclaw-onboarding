@@ -30,6 +30,7 @@ Added SDR vs Account Executive split, Account Manager (post-sale), Proposal & Qu
 ---
 
 ### 1. SDR (Sales Development Rep)
+**Slug:** sdr-sales-development-rep
 **What it does:** Top-of-funnel outreach. Cold email, cold call, LinkedIn DM. Qualifies leads, books discovery calls for AEs. Does NOT close deals.
 **Core SOPs to build:**
 - 01-How-to-Cold-Email-a-Prospect.md
@@ -75,6 +76,7 @@ Added SDR vs Account Executive split, Account Manager (post-sale), Proposal & Qu
 ---
 
 ### 5. Account Executive (Full-Cycle)
+**Slug:** account-executive-full-cycle
 **What it does:** For deals that don't split into SDR/Discovery/Closer, the AE owns the full deal cycle from qualified lead to closed-won. Common for mid-market and longer sales cycles.
 **Core SOPs to build:**
 - 01-How-to-Run-a-Full-Cycle-Sales-Process.md
@@ -86,6 +88,7 @@ Added SDR vs Account Executive split, Account Manager (post-sale), Proposal & Qu
 ---
 
 ### 6. Account Manager (Post-Sale)
+**Slug:** account-manager-post-sale
 **What it does:** Owns the relationship after the sale. Drives renewals, identifies expansion opportunities, manages account health. Hands escalations to Customer Support. Separate from new-business close.
 **Core SOPs to build:**
 - 01-How-to-Run-a-Quarterly-Business-Review-with-Client.md
@@ -130,6 +133,7 @@ Added SDR vs Account Executive split, Account Manager (post-sale), Proposal & Qu
 ---
 
 ### 10. CRM Specialist (Sales Version)
+**Slug:** crm-specialist-sales-version
 **What it does:** Bridges between Sales dept and CRM dept. Owns Sales-side CRM configuration (pipeline stages, deal fields, automations). Hands off to CRM dept for platform-level work.
 **Core SOPs to build:**
 - 01-How-to-Configure-Sales-Pipeline-Stages.md
@@ -140,6 +144,7 @@ Added SDR vs Account Executive split, Account Manager (post-sale), Proposal & Qu
 ---
 
 ### 11. QC Specialist — Sales
+**Slug:** qc-specialist-sales
 **What it does:** Reviews proposals before they go out. Audits discovery call notes for completeness. Listens to sample sales calls for quality. Verifies pricing math and contract terms.
 **Core SOPs to build:**
 - 01-How-to-QC-Review-a-Proposal.md
@@ -151,6 +156,7 @@ Added SDR vs Account Executive split, Account Manager (post-sale), Proposal & Qu
 ---
 
 ### 12. Deep Research Specialist — Sales
+**Slug:** deep-research-specialist-sales
 **What it does:** On-call researcher for sales intelligence — competitive deal positioning, account research, industry sales benchmarks (Gartner, Forrester, McKinsey).
 **Core SOPs to build:**
 - 01-How-to-Run-Account-Research-Before-Discovery.md

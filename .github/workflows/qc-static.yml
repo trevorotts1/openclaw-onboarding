@@ -761,6 +761,34 @@ jobs:
           #      industry-org-design research manifest.
           bash 23-ai-workforce-blueprint/scripts/test-ws4-departments.sh
 
+      - name: Skill 23 repo-consistency gate (floor x roster x library x SOP x persona)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # THE cross-checking gate that makes it IMPOSSIBLE for a department /
+          # role / SOP / persona to ship inconsistent. The repo carries SIX
+          # independent sources of truth that nothing used to cross-check:
+          # FLOOR (department-naming-map.json mandatory + universal-primary),
+          # ROSTERS (suggested-roles/*.md), ROLE LIBRARY (templates/role-library/
+          # _index.json), SOP SOURCE (role-library copy path / Skill-42 PA library),
+          # PERSONA DOMAINS (build-workforce.dept_to_domains x2 +
+          # create_role_workspaces.DEPT_DOMAIN_HINTS), and ORPHANS. Six departments
+          # once shipped UNBUILDABLE because no gate compared floor vs rosters. The
+          # gate HARD-ASSERTS, for every floor dept: (a) its roster PARSES,
+          # (b) every roster role resolves a library/SOP template, (c) the dept
+          # DRY-RUN-INSTANTIATES cleanly, (d) every role has an SOP source (canonical
+          # copy path or Skill-42), (e) the dept has a NON-fallback persona-domain
+          # mapping in ALL THREE persona maps (never the generic ['leadership']),
+          # and (f) there are no orphan rosters / unreachable floor depts. It uses
+          # the SAME functions the build uses (parse_roster / library_lookup /
+          # normalize_dept / evaluate_floor / is_canonical_dept) so it can never
+          # disagree with what the build will do. Exits 5 on ANY drift.
+          python3 23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py
+          # Fixture tests prove the gate BITES (clean PASSes; missing-roster /
+          # unresolvable-role / missing-persona-map / corrupt-library-slug all FAIL).
+          bash 23-ai-workforce-blueprint/scripts/test-repo-consistency.sh
+          echo "✓ Skill 23 repo-consistency: floor x roster x library x SOP x persona all consistent; gate proven to fail on drift"
+
       - name: Skill 23 how-to-use-this-department guides present, current, clean + wired
         shell: bash
         run: |

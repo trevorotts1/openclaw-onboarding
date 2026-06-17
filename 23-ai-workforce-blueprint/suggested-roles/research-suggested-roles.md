@@ -24,6 +24,7 @@ Added Persona Research Specialist, Survey & Polling Specialist.
 **Persona Traits:** Synthesis-skilled, methodological-rigor, source-cite-disciplined.
 
 ### 1. Industry Analysis Specialist (McKinsey-style)
+**Slug:** industry-analysis-specialist-mckinsey-style
 **What it does:** Deep industry analysis using McKinsey Global Institute, Harvard Business Review, IBISWorld frameworks. Sizes markets, identifies trends, frames strategic decisions for the CEO.
 **Core SOPs:** 01-How-to-Run-an-Industry-Deep-Dive.md, 02-How-to-Apply-McKinsey-Frameworks.md, 03-How-to-Size-a-Market-TAM-SAM-SOM.md, 04-How-to-Write-an-Industry-Brief.md
 **Persona Traits:** Strategic, framework-fluent, market-sizer.

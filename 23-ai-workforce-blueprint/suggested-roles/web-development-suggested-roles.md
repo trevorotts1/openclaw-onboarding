@@ -33,6 +33,7 @@ Added Member Area Specialist, Web Accessibility (A11y) Specialist, Web Security 
 **Persona Traits:** Copy-skilled, conversion-driven, speed-builder.
 
 ### 3. SEO Specialist (Organic Search)
+**Slug:** seo-specialist-organic-search
 **What it does:** Owns organic search visibility. Keyword research, on-page SEO, content briefs to Content Marketing Strategist. Tracks rankings and organic traffic.
 **Core SOPs:** 01-How-to-Run-Keyword-Research.md, 02-How-to-Write-an-SEO-Brief.md, 03-How-to-Audit-On-Page-SEO.md, 04-How-to-Track-Rankings.md
 **Persona Traits:** Long-game patient, keyword-data-fluent, EEAT-aware.
@@ -53,6 +54,7 @@ Added Member Area Specialist, Web Accessibility (A11y) Specialist, Web Security 
 **Persona Traits:** Code-clean, performance-aware, component-thinker.
 
 ### 7. Conversion Rate Optimization (CRO) Specialist
+**Slug:** conversion-rate-optimization-cro-specialist
 **What it does:** Runs A/B tests, heatmap analysis, user session reviews. Identifies why people don't convert and tests fixes. Works closely with Funnel Builder + Landing Page.
 **Core SOPs:** 01-How-to-Run-an-A-B-Test.md, 02-How-to-Analyze-Heatmaps.md, 03-How-to-Review-Session-Recordings.md, 04-How-to-Hypothesis-Driven-Optimize.md
 **Persona Traits:** Hypothesis-tester, sample-size-aware, statistically-literate.
@@ -68,6 +70,7 @@ Added Member Area Specialist, Web Accessibility (A11y) Specialist, Web Security 
 **Persona Traits:** Gating-platform-fluent, access-management-thinker.
 
 ### 10. Web Accessibility (A11y) Specialist
+**Slug:** web-accessibility-a11y-specialist
 **What it does:** Ensures the website meets WCAG 2.1 AA / 2.2 standards. Keyboard navigation, screen reader compatibility, color contrast, alt text. Reduces legal/regulatory risk + expands customer base.
 **Core SOPs:** 01-How-to-Run-an-A11y-Audit.md, 02-How-to-Add-Alt-Text-and-ARIA-Labels.md, 03-How-to-Test-with-Screen-Reader.md, 04-How-to-Fix-Color-Contrast-Issues.md
 **Persona Traits:** Inclusion-minded, standards-rigorous, detail-oriented.

@@ -17,11 +17,11 @@ Because this department maintains the very system it runs on, **any change to `[
 
 ## Governing Rules for the 4 New Maintenance Specialists (v12.3.0)
 
-### Furnace-Watch Mandate (applies to all 4 specialists)
+#### Furnace-Watch Mandate (applies to all 4 specialists)
 
 The Token Manager / Furnace Watch Specialist (role 13) performs an **hourly, read-only sweep** for runaway-agent and token-furnace conditions. Known drivers include: heartbeat-poll loops (gateway 30m default + Skill-18 HEARTBEAT.md + memory dreaming piling up session entries), GHL-MCP autostart restart-loop spinning agentTurns, broken resume/build crons firing without delivery, duplicate or orphan crons, and gateway-crash instance-backup loops. **Notify-on-change-only** — never spam a repeated alert for the same condition. Definitive furnace → auto-fix then notify. Ambiguous or feature-bearing → escalate via Rescue Rangers (see below). The Cost / Model Optimizer Specialist (role 14) and Uptime Watchdog (role 16) share the notify-on-change-only constraint on all their recurring probes.
 
-### Rescue Rangers Escalation (applies to all 4 specialists)
+#### Rescue Rangers Escalation (applies to all 4 specialists)
 
 Every specialist in this department (including the 4 new ones) escalates ambiguous or feature-bearing findings via:
 
@@ -31,7 +31,7 @@ openclaw message send --channel telegram -t "${RESCUE_RANGERS_HELP_CHAT_ID}"
 
 Message must include: box identifier, driver/symptom, evidence (log excerpt or metric), proposed fix, and why the specialist is unsure. **NEVER bypass OpenClaw's gateway for Telegram** — no direct curl to api.telegram.org. Propagation script: `~/clawd/fleet-heartbeat/scripts/propagate-rescue-chat-id.sh`. This mirrors the fleet-wide Rescue Rangers setup (`~/clawd/fleet-heartbeat/rescue-rangers-setup.md`).
 
-### Platform-Specific Guardrails for Uptime Watchdog (role 16)
+#### Platform-Specific Guardrails for Uptime Watchdog (role 16)
 
 - **Mac:** NEVER run `openclaw gateway restart` over SSH (launchd err 125 = box DOWN). Restart pattern: detached `openclaw gateway run` + a launchd-guarded watchdog. Watchdog cron must be a **pure-shell `*/10` probe**, notify-on-change-only — NOT an agentTurn, NOT `*/2`.
 - **VPS (Hostinger Docker):** use `docker restart policy` / `--force-recreate`. Never run `openclaw gateway restart` as the primary repair path inside a container session.

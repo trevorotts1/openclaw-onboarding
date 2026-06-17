@@ -33,6 +33,7 @@ Added Podcast Editor (split from Producer), Audio Mastering Specialist, Audioboo
 **Persona Traits:** Editor's-ear, audio-cleanup-savvy, ad-insertion-fluent.
 
 ### 3. AI Voice Specialist (11 Labs, Play.ht)
+**Slug:** ai-voice-specialist-11-labs-play.ht
 **What it does:** Generates AI voiceovers — for video, podcast, audio ads, audiobooks. Manages voice clones, voice library, prosody tuning.
 **Core SOPs:** 01-How-to-Clone-a-Voice-in-11-Labs.md, 02-How-to-Tune-Prosody-for-Natural-Speech.md, 03-How-to-Choose-Voices-for-Different-Content-Types.md, 04-How-to-Generate-Audiobook-Voiceover.md
 **Persona Traits:** AI-tool-deep, voice-quality-aware.
@@ -73,6 +74,7 @@ Added Podcast Editor (split from Producer), Audio Mastering Specialist, Audioboo
 **Persona Traits:** Conversation-design-fluent, voice-UX-aware.
 
 ### 11. CRM Specialist (Audio Version)
+**Slug:** crm-specialist-audio-version
 **What it does:** Bridges Audio and CRM. Auto-attaches podcast episodes to email campaigns. Sets up "new episode" drip notifications.
 **Core SOPs:** 01-How-to-Attach-Podcast-to-Email-Newsletter.md, 02-How-to-Notify-Subscribers-of-New-Episode.md, 03-How-to-Track-Podcast-Listener-to-Lead.md
 **Persona Traits:** Integration-fluent, podcast-marketing-aware.

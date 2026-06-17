@@ -1,0 +1,50 @@
+name: ghl-mcp-supervised-guard
+
+# Fails the build if the GHL MCP autostart scripts regress to an unsupervised /
+# random-port configuration — the fleet incident where 12/19 boxes went down
+# because a bare `nohup node …` died on teardown and an unpinned PORT bound a
+# random port (main.js reads PORT before MCP_SERVER_PORT).
+# v12.24.0 / fix/ghl-mcp-supervised-autostart
+
+on:
+  push:
+    paths:
+      - scripts/ghl-mcp-autostart.sh
+      - scripts/qc-assert-ghl-mcp-supervised.sh
+      - platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh
+      - tests/unit/ghl-mcp-supervised.test.sh
+      - .github/workflows/ghl-mcp-supervised-guard.yml
+  pull_request:
+    paths:
+      - scripts/ghl-mcp-autostart.sh
+      - scripts/qc-assert-ghl-mcp-supervised.sh
+      - platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh
+      - tests/unit/ghl-mcp-supervised.test.sh
+      - .github/workflows/ghl-mcp-supervised-guard.yml
+
+jobs:
+  ghl-mcp-supervised-guard:
+    name: GHL MCP supervision regression guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax-check the autostart + gate scripts
+        run: |
+          for f in \
+            scripts/ghl-mcp-autostart.sh \
+            scripts/qc-assert-ghl-mcp-supervised.sh \
+            platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh; do
+            bash -n "$f"
+          done
+
+      - name: Run GHL MCP supervision invariant gate (must pass)
+        run: |
+          chmod +x scripts/qc-assert-ghl-mcp-supervised.sh
+          bash scripts/qc-assert-ghl-mcp-supervised.sh
+
+      - name: Run GHL MCP supervision unit test (positive + negative)
+        run: |
+          chmod +x tests/unit/ghl-mcp-supervised.test.sh
+          bash tests/unit/ghl-mcp-supervised.test.sh

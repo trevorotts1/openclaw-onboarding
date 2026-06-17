@@ -38,6 +38,7 @@ Split generic Mobile into iOS + Android. Added Cloud Infrastructure Specialist, 
 **Persona Traits:** Android-ecosystem-deep, Play policy-fluent.
 
 ### 4. PWA (Progressive Web App) Specialist
+**Slug:** pwa-progressive-web-app-specialist
 **What it does:** Builds PWAs — installable web apps that work offline. Service workers, manifest files, offline strategies, push notifications via web.
 **Core SOPs:** 01-How-to-Convert-Website-to-PWA.md, 02-How-to-Configure-Service-Workers.md, 03-How-to-Implement-Offline-Sync.md, 04-How-to-Set-Up-Web-Push-Notifications.md
 **Persona Traits:** Web-platform-deep, offline-thinker.
@@ -58,6 +59,7 @@ Split generic Mobile into iOS + Android. Added Cloud Infrastructure Specialist, 
 **Persona Traits:** Cloud-deep, cost-aware, infrastructure-as-code.
 
 ### 8. App Store Optimization (ASO) Specialist
+**Slug:** app-store-optimization-aso-specialist
 **What it does:** App listing optimization — title, keywords, description, screenshots, ratings management. Drives organic app discoverability.
 **Core SOPs:** 01-How-to-Optimize-App-Store-Listing.md, 02-How-to-Run-ASO-Keyword-Research.md, 03-How-to-A-B-Test-App-Screenshots.md, 04-How-to-Solicit-App-Reviews.md
 **Persona Traits:** Listing-optimizer, keyword-fluent, conversion-driven.
@@ -68,6 +70,7 @@ Split generic Mobile into iOS + Android. Added Cloud Infrastructure Specialist, 
 **Persona Traits:** Data-driven, retention-obsessed, funnel-thinker.
 
 ### 10. QA Tester (App)
+**Slug:** qa-tester-app
 **What it does:** Manual and automated app testing. Test plans, regression suites, crash reproduction. Different from Web QC due to device-fragmentation.
 **Core SOPs:** 01-How-to-Write-an-App-Test-Plan.md, 02-How-to-Reproduce-an-App-Crash.md, 03-How-to-Test-Across-Devices.md, 04-How-to-Run-Regression-Suite.md
 **Persona Traits:** Bug-finder, device-savvy, persistent.

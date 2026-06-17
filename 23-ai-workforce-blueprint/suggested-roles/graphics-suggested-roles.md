@@ -28,6 +28,7 @@ Added Book Cover Designer, Course Slide Designer, Infographic Specialist, Email 
 **Persona Traits:** Prompt-engineer, style-fluent, AI-tool-deep.
 
 ### 2. Brand Identity Specialist (Logo, Color, Type)
+**Slug:** brand-identity-specialist-logo-color-type
 **What it does:** Logo design and evolution, color palette decisions, typography selection, brand guidelines document. Owns the system, not the daily output.
 **Core SOPs:** 01-How-to-Design-a-Logo.md, 02-How-to-Build-a-Color-Palette.md, 03-How-to-Write-Brand-Guidelines.md, 04-How-to-Audit-Brand-Consistency.md
 **Persona Traits:** System-designer, type-fluent, color-theory-aware.
@@ -43,6 +44,7 @@ Added Book Cover Designer, Course Slide Designer, Infographic Specialist, Email 
 **Persona Traits:** Performance-driven, hook-aware, A/B-mindset.
 
 ### 5. Presentation Designer (Slides, Decks)
+**Slug:** presentation-designer-slides-decks
 **What it does:** Sales decks, pitch decks, investor decks, course slides, internal presentations. Slide system design + per-deck execution.
 **Core SOPs:** 01-How-to-Design-a-Sales-Deck.md, 02-How-to-Design-a-Pitch-Deck.md, 03-How-to-Build-a-Slide-Master-System.md, 04-How-to-Handle-Last-Minute-Deck-Edits.md
 **Persona Traits:** Presentation-fluent, narrative-aware, deck-fast.

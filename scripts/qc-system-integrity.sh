@@ -828,6 +828,89 @@ else
   WARNINGS+=("X.11|qc-assert-workspace-departments-built.sh missing|Update openclaw-onboarding to v12.23.0+")
 fi
 
+# ─── CHECK X.12: Repo consistency (floor x roster x library x SOP x persona) ──
+# Hard-fail: the INSTALLED skill repo must be internally consistent across its
+# six independent sources of truth (FLOOR / ROSTERS / ROLE LIBRARY / SOP SOURCE /
+# PERSONA DOMAINS / no ORPHANS). A client build must REFUSE to run against an
+# inconsistent repo — six departments once shipped UNBUILDABLE because no gate
+# cross-checked floor vs rosters vs library vs persona maps. This runs the SAME
+# gate as CI (qc-assert-repo-consistency.py) against the installed skill dir, so
+# a drifted repo can never quietly produce a half-built workforce.
+#   rc=0 -> consistent.  rc=5 -> DRIFT (hard fail).  rc=2 -> could not load (warn).
+echo
+blue "── CHECK X.12: Repo consistency (floor x roster x library x SOP x persona) ──"
+CONSISTENCY_GATE=""
+for _cg in \
+  "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py" \
+  "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py" \
+  "$(dirname "${BASH_SOURCE[0]}")/../23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py"; do
+  [[ -f "$_cg" ]] && CONSISTENCY_GATE="$_cg" && break
+done
+if [[ -n "$CONSISTENCY_GATE" ]]; then
+  _cg_skill_dir="$(cd "$(dirname "$CONSISTENCY_GATE")/.." && pwd)"
+  _cg_tmp=$(mktemp)
+  python3 "$CONSISTENCY_GATE" --skill-dir "$_cg_skill_dir" > "$_cg_tmp" 2>&1
+  CONSISTENCY_RC=$?
+  case "$CONSISTENCY_RC" in
+    0)
+      green "  ✓ X.12 Repo consistent: all floor departments aligned across floor/roster/library/SOP/persona"; PASS=$((PASS+1)) ;;
+    5)
+      red "  ✗ X.12 REPO DRIFT — a department/role/SOP/persona is inconsistent; a client build MUST NOT run against this repo"
+      FAIL=$((FAIL+1))
+      FAILURES+=("X.12|Repo consistency drift (floor x roster x library x SOP x persona)|Run: python3 $CONSISTENCY_GATE — fix every DRIFT row (missing roster / unresolvable role / missing persona-domain mapping) before building")
+      while IFS= read -r _cgl; do
+        case "$_cgl" in *"[LIBRARY/SOP]"*|*"[ROSTER]"*|*"[PERSONA-DOMAIN]"*|*"[INSTANTIATE]"*|*"[SOP-SOURCE]"*|*"[ORPHAN"*) red "    $_cgl" ;; esac
+      done < "$_cg_tmp" ;;
+    *)
+      yellow "  ⚠ X.12 Repo-consistency gate could not run (rc=$CONSISTENCY_RC)"; WARN=$((WARN+1))
+      WARNINGS+=("X.12|Repo-consistency gate could not run (rc=$CONSISTENCY_RC)|Ensure python3 + the skill scripts are present; re-run $CONSISTENCY_GATE") ;;
+  esac
+  rm -f "$_cg_tmp"
+else
+  yellow "  ⚠ X.12 qc-assert-repo-consistency.py not found — skipping repo-consistency check"
+  WARN=$((WARN+1))
+  WARNINGS+=("X.12|qc-assert-repo-consistency.py missing|Update openclaw-onboarding to the version that ships the repo-consistency gate")
+fi
+
+# ─── CHECK X.13: GHL MCP supervision standard (v12.22.0) ─────────────────────
+# Hard-fail: the SHIPPED GHL-MCP autostart scripts (skill 36, Tier 2) MUST be
+# configured for PROPER, REBOOT-SURVIVING, PORT-PINNED supervision so a FRESH
+# install can never reproduce the fleet incident (12/19 boxes down/unsupervised).
+# Forbidden regressions: a BARE `nohup node …` (unsupervised, dies on teardown)
+# and an UNPINNED port (main.js reads PORT before MCP_SERVER_PORT → binds a random
+# port). Delegates to qc-assert-ghl-mcp-supervised.sh (single source of truth).
+echo
+blue "── CHECK X.13: GHL MCP supervision standard ──"
+GHL_SUP_SCRIPT=""
+for _gs_cand in \
+  "$(dirname "${BASH_SOURCE[0]}")/qc-assert-ghl-mcp-supervised.sh" \
+  "$HOME/.openclaw/skills/scripts/qc-assert-ghl-mcp-supervised.sh" \
+  "/data/.openclaw/skills/scripts/qc-assert-ghl-mcp-supervised.sh"; do
+  [[ -f "$_gs_cand" ]] && GHL_SUP_SCRIPT="$_gs_cand" && break
+done
+if [[ -n "$GHL_SUP_SCRIPT" ]]; then
+  _gs_tmp=$(mktemp)
+  bash "$GHL_SUP_SCRIPT" > "$_gs_tmp" 2>&1
+  GHL_SUP_RC=$?
+  GHL_SUP_OUT=$(cat "$_gs_tmp"); rm -f "$_gs_tmp"
+  if [[ "$GHL_SUP_RC" = "0" ]]; then
+    green "  ✓ X.13 GHL MCP autostart is supervised (launchd/pm2/systemd), reboot-surviving, and PORT-pinned (no bare nohup, no random port)"; PASS=$((PASS+1))
+  else
+    red "  ✗ X.13 GHL MCP supervision invariant violated — a fresh install could ship an unsupervised / random-port GHL MCP"
+    FAIL=$((FAIL+1))
+    FAILURES+=("X.13|GHL MCP autostart not properly supervised / PORT not pinned|Run: bash scripts/qc-assert-ghl-mcp-supervised.sh — fix every INVARIANT VIOLATED line (use pm2+save+resurrect on VPS, launchd KeepAlive on Mac, pin BOTH PORT and MCP_SERVER_PORT, remove bare nohup)")
+    while IFS= read -r _gsline; do
+      case "$_gsline" in
+        *"INVARIANT VIOLATED"*|*"offender:"*) red "    $_gsline" ;;
+      esac
+    done <<< "$GHL_SUP_OUT"
+  fi
+else
+  yellow "  ⚠ X.13 qc-assert-ghl-mcp-supervised.sh not found — skipping GHL MCP supervision check"
+  WARN=$((WARN+1))
+  WARNINGS+=("X.13|qc-assert-ghl-mcp-supervised.sh missing|Update openclaw-onboarding to v12.22.0+")
+fi
+
 # ─── SUMMARY ─────────────────────────────────────────────────────────────────
 echo
 blue "═══════════════════════════════════════════════════"

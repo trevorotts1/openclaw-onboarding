@@ -1580,6 +1580,13 @@ def write_governing_personas_md(dept_path, dept_id, dept_name=None):
                 "general-task":     ["operations", "productivity-systems", "leadership"],
                 "project-architecture-office": ["strategy-innovation", "leadership", "operations"],
                 "project-management": ["leadership", "strategy-innovation", "productivity-systems"],
+                # --- FIX 3 additions (2026-06-17, repo-consistency gate) ---
+                # These canonical FLOOR dept ids were missing, so they fell back
+                # to the first-5-personas default in write_governing_personas_md.
+                # Enforced by scripts/qc-assert-repo-consistency.py.
+                "crm":              ["sales", "communication", "operations"],
+                "quality-control":  ["productivity-systems", "operations", "strategy-innovation"],
+                "account-management": ["communication", "coaching", "strategy-innovation"],
             }
             hints = DEPT_DOMAIN_HINTS.get(dept_lower, [])
             ranked = []
@@ -1789,11 +1796,68 @@ def parse_roster(roster_path):
                 cur["role_type"] = line.replace("**Role type:**", "").strip().lower()
     if cur is not None:
         roles.append(cur)
+    # TABLE-FORMAT FALLBACK (FIX 4, 2026-06-17, repo-consistency gate):
+    # Two rosters (general-task, project-architecture-office) list their roles as
+    # a markdown table `| # | Slug | Title | Type | Purpose |` instead of
+    # `### N. Name` headers. The header parser above returns 0 roles for them, so
+    # the dept would silently materialize ZERO specialists despite having full
+    # role-library templates. When NO `### N.` roles were parsed, fall back to
+    # parsing the role table. Kept in lockstep with build-workforce.parse_suggested_roles.
+    if not roles:
+        roles = _parse_roster_table(text)
     # Backfill any missing slug from the cleaned name.
     for r in roles:
         if not r["slug"]:
             r["slug"] = slugify(r["name"])
     return roles
+
+
+def _parse_roster_table(text):
+    """Parse a `| # | Slug | Title | Type | Purpose |` role table into role dicts.
+
+    Recognizes the header row (a `|`-delimited row whose normalized cells contain
+    both a 'slug' column and a 'title' column), then reads each subsequent data
+    row, mapping the slug/title/type columns by position. Skips the `---|---`
+    separator row. Returns [] if no recognizable table is present.
+    """
+    rows = []
+    cols = None  # {col_name: index}
+    for line in text.split("\n"):
+        s = line.strip()
+        if not s.startswith("|"):
+            cols = None  # a non-table line ends the current table
+            continue
+        cells = [c.strip() for c in s.strip("|").split("|")]
+        # separator row: all cells are dashes/colons
+        if all(re.fullmatch(r":?-{2,}:?", c or "-") for c in cells):
+            continue
+        lowered = [c.lower().strip("` ") for c in cells]
+        if cols is None:
+            # Try to interpret this as the header row.
+            idx = {name: i for i, name in enumerate(lowered)}
+            if "slug" in idx and "title" in idx:
+                cols = idx
+            continue
+        # Data row.
+        def cell(name):
+            i = cols.get(name)
+            return cells[i].strip().strip("`") if i is not None and i < len(cells) else ""
+        slug = cell("slug")
+        title = cell("title")
+        if not slug and not title:
+            continue
+        num = cell("#")
+        try:
+            number = int(num)
+        except ValueError:
+            number = len(rows)
+        rows.append({
+            "number": number,
+            "name": title or slug,
+            "slug": slug,
+            "role_type": (cell("type") or "specialist").lower(),
+        })
+    return rows
 
 
 def _resolve_dept_library_dir(dept_slug):

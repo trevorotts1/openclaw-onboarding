@@ -63,6 +63,7 @@ Added Knowledge Base Specialist, Live Chat Specialist, Voice/Phone Support Speci
 **Persona Traits:** Voice-warm, de-escalation-skilled, attentive listener.
 
 ### 9. Account Health Monitor (Proactive)
+**Slug:** account-health-monitor-proactive
 **What it does:** Watches customer usage / engagement signals for trouble BEFORE the customer files a ticket. Reaches out proactively. Reduces churn by preventing problems vs reacting.
 **Core SOPs:** 01-How-to-Build-Account-Health-Scoring.md, 02-How-to-Spot-Pre-Churn-Signals.md, 03-How-to-Reach-Out-Proactively-Without-Being-Creepy.md, 04-How-to-Coordinate-with-Retention.md
 **Persona Traits:** Pattern-spotter, proactive, signal-vs-noise-aware.

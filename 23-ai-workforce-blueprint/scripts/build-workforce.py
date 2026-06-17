@@ -3462,6 +3462,67 @@ def parse_suggested_roles(dept_id):
     if current_role:
         roles.append(current_role)
 
+    # TABLE-FORMAT FALLBACK (FIX 4, 2026-06-17, repo-consistency gate):
+    # general-task + project-architecture-office list roles in a markdown table
+    # (`| # | Slug | Title | Type | Purpose |`) instead of `### N.` headers. The
+    # header parser above returns 0 roles for them, so they would build ZERO
+    # specialists despite shipping full role-library templates. When no `### N.`
+    # roles were parsed, fall back to the role table. Kept in lockstep with
+    # create_role_workspaces.parse_roster / _parse_roster_table.
+    if not roles:
+        roles = _parse_suggested_roles_table(content)
+
+    return roles
+
+
+def _parse_suggested_roles_table(content):
+    """Parse a `| # | Slug | Title | Type | Purpose |` role table.
+
+    Mirrors create_role_workspaces._parse_roster_table but returns the dict shape
+    parse_suggested_roles produces (number/name/slug/description/sops/
+    persona_traits/is_qc). Returns [] if no recognizable table is present.
+    """
+    import re as _re
+    roles = []
+    cols = None
+    for line in content.split('\n'):
+        s = line.strip()
+        if not s.startswith('|'):
+            cols = None
+            continue
+        cells = [c.strip() for c in s.strip('|').split('|')]
+        if all(_re.fullmatch(r':?-{2,}:?', c or '-') for c in cells):
+            continue
+        lowered = [c.lower().strip('` ') for c in cells]
+        if cols is None:
+            idx = {name: i for i, name in enumerate(lowered)}
+            if 'slug' in idx and 'title' in idx:
+                cols = idx
+            continue
+
+        def cell(name):
+            i = cols.get(name)
+            return cells[i].strip().strip('`') if i is not None and i < len(cells) else ''
+        slug = cell('slug')
+        title = cell('title')
+        if not slug and not title:
+            continue
+        num = cell('#')
+        try:
+            number = int(num)
+        except ValueError:
+            number = len(roles)
+        rtype = cell('type').lower()
+        roles.append({
+            'number': number,
+            'name': (title or slug).strip(),
+            'slug': slug,
+            'description': cell('purpose'),
+            'sops': [],
+            'persona_traits': '',
+            'is_qc': rtype == 'qc' or 'quality control' in title.lower()
+                     or 'qc ' in title.lower(),
+        })
     return roles
 
 
@@ -4204,6 +4265,14 @@ def create_governing_personas_md(dept_id, dept_info, categories_data):
     #   strategy-innovation, personal-development
     # FIX 2 (2026-06-17): added 12 canonical departments that were missing,
     # causing all of them to fall back to the generic ["leadership"] pool.
+    # FIX 3 (2026-06-17, repo-consistency gate): selected_departments keys on the
+    # CANONICAL dept ids (billing-finance, customer-support, web-development,
+    # app-development, communications, openclaw-maintenance, social-media,
+    # paid-advertisement, crm, quality-control, account-management) — NOT the
+    # legacy short ids (billing/support/webdev/comms/...). Those canonical ids were
+    # missing here, so 11 floor depts silently fell back to ['leadership']. Every
+    # FLOOR dept id is now a key (legacy ids kept as aliases for old configs).
+    # This map is enforced by scripts/qc-assert-repo-consistency.py.
     dept_to_domains = {
         "marketing": ["marketing", "copywriting", "communication"],
         "sales": ["sales", "communication", "strategy-innovation"],
@@ -4235,6 +4304,18 @@ def create_governing_personas_md(dept_id, dept_info, categories_data):
         "general-task": ["operations", "productivity-systems", "leadership"],
         "project-architecture-office": ["strategy-innovation", "leadership", "operations"],
         "project-management": ["leadership", "strategy-innovation", "productivity-systems"],
+        # --- FIX 3 additions (2026-06-17): CANONICAL floor dept ids ---
+        "billing-finance": ["finance", "operations"],
+        "customer-support": ["communication", "coaching"],
+        "web-development": ["strategy-innovation", "marketing", "productivity-systems"],
+        "app-development": ["strategy-innovation", "productivity-systems"],
+        "communications": ["communication", "leadership", "marketing"],
+        "openclaw-maintenance": ["productivity-systems", "strategy-innovation", "operations"],
+        "social-media": ["marketing", "communication", "copywriting"],
+        "paid-advertisement": ["marketing", "copywriting", "strategy-innovation"],
+        "crm": ["sales", "communication", "operations"],
+        "quality-control": ["productivity-systems", "operations", "strategy-innovation"],
+        "account-management": ["communication", "coaching", "strategy-innovation"],
     }
 
     domains = dept_to_domains.get(dept_id, ["leadership"])
@@ -4805,6 +4886,13 @@ def generate_persona_matrix(departments, persona_categories, company_name):
     #   strategy-innovation, personal-development
     # FIX 2 (2026-06-17): added 12 canonical departments that were missing,
     # causing all of them to fall back to the generic ["leadership"] pool.
+    # FIX 3 (2026-06-17, repo-consistency gate): added the canonical FLOOR dept
+    # ids (billing-finance/customer-support/web-development/app-development/
+    # communications/openclaw-maintenance/social-media/paid-advertisement/crm/
+    # quality-control/account-management) — selected_departments keys on these,
+    # not the legacy short ids, so they were silently mapping to ['leadership'].
+    # Kept in lockstep with create_governing_personas_md and enforced by
+    # scripts/qc-assert-repo-consistency.py.
     dept_to_domains = {
         "marketing": ["marketing", "copywriting", "communication"],
         "sales": ["sales", "communication", "strategy-innovation"],
@@ -4836,6 +4924,18 @@ def generate_persona_matrix(departments, persona_categories, company_name):
         "general-task": ["operations", "productivity-systems", "leadership"],
         "project-architecture-office": ["strategy-innovation", "leadership", "operations"],
         "project-management": ["leadership", "strategy-innovation", "productivity-systems"],
+        # --- FIX 3 additions (2026-06-17): CANONICAL floor dept ids ---
+        "billing-finance": ["finance", "operations"],
+        "customer-support": ["communication", "coaching"],
+        "web-development": ["strategy-innovation", "marketing", "productivity-systems"],
+        "app-development": ["strategy-innovation", "productivity-systems"],
+        "communications": ["communication", "leadership", "marketing"],
+        "openclaw-maintenance": ["productivity-systems", "strategy-innovation", "operations"],
+        "social-media": ["marketing", "communication", "copywriting"],
+        "paid-advertisement": ["marketing", "copywriting", "strategy-innovation"],
+        "crm": ["sales", "communication", "operations"],
+        "quality-control": ["productivity-systems", "operations", "strategy-innovation"],
+        "account-management": ["communication", "coaching", "strategy-innovation"],
     }
 
     content = f"""# Persona Matrix - {company_name}

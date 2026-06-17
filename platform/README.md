@@ -29,8 +29,8 @@ OPENCLAW_PLATFORM=vps  bash install.sh   # force VPS path
 | `WORKSPACE` | `~/.openclaw/workspace` | `/data/.openclaw/workspace` |
 | Backups | `~/Downloads/openclaw-backups` | `/data/.openclaw/backups` |
 | Downloads | `~/Downloads` | `/data/Downloads` |
-| Service mgmt | launchd | container nohup + cron |
-| GHL MCP start | `scripts/ghl-mcp-autostart.sh` | `platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh` |
+| Service mgmt | launchd | pm2 + `pm2 save` + `@reboot pm2 resurrect` (container) |
+| GHL MCP start | `scripts/ghl-mcp-autostart.sh` (launchd KeepAlive plist, `PORT` pinned) | `platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh` (pm2 ecosystem + save + resurrect; NO bare nohup; `PORT`+`MCP_SERVER_PORT` pinned) |
 | Container re-exec | n/a | `platform/vps/bootstrap.sh` |
 | **Ollama provider** | **Signed-in LOCAL daemon** — `baseUrl: http://127.0.0.1:11434`, `apiKey: ollama-local`; serves BOTH local + `:cloud` (see `docs/OLLAMA-PROVIDER-BY-PLATFORM.md`) | **Cloud-direct** — `baseUrl: https://ollama.com` + client's `OLLAMA_API_KEY`; no local daemon |
 | **STT (speech-to-text)** | LOCAL `oc-faster-whisper` primary + OpenAI cloud fallback (`docs/STT-TRANSCRIPTION.md`) | Cloud transcription only (`platform/vps/STT-TRANSCRIPTION.md`) |

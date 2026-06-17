@@ -141,6 +141,47 @@ layer. See `AGENTS.md` N37.
 condition, and CI (`.github/workflows/qc-static.yml` runs
 `scripts/test-workspace-departments-built.sh` + `scripts/test-watchdog-loop.sh`).
 
+### 7. Repo consistency — one gate cross-checks floor / roster / library / SOP / persona
+
+The Skill 23 workforce blueprint carries **six independent sources of truth** that
+nothing used to cross-check, so a department / role / SOP / persona could ship
+**inconsistent** (six departments once shipped UNBUILDABLE because no gate
+compared the floor against the rosters):
+
+1. **FLOOR** — `23-ai-workforce-blueprint/department-naming-map.json` `.mandatory`
+   (22) + the 7 universal-primary vertical-pack depts (enforced on-disk by
+   `scripts/department-floor.py`).
+2. **ROSTERS** — `suggested-roles/<dept>-suggested-roles.md` (the proposed
+   specialist menu, parsed by `create_role_workspaces.parse_roster`).
+3. **ROLE LIBRARY** — `templates/role-library/_index.json` + the per-dept role
+   template docs (resolved by `create_role_workspaces.library_lookup`).
+4. **SOP SOURCE** — every floor dept's roles must resolve a real SOP source: the
+   Skill-23 role-library copy path (canonical, guarded by
+   `sop_boundary_gate.is_canonical_dept`) or, for `personal-assistant`, the
+   Skill-42 specialist library.
+5. **PERSONA DOMAINS** — `build-workforce.py` `create_governing_personas_md` /
+   `generate_persona_matrix` `dept_to_domains`, and `create_role_workspaces.py`
+   `write_governing_personas_md` `DEPT_DOMAIN_HINTS`. A floor dept MISSING from
+   these maps silently falls back to the generic `['leadership']` pool.
+6. **NO ORPHANS** — no roster without a floor/library home; no floor dept the
+   library can't reach.
+
+**The rule:** every floor department MUST be consistent across all six. When you
+ADD or RENAME a department, role, SOP, or persona, you MUST update floor +
+roster + library + SOP source + persona maps together. See
+`23-ai-workforce-blueprint/ADDING-DEPARTMENTS-ROLES-SOPS.md` for the contributor
+checklist.
+
+**Enforced (fail-closed) by** `23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py`
+(exit 5 on ANY drift; uses the SAME resolution functions the build uses so it can
+never disagree with the build), via `scripts/qc-system-integrity.sh` **CHECK X.12**
+(hard-fail), the build-start preflight `lib-onboarding-state.sh`
+`oc_repo_consistency_ok()` (a client build REFUSES to run against a drifted
+repo), and CI (`.github/workflows/qc-static.yml` runs the gate +
+`23-ai-workforce-blueprint/scripts/test-repo-consistency.sh`, which proves the
+gate fails on a removed roster / unresolvable role / missing persona-mapping /
+corrupt library slug).
+
 ## Source of Truth
 
 Configuration verified against:

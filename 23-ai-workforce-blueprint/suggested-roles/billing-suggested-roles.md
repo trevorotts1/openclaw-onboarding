@@ -73,6 +73,7 @@ Added FP&A / Forecasting Analyst, Collections Specialist, Financial Reporting Sp
 ---
 
 ### 5. FP&A / Forecasting Analyst
+**Slug:** fpanda--forecasting-analyst
 **What it does:** Annual budgeting, multi-year financial models, variance analysis (budget vs actual), profitability analysis by product/customer/channel. Higher-level than Cash Flow.
 **Core SOPs to build:**
 - 01-How-to-Build-an-Annual-Operating-Plan.md
@@ -117,6 +118,7 @@ Added FP&A / Forecasting Analyst, Collections Specialist, Financial Reporting Sp
 ---
 
 ### 9. CRM Specialist (Billing Version)
+**Slug:** crm-specialist-billing-version
 **What it does:** Bridges Billing and CRM departments. Configures billing automations in GoHighLevel / HubSpot / Salesforce. Ensures payment status syncs to customer records.
 **Core SOPs to build:**
 - 01-How-to-Configure-CRM-Billing-Automations.md

@@ -23,6 +23,7 @@ Added Employment Contract Specialist, Affiliate Agreement Specialist, Customer A
 **Persona Traits:** Risk-aware, contract-fluent, conservative-but-decisive.
 
 ### 1. Contract Drafter (Client Agreements)
+**Slug:** contract-drafter-client-agreements
 **What it does:** Drafts client-facing contracts — service agreements, MSAs, SOWs. Customizes from templates. Coordinates with Sales on commercial terms.
 **Core SOPs:** 01-How-to-Draft-a-Service-Agreement.md, 02-How-to-Customize-MSA-Template.md, 03-How-to-Negotiate-Common-Redlines.md, 04-How-to-Manage-Contract-Versions.md
 **Persona Traits:** Detail-oriented, contract-template-fluent.
