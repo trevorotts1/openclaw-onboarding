@@ -31,7 +31,8 @@
 #   SESSIONS_JSON_OVERRIDE    — override sessions.json path
 #   A2_PROBE_TIMEOUT          — max seconds to poll for canary echo (default 90)
 #   A2_POLL_INTERVAL          — poll interval (default 5)
-#   OPERATOR_TELEGRAM_CHAT_ID — operator alert chat (default 5252140759)
+#   OPERATOR_ESCALATION_CHAT_ID / OPERATOR_TELEGRAM_CHAT_ID — operator alert chat
+#                               (OPT-IN; empty => alert skipped, no hardcoded chat)
 #   FLEET_REFRESH_ROOT        — openclaw root dir override
 
 set -euo pipefail
@@ -42,7 +43,8 @@ WORKSPACE_OVERRIDE=""
 CEO_CHAT_ID=""
 PROBE_TIMEOUT="${A2_PROBE_TIMEOUT:-90}"
 POLL_INTERVAL="${A2_POLL_INTERVAL:-5}"
-OPERATOR_CHAT="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}"
+# CO-MINGLING GUARD (v12.4.0): operator alert chat is OPT-IN. NO hardcoded chat.
+OPERATOR_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
 
 # ── Parse args ─────────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -201,13 +203,17 @@ except Exception:
 " <<< "$PY_OUT" 2>/dev/null || echo "session did not re-initialize")
 
   ALERT_MSG="[A.2 v2 ALERT] loaded_confidence=LOW on box ${BOX}. LEG A (session re-init) failed: ${ERRORS}. Action required: verify openclaw gateway is healthy, re-run update-skills.sh."
-  log "Sending LOW/FAIL operator alert to chat $OPERATOR_CHAT"
 
-  openclaw message send \
-    --channel telegram \
-    --target "$OPERATOR_CHAT" \
-    --message "$ALERT_MSG" 2>/dev/null \
-  || log "WARNING: operator alert send failed (non-fatal)"
+  if [[ -n "$OPERATOR_CHAT" ]]; then
+    log "Sending LOW/FAIL operator alert to chat $OPERATOR_CHAT"
+    openclaw message send \
+      --channel telegram \
+      --target "$OPERATOR_CHAT" \
+      --message "$ALERT_MSG" 2>/dev/null \
+    || log "WARNING: operator alert send failed (non-fatal)"
+  else
+    log "operator escalation chat not configured (OPERATOR_ESCALATION_CHAT_ID unset) — LOW/FAIL alert logged only, not sent"
+  fi
 
   log "=== A.2 v2 Session Load Gate FAILED (LOW). Exiting 1. ==="
   exit 1

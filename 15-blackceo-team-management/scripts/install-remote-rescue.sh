@@ -1,12 +1,24 @@
 #!/usr/bin/env bash
 # install-remote-rescue.sh - Skill 15 step that wires up the operator-side
-# Remote Rescue agent + the OPERATOR_TELEGRAM_CHAT_ID config key.
+# Remote Rescue agent (operator INBOUND access) + an OPT-IN operator escalation
+# chat key.
 #
 # ISOLATION MODEL (v2.0.0+)
 # --------------------------
 # OpenClaw keys every conversation as agent:<agentId>:telegram:<chatId>.
 # Operators (Trevor / Spaulding / LeAnne) must land in a session keyed to
 # "remote-rescue", NEVER to "main" (the owner's agent).
+#
+# OPERATOR INBOUND (always applied — this is the desired "we can still reach the
+# client agent" behavior): operator IDs are added to channels.telegram.allowFrom,
+# stripped from groupAllowFrom, and bound to the remote-rescue agent.
+#
+# OPERATOR ESCALATION DESTINATION (OPT-IN — v12.4.0 co-mingling guard): the
+# PROACTIVE-SEND chat (env.vars.OPERATOR_ESCALATION_CHAT_ID) is written ONLY when
+# an operator chat id is explicitly provided (interactive prompt answer or
+# OPERATOR_ESCALATION_CHAT_ID / OPERATOR_TELEGRAM_CHAT_ID env). There is NO
+# hardcoded personal-chat default: a client box installed without one ships with
+# operator escalation DISABLED and will never proactively message an operator.
 #
 # Idempotent. Safe to re-run. Backs up openclaw.json before any write.
 # Modes: (default) interactive; --repair non-interactive re-apply.
@@ -18,7 +30,8 @@ for arg in "$@"; do
   [[ "$arg" == "--repair" ]] && REPAIR_MODE=1
 done
 
-DEFAULT_CHAT_ID="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}"
+# OPT-IN escalation chat — NO hardcoded default. Empty == escalation disabled.
+DEFAULT_CHAT_ID="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
 TS="$(date -u +%Y%m%d-%H%M%S)"
 RR_WORKSPACE_PATH="${RR_WORKSPACE:-$HOME/.openclaw/workspaces/remote-rescue}"
 
@@ -44,15 +57,30 @@ echo "Backup: ${CFG}.bak-pre-remote-rescue-${TS}"
 CHAT_ID="$DEFAULT_CHAT_ID"
 if [[ "$REPAIR_MODE" != "1" && "${NONINTERACTIVE:-0}" != "1" ]]; then
   if [[ -t 0 ]]; then
-    read -r -p "Operator Telegram chat ID for escalations [$DEFAULT_CHAT_ID]: " input || true
+    echo "Operator escalation routes PROACTIVE messages (maintenance/escalation) to a"
+    echo "chat. This is OPT-IN. Leave BLANK to DISABLE operator escalation on this box"
+    echo "(operator inbound access is configured either way)."
+    read -r -p "Operator escalation Telegram chat ID [blank = disabled]${DEFAULT_CHAT_ID:+ [$DEFAULT_CHAT_ID]}: " input || true
     CHAT_ID="${input:-$DEFAULT_CHAT_ID}"
   fi
 fi
-echo "Using operator chat ID: $CHAT_ID"
 
-openclaw config set env.vars.OPERATOR_TELEGRAM_CHAT_ID "\"$CHAT_ID\"" --strict-json >/dev/null
-echo "Set env.vars.OPERATOR_TELEGRAM_CHAT_ID = $CHAT_ID"
+# CO-MINGLING GUARD (v12.4.0): only persist the escalation destination if one was
+# explicitly provided. Empty => operator escalation stays DISABLED (no proactive
+# send). We write BOTH the canonical key and the back-compat key.
+if [[ -n "$CHAT_ID" ]]; then
+  echo "Using operator escalation chat ID: $CHAT_ID"
+  openclaw config set env.vars.OPERATOR_ESCALATION_CHAT_ID "\"$CHAT_ID\"" --strict-json >/dev/null
+  openclaw config set env.vars.OPERATOR_TELEGRAM_CHAT_ID  "\"$CHAT_ID\"" --strict-json >/dev/null
+  echo "Set env.vars.OPERATOR_ESCALATION_CHAT_ID = $CHAT_ID (and back-compat OPERATOR_TELEGRAM_CHAT_ID)"
+else
+  echo "No operator escalation chat provided — operator escalation DISABLED (opt-in)."
+  echo "Operator INBOUND access is still configured below (allowFrom + remote-rescue binding)."
+fi
 
+# The three operator IDs always get INBOUND access (allowFrom + remote-rescue
+# binding). This is the desired "operators can still message the client agent"
+# behavior and is independent of the (opt-in) escalation destination above.
 OPERATOR_IDS_JSON='["5252140759","6663821679","6771245262"]'
 
 python3 - "$CFG" "$CHAT_ID" "$OPERATOR_IDS_JSON" "$RR_WORKSPACE_PATH" <<'PYEOF'
@@ -66,7 +94,12 @@ rr_ws      = sys.argv[4]
 with open(cfg_path) as f:
     cfg = json.load(f)
 
-team_ids = list(dict.fromkeys([*op_ids_raw, extra_id]))
+# Operator INBOUND access set: the three operator IDs, plus the explicit escalation
+# chat id ONLY if one was provided (never add an empty string to allowFrom).
+team_ids = list(op_ids_raw)
+if extra_id and extra_id.strip():
+    team_ids.append(extra_id.strip())
+team_ids = list(dict.fromkeys(team_ids))
 
 tg = cfg.setdefault("channels", {}).setdefault("telegram", {})
 
@@ -127,7 +160,7 @@ echo "Config validated."
 mkdir -p "$RR_WORKSPACE_PATH"
 echo "Remote Rescue workspace: $RR_WORKSPACE_PATH"
 
-if [[ "${SKIP_BOOTSTRAP_MSG:-0}" != "1" ]]; then
+if [[ "${SKIP_BOOTSTRAP_MSG:-0}" != "1" && -n "$CHAT_ID" ]]; then
   CLIENT_NAME_S="${CLIENT_NAME:-<client>}"
   BOT_S="${CLIENT_BOT_USERNAME:-<bot>}"
   PERSONA_S="${PERSONA:-<persona>}"

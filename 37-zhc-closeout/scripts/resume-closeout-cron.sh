@@ -72,14 +72,22 @@ fi
 run_count=$((run_count + 1))
 printf '%d\n' "$run_count" > "$RUN_COUNT_FILE"
 
-# ---- resolve operator chat for escalations ----
+# ---- resolve operator ESCALATION chat for escalations ----
+# CO-MINGLING GUARD (v12.4.0): destination is OPT-IN. NO hardcoded personal chat.
+# Empty result = escalation destination not configured; callers MUST skip the send.
 resolve_operator_chat_id() {
   local v=""
   if command -v openclaw >/dev/null 2>&1; then
-    v="$(openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
+    v="$(openclaw config get env.vars.OPERATOR_ESCALATION_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
     case "$v" in ""|*"not found"*|*"Error"*) v="" ;; esac
+    if [[ -z "$v" ]]; then
+      v="$(openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
+      case "$v" in ""|*"not found"*|*"Error"*) v="" ;; esac
+    fi
   fi
-  [[ -z "$v" ]] && v="${ZHC_OPERATOR_CHAT_ID:-5252140759}"
+  [[ -z "$v" && -n "${OPERATOR_ESCALATION_CHAT_ID:-}" ]] && v="$OPERATOR_ESCALATION_CHAT_ID"
+  [[ -z "$v" && -n "${ZHC_OPERATOR_CHAT_ID:-}" ]] && v="$ZHC_OPERATOR_CHAT_ID"
+  # No baked-in personal chat. Empty = no operator escalation configured.
   printf '%s' "$v"
 }
 
@@ -156,10 +164,12 @@ if (( run_count > MAX_RUNS )); then
   reason="closeout did not complete after $MAX_RUNS cron fires (${MAX_RUNS}×15min = $((MAX_RUNS*15/60))h)"
   log "MAX RUNS EXCEEDED ($run_count > $MAX_RUNS): $reason -- removing cron + escalating"
   operator_chat=$(resolve_operator_chat_id)
-  if command -v openclaw >/dev/null 2>&1; then
+  if [[ -n "$operator_chat" ]] && command -v openclaw >/dev/null 2>&1; then
     openclaw message send --channel telegram --target "$operator_chat" \
       --message "🚨 Closeout resume cron exhausted ($run_count runs). closeoutStatus=${closeout_status:-unset}. State: $STATE_FILE" \
       >/dev/null 2>&1 || true
+  else
+    log "operator escalation chat not configured -- skipping operator notify (state already logged)"
   fi
   self_remove_cron "max-runs-exceeded ($run_count)"
   exit 0
@@ -218,10 +228,12 @@ state_set ".closeoutResumeAttempts = $attempts" || true
 
 if (( attempts >= 3 )) && [[ $(( attempts % 3 )) -eq 0 ]]; then
   log "closeout has been resumed $attempts times without completion -- escalating to operator"
-  if command -v openclaw >/dev/null 2>&1; then
+  if [[ -n "$operator_chat" ]] && command -v openclaw >/dev/null 2>&1; then
     openclaw message send --channel telegram --target "$operator_chat" \
       --message "⚠️ ZHC closeout stalled for ${agent_name}. Missing legs: ${incomplete_legs}. closeoutStatus=${closeout_status:-unset}. Resume attempt $attempts. Check: $LOG_FILE" \
       >/dev/null 2>&1 || true
+  else
+    log "operator escalation chat not configured -- skipping operator notify (state already logged)"
   fi
 fi
 
@@ -249,10 +261,18 @@ fi
 msg="[CLOSEOUT-RESUME] ${agent_name}: workforce closeout is incomplete after ${run_count} cron fire(s). closeoutStatus=${closeout_status:-unset}. Missing deliverable legs: ${incomplete_legs}. run-closeout.sh was launched in-process as the primary path; this self-ping is a secondary nudge. Invoke scripts/run-closeout.sh manually if the closeout does not advance within 15 min. Do NOT message the owner -- they only hear from you when Step 6 Telegram delivery fires. Resume attempt ${attempts}."
 
 if [[ -z "$owner_chat" || "$owner_chat" == "null" ]]; then
-  log "ownerChat not set -- sending resume to operator chat $operator_chat"
+  log "ownerChat not set -- falling back to operator escalation chat (if configured)"
   target_chat="$operator_chat"
 else
   target_chat="$owner_chat"
+fi
+
+# run-closeout.sh already fired in-process above (PRIMARY path). The self-ping is
+# only a secondary nudge -- if neither owner nor operator chat is available, skip
+# the send rather than dispatching to an empty target.
+if [[ -z "$target_chat" ]]; then
+  log "[CLOSEOUT-RESUME] no usable target chat (ownerChat unset, operator escalation not configured) -- in-process exec already fired; skipping self-ping"
+  exit 0
 fi
 
 log "[CLOSEOUT-RESUME] run=$run_count attempt=$attempts missing=$incomplete_legs -- dispatching self-ping to $target_chat"

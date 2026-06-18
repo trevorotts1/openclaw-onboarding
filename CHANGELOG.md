@@ -1,3 +1,13 @@
+## v12.32.0 — 2026-06-18 — Operator co-mingling fix
+
+Fleet Operator Co-Mingling Audit remediation — client boxes no longer ship the operator's personal chat as a proactive send-target or routed worker:
+
+- Client boxes now ship **reply-to-sender + owner-only** routing: the materialized routing docs (TEAM_CONFIG.md and the skill-15 client-box stamping blocks) carry only the owner placeholder, never an operator Telegram ID. Client agents reply to whoever messaged them and route work to the owner alone.
+- The **operator dispatcher roster is gated to the operator box only** (`IS_OPERATOR_BOX=1`). On any client box the dispatcher table is absent; the skill-15 QC Hard Gate 6 fails the build if an operator ID appears in client-box routing, and skips on the operator box where the roster is legitimate.
+- **Operator escalation is opt-in** via `OPERATOR_ESCALATION_CHAT_ID` (default OFF). There is no hardcoded `5252140759` fallback anywhere — the central resolver `shared-utils/operator-chat-id.sh` defaults to empty, so escalation only fires when the operator explicitly configures the key.
+- New **`no-operator-comingle-template` CI guard** (`tests/unit/no-operator-comingle-template.test.sh` + `.github/workflows/cron-owner-chat-guard.yml`) is the upstream backstop: it fails the build if any script reintroduces an operator ID as a send-target fallback default, or if a client routing template lists an operator ID as a routed worker.
+- **Operator inbound access preserved**: operator IDs remain in `channels.telegram.allowFrom` (legitimate inbound DMs via the isolated `remote-rescue` agent). Only the outbound/proactive co-mingling was removed; inbound operator access is unchanged.
+
 ## v12.31.1 — 2026-06-18 — content-manifest restamp + QC-static repo-consistency fix
 
 - Content-manifest restamp + QC-static repo-consistency fix for the v12.31.0 presentation edits. The v12.31.0 commit restamped `23-ai-workforce-blueprint/templates/role-library/_index.json` (a Skill-23 file) without moving the skill version, tripping the version-consistency guards (G3 "skill content change requires skill-version.txt bump" + the "9 markers must agree / skill-version.txt == /version" rule). This patch bumps the whole version in lockstep so all 9 markers + `cc-compat.json onboardingVersion` read `v12.31.1`, and re-runs `hash-content-manifest.py` so the per-artifact content_sha manifest stays consistent. No functional change beyond v12.31.0.

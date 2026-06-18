@@ -1,41 +1,73 @@
 #!/usr/bin/env bash
-# operator-chat-id.sh — resolve the operator's Telegram chat ID for cross-skill escalations.
+# operator-chat-id.sh — resolve the operator ESCALATION Telegram chat ID.
 #
-# Source this file (or call it directly) to get $OPERATOR_CHAT_ID populated.
+# CO-MINGLING GUARD (v12.4.0):
+#   This resolver NEVER bakes in a personal chat ID. The destination for
+#   operator escalations/monitoring is OPT-IN and CONFIGURABLE. If no operator
+#   escalation chat is configured, this returns the EMPTY STRING and every
+#   caller MUST treat that as "escalation destination not configured" and NO-OP
+#   the send (log only). A client box that ships without this env set will
+#   therefore never proactively message any operator's personal Telegram.
 #
-# Lookup order:
-#   1. env.vars.OPERATOR_TELEGRAM_CHAT_ID from openclaw config
-#   2. $OPERATOR_TELEGRAM_CHAT_ID environment variable
-#   3. Hardcoded default 5252140759 (Trevor Otts) for back-compat
+# Source this file (or call it directly) to get $OPERATOR_CHAT_ID populated
+# (possibly empty).
 #
-# This is a schema-compliant home for the value: env.vars accepts arbitrary
-# string keys per the 2026.5.22 openclaw.json schema, validated end-to-end.
+# Lookup order (first non-empty wins; ALL operator-supplied, none hardcoded):
+#   1. env.vars.OPERATOR_ESCALATION_CHAT_ID   (openclaw config — primary, new)
+#   2. env.vars.OPERATOR_TELEGRAM_CHAT_ID     (openclaw config — back-compat)
+#   3. $OPERATOR_ESCALATION_CHAT_ID           (environment variable — primary)
+#   4. $OPERATOR_TELEGRAM_CHAT_ID             (environment variable — back-compat)
+#   5. $ZHC_OPERATOR_CHAT_ID                  (environment variable — closeout legacy)
+#   6. "" (EMPTY — escalation no-ops; this is the safe default for client boxes)
+#
+# To OPT IN to operator escalation on a box (operator box, or a client that has
+# explicitly authorized operator monitoring):
+#   openclaw config set env.vars.OPERATOR_ESCALATION_CHAT_ID "<operator chat id>" --strict-json
 #
 # Usage:
 #   source /path/to/shared-utils/operator-chat-id.sh
-#   echo "$OPERATOR_CHAT_ID"
-#   openclaw message send --channel telegram --target "$OPERATOR_CHAT_ID" --message "..."
+#   if [[ -n "$OPERATOR_CHAT_ID" ]]; then
+#     openclaw message send --channel telegram --target "$OPERATOR_CHAT_ID" --message "..."
+#   else
+#     echo "operator escalation chat not configured — skipping send"
+#   fi
 
 set -u
 
+_oc_cfg_get() {
+  # Read an openclaw config key, returning empty on any error/"not found".
+  local key="$1" v
+  command -v openclaw >/dev/null 2>&1 || { printf '%s' ""; return 0; }
+  v="$(openclaw config get "$key" 2>/dev/null | tail -1 | tr -d '[:space:]')"
+  case "$v" in
+    ""|*"not found"*|*"Error"*|*"undefined"*|null) v="" ;;
+  esac
+  printf '%s' "$v"
+}
+
 _oc_resolve_operator_chat_id() {
   local v
-  v="$(openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
-  if [[ -n "${v:-}" && "$v" != *"not found"* && "$v" != *"Error"* ]]; then
-    printf '%s' "$v"
-    return 0
+  v="$(_oc_cfg_get env.vars.OPERATOR_ESCALATION_CHAT_ID)"
+  [[ -n "$v" ]] && { printf '%s' "$v"; return 0; }
+  v="$(_oc_cfg_get env.vars.OPERATOR_TELEGRAM_CHAT_ID)"
+  [[ -n "$v" ]] && { printf '%s' "$v"; return 0; }
+  if [[ -n "${OPERATOR_ESCALATION_CHAT_ID:-}" ]]; then
+    printf '%s' "$OPERATOR_ESCALATION_CHAT_ID"; return 0
   fi
   if [[ -n "${OPERATOR_TELEGRAM_CHAT_ID:-}" ]]; then
-    printf '%s' "$OPERATOR_TELEGRAM_CHAT_ID"
-    return 0
+    printf '%s' "$OPERATOR_TELEGRAM_CHAT_ID"; return 0
   fi
-  printf '%s' "5252140759"
+  if [[ -n "${ZHC_OPERATOR_CHAT_ID:-}" ]]; then
+    printf '%s' "$ZHC_OPERATOR_CHAT_ID"; return 0
+  fi
+  # No operator escalation chat configured — return empty (safe default).
+  printf '%s' ""
 }
 
 OPERATOR_CHAT_ID="$(_oc_resolve_operator_chat_id)"
 export OPERATOR_CHAT_ID
 
-# If called directly (not sourced), print the resolved value.
+# If called directly (not sourced), print the resolved value (may be empty).
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   echo "$OPERATOR_CHAT_ID"
 fi

@@ -54,16 +54,19 @@ done
 
 # ----- Operator chat ID for migration status reports -----
 # INTENTIONAL: this script is an OPERATOR-INITIATED fleet-migration tool.
-# All Telegram sends here go to Trevor (the operator) to report migration
-# progress, NOT to the client owner.  This is correct and intentional —
-# do NOT replace this with a client-owner resolver.
-# Overridable via OPERATOR_TELEGRAM_CHAT_ID env var for future operator changes.
-TREVOR_CHAT="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}"
+# Telegram sends here report migration progress to the OPERATOR (not the client
+# owner). CO-MINGLING GUARD (v12.4.0): the operator destination is OPT-IN and
+# CONFIGURABLE — NO hardcoded personal chat. If no operator escalation chat is
+# configured, the progress-report sends are SKIPPED (the migration still runs).
+# Configure with: env.vars.OPERATOR_ESCALATION_CHAT_ID (or OPERATOR_TELEGRAM_CHAT_ID).
+OPERATOR_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
 
 log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*" | tee -a "$LOG"; }
 tg() {
-  if [ -n "$OC_BIN" ]; then
-    "$OC_BIN" message send --channel telegram -t "$TREVOR_CHAT" -m "$1" >>"$LOG" 2>&1 \
+  if [ -z "$OPERATOR_CHAT" ]; then
+    log "TG-SKIP (operator escalation chat not configured): $1"
+  elif [ -n "$OC_BIN" ]; then
+    "$OC_BIN" message send --channel telegram -t "$OPERATOR_CHAT" -m "$1" >>"$LOG" 2>&1 \
       && log "TG sent" \
       || log "TG send FAILED (see log)"
   else

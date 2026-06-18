@@ -121,19 +121,27 @@ nudge_credit_fail_dormant() {
   fi
 }
 
-# ── operator chat resolver ────────────────────────────────────────────────────
+# ── operator ESCALATION chat resolver ───────────────────────────────────────
+# CO-MINGLING GUARD (v12.4.0): destination is OPT-IN. NO hardcoded personal chat.
+# Empty result = escalation destination not configured; callers MUST skip the send.
 resolve_operator_chat_id() {
   local v=""
   if command -v openclaw >/dev/null 2>&1; then
-    v="$(openclaw config get env.vars.OPERATOR_HELP_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
+    v="$(openclaw config get env.vars.OPERATOR_ESCALATION_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
     case "$v" in ""|*"not found"*|*"Error"*) v="" ;; esac
+    if [[ -z "$v" ]]; then
+      v="$(openclaw config get env.vars.OPERATOR_HELP_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
+      case "$v" in ""|*"not found"*|*"Error"*) v="" ;; esac
+    fi
     if [[ -z "$v" ]]; then
       v="$(openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
       case "$v" in ""|*"not found"*|*"Error"*) v="" ;; esac
     fi
   fi
+  [[ -z "$v" && -n "${OPERATOR_ESCALATION_CHAT_ID:-}" ]] && v="$OPERATOR_ESCALATION_CHAT_ID"
   [[ -z "$v" && -n "${OPERATOR_HELP_CHAT_ID:-}" ]] && v="$OPERATOR_HELP_CHAT_ID"
-  [[ -z "$v" ]] && v="5252140759"
+  [[ -z "$v" && -n "${OPERATOR_TELEGRAM_CHAT_ID:-}" ]] && v="$OPERATOR_TELEGRAM_CHAT_ID"
+  # No baked-in personal chat. Empty = no operator escalation configured.
   printf '%s' "$v"
 }
 

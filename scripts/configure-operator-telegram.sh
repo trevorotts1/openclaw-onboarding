@@ -72,15 +72,28 @@ PYEOF
   printf '%s' "$v"
 }
 OPERATOR_BOT_TOKEN="$(_get_var OPERATOR_TELEGRAM_BOT_TOKEN)"
-# Operator help chat id (where maintenance / drive output goes). Default to the
-# primary operator id; allow override.
-OPERATOR_HELP_CHAT_ID="$(_get_var OPERATOR_HELP_CHAT_ID)"
-[ -z "$OPERATOR_HELP_CHAT_ID" ] && OPERATOR_HELP_CHAT_ID="5252140759"
+# Operator escalation/help chat id (where maintenance / drive output goes).
+# CO-MINGLING GUARD (v12.4.0): this destination is OPT-IN and CONFIGURABLE. We
+# NEVER bake in a personal chat id. Resolve from (in order):
+#   OPERATOR_ESCALATION_CHAT_ID -> OPERATOR_HELP_CHAT_ID -> OPERATOR_TELEGRAM_CHAT_ID
+# and if none is provided, leave it EMPTY. An empty value means operator
+# escalation is disabled until an operator explicitly opts in — a client box
+# that has not opted in will therefore never proactively message any operator.
+OPERATOR_HELP_CHAT_ID="$(_get_var OPERATOR_ESCALATION_CHAT_ID)"
+[ -z "$OPERATOR_HELP_CHAT_ID" ] && OPERATOR_HELP_CHAT_ID="$(_get_var OPERATOR_HELP_CHAT_ID)"
+[ -z "$OPERATOR_HELP_CHAT_ID" ] && OPERATOR_HELP_CHAT_ID="$(_get_var OPERATOR_TELEGRAM_CHAT_ID)"
+# No hardcoded default — empty == operator escalation not configured (opt-in only).
 
-# Persist OPERATOR_HELP_CHAT_ID into openclaw.json env.vars so the maintenance
-# contract (and resume crons) can resolve it later. Idempotent.
-if command -v openclaw >/dev/null 2>&1; then
+# Persist the escalation chat into openclaw.json env.vars ONLY if one was
+# explicitly provided, so the maintenance contract (and resume crons) can resolve
+# it later. We write BOTH the new canonical key (OPERATOR_ESCALATION_CHAT_ID) and
+# the back-compat key (OPERATOR_HELP_CHAT_ID). Idempotent. If empty, we write
+# nothing — leaving the box in the safe, no-operator-send default.
+if [ -n "$OPERATOR_HELP_CHAT_ID" ] && command -v openclaw >/dev/null 2>&1; then
+  openclaw config set env.vars.OPERATOR_ESCALATION_CHAT_ID "$OPERATOR_HELP_CHAT_ID" >/dev/null 2>&1 || true
   openclaw config set env.vars.OPERATOR_HELP_CHAT_ID "$OPERATOR_HELP_CHAT_ID" >/dev/null 2>&1 || true
+elif [ -z "$OPERATOR_HELP_CHAT_ID" ]; then
+  log "no operator escalation chat provided (OPERATOR_ESCALATION_CHAT_ID unset) — leaving operator escalation DISABLED (opt-in). Account separation/binding still applied below."
 fi
 
 # ── Backup ───────────────────────────────────────────────────────────────────

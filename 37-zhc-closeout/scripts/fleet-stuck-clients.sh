@@ -241,8 +241,9 @@ echo ""
 log "INFO" "fleet-stuck scan complete: $boxes_stuck/$boxes_total boxes stuck"
 
 # ── Operator Telegram summary (--apply mode) ─────────────────────────────────
+# CO-MINGLING GUARD (v12.4.0): destination is OPT-IN. NO hardcoded personal chat.
 if [[ "$APPLY" -eq 1 && "$any_stuck" -eq 1 ]]; then
-  OPERATOR_CHAT="${ZHC_OPERATOR_CHAT_ID:-5252140759}"
+  OPERATOR_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${ZHC_OPERATOR_CHAT_ID:-}}"
   summary_msg="🚨 ZHC Stuck-Client Scan
 Boxes scanned:  $boxes_total
 Stuck:          $boxes_stuck
@@ -250,10 +251,12 @@ Stuck:          $boxes_stuck
 $(printf '%b' "$stuck_report")
 Run fleet-stuck-clients.sh for full details. These clients are NOT in the closeout sweep — they need operator action."
 
-  if command -v openclaw >/dev/null 2>&1; then
+  if [[ -n "$OPERATOR_CHAT" ]] && command -v openclaw >/dev/null 2>&1; then
     openclaw message send --channel telegram --target "$OPERATOR_CHAT" \
       --message "$summary_msg" >/dev/null 2>&1 || true
     log "INFO" "Telegram operator summary sent (chat=$OPERATOR_CHAT)"
+  else
+    [[ -z "$OPERATOR_CHAT" ]] && log "INFO" "operator escalation chat not configured (OPERATOR_ESCALATION_CHAT_ID/ZHC_OPERATOR_CHAT_ID unset) — skipping stuck-client summary send"
   fi
 fi
 

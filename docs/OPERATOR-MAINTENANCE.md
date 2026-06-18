@@ -95,8 +95,12 @@ openclaw message send \
 openclaw message send --session-key agent:main:operator --no-deliver --message "..."
 ```
 
-`OPERATOR_HELP_CHAT_ID` is written into `openclaw.json` env.vars by
-`configure-operator-telegram.sh` (defaults to `5252140759`).
+`OPERATOR_HELP_CHAT_ID` / `OPERATOR_ESCALATION_CHAT_ID` are written into
+`openclaw.json` env.vars by `configure-operator-telegram.sh` ONLY when an operator
+escalation chat is explicitly provided. **There is NO hardcoded default (v12.4.0
+co-mingling fix):** if none is configured, operator escalation is DISABLED and
+maintenance/escalation/resume sends NO-OP rather than defaulting to any personal
+chat. To enable, set `env.vars.OPERATOR_ESCALATION_CHAT_ID` to the operator chat id.
 
 **Rule:** owner-facing onboarding/closeout messages use the **default** account
 (unchanged). Operator maintenance, Rescue-Rangers escalations, and resume-cron

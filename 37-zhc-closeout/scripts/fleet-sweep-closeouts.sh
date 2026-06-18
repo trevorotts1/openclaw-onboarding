@@ -416,8 +416,9 @@ if [[ "$JSON_OUTPUT" -eq 1 ]]; then
 fi
 
 # ---- operator Telegram summary (apply mode only) ----
+# CO-MINGLING GUARD (v12.4.0): destination is OPT-IN. NO hardcoded personal chat.
 if [[ "$APPLY" -eq 1 && "$any_incomplete" -eq 1 ]]; then
-  OPERATOR_CHAT="${ZHC_OPERATOR_CHAT_ID:-5252140759}"
+  OPERATOR_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${ZHC_OPERATOR_CHAT_ID:-}}"
   summary_msg="🔄 ZHC Closeout Fleet Sweep APPLIED
 Boxes checked: $boxes_checked
 Complete:       $boxes_complete
@@ -427,9 +428,11 @@ Build pending:  $boxes_no_build
 Stuck pre-close: $boxes_stuck (run fleet-stuck-clients.sh for details)
 run-closeout.sh was invoked on each incomplete box. Cron will pick up any remaining legs within 15 min."
 
-  if command -v openclaw >/dev/null 2>&1; then
+  if [[ -n "$OPERATOR_CHAT" ]] && command -v openclaw >/dev/null 2>&1; then
     openclaw message send --channel telegram --target "$OPERATOR_CHAT" \
       --message "$summary_msg" >/dev/null 2>&1 || true
+  else
+    [[ -z "$OPERATOR_CHAT" ]] && log "INFO" "operator escalation chat not configured (OPERATOR_ESCALATION_CHAT_ID/ZHC_OPERATOR_CHAT_ID unset) — skipping fleet-sweep summary send"
   fi
 fi
 

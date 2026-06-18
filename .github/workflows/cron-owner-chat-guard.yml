@@ -1,8 +1,10 @@
 name: cron-owner-chat-guard
 
 # Fails the build if any Telegram-delivery cron --to path bypasses the
-# operator-rejecting resolver.  Triggered whenever the guarded files change.
+# operator-rejecting resolver, OR if a client-box template ships a hardcoded
+# operator chat ID as a proactive-send target / routed worker (co-mingling).
 # v12.3.8 / fix/v12.3.8-cron-resolver-parity
+# v12.4.0 / no-operator-comingle-template guard added
 
 on:
   push:
@@ -11,7 +13,11 @@ on:
       - update-skills.sh
       - shared-utils/**
       - scripts/**
+      - 15-blackceo-team-management/**
+      - 23-ai-workforce-blueprint/scripts/**
+      - 37-zhc-closeout/scripts/**
       - tests/unit/cron-owner-chat-guard.test.sh
+      - tests/unit/no-operator-comingle-template.test.sh
       - .github/workflows/cron-owner-chat-guard.yml
   pull_request:
     paths:
@@ -19,7 +25,11 @@ on:
       - update-skills.sh
       - shared-utils/**
       - scripts/**
+      - 15-blackceo-team-management/**
+      - 23-ai-workforce-blueprint/scripts/**
+      - 37-zhc-closeout/scripts/**
       - tests/unit/cron-owner-chat-guard.test.sh
+      - tests/unit/no-operator-comingle-template.test.sh
       - .github/workflows/cron-owner-chat-guard.yml
 
 jobs:
@@ -39,3 +49,8 @@ jobs:
         run: |
           chmod +x tests/unit/cron-owner-chat-guard.test.sh
           bash tests/unit/cron-owner-chat-guard.test.sh
+
+      - name: Run no-operator-comingle-template guard
+        run: |
+          chmod +x tests/unit/no-operator-comingle-template.test.sh
+          bash tests/unit/no-operator-comingle-template.test.sh

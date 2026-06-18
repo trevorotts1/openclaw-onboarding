@@ -125,8 +125,9 @@ if [[ -n "$_early_build_done" && "$_early_build_done" != "null" && "$_early_qc" 
         | . + [{\"class\":\"STUCK_QC_FAILED\",\"reason\":\"$_early_block_reason\",\"since\":\"$_TS_EARLY\",\"escalatedAt\":null,\"cleared\":false}]
       )
     " "$STATE_FILE" > "$_tmp_b" && mv "$_tmp_b" "$STATE_FILE" || rm -f "$_tmp_b"
-    _OP_CHAT="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}"
-    if command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
+    # CO-MINGLING GUARD (v12.4.0): operator escalation is OPT-IN. NO hardcoded chat.
+    _OP_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
+    if [[ -n "$_OP_CHAT" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
       openclaw message send --channel telegram -t "$_OP_CHAT" \
         -m "🚨 ZHC BLOCKED [STUCK_QC_FAILED] interviewQc.status=${_early_qc} - closeout refused for $(jq -r '.companyName // empty' "$STATE_FILE" 2>/dev/null). State: $STATE_FILE" \
         >>"$LOG_FILE" 2>&1 || true
@@ -213,9 +214,10 @@ if [[ "$_qc_status" != "pass" ]]; then
       | . + [{\"class\":\"STUCK_QC_FAILED\",\"reason\":\"$_block_reason\",\"since\":\"$_TS\",\"escalatedAt\":null,\"cleared\":false}]
     )
   " || true
-  # Escalate operator via Telegram (non-fatal)
-  _OPERATOR_CHAT="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}"
-  if command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
+  # Escalate operator via Telegram (non-fatal). CO-MINGLING GUARD (v12.4.0):
+  # operator escalation is OPT-IN. NO hardcoded chat — empty => skip the send.
+  _OPERATOR_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
+  if [[ -n "$_OPERATOR_CHAT" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
     openclaw message send --channel telegram -t "$_OPERATOR_CHAT" \
       -m "🚨 ZHC BLOCKED [STUCK_QC_FAILED] interviewQc.status=${_qc_status} - closeout refused for $(state_get '.companyName'). Verify interview + run QC. State: $STATE_FILE" \
       >>"$LOG_FILE" 2>&1 || true
@@ -333,7 +335,7 @@ if [[ "${ZHC_SKIP_PROVIDER_SMOKE:-0}" != "1" ]]; then
   done
   if [[ -n "$PROVIDER_SMOKE_SCRIPT" ]]; then
     SMOKE_STATE_FILE="$STATE_FILE" \
-    SMOKE_OPERATOR_CHAT_ID="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}" \
+    SMOKE_OPERATOR_CHAT_ID="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}" \
     bash "$PROVIDER_SMOKE_SCRIPT" >> "$LOG_FILE" 2>&1
     PROVIDER_SMOKE_RC=$?
     if [[ "$PROVIDER_SMOKE_RC" != "0" ]]; then
@@ -686,9 +688,9 @@ if [[ "$GATE_INF1_RESULT" == "pass" ]]; then
           | . + [{\"class\":\"org-chart-not-rendered\",\"reason\":\"$_inf1_fail_reason\",\"since\":\"$_TS_INF\",\"escalatedAt\":\"$_TS_INF\",\"cleared\":false}]
         )
       " || true
-      # Operator escalation
-      _OP_CHAT="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}"
-      if command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
+      # Operator escalation. CO-MINGLING GUARD (v12.4.0): OPT-IN, no hardcoded chat.
+      _OP_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
+      if [[ -n "$_OP_CHAT" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
         openclaw message send --channel telegram -t "$_OP_CHAT" \
           -m "🚨 ZHC HOLD [org-chart-not-rendered] $(state_get '.companyName'): org-chart Playwright returned rc=3 (no artifact). Install Chromium or use ZHC_ORGCHART_FALLBACK=1. State: $STATE_FILE" \
           >>"$LOG_FILE" 2>&1 || true
@@ -975,12 +977,15 @@ else
 
   # ------------------------------------------------------------------
   # Operator success summary -- v10.x.
-  # Sends Trevor a single Telegram message (via the OpenClaw gateway) with LINKS
-  # to every delivered artifact: dashboard, both infographics, celebration video,
-  # Notion closeout page (+ Drive/GHL where present). Idempotent.
+  # Sends the operator a single Telegram message (via the OpenClaw gateway) with
+  # LINKS to every delivered artifact. CO-MINGLING GUARD (v12.4.0): OPT-IN only.
+  # send-operator-summary.sh resolves env.vars.OPERATOR_ESCALATION_CHAT_ID (or
+  # back-compat names) and SKIPS the send entirely if none is configured — a
+  # client box that has not opted in never proactively messages an operator.
   # ------------------------------------------------------------------
-  ZHC_OPERATOR_CHAT_ID="${ZHC_OPERATOR_CHAT_ID:-5252140759}"
-  export ZHC_OPERATOR_CHAT_ID
+  # Pass through an operator chat ONLY if one is already set in the environment
+  # (do NOT bake in a personal chat id).
+  [[ -n "${ZHC_OPERATOR_CHAT_ID:-}" ]] && export ZHC_OPERATOR_CHAT_ID
   if [[ -x "$SKILL_DIR/scripts/send-operator-summary.sh" ]]; then
     bash "$SKILL_DIR/scripts/send-operator-summary.sh" || log "WARN" "operator-summary step returned non-zero (non-fatal)"
   fi

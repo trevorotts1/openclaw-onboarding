@@ -11,8 +11,10 @@
 # build closed out cleanly + where every deliverable lives. This is that message.
 #
 # All sends go THROUGH the OpenClaw gateway (openclaw message send). Never curl
-# api.telegram.org directly. Chat ID resolution prefers shared-utils, then
-# $ZHC_OPERATOR_CHAT_ID, then the hardcoded default 5252140759 (Trevor).
+# api.telegram.org directly. Chat ID resolution prefers shared-utils
+# (env.vars.OPERATOR_ESCALATION_CHAT_ID), then $ZHC_OPERATOR_CHAT_ID. There is NO
+# hardcoded operator chat: if none is configured, the operator summary is SKIPPED
+# (opt-in only — a client box never proactively messages an operator).
 #
 # Idempotent: writes .operatorSummarySentAt into state and no-ops if already sent
 # for this closeout (cleared when a new build starts).
@@ -56,8 +58,11 @@ if [[ -f "$SHARED_UTIL" ]]; then
   # shellcheck disable=SC1090
   source "$SHARED_UTIL" 2>/dev/null || true
 fi
+# CO-MINGLING GUARD (v12.4.0): operator escalation destination is OPT-IN.
+# operator-chat-id.sh resolves env.vars.OPERATOR_ESCALATION_CHAT_ID (or back-compat
+# names). NO hardcoded personal chat. Empty => skip the send below.
+[[ -z "${OPERATOR_CHAT_ID:-}" ]] && OPERATOR_CHAT_ID="${OPERATOR_ESCALATION_CHAT_ID:-}"
 [[ -z "${OPERATOR_CHAT_ID:-}" ]] && OPERATOR_CHAT_ID="${ZHC_OPERATOR_CHAT_ID:-}"
-[[ -z "${OPERATOR_CHAT_ID:-}" ]] && OPERATOR_CHAT_ID="5252140759"
 
 # ---- gather artifact links ----
 COMPANY="$(state_get '.companyName')"; [[ -z "$COMPANY" ]] && COMPANY="$(state_get '.companySlug')"
@@ -96,6 +101,11 @@ MSG="$(
 
 if ! command -v openclaw >/dev/null 2>&1; then
   log "ERROR" "operator-summary: openclaw CLI not found -- cannot send summary"
+  exit 0
+fi
+
+if [[ -z "${OPERATOR_CHAT_ID:-}" ]]; then
+  log "INFO" "operator-summary: operator escalation chat not configured (env.vars.OPERATOR_ESCALATION_CHAT_ID unset) -- skipping operator summary send"
   exit 0
 fi
 

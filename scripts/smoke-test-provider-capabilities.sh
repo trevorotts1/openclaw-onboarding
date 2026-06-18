@@ -100,8 +100,9 @@ _state_set_blocked() {
 
 _operator_alert() {
   local msg="$1"
-  local chat_id="${SMOKE_OPERATOR_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}}"
-  if command -v openclaw >/dev/null 2>&1; then
+  # CO-MINGLING GUARD (v12.4.0): operator alert chat is OPT-IN. NO hardcoded chat.
+  local chat_id="${SMOKE_OPERATOR_CHAT_ID:-${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}}"
+  if [[ -n "$chat_id" ]] && command -v openclaw >/dev/null 2>&1; then
     openclaw message send --channel telegram -t "$chat_id" -m "$msg" >/dev/null 2>&1 || true
   fi
 }

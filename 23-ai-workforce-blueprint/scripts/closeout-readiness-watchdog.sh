@@ -66,7 +66,10 @@ ZHC_STUCK_REESCALATE_DAYS="${ZHC_STUCK_REESCALATE_DAYS:-7}"
 # 5-day STUCK_MID_INTERVIEW threshold, which wrongly assumes the owner went idle.
 # Default 6h (one watchdog cycle plus margin).
 ZHC_STUCK_FLAG_MISSING_HOURS="${ZHC_STUCK_FLAG_MISSING_HOURS:-6}"
-OPERATOR_TELEGRAM_CHAT_ID="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}"
+# CO-MINGLING GUARD (v12.4.0): operator escalation destination is OPT-IN and
+# CONFIGURABLE. NO hardcoded personal chat. Empty => the Telegram escalation
+# below is SKIPPED (the state blocker is still written; Rescue Rangers still fires).
+OPERATOR_TELEGRAM_CHAT_ID="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
 RESCUE_RANGERS_WEBHOOK_URL="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rescue-rangers}"
 
 # Flag: --from-nudge signals the nudge cron invoked us after its final pass
@@ -321,13 +324,15 @@ state_set ".stuckEscalations.${STUCK_CLASS}.notifiedAt = \"${TS_NOW}\" | .stuckE
 # ── Telegram operator escalation ──────────────────────────────────────────────
 ESCALATE_MSG="🚨 ZHC STUCK [${STUCK_CLASS}] ${company_name}/${agent_name}: ${STUCK_REASON}. Idle: ${STUCK_IDLE_LABEL}. State: ${STATE_FILE}"
 
-if command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
+if [[ -n "${OPERATOR_TELEGRAM_CHAT_ID}" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
   log "escalating to operator via Telegram (chat=${OPERATOR_TELEGRAM_CHAT_ID})"
   openclaw message send \
     --channel telegram \
     -t "${OPERATOR_TELEGRAM_CHAT_ID}" \
     -m "${ESCALATE_MSG}" >>"${LOG_FILE}" 2>&1 \
     || log "WARN: Telegram escalation failed (non-fatal - state blocker already written)"
+elif [[ -z "${OPERATOR_TELEGRAM_CHAT_ID}" ]]; then
+  log "INFO: operator escalation chat not configured (OPERATOR_ESCALATION_CHAT_ID unset) - operator message skipped (state blocker written; Rescue Rangers still fires)"
 else
   log "INFO: openclaw CLI not available or TG preflight skipped - operator message not sent (state blocker written)"
 fi

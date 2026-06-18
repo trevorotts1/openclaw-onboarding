@@ -319,8 +319,9 @@ if [[ -z "$ROOT_ID" || "$ROOT_ID" == "null" ]]; then
       | . + [{\"class\":\"notion-root-page-failed\",\"reason\":\"$_notion_fail_reason\",\"since\":\"$_TS_N\",\"escalatedAt\":\"$_TS_N\",\"cleared\":false}]
     )
   " || true
-  _OP_CHAT="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}"
-  if command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
+  # CO-MINGLING GUARD (v12.4.0): operator escalation is OPT-IN. NO hardcoded chat.
+  _OP_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
+  if [[ -n "$_OP_CHAT" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
     openclaw message send --channel telegram -t "$_OP_CHAT" \
       -m "ZHC HOLD [notion-root-page-failed] $(state_get '.companyName'): Notion root page creation failed. $_notion_fail_reason. Check NOTION_API_TOKEN + workspace permissions. State: $STATE_FILE" \
       >>"$LOG_FILE" 2>&1 || true

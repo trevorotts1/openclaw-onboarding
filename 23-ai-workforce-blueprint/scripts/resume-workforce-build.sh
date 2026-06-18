@@ -53,26 +53,24 @@ log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG_FILE"
 }
 
-# Remote Rescue v1 - resolve the operator's Telegram chat ID for escalations.
-# Lookup order: env.vars.OPERATOR_TELEGRAM_CHAT_ID -> $OPERATOR_TELEGRAM_CHAT_ID
-# -> $OPENCLAW_TREVOR_CHAT (legacy) -> hardcoded 5252140759 (Trevor default).
+# Remote Rescue v1 - resolve the operator ESCALATION Telegram chat ID.
+# CO-MINGLING GUARD (v12.4.0): destination is OPT-IN. NO hardcoded personal chat.
+# Lookup: env.vars.OPERATOR_ESCALATION_CHAT_ID -> env.vars.OPERATOR_TELEGRAM_CHAT_ID
+# -> $OPERATOR_ESCALATION_CHAT_ID -> $OPERATOR_TELEGRAM_CHAT_ID -> "" (no-op).
+# Empty result = escalation destination not configured; callers MUST skip the send.
 resolve_operator_chat_id() {
   local v=""
   if command -v openclaw >/dev/null 2>&1; then
-    v="$(openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
-    case "$v" in
-      ""|*"not found"*|*"Error"*) v="" ;;
-    esac
+    v="$(openclaw config get env.vars.OPERATOR_ESCALATION_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
+    case "$v" in ""|*"not found"*|*"Error"*) v="" ;; esac
+    if [[ -z "$v" ]]; then
+      v="$(openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
+      case "$v" in ""|*"not found"*|*"Error"*) v="" ;; esac
+    fi
   fi
-  if [[ -z "$v" && -n "${OPERATOR_TELEGRAM_CHAT_ID:-}" ]]; then
-    v="$OPERATOR_TELEGRAM_CHAT_ID"
-  fi
-  if [[ -z "$v" && -n "${OPENCLAW_TREVOR_CHAT:-}" ]]; then
-    v="$OPENCLAW_TREVOR_CHAT"
-  fi
-  if [[ -z "$v" ]]; then
-    v="5252140759"
-  fi
+  [[ -z "$v" && -n "${OPERATOR_ESCALATION_CHAT_ID:-}" ]] && v="$OPERATOR_ESCALATION_CHAT_ID"
+  [[ -z "$v" && -n "${OPERATOR_TELEGRAM_CHAT_ID:-}" ]] && v="$OPERATOR_TELEGRAM_CHAT_ID"
+  # No baked-in personal chat. Empty = no operator escalation configured.
   printf '%s' "$v"
 }
 
@@ -324,7 +322,7 @@ if [[ "$qc_status" != "pass" ]]; then
     if command -v openclaw >/dev/null 2>&1; then
       _owner_chat=$(jq -r '.ownerChat // empty' "$STATE_FILE" 2>/dev/null || true)
       # Self-ping is INTERNAL (to agent, not owner). Use operator escalation path if available.
-      _operator_chat=$(resolve_operator_chat_id 2>/dev/null || echo "5252140759")
+      _operator_chat=$(resolve_operator_chat_id 2>/dev/null || true)
       if [[ -n "$_operator_chat" ]]; then
         openclaw message send --channel telegram -t "$_operator_chat" \
           -m "⚠️ [QC-RESUME] interviewQc.status=${qc_status} on $(hostname) - build resume blocked until QC gate passes. State: $STATE_FILE" \

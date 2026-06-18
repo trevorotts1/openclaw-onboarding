@@ -143,35 +143,68 @@ Target state: AI agent operates as a dispatcher that assigns each sender a dedic
 Before starting, create this checklist and confirm completion after each step:
 
 ```
-[ ] Step 0: Team Member Intake (collect all team data before touching config)
-[ ] Step 0.5: Operator chat ID + Remote Rescue install
+[ ] Step 0: Determine box type (CLIENT vs OPERATOR), load the correct roster
+[ ] Step 0.5: Operator INBOUND access (remote-rescue) + OPT-IN escalation chat
 [ ] Step 1: Back up ~/.openclaw/openclaw.json
 [ ] Step 2: Configure sub-agent settings in openclaw.json
 [ ] Step 3: Add Telegram IDs to channels.telegram.allowFrom
-[ ] Step 4: Generate TEAM_CONFIG.md with collected team data
-[ ] Step 5: Create WORKFLOW_AUTO.md routing table
-[ ] Step 6: Add team IDs to AGENTS.md
-[ ] Step 7: Add team IDs to TOOLS.md
-[ ] Step 8: Add team IDs to MEMORY.md
+[ ] Step 4: Generate TEAM_CONFIG.md (CLIENT box: owner-only reply-to-sender)
+[ ] Step 5: Create WORKFLOW_AUTO.md routing table (CLIENT box: reply-to-sender)
+[ ] Step 6: Add routing to AGENTS.md (CLIENT box: owner-only)
+[ ] Step 7: Add routing to TOOLS.md (CLIENT box: owner-only)
+[ ] Step 8: Add routing to MEMORY.md (CLIENT box: owner-only)
 [ ] Step 9: Validate JSON syntax
 [ ] Step 10: Restart OpenClaw gateway
 [ ] Step 11: Verify gateway is running
-[ ] Step 12: Test routing with each team member
-[ ] Step 13: Confirm message isolation between senders
-[ ] Step 14: Send completion confirmation to the operator (resolves operator chat ID via shared-utils/operator-chat-id.sh — defaults to 5252140759)
+[ ] Step 12: Test routing with the owner (and operators inbound via remote-rescue)
+[ ] Step 13: Confirm message isolation (operator session != owner session)
+[ ] Step 14: (OPT-IN only) Completion confirmation to operator — resolves via
+            shared-utils/operator-chat-id.sh; SKIPPED if no operator escalation
+            chat is configured (NO hardcoded personal-chat default)
 ```
 
 ---
 
-## Step 0: Load Pre-Configured Team Data
+## Step 0: Determine Box Type, Then Load the CORRECT Routing Roster
 
-**This skill has three pre-configured team members. Do NOT ask the operator for this data.**
+**🔴 CO-MINGLING GUARD (v12.4.0): a CLIENT box must ship reply-to-sender +
+owner-only routing. The BlackCEO operator team (Trevor / LeAnne / Spaulding)
+must NEVER be stamped as "workers" on a client's `main` agent. Operators get
+INBOUND access via the separate `remote-rescue` agent in Step 0.5 — that is the
+only place operator IDs belong on a client box.**
 
-Open TEAM_CONFIG.md in this same skill folder and read the team data directly.
+### Step 0a: Is this the OPERATOR box or a CLIENT box?
 
-If TEAM_CONFIG.md has real IDs (not placeholders), use that data and skip to Step 1.
+- **CLIENT box** (the default — every box you onboard for a paying client):
+  the box serves ONE owner (the client). There is NO operator "team" routed on
+  the `main` agent. Set the routing roster to the single client owner.
+- **OPERATOR box** (BlackCEO's own internal management box ONLY): set
+  `IS_OPERATOR_BOX=1` in the environment before running this skill. Only an
+  operator box materializes the multi-member BlackCEO dispatcher table.
 
-If TEAM_CONFIG.md has placeholders, the team data is:
+Detect: if `IS_OPERATOR_BOX=1` is set (or you have been told explicitly that
+this is BlackCEO's own internal box), use the OPERATOR roster below. Otherwise
+this is a CLIENT box — use the CLIENT roster.
+
+### Step 0b (CLIENT box — the default): owner-only reply-to-sender
+
+Collect the ONE owner chat id (the paying client). It is normally already known:
+it is the client's own Telegram chat id, the same id approved in
+`channels.telegram.allowFrom` for the client bot (NOT an operator id). If you do
+not already have it, ask the owner once for their Telegram chat id.
+
+| Telegram ID | Name | Role | Type | Reply To |
+|-------------|------|------|------|----------|
+| {{OWNER_CHAT_ID}} | {{OWNER_NAME}} | Owner (the client) | Owner | {{OWNER_CHAT_ID}} |
+
+Routing rule for a client box: **reply ONLY to the sender of each incoming
+message. Do NOT spawn per-person operator worker lanes. There is no operator
+team on this box.** Proceed to Step 0.5 (which configures operator INBOUND
+access via remote-rescue, separately and correctly).
+
+### Step 0c (OPERATOR box ONLY — `IS_OPERATOR_BOX=1`): BlackCEO dispatcher roster
+
+The operator box (and ONLY the operator box) routes the BlackCEO management team:
 
 | Telegram ID | Name | Role | Type | Worker Label |
 |-------------|------|------|------|--------------|
@@ -179,17 +212,30 @@ If TEAM_CONFIG.md has placeholders, the team data is:
 | 6663821679 | LeAnne Dolce | Client | Client | leanne-worker |
 | 6771245262 | E.R. Spaulding | Chief of Operations | Worker | spaulding-worker |
 
-**Do NOT ask "How many team members?" or "What is this person's name?" or "What is their Telegram ID?"**
-**Do NOT run Step 0 intake questions.**
-**Use the data above directly and proceed to Step 0.5.**
+**If `IS_OPERATOR_BOX` is NOT set, do NOT use this roster on the box. Using it on
+a client box is the co-mingling defect this guard exists to prevent.**
 
 ---
 
-## Step 0.5: Operator Chat ID + Remote Rescue Install
+## Step 0.5: Operator INBOUND Access (Remote Rescue) + OPT-IN Escalation Chat
 
-**This step provisions the operator-side "Remote Rescue by T Otts" agent and persists the operator's Telegram chat ID into `env.vars.OPERATOR_TELEGRAM_CHAT_ID` (schema-compliant under the 2026.5.22 openclaw.json schema).**
+**This step provisions the operator-side "Remote Rescue by T Otts" agent
+(operator INBOUND access — desired and preserved) and, ONLY if you explicitly
+provide one, an OPT-IN operator escalation chat in
+`env.vars.OPERATOR_ESCALATION_CHAT_ID` (schema-compliant under the 2026.5.22
+openclaw.json schema).**
 
-Why it exists: every escalation in skills 15/23/35/37 + cron-prompt previously hardcoded `5252140759`. That broke on every box that wasn't Trevor's. The single config key `env.vars.OPERATOR_TELEGRAM_CHAT_ID` is now the source of truth, resolved at runtime via `shared-utils/operator-chat-id.sh` (triple-fallback: config -> env var -> hardcoded default of `5252140759`).
+Why it exists: operators (Trevor / LeAnne / Spaulding) must be able to message
+the client agent (inbound), landing in the isolated `remote-rescue` session —
+NEVER in the owner's `main` session, and NEVER as routed "workers." Separately,
+some skills (23/35/37 + cron-prompt) can escalate maintenance/build status to an
+operator. That escalation destination is now **opt-in and configurable** via
+`env.vars.OPERATOR_ESCALATION_CHAT_ID` (back-compat: `OPERATOR_TELEGRAM_CHAT_ID`),
+resolved at runtime via `shared-utils/operator-chat-id.sh`. **There is NO
+hardcoded personal-chat default** — if no escalation chat is configured, every
+escalation NO-OPs (logs only). A client box installed without one therefore
+never proactively messages any operator. (This is the v12.4.0 co-mingling fix —
+the old hardcoded `5252140759` default was the leakage vector.)
 
 ### ISOLATION GUARANTEE
 
@@ -210,17 +256,26 @@ bash 15-blackceo-team-management/scripts/install-remote-rescue.sh
 ```
 
 The script will:
-1. Prompt for the operator Telegram chat ID (default `5252140759`).
-2. Write it to `env.vars.OPERATOR_TELEGRAM_CHAT_ID` via `openclaw config set ... --strict-json`.
-3. Add operator IDs to `channels.telegram.allowFrom` and STRIP them from `channels.telegram.groupAllowFrom`.
-4. Append or update `remote-rescue` in `agents.list` with `workspace`, `telegram.allowFrom` binding, and `subagents.allowAgents: ["*"]` (idempotent).
+1. Prompt for the operator escalation Telegram chat ID. **Leave BLANK to DISABLE
+   operator escalation on this box (the safe client-box default — no hardcoded id).**
+2. ONLY if a chat id was provided: write it to `env.vars.OPERATOR_ESCALATION_CHAT_ID`
+   (and back-compat `OPERATOR_TELEGRAM_CHAT_ID`) via `openclaw config set ... --strict-json`.
+   If blank, nothing is written and operator escalation stays disabled.
+3. Add operator IDs to `channels.telegram.allowFrom` and STRIP them from
+   `channels.telegram.groupAllowFrom` (operator INBOUND access — always applied).
+4. Append or update `remote-rescue` in `agents.list` with `workspace`,
+   `telegram.allowFrom` binding, and `subagents.allowAgents: ["*"]` (idempotent).
 5. Create the workspace directory at `~/.openclaw/workspaces/remote-rescue`.
-6. Send a bootstrap message to the operator explaining the isolated routing (no `/agent` switch needed).
+6. (Only if an escalation chat was provided) send a one-time bootstrap message to
+   that operator chat explaining the isolated routing (no `/agent` switch needed).
 
 ### Non-interactive install (rollout automation)
 
 ```bash
-NONINTERACTIVE=1 OPERATOR_TELEGRAM_CHAT_ID=5252140759 \
+# CLIENT box default: leave OPERATOR_ESCALATION_CHAT_ID UNSET to ship with
+# operator escalation disabled (operator inbound access is still configured).
+# To OPT IN, set OPERATOR_ESCALATION_CHAT_ID="<operator chat id>" explicitly.
+NONINTERACTIVE=1 \
 CLIENT_NAME="<Client Name>" PERSONA="<Persona>" \
 CLIENT_BOT_USERNAME="<bot_username>" HOST_NAME="$(hostname)" \
 bash 15-blackceo-team-management/scripts/install-remote-rescue.sh
@@ -235,7 +290,7 @@ NONINTERACTIVE=1 bash 15-blackceo-team-management/scripts/install-remote-rescue.
 ### Verification (MANDATORY before proceeding to Step 1)
 
 ```bash
-openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID
+openclaw config get env.vars.OPERATOR_ESCALATION_CHAT_ID   # empty == escalation disabled (OK on a client box)
 openclaw config get agents.list | grep -A15 "remote-rescue"
 python3 -c "
 import json, os
@@ -336,27 +391,31 @@ mkdir -p ~/.openclaw/skills/15-blackceo-team-management
 nano ~/.openclaw/skills/15-blackceo-team-management/TEAM_CONFIG.md
 ```
 
-Paste and fill in with the actual team data collected in Step 0:
+**CLIENT box (default):** paste the owner-only reply-to-sender config. Replace
+`{{OWNER_CHAT_ID}}` / `{{OWNER_NAME}}` with the client owner's real values from
+Step 0b. Do NOT add operator IDs here — operators get inbound access via
+remote-rescue (Step 0.5), never as workers on this box.
 
 ```markdown
-# TEAM_CONFIG.md - Team Member Configuration
+# TEAM_CONFIG.md - Routing Configuration (CLIENT box: reply-to-sender, owner-only)
 # Generated during skill 15 setup
-# Update this file when team membership changes
+# This is a single-client box. Reply ONLY to the sender. No operator team here.
 
-## Team Members
+## Owner
 
-| Name | Telegram ID | Role | Type | Worker Label |
-|------|-------------|------|------|--------------|
-| [Name 1] | [ID 1] | [Role 1] | Worker | [firstname1]-worker |
-| [Name 2] | [ID 2] | [Role 2] | Worker | [firstname2]-worker |
-| [Name 3] | [ID 3] | [Role 3] | Client | [firstname3]-worker |
+| Telegram ID | Name | Role | Type | Reply To |
+|-------------|------|------|------|----------|
+| {{OWNER_CHAT_ID}} | {{OWNER_NAME}} | Owner (the client) | Owner | {{OWNER_CHAT_ID}} |
 
 ## Notes
-- Worker: Team member who gives instructions. The AI executes their requests.
-- Client: Business owner or client being served. The AI never assigns them tasks.
-- Worker labels are auto-generated: first name, lowercase, + "-worker"
-- Add new team members here AND to openclaw.json allowFrom AND to WORKFLOW_AUTO.md
+- This box serves ONE owner (the paying client). Reply only to the sender.
+- Do NOT spawn per-person operator worker lanes. There is no operator team on this box.
+- Operator (BlackCEO) inbound access is configured separately via the
+  remote-rescue agent (Step 0.5) — operator IDs NEVER appear here as workers.
 ```
+
+**OPERATOR box ONLY (`IS_OPERATOR_BOX=1`):** use the multi-member BlackCEO
+dispatcher roster from Step 0c instead (one row per operator with a worker label).
 
 Replace all placeholder brackets with real data from Step 0. Save file.
 
@@ -371,103 +430,111 @@ Execute:
 nano ~/clawd/WORKFLOW_AUTO.md
 ```
 
-Paste and customize using the data from TEAM_CONFIG.md:
+**CLIENT box (default):** paste the reply-to-sender routing block. Replace
+`{{OWNER_CHAT_ID}}` / `{{OWNER_NAME}}` with the client owner's real values.
 
 ```markdown
-# WORKFLOW_AUTO.md - Team Management Protocol (Dispatcher Routing)
+# WORKFLOW_AUTO.md — Reply-To-Sender (single owner / CLIENT box)
 
-## Dispatcher Pattern (ACTIVE)
-Main session = dispatcher/router. Route all incoming messages by sender ID.
+## Routing
+- This is a single-client box. Reply ONLY to the sender of each incoming message.
+- Do NOT spawn per-person operator worker sub-agents. There is no operator team on this box.
 
-## Team Members
-| Sender ID | Name | Role | Worker Label | Reply To |
-|---|---|---|---|---|
-| [TEAM_MEMBER_ID] | [TEAM_MEMBER_NAME] | [ROLE] | [firstname]-worker | [TEAM_MEMBER_ID] |
-| [TEAM_MEMBER_ID] | [TEAM_MEMBER_NAME] | [ROLE] | [firstname]-worker | [TEAM_MEMBER_ID] |
-| [CLIENT_ID] | [CLIENT_NAME] | Client (NOT a worker) | [firstname]-worker | [CLIENT_ID] |
+| Telegram Chat ID | Role | Lane |
+|---|---|---|
+| {{OWNER_CHAT_ID}} | Owner (the client) | serve directly |
 
 ## Reply Rules
-- Results go ONLY to requesting DM
-- No cross-posting unless explicitly requested
-- Tag: [Dispatcher] / [worker-label]
+- Reply ONLY to the originating sender's DM.
+- Directed sends are always allowed: if the owner says "send [person] X," execute it.
+- No proactive sends to operator IDs. Operator inbound access is handled by the
+  separate remote-rescue agent — not by routing on this `main` agent.
 
-## Worker Config
-- Model: [primary model]
-- Fallbacks: [fallback 1], [fallback 2]
-- cleanup: keep
-- archiveAfterMinutes: 43200
-
-## Client Rules
-- [Client name] is the CLIENT - never assign tasks, serve respectfully
-- Team workers give instructions - AI executes their requests
+## Notes
+- {{OWNER_NAME}} is the CLIENT — serve respectfully; the AI never assigns them tasks.
 ```
+
+**OPERATOR box ONLY (`IS_OPERATOR_BOX=1`):** use the multi-member dispatcher
+routing table instead (one row per operator: Sender ID / Name / Role / Worker
+Label / Reply To, plus Worker Config + Dispatcher rules). Do NOT use the operator
+dispatcher table on a client box.
 
 Replace all placeholder brackets with the real data from TEAM_CONFIG.md. Save file.
 
 ---
 
-## Step 6: Add Team IDs to AGENTS.md
+## Step 6: Add Routing to AGENTS.md
 
-Open ~/clawd/AGENTS.md and add this section (replace placeholders with real data from TEAM_CONFIG.md):
+**CLIENT box (default):** open ~/clawd/AGENTS.md and add the owner-only
+reply-to-sender block (replace `{{OWNER_CHAT_ID}}` / `{{OWNER_NAME}}` with the
+client owner's real values):
 
 ```markdown
-## Team Management - Telegram Routing (Dispatcher Protocol)
-- Protocol doc: ~/Downloads/[master-files-folder]/blackceo-management-protocol.md
+## Telegram Routing — Reply-To-Sender (single owner)
 - Routing table: ~/clawd/WORKFLOW_AUTO.md
 - Team config: ~/.openclaw/skills/15-blackceo-team-management/TEAM_CONFIG.md
-- Architecture: Main session = dispatcher. Each person gets a dedicated worker sub-agent.
+- This is a single-client box. Reply ONLY to the sender of each incoming message.
+- Do NOT spawn per-person operator worker sub-agents. There is NO operator team on this box.
 
-### Team Members (from TEAM_CONFIG.md)
-| Name | Telegram ID | Role | Worker Label |
-|------|-------------|------|-------------|
-| [TEAM_MEMBER_NAME] | [TEAM_MEMBER_ID] | [ROLE] | [firstname]-worker |
-| [TEAM_MEMBER_NAME] | [TEAM_MEMBER_ID] | [ROLE] | [firstname]-worker |
+### Owner (the client)
+| Name | Telegram ID | Role | Lane |
+|------|-------------|------|------|
+| {{OWNER_NAME}} | {{OWNER_CHAT_ID}} | Owner (the client) | serve directly |
 
-### Dispatcher Rules
-- Route incoming messages by sender Telegram ID to the correct worker
-- If worker exists and is active: use sessions_send to relay the task
-- If worker does not exist: spawn with sessions_spawn (label, model, cleanup: keep)
-- Results go ONLY to the requesting DM unless sender says "send this to [person]"
-- Dispatcher has FULL VISIBILITY across all workers (can read any worker's history via sessions_history)
-- Workers are isolated from each other but the dispatcher bridges them when asked
+### Reply Rules
+- Reply ONLY to the originating sender's DM.
+- Directed sends are always allowed when the owner asks ("send [person] X").
+- NEVER proactively message an operator ID. Operator (BlackCEO) inbound access is
+  handled by the separate `remote-rescue` agent — not by routing on `main`.
 ```
+
+**OPERATOR box ONLY (`IS_OPERATOR_BOX=1`):** instead add the full
+"Team Management - Dispatcher Protocol" block with the multi-member operator
+roster and dispatcher rules (route by sender ID to per-person worker sub-agents).
+Do NOT add the operator dispatcher block on a client box.
 
 Save file.
 
 ---
 
-## Step 7: Add Team IDs to TOOLS.md
+## Step 7: Add Routing to TOOLS.md
 
-Open ~/clawd/TOOLS.md and add this section (replace placeholders with real data from TEAM_CONFIG.md):
+**CLIENT box (default):** open ~/clawd/TOOLS.md and add:
 
 ```markdown
-## Team Dispatcher - Message Routing
-- WORKFLOW_AUTO.md: ~/clawd/WORKFLOW_AUTO.md (routing table with all Telegram IDs)
+## Message Routing — Reply-To-Sender (single owner)
+- WORKFLOW_AUTO.md: ~/clawd/WORKFLOW_AUTO.md (owner-only routing table)
 - Team config: ~/.openclaw/skills/15-blackceo-team-management/TEAM_CONFIG.md
-- Full protocol: ~/Downloads/[master-files-folder]/blackceo-management-protocol.md
-- To send to a specific person: use message tool with target set to their Telegram ID
-- All team Telegram IDs: see TEAM_CONFIG.md
-- Worker sub-agent model must support tool calls (MiniMax M2.5, Codex, Sonnet - NOT reasoning-only models)
+- Reply only to the sender. To send to a specific person when the owner asks,
+  use the message tool with target = that person's Telegram ID.
+- NEVER proactively send to an operator ID — there is no operator team on this box.
 ```
+
+**OPERATOR box ONLY (`IS_OPERATOR_BOX=1`):** add the "Team Dispatcher - Message
+Routing" block referencing the multi-member roster instead.
 
 Save file.
 
 ---
 
-## Step 8: Add Team IDs to MEMORY.md
+## Step 8: Add Routing to MEMORY.md
 
-Open ~/clawd/MEMORY.md and add this section (replace placeholders with real data from TEAM_CONFIG.md):
+**CLIENT box (default):** open ~/clawd/MEMORY.md and add (replace
+`{{OWNER_CHAT_ID}}` / `{{OWNER_NAME}}` with real values):
 
 ```markdown
-## Team Telegram IDs (Dispatcher Protocol)
+## Telegram Routing — Owner-Only (Reply-To-Sender)
 | Name | Telegram ID | Role |
 |------|-------------|------|
-| [TEAM_MEMBER_NAME] | [TEAM_MEMBER_ID] | [ROLE] |
-| [TEAM_MEMBER_NAME] | [TEAM_MEMBER_ID] | [ROLE] |
-- All IDs are approved in channels.telegram.allowFrom
+| {{OWNER_NAME}} | {{OWNER_CHAT_ID}} | Owner (the client) |
+- Single-client box: reply ONLY to the sender. No operator team is routed here.
+- Operator inbound access is via the remote-rescue agent (Step 0.5), never as a worker.
 - Routing protocol: ~/clawd/WORKFLOW_AUTO.md
-- Full team config: ~/.openclaw/skills/15-blackceo-team-management/TEAM_CONFIG.md
+- Team config: ~/.openclaw/skills/15-blackceo-team-management/TEAM_CONFIG.md
 ```
+
+**OPERATOR box ONLY (`IS_OPERATOR_BOX=1`):** add the multi-member
+"Team Telegram IDs (Dispatcher Protocol)" table instead.
 
 Save file.
 
@@ -556,16 +623,26 @@ EOF
 HARD FAIL: if this gate fails, the operator/owner session isolation is broken. Fix via `--repair` before proceeding.
 
 ---
-## Step 14: Send Completion Confirmation to the Operator
+## Step 14: (OPT-IN) Completion Confirmation to the Operator
 
-**This step is MANDATORY. Do NOT skip. Do NOT mark skill complete without doing this.**
+**Send this confirmation ONLY if an operator escalation chat is configured. If
+`$OPERATOR_CHAT_ID` resolves empty (the safe client-box default), SKIP this step —
+do NOT send to any hardcoded chat.**
 
-After Steps 1-13 are complete, you MUST send a confirmation message to the operator's Telegram DM. Resolve the destination via the shared helper (it reads `env.vars.OPERATOR_TELEGRAM_CHAT_ID`, falls back to the `OPERATOR_TELEGRAM_CHAT_ID` env var, then to the hardcoded default `5252140759`):
+After Steps 1-13 are complete, resolve the operator escalation destination via the
+shared helper. It reads `env.vars.OPERATOR_ESCALATION_CHAT_ID` (back-compat:
+`OPERATOR_TELEGRAM_CHAT_ID`) and returns EMPTY if none is configured — there is NO
+hardcoded personal-chat default:
 
 ```bash
 source ~/.openclaw/skills/shared-utils/operator-chat-id.sh
-# $OPERATOR_CHAT_ID is now populated.
+# $OPERATOR_CHAT_ID is now populated (may be EMPTY).
+if [ -z "$OPERATOR_CHAT_ID" ]; then
+  echo "operator escalation chat not configured — skipping completion confirmation (opt-in only)"
+fi
 ```
+
+If `$OPERATOR_CHAT_ID` is non-empty, send the confirmation to it. Otherwise skip.
 
 The message must include:
 

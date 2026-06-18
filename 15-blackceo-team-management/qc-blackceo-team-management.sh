@@ -119,9 +119,53 @@ missing = op_ids - allow
 assert not missing, f'missing: {missing}'
 \""
 
-warn_only "env.vars.OPERATOR_TELEGRAM_CHAT_ID set in openclaw.json" \
-  "python3 -c \"import json; cfg=json.load(open('$CFG_PATH')); assert cfg.get('env',{}).get('vars',{}).get('OPERATOR_TELEGRAM_CHAT_ID')\""
+warn_only "env.vars.OPERATOR_ESCALATION_CHAT_ID set (OPT-IN — empty is OK on a client box)" \
+  "python3 -c \"import json; cfg=json.load(open('$CFG_PATH')); v=cfg.get('env',{}).get('vars',{}); assert v.get('OPERATOR_ESCALATION_CHAT_ID') or v.get('OPERATOR_TELEGRAM_CHAT_ID')\""
 
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HARD GATE 6 (v12.4.0): CLIENT-box routing must be OWNER-ONLY (no operator
+# co-mingling). On a client box (IS_OPERATOR_BOX != 1), the materialized routing
+# files must NOT carry an operator ID as a routed worker / reply-target. Operator
+# IDs in openclaw.json allowFrom/groupAllowFrom are NOT inspected here (that is
+# legitimate inbound access, gated separately above) — only the ROUTING DOCS.
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
+echo "=== HARD GATE 6: CLIENT-box routing is owner-only (no operator co-mingling) ==="
+echo ""
+
+if [ "${IS_OPERATOR_BOX:-0}" = "1" ]; then
+  yellow "  SKIP -- IS_OPERATOR_BOX=1: operator dispatcher roster is allowed on the operator box"
+else
+  OP_IDS_RE='5252140759|6663821679|6771245262'
+  ROUTING_FILES=(
+    "$SKILLS_DIR_DEFAULT/15-blackceo-team-management/TEAM_CONFIG.md"
+    "$WORKSPACE/WORKFLOW_AUTO.md"
+    "$HOME/.openclaw/workspace/WORKFLOW_AUTO.md"
+    "$WORKSPACE/AGENTS.md"
+    "$WORKSPACE/MEMORY.md"
+    "$WORKSPACE/TOOLS.md"
+  )
+  GATE6_FAIL=0
+  for rf in "${ROUTING_FILES[@]}"; do
+    [ -f "$rf" ] || continue
+    # Flag any non-comment line that contains an operator ID. On a client box,
+    # an operator ID has no business being in a routing doc at all (operators are
+    # inbound-only via remote-rescue, which lives in openclaw.json, not these docs).
+    if grep -vE '^\s*#|^\s*//' "$rf" 2>/dev/null | grep -qE "$OP_IDS_RE"; then
+      red "  FAIL -- $rf contains an operator Telegram ID in routing (co-mingling)"
+      red "         A client box must ship reply-to-sender + owner-only. Remove the"
+      red "         operator roster; operators are inbound-only via remote-rescue."
+      GATE6_FAIL=1
+    fi
+  done
+  if [ "$GATE6_FAIL" -eq 0 ]; then
+    green "  PASS -- no operator IDs found in client-box routing docs"
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+  fi
 fi
 
 echo ""

@@ -469,7 +469,30 @@ Cost note: Each worker has its own token usage. Monitor via usage-tracker report
 
 13) Template: WORKFLOW_AUTO.md
 
-Copy and customize for each client deployment:
+🔴 CO-MINGLING GUARD (v12.4.0): a CLIENT box ships REPLY-TO-SENDER + OWNER-ONLY.
+Use the client-box template directly below. The multi-member operator dispatcher
+table (Team Members + Client Team) that follows it is OPERATOR-BOX ONLY
+(IS_OPERATOR_BOX=1). The BlackCEO operator team (Trevor / LeAnne / Spaulding)
+must NEVER be stamped as routable "workers" on a client's `main` agent — they get
+INBOUND access via the separate remote-rescue agent (Step 0.5).
+
+CLIENT box (default) — copy this, replacing {{OWNER_CHAT_ID}} / {{OWNER_NAME}}:
+
+# WORKFLOW_AUTO.md — Reply-To-Sender (single owner)
+## Routing
+- This is a single-client box. Reply ONLY to the sender of each incoming message.
+- Do NOT spawn per-person operator worker sub-agents. There is no operator team on this box.
+| Telegram Chat ID | Role | Lane |
+|---|---|---|
+| {{OWNER_CHAT_ID}} | Owner (the client) | serve directly |
+## Reply Rules
+- Reply ONLY to the originating sender's DM. Directed sends allowed when the owner asks.
+- NEVER proactively send to an operator ID. Operator inbound = remote-rescue agent, not this routing.
+## Notes
+- {{OWNER_NAME}} is the CLIENT — serve respectfully; the AI never assigns them tasks.
+
+OPERATOR box ONLY (IS_OPERATOR_BOX=1) — the multi-member dispatcher template below
+(copy and customize ONLY on BlackCEO's own internal operator box):
 
 # WORKFLOW_AUTO.md - Team Management Protocol (Dispatcher Routing)## Dispatcher Pattern (ACTIVE)Main session = dispatcher/router. Route all incoming messages by sender ID.## Team Members (Customize Per Deployment)| Sender ID | Name | Role | Worker Label | Reply To ||---|---|---|---|---|| [TEAM_MEMBER_1_ID] | [TEAM_MEMBER_NAME] | [ROLE] | [firstname1]-worker | [TEAM_MEMBER_1_ID] || [TEAM_MEMBER_2_ID] | [TEAM_MEMBER_NAME] | [ROLE] | [firstname2]-worker | [TEAM_MEMBER_2_ID] || [TEAM_MEMBER_3_ID] | [TEAM_MEMBER_NAME] | [ROLE] | [firstname3]-worker | [TEAM_MEMBER_3_ID] |## Client Team (Customize Per Deployment)| Sender ID | Name | Role | Worker Label | Reply To ||---|---|---|---|---|| CLIENT_ID | Client Name | Client (NOT a worker) | client-name-worker | CLIENT_ID || TEAM_ID | Team Member | Role | member-worker | TEAM_ID |## Reply Rules- Results go ONLY to requesting DM by default- Directed sends (sender says 'tell [person] X' or 'send [name] a message'): execute immediately, no confirmation needed- Context isolation: never share one worker's conversation data with another worker without being asked- Tag: 🏆 [Dispatcher] / 🔧 [worker-label]## Worker Config- Model: [primary model]- Fallbacks: [fallback 1], [fallback 2]- cleanup: keep- archiveAfterMinutes: 43200## Client Rules- [Client name] is the CLIENT - never assign tasks, serve respectfully- Team workers give instructions - AI executes their requests
 
@@ -495,7 +518,12 @@ WORKFLOW_AUTO.md is a custom routing file - NOT a standard OpenClaw file. The ag
 
 The fix: Write the IDs to BOTH WORKFLOW_AUTO.md AND the core .md files.
 
-[ADD TO AGENTS.md]
+🔴 CO-MINGLING GUARD (v12.4.0): on a CLIENT box, use the OWNER-ONLY core-file
+blocks in CORE_UPDATES.md (reply-to-sender, {{OWNER_CHAT_ID}}). The
+"BLACK CEO Team" multi-member dispatcher blocks below are OPERATOR-BOX ONLY
+(IS_OPERATOR_BOX=1) — do NOT add them to a client box.
+
+[OPERATOR BOX ONLY — ADD TO AGENTS.md]
 
 ## BLACK CEO Team - Telegram Routing (Dispatcher Protocol)
 - Protocol doc: ~/Downloads/[master-files-folder]/blackceo-management-protocol.md

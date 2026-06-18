@@ -10,67 +10,80 @@ Team config lives in: ~/.openclaw/skills/15-blackceo-team-management/TEAM_CONFIG
 
 ---
 
+> 🔴 CO-MINGLING GUARD (v12.4.0): the blocks below are the CLIENT-box defaults —
+> reply-to-sender + owner-only. The BlackCEO operator team (Trevor / LeAnne /
+> Spaulding) must NEVER be stamped here as routable "workers." Operators get
+> INBOUND access via the separate remote-rescue agent (Skill 15 Step 0.5). The
+> multi-member operator "Dispatcher Protocol" block is OPERATOR-BOX ONLY
+> (IS_OPERATOR_BOX=1) — see INSTALL.md Step 0c. Replace {{OWNER_CHAT_ID}} /
+> {{OWNER_NAME}} with the client owner's real values.
+
 ## AGENTS.md - UPDATE REQUIRED
 
-Add:
+Add (CLIENT box — reply-to-sender, owner-only):
 
 ```
-## Team Management - Dispatcher Protocol [PRIORITY: CRITICAL]
-- Main session = dispatcher. Each person gets a dedicated worker sub-agent.
+## Telegram Routing - Reply-To-Sender (single owner) [PRIORITY: CRITICAL]
+- This is a single-client box. Reply ONLY to the sender of each incoming message.
+- Do NOT spawn per-person operator worker sub-agents. There is NO operator team on this box.
 - Routing table: ~/clawd/WORKFLOW_AUTO.md
-- Team config (source of truth): ~/.openclaw/skills/15-blackceo-team-management/TEAM_CONFIG.md
-- Dispatcher has full cross-worker visibility via sessions_history
-- Workers operate in isolated context windows. No conversation data from one worker bleeds into another.
-- Workers CAN send directed Telegram messages to any ID when explicitly asked. There is no messaging lockdown - only context isolation.
-- Full protocol: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/15-blackceo-team-management/blackceo-team-management-full.md
+- Routing config (source of truth): ~/.openclaw/skills/15-blackceo-team-management/TEAM_CONFIG.md
 
-### Team Members (fill in from TEAM_CONFIG.md during setup)
-| Name | Telegram ID | Role | Worker Label |
-|------|-------------|------|-------------|
-(Populated during Step 0 intake - see INSTALL.md)
+### Owner (the client)
+| Name | Telegram ID | Role | Lane |
+|------|-------------|------|------|
+| {{OWNER_NAME}} | {{OWNER_CHAT_ID}} | Owner (the client) | serve directly |
 
-### Context Isolation Rule (NOT Communication Lockdown)
-- Worker conversation data is STRICTLY isolated per worker. One worker's context NEVER leaks to another.
-- Directed sends are ALWAYS allowed: if any team member says "send [name] a message" or "tell [person] X," execute the Telegram send immediately.
-- "Cross-posting" means auto-sharing results without being asked. It does NOT mean blocking directed sends.
-- Workers CAN use the message tool to send to any Telegram ID when explicitly asked.
-- Workers CANNOT read, reference, or expose another worker's conversation history.
+### Reply Rules
+- Reply ONLY to the originating sender's DM.
+- Directed sends are ALWAYS allowed: if the owner says "send [name] a message" or "tell [person] X," execute the Telegram send immediately.
+- NEVER proactively message an operator ID from this `main` agent. Operator
+  (BlackCEO) inbound access is the remote-rescue agent's job, not this routing.
 ```
 
 ---
 
 ## TOOLS.md - UPDATE REQUIRED
 
-Add:
+Add (CLIENT box — reply-to-sender, owner-only):
 
 ```
-## Team Dispatcher - Message Routing
-- WORKFLOW_AUTO.md: ~/clawd/WORKFLOW_AUTO.md (routing table)
-- Team config: ~/.openclaw/skills/15-blackceo-team-management/TEAM_CONFIG.md
-- To send to specific person: message tool with target = their Telegram ID
-- Worker results go ONLY to the requesting DM
-- Full protocol: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/15-blackceo-team-management/blackceo-team-management-full.md
+## Message Routing - Reply-To-Sender (single owner)
+- WORKFLOW_AUTO.md: ~/clawd/WORKFLOW_AUTO.md (owner-only routing table)
+- Routing config: ~/.openclaw/skills/15-blackceo-team-management/TEAM_CONFIG.md
+- Reply only to the sender. To send to a specific person when the owner asks,
+  use the message tool with target = that person's Telegram ID.
+- NEVER proactively send to an operator ID — there is no operator team on this box.
 ```
 
 ---
 
 ## MEMORY.md - UPDATE REQUIRED
 
-Add:
+Add (CLIENT box — reply-to-sender, owner-only):
 
 ```
-## Team Management - Installed [DATE]
-- Dispatcher architecture configured
+## Telegram Routing - Owner-Only (Reply-To-Sender) - Installed [DATE]
+- Single-client box: reply ONLY to the sender. No operator team is routed here.
+- Operator (BlackCEO) inbound access is via the remote-rescue agent (Step 0.5), never as a worker.
 - Routing table: ~/clawd/WORKFLOW_AUTO.md
-- Team config (source of truth): ~/.openclaw/skills/15-blackceo-team-management/TEAM_CONFIG.md
-- Context isolation: Workers have isolated context windows (no data bleed between workers). Workers CAN send directed messages to any Telegram ID when explicitly asked - isolation is context only, not communication lockdown.
-- Full protocol: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/15-blackceo-team-management/blackceo-team-management-full.md
+- Routing config (source of truth): ~/.openclaw/skills/15-blackceo-team-management/TEAM_CONFIG.md
 
-### Team Members (fill in from TEAM_CONFIG.md during setup)
+### Owner (the client)
 | Name | Telegram ID | Role |
 |------|-------------|------|
-(Populated during Step 0 intake - see INSTALL.md)
+| {{OWNER_NAME}} | {{OWNER_CHAT_ID}} | Owner (the client) |
 ```
+
+---
+
+## OPERATOR BOX ONLY (IS_OPERATOR_BOX=1)
+
+The multi-member BlackCEO "Dispatcher Protocol" core-file blocks (Main session =
+dispatcher; per-person worker sub-agents; cross-worker visibility; the operator
+roster table) belong ONLY on BlackCEO's own internal operator box. Do NOT add
+them to a client box. See blackceo-team-management-full.md sections 15 and INSTALL.md
+Step 0c for the operator-box variant.
 
 ---
 

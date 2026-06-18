@@ -145,15 +145,24 @@ if [ "$COMPLETE" = true ]; then
   active_depts=$(jq -r '[.departments[]? | select(.status != "pending")] | length' "$STATE" 2>/dev/null || echo 0)
   if [ "$qc_for_kick" = "pass" ] && [ "${active_depts:-0}" = "0" ]; then
     if command -v openclaw >/dev/null 2>&1; then
-      # Resolve a chat the bot can reply to: owner first, else operator default.
+      # Resolve a chat the bot can reply to: owner first, else operator escalation
+      # chat IF configured. CO-MINGLING GUARD (v12.4.0): NO hardcoded personal
+      # chat — if neither owner nor a configured operator chat is available, skip
+      # the build-kick send (the resume cron's in-process exec still drives it).
       KICK_CHAT=$(jq -r '.ownerChat // empty' "$STATE" 2>/dev/null || true)
       if [ -z "$KICK_CHAT" ] || [ "$KICK_CHAT" = "null" ]; then
-        KICK_CHAT="$(openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
-        case "$KICK_CHAT" in ""|*"not found"*|*"Error"*) KICK_CHAT="${OPERATOR_TELEGRAM_CHAT_ID:-${OPENCLAW_TREVOR_CHAT:-5252140759}}" ;; esac
+        KICK_CHAT="$(openclaw config get env.vars.OPERATOR_ESCALATION_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
+        case "$KICK_CHAT" in ""|*"not found"*|*"Error"*) KICK_CHAT="" ;; esac
+        if [ -z "$KICK_CHAT" ]; then
+          KICK_CHAT="$(openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
+          case "$KICK_CHAT" in ""|*"not found"*|*"Error"*) KICK_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}" ;; esac
+        fi
       fi
       KICK_AGENT=$(jq -r '.agentName // "the master orchestrator"' "$STATE" 2>/dev/null || echo "the master orchestrator")
       KICK_MSG="[WORKFORCE-RESUME] ${KICK_AGENT}: the interview is COMPLETE and the QC gate passed. Start the workforce build NOW per the Skill 23 Post-Interview Handoff Protocol - reconcile the canonical department floor with the owner's custom departments, write every planned department into .workforce-build-state.json as status=pending, then build them (build-workforce.py). roleLibraryStatus + sopLibraryStatus are already seeded pending; a SCRIPT will write buildCompletedAt + closeoutStatus when all departments + both libraries are done, and the closeout fires automatically. Do NOT message the owner - this is an internal build kick; the owner only hears from you when Skill 37 Step 6 delivers the celebration."
-      if openclaw message send --channel telegram -t "$KICK_CHAT" -m "$KICK_MSG" 2>&1; then
+      if [ -z "$KICK_CHAT" ]; then
+        echo "INFO: no owner chat and no operator escalation chat configured - build-kick send skipped (resume cron will drive the build in-process within 15m)" >&2
+      elif openclaw message send --channel telegram -t "$KICK_CHAT" -m "$KICK_MSG" 2>&1; then
         echo "auto-closeout: dispatched [WORKFORCE-RESUME] build-kick to chat $KICK_CHAT"
       else
         echo "WARN: build-kick dispatch failed (non-fatal - resume cron will re-dispatch within 15m)" >&2
