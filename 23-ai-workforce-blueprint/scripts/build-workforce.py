@@ -49,6 +49,7 @@ import os
 import sys
 import json
 import re
+import hashlib
 import argparse
 import shutil
 import subprocess  # v10.15.25: module-level so bare subprocess.run / subprocess.TimeoutExpired
@@ -119,6 +120,15 @@ _LIBRARY_FILL_STATS = {"instantiated_from_library": 0, "llm_generated": 0}
 # write_sop_research_manifest() can SKIP them (their SOPs are already authored
 # inside how-to.md - no LLM regeneration needed).
 _LIBRARY_INSTANTIATED_ROLE_DIRS = set()
+
+# PER-ARTIFACT VERSIONING (v12.27.0): build-wide accumulator of the SOURCE
+# content_sha each role was instantiated FROM. Keyed "<dept>/<role-slug>". Flushed
+# into .workforce-build-state.json.artifactProvenance by
+# _flush_artifact_provenance_to_state() at the end of the build. This is the FAST
+# PATH detect-stale-artifacts.py reads (no need to re-scan every client file); the
+# per-file `workforce-provenance` HTML-comment marker is the ground-truth fallback.
+_ARTIFACT_PROVENANCE = {}              # "<dept>/<slug>" -> {source_content_sha, ...}
+_ARTIFACT_PROVENANCE_MANIFEST_VERSION = {"version": None}
 
 # PRD 2.12: boundary gate - canonical-library dept registry.
 # Import sop-boundary-gate.py from the same scripts/ directory.
@@ -679,6 +689,136 @@ def _load_build_state():
             return json.load(f)
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+def _resolve_role_library_index():
+    """
+    Resolve the repo/skill _index.json (the content-manifest source of truth) so
+    the build-state provenance roll-up can copy the dept + SOP source content_shas.
+    Mirrors the lookup create_role_workspaces uses (ROLE_LIBRARY_PATH override,
+    then the script's own skill dir). Returns (path_or_None, data_or_{}).
+    """
+    candidates = []
+    env_dir = os.environ.get("ROLE_LIBRARY_PATH")
+    if env_dir:
+        candidates.append(os.path.join(env_dir, "templates", "role-library", "_index.json"))
+    here = os.path.dirname(os.path.abspath(__file__))
+    skill_dir = os.path.dirname(here)
+    candidates.append(os.path.join(skill_dir, "templates", "role-library", "_index.json"))
+    for p in candidates:
+        if os.path.isfile(p):
+            try:
+                with open(p, encoding="utf-8") as f:
+                    return p, json.load(f)
+            except (OSError, json.JSONDecodeError):
+                continue
+    return None, {}
+
+
+def _flush_artifact_provenance_to_state():
+    """
+    Flush the per-role _ARTIFACT_PROVENANCE accumulator into
+    .workforce-build-state.json under the new `artifactProvenance` key, alongside
+    the dept + SOP source content_shas copied from the role-library manifest.
+
+    Shape (the FAST PATH detect-stale-artifacts.py reads):
+        artifactProvenance: {
+          manifestVersion: "<_index.json version the build read>",
+          manifestContentManifestSchema: "1.0",
+          builtAt: "<iso>",
+          roles: { "<dept>/<slug>": {source_content_sha, source_content_version,
+                                     instantiatedAt, sourcePath} },
+          depts: { "<dept>": {source_content_sha} },
+          sops:  { "<dept>/<sop-slug>": {source_content_sha, source_content_version,
+                                          sourcePath} },
+          personas: { "<persona-slug>": {source_content_sha, source_content_version,
+                                          sourcePath} },   # shared pool (not per-dept)
+          personaSetSha: "sha256:<sha over the sorted persona shas>"
+        }
+
+    Idempotent + additive: merges into the existing build-state, never clobbers
+    unrelated keys. Called once at the end of the build. Never raises.
+    """
+    if not _ARTIFACT_PROVENANCE:
+        return  # nothing instantiated from the library this run
+    path = _build_state_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        idx_path, idx = _resolve_role_library_index()
+        manifest_version = idx.get("version")
+        cm = idx.get("content_manifest") or {}
+        depts_manifest = idx.get("departments") or {}
+        sops_manifest = idx.get("sops") or []
+        personas_manifest = idx.get("personas") or []
+
+        # dept roll-up: only the depts that actually had a role instantiated.
+        touched_depts = {k.split("/", 1)[0] for k in _ARTIFACT_PROVENANCE}
+        depts_out = {}
+        for did in sorted(touched_depts):
+            d = depts_manifest.get(did)
+            if isinstance(d, dict) and d.get("content_sha"):
+                depts_out[did] = {"source_content_sha": d["content_sha"]}
+
+        # sop roll-up: record every dept-level SOP for a touched dept.
+        sops_out = {}
+        for s in sops_manifest:
+            if not isinstance(s, dict):
+                continue
+            if s.get("dept") in touched_depts:
+                key = f"{s.get('dept')}/{s.get('slug')}"
+                sops_out[key] = {
+                    "source_content_sha": s.get("content_sha"),
+                    "source_content_version": s.get("content_version"),
+                    "sourcePath": s.get("path"),
+                }
+
+        # persona roll-up: personas are a SHARED pool (not per-dept-rendered like
+        # roles), so a client that built any department against this library built
+        # against the WHOLE persona set. Record every library persona's source
+        # content_sha keyed by bare slug (detect-stale normalizes to persona/<slug>),
+        # plus a library-level personaSetSha = sha over the sorted persona shas so a
+        # single value captures "which persona-set version this client built against".
+        personas_out = {}
+        _pset_lines = []
+        for p in personas_manifest:
+            if not isinstance(p, dict):
+                continue
+            pslug = p.get("slug")
+            psha = p.get("content_sha")
+            if not (pslug and psha):
+                continue
+            personas_out[pslug] = {
+                "source_content_sha": psha,
+                "source_content_version": p.get("content_version"),
+                "sourcePath": p.get("path"),
+            }
+            _pset_lines.append(f"{pslug}\t{psha}")
+        persona_set_sha = None
+        if _pset_lines:
+            payload = "\n".join(sorted(_pset_lines)).encode("utf-8")
+            persona_set_sha = "sha256:" + hashlib.sha256(payload).hexdigest()
+
+        state = _load_build_state()
+        ap = {
+            "manifestVersion": manifest_version,
+            "manifestContentManifestSchema": cm.get("manifest_schema"),
+            "builtAt": datetime.now().isoformat(),
+            "roles": dict(_ARTIFACT_PROVENANCE),
+            "depts": depts_out,
+            "sops": sops_out,
+            "personas": personas_out,
+            "personaSetSha": persona_set_sha,
+        }
+        state["artifactProvenance"] = ap
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2)
+        print(f"[PROVENANCE] Wrote artifactProvenance ({len(ap['roles'])} roles, "
+              f"{len(depts_out)} depts, {len(sops_out)} sops, "
+              f"{len(personas_out)} personas) to {path}",
+              file=sys.stderr)
+    except OSError as e:
+        print(f"[PROVENANCE WARNING] Could not write artifactProvenance to {path}: {e}",
+              file=sys.stderr)
 
 
 def _write_canonical_reconciliation(record):
@@ -2010,6 +2150,13 @@ def build_from_config(config):
         f"sop_populate_rc={_sop_rc}",
         file=sys.stderr,
     )
+
+    # PER-ARTIFACT VERSIONING (v12.27.0): flush the SOURCE content_sha each role
+    # was instantiated from into build-state.artifactProvenance. All
+    # create_role_workspace() calls (which run _instantiate_role_from_library and
+    # populate the _ARTIFACT_PROVENANCE accumulator) have completed by now, so this
+    # is the authoritative roll-up detect-stale-artifacts.py reads as the fast path.
+    _flush_artifact_provenance_to_state()
 
     print(f"\n[NON-INTERACTIVE] {_build_complete_msg}", file=sys.stderr)
     print(f"[NON-INTERACTIVE] Company: {company_name}", file=sys.stderr)
@@ -3655,11 +3802,41 @@ def _instantiate_role_from_library(role_name, dept_id, interview_answers):
         )
         return None
 
-    header = (f"<!-- WS-2: instantiated from role-library "
-              f"v{role_entry.get('version', '?') if role_entry else '?'} "
-              f"({role_entry.get('slug', '?') if role_entry else '?'}) on "
-              f"{gen_date}. Pre-written Section-9 SOPs included - not "
-              f"LLM-regenerated. -->\n")
+    # PER-ARTIFACT PROVENANCE (v12.27.0): stamp the resolved SOURCE content_sha +
+    # content_version COPIED FROM THE MANIFEST entry (role_entry IS the
+    # _index.json entry that _crw_library_lookup returned; it now carries
+    # content_sha/content_version stamped by hash-content-manifest.py). This is
+    # the SOURCE hash — NEVER a hash of the rendered client file — and is the
+    # ground-truth fallback / tamper check that detect-stale-artifacts.py greps
+    # when the build-state.artifactProvenance fast path is missing. The old marker
+    # rendered `v?` (no version field existed) and carried no sha.
+    _re = role_entry or {}
+    _content_sha = _re.get("content_sha", "sha256:UNKNOWN")
+    _content_ver = _re.get("content_version", "?")
+    _slug = _re.get("slug", "?")
+    _dept = _re.get("dept", dept_id)
+    header = (
+        f"<!-- workforce-provenance: source=role-library "
+        f"role-slug={_slug} dept={_dept} content_sha={_content_sha} "
+        f"content_version={_content_ver} instantiated={gen_date} "
+        f"generator=build-workforce.py. Pre-written Section-9 SOPs included - "
+        f"not LLM-regenerated. -->\n"
+    )
+
+    # Record the SOURCE provenance for the build-state roll-up (fast-path detection).
+    # Key by "<dept>/<role-slug>" — the same key detect-stale-artifacts.py builds
+    # from the manifest. source_path is the canonical library file this came from.
+    try:
+        _prov_key = f"{_dept}/{_slug}"
+        _ARTIFACT_PROVENANCE[_prov_key] = {
+            "source_content_sha": _content_sha,
+            "source_content_version": _content_ver,
+            "instantiatedAt": gen_date,
+            "sourcePath": _re.get("path", ""),
+        }
+    except Exception:
+        pass  # provenance accounting must never break a build
+
     return header + out
 
 

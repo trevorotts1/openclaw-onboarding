@@ -69,6 +69,7 @@ floor dept, role, skill, bootstrap file, or version can silently fall out of a
 | **BOOTSTRAP** | the core/bootstrap files are consistent: the 6 shipped templates (`IDENTITY`/`SOUL`/`AGENTS`/`USER`/`TOOLS`/`HEARTBEAT`.md) exist at repo root, `MEMORY.md` is **not** committed (it's seeded fresh+empty per agent), and the canonical 7-file enumeration in `Start Here.md` names all seven | file existence + `Start Here.md` scan |
 | **SKILLS-COUNT** | `install.sh` active-skill prose == README count == the actual skill-dir tree (active = numbered dirs minus `*-ARCHIVED`), and every active skill has a README inventory row | parse README `**N numbered skill folders**` / `M active + K archived` + inventory rows + `install.sh` `(N active + K archived)` / `The N active skills`, compare to the live tree |
 | **VERSION** | every repo-wide version marker agrees with `/version` — the 9-marker `bump-version.sh` set **plus** `cc-compat.json` `onboardingVersion` | reads each marker, compares the normalized semver to `/version` |
+| **CONTENT-HASH** | the per-artifact content manifest is **present + current**: every `roles[]`/`sops[]` entry has `content_sha` + `content_version`, each stored `content_sha` equals a freshly recomputed one (manifest not stale vs the live `.md` files), and `render_sha` recomputes with no un-mapped **canonical** `{{TOKEN}}` surviving the neutral render | re-runs the `hash-content-manifest.py` pipeline (`check_manifest`) over the live library files; **exit 6** on any drift — makes a stale manifest impossible to ship |
 
 These mirror the build the same way the 5-dimension gate does: ORG-CHART /
 ROUTING / COMMAND-CENTER / DREAMING are all **derived at build time** by iterating
@@ -91,10 +92,78 @@ subset, or is unwired **fails**. The drift you must fix:
 - **org-chart / routing / command-center / dreaming drift** → never replace a
   generator's `selected_departments` loop with a hardcoded subset, and keep every
   generator wired into the build.
+- **content-hash drift** → after adding or editing ANY role / SOP / department,
+  run `python3 scripts/hash-content-manifest.py` to re-stamp the manifest (details
+  in ["Per-artifact content hashes + change detection"](#per-artifact-content-hashes--change-detection-v12270) below). The
+  gate FAILS if the stored `content_sha` no longer matches the file.
 
 The adversarial fixtures
 (`scripts/test-artifact-coverage.sh`) plant exactly one drift per dimension and
 prove the gate exits 6 — a green gate that never fails is worthless.
+
+---
+
+## Per-artifact content hashes + change detection (v12.27.0)
+
+Each canonical artifact (role, dept-level SOP, department) carries a **content
+hash + version** in `templates/role-library/_index.json`, so the system can tell —
+per role, per SOP, per department — whether a given client's built copy is **out of
+date** vs the current library content. This is what drives "this client's role X is
+out of date → refresh it".
+
+### The hash is computed on the CANONICAL TEMPLATE, never on rendered client bytes
+
+This is the whole point. Every library `.md` is a pure template full of `{{TOKENS}}`
+(`{{COMPANY_NAME}}`, `{{ISO_DATE}}`, `{{GENERATION_DATE}}`, …). At instantiation
+those tokens become per-client values **and** volatile values (`datetime.now()`), so
+a hash of the *rendered client file* differs for **every client and every day** even
+when the library is unchanged → massive false positives. Instead, `content_sha` is
+computed over the **template** with `{{TOKENS}} left intact** (the tokens **are** the
+canonical content), via:
+
+1. strip the provenance HTML-comment marker line(s) (self-reference removal),
+2. normalize the volatile header fields — the `**Last updated:**` and `**Version:**`
+   values become `<NORMALIZED>` (so a re-generation that only re-dates the header is
+   **not** a content change),
+3. CRLF→LF and strip one trailing newline,
+4. `content_sha = "sha256:" + sha256(bytes)`.
+
+Two identical templates therefore produce the **same** `content_sha` regardless of
+which client they serve — zero per-client false positives. A `render_sha`
+cross-check (forward-render through `fill_tokens()` with a fixed neutral config + a
+frozen clock) is a build-time **determinism** assertion only (it proves no un-mapped
+canonical token survives a render); **detection compares `content_sha`**.
+
+A **department**'s `content_sha` is the sha over its sorted `(member-slug,
+member content_sha)` list, so a dept goes stale when a member is added/removed/renamed
+**or** any member role's content changes. `content_version` defaults to `1.0.0` and
+auto patch-bumps when `content_sha` changes between manifest runs.
+
+### The three tools
+
+| Tool | Role |
+|------|------|
+| `scripts/hash-content-manifest.py` | **Generator.** Idempotent in-place stamper (modeled on `tag_role_classes.py`) — stamps `content_sha`/`render_sha`/`content_version`/`content_hashed_at` onto every `roles[]` entry, adds the top-level `sops[]` array for `<dept>/sops/*.md`, computes the per-dept `content_sha`, and writes the self-describing `content_manifest{}` header. **Run it LAST in the library-build chain** (after `generate-role-library.py` / `tag_role_classes.py`) and after editing any role/SOP. `--dry-run` / `--summary` / `--check`. |
+| build pipeline (`create_role_workspaces.py` + `build-workforce.py`) | **Build record.** At instantiation, stamps a `workforce-provenance` HTML-comment marker into each `how-to.md` carrying the **source** `content_sha`/`content_version` copied from the manifest, and rolls them up into `.workforce-build-state.json` → `artifactProvenance.{roles,depts,sops}`. The build-state is the fast detection path; the per-file marker is the ground-truth fallback. |
+| `scripts/detect-stale-artifacts.py` | **Detector.** Given a client workspace + the manifest, reports per artifact: **CURRENT** (source sha == manifest sha), **STALE** (source sha changed since build), **MISSING** (manifest offers it, client never built it), **ORPHAN** (client built a key not in the manifest), **UNTRACKED** (built before provenance shipped). `--json`; **exit 0** = all current, **10** = actionable drift (feeds the refresh queue), **2** = load error. Read-only on the client side. |
+
+### When you edit a role / SOP / department — you MUST re-stamp
+
+After adding or changing any role/SOP/dept `.md`, run:
+
+```bash
+python3 23-ai-workforce-blueprint/scripts/hash-content-manifest.py
+```
+
+The consistency gate's **CONTENT-HASH** dimension (`--only artifact`, exit 6) and the
+`qc-static.yml` `hash-content-manifest.py --check` step both **fail** if you skip
+this — a stale manifest cannot ship. Because the hash is canonical-source based, your
+edit changes **only** that artifact's `content_sha`, which makes `detect-stale-artifacts.py`
+flag **only** the clients built from the old sha, for **only** that artifact —
+precise, per-artifact, false-positive-free fan-out. The refresh flow
+(`update-skills.sh`, after `migrate-existing-workforce.sh`) runs the detector and
+writes the actionable items to `.artifact-refresh-queue.json` for re-instantiation
+via the same additive library-fill path.
 
 ---
 

@@ -1202,8 +1202,26 @@ def try_library_fill(role_name, dept_path, is_ceo, lib_key=None):
 
     # Stamp the front so reviewers can tell at a glance this came from library.
     # Marker is written ONLY when content size >= floor (enforced above).
-    header = (f"<!-- Filled from role-library v{role_entry.get('version', '?')} on "
-              f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')} -->\n")
+    #
+    # PER-ARTIFACT PROVENANCE (v12.27.0): emit the resolved SOURCE content_sha +
+    # content_version COPIED FROM THE MANIFEST entry for this role (role_entry IS
+    # the _index.json entry that library_lookup returned, which now carries
+    # content_sha/content_version stamped by hash-content-manifest.py). This is
+    # the SOURCE hash — NEVER a hash of the rendered client file — so
+    # detect-stale-artifacts.py can compare it against the live manifest and tell
+    # whether THIS client's copy of this role is CURRENT or STALE. The old marker
+    # rendered `v?` (no version field existed) and carried no sha.
+    _gen_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    _content_sha = (role_entry or {}).get('content_sha', 'sha256:UNKNOWN')
+    _content_ver = (role_entry or {}).get('content_version', '?')
+    _slug = (role_entry or {}).get('slug', '?')
+    _dept = (role_entry or {}).get('dept', dept_slug)
+    header = (
+        f"<!-- workforce-provenance: source=role-library "
+        f"role-slug={_slug} dept={_dept} content_sha={_content_sha} "
+        f"content_version={_content_ver} instantiated={_gen_date} "
+        f"generator=create_role_workspaces.py -->\n"
+    )
     return header + filled
 
 

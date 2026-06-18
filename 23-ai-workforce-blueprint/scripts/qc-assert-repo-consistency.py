@@ -994,6 +994,46 @@ def evaluate_artifact_coverage(skill_dir):
     except Exception as e:  # noqa: BLE001
         add_row("VERSION-MARKERS", False, f"version-marker check raised: {e}")
 
+    # ── DIMENSION: CONTENT-HASH (v12.27.0) ────────────────────────────────────
+    # The per-artifact content-manifest must be PRESENT + UP TO DATE. This makes a
+    # stale content manifest IMPOSSIBLE to ship: it re-runs the SAME hash pipeline
+    # (hash-content-manifest.check_manifest) over the LIVE library files under test
+    # and asserts (a) EVERY roles[]/sops[]/personas[] entry HAS content_sha + content_version,
+    # (b) each STORED content_sha EQUALS the freshly recomputed one (manifest not
+    # stale vs files), (c) the content_manifest header is present + uses the
+    # expected algo/schema, and (d) render_sha recomputes cleanly — no un-mapped
+    # CANONICAL token survives the neutral render (the TOKEN_LEAK invariant). Any
+    # mismatch => DRIFT => rc 6. Because content_sha is canonical-source-based, any
+    # future edit to a role/SOP/dept .md changes that artifact's content_sha at the
+    # next hash-content-manifest.py run; this gate forces that re-stamp before the
+    # edit can ship, so detect-stale-artifacts.py can flag exactly the affected
+    # clients.
+    try:
+        hcm = _load_module("hash_content_manifest", repo.scripts / "hash-content-manifest.py")
+        # The hash module resolves the library under _SKILL_DIR (its own parent).
+        # Repo() already forced ROLE_LIBRARY_PATH = skill under test, but the hash
+        # module pins _SKILL_DIR at import time from its OWN location, which IS the
+        # skill-under-test's scripts/ parent — so it reads the same files. Validate
+        # the repo's loaded index against the live files via the shared check.
+        # render is best-effort: if fill_tokens isn't importable, the token-leak
+        # sub-check is skipped (content_sha assertion is unaffected).
+        ok_hash, hash_problems = hcm.check_manifest(repo.index, do_render=True)
+        if ok_hash:
+            n_roles = len(repo.index.get("roles", []))
+            n_sops = len(repo.index.get("sops", []))
+            n_personas = len(repo.index.get("personas", []))
+            add_row("CONTENT-HASH", True,
+                    f"content-manifest present + current: {n_roles} roles + "
+                    f"{n_sops} sops + {n_personas} personas carry content_sha/version; "
+                    f"all match live files")
+        else:
+            add_row("CONTENT-HASH", False,
+                    f"content-manifest drift ({len(hash_problems)}): "
+                    + "; ".join(hash_problems[:4])
+                    + (f" … +{len(hash_problems) - 4} more" if len(hash_problems) > 4 else ""))
+    except Exception as e:  # noqa: BLE001
+        add_row("CONTENT-HASH", False, f"content-hash check raised: {e}")
+
     rc = 0 if not failures else 6
     summary = {
         "floor_count": len(floor_ids),
@@ -1009,7 +1049,7 @@ def _print_artifact_table(verdict):
     s = verdict["summary"]
     print("=" * 110)
     print("ARTIFACT COVERAGE GATE — org-chart x routing x command-center x dreaming "
-          "x bootstrap x skills-count x version")
+          "x bootstrap x skills-count x version x content-hash")
     print(f"floor = {s.get('floor_count')} departments")
     print("=" * 110)
     print(f"{'DIMENSION':<20}{'STATUS':<8}DETAIL")

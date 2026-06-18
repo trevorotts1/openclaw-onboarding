@@ -254,6 +254,56 @@ else
 fi
 [ -z "$CONTENT_DRIFT_SKILLS_JSON" ] && CONTENT_DRIFT_SKILLS_JSON="[]"
 
+# ----------------------------------------------------------
+# v12.27.0: PER-ARTIFACT staleness probe (role / dept / SOP). READ-ONLY.
+# After a new library version lands in $SKILLS_DIR, this asks
+# detect-stale-artifacts.py whether THIS client's built workforce is out of date
+# vs the installed role-library content manifest — per ROLE, per DEPT, per SOP.
+# The hash is canonical-source based, so this has zero per-client false positives.
+# rc 10 + the --json item list become the refresh work queue that update-skills.sh
+# re-instantiates. We surface a compact summary in the output JSON; the full item
+# list is available by running the detector directly.
+# ----------------------------------------------------------
+ARTIFACT_STALENESS_JSON='{"available":false}'
+_DETECT="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/detect-stale-artifacts.py"
+_AMANIFEST="$SKILLS_DIR/23-ai-workforce-blueprint/templates/role-library/_index.json"
+if [ "$PLATFORM" = "vps" ]; then
+  _OC_WORKSPACE="/data/.openclaw/workspace"
+else
+  _OC_WORKSPACE="$HOME/.openclaw/workspace"
+fi
+if [ -f "$_DETECT" ] && [ -f "$_AMANIFEST" ] && \
+   { [ -d "$_OC_WORKSPACE/departments" ] || [ -f "$_OC_WORKSPACE/.workforce-build-state.json" ]; } && \
+   command -v python3 >/dev/null 2>&1; then
+  _DETECT_JSON=$(python3 "$_DETECT" --workspace "$_OC_WORKSPACE" --manifest "$_AMANIFEST" --json 2>/dev/null || echo "")
+  if [ -n "$_DETECT_JSON" ]; then
+    ARTIFACT_STALENESS_JSON=$(printf '%s' "$_DETECT_JSON" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print('{\"available\":false}'); sys.exit(0)
+s = d.get('summary', {})
+stale_items = [i['key'] for i in d.get('items', []) if i.get('status') in ('STALE','MISSING','UNTRACKED','ORPHAN')]
+out = {
+    'available': True,
+    'manifest_version': d.get('manifest_version'),
+    'build_record_source': d.get('build_record_source'),
+    'summary': s,
+    'actionable': s.get('stale',0)+s.get('missing',0)+s.get('orphan',0)+s.get('untracked',0),
+    'sample': stale_items[:25],
+}
+print(json.dumps(out))
+" 2>/dev/null || echo '{"available":false}')
+    # An out-of-date workforce is an update signal (drives the refresh flow).
+    _ACTIONABLE=$(printf '%s' "$ARTIFACT_STALENESS_JSON" | python3 -c "import json,sys;print(json.load(sys.stdin).get('actionable',0))" 2>/dev/null || echo 0)
+    if [ "${_ACTIONABLE:-0}" -gt 0 ] 2>/dev/null; then
+      HAS_SKILL_UPDATES="true"
+    fi
+  fi
+fi
+[ -z "$ARTIFACT_STALENESS_JSON" ] && ARTIFACT_STALENESS_JSON='{"available":false}'
+
 # Escape changelog excerpt for JSON
 LATEST_ENTRY_JSON=$(printf '%s' "$LATEST_ENTRY" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" 2>/dev/null)
 [ -z "$LATEST_ENTRY_JSON" ] && LATEST_ENTRY_JSON='""'
@@ -272,7 +322,8 @@ cat <<JSON
   "changelog_excerpt": ${LATEST_ENTRY_JSON},
   "skill_changes": [${SKILL_CHANGES_JSON}],
   "content_verified": ${CONTENT_VERIFIED},
-  "content_drift_skills": ${CONTENT_DRIFT_SKILLS_JSON}
+  "content_drift_skills": ${CONTENT_DRIFT_SKILLS_JSON},
+  "artifact_staleness": ${ARTIFACT_STALENESS_JSON}
 }
 JSON
 

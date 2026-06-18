@@ -34,7 +34,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v12.26.0"
+ONBOARDING_VERSION="v12.27.0"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -310,7 +310,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v12.26.0 - safe_json_edit
+# v12.27.0 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1408,6 +1408,67 @@ except:
     fi
   else
     echo "  (migrate-existing-workforce.sh not found or not executable -- skipping)"
+  fi
+
+  # ----------------------------------------------------------
+  # v12.27.0: PER-ARTIFACT STALENESS DETECTION (drives the refresh flow).
+  # After the new library version lands and the migration filled structural gaps,
+  # ask detect-stale-artifacts.py whether THIS client's built roles / depts / SOPs
+  # are out of date vs the installed role-library content manifest. The hash is
+  # canonical-source based (computed over the library TEMPLATE with {{TOKENS}}
+  # intact, NOT rendered client bytes), so this has ZERO per-client false
+  # positives: a future edit to ONE role .md flags ONLY clients built from the old
+  # content_sha, for ONLY that artifact. rc 10 + the --json item list are the
+  # refresh work queue: STALE roles are re-instantiated via the SAME copy+token-fill
+  # path migrate-existing-workforce.sh / build-workforce use, MISSING roles are
+  # added, build-state.artifactProvenance is rewritten, and the per-file
+  # workforce-provenance marker is re-stamped — returning the client to CURRENT.
+  # READ-ONLY here (report + queue); the re-instantiation reuses the existing
+  # additive migration path so this never deletes or overwrites client edits.
+  # ----------------------------------------------------------
+  DETECT_SCRIPT="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/detect-stale-artifacts.py"
+  DETECT_MANIFEST="$SKILLS_DIR/23-ai-workforce-blueprint/templates/role-library/_index.json"
+  if [ "$PLATFORM" = "vps" ]; then
+    OC_WORKSPACE="/data/.openclaw/workspace"
+  else
+    OC_WORKSPACE="$HOME/.openclaw/workspace"
+  fi
+  if [ -f "$DETECT_SCRIPT" ] && [ -f "$DETECT_MANIFEST" ] && \
+     { [ -d "$OC_WORKSPACE/departments" ] || [ -f "$OC_WORKSPACE/.workforce-build-state.json" ]; } && \
+     command -v python3 >/dev/null 2>&1; then
+    echo ""
+    echo "  Detecting per-artifact staleness (role / dept / SOP) vs new library content manifest..."
+    DETECT_OUT="$(python3 "$DETECT_SCRIPT" --workspace "$OC_WORKSPACE" --manifest "$DETECT_MANIFEST" --json 2>>"$LOG_FILE")"
+    DETECT_RC=$?
+    if [ -n "$DETECT_OUT" ]; then
+      # Persist the refresh work queue so the orchestrator / a follow-up
+      # re-instantiation pass can consume it (and for audit).
+      QUEUE_FILE="$OC_WORKSPACE/.artifact-refresh-queue.json"
+      printf '%s' "$DETECT_OUT" > "$QUEUE_FILE" 2>/dev/null || true
+      printf '%s' "$DETECT_OUT" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+s = d.get('summary', {})
+act = s.get('stale',0)+s.get('missing',0)+s.get('orphan',0)+s.get('untracked',0)
+print(f\"  artifact staleness: CURRENT={s.get('current',0)} STALE={s.get('stale',0)} \"
+      f\"MISSING={s.get('missing',0)} ORPHAN={s.get('orphan',0)} UNTRACKED={s.get('untracked',0)}\")
+if act:
+    print(f'  -> {act} artifact(s) queued for refresh (.artifact-refresh-queue.json); '
+          'STALE/MISSING re-instantiate via the additive library-fill path')
+else:
+    print('  -> all artifacts CURRENT (nothing to refresh)')
+" 2>/dev/null || true
+      if [ "$DETECT_RC" -eq 10 ]; then
+        echo "  (refresh queue written: $QUEUE_FILE)"
+      fi
+    else
+      echo "  (detect-stale-artifacts.py produced no output -- skipping; see $LOG_FILE)"
+    fi
+  else
+    echo "  (detect-stale-artifacts.py / manifest / workspace not present -- skipping per-artifact staleness check)"
   fi
 
   # ----------------------------------------------------------

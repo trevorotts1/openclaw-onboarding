@@ -824,6 +824,30 @@ jobs:
           bash 23-ai-workforce-blueprint/scripts/test-artifact-coverage.sh
           echo "✓ Skill 23 artifact-coverage: every downstream artifact covers all floor depts; skills/versions/bootstrap consistent; gate proven to fail on each drift"
 
+      - name: Skill 23 per-artifact content-manifest is present + current (v12.27.0)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # PER-ARTIFACT VERSIONING + CHANGE-DETECTION. The content manifest
+          # (content_sha/render_sha/content_version on every roles[]/sops[] entry +
+          # per-dept content_sha + the content_manifest{} header in _index.json) MUST
+          # be present and NOT STALE vs the live library files, so a stale/incomplete
+          # manifest can never ship. This is the PURE-REPO fast check (no live
+          # OpenClaw install needed): it re-runs the canonical-source hash pipeline
+          # over the library .md files and asserts every stored content_sha matches
+          # the freshly recomputed one and no un-mapped CANONICAL token survives the
+          # neutral render. The hash is computed on the CANONICAL TEMPLATE (tokens
+          # intact) — NOT rendered client bytes — so it has zero per-client false
+          # positives. (The same assertion also runs inside the artifact gate above
+          # as the CONTENT-HASH dimension; this standalone step fails fast + clearly.)
+          python3 23-ai-workforce-blueprint/scripts/hash-content-manifest.py --check
+          # Adversarial fixtures prove the manifest generator + detector BITE:
+          # canonical hash is client/day-invariant, a real edit changes it, a stale
+          # manifest FAILs --check, and detect-stale-artifacts.py classifies
+          # CURRENT/STALE/MISSING/ORPHAN/UNTRACKED with the right exit codes.
+          bash 23-ai-workforce-blueprint/scripts/test-artifact-versioning.sh
+          echo "✓ Skill 23 per-artifact content-manifest present + current; versioning/detection fixtures pass"
+
       - name: Skill 23 how-to-use-this-department guides present, current, clean + wired
         shell: bash
         run: |

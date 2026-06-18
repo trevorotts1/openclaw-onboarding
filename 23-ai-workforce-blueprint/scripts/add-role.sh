@@ -510,12 +510,27 @@ else
   echo "[add-role] WARN: verify-wiring.sh not found — run it manually after filling how-to.md" >&2
 fi
 
+# v12.27.0: RE-STAMP the per-artifact content manifest so the new role (and its
+# dept's content_sha) get a content_sha/content_version. The consistency gate's
+# CONTENT-HASH dimension FAILS if the manifest is stale vs the files, so this keeps
+# the index shippable after an add. Idempotent. (After the how-to.md is filled in
+# the next steps, run it again so the content_sha reflects the FINAL content.)
+_HASH_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/hash-content-manifest.py"
+if [[ -f "$_HASH_SCRIPT" ]] && command -v python3 >/dev/null 2>&1; then
+  echo "[add-role] Re-stamping per-artifact content manifest (content_sha/version)..."
+  python3 "$_HASH_SCRIPT" >/dev/null 2>&1 \
+    && echo "[add-role] content-manifest re-stamped." \
+    || echo "[add-role] WARN: hash-content-manifest.py re-stamp reported warnings (run it manually)." >&2
+fi
+
 echo ""
 echo "[add-role] Done. Role '$ROLE_NAME' added under dept '$DEPT_SLUG'."
 echo "  Next steps (ALL REQUIRED):"
 echo "    1. Fill how-to.md from the role-library template (remove the [PENDING — FILL FROM LIBRARY] marker)."
 echo "       Template: 23-ai-workforce-blueprint/templates/role-library/<dept>/<role>/how-to.md"
 echo "    2. Run generate-governing-personas.sh to update persona pools."
-echo "    3. Run converge: bash 32-command-center-setup/scripts/sync-extensions.sh --converge"
+echo "    3. Re-stamp the content manifest so content_sha reflects the FILLED how-to.md:"
+echo "       python3 23-ai-workforce-blueprint/scripts/hash-content-manifest.py"
+echo "    4. Run converge: bash 32-command-center-setup/scripts/sync-extensions.sh --converge"
 echo "       This updates build-state, ORG-CHART.md, infographic, Notion, and the CC dashboard."
 exit 0
