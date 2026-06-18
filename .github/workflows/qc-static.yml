@@ -1172,12 +1172,19 @@ jobs:
           echo "✓ migrate_zhc_runner.py syntax OK"
 
           # 3. Runner accepts --help without needing a real install
-          python3 shared-utils/migrate_zhc_runner.py --help 2>&1 | grep -q "shared-utils\|repo-root" \
+          # NOTE: capture the output FIRST, then grep — never pipe directly into
+          # `grep -q`. With `set -o pipefail`, grep -q closes the pipe on its first
+          # match and the still-writing producer takes SIGPIPE (141), flaking the
+          # pipeline. Capturing the full output first removes the race entirely
+          # while keeping the assertion identical (output must contain the args).
+          RUNNER_HELP="$(python3 shared-utils/migrate_zhc_runner.py --help 2>&1 || true)"
+          echo "$RUNNER_HELP" | grep -q "shared-utils\|repo-root" \
             || { echo "✗ runner --help did not show expected args"; exit 1; }
           echo "✓ migrate_zhc_runner.py --help OK"
 
           # 4. Shell script is executable or can be run via bash (CI checkout may strip x bit)
-          bash scripts/migrate-zhc-to-master-files.sh --help 2>&1 | grep -q "dry-run\|apply" \
+          MIGRATE_HELP="$(bash scripts/migrate-zhc-to-master-files.sh --help 2>&1 || true)"
+          echo "$MIGRATE_HELP" | grep -q "dry-run\|apply" \
             || { echo "✗ migrate-zhc-to-master-files.sh --help output unexpected"; exit 1; }
           echo "✓ migrate-zhc-to-master-files.sh --help OK"
 
@@ -1757,6 +1764,10 @@ jobs:
       #   23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py
       #   23-ai-workforce-blueprint/scripts/persona-selector-v2.py
       #   23-ai-workforce-blueprint/scripts/_qc_company_info.py   [v11.18.4 bash-3.2 extraction]
+      #   23-ai-workforce-blueprint/templates/presentation-render/build_deck.py   [secrets/.env fallback]
+      #   23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py  [secrets/.env fallback]
+      #   23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py   [secrets/.env fallback]
+      #   23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py  [secrets/.env fallback]
       #   22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py
       #   shared-utils/key_resolver.py
       #   shared-utils/api_key_utils.py
@@ -1789,6 +1800,15 @@ jobs:
               # legacy loop as the rest of this list — calls get_openclaw_paths()
               # first, the ~/clawd scan is only a non-standard-layout fallback.
               "23-ai-workforce-blueprint/scripts/_qc_company_info.py",
+              # 23-ai-workforce-blueprint presentation-render templates: the
+              # ~/clawd/secrets/.env item is a legit client-box secret-location
+              # fallback in SECRETS_CANDIDATES (tried after ~/.openclaw stores),
+              # not a company-root candidate loop. Tracked for removal after
+              # fleet migration off the ~/clawd secrets store.
+              "23-ai-workforce-blueprint/templates/presentation-render/build_deck.py",
+              "23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py",
+              "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py",
+              "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py",
               # 22-book-to-persona
               "22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py",
               # shared-utils
@@ -1902,6 +1922,10 @@ jobs:
               "23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py",
               "23-ai-workforce-blueprint/scripts/persona-selector-v2.py",
               "23-ai-workforce-blueprint/scripts/_qc_company_info.py",
+              "23-ai-workforce-blueprint/templates/presentation-render/build_deck.py",
+              "23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py",
+              "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py",
+              "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py",
               "22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py",
               "shared-utils/key_resolver.py",
               "shared-utils/api_key_utils.py",
@@ -2048,15 +2072,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Security invariant: any shell script that writes to secrets/.env (or
-          # a path containing secrets/.env) MUST also call chmod 600 on that file.
-          # A world-readable secrets file exposes Cloudflare API tokens, HOOKS tokens,
-          # and GHL credentials to any process on the box.
+          # Security invariant: any shell script that WRITES to secrets/.env MUST
+          # also call chmod 600 on that file. A world-readable secrets file exposes
+          # Cloudflare API tokens, HOOKS tokens, and GHL credentials to any process
+          # on the box.
+          #
+          # "Writes" means an actual redirection (> / >>), tee, or heredoc whose
+          # TARGET is a secrets-env path: a SECRETS_ENV / SECRETS_ENV_FILE variable,
+          # or a literal path token ending in `secrets/.env`. Scripts that merely
+          # READ secrets/.env, mention it in a comment, hold it as a grep/detection
+          # pattern, or list it in a path-resolution loop do NOT write the file and
+          # must NOT trip this gate. (The previous detector matched ANY mention of
+          # `secrets/.env` / `SECRETS_ENV_FILE`, which false-flagged ~45 read-only
+          # scripts; every script that genuinely writes the file already chmod 600s
+          # it. This detector keeps the real assertion — a true writer with no
+          # chmod 600 still fails — while dropping the false positives.)
           fail=0
+          # Redirect-or-tee operator immediately before a secrets-env target.
+          WRITE_PAT='>>?[[:space:]]*"?(\$\{?SECRETS_ENV([A-Z_]*)?\}?|[^"[:space:]]*secrets/\.env)|tee[[:space:]]+(-a[[:space:]]+)?"?(\$\{?SECRETS_ENV|[^"[:space:]]*secrets/\.env)'
           while IFS= read -r f; do
-            # Does this script write to secrets/.env?
-            if grep -qE "(secrets/\.env|SECRETS_ENV_FILE)" "$f" 2>/dev/null; then
-              # It writes to the file — does it also chmod 600 it?
+            # Strip comment-only lines; keep lines that write a secrets-env target;
+            # drop stderr / fd / /dev/null redirections that are not real writes.
+            writes="$(grep -vE '^[[:space:]]*#' "$f" 2>/dev/null \
+                       | grep -E "$WRITE_PAT" 2>/dev/null \
+                       | grep -vE '2>|>&|>[[:space:]]*/dev/null' || true)"
+            if [ -n "$writes" ]; then
+              # It writes the file — does it also chmod 600 it?
               if ! grep -qE 'chmod[[:space:]]+600' "$f" 2>/dev/null; then
                 echo "✗ $f: writes secrets/.env but never calls chmod 600 (secrets would be world-readable)"
                 fail=1
