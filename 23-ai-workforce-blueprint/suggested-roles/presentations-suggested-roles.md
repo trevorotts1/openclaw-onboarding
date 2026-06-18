@@ -17,6 +17,8 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 **Canonical Render Module (mandatory for all producing roles):** All image generation in this department MUST use the shared module at `23-ai-workforce-blueprint/templates/presentation-render/render_deck.py`. Per-deck renderers are FORBIDDEN (AF-RENDERER auto-fail). The canonical module validates model sovereignty, prompt character floor, and structural block requirements before any API call, and writes `render_manifest.json` to the workspace for QC verification.
 
+**The Intelligence Engines (the department's named capability set):** Every deck is run against NINE named INTELLIGENCE ENGINES -- Facial, Lighting, Typography, Story, World, Pricing, Hook, Recap, and Product (roadmap) -- each defined with a verification check and auto-failed failure modes in `sops/SOP-ENGINE-00-INTELLIGENCE-ENGINES-FRAMEWORK.md`. The framework promotes the three engines the image pipeline already ran by name (Facial, Audience, World) and the two pitch mechanics (Hook, Recap) into the full set, and wires each engine to its enforcement (SOP-SLIDE-00 Section 8).
+
 ---
 
 ## Roles

@@ -254,3 +254,23 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Failure mode:** If the owner does not respond to the scheduling message within 48 hours, send one follow-up. If still no response after 72 hours total, log `gate_status: "owner_unresponsive"` in rehearsal_gate.json and escalate to the Director with the timestamp trail. The gate cannot be waived by silence. The Director and operator decide whether to proceed at risk.
 
 ---
+
+### SOP 9.5 -- Hybrid Presentation Model (live -> record -> live)
+
+**When to run:** At delivery planning, after the rehearsal gate (SOP 9.4) passes and before any recording is cut. This is the production-cadence doctrine the Presenter Coach owns jointly with the Delivery Concierge (which owns the recording handoff).
+
+**The doctrine (DOCTRINE -- HYBRID PRESENTATION).** A deck is not recorded cold. The presenter delivers it LIVE at least THREE times to knock off rust and lock pacing BEFORE it is automated into a recording; the automated recording is then deployed for scale; the presenter RETURNS to live for high-value rooms. The cadence is live -> record -> live, not live-once-then-recorded-forever. The three (or more) live runs are where timing, the hook beats, the drop pauses, and the CTA delivery actually settle; a recording cut before that captures the rust permanently.
+
+**Steps:**
+1. Record a delivery plan in working/presenter-coach/delivery_plan.json with a `live_runs` array. Each completed live delivery appends an entry (date, room/context, confidence note). The rehearsal-gate run (SOP 9.4) counts toward rehearsal but the THREE live runs are real-audience deliveries, logged separately.
+2. **Verification gate:** the delivery plan must record at least 3 live runs (`live_runs.length >= 3`) before the recording is cut. A plan that jumps straight from the rehearsal gate to "record" with fewer than 3 logged live runs fails this verification.
+3. On the 3rd logged live run, hand off to the Delivery Concierge (delivery-concierge-sops.md) for the recording cut. After the recording is deployed, schedule the presenter's RETURN-to-live cadence for high-value rooms and log it in the same plan.
+
+**Outputs:**
+- working/presenter-coach/delivery_plan.json (the live -> record -> live plan; `live_runs` >= 3 before recording).
+
+**Hand to:** Delivery Concierge (recording handoff, after the 3rd live run).
+
+**Failure mode:** If the owner wants to record before 3 live runs, do NOT block delivery, but log the exception clearly ("RECORDING CUT BEFORE 3 LIVE RUNS -- pacing/rust risk accepted by owner") and notify the Director, so the decision is documented, not silent.
+
+---

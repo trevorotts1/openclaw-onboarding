@@ -13,6 +13,8 @@
 
 After the final price is revealed, the deck does NOT just close. The forensic reference deck revealed the price and ended on a moment slide and a thank-you, leaving the offer un-recapped. The gold-standard reference deck recaps the entire offer after the final price: the full stack re-listed, the total value versus the price restated, the promises restated, the guarantee restated, the urgency reset, then a warm send-off. The re-pitch is the genuinely-missing structural beat the forensic named. This SOP makes a 4-to-7-slide re-pitch block mandatory after the final price and before the close.
 
+**This is the RECAP INTELLIGENCE engine (SOP-ENGINE-00 Engine 8). "Re-Pitch" and "Recap Intelligence" are the same doctrine** -- the engine framework's name for this already-built mechanic. It recaps the value received AND the price near the close so the buyer re-feels the full stack against the number before deciding. No new behavior or gate is added by the alias; the enforcement remains QC copy criteria c23 / c24 and AF-DEN-7.
+
 ---
 
 ## 2. THE HARD RULE (the re-pitch procedure)

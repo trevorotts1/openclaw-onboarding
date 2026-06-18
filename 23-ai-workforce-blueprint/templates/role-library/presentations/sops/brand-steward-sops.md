@@ -80,6 +80,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - Price tag motif: large white hang-tag shape with Primary border; old prices struck through with DRAWN Primary diagonal lines; new price in Secondary at the bottom of the tag
    - Section progress banners: "SECTION 3 OF 7" or "SECRET #1" rendered in a filled Secondary banner box on section-opener slides
    - Compliance line: small italic disclaimer in the lower margin on every slide containing a results or income claim
+   - Subtle brand cue (in-world, optional per slide): one hidden, believable in-scene reminder of the brand's core value (the brand's tagline on a mug, a wall, a notebook in the corner), never competing with the headline (see the Subtle Brand Cue doctrine below SOP 9.1)
 
    REPRESENTATION RATIO (deck-level target):
    [If client answered: list each group and percentage verbatim from intake]
@@ -114,6 +115,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Hand to:** Slide Image Creator (for use in all 15-element prompts); also triggers SOP 9.3 delivery
 
 **Failure mode:** If intake.json has no brand information at all (no colors, no fonts, no logo), write the STYLE BLOCK with all default values and flag: "STYLE BLOCK uses all defaults -- please confirm brand colors, fonts, and logo before final image generation. Images generated with defaults will need re-generation if brand is different." Notify the Director. If representation is unanswered, follow the no-people default rule in Step 5 above.
+
+**SUBTLE BRAND CUE (the in-world hidden cue doctrine; pairs with PRODUCT INTELLIGENCE, SOP-ENGINE-00 Engine 9).** Beyond the formal brand grammar (the logo chip, kicker, divider, palette, price-tag motif), the deck may plant ONE hidden, in-scene reminder of the brand's core VALUE on designated slides: the brand's tagline or core phrase appearing in-world (on a mug, a wall, a notebook, a poster in the corner) -- the way a sponsor's product or message sits naturally inside a TV-show scene, noticed without being announced. Rules: it is BELIEVABLE in the world (it must still pass World Intelligence, slide-image-creator-sops.md SOP 9.3), it NEVER competes with the headline, and it is distinct from the formal logo chip (which is the explicit brand chrome). The cue carries the brand's VALUE; the logo carries the brand's MARK. This pairs with Product Intelligence (the real product in-scene): both are subtle in-world placements composited believably, never floating overlays. The cue text, like all brand assets, comes from the client (their real tagline / core value), never invented.
 
 ---
 

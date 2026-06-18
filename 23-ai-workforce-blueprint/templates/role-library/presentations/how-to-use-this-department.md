@@ -251,8 +251,20 @@ or name any role directly.
 
 You never have to invoke a procedure by hand — the roles run them for you. This
 section exists so that when you ask "what does X do?" your agent can answer precisely.
-There are 46 procedures: 22 shared doctrine procedures plus one per-role procedure
+There are 47 procedures: 23 shared doctrine procedures plus one per-role procedure
 file for each of the 24 roles.
+
+### Doctrine procedures — Intelligence Engines
+
+- **The Intelligence Engines Framework (SOP-ENGINE-00)** — The single map of the nine
+  named INTELLIGENCE ENGINES this department runs against every deck — Facial, Lighting,
+  Typography, Story, World, Pricing, Hook, Recap, and Product (roadmap) — each with a
+  definition, a "how you know it landed" check, and named failure modes that auto-fail at
+  QC. It promotes the three engines the image pipeline already ran by name (Facial,
+  Audience, World) and the two pitch mechanics (Hook, Recap) into the full named set, and
+  points each engine at its enforcement rather than duplicating it. *Use case:* the
+  artifact your agent reads when you ask "what makes our slides different?" or "which
+  engine owns X?"; the framework behind the per-engine auto-fails in SOP-SLIDE-00.
 
 ### Doctrine procedures — Casting
 

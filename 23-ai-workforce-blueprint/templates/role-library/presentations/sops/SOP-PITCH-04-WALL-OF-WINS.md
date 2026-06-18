@@ -32,6 +32,11 @@ The Wall of Wins is an homage to REAL people who got results, a crowd of past cl
 
 6. **The grid is the device, not a single testimonial.** It is a multi-portrait grid (the gold-standard reference deck used a 3x2 of six owner portraits with name+city chips and result chips), an honest results-disclaimer included, so the proof reads as a crowd, not one cherry-picked story.
 
+7. **EXTERNAL PROOF -- "who says so other than you" (two required beats, DISTINCT from the Wall). Auto-fail: AF-NO-EXPERT-PROOF (extends the existing AF-VALIDATOR).** The Wall of Wins is the CLIENT'S OWN results. Separately, the deck must establish that someone OTHER than the brand vouches for the method, via two named beats:
+   - **(a) EXPERT QUOTE BOXES.** At least one slide carrying an attributed third-party expert quote (a named authority, with their name and credential), framed as outside endorsement.
+   - **(b) "THE SCIENCE AGREES" STUDIES SLIDE.** At least one slide citing named studies or publications that back the method ("the science agrees"), with real, named sources.
+   These are distinct from the Wall of Wins (client results) and from the single in-flow testimonials. Verify: both external-proof beats are present with real, named sources. A deck that proves only its own client results, with no third-party expert quote and no studies slide, fails AF-NO-EXPERT-PROOF. Real, named sources only; never fabricate an expert, a credential, or a study (placeholder discipline holds until the client/interview supplies them: [EXPERT QUOTE - owner to confirm] / [STUDY CITATION - owner to confirm]).
+
 ---
 
 ## 3. THE ENFORCEMENT CHECK (pass/fail)

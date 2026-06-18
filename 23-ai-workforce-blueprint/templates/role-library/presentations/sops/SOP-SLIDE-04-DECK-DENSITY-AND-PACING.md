@@ -34,6 +34,18 @@ A slow drop is a reward for staying, earned across minutes of narrative. The for
    A deck materially below these floors is too thin to pace a slow drop and fails.
 9. **Total length:** a deck that is more than ~10 slides below the section floors summed (a thin deck that cannot space its drops) is rejected; the Director adds slides until the gaps and floors are satisfiable.
 
+### 2.1 REQUIRED SLIDE-TYPE BEATS (the Intelligence-Engine doctrines, SOP-ENGINE-00 Section 4)
+
+These are REQUIRED slide-types the arc must reserve, each with its own deck-level auto-fail. They are distinct beats, not sub-conditions of the ladder.
+
+10. **FORMULA SLIDE (required, exactly one). Auto-fail: AF-NO-FORMULA.** Every deck carries exactly one Formula Slide: a memorable equation the deck "bangs on" (this + this + this = this; e.g. M+M+M=M), stated in the client's own vocabulary. Placed early-to-mid, reprised verbally at the close. Verify: a single equation slide exists and the close references it. A deck with no formula beat fails AF-NO-FORMULA.
+
+11. **MEASURABLE RESULTS SLIDE (required, at least one). Auto-fail: AF-NO-MEASURABLE-RESULTS.** A standalone slide of concrete, measurable outcomes (numbers, timeframes), DISTINCT from the Wall of Wins. Its rationale is logical and quantitative: "people decide on emotion but justify with logic." It prevents buyer's remorse and sets expectations. Verify: at least one results slide with hard numbers, separate from the Wall. A deck with no standalone measurable-results beat fails AF-NO-MEASURABLE-RESULTS.
+
+12. **FORK-IN-THE-ROAD / DECISION TREE (required, at least one near the decision point). Auto-fail: AF-NO-FORK.** One decision-tree slide presenting exactly two paths (act / stand still). A visible CHECK-MARK sits on the path you want them to choose; the other path visually carries the cost of inaction. This is distinct from the VIP two-option price close. Verify: a two-branch slide is present with a check-mark on the desired branch. A deck with no fork-in-the-road beat fails AF-NO-FORK.
+
+13. **BEFORE & AFTER (required, at least one; 2 to 3 ideal). Auto-fail: AF-NO-BEFORE-AFTER.** At least one before/after slide showing the transformation the offer delivers (2 to 3 is ideal). Verify: at least one before/after pair. A deck with no before/after beat fails AF-NO-BEFORE-AFTER.
+
 ---
 
 ## 3. THE ENFORCEMENT CHECK (what auto-fails the deck)

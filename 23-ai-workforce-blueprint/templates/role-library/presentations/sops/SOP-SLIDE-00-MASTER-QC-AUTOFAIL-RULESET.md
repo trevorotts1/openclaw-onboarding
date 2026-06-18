@@ -410,6 +410,76 @@ These ten codes close the remaining gaps found in the Presentation Department V2
 
 ---
 
+## 8. NEW AUTO-FAIL CODES -- 2026-06-17 INTELLIGENCE-ENGINES ENFORCEMENT
+
+These codes wire the nine Intelligence Engines (SOP-ENGINE-00) and their required slide-type doctrines into the gate so the framework is ENFORCEMENT, not prose. Each is authored as doctrine in its owning SOP (named in the CROSS-REF) and registered here as a mechanical auto-fail. The NAMING-only engines (Pricing, Hook, Recap) add NO new code -- their existing gates (AF-C7 / AF-DEN, AF-HOOK / AF-C2 / AF-P12, c23 / c24 / AF-DEN-7) are the enforcement; SOP-ENGINE-00 only renames and cross-references them. Do NOT add a parallel namespace for those three.
+
+### Code Index
+
+| Code | Engine / doctrine | Gate phase | Scope | What it blocks |
+|------|-------------------|-----------|-------|----------------|
+| `AF-WORD-IMAGE-MISMATCH` | The engine spine | Phase 5/6 | slide | the picture and the copy tell different stories (the image does not reflect what the words say) |
+| `AF-LIGHT-SKINTONE` | Engine 2 Lighting | Phase 5 image QC | slide | subject not lit for their skin tone: deep skin as a dark silhouette ("murderer"), lighter skin over-lit flat-white ("Casper"), or no rim/hair light on the hero subject |
+| `AF-TYPE-8THROW` | Engine 3 Typography | Phase 5/6 | slide | headline fails the 8th-row test (illegible when the rendered slide is shrunk to ~25%) |
+| `AF-TYPE-SALESY-FONT` | Engine 3 Typography | Phase 5/6 | DECK | a banned salesy / cheap / "big price tag" carnival display face on a trust/credibility deck |
+| `AF-STORY-CHARACTER-DRIFT` | Engine 4 Story | Phase 5/6 | slide | a `STORY_CHARACTER:<id>`-tagged character's identity drifts across its run (a different-looking person where the same person was intended) |
+| `AF-PRODUCT-INVENTED` | Engine 9 Product | Phase 5 image QC | slide | on a `PRODUCT_PLACEMENT:yes` slide, the product is a garbled/invented cover instead of image-to-image from the real `PRODUCT_ASSET_URL` |
+| `AF-PRODUCT-MISSING` | Engine 9 Product | Phase 5/6 | slide | on a `PRODUCT_PLACEMENT:yes` slide, the product is absent |
+| `AF-NO-FORMULA` | Required beat (D2) | Phase 1Q/6 | DECK | the deck carries no Formula slide (this+this+this=this) |
+| `AF-NO-MEASURABLE-RESULTS` | Required beat (D3) | Phase 1Q/6 | DECK | no standalone Measurable-Results slide (hard numbers), distinct from the Wall of Wins |
+| `AF-NO-FORK` | Required beat (D4) | Phase 1Q/6 | DECK | no Fork-in-the-Road decision-tree slide with a check-mark on the chosen path |
+| `AF-NO-BEFORE-AFTER` | Required beat (D7) | Phase 1Q/6 | DECK | no Before & After slide (min 1, 2-3 ideal) |
+| `AF-NO-EXPERT-PROOF` | Required beats (D8) | Phase 1Q/6 | DECK | missing external proof: no expert-quote box AND/OR no "the science agrees" studies slide (extends AF-VALIDATOR) |
+| `AF-EMPTY-NOTES-PANE` | Required (D11) | Closeout | package (DECK) | the final `.pptx` ships with empty notes panes on content slides (per-slide speaker notes not injected) |
+
+### AF-WORD-IMAGE-MISMATCH -- the engine spine (slide-level, Phase 5/6)
+**Doctrine (SOP-ENGINE-00 Section 1):** the image must reflect what the words say, and the words must match what the image reflects. Any slide where the picture and the copy tell different stories is a defect.
+**Detection:** Vision QC reads the slide copy and the rendered image; if the depicted scene/emotion contradicts the copy's claim or beat, the slide fails. (Companion to AF-FACE-MOOD, which covers the FACE specifically.)
+**Failure message:** `AF-WORD-IMAGE-MISMATCH: slide {N} -- the image and the copy tell different stories. Re-render so the picture reflects what the words say.`
+
+### AF-LIGHT-SKINTONE -- Lighting Intelligence (slide-level, Phase 5)
+**Doctrine (slide-image-creator-sops.md SOP 9.3, Engine 2):** the subject is lit for their skin tone; deep skin rich and dimensional with a rim/hair light, lighter skin with retained texture and shadow.
+**Detection:** Vision QC on each people-slide: deep-skin subject rendered as a dark, detail-less silhouette = fail ("murderer"); lighter-skin subject blown out to a flat ghost-white face = fail ("Casper"); no rim/hair separation light on the hero subject = fail.
+**Producing-role requirement (Slide Image Creator):** every people-prompt states a key/fill/rim direction appropriate to the cast member's skin tone and names a rim/hair light.
+**Failure message:** `AF-LIGHT-SKINTONE: slide {N} -- subject not lit for skin tone ({silhouette|washed-out|no rim light}). Re-prompt the skin-tone lighting doctrine (SOP 9.3).`
+
+### AF-TYPE-8THROW -- Typography Intelligence, 8th-row test (slide-level, Phase 5/6)
+**Doctrine (SOP-DESIGN-01 SOP 2.6a, Engine 3):** headlines read from the 8th row; the headline survives a ~25% shrink.
+**Detection:** downscale the rendered slide to ~25% (or measure headline cap-height vs slide height against the 2.1 ladder floor); if the headline is illegible at that scale, fail.
+**Failure message:** `AF-TYPE-8THROW: slide {N} headline fails the 8th-row test (illegible when shrunk to ~25%). Increase the hero line to the BLACK-weight 60-86pt range (SOP-DESIGN-01 2.1).`
+
+### AF-TYPE-SALESY-FONT -- Typography Intelligence, salesy-font ban (deck-level, Phase 5/6)
+**Doctrine (SOP-DESIGN-01 SOP 2.6b, Engine 3):** salesy/cheap/"big price tag" carnival display faces are banned on a trust/credibility deck ("typography = funnel").
+**Detection:** font identification on rendered headlines; a banned carnival/discount/novelty display face on a trust deck = deck-level fail.
+**Failure message:** `AF-TYPE-SALESY-FONT: DECK FAIL -- a banned salesy display face is used on a trust deck. Replace with the locked editorial/brand typeface (SOP-DESIGN-01 2.6b).`
+
+### AF-STORY-CHARACTER-DRIFT -- Story Intelligence (slide-level, Phase 5/6)
+**Doctrine (slide-image-creator-sops.md Part D STORY_CHARACTER exception, Engine 4):** on `STORY_CHARACTER:<id>`-tagged slides the same person identity is held across the run, aged per the beat (image-to-image with a locked character reference).
+**Detection:** for each STORY_CHARACTER id, compare the rendered subject's identity across its tagged slides; a different-looking person where the same person was intended = fail. (Outside a tagged run, the anti-template variety rule AF-SAME governs instead -- the two never both fire on the same slide.)
+**Failure message:** `AF-STORY-CHARACTER-DRIFT: STORY_CHARACTER {id} drifts at slide {N} (different person than the locked reference). Re-render image-to-image from the locked character reference, aged per the beat.`
+
+### AF-PRODUCT-INVENTED / AF-PRODUCT-MISSING -- Product Intelligence (slide-level, Phase 5/6)
+**Doctrine (slide-image-creator-sops.md element 16, Engine 9):** on a `PRODUCT_PLACEMENT:yes` slide the client's real product is composited image-to-image from `PRODUCT_ASSET_URL`, subtle and in-world, never reinvented.
+**Detection:** AF-PRODUCT-MISSING -- the tagged slide ships with no product object. AF-PRODUCT-INVENTED -- the product appears as a garbled or made-up cover/label rather than the real asset composited via image-to-image (same defect class as logo mutation).
+**Failure message:** `AF-PRODUCT-{MISSING|INVENTED}: slide {N} (PRODUCT_PLACEMENT) -- product {absent|reinvented}. Composite the real product image-to-image from PRODUCT_ASSET_URL, subtle and in-world.`
+
+### AF-NO-FORMULA / AF-NO-MEASURABLE-RESULTS / AF-NO-FORK / AF-NO-BEFORE-AFTER -- required slide-type beats (deck-level, Phase 1Q/6)
+**Doctrine (SOP-SLIDE-04 Section 2.1, rules 10-13):** the arc must reserve a Formula slide, a standalone Measurable-Results slide, a Fork-in-the-Road decision-tree slide with a check-mark on the chosen path, and at least one Before & After slide.
+**Detection:** scan slide tags/copy in slide order for each required beat: a single equation slide (and a close reference) for FORMULA; a standalone hard-number results slide distinct from the Wall for MEASURABLE-RESULTS; a two-branch decision-tree slide with a visible check-mark on the desired branch for FORK; at least one before/after pair for BEFORE-AFTER. Any absent beat = deck-level fail under its code.
+**Failure message:** `AF-NO-{FORMULA|MEASURABLE-RESULTS|FORK|BEFORE-AFTER}: DECK FAIL -- required beat absent. Reserve the {beat} in the arc (SOP-SLIDE-04 2.1).`
+
+### AF-NO-EXPERT-PROOF -- External Proof beats (deck-level, Phase 1Q/6)
+**Doctrine (SOP-PITCH-04 rule 7, D8):** beyond the Wall of Wins (client results), the deck must establish "who says so other than you" with an expert-quote box AND a "the science agrees" studies slide, with real named sources. Extends the existing AF-VALIDATOR.
+**Detection:** confirm at least one attributed third-party expert-quote slide AND at least one named-studies/publications slide, both distinct from the Wall of Wins. Either missing = deck-level fail.
+**Failure message:** `AF-NO-EXPERT-PROOF: DECK FAIL -- external proof incomplete (missing {expert quote | studies slide}). Add the named third-party proof beats (SOP-PITCH-04 rule 7); real named sources only.`
+
+### AF-EMPTY-NOTES-PANE -- per-slide speaker notes in the notes pane (package-level, closeout)
+**Doctrine (pptx-assembly-specialist-sops.md SOP 9.1, D11):** the shipped `.pptx` carries each content slide's talking points in its native NOTES pane so the file is self-coaching. Enforced at CLOSEOUT (after the Phase-9 speech exists), not at the Phase-4 render (where an absent speech is non-fatal).
+**Detection:** open the final `.pptx`; read `slide.notes_slide.notes_text_frame.text` per slide; any audience-facing content slide with an empty notes pane = fail (structural/divider slides exempt).
+**Failure message:** `AF-EMPTY-NOTES-PANE: DECK FAIL -- final .pptx ships with empty notes panes on content slides. Re-assemble with the presenter speech present so per-slide notes are injected (build_deck.py auto-injection), then re-verify.`
+
+---
+
 ## 6. NEW AUTO-FAIL CODES -- 2026-06-14 ENFORCEMENT OVERHAUL
 
 These five codes were added after the forensic four-deck failure analysis. Each one maps to a specific failure pattern from that analysis:

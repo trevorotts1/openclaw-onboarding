@@ -169,6 +169,13 @@ When the deck is assembled via the deterministic fleet renderer `scripts/build_d
 
 This path is reconciled by `scripts/sync_check.py`: `parse_speech_chunks` is registered in `PIPELINE-MANIFEST.json` under the `P8-ASSEMBLE` phase `emits.checks`, and `sync_check` fails the lockstep gate (drift A8) if that symbol is renamed or removed from `build_deck.py` without updating the manifest.
 
+**REQUIRED -- PER-SLIDE SPEAKER NOTES IN THE NOTES PANE (the self-coaching .pptx; QC enforcement: AF-EMPTY-NOTES-PANE at closeout).**
+
+The shipped `.pptx` must carry, in each slide's NATIVE NOTES pane, that slide's talking points (mirrored from the presenter speech / Presenter Guide), so the FILE ITSELF is self-coaching when opened in PowerPoint. This is in ADDITION to the Presenter Guide PDF. The mechanic is the `slide.notes_slide.notes_text_frame.text` injection above; this rule mandates the OUTCOME.
+
+- **Phase-ordering note (not a render gate).** Because the presenter speech is a later-phase (Phase 9) artifact, the notes pane is FREQUENTLY empty at the Phase-4 render and that is non-fatal at render time (per the auto-discovery rule above). The notes-pane requirement is enforced at CLOSEOUT, after the speech exists: by final delivery, the re-assembled / finalized `.pptx` must have a non-empty notes pane on every audience-facing content slide.
+- **Verify (AF-EMPTY-NOTES-PANE).** At closeout, open the final `.pptx` and confirm every content slide's notes pane is non-empty (read `slide.notes_slide.notes_text_frame.text` per slide; structural/section-divider slides with no spoken line are exempt). A final delivery whose content slides ship with empty notes panes (the speech existed but was never injected) fails AF-EMPTY-NOTES-PANE; re-run the deterministic assembly with the speech present so the notes are injected, then re-verify.
+
 ---
 
 ### SOP 9.2 -- Export the Deck to Portable-Document Format (System-Wide Delivery Output + Final QC)

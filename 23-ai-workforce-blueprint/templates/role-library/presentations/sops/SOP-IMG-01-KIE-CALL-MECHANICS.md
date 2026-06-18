@@ -16,6 +16,8 @@ The forensic reference deck (Dimension F) proved the consequence of guessing the
 
 This SOP is a precise reference an agent follows without guessing. It does not introduce a new model. The model manifest (CLIENT-WEBINAR-DECK-SOP §9.0) still pins `gpt-image-2-image-to-image` / `gpt-image-2-text-to-image`. This SOP makes the choice between them, and the body for each, mechanical.
 
+**Why GPT-Image-2 is the pinned model (the WORLD INTELLIGENCE rationale, SOP-ENGINE-00 Engine 5).** The pin is not arbitrary. GPT-Image-2 is mandated specifically because of its strong REAL-WORLD GROUNDING: it knows what an actual office, kitchen table, empty classroom at 6am, or a roughly 15-year-old's normal bedroom actually looks like, and it renders believable people, props, and scale for THIS character rather than a generic studio fantasy. That grounding is exactly what the WORLD ENGINE depends on (slide-image-creator-sops.md element 11 / SOP 9.3, the "would this exact person actually be in this exact room?" believability rule). A model with weaker real-world grounding would force the World Intelligence gate to fight the renderer; GPT-Image-2 makes grounded, believable scenes the default. This is the load-bearing reason the model is pinned, stated here so the pin is a defensible doctrine, not a bare config value.
+
 This is a build-mechanics reference. NONE of its content is ever printed on a slide. (Cross-ref the Audience-Facing battery in the slide-craft cluster.)
 
 ---

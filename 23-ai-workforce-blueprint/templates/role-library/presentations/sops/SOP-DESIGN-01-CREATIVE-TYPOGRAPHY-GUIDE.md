@@ -54,6 +54,16 @@ On every DROP slide (or its immediate successor) the price-typography system ren
 
 The two are visually PAIRED on the same slide so the widening gap is seen: the falling struck price and the rising value total set against each other (side by side, stacked as a two-line ledger, or as an up-arrow value beside the struck price), so the audience literally watches the price line move down while the value line moves up. Rendering only the struck price, with no climbing value total beside it, leaves the inverse implied rather than seen and fails this rule. The numbers are the Strategist's (consistent with offer_stack.json, AF-C4 clean); the renderer draws the two lines and the gap. The rendered VALUE numbers are pitch-stack figures, NOT a presenter-narration line: the telegraphing phrases ("the lower the price, the greater the value", "the value is still climbing") remain banned as on-slide copy (AF-C9). What is rendered is the climbing TOTAL itself, shown rising, not a sentence describing it.
 
+### 2.6 TYPOGRAPHY INTELLIGENCE -- the 8th-row test, the salesy-font ban, and "typography = funnel"
+
+This is the named TYPOGRAPHY INTELLIGENCE engine (SOP-ENGINE-00 Engine 3): type is engineered for the room and the goal, not decorated.
+
+**(a) The 8th-row readability test.** Headlines are sized so they read FROM THE 8TH ROW of a room. The test is mechanical and relative to slide HEIGHT, never to a guessed room distance: shrink the rendered slide to about 25% (or stand back from it) and the headline must STILL read clearly. The weight ladder in 2.1 sets the sizes (hero headlines BLACK at 60-86pt relative to a 1440px slide height); the 8th-row test is the verification that those sizes actually carry. A headline that disappears or becomes illegible at 25% shrink fails the 8th-row test.
+
+**(b) The salesy / cheap-font ban (fonts to avoid for trust).** Typeface choice signals INTENT. Certain display faces telegraph "salesy / cheap / $9.97-big-price-tag carnival" and are BANNED whenever the deck's goal is TRUST or credibility. The banned-for-trust taxonomy: loud condensed "big price tag" display faces, infomercial / late-night-sale carnival fonts, novelty or "free download" display fonts, distressed grunge faces, over-rounded bubble fonts, and any font whose primary association is a discount sticker or a hype sales page. These compete with the very credibility a webinar deck is built to establish. The default editorial sans (Montserrat) and the client's locked brand typeface are trust-appropriate; a banned salesy display face on a credibility deck is a defect (AF-TYPE-SALESY-FONT). (This is a TASTE / INTENT rule layered on top of the weight ladder; the ladder says HOW MANY weights, this says WHICH faces are allowed.)
+
+**(c) Typography and funnel are the same thing.** The type DOES the persuading, so the type is chosen like a funnel step, not like decoration. Every typographic decision (which word carries the accent, how big the hero line is, which face the deck wears) is a conversion decision: it moves the eye, sets the trust temperature, and times the reveal. "Typography = funnel" is the binding framing for this engine: a font choice that would weaken trust is a funnel leak, exactly like a weak headline or a cold price.
+
 ---
 
 ## 3. The Enforcement Check (what auto-fails the slide/deck)
@@ -70,6 +80,8 @@ These gates are checked by QC. Each is a concrete PASS/FAIL.
 | A DROP slide (or its successor) renders the struck/falling price but NOT the climbing running value total beside it (the rising-value curve of SOP 2.5 is absent, so the inverse is implied not seen) | FAIL that prompt/image |
 | Two elements on one slide compete as the visual "first" (no single reading order) | FAIL that prompt |
 | Emphasis word(s) absent on a headline that names a contrast or a money word | FAIL that prompt |
+| A headline does not survive the 8th-row test (illegible when the rendered slide is shrunk to ~25%) | FAIL that image (AF-TYPE-8THROW) |
+| A banned salesy / cheap / "big price tag" carnival display face is used on a trust or credibility deck (SOP 2.6b) | AUTO-FAIL (deck-level): AF-TYPE-SALESY-FONT |
 
 QC checks the prompt at Phase 3 against the Typography Architect treatment table (the prompt must name the assigned weight roles and emphasis word) and checks the rendered image at Phase 5 (the hero element is visibly the heaviest; the emphasis word is visibly accented; the price uses the gradient). On DROP slides, QC additionally confirms the rising-value curve of SOP 2.5: the cumulative running value total is rendered, climbing, against the struck/falling price so the widening gap is visible (a struck price with no climbing value total beside it fails); this is the rendering half of the choreography the QC Specialist enforces under AF-C7 sub-condition (c).
 

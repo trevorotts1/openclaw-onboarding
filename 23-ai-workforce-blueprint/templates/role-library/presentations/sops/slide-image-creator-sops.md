@@ -301,6 +301,23 @@ Rules:
 - The prompt STATES the setting AND justifies WHY it fits the slide's one idea (e.g., "soft morning kitchen light, because this is the exact moment our audience feels the pain, before the day starts").
 - A generic studio backdrop where a real-world scene belongs is a defect and an auto-fail at image QC.
 
+**WORLD INTELLIGENCE -- believability and scale calibration (the WORLD ENGINE engine, SOP-ENGINE-00 Engine 5; QC enforcement: World grounding criterion).**
+The render must KNOW what the real world looks like and keep the environment believable FOR THIS CHARACTER. Props and scale match the character's real life and station: a roughly 15-year-old's bedroom is a sports poster and a few trophies in a NORMAL house -- NOT a million-dollar condo or a luxury penthouse. Before writing the WORLD ENGINE setting, ask: "would this exact person actually be in this exact room, with these exact props, at this moment?" -- only a yes passes. Aspirational over-scaling (placing a modest-life character in an upscale fantasy environment that contradicts their station) is a defect, the same class of failure as a generic studio backdrop, and is caught at the World grounding gate.
+
+**LIGHTING INTELLIGENCE -- skin-tone lighting (the LIGHTING INTELLIGENCE engine, SOP-ENGINE-00 Engine 2; QC enforcement: AF-LIGHT-SKINTONE).**
+Lighting is a SKIN-TONE property, not a single deck-wide recipe. Every people-prompt states a key / fill / rim lighting direction APPROPRIATE TO THE CAST MEMBER'S SKIN TONE, in addition to the scene/time-of-day setting picked from the library above:
+
+| Subject skin tone | Lighting doctrine to write into the prompt | The failure tell to AVOID |
+|---|---|---|
+| Deep / dark skin | Light rich, warm, and DIMENSIONAL: a defined key light with visible catchlights, modeled cheeks and forehead, and a lifted exposure so the face shows full tonal range. State a RIM or HAIR light ("a light on top of the hair / a separation light along the hair and shoulder edge") so the subject reads off the background. | The "murderer" look -- deep skin crushed into a dark, flat silhouette with no facial detail because the scene was lit for a lighter subject. |
+| Light / Caucasian skin | Light with retained TEXTURE and SHADOW: directional key with real falloff, so the face keeps shape and skin texture, never a flat blown-out wash. | The "Casper" look -- a lighter-skinned subject over-lit into a flat, ghostly, ghost-white face with no shadow or texture. |
+
+Rules:
+- Every people-prompt names a RIM or HAIR light on the hero subject (the "lighting on top of the hair" tell) as the separation cue, regardless of skin tone.
+- The lighting direction is chosen for the actual cast member's skin tone, NOT copied unchanged from one deck-wide recipe onto every subject. A single lighting recipe applied to every subject regardless of skin tone is the root cause of both the "murderer" and "Casper" failures.
+- This is a LIGHTING rule (how the subject is lit). It is distinct from, and stacks on top of, the COLOR-fidelity negative in element 11 / the negative block (do not lighten, ashen, grey, or desaturate deep skin tones), which protects the skin's COLOR. Lighting Intelligence protects the skin's EXPOSURE and DIMENSION.
+- Deep skin rendered as a dark silhouette, a lighter subject over-lit flat-white, or no rim/hair light on the hero subject is AF-LIGHT-SKINTONE.
+
 ---
 
 ### SOP 9.4 -- People (Three Engines + Shot Layer), Overlays, and Logo
@@ -325,6 +342,12 @@ Rules:
 **Steps (Logo -- Element 10; density-floor overhaul: image-to-image, one locked mark):**
 1. Read the logo_placement_rule from the STYLE BLOCK. Typical rule: "Logo in lower-right corner, approximately 9% of slide width on a white chip with a 1px gold border, no less than 40px from any edge, never recolored or distorted."
 2. When LOGO_ON_SLIDES = true, write element 10 to PASS the locked LOGO_URL as the first reference in `input.input_urls` and name it in the prompt: "The first reference image is the company logo: place it [per the rule], do not redraw, recolor, or restyle it." NEVER text-to-image the mark. One locked asset, composited identically on every slide (the anti-mutation path; SOP-IMG-01 Mode B, design-system/05). If the logo carries text and it garbles twice on render, composite it natively at Phase 6 (master SOP 7.4 extended to the logo).
+
+**Steps (Product Placement -- Element 16; the PRODUCT INTELLIGENCE engine, SOP-ENGINE-00 Engine 9; QC enforcement: AF-PRODUCT-INVENTED, AF-PRODUCT-MISSING):**
+1. Element 16 fires ONLY on a slide tagged `PRODUCT_PLACEMENT:yes` (the Director / arc tags these; the client's real product asset is supplied at intake as `PRODUCT_ASSET_URL`). It is the subtle, in-world placement of the brand's ACTUAL product -- the client's real book, bottle, box, or kit -- sitting naturally in the scene (on a desk, in hand, on a shelf), the way a sponsor's product sits on a TV-show desk. Little brands can do this too; it does not require a famous product.
+2. Compose the product image-to-image, MIRRORING the logo mechanic: pass the locked `PRODUCT_ASSET_URL` as a named reference in `input.input_urls` (after the logo reference) and name it in the prompt: "Reference image [N] is the company's product: place it as a believable scene object [position]; do not redraw, restyle, re-typeset, or invent its cover or label." The real product is COMPOSITED, never reinvented as a garbled or made-up cover (text-to-imaging a product cover is the same defect class as logo mutation).
+3. Placement is subtle and believable: the product sits IN the world (it must still pass WORLD INTELLIGENCE believability, Engine 5), it does NOT float like a logo, and it does NOT cover or compete with the headline. It pairs with the Subtle Brand Cue doctrine (brand-steward-sops.md) -- the hidden in-world reminder of the brand's core value.
+4. Auto-fails on a `PRODUCT_PLACEMENT:yes` slide: the product is absent (AF-PRODUCT-MISSING); the product is rendered as a garbled or invented cover instead of image-to-image from the real asset (AF-PRODUCT-INVENTED); placement breaks World believability or covers copy. On a slide NOT tagged PRODUCT_PLACEMENT, element 16 is simply omitted (it is not a universal element).
 
 **Steps (Overlays -- Element 8; density-floor overhaul: NO hook footer band):**
 1. **There is NO hook footer band.** The hook is NEVER rendered as a bottom strip/band on any slide. The hook renders ONLY as the type-dominant content of its 3 to 4 DEDICATED pure-typography slides (the treatment_table PURE_TYPE_HOOK rows: the verbatim hook line large over a low-opacity image, printed once, nothing else). The old bottom-15%-band rendering is DELETED (it produced the reference failure case 40-slide footer-stamping; AF-I8 / AF-HOOK-2 now auto-fail it).
@@ -654,7 +677,7 @@ Authoring rule: when assigning archetypes to slides in Phase 1 (the arc assignme
 2. MINIMUM VARIETY FLOOR: across any 10-slide window in the deck, at least 3 distinct archetypes must appear.
 3. These constraints are checked at Phase 1 arc assignment AND enforced by AF-SAME at Phase 5/6 image QC.
 
-Vary composition, crop, camera angle, and subject placement across slides while holding the grade and model constant. Consistency is a color and light property, not a composition property.
+Vary composition, crop, camera angle, and subject placement across slides while holding the grade and model constant. Consistency is a color and light property, not a composition property -- EXCEPT where STORY INTELLIGENCE applies (the STORY_CHARACTER exception, SOP-ENGINE-00 Engine 4): when a slide is tagged `STORY_CHARACTER:<id>`, the SAME PERSON IDENTITY is held across that character's slides as a deliberate composition property, carried by image-to-image from a locked character reference and AGED or changed per the narrative beat (the same kid younger and older), so the imagery tells the deck's story across life stages. Outside a tagged STORY_CHARACTER run, the anti-template variety rule above still governs (a different believable person per slide is correct; "swap the person, keep the frame" is still the documented failure). The two rules do not conflict: variety is the default; held character identity is the explicit, tagged exception that Story Intelligence turns on. Drift of the tagged character's identity across its run (a different-looking person where the same person was intended) is AF-STORY-CHARACTER-DRIFT.
 
 ---
 
@@ -665,7 +688,7 @@ Before writing any people-prompt, confirm `audience_composition` is captured in 
 1. Read the Casting Ledger from the brief (built by the Brief Author per SOP-CAST-01 Section 2).
 2. For each people-slide, write element 11 (Audience Engine) using the demographic assigned by the Casting Ledger for that slide.
 3. Do NOT add a per-slide demographic LOCK ("do not render a demographic other than [X] on this slide"). Replace it with: "render the demographic assigned by the Casting Ledger for this slide ([demographic]); render with dignity, warmth, and accurate skin-tone fidelity."
-4. Facial-intelligence rule: bright, warm, hopeful expression on positive beats (vision, future-pace, celebration, transformation). Brow tension, the "2am-spreadsheet face" on pain beats. Never dour or blank on a positive beat (AF-FACE-MOOD).
+4. Facial-intelligence rule (the FACIAL INTELLIGENCE engine, SOP-ENGINE-00 Engine 1): bright, warm, hopeful expression on positive beats (vision, future-pace, celebration, transformation). Brow tension, the "2am-spreadsheet face" on pain beats. Never dour or blank on a positive beat (AF-FACE-MOOD). On a serious or sober beat the subject reads DISTANT, NOT ANGRY (facial intelligence on a heavy beat is distance -- a far-off, inward gaze -- never an aggressive or scowling face). NEVER a salesy face on a trust beat: an over-eager, toothy "closer" smile on an authority, credibility, or trust slide is a defect; the subject reads as a knowledgeable guide, not a salesperson (cross-ref Shot C). An over-eager salesperson face on a trust beat and an angry face on a sober beat both fail under AF-FACE-MOOD.
 
 ---
 

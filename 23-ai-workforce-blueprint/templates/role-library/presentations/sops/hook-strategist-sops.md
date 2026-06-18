@@ -10,6 +10,8 @@
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
+> Engine cross-reference: this role OWNS the HOOK INTELLIGENCE engine (SOP-ENGINE-00 Engine 7). "Hook Intelligence" is the engine framework's name for the sacred-refrain doctrine these SOPs build: one canonical hook, built once, reused verbatim at 3 to 4 natural beats, never reworded, never a footer band. Enforced by the AF-HOOK / AF-C2 / AF-P12 battery (SOP-SLIDE-03).
+
 ### SOP 9.1 -- Hook Generation and Scoring (the Hook Lab, part 1)
 
 **When to run:** Phase 1, before the Slide Copywriter writes slide 1. The hook must exist and be owner-selected before the copy is written around it.

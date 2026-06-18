@@ -10,6 +10,8 @@
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
+> Hybrid-delivery handoff (DOCTRINE -- HYBRID PRESENTATION, live -> record -> live; SOP-ENGINE-00 Section 4). This role owns the RECORDING handoff half of the hybrid model. A deck's recording is cut ONLY after the presenter has delivered it LIVE at least THREE times (the Presenter Coach logs these in working/presenter-coach/delivery_plan.json, `live_runs >= 3`; see presenter-coach-sops.md SOP 9.5). Do NOT accept a recording-cut handoff before the 3rd logged live run unless the owner has explicitly accepted the rust/pacing risk (logged as an exception). After the recording is deployed for scale, the plan schedules the presenter's RETURN to live for high-value rooms; the cadence is live -> record -> live, never live-once-then-recorded-forever.
+
 ### SOP 9.0 -- Package Assembly and Hygiene Sweep (RUNS BEFORE SOP 9.1)
 
 **When to run:** FIRST, immediately upon receiving a QC-passed deck, BEFORE SOP 9.1 (Destination Resolution) and BEFORE any file is moved or uploaded. This step is the AF-DH1 gate.

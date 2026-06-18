@@ -13,6 +13,8 @@
 
 The hook is a song's chorus, not its wallpaper. It is sung at a few natural beats so the audience leaves humming it. The forensic reference deck did the exact opposite: the example signature hook was stamped as a footer on roughly 40 of 45 slides, printed twice on at least eight, extended/mutated on one ("...and the results are significantly different."), and rendered a misspelled hook ("hclarity") on slide 23. There was no clean dedicated hook slide at all.
 
+**This is the HOOK INTELLIGENCE engine (SOP-ENGINE-00 Engine 7). "Hook Doctrine / The Sacred Refrain" and "Hook Intelligence" are the same doctrine** -- the engine framework's name for this already-built mechanic: ONE canonical hook, built once, reused verbatim at 3 to 4 natural beats, never reworded, never a footer band. No new behavior or gate is added by the alias; the enforcement remains the AF-HOOK / AF-C2 / AF-P12 battery.
+
 The root cause is in the system's own rules: the master SOP mandates the hook "AT LEAST 7 TIMES... roughly one per 8 to 10 slides", the copy criterion 11 auto-fails when the count is BELOW 7, and the image creator's render spec prescribed a bottom-band footer as the hook rendering. The system did exactly what it was told: it floored the count and stamped footers. This SOP inverts the rule: the hook lives on a small, fixed CEILING of dedicated slides, footer-stamping is banned, and the refrain is sacred and exact.
 
 ---
