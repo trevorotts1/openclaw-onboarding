@@ -154,6 +154,142 @@ Operators never memorize CLI syntax. Say what you want in Telegram; the agent ro
 | "Schedule this social post for tomorrow at 9am" | `caf social post schedule --time "tomorrow 9am" --content "..."` |
 | "What workflows do I have?" | `caf workflows list` |
 | "Review/audit this workflow" / "check this workflow" / "inspect this workflow" | `caf workflows export <id>` (Tier 0 first), then escalate per skill 36 for what export cannot show (e.g. trigger-bucket state) |
+| "Create a new sub-account / location for <NAME>" / "spin up a client sub-account" | `caf --experimental locations create --name "<NAME>" --company-id <AGENCY_FIRESTORE_ID>` (Firebase/internal path — see Agency operations below) |
+| "Add a user to <SUBACCOUNT>" / "create a login for <PERSON>" / "give <PERSON> access" | `caf locations add-user --location-id <SUBACCOUNT_ID> --company-id <AGENCY_FIRESTORE_ID> --first-name <FIRST> --last-name <LAST> --email <EMAIL> --role <user\|admin>` (agency PIT public path; omit password → invite email; defaults to a SUB-ACCOUNT user — see Agency operations below) |
+
+---
+
+## Agency operations — create sub-account / add user
+
+These provision new sub-accounts (locations) and add users. They use **TWO
+DIFFERENT auth paths** — pick the right one per operation:
+
+| Operation | Path | Auth | Endpoint | Version header |
+|---|---|---|---|---|
+| **Create sub-account (location)** | Firebase **internal** API | `token-id: <firebase-id-token>` (NOT Bearer) | `POST backend.leadconnectorhq.com/locations/` | `2021-07-28` |
+| **Add a user** | Agency **PIT + PUBLIC** API | `Authorization: Bearer <agency PIT>` | `POST services.leadconnectorhq.com/users/` | `2023-02-21` |
+
+This is the PROVEN split — the real user was just added via the simpler PIT
+public path; the official public API CANNOT create a location, so create-location
+must use the internal Firebase path. Do not cross them.
+
+> **OAuth marketplace app = DEAD END.** Do NOT attempt either operation via the
+> OAuth marketplace-app flow. The app has no published version, so it returns
+> `error.noAppVersionIdFound`. Never route create-location or add-user through
+> OAuth. (PIT is a Private Integration Token — it is NOT OAuth, and the PIT
+> public path for add-user works fine.)
+
+### Add a user — DEFAULT, the proven simple path (agency PIT + public API)
+
+`caf locations add-user` posts to `POST https://services.leadconnectorhq.com/users/`
+with `Authorization: Bearer <agency PIT>` and `Version: 2023-02-21`. No Firebase
+token and **no Chrome extension** are needed for this operation.
+
+Body (CreateUserDto): `companyId` (agency FIRESTORE id), `locationIds=[--location-id]`,
+`firstName`, `lastName`, `email`, `type`, `role`, `permissions{...}`.
+
+- **Omit `--password`** so GHL sends its invite email and the user sets their
+  OWN password (recommended). Only pass `--password` to force a specific one.
+- `--type` defaults to `account` (a sub-account user). See the user-type warning
+  below — this is the most important rule on this page.
+
+```
+caf locations add-user \
+  --location-id <SUBACCOUNT_ID> \
+  --company-id <AGENCY_FIRESTORE_ID> \
+  --first-name <FIRST> --last-name <LAST> --email <EMAIL> \
+  --role <user|admin>
+```
+
+### USER TYPE — account vs agency (HARD WARNING)
+
+**Adding a user to a client's sub-account must NEVER make them an agency user.**
+
+- `--type account` (DEFAULT) + `locationIds=[<SUBACCOUNT_ID>]`
+  → a **SUB-ACCOUNT user**. They live ONLY in that one sub-account.
+  `--role admin` here = admin **of that sub-account ONLY**.
+- `--type agency`
+  → an **AGENCY user**. They control the **WHOLE agency and EVERY sub-account
+  under it**. This is almost never what you want when "adding a user to a
+  client's sub-account."
+
+The CLI enforces this: `--type agency` is **REFUSED** unless you also pass
+`--i-understand-this-is-an-agency-user`. When in doubt, leave `--type` alone
+(it defaults to `account`, scoped to `--location-id`).
+
+### Create a sub-account (location) — Firebase internal path
+
+`caf --experimental locations create` posts to
+`POST https://backend.leadconnectorhq.com/locations/` with these request headers:
+
+```
+token-id: <firebase-id-token>   <-- grabbed from the agency-owner browser session
+channel:  APP
+source:   WEB_USER
+version:  2021-07-28             <-- REQUIRED. Its absence returns HTTP 401.
+Content-Type: application/json
+```
+
+This is the ONLY working create-location path — the official public API / PIT
+CANNOT create a location.
+
+**The Chrome-extension token grab (and short-lived reality).** The `token-id`
+above is a Firebase **id-token**. It is exchanged from
+`GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` at `securetoken.googleapis.com`. That
+refresh token is grabbed by the **Convert and Flow / Scale-44 Chrome-extension
+Token Grabber**, which reads `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` from the
+logged-in **agency-owner** browser session (see
+`references/owner-token-grabber-guide.md`). The id-token is **SHORT-LIVED** —
+the CLI auto-refreshes on a 50-minute window and retries the exchange once on a
+transient failure. **Re-grab via the Chrome extension before agency writes** if
+the refresh token itself is revoked/expired; the command surfaces
+`TOKEN_REFRESH_FAILED`, after which you re-set `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`.
+
+```
+caf --experimental locations create \
+  --name "<NAME>" \
+  --company-id <AGENCY_FIRESTORE_ID> \
+  [--phone <PHONE>] [--address "<ADDR>"] [--timezone <IANA_TZ>]
+```
+
+### companyId rule — FIRESTORE id, NOT relationNumber
+
+In every path/body above, `companyId` is the agency's **Firestore document id**,
+NOT the human-readable `relationNumber` you see in the UI. Passing the
+relationNumber will fail. Resolve the Firestore id once and reuse it.
+
+### Safety gate behaviour
+
+- `locations create` requires `--experimental` (it is the internal Firebase API).
+  `locations add-user` does NOT require `--experimental` (it is the public PIT path).
+- Approval gate applies to both (same as workflow writes): set `CAF_APPROVAL_TOKEN`,
+  or prefix a `ZHC-`/`ZHC_` name for standing approval. No approval = WRITE REFUSED.
+- `locations create`: the location whitelist is SKIPPED (a sub-account being
+  created has no id yet); the approval gate still applies. No `GHL_LOCATION_ID`
+  is required.
+- `locations add-user`: the whitelist (`CAF_ALLOWED_LOCATION_IDS`) is checked
+  against `--location-id`, so a user can only be added to an approved sub-account.
+- `CAF_DRY_RUN=true` prints the exact `POST` body and exits 0 without sending.
+- On any non-OK result the CLI fails loud (stderr + exit 1) — never a silent
+  false success.
+
+### Non-default fallback — add-user via internal Firebase
+
+If the PIT public path is unavailable, `caf --experimental locations add-user
+--internal-firebase-fallback ...` routes add-user through the internal Firebase
+API (`backend.leadconnectorhq.com/users/`, version `2021-07-28`, CreateUserDto
+with `password`). This is **NOT the default** and needs a Firebase token; prefer
+the PIT public path above.
+
+### NL-intent -> command rows
+
+| Intent | Command |
+|---|---|
+| "Create a new sub-account / location for <NAME>" | `caf --experimental locations create --name "<NAME>" --company-id <AGENCY_FIRESTORE_ID> [--phone <PHONE>] [--address "<ADDR>"] [--timezone <IANA_TZ>]` (Firebase internal path) |
+| "Add a user / login for <PERSON> on <SUBACCOUNT>" | `caf locations add-user --location-id <SUBACCOUNT_ID> --company-id <AGENCY_FIRESTORE_ID> --first-name <FIRST> --last-name <LAST> --email <EMAIL> --role <user\|admin>` (agency PIT public path; omit password → invite email; defaults to a sub-account user) |
+
+(`<NAME>`, `<AGENCY_FIRESTORE_ID>`, `<SUBACCOUNT_ID>`, `<PERSON>`, `<EMAIL>`
+etc. are PLACEHOLDERS — substitute the live values at runtime.)
 
 ---
 

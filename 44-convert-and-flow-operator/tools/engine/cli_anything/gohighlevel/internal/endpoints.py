@@ -52,3 +52,26 @@ def trigger_put(loc: str, tr: str) -> str:
 def tag_create(loc: str) -> str:
     """POST body {tag:"..."} — create a location-level tag."""
     return f"/workflow/{loc}/tags/create"
+
+
+# ── Agency operations (sub-account + user provisioning) ───────────────────────
+
+def location_create() -> str:
+    """POST body <create-location DTO> — create a sub-account (location).
+
+    Internal/agency endpoint.  Body's companyId is the FIRESTORE document id of
+    the agency, NOT the human-readable relationNumber.  Verified live: the
+    "version": "2021-07-28" request header is REQUIRED (absent -> 401).
+    """
+    return "/locations/"
+
+
+def user_create() -> str:
+    """POST body <CreateUserDto> — add a user (and set their own login password).
+
+    Internal/agency endpoint.  CreateUserDto required fields:
+      companyId (FIRESTORE id), firstName, lastName, email, password, type,
+      role, locationIds.  Verified live: the "version": "2021-07-28" request
+      header is REQUIRED (absent -> 401).
+    """
+    return "/users/"

@@ -5,7 +5,8 @@ PRESERVED EXACTLY from ghl_internal_client.py (verified 2026-03-25):
 - Token cache freshness window: (time.time() - _token_time) < 3000 (50 min)
 - force_refresh() clears cache and re-fetches
 - request() retry-once on auth failure (None return from _do_request)
-- _do_request headers: token-id, channel, source, JSON content-type, CHROME_UA
+- _do_request headers: token-id, channel, source, version (2021-07-28),
+  JSON content-type, CHROME_UA
 - ASCII-safe token scrub
 - call_count per _do_request
 
@@ -211,8 +212,10 @@ class InternalTransport:
     ) -> Optional[dict]:
         """Raw HTTP call.  Returns None on 401/403 (triggers retry), dict otherwise.
 
-        PRESERVED EXACTLY: headers, ASCII scrub, 30s timeout, call_count.
-        ADDITIVE: 429 recognized explicitly, reset header passed through.
+        PRESERVED EXACTLY: ASCII scrub, 30s timeout, call_count.
+        ADDITIVE: "version": "2021-07-28" header (REQUIRED by the internal
+        backend — its absence returns 401 on agency endpoints like /locations/
+        and /users/); 429 recognized explicitly, reset header passed through.
         """
         from cli_anything.gohighlevel.internal.endpoints import BASE_URL as _BASE_URL
         self._call_count += 1
@@ -221,6 +224,7 @@ class InternalTransport:
             "token-id": safe_token,
             "channel": "APP",
             "source": "WEB_USER",
+            "version": "2021-07-28",
             "Content-Type": "application/json",
             "Accept": "application/json",
             "User-Agent": CHROME_UA,

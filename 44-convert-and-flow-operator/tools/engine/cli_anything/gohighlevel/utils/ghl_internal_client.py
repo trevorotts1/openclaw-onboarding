@@ -174,6 +174,7 @@ class InternalGHLClient:
             "token-id": safe_token,
             "channel": "APP",
             "source": "WEB_USER",
+            "version": "2021-07-28",
             "Content-Type": "application/json",
             "Accept": "application/json",
             "User-Agent": CHROME_UA,
@@ -216,3 +217,23 @@ class InternalGHLClient:
             workflow_name=workflow_name,
         )
         return bool(result and not result.get("_error"))
+
+    # ── Agency operations (sub-account + user provisioning) ───────────────────
+
+    def create_location(self, body: dict) -> "AdapterResult":
+        """Create a sub-account (location) via the InternalAdapter (write-gated).
+
+        body.companyId must be the FIRESTORE document id of the agency (not the
+        relationNumber).  The location whitelist is skipped for create (no id
+        exists yet); the approval gate still applies.
+        """
+        return self._adapter.create_location(body)
+
+    def create_user(self, body: dict) -> "AdapterResult":
+        """Add a user via the InternalAdapter (write-gated).
+
+        Required body fields: companyId (FIRESTORE id), firstName, lastName,
+        email, password, type, role, locationIds.  The whitelist is checked
+        against locationIds[0].
+        """
+        return self._adapter.create_user(body)

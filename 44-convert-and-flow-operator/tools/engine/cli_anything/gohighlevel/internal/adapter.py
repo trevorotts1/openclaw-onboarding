@@ -29,6 +29,8 @@ from cli_anything.gohighlevel.internal.endpoints import (
     trigger_create,
     trigger_put,
     tag_create,
+    location_create,
+    user_create,
 )
 from cli_anything.gohighlevel.internal.contract import (
     normalize_result,
@@ -40,6 +42,10 @@ from cli_anything.gohighlevel.internal.contract import (
 )
 from cli_anything.gohighlevel.internal.guards import step_backoff
 from cli_anything.gohighlevel.internal import degrade
+
+# Sentinel so _call can distinguish "caller did not pass whitelist_location"
+# (-> default to self.location_id) from an explicit None (-> skip whitelist).
+_UNSET = object()
 
 # Max workers for parallel builds (lowered from source's 10 to reduce burst pressure).
 # Configurable via CAF_INTERNAL_MAX_WORKERS.
@@ -118,6 +124,33 @@ class InternalAdapter:
         body = {"tag": tag}
         return self._call("POST", path, body, is_write=True)
 
+    # ── Agency operations (sub-account + user provisioning) ───────────────────
+
+    def create_location(self, body: dict) -> AdapterResult:
+        """POST create-location DTO — create a sub-account (location).
+
+        The whitelist (CAF_ALLOWED_LOCATION_IDS) is intentionally NOT applied
+        here: a sub-account being CREATED has no id yet, so there is nothing to
+        whitelist against.  The approval gate (CAF_APPROVAL_TOKEN / ZHC- name)
+        STILL applies via whitelist_location=None below.  body.companyId must
+        be the FIRESTORE document id of the agency, not the relationNumber.
+        """
+        path = location_create()
+        return self._call("POST", path, body, is_write=True, whitelist_location=None)
+
+    def create_user(self, body: dict) -> AdapterResult:
+        """POST CreateUserDto — add a user (sets their own login password).
+
+        Required body fields: companyId (FIRESTORE id), firstName, lastName,
+        email, password, type, role, locationIds.  The whitelist IS applied
+        against the FIRST entry of locationIds (the sub-account the user is
+        being added to) so a user can only be created on an approved location.
+        """
+        path = user_create()
+        loc_ids = body.get("locationIds") or []
+        target = loc_ids[0] if loc_ids else self.location_id
+        return self._call("POST", path, body, is_write=True, whitelist_location=target)
+
     # ── Single choke point ────────────────────────────────────────────────────
 
     def _call(
@@ -127,6 +160,7 @@ class InternalAdapter:
         body: Optional[dict],
         *,
         is_write: bool,
+        whitelist_location: Optional[str] = _UNSET,
     ) -> AdapterResult:
         """All endpoint methods delegate here.
 
@@ -136,7 +170,17 @@ class InternalAdapter:
           3. Safety gate (location whitelist + approval token).
           4. Transport call -> raw result.
           5. normalize_result() -> AdapterResult.
+
+        whitelist_location selects WHICH location id the safety gate checks
+        against CAF_ALLOWED_LOCATION_IDS.  Default (_UNSET) -> self.location_id,
+        preserving the existing behaviour of every workflow/tag write.  Agency
+        ops pass an explicit value: create_location passes None (skip whitelist,
+        nothing to whitelist yet — approval gate still applies); create_user
+        passes the target sub-account id so the user can only land on an
+        approved location.
         """
+        if whitelist_location is _UNSET:
+            whitelist_location = self.location_id
         # Step 1 — write gate
         if is_write and degrade.is_write_disabled():
             record = degrade.read_disable_record() or {}
@@ -161,7 +205,7 @@ class InternalAdapter:
             from cli_anything.gohighlevel.utils.safety_gate import check_write, SafetyRefused
             url = f"{BASE_URL}{path}"
             try:
-                check_write(method, url, body, location_id=self.location_id)
+                check_write(method, url, body, location_id=whitelist_location)
             except SafetyRefused as exc:
                 return AdapterResult(ok=False, error=str(exc), http_code=None)
 

@@ -577,11 +577,18 @@ def _require_experimental(ctx: click.Context):
         sys.exit(1)
 
 
-def _get_internal_client(ctx: click.Context):
-    """Get an InternalGHLClient (lazy import to avoid dep when not needed)."""
+def _get_internal_client(ctx: click.Context, location_id: str | None = None):
+    """Get an InternalGHLClient (lazy import to avoid dep when not needed).
+
+    location_id override: agency ops that target no existing sub-account
+    (locations create) pass an explicit id so they don't trip the
+    GHL_LOCATION_ID env requirement of _loc(ctx).  When omitted, the location
+    is resolved the usual way.
+    """
     from cli_anything.gohighlevel.utils.ghl_internal_client import TokenManager, InternalGHLClient
     token_mgr = TokenManager()
-    return InternalGHLClient(token_mgr, _loc(ctx))
+    loc = location_id if location_id is not None else _loc(ctx)
+    return InternalGHLClient(token_mgr, loc)
 
 
 @cli.group()
@@ -1525,6 +1532,201 @@ def locations_search(ctx, company_id, limit, skip, query):
             params["query"] = query
         data = api.get("/locations/search", params=params)
         _output(ctx, data, "Locations")
+    except Exception as e:
+        _handle_error(e)
+
+
+def _emit_adapter_result(ctx: click.Context, result, label: str) -> None:
+    """Print an AdapterResult and FAIL LOUD (exit 1) when ok=False.
+
+    Mirrors _emit_build_result: a refused/failed internal-API write must never
+    look like a success.  On ok=False the error is printed to stderr and the
+    process exits non-zero.
+    """
+    if result.ok:
+        _output(ctx, result.data, label)
+        return
+    detail = result.error or "internal API call failed"
+    if result.http_code:
+        detail = f"({result.http_code}) {detail}"
+    click.echo(f"FAILED: {detail}", err=True)
+    sys.exit(1)
+
+
+@locations.command("create")
+@click.option("--name", required=True, help="Sub-account (location) name")
+@click.option("--company-id", required=True,
+              help="Agency company FIRESTORE document id (NOT the relationNumber)")
+@click.option("--phone", default=None, help="Sub-account phone (optional)")
+@click.option("--address", default=None, help="Street address (optional)")
+@click.option("--timezone", default=None, help="IANA timezone, e.g. America/New_York (optional)")
+@click.pass_context
+def locations_create(ctx, name, company_id, phone, address, timezone):
+    """Create a sub-account / location (experimental, internal API).
+
+    Requires --experimental and the standard safety gate (approval token or a
+    ZHC- prefixed name).  company-id must be the agency FIRESTORE document id.
+    """
+    _require_experimental(ctx)
+    try:
+        body = {"name": name, "companyId": company_id}
+        if phone:
+            body["phone"] = phone
+        if address:
+            body["address"] = address
+        if timezone:
+            body["timezone"] = timezone
+
+        # No target sub-account exists yet, so do not require GHL_LOCATION_ID;
+        # the whitelist is skipped for create (approval gate still applies).
+        client = _get_internal_client(ctx, location_id="")
+        result = client.create_location(body)
+        _emit_adapter_result(ctx, result, "Sub-account Created")
+    except Exception as e:
+        _handle_error(e)
+
+
+# Public-API user-create version (CreateUserDto). NOT the internal/Firebase
+# version (2021-07-28) — this is the agency PIT + public services API.
+_USERS_API_VERSION = "2023-02-21"
+
+# Default permission map for a sub-account ("account") user. GHL accepts a
+# permissions object on CreateUserDto; an empty/omitted map yields a user with
+# no granular permissions, so we grant a sane read/write default for a normal
+# sub-account team member. Override nothing here for agency users — agency
+# users are a deliberately-gated, separate path (see --agency).
+_DEFAULT_ACCOUNT_PERMISSIONS = {
+    "campaignsEnabled": True,
+    "contactsEnabled": True,
+    "workflowsEnabled": True,
+    "opportunitiesEnabled": True,
+    "appointmentsEnabled": True,
+    "conversationsEnabled": True,
+    "dashboardStatsEnabled": True,
+    "settingsEnabled": False,
+}
+
+
+@locations.command("add-user")
+@click.option("--location-id", required=True,
+              help="Sub-account id the user is added to (must be on the whitelist)")
+@click.option("--company-id", required=True,
+              help="Agency company FIRESTORE document id (NOT the relationNumber)")
+@click.option("--first-name", required=True, help="User first name")
+@click.option("--last-name", required=True, help="User last name")
+@click.option("--email", required=True, help="User login email")
+@click.option("--password", default=None,
+              help="OPTIONAL. Omit to send GHL's invite email (user sets their "
+                   "OWN password). Only set this to force a specific password.")
+@click.option("--role", default="user", type=click.Choice(["user", "admin"]),
+              help="Role WITHIN the sub-account (default: user). With the default "
+                   "--type account, role=admin means admin of THAT sub-account ONLY.")
+@click.option("--type", "user_type", default="account",
+              type=click.Choice(["account", "agency"]),
+              help="account = SUB-ACCOUNT user (default; lives only in --location-id). "
+                   "agency = AGENCY user (controls the WHOLE agency) — requires "
+                   "--i-understand-this-is-an-agency-user.")
+@click.option("--i-understand-this-is-an-agency-user", "agency_ack", is_flag=True,
+              default=False,
+              help="Explicit acknowledgement required for --type agency. Without it, "
+                   "--type agency is REFUSED so you can never accidentally make a "
+                   "sub-account user an agency-wide admin.")
+@click.option("--internal-firebase-fallback", "use_internal", is_flag=True,
+              default=False,
+              help="NON-DEFAULT fallback: route through the internal Firebase API "
+                   "instead of the agency PIT public API. Requires --experimental "
+                   "and a Firebase token. Only for the rare case the PIT path fails.")
+@click.pass_context
+def locations_add_user(ctx, location_id, company_id, first_name, last_name,
+                       email, password, role, user_type, agency_ack, use_internal):
+    """Add a user — DEFAULT: agency PIT + PUBLIC API (the proven path).
+
+    DEFAULT PATH (recommended): POST https://services.leadconnectorhq.com/users/
+    with Authorization: Bearer <agency PIT> and Version: 2023-02-21. Body is a
+    CreateUserDto: companyId (agency FIRESTORE id), locationIds=[--location-id],
+    firstName, lastName, email, type, role, permissions. No Firebase token and
+    no Chrome extension are needed for this path.
+
+    USER TYPE — read carefully (this is the difference that matters):
+      --type account (DEFAULT) + locationIds=[--location-id]
+          => a SUB-ACCOUNT user. They live ONLY in that one sub-account.
+             --role admin here = admin of THAT SUB-ACCOUNT ONLY.
+      --type agency
+          => an AGENCY user. They control the WHOLE agency and EVERY
+             sub-account under it. This is almost never what you want when
+             "adding a user to a client's sub-account." It is gated behind
+             --i-understand-this-is-an-agency-user and will be REFUSED without it.
+
+    PASSWORD: omit --password to trigger GHL's invite email (the user sets
+    their own password). Only pass --password to force a specific one.
+
+    FALLBACK: --internal-firebase-fallback routes through the internal Firebase
+    API (requires --experimental + a Firebase token). This is NOT the default
+    and should only be used if the PIT path is unavailable.
+    """
+    # Hard guard: an agency user is a different, dangerous thing. Adding a user
+    # to a client's sub-account must NEVER silently make them an agency user.
+    if user_type == "agency" and not agency_ack:
+        click.echo(
+            "REFUSED: --type agency creates an AGENCY-WIDE user (controls the "
+            "WHOLE agency + all sub-accounts), NOT a sub-account user.\n"
+            "If that is genuinely intended, re-run with "
+            "--i-understand-this-is-an-agency-user.\n"
+            "To add a normal user to a client's sub-account, drop --type agency "
+            "(the default --type account scopes them to --location-id only).",
+            err=True,
+        )
+        sys.exit(1)
+
+    # ── NON-DEFAULT fallback: internal Firebase path ──────────────────────────
+    if use_internal:
+        _require_experimental(ctx)
+        try:
+            body = {
+                "companyId": company_id,
+                "firstName": first_name,
+                "lastName": last_name,
+                "email": email,
+                "type": user_type,
+                "role": role,
+                "locationIds": [location_id],
+            }
+            if password:
+                body["password"] = password
+            # The target sub-account comes from --location-id (also the whitelist
+            # key inside create_user), so don't require GHL_LOCATION_ID here.
+            client = _get_internal_client(ctx, location_id=location_id)
+            result = client.create_user(body)
+            _emit_adapter_result(ctx, result, "User Added (internal Firebase fallback)")
+        except Exception as e:
+            _handle_error(e)
+        return
+
+    # ── DEFAULT: agency PIT + PUBLIC API (services.leadconnectorhq.com/users/) ─
+    try:
+        body = {
+            "companyId": company_id,
+            "locationIds": [location_id],
+            "firstName": first_name,
+            "lastName": last_name,
+            "email": email,
+            "type": user_type,
+            "role": role,
+            "permissions": dict(_DEFAULT_ACCOUNT_PERMISSIONS),
+        }
+        # Omit password entirely to trigger GHL's invite email. Only include it
+        # when the operator explicitly forces a password.
+        if password:
+            body["password"] = password
+
+        # Whitelist enforcement: the public post() gate reads the target location
+        # from data["locationId"] or GHL_LOCATION_ID. CreateUserDto carries the
+        # target in locationIds[] (not locationId), so point the gate at the
+        # --location-id via the env it already honours. A user can therefore only
+        # be created on an approved sub-account.
+        os.environ["GHL_LOCATION_ID"] = location_id
+        data = api.post("/users/", data=body, version=_USERS_API_VERSION)
+        _output(ctx, data, "User Added")
     except Exception as e:
         _handle_error(e)
 
