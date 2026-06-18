@@ -1,4 +1,8 @@
-## v12.31.0 — 2026-06-18 — Presentations Friday-critical fixes + roster-regen materialization
+## v12.31.1 — 2026-06-18 — content-manifest restamp + QC-static repo-consistency fix
+
+- Content-manifest restamp + QC-static repo-consistency fix for the v12.31.0 presentation edits. The v12.31.0 commit restamped `23-ai-workforce-blueprint/templates/role-library/_index.json` (a Skill-23 file) without moving the skill version, tripping the version-consistency guards (G3 "skill content change requires skill-version.txt bump" + the "9 markers must agree / skill-version.txt == /version" rule). This patch bumps the whole version in lockstep so all 9 markers + `cc-compat.json onboardingVersion` read `v12.31.1`, and re-runs `hash-content-manifest.py` so the per-artifact content_sha manifest stays consistent. No functional change beyond v12.31.0.
+
+
 
 Presentation pipeline (Friday-critical):
 - Deleted the legacy `23-ai-workforce-blueprint/templates/presentation-render/build_deck.py`; the canonical renderer is `templates/role-library/presentations/scripts/build_deck.py`. Cleaned the now-dead `presentation-render/build_deck.py` references in `docs/LEGACY-RETIREMENT.md` and the three AF3 retirement-allowlist locations in `.github/workflows/qc-static.yml`.
