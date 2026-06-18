@@ -92,6 +92,18 @@ def get_openclaw_paths() -> dict:
     # --- canonical company root (PRD 1.9: always inside master_files) ---
     company_root = master_files / "zero-human-company"
 
+    # --- legacy read-only company roots (resolution fallback ONLY) ---
+    # PRD 1.10 / fleet-fix: several VPS clients' real workforces still live at the
+    # LEGACY tree /data/clawd/zero-human-company/<slug>/ (built before the canonical
+    # master_files root was adopted). company_root is NEVER repointed here — new
+    # builds still write canonical — but if the canonical root holds no company we
+    # must RESOLVE company_dir from the legacy tree so the gate/updater audit the
+    # real workforce instead of an empty stub (which raised false department-floor
+    # FAIL alerts). Resolution only; nothing is moved or migrated.
+    legacy_company_roots = []
+    if platform == "vps":
+        legacy_company_roots.append(Path("/data/clawd/zero-human-company"))
+
     # --- derived paths ---
     # PRD 2.7: canonical coaching-personas dir is workspace/data/coaching-personas/
     # (next to the gemini index; aligns with orchestrator + embedding_engine paths).
@@ -101,7 +113,7 @@ def get_openclaw_paths() -> dict:
     # build_state: the workforce build-state JSON (written by build-workforce.py)
     build_state = workspace / ".workforce-build-state.json"
 
-    company_dir = resolve_active_company_dir(company_root)
+    company_dir = resolve_active_company_dir(company_root, extra_roots=legacy_company_roots)
     persona_categories = resolve_persona_categories(workspace, root, coaching_personas)
 
     # PRD 1.3: resolve dashboard DB through the single shared resolver.
@@ -198,31 +210,52 @@ def resolve_persona_categories(workspace: Path, root: Path, coaching_personas: P
     return candidates[0]  # canonical-but-missing path (warns elsewhere)
 
 
-def resolve_active_company_dir(company_root: Path):
+def resolve_active_company_dir(company_root: Path, extra_roots=None):
     """
-    Resolve the active per-company ZHC folder under company_root.
+    Resolve the active per-company ZHC folder.
 
-    Resolution order:
-        1. $OPENCLAW_COMPANY_SLUG env var -> company_root/<slug>/
-        2. Single subdir under company_root -> that one
-        3. Most-recently-modified subdir under company_root
-        4. None (no company built yet)
+    Scans the canonical company_root FIRST, then any legacy roots in
+    extra_roots (read-only resolution fallback — used on VPS boxes whose real
+    workforce still lives at /data/clawd/zero-human-company/<slug>/). The
+    canonical root is always preferred; a legacy root is only used when the
+    canonical root holds no company. Nothing is moved or migrated — this picks
+    the root that ACTUALLY contains the client's company dir so the gate/updater
+    audit the real tree instead of an empty stub.
+
+    Per-root resolution order:
+        1. $OPENCLAW_COMPANY_SLUG env var -> <root>/<slug>/
+        2. Single subdir under <root> -> that one
+        3. Most-recently-modified subdir under <root>
+        4. None (no company built yet under that root)
 
     Returns Path or None.
     """
-    if not company_root.exists():
-        return None
+    roots = [company_root]
+    for r in (extra_roots or []):
+        if r not in roots:
+            roots.append(r)
+
+    # Pass 1: if an explicit slug is requested, prefer whichever root actually
+    # HAS that slug (canonical first) before any mtime-based guessing.
     slug = os.environ.get("OPENCLAW_COMPANY_SLUG")
     if slug:
-        candidate = company_root / slug
-        if candidate.is_dir():
-            return candidate
-    subdirs = [p for p in company_root.iterdir() if p.is_dir() and not p.name.startswith(".")]
-    if not subdirs:
-        return None
-    if len(subdirs) == 1:
-        return subdirs[0]
-    return max(subdirs, key=lambda p: p.stat().st_mtime)
+        for root in roots:
+            candidate = root / slug
+            if candidate.is_dir():
+                return candidate
+
+    # Pass 2: no slug match — pick the active company from the first root that
+    # holds one (canonical preferred; legacy roots only as a fallback).
+    for root in roots:
+        if not root.exists():
+            continue
+        subdirs = [p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")]
+        if not subdirs:
+            continue
+        if len(subdirs) == 1:
+            return subdirs[0]
+        return max(subdirs, key=lambda p: p.stat().st_mtime)
+    return None
 
 
 if __name__ == "__main__":

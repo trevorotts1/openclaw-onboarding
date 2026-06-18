@@ -1,3 +1,7 @@
+## v12.29.0
+- Skill 44 agency provisioning: create-sub-account (Firebase internal / Chrome-extension token) + add-user (agency PIT public API, type=account guarded, agency-user hard-refused); version:2021-07-28 transport fix; teach-yourself + AGENTS.md + TOOLS.md rewritten to the new way; OAuth marketplace path marked dead.
+- Fleet-completion unblock: detect_platform now also resolves the legacy /data/clawd/zero-human-company workforce path on VPS boxes (kills false department-floor-FAIL alerts on legacy-tree clients).
+
 ## [v12.28.0] — 2026-06-17 — feat(presentations): the nine Intelligence Engines — named taxonomy + new enforcement (Lighting skin-tone, Typography 8th-row/salesy-font, Story character-continuity, Product placement, required slide-type beats)
 
 Promotes the Presentation Department's image/pitch capabilities to a single, named, verifiable **Intelligence Engines** taxonomy and wires the previously-undocumented doctrines into the QC auto-fail gate as **enforcement, not prose**. The pipeline already spoke three of these engines by name (the FACIAL EXPRESSION ENGINE, the AUDIENCE ENGINE, and the WORLD ENGINE in `slide-image-creator-sops.md` element 11) and two under their mechanic names (Hook Doctrine, Re-Pitch); this release completes and unifies the set of NINE — **1 Facial · 2 Lighting · 3 Typography · 4 Story · 5 World · 6 Pricing · 7 Hook · 8 Recap · 9 Product** — each with a definition, a "how you know it landed" check, and named failure modes auto-failed at QC.
