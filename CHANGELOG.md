@@ -4,6 +4,8 @@
 
 
 
+## v12.31.0 — 2026-06-18 — Presentation Friday-critical fixes + roster-regen materialization fix
+
 Presentation pipeline (Friday-critical):
 - Deleted the legacy `23-ai-workforce-blueprint/templates/presentation-render/build_deck.py`; the canonical renderer is `templates/role-library/presentations/scripts/build_deck.py`. Cleaned the now-dead `presentation-render/build_deck.py` references in `docs/LEGACY-RETIREMENT.md` and the three AF3 retirement-allowlist locations in `.github/workflows/qc-static.yml`.
 - PIPELINE-MANIFEST.json bumped to manifest_version 7 with the new autofails wired in (AF additions) and the role roster reconciled — `sync_check.py` now reports IN SYNC (11 phases, 45 autofails, 29 roles).
