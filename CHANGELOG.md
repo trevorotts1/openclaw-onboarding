@@ -1,3 +1,7 @@
+## v12.30.0
+- CI green on bare runners: detect_platform honors an OPENCLAW_PLATFORM env override (mac|vps) so static gates run without a live OpenClaw install (real Mac/VPS detection unchanged; v12.29.0 legacy /data/clawd path preserved); qc-static.yml sets OPENCLAW_PLATFORM=mac.
+- how-to-use-this-department gate fix: relocate the stray fish-audio/ reference docs into presentations/fish-audio/ (kills a false department; preserves the presenters-speech-writer references) + regenerate the stale presentations how-to guide.
+
 ## v12.29.0
 - Skill 44 agency provisioning: create-sub-account (Firebase internal / Chrome-extension token) + add-user (agency PIT public API, type=account guarded, agency-user hard-refused); version:2021-07-28 transport fix; teach-yourself + AGENTS.md + TOOLS.md rewritten to the new way; OAuth marketplace path marked dead.
 - Fleet-completion unblock: detect_platform now also resolves the legacy /data/clawd/zero-human-company workforce path on VPS boxes (kills false department-floor-FAIL alerts on legacy-tree clients).

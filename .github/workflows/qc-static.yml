@@ -24,6 +24,22 @@ jobs:
   qc-static:
     name: QC static invariants
     runs-on: ubuntu-latest
+    # The runner is a bare box: it has NO ~/.openclaw (Mac marker) and NO
+    # /data/.openclaw or /data/clawd (VPS markers), so detect_platform.py cannot
+    # resolve a platform from disk and raises SystemExit("Cannot detect OpenClaw
+    # platform."). Several static gates load the REAL build modules — e.g.
+    # qc-assert-repo-consistency.py -> create_role_workspaces.instantiate_department
+    # -> fill_tokens -> _load_company_config -> get_openclaw_paths() — which then
+    # dies (and SystemExit slips past their `except Exception`). OPENCLAW_PLATFORM
+    # is the same first-class platform override install.sh / update-skills.sh /
+    # lib-shared.sh already honor; setting it makes detection deterministic for the
+    # WHOLE job WITHOUT weakening real Mac/VPS detection (the override is ONLY
+    # consulted when set, so a real box auto-detects exactly as before, including
+    # the v12.29.0 legacy /data/clawd resolution). These are STATIC gates — they
+    # read the repo's own templates/config, not a live install — so a forced
+    # platform is correct here. `mac` maps roots under $HOME; nothing is written.
+    env:
+      OPENCLAW_PLATFORM: mac
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4

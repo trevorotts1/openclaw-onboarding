@@ -31,6 +31,7 @@ def get_openclaw_paths() -> dict:
         departments_json, company_config, org_chart, user_md, soul_md,
         memory_md, agents_md, tools_md, heartbeat_md
     """
+    import os
     vps_root = Path("/data/.openclaw")
     mac_new = Path.home() / ".openclaw"
     mac_legacy = Path.home() / "clawd"
@@ -44,7 +45,41 @@ def get_openclaw_paths() -> dict:
     # Resolution only — nothing is moved or migrated. Mac path logic is unchanged.
     legacy_company_roots = []
 
-    if vps_root.exists():
+    # --- explicit OPENCLAW_PLATFORM override (mac | vps | mac-legacy) ---
+    # An explicit override resolves the platform WITHOUT requiring an installed
+    # marker directory on disk — the same first-class concept install.sh /
+    # update-skills.sh / lib-shared.sh already use. It lets the static QC gates
+    # (qc-assert-repo-consistency.py, test-ws4-departments.sh, etc.) run
+    # deterministically on a bare CI runner that has neither ~/.openclaw nor
+    # /data/.openclaw. When UNSET, detection is unchanged (the marker checks below
+    # run exactly as before — a real Mac or VPS is detected identically, including
+    # the v12.29.0 legacy /data/clawd resolution). Only the platform/roots are
+    # forced; nothing is written.
+    _env_platform = os.environ.get("OPENCLAW_PLATFORM", "").strip().lower()
+
+    if _env_platform == "vps":
+        root = vps_root
+        platform = "vps"
+        master_files = Path("/data/.openclaw/master-files")
+        company_root = Path("/data/.openclaw/workspace/zero-human-company")
+        workspace = root / "workspace"
+        legacy_company_roots.append(Path("/data/clawd/zero-human-company"))
+    elif _env_platform in ("mac", "mac-new"):
+        root = mac_new
+        platform = "mac"
+        master_files = Path.home() / "Downloads" / "openclaw-master-files"
+        workspace = root / "workspace"
+        if mac_legacy.exists():
+            company_root = mac_legacy / "zero-human-company"
+        else:
+            company_root = workspace / "zero-human-company"
+    elif _env_platform == "mac-legacy":
+        root = mac_legacy
+        platform = "mac-legacy"
+        master_files = Path.home() / "Downloads" / "openclaw-master-files"
+        workspace = root
+        company_root = mac_legacy / "zero-human-company"
+    elif vps_root.exists():
         root = vps_root
         platform = "vps"
         master_files = Path("/data/.openclaw/master-files")
@@ -73,7 +108,8 @@ def get_openclaw_paths() -> dict:
         print("  - /data/.openclaw (expected on VPS / Hostinger Docker)")
         print("  - ~/.openclaw (expected on Mac, new install)")
         print("  - ~/clawd (expected on Mac, legacy install)")
-        print("Run the OpenClaw installer before executing this script.")
+        print("Set OPENCLAW_PLATFORM=mac|vps to override (e.g. CI static checks),")
+        print("or run the OpenClaw installer before executing this script.")
         raise SystemExit(1)
 
     # PRD 2.7: canonical coaching-personas dir is workspace/data/coaching-personas/

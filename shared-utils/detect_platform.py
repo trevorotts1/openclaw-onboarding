@@ -55,8 +55,35 @@ def get_openclaw_paths() -> dict:
     mac_new = Path.home() / ".openclaw"
     mac_legacy = Path.home() / "clawd"
 
+    # --- explicit OPENCLAW_PLATFORM override (mac | vps | mac-legacy) ---
+    # An explicit override resolves the platform WITHOUT requiring an installed
+    # marker directory on disk. This is the same first-class concept install.sh /
+    # update-skills.sh / lib-shared.sh already use, and it lets the static QC gates
+    # (qc-assert-repo-consistency.py, test-ws4-departments.sh, etc.) run
+    # deterministically on a bare CI runner that has neither ~/.openclaw nor
+    # /data/.openclaw. When UNSET, detection is unchanged (the marker checks below
+    # run exactly as before — a real Mac or VPS is detected identically). Only the
+    # platform/roots are forced; nothing is written, and the legacy /data/clawd
+    # resolution fallback (below) still applies for vps.
+    _env_platform = os.environ.get("OPENCLAW_PLATFORM", "").strip().lower()
+
     # --- platform detection ---
-    if vps_marker.exists():
+    if _env_platform == "vps":
+        root = vps_marker
+        platform = "vps"
+        workspace = root / "workspace"
+        _default_master = Path("/data/openclaw-master-files")
+    elif _env_platform in ("mac", "mac-new"):
+        root = mac_new
+        platform = "mac"
+        workspace = root / "workspace"
+        _default_master = Path.home() / "Downloads" / "openclaw-master-files"
+    elif _env_platform == "mac-legacy":
+        root = mac_legacy
+        platform = "mac-legacy"
+        workspace = root
+        _default_master = Path.home() / "Downloads" / "openclaw-master-files"
+    elif vps_marker.exists():
         root = vps_marker
         platform = "vps"
         workspace = root / "workspace"
@@ -79,7 +106,8 @@ def get_openclaw_paths() -> dict:
         print("  - /data/.openclaw (expected on VPS / Hostinger Docker)", file=sys.stderr)
         print("  - ~/.openclaw (expected on Mac, new install)", file=sys.stderr)
         print("  - ~/clawd (expected on Mac, legacy install)", file=sys.stderr)
-        print("Run the OpenClaw installer before executing this script.", file=sys.stderr)
+        print("Set OPENCLAW_PLATFORM=mac|vps to override (e.g. CI static checks),", file=sys.stderr)
+        print("or run the OpenClaw installer before executing this script.", file=sys.stderr)
         raise SystemExit(1)
 
     # --- MASTER_FILES_DIR override (PRD 1.9) ---
