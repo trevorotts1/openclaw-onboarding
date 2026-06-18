@@ -435,3 +435,52 @@ Call `add_gradient_scrim(slide, overlay_entry)` for every overlay entry that sit
 **Failure mode:** Any assert failure in Rules 3, 5, or the autofit check is a hard stop. Do not proceed. Notify the Director with the exact slide number, the failing rule, and the specific measurement that caused the failure. The Director must update pptx_text_overlays.json or escalate to the Slide Image Creator for a re-render. Never bypass the assert. Never deliver a PPTX with a known collision or overflow.
 
 ---
+
+### SOP 9.5 -- Infographic PNG Export (infographic_png deliverable)
+
+**When to run:** After SOP 9.2 (PDF export complete) AND only when `working/checkpoints/infographic_status.json` exists with `status: "ready"`. This SOP is CONDITIONAL -- it fires exclusively on runs where the Slide Image Creator produced a QC-passed `working/deliverables/infographic.png` (converter-origin runs and any deck with `deliverable_bundle.checklist_items` in intake.json). Skip this SOP and record `infographic_export_skipped: true` in render_log.json when `infographic_status.json` is absent or `status != "ready"`.
+
+**Why this SOP exists:** `PIPELINE-MANIFEST.json` lists `infographic_png` as a required deliverable for converter-origin decks (key: `infographic_png`; note: "produced by infographic-checklist role"). The Slide Image Creator owns production (SOP 9.10); this role owns the verified copy into the delivery path, identical to how the PDF export is a separate verified step from assembly.
+
+**Inputs:**
+- working/checkpoints/infographic_status.json (`status: "ready"`, `deliverable_path: "working/deliverables/infographic.png"`)
+- working/deliverables/infographic.png (QC-passed portrait infographic image)
+
+**Steps:**
+1. Read `working/checkpoints/infographic_status.json`. Confirm `status == "ready"` and `qc_passed == true`. If either is false or the file is absent: skip this SOP (record `infographic_export_skipped: true` in render_log.json) and notify the Director: "infographic_status.json missing or not ready -- SOP 9.5 skipped. If this run requires an infographic, route back to Slide Image Creator SOP 9.10."
+2. Verify the source file exists and is non-empty:
+   ```bash
+   ls -lh working/deliverables/infographic.png
+   ```
+   The file must exist and show a non-zero size (expect >= 100KB for a 2K-resolution render). A missing or zero-byte file is a halt condition.
+3. Copy to the output directory alongside the PPTX and PDF:
+   ```bash
+   cp working/deliverables/infographic.png output/infographic.png
+   ```
+4. Verify the copy succeeded:
+   ```bash
+   ls -lh output/infographic.png
+   ```
+   The output file must exist and have the same size as the source (within 1 byte; a size mismatch indicates a corrupt copy).
+5. Update `output/render_log.json` to add the infographic record:
+   ```json
+   {
+     "infographic_path": "output/infographic.png",
+     "infographic_size_bytes": N,
+     "infographic_export_tool": "cp",
+     "infographic_qc_passed": true,
+     "infographic_exported_at": "ISO timestamp"
+   }
+   ```
+   Merge this into the existing render_log.json object (do not overwrite the PPTX/PDF fields).
+6. Notify the Director: "output/infographic.png exported and verified ([SIZE]). Ready for Delivery Concierge."
+
+**Outputs:**
+- output/infographic.png (delivery-ready copy of the QC-passed infographic)
+- output/render_log.json (updated with infographic_path, infographic_size_bytes, infographic_qc_passed)
+
+**Hand to:** Delivery Concierge (SOP 9.0 / AF-DH1) -- the Delivery Concierge adds `infographic.png` to the five-file client package whitelist for converter-origin runs and copies it into `delivery/[DECK_SLUG]-FINAL/`. This role does NOT copy to delivery/; that is Delivery Concierge territory (AF-DH1 rule).
+
+**Failure mode:** If the copy fails (disk full, permission error): halt and notify the Director immediately. Do NOT proceed to delivery with a missing infographic on a run where `infographic_status.json` declares it required. If the source file is zero bytes despite `status: "ready"` in infographic_status.json, flag to the Director AND the Slide Image Creator: "infographic.png is zero bytes -- Slide Image Creator must re-run SOP 9.10 before export."
+
+---

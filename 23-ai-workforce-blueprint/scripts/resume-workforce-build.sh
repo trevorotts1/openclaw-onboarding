@@ -679,7 +679,18 @@ if [[ -z "$TARGET_CHAT" ]]; then
 fi
 
 if (( library_dirty == 1 )) && (( closeout_dirty == 0 )); then
-  msg="[LIBRARY-RESUME] ${agent_name}: every department is built but the ROLE LIBRARY and/or SOP LIBRARY are NOT populated (roleLibraryStatus=${role_library_status:-unset}, sopLibraryStatus=${sop_library_status:-unset}). The workforce is NOT complete until BOTH are done. Run scripts/verify-library-gate.sh to measure; if role library < 100% re-run scripts/post-build-role-workspaces.py (pulls how-to.md from templates/role-library/); if SOPs have stubs re-run scripts/populate-sops-from-manifest.py. Re-run verify-library-gate.sh until it exits 0 (roleLibraryStatus=done AND sopLibraryStatus=done) - ONLY THEN write buildCompletedAt + closeoutStatus=pending. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this - the resume is internal."
+  # ROOT-CAUSE FIX (2026-06-18): a resume that (re)materializes role folders must
+  # also refresh each department's ROSTER.md (the When-to Reference Map the
+  # director agent reads). post-build-role-workspaces.py now refreshes ROSTER.md
+  # per dept automatically, but run regenerate-dept-roster.py inline here as a
+  # deterministic backstop so a partial/resume materialization can NEVER leave a
+  # stale roster that under-reports the roles the agent actually has on disk.
+  _roster_script="$SCRIPT_DIR/regenerate-dept-roster.py"
+  if [[ -f "$_roster_script" ]]; then
+    log "[ROSTER-RESUME] refreshing every department ROSTER.md from on-disk role folders"
+    python3 "$_roster_script" >>"$LOG_FILE" 2>&1 || true
+  fi
+  msg="[LIBRARY-RESUME] ${agent_name}: every department is built but the ROLE LIBRARY and/or SOP LIBRARY are NOT populated (roleLibraryStatus=${role_library_status:-unset}, sopLibraryStatus=${sop_library_status:-unset}). The workforce is NOT complete until BOTH are done. Run scripts/verify-library-gate.sh to measure; if role library < 100% re-run scripts/post-build-role-workspaces.py (pulls how-to.md from templates/role-library/ AND refreshes each department's ROSTER.md from the role folders on disk); if SOPs have stubs re-run scripts/populate-sops-from-manifest.py. If any department's ROSTER.md under-reports its role folders, run scripts/regenerate-dept-roster.py to rebuild every roster from disk. Re-run verify-library-gate.sh until it exits 0 (roleLibraryStatus=done AND sopLibraryStatus=done) - ONLY THEN write buildCompletedAt + closeoutStatus=pending. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this - the resume is internal."
 # B4: [WIRING-RESUME] self-ping when wiring is dirty
 elif (( wiring_dirty > 0 )); then
   log "[WIRING-RESUME] wiring_dirty=$wiring_dirty — one or more departments have wiringStatus!=done. Running verify-wiring.sh inline..."

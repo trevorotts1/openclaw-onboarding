@@ -18,11 +18,11 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ### The Ten Required Presentation Components (master SOP Section 4.4)
 
-Every deck must carry, and the QC Specialist gates, the operator's ten named required components: (1) the Promise (pitch the promise, not the product), (2) the Hook (written like a song, sung ~10x, minimum 7), (3) Case Studies / "who says so other than you" (third-party proof woven between the drops; zero-proof deck FAILS), (4) the Wall of Wins / wall of results, (5) One Big Idea Per Slide (multi-idea slide AUTO-FAILS), (6) the Guarantee, (7) the Scarcity Factor (last-calls / doors-closing, real only), (8) the Story Arc (short-term fix vs long-term identity; self-recognition), (9) the Gradual Price Ladder (value-plant anchor -> spread earned-reason drops -> add value every drop -> final late), and (10) "a checklist for an AI is a list of promises" (the QC / checklist philosophy). Producing roles: Director (1, 10), Hook Strategist (2), Deep Research (3, 4), Copywriter (all copy beats), Offer Price Strategist (6, 7, 9). Gating role: QC Specialist (copy QC criteria c1, c11, c18-c22 + AF-C6 + final-deck structural-completeness).
+Every deck must carry, and the QC Specialist gates, the operator's ten named required components: (1) the Promise (pitch the promise, not the product), (2) the Hook (written like a song, 3-4 dedicated pure-typography slides, ceiling not floor), (3) Case Studies / "who says so other than you" (third-party proof woven between the drops; zero-proof deck FAILS), (4) the Wall of Wins / wall of results, (5) One Big Idea Per Slide (multi-idea slide AUTO-FAILS), (6) the Guarantee, (7) the Scarcity Factor (last-calls / doors-closing, real only), (8) the Story Arc (short-term fix vs long-term identity; self-recognition), (9) the Gradual Price Ladder (value-plant anchor -> spread earned-reason drops -> add value every drop -> final late), and (10) "a checklist for an AI is a list of promises" (the QC / checklist philosophy). Producing roles: Director (1, 10), Hook Strategist (2), Deep Research (3, 4), Copywriter (all copy beats), Offer Price Strategist (6, 7, 9). Gating role: QC Specialist (copy QC criteria c1, c11, c18-c22 + AF-C6 + final-deck structural-completeness).
 
 ---
 
-## Role Roster (22 roles)
+## Role Roster (24 roles)
 
 | ROLE | Slug | Role type | File |
 |------|------|-----------|------|
@@ -46,8 +46,10 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 | ROLE-18 | typography-architect | specialist | typography-architect.md |
 | ROLE-19 | presenters-guide-specialist | specialist | presenters-guide-specialist.md |
 | ROLE-20 | presenters-speech-writer | specialist | presenters-speech-writer.md |
+| ROLE-20 | audio-demonstration-specialist | specialist | audio-demonstration-specialist.md |
 | ROLE-21 | fish-audio-expression-specialist | specialist | fish-audio-expression-specialist.md |
 | ROLE-22 | first-time-onboarding-presentations | specialist | first-time-onboarding-presentations.md |
+| ROLE-23 | content-to-presentation-architect | specialist | content-to-presentation-architect.md |
 
 **New in the density-floor overhaul (2026-06-14):** ROLE-18 Typography Architect (locks the type/layout/treatment system in Phase 1.5, before any prompt), ROLE-19 Presenter's Guide Specialist (speaker-facing outline PDF + Notion), ROLE-20 Presenter's Speech Writer (word-for-word script at 130 wpm + audio demo via Fish > ElevenLabs > local + ffmpeg chunk/stitch), ROLE-21 Fish Audio / Expression Specialist (expression-tags the speech), ROLE-22 First-Time-User Onboarding (orients a newcomer once, then hands to the Brainstorming Buddy).
 
@@ -78,7 +80,7 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 
 On-call throughout: ROLE-05 Devil's Advocate (high-stakes reviews).
 
-**ROLE-04 Deep Research Specialist:** MANDATORY Phase -0.5 on EVERY deck run (personal brand and general). NOT on-call -- it is a blocking phase gate dispatched by the Director after Step 0.5. See Phase -0.5 above. Output: `working/research/brief-[DECK_SLUG].md` (`research_complete: true`, categories A-F). Categories B/C/D feed Copywriter; E feeds Image Creator; F feeds Typography Architect AND Image Creator.
+**ROLE-04 Deep Research Specialist:** MANDATORY Phase -0.5 on EVERY deck run (personal brand and general). NOT on-call -- it is a blocking phase gate dispatched by the Director after Step 0.5. See Phase -0.5 above. Output: `working/research/brief-[DECK_SLUG].md` (`research_complete: true`, categories A-L). Categories B/C/D feed Copywriter; E feeds Image Creator; F feeds Typography Architect AND Image Creator. Category G (attributable quotes) -> Copywriter; H (fact-validation ledger) -> QC Specialist + Copywriter; I (objection research) -> Copywriter + Devil's Advocate; J (social proof) -> Copywriter; K (persuasion-framework validation) -> Director + Copywriter; L (compliance) -> Director + Devil's Advocate.
 
 **Dogfooding doctrine (Workstream 1E):** Every role in this department that produces a deliverable (copy, prompts, images, layouts, assembly) MUST itself serve as a demonstration of the department's own doctrine. A slide written by the Copywriter is itself a proof-of-concept of AF-C1 through AF-C11. A prompt written by the Image Creator is itself a proof-of-concept of AF-P1 through AF-P16. An assembled PPTX produced by the Assembly Specialist is itself a proof-of-concept of AF-F1 through AF-F14. A layout template produced by the Typography Architect is itself a proof-of-concept of the min_body_pt and type_scale_steps requirements. The department's own internal documents -- SOPs, briefs, templates, schemas -- are held to the same bar as a client deliverable. A rule not enforced on the department's own artifacts does not exist.
 
@@ -152,7 +154,7 @@ These standalone SOP documents live in `sops/` alongside the per-role mirrors. T
 
 ## Design Intelligence Unit (DIU) Boundary
 
-The Graphics department's Design Intelligence Unit (DIU) -- Style Analyst, Deck Systems Specialist, Generation Operator, Photo Shoot Director, Fidelity Tester -- operates entirely within the Graphics department and does NOT touch the presentations pipeline. This department's webinar and deck production workflow (ROLE-01 through ROLE-17, the full phase sequence above, and the Kie.ai submission path via ROLE-12 Slide Submitter) is the authoritative source for webinar deck delivery. The DIU's Deck Systems Specialist analyzes and generates deck IMAGERY STYLE SYSTEMS only; deck narrative writing, price ladder choreography, PPTX assembly, and final submission to Kie.ai for webinar decks remain exclusively with this department. Any cross-department request that would route deck narrative or assembly work to the Graphics DIU is a misroute -- return it here.
+The Graphics department's Design Intelligence Unit (DIU) -- Style Analyst, Deck Systems Specialist, Generation Operator, Photo Shoot Director, Fidelity Tester -- operates entirely within the Graphics department and does NOT touch the presentations pipeline. This department's webinar and deck production workflow (ROLE-01 through ROLE-24, the full phase sequence above, and the Kie.ai submission path via ROLE-12 Slide Submitter) is the authoritative source for webinar deck delivery. The DIU's Deck Systems Specialist analyzes and generates deck IMAGERY STYLE SYSTEMS only; deck narrative writing, price ladder choreography, PPTX assembly, and final submission to Kie.ai for webinar decks remain exclusively with this department. Any cross-department request that would route deck narrative or assembly work to the Graphics DIU is a misroute -- return it here.
 
 **Permitted cross-department request (presentations → Graphics DIU):** This department MAY request a style card analysis from the Graphics DIU when a client wants a NEW webinar deck built to match an existing deck's visual aesthetic. In that case, ROLE-02 Brand Steward submits the reference deck to the Graphics DIU Style Analyst (via Chief Design Officer) for a PPT-tier style card; the resulting style ID is then passed back to ROLE-11 Slide Image Creator as the style reference for Phase 2 prompt authoring. The narrative, copy, and assembly pipeline remain entirely with this department; only the imagery style analysis crosses the boundary. This is the ONLY permitted cross-department call; all other DIU capabilities (photo shoot, generation operator, fidelity testing) are out of scope for this department.
 

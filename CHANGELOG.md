@@ -1,3 +1,17 @@
+## v12.31.0 — 2026-06-18 — Presentations Friday-critical fixes + roster-regen materialization
+
+Presentation pipeline (Friday-critical):
+- Deleted the legacy `23-ai-workforce-blueprint/templates/presentation-render/build_deck.py`; the canonical renderer is `templates/role-library/presentations/scripts/build_deck.py`. Cleaned the now-dead `presentation-render/build_deck.py` references in `docs/LEGACY-RETIREMENT.md` and the three AF3 retirement-allowlist locations in `.github/workflows/qc-static.yml`.
+- PIPELINE-MANIFEST.json bumped to manifest_version 7 with the new autofails wired in (AF additions) and the role roster reconciled — `sync_check.py` now reports IN SYNC (11 phases, 45 autofails, 29 roles).
+- ROLE-23 registration: the missing presentations role is now registered in the manifest/roster so the lockstep check passes.
+- Infographic-owner ownership corrected and ROLE-21 duplicate registration de-duplicated in the roster.
+- Research routing: the AF-RESEARCH-GATE (`_chk_research_brief`) now requires Deep-Research categories G/H/I/K/L to be present AND carry real (non-placeholder) bodies before `research_complete:true` is honoured; `test_preflight.py`'s CASE2 fixture was updated to populate those five sections (the gate itself was NOT weakened). All preflight + postflight self-tests pass (exit 0).
+- Teleprompter publish uses `CLOUDFLARE_ZHW_ACCOUNT_ID` (the Zero Human Workforce fleet account, distinct from the per-client `CLOUDFLARE_ACCOUNT_ID`) for the central R2 `zhw-teleprompter` bucket PutObject.
+- Added `.github/workflows/presentations-lockstep.yml` so CI runs `sync_check.py` (renderer ↔ manifest ↔ roster ↔ SOP lockstep) on every change.
+
+Workforce build:
+- Roster-regen materialization fix in the department roster regeneration path (`regenerate-dept-roster.py` + build-workforce / create_role_workspaces) so the regenerated department roster is actually materialized on the box.
+
 ## Historical release backfill — CHANGELOG headers for previously-untracked annotated tags
 
 ## v12.19.0 — 2026-06-16 — historical release (backfilled changelog entry)

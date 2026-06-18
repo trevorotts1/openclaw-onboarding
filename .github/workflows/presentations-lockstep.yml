@@ -1,0 +1,90 @@
+name: Presentations lockstep (sync_check)
+
+# Wires sync_check.py into CI as required by H3 in the presentation department review.
+# sync_check reconciles the Python renderer (build_deck.py), the MASTER ruleset
+# Section-5 table, the PIPELINE-MANIFEST.json autofails/phases/roles, and the
+# deployed role-library + sops file set. Any drift (STACK-AHEAD-OF-CODE or
+# CODE-AHEAD-OF-STACK) exits 4 — failing this job and blocking the merge.
+#
+# Triggered on pushes to main and PRs touching any of the four presentation-layer
+# inputs sync_check reads:
+#   1. build_deck.py (the canonical renderer — changes checkers / AF citations)
+#   2. PIPELINE-MANIFEST.json (the declared truth — phases / autofails / roles)
+#   3. MASTER-QC-AUTOFAIL-RULESET.md (the Section-5 AF registry)
+#   4. any presentations role-library .md or sops .md (role/SOP roster drift)
+#
+# This is the CI gate that makes the AF-BAKED / AF-PROMPT-FLOOR class of drift
+# (C2 in the review) fail loud forever: once a code is in the ruleset it MUST
+# also be in the manifest, or this job exits non-zero.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      # Canonical renderer — any checker add/rename/delete changes the lockstep
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py"
+      # Manifest (phases / autofails / roles / deliverables_required)
+      - "universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json"
+      # Section-5 AF registry — adding a row here without updating the manifest breaks sync
+      - "universal-sops/presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md"
+      # Presentation role-library files — adding/removing a role changes the roster
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/*.md"
+      # Presentation SOP files — adding/removing an SOP changes the SOP file set
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/sops/*.md"
+      # Universal-SOPs cluster also ships the manifest/ruleset (kept in sync with above)
+      - "universal-sops/presentation-slide-craft/*.md"
+      - "universal-sops/presentation-slide-craft/*.json"
+
+jobs:
+  presentations-lockstep:
+    name: Presentations SOP/manifest/code lockstep (sync_check)
+    runs-on: ubuntu-latest
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install reportlab (required by presenters_speech_pdf.py import in sync env)
+        shell: bash
+        run: pip install reportlab --quiet
+
+      - name: sync_check.py — presentations lockstep (exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SYNC_CHECK="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/sync_check.py"
+          if [ ! -f "$SYNC_CHECK" ]; then
+            echo "FATAL: sync_check.py not found at $SYNC_CHECK" >&2
+            exit 2
+          fi
+          # Run sync_check and require exit 0.
+          # Exit 4 = lockstep drift (AF code / checker / role / SOP mismatch).
+          # Exit 2 = sync_check could not run (missing input — also a hard fail).
+          python3 "$SYNC_CHECK"
+          echo "sync_check: presentations lockstep PASSED — renderer, ruleset, manifest, roles, and SOPs are in sync."
+
+      - name: STANDARD-presenter-speech-layout.pdf present (H7 gate)
+        shell: bash
+        run: |
+          set -euo pipefail
+          PDF="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/STANDARD-presenter-speech-layout.pdf"
+          if [ ! -f "$PDF" ]; then
+            echo "FAIL: $PDF is absent." >&2
+            echo "Fix: run python3 .../presenters_speech_pdf.py --sample --out STANDARD-presenter-speech-layout.pdf" >&2
+            echo "and commit the generated file. See H7 in the presentation review." >&2
+            exit 1
+          fi
+          SIZE=$(wc -c < "$PDF")
+          if [ "$SIZE" -lt 1000 ]; then
+            echo "FAIL: $PDF exists but is only $SIZE bytes — likely an empty or truncated file." >&2
+            exit 1
+          fi
+          echo "STANDARD-presenter-speech-layout.pdf present ($SIZE bytes)."

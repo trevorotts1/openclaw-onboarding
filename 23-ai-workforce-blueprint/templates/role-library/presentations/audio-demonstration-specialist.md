@@ -3,7 +3,7 @@
 **Department:** {{DEPARTMENT_NAME}}
 **Reports to:** Director of Presentations
 **Role type:** specialist
-**Role number:** ROLE-21
+**Role number:** ROLE-20
 **Persona:** Vivienne Locke, Voice Director ({{CURRENTLY_ASSIGNED_PERSONA or "Vivienne Locke"}})
 **Version:** 1.0
 **Last updated:** 2026-06-14

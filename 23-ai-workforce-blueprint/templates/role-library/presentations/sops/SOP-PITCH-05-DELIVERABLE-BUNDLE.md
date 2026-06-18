@@ -3,7 +3,7 @@
 **Cluster:** Pitch-Craft Rules / Closeout
 **Version:** v2.0.0 (2026-06-15)
 **Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md; 30-fish-audio-api-reference/fish-audio-voice-sop.md
-**Owning role at write time:** Deliverable Producer (ROLE-R3, new closeout role); Presenters Guide Specialist; Presenters Speech Writer
+**Owning role at write time:** Presenters Guide Specialist (ROLE-19, SOP 9.2) for the Presenter Guide PDF; Presenters Speech Writer (ROLE-20, SOP 9.2) for the Word-for-Word Script PDF and audio render source
 **Enforced at the gate by:** QC Specialist - Presentations (AF-DELIVER -- closeout hard gate)
 **Purpose:** Guarantee every deck build produces all three required artifacts -- presenter guide PDF, word-for-word script PDF, and AUDIO rendition -- and that the gate blocks closeout until all three are verified on disk as non-empty files.
 
@@ -25,7 +25,7 @@ Missing any of these three triggers AF-DELIVER (closeout auto-fail). The deck ca
 
 ## 2. PRESENTER GUIDE PDF (the visual reference)
 
-The Presenters Guide Specialist (already a role in the presentation department) authors `PRESENTER-GUIDE.md` -- a presenter-facing reference that shows each slide thumbnail or description alongside the key talking points and timing guidance. The Deliverable Producer renders it to PDF using the following method:
+The Presenters Guide Specialist (ROLE-19, SOP 9.2) authors `PRESENTER-GUIDE.md` -- a presenter-facing reference that shows each slide thumbnail or description alongside the key talking points and timing guidance. The Presenters Guide Specialist also renders it to PDF using the following method:
 
 1. Confirm `working/deliverables/PRESENTER-GUIDE.md` exists and is non-empty (at least 2KB).
 2. Render to PDF: `pandoc working/deliverables/PRESENTER-GUIDE.md -o working/deliverables/PRESENTER-GUIDE.pdf --pdf-engine=wkhtmltopdf` (or equivalent). If the toolchain is unavailable, use LibreOffice Writer as a fallback: `soffice --headless --convert-to pdf working/deliverables/PRESENTER-GUIDE.md`.
@@ -36,7 +36,7 @@ The Presenters Guide Specialist (already a role in the presentation department) 
 
 ## 3. WORD-FOR-WORD SCRIPT PDF (the oral rendition source)
 
-The Presenters Speech Writer (already a role) authors `PRESENTER-SPEECH.md` -- the complete word-for-word spoken script, with slide-by-slide sections, timing, and expression cues. The Deliverable Producer renders it to PDF using the same method as the guide (step 2 above, substitute PRESENTER-SPEECH.md/pdf).
+The Presenters Speech Writer (ROLE-20, SOP 9.2) authors `PRESENTER-SPEECH.md` -- the complete word-for-word spoken script, with slide-by-slide sections, timing, and expression cues. The Presenters Speech Writer also renders it to PDF using the same method as the guide (step 2 above, substitute PRESENTER-SPEECH.md/pdf).
 
 1. Confirm `working/deliverables/PRESENTER-SPEECH.md` exists and is non-empty (at least 5KB -- a full webinar script is typically 5,000-15,000 words).
 2. Render to PDF via pandoc or LibreOffice.
@@ -51,7 +51,7 @@ The audio rendition is a FULL voiced reading of the presenter script, rendered v
 
 ### 4.1 Source
 
-The source text is `working/deliverables/PRESENTER-SPEECH.md`. The Deliverable Producer reads the script, chunks it by section (each `## Slide N` heading starts a new chunk), and adds Fish Audio S2 expression tags to each chunk for directed vocal performance.
+The source text is `working/deliverables/PRESENTER-SPEECH.md`. The Presenters Speech Writer (ROLE-20) reads the script, chunks it by section (each `## Slide N` heading starts a new chunk), and adds Fish Audio S2 expression tags to each chunk for directed vocal performance.
 
 ### 4.2 Expression Tags (required -- not flat TTS)
 
@@ -62,7 +62,7 @@ Per `30-fish-audio-api-reference/fish-audio-voice-sop.md`, S2 supports expressio
 - `[voice lifts]` at climactic moments (a promise landed, a price reveal, the close).
 - Paired physical+emotion tags where the script calls for them (e.g., `[warm, leaning in]` at the close section, `[grounded, certain]` at the authority section).
 
-The Deliverable Producer adds these tags inline in the chunked script before submitting to the Fish Audio S2 API. Do not submit flat untagged text: flat TTS produces a monotone read that does not serve the presenter or the audience.
+The Presenters Speech Writer (ROLE-20) adds these tags inline in the chunked script before submitting to the Fish Audio S2 API. Do not submit flat untagged text: flat TTS produces a monotone read that does not serve the presenter or the audience.
 
 ### 4.3 Voice Key Selection
 
@@ -90,7 +90,7 @@ If the Fish Audio S2 API is unavailable or returns an error:
 
 ## 5. DELIVERABLE BUNDLE QC CHECK
 
-The Deliverable Producer records all three artifacts in `working/checkpoints/deliverable_bundle.json`:
+The Presenters Guide Specialist (ROLE-19) records the guide artifact and the Presenters Speech Writer (ROLE-20) records the script and audio artifacts in `working/checkpoints/deliverable_bundle.json`, then either role sets `all_present: true` once both have confirmed their artifacts are ready:
 
 ```json
 {
@@ -125,7 +125,7 @@ AF-DELIVER is checked independently of `final_deck_qc.json`. Both must pass (AF-
 
 ## 7. INTEGRATION NOTE
 
-This SOP extends (does not replace) the existing Presenter Guide Specialist and Presenters Speech Writer roles. It adds the audio render stage as a mandatory third artifact, the Fish Audio S2 expression-tag requirement, the ffmpeg stitch procedure, the `deliverable_bundle.json` manifest, and the AF-DELIVER closeout gate. Prior builds that shipped only the deck PPTX + the guide/script as markdown files are now incomplete. The three-artifact bundle is the minimum viable delivery.
+This SOP is owned jointly by the Presenters Guide Specialist (ROLE-19, SOP 9.2) and the Presenters Speech Writer (ROLE-20, SOP 9.2) -- there is no separate "Deliverable Producer" role. ROLE-19 owns the guide PDF; ROLE-20 owns the script PDF and the audio render. This SOP adds the audio render stage as a mandatory third artifact, the Fish Audio S2 expression-tag requirement, the ffmpeg stitch procedure, the `deliverable_bundle.json` manifest, and the AF-DELIVER closeout gate. Prior builds that shipped only the deck PPTX + the guide/script as markdown files are now incomplete. The three-artifact bundle is the minimum viable delivery.
 
 ---
 

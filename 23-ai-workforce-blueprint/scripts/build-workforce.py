@@ -103,6 +103,21 @@ except Exception as _e:  # pragma: no cover - defensive
     print(f"[ROLE-LIBRARY WARNING] create_role_workspaces import failed "
           f"({_e}); falling back to stub+LLM SOP path", file=sys.stderr)
 
+# ROOT-CAUSE FIX (2026-06-18): the disk-truth roster generator. write_department_
+# roster delegates to this so ROSTER.md lists exactly the role folders that EXIST
+# on disk (including custom/extra roles materialized via materialize_custom_roles
+# and partial/resume builds), instead of only the suggested-roles menu.
+try:
+    from create_role_workspaces import (
+        regenerate_department_roster as _crw_regenerate_department_roster,
+        scan_department_roles_on_disk as _crw_scan_department_roles_on_disk,
+    )
+    _ROSTER_DISK_TRUTH_AVAILABLE = True
+except Exception as _e:  # pragma: no cover - defensive
+    _ROSTER_DISK_TRUTH_AVAILABLE = False
+    print(f"[ROSTER WARNING] regenerate_department_roster import failed "
+          f"({_e}); ROSTER.md will be derived from the menu only", file=sys.stderr)
+
 # PRD-2.15: helper to resolve the build state file path (no tildes; mirrors detect_platform.py).
 def _resolve_build_state_path():
     """Return Path to .workforce-build-state.json or None if workspace not found."""
@@ -4608,6 +4623,30 @@ def write_department_roster(dept_id, dept_info):
     if not os.path.isdir(dept_dir):
         print(f"[ROSTER] dept dir missing for {dept_id}; skipping", file=sys.stderr)
         return None
+
+    # ROOT-CAUSE FIX (2026-06-18): prefer the disk-truth roster. write_department_
+    # roster runs AFTER create_role_workspace + materialize_custom_roles, so the
+    # role folders already exist on disk. Listing them (not just the menu) means
+    # ROSTER.md reflects custom/extra roles and partial builds, and the SAME helper
+    # backs every other materialization path — so the roster can never under-report
+    # the roles an agent actually has. Falls back to the menu-derived body below
+    # only if the helper is unavailable or no folders exist yet.
+    if _ROSTER_DISK_TRUTH_AVAILABLE:
+        try:
+            _disk_roles = _crw_scan_department_roles_on_disk(dept_dir)
+        except Exception:
+            _disk_roles = None
+        if _disk_roles:
+            try:
+                return _crw_regenerate_department_roster(
+                    dept_dir,
+                    dept_name=dept_info.get("name"),
+                    dept_head=dept_info.get("head", dept_info.get("name", dept_id)),
+                    dept_emoji=dept_info.get("emoji", ""),
+                )
+            except Exception as _e:  # pragma: no cover - never block the build
+                print(f"[ROSTER] disk-truth generator failed for {dept_id} "
+                      f"({_e}); falling back to menu-derived roster", file=sys.stderr)
 
     roles = parse_suggested_roles(dept_id)
     lines = [

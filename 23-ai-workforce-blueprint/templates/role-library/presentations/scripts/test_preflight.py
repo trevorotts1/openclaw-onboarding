@@ -89,6 +89,14 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
         # Research brief with >= MIN_CITED_SOURCES (8) real cited URLs so the
         # AF-RESEARCH-UNCITED gate passes.  Each URL is on its own line and is a
         # distinct authoritative source (the gate counts distinct URLs, not lines).
+        #
+        # The AF-RESEARCH-GATE (_chk_research_brief) ALSO requires the Deep-Research
+        # categories G, H, I, K, and L to be PRESENT as '## Category X:' headings AND
+        # carry real (non-placeholder, non-blank) bodies before research_complete:true
+        # is honoured.  Each section below carries a real authored body so the gate
+        # passes — this mirrors what a completed Phase -0.5 (Deep Research Specialist
+        # SOP 9.4) brief looks like.  Do NOT replace these bodies with blanks or
+        # "[Output of SOP …]" placeholder lines — the gate counts those as empty.
         (root / "working" / "research" / "brief-demo.md").write_text(
             "# Research brief\n"
             "research_complete: true\n"
@@ -101,6 +109,40 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
             "- Source: https://www.pewresearch.org/social-trends/2023/01/24/\n"
             "- Source: https://www.apa.org/topics/parenting/positive-discipline\n"
             "- Source: https://www.cdc.gov/childrensmentalhealth/data.html\n"
+            "\n"
+            "## Category G: Credible Attributable Quotes\n"
+            "- \"Pipelines that get a second human touch in the first hour close "
+            "roughly twice as often.\" — VP Revenue Operations, peer-reviewed sales "
+            "benchmark (ResearchGate 369670311).\n"
+            "- \"Decision-makers reward the vendor who reframes the problem, not the "
+            "one who lists features.\" — buyer-psychology study, APA positive-influence "
+            "literature.\n"
+            "\n"
+            "## Category H: Fact-Validation Ledger\n"
+            "- Claim: 'three moves doubled the pipeline' — VALIDATED against the "
+            "CDC/Pew funnel-conversion baselines; the 2x lift sits within the cited "
+            "95% confidence interval. Status: SUPPORTED.\n"
+            "- Claim: 'second-touch within the first hour' — VALIDATED against NIH "
+            "PMC9135772 response-latency findings. Status: SUPPORTED.\n"
+            "\n"
+            "## Category I: Objection Research\n"
+            "- Objection: \"We already have a CRM.\" Reframe: the moves are a process "
+            "layer ON TOP of any CRM, not a replacement; cite the integration data.\n"
+            "- Objection: \"This won't scale to our team.\" Reframe: the cited cohort "
+            "ran 40-person teams; show the per-rep ramp curve.\n"
+            "\n"
+            "## Category K: Persuasion-Framework Validation\n"
+            "- Framework: Problem -> Agitate -> Solve, validated against the cited "
+            "buyer-psychology corpus (APA). The hook slide opens on the prospect's "
+            "own stalled-pipeline pain before any solution is named.\n"
+            "- Social-proof placement validated: attributable quotes (Category G) are "
+            "front-loaded onto the 'who says so' slides per the cited evidence.\n"
+            "\n"
+            "## Category L: Compliance Flags\n"
+            "- No medical, financial, or legal guarantee language is used; all "
+            "outcome claims are framed as cited ranges, not promises.\n"
+            "- All statistics carry an inline source from the citation list above; no "
+            "uncited percentage appears on any slide. Status: CLEAR.\n"
         )
         (root / "working" / "qc" / "copy_qc_report.json").write_text(json.dumps(
             {"gate": "Phase 1Q", "average": 9.1, "triggered_autofails": [], "pass": True}))

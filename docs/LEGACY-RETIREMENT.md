@@ -48,7 +48,7 @@ block alongside it. These are the direct retirement targets.
 
 #### Presentation-render templates (`~/clawd/secrets/.env` secret-location fallback)
 
-These four deck/image generator templates resolve the API key from the client's
+These deck/image generator templates resolve the API key from the client's
 own env stores via a `SECRETS_CANDIDATES` list. The `~/clawd/secrets/.env` item is
 a legit secret-location fallback (tried after the `~/.openclaw/workspace/.env` and
 `~/.openclaw/secrets/.env` stores), NOT a company-root candidate loop. It matches
@@ -56,7 +56,6 @@ the AF3 `expanduser("~/clawd/...")`-list-item pattern, so it is tracked here.
 
 | File | Local loop location | Status |
 |------|---------------------|--------|
-| `23-ai-workforce-blueprint/templates/presentation-render/build_deck.py`                  | `SECRETS_CANDIDATES` list with `os.path.expanduser("~/clawd/secrets/.env"),` item | TRACKED — remove after fleet migration |
 | `23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py`                | `SECRETS_CANDIDATES` list with `os.path.expanduser("~/clawd/secrets/.env"),` item | TRACKED — remove after fleet migration |
 | `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py`   | `SECRETS_CANDIDATES` list with `os.path.expanduser("~/clawd/secrets/.env"),` item | TRACKED — remove after fleet migration |
 | `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py` | `_secrets_candidates()` list with `os.path.expanduser("~/clawd/secrets/.env"),` item | TRACKED — remove after fleet migration |

@@ -620,7 +620,45 @@ Do not render any watermark, signature, UI artifact, emoji or clipart glyph, em 
 
 ---
 
-### SOP 9.10 -- Producing-Rule Additions (Vision-Gate Doctrine, v12.9.0)
+### SOP 9.10 -- One-Page Infographic Slide (infographic_png deliverable)
+
+**When to run:** Phase 2 -- after all regular per-slide prompts are authored (SOP 9.1 complete) AND the deck originates from the Content-to-Presentation Architect (ROLE-23; `source_brief_origin` present in intake.json). This step also runs on any deck where `deliverable_bundle.checklist_items` contains `"infographic"`. The output is the single-image infographic that ships as `infographic.png` in the client bundle, satisfying the `infographic_png` deliverable declared in `PIPELINE-MANIFEST.json`.
+
+**Inputs:**
+- working/copy/slides_copy.md (the approved copy; the infographic distills the deck's core promise + checklist)
+- intake.json (`checklist_items` array, `OFFER_NAME`, `TRANSFORMATION_PROMISE`, `FINAL_PRICE`)
+- STYLE BLOCK (brand palette, TYPOGRAPHY LAW, logo rule, LOGO_URL)
+- working/research/brief-[DECK_SLUG].md (Category B + C findings for any cited stats)
+
+**Steps:**
+1. Confirm the run requires an infographic by checking `deliverable_bundle.checklist_items` in intake.json. If the key is absent or empty and the run is NOT a converter origin, skip this SOP and record `infographic_skipped: true` in working/checkpoints/infographic_status.json. Do NOT produce the file speculatively.
+2. Determine the infographic format from `checklist_items`. If the items are a numbered checklist (the typical converter output), produce a **one-page checklist infographic** (see step 3). If the items describe a framework or step-by-step process, produce a **vertical process infographic** (same visual rules; layout adapts). Declare the format in working/checkpoints/infographic_status.json as `infographic_format: "checklist" | "process"`.
+3. Author the infographic prompt as a single long-format text-to-image prompt. Apply ALL SOP 9.1 elements. The infographic is treated as ONE slide (slide type: A4 TYPE-DOMINANT PUNCH with an embedded structured list). Required prompt elements specific to the infographic:
+   a. **FORMAT:** "Create a 9:16 portrait image at 2K resolution (1440x2560 pixels). This is a one-page infographic, NOT a presentation slide." Override the 16:9 rule for this single output only.
+   b. **HEADLINE:** The deck's core promise or the infographic title (from OFFER_NAME or TRANSFORMATION_PROMISE). Apply the full spelling-lock rule (SOP 9.1 step 2, element 3).
+   c. **CHECKLIST BODY:** Each item from `checklist_items` set as a numbered or checked row in ExtraBold weight, 24-28pt, with a gold check-mark or numbered badge to the left. Apply a spelling-lock sentence for each item verbatim string.
+   d. **BRAND PALETTE, TYPOGRAPHY LAW, LOGO:** identical rules as any other slide -- designed type, white base, brand hexes, logo chip lower-right (image-to-image Mode B with LOGO_URL).
+   e. **NEGATIVE BLOCK:** the full SOP 9.8 eight-class block applies without exception.
+4. Verify character count: the infographic prompt must be at least 5,000 characters (the same soft minimum as slide prompts). The structured checklist body naturally expands the prompt with spelling-lock sentences; do not skip them to save space.
+5. Save the prompt to `working/prompts/infographic-prompt.txt`.
+6. Submit to the image API exactly as a slide prompt is submitted (SOP 9.1 RENDERED VERBATIM rule applies). Save the result to `working/renders/infographic.png`. Do NOT rename to a slide number.
+7. Route `working/renders/infographic.png` to the QC Specialist for a standalone image QC pass (same criteria as Phase 5 slide QC, adapted for portrait orientation). All AF-I and AF-F codes apply.
+8. After QC passes: copy `working/renders/infographic.png` to `working/deliverables/infographic.png`. This is the path the PPTX Assembly Specialist reads for the export step.
+9. Record in working/checkpoints/infographic_status.json: `{ "infographic_format": "checklist|process", "prompt_path": "working/prompts/infographic-prompt.txt", "render_path": "working/renders/infographic.png", "deliverable_path": "working/deliverables/infographic.png", "qc_passed": true, "status": "ready" }`.
+
+**Outputs:**
+- working/prompts/infographic-prompt.txt
+- working/renders/infographic.png (raw render)
+- working/deliverables/infographic.png (QC-passed deliverable)
+- working/checkpoints/infographic_status.json
+
+**Hand to:** QC Specialist (step 7 image QC), then PPTX Assembly Specialist (step 8 export to infographic.png in the client bundle).
+
+**Failure mode:** If `checklist_items` is present but contains only one item (or is a degenerate list), flag to the Director before authoring: "infographic checklist has only [N] item(s) -- confirm the client supplied all checklist items or supply them now." Do not produce a one-item infographic. If the image render fails twice: apply the same two-failed-attempts fallback as SOP 9.5 (write an entry to pptx_text_overlays.json so the PPTX Assembly Specialist can composite the checklist as native text over a background image; record `fallback: "native_text"` in infographic_status.json).
+
+---
+
+### SOP 9.11 -- Producing-Rule Additions (Vision-Gate Doctrine, v12.9.0)
 
 **When to run:** Alongside SOP 9.1, SOP 9.6, and SOP 9.7 on every prompt in every presentation deck. These rules are the PRODUCING-ROLE half of each auto-fail code introduced in the vision-gate overhaul. Each rule here has a corresponding hard auto-fail in qc-specialist-presentations-sops.md (the gate is the enforcement; this SOP is the authoring discipline).
 

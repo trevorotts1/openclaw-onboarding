@@ -1201,6 +1201,76 @@ def _chk_research_brief(path: Optional[Path]) -> str:
         # tolerate 'research_complete: true' spacing
         if "research_complete" not in low or "true" not in low.split("research_complete", 1)[1][:40].lower():
             return "research_complete:true not present"
+
+    # H2: Deep-Research categories G/H/I/K/L must be present AND non-empty before
+    # research_complete:true is honoured.  These categories carry the sourced quotes
+    # (G), fact-validation ledger (H), objection research (I), persuasion-framework
+    # validation (K), and compliance flags (L) that feed the "who says so" slides.
+    # A brief with research_complete:true but an empty G, H, I, K, or L section means
+    # the Deep Research Specialist skipped the sourced-quote / validation pass — the
+    # resulting slides WILL be empty or unsupported.
+    #
+    # Detection heuristic: locate the "## Category X:" heading (case-insensitive),
+    # then read everything up to the next "## " heading (or end-of-file).  The body is
+    # considered non-empty when it contains at least one non-whitespace, non-template
+    # token (i.e. it is NOT solely the placeholder "[Output of SOP …]" text or blank).
+    import re as _re
+    _PLACEHOLDER_RE = _re.compile(
+        r"^\s*\[Output of SOP[^\]]*\]\s*$", _re.IGNORECASE
+    )
+
+    def _category_body(raw_text: str, letter: str) -> str:
+        """Return the body text of '## Category <letter>:' section, or '' if absent."""
+        pattern = _re.compile(
+            rf"^##\s+Category\s+{letter}[:\s]", _re.IGNORECASE | _re.MULTILINE
+        )
+        m = pattern.search(raw_text)
+        if not m:
+            return ""
+        start = m.end()
+        # Find next '## ' heading (the start of the next section)
+        next_hdr = _re.search(r"^##\s+", raw_text[start:], _re.MULTILINE)
+        body = raw_text[start : start + next_hdr.start()] if next_hdr else raw_text[start:]
+        return body
+
+    def _is_nonempty_body(body: str) -> bool:
+        """True when body has real content beyond whitespace / placeholder lines."""
+        stripped = body.strip()
+        if not stripped:
+            return False
+        # If every non-blank line is a template placeholder, treat as empty.
+        non_blank_lines = [ln for ln in stripped.splitlines() if ln.strip()]
+        if not non_blank_lines:
+            return False
+        real_lines = [ln for ln in non_blank_lines if not _PLACEHOLDER_RE.match(ln)]
+        return len(real_lines) > 0
+
+    required_cats = {
+        "G": "Credible Attributable Quotes",
+        "H": "Fact-Validation Ledger",
+        "I": "Objection Research",
+        "K": "Persuasion-Framework Validation",
+        "L": "Compliance Flags",
+    }
+    missing_or_empty = []
+    for letter, label in required_cats.items():
+        body = _category_body(text, letter)
+        if not body:
+            missing_or_empty.append(f"Category {letter} ({label}) section absent")
+        elif not _is_nonempty_body(body):
+            missing_or_empty.append(
+                f"Category {letter} ({label}) section is empty or contains only "
+                f"template placeholder text"
+            )
+    if missing_or_empty:
+        return (
+            "AF-RESEARCH-GATE: research_complete:true asserted but the following "
+            "Deep-Research categories are missing or empty — 'who says so' slides "
+            "WILL be empty without them. Re-run Phase -0.5 (Deep Research Specialist "
+            "SOP 9.4) and populate each category before setting research_complete:true: "
+            + "; ".join(missing_or_empty)
+        )
+
     return ""
 
 
@@ -2197,7 +2267,7 @@ def publish_teleprompter(bundle_dir: Path, deck_slug: str, run_dir: Path,
 
     # FLEET secret — operator/fleet Cloudflare token, never a client key, never printed.
     token = _load_secret("CLOUDFLARE_ZHW_APPS_API_TOKEN")
-    account_id = _load_secret("CLOUDFLARE_ACCOUNT_ID")
+    account_id = _load_secret("CLOUDFLARE_ZHW_ACCOUNT_ID")
     if not token or not account_id:
         record = {
             "platform": platform, "host_target": "cloudflare-central",
@@ -2205,14 +2275,14 @@ def publish_teleprompter(bundle_dir: Path, deck_slug: str, run_dir: Path,
             "published_at": now, "verified_http_status": None, "verified_at": None,
             "status": "verify_failed",
             "note": ("central Cloudflare credentials not found "
-                     "(CLOUDFLARE_ZHW_APPS_API_TOKEN / CLOUDFLARE_ACCOUNT_ID). "
+                     "(CLOUDFLARE_ZHW_APPS_API_TOKEN / CLOUDFLARE_ZHW_ACCOUNT_ID). "
                      "This is FLEET infra; set the operator/fleet token in the env "
                      "store. The value is never printed."),
         }
         _write_publish_ledger(pub_path, record)
         raise RuntimeError(
             "publish_teleprompter: CLOUDFLARE_ZHW_APPS_API_TOKEN and/or "
-            "CLOUDFLARE_ACCOUNT_ID not found in env or secrets stores. The central "
+            "CLOUDFLARE_ZHW_ACCOUNT_ID not found in env or secrets stores. The central "
             "teleprompter host is fleet infra; configure the operator/fleet token."
         )
 

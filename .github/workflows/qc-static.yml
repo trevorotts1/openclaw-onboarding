@@ -1764,7 +1764,6 @@ jobs:
       #   23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py
       #   23-ai-workforce-blueprint/scripts/persona-selector-v2.py
       #   23-ai-workforce-blueprint/scripts/_qc_company_info.py   [v11.18.4 bash-3.2 extraction]
-      #   23-ai-workforce-blueprint/templates/presentation-render/build_deck.py   [secrets/.env fallback]
       #   23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py  [secrets/.env fallback]
       #   23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py   [secrets/.env fallback]
       #   23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py  [secrets/.env fallback]
@@ -1805,7 +1804,6 @@ jobs:
               # fallback in SECRETS_CANDIDATES (tried after ~/.openclaw stores),
               # not a company-root candidate loop. Tracked for removal after
               # fleet migration off the ~/clawd secrets store.
-              "23-ai-workforce-blueprint/templates/presentation-render/build_deck.py",
               "23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py",
               "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py",
               "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py",
@@ -1922,7 +1920,6 @@ jobs:
               "23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py",
               "23-ai-workforce-blueprint/scripts/persona-selector-v2.py",
               "23-ai-workforce-blueprint/scripts/_qc_company_info.py",
-              "23-ai-workforce-blueprint/templates/presentation-render/build_deck.py",
               "23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py",
               "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py",
               "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py",

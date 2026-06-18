@@ -1,5 +1,5 @@
 {
-  "manifest_version": 6,
+  "manifest_version": 7,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -56,7 +56,9 @@
       "filename": "infographic.png",
       "label": "infographic checklist PNG",
       "min_bytes": 102400,
-      "note": ">100KB; produced by infographic-checklist role. REQUIRED UPSTREAM STEP."
+      "note": ">100KB; one-page infographic slide exported as PNG. Owned by slide-image-creator (SOP: slide-image-creator-sops.md infographic step) with final PNG export by pptx-assembly-specialist (SOP: pptx-assembly-specialist-sops.md infographic export step). REQUIRED UPSTREAM STEP.",
+      "owning_role": "slide-image-creator",
+      "export_role": "pptx-assembly-specialist"
     },
     {
       "key": "teleprompter_html",
@@ -96,7 +98,37 @@
           "checker": "_chk_claims_without_citation",
           "label": "claims-without-citation (slide copy claim markers must have a cited research pack; AF-RESEARCH-UNCITED)"
         }
+      ],
+      "required_brief_categories": [
+        {"code": "A", "name": "Niche Deck Structures", "hard_gate": true, "note": "Best-in-class deck structure patterns for the niche; always required"},
+        {"code": "B", "name": "Pricing & Value Benchmarking", "hard_gate": false, "note": "Comparable-market price band (low/median/high); checked by Offer Price Strategist and AF-CONVERTER-PARITY gate"},
+        {"code": "C", "name": "Supporting Statistics / Studies / White Papers", "hard_gate": true, "note": "Every stat must carry a source URL + publication date; stale >36 months flagged"},
+        {"code": "D", "name": "External Corroboration (GP-8: who says so other than you?)", "hard_gate": true, "note": "D1=named expert quotes, D2=third-party case studies, D3=Wall-of-Wins testimonials; zero HIGH/MEDIUM triggers GP-8 ALERT"},
+        {"code": "E", "name": "Grounded Image Context", "hard_gate": false, "note": "Scene descriptions anchoring Kie/GPT-Image-2 renders to THIS source's method; checked by Gate 5 and AF-CONVERTER-PARITY gate"},
+        {"code": "F", "name": "Design + Hook + Pacing Best-Practices Research", "hard_gate": true, "note": "Design-brief input for Typography Architect and Slide Image Creator; may be skipped only with design_research_mode: delegated_to_DIU + logged delegation note"},
+        {"code": "G", "name": "Credible Attributable Quotes", "hard_gate": true, "note": "Named, sourced, verbatim quotes for 'who says so' slides; routed to Slide Copywriter"},
+        {"code": "H", "name": "Fact-Validation — Slide-Claim Verification Ledger", "hard_gate": true, "note": "Every slide-bound figure verified; produces fact-validation ledger; routed to QC + Slide Copywriter"},
+        {"code": "I", "name": "Objection Research", "hard_gate": true, "note": "Audience objections with proof rebuttals; routed to Slide Copywriter + Devil's Advocate"},
+        {"code": "J", "name": "Social-Proof Patterns", "hard_gate": false, "note": "Social-proof formats and platforms; required-but-may-be-condensed; routed to Slide Copywriter"},
+        {"code": "K", "name": "Persuasion-Framework Validation", "hard_gate": true, "note": "Arc validation against proven structures; routed to Director + Slide Copywriter"},
+        {"code": "L", "name": "Compliance Flags", "hard_gate": true, "note": "Income claims, health claims, regulatory risks; routed to Director + Devil's Advocate"}
       ]
+    },
+    {
+      "id": "P-CONVERTER",
+      "order": -1,
+      "name": "Content-to-Presentation Conversion (Zoom/Video/Doc → Intake)",
+      "owning_role": "content-to-presentation-architect",
+      "sop_refs": [
+        "content-to-presentation-architect-sops.md"
+      ],
+      "produces_artifact": "working/copy/intake.json",
+      "gate_codes": [
+        "AF-CONVERTER-PARITY"
+      ],
+      "preflight": null,
+      "routing_note": "Content-first path only. Writes intake.json with source_brief_origin: 'content-to-presentation-architect'. Mandates Phase -0.5 Deep Research (SOP 9.8 step 3) before standard pipeline continues.",
+      "converter_path": true
     },
     {
       "id": "P0A-INTAKE",
@@ -676,9 +708,29 @@
       "stage": "6",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "assembled PPTX page count != QC-passed render count",
+      "trigger": "assembled PPTX page count != QC-passed render count; or converter-origin deck (source_brief_origin: 'content-to-presentation-architect') failed runtime parity gate (canonical renderer + model pin + vision QC + Phase -0.5 research brief with Category E+F + persuasion variables)",
+      "enforced_by": "closeout_gate",
+      "py_symbol": null,
+      "converter_slug": "content-to-presentation-architect",
+      "source_brief_origin_key": "content-to-presentation-architect"
+    },
+    {
+      "code": "AF-BAKED",
+      "stage": "5/6",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "slide text drawn by Pillow/PPTX/ImageDraw rather than baked by the image model, or flat placeholder fill",
       "enforced_by": "closeout_gate",
       "py_symbol": null
+    },
+    {
+      "code": "AF-PROMPT-FLOOR",
+      "stage": "3",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "image prompt outside 1500-15000 chars or missing required structural blocks",
+      "enforced_by": "build_deck",
+      "py_symbol": "PROMPT_CHAR_FLOOR"
     }
   ],
   "roles": [
@@ -776,7 +828,21 @@
     },
     {
       "id": "content-to-presentation-architect",
-      "owns_phase": null
+      "role_number": "ROLE-23",
+      "slug": "content-to-presentation-architect",
+      "owns_phase": "P-CONVERTER",
+      "description": "Zoom/video/document to presentation converter. Content-first path: extracts persuasion intelligence from source content, writes intake.json with source_brief_origin: 'content-to-presentation-architect', then hands to Phase -0.5 Deep Research (ROLE-04) before the standard pipeline.",
+      "trigger_phrases": [
+        "turn this into a presentation",
+        "convert this video",
+        "make a deck from this",
+        "presentation from this recording",
+        "Zoom call to slides",
+        "webinar replay to presentation"
+      ],
+      "source_brief_origin_slug": "content-to-presentation-architect",
+      "sop_refs": ["content-to-presentation-architect-sops.md"],
+      "routing_note": "Content-first (source exists) path only. Idea-first ('I want a presentation') routes to brainstorming-buddy-presentations, NOT here."
     },
     {
       "id": "how-to-use-this-department",

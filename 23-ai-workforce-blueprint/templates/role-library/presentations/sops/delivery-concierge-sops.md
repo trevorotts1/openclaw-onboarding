@@ -241,6 +241,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - `<bundle_dir>/presenter-teleprompter.html` (self-contained app; produced by `build_teleprompter.py`, owned by the Presenter's Speech Writer)
 - `<bundle_dir>/teleprompter_publish.json` (written by `build_deck.py`'s `publish_teleprompter()` if it already ran; this SOP re-runs/repairs the publish if absent or unverified)
 - The FLEET Cloudflare token `CLOUDFLARE_ZHW_APPS_API_TOKEN` (operator/fleet infra -- NOT a client key, never printed) for the upload to the central host
+- `CLOUDFLARE_ZHW_ACCOUNT_ID` (operator/fleet infra -- the Zero Human Workforce Cloudflare account ID, set ONCE in `~/clawd/secrets/.env` by the operator; NEVER written by per-client onboarding scripts such as `13-create-cloudflare-tunnel.sh` or `23-save-secrets.sh`). This is DISTINCT from the per-client `CLOUDFLARE_ACCOUNT_ID` (the client's own Cloudflare tunnel account). The R2 PutObject for the `zhw-teleprompter` bucket MUST use `CLOUDFLARE_ZHW_ACCOUNT_ID`; using the generic `CLOUDFLARE_ACCOUNT_ID` here will target the wrong account and cause a hard publish failure if a per-client token was active during onboarding.
 
 **Host (UNIFORM -- every client, Mac and VPS):** the central Cloudflare host at
 `https://teleprompter.zerohumanworkforce.com/<client-slug>/<deck-slug>/teleprompter.html`

@@ -1508,6 +1508,12 @@ def augment_all_existing_role_folders(dept_path, workspace_root, dry_run=False):
             if result["symlinked"]:
                 extras.append(f"+links: {','.join(result['symlinked'])}")
             print(f"    {entry.name}: {' | '.join(extras)}")
+
+    # ROOT-CAUSE FIX: after (re)materializing/augmenting a department's role
+    # folders, ALWAYS refresh its ROSTER.md from the folders now on disk. This is
+    # the path post-build-role-workspaces.py (and the resume/fleet pass) take, so
+    # a partial or resume materialization can never leave a stale roster behind.
+    regenerate_department_roster(dept_path, dry_run=dry_run)
     return results
 
 
@@ -1878,6 +1884,263 @@ def _parse_roster_table(text):
     return rows
 
 
+# ─── DISK-TRUTH DEPARTMENT ROSTER (ROSTER.md) ─────────────────────────────────
+# ROOT-CAUSE FIX (2026-06-18): every materialization path writes role folders
+# into a department but, before this, NONE of them (re)generated the department's
+# ROSTER.md — the When-to Reference Map the director agent actually reads. The
+# director reads ROSTER.md, NOT the folders, so it under-reported its roles
+# (e.g. "1 role" when 24 NN-<slug>/ folders existed). build-workforce.py wrote
+# ROSTER.md only in the full build loop, and even then derived rows from the
+# *menu* (parse_suggested_roles), so custom/extra/partial materializations drifted.
+#
+# These helpers (re)generate ROSTER.md from the ACTUAL on-disk role folders, so
+# the roster ALWAYS matches what was materialized. Idempotent — safe to call on
+# every materialization path (full build, --from-roster, augment, resume, fleet).
+
+# Folder names that are NOT roles and must be excluded from the roster.
+_ROSTER_SKIP_FOLDERS = {
+    "memory", "_archive", "_index", "_compliance_audit", "_pending_rewrite",
+    "_stage1_drafts", "sops", "scripts", "roles", "_drafts", "artifacts",
+    "templates", "assets",
+}
+# Match a folder/heading title in the per-role IDENTITY.md stub:
+#   "# <Role Name> — IDENTITY"   (em-dash or hyphen variants)
+_IDENTITY_TITLE_RE = re.compile(r"^#\s+(.*?)\s*[—–-]\s*IDENTITY\s*$")
+_REPORTS_TO_RE = re.compile(r"^\*\*Reports to:\*\*\s*(.+?)\s*$", re.IGNORECASE)
+_ROLE_TYPE_RE = re.compile(r"^\*\*Role type:\*\*\s*(.+?)\s*$", re.IGNORECASE)
+_ROLE_TYPE_ALT_RE = re.compile(r"^\*\*Role Type:\*\*\s*(.+?)\s*$", re.IGNORECASE)
+_NN_PREFIX_RE = re.compile(r"^(\d+)-(.*)$")
+
+
+def _first_md_heading(text):
+    """Return the first level-1 markdown heading text, or '' if none."""
+    for line in text.split("\n"):
+        s = line.strip()
+        if s.startswith("# "):
+            return s[2:].strip()
+    return ""
+
+
+def _read_role_from_folder(role_path):
+    """Read one materialized role folder and return its roster fields from disk.
+
+    The authoritative title/reports-to/type live in the role's own files (written
+    by create_role_workspace / the role-library how-to). Resolution order, most to
+    least authoritative:
+      1. 00-START-HERE.md  -> '# <Role Name>' + '**Role Type:**'
+      2. how-to.md         -> '# <Role Name>' + '**Reports to:**' + '**Role type:**'
+      3. IDENTITY.md       -> '# <Role Name> — IDENTITY'
+      4. folder slug (decoration-stripped, title-cased)
+    The leading NN- of the folder name is the role number. A '00-' role is the
+    department head.
+
+    Returns {"number", "name", "slug", "role_type", "reports_to", "is_head"} or
+    None when role_path is not a usable role folder.
+    """
+    role_path = Path(role_path)
+    if not role_path.is_dir():
+        return None
+    folder = role_path.name
+
+    number = 999
+    slug = folder
+    m = _NN_PREFIX_RE.match(folder)
+    if m:
+        try:
+            number = int(m.group(1))
+        except ValueError:
+            number = 999
+        slug = m.group(2)
+
+    name = ""
+    reports_to = ""
+    role_type = ""
+
+    def _scan(fname):
+        nonlocal name, reports_to, role_type
+        fpath = role_path / fname
+        if not fpath.is_file():
+            return
+        try:
+            text = fpath.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return
+        if not name:
+            if fname == "IDENTITY.md":
+                # Try the "<Name> — IDENTITY" stub form first, then a plain heading.
+                for line in text.split("\n"):
+                    mt = _IDENTITY_TITLE_RE.match(line.strip())
+                    if mt:
+                        name = mt.group(1).strip()
+                        break
+                if not name:
+                    name = _first_md_heading(text)
+            else:
+                name = _first_md_heading(text)
+        for line in text.split("\n"):
+            s = line.strip()
+            if not reports_to:
+                rm = _REPORTS_TO_RE.match(s)
+                if rm:
+                    reports_to = rm.group(1).strip()
+            if not role_type:
+                tm = _ROLE_TYPE_RE.match(s) or _ROLE_TYPE_ALT_RE.match(s)
+                if tm:
+                    role_type = tm.group(1).strip()
+
+    # 00-START-HERE.md and how-to.md carry the richest, most current metadata.
+    for fname in ("00-START-HERE.md", "how-to.md", "IDENTITY.md"):
+        _scan(fname)
+
+    if not name:
+        name = _roster_clean_name(slug.replace("-", " ").title())
+
+    is_head = (number == 0) or slug == "master-orchestrator"
+    return {
+        "number": number,
+        "name": _roster_clean_name(name),
+        "slug": slug,
+        "role_type": (role_type or "").lower(),
+        "reports_to": reports_to,
+        "is_head": is_head,
+    }
+
+
+def scan_department_roles_on_disk(dept_path):
+    """Return the materialized role folders for a department, read FROM DISK.
+
+    Supports BOTH layouts: the flat `NN-<slug>/` folders directly under the dept
+    dir (what create_role_workspace writes), AND a nested `roles/<slug>/` layout
+    if a department uses one. Excludes dept-level meta folders (sops/, scripts/,
+    memory/, dot-folders, etc.). Sorted by role number then slug so the head (00)
+    leads. Returns a list of role dicts (see _read_role_from_folder).
+    """
+    dept_path = Path(dept_path)
+    if not dept_path.is_dir():
+        return []
+    roles = []
+
+    def _consider(entry):
+        if not entry.is_dir():
+            return
+        nm = entry.name
+        if nm.startswith(".") or nm.lower() in _ROSTER_SKIP_FOLDERS:
+            return
+        # A role folder has at least one of the canonical role files.
+        if not any((entry / f).exists()
+                   for f in ("00-START-HERE.md", "IDENTITY.md", "how-to.md")):
+            return
+        role = _read_role_from_folder(entry)
+        if role:
+            roles.append(role)
+
+    # Flat NN-<slug>/ layout (canonical).
+    for entry in sorted(dept_path.iterdir()):
+        _consider(entry)
+    # Nested roles/<slug>/ layout (defensive; some trees use it).
+    nested = dept_path / "roles"
+    if nested.is_dir():
+        for entry in sorted(nested.iterdir()):
+            _consider(entry)
+
+    roles.sort(key=lambda r: (r.get("number", 999), r.get("slug", "")))
+    return roles
+
+
+def _roster_when_to_use(role):
+    """One-line when-to-use cell for a disk-derived role (kept scannable)."""
+    return f"Tasks owned by the {role['name']}."
+
+
+def regenerate_department_roster(dept_path, dept_name=None, dept_head=None,
+                                 dept_emoji="", dry_run=False):
+    """(Re)generate <dept_path>/ROSTER.md FROM the on-disk role folders.
+
+    This is the idempotent disk-truth companion to
+    build-workforce.write_department_roster: instead of deriving rows from the
+    suggested-roles menu, it lists exactly the role folders that EXIST in the
+    department right now, so the roster can never under-report materialized roles.
+
+    Output matches build-workforce.write_department_roster's format (same header,
+    same `| Role | Role folder | Type | When to use |` table, same dispatch
+    footer) so the director's OPERATING PROTOCOL reads it identically regardless
+    of which path generated it.
+
+    Returns the Path written (or that would be written under dry_run), or None if
+    dept_path is not a directory.
+    """
+    dept_path = Path(dept_path)
+    if not dept_path.is_dir():
+        return None
+
+    roles = scan_department_roles_on_disk(dept_path)
+
+    if dept_name is None:
+        dept_name = dept_path.name.replace("-dept", "").replace("-", " ").title()
+    # Department head: prefer an explicit arg, else the 00- head role's name,
+    # else any role's stated reports-to, else the dept name.
+    if not dept_head:
+        head_role = next((r for r in roles if r.get("is_head")), None)
+        if head_role:
+            dept_head = head_role["name"]
+        else:
+            dept_head = next((r["reports_to"] for r in roles if r.get("reports_to")),
+                             dept_name)
+
+    lines = [
+        f"# ROSTER - {dept_name} ({dept_emoji})".rstrip(),
+        "",
+        f"**Department head:** {dept_head}",
+        "**This is the When-to Reference Map for this department.** Before you "
+        "dispatch ANY task, find the row whose *When to use* matches the task, "
+        "then spawn a sub-agent and have it read that role folder IN ORDER: "
+        "`00-START-HERE.md` -> `IDENTITY.md` -> `SOUL.md` -> `how-to.md` -> "
+        "`governing-personas.md`, then execute per the how-to. If no row matches, "
+        "escalate to the CEO - do not guess.",
+        "",
+        "| Role | Role folder | Type | When to use |",
+        "| --- | --- | --- | --- |",
+    ]
+    if roles:
+        for role in roles:
+            rtype = ("QC" if "qc" in role.get("role_type", "")
+                     or role["slug"].endswith("qc-specialist")
+                     or role["slug"].startswith("qc-")
+                     else ("Head" if role.get("is_head") else "Specialist"))
+            lines.append(
+                f"| {role['name']} | `{role['slug']}/` | {rtype} | "
+                f"{_roster_when_to_use(role)} |"
+            )
+    else:
+        lines.append("| _(no role folders found on disk - investigate "
+                     "materialization)_ |  |  |  |")
+
+    lines += [
+        "",
+        "## How the director dispatches",
+        "1. Match the task to a row above (When to use).",
+        "2. Spawn a sub-agent; instruct it to read that role folder in order and "
+        "act AS IF it IS that role.",
+        "3. If the role's `how-to.md` / `SOP/` does not cover the task, fire the "
+        "department SOP-Writer (INSTRUCTIONS.md Moment 3.7) before proceeding - "
+        "never guess.",
+        "4. Review the sub-agent's output against the same how-to before reporting.",
+        "",
+        f"*Generated from the on-disk role folders by create_role_workspaces."
+        f"regenerate_department_roster (Skill 23) on "
+        f"{datetime.now().strftime('%B %d, %Y at %I:%M %p')}. Lists "
+        f"{len(roles)} role folder(s).*",
+        "",
+    ]
+
+    roster_path = dept_path / "ROSTER.md"
+    if not dry_run:
+        roster_path.write_text("\n".join(lines), encoding="utf-8")
+    print(f"[ROSTER] {'(dry-run) ' if dry_run else ''}"
+          f"{roster_path} ({len(roles)} roles from disk)")
+    return roster_path
+
+
 def _resolve_dept_library_dir(dept_slug):
     """Return the role-library dir for a dept (Path) or None."""
     skill_dir = _resolve_skill_dir()
@@ -2002,6 +2265,13 @@ def instantiate_department(dept_path, dept_slug, roles, workspace_root,
         role_path = create_role_workspace(
             dept_path, role["name"], workspace_root, role_metadata=role)
         summary["roles_created"].append(role_path.name)
+
+    # ROOT-CAUSE FIX: (re)generate ROSTER.md from the role folders we just
+    # materialized, so the director's When-to Reference Map always matches the
+    # actual roles on disk. Idempotent; runs on every --from-roster instantiation.
+    roster_path = regenerate_department_roster(dept_path, dept_slug, dry_run=dry_run)
+    if roster_path is not None:
+        summary["roster_regenerated"] = str(roster_path)
     return summary
 
 
