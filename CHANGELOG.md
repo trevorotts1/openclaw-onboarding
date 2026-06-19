@@ -1,3 +1,16 @@
+## v12.37.0 — 2026-06-19 — Guard A green: emit_af_coverage probes for 4 new gates + _slide_dominant_colors Pillow 11.x palette-length fix
+
+Two concrete bugs found by independent audit, both fixed:
+
+- **Bug 1 (Guard A red — BUG 1)**: `emit_af_coverage()` in `test_preflight.py` had standalone `test_check_*()` functions for the 4 new gates (AF-VISUAL-VARIETY, AF-PACKAGE-CLEAN, AF-IMAGE-QC-RAN, AF-BRAND-CONSISTENCY) but NO probes in `emit_af_coverage()` — the ONLY producer of `working/af-coverage.json` that `gate_integrity_check.py` (Guard A) reads. Guard A was exiting 1 with "4 UNTESTED violations". Fixed: added 4 deliberate-failure probes in `emit_af_coverage()` that drive each gate to a FAIL result and record the AF code via the `record()` helper. The triggered set grows from 18 to 22 codes; Guard A now exits 0.
+- **Bug 2 (AF-BRAND-CONSISTENCY no-op)**: `_slide_dominant_colors()` used `for i in range(64)` after `quantize(colors=64)`, but Pillow 11.x returns a SHORT palette for low-colour images (e.g. a solid fill yields `len(palette)==3`). Indexing `palette[i*3]` for `i>=1` raised `IndexError`; the bare `except Exception` swallowed it and returned `[]`, so `check_brand_consistency()` treated every slide as "skip" and could NEVER fail. Fixed: bounded the loop to `len(palette)//3`; separated the `ImportError` (PIL absent → silent defer) from real errors (logged to stderr, return `[]` — callers skip slides where dominant==[]).
+
+Verification (all from the scripts dir):
+- `python3 test_preflight.py` → exit 0, 22 codes triggered in af-coverage.
+- `python3 gate_integrity_check.py` → exit 0 (Guard A green, 22/22 codes).
+- `python3 sync_check.py` → exit 0.
+- `check_brand_consistency` with a solid-magenta slide vs navy/gold palette returns AF-BRAND-CONSISTENCY (was: always return "").
+
 ## v12.36.0 — 2026-06-19 — Deck quality enforcement gates: AF-VISUAL-VARIETY, AF-PACKAGE-CLEAN, AF-IMAGE-QC-RAN, AF-BRAND-CONSISTENCY
 
 Four new enforcement gates close a class of deck-delivery failures seen in production. Each gate has a concrete Python checker in `build_deck.py`, a manifest entry in `PIPELINE-MANIFEST.json` (manifest_version 11, 58 autofails), a row in the Section-5 `MASTER-QC-AUTOFAIL-RULESET.md` table, a negative test in `test_preflight.py` (Guard A stays green), and is wired into both `PREFLIGHT_REQUIRED` (where conditional) and `run_postflight_gate`. `sync_check.py` exits 0 (in-sync). Skill-23 bumped to 2.1.0.

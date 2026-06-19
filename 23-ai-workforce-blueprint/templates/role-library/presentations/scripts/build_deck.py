@@ -2649,22 +2649,40 @@ def _rgb_distance(c1: tuple, c2: tuple) -> float:
 
 def _slide_dominant_colors(path: Path, n: int = 3):
     """Return a list of the n most-common quantised colors in the slide PNG. Uses PIL
-    when available; returns [] when PIL is absent or the file is unreadable."""
+    when available; returns [] when PIL is absent or the file is unreadable.
+
+    BUG FIX (Pillow 11.x): quantize(colors=64) returns a SHORT palette when the image
+    has fewer than 64 unique colors (e.g. a solid fill returns len(palette)==3).
+    Iterating range(64) then produces IndexError at palette[i*3] for i>=1.  We bound
+    the loop to len(palette)//3 to use only the entries Pillow actually allocated.
+    The bare 'except Exception' that previously swallowed this real bug is replaced
+    with an import-guard so PIL-unavailability is silent but real bugs surface."""
     try:
-        from PIL import Image
+        from PIL import Image  # noqa: PLC0415 — checked here, not at module level
+    except ImportError:
+        return []  # PIL genuinely unavailable — gate defers gracefully.
+    try:
         with Image.open(str(path)) as im:
-            # Quantise to 64 colors and get the palette.
+            # Quantise to up to 64 colors and get the palette.
             quantised = im.convert("RGB").quantize(colors=64)
             palette = quantised.getpalette()  # flat list of R,G,B ints
             hist = quantised.histogram()
-            # Pair (count, (R, G, B)) and sort descending.
+            # The palette length may be shorter than 64*3 for low-colour images
+            # (e.g. a solid fill produces len(palette)==3 on Pillow 11.x).
+            # Bound the range to the actual number of allocated entries.
+            n_colors = len(palette) // 3
+            # Pair (count, (R, G, B)) for real palette entries only; sort descending.
             indexed = sorted(
                 [(hist[i], (palette[i * 3], palette[i * 3 + 1], palette[i * 3 + 2]))
-                 for i in range(64)],
+                 for i in range(n_colors)],
                 reverse=True
             )
             return [rgb for _, rgb in indexed[:n]]
-    except Exception:  # noqa: BLE001
+    except Exception as _exc:  # noqa: BLE001
+        # Log real errors to stderr so they are visible in debug runs but do not
+        # block the gate (the caller skips slides where dominant==[] is returned).
+        import sys as _sys
+        print(f"_slide_dominant_colors({path.name}): {_exc}", file=_sys.stderr)
         return []
 
 

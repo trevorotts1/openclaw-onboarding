@@ -1952,6 +1952,74 @@ def emit_af_coverage():
     record("AF-CREATIVITY", build_deck._chk_creativity(
         _creativity_run_dir(dominant=True)))
 
+    # ---- 2026-06-19 deck-quality gate probes (Bug 1 fix) ----
+    # AF-VISUAL-VARIETY — 35 all-dark near-black PNGs drive check_visual_variety to FAIL.
+    # We write real PNG headers + dark-byte fill so the luma heuristic sees near-zero
+    # mean luminance (all bytes 0x05 = ~2% brightness) and the hue-dominance check
+    # also fires (all slides share the same near-black hue bucket 36 / achromatic).
+    vv_root = Path(tempfile.mkdtemp(prefix="deck_coverage_vv_probe_"))
+    (vv_root / "renders").mkdir(parents=True)
+    for _i in range(1, 36):
+        # near-black PNG (fill byte 0x05 => very dark; luma << VISUAL_VARIETY_DARK_LUMA_THRESHOLD)
+        (vv_root / "renders" / f"slide-{_i:02d}.png").write_bytes(
+            b"\x89PNG\r\n\x1a\n" + bytes([0x05]) * (100 * 1024))
+    record("AF-VISUAL-VARIETY", build_deck.check_visual_variety(vv_root))
+
+    # AF-PACKAGE-CLEAN — a bundle containing a .py dev artifact drives
+    # check_package_cleanliness to FAIL (build scripts must not reach the client).
+    pc_root = Path(tempfile.mkdtemp(prefix="deck_coverage_pc_probe_"))
+    (pc_root / "build_slide.py").write_bytes(b"# dev artifact")
+    (pc_root / "poll_images.sh").write_bytes(b"#!/bin/bash")
+    (pc_root / "tasks").mkdir()                                    # forbidden dir
+    (pc_root / "deliverables.json").write_text("{}")               # canonical — OK
+    record("AF-PACKAGE-CLEAN", build_deck.check_package_cleanliness(pc_root))
+
+    # AF-IMAGE-QC-RAN — a bundle where the image_qc_report.json was written BEFORE
+    # the rendered PNGs (stale) drives check_image_qc_present to FAIL.
+    import time as _time
+    iqr_root = Path(tempfile.mkdtemp(prefix="deck_coverage_iqr_probe_"))
+    (iqr_root / "renders").mkdir(parents=True)
+    (iqr_root / "working" / "qc").mkdir(parents=True, exist_ok=True)
+    _stale_report = iqr_root / "working" / "qc" / "image_qc_report.json"
+    _stale_report.write_text(json.dumps({
+        "gate": "Phase Image-QC", "average": 9.0, "pass": True,
+        "slides": [{"slide": 1, "verdict": "PASS"}],
+        "qc_independence": {"graded_by": "qc-img-specialist", "independent": True},
+    }))
+    _time.sleep(0.05)   # ensure the PNG is NEWER than the report (makes it stale)
+    (iqr_root / "renders" / "slide-01.png").write_bytes(
+        b"\x89PNG\r\n\x1a\n" + b"\xcc" * 10240)
+    record("AF-IMAGE-QC-RAN", build_deck.check_image_qc_present(iqr_root))
+
+    # AF-BRAND-CONSISTENCY — a solid magenta (255, 0, 255) slide against a navy/gold
+    # brand palette drives check_brand_consistency to FAIL. The Bug 2 fix in
+    # _slide_dominant_colors (bounding range to len(palette)//3) makes this possible;
+    # without the fix, quantize returns a len-3 palette on a solid-colour image and
+    # the bare-except swallowed the IndexError, returning [] and causing DEFER.
+    bc_root = Path(tempfile.mkdtemp(prefix="deck_coverage_bc_probe_"))
+    (bc_root / "renders").mkdir(parents=True)
+    (bc_root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    # Write the magenta PNG using PIL if available; fall back to raw PNG header.
+    try:
+        from PIL import Image as _PilImage
+        _magenta_img = _PilImage.new("RGB", (200, 200), (255, 0, 255))
+        _magenta_img.save(str(bc_root / "renders" / "slide-01.png"))
+    except ImportError:
+        # PIL absent — write a raw PNG header + magenta-ish bytes (high R+B, low G).
+        # The stdlib luma fallback will read raw bytes; at the function level we
+        # cannot get AF-BRAND-CONSISTENCY without PIL (the gate skips slides where
+        # _slide_dominant_colors returns []).  Record the code manually so Guard A
+        # knows we have a probe — but only if PIL is installed.
+        pass
+    (bc_root / "working" / "copy" / "intake.json").write_text(json.dumps({
+        "brand": {"palette": ["#1B2A4A", "#C8963E"]},   # navy + gold
+        "interview_confirmed": True,
+        "presentation_mode": "general",
+        "audience_mode": "STANDARD",
+        "target_talk_minutes": 30,
+    }))
+    record("AF-BRAND-CONSISTENCY", build_deck.check_brand_consistency(bc_root))
+
     triggered_sorted = sorted(triggered)
     AF_COVERAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
     AF_COVERAGE_PATH.write_text(json.dumps(
