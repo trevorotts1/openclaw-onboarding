@@ -321,10 +321,40 @@ MIN_CITED_SOURCES = 8   # HARD floor (AF-RESEARCH-UNCITED): fewer real URLs = FA
 #   * example.* placeholder domains (example.com / example.org / example-source-*)
 MIN_DISTINCT_DOMAINS = 6   # HARD floor on DISTINCT REAL PUBLIC domains (AF-RESEARCH-UNCITED)
 
+# AF-I14: a real KIE-baked 2K slide PNG is hundreds of KB; a flat-fill / native-render
+# placeholder (a solid colour, a Pillow/PPTX-drawn text card, or a tiny stub) is far
+# smaller. 50 KiB is a conservative floor that any genuine model-baked slide clears
+# easily while a flat-placeholder/native-render signature falls below it.
+PLACEHOLDER_MIN_BYTES = 51200   # AF-I14: per-slide PNG floor — below this = not a real KIE bake
+
 # Reserved / non-routable TLD suffixes that are never a real public source.
 _NON_PUBLIC_TLD_SUFFIXES = (
     ".local", ".localhost", ".internal", ".example", ".invalid", ".test",
 )
+
+# ---------------------------------------------------------------------------
+# QC-INDEPENDENCE GATE (AF-QC-INDEPENDENCE) — the QC report must be graded by a
+# reviewer INDEPENDENT of the builder, never self-graded.
+# ---------------------------------------------------------------------------
+# A Phase-1Q QC report with average>=8.5 and no triggered autofails STILL fails
+# the deck if the builder graded its own work.  A report self-written by the
+# renderer / by the same role that authored the copy proves nothing — it is the
+# rubber-stamp the whole gate exists to refuse.  The report MUST carry explicit
+# provenance naming an independent QC reviewer identity that is NOT the builder.
+#
+# These tokens are the "builder / self" identities a graded_by / reviewer /
+# author field may NOT name.  Any of them (or a self_graded:true flag, or a
+# reviewer == the builder, or NO independent-reviewer provenance at all) trips
+# AF-QC-INDEPENDENCE.  The qc-specialist persona writes the report and stamps
+# its own (independent) identity into the provenance block — see
+# qc-specialist-presentations-sops.md (PROVENANCE block).
+FORBIDDEN_QC_GRADER_IDENTITIES = frozenset({
+    "build_deck.py", "build_deck", "self", "builder", "author",
+})
+# The role that AUTHORS the deck copy — a QC report whose reviewer equals this
+# role is self-grading-by-proxy and is refused (the copywriter cannot grade the
+# copywriter's own copy).
+QC_BUILDER_ROLE = "slide-copywriter"
 
 
 def _registered_domain(netloc: str) -> Optional[str]:
@@ -1192,6 +1222,41 @@ def _chk_intake(path: Optional[Path]) -> str:
     return ""
 
 
+# Deep-Research category-body helpers. Shared by BOTH _chk_research_brief (the
+# research_complete:true G/H/I/K/L gate) and _chk_research_cited (the citation gate's
+# G/H/I population check) so the two checkers can never drift in how they decide a
+# Category section is present + non-empty.
+_RESEARCH_PLACEHOLDER_RE = re.compile(r"^\s*\[Output of SOP[^\]]*\]\s*$", re.IGNORECASE)
+
+
+def _research_category_body(raw_text: str, letter: str) -> str:
+    """Return the body text of the '## Category <letter>:' section, or '' if absent.
+    Locates the heading (case-insensitive), then reads to the next '## ' heading
+    (or end-of-file)."""
+    pattern = re.compile(
+        rf"^##\s+Category\s+{letter}[:\s]", re.IGNORECASE | re.MULTILINE
+    )
+    m = pattern.search(raw_text)
+    if not m:
+        return ""
+    start = m.end()
+    next_hdr = re.search(r"^##\s+", raw_text[start:], re.MULTILINE)
+    return raw_text[start : start + next_hdr.start()] if next_hdr else raw_text[start:]
+
+
+def _research_category_nonempty(body: str) -> bool:
+    """True when the category body has real content beyond whitespace / placeholder
+    lines (a body that is solely the '[Output of SOP …]' placeholder counts as empty)."""
+    stripped = body.strip()
+    if not stripped:
+        return False
+    non_blank_lines = [ln for ln in stripped.splitlines() if ln.strip()]
+    if not non_blank_lines:
+        return False
+    real_lines = [ln for ln in non_blank_lines if not _RESEARCH_PLACEHOLDER_RE.match(ln)]
+    return len(real_lines) > 0
+
+
 def _chk_research_brief(path: Optional[Path]) -> str:
     if path is None:
         return "no working/research/brief-*.md found"
@@ -1214,37 +1279,8 @@ def _chk_research_brief(path: Optional[Path]) -> str:
     # then read everything up to the next "## " heading (or end-of-file).  The body is
     # considered non-empty when it contains at least one non-whitespace, non-template
     # token (i.e. it is NOT solely the placeholder "[Output of SOP …]" text or blank).
-    import re as _re
-    _PLACEHOLDER_RE = _re.compile(
-        r"^\s*\[Output of SOP[^\]]*\]\s*$", _re.IGNORECASE
-    )
-
-    def _category_body(raw_text: str, letter: str) -> str:
-        """Return the body text of '## Category <letter>:' section, or '' if absent."""
-        pattern = _re.compile(
-            rf"^##\s+Category\s+{letter}[:\s]", _re.IGNORECASE | _re.MULTILINE
-        )
-        m = pattern.search(raw_text)
-        if not m:
-            return ""
-        start = m.end()
-        # Find next '## ' heading (the start of the next section)
-        next_hdr = _re.search(r"^##\s+", raw_text[start:], _re.MULTILINE)
-        body = raw_text[start : start + next_hdr.start()] if next_hdr else raw_text[start:]
-        return body
-
-    def _is_nonempty_body(body: str) -> bool:
-        """True when body has real content beyond whitespace / placeholder lines."""
-        stripped = body.strip()
-        if not stripped:
-            return False
-        # If every non-blank line is a template placeholder, treat as empty.
-        non_blank_lines = [ln for ln in stripped.splitlines() if ln.strip()]
-        if not non_blank_lines:
-            return False
-        real_lines = [ln for ln in non_blank_lines if not _PLACEHOLDER_RE.match(ln)]
-        return len(real_lines) > 0
-
+    # These two helpers are shared module-level functions (_research_category_body /
+    # _research_category_nonempty) so this gate and _chk_research_cited never drift.
     required_cats = {
         "G": "Credible Attributable Quotes",
         "H": "Fact-Validation Ledger",
@@ -1254,10 +1290,10 @@ def _chk_research_brief(path: Optional[Path]) -> str:
     }
     missing_or_empty = []
     for letter, label in required_cats.items():
-        body = _category_body(text, letter)
+        body = _research_category_body(text, letter)
         if not body:
             missing_or_empty.append(f"Category {letter} ({label}) section absent")
-        elif not _is_nonempty_body(body):
+        elif not _research_category_nonempty(body):
             missing_or_empty.append(
                 f"Category {letter} ({label}) section is empty or contains only "
                 f"template placeholder text"
@@ -1270,6 +1306,84 @@ def _chk_research_brief(path: Optional[Path]) -> str:
             "SOP 9.4) and populate each category before setting research_complete:true: "
             + "; ".join(missing_or_empty)
         )
+
+    return ""
+
+
+def _qc_independence_reason(obj: dict) -> str:
+    """AF-QC-INDEPENDENCE: prove the QC report was graded by a reviewer INDEPENDENT
+    of the builder, never self-graded. Returns "" when the report carries valid
+    independent-reviewer provenance, or a non-empty AF-QC-INDEPENDENCE reason when
+    the report is (or could be) self/builder-graded.
+
+    A report PASSES only when ALL of these hold:
+      * it is NOT marked self_graded:true;
+      * it names an EXPLICIT independent reviewer identity — provenance lives in a
+        `qc_independence` block (preferred) or top-level `graded_by`/`reviewer`/
+        `reviewed_by` field — that is a non-empty string;
+      * that reviewer identity is NOT one of the builder/self tokens
+        (build_deck.py, self, builder, author) and is NOT the deck-copy authoring
+        role (slide-copywriter) — i.e. it is genuinely someone other than the builder;
+      * if an `independent` flag is present it is not explicitly false, and if a
+        `builder`/`built_by` identity is recorded it does NOT equal the reviewer.
+
+    A report that simply OMITS the provenance entirely FAILS — independence must be
+    affirmatively proven, not assumed."""
+    blk = obj.get("qc_independence")
+    blk = blk if isinstance(blk, dict) else {}
+
+    # self_graded:true (top-level or in the block) is an immediate fail.
+    for src in (obj, blk):
+        if src.get("self_graded") is True:
+            return ("AF-QC-INDEPENDENCE: QC report is marked self_graded:true — a QC "
+                    "report graded by the builder cannot pass. An INDEPENDENT QC "
+                    "specialist (not the copy author / not build_deck.py) must grade "
+                    "the deck and stamp the qc_independence provenance block "
+                    "(graded_by + independent:true). See qc-specialist-presentations-sops.md.")
+
+    # Resolve the reviewer identity from any of the accepted provenance fields.
+    reviewer = None
+    for src in (blk, obj):
+        for key in ("graded_by", "reviewer", "reviewed_by", "reviewer_identity"):
+            val = src.get(key)
+            if isinstance(val, str) and val.strip():
+                reviewer = val.strip()
+                break
+        if reviewer is not None:
+            break
+
+    if not reviewer:
+        return ("AF-QC-INDEPENDENCE: QC report carries no independent-reviewer "
+                "provenance — it lacks a qc_independence block (or a graded_by/"
+                "reviewer/reviewed_by field) naming the INDEPENDENT QC specialist who "
+                "graded the deck. A QC report self-written by the builder with no "
+                "reviewer identity cannot pass; independence must be PROVEN, not "
+                "assumed. The qc-specialist persona must stamp graded_by + "
+                "independent:true. See qc-specialist-presentations-sops.md.")
+
+    reviewer_norm = reviewer.lower()
+    if reviewer_norm in FORBIDDEN_QC_GRADER_IDENTITIES or reviewer_norm == QC_BUILDER_ROLE:
+        return (f"AF-QC-INDEPENDENCE: QC report graded_by/reviewer is {reviewer!r}, "
+                f"which is the builder/self (or the deck-copy author) — a self-graded "
+                f"report cannot pass. An INDEPENDENT QC specialist must grade the deck. "
+                f"See qc-specialist-presentations-sops.md.")
+
+    # An explicit independent:false flag is a self-report that it is NOT independent.
+    indep_flag = blk.get("independent", obj.get("independent"))
+    if indep_flag is False:
+        return ("AF-QC-INDEPENDENCE: QC report provenance sets independent:false — the "
+                "reviewer self-reports as NOT independent of the builder. An "
+                "INDEPENDENT QC specialist must grade the deck. "
+                "See qc-specialist-presentations-sops.md.")
+
+    # If a builder/built_by identity is recorded, the reviewer must not equal it.
+    for key in ("builder", "built_by"):
+        builder_id = blk.get(key, obj.get(key))
+        if isinstance(builder_id, str) and builder_id.strip().lower() == reviewer_norm:
+            return (f"AF-QC-INDEPENDENCE: QC report reviewer {reviewer!r} is the SAME "
+                    f"identity recorded as the builder ({key}) — the builder graded its "
+                    f"own work. An INDEPENDENT QC specialist must grade the deck. "
+                    f"See qc-specialist-presentations-sops.md.")
 
     return ""
 
@@ -1302,6 +1416,14 @@ def _chk_copy_qc(path: Optional[Path]) -> str:
     # report must explicitly assert pass:true.
     if obj.get("pass") is not True:
         return f"report does not affirmatively mark pass:true (got pass={obj.get('pass')!r})"
+    # AF-QC-INDEPENDENCE: the report MUST prove an INDEPENDENT reviewer (not the
+    # builder / not self) graded it. A QC report self-written by the builder passes
+    # every numeric check above yet proves nothing — this is the rubber-stamp the
+    # gate exists to refuse. Keep this LAST so the more obvious shape errors report
+    # first, but never let a self-graded report through.
+    indep = _qc_independence_reason(obj)
+    if indep:
+        return indep
     return ""
 
 
@@ -1432,6 +1554,37 @@ def _chk_research_cited(path: Optional[Path]) -> str:
             f"real, authoritative public sources (covering categories A/B/C/D/G/H/I/K/L "
             f"per the Deep Research SOP). Re-run Phase -0.5 (Deep Research Specialist) "
             f"and cite every distinct source you find."
+        )
+
+    # SOURCED-CATEGORY population check (independent of the self-asserted
+    # research_complete:true flag, which this gate ignores). Categories G (Credible
+    # Attributable Quotes), H (Fact-Validation Ledger), and I (Objection Research)
+    # carry the SOURCED material the "who says so" / proof / objection slides draw
+    # from — a research pack with citations but an absent/empty G, H, or I is not a
+    # usable pack. Uses the same shared helpers as _chk_research_brief so the two
+    # checkers cannot drift.
+    sourced_cats = {
+        "G": "Credible Attributable Quotes",
+        "H": "Fact-Validation Ledger",
+        "I": "Objection Research",
+    }
+    missing = []
+    for letter, label in sourced_cats.items():
+        body = _research_category_body(text, letter)
+        if not body:
+            missing.append(f"Category {letter} ({label}) section absent")
+        elif not _research_category_nonempty(body):
+            missing.append(
+                f"Category {letter} ({label}) section is empty or contains only "
+                f"template placeholder text")
+    if missing:
+        return (
+            "AF-RESEARCH-UNCITED: the research pack cites enough distinct domains but "
+            "the SOURCED categories that feed the 'who says so' / proof / objection "
+            "slides are missing or empty (checked independently of the self-asserted "
+            "research_complete:true flag). Re-run Phase -0.5 (Deep Research Specialist "
+            "SOP 9.4) and populate each sourced category with real cited material: "
+            + "; ".join(missing)
         )
     return ""
 
@@ -1593,6 +1746,126 @@ def _chk_rich_prompts(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     return ""
 
 
+def _chk_kie_baked(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """KIE-BAKED gate (AF-I14, fail-loud). EVERY rendered slide must have been BAKED
+    by the image model (a real KIE task that produced a real, above-floor PNG) — not
+    drawn natively (Pillow/PPTX/ImageDraw), not a flat-colour placeholder, not a stub.
+
+    AF-BAKED previously existed in the ruleset as an SOP-only rule (enforced_by:
+    closeout_gate, py_symbol: null) with no real checker — a model could skip the KIE
+    bake and native-render slides with nothing failing. This is that real checker.
+
+    It reads the on-disk signal that write_process_manifest() emits:
+    working/checkpoints/process_manifest.json, finds the LAST phase=="render" record,
+    and HARD-FAILS (returns an AF-I14 message) when ANY of:
+      * the render record is absent (no render ran -> no KIE bake);
+      * output_slide_count < the rendered slide count derived from slides_path
+        (a slide was skipped during baking);
+      * any per-slide entry has taskId in (None, "", "native", "placeholder") -- i.e.
+        not a real KIE task id;
+      * any per-slide image file is missing, fails verify_png, or is below
+        PLACEHOLDER_MIN_BYTES (the flat-placeholder / native-render byte signature);
+      * any per-slide image_sha256 is null, or a single hash repeats across >2 slides
+        (flat-fill reuse: the same placeholder image baked into many slides).
+
+    Returns "" ONLY when every rendered slide maps to a real KIE taskId AND a verified,
+    above-floor PNG. The message names the offending slide(s) and the remediation verb.
+
+    CONDITIONAL by design (the AF-SPEECH-SHORT pattern): the render record is written
+    AFTER the render. So at PRE-RENDER preflight — before any render has run — there is
+    no process_manifest.json / no render record yet, and this gate DEFERS (returns "",
+    pass) rather than blocking the render that is about to produce the record. Once a
+    render record EXISTS (pre-render of a downstream phase, or at the closeout postflight
+    gate where it always exists), the gate is the source of truth that the slides were
+    actually KIE-baked. This is wired into the lockstep so it can never be silently
+    skipped once a render record is on disk.
+    """
+    ckpt = run_dir / "working" / "checkpoints" / "process_manifest.json"
+    if not ckpt.exists():
+        return ""  # no render yet — gate defers to the post-render run.
+    obj = _read_json(ckpt)
+    if not isinstance(obj, dict) or "__parse_error__" in obj:
+        return ("AF-I14: working/checkpoints/process_manifest.json is unreadable / not "
+                "valid JSON, so the KIE bake cannot be proven. stage=render, missing "
+                "artifact=KIE-baked PNG -> re-run build_deck render for every slide.")
+    phases = obj.get("phases")
+    render_recs = [p for p in phases if isinstance(p, dict) and p.get("phase") == "render"] \
+        if isinstance(phases, list) else []
+    if not render_recs:
+        return ""  # manifest exists but no render record yet — gate defers.
+    rec = render_recs[-1]  # the LAST render record is authoritative for this run.
+
+    rendered_n = _count_output_slides(run_dir, slides_path)
+    out_count = rec.get("output_slide_count")
+    try:
+        out_count = int(out_count)
+    except (TypeError, ValueError):
+        out_count = None
+    if rendered_n is not None and (out_count is None or out_count < rendered_n):
+        return (f"AF-I14: render record baked {out_count} slide(s) but the deck has "
+                f"{rendered_n} slide(s) — at least one slide was skipped during baking. "
+                f"stage=render, missing artifact=KIE-baked PNG -> re-run build_deck "
+                f"render for the missing slide(s).")
+
+    per_slide = rec.get("slides")
+    if not isinstance(per_slide, list) or not per_slide:
+        return ("AF-I14: render record carries no per-slide entries, so no slide can be "
+                "proven KIE-baked. stage=render, missing artifact=KIE-baked PNG -> "
+                "re-run build_deck render for every slide.")
+
+    _BAD_TASK_IDS = {None, "", "native", "placeholder"}
+    problems = []
+    hash_counts = {}
+    for entry in per_slide:
+        if not isinstance(entry, dict):
+            problems.append("a per-slide entry is malformed (not an object)")
+            continue
+        ordinal = entry.get("slide")
+        tag = f"slide {ordinal}" if ordinal is not None else "a slide"
+        task_id = entry.get("taskId")
+        if (task_id in _BAD_TASK_IDS) or (isinstance(task_id, str) and task_id.strip().lower() in _BAD_TASK_IDS):
+            problems.append(
+                f"{tag}: taskId={task_id!r} is not a real KIE task id "
+                f"(native render / placeholder, not a model bake)")
+        img = entry.get("image")
+        if not img:
+            problems.append(f"{tag}: no image path recorded — slide was not baked")
+        else:
+            ip = Path(img)
+            if not ip.exists():
+                problems.append(f"{tag}: baked image {ip.name} is missing on disk")
+            else:
+                try:
+                    verify_png(ip)
+                except Exception as exc:  # noqa: BLE001
+                    problems.append(f"{tag}: image {ip.name} is not a valid PNG ({exc})")
+                else:
+                    size = ip.stat().st_size
+                    if size < PLACEHOLDER_MIN_BYTES:
+                        problems.append(
+                            f"{tag}: image {ip.name} is {size:,} bytes, below the "
+                            f"{PLACEHOLDER_MIN_BYTES:,}-byte KIE-bake floor "
+                            f"(flat-placeholder / native-render signature)")
+        sha = entry.get("image_sha256")
+        if not sha:
+            problems.append(f"{tag}: image_sha256 is null — bake not recorded")
+        else:
+            hash_counts[sha] = hash_counts.get(sha, 0) + 1
+
+    for sha, count in hash_counts.items():
+        if count > 2:
+            problems.append(
+                f"image_sha256 {sha[:12]}… is reused across {count} slides "
+                f"(>2) — flat-fill placeholder baked into many slides")
+
+    if problems:
+        return ("AF-I14: rendered slide(s) were not KIE-baked (native render / missing "
+                "image / flat-placeholder fill / reused flat-fill). stage=render, "
+                "missing artifact=KIE-baked PNG -> re-run build_deck render for the "
+                "offending slide(s). Offenders: " + "; ".join(problems))
+    return ""
+
+
 # Speech-length gate floor: the presenter speech must carry at least
 # target_talk_minutes x SPEECH_WPM_FLOOR words. 120 wpm is the LOW end of the
 # verified 120-140 absorption band the Presenter Speech Writer cites (the deck is
@@ -1698,7 +1971,7 @@ PREFLIGHT_REQUIRED = [
      "Phase 3 — Signature Presentation Architect SOP",
      _chk_arc),
     ("working/copy/slides_copy.md",
-     "slide copy authored per doctrine (hook >=7x, 10 components)",
+     "slide copy authored per doctrine (hook recurs across the deck, 3-4 band, 10 components)",
      "Phase 4 — Slide Copywriter SOP",
      _chk_slides_copy),
     ("working/research/design-brief-*.md",
@@ -1721,6 +1994,16 @@ PREFLIGHT_REQUIRED = [
      "rich per-slide prompt — every slide has a >=1,500-char prompt in working/prompts/ (rendered VERBATIM)",
      "Phase 2 — Slide Image Creator SOP 9.1 (15-element rich prompt; rendered verbatim, no thin fallback)",
      _chk_rich_prompts),
+    # KIE-BAKED gate (AF-I14). Once a render record exists, EVERY rendered slide must
+    # map to a real KIE taskId + a verified, above-floor PNG (no native render, no
+    # flat-placeholder fill). Run-dir-scoped (reads process_manifest.json + needs the
+    # slide count), so it uses the rel sentinel None. Pre-render of downstream phases
+    # this passes vacuously (no render record yet); after render it is the source of
+    # truth that the slides were actually baked.
+    (None,
+     "KIE-baked slides — every rendered slide has a real KIE taskId + a verified, above-floor PNG (no native render / flat placeholder)",
+     "Phase 5/6 — Slide Image Creator / render (AF-I14)",
+     _chk_kie_baked),
     # 9th check — SPEECH-LENGTH gate (AF-SPEECH-SHORT). Conditional: enforced only
     # once the presenter speech exists (it is written downstream at delivery), so it
     # never blocks the pre-speech render but is wired so it can't be silently skipped.
@@ -2359,7 +2642,7 @@ def publish_teleprompter(bundle_dir: Path, deck_slug: str, run_dir: Path,
     return record
 
 
-def _check_teleprompter_published(bundle_dir: Path) -> str:
+def _check_teleprompter_published(bundle_dir: Path, skip_gate: bool = False) -> str:
     """Teleprompter-publish sub-check of the postflight bundle gate (folded under
     AF-BUNDLE-COMPLETE). Return "" when the teleprompter is published with a verified
     live URL, else a fail reason. Reads <bundle_dir>/teleprompter_publish.json:
@@ -2367,9 +2650,19 @@ def _check_teleprompter_published(bundle_dir: Path) -> str:
       * status != 'published'                        -> fail (carry the recorded status)
       * public_url missing / not http(s)             -> fail
       * verified_http_status != 200                  -> fail
-    The --adhoc standalone path writes status 'skipped_adhoc'; this check PASSES on
-    'skipped_adhoc' ONLY (ad-hoc output is explicitly not a client deliverable)."""
+
+    M7 HARDENING: the gate is bypassed ONLY when the caller passes the explicit
+    per-run --skip-teleprompter-gate CLI flag (skip_gate=True). It is NEVER bypassed
+    by a persisted status string. A 'skipped_adhoc' record written by a prior --adhoc
+    run can persist on disk and would otherwise false-pass a later real run whose
+    publish step was skipped, so it is treated as an UNPUBLISHED failure and a WARNING
+    is logged whenever it is encountered."""
     pub = bundle_dir / TELEPROMPTER_PUBLISH_LEDGER
+    if skip_gate:
+        print("WARNING: teleprompter-publish gate bypassed via the explicit "
+              "--skip-teleprompter-gate flag. The teleprompter is NOT verified as "
+              "hosted — this run MUST NOT be delivered to a client.", file=sys.stderr)
+        return ""
     if not pub.exists():
         return ("teleprompter_publish.json absent — the teleprompter was never "
                 "published (TELEPROMPTER-PUBLISH). Run publish_teleprompter.")
@@ -2377,7 +2670,13 @@ def _check_teleprompter_published(bundle_dir: Path) -> str:
     if "__parse_error__" in obj:
         return f"teleprompter_publish.json not valid JSON ({obj['__parse_error__']})"
     if obj.get("status") == "skipped_adhoc":
-        return ""
+        print("WARNING: teleprompter_publish.json carries a stale 'skipped_adhoc' "
+              "status from a prior --adhoc run. This NO LONGER passes the gate (M7): "
+              "a real run must publish the teleprompter and verify a live HTTP 200, "
+              "or be re-run with the explicit --skip-teleprompter-gate flag.",
+              file=sys.stderr)
+        return ("teleprompter publish status is 'skipped_adhoc' (stale ad-hoc record) "
+                "— not a published, live-verified teleprompter (TELEPROMPTER-PUBLISH).")
     if obj.get("status") != "published":
         return f"teleprompter publish status is {obj.get('status')!r}, expected 'published'"
     url = str(obj.get("public_url", "")).strip()
@@ -2448,7 +2747,10 @@ def _magic_ok(path: Path, signatures) -> bool:
     return False
 
 
-def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str) -> None:
+def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
+                        skip_teleprompter_gate: bool = False,
+                        run_dir: Optional[Path] = None,
+                        slides_path: Optional[Path] = None) -> None:
     """POSTFLIGHT COMPLETENESS GATE (AF-BUNDLE-COMPLETE, Requirement 2).
 
     After assembly, verify EVERY DELIVERABLES_REQUIRED artifact exists in
@@ -2520,6 +2822,27 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str) -> 
             continue
         update_deliverable_status(ledger_path, key, "verified", size=actual)
 
+    # --- KIE-BAKED sub-check (AF-I14) — at closeout, re-prove every rendered slide
+    # was actually baked by the image model (real KIE taskId + verified above-floor
+    # PNG), not native-rendered / flat-placeholder-filled. This mirrors the preflight
+    # _chk_kie_baked call but fires at the FINAL gate so a native-rendered deck can
+    # never be reported "complete". run_dir is threaded in by main(); when it is not
+    # available (a bare gate-only invocation) the sub-check is skipped rather than
+    # failing a caller that has no run dir.
+    kie_fail_reason = ""
+    if run_dir is not None:
+        kie_reason = _chk_kie_baked(run_dir, slides_path)
+        if kie_reason:
+            kie_fail_reason = kie_reason
+            missing_or_short.append((
+                "deck_pptx",
+                _expand_filename("deck.pptx", deck_slug),
+                "KIE-baked slide images (every slide model-baked, not native render)",
+                0, 0, "NOT_BAKED"))
+            # Record the AF-I14 reason on the deck entry so the ledger carries it.
+            update_deliverable_status(ledger_path, "deck_pptx", "failed",
+                                      error=kie_reason)
+
     # --- TELEPROMPTER-PUBLISH sub-check (folded under AF-BUNDLE-COMPLETE) ---
     # A self-contained HTML on disk is NOT a delivered teleprompter. The bundle is not
     # complete until the teleprompter is hosted at the central Cloudflare URL and that
@@ -2527,7 +2850,7 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str) -> 
     # missing/unverified publish URL is a hard exit-5 failure (no new AF code — it is
     # the teleprompter-publish condition of the existing bundle-completeness gate). The
     # delivery / ruleset SOPs name this the TELEPROMPTER-PUBLISH auto-fail.
-    tele_pub = _check_teleprompter_published(bundle_dir)
+    tele_pub = _check_teleprompter_published(bundle_dir, skip_gate=skip_teleprompter_gate)
     if tele_pub:
         update_deliverable_status(ledger_path, "teleprompter_html", "failed",
                                   error=tele_pub)
@@ -2592,6 +2915,13 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str) -> 
                       file=sys.stderr)
                 print(f"           not match the expected type (decoy / wrong-type file).",
                       file=sys.stderr)
+            elif reason == "NOT_BAKED":
+                print(f"  NOT BAKED [{key}] {fname}  ({label})", file=sys.stderr)
+                print(f"           one or more rendered slides were NOT KIE-baked "
+                      f"(native render,", file=sys.stderr)
+                print(f"           missing image, or flat-placeholder fill) — AF-I14.",
+                      file=sys.stderr)
+                print(f"           {kie_fail_reason}", file=sys.stderr)
             elif reason == "UNPUBLISHED":
                 print(f"  UNPUBLISHED [{key}] {fname}  ({label})", file=sys.stderr)
                 print(f"           the teleprompter HTML exists locally but was not "
@@ -2645,12 +2975,16 @@ def main():
     timestamp_arg = None
     out_dir_arg = None   # --out BUNDLE_DIR (default ~/Downloads/<deck-slug>)
     platform_arg = None  # --platform {vps|mac} override (default None -> auto-detect)
+    skip_teleprompter_gate = False  # M7: explicit per-run bypass of the teleprompter
+                                    # publish sub-check (never via a persisted status).
     positional = []
     i = 0
     while i < len(argv):
         tok = argv[i]
         if tok == "--adhoc-no-process":
             adhoc = True
+        elif tok == "--skip-teleprompter-gate":
+            skip_teleprompter_gate = True
         elif tok == "--run-dir":
             i += 1
             if i >= len(argv):
@@ -2701,7 +3035,8 @@ def main():
     if len(positional) not in (2, 3):
         print("Usage: python3 build_deck.py <slides.json> <out.pptx> [renders_dir] "
               "[--run-dir DIR] [--logo PNG] [--out BUNDLE_DIR] "
-              "[--platform vps|mac] [--timestamp ISO8601] [--adhoc-no-process]",
+              "[--platform vps|mac] [--timestamp ISO8601] [--adhoc-no-process] "
+              "[--skip-teleprompter-gate]",
               file=sys.stderr)
         sys.exit(2)
 
@@ -2791,7 +3126,13 @@ def main():
     elif logo_path is not None:
         print(f"=== OFFICIAL LOGO (overlay fallback): {logo_path} ===", flush=True)
 
-    api_key = load_api_key()
+    # In --adhoc-no-process mode the key is NEVER used for a network call: render_slide
+    # raises on missing rich prompts before reaching submit_task, so we skip the
+    # load_api_key() call entirely.  This makes adhoc runs platform-portable (no
+    # secrets files required on CI / linux runners) without weakening any gate —
+    # if a prompt file IS present and render_slide would actually call KIE, it receives
+    # the sentinel "" and will fail at the HTTP layer, not silently succeed.
+    api_key = "" if adhoc else load_api_key()
     renders_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"=== build_deck — {len(slides)} slides ===", flush=True)
@@ -2949,7 +3290,13 @@ def main():
     # present and sized. Exit 5 (loud failure) when any are missing or under-threshold.
     # The word "COMPLETE" / "DONE" is printed ONLY from inside run_postflight_gate
     # after reading deliverables.json (not from in-memory state).
-    run_postflight_gate(bundle_dir, ledger_path, deck_slug)
+    # M7: the teleprompter-publish sub-check is bypassed ONLY by an explicit per-run
+    # CLI flag — never by a persisted status string. --adhoc-no-process is itself an
+    # explicit per-run flag (ad-hoc output is not a client deliverable), so it implies
+    # the bypass for THIS run only; a later real run without the flag re-arms the gate.
+    run_postflight_gate(bundle_dir, ledger_path, deck_slug,
+                         skip_teleprompter_gate=(skip_teleprompter_gate or adhoc),
+                         run_dir=run_dir, slides_path=slides_path)
     sys.exit(0)
 
 

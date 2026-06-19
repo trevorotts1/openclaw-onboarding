@@ -41,6 +41,10 @@ Shape (unchanged from the prior version -- backward compatible):
   "hook": str,                       # the verbatim refrain
   "spoken_rate_wpm": 130,            # tunable; default 130
   "brand": {"primary": "#RRGGBB", "accent": "#RRGGBB", "ink": "#RRGGBB"},  # optional
+  "design_system_path": "working/typography/design_system.json",  # optional; when
+       # present, brand.accent_hex / brand.headline_font / brand.body_font from the
+       # design system OVERRIDE the accent + typefaces so the PDF inherits the deck's
+       # locked design system. (Also settable via the --design-system CLI flag.)
   "stages": [                        # ordered webinar stages
     {
       "stage": "WELCOME",            # one of the canonical stage keys (see STAGE_TINT)
@@ -213,7 +217,82 @@ class SpeechPDF:
         self.muted = "#7A7A7A"                            # grey for labels / margin notes
         self.faint = "#B8B8B8"                            # faint grey for thin rules
         self.tag_col = "#9333EA"                          # purple for stray expression tags
+        # Default typeface families (reportlab built-ins). May be overridden by the
+        # design-system below.
+        self.headline_font = "Helvetica-Bold"
+        self.body_font = "Helvetica"
+        # design-system accent that MUST appear in the rendered color table; set by
+        # _apply_design_system when a design_system.json is wired into the spec.
+        self.design_system_accent = None
+        self._apply_design_system()
         self._build_styles()
+
+    def _apply_design_system(self):
+        """When the speech spec carries a `design_system_path`, pull the LOCKED
+        brand accent and typeface families from design_system.json so the speech
+        PDF inherits the deck's design system instead of the house defaults.
+
+        Reads brand.accent_hex (accent color), brand.headline_font and
+        brand.body_font (typeface family names). Font names are mapped to a
+        reportlab built-in family; if an explicit *_font_file TTF path is given
+        and exists, it is registered and used verbatim. Absent/unreadable
+        design system leaves the reference defaults untouched (backward compatible).
+        """
+        ds_path = self.spec.get("design_system_path")
+        if not ds_path:
+            return
+        try:
+            with open(ds_path) as f:
+                ds = json.load(f)
+        except Exception:
+            return
+        brand = ds.get("brand") if isinstance(ds, dict) else None
+        if not isinstance(brand, dict):
+            return
+        accent = brand.get("accent_hex") or brand.get("accent")
+        if isinstance(accent, str) and re.fullmatch(
+            r"#[0-9A-Fa-f]{3}([0-9A-Fa-f]{3})?", accent.strip()
+        ):
+            self.accent = accent.strip()
+            self.design_system_accent = accent.strip()
+        self.headline_font = self._resolve_font(
+            brand.get("headline_font"), brand.get("headline_font_file"),
+            default="Helvetica-Bold", bold=True,
+        )
+        self.body_font = self._resolve_font(
+            brand.get("body_font"), brand.get("body_font_file"),
+            default="Helvetica", bold=False,
+        )
+
+    @staticmethod
+    def _resolve_font(font_name, font_file, default, bold):
+        """Resolve a design-system font name to a usable reportlab font.
+
+        If a TTF path is provided and readable, register and return it. Otherwise
+        map the family name to the nearest reportlab built-in (Times/Courier),
+        defaulting to the Helvetica family. Never raises -- falls back to default.
+        """
+        if font_file:
+            try:
+                from reportlab.pdfbase import pdfmetrics
+                from reportlab.pdfbase.ttfonts import TTFont
+                import os
+                if os.path.exists(font_file):
+                    reg_name = os.path.splitext(os.path.basename(font_file))[0]
+                    pdfmetrics.registerFont(TTFont(reg_name, font_file))
+                    return reg_name
+            except Exception:
+                pass
+        if not isinstance(font_name, str) or not font_name.strip():
+            return default
+        low = font_name.lower()
+        if "times" in low or ("serif" in low and "sans" not in low):
+            return "Times-Bold" if bold else "Times-Roman"
+        if "courier" in low or "mono" in low:
+            return "Courier-Bold" if bold else "Courier"
+        # Sans-serif families (Helvetica, Arial, Montserrat, Inter, etc.) map to
+        # the Helvetica built-in family, the closest universally available sans.
+        return "Helvetica-Bold" if bold else "Helvetica"
 
     def _S(self, name, **kw):
         size = kw.get("fontSize", MIN_FONT_PT)
@@ -228,33 +307,34 @@ class SpeechPDF:
     def _build_styles(self):
         ss = getSampleStyleSheet()
         self.base = ss["Normal"]
-        self.base.fontName = "Helvetica"
+        self.base.fontName = self.body_font
         self.st = {
             # --- lean cover header (no separate cover page) ---
             "cover_title": self._S("cover_title", fontSize=30, leading=34,
                                     textColor=_hex(self.primary),
-                                    fontName="Helvetica-Bold"),
+                                    fontName=self.headline_font),
             "cover_sub": self._S("cover_sub", fontSize=15, leading=20,
                                   textColor=_hex(self.accent)),
             "cover_pacing": self._S("cover_pacing", fontSize=14, leading=18,
                                     textColor=_hex(self.muted)),
             "section_hdr": self._S("section_hdr", fontSize=15, leading=19,
                                     textColor=_hex(self.primary),
-                                    fontName="Helvetica-Bold"),
+                                    fontName=self.headline_font),
             # --- per-slide bar ---
             "slide_no": self._S("slide_no", fontSize=16, leading=20,
                                  textColor=_hex(self.primary),
-                                 fontName="Helvetica-Bold"),
+                                 fontName=self.headline_font),
             "slide_label": self._S("slide_label", fontSize=15, leading=20,
                                     textColor=_hex(self.muted),
-                                    fontName="Helvetica"),
+                                    fontName=self.body_font),
             "badge": self._S("badge", fontSize=14, leading=18,
                              textColor=_hex(self.muted),
                              fontName="Helvetica-Bold"),
             # --- body ---
             "spoken": self._S("spoken", fontSize=16, leading=23,
                               textColor=_hex(self.ink), spaceBefore=2,
-                              spaceAfter=2, alignment=TA_LEFT),
+                              spaceAfter=2, alignment=TA_LEFT,
+                              fontName=self.body_font),
             "cue": self._S("cue", fontSize=14, leading=20,
                            textColor=_hex(self.accent),
                            fontName="Helvetica-Bold", leftIndent=18,
@@ -662,6 +742,10 @@ def main():
     ap.add_argument("--spec", help="path to speech-spec JSON")
     ap.add_argument("--out", default="PRESENTERS-SPEECH.pdf", help="output PDF path")
     ap.add_argument("--sample", action="store_true", help="render the built-in stub speech")
+    ap.add_argument("--design-system",
+                    help="path to design_system.json; injects the locked brand "
+                         "accent_hex/headline_font/body_font into the PDF "
+                         "(overrides spec.design_system_path if both are given)")
     ap.add_argument("--emit-sample-spec", metavar="PATH",
                     help="write the built-in stub spec to PATH and exit")
     args = ap.parse_args()
@@ -673,12 +757,15 @@ def main():
         return
 
     if args.sample:
-        spec = SAMPLE_SPEC
+        spec = dict(SAMPLE_SPEC)
     elif args.spec:
         with open(args.spec) as f:
             spec = json.load(f)
     else:
         ap.error("provide --spec PATH or --sample")
+
+    if args.design_system:
+        spec["design_system_path"] = args.design_system
 
     pdf = SpeechPDF(spec)
     words, secs = pdf.build(args.out)

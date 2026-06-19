@@ -330,7 +330,7 @@ These auto-fails implement the gate-overhaul doctrine: every rule lands in BOTH 
 | AF-DELIVER | Deliverable bundle incomplete at closeout (missing guide PDF, script PDF, or audio file) | SOP-PITCH-05-DELIVERABLE-BUNDLE.md |
 | AF-DH1 | Deliverable Hygiene violation. The client package directory `delivery/[DECK_SLUG]-FINAL/` contains ANY file that is NOT one of the five allowed files: `[Deck-Title]-FINAL.pptx`, `[Deck-Title]-FINAL.pdf`, `PRESENTER-GUIDE.pdf`, `PRESENTER-SPEECH.pdf`, `PRESENTER-AUDIO.mp3`. Extra files (build artifacts, intermediate renders, prompts, scripts, QC reports, draft PPTX versions, or any file not matching the whitelist) block delivery. Additionally auto-fails when the PPTX or PDF file name does not end in `-FINAL` (draft naming is forbidden in the delivery directory). Detection: enumerate the delivery directory and compare every file name against the five-item whitelist; any extra or wrongly-named file = AF-DH1. Owned by Delivery Concierge SOP 9.0; verified here as the final gate before the owner's download link is produced. |
 | AF-RESEARCH-GATE | Research Phase gate block. At Phase 1Q (copy QC), before any scoring begins, verify that `working/research/brief-[DECK_SLUG].md` exists on disk, contains the header field `research_complete: true`, and includes sections for research categories A, C, D, AND F. Any of the following = AF-RESEARCH-GATE and BLOCKS Phase 1Q entirely: file absent; `research_complete` field missing or not exactly `true`; any of categories A, C, D, or F missing from the brief body. Failure message: "BLOCKED: Research Phase (-0.5) incomplete. The Deep Research Specialist must complete all required categories and set `research_complete: true` before copy QC can run." Route to Director; Director re-dispatches ROLE-04. This gate applies to ALL deck types: personal brand decks AND general offer decks. |
-| AF-CONVERTER-PARITY | Converter-origin runtime parity gate (deck-level, Phase 1Q, converter-origin decks only). Check `intake.json` for `source_brief_origin: "role-22"`. If present, verify ALL FIVE conditions: (1) `render_manifest.json` exists with a `module_version` key (canonical renderer used); (2) all slides in `render_manifest.json` show `model_used` == `intake.json model_pin` or a documented fallback event (model pin held); (3) `working/qc/vision_qc_log.json` exists, non-empty, each slide entry has a non-null `vision_api_response` (real vision QC executed -- path-only entries fail); (4) `working/research/brief-[DECK_SLUG].md` exists + `research_complete: true` + `working/research/grounded-content-[DECK_SLUG].json` exists + `working/research/design-brief-[DECK_SLUG].md` exists (Phase -0.5 complete with Category E and F delivered); (5) `intake.json` carries non-null GOAL, CTA_ACTION, TRANSFORMATION_PROMISE, PRIMARY_OBJECTION, TARGET_FEELING, TONE (each null field is acceptable only when explicitly listed in `source_brief.json persuasion_intelligence.fields_absent_in_source`; an unlisted null = propagation failure). Any failed condition blocks Phase 1Q. Record `af_converter_parity_triggered: true` in `copy_qc_report.json`. Skip entirely when `source_brief_origin` is absent. Failure message: "AF-CONVERTER-PARITY: DECK FAIL -- converter-origin deck failed the runtime parity gate. Failed conditions: {list}." |
+| AF-CONVERTER-PARITY | Converter-origin runtime parity gate (deck-level, Phase 1Q, converter-origin decks only). Check `intake.json` for `source_brief_origin: "content-to-presentation-architect"`. If present, verify ALL FIVE conditions: (1) `render_manifest.json` exists with a `module_version` key (canonical renderer used); (2) all slides in `render_manifest.json` show `model_used` == `intake.json model_pin` or a documented fallback event (model pin held); (3) `working/qc/vision_qc_log.json` exists, non-empty, each slide entry has a non-null `vision_api_response` (real vision QC executed -- path-only entries fail); (4) `working/research/brief-[DECK_SLUG].md` exists + `research_complete: true` + `working/research/grounded-content-[DECK_SLUG].json` exists + `working/research/design-brief-[DECK_SLUG].md` exists (Phase -0.5 complete with Category E and F delivered); (5) `intake.json` carries non-null GOAL, CTA_ACTION, TRANSFORMATION_PROMISE, PRIMARY_OBJECTION, TARGET_FEELING, TONE (each null field is acceptable only when explicitly listed in `source_brief.json persuasion_intelligence.fields_absent_in_source`; an unlisted null = propagation failure). Any failed condition blocks Phase 1Q. Record `af_converter_parity_triggered: true` in `copy_qc_report.json`. Skip entirely when `source_brief_origin` is absent. Failure message: "AF-CONVERTER-PARITY: DECK FAIL -- converter-origin deck failed the runtime parity gate. Failed conditions: {list}." |
 
 **AF-P3 demotion:** verbatim match to the brief is necessary but NOT sufficient as a PASS condition. A brief-matching string that triggers AF-TELEGRAPH, AF-PRICE-FACE, or any other AF code still auto-fails.
 
@@ -403,9 +403,17 @@ This family does not score a slide. It guards the SOP TEXT ITSELF against the si
      "gate": "Phase 1Q",
      "overall_average": 0.0,
      "weighted_average": 0.0,
+     "average": 0.0,
      "auto_fails_triggered": [],
      "af_converter_parity_triggered": false,
      "pass": true,
+     "qc_independence": {
+       "graded_by": "qc-specialist-presentations",
+       "independent": true,
+       "builder": "slide-copywriter",
+       "self_graded": false,
+       "graded_at": "2026-06-18T00:00:00Z"
+     },
      "per_slide_scores": [
        {"slide": N, "auto_fails": [], "scores": {"c1": 0, "c2": 0, ...}, "average": 0.0, "pass": true, "notes": ""}
      ],
@@ -413,6 +421,17 @@ This family does not score a slide. It guards the SOP TEXT ITSELF against the si
      "revision_instructions": []
    }
    ```
+
+   **PROVENANCE (AF-QC-INDEPENDENCE) — the `qc_independence` block is MANDATORY.**
+   The build_deck.py preflight (`_chk_copy_qc`) HARD-FAILS the deck (exit 3) on a
+   self-graded / builder-graded report — a report that passes every numeric check
+   but was written by the role that authored the copy proves nothing. The block MUST:
+   `graded_by` (or `reviewer`/`reviewed_by`/`reviewer_identity`) names the INDEPENDENT
+   QC specialist (a non-empty string, NOT any of `build_deck.py`/`build_deck`/`self`/
+   `builder`/`author`, NOT the deck-copy author role `slide-copywriter`); `independent`
+   is `true`; `self_graded` is `false`; and any recorded `builder`/`built_by` identity
+   must differ from the reviewer. A report that OMITS this block FAILS — independence
+   is proven affirmatively, never assumed.
 6. For every slide with an auto-fail or scoring < 8.5: write specific revision_instructions. Each instruction must name the criterion or auto-fail code, the specific failure, and the required fix. Example: "Slide 12, AF-C5 (headline word count): headline is 11 words (max 9). Trim to: 'Your clients come to you every week.'"
 7. If overall weighted_average >= 8.5 AND no individual slide scores below 7.0 AND no auto-fails: pass. Write `pass: true`.
 8. If any slide scores below 7.0 OR overall weighted_average < 8.5 OR any auto-fail triggered: fail. Write `pass: false`. Send revision_instructions to the Slide Copywriter.
@@ -710,7 +729,7 @@ soffice --headless --convert-to pdf <Deck>.pptx && pdftoppm -png -r 100 <Deck>.p
    h. **Teach-themselves (SP-TEACH):** the deck invites the audience to reach the conclusion themselves ("you already know..."), conversational rather than lecturing.
    i. **Not over-taught (GP-10):** "appetizer, not dinner" -- the teaching proves value and creates desire without handing over the complete HOW (which lives in the offer).
    j. **The Promise leads (master rule 2, component 1):** the deck identifies and leads with the core promise; teach/offer slides pitch the promise, not the product.
-   k. **The Hook sings (master rule 1, component 2):** the hook is present and sung >= 7 times in the assembled deck (re-confirm the copy QC c1 count survived assembly).
+   k. **The Hook sings (master rule 1, component 2):** the verbatim hook stands on EXACTLY 3 to 4 DEDICATED pure-typography slides, NOWHERE ELSE, and never as a footer in the assembled deck (re-confirm the AF-HOOK ceiling survived assembly; over-stamping is the defect, not under-count).
    l. **Who says so / external proof present (master rule 12, component 3):** at least one third-party proof beat (case study / study / white paper) is woven between the drops. ZERO external proof in the assembled deck = fail; surface to the operator.
    m. **Wall of Wins present (master rule 20, component 4):** a wall-of-wins / wall-of-results slide concentrating multiple named wins exists near the close.
    n. **The Guarantee present (master rule 21, component 6):** an explicit guarantee / risk-reversal beat exists.
@@ -806,8 +825,8 @@ The TYPOGRAPHY LAW is a scored AUTO-FAIL gate. At prompt QC it is AF-P10 (binary
 ### Gate 11 -- Standalone Art
 The standalone-art principle is a scored AUTO-FAIL gate. At prompt QC it is AF-P11 (binary floor) plus criterion p18 (scored, double-weight); at image QC it is AF-I10 (binary floor) plus criterion i17 (scored, double-weight); it is re-verified at final-deck QC (SOP 9.5 step 2e). "Just a background with text" does not pass. Each slide must read, pulled out alone, as a finished gallery-grade piece of visual art with its own felt emotional beat.
 
-### Gate 12 -- Hook Doctrine (Purple Rain, ~10x woven)
-The hook is a scored AUTO-FAIL gate at copy QC: AF-C2 (binary floor) plus criterion c1 (scored, double-weight). The refrain appears >= 7 times (doctrine ~10x), is sung from the first verse (inside the first 15%) and woven slide to slide through every section, never only on slide 1 and the close, with a dedicated A4 hook slide and a closing reprise. A delayed or end-only hook fails even if the raw count clears 7.
+### Gate 12 -- Hook Doctrine (Purple Rain, banded ceiling)
+The hook is an AUTO-FAIL gate at copy QC: AF-C2 (the AF-HOOK ceiling battery) governs it; criterion c1 is NOT scored by count. The verbatim refrain stands on EXACTLY 3 to 4 DEDICATED pure-typography slides at named beats and NOWHERE ELSE, never as a footer, never on a content slide, with a dedicated A4 hook slide and a closing reprise as two of those beats. More than 4 hook-carrying slides, or any footer-stamped hook, fails; over-stamping is the #1 defect -- STRIP excess rather than pad.
 
 ### Gate 13 -- GRADUAL-Drop Choreography (spread, not stacked)
 The gradual drop is a scored AUTO-FAIL gate at copy QC: AF-C7 (binary floor) plus criteria c15 and c17 (scored). The anchor is a value plant (not a drop), the drops are spread across the whole deck (~47/68/87%, not stacked in the close), every drop is earned and built up and ADDS value (never strips it), case studies sit between the drops, and the FINAL real price sits below the entire ladder. Cross-checked against price_ladder.json, offer_stack.json, and the Offer and Price Strategist Gate 6 + Gate 10. AF-C7 has four individually-recorded sub-conditions (FIX-5): (a) SPREAD, (b) EARNED + BUILT-UP, (c) ADDS value, (d) FINAL below the ladder. Sub-condition (c) carries the ESCALATION clause (the value added at each drop is bigger and better than the prior rung, so the cumulative running value total strictly climbs) and the RISING-VALUE CURVE clause (that climbing value total is rendered against the falling/struck price so the inverse is SEEN, not implied). The RAVENOUS objective: with every price drop the value INCREASES with a bigger and better promise, so the audience watches the price fall while the value rises on screen; that visible, escalating, falling-price/rising-value inverse is what makes the audience ravenous by the final price. The stacked failure (all drops crammed into the close), a flat-value discount, or a struck price with no climbing value total beside it does not pass.
@@ -906,7 +925,7 @@ image_qc_report.json representation_tally: captured_mix = [{group: "African Amer
 - Letting delivery proceed without `final_deck_qc.json` on disk with `pass: true`. AF-F5 / SOP 9.6 is a hard precondition. A done message without verified artifacts is a lie; an un-rendered or un-asserted deck is an unverified deck and must never carry a PASS artifact.
 - Passing a prompt or image whose type reads as a basic or default font, or whose type has no hierarchy, because "the headline is correct." AF-P10 / AF-I9 typography is blocking: designed weight-mapped typography composed into the image is mandatory; a basic font is the documented gold-standard failure.
 - Passing a slide that is "just a background with text" because "the photo is beautiful." AF-P11 / AF-I10 standalone-art is blocking: each slide must read, pulled out alone, as a finished piece of art with its own felt beat. A background with copy dropped on it fails even if the photo is premium.
-- Passing the hook because the raw count is 7, when the hook is only on slide 1 and the close (not woven through the sections) or first appears past the first 15%. AF-C2 / c1 enforces the Purple Rain doctrine: ~10x, from the first verse, woven the whole way through.
+- Passing a hook that is footer-stamped, duplicated, or spread beyond its dedicated beats because "the count is high." AF-C2 / AF-HOOK enforces the Purple Rain ceiling: the verbatim hook lives on EXACTLY 3 to 4 DEDICATED pure-typography slides and NOWHERE ELSE, never a footer; more than 4 hook-carrying slides fails. Over-stamping is the defect -- STRIP excess rather than pad.
 - Passing the ladder because each individual price is consistent, when the drops are stacked back-to-back in the close instead of spread across the deck, or a drop strips value to justify itself. AF-C7 / c15 / c17 enforces the gradual-drop choreography: spread, earned, built up, value added (never stripped), FINAL below the ladder.
 
 ---
@@ -932,7 +951,7 @@ image_qc_report.json representation_tally: captured_mix = [{group: "African Amer
 | 15 | Reporting a deck "done" before final_deck_qc.json exists and is PASS | SOP 9.6 delivery interlock (AF-F5): no PASS artifact, no delivery. Verify the artifact on disk. |
 | 16 | Passing a slide whose type is a basic or default font, or has no hierarchy | AF-P10/AF-I9 (typography) is blocking. Designed weight-mapped typography composed into the image is mandatory; check the weight, the per-line size, and the hierarchy. |
 | 17 | Passing a "background with text" slide because the photo looks premium | AF-P11/AF-I10 (standalone art) is blocking. Pull the slide out alone: it must read as a finished gallery-grade art piece with its own felt beat. |
-| 18 | Passing the hook on raw count alone | AF-C2/c1: the doctrine is ~10x, from the first verse, woven slide to slide. End-only or delayed hooks fail even at count 7. |
+| 18 | Passing a footer-stamped or over-spread hook because the count is high | AF-C2/AF-HOOK: the ceiling is EXACTLY 3 to 4 DEDICATED pure-typography slides, NOWHERE ELSE, never a footer. More than 4 hook-carrying slides fails; over-stamping is the #1 defect -- STRIP excess rather than pad. |
 | 19 | Passing the ladder because numbers are consistent | AF-C7/c15/c17: the drops must be spread (not stacked in the close), earned, built up, and ADD value (never strip it), with the FINAL below the ladder. |
 
 ---

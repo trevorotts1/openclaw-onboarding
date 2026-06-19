@@ -1,0 +1,27 @@
+{
+  "$schema_note": "GUARD B — RETIRED-DOCTRINE RESIDUAL LINT registry. SINGLE SOURCE OF TRUTH for doctrine VALUES that have been retired and must never silently re-appear in the Presentations tree. scripts/doctrine_residual_check.py greps each entry's `pattern` (regex, IGNORECASE+MULTILINE) over the files matched by `scope` (glob, relative to the presentations/ root). Any match on a line/block that does NOT also carry an allowed_context_marker (an explicit retirement/replacement signal) is an OFFENDER and fails the check non-zero. A retired value is allowed to survive ONLY as documented history — i.e. on a line (or within `context_window` lines) that says it was retired/replaced. RETIRING A DOCTRINE VALUE IS A CONTRACT: add it here (Guard B) so the OLD value can never quietly creep back in as a live instruction. To add a new retired pattern: append an object with a unique `id`, a `pattern` that matches the retired value, a `scope` glob, a one-line `why`, and (optionally) per-pattern `allowed_context_markers` (otherwise the registry-level defaults apply).",
+  "context_window": 2,
+  "allowed_context_markers": [
+    "retired",
+    "RETIRED",
+    "retire",
+    "replaced",
+    "replac",
+    "do not re-introduce",
+    "never re-introduce",
+    "historical",
+    "migration",
+    "no longer",
+    "inverts",
+    "below 7"
+  ],
+  "patterns": [
+    {
+      "id": "hook-floor-ge-7",
+      "why": "The retired '>= 7 / sung at least 7 times / seven times' HOOK FLOOR produced the reference-case 40-slide footer-stamping. The live gate is the banded AF-HOOK CEILING (3-4 dedicated slides). The old floor must never re-appear as a live instruction.",
+      "pattern": "(?:>=\\s*7x?|at\\s+least\\s+7|fewer\\s+than\\s+7|never\\s+fewer\\s+than\\s+7|below\\s+7|7\\s+times|seven\\s+times|occurrences\\s*>=\\s*7|AT\\s+LEAST\\s+7\\s+TIMES)",
+      "near": "hook",
+      "scope": "**/*.md"
+    }
+  ]
+}

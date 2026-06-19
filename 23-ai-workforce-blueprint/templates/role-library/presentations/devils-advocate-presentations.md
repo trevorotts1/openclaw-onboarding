@@ -134,7 +134,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    DA Review Date: [YYYY-MM-DD]
    Reviewer: Devil's Advocate -- Presentations
 
-   ## Doctrine Point 1: The Hook Doctrine (hook sings >= 7 times)
+   ## Doctrine Point 1: The Hook Doctrine (hook on EXACTLY 3 to 4 dedicated slides, nowhere else)
    STATUS: PASS/FLAG
    [If FLAG: Slide(s): N, M. Violation: [exact text]. Fix: [exact instruction].]
 
@@ -187,7 +187,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **1. THE HOOK DOCTRINE (the Purple Rain rule).** A presentation is written like a song: there is a rhythm, and there is a hook. A 5-minute song sings its hook 10 times so you remember a 5-minute song; most presenters give a 30-minute presentation and say their hook once. This system writes the hook and SINGS it.
 - The hook is the strongest part of the promise, the one thing the audience wants most, compressed into one singable line (proven deck: "30 Kids. 30 Days."; another client: "There is a difference between parenting by control and parenting through clarity.").
 - Phase 1 derives the hook from `BIG_PROMISE` + `OFFER_STACK`, records it as `HOOK` in intake.json, and the owner confirms it at the approval gate.
-- **The hook appears AT LEAST 7 TIMES across the deck** (scale up on longer decks: roughly one occurrence per 8 to 10 slides, never fewer than 7). Each occurrence is tied back to the content on that slide; it is a refrain, not wallpaper.
+- **The verbatim hook stands on EXACTLY 3 to 4 DEDICATED pure-typography slides at named beats and NOWHERE ELSE** -- never as a footer, never on a content slide. More than 4 hook-carrying slides is an auto-fail; over-stamping (the 40-slide footer-stamping of the reference failure) is the #1 defect -- STRIP excess rather than pad. It is a sacred refrain on its dedicated beats, never wallpaper.
 - The hook gets at least one DEDICATED slide of its own (A4 type-dominant treatment).
 - **Sing it early.** Nobody waits until the end of the song to sing Purple Rain. First occurrence lands inside the first 10 to 15% of the deck, then recurs through every section, and reprises in the close.
 - **Refrain after proof.** When a story or case study proves the point, the hook is run again at the bottom of that slide, because the proof just earned it.
@@ -295,8 +295,8 @@ The DA's hook count is performed independently (not just reading hook_variants.j
 ### Example A -- Doctrine Point 12 (Who Says So / no fabricated proof) BLOCKING FLAG
 "Doctrine Point 12: Who says so other than you -- proof named, located, sourced. STATUS: FLAG (HIGH, BLOCKING). Slide 31 cites 'Renata, Austin, closed $24,000 in 30 days,' but proof_audit.txt has no source for this testimonial and intake PROOF_ASSETS lists no Renata. This is fabricated proof (master point 12 + Section 3.2 no-fabrication rule). Fix: replace with a sourced, named, located testimonial from the client's records, or mark the slide [CLIENT TO SUPPLY] and restructure without the claim. RUN BLOCKED: deck cannot advance to Phase 1A until the Director resolves this."
 
-### Example B -- Doctrine Point 1 (Hook Doctrine, sings >= 7 times) PASS
-"Doctrine Point 1: The Hook Doctrine -- hook sings >= 7 times. STATUS: PASS. Independent count: 9 hook appearances across slides 1, 8, 18, 27, 39, 47, 56, 67, 74. First occurrence at slide 1 (inside the first 15%). Dedicated A4 hook slide present at slide 18. Distribution is even across all sections, and the close (slide 74) reprises it."
+### Example B -- Doctrine Point 1 (Hook Doctrine, 3 to 4 dedicated slides, nowhere else) PASS
+"Doctrine Point 1: The Hook Doctrine -- hook on EXACTLY 3 to 4 dedicated slides, nowhere else. STATUS: PASS. Independent count: 4 DEDICATED pure-typography hook slides at 8, 18, 47, 74 and ZERO footer occurrences elsewhere. First dedicated beat at slide 8 (inside the first 15%). The close (slide 74) reprises it. No content slide carries the hook; no footer-stamping. Within the 3-to-4 ceiling."
 
 ### Example C -- Doctrine Point 14 (Always Pitch / fake scarcity) BLOCKING FLAG
 "Doctrine Point 14: Always pitch something -- real revenue, real commitment, real scarcity. STATUS: FLAG (HIGH, BLOCKING). Slide 71 reads 'Only 3 spots left' but VIP_SPOTS in intake.json is unset and no real cap exists. This is fake scarcity (master point 14 + Section 5.4 true-urgency rule). Fix: state the true constraint (a real cohort start date or a real enrollment cap) or remove the scarcity claim entirely. RUN BLOCKED until the Director resolves this."

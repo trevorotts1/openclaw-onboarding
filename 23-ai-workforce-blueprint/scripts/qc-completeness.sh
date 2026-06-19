@@ -32,6 +32,16 @@
 #   3 = FAIL  (any dept at zero materialization or library missing)
 #   4 = NO_WORKFORCE_FOUND  (cannot resolve active company)
 #   5 = GATE_BUG  (resolver returned no result but real workforce dir exists)
+#   6 = PRESENTATION_DEPS_MISSING  (a presentation-pipeline runtime dep is absent)
+#
+# PRESENTATION-DEPS HARD GATE (deps-fix): the Skill 23 presentation pipeline
+# requires four runtime deps — soffice (LibreOffice/libreoffice-impress, PPTX→PDF),
+# pdftoppm (poppler/poppler-utils, PDF→PNG for Phase-6 QC), and the Python modules
+# reportlab + pptx (python-pptx). install.sh Step 6.5 installs all four. This gate
+# now hard-fails (exit 6) when ANY of them is missing, so onboarding / the
+# presentation build cannot be declared complete with a broken pipeline. The check
+# runs BEFORE the workforce resolution so it fires even on a not-yet-built company.
+# Set QC_SKIP_PRESENTATION_DEPS=1 to bypass (e.g. a non-presentation install).
 
 set -uo pipefail
 
@@ -68,6 +78,28 @@ log "skill_dir=${SKILL_DIR}"
 log "log_file=${LOG_FILE}"
 log "json_file=${JSON_FILE}"
 log "============================================"
+
+# ----- PRESENTATION-DEPS HARD GATE (deps-fix) -----------------------------------
+# Skill 23's presentation pipeline cannot run without these four runtime deps.
+# install.sh Step 6.5 installs them (Mac: brew + pip; VPS: real /usr/bin/apt-get +
+# pip, re-asserted by the reassert-presentation-deps cron). If any is missing the
+# build will silently produce no deck / no presenter guide / no Phase-6 QC PNGs, so
+# we HARD-FAIL here (exit 6) rather than letting onboarding pass. Runs before the
+# workforce resolution so it fires even on a not-yet-built company.
+if [ "${QC_SKIP_PRESENTATION_DEPS:-0}" != "1" ]; then
+  _PRES_DEPS_MISSING=""
+  command -v soffice  >/dev/null 2>&1 || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} soffice(libreoffice-impress)"
+  command -v pdftoppm >/dev/null 2>&1 || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} pdftoppm(poppler-utils)"
+  python3 -c "import reportlab, pptx" >/dev/null 2>&1 || _PRES_DEPS_MISSING="${_PRES_DEPS_MISSING} python(reportlab+python-pptx)"
+  if [ -n "$_PRES_DEPS_MISSING" ]; then
+    log "PRESENTATION_DEPS_MISSING — missing:${_PRES_DEPS_MISSING}"
+    log "  The Skill 23 presentation pipeline cannot run. Re-run install.sh Step 6.5,"
+    log "  or on a VPS run: bash /data/.openclaw/scripts/reassert-presentation-deps.sh"
+    printf '{"status":"PRESENTATION_DEPS_MISSING","ts":"%s","missing":"%s"}\n' "$TS" "${_PRES_DEPS_MISSING# }" > "$JSON_FILE"
+    exit 6
+  fi
+  log "presentation deps OK: soffice + pdftoppm + reportlab + python-pptx all present"
+fi
 
 # ----- Resolve active company via vendored detect_platform -----
 # v10.15.44 / v10.16.43 FIX: use the same resolver as post-build-role-workspaces.py.

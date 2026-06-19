@@ -357,9 +357,40 @@ def read_brand_name(intake_path):
     return ""
 
 
+HOUSE_ACCENT = "#f2b134"
+
+
+def read_design_system_accent(design_system_path):
+    """Best-effort locked brand accent hex from design_system.json.
+
+    Reads brand.accent (preferred), falling back to brand.accent_hex then
+    brand.primary. Returns the HOUSE_ACCENT fallback if the file is absent,
+    unreadable, or has no usable accent. Validates the value is a #RGB/#RRGGBB
+    hex string before accepting it.
+    """
+    if not design_system_path:
+        return HOUSE_ACCENT
+    p = Path(design_system_path)
+    if not p.exists():
+        return HOUSE_ACCENT
+    try:
+        data = json.loads(p.read_text())
+    except Exception:
+        return HOUSE_ACCENT
+    brand = data.get("brand") if isinstance(data, dict) else None
+    if not isinstance(brand, dict):
+        return HOUSE_ACCENT
+    for key in ("accent", "accent_hex", "primary"):
+        v = brand.get(key)
+        if isinstance(v, str) and re.fullmatch(r"#[0-9A-Fa-f]{3}([0-9A-Fa-f]{3})?", v.strip()):
+            return v.strip()
+    return HOUSE_ACCENT
+
+
 # ---------------------------------------------------------------------------
 # HTML template. The speech payload is injected as inline JSON at __SPEECH_JSON__,
-# the brand name at __BRAND_NAME__, and the default WPM at __WPM__.
+# the brand name at __BRAND_NAME__, the default WPM at __WPM__, and the locked
+# brand accent hex at __ACCENT_HEX__ (from design_system.json, fallback #f2b134).
 # Everything else is static, self-contained CSS + JS. No external assets.
 # ---------------------------------------------------------------------------
 HTML_TEMPLATE = r"""<!DOCTYPE html>
@@ -370,9 +401,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <title>Presenter's Speech -- Teleprompter</title>
 <style>
   :root {
-    --bg: #0b0d12; --fg: #f5f7fa; --muted: #8a93a3; --accent: #f2b134;
-    --rail: #141821; --rail-active: #1d2430; --cue: #f2b134; --over: #ff5a5a;
-    --ok: #57d977; --warn: #f2b134;
+    --bg: #0b0d12; --fg: #f5f7fa; --muted: #8a93a3; --accent: __ACCENT_HEX__;
+    --rail: #141821; --rail-active: #1d2430; --cue: __ACCENT_HEX__; --over: #ff5a5a;
+    --ok: #57d977; --warn: __ACCENT_HEX__;
   }
   html.light {
     --bg: #fbfbf9; --fg: #1a1a1a; --muted: #6b6b6b; --accent: #b9810a;
@@ -799,7 +830,7 @@ function ingest(md){
 """
 
 
-def build_html(data, brand_name, wpm):
+def build_html(data, brand_name, wpm, accent_hex=HOUSE_ACCENT):
     payload = json.dumps(data, ensure_ascii=False)
     # guard against the JSON closing the inline <script> early
     payload = payload.replace("</", "<\\/")
@@ -807,6 +838,7 @@ def build_html(data, brand_name, wpm):
     html = html.replace("__SPEECH_JSON__", payload)
     html = html.replace("__BRAND_NAME__", (brand_name or "Presenter's Speech").replace("&", "&amp;").replace("<", "&lt;"))
     html = html.replace("__WPM__", str(int(wpm)))
+    html = html.replace("__ACCENT_HEX__", accent_hex or HOUSE_ACCENT)
     return html
 
 
@@ -886,6 +918,9 @@ def main():
     ap.add_argument("--speech", help="path to the finished PRESENTERS-SPEECH.md")
     ap.add_argument("--out", default="presenter-teleprompter.html", help="output HTML path")
     ap.add_argument("--intake", help="path to intake.json (for brand/company name)")
+    ap.add_argument("--design-system",
+                    help="path to design_system.json (for the locked brand accent color); "
+                         "falls back to house amber #f2b134 when absent")
     ap.add_argument("--sample", action="store_true", help="build from the built-in stub speech")
     ap.add_argument("--emit-sample-speech", metavar="PATH",
                     help="write the built-in stub PRESENTERS-SPEECH.md to PATH and exit")
@@ -919,11 +954,12 @@ def main():
         )
         sys.exit(2)
     brand = read_brand_name(args.intake)
-    html = build_html(data, brand, data["wpm"])
+    accent = read_design_system_accent(args.design_system)
+    html = build_html(data, brand, data["wpm"], accent)
     Path(args.out).write_text(html)
     print(f"Rendered {args.out}")
     print(f"Slides: {len(data['slides'])}  |  WPM: {data['wpm']}  |  "
-          f"brand: {brand or '(none from intake)'}")
+          f"brand: {brand or '(none from intake)'}  |  accent: {accent}")
     print(f"HTML size: {len(html):,} bytes (self-contained: inline CSS + JS + speech JSON)")
 
 

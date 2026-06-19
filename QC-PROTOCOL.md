@@ -344,6 +344,34 @@ ONLY when all three of the following layers are confirmed, not just one:
 **Tool:** `scripts/fleet-refresh.sh --verify-only` generates the per-box
 evidence for all three layers without making any changes.
 
+### Rule 9c: A rule that is only DESCRIBED is not ENFORCED (the promotion rule)
+
+A doctrine rule does not exist until it is enforced and tested. Prose that
+"says" a gate exists — but ships no enforcing code and no test that fails when
+the gate is violated — is a latent no-op (this is exactly how the Presentations
+`AF-QC-INDEPENDENCE` gate shipped as a manifest entry whose enforcement was a
+no-op, with no negative test). The binding promotion rule:
+
+  1. **Every doctrine rule ships as a manifest autofail WITH an enforcing
+     `py_symbol` AND a negative test that triggers it (Guard A).** For the
+     Presentations department, `scripts/gate_integrity_check.py` asserts, for
+     every `PIPELINE-MANIFEST.json` autofail with `enforced_by == build_deck`,
+     that its `py_symbol` is defined + referenced on the enforcement path AND
+     that the AF code appears in `test_preflight.py`'s emitted `af-coverage`
+     (i.e. a deliberately-failing fixture actually triggers it). A declared gate
+     that is a no-op or untested fails the check non-zero.
+
+  2. **Retiring a doctrine VALUE requires adding it to
+     `retired-doctrine-patterns.json` (Guard B).** A retired value (e.g. the old
+     hook `>= 7 times` floor) must be registered so
+     `scripts/doctrine_residual_check.py` greps the tree and fails if it ever
+     re-appears as a LIVE instruction (any occurrence lacking a retirement
+     context marker).
+
+These two guards plus `sync_check.py` run in CI
+(`.github/workflows/presentations-lockstep.yml`); a described-only rule, a no-op
+gate, an untested gate, or a resurrected retired value all fail the merge.
+
 ## PART 3 — CLOUDFLARE API KEY CHECK AT INSTALL
 
 ### Rule 10: Cloudflare API key is verified before install proceeds

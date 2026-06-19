@@ -37,7 +37,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ### 1. Slide Copywriter
 **Slug:** slide-copywriter
-**What it does:** Writes every word on every slide (Phase 1): headlines (max 9 words), subheads (max 18 words), body bullets (max 3), and presenter notes. Embeds the hook at least 7 times. Enforces no-em-dash and no-fabrication rules. Produces slides_copy.md for the Phase 1Q QC gate and the owner approval gate.
+**What it does:** Writes every word on every slide (Phase 1): headlines (max 9 words), subheads (max 18 words), body bullets (max 3), and presenter notes. Places the canonical hook on the 3 to 4 DEDICATED pure-typography hook slides named by the Hook Strategist and nowhere else. Enforces no-em-dash and no-fabrication rules. Produces slides_copy.md for the Phase 1Q QC gate and the owner approval gate.
 **Core SOPs to build:**
 - 01-Write-the-Slides-Words-First-One-Big-Idea.md
 - 02-Hook-Authoring-and-Refrain-Placement.md
