@@ -27,6 +27,20 @@ Note on the spacing floor: this ruleset's AF-DEN-1 proposes an absolute "8-slide
 
 ---
 
+## AF-DARK-SLIDE — No Dark Slides (AUTO-FAIL)
+
+Slides MUST use LIGHT / bright backgrounds by DEFAULT. DARK or black-background slides are NOT ALLOWED unless the CLIENT EXPLICITLY requests a dark theme via the intake flag `client_dark_theme: true`. Light is the default; dark is opt-in by client request only.
+
+- DEFAULT: Light / bright background slides
+- ALLOWED dark: Only when `client_dark_theme: true` is set in working/copy/intake.json
+- AUTO-FAIL: Any dark/black/near-black default background without `client_dark_theme: true`
+
+**Trigger:** image prompts or design brief contain dark background keywords ("dark background", "black background", "dark theme", "near-black", "dark slide", "dark mode") OR near-black hex/rgb color references (#000, #111, #222, #1a1a1a, #0d0d0d, rgb(0,0,0), rgb(20,20,20)) AND intake.json does NOT carry `client_dark_theme: true`.
+
+**Failure message:** `AF-DARK-SLIDE: Dark/black background detected in prompts but client_dark_theme is not set. Light backgrounds are required by default. Set client_dark_theme: true in intake.json to enable dark theme (explicit client request only).`
+
+---
+
 ## 0. WHY DESCRIPTION ALONE FAILED (read before wiring)
 
 PR #212 added 77 auto-fails and the FINAL deck STILL shipped the hook on 40 slides, the word "webinar", and raw "[owner to confirm]" placeholders. The lesson: a rule that is SCORED (averages away) or phrased as soft guidance ("the hook should recur as a refrain, not wallpaper") does not stop the defect. Every rule here is a BINARY TRIGGER with an exact detection method and a deck/slide-level veto. If a checker cannot mechanically evaluate it, it is not in this ruleset. The five things that must be impossible to ship are:
@@ -185,6 +199,7 @@ These are deck-level and are evaluated against arc_allocation.json and slide ord
 | AF-PACKAGE-CLEAN | Postflight/Closeout | DECK | Dev artifacts in the delivered bundle (*.py, *.sh, ~$* Office lock/temp, tasks/ dir, task_*.json, intermediate .md drafts) | check_package_cleanliness(bundle_dir): enumerates bundle directory; forbidden extensions + forbidden name prefixes + forbidden dir names + intermediate draft pattern; fails listing each forbidden artifact. A clean canonical-only bundle passes. |
 | AF-IMAGE-QC-RAN | Image-QC/Postflight | DECK | Image-QC report absent, stale (older than rendered PNGs), or rubber-stamped (no per-slide PASS/FAIL rows for all N slides) | check_image_qc_present(run_dir): checks report exists + mtime > all PNG mtimes + slides[] array has one entry per rendered slide. Absent report defers (AF-IMAGE-QC owns absence). Stale or row-missing -> FAIL. |
 | AF-BRAND-CONSISTENCY | Image-QC/Postflight | DECK | Off-brand palette: any rendered slide whose ALL dominant sampled colors fall outside the declared brand token set (intake.json brand.palette) by > BRAND_CONSISTENCY_TOLERANCE (80 RGB units) | check_brand_consistency(run_dir): loads brand.palette from intake.json; samples dominant colors per slide PNG; fails 'off_brand_palette' for offending slides. Defers when no brand palette declared or no renders exist. |
+| AF-DARK-SLIDE | Intake/Prompt | DECK | dark/black background in prompts without client_dark_theme:true | scan image prompts + design brief for dark background keywords and near-black hex/rgb values; pass ONLY when client_dark_theme:true is in intake.json |
 
 Every row is a binary trigger with an exact detection method and a verbatim failure message (Section 1 and 2). Wire them as auto-fails, checked before scoring. A deck that trips any DECK-level row, or any slide that trips a slide-level row, cannot be marked final.
 

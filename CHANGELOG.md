@@ -1,24 +1,27 @@
-## v12.37.0 — 2026-06-19 — Guard A green: emit_af_coverage probes for 4 new gates + _slide_dominant_colors Pillow 11.x palette-length fix
+## v12.37.0 — 2026-06-19 — Guard A green: emit_af_coverage probes for 5 new gates (including AF-DARK-SLIDE from main) + _slide_dominant_colors Pillow 11.x palette-length fix
 
 Two concrete bugs found by independent audit, both fixed:
 
-- **Bug 1 (Guard A red — BUG 1)**: `emit_af_coverage()` in `test_preflight.py` had standalone `test_check_*()` functions for the 4 new gates (AF-VISUAL-VARIETY, AF-PACKAGE-CLEAN, AF-IMAGE-QC-RAN, AF-BRAND-CONSISTENCY) but NO probes in `emit_af_coverage()` — the ONLY producer of `working/af-coverage.json` that `gate_integrity_check.py` (Guard A) reads. Guard A was exiting 1 with "4 UNTESTED violations". Fixed: added 4 deliberate-failure probes in `emit_af_coverage()` that drive each gate to a FAIL result and record the AF code via the `record()` helper. The triggered set grows from 18 to 22 codes; Guard A now exits 0.
-- **Bug 2 (AF-BRAND-CONSISTENCY no-op)**: `_slide_dominant_colors()` used `for i in range(64)` after `quantize(colors=64)`, but Pillow 11.x returns a SHORT palette for low-colour images (e.g. a solid fill yields `len(palette)==3`). Indexing `palette[i*3]` for `i>=1` raised `IndexError`; the bare `except Exception` swallowed it and returned `[]`, so `check_brand_consistency()` treated every slide as "skip" and could NEVER fail. Fixed: bounded the loop to `len(palette)//3`; separated the `ImportError` (PIL absent → silent defer) from real errors (logged to stderr, return `[]` — callers skip slides where dominant==[]).
+- **Bug 1 (Guard A red — BUG 1)**: `emit_af_coverage()` in `test_preflight.py` had standalone `test_check_*()` functions for the 4 new gates (AF-VISUAL-VARIETY, AF-PACKAGE-CLEAN, AF-IMAGE-QC-RAN, AF-BRAND-CONSISTENCY) but NO probes in `emit_af_coverage()` — the ONLY producer of `working/af-coverage.json` that `gate_integrity_check.py` (Guard A) reads. Guard A was exiting 1 with "4 UNTESTED violations". Fixed: added 4 deliberate-failure probes in `emit_af_coverage()` that drive each gate to a FAIL result and record the AF code via the `record()` helper. AF-DARK-SLIDE (merged from main) also wired into emit_af_coverage. The triggered set grows to 23 codes; Guard A now exits 0.
+- **Bug 2 (AF-BRAND-CONSISTENCY no-op)**: `_slide_dominant_colors()` used `for i in range(64)` after `quantize(colors=64)`, but Pillow 11.x returns a SHORT palette for low-colour images (e.g. a solid fill yields `len(palette)==3`). Indexing `palette[i*3]` for `i>=1` raised `IndexError`; the bare `except Exception` swallowed it and returned `[]`, so `check_brand_consistency()` treated every slide as "skip" and could NEVER fail. Fixed: bounded the loop to `len(palette)//3`; separated the `ImportError` (PIL absent -> silent defer) from real errors (logged to stderr, return `[]` -- callers skip slides where dominant==[]).
+
+Merge: v12.36.0 from main (AF-DARK-SLIDE gate) merged into deck-quality-gates branch. All five gates now present; manifest_version bumped to 12.
 
 Verification (all from the scripts dir):
-- `python3 test_preflight.py` → exit 0, 22 codes triggered in af-coverage.
-- `python3 gate_integrity_check.py` → exit 0 (Guard A green, 22/22 codes).
-- `python3 sync_check.py` → exit 0.
+- `python3 test_preflight.py` -> exit 0, 23 codes triggered in af-coverage.
+- `python3 gate_integrity_check.py` -> exit 0 (Guard A green, 23/23 codes).
+- `python3 sync_check.py` -> exit 0.
 - `check_brand_consistency` with a solid-magenta slide vs navy/gold palette returns AF-BRAND-CONSISTENCY (was: always return "").
 
-## v12.36.0 — 2026-06-19 — Deck quality enforcement gates: AF-VISUAL-VARIETY, AF-PACKAGE-CLEAN, AF-IMAGE-QC-RAN, AF-BRAND-CONSISTENCY
+## v12.36.0 — 2026-06-19 — Deck quality enforcement gates + No-dark-slides rule (AF-VISUAL-VARIETY, AF-PACKAGE-CLEAN, AF-IMAGE-QC-RAN, AF-BRAND-CONSISTENCY, AF-DARK-SLIDE)
 
-Four new enforcement gates close a class of deck-delivery failures seen in production. Each gate has a concrete Python checker in `build_deck.py`, a manifest entry in `PIPELINE-MANIFEST.json` (manifest_version 11, 58 autofails), a row in the Section-5 `MASTER-QC-AUTOFAIL-RULESET.md` table, a negative test in `test_preflight.py` (Guard A stays green), and is wired into both `PREFLIGHT_REQUIRED` (where conditional) and `run_postflight_gate`. `sync_check.py` exits 0 (in-sync). Skill-23 bumped to 2.1.0.
+Five enforcement gates total (4 from deck-quality-gates branch + AF-DARK-SLIDE from main). Each gate has a concrete Python checker in `build_deck.py`, a manifest entry in `PIPELINE-MANIFEST.json`, a row in the Section-5 `MASTER-QC-AUTOFAIL-RULESET.md` table, a negative test in `test_preflight.py`, and is wired into both `PREFLIGHT_REQUIRED` (where conditional) and `run_postflight_gate`. `sync_check.py` exits 0 (in-sync). Skill-23 bumped to 2.1.0.
 
-- **AF-VISUAL-VARIETY** (`check_visual_variety`): rejects an all-dark monotone deck — fires when >= 90% of rendered slides share one dominant background hue bucket OR >= 90% are below the dark-luma threshold (0.30) with < 10% light/break slides. Blocks an all-navy 35-slide deck (mean luma < 0.18, gold-on-navy contrast ~2.1:1 WCAG fail). Defers pre-render.
+- **AF-VISUAL-VARIETY** (`check_visual_variety`): rejects an all-dark monotone deck -- fires when >= 90% of rendered slides share one dominant background hue bucket OR >= 90% are below the dark-luma threshold (0.30) with < 10% light/break slides. Blocks an all-navy 35-slide deck (mean luma < 0.18, gold-on-navy contrast ~2.1:1 WCAG fail). Defers pre-render.
 - **AF-PACKAGE-CLEAN** (`check_package_cleanliness`): the delivered bundle must contain ONLY canonical deliverable files. Fails on any `.py`, `.sh`, `~$*` Office lock/temp file, `tasks/` directory, `task_*.json`, or numbered intermediate `.md` draft. Example rejected artifacts: build_pptx.py, poll_images.py, download_images.sh, tasks/, ~$WIB-Business-Function-Fidelity.pptx. Fires at postflight.
 - **AF-IMAGE-QC-RAN** (`check_image_qc_present`): the image-QC report must exist, be NEWER than the rendered PNGs (staleness check), and carry a per-slide PASS/FAIL row for every rendered slide. A stale or rubber-stamped report (no slides[] array) fails loud. Defers pre-render; defers on absent report (AF-IMAGE-QC owns absence).
 - **AF-BRAND-CONSISTENCY** (`check_brand_consistency`): every rendered slide's dominant palette must fall within the client's declared brand token set (intake.json brand.palette). Slides whose ALL sampled dominant colors exceed BRAND_CONSISTENCY_TOLERANCE (80 RGB units) from every brand token are flagged. Closes the off-brand stock-imagery failure (fantasy castle / sunrise against navy/gold). Defers when no palette declared or no renders.
+- **AF-DARK-SLIDE** (`_chk_no_dark_slides`, merged from main): presentation slides MUST use LIGHT backgrounds by default; DARK/black-background slides are NOT allowed unless the client explicitly requests a dark theme (client_dark_theme flag in intake.json). Written into SOP-SLIDE-00 (both ruleset copies) + slide-image-creator / typography / slide-copywriter / director SOPs.
 
 ## v12.35.0 — 2026-06-19 — System-wide add-handling: AUTO-REGISTER helper + library-lockstep backstop (every department)
 

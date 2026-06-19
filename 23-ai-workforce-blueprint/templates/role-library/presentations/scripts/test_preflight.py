@@ -1971,7 +1971,7 @@ def emit_af_coverage():
     (pc_root / "build_slide.py").write_bytes(b"# dev artifact")
     (pc_root / "poll_images.sh").write_bytes(b"#!/bin/bash")
     (pc_root / "tasks").mkdir()                                    # forbidden dir
-    (pc_root / "deliverables.json").write_text("{}")               # canonical — OK
+    (pc_root / "deliverables.json").write_text("{}")               # canonical -- OK
     record("AF-PACKAGE-CLEAN", build_deck.check_package_cleanliness(pc_root))
 
     # AF-IMAGE-QC-RAN — a bundle where the image_qc_report.json was written BEFORE
@@ -2005,11 +2005,11 @@ def emit_af_coverage():
         _magenta_img = _PilImage.new("RGB", (200, 200), (255, 0, 255))
         _magenta_img.save(str(bc_root / "renders" / "slide-01.png"))
     except ImportError:
-        # PIL absent — write a raw PNG header + magenta-ish bytes (high R+B, low G).
+        # PIL absent -- write a raw PNG header + magenta-ish bytes (high R+B, low G).
         # The stdlib luma fallback will read raw bytes; at the function level we
         # cannot get AF-BRAND-CONSISTENCY without PIL (the gate skips slides where
         # _slide_dominant_colors returns []).  Record the code manually so Guard A
-        # knows we have a probe — but only if PIL is installed.
+        # knows we have a probe -- but only if PIL is installed.
         pass
     (bc_root / "working" / "copy" / "intake.json").write_text(json.dumps({
         "brand": {"palette": ["#1B2A4A", "#C8963E"]},   # navy + gold
@@ -2019,6 +2019,11 @@ def emit_af_coverage():
         "target_talk_minutes": 30,
     }))
     record("AF-BRAND-CONSISTENCY", build_deck.check_brand_consistency(bc_root))
+
+    # AF-DARK-SLIDE — dark background prompt without client_dark_theme:true FAILS
+    # _chk_no_dark_slides. The fixture is a dark-keyword prompt with no intake flag.
+    record("AF-DARK-SLIDE", build_deck._chk_no_dark_slides(
+        _dark_slide_run_dir(dark=True, client_dark_theme=False)))
 
     triggered_sorted = sorted(triggered)
     AF_COVERAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -2078,6 +2083,95 @@ def _emit_af_bundle_probe() -> str:
     except Exception as exc:  # noqa: BLE001
         return str(exc)
     return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# NO-DARK-SLIDES gate (AF-DARK-SLIDE) — three negative/positive test cases
+# ---------------------------------------------------------------------------
+
+def _dark_slide_run_dir(dark: bool, client_dark_theme: bool = False) -> Path:
+    """Build a minimal run-dir fixture for the _chk_no_dark_slides gate.
+
+    If `dark` is True, writes a prompt file containing "dark background" — a
+    keyword that should trigger AF-DARK-SLIDE (unless client_dark_theme is True).
+    If `dark` is False, writes a prompt file with only light-background language.
+    If `client_dark_theme` is True, sets that flag in intake.json.
+    """
+    root = Path(tempfile.mkdtemp(prefix="deck_dark_slide_test_"))
+    (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    (root / "working" / "prompts").mkdir(parents=True, exist_ok=True)
+    # Write intake.json with client_dark_theme if requested.
+    intake = {"interview_confirmed": True, "presentation_mode": "one-person",
+              "target_talk_minutes": 30}
+    if client_dark_theme:
+        intake["client_dark_theme"] = True
+    (root / "working" / "copy" / "intake.json").write_text(json.dumps(intake))
+    # Write a single prompt file with dark or light language.
+    if dark:
+        prompt_text = (
+            "SLIDE 1 IMAGE PROMPT\n\n"
+            "Scene: A moody, atmospheric stage with a dark background and deep black gradients "
+            "framing the speaker silhouette. The lighting from below creates a near-black vignette "
+            "that draws focus to the central figure. The dark theme is intentional and cinematic.\n\n"
+            "Layout: full-bleed cinematic.\n"
+            "Subject: presenter, center.\n"
+        )
+    else:
+        prompt_text = (
+            "SLIDE 1 IMAGE PROMPT\n\n"
+            "Scene: A bright, airy conference room bathed in natural daylight. The background is a "
+            "clean off-white wall with warm accent lighting. The colour palette is ivory, sky blue, "
+            "and soft amber — all light, open, and energetic.\n\n"
+            "Layout: full-bleed airy.\n"
+            "Subject: presenter, center.\n"
+        )
+    (root / "working" / "prompts" / "slide-01.txt").write_text(prompt_text)
+    return root
+
+
+def test_af_dark_slide_triggers_without_flag() -> list:
+    """AF-DARK-SLIDE fires when dark-background keywords appear in prompts and
+    client_dark_theme is NOT set in intake.json. (Negative test.)"""
+    failures = []
+    rd = _dark_slide_run_dir(dark=True, client_dark_theme=False)
+    result = build_deck._chk_no_dark_slides(rd)
+    if "AF-DARK-SLIDE" not in result:
+        failures.append(
+            f"test_af_dark_slide_triggers_without_flag: expected AF-DARK-SLIDE in result, "
+            f"got: {result!r}"
+        )
+    print(f"test_af_dark_slide_triggers_without_flag -> "
+          f"{'PASS' if not failures else 'FAIL'}")
+    return failures
+
+
+def test_light_slide_passes() -> list:
+    """Light-background prompt with no client_dark_theme flag PASSES (no AF-DARK-SLIDE)."""
+    failures = []
+    rd = _dark_slide_run_dir(dark=False, client_dark_theme=False)
+    result = build_deck._chk_no_dark_slides(rd)
+    if result:
+        failures.append(
+            f"test_light_slide_passes: expected empty result (PASS), got: {result!r}"
+        )
+    print(f"test_light_slide_passes -> {'PASS' if not failures else 'FAIL'}")
+    return failures
+
+
+def test_dark_slide_with_client_flag_passes() -> list:
+    """Dark-background prompt PASSES when client_dark_theme:true is set in intake.json.
+    (Opt-in: dark is allowed ONLY when the client explicitly requests it.)"""
+    failures = []
+    rd = _dark_slide_run_dir(dark=True, client_dark_theme=True)
+    result = build_deck._chk_no_dark_slides(rd)
+    if result:
+        failures.append(
+            f"test_dark_slide_with_client_flag_passes: expected empty result (PASS) "
+            f"when client_dark_theme:true, got: {result!r}"
+        )
+    print(f"test_dark_slide_with_client_flag_passes -> "
+          f"{'PASS' if not failures else 'FAIL'}")
+    return failures
 
 
 def main():
@@ -2159,6 +2253,13 @@ def main():
     # O5 (NEW) — AF-CREATIVITY: an archetype-dominant deck fails; a varied deck passes;
     # cliche copy fails.
     failures += test_chk_creativity()
+
+    # AF-DARK-SLIDE (NEW) — slides must use light/bright backgrounds by default.
+    # Dark backgrounds are ONLY allowed when the client explicitly sets
+    # client_dark_theme:true in intake.json (opt-in by client request only).
+    failures += test_af_dark_slide_triggers_without_flag()
+    failures += test_light_slide_passes()
+    failures += test_dark_slide_with_client_flag_passes()
 
     # O2 (NEW) — the four new QC gates (typography/prompt/image/speech) reject a
     # self/builder-graded report and pass an independent one (generalized

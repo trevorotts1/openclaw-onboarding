@@ -2768,6 +2768,115 @@ def check_brand_consistency(run_dir: Path, slides_path: Optional[Path] = None) -
 # The MANDATORY pre-render artifact set. The first three are the minimum the
 # operator task names explicitly; the rest are the broader mandatory upstream set
 # from the dept-pipeline analysis. All must exist + be complete before any render.
+# ---------------------------------------------------------------------------
+# NO-DARK-SLIDES GATE (AF-DARK-SLIDE) — slides must use light/bright backgrounds
+# by default. Dark/black backgrounds are ONLY allowed when the client has explicitly
+# requested a dark theme via intake.json client_dark_theme: true.
+# ---------------------------------------------------------------------------
+
+# Dark-background keywords (case-insensitive) that trigger AF-DARK-SLIDE.
+_DARK_SLIDE_KEYWORDS = (
+    "dark background",
+    "black background",
+    "dark theme",
+    "near-black",
+    "dark slide",
+    "dark mode",
+)
+
+# Near-black hex/rgb patterns that signal a dark background in prompts.
+_DARK_COLOR_PATTERNS = re.compile(
+    r"""
+    \#(?:000000|000|111111|111|222222|222|1[aA]1[aA]1[aA]|0[dD]0[dD]0[dD])
+    |
+    rgb\(\s*(?:0\s*,\s*0\s*,\s*0|1[0-9]\s*,\s*1[0-9]\s*,\s*1[0-9]|20\s*,\s*20\s*,\s*20)\s*\)
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
+
+
+def _chk_no_dark_slides(run_dir: Path) -> str:
+    """NO-DARK-SLIDES gate (AF-DARK-SLIDE, fail-loud).
+
+    Slides MUST use LIGHT / bright backgrounds by DEFAULT. Dark or black-background
+    slides are NOT ALLOWED unless the client EXPLICITLY requests a dark theme via
+    the intake flag `client_dark_theme: true`. Light is the default; dark is opt-in
+    by client request only.
+
+    This gate:
+      1. Reads intake.json for client_dark_theme (default False).
+      2. Scans image prompts (working/prompts/*.txt) AND the design brief
+         (working/research/design-brief-*.md) for dark background keywords and
+         near-black hex/rgb color references.
+      3. If dark keywords are found AND client_dark_theme is not True -> FAIL.
+      4. If client_dark_theme is True -> PASS (dark is allowed by explicit request).
+      5. If no dark keywords found -> PASS.
+
+    Returns "" on pass, or a fatal AF-DARK-SLIDE message on fail.
+    """
+    # Step 1: read client_dark_theme from intake.json.
+    client_dark_theme = False
+    for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
+        p = run_dir / rel
+        if p.exists():
+            obj = _read_json(p)
+            if isinstance(obj, dict) and "__parse_error__" not in obj:
+                val = obj.get("client_dark_theme")
+                if val is True:
+                    client_dark_theme = True
+            break
+
+    if client_dark_theme:
+        # Dark theme is explicitly permitted by client request — gate passes.
+        return ""
+
+    # Step 2: gather all text to scan (prompts + design brief).
+    scan_sources = []
+
+    # Image prompts.
+    prompts_dir = run_dir / "working" / "prompts"
+    if prompts_dir.is_dir():
+        for prompt_file in sorted(prompts_dir.glob("*.txt")):
+            try:
+                scan_sources.append((str(prompt_file), prompt_file.read_text(errors="replace")))
+            except OSError:
+                pass
+
+    # Design brief (working/research/design-brief-*.md).
+    research_dir = run_dir / "working" / "research"
+    if research_dir.is_dir():
+        for brief_file in sorted(research_dir.glob("design-brief-*.md")):
+            try:
+                scan_sources.append((str(brief_file), brief_file.read_text(errors="replace")))
+            except OSError:
+                pass
+
+    if not scan_sources:
+        # No prompts or design brief yet — gate defers (pre-authoring phase).
+        return ""
+
+    # Step 3: scan for dark background keywords and near-black color patterns.
+    hits = []
+    for source_name, text in scan_sources:
+        text_lower = text.lower()
+        for keyword in _DARK_SLIDE_KEYWORDS:
+            if keyword in text_lower:
+                hits.append(f"{source_name}: keyword {keyword!r}")
+                break
+        if _DARK_COLOR_PATTERNS.search(text):
+            hits.append(f"{source_name}: near-black hex/rgb color detected")
+
+    if hits:
+        return (
+            "AF-DARK-SLIDE: Dark/black background detected in prompts or design brief "
+            "but client_dark_theme is not set in intake.json. Light backgrounds are "
+            "required by default. Set client_dark_theme: true in intake.json ONLY when "
+            "the client explicitly requests a dark theme (opt-in by client request only). "
+            "Offenders: " + "; ".join(hits)
+        )
+    return ""
+
+
 PREFLIGHT_REQUIRED = [
     ("working/copy/intake.json",
      "intake.json (interview_confirmed:true, presentation_mode one-person|general)",
@@ -2924,8 +3033,17 @@ PREFLIGHT_REQUIRED = [
     # bundle_dir. Since PREFLIGHT runs before assembly (no bundle_dir yet), this
     # gate is wired as a deferred/conditional entry that always defers here and
     # is re-invoked directly in run_postflight_gate.
-    # (PREFLIGHT entry deliberately omitted for AF-PACKAGE-CLEAN — it fires only
+    # (PREFLIGHT entry deliberately omitted for AF-PACKAGE-CLEAN -- it fires only
     # at the postflight gate where bundle_dir is known.)
+    # NO-DARK-SLIDES gate (AF-DARK-SLIDE). Slides MUST use LIGHT/bright backgrounds by
+    # DEFAULT. Dark or black-background slides are NOT ALLOWED unless the client
+    # EXPLICITLY requests a dark theme (intake flag client_dark_theme:true). Light is
+    # the default; dark is opt-in by client request only. Run-dir-scoped (None sentinel):
+    # reads intake.json + scans working/prompts/*.txt + working/research/design-brief-*.md.
+    (None,
+     "no-dark-slides — slides must use light backgrounds by default; dark only with client_dark_theme:true",
+     "Intake/Prompt — Director intake + Slide Image Creator (AF-DARK-SLIDE)",
+     _chk_no_dark_slides),
 ]
 
 
