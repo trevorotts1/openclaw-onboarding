@@ -1,3 +1,8 @@
+## v12.36.0 — 2026-06-19 — No-dark-slides rule + AF-DARK-SLIDE gate
+
+- Presentation slides MUST use LIGHT backgrounds by default; DARK/black-background slides are NOT allowed unless the client explicitly requests a dark theme (client_dark_theme flag). Written into SOP-SLIDE-00 (both ruleset copies) + slide-image-creator / typography / slide-copywriter / director SOPs + the how-to.
+- New autofail AF-DARK-SLIDE enforces it (build_deck checker + negative test; Guard A green).
+
 ## v12.35.0 — 2026-06-19 — System-wide add-handling: AUTO-REGISTER helper + library-lockstep backstop (every department)
 
 Generalizes the presentation-only `sync_check` lockstep to the WHOLE role/SOP/persona/department library. The role library's single machine source of truth is `templates/role-library/_index.json` — everything downstream (`create_role_workspaces.library_lookup`, the materializer, the content-hash manifest, the repo-consistency gate, Command-Center wiring) reads the index, never the raw files. So a "half-add" — a role/SOP/persona/dept FILE added without its `_index.json` registration, or a stale entry whose file was renamed/removed — was invisible to the build and slipped through CI. This closes that, system-wide.
