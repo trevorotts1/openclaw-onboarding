@@ -1,3 +1,18 @@
+## v12.40.0 — 2026-06-19 — fix(update-skills): PLATFORM unbound-variable crash — built boxes were stuck at their prior version
+
+**Bug (introduced v12.27.0):** `update-skills.sh` referenced `$PLATFORM` at the stale-artifact detection block (line 1431 of the pre-fix file) but that variable was never assigned anywhere in the script. Under `set -euo pipefail` (active from line 35), any reference to an unset variable aborts with "PLATFORM: unbound variable" and exits 1. The `.onboarding-version` stamp write sits ~110 lines later (after the A3 content gate), so the stamp was never written even when all skills installed cleanly and the A3 gate passed. Result: fully-built boxes were permanently stuck reporting their old version; re-runs of `update-skills.sh` always crashed before the stamp was written.
+
+**Root cause:** The script exports `OPENCLAW_PLATFORM` unconditionally at line 17 (always `vps` or `mac`) and `OC_PLATFORM` conditionally in the no-bootstrap fallback branch. The stale-artifact block mistakenly used the bare name `PLATFORM` which exists in neither branch.
+
+**Fix:** Changed line 1431 from `if [ "$PLATFORM" = "vps" ]; then` to `if [ "$OPENCLAW_PLATFORM" = "vps" ]; then`. Confirmed with a full grep that this was the only bare `$PLATFORM` / `${PLATFORM}` reference in the script.
+
+**Proof:**
+- `bash -n update-skills.sh` exits 0.
+- Under `bash -u` with `OPENCLAW_PLATFORM=vps` and `PLATFORM` unset: fixed code exits 0 and sets `OC_WORKSPACE=/data/.openclaw/workspace`.
+- Under `bash -u` with `PLATFORM` unset: old code exits 127 with "PLATFORM: unbound variable".
+
+**Impact:** Built boxes whose `.onboarding-version` stamp was never updated will stamp correctly on the next `update-skills.sh` run.
+
 ## v12.39.0 — 2026-06-19 — A3 content-gate hash-race fix: exclude volatile generated files from both sides of the SRC/DEST comparison
 
 Fleet-wide bug fix for the A3 integrity gate in `update-skills.sh`. The gate computes a SRC digest of each skill's content (from the freshly downloaded source tree) before the install copy loop, then computes a DEST digest of the installed skill afterward. A spurious mismatch could occur because `hash-content-manifest.py` rewrites `templates/role-library/_index.json` (updating `content_hashed_at` / `generated_at` timestamps) after the copy but before the DEST hash is computed — so the DEST view includes modified timestamps not present in the SRC view. This caused the gate to fail and refuse to write the `.onboarding-version` stamp even when all real content was correctly installed.
