@@ -1,3 +1,13 @@
+## v12.43.0 — 2026-06-19 — fix(install): IS_VPS unbound variable aborted fresh installs with zero skills installed
+
+**Bug:** `install.sh` line 5821 referenced `$IS_VPS` inside an `if` condition. The variable `IS_VPS` is never assigned anywhere in `install.sh` — platform detection sets and exports `OPENCLAW_PLATFORM` (values: `vps` or `mac`) at line 42. Because `set -u` is active at that point in the script, any expansion of the unbound `$IS_VPS` aborted the installer immediately with `IS_VPS: unbound variable`. This caused fresh Mac installs to exit with zero skills installed and no `.onboarding-version` stamp written. Reproduced on a fresh Mac install.
+
+**Fix:** Changed `[ "$IS_VPS" = "true" ]` to `[ "$OPENCLAW_PLATFORM" = "vps" ]`. `OPENCLAW_PLATFORM` is the canonical platform variable exported at line 42; its value is `vps` on VPS boxes and `mac` on Mac boxes. No other IS_VPS references exist in install.sh (confirmed by grep). The secondary guard `[ -d "/docker" ]` is unchanged and continues to catch Hostinger Docker environments on VPS.
+
+**Proof:** `bash -n install.sh` exits 0. Under `bash -u`, the fixed construct `export OPENCLAW_PLATFORM=mac; if [ "$OPENCLAW_PLATFORM" = "vps" ] || [ -d /docker ]; then echo vps; else echo mac; fi` prints `mac` with no error; the old construct `if [ "$IS_VPS" = "true" ]; then :; fi` aborts with `IS_VPS: unbound variable`.
+
+**Impact:** Every fresh install on a Mac box hit this abort at the WhatsApp-ban layer (line 5821), after skill-copying had already run but before `.onboarding-version` was stamped. The installer exited with a non-zero code, leaving the box with skills on disk but no onboarding-version marker and no final kickoff fired.
+
 ## v12.42.0 — 2026-06-19 — fix(skill-content-hash): exclude __pycache__/*.pyc/*.pyo + .DS_Store from A3 content hash — some built boxes that ran skill Python at install could not stamp
 
 **Bug (introduced before v12.39.0):** `scripts/skill-content-hash.sh` hashes every non-excluded file under each numbered skill directory. Its `_should_exclude()` function did not exclude `__pycache__/` directories or `*.pyc`/`*.pyo` files. At install time, skill-23's Python scripts execute and Python writes `*/scripts/__pycache__/*.cpython-3XX.pyc` and `*/lib/__pycache__/*.pyc` into the destination skill directory. Those bytecode files (a) are absent from the source tree, (b) embed a per-run source hash/mtime that changes every install, and (c) vary by Python version. Because the source manifest never contains these files but the destination directory does, the A3 gate computed `src_digest != dest_digest` non-deterministically — blocking the `.onboarding-version` stamp write on some built boxes even when all shipped content was fully correct.
