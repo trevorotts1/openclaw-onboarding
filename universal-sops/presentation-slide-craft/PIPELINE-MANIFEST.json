@@ -1,5 +1,5 @@
 {
-  "manifest_version": 10,
+  "manifest_version": 11,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -931,6 +931,59 @@
       "enforced_by": "build_deck",
       "py_symbol": "_chk_creativity",
       "secondary_py_symbols": ["ARCHETYPE_DOMINANCE_CEILING", "FORBIDDEN_CLICHE_PHRASES"]
+    },
+    {
+      "code": "AF-VISUAL-VARIETY",
+      "stage": "Image-QC/Postflight",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "all-dark monotone deck — >= 90% of rendered slides share one dominant background hue bucket OR >= 90% of slides are below the dark-luma threshold (0.30) with < 10% light/break slides. Rejects decks with no visual variety (e.g. all-navy 35-slide deck) that are illegible at projection distance and violate WCAG AA contrast.",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_visual_variety",
+      "secondary_py_symbols": [
+        "VISUAL_VARIETY_DARK_DOMINANT_CEILING",
+        "VISUAL_VARIETY_LIGHT_SLIDE_FLOOR_PCT",
+        "VISUAL_VARIETY_HUE_DOMINANCE_CEILING",
+        "VISUAL_VARIETY_DARK_LUMA_THRESHOLD"
+      ]
+    },
+    {
+      "code": "AF-PACKAGE-CLEAN",
+      "stage": "Postflight/Closeout",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "dev artifacts in the delivered bundle — any *.py, *.sh, ~$* Office lock/temp file, tasks/ directory, task_*.json, or numbered intermediate .md working draft present in the final bundle directory. The client package must contain ONLY the canonical deliverable files.",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_package_cleanliness",
+      "secondary_py_symbols": [
+        "PACKAGE_CLEAN_FORBIDDEN_EXTENSIONS",
+        "PACKAGE_CLEAN_FORBIDDEN_NAME_PREFIXES",
+        "PACKAGE_CLEAN_FORBIDDEN_DIR_NAMES",
+        "PACKAGE_CLEAN_CANONICAL_MD_FILES",
+        "PACKAGE_CLEAN_DRAFT_MD_RE"
+      ]
+    },
+    {
+      "code": "AF-IMAGE-QC-RAN",
+      "stage": "Image-QC/Postflight",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "image-QC report is absent, stale (older than the rendered PNGs), or rubber-stamped (lacks a per-slide PASS/FAIL row for all N rendered slides). A report that was auto-populated from a template without real per-slide entries is refused. Requires: report exists AND mtime > all PNG mtimes AND slides[] array has one entry per rendered slide.",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_image_qc_present"
+    },
+    {
+      "code": "AF-BRAND-CONSISTENCY",
+      "stage": "Image-QC/Postflight",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "off-brand palette — any rendered slide whose dominant palette colors ALL fall outside the declared brand token set (intake.json brand.palette) by more than BRAND_CONSISTENCY_TOLERANCE (80 RGB units). Complements AF-VISUAL-VARIETY: variety rejects sameness; brand rejects off-token outliers (e.g. fantasy-castle render against navy/gold token set). Defers when no brand palette is declared.",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_brand_consistency",
+      "secondary_py_symbols": [
+        "BRAND_CONSISTENCY_TOLERANCE",
+        "BRAND_CONSISTENCY_SAMPLE_COLORS"
+      ]
     }
   ],
   "roles": [
