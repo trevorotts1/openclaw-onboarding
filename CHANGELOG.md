@@ -1,3 +1,22 @@
+## v12.42.0 — 2026-06-19 — fix(skill-content-hash): exclude __pycache__/*.pyc/*.pyo + .DS_Store from A3 content hash — some built boxes that ran skill Python at install could not stamp
+
+**Bug (introduced before v12.39.0):** `scripts/skill-content-hash.sh` hashes every non-excluded file under each numbered skill directory. Its `_should_exclude()` function did not exclude `__pycache__/` directories or `*.pyc`/`*.pyo` files. At install time, skill-23's Python scripts execute and Python writes `*/scripts/__pycache__/*.cpython-3XX.pyc` and `*/lib/__pycache__/*.pyc` into the destination skill directory. Those bytecode files (a) are absent from the source tree, (b) embed a per-run source hash/mtime that changes every install, and (c) vary by Python version. Because the source manifest never contains these files but the destination directory does, the A3 gate computed `src_digest != dest_digest` non-deterministically — blocking the `.onboarding-version` stamp write on some built boxes even when all shipped content was fully correct.
+
+**Fix (3 additions to `_should_exclude()`):**
+1. Path-based exclusion: `*/__pycache__/*) return 0 ;;` — any file under a `__pycache__` directory at any depth is excluded from the hash.
+2. Basename exclusion: `*.pyc|*.pyo) return 0 ;;` — compiled/optimised Python bytecode files, which may appear outside `__pycache__` on older toolchains.
+3. Basename exclusion: `.DS_Store) return 0 ;;` — macOS Finder metadata, which is OS-generated and not shipped content.
+
+No existing excludes were removed or weakened. The hashing algorithm is unchanged. All `.py` source files remain in scope, so a missing or truncated source script still changes the digest and fails the gate.
+
+**Proof (replayed against a temp copy of skill-23):**
+- Copy A = clean. Copy B = clean + `scripts/__pycache__/x.cpython-314.pyc` and `lib/__pycache__/y.cpython-314.pyc` injected with random bytes.
+- Round 1: `digest(A) = f65f06c607a43c042d8154e3659545e538637c661c1f1e2475d62d2600856dcb`, `digest(B) = f65f06c607a43c042d8154e3659545e538637c661c1f1e2475d62d2600856dcb` — equal (PASS).
+- Round 2 (different random bytes): `digest(A) = f65f06c607a43c042d8154e3659545e538637c661c1f1e2475d62d2600856dcb`, `digest(B) = f65f06c607a43c042d8154e3659545e538637c661c1f1e2475d62d2600856dcb` — equal (PASS, run-to-run determinism confirmed).
+- Gate still works: after deleting a real source `.md` from copy B, `digest(B) = d24668424e112d6d77bb0d764070d8de27d7771bd39fc903230d4c46737e2a3c` differs from `digest(A)` (PASS).
+
+**Impact:** Some built boxes that executed skill-23 Python scripts at install time accumulated `__pycache__/*.pyc` files in the destination skill directory, causing the A3 content gate to withhold the stamp non-deterministically on subsequent updater runs. After this fix the hash is stable across installs and Python versions.
+
 ## v12.41.0 — 2026-06-19 — fix(update-skills): set -e hardening of stale-detection and A3 content-gate block — three grep pipelines and detect-stale exit-10 now safe under set -euo pipefail
 
 **Bug (introduced v12.27.0):** `update-skills.sh` runs under `set -euo pipefail` from line 35. The stale-detection block assigned the output of `detect-stale-artifacts.py` directly: `DETECT_OUT="$(python3 ... )"`. That script intentionally exits 10 when actionable artifacts exist. Under `set -e`, a bare command-substitution assignment inherits the subprocess exit code, so exit 10 aborted the script at that line — before `DETECT_RC=$?` was captured, before the rc-10 handler ran, and before the `.onboarding-version` stamp write at line 1541. Skills installed cleanly (46 of them) and the A3 gate passed, but the stamp was never written.
