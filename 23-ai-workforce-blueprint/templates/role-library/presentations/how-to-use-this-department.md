@@ -194,13 +194,7 @@ When you ask this department for something, here is the normal flow:
    procedure (its SOP). Nobody guesses; if there is no procedure for your
    request, one is written before the work starts.
 3. **The work itself.** The specialist does the job and it is checked by the
-   department's quality-control review before it reaches you. That review is run by
-   an INDEPENDENT QC specialist — never the same role that wrote the work. The Phase
-   1Q copy QC report (`working/qc/copy_qc_report.json`) must carry a `qc_independence`
-   provenance block (`graded_by` = the independent reviewer, `independent: true`,
-   `self_graded: false`, `builder` = the copy author); the render gate HARD-FAILS the
-   deck (AF-QC-INDEPENDENCE) on a self-graded report, so nobody can sign off on their
-   own work.
+   department's quality-control review before it reaches you.
 4. **Delivery.** You get the finished result: the finished presentations work you asked for.
    Anything that needs your sign-off before it goes live is flagged for your
    approval first.
@@ -215,8 +209,8 @@ same working session; larger projects come back with a clear estimate up front.
 - **To you:** finished deliverables arrive in your workspace and you are notified.
   Anything marked owner-approval-required waits for your yes before it ships.
 - **To other departments:** when your request needs another team, this department
-  coordinates the handoff for you through the company's routing map. You do not have
-  to manage the handoff.
+  coordinates the handoff for you through the company's routing map
+  (`universal-sops/00-ROUTING.md`). You do not have to manage the handoff.
   
 - **Escalation:** if something is blocked, needs a decision only you can make, or
   needs a credential or payment, it is escalated to you directly rather than
@@ -234,31 +228,6 @@ document:
 - "How do I use the Audio Demonstration Specialist?"
 - "Who handles something from the presentations team?"
 - "What do I get back if I ask Presentations for something from the presentations team?"
-
----
-
-## 8. For Maintainers — The Promotion Rule (a described rule is not enforced)
-
-This department's quality is enforced by code, not prose. A doctrine rule does
-not exist until it is enforced AND tested. Two guards make that structural, and
-both run in CI (`.github/workflows/presentations-lockstep.yml`):
-
-- **Guard A — every doctrine rule ships as a manifest autofail WITH an enforcing
-  `py_symbol` AND a negative test that triggers it.** `scripts/gate_integrity_check.py`
-  asserts, for every `PIPELINE-MANIFEST.json` autofail with `enforced_by ==
-  build_deck`, that its enforcing symbol is real and referenced AND that a
-  deliberately-failing fixture in `scripts/test_preflight.py` actually triggers
-  the code (it appears in the emitted `af-coverage`). A declared gate that is a
-  no-op or untested fails CI.
-
-- **Guard B — retiring a doctrine VALUE requires adding it to
-  `retired-doctrine-patterns.json`.** `scripts/doctrine_residual_check.py` greps
-  the tree and fails if a retired value (e.g. the old hook `>= 7 times` floor)
-  ever re-appears as a live instruction without a retirement context marker.
-
-**A rule that is only described is not enforced.** When you add a doctrine rule,
-add the manifest autofail + enforcing symbol + a negative test (Guard A); when you
-retire a value, register it in `retired-doctrine-patterns.json` (Guard B).
 
 ---
 
