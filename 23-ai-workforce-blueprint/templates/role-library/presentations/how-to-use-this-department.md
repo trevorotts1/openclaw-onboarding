@@ -88,6 +88,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Slide Image Creator** | Writes one 15-element image prompt per slide (Phase 2). |
 | **Slide Submitter** | Submits all prompts to Kie.ai GPT Image 2 (Phase 4). |
 | **Typography Architect** | Runs as a Phase-0.7/1.5 gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json. |
+| **Prompt Author** | You write each slide's rich image prompt to the 5,000-character prompt standard - the full per-slide specification. |
 
 ### What each specialist is for, with an example request
 
@@ -180,6 +181,11 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* Runs as a Phase-0.7/1.5 gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json.
 - *Example request:* "Have the Typography Architect take this on: Runs as a Phase-0.7/1.5 gate AFTER the Brand Steward emits the STYLE BLOCK."
+
+**Prompt Author**
+
+- *What it is for:* You write each slide's rich image prompt to the 5,000-character prompt standard - the full per-slide specification.
+- *Example request:* "Have the Prompt Author take this on: You write each slide's rich image prompt to the 5."
 
 
 ---

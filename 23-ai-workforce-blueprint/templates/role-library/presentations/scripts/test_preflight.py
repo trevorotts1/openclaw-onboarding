@@ -43,7 +43,7 @@ SLIDES = [
 ]
 
 # A realistic RICH per-slide prompt is long (the SOP targets 9,000-14,000 chars).
-# >= PROMPT_CHAR_FLOOR (1,500) is the HARD floor; build it well over the floor.
+# >= PROMPT_CHAR_FLOOR (5,000) is the reconciled HARD floor; build it well over it.
 RICH_PROMPT = (
     "[ARCHETYPE A1] [SECTION: HOOK] [LADDER: open]\n"
     "ONE BIG IDEA: Three moves that doubled the pipeline.\n"
@@ -60,7 +60,7 @@ RICH_PROMPT = (
     "CLOSING CONSTRAINTS (negative block): Do not garble text. Do not mutate the logo. Do not "
     "render any bracketed placeholder token. Do not narrate the image. Do not produce anatomical "
     "artifacts. Do not let the background compete with the text. Do not alter skin-tone fidelity. "
-) * 4  # ~4x => comfortably over the 1,500 floor, under the 18,000 ceiling
+) * 6  # ~6x => comfortably over the 5,000 floor, under the 18,000 ceiling
 
 
 def _write_intake(root: Path):
@@ -79,7 +79,21 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
     rich-prompt-required gate fails); short_prompt=True writes a sub-floor prompt
     (to prove the 1,500-char floor fails)."""
     root = Path(tempfile.mkdtemp(prefix="deck_preflight_test_"))
-    (root / "slides.json").write_text(json.dumps(SLIDES))
+    # The full-artifacts deck is sized to clear the AF-SLIDE-COUNT-FLOOR gate for the
+    # 30-minute intake target (floor = ceil(30 x 1.3) = 39 slides). The bare/no-artifact
+    # deck keeps the single SLIDES fixture (the gate defers when no intake target exists).
+    _talk_minutes = 30
+    _floor_slides = int(__import__("math").ceil(_talk_minutes * 1.3))  # 39
+    if with_artifacts:
+        deck_slides = [
+            {"slide": i,
+             "scene": f"Editorial office scene {i}, documentary photography.",
+             "copy": [f"Northwind Co", f"Converting beat {i}"]}
+            for i in range(1, _floor_slides + 1)
+        ]
+        (root / "slides.json").write_text(json.dumps(deck_slides))
+    else:
+        (root / "slides.json").write_text(json.dumps(SLIDES))
     if with_artifacts:
         (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
         (root / "working" / "research").mkdir(parents=True, exist_ok=True)
@@ -144,27 +158,56 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
             "- All statistics carry an inline source from the citation list above; no "
             "uncited percentage appears on any slide. Status: CLEAR.\n"
         )
-        # AF-QC-INDEPENDENCE: the report must carry an independent-reviewer provenance
-        # block proving an INDEPENDENT QC specialist (not build_deck.py / not the
-        # copy-author role) graded it; a report self-written by the builder is refused.
-        (root / "working" / "qc" / "copy_qc_report.json").write_text(json.dumps(
-            {"gate": "Phase 1Q", "average": 9.1, "triggered_autofails": [], "pass": True,
-             "qc_independence": {"graded_by": "qc-specialist-presentations",
-                                 "independent": True, "builder": "slide-copywriter",
-                                 "self_graded": False}}))
+        # AF-QC-INDEPENDENCE: the copy QC report (and the four other QC reports) are
+        # written below via _qc(...) with an independent-reviewer provenance block
+        # proving an INDEPENDENT QC specialist (not build_deck.py / not the author
+        # role) graded it; a report self-written by the builder is refused.
         # Phase 3 — converting arc allocation (Signature Presentation Architect).
-        (root / "working" / "copy" / "arc_allocation.json").write_text(json.dumps(
-            [{"slide": 1, "arc_section": "hook"}]))
-        # Phase 4 — slide copy authored per doctrine.
+        # Carries an OFFER LADDER (value-stack -> anchor -> price drops) AND a re-pitch
+        # beat after the FINAL price so the AF-PITCH-MISSING gate passes.
+        arc_beats = [{"slide": i, "arc_section": "body"} for i in range(1, _floor_slides + 1)]
+        arc_beats[0]["arc_section"] = "hook"
+        arc_beats[10]["arc_section"] = "value-stack"
+        arc_beats[15]["arc_section"] = "anchor"
+        arc_beats[20]["arc_section"] = "price ladder drop"
+        arc_beats[30]["arc_section"] = "final price"
+        arc_beats[34]["arc_section"] = "re-pitch"
+        (root / "working" / "copy" / "arc_allocation.json").write_text(json.dumps(arc_beats))
+        # Phase 4 — slide copy authored per doctrine (no banned cliche phrases).
         (root / "working" / "copy" / "slides_copy.md").write_text(
             "# Slide copy\n" + ("Authored converting copy per doctrine. " * 40) + "\n")
         # Phase F — typography/design brief (per-slide art direction).
         (root / "working" / "research" / "design-brief-demo.md").write_text(
             "# Design brief\n" + ("Per-slide art direction and typography. " * 20) + "\n")
-        # Phase 2 — rich per-slide prompt(s) (rendered VERBATIM). One slide => slide-01.txt.
+        # Phase F — design system with VARIED archetypes so no single archetype
+        # dominates beyond the 60% ceiling (AF-CREATIVITY passes).
+        archetypes = ["A1-hero", "A2-split", "A3-pure-type", "A4-grid", "A5-quote"]
+        (root / "working" / "typography").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "typography" / "design_system.json").write_text(json.dumps({
+            "per_slide": [{"slide": i, "archetype": archetypes[i % len(archetypes)]}
+                          for i in range(1, _floor_slides + 1)]}))
+        # The FIVE QC reports (each INDEPENDENT-reviewer graded). Copy-QC plus the four
+        # NEW QC gates (typography / prompt / image / speech). Each carries the
+        # qc_independence provenance block proving an independent specialist graded it.
+        def _qc(gate, builder, reviewer):
+            return json.dumps({"gate": gate, "average": 9.1, "triggered_autofails": [],
+                               "pass": True,
+                               "qc_independence": {"graded_by": reviewer, "independent": True,
+                                                   "builder": builder, "self_graded": False}})
+        (root / "working" / "qc" / "copy_qc_report.json").write_text(
+            _qc("Phase 1Q", "slide-copywriter", "qc-specialist-presentations"))
+        (root / "working" / "qc" / "typography_qc_report.json").write_text(
+            _qc("Phase Typography-QC", "typography-architect", "qc-specialist-typography-presentations"))
+        (root / "working" / "qc" / "prompt_qc_report.json").write_text(
+            _qc("Phase Prompt-QC", "prompt-author-presentations", "qc-specialist-prompt-presentations"))
+        (root / "working" / "qc" / "image_qc_report.json").write_text(
+            _qc("Phase Image-QC", "slide-image-creator", "qc-specialist-image-presentations"))
+        # speech_qc_report.json intentionally ABSENT here -> AF-SPEECH-QC defers (pre-delivery).
+        # Phase 2 — rich per-slide prompt(s) (rendered VERBATIM), one per slide.
         if rich_prompts:
-            text = "short prompt" if short_prompt else RICH_PROMPT
-            (root / "working" / "prompts" / "slide-01.txt").write_text(text)
+            for i in range(1, _floor_slides + 1):
+                text = "short prompt" if short_prompt else RICH_PROMPT
+                (root / "working" / "prompts" / f"slide-{i:02d}.txt").write_text(text)
         # Mode A: no mission_prd.json => source_slide_count 0 => coverage always passes.
         # No speech.md => speech-length gate defers (passes) at this pre-delivery stage.
     else:
@@ -264,12 +307,12 @@ def test_chk_rich_prompts():
     plus load_rich_prompt raises on missing/short and returns the prompt verbatim
     when valid. Returns a list of failure strings ([] = all passed)."""
     fails = []
-    assert build_deck.PROMPT_CHAR_FLOOR == 1500, \
-        f"PROMPT_CHAR_FLOOR must be 1500, got {build_deck.PROMPT_CHAR_FLOOR}"
+    assert build_deck.PROMPT_CHAR_FLOOR == 5000, \
+        f"PROMPT_CHAR_FLOOR must be 5000 (reconciled standard), got {build_deck.PROMPT_CHAR_FLOOR}"
 
     valid = RICH_PROMPT
-    assert len(valid) >= 1500, "test fixture RICH_PROMPT must be >= 1500 chars"
-    short = "way too thin to be a real slide prompt"  # well under 1,500
+    assert len(valid) >= 5000, "test fixture RICH_PROMPT must be >= 5000 chars"
+    short = "way too thin to be a real slide prompt"  # well under 5,000
 
     # ---- NEW ASSERTION 1: a MISSING rich prompt FAILS ----
     rd = _rich_prompt_run_dir(None)
@@ -375,6 +418,144 @@ def _qc_report_path(obj: dict) -> Path:
     p = root / "working" / "qc" / "copy_qc_report.json"
     p.write_text(json.dumps(obj))
     return p
+
+
+# ---------------------------------------------------------------------------
+# O2/O4/O5 NEW-GATE fixture builders + unit tests.
+# ---------------------------------------------------------------------------
+def _slide_count_run_dir(target_minutes, output_slides) -> Path:
+    """Build a run dir with intake.json (target_talk_minutes) and a slides.json of
+    output_slides slides — drives the AF-SLIDE-COUNT-FLOOR gate."""
+    root = Path(tempfile.mkdtemp(prefix="deck_slidefloor_test_"))
+    (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    (root / "working" / "copy" / "intake.json").write_text(json.dumps(
+        {"interview_confirmed": True, "presentation_mode": "general",
+         "audience_mode": "STANDARD", "target_talk_minutes": target_minutes}))
+    (root / "working" / "copy" / "slides.json").write_text(json.dumps(
+        [{"slide": i} for i in range(1, output_slides + 1)]))
+    return root
+
+
+def _pitch_run_dir(arc_slots) -> Path:
+    """Build a run dir with arc_allocation.json carrying arc_slots — drives AF-PITCH-MISSING."""
+    root = Path(tempfile.mkdtemp(prefix="deck_pitch_test_"))
+    (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    (root / "working" / "copy" / "arc_allocation.json").write_text(json.dumps(arc_slots))
+    return root
+
+
+def _creativity_run_dir(dominant: bool) -> Path:
+    """Build a run dir with a design_system.json. dominant=True => one archetype on
+    every slide (>60% => AF-CREATIVITY); dominant=False => varied archetypes."""
+    root = Path(tempfile.mkdtemp(prefix="deck_creativity_test_"))
+    (root / "working" / "typography").mkdir(parents=True, exist_ok=True)
+    if dominant:
+        per = [{"slide": i, "archetype": "A1-hero"} for i in range(1, 11)]
+    else:
+        arch = ["A1-hero", "A2-split", "A3-pure-type", "A4-grid", "A5-quote"]
+        per = [{"slide": i, "archetype": arch[i % len(arch)]} for i in range(1, 11)]
+    (root / "working" / "typography" / "design_system.json").write_text(
+        json.dumps({"per_slide": per}))
+    return root
+
+
+def test_chk_slide_count_floor():
+    """AF-SLIDE-COUNT-FLOOR: 30-min/10-slide (floor 39) FAILS; 30-min/39-slide PASSES;
+    no target defers (passes)."""
+    fails = []
+    r = build_deck._chk_slide_count_floor(_slide_count_run_dir(30, 10))
+    if not r or "AF-SLIDE-COUNT-FLOOR" not in r:
+        fails.append(f"SLIDEFLOOR: 30min/10 slides should FAIL (AF-SLIDE-COUNT-FLOOR), got {r!r}")
+    if build_deck._chk_slide_count_floor(_slide_count_run_dir(30, 39)):
+        fails.append("SLIDEFLOOR: 30min/39 slides should PASS but failed")
+    # no target -> defer
+    rd = Path(tempfile.mkdtemp(prefix="deck_slidefloor_notarget_"))
+    (rd / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    (rd / "working" / "copy" / "slides.json").write_text(json.dumps([{"slide": 1}]))
+    if build_deck._chk_slide_count_floor(rd):
+        fails.append("SLIDEFLOOR: no target should DEFER (pass) but failed")
+    print(f"SLIDE-COUNT-FLOOR (pacing)   -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_chk_pitch():
+    """AF-PITCH-MISSING: arc with no ladder/no re-pitch FAILS; full ladder+re-pitch PASSES;
+    absent arc defers (passes)."""
+    fails = []
+    r = build_deck._chk_pitch(_pitch_run_dir(
+        [{"slide": 1, "arc_section": "hook"}, {"slide": 2, "arc_section": "body"}]))
+    if not r or "AF-PITCH-MISSING" not in r:
+        fails.append(f"PITCH: no ladder/no re-pitch should FAIL (AF-PITCH-MISSING), got {r!r}")
+    full = build_deck._chk_pitch(_pitch_run_dir([
+        {"slide": 1, "arc_section": "hook"},
+        {"slide": 2, "arc_section": "value-stack"},
+        {"slide": 3, "arc_section": "anchor"},
+        {"slide": 4, "arc_section": "price ladder drop"},
+        {"slide": 5, "arc_section": "re-pitch"}]))
+    if full:
+        fails.append(f"PITCH: full ladder + re-pitch should PASS but got {full!r}")
+    # absent arc -> defer
+    rd = Path(tempfile.mkdtemp(prefix="deck_pitch_absent_"))
+    (rd / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    if build_deck._chk_pitch(rd):
+        fails.append("PITCH: absent arc should DEFER (pass) but failed")
+    print(f"PITCH (offer ladder+re-pitch)-> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_chk_creativity():
+    """AF-CREATIVITY: a deck where one archetype dominates (>60%) FAILS; a varied deck
+    PASSES; cliche copy FAILS."""
+    fails = []
+    r = build_deck._chk_creativity(_creativity_run_dir(dominant=True))
+    if not r or "AF-CREATIVITY" not in r:
+        fails.append(f"CREATIVITY: archetype-dominant deck should FAIL, got {r!r}")
+    if build_deck._chk_creativity(_creativity_run_dir(dominant=False)):
+        fails.append("CREATIVITY: varied-archetype deck should PASS but failed")
+    # cliche copy -> FAIL
+    rd = Path(tempfile.mkdtemp(prefix="deck_creativity_cliche_"))
+    (rd / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    (rd / "working" / "copy" / "slides_copy.md").write_text(
+        "In today's fast-paced world, we move the needle.")
+    rc = build_deck._chk_creativity(rd)
+    if not rc or "AF-CREATIVITY" not in rc:
+        fails.append(f"CREATIVITY: cliche copy should FAIL, got {rc!r}")
+    print(f"CREATIVITY (anti-template)   -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_chk_qc_gates_independence():
+    """The four NEW QC gates (typography/prompt/image/speech) reject a self-graded /
+    builder-graded report and pass an independent one. Generalizes AF-QC-INDEPENDENCE."""
+    fails = []
+    cases = [
+        ("AF-TYPOGRAPHY-QC", build_deck._chk_typography_qc, "Phase Typography-QC"),
+        ("AF-PROMPT-QC", build_deck._chk_prompt_qc, "Phase Prompt-QC"),
+        ("AF-IMAGE-QC", build_deck._chk_image_qc, "Phase Image-QC"),
+        ("AF-SPEECH-QC", build_deck._chk_speech_qc, "Phase Speech-QC"),
+    ]
+    for code, fn, gate in cases:
+        # self-graded -> FAIL with this gate's code
+        bad = _qc_report_path({"gate": gate, "average": 9.1, "triggered_autofails": [],
+                               "pass": True,
+                               "qc_independence": {"graded_by": "self", "independent": True}})
+        r = fn(bad)
+        if not r or code not in r:
+            fails.append(f"{code}: self-graded report should FAIL with {code}, got {r!r}")
+        # independent -> PASS
+        good = _qc_report_path({"gate": gate, "average": 9.1, "triggered_autofails": [],
+                                "pass": True,
+                                "qc_independence": {"graded_by": "qc-specialist-x",
+                                                    "independent": True,
+                                                    "builder": "some-author",
+                                                    "self_graded": False}})
+        if fn(good):
+            fails.append(f"{code}: independent report should PASS but failed")
+    # AF-SPEECH-QC absent -> defer (pass)
+    if build_deck._chk_speech_qc(None):
+        fails.append("AF-SPEECH-QC: absent report should DEFER (pass) but failed")
+    print(f"QC-GATES INDEPENDENCE (4 new)-> {'PASS' if not fails else 'FAIL'}")
+    return fails
 
 
 def test_chk_qc_independence_rejects_self_graded():
@@ -1373,7 +1554,7 @@ def test_h1_whitespace_only_prompt():
     slide = {"slide": 1, "scene": "x", "copy": ["y"]}
 
     # ---- pure whitespace, well over the RAW floor ----
-    whitespace_only = (" \t\n" * 1000)  # ~3,000 raw chars, 0 non-whitespace
+    whitespace_only = (" \t\n" * ((floor // 3) + 500))  # well over the RAW floor, 0 non-whitespace
     assert len(whitespace_only) > floor, "fixture must exceed the RAW floor to prove the bug"
     rd = _rich_prompt_run_dir(whitespace_only)
     reason = build_deck._chk_rich_prompts(rd)
@@ -1737,6 +1918,40 @@ def emit_af_coverage():
     bc_reason = _emit_af_bundle_probe()
     record("AF-BUNDLE-COMPLETE", bc_reason)
 
+    # ---- O2 / O5 NEW build_deck-enforced gates (negative-test coverage) ----
+
+    # AF-TYPOGRAPHY-QC — a self-graded typography QC report FAILS _chk_typography_qc.
+    record("AF-TYPOGRAPHY-QC", build_deck._chk_typography_qc(
+        _qc_report_path({"gate": "Phase Typography-QC", "average": 9.1,
+                         "triggered_autofails": [], "pass": True,
+                         "qc_independence": {"graded_by": "self", "independent": True}})))
+    # AF-PROMPT-QC — a self-graded prompt QC report FAILS _chk_prompt_qc.
+    record("AF-PROMPT-QC", build_deck._chk_prompt_qc(
+        _qc_report_path({"gate": "Phase Prompt-QC", "average": 9.1,
+                         "triggered_autofails": [], "pass": True,
+                         "qc_independence": {"graded_by": "self", "independent": True}})))
+    # AF-IMAGE-QC — a self-graded image QC report FAILS _chk_image_qc.
+    record("AF-IMAGE-QC", build_deck._chk_image_qc(
+        _qc_report_path({"gate": "Phase Image-QC", "average": 9.1,
+                         "triggered_autofails": [], "pass": True,
+                         "qc_independence": {"graded_by": "builder", "independent": True}})))
+    # AF-SPEECH-QC — a PRESENT but self-graded speech QC report FAILS _chk_speech_qc
+    # (absent defers; present + self-graded triggers).
+    record("AF-SPEECH-QC", build_deck._chk_speech_qc(
+        _qc_report_path({"gate": "Phase Speech-QC", "average": 9.1,
+                         "triggered_autofails": [], "pass": True,
+                         "qc_independence": {"graded_by": "author", "independent": True}})))
+    # AF-SLIDE-COUNT-FLOOR — a 30-min/10-slide deck (floor 39) FAILS _chk_slide_count_floor.
+    record("AF-SLIDE-COUNT-FLOOR", build_deck._chk_slide_count_floor(
+        _slide_count_run_dir(30, 10)))
+    # AF-PITCH-MISSING — an arc with no ladder/no re-pitch FAILS _chk_pitch.
+    record("AF-PITCH-MISSING", build_deck._chk_pitch(
+        _pitch_run_dir([{"slide": 1, "arc_section": "hook"},
+                        {"slide": 2, "arc_section": "body"}])))
+    # AF-CREATIVITY — a design system where one archetype dominates FAILS _chk_creativity.
+    record("AF-CREATIVITY", build_deck._chk_creativity(
+        _creativity_run_dir(dominant=True)))
+
     triggered_sorted = sorted(triggered)
     AF_COVERAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
     AF_COVERAGE_PATH.write_text(json.dumps(
@@ -1865,6 +2080,23 @@ def main():
     # retired '>= 7' floor (hook_package.json.dedicated_slide_count).
     failures += test_hook_dedicated_slide_count()
 
+    # O4 (NEW) — AF-SLIDE-COUNT-FLOOR: a 30-min/10-slide deck (floor 39) auto-fails;
+    # a 30-min/39-slide deck passes; no duration target defers.
+    failures += test_chk_slide_count_floor()
+
+    # O5 (NEW) — AF-PITCH-MISSING: an arc with no offer-ladder / no re-pitch fails;
+    # a full ladder + re-pitch passes; an absent arc defers.
+    failures += test_chk_pitch()
+
+    # O5 (NEW) — AF-CREATIVITY: an archetype-dominant deck fails; a varied deck passes;
+    # cliche copy fails.
+    failures += test_chk_creativity()
+
+    # O2 (NEW) — the four new QC gates (typography/prompt/image/speech) reject a
+    # self/builder-graded report and pass an independent one (generalized
+    # AF-QC-INDEPENDENCE); AF-SPEECH-QC defers when its report is absent.
+    failures += test_chk_qc_gates_independence()
+
     # GUARD A — emit working/af-coverage.json listing every build_deck-enforced AF
     # code a deliberately-failing fixture actually triggered. gate_integrity_check.py
     # reads this artifact and fails if any declared+enforced gate is a no-op/untested.
@@ -1925,10 +2157,10 @@ def main():
     out = r.stdout + r.stderr
     if r.returncode != 3:
         failures.append(f"CASE5 (short rich prompt) expected exit 3, got {r.returncode}")
-    if "AF-P1" not in out or "1500" not in out:
-        failures.append("CASE5 stderr missing the AF-P1 1500-char floor reason")
+    if "AF-P1" not in out or "5000" not in out:
+        failures.append("CASE5 stderr missing the AF-P1 5000-char floor reason")
     print(f"CASE5 (short)    -> exit {r.returncode} (expected 3)  "
-          f"{'PASS' if r.returncode == 3 and 'AF-P1' in out and '1500' in out else 'FAIL'}")
+          f"{'PASS' if r.returncode == 3 and 'AF-P1' in out and '5000' in out else 'FAIL'}")
 
     # CASE 2 — artifacts present => preflight passes (must NOT exit 3).
     # We only need to prove the GATE passed; we stop the process the moment it
