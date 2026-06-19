@@ -59,21 +59,47 @@ NO slide markers at all, the parser falls back to splitting on `---` horizontal
 rules (treating each section as one slide) with a WARNING printed to stderr
 instead of a hard FATAL crash.
 
-FEATURES (the teleprompter, all client-side)
+FEATURES (the teleprompter, all client-side, vanilla JS, zero dependencies)
 - Pre-loaded speech (inline JSON) + a "Load .md" file picker + a "Paste" fallback.
+- DUAL SCROLL MODE with a toggle, persisted to localStorage:
+  * TRADITIONAL (default + always-available fallback): a requestAnimationFrame
+    fixed-speed engine with a SUB-PIXEL accumulator (carries the fractional
+    remainder so it stays smooth even at the slow floor), a dt CLAMP (a stalled /
+    GC / tab-refocus frame can never produce a jump), and a curved 18..240 px/s
+    speed range so the slow end is readably-slow-but-visibly-moving.
+  * SPOKEN (voice-following): the Web Speech API (SpeechRecognition ||
+    webkitSpeechRecognition; continuous + interim results) listens to the mic and
+    a fuzzy token sequence-aligner drives the scroll to keep the spoken word in the
+    reading zone. Restart-on-end (guarded by shouldListen) survives Chrome's ~7s
+    silence cutoff; mic-denied / unsupported auto-falls-back to TRADITIONAL with a
+    one-line notice; hidden entirely where SpeechRecognition is absent (Firefox).
+- SMART FUZZY HIGHLIGHT: the script is tokenized once (normalized, with {slide,
+  block} back-refs); a bounded local sequence-aligner maps speech onto the script
+  tolerant of paraphrase, skips, repeats and ad-libs, confidence-gated. Two-tier
+  render: already-spoken tokens dim/strike, the current/interim region is accented
+  and drives the scroll anchor.
 - Big adjustable font (default ~48px) with +/- controls.
 - Scroll-speed slider; default seeded from the speech WPM.
-- Play / pause on the scroll (Space).
-- Mirror mode (CSS transform: scaleX(-1)) for a beam-splitter rig.
+- Play / pause on the scroll (Space, or clicker B key).
+- PRESENTER-CLICKER keys: PageUp/PageDown + "." map to prev/next; B = pause.
+- EYE-LINE READING GUIDE: a fixed anchor line + dim mask above/below the reading
+  zone keeps the presenter's gaze at camera height (toggle / G key).
+- Mirror modes for beam-splitter rigs: horizontal (scaleX(-1), M key) AND vertical
+  flip (scaleY(-1), V key), independently toggleable.
+- Mic / recognition-STATUS chip (idle / listening / heard / paused / blocked).
 - Progress bar + "Slide N of M".
 - A slide RAIL on the left to jump to any slide; current slide is highlighted.
 - Manual prev / next slide with the arrow keys, in lockstep with the scroll.
 - Per-slide pacing COUNTDOWN from the SECONDS: metadata (turns amber, then red,
   when the presenter runs over that slide's budget).
 - Fullscreen toggle.
-- Settings persisted to localStorage (font, speed, mirror, theme).
+- Settings persisted to localStorage (font, speed, mirror, vmirror, guide, mode,
+  theme).
 - Dark high-contrast theme (default) with a light toggle.
 - Brand / company name in the header, read from intake.json if available.
+
+DEFERRED (tracked, not built this pass): multi-camera pop-out window, per-slide
+WPM auto-calibration, 3-2-1 countdown overlay, post-run actual-vs-budget report.
 
 USAGE
 -----
@@ -512,6 +538,45 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   #loader .row { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
   .hint { color: var(--muted); font-size: 12px; }
   kbd { background: var(--rail-active); border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+
+  /* Objective 2/3 -- mode toggle, status chip, two-tier highlight, guide */
+  #stage.vmirror #scroll { transform: scaleY(-1); }
+  #stage.mirror.vmirror #scroll { transform: scaleX(-1) scaleY(-1); }
+  .slide .tok { transition: color .15s ease, background .15s ease; }
+  /* committed (already-spoken): dimmed + struck */
+  .slide .tok.spoken { color: var(--muted); text-decoration: line-through;
+    text-decoration-thickness: 1px; opacity: .65; }
+  /* current/interim region: accent highlight (drives the scroll anchor) */
+  .slide .tok.cur { color: var(--accent); background: rgba(242,177,52,.14);
+    border-radius: 4px; }
+  html.light .slide .tok.cur { background: rgba(185,129,10,.15); }
+  /* eye-line reading guide: fixed anchor line + dim mask above/below the zone */
+  #guide { position: absolute; inset: 0; pointer-events: none; display: none; z-index: 5; }
+  #stage.guide #guide { display: block; }
+  #guide .mask-top, #guide .mask-bot { position: absolute; left: 0; right: 0;
+    background: rgba(0,0,0,.45); }
+  html.light #guide .mask-top, html.light #guide .mask-bot { background: rgba(255,255,255,.45); }
+  #guide .mask-top { top: 0; height: 26%; }
+  #guide .mask-bot { top: 38%; bottom: 0; }
+  #guide .line { position: absolute; left: 0; right: 0; top: 26%; height: 2px;
+    background: var(--accent); opacity: .8; }
+  /* recognition-status chip */
+  #micChip { display: none; align-items: center; gap: 6px; font-size: 12px;
+    padding: 4px 10px; border-radius: 999px; background: var(--rail);
+    border: 1px solid var(--rail-active); color: var(--muted); }
+  #micChip.show { display: inline-flex; }
+  #micChip .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  #micChip.listening .dot { background: var(--ok); animation: pulse 1.2s infinite; }
+  #micChip.heard .dot { background: var(--accent); }
+  #micChip.paused .dot { background: var(--muted); }
+  #micChip.err .dot { background: var(--over); }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.3;} }
+  #notice { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    background: var(--rail); border: 1px solid var(--accent); color: var(--fg);
+    padding: 10px 16px; border-radius: 8px; font-size: 13px; max-width: 80vw;
+    z-index: 60; display: none; box-shadow: 0 6px 24px rgba(0,0,0,.4); }
+  #notice.show { display: block; }
+  header button[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -519,6 +584,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <header>
     <div class="brand">__BRAND_NAME__<span class="sub" id="decktitle"></span></div>
     <div class="spacer"></div>
+    <div class="ctl">
+      <button id="modeBtn" title="Switch between fixed-speed and voice-following">Mode: Traditional</button>
+      <span id="micChip"><span class="dot"></span><span class="txt">idle</span></span>
+    </div>
     <div class="ctl"><button id="playBtn" title="Space">Play</button></div>
     <div class="ctl">Speed
       <button id="spdDown">-</button>
@@ -529,14 +598,18 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <button id="fontDown">A-</button><button id="fontUp">A+</button>
     </div>
     <div class="ctl">
-      <button id="mirrorBtn" title="Mirror for beam splitter">Mirror</button>
+      <button id="mirrorBtn" title="Horizontal mirror for beam splitter">Mirror H</button>
+      <button id="vmirrorBtn" title="Vertical flip for beam splitter">Mirror V</button>
+      <button id="guideBtn" title="Eye-line reading guide">Guide</button>
       <button id="themeBtn">Light</button>
       <button id="fsBtn" title="Fullscreen">Full</button>
       <button id="loadBtn">Load .md</button>
     </div>
   </header>
   <nav id="rail"></nav>
-  <main id="stage"><div id="scroll"></div></main>
+  <main id="stage"><div id="scroll"></div>
+    <div id="guide"><div class="mask-top"></div><div class="line"></div><div class="mask-bot"></div></div>
+  </main>
   <footer id="bar">
     <button id="prevBtn" title="Left arrow">&#8592; Prev</button>
     <button id="nextBtn" title="Right arrow">Next &#8594;</button>
@@ -566,6 +639,8 @@ Hello and welcome, everybody. [PAUSE] ..."></textarea>
     </div>
   </div>
 </div>
+
+<div id="notice"></div>
 
 <script id="speech-data" type="application/json">__SPEECH_JSON__</script>
 <script id="token-data" type="application/json">__TOKENS_JSON__</script>
@@ -702,6 +777,64 @@ function ownerize(html){
   return html.replace(OWNER_RE, m=>'<span class="owner">'+esc(m)+'</span>');
 }
 
+// ---- Objective 3 normalization (mirror of the Python _norm_token / _FILLER set)
+const FILLER = new Set(["um","uh","erm","uhh","umm","er","ah","like","you","know"]);
+const NUMW = {"0":"zero","1":"one","2":"two","3":"three","4":"four","5":"five",
+  "6":"six","7":"seven","8":"eight","9":"nine","10":"ten"};
+function normTok(raw){
+  let t=raw.toLowerCase().replace(/[^a-z0-9']/g,"").replace(/^'+|'+$/g,"");
+  if(!t) return "";
+  if(NUMW[t]) t=NUMW[t];
+  return t;
+}
+// Build {slide}:{block}:{wi} -> global token index from TOKENS (built server-side
+// AND rebuilt at runtime for Load/Paste). Lets render wrap each surface word in a
+// span carrying its global token index so the aligner can highlight it.
+let TOK_INDEX = {};
+function rebuildTokenIndex(){
+  TOK_INDEX = {};
+  for(let gi=0; gi<TOKENS.length; gi++){
+    const t=TOKENS[gi];
+    TOK_INDEX[t.slide+":"+t.block+":"+t.wi]=gi;
+  }
+}
+// Tokenize the loaded slides[] the same way Python does, for runtime Load/Paste.
+function buildTokensFromSlides(){
+  const out=[];
+  slides.forEach((s,si)=>{
+    (s.blocks||[]).forEach((b,bi)=>{
+      if(b.type!=="body") return;
+      const words=(b.text||"").trim().split(/\s+/);
+      let wi=0;
+      words.forEach(w=>{
+        if(!w) return;
+        const nt=normTok(w);
+        if(nt && !FILLER.has(nt)) out.push({t:nt,slide:si,block:bi,wi:wi,w:w});
+        wi++;
+      });
+    });
+  });
+  return out;
+}
+// Render one body block: wrap each surface word in a span; tokenized words get a
+// data-ti = global token index so highlightUpTo()/highlightCur() can style them.
+function renderBody(text, slideIdx, blockIdx){
+  const words=(text||"").trim().split(/\s+/);
+  let wi=0, html="";
+  words.forEach((w,k)=>{
+    if(!w) return;
+    const nt=normTok(w);
+    const tokenized = nt && !FILLER.has(nt);
+    const ti = tokenized ? TOK_INDEX[slideIdx+":"+blockIdx+":"+wi] : undefined;
+    const surface = ownerize(esc(w));
+    if(ti!==undefined) html+='<span class="tok" data-ti="'+ti+'">'+surface+'</span>';
+    else html+='<span class="tok">'+surface+'</span>';
+    html+= (k<words.length-1?" ":"");
+    wi++;
+  });
+  return html;
+}
+
 function render(){
   document.getElementById("decktitle").textContent = DATA.deck_title ? "  /  "+DATA.deck_title : "";
   scrollEl.innerHTML = "";
@@ -713,10 +846,10 @@ function render(){
     const stageTxt = s.stage ? " &nbsp; "+esc(s.stage.replace(/_/g," ")) : "";
     lab.innerHTML = '<span class="num">Slide '+s.no+'</span> &nbsp; '+esc(s.headline)+stageTxt;
     sec.appendChild(lab);
-    (s.blocks||[]).forEach(b=>{
+    (s.blocks||[]).forEach((b,bi)=>{
       const p=document.createElement("p");
       if(b.type==="cue"){ p.className="cue"; p.textContent=b.text; }
-      else { p.innerHTML = ownerize(esc(b.text)); }
+      else { p.innerHTML = renderBody(b.text, idx, bi); }
       sec.appendChild(p);
     });
     scrollEl.appendChild(sec);
@@ -726,6 +859,7 @@ function render(){
     item.onclick=()=>goTo(idx, true);
     rail.appendChild(item);
   });
+  _tokSpans = null;  // DOM rebuilt; drop the cached token-span list
   applyFont(); updateActive(); updatePos();
 }
 
@@ -836,6 +970,194 @@ function tweenTowardVoiceTarget(dt){
   if(whole !== 0){ stage.scrollTop += whole; scrollAccum -= whole; }
 }
 
+// ========================================================================
+// Objective 3 -- Smart fuzzy sequence aligner (bounded local Levenshtein)
+// Maps the spoken token stream onto TOKENS tolerant of paraphrase/skip/
+// repeat/ad-lib, confidence-gated, two-tier highlight.
+// ========================================================================
+let cursor = 0;            // committed position in TOKENS (already-spoken boundary)
+let interimEnd = 0;        // furthest token touched by the live interim region
+const WINDOW = 28;         // tokens of lookahead the aligner searches each step
+const BACKTRACK = 6;       // tokens behind the cursor it may re-anchor to
+const FUZZ = 0.34;         // max normalized edit distance to count two tokens "equal"
+
+// Normalized Levenshtein on two short tokens (0 = identical, 1 = totally different).
+function tokDist(a,b){
+  if(a===b) return 0;
+  const m=a.length, n=b.length;
+  if(!m||!n) return 1;
+  let prev=new Array(n+1), cur=new Array(n+1);
+  for(let j=0;j<=n;j++) prev[j]=j;
+  for(let i=1;i<=m;i++){
+    cur[0]=i;
+    for(let j=1;j<=n;j++){
+      const cost=a[i-1]===b[j-1]?0:1;
+      cur[j]=Math.min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost);
+    }
+    [prev,cur]=[cur,prev];
+  }
+  return prev[n]/Math.max(m,n);
+}
+function tokEq(a,b){ return tokDist(a,b) <= FUZZ; }
+
+// Feed a chunk of recognized words. `commit` = true for final results (advance the
+// committed cursor), false for interim (drives the current/interim highlight only).
+function alignSpoken(text, commit){
+  if(!TOKENS.length) return;
+  const heard = text.split(/\s+/).map(normTok).filter(w=>w && !FILLER.has(w));
+  if(!heard.length) return;
+  // Bounded window [cursor-BACKTRACK, cursor+WINDOW]. We greedily walk the heard
+  // stream against the script, allowing skips (paraphrase/jumps) and absorbing
+  // unmatched heard words (ad-libs/insertions). Track the FURTHEST script index
+  // we matched and how many words matched -- that drives forward progress even
+  // when the recent tail is an ad-lib that isn't in the script.
+  const lo = Math.max(0, cursor - BACKTRACK);
+  const hi = Math.min(TOKENS.length, cursor + WINDOW);
+  let si = lo, matched = 0, lastMatch = -1;
+  for(let hk=0; hk<heard.length; hk++){
+    // search forward within the window for this heard word (skip-tolerant)
+    let found=-1;
+    for(let p=si; p<hi && p<=si+WINDOW; p++){
+      if(tokEq(heard[hk], TOKENS[p].t)){ found=p; break; }
+    }
+    if(found>=0){ matched++; lastMatch=found; si=found+1; }
+    // unmatched heard word = ad-lib/insertion: absorb it, keep si put.
+  }
+  // Confidence gate: need >=2 matched words (or >=1 when only 1-2 heard) to move,
+  // and an actual forward landing. Otherwise hold the last good position.
+  const need = heard.length<=2 ? 1 : 2;
+  if(matched < need || lastMatch < 0){ return; }
+  const target = lastMatch + 1; // committed boundary sits just past the last spoken word
+  if(commit){
+    if(target > cursor){ cursor = target; }     // forward only; never run backward off garbage
+    interimEnd = cursor;
+    renderHighlight();
+    anchorToToken(Math.max(0, cursor-1));
+  } else {
+    interimEnd = Math.max(cursor, target);
+    renderHighlight();
+    anchorToToken(Math.max(0, interimEnd-1));
+  }
+}
+
+// Two-tier highlight: tokens < cursor = spoken (dim/strike); cursor..interimEnd = current.
+let _tokSpans = null;
+function tokSpans(){
+  if(!_tokSpans) _tokSpans = scrollEl.querySelectorAll(".tok[data-ti]");
+  return _tokSpans;
+}
+function renderHighlight(){
+  const spans = tokSpans();
+  spans.forEach(sp=>{
+    const ti=+sp.dataset.ti;
+    sp.classList.toggle("spoken", ti < cursor);
+    sp.classList.toggle("cur", ti >= cursor && ti <= interimEnd);
+  });
+}
+// Set the voice-derived scroll target so the current token sits in the upper-third
+// reading zone; the RAF tween (tweenTowardVoiceTarget) eases scrollTop toward it.
+function anchorToToken(ti){
+  const tok = TOKENS[Math.min(ti, TOKENS.length-1)];
+  if(!tok) return;
+  const slideEl = document.getElementById("slide-"+tok.slide);
+  if(!slideEl) return;
+  const span = scrollEl.querySelector('.tok[data-ti="'+ti+'"]') || slideEl;
+  const rectTop = span.offsetTop;  // offset within scrollEl
+  voiceTargetTop = Math.max(0, rectTop - stage.clientHeight*0.30);
+  // keep slide tracking + countdown honest
+  if(tok.slide !== current){ current=tok.slide; slideStart=performance.now(); updateActive(); }
+  updatePos();
+}
+function resetAligner(){ cursor=0; interimEnd=0; _tokSpans=null; renderHighlight(); }
+
+// ========================================================================
+// Objective 2 -- Web Speech API recognizer + dual-mode toggle
+// ========================================================================
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const SPEECH_SUPPORTED = !!SR;
+let rec = null, shouldListen = false;
+
+function micChip(state, txt){
+  const c=document.getElementById("micChip");
+  c.className = "show "+state;
+  c.querySelector(".txt").textContent = txt;
+}
+function showNotice(msg, ms){
+  const n=document.getElementById("notice");
+  n.textContent=msg; n.classList.add("show");
+  clearTimeout(n._t); n._t=setTimeout(()=>n.classList.remove("show"), ms||5000);
+}
+
+function startRecognition(){
+  if(!SPEECH_SUPPORTED) return false;
+  try {
+    rec = new SR();
+    rec.lang="en-US"; rec.continuous=true; rec.interimResults=true;
+    rec.onstart = ()=> micChip("listening","listening");
+    rec.onresult = e=>{
+      let interim="", final="";
+      for(let i=e.resultIndex; i<e.results.length; i++){
+        const r=e.results[i];
+        if(r.isFinal) final += r[0].transcript+" ";
+        else interim += r[0].transcript+" ";
+      }
+      if(final.trim()){ alignSpoken(final, true); micChip("heard","heard"); }
+      if(interim.trim()){ alignSpoken(interim, false); micChip("listening","listening"); }
+    };
+    rec.onerror = e=>{
+      if(e.error==="not-allowed" || e.error==="service-not-allowed"){
+        micChip("err","mic blocked");
+        showNotice("Microphone unavailable. Switched to Traditional (fixed-speed) mode.");
+        setMode("traditional", true);
+      } else if(e.error==="no-speech" || e.error==="aborted"){
+        // benign; re-arm happens in onend
+      } else {
+        micChip("err", e.error||"error");
+      }
+    };
+    rec.onend = ()=>{
+      // Chrome fires onend after ~7s silence even with continuous=true; re-arm.
+      if(shouldListen){ try{ rec.start(); }catch(_){} }
+      else micChip("paused","paused");
+    };
+    shouldListen = true;
+    rec.start();
+    return true;
+  } catch(err){
+    showNotice("Voice mode could not start. Using Traditional mode.");
+    setMode("traditional", true);
+    return false;
+  }
+}
+function stopRecognition(){
+  shouldListen=false;
+  if(rec){ try{ rec.stop(); }catch(_){} rec=null; }
+  micChip("paused","off");
+}
+
+// Mode switch. silent=true skips the privacy notice (used on auto-fallback).
+function setMode(mode, silent){
+  if(mode==="spoken" && !SPEECH_SUPPORTED) mode="traditional";
+  MODE = mode;
+  localStorage.setItem(MODE_KEY, mode);
+  document.getElementById("modeBtn").textContent =
+    "Mode: " + (mode==="spoken" ? "Spoken" : "Traditional");
+  document.getElementById("modeBtn").classList.toggle("on", mode==="spoken");
+  resetScrollClock();
+  if(mode==="spoken"){
+    resetAligner();
+    voiceTargetTop = stage.scrollTop;
+    if(!silent) showNotice("Voice mode sends audio to your browser's speech service (cloud-based in Chrome/Edge). Choose Traditional for sensitive content.", 7000);
+    document.getElementById("micChip").classList.add("show");
+    startRecognition();
+    setPlaying(true);   // RAF runs as the smoothing tween toward the voice target
+  } else {
+    stopRecognition();
+    document.getElementById("micChip").classList.remove("show");
+    setPlaying(false);
+  }
+}
+
 // ---- font / mirror / theme
 function applyFont(){
   const px = +(localStorage.getItem(FONT_KEY)||48);
@@ -850,6 +1172,16 @@ function applyMirror(){
   stage.classList.toggle("mirror", on);
   document.getElementById("mirrorBtn").classList.toggle("on", on);
 }
+function applyVmirror(){
+  const on = localStorage.getItem(VMIRROR_KEY)==="1";
+  stage.classList.toggle("vmirror", on);
+  document.getElementById("vmirrorBtn").classList.toggle("on", on);
+}
+function applyGuide(){
+  const on = localStorage.getItem(GUIDE_KEY)==="1";
+  stage.classList.toggle("guide", on);
+  document.getElementById("guideBtn").classList.toggle("on", on);
+}
 function applyTheme(){
   const light = localStorage.getItem(THEME_KEY)==="light";
   document.documentElement.classList.toggle("light", light);
@@ -857,6 +1189,9 @@ function applyTheme(){
 }
 
 // ---- wiring
+document.getElementById("modeBtn").onclick=()=>setMode(MODE==="spoken"?"traditional":"spoken");
+document.getElementById("vmirrorBtn").onclick=()=>{ localStorage.setItem(VMIRROR_KEY, localStorage.getItem(VMIRROR_KEY)==="1"?"0":"1"); applyVmirror(); };
+document.getElementById("guideBtn").onclick=()=>{ localStorage.setItem(GUIDE_KEY, localStorage.getItem(GUIDE_KEY)==="1"?"0":"1"); applyGuide(); };
 document.getElementById("playBtn").onclick=()=>setPlaying(!playing);
 document.getElementById("spdUp").onclick=()=>{ const s=document.getElementById("speed"); s.value=Math.min(100,+s.value+5); localStorage.setItem(SPEED_KEY,s.value); resetScrollClock(); };
 document.getElementById("spdDown").onclick=()=>{ const s=document.getElementById("speed"); s.value=Math.max(0,+s.value-5); localStorage.setItem(SPEED_KEY,s.value); resetScrollClock(); };
@@ -872,12 +1207,17 @@ stage.addEventListener("scroll", ()=>{ if(!playing){ detectCurrentFromScroll(); 
 
 document.addEventListener("keydown", e=>{
   if(e.target.tagName==="TEXTAREA"||e.target.tagName==="INPUT") return;
+  // Presenter-clicker keys (O4): PageDown/PageUp/period = next/prev; B = pause/blank toggle.
   if(e.code==="Space"){ e.preventDefault(); setPlaying(!playing); }
-  else if(e.code==="ArrowRight"||e.code==="ArrowDown"){ e.preventDefault(); goTo(current+1,true); }
-  else if(e.code==="ArrowLeft"||e.code==="ArrowUp"){ e.preventDefault(); goTo(current-1,true); }
+  else if(e.code==="ArrowRight"||e.code==="ArrowDown"||e.code==="PageDown"){ e.preventDefault(); goTo(current+1,true); }
+  else if(e.code==="ArrowLeft"||e.code==="ArrowUp"||e.code==="PageUp"){ e.preventDefault(); goTo(current-1,true); }
+  else if(e.key==="b"||e.key==="B"){ e.preventDefault(); setPlaying(!playing); }   // clicker "blank/pause" key
+  else if(e.key==="."){ e.preventDefault(); goTo(current+1,true); }                  // some clickers emit "."
   else if(e.key==="+"||e.key==="="){ bumpFont(4); }
   else if(e.key==="-"){ bumpFont(-4); }
   else if(e.key==="m"||e.key==="M"){ document.getElementById("mirrorBtn").click(); }
+  else if(e.key==="v"||e.key==="V"){ document.getElementById("vmirrorBtn").click(); }
+  else if(e.key==="g"||e.key==="G"){ document.getElementById("guideBtn").click(); }
   else if(e.key==="f"||e.key==="F"){ document.getElementById("fsBtn").click(); }
 });
 
@@ -894,7 +1234,13 @@ document.getElementById("parsePaste").onclick=()=>{
 };
 function ingest(md){
   const parsed=parseMarkdown(md);
-  if(parsed.slides.length){ DATA=parsed; slides=parsed.slides; WPM=parsed.wpm; current=0; render(); goTo(0,false); setPlaying(false); }
+  if(parsed.slides.length){
+    DATA=parsed; slides=parsed.slides; WPM=parsed.wpm; current=0;
+    TOKENS=buildTokensFromSlides(); rebuildTokenIndex();  // re-tokenize for SPOKEN highlight
+    resetAligner();
+    if(MODE==="spoken") setMode("traditional", true);     // restart cleanly in fixed mode on new file
+    render(); goTo(0,false); setPlaying(false);
+  }
   else alert("No slides could be parsed. The file may be empty. Accepted formats: '## Slide N -- Headline', '[Slide N] Headline', 'Slide N: Headline', or use '---' separators for a paragraph fallback.");
 }
 
@@ -906,10 +1252,20 @@ function ingest(md){
     const v=Math.max(10,Math.min(70, Math.round((WPM-90)/2)+25));
     document.getElementById("speed").value=v;
   }
-  applyMirror(); applyTheme();
+  applyMirror(); applyVmirror(); applyGuide(); applyTheme();
   if(!localStorage.getItem(FONT_KEY)) localStorage.setItem(FONT_KEY, 48);
+  rebuildTokenIndex();  // map {slide,block,wi}->token index before first render
+  // Hide SPOKEN where unsupported (e.g. Firefox): Traditional-only, no dead state.
+  if(!SPEECH_SUPPORTED){
+    document.getElementById("modeBtn").hidden = true;
+    document.getElementById("micChip").classList.remove("show");
+  }
   if(!slides.length){ render(); loader.style.display="flex"; }
   else { render(); goTo(0,false); }
+  // Restore persisted mode (only if supported); default Traditional.
+  const savedMode = localStorage.getItem(MODE_KEY);
+  if(savedMode==="spoken" && SPEECH_SUPPORTED) setMode("spoken");
+  else setMode("traditional", true);
   setInterval(()=>{ if(!playing) tickCountdown(); }, 250);
 })();
 </script>
