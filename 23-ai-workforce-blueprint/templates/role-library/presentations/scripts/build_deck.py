@@ -67,7 +67,7 @@ WHAT IT DOES (zero AI judgement at runtime):
        THAT prompt verbatim — it does NOT compose its own thin prompt from
        scene+copy. A whole slide is rendered in ONE gpt-image-2 generation.
        If a slide has NO rich prompt file, or the prompt is < PROMPT_CHAR_FLOOR
-       (1,500) chars, build_deck.py FAILS LOUD — it NEVER silently falls back to a
+       (5,000) chars, build_deck.py FAILS LOUD — it NEVER silently falls back to a
        thin composed prompt. TWO prompt-side QC gates run on every rich prompt,
        both FAIL-LOUD (no silent render):
          (a) FACIAL-INTELLIGENCE / REPRESENTATION gate — refuses any prompt that
@@ -76,9 +76,9 @@ WHAT IT DOES (zero AI judgement at runtime):
              (the client's captured audience), never a baked-in default split
              (SOP-CAST-01, AF-R3).
          (b) CHAR-COUNT gate — the rich prompt length must be within
-             [PROMPT_CHAR_FLOOR, PROMPT_CHAR_CEILING] = [1500, 18000]; the floor is
-             HARD (any prompt under 1,500 chars is not run, not rendered, not
-             updated — AF-P1) and the 18,000 ceiling is the universal GPT-Image 2
+             [PROMPT_CHAR_FLOOR, PROMPT_CHAR_CEILING] = [5000, 18000]; the floor is
+             HARD (any prompt under the 5,000-char standard is not run, not rendered,
+             not updated — AF-P1/AF-PROMPT-FLOOR) and the 18,000 ceiling is the universal GPT-Image 2
              safety boundary (AF-P2).
     3. Calls KIE.ai (gpt-image-2-text-to-image, or gpt-image-2-image-to-image when a
        logo is supplied via input_urls so the WHOLE slide + logo render in ONE
@@ -280,12 +280,14 @@ ENGLISH_PIN = (
 #     That prompt carries the full 15-element spec (typography size + per-line
 #     weight, placement, usage, the logo(s), the scene, verbatim copy, the negative
 #     block, everything on the slide); the SOP targets 9,000–14,000 chars. A prompt
-#     under 1,500 chars is, by definition, not a real slide prompt — it is a thin
+#     under 5,000 chars is, by definition, not a real slide prompt — it is a thin
 #     stub or a truncated file — so it is NOT run, NOT rendered, and NOT updated:
-#     the slide FAILS LOUD (AF-P1). 1,500 is the absolute minimum below which a
-#     prompt cannot possibly carry the mandatory specificity; the SOP's own
-#     soft-minimum of 5,000 lives upstream at the Slide Image Creator / Phase-3 QC.
-PROMPT_CHAR_FLOOR = 1500      # HARD floor (AF-P1): any rich prompt under this is NOT run/rendered/updated — FAIL LOUD
+#     the slide FAILS LOUD (AF-P1). 5,000 is the reconciled HARD floor: the SOP's
+#     own authored standard ("write each slide prompt to the 5,000-char standard")
+#     is now the un-bypassable minimum below which a prompt cannot possibly carry
+#     the mandatory specificity. The Prompt-Authoring phase (P4-PROMPT) writes to
+#     this standard and the Prompt-QC phase (P4-PROMPT-QC) verifies it independently.
+PROMPT_CHAR_FLOOR = 5000      # HARD floor (AF-P1/AF-PROMPT-FLOOR): any rich prompt under the 5,000-char standard is NOT run/rendered/updated — FAIL LOUD
 PROMPT_CHAR_CEILING = 18000   # UNIVERSAL hard maximum (AF-P2; 2,000 under the 20,000 API ceiling)
 
 # ---------------------------------------------------------------------------
@@ -675,7 +677,7 @@ def load_rich_prompt(slide: dict, run_dir: Path) -> str:
 
     FAIL LOUD (ValueError; the caller fails the slide and the run is blocked) when:
       * no rich prompt file exists for this slide                       → AF-P1
-      * the rich prompt is < PROMPT_CHAR_FLOOR (1,500) chars            → AF-P1
+      * the rich prompt is < PROMPT_CHAR_FLOOR (5,000) chars            → AF-P1
         (not run, not rendered, not updated)
       * the rich prompt is > PROMPT_CHAR_CEILING (18,000) chars         → AF-P2
       * a forbidden demographic-default landmine is present             → AF-R3
@@ -1427,6 +1429,322 @@ def _chk_copy_qc(path: Optional[Path]) -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------
+# THE FIVE QC GATES — each is a written-standard rubric report graded by an
+# INDEPENDENT reviewer (generalizing AF-QC-INDEPENDENCE across the whole
+# pipeline). copy-QC is _chk_copy_qc above; the four below mirror its contract:
+#   * gate == the phase's expected gate string (present + exact),
+#   * average >= 8.5 pass threshold,
+#   * no triggered autofails,
+#   * pass:true affirmatively,
+#   * INDEPENDENT-reviewer provenance (_qc_independence_reason) — a self/builder
+#     grade is REFUSED. The builder/author of the artifact may NOT grade it.
+# Each QC gate sequences AFTER its artifact (manifest order): Prompt-QC after
+# prompt authoring, Image-QC after render, Typography-QC after design,
+# Speech-QC after speech. Returns "" on pass, or a fatal AF message string.
+# ---------------------------------------------------------------------------
+def _qc_report_gate(path: Optional[Path], af_code: str, gate_label: str,
+                   sop_ref: str) -> str:
+    """Generic INDEPENDENT-reviewer QC-report gate. Validates the report shape
+    (gate string, >=8.5 average, no triggered autofails, pass:true) AND the
+    independent-reviewer provenance block, citing `af_code` on every failure so
+    the enforcement path names the code it raises (Guard A requirement)."""
+    if path is None:
+        return (f"{af_code}: file absent — the {gate_label} QC report was never "
+                f"produced. An INDEPENDENT QC specialist must grade this stage and "
+                f"write the report with a qc_independence provenance block. See {sop_ref}.")
+    obj = _read_json(path)
+    if "__parse_error__" in obj:
+        return f"{af_code}: report not valid JSON ({obj['__parse_error__']}). See {sop_ref}."
+    gate = str(obj.get("gate", "")).strip()
+    if gate != gate_label:
+        return (f"{af_code}: gate is {gate!r}, expected {gate_label!r} (must be present "
+                f"and exactly {gate_label!r}). See {sop_ref}.")
+    avg = obj.get("average", obj.get("average_score"))
+    try:
+        if avg is None or float(avg) < 8.5:
+            return f"{af_code}: average score {avg!r} is below the 8.5 pass threshold. See {sop_ref}."
+    except (TypeError, ValueError):
+        return f"{af_code}: average score {avg!r} is not numeric. See {sop_ref}."
+    triggered = obj.get("triggered_autofails") or obj.get("autofails_triggered") or []
+    if triggered:
+        return f"{af_code}: triggered autofails present: {triggered}. See {sop_ref}."
+    if obj.get("pass") is not True:
+        return (f"{af_code}: report does not affirmatively mark pass:true "
+                f"(got pass={obj.get('pass')!r}). See {sop_ref}.")
+    # INDEPENDENCE — reuse the copy-QC independence proof so a self/builder-graded
+    # report for ANY of the five QC stages is refused identically.
+    indep = _qc_independence_reason(obj)
+    if indep:
+        # _qc_independence_reason cites AF-QC-INDEPENDENCE; re-stamp this stage's code
+        # so Guard A's "the path names the code" proof holds for THIS gate too.
+        return f"{af_code}: {indep}"
+    return ""
+
+
+def _chk_prompt_qc(path: Optional[Path]) -> str:
+    """PROMPT-QC gate (AF-PROMPT-QC). After Prompt-Authoring (P4-PROMPT), an
+    INDEPENDENT QC specialist grades every per-slide prompt against the written
+    5,000-char prompt standard rubric (length, the 15-element structural blocks,
+    negative block, spelling-locks). Self/builder grade refused."""
+    return _qc_report_gate(path, "AF-PROMPT-QC", "Phase Prompt-QC",
+                          "qc-specialist-prompt-presentations-sops.md")
+
+
+def _chk_image_qc(path: Optional[Path]) -> str:
+    """IMAGE-QC gate (AF-IMAGE-QC). After Render (P4-RENDER), an INDEPENDENT QC
+    specialist grades the rendered slides against the written image-QC rubric
+    (multimodal pass: copy-vs-pixel parity, baked-not-overlaid, contrast,
+    no-placeholder). Self/builder grade refused."""
+    return _qc_report_gate(path, "AF-IMAGE-QC", "Phase Image-QC",
+                          "qc-specialist-image-presentations-sops.md")
+
+
+def _chk_typography_qc(path: Optional[Path]) -> str:
+    """TYPOGRAPHY-QC gate (AF-TYPOGRAPHY-QC). After the Design brief (PF-DESIGN), an
+    INDEPENDENT QC specialist grades the design system against the written
+    typography rubric (weight ladder, per-archetype treatment, anti-template
+    variation, type-scale floor). Self/builder grade refused."""
+    return _qc_report_gate(path, "AF-TYPOGRAPHY-QC", "Phase Typography-QC",
+                          "qc-specialist-typography-presentations-sops.md")
+
+
+def _chk_speech_qc(path: Optional[Path]) -> str:
+    """SPEECH-QC gate (AF-SPEECH-QC). After the Presenter Speech (P9-SPEECH), an
+    INDEPENDENT QC specialist grades the speech against the written speech rubric
+    (pacing, on-slide-sync, persuasion-arc fidelity, audience-facing voice).
+    CONDITIONAL by design (the AF-SPEECH-SHORT pattern): the speech is written
+    downstream, so when no report exists yet this DEFERS (returns "", pass) rather
+    than blocking the pre-speech render. Once the report exists it is enforced.
+    Self/builder grade refused."""
+    if path is None:
+        return ""  # speech QC not produced yet (pre-delivery) — gate defers.
+    return _qc_report_gate(path, "AF-SPEECH-QC", "Phase Speech-QC",
+                          "qc-specialist-speech-presentations-sops.md")
+
+
+# ---------------------------------------------------------------------------
+# SLIDE-COUNT FLOOR (AF-SLIDE-COUNT-FLOOR) — the deck must carry enough slides
+# for the chosen speaking duration. A 30-minute talk on 10 slides is 3 minutes a
+# slide — a wall-of-text reading session, not a paced deck. The verified pacing
+# band is ~1.3–1.5 slides per talking minute; this gate enforces the LOW end
+# (1.3) as the floor, so a deck below target_talk_minutes x SLIDES_PER_MINUTE_FLOOR
+# AUTO-FAILS. The +/- pacing budget above the floor stays with the Director.
+# ---------------------------------------------------------------------------
+SLIDES_PER_MINUTE_FLOOR = 1.3   # AF-SLIDE-COUNT-FLOOR: min slides per talking minute
+
+
+def _chk_slide_count_floor(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """SLIDE-COUNT-FLOOR gate (AF-SLIDE-COUNT-FLOOR). The output slide count must be
+    >= target_talk_minutes x SLIDES_PER_MINUTE_FLOOR (1.3). A 30-min/10-slide deck
+    (needs >=39) AUTO-FAILS. target_talk_minutes comes from intake.json (the field
+    _chk_intake requires). Returns "" on pass / not-applicable, or a fatal AF
+    message. Defers (passes) only when no target or no slide count can be read —
+    those are the intake gate's / rich-prompt gate's job, not this one."""
+    target = None
+    for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
+        p = run_dir / rel
+        if p.exists():
+            obj = _read_json(p)
+            if isinstance(obj, dict) and "__parse_error__" not in obj:
+                raw = obj.get("target_talk_minutes")
+                try:
+                    target = float(raw) if raw is not None else None
+                except (TypeError, ValueError):
+                    target = None
+            break
+    if not target or target <= 0:
+        return ""  # no usable target — intake gate handles a missing/invalid target.
+
+    n = _count_output_slides(run_dir, slides_path)
+    if n is None:
+        return ""  # slide count unreadable — the rich-prompt/coverage gates own that.
+
+    floor = int(__import__("math").ceil(target * SLIDES_PER_MINUTE_FLOOR))
+    if n < floor:
+        return (f"AF-SLIDE-COUNT-FLOOR: the deck has {n} slide(s) for a "
+                f"{target:g}-minute talk; the pacing floor is "
+                f"target_talk_minutes x {SLIDES_PER_MINUTE_FLOOR} = {floor} slides. "
+                f"A {target:g}-min talk on {n} slides is a reading session, not a paced "
+                f"deck. Add {floor - n} slide(s) (verified band is ~1.3–1.5 slides/min).")
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# PITCH / OFFER-LADDER (AF-PITCH-MISSING) — a converting deck MUST carry an offer
+# ladder AND a re-pitch after the FINAL price. The arc_allocation.json the Offer
+# Price Strategist produces is the source of truth: it must contain the LADDER /
+# offer beats (the value stack -> anchor -> price drops) and a RE-PITCH beat after
+# the FINAL price. A deck with no offer ladder, or no re-pitch, is a teaching dump
+# that never asks for the sale (or asks once and never recovers a "no").
+# ---------------------------------------------------------------------------
+def _chk_pitch(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """PITCH gate (AF-PITCH-MISSING). The converting arc MUST carry an offer ladder
+    (value-stack / anchor / price beats) AND a re-pitch beat after the FINAL price.
+    Reads arc_allocation.json (the Offer Price Strategist artifact). Returns "" on
+    pass, or a fatal AF-PITCH-MISSING message. Defers (passes) only when the arc
+    artifact is absent — _chk_arc owns the 'arc missing' failure, this gate owns
+    'arc present but has no pitch / no re-pitch'."""
+    arc = None
+    for rel in ("working/copy/arc_allocation.json", "arc_allocation.json",
+                "working/arc_allocation.json"):
+        p = run_dir / rel
+        if p.exists():
+            arc = p
+            break
+    if arc is None:
+        return ""  # arc not built yet — _chk_arc owns the absence; nothing to pitch-check.
+    obj = _read_json(arc)
+    if isinstance(obj, dict) and "__parse_error__" in obj:
+        return ("AF-PITCH-MISSING: arc_allocation.json is not valid JSON, so the offer "
+                "ladder + re-pitch cannot be proven. See SOP-PITCH-01 / SOP-PITCH-03.")
+    slots = obj if isinstance(obj, list) else (
+        obj.get("slots") or obj.get("allocation") or obj.get("slides") or [])
+    # Flatten every arc-section / tag token across the allocation into one lowercase blob.
+    tokens = []
+    for s in slots if isinstance(slots, list) else []:
+        if isinstance(s, dict):
+            for k in ("arc_section", "section", "beat", "tag", "type", "role"):
+                v = s.get(k)
+                if isinstance(v, str):
+                    tokens.append(v.lower())
+            tags = s.get("tags")
+            if isinstance(tags, list):
+                tokens += [str(t).lower() for t in tags]
+        elif isinstance(s, str):
+            tokens.append(s.lower())
+    blob = " ".join(tokens)
+    # OFFER-LADDER present: at least one ladder/anchor/price/offer/value-stack beat.
+    ladder_markers = ("ladder", "anchor", "price", "offer", "value-stack",
+                      "value_stack", "valuestack", "drop", "stack")
+    has_ladder = any(m in blob for m in ladder_markers)
+    # RE-PITCH present: an explicit re-pitch / second-close beat after the FINAL.
+    repitch_markers = ("re-pitch", "re_pitch", "repitch", "second close",
+                       "second-close", "re-offer", "reoffer", "post-final", "post_final")
+    has_repitch = any(m in blob for m in repitch_markers)
+    if not has_ladder or not has_repitch:
+        missing = []
+        if not has_ladder:
+            missing.append("no offer-ladder beats (value-stack -> anchor -> price drops)")
+        if not has_repitch:
+            missing.append("no re-pitch beat after the FINAL price")
+        return ("AF-PITCH-MISSING: the converting arc is incomplete — "
+                + "; ".join(missing) + ". A converting deck must build an offer ladder "
+                "and re-pitch after the FINAL price (SOP-PITCH-01 value stack / "
+                "SOP-PITCH-03 re-pitch). A deck that never asks for the sale, or asks "
+                "once and never recovers a 'no', auto-fails.")
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# CREATIVITY (AF-CREATIVITY) — reject template-sameness and cliche. A deck whose
+# slides all share one layout archetype (forty copies of the same black headline)
+# or whose copy leans on worn-out cliche openers is a template, not a designed
+# piece. The design system (design_system.json, Typography Architect) assigns each
+# slide one of several archetypes; this gate fails a deck where a single archetype
+# dominates beyond a ceiling, OR where banned cliche phrases appear in slide copy.
+# ---------------------------------------------------------------------------
+# A single archetype may cover at most this fraction of the deck before it reads as
+# template-sameness (the anti-template SOP-DESIGN-03 mandates no two CONSECUTIVE
+# slides share an archetype; this is the deck-wide dominance ceiling behind it).
+ARCHETYPE_DOMINANCE_CEILING = 0.60
+# Worn-out cliche openers/phrases a converting deck must not lean on (lowercase,
+# substring match on slide copy). Curated from the forensic template-sameness set.
+FORBIDDEN_CLICHE_PHRASES = (
+    "in today's fast-paced world",
+    "in today's fast paced world",
+    "in this day and age",
+    "at the end of the day",
+    "think outside the box",
+    "take it to the next level",
+    "the sky is the limit",
+    "last but not least",
+    "needless to say",
+    "synergy",
+    "low-hanging fruit",
+    "move the needle",
+    "circle back",
+    "boil the ocean",
+    "best-kept secret",
+    "game changer",
+    "game-changer",
+    "revolutionary new",
+    "one simple trick",
+)
+
+
+def _chk_creativity(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """CREATIVITY gate (AF-CREATIVITY). Rejects template-sameness and cliche:
+      * archetype dominance — if the design system assigns one archetype to MORE
+        than ARCHETYPE_DOMINANCE_CEILING (60%) of the slides, the deck reads as a
+        template (forty copies of one layout) and FAILS;
+      * cliche copy — if slide copy contains any FORBIDDEN_CLICHE_PHRASES, FAILS.
+    Reads working/typography/design_system.json (per-slide archetype map) and
+    working/copy/slides_copy.md. Defers (passes) when neither artifact exists yet
+    (those absences are owned by _chk_design_brief / _chk_slides_copy). Returns ""
+    on pass, or a fatal AF-CREATIVITY message."""
+    problems = []
+    # --- archetype dominance ---
+    ds = None
+    for rel in ("working/typography/design_system.json",
+                "working/copy/design_system.json", "design_system.json"):
+        p = run_dir / rel
+        if p.exists():
+            ds = p
+            break
+    if ds is not None:
+        obj = _read_json(ds)
+        if isinstance(obj, dict) and "__parse_error__" not in obj:
+            per = obj.get("per_slide") or obj.get("slides") or obj.get("slide_plan")
+            archetypes = []
+            if isinstance(per, list):
+                for s in per:
+                    if isinstance(s, dict):
+                        a = s.get("archetype") or s.get("type") or s.get("treatment")
+                        if isinstance(a, str) and a.strip():
+                            archetypes.append(a.strip().lower())
+            elif isinstance(per, dict):
+                for v in per.values():
+                    if isinstance(v, str) and v.strip():
+                        archetypes.append(v.strip().lower())
+                    elif isinstance(v, dict):
+                        a = v.get("archetype") or v.get("type")
+                        if isinstance(a, str) and a.strip():
+                            archetypes.append(a.strip().lower())
+            if len(archetypes) >= 3:
+                counts = {}
+                for a in archetypes:
+                    counts[a] = counts.get(a, 0) + 1
+                top, top_n = max(counts.items(), key=lambda kv: kv[1])
+                frac = top_n / len(archetypes)
+                if frac > ARCHETYPE_DOMINANCE_CEILING:
+                    problems.append(
+                        f"template-sameness: archetype {top!r} covers {top_n}/"
+                        f"{len(archetypes)} slides ({frac:.0%}), over the "
+                        f"{ARCHETYPE_DOMINANCE_CEILING:.0%} dominance ceiling — the deck "
+                        f"reads as one repeated layout (SOP-DESIGN-03 anti-template)")
+    # --- cliche copy ---
+    cp = None
+    for rel in ("working/copy/slides_copy.md", "slides_copy.md",
+                "working/slides_copy.md"):
+        p = run_dir / rel
+        if p.exists():
+            cp = p
+            break
+    if cp is not None:
+        low = cp.read_text(errors="replace").lower()
+        hits = [ph for ph in FORBIDDEN_CLICHE_PHRASES if ph in low]
+        if hits:
+            problems.append("cliche copy: slide copy leans on worn-out phrase(s) "
+                            + ", ".join(repr(h) for h in hits[:6]))
+    if problems:
+        return ("AF-CREATIVITY: the deck fails the anti-template / anti-cliche gate — "
+                + "; ".join(problems) + ". Vary the layout archetypes (no single "
+                "archetype dominates) and rewrite cliche copy into specific, original "
+                "lines (SOP-DESIGN-03 variable-layout / slide-copywriter doctrine).")
+    return ""
+
+
 def _chk_arc(path: Optional[Path]) -> str:
     # Signature Presentation Architect — the converting-arc allocation must exist.
     if path is None:
@@ -1709,7 +2027,7 @@ def _chk_coverage(run_dir: Path, slides_path: Optional[Path] = None) -> str:
 def _chk_rich_prompts(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """RICH-PROMPT-REQUIRED gate (AF-P1). EVERY slide the system is about to render
     MUST have a hand-authored RICH per-slide prompt in working/prompts/ that is
-    >= PROMPT_CHAR_FLOOR (1,500) chars. A missing prompt file, or one under the
+    >= PROMPT_CHAR_FLOOR (5,000) chars. A missing prompt file, or one under the
     floor, is an AF-P1 auto-fail: build_deck.py renders the rich prompt VERBATIM and
     NEVER composes a thin fallback, so a thin/absent prompt means the slide cannot be
     rendered at all. Returns "" on pass, or a fatal AF-P1 message (run_preflight maps
@@ -1978,6 +2296,50 @@ PREFLIGHT_REQUIRED = [
      "typography/design brief — per-slide creative art direction",
      "Phase F — Typography Architect / SOP-DESIGN-01/02",
      _chk_design_brief),
+    # TYPOGRAPHY-QC gate (AF-TYPOGRAPHY-QC). After the design brief, an INDEPENDENT
+    # QC specialist grades the design system against the written typography rubric.
+    ("working/qc/typography_qc_report.json",
+     "typography QC report (gate Phase Typography-QC, average >= 8.5, independent reviewer)",
+     "Phase Typography-QC — Typography QC Specialist (AF-TYPOGRAPHY-QC)",
+     _chk_typography_qc),
+    # PROMPT-QC gate (AF-PROMPT-QC). After Prompt-Authoring, an INDEPENDENT QC
+    # specialist grades every per-slide prompt against the 5,000-char prompt standard.
+    ("working/qc/prompt_qc_report.json",
+     "prompt QC report (gate Phase Prompt-QC, average >= 8.5, independent reviewer)",
+     "Phase Prompt-QC — Prompt QC Specialist (AF-PROMPT-QC)",
+     _chk_prompt_qc),
+    # IMAGE-QC gate (AF-IMAGE-QC). After Render, an INDEPENDENT QC specialist grades
+    # the rendered slides against the written image-QC rubric (multimodal pass).
+    ("working/qc/image_qc_report.json",
+     "image QC report (gate Phase Image-QC, average >= 8.5, independent reviewer)",
+     "Phase Image-QC — Image QC Specialist (AF-IMAGE-QC)",
+     _chk_image_qc),
+    # SPEECH-QC gate (AF-SPEECH-QC). CONDITIONAL: enforced only once the speech QC
+    # report exists (speech is written downstream at delivery), so it never blocks
+    # the pre-speech render but is wired so it can't be silently skipped.
+    ("working/qc/speech_qc_report.json",
+     "speech QC report (gate Phase Speech-QC, average >= 8.5, independent reviewer)",
+     "Phase Speech-QC — Speech QC Specialist (AF-SPEECH-QC)",
+     _chk_speech_qc),
+    # SLIDE-COUNT-FLOOR gate (AF-SLIDE-COUNT-FLOOR). The output slide count must be
+    # >= target_talk_minutes x 1.3 (the low end of the verified 1.3–1.5 slides/min
+    # pacing band). A 30-min/10-slide deck auto-fails. Run-dir-scoped (None sentinel).
+    (None,
+     "slide-count floor — output slides >= target_talk_minutes x 1.3 (pacing band)",
+     "Phase 0a/4 — Director duration intake + Arc allocation (AF-SLIDE-COUNT-FLOOR)",
+     _chk_slide_count_floor),
+    # PITCH gate (AF-PITCH-MISSING). The converting arc must carry an offer ladder
+    # AND a re-pitch after the FINAL price. Run-dir-scoped (None sentinel).
+    (None,
+     "offer ladder + re-pitch — arc carries a value-stack/anchor/price ladder and a re-pitch",
+     "Phase 3 — Offer Price Strategist (SOP-PITCH-01 / SOP-PITCH-03, AF-PITCH-MISSING)",
+     _chk_pitch),
+    # CREATIVITY gate (AF-CREATIVITY). Rejects template-sameness (one archetype
+    # dominating the deck) and cliche copy. Run-dir-scoped (None sentinel).
+    (None,
+     "creativity — no single layout archetype dominates the deck; no cliche copy",
+     "Phase F/4 — Typography Architect + Slide Copywriter (SOP-DESIGN-03, AF-CREATIVITY)",
+     _chk_creativity),
     # 7th check — ANTI-COMPRESSION coverage gate (AF-COVERAGE-1). The rel sentinel
     # None tells run_preflight to call this check with the run_dir itself (it needs
     # both mission_prd.json's source_slide_count AND the output slide count), not a
