@@ -311,15 +311,34 @@ Search the user's machine for any folder matching these names (case-insensitive)
 find ~/Downloads -maxdepth 2 -type d -iname "*openclaw*master*" -o -iname "*openclaw*onboarding*" 2>/dev/null
 ```
 
-**Step 2: Add the path to memorySearch.extraPaths.**
+**Step 2: Add the path to the MAIN agent's memorySearch.extraPaths.**
 
-In `~/.openclaw/openclaw.json`, inside the `agents.defaults.memorySearch` section, add:
+> **MEMORY-BLOAT GUARD — read this.** Attach the corpus to the **single `main`
+> agent ONLY** — in `agents.list[]`, on the entry whose `"id"` is `"main"`.
+> Do **NOT** put it in `agents.defaults.memorySearch.extraPaths`, and do **NOT**
+> put it in any per-department agent's `extraPaths`. The OpenClaw runtime
+> **unions** each agent's `extraPaths` onto `agents.defaults`, so a corpus path
+> placed in `defaults` (or in any dept agent) gets re-embedded into **every**
+> department's memory DB — one full copy of the corpus per department — which is
+> what produced the multi-GB-per-box memory-DB bloat. Embed it ONCE, on `main`.
+> The `activate-memory-stack.sh` script does this automatically; the manual steps
+> below are the equivalent edit.
+
+In `~/.openclaw/openclaw.json`, find (or create) the `agents.list[]` entry with
+`"id": "main"` and add the corpus path under ITS `memorySearch.extraPaths`:
 
 ```json
-"extraPaths": [
-  "/Users/USERNAME/Downloads/openclaw-master-files"
-]
+{
+  "id": "main",
+  "memorySearch": {
+    "extraPaths": [
+      "/Users/USERNAME/Downloads/openclaw-master-files"
+    ]
+  }
+}
 ```
+
+Leave `agents.defaults.memorySearch.extraPaths` as an empty array `[]`.
 
 **CRITICAL: Use the FULL ABSOLUTE path, not a tilde (~).** OpenClaw resolves non-absolute paths relative to the workspace directory, so `~/Downloads/...` becomes `~/.openclaw/workspace/~/Downloads/...` which does not exist.
 

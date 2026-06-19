@@ -1,0 +1,38 @@
+name: memory-corpus-guard
+
+# Fails the build if any materializer, config template, or onboarding
+# instruction plants the shared master-files corpus into a place the OpenClaw
+# runtime UNIONS onto every department agent — agents.defaults.memorySearch.
+# extraPaths or any per-department agent's extraPaths — which caused the
+# field-confirmed multi-GB-per-box memory-DB bloat (one corpus copy per dept).
+# The corpus must be embedded ONCE, on the single `main` agent.
+# system-memory-fix
+
+on:
+  push:
+    paths:
+      - 31-upgraded-memory-system/**
+      - 32-command-center-setup/**
+      - install.sh
+      - tests/unit/memory-corpus-no-defaults-extrapaths.test.sh
+      - .github/workflows/memory-corpus-guard.yml
+  pull_request:
+    paths:
+      - 31-upgraded-memory-system/**
+      - 32-command-center-setup/**
+      - install.sh
+      - tests/unit/memory-corpus-no-defaults-extrapaths.test.sh
+      - .github/workflows/memory-corpus-guard.yml
+
+jobs:
+  memory-corpus-guard:
+    name: Memory-bloat corpus-placement guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run memory-corpus-no-defaults-extrapaths guard
+        run: |
+          chmod +x tests/unit/memory-corpus-no-defaults-extrapaths.test.sh
+          bash tests/unit/memory-corpus-no-defaults-extrapaths.test.sh
