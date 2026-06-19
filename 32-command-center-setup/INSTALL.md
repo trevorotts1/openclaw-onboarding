@@ -192,15 +192,25 @@ For each department, the agent adds an entry to `agents.list[]`:
   "name": "Chief Marketing Officer",
   "workspace": "/Users/username/.openclaw/workspaces/command-center/marketing",
   "memorySearch": {
-    "extraPaths": ["/Users/username/Downloads/openclaw-master-files"],
+    "extraPaths": [],
     "multimodal": {
-      "enabled": true,
-      "modalities": ["all"]
+      "enabled": false,
+      "modalities": []
     },
-    "fallback": "none"
+    "fallback": "openai"
   }
 }
 ```
+
+> **MEMORY-BLOAT GUARD — per-department `extraPaths` MUST stay empty.** Do not
+> add the shared master-files corpus to any department agent's `extraPaths`. The
+> OpenClaw runtime unions each agent's `extraPaths` onto `agents.defaults`, so
+> the corpus would be re-embedded into every department's memory DB — one full
+> copy per department, producing multi-GB-per-box bloat. The corpus is embedded
+> ONCE, on the single `main` agent (see Skill 31 `activate-memory-stack.sh` /
+> FULL-DOC.md §4.3). Departments search that shared index without each holding
+> their own copy. `materialize-dept-agents.sh` already writes `extraPaths: []`
+> for every department agent — keep it that way.
 
 ### 4.2b Wiki Context Injection
 Each department agent is configured to use the Memory Wiki for structured knowledge retrieval:
@@ -228,7 +238,8 @@ This enables department heads to:
 **Important notes:**
 - Agent ID format: `dept-[dept-name]` (matches Skill 23's agent ID format)
 - Workspace paths are absolute (not tilde paths)
-- extraPaths points to your master files folder using absolute path
+- Per-department `extraPaths` stays EMPTY (`[]`) — the shared corpus is embedded
+  once on the `main` agent, never per department (memory-bloat guard)
 - Sandboxing is NOT enabled (department heads need full access)
 
 ### 4.3 Add Telegram Group to Channels
