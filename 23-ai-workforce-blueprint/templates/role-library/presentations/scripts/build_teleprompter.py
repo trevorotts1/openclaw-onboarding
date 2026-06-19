@@ -684,12 +684,16 @@ function parseMarkdown(md){
 
 // ---- state
 let DATA = JSON.parse(document.getElementById("speech-data").textContent || "{}");
+let TOKENS = JSON.parse((document.getElementById("token-data")||{}).textContent || "[]");
 let slides = DATA.slides || [];
 let WPM = DATA.wpm || DEFAULT_WPM;
 let current = 0;            // index of the current slide
 let playing = false;
 let rafId = null, lastTs = 0;
 let slideStart = performance.now();   // when the current slide became current
+// MODE: "traditional" (Objective 1 fixed-speed RAF, default+fallback) | "spoken" (voice-following).
+let MODE = "traditional";
+let voiceTargetTop = 0;    // SPOKEN: scroll target the RAF tween chases (set by the aligner)
 const stage = document.getElementById("stage");
 const scrollEl = document.getElementById("scroll");
 
@@ -776,28 +780,60 @@ function tickCountdown(){
   cnt.classList.toggle("warn", remain >= 0 && budget>0 && remain < budget*0.2);
 }
 
-// ---- auto-scroll engine
+// ---- auto-scroll engine (Objective 1: sub-pixel accumulator + dt clamp + curved range)
+const SPEED_FLOOR = 18;   // px/s at slider minimum: readably slow but VISIBLY moving
+const SPEED_TOP   = 240;  // px/s at slider maximum
+const DT_MAX      = 0.05; // seconds; clamp a stalled/GC/refocus frame to ~3 frames @60fps
+let scrollAccum   = 0;    // fractional sub-pixel scroll carry
 function speedPxPerSec(){
-  const v = +document.getElementById("speed").value; // 0..100
-  // 8..220 px/s, seeded default tuned so a ~48px line reads near WPM cadence
-  return 8 + (v/100)*212;
+  const v = +document.getElementById("speed").value / 100; // 0..1
+  // Mild ease (v^1.3) so the low half of the slider has fine control while the
+  // floor stays above the visible-motion threshold and the top reaches ~240px/s.
+  return SPEED_FLOOR + Math.pow(v, 1.3) * (SPEED_TOP - SPEED_FLOOR);
 }
+// Reset the timestamp + sub-pixel carry on EVERY transition into motion so a
+// stale lastTs can never multiply into a jump. Called on play/speed/mode change.
+function resetScrollClock(){ lastTs = 0; scrollAccum = 0; }
 function loop(ts){
   if(!playing){ rafId=null; return; }
   if(!lastTs) lastTs=ts;
-  const dt=(ts-lastTs)/1000; lastTs=ts;
-  stage.scrollTop += speedPxPerSec()*dt;
+  let dt=(ts-lastTs)/1000; lastTs=ts;
+  dt = Math.min(dt, DT_MAX);            // clamp: a stalled/GC/refocus frame can never jump
+  if(dt < 0) dt = 0;
+  if(MODE==="spoken"){
+    // SPOKEN: tween toward the voice-derived target instead of constant speed.
+    tweenTowardVoiceTarget(dt);
+  } else {
+    // TRADITIONAL: accumulate sub-pixel scroll, write only the integer delta,
+    // carry the remainder — smooth even at the slow floor at any frame rate.
+    scrollAccum += speedPxPerSec()*dt;
+    const whole = Math.trunc(scrollAccum);
+    if(whole !== 0){ stage.scrollTop += whole; scrollAccum -= whole; }
+  }
   detectCurrentFromScroll();
   tickCountdown();
   const atEnd = stage.scrollTop >= stage.scrollHeight - stage.clientHeight - 1;
-  if(atEnd){ setPlaying(false); }
+  if(atEnd && MODE!=="spoken"){ setPlaying(false); }
   else rafId=requestAnimationFrame(loop);
 }
 function setPlaying(p){
-  playing=p; lastTs=0;
+  playing=p; resetScrollClock();
   document.getElementById("playBtn").textContent = p?"Pause":"Play";
   document.getElementById("playBtn").classList.toggle("on", p);
   if(p && !rafId) rafId=requestAnimationFrame(loop);
+}
+// SPOKEN smoothing tween: ease the real scrollTop toward the voice-derived
+// target so motion stays smooth between recognition events instead of snapping.
+// Sub-pixel safe (writes integer deltas, carries the remainder via scrollAccum).
+function tweenTowardVoiceTarget(dt){
+  const cur = stage.scrollTop;
+  const diff = voiceTargetTop - cur;
+  if(Math.abs(diff) < 0.5){ scrollAccum = 0; return; }
+  // Exponential approach, frame-rate independent; capped so a big jump still eases.
+  const k = 1 - Math.pow(0.0001, dt); // ~time-constant smoothing
+  scrollAccum += diff * k;
+  const whole = Math.trunc(scrollAccum);
+  if(whole !== 0){ stage.scrollTop += whole; scrollAccum -= whole; }
 }
 
 // ---- font / mirror / theme
@@ -822,9 +858,9 @@ function applyTheme(){
 
 // ---- wiring
 document.getElementById("playBtn").onclick=()=>setPlaying(!playing);
-document.getElementById("spdUp").onclick=()=>{ const s=document.getElementById("speed"); s.value=Math.min(100,+s.value+5); localStorage.setItem(SPEED_KEY,s.value); };
-document.getElementById("spdDown").onclick=()=>{ const s=document.getElementById("speed"); s.value=Math.max(0,+s.value-5); localStorage.setItem(SPEED_KEY,s.value); };
-document.getElementById("speed").oninput=e=>localStorage.setItem(SPEED_KEY,e.target.value);
+document.getElementById("spdUp").onclick=()=>{ const s=document.getElementById("speed"); s.value=Math.min(100,+s.value+5); localStorage.setItem(SPEED_KEY,s.value); resetScrollClock(); };
+document.getElementById("spdDown").onclick=()=>{ const s=document.getElementById("speed"); s.value=Math.max(0,+s.value-5); localStorage.setItem(SPEED_KEY,s.value); resetScrollClock(); };
+document.getElementById("speed").oninput=e=>{ localStorage.setItem(SPEED_KEY,e.target.value); resetScrollClock(); };
 document.getElementById("fontUp").onclick=()=>bumpFont(4);
 document.getElementById("fontDown").onclick=()=>bumpFont(-4);
 document.getElementById("prevBtn").onclick=()=>goTo(current-1,true);
