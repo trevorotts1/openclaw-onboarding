@@ -1,3 +1,22 @@
+## v12.41.0 — 2026-06-19 — fix(update-skills): set -e hardening of stale-detection and A3 content-gate block — three grep pipelines and detect-stale exit-10 now safe under set -euo pipefail
+
+**Bug (introduced v12.27.0):** `update-skills.sh` runs under `set -euo pipefail` from line 35. The stale-detection block assigned the output of `detect-stale-artifacts.py` directly: `DETECT_OUT="$(python3 ... )"`. That script intentionally exits 10 when actionable artifacts exist. Under `set -e`, a bare command-substitution assignment inherits the subprocess exit code, so exit 10 aborted the script at that line — before `DETECT_RC=$?` was captured, before the rc-10 handler ran, and before the `.onboarding-version` stamp write at line 1541. Skills installed cleanly (46 of them) and the A3 gate passed, but the stamp was never written.
+
+Two additional unguarded grep pipelines in the same block (`dest_digest=$(... | grep ...)` in the A3 loop, `_TREE_SHA=$(... | grep ...)` in the manifest-write section) would abort the script on a no-match because `grep` exits 1 when no lines match and `pipefail` propagates that through the pipeline.
+
+**Fixes (3 lines):**
+1. Replaced the two-line `DETECT_OUT=... ; DETECT_RC=$?` construct with the if-idiom (`if DETECT_OUT="$(...)"; then DETECT_RC=0; else DETECT_RC=$?; fi`). The if-condition is exempt from `set -e`, so exit 10 is caught and `$DETECT_RC` is correctly set to 10. Downstream rc-10 handler and stamp write are now reachable.
+2. Added `|| true` to `dest_digest=$(... | grep "^${skill_name}|" ...)` in the A3 loop. When a skill is absent from the destination manifest, grep exits 1; the guard lets the assignment produce an empty string, which the existing `[ -z "$dest_digest" ]` check then correctly classifies as a mismatch.
+3. Added `|| true` to `_TREE_SHA=$(... | grep "^__TREE_SHA__|" ...)` in the manifest companion-write section. If the manifest contains no `__TREE_SHA__` row, grep exits 1; the guard lets `_TREE_SHA` be empty, and the existing `${_TREE_SHA:-unknown}` expansion handles the fallback.
+
+**Proof (replayed in bash -euo pipefail):**
+- Old construct: `DETECT_OUT="$(stub_exit10)"; echo NEXT` — NEXT never printed; shell exits 10.
+- New construct: `if DETECT_OUT="$(stub_exit10)"; then DETECT_RC=0; else DETECT_RC=$?; fi; echo "SURVIVED rc=$DETECT_RC"` — prints `SURVIVED rc=10`.
+- Unguarded grep no-match: `x=$(echo "a|1" | grep "^z|" | cut -d'|' -f2 | head -1)` — exits 1, script aborts.
+- Guarded: `x=$(... || true)` — exits 0, `x` is empty string.
+
+**Impact:** Boxes with detect-stale-artifacts.py returning rc 10 (actionable stale artifacts present) will now correctly write the `.onboarding-version` stamp after a successful install.
+
 ## v12.40.0 — 2026-06-19 — fix(update-skills): PLATFORM unbound-variable crash — built boxes were stuck at their prior version
 
 **Bug (introduced v12.27.0):** `update-skills.sh` referenced `$PLATFORM` at the stale-artifact detection block (line 1431 of the pre-fix file) but that variable was never assigned anywhere in the script. Under `set -euo pipefail` (active from line 35), any reference to an unset variable aborts with "PLATFORM: unbound variable" and exits 1. The `.onboarding-version` stamp write sits ~110 lines later (after the A3 content gate), so the stamp was never written even when all skills installed cleanly and the A3 gate passed. Result: fully-built boxes were permanently stuck reporting their old version; re-runs of `update-skills.sh` always crashed before the stamp was written.
