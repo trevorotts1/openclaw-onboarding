@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v12.42.0"
+ONBOARDING_VERSION="v12.43.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -5818,7 +5818,7 @@ else
 fi
 
 # Layer 2 (VPS only): comment out WHATSAPP_NUMBER in Hostinger Docker .env
-if [ "$IS_VPS" = "true" ] || [ -d "/docker" ]; then
+if [ "$OPENCLAW_PLATFORM" = "vps" ] || [ -d "/docker" ]; then
     _wa_env_found=0
     for _wa_envf in /docker/*/.env /data/docker/*/.env; do
         [ -f "$_wa_envf" ] || continue
