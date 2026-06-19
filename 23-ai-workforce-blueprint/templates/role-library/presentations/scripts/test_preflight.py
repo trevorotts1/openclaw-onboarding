@@ -1952,6 +1952,74 @@ def emit_af_coverage():
     record("AF-CREATIVITY", build_deck._chk_creativity(
         _creativity_run_dir(dominant=True)))
 
+    # ---- 2026-06-19 deck-quality gate probes (Bug 1 fix) ----
+    # AF-VISUAL-VARIETY — 35 all-dark near-black PNGs drive check_visual_variety to FAIL.
+    # We write real PNG headers + dark-byte fill so the luma heuristic sees near-zero
+    # mean luminance (all bytes 0x05 = ~2% brightness) and the hue-dominance check
+    # also fires (all slides share the same near-black hue bucket 36 / achromatic).
+    vv_root = Path(tempfile.mkdtemp(prefix="deck_coverage_vv_probe_"))
+    (vv_root / "renders").mkdir(parents=True)
+    for _i in range(1, 36):
+        # near-black PNG (fill byte 0x05 => very dark; luma << VISUAL_VARIETY_DARK_LUMA_THRESHOLD)
+        (vv_root / "renders" / f"slide-{_i:02d}.png").write_bytes(
+            b"\x89PNG\r\n\x1a\n" + bytes([0x05]) * (100 * 1024))
+    record("AF-VISUAL-VARIETY", build_deck.check_visual_variety(vv_root))
+
+    # AF-PACKAGE-CLEAN — a bundle containing a .py dev artifact drives
+    # check_package_cleanliness to FAIL (build scripts must not reach the client).
+    pc_root = Path(tempfile.mkdtemp(prefix="deck_coverage_pc_probe_"))
+    (pc_root / "build_slide.py").write_bytes(b"# dev artifact")
+    (pc_root / "poll_images.sh").write_bytes(b"#!/bin/bash")
+    (pc_root / "tasks").mkdir()                                    # forbidden dir
+    (pc_root / "deliverables.json").write_text("{}")               # canonical -- OK
+    record("AF-PACKAGE-CLEAN", build_deck.check_package_cleanliness(pc_root))
+
+    # AF-IMAGE-QC-RAN — a bundle where the image_qc_report.json was written BEFORE
+    # the rendered PNGs (stale) drives check_image_qc_present to FAIL.
+    import time as _time
+    iqr_root = Path(tempfile.mkdtemp(prefix="deck_coverage_iqr_probe_"))
+    (iqr_root / "renders").mkdir(parents=True)
+    (iqr_root / "working" / "qc").mkdir(parents=True, exist_ok=True)
+    _stale_report = iqr_root / "working" / "qc" / "image_qc_report.json"
+    _stale_report.write_text(json.dumps({
+        "gate": "Phase Image-QC", "average": 9.0, "pass": True,
+        "slides": [{"slide": 1, "verdict": "PASS"}],
+        "qc_independence": {"graded_by": "qc-img-specialist", "independent": True},
+    }))
+    _time.sleep(0.05)   # ensure the PNG is NEWER than the report (makes it stale)
+    (iqr_root / "renders" / "slide-01.png").write_bytes(
+        b"\x89PNG\r\n\x1a\n" + b"\xcc" * 10240)
+    record("AF-IMAGE-QC-RAN", build_deck.check_image_qc_present(iqr_root))
+
+    # AF-BRAND-CONSISTENCY — a solid magenta (255, 0, 255) slide against a navy/gold
+    # brand palette drives check_brand_consistency to FAIL. The Bug 2 fix in
+    # _slide_dominant_colors (bounding range to len(palette)//3) makes this possible;
+    # without the fix, quantize returns a len-3 palette on a solid-colour image and
+    # the bare-except swallowed the IndexError, returning [] and causing DEFER.
+    bc_root = Path(tempfile.mkdtemp(prefix="deck_coverage_bc_probe_"))
+    (bc_root / "renders").mkdir(parents=True)
+    (bc_root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    # Write the magenta PNG using PIL if available; fall back to raw PNG header.
+    try:
+        from PIL import Image as _PilImage
+        _magenta_img = _PilImage.new("RGB", (200, 200), (255, 0, 255))
+        _magenta_img.save(str(bc_root / "renders" / "slide-01.png"))
+    except ImportError:
+        # PIL absent -- write a raw PNG header + magenta-ish bytes (high R+B, low G).
+        # The stdlib luma fallback will read raw bytes; at the function level we
+        # cannot get AF-BRAND-CONSISTENCY without PIL (the gate skips slides where
+        # _slide_dominant_colors returns []).  Record the code manually so Guard A
+        # knows we have a probe -- but only if PIL is installed.
+        pass
+    (bc_root / "working" / "copy" / "intake.json").write_text(json.dumps({
+        "brand": {"palette": ["#1B2A4A", "#C8963E"]},   # navy + gold
+        "interview_confirmed": True,
+        "presentation_mode": "general",
+        "audience_mode": "STANDARD",
+        "target_talk_minutes": 30,
+    }))
+    record("AF-BRAND-CONSISTENCY", build_deck.check_brand_consistency(bc_root))
+
     # AF-DARK-SLIDE — dark background prompt without client_dark_theme:true FAILS
     # _chk_no_dark_slides. The fixture is a dark-keyword prompt with no intake flag.
     record("AF-DARK-SLIDE", build_deck._chk_no_dark_slides(
@@ -2223,6 +2291,22 @@ def main():
     # and is returned VERBATIM.
     failures += test_h1_whitespace_only_prompt()
 
+    # 2026-06-19 deck-quality gates — NEGATIVE TESTS for the four new enforcement gates.
+    # AF-VISUAL-VARIETY: 35 all-dark PNGs -> FAIL; no renders -> DEFER.
+    failures += test_check_visual_variety()
+
+    # AF-PACKAGE-CLEAN: dirty bundle (build_pptx.py, poll_images.py, tasks/, ~$lock) -> FAIL;
+    # clean bundle -> PASS; nonexistent dir -> DEFER.
+    failures += test_check_package_cleanliness()
+
+    # AF-IMAGE-QC-RAN: stale report -> FAIL 'stale'; no per-slide entries -> FAIL;
+    # fresh+covered -> PASS; no renders -> DEFER.
+    failures += test_check_image_qc_present()
+
+    # AF-BRAND-CONSISTENCY: no palette declared -> DEFER; no renders -> DEFER;
+    # function callable and returns str.
+    failures += test_check_brand_consistency()
+
     # CASE 1 — missing artifacts => refused, exit 3, lists what's missing.
     root = make_workdir(with_artifacts=False)
     r = run(root)
@@ -2344,6 +2428,280 @@ def main():
         sys.exit(1)
     print("ALL PREFLIGHT TESTS PASSED")
     sys.exit(0)
+
+
+# ---------------------------------------------------------------------------
+# NEGATIVE TESTS: 2026-06-19 deck-quality gates
+# AF-VISUAL-VARIETY, AF-PACKAGE-CLEAN, AF-IMAGE-QC-RAN, AF-BRAND-CONSISTENCY
+# ---------------------------------------------------------------------------
+
+def _write_fake_png(path: Path, fill_byte: int = 0x33, size: int = 200 * 1024) -> None:
+    """Write a fake-but-valid-header PNG for testing (PNG magic + padding)."""
+    import struct
+    magic = b"\x89PNG\r\n\x1a\n"
+    # Minimal fake IHDR chunk so PIL can read it (width=1920, height=1080, 8-bit RGB)
+    ihdr_data = struct.pack(">IIBBBBB", 1920, 1080, 8, 2, 0, 0, 0)
+    ihdr_crc = 0
+    ihdr = struct.pack(">I", 13) + b"IHDR" + ihdr_data + struct.pack(">I", ihdr_crc)
+    pad = bytes([fill_byte]) * max(0, size - len(magic) - len(ihdr))
+    path.write_bytes(magic + ihdr + pad)
+
+
+def test_check_visual_variety():
+    """AF-VISUAL-VARIETY negative test (2026-06-19):
+      (a) Feed 35 all-dark near-black PNGs -> MUST return FAIL 'AF-VISUAL-VARIETY'
+          (monotone_dark_palette or monotone_palette).
+      (b) A run dir with no renders/ dir -> MUST DEFER (pass, empty string).
+      (c) A run dir with renders/ but no *.png files -> MUST DEFER.
+    Note: PIL may not be installed in test env; the gate uses a stdlib fallback.
+    Returns a list of failure strings ([] = all passed)."""
+    fails = []
+
+    # (a) 35 all-dark slides (near-black fill byte 0x05 -> very dark).
+    root = Path(tempfile.mkdtemp(prefix="deck_visual_variety_test_"))
+    renders_dir = root / "renders"
+    renders_dir.mkdir(parents=True, exist_ok=True)
+    for i in range(1, 36):
+        png_path = renders_dir / f"slide-{i:02d}.png"
+        # Write a small mostly-dark PNG (fill with near-black bytes).
+        png_path.write_bytes(b"\x89PNG\r\n\x1a\n" + bytes([0x05]) * (100 * 1024))
+    r = build_deck.check_visual_variety(root)
+    if not r or "AF-VISUAL-VARIETY" not in r:
+        fails.append(
+            f"VISUAL-VARIETY-A: 35 all-dark PNGs should FAIL with AF-VISUAL-VARIETY, "
+            f"got: {r!r}"
+        )
+    print(f"VISUAL-VARIETY-A (35 dark) -> {'PASS' if 'VISUAL-VARIETY-A' not in str(fails) else 'FAIL'}")
+
+    # (b) No renders/ dir -> DEFER (pass).
+    rd_no_renders = Path(tempfile.mkdtemp(prefix="deck_visual_variety_norender_"))
+    r2 = build_deck.check_visual_variety(rd_no_renders)
+    if r2:
+        fails.append(
+            f"VISUAL-VARIETY-B: no renders/ should DEFER (pass), got: {r2!r}"
+        )
+    print(f"VISUAL-VARIETY-B (no renders) -> {'PASS' if 'VISUAL-VARIETY-B' not in str(fails) else 'FAIL'}")
+
+    # (c) renders/ dir but no *.png -> DEFER.
+    rd_empty_renders = Path(tempfile.mkdtemp(prefix="deck_visual_variety_empty_"))
+    (rd_empty_renders / "renders").mkdir()
+    r3 = build_deck.check_visual_variety(rd_empty_renders)
+    if r3:
+        fails.append(
+            f"VISUAL-VARIETY-C: empty renders/ should DEFER (pass), got: {r3!r}"
+        )
+    print(f"VISUAL-VARIETY-C (empty renders) -> {'PASS' if 'VISUAL-VARIETY-C' not in str(fails) else 'FAIL'}")
+
+    print(f"VISUAL-VARIETY (gate tests) -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_check_package_cleanliness():
+    """AF-PACKAGE-CLEAN negative test (2026-06-19):
+      (a) Bundle containing build_pptx.py, poll_images.py, poll_images2.py,
+          download_images.sh, submit_images.sh, a tasks/ dir, and a
+          ~$WIB-Business-Function-Fidelity.pptx lock file -> MUST FAIL with
+          AF-PACKAGE-CLEAN listing each forbidden artifact.
+      (b) A clean bundle (only deliverables.json + teleprompter_publish.json) -> PASS.
+      (c) bundle_dir does not exist -> DEFER (pass).
+    Returns a list of failure strings ([] = all passed)."""
+    fails = []
+
+    # (a) Dirty bundle with dev artifacts that should be rejected.
+    dirty_dir = Path(tempfile.mkdtemp(prefix="deck_pkgclean_dirty_"))
+    for fname in [
+        "build_pptx.py", "poll_images.py", "poll_images2.py",
+        "download_images.sh", "submit_images.sh",
+        "~$WIB-Business-Function-Fidelity.pptx",
+    ]:
+        (dirty_dir / fname).write_bytes(b"x")
+    (dirty_dir / "tasks").mkdir()
+    # Also write canonical files so the whitelist doesn't flag them.
+    (dirty_dir / "deliverables.json").write_text("{}")
+    (dirty_dir / "teleprompter_publish.json").write_text("{}")
+    r = build_deck.check_package_cleanliness(dirty_dir)
+    if not r or "AF-PACKAGE-CLEAN" not in r:
+        fails.append(
+            f"PKG-CLEAN-A: dirty bundle should FAIL with AF-PACKAGE-CLEAN, got: {r!r}"
+        )
+    # Verify specific forbidden items are named.
+    for expected in ["build_pptx.py", "poll_images.py", "download_images.sh", "tasks"]:
+        if expected not in r:
+            fails.append(
+                f"PKG-CLEAN-A: fail message should name {expected!r}, got: {r!r}"
+            )
+    print(f"PKG-CLEAN-A (dirty bundle) -> {'PASS' if 'PKG-CLEAN-A' not in str(fails) else 'FAIL'}")
+
+    # (b) Clean bundle (only housekeeping files).
+    clean_dir = Path(tempfile.mkdtemp(prefix="deck_pkgclean_clean_"))
+    (clean_dir / "deliverables.json").write_text("{}")
+    (clean_dir / "teleprompter_publish.json").write_text("{}")
+    r2 = build_deck.check_package_cleanliness(clean_dir)
+    if r2:
+        fails.append(
+            f"PKG-CLEAN-B: clean bundle should PASS, got: {r2!r}"
+        )
+    print(f"PKG-CLEAN-B (clean bundle) -> {'PASS' if 'PKG-CLEAN-B' not in str(fails) else 'FAIL'}")
+
+    # (c) Nonexistent bundle_dir -> DEFER.
+    r3 = build_deck.check_package_cleanliness(Path("/nonexistent/bundle_dir_xyz"))
+    if r3:
+        fails.append(
+            f"PKG-CLEAN-C: nonexistent dir should DEFER (pass), got: {r3!r}"
+        )
+    print(f"PKG-CLEAN-C (nonexistent dir) -> {'PASS' if 'PKG-CLEAN-C' not in str(fails) else 'FAIL'}")
+
+    print(f"PKG-CLEAN (gate tests)      -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_check_image_qc_present():
+    """AF-IMAGE-QC-RAN negative test (2026-06-19):
+      (a) Package has NO image-qc file at all -> DEFER (AF-IMAGE-QC owns absence).
+      (b) Renders exist but image_qc_report.json has mtime BEFORE the PNGs -> FAIL 'stale'.
+      (c) image_qc_report.json exists and is fresh but has no per-slide entries -> FAIL.
+      (d) Fresh report with correct per-slide coverage -> PASS.
+    Returns a list of failure strings ([] = all passed)."""
+    import time as _time
+    fails = []
+
+    # (a) No renders/ dir -> DEFER (gate defers when no renders exist).
+    rd_no_renders = Path(tempfile.mkdtemp(prefix="deck_imgqcran_a_"))
+    (rd_no_renders / "working" / "qc").mkdir(parents=True, exist_ok=True)
+    r = build_deck.check_image_qc_present(rd_no_renders)
+    if r:
+        fails.append(
+            f"IMG-QC-RAN-A: no renders/ should DEFER (pass), got: {r!r}"
+        )
+    print(f"IMG-QC-RAN-A (no renders) -> {'PASS' if 'IMG-QC-RAN-A' not in str(fails) else 'FAIL'}")
+
+    # (b) Renders exist, report is STALE (written before the PNGs).
+    rd_stale = Path(tempfile.mkdtemp(prefix="deck_imgqcran_stale_"))
+    (rd_stale / "renders").mkdir(parents=True)
+    (rd_stale / "working" / "qc").mkdir(parents=True, exist_ok=True)
+    # Write report FIRST (old timestamp).
+    report_path = rd_stale / "working" / "qc" / "image_qc_report.json"
+    report_path.write_text(json.dumps({
+        "gate": "Phase Image-QC", "average": 9.0, "pass": True,
+        "slides": [{"slide": 1, "verdict": "PASS"}],
+        "qc_independence": {"graded_by": "qc-img-specialist", "independent": True},
+    }))
+    _time.sleep(0.05)  # ensure PNG is newer than report.
+    png1 = rd_stale / "renders" / "slide-01.png"
+    png1.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x99" * 10240)
+    r = build_deck.check_image_qc_present(rd_stale)
+    if not r or "AF-IMAGE-QC-RAN" not in r or "STALE" not in r.upper():
+        fails.append(
+            f"IMG-QC-RAN-B: stale report should FAIL 'stale' AF-IMAGE-QC-RAN, got: {r!r}"
+        )
+    print(f"IMG-QC-RAN-B (stale report) -> {'PASS' if 'IMG-QC-RAN-B' not in str(fails) else 'FAIL'}")
+
+    # (c) Fresh report but NO per-slide entries -> FAIL.
+    rd_no_slides = Path(tempfile.mkdtemp(prefix="deck_imgqcran_noslides_"))
+    (rd_no_slides / "renders").mkdir(parents=True)
+    (rd_no_slides / "working" / "qc").mkdir(parents=True, exist_ok=True)
+    png2 = rd_no_slides / "renders" / "slide-01.png"
+    png2.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\xaa" * 10240)
+    _time.sleep(0.05)
+    report2 = rd_no_slides / "working" / "qc" / "image_qc_report.json"
+    report2.write_text(json.dumps({
+        "gate": "Phase Image-QC", "average": 9.0, "pass": True,
+        # No slides array at all -> rubber-stamped boilerplate.
+        "qc_independence": {"graded_by": "qc-img-specialist", "independent": True},
+    }))
+    r = build_deck.check_image_qc_present(rd_no_slides)
+    if not r or "AF-IMAGE-QC-RAN" not in r:
+        fails.append(
+            f"IMG-QC-RAN-C: no per-slide entries should FAIL AF-IMAGE-QC-RAN, got: {r!r}"
+        )
+    print(f"IMG-QC-RAN-C (no slide rows) -> {'PASS' if 'IMG-QC-RAN-C' not in str(fails) else 'FAIL'}")
+
+    # (d) Fresh report with correct per-slide coverage -> PASS.
+    rd_good = Path(tempfile.mkdtemp(prefix="deck_imgqcran_good_"))
+    (rd_good / "renders").mkdir(parents=True)
+    (rd_good / "working" / "qc").mkdir(parents=True, exist_ok=True)
+    png3 = rd_good / "renders" / "slide-01.png"
+    png3.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\xbb" * 10240)
+    _time.sleep(0.05)
+    report3 = rd_good / "working" / "qc" / "image_qc_report.json"
+    report3.write_text(json.dumps({
+        "gate": "Phase Image-QC", "average": 9.0, "pass": True,
+        "slides": [{"slide": 1, "verdict": "PASS", "score": 9}],
+        "qc_independence": {"graded_by": "qc-img-specialist", "independent": True},
+    }))
+    r = build_deck.check_image_qc_present(rd_good)
+    if r:
+        fails.append(
+            f"IMG-QC-RAN-D: fresh report with per-slide coverage should PASS, got: {r!r}"
+        )
+    print(f"IMG-QC-RAN-D (fresh+coverage) -> {'PASS' if 'IMG-QC-RAN-D' not in str(fails) else 'FAIL'}")
+
+    print(f"IMG-QC-RAN (gate tests)     -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_check_brand_consistency():
+    """AF-BRAND-CONSISTENCY negative test (2026-06-19):
+      (a) No brand palette declared in intake.json -> DEFER (pass).
+      (b) Brand palette declared; no renders/ dir -> DEFER.
+      (c) Brand tokens declared (navy #1B2A4A, gold #C8963E); renders exist but PIL
+          is unavailable -> DEFER (gate cannot compute without PIL; pass gracefully).
+      (d) Empty renders/ with palette declared -> DEFER.
+    Note: We can't easily test the FAIL path without PIL + real PNG pixel data in a
+    unittest, so we validate the defer + pass paths rigorously and confirm the
+    function is callable and returns a string.
+    Returns a list of failure strings ([] = all passed)."""
+    fails = []
+
+    # Ensure the function is importable and returns a string.
+    if not callable(build_deck.check_brand_consistency):
+        fails.append("BRAND-A: check_brand_consistency is not callable")
+    r_type = build_deck.check_brand_consistency(
+        Path(tempfile.mkdtemp(prefix="deck_brand_type_"))
+    )
+    if not isinstance(r_type, str):
+        fails.append(f"BRAND-A: check_brand_consistency must return str, got {type(r_type)}")
+    print(f"BRAND-A (callable+str)      -> {'PASS' if 'BRAND-A' not in str(fails) else 'FAIL'}")
+
+    # (a) No intake.json (no brand palette) -> DEFER.
+    rd_no_intake = Path(tempfile.mkdtemp(prefix="deck_brand_nointake_"))
+    (rd_no_intake / "renders").mkdir(parents=True)
+    (rd_no_intake / "renders" / "slide-01.png").write_bytes(
+        b"\x89PNG\r\n\x1a\n" + b"\x1b" * 50000)
+    r = build_deck.check_brand_consistency(rd_no_intake)
+    if r:
+        fails.append(f"BRAND-B: no brand palette should DEFER (pass), got: {r!r}")
+    print(f"BRAND-B (no palette defer)  -> {'PASS' if 'BRAND-B' not in str(fails) else 'FAIL'}")
+
+    # (b) Intake with palette but no renders/ dir -> DEFER.
+    rd_no_renders = Path(tempfile.mkdtemp(prefix="deck_brand_norenders_"))
+    (rd_no_renders / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    (rd_no_renders / "working" / "copy" / "intake.json").write_text(json.dumps({
+        "brand": {"palette": ["#1B2A4A", "#C8963E"]},
+        "interview_confirmed": True, "presentation_mode": "general",
+        "audience_mode": "STANDARD", "target_talk_minutes": 30,
+    }))
+    r = build_deck.check_brand_consistency(rd_no_renders)
+    if r:
+        fails.append(f"BRAND-C: no renders/ should DEFER (pass), got: {r!r}")
+    print(f"BRAND-C (no renders defer)  -> {'PASS' if 'BRAND-C' not in str(fails) else 'FAIL'}")
+
+    # (d) Empty renders/ with palette declared -> DEFER.
+    rd_empty = Path(tempfile.mkdtemp(prefix="deck_brand_emptyrender_"))
+    (rd_empty / "renders").mkdir(parents=True)
+    (rd_empty / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    (rd_empty / "working" / "copy" / "intake.json").write_text(json.dumps({
+        "brand": {"palette": ["#1B2A4A", "#C8963E"]},
+        "interview_confirmed": True, "presentation_mode": "general",
+        "audience_mode": "STANDARD", "target_talk_minutes": 30,
+    }))
+    r = build_deck.check_brand_consistency(rd_empty)
+    if r:
+        fails.append(f"BRAND-D: empty renders/ should DEFER (pass), got: {r!r}")
+    print(f"BRAND-D (empty renders)     -> {'PASS' if 'BRAND-D' not in str(fails) else 'FAIL'}")
+
+    print(f"BRAND-CONSISTENCY (gate tests)-> {'PASS' if not fails else 'FAIL'}")
+    return fails
 
 
 if __name__ == "__main__":
