@@ -1,3 +1,17 @@
+## v12.39.0 — 2026-06-19 — A3 content-gate hash-race fix: exclude volatile generated files from both sides of the SRC/DEST comparison
+
+Fleet-wide bug fix for the A3 integrity gate in `update-skills.sh`. The gate computes a SRC digest of each skill's content (from the freshly downloaded source tree) before the install copy loop, then computes a DEST digest of the installed skill afterward. A spurious mismatch could occur because `hash-content-manifest.py` rewrites `templates/role-library/_index.json` (updating `content_hashed_at` / `generated_at` timestamps) after the copy but before the DEST hash is computed — so the DEST view includes modified timestamps not present in the SRC view. This caused the gate to fail and refuse to write the `.onboarding-version` stamp even when all real content was correctly installed.
+
+**Root cause**: `scripts/skill-content-hash.sh`'s `_should_exclude()` function excluded `.wired-*`, `skill-version.txt`, `.onboarding-version`, `.onboarding-content-manifest.json` but NOT the install-time-regenerated generated artifacts (`_index.json`, `_qc-summary.md`, `how-to-use-this-department.md`).
+
+**Fix**: Added those three generated-artifact filenames to `_should_exclude()` with clear comments explaining why each is safe to exclude. The fix is applied consistently to BOTH sides of the A3 comparison (both SRC and DEST calls to `skill-content-hash.sh` use the same script, so adding to `_should_exclude` fixes both sides simultaneously). The gate still detects a real content mismatch — all non-generated role, SOP, and persona `.md` files remain in scope.
+
+**Simulation proof** (run locally):
+- Test 1 (correct install passes): SRC digest == DEST digest `0755bd36e2630564a22d52d7b019f6ba972bf5087c420916e0dc7081c11fac76` after mutating `_index.json` + `_qc-summary.md` + `how-to-use-this-department.md` in DEST. PASS.
+- Test 2 (real mismatch detected): deleting `account-management/client-relationship-manager.md` from DEST changes digest to `26ea7c16805bd96cfa42dae8653f3630ac8be9e89ce3256a71cf5fe03f61f101`. PASS.
+
+**Impact**: Boxes whose `.onboarding-version` stamp was never written despite a correct install (observed intermittently — some boxes hit the race repeatedly before passing, and at least one never recovered) will stamp correctly on the next `update-skills.sh` run.
+
 ## v12.38.0 — 2026-06-19 — Teleprompter upgrade: speed-control fix, SPOKEN/TRADITIONAL dual mode, fuzzy already-spoken highlight, feature-gap fixes
 
 Teleprompter rebuilt and self-verified (build_teleprompter.py + teleprompter SOP/role updates):
