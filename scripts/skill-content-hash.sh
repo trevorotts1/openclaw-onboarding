@@ -95,6 +95,20 @@ _should_exclude() {
   esac
   case "$f" in
     */.git/*) return 0 ;;
+    # Install-time Python bytecode: Python writes __pycache__/*.pyc / *.pyo into
+    # the DEST skill dir when skill scripts execute at install time.  These files
+    # (a) are absent from the source tree, (b) embed a per-run source hash/mtime
+    # that changes every install, and (c) vary by Python version.  They carry no
+    # shipped content so excluding them restores A3 determinism without weakening
+    # the integrity gate (all .py source files remain in scope).
+    */__pycache__/*) return 0 ;;
+  esac
+  case "$base" in
+    # Python compiled/optimised bytecode files — same rationale as __pycache__
+    # above; may appear outside the __pycache__ dir on older toolchains.
+    *.pyc|*.pyo) return 0 ;;
+    # macOS Finder metadata — OS-generated, never shipped content.
+    .DS_Store) return 0 ;;
   esac
   return 1
 }
