@@ -1,5 +1,5 @@
 {
-  "manifest_version": 7,
+  "manifest_version": 9,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -179,12 +179,13 @@
         "AF-DEN-5",
         "AF-DEN-6",
         "AF-DEN-7",
-        "AF-DEN-8"
+        "AF-DEN-8",
+        "AF-QC-INDEPENDENCE"
       ],
       "preflight": {
         "required": true,
         "checker": "_chk_copy_qc",
-        "label": "copy QC report (gate Phase 1Q, average >= 8.5, no AF-* triggered)"
+        "label": "copy QC report (gate Phase 1Q, average >= 8.5, no AF-* triggered, independent-reviewer provenance)"
       }
     },
     {
@@ -255,7 +256,8 @@
         "AF-PLACEHOLDER",
         "AF-RENDERER",
         "AF-MODEL-SOVEREIGNTY",
-        "AF-NO-VISION-QC"
+        "AF-NO-VISION-QC",
+        "AF-I14"
       ],
       "preflight": null,
       "emits": {
@@ -318,7 +320,8 @@
         "AF-BUNDLE-COMPLETE",
         "AF-DELIVER",
         "AF-DH1",
-        "AF-DELIVERY-COMPLETE"
+        "AF-DELIVERY-COMPLETE",
+        "AF-I14"
       ],
       "preflight": null
     }
@@ -724,6 +727,16 @@
       "py_symbol": null
     },
     {
+      "code": "AF-I14",
+      "stage": "5/6",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "rendered slide was not KIE-baked (native render, missing image, or flat-placeholder fill below the placeholder floor)",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_kie_baked",
+      "secondary_py_symbols": ["PLACEHOLDER_MIN_BYTES"]
+    },
+    {
       "code": "AF-PROMPT-FLOOR",
       "stage": "3",
       "level": "slide",
@@ -731,6 +744,16 @@
       "trigger": "image prompt outside 1500-15000 chars or missing required structural blocks",
       "enforced_by": "build_deck",
       "py_symbol": "PROMPT_CHAR_FLOOR"
+    },
+    {
+      "code": "AF-QC-INDEPENDENCE",
+      "stage": "1Q",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Phase-1Q copy QC report was self-graded / builder-graded — it lacks an independent-reviewer provenance block (qc_independence: graded_by + independent:true naming a QC specialist who is NOT build_deck.py / self / builder / author / the deck-copy author), is marked self_graded:true, sets independent:false, or names a reviewer equal to the recorded builder",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_copy_qc",
+      "secondary_py_symbols": ["FORBIDDEN_QC_GRADER_IDENTITIES", "QC_BUILDER_ROLE"]
     }
   ],
   "roles": [

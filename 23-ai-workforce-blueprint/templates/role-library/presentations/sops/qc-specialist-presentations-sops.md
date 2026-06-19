@@ -285,8 +285,16 @@ This family does not score a slide. It guards the SOP TEXT ITSELF against the de
      "gate": "Phase 1Q",
      "overall_average": 0.0,
      "weighted_average": 0.0,
+     "average": 0.0,
      "auto_fails_triggered": [],
      "pass": true,
+     "qc_independence": {
+       "graded_by": "qc-specialist-presentations",
+       "independent": true,
+       "builder": "slide-copywriter",
+       "self_graded": false,
+       "graded_at": "2026-06-18T00:00:00Z"
+     },
      "per_slide_scores": [
        {"slide": N, "auto_fails": [], "scores": {"c1": 0, "c2": 0, ...}, "average": 0.0, "pass": true, "notes": ""}
      ],
@@ -294,6 +302,24 @@ This family does not score a slide. It guards the SOP TEXT ITSELF against the de
      "revision_instructions": []
    }
    ```
+
+   **PROVENANCE — the `qc_independence` block is MANDATORY (AF-QC-INDEPENDENCE).**
+   The build_deck.py preflight (`_chk_copy_qc`) HARD-FAILS the deck (exit 3) on a
+   self-graded / builder-graded report. A report that passes every numeric check
+   but was written by the role that authored the copy proves nothing — it is the
+   rubber-stamp the gate exists to refuse. The block MUST satisfy ALL of:
+   - `graded_by` (or `reviewer` / `reviewed_by` / `reviewer_identity`) names the
+     INDEPENDENT QC specialist persona running THIS gate. It must be a non-empty
+     string and must NOT be any of `build_deck.py`, `build_deck`, `self`,
+     `builder`, `author`, nor the deck-copy author role `slide-copywriter`.
+   - `independent` is `true` (an explicit `independent: false` fails the gate).
+   - `self_graded` is `false` (top-level `self_graded: true` fails the gate).
+   - if a `builder` / `built_by` identity is recorded, it must NOT equal the
+     reviewer identity (the builder may not grade its own work).
+   A report that OMITS this block entirely FAILS — independence is proven
+   affirmatively, never assumed. The independent QC specialist (a persona distinct
+   from the Slide Copywriter that authored the copy) stamps this block when it
+   writes the report.
 6. For every slide with an auto-fail or scoring < 8.5: write specific revision_instructions. Each instruction must name the criterion or auto-fail code, the specific failure, and the required fix. Example: "Slide 12, AF-C5 (headline word count): headline is 11 words (max 9). Trim to: 'Your clients come to you every week.'"
 7. If overall weighted_average >= 8.5 AND no individual slide scores below 7.0 AND no auto-fails: pass. Write `pass: true`.
 8. If any slide scores below 7.0 OR overall weighted_average < 8.5 OR any auto-fail triggered: fail. Write `pass: false`. Send revision_instructions to the Slide Copywriter.
@@ -570,7 +596,7 @@ soffice --headless --convert-to pdf <Deck>.pptx && pdftoppm -png -r 100 <Deck>.p
    h. **Teach-themselves (SP-TEACH):** the deck invites the audience to reach the conclusion themselves ("you already know..."), conversational rather than lecturing.
    i. **Not over-taught (GP-10):** "appetizer, not dinner" -- the teaching proves value and creates desire without handing over the complete HOW (which lives in the offer).
    j. **The Promise leads (master rule 2, component 1):** the deck identifies and leads with the core promise; teach/offer slides pitch the promise, not the product.
-   k. **The Hook sings (master rule 1, component 2):** the hook is present and sung >= 7 times in the assembled deck (re-confirm the copy QC c1 count survived assembly).
+   k. **The Hook sings (master rule 1, component 2):** the verbatim hook stands on EXACTLY 3 to 4 DEDICATED pure-typography slides, NOWHERE ELSE, and never as a footer in the assembled deck (re-confirm the AF-HOOK ceiling survived assembly; over-stamping is the defect, not under-count).
    l. **Who says so / external proof present (master rule 12, component 3):** at least one third-party proof beat (case study / study / white paper) is woven between the drops. ZERO external proof in the assembled deck = fail; surface to the operator.
    m. **Wall of Wins present (master rule 20, component 4):** a wall-of-wins / wall-of-results slide concentrating multiple named wins exists near the close.
    n. **The Guarantee present (master rule 21, component 6):** an explicit guarantee / risk-reversal beat exists.

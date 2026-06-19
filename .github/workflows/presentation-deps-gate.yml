@@ -1,0 +1,41 @@
+name: presentation-deps-gate
+
+# Fails the build if the presentation-pipeline runtime dependency fix regresses:
+#   - install.sh Step 6.5 must install all four deps (reportlab, python-pptx,
+#     poppler/poppler-utils, LibreOffice/libreoffice-impress) for BOTH platforms,
+#     with the VPS arm using the real /usr/bin/apt-get and the openclaw scheduler
+#     (NOT a system @reboot crontab) for force-recreate durability.
+#   - 23-ai-workforce-blueprint/scripts/qc-completeness.sh must hard-fail (exit 6)
+#     when any of the four deps is missing.
+
+on:
+  push:
+    paths:
+      - install.sh
+      - 23-ai-workforce-blueprint/scripts/qc-completeness.sh
+      - tests/unit/presentation-deps-gate.test.sh
+      - .github/workflows/presentation-deps-gate.yml
+  pull_request:
+    paths:
+      - install.sh
+      - 23-ai-workforce-blueprint/scripts/qc-completeness.sh
+      - tests/unit/presentation-deps-gate.test.sh
+      - .github/workflows/presentation-deps-gate.yml
+
+jobs:
+  presentation-deps-gate:
+    name: Presentation-deps install + QC hard-fail guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run presentation-deps-gate test
+        run: |
+          chmod +x tests/unit/presentation-deps-gate.test.sh
+          bash tests/unit/presentation-deps-gate.test.sh

@@ -1,3 +1,13 @@
+## v12.33.0 — 2026-06-18 — Presentation pipeline hardening: process gate, QC-independence, prevention guards, deps
+
+Presentation department — the deck build now hard-fails (non-zero exit) on any skipped mandatory stage, and the gate system is protected against future "described-but-unenforced" gaps:
+
+- **Process gate / self-healing**: `AF-I14` (rendered slides must be real KIE-baked images, not placeholders → postflight exit 5), the research-cited Category G/H/I gate (preflight exit 3), and the postflight bundle-completeness gate (`AF-BUNDLE-COMPLETE`) all hard-fail on a skipped stage. The per-slide render loop retries with backoff (self-healing) and stops + escalates the exact reason on a genuine blocker (e.g. no KIE key) rather than silent-skipping.
+- **QC independence (`AF-QC-INDEPENDENCE`, NEW)**: a copy-QC report self-graded by the builder (`graded_by`/`author`/`reviewer` == the builder, or `self_graded:true`, or no independent-reviewer provenance) is now rejected (preflight exit 3). Registered in `PIPELINE-MANIFEST.json` + both `MASTER-QC-AUTOFAIL-RULESET.md` copies (sync_check lockstep → manifest_version 9, 47 autofails) + a negative test in `test_preflight.py`.
+- **Hook-doctrine reconciliation (M4/L2)**: the retired hook≥7 floor is fully removed from live instructions across the dept (`build_deck.py` + `presenter-coach.md` reconciled to the 3–4 band); remaining "7" mentions are retirement/history context only.
+- **Prevention guards (NEW)**: `gate_integrity_check.py` (Guard A) fails CI if any build_deck-enforced autofail lacks an enforcing symbol or a negative test that triggers it (via `test_preflight.py`'s af-coverage cross-check); `doctrine_residual_check.py` + `retired-doctrine-patterns.json` (Guard B) fail CI on any live reappearance of a retired doctrine value; the promotion rule ("a described rule is not enforced") is documented in `QC-PROTOCOL.md` + the dept how-to. Both wired into `presentations-lockstep.yml`.
+- **Runtime deps**: `install.sh` installs the presentation toolchain (LibreOffice/soffice, poppler/pdftoppm, reportlab, python-pptx) on Mac + VPS-durable via openclaw cron; the qc-completeness gate hard-fails on a missing dep; new CI guard (`presentation-deps-gate.yml`).
+
 ## v12.32.0 — 2026-06-18 — Operator co-mingling fix
 
 Fleet Operator Co-Mingling Audit remediation — client boxes no longer ship the operator's personal chat as a proactive send-target or routed worker:

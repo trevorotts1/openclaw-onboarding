@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v12.32.0"
+ONBOARDING_VERSION="v12.33.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -2698,6 +2698,272 @@ if [ "$_s22_deps_ok_mac" = "true" ]; then
     success "All Skill 22 Python deps verified (pdfplumber, pypdf, ebooklib, mobi, bs4, aiohttp, numpy)"
 else
     warn "One or more Skill 22 Python deps are missing. See $LOG_FILE for details."
+fi
+
+# ----------------------------------------------------------
+# Step 6.5: Presentation pipeline runtime dependencies
+# ----------------------------------------------------------
+# Skill 23 (AI Workforce Blueprint) includes a presentation pipeline that needs:
+#   • reportlab       — presenter-guide PDF renderer (presenters_speech_pdf.py)
+#   • python-pptx     — PPTX deck assembly (build_deck.py)
+#   • poppler/pdftoppm — PDF→PNG page extraction for Phase-6 QC
+#   • LibreOffice/soffice — PPTX→PDF export (PPTX Assembly Specialist, SOP 9.2)
+#
+# Platform branches:
+#   Mac  — Python deps via _install_py_pkg_mac; poppler via formula; LibreOffice
+#          via NONINTERACTIVE cask (no sudo hang); symlink on PATH.
+#   VPS  — System packages (libreoffice-impress, poppler-utils) via the REAL
+#          Debian apt at /usr/bin/apt-get — NOT the Linuxbrew shim at
+#          /usr/local/bin/apt-get (INSTALL-GOTCHAS.md: apt/apt-get redirect to
+#          brew on these images). Python deps (reportlab, python-pptx) via pip
+#          --break-system-packages into the SAME python3 that build_deck.py runs.
+#          NOTE — VPS DURABILITY: the upstream Docker image is external and cannot
+#          be edited from this repo, so neither the apt packages nor the pip deps
+#          live in a layer that survives `docker compose up --force-recreate`
+#          (only the /data bind-mount persists). We therefore RE-ASSERT all four
+#          deps on a frequent interval via the OpenClaw scheduler
+#          (`openclaw cron create`, */15), which is the same durable recurring-task
+#          mechanism every other VPS cron in this installer uses — its definition
+#          lives in the gateway config on /data and the gateway (PID 1) re-loads it
+#          on each container start, then fires it on the schedule. There is NO cron
+#          daemon in the container, so a system @reboot crontab would NOT fire;
+#          that approach was removed.
+#
+# The Capacity & Reliability Engineer (capacity-reliability-engineer.md §11) verifies
+# all four at Phase-0.5. The qc-completeness.sh gate (install step 6b) hard-fails
+# (command -v soffice / command -v pdftoppm / python3 -c "import reportlab, pptx")
+# if any dep is missing at the time the operator declares install complete.
+# ────────────────────────────────────────────────────────────────────────────
+
+step "Step 6.5: Installing presentation pipeline runtime dependencies (reportlab, python-pptx, poppler, LibreOffice)"
+
+if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
+    # ── VPS ARM ──────────────────────────────────────────────────────────────
+    # Resolve the REAL Debian apt-get (NOT the Linuxbrew shim). On these images
+    # /usr/local/bin/apt-get redirects to brew (INSTALL-GOTCHAS.md), which cannot
+    # install libreoffice-impress / poppler-utils. /usr/bin/apt-get is the genuine
+    # dpkg-backed apt. We also resolve the python3 that build_deck.py will run so
+    # reportlab/python-pptx land in the interpreter that actually imports them.
+    _APT_GET="/usr/bin/apt-get"
+    _PY3="$(command -v python3 || echo /usr/bin/python3)"
+    note "VPS: using real Debian apt at $_APT_GET and python3 at $_PY3"
+
+    # Write the reassert script FIRST so the install path and the cron path run
+    # IDENTICAL logic (the install below simply invokes it once).
+    _VPS_REASSERT_SCRIPT="/data/.openclaw/scripts/reassert-presentation-deps.sh"
+    mkdir -p /data/.openclaw/scripts /data/.openclaw/logs
+    cat > "$_VPS_REASSERT_SCRIPT" << 'REASSERT_EOF'
+#!/usr/bin/env bash
+# reassert-presentation-deps.sh — (re)installs the four presentation-pipeline deps
+# on a VPS container. The upstream Docker image is external and cannot be edited
+# from this repo, so apt packages (libreoffice-impress, poppler-utils) and pip
+# deps (reportlab, python-pptx) do NOT survive `docker compose up --force-recreate`
+# (only the /data bind-mount persists). This script is invoked once by install.sh
+# Step 6.5 AND re-fired on a schedule by the OpenClaw scheduler cron
+# "reassert-presentation-deps" so the deps are re-installed per container start.
+# Idempotent — safe to re-run. Installed by install.sh Step 6.5. DO NOT EDIT.
+set -uo pipefail
+LOG=/data/.openclaw/logs/reassert-presentation-deps.log
+mkdir -p "$(dirname "$LOG")"
+ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+echo "[$(ts)] reassert-presentation-deps starting" >> "$LOG"
+
+# Real Debian apt (NOT the /usr/local/bin brew shim).
+APT_GET="/usr/bin/apt-get"
+PY3="$(command -v python3 || echo /usr/bin/python3)"
+
+# --- System packages: libreoffice-impress (provides soffice) + poppler-utils (pdftoppm)
+if [ -x "$APT_GET" ]; then
+    if ! command -v soffice >/dev/null 2>&1 || ! command -v pdftoppm >/dev/null 2>&1; then
+        echo "[$(ts)] apt-get update + install libreoffice-impress poppler-utils" >> "$LOG"
+        ( "$APT_GET" update -y && \
+          DEBIAN_FRONTEND=noninteractive "$APT_GET" install -y --no-install-recommends \
+              libreoffice-impress poppler-utils ) >> "$LOG" 2>&1 \
+            && echo "[$(ts)] apt packages OK" >> "$LOG" \
+            || echo "[$(ts)] WARN: apt install failed (see above)" >> "$LOG"
+    else
+        echo "[$(ts)] soffice + pdftoppm already present — apt install skipped" >> "$LOG"
+    fi
+else
+    echo "[$(ts)] WARN: real apt-get not found at $APT_GET — cannot install soffice/pdftoppm" >> "$LOG"
+fi
+
+# --- Python deps into the SAME interpreter build_deck.py runs.
+"$PY3" -m pip install --break-system-packages --quiet reportlab >> "$LOG" 2>&1 \
+    && echo "[$(ts)] reportlab OK" >> "$LOG" \
+    || echo "[$(ts)] WARN: reportlab install failed" >> "$LOG"
+"$PY3" -m pip install --break-system-packages --quiet python-pptx >> "$LOG" 2>&1 \
+    && echo "[$(ts)] python-pptx OK" >> "$LOG" \
+    || echo "[$(ts)] WARN: python-pptx install failed" >> "$LOG"
+
+# --- Verify (same checks qc-completeness.sh hard-fails on).
+command -v soffice  >/dev/null 2>&1 && echo "[$(ts)] verify soffice OK"  >> "$LOG" || echo "[$(ts)] WARN: soffice missing"  >> "$LOG"
+command -v pdftoppm >/dev/null 2>&1 && echo "[$(ts)] verify pdftoppm OK" >> "$LOG" || echo "[$(ts)] WARN: pdftoppm missing" >> "$LOG"
+"$PY3" -c "import reportlab, pptx" >/dev/null 2>&1 && echo "[$(ts)] verify reportlab+pptx OK" >> "$LOG" || echo "[$(ts)] WARN: reportlab/pptx import failed" >> "$LOG"
+
+echo "[$(ts)] reassert-presentation-deps done" >> "$LOG"
+REASSERT_EOF
+    chmod +x "$_VPS_REASSERT_SCRIPT"
+
+    # Run the reassert script ONCE now to install all four deps for this container.
+    note "VPS: installing all four presentation deps via $_VPS_REASSERT_SCRIPT ..."
+    bash "$_VPS_REASSERT_SCRIPT" >> "$LOG_FILE" 2>&1 || true
+
+    # Report per-dep result (read the verifier-equivalent checks directly).
+    command -v soffice  >/dev/null 2>&1 \
+        && success "soffice (libreoffice-impress) on PATH: $(soffice --version 2>&1 | head -1 || true)" \
+        || warn "soffice NOT on PATH after install — PPTX→PDF export will fail. Manual fix: $_APT_GET update && DEBIAN_FRONTEND=noninteractive $_APT_GET install -y libreoffice-impress"
+    command -v pdftoppm >/dev/null 2>&1 \
+        && success "pdftoppm (poppler-utils) on PATH" \
+        || warn "pdftoppm NOT on PATH after install — Phase-6 QC PNG extraction will fail. Manual fix: $_APT_GET install -y poppler-utils"
+    "$_PY3" -c "import reportlab" >/dev/null 2>&1 \
+        && success "reportlab importable in $_PY3" \
+        || warn "reportlab NOT importable — presenter-guide PDF will not render. Manual fix: $_PY3 -m pip install --break-system-packages reportlab"
+    "$_PY3" -c "import pptx" >/dev/null 2>&1 \
+        && success "python-pptx importable in $_PY3" \
+        || warn "python-pptx NOT importable — deck assembly will fail at Phase 4. Manual fix: $_PY3 -m pip install --break-system-packages python-pptx"
+
+    # ── VPS DURABILITY via the OpenClaw scheduler ────────────────────────────
+    # The container has NO cron daemon and the gateway is PID 1, so a system
+    # @reboot crontab would never fire. Use `openclaw cron create` — the SAME
+    # durable recurring-task mechanism every other VPS cron in this installer
+    # uses. Its state lives in the gateway config on the /data bind-mount, so the
+    # cron definition survives force-recreate, and the gateway re-loads it on each
+    # start. The job messages the agent to run the idempotent reassert script on a
+    # */15 interval, re-installing the (ephemeral, image-layer) deps within ~15
+    # minutes of any force-recreate. (The OpenClaw scheduler is time-based, not a
+    # vixie-cron daemon, so there is no @reboot trigger to hook.)
+    install_presentation_deps_cron() {
+        if ! command -v openclaw >/dev/null 2>&1; then
+            warn "openclaw CLI not on PATH — skipping presentation-deps re-assert cron. Re-run update-skills.sh later."
+            return 0
+        fi
+        if openclaw cron list 2>/dev/null | grep -qi "reassert-presentation-deps"; then
+            success "Presentation-deps re-assert cron already installed — skipping"
+            return 0
+        fi
+        if [ "$TELEGRAM_RESOLVED" != "true" ]; then
+            resolve_telegram_target_universal
+        fi
+        local TG_TARGET="$TELEGRAM_TARGET_CACHED"
+        if [ -z "$TG_TARGET" ]; then
+            warn "Telegram target not resolved — skipping presentation-deps re-assert cron. Manual fix below."
+            warn "  openclaw cron create --name reassert-presentation-deps --cron '*/15 * * * *' --channel telegram --to <owner-chat> --message '[PRESENTATION-DEPS] bash $_VPS_REASSERT_SCRIPT'"
+            return 0
+        fi
+        # REGRESSION GUARD (cron-owner-chat-routing): never wire an operator ID as cron target.
+        case "$TG_TARGET" in
+            5252140759|6663821679|6771245262)
+                warn "ERROR: presentation-deps cron target resolved to an OPERATOR chat ID ($TG_TARGET). Aborting cron install."
+                warn "Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> before running install.sh to force the correct target."
+                return 1
+                ;;
+        esac
+        local REASSERT_PROMPT="[PRESENTATION-DEPS] Re-assert the presentation-pipeline runtime deps (libreoffice-impress, poppler-utils, reportlab, python-pptx) which do not survive a Docker force-recreate: bash $_VPS_REASSERT_SCRIPT . This is an idempotent maintenance script; it is a near-no-op once the deps are present."
+        local CHANNEL_ACCOUNT="$TELEGRAM_ACCOUNT_CACHED"
+        local OUT="" RC=0
+        # The OpenClaw scheduler is time-based (5-field cron), not a vixie-cron
+        # daemon, so there is no @reboot hook to fire on container start. Instead
+        # we run on a frequent interval ("*/15 * * * *" — the same cadence the
+        # workforce-build-resume cron uses). The reassert script is idempotent and
+        # a near-no-op when the deps are present, so after a force-recreate the
+        # deps are re-installed within ~15 minutes. The cron definition itself
+        # lives in the gateway config on /data and so survives force-recreate.
+        local BASE=(
+            --name "reassert-presentation-deps"
+            --cron "*/15 * * * *"
+            --tz "America/New_York"
+            --channel telegram
+            --to "$TG_TARGET"
+        )
+        [ -n "$CHANNEL_ACCOUNT" ] && BASE+=(--account "$CHANNEL_ACCOUNT")
+        OUT=$(openclaw cron create "${BASE[@]}" --message "$REASSERT_PROMPT" 2>&1) || RC=$?
+        echo "$OUT" >> "$LOG_FILE"
+        if [ "$RC" -eq 0 ]; then
+            success "Presentation-deps re-assert cron installed (openclaw scheduler, @reboot — survives force-recreate)"
+            return 0
+        fi
+        local BASE_NO_ACCT=(
+            --name "reassert-presentation-deps"
+            --cron "*/15 * * * *"
+            --tz "America/New_York"
+            --channel telegram
+            --to "$TG_TARGET"
+        )
+        OUT=$(openclaw cron create "${BASE_NO_ACCT[@]}" --message "$REASSERT_PROMPT" 2>&1) || RC=$?
+        echo "$OUT" >> "$LOG_FILE"
+        if [ "$RC" -eq 0 ]; then
+            success "Presentation-deps re-assert cron installed (no-account fallback)"
+            return 0
+        fi
+        warn "Presentation-deps re-assert cron creation failed. Manual install:"
+        warn "  openclaw cron create --name reassert-presentation-deps \\"
+        warn "    --cron '*/15 * * * *' --tz America/New_York \\"
+        warn "    --channel telegram --to '$TG_TARGET' \\"
+        warn "    --message '[PRESENTATION-DEPS] bash $_VPS_REASSERT_SCRIPT'"
+        return 0
+    }
+    install_presentation_deps_cron
+
+else
+    # ── MAC ARM ───────────────────────────────────────────────────────────────
+    # Python deps via the _install_py_pkg_mac helper already defined in Step 6.4.
+    _install_py_pkg_mac "reportlab"   "reportlab" "reportlab (presenter-guide PDF)"
+    _install_py_pkg_mac "python-pptx" "pptx"      "python-pptx (deck assembly)"
+
+    # poppler (pdftoppm): Homebrew formula — no cask, no admin prompt.
+    if command -v pdftoppm >/dev/null 2>&1; then
+        success "pdftoppm (poppler) already on PATH"
+    elif command -v brew >/dev/null 2>&1; then
+        note "Installing poppler (pdftoppm) via Homebrew formula..."
+        brew install poppler 2>&1 | tee -a "$LOG_FILE" | tail -3 \
+            && success "poppler (pdftoppm) installed" \
+            || warn "brew install poppler failed — pdftoppm unavailable. Phase-6 QC PNG extraction will fail."
+    else
+        warn "Homebrew not found — cannot install poppler. pdftoppm unavailable. Phase-6 QC PNG extraction will fail."
+    fi
+
+    # LibreOffice (soffice): NONINTERACTIVE cask so it never hangs on a TTY
+    # password prompt in a headless/CI context. If it genuinely requires an admin
+    # password the cask fails fast; the qc-completeness.sh gate then hard-fails so
+    # the gap can't ship silently. The operator must run `brew install --cask
+    # libreoffice` interactively once on that Mac and re-run the gate.
+    if command -v soffice >/dev/null 2>&1 || [ -x /Applications/LibreOffice.app/Contents/MacOS/soffice ]; then
+        if command -v soffice >/dev/null 2>&1; then
+            success "soffice (LibreOffice) already on PATH: $(soffice --version 2>&1 | head -1 || true)"
+        else
+            # Binary present but not on PATH — wire a symlink (same pattern as Calibre).
+            _MAC_LO_BIN="/Applications/LibreOffice.app/Contents/MacOS/soffice"
+            note "LibreOffice already installed at $_MAC_LO_BIN — adding to PATH via symlink..."
+            sudo ln -sf "$_MAC_LO_BIN" /usr/local/bin/soffice 2>/dev/null \
+                && success "soffice symlinked to /usr/local/bin/soffice" \
+                || warn "Could not symlink soffice (no sudo or symlink failed). Operator must run: sudo ln -sf $_MAC_LO_BIN /usr/local/bin/soffice OR the PPTX Assembly Specialist must use the full path $_MAC_LO_BIN"
+        fi
+    elif command -v brew >/dev/null 2>&1; then
+        note "Installing LibreOffice (soffice) via Homebrew cask (NONINTERACTIVE — will not block on TTY)..."
+        if NONINTERACTIVE=1 brew install --cask libreoffice 2>&1 | tee -a "$LOG_FILE" | tail -5; then
+            if command -v soffice >/dev/null 2>&1; then
+                success "LibreOffice installed and soffice is on PATH: $(soffice --version 2>&1 | head -1 || true)"
+            elif [ -x /Applications/LibreOffice.app/Contents/MacOS/soffice ]; then
+                _MAC_LO_BIN="/Applications/LibreOffice.app/Contents/MacOS/soffice"
+                note "LibreOffice installed to /Applications/LibreOffice.app. Adding to PATH via symlink..."
+                sudo ln -sf "$_MAC_LO_BIN" /usr/local/bin/soffice 2>/dev/null \
+                    && success "soffice symlinked: /usr/local/bin/soffice -> $_MAC_LO_BIN" \
+                    || warn "Could not symlink soffice (sudo failed). Skill 23 PPTX assembly must use full path: $_MAC_LO_BIN"
+            else
+                warn "brew install --cask libreoffice ran but soffice not found. Operator: re-run interactively or check /Applications/LibreOffice.app."
+                warn "The qc-completeness.sh gate (step 6b) will FAIL until soffice is resolvable."
+            fi
+        else
+            warn "NONINTERACTIVE LibreOffice cask install failed (may require admin password)."
+            warn "Operator fix: run interactively once: brew install --cask libreoffice"
+            warn "Then re-run qc-completeness.sh to confirm the gate passes."
+            warn "The qc-completeness.sh gate (step 6b) will FAIL until soffice is resolvable."
+        fi
+    else
+        warn "Homebrew not found — cannot install LibreOffice. PPTX-to-PDF export will fail."
+        warn "Operator fix: install Homebrew (https://brew.sh), then: brew install --cask libreoffice"
+    fi
 fi
 
 # ----------------------------------------------------------

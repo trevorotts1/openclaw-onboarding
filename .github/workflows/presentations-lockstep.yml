@@ -25,6 +25,8 @@ on:
     paths:
       # Canonical renderer — any checker add/rename/delete changes the lockstep
       - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py"
+      # Process-gate unit tests — run alongside sync_check so a gate regression fails CI
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/test_preflight.py"
       # Manifest (phases / autofails / roles / deliverables_required)
       - "universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json"
       # Section-5 AF registry — adding a row here without updating the manifest breaks sync
@@ -36,6 +38,11 @@ on:
       # Universal-SOPs cluster also ships the manifest/ruleset (kept in sync with above)
       - "universal-sops/presentation-slide-craft/*.md"
       - "universal-sops/presentation-slide-craft/*.json"
+      # Guard A — declared==enforced==tested gate-integrity check
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/gate_integrity_check.py"
+      # Guard B — retired-doctrine residual lint + its pattern registry
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/doctrine_residual_check.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/retired-doctrine-patterns.json"
 
 jobs:
   presentations-lockstep:
@@ -70,6 +77,60 @@ jobs:
           # Exit 2 = sync_check could not run (missing input — also a hard fail).
           python3 "$SYNC_CHECK"
           echo "sync_check: presentations lockstep PASSED — renderer, ruleset, manifest, roles, and SOPs are in sync."
+
+      - name: test_preflight.py — process-gate unit tests (exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_PREFLIGHT="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/test_preflight.py"
+          if [ ! -f "$TEST_PREFLIGHT" ]; then
+            echo "FATAL: test_preflight.py not found at $TEST_PREFLIGHT" >&2
+            exit 2
+          fi
+          # The process-gate unit tests exercise every build_deck.py preflight/postflight
+          # checker (research-cited, claims, coverage, rich-prompt, KIE-baked, bundle
+          # completeness, teleprompter publish). Any regression in a gate exits non-zero
+          # and blocks the merge. This step ALSO emits scripts/working/af-coverage.json
+          # (every build_deck-enforced AF code a deliberately-failing fixture triggered),
+          # which Guard A (gate_integrity_check.py) consumes in the next step.
+          python3 "$TEST_PREFLIGHT"
+          echo "test_preflight: all process-gate unit tests PASSED (af-coverage emitted)."
+
+      - name: gate_integrity_check.py — Guard A (declared==enforced==tested, exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          GUARD_A="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/gate_integrity_check.py"
+          AF_COV="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/working/af-coverage.json"
+          if [ ! -f "$GUARD_A" ]; then
+            echo "FATAL: gate_integrity_check.py not found at $GUARD_A" >&2
+            exit 2
+          fi
+          if [ ! -f "$AF_COV" ]; then
+            echo "FATAL: af-coverage.json not found at $AF_COV — the test_preflight step must run first to emit it." >&2
+            exit 2
+          fi
+          # Guard A: every PIPELINE-MANIFEST autofail with enforced_by==build_deck must
+          # have a referenced enforcing py_symbol AND a negative test that triggers it
+          # (present in af-coverage). A declared-but-no-op or declared-but-untested gate
+          # exits non-zero — this is what would have caught AF-QC-INDEPENDENCE as a no-op.
+          python3 "$GUARD_A"
+          echo "gate_integrity_check: Guard A PASSED — every build_deck-enforced gate is enforced AND tested."
+
+      - name: doctrine_residual_check.py — Guard B (retired-doctrine residual lint, exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          GUARD_B="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/doctrine_residual_check.py"
+          if [ ! -f "$GUARD_B" ]; then
+            echo "FATAL: doctrine_residual_check.py not found at $GUARD_B" >&2
+            exit 2
+          fi
+          # Guard B: a retired doctrine VALUE (registered in retired-doctrine-patterns.json,
+          # e.g. the old hook '>= 7 times' floor) must never re-appear as a LIVE instruction.
+          # Any match lacking a retirement context marker exits non-zero and blocks the merge.
+          python3 "$GUARD_B"
+          echo "doctrine_residual_check: Guard B PASSED — no retired doctrine present as a live instruction."
 
       - name: STANDARD-presenter-speech-layout.pdf present (H7 gate)
         shell: bash

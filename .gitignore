@@ -13,3 +13,9 @@ projects/gemini-migration/
 tmp/
 .openclaw/
 *.TRUNCATED-BACKUP
+
+# Guard A af-coverage artifact — emitted at test time by test_preflight.py, consumed
+# by gate_integrity_check.py; regenerated in CI, never committed.
+23-ai-workforce-blueprint/templates/role-library/presentations/scripts/working/
+
+.wrangler/
