@@ -338,6 +338,56 @@ def parse_speech(md_text, default_wpm=130):
     }
 
 
+# Filler words dropped during normalization (mirror of the JS NORM filler set).
+_FILLER = {"um", "uh", "erm", "uhh", "umm", "er", "ah", "like", "you", "know"}
+_NUM_WORDS = {
+    "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four", "5": "five",
+    "6": "six", "7": "seven", "8": "eight", "9": "nine", "10": "ten",
+}
+
+
+def _norm_token(raw):
+    """Normalize one word to a comparison token: lowercase, strip punctuation,
+    fold cheap small numbers to words. Returns '' if it normalizes to nothing."""
+    t = raw.lower()
+    t = re.sub(r"[^a-z0-9']", "", t)
+    t = t.strip("'")
+    if not t:
+        return ""
+    if t in _NUM_WORDS:
+        t = _NUM_WORDS[t]
+    return t
+
+
+def tokenize_script(data):
+    """Flatten every body block into a single ordered token array with
+    back-references. Each token is {t, slide, block, w} where:
+      t     = normalized comparison token (lowercased, de-punctuated)
+      slide = slide index (0-based, into data['slides'])
+      block = block index within that slide's blocks[]
+      w     = the original surface word (for per-token span rendering)
+    Cue blocks are skipped (they are not spoken). Filler tokens that normalize
+    to '' are skipped so the aligner never has to match them. The same {slide,
+    block, tokenIndexInBlock} lets the runtime wrap each surface word in a span.
+    """
+    tokens = []
+    slides = data.get("slides") or []
+    for si, s in enumerate(slides):
+        for bi, b in enumerate(s.get("blocks") or []):
+            if b.get("type") != "body":
+                continue
+            words = re.split(r"\s+", (b.get("text") or "").strip())
+            wi = 0
+            for w in words:
+                if not w:
+                    continue
+                nt = _norm_token(w)
+                if nt and nt not in _FILLER:
+                    tokens.append({"t": nt, "slide": si, "block": bi, "wi": wi, "w": w})
+                wi += 1
+    return tokens
+
+
 def read_brand_name(intake_path):
     """Best-effort company/brand name from intake.json. Returns '' if unavailable."""
     if not intake_path:
@@ -518,10 +568,12 @@ Hello and welcome, everybody. [PAUSE] ..."></textarea>
 </div>
 
 <script id="speech-data" type="application/json">__SPEECH_JSON__</script>
+<script id="token-data" type="application/json">__TOKENS_JSON__</script>
 <script>
 "use strict";
 const DEFAULT_WPM = __WPM__;
 const FONT_KEY = "ptp.font", SPEED_KEY = "ptp.speed", MIRROR_KEY = "ptp.mirror", THEME_KEY = "ptp.theme";
+const MODE_KEY = "ptp.mode", VMIRROR_KEY = "ptp.vmirror", GUIDE_KEY = "ptp.guide";
 
 // ---- cue / pacing parsing (mirror of the Python parser, for pasted/loaded files)
 const CUE_RE = /\[\s*(?:PAUSE|BREATHE|BREAK|LONG[- ]?BREAK|SHORT\s+PAUSE)\s*\]|\(\s*(?:PAUSE|BREATHE|BREAK|LONG[- ]?BREAK|SHORT\s+PAUSE)\b[^)]*\)/ig;
@@ -834,8 +886,11 @@ def build_html(data, brand_name, wpm, accent_hex=HOUSE_ACCENT):
     payload = json.dumps(data, ensure_ascii=False)
     # guard against the JSON closing the inline <script> early
     payload = payload.replace("</", "<\\/")
+    tokens = tokenize_script(data)
+    token_payload = json.dumps(tokens, ensure_ascii=False).replace("</", "<\\/")
     html = HTML_TEMPLATE
     html = html.replace("__SPEECH_JSON__", payload)
+    html = html.replace("__TOKENS_JSON__", token_payload)
     html = html.replace("__BRAND_NAME__", (brand_name or "Presenter's Speech").replace("&", "&amp;").replace("<", "&lt;"))
     html = html.replace("__WPM__", str(int(wpm)))
     html = html.replace("__ACCENT_HEX__", accent_hex or HOUSE_ACCENT)
