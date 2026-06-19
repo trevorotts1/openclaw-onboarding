@@ -240,3 +240,15 @@ document:
 *This guide is generated for {{COMPANY_NAME}} by the AI Workforce Blueprint
 (Skill 23). It is regenerated whenever the department's roster changes so it
 always matches the specialists you actually have.*
+
+---
+
+## AF-DARK-SLIDE - No Dark Slides (AUTO-FAIL)
+
+Slides MUST use LIGHT / bright backgrounds by DEFAULT. DARK or black-background slides are NOT ALLOWED unless the CLIENT EXPLICITLY requests a dark theme via the intake flag `client_dark_theme: true`. Light is the default; dark is opt-in by client request only.
+
+- DEFAULT: Light / bright background slides
+- ALLOWED dark: Only when `client_dark_theme: true` is set in working/copy/intake.json
+- AUTO-FAIL: Any dark/black/near-black default background without `client_dark_theme: true`
+
+**To enable a dark theme:** during onboarding, explicitly tell the Director of Presentations you want dark slides. The Director will record `client_dark_theme: true` in your intake.json. Without this explicit request, all slides default to light/bright backgrounds and any dark background specification is an AUTO-FAIL blocked by the build pipeline.
