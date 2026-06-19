@@ -1,3 +1,9 @@
+## v12.34.0 — 2026-06-18 — Presentation Quality Overhaul: re-sequenced flow + 5 QC roles + duration/pitch/creativity gates
+
+- Flow re-sequenced so each QC follows its artifact (copy-QC after copy, prompt-QC after prompt-authoring, image-QC after render, typography-QC after design, speech-QC after speech).
+- Five independent QC functions with rubric SOPs + independent-reviewer requirement; new prompt-author role; image-prompt floor reconciled to 5000.
+- Duration-driven intake + AF-SLIDE-COUNT-FLOOR (a 30-min/10-slide deck auto-fails); AF-PITCH-MISSING (offer ladder + re-pitch required); AF-CREATIVITY (reject template-sameness/cliche). manifest_version 10; each gate has a negative test (Guard A).
+
 ## v12.33.0 — 2026-06-18 — Presentation pipeline hardening: process gate, QC-independence, prevention guards, deps
 
 Presentation department — the deck build now hard-fails (non-zero exit) on any skipped mandatory stage, and the gate system is protected against future "described-but-unenforced" gaps:
