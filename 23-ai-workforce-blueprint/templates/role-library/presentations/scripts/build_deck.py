@@ -3126,7 +3126,13 @@ def main():
     elif logo_path is not None:
         print(f"=== OFFICIAL LOGO (overlay fallback): {logo_path} ===", flush=True)
 
-    api_key = load_api_key()
+    # In --adhoc-no-process mode the key is NEVER used for a network call: render_slide
+    # raises on missing rich prompts before reaching submit_task, so we skip the
+    # load_api_key() call entirely.  This makes adhoc runs platform-portable (no
+    # secrets files required on CI / linux runners) without weakening any gate —
+    # if a prompt file IS present and render_slide would actually call KIE, it receives
+    # the sentinel "" and will fail at the HTTP layer, not silently succeed.
+    api_key = "" if adhoc else load_api_key()
     renders_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"=== build_deck — {len(slides)} slides ===", flush=True)
