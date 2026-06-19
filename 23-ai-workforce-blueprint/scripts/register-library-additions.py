@@ -319,7 +319,32 @@ def reconcile(data, disk_roles):
         entry["roles"] = sorted(slugs)
         entry["count"] = len(entry["roles"])
 
-    # 5. Recompute global totals.
+    # 5. Register SOPs + personas from disk (membership only — content_sha is
+    #    stamped later by hash-content-manifest). Done HERE so registration is
+    #    complete even with --no-hash; the hash step preserves these entries and
+    #    only adds/refreshes content_sha/content_version.
+    report["added_sops"] = []
+    report["added_personas"] = []
+    sops = data.setdefault("sops", [])
+    sop_paths = {s.get("path") for s in sops}
+    for sop in discover_dept_sop_files():
+        if sop["path"] not in sop_paths:
+            sops.append({"slug": sop["slug"], "dept": sop["dept"], "path": sop["path"]})
+            sop_paths.add(sop["path"])
+            report["added_sops"].append(sop["path"])
+    # Drop dead SOP entries (file gone).
+    data["sops"] = [s for s in sops if (_SKILL_DIR / s.get("path", "")).is_file()]
+
+    personas = data.setdefault("personas", [])
+    persona_paths = {p.get("path") for p in personas}
+    for persona in discover_persona_files():
+        if persona["path"] not in persona_paths:
+            personas.append({"slug": persona["slug"], "path": persona["path"]})
+            persona_paths.add(persona["path"])
+            report["added_personas"].append(persona["path"])
+    data["personas"] = [p for p in personas if (_SKILL_DIR / p.get("path", "")).is_file()]
+
+    # 6. Recompute global totals.
     data["total_roles"] = sum(len(d.get("roles", [])) for d in depts.values())
     data["total_departments"] = len(depts)
     report["recount"] = {
@@ -528,6 +553,14 @@ def main(argv=None):
         print(f"      + {p}")
     if report["added_depts"]:
         print(f"  NEW departments:        {report['added_depts']}")
+    if report.get("added_sops"):
+        print(f"  sops registered:        {len(report['added_sops'])}")
+        for p in report["added_sops"][:20]:
+            print(f"      + {p}")
+    if report.get("added_personas"):
+        print(f"  personas registered:    {len(report['added_personas'])}")
+        for p in report["added_personas"][:20]:
+            print(f"      + {p}")
     if report["fixed_paths"]:
         print(f"  healed stale paths:     {len(report['fixed_paths'])}")
         for p in report["fixed_paths"][:10]:
