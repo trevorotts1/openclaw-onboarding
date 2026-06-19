@@ -784,7 +784,46 @@ def render_how_to_use(dept_folder, roles=None, tokens=None, meta_table=None):
     out = _sanitize_block(out)
     out = out.replace("\x00CN\x00", fill["COMPANY_NAME"]).replace(
         "\x00GD\x00", fill["GENERATION_DATE"])
+
+    # Department-specific appendix sections. These carry rules that are
+    # enforced at the BUILD pipeline level (AUTO-FAIL gates) and must be
+    # surfaced in the owner-facing guide so the client understands them.
+    # Written using plain ASCII dashes (never em/en dashes) to satisfy the
+    # fleet em-dash ban. New entries follow the same pattern.
+    appendix = _DEPT_APPENDIX.get(dept_folder, "")
+    if appendix:
+        out = out.rstrip("\n") + "\n\n" + appendix.strip("\n") + "\n"
+
     return out
+
+
+# Department-specific appendix blocks. Each value is appended verbatim after
+# the generated guide body (after the _sanitize_block pass, so they must
+# already be em-dash-free). Keep entries sorted by dept_folder key.
+_DEPT_APPENDIX = {
+    "presentations": """\
+---
+
+## AF-DARK-SLIDE - No Dark Slides (AUTO-FAIL)
+
+Slides MUST use LIGHT / bright backgrounds by DEFAULT. DARK or \
+black-background slides are NOT ALLOWED unless the CLIENT EXPLICITLY requests \
+a dark theme via the intake flag `client_dark_theme: true`. Light is the \
+default; dark is opt-in by client request only.
+
+- DEFAULT: Light / bright background slides
+- ALLOWED dark: Only when `client_dark_theme: true` is set in \
+working/copy/intake.json
+- AUTO-FAIL: Any dark/black/near-black default background without \
+`client_dark_theme: true`
+
+**To enable a dark theme:** during onboarding, explicitly tell the Director \
+of Presentations you want dark slides. The Director will record \
+`client_dark_theme: true` in your intake.json. Without this explicit request, \
+all slides default to light/bright backgrounds and any dark background \
+specification is an AUTO-FAIL blocked by the build pipeline.
+""",
+}
 
 
 if __name__ == "__main__":
