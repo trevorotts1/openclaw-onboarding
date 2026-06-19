@@ -394,12 +394,27 @@ def check(data, disk_roles):
         if rel and not (_SKILL_DIR / rel).is_file():
             problems.append(f"DEAD SOP ENTRY: sops[] {rel} (file missing)")
 
-    # (f) every persona file registered in personas[]
+    # (f) every persona file registered in personas[] + WIRED (declares a Domain
+    #     tags header so the persona-selector can route depts/tasks to it; a persona
+    #     with no domain tags is unreachable — a half-wired persona).
     persona_paths = {p.get("path") for p in data.get("personas", [])}
     for persona in discover_persona_files():
         if persona["path"] not in persona_paths:
             problems.append(f"UNREGISTERED PERSONA: {persona['path']} present on disk "
                             f"but ABSENT from _index.json personas[]")
+        abspath = _SKILL_DIR / persona["path"]
+        if abspath.is_file():
+            try:
+                ptext = abspath.read_text(encoding="utf-8")
+            except OSError:
+                ptext = ""
+            m = re.search(r"^\*\*Domain tags:\*\*\s*(.+?)\s*$", ptext, re.MULTILINE)
+            tags = [t.strip() for t in m.group(1).split(",")] if m else []
+            tags = [t for t in tags if t]
+            if not tags:
+                problems.append(
+                    f"UNWIRED PERSONA: {persona['path']} has no '**Domain tags:**' "
+                    f"header — the persona-selector cannot route any dept/task to it")
     for p in data.get("personas", []):
         rel = p.get("path", "")
         if rel and not (_SKILL_DIR / rel).is_file():

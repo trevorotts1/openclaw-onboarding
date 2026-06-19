@@ -155,6 +155,22 @@ else
 fi
 rm -rf "$sb"
 
+# ── 8b. unwired persona (no Domain tags header) -> FAIL ──────────────────────
+sb="$(make_sandbox)"
+if [ -d "$sb/skill/templates/persona-library" ]; then
+  # Register the persona but give it NO Domain tags header -> unreachable/half-wired.
+  printf '# Persona — Unwired Fixture\n\n**Persona type:** governing-persona\n\nbody\n' \
+    > "$sb/skill/templates/persona-library/fixture-unwired-persona.md"
+  ( cd "$sb" && python3 "skill/scripts/$GATE" \
+      --index "skill/templates/role-library/_index.json" --apply --no-hash ) >/dev/null 2>&1
+  rc="$(run_check "$sb")"
+  [ "$rc" -eq 7 ] && pass "unwired persona (no Domain tags) FAILS (rc 7)" \
+                  || die "unwired persona should FAIL (rc 7), got $rc"
+else
+  echo "  ! no persona-library — skipping unwired-persona fixture"
+fi
+rm -rf "$sb"
+
 # ── 9. --apply heals an unregistered role, then --check PASSES (round-trip) ───
 sb="$(make_sandbox)"
 printf '# Heal Me\n\n**Role type:** specialist\n\nbody\n' \
