@@ -278,3 +278,17 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ---
 
+## AF-DARK-SLIDE — No Dark Slides (AUTO-FAIL)
+
+Slides MUST use LIGHT / bright backgrounds by DEFAULT. DARK or black-background slides are NOT ALLOWED unless the CLIENT EXPLICITLY requests a dark theme via the intake flag `client_dark_theme: true`. Light is the default; dark is opt-in by client request only.
+
+- DEFAULT: Light / bright background slides
+- ALLOWED dark: Only when `client_dark_theme: true` is set in working/copy/intake.json
+- AUTO-FAIL: Any dark/black/near-black default background without `client_dark_theme: true`
+
+**Director intake responsibility:** during the intake interview (SOP 9.1), explicitly ask whether the client wants a dark theme. Record `client_dark_theme: true` in intake.json ONLY when the client explicitly requests it. Default (no request = no flag = light backgrounds enforced). This gate is enforced mechanically by build_deck.py `_chk_no_dark_slides` at preflight.
+
+**Failure message:** `AF-DARK-SLIDE: Dark/black background detected in prompts but client_dark_theme is not set. Light backgrounds are required by default.`
+
+---
+

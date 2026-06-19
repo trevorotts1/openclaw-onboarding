@@ -1,5 +1,5 @@
 {
-  "manifest_version": 10,
+  "manifest_version": 11,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -931,6 +931,15 @@
       "enforced_by": "build_deck",
       "py_symbol": "_chk_creativity",
       "secondary_py_symbols": ["ARCHETYPE_DOMINANCE_CEILING", "FORBIDDEN_CLICHE_PHRASES"]
+    },
+    {
+      "code": "AF-DARK-SLIDE",
+      "stage": "Intake/Prompt",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "dark/black background keywords (e.g. 'dark background', 'black background', 'dark theme', 'near-black', 'dark slide', 'dark mode') or near-black hex/rgb colors detected in working/prompts/*.txt or working/research/design-brief-*.md without client_dark_theme:true in intake.json. Slides MUST use LIGHT/bright backgrounds by default; dark is opt-in by explicit client request only.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_no_dark_slides"
     }
   ],
   "roles": [

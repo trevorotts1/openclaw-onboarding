@@ -27,6 +27,20 @@ Note on the spacing floor: this ruleset's AF-DEN-1 proposes an absolute "8-slide
 
 ---
 
+## AF-DARK-SLIDE — No Dark Slides (AUTO-FAIL)
+
+Slides MUST use LIGHT / bright backgrounds by DEFAULT. DARK or black-background slides are NOT ALLOWED unless the CLIENT EXPLICITLY requests a dark theme via the intake flag `client_dark_theme: true`. Light is the default; dark is opt-in by client request only.
+
+- DEFAULT: Light / bright background slides
+- ALLOWED dark: Only when `client_dark_theme: true` is set in working/copy/intake.json
+- AUTO-FAIL: Any dark/black/near-black default background without `client_dark_theme: true`
+
+**Trigger:** image prompts or design brief contain dark background keywords ("dark background", "black background", "dark theme", "near-black", "dark slide", "dark mode") OR near-black hex/rgb color references (#000, #111, #222, #1a1a1a, #0d0d0d, rgb(0,0,0), rgb(20,20,20)) AND intake.json does NOT carry `client_dark_theme: true`.
+
+**Failure message:** `AF-DARK-SLIDE: Dark/black background detected in prompts but client_dark_theme is not set. Light backgrounds are required by default. Set client_dark_theme: true in intake.json to enable dark theme (explicit client request only).`
+
+---
+
 ## 0. WHY DESCRIPTION ALONE FAILED (read before wiring)
 
 PR #212 added 77 auto-fails and the FINAL deck STILL shipped the hook on 40 slides, the word "webinar", and raw "[owner to confirm]" placeholders. The lesson: a rule that is SCORED (averages away) or phrased as soft guidance ("the hook should recur as a refrain, not wallpaper") does not stop the defect. Every rule here is a BINARY TRIGGER with an exact detection method and a deck/slide-level veto. If a checker cannot mechanically evaluate it, it is not in this ruleset. The five things that must be impossible to ship are:
@@ -181,6 +195,7 @@ These are deck-level and are evaluated against arc_allocation.json and slide ord
 | AF-SLIDE-COUNT-FLOOR | Phase 0a/4 | DECK | Output slide count below target_talk_minutes x 1.3 (a 30-min/10-slide deck auto-fails) | output slide count < ceil(intake.json target_talk_minutes x SLIDES_PER_MINUTE_FLOOR(1.3)); the verified pacing band is ~1.3-1.5 slides/min |
 | AF-PITCH-MISSING | Phase 3 | DECK | Converting arc carries no offer ladder (value-stack -> anchor -> price drops) OR no re-pitch after the FINAL price | arc_allocation.json arc-section/tag tokens contain no ladder/anchor/price/offer/value-stack/drop beat OR no re-pitch/second-close/re-offer/post-final beat |
 | AF-CREATIVITY | Phase F/4 | DECK | Template-sameness (one archetype > 60% of slides) OR cliche copy | design_system.json per-slide archetype map: top archetype share > ARCHETYPE_DOMINANCE_CEILING(0.60); OR slides_copy.md contains a banned FORBIDDEN_CLICHE_PHRASES phrase |
+| AF-DARK-SLIDE | Intake/Prompt | DECK | dark/black background in prompts without client_dark_theme:true | scan image prompts + design brief for dark background keywords and near-black hex/rgb values; pass ONLY when client_dark_theme:true is in intake.json |
 
 Every row is a binary trigger with an exact detection method and a verbatim failure message (Section 1 and 2). Wire them as auto-fails, checked before scoring. A deck that trips any DECK-level row, or any slide that trips a slide-level row, cannot be marked final.
 
