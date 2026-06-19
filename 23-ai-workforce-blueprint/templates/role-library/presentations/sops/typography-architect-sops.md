@@ -135,3 +135,17 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Failure mode:** If slides_copy.md is incomplete (slides still being written), produce the plan for the locked slides and mark the open slides PENDING; deliver the rest only when copy is final. Never hand off a partial plan as if complete.
 
 ---
+
+## AF-DARK-SLIDE — No Dark Slides (AUTO-FAIL)
+
+Slides MUST use LIGHT / bright backgrounds by DEFAULT. DARK or black-background slides are NOT ALLOWED unless the CLIENT EXPLICITLY requests a dark theme via the intake flag `client_dark_theme: true`. Light is the default; dark is opt-in by client request only.
+
+- DEFAULT: Light / bright background slides
+- ALLOWED dark: Only when `client_dark_theme: true` is set in working/copy/intake.json
+- AUTO-FAIL: Any dark/black/near-black default background without `client_dark_theme: true`
+
+**Before authoring the design system:** check `working/copy/intake.json` for `client_dark_theme: true`. If absent or false, the design system MUST specify light/bright backgrounds for all archetypes. Never prescribe dark, black, or near-black (#000, #111, #222, #1a1a1a) backgrounds in the design system without that flag set.
+
+**Failure message:** `AF-DARK-SLIDE: Dark/black background detected in design brief but client_dark_theme is not set. Light backgrounds are required by default.`
+
+---

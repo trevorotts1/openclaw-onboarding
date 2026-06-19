@@ -769,3 +769,17 @@ Capture external proof at intake. If the client has not supplied real external p
 **Failure mode:** If audience_composition is absent, HALT at Part E (do not proceed to people-prompts). If no external proof is available for the validator slide, flag to the Director before writing that slide's prompt.
 
 ---
+
+## AF-DARK-SLIDE — No Dark Slides (AUTO-FAIL)
+
+Slides MUST use LIGHT / bright backgrounds by DEFAULT. DARK or black-background slides are NOT ALLOWED unless the CLIENT EXPLICITLY requests a dark theme via the intake flag `client_dark_theme: true`. Light is the default; dark is opt-in by client request only.
+
+- DEFAULT: Light / bright background slides
+- ALLOWED dark: Only when `client_dark_theme: true` is set in working/copy/intake.json
+- AUTO-FAIL: Any dark/black/near-black default background without `client_dark_theme: true`
+
+**Before writing any prompt:** check `working/copy/intake.json` for `client_dark_theme: true`. If absent or false, ALL slide backgrounds must be light/bright. Never use "dark background", "black background", "dark theme", "near-black", "dark slide", or "dark mode" in any prompt unless `client_dark_theme: true` is confirmed. Never use near-black hex colors (#000, #111, #222, #1a1a1a, #0d0d0d) or rgb(0,0,0)/rgb(20,20,20) as background colors without that flag.
+
+**Failure message:** `AF-DARK-SLIDE: Dark/black background detected in prompts but client_dark_theme is not set. Light backgrounds are required by default.`
+
+---
