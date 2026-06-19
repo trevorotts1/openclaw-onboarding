@@ -1,3 +1,14 @@
+## v12.38.0 — 2026-06-19 — Teleprompter upgrade: speed-control fix, SPOKEN/TRADITIONAL dual mode, fuzzy already-spoken highlight, feature-gap fixes
+
+Teleprompter rebuilt and self-verified (build_teleprompter.py + teleprompter SOP/role updates):
+
+- **Speed-control fix (O1)**: sub-pixel accumulator + delta-time clamp eliminates scroll jitter; curved 18–240 px/s range with clock reset on every mode transition. Speed changes now take effect immediately without a reset.
+- **SPOKEN/TRADITIONAL dual mode (O2)**: Web Speech API voice-following mode (tracks spoken word and auto-scrolls to match) alongside fixed-speed TRADITIONAL mode; runtime toggle with fallback to fixed-speed when the browser lacks Web Speech support.
+- **Fuzzy already-spoken highlight (O3)**: two-tier highlight (current word + surrounding context window); fuzzy string alignment means the highlight recovers gracefully from recognition errors and partial words rather than losing position.
+- **Feature-gap fixes (O4)**: clicker-key navigation (PageUp/PageDown/arrow keys advance cue points), eye-line guide overlay (fixed horizontal bar at reading position), vertical mirror mode, and status chip showing current mode + recognition confidence.
+
+Merged from main: v12.36.0 (AF-DARK-SLIDE gate) + v12.37.0 (5 deck-quality gates + Guard A green). All five presentation gates present; Guard A exits 0; all verification gates pass.
+
 ## v12.37.0 — 2026-06-19 — Guard A green: emit_af_coverage probes for 5 new gates (including AF-DARK-SLIDE from main) + _slide_dominant_colors Pillow 11.x palette-length fix
 
 Two concrete bugs found by independent audit, both fixed:
