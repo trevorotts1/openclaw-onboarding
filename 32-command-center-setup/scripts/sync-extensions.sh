@@ -112,13 +112,17 @@ MATERIALIZE_SH="$SCRIPT_DIR/materialize-dept-agents.sh"
 BUILD_WORKFORCE_PY="$REPO_ROOT/23-ai-workforce-blueprint/scripts/build-workforce.py"
 REFRESH_BUILD_STATE_PY="$REPO_ROOT/23-ai-workforce-blueprint/scripts/refresh-build-state-from-index.py"
 REGEN_SOP_INDEX_PY="$REPO_ROOT/23-ai-workforce-blueprint/scripts/regenerate-sop-index.py"
+# AUTO-REGISTER: reconcile any NEW on-disk library role/SOP/persona/dept into
+# _index.json (+ content-hash restamp) BEFORE propagation, so a library half-add
+# can never propagate as an invisible/partial role.
+REGISTER_LIB_PY="$REPO_ROOT/23-ai-workforce-blueprint/scripts/register-library-additions.py"
 SEED_WORKSPACES_PY="$SCRIPT_DIR/seed-workspaces.py"
 INGEST_SOP_LIBRARY_SH="$SCRIPT_DIR/ingest-sop-library.sh"
 GENERATE_INFOGRAPHICS_SH="$REPO_ROOT/37-zhc-closeout/scripts/generate-infographics.sh"
 CREATE_NOTION_SH="$REPO_ROOT/37-zhc-closeout/scripts/create-notion-closeout.sh"
 
 # Also check installed paths for key scripts
-for script_var in REFRESH_BUILD_STATE_PY REGEN_SOP_INDEX_PY BUILD_WORKFORCE_PY; do
+for script_var in REFRESH_BUILD_STATE_PY REGEN_SOP_INDEX_PY BUILD_WORKFORCE_PY REGISTER_LIB_PY; do
   script_path="${!script_var}"
   if [[ ! -f "$script_path" ]]; then
     for oc_cand in \
@@ -281,6 +285,31 @@ while IFS= read -r dept; do
 
   REGISTERED+=("$dept")
 done <<< "$NEW_DEPTS"
+
+# ─── Step 2b-pre: AUTO-REGISTER new library artifacts into _index.json ───────
+# Before validating invariants OR propagating, reconcile the role-library index
+# with what is actually on disk: register any NEW role/SOP/persona/dept file that
+# was added to the library without its _index.json entry (+ restamp the content
+# manifest), and surface any duplicate-residue / triple-hyphen orphan. This is the
+# library-side AUTO-REGISTER that makes a library add WHOLE before it propagates
+# into client workspaces — the system-wide companion to add-role.sh / add-department.sh.
+# Idempotent: a no-op when the library is already in sync.
+if [[ $CONVERGE_MODE -eq 1 && -f "$REGISTER_LIB_PY" ]]; then
+  info "Step 2b-pre: AUTO-REGISTER new library artifacts into _index.json..."
+  if [[ $DRY_RUN -eq 1 ]]; then
+    python3 "$REGISTER_LIB_PY" --index "$INDEX_JSON" 2>&1 | sed 's/^/    /' || true
+    info "  [DRY-RUN] would run: register-library-additions.py --apply"
+  else
+    if python3 "$REGISTER_LIB_PY" --index "$INDEX_JSON" --apply 2>&1 | sed 's/^/    /'; then
+      ok "Step 2b-pre: library index reconciled with disk (new roles/SOPs/personas registered + content-hash restamped)"
+    else
+      fail "Step 2b-pre: register-library-additions.py --apply reported drift it could not auto-heal"
+      die "Library has a half-add that needs manual attention (e.g. duplicate-residue or triple-hyphen orphan). Run: python3 $REGISTER_LIB_PY --check"
+    fi
+  fi
+elif [[ $CONVERGE_MODE -eq 1 ]]; then
+  warn "register-library-additions.py not found — skipping library AUTO-REGISTER (run it manually if you added library files)"
+fi
 
 # ─── Step 2c extended: validate _index.json invariants (converge mode) ───────
 if [[ $CONVERGE_MODE -eq 1 && $DRY_RUN -eq 0 ]]; then

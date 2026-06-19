@@ -185,6 +185,30 @@ def upsert_role_into_index(dept_slug, role_slug, oc_root, script_dir, now):
     dept_entry["roles"] = roles
     dept_entry["count"] = len(roles)
 
+    # Scaffold a LIBRARY how-to.md stub for the role so it is a COMPLETE,
+    # registerable library artifact (not membership-without-a-file, which
+    # register-library-additions.py --check would correctly flag as a half-add).
+    # Folder-form <dept>/<slug>/how-to.md is the canonical library layout.
+    lib_role_dir = target.parent / dept_slug / role_slug
+    lib_how_to = lib_role_dir / "how-to.md"
+    if not lib_how_to.exists():
+        try:
+            lib_role_dir.mkdir(parents=True, exist_ok=True)
+            lib_how_to.write_text(
+                f"# {role_slug.replace('-', ' ').title()} — how-to.md (stub)  "
+                f"[PENDING — FILL FROM LIBRARY]\n\n"
+                f"**Department:** {dept_slug}\n"
+                f"**Role type:** specialist\n"
+                f"**Status:** PENDING — fill this file with the role's SOPs before "
+                f"assigning work.\n\n"
+                f"## Responsibilities\n(Fill from interview or a sibling role template.)\n\n"
+                f"## Section 9 — Standard Operating Procedures\n(Add per-task SOPs here.)\n",
+                encoding="utf-8")
+            print(f"  + library-stub   {lib_how_to}")
+        except OSError as e:
+            print(f"  [role-index] WARN: could not scaffold library stub {lib_how_to}: {e}",
+                  file=sys.stderr)
+
     # Recompute global totals
     idx["total_roles"] = sum(len(d.get("roles", [])) for d in deps.values())
     idx["total_departments"] = len(deps)
@@ -510,13 +534,23 @@ else
   echo "[add-role] WARN: verify-wiring.sh not found — run it manually after filling how-to.md" >&2
 fi
 
-# v12.27.0: RE-STAMP the per-artifact content manifest so the new role (and its
-# dept's content_sha) get a content_sha/content_version. The consistency gate's
-# CONTENT-HASH dimension FAILS if the manifest is stale vs the files, so this keeps
-# the index shippable after an add. Idempotent. (After the how-to.md is filled in
-# the next steps, run it again so the content_sha reflects the FINAL content.)
+# v12.34.0: AUTO-REGISTER — reconcile the role-library _index.json with what is
+# now on disk. The §8 upsert above adds the role's SLUG to departments[].roles[],
+# but the detailed roles[] entry (title/role_type/capability_class/path/word_count)
+# AND the per-artifact content_sha are produced by register-library-additions.py,
+# which discovers the new role file, ADDS its roles[] entry (idempotent — never
+# clobbers existing metadata), re-tags capability_class, and re-stamps the content
+# manifest in one pass. This is what keeps BOTH the library-lockstep gate and the
+# CONTENT-HASH gate green after an add. Falls back to the bare content-hash restamp
+# if the register script is unavailable (older installs).
+_REGISTER_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/register-library-additions.py"
 _HASH_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/hash-content-manifest.py"
-if [[ -f "$_HASH_SCRIPT" ]] && command -v python3 >/dev/null 2>&1; then
+if [[ -f "$_REGISTER_SCRIPT" ]] && command -v python3 >/dev/null 2>&1; then
+  echo "[add-role] AUTO-REGISTER: reconciling _index.json with disk + restamping content manifest..."
+  python3 "$_REGISTER_SCRIPT" --apply >/dev/null 2>&1 \
+    && echo "[add-role] library index reconciled + content-manifest re-stamped." \
+    || echo "[add-role] WARN: register-library-additions.py reported drift (run: python3 $_REGISTER_SCRIPT --check)." >&2
+elif [[ -f "$_HASH_SCRIPT" ]] && command -v python3 >/dev/null 2>&1; then
   echo "[add-role] Re-stamping per-artifact content manifest (content_sha/version)..."
   python3 "$_HASH_SCRIPT" >/dev/null 2>&1 \
     && echo "[add-role] content-manifest re-stamped." \
