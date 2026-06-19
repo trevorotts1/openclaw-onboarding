@@ -864,6 +864,30 @@ jobs:
           bash 23-ai-workforce-blueprint/scripts/test-artifact-versioning.sh
           echo "✓ Skill 23 per-artifact content-manifest present + current; versioning/detection fixtures pass"
 
+      - name: Skill 23 library lockstep — no half-add in any dept (system-wide add-handling)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # SYSTEM-WIDE add-handling backstop (generalizes the presentation-only
+          # sync_check to EVERY department). The role library's ONE machine source
+          # of truth is templates/role-library/_index.json — everything downstream
+          # (library_lookup, the materializer, the content-hash manifest, the
+          # consistency gate, Command-Center wiring) reads the index, not the raw
+          # files. So a half-add (a role/SOP/persona/dept FILE added without its
+          # _index.json registration — or a stale entry whose file was renamed/removed,
+          # e.g. a flat <dept>/<slug>.md left beside the canonical
+          # <dept>/<slug>/how-to.md, or a triple-hyphen orphan draft) is INVISIBLE to
+          # the build and used to slip through CI. register-library-additions.py
+          # --check is the bidirectional disk<->index cross-check that FAILS LOUD
+          # (exit 7) on ANY half-add in ANY dept: unregistered file, dead entry,
+          # duplicate-residue, triple-hyphen orphan, or count drift.
+          python3 23-ai-workforce-blueprint/scripts/register-library-additions.py --check
+          # Adversarial fixtures prove the backstop BITES on every half-add class
+          # (a green gate that never fails is worthless) and that --apply HEALS an
+          # unregistered role (round-trip).
+          bash 23-ai-workforce-blueprint/scripts/test-library-register.sh
+          echo "✓ Skill 23 library lockstep: every role/SOP/persona/dept on disk is registered in _index.json and vice-versa; backstop proven to fail on each half-add class"
+
       - name: Skill 23 how-to-use-this-department guides present, current, clean + wired
         shell: bash
         run: |

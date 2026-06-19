@@ -1,0 +1,104 @@
+name: Library lockstep (system-wide add-handling)
+
+# SYSTEM-WIDE BACKSTOP for the role/SOP/persona/department library — the
+# generalization of the presentation-only sync_check lockstep to EVERY department.
+#
+# The role library has ONE machine source of truth: templates/role-library/_index.json.
+# Everything downstream (create_role_workspaces.library_lookup, the materializer,
+# the content-hash manifest, the repo-consistency gate, Command-Center wiring)
+# reads the index, never the raw files. So a half-add — a role/SOP/persona/dept
+# FILE added to the library without its _index.json registration (or a stale entry
+# whose file was renamed/removed, e.g. a flat <dept>/<slug>.md left beside the
+# canonical <dept>/<slug>/how-to.md, or a triple-hyphen orphan draft) — is INVISIBLE
+# to the build and used to slip through CI. This job FAILS LOUD (exit 7) on any
+# half-add in ANY department:
+#
+#   1. register-library-additions.py --check    bidirectional disk<->index cross-check:
+#        - every canonical on-disk role/SOP/persona file is registered in _index.json
+#        - every _index.json entry's file exists on disk
+#        - no duplicate-residue (flat .md beside a canonical folder-form role)
+#        - no un-registered triple-hyphen orphan files
+#        - total_roles / total_departments / per-dept counts agree
+#   2. test-library-register.sh                  adversarial fixtures proving the gate
+#        BITES on every half-add class (a green gate that never fails is worthless)
+#        and that --apply HEALS an unregistered role (round-trip).
+#   3. hash-content-manifest.py --check          the content-manifest stays current
+#        (a register without a content-hash restamp would leave the manifest stale).
+#
+# Triggers on every push to main and any PR touching the library, its index, the
+# persona library, or the scripts that maintain them.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      # Any role/SOP file in ANY department + the index itself
+      - "23-ai-workforce-blueprint/templates/role-library/**"
+      # The shared persona library
+      - "23-ai-workforce-blueprint/templates/persona-library/**"
+      # The maintainer scripts (a change here can alter what "registered" means)
+      - "23-ai-workforce-blueprint/scripts/register-library-additions.py"
+      - "23-ai-workforce-blueprint/scripts/test-library-register.sh"
+      - "23-ai-workforce-blueprint/scripts/hash-content-manifest.py"
+      - "23-ai-workforce-blueprint/scripts/tag_role_classes.py"
+      - "23-ai-workforce-blueprint/scripts/create_role_workspaces.py"
+      - ".github/workflows/library-lockstep.yml"
+
+jobs:
+  library-lockstep:
+    name: Role/SOP/persona/dept library lockstep (no half-add in any dept)
+    runs-on: ubuntu-latest
+    env:
+      # Forced platform — same first-class override the other static gates use so
+      # detect_platform.py is deterministic on the bare runner. These are static
+      # gates (they read the repo's own templates, not a live install).
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: register-library-additions.py --check (disk <-> _index.json lockstep)
+        shell: bash
+        run: |
+          set -euo pipefail
+          GATE="23-ai-workforce-blueprint/scripts/register-library-additions.py"
+          if [ ! -f "$GATE" ]; then
+            echo "FATAL: $GATE not found" >&2
+            exit 2
+          fi
+          # Exit 7 = a half-add in some department (unregistered file / dead entry /
+          # duplicate-residue / triple-hyphen orphan / count drift). Exit 2 = could
+          # not run. Either is a hard fail that blocks the merge.
+          python3 "$GATE" --check
+          echo "library-register: every role/SOP/persona/dept on disk is registered in _index.json and vice-versa; counts agree; no duplicate-residue/orphans."
+
+      - name: test-library-register.sh (the backstop bites on every half-add class)
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST="23-ai-workforce-blueprint/scripts/test-library-register.sh"
+          if [ ! -f "$TEST" ]; then
+            echo "FATAL: $TEST not found" >&2
+            exit 2
+          fi
+          bash "$TEST"
+          echo "test-library-register: backstop proven to fail on unregistered role/SOP/persona, dead entry, duplicate-residue, triple-hyphen orphan, and count drift — and to heal via --apply."
+
+      - name: hash-content-manifest.py --check (content manifest current after any add)
+        shell: bash
+        run: |
+          set -euo pipefail
+          HCM="23-ai-workforce-blueprint/scripts/hash-content-manifest.py"
+          if [ ! -f "$HCM" ]; then
+            echo "FATAL: $HCM not found" >&2
+            exit 2
+          fi
+          python3 "$HCM" --check
+          echo "content-manifest current: a registration without a content-hash restamp cannot ship."
