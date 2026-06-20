@@ -16,8 +16,10 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Inputs:**
 - intake.json (brand_colors, brand_fonts, logo_description, representation_preferences, style_references)
+- **(Decision 1C) `working/copy/assets_manifest.json`** when present — client-provided logo / brand-color / photo assets to CONSUME.
 
 **Steps:**
+0. **(Decision 1C) Consume client-provided brand assets FIRST.** If `working/copy/assets_manifest.json` exists with `assets_provided:true`, read it before authoring the STYLE BLOCK: for every asset whose `consumed_by` includes `brand-steward` (logo / brand_color / founder-proof photo), use the asset's `public_url` as the authoritative source — the locked `LOGO_URL` IS the provided logo's `public_url` (composited image-to-image, never redrawn); the brand palette is derived from the provided brand-color swatches; provided photos are carried to the Slide Image Creator as gpt-image-2 `input_urls`. Provided client material ALWAYS wins over an invented/default look. The gate **AF-MANIFEST-UNREFERENCED** fails the deck if a provided brand asset is recorded but not actually consumed.
 1. Extract brand colors from intake.json. If the client provided hex codes, use them verbatim. If the client described colors without hex codes (e.g., "gold and navy"), find the closest brand-standard hex codes and record them as `color_source: "derived_from_description"` in the STYLE BLOCK. If no color information exists, use a professional neutral default (#1A2B4C navy, #C4A44D gold, #FFFFFF white) and flag as `color_source: "default_pending_client_confirmation"`.
 2. Assign roles to the 3 hex codes. Exactly 3 hex codes are required:
    - PRIMARY: accent-1 -- used for money/value displays, dividers, and key visual highlights (gold or brand equivalent)
@@ -158,6 +160,37 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Hand to:** Director (audit result is part of the pre-Phase-3 readiness check)
 
 **Failure mode:** If 90% or more of slides have no people at all (e.g., a highly technical deck or a no-people default), log this as `people_slides_pct: low`. The representation audit is inconclusive. Notify the Director -- the deck may not satisfy the representation target by design, and the operator should be informed.
+
+---
+
+### SOP 9.2b -- Hairstyle Authenticity Catalog (the Representation HAIR engine)
+
+**When to run:** once per client at brand-build time (alongside SOP 9.2), and re-checked whenever the cast/audience demographic changes. Source authority: SOP-ENGINE-00 (Representation Intelligence), SOP-SLIDE-00 §8b (AF-HAIR-INAUTHENTIC).
+
+**Why this engine exists.** Representation is not only the RATIO (which group, how often -- SOP 9.2). It is also AUTHENTICITY: real, age-appropriate, culturally accurate hair, so the render does not produce generic "AI plastic hair." The ratio engine (AF-R*/AF-CAST) and the hair engine (AF-HAIR-INAUTHENTIC) are ORTHOGONAL and both run.
+
+**The hard rule (mechanical):** every people-prompt MUST cite a hairstyle token that is a MEMBER of an age-banded, by-gender hairstyle reference catalog you ship to `working/brand/hairstyle_catalog.json`. Prompt QC runs `scripts/intelligence_engines_check.py --phase prompt`; a people-prompt that cites no catalog hairstyle (or any prompt at all when the catalog asset is absent) auto-fails AF-HAIR-INAUTHENTIC. The "AI plastic hair" render is the vision VERDICT, graded at Image-QC and logged to `vision_qc_log.json`.
+
+**Steps:**
+1. From `REPRESENTATION_MIX` and `audience_demographic` (intake), determine the cast's groups, genders, and age bands present on this deck.
+2. Build `working/brand/hairstyle_catalog.json` as the authoritative token set. Two accepted shapes (the checker reads either):
+   ```json
+   { "by_age_band": {
+       "child": ["coils", "afro puffs", "two-strand twists", "fresh fade"],
+       "teen":  ["high-top fade", "box braids", "wash-and-go", "tapered natural"],
+       "adult": ["silk press", "locs", "twist-out", "low cut", "bun", "cornrows"],
+       "senior":["short natural grey", "salt-and-pepper waves", "low taper"]
+   } }
+   ```
+   or the flat form `{ "styles": ["locs", "afro", "box braids", ...] }`. Populate it with REAL, culturally accurate, age-appropriate styles for THIS client's cast -- not a generic stock list. Aim for breadth across the age bands actually on the deck.
+3. Hand the catalog to the Slide Image Creator / Prompt Author. Every people-prompt must cite an age-appropriate style from it (slide-image-creator-sops.md SOP 9.3b, token class 4).
+4. Record `hairstyle_catalog_built: true` and the timestamp in `representation_audit.json`.
+
+**Outputs:** `working/brand/hairstyle_catalog.json`.
+
+**Hand to:** Slide Image Creator / Prompt Author (prompt-token mandate); QC Specialists (AF-HAIR-INAUTHENTIC mechanical half at Prompt QC, vision verdict at Image QC).
+
+**Failure mode:** if the client's cast demographic is genuinely unknown, do NOT invent culturally specific styles. Flag the Director to confirm the demographic, ship a conservative age-banded catalog of neutral descriptors, and note the gap; never leave the catalog absent (an absent catalog makes every people-prompt fail AF-HAIR-INAUTHENTIC by design until it is supplied).
 
 ---
 

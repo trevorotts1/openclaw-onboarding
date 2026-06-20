@@ -1,4 +1,6 @@
-# SOP-IMG-05: PIL LOGO COMPOSITE + NATIVE TEXT OVERLAY (PIPELINE DETERMINISM)
+# SOP-IMG-05: PIL LOGO IMAGE COMPOSITE (PIPELINE DETERMINISM)
+
+> **Decision 5C (AF-OVERLAY-DELIVERED):** the native-text overlay half of this SOP is ELIMINATED. This SOP now composites ONLY the locked logo IMAGE onto the slide PNG (image compositing — the real mark, baked into the image before assembly). It NEVER writes `pptx_text_overlays.json` and NEVER routes any text to a native PPTX text box. Garbled/mis-styled HERO TEXT is fixed by the Slide Image Creator's re-prompt/re-seed loop, then human escalation — never an overlay.
 
 **Cluster:** Image-Design System (pipeline post-processing)
 **Version:** v1.0.0 (2026-06-14)
@@ -35,36 +37,15 @@ Why: the image model cannot guarantee pixel-perfect logo reproduction. Even imag
 
 ---
 
-### Rule B -- Native Text Overlay for Hero Strings (triggered by two-failed-attempts OR by SOP directive)
+### Rule B -- ELIMINATED: Native Text Overlay for Hero Strings (Decision 5C, AF-OVERLAY-DELIVERED)
 
-The native text overlay fallback (SOP 9.5 step 7 in slide-image-creator-sops.md) is generalized: it applies to ANY critical verbatim string that garbles or mis-styles twice at render. In addition, the following string classes are declared as NATIVE-OVERLAY-PRIMARY -- meaning the prompt instructs the model to render the visual background without baking these strings, and the strings are composited by code as PPTX native text after image generation:
+The former native-text overlay rule is REMOVED. ALL text — hero price numbers, callout strings, headlines, gradient-risk strings, struck prices — is baked into the SINGLE composed gpt-image-2 image by the model. There is no NATIVE-OVERLAY-PRIMARY class, no "render the background only and overlay the text later" instruction, and no `pptx_text_overlays.json`.
 
-- Hero price numbers and callout strings on offer / CTA slides (the `$97`, `15 Minutes`, and any per-rung price).
-- Gradient-risk strings: any headline or sub that the producing SOP (slide-image-creator-sops.md SOP 9.6 Part A, gradient ban) identifies as "gradient-risk" (typically value/price/headline on offer slides where the prior prompt language used "liquid-gold gradient" or "radial glow").
+When a critical verbatim string garbles or mis-styles at render (including the gradient-risk strings the gradient ban in Section 2 targets), the remedy is the Slide Image Creator's RE-PROMPT / RE-SEED loop (tighten the spelling-lock + negative block, new seed, re-render the composed image), then HUMAN ESCALATION if it persists. A native PPTX text box is never the remedy.
 
-**Why native overlay for gradient-risk strings:** the model cannot be reliably instructed to render a gradient-free flat font on strings that prior training associated with gradient/glow effects. The native overlay guarantees flat brand-color type at any weight and size without relying on the model.
+**Why no native overlay:** a native PPTX text run is not part of the composed image; it is the exact defect Decision 5C eliminates. The mere presence of a `pptx_text_overlays.json` at assembly, or any native (non-notes) on-slide text run in the delivered PPTX, is AF-OVERLAY-DELIVERED, enforced by `scripts/build_deck.py` `_chk_no_overlay`. The gradient ban (Section 2) is enforced inside the prompt + AF-GRAD, not by extracting text to an overlay.
 
-**The native overlay procedure:**
-
-1. In the prompt, where a native-overlay-primary string appears, instruct the model: "Render the visual background and scene only. The string '[HEADLINE]' will be composited as a native text layer in post-processing. Do not render this text in the image."
-2. Record the intended string in `working/checkpoints/pptx_text_overlays.json`:
-   ```json
-   {
-     "slide": "slide-NN",
-     "text": "<exact string>",
-     "font_family": "Montserrat",
-     "font_weight": "Black",
-     "font_size_pt": 78,
-     "color_hex": "#1A1A1A",
-     "position_zone": "lower-left third",
-     "strike": false,
-     "note": "native overlay primary -- gradient-risk string"
-   }
-   ```
-3. The PPTX Assembly Specialist reads `pptx_text_overlays.json` and composites every entry as a native PPTX text box at Phase 6, per the font, size, color, and position declared.
-4. For struck prices, set `"strike": true` and include both the old price (strike=true) and the new price (strike=false) as separate entries.
-
-**Failure mode:** If the PPTX Assembly Specialist cannot composite a native overlay entry (font unavailable, coordinate out of bounds), escalate to the Director. A slide missing its declared native overlay is an AF-TYPE risk and must not ship.
+This SOP's ONLY post-render composite is Rule A — the locked logo IMAGE onto the PNG.
 
 ---
 
@@ -94,6 +75,6 @@ Replace with: flat brand-color hero type (solid brand color, high contrast again
 
 ## 4. OUTPUTS PRODUCED
 
-- `working/renders/slide-NN.png` (overwritten with PIL-composited logo, for every slide)
+- `working/renders/slide-NN.png` (overwritten with PIL-composited logo IMAGE, for every slide)
 - `working/checkpoints/logo_composite_log.json` (one entry per slide)
-- `working/checkpoints/pptx_text_overlays.json` (appended with native-overlay-primary strings)
+- (NO pptx_text_overlays.json — the native-text overlay path is eliminated, Decision 5C; its presence is AF-OVERLAY-DELIVERED)

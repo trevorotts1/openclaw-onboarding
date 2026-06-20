@@ -111,3 +111,30 @@ A deck whose `process_manifest.json` is not finalized, or is missing any require
 - The pipeline map (CLIENT-WEBINAR-DECK-SOP §0): the ordered phase list this manifest attests to.
 - `scripts/build_deck.py` process preflight: the deterministic renderer already refuses to render without the upstream dept artifacts; this manifest extends that guarantee across the WHOLE stack and makes the attestation machine-readable at the QC gate.
 - The lesson that description alone fails (MASTER-QC-AUTOFAIL-RULESET §0): a phase that is merely told to run can be skipped; a phase whose execution is attested in a gate-read artifact cannot be silently skipped.
+
+---
+
+## 7. DETERMINISTIC RUNNER + PHASE PRECONDITIONS + PHASE-0 PRE-FLIGHT (Decision 3C)
+
+`scripts/run_signature_deck.py` is the deterministic signature-deck runner — a state-machine over `PIPELINE-MANIFEST.json` that ORCHESTRATES the pipeline around `build_deck.py` (which it invokes as a subprocess for the render phase; the render path is never re-implemented or broken).
+
+**Phase order + attestation.** The runner reads `phases[]` from the manifest and walks them in ascending `order`. Each phase's completion is proven by an attestation appended to `working/checkpoints/process_manifest.json` (the same cumulative file Section 1 defines). The runner appends a `phase_attestations[]` entry `{phase_id, owning_role, status, artifact_sha, attested_at}` as each phase clears.
+
+**Phase preconditions — skipping/reordering is structurally impossible (AF-PHASE-SKIPPED).** Before dispatching phase N, the runner asserts (via the shared checker `build_deck.check_phase_preconditions`) that EVERY phase with a lower `order` has an attestation in `process_manifest.json` AND its `produces_artifact` is present. A missing prior attestation is a HARD ABORT (exit 2, **AF-PHASE-SKIPPED**) naming the missing phase. Phase N+1 literally reads phase N's attestation as a precondition, so a phase cannot be silently skipped or reordered.
+
+**Owner-authorized skip (the only exception — NOT a free flag).** A phase may be skipped ONLY with a logged owner approval in `working/checkpoints/phase_skip_approvals.json`:
+```json
+{ "approvals": [
+  { "phase_id": "P3-ARC", "owner_approved": true,
+    "approved_by": "<owner id>", "reason": "pitchless deck — no offer arc",
+    "timestamp": "2026-06-20T00:00:00Z" } ] }
+```
+The runner records the skipped phase as `status: "skipped_owner_authorized"`. Absent the signed record, the precondition is unmet and the run aborts — the approval file is the only thing that authorizes a skip.
+
+**Phase-0 pre-flight (mandatory, before ANY dispatch/render).**
+1. `detect_platform(run_dir)` records `box_type` (mac -> fewer render workers; vps -> more) into the brief/attestation. REUSED from `build_deck.py`, not re-implemented.
+2. **Kie.ai balance pre-flight (AF-KIE-BALANCE):** `GET https://api.kie.ai/api/v1/chat/credit` reads the live credit balance; if `balance < estimated_floor` (`slide_count x PER_SLIDE_CREDIT_ESTIMATE x KIE_BALANCE_FLOOR_MULTIPLIER`) the runner HARD-ABORTS (exit 4) BEFORE a single slide is dispatched, so a run never dies mid-deck and burns credits on a partial render. This is the shared `build_deck.kie_balance_preflight` — `build_deck.py main()` runs the same gate at Phase-0 before its own render fan-out.
+
+**`--adhoc` escape (owner-authorized + logged).** `--adhoc` is REFUSED unless `working/checkpoints/adhoc_authorization.json` carries `{owner_approved:true, approved_by, reason, timestamp}`. With it, the runner prints the loud non-deliverable banner and relaxes the phase preconditions + balance pre-flight; the output is explicitly NOT a process-compliant client deliverable. Without the logged record, `--adhoc` is not a free flag.
+
+**Lockstep.** `AF-PHASE-SKIPPED` is `enforced_by: runner` (py_symbol null — out of the build_deck Guard-A set by design); `AF-KIE-BALANCE` is `enforced_by: build_deck` (py_symbol `kie_balance_preflight`, with `KIE_CREDIT_URL` / `PER_SLIDE_CREDIT_ESTIMATE` / `KIE_BALANCE_FLOOR_MULTIPLIER` / `_fetch_kie_balance` as secondary symbols), and has a negative test in `scripts/test_preflight.py`.

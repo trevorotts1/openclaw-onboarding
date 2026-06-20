@@ -1,5 +1,5 @@
 {
-  "manifest_version": 12,
+  "manifest_version": 14,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -200,7 +200,11 @@
       ],
       "produces_artifact": "working/copy/intake.json",
       "gate_codes": [
-        "AF-SLIDE-COUNT-FLOOR"
+        "AF-SLIDE-COUNT-FLOOR",
+        "AF-ASSET-QUESTION-MISSING",
+        "AF-MANIFEST-UNREFERENCED",
+        "AF-SCRATCH-PARSE-SKIPPED",
+        "AF-PITCH-FLAG-UNSET"
       ],
       "preflight": {
         "required": true,
@@ -212,6 +216,26 @@
           "required": true,
           "checker": "_chk_slide_count_floor",
           "label": "slide-count floor (output slides >= target_talk_minutes x 1.3 slides/min; a 30-min/10-slide deck AUTO-FAILS; AF-SLIDE-COUNT-FLOOR)"
+        },
+        {
+          "required": true,
+          "checker": "_chk_asset_question",
+          "label": "asset-intake question asked (intake records asset_intake_question_asked:true — the one question about photos/logo/colors/rough deck/slides/concepts; AF-ASSET-QUESTION-MISSING)"
+        },
+        {
+          "required": true,
+          "checker": "_chk_assets_manifest",
+          "label": "provided assets consumed (assets_manifest.json records each provided asset with a public_url + non-empty consumed_by; AF-MANIFEST-UNREFERENCED)"
+        },
+        {
+          "required": true,
+          "checker": "_chk_scratch_parse",
+          "label": "scratch deck parsed (uploaded old deck extracted to scratch_seed.json and seeded into the PRD; interview still runs in full; AF-SCRATCH-PARSE-SKIPPED)"
+        },
+        {
+          "required": true,
+          "checker": "_chk_pitch_flag",
+          "label": "pitch_included captured (intake.json carries an explicit boolean pitch_included; AF-PITCH-FLAG-UNSET)"
         }
       ]
     },
@@ -268,7 +292,8 @@
       "produces_artifact": "working/copy/arc_allocation.json",
       "gate_codes": [
         "AF-COVERAGE-1",
-        "AF-PITCH-MISSING"
+        "AF-PITCH-MISSING",
+        "AF-PITCH-LEAK"
       ],
       "preflight": {
         "required": true,
@@ -279,7 +304,12 @@
         {
           "required": true,
           "checker": "_chk_pitch",
-          "label": "offer ladder + re-pitch (arc carries value-stack/anchor/price ladder beats AND a re-pitch after FINAL; AF-PITCH-MISSING)"
+          "label": "offer ladder + re-pitch (CONDITIONAL on pitch_included:true \u2014 arc carries value-stack/anchor/price ladder beats AND a re-pitch after FINAL; AF-PITCH-MISSING). Pitchless decks (pitch_included:false) defer this and are governed by AF-PITCH-LEAK instead."
+        },
+        {
+          "required": true,
+          "checker": "_chk_pitch_leak",
+          "label": "pitchless integrity (pitch_included:false decks carry NO offer/price/ladder/re-pitch content and no price_ladder.json; AF-PITCH-LEAK)"
         }
       ]
     },
@@ -389,7 +419,8 @@
         "AF-RENDERER",
         "AF-MODEL-SOVEREIGNTY",
         "AF-NO-VISION-QC",
-        "AF-I14"
+        "AF-I14",
+        "AF-KIE-BALANCE"
       ],
       "preflight": null,
       "emits": {
@@ -429,7 +460,8 @@
       ],
       "produces_artifact": "*-FINAL.pptx",
       "gate_codes": [
-        "AF-CONVERTER-PARITY"
+        "AF-CONVERTER-PARITY",
+        "AF-OVERLAY-DELIVERED"
       ],
       "preflight": null,
       "emits": {
@@ -996,9 +1028,12 @@
       "stage": "3",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the converting arc (arc_allocation.json) carries no offer-ladder beats (value-stack -> anchor -> price drops) OR no re-pitch beat after the FINAL price \u2014 a teaching dump that never asks for the sale, or asks once and never recovers a 'no'",
+      "trigger": "CONDITIONAL on intake.json.pitch_included:true. When the client said the deck ends with an offer/pitch, the converting arc (arc_allocation.json) carries no offer-ladder beats (value-stack -> anchor -> price drops) OR no re-pitch beat after the FINAL price \u2014 a teaching dump that never asks for the sale, or asks once and never recovers a 'no'. DEFERS for pitchless decks (pitch_included:false), which are first-class and governed by AF-PITCH-LEAK; defers when the flag is unset (AF-PITCH-FLAG-UNSET owns that).",
       "enforced_by": "build_deck",
-      "py_symbol": "_chk_pitch"
+      "py_symbol": "_chk_pitch",
+      "secondary_py_symbols": [
+        "_intake_pitch_included"
+      ]
     },
     {
       "code": "AF-CREATIVITY",
@@ -1074,6 +1109,178 @@
       "trigger": "dark/black background keywords (e.g. 'dark background', 'black background', 'dark theme', 'near-black', 'dark slide', 'dark mode') or near-black hex/rgb colors detected in working/prompts/*.txt or working/research/design-brief-*.md without client_dark_theme:true in intake.json. Slides MUST use LIGHT/bright backgrounds by default; dark is opt-in by explicit client request only.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_no_dark_slides"
+    },
+    {
+      "code": "AF-CADENCE",
+      "stage": "1Q/6",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "a price-drop rung's slide window does not run the four-beat cadence loop VALUE_ADD -> PROMISE -> REPITCH_MINI -> COST_OF_INACTION in monotonic slide order. Layers the per-rung ORDERING requirement on top of AF-C7's global price-drop<->value floor; the two do not contradict.",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/pitch_engines_check.py::chk_cadence",
+      "sop_ref": "SOP-PITCH-06-PITCH-ENGINES.md#1.1"
+    },
+    {
+      "code": "AF-NO-COST-OF-INACTION",
+      "stage": "1Q/6",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the deck never states the cost of NOT acting: price_ladder.json.cost_of_inaction_slide is null/absent, or no COST_OF_INACTION arc beat is tagged in slides_copy.md. Promotes offer SOP 9.6 from 'flag as a doctrine gap' to a hard gate.",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/pitch_engines_check.py::chk_cost_of_inaction",
+      "sop_ref": "SOP-PITCH-06-PITCH-ENGINES.md#1.2"
+    },
+    {
+      "code": "AF-GUARANTEE-GENERIC",
+      "stage": "1Q/6",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "the guarantee is a bare refund-template phrase (money-back / 30-day / refund / satisfaction guaranteed / no-questions-asked) with no client-specific felt frame: price_ladder.json.guarantee.statement reduces to a generic template AND no guarantee_felt_frame is supplied. The mechanical anti-generic half is the hard trigger; the felt-vs-generic VERDICT is logged to copy_qc_report.json.",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/pitch_engines_check.py::chk_guarantee_generic",
+      "sop_ref": "SOP-PITCH-06-PITCH-ENGINES.md#1.3"
+    },
+    {
+      "code": "AF-NO-BRANDED-METHOD",
+      "stage": "1Q",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "generic intake content but ZERO named-method beat: no NAMED_METHOD arc beat in slides_copy.md AND no intake.json.named_methodology. Generic content ships at generic prices; the department must PROPOSE a branded-method name for owner approval rather than leave the deck method-less. De-inverts the retired hard 'never fabricate a methodology name' ban.",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/pitch_engines_check.py::chk_branded_method",
+      "sop_ref": "SOP-PITCH-06-PITCH-ENGINES.md#1.4"
+    },
+    {
+      "code": "AF-METHOD-FABRICATED",
+      "stage": "1Q",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "a NAMED_METHOD beat appears on a slide with NEITHER a client-supplied intake.json.named_methodology NOR an owner_approved:true record in working/copy/method_name_approval.json. Catches silent invention; owner-approved or client-supplied naming is required, silent fabrication stays banned.",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/pitch_engines_check.py::chk_branded_method",
+      "sop_ref": "SOP-PITCH-06-PITCH-ENGINES.md#1.4"
+    },
+    {
+      "code": "AF-NO-TIME-TO-RESULT",
+      "stage": "1Q",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "no EXPECTATION beat stating how long the result takes: no EXPECTATION arc beat in slides_copy.md, or the beat carries no duration token (day/week/month/session/hour/minute), or intake.json.time_to_result is absent (the timeframe must be sourced from intake, never fabricated).",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/pitch_engines_check.py::chk_time_to_result",
+      "sop_ref": "SOP-PITCH-06-PITCH-ENGINES.md#1.5"
+    },
+    {
+      "code": "AF-SPEECH-HOOK-COUNT",
+      "stage": "Speech-QC",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the canonical hook is sung fewer than 5 or more than 20 times in PRESENTERS-SPEECH.md (char-exact to intake.json.hook). Below 5 = under-sung; above 20 = wallpaper. The slide-side visual ceiling (AF-HOOK-1 / AF-C2, 3-4 dedicated slides) is UNCHANGED: visual ceiling vs spoken floor, reconciled in SOP-SLIDE-03. CONDITIONAL: defers when the speech is absent at pre-speech phase.",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/pitch_engines_check.py::chk_speech_hook_count",
+      "sop_ref": "SOP-PITCH-06-PITCH-ENGINES.md#1.8"
+    },
+    {
+      "code": "AF-ASSET-QUESTION-MISSING",
+      "stage": "Intake",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Decision 1C. intake.json does not record asset_intake_question_asked:true. Every signature run MUST ask the client the one asset-intake question (anything they already have — photos, a logo, brand colors, a rough/old deck, slides, or concepts) and record that it was asked. Defers (passes) only when intake.json is absent (AF-SLIDE-COUNT-FLOOR / _chk_intake own intake absence).",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_asset_question",
+      "secondary_py_symbols": [
+        "_read_intake_obj"
+      ]
+    },
+    {
+      "code": "AF-MANIFEST-UNREFERENCED",
+      "stage": "Intake/2",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Decision 1C. The client provided assets but assets_manifest.json is absent/invalid, OR a provided asset is not provably consumed downstream — it lacks a resolvable public_url and/or a non-empty consumed_by list (so it is never fed to the Brand Steward + Slide Image Creator as gpt-image-2 input_urls). Collected-but-ignored assets fail. Defers when no assets were provided.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_assets_manifest",
+      "secondary_py_symbols": [
+        "_read_assets_manifest"
+      ]
+    },
+    {
+      "code": "AF-SCRATCH-PARSE-SKIPPED",
+      "stage": "Intake/PRD",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Decision 1C. assets_manifest.json records a client scratch/old deck was provided (scratch_deck.provided:true) but it was not parsed (scratch_deck.parsed not true), OR working/copy/scratch_seed.json is absent/invalid, OR the PRD (mission_prd.json) shows no seeded scratch content. The interview still runs in full; the seed only seeds the PRD. Defers when no scratch deck was uploaded.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_scratch_parse"
+    },
+    {
+      "code": "AF-PITCH-FLAG-UNSET",
+      "stage": "Intake/1",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Decision 2A. intake.json.pitch_included is missing or not a boolean at intake. The deck must capture an EXPLICIT yes/no (yes = the presentation ends with an offer/pitch; no = a teaching/content-only presentation). It is non-defaultable — a deck must never silently inherit 'has a pitch'. Defers when intake.json is absent (_chk_intake owns that).",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_pitch_flag",
+      "secondary_py_symbols": [
+        "_read_intake_obj"
+      ]
+    },
+    {
+      "code": "AF-PITCH-LEAK",
+      "stage": "3/QC",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Decision 2A. A PITCHLESS deck (intake.json.pitch_included:false) carries pitch/price/offer content: a price_ladder.json exists (the Offer Price Strategist ran), or arc_allocation.json / slides_copy.md contain suppressed sale-mechanic tokens (price ladder, value stack, anchor price, re-pitch, cost of inaction, buy now, payment plan, etc.). Pitchless is first-class: the pitch machinery is SUPPRESSED and no pitch content may appear. Defers when pitch_included is true (AF-PITCH-MISSING governs) or unset (AF-PITCH-FLAG-UNSET governs).",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_pitch_leak",
+      "secondary_py_symbols": [
+        "_intake_pitch_included",
+        "PITCHLESS_FORBIDDEN_TOKENS"
+      ]
+    },
+    {
+      "code": "AF-KIE-BALANCE",
+      "stage": "Phase-0",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Decision 3C. Phase-0 Kie.ai balance pre-flight. The live credit balance (GET https://api.kie.ai/api/v1/chat/credit) is below the estimated floor for this deck (slide_count x PER_SLIDE_CREDIT_ESTIMATE x KIE_BALANCE_FLOOR_MULTIPLIER), OR the balance could not be verified. HARD-ABORTS before any slide is dispatched so a run never dies mid-deck. An unverifiable balance is never treated as 'enough'.",
+      "enforced_by": "build_deck",
+      "py_symbol": "kie_balance_preflight",
+      "secondary_py_symbols": [
+        "KIE_CREDIT_URL",
+        "PER_SLIDE_CREDIT_ESTIMATE",
+        "KIE_BALANCE_FLOOR_MULTIPLIER",
+        "_fetch_kie_balance"
+      ]
+    },
+    {
+      "code": "AF-PHASE-SKIPPED",
+      "stage": "Runner",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Decision 3C. The deterministic signature runner (scripts/run_signature_deck.py) dispatched a phase without every lower-order phase having an attestation in working/checkpoints/process_manifest.json AND its produces_artifact present — and no logged OWNER-AUTHORIZED skip record (working/checkpoints/phase_skip_approvals.json owner_approved:true) covers the missing phase. Phase N+1 reads phase N's attestation as a precondition, so skipping/reordering a phase is structurally impossible except via an explicit, logged owner authorization (not a free flag).",
+      "enforced_by": "runner",
+      "py_symbol": null
+    },
+    {
+      "code": "AF-OVERLAY-DELIVERED",
+      "stage": "5/6/Postflight",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "Decision 5C. The native PPTX text/element-overlay path is ELIMINATED. Fires when an eliminated pptx_text_overlays.json file is present in the run dir (its mere presence at assembly is a violation), OR any delivered slide carries a native (non-notes) on-slide text run instead of a single composed gpt-image-2 image. Persistent garble escalates to a re-prompt/re-seed loop then human escalation — never a native overlay. Strengthens (does not replace) AF-BAKED / AF-I14. The only legitimate PPTX text part is the off-slide speaker-notes pane.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_no_overlay",
+      "secondary_py_symbols": [
+        "OVERLAY_FORBIDDEN_FILES",
+        "_delivered_pptx_native_text"
+      ]
     }
   ],
   "roles": [

@@ -552,14 +552,33 @@ generate_rate_gate() {
       return 0
     fi
 
-    # The agent MUST now self-rate this artifact 1-10 against QUALITY-GATE.md
-    # and QC it, writing .qualityRatings.<key>.{score,qc,note} into state.
+    # BUG B FIX (8.5 self-rating gate held artifacts): the rating used to depend
+    # ENTIRELY on a human/agent writing .qualityRatings.<key> — so an UNATTENDED
+    # run (resume cron's `nohup bash run-closeout.sh`) never got a rating, every
+    # artifact stayed null, and was HELD silently forever. We now RUN a
+    # deterministic rate+QC step that ALWAYS writes a real rating (pass or fail
+    # with a reason) so the gate can RELEASE on pass or fail LOUD — never leave
+    # .qualityRatings null with the artifact silently held. An agent that wants a
+    # higher subjective bar can still overwrite this rating before this point.
     score=$(gate_get_score "$key")
     qc=$(gate_get_qc "$key")
     if [[ -z "$score" ]]; then
-      log "WARN" "gate[$key]: artifact NOT YET RATED by agent. Agent must self-rate 1-10 against QUALITY-GATE.md and write .qualityRatings.$key.{score,qc,note} before delivery. Holding pending rating."
+      RATE_SCRIPT="$SKILL_DIR/scripts/qc-rate-artifacts.sh"
+      if [[ -f "$RATE_SCRIPT" ]]; then
+        log "INFO" "gate[$key]: no agent rating present -- running deterministic rate+QC (qc-rate-artifacts.sh --key $key)"
+        ZHC_STATE_FILE="$STATE_FILE" ZHC_LOG_FILE="$LOG_FILE" ZHC_QUALITY_MIN="$ZHC_QUALITY_MIN" \
+          bash "$RATE_SCRIPT" --key "$key" --state "$STATE_FILE" >>"$LOG_FILE" 2>&1 || \
+          log "WARN" "gate[$key]: qc-rate-artifacts.sh returned non-zero (see log)"
+        score=$(gate_get_score "$key")
+        qc=$(gate_get_qc "$key")
+      else
+        log "WARN" "gate[$key]: qc-rate-artifacts.sh not found at $RATE_SCRIPT -- cannot auto-rate"
+      fi
+    fi
+    if [[ -z "$score" ]]; then
+      log "ERROR" "gate[$key]: artifact STILL has no rating after deterministic rater (qualityRatings.$key null). FAILING LOUD: holding for human review rather than shipping unrated."
       eval "GATE_${name}_RESULT=held"
-      state_set ".qualityHeld = ((.qualityHeld // []) + [\"$key\"] | unique)" || true
+      state_set ".qualityHeld = ((.qualityHeld // []) + [\"$key\"] | unique) | .closeoutHoldReason = \"quality-gate: $key has no rating (auto-rater could not score it)\"" || true
       return 0
     fi
 
@@ -895,12 +914,16 @@ soft_failed=()
 if (( ${#critical_failed[@]} > 0 )); then
   reason="critical-failed: $(IFS=,; echo "${critical_failed[*]}")"
   [[ ${#soft_failed[@]} -gt 0 ]] && reason="$reason; soft-failed: $(IFS=,; echo "${soft_failed[*]}")"
-  state_set ".closeoutStatus = \"failed\" | .closeoutFailureReason = \"$reason\" | .closeoutCompletedAt = \"$(now_iso)\""
+  # BUG A FIX: record the failed critical legs as named pending slots AND a
+  # sticky closeoutCriticalFailed marker so the resume cron's ghost-closeout
+  # guard can SEE this critical failure and refuse to self-stamp done over it.
+  crit_json=$(printf '%s\n' "${critical_failed[@]}" | jq -R . | jq -s .)
+  state_set ".closeoutStatus = \"failed\" | .closeoutFailureReason = \"$reason\" | .closeoutPendingSlots = $crit_json | .closeoutCriticalFailed = $crit_json | .closeoutCompletedAt = \"$(now_iso)\""
   log "ERROR" "closeout finalize: $reason"
   exit 1
 elif (( ${#soft_failed[@]} > 0 )); then
   partial=$(printf '%s\n' "${soft_failed[@]}" | jq -R . | jq -s .)
-  state_set ".closeoutStatus = \"partial\" | .closeoutPartialArtifacts = $partial | .closeoutCompletedAt = \"$(now_iso)\""
+  state_set ".closeoutStatus = \"partial\" | .closeoutPartialArtifacts = $partial | .closeoutPendingSlots = $partial | .closeoutCompletedAt = \"$(now_iso)\""
   log "WARN" "closeout finalize: partial -- soft-failed: ${soft_failed[*]}"
   exit 0
 else
@@ -1035,7 +1058,12 @@ else
     lr_kill "interview-nudge" 2>/dev/null || true
   fi
 
-  state_set ".closeoutStatus = \"done\" | .closeoutCompletedAt = \"$(now_iso)\""
-  log "INFO" "closeout complete -- closeoutStatus=done (PRD-2.8: all 7 closeoutDeliverables legs written, resume cron removed)"
+  # BUG A FIX: this is the VERIFIED done path (phantom guard + telegram-delivery
+  # confirmation both passed above). Clear any sticky critical-failure marker /
+  # pending slots from a prior failed attempt so the cron guard does not block a
+  # genuinely-recovered closeout.
+  state_set ".closeoutStatus = \"done\" | .closeoutCompletedAt = \"$(now_iso)\" | .closeoutPendingSlots = [] | del(.closeoutCriticalFailed) | .closeoutFailureReason = null" || \
+    state_set ".closeoutStatus = \"done\" | .closeoutCompletedAt = \"$(now_iso)\""
+  log "INFO" "closeout complete -- closeoutStatus=done (PRD-2.8: all 7 closeoutDeliverables legs written + critical legs verified, resume cron removed)"
   exit 0
 fi

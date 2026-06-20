@@ -2,6 +2,11 @@
 # apply-fleet-standards.sh — Idempotent enforcer for the OpenClaw fleet standard:
 #   • Sub-agents fully permitted (spawn + exec + read/write across all agents)
 #   • tools.exec: security=full, ask=off (TOP-LEVEL only — valid on 2026.6.1+)
+#   • GOAL-4 D4 (4B+4C): FULL fleetwide exec/approval UNGATE + a no-refusal tool
+#     baseline at agents.defaults.tools.allow=["*"] so NO department/sub-agent ever
+#     refuses a job (exec, file ops, web, MCP, Kie HTTP). The CEO/main per-agent
+#     deny is RE-ASSERTED after the baseline (restrict-only precedence keeps the
+#     CEO gated while every other agent inherits the wide-open baseline).
 #   • Telegram media limit 50 MB (inbound + outbound)
 #   • WhatsApp PERMANENTLY DISABLED (fleet-wide, non-negotiable — see FLEET-STANDARDS.md §3)
 #
@@ -9,6 +14,17 @@
 #   and causes "agents.defaults: Invalid input" / auto-revert by doctor --fix.
 #   Only the top-level tools.exec is valid. Generation depts get per-agent
 #   tools.allow set by build-workforce.py, not by this canonical block.
+#
+# GOAL-4 D4 COORDINATION (with Goal-5 CEO tool-gate):
+#   The no-refusal baseline is agents.defaults.tools.ALLOW (valid on 2026.6.1+ —
+#   unlike agents.defaults.tools.EXEC, which is the poison key). Under OpenClaw's
+#   RESTRICT-ONLY tool-policy precedence (docs.openclaw.ai/tools/
+#   multi-agent-sandbox-tools: "each level can further restrict tools, but cannot
+#   grant back denied tools from earlier levels"), a per-agent deny on `main`
+#   STILL restricts even though defaults allow ["*"]. So the wide-open baseline
+#   frees departments + sub-agents WITHOUT re-opening the CEO. The CEO deny
+#   re-assert below runs AFTER the baseline merge to make the order explicit and
+#   self-documenting.
 #
 # Why a script and not `openclaw config set`:
 #   Per-agent overrides in agents.list[] override global defaults. The schema
@@ -102,6 +118,21 @@ CANONICAL = {
             "subagents": {
                 "allowAgents": ["*"],
                 "requireAgentId": False
+            },
+            # GOAL-4 D4 (4B+4C) — NO-REFUSAL TOOL BASELINE.
+            # agents.defaults.tools.allow=["*"] is the positive baseline that
+            # guarantees EVERY agent — departments + their sub-agents — can run
+            # exec / file ops / web / MCP / Kie HTTP without ever refusing a job.
+            #   • This is the VALID defaults-level key (allow), NOT the poison key
+            #     (exec). agents.defaults.tools.ALLOW validates on 2026.6.1+;
+            #     agents.defaults.tools.EXEC does not (see v11.3.1 note above).
+            #   • Under RESTRICT-ONLY precedence the per-agent CEO deny (main)
+            #     re-asserted below STILL wins, so this wildcard does NOT re-open
+            #     the CEO's denied production tools.
+            #   • If a future gateway rejects ["*"] here, replace it with explicit
+            #     group grants: ["group:runtime","group:fs","group:web","group:plugins"].
+            "tools": {
+                "allow": ["*"]
             }
         }
     },
@@ -146,6 +177,83 @@ if "agents" in cfg and "list" in cfg["agents"]:
                 agent_name = agent.get("name", "unknown")
                 print(f"[apply-fleet-standards] fixing agent '{agent_name}' allowAgents → ['*']")
                 agent["subagents"]["allowAgents"] = ["*"]
+
+# GOAL-5 Item 1 + GOAL-4 D4 COORDINATION GUARD — RE-ASSERT CEO tool-gate.
+# Two fleet-wide opens precede this re-assert and BOTH must be prevented from
+# re-opening the CEO's denied production tools:
+#   (1) agents.defaults.subagents.allowAgents=["*"] — re-opens sub-agent spawning.
+#   (2) agents.defaults.tools.allow=["*"]          — the GOAL-4 no-refusal baseline.
+# Neither re-opens the CEO because OpenClaw tool policy is RESTRICT-ONLY: a
+# per-agent deny on `main` (and the deny a spawned sub-agent inherits from its
+# parent) cannot be granted back by a broader defaults allow. We re-assert the
+# per-agent CEO deny HERE, AFTER the canonical/defaults merge above, so the
+# ungate and the CEO gate never fight and the order is explicit. This is the
+# SAME deny set applied by apply-routing-fix.sh Layer 5 and build-workforce.py.
+# Idempotent: only adds missing entries.
+# KEEP IN SYNC with build-workforce.py (CEO_TOOL_*) and apply-routing-fix.sh L5
+# and hooks/lib-ceo-tool-gate.sh. test-ceo-tool-gate.sh asserts they match.
+_CEO_TOOL_DENY = [
+    "write", "edit", "apply_patch", "browser", "canvas", "image", "process",
+    "ghl-community-mcp__*", "ghl-mcp__*",
+]
+_CEO_TOOL_ALLOW = [
+    "read", "web_fetch", "web_search",
+    "message", "telegram", "slack", "discord",
+    "sessions_send", "sessions_list", "sessions_history",
+    "exec",  # INTERIM — replace with mc-route__route_task once that MCP tool ships
+]
+_CEO_MCP_DENY = {
+    "ghl-community-mcp": {"deny": ["*"]},
+    "ghl-mcp": {"deny": ["*"]},
+}
+
+# Owner-consent carve-out guard: if an owner-consent grant is ACTIVE, the gate
+# is intentionally lifted — re-asserting it here would silently revoke the
+# owner's grant. Skip the re-gate while consent is present (the same single
+# shared sidecar read by src/lib/consent.ts and hooks/lib-ceo-consent.sh).
+import os as _os
+def _ceo_consent_active():
+    cands = []
+    if _os.environ.get("CEO_CONSENT_FILE"):
+        cands.append(_os.environ["CEO_CONSENT_FILE"])
+    cands.append("/data/.openclaw/state/ceo-consent.json")
+    cands.append(_os.path.join(_os.path.expanduser("~"), ".openclaw", "state", "ceo-consent.json"))
+    for c in cands:
+        try:
+            with open(c) as fh:
+                rec = json.load(fh)
+            if isinstance(rec, dict) and rec.get("granted") is True:
+                return True
+        except Exception:
+            continue
+    return False
+
+if _ceo_consent_active():
+    print("[apply-fleet-standards] owner-consent carve-out ACTIVE — skipping CEO tool-gate re-assert (would revoke the owner's grant)")
+elif "agents" in cfg and "list" in cfg["agents"]:
+    for agent in cfg["agents"]["list"]:
+        if agent.get("id") == "main":
+            tools = agent.setdefault("tools", {})
+            deny = tools.setdefault("deny", [])
+            if not isinstance(deny, list):
+                deny = []; tools["deny"] = deny
+            for t in _CEO_TOOL_DENY:
+                if t not in deny:
+                    deny.append(t)
+            allow = tools.setdefault("allow", [])
+            if not isinstance(allow, list):
+                allow = []; tools["allow"] = allow
+            for t in _CEO_TOOL_ALLOW:
+                if t not in allow:
+                    allow.append(t)
+            tools["allow"] = [t for t in allow if t not in deny]  # deny wins
+            by_provider = tools.setdefault("byProvider", {})
+            if not isinstance(by_provider, dict):
+                by_provider = {}; tools["byProvider"] = by_provider
+            for prov, rule in _CEO_MCP_DENY.items():
+                by_provider[prov] = rule
+            print("[apply-fleet-standards] re-asserted CEO tool-gate on main agent (production tools denied)")
+            break
 
 after_json = json.dumps(cfg, sort_keys=True, indent=2)
 
@@ -322,6 +430,25 @@ No agent decides what it will or will not do.
 
 This rule is role-scoped so it reinforces the CEO routing mandate WITHOUT gagging executing
 specialists. Both behaviors — the CEO routing and specialists executing — are equally required.
+
+### POLICY-DENY MEANS ROUTE (block-and-redirect self-correction)
+
+The CEO's production tools (write, edit, exec, browser, image generation, and every
+`ghl-community-mcp__*` / MCP production tool) are GATED behind owner consent. If any tool
+returns a **policy / permission deny** error, that is NOT a bug and NOT something to retry —
+it is the system telling you to **ROUTE**: immediately POST `/api/tasks/ingest` with a
+`department_slug`. Do NOT retry the denied tool, do NOT spawn a sub-agent to do the denied
+work, and do NOT seek an un-gated alternate tool. The gate opens ONLY via an explicit
+owner-consent grant. Until then: a deny = route.
+
+### NO BOUNCE-BACK (department specialists)
+
+A department specialist MAY NOT return a properly-routed task to the CEO citing CEO competence,
+triviality, or "the CEO should do this." A handback is ONLY valid when it names a CONCRETE
+MISSING INPUT — a specific data field, credential, asset, decision, or access that was required
+and not provided (`missing_input: { kind, name, why_blocking }`). A handback without a named
+missing input is auto-rejected (HTTP 422): the task stays with the SAME specialist and is
+re-dispatched. The CEO never inherits work via a bounce.
 
 ---
 

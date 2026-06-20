@@ -16,7 +16,7 @@ This department does not "make slides." It runs NINE INTELLIGENCE ENGINES agains
 
 > THE IMAGE MUST REFLECT WHAT THE WORDS SAY, AND THE WORDS MUST MATCH WHAT THE IMAGE REFLECTS. Any slide where the picture and the copy tell different stories is a defect (AF-WORD-IMAGE-MISMATCH).
 
-**The nine engines:** 1 Facial - 2 Lighting - 3 Typography - 4 Story - 5 World - 6 Pricing - 7 Hook - 8 Recap - 9 Product (roadmap).
+**The engines:** 1 Facial - 2 Lighting - 3 Typography - 4 Story (incl. villain->hero ordering) - 5 World - 6 Pricing - 7 Hook - 8 Recap - 9 Product (roadmap) - 10 Emotional (felt-stakes, NEW 2026-06-20). The Representation HAIR engine is enforced via the Brand Steward (SOP 9.2b) and registered as AF-HAIR-INAUTHENTIC.
 
 ---
 
@@ -66,7 +66,9 @@ This department does not "make slides." It runs NINE INTELLIGENCE ENGINES agains
 
 **Failure modes (auto-failed at QC).** A different stock person on every slide where continuity was intended; an image that contradicts the narrative beat; "decorative" imagery with no story job.
 
-[CROSS-REF] NEW capability. It conflicted with the prior line in slide-image-creator-sops.md Part D ("Consistency is a color and light property, not a composition property"), which silently blocked same-character continuity. That line was AMENDED by this update to carve out a STORY_CHARACTER exception: when a slide is tagged `STORY_CHARACTER:<id>`, the same person identity is held across its slides (image-to-image with a locked character reference), aged per the beat. New auto-fail: AF-STORY-CHARACTER-DRIFT.
+**Story narrative ordering -- VILLAIN before HERO (the 2026-06-20 addition).** Story Intelligence is not only VISUAL character continuity; it is the NARRATIVE arc itself: problem -> promise, and specifically VILLAIN -> HERO. "No one cares about the hero until they meet the villain." The arc must carry an explicit VILLAIN/antagonist beat (the broken system, the old way, the lie they've been told, the thing actually stopping them) that PRECEDES the HERO/solution/promise beat. The Slide Copywriter writes and tags these beats (`VILLAIN`, `HERO` -- slide-copywriter-sops.md SOP 9.7 step 23); the Director reserves the ordering in `arc_allocation.json`. Detection is mechanical: scan `slides_copy.md` arc tags in slide order; a missing villain, or a villain that appears after the hero, fails. New auto-fail: AF-NO-VILLAIN (deck-level; SOP-STORY-01; SOP-SLIDE-00 §8b; checker `scripts/intelligence_engines_check.py --phase copy`). ORTHOGONAL to AF-STORY-CHARACTER-DRIFT (the two never both fire on one finding).
+
+[CROSS-REF] NEW capability. It conflicted with the prior line in slide-image-creator-sops.md Part D ("Consistency is a color and light property, not a composition property"), which silently blocked same-character continuity. That line was AMENDED by this update to carve out a STORY_CHARACTER exception: when a slide is tagged `STORY_CHARACTER:<id>`, the same person identity is held across its slides (image-to-image with a locked character reference), aged per the beat. New auto-fails: AF-STORY-CHARACTER-DRIFT (visual continuity) and AF-NO-VILLAIN (villain->hero narrative ordering).
 
 ---
 
@@ -132,6 +134,28 @@ This department does not "make slides." It runs NINE INTELLIGENCE ENGINES agains
 
 ---
 
+### Engine 10 - EMOTIONAL INTELLIGENCE  [NEW 2026-06-20]
+
+**Definition.** The deck makes the audience FEEL the cost of inaction in concrete HUMAN terms, not abstract ones. Its signature device is the felt-stakes quantifier -- "3,285 mornings left" -- a real NUMBER fused to a personal-loss frame, landed BEFORE the offer so the audience feels what's at stake before they see a price. This is the emotional twin of Pricing Intelligence's "promise precedes price": felt-stakes precede the close.
+
+**How to verify it landed.** At least one FELT_STAKES slide exists before the first ladder beat (ANCHOR/BUILDUP/DROP/FINAL), pairing a concrete number with a personal-loss frame ("mornings left", "days you'll never get back", "every day you wait costs you"). Read the deck in order: the audience feels the cost before the offer arrives.
+
+**Failure modes (auto-failed at QC).** No felt-stakes slide anywhere (stakes stated only abstractly); a felt-stakes slide placed AFTER the offer ladder (too late to do its job); a fabricated number (the figure must come from the Deep Research brief or intake, never invented).
+
+[CROSS-REF] NEW. Owned by the Slide Copywriter (copy + `FELT_STAKES` beat tag -- slide-copywriter-sops.md SOP 9.7 step 22) and the Deep Research Specialist (the real number). It survived before only as element 13 MOOD + copy-QC `SP-SEE`/`SP-JOURNEY` with no required beat; this promotes it to a first-class engine with a deck-level gate. New auto-fail: AF-NO-FELT-STAKES (deck-level; SOP-SLIDE-00 §8b; checker `scripts/intelligence_engines_check.py --phase copy`).
+
+---
+
+### THE PERCEPTUAL-ENGINE MECHANICAL-HALF DOCTRINE (Facial / World / Lighting / Hair) [NEW 2026-06-20]
+
+Four engines above (Facial=1, Lighting=2, World=5) plus the Representation HAIR engine are irreducibly perceptual at the VERDICT layer -- "does the face read the slide's emotion", "would this person be in this room", "is this subject lit for their skin tone", "is the hair authentic". Per the binding doctrine *a rule that cannot be mechanically checked is not a rule*, each is split into two halves:
+- a MECHANICAL half (the GATEABLE half) -- a required token string MUST be present in the people/scene prompt, asserted deterministically at Prompt QC by `scripts/intelligence_engines_check.py --phase prompt`. This is the hard auto-fail trigger. Codes: AF-FACE-PROMPT-MISSING (expression token), AF-WORLD-SCALE (setting + believability justification), AF-LIGHT-PROMPT-MISSING (key/fill/rim direction + rim/hair light), AF-HAIR-INAUTHENTIC (age-banded hairstyle-catalog token).
+- a VISION VERDICT half -- the perceptual call, graded at Image-QC and LOGGED to `working/qc/vision_qc_log.json` (already required non-empty by AF-NO-VISION-QC). Codes: AF-FACE-MOOD, AF-WORD-IMAGE-MISMATCH/world-grounding, AF-LIGHT-SKINTONE, the plastic-hair read.
+
+This is how the Slide-00 binary-auto-fail principle is kept literally true for perceptual engines. Producing-role doctrine: slide-image-creator-sops.md SOP 9.3b (prompt-token mandate) and brand-steward-sops.md SOP 9.2b (hairstyle catalog). Registration: SOP-SLIDE-00 §8b + §9 code index. Typography (Engine 3) is already fully mechanical and needs no such split.
+
+---
+
 ## 3. NOTE - IMAGE EDITING IS A LEGO SET
 
 People, races, poses, and scenes are modular: mix and match via image-to-image to build the exact cast a slide needs (this ties to the Personal Photo Shoot skill). The Facial Intelligence engine infers the right expression automatically from the slide copy; the operator does not hand-pose every face. This is the mental model behind the engines, not a separate gate.
@@ -159,6 +183,23 @@ The engines above are CAPABILITIES; the deck-density SOP (SOP-SLIDE-04) and the 
 2. For the NAMING-only engines (Pricing, Hook, Recap) there is no new gate; their existing gates (AF-C7 / AF-DEN, AF-HOOK / AF-C2, c23 / c24 / AF-DEN-7) are the enforcement and this SOP only renames and cross-references them.
 3. For the NEW gates (AF-LIGHT-SKINTONE, AF-TYPE-8THROW, AF-TYPE-SALESY-FONT, AF-STORY-CHARACTER-DRIFT, AF-PRODUCT-INVENTED, AF-PRODUCT-MISSING) and the required-beat gates (AF-NO-FORMULA, AF-NO-MEASURABLE-RESULTS, AF-NO-FORK, AF-NO-BEFORE-AFTER, AF-NO-EXPERT-PROOF, AF-EMPTY-NOTES-PANE, AF-WORD-IMAGE-MISMATCH), see SOP-SLIDE-00 Section 8 for the wired detection method and message.
 4. Loop up to 3 times. On the 4th failure escalate to the Director and ROLE-16 Healer per QC SOP 9.4.
+
+---
+
+## 5.2 REDUNDANT / ALIASED ENGINES (the single authoritative merge map — do NOT add a parallel code)
+
+Several engines named in the June-19 breakdown are REAL devices but are already fully enforced by an existing auto-fail under a different name. They are MERGED here, not given a parallel namespace. Adding a duplicate `AF-NO-SHIFT` / `AF-NO-COMPARISON` / `AF-NO-CHOICE` code would create a second gate for the same beat and is forbidden (it would also create lockstep drift in `sync_check.py`). The mapping below is the authority:
+
+| Breakdown engine / device | MERGED INTO (the live enforcing code) | Why it is the same beat |
+|---|---|---|
+| **Shift** (was / now) | `AF-NO-BEFORE-AFTER` (SOP-SLIDE-04 rule 13) | "was → now" IS the Before & After transformation beat. A separate shift gate would fire on the identical slide. |
+| **Comparison & Contrast** (what it was / what it is) | `AF-NO-BEFORE-AFTER` (SOP-SLIDE-04 rule 13) | The same was/is device. One required before/after pair satisfies both. |
+| **Choice** (DIY-alone vs with-us; two paths) | `AF-NO-FORK` (SOP-SLIDE-04 rule 12) | The Fork-in-the-Road already presents EXACTLY two paths (act / stand still), a check-mark on the chosen path, and the cost of inaction on the unchosen path. "DIY-alone vs with-us" IS that fork; the copy doctrine in SOP-SLIDE-04 rule 12 frames the two branches as act-with-us vs stand-still-alone. No new code. |
+| **Pricing** (Engine 6) | `AF-C7` / `AF-DEN` battery (offer-price-strategist SOP 9.1-9.5, SOP-PITCH-01/02) | NAMING alias only (§5 rule 2); "promise precedes price" is re-homed here, the gates are the slow-drop/value-stack codes. |
+| **Hook** (Engine 7) | `AF-HOOK` / `AF-C2` / `AF-P12` battery (SOP-SLIDE-03) | NAMING alias only; the verbatim-refrain + banded-cadence gates ARE the enforcement. |
+| **Recap** (Engine 8) | `AF-DEN-7` + copy `c23`/`c24` (SOP-PITCH-03 RE-PITCH) | NAMING alias only; the post-FINAL 4-7-slide re-pitch block IS the recap. |
+
+The Pricing / Hook / Recap rows restate §5 rule 2 (the three NAMING-only engines); the Shift / Comparison / Choice rows are the NET-NEW merges added by the 2026-06-20 structure consolidation so the breakdown's full device list maps cleanly onto the existing gates with zero duplicate codes.
 
 ---
 

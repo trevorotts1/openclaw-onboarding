@@ -21,6 +21,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - the GROUNDED_CONTENT variable from intake.json (the client's book / message / offer / methodology) plus any deep-research grounding routed into the image brief: the concrete moments, settings, and props from THIS client's actual method that the imagery must depict (P6 grounding; the World Engine consumes it). If GROUNDED_CONTENT is blank, flag the operator and do not invent a generic stand-in for the client's method.
 - working/research/grounded-content-[DECK_SLUG].json (Category E from ROLE-04 Phase -0.5 -- REQUIRED; load before writing any prompt)
 - working/research/design-brief-[DECK_SLUG].md (Category F from ROLE-04 Phase -0.5 -- REQUIRED; informs composition and grading direction)
+- **(Decision 1C) working/copy/assets_manifest.json** when present — client-provided photo / product / logo assets to CONSUME as gpt-image-2 `input_urls`.
+
+**Step 0c (Decision 1C) — consume client-provided slide assets.** If `working/copy/assets_manifest.json` exists with `assets_provided:true`, before authoring any slide that references a provided subject, read it: for every asset whose `consumed_by` includes `slide-image-creator` (a founder/team photo, a product shot, the logo), pass that asset's `public_url` in the slide prompt's `input.input_urls` (image-to-image) and name it in the prompt ("the [Nth] reference image is the client-provided [founder photo / product]; use it as the source"). A provided photo of the real founder/product is ALWAYS used over an invented stand-in. The gate **AF-MANIFEST-UNREFERENCED** fails the deck if a provided slide asset is recorded but never fed as `input_urls`.
 
 **Real-image-present requirement (AF-I11):** Every non-pure-typography slide must specify a real generated raster (Kie / GPT-Image-2) at >=1920px on the long edge, full-bleed or designed-zone, sourced from the Category E grounded anchor. Decorative icon-font glyphs, single-color clip-art PNGs <=256px, and emoji-as-iconography are FORBIDDEN as slide content art. Concept slides (process, architecture, comparison) must specify a generated diagram-as-image, never text in boxes.
 
@@ -320,6 +323,26 @@ Rules:
 
 ---
 
+### SOP 9.3b -- INTELLIGENCE-ENGINE PROMPT-TOKEN MANDATE (the mechanical half of Facial / World / Lighting / Hair)
+
+**When to run:** as you finalize element 11 (PEOPLE) and the scene/WORLD block on EVERY people/scene slide, before handoff to Prompt QC. Source authority: SOP-ENGINE-00 (Facial / World / Lighting / Representation), SOP-SLIDE-00 §8b.
+
+**The binding principle (why this section exists):** a rule that cannot be mechanically checked is not a rule. The MATCH (does the face read sad, would this person be in this room, is the hair authentic) is an irreducibly perceptual VERDICT graded by vision at Image-QC and logged to `working/qc/vision_qc_log.json`. But the PROMPT is fully deterministic: the required token MUST be present in the prompt text. Prompt QC runs `scripts/intelligence_engines_check.py --phase prompt` over `working/prompts/slide-*.txt` and auto-fails any people/scene prompt missing a required token. This is the hard trigger; the vision verdict is the logged note. Write every token below or your prompt fails at Prompt QC.
+
+**The four required token classes (each a binary auto-fail at Prompt QC):**
+
+1. **FACIAL -> AF-FACE-PROMPT-MISSING.** Every people-prompt names an EXPLICIT expression term from the Expression Vocabulary Table (SOP 9.2 strengthening) — e.g. "brow tension, distant gaze", "relieved, arrived, soft confident smile", "direct to camera, settled, certain, no grin". A bare "smiling" / "smile" with no explicit emotion term does NOT satisfy the gate. Pick the row matching the slide's emotion and write the explicit terms.
+
+2. **WORLD -> AF-WORLD-SCALE.** Every scene-bearing prompt STATES a setting AND a one-line believability/scale justification string. The justification names WHY this person belongs in this room at this moment — "because this is the exact moment our audience feels the pain", "would this exact person actually be in this exact room", "a normal teenager's room: a sports poster and a few trophies, NOT a luxury condo". A setting with no justification fails.
+
+3. **LIGHTING -> AF-LIGHT-PROMPT-MISSING.** Every people-prompt names a key/fill/rim lighting DIRECTION ("a defined key light, soft fill, and a rim light") AND a rim/hair separation-light token ("a light on top of the hair / a separation light along the hair and shoulder edge"), chosen for the cast member's skin tone per the table above. Either missing fails. (This is the prompt-side companion to the render-side AF-LIGHT-SKINTONE verdict.)
+
+4. **HAIR (Representation authenticity) -> AF-HAIR-INAUTHENTIC.** Every people-prompt cites an age-appropriate hairstyle token that is a MEMBER of the age-banded hairstyle catalog the Brand Steward ships at `working/brand/hairstyle_catalog.json`. Until that catalog asset exists, the checker enforces a presence floor (a specific named hairstyle descriptor, not generic "nice hair") and flags the missing catalog. The vision verdict (the "AI plastic hair" failure) is graded at Image-QC. This is ORTHOGONAL to the representation-RATIO audit (AF-R*/AF-CAST), which is unchanged.
+
+**Self-check before handoff:** run `python3 scripts/intelligence_engines_check.py working --phase prompt` on your own prompts; exit 0 means all four token classes are present on every people/scene slide. Do not hand off a prompt set that exits 4.
+
+---
+
 ### SOP 9.4 -- People (Three Engines + Shot Layer), Overlays, and Logo
 
 **When to run:** Within SOP 9.1 -- applied during elements 10, 11, and 8 (LOGO, PEOPLE, OVERLAYS).
@@ -405,13 +428,13 @@ Rules:
 4. Verify: the struck price on this slide matches the PREVIOUS drop price (or ANCHOR_PRICE for Drop 1) in price_ladder.json exactly.
 5. Verify: the new (unhurt) price on this slide matches price_ladder.json for this drop number exactly.
 6. Write steps 2-3 into element 7 (OBJECT PLACEMENT) and element 3 (HEADLINE VERBATIM) of the prompt, overriding the standard placement for price-drop slides.
-7. **Two-failed-attempts native-text fallback (generalized from PRICE text to ALL critical text -- the forensic Dimension-F fix, "native-text fallback only triggered for price text").** The native-text fallback is NOT scoped to price text only. It applies to EVERY critical verbatim string -- every headline, sub-headline, supporting line, kicker label, price, struck price, and any logo wordmark -- whenever that string garbles, misspells, or duplicates twice at image QC (the "hclarity" / "GRABLED BRANDCO" defect class). After TWO failed render attempts on any such text element, trigger the native PPTX text overlay fallback: regenerate the slide WITHOUT the failing text element (the spelling-lock from element 3 having failed twice on the model), and record the exact intended string in working/checkpoints/pptx_text_overlays.json so the PPTX Assembly Specialist composites it as a native text box at Phase 6, where spelling is guaranteed. For a struck price, set `"strike": true` on the entry. Example entries: `{ "slide": "slide-65", "text": "$1,000", "strike": true, "color": "[BRAND_ACCENT]", "note": "old price, strike line failed render x2" }` and `{ "slide": "slide-23", "text": "the example signature hook", "strike": false, "note": "headline garbled to 'hclarity' x2; native text overlay" }`. This is the documented fallback for ANY slide whose verbatim text fails twice on render (master SOP Section 7.4 and 10.1; SOP-DESIGN-04 step 2 extends the same fallback to the logo).
+7. **Garbled-text remedy = RE-PROMPT / RE-SEED loop, then HUMAN ESCALATION (Decision 5C — the native-text overlay path is ELIMINATED, AF-OVERLAY-DELIVERED).** The legacy "two-failed-attempts native-text fallback" is REMOVED. When EVERY critical verbatim string -- a headline, sub-headline, supporting line, kicker label, price, struck price, or logo wordmark -- garbles, misspells, or duplicates at image QC (the "hclarity" / "GRABLED BRANDCO" defect class), you do NOT write a native overlay. Instead: (a) RE-PROMPT the slide (tighten the element-3 spelling-lock, strengthen the negative block) AND RE-SEED it (use a new seed) and re-render the SINGLE composed gpt-image-2 image; (b) if it still garbles, re-prompt/re-seed again within the loop; (c) if the garble PERSISTS after the loop, ESCALATE TO A HUMAN — never paper it over with a native PPTX text box. NEVER write `pptx_text_overlays.json`: its mere presence at assembly is AF-OVERLAY-DELIVERED, and a delivered slide carrying a native (non-notes) on-slide text run instead of a composed image is AF-OVERLAY-DELIVERED. For a struck price that garbles, the same loop applies — re-prompt the drawn-line strike + re-seed, then escalate; do not native-overlay the price. (The LOGO is the only image-composite exception and it is NOT native text: when the model cannot bake the locked logo cleanly, the real logo IMAGE is composited onto the PNG via the PIL image-composite path SOP-IMG-05, baked into the image before assembly.)
 
 **Outputs:**
 - Price-drop slide prompts with the price-tag motif, the drawn-line strike, and new-price formatting instructions
-- working/checkpoints/pptx_text_overlays.json entries (with `strike:true` for struck prices) when the two-failed-attempts fallback is triggered
+- A re-prompt/re-seed render record (and, on persistent garble, a human-escalation note) — NEVER a pptx_text_overlays.json entry
 
-**Hand to:** QC Specialist (for Phase 3 prompt QC, which checks price-drop slides against price_ladder.json); PPTX Assembly Specialist (for any pptx_text_overlays.json fallback entries)
+**Hand to:** QC Specialist (for Phase 3 prompt QC, which checks price-drop slides against price_ladder.json). On persistent garble after the re-prompt/re-seed loop, escalate to a human (the Director) — not to a native overlay.
 
 **Failure mode:** If a price-drop slide's copy in slides_copy.md shows a price that does not match price_ladder.json, halt and flag to the Director: "Price discrepancy on slide N -- slides_copy.md shows $X but price_ladder.json shows $Y. Offer Price Strategist must resolve before prompt can be written."
 
@@ -654,7 +677,7 @@ Do not render any watermark, signature, UI artifact, emoji or clipart glyph, em 
 
 **Hand to:** QC Specialist (step 7 image QC), then PPTX Assembly Specialist (step 8 export to infographic.png in the client bundle).
 
-**Failure mode:** If `checklist_items` is present but contains only one item (or is a degenerate list), flag to the Director before authoring: "infographic checklist has only [N] item(s) -- confirm the client supplied all checklist items or supply them now." Do not produce a one-item infographic. If the image render fails twice: apply the same two-failed-attempts fallback as SOP 9.5 (write an entry to pptx_text_overlays.json so the PPTX Assembly Specialist can composite the checklist as native text over a background image; record `fallback: "native_text"` in infographic_status.json).
+**Failure mode:** If `checklist_items` is present but contains only one item (or is a degenerate list), flag to the Director before authoring: "infographic checklist has only [N] item(s) -- confirm the client supplied all checklist items or supply them now." Do not produce a one-item infographic. If the infographic render garbles: apply the Decision-5C remedy — RE-PROMPT and RE-SEED the infographic image and re-render the single composed gpt-image-2 image; on persistent garble after the loop, ESCALATE TO A HUMAN (record `fallback: "human_escalation"` in infographic_status.json). NEVER write `pptx_text_overlays.json` or composite native text — the native-overlay path is eliminated (AF-OVERLAY-DELIVERED).
 
 ---
 

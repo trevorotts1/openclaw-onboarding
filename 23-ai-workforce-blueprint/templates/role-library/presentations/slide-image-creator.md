@@ -150,7 +150,7 @@ Review the master SOP for any updates to the 15-element spec or the image model.
 - 45-design-intelligence-library/library/_system/NEGATIVE-PROMPTING-SOP.md (read -- the negative-prompt system this role wires into SOP 9.8: the universal baseline avoid-list, the inline-conversion mechanism, the positive-twin rule, the no-contradiction audit)
 - sops/SOP-IMG-01-KIE-CALL-MECHANICS.md (read -- the three Kie.ai modes; the logo-on-slides image-to-image directive lives here)
 - sops/SOP-DESIGN-04-LOGO-CONSISTENCY.md (read -- one locked logo asset, composited image-to-image, never redrawn)
-- working/checkpoints/pptx_text_overlays.json (write -- struck/replacement text entries when the two-failed-attempts native-text fallback fires on ANY critical text element; strike:true for struck prices)
+- (Decision 5C) NO pptx_text_overlays.json — the native-text overlay path is eliminated. Garbled text is fixed by the re-prompt/re-seed loop then human escalation; writing this file (or shipping a native on-slide text run) is AF-OVERLAY-DELIVERED.
 
 ---
 
@@ -526,13 +526,13 @@ Rules:
 4. Verify: the struck price on this slide matches the PREVIOUS drop price (or ANCHOR_PRICE for Drop 1) in price_ladder.json exactly.
 5. Verify: the new (unhurt) price on this slide matches price_ladder.json for this drop number exactly.
 6. Write steps 2-3 into element 7 (OBJECT PLACEMENT) and element 3 (HEADLINE VERBATIM) of the prompt, overriding the standard placement for price-drop slides.
-7. **Two-failed-attempts native-text fallback (generalized from PRICE text to ALL critical text -- the forensic Dimension-F fix, "native-text fallback only triggered for price text").** The native-text fallback is NOT scoped to price text only. It applies to EVERY critical verbatim string -- every headline, sub-headline, supporting line, kicker label, price, struck price, and any logo wordmark -- whenever that string garbles, misspells, or duplicates twice at image QC (the "hclarity" / "GRABLED BRANDCO" defect class). After TWO failed render attempts on any such text element, trigger the native PPTX text overlay fallback: regenerate the slide WITHOUT the failing text element (the spelling-lock from element 3 having failed twice on the model), and record the exact intended string in working/checkpoints/pptx_text_overlays.json so the PPTX Assembly Specialist composites it as a native text box at Phase 6, where spelling is guaranteed. For a struck price, set `"strike": true` on the entry. Example entries: `{ "slide": "slide-65", "text": "$1,000", "strike": true, "color": "[BRAND_ACCENT]", "note": "old price, strike line failed render x2" }` and `{ "slide": "slide-23", "text": "There is a difference between parenting through control and parenting through clarity", "strike": false, "note": "headline garbled to 'hclarity' x2; native text overlay" }`. This is the documented fallback for ANY slide whose verbatim text fails twice on render (master SOP Section 7.4 and 10.1; SOP-DESIGN-04 step 2 extends the same fallback to the logo).
+7. **Garbled-text remedy = RE-PROMPT / RE-SEED loop, then HUMAN ESCALATION (Decision 5C — the native-text overlay path is ELIMINATED, AF-OVERLAY-DELIVERED).** The legacy "two-failed-attempts native-text fallback" is REMOVED. When ANY critical verbatim string -- a headline, sub-headline, supporting line, kicker label, price, struck price, or logo wordmark -- garbles, misspells, or duplicates at image QC (the "hclarity" / "GRABLED BRANDCO" defect class), you do NOT write a native overlay. Instead: (a) RE-PROMPT the slide (tighten the element-3 spelling-lock + negative block) and RE-SEED it (new seed) and re-render the SINGLE composed gpt-image-2 image; (b) repeat the re-prompt/re-seed loop if it still garbles; (c) on PERSISTENT garble, ESCALATE TO A HUMAN — never a native PPTX text box. NEVER write `pptx_text_overlays.json`: its presence at assembly is AF-OVERLAY-DELIVERED, and any native (non-notes) on-slide text run in the delivered deck is AF-OVERLAY-DELIVERED. The same loop applies to a garbled struck price. (The LOGO is the only image-composite exception and is NOT native text: the real logo IMAGE is composited onto the PNG via the PIL path SOP-IMG-05, baked into the image before assembly.)
 
 **Outputs:**
 - Price-drop slide prompts with the price-tag motif, the drawn-line strike, and new-price formatting instructions
-- working/checkpoints/pptx_text_overlays.json entries (with `strike:true` for struck prices) when the two-failed-attempts fallback is triggered
+- A re-prompt/re-seed render record (and, on persistent garble, a human-escalation note) — NEVER a pptx_text_overlays.json entry
 
-**Hand to:** QC Specialist (for Phase 3 prompt QC, which checks price-drop slides against price_ladder.json); PPTX Assembly Specialist (for any pptx_text_overlays.json fallback entries)
+**Hand to:** QC Specialist (for Phase 3 prompt QC, which checks price-drop slides against price_ladder.json). On persistent garble, escalate to a human (the Director) — never to a native overlay.
 
 **Failure mode:** If a price-drop slide's copy in slides_copy.md shows a price that does not match price_ladder.json, halt and flag to the Director: "Price discrepancy on slide N -- slides_copy.md shows $X but price_ladder.json shows $Y. Offer Price Strategist must resolve before prompt can be written."
 
@@ -793,7 +793,7 @@ The four write-time controls that pre-empt the forensic defects. Every prompt mu
 ### You hand work off to:
 - QC Specialist -- Presentations (Phase 3 prompt QC)
 - After Phase 3 passes: Slide Submitter (Phase 4 generation) receives the prompts directory
-- PPTX Assembly Specialist -- receives working/checkpoints/pptx_text_overlays.json entries (with strike:true for struck prices) whenever the two-failed-attempts native-text fallback is triggered on any text element (SOP 9.5 step 7, master SOP 7.4 and 10.1)
+- PPTX Assembly Specialist -- receives ONLY the single composed gpt-image-2 slide images (text baked in). The native-text overlay path is eliminated (Decision 5C): no pptx_text_overlays.json is ever passed; garbled text is fixed by the re-prompt/re-seed loop then human escalation (AF-OVERLAY-DELIVERED)
 
 ---
 
@@ -861,7 +861,7 @@ The four write-time controls that pre-empt the forensic defects. Every prompt mu
 | 7 | A slide that is "just a background with text" | Run the standalone-art gate (SOP 9.6 Part B): art direction + hero + typography composed in + a felt beat. Each slide must read as gallery-grade art on its own. |
 | 8 | Skipping the contrast declaration or writing low-contrast copy (e.g., gold on white without checking WCAG) | Write the contrast ratio statement into element 9 (WCAG AA minimum: 4.5:1 normal text, 3:1 large text). Run SOP 9.7 Part A on every prompt. |
 | 9 | An inconsistently graded deck -- some images warm, some cool, some flat | Write the TEMPERATURE LOCK and COLOR GRADING block comment on every prompt. Read the COLOR GRADING PROFILE from the STYLE BLOCK before starting Phase 2. |
-| 10 | Garbled / misspelled rendered text ("hclarity", "GRABLED BRANDCO") | Wrap EVERY verbatim string in the element-3 spelling-lock; add negative-block class 1; route to native-text overlay after two failed renders (SOP 9.5 step 7, generalized to all critical text). |
+| 10 | Garbled / misspelled rendered text ("hclarity", "GRABLED BRANDCO") | Wrap EVERY verbatim string in the element-3 spelling-lock; add negative-block class 1; on garble, RE-PROMPT + RE-SEED and re-render the single composed image, then HUMAN ESCALATION if it persists. NEVER a native-text overlay (Decision 5C, AF-OVERLAY-DELIVERED). |
 | 11 | Logo mutating into a different mark across slides | Composite ONE locked logo image-to-image (Mode B, LOGO_URL first reference, "place, do not redraw"); add negative-block class 2; never text-to-image the mark (SOP-IMG-01 / SOP-DESIGN-04). |
 | 12 | A bracket / "owner to confirm" placeholder reaching the render | Scan the prompt for bracket tokens / build notes before handoff (AF-P16); resolve with real interview content or pull the slide; add negative-block class 3 (pre-empts AF-F10). |
 | 13 | Missing or unpaired negative block; under-budget starved prompt | Author the full eight-class SOP 9.8 block as the final paragraph, each negative paired with a positive twin; spend the 9,000-14,000 budget on defect-preventing specificity, not padding (Gate 11). |

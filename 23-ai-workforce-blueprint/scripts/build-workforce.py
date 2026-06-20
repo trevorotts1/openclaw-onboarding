@@ -2042,6 +2042,21 @@ def build_from_config(config):
             # install.sh Step 8. Per-department generation tools are unlocked
             # via explicit tools.allow on each generation dept agent (see
             # add_agent_to_config below).
+            #
+            # GOAL-4 D4 (4B+4C) — NO-REFUSAL TOOL BASELINE at build origin.
+            # Mirrors apply-fleet-standards.sh: agents.defaults.tools.allow=["*"]
+            # so a freshly-built box is BORN with departments + sub-agents able to
+            # run exec / file ops / web / MCP / Kie HTTP without ever refusing a
+            # job. This is the VALID defaults-level key (allow) — NOT the poison
+            # key (exec). Under RESTRICT-ONLY precedence the CEO/main per-agent
+            # deny (set in add_agent_to_config) STILL wins, so the wildcard does
+            # NOT re-open the CEO. Idempotent: only fills the key if absent so a
+            # client customization is never clobbered.
+            _defaults = config_data.setdefault("agents", {}).setdefault("defaults", {})
+            _defaults_tools = _defaults.setdefault("tools", {})
+            if "allow" not in _defaults_tools:
+                _defaults_tools["allow"] = ["*"]
+                print("[NON-INTERACTIVE] no-refusal baseline: agents.defaults.tools.allow=['*'] (GOAL-4 D4)", file=sys.stderr)
 
             registration_failures = []
             for dept_id, dept_info in selected_departments.items():
@@ -5401,6 +5416,68 @@ def add_agent_to_config(config, dept_id, dept_info):
         "web_search",
     ]
 
+    # ── CEO / MASTER-ORCHESTRATOR TOOL-GATE (GOAL-5, Item 1) ──────────────────
+    # The CEO is a pure ROUTER. skills:[] alone does NOT gate the OpenClaw
+    # built-in tools (exec/write/edit/browser/image), which is how the CEO could
+    # still self-execute production work. We deny EVERY production tool here,
+    # using the REAL built-in tool names from docs.openclaw.ai/gateway/security
+    # (read, write, edit, apply_patch, exec, process, browser, canvas, web_fetch,
+    # web_search, image, cron, gateway, nodes, sessions_*), and deny ALL GHL MCP
+    # tools by provider. We keep only the tools the CEO needs to ROUTE and
+    # converse: read (workspace files), web_fetch/web_search (read-only lookups),
+    # the messaging channels, and sessions_send/list/history (to coordinate, not
+    # to spawn production workers).
+    #
+    # Tool-policy precedence is RESTRICT-ONLY (docs.openclaw.ai/tools/
+    # multi-agent-sandbox-tools): a deny here cannot be un-denied in-session, so
+    # the owner-consent carve-out is a PROFILE/ENTRY SWAP, not an in-session
+    # allow (see grant-ceo-consent.sh + the runtime hook).
+    #
+    # `exec` is the crux: it is BOTH the production-execution tool AND (today)
+    # the path the CEO uses to `curl POST /api/tasks/ingest`. Until the dedicated
+    # `route_task` MCP tool ships fleet-wide we keep `exec` in ALLOW so routing
+    # still works — but verify-routing.sh G7 emits a FAIL-WARN for that interim
+    # state so a box is never falsely marked clean. When the route-task MCP tool
+    # is present, move `exec` from CEO_TOOL_ALLOW into CEO_TOOL_DENY.
+    CEO_TOOL_DENY = [
+        "write",
+        "edit",
+        "apply_patch",
+        "browser",
+        "canvas",
+        "image",
+        "process",
+        # Belt-and-suspenders MCP deny by name-glob, in case a gateway version
+        # does not honor tools.byProvider. Denies always win and are restrict-only.
+        "ghl-community-mcp__*",
+        "ghl-mcp__*",
+    ]
+    CEO_TOOL_ALLOW = [
+        "read",
+        "web_fetch",
+        "web_search",
+        # Messaging: "message" is the channel-agnostic send tool seen in live
+        # configs; the per-channel names are also valid (docs/gateway/security).
+        "message",
+        "telegram",
+        "slack",
+        "discord",
+        "sessions_send",
+        "sessions_list",
+        "sessions_history",
+        # INTERIM: exec stays allowed only so the CEO can curl the ingest route.
+        # Replace with "mc-route__route_task" once the route-task MCP tool ships.
+        "exec",
+    ]
+    # GHL MCP is registered under BOTH ids on live boxes: ghl-community-mcp AND
+    # the legacy alias ghl-mcp. Deny ALL tools from both, by provider. The glob
+    # entries in CEO_TOOL_DENY ("<server>__*") are a belt-and-suspenders fallback
+    # for any version where byProvider is not honored — harmless if it is.
+    CEO_MCP_DENY = {
+        "ghl-community-mcp": {"deny": ["*"]},
+        "ghl-mcp": {"deny": ["*"]},
+    }
+
     is_ceo_agent = dept_id in ("ceo", "master-orchestrator", "dept-ceo")
     is_generation_dept = dept_id in GENERATION_DEPT_IDS
     agent_entry = {
@@ -5417,6 +5494,14 @@ def add_agent_to_config(config, dept_id, dept_info):
         # Enforce orchestrator-only posture: no production skills.
         # The CEO routes via messaging + task-ingest API calls only.
         agent_entry["skills"] = []
+        # GOAL-5 Item 1: hard tool-gate so skills:[] is not the ONLY brake.
+        # Deny every production tool by real built-in name + deny all GHL MCP
+        # tools by provider; allow only routing/conversation tools.
+        agent_entry["tools"] = {
+            "deny": list(CEO_TOOL_DENY),
+            "allow": list(CEO_TOOL_ALLOW),
+            "byProvider": dict(CEO_MCP_DENY),
+        }
     if is_generation_dept:
         # Explicit tools.allow so generation tools survive any parent-deny
         # inheritance. The dept agent runs under its own tool policy but a
