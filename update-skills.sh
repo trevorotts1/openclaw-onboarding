@@ -1428,7 +1428,7 @@ except:
   # ----------------------------------------------------------
   DETECT_SCRIPT="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/detect-stale-artifacts.py"
   DETECT_MANIFEST="$SKILLS_DIR/23-ai-workforce-blueprint/templates/role-library/_index.json"
-  if [ "$PLATFORM" = "vps" ]; then
+  if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
     OC_WORKSPACE="/data/.openclaw/workspace"
   else
     OC_WORKSPACE="$HOME/.openclaw/workspace"
@@ -1438,8 +1438,7 @@ except:
      command -v python3 >/dev/null 2>&1; then
     echo ""
     echo "  Detecting per-artifact staleness (role / dept / SOP) vs new library content manifest..."
-    DETECT_OUT="$(python3 "$DETECT_SCRIPT" --workspace "$OC_WORKSPACE" --manifest "$DETECT_MANIFEST" --json 2>>"$LOG_FILE")"
-    DETECT_RC=$?
+    if DETECT_OUT="$(python3 "$DETECT_SCRIPT" --workspace "$OC_WORKSPACE" --manifest "$DETECT_MANIFEST" --json 2>>"$LOG_FILE")"; then DETECT_RC=0; else DETECT_RC=$?; fi
     if [ -n "$DETECT_OUT" ]; then
       # Persist the refresh work queue so the orchestrator / a follow-up
       # re-instantiation pass can consume it (and for audit).
@@ -1505,7 +1504,7 @@ else:
       [[ "$skill_name" == "__TREE_SHA__" ]] && continue
       case "$skill_name" in *ARCHIVED*) continue ;; esac
 
-      dest_digest=$(echo "$DEST_MANIFEST" | grep "^${skill_name}|" | cut -d'|' -f2 | head -1)
+      dest_digest=$(echo "$DEST_MANIFEST" | grep "^${skill_name}|" | cut -d'|' -f2 | head -1 || true)
       if [ -z "$dest_digest" ]; then
         echo "    [A3] MISMATCH: $skill_name — present in source but NOT in destination" >&2
         _A3_MISMATCH_SKILLS="${_A3_MISMATCH_SKILLS}  $skill_name: expected=$src_digest found=<missing>\n"
@@ -1554,7 +1553,7 @@ else:
       [ -n "$_SKILLS_JSON" ] && _SKILLS_JSON="${_SKILLS_JSON},"
       _SKILLS_JSON="${_SKILLS_JSON}\"${_sn}\":\"${_sd}\""
     done <<< "$SRC_MANIFEST"
-    _TREE_SHA=$(echo "$SRC_MANIFEST" | grep "^__TREE_SHA__|" | cut -d'|' -f2 | head -1)
+    _TREE_SHA=$(echo "$SRC_MANIFEST" | grep "^__TREE_SHA__|" | cut -d'|' -f2 | head -1 || true)
     python3 -c "
 import json, sys
 data = {

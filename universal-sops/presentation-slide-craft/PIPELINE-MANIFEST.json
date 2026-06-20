@@ -1,5 +1,5 @@
 {
-  "manifest_version": 9,
+  "manifest_version": 12,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -100,24 +100,84 @@
         }
       ],
       "required_brief_categories": [
-        {"code": "A", "name": "Niche Deck Structures", "hard_gate": true, "note": "Best-in-class deck structure patterns for the niche; always required"},
-        {"code": "B", "name": "Pricing & Value Benchmarking", "hard_gate": false, "note": "Comparable-market price band (low/median/high); checked by Offer Price Strategist and AF-CONVERTER-PARITY gate"},
-        {"code": "C", "name": "Supporting Statistics / Studies / White Papers", "hard_gate": true, "note": "Every stat must carry a source URL + publication date; stale >36 months flagged"},
-        {"code": "D", "name": "External Corroboration (GP-8: who says so other than you?)", "hard_gate": true, "note": "D1=named expert quotes, D2=third-party case studies, D3=Wall-of-Wins testimonials; zero HIGH/MEDIUM triggers GP-8 ALERT"},
-        {"code": "E", "name": "Grounded Image Context", "hard_gate": false, "note": "Scene descriptions anchoring Kie/GPT-Image-2 renders to THIS source's method; checked by Gate 5 and AF-CONVERTER-PARITY gate"},
-        {"code": "F", "name": "Design + Hook + Pacing Best-Practices Research", "hard_gate": true, "note": "Design-brief input for Typography Architect and Slide Image Creator; may be skipped only with design_research_mode: delegated_to_DIU + logged delegation note"},
-        {"code": "G", "name": "Credible Attributable Quotes", "hard_gate": true, "note": "Named, sourced, verbatim quotes for 'who says so' slides; routed to Slide Copywriter"},
-        {"code": "H", "name": "Fact-Validation — Slide-Claim Verification Ledger", "hard_gate": true, "note": "Every slide-bound figure verified; produces fact-validation ledger; routed to QC + Slide Copywriter"},
-        {"code": "I", "name": "Objection Research", "hard_gate": true, "note": "Audience objections with proof rebuttals; routed to Slide Copywriter + Devil's Advocate"},
-        {"code": "J", "name": "Social-Proof Patterns", "hard_gate": false, "note": "Social-proof formats and platforms; required-but-may-be-condensed; routed to Slide Copywriter"},
-        {"code": "K", "name": "Persuasion-Framework Validation", "hard_gate": true, "note": "Arc validation against proven structures; routed to Director + Slide Copywriter"},
-        {"code": "L", "name": "Compliance Flags", "hard_gate": true, "note": "Income claims, health claims, regulatory risks; routed to Director + Devil's Advocate"}
+        {
+          "code": "A",
+          "name": "Niche Deck Structures",
+          "hard_gate": true,
+          "note": "Best-in-class deck structure patterns for the niche; always required"
+        },
+        {
+          "code": "B",
+          "name": "Pricing & Value Benchmarking",
+          "hard_gate": false,
+          "note": "Comparable-market price band (low/median/high); checked by Offer Price Strategist and AF-CONVERTER-PARITY gate"
+        },
+        {
+          "code": "C",
+          "name": "Supporting Statistics / Studies / White Papers",
+          "hard_gate": true,
+          "note": "Every stat must carry a source URL + publication date; stale >36 months flagged"
+        },
+        {
+          "code": "D",
+          "name": "External Corroboration (GP-8: who says so other than you?)",
+          "hard_gate": true,
+          "note": "D1=named expert quotes, D2=third-party case studies, D3=Wall-of-Wins testimonials; zero HIGH/MEDIUM triggers GP-8 ALERT"
+        },
+        {
+          "code": "E",
+          "name": "Grounded Image Context",
+          "hard_gate": false,
+          "note": "Scene descriptions anchoring Kie/GPT-Image-2 renders to THIS source's method; checked by Gate 5 and AF-CONVERTER-PARITY gate"
+        },
+        {
+          "code": "F",
+          "name": "Design + Hook + Pacing Best-Practices Research",
+          "hard_gate": true,
+          "note": "Design-brief input for Typography Architect and Slide Image Creator; may be skipped only with design_research_mode: delegated_to_DIU + logged delegation note"
+        },
+        {
+          "code": "G",
+          "name": "Credible Attributable Quotes",
+          "hard_gate": true,
+          "note": "Named, sourced, verbatim quotes for 'who says so' slides; routed to Slide Copywriter"
+        },
+        {
+          "code": "H",
+          "name": "Fact-Validation \u2014 Slide-Claim Verification Ledger",
+          "hard_gate": true,
+          "note": "Every slide-bound figure verified; produces fact-validation ledger; routed to QC + Slide Copywriter"
+        },
+        {
+          "code": "I",
+          "name": "Objection Research",
+          "hard_gate": true,
+          "note": "Audience objections with proof rebuttals; routed to Slide Copywriter + Devil's Advocate"
+        },
+        {
+          "code": "J",
+          "name": "Social-Proof Patterns",
+          "hard_gate": false,
+          "note": "Social-proof formats and platforms; required-but-may-be-condensed; routed to Slide Copywriter"
+        },
+        {
+          "code": "K",
+          "name": "Persuasion-Framework Validation",
+          "hard_gate": true,
+          "note": "Arc validation against proven structures; routed to Director + Slide Copywriter"
+        },
+        {
+          "code": "L",
+          "name": "Compliance Flags",
+          "hard_gate": true,
+          "note": "Income claims, health claims, regulatory risks; routed to Director + Devil's Advocate"
+        }
       ]
     },
     {
       "id": "P-CONVERTER",
       "order": -1,
-      "name": "Content-to-Presentation Conversion (Zoom/Video/Doc → Intake)",
+      "name": "Content-to-Presentation Conversion (Zoom/Video/Doc \u2192 Intake)",
       "owning_role": "content-to-presentation-architect",
       "sop_refs": [
         "content-to-presentation-architect-sops.md"
@@ -139,17 +199,26 @@
         "director-of-presentations-sops.md"
       ],
       "produces_artifact": "working/copy/intake.json",
-      "gate_codes": [],
+      "gate_codes": [
+        "AF-SLIDE-COUNT-FLOOR"
+      ],
       "preflight": {
         "required": true,
         "checker": "_chk_intake",
-        "label": "intake.json (interview_confirmed:true, presentation_mode one-person|general)"
-      }
+        "label": "intake.json (interview_confirmed:true, presentation_mode one-person|general, target_talk_minutes from the 20/30/60-min duration question + speaking time)"
+      },
+      "additional_preflights": [
+        {
+          "required": true,
+          "checker": "_chk_slide_count_floor",
+          "label": "slide-count floor (output slides >= target_talk_minutes x 1.3 slides/min; a 30-min/10-slide deck AUTO-FAILS; AF-SLIDE-COUNT-FLOOR)"
+        }
+      ]
     },
     {
       "id": "P1Q-COPY-QC",
-      "order": 1.5,
-      "name": "Copy QC (Phase 1Q)",
+      "order": 4.2,
+      "name": "Copy QC (Phase 1Q) \u2014 sequenced AFTER Slide Copy (O1 re-sequence: a QC follows the artifact it grades; copy-QC at order 1.5 before copy order 4 was the defect this fixes)",
       "owning_role": "qc-specialist-presentations",
       "sop_refs": [
         "qc-specialist-presentations-sops.md"
@@ -198,13 +267,21 @@
       ],
       "produces_artifact": "working/copy/arc_allocation.json",
       "gate_codes": [
-        "AF-COVERAGE-1"
+        "AF-COVERAGE-1",
+        "AF-PITCH-MISSING"
       ],
       "preflight": {
         "required": true,
         "checker": "_chk_arc",
         "label": "converting arc \u2014 per-slide arc-section allocation"
-      }
+      },
+      "additional_preflights": [
+        {
+          "required": true,
+          "checker": "_chk_pitch",
+          "label": "offer ladder + re-pitch (arc carries value-stack/anchor/price ladder beats AND a re-pitch after FINAL; AF-PITCH-MISSING)"
+        }
+      ]
     },
     {
       "id": "P4-COPY",
@@ -241,6 +318,61 @@
       }
     },
     {
+      "id": "P-TYPO-QC",
+      "order": 4.6,
+      "name": "Typography QC \u2014 sequenced AFTER Design (O1; independent reviewer)",
+      "owning_role": "qc-specialist-typography-presentations",
+      "sop_refs": [
+        "qc-specialist-typography-presentations-sops.md"
+      ],
+      "produces_artifact": "working/qc/typography_qc_report.json",
+      "gate_codes": [
+        "AF-TYPOGRAPHY-QC",
+        "AF-CREATIVITY"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_typography_qc",
+        "label": "typography QC report (gate Phase Typography-QC, average >= 8.5, independent-reviewer provenance)"
+      }
+    },
+    {
+      "id": "P4-PROMPT",
+      "order": 4.7,
+      "name": "Prompt Authoring \u2014 each slide prompt to the 5,000-char standard",
+      "owning_role": "prompt-author-presentations",
+      "sop_refs": [
+        "prompt-author-presentations-sops.md"
+      ],
+      "produces_artifact": "working/prompts/slide-*.txt",
+      "gate_codes": [
+        "AF-PROMPT-FLOOR"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_rich_prompts",
+        "label": "rich per-slide prompt \u2014 every slide has a >=5,000-char prompt in working/prompts/ (rendered VERBATIM)"
+      }
+    },
+    {
+      "id": "P-PROMPT-QC",
+      "order": 4.8,
+      "name": "Prompt QC \u2014 sequenced AFTER Prompt-Authoring (O1; independent reviewer)",
+      "owning_role": "qc-specialist-prompt-presentations",
+      "sop_refs": [
+        "qc-specialist-prompt-presentations-sops.md"
+      ],
+      "produces_artifact": "working/qc/prompt_qc_report.json",
+      "gate_codes": [
+        "AF-PROMPT-QC"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_prompt_qc",
+        "label": "prompt QC report (gate Phase Prompt-QC, average >= 8.5, independent-reviewer provenance)"
+      }
+    },
+    {
       "id": "P4-RENDER",
       "order": 4.9,
       "name": "Deterministic Render (build_deck.py \u2014 this script)",
@@ -267,6 +399,24 @@
           "PROMPT_CHAR_CEILING",
           "FORBIDDEN_DEMOGRAPHIC_DEFAULTS"
         ]
+      }
+    },
+    {
+      "id": "P-IMAGE-QC",
+      "order": 4.95,
+      "name": "Image QC \u2014 sequenced AFTER Render (O1; independent multimodal reviewer)",
+      "owning_role": "qc-specialist-image-presentations",
+      "sop_refs": [
+        "qc-specialist-image-presentations-sops.md"
+      ],
+      "produces_artifact": "working/qc/image_qc_report.json",
+      "gate_codes": [
+        "AF-IMAGE-QC"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_image_qc",
+        "label": "image QC report (gate Phase Image-QC, average >= 8.5, independent-reviewer provenance)"
       }
     },
     {
@@ -304,7 +454,25 @@
       "preflight": {
         "required": false,
         "checker": "_chk_speech_length",
-        "label": "speech length — presenter speech words >= target_talk_minutes x 120 wpm (fails short; defers when speech absent)"
+        "label": "speech length \u2014 presenter speech words >= target_talk_minutes x 120 wpm (fails short; defers when speech absent)"
+      }
+    },
+    {
+      "id": "P-SPEECH-QC",
+      "order": 8.6,
+      "name": "Speech QC \u2014 sequenced AFTER Speech (O1; independent reviewer; conditional)",
+      "owning_role": "qc-specialist-speech-presentations",
+      "sop_refs": [
+        "qc-specialist-speech-presentations-sops.md"
+      ],
+      "produces_artifact": "working/qc/speech_qc_report.json",
+      "gate_codes": [
+        "AF-SPEECH-QC"
+      ],
+      "preflight": {
+        "required": false,
+        "checker": "_chk_speech_qc",
+        "label": "speech QC report (gate Phase Speech-QC, average >= 8.5, independent-reviewer provenance; defers when speech QC absent)"
       }
     },
     {
@@ -368,10 +536,13 @@
       "stage": "-0.5/1Q",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "research pack contains fewer than MIN_CITED_SOURCES (8) distinct http(s) URLs, OR slide copy contains factual/statistical claim markers with zero cited URLs in the research pack — the self-asserted research_complete:true flag is ignored; real citations are required",
+      "trigger": "research pack contains fewer than MIN_CITED_SOURCES (8) distinct http(s) URLs, OR slide copy contains factual/statistical claim markers with zero cited URLs in the research pack \u2014 the self-asserted research_complete:true flag is ignored; real citations are required",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_research_cited",
-      "secondary_py_symbols": ["_chk_claims_without_citation", "MIN_CITED_SOURCES"]
+      "secondary_py_symbols": [
+        "_chk_claims_without_citation",
+        "MIN_CITED_SOURCES"
+      ]
     },
     {
       "code": "AF-COVERAGE-1",
@@ -734,14 +905,16 @@
       "trigger": "rendered slide was not KIE-baked (native render, missing image, or flat-placeholder fill below the placeholder floor)",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_kie_baked",
-      "secondary_py_symbols": ["PLACEHOLDER_MIN_BYTES"]
+      "secondary_py_symbols": [
+        "PLACEHOLDER_MIN_BYTES"
+      ]
     },
     {
       "code": "AF-PROMPT-FLOOR",
       "stage": "3",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "image prompt outside 1500-15000 chars or missing required structural blocks",
+      "trigger": "image prompt under the reconciled 5,000-char standard (PROMPT_CHAR_FLOOR) or over the 18,000-char ceiling (PROMPT_CHAR_CEILING) or missing required structural blocks",
       "enforced_by": "build_deck",
       "py_symbol": "PROMPT_CHAR_FLOOR"
     },
@@ -750,10 +923,157 @@
       "stage": "1Q",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "Phase-1Q copy QC report was self-graded / builder-graded — it lacks an independent-reviewer provenance block (qc_independence: graded_by + independent:true naming a QC specialist who is NOT build_deck.py / self / builder / author / the deck-copy author), is marked self_graded:true, sets independent:false, or names a reviewer equal to the recorded builder",
+      "trigger": "Phase-1Q copy QC report was self-graded / builder-graded \u2014 it lacks an independent-reviewer provenance block (qc_independence: graded_by + independent:true naming a QC specialist who is NOT build_deck.py / self / builder / author / the deck-copy author), is marked self_graded:true, sets independent:false, or names a reviewer equal to the recorded builder",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_copy_qc",
-      "secondary_py_symbols": ["FORBIDDEN_QC_GRADER_IDENTITIES", "QC_BUILDER_ROLE"]
+      "secondary_py_symbols": [
+        "FORBIDDEN_QC_GRADER_IDENTITIES",
+        "QC_BUILDER_ROLE"
+      ]
+    },
+    {
+      "code": "AF-TYPOGRAPHY-QC",
+      "stage": "Typography-QC",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the Typography-QC report (working/qc/typography_qc_report.json), sequenced AFTER Design, is missing, not gated 'Phase Typography-QC', below the 8.5 average, has a triggered autofail, does not mark pass:true, OR was self/builder-graded (lacks independent-reviewer provenance per the generalized AF-QC-INDEPENDENCE contract)",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_typography_qc",
+      "secondary_py_symbols": [
+        "_qc_independence_reason"
+      ]
+    },
+    {
+      "code": "AF-PROMPT-QC",
+      "stage": "Prompt-QC",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the Prompt-QC report (working/qc/prompt_qc_report.json), sequenced AFTER Prompt-Authoring, is missing, not gated 'Phase Prompt-QC', below the 8.5 average, has a triggered autofail, does not mark pass:true, OR was self/builder-graded (no independent-reviewer provenance)",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_prompt_qc",
+      "secondary_py_symbols": [
+        "_qc_independence_reason"
+      ]
+    },
+    {
+      "code": "AF-IMAGE-QC",
+      "stage": "Image-QC",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the Image-QC report (working/qc/image_qc_report.json), sequenced AFTER Render, is missing, not gated 'Phase Image-QC', below the 8.5 average, has a triggered autofail, does not mark pass:true, OR was self/builder-graded (no independent-reviewer provenance)",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_image_qc",
+      "secondary_py_symbols": [
+        "_qc_independence_reason"
+      ]
+    },
+    {
+      "code": "AF-SPEECH-QC",
+      "stage": "Speech-QC",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the Speech-QC report (working/qc/speech_qc_report.json), sequenced AFTER Speech, is present but not gated 'Phase Speech-QC', below the 8.5 average, has a triggered autofail, does not mark pass:true, OR was self/builder-graded (no independent-reviewer provenance). CONDITIONAL: defers (passes) when the report is absent at pre-speech render, enforced once it exists.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_speech_qc",
+      "secondary_py_symbols": [
+        "_qc_independence_reason"
+      ]
+    },
+    {
+      "code": "AF-SLIDE-COUNT-FLOOR",
+      "stage": "0a/4",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "output slide count is below target_talk_minutes x 1.3 (the low end of the verified 1.3-1.5 slides/min pacing band); e.g. a 30-minute talk on 10 slides (floor 39) AUTO-FAILS \u2014 it is a reading session, not a paced deck",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_slide_count_floor",
+      "secondary_py_symbols": [
+        "SLIDES_PER_MINUTE_FLOOR"
+      ]
+    },
+    {
+      "code": "AF-PITCH-MISSING",
+      "stage": "3",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the converting arc (arc_allocation.json) carries no offer-ladder beats (value-stack -> anchor -> price drops) OR no re-pitch beat after the FINAL price \u2014 a teaching dump that never asks for the sale, or asks once and never recovers a 'no'",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_pitch"
+    },
+    {
+      "code": "AF-CREATIVITY",
+      "stage": "F/4",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "template-sameness or cliche \u2014 a single layout archetype covers more than ARCHETYPE_DOMINANCE_CEILING (60%) of the slides (forty copies of one layout), OR slide copy leans on a banned worn-out cliche phrase",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_creativity",
+      "secondary_py_symbols": [
+        "ARCHETYPE_DOMINANCE_CEILING",
+        "FORBIDDEN_CLICHE_PHRASES"
+      ]
+    },
+    {
+      "code": "AF-VISUAL-VARIETY",
+      "stage": "Image-QC/Postflight",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "all-dark monotone deck \u2014 >= 90% of rendered slides share one dominant background hue bucket OR >= 90% of slides are below the dark-luma threshold (0.30) with < 10% light/break slides. Rejects decks with no visual variety (e.g. all-navy 35-slide deck) that are illegible at projection distance and violate WCAG AA contrast.",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_visual_variety",
+      "secondary_py_symbols": [
+        "VISUAL_VARIETY_DARK_DOMINANT_CEILING",
+        "VISUAL_VARIETY_LIGHT_SLIDE_FLOOR_PCT",
+        "VISUAL_VARIETY_HUE_DOMINANCE_CEILING",
+        "VISUAL_VARIETY_DARK_LUMA_THRESHOLD"
+      ]
+    },
+    {
+      "code": "AF-PACKAGE-CLEAN",
+      "stage": "Postflight/Closeout",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "dev artifacts in the delivered bundle \u2014 any *.py, *.sh, ~$* Office lock/temp file, tasks/ directory, task_*.json, or numbered intermediate .md working draft present in the final bundle directory. The client package must contain ONLY the canonical deliverable files.",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_package_cleanliness",
+      "secondary_py_symbols": [
+        "PACKAGE_CLEAN_FORBIDDEN_EXTENSIONS",
+        "PACKAGE_CLEAN_FORBIDDEN_NAME_PREFIXES",
+        "PACKAGE_CLEAN_FORBIDDEN_DIR_NAMES",
+        "PACKAGE_CLEAN_CANONICAL_MD_FILES",
+        "PACKAGE_CLEAN_DRAFT_MD_RE"
+      ]
+    },
+    {
+      "code": "AF-IMAGE-QC-RAN",
+      "stage": "Image-QC/Postflight",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "image-QC report is absent, stale (older than the rendered PNGs), or rubber-stamped (lacks a per-slide PASS/FAIL row for all N rendered slides). A report that was auto-populated from a template without real per-slide entries is refused. Requires: report exists AND mtime > all PNG mtimes AND slides[] array has one entry per rendered slide.",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_image_qc_present"
+    },
+    {
+      "code": "AF-BRAND-CONSISTENCY",
+      "stage": "Image-QC/Postflight",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "off-brand palette \u2014 any rendered slide whose dominant palette colors ALL fall outside the declared brand token set (intake.json brand.palette) by more than BRAND_CONSISTENCY_TOLERANCE (80 RGB units). Complements AF-VISUAL-VARIETY: variety rejects sameness; brand rejects off-token outliers (e.g. fantasy-castle render against navy/gold token set). Defers when no brand palette is declared.",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_brand_consistency",
+      "secondary_py_symbols": [
+        "BRAND_CONSISTENCY_TOLERANCE",
+        "BRAND_CONSISTENCY_SAMPLE_COLORS"
+      ]
+    },
+    {
+      "code": "AF-DARK-SLIDE",
+      "stage": "Intake/Prompt",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "dark/black background keywords (e.g. 'dark background', 'black background', 'dark theme', 'near-black', 'dark slide', 'dark mode') or near-black hex/rgb colors detected in working/prompts/*.txt or working/research/design-brief-*.md without client_dark_theme:true in intake.json. Slides MUST use LIGHT/bright backgrounds by default; dark is opt-in by explicit client request only.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_no_dark_slides"
     }
   ],
   "roles": [
@@ -864,8 +1184,35 @@
         "webinar replay to presentation"
       ],
       "source_brief_origin_slug": "content-to-presentation-architect",
-      "sop_refs": ["content-to-presentation-architect-sops.md"],
+      "sop_refs": [
+        "content-to-presentation-architect-sops.md"
+      ],
       "routing_note": "Content-first (source exists) path only. Idea-first ('I want a presentation') routes to brainstorming-buddy-presentations, NOT here."
+    },
+    {
+      "id": "prompt-author-presentations",
+      "owns_phase": "P4-PROMPT",
+      "description": "Writes each slide's rich image prompt to the 5,000-char prompt standard (the 15-element structural spec + negative block + spelling-locks). The Prompt QC Specialist grades the output."
+    },
+    {
+      "id": "qc-specialist-typography-presentations",
+      "owns_phase": "P-TYPO-QC",
+      "description": "INDEPENDENT reviewer of the design system (AF-TYPOGRAPHY-QC). Grades against the written typography rubric; never the Typography Architect who built it."
+    },
+    {
+      "id": "qc-specialist-prompt-presentations",
+      "owns_phase": "P-PROMPT-QC",
+      "description": "INDEPENDENT reviewer of the per-slide prompts (AF-PROMPT-QC). Grades against the written 5,000-char prompt-standard rubric; never the Prompt Author who wrote them."
+    },
+    {
+      "id": "qc-specialist-image-presentations",
+      "owns_phase": "P-IMAGE-QC",
+      "description": "INDEPENDENT multimodal reviewer of the rendered slides (AF-IMAGE-QC). Grades against the written image-QC rubric; never the renderer."
+    },
+    {
+      "id": "qc-specialist-speech-presentations",
+      "owns_phase": "P-SPEECH-QC",
+      "description": "INDEPENDENT reviewer of the presenter speech (AF-SPEECH-QC). Grades against the written speech rubric; never the Speech Writer who authored it."
     },
     {
       "id": "how-to-use-this-department",

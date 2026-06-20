@@ -5848,7 +5848,7 @@ else
 fi
 
 # Layer 2 (VPS only): comment out WHATSAPP_NUMBER in Hostinger Docker .env
-if [ "$IS_VPS" = "true" ] || [ -d "/docker" ]; then
+if [ "$OPENCLAW_PLATFORM" = "vps" ] || [ -d "/docker" ]; then
     _wa_env_found=0
     for _wa_envf in /docker/*/.env /data/docker/*/.env; do
         [ -f "$_wa_envf" ] || continue

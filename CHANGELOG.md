@@ -7,6 +7,134 @@ Guarantees every client who completes the AI Workforce interview reliably receiv
 - **Gate scope (client-facing)**: never-client-facing meta-roles (`devils-advocate`, `sop-writer`) exempted from the per-role SOP-substance floor; trio gate scoped to departments whose canonical roster includes a trio; personal-assistant reconciled to its canonical templated roster. No-weakening preserved.
 - **11 client-facing role templates authored** (7 thin workflow roles + 4 presentations QC sub-specialists) so every client gets them via deterministic template-copy.
 
+## v12.43.0 — 2026-06-19 — fix(install): IS_VPS unbound variable aborted fresh installs with zero skills installed
+
+**Bug:** `install.sh` line 5821 referenced `$IS_VPS` inside an `if` condition. The variable `IS_VPS` is never assigned anywhere in `install.sh` — platform detection sets and exports `OPENCLAW_PLATFORM` (values: `vps` or `mac`) at line 42. Because `set -u` is active at that point in the script, any expansion of the unbound `$IS_VPS` aborted the installer immediately with `IS_VPS: unbound variable`. This caused fresh Mac installs to exit with zero skills installed and no `.onboarding-version` stamp written. Reproduced on a fresh Mac install.
+
+**Fix:** Changed `[ "$IS_VPS" = "true" ]` to `[ "$OPENCLAW_PLATFORM" = "vps" ]`. `OPENCLAW_PLATFORM` is the canonical platform variable exported at line 42; its value is `vps` on VPS boxes and `mac` on Mac boxes. No other IS_VPS references exist in install.sh (confirmed by grep). The secondary guard `[ -d "/docker" ]` is unchanged and continues to catch Hostinger Docker environments on VPS.
+
+**Proof:** `bash -n install.sh` exits 0. Under `bash -u`, the fixed construct `export OPENCLAW_PLATFORM=mac; if [ "$OPENCLAW_PLATFORM" = "vps" ] || [ -d /docker ]; then echo vps; else echo mac; fi` prints `mac` with no error; the old construct `if [ "$IS_VPS" = "true" ]; then :; fi` aborts with `IS_VPS: unbound variable`.
+
+**Impact:** Every fresh install on a Mac box hit this abort at the WhatsApp-ban layer (line 5821), after skill-copying had already run but before `.onboarding-version` was stamped. The installer exited with a non-zero code, leaving the box with skills on disk but no onboarding-version marker and no final kickoff fired.
+
+## v12.42.0 — 2026-06-19 — fix(skill-content-hash): exclude __pycache__/*.pyc/*.pyo + .DS_Store from A3 content hash — some built boxes that ran skill Python at install could not stamp
+
+**Bug (introduced before v12.39.0):** `scripts/skill-content-hash.sh` hashes every non-excluded file under each numbered skill directory. Its `_should_exclude()` function did not exclude `__pycache__/` directories or `*.pyc`/`*.pyo` files. At install time, skill-23's Python scripts execute and Python writes `*/scripts/__pycache__/*.cpython-3XX.pyc` and `*/lib/__pycache__/*.pyc` into the destination skill directory. Those bytecode files (a) are absent from the source tree, (b) embed a per-run source hash/mtime that changes every install, and (c) vary by Python version. Because the source manifest never contains these files but the destination directory does, the A3 gate computed `src_digest != dest_digest` non-deterministically — blocking the `.onboarding-version` stamp write on some built boxes even when all shipped content was fully correct.
+
+**Fix (3 additions to `_should_exclude()`):**
+1. Path-based exclusion: `*/__pycache__/*) return 0 ;;` — any file under a `__pycache__` directory at any depth is excluded from the hash.
+2. Basename exclusion: `*.pyc|*.pyo) return 0 ;;` — compiled/optimised Python bytecode files, which may appear outside `__pycache__` on older toolchains.
+3. Basename exclusion: `.DS_Store) return 0 ;;` — macOS Finder metadata, which is OS-generated and not shipped content.
+
+No existing excludes were removed or weakened. The hashing algorithm is unchanged. All `.py` source files remain in scope, so a missing or truncated source script still changes the digest and fails the gate.
+
+**Proof (replayed against a temp copy of skill-23):**
+- Copy A = clean. Copy B = clean + `scripts/__pycache__/x.cpython-314.pyc` and `lib/__pycache__/y.cpython-314.pyc` injected with random bytes.
+- Round 1: `digest(A) = f65f06c607a43c042d8154e3659545e538637c661c1f1e2475d62d2600856dcb`, `digest(B) = f65f06c607a43c042d8154e3659545e538637c661c1f1e2475d62d2600856dcb` — equal (PASS).
+- Round 2 (different random bytes): `digest(A) = f65f06c607a43c042d8154e3659545e538637c661c1f1e2475d62d2600856dcb`, `digest(B) = f65f06c607a43c042d8154e3659545e538637c661c1f1e2475d62d2600856dcb` — equal (PASS, run-to-run determinism confirmed).
+- Gate still works: after deleting a real source `.md` from copy B, `digest(B) = d24668424e112d6d77bb0d764070d8de27d7771bd39fc903230d4c46737e2a3c` differs from `digest(A)` (PASS).
+
+**Impact:** Some built boxes that executed skill-23 Python scripts at install time accumulated `__pycache__/*.pyc` files in the destination skill directory, causing the A3 content gate to withhold the stamp non-deterministically on subsequent updater runs. After this fix the hash is stable across installs and Python versions.
+
+## v12.41.0 — 2026-06-19 — fix(update-skills): set -e hardening of stale-detection and A3 content-gate block — three grep pipelines and detect-stale exit-10 now safe under set -euo pipefail
+
+**Bug (introduced v12.27.0):** `update-skills.sh` runs under `set -euo pipefail` from line 35. The stale-detection block assigned the output of `detect-stale-artifacts.py` directly: `DETECT_OUT="$(python3 ... )"`. That script intentionally exits 10 when actionable artifacts exist. Under `set -e`, a bare command-substitution assignment inherits the subprocess exit code, so exit 10 aborted the script at that line — before `DETECT_RC=$?` was captured, before the rc-10 handler ran, and before the `.onboarding-version` stamp write at line 1541. Skills installed cleanly (46 of them) and the A3 gate passed, but the stamp was never written.
+
+Two additional unguarded grep pipelines in the same block (`dest_digest=$(... | grep ...)` in the A3 loop, `_TREE_SHA=$(... | grep ...)` in the manifest-write section) would abort the script on a no-match because `grep` exits 1 when no lines match and `pipefail` propagates that through the pipeline.
+
+**Fixes (3 lines):**
+1. Replaced the two-line `DETECT_OUT=... ; DETECT_RC=$?` construct with the if-idiom (`if DETECT_OUT="$(...)"; then DETECT_RC=0; else DETECT_RC=$?; fi`). The if-condition is exempt from `set -e`, so exit 10 is caught and `$DETECT_RC` is correctly set to 10. Downstream rc-10 handler and stamp write are now reachable.
+2. Added `|| true` to `dest_digest=$(... | grep "^${skill_name}|" ...)` in the A3 loop. When a skill is absent from the destination manifest, grep exits 1; the guard lets the assignment produce an empty string, which the existing `[ -z "$dest_digest" ]` check then correctly classifies as a mismatch.
+3. Added `|| true` to `_TREE_SHA=$(... | grep "^__TREE_SHA__|" ...)` in the manifest companion-write section. If the manifest contains no `__TREE_SHA__` row, grep exits 1; the guard lets `_TREE_SHA` be empty, and the existing `${_TREE_SHA:-unknown}` expansion handles the fallback.
+
+**Proof (replayed in bash -euo pipefail):**
+- Old construct: `DETECT_OUT="$(stub_exit10)"; echo NEXT` — NEXT never printed; shell exits 10.
+- New construct: `if DETECT_OUT="$(stub_exit10)"; then DETECT_RC=0; else DETECT_RC=$?; fi; echo "SURVIVED rc=$DETECT_RC"` — prints `SURVIVED rc=10`.
+- Unguarded grep no-match: `x=$(echo "a|1" | grep "^z|" | cut -d'|' -f2 | head -1)` — exits 1, script aborts.
+- Guarded: `x=$(... || true)` — exits 0, `x` is empty string.
+
+**Impact:** Boxes with detect-stale-artifacts.py returning rc 10 (actionable stale artifacts present) will now correctly write the `.onboarding-version` stamp after a successful install.
+
+## v12.40.0 — 2026-06-19 — fix(update-skills): PLATFORM unbound-variable crash — built boxes were stuck at their prior version
+
+**Bug (introduced v12.27.0):** `update-skills.sh` referenced `$PLATFORM` at the stale-artifact detection block (line 1431 of the pre-fix file) but that variable was never assigned anywhere in the script. Under `set -euo pipefail` (active from line 35), any reference to an unset variable aborts with "PLATFORM: unbound variable" and exits 1. The `.onboarding-version` stamp write sits ~110 lines later (after the A3 content gate), so the stamp was never written even when all skills installed cleanly and the A3 gate passed. Result: fully-built boxes were permanently stuck reporting their old version; re-runs of `update-skills.sh` always crashed before the stamp was written.
+
+**Root cause:** The script exports `OPENCLAW_PLATFORM` unconditionally at line 17 (always `vps` or `mac`) and `OC_PLATFORM` conditionally in the no-bootstrap fallback branch. The stale-artifact block mistakenly used the bare name `PLATFORM` which exists in neither branch.
+
+**Fix:** Changed line 1431 from `if [ "$PLATFORM" = "vps" ]; then` to `if [ "$OPENCLAW_PLATFORM" = "vps" ]; then`. Confirmed with a full grep that this was the only bare `$PLATFORM` / `${PLATFORM}` reference in the script.
+
+**Proof:**
+- `bash -n update-skills.sh` exits 0.
+- Under `bash -u` with `OPENCLAW_PLATFORM=vps` and `PLATFORM` unset: fixed code exits 0 and sets `OC_WORKSPACE=/data/.openclaw/workspace`.
+- Under `bash -u` with `PLATFORM` unset: old code exits 127 with "PLATFORM: unbound variable".
+
+**Impact:** Built boxes whose `.onboarding-version` stamp was never updated will stamp correctly on the next `update-skills.sh` run.
+
+## v12.39.0 — 2026-06-19 — A3 content-gate hash-race fix: exclude volatile generated files from both sides of the SRC/DEST comparison
+
+Fleet-wide bug fix for the A3 integrity gate in `update-skills.sh`. The gate computes a SRC digest of each skill's content (from the freshly downloaded source tree) before the install copy loop, then computes a DEST digest of the installed skill afterward. A spurious mismatch could occur because `hash-content-manifest.py` rewrites `templates/role-library/_index.json` (updating `content_hashed_at` / `generated_at` timestamps) after the copy but before the DEST hash is computed — so the DEST view includes modified timestamps not present in the SRC view. This caused the gate to fail and refuse to write the `.onboarding-version` stamp even when all real content was correctly installed.
+
+**Root cause**: `scripts/skill-content-hash.sh`'s `_should_exclude()` function excluded `.wired-*`, `skill-version.txt`, `.onboarding-version`, `.onboarding-content-manifest.json` but NOT the install-time-regenerated generated artifacts (`_index.json`, `_qc-summary.md`, `how-to-use-this-department.md`).
+
+**Fix**: Added those three generated-artifact filenames to `_should_exclude()` with clear comments explaining why each is safe to exclude. The fix is applied consistently to BOTH sides of the A3 comparison (both SRC and DEST calls to `skill-content-hash.sh` use the same script, so adding to `_should_exclude` fixes both sides simultaneously). The gate still detects a real content mismatch — all non-generated role, SOP, and persona `.md` files remain in scope.
+
+**Simulation proof** (run locally):
+- Test 1 (correct install passes): SRC digest == DEST digest `0755bd36e2630564a22d52d7b019f6ba972bf5087c420916e0dc7081c11fac76` after mutating `_index.json` + `_qc-summary.md` + `how-to-use-this-department.md` in DEST. PASS.
+- Test 2 (real mismatch detected): deleting `account-management/client-relationship-manager.md` from DEST changes digest to `26ea7c16805bd96cfa42dae8653f3630ac8be9e89ce3256a71cf5fe03f61f101`. PASS.
+
+**Impact**: Boxes whose `.onboarding-version` stamp was never written despite a correct install (observed intermittently — some boxes hit the race repeatedly before passing, and at least one never recovered) will stamp correctly on the next `update-skills.sh` run.
+
+## v12.38.0 — 2026-06-19 — Teleprompter upgrade: speed-control fix, SPOKEN/TRADITIONAL dual mode, fuzzy already-spoken highlight, feature-gap fixes
+
+Teleprompter rebuilt and self-verified (build_teleprompter.py + teleprompter SOP/role updates):
+
+- **Speed-control fix (O1)**: sub-pixel accumulator + delta-time clamp eliminates scroll jitter; curved 18–240 px/s range with clock reset on every mode transition. Speed changes now take effect immediately without a reset.
+- **SPOKEN/TRADITIONAL dual mode (O2)**: Web Speech API voice-following mode (tracks spoken word and auto-scrolls to match) alongside fixed-speed TRADITIONAL mode; runtime toggle with fallback to fixed-speed when the browser lacks Web Speech support.
+- **Fuzzy already-spoken highlight (O3)**: two-tier highlight (current word + surrounding context window); fuzzy string alignment means the highlight recovers gracefully from recognition errors and partial words rather than losing position.
+- **Feature-gap fixes (O4)**: clicker-key navigation (PageUp/PageDown/arrow keys advance cue points), eye-line guide overlay (fixed horizontal bar at reading position), vertical mirror mode, and status chip showing current mode + recognition confidence.
+
+Merged from main: v12.36.0 (AF-DARK-SLIDE gate) + v12.37.0 (5 deck-quality gates + Guard A green). All five presentation gates present; Guard A exits 0; all verification gates pass.
+
+## v12.37.0 — 2026-06-19 — Guard A green: emit_af_coverage probes for 5 new gates (including AF-DARK-SLIDE from main) + _slide_dominant_colors Pillow 11.x palette-length fix
+
+Two concrete bugs found by independent audit, both fixed:
+
+- **Bug 1 (Guard A red — BUG 1)**: `emit_af_coverage()` in `test_preflight.py` had standalone `test_check_*()` functions for the 4 new gates (AF-VISUAL-VARIETY, AF-PACKAGE-CLEAN, AF-IMAGE-QC-RAN, AF-BRAND-CONSISTENCY) but NO probes in `emit_af_coverage()` — the ONLY producer of `working/af-coverage.json` that `gate_integrity_check.py` (Guard A) reads. Guard A was exiting 1 with "4 UNTESTED violations". Fixed: added 4 deliberate-failure probes in `emit_af_coverage()` that drive each gate to a FAIL result and record the AF code via the `record()` helper. AF-DARK-SLIDE (merged from main) also wired into emit_af_coverage. The triggered set grows to 23 codes; Guard A now exits 0.
+- **Bug 2 (AF-BRAND-CONSISTENCY no-op)**: `_slide_dominant_colors()` used `for i in range(64)` after `quantize(colors=64)`, but Pillow 11.x returns a SHORT palette for low-colour images (e.g. a solid fill yields `len(palette)==3`). Indexing `palette[i*3]` for `i>=1` raised `IndexError`; the bare `except Exception` swallowed it and returned `[]`, so `check_brand_consistency()` treated every slide as "skip" and could NEVER fail. Fixed: bounded the loop to `len(palette)//3`; separated the `ImportError` (PIL absent -> silent defer) from real errors (logged to stderr, return `[]` -- callers skip slides where dominant==[]).
+
+Merge: v12.36.0 from main (AF-DARK-SLIDE gate) merged into deck-quality-gates branch. All five gates now present; manifest_version bumped to 12.
+
+Verification (all from the scripts dir):
+- `python3 test_preflight.py` -> exit 0, 23 codes triggered in af-coverage.
+- `python3 gate_integrity_check.py` -> exit 0 (Guard A green, 23/23 codes).
+- `python3 sync_check.py` -> exit 0.
+- `check_brand_consistency` with a solid-magenta slide vs navy/gold palette returns AF-BRAND-CONSISTENCY (was: always return "").
+
+## v12.36.0 — 2026-06-19 — Deck quality enforcement gates + No-dark-slides rule (AF-VISUAL-VARIETY, AF-PACKAGE-CLEAN, AF-IMAGE-QC-RAN, AF-BRAND-CONSISTENCY, AF-DARK-SLIDE)
+
+Five enforcement gates total (4 from deck-quality-gates branch + AF-DARK-SLIDE from main). Each gate has a concrete Python checker in `build_deck.py`, a manifest entry in `PIPELINE-MANIFEST.json`, a row in the Section-5 `MASTER-QC-AUTOFAIL-RULESET.md` table, a negative test in `test_preflight.py`, and is wired into both `PREFLIGHT_REQUIRED` (where conditional) and `run_postflight_gate`. `sync_check.py` exits 0 (in-sync). Skill-23 bumped to 2.1.0.
+
+- **AF-VISUAL-VARIETY** (`check_visual_variety`): rejects an all-dark monotone deck -- fires when >= 90% of rendered slides share one dominant background hue bucket OR >= 90% are below the dark-luma threshold (0.30) with < 10% light/break slides. Blocks an all-navy 35-slide deck (mean luma < 0.18, gold-on-navy contrast ~2.1:1 WCAG fail). Defers pre-render.
+- **AF-PACKAGE-CLEAN** (`check_package_cleanliness`): the delivered bundle must contain ONLY canonical deliverable files. Fails on any `.py`, `.sh`, `~$*` Office lock/temp file, `tasks/` directory, `task_*.json`, or numbered intermediate `.md` draft. Example rejected artifacts: build_pptx.py, poll_images.py, download_images.sh, tasks/, ~$WIB-Business-Function-Fidelity.pptx. Fires at postflight.
+- **AF-IMAGE-QC-RAN** (`check_image_qc_present`): the image-QC report must exist, be NEWER than the rendered PNGs (staleness check), and carry a per-slide PASS/FAIL row for every rendered slide. A stale or rubber-stamped report (no slides[] array) fails loud. Defers pre-render; defers on absent report (AF-IMAGE-QC owns absence).
+- **AF-BRAND-CONSISTENCY** (`check_brand_consistency`): every rendered slide's dominant palette must fall within the client's declared brand token set (intake.json brand.palette). Slides whose ALL sampled dominant colors exceed BRAND_CONSISTENCY_TOLERANCE (80 RGB units) from every brand token are flagged. Closes the off-brand stock-imagery failure (fantasy castle / sunrise against navy/gold). Defers when no palette declared or no renders.
+- **AF-DARK-SLIDE** (`_chk_no_dark_slides`, merged from main): presentation slides MUST use LIGHT backgrounds by default; DARK/black-background slides are NOT allowed unless the client explicitly requests a dark theme (client_dark_theme flag in intake.json). Written into SOP-SLIDE-00 (both ruleset copies) + slide-image-creator / typography / slide-copywriter / director SOPs.
+
+## v12.35.0 — 2026-06-19 — System-wide add-handling: AUTO-REGISTER helper + library-lockstep backstop (every department)
+
+Generalizes the presentation-only `sync_check` lockstep to the WHOLE role/SOP/persona/department library. The role library's single machine source of truth is `templates/role-library/_index.json` — everything downstream (`create_role_workspaces.library_lookup`, the materializer, the content-hash manifest, the repo-consistency gate, Command-Center wiring) reads the index, never the raw files. So a "half-add" — a role/SOP/persona/dept FILE added without its `_index.json` registration, or a stale entry whose file was renamed/removed — was invisible to the build and slipped through CI. This closes that, system-wide.
+
+- **AUTO-REGISTER helper (NEW)**: `23-ai-workforce-blueprint/scripts/register-library-additions.py` — an idempotent disk→index reconciler for ANY department. Discovers every canonical role file (flat `<dept>/<slug>.md` OR folder `<dept>/<slug>/how-to.md`), ADDS a `roles[]` entry + dept membership for any role missing from the index (preserving existing rich metadata — never clobbers), recomputes `total_roles`/`total_departments`/per-dept `count`, then chains `tag_role_classes.py` (capability_class) + `hash-content-manifest.py` (content_sha restamp) so the whole manifest is current. `--check` (CI), `--apply`, `--prune-duplicate-residue`.
+- **AUTO-PROPAGATE wiring**: `add-role.sh` now scaffolds a library `how-to.md` stub and runs the reconciler so a single add yields a COMPLETE `roles[]` entry (not membership-without-a-file); `32-command-center-setup/scripts/sync-extensions.sh --converge` runs the reconciler (Step 2b-pre) BEFORE invariant-validation/propagation so new library roles are registered before they materialize into client workspaces (rosters are already regenerated every materialize run by `create_role_workspaces.regenerate_department_roster`).
+- **BACKSTOP (NEW)**: `register-library-additions.py --check` is wired into `qc-static.yml` and a dedicated `library-lockstep.yml` workflow; it FAILS LOUD (exit 7) on any half-add in any dept — unregistered file, dead entry, duplicate-residue (flat `.md` beside a canonical folder-form role), triple-hyphen orphan, or count drift. `test-library-register.sh` (NEW) proves the gate bites on all of those classes and heals via `--apply`.
+- **Cleaned pre-existing half-adds**: removed 14 duplicate-residue flat role files (e.g. `engineering/qa-engineer.md` beside the canonical `engineering/qa-engineer/how-to.md`) and 1 triple-hyphen orphan draft (`legal-compliance/qc-specialist---legal.md`); content manifest re-stamped. On the merged tree (rebased onto the v12.34.0 Presentation Quality Overhaul) `total_roles` is 428 — the v12.34.0 overhaul's 5 new presentation roles plus the cleaned library.
+
+## v12.34.0 — 2026-06-18 — Presentation Quality Overhaul: re-sequenced flow + 5 QC roles + duration/pitch/creativity gates
+
+- Flow re-sequenced so each QC follows its artifact (copy-QC after copy, prompt-QC after prompt-authoring, image-QC after render, typography-QC after design, speech-QC after speech).
+- Five independent QC functions with rubric SOPs + independent-reviewer requirement; new prompt-author role; image-prompt floor reconciled to 5000.
+- Duration-driven intake + AF-SLIDE-COUNT-FLOOR (a 30-min/10-slide deck auto-fails); AF-PITCH-MISSING (offer ladder + re-pitch required); AF-CREATIVITY (reject template-sameness/cliche). manifest_version 10; each gate has a negative test (Guard A).
+
 ## v12.33.0 — 2026-06-18 — Presentation pipeline hardening: process gate, QC-independence, prevention guards, deps
 
 Presentation department — the deck build now hard-fails (non-zero exit) on any skipped mandatory stage, and the gate system is protected against future "described-but-unenforced" gaps:
