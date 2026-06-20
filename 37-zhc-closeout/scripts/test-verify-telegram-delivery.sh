@@ -9,6 +9,11 @@
 #   CASE D: a required messageId is MISSING but AGED OUT past TTL  -> PASS (rc 0)
 #   CASE E: phantom guard -- messagesDelivered with only send-failed
 #           records (no real messageId) is NOT counted delivered    -> count 0
+#   CASE F: registry FILE ABSENT (OpenClaw 2026.6.x migrated it away) +
+#           all required ids gateway-confirmed in state             -> PASS (rc 0)
+#   CASE G: registry ABSENT + a required slot genuinely undelivered -> FAIL (rc 4)
+#   CASE H: registry ABSENT + a required slot has no record at all  -> FAIL (rc 4)
+#   CASE I: registry ABSENT + ZHC_TG_REGISTRY_REQUIRED=1 (legacy)   -> ENV  (rc 7)
 #
 # No live OpenClaw install needed: drives the verifier via ZHC_STATE_FILE /
 # ZHC_LOG_FILE / ZHC_TG_REGISTRY fixtures in a temp dir.
@@ -126,6 +131,82 @@ if [[ "$real_count" == "0" ]]; then
   PASS=$((PASS + 1))
 else
   echo "  ✗ CASE E: expected 0 real deliveries, got $real_count" >&2
+  FAILED=$((FAILED + 1))
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OpenClaw 2026.6.x DERIVED MODE: the gateway no longer writes the JSON sent-
+# registry (it migrated into SQLite), so the registry FILE is absent. The gate
+# must then confirm delivery from the gateway-confirmed messageIds already in
+# state -- WITHOUT the env-var/manual workaround that was needed for a recent
+# closeout, and while STILL failing on genuinely-undelivered slots.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# run_case_noreg <name> <expect_rc> -- like run_case but points ZHC_TG_REGISTRY
+# at a path that does NOT exist (simulates the migrated-away 2026.6.x registry).
+run_case_noreg() {
+  local name="$1" expect_rc="$2" rc
+  rm -f "$TMP/registry.json"
+  ZHC_STATE_FILE="$TMP/state.json" \
+  ZHC_LOG_FILE="$TMP/verify.log" \
+  ZHC_TG_REGISTRY="$TMP/does-not-exist-registry.json" \
+  ZHC_TG_REQUIRED_SLOTS="1,6,7" \
+    bash "$VERIFY" >/dev/null 2>&1
+  rc=$?
+  if [[ "$rc" == "$expect_rc" ]]; then
+    echo "  ✓ $name (rc=$rc as expected)"
+    PASS=$((PASS + 1))
+  else
+    echo "  ✗ $name -- expected rc=$expect_rc, got rc=$rc" >&2
+    FAILED=$((FAILED + 1))
+  fi
+}
+
+# CASE F: registry FILE absent + all required slots have gateway-confirmed
+# messageIds in state -> PASS (rc 0) WITHOUT any skip/workaround env var.
+write_state "[
+  {\"n\":1,\"messageId\":\"6001\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"},
+  {\"n\":6,\"messageId\":\"6006\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"},
+  {\"n\":7,\"messageId\":\"6007\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"}
+]"
+run_case_noreg "CASE F: registry absent (2026.6.x) + all ids confirmed in state -> PASS" 0
+
+# CASE G: registry FILE absent + a required slot has NO messageId (genuine
+# send failure) -> still FAIL (rc 4). Fail-loud preserved in derived mode.
+write_state "[
+  {\"n\":1,\"messageId\":\"7001\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"},
+  {\"n\":6,\"messageId\":\"7006\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"},
+  {\"n\":7,\"status\":\"send-failed\",\"reason\":\"no-messageId\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"}
+]"
+run_case_noreg "CASE G: registry absent + required slot never delivered -> FAIL(4)" 4
+
+# CASE H: registry FILE absent + a required slot has no record AT ALL -> FAIL(4).
+write_state "[
+  {\"n\":1,\"messageId\":\"8001\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"},
+  {\"n\":6,\"messageId\":\"8006\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"}
+]"
+run_case_noreg "CASE H: registry absent + required slot 7 has no record -> FAIL(4)" 4
+
+# CASE I: legacy hard-require -- registry absent but ZHC_TG_REGISTRY_REQUIRED=1
+# forces the old env-error (rc 7) so operators can opt back into strict behavior.
+write_state "[
+  {\"n\":1,\"messageId\":\"9001\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"},
+  {\"n\":6,\"messageId\":\"9006\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"},
+  {\"n\":7,\"messageId\":\"9007\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"}
+]"
+rm -f "$TMP/registry.json"
+ZHC_STATE_FILE="$TMP/state.json" \
+ZHC_LOG_FILE="$TMP/verify.log" \
+ZHC_TG_REGISTRY="$TMP/does-not-exist-registry.json" \
+ZHC_TG_REQUIRED_SLOTS="1,6,7" \
+ZHC_TG_REGISTRY_REQUIRED=1 \
+  bash "$VERIFY" >/dev/null 2>&1
+ical_rc=$?
+if [[ "$ical_rc" == "7" ]]; then
+  echo "  ✓ CASE I: registry absent + ZHC_TG_REGISTRY_REQUIRED=1 -> env-error(7) (rc=7 as expected)"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ CASE I: expected rc=7, got rc=$ical_rc" >&2
   FAILED=$((FAILED + 1))
 fi
 

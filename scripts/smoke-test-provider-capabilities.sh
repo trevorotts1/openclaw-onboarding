@@ -107,6 +107,69 @@ _operator_alert() {
   fi
 }
 
+# ─── OpenClaw version + capability detection (S3 version-awareness) ────────────
+#
+# WHY: the S3 live-turn probe historically used `openclaw message send --channel
+# internal` — a gateway loopback channel. That channel was REMOVED in OpenClaw
+# 2026.6.x. On 2026.6.8 the CLI returns `Error: Unknown channel: internal`
+# (verified: `openclaw message send --channel internal -t self --dry-run` ⇒
+# "Unknown channel: internal"; `openclaw message send --help` lists the supported
+# channels and 'internal' is NOT among them). The replacement live-turn surface is
+# `openclaw agent --message <text> --json`, which "Runs an agent turn via the
+# Gateway" and returns the agent's reply WITHOUT delivering to any channel (we omit
+# --deliver). So the probe stays a genuine live model turn on every version; only
+# the transport changes.
+#
+# VERSION ASSUMPTION (documented): the 'internal' channel exists on installs
+# BELOW 2026.6.0 and was removed at/after 2026.6.0. We therefore branch on a
+# detected-version threshold of 2026.6.0 AND fall back to a runtime capability
+# probe (does `agent` exist? is 'internal' an accepted channel?) so the gate is
+# correct even if the exact removal version differs slightly across builds.
+INTERNAL_REMOVED_VERSION="2026.6.0"
+
+# OC_VERSION = parsed YYYY.M.P token from `openclaw --version`, or "" if unknown.
+OC_VERSION=""
+if command -v openclaw >/dev/null 2>&1; then
+  _oc_raw="$(openclaw --version 2>&1 | tr -d '\r' | head -n1 || true)"
+  OC_VERSION="$(printf '%s' "$_oc_raw" | grep -oE '20[0-9]{2}\.[0-9]+\.[0-9]+' | head -n1 || true)"
+fi
+# Allow tests to pin the version (and bypass the live binary) deterministically.
+OC_VERSION="${SMOKE_OC_VERSION_OVERRIDE:-$OC_VERSION}"
+[ -n "$OC_VERSION" ] && _info "OpenClaw version detected: $OC_VERSION"
+
+# _ver_ge A B  → returns 0 if version A >= version B (numeric YYYY.M.P compare).
+# Mirrors the canonical comparator in 38-.../16-verify-openclaw-version.sh.
+_ver_ge() {
+  printf '%s\n%s\n' "$2" "$1" | sort -t. -k1,1n -k2,2n -k3,3n -C
+}
+
+# _internal_channel_supported → 0 (yes) / 1 (no). Branch by version when known,
+# else fall back to a runtime capability probe so we never fail on a version
+# artifact. Tests can force the answer with SMOKE_INTERNAL_CHANNEL_SUPPORTED=0|1.
+_internal_channel_supported() {
+  if [ -n "${SMOKE_INTERNAL_CHANNEL_SUPPORTED:-}" ]; then
+    [ "${SMOKE_INTERNAL_CHANNEL_SUPPORTED}" = "1" ] && return 0 || return 1
+  fi
+  if [ -n "$OC_VERSION" ]; then
+    # internal exists only on versions strictly BELOW the removal version.
+    if _ver_ge "$OC_VERSION" "$INTERNAL_REMOVED_VERSION"; then
+      return 1   # 2026.6.0+ → removed
+    else
+      return 0   # below 2026.6.0 → present
+    fi
+  fi
+  # Version unknown: runtime capability probe. `openclaw message send --help`
+  # enumerates the supported --channel values; 'internal' present ⇒ supported.
+  if command -v openclaw >/dev/null 2>&1; then
+    if openclaw message send --help 2>&1 | grep -qiwE 'internal'; then
+      return 0
+    fi
+    return 1
+  fi
+  # No binary at all: caller will skip the live probe anyway.
+  return 1
+}
+
 # ─── Read config via Python ───────────────────────────────────────────────────
 
 CONFIG_READ=$(python3 - "$OC_CONFIG" <<'PYEOF'
@@ -220,7 +283,14 @@ fi
 
 # ─── S3: live agent turn test ─────────────────────────────────────────────────
 # Sends a minimal probe to the local gateway and verifies a real reply comes back.
-# Skip when: openclaw CLI not available, or ZHC_SKIP_LIVE_PROBE=1 (testing mode).
+# VERSION-AWARE TRANSPORT:
+#   • OpenClaw < 2026.6.0: probe via `message send --channel internal` (loopback).
+#   • OpenClaw >= 2026.6.0: the 'internal' channel was REMOVED, so probe via
+#     `openclaw agent --message <text> --json` (runs a genuine agent turn through
+#     the Gateway, no channel delivery). Same semantics: a real model reply must
+#     come back. We do NOT skip the gate or require ZHC_SKIP_LIVE_PROBE — the gate
+#     keeps fail-loud for a genuine provider/gateway failure on every version.
+# Skip ONLY when: openclaw CLI not available, or ZHC_SKIP_LIVE_PROBE=1 (test mode).
 _info "S3: live agent turn probe"
 if [[ "${ZHC_SKIP_LIVE_PROBE:-0}" = "1" ]]; then
   _info "S3: ZHC_SKIP_LIVE_PROBE=1 — skipping live probe (test mode)"
@@ -229,14 +299,24 @@ elif ! command -v openclaw >/dev/null 2>&1; then
   WARNINGS=$((WARNINGS + 1))
 else
   # Use a deterministic single-word probe that any model should answer in one token
-  PROBE_OUT=$(openclaw message send --channel internal -m "ping" --json --timeout 30 2>&1 || true)
+  if _internal_channel_supported; then
+    _info "S3: using legacy 'internal' loopback channel (OpenClaw < ${INTERNAL_REMOVED_VERSION})"
+    PROBE_OUT=$(openclaw message send --channel internal -m "ping" --json --timeout 30 2>&1 || true)
+  else
+    _info "S3: 'internal' channel unavailable on this OpenClaw (>= ${INTERNAL_REMOVED_VERSION}); probing via 'openclaw agent' turn"
+    # `agent` runs a real Gateway turn and returns the reply; omit --deliver so
+    # nothing is sent to any channel. This preserves the live-turn semantics.
+    PROBE_OUT=$(openclaw agent --message "ping" --json --timeout 30 2>&1 || true)
+  fi
   PROBE_OK=0
-  # Accept any non-empty reply that isn't a connectivity/auth error
-  if printf '%s' "$PROBE_OUT" | grep -qiE '"reply"|"content"|"message"|"response"'; then
+  # Accept any non-empty reply that isn't a connectivity/auth error. Cover both
+  # the message-send shape ("reply"/"content"/"message"/"response") and the
+  # `openclaw agent --json` shape ("text"/"reply"/"output"/"result").
+  if printf '%s' "$PROBE_OUT" | grep -qiE '"reply"|"content"|"message"|"response"|"text"|"output"|"result"'; then
     PROBE_OK=1
   fi
-  # Explicit failure signals
-  if printf '%s' "$PROBE_OUT" | grep -qiE '4[0-9]{2}|ECONNREFUSED|402|model.*error|authentication.*fail|unauthorized'; then
+  # Explicit failure signals (genuine provider/gateway failure → keep fail-loud).
+  if printf '%s' "$PROBE_OUT" | grep -qiE '4[0-9]{2}|ECONNREFUSED|402|model.*error|authentication.*fail|unauthorized|Unknown channel'; then
     PROBE_OK=0
   fi
   if [ "$PROBE_OK" = "1" ]; then

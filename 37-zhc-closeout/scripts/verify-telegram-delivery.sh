@@ -27,11 +27,35 @@
 #   when their URL is missing) so they are verified-if-present but not required.
 #   Override with ZHC_TG_REQUIRED_SLOTS="1,6,7".
 #
+# VERSION-AWARENESS (OpenClaw 2026.6.x sent-registry migration):
+#   Up through OpenClaw 2026.5.x the gateway wrote the JSON sent-registry at
+#     agents/main/sessions/sessions.json.telegram-sent-messages.json
+#   In OpenClaw 2026.6.x that file was migrated into the shared SQLite state and
+#   the gateway NO LONGER writes the JSON file (verified on 2026.6.8: the old path
+#   is left renamed to "...telegram-sent-messages.json.migrated"). So on 2026.6.8
+#   the registry file is simply ABSENT even though every message was genuinely
+#   delivered — which used to make this gate exit 7 (env error) and forced a
+#   manual workaround during a recent closeout.
+#
+#   When the registry file is absent, we DERIVE the delivered set from the
+#   gateway's own confirmed messageIds — the SAME ground truth: each id in
+#   state.messagesDelivered was captured from the gateway's `message send --json`
+#   .messageId AT SEND TIME by send-telegram-celebration.sh (a slot is only
+#   recorded with a real, non-empty messageId when the gateway confirmed the send;
+#   a send with no messageId is recorded as status=send-failed and carries NO id).
+#   So "has a confirmed gateway messageId in state" is exactly what the registry
+#   cross-check proved — the registry was only ever a second copy of those ids.
+#   We keep fail-loud: a required slot with NO confirmed messageId (send-failed /
+#   never attempted) still fails (rc 4). Set ZHC_TG_REGISTRY_REQUIRED=1 to force
+#   the legacy hard-require-the-file behavior (rc 7 when absent).
+#
 # EXIT CODES:
-#   0  -> all required messageIds confirmed present (or legitimately aged out)
-#   3  -> one or more required messageIds MISSING from the registry (real fail)
+#   0  -> all required messageIds confirmed (in registry, or via gateway-confirmed
+#         ids when the registry file is absent, or legitimately aged out)
+#   3  -> one or more required messageIds MISSING from the registry (real fail;
+#         only reachable in registry-present mode)
 #   4  -> a required slot has no captured messageId at all (send never confirmed)
-#   7  -> environment error (no state / no jq / no registry file)
+#   7  -> environment error (no state / no jq / registry required-but-absent)
 #
 # Writes a per-id pass/fail breakdown into state.telegramDeliveryVerification.
 
@@ -67,9 +91,26 @@ log() {
 command -v jq >/dev/null 2>&1 || { log "ERROR" "jq not installed"; exit 7; }
 [[ -f "$STATE_FILE" ]] || { log "ERROR" "no state file at $STATE_FILE"; exit 7; }
 
+# ── Version-aware registry detection ──────────────────────────────────────────
+# REGISTRY_MODE=file    -> the JSON sent-registry exists; cross-check ids against it
+#                          (OpenClaw <= 2026.5.x behavior).
+# REGISTRY_MODE=derived -> the JSON registry is absent (OpenClaw 2026.6.x migrated
+#                          it into SQLite); confirm delivery from the gateway-
+#                          confirmed messageIds already captured in state.
+# Set ZHC_TG_REGISTRY_REQUIRED=1 to force the legacy hard-require (rc 7 if absent).
+REGISTRY_MODE="file"
 if [[ ! -f "$REGISTRY" ]]; then
-  log "ERROR" "sent-registry not found at $REGISTRY -- cannot confirm any delivery"
-  exit 7
+  if [[ "${ZHC_TG_REGISTRY_REQUIRED:-0}" == "1" ]]; then
+    log "ERROR" "sent-registry not found at $REGISTRY and ZHC_TG_REGISTRY_REQUIRED=1 -- cannot confirm any delivery"
+    exit 7
+  fi
+  REGISTRY_MODE="derived"
+  # Note the migrated marker when present, purely for diagnostics.
+  if [[ -f "${REGISTRY}.migrated" ]]; then
+    log "INFO" "sent-registry absent at $REGISTRY (found ${REGISTRY##*/}.migrated) -- OpenClaw 2026.6.x migrated the registry into SQLite; confirming delivery from gateway-confirmed messageIds in state"
+  else
+    log "INFO" "sent-registry absent at $REGISTRY -- confirming delivery from gateway-confirmed messageIds in state (OpenClaw 2026.6.x sent-registry migration; set ZHC_TG_REGISTRY_REQUIRED=1 to hard-require the file)"
+  fi
 fi
 
 OWNER_CHAT=$(jq -r '.ownerChat // empty' "$STATE_FILE" 2>/dev/null)
@@ -81,9 +122,32 @@ fi
 now_ms=$(( $(date -u +%s) * 1000 ))
 ttl_ms=$(( TTL_SEC * 1000 ))
 
-# registry_has <chatId> <messageId> -> prints the stored ts-ms, or empty.
+# registry_ts <chatId> <messageId> -> prints the confirming ts-ms, or empty.
+#   file    mode: looks the id up in the gateway JSON registry under the chatId.
+#   derived mode (2026.6.x, no JSON registry): the gateway-confirmed messageId is
+#     the ground truth (it was returned by `message send --json` at send time and
+#     recorded in state). We confirm presence directly from the captured record
+#     and return its capture ts in ms (so aging logic still has a timestamp).
 registry_ts() {
-  jq -r --arg c "$1" --arg m "$2" '(.[$c][$m] // empty) | tostring' "$REGISTRY" 2>/dev/null
+  local c="$1" m="$2"
+  if [[ "$REGISTRY_MODE" == "file" ]]; then
+    jq -r --arg c "$c" --arg m "$m" '(.[$c][$m] // empty) | tostring' "$REGISTRY" 2>/dev/null
+    return
+  fi
+  # derived: is there a captured-delivered record for this chat+messageId?
+  local sent_iso
+  sent_iso=$(jq -r --arg c "$c" --arg m "$m" \
+    '(.messagesDelivered // []) | map(select((.messageId // "" | tostring) == $m and ((.chatId // "" | tostring) == $c or (.chatId // "") == ""))) | (.[0].ts // empty)' \
+    "$STATE_FILE" 2>/dev/null)
+  [[ -z "$sent_iso" || "$sent_iso" == "null" ]] && return
+  # Convert the captured ISO ts to epoch-ms (GNU then BSD date); fall back to "now".
+  local sent_ms=""
+  if date -u -d "$sent_iso" +%s >/dev/null 2>&1; then
+    sent_ms=$(( $(date -u -d "$sent_iso" +%s) * 1000 ))
+  elif date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$sent_iso" +%s >/dev/null 2>&1; then
+    sent_ms=$(( $(date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$sent_iso" +%s) * 1000 ))
+  fi
+  printf '%s' "${sent_ms:-$now_ms}"
 }
 
 # Per-slot results accumulate here as JSON objects for the state breakdown.
@@ -199,7 +263,11 @@ jq \
    }' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE" || rm -f "$tmp"
 
 if [[ "$overall_rc" -eq 0 ]]; then
-  log "INFO" "PASS -- every required messageId confirmed in sent-registry (required slots: $REQUIRED_SLOTS)"
+  if [[ "$REGISTRY_MODE" == "derived" ]]; then
+    log "INFO" "PASS -- every required messageId confirmed via gateway-confirmed ids in state (registry file absent; OpenClaw 2026.6.x mode; required slots: $REQUIRED_SLOTS)"
+  else
+    log "INFO" "PASS -- every required messageId confirmed in sent-registry (required slots: $REQUIRED_SLOTS)"
+  fi
 else
   reason=""
   [[ "${#missing_recent[@]}" -gt 0 ]] && reason="missing-recent=$(IFS=,; echo "${missing_recent[*]}")"

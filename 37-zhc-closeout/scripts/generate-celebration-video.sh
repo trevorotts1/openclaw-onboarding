@@ -32,6 +32,30 @@
 #   - submit_gemini_omni() now always sets aspect_ratio (KIE 422 fix)
 #   - VEO poll timeout bumped to 1800s + transient 500 retry (max 3)
 #
+# PUBLIC-REFERENCE-IMAGE fix (2026-06-20 closeout postmortem -- recurring
+# "Gemini Omni: Image fetch failed" across multiple recent closeouts):
+#   ROOT CAUSE: the reference images handed to the video model were not
+#   reliably reachable by KIE/Gemini's own servers. The org-chart infographic
+#   (infographic1Url) is rendered LOCALLY and stored as a file:// path; the
+#   AI-generated infographics are stored as KIE tempfile.* URLs that auto-delete
+#   after a few days and whose CDN the Gemini Omni backend intermittently
+#   cannot fetch. file:// was silently dropped (losing the brand reference) and
+#   tempfile URLs were passed verbatim with NO retry -> "Image fetch failed".
+#   FIX: ensure_public_url() now GUARANTEES every reference image is a fresh,
+#   durable, model-reachable https URL BEFORE the video call:
+#     - file:// or on-disk path -> KIE base64 upload (file-base64-upload)
+#     - existing http(s) URL     -> KIE re-host (file-url-upload), so an expired
+#                                   or flaky tempfile becomes a fresh KIE-hosted
+#                                   URL the model can fetch.
+#   Both uploaders retry-with-backoff. submit_gemini_omni()/poll also treat
+#   "image fetch failed" as a transient and retry. Endpoints (KIE, same key):
+#     POST https://kieai.redpandaai.co/api/file-base64-upload
+#     POST https://kieai.redpandaai.co/api/file-url-upload
+#   (see 07-kie-setup/kie-setup-full.md "File upload APIs"). Uploaded files are
+#   retained ~3 days -- ample for the closeout window. If a reference still can't
+#   be made public, it is simply OMITTED (the video renders prompt-only) rather
+#   than poisoning the request with an unfetchable URL.
+#
 # CRITICAL (Lesson 2): NEVER pass tempfile.aiquickdraw.com URLs directly to
 # Telegram. The CDN returns content-disposition: attachment, so Telegram
 # renders the message as a download card rather than an inline video player.
@@ -50,8 +74,8 @@ else
   exit 1
 fi
 
-STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
-LOG_FILE="$OC_ROOT/workspace/.zhc-closeout.log"
+STATE_FILE="${ZHC_STATE_FILE:-$OC_ROOT/workspace/.workforce-build-state.json}"
+LOG_FILE="${ZHC_LOG_FILE:-$OC_ROOT/workspace/.zhc-closeout.log}"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMPLATE="$SKILL_DIR/templates/veo-prompt.txt"
 STEP_LABEL="celebration-video"
@@ -59,10 +83,184 @@ LOCAL_MP4="$OC_ROOT/workspace/.zhc-celebration-video.mp4"
 
 log() {
   printf '%s [%-5s] step=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$STEP_LABEL" "$2" >> "$LOG_FILE"
-  printf '%s [%-5s] step=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$STEP_LABEL" "$2"
+  # Console copy goes to STDERR, never STDOUT. Several helpers below have their
+  # STDOUT captured by command substitution (submit_*, poll_*, ensure_public_url,
+  # _upload_*). Logging to stdout would poison those captures (e.g. a warning line
+  # interleaved into the createTask JSON response broke task_id extraction).
+  printf '%s [%-5s] step=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$STEP_LABEL" "$2" >&2
 }
 state_get() { jq -r "$1 // empty" "$STATE_FILE" 2>/dev/null; }
 state_set() { local tmp; tmp=$(mktemp); jq "$1" "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"; }
+
+# ----------------------------------------------------------------------
+# PUBLIC REFERENCE IMAGE RESOLUTION (2026-06-20 "Image fetch failed" fix)
+#
+# The video model (Gemini Omni via KIE) downloads each reference image from
+# its OWN servers. So every reference MUST be a publicly reachable https URL.
+# Two failure modes we have to defeat:
+#   1. file:// / on-disk path  -> not reachable by anyone but this box.
+#   2. ephemeral / flaky URL   -> e.g. a KIE tempfile.* that has expired or a
+#      CDN the model backend intermittently cannot pull -> "Image fetch failed".
+#
+# KIE_UPLOAD_BASE: the KIE temp-file upload service (07-kie-setup). It returns a
+# durable (~3 day) KIE-hosted https URL that the SAME KIE/Gemini backend can
+# always fetch. Overridable for tests.
+KIE_UPLOAD_BASE="${KIE_UPLOAD_BASE:-https://kieai.redpandaai.co}"
+# KIE_API_BASE: the createTask/recordInfo + veo job API host. Overridable for
+# tests (lets the harness point the whole pipeline at a local mock). Production
+# default is the real KIE host.
+KIE_API_BASE="${KIE_API_BASE:-https://api.kie.ai}"
+# Re-host EVERY reference (even already-public ones) so the model always gets a
+# fresh, first-party KIE URL? Default on -- this is what kills the recurring
+# transient "Image fetch failed" on tempfile/CDN URLs. Set 0 to pass through
+# already-public http(s) URLs unchanged.
+ZHC_REHOST_PUBLIC_REFS="${ZHC_REHOST_PUBLIC_REFS:-1}"
+
+# _is_local_path <str> -> 0 if it is a file:// URL or an on-disk path.
+_is_local_path() {
+  local u="$1"
+  [[ "$u" == file://* ]] && return 0
+  [[ "$u" == /* && -e "$u" ]] && return 0   # absolute path that exists on disk
+  return 1
+}
+
+# _local_to_disk <str> -> strips file:// to a plain filesystem path on stdout.
+_local_to_disk() {
+  local u="$1"
+  [[ "$u" == file://* ]] && u="${u#file://}"
+  printf '%s' "$u"
+}
+
+# _mime_for <path> -> best-effort image mime type for the base64 data URL.
+_mime_for() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    *.png)         echo "image/png" ;;
+    *.jpg|*.jpeg)  echo "image/jpeg" ;;
+    *.webp)        echo "image/webp" ;;
+    *.gif)         echo "image/gif" ;;
+    *)             echo "image/png" ;;
+  esac
+}
+
+# _curl_retry: POST a JSON body with retry-with-backoff on transient failures.
+# Echoes the response body; returns non-zero only after all attempts fail.
+# Treats HTTP 5xx / 429 / 408 / connection failures as transient.
+_curl_retry_post() {
+  local url="$1"; local body="$2"; local label="$3"
+  local attempts="${4:-4}"
+  local i resp http_code
+  for (( i=1; i<=attempts; i++ )); do
+    resp=$(curl -sS -m 60 -w '\n__HTTP_CODE__%{http_code}' -X POST "$url" \
+      -H "Authorization: Bearer ${KIE_API_KEY:-}" \
+      -H "Content-Type: application/json" \
+      -d "$body" 2>/dev/null)
+    local rc=$?
+    http_code=$(printf '%s' "$resp" | awk -F'__HTTP_CODE__' 'END{print $2}')
+    resp=$(printf '%s' "$resp" | sed 's/__HTTP_CODE__[0-9]*$//')
+    if [[ $rc -eq 0 && "$http_code" =~ ^2 ]]; then
+      printf '%s' "$resp"
+      return 0
+    fi
+    # transient? (curl failure, or 408/429/5xx)
+    if [[ $rc -ne 0 || "$http_code" =~ ^5 || "$http_code" == "429" || "$http_code" == "408" || -z "$http_code" ]]; then
+      log "WARN" "$label: transient failure (rc=$rc http=${http_code:-none}, attempt $i/$attempts); retrying"
+      sleep $(( i * i * 2 ))
+      continue
+    fi
+    # any other 4xx is terminal for this call
+    log "WARN" "$label: non-retryable HTTP ${http_code}: $(printf '%s' "$resp" | head -c 160)"
+    return 1
+  done
+  log "WARN" "$label: exhausted $attempts attempts"
+  return 1
+}
+
+# _upload_local_to_public <disk_path> -> echoes a public KIE URL, or non-zero.
+_upload_local_to_public() {
+  local path; path="$(_local_to_disk "$1")"
+  if [[ ! -s "$path" ]]; then
+    log "WARN" "ref-upload: local file missing/empty: $path"
+    return 1
+  fi
+  if [[ -z "${KIE_API_KEY:-}" ]]; then
+    log "WARN" "ref-upload: KIE_API_KEY unset; cannot upload local reference $path"
+    return 1
+  fi
+  local mime b64 fname body resp url
+  mime="$(_mime_for "$path")"
+  b64=$(base64 < "$path" 2>/dev/null | tr -d '\n')
+  if [[ -z "$b64" ]]; then
+    log "WARN" "ref-upload: base64 of $path produced no data"
+    return 1
+  fi
+  fname="zhc-ref-$(date -u +%s)-$(basename "$path")"
+  body=$(jq -n \
+    --arg data "data:${mime};base64,${b64}" \
+    --arg p "images/zhc-closeout" \
+    --arg f "$fname" \
+    '{base64Data: $data, uploadPath: $p, fileName: $f}')
+  resp=$(_curl_retry_post "$KIE_UPLOAD_BASE/api/file-base64-upload" "$body" "ref-upload(base64)") || return 1
+  url=$(printf '%s' "$resp" | jq -r '.data.downloadUrl // .downloadUrl // .data.url // empty' 2>/dev/null)
+  if [[ -n "$url" && "$url" == http* ]]; then
+    printf '%s' "$url"
+    return 0
+  fi
+  log "WARN" "ref-upload(base64): no downloadUrl in response: $(printf '%s' "$resp" | head -c 160)"
+  return 1
+}
+
+# _rehost_url_to_public <http_url> -> echoes a fresh KIE-hosted URL, or non-zero.
+_rehost_url_to_public() {
+  local src="$1"
+  if [[ -z "${KIE_API_KEY:-}" ]]; then
+    log "WARN" "ref-rehost: KIE_API_KEY unset; cannot re-host $src"
+    return 1
+  fi
+  local fname body resp url
+  fname="zhc-ref-$(date -u +%s).png"
+  body=$(jq -n \
+    --arg u "$src" \
+    --arg p "images/zhc-closeout" \
+    --arg f "$fname" \
+    '{fileUrl: $u, uploadPath: $p, fileName: $f}')
+  resp=$(_curl_retry_post "$KIE_UPLOAD_BASE/api/file-url-upload" "$body" "ref-rehost(url)") || return 1
+  url=$(printf '%s' "$resp" | jq -r '.data.downloadUrl // .downloadUrl // .data.url // empty' 2>/dev/null)
+  if [[ -n "$url" && "$url" == http* ]]; then
+    printf '%s' "$url"
+    return 0
+  fi
+  log "WARN" "ref-rehost(url): no downloadUrl in response: $(printf '%s' "$resp" | head -c 160)"
+  return 1
+}
+
+# ensure_public_url <raw_ref> -> echoes a model-reachable https URL on stdout,
+# or echoes nothing + returns non-zero if the ref cannot be made public (the
+# caller then OMITS it rather than poisoning the request). Idempotent + cached.
+ensure_public_url() {
+  local raw="$1"
+  [[ -z "$raw" || "$raw" == "null" ]] && return 1
+  if _is_local_path "$raw"; then
+    _upload_local_to_public "$raw" && return 0
+    return 1
+  fi
+  if [[ "$raw" == http://* || "$raw" == https://* ]]; then
+    if [[ "$ZHC_REHOST_PUBLIC_REFS" == "1" ]]; then
+      # Re-host to a fresh first-party KIE URL. On failure, fall back to the
+      # original URL (better to try the original than to drop the reference).
+      local rehosted
+      if rehosted="$(_rehost_url_to_public "$raw")"; then
+        printf '%s' "$rehosted"
+        return 0
+      fi
+      log "WARN" "ref: re-host failed for $raw; falling back to original public URL"
+    fi
+    printf '%s' "$raw"
+    return 0
+  fi
+  # unknown scheme -> not usable
+  log "WARN" "ref: unrecognized reference '$raw' (not file://, path, or http[s]); omitting"
+  return 1
+}
 
 COMPANY_NAME=$(state_get '.companyName'); [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="Your Company"
 OWNER_NAME=$(state_get '.ownerName'); [[ -z "$OWNER_NAME" ]] && OWNER_NAME="the Owner"
@@ -81,6 +279,47 @@ if [[ -z "$LOGO_URL" ]]; then
   if [[ -n "$_branding_file" ]]; then
     LOGO_URL=$(jq -r '.logo_url // .logoUrl // .logo // empty' "$_branding_file" 2>/dev/null || true)
     [[ "$LOGO_URL" == "null" ]] && LOGO_URL=""
+  fi
+fi
+
+# ----------------------------------------------------------------------
+# Make every reference image PUBLIC before the video call (Image-fetch fix).
+# After this block, INFOGRAPHIC1_URL / LOGO_URL are EITHER a model-reachable
+# https URL OR empty (omitted). The on-disk org-chart PNG is preferred as the
+# source for infographic1 when present, since it is a guaranteed-good local
+# file we can upload, vs an already-ephemeral KIE tempfile URL.
+# ----------------------------------------------------------------------
+INFOGRAPHIC1_LOCAL=$(state_get '.infographic1LocalPath')
+
+# Prefer the on-disk PNG (upload it) over a stale tempfile URL when available.
+_inf1_src="$INFOGRAPHIC1_URL"
+if [[ -n "$INFOGRAPHIC1_LOCAL" && "$INFOGRAPHIC1_LOCAL" != "null" && -s "$INFOGRAPHIC1_LOCAL" ]]; then
+  _inf1_src="$INFOGRAPHIC1_LOCAL"
+fi
+# Preserve the ORIGINAL sources so an "image fetch failed" mid-job can re-host
+# them to a fresh KIE URL and re-submit (see the retry loop below).
+INF1_SRC_ORIG="$_inf1_src"
+LOGO_SRC_ORIG="$LOGO_URL"
+
+if [[ -n "$_inf1_src" && "$_inf1_src" != "null" ]]; then
+  if _pub=$(ensure_public_url "$_inf1_src"); then
+    log "INFO" "reference image infographic1 -> public URL: $_pub"
+    INFOGRAPHIC1_URL="$_pub"
+  else
+    log "WARN" "reference image infographic1 could not be made public ('$_inf1_src'); OMITTING it from the video request (prompt-only render)"
+    INFOGRAPHIC1_URL=""
+  fi
+else
+  INFOGRAPHIC1_URL=""
+fi
+
+if [[ -n "$LOGO_URL" && "$LOGO_URL" != "null" ]]; then
+  if _pub=$(ensure_public_url "$LOGO_URL"); then
+    log "INFO" "reference image logo -> public URL: $_pub"
+    LOGO_URL="$_pub"
+  else
+    log "WARN" "reference image logo could not be made public ('$LOGO_URL'); OMITTING it from the video request"
+    LOGO_URL=""
   fi
 fi
 
@@ -144,19 +383,34 @@ submit_gemini_omni() {
       aspect="16:9"
       ;;
   esac
-  # KIE gemini-omni-video requires duration as a STRING ("8"), not an integer - returns error otherwise (Teresa launch 2026-05-27).
+  # KIE gemini-omni-video requires duration as a STRING ("8"), not an integer - returns error otherwise (verified 2026-05-27).
   # We use jq --arg (NOT --argjson) for duration so it is always emitted as a
   # quoted JSON string. aspect_ratio stays "16:9" (validated above).
   # PRD step 4: audio flag added to primary Gemini Omni body (was absent before,
   # only the Veo fallback had generate_audio). Logo URL composited when available.
   local input_obj
-  # Build image_urls array: infographic first, then logo if available
+  # Build image_urls array: infographic first, then logo if available.
+  # HARD RULE (Image-fetch fix): ONLY public http(s) URLs are ever placed here.
+  # By this point ensure_public_url() has already converted file://, on-disk
+  # paths, and flaky tempfile URLs into durable, model-reachable URLs (or emptied
+  # them). This guard is belt-and-suspenders: any value that is not http(s) --
+  # a file://, a bare path, an unknown scheme -- is NEVER sent to the model, so
+  # the model can never be handed an unfetchable reference. (https is strongly
+  # preferred; a plain-http public URL is still model-reachable, so we keep it
+  # but warn.)
   local img_urls_arr="[]"
-  if [[ -n "$INFOGRAPHIC1_URL" && "$INFOGRAPHIC1_URL" != "null" && "$INFOGRAPHIC1_URL" != file://* ]]; then
+  _ref_ok() { [[ "$1" == https://* || "$1" == http://* ]]; }
+  if _ref_ok "$INFOGRAPHIC1_URL"; then
+    [[ "$INFOGRAPHIC1_URL" == http://* ]] && log "WARN" "submit: infographic reference is plain http (https preferred): $INFOGRAPHIC1_URL"
     img_urls_arr=$(jq -n --arg img "$INFOGRAPHIC1_URL" '[$img]')
+  elif [[ -n "$INFOGRAPHIC1_URL" && "$INFOGRAPHIC1_URL" != "null" ]]; then
+    log "WARN" "submit: dropping non-public infographic reference '$INFOGRAPHIC1_URL' (model cannot fetch it)"
   fi
-  if [[ -n "$LOGO_URL" && "$LOGO_URL" != "null" && "$LOGO_URL" != file://* ]]; then
+  if _ref_ok "$LOGO_URL"; then
+    [[ "$LOGO_URL" == http://* ]] && log "WARN" "submit: logo reference is plain http (https preferred): $LOGO_URL"
     img_urls_arr=$(echo "$img_urls_arr" | jq --arg logo "$LOGO_URL" '. + [$logo]')
+  elif [[ -n "$LOGO_URL" && "$LOGO_URL" != "null" ]]; then
+    log "WARN" "submit: dropping non-public logo reference '$LOGO_URL' (model cannot fetch it)"
   fi
   if [[ $(echo "$img_urls_arr" | jq 'length') -gt 0 ]]; then
     input_obj=$(jq -n \
@@ -177,7 +431,7 @@ submit_gemini_omni() {
     --arg model "$MODEL" \
     --argjson input "$input_obj" \
     '{model: $model, input: $input}')
-  curl -sS --fail-with-body -X POST "https://api.kie.ai/api/v1/jobs/createTask" \
+  curl -sS --fail-with-body -X POST "$KIE_API_BASE/api/v1/jobs/createTask" \
     -H "Authorization: Bearer $KIE_API_KEY" \
     -H "Content-Type: application/json" \
     -d "$body"
@@ -190,7 +444,7 @@ poll_gemini_omni() {
   local timeout_sec="${ZHC_VIDEO_POLL_TIMEOUT_SEC:-1800}"
   while (( elapsed < timeout_sec )); do
     local resp
-    resp=$(curl -sS "https://api.kie.ai/api/v1/jobs/recordInfo?taskId=$task_id" \
+    resp=$(curl -sS "$KIE_API_BASE/api/v1/jobs/recordInfo?taskId=$task_id" \
       -H "Authorization: Bearer $KIE_API_KEY" 2>/dev/null)
     local state
     state=$(echo "$resp" | jq -r '.data.state // empty' 2>/dev/null)
@@ -203,6 +457,16 @@ poll_gemini_omni() {
       fail)
         local msg
         msg=$(echo "$resp" | jq -r '.data.failMsg // .msg // "unknown failure"')
+        # "Image fetch failed" (and kin) are TRANSIENT on the model side: the
+        # backend couldn't pull a reference image this time. Signal the outer
+        # retry loop (rc=2) so it RE-SUBMITS -- the references are already public
+        # and get re-hosted to a fresh KIE URL on the next ensure step. Without
+        # this, the recurring "Image fetch failed" across multiple recent closeouts
+        # was a one-and-done hard fail.
+        if echo "$msg" | grep -qiE 'image fetch failed|fetch.*image|failed to (fetch|download|load).*(image|url)|image.*(download|fetch).*fail'; then
+          log "WARN" "Gemini Omni job $task_id: transient image-fetch failure ('$msg') -- signalling re-submit"
+          return 2
+        fi
         log "ERROR" "Gemini Omni job $task_id failed: $msg"
         return 1
         ;;
@@ -228,7 +492,7 @@ submit_veo() {
     --arg prompt "$PROMPT" \
     --argjson duration "$DURATION" \
     '{model: $model, prompt: $prompt, aspect_ratio: "9:16", duration: $duration, generate_audio: true}')
-  curl -sS --fail-with-body -X POST "https://api.kie.ai/api/v1/veo/generate" \
+  curl -sS --fail-with-body -X POST "$KIE_API_BASE/api/v1/veo/generate" \
     -H "Authorization: Bearer $KIE_API_KEY" \
     -H "Content-Type: application/json" \
     -d "$body"
@@ -246,7 +510,7 @@ poll_veo() {
   while (( elapsed < timeout_sec )); do
     local resp http_code
     resp=$(curl -sS -w '\n__HTTP_CODE__%{http_code}' \
-      "https://api.kie.ai/api/v1/veo/record-info?taskId=$task_id" \
+      "$KIE_API_BASE/api/v1/veo/record-info?taskId=$task_id" \
       -H "Authorization: Bearer $KIE_API_KEY" 2>/dev/null)
     http_code=$(printf '%s' "$resp" | awk -F'__HTTP_CODE__' 'END{print $2}')
     resp=$(printf '%s' "$resp" | sed 's/__HTTP_CODE__[0-9]*$//')
@@ -307,6 +571,9 @@ poll_veo() {
 # if both fail, attempt 3 falls back to veo3_fast (unless already Veo).
 # ----------------------------------------------------------------------
 PRIMARY_MODEL="$MODEL"
+# Inter-attempt backoff base (seconds): sleep grows as BASE**attempt. Overridable
+# so the test harness can run with no real waits; production keeps 4 (4s,16s,64s).
+ZHC_VIDEO_RETRY_BACKOFF_BASE="${ZHC_VIDEO_RETRY_BACKOFF_BASE:-4}"
 attempt=0
 result_url=""
 while (( attempt < 3 )); do
@@ -318,13 +585,27 @@ while (( attempt < 3 )); do
   fi
 
   log "INFO" "attempt $attempt/3: submitting video job model=$MODEL duration=${DURATION}s"
+  poll_rc=0
   case "$MODEL" in
     gemini-omni-video)
       submit_resp=$(submit_gemini_omni || true)
       task_id=$(echo "$submit_resp" | jq -r '.data.taskId // .taskId // empty' 2>/dev/null)
       if [[ -n "$task_id" ]]; then
         log "INFO" "attempt $attempt: submitted gemini-omni-video taskId=$task_id"
-        result_url=$(poll_gemini_omni "$task_id" || true)
+        result_url=$(poll_gemini_omni "$task_id"); poll_rc=$?
+        # rc=2 -> transient "image fetch failed": the model couldn't pull a
+        # reference. Re-host the ORIGINAL references to brand-new public KIE URLs
+        # so the next submit hands the model fresh, definitely-fetchable URLs.
+        if (( poll_rc == 2 )); then
+          log "WARN" "attempt $attempt: image-fetch transient; re-hosting references to fresh public URLs before re-submit"
+          if [[ -n "$INF1_SRC_ORIG" && "$INF1_SRC_ORIG" != "null" ]]; then
+            if _pub=$(ensure_public_url "$INF1_SRC_ORIG"); then INFOGRAPHIC1_URL="$_pub"; else INFOGRAPHIC1_URL=""; fi
+          fi
+          if [[ -n "$LOGO_SRC_ORIG" && "$LOGO_SRC_ORIG" != "null" ]]; then
+            if _pub=$(ensure_public_url "$LOGO_SRC_ORIG"); then LOGO_URL="$_pub"; else LOGO_URL=""; fi
+          fi
+          result_url=""
+        fi
       fi
       ;;
     veo3|veo3_fast)
@@ -339,7 +620,7 @@ while (( attempt < 3 )); do
 
   if [[ -z "${task_id:-}" ]]; then
     log "WARN" "attempt $attempt: submit failed, response: $(echo "${submit_resp:-}" | head -c 200)"
-    sleep $((4 ** attempt))
+    sleep $(( ZHC_VIDEO_RETRY_BACKOFF_BASE ** attempt ))
     continue
   fi
   if [[ -n "$result_url" && "$result_url" != "null" ]]; then
@@ -348,7 +629,7 @@ while (( attempt < 3 )); do
   fi
   log "WARN" "attempt $attempt: did not produce a usable URL"
   result_url=""
-  sleep $((4 ** attempt))
+  sleep $(( ZHC_VIDEO_RETRY_BACKOFF_BASE ** attempt ))
 done
 
 if [[ -z "$result_url" ]]; then
