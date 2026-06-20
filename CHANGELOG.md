@@ -1,3 +1,12 @@
+## v13.0.0 — 2026-06-20 — Zero-Human-Experience closeout reliability + presentation gate-measurement fixes
+
+Guarantees every client who completes the AI Workforce interview reliably receives their Zero-Human-Experience closeout, and fixes the build-completeness gate so genuinely-complete workforces stop reading as incomplete.
+
+- **Closeout trigger reliability**: new `scripts/ensure-pipeline-crons.sh` (idempotent registrar of all pipeline trigger crons) is now called by BOTH `install.sh` and `update-skills.sh` (closes the gap where the hot-patch path shipped files but no triggers); new install-time `37-zhc-closeout/scripts/install-closeout-resume-cron.sh` makes the closeout trigger redundant; `install.sh` Step-13 operator-chat hard-abort relaxed to log+continue (was stranding boxes); new `37-zhc-closeout/scripts/qc-closeout-wiring.sh` per-box gate fails loud if closeout would silently never fire.
+- **Six gate-measurement bug fixes** (complete workforces were false-failing the closeout completeness gate): LIBRARY_MARKER regex drift (now recognizes the `workforce-provenance: source=role-library` marker; >=3072B floor unchanged); lib% denominator no longer counts non-role dirs (sops/scripts); trio gate counts subdir-stored roles (not just `.md` files); jq slug-null state-write crash guarded; SOP-substance TOKEN_LEAK regex no longer nukes credit for `{{X}}` single-letter example variables (>=3-char real field tokens only); graphics `_index.json` phantom (13 byte-identical `ROLE--` twins) deduped.
+- **Gate scope (client-facing)**: never-client-facing meta-roles (`devils-advocate`, `sop-writer`) exempted from the per-role SOP-substance floor; trio gate scoped to departments whose canonical roster includes a trio; personal-assistant reconciled to its canonical templated roster. No-weakening preserved.
+- **11 client-facing role templates authored** (7 thin workflow roles + 4 presentations QC sub-specialists) so every client gets them via deterministic template-copy.
+
 ## v12.33.0 — 2026-06-18 — Presentation pipeline hardening: process gate, QC-independence, prevention guards, deps
 
 Presentation department — the deck build now hard-fails (non-zero exit) on any skipped mandatory stage, and the gate system is protected against future "described-but-unenforced" gaps:

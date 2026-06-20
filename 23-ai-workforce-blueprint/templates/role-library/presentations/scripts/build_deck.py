@@ -67,7 +67,7 @@ WHAT IT DOES (zero AI judgement at runtime):
        THAT prompt verbatim — it does NOT compose its own thin prompt from
        scene+copy. A whole slide is rendered in ONE gpt-image-2 generation.
        If a slide has NO rich prompt file, or the prompt is < PROMPT_CHAR_FLOOR
-       (1,500) chars, build_deck.py FAILS LOUD — it NEVER silently falls back to a
+       (5,000) chars, build_deck.py FAILS LOUD — it NEVER silently falls back to a
        thin composed prompt. TWO prompt-side QC gates run on every rich prompt,
        both FAIL-LOUD (no silent render):
          (a) FACIAL-INTELLIGENCE / REPRESENTATION gate — refuses any prompt that
@@ -76,9 +76,9 @@ WHAT IT DOES (zero AI judgement at runtime):
              (the client's captured audience), never a baked-in default split
              (SOP-CAST-01, AF-R3).
          (b) CHAR-COUNT gate — the rich prompt length must be within
-             [PROMPT_CHAR_FLOOR, PROMPT_CHAR_CEILING] = [1500, 18000]; the floor is
-             HARD (any prompt under 1,500 chars is not run, not rendered, not
-             updated — AF-P1) and the 18,000 ceiling is the universal GPT-Image 2
+             [PROMPT_CHAR_FLOOR, PROMPT_CHAR_CEILING] = [5000, 18000]; the floor is
+             HARD (any prompt under the 5,000-char standard is not run, not rendered,
+             not updated — AF-P1/AF-PROMPT-FLOOR) and the 18,000 ceiling is the universal GPT-Image 2
              safety boundary (AF-P2).
     3. Calls KIE.ai (gpt-image-2-text-to-image, or gpt-image-2-image-to-image when a
        logo is supplied via input_urls so the WHOLE slide + logo render in ONE
@@ -280,12 +280,14 @@ ENGLISH_PIN = (
 #     That prompt carries the full 15-element spec (typography size + per-line
 #     weight, placement, usage, the logo(s), the scene, verbatim copy, the negative
 #     block, everything on the slide); the SOP targets 9,000–14,000 chars. A prompt
-#     under 1,500 chars is, by definition, not a real slide prompt — it is a thin
+#     under 5,000 chars is, by definition, not a real slide prompt — it is a thin
 #     stub or a truncated file — so it is NOT run, NOT rendered, and NOT updated:
-#     the slide FAILS LOUD (AF-P1). 1,500 is the absolute minimum below which a
-#     prompt cannot possibly carry the mandatory specificity; the SOP's own
-#     soft-minimum of 5,000 lives upstream at the Slide Image Creator / Phase-3 QC.
-PROMPT_CHAR_FLOOR = 1500      # HARD floor (AF-P1): any rich prompt under this is NOT run/rendered/updated — FAIL LOUD
+#     the slide FAILS LOUD (AF-P1). 5,000 is the reconciled HARD floor: the SOP's
+#     own authored standard ("write each slide prompt to the 5,000-char standard")
+#     is now the un-bypassable minimum below which a prompt cannot possibly carry
+#     the mandatory specificity. The Prompt-Authoring phase (P4-PROMPT) writes to
+#     this standard and the Prompt-QC phase (P4-PROMPT-QC) verifies it independently.
+PROMPT_CHAR_FLOOR = 5000      # HARD floor (AF-P1/AF-PROMPT-FLOOR): any rich prompt under the 5,000-char standard is NOT run/rendered/updated — FAIL LOUD
 PROMPT_CHAR_CEILING = 18000   # UNIVERSAL hard maximum (AF-P2; 2,000 under the 20,000 API ceiling)
 
 # ---------------------------------------------------------------------------
@@ -675,7 +677,7 @@ def load_rich_prompt(slide: dict, run_dir: Path) -> str:
 
     FAIL LOUD (ValueError; the caller fails the slide and the run is blocked) when:
       * no rich prompt file exists for this slide                       → AF-P1
-      * the rich prompt is < PROMPT_CHAR_FLOOR (1,500) chars            → AF-P1
+      * the rich prompt is < PROMPT_CHAR_FLOOR (5,000) chars            → AF-P1
         (not run, not rendered, not updated)
       * the rich prompt is > PROMPT_CHAR_CEILING (18,000) chars         → AF-P2
       * a forbidden demographic-default landmine is present             → AF-R3
@@ -1427,6 +1429,322 @@ def _chk_copy_qc(path: Optional[Path]) -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------
+# THE FIVE QC GATES — each is a written-standard rubric report graded by an
+# INDEPENDENT reviewer (generalizing AF-QC-INDEPENDENCE across the whole
+# pipeline). copy-QC is _chk_copy_qc above; the four below mirror its contract:
+#   * gate == the phase's expected gate string (present + exact),
+#   * average >= 8.5 pass threshold,
+#   * no triggered autofails,
+#   * pass:true affirmatively,
+#   * INDEPENDENT-reviewer provenance (_qc_independence_reason) — a self/builder
+#     grade is REFUSED. The builder/author of the artifact may NOT grade it.
+# Each QC gate sequences AFTER its artifact (manifest order): Prompt-QC after
+# prompt authoring, Image-QC after render, Typography-QC after design,
+# Speech-QC after speech. Returns "" on pass, or a fatal AF message string.
+# ---------------------------------------------------------------------------
+def _qc_report_gate(path: Optional[Path], af_code: str, gate_label: str,
+                   sop_ref: str) -> str:
+    """Generic INDEPENDENT-reviewer QC-report gate. Validates the report shape
+    (gate string, >=8.5 average, no triggered autofails, pass:true) AND the
+    independent-reviewer provenance block, citing `af_code` on every failure so
+    the enforcement path names the code it raises (Guard A requirement)."""
+    if path is None:
+        return (f"{af_code}: file absent — the {gate_label} QC report was never "
+                f"produced. An INDEPENDENT QC specialist must grade this stage and "
+                f"write the report with a qc_independence provenance block. See {sop_ref}.")
+    obj = _read_json(path)
+    if "__parse_error__" in obj:
+        return f"{af_code}: report not valid JSON ({obj['__parse_error__']}). See {sop_ref}."
+    gate = str(obj.get("gate", "")).strip()
+    if gate != gate_label:
+        return (f"{af_code}: gate is {gate!r}, expected {gate_label!r} (must be present "
+                f"and exactly {gate_label!r}). See {sop_ref}.")
+    avg = obj.get("average", obj.get("average_score"))
+    try:
+        if avg is None or float(avg) < 8.5:
+            return f"{af_code}: average score {avg!r} is below the 8.5 pass threshold. See {sop_ref}."
+    except (TypeError, ValueError):
+        return f"{af_code}: average score {avg!r} is not numeric. See {sop_ref}."
+    triggered = obj.get("triggered_autofails") or obj.get("autofails_triggered") or []
+    if triggered:
+        return f"{af_code}: triggered autofails present: {triggered}. See {sop_ref}."
+    if obj.get("pass") is not True:
+        return (f"{af_code}: report does not affirmatively mark pass:true "
+                f"(got pass={obj.get('pass')!r}). See {sop_ref}.")
+    # INDEPENDENCE — reuse the copy-QC independence proof so a self/builder-graded
+    # report for ANY of the five QC stages is refused identically.
+    indep = _qc_independence_reason(obj)
+    if indep:
+        # _qc_independence_reason cites AF-QC-INDEPENDENCE; re-stamp this stage's code
+        # so Guard A's "the path names the code" proof holds for THIS gate too.
+        return f"{af_code}: {indep}"
+    return ""
+
+
+def _chk_prompt_qc(path: Optional[Path]) -> str:
+    """PROMPT-QC gate (AF-PROMPT-QC). After Prompt-Authoring (P4-PROMPT), an
+    INDEPENDENT QC specialist grades every per-slide prompt against the written
+    5,000-char prompt standard rubric (length, the 15-element structural blocks,
+    negative block, spelling-locks). Self/builder grade refused."""
+    return _qc_report_gate(path, "AF-PROMPT-QC", "Phase Prompt-QC",
+                          "qc-specialist-prompt-presentations-sops.md")
+
+
+def _chk_image_qc(path: Optional[Path]) -> str:
+    """IMAGE-QC gate (AF-IMAGE-QC). After Render (P4-RENDER), an INDEPENDENT QC
+    specialist grades the rendered slides against the written image-QC rubric
+    (multimodal pass: copy-vs-pixel parity, baked-not-overlaid, contrast,
+    no-placeholder). Self/builder grade refused."""
+    return _qc_report_gate(path, "AF-IMAGE-QC", "Phase Image-QC",
+                          "qc-specialist-image-presentations-sops.md")
+
+
+def _chk_typography_qc(path: Optional[Path]) -> str:
+    """TYPOGRAPHY-QC gate (AF-TYPOGRAPHY-QC). After the Design brief (PF-DESIGN), an
+    INDEPENDENT QC specialist grades the design system against the written
+    typography rubric (weight ladder, per-archetype treatment, anti-template
+    variation, type-scale floor). Self/builder grade refused."""
+    return _qc_report_gate(path, "AF-TYPOGRAPHY-QC", "Phase Typography-QC",
+                          "qc-specialist-typography-presentations-sops.md")
+
+
+def _chk_speech_qc(path: Optional[Path]) -> str:
+    """SPEECH-QC gate (AF-SPEECH-QC). After the Presenter Speech (P9-SPEECH), an
+    INDEPENDENT QC specialist grades the speech against the written speech rubric
+    (pacing, on-slide-sync, persuasion-arc fidelity, audience-facing voice).
+    CONDITIONAL by design (the AF-SPEECH-SHORT pattern): the speech is written
+    downstream, so when no report exists yet this DEFERS (returns "", pass) rather
+    than blocking the pre-speech render. Once the report exists it is enforced.
+    Self/builder grade refused."""
+    if path is None:
+        return ""  # speech QC not produced yet (pre-delivery) — gate defers.
+    return _qc_report_gate(path, "AF-SPEECH-QC", "Phase Speech-QC",
+                          "qc-specialist-speech-presentations-sops.md")
+
+
+# ---------------------------------------------------------------------------
+# SLIDE-COUNT FLOOR (AF-SLIDE-COUNT-FLOOR) — the deck must carry enough slides
+# for the chosen speaking duration. A 30-minute talk on 10 slides is 3 minutes a
+# slide — a wall-of-text reading session, not a paced deck. The verified pacing
+# band is ~1.3–1.5 slides per talking minute; this gate enforces the LOW end
+# (1.3) as the floor, so a deck below target_talk_minutes x SLIDES_PER_MINUTE_FLOOR
+# AUTO-FAILS. The +/- pacing budget above the floor stays with the Director.
+# ---------------------------------------------------------------------------
+SLIDES_PER_MINUTE_FLOOR = 1.3   # AF-SLIDE-COUNT-FLOOR: min slides per talking minute
+
+
+def _chk_slide_count_floor(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """SLIDE-COUNT-FLOOR gate (AF-SLIDE-COUNT-FLOOR). The output slide count must be
+    >= target_talk_minutes x SLIDES_PER_MINUTE_FLOOR (1.3). A 30-min/10-slide deck
+    (needs >=39) AUTO-FAILS. target_talk_minutes comes from intake.json (the field
+    _chk_intake requires). Returns "" on pass / not-applicable, or a fatal AF
+    message. Defers (passes) only when no target or no slide count can be read —
+    those are the intake gate's / rich-prompt gate's job, not this one."""
+    target = None
+    for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
+        p = run_dir / rel
+        if p.exists():
+            obj = _read_json(p)
+            if isinstance(obj, dict) and "__parse_error__" not in obj:
+                raw = obj.get("target_talk_minutes")
+                try:
+                    target = float(raw) if raw is not None else None
+                except (TypeError, ValueError):
+                    target = None
+            break
+    if not target or target <= 0:
+        return ""  # no usable target — intake gate handles a missing/invalid target.
+
+    n = _count_output_slides(run_dir, slides_path)
+    if n is None:
+        return ""  # slide count unreadable — the rich-prompt/coverage gates own that.
+
+    floor = int(__import__("math").ceil(target * SLIDES_PER_MINUTE_FLOOR))
+    if n < floor:
+        return (f"AF-SLIDE-COUNT-FLOOR: the deck has {n} slide(s) for a "
+                f"{target:g}-minute talk; the pacing floor is "
+                f"target_talk_minutes x {SLIDES_PER_MINUTE_FLOOR} = {floor} slides. "
+                f"A {target:g}-min talk on {n} slides is a reading session, not a paced "
+                f"deck. Add {floor - n} slide(s) (verified band is ~1.3–1.5 slides/min).")
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# PITCH / OFFER-LADDER (AF-PITCH-MISSING) — a converting deck MUST carry an offer
+# ladder AND a re-pitch after the FINAL price. The arc_allocation.json the Offer
+# Price Strategist produces is the source of truth: it must contain the LADDER /
+# offer beats (the value stack -> anchor -> price drops) and a RE-PITCH beat after
+# the FINAL price. A deck with no offer ladder, or no re-pitch, is a teaching dump
+# that never asks for the sale (or asks once and never recovers a "no").
+# ---------------------------------------------------------------------------
+def _chk_pitch(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """PITCH gate (AF-PITCH-MISSING). The converting arc MUST carry an offer ladder
+    (value-stack / anchor / price beats) AND a re-pitch beat after the FINAL price.
+    Reads arc_allocation.json (the Offer Price Strategist artifact). Returns "" on
+    pass, or a fatal AF-PITCH-MISSING message. Defers (passes) only when the arc
+    artifact is absent — _chk_arc owns the 'arc missing' failure, this gate owns
+    'arc present but has no pitch / no re-pitch'."""
+    arc = None
+    for rel in ("working/copy/arc_allocation.json", "arc_allocation.json",
+                "working/arc_allocation.json"):
+        p = run_dir / rel
+        if p.exists():
+            arc = p
+            break
+    if arc is None:
+        return ""  # arc not built yet — _chk_arc owns the absence; nothing to pitch-check.
+    obj = _read_json(arc)
+    if isinstance(obj, dict) and "__parse_error__" in obj:
+        return ("AF-PITCH-MISSING: arc_allocation.json is not valid JSON, so the offer "
+                "ladder + re-pitch cannot be proven. See SOP-PITCH-01 / SOP-PITCH-03.")
+    slots = obj if isinstance(obj, list) else (
+        obj.get("slots") or obj.get("allocation") or obj.get("slides") or [])
+    # Flatten every arc-section / tag token across the allocation into one lowercase blob.
+    tokens = []
+    for s in slots if isinstance(slots, list) else []:
+        if isinstance(s, dict):
+            for k in ("arc_section", "section", "beat", "tag", "type", "role"):
+                v = s.get(k)
+                if isinstance(v, str):
+                    tokens.append(v.lower())
+            tags = s.get("tags")
+            if isinstance(tags, list):
+                tokens += [str(t).lower() for t in tags]
+        elif isinstance(s, str):
+            tokens.append(s.lower())
+    blob = " ".join(tokens)
+    # OFFER-LADDER present: at least one ladder/anchor/price/offer/value-stack beat.
+    ladder_markers = ("ladder", "anchor", "price", "offer", "value-stack",
+                      "value_stack", "valuestack", "drop", "stack")
+    has_ladder = any(m in blob for m in ladder_markers)
+    # RE-PITCH present: an explicit re-pitch / second-close beat after the FINAL.
+    repitch_markers = ("re-pitch", "re_pitch", "repitch", "second close",
+                       "second-close", "re-offer", "reoffer", "post-final", "post_final")
+    has_repitch = any(m in blob for m in repitch_markers)
+    if not has_ladder or not has_repitch:
+        missing = []
+        if not has_ladder:
+            missing.append("no offer-ladder beats (value-stack -> anchor -> price drops)")
+        if not has_repitch:
+            missing.append("no re-pitch beat after the FINAL price")
+        return ("AF-PITCH-MISSING: the converting arc is incomplete — "
+                + "; ".join(missing) + ". A converting deck must build an offer ladder "
+                "and re-pitch after the FINAL price (SOP-PITCH-01 value stack / "
+                "SOP-PITCH-03 re-pitch). A deck that never asks for the sale, or asks "
+                "once and never recovers a 'no', auto-fails.")
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# CREATIVITY (AF-CREATIVITY) — reject template-sameness and cliche. A deck whose
+# slides all share one layout archetype (forty copies of the same black headline)
+# or whose copy leans on worn-out cliche openers is a template, not a designed
+# piece. The design system (design_system.json, Typography Architect) assigns each
+# slide one of several archetypes; this gate fails a deck where a single archetype
+# dominates beyond a ceiling, OR where banned cliche phrases appear in slide copy.
+# ---------------------------------------------------------------------------
+# A single archetype may cover at most this fraction of the deck before it reads as
+# template-sameness (the anti-template SOP-DESIGN-03 mandates no two CONSECUTIVE
+# slides share an archetype; this is the deck-wide dominance ceiling behind it).
+ARCHETYPE_DOMINANCE_CEILING = 0.60
+# Worn-out cliche openers/phrases a converting deck must not lean on (lowercase,
+# substring match on slide copy). Curated from the forensic template-sameness set.
+FORBIDDEN_CLICHE_PHRASES = (
+    "in today's fast-paced world",
+    "in today's fast paced world",
+    "in this day and age",
+    "at the end of the day",
+    "think outside the box",
+    "take it to the next level",
+    "the sky is the limit",
+    "last but not least",
+    "needless to say",
+    "synergy",
+    "low-hanging fruit",
+    "move the needle",
+    "circle back",
+    "boil the ocean",
+    "best-kept secret",
+    "game changer",
+    "game-changer",
+    "revolutionary new",
+    "one simple trick",
+)
+
+
+def _chk_creativity(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """CREATIVITY gate (AF-CREATIVITY). Rejects template-sameness and cliche:
+      * archetype dominance — if the design system assigns one archetype to MORE
+        than ARCHETYPE_DOMINANCE_CEILING (60%) of the slides, the deck reads as a
+        template (forty copies of one layout) and FAILS;
+      * cliche copy — if slide copy contains any FORBIDDEN_CLICHE_PHRASES, FAILS.
+    Reads working/typography/design_system.json (per-slide archetype map) and
+    working/copy/slides_copy.md. Defers (passes) when neither artifact exists yet
+    (those absences are owned by _chk_design_brief / _chk_slides_copy). Returns ""
+    on pass, or a fatal AF-CREATIVITY message."""
+    problems = []
+    # --- archetype dominance ---
+    ds = None
+    for rel in ("working/typography/design_system.json",
+                "working/copy/design_system.json", "design_system.json"):
+        p = run_dir / rel
+        if p.exists():
+            ds = p
+            break
+    if ds is not None:
+        obj = _read_json(ds)
+        if isinstance(obj, dict) and "__parse_error__" not in obj:
+            per = obj.get("per_slide") or obj.get("slides") or obj.get("slide_plan")
+            archetypes = []
+            if isinstance(per, list):
+                for s in per:
+                    if isinstance(s, dict):
+                        a = s.get("archetype") or s.get("type") or s.get("treatment")
+                        if isinstance(a, str) and a.strip():
+                            archetypes.append(a.strip().lower())
+            elif isinstance(per, dict):
+                for v in per.values():
+                    if isinstance(v, str) and v.strip():
+                        archetypes.append(v.strip().lower())
+                    elif isinstance(v, dict):
+                        a = v.get("archetype") or v.get("type")
+                        if isinstance(a, str) and a.strip():
+                            archetypes.append(a.strip().lower())
+            if len(archetypes) >= 3:
+                counts = {}
+                for a in archetypes:
+                    counts[a] = counts.get(a, 0) + 1
+                top, top_n = max(counts.items(), key=lambda kv: kv[1])
+                frac = top_n / len(archetypes)
+                if frac > ARCHETYPE_DOMINANCE_CEILING:
+                    problems.append(
+                        f"template-sameness: archetype {top!r} covers {top_n}/"
+                        f"{len(archetypes)} slides ({frac:.0%}), over the "
+                        f"{ARCHETYPE_DOMINANCE_CEILING:.0%} dominance ceiling — the deck "
+                        f"reads as one repeated layout (SOP-DESIGN-03 anti-template)")
+    # --- cliche copy ---
+    cp = None
+    for rel in ("working/copy/slides_copy.md", "slides_copy.md",
+                "working/slides_copy.md"):
+        p = run_dir / rel
+        if p.exists():
+            cp = p
+            break
+    if cp is not None:
+        low = cp.read_text(errors="replace").lower()
+        hits = [ph for ph in FORBIDDEN_CLICHE_PHRASES if ph in low]
+        if hits:
+            problems.append("cliche copy: slide copy leans on worn-out phrase(s) "
+                            + ", ".join(repr(h) for h in hits[:6]))
+    if problems:
+        return ("AF-CREATIVITY: the deck fails the anti-template / anti-cliche gate — "
+                + "; ".join(problems) + ". Vary the layout archetypes (no single "
+                "archetype dominates) and rewrite cliche copy into specific, original "
+                "lines (SOP-DESIGN-03 variable-layout / slide-copywriter doctrine).")
+    return ""
+
+
 def _chk_arc(path: Optional[Path]) -> str:
     # Signature Presentation Architect — the converting-arc allocation must exist.
     if path is None:
@@ -1709,7 +2027,7 @@ def _chk_coverage(run_dir: Path, slides_path: Optional[Path] = None) -> str:
 def _chk_rich_prompts(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """RICH-PROMPT-REQUIRED gate (AF-P1). EVERY slide the system is about to render
     MUST have a hand-authored RICH per-slide prompt in working/prompts/ that is
-    >= PROMPT_CHAR_FLOOR (1,500) chars. A missing prompt file, or one under the
+    >= PROMPT_CHAR_FLOOR (5,000) chars. A missing prompt file, or one under the
     floor, is an AF-P1 auto-fail: build_deck.py renders the rich prompt VERBATIM and
     NEVER composes a thin fallback, so a thin/absent prompt means the slide cannot be
     rendered at all. Returns "" on pass, or a fatal AF-P1 message (run_preflight maps
@@ -1930,9 +2248,635 @@ def _chk_speech_length(run_dir: Path) -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------
+# AF-VISUAL-VARIETY (deck-quality gates 2026-06-19)
+# ---------------------------------------------------------------------------
+# A monotone dark deck — e.g. 35 slides all deep navy — is illegible at projection
+# distance and signals that no real design system was applied. This gate measures
+# the mean luminance of rendered slide PNGs (if present) AND falls back to checking
+# the design_system.json archetype roster for palette diversity when no PNGs exist.
+#
+# PASS conditions (either is sufficient):
+#   * At least VISUAL_VARIETY_LIGHT_SLIDE_FLOOR_PCT of slides have a mean luma
+#     above the dark-luma threshold (i.e. the deck has light/break slides), AND
+#     the fraction of slides below the dark-luma threshold does not exceed
+#     VISUAL_VARIETY_DARK_DOMINANT_CEILING.
+#   * No single dominant background hue (quantised to 36 buckets of 10° each)
+#     covers more than VISUAL_VARIETY_HUE_DOMINANCE_CEILING of all slides.
+#
+# FAIL: >=90% slides share one dominant background hue bucket OR >=90% are below
+# the dark-luma threshold with no light/break slides.
+#
+# Defers (passes) when no rendered PNGs exist yet (pre-render) so the gate never
+# blocks the initial render; it fires at Image-QC and postflight where slides exist.
+# ---------------------------------------------------------------------------
+VISUAL_VARIETY_DARK_DOMINANT_CEILING = 0.90   # if >= this fraction is dark -> FAIL
+VISUAL_VARIETY_LIGHT_SLIDE_FLOOR_PCT = 0.10   # at least 10% of slides must be light
+VISUAL_VARIETY_HUE_DOMINANCE_CEILING = 0.90   # if one hue bucket >= this fraction -> FAIL
+VISUAL_VARIETY_DARK_LUMA_THRESHOLD   = 0.30   # luma <= this is "dark" (0-1 scale)
+
+
+def _png_mean_luma(path: Path) -> Optional[float]:
+    """Return the mean luminance (0.0–1.0 Y-channel) of a PNG slide, or None if
+    the file cannot be read or Pillow is unavailable. Converts to grayscale (ITU-R
+    BT.601) and averages all pixels. This is a stdlib-only fallback that reads raw
+    RGBA bytes when PIL is absent."""
+    try:
+        from PIL import Image
+        with Image.open(str(path)) as im:
+            gray = im.convert("L")
+            pixels = list(gray.getdata())
+            return sum(pixels) / (len(pixels) * 255.0)
+    except Exception:  # noqa: BLE001
+        pass
+    # Fallback: read raw PNG IDAT and compute a heuristic from the first few scanlines.
+    try:
+        with open(path, "rb") as f:
+            data = f.read(4096)
+        # Very rough heuristic: count high-value bytes in the raw compressed stream.
+        # This is approximate but good enough to distinguish all-dark from mixed.
+        non_zero = sum(1 for b in data[8:] if b > 30)
+        return non_zero / max(len(data) - 8, 1)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _png_dominant_hue_bucket(path: Path) -> Optional[int]:
+    """Return the dominant background hue bucket (0-35, quantised in 10° steps) of a
+    PNG slide, or None when PIL is absent or the file is unreadable. Samples 50
+    corner/edge pixels from the slide's four corners (background approximation) to
+    find the dominant hue without loading the whole image into memory."""
+    try:
+        from PIL import Image
+        with Image.open(str(path)) as im:
+            rgb = im.convert("RGB")
+            w, h = rgb.size
+            # Sample the four corners (background pixels).
+            sample_coords = [
+                (0, 0), (w // 4, 0), (w // 2, 0), (3 * w // 4, 0), (w - 1, 0),
+                (0, h // 2), (w - 1, h // 2),
+                (0, h - 1), (w // 4, h - 1), (w // 2, h - 1), (3 * w // 4, h - 1), (w - 1, h - 1),
+            ]
+            hue_counts = {}
+            for x, y in sample_coords:
+                r, g, b = rgb.getpixel((x, y))
+                # Convert RGB -> HSV hue
+                rn, gn, bn = r / 255.0, g / 255.0, b / 255.0
+                mx = max(rn, gn, bn)
+                mn = min(rn, gn, bn)
+                diff = mx - mn
+                if diff < 0.05:
+                    # Achromatic (gray/black/white) — treat as bucket 36 (neutral)
+                    bucket = 36
+                elif mx == rn:
+                    hue = 60 * (((gn - bn) / diff) % 6)
+                elif mx == gn:
+                    hue = 60 * ((bn - rn) / diff + 2)
+                else:
+                    hue = 60 * ((rn - gn) / diff + 4)
+                if hue < 0:
+                    hue += 360
+                bucket = int(hue // 10) % 36
+                hue_counts[bucket] = hue_counts.get(bucket, 0) + 1
+            if not hue_counts:
+                return None
+            return max(hue_counts, key=hue_counts.get)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def check_visual_variety(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-VISUAL-VARIETY: reject an all-dark monotone deck.
+
+    Scans rendered slide PNGs (renders/slide-NN.png). If not present yet, defers
+    (passes). When PNGs exist:
+      * Fails if >= VISUAL_VARIETY_DARK_DOMINANT_CEILING (90%) of slides have
+        mean luma <= VISUAL_VARIETY_DARK_LUMA_THRESHOLD with < 10% light slides.
+      * Fails if one dominant background hue bucket covers >=
+        VISUAL_VARIETY_HUE_DOMINANCE_CEILING (90%) of slides.
+    Returns '' on pass / defer, or a fatal AF-VISUAL-VARIETY message."""
+    renders_dir = run_dir / "renders"
+    if not renders_dir.is_dir():
+        return ""  # no renders yet — gate defers to post-render QC pass.
+
+    pngs = sorted(renders_dir.glob("slide-*.png"))
+    if not pngs:
+        return ""  # defers when no PNG renders exist yet.
+
+    lumas = []
+    hue_buckets = []
+    for png in pngs:
+        luma = _png_mean_luma(png)
+        if luma is not None:
+            lumas.append(luma)
+        hue = _png_dominant_hue_bucket(png)
+        if hue is not None:
+            hue_buckets.append(hue)
+
+    n = len(pngs)
+    problems = []
+
+    # Dark-dominance check.
+    if lumas:
+        dark_count = sum(1 for l in lumas if l <= VISUAL_VARIETY_DARK_LUMA_THRESHOLD)
+        dark_frac = dark_count / len(lumas)
+        light_frac = 1.0 - dark_frac
+        if (dark_frac >= VISUAL_VARIETY_DARK_DOMINANT_CEILING and
+                light_frac < VISUAL_VARIETY_LIGHT_SLIDE_FLOOR_PCT):
+            problems.append(
+                f"monotone_dark_palette: {dark_count}/{len(lumas)} slides have mean "
+                f"luma <= {VISUAL_VARIETY_DARK_LUMA_THRESHOLD} (dark threshold); "
+                f"only {light_frac:.0%} are light (minimum {VISUAL_VARIETY_LIGHT_SLIDE_FLOOR_PCT:.0%} required). "
+                f"Add light/break slides and vary the background palette to prevent "
+                f"projection-distance illegibility."
+            )
+
+    # Hue-dominance check.
+    if hue_buckets:
+        from collections import Counter
+        hue_counts = Counter(hue_buckets)
+        top_bucket, top_count = hue_counts.most_common(1)[0]
+        hue_frac = top_count / len(hue_buckets)
+        if hue_frac >= VISUAL_VARIETY_HUE_DOMINANCE_CEILING:
+            hue_deg = top_bucket * 10
+            problems.append(
+                f"monotone_palette: {top_count}/{len(hue_buckets)} slides share "
+                f"dominant background hue bucket ~{hue_deg}° (={hue_frac:.0%} of deck; "
+                f"ceiling {VISUAL_VARIETY_HUE_DOMINANCE_CEILING:.0%}). "
+                f"Introduce section-break slides with contrasting palette to ensure "
+                f"visual variety and WCAG AA legibility at projection distance."
+            )
+
+    if problems:
+        return (
+            f"AF-VISUAL-VARIETY: DECK FAIL — rendered slides show no visual variety. "
+            + " | ".join(problems)
+            + " (SOP-DESIGN-03, AF-VISUAL-VARIETY)"
+        )
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# AF-PACKAGE-CLEAN (deck-quality gates 2026-06-19)
+# ---------------------------------------------------------------------------
+# The final delivered bundle must contain ONLY the canonical deliverable files.
+# Dev artifacts (build scripts, polling scripts, download helpers, task JSON dirs,
+# intermediate .md working drafts, Office lock/temp files) MUST NOT reach the
+# client package. This gate scans the bundle directory for forbidden patterns.
+#
+# Forbidden:
+#   * Any *.py file (build/render/assembly scripts)
+#   * Any *.sh file (shell helpers)
+#   * Any ~$* file (Office lock/temp files, e.g. ~$WIB-Business-Function-Fidelity.pptx)
+#   * Any tasks/ or task_*.json working directories / files
+#   * Any numbered intermediate .md working drafts (e.g. 01-draft.md, working-draft.md)
+#   * Any file that is NOT in the DELIVERABLES_REQUIRED filename set (whitelist-first)
+#
+# The whitelist check (file must match a canonical deliverable) is the PRIMARY gate;
+# the blocklist is belt-and-suspenders.
+#
+# Defers (passes) when bundle_dir does not exist yet (pre-delivery) so it never
+# blocks the render phase; it fires at the postflight gate and closeout.
+# ---------------------------------------------------------------------------
+PACKAGE_CLEAN_FORBIDDEN_EXTENSIONS = frozenset({
+    ".py", ".sh",
+})
+PACKAGE_CLEAN_FORBIDDEN_NAME_PREFIXES = ("~$",)
+PACKAGE_CLEAN_FORBIDDEN_DIR_NAMES = frozenset({
+    "tasks", "working", "prompts", "images", "renders", "qc", "scripts", "checkpoints",
+})
+# Intermediate .md draft pattern: a working draft that is NOT a canonical deliverable.
+# Canonical deliverable .md files are PRESENTERS-SPEECH.md and PRESENTERS-SPEECH-FISH-TAGGED.md.
+PACKAGE_CLEAN_CANONICAL_MD_FILES = frozenset({
+    "PRESENTERS-SPEECH.md", "PRESENTERS-SPEECH-FISH-TAGGED.md",
+})
+# Intermediate-draft naming patterns (numbered drafts, *-draft.md, *-working.md, etc.)
+PACKAGE_CLEAN_DRAFT_MD_RE = re.compile(
+    r'^(?:\d+[-_].*\.md|.*[-_](?:draft|working|temp|wip|intermediate|scratch)\.md)$',
+    re.IGNORECASE
+)
+
+
+def check_package_cleanliness(bundle_dir: Path) -> str:
+    """AF-PACKAGE-CLEAN: the final delivered bundle must contain ONLY the canonical
+    deliverable files. Dev artifacts (.py, .sh, ~$* lock files, tasks/ dirs,
+    intermediate .md drafts) auto-fail the gate.
+
+    Returns '' on pass / not-yet-present, or a fatal AF-PACKAGE-CLEAN message
+    listing each forbidden artifact found."""
+    if not bundle_dir or not bundle_dir.is_dir():
+        return ""  # bundle not yet assembled — gate defers.
+
+    # Build the canonical filename set (deck_slug-agnostic: strip {deck_slug} prefix).
+    canonical_names: set = set()
+    for spec in DELIVERABLES_REQUIRED:
+        fname = spec["filename"]
+        # Accept both the template form and any real slug substitution.
+        canonical_names.add(fname)
+        # Also accept DELIVERABLES_REQUIRED filenames with any deck_slug prefix.
+        # E.g. "{deck_slug}-FINAL.pptx" -> anything ending in "-FINAL.pptx".
+        canonical_names.add("deliverables.json")      # the deliverables ledger itself
+        canonical_names.add("teleprompter_publish.json")  # teleprompter publish ledger
+
+    forbidden: list = []
+
+    for item in bundle_dir.iterdir():
+        name = item.name
+
+        # Forbidden directories.
+        if item.is_dir():
+            if name.lower() in PACKAGE_CLEAN_FORBIDDEN_DIR_NAMES:
+                forbidden.append(f"forbidden directory: {name}/")
+            continue
+
+        # Forbidden extensions.
+        ext = item.suffix.lower()
+        if ext in PACKAGE_CLEAN_FORBIDDEN_EXTENSIONS:
+            forbidden.append(f"forbidden artifact ({ext}): {name}")
+            continue
+
+        # Forbidden Office lock/temp files (~$* prefix).
+        if any(name.startswith(pfx) for pfx in PACKAGE_CLEAN_FORBIDDEN_NAME_PREFIXES):
+            forbidden.append(f"Office lock/temp file: {name}")
+            continue
+
+        # task_*.json intermediate files.
+        if re.match(r'^task_.*\.json$', name, re.IGNORECASE) or name.lower() == "tasks":
+            forbidden.append(f"intermediate task file: {name}")
+            continue
+
+        # Intermediate .md working drafts (not a canonical deliverable .md).
+        if name.endswith(".md") and name not in PACKAGE_CLEAN_CANONICAL_MD_FILES:
+            if PACKAGE_CLEAN_DRAFT_MD_RE.match(name):
+                forbidden.append(f"intermediate working draft: {name}")
+                continue
+
+    if forbidden:
+        return (
+            "AF-PACKAGE-CLEAN: DELIVERY BLOCKED — the bundle contains forbidden artifacts "
+            "that must never reach the client package. Remove each before delivery: "
+            + "; ".join(forbidden)
+            + " (AF-PACKAGE-CLEAN, SOP-DH1 / AF-DH1)"
+        )
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# AF-IMAGE-QC-RAN (deck-quality gates 2026-06-19)
+# ---------------------------------------------------------------------------
+# The image-QC report must: (a) exist, (b) be NEWER than the rendered PNGs (not
+# stale), and (c) contain a per-slide PASS/FAIL row for ALL N slides (no
+# rubber-stamped all-[x] boilerplate). The existing AF-IMAGE-QC gate already
+# checks the report's score/pass/independence. AF-IMAGE-QC-RAN is the
+# complementary freshness + per-slide-coverage check: a stale report or one that
+# was auto-populated from a template without real per-slide entries is refused.
+#
+# "Per-slide rows" is detected by checking that the image_qc_report.json carries
+# a "slides" or "per_slide" array with one entry per rendered slide. A report
+# that lacks this structure is assumed to be rubber-stamped boilerplate and fails.
+#
+# Defers when no renders exist yet. Defers when no image_qc_report.json exists
+# yet (pre-Image-QC phase); AF-IMAGE-QC owns the absence failure.
+# ---------------------------------------------------------------------------
+def check_image_qc_present(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-IMAGE-QC-RAN: the image-QC report must exist, be newer than the rendered
+    PNGs, and carry a per-slide PASS/FAIL row for every rendered slide.
+
+    Returns '' on pass / defer, or a fatal AF-IMAGE-QC-RAN message."""
+    report_path = run_dir / "working" / "qc" / "image_qc_report.json"
+    renders_dir = run_dir / "renders"
+
+    # No renders yet — gate defers.
+    pngs: list = []
+    if renders_dir.is_dir():
+        pngs = sorted(renders_dir.glob("slide-*.png"))
+    if not pngs:
+        return ""  # no rendered slides yet — defer.
+
+    # No report yet — defer (AF-IMAGE-QC owns the absence failure at preflight).
+    if not report_path.exists():
+        return ""  # absence is AF-IMAGE-QC's job; we only check freshness + coverage.
+
+    # Staleness check: report must be NEWER than ALL rendered PNGs.
+    try:
+        report_mtime = report_path.stat().st_mtime
+        png_mtimes = [p.stat().st_mtime for p in pngs if p.exists()]
+        if png_mtimes and report_mtime < max(png_mtimes):
+            newest_png = max(pngs, key=lambda p: p.stat().st_mtime)
+            return (
+                f"AF-IMAGE-QC-RAN: image-QC report is STALE — it was last written "
+                f"before {newest_png.name} was rendered. The report must be re-run after "
+                f"the current render batch. A stale report cannot prove the rendered slides "
+                f"were actually reviewed (AF-IMAGE-QC-RAN)."
+            )
+    except OSError:
+        pass  # if stat fails, skip staleness check
+
+    # Per-slide coverage check: the report must carry per-slide entries.
+    obj = _read_json(report_path)
+    if "__parse_error__" in obj:
+        return ""  # JSON error is AF-IMAGE-QC's job.
+
+    n_slides = len(pngs)
+    # Accept "slides" or "per_slide" array.
+    per_slide = obj.get("slides") or obj.get("per_slide") or obj.get("slide_results") or []
+    if not isinstance(per_slide, list):
+        per_slide = []
+
+    if not per_slide:
+        return (
+            f"AF-IMAGE-QC-RAN: image-QC report has no per-slide entries (expected "
+            f"{n_slides} rows, one per rendered slide). A report with no per-slide data "
+            f"is rubber-stamped boilerplate and cannot prove the rendered slides were "
+            f"reviewed. Re-run the Image QC Specialist with a per-slide PASS/FAIL row "
+            f"for each of the {n_slides} rendered slide(s) (AF-IMAGE-QC-RAN)."
+        )
+
+    if len(per_slide) < n_slides:
+        return (
+            f"AF-IMAGE-QC-RAN: image-QC report covers only {len(per_slide)} of "
+            f"{n_slides} rendered slide(s). Every rendered slide must have a per-slide "
+            f"PASS/FAIL entry. Missing {n_slides - len(per_slide)} slide(s). Re-run the "
+            f"Image QC Specialist to cover all {n_slides} slides (AF-IMAGE-QC-RAN)."
+        )
+
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# AF-BRAND-CONSISTENCY (deck-quality gates 2026-06-19)
+# ---------------------------------------------------------------------------
+# Every rendered slide's dominant palette must fall within the client's declared
+# brand token set (approved hex colors). Off-brand stock imagery or completely
+# wrong palettes (e.g. a fantasy-castle render when the brand is navy/gold) are
+# auto-failed. This complements AF-VISUAL-VARIETY (variety rejects sameness;
+# brand rejects off-token outliers).
+#
+# Brand tokens are read from:
+#   working/copy/intake.json -> brand.palette (list of hex strings)
+#   working/research/design-brief-*.md -> palette declaration
+#
+# When no brand palette is declared (brand tokens not configured), this gate
+# DEFERS (passes) — a gate that can't know what to check can't enforce anything.
+#
+# When brand tokens ARE declared, each rendered slide's 3 most common pixel colors
+# are sampled. If ALL 3 dominant colors are "far" from every declared brand token
+# (distance > BRAND_CONSISTENCY_TOLERANCE in RGB-255 space), that slide fails.
+#
+# Defers when no rendered PNGs exist yet (pre-render).
+# ---------------------------------------------------------------------------
+BRAND_CONSISTENCY_TOLERANCE = 80   # max RGB Euclidean distance (0-441 scale, 0=exact match)
+BRAND_CONSISTENCY_SAMPLE_COLORS = 3  # number of dominant colors to sample per slide
+
+
+def _hex_to_rgb(hex_color: str) -> Optional[tuple]:
+    """Parse a hex color (#RRGGBB or RRGGBB) to (R, G, B) tuple, or None on error."""
+    h = hex_color.lstrip("#").strip()
+    if len(h) == 3:
+        h = h[0] * 2 + h[1] * 2 + h[2] * 2
+    if len(h) != 6:
+        return None
+    try:
+        return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+    except ValueError:
+        return None
+
+
+def _rgb_distance(c1: tuple, c2: tuple) -> float:
+    """Euclidean distance between two RGB tuples."""
+    return ((c1[0] - c2[0]) ** 2 + (c1[1] - c2[1]) ** 2 + (c1[2] - c2[2]) ** 2) ** 0.5
+
+
+def _slide_dominant_colors(path: Path, n: int = 3):
+    """Return a list of the n most-common quantised colors in the slide PNG. Uses PIL
+    when available; returns [] when PIL is absent or the file is unreadable.
+
+    BUG FIX (Pillow 11.x): quantize(colors=64) returns a SHORT palette when the image
+    has fewer than 64 unique colors (e.g. a solid fill returns len(palette)==3).
+    Iterating range(64) then produces IndexError at palette[i*3] for i>=1.  We bound
+    the loop to len(palette)//3 to use only the entries Pillow actually allocated.
+    The bare 'except Exception' that previously swallowed this real bug is replaced
+    with an import-guard so PIL-unavailability is silent but real bugs surface."""
+    try:
+        from PIL import Image  # noqa: PLC0415 — checked here, not at module level
+    except ImportError:
+        return []  # PIL genuinely unavailable — gate defers gracefully.
+    try:
+        with Image.open(str(path)) as im:
+            # Quantise to up to 64 colors and get the palette.
+            quantised = im.convert("RGB").quantize(colors=64)
+            palette = quantised.getpalette()  # flat list of R,G,B ints
+            hist = quantised.histogram()
+            # The palette length may be shorter than 64*3 for low-colour images
+            # (e.g. a solid fill produces len(palette)==3 on Pillow 11.x).
+            # Bound the range to the actual number of allocated entries.
+            n_colors = len(palette) // 3
+            # Pair (count, (R, G, B)) for real palette entries only; sort descending.
+            indexed = sorted(
+                [(hist[i], (palette[i * 3], palette[i * 3 + 1], palette[i * 3 + 2]))
+                 for i in range(n_colors)],
+                reverse=True
+            )
+            return [rgb for _, rgb in indexed[:n]]
+    except Exception as _exc:  # noqa: BLE001
+        # Log real errors to stderr so they are visible in debug runs but do not
+        # block the gate (the caller skips slides where dominant==[] is returned).
+        import sys as _sys
+        print(f"_slide_dominant_colors({path.name}): {_exc}", file=_sys.stderr)
+        return []
+
+
+def _load_brand_palette(run_dir: Path) -> list:
+    """Load the brand palette hex tokens from intake.json -> brand.palette.
+    Returns a list of (R, G, B) tuples, or [] when no palette is declared."""
+    intake_path = run_dir / "working" / "copy" / "intake.json"
+    if not intake_path.exists():
+        return []
+    obj = _read_json(intake_path)
+    if "__parse_error__" in obj:
+        return []
+    brand = obj.get("brand") if isinstance(obj, dict) else None
+    if not isinstance(brand, dict):
+        return []
+    palette = brand.get("palette") or []
+    if not isinstance(palette, list):
+        return []
+    tokens = []
+    for entry in palette:
+        if isinstance(entry, str):
+            rgb = _hex_to_rgb(entry)
+            if rgb:
+                tokens.append(rgb)
+        elif isinstance(entry, dict):
+            for key in ("hex", "color", "value"):
+                val = entry.get(key)
+                if isinstance(val, str):
+                    rgb = _hex_to_rgb(val)
+                    if rgb:
+                        tokens.append(rgb)
+                        break
+    return tokens
+
+
+def check_brand_consistency(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-BRAND-CONSISTENCY: every rendered slide's dominant palette must fall within
+    the client's declared brand token set. Off-brand palettes auto-fail that slide.
+
+    Complements AF-VISUAL-VARIETY: variety rejects sameness; brand rejects off-token
+    outliers. Defers when no brand palette is declared or no renders exist.
+
+    Returns '' on pass / defer, or a fatal AF-BRAND-CONSISTENCY message."""
+    renders_dir = run_dir / "renders"
+    if not renders_dir.is_dir():
+        return ""  # no renders yet — defer.
+
+    pngs = sorted(renders_dir.glob("slide-*.png"))
+    if not pngs:
+        return ""  # no renders yet — defer.
+
+    brand_tokens = _load_brand_palette(run_dir)
+    if not brand_tokens:
+        return ""  # no brand palette declared — gate cannot enforce; defer.
+
+    off_brand_slides = []
+    for png in pngs:
+        dominant = _slide_dominant_colors(png, n=BRAND_CONSISTENCY_SAMPLE_COLORS)
+        if not dominant:
+            continue  # PIL unavailable or unreadable — skip this slide.
+        # A slide is OFF-BRAND if ALL sampled dominant colors are far from every token.
+        all_far = all(
+            all(_rgb_distance(dc, bt) > BRAND_CONSISTENCY_TOLERANCE
+                for bt in brand_tokens)
+            for dc in dominant
+        )
+        if all_far:
+            off_brand_slides.append(png.stem)
+
+    if off_brand_slides:
+        return (
+            f"AF-BRAND-CONSISTENCY: DECK FAIL — {len(off_brand_slides)} slide(s) have "
+            f"dominant palette colors that fall outside the declared brand token set "
+            f"(tolerance {BRAND_CONSISTENCY_TOLERANCE} RGB units): "
+            + ", ".join(off_brand_slides)
+            + ". Off-brand stock imagery or wrong-palette renders must be re-generated "
+            "using the approved brand palette. Check brand.palette in intake.json and "
+            "re-run with the correct art direction (AF-BRAND-CONSISTENCY)."
+        )
+    return ""
+
+
 # The MANDATORY pre-render artifact set. The first three are the minimum the
 # operator task names explicitly; the rest are the broader mandatory upstream set
 # from the dept-pipeline analysis. All must exist + be complete before any render.
+# ---------------------------------------------------------------------------
+# NO-DARK-SLIDES GATE (AF-DARK-SLIDE) — slides must use light/bright backgrounds
+# by default. Dark/black backgrounds are ONLY allowed when the client has explicitly
+# requested a dark theme via intake.json client_dark_theme: true.
+# ---------------------------------------------------------------------------
+
+# Dark-background keywords (case-insensitive) that trigger AF-DARK-SLIDE.
+_DARK_SLIDE_KEYWORDS = (
+    "dark background",
+    "black background",
+    "dark theme",
+    "near-black",
+    "dark slide",
+    "dark mode",
+)
+
+# Near-black hex/rgb patterns that signal a dark background in prompts.
+_DARK_COLOR_PATTERNS = re.compile(
+    r"""
+    \#(?:000000|000|111111|111|222222|222|1[aA]1[aA]1[aA]|0[dD]0[dD]0[dD])
+    |
+    rgb\(\s*(?:0\s*,\s*0\s*,\s*0|1[0-9]\s*,\s*1[0-9]\s*,\s*1[0-9]|20\s*,\s*20\s*,\s*20)\s*\)
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
+
+
+def _chk_no_dark_slides(run_dir: Path) -> str:
+    """NO-DARK-SLIDES gate (AF-DARK-SLIDE, fail-loud).
+
+    Slides MUST use LIGHT / bright backgrounds by DEFAULT. Dark or black-background
+    slides are NOT ALLOWED unless the client EXPLICITLY requests a dark theme via
+    the intake flag `client_dark_theme: true`. Light is the default; dark is opt-in
+    by client request only.
+
+    This gate:
+      1. Reads intake.json for client_dark_theme (default False).
+      2. Scans image prompts (working/prompts/*.txt) AND the design brief
+         (working/research/design-brief-*.md) for dark background keywords and
+         near-black hex/rgb color references.
+      3. If dark keywords are found AND client_dark_theme is not True -> FAIL.
+      4. If client_dark_theme is True -> PASS (dark is allowed by explicit request).
+      5. If no dark keywords found -> PASS.
+
+    Returns "" on pass, or a fatal AF-DARK-SLIDE message on fail.
+    """
+    # Step 1: read client_dark_theme from intake.json.
+    client_dark_theme = False
+    for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
+        p = run_dir / rel
+        if p.exists():
+            obj = _read_json(p)
+            if isinstance(obj, dict) and "__parse_error__" not in obj:
+                val = obj.get("client_dark_theme")
+                if val is True:
+                    client_dark_theme = True
+            break
+
+    if client_dark_theme:
+        # Dark theme is explicitly permitted by client request — gate passes.
+        return ""
+
+    # Step 2: gather all text to scan (prompts + design brief).
+    scan_sources = []
+
+    # Image prompts.
+    prompts_dir = run_dir / "working" / "prompts"
+    if prompts_dir.is_dir():
+        for prompt_file in sorted(prompts_dir.glob("*.txt")):
+            try:
+                scan_sources.append((str(prompt_file), prompt_file.read_text(errors="replace")))
+            except OSError:
+                pass
+
+    # Design brief (working/research/design-brief-*.md).
+    research_dir = run_dir / "working" / "research"
+    if research_dir.is_dir():
+        for brief_file in sorted(research_dir.glob("design-brief-*.md")):
+            try:
+                scan_sources.append((str(brief_file), brief_file.read_text(errors="replace")))
+            except OSError:
+                pass
+
+    if not scan_sources:
+        # No prompts or design brief yet — gate defers (pre-authoring phase).
+        return ""
+
+    # Step 3: scan for dark background keywords and near-black color patterns.
+    hits = []
+    for source_name, text in scan_sources:
+        text_lower = text.lower()
+        for keyword in _DARK_SLIDE_KEYWORDS:
+            if keyword in text_lower:
+                hits.append(f"{source_name}: keyword {keyword!r}")
+                break
+        if _DARK_COLOR_PATTERNS.search(text):
+            hits.append(f"{source_name}: near-black hex/rgb color detected")
+
+    if hits:
+        return (
+            "AF-DARK-SLIDE: Dark/black background detected in prompts or design brief "
+            "but client_dark_theme is not set in intake.json. Light backgrounds are "
+            "required by default. Set client_dark_theme: true in intake.json ONLY when "
+            "the client explicitly requests a dark theme (opt-in by client request only). "
+            "Offenders: " + "; ".join(hits)
+        )
+    return ""
+
+
 PREFLIGHT_REQUIRED = [
     ("working/copy/intake.json",
      "intake.json (interview_confirmed:true, presentation_mode one-person|general)",
@@ -1978,6 +2922,50 @@ PREFLIGHT_REQUIRED = [
      "typography/design brief — per-slide creative art direction",
      "Phase F — Typography Architect / SOP-DESIGN-01/02",
      _chk_design_brief),
+    # TYPOGRAPHY-QC gate (AF-TYPOGRAPHY-QC). After the design brief, an INDEPENDENT
+    # QC specialist grades the design system against the written typography rubric.
+    ("working/qc/typography_qc_report.json",
+     "typography QC report (gate Phase Typography-QC, average >= 8.5, independent reviewer)",
+     "Phase Typography-QC — Typography QC Specialist (AF-TYPOGRAPHY-QC)",
+     _chk_typography_qc),
+    # PROMPT-QC gate (AF-PROMPT-QC). After Prompt-Authoring, an INDEPENDENT QC
+    # specialist grades every per-slide prompt against the 5,000-char prompt standard.
+    ("working/qc/prompt_qc_report.json",
+     "prompt QC report (gate Phase Prompt-QC, average >= 8.5, independent reviewer)",
+     "Phase Prompt-QC — Prompt QC Specialist (AF-PROMPT-QC)",
+     _chk_prompt_qc),
+    # IMAGE-QC gate (AF-IMAGE-QC). After Render, an INDEPENDENT QC specialist grades
+    # the rendered slides against the written image-QC rubric (multimodal pass).
+    ("working/qc/image_qc_report.json",
+     "image QC report (gate Phase Image-QC, average >= 8.5, independent reviewer)",
+     "Phase Image-QC — Image QC Specialist (AF-IMAGE-QC)",
+     _chk_image_qc),
+    # SPEECH-QC gate (AF-SPEECH-QC). CONDITIONAL: enforced only once the speech QC
+    # report exists (speech is written downstream at delivery), so it never blocks
+    # the pre-speech render but is wired so it can't be silently skipped.
+    ("working/qc/speech_qc_report.json",
+     "speech QC report (gate Phase Speech-QC, average >= 8.5, independent reviewer)",
+     "Phase Speech-QC — Speech QC Specialist (AF-SPEECH-QC)",
+     _chk_speech_qc),
+    # SLIDE-COUNT-FLOOR gate (AF-SLIDE-COUNT-FLOOR). The output slide count must be
+    # >= target_talk_minutes x 1.3 (the low end of the verified 1.3–1.5 slides/min
+    # pacing band). A 30-min/10-slide deck auto-fails. Run-dir-scoped (None sentinel).
+    (None,
+     "slide-count floor — output slides >= target_talk_minutes x 1.3 (pacing band)",
+     "Phase 0a/4 — Director duration intake + Arc allocation (AF-SLIDE-COUNT-FLOOR)",
+     _chk_slide_count_floor),
+    # PITCH gate (AF-PITCH-MISSING). The converting arc must carry an offer ladder
+    # AND a re-pitch after the FINAL price. Run-dir-scoped (None sentinel).
+    (None,
+     "offer ladder + re-pitch — arc carries a value-stack/anchor/price ladder and a re-pitch",
+     "Phase 3 — Offer Price Strategist (SOP-PITCH-01 / SOP-PITCH-03, AF-PITCH-MISSING)",
+     _chk_pitch),
+    # CREATIVITY gate (AF-CREATIVITY). Rejects template-sameness (one archetype
+    # dominating the deck) and cliche copy. Run-dir-scoped (None sentinel).
+    (None,
+     "creativity — no single layout archetype dominates the deck; no cliche copy",
+     "Phase F/4 — Typography Architect + Slide Copywriter (SOP-DESIGN-03, AF-CREATIVITY)",
+     _chk_creativity),
     # 7th check — ANTI-COMPRESSION coverage gate (AF-COVERAGE-1). The rel sentinel
     # None tells run_preflight to call this check with the run_dir itself (it needs
     # both mission_prd.json's source_slide_count AND the output slide count), not a
@@ -2011,6 +2999,51 @@ PREFLIGHT_REQUIRED = [
      "speech length — presenter speech words >= target_talk_minutes x 120 wpm (fails short)",
      "Phase 9 — Presenter Speech Writer SOP 9.1 (130 wpm pacing; 120 wpm floor)",
      _chk_speech_length),
+    # AF-VISUAL-VARIETY gate (2026-06-19). Rejects an all-dark monotone deck that
+    # lacks visual variety (palette or luminance). Conditional: defers when no
+    # rendered PNGs exist yet (pre-render), fires at Image-QC and postflight.
+    (None,
+     "visual variety — deck has light/break slides and varied background palette "
+     "(>=10% light slides; no single hue covers >=90% of deck; AF-VISUAL-VARIETY)",
+     "Phase Image-QC / Postflight — Typography Architect + Slide Image Creator "
+     "(SOP-DESIGN-03, AF-VISUAL-VARIETY)",
+     check_visual_variety),
+    # AF-IMAGE-QC-RAN gate (2026-06-19). Requires the image-QC report to exist,
+    # be NEWER than the rendered PNGs, and carry a per-slide PASS/FAIL row for
+    # every rendered slide. Defers when no renders exist.
+    (None,
+     "image-QC ran — image-QC report is present, newer than all rendered PNGs, "
+     "and covers every slide with a per-slide PASS/FAIL row (AF-IMAGE-QC-RAN)",
+     "Phase Image-QC — Image QC Specialist (AF-IMAGE-QC-RAN)",
+     check_image_qc_present),
+    # AF-BRAND-CONSISTENCY gate (2026-06-19). Every rendered slide's dominant
+    # palette must fall within the client's declared brand token set. Defers when
+    # no brand palette is declared or no renders exist.
+    (None,
+     "brand consistency — every rendered slide's dominant palette is within the "
+     "declared brand token set (AF-BRAND-CONSISTENCY)",
+     "Phase Image-QC / Postflight — Slide Image Creator + Typography Architect "
+     "(AF-BRAND-CONSISTENCY)",
+     check_brand_consistency),
+    # AF-PACKAGE-CLEAN gate (2026-06-19). The final bundle directory must contain
+    # only the canonical deliverable files (no .py/.sh/~$*/tasks/ artifacts).
+    # Defers when bundle_dir does not exist. Fires at postflight closeout.
+    # Note: this is a bundle-dir-scoped gate; run_preflight passes run_dir as the
+    # first positional arg, but check_package_cleanliness accepts a Path to the
+    # bundle_dir. Since PREFLIGHT runs before assembly (no bundle_dir yet), this
+    # gate is wired as a deferred/conditional entry that always defers here and
+    # is re-invoked directly in run_postflight_gate.
+    # (PREFLIGHT entry deliberately omitted for AF-PACKAGE-CLEAN -- it fires only
+    # at the postflight gate where bundle_dir is known.)
+    # NO-DARK-SLIDES gate (AF-DARK-SLIDE). Slides MUST use LIGHT/bright backgrounds by
+    # DEFAULT. Dark or black-background slides are NOT ALLOWED unless the client
+    # EXPLICITLY requests a dark theme (intake flag client_dark_theme:true). Light is
+    # the default; dark is opt-in by client request only. Run-dir-scoped (None sentinel):
+    # reads intake.json + scans working/prompts/*.txt + working/research/design-brief-*.md.
+    (None,
+     "no-dark-slides — slides must use light backgrounds by default; dark only with client_dark_theme:true",
+     "Intake/Prompt — Director intake + Slide Image Creator (AF-DARK-SLIDE)",
+     _chk_no_dark_slides),
 ]
 
 
@@ -2842,6 +3875,60 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
             # Record the AF-I14 reason on the deck entry so the ledger carries it.
             update_deliverable_status(ledger_path, "deck_pptx", "failed",
                                       error=kie_reason)
+
+    # --- AF-PACKAGE-CLEAN sub-check (2026-06-19, deck-quality gate) ---
+    # The final bundle must contain ONLY the canonical deliverable files. Dev artifacts
+    # (.py/.sh/~$*/tasks/) in the bundle are a hard delivery failure.
+    pkg_clean_reason = check_package_cleanliness(bundle_dir)
+    if pkg_clean_reason:
+        missing_or_short.append((
+            "deck_pptx",
+            _expand_filename("bundle/", deck_slug),
+            "package cleanliness (no dev artifacts in the delivered bundle)",
+            0, 0, "DIRTY_PACKAGE"))
+        update_deliverable_status(ledger_path, "deck_pptx", "failed", error=pkg_clean_reason)
+
+    # --- AF-VISUAL-VARIETY sub-check (2026-06-19, deck-quality gate) ---
+    # Post-render: re-run the visual-variety check at the postflight gate where renders exist.
+    visual_variety_reason = ""
+    if run_dir is not None:
+        visual_variety_reason = check_visual_variety(run_dir, slides_path)
+        if visual_variety_reason:
+            missing_or_short.append((
+                "deck_pptx",
+                _expand_filename("deck.pptx", deck_slug),
+                "visual variety (deck has light/break slides and varied palette)",
+                0, 0, "MONOTONE_DECK"))
+            update_deliverable_status(ledger_path, "deck_pptx", "failed",
+                                      error=visual_variety_reason)
+
+    # --- AF-IMAGE-QC-RAN sub-check (2026-06-19, deck-quality gate) ---
+    # Post-render: verify the image-QC report is fresh and has per-slide coverage.
+    image_qc_ran_reason = ""
+    if run_dir is not None:
+        image_qc_ran_reason = check_image_qc_present(run_dir, slides_path)
+        if image_qc_ran_reason:
+            missing_or_short.append((
+                "deck_pptx",
+                "working/qc/image_qc_report.json",
+                "image-QC report (fresh + per-slide coverage; AF-IMAGE-QC-RAN)",
+                0, 0, "IMAGE_QC_STALE_OR_MISSING"))
+            update_deliverable_status(ledger_path, "deck_pptx", "failed",
+                                      error=image_qc_ran_reason)
+
+    # --- AF-BRAND-CONSISTENCY sub-check (2026-06-19, deck-quality gate) ---
+    # Post-render: check rendered slides against the declared brand palette.
+    brand_reason = ""
+    if run_dir is not None:
+        brand_reason = check_brand_consistency(run_dir, slides_path)
+        if brand_reason:
+            missing_or_short.append((
+                "deck_pptx",
+                _expand_filename("deck.pptx", deck_slug),
+                "brand consistency (all rendered slides within declared brand palette)",
+                0, 0, "OFF_BRAND"))
+            update_deliverable_status(ledger_path, "deck_pptx", "failed",
+                                      error=brand_reason)
 
     # --- TELEPROMPTER-PUBLISH sub-check (folded under AF-BUNDLE-COMPLETE) ---
     # A self-contained HTML on disk is NOT a delivered teleprompter. The bundle is not

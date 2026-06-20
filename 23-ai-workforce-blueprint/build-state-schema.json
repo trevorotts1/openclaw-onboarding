@@ -679,7 +679,7 @@
     },
     "interviewQc": {
       "type": "object",
-      "description": "PRD-2.15: result of 23-ai-workforce-blueprint/scripts/qc-interview-completion.py. closeoutStatus MUST NOT advance past 'pending' until interviewQc.status=='pass'. Folds the interview experience into the 2.8 closeout gate so 'interview felt great AND artifacts landed' is one verified state. Set to {status:'pending'} by update-interview-state.sh --complete. Added v11.11.0. Cross-skill seam: run-closeout.sh (Skill 37) should gate on interviewQc.status != 'pass' before proceeding \u2014 wiring that one-line gate is the follow-up for whoever next touches Skill 37.",
+      "description": "PRD-2.15: result of 23-ai-workforce-blueprint/scripts/qc-interview-completion.py. closeoutStatus MUST NOT advance past 'pending' until interviewQc.status=='pass'. Folds the interview experience into the 2.8 closeout gate so 'interview felt great AND artifacts landed' is one verified state. Set to {status:'pending'} by update-interview-state.sh --complete. Added v11.11.0. Cross-skill seam (WIRED): run-closeout.sh (Skill 37) gates on interviewQc.status != 'pass' before proceeding (the interviewQc HARD GATE in run-closeout.sh).",
       "properties": {
         "status": {
           "type": "string",

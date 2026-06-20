@@ -1,4 +1,5 @@
 # Member Area / Membership Site Specialist — How-To Guide
+<!-- workforce-provenance: source=role-library role-slug=member-area-specialist content_sha=template -->
 
 ## 1. Role Identity
 
@@ -171,6 +172,17 @@ LTV (Lifetime Value):        {{ARPU}} / {{CHURN_RATE}}%
 
 **Objective:** Design, configure, test, and deploy a new membership tier — including pricing, access rules, checkout flow, onboarding sequence, and content gating — without disrupting existing members.
 
+**When to run:** Triggered when {{HEAD_OF_MARKETING_TITLE}} or product owner approves a new membership tier with a complete specification (tier name, price, access rules, target persona, and launch date all confirmed).
+
+**Frequency:** Per new tier launch; also triggered when an existing tier's pricing, access rules, or onboarding sequence requires a structural update.
+
+**Inputs:**
+- Complete tier specification from {{HEAD_OF_MARKETING_TITLE}}: tier name, monthly and annual price, included content/features, target member persona, launch date
+- {{MEMBERSHIP_PLATFORM}} admin access to configure tiers and access rules
+- {{EMAIL_PLATFORM}} access to build the onboarding email sequence
+- {{PAYMENT_GATEWAY}} test mode credentials for staging lifecycle test
+- Staging environment matching production (for full lifecycle test before deployment)
+
 **Steps:**
 1. **Receive the tier specification.** From {{HEAD_OF_MARKETING_TITLE}} or product owner: tier name, price point (monthly and annual), included content/features, target member persona, and launch date. IF the specification is incomplete (missing access rules or pricing), THEN request a complete brief before beginning technical work.
 2. **Configure the tier in {{MEMBERSHIP_PLATFORM}}.** Create the membership level with: name, description, price (monthly and annual), billing frequency, trial period (if any), and signup fee (if any). Configure the access rules: which pages, posts, categories, courses, downloads, and community spaces are included. IF the platform supports it, configure upgrade/downgrade paths between existing tiers.
@@ -180,9 +192,32 @@ LTV (Lifetime Value):        {{ARPU}} / {{CHURN_RATE}}%
 6. **Deploy to production.** Schedule deployment during low-traffic hours. Add the new tier to the pricing page. Update any global navigation menus, footer links, or tier-gated prompts throughout the site. IF the launch affects existing member pricing (grandfathering decisions), THEN ensure existing members are NOT auto-migrated — changes should only apply to new signups unless an explicit migration campaign is running.
 7. **Monitor post-launch.** For 48 hours after launch, monitor: new signups to the tier, payment processing errors, support ticket volume, and onboarding email delivery. IF error rates exceed baseline by >25%, THEN pause signups to the tier and investigate before resuming.
 
+**Outputs:**
+- New membership tier live in {{MEMBERSHIP_PLATFORM}} with pricing, access rules, and upgrade/downgrade paths configured
+- Checkout flow deployed and tested: pricing page with tier comparison, trust elements, and mobile-responsive design
+- Onboarding email sequence active in {{EMAIL_PLATFORM}}: 6-email sequence (Day 0 through Day 30) with tier-specific tags
+- Post-launch monitoring report at 48 hours: signups, payment errors, support ticket volume, email delivery status
+
+**Hand to:** {{HEAD_OF_MARKETING_TITLE}} for launch announcement and promotion; {{CUSTOMER_SUPPORT_TEAM}} briefed on the new tier's features and access rules before launch; {{EMAIL_PLATFORM}} campaign manager for onboarding sequence activation.
+
+**Failure mode:** Full lifecycle not tested in staging before production deployment — a broken webhook, misconfigured access rule, or missing onboarding email reaches real members, causing access failures and support escalations. Guard: the production deployment checklist requires a signed-off staging lifecycle test receipt (register -> pay -> access -> cancel -> revoke) before the deploy window is authorized.
+
+---
+
 ### SOP-02: Payment Recovery (Dunning) Configuration
 
 **Objective:** Configure and maintain an automated payment recovery sequence that recaptures revenue from failed subscription renewals without annoying or alienating members.
+
+**When to run:** Triggered when a subscription renewal payment fails in {{PAYMENT_GATEWAY}}. Also triggered when monthly recovery rate falls below 55% and the dunning configuration requires adjustment.
+
+**Frequency:** Configuration is set once and runs automatically per renewal failure event; monthly monitoring review to assess recovery rates and tune the sequence.
+
+**Inputs:**
+- {{PAYMENT_GATEWAY}} admin access (Stripe or equivalent) for retry schedule and Smart Retries configuration
+- {{MEMBERSHIP_PLATFORM}} admin access for grace period and access state transition settings
+- {{EMAIL_PLATFORM}} access to build the 4-email dunning notification sequence
+- Stripe test card `4000000000000341` (decline trigger) for end-to-end sequence testing
+- Monthly recovery rate baseline (target: ≥55% overall recovery rate)
 
 **Steps:**
 1. **Configure the retry schedule.** Set the dunning sequence in {{PAYMENT_GATEWAY}} and/or {{MEMBERSHIP_PLATFORM}}: Retry 1 (Day 1 after failure), Retry 2 (Day 3), Retry 3 (Day 5), Retry 4 (Day 7). IF the membership platform supports Stripe's Smart Retries or adaptive retry logic, THEN enable it — machine-learning-optimized retry timing outperforms fixed schedules.
@@ -192,9 +227,31 @@ LTV (Lifetime Value):        {{ARPU}} / {{CHURN_RATE}}%
 5. **Test the full sequence.** Use a test card designed to fail (Stripe test card `4000000000000341` triggers a decline). Register a test member, trigger a renewal failure, and verify each retry, each email, and the access state transition. IF any step fails, THEN fix and retest.
 6. **Monitor recovery metrics monthly.** Track: failed payment volume, recovery rate at each retry, overall recovery rate, and involuntary churn rate. IF overall recovery rate is below 55%, THEN adjust retry timing, email copy, or add an SMS notification channel.
 
+**Outputs:**
+- Dunning retry schedule active in {{PAYMENT_GATEWAY}}: 4 retries over 7 days, Smart Retries enabled if supported
+- 4-email notification sequence live in {{EMAIL_PLATFORM}}: Day 1/5/7/10 cadence with direct payment-update links
+- Grace period and access state transition configured: full access Days 1-10, paused state Day 10-30, cancellation Day 30
+- Monthly recovery report: failed payment volume, per-retry recovery rate, overall recovery rate, involuntary churn rate vs. baseline
+
+**Hand to:** {{HEAD_OF_WEB_DEVELOPMENT_TITLE}} if overall recovery rate stays below 55% for 2+ consecutive months and a structural change (platform feature, gateway switch, or SMS channel addition) is required; {{CHIEF_FINANCIAL_OFFICER_TITLE}} for involuntary churn reporting and revenue impact.
+
+**Failure mode:** Dunning sequence not tested with a decline-triggering test card before going live — a misconfigured retry rule or missing email means members are charged failed attempts but receive no communication, damaging trust and accelerating voluntary cancellation. Guard: the end-to-end test (Stripe test card `4000000000000341` through all 4 retries + all 4 emails + access state transitions) is required before any dunning configuration change is marked complete.
+
+---
+
 ### SOP-03: Content Access Control and Gating Configuration
 
 **Objective:** Configure content visibility rules so that (a) members can access everything their tier entitles them to, (b) non-members cannot access gated content through any path (direct URL, RSS, search), and (c) content previews/teasers drive conversions without leaking full content.
+
+**When to run:** Triggered when a new membership tier is launched (SOP-01), when new content is added to the site, when an access rule complaint is received from a member or support team, or at the scheduled quarterly access matrix audit.
+
+**Frequency:** Per new content addition or tier change; quarterly audit of the full access matrix.
+
+**Inputs:**
+- Access matrix document: every content item (page, post, course module, download, community space) mapped to which tiers can access it, provided by {{HEAD_OF_MARKETING_TITLE}}
+- {{MEMBERSHIP_PLATFORM}} admin access for category-based and per-post access rule configuration
+- Incognito browser for access path testing (direct URL, RSS, search, HTML source inspection)
+- Test member accounts for each active membership tier
 
 **Steps:**
 1. **Define the access matrix.** For each piece of content (page, post, course module, download, community space), document which membership tiers can access it. Work from the tier specification provided by {{HEAD_OF_MARKETING_TITLE}}. IF the matrix is ambiguous ("maybe this tier should see this?"), THEN escalate for clarification before configuring — incorrect access rules are the #1 source of member complaints.
@@ -205,9 +262,33 @@ LTV (Lifetime Value):        {{ARPU}} / {{CHURN_RATE}}%
 6. **Configure drip schedules.** For courses or sequential content: set content to unlock based on time (e.g., Module 2 unlocks 7 days after joining), date (new content every Monday), or completion (Module 2 unlocks when Module 1 is marked complete). IF using completion-based drip, THEN test that the completion trigger fires reliably — a stuck drip means members hit a content wall and churn.
 7. **Audit quarterly.** Review the access matrix against the current content library. Remove access rules for deleted content. Verify that new content has been added to the appropriate tier rules. IF a quarterly audit is not performed, THEN access rules will drift and members will find broken access patterns.
 
+**Outputs:**
+- Access matrix document updated and signed off by {{HEAD_OF_MARKETING_TITLE}}: every content item mapped to correct tiers, category-based rules applied where possible
+- All 5 access paths verified clean in incognito: direct URL, download URL, RSS feed, site search, HTML source
+- Tier gating verified for each active tier: tier-appropriate content accessible, upgrade prompts (not generic errors) on higher-tier content
+- Drip schedules configured and tested (completion trigger verified if completion-based)
+- Quarterly audit log entry: date, items reviewed, rules updated, access drift items remediated
+
+**Hand to:** {{HEAD_OF_MARKETING_TITLE}} for confirmation that access rules match the current tier pricing and value proposition; {{CUSTOMER_SUPPORT_TEAM}} with a summary of any access rule changes that may trigger member inquiries.
+
+**Failure mode:** New premium content published without verifying access rules — the article is indexed by search engines and accessible via direct URL to non-members, leaking the membership value proposition publicly. Guard: the content publication checklist requires an incognito access path test (direct URL + HTML source inspection) to be completed and marked pass before any content flagged "restricted" is published.
+
+---
+
 ### SOP-04: Member Onboarding Flow Implementation
 
 **Objective:** Build and maintain a technical onboarding experience that guides new members to their first "quick win" within 7 days, maximizing first-month engagement and long-term retention.
+
+**When to run:** Triggered when a new membership tier is launched (SOP-01) and requires a corresponding onboarding flow; also triggered when the 14-day engagement rate drops below target (85% first-week login, 70% 14-day profile completion) indicating an onboarding friction point.
+
+**Frequency:** Per tier launch (initial build); quarterly review of engagement tracking metrics; immediate remediation when activation rates drop below targets.
+
+**Inputs:**
+- Tier specification from {{HEAD_OF_MARKETING_TITLE}}: welcome video script, quick-win content designation, community introduction post
+- {{MEMBERSHIP_PLATFORM}} integration with {{EMAIL_PLATFORM}} (webhook or native integration for new-member trigger)
+- {{EMAIL_PLATFORM}} access to build the 6-email welcome sequence with tier-specific tags and suppression rules
+- Analytics platform access (Google Analytics or equivalent) for engagement event configuration
+- Test email account (new email address) for end-to-end onboarding experience testing
 
 **Steps:**
 1. **Build the post-checkout experience.** After successful payment, the member should land on a dedicated "Welcome" page (not just an order confirmation). This page contains: (a) a short welcome video (<3 minutes) from {{COMPANY_NAME}} that sets the tone and vision, (b) login credentials summary (if not auto-logged-in), (c) 3 immediate actions: "Watch the Quick Start Guide" (5 min video), "Complete Your Profile" (link to profile page), "Join the Community" (link to community intro post). IF the platform auto-logs-in after purchase, THEN the welcome page is the first thing they see.
@@ -217,9 +298,32 @@ LTV (Lifetime Value):        {{ARPU}} / {{CHURN_RATE}}%
 5. **Set up engagement tracking.** Configure analytics events for: first login, profile completion, first content access, first community post/comment, first event registration. Dashboard these metrics in a "New Member Activation" report. IF any activation rate drops below target (85% first-week login, 70% 14-day profile completion), THEN investigate and fix the onboarding friction point.
 6. **Test as a brand new member.** Create a test account with a new email address. Go through the full experience: register, pay, land on the welcome page, receive all 6 emails (use an email testing tool to accelerate the sequence), access the onboarding hub, and attempt all 3 immediate actions. IF any link is broken, any email fails to send, or any page is confusing, THEN fix before real members experience it.
 
+**Outputs:**
+- Welcome page live and linked as the post-checkout destination: welcome video, login summary, 3 immediate action prompts
+- 6-email welcome sequence active in {{EMAIL_PLATFORM}}: trigger fires on new-member tag, suppression rule active for 30 days, at-risk tag fires if no engagement within 14 days
+- "Start Here" onboarding hub page live and linked from the member dashboard
+- New Member Activation report configured: 5 engagement events tracked, activation rate targets set (85% first-week login, 70% 14-day profile completion)
+
+**Hand to:** Community manager for personal outreach when a new member is tagged "at-risk" (no email engagement in 14 days); {{HEAD_OF_MARKETING_TITLE}} for onboarding performance review at the 30-day mark for each new tier cohort.
+
+**Failure mode:** New member lands on a generic order confirmation page instead of the dedicated welcome page — first impression is transactional rather than experiential, reducing first-week login rate and long-term retention. Guard: the post-checkout redirect URL in {{MEMBERSHIP_PLATFORM}} and {{PAYMENT_GATEWAY}} must be set to the Welcome page URL, not the default order confirmation; this is verified in the end-to-end test (Step 6) before any tier goes live.
+
+---
+
 ### SOP-05: Membership Site Migration
 
 **Objective:** Migrate the membership site from one platform to another (or from hosted to self-hosted, or between WordPress membership plugins) without data loss, without member disruption, and without revenue interruption.
+
+**When to run:** Triggered by a strategic decision from {{HEAD_OF_WEB_DEVELOPMENT_TITLE}} to change membership platforms, or when the current {{MEMBERSHIP_PLATFORM}} reaches end-of-life, introduces breaking changes, or can no longer support a critical business requirement.
+
+**Frequency:** Per platform migration (rare; typically once every 2-5 years); parallel testing phase runs for 2-4 weeks before cutover.
+
+**Inputs:**
+- Full platform audit export: member accounts (count, tiers, statuses, join dates), active subscriptions (billing cycle, next renewal, gateway tokens), content and access rule inventory, integration list, custom code inventory
+- New platform environment (staging) with matching tier structure, content import, and payment gateway in test mode
+- 301 redirect map: every old URL mapped to the new URL
+- Stripe account access (to assess whether payment tokens can transfer to the new platform)
+- Communication plan for members (especially if payment re-entry is required)
 
 **Steps:**
 1. **Audit the current platform.** Export and document: (a) all member accounts (count, tiers, subscription statuses, join dates), (b) all active subscriptions (gateway, billing cycle, next renewal date, amount), (c) all content and its access rules (what is gated to which tier), (d) all integrations (email platform, CRM, analytics, payment gateways), (e) all custom code (theme modifications, custom plugins, snippets). IF the current platform cannot export subscription data with active payment gateway tokens, THEN migration is significantly more complex — members may need to re-enter payment information — escalate to {{HEAD_OF_WEB_DEVELOPMENT_TITLE}}.
@@ -229,6 +333,18 @@ LTV (Lifetime Value):        {{ARPU}} / {{CHURN_RATE}}%
 5. **Run parallel testing.** With both platforms running (old in production, new in staging): (a) create test accounts on both and compare the experience, (b) verify that content access rules are identical, (c) test payment processing in sandbox mode, (d) verify email sequences trigger correctly, (e) load test the new platform to ensure it handles production traffic.
 6. **Schedule and execute the cutover.** Choose the lowest-traffic window. Put the old site in maintenance mode. Export the final snapshot of member data (any changes since the initial migration). Import the delta into the new platform. Switch DNS to point to the new platform. Deploy 301 redirects. Verify: login works, payments process, content is accessible. IF any critical function fails, THEN roll back to the old platform within the maintenance window and diagnose — do not extend the downtime.
 7. **Monitor for 72 hours post-migration.** Watch: support ticket volume, payment processing errors, login failures, email deliverability, and analytics data flow. IF any metric exceeds 2x the normal baseline, THEN investigate and remediate immediately.
+
+**Outputs:**
+- New platform live in production: all member accounts migrated, tiers matching, content accessible, 301 redirects active
+- Payment token migration confirmed (or member re-entry communication sent with extended grace period)
+- 72-hour post-migration monitoring report: support ticket volume, payment errors, login failures, email deliverability, analytics flow — all below 2x baseline
+- Incident log entry documenting the migration: date, what changed, any issues encountered and resolved, rollback plan status
+
+**Hand to:** {{HEAD_OF_WEB_DEVELOPMENT_TITLE}} for strategic sign-off at the cutover decision point; {{CUSTOMER_SUPPORT_TEAM}} briefed 48 hours before cutover with a FAQ document covering what members may experience; {{CHIEF_FINANCIAL_OFFICER_TITLE}} if payment token migration cannot occur and revenue interruption risk must be quantified.
+
+**Failure mode:** Cutover executed without a tested rollback plan — if a critical function fails (login broken, payments failing, content inaccessible) during the maintenance window, extended downtime accrues while the root cause is diagnosed without a restore path. Guard: the rollback procedure (DNS revert + old platform out of maintenance mode) must be documented and rehearsed in staging before the production cutover window is opened; maximum tolerable downtime is defined in advance and the rollback is triggered automatically if it is exceeded.
+
+---
 
 ## 10. Quality Gates
 

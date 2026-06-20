@@ -1,4 +1,5 @@
 # Long-Form Video Specialist (YouTube, Courses, Sales Videos) — How-To Guide
+<!-- workforce-provenance: source=role-library role-slug=long-form-video-specialist content_sha=template -->
 
 ## 1. Role Identity
 
@@ -178,6 +179,17 @@ Revenue targets tie to {{COMPANY_NAME}}'s overall content monetization strategy.
 
 **Objective:** Produce a high-retention YouTube video from concept to published, following a repeatable 6-stage workflow that maximizes algorithmic performance.
 
+**When to run:** Triggered when a new YouTube video topic is approved by the content calendar or {{HEAD_OF_MARKETING_TITLE}}. Also triggered when a topic passes ideation validation (proven search volume + unique angle confirmed).
+
+**Frequency:** Per video; target cadence is one long-form video per week to maintain algorithmic consistency.
+
+**Inputs:**
+- Approved video topic from content calendar or {{HEAD_OF_MARKETING_TITLE}}
+- {{SCRIPT_ANALYSIS_TOOL}} access for retention prediction scoring
+- Shot list, B-roll plan, and location/equipment checklist
+- {{COMPANY_NAME}} brand guidelines and thumbnail template library
+- Channel analytics (audience peak times, current CTR baseline, recent AVD benchmarks)
+
 **Steps:**
 1. **Ideation and Research (30-60 min).** Identify the video topic. Use YouTube search autocomplete, vidIQ/TubeBuddy keyword tools, competitor channel analysis, and audience comment mining to validate demand. Check: does this topic have proven search volume? Can you offer a unique angle? IF the topic has zero search volume AND no competitor has successfully covered it, THEN reject the topic — you cannot create demand where none exists.
 2. **Scriptwriting (2-4 hours).** Write the script using the SPEC framework: Setup (5-10% — context after hook), Points (70-80% — ordered strong, strong, medium, strong, medium, strongest), Evidence (a stat or example every ~200 words), Conclusion (10-15% — takeaway + "one more thing" bonus). Write the hook last — it should be the sharpest version of the idea. Target word count: ~150 words per minute of intended video length. Run the script through {{SCRIPT_ANALYSIS_TOOL}} for retention prediction. IF the predicted retention score is below 65, THEN rewrite the hook and weak sections before proceeding.
@@ -186,9 +198,31 @@ Revenue targets tie to {{COMPANY_NAME}}'s overall content monetization strategy.
 5. **Editing (3-8 hours).** Follow the editing pipeline: (a) Assembly edit — lay down best A-roll takes in order, (b) B-roll and visual variety — insert supporting visuals, ensure no single visual persists beyond 30 seconds without change, (c) Audio mixing — voice at full/consistent, background music at 15-25% of voice (-15 to -20dB below), target -14 LUFS, (d) Color grade — apply consistent look across all clips, (e) Graphics — add titles, lower thirds, chapter markers, CTAs. IF the raw cut exceeds target length by >15%, THEN perform a drift test: watch at 1x speed and mark every moment attention drifts — cut those sections.
 6. **Upload Optimization (30-60 min).** Create 3 thumbnail variations with high contrast, 3-5 words max, and clear at phone size. Write the title (under 60 characters, front-load keywords, create curiosity without clickbait). Write the description (first 2 lines = keyword-rich hook, then timestamps, then detailed description with links). Add tags, playlist, end screen elements, and cards. Schedule upload 30-60 minutes before audience peak. Immediately after publishing: add the video to relevant playlists, post to Community tab, and share to external channels (email, social). IF CTR drops below 4% within the first 48 hours, THEN swap the thumbnail and test — do not wait.
 
+**Outputs:**
+- Published YouTube video with optimized title (under 60 characters), description (keyword-rich with timestamps), tags, end screens, and cards
+- Three thumbnail variations uploaded (active thumbnail selected; alternates ready for A/B swap if CTR drops below 4% in 48 hours)
+- Video added to relevant playlists and shared to Community tab, email, and social channels
+- Repurposing handoff package initiated per SOP-05
+
+**Hand to:** {{HEAD_OF_MARKETING_TITLE}} or Social Media Manager for distribution amplification; SOP-05 (Multi-Format Content Repurposing) 7 days post-publish once performance data is available; SOP-04 (Retention Engineering) if AVD falls below 40%.
+
+**Failure mode:** Video published with a generic "hey guys welcome back" opening — hook cliff causes 30%+ audience drop in the first 30 seconds, suppressing the algorithm's willingness to distribute the video. Guard: scripts must pass {{SCRIPT_ANALYSIS_TOOL}} retention prediction score ≥65 before filming begins; hook section must deliver substantive value within the first 15 seconds of spoken word.
+
+---
+
 ### SOP-02: Online Course Video Production
 
 **Objective:** Produce instructional video modules that maximize learner comprehension, retention, and completion rates, following Mayer's Multimedia Learning Principles.
+
+**When to run:** Triggered when a new course module is assigned by {{HEAD_OF_EDUCATION_TITLE}} or curriculum designer, or when an existing module is flagged for update (quarterly review or content drift).
+
+**Frequency:** Per course module; quarterly review cycle to flag outdated content for re-recording.
+
+**Inputs:**
+- Module brief from {{HEAD_OF_EDUCATION_TITLE}}: learning objectives (1-3, using Bloom's taxonomy verbs), module outline, source materials, subject matter expert contact
+- {{LMS_PLATFORM}} course structure (existing modules, curriculum sequence, prerequisite rules)
+- Recording environment (distraction-free, external microphone, consistent lighting and backdrop)
+- Accessibility checklist (WCAG 2.1 AA color contrast, caption requirements)
 
 **Steps:**
 1. **Define Learning Objectives.** With the {{HEAD_OF_EDUCATION_TITLE}} or curriculum designer, define 1-3 measurable learning objectives per video. Use Bloom's taxonomy action verbs: "By the end of this video, you will be able to [calculate/design/analyze/apply]." IF objectives cannot be stated concretely, THEN do not proceed — the video topic is too vague.
@@ -199,9 +233,30 @@ Revenue targets tie to {{COMPANY_NAME}}'s overall content monetization strategy.
 6. **Upload and Integrate into Curriculum.** Upload to {{LMS_PLATFORM}} or video host. Configure: completion tracking (view 90%+ = complete), prerequisite gating (video B unlocks only after video A is complete if the curriculum is sequential), and analytics (track watch time, drop-off timestamps, replays). IF completion rate drops below 70%, THEN review drop-off timestamps and restructure the section where viewers leave.
 7. **Maintain and Update.** Review course videos quarterly. IF the software UI, policy, or best practice shown in the video has changed, THEN flag for re-recording. Modular architecture allows updating individual segments without re-shooting the entire module.
 
+**Outputs:**
+- Finished course module uploaded to {{LMS_PLATFORM}} with: chapter markers, 99%-accurate closed captions, downloadable transcript, completion tracking configured, prerequisite gating set
+- Rough cut returned to subject matter expert for content accuracy review before final export
+- Module added to the curriculum sequence in the correct position with prerequisite rules enforced
+
+**Hand to:** {{HEAD_OF_EDUCATION_TITLE}} or curriculum designer for subject matter expert content review before final render; {{LMS_PLATFORM}} administrator for enrollment configuration and learner notification; quarterly update review cycle.
+
+**Failure mode:** Module runtime exceeds 12 minutes without being split — learner completion rate drops 50%+ at the 12-minute mark per MIT/edX research on 6.9M sessions. Guard: planned runtime is reviewed at the instructional structure design step (Step 2); any module exceeding 12 minutes must be split into two videos before recording begins.
+
+---
+
 ### SOP-03: Video Sales Letter (VSL) Production
 
 **Objective:** Produce a conversion-optimized VSL that follows the proven psychological framework and drives measurable sales or lead generation.
+
+**When to run:** Triggered when {{HEAD_OF_MARKETING_TITLE}} or {{HEAD_OF_SALES_TITLE}} approves a new VSL project with a completed strategy brief (audience, unique mechanism, offer, and CTA defined). Also triggered quarterly for VSL performance review and refresh.
+
+**Frequency:** Per campaign or offer launch; quarterly review and refresh cycle for active VSLs.
+
+**Inputs:**
+- Approved strategy brief from {{HEAD_OF_MARKETING_TITLE}} or product owner: target audience definition, unique mechanism, offer details (price, guarantee, bonuses), desired CTA action
+- Legal-reviewed claims and approved testimonials or case study data
+- {{VSL_HOSTING_PLATFORM}} (Vidalytics or Wistia) account and {{LANDING_PAGE_BUILDER}} access
+- Recording environment (professional audio, mobile-first visual design considerations)
 
 **Steps:**
 1. **Research and Strategy Brief.** Before writing a single word, document: (a) target audience — who are they, what problem do they have, what have they tried, why hasn't it worked? (b) Unique Mechanism — what is the specific, differentiated way your product solves their problem? (c) Offer — what exactly are they buying, at what price, with what guarantee? (d) Desired action — one single CTA. IF this brief is not approved by the {{HEAD_OF_MARKETING_TITLE}} or product owner, THEN do not begin scripting.
@@ -211,9 +266,31 @@ Revenue targets tie to {{COMPANY_NAME}}'s overall content monetization strategy.
 5. **Track and Optimize.** Monitor: play rate (visitors who click play), retention at 25/50/75% markers, CTA click-through rate, and conversion rate (purchase or lead capture). IF play rate is below 5%, THEN test a new thumbnail or headline. IF retention drops sharply before the 25% mark, THEN the hook or problem section is weak — re-record the first 90 seconds. IF CTA clicks are low despite strong retention, THEN the offer or CTA language needs revision. Run split tests: test VSL vs. text-only landing page, test different hooks, test different offers.
 6. **Iterate Quarterly.** VSL performance decays over time as audiences saturate and competitors adopt similar messaging. Review and refresh VSLs at least quarterly. Major changes (new offer, new proof, new hook) require full re-production; minor changes (updated stats, new testimonial) can be done with patch edits.
 
+**Outputs:**
+- Completed VSL hosted on {{VSL_HOSTING_PLATFORM}} with analytics tracking active (play rate, retention markers, CTA clicks)
+- Dedicated landing page live in {{LANDING_PAGE_BUILDER}} with VSL as primary element, CTA button visible without scrolling, and all exit links removed
+- Legal sign-off obtained before live date; all claims verified
+- Quarterly performance report delivered to {{HEAD_OF_MARKETING_TITLE}}: play rate, retention at 25/50/75% markers, conversion rate vs. {{VSL_CONVERSION_TARGET}}%
+
+**Hand to:** {{HEAD_OF_MARKETING_TITLE}} and Legal for final sign-off before landing page goes live; {{HEAD_OF_MARKETING_TITLE}} for funnel analysis if conversion rate drops >50% from baseline (escalation per Section 12).
+
+**Failure mode:** VSL recorded before the strategy brief is reviewed by Legal — unverified claims go live, triggering compliance risk or forced takedown mid-campaign. Guard: scripting does not begin until the strategy brief carries {{HEAD_OF_MARKETING_TITLE}} approval signature; all claims must pass legal review before the recording session is scheduled.
+
+---
+
 ### SOP-04: Retention Engineering for Long-Form Video
 
 **Objective:** Systematically optimize a long-form video's audience retention by analyzing data and applying structural improvements at every stage of production.
+
+**When to run:** After any published video crosses 1,000 views; also triggered when channel-wide AVD drops below 40% for 3+ consecutive videos, or when a specific video shows a hook cliff (>30% drop in first 30 seconds).
+
+**Frequency:** Per video at the 1,000-view threshold; channel-wide audit monthly; pre-flight script analysis before every new video recording.
+
+**Inputs:**
+- YouTube Studio Analytics: retention graph, hook cliff data, mid-video crater timestamps, rewatch spike locations
+- {{SCRIPT_ANALYSIS_TOOL}} for pre-flight retention prediction on upcoming scripts
+- Retention Playbook (living document of structural fixes that have improved AVD on this channel)
+- 3+ videos with sufficient data for cross-video comparison (minimum 1,000 views each)
 
 **Steps:**
 1. **Analyze the Retention Graph.** For any published video with >1,000 views, open YouTube Studio -> Analytics -> Retention. Identify: (a) hook cliff — >30% drop in first 30 seconds (indicates hook failure), (b) mid-video craters — sections where retention drops more than 8% per 30 seconds, (c) slow bleeds — gradual but steady decline (indicates pacing or interest fatigue), (d) rewatch spikes — sections viewers re-watch (indicates high-value content — expand these). IF the video has a hook cliff, THEN the hook must be re-written and re-recorded — no amount of editing will save a bad hook.
@@ -223,9 +300,33 @@ Revenue targets tie to {{COMPANY_NAME}}'s overall content monetization strategy.
 5. **Re-Test and Compare.** After applying fixes to 3+ videos, compare retention graphs against the baseline. Measure: did the average AVD improve? Did the hook cliff shrink? Are retention curves flatter (slower bleed) after structural fixes? Document what worked in a "Retention Playbook" that informs all future scripts.
 6. **Apply Pre-Flight Script Analysis.** Before filming future videos, run scripts through {{SCRIPT_ANALYSIS_TOOL}}. IF the predicted retention score is below 65, THEN rewrite — pre-flight analysis prevents 67% of script-level retention failures (PrePublish 2026).
 
+**Outputs:**
+- Retention analysis report per video: problem areas identified, root causes matched, structural fixes recommended for the next video
+- Updated Retention Playbook documenting what interventions improved AVD across 3+ videos
+- Pre-flight script analysis score logged for every future video (minimum threshold: 65)
+- Channel-wide AVD trend documented monthly for reporting to {{HEAD_OF_MARKETING_TITLE}}
+
+**Hand to:** Scriptwriting phase of SOP-01 (structural fixes inform next video's script); {{HEAD_OF_VIDEO_TITLE}} if channel-wide AVD drops below 40% for 3+ consecutive videos and warrants a strategic content review.
+
+**Failure mode:** Hook cliff goes undiagnosed after the 1,000-view threshold — the video continues to underperform for its full traffic window and the structural lesson is not applied to future scripts. Guard: a retention analysis review is mandatory for every video within 7 days of crossing 1,000 views; findings are logged in the Retention Playbook before the next video enters scripting.
+
+---
+
 ### SOP-05: Multi-Format Content Repurposing (Atomization)
 
 **Objective:** Extract maximum value from each long-form video by repurposing it into multiple derivative assets for different platforms and purposes, ensuring brand consistency across all channels.
+
+**When to run:** 7 days after a long-form video is published and performance data is available. Triggered when the video's AVD is above 50% AND CTR is above 5%, qualifying it as a strong repurposing candidate.
+
+**Frequency:** Per qualifying long-form video (7 days post-publish); repurposing ROI tracking reviewed monthly.
+
+**Inputs:**
+- Published YouTube video (minimum 7-day performance data: AVD >50% AND CTR >5%)
+- {{AI_CLIP_TOOL}} (OpusClip, Klap, or manual editing workflow) for short-form clip extraction
+- AI transcription tool for full-video transcript
+- {{EMAIL_PLATFORM}} access for newsletter distribution
+- {{COMPANY_NAME}} brand kit (Canva templates, color palette, logo assets)
+- Social media scheduling tool for platform-specific post distribution
 
 **Steps:**
 1. **Identify Repurposing Candidates.** After publishing a long-form video, wait 7 days for performance data. IF the video's AVD is above 50% AND CTR is above 5%, THEN it is a strong candidate for repurposing. Prioritize videos that contain: clear "aha" moments, quotable insights, before/after demonstrations, or emotional peaks.
@@ -235,6 +336,19 @@ Revenue targets tie to {{COMPANY_NAME}}'s overall content monetization strategy.
 5. **Create Social Media Assets.** From the blog post: extract 5-7 key quotes and create quote graphics (Canva templates with {{COMPANY_NAME}} branding). From the video: grab 3-5 still frames for social posts. Write platform-specific captions for LinkedIn, Twitter/X, Instagram, and Facebook. Schedule posts across the week following the video release.
 6. **Create an Email Newsletter Version.** Write a 200-300 word summary of the video's key takeaway. Embed the video thumbnail (linked to YouTube). Include one unique insight not fully explored in the video — gives newsletter subscribers an exclusive reason to stay subscribed. Send to {{COMPANY_NAME}}'s email list through {{EMAIL_PLATFORM}}.
 7. **Track Repurposing ROI.** For each derivative asset, track: views/impressions, clicks back to the original video, and conversions attributed to the repurposed content. IF a derivative format consistently underperforms (low engagement for 3+ consecutive assets), THEN deprioritize that format and reallocate effort to higher-performing channels.
+
+**Outputs:**
+- 5-10 short-form clips (30-60 seconds each, burned-in captions, self-contained) distributed to Shorts/TikTok/Reels
+- Blog post published to {{COMPANY_NAME}}'s blog with YouTube video embedded and SEO metadata complete
+- 5-7 quote graphics and 3-5 still-frame social posts scheduled across LinkedIn, Twitter/X, Instagram, and Facebook
+- Email newsletter version sent to {{COMPANY_NAME}}'s list via {{EMAIL_PLATFORM}} within 7 days of video publish
+- Podcast audio episode uploaded to distribution platforms (if {{COMPANY_NAME}} runs a podcast)
+
+**Hand to:** {{HEAD_OF_MARKETING_TITLE}} or Social Media Manager for distribution scheduling approval; {{EMAIL_PLATFORM}} campaign manager for newsletter send; repurposing ROI report reviewed monthly by {{HEAD_OF_MARKETING_TITLE}}.
+
+**Failure mode:** Long-form video published without a repurposing workflow — 8-18 hours of production investment yields a single asset, dramatically reducing content ROI. Guard: every video that clears the AVD >50% AND CTR >5% threshold at the 7-day mark automatically enters the repurposing queue; the atomization checklist (clips, blog, social, email) must be completed within 14 days of the video's publish date.
+
+---
 
 ## 10. Quality Gates
 

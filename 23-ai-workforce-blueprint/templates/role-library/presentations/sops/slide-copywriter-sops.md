@@ -228,3 +228,17 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Failure mode:** If a line is genuinely ambiguous (audience copy or spoken line), default it to SAY (route to the speech) and keep the slide to the one big idea; never leave a maybe-spoken line on the face.
 
 ---
+
+## AF-DARK-SLIDE — No Dark Slides (AUTO-FAIL)
+
+Slides MUST use LIGHT / bright backgrounds by DEFAULT. DARK or black-background slides are NOT ALLOWED unless the CLIENT EXPLICITLY requests a dark theme via the intake flag `client_dark_theme: true`. Light is the default; dark is opt-in by client request only.
+
+- DEFAULT: Light / bright background slides
+- ALLOWED dark: Only when `client_dark_theme: true` is set in working/copy/intake.json
+- AUTO-FAIL: Any dark/black/near-black default background without `client_dark_theme: true`
+
+**Note for slide copywriters:** do not author copy that implies or specifies dark/black backgrounds (e.g., "white text on black", "dark slide", "near-black background") unless `client_dark_theme: true` is confirmed in intake.json. Flag to the Director if a client brief implies a dark theme without the intake flag.
+
+**Failure message:** `AF-DARK-SLIDE: Dark/black background detected in copy or brief but client_dark_theme is not set. Light backgrounds are required by default.`
+
+---

@@ -1,0 +1,373 @@
+#!/usr/bin/env bash
+# ensure-pipeline-crons.sh — SHARED, IDEMPOTENT registrar/backfiller for ALL
+# closeout/pipeline trigger crons.
+#
+# WHY THIS EXISTS (root cause — see ZHC-EXPERIENCE-DIAGNOSIS Part 2/3):
+#   The ZHC closeout experience (Skill 37) is fully state-machine-driven and its
+#   files ship two independent ways, BUT the only automatic TRIGGER for closeout
+#   was a single cron (workforce-build-resume) created in install.sh Step 13. The
+#   fleet hot-patch path (update-skills.sh) registered NONE of the pipeline crons,
+#   so a box patched only via update-skills.sh got new files but no trigger. And
+#   the dedicated closeout-resume cron was only ever self-bootstrapped at runtime
+#   by run-closeout.sh — which never runs if the build-resume cron is absent. So
+#   the gap cascaded and the closeout silently never fired.
+#
+#   This script is the SINGLE SOURCE OF TRUTH that asserts the presence of every
+#   pipeline trigger cron, registers any that are missing, and prints a one-line
+#   audit. It is called by BOTH install.sh (end of run) and update-skills.sh
+#   (after the wiring phase) so files AND triggers always land together.
+#
+# CRONS MANAGED (name-keyed, idempotent):
+#   1. workforce-build-resume          (*/15, MESSAGE mode)  — Skill 23 build resume + closeout exec
+#   2. interview-nudge                 (0 */6, COMMAND mode) — owner-facing idle-interview nudge
+#   3. closeout-readiness-watchdog     (0 */6, COMMAND mode) — operator-facing stall escalation
+#   4. closeout-resume                 (*/15, COMMAND mode)  — DEDICATED closeout trigger (REDUNDANT path)
+#
+# REDUNDANCY (closes the single-point-of-failure): closeout fires if ANY of
+#   {workforce-build-resume cron, closeout-resume cron, watchdog} reaches the
+#   box. The closeout-resume cron is COMMAND mode (`bash resume-closeout-cron.sh`)
+#   so it needs NO Telegram owner target — it runs even on a box with no resolved
+#   owner chat. That removes the case where "no owner chat yet" silently disabled
+#   the entire closeout trigger.
+#
+# OPERATOR-CHAT SAFETY: only the MESSAGE-mode cron (workforce-build-resume) needs
+#   a non-operator owner target (its self-ping must not land in an operator chat).
+#   If the resolved target is an operator chat id we LOG + CONTINUE (we still
+#   register the command-mode triggers — we do NOT strand the box). We only SKIP
+#   the message-mode cron's self-ping wiring, not the deterministic exec path.
+#
+# IDEMPOTENT: every registration is guarded by `openclaw cron list | grep -q
+#   <name>`; safe to call repeatedly. Fail-loud on a true error, near-no-op when
+#   everything is already present.
+#
+# bash-not-zsh (strict glob in zsh aborts silently — always invoke via bash).
+#
+# EXIT CODES:
+#   0  all four crons present (or registered this run)
+#   3  one or more crons could NOT be registered (caller should warn; install
+#      continues — this is advisory, not fatal, so a partial box is not bricked)
+#
+# Onboarding repo version markers (kept in sync by scripts/bump-version.sh):
+#   ENSURE_PIPELINE_CRONS_VERSION
+ENSURE_PIPELINE_CRONS_VERSION="v12.33.0"
+
+set -u
+
+# ---------------------------------------------------------------------------
+# Platform detection — VPS (/data) first, then Mac ($HOME). Mirrors every other
+# pipeline script's detection block so paths resolve identically on both.
+# ---------------------------------------------------------------------------
+if [[ -d /data/.openclaw ]]; then
+  OC_ROOT="/data/.openclaw"
+elif [[ -d "${HOME}/.openclaw" ]]; then
+  OC_ROOT="${HOME}/.openclaw"
+else
+  echo "[ensure-pipeline-crons] no OpenClaw root found (.openclaw absent) — nothing to wire" >&2
+  exit 0
+fi
+
+SKILLS_DIR="$OC_ROOT/skills"
+STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+
+# OPERATOR chat ids — MUST match install.sh OPERATOR_CHAT_IDS exactly.
+OPERATOR_CHAT_IDS_RE='^(5252140759|6663821679|6771245262)$'
+
+_now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null; }
+
+_log() { echo "[ensure-pipeline-crons] $*"; }
+
+# Find a pipeline script across the canonical skill locations.
+# $1 = skill folder (e.g. 23-ai-workforce-blueprint), $2 = relative script path.
+_find_script() {
+  local skill="$1" rel="$2" cand
+  for cand in \
+    "$OC_ROOT/skills/$skill/$rel" \
+    "${HOME}/.openclaw/skills/$skill/$rel" \
+    "/data/.openclaw/skills/$skill/$rel"; do
+    if [[ -f "$cand" ]]; then
+      printf '%s\n' "$cand"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Resolve a non-operator owner Telegram target (for the MESSAGE-mode cron only).
+# Prints the chat id on stdout, or empty string if none / operator-only.
+# Mirrors the three-layer resolver in install.sh + update-skills.sh.
+_resolve_owner_chat() {
+  command -v python3 >/dev/null 2>&1 || { printf ''; return 0; }
+  python3 - "$OC_ROOT" <<'PYEOF' 2>/dev/null
+import json, os, sys
+OPERATOR_CHAT_IDS = {"5252140759", "6663821679", "6771245262"}
+oc_root = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/.openclaw")
+oc_json = os.path.join(oc_root, "openclaw.json")
+
+def valid(v, bot_id=""):
+    if not isinstance(v, (str, int)):
+        return ""
+    s = str(v).strip().replace("telegram:", "").replace("tg:", "")
+    if not s:
+        return ""
+    digits = s.lstrip("-")
+    if not (digits.isdigit() and 6 <= len(digits) <= 20):
+        return ""
+    if bot_id and s == bot_id:
+        return ""
+    if s in OPERATOR_CHAT_IDS:
+        return ""
+    return s
+
+cfg = {}
+try:
+    cfg = json.load(open(oc_json))
+except Exception:
+    pass
+
+bot_id = ""
+bt = (cfg.get("channels", {}).get("telegram", {}) or {}).get("botToken", "") or ""
+if ":" in bt:
+    bot_id = bt.split(":")[0]
+
+# S0: explicit env override
+s0 = os.environ.get("OPENCLAW_OWNER_CHAT_ID", "").strip()
+if s0:
+    cid = valid(s0, bot_id)
+    if cid:
+        print(cid); raise SystemExit(0)
+
+# S1: channels.telegram.allowFrom
+for v in (cfg.get("channels", {}).get("telegram", {}) or {}).get("allowFrom", []) or []:
+    cid = valid(v, bot_id)
+    if cid:
+        print(cid); raise SystemExit(0)
+
+# S2: commands.ownerAllowFrom
+for v in (cfg.get("commands", {}) or {}).get("ownerAllowFrom", []) or []:
+    cid = valid(v, bot_id)
+    if cid:
+        print(cid); raise SystemExit(0)
+
+print("")
+PYEOF
+}
+
+# Resolve the channel account (if any) for the message-mode cron.
+_resolve_channel_account() {
+  command -v python3 >/dev/null 2>&1 || { printf ''; return 0; }
+  python3 - "$OC_ROOT" <<'PYEOF' 2>/dev/null
+import json, os, sys
+oc_root = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/.openclaw")
+oc_json = os.path.join(oc_root, "openclaw.json")
+cfg = {}
+try:
+    cfg = json.load(open(oc_json))
+except Exception:
+    pass
+tg = cfg.get("channels", {}).get("telegram", {}) or {}
+acct = tg.get("account") or tg.get("accountId") or ""
+print(acct if isinstance(acct, str) else "")
+PYEOF
+}
+
+# ---------------------------------------------------------------------------
+# Registrars — one per cron. Each is name-keyed + idempotent.
+# Returns 0 on present-or-registered, 1 on a real registration failure.
+# ---------------------------------------------------------------------------
+
+# 1. workforce-build-resume (MESSAGE mode, */15). Drives Skill 23 build resume
+#    AND in-process execs run-closeout.sh on the auto-complete hop. Needs a
+#    non-operator owner chat for the self-ping; if absent, we LOG + skip THIS
+#    cron only (the command-mode closeout-resume below still fires closeout).
+_ensure_workforce_build_resume() {
+  if openclaw cron list 2>/dev/null | grep -qi "workforce-build-resume"; then
+    _log "OK  workforce-build-resume cron already present"
+    return 0
+  fi
+
+  local prompt_file
+  prompt_file="$(_find_script 23-ai-workforce-blueprint resume-prompt.txt)" || true
+  if [[ -z "${prompt_file:-}" ]]; then
+    _log "SKIP workforce-build-resume — resume-prompt.txt not found (older skill bundle)"
+    return 1
+  fi
+
+  local target account
+  target="$(_resolve_owner_chat)"
+  account="$(_resolve_channel_account)"
+
+  if [[ -z "$target" ]]; then
+    _log "SKIP workforce-build-resume self-ping — no non-operator owner chat resolved."
+    _log "     (Set OPENCLAW_OWNER_CHAT_ID, or fix allowFrom, then re-run. The"
+    _log "      command-mode closeout-resume cron still fires closeout independently.)"
+    return 1
+  fi
+  if [[ "$target" =~ $OPERATOR_CHAT_IDS_RE ]]; then
+    # RELAXED (was: hard-abort). Operator chat resolved → do not wire the
+    # message-mode self-ping to it (would spam the operator), but DO NOT strand
+    # the box: the command-mode triggers below still run closeout deterministically.
+    _log "NOTE workforce-build-resume target resolved to an OPERATOR chat ($target)."
+    _log "     LOG + CONTINUE: skipping ONLY the message-mode self-ping wiring;"
+    _log "     command-mode closeout-resume cron remains the deterministic trigger."
+    _log "     Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> to wire the owner self-ping."
+    return 1
+  fi
+
+  local prompt
+  prompt="$(cat "$prompt_file")"
+  local base=(--name "workforce-build-resume" --cron "*/15 * * * *" --tz "America/New_York" --channel telegram --to "$target")
+  [[ -n "$account" ]] && base+=(--account "$account")
+  if openclaw cron create "${base[@]}" --message "$prompt" >/dev/null 2>&1; then
+    _log "DONE workforce-build-resume cron registered (*/15, telegram → $target)"
+    return 0
+  fi
+  # account fallback
+  if openclaw cron create --name "workforce-build-resume" --cron "*/15 * * * *" --tz "America/New_York" --channel telegram --to "$target" --message "$prompt" >/dev/null 2>&1; then
+    _log "DONE workforce-build-resume cron registered (no-account fallback)"
+    return 0
+  fi
+  _log "FAIL workforce-build-resume cron creation failed (openclaw cron create rc!=0)"
+  return 1
+}
+
+# 2. interview-nudge (COMMAND mode, 0 */6). Owner-facing idle-interview nudge.
+_ensure_interview_nudge() {
+  if openclaw cron list 2>/dev/null | grep -qi "interview-nudge"; then
+    _log "OK  interview-nudge cron already present"
+    return 0
+  fi
+  local script
+  script="$(_find_script 23-ai-workforce-blueprint scripts/interview-nudge-cron.sh)" || true
+  if [[ -z "${script:-}" ]]; then
+    _log "SKIP interview-nudge — interview-nudge-cron.sh not found"
+    return 1
+  fi
+  chmod +x "$script" 2>/dev/null || true
+  local out uuid
+  if out=$(openclaw cron add --name "interview-nudge" --schedule "0 */6 * * *" --command "bash $script" --json 2>/dev/null); then
+    uuid=$(printf '%s' "$out" | jq -r '.uuid // .id // empty' 2>/dev/null || true)
+    [[ -n "$uuid" && "$uuid" != "null" ]] && _persist_uuid interviewNudgeUuid "$uuid"
+    _log "DONE interview-nudge cron registered (0 */6, command mode)"
+    return 0
+  fi
+  _log "FAIL interview-nudge cron creation failed"
+  return 1
+}
+
+# 3. closeout-readiness-watchdog (COMMAND mode, 0 */6). Operator escalation.
+_ensure_closeout_watchdog() {
+  if openclaw cron list 2>/dev/null | grep -qi "closeout-readiness-watchdog"; then
+    _log "OK  closeout-readiness-watchdog cron already present"
+    return 0
+  fi
+  local script
+  script="$(_find_script 23-ai-workforce-blueprint scripts/closeout-readiness-watchdog.sh)" || true
+  if [[ -z "${script:-}" ]]; then
+    _log "SKIP closeout-readiness-watchdog — closeout-readiness-watchdog.sh not found"
+    return 1
+  fi
+  chmod +x "$script" 2>/dev/null || true
+  local out uuid
+  if out=$(openclaw cron add --name "closeout-readiness-watchdog" --schedule "0 */6 * * *" --command "bash $script" --json 2>/dev/null); then
+    uuid=$(printf '%s' "$out" | jq -r '.uuid // .id // empty' 2>/dev/null || true)
+    [[ -n "$uuid" && "$uuid" != "null" ]] && _persist_uuid closeoutWatchdogCronUuid "$uuid"
+    _log "DONE closeout-readiness-watchdog cron registered (0 */6, command mode)"
+    return 0
+  fi
+  _log "FAIL closeout-readiness-watchdog cron creation failed"
+  return 1
+}
+
+# 4. closeout-resume (COMMAND mode, */15). The DEDICATED, REDUNDANT closeout
+#    trigger. No Telegram target needed — runs run-closeout.sh via the resume
+#    cron script regardless of owner-chat resolution. This is the fix that makes
+#    closeout fire even on boxes where Step 13's message-mode cron was skipped.
+_ensure_closeout_resume() {
+  if openclaw cron list 2>/dev/null | grep -qi "closeout-resume"; then
+    _log "OK  closeout-resume cron already present"
+    return 0
+  fi
+  local script
+  script="$(_find_script 37-zhc-closeout scripts/resume-closeout-cron.sh)" || true
+  if [[ -z "${script:-}" ]]; then
+    _log "SKIP closeout-resume — resume-closeout-cron.sh not found (Skill 37 not installed yet)"
+    return 1
+  fi
+  chmod +x "$script" 2>/dev/null || true
+  local out uuid
+  if out=$(openclaw cron add --name "closeout-resume" --schedule "*/15 * * * *" --command "bash $script" --json 2>/dev/null); then
+    uuid=$(printf '%s' "$out" | jq -r '.uuid // .id // empty' 2>/dev/null || true)
+    if [[ -n "$uuid" && "$uuid" != "null" ]]; then
+      _persist_uuid closeoutResumeUuid "$uuid"
+      _persist_field closeoutResumeRegisteredAt "$(_now_iso)"
+    fi
+    _log "DONE closeout-resume cron registered (*/15, command mode — REDUNDANT trigger, no owner chat required)"
+    return 0
+  fi
+  _log "FAIL closeout-resume cron creation failed"
+  return 1
+}
+
+# Persist a cron UUID into build-state (best-effort; never fatal).
+_persist_uuid() {
+  local key="$1" uuid="$2"
+  [[ -f "$STATE_FILE" ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  local tmp
+  tmp=$(mktemp) || return 0
+  if jq --arg uuid "$uuid" ".${key} = \$uuid" "$STATE_FILE" > "$tmp" 2>/dev/null; then
+    mv "$tmp" "$STATE_FILE"
+  else
+    rm -f "$tmp"
+  fi
+}
+
+_persist_field() {
+  local key="$1" val="$2"
+  [[ -f "$STATE_FILE" ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  local tmp
+  tmp=$(mktemp) || return 0
+  if jq --arg v "$val" ".${key} = \$v" "$STATE_FILE" > "$tmp" 2>/dev/null; then
+    mv "$tmp" "$STATE_FILE"
+  else
+    rm -f "$tmp"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
+main() {
+  if ! command -v openclaw >/dev/null 2>&1; then
+    _log "openclaw CLI not on PATH — cannot register pipeline crons. Re-run after CLI is installed."
+    # Not fatal: install/update continues; the next run backfills.
+    exit 0
+  fi
+
+  _log "asserting pipeline trigger crons (idempotent backfill) — $ENSURE_PIPELINE_CRONS_VERSION"
+
+  local fails=0
+  # The two COMMAND-mode triggers first — these never depend on a Telegram
+  # owner chat, so the closeout experience is guaranteed a deterministic trigger
+  # even when the message-mode resume cron cannot be wired.
+  _ensure_closeout_resume          || fails=$((fails + 1))
+  _ensure_closeout_watchdog        || fails=$((fails + 1))
+  _ensure_interview_nudge          || fails=$((fails + 1))
+  # The message-mode resume cron last (its self-ping needs a non-operator chat).
+  _ensure_workforce_build_resume   || fails=$((fails + 1))
+
+  # One-line audit of current cron presence (fast, name-keyed).
+  local present
+  present=$(openclaw cron list 2>/dev/null | grep -Eio 'workforce-build-resume|interview-nudge|closeout-readiness-watchdog|closeout-resume' | sort -u | tr '\n' ' ' | sed 's/ $//')
+  _log "AUDIT crons present after run: [${present:-none}]"
+
+  if [[ "$fails" -gt 0 ]]; then
+    _log "WARN $fails pipeline cron(s) could not be registered this run (see lines above). Install/update continues; re-run to backfill."
+    exit 3
+  fi
+  _log "ALL pipeline trigger crons present."
+  exit 0
+}
+
+main "$@"

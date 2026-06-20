@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v12.33.0"
+ONBOARDING_VERSION="v13.0.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -4667,13 +4667,25 @@ install_workforce_resume_cron() {
         warn "Telegram target not resolved — skipping workforce-resume cron."
         return 0
     fi
-    # REGRESSION GUARD (fix/cron-owner-chat-routing): never wire an operator ID as cron target.
+    # REGRESSION GUARD (fix/cron-owner-chat-routing): never wire an operator ID as
+    # the MESSAGE-mode self-ping target (it would spam the operator).
+    #
+    # v12.34.0 (ZHC-EXPERIENCE fix BREAK #2): RELAXED from hard-abort (return 1) to
+    # LOG + CONTINUE. The old `return 1` stranded the ENTIRE box: it not only
+    # skipped this message-mode cron but, because the closeout used to hang off
+    # this single cron, it silently disabled the whole closeout experience whenever
+    # no client owner chat had been configured yet. We now SKIP only this
+    # message-mode cron (return 0, install proceeds). The deterministic closeout
+    # trigger is the COMMAND-mode closeout-resume cron (Step 14 +
+    # ensure-pipeline-crons.sh), which needs no owner chat — so the box is NOT
+    # stranded.
     case "$TG_TARGET" in
         5252140759|6663821679|6771245262)
-            warn "ERROR: workforce-build-resume cron target resolved to an OPERATOR chat ID ($TG_TARGET)."
-            warn "This would route cron deliveries to the operator, not the client owner. Aborting cron install."
-            warn "Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> before running install.sh to force the correct target."
-            return 1
+            warn "NOTE: workforce-build-resume cron target resolved to an OPERATOR chat ID ($TG_TARGET)."
+            warn "Skipping ONLY this message-mode self-ping cron (it would route to the operator, not the client owner)."
+            warn "The closeout experience still fires via the command-mode closeout-resume cron (Step 14) — box is NOT stranded."
+            warn "Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> before running install.sh to wire the owner self-ping too."
+            return 0
             ;;
     esac
 
@@ -5242,7 +5254,25 @@ install_skill_37_zhc_closeout() {
     fi
 
     success "Skill 37 (ZHC Closeout) installed → $SKILL_DEST"
-    note "Skill 37 fires automatically via the workforce-build-resume cron (Step 13) when buildCompletedAt is set + closeoutStatus is dirty. No separate cron needed."
+
+    # v12.34.0 (ZHC-EXPERIENCE fix BREAK #2/#3): closeout MUST NOT depend solely
+    # on the Step 13 workforce-build-resume cron. Register the DEDICATED,
+    # REDUNDANT closeout-resume cron here, at install time. It is COMMAND mode
+    # (`bash resume-closeout-cron.sh`) so it needs NO owner Telegram target and
+    # fires run-closeout.sh even on a box where Step 13 was skipped/aborted.
+    local _CLOSEOUT_CRON_INSTALLER="$SKILL_DEST/scripts/install-closeout-resume-cron.sh"
+    if [ -f "$_CLOSEOUT_CRON_INSTALLER" ]; then
+        chmod +x "$_CLOSEOUT_CRON_INSTALLER" 2>/dev/null || true
+        if bash "$_CLOSEOUT_CRON_INSTALLER" >> "$LOG_FILE" 2>&1; then
+            success "Dedicated closeout-resume cron registered (REDUNDANT trigger — closeout no longer hangs off a single cron)"
+        else
+            warn "install-closeout-resume-cron.sh reported a non-zero rc (closeout-resume cron may not have registered — ensure-pipeline-crons.sh will backfill at end of run)"
+        fi
+    else
+        warn "install-closeout-resume-cron.sh not found in Skill 37 scripts — relying on ensure-pipeline-crons.sh backfill for the closeout trigger."
+    fi
+
+    note "Skill 37 fires via REDUNDANT triggers: the dedicated closeout-resume cron (registered here), the workforce-build-resume cron (Step 13), AND the closeout-readiness-watchdog. ensure-pipeline-crons.sh (end of run) backfills any missing trigger. No single point of failure."
     return 0
 }
 
@@ -5850,6 +5880,28 @@ if [ -f "$_hardening_self" ]; then
     bash "$_hardening_self" 2>&1 | tail -20 || warn "install-hardening returned non-zero (treated as informational)"
 else
     note "install-hardening.sh not in bundle — skipping (older onboarding bundle, harmless)"
+fi
+
+# ----------------------------------------------------------
+# v12.34.0 (ZHC-EXPERIENCE fix BREAK #1/#4): END-OF-RUN PIPELINE CRON BACKFILL.
+# A single, idempotent assertion that ALL closeout/pipeline trigger crons are
+# present (workforce-build-resume, interview-nudge, closeout-readiness-watchdog,
+# closeout-resume). Steps 13/13.5/13.5b/14 register them individually; this
+# end-of-run sweep is the safety net that catches any that skipped (no owner
+# chat yet, container recreate that dropped crons, ordering) so a box never ends
+# an install with files-but-no-trigger. Shared registrar — also called by
+# update-skills.sh so the hot-patch path is self-sufficient too.
+# ----------------------------------------------------------
+step "Backfilling pipeline trigger crons (ensure-pipeline-crons.sh — closeout trigger safety net)"
+_ENSURE_CRONS="$ONBOARDING_DIR/scripts/ensure-pipeline-crons.sh"
+if [ -f "$_ENSURE_CRONS" ]; then
+    if bash "$_ENSURE_CRONS" 2>&1 | tee -a "$LOG_FILE"; then
+        success "Pipeline trigger crons asserted — closeout experience has at least one live trigger"
+    else
+        warn "ensure-pipeline-crons.sh reported a non-zero rc — one or more pipeline crons could not be registered (see log). Re-run update-skills.sh to backfill."
+    fi
+else
+    warn "ensure-pipeline-crons.sh not in bundle ($_ENSURE_CRONS) — pipeline cron backfill skipped (older onboarding bundle)."
 fi
 
 # ----------------------------------------------------------

@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# install-closeout-resume-cron.sh — INSTALL-TIME registrar for the DEDICATED
+# closeout-resume cron (Skill 37).
+#
+# WHY THIS EXISTS (see ZHC-EXPERIENCE-DIAGNOSIS Part 2 BREAK #2/#3):
+#   Through v12.14.x the dedicated closeout-resume cron was ONLY ever
+#   self-bootstrapped at RUNTIME by run-closeout.sh. But run-closeout.sh itself
+#   only runs when the workforce-build-resume cron (install.sh Step 13) execs it.
+#   If Step 13 was skipped/aborted (no owner chat, operator-chat target,
+#   pre-v10.14.17 box, container recreate that dropped crons), run-closeout.sh
+#   never fired → the dedicated closeout cron was never created → the whole
+#   closeout experience hung off ONE cron with no independent recovery path.
+#
+#   This script registers the dedicated closeout-resume cron AT INSTALL TIME,
+#   so the closeout trigger is REDUNDANT: closeout fires if ANY of
+#   {workforce-build-resume, closeout-resume, watchdog} reaches the box.
+#
+#   The cron is COMMAND mode (`bash resume-closeout-cron.sh`) — it needs NO
+#   Telegram owner target, so it installs even on a box with no resolved owner
+#   chat. This is the schema's `closeoutResumeRegisteredAt` writer
+#   (build-state-schema.json) that previously had no implementing script.
+#
+# IDEMPOTENT: skips if a closeout-resume cron already exists. Safe to re-run.
+# bash-not-zsh.
+#
+# EXIT CODES:
+#   0  cron present (already, or registered this run), OR honest skip (no CLI /
+#      script not found) — install must not abort on this
+#   1  registration attempted but failed (caller warns; install continues)
+#
+# Onboarding repo version markers (kept in sync by scripts/bump-version.sh):
+#   INSTALL_CLOSEOUT_RESUME_CRON_VERSION
+INSTALL_CLOSEOUT_RESUME_CRON_VERSION="v12.33.0"
+
+set -u
+
+# ---- platform detection (VPS first, then Mac) ----
+if [[ -d /data/.openclaw ]]; then
+  OC_ROOT="/data/.openclaw"
+elif [[ -d "${HOME}/.openclaw" ]]; then
+  OC_ROOT="${HOME}/.openclaw"
+else
+  echo "[install-closeout-resume-cron] no OpenClaw root found — nothing to wire" >&2
+  exit 0
+fi
+
+STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+
+_log() { echo "[install-closeout-resume-cron] $*"; }
+_now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null; }
+
+if ! command -v openclaw >/dev/null 2>&1; then
+  _log "openclaw CLI not on PATH — skipping closeout-resume cron install (re-run later)."
+  exit 0
+fi
+
+# Already present? idempotent no-op.
+if openclaw cron list 2>/dev/null | grep -qi "closeout-resume"; then
+  _log "closeout-resume cron already installed — skipping (idempotent)."
+  exit 0
+fi
+
+# Locate resume-closeout-cron.sh: prefer this script's own dir, then canonical
+# install locations.
+RESUME_CRON_SCRIPT=""
+for _cand in \
+  "$SCRIPT_DIR/resume-closeout-cron.sh" \
+  "$OC_ROOT/skills/37-zhc-closeout/scripts/resume-closeout-cron.sh" \
+  "${HOME}/.openclaw/skills/37-zhc-closeout/scripts/resume-closeout-cron.sh" \
+  "/data/.openclaw/skills/37-zhc-closeout/scripts/resume-closeout-cron.sh"; do
+  if [[ -f "$_cand" ]]; then
+    RESUME_CRON_SCRIPT="$_cand"
+    break
+  fi
+done
+
+if [[ -z "$RESUME_CRON_SCRIPT" ]]; then
+  _log "resume-closeout-cron.sh not found — closeout-resume cron NOT installed (Skill 37 files missing?)."
+  exit 0
+fi
+chmod +x "$RESUME_CRON_SCRIPT" 2>/dev/null || true
+
+# Register COMMAND mode (no --channel/--to/--message). No owner chat required.
+OUT=""
+if OUT=$(openclaw cron add \
+    --name "closeout-resume" \
+    --schedule "*/15 * * * *" \
+    --command "bash $RESUME_CRON_SCRIPT" \
+    --json 2>/dev/null); then
+  UUID=$(printf '%s' "$OUT" | jq -r '.uuid // .id // empty' 2>/dev/null || true)
+  if [[ -n "$UUID" && "$UUID" != "null" ]] && [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
+    _TMP=$(mktemp)
+    if jq --arg uuid "$UUID" --arg ts "$(_now_iso)" \
+        '.closeoutResumeUuid = $uuid | .closeoutResumeRegisteredAt = $ts' \
+        "$STATE_FILE" > "$_TMP" 2>/dev/null; then
+      mv "$_TMP" "$STATE_FILE"
+    else
+      rm -f "$_TMP"
+    fi
+  fi
+  _log "closeout-resume cron installed (*/15, command mode — dedicated REDUNDANT closeout trigger, no owner chat needed)."
+  exit 0
+fi
+
+_log "closeout-resume cron creation failed (non-fatal)."
+_log "  Manual: openclaw cron add --name closeout-resume --schedule '*/15 * * * *' --command 'bash $RESUME_CRON_SCRIPT' --json"
+exit 1

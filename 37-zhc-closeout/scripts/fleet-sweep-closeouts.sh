@@ -201,6 +201,34 @@ if [[ "$LOCAL_MODE" -eq 1 ]]; then
   STATE_FILE="${ZHC_STATE_FILE:-$OC_ROOT/workspace/.workforce-build-state.json}"
   log "INFO" "local mode: checking $STATE_FILE"
 
+  # v12.34.0 (ZHC-EXPERIENCE fix Fix 4): assert files+crons+state WIRING before
+  # reading closeout legs. A box can have every file + a clean state and STILL
+  # never deliver a closeout because no trigger cron is registered (the Jennifer
+  # ENOENT class + the hot-patch-no-cron class). qc-closeout-wiring.sh fails loud
+  # on that so this sweep reports files-but-no-trigger, not just in-flight stalls.
+  WIRING_GATE="$SCRIPT_DIR/qc-closeout-wiring.sh"
+  if [[ -x "$WIRING_GATE" ]]; then
+    if bash "$WIRING_GATE"; then
+      log "INFO" "wiring gate PASS — closeout is wired (files + trigger cron + state sane)"
+    else
+      log "WARN" "wiring gate FAIL — this box has a closeout WIRING defect (see above). Repair: bash $SCRIPT_DIR/../../../onboarding/scripts/ensure-pipeline-crons.sh"
+      if [[ "$APPLY" -eq 1 ]]; then
+        # Self-heal the trigger crons before attempting the closeout run.
+        for _ec in \
+          "$OC_ROOT/onboarding/scripts/ensure-pipeline-crons.sh" \
+          "$SCRIPT_DIR/install-closeout-resume-cron.sh"; do
+          if [[ -f "$_ec" ]]; then
+            log "INFO" "applying: registering pipeline trigger crons via $_ec"
+            bash "$_ec" || true
+            break
+          fi
+        done
+      fi
+    fi
+  else
+    log "INFO" "qc-closeout-wiring.sh not present — skipping wiring gate (older Skill 37 bundle)"
+  fi
+
   result=$(check_state_file "$STATE_FILE" "local")
   echo "$result" | jq .
 

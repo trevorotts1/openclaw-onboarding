@@ -1,4 +1,5 @@
 # Account Executive (Full-Cycle) — How-To Guide
+<!-- workforce-provenance: source=role-library role-slug=account-executive-full-cycle content_sha=template -->
 
 ## 1. Role Identity
 
@@ -181,6 +182,17 @@ Source: Glassdoor 2026 salary submissions, RepVue, Oakstone 2026 skills report. 
 
 **Objective:** Ensure every deal entering your active pipeline meets a minimum qualification bar, protecting your time, forecast accuracy, and win rate.
 
+**When to run:** Triggered whenever a new lead arrives — inbound (marketing qualified lead, demo request, content download) or outbound (positive response to outreach) — before any opportunity record is created in the CRM.
+
+**Frequency:** Per inbound lead or outbound positive response; typically multiple times per week.
+
+**Inputs:**
+- Lead record from {{CRM_PLATFORM_NAME}} (source, contact info, company)
+- {{COMPANY_NAME}} Ideal Customer Profile (ICP) criteria document
+- MEDD qualification scorecard
+- LinkedIn Sales Navigator access for account mapping
+- {{SALES_INTELLIGENCE_TOOL}} for firmographic enrichment
+
 **Steps:**
 1. **Identify trigger event.** A new lead arrives via inbound (marketing qualified, demo request, content download) or outbound (positive response to your outreach). Log the source in {{CRM_PLATFORM_NAME}}.
 2. **Run ICP fit assessment.** Verify the account matches {{COMPANY_NAME}}'s Ideal Customer Profile: industry vertical, company size (employees/revenue), technology stack compatibility, and geographic alignment. IF the account fails 2+ ICP criteria, THEN route to a nurture sequence and do NOT create an opportunity.
@@ -191,9 +203,31 @@ Source: Glassdoor 2026 salary submissions, RepVue, Oakstone 2026 skills report. 
 7. **Create Mutual Action Plan (MAP) for deals >$25K ACV.** A shared document with the prospect listing: specific decision steps, owner for each step, target dates, and what success looks like at each milestone. Send within 24 hours of the qualification call.
 8. **Begin multi-threading (deals >$50K ACV).** Identify 3+ additional stakeholders to engage within the account. Use LinkedIn Sales Navigator to map the buying committee. IF the deal has only a single contact 14 days after opportunity creation, THEN flag as "single-threaded risk" in CRM and escalate to {{SALES_DIRECTOR_TITLE}}.
 
+**Outputs:**
+- Qualified opportunity record in {{CRM_PLATFORM_NAME}} with all required fields populated
+- MEDD score on file (18+ for active pipeline; 12-17 flagged for validation)
+- Mutual Action Plan sent to prospect (deals >$25K ACV)
+- Lead routed to nurture sequence if below qualification threshold
+
+**Hand to:** {{SALES_DIRECTOR_TITLE}} for pipeline review; Discovery Call phase (SOP-02) for qualified opportunities; nurture sequence for sub-threshold leads.
+
+**Failure mode:** Opportunity created without a confirmed compelling event — deals without urgency stall and inflate the forecast. Guard: the CRM stage "Prospecting" cannot advance until the compelling event field is populated and a MEDD score of 12+ is logged.
+
+---
+
 ### SOP-02: Discovery Call Execution
 
 **Objective:** Conduct a structured discovery call that uncovers measurable pain, establishes the cost of inaction, maps the decision process, and positions you as a trusted advisor — not a vendor.
+
+**When to run:** After a qualified opportunity clears SOP-01 and a discovery call is scheduled with the prospect. Also triggered when an existing deal in "Discovery" stage needs a follow-up call to answer outstanding critical questions.
+
+**Frequency:** Per qualified opportunity; may occur 1-2 times per deal cycle if the first call is incomplete.
+
+**Inputs:**
+- Qualified opportunity record from {{CRM_PLATFORM_NAME}} (MEDD score, ICP fit notes, contact info)
+- Pre-call brief compiled via {{SALES_INTELLIGENCE_TOOL}}, {{CONVERSATION_INTEL_TOOL}}, and LinkedIn
+- SPIN question bank tailored to the prospect's industry and role
+- Relevant case study or resource aligned to hypothesized pain points
 
 **Steps:**
 1. **Prepare the call brief.** Using {{SALES_INTELLIGENCE_TOOL}}, {{CONVERSATION_INTEL_TOOL}}, and LinkedIn, compile: company overview, recent news/trigger events, key contacts and their roles, hypothesized pain points based on industry/role, and 3-5 tailored discovery questions. Timebox prep to 20 minutes.
@@ -205,9 +239,31 @@ Source: Glassdoor 2026 salary submissions, RepVue, Oakstone 2026 skills report. 
 7. **Send follow-up within 2 hours.** Include: recap of pain points discussed, preview of what you'll cover in the next meeting, a relevant case study or resource (not generic — tied to their stated pain), and the confirmed next meeting date/time.
 8. **Update {{CRM_PLATFORM_NAME}} fields.** Log: call summary, MEDD score update, decision process notes, compelling event validation, next step date, and stage advancement IF exit criteria for "Discovery Complete" are met (all three critical questions answered + decision process documented). IF any critical question is unanswered, THEN keep the deal in "Discovery" stage and schedule a follow-up discovery call.
 
+**Outputs:**
+- Updated opportunity record in {{CRM_PLATFORM_NAME}}: call summary, MEDD score revision, decision process documented, next step date set
+- Follow-up email sent to prospect within 2 hours (recap + case study + confirmed next meeting)
+- Deal advanced to "Discovery Complete" stage if all three critical questions answered and decision process fully mapped
+
+**Hand to:** Product Demonstration phase (SOP-03) once "Discovery Complete" exit criteria are met; {{SALES_DIRECTOR_TITLE}} if multi-threading is absent on deals >$50K ACV.
+
+**Failure mode:** Call ends without all three critical questions answered — deal moves to demo stage without a quantified cost of inaction, causing weak demo narrative and late-stage stall. Guard: CRM stage "Discovery Complete" requires all three critical question fields populated before advancement.
+
+---
+
 ### SOP-03: Product Demonstration
 
 **Objective:** Deliver a personalized, narrative-driven product demonstration that connects your solution directly to the prospect's documented pain points and leaves them able to articulate the value to other stakeholders.
+
+**When to run:** After "Discovery Complete" exit criteria are met in {{CRM_PLATFORM_NAME}} and a demo meeting is confirmed with the prospect's relevant stakeholders.
+
+**Frequency:** Once per opportunity (in standard cycles); a second focused demo may be required for large deals (>$50K ACV) with multiple persona groups or unresolved technical questions.
+
+**Inputs:**
+- Discovery call notes and documented pain points from {{CRM_PLATFORM_NAME}}
+- Demo brief (one-page, created from discovery output)
+- Sales Engineer briefed if deal >$50K ACV or if technical complexity requires it
+- {{INTERACTIVE_DEMO_TOOL}} environment configured and tested before the call
+- Persona mix for the demo audience (who will attend and what each cares about)
 
 **Steps:**
 1. **Prepare a demo brief.** Based on the discovery call, create a one-page document listing: (a) the 2-3 specific pain points you will address, (b) the prospect's own language and metrics to mirror, (c) the 3-5 features you will show (no more), ordered by impact, (d) the persona mix in the audience and what each cares about. Share with your Sales Engineer if one is assigned.
@@ -219,9 +275,32 @@ Source: Glassdoor 2026 salary submissions, RepVue, Oakstone 2026 skills report. 
 7. **Confirm value recognition.** Before closing, ask: "On a scale of 1-10, how well does what you saw address the challenges we discussed?" IF the answer is 7 or below, THEN ask: "What would make it a 9 or 10?" and address the gap in real time or schedule a focused follow-up. IF the answer is 8+, THEN proceed to next steps.
 8. **Close with a clear next step.** Schedule the proposal review meeting. Send a leave-behind: a recorded version of the demo (if applicable), a personalized one-pager summarizing key points, and an interactive demo link (via {{INTERACTIVE_DEMO_TOOL}} like Walnut or Navattic) so the champion can sell internally. Update {{CRM_PLATFORM_NAME}}: log demo completed, update MEDD score, advance stage if exit criteria are met, set next step date.
 
+**Outputs:**
+- Demo completed and logged in {{CRM_PLATFORM_NAME}} with updated MEDD score and stage advancement
+- Leave-behind package sent to champion: demo recording (if applicable), personalized one-pager, interactive demo link
+- Proposal review meeting confirmed on calendar
+- Value recognition score (1-10) documented in CRM
+
+**Hand to:** Proposal, Negotiation, and Close phase (SOP-04) if value recognition score is 8+ and MEDDPICC score ≥21; Sales Engineer for technical follow-up questions; {{SALES_DIRECTOR_TITLE}} for deal review if required by deal size.
+
+**Failure mode:** Demo proceeds as a generic product tour disconnected from documented pain points — prospect cannot articulate value to other stakeholders, champion is unable to sell internally. Guard: demo brief must be created from discovery notes before the call; any feature not mapped to a documented pain point must be skipped.
+
+---
+
 ### SOP-04: Proposal, Negotiation, and Close
 
 **Objective:** Present a commercially sound proposal, navigate negotiation without unnecessary discounting, and close deals that are profitable, referenceable, and set up for successful post-sale delivery.
+
+**When to run:** After the demo is logged "Complete" in {{CRM_PLATFORM_NAME}}, value recognition score is 8+, and MEDDPICC score is ≥21 (of 28). Also triggered when the prospect explicitly requests a proposal after a strong discovery or demo call.
+
+**Frequency:** Once per qualified opportunity; revision rounds occur as needed during negotiation (typically 1-3 revision cycles).
+
+**Inputs:**
+- Discovery documentation and demo debrief from {{CRM_PLATFORM_NAME}}
+- MEDDPICC scorecard (≥21 required before proposal is sent)
+- {{PROPOSAL_TOOL}} (DocuSign, PandaDoc, or CPQ) with approved pricing and terms
+- Deal desk approval if custom pricing or non-standard terms are required
+- Champion-confirmed close date and procurement/legal process details
 
 **Steps:**
 1. **Build the proposal.** Use {{PROPOSAL_TOOL}} (DocuSign, PandaDoc, or CPQ). Include: executive summary tying back to discovery pain points, solution overview (what you're providing), pricing and payment terms (clearly stated, no hidden fees), implementation timeline and key milestones, and standard terms and conditions. IF the deal requires custom pricing or non-standard terms, THEN submit a deal desk request to {{SALES_DIRECTOR_TITLE}} BEFORE sending the proposal to the prospect.
@@ -233,9 +312,32 @@ Source: Glassdoor 2026 salary submissions, RepVue, Oakstone 2026 skills report. 
 7. **Close the deal.** Upon signed contract: update {{CRM_PLATFORM_NAME}} to Closed-Won (within 1 hour — this triggers commission tracking and CS handoff), send a personal thank-you to the economic buyer and champion, log the close reason and key win factors, and immediately initiate the handoff to Customer Success per SOP-05 in Section 11.
 8. **Post-close, update your win analysis for future leverage.** Document why you won: which MEDDPICC elements were strongest, what differentiated you from competition, what almost derailed the deal, and what you would do differently. This becomes part of your monthly retrospective and quarterly win/loss analysis.
 
+**Outputs:**
+- Signed contract executed and filed
+- {{CRM_PLATFORM_NAME}} updated to Closed-Won within 1 hour of signature (triggers commission tracking and Customer Success handoff)
+- Win analysis documented in CRM: close reason, competitive differentiation, MEDDPICC strengths, lessons learned
+- Personal thank-you sent to economic buyer and champion
+
+**Hand to:** {{CUSTOMER_SUCCESS_TEAM}} via {{CS_HANDOFF_PROCESS}} (post-close handoff within 24 hours of signature); {{SALES_DIRECTOR_TITLE}} for commission processing and forecast update.
+
+**Failure mode:** Proposal emailed without a live review call — prospect receives it, intends to read it, gets busy, and the deal goes dark. Guard: {{PROPOSAL_TOOL}} send action is only permitted once a proposal review meeting is confirmed on the calendar; never send the proposal link before the meeting is booked.
+
+---
+
 ### SOP-05: Outbound Pipeline Generation Cadence
 
 **Objective:** Execute a disciplined, signal-driven outbound prospecting routine that generates sufficient qualified pipeline to maintain 3.0x+ pipeline coverage against {{MONTHLY_TARGET}}.
+
+**When to run:** Weekly (account list curation and sequence building) and daily (outreach block execution). Triggered immediately when pipeline coverage drops below 3.0x of {{MONTHLY_TARGET}} or when outbound-sourced pipeline falls below 30% of total pipeline.
+
+**Frequency:** Daily outreach block (60-90 minutes); weekly account list refresh and metrics review; weekly pipeline report to {{SALES_DIRECTOR_TITLE}}.
+
+**Inputs:**
+- ICP definition and territory assignment from {{SALES_DIRECTOR_TITLE}}
+- {{SALES_INTELLIGENCE_TOOL}} and LinkedIn Sales Navigator for account targeting and signal identification
+- {{SALES_ENGAGEMENT_TOOL}} for sequence management and activity tracking
+- Approved outreach templates and messaging library (trigger-anchored, persona-specific)
+- Current pipeline coverage figure from {{CRM_PLATFORM_NAME}} (3.0x {{MONTHLY_TARGET}} is the minimum)
 
 **Steps:**
 1. **Curate your target account list weekly.** Using {{SALES_INTELLIGENCE_TOOL}} and LinkedIn Sales Navigator, pull 50-100 accounts matching your ICP from your territory. Filter by: industry, employee count, revenue range, technology stack (technographics), and recent trigger events (funding, leadership change, expansion, job postings). IF the list size drops below 50, THEN broaden one ICP criterion marginally (e.g., expand employee range by 10%) and re-pull.
@@ -246,6 +348,18 @@ Source: Glassdoor 2026 salary submissions, RepVue, Oakstone 2026 skills report. 
 6. **Convert positive responses to qualification calls within 48 hours.** When a prospect responds positively: send the calendar link within 1 hour, confirm the meeting with a brief value statement, and attach a relevant piece of social proof (case study, ROI calculator, benchmark report). IF the prospect does not book within 48 hours, THEN send one follow-up and, if still no response, move back to the nurturing sequence.
 7. **Maintain CRM hygiene for outbound.** Every outbound activity (email, call, LinkedIn) must be logged in {{CRM_PLATFORM_NAME}} via {{SALES_ENGAGEMENT_TOOL}} integration. Weekly, review your "no response" accounts and ensure they have been moved to the appropriate nurture track. Remove bounced emails and update contact records with correct information from {{SALES_INTELLIGENCE_TOOL}}.
 8. **Report pipeline generation metrics weekly to {{SALES_DIRECTOR_TITLE}}.** New accounts added to sequence, outreach volume (emails/calls/LinkedIn), positive response rate, meetings booked from outbound, and qualified opportunities created from outbound. IF outbound-sourced pipeline is less than 30% of your total pipeline, THEN increase daily outreach volume by 25% or revisit your targeting criteria.
+
+**Outputs:**
+- Weekly target account list (50-100 accounts) curated in {{SALES_ENGAGEMENT_TOOL}} with signal-based priority scores
+- 7-touch outreach sequences active for top 20 accounts; semi-personalized sequences for accounts 21-50
+- Weekly pipeline generation report submitted to {{SALES_DIRECTOR_TITLE}}: outreach volume, response rates, meetings booked, qualified opportunities created
+- New qualified opportunities entered into {{CRM_PLATFORM_NAME}} via SOP-01 when a prospect converts
+
+**Hand to:** SOP-01 (New Opportunity Qualification) when a prospect responds positively and books a qualification call; {{SALES_DIRECTOR_TITLE}} if pipeline coverage drops below 2.0x {{MONTHLY_TARGET}} despite a full outreach week.
+
+**Failure mode:** Generic outreach sent without trigger-event personalization — reply rates collapse, domain reputation degrades, and the brand is damaged in your target market. Guard: {{SALES_ENGAGEMENT_TOOL}} blocks any message whose first sentence does not reference a company-specific or contact-specific trigger; all templates must pass review before being added to the sequence library.
+
+---
 
 ## 10. Quality Gates
 

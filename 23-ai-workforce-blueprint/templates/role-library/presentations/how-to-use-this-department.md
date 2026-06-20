@@ -88,6 +88,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Slide Image Creator** | Writes one 15-element image prompt per slide (Phase 2). |
 | **Slide Submitter** | Submits all prompts to Kie.ai GPT Image 2 (Phase 4). |
 | **Typography Architect** | Runs as a Phase-0.7/1.5 gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json. |
+| **Prompt Author** | You write each slide's rich image prompt to the 5,000-character prompt standard - the full per-slide specification. |
 
 ### What each specialist is for, with an example request
 
@@ -181,6 +182,11 @@ and it will pick the right one, or you can ask for a specialist by name.
 - *What it is for:* Runs as a Phase-0.7/1.5 gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json.
 - *Example request:* "Have the Typography Architect take this on: Runs as a Phase-0.7/1.5 gate AFTER the Brand Steward emits the STYLE BLOCK."
 
+**Prompt Author**
+
+- *What it is for:* You write each slide's rich image prompt to the 5,000-character prompt standard - the full per-slide specification.
+- *Example request:* "Have the Prompt Author take this on: You write each slide's rich image prompt to the 5."
+
 
 ---
 
@@ -234,3 +240,15 @@ document:
 *This guide is generated for {{COMPANY_NAME}} by the AI Workforce Blueprint
 (Skill 23). It is regenerated whenever the department's roster changes so it
 always matches the specialists you actually have.*
+
+---
+
+## AF-DARK-SLIDE - No Dark Slides (AUTO-FAIL)
+
+Slides MUST use LIGHT / bright backgrounds by DEFAULT. DARK or black-background slides are NOT ALLOWED unless the CLIENT EXPLICITLY requests a dark theme via the intake flag `client_dark_theme: true`. Light is the default; dark is opt-in by client request only.
+
+- DEFAULT: Light / bright background slides
+- ALLOWED dark: Only when `client_dark_theme: true` is set in working/copy/intake.json
+- AUTO-FAIL: Any dark/black/near-black default background without `client_dark_theme: true`
+
+**To enable a dark theme:** during onboarding, explicitly tell the Director of Presentations you want dark slides. The Director will record `client_dark_theme: true` in your intake.json. Without this explicit request, all slides default to light/bright backgrounds and any dark background specification is an AUTO-FAIL blocked by the build pipeline.

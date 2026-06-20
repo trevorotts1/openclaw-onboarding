@@ -170,12 +170,41 @@ These are deck-level and are evaluated against arc_allocation.json and slide ord
 | AF-MODEL-SOVEREIGNTY | Phase 4/6 | DECK | Submitted model does not match client's pinned model with no logged fallback event | render_manifest.json model_used != intake.json model_pin AND no fallback_events entry for that slide |
 | AF-BAKED | Phase 5/6 | slide (blocks FINAL) | Slide text was drawn by Pillow/PPTX/ImageDraw rather than baked by the image model, OR slide is a flat placeholder fill with no Kie render | Vision QC agent confirms: text is overlaid, not rendered; OR image dimensions/size match known placeholder signatures |
 | AF-I14 | Phase 5/6 | slide (blocks FINAL) | Rendered slide not KIE-baked (native render / no image / flat-placeholder fill) | process_manifest.json render record: per-slide taskId is a real KIE id AND the PNG exists, is a valid PNG, and exceeds the placeholder floor; absent/native/under-floor/duplicate-hash = fail |
-| AF-PROMPT-FLOOR | Phase 3 | slide | Image prompt outside 1500-15000 chars OR missing required structural blocks | len(prompt) < 1500 OR len(prompt) > 15000 OR prompt missing [ARCHETYPE, NEGATIVE BLOCK, "Do not " imperatives] |
+| AF-PROMPT-FLOOR | Phase Prompt-QC | slide | Image prompt under the reconciled 5,000-char standard OR over the ceiling OR missing required structural blocks | len(prompt) < 5000 (PROMPT_CHAR_FLOOR) OR len(prompt) > 18000 (PROMPT_CHAR_CEILING) OR prompt missing [ARCHETYPE, NEGATIVE BLOCK, "Do not " imperatives] |
 | AF-NO-VISION-QC | Phase 6 | DECK | Deck submitted without an executed vision-QC log (path.exists() is not vision QC) | working/qc/vision_qc_log.json missing OR empty OR contains only path-existence checks with no vision API call records |
 | AF-CONVERTER-PARITY | Phase 1Q | DECK (converter-origin only) | Converter-origin deck (intake.json source_brief_origin: "content-to-presentation-architect") failed the runtime parity gate | Any of: render_manifest.json absent or not canonical; model pin mismatch; vision_qc_log.json missing/empty/path-only; research brief absent or Category E/F missing; persuasion variables (GOAL/CTA_ACTION/TRANSFORMATION_PROMISE/PRIMARY_OBJECTION/TARGET_FEELING/TONE) absent from intake.json without being listed in fields_absent_in_source |
 | AF-QC-INDEPENDENCE | Phase 1Q | DECK | Copy QC report was self-graded / builder-graded rather than graded by an INDEPENDENT QC specialist | working/qc/copy_qc_report.json lacks an independent-reviewer provenance block (qc_independence with graded_by + independent:true naming a reviewer who is NOT build_deck.py / self / builder / author / the deck-copy author slide-copywriter), OR is marked self_graded:true, OR sets independent:false, OR names a reviewer equal to the recorded builder/built_by identity |
+| AF-TYPOGRAPHY-QC | Phase Typography-QC | DECK | Typography QC report (sequenced AFTER Design) missing / wrong gate / below 8.5 / triggered-autofail / not pass:true / self-or-builder-graded | working/qc/typography_qc_report.json: gate=="Phase Typography-QC", average>=8.5, no triggered_autofails, pass:true, AND independent-reviewer provenance (generalized AF-QC-INDEPENDENCE); any miss fails the DECK |
+| AF-PROMPT-QC | Phase Prompt-QC | DECK | Prompt QC report (sequenced AFTER Prompt-Authoring) missing / wrong gate / below 8.5 / triggered-autofail / not pass:true / self-or-builder-graded | working/qc/prompt_qc_report.json: gate=="Phase Prompt-QC", average>=8.5, no triggered_autofails, pass:true, AND independent-reviewer provenance; any miss fails the DECK |
+| AF-IMAGE-QC | Phase Image-QC | DECK | Image QC report (sequenced AFTER Render) missing / wrong gate / below 8.5 / triggered-autofail / not pass:true / self-or-builder-graded | working/qc/image_qc_report.json: gate=="Phase Image-QC", average>=8.5, no triggered_autofails, pass:true, AND independent-reviewer provenance; any miss fails the DECK |
+| AF-SPEECH-QC | Phase Speech-QC | DECK | Speech QC report (sequenced AFTER Speech) present but wrong gate / below 8.5 / triggered-autofail / not pass:true / self-or-builder-graded (CONDITIONAL: defers when absent at pre-speech render) | working/qc/speech_qc_report.json: gate=="Phase Speech-QC", average>=8.5, no triggered_autofails, pass:true, AND independent-reviewer provenance; absent defers, present-and-failing fails the DECK |
+| AF-SLIDE-COUNT-FLOOR | Phase 0a/4 | DECK | Output slide count below target_talk_minutes x 1.3 (a 30-min/10-slide deck auto-fails) | output slide count < ceil(intake.json target_talk_minutes x SLIDES_PER_MINUTE_FLOOR(1.3)); the verified pacing band is ~1.3-1.5 slides/min |
+| AF-PITCH-MISSING | Phase 3 | DECK | Converting arc carries no offer ladder (value-stack -> anchor -> price drops) OR no re-pitch after the FINAL price | arc_allocation.json arc-section/tag tokens contain no ladder/anchor/price/offer/value-stack/drop beat OR no re-pitch/second-close/re-offer/post-final beat |
+| AF-CREATIVITY | Phase F/4 | DECK | Template-sameness (one archetype > 60% of slides) OR cliche copy | design_system.json per-slide archetype map: top archetype share > ARCHETYPE_DOMINANCE_CEILING(0.60); OR slides_copy.md contains a banned FORBIDDEN_CLICHE_PHRASES phrase |
+
+| AF-DARK-SLIDE | Intake/Prompt | DECK | dark/black background in prompts without client_dark_theme:true | scan image prompts + design brief for dark background keywords and near-black hex/rgb values; pass ONLY when client_dark_theme:true is in intake.json |
+| AF-VISUAL-VARIETY | Image-QC/Postflight | DECK | All-dark monotone deck: >= 90% of rendered slides share one dominant background hue bucket OR >= 90% are below dark-luma threshold (0.30) with < 10% light/break slides | check_visual_variety(run_dir): scans renders/slide-*.png for mean luma + dominant background hue; fails 'monotone_palette: N/N dominant-hue=X' or 'monotone_dark_palette'. A mixed deck with light dividers passes. Defers when no renders exist. |
+| AF-PACKAGE-CLEAN | Postflight/Closeout | DECK | Dev artifacts in the delivered bundle (*.py, *.sh, ~$* Office lock/temp, tasks/ dir, task_*.json, intermediate .md drafts) | check_package_cleanliness(bundle_dir): enumerates bundle directory; forbidden extensions + forbidden name prefixes + forbidden dir names + intermediate draft pattern; fails listing each forbidden artifact. A clean canonical-only bundle passes. |
+| AF-IMAGE-QC-RAN | Image-QC/Postflight | DECK | Image-QC report absent, stale (older than rendered PNGs), or rubber-stamped (no per-slide PASS/FAIL rows for all N slides) | check_image_qc_present(run_dir): checks report exists + mtime > all PNG mtimes + slides[] array has one entry per rendered slide. Absent report defers (AF-IMAGE-QC owns absence). Stale or row-missing -> FAIL. |
+| AF-BRAND-CONSISTENCY | Image-QC/Postflight | DECK | Off-brand palette: any rendered slide whose ALL dominant sampled colors fall outside the declared brand token set (intake.json brand.palette) by > BRAND_CONSISTENCY_TOLERANCE (80 RGB units) | check_brand_consistency(run_dir): loads brand.palette from intake.json; samples dominant colors per slide PNG; fails 'off_brand_palette' for offending slides. Defers when no brand palette declared or no renders exist. |
 
 Every row is a binary trigger with an exact detection method and a verbatim failure message (Section 1 and 2). Wire them as auto-fails, checked before scoring. A deck that trips any DECK-level row, or any slide that trips a slide-level row, cannot be marked final.
+
+---
+
+## AF-DARK-SLIDE — No Dark Slides (AUTO-FAIL)
+
+Slides MUST use LIGHT / bright backgrounds by DEFAULT. DARK or black-background slides are NOT ALLOWED unless the CLIENT EXPLICITLY requests a dark theme via the intake flag `client_dark_theme: true`. Light is the default; dark is opt-in by client request only.
+
+- DEFAULT: Light / bright background slides
+- ALLOWED dark: Only when `client_dark_theme: true` is set in working/copy/intake.json
+- AUTO-FAIL: Any dark/black/near-black default background without `client_dark_theme: true`
+
+**Trigger:** image prompts or design brief contain dark background keywords ("dark background", "black background", "dark theme", "near-black", "dark slide", "dark mode") OR near-black hex/rgb color references (#000, #111, #222, #1a1a1a, #0d0d0d, rgb(0,0,0), rgb(20,20,20)) AND intake.json does NOT carry `client_dark_theme: true`.
+
+**Failure message:** `AF-DARK-SLIDE: Dark/black background detected in prompts but client_dark_theme is not set. Light backgrounds are required by default. Set client_dark_theme: true in intake.json to enable dark theme (explicit client request only).`
+
+| AF-DARK-SLIDE | Intake/Prompt | DECK | dark/black background in prompts without client_dark_theme:true | scan image prompts + design brief for dark background keywords and near-black hex/rgb values; check intake.json client_dark_theme |
 
 ---
 
@@ -500,7 +529,7 @@ These five codes were added after the forensic four-deck failure analysis. Each 
 
 ### AF-PROMPT-FLOOR (Fix 5)
 **What failed:** 100% of 98 image prompts (across all four decks) were below the 1500-char floor. Median was 277 chars -- 5.4x under floor. Zero prompts had proper archetype declarations or negative blocks.
-**Detection:** Phase 3 (Prompt QC gate). Count characters in each prompt file. Check for `[ARCHETYPE` on line 1, a dedicated NEGATIVE BLOCK paragraph, and at least three "Do not ..." imperative sentences in the final paragraph. Any miss: slide FAIL, loops back to Slide Image Creator.
+**Detection:** Phase Prompt-QC (the dedicated Prompt QC gate, sequenced AFTER Prompt-Authoring). Count characters in each prompt file against the RECONCILED 5,000-char standard (`PROMPT_CHAR_FLOOR` in build_deck.py): a prompt under 5,000 chars (or over the 18,000 ceiling, `PROMPT_CHAR_CEILING`) FAILS. Check for `[ARCHETYPE` on line 1, a dedicated NEGATIVE BLOCK paragraph, and at least three "Do not ..." imperative sentences in the final paragraph. Any miss: slide FAIL, loops back to the Prompt Author.
 
 ### AF-NO-VISION-QC (Fix 6)
 **What failed:** All four decks used only `path.exists()` for "verification." No vision API was called on any image. Part1-GENERAL shipped 40 placeholder PNGs because they passed the file-presence check.

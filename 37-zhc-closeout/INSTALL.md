@@ -44,14 +44,36 @@ ls -l /data/.openclaw/skills/37-zhc-closeout/scripts/
 printenv KIE_API_KEY | head -c 8 && echo "..."
 printenv NOTION_API_TOKEN | head -c 8 && echo "..."
 
-# 4. Workforce-build-resume cron is installed
-openclaw cron list | grep workforce-build-resume
+# 4. At least ONE closeout trigger cron is installed (REDUNDANT triggers — v12.34.0)
+#    The closeout fires if ANY of these reach run-closeout.sh:
+openclaw cron list | grep -E 'closeout-resume|workforce-build-resume'
 
 # 5. Schema includes closeoutStatus
 jq '.properties.closeoutStatus' /data/.openclaw/skills/23-ai-workforce-blueprint/build-state-schema.json
+
+# 6. One-shot wiring gate (files + crons + state) — fails loud if not wired
+bash /data/.openclaw/skills/37-zhc-closeout/scripts/qc-closeout-wiring.sh
 ```
 
-If any of those return empty / missing, re-run `update-skills.sh`.
+If any of those return empty / missing / FAIL, re-run `update-skills.sh` (it now
+backfills all pipeline trigger crons via `scripts/ensure-pipeline-crons.sh`), or
+register the dedicated trigger directly:
+`bash /data/.openclaw/skills/37-zhc-closeout/scripts/install-closeout-resume-cron.sh`.
+
+### Trigger redundancy (v12.34.0)
+
+Closeout no longer hangs off a single cron. THREE independent triggers can each
+reach `run-closeout.sh`:
+
+1. **`closeout-resume`** (`*/15`, command mode) — the dedicated, deterministic
+   trigger. Needs NO owner Telegram chat. Registered at install time by
+   `install-closeout-resume-cron.sh` and backfilled by `ensure-pipeline-crons.sh`.
+2. **`workforce-build-resume`** (`*/15`, message mode) — Skill 23's build-resume
+   cron, which in-process execs `run-closeout.sh` on the auto-complete hop.
+   Skipped (LOG + CONTINUE, not aborted) if the only resolvable target is an
+   operator chat — but the box is NOT stranded because trigger #1 still fires.
+3. **`closeout-readiness-watchdog`** (`0 */6`, command mode) — operator
+   escalation for any stalled closeout.
 
 ## Cost Cap Configuration
 
@@ -77,7 +99,7 @@ jq '.closeoutStatus = "done"' /data/.openclaw/workspace/.workforce-build-state.j
 rm -rf /data/.openclaw/skills/37-zhc-closeout/
 ```
 
-The workforce-build-resume cron will no-op gracefully if the skill files are missing.
+Both the workforce-build-resume and closeout-resume crons will no-op gracefully if the skill files are missing.
 
 ## Known Issues
 
