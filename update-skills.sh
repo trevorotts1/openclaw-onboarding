@@ -34,7 +34,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v13.0.0"
+ONBOARDING_VERSION="v13.0.1"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -310,7 +310,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v13.0.0 - safe_json_edit
+# v13.0.1 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -806,10 +806,18 @@ main() {
     _OC_SCRIPTS_DEST="$HOME/.openclaw/scripts"
     [ -d "/data/.openclaw" ] && _OC_SCRIPTS_DEST="/data/.openclaw/scripts"
     mkdir -p "$_OC_SCRIPTS_DEST" 2>/dev/null || true
-    for _s in onboarding-state.sh ghl-mcp-autostart.sh configure-operator-telegram.sh resume-onboarding.sh apply-fleet-standards.sh diagnose-telegram-config.sh; do
+    # BUG-FIX v13.0.1: ensure-pipeline-crons.sh is ADDED here so it is persisted
+    # to ~/.openclaw/scripts (a path that SURVIVES the temp-clone cleanup at the
+    # "# Cleanup" rm -rf below). The cron-backfill block runs AFTER that cleanup,
+    # so it must NOT depend on $ONBOARDING_DIR (the wiped clone) — it reads the
+    # persistent copy instead. Same reason apply-fleet-standards.sh is here.
+    for _s in onboarding-state.sh ghl-mcp-autostart.sh configure-operator-telegram.sh resume-onboarding.sh apply-fleet-standards.sh ensure-pipeline-crons.sh diagnose-telegram-config.sh; do
       [ -f "$ONBOARDING_DIR/scripts/$_s" ] && cp -f "$ONBOARDING_DIR/scripts/$_s" "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
       [ -f "$_OC_SCRIPTS_DEST/$_s" ] && chmod +x "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
     done
+    # Export the persistent scripts dir so the post-cleanup cron-backfill /
+    # fleet-standards blocks can resolve these scripts after $ONBOARDING_DIR is gone.
+    export OC_PERSISTENT_SCRIPTS_DIR="$_OC_SCRIPTS_DEST"
   else
     echo "  ⚠ onboarding-state.sh not found in pulled repo -- honesty gate disabled for this run (older bundle?)"
   fi
@@ -1820,7 +1828,18 @@ PYEOF
   # ----------------------------------------------------------
   echo ""
   echo "  Ensuring pipeline trigger crons (closeout experience triggers — hot-patch parity with install.sh)..."
-  ENSURE_CRONS="$ONBOARDING_DIR/scripts/ensure-pipeline-crons.sh"
+  # BUG-FIX v13.0.1: this block runs AFTER the "# Cleanup" rm -rf "$TEMP_EXTRACT"
+  # that wipes the freshly-pulled clone ($ONBOARDING_DIR/$EXTRACTED_DIR). On the
+  # SUCCESS path $ONBOARDING_DIR no longer exists here, so resolve the persistent
+  # copy first (stashed to ~/.openclaw/scripts during the install phase, before
+  # cleanup). Fall back to the clone path / legacy path for older bundles.
+  _PERSIST_SCRIPTS="${OC_PERSISTENT_SCRIPTS_DIR:-}"
+  if [ -z "$_PERSIST_SCRIPTS" ]; then
+    _PERSIST_SCRIPTS="$HOME/.openclaw/scripts"
+    [ -d "/data/.openclaw" ] && _PERSIST_SCRIPTS="/data/.openclaw/scripts"
+  fi
+  ENSURE_CRONS="$_PERSIST_SCRIPTS/ensure-pipeline-crons.sh"
+  [ -f "$ENSURE_CRONS" ] || ENSURE_CRONS="$ONBOARDING_DIR/scripts/ensure-pipeline-crons.sh"
   [ -f "$ENSURE_CRONS" ] || ENSURE_CRONS="$SKILLS_DIR/../onboarding/scripts/ensure-pipeline-crons.sh"
   if [ -f "$ENSURE_CRONS" ]; then
     if bash "$ENSURE_CRONS" >> "$LOG_FILE" 2>&1; then
@@ -1838,8 +1857,14 @@ PYEOF
   # ----------------------------------------------------------
   echo ""
   echo "  Applying fleet standards (sub-agents fully permitted, Telegram media 50MB)..."
-  if [ -f "$ONBOARDING_DIR/scripts/apply-fleet-standards.sh" ]; then
-    bash "$ONBOARDING_DIR/scripts/apply-fleet-standards.sh" >/dev/null 2>&1 && echo "  ✓ Fleet standards applied" || echo "  ⚠ Fleet standards application reported errors (update continues)"
+  # BUG-FIX v13.0.1: prefer the persistent copy — $ONBOARDING_DIR (the clone) was
+  # already removed by the "# Cleanup" rm -rf above on the success path, which is
+  # why this previously printed "Fleet standards script not found" on EVERY
+  # successful update. Fall back to the clone path for older/edge bundles.
+  FLEET_STD="$_PERSIST_SCRIPTS/apply-fleet-standards.sh"
+  [ -f "$FLEET_STD" ] || FLEET_STD="$ONBOARDING_DIR/scripts/apply-fleet-standards.sh"
+  if [ -f "$FLEET_STD" ]; then
+    bash "$FLEET_STD" >/dev/null 2>&1 && echo "  ✓ Fleet standards applied" || echo "  ⚠ Fleet standards application reported errors (update continues)"
   else
     echo "  ⚠ Fleet standards script not found"
   fi

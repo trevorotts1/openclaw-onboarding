@@ -49,7 +49,7 @@
 #
 # Onboarding repo version markers (kept in sync by scripts/bump-version.sh):
 #   ENSURE_PIPELINE_CRONS_VERSION
-ENSURE_PIPELINE_CRONS_VERSION="v12.33.0"
+ENSURE_PIPELINE_CRONS_VERSION="v13.0.1"
 
 set -u
 
@@ -75,6 +75,88 @@ OPERATOR_CHAT_IDS_RE='^(5252140759|6663821679|6771245262)$'
 _now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null; }
 
 _log() { echo "[ensure-pipeline-crons] $*"; }
+
+# ---------------------------------------------------------------------------
+# CLI capability detection (BUG-FIX v13.0.1 — fleet cron registration).
+#
+# Two independent CLI-shape facts decided the registration form:
+#   1. SCHEDULE FLAG: every deployed CLI (2026.5.4 / 5.22 / 5.28 / 6.8) takes
+#      the schedule via `--cron "<expr>"`. The flag `--schedule` DOES NOT EXIST
+#      on ANY of them (the old code used it → every box rejected the cron with
+#      `OpenClaw does not recognize option "--schedule"`). We ALWAYS use --cron.
+#   2. JOB TYPE: 2026.6.x `cron add` supports `--command "<shell>"` (a real
+#      command-mode job). The 2026.5.x line has NO `--command` (only --message /
+#      --system-event agent jobs). So on the older CLI we register an AGENT
+#      MESSAGE job that instructs the main agent to run the SAME script via the
+#      shell. Both forms register a cron under the same name → qc-closeout-
+#      wiring.sh C4 (which only checks `cron list` for the name) passes either way.
+#
+# _cli_supports_command: returns 0 if `openclaw cron add --help` advertises a
+# `--command` option, else 1. Memoised. Fail-closed (assume NO --command) if the
+# help text can't be read, so we never emit an unsupported flag to an old CLI.
+# ---------------------------------------------------------------------------
+_CLI_CMD_SUPPORT=""   # "" = unknown, "1" = yes, "0" = no
+_cli_supports_command() {
+  if [[ -z "$_CLI_CMD_SUPPORT" ]]; then
+    local help
+    help="$(openclaw cron add --help 2>&1 || true)"
+    if printf '%s' "$help" | grep -qE '^[[:space:]]*--command[[:space:]<]'; then
+      _CLI_CMD_SUPPORT="1"
+    else
+      _CLI_CMD_SUPPORT="0"
+    fi
+  fi
+  [[ "$_CLI_CMD_SUPPORT" == "1" ]]
+}
+
+# Register ONE command-style pipeline cron in a CLI-portable way.
+#   $1 name        cron name (idempotency key)
+#   $2 schedule    cron expression (5-field), passed via --cron
+#   $3 script      absolute path to the bash script the cron must run
+#   $4 uuid_key    build-state key to persist the returned uuid into (optional)
+#   $5 reg_at_key  build-state key to stamp the registration time (optional)
+# Returns 0 on present-or-registered, 1 on a real registration failure.
+#
+# IDEMPOTENT: guarded by `openclaw cron list | grep -q <name>` (caller already
+# checked, but we re-guard so the helper is safe standalone).
+# FAIL-LOUD: a non-zero `cron add` rc is reported (caller increments fails →
+# script exits 3 → qc-closeout-wiring.sh / installer surfaces the gap).
+_register_command_cron() {
+  local name="$1" schedule="$2" script="$3" uuid_key="${4:-}" reg_at_key="${5:-}"
+  local out uuid
+
+  if _cli_supports_command; then
+    # 2026.6.x+ : native command-mode job. --cron (NOT --schedule).
+    out=$(openclaw cron add --name "$name" --cron "$schedule" \
+            --command "bash $script" --json 2>/dev/null) || out=""
+  else
+    # 2026.5.x : no --command. Register an AGENT MESSAGE job that runs the SAME
+    # script through the shell. Silent (no --channel/--to) so it never announces
+    # to a chat — it runs in the main agent's own context, mirroring the
+    # 38-conversational-ai-system 2026.5.27-targeted registration pattern.
+    local msg
+    msg="[PIPELINE-CRON ${name}] Run this exact shell command now and report only on failure: bash ${script}"
+    out=$(openclaw cron add --name "$name" --cron "$schedule" \
+            --agent main --light-context --best-effort-deliver \
+            --message "$msg" --json 2>/dev/null) || out=""
+    # Some 5.x builds reject --json; retry without it (cron still registers).
+    if [[ -z "$out" ]]; then
+      if openclaw cron add --name "$name" --cron "$schedule" \
+            --agent main --light-context --best-effort-deliver \
+            --message "$msg" >/dev/null 2>&1; then
+        out="{}"
+      fi
+    fi
+  fi
+
+  if [[ -n "$out" ]] && openclaw cron list 2>/dev/null | grep -qi "$name"; then
+    uuid=$(printf '%s' "$out" | jq -r '.uuid // .id // empty' 2>/dev/null || true)
+    [[ -n "$uuid_key" && -n "$uuid" && "$uuid" != "null" ]] && _persist_uuid "$uuid_key" "$uuid"
+    [[ -n "$reg_at_key" ]] && _persist_field "$reg_at_key" "$(_now_iso)"
+    return 0
+  fi
+  return 1
+}
 
 # Find a pipeline script across the canonical skill locations.
 # $1 = skill folder (e.g. 23-ai-workforce-blueprint), $2 = relative script path.
@@ -202,6 +284,10 @@ _ensure_workforce_build_resume() {
     _log "      command-mode closeout-resume cron still fires closeout independently.)"
     return 1
   fi
+  # OPERATOR-CHAT GUARD: never wire the message-mode self-ping --to an operator
+  # chat. $OPERATOR_CHAT_IDS_RE matches exactly the operator ids
+  # 5252140759|6663821679|6771245262 ; if $target is one we LOG + CONTINUE (skip
+  # ONLY this cron's --to wiring below) so the operator is never spammed.
   if [[ "$target" =~ $OPERATOR_CHAT_IDS_RE ]]; then
     # RELAXED (was: hard-abort). Operator chat resolved → do not wire the
     # message-mode self-ping to it (would spam the operator), but DO NOT strand
@@ -243,14 +329,11 @@ _ensure_interview_nudge() {
     return 1
   fi
   chmod +x "$script" 2>/dev/null || true
-  local out uuid
-  if out=$(openclaw cron add --name "interview-nudge" --schedule "0 */6 * * *" --command "bash $script" --json 2>/dev/null); then
-    uuid=$(printf '%s' "$out" | jq -r '.uuid // .id // empty' 2>/dev/null || true)
-    [[ -n "$uuid" && "$uuid" != "null" ]] && _persist_uuid interviewNudgeUuid "$uuid"
-    _log "DONE interview-nudge cron registered (0 */6, command mode)"
+  if _register_command_cron "interview-nudge" "0 */6 * * *" "$script" interviewNudgeUuid; then
+    _log "DONE interview-nudge cron registered (0 */6, $(_cli_supports_command && echo 'command mode' || echo 'agent-message fallback'))"
     return 0
   fi
-  _log "FAIL interview-nudge cron creation failed"
+  _log "FAIL interview-nudge cron creation failed (openclaw cron add rc!=0 or name not in cron list)"
   return 1
 }
 
@@ -267,14 +350,11 @@ _ensure_closeout_watchdog() {
     return 1
   fi
   chmod +x "$script" 2>/dev/null || true
-  local out uuid
-  if out=$(openclaw cron add --name "closeout-readiness-watchdog" --schedule "0 */6 * * *" --command "bash $script" --json 2>/dev/null); then
-    uuid=$(printf '%s' "$out" | jq -r '.uuid // .id // empty' 2>/dev/null || true)
-    [[ -n "$uuid" && "$uuid" != "null" ]] && _persist_uuid closeoutWatchdogCronUuid "$uuid"
-    _log "DONE closeout-readiness-watchdog cron registered (0 */6, command mode)"
+  if _register_command_cron "closeout-readiness-watchdog" "0 */6 * * *" "$script" closeoutWatchdogCronUuid; then
+    _log "DONE closeout-readiness-watchdog cron registered (0 */6, $(_cli_supports_command && echo 'command mode' || echo 'agent-message fallback'))"
     return 0
   fi
-  _log "FAIL closeout-readiness-watchdog cron creation failed"
+  _log "FAIL closeout-readiness-watchdog cron creation failed (openclaw cron add rc!=0 or name not in cron list)"
   return 1
 }
 
@@ -294,17 +374,11 @@ _ensure_closeout_resume() {
     return 1
   fi
   chmod +x "$script" 2>/dev/null || true
-  local out uuid
-  if out=$(openclaw cron add --name "closeout-resume" --schedule "*/15 * * * *" --command "bash $script" --json 2>/dev/null); then
-    uuid=$(printf '%s' "$out" | jq -r '.uuid // .id // empty' 2>/dev/null || true)
-    if [[ -n "$uuid" && "$uuid" != "null" ]]; then
-      _persist_uuid closeoutResumeUuid "$uuid"
-      _persist_field closeoutResumeRegisteredAt "$(_now_iso)"
-    fi
-    _log "DONE closeout-resume cron registered (*/15, command mode — REDUNDANT trigger, no owner chat required)"
+  if _register_command_cron "closeout-resume" "*/15 * * * *" "$script" closeoutResumeUuid closeoutResumeRegisteredAt; then
+    _log "DONE closeout-resume cron registered (*/15, $(_cli_supports_command && echo 'command mode' || echo 'agent-message fallback') — REDUNDANT trigger, no owner chat required)"
     return 0
   fi
-  _log "FAIL closeout-resume cron creation failed"
+  _log "FAIL closeout-resume cron creation failed (openclaw cron add rc!=0 or name not in cron list)"
   return 1
 }
 
