@@ -47,8 +47,11 @@ STEP_LABEL="notion"
 NOTION_VERSION="${NOTION_API_VERSION:-2022-06-28}"
 
 log() {
+  # NOTE: the console copy goes to STDERR (not stdout). Several helpers below are
+  # invoked via $(...) command substitution (e.g. SEC5_ID=$(create_child_page ...))
+  # and any log line they emit would otherwise contaminate the captured value.
   printf '%s [%-5s] step=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$STEP_LABEL" "$2" >> "$LOG_FILE"
-  printf '%s [%-5s] step=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$STEP_LABEL" "$2"
+  printf '%s [%-5s] step=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$STEP_LABEL" "$2" >&2
 }
 state_get() { jq -r "$1 // empty" "$STATE_FILE" 2>/dev/null; }
 state_set() { local tmp; tmp=$(mktemp); jq "$1" "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"; }
@@ -97,6 +100,54 @@ notion_curl() {
     -H "Notion-Version: $NOTION_VERSION" \
     -H "Content-Type: application/json" \
     "$@"
+}
+
+# ---- jq-safe extraction guards (idempotency-resume fix) ----
+# A jq parse error on an unexpected Notion response body MUST NEVER silently
+# abort the section-population flow. These helpers validate JSON before
+# extracting, return empty on any failure, and log a clear, bounded message
+# when the body is not the JSON shape we expected.
+
+# is_json <body> -- returns 0 if the body parses as JSON, 1 otherwise.
+is_json() {
+  [[ -n "${1:-}" ]] || return 1
+  printf '%s' "$1" | jq -e . >/dev/null 2>&1
+}
+
+# jq_get <filter> <body> [context] -- validate, then extract.
+# On invalid JSON: log once (with context + a bounded snippet) and echo "".
+# On a jq filter error against valid JSON: echo "" (never leaks a parse error).
+jq_get() {
+  local filter="$1" body="$2" ctx="${3:-notion-response}"
+  if ! is_json "$body"; then
+    log "WARN" "jq-guard: non-JSON body for [$ctx] -- treating as empty. snippet: $(printf '%s' "${body:-<empty>}" | tr '\n' ' ' | head -c 160)"
+    echo ""
+    return 0
+  fi
+  local out
+  out=$(printf '%s' "$body" | jq -r "$filter // empty" 2>/dev/null) || {
+    log "WARN" "jq-guard: filter '$filter' failed on [$ctx] body -- treating as empty"
+    echo ""
+    return 0
+  }
+  echo "$out"
+}
+
+# notion_error_of <body> -- if the body is a Notion API error object, echo a
+# one-line "code: message"; else echo "". Used to surface the real reason a
+# search/create returned nothing instead of guessing.
+notion_error_of() {
+  local body="$1"
+  is_json "$body" || { echo ""; return 0; }
+  local obj code msg
+  obj=$(printf '%s' "$body" | jq -r '.object // empty' 2>/dev/null)
+  if [[ "$obj" == "error" ]]; then
+    code=$(printf '%s' "$body" | jq -r '.code // "unknown"' 2>/dev/null)
+    msg=$(printf '%s' "$body" | jq -r '.message // ""' 2>/dev/null)
+    echo "${code}: ${msg}"
+  else
+    echo ""
+  fi
 }
 
 # RPS pacing: 0.4s between calls. Call this after every notion page create.
@@ -232,18 +283,42 @@ fi
 # ---- resolve parent page ----
 PARENT_PAGE_ID="${NOTION_CLOSEOUT_PARENT_PAGE_ID:-}"
 PARENT_KIND="env"
+# SHARED_PAGE_SEEN: did ANY search return a page result? If every search comes
+# back with zero results, the integration has NO page shared with it (the
+# no-shared-page case) and we must NOT silently fall through to a workspace-root create.
+SHARED_PAGE_SEEN=0
+# note_shared <search-response> -- mark SHARED_PAGE_SEEN if the body is a valid
+# Notion search response carrying >=1 result; surface API errors clearly.
+note_shared() {
+  local body="$1" ctx="${2:-search}"
+  local err; err=$(notion_error_of "$body")
+  if [[ -n "$err" ]]; then
+    log "WARN" "notion search [$ctx] returned API error -- $err"
+    return 0
+  fi
+  is_json "$body" || return 0
+  local n; n=$(printf '%s' "$body" | jq -r '(.results | length) // 0' 2>/dev/null)
+  [[ "$n" =~ ^[0-9]+$ ]] || n=0
+  (( n > 0 )) && SHARED_PAGE_SEEN=1
+}
+
 if [[ -z "$PARENT_PAGE_ID" ]]; then
   log "INFO" "fallback 2: searching for an existing BlackCEO parent page..."
   search_resp=$(with_retry notion_curl POST "https://api.notion.com/v1/search" \
     -d '{"query":"BlackCEO","filter":{"value":"page","property":"object"},"page_size":5}' || echo "{}")
-  PARENT_PAGE_ID=$(echo "$search_resp" | jq -r '.results[0].id // empty')
+  note_shared "$search_resp" "BlackCEO"
+  PARENT_PAGE_ID=$(jq_get '.results[0].id' "$search_resp" "parent-search:BlackCEO")
   [[ -n "$PARENT_PAGE_ID" ]] && PARENT_KIND="search:BlackCEO"
+else
+  # An explicit env-provided parent counts as a shared, accessible page.
+  SHARED_PAGE_SEEN=1
 fi
 if [[ -z "$PARENT_PAGE_ID" ]]; then
   log "INFO" "fallback 3: searching for an existing OpenClaw parent page..."
   search_resp=$(with_retry notion_curl POST "https://api.notion.com/v1/search" \
     -d '{"query":"OpenClaw","filter":{"value":"page","property":"object"},"page_size":5}' || echo "{}")
-  PARENT_PAGE_ID=$(echo "$search_resp" | jq -r '.results[0].id // empty')
+  note_shared "$search_resp" "OpenClaw"
+  PARENT_PAGE_ID=$(jq_get '.results[0].id' "$search_resp" "parent-search:OpenClaw")
   [[ -n "$PARENT_PAGE_ID" ]] && PARENT_KIND="search:OpenClaw"
 fi
 if [[ -z "$PARENT_PAGE_ID" ]]; then
@@ -251,33 +326,95 @@ if [[ -z "$PARENT_PAGE_ID" ]]; then
   for q in "Your Zero-Human Company" "Zero Human Company" "Zero-Human Company"; do
     search_resp=$(with_retry notion_curl POST "https://api.notion.com/v1/search" \
       -d "$(jq -n --arg q "$q" '{query:$q,filter:{value:"page",property:"object"},page_size:5}')" || echo "{}")
-    PARENT_PAGE_ID=$(echo "$search_resp" | jq -r '.results[0].id // empty')
+    note_shared "$search_resp" "zhc:$q"
+    PARENT_PAGE_ID=$(jq_get '.results[0].id' "$search_resp" "parent-search:zhc:$q")
     if [[ -n "$PARENT_PAGE_ID" ]]; then
       PARENT_KIND="search:zhc-prior-run:$q"
       break
     fi
   done
 fi
+# Final probe: an unfiltered page-object search. This is the authoritative
+# "is ANYTHING shared with this integration?" check (no-shared-page detection).
+if [[ -z "$PARENT_PAGE_ID" && "$SHARED_PAGE_SEEN" -eq 0 ]]; then
+  probe_resp=$(with_retry notion_curl POST "https://api.notion.com/v1/search" \
+    -d '{"filter":{"value":"page","property":"object"},"page_size":1}' || echo "{}")
+  note_shared "$probe_resp" "any-page-probe"
+  PARENT_PAGE_ID=$(jq_get '.results[0].id' "$probe_resp" "parent-search:any-page-probe")
+  [[ -n "$PARENT_PAGE_ID" ]] && PARENT_KIND="search:any-shared-page"
+fi
+
+# ---- NO-SHARED-PAGE DETECTION (no-shared-page detection fix) ----
+# If no parent page was found AND no search ever returned a page, the client's
+# Notion integration has nothing shared with it. Creating at workspace-root will
+# fail for an internal integration, so emit a CLEAR, actionable error and exit
+# WITHOUT producing a placeholder. Allow an explicit opt-in escape hatch
+# (ZHC_NOTION_ALLOW_WORKSPACE_ROOT=1) for true workspace-capable integrations.
 if [[ -z "$PARENT_PAGE_ID" ]]; then
-  log "WARN" "fallback 5: no parent page found -- creating at WORKSPACE ROOT (no parent)"
+  if [[ "$SHARED_PAGE_SEEN" -eq 0 && "${ZHC_NOTION_ALLOW_WORKSPACE_ROOT:-0}" != "1" ]]; then
+    _ns_reason="notion-no-shared-page: the zhc Notion integration has NO accessible page. Share a Notion page with the zhc integration (open a Notion page -> ... menu -> Connections -> add the zhc integration), then re-run create-notion-closeout.sh."
+    log "ERROR" "$_ns_reason"
+    state_set ".notionFailureReason = \"$_ns_reason\"" || true
+    state_set ".closeoutLegStatus.notion = \"failed:no-shared-page\"" || true
+    _TS_NS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    state_set "
+      .closeoutBlockers = (
+        (.closeoutBlockers // [])
+        | map(select(.class != \"notion-no-shared-page\"))
+        | . + [{\"class\":\"notion-no-shared-page\",\"reason\":\"$_ns_reason\",\"since\":\"$_TS_NS\",\"escalatedAt\":\"$_TS_NS\",\"cleared\":false,\"actionable\":\"share a Notion page with the zhc integration, then re-run\"}]
+      )
+    " || true
+    # Operator escalation is OPT-IN. No hardcoded chat, no co-mingling.
+    _OP_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
+    if [[ -n "$_OP_CHAT" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
+      openclaw message send --channel telegram -t "$_OP_CHAT" \
+        -m "ZHC HOLD [notion-no-shared-page] $(state_get '.companyName'): $_ns_reason" \
+        >>"$LOG_FILE" 2>&1 || true
+    fi
+    echo "[NOTION] BLOCKED: no page is shared with the zhc integration. Share a Notion page with the zhc integration, then re-run." >&2
+    exit 2
+  fi
+  # A page WAS seen but none matched a parent we want: create at workspace root
+  # (opt-in path only, or a genuinely workspace-capable integration).
+  log "WARN" "no named parent page matched -- creating at WORKSPACE ROOT (shared_page_seen=$SHARED_PAGE_SEEN, opt-in=${ZHC_NOTION_ALLOW_WORKSPACE_ROOT:-0})"
   PARENT_PAGE_ID=""
   PARENT_KIND="workspace-root"
 else
   log "INFO" "parent page id=$PARENT_PAGE_ID (kind=$PARENT_KIND)"
 fi
 
-# ---- idempotency: search for existing root page ----
+# ---- idempotency / RESUME MODE: search for existing root page ----
+# idempotency-resume fix: if the root page already exists, we do NOT exit -- we
+# adopt it as ROOT_ID and fall through to the (idempotent) section population so
+# any missing sections are filled in. The old code exited here, which is why a
+# root created on a prior run never got its 10 sections.
 existing_resp=$(with_retry notion_curl POST "https://api.notion.com/v1/search" \
   -d "$(jq -n --arg q "$ROOT_TITLE" '{query:$q,filter:{value:"page",property:"object"},page_size:5}')" || echo "{}")
-existing_id=$(echo "$existing_resp" | jq -r --arg t "$ROOT_TITLE" '.results[] | select((.properties.title.title[0].plain_text // .properties.Name.title[0].plain_text // "") == $t) | .id' | head -1)
+existing_id=""
+if is_json "$existing_resp"; then
+  existing_id=$(printf '%s' "$existing_resp" | jq -r --arg t "$ROOT_TITLE" \
+    '.results[]? | select((.properties.title.title[0].plain_text // .properties.Name.title[0].plain_text // "") == $t) | .id' 2>/dev/null | head -1)
+else
+  _es_err=$(notion_error_of "$existing_resp")
+  log "WARN" "jq-guard: idempotency search returned non-JSON/unexpected body -- treating as no existing root. ${_es_err:+($_es_err)}"
+fi
+RESUME_MODE=0
 if [[ -n "$existing_id" ]]; then
-  existing_url=$(echo "https://www.notion.so/${existing_id//-/}")
-  log "INFO" "root page already exists id=$existing_id -- re-using (idempotent)"
-  state_set ".notionRootPageUrl = \"$existing_url\""
-  exit 0
+  ROOT_ID="$existing_id"
+  ROOT_URL="https://www.notion.so/${ROOT_ID//-/}"
+  RESUME_MODE=1
+  log "INFO" "root page already exists id=$ROOT_ID -- RESUME MODE: populating missing sections (idempotent, no re-create, no dupes)"
+  state_set ".notionRootPageUrl = \"$ROOT_URL\" | .notionCloseoutPageId = \"$ROOT_ID\""
 fi
 
-# ---- create root page ----
+# ---- section idempotency counters (used in both fresh + resume paths) ----
+SECTION_CREATED=0
+SECTION_SKIPPED=0
+
+# ---- create root page (skipped entirely in RESUME MODE) ----
+if [[ "$RESUME_MODE" -eq 1 ]]; then
+  log "INFO" "RESUME MODE: skipping root create, reconciling sections under existing root id=$ROOT_ID"
+else
 log "INFO" "creating root page: $ROOT_TITLE (parent_kind=$PARENT_KIND)"
 if [[ "$PARENT_KIND" == "workspace-root" ]]; then
   root_body=$(jq -n \
@@ -304,7 +441,7 @@ else
     }')
 fi
 root_resp=$(with_retry notion_curl POST "https://api.notion.com/v1/pages" -d "$root_body")
-ROOT_ID=$(echo "$root_resp" | jq -r '.id')
+ROOT_ID=$(jq_get '.id' "$root_resp" "root-page-create")
 if [[ -z "$ROOT_ID" || "$ROOT_ID" == "null" ]]; then
   _notion_err_detail=$(echo "$root_resp" | jq -r '.message // .code // "unknown"' 2>/dev/null || echo "no detail")
   _notion_fail_reason="root-page-create-failed: Notion API returned no id. Detail: $_notion_err_detail"
@@ -330,7 +467,10 @@ if [[ -z "$ROOT_ID" || "$ROOT_ID" == "null" ]]; then
 fi
 ROOT_URL="https://www.notion.so/${ROOT_ID//-/}"
 log "INFO" "root page created id=$ROOT_ID url=$ROOT_URL"
+# Persist root id immediately so a crash mid-population resumes correctly next run.
+state_set ".notionRootPageUrl = \"$ROOT_URL\" | .notionCloseoutPageId = \"$ROOT_ID\"" || true
 pace
+fi  # end: RESUME_MODE root-create guard
 
 # ---- block helpers ----
 p() {
@@ -352,10 +492,58 @@ divider() {
   echo '{"object":"block","type":"divider","divider":{}}'
 }
 
-# Helper to create a child page under root
+# ---- idempotent section detection (idempotency-resume fix) ----
+# Uses the block-children listing (authoritative for DIRECT children) so resume
+# mode never duplicates a section. Both helpers fail safe: on any API/JSON error
+# they report "absent" so a probe error can never WRONGLY suppress a needed
+# section (worst case is a duplicate, never a missing section -- and the listing
+# would have to be broken on both this run and the next for that to persist).
+#
+# child_section_id <root_id> <title> -- echo the id of the existing child page
+# with the exact title directly under root_id, or "" if none. jq-guarded,
+# paginated across all pages of children.
+child_section_id() {
+  local root_id="$1" want_title="$2"
+  local cursor="" url body match="" has_more="true"
+  while [[ "$has_more" == "true" ]]; do
+    url="https://api.notion.com/v1/blocks/${root_id}/children?page_size=100"
+    [[ -n "$cursor" ]] && url="${url}&start_cursor=${cursor}"
+    body=$(with_retry notion_curl GET "$url" || echo "{}")
+    if ! is_json "$body"; then
+      log "WARN" "child_section_id: non-JSON listing for root=$root_id -- assuming '$want_title' absent"
+      echo ""
+      return 0
+    fi
+    match=$(printf '%s' "$body" | jq -r --arg t "$want_title" \
+      '.results[]? | select(.type=="child_page") | select((.child_page.title // "") == $t) | .id' 2>/dev/null | head -1)
+    if [[ -n "$match" ]]; then
+      echo "$match"
+      return 0
+    fi
+    has_more=$(printf '%s' "$body" | jq -r '.has_more // false' 2>/dev/null)
+    cursor=$(printf '%s' "$body" | jq -r '.next_cursor // empty' 2>/dev/null)
+    [[ -z "$cursor" ]] && has_more="false"
+  done
+  echo ""
+  return 0
+}
+
+child_section_exists() {
+  [[ -n "$(child_section_id "$1" "$2")" ]]
+}
+
+# Helper to create a child page under root.
+# Idempotent: if a child page with this exact title already exists directly
+# under $ROOT_ID, it is skipped (no duplicate) and the existing id is returned.
 create_child_page() {
   local title="$1"
   local body_json="$2"
+  if child_section_exists "$ROOT_ID" "$title"; then
+    log "INFO" "section '$title' already present under root -- skipping (idempotent resume)"
+    SECTION_SKIPPED=$((SECTION_SKIPPED + 1))
+    echo ""
+    return 0
+  fi
   local body
   body=$(jq -n \
     --arg parent "$ROOT_ID" \
@@ -366,10 +554,16 @@ create_child_page() {
       properties: {title: {title: [{type:"text", text:{content: $title}}]}},
       children: $children
     }')
-  local resp
+  local resp new_id
   resp=$(with_retry notion_curl POST "https://api.notion.com/v1/pages" -d "$body")
   pace
-  echo "$resp" | jq -r '.id // empty'
+  new_id=$(jq_get '.id' "$resp" "create-child-page:$title")
+  if [[ -z "$new_id" ]]; then
+    log "ERROR" "section '$title' create returned no id. $(notion_error_of "$resp")"
+  else
+    SECTION_CREATED=$((SECTION_CREATED + 1))
+  fi
+  echo "$new_id"
 }
 
 # Helper to create a child page under an arbitrary parent ID
@@ -473,7 +667,25 @@ sec5_intro_blocks=$(jq -s '.' \
   <(p "Below are your departments. Each department has its own sub-page listing the department director, their focal point, every role built, and the SOP count for that department. Read these once so you know what is available.") \
   <(p "Total departments active: ${n_depts}. All departments are staffed and ready.") )
 SEC5_ID=$(create_child_page "5. Departments and Roles" "$sec5_intro_blocks")
+# Resume mode: if section 5 already existed, create_child_page returns "" --
+# resolve the existing id so per-dept sub-pages still populate (and dedupe).
+# (The SECTION_SKIPPED bump inside create_child_page is lost to the $(...)
+# subshell here, so account for it explicitly in the parent shell.)
+if [[ -z "$SEC5_ID" ]]; then
+  SECTION_SKIPPED=$((SECTION_SKIPPED + 1))
+  SEC5_ID=$(child_section_id "$ROOT_ID" "5. Departments and Roles")
+  log "INFO" "section 5 already existed -- resolved id=$SEC5_ID for dept sub-page reconciliation"
+else
+  # Section 5 was freshly created -- the SECTION_CREATED bump inside
+  # create_child_page is lost to the $(...) subshell, so account for it here.
+  SECTION_CREATED=$((SECTION_CREATED + 1))
+fi
 log "INFO" "section 5 root id=$SEC5_ID"
+
+if [[ -z "$SEC5_ID" ]]; then
+  log "WARN" "section 5 id unresolved -- skipping per-dept sub-pages this run"
+  n_depts=0
+fi
 
 for i in $(seq 0 $((n_depts - 1))); do
   dept_name=$(echo "$DEPT_NORM" | jq -r ".[$i].name // .[$i].slug")
@@ -544,14 +756,22 @@ for i in $(seq 0 $((n_depts - 1))); do
     dept_blocks_arr+=( "$(p "SOPs for this department are embedded in each role's how-to.md and stored in the mission-control database. Query by department to see all procedures.")" )
   fi
 
+  # Idempotent: skip if this dept sub-page already exists under section 5.
+  if child_section_exists "$SEC5_ID" "$dept_name"; then
+    log "INFO" "dept sub-page '$dept_name' already present under section 5 -- skipping (idempotent resume)"
+    continue
+  fi
   dept_page_blocks=$(printf '%s\n' "${dept_blocks_arr[@]}" | jq -s '.')
   body=$(jq -n \
     --arg parent "$SEC5_ID" \
     --arg title "$dept_name" \
     --argjson children "$dept_page_blocks" \
     '{parent:{page_id:$parent},properties:{title:{title:[{type:"text",text:{content:$title}}]}},children:$children}')
-  with_retry notion_curl POST "https://api.notion.com/v1/pages" -d "$body" >/dev/null \
-    || log "WARN" "failed creating dept sub-page for $dept_name"
+  dept_resp=$(with_retry notion_curl POST "https://api.notion.com/v1/pages" -d "$body" \
+    || echo "{}")
+  if [[ -z "$(jq_get '.id' "$dept_resp" "dept-subpage:$dept_name")" ]]; then
+    log "WARN" "failed creating dept sub-page for $dept_name. $(notion_error_of "$dept_resp")"
+  fi
   pace
 done
 
@@ -661,7 +881,11 @@ create_child_page "10. Your First 7 Days" "$sec10_blocks" >/dev/null
 
 # ---- finalize ----
 state_set ".notionRootPageUrl = \"$ROOT_URL\" | .notionCloseoutPageId = \"$ROOT_ID\""
-log "INFO" "notion page tree complete -- root url=$ROOT_URL id=$ROOT_ID (notionCloseoutPageId set)"
+if [[ "$RESUME_MODE" -eq 1 ]]; then
+  log "INFO" "RESUME complete -- root url=$ROOT_URL id=$ROOT_ID (sections created this run=$SECTION_CREATED, already-present skipped=$SECTION_SKIPPED, no dupes)"
+else
+  log "INFO" "notion page tree complete -- root url=$ROOT_URL id=$ROOT_ID (sections created=$SECTION_CREATED, skipped=$SECTION_SKIPPED; notionCloseoutPageId set)"
+fi
 log "INFO" "closeoutLegStatus.notion = pass"
 state_set ".closeoutLegStatus.notion = \"pass\"" || true
 exit 0
