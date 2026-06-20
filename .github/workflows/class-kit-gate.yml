@@ -1,0 +1,83 @@
+name: class-kit-gate
+
+# Self-tests the Department Class-Kit ENFORCEMENT GATE so no future department
+# can ship as a text-only page again. Real kits and the live Notion API are not
+# available in CI, so the gate is exercised against two baked-in fixtures
+# materialized at runtime:
+#   - GOOD fixture: a minimal kit (real 20-slide .pptx + all required files/
+#     counts, no deferral language) -> the gate MUST PASS (exit 0).
+#   - BAD  fixture: a text-only 7-section stub with placeholder/deferral
+#     language (the exact 33-failure signature) -> the gate MUST AUTO-FAIL (exit 1).
+# Gate C (live Notion) is intentionally not exercised in CI; it runs on the
+# operator box when a Notion page id is supplied.
+
+on:
+  push:
+    paths:
+      - 23-ai-workforce-blueprint/scripts/qc-class-kit-gate.sh
+      - 23-ai-workforce-blueprint/test-fixtures/make-class-kit-fixtures.sh
+      - 23-ai-workforce-blueprint/DEPT-KIT-TEMPLATE.md
+      - .github/workflows/class-kit-gate.yml
+  pull_request:
+    paths:
+      - 23-ai-workforce-blueprint/scripts/qc-class-kit-gate.sh
+      - 23-ai-workforce-blueprint/test-fixtures/make-class-kit-fixtures.sh
+      - 23-ai-workforce-blueprint/DEPT-KIT-TEMPLATE.md
+      - .github/workflows/class-kit-gate.yml
+
+jobs:
+  class-kit-gate:
+    name: Class-Kit gate — passes GOOD fixture, AUTO-FAILS BAD fixture
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Ensure unzip is present
+        run: sudo apt-get update -y && sudo apt-get install -y unzip
+
+      - name: Materialize the GOOD and BAD fixtures
+        run: |
+          chmod +x 23-ai-workforce-blueprint/test-fixtures/make-class-kit-fixtures.sh
+          bash 23-ai-workforce-blueprint/test-fixtures/make-class-kit-fixtures.sh "$RUNNER_TEMP/ck-fixtures"
+          echo "Deck slide count (raw):"
+          unzip -l "$RUNNER_TEMP"/ck-fixtures/good-kit/deck/*.pptx | grep -cE 'ppt/slides/slide[0-9]+\.xml'
+
+      - name: GOOD fixture MUST PASS (gate exit 0)
+        run: |
+          chmod +x 23-ai-workforce-blueprint/scripts/qc-class-kit-gate.sh
+          set +e
+          bash 23-ai-workforce-blueprint/scripts/qc-class-kit-gate.sh "$RUNNER_TEMP/ck-fixtures/good-kit"
+          rc=$?
+          set -e
+          echo "GOOD fixture gate exit code: $rc"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::Class-Kit gate REJECTED the GOOD fixture (expected PASS / exit 0, got $rc)"
+            exit 1
+          fi
+          echo "GOOD fixture passed the gate as expected."
+
+      - name: BAD fixture MUST AUTO-FAIL (gate exit 1)
+        run: |
+          set +e
+          bash 23-ai-workforce-blueprint/scripts/qc-class-kit-gate.sh "$RUNNER_TEMP/ck-fixtures/bad-kit"
+          rc=$?
+          set -e
+          echo "BAD fixture gate exit code: $rc"
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::Class-Kit gate PASSED the text-only BAD fixture (expected AUTO-FAIL / exit 1). The gate is not enforcing."
+            exit 1
+          fi
+          echo "BAD fixture AUTO-FAILED the gate as expected (exit $rc)."
+
+      - name: Summary
+        run: |
+          echo "Class-Kit gate self-test complete:"
+          echo "  GOOD fixture -> PASS (exit 0)"
+          echo "  BAD  fixture -> AUTO-FAIL (exit 1)"
+          echo "The enforcement gate is wired and self-testing in CI."
