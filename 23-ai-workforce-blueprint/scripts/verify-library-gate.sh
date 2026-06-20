@@ -215,6 +215,33 @@ library_dir = Path(sys.argv[1])
 # Directories that are not operational workflow departments
 SKIP = {"_stage1_drafts", "master-orchestrator"}
 
+# ── GATE-SCOPE (Option 2, 2026-06-20): scope the TRIO gate to depts whose
+# CANONICAL roster includes the trio ──────────────────────────────────────────
+# The trio (qc-specialist + deep-research-specialist + devils-advocate) is a bar
+# for full operational departments. Minimal ops departments — listings,
+# logistics-fulfillment, podcast, product-production, scheduling-dispatch — have
+# 4-5 role canonical rosters that NEVER included the full trio (e.g. podcast has a
+# qc-specialist but no deep-research/devils-advocate). Forcing the trio on them
+# fails genuinely client-complete workforces. We now REQUIRE the trio for a dept
+# ONLY when that dept's CANONICAL roster (_index.json roles) registers all three.
+# This is the authority — not a blanket requirement and not a hardcoded dept list.
+# A dept whose canonical roster DOES include the trio is still fully gated: if a
+# built/library trio member is missing, it STILL fails (no weakening).
+INDEX_JSON = library_dir / "_index.json"
+roster_requires_trio = {}   # dept -> True iff its canonical roster registers qc+research+da
+try:
+    _idx = json.loads(INDEX_JSON.read_text())
+    for _dept, _info in (_idx.get("departments") or {}).items():
+        _roles = [str(r).lower() for r in (_info.get("roles") or [])]
+        _has_qc = any("qc" in r for r in _roles)
+        _has_research = any("deep-research" in r for r in _roles)
+        _has_da = any("devil" in r for r in _roles)
+        roster_requires_trio[_dept] = (_has_qc and _has_research and _has_da)
+except Exception:
+    # If the index can't be read, fall back to requiring the trio everywhere
+    # (fail-closed): an unreadable roster must NOT silently exempt any dept.
+    roster_requires_trio = {}
+
 dept_results = {}
 trio_gaps = []
 trio_done = True
@@ -225,13 +252,45 @@ for dept_path in sorted(library_dir.iterdir()):
     dept = dept_path.name
     if dept.startswith("_") or dept in SKIP:
         continue
-    files = [f.name.lower() for f in dept_path.iterdir() if f.suffix == ".md"]
+    # GATE-SCOPE: skip the trio requirement for depts whose canonical roster does
+    # not register the full trio (minimal ops depts). Fail-closed: if the roster
+    # is unknown (roster_requires_trio empty / dept absent), default to REQUIRING
+    # the trio so a real gap is never hidden by a missing/garbled index.
+    if dept in roster_requires_trio and not roster_requires_trio[dept]:
+        dept_results[dept] = {
+            "trioFilled": True,
+            "trioRequired": False,
+            "hasQC": None, "hasResearch": None, "hasDA": None,
+        }
+        continue
+    # BUG 3 FIX (gate-measurement, 2026-06-20): the trio roles (qc-specialist,
+    # deep-research-specialist, devils-advocate) are stored in the role-library in
+    # TWO equally-valid shapes — as a flat "<slug>.md" FILE in some depts, and as a
+    # "<slug>/" SUBDIRECTORY containing how-to.md/IDENTITY.md in others (the
+    # instantiate-style depts: account-management, client-experience-booking,
+    # engineering, founding-member-concierge, launch-operations, ...). The old gate
+    # only collected ".md" FILES, so every subdirectory-stored trio read as missing
+    # and ~10 depts failed the trio gate though all three roles exist. Fix: build
+    # the candidate-name set from BOTH ".md" files AND any subdirectory that
+    # actually carries a role artifact (how-to.md or IDENTITY.md). The name-match
+    # logic below is UNCHANGED, so a genuinely-missing trio member — no matching
+    # .md and no matching role subdir — STILL fails this gate (no weakening).
+    names = []
+    for f in dept_path.iterdir():
+        if f.is_file() and f.suffix == ".md":
+            names.append(f.name.lower())
+        elif f.is_dir() and not f.name.startswith(".") and not f.name.startswith("_"):
+            # a directory only counts as a stored role if it holds a role artifact
+            if (f / "how-to.md").is_file() or (f / "IDENTITY.md").is_file():
+                names.append(f.name.lower())
+    files = names
     has_qc = any("qc" in f for f in files)
     has_research = any("deep-research" in f for f in files)
     has_da = any("devil" in f for f in files)
     trio_filled = has_qc and has_research and has_da
     dept_results[dept] = {
         "trioFilled": trio_filled,
+        "trioRequired": True,
         "hasQC": has_qc,
         "hasResearch": has_research,
         "hasDA": has_da,
@@ -339,7 +398,8 @@ if [ -f "$STATE_FILE" ]; then
       | .libraryFailureReason = $fail
       | .departments = ((.departments // []) | map(
           . as $d
-          | ($perdept[$d.slug] // {}) as $pd
+          | (($d.slug // $d.dept_id // $d.id // $d.name // "") | tostring) as $key
+          | ($perdept[$key] // {}) as $pd
           | $d
           + (if ($pd | has("roleLibraryFilled")) then {roleLibraryFilled: $pd.roleLibraryFilled} else {} end)
           + (if ($pd | has("sopLibraryFilled")) then {sopLibraryFilled: $pd.sopLibraryFilled} else {} end)

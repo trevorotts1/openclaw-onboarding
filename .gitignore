@@ -19,3 +19,6 @@ tmp/
 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/working/
 
 .wrangler/
+
+# backup files from automated fixes
+*.bak*

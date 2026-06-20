@@ -235,7 +235,7 @@ After install completes:
 - [ ] `scripts/run-closeout.sh` is `chmod +x`
 - [ ] `KIE_API_KEY` is set on the container (`printenv KIE_API_KEY | head -c 8` returns non-empty)
 - [ ] `NOTION_API_TOKEN` is set on the container
-- [ ] Workforce-build-resume cron exists AND its dirty-state detection includes `closeoutStatus` (re-run `install.sh` if it was installed pre-v10.14.17)
+- [ ] At least ONE closeout trigger cron exists — `openclaw cron list | grep -E 'closeout-resume|workforce-build-resume'` (v12.34.0: triggers are REDUNDANT; the dedicated `closeout-resume` cron needs no owner chat). Run `scripts/qc-closeout-wiring.sh` to assert files+crons+state in one shot; re-run `update-skills.sh` (now backfills all pipeline crons via `scripts/ensure-pipeline-crons.sh`) if it FAILs.
 
 ## Support
 

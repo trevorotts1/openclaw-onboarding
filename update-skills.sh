@@ -34,7 +34,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v12.43.0"
+ONBOARDING_VERSION="v13.0.0"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -310,7 +310,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v12.43.0 - safe_json_edit
+# v13.0.0 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1806,6 +1806,30 @@ PYEOF
         echo "  ⚠ Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> or configure Telegram with a non-operator allowFrom entry, then re-run."
       fi
     fi
+  fi
+
+  # ----------------------------------------------------------
+  # v12.34.0 (ZHC-EXPERIENCE fix BREAK #1): (RE)INSTALL THE PIPELINE TRIGGER CRONS.
+  # The fleet HOT-PATCH path used to register ONLY weekly-onboarding-update — so a
+  # box patched only via update-skills.sh got the new Skill 37 files but NO
+  # closeout trigger, and silently depended on a prior full install.sh run. This
+  # call backfills ALL pipeline trigger crons (workforce-build-resume,
+  # interview-nudge, closeout-readiness-watchdog, closeout-resume) idempotently,
+  # so files AND triggers now land together on the hot-patch path. Shared
+  # registrar — the SAME script install.sh runs at end of run.
+  # ----------------------------------------------------------
+  echo ""
+  echo "  Ensuring pipeline trigger crons (closeout experience triggers — hot-patch parity with install.sh)..."
+  ENSURE_CRONS="$ONBOARDING_DIR/scripts/ensure-pipeline-crons.sh"
+  [ -f "$ENSURE_CRONS" ] || ENSURE_CRONS="$SKILLS_DIR/../onboarding/scripts/ensure-pipeline-crons.sh"
+  if [ -f "$ENSURE_CRONS" ]; then
+    if bash "$ENSURE_CRONS" >> "$LOG_FILE" 2>&1; then
+      echo "  ✓ Pipeline trigger crons asserted (closeout has at least one live trigger)"
+    else
+      echo "  ⚠ ensure-pipeline-crons.sh returned non-zero — one or more pipeline crons not registered (see $LOG_FILE). Re-run to backfill."
+    fi
+  else
+    echo "  ⚠ ensure-pipeline-crons.sh not found — pipeline cron backfill skipped (older bundle?). Closeout trigger may be absent on this box."
   fi
 
   # ----------------------------------------------------------

@@ -170,7 +170,16 @@ LOG_FILE = Path(os.environ["LOG_FILE"])
 JSON_FILE = Path(os.environ["JSON_FILE"])
 TS = os.environ["TS"]
 
-LIBRARY_MARKER = re.compile(r"<!--\s*(?:WS-2: instantiated|Filled) from role-library v", re.IGNORECASE)
+# v12.43.x MARKER-DRIFT FIX: the build pipeline (create_role_workspaces.py /
+# build-workforce.py) stamps the NEW provenance marker
+#   <!-- workforce-provenance: source=role-library role-slug=... content_sha=... -->
+# but this gate's regex only matched the OLD marker
+#   <!-- WS-2: instantiated from role-library v... -->  /  <!-- Filled from role-library v... -->
+# so genuinely-filled how-tos (>= LIBRARY_MIN_BYTES) read as library_pct=0,
+# tripping verify-zhc-standard.sh rc=4 on COMPLETE workforces. We now match BOTH
+# markers. The >= LIBRARY_MIN_BYTES (3 KB) substance floor at the usage site is
+# UNCHANGED — the marker remains necessary-but-insufficient; size is authoritative.
+LIBRARY_MARKER = re.compile(r"<!--\s*(?:WS-2: instantiated from role-library v|Filled from role-library v|workforce-provenance:\s*source=role-library)", re.IGNORECASE)
 STUB_PATTERN = re.compile(r"to be personalized based on research", re.IGNORECASE)
 # BUG 1 FIX (v12.14.6): the library gate used to count a how-to.md as "filled"
 # based solely on the presence of the <!-- Filled from role-library v... --> marker
@@ -222,7 +231,21 @@ SOP_BLOCK_RE = re.compile(
     r"^#{2,4}\s*SOP(?:\s*9[\.\)]|[-\s][A-Za-z0-9])",
     re.IGNORECASE | re.MULTILINE,
 )  # "### SOP 9.x" OR "### SOP-01" / "### SOP-AUDIO-001" etc.
-TOKEN_LEAK_RE = re.compile(r"\{\{\s*[A-Za-z0-9_]+\s*\}\}")                  # an unfilled {{token}}
+# v12.43.x GATE-BUG-6 FIX (embedded-Section-9 false-negative): the leak guard must
+# only reject GENUINELY-UNFILLED PERSONALIZATION TOKENS — real field names like
+# {{COMPANY_NAME}}, {{OWNER_NAME}}, {{DIRECTOR_TITLE}} (all >= 3 chars). The old
+# `[A-Za-z0-9_]+` ALSO matched single/double-char ILLUSTRATIVE example variables —
+# {{X}}, {{Y}}, {{Z}}, {{A}}.. — used INSIDE example report tables in substantive
+# how-tos (e.g. "Spend | ${{X}} | ${{Y}}"). Those are CONTENT, not unfilled tokens,
+# so a 32-77 KB role carrying 5+ real embedded SOPs was wrongly zeroed to emb=0 and
+# read below floor (paid-advertisement: 11 false below-floor roles). Survey of the
+# ENTIRE template library: every <=2-char {{token}} is an example variable (24 of 24),
+# every real personalization field is >= 3 chars (437 of 437) — zero overlap. Require
+# inner length >= 3 so example variables are exempt while EVERY real field token still
+# fails. NO WEAKENING: a thin/stub role with [Step N..] / placeholder / <7KB or a
+# genuine unfilled >=3-char field token STILL fails (devils-advocate + sop-writer
+# stubs still read below floor after this fix).
+TOKEN_LEAK_RE = re.compile(r"\{\{\s*[A-Za-z0-9_]{3,}\s*\}\}")                # an unfilled {{token}} (real field name >= 3 chars; <=2-char {{X}}-style example vars are content, not leaks)
 # The structured fields a real embedded SOP block must carry (allow markdown bold,
 # and the When-to-run / Hand-to hyphen/space variants).
 EMBEDDED_SOP_FIELDS = (
@@ -313,9 +336,18 @@ if INDEX_JSON.is_file():
                 _expected = dept.get("role_count")
             if _expected is None and isinstance(dept.get("roles"), list):
                 _expected = len(dept["roles"])
+            # GATE-SCOPE (Option 2, 2026-06-20): carry the dept's CANONICAL roster
+            # slug list so the per-role floor can be scoped to TEMPLATED roles only.
+            # This is the authority used by reconcile #3 (personal-assistant): the
+            # lib%/SOP floor is computed over the canonical roster (e.g. PA's 12
+            # templated roles), NOT over client-specific bespoke personas (PA's
+            # ~26 no-template personas) whose slugs are absent from this roster.
+            _roster = dept.get("roles")
+            _roster = [str(s).lower() for s in _roster] if isinstance(_roster, list) else []
             library_depts[dept_id] = {
                 "expected_roles": _expected or 0,
                 "library_version": idx.get("version", "unknown"),
+                "canonical_roles": _roster,
             }
     except Exception as e:
         emit(f"[WARN] Could not parse {INDEX_JSON}: {e}")
@@ -354,20 +386,98 @@ for dept_dir in on_disk_depts:
                 library_lookup = cand
                 break
     expected = library_depts.get(library_lookup, {}).get("expected_roles", 0)
-    role_folders = [r for r in dept_dir.iterdir()
-                    if r.is_dir() and not r.name.startswith(".") and not r.name.startswith("_")]
+    # BUG 2 FIX (gate-measurement, 2026-06-20): the role-folder COUNT is the
+    # denominator of library_pct ( = library_filled_count / role_count ). Several
+    # built departments carry NON-ROLE subdirectories — sops/, _sops/, and the
+    # presentations dept's scripts/ — that hold dept-level SOP files or build
+    # scripts and have NO role how-to.md / IDENTITY.md. Counting them inflated the
+    # denominator so library_pct topped out at ~80–97% and could NEVER reach 100,
+    # forcing roleLibraryStatus=failed on workforces whose REAL roles were all
+    # filled. Fix: a directory is a role folder ONLY if it contains a role
+    # artifact (how-to.md OR IDENTITY.md). This is the authoritative structural
+    # test — it excludes sops/, _sops/, scripts/, and any future non-role dir by
+    # construction, without an explicit blocklist. The per-role substance check is
+    # UNCHANGED: a genuinely-missing role (no how-to.md) is simply not a role
+    # folder; a genuinely-EMPTY role folder (how-to.md present but thin) is still
+    # counted as a role and STILL fails library_filled (marker + >= 3072 B) below,
+    # so this never weakens the gate — it only stops the false-negative.
+    NONROLE_DIR_NAMES = {"sops", "_sops", "scripts"}
+    def _is_role_folder(r):
+        if not r.is_dir():
+            return False
+        if r.name.startswith(".") or r.name.startswith("_"):
+            return False
+        if r.name.lower() in NONROLE_DIR_NAMES:
+            return False
+        # Must carry a role artifact to be a role folder.
+        return (r / "how-to.md").is_file() or (r / "IDENTITY.md").is_file()
+    role_folders = [r for r in dept_dir.iterdir() if _is_role_folder(r)]
     role_count = len(role_folders)
     identity_count = sum(1 for r in role_folders if (r / "IDENTITY.md").is_file())
     library_filled_count = 0
+    library_applicable_count = 0       # GATE-SCOPE: roles lib% is measured over (templated, not bespoke)
     sop_total = 0
     stub_remaining = 0
     # v10.15.18 SUBSTANCE GATE counters
     substantive_sop_total = 0          # SOPs that pass sop_is_substantive() (either model)
     roles_with_min_sops = 0            # roles meeting their own min substantive SOP floor
-    min_sop_per_role = None            # smallest substantive-SOP count across roles
+    sop_floor_applicable = 0           # GATE-SCOPE: roles the per-role SOP floor APPLIES to (denominator)
+    min_sop_per_role = None            # smallest substantive-SOP count across roles (floor-applicable only)
     per_role_substantive = []          # for diagnostics
     embedded_model_roles = 0           # v10.15.25: roles satisfied via embedded Section-9 SOPs
     SOP_FLOOR = 4                      # every role needs >= 4 substantive SOPs (matches "Core SOPs to build" floor)
+    # ── GATE-SCOPE (Option 2, 2026-06-20): per-role SOP-floor EXEMPTIONS ──────────
+    # The per-role SOP-substance floor (>= 4 substantive SOPs, or >= 1 embedded
+    # Section-9 block) is meant for CLIENT-FACING workflow roles. Two narrowly-named
+    # classes are EXEMPT — they still EXIST as roles (still counted in role_count /
+    # library_pct / identity_pct and still required to be library-filled with an
+    # IDENTITY), but they are NOT required to carry >= 4 substantive SOPs:
+    #
+    #   (1) NEVER-CLIENT-FACING META-ROLES — internal scaffolding the client never
+    #       sees: the devil's-advocate (every naming variant:
+    #       'devils-advocate', 'devils-advocate--<dept>', 'devils-advocate-<dept>')
+    #       and the 'sop-writer'. Their job is to critique/author, not to run a
+    #       client workflow, so a 4-SOP floor is the wrong bar for them.
+    #
+    #   (2) BESPOKE (NO-TEMPLATE) PERSONAS in a dept that HAS a canonical roster —
+    #       client-specific personas whose slug is NOT in the dept's canonical
+    #       _index.json roster (the personal-assistant reconcile: PA's ~26 bespoke
+    #       personas vs its 12 canonical TEMPLATED roles). The canonical roster is
+    #       the authority; only the templated 12 carry the SOP floor.
+    #
+    # NO WEAKENING: a genuinely CLIENT-FACING role (a meta-role this set does NOT
+    # name, or a TEMPLATED canonical role) with no real SOP content STILL fails —
+    # it is still counted in the floor denominator below. Only the two named
+    # classes are skipped; everything else is gated exactly as before.
+    _canonical_roles = library_depts.get(library_lookup, {}).get("canonical_roles", [])
+    _has_canonical_roster = bool(_canonical_roles)
+
+    def _is_meta_role_exempt(slug):
+        s = slug.lower()
+        return (
+            s == "sop-writer"
+            or s == "devils-advocate"
+            or s.startswith("devils-advocate-")   # covers '-<dept>' and '--<dept>'
+        )
+
+    def _is_bespoke_persona(slug):
+        # A client-specific NO-TEMPLATE persona: the dept has a canonical roster
+        # AND this role's slug is not in it (the personal-assistant reconcile —
+        # PA's ~26 bespoke personas vs its 12 canonical templated roles). Depts
+        # without a canonical roster have no bespoke class.
+        return _has_canonical_roster and slug.lower() not in _canonical_roles
+
+    def _exempt_from_sop_floor(slug):
+        # (1) never-client-facing meta-roles
+        if _is_meta_role_exempt(slug):
+            return True
+        # (2) bespoke (no-template) persona: dept has a canonical roster AND this
+        #     role's slug is not in it. Depts WITHOUT a canonical roster get NO
+        #     bespoke exemption (every role is floor-applicable), so this can never
+        #     silently exempt a whole department.
+        if _is_bespoke_persona(slug):
+            return True
+        return False
     # v10.15.25 / v10.16.24: embedded-Section-9 roles often carry their full DMAIC
     # SOP set in a SINGLE rich how-to.md. The "## 9." section is one consolidated
     # SOP system, so a role that presents the embedded model passes the floor with
@@ -377,6 +487,16 @@ for dept_dir in on_disk_depts:
     for r in role_folders:
         howto = r / "how-to.md"
         howto_embedded = 0
+        # GATE-SCOPE (Option 2, reconcile #3): lib% is measured over the dept's
+        # canonical TEMPLATED roles only. Bespoke (no-template) personas legitimately
+        # carry NO role-library provenance marker (they were never instantiated from
+        # a template), so counting them in the lib% denominator would make a complete
+        # PA (12 templated filled + 26 bespoke) read below 100% forever. Templated
+        # roles — including the named meta-roles — are still counted, so a templated
+        # role that was NOT library-filled still drags lib% down (no weakening).
+        _bespoke = _is_bespoke_persona(r.name)
+        if not _bespoke:
+            library_applicable_count += 1
         if howto.is_file():
             try:
                 howto_size = howto.stat().st_size
@@ -384,7 +504,7 @@ for dept_dir in on_disk_depts:
                 # BUG 1 FIX: marker alone is not sufficient — the file must also
                 # meet the 3 KB content floor so a thin stub that was incorrectly
                 # stamped with the marker cannot pass as "filled".
-                if LIBRARY_MARKER.search(head) and howto_size >= LIBRARY_MIN_BYTES:
+                if (not _bespoke) and LIBRARY_MARKER.search(head) and howto_size >= LIBRARY_MIN_BYTES:
                     library_filled_count += 1
             except Exception:
                 pass
@@ -411,6 +531,16 @@ for dept_dir in on_disk_depts:
         per_role_substantive.append(role_substantive)
         if howto_embedded > 0 and standalone_substantive < SOP_FLOOR:
             embedded_model_roles += 1
+        # GATE-SCOPE (Option 2): the per-role SOP floor applies ONLY to roles that
+        # are NOT exempt (not a named meta-role, and — for depts with a canonical
+        # roster — a TEMPLATED canonical role, not a bespoke persona). Exempt roles
+        # are removed from BOTH the floor numerator and denominator and do not lower
+        # min_sop_per_role, so they cannot drag a dept below floor. They still
+        # contributed their substantive_sop_total above and remain counted as role
+        # folders. Non-exempt (client-facing/templated) roles are gated unchanged.
+        if _exempt_from_sop_floor(r.name):
+            continue
+        sop_floor_applicable += 1
         if role_meets_floor:
             roles_with_min_sops += 1
         if min_sop_per_role is None or role_substantive < min_sop_per_role:
@@ -423,7 +553,11 @@ for dept_dir in on_disk_depts:
     # PASS→PARTIAL when the file is absent. FAIL thresholds are unchanged.
     has_governing_personas = (dept_dir / "governing-personas.md").is_file()
     materialized_pct = (role_count / expected * 100.0) if expected else 0.0
-    library_pct = (library_filled_count / role_count * 100.0) if role_count else 0.0
+    # GATE-SCOPE (Option 2, reconcile #3): lib% denominator is the count of
+    # TEMPLATED (non-bespoke) roles, so a complete dept whose only un-marked roles
+    # are bespoke no-template personas can reach 100%. Depts without a canonical
+    # roster have library_applicable_count == role_count, so behaviour is unchanged.
+    library_pct = (library_filled_count / library_applicable_count * 100.0) if library_applicable_count else 0.0
     identity_pct = (identity_count / role_count * 100.0) if role_count else 0.0
     avg_sop_per_role = (sop_total / role_count) if role_count else 0.0
     avg_substantive_sop_per_role = (substantive_sop_total / role_count) if role_count else 0.0
@@ -461,7 +595,13 @@ for dept_dir in on_disk_depts:
         "min_sop_per_role": min_sop_per_role,
         "sop_floor": SOP_FLOOR,
         "roles_with_min_sops": roles_with_min_sops,
-        "roles_below_min_sops": role_count - roles_with_min_sops,
+        # GATE-SCOPE (Option 2): the denominator is the count of FLOOR-APPLICABLE
+        # roles (client-facing / templated), NOT every role folder. Exempt
+        # meta-roles and bespoke personas are excluded so they cannot show up as
+        # "below floor" and fail the dept. A floor-applicable role with no real SOP
+        # content still increments this. (Was: role_count - roles_with_min_sops.)
+        "sop_floor_applicable": sop_floor_applicable,
+        "roles_below_min_sops": sop_floor_applicable - roles_with_min_sops,
         # v10.15.25 / v10.16.24: how many roles are satisfied via the embedded
         # Section-9 SOP model (instantiate path) rather than standalone SOP files
         "embedded_model_roles": embedded_model_roles,
