@@ -49,7 +49,8 @@
 #
 # Onboarding repo version markers (kept in sync by scripts/bump-version.sh):
 #   ENSURE_PIPELINE_CRONS_VERSION
-ENSURE_PIPELINE_CRONS_VERSION="v13.0.1"
+# BUG-FIX v13.0.2 — JSON presence check, no text-table truncation
+ENSURE_PIPELINE_CRONS_VERSION="v13.0.2"
 
 set -u
 
@@ -75,6 +76,78 @@ OPERATOR_CHAT_IDS_RE='^(5252140759|6663821679|6771245262)$'
 _now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null; }
 
 _log() { echo "[ensure-pipeline-crons] $*"; }
+
+# ---------------------------------------------------------------------------
+# _cron_present NAME
+#
+# Returns 0 if a cron with EXACT name NAME exists in `openclaw cron list`,
+# returns 1 if absent or list fails.
+#
+# WHY JSON (BUG-FIX v13.0.2): the text table produced by `openclaw cron list`
+# truncates names longer than ~22 chars, appending "...". The cron named
+# "closeout-readiness-watchdog" (27 chars) was rendered as
+# "closeout-readiness-wa..." in every text-table row, so any grep on the
+# full name always returned non-zero (false "absent") — causing the script to
+# re-register a duplicate on every run AND to false-negative on the post-
+# registration success check (exit 3 even when the cron registered fine).
+#
+# Strategy (most to least reliable):
+#   1. jq  — exact `.jobs[].name` match against `--json` output
+#   2. python3 — same but via json.load (no jq dep)
+#   3. NEVER fall back to text-table grep — that is the root-cause path.
+#      If both jq and python3 are absent we fail OPEN (return 1) so callers
+#      attempt re-registration rather than silently claiming presence.
+# ---------------------------------------------------------------------------
+_cron_present() {
+  local name="$1"
+  local raw
+  raw=$(openclaw cron list --json 2>/dev/null) || raw=""
+
+  # Strategy 1: jq exact match
+  if [[ -n "$raw" ]] && command -v jq >/dev/null 2>&1; then
+    if printf '%s' "$raw" | jq -e --arg n "$name" '
+        # Accept both array-at-root and {jobs:[...]} wrapper shapes
+        ( if type == "array" then . else .jobs // [] end )
+        | map(select(.name == $n))
+        | length > 0
+      ' >/dev/null 2>&1; then
+      return 0
+    else
+      return 1
+    fi
+  fi
+
+  # Strategy 2: python3 exact match (no jq required)
+  if [[ -n "$raw" ]] && command -v python3 >/dev/null 2>&1; then
+    if printf '%s' "$raw" | python3 - "$name" 2>/dev/null <<'PYEOF'
+import json, sys
+name = sys.argv[1]
+raw = sys.stdin.read()
+try:
+    data = json.loads(raw)
+except Exception:
+    sys.exit(1)
+jobs = data if isinstance(data, list) else data.get("jobs", [])
+if any(j.get("name") == name for j in jobs):
+    sys.exit(0)
+sys.exit(1)
+PYEOF
+    then
+      return 0
+    else
+      return 1
+    fi
+  fi
+
+  # Strategy 3: --json flag not supported or both parsers absent.
+  # Fall back to the text table ONLY as a last resort.  We use a fixed-width-
+  # aware grep anchored at the start of the name column so it does NOT match
+  # truncated "name..." rows — but we also note that if truncation IS occurring
+  # we may still false-negative here.  This path is logged as a warning so the
+  # operator can see it.
+  _log "WARN _cron_present: jq and python3 unavailable — falling back to text-table grep (truncation risk!)"
+  openclaw cron list 2>/dev/null | grep -Fq "$name"
+}
 
 # ---------------------------------------------------------------------------
 # CLI capability detection (BUG-FIX v13.0.1 — fleet cron registration).
@@ -149,7 +222,7 @@ _register_command_cron() {
     fi
   fi
 
-  if [[ -n "$out" ]] && openclaw cron list 2>/dev/null | grep -qi "$name"; then
+  if [[ -n "$out" ]] && _cron_present "$name"; then
     uuid=$(printf '%s' "$out" | jq -r '.uuid // .id // empty' 2>/dev/null || true)
     [[ -n "$uuid_key" && -n "$uuid" && "$uuid" != "null" ]] && _persist_uuid "$uuid_key" "$uuid"
     [[ -n "$reg_at_key" ]] && _persist_field "$reg_at_key" "$(_now_iso)"
@@ -262,7 +335,7 @@ PYEOF
 #    non-operator owner chat for the self-ping; if absent, we LOG + skip THIS
 #    cron only (the command-mode closeout-resume below still fires closeout).
 _ensure_workforce_build_resume() {
-  if openclaw cron list 2>/dev/null | grep -qi "workforce-build-resume"; then
+  if _cron_present "workforce-build-resume"; then
     _log "OK  workforce-build-resume cron already present"
     return 0
   fi
@@ -318,7 +391,7 @@ _ensure_workforce_build_resume() {
 
 # 2. interview-nudge (COMMAND mode, 0 */6). Owner-facing idle-interview nudge.
 _ensure_interview_nudge() {
-  if openclaw cron list 2>/dev/null | grep -qi "interview-nudge"; then
+  if _cron_present "interview-nudge"; then
     _log "OK  interview-nudge cron already present"
     return 0
   fi
@@ -339,7 +412,7 @@ _ensure_interview_nudge() {
 
 # 3. closeout-readiness-watchdog (COMMAND mode, 0 */6). Operator escalation.
 _ensure_closeout_watchdog() {
-  if openclaw cron list 2>/dev/null | grep -qi "closeout-readiness-watchdog"; then
+  if _cron_present "closeout-readiness-watchdog"; then
     _log "OK  closeout-readiness-watchdog cron already present"
     return 0
   fi
@@ -363,7 +436,7 @@ _ensure_closeout_watchdog() {
 #    cron script regardless of owner-chat resolution. This is the fix that makes
 #    closeout fire even on boxes where Step 13's message-mode cron was skipped.
 _ensure_closeout_resume() {
-  if openclaw cron list 2>/dev/null | grep -qi "closeout-resume"; then
+  if _cron_present "closeout-resume"; then
     _log "OK  closeout-resume cron already present"
     return 0
   fi
@@ -431,9 +504,13 @@ main() {
   # The message-mode resume cron last (its self-ping needs a non-operator chat).
   _ensure_workforce_build_resume   || fails=$((fails + 1))
 
-  # One-line audit of current cron presence (fast, name-keyed).
-  local present
-  present=$(openclaw cron list 2>/dev/null | grep -Eio 'workforce-build-resume|interview-nudge|closeout-readiness-watchdog|closeout-resume' | sort -u | tr '\n' ' ' | sed 's/ $//')
+  # One-line audit of current cron presence (exact JSON match, no truncation).
+  local present=""
+  local _n
+  for _n in "workforce-build-resume" "interview-nudge" "closeout-readiness-watchdog" "closeout-resume"; do
+    _cron_present "$_n" && present="${present}${_n} "
+  done
+  present="${present% }"  # trim trailing space
   _log "AUDIT crons present after run: [${present:-none}]"
 
   if [[ "$fails" -gt 0 ]]; then
