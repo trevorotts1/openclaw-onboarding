@@ -101,7 +101,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ### 8. PPTX Assembly Specialist
 **Slug:** pptx-assembly-specialist
-**What it does:** Assembles the final PowerPoint from QC-passed images using python-pptx (13.333 x 7.5 inch slides, full-bleed). Embeds speaker notes from presenter_notes.json. Applies native text overlays from pptx_text_overlays.json if present. Renders to PDF via soffice --headless --convert-to pdf, then to PNG pages via pdftoppm -png -r 100 for Phase 6 QC.
+**What it does:** Assembles the final PowerPoint from QC-passed images using python-pptx (13.333 x 7.5 inch slides, full-bleed). Each slide is a SINGLE composed gpt-image-2 image (text baked in by the model); the only PPTX text part is the off-slide speaker-notes pane (from presenter_notes.json). Native text overlays are ELIMINATED (Decision 5C) — no pptx_text_overlays.json, no native on-slide text runs (AF-OVERLAY-DELIVERED). Renders to PDF via soffice --headless --convert-to pdf, then to PNG pages via pdftoppm -png -r 100 for Phase 6 QC.
 **Core SOPs to build:**
 - 01-PPTX-Build-with-Embedded-Speaker-Notes.md
 - 02-Render-to-PDF-for-Final-QC.md

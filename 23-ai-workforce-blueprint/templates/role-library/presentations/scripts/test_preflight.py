@@ -64,11 +64,19 @@ RICH_PROMPT = (
 
 
 def _write_intake(root: Path):
+    # GOAL-4: the full-artifacts intake records the asset-intake question was asked
+    # (1C, AF-ASSET-QUESTION-MISSING), an explicit pitch_included flag (2A,
+    # AF-PITCH-FLAG-UNSET), and that the client provided no extra assets
+    # (assets_provided:false => AF-MANIFEST-UNREFERENCED / AF-SCRATCH-PARSE-SKIPPED
+    # defer). pitch_included:true keeps the existing offer-ladder arc fixture valid.
     (root / "working" / "copy" / "intake.json").write_text(json.dumps({
         "interview_confirmed": True,
         "presentation_mode": "general",
         "audience_mode": "STANDARD",
         "target_talk_minutes": 30,
+        "asset_intake_question_asked": True,
+        "assets_provided": False,
+        "pitch_included": True,
     }))
 
 
@@ -436,11 +444,18 @@ def _slide_count_run_dir(target_minutes, output_slides) -> Path:
     return root
 
 
-def _pitch_run_dir(arc_slots) -> Path:
-    """Build a run dir with arc_allocation.json carrying arc_slots — drives AF-PITCH-MISSING."""
+def _pitch_run_dir(arc_slots, pitch_included=True) -> Path:
+    """Build a run dir with arc_allocation.json carrying arc_slots — drives AF-PITCH-MISSING.
+    GOAL-4/2A: AF-PITCH-MISSING is now CONDITIONAL on intake.json.pitch_included:true
+    (a pitchless deck must NOT be force-fitted with a pitch). The fixture writes an
+    intake with pitch_included (default true) so the conditional gate evaluates."""
     root = Path(tempfile.mkdtemp(prefix="deck_pitch_test_"))
     (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
     (root / "working" / "copy" / "arc_allocation.json").write_text(json.dumps(arc_slots))
+    (root / "working" / "copy" / "intake.json").write_text(json.dumps({
+        "interview_confirmed": True, "presentation_mode": "general",
+        "audience_mode": "STANDARD", "target_talk_minutes": 30,
+        "asset_intake_question_asked": True, "pitch_included": pitch_included}))
     return root
 
 
@@ -1831,6 +1846,311 @@ def _af_codes_in(text: str):
     return set(_AF_RE.findall(text or ""))
 
 
+# ===========================================================================
+# GOAL-4 fixture builders + unit tests (1C / 2A / 3C / 5C).
+# ===========================================================================
+def _g4_run_dir(prefix: str) -> Path:
+    root = Path(tempfile.mkdtemp(prefix=prefix))
+    (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _asset_intake_run_dir(asked: bool) -> Path:
+    """1C — intake.json with/without asset_intake_question_asked:true."""
+    root = _g4_run_dir("deck_g4_assetq_")
+    intake = {"interview_confirmed": True, "presentation_mode": "general",
+              "audience_mode": "STANDARD", "target_talk_minutes": 30,
+              "pitch_included": True}
+    if asked:
+        intake["asset_intake_question_asked"] = True
+    (root / "working" / "copy" / "intake.json").write_text(json.dumps(intake))
+    return root
+
+
+def _assets_manifest_run_dir(provided: bool, consumed: bool) -> Path:
+    """1C — intake assets_provided:<provided> + an assets_manifest.json whose single
+    asset is consumed (public_url + consumed_by) or not."""
+    root = _g4_run_dir("deck_g4_manifest_")
+    (root / "working" / "copy" / "intake.json").write_text(json.dumps({
+        "interview_confirmed": True, "presentation_mode": "general",
+        "audience_mode": "STANDARD", "target_talk_minutes": 30,
+        "asset_intake_question_asked": True, "pitch_included": True,
+        "assets_provided": provided}))
+    if consumed:
+        asset = {"kind": "photo", "public_url": "https://cdn.example.com/founder.png",
+                 "consumed_by": ["brand-steward", "slide-image-creator"]}
+    else:
+        asset = {"kind": "photo"}  # no public_url, no consumed_by => unconsumed
+    (root / "working" / "copy" / "assets_manifest.json").write_text(json.dumps({
+        "asset_question_asked": True, "assets_provided": provided,
+        "assets": [asset]}))
+    return root
+
+
+def _scratch_deck_run_dir(provided: bool, parsed: bool) -> Path:
+    """1C — assets_manifest.json with a scratch_deck.provided/parsed; when parsed,
+    also write scratch_seed.json + a PRD that references it."""
+    root = _g4_run_dir("deck_g4_scratch_")
+    (root / "working" / "copy" / "intake.json").write_text(json.dumps({
+        "interview_confirmed": True, "presentation_mode": "general",
+        "audience_mode": "STANDARD", "target_talk_minutes": 30,
+        "asset_intake_question_asked": True, "pitch_included": True,
+        "assets_provided": True}))
+    scratch = {"provided": provided, "parsed": parsed,
+               "path": "uploads/old-deck.pptx",
+               "seed_prd_path": "working/copy/scratch_seed.json"}
+    (root / "working" / "copy" / "assets_manifest.json").write_text(json.dumps({
+        "asset_question_asked": True, "assets_provided": True, "assets": [],
+        "scratch_deck": scratch}))
+    if parsed:
+        (root / "working" / "copy" / "scratch_seed.json").write_text(json.dumps({
+            "extracted_titles": ["Old hook", "Old offer"], "slide_count": 12}))
+        (root / "working" / "copy" / "mission_prd.json").write_text(json.dumps({
+            "seeded_from_scratch_deck": True,
+            "scratch_seed_ref": "working/copy/scratch_seed.json"}))
+    return root
+
+
+def _pitch_flag_run_dir(set_flag: bool) -> Path:
+    """2A — intake.json with/without an explicit boolean pitch_included."""
+    root = _g4_run_dir("deck_g4_pitchflag_")
+    intake = {"interview_confirmed": True, "presentation_mode": "general",
+              "audience_mode": "STANDARD", "target_talk_minutes": 30,
+              "asset_intake_question_asked": True}
+    if set_flag:
+        intake["pitch_included"] = True
+    (root / "working" / "copy" / "intake.json").write_text(json.dumps(intake))
+    return root
+
+
+def _pitch_leak_run_dir(leak: bool, pitch_included: bool = False) -> Path:
+    """2A — a pitchless deck (pitch_included:false). When leak=True, plant a
+    price_ladder.json + an offer beat in the arc (the leak the gate must catch)."""
+    root = _g4_run_dir("deck_g4_pitchleak_")
+    (root / "working" / "copy" / "intake.json").write_text(json.dumps({
+        "interview_confirmed": True, "presentation_mode": "general",
+        "audience_mode": "STANDARD", "target_talk_minutes": 30,
+        "asset_intake_question_asked": True, "pitch_included": pitch_included}))
+    if leak:
+        (root / "working" / "copy" / "price_ladder.json").write_text(json.dumps(
+            {"rungs": [{"kind": "FINAL", "target_slide": 30}]}))
+        (root / "working" / "copy" / "arc_allocation.json").write_text(json.dumps(
+            [{"slide": 1, "arc_section": "hook"},
+             {"slide": 2, "arc_section": "value-stack"},
+             {"slide": 3, "arc_section": "price ladder drop"},
+             {"slide": 4, "arc_section": "re-pitch"}]))
+    else:
+        (root / "working" / "copy" / "arc_allocation.json").write_text(json.dumps(
+            [{"slide": 1, "arc_section": "hook"},
+             {"slide": 2, "arc_section": "teach"},
+             {"slide": 3, "arc_section": "summary"}]))
+    return root
+
+
+def _overlay_run_dir(overlay_file: bool) -> Path:
+    """5C — a run dir that does (overlay_file=True) or does not contain the
+    eliminated working/copy/pptx_text_overlays.json native-overlay file."""
+    root = _g4_run_dir("deck_g4_overlay_")
+    if overlay_file:
+        (root / "working" / "copy" / "pptx_text_overlays.json").write_text(json.dumps(
+            [{"slide": 1, "text": "$1,000", "strike": True}]))
+    return root
+
+
+def _kie_balance_probe() -> str:
+    """3C — drive kie_balance_preflight to FAIL by monkeypatching _fetch_kie_balance
+    to return a below-floor balance (no network). Restores the original after."""
+    root = _g4_run_dir("deck_g4_kiebalance_")
+    orig = build_deck._fetch_kie_balance
+    try:
+        build_deck._fetch_kie_balance = lambda *a, **k: 1.0  # far below floor
+        # 40 slides * 4 credits * 1.25 = 200 floor; balance 1.0 => AF-KIE-BALANCE.
+        return build_deck.kie_balance_preflight(root, 40, "stub-key")
+    finally:
+        build_deck._fetch_kie_balance = orig
+
+
+def test_chk_asset_question():
+    """1C AF-ASSET-QUESTION-MISSING: intake without asset_intake_question_asked FAILS;
+    with it PASSES; absent intake DEFERS (passes)."""
+    fails = []
+    r = build_deck._chk_asset_question(_asset_intake_run_dir(asked=False))
+    if not r or "AF-ASSET-QUESTION-MISSING" not in r:
+        fails.append(f"ASSET-Q: unasked intake should FAIL, got {r!r}")
+    if build_deck._chk_asset_question(_asset_intake_run_dir(asked=True)):
+        fails.append("ASSET-Q: asked intake should PASS but failed")
+    if build_deck._chk_asset_question(_g4_run_dir("deck_g4_assetq_absent_")):
+        fails.append("ASSET-Q: absent intake should DEFER (pass) but failed")
+    print(f"ASSET-QUESTION (1C)          -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_chk_assets_manifest():
+    """1C AF-MANIFEST-UNREFERENCED: a provided-but-unconsumed asset FAILS; a consumed
+    asset PASSES; assets_provided:false DEFERS."""
+    fails = []
+    r = build_deck._chk_assets_manifest(_assets_manifest_run_dir(provided=True, consumed=False))
+    if not r or "AF-MANIFEST-UNREFERENCED" not in r:
+        fails.append(f"MANIFEST: unconsumed asset should FAIL, got {r!r}")
+    if build_deck._chk_assets_manifest(_assets_manifest_run_dir(provided=True, consumed=True)):
+        fails.append("MANIFEST: consumed asset should PASS but failed")
+    if build_deck._chk_assets_manifest(_assets_manifest_run_dir(provided=False, consumed=False)):
+        fails.append("MANIFEST: assets_provided:false should DEFER (pass) but failed")
+    print(f"ASSETS-MANIFEST (1C)         -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_chk_scratch_parse():
+    """1C AF-SCRATCH-PARSE-SKIPPED: an unparsed uploaded scratch deck FAILS; a parsed +
+    PRD-seeded scratch deck PASSES; no scratch deck DEFERS."""
+    fails = []
+    r = build_deck._chk_scratch_parse(_scratch_deck_run_dir(provided=True, parsed=False))
+    if not r or "AF-SCRATCH-PARSE-SKIPPED" not in r:
+        fails.append(f"SCRATCH: unparsed scratch deck should FAIL, got {r!r}")
+    if build_deck._chk_scratch_parse(_scratch_deck_run_dir(provided=True, parsed=True)):
+        fails.append("SCRATCH: parsed + PRD-seeded scratch deck should PASS but failed")
+    if build_deck._chk_scratch_parse(_scratch_deck_run_dir(provided=False, parsed=False)):
+        fails.append("SCRATCH: no scratch deck should DEFER (pass) but failed")
+    print(f"SCRATCH-PARSE (1C)           -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_chk_pitch_flag():
+    """2A AF-PITCH-FLAG-UNSET: intake with no boolean pitch_included FAILS; with it
+    PASSES; absent intake DEFERS."""
+    fails = []
+    r = build_deck._chk_pitch_flag(_pitch_flag_run_dir(set_flag=False))
+    if not r or "AF-PITCH-FLAG-UNSET" not in r:
+        fails.append(f"PITCH-FLAG: unset flag should FAIL, got {r!r}")
+    if build_deck._chk_pitch_flag(_pitch_flag_run_dir(set_flag=True)):
+        fails.append("PITCH-FLAG: set flag should PASS but failed")
+    if build_deck._chk_pitch_flag(_g4_run_dir("deck_g4_pitchflag_absent_")):
+        fails.append("PITCH-FLAG: absent intake should DEFER (pass) but failed")
+    print(f"PITCH-FLAG (2A)              -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_chk_pitch_leak():
+    """2A AF-PITCH-LEAK: a pitchless deck with leaked price/offer content FAILS; a
+    clean pitchless deck PASSES; a pitch deck (pitch_included:true) DEFERS (the leak
+    gate only applies to pitchless decks — AF-PITCH-MISSING governs pitch decks)."""
+    fails = []
+    r = build_deck._chk_pitch_leak(_pitch_leak_run_dir(leak=True))
+    if not r or "AF-PITCH-LEAK" not in r:
+        fails.append(f"PITCH-LEAK: leaked pitchless deck should FAIL, got {r!r}")
+    if build_deck._chk_pitch_leak(_pitch_leak_run_dir(leak=False)):
+        fails.append("PITCH-LEAK: clean pitchless deck should PASS but failed")
+    # a pitch deck (pitch_included:true) with a price ladder must NOT trip AF-PITCH-LEAK
+    if build_deck._chk_pitch_leak(_pitch_leak_run_dir(leak=True, pitch_included=True)):
+        fails.append("PITCH-LEAK: a pitch deck should DEFER (not be leak-checked) but failed")
+    print(f"PITCH-LEAK (2A)              -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_chk_pitch_conditional():
+    """2A: AF-PITCH-MISSING is CONDITIONAL on pitch_included:true. A pitch deck with
+    no ladder/re-pitch FAILS; a PITCHLESS deck (pitch_included:false) with no ladder
+    PASSES (a pitch is never forced)."""
+    fails = []
+    arc_no_pitch = [{"slide": 1, "arc_section": "hook"},
+                    {"slide": 2, "arc_section": "teach"}]
+    r = build_deck._chk_pitch(_pitch_run_dir(arc_no_pitch, pitch_included=True))
+    if not r or "AF-PITCH-MISSING" not in r:
+        fails.append(f"PITCH-COND: pitch deck w/ no ladder should FAIL, got {r!r}")
+    rp = build_deck._chk_pitch(_pitch_run_dir(arc_no_pitch, pitch_included=False))
+    if rp:
+        fails.append(f"PITCH-COND: PITCHLESS deck must NOT be blocked by AF-PITCH-MISSING, got {rp!r}")
+    print(f"PITCH-CONDITIONAL (2A)       -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_kie_balance_preflight():
+    """3C AF-KIE-BALANCE: a below-floor balance HARD-ABORTS (returns AF-KIE-BALANCE);
+    a sufficient balance PASSES; slide_count<=0 or no key DEFERS."""
+    fails = []
+    r = _kie_balance_probe()
+    if not r or "AF-KIE-BALANCE" not in r:
+        fails.append(f"KIE-BALANCE: below-floor balance should FAIL, got {r!r}")
+    root = _g4_run_dir("deck_g4_kiebalance_ok_")
+    orig = build_deck._fetch_kie_balance
+    try:
+        build_deck._fetch_kie_balance = lambda *a, **k: 100000.0
+        if build_deck.kie_balance_preflight(root, 40, "stub-key"):
+            fails.append("KIE-BALANCE: ample balance should PASS but failed")
+    finally:
+        build_deck._fetch_kie_balance = orig
+    # no key => defer; zero slides => defer
+    if build_deck.kie_balance_preflight(root, 40, None):
+        fails.append("KIE-BALANCE: no api_key should DEFER (pass) but failed")
+    if build_deck.kie_balance_preflight(root, 0, "stub-key"):
+        fails.append("KIE-BALANCE: 0 slides should DEFER (pass) but failed")
+    # REGRESSION: the VERIFIED-LIVE Kie response shape is {"data": <bare number>},
+    # NOT {"data": {"credit": N}}. _fetch_kie_balance must read the bare-number form
+    # (a prior parser only handled the dict form and false-aborted every real run with
+    # ample credits). Lock the live shape.
+    import urllib.request as _ur
+    _orig = _ur.urlopen
+
+    class _FakeResp:
+        def __init__(self, body): self._b = body.encode()
+        def read(self): return self._b
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+    try:
+        _ur.urlopen = lambda *a, **k: _FakeResp(
+            '{"code":200,"msg":"success","data":1951.33}')
+        bal = build_deck._fetch_kie_balance("stub-key")
+        if abs(bal - 1951.33) > 0.01:
+            fails.append(f"KIE-BALANCE: live {{data:<number>}} shape misparsed as {bal!r}")
+    finally:
+        _ur.urlopen = _orig
+    print(f"KIE-BALANCE (3C)             -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_check_phase_preconditions():
+    """3C AF-PHASE-SKIPPED: dispatching a phase before a prior phase is attested
+    FAILS; an attested prior PASSES; an owner-authorized skip PASSES."""
+    fails = []
+    root = _g4_run_dir("deck_g4_phaseskip_")
+    ckpt = root / "working" / "checkpoints"
+    ckpt.mkdir(parents=True, exist_ok=True)
+    # No attestation for P3-ARC => dispatching P4-RENDER FAILS.
+    r = build_deck.check_phase_preconditions(root, "P4-RENDER", ["P3-ARC"])
+    if not r or "AF-PHASE-SKIPPED" not in r:
+        fails.append(f"PHASE-SKIP: missing prior attestation should FAIL, got {r!r}")
+    # Attest P3-ARC => P4-RENDER precondition met.
+    (ckpt / "process_manifest.json").write_text(json.dumps(
+        {"phases": [{"id": "P3-ARC", "status": "complete"}]}))
+    if build_deck.check_phase_preconditions(root, "P4-RENDER", ["P3-ARC"]):
+        fails.append("PHASE-SKIP: attested prior should PASS but failed")
+    # Owner-authorized skip of a NOT-attested phase => precondition satisfied.
+    root2 = _g4_run_dir("deck_g4_phaseskip2_")
+    ck2 = root2 / "working" / "checkpoints"
+    ck2.mkdir(parents=True, exist_ok=True)
+    (ck2 / "phase_skip_approvals.json").write_text(json.dumps(
+        {"approvals": [{"phase_id": "P3-ARC", "owner_approved": True,
+                        "approved_by": "owner", "reason": "no pitch in this deck",
+                        "timestamp": "2026-06-20T00:00:00Z"}]}))
+    if build_deck.check_phase_preconditions(root2, "P4-RENDER", ["P3-ARC"]):
+        fails.append("PHASE-SKIP: owner-authorized skip should PASS but failed")
+    print(f"PHASE-PRECONDITIONS (3C)     -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_chk_no_overlay():
+    """5C AF-OVERLAY-DELIVERED: a present pptx_text_overlays.json FAILS; a run with no
+    overlay file + no delivered PPTX PASSES."""
+    fails = []
+    r = build_deck._chk_no_overlay(_overlay_run_dir(overlay_file=True))
+    if not r or "AF-OVERLAY-DELIVERED" not in r:
+        fails.append(f"OVERLAY: present overlay file should FAIL, got {r!r}")
+    if build_deck._chk_no_overlay(_overlay_run_dir(overlay_file=False)):
+        fails.append("OVERLAY: clean run (no overlay file) should PASS but failed")
+    print(f"NO-OVERLAY (5C)              -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
 def emit_af_coverage():
     """Drive every build_deck-enforced gate to FAILURE and record which AF codes
     a deliberately-failing fixture actually triggers. Writes working/af-coverage.json
@@ -2024,6 +2344,53 @@ def emit_af_coverage():
     # _chk_no_dark_slides. The fixture is a dark-keyword prompt with no intake flag.
     record("AF-DARK-SLIDE", build_deck._chk_no_dark_slides(
         _dark_slide_run_dir(dark=True, client_dark_theme=False)))
+
+    # ---- GOAL-4 build_deck-enforced gate probes (1C / 2A / 3C / 5C) ----
+
+    # AF-ASSET-QUESTION-MISSING (1C) — an intake that does NOT record the asset
+    # question being asked FAILS _chk_asset_question.
+    record("AF-ASSET-QUESTION-MISSING",
+           build_deck._chk_asset_question(_asset_intake_run_dir(asked=False)))
+
+    # AF-MANIFEST-UNREFERENCED (1C) — assets_provided:true with a provided asset that
+    # has no consumed_by / no public_url FAILS _chk_assets_manifest.
+    record("AF-MANIFEST-UNREFERENCED",
+           build_deck._chk_assets_manifest(_assets_manifest_run_dir(
+               provided=True, consumed=False)))
+
+    # AF-SCRATCH-PARSE-SKIPPED (1C) — an uploaded scratch deck not parsed (no
+    # scratch_seed.json) FAILS _chk_scratch_parse.
+    record("AF-SCRATCH-PARSE-SKIPPED",
+           build_deck._chk_scratch_parse(_scratch_deck_run_dir(
+               provided=True, parsed=False)))
+
+    # AF-PITCH-FLAG-UNSET (2A) — an intake with no boolean pitch_included FAILS
+    # _chk_pitch_flag.
+    record("AF-PITCH-FLAG-UNSET",
+           build_deck._chk_pitch_flag(_pitch_flag_run_dir(set_flag=False)))
+
+    # AF-PITCH-LEAK (2A) — a pitchless deck (pitch_included:false) with a leaked
+    # price-ladder / offer beat FAILS _chk_pitch_leak.
+    record("AF-PITCH-LEAK",
+           build_deck._chk_pitch_leak(_pitch_leak_run_dir(leak=True)))
+
+    # AF-KIE-BALANCE (3C) — an unverifiable Kie balance (stub endpoint raising) is a
+    # HARD ABORT from kie_balance_preflight. We monkeypatch _fetch_kie_balance to a
+    # below-floor balance so the gate fires deterministically with no network.
+    record("AF-KIE-BALANCE", _kie_balance_probe())
+
+    # AF-OVERLAY-DELIVERED (5C) — a present pptx_text_overlays.json (the eliminated
+    # native-overlay path) FAILS _chk_no_overlay.
+    record("AF-OVERLAY-DELIVERED",
+           build_deck._chk_no_overlay(_overlay_run_dir(overlay_file=True)))
+
+    # AF-PHASE-SKIPPED (3C) — dispatching a phase before a prior phase is attested
+    # (and with no owner-authorized skip record) FAILS check_phase_preconditions. An
+    # empty run dir means NO prior phase is attested, so the precondition is unmet.
+    _ps_root = Path(tempfile.mkdtemp(prefix="deck_phase_skipped_probe_"))
+    (_ps_root / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    record("AF-PHASE-SKIPPED",
+           build_deck.check_phase_preconditions(_ps_root, "P4-RENDER", ["P0A-INTAKE"]))
 
     triggered_sorted = sorted(triggered)
     AF_COVERAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -2265,6 +2632,23 @@ def main():
     # self/builder-graded report and pass an independent one (generalized
     # AF-QC-INDEPENDENCE); AF-SPEECH-QC defers when its report is absent.
     failures += test_chk_qc_gates_independence()
+
+    # GOAL-4 / 1C — client-asset intake + consumption + scratch-deck parse.
+    failures += test_chk_asset_question()
+    failures += test_chk_assets_manifest()
+    failures += test_chk_scratch_parse()
+
+    # GOAL-4 / 2A — explicit pitch flag; pitchless first-class; conditional pitch gate.
+    failures += test_chk_pitch_flag()
+    failures += test_chk_pitch_leak()
+    failures += test_chk_pitch_conditional()
+
+    # GOAL-4 / 3C — Kie balance pre-flight + phase-precondition contract.
+    failures += test_kie_balance_preflight()
+    failures += test_check_phase_preconditions()
+
+    # GOAL-4 / 5C — native PPTX text-overlay path eliminated.
+    failures += test_chk_no_overlay()
 
     # GUARD A — emit working/af-coverage.json listing every build_deck-enforced AF
     # code a deliberately-failing fixture actually triggered. gate_integrity_check.py

@@ -198,12 +198,89 @@ n8n_val=$(state_get '.closeoutDeliverables.n8nWired')
 total_done=$(( inf1_done + inf2_done + video_done + notion_done + tg_done + cc_done + n8n_done ))
 log "leg status: inf1=$inf1_done inf2=$inf2_done video=$video_done notion=$notion_done tg=$tg_done cc=$cc_done n8n=$n8n_done (${total_done}/7)"
 
-# Kill condition 4: all 7 legs done
+# ----------------------------------------------------------------------
+# BUG A FIX (GHOST FALSE-DONE).
+#
+# Through v12.x "Kill condition 4" stamped closeoutStatus=done the moment 7
+# URL/flag fields were non-null. That bypassed EVERY finalize guard in
+# run-closeout.sh (phantom-closeout guard + the Telegram delivery-confirmation
+# gate). The observed ghost: run-closeout.sh recorded
+#   closeout finalize: critical-failed: infographic-1,telegram   (08:51, exit 1)
+# and 6 minutes later THIS cron stamped done (08:57) because the URL fields were
+# present — even though the critical legs had FAILED. closeoutStatus=done may now
+# be written by this cron ONLY when ALL critical legs are VERIFIED:
+#   * every load-bearing deliverable exists, AND
+#   * every REQUIRED Telegram slot has a gateway-confirmed messageId AND passes
+#     verify-telegram-delivery.sh (same gate run-closeout.sh uses).
+# On any critical failure we stamp partial (named pending slots) — NEVER done.
+# ----------------------------------------------------------------------
+
+# GUARD: never re-stamp done over a recorded critical failure that hasn't been
+# cleared by a fresh successful run. If a prior run-closeout finalize recorded
+# closeoutStatus=failed (a CRITICAL failure) or a critical entry in
+# closeoutCriticalFailed, this cron must NOT overwrite it to done — it may only
+# re-launch the build (the in-process exec below) and let run-closeout's own
+# verified finalize transition it. We treat closeoutStatus=failed as a sticky
+# critical marker: the only legitimate path out of it is run-closeout.sh writing
+# a fresh verified done/partial itself.
+critical_failed_recorded=0
+if [[ "$closeout_status" == "failed" ]]; then
+  critical_failed_recorded=1
+  log "GUARD: closeoutStatus=failed is a recorded critical failure (reason: $(state_get '.closeoutFailureReason')). This cron will NOT stamp done over it -- only run-closeout.sh's verified finalize may clear it. Proceeding to re-launch the build."
+fi
+
+# verify_critical_legs -> 0 if every critical leg is verified, else non-zero.
+# Mirrors run-closeout.sh finalize: load-bearing deliverables + telegram
+# delivery confirmed against the gateway (not just "a URL is set").
+critical_pending=""
+verify_critical_legs() {
+  critical_pending=""
+  # Load-bearing deliverable 1: org chart artifact present.
+  if ! check_leg '.infographic1Url'; then
+    critical_pending="${critical_pending},infographic1"
+  fi
+  # Load-bearing deliverable 2: at least one Telegram message with a REAL
+  # gateway-confirmed messageId (a bare send-failed slot must not count).
+  local delivered_count
+  delivered_count=$(jq -r '(.messagesDelivered // []) | map(select((.messageId // "") | tostring | length > 0)) | length' "$STATE_FILE" 2>/dev/null)
+  if [[ -z "$delivered_count" || "$delivered_count" == "null" || "$delivered_count" == "0" ]]; then
+    critical_pending="${critical_pending},telegramSequence"
+  fi
+  # Telegram delivery-confirmation gate: cross-check captured messageIds against
+  # the gateway sent-registry (same anti-faking layer run-closeout.sh uses).
+  local verify_tg=""
+  for _vc in \
+    "$OC_ROOT/skills/37-zhc-closeout/scripts/verify-telegram-delivery.sh" \
+    "$HOME/.openclaw/skills/37-zhc-closeout/scripts/verify-telegram-delivery.sh" \
+    "/data/.openclaw/skills/37-zhc-closeout/scripts/verify-telegram-delivery.sh"; do
+    [[ -f "$_vc" ]] && verify_tg="$_vc" && break
+  done
+  if [[ -n "$verify_tg" ]]; then
+    if ! ZHC_STATE_FILE="$STATE_FILE" ZHC_LOG_FILE="$LOG_FILE" bash "$verify_tg" >>"$LOG_FILE" 2>&1; then
+      # Only add telegramSequence once.
+      case ",$critical_pending," in *,telegramSequence,*) : ;; *) critical_pending="${critical_pending},telegramSequence" ;; esac
+    fi
+  else
+    # Verifier missing: refuse to claim done (same stance as run-closeout.sh).
+    case ",$critical_pending," in *,telegramSequence,*) : ;; *) critical_pending="${critical_pending},telegramSequence-unverifiable" ;; esac
+  fi
+  critical_pending="${critical_pending#,}"
+  [[ -z "$critical_pending" ]]
+}
+
+# Kill condition 4: all 7 legs present AND critical legs VERIFIED.
 if (( total_done == 7 )); then
-  log "all 7 closeout deliverable legs done -- marking closeoutStatus=done and self-removing cron"
-  state_set '.closeoutStatus = "done" | .closeoutCompletedAt = (now | strftime("%Y-%m-%dT%H:%M:%SZ"))' || true
-  self_remove_cron "all-7-legs-done"
-  exit 0
+  if (( critical_failed_recorded == 1 )); then
+    log "all 7 leg fields are present, but closeoutStatus=failed is recorded -- REFUSING to stamp done (ghost-closeout guard). Re-launching run-closeout.sh so its verified finalize decides."
+  elif verify_critical_legs; then
+    log "all 7 closeout deliverable legs present AND critical legs VERIFIED (telegram confirmed, org-chart present) -- marking closeoutStatus=done and self-removing cron"
+    state_set '.closeoutStatus = "done" | .closeoutCompletedAt = (now | strftime("%Y-%m-%dT%H:%M:%SZ")) | .closeoutPendingSlots = []' || true
+    self_remove_cron "all-7-legs-done-verified"
+    exit 0
+  else
+    log "all 7 leg FIELDS present but CRITICAL legs UNVERIFIED (pending: ${critical_pending}) -- stamping partial, NOT done (ghost-closeout guard). Re-launching run-closeout.sh."
+    state_set ".closeoutStatus = \"partial\" | .closeoutPendingSlots = (\"${critical_pending}\" | split(\",\")) | .closeoutPartialReason = \"resume-cron critical-unverified: ${critical_pending}\"" || true
+  fi
 fi
 
 # ---- work to do: dispatch CLOSEOUT-RESUME self-ping ----

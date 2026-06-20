@@ -147,7 +147,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
        checkpoints/               (all checkpoint JSON files)
          media_library.json       (run ledger: paths, GHL folder id, version number)
          run_ledger.json          (per-phase completion log)
-         pptx_text_overlays.json  (native-text fallback entries from PPTX Assembly Specialist)
+         (no pptx_text_overlays.json — native-text overlays are eliminated, Decision 5C; its presence is AF-OVERLAY-DELIVERED)
        qc/                        (QC reports from all phases)
          copy_qc_report.json
          prompt_qc_report.json

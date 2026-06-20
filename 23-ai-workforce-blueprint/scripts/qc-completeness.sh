@@ -450,22 +450,58 @@ for dept_dir in on_disk_depts:
     # it is still counted in the floor denominator below. Only the two named
     # classes are skipped; everything else is gated exactly as before.
     _canonical_roles = library_depts.get(library_lookup, {}).get("canonical_roles", [])
-    _has_canonical_roster = bool(_canonical_roles)
+    # v13.0.2 FIX: a dept NOT in the _index.json at all (EXP=0, no library entry)
+    # is a fully bespoke department — all roles were LLM-authored, not from role-library
+    # templates. For bespoke depts, library_applicable_count must be 0 so that
+    # library_pct defaults to 100% (vacuously complete). We achieve this by treating
+    # the dept as "has a canonical roster but the roster is empty" — which causes
+    # _is_bespoke_persona to return True for all role slugs (slug not in []).
+    #
+    # _has_canonical_roster is True when:
+    #   (a) the dept IS in the index AND has >=1 canonical role (normal canonical-roster case), OR
+    #   (b) the dept is NOT in the index at all (fully bespoke: empty implied roster)
+    # _has_canonical_roster is False only for an edge-case dept explicitly in the index
+    # with 0 canonical roles (preserve existing behaviour: all roles become applicable).
+    _in_library = library_lookup in library_depts
+    _has_canonical_roster = bool(_canonical_roles) or not _in_library
 
     def _is_meta_role_exempt(slug):
+        # Check both the raw slug and bare slug (prefix-stripped) so numbered
+        # variants like "19-sop-writer" and "16-devils-advocate-marketing" are
+        # correctly exempt.  _bare_slug is defined below (inside this for-loop
+        # scope), but we replicate the strip inline here since _bare_slug is
+        # defined AFTER this function in the source — Python closures resolve
+        # names at call time so _bare_slug is already defined when this fires.
         s = slug.lower()
-        return (
-            s == "sop-writer"
-            or s == "devils-advocate"
-            or s.startswith("devils-advocate-")   # covers '-<dept>' and '--<dept>'
-        )
+        def _matches_meta(t):
+            return (
+                t == "sop-writer"
+                or t == "devils-advocate"
+                or t.startswith("devils-advocate-")   # covers '-<dept>' and '--<dept>'
+            )
+        # Strip numeric prefix before meta check (e.g. "19-sop-writer" → "sop-writer")
+        _strip = re.sub(r"^[0-9]+[-—\s]+", "", s)
+        return _matches_meta(s) or _matches_meta(_strip)
+
+    # v13.0.2 FIX (gate-measurement, 2026-06-20): on-disk role folders carry
+    # numeric prefixes (e.g. "01-brand-positioning-specialist") while the
+    # _index.json canonical_roles list uses bare slugs ("brand-positioning-specialist").
+    # Comparing the prefixed folder name directly caused _every_ numbered role to
+    # be classified as bespoke (no-template persona), zeroing library_applicable_count
+    # → library_pct=0.0 for depts whose roles are all prefixed. Fix: strip the
+    # leading numeric prefix (NN-) before the canonical-roster lookup so
+    # "01-brand-positioning-specialist" matches "brand-positioning-specialist".
+    _NUM_PREFIX_RE = re.compile(r"^[0-9]+[-—\s]+")
+    def _bare_slug(slug):
+        return _NUM_PREFIX_RE.sub("", slug.lower())
 
     def _is_bespoke_persona(slug):
         # A client-specific NO-TEMPLATE persona: the dept has a canonical roster
         # AND this role's slug is not in it (the personal-assistant reconcile —
         # PA's ~26 bespoke personas vs its 12 canonical templated roles). Depts
         # without a canonical roster have no bespoke class.
-        return _has_canonical_roster and slug.lower() not in _canonical_roles
+        # Strip numeric prefix before lookup (NN-slug → slug).
+        return _has_canonical_roster and _bare_slug(slug) not in _canonical_roles
 
     def _exempt_from_sop_floor(slug):
         # (1) never-client-facing meta-roles
@@ -557,7 +593,13 @@ for dept_dir in on_disk_depts:
     # TEMPLATED (non-bespoke) roles, so a complete dept whose only un-marked roles
     # are bespoke no-template personas can reach 100%. Depts without a canonical
     # roster have library_applicable_count == role_count, so behaviour is unchanged.
-    library_pct = (library_filled_count / library_applicable_count * 100.0) if library_applicable_count else 0.0
+    # v13.0.2 FIX: when library_applicable_count==0 (dept has NO templated/canonical
+    # roles — all roles are bespoke no-template personas), the library is vacuously
+    # complete at 100%. The old `else 0.0` caused pure-bespoke depts (client-coaches,
+    # community-management, course-creator) to read library_pct=0.0 permanently,
+    # failing the role-library gate even though there is nothing to fill. Bespoke
+    # depts legitimately carry no provenance marker; they must not be penalized.
+    library_pct = (library_filled_count / library_applicable_count * 100.0) if library_applicable_count else 100.0
     identity_pct = (identity_count / role_count * 100.0) if role_count else 0.0
     avg_sop_per_role = (sop_total / role_count) if role_count else 0.0
     avg_substantive_sop_per_role = (substantive_sop_total / role_count) if role_count else 0.0

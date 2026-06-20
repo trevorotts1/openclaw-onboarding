@@ -39,6 +39,46 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 > (blocks review→Done when the research brief, copy/image QC log, or GHL
 > media-upload record are absent).
 
+### SOP 9.0 -- Client-Asset Ingest + Scratch-Deck Parser (Decision 1C)
+
+**When to run:** At intake, whenever `intake.json.assets_provided:true` (the client answered the Brainstorming Buddy ASSET BRANCH with materials). Runs BEFORE Phase 2 so the Brand Steward + Slide Image Creator can consume the provided assets as gpt-image-2 `input_urls`.
+
+**Inputs:**
+- intake.json (`assets_provided`, the captured asset list / uploads)
+- The provided files (photos, logo, brand-color swatches, product shots, a rough/old deck, slides, concepts)
+
+**Steps:**
+1. **Classify each provided asset** into a `kind`: `photo` | `logo` | `brand_color` | `product` | `scratch_slide` | `concept`.
+2. **Upload each asset to a STABLE public URL** (the same GHL/Drive upload path SOP 9.3 uses; the URL must be reachable so KIE can fetch it as `input_urls`). Record the resolved `public_url`.
+3. **Write `working/copy/assets_manifest.json`** with this shape:
+   ```json
+   {
+     "asset_question_asked": true,
+     "assets_provided": true,
+     "assets": [
+       { "kind": "logo", "source_path": "uploads/logo.png",
+         "public_url": "https://.../logo.png",
+         "consumed_by": ["brand-steward", "slide-image-creator"] },
+       { "kind": "photo", "source_path": "uploads/founder.jpg",
+         "public_url": "https://.../founder.jpg",
+         "consumed_by": ["slide-image-creator"] }
+     ],
+     "scratch_deck": { "provided": false, "parsed": false,
+                       "path": null, "seed_prd_path": "working/copy/scratch_seed.json" }
+   }
+   ```
+   Every provided asset MUST carry a non-empty `consumed_by` list AND a resolved `public_url`. The gate **AF-MANIFEST-UNREFERENCED** (`build_deck.py` `_chk_assets_manifest`) fails the deck if any provided asset is recorded but not provably consumed (no `consumed_by`) or has no `public_url` to feed as `input_urls`. Provided client material is NEVER collected and ignored.
+4. **Scratch-deck parser sub-step (when the client uploaded a rough/old deck):** set `scratch_deck.provided:true`, extract the uploaded deck's content + structure (slide titles, copy, section order, any stated offer/claims) into `working/copy/scratch_seed.json`, then set `scratch_deck.parsed:true` and `scratch_deck.path` to the uploaded file. The Director's PRD improvement pass (director SOP 9.2) folds `scratch_seed.json` into the Mission PRD and sets `seeded_from_scratch_deck:true`. **The interview still runs in FULL — the scratch deck only SEEDS the PRD; the client still answers every question.** The gate **AF-SCRATCH-PARSE-SKIPPED** (`_chk_scratch_parse`) fails the deck if an uploaded scratch deck is recorded but not parsed, or parsed but never seeds the PRD.
+5. Notify the Director: "Asset ingest complete: N assets in assets_manifest.json (consumed_by recorded); scratch deck parsed=[yes/no]."
+
+**Outputs:**
+- `working/copy/assets_manifest.json` (per-asset `public_url` + `consumed_by`)
+- `working/copy/scratch_seed.json` (only when a scratch deck was uploaded)
+
+**Hand to:** Brand Steward (consumes logo/brand-color/photo assets as `input_urls`) + Slide Image Creator (consumes photo/product assets as `input_urls`); Director (PRD seed from `scratch_seed.json`).
+
+---
+
 ### SOP 9.1 -- Step-0 Landing Zone Creation
 
 **When to run:** At the very start of every new deck run -- before discovery interview, before any other action.
@@ -66,7 +106,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
        checkpoints/               (all checkpoint JSON files)
          media_library.json       (run ledger: paths, GHL folder id, version number)
          run_ledger.json          (per-phase completion log)
-         pptx_text_overlays.json  (native-text fallback entries from PPTX Assembly Specialist)
+         (no pptx_text_overlays.json — native-text overlays are eliminated, Decision 5C; its presence is AF-OVERLAY-DELIVERED)
        qc/                        (QC reports from all phases)
          copy_qc_report.json
          prompt_qc_report.json

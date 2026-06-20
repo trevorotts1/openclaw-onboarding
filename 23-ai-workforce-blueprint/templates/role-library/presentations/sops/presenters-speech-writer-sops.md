@@ -45,6 +45,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; voice authority: 30
 - Stiff, written-for-the-eye, corporate prose instead of prolific spoken language = FAIL.
 - A statistic, study, or quote spoken on stage with no real source = FAIL (fabricated research).
 - The hook reworded, extended, or misspelled in any spoken block = FAIL (it is a fixed verbatim refrain).
+- The hook SUNG fewer than 5 or more than 20 times across the whole speech = FAIL (`AF-SPEECH-HOOK-COUNT`, `scripts/pitch_engines_check.py::chk_speech_hook_count`, SOP-PITCH-06 1.8). Count char-exact occurrences of `intake.json.hook` in `PRESENTERS-SPEECH.md` and assert `5 <= count <= 20`. The hook is SUNG, not stamped: it must recur verbatim 5-20 times in the spoken script (refrain beats + the close circle-back). This is the SPOKEN floor; the slide-side visual ceiling (`AF-HOOK-1`/`AF-C2`, 3-4 dedicated typography slides) is a separate VISUAL rule and is UNCHANGED -- visual ceiling vs spoken floor, reconciled in SOP-SLIDE-03. Checked at Phase Speech-QC by the Speech QC Specialist.
 - A fabricated win/number/price in place of a [CLIENT TO SUPPLY] flag = FAIL.
 - An em dash anywhere in the spoken script = FAIL.
 - The spoken block duplicates the slide headline word for word = FAIL (slide is not the script).

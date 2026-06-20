@@ -396,6 +396,20 @@
       },
       "description": "Set when closeoutStatus=partial. Names the soft-failed legs (e.g. ['celebration-video', 'notion']). Hard-failed legs are in closeoutFailureReason."
     },
+    "closeoutPendingSlots": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "BUG-A FIX (ghost-closeout): names the closeout legs still NOT verified-complete when closeoutStatus is failed/partial (e.g. ['infographic-1','telegram']). Cleared to [] only on a verified closeoutStatus=done. Written by run-closeout.sh finalize and resume-closeout-cron.sh; lets operators and the resume cron see exactly which critical legs are outstanding."
+    },
+    "closeoutCriticalFailed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "BUG-A FIX (ghost-closeout): STICKY marker listing the critical legs (infographic-1 / infographic-2 / telegram) that failed in the last run-closeout.sh finalize. Set when closeoutStatus=failed; removed only when run-closeout.sh writes a VERIFIED done. resume-closeout-cron.sh reads this (and closeoutStatus=failed) and REFUSES to self-stamp closeoutStatus=done over it — the cron may only re-launch run-closeout.sh, whose own phantom-guard + telegram-delivery-confirmation gate is the only path to done."
+    },
     "commandCenterStatus": {
       "type": "string",
       "enum": [

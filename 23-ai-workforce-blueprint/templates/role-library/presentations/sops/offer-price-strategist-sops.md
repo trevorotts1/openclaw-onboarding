@@ -10,9 +10,18 @@
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
+### SOP 9.0 -- PITCHLESS SUPPRESSION GATE (Decision 2A — READ FIRST)
+
+**Hard guard, evaluated before ANY work in this role.** Read `intake.json.pitch_included`:
+- **If `pitch_included` is `false` (a PITCHLESS, teaching/content-only deck — first-class):** this role MUST NOT run. Produce NOTHING — no `price_ladder.json`, no `offer_stack.json`, no offer/ladder/anchor/re-pitch arc beats. The Director does not dispatch you, and if you are dispatched anyway you immediately return with `suppressed: true, reason: "pitch_included:false"` and write no artifact. A pitch is NEVER forced onto a pitchless deck. The gate **AF-PITCH-LEAK** (`build_deck.py` `_chk_pitch_leak`) fails the deck if any price/offer/ladder content — including the mere presence of `price_ladder.json` — appears when `pitch_included:false`.
+- **If `pitch_included` is `true`:** run normally (SOP 9.1+). The gate **AF-PITCH-MISSING** (`_chk_pitch`, conditional on `pitch_included:true`) then requires the full offer arc (value-stack -> anchor -> price ladder -> re-pitch after FINAL).
+- **If `pitch_included` is unset/non-boolean:** the deck has already failed **AF-PITCH-FLAG-UNSET** at intake; do not proceed — the Director must capture the explicit yes/no first.
+
+---
+
 ### SOP 9.1 -- Spread Value-Ladder Choreography (ANCHOR -> DROP1/2/3 -> FINAL)
 
-**When to run:** Concurrently with Phase 1 (copy writing). Must complete before the Slide Copywriter reaches the Price Ladder section.
+**When to run:** Concurrently with Phase 1 (copy writing), **ONLY when `intake.json.pitch_included:true`** (see SOP 9.0). Must complete before the Slide Copywriter reaches the Price Ladder section.
 
 **Inputs:**
 - intake.json (FINAL_PRICE, payment_plan if any, stated_anchor if client provided one)
@@ -273,7 +282,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Hand to:** Director (who routes to the Slide Copywriter and the QC Specialist)
 
-**Failure mode:** If a deck reaches the offer section without answering BOTH cost-of-inaction and value-of-action, flag it as a doctrine gap. If a non-monetary outcome has a fabricated dollar value attached, that is a fabrication violation -- strip the fake number, run the priceless pitch instead, and notify the Director.
+**Failure mode (gated AF-NO-COST-OF-INACTION; promoted from a doctrine-gap flag to a HARD GATE).** A deck that reaches the offer section without the cost-of-inaction beat is no longer merely "flagged" -- it AUTO-FAILS. The mechanical gate (`scripts/pitch_engines_check.py::chk_cost_of_inaction`, SOP-PITCH-06 1.2) asserts `price_ladder.json.cost_of_inaction_slide` is present and non-null AND a `COST_OF_INACTION` arc beat is tagged in `slides_copy.md`; either absent = `AF-NO-COST-OF-INACTION` at Phase 1Q + Phase 6. Per the cadence loop (AF-CADENCE, SOP-PITCH-06 1.1) the cost-of-inaction beat must ALSO recur per price-drop rung, not just once. If a non-monetary outcome has a fabricated dollar value attached, that is a fabrication violation -- strip the fake number, run the priceless pitch instead, and notify the Director.
 
 ---
 
@@ -337,11 +346,13 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    "guarantee": {
      "type": "unconditional|conditional|anti|implied|service",
      "statement": "one bold sentence the guarantee slide carries",
+     "guarantee_felt_frame": "the named, felt, client-specific stake the guarantee promises (e.g. 'your next 30 days is on us', 'five more sessions until your breakthrough') -- REQUIRED so the guarantee is one they can FEEL, not a bare refund template",
      "conditional_logic": "the do-the-work or eligibility clause, or null",
      "positioned_after_final_price": true,
      "source": "client_stated|strategist_proposed"
    }
    ```
+   The `guarantee_felt_frame` is gate-checked: a guarantee whose `statement` reduces to a generic refund-template phrase (money-back / 30-day / refund / satisfaction guaranteed / no-questions-asked) with no `guarantee_felt_frame` AUTO-FAILS `AF-GUARANTEE-GENERIC` (`scripts/pitch_engines_check.py::chk_guarantee_generic`, SOP-PITCH-06 1.3). The mechanical anti-generic half is the hard trigger; the felt-vs-generic quality VERDICT is scored by Copy-QC and logged to `copy_qc_report.json`. A guarantee they can feel is required, not a money-back line.
 3. **Define the SCARCITY FACTOR for the close (real only).** Set the real constraint the close will use: a real spot cap (`VIP_SPOTS`), a real cohort start date, or a real expiry window (the proven deck used a true 15-minute action window). Record:
    ```json
    "scarcity": {

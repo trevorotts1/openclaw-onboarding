@@ -244,7 +244,30 @@ POLL_MAX_PASSES = POLL_MAX_SECONDS // POLL_INTERVAL_S  # ~52 passes
 RATE_LIMIT_SLEEP_S = 20
 
 # Per-slide retries (full re-submit) on any failure.
-SLIDE_MAX_ATTEMPTS = 3
+# A KIE failCode 400 "Internal Error, Please try again later" is a VERIFIED
+# TRANSIENT upstream error: retry the IDENTICAL request with exponential backoff
+# (do NOT trim the prompt or change aspect_ratio). Overridable via env so a kit
+# render can use 4-6 attempts; default kept at a safe 6 with exponential backoff.
+def _slide_max_attempts() -> int:
+    try:
+        n = int(os.environ.get("BUILD_DECK_SLIDE_MAX_ATTEMPTS", "6"))
+    except ValueError:
+        n = 6
+    return max(1, min(10, n))
+
+
+SLIDE_MAX_ATTEMPTS = _slide_max_attempts()
+
+# Exponential backoff base (seconds) between slide re-submits on transient failure.
+def _slide_backoff_base() -> float:
+    try:
+        return max(0.5, float(os.environ.get("BUILD_DECK_SLIDE_BACKOFF_BASE", "4")))
+    except ValueError:
+        return 4.0
+
+
+SLIDE_BACKOFF_BASE = _slide_backoff_base()
+SLIDE_BACKOFF_CAP_S = 90.0
 
 # Parallel render fan-out. Each slide is an independent KIE generation (submit +
 # poll + download + verify), so they run concurrently in a ThreadPoolExecutor.
@@ -328,6 +351,33 @@ MIN_DISTINCT_DOMAINS = 6   # HARD floor on DISTINCT REAL PUBLIC domains (AF-RESE
 # smaller. 50 KiB is a conservative floor that any genuine model-baked slide clears
 # easily while a flat-placeholder/native-render signature falls below it.
 PLACEHOLDER_MIN_BYTES = 51200   # AF-I14: per-slide PNG floor — below this = not a real KIE bake
+
+# ---------------------------------------------------------------------------
+# GOAL-4 CONSTANTS (decisions 1C / 2A / 3C / 5C)
+# ---------------------------------------------------------------------------
+# 3C — Kie.ai balance pre-flight (AF-KIE-BALANCE). Phase-0 of the signature runner
+# (and a shared pre-render gate) GETs the live Kie credit balance and HARD-ABORTS
+# before a single slide is dispatched when balance < estimated_floor. The floor is
+# estimated as slide_count x PER_SLIDE_CREDIT_ESTIMATE x KIE_BALANCE_FLOOR_MULTIPLIER.
+# These are named (not inlined) so sync_check can verify they exist and the manifest
+# AF-KIE-BALANCE secondary_py_symbols can point at them.
+KIE_CREDIT_URL = "https://api.kie.ai/api/v1/chat/credit"  # AF-KIE-BALANCE: live credit endpoint
+PER_SLIDE_CREDIT_ESTIMATE = 4      # AF-KIE-BALANCE: estimated Kie credits consumed per slide render (gpt-image-2 2K)
+KIE_BALANCE_FLOOR_MULTIPLIER = 1.25  # AF-KIE-BALANCE: safety headroom over the bare per-slide estimate (retries/QC re-renders)
+
+# 5C — native PPTX text/element-overlay path ELIMINATED (AF-OVERLAY-DELIVERED). The
+# legacy fallback wrote intended text into pptx_text_overlays.json and the assembler
+# composited it as a native PPTX text box. That path is removed by construction: its
+# mere presence in a run dir, OR any native (non-notes) on-slide text run in the
+# delivered PPTX, is a hard auto-fail. The only legitimate slide text is baked into
+# the single composed gpt-image-2 image; the only legitimate PPTX text part is the
+# off-slide speaker-notes pane. OVERLAY_FORBIDDEN_FILES are the run-relative paths the
+# eliminated path used to write (any present = violation).
+OVERLAY_FORBIDDEN_FILES = (
+    "working/copy/pptx_text_overlays.json",
+    "working/checkpoints/pptx_text_overlays.json",
+    "pptx_text_overlays.json",
+)
 
 # Reserved / non-routable TLD suffixes that are never a real public source.
 _NON_PUBLIC_TLD_SUFFIXES = (
@@ -973,7 +1023,12 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
             last_err = exc
             print(f"    FAIL attempt {attempt}: {exc}", file=sys.stderr, flush=True)
             if attempt < SLIDE_MAX_ATTEMPTS:
-                time.sleep(3)
+                # Exponential backoff on the IDENTICAL request. The KIE failCode 400
+                # "Internal Error, Please try again later" is transient; re-submit the
+                # same prompt/params rather than trimming.
+                backoff = min(SLIDE_BACKOFF_CAP_S, SLIDE_BACKOFF_BASE * (2 ** (attempt - 1)))
+                print(f"    backing off {backoff:.0f}s before identical re-submit", flush=True)
+                time.sleep(backoff)
 
     raise RuntimeError(f"{name}: failed after {SLIDE_MAX_ATTEMPTS} attempts. Last error: {last_err}")
 
@@ -1584,7 +1639,17 @@ def _chk_pitch(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     Reads arc_allocation.json (the Offer Price Strategist artifact). Returns "" on
     pass, or a fatal AF-PITCH-MISSING message. Defers (passes) only when the arc
     artifact is absent — _chk_arc owns the 'arc missing' failure, this gate owns
-    'arc present but has no pitch / no re-pitch'."""
+    'arc present but has no pitch / no re-pitch'.
+
+    2A: CONDITIONAL on intake.json.pitch_included. AF-PITCH-MISSING fires ONLY when
+    pitch_included:true (the client said the deck ends with an offer/pitch). When
+    pitch_included:false this gate DEFERS — a pitchless deck is first-class and must
+    NOT be forced to carry an offer ladder; its integrity is enforced by AF-PITCH-LEAK
+    instead. When the flag is unset, AF-PITCH-FLAG-UNSET owns the failure; to avoid a
+    double-fail this gate also defers on an unset flag."""
+    if _intake_pitch_included(run_dir) is not True:
+        # pitchless (false) or unset → AF-PITCH-LEAK / AF-PITCH-FLAG-UNSET own those cases.
+        return ""
     arc = None
     for rel in ("working/copy/arc_allocation.json", "arc_allocation.json",
                 "working/arc_allocation.json"):
@@ -2877,6 +2942,465 @@ def _chk_no_dark_slides(run_dir: Path) -> str:
     return ""
 
 
+# ===========================================================================
+# GOAL-4 CHECKERS (decisions 1C / 2A / 3C / 5C)
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# 1C — client-provided materials: intake question asked + assets_manifest consumed
+#      + scratch-deck parsed. Three run-dir-scoped checkers.
+# ---------------------------------------------------------------------------
+def _read_intake_obj(run_dir: Path):
+    """Resolve + parse working/copy/intake.json (or intake.json) for the 1C/2A
+    intake-flag checks. Returns the dict, or None when absent/unparseable."""
+    for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
+        p = run_dir / rel
+        if p.exists():
+            obj = _read_json(p)
+            if isinstance(obj, dict) and "__parse_error__" not in obj:
+                return obj
+            return None
+    return None
+
+
+def _read_assets_manifest(run_dir: Path):
+    """Resolve + parse working/copy/assets_manifest.json. Returns the dict, the
+    sentinel string "__absent__" when no manifest exists, or "__parse_error__"."""
+    for rel in ("working/copy/assets_manifest.json", "assets_manifest.json",
+                "working/assets_manifest.json"):
+        p = run_dir / rel
+        if p.exists():
+            obj = _read_json(p)
+            if isinstance(obj, dict) and "__parse_error__" in obj:
+                return "__parse_error__"
+            return obj
+    return "__absent__"
+
+
+def _chk_asset_question(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """1C — AF-ASSET-QUESTION-MISSING. The signature intake MUST ask the client
+    whether they already have materials (photos / logo / brand colors / a rough or
+    old deck / slides / concepts). intake.json must record
+    asset_intake_question_asked:true. Defers (passes) only when intake.json is
+    absent — _chk_intake owns the intake-absence failure; this gate owns
+    'intake present but the asset question was never asked'."""
+    obj = _read_intake_obj(run_dir)
+    if obj is None:
+        return ""  # intake not built / unparseable — _chk_intake owns that absence.
+    if obj.get("asset_intake_question_asked") is not True:
+        return ("AF-ASSET-QUESTION-MISSING: intake.json does not record "
+                "asset_intake_question_asked:true. Every signature run MUST ask the "
+                "client the one asset-intake question (photos / a logo / brand colors / "
+                "a rough or old deck / slides / concepts) and record that it was asked. "
+                "See Brainstorming Buddy SOP 9.1/9.2 + Director intake.")
+    return ""
+
+
+def _chk_assets_manifest(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """1C — AF-MANIFEST-UNREFERENCED. When the client provided assets, the
+    Media-Librarian step must have written assets_manifest.json AND every provided
+    asset must be provably consumed downstream (a non-empty consumed_by list AND a
+    resolvable public_url the Brand Steward / Slide Image Creator can pass to
+    gpt-image-2 as input_urls). Provided-but-unconsumed assets are the defect this
+    gate catches. Defers (passes) when intake says no assets were provided, or when
+    intake is absent (pre-intake phase)."""
+    obj = _read_intake_obj(run_dir)
+    if obj is None:
+        return ""  # pre-intake — nothing to enforce yet.
+    # The intake either declares assets_provided directly, or the manifest does.
+    manifest = _read_assets_manifest(run_dir)
+    intake_says_provided = bool(obj.get("assets_provided"))
+    if manifest == "__parse_error__":
+        return ("AF-MANIFEST-UNREFERENCED: assets_manifest.json is present but is not "
+                "valid JSON, so provided-asset consumption cannot be proven. See "
+                "Media-Librarian SOP (asset-ingest step).")
+    if manifest == "__absent__":
+        if intake_says_provided:
+            return ("AF-MANIFEST-UNREFERENCED: intake.json declares the client provided "
+                    "assets (assets_provided:true) but no working/copy/assets_manifest.json "
+                    "exists. The Media-Librarian step must classify each provided asset, "
+                    "upload it to a stable public URL, and record it (with consumed_by) in "
+                    "assets_manifest.json so the Brand Steward + Slide Image Creator consume "
+                    "it as gpt-image-2 input_urls.")
+        return ""  # no assets provided and no manifest — nothing to consume.
+    # Manifest exists — validate it proves the question was asked + assets consumed.
+    if not isinstance(manifest, dict):
+        return ("AF-MANIFEST-UNREFERENCED: assets_manifest.json is not a JSON object. "
+                "Expected {asset_question_asked, assets_provided, assets:[...], scratch_deck}.")
+    manifest_provided = bool(manifest.get("assets_provided"))
+    if not (manifest_provided or intake_says_provided):
+        return ""  # manifest records no provided assets — vacuously consumed.
+    assets = manifest.get("assets")
+    if not isinstance(assets, list) or not assets:
+        return ("AF-MANIFEST-UNREFERENCED: assets_manifest.json declares assets were "
+                "provided but carries no assets[] entries. Each provided asset must be "
+                "recorded with a public_url + a non-empty consumed_by list.")
+    unconsumed = []
+    for idx, a in enumerate(assets):
+        if not isinstance(a, dict):
+            unconsumed.append(f"asset#{idx} (not an object)")
+            continue
+        consumed_by = a.get("consumed_by")
+        url = str(a.get("public_url") or a.get("url") or "").strip()
+        kind = str(a.get("kind") or "asset")
+        if not isinstance(consumed_by, list) or not consumed_by:
+            unconsumed.append(f"{kind}#{idx} (empty consumed_by)")
+        elif not url:
+            unconsumed.append(f"{kind}#{idx} (no public_url to pass as input_urls)")
+    if unconsumed:
+        return ("AF-MANIFEST-UNREFERENCED: one or more provided assets are not provably "
+                "consumed downstream — " + "; ".join(unconsumed[:8]) + ". Every provided "
+                "asset must carry a public_url AND a non-empty consumed_by (e.g. "
+                "['brand-steward','slide-image-creator']) so it is actually fed to "
+                "gpt-image-2 as input_urls, not collected and ignored.")
+    return ""
+
+
+def _chk_scratch_parse(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """1C — AF-SCRATCH-PARSE-SKIPPED. When the client uploaded a rough/old deck,
+    the scratch-deck parser MUST extract its content + structure into
+    working/copy/scratch_seed.json AND that seed must be folded into the PRD
+    (mission_prd.json). The client still answers every interview question — the
+    seed only seeds the PRD; it never replaces the interview. Defers (passes) when
+    no scratch deck was provided, or when intake/manifest are absent."""
+    manifest = _read_assets_manifest(run_dir)
+    if manifest in ("__absent__", "__parse_error__") or not isinstance(manifest, dict):
+        return ""  # no manifest — _chk_assets_manifest owns manifest problems.
+    scratch = manifest.get("scratch_deck")
+    if not isinstance(scratch, dict) or not scratch.get("provided"):
+        return ""  # no scratch deck uploaded — nothing to parse.
+    if not scratch.get("parsed"):
+        return ("AF-SCRATCH-PARSE-SKIPPED: assets_manifest.json records a client scratch "
+                "deck was provided but scratch_deck.parsed is not true. The scratch-deck "
+                "parser must extract the uploaded deck's content/structure into "
+                "working/copy/scratch_seed.json and seed the PRD (the interview still runs "
+                "in full).")
+    # The seed file must exist and be non-empty.
+    seed_rel = str(scratch.get("seed_prd_path") or "working/copy/scratch_seed.json")
+    seed_path = run_dir / seed_rel
+    if not seed_path.exists():
+        return (f"AF-SCRATCH-PARSE-SKIPPED: scratch_deck.parsed is true but the seed file "
+                f"{seed_rel!r} does not exist. The parser must write scratch_seed.json.")
+    seed_obj = _read_json(seed_path)
+    if isinstance(seed_obj, dict) and "__parse_error__" in seed_obj:
+        return (f"AF-SCRATCH-PARSE-SKIPPED: {seed_rel} is not valid JSON, so the parsed "
+                f"scratch content cannot seed the PRD.")
+    # Prove the seed reached the PRD: mission_prd.json must reference the seed.
+    prd = None
+    for rel in ("working/copy/mission_prd.json", "mission_prd.json",
+                "working/mission_prd.json"):
+        p = run_dir / rel
+        if p.exists():
+            prd = p
+            break
+    if prd is not None:
+        prd_obj = _read_json(prd)
+        if isinstance(prd_obj, dict) and "__parse_error__" not in prd_obj:
+            blob = json.dumps(prd_obj).lower()
+            if ("scratch_seed" not in blob and "scratch_deck" not in blob
+                    and not prd_obj.get("seeded_from_scratch_deck")):
+                return ("AF-SCRATCH-PARSE-SKIPPED: scratch_seed.json exists but the PRD "
+                        "(mission_prd.json) shows no seeded scratch content (no "
+                        "seeded_from_scratch_deck flag and no scratch_seed reference). The "
+                        "parsed scratch deck must seed the PRD.")
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# 2A — explicit PITCH_INCLUDED flag. Pitchless is first-class: when
+#      pitch_included:false the pitch/price machinery is suppressed and a NEW
+#      AF-PITCH-LEAK fires if any pitch/price content leaked into the deck. The
+#      pitch-required gate (AF-PITCH-MISSING) becomes conditional on
+#      pitch_included:true.
+# ---------------------------------------------------------------------------
+def _intake_pitch_included(run_dir: Path):
+    """Return True / False / None (unset) for intake.json.pitch_included."""
+    obj = _read_intake_obj(run_dir)
+    if obj is None:
+        return None
+    val = obj.get("pitch_included")
+    if isinstance(val, bool):
+        return val
+    return None
+
+
+def _chk_pitch_flag(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """2A — AF-PITCH-FLAG-UNSET. The signature intake MUST capture an explicit
+    boolean pitch_included (yes = the deck ends with an offer/pitch; no = a
+    teaching/content-only deck). It is non-defaultable: a deck must never silently
+    inherit 'has a pitch'. Defers (passes) only when intake.json is absent
+    (_chk_intake owns that absence)."""
+    obj = _read_intake_obj(run_dir)
+    if obj is None:
+        return ""  # pre-intake — _chk_intake owns intake absence.
+    val = obj.get("pitch_included")
+    if not isinstance(val, bool):
+        return ("AF-PITCH-FLAG-UNSET: intake.json.pitch_included must be an explicit "
+                "boolean captured at intake (true = the presentation ends with an "
+                "offer/pitch; false = a teaching/content-only presentation). It was "
+                f"{val!r}. Never default it — ask the client and record yes/no.")
+    return ""
+
+
+# Pitch/price/offer tokens that must NOT appear anywhere in a pitchless deck's arc
+# or copy. Lowercase substring match. Kept narrow + specific so ordinary teaching
+# copy (e.g. 'value', 'price of admission' as metaphor) is not over-caught — these
+# are sale-mechanic tokens, the price-ladder/offer machinery.
+PITCHLESS_FORBIDDEN_TOKENS = (
+    "price ladder", "price_ladder", "offer ladder", "offer_ladder",
+    "value stack", "value-stack", "value_stack",
+    "re-pitch", "repitch", "re_pitch", "second close", "second-close",
+    "anchor price", "anchor_price", "buy now", "enroll now", "enrol now",
+    "limited-time offer", "limited time offer", "payment plan", "deposit today",
+    "money-back guarantee", "money back guarantee", "act now",
+    "cost of inaction", "cost_of_inaction",
+)
+
+
+def _chk_pitch_leak(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """2A — AF-PITCH-LEAK. A PITCHLESS deck (intake.json.pitch_included:false) must
+    contain NO pitch/price/offer/ladder content. Scans arc_allocation.json,
+    slides_copy.md, and price_ladder.json for the suppressed sale-mechanic tokens
+    AND for the mere presence of a price_ladder.json (the Offer Price Strategist
+    must not have run). Defers (passes) when pitch_included is true or unset (true
+    decks are governed by AF-PITCH-MISSING; unset is governed by AF-PITCH-FLAG-UNSET)."""
+    if _intake_pitch_included(run_dir) is not False:
+        return ""  # only pitchless decks are leak-checked.
+    leaks = []
+    # The price-ladder artifact must not exist at all in a pitchless deck.
+    for rel in ("working/copy/price_ladder.json", "price_ladder.json",
+                "working/price_ladder.json"):
+        if (run_dir / rel).exists():
+            leaks.append(f"{rel} present (Offer Price Strategist ran on a pitchless deck)")
+            break
+    # Token scan over the arc + copy artifacts.
+    scan = []
+    for rel in ("working/copy/arc_allocation.json", "arc_allocation.json",
+                "working/copy/slides_copy.md", "slides_copy.md",
+                "working/copy/price_ladder.json"):
+        p = run_dir / rel
+        if p.exists():
+            scan.append((rel, p.read_text(errors="replace").lower()))
+    for rel, low in scan:
+        hits = [t for t in PITCHLESS_FORBIDDEN_TOKENS if t in low]
+        if hits:
+            leaks.append(f"{rel}: " + ", ".join(repr(h) for h in hits[:6]))
+    if leaks:
+        return ("AF-PITCH-LEAK: intake.json declares this is a PITCHLESS deck "
+                "(pitch_included:false) but pitch/price/offer content leaked in — "
+                + "; ".join(leaks) + ". A pitchless deck is built with NO pitch: the "
+                "Offer Price Strategist and price ladder are SUPPRESSED and no "
+                "offer/ladder/re-pitch/cost-of-inaction beats may appear.")
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# 3C — Kie.ai balance pre-flight (AF-KIE-BALANCE). Phase-0 of the signature runner
+#      and a shared pre-render gate. HARD-ABORTS before any render when the live
+#      Kie credit balance is below the estimated floor for this deck.
+# ---------------------------------------------------------------------------
+def _fetch_kie_balance(api_key: str, url: str = KIE_CREDIT_URL,
+                       timeout: int = 30) -> float:
+    """GET the live Kie credit balance. Returns the numeric balance. Raises
+    RuntimeError on a network/parse error so the caller fails LOUD rather than
+    treating an unknown balance as 'enough'. Parses the common Kie response shapes
+    ({data:{credit|credits|balance}} or a top-level number)."""
+    import urllib.request
+    import urllib.error
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {api_key}",
+        "Accept": "application/json",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
+        raise RuntimeError(f"Kie credit endpoint unreachable ({url}): {exc}")
+    try:
+        obj = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Kie credit response is not JSON: {exc}; body={raw[:200]!r}")
+    # Common shapes (verified live 2026-06-20):
+    #   {"code":200,"msg":"success","data":1951.33}   <- data is a BARE NUMBER
+    #   {"data": {"credit": N}} / {"credits": N} / {"balance": N} / a top-level number N
+    candidates = []
+    if isinstance(obj, (int, float)):
+        candidates.append(obj)
+    if isinstance(obj, dict):
+        # The real Kie credit endpoint returns the balance as a bare number under "data".
+        data_val = obj.get("data")
+        if isinstance(data_val, (int, float)):
+            candidates.append(data_val)
+        # Some shapes nest the number under data{credit|credits|balance|...}; others put
+        # it at the top level. Scan both the data dict and the outer dict for a key.
+        for container in (data_val if isinstance(data_val, dict) else None, obj):
+            if not isinstance(container, dict):
+                continue
+            for k in ("credit", "credits", "balance", "remaining", "available"):
+                v = container.get(k)
+                if isinstance(v, (int, float)):
+                    candidates.append(v)
+    if not candidates:
+        raise RuntimeError(f"Kie credit response carried no numeric balance: {raw[:200]!r}")
+    return float(candidates[0])
+
+
+def kie_balance_preflight(run_dir: Path, slide_count: int,
+                          api_key: Optional[str] = None) -> str:
+    """3C — AF-KIE-BALANCE. Phase-0 balance gate. Computes the estimated credit
+    floor for this deck (slide_count x PER_SLIDE_CREDIT_ESTIMATE x
+    KIE_BALANCE_FLOOR_MULTIPLIER), fetches the live Kie balance, and returns a
+    fatal AF-KIE-BALANCE string when balance < floor. Returns "" on pass.
+
+    SHARED implementation: the signature runner's Phase-0 and any pre-render hook
+    both call this so there is ONE balance check. Defers (passes) ONLY when no API
+    key is available AND adhoc/no-network context (slide_count<=0) — a real run with
+    a key always evaluates. A balance the endpoint cannot return is a HARD ABORT (an
+    unknown balance is never treated as 'enough')."""
+    if not slide_count or slide_count <= 0:
+        return ""  # nothing to render — no floor to clear.
+    if not api_key:
+        # No key available to query — cannot prove balance; this is only reached on
+        # an adhoc/offline path. The render path's own key load fails loud elsewhere.
+        return ""
+    estimated_floor = float(slide_count) * PER_SLIDE_CREDIT_ESTIMATE * KIE_BALANCE_FLOOR_MULTIPLIER
+    try:
+        balance = _fetch_kie_balance(api_key)
+    except RuntimeError as exc:
+        return ("AF-KIE-BALANCE: could not verify the Kie.ai credit balance before "
+                f"render ({exc}). An unverifiable balance is a HARD ABORT — never render "
+                "on an unknown balance. Fix the key / endpoint, or top up and retry.")
+    if balance < estimated_floor:
+        return ("AF-KIE-BALANCE: Kie.ai credit balance is below the estimated floor for "
+                f"this deck. balance={balance:g} credits, estimated_floor={estimated_floor:g} "
+                f"({slide_count} slides x {PER_SLIDE_CREDIT_ESTIMATE} credits x "
+                f"{KIE_BALANCE_FLOOR_MULTIPLIER} headroom). HARD ABORT before any render so "
+                "the run does not die mid-deck. Top up Kie.ai credits and retry.")
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# 3C — phase-precondition gate (AF-PHASE-SKIPPED). The deterministic runner
+#      (run_signature_deck.py) makes skipping/reordering a phase structurally
+#      impossible: before dispatching phase N+1 it proves every lower-order phase
+#      has an attestation in working/checkpoints/process_manifest.json OR a logged
+#      owner-authorized skip. This shared checker is the single source of truth for
+#      that precondition (the runner imports it; build_deck references it so the
+#      symbol is live and gate-integrity-visible).
+# ---------------------------------------------------------------------------
+def check_phase_preconditions(run_dir: Path, phase_id, prior_phase_ids) -> str:
+    """3C — AF-PHASE-SKIPPED. Returns "" when every phase in prior_phase_ids has
+    either an attestation in working/checkpoints/process_manifest.json (phases[].id /
+    phase_id) OR an owner-authorized skip record in
+    working/checkpoints/phase_skip_approvals.json (owner_approved:true). Returns a
+    fatal AF-PHASE-SKIPPED string naming the first unmet prior phase otherwise — the
+    runner HARD-ABORTS on it, so a phase can never be silently skipped or reordered.
+    An owner-authorized skip is the ONLY exception, and it must be logged."""
+    attested = set()
+    pm = run_dir / "working" / "checkpoints" / "process_manifest.json"
+    if pm.exists():
+        obj = _read_json(pm)
+        if isinstance(obj, dict) and "__parse_error__" not in obj:
+            for ph in obj.get("phases", []) or []:
+                if isinstance(ph, dict):
+                    for k in ("id", "phase_id", "phase", "name"):
+                        v = ph.get(k)
+                        if isinstance(v, str) and v.strip():
+                            attested.add(v.strip())
+    approved = set()
+    sk = run_dir / "working" / "checkpoints" / "phase_skip_approvals.json"
+    if sk.exists():
+        sobj = _read_json(sk)
+        records = sobj if isinstance(sobj, list) else (
+            (sobj.get("approvals") or sobj.get("skips") or [])
+            if isinstance(sobj, dict) else [])
+        for r in records if isinstance(records, list) else []:
+            if (isinstance(r, dict) and r.get("owner_approved") is True
+                    and str(r.get("phase_id") or "").strip()):
+                approved.add(str(r["phase_id"]).strip())
+    for prior in (prior_phase_ids or []):
+        pid = str(prior).strip()
+        if not pid or pid in attested or pid in approved:
+            continue
+        return ("AF-PHASE-SKIPPED: phase " + str(phase_id) + " was dispatched before "
+                "prior phase " + pid + " was attested. Each phase N+1 reads phase N's "
+                "attestation in working/checkpoints/process_manifest.json as a "
+                "precondition, so skipping or reordering a phase is structurally "
+                "impossible EXCEPT with a logged owner-authorized skip in "
+                "working/checkpoints/phase_skip_approvals.json (an entry with "
+                "phase_id + owner_approved:true + approved_by + reason + timestamp). "
+                "See run_signature_deck.py + SOP-SLIDE-05-PROCESS-MANIFEST.md.")
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# 5C — native-overlay path ELIMINATED (AF-OVERLAY-DELIVERED). No slide may ship a
+#      native PPTX text run instead of a single composed gpt-image-2 image, and the
+#      eliminated pptx_text_overlays.json must never be present.
+# ---------------------------------------------------------------------------
+def _delivered_pptx_native_text(pptx_path: Path) -> str:
+    """Return a non-empty reason if the delivered PPTX carries any native on-slide
+    text run (a shape with non-empty text_frame text on a slide). The off-slide
+    speaker-notes part is NOT on-slide and is explicitly allowed. Returns "" when
+    the deck is image-only (the required state) or when python-pptx is unavailable
+    (cannot scan — defers rather than false-fail)."""
+    try:
+        from pptx import Presentation
+    except ImportError:
+        return ""  # cannot scan without python-pptx; the file-presence half still fires.
+    try:
+        prs = Presentation(str(pptx_path))
+    except Exception:  # noqa: BLE001
+        # A file python-pptx cannot open is NOT a valid deck to scan here — the
+        # postflight bundle-completeness magic-byte gate (AF-BUNDLE-COMPLETE) owns
+        # malformed / decoy .pptx files. Defer rather than false-fail AF-OVERLAY-DELIVERED.
+        return ""
+    offenders = []
+    for idx, slide in enumerate(prs.slides, start=1):
+        for shape in slide.shapes:
+            if not getattr(shape, "has_text_frame", False):
+                continue
+            txt = (shape.text_frame.text or "").strip()
+            if txt:
+                offenders.append(f"slide {idx}: native text run {txt[:40]!r}")
+    if offenders:
+        return ("delivered slides carry NATIVE on-slide text instead of a single composed "
+                "gpt-image-2 image — " + "; ".join(offenders[:8]))
+    return ""
+
+
+def _chk_no_overlay(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """5C — AF-OVERLAY-DELIVERED. The native PPTX text/element-overlay path is
+    eliminated. This gate fails when (a) any eliminated pptx_text_overlays.json file
+    is present in the run dir (its mere presence at assembly is a violation), OR
+    (b) the delivered PPTX carries any native (non-notes) on-slide text run. The
+    only legitimate slide text is baked into the single composed gpt-image-2 image;
+    the only legitimate PPTX text part is the off-slide speaker-notes pane. Persistent
+    garble is re-prompted / re-seeded then escalated to a human — NEVER overlaid."""
+    # (a) the eliminated overlays file must never exist.
+    for rel in OVERLAY_FORBIDDEN_FILES:
+        if (run_dir / rel).exists():
+            return ("AF-OVERLAY-DELIVERED: the eliminated native-text-overlay file "
+                    f"{rel!r} is present. The pptx_text_overlays.json native-overlay path "
+                    "was removed by construction (Decision 5C). Persistent garble must be "
+                    "re-prompted / re-seeded and, if it still fails, escalated to a human — "
+                    "NEVER composited as a native PPTX text box. Delete this file and "
+                    "re-render the affected slide as a single composed gpt-image-2 image.")
+    # (b) scan any delivered PPTX in the run dir for native on-slide text.
+    for pptx in sorted(run_dir.glob("**/*.pptx")):
+        # skip Office lock/temp files
+        if pptx.name.startswith("~$"):
+            continue
+        reason = _delivered_pptx_native_text(pptx)
+        if reason:
+            return ("AF-OVERLAY-DELIVERED: " + reason + ". Every delivered slide must be a "
+                    "SINGLE composed gpt-image-2 image with its text baked in; the native "
+                    "PPTX text-overlay path is eliminated. Re-prompt/re-seed the garbled "
+                    "slide, escalate to a human if it persists, and re-render — do not add a "
+                    "native text run.")
+    return ""
+
+
 PREFLIGHT_REQUIRED = [
     ("working/copy/intake.json",
      "intake.json (interview_confirmed:true, presentation_mode one-person|general)",
@@ -3044,6 +3568,53 @@ PREFLIGHT_REQUIRED = [
      "no-dark-slides — slides must use light backgrounds by default; dark only with client_dark_theme:true",
      "Intake/Prompt — Director intake + Slide Image Creator (AF-DARK-SLIDE)",
      _chk_no_dark_slides),
+    # GOAL-4 / 1C — ASSET-QUESTION gate (AF-ASSET-QUESTION-MISSING). The signature
+    # intake must ask whether the client already has materials (photos/logo/colors/
+    # rough deck/slides/concepts). Run-dir-scoped (None sentinel); defers pre-intake.
+    (None,
+     "asset-intake question asked — intake records asset_intake_question_asked:true",
+     "Intake — Brainstorming Buddy SOP 9.1/9.2 + Director (AF-ASSET-QUESTION-MISSING)",
+     _chk_asset_question),
+    # GOAL-4 / 1C — ASSETS-MANIFEST gate (AF-MANIFEST-UNREFERENCED). Provided assets
+    # must be recorded in assets_manifest.json AND provably consumed (public_url +
+    # consumed_by). Run-dir-scoped; defers when no assets provided / pre-intake.
+    (None,
+     "provided assets consumed — assets_manifest.json records each provided asset with a "
+     "public_url + non-empty consumed_by (fed to gpt-image-2 as input_urls)",
+     "Media-Librarian asset-ingest step (AF-MANIFEST-UNREFERENCED)",
+     _chk_assets_manifest),
+    # GOAL-4 / 1C — SCRATCH-PARSE gate (AF-SCRATCH-PARSE-SKIPPED). An uploaded
+    # rough/old deck must be parsed into scratch_seed.json and seed the PRD (the
+    # interview still runs in full). Run-dir-scoped; defers when no scratch deck.
+    (None,
+     "scratch deck parsed — uploaded old deck extracted to scratch_seed.json and seeded "
+     "into the PRD (interview still runs in full)",
+     "Media-Librarian scratch-deck parser sub-step (AF-SCRATCH-PARSE-SKIPPED)",
+     _chk_scratch_parse),
+    # GOAL-4 / 2A — PITCH-FLAG gate (AF-PITCH-FLAG-UNSET). intake.json must capture an
+    # explicit boolean pitch_included. Run-dir-scoped; defers pre-intake.
+    (None,
+     "pitch_included captured — intake.json carries an explicit boolean pitch_included "
+     "(yes = offer/pitch deck; no = teaching/content-only)",
+     "Intake — Brainstorming Buddy + Director (AF-PITCH-FLAG-UNSET)",
+     _chk_pitch_flag),
+    # GOAL-4 / 2A — PITCH-LEAK gate (AF-PITCH-LEAK). A pitchless deck
+    # (pitch_included:false) must carry NO pitch/price/offer/ladder content and no
+    # price_ladder.json. Run-dir-scoped; defers when pitch_included is true/unset.
+    (None,
+     "pitchless integrity — a pitch_included:false deck has no offer/price/ladder/re-pitch "
+     "content and no price_ladder.json (Offer Price Strategist suppressed)",
+     "Phase 3 — pitchless suppression (AF-PITCH-LEAK)",
+     _chk_pitch_leak),
+    # GOAL-4 / 5C — NO-OVERLAY gate (AF-OVERLAY-DELIVERED). The native PPTX
+    # text-overlay path is eliminated: no pptx_text_overlays.json may be present and
+    # no delivered slide may carry a native on-slide text run (only a single composed
+    # gpt-image-2 image; only off-slide speaker notes are allowed). Run-dir-scoped.
+    (None,
+     "no native overlay — no pptx_text_overlays.json present and no delivered slide ships "
+     "native on-slide text instead of a composed gpt-image-2 image",
+     "Phase 5/6/Postflight — render + PPTX assembly (AF-OVERLAY-DELIVERED)",
+     _chk_no_overlay),
 ]
 
 
@@ -3930,6 +4501,34 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
             update_deliverable_status(ledger_path, "deck_pptx", "failed",
                                       error=brand_reason)
 
+    # --- AF-OVERLAY-DELIVERED sub-check (2026-06-20, Decision 5C) ---
+    # The native PPTX text-overlay path is eliminated. At closeout, re-prove no
+    # eliminated pptx_text_overlays.json is present AND the delivered PPTX carries no
+    # native on-slide text run (only a composed gpt-image-2 image + off-slide notes).
+    overlay_reason = ""
+    if run_dir is not None:
+        overlay_reason = _chk_no_overlay(run_dir, slides_path)
+    # Also scan the bundle's delivered PPTX directly (bundle_dir may be outside run_dir).
+    if not overlay_reason:
+        for pptx in sorted(bundle_dir.glob("*.pptx")):
+            if pptx.name.startswith("~$"):
+                continue
+            r = _delivered_pptx_native_text(pptx)
+            if r:
+                overlay_reason = ("AF-OVERLAY-DELIVERED: " + r + ". Every delivered slide "
+                                  "must be a single composed gpt-image-2 image; the native "
+                                  "PPTX text-overlay path is eliminated (Decision 5C).")
+                break
+    if overlay_reason:
+        missing_or_short.append((
+            "deck_pptx",
+            _expand_filename("deck.pptx", deck_slug),
+            "no native overlay (every slide a composed gpt-image-2 image; "
+            "no pptx_text_overlays.json)",
+            0, 0, "OVERLAY_DELIVERED"))
+        update_deliverable_status(ledger_path, "deck_pptx", "failed",
+                                  error=overlay_reason)
+
     # --- TELEPROMPTER-PUBLISH sub-check (folded under AF-BUNDLE-COMPLETE) ---
     # A self-contained HTML on disk is NOT a delivered teleprompter. The bundle is not
     # complete until the teleprompter is hosted at the central Cloudflare URL and that
@@ -4009,6 +4608,17 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
                 print(f"           missing image, or flat-placeholder fill) — AF-I14.",
                       file=sys.stderr)
                 print(f"           {kie_fail_reason}", file=sys.stderr)
+            elif reason == "OVERLAY_DELIVERED":
+                print(f"  OVERLAY   [{key}] {fname}  ({label})", file=sys.stderr)
+                print(f"           a delivered slide ships native on-slide text (or a "
+                      f"pptx_text_overlays.json", file=sys.stderr)
+                print(f"           is present) instead of a single composed gpt-image-2 "
+                      f"image — AF-OVERLAY-DELIVERED.", file=sys.stderr)
+                print(f"           {overlay_reason}", file=sys.stderr)
+                print(f"           The native-overlay path is eliminated (Decision 5C): "
+                      f"re-prompt/re-seed", file=sys.stderr)
+                print(f"           the garbled slide, escalate to a human if it persists, "
+                      f"and re-render.", file=sys.stderr)
             elif reason == "UNPUBLISHED":
                 print(f"  UNPUBLISHED [{key}] {fname}  ({label})", file=sys.stderr)
                 print(f"           the teleprompter HTML exists locally but was not "
@@ -4221,6 +4831,32 @@ def main():
     # the sentinel "" and will fail at the HTTP layer, not silently succeed.
     api_key = "" if adhoc else load_api_key()
     renders_dir.mkdir(parents=True, exist_ok=True)
+
+    # === GOAL-4 / 3C PHASE-0 PRE-FLIGHT — runs BEFORE any KIE render ===
+    # (1) AF-KIE-BALANCE: HARD-ABORT before a single slide is dispatched when the
+    #     client's live Kie.ai credit balance is below the estimated floor for this
+    #     deck, so a run never dies mid-deck and burns credits on a partial render.
+    #     Skipped in --adhoc mode (no key / no network). The runner
+    #     (run_signature_deck.py) calls the same kie_balance_preflight() at its Phase-0.
+    # (2) AF-PHASE-SKIPPED: the deterministic phase-precondition contract lives in
+    #     check_phase_preconditions(); the runner enforces it across phases. build_deck
+    #     references it here (render = the P4-RENDER phase) so the symbol is live and a
+    #     direct render is recorded as honouring the precondition contract.
+    if not adhoc:
+        _box_type = detect_platform(run_dir, platform_arg)
+        print(f"=== PHASE-0 PRE-FLIGHT — box_type={_box_type}; "
+              f"Kie balance floor check before render ===", flush=True)
+        _balance_reason = kie_balance_preflight(run_dir, len(slides), api_key)
+        if _balance_reason:
+            print("\nFATAL: " + _balance_reason, file=sys.stderr)
+            sys.exit(4)
+        # Render is the canonical P4-RENDER phase; a direct build has no prior runner
+        # attestations to require (prior_phase_ids empty), so this is a no-op pass here
+        # but keeps the precondition contract symbol on the live enforcement path.
+        _precondition_reason = check_phase_preconditions(run_dir, "P4-RENDER", [])
+        if _precondition_reason:
+            print("\nFATAL: " + _precondition_reason, file=sys.stderr)
+            sys.exit(4)
 
     print(f"=== build_deck — {len(slides)} slides ===", flush=True)
     print(f"slides.json: {slides_path}", flush=True)

@@ -323,7 +323,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Hand to:** QC Specialist -- Presentations (Phase 1Q criterion 12, Doctrine compliance)
 
-**Failure mode:** If the intake does not name any client methodology to treat as a system (rule 2 has nothing to sell), do not invent one. Flag to the Director that the deck lacks a named system to weave, and ask whether the client has one to supply. Never fabricate a methodology name.
+**Failure mode (Branded-Methodology engine; gated AF-NO-BRANDED-METHOD + AF-METHOD-FABRICATED).** Generic content sells at generic prices, so a deck whose intake content is generic must still carry a named-method beat — but the name is PROPOSED for owner approval, never silently invented on the slide. Two distinct failures:
+- **Silent fabrication is still banned (AF-METHOD-FABRICATED).** A method name printed on a slide with neither (a) a client-supplied `intake.json.named_methodology`, nor (b) an `owner_approved:true` record for the proposed name in `working/copy/method_name_approval.json`, auto-fails. Never composite an unapproved invented name.
+- **No method beat at all is also a failure (AF-NO-BRANDED-METHOD).** If the intake names no methodology (rule 2 has nothing to sell), do NOT leave the deck method-less and do NOT silently invent one. Instead PROPOSE a branded-method name (work with the Brainstorming Buddy for candidates), route it to the Director who takes it to the owner, and record the owner's decision in `working/copy/method_name_approval.json` (`proposed_name`, `owner_approved:true|false`). Only an owner-approved name (or a client-supplied one) may reach a slide. This replaces the retired hard "never fabricate a methodology name" ban: silent fabrication stays banned, owner-approved naming is now required.
 
 ---
 

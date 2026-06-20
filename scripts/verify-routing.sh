@@ -9,14 +9,35 @@
 #       "default agent" = first agent with default:true; falls back to id="main"
 #   G5  workspace real-path is in skills.load.allowSymlinkTargets
 #   G6  at least one department workspace row exists in mission-control.db
+#   G7  CEO/main agent tool-gate: production tools (write/edit/apply_patch/
+#       browser/canvas/image/process) denied + GHL MCP denied by provider.
+#       FAIL-WARN (not clean) while 'exec' is still allowed as the interim
+#       ingest-routing path; --strict-exec hard-fails that interim state. When an
+#       owner-consent sidecar is present the gate is intentionally lifted (INFO).
+#   G8  CEO PreToolUse intent-gate hook is wired (Claude-Code boxes) AND the
+#       owner-consent sidecar path is NOT inside any agent-writable workspace.
+#       (block-and-redirect enforcement — goal doc Option 1). On pure OpenClaw
+#       boxes with no Claude Code settings.json this gate is INFO/skip, since the
+#       OpenClaw runtime brake is the Layer-1 hard tool-deny, not a hook.
+#
+# Runtime obedience probes (only with --probe; need a live Command Center):
+#   G9   in-house master self-execution (no consent) → task failed + deliverable
+#        discarded + work re-emitted to a specialist (QC state-gate).
+#   G10  competence-excuse handback → 422 reject, task stays with the specialist
+#        and is re-dispatched (no-bounce-back rule).
+#   G11  CEO requested_model survives ingest onto tasks.model_id (model choice
+#        preserved through the gate).
 #
 # Exit codes:
 #   0  — all checks pass (routing is clean)
 #   1  — one or more checks failed (FATAL — do not proceed)
 #
 # Usage:
-#   bash verify-routing.sh             # check + report + exit
-#   bash verify-routing.sh --quiet     # exit code only (no printed output)
+#   bash verify-routing.sh                 # static gates G1–G8
+#   bash verify-routing.sh --quiet         # exit code only (no printed output)
+#   bash verify-routing.sh --strict-exec   # hard-fail G7 while exec is still allowed
+#   bash verify-routing.sh --probe         # also run runtime probes G9/G10/G11
+#                                          # (PROBE_BASE_URL overrides CC base URL)
 #
 # Designed to be wired as a hard precondition gate in run-closeout.sh (Skill 37).
 # Also callable standalone for fleet sweeps or CI.
@@ -24,9 +45,15 @@
 set -euo pipefail
 
 QUIET=0
+STRICT_EXEC=0
+PROBE=0
 for _arg in "$@"; do
   [[ "$_arg" == "--quiet" ]] && QUIET=1
+  [[ "$_arg" == "--strict-exec" ]] && STRICT_EXEC=1
+  [[ "$_arg" == "--probe" ]] && PROBE=1
 done
+# Base URL for the runtime probes (G9/G10/G11). Override with PROBE_BASE_URL.
+PROBE_BASE_URL="${PROBE_BASE_URL:-http://localhost:4000}"
 
 _pass() { [ "$QUIET" = "0" ] && printf '[verify-routing] PASS  %s\n' "$*"; }
 _fail() { printf '[verify-routing] FATAL %s\n' "$*" >&2; }
@@ -306,6 +333,454 @@ PYEOF
       _pass "G6: $DEPT_COUNT department workspace rows found in $DB_PATH"
       ;;
   esac
+fi
+
+# ─── G7: CEO tool-gate present (GOAL-5 Item 1 — Layer-1 structural brake) ─────
+# The hard structural brake: the CEO/orchestrator agent must DENY every
+# production tool so skills:[] (G4) is not the only thing stopping in-house work.
+# Asserts, on the resolved CEO agent in openclaw.json:
+#   - tools.deny ⊇ {write, edit, apply_patch, browser, canvas, image, process}
+#   - tools.byProvider["ghl-community-mcp"].deny == ["*"]  (GHL MCP denied)
+#   - exec is NOT in tools.allow  → clean PASS
+#     exec IS in tools.allow      → FAIL-WARN (interim routing hole; not clean)
+#                                   unless a route-task MCP tool is allowed.
+# The CEO agent is resolved as id==main → default:true → known CEO ids.
+#
+# NOTE: this gate intentionally PASSES on a CONSENTED box (owner carve-out
+# active: ceo-consent.json present AND the gate lifted) — re-gating that box
+# would fight the owner. If the consent sidecar is present, G7 reports INFO and
+# does not fail (the QC state-gate covers a consented box at completion time).
+_info "G7: checking CEO tool-gate (production tools denied on the orchestrator)"
+
+# Honor an active owner-consent carve-out: if consent is granted, the lifted
+# gate is EXPECTED, not a failure.
+_CEO_CONSENT_FILE=""
+if [ -n "${CEO_CONSENT_FILE:-}" ]; then
+  _CEO_CONSENT_FILE="$CEO_CONSENT_FILE"
+elif [ -f /data/.openclaw/state/ceo-consent.json ]; then
+  _CEO_CONSENT_FILE="/data/.openclaw/state/ceo-consent.json"
+elif [ -f "$HOME/.openclaw/state/ceo-consent.json" ]; then
+  _CEO_CONSENT_FILE="$HOME/.openclaw/state/ceo-consent.json"
+fi
+
+G7_RESULT=$(python3 - "$OC_CONFIG" <<'PYEOF'
+import json, sys
+from pathlib import Path
+
+REQUIRED_DENY = {"write", "edit", "apply_patch", "browser", "canvas", "image", "process"}
+CEO_IDS = ("main", "dept-ceo", "ceo", "master-orchestrator", "dept-master-orchestrator")
+
+try:
+    cfg = json.loads(Path(sys.argv[1]).read_text())
+    agents = cfg.get("agents", {}).get("list", []) or []
+
+    ceo = None
+    for ag in agents:
+        if isinstance(ag, dict) and ag.get("id") == "main":
+            ceo = ag; break
+    if ceo is None:
+        for ag in agents:
+            if isinstance(ag, dict) and ag.get("default") is True:
+                ceo = ag; break
+    if ceo is None:
+        for ag in agents:
+            if isinstance(ag, dict) and ag.get("id") in CEO_IDS:
+                ceo = ag; break
+    if ceo is None:
+        print("NO_CEO_AGENT"); sys.exit(0)
+
+    cid = ceo.get("id", "<unknown>")
+    tools = ceo.get("tools")
+    if not isinstance(tools, dict):
+        print(f"NO_TOOLS:{cid}"); sys.exit(0)
+
+    deny = set(tools.get("deny") or [])
+    missing = REQUIRED_DENY - deny
+    if missing:
+        print(f"DENY_INCOMPLETE:{cid}:{','.join(sorted(missing))}"); sys.exit(0)
+
+    # GHL MCP denied? accept byProvider form OR the name-glob fallback.
+    bp = tools.get("byProvider") or {}
+    ghl_bp = isinstance(bp, dict) and (
+        bp.get("ghl-community-mcp", {}).get("deny") == ["*"]
+        or bp.get("ghl-mcp", {}).get("deny") == ["*"]
+    )
+    ghl_glob = any(t in deny for t in ("ghl-community-mcp__*", "ghl-mcp__*"))
+    if not (ghl_bp or ghl_glob):
+        print(f"GHL_NOT_DENIED:{cid}"); sys.exit(0)
+
+    allow = set(tools.get("allow") or [])
+    has_route_tool = any(t.endswith("__route_task") or t == "route_task" for t in allow)
+    if "exec" in allow and not has_route_tool:
+        # Interim posture: exec is the routing path but also a production hole.
+        print(f"INTERIM_EXEC:{cid}"); sys.exit(0)
+
+    print(f"PASS:{cid}")
+except Exception as e:
+    print(f"ERROR:{e}")
+PYEOF
+) || G7_RESULT="ERROR:python3_failed"
+
+# If an owner-consent carve-out is active, a lifted gate is expected → INFO only.
+if [ -n "$_CEO_CONSENT_FILE" ] && [ -f "$_CEO_CONSENT_FILE" ]; then
+  case "$G7_RESULT" in
+    PASS:*) _pass "G7: CEO tool-gate present (id=${G7_RESULT#PASS:}) [consent sidecar also present]" ;;
+    *)      _info "G7: owner-consent carve-out ACTIVE ($_CEO_CONSENT_FILE) — CEO tool-gate is intentionally lifted; QC state-gate covers this box. Not failing." ;;
+  esac
+else
+  case "$G7_RESULT" in
+    PASS:*)
+      _pass "G7: CEO tool-gate present (id=${G7_RESULT#PASS:}) — production tools + GHL MCP denied, exec not exposed"
+      ;;
+    INTERIM_EXEC:*)
+      # FAIL-WARN (visible, NOT a silent pass): the production denies ARE in
+      # place (the main brake holds), but exec is still allowed as the routing
+      # path — a residual hole until the route-task MCP tool ships. We do NOT
+      # mark the box "clean" (no PASS line) yet we do NOT block closeout fleet-
+      # wide on a state that is currently universal. Pass --strict-exec to make
+      # this a hard FAILURE once route-task is expected on the box.
+      if [ "${STRICT_EXEC:-0}" = "1" ]; then
+        _fail "G7: CEO tool-gate INTERIM (id=${G7_RESULT#INTERIM_EXEC:}) — production tools denied BUT 'exec' still in allow (routing hole). --strict-exec set: ship the route-task MCP tool + remove exec from CEO_TOOL_ALLOW."
+        FAILURES=$((FAILURES + 1))
+      else
+        printf '[verify-routing] WARN  G7: CEO tool-gate INTERIM (id=%s) — production tools + GHL MCP denied (brake holds), but '\''exec'\'' is still allowed as the ingest-routing path. NOT marked clean. Replace exec with the route-task MCP tool to clear; run with --strict-exec to hard-fail.\n' "${G7_RESULT#INTERIM_EXEC:}" >&2
+      fi
+      ;;
+    DENY_INCOMPLETE:*)
+      _G7_REST="${G7_RESULT#DENY_INCOMPLETE:}"
+      _fail "G7: CEO tool-gate INCOMPLETE (id=${_G7_REST%%:*}) — missing denies: ${_G7_REST#*:}; run apply-routing-fix.sh (Layer 5)"
+      FAILURES=$((FAILURES + 1))
+      ;;
+    GHL_NOT_DENIED:*)
+      _fail "G7: CEO tool-gate (id=${G7_RESULT#GHL_NOT_DENIED:}) does NOT deny GHL MCP — add byProvider['ghl-community-mcp'].deny=['*']; run apply-routing-fix.sh (Layer 5)"
+      FAILURES=$((FAILURES + 1))
+      ;;
+    NO_TOOLS:*)
+      _fail "G7: CEO agent (id=${G7_RESULT#NO_TOOLS:}) has NO tools policy — production tools wide open; run apply-routing-fix.sh (Layer 5)"
+      FAILURES=$((FAILURES + 1))
+      ;;
+    NO_CEO_AGENT)
+      _fail "G7: no CEO/main agent found in openclaw.json agents.list"
+      FAILURES=$((FAILURES + 1))
+      ;;
+    ERROR:*)
+      _fail "G7: could not read openclaw.json: ${G7_RESULT#ERROR:}"
+      FAILURES=$((FAILURES + 1))
+      ;;
+  esac
+fi
+
+# ─── G7b: GOAL-4 D4 no-refusal baseline (departments/sub-agents never refuse) ─
+# The fleetwide ungate (4B+4C) must leave a positive no-refusal baseline so NO
+# department or sub-agent ever refuses a job. Asserts on openclaw.json:
+#   - agents.defaults.tools.allow == ["*"]            (wide-open baseline), OR the
+#     explicit group fallback ["group:runtime","group:fs","group:web","group:plugins"]
+# PAIRED with G7: this gate confirms "no refusals" while G7 confirms the CEO is
+# STILL gated. Together they are the per-box proof that the ungate and the CEO
+# tool-gate coexist (no refusals AND CEO gated).
+_info "G7b: checking GOAL-4 no-refusal baseline (agents.defaults.tools.allow)"
+G7B_RESULT=$(python3 - "$OC_CONFIG" <<'PYEOF'
+import json, sys
+from pathlib import Path
+try:
+    cfg = json.loads(Path(sys.argv[1]).read_text())
+    allow = (cfg.get("agents", {}) or {}).get("defaults", {}).get("tools", {}).get("allow")
+    if allow == ["*"]:
+        print("PASS:wildcard")
+    elif isinstance(allow, list) and set(allow) >= {"group:runtime", "group:fs", "group:web", "group:plugins"}:
+        print("PASS:groups")
+    elif allow is None:
+        print("MISSING")
+    else:
+        print("WEAK:" + ",".join(map(str, allow)) if isinstance(allow, list) else "WEAK:" + str(allow))
+except Exception as e:
+    print(f"ERROR:{e}")
+PYEOF
+) || G7B_RESULT="ERROR:python3_failed"
+case "$G7B_RESULT" in
+  PASS:wildcard) _pass "G7b: no-refusal baseline present (agents.defaults.tools.allow=['*']) — departments + sub-agents never refuse" ;;
+  PASS:groups)   _pass "G7b: no-refusal baseline present (explicit group grant) — departments + sub-agents have runtime/fs/web/plugins" ;;
+  MISSING)
+    _fail "G7b: no-refusal baseline MISSING (agents.defaults.tools.allow unset) — run apply-fleet-standards.sh to set the GOAL-4 D4 baseline"
+    FAILURES=$((FAILURES + 1)) ;;
+  WEAK:*)
+    _fail "G7b: no-refusal baseline WEAK (agents.defaults.tools.allow=${G7B_RESULT#WEAK:}) — not ['*'] nor the runtime/fs/web/plugins group set; departments may refuse jobs"
+    FAILURES=$((FAILURES + 1)) ;;
+  ERROR:*)
+    _fail "G7b: could not read openclaw.json: ${G7B_RESULT#ERROR:}"
+    FAILURES=$((FAILURES + 1)) ;;
+esac
+
+# ─── G8: CEO PreToolUse intent-gate wired + consent sidecar path safe ────────
+# Block-and-redirect enforcement (goal doc Option 1). Two parts:
+#   8a. Claude-Code box: settings.json hooks.PreToolUse contains an entry whose
+#       command is .../ceo-intent-gate.sh. (On a pure OpenClaw box with no
+#       settings.json, 8a is INFO/skip — the OpenClaw runtime brake is the
+#       Layer-1 hard tool-deny, not a hook.)
+#   8b. Consent-path safety: the resolved owner-consent sidecar must live OUTSIDE
+#       the agent workspace (so the CEO agent cannot author its own consent).
+_info "G8: checking CEO intent-gate hook + consent-path safety"
+
+# 8a — locate a Claude Code settings.json (project then user level).
+CC_SETTINGS=""
+for _cand in \
+  "${CLAUDE_SETTINGS_FILE:-}" \
+  "$HOME/.claude/settings.json" \
+  "/data/.claude/settings.json"; do
+  [ -n "$_cand" ] || continue
+  if [ -f "$_cand" ]; then CC_SETTINGS="$_cand"; break; fi
+done
+
+if [ -z "$CC_SETTINGS" ]; then
+  _info "G8a: no Claude Code settings.json found — OpenClaw box; PreToolUse hook N/A (Layer-1 tool-deny is the brake here). Skipping 8a."
+else
+  G8A=$(SETTINGS_PATH="$CC_SETTINGS" python3 - <<'PYEOF'
+import json, os, sys
+try:
+    cfg = json.load(open(os.environ["SETTINGS_PATH"]))
+    pre = (cfg.get("hooks", {}) or {}).get("PreToolUse", []) or []
+    found = False
+    for entry in pre:
+        if not isinstance(entry, dict):
+            continue
+        for h in entry.get("hooks", []) or []:
+            cmd = h.get("command", "") if isinstance(h, dict) else ""
+            if "ceo-intent-gate.sh" in cmd:
+                found = True
+    print("PASS" if found else "MISSING")
+except Exception as e:
+    print(f"ERROR:{e}")
+PYEOF
+) || G8A="ERROR:python3_failed"
+  case "$G8A" in
+    PASS) _pass "G8a: ceo-intent-gate.sh wired in $CC_SETTINGS hooks.PreToolUse" ;;
+    MISSING)
+      _fail "G8a: PreToolUse intent-gate NOT wired in $CC_SETTINGS — run install-ceo-intent-gate.sh"
+      FAILURES=$((FAILURES + 1)) ;;
+    ERROR:*)
+      _fail "G8a: could not read $CC_SETTINGS: ${G8A#ERROR:}"
+      FAILURES=$((FAILURES + 1)) ;;
+  esac
+fi
+
+# 8b — consent sidecar path must be OUTSIDE the agent workspace.
+CONSENT_LIB=""
+for _cand in \
+  "$ONBOARDING_DIR/hooks/lib-ceo-consent.sh" \
+  "$OC_ROOT/hooks/lib-ceo-consent.sh"; do
+  [ -f "$_cand" ] && CONSENT_LIB="$_cand" && break
+done
+if [ -z "$CONSENT_LIB" ]; then
+  _fail "G8b: lib-ceo-consent.sh not found — consent reader missing; run install-ceo-intent-gate.sh"
+  FAILURES=$((FAILURES + 1))
+else
+  # shellcheck source=/dev/null
+  . "$CONSENT_LIB"
+  CONSENT_PATH="$(ceo_consent_file)"
+  # Resolve both to real-ish absolute paths for the containment test.
+  _WS_ABS="$WS_REALPATH"
+  case "$CONSENT_PATH" in
+    "$_WS_ABS"/*|"$WORKSPACE_DIR"/*)
+      _fail "G8b: consent sidecar ($CONSENT_PATH) is INSIDE the agent workspace ($_WS_ABS) — the CEO agent could author its own consent. UNSAFE."
+      FAILURES=$((FAILURES + 1)) ;;
+    *)
+      _pass "G8b: consent sidecar ($CONSENT_PATH) is outside the agent workspace — agent cannot self-consent" ;;
+  esac
+fi
+
+# ═════════════════════════════════════════════════════════════════════════════
+# RUNTIME OBEDIENCE PROBES (G9/G10/G11) — only with --probe (need a live CC)
+# ═════════════════════════════════════════════════════════════════════════════
+# G1–G8 are static/config checks. The goal's Definition-of-Done demands proof of
+# RUNTIME obedience: that a master self-execution is actually discarded+re-routed,
+# that a competence-excuse bounce is actually rejected, and that a CEO-chosen
+# model actually survives to dispatch. These probes plant fixtures and drive the
+# real endpoints on a LIVE Command Center.
+if [ "$PROBE" = "0" ]; then
+  _info "G9/G10/G11: runtime probes skipped (pass --probe with a live CC to run them)"
+else
+  _info "G9/G10/G11: running runtime obedience probes against $PROBE_BASE_URL"
+
+  # Resolve the DB (reuse G6's resolver). If absent, the probes cannot plant fixtures.
+  PROBE_DB="${DB_PATH:-}"
+  if [ -z "$PROBE_DB" ]; then
+    _fail "G9/G10/G11: mission-control.db not found — cannot plant probe fixtures"
+    FAILURES=$((FAILURES + 1))
+  else
+    # ── G9: in-house master self-execution → failed + discarded + re-routed ──
+    _info "G9: probing in-house-master rejection (no consent) via agent-completion"
+    G9_OUT=$(PROBE_DB="$PROBE_DB" PROBE_BASE_URL="$PROBE_BASE_URL" python3 - <<'PYEOF'
+import json, os, sqlite3, urllib.request, uuid, sys
+
+db = os.environ["PROBE_DB"]; base = os.environ["PROBE_BASE_URL"].rstrip("/")
+conn = sqlite3.connect(db); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+
+# Find (or fail) a master agent + its workspace.
+m = cur.execute("SELECT id, workspace_id FROM agents WHERE is_master = 1 LIMIT 1").fetchone()
+if not m:
+    print("SKIP:no-master-agent"); sys.exit(0)
+master_id = m["id"]; ws = m["workspace_id"]
+
+tid = str(uuid.uuid4())
+cur.execute(
+    "INSERT INTO tasks (id, title, description, status, priority, assigned_agent_id, created_by_agent_id, workspace_id, created_at, updated_at) "
+    "VALUES (?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))",
+    (tid, "PROBE G9 in-house master deliverable", "probe", "in_progress", "medium", master_id, master_id, ws),
+)
+did = str(uuid.uuid4())
+cur.execute(
+    "INSERT INTO task_deliverables (id, task_id, deliverable_type, title, created_at, updated_at) "
+    "VALUES (?,?,?,?,datetime('now'),datetime('now'))",
+    (did, tid, "file", "probe-artifact.html"),
+)
+conn.commit()
+
+# Ensure NO consent sidecar covers this task: handled by env (CEO_CONSENT_FILE unset/empty file).
+req = urllib.request.Request(
+    base + "/api/webhooks/agent-completion",
+    data=json.dumps({"task_id": tid, "summary": "did it myself"}).encode(),
+    headers={"Content-Type": "application/json"}, method="POST",
+)
+status = None
+try:
+    with urllib.request.urlopen(req, timeout=15) as r:
+        status = r.status
+except urllib.error.HTTPError as e:
+    status = e.code  # 409 expected (in_house_master_block)
+except Exception as e:
+    print("ERROR:request-failed:%s" % e); sys.exit(0)
+
+# Re-read DB state.
+row = cur.execute("SELECT status FROM tasks WHERE id = ?", (tid,)).fetchone()
+delrow = cur.execute("SELECT discarded FROM task_deliverables WHERE id = ?", (did,)).fetchone()
+# A fresh re-emitted task with the same title should exist, NOT assigned to the master.
+reemit = cur.execute(
+    "SELECT id, assigned_agent_id FROM tasks WHERE title = ? AND id != ? ORDER BY created_at DESC LIMIT 1",
+    ("PROBE G9 in-house master deliverable", tid),
+).fetchone()
+conn.close()
+
+failed_ok = (row and row["status"] == "failed")
+discarded_ok = (delrow and delrow["discarded"] == 1)
+reemit_ok = (reemit is not None and reemit["assigned_agent_id"] != master_id)
+if status == 409 and failed_ok and discarded_ok and reemit_ok:
+    print("PASS")
+else:
+    print("FAIL:status=%s failed=%s discarded=%s reemit=%s" % (status, failed_ok, discarded_ok, reemit_ok))
+PYEOF
+) || G9_OUT="ERROR:python3_failed"
+    case "$G9_OUT" in
+      PASS)      _pass "G9: in-house-master deliverable was failed + discarded + re-routed to a specialist" ;;
+      SKIP:*)    _info "G9: skipped (${G9_OUT#SKIP:}) — no master agent seeded to probe" ;;
+      ERROR:*)   _fail "G9: probe error: ${G9_OUT#ERROR:}"; FAILURES=$((FAILURES + 1)) ;;
+      *)         _fail "G9: in-house-master rejection did NOT fire as expected — ${G9_OUT}"; FAILURES=$((FAILURES + 1)) ;;
+    esac
+
+    # ── G10: competence-excuse handback → 422 reject, stays with specialist ──
+    _info "G10: probing no-bounce-back (competence excuse) via return-to-orchestrator"
+    G10_OUT=$(PROBE_DB="$PROBE_DB" PROBE_BASE_URL="$PROBE_BASE_URL" python3 - <<'PYEOF'
+import json, os, sqlite3, urllib.request, uuid, sys
+
+db = os.environ["PROBE_DB"]; base = os.environ["PROBE_BASE_URL"].rstrip("/")
+conn = sqlite3.connect(db); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+
+# A non-master specialist + workspace.
+s = cur.execute("SELECT id, workspace_id FROM agents WHERE COALESCE(is_master,0) = 0 LIMIT 1").fetchone()
+if not s:
+    print("SKIP:no-specialist-agent"); sys.exit(0)
+spec_id = s["id"]; ws = s["workspace_id"]
+
+tid = str(uuid.uuid4())
+cur.execute(
+    "INSERT INTO tasks (id, title, description, status, priority, assigned_agent_id, workspace_id, created_at, updated_at) "
+    "VALUES (?,?,?,?,?,?,?,datetime('now'),datetime('now'))",
+    (tid, "PROBE G10 bounce", "probe", "in_progress", "medium", spec_id, ws),
+)
+conn.commit()
+
+# Competence-excuse handback with NO missing_input.
+body = {
+    "problem": "This is trivial, the CEO should do this himself.",
+    "what_i_tried": "nothing, not my job",
+    "what_i_think_it_needs": "the CEO knows how to do this",
+}
+req = urllib.request.Request(
+    base + "/api/tasks/%s/return-to-orchestrator" % tid,
+    data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}, method="POST",
+)
+status = None; payload = {}
+try:
+    with urllib.request.urlopen(req, timeout=15) as r:
+        status = r.status; payload = json.loads(r.read() or b"{}")
+except urllib.error.HTTPError as e:
+    status = e.code
+    try: payload = json.loads(e.read() or b"{}")
+    except Exception: payload = {}
+except Exception as e:
+    print("ERROR:request-failed:%s" % e); sys.exit(0)
+
+row = cur.execute("SELECT status, assigned_agent_id FROM tasks WHERE id = ?", (tid,)).fetchone()
+conn.close()
+
+# Expect: 422, rejected:true, task NOT in backlog (still with specialist), assignee unchanged.
+rejected = bool(payload.get("rejected"))
+stays = (row and row["assigned_agent_id"] == spec_id and row["status"] != "backlog")
+if status == 422 and rejected and stays:
+    print("PASS")
+else:
+    print("FAIL:status=%s rejected=%s stays=%s status_now=%s" % (status, rejected, stays, row["status"] if row else None))
+PYEOF
+) || G10_OUT="ERROR:python3_failed"
+    case "$G10_OUT" in
+      PASS)    _pass "G10: competence-excuse bounce rejected (422); task stayed with the specialist" ;;
+      SKIP:*)  _info "G10: skipped (${G10_OUT#SKIP:}) — no specialist agent seeded to probe" ;;
+      ERROR:*) _fail "G10: probe error: ${G10_OUT#ERROR:}"; FAILURES=$((FAILURES + 1)) ;;
+      *)       _fail "G10: no-bounce-back gate did NOT reject as expected — ${G10_OUT}"; FAILURES=$((FAILURES + 1)) ;;
+    esac
+
+    # ── G11: CEO requested_model survives ingest → tasks.model_id ──
+    _info "G11: probing model-choice survival via ingest requested_model"
+    G11_OUT=$(PROBE_DB="$PROBE_DB" PROBE_BASE_URL="$PROBE_BASE_URL" python3 - <<'PYEOF'
+import json, os, sqlite3, urllib.request, uuid, sys
+
+db = os.environ["PROBE_DB"]; base = os.environ["PROBE_BASE_URL"].rstrip("/")
+want_model = "probe/ceo-chosen-model-%s" % uuid.uuid4().hex[:8]
+title = "PROBE G11 model survival %s" % uuid.uuid4().hex[:6]
+
+req = urllib.request.Request(
+    base + "/api/tasks/ingest",
+    data=json.dumps({"title": title, "description": "probe", "requested_model": want_model}).encode(),
+    headers={"Content-Type": "application/json"}, method="POST",
+)
+payload = {}
+try:
+    with urllib.request.urlopen(req, timeout=15) as r:
+        payload = json.loads(r.read() or b"{}")
+except urllib.error.HTTPError as e:
+    try: payload = json.loads(e.read() or b"{}")
+    except Exception: payload = {}
+except Exception as e:
+    print("ERROR:request-failed:%s" % e); sys.exit(0)
+
+new_id = payload.get("task_id")
+if not new_id:
+    print("FAIL:no-task-id payload=%s" % payload); sys.exit(0)
+
+conn = sqlite3.connect(db); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+row = cur.execute("SELECT model_id FROM tasks WHERE id = ?", (new_id,)).fetchone()
+conn.close()
+if row and row["model_id"] == want_model:
+    print("PASS")
+else:
+    print("FAIL:model_id=%s want=%s" % (row["model_id"] if row else None, want_model))
+PYEOF
+) || G11_OUT="ERROR:python3_failed"
+    case "$G11_OUT" in
+      PASS)    _pass "G11: CEO requested_model survived ingest onto tasks.model_id (model choice preserved)" ;;
+      ERROR:*) _fail "G11: probe error: ${G11_OUT#ERROR:}"; FAILURES=$((FAILURES + 1)) ;;
+      *)       _fail "G11: CEO model choice did NOT survive ingest — ${G11_OUT}"; FAILURES=$((FAILURES + 1)) ;;
+    esac
+  fi
 fi
 
 # ─── Summary ─────────────────────────────────────────────────────────────────

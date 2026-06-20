@@ -108,8 +108,23 @@ fi
 LOG_DIR="$HOME/.openclaw/logs"
 [ -d "/data/.openclaw" ] && LOG_DIR="/data/.openclaw/logs"
 
-bash "$QC_SCRIPT" --quiet >/dev/null 2>&1
+# v10.15.45 (Mac) / v10.16.44 (VPS): set QC_SKIP_PRESENTATION_DEPS=1 so that
+# the library/SOP gate is not blocked by a missing LibreOffice/soffice dep.
+# Presentation dep checks are relevant for the PRESENTATION step only; the
+# role-library and SOP-library verdicts must run regardless of whether soffice
+# is installed. Without this flag, qc-completeness exits 6 before writing any
+# dept-level JSON, and this gate reads an empty/stub artifact and incorrectly
+# marks roleLibraryStatus=failed + sopLibraryStatus=failed.
+QC_SKIP_PRESENTATION_DEPS=1 bash "$QC_SCRIPT" --quiet >/dev/null 2>&1
 QC_RC=$?
+# Handle PRESENTATION_DEPS_MISSING (exit 6) from qc-completeness: the JSON was
+# written with status=PRESENTATION_DEPS_MISSING which contains no dept data, so
+# we re-run qc with the skip flag (already done above) and the JSON written
+# during THAT run is what we'll use. If rc is 6 and we already set the skip
+# flag, this means qc hit some other early exit — treat as partial/unknown.
+if [ "$QC_RC" -eq 6 ]; then
+  echo "[verify-library-gate] WARN: qc exited 6 (PRESENTATION_DEPS_MISSING) even with QC_SKIP_PRESENTATION_DEPS=1 — possible soffice dep check bypassed but another dep is missing; continuing with available JSON artifact" >&2
+fi
 if [ "$QC_RC" -eq 4 ]; then
   echo "[verify-library-gate] qc reports NO_WORKFORCE_FOUND — nothing to gate; exiting 5" >&2
   exit 5

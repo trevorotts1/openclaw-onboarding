@@ -166,6 +166,30 @@ No agent decides what it will or will not do.
 This rule is role-scoped so it reinforces the CEO routing mandate WITHOUT gagging executing
 specialists. Both behaviors — the CEO routing and specialists executing — are equally required.
 
+### POLICY-DENY MEANS ROUTE (block-and-redirect self-correction)
+
+The CEO's production tools (write, edit, exec, browser, image generation, and every
+`ghl-community-mcp__*` / MCP production tool) are GATED behind owner consent. If any tool
+returns a **policy / permission deny** error, that is NOT a bug and NOT something to retry —
+it is the system telling you to **ROUTE**:
+
+- Immediately **POST `/api/tasks/ingest`** with `{ "title", "description", "department_slug" }`.
+- Do **NOT** retry the denied tool.
+- Do **NOT** spawn a sub-agent to perform the denied work for you (that is the same violation).
+- Do **NOT** look for an un-gated alternate tool to accomplish the same production action.
+
+The only way the gate opens is an explicit owner-consent grant (the owner-permission exception),
+which the owner — never you — provides. Until then: a deny = route.
+
+### NO BOUNCE-BACK (department specialists)
+
+A department specialist MAY NOT return a properly-routed task to the CEO citing CEO competence,
+triviality, or "the CEO should do this." A handback is ONLY valid when it names a CONCRETE
+MISSING INPUT — a specific data field, credential, asset, decision, or access that was required
+and not provided (`missing_input: { kind, name, why_blocking }`). A handback without a named
+missing input is auto-rejected (HTTP 422): the task stays with the SAME specialist and is
+re-dispatched. The CEO never inherits work via a bounce.
+
 ---
 
 RDEOF
@@ -384,6 +408,130 @@ print("[apply-routing-fix] L2: skills:[] set on main agent")
 PYEOF
     _log "L2: pptx deny (skills:[]) applied to main agent in openclaw.json"
   fi
+fi
+
+# ═════════════════════════════════════════════════════════════════════════════
+# LAYER 5 — CEO TOOL-GATE (GOAL-5 Item 1; runs before L3 so config validates once)
+# ═════════════════════════════════════════════════════════════════════════════
+# skills:[] (Layer 2) does NOT gate the OpenClaw built-in tools, so the CEO could
+# still self-execute via exec/write/edit/browser/image or the GHL MCP. This layer
+# deep-merges a hard tool-policy onto the main agent for ALREADY-BUILT boxes
+# (fresh boxes get it from build-workforce.py): deny all production tools by their
+# REAL built-in names + deny ALL GHL MCP tools by provider, and allow only the
+# routing/conversation tools. Restrict-only precedence means this cannot be
+# un-denied in-session — the owner-consent carve-out is a profile/entry swap done
+# by grant-ceo-consent.sh, never an in-session allow.
+#
+# INTERIM exec note: exec stays in ALLOW so the CEO can curl /api/tasks/ingest
+# until the route-task MCP tool ships. verify-routing.sh G7 FAIL-WARNs on that
+# interim state so a box is never falsely marked clean.
+# Idempotent: skips if tools.deny already contains "write".
+_log "--- LAYER 5: CEO tool-gate (deny production tools on main agent) ---"
+
+if [ "$DRY_RUN" = "1" ]; then
+  _dry "L5: would deny production tools (write/edit/apply_patch/browser/canvas/image/process) + GHL MCP on main agent (allow: read/web_fetch/web_search/messaging/sessions_*/exec-interim)"
+else
+  L5_RESULT=$(python3 - "$OC_CONFIG" <<'PYEOF'
+import json, sys
+from pathlib import Path
+
+# KEEP IN SYNC with build-workforce.py (CEO_TOOL_*), apply-fleet-standards.sh,
+# and hooks/lib-ceo-tool-gate.sh. test-ceo-tool-gate.sh asserts they match.
+CEO_TOOL_DENY = [
+    "write", "edit", "apply_patch", "browser", "canvas", "image", "process",
+    "ghl-community-mcp__*", "ghl-mcp__*",
+]
+CEO_TOOL_ALLOW = [
+    "read", "web_fetch", "web_search",
+    "message", "telegram", "slack", "discord",
+    "sessions_send", "sessions_list", "sessions_history",
+    "exec",  # INTERIM — replace with mc-route__route_task once that MCP tool ships
+]
+CEO_MCP_DENY = {
+    "ghl-community-mcp": {"deny": ["*"]},
+    "ghl-mcp": {"deny": ["*"]},
+}
+
+cfg_path = Path(sys.argv[1])
+cfg = json.loads(cfg_path.read_text())
+
+# Owner-consent carve-out guard: if a grant is ACTIVE the gate is intentionally
+# lifted; re-gating here would silently revoke the owner's grant. Same single
+# shared sidecar read by src/lib/consent.ts and hooks/lib-ceo-consent.sh.
+import os as _os
+def _ceo_consent_active():
+    cands = []
+    if _os.environ.get("CEO_CONSENT_FILE"):
+        cands.append(_os.environ["CEO_CONSENT_FILE"])
+    cands.append("/data/.openclaw/state/ceo-consent.json")
+    cands.append(_os.path.join(_os.path.expanduser("~"), ".openclaw", "state", "ceo-consent.json"))
+    for c in cands:
+        try:
+            with open(c) as fh:
+                rec = json.load(fh)
+            if isinstance(rec, dict) and rec.get("granted") is True:
+                return True
+        except Exception:
+            continue
+    return False
+
+if _ceo_consent_active():
+    print("CONSENT_ACTIVE_SKIP")
+    sys.exit(0)
+
+agents_list = cfg.get("agents", {}).get("list", []) or []
+main_agent = None
+for ag in agents_list:
+    if isinstance(ag, dict) and ag.get("id") == "main":
+        main_agent = ag
+        break
+
+if main_agent is None:
+    print("NO_MAIN_AGENT")
+    sys.exit(0)
+
+tools = main_agent.get("tools")
+if isinstance(tools, dict) and isinstance(tools.get("deny"), list) and "write" in tools["deny"]:
+    print("ALREADY_GATED")
+    sys.exit(0)
+
+# Deep-merge (preserve any existing allow/deny entries; never clobber).
+tools = main_agent.setdefault("tools", {})
+deny = tools.setdefault("deny", [])
+if not isinstance(deny, list):
+    deny = []
+    tools["deny"] = deny
+for t in CEO_TOOL_DENY:
+    if t not in deny:
+        deny.append(t)
+allow = tools.setdefault("allow", [])
+if not isinstance(allow, list):
+    allow = []
+    tools["allow"] = allow
+for t in CEO_TOOL_ALLOW:
+    if t not in allow:
+        allow.append(t)
+# Deny wins: never allow a tool we are denying.
+tools["allow"] = [t for t in allow if t not in deny]
+by_provider = tools.setdefault("byProvider", {})
+if not isinstance(by_provider, dict):
+    by_provider = {}
+    tools["byProvider"] = by_provider
+for prov, rule in CEO_MCP_DENY.items():
+    by_provider[prov] = rule
+
+cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
+print("APPLIED")
+PYEOF
+) || L5_RESULT="ERROR"
+
+  case "$L5_RESULT" in
+    ALREADY_GATED)      _log "L5: CEO tool-gate already present on main agent — no-op" ;;
+    CONSENT_ACTIVE_SKIP) _log "L5: owner-consent carve-out ACTIVE — skipping CEO tool-gate (would revoke the owner's grant)" ;;
+    NO_MAIN_AGENT)      _warn "L5: no agent with id=main found — skipping CEO tool-gate" ;;
+    APPLIED)            _log "L5: CEO tool-gate applied to main agent (production tools denied; routing tools allowed)" ;;
+    *)                  _warn "L5: could not apply CEO tool-gate (result=$L5_RESULT) — skipping" ;;
+  esac
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
