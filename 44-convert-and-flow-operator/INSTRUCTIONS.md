@@ -503,6 +503,40 @@ WF-20 ("NO HALLUCINATED ARTIFACTS") is the dedicated detector.
 
 ---
 
+## Daily Firebase Token Liveness Check (Skills 44 + 46)
+
+A daily cron (`ghl-token-liveness`) runs automatically at 08:00 UTC on every client box.
+It POSTs the box's `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` to Google's
+`securetoken.googleapis.com` exchange endpoint and classifies the result.
+
+**Agent action on PASS (HTTP 200 + id_token returned):** no action. The check writes a
+day-stamp and exits silently.
+
+**Agent action on INVALID (TOKEN_EXPIRED / USER_DISABLED / INVALID_REFRESH_TOKEN):**
+The check script automatically sends the client a plain-English notification via
+`openclaw message send` pointing them to the Token Grabber re-grab flow
+(`references/owner-token-grabber-guide.md`). The client replies with the new token;
+wire it in using the standard steps (Step 1 of the owner-token-grabber-guide FOR THE
+AGENT section: `openclaw config set env.vars.GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN "<token>"`
+then `caf doctor` to confirm).
+
+**Do not send the re-grab notification manually if the daily check already sent it today.**
+The check script writes a `.notified` stamp alongside the `.ok` stamp when it fires a
+notification; the agent should inspect `~/.openclaw/workspace/ghl-token-liveness/` before
+sending a duplicate.
+
+**Manual invocation** (e.g. after a client reports workflow writes failing):
+```bash
+bash ~/.openclaw/skills/44-convert-and-flow-operator/tools/check-ghl-token-liveness.sh
+```
+Delete the day-stamp file first to force a re-check even if the cron already ran today:
+```bash
+rm -f ~/.openclaw/workspace/ghl-token-liveness/ghl-token-liveness-"$(date -u +%Y-%m-%d)".ok
+bash ~/.openclaw/skills/44-convert-and-flow-operator/tools/check-ghl-token-liveness.sh
+```
+
+---
+
 ## Disclosure header format
 
 Every GHL response from Tier 0 must begin with:

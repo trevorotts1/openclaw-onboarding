@@ -97,6 +97,42 @@ Slide rendered
   Source: in-repo 07-kie-setup/kie-setup-full.md lines 603-605
 - Worker KV reads: effectively unlimited on the operator plan
 
+## Daily GHL Firebase Token Liveness Check
+
+Per operator instruction the daily `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` liveness check
+is cross-referenced here alongside Skill 44.
+
+**Note:** this Kie Callback Relay does **not** itself consume the GHL Firebase token —
+the token, its dependency, and the check are owned by **Skill 44 (convert-and-flow-operator)**.
+This section is a discoverability pointer so an operator working in Skill 46 knows the
+check exists; it does not imply Skill 46 makes GoHighLevel writes.
+
+A daily cron (`ghl-token-liveness`, registered by `scripts/ensure-pipeline-crons.sh` at
+08:00 UTC) runs on every client box where Skill 44 is installed.
+
+**What the check does:**
+
+1. Resolves `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` from the standard env-store search
+   order (`secrets/.env` → `openclaw.json env.vars` → `workspace/.env`).
+2. Exchanges it at `securetoken.googleapis.com/v1/token` (same endpoint as the
+   Skill 44 transport engine and `seed-ghl-auth.py`).
+3. On **VALID** (HTTP 200 + `id_token` returned): exits silently, no notification.
+4. On **INVALID** (`TOKEN_EXPIRED` / `USER_DISABLED` / `INVALID_REFRESH_TOKEN`):
+   sends a plain-English notification to the CLIENT's own Telegram chat with
+   step-by-step instructions to re-grab the token via the Convert and Flow Token
+   Grabber Chrome extension (Skill 44 `tools/chrome-extension/`).
+
+The check is idempotent (once per calendar day). The script lives at:
+`44-convert-and-flow-operator/tools/check-ghl-token-liveness.sh`
+
+**Agent action on notification:** when the client replies with a new token, wire it in:
+```bash
+openclaw config set env.vars.GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN "<new-token>"
+```
+Then verify with `caf doctor` (Skill 44) before any workflow write.
+
+---
+
 ## Unverified Items (do not present as fact)
 
 - Exact Kie CDN hostname(s) for the result URL allowlist -- must confirm from a

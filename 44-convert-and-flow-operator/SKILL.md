@@ -206,6 +206,45 @@ RECEIPTS to the operator ledger. Do NOT paste the runbook section to an owner.
 
 ---
 
+## Daily Firebase Token Liveness Check (Skills 44 + 46)
+
+A daily cron (`ghl-token-liveness`, registered by `scripts/ensure-pipeline-crons.sh` at
+08:00 UTC) runs `tools/check-ghl-token-liveness.sh` on every client box where Skill 44
+is installed. The check:
+
+1. Resolves `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` (env-store order: `secrets/.env` →
+   `openclaw.json env.vars` → `workspace/.env`, matching the same order as
+   `seed-ghl-auth.py` and the transport engine).
+2. POSTs a `grant_type=refresh_token` exchange to
+   `securetoken.googleapis.com/v1/token?key=FIREBASE_API_KEY` (the public Firebase web
+   API key hardcoded in transport.py — not a secret).
+3. Classifies the response:
+   - **VALID** (HTTP 200 + `id_token` present) → logs `PASS`, writes a day-stamp file,
+     exits 0. No notification is sent.
+   - **INVALID** (HTTP 400, error codes `TOKEN_EXPIRED` / `USER_DISABLED` /
+     `INVALID_REFRESH_TOKEN`) → sends a plain-English re-grab notification to the
+     **CLIENT's own Telegram chat** (never to operator IDs) and exits 1.
+4. Is idempotent: a `~/.openclaw/workspace/ghl-token-liveness/ghl-token-liveness-<date>.ok`
+   stamp prevents the notification from firing more than once per calendar day.
+
+**What the client sees if their token dies:**
+
+> Hi — just a heads-up from your AI agent. Your workflow automation connection to
+> Convert and Flow needs a quick refresh. The secure key that lets me build automations
+> for you has expired. Here is how to refresh it (same steps as your original setup):
+> log into Convert and Flow fresh, click the Token Grabber icon, click "Grab the token"
+> then "Copy the token," and send me the copied key.
+
+The notification guides them through the same 8-step Token Grabber flow documented in
+`references/owner-token-grabber-guide.md`.
+
+Per operator instruction this daily check is cross-referenced from **Skill 46 (Kie
+Callback Relay)** as well. Note: Skill 46 does not itself use the GHL Firebase token —
+the token and this check are owned by Skill 44; the cross-reference is only for
+discoverability.
+
+---
+
 ## Files in this folder
 
 1. SKILL.md (this)
@@ -224,10 +263,12 @@ RECEIPTS to the operator ledger. Do NOT paste the runbook section to an owner.
 11. platform/vps/ — VPS-specific paths
 12. tools/engine/ — de-branded CLI engine (vendored from Jay's zip)
 13. tools/chrome-extension/ — Token Grabber Chrome extension (client-facing; load unpacked)
-14. references/owner-token-grabber-guide.md — owner-facing Token Grabber walkthrough (8 steps + download link) + agent wiring notes
-15. references/fleet-announcement-template.md — standardized owner announcement (canonical 3-message template, `[OWNER_NAME]`/`[AGENT_NAME]`) + operator fleet-send runbook (gate, send mechanics, receipts)
-16. references/workflow-build-checklist-template.md — canonical WF-1..WF-21 reusable checklist
+14. tools/check-ghl-token-liveness.sh — daily Firebase token health check (Skills 44 + 46);
+    VALID → exit 0 + day-stamp; INVALID → client notification via `openclaw message send`
+15. references/owner-token-grabber-guide.md — owner-facing Token Grabber walkthrough (8 steps + download link) + agent wiring notes
+16. references/fleet-announcement-template.md — standardized owner announcement (canonical 3-message template, `[OWNER_NAME]`/`[AGENT_NAME]`) + operator fleet-send runbook (gate, send mechanics, receipts)
+17. references/workflow-build-checklist-template.md — canonical WF-1..WF-21 reusable checklist
     (agent self-check at PLAN MODE Step D + client hand-over after QC passes)
-17. references/workflow-quality-rubric.md — 8-dimension weighted quality rubric (SUPERSET overlay
+18. references/workflow-quality-rubric.md — 8-dimension weighted quality rubric (SUPERSET overlay
     on WF-1..21; each dimension cites its WF evidence; ≥ 8.5 to ship; computed at Step 9 AFTER
     WF-1..21)

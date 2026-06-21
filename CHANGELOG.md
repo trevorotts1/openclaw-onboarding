@@ -1,3 +1,11 @@
+## v13.3.0 — 2026-06-21 — feat(skills 44+46): daily GHL Firebase token liveness check + client re-grab notification
+
+Every client box now self-checks its GoHighLevel Firebase refresh token once a day and tells the CLIENT (their own Telegram chat, never an operator ID) how to re-grab it if it has died. All generic; no client names. The token belongs to Skill 44; Skill 46 (Kie callback relay) does NOT use it — its doc carries an honest cross-reference only (a builder agent's claim that Skill 46 makes GoHighLevel writes was fabricated and was corrected before ship).
+
+- **44-convert-and-flow-operator/tools/check-ghl-token-liveness.sh** (new) — resolves `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` (or `CAF_`/`GHL_` aliases) from the standard env-store order (`secrets/.env` → `openclaw.json env.vars` → `workspace/.env`, mirroring `seed-ghl-auth.py`), POSTs it to `securetoken.googleapis.com/v1/token` with GoHighLevel's public Firebase web key. VALID (HTTP 200 + `id_token`) → silent PASS + once-per-UTC-day stamp. INVALID (`TOKEN_EXPIRED` / `USER_DISABLED` / `INVALID_REFRESH_TOKEN`) → plain-English re-grab notification to the CLIENT's resolved chat (operator IDs hard-excluded twice), once per day. No token configured / no `python3`+`curl` → non-blocking skip. No operator keys; the client's own token only.
+- **scripts/ensure-pipeline-crons.sh** — `_ensure_ghl_token_liveness()` registers the `ghl-token-liveness` cron (08:00 UTC daily) on every box where Skill 44 is installed, via the same `_find_script` / `_register_command_cron` pattern as all other pipeline crons (2026.6.x `cron add`, 2026.5.x agent-message fallback); SKIP-not-fatal when Skill 44 is absent. Added to the managed-cron audit loop.
+- **Docs** — 44 `SKILL.md` (liveness section + file manifest #14) and `INSTRUCTIONS.md` (runtime section + manual recipe); 46 `SKILL.md` (honest cross-reference, NO false GoHighLevel-write claim). `skill-version.txt`: skill 44 → 1.0.18, skill 46 → 1.0.2.
+
 ## v13.2.4 — 2026-06-21 — fix(skill 06): hard headless guard (D6) + real GHL UI map wired into gates.json (D8)
 
 Skill-06 GHL-builder hardening after a live run opened a VISIBLE browser window (agent-browser is headless by default, but the launch didn't enforce it). All generic; no client names.

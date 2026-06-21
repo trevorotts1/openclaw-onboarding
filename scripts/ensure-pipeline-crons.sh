@@ -26,6 +26,7 @@
 #   6. orphan-temp-sweep               (hourly, COMMAND)     — clears failed-reindex *.sqlite.tmp orphans (item 5)
 #   7. disk-usage-alert                (hourly, COMMAND)     — disk >85% alert (item 6)
 #   8. pre-july14-embed-migrate        (daily, COMMAND)      — flags any box still on dying gemini-embedding-001 (item 7)
+#   9. ghl-token-liveness              (daily 08:00 UTC, COMMAND) — Skills 44+46 Firebase token daily health check; notifies CLIENT if expired
 #
 # REDUNDANCY (closes the single-point-of-failure): closeout fires if ANY of
 #   {workforce-build-resume cron, closeout-resume cron, watchdog} reaches the
@@ -55,7 +56,8 @@
 #   ENSURE_PIPELINE_CRONS_VERSION
 # BUG-FIX v13.0.2 — JSON presence check, no text-table truncation
 # v13.2.0 — EMBEDDING-PREVENTION BUNDLE: wire 4 memory-health crons fleet-wide.
-ENSURE_PIPELINE_CRONS_VERSION="v13.2.0"
+# v13.3.0 — GHL token liveness cron: daily Skills 44+46 Firebase token health check.
+ENSURE_PIPELINE_CRONS_VERSION="v13.3.0"
 
 set -u
 
@@ -504,6 +506,31 @@ _ensure_closeout_resume() {
   return 1
 }
 
+# 9. ghl-token-liveness (COMMAND mode, 0 8 * * *). Daily Skills 44+46 Firebase
+#    token health check. Runs check-ghl-token-liveness.sh once per day at 08:00
+#    UTC; the script is self-idempotent (day-stamp guard) so firing it via cron
+#    AND via direct invocation is safe. No Telegram owner chat is needed here —
+#    the check script resolves the client chat itself.
+_ensure_ghl_token_liveness() {
+  if _cron_present "ghl-token-liveness"; then
+    _log "OK  ghl-token-liveness cron already present"
+    return 0
+  fi
+  local script
+  script="$(_find_script 44-convert-and-flow-operator tools/check-ghl-token-liveness.sh)" || true
+  if [[ -z "${script:-}" ]]; then
+    _log "SKIP ghl-token-liveness — check-ghl-token-liveness.sh not found in Skill 44 tools/ (Skill 44 not installed yet)"
+    return 1
+  fi
+  chmod +x "$script" 2>/dev/null || true
+  if _register_command_cron "ghl-token-liveness" "0 8 * * *" "$script"; then
+    _log "DONE ghl-token-liveness cron registered (0 8 * * *, daily at 08:00 UTC, $(_cli_supports_command && echo 'command mode' || echo 'agent-message fallback'))"
+    return 0
+  fi
+  _log "FAIL ghl-token-liveness cron creation failed (openclaw cron add rc!=0 or name not in cron list)"
+  return 1
+}
+
 # Persist a cron UUID into build-state (best-effort; never fatal).
 _persist_uuid() {
   local key="$1" uuid="$2"
@@ -565,11 +592,19 @@ main() {
   _ensure_health_cron "disk-usage-alert"         "47 * * * *" "disk-usage-alert.sh"                       || fails=$((fails + 1))
   _ensure_health_cron "pre-july14-embed-migrate" "23 9 * * *" "pre-july14-embedding-migration-check.sh"  || fails=$((fails + 1))
 
+  # ── GHL TOKEN LIVENESS (Skills 44 + 46) ─────────────────────────────────────
+  # Daily at 08:00 UTC: checks if the client's GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN
+  # is still exchangeable at securetoken.googleapis.com. On INVALID, the check
+  # script sends a plain-English re-grab notification to the CLIENT's own chat.
+  # A missing script (Skill 44 not installed) is a SKIP (advisory, not fatal).
+  _ensure_ghl_token_liveness || fails=$((fails + 1))
+
   # One-line audit of current cron presence (exact JSON match, no truncation).
   local present=""
   local _n
   for _n in "workforce-build-resume" "interview-nudge" "closeout-readiness-watchdog" "closeout-resume" \
-            "index-model-drift-check" "orphan-temp-sweep" "disk-usage-alert" "pre-july14-embed-migrate"; do
+            "index-model-drift-check" "orphan-temp-sweep" "disk-usage-alert" "pre-july14-embed-migrate" \
+            "ghl-token-liveness"; do
     _cron_present "$_n" && present="${present}${_n} "
   done
   present="${present% }"  # trim trailing space
