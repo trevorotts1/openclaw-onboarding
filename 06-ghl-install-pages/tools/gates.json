@@ -230,12 +230,19 @@
         "indexeddb_database": "firebaseLocalStorageDb",
         "object_store": "firebaseLocalStorage",
         "keyPath": "fbase_key",
+        "fbase_key": "firebase:authUser:AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE:[DEFAULT]",
+        "fbase_key_format": "firebase:authUser:<apiKey>:<appName> (appName='[DEFAULT]'; CONFIRMED verbatim via Firebase JS SDK _persistenceKeyName + the live store)",
+        "value_shape": "FULL Firebase Web SDK User record (User._fromJSON): { uid, emailVerified:false, isAnonymous:false, providerData:[], stsTokenManager:{refreshToken, accessToken, expirationTime(epoch MILLIS)}, createdAt(string), lastLoginAt(string), apiKey, appName:'[DEFAULT]' }. email/displayName/photoURL OMITTED (undefined) — this is a custom-auth user (sign_in_provider=custom) with no such fields; setting them null fails the SDK string|undefined assertion.",
+        "required_value_fields": ["uid", "stsTokenManager", "emailVerified", "isAnonymous"],
         "token_path": "value.stsTokenManager.{refreshToken, accessToken, expirationTime}",
         "uid_path": "value.uid",
-        "localStorage": "deviceId, proxyLoginCount, debug_sentry, locale (NO token)",
+        "app_token_required": false,
+        "session_cookie_required": false,
+        "auth_header": "token-id: <id_token> (NOT Authorization:Bearer — Bearer returns 401); version: 2021-07-28",
+        "localStorage": "deviceId, proxyLoginCount, debug_sentry, locale (NO token; not auth-bearing — do NOT need to seed)",
         "firebase_api_key": "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE (hardcoded in Skill 44 transport.py; not an env var)"
       },
-      "note": "CORRECTS the GOAL spec §2.4 which assumed localStorage. Auth is in IndexedDB. Seed via seed-ghl-auth.py + inject-ghl-auth.sh (TOKEN-SEED-INTO-INDEXEDDB is the DEFAULT path — no UI login form is rendered; UI login is LAST-RESORT fallback only). The exact fbase_key value + post-login session cookies still need a logged-in capture to confirm verbatim."
+      "note": "CORRECTS the GOAL spec §2.4 which assumed localStorage. Auth is in IndexedDB. The Firebase refresh token ALONE logs the SPA in: seed-ghl-auth.py mints a fresh id_token from the refresh token and emits the FULL User record above; inject-ghl-auth.sh writes it (and reads it back to confirm). ROOT-CAUSE FIX (auth/internal-error): the record now ALWAYS carries emailVerified:false + isAnonymous:false (the SDK asserts both as booleans; omitting them threw INTERNAL_ERROR and bounced the SPA to the login form). NO app-token and NO session cookie are required — the id_token validates directly via the token-id header. HARD RULE: TOKEN-SEED IS THE ONLY AUTH PATH — there is NO automatic UI-login / two-factor fallback. If the seed fails to log in, the builder STOPS and reports (non-zero); the operator re-grabs a fresh refresh token (Token Grabber) and retries. GHL_AGENCY_EMAIL/PASSWORD is a documented MANUAL last resort only, never auto-invoked."
     },
     {
       "id": 28, "spec": "C3", "name": "ghl_published_domain_for_frame_ancestors", "status": "runtime",

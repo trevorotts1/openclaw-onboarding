@@ -19,19 +19,26 @@ agent-browser-first convention (GOAL §2.2 / §4.2.2).
 >    `tools/inject-ghl-auth.sh` and the `tools/ghl_builder.py headless-guard`
 >    helper do this and ABORT — exit 75 — if a headed signal survives).
 > There is NO supported path — not first login, not two-factor, not Playwright —
-> that may open a visible window. Two-factor that genuinely needs a human is
-> handled by the headless seed path (§2) so the form is never even rendered; a
-> truly-blocked two-factor PAUSES and surfaces to the operator, it does NOT pop a
-> window. Emit every browser line via `ghl_builder.py browser-cmd ...` (it
-> prepends `--headed false`) or by hand with the prefix above.
+> that may open a visible window. The build loop never renders the Sign-in form
+> at all: the headless token seed (§2) is the ONLY auth path, so two-factor is
+> never reached. If the seed fails to log in, the builder STOPS and surfaces to
+> the operator (NO auto UI-login / two-factor); it does NOT pop a window. Emit
+> every browser line via `ghl_builder.py browser-cmd ...` (it prepends
+> `--headed false`) or by hand with the prefix above.
 
 > **STATUS — PENDING-LIVE-RUN.** Gate #1 (login form) and gate #27 (auth-storage
-> keys) are LIVE-CAPTURED and real. Gates #2–#26 and #28 are **runtime
-> snapshot-gates** (`gates.json` status=`runtime`) — they were BLOCKED behind
-> two-factor authentication in the 2026-06-21 capture pass and have **NOT** been
-> verified live. No invented CSS is shipped as fact for them. The end-to-end
-> funnel/website live test (GOAL D9–D13) is **NOT** claimed — it is blocked on a
-> fresh Firebase refresh token or an attended two-factor-authentication run.
+> keys) are LIVE-CAPTURED and real. Gate #27's full record shape — the
+> `firebase:authUser:<apiKey>:[DEFAULT]` key and the Firebase Web SDK `User` value
+> (with the REQUIRED `emailVerified`/`isAnonymous` booleans that fix the old
+> `auth/internal-error`) — is confirmed against the Firebase JS SDK source and the
+> live token exchange (securetoken HTTP 200, id_token validates via the `token-id`
+> header). The refresh token alone seeds a logged-in SPA session — **no UI login,
+> no two-factor.** Gates #2–#26 and #28 are **runtime snapshot-gates**
+> (`gates.json` status=`runtime`) — they were BLOCKED behind two-factor
+> authentication in the 2026-06-21 capture pass and have **NOT** been verified
+> live. No invented CSS is shipped as fact for them. The end-to-end funnel/website
+> live test (GOAL D9–D13) is **NOT** claimed — it is blocked on a fresh Firebase
+> refresh token (seed path), NOT on a UI/two-factor run, which is now disabled.
 
 ---
 
@@ -115,27 +122,50 @@ babysit.
 
 ## 2. AUTH SEEDING — start already logged in (D7)
 
-> **D7 — TOKEN-SEED-INTO-INDEXEDDB IS THE DEFAULT (no UI login).** The DEFAULT
-> and ONLY-by-default auth path is: mint the Firebase ID/refresh token from the
-> client's refresh token, write it straight into IndexedDB
-> (`firebaseLocalStorageDb` → `firebaseLocalStorage` → `fbase_key` →
-> `value.stsTokenManager`), then navigate STRAIGHT INTO the dashboard. **No login
-> form is ever rendered** on this path — which is what tempted the earlier visible
-> window. **UI login (the Sign-in form, §2.2 / A1) is the LAST-RESORT FALLBACK
-> ONLY**, used solely when no usable refresh token exists; it is still headless
-> and still never opens a visible window (D6).
+> **D7 — TOKEN-SEED-INTO-INDEXEDDB IS THE *ONLY* AUTH PATH (no UI login, no 2FA).**
+> The client's Firebase **refresh token ALONE** produces a logged-in SPA session:
+> mint a fresh ID token from the refresh token, write the **full Firebase Web SDK
+> User record** into IndexedDB (`firebaseLocalStorageDb` → `firebaseLocalStorage`
+> → `fbase_key` → `value{…}`), then navigate STRAIGHT INTO the dashboard. **No
+> Sign-in form is ever rendered, no password is typed, two-factor is never
+> reached.**
+>
+> **HARD RULE — NO AUTOMATIC UI-LOGIN / 2FA FALLBACK.** The token-seed is the ONLY
+> auto-invoked auth path. If seeding fails (no token / revoked token / the seeded
+> record does not log the SPA in), the builder **STOPS and reports** (non-zero
+> exit) — it MUST NOT auto-open the Sign-in form or a two-factor prompt. The
+> operator re-grabs a fresh refresh token (Token Grabber) and retries the seed.
+> `GHL_AGENCY_EMAIL` / `GHL_AGENCY_PASSWORD` remain a **DOCUMENTED, MANUAL last
+> resort only** (operator-initiated, never auto-invoked, §2.2).
 
-**Corrected by the 2026-06-21 live capture:** GoHighLevel stores Firebase auth in
-**IndexedDB, NOT localStorage.** Seeding localStorage does nothing.
+**Corrected by the 2026-06-21 live capture + Firebase JS SDK source:** GoHighLevel
+stores Firebase auth in **IndexedDB, NOT localStorage.** Seeding localStorage does
+nothing. The persisted record is the Firebase Web SDK `User._fromJSON()` shape and
+**must** include `emailVerified` + `isAnonymous` as booleans — the SDK asserts
+both; omitting them was the root cause of the old `auth/internal-error` that
+bounced the SPA back to the login form.
 
 ```
 IndexedDB database : firebaseLocalStorageDb
   object store     : firebaseLocalStorage   (keyPath = "fbase_key")
-    entry.value.stsTokenManager.refreshToken   <- Firebase refresh token
-    entry.value.stsTokenManager.accessToken    <- Firebase ID token (short-lived JWT)
-    entry.value.stsTokenManager.expirationTime <- epoch millis
-    entry.value.uid                            <- user id
-localStorage (origin): deviceId, proxyLoginCount, debug_sentry, locale  (NO token)
+    entry.fbase_key = "firebase:authUser:AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE:[DEFAULT]"
+    entry.value = {                            <- full Firebase Web SDK User JSON
+      uid               : <user_id from securetoken response>
+      emailVerified     : false               <- REQUIRED boolean (SDK assertion)
+      isAnonymous       : false               <- REQUIRED boolean (SDK assertion)
+      providerData      : []                   <- custom sign-in -> empty array
+      stsTokenManager.refreshToken            <- Firebase refresh token
+      stsTokenManager.accessToken             <- Firebase ID token (short-lived JWT)
+      stsTokenManager.expirationTime          <- epoch MILLISECONDS
+      createdAt / lastLoginAt                 <- epoch-ms STRINGS (not numbers)
+      apiKey  = AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE
+      appName = "[DEFAULT]"
+    }
+    (email/displayName/photoURL OMITTED — a custom-auth user has none; null fails
+     the SDK's string|undefined assertion.)
+localStorage (origin): deviceId, proxyLoginCount, debug_sentry, locale  (NO token,
+  not auth-bearing — do NOT seed). Cookies: none required (auth rides the
+  `token-id` header sourced from the IndexedDB record; no app-token to mint).
 ```
 
 ### 2.1 Flow
@@ -147,14 +177,19 @@ localStorage (origin): deviceId, proxyLoginCount, debug_sentry, locale  (NO toke
    `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` → `CAF_FIREBASE_REFRESH_TOKEN` →
    `GHL_FIREBASE_REFRESH_TOKEN`). It does NOT import or modify Skill 44's engine.
 2. `bash tools/inject-ghl-auth.sh <session> /tmp/<session>/ghl-auth-seed.json --pre-open`
-   — opens the GoHighLevel origin (so IndexedDB exists), writes the seed entry
-   into `firebaseLocalStorageDb`/`firebaseLocalStorage` via `eval`, reloads. This
-   script is HEADLESS-FORCED (D6): it `unset`s `AGENT_BROWSER_HEADED`, runs every
-   agent-browser call through a wrapper that appends `--headed false`, and ABORTS
-   (exit 75) if a headed signal survives. No login form is rendered on this path.
+   — opens the GoHighLevel origin (so IndexedDB exists), validates the seed has
+   the required boolean fields + tokens (FAIL LOUD otherwise), writes the entry
+   into `firebaseLocalStorageDb`/`firebaseLocalStorage` via `eval`, **reads it
+   back to confirm it persisted**, then reloads. This script is HEADLESS-FORCED
+   (D6): it `unset`s `AGENT_BROWSER_HEADED`, runs every agent-browser call through
+   a wrapper that appends `--headed false`, and ABORTS (exit 75) if a headed
+   signal survives. No login form is rendered on this path. If the write/readback
+   fails it exits **non-zero** — the builder STOPS (no auto UI-login fallback).
 3. `agent-browser --headed false --session <session> snapshot -i` → confirm the
-   **dashboard**, NOT the Sign in form. If the form shows → token revoked → fall
-   back to A1 (the LAST-RESORT UI login, still headless).
+   **dashboard**, NOT the Sign in form. **If the form shows → token revoked → STOP
+   and report (non-zero).** Do NOT auto-fill the form or trigger two-factor. The
+   operator re-grabs a fresh refresh token (Token Grabber) and retries this
+   token-seed path.
 4. Once a real logged-in session exists, `agent-browser --headed false --session
    <session> state save ./<client>-auth.json` and reuse via `--state` (captures
    the verbatim post-login cookie set, which a freshly minted token alone cannot
@@ -163,18 +198,22 @@ localStorage (origin): deviceId, proxyLoginCount, debug_sentry, locale  (NO toke
 ID token is short-lived (~50–60 min). On a 401 mid-build, re-run
 `seed-ghl-auth.py` and re-inject (retry-once, mirrors transport.py).
 
-### 2.2 Documented fallback (LAST RESORT — UI login)
-**UI login is the LAST-RESORT fallback only** (the default is the headless token
-seed in §2.1; this path renders the Sign-in form and is used ONLY when no usable
-refresh token exists). No usable refresh token → login form (A1) with
+### 2.2 MANUAL last resort (operator only — NEVER auto-invoked)
+**The token-seed (§2.1) is the ONLY automatic auth path.** There is **no
+automatic UI-login / two-factor fallback** — neither `seed-ghl-auth.py` nor
+`inject-ghl-auth.sh` ever drives the Sign-in form. When the token-seed cannot run
+or cannot log in, the builder **STOPS and reports** (non-zero exit). The correct
+fix is for the operator to re-grab the client's refresh token (Token Grabber) and
+re-run §2.1.
+
 `GHL_AGENCY_EMAIL` / `GHL_AGENCY_PASSWORD` (real fleet var names;
-`GHL_EMAIL`/`GHL_PASSWORD` also accepted). The form is filled **headless** (D6 —
-still `--headed false`, still no visible window). **Two-factor authentication is
-NEVER bypassed:** if a code is genuinely required and cannot be satisfied
-headless, the run PAUSES, captures a screenshot to disk, and surfaces to the
-operator — it does NOT open a window. Prefer fixing auth by re-grabbing the
-client's refresh token (Token Grabber) so the default §2.1 seed path applies.
-`state save` after a successful login so it persists.
+`GHL_EMAIL`/`GHL_PASSWORD` also accepted) are retained **only as a documented,
+operator-initiated manual recovery** for the rare case the refresh token cannot be
+re-grabbed at all. They are **never** invoked automatically by the build loop. If
+an operator runs that manual path by hand, it stays headless (D6 — `--headed
+false`, no visible window) and two-factor is **never bypassed**: a genuinely
+required code PAUSES, screenshots to disk, and surfaces to the operator. After a
+successful manual login, `state save` so it persists and the §2.1 path resumes.
 
 ### 2.3 Credential model
 CLIENT keys ONLY. Every client box runs on the client's own funded GoHighLevel
@@ -212,8 +251,10 @@ Each step: ACTION / GATE (from gates.json) / VERIFY / EDGE. Resolve every
 `runtime` gate by live snapshot before acting.
 
 ### A0. Preflight
-- A0.1 Auth: `seed-ghl-auth.py --check` reports `refresh-token` (preferred) or
-  `login-form`. At least one path must be present.
+- A0.1 Auth: `seed-ghl-auth.py --check` must report `refresh-token` — that is the
+  ONLY automatic auth path. Any other result (`none`) means **STOP**: the operator
+  re-grabs the client's refresh token (Token Grabber). The check NEVER authorizes
+  an automatic UI login; `manual_login_creds_present` is informational only.
 - A0.2 Payloads exist on disk, one per page, self-contained (inline CSS/`<style>`,
   no React/build deps). `ghl_builder.build_manifest` enforces non-empty + file
   exists. A payload too rich for a code block → route to Mode 2 (Part C).
@@ -226,18 +267,25 @@ Each step: ACTION / GATE (from gates.json) / VERIFY / EDGE. Resolve every
 - A0.4 Build the MANIFEST up front (`ghl_builder.build_manifest`): ordered
   `{name, path, payload_path, mode}` — the loop driver AND resume ledger key.
 
-### A1. Login + session
-- A1.1 Navigate to root `https://app.convertandflow.com/` (GATE #1, captured).
-- A1.2 If auth was seeded (§2) and snapshot shows the dashboard → skip to A2.
-  Else fill `input#email` / `input#password` (captured) → click `button "Sign
-  in"`.
+### A1. Session — token-seed ONLY (no UI login)
+- A1.1 Seed auth via §2 (`seed-ghl-auth.py` → `inject-ghl-auth.sh`) BEFORE
+  navigating. The refresh token alone logs the SPA in.
+- A1.2 Navigate to root `https://app.convertandflow.com/`, then `snapshot -i` →
+  confirm the **dashboard**. Gate #1 (the Sign-in form) is captured ONLY so the
+  agent can DETECT it and STOP — it is **never filled** by the build loop.
 - A1.3 VERIFY: URL reaches the dashboard within timeout.
-- EDGE not-logged-in/expired: re-auth once (prefer re-seeding the token, §2.1);
-  still failing → PAUSE + screenshot + surface to operator. Never loop silently.
-- EDGE two-factor: detect the "Verify Security Code" screen → PAUSE up to 5 min,
-  capture a screenshot to disk, and surface to the operator. **Stay headless
-  (D6) — NEVER open a window.** NEVER bypass. `state save` after the operator
-  resolves it.
+- EDGE not-logged-in / expired token: re-seed ONCE (re-run §2.1 to mint a fresh
+  ID token from the same refresh token). If the dashboard still does not appear →
+  **STOP and report (non-zero)**. Do NOT fill the Sign-in form, do NOT trigger
+  two-factor. The operator re-grabs a fresh refresh token (Token Grabber) and
+  retries the seed. Never loop silently, never auto-open the form.
+- EDGE Sign-in form / two-factor screen shows: this means the seed did not log in
+  (token revoked). **STOP and report** — capture a screenshot to disk and surface
+  to the operator. **Stay headless (D6) — NEVER open a window. NEVER auto-fill the
+  form or bypass two-factor.** The fix is a fresh refresh token, not a UI login.
+- MANUAL recovery (operator only, §2.2): `GHL_AGENCY_EMAIL`/`GHL_AGENCY_PASSWORD`
+  is a documented last resort the operator may run BY HAND; the build loop never
+  invokes it.
 
 ### A2. Sub-account selection — HARD GATE
 - A2.1 Read the current sub-account label (top-left).
@@ -379,8 +427,10 @@ For full Vercel builds (React/external deps) that cannot live in a Code element.
 ---
 
 ## EDGE CASES (consolidated — all handled above)
-sub-account mismatch (A2.3 hard gate) · two-factor pause (A1, never bypass) ·
-token expiry mid-build (re-seed, retry-once) · duplicate funnel/website name +
+sub-account mismatch (A2.3 hard gate) · seed fails to log in / Sign-in form or
+two-factor screen shows (A1 — STOP + report, NO auto UI login/2FA; operator
+re-grabs the refresh token) · token expiry mid-build (re-seed from the same
+refresh token, retry-once) · duplicate funnel/website name +
 duplicate step path (search-first, disambiguate, record) · nested-iframe editor
 (frame scope) · AI popup (dismiss) · payload too large (→ Mode 2) ·
 X-Frame-Options/CSP (frame-ancestors) · full-width label drift (verify by state)
