@@ -281,7 +281,15 @@ if [[ -f "$DEPT_NAMING_MAP" ]]; then
 fi
 
 # ---- resolve parent page ----
-PARENT_PAGE_ID="${NOTION_CLOSEOUT_PARENT_PAGE_ID:-}"
+# Two equivalent ways to provide an explicit, already-shared parent page:
+#   NOTION_CLOSEOUT_PARENT_PAGE_ID -- the canonical closeout parent page id.
+#   NOTION_WORKSPACE_ROOT_ID       -- a workspace root page id shared with the
+#                                     zhc integration (used by automated setup +
+#                                     the closeout-watchdog fixture). Either one,
+#                                     when set, is treated as a genuine shared
+#                                     page so the no-shared-page hold below does
+#                                     not fire and the root page is created here.
+PARENT_PAGE_ID="${NOTION_CLOSEOUT_PARENT_PAGE_ID:-${NOTION_WORKSPACE_ROOT_ID:-}}"
 PARENT_KIND="env"
 # SHARED_PAGE_SEEN: did ANY search return a page result? If every search comes
 # back with zero results, the integration has NO page shared with it (the
