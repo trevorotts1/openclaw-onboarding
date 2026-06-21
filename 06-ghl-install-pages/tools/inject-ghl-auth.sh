@@ -1,30 +1,53 @@
 #!/usr/bin/env bash
 # inject-ghl-auth.sh — Seed a logged-in GoHighLevel session into an agent-browser
-# session's IndexedDB, so the builder starts authenticated without typing a
-# password or hitting two-factor authentication.
+# session, so the builder starts authenticated WITHOUT typing a password and
+# WITHOUT ever reaching two-factor authentication. The client's Firebase refresh
+# token ALONE produces a logged-in SPA session.
 #
-# This is the BROWSER-SIDE half of D7. The TOKEN-SIDE half is seed-ghl-auth.py
-# (mints the Firebase ID token from the client's refresh token). Order:
+# This is the BROWSER-SIDE half of D7 and is the ONLY auth path it drives. The
+# TOKEN-SIDE half is seed-ghl-auth.py (mints the Firebase ID token from the
+# client's refresh token and emits the seed contract). Order:
 #
 #   1. python3 seed-ghl-auth.py --print-seed --out /tmp/<session>/ghl-auth-seed.json
-#   2. inject-ghl-auth.sh <session-name> /tmp/<session>/ghl-auth-seed.json
-#   3. agent-browser --session <session-name> reload   (SPA rehydrates from IndexedDB)
-#   4. snapshot -> confirm dashboard (NOT the login form). If login form -> seed
-#      failed (token revoked) -> fall back to the login path (A1).
+#   2. inject-ghl-auth.sh <session-name> /tmp/<session>/ghl-auth-seed.json --pre-open
+#   3. (this script: seeds Firebase IndexedDB -> fetches /oauth/2/login/current
+#      in-page (token-id header) -> writes the six SPA cookies from the response
+#      -> reloads so the SPA rehydrates)
+#   4. snapshot -> confirm dashboard (NOT the login form).
+#
+# WHY BOTH COOKIES *AND* INDEXEDDB (bundle-verified chunk.DOYVEcZH.js):
+#   * COOKIES are the SPA's authoritative logged-in signal. The `An` getter reads
+#     cookie `a` (= btoa(JSON.stringify({apiKey,userId,companyId}))) and THROWS
+#     "user_not_logged_in" if it is absent; Cl() throws "Not authenticated" with
+#     no apiKey. An earlier IndexedDB-ONLY seed therefore bounced to the login
+#     form (03-login-attempt.png). We MUST set cookie `a` + the five token
+#     cookies (access-token-v1/v2, refresh-token-v1/v2, custom-firebase-token).
+#   * FIREBASE IndexedDB is needed so the generic-API interceptor's
+#     `token-id = await firebase.auth().currentUser.getIdToken()` resolves on data
+#     XHRs (the SPA also boots Firebase from the custom-firebase-token cookie via
+#     signInWithCustomToken()).
+#   The cookie VALUES come from the SPA's own getCurrentUser():
+#     GET /oauth/2/login/current  headers{channel,source,version,device-id,token-id}
+#   run IN this browser (Cloudflare's bot-check WAF — error 1010 — blocks bare
+#   non-browser requests; inside agent-browser the clearance + UA are automatic).
+#   It returns {token, jwt, refreshJwt, apiKey, authToken, refreshToken, userId,
+#   companyId} — live-proven 200, token-id alone authenticates, no 2FA.
+#
+# HARD RULE — NO AUTOMATIC UI-LOGIN / 2FA FALLBACK:
+#   This script NEVER drives the Sign-in form and NEVER triggers two-factor. If
+#   any step fails (mint/login-current/cookie-write/verify) it exits NON-ZERO and
+#   the builder MUST STOP and report. A revoked/expired token => operator
+#   re-grabs a fresh refresh token (Token Grabber); it does NOT cause an automatic
+#   UI login. GHL_AGENCY_EMAIL/PASSWORD is a documented MANUAL last resort only.
 #
 # PRIMARY ENGINE: agent-browser (Vercel Labs), headless, isolated --session.
-# It must already have navigated to the GoHighLevel origin once (so the origin's
-# IndexedDB exists) — pass --pre-open to do that here.
+# It must already have navigated to the GoHighLevel origin once (so cookies bind
+# to the right origin + the Firebase IndexedDB exists) — pass --pre-open here.
 #
-# WHY IndexedDB and not localStorage: the 2026-06-21 live-capture pass proved
-# GoHighLevel stores Firebase auth in IndexedDB database `firebaseLocalStorageDb`,
-# object store `firebaseLocalStorage` (keyPath `fbase_key`). localStorage holds
-# NO token. Writing localStorage would NOT log the session in.
-#
-# agent-browser's own `state save/load` also captures IndexedDB; once a real
-# logged-in session has been state-saved, prefer `--state <file>` for the
-# verbatim post-login cookie set. This script is the path when all we have is a
-# freshly minted token (no prior saved state).
+# agent-browser's own `state save/load` also captures cookies + IndexedDB; once a
+# real logged-in session has been state-saved, prefer `--state <file>` for the
+# verbatim cookie set. This script is the path when all we have is a freshly
+# minted token (no prior saved state).
 set -euo pipefail
 
 # ── D6: HARD HEADLESS GUARD ──────────────────────────────────────────────────
@@ -72,86 +95,262 @@ fi
 [ -f "$SEED_FILE" ] || { echo "seed file not found: $SEED_FILE" >&2; exit 66; }
 [ -x "$AB_BIN" ] || { echo "agent-browser not found (Skill 03 must be installed)" >&2; exit 69; }
 
-# Ensure the origin's IndexedDB exists before we write to it.
+# Ensure the origin is open + the SPA is MOUNTED before we seed: activation drives
+# the SPA's own store + router (#app.__vue_app__), which only exists once the app
+# bundle has booted. The page will bounce to /login (no valid session yet) — that
+# is expected; we only need #app mounted so $store/$router are reachable.
 # (AB() forces --headed false — D6 headless guard; never a visible window.)
 if [ "$PRE_OPEN" = "1" ]; then
   AB --session "$SESSION" open "$ORIGIN/" >/dev/null
-  AB --session "$SESSION" wait 1500 >/dev/null || true
+  # Poll for the Vue app mount (up to ~12s) instead of a flat sleep.
+  for _i in 1 2 3 4 5 6 7 8; do
+    MOUNTED="$(AB --session "$SESSION" eval "!!(document.querySelector('#app')&&document.querySelector('#app').__vue_app__)" 2>/dev/null || echo false)"
+    case "$MOUNTED" in *true*) break ;; esac
+    AB --session "$SESSION" wait 1500 >/dev/null || true
+  done
 fi
 
-# Build the injector JS. It opens (or creates) the database, ensures the object
-# store with the correct keyPath exists, and puts the entry. Reads the seed from
-# an env var to avoid shell-escaping a large JSON blob.
+# Build the injector JS. It (1) seeds the Firebase IndexedDB record, (2) fetches
+# /oauth/2/login/current IN this browser (token-id header) to get the logged-in
+# object `i`, and (3) writes the SPA's six auth cookies from `i` using the
+# verbatim `An` setter template (cookie `a` = btoa({apiKey,userId,companyId}) is
+# the authoritative logged-in signal). Reads the seed from window.__GHL_SEED__ to
+# avoid shell-escaping a large JSON blob.
 export GHL_SEED_JSON="$(cat "$SEED_FILE")"
 
 read -r -d '' INJECT_JS <<'JS' || true
 (async () => {
-  const seed = JSON.parse(__SEED__);
+  const seed = __SEED__;
   const { database, store, keyPath, entry } = seed.indexeddb;
+
+  // ── (B) FAIL LOUD before writing the Firebase record ──────────────────────
+  // The Firebase Web SDK User._fromJSON() asserts typeof emailVerified==='boolean'
+  // and typeof isAnonymous==='boolean', and needs uid + a stsTokenManager with
+  // refreshToken + accessToken. A record missing these throws auth/internal-error
+  // on rehydrate. We refuse to seed a record that would not log in.
+  const v = entry && entry.value || {};
+  const missing = [];
+  if (!v.uid) missing.push("uid");
+  if (typeof v.emailVerified !== "boolean") missing.push("emailVerified(boolean)");
+  if (typeof v.isAnonymous !== "boolean") missing.push("isAnonymous(boolean)");
+  if (!v.stsTokenManager || !v.stsTokenManager.refreshToken) missing.push("stsTokenManager.refreshToken");
+  if (!v.stsTokenManager || !v.stsTokenManager.accessToken) missing.push("stsTokenManager.accessToken");
+  if (missing.length) throw new Error("SEED-INVALID: missing/badtype " + missing.join(","));
 
   function openDb() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(database);
       req.onupgradeneeded = (e) => {
         const db = e.target.result;
-        if (!db.objectStoreNames.contains(store)) {
-          db.createObjectStore(store, { keyPath });
-        }
+        if (!db.objectStoreNames.contains(store)) db.createObjectStore(store, { keyPath });
       };
       req.onsuccess = (e) => resolve(e.target.result);
       req.onerror = (e) => reject(e.target.error);
     });
   }
-
   let db = await openDb();
-  // If the store is missing (fresh DB created by the SDK without our store),
-  // bump the version to add it.
   if (!db.objectStoreNames.contains(store)) {
-    const v = db.version + 1;
-    db.close();
+    const ver = db.version + 1; db.close();
     db = await new Promise((resolve, reject) => {
-      const req = indexedDB.open(database, v);
-      req.onupgradeneeded = (e) => {
-        const d = e.target.result;
-        if (!d.objectStoreNames.contains(store)) d.createObjectStore(store, { keyPath });
-      };
+      const req = indexedDB.open(database, ver);
+      req.onupgradeneeded = (e) => { const d = e.target.result; if (!d.objectStoreNames.contains(store)) d.createObjectStore(store, { keyPath }); };
       req.onsuccess = (e) => resolve(e.target.result);
       req.onerror = (e) => reject(e.target.error);
     });
   }
-
   await new Promise((resolve, reject) => {
     const tx = db.transaction(store, "readwrite");
     tx.objectStore(store).put(entry);
     tx.oncomplete = () => resolve();
     tx.onerror = (e) => reject(e.target.error);
   });
+  const got = await new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readonly");
+    const r = tx.objectStore(store).get(entry.fbase_key);
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = (e) => reject(e.target.error);
+  });
   db.close();
-  return "seeded:" + entry.fbase_key;
+  if (!got || !got.value || !got.value.stsTokenManager ||
+      got.value.stsTokenManager.accessToken !== entry.value.stsTokenManager.accessToken) {
+    throw new Error("SEED-READBACK-FAILED: firebase record did not persist for " + entry.fbase_key);
+  }
+
+  // ── (STEP 2) getCurrentUser() — the SPA's own login/current call ──────────
+  // Authed by token-id (the minted id_token). Done HERE because Cloudflare's
+  // bot-check (error 1010) blocks bare non-browser requests; the agent-browser
+  // carries the clearance + a real UA automatically. NOTE: credentials are
+  // OMITTED — exactly like the SPA's own axios. The GHL backend's CORS does NOT
+  // allow credentialed cross-origin requests, so credentials:"include" makes the
+  // browser block it ("Failed to fetch"); credentials:"omit" returns 200.
+  const lc = seed.login_current;
+  // Stable device-id (SPA reads getDeviceId/localStorage; supply one if absent).
+  let deviceId = "";
+  try { deviceId = localStorage.getItem("deviceId") || ""; } catch (e) {}
+  if (!deviceId) {
+    deviceId = (crypto && crypto.randomUUID) ? crypto.randomUUID()
+      : ("dev-" + Date.now() + "-" + Math.random().toString(16).slice(2));
+    try { localStorage.setItem("deviceId", deviceId); } catch (e) {}
+  }
+  const lcHeaders = Object.assign({}, lc.headers, { "device-id": deviceId });
+  let i;
+  try {
+    const resp = await fetch(lc.url, { method: lc.method || "GET", headers: lcHeaders, mode: "cors", credentials: "omit" });
+    if (resp.status !== 200) {
+      const body = (await resp.text()).slice(0, 200);
+      throw new Error("LOGIN-CURRENT-" + resp.status + ": " + body);
+    }
+    i = await resp.json();
+  } catch (e) {
+    throw new Error("LOGIN-CURRENT-FAILED: " + (e && e.message || e));
+  }
+  // The object `i` MUST carry the apiKey/userId/companyId that cookie `a` needs.
+  if (!i || !i.apiKey || !i.userId) {
+    throw new Error("LOGIN-CURRENT-NOFIELDS: missing apiKey/userId in response (got keys: " + Object.keys(i || {}).join(",") + ")");
+  }
+
+  // ── (A) Write the six SPA cookies from `i` — VERBATIM `An` setter template ──
+  // From chunk.DOYVEcZH.js:
+  //   a="/"; i=(e===null?-1:1)*31536e3; n=fp(hostname); s=n?`domain=${n};`:"";
+  //   o=n?"secure":""; cookie a=btoa(JSON.stringify({apiKey,userId,companyId}));
+  //   access-token-v1=jwt; refresh-token-v1=refreshJwt; access-token-v2=authToken;
+  //   refresh-token-v2=refreshToken; custom-firebase-token=firebaseToken(=i.token)
+  const ckA = seed.cookies;
+  const path = (ckA.attrs && ckA.attrs.path) || "/";
+  const maxAge = (ckA.attrs && ckA.attrs.maxAge) || 31536000;
+  // fp(hostname): registrable domain (last two labels) — the SPA only sets the
+  // domain attribute when this resolves, and only then adds `secure`.
+  function registrableDomain(host) {
+    if (!host || /^[0-9.]+$/.test(host) || host === "localhost") return "";
+    const parts = host.split(".");
+    if (parts.length < 2) return "";
+    return parts.slice(-2).join(".");
+  }
+  const dom = registrableDomain(window.location.hostname);
+  const domStr = dom ? ("domain=" + dom + ";") : "";
+  const secStr = dom ? "secure" : "";
+  function setCookie(name, value) {
+    document.cookie = name + "=" + (value == null ? "" : value) + ";" + domStr + "path=" + path + ";Max-Age=" + maxAge + ";" + secStr + ";";
+  }
+  // cookie `a` — authoritative logged-in signal. Exact key ORDER per a_shape.
+  const aObj = {};
+  for (const k of ckA.a_shape) aObj[k] = (i[k] != null ? i[k] : "");
+  setCookie(ckA.a_name, btoa(JSON.stringify(aObj)));
+  // The five token cookies. firebaseToken := i.token (the firebase custom token).
+  const responseFields = { jwt: i.jwt, refreshJwt: i.refreshJwt, authToken: i.authToken, refreshToken: i.refreshToken, firebaseToken: i.token };
+  for (const [field, cookieName] of Object.entries(ckA.token_map)) {
+    setCookie(cookieName, responseFields[field] != null ? responseFields[field] : "");
+  }
+
+  // Read cookie `a` back and confirm it decodes to an object carrying apiKey —
+  // never report "seeded" if the SPA's logged-in signal did not land.
+  function getCookie(n) {
+    const m = document.cookie.match(new RegExp("(?:^|; )" + n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "=([^;]*)"));
+    return m ? m[1] : null;
+  }
+  const rawA = getCookie(ckA.a_name);
+  let decoded = null;
+  try { decoded = rawA ? JSON.parse(atob(rawA)) : null; } catch (e) {}
+  if (!decoded || !decoded.apiKey) {
+    throw new Error("COOKIE-A-READBACK-FAILED: cookie `a` missing/undecodable (the SPA would throw user_not_logged_in)");
+  }
+  return "seeded:" + entry.fbase_key + "|cookie-a:apiKey=" + String(decoded.apiKey).slice(0, 6) + "...|userId=" + decoded.userId;
 })()
 JS
 
-# Substitute the seed JSON as a JS string literal (JSON is valid JS for a string
-# via JSON.parse of a quoted blob). We pass it through window for safety.
-INJECT_JS="${INJECT_JS/__SEED__/JSON.stringify(window.__GHL_SEED__)}"
+# The injector reads the seed as a live JS OBJECT (not a JSON string), so it can
+# access seed.indexeddb / seed.login_current / seed.cookies directly. We stage
+# the object on window first, then substitute __SEED__ -> window.__GHL_SEED__.
+INJECT_JS="${INJECT_JS/__SEED__/window.__GHL_SEED__}"
 
 # Stage the seed object on window first (small eval), then run the injector.
 AB --session "$SESSION" eval --stdin <<EOF >/dev/null
 window.__GHL_SEED__ = ${GHL_SEED_JSON};
 EOF
 
-RESULT="$(AB --session "$SESSION" eval --stdin <<EOF
+# Run the injector. If the JS throws (invalid seed / login-current failure /
+# cookie-write failure) the eval exits non-zero and `set -e` aborts this script —
+# the builder STOPS and reports. There is NO automatic fall-back to the UI login
+# form / two-factor here.
+if ! RESULT="$(AB --session "$SESSION" eval --stdin <<EOF
 ${INJECT_JS}
 EOF
-)"
+)"; then
+  echo "REFUSE: auth seed failed (Firebase IndexedDB / login-current fetch / cookie write). Token-seed is the ONLY auth path. Do NOT open the Sign-in form. Re-grab a fresh refresh token (Token Grabber) and retry. STOP." >&2
+  exit 1
+fi
+
+# Guard: the injector returns "seeded:<key>" on success and throws otherwise.
+# agent-browser 0.27.0 `eval` returns the JS return value JSON-ENCODED, so a
+# string result arrives wrapped in literal double quotes
+# (e.g. `"seeded:firebase:authUser:...:[DEFAULT]"`). Strip a single layer of
+# surrounding double quotes before matching so a SUCCESSFUL seed is not wrongly
+# REFUSEd. (Trailing CR/whitespace is also trimmed.)
+RESULT="${RESULT%$'\r'}"
+RESULT="${RESULT#\"}"
+RESULT="${RESULT%\"}"
+case "$RESULT" in
+  seeded:*) : ;;
+  *) echo "REFUSE: seed did not confirm (got: '${RESULT}'). Token-seed is the ONLY auth path — do NOT auto-open the login form. STOP." >&2; exit 1 ;;
+esac
 
 echo "$RESULT"
 
-# Reload so the SPA rehydrates from the seeded IndexedDB.
-AB --session "$SESSION" reload >/dev/null
-AB --session "$SESSION" wait 2000 >/dev/null || true
+# ── DO NOT RELOAD ─────────────────────────────────────────────────────────────
+# A full page reload re-runs the agency whitelabel boot gate (the "[redirectIIFE]
+# post-ready check" IIFE), which calls firebase signOut() and WIPES the seeded
+# Firebase IndexedDB record before it is used, then bounces to /login?logout=true.
+# PROVEN: seed + reload => login bounce; seed + in-app router nav => logged in.
+# So instead we activate the session through the SPA's OWN store + router (exactly
+# what a real login does): commit auth/get (reads the seeded cookies) + user/get,
+# then $router.push() to the post-login surface. No full navigation, so the boot
+# IIFE never re-runs. The injector already verified cookie `a` decodes; here we
+# confirm the store accepts it (auth/get returns a user) and land on the app.
+ACTIVATE_TARGET="${GHL_ACTIVATE_PATH:-/}"
+read -r -d '' ACTIVATE_JS <<'AJS' || true
+(async () => {
+  const el = document.querySelector('#app');
+  if (!el || !el.__vue_app__) throw new Error("ACTIVATE-NO-VUE-APP: SPA not mounted (open the GHL origin first / --pre-open)");
+  const gp = el.__vue_app__.config.globalProperties;
+  const store = gp.$store, router = gp.$router;
+  if (!store || !router) throw new Error("ACTIVATE-NO-STORE-ROUTER");
+  // auth/get reads the seeded cookie `a` (+ token cookies). If it rejects, the
+  // seed did not take — FAIL LOUD (the builder STOPS; no UI-login fallback).
+  let user;
+  try { user = await store.dispatch('auth/get'); }
+  catch (e) { throw new Error("ACTIVATE-AUTHGET-REJECT: " + (e && e.message || e)); }
+  if (!user || !user.apiKey || !user.userId) throw new Error("ACTIVATE-AUTHGET-NOUSER");
+  try { await store.dispatch('user/get'); } catch (e) { /* non-fatal: some accounts gate user/get */ }
+  try { await router.push({ path: window.__GHL_ACTIVATE_TARGET__ || '/' }); } catch (e) { /* router may redirect; check below */ }
+  await new Promise(r => setTimeout(r, 800));
+  const hasPwd = !!document.querySelector('input[type=password]');
+  const onLogin = /[?&]logout=true/.test(location.href) || /\/login(\b|$)/.test(location.pathname) || hasPwd;
+  if (onLogin) throw new Error("ACTIVATE-BOUNCED-TO-LOGIN: href=" + location.href + " hasPwd=" + hasPwd);
+  return "activated:userId=" + user.userId + "|href=" + location.href;
+})()
+AJS
 
-# Caller must snapshot and confirm dashboard (NOT login form). See A1.3.
-# NOTE: the snapshot below ALSO carries --headed false (D6) — every agent-browser
-# call in this flow is headless; never let the next step open a visible window.
-echo "NEXT: agent-browser --headed false --session ${SESSION} snapshot -i  # expect dashboard, not the Sign in form"
+AB --session "$SESSION" eval --stdin <<EOF >/dev/null
+window.__GHL_ACTIVATE_TARGET__ = ${ACTIVATE_TARGET@Q};
+EOF
+
+if ! ARESULT="$(AB --session "$SESSION" eval --stdin <<EOF
+${ACTIVATE_JS}
+EOF
+)"; then
+  echo "REFUSE: session activation failed (store/router rejected the seeded auth). Token-seed is the ONLY auth path — do NOT open the Sign-in form. Re-grab a fresh refresh token (Token Grabber) and retry. STOP." >&2
+  exit 1
+fi
+ARESULT="${ARESULT%$'\r'}"; ARESULT="${ARESULT#\"}"; ARESULT="${ARESULT%\"}"
+case "$ARESULT" in
+  activated:*) echo "$ARESULT" ;;
+  *) echo "REFUSE: activation did not confirm (got: '${ARESULT}'). The SPA still rejected the seeded session — do NOT auto-open the login form. STOP + report." >&2; exit 1 ;;
+esac
+
+# Caller may now snapshot and confirm the app surface (NOT the login form). See A1.3.
+# Every agent-browser call carries --headed false (D6). HARD RULE: if the SPA ever
+# shows the Sign-in form (token revoked), the builder STOPS and reports — it MUST
+# NOT auto-fill the form or trigger two-factor. The operator re-grabs a fresh
+# refresh token and retries this token-seed path. NEVER `reload` after seeding —
+# that re-runs the boot gate and logs the seeded session out.
+echo "NEXT: agent-browser --headed false --session ${SESSION} snapshot -i  # expect the app (NOT login). Navigate via the SPA's own router (\$router.push) — do NOT reload."
