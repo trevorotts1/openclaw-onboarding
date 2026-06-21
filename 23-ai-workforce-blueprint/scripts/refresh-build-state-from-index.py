@@ -40,6 +40,7 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 
 # ─── Path resolvers ──────────────────────────────────────────────────────────
@@ -60,7 +61,7 @@ def find_build_state_path() -> Path:
     return candidates[1] if Path.home().is_dir() else candidates[0]
 
 
-def find_index_json_path() -> Path | None:
+def find_index_json_path() -> Optional[Path]:
     """Locate the role-library _index.json (env override first, then VPS, then Mac)."""
     # Test/override hook: lets the acceptance suite point at a sandbox index.
     env_override = os.environ.get("WORKFORCE_INDEX_PATH")
@@ -76,7 +77,7 @@ def find_index_json_path() -> Path | None:
     return None
 
 
-def find_departments_dir() -> Path | None:
+def find_departments_dir() -> Optional[Path]:
     """Locate the on-disk departments directory."""
     workspace_candidates = [
         Path("/data/.openclaw/workspace/agents/main/departments"),
