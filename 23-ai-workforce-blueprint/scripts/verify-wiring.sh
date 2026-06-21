@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-# verify-wiring.sh — v1.0.2 (WIRING GATE: materialized + registered + reachable + connected)
+# verify-wiring.sh — v1.0.3 (WIRING GATE: materialized + registered + reachable + connected)
+# v1.0.3  2026-06-20  fix: materialization walker no longer mis-classifies a NAMED-SET
+#                     `sops/` SOP-library container (graphics/presentations/quality-control/
+#                     openclaw-maintenance) as an unmaterialized role. Such a `sops/` dir
+#                     holds 40+ real SOP--*.md / SOP-DIU-*.md docs + a small [PENDING] stub
+#                     how-to.md; the old walker returned rc=2 (`<dept>/sops:stub-NNNNB`),
+#                     blocking ZHC closeout for every client with named-set SOP depts even
+#                     though the SOP content is fully substantive (prove-floor PASSES). New
+#                     is_sops_library_dir() recognizes and SKIPS the library container.
 # v1.0.2  2026-06-15  fix: .departments[].slug -> .id (runtime state uses .id, not .slug);
 #                     add guard: ALL_DEPTS empty when state HAS departments = HARD FAIL not
 #                     a vacuous pass; fix state-write jq ($d.slug -> $d.id) so wiringStatus
@@ -60,6 +68,7 @@
 # v1.0.0  2026-06-14  Initial implementation; fleet-wide stub-dept fix.
 # v1.0.1  2026-06-15  fix/gate-scripts-bash-portability: replace mapfile with while-read.
 # v1.0.2  2026-06-15  fix/gate-and-resume-correctness: .id field fix + ALL_DEPTS empty guard.
+# v1.0.3  2026-06-20  fix/named-set-sops-library-walker: skip `sops/` SOP-library containers.
 
 set -uo pipefail
 
@@ -174,6 +183,47 @@ HOW_TO_MIN_BYTES=3072        # 3 KB minimum for a non-stub how-to.md
 PENDING_MARKER="[PENDING"    # substring that signals an unfilled stub
 DIRECTOR_SLUGS=("director" "head" "lead" "architect" "chief")
 
+# ---- Named-set SOP-library detection -----------------------------------------
+# v1.0.3 (2026-06-20): NAMED-SET SOP-library departments (graphics, presentations,
+# quality-control, openclaw-maintenance) keep their SOP LIBRARY in a `sops/`
+# subdirectory holding 40+ real SOP--*.md / SOP-DIU-*.md (and *-sops.md) files plus,
+# at most, a small `[PENDING — FILL FROM LIBRARY]` stub how-to.md. The materialization
+# walker below iterates EVERY dept subdir as a "role" and fails any whose how-to.md is
+# < 3072B. That mis-classified the `sops/` LIBRARY container as an unmaterialized role
+# and returned rc=2 (e.g. `graphics/sops:stub-2015B`), blocking ZHC closeout for every
+# client with named-set SOP depts — even though the SOP content is fully substantive
+# (prove-floor PASSES). This helper recognizes a `sops/` container so it is SKIPPED by
+# the role-count / how-to-size check. It is NOT a role and was never meant to be one.
+#
+# A directory qualifies as a SOP-library container (NOT a role) when BOTH hold:
+#   1. its basename is exactly "sops" (case-insensitive), AND
+#   2. it contains >= 1 real SOP-library doc — a *.md file whose name (case-insensitive)
+#      starts with "SOP-" (covers SOP--*, SOP-DIU-*, SOP-PITCH-*, SOP-IMG-*, sop-*)
+#      OR ends with "-sops.md" (the role-suffixed library docs).
+# This is deliberately tight: it never skips a real role folder (real roles are never
+# named "sops"), and it never skips an empty `sops/` shell (which has no SOP docs).
+is_sops_library_dir() {
+  local _d="$1"
+  local _base
+  _base="$(basename "$_d")"
+  # case-insensitive exact match on the folder name "sops"
+  case "$(printf '%s' "$_base" | tr '[:upper:]' '[:lower:]')" in
+    sops) : ;;
+    *) return 1 ;;
+  esac
+  # must contain at least one real SOP-library doc to count as a library
+  local _f _fn _fnl
+  for _f in "$_d"/*.md; do
+    [[ -e "$_f" ]] || continue
+    _fn="$(basename "$_f")"
+    _fnl="$(printf '%s' "$_fn" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$_fnl" == sop-* || "$_fnl" == *-sops.md ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 # ---- Aggregate failure tracking ----------------------------------------------
 FAIL_MATERIALIZED=()
 FAIL_REGISTERED=()
@@ -221,6 +271,15 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
       ROLE_SLUG="$(basename "$ROLE_DIR")"
       # skip hidden/meta dirs
       [[ "$ROLE_SLUG" == .* ]] && continue
+      # v1.0.3: a NAMED-SET `sops/` SOP-library container is NOT a role. Skip it so
+      # its (legitimately small / [PENDING]) stub how-to.md never trips the role
+      # materialization gate. The SOP content lives in the SOP--*.md / SOP-DIU-*.md
+      # files inside it, which prove-floor verifies separately.
+      if is_sops_library_dir "$ROLE_DIR"; then
+        _sop_lib_count=$(find "$ROLE_DIR" -maxdepth 1 -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')
+        echo "  [MATERIALIZED] SKIP: $ROLE_SLUG — named-set SOP-library container (${_sop_lib_count} SOP docs), not a role"
+        continue
+      fi
       HOW_TO="$ROLE_DIR/how-to.md"
       if [[ ! -f "$HOW_TO" ]]; then
         echo "  [MATERIALIZED] FAIL: $ROLE_SLUG — how-to.md missing" >&2

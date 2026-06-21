@@ -179,7 +179,32 @@ TS = os.environ["TS"]
 # tripping verify-zhc-standard.sh rc=4 on COMPLETE workforces. We now match BOTH
 # markers. The >= LIBRARY_MIN_BYTES (3 KB) substance floor at the usage site is
 # UNCHANGED — the marker remains necessary-but-insufficient; size is authoritative.
-LIBRARY_MARKER = re.compile(r"<!--\s*(?:WS-2: instantiated from role-library v|Filled from role-library v|workforce-provenance:\s*source=role-library)", re.IGNORECASE)
+#
+# v13.1.2 REGRESSION-1 FIX (marker-drift, old bare form): the v12.43.x regex above
+# only matched the WS-2-PREFIXED instantiate marker
+#   <!-- WS-2: instantiated from role-library v... -->
+# but many real, complete, library-instantiated how-to.md files (40 KB DMAIC docs
+# with full `## Standard Operating Procedures` / `### SOP 9.x` blocks) carry the
+# OLDER, BARE marker form with NO `WS-2:` prefix:
+#   <!-- Instantiated from role-library v12.17.1 ... -->
+# Those failed to match, so genuinely-filled departments read lib%=0.0 and failed
+# the role-library gate (rc=4) even though the content was fully present (census on
+# a real box: 620/715 how-to.md matched; ~33 of the 95 misses were these
+# old-bare-marker real-content files). Fix: make the `WS-2:` prefix OPTIONAL so the
+# bare `Instantiated from role-library v` form is also recognized, and keep matching
+# the `workforce-provenance ... source=role-library` marker in EITHER field order.
+# This is a marker-OR broadening only — the >= LIBRARY_MIN_BYTES (3 KB) substance
+# floor at the usage site is UNCHANGED, so a thin stub carrying any marker still
+# fails. The marker stays necessary-but-insufficient; size is authoritative.
+LIBRARY_MARKER = re.compile(
+    r"<!--\s*"
+    r"(?:"
+    r"(?:WS-2:\s*)?instantiated from role-library v"   # bare OR WS-2:-prefixed instantiate marker
+    r"|Filled from role-library v"                      # new library-fill marker
+    r"|workforce-provenance\b[^>]*\bsource=role-library"  # provenance marker (any field order)
+    r")",
+    re.IGNORECASE,
+)
 STUB_PATTERN = re.compile(r"to be personalized based on research", re.IGNORECASE)
 # BUG 1 FIX (v12.14.6): the library gate used to count a how-to.md as "filled"
 # based solely on the presence of the <!-- Filled from role-library v... --> marker
