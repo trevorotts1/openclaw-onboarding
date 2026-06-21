@@ -1,3 +1,12 @@
+## v13.2.4 — 2026-06-21 — fix(skill 06): hard headless guard (D6) + real GHL UI map wired into gates.json (D8)
+
+Skill-06 GHL-builder hardening after a live run opened a VISIBLE browser window (agent-browser is headless by default, but the launch didn't enforce it). All generic; no client names.
+
+- **D6 — hard headless guard.** `inject-ghl-auth.sh` force-exports `AGENT_BROWSER_HEADED=false`, wraps every agent-browser call with `--headed false`, and ABORTS (exit 75) if any headed signal survives — a visible window can NEVER open, dev or client. `ghl_builder.py` adds `headless_guard()`/`browser_cmd()` + `headless-guard`/`browser-cmd` CLI. Docs flip every `--headed`/`headless=False` exception (login, two-factor, Playwright) to headless; a blocked two-factor now pauses + screenshots + surfaces instead of opening a window.
+- **D7 — token-seed-into-IndexedDB documented as the DEFAULT** auth path (no UI login form rendered; UI login is last-resort fallback, still headless).
+- **D8 — real GHL UI map wired into `gates.json`** from 15 live screenshots: 19 of 28 gates now carry screenshot-confirmed visible labels (the full funnel click-path); env recorded (operator test location id, blackceolinks.com preview domain, Websites-mirrors-Funnels); no invented CSS — runtime @ref capture unchanged.
+- Skill-06 wrapper `skill-version.txt` v7.0.0 → v7.1.0. **PENDING-LIVE-RUN unchanged:** D9–D13 live funnel/website/publish runs still require a live GHL session.
+
 ## v13.2.3 — 2026-06-21 — feat(ghl-builder Phase 1): Skill 44 workflow-quality rubric + Skill 06 agent-browser overhaul (code complete; live runtime PENDING-LIVE-RUN)
 
 GHL-builder Phase 1. Two skills get a hardened build+QC layer; Skill 36 is realigned to point at the overhauled Skill 06 (no parallel page-builder path). All generic; no client names. The token-gated live browser/funnel runs (Skill 06 D8-first capture + D9–D13) are explicitly **PENDING-LIVE-RUN** — code and QC are in place but the live GHL session has not been exercised; they must be run on a real white-label login before any client LIVE build.

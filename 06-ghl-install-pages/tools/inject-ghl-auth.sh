@@ -27,7 +27,38 @@
 # freshly minted token (no prior saved state).
 set -euo pipefail
 
-AB="$(command -v agent-browser || echo "$HOME/.npm-global/bin/agent-browser")"
+# ── D6: HARD HEADLESS GUARD ──────────────────────────────────────────────────
+# HEADLESS-ONLY — never open a visible window; taking over a screen is forbidden
+# (esp. client boxes). A live run once opened a VISIBLE Chromium window because
+# agent-browser inherited a headed config / env: agent-browser is headless by
+# default, but an AGENT_BROWSER_HEADED env var OR a {"headed": true} config file
+# silently forces a headed window. We close that door three ways, on EVERY
+# invocation, dev OR client:
+#   1. Strip the inherited env       -> unset AGENT_BROWSER_HEADED
+#   2. Force headless on the CLI     -> AB() wrapper appends `--headed false`,
+#      which the agent-browser docs define as the explicit override that also
+#      disables "headed": true from a config file.
+#   3. Refuse to proceed if headed could still be on (assert below).
+# `--headed false` is a documented hard override (agent-browser 0.27.0): it
+# disables a config-file "headed": true. There is NO code path here that may
+# open a headed window.
+unset AGENT_BROWSER_HEADED 2>/dev/null || true
+export AGENT_BROWSER_HEADED=false   # belt: any child that re-reads env sees false
+
+AB_BIN="$(command -v agent-browser || echo "$HOME/.npm-global/bin/agent-browser")"
+
+# Guard/assert: if a headed signal survived our strip, ABORT — never risk a
+# visible window. AGENT_BROWSER_HEADED must be exactly "false" (we just set it);
+# anything truthy means our strip failed and we refuse.
+case "${AGENT_BROWSER_HEADED:-false}" in
+  ""|0|false|False|FALSE|no|off) : ;;  # headless — OK
+  *) echo "REFUSE: AGENT_BROWSER_HEADED='${AGENT_BROWSER_HEADED}' would open a VISIBLE window. Headless is mandatory (D6). Aborting." >&2; exit 75 ;;
+esac
+
+# AB() — the ONLY way agent-browser is invoked in this script. Forces
+# `--headed false` on every call so no inherited config/env can open a window.
+AB() { command "$AB_BIN" --headed false "$@"; }
+
 SESSION="${1:-}"
 SEED_FILE="${2:-}"
 ORIGIN="${GHL_AGENCY_URL:-https://app.convertandflow.com}"
@@ -39,12 +70,13 @@ if [ -z "$SESSION" ] || [ -z "$SEED_FILE" ]; then
   exit 64
 fi
 [ -f "$SEED_FILE" ] || { echo "seed file not found: $SEED_FILE" >&2; exit 66; }
-[ -x "$AB" ] || { echo "agent-browser not found (Skill 03 must be installed)" >&2; exit 69; }
+[ -x "$AB_BIN" ] || { echo "agent-browser not found (Skill 03 must be installed)" >&2; exit 69; }
 
 # Ensure the origin's IndexedDB exists before we write to it.
+# (AB() forces --headed false — D6 headless guard; never a visible window.)
 if [ "$PRE_OPEN" = "1" ]; then
-  "$AB" --session "$SESSION" open "$ORIGIN/" >/dev/null
-  "$AB" --session "$SESSION" wait 1500 >/dev/null || true
+  AB --session "$SESSION" open "$ORIGIN/" >/dev/null
+  AB --session "$SESSION" wait 1500 >/dev/null || true
 fi
 
 # Build the injector JS. It opens (or creates) the database, ensures the object
@@ -104,11 +136,11 @@ JS
 INJECT_JS="${INJECT_JS/__SEED__/JSON.stringify(window.__GHL_SEED__)}"
 
 # Stage the seed object on window first (small eval), then run the injector.
-"$AB" --session "$SESSION" eval --stdin <<EOF >/dev/null
+AB --session "$SESSION" eval --stdin <<EOF >/dev/null
 window.__GHL_SEED__ = ${GHL_SEED_JSON};
 EOF
 
-RESULT="$("$AB" --session "$SESSION" eval --stdin <<EOF
+RESULT="$(AB --session "$SESSION" eval --stdin <<EOF
 ${INJECT_JS}
 EOF
 )"
@@ -116,8 +148,10 @@ EOF
 echo "$RESULT"
 
 # Reload so the SPA rehydrates from the seeded IndexedDB.
-"$AB" --session "$SESSION" reload >/dev/null
-"$AB" --session "$SESSION" wait 2000 >/dev/null || true
+AB --session "$SESSION" reload >/dev/null
+AB --session "$SESSION" wait 2000 >/dev/null || true
 
 # Caller must snapshot and confirm dashboard (NOT login form). See A1.3.
-echo "NEXT: agent-browser --session ${SESSION} snapshot -i  # expect dashboard, not the Sign in form"
+# NOTE: the snapshot below ALSO carries --headed false (D6) — every agent-browser
+# call in this flow is headless; never let the next step open a visible window.
+echo "NEXT: agent-browser --headed false --session ${SESSION} snapshot -i  # expect dashboard, not the Sign in form"

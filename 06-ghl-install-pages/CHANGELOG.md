@@ -4,6 +4,58 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v7.1.0] - June 21, 2026 — HEADLESS HARD-GUARD + REAL UI MAP (repo v13.2.4)
+
+A live run opened a VISIBLE browser window on the operator's screen. agent-browser
+is headless by default, but the launch did not ENFORCE it — an inherited
+`AGENT_BROWSER_HEADED` env var or a `{"headed": true}` config file can silently
+force a headed window. This release closes that door permanently and wires the
+real GoHighLevel UI labels from 15 live screenshots.
+
+### Fixed — D6 HARD HEADLESS GUARD (priority)
+- `tools/inject-ghl-auth.sh`: forces headless on EVERY agent-browser call —
+  `unset AGENT_BROWSER_HEADED` + `export AGENT_BROWSER_HEADED=false`, an `AB()`
+  wrapper that appends `--headed false` (the documented agent-browser 0.27.0
+  override that also disables a config-file `"headed": true`), and a guard/assert
+  that REFUSES to proceed (exit 75) if a headed signal survives. Loud comment:
+  "HEADLESS-ONLY — never open a visible window; taking over a screen is forbidden
+  (esp. client boxes)."
+- `tools/ghl_builder.py`: adds `headed_is_forced()`, `headless_guard()` (raises),
+  `browser_cmd()` (emits headless-forced `--headed false` lines), and CLI
+  subcommands `headless-guard` (exit 75 if headed would open) + `browser-cmd`.
+- Docs (`ghl-browser-builder-full.md` v3.0, `INSTALL.md`, legacy
+  `ghl-install-pages-full.md` v2.0): every documented browser invocation is now
+  headless-forced; the old `--headed` / `headless=False` two-factor and "keep the
+  browser visible" exceptions are REMOVED — no path (login, two-factor,
+  Playwright fallback) may open a window. A blocked two-factor PAUSES + screenshots
+  + surfaces to the operator instead.
+
+### Confirmed — D7 token-seed-into-IndexedDB is the DEFAULT (no UI login)
+- `seed-ghl-auth.py` + `inject-ghl-auth.sh` seed the Firebase ID/refresh token
+  straight into IndexedDB (`firebaseLocalStorageDb` → `firebaseLocalStorage` →
+  `fbase_key` → `value.stsTokenManager`) and navigate straight in — NO login form
+  is rendered (the form was the temptation for the visible window). Documented:
+  UI login is the LAST-RESORT fallback ONLY, and still headless.
+
+### Added — D8 real UI map wired into `tools/gates.json`
+- Replaced the placeholder/heuristic `find` hints with the REAL visible labels +
+  sequence from the operator's 15 live screenshots (`Downloads/ghl-ui-map.md`): Sites
+  (left) → Funnels top-tab → "+ New funnel" → "Create new funnel" modal ("From
+  blank" + name + Create) → "+ Add new step or import" → "New step in funnel"
+  modal ("Name for page" + Path → "Create funnel step") → step CONTROL box ("Use
+  existing"/"Create from blank", Edit dropdown = edit path) → close "Ask AI" X →
+  "Blank Section" → "+ Add" → Quick Add → "Custom" group → "Code" → "Custom Code"
+  → "Open Code Editor" → "Custom Javascript/HTML" modal → paste → Save →
+  "Allow Rows to take entire width" → eye=Preview / disk=Save / blue "Publish".
+- Each gate now carries `label` + `label_source` (screenshot-confirmed-label vs
+  still-runtime-snapshot). **20 of 28 gates carry screenshot-confirmed labels.**
+- Recorded `_env`: BlackCEO LLC location id `Mct54Bwi1KlNouGXQcDX`, preview
+  domain `blackceolinks.com`, Websites mirrors Funnels.
+- NO invented CSS: labels are visible-text/role targets the agent confirms at
+  runtime; the runtime @ref capture is unchanged.
+
+---
+
 ## [v7.0.0] - June 21, 2026 — BROWSER-BUILDER OVERHAUL (Part 2)
 
 ### Changed (BREAKING for internal procedure, not for slot/ID/install)

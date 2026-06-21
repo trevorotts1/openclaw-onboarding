@@ -39,6 +39,55 @@ import urllib.request
 LEDGER_STATES = ["created", "code-saved", "page-saved", "previewed", "published"]
 ZHC_PREFIX_RE = re.compile(r"^\s*zhc\b", re.IGNORECASE)
 
+# ── D6: HARD HEADLESS GUARD ──────────────────────────────────────────────────
+# HEADLESS-ONLY — never open a visible window; taking over a screen is forbidden
+# (esp. client boxes). agent-browser is headless by default, but an inherited
+# AGENT_BROWSER_HEADED env var OR a {"headed": true} config file can silently
+# force a HEADED window (this is exactly how a live run once opened a visible
+# Chromium on the operator's screen). Every agent-browser invocation emitted or
+# blessed by this module MUST start with this prefix, which:
+#   - passes `--headed false` (agent-browser 0.27.0 documents this as the
+#     explicit override that also disables a config-file "headed": true), and
+#   - is paired with `unset AGENT_BROWSER_HEADED` in the shell wrappers.
+# There is NO supported code path that may open a headed window — dev OR client.
+AGENT_BROWSER_HEADLESS_PREFIX = "agent-browser --headed false"
+
+# Values of AGENT_BROWSER_HEADED that are SAFE (headless). Anything else = headed.
+_HEADED_OFF_VALUES = frozenset({"", "0", "false", "no", "off"})
+
+
+def headed_is_forced(env: dict | None = None) -> bool:
+    """True iff the environment would force a VISIBLE (headed) browser window.
+    Reads AGENT_BROWSER_HEADED (agent-browser's own env knob). A config-file
+    "headed": true cannot be inspected here, which is exactly why the launch
+    wrappers ALSO pass `--headed false` (the documented config override)."""
+    env = env if env is not None else os.environ
+    val = str(env.get("AGENT_BROWSER_HEADED", "")).strip().lower()
+    return val not in _HEADED_OFF_VALUES
+
+
+def headless_guard(env: dict | None = None) -> None:
+    """REFUSE to proceed if a headed window could open (D6). Callers that are
+    about to launch/drive the browser invoke this first. Raises RuntimeError
+    rather than ever risk taking over a screen."""
+    if headed_is_forced(env):
+        raise RuntimeError(
+            "REFUSE (D6 headless guard): AGENT_BROWSER_HEADED is set to a headed "
+            "value, which would open a VISIBLE browser window. Headless is "
+            "mandatory (never take over a screen, esp. client boxes). "
+            "Run: unset AGENT_BROWSER_HEADED  and always pass `--headed false`."
+        )
+
+
+def browser_cmd(*args: str) -> str:
+    """Return a single agent-browser command line, headless-FORCED (D6).
+    Use this to emit any agent-browser invocation in a plan so no improvised
+    call can ever drop `--headed false`. Example:
+        browser_cmd("--session", "acme", "snapshot", "-i")
+        -> 'agent-browser --headed false --session acme snapshot -i'"""
+    parts = [AGENT_BROWSER_HEADLESS_PREFIX, *(str(a) for a in args)]
+    return " ".join(parts)
+
 
 # ── ZHC naming (guardrail 2 — carries standing build approval per Skill 44) ──
 
@@ -227,6 +276,16 @@ def captured_gates(gates_path: str | None = None) -> list[dict]:
 # ── CLI (mechanical helpers the agent shells out to) ─────────────────────────
 
 def main() -> int:
+    # `browser-cmd` is intercepted BEFORE argparse so pass-through flags like
+    # --session / -i reach the emitted agent-browser line verbatim (argparse
+    # would otherwise treat them as unknown options of THIS program).
+    if len(sys.argv) >= 2 and sys.argv[1] == "browser-cmd":
+        try:
+            headless_guard()
+        except RuntimeError as e:
+            sys.stderr.write(str(e) + "\n"); return 75
+        print(browser_cmd(*sys.argv[2:])); return 0
+
     ap = argparse.ArgumentParser(description="GoHighLevel builder mechanical helpers")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
@@ -240,6 +299,11 @@ def main() -> int:
     p = sub.add_parser("gates"); p.add_argument("--runtime", action="store_true"); p.add_argument("--captured", action="store_true")
     p = sub.add_parser("may-publish"); p.add_argument("approval", nargs="?", default="")
     p = sub.add_parser("subaccount"); p.add_argument("current"); p.add_argument("target")
+    # D6 headless guard helpers.
+    sub.add_parser("headless-guard")  # exit 0 = headless OK; exit 75 = headed would open
+    # browser-cmd is intercepted before argparse (top of main) so its args pass
+    # through verbatim; registered here only so it appears in --help.
+    sub.add_parser("browser-cmd", help="emit a headless-forced agent-browser line (--headed false prepended); all following args pass through")
 
     args = ap.parse_args()
 
@@ -264,6 +328,13 @@ def main() -> int:
     if args.cmd == "subaccount":
         ok = subaccount_matches(args.current, args.target)
         print("MATCH" if ok else "MISMATCH"); return 0 if ok else 1
+    if args.cmd == "headless-guard":
+        try:
+            headless_guard()
+        except RuntimeError as e:
+            sys.stderr.write(str(e) + "\n"); return 75
+        print("HEADLESS-OK"); return 0
+    # `browser-cmd` is handled by the pre-argparse intercept at the top of main().
     return 0
 
 

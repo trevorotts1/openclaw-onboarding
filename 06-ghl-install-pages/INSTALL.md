@@ -239,7 +239,7 @@ from playwright.sync_api import sync_playwright
 with sync_playwright() as p:
     browser = p.chromium.launch_persistent_context(
         user_data_dir=os.path.expanduser("~/.openclaw/playwright-data/ghl-install-pages"),
-        headless=False,
+        headless=True,   # D6 HEADLESS-ONLY — never open a visible window (dev OR client). NEVER set False.
         viewport={"width": 1440, "height": 900},
         args=[
             "--window-size=1440,900",
@@ -252,7 +252,7 @@ with sync_playwright() as p:
 Configuration notes:
 - Always use launch_persistent_context (not regular launch). This saves login session so re-authentication is not required on every run.
 - The user_data_dir ("./ghl_session") is where the browser saves cookies and session data. This folder persists between runs.
-- headless=False means the browser window is visible. This is required for first login and 2FA.
+- headless MUST stay True (D6 HEADLESS-ONLY). A visible window is forbidden, dev OR client. First login and two-factor are handled by the headless token-seed path (ghl-browser-builder-full.md §2) — no window is ever opened; a genuinely-blocked two-factor PAUSES + screenshots + surfaces to the operator instead.
 - Below 1280px width: GHL's left sidebar collapses into a hamburger menu, breaking automation.
 - Below 900px height: Modal dialogs may not fully render, cutting off buttons.
 
@@ -304,7 +304,7 @@ Many business GHL accounts have 2FA enabled. After entering email and password, 
 The agent must handle 2FA as follows:
 - When 2FA is detected, PAUSE and wait for user to complete verification in the browser window
 - NEVER attempt to bypass 2FA
-- Set headless=False so the user can see and interact with the browser
+- Stay headless (D6 — NEVER headless=False, no visible window). If two-factor genuinely cannot be satisfied headless, PAUSE, screenshot to disk, and surface to the operator — do not open a window.
 - Set a generous timeout (at least 5 minutes) because the user may need to find their phone and open an authenticator app
 - After the user completes 2FA, the persistent session will remember the approval so it should not ask again for a while
 

@@ -29,6 +29,17 @@ This module NEVER opens a browser itself and NEVER logs in with a password. It
 only mints the token and prints the seed contract. The browser-side write is
 done by inject_ghl_auth.sh (agent-browser eval) or the Playwright fallback.
 
+D7 — TOKEN-SEED-INTO-INDEXEDDB IS THE DEFAULT PATH (no UI login):
+  The DEFAULT, no-UI auth path is exactly this module + inject-ghl-auth.sh:
+  mint the Firebase ID/refresh token, write it into IndexedDB
+  (firebaseLocalStorageDb -> firebaseLocalStorage -> fbase_key ->
+  value.stsTokenManager), then navigate STRAIGHT INTO the dashboard. NO login
+  form is rendered — that matters because a rendered login form is what once
+  tempted a VISIBLE browser window. The UI login form (GHL_AGENCY_EMAIL/PASSWORD,
+  see "Fallback" below) is the LAST-RESORT fallback ONLY, used solely when no
+  usable refresh token exists; it is still driven HEADLESS (D6) and never opens a
+  visible window.
+
 AUTH STORAGE SCHEMA (live-captured 2026-06-21, app.convertandflow.com)
 ----------------------------------------------------------------------
 IndexedDB database : firebaseLocalStorageDb
