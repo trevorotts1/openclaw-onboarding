@@ -22,6 +22,10 @@
 #   2. interview-nudge                 (0 */6, COMMAND mode) — owner-facing idle-interview nudge
 #   3. closeout-readiness-watchdog     (0 */6, COMMAND mode) — operator-facing stall escalation
 #   4. closeout-resume                 (*/15, COMMAND mode)  — DEDICATED closeout trigger (REDUNDANT path)
+#   5. index-model-drift-check         (hourly, COMMAND)     — config-vs-index embedding-model drift alarm (EMBEDDING-PREVENTION item 4)
+#   6. orphan-temp-sweep               (hourly, COMMAND)     — clears failed-reindex *.sqlite.tmp orphans (item 5)
+#   7. disk-usage-alert                (hourly, COMMAND)     — disk >85% alert (item 6)
+#   8. pre-july14-embed-migrate        (daily, COMMAND)      — flags any box still on dying gemini-embedding-001 (item 7)
 #
 # REDUNDANCY (closes the single-point-of-failure): closeout fires if ANY of
 #   {workforce-build-resume cron, closeout-resume cron, watchdog} reaches the
@@ -50,7 +54,8 @@
 # Onboarding repo version markers (kept in sync by scripts/bump-version.sh):
 #   ENSURE_PIPELINE_CRONS_VERSION
 # BUG-FIX v13.0.2 — JSON presence check, no text-table truncation
-ENSURE_PIPELINE_CRONS_VERSION="v13.0.2"
+# v13.2.0 — EMBEDDING-PREVENTION BUNDLE: wire 4 memory-health crons fleet-wide.
+ENSURE_PIPELINE_CRONS_VERSION="v13.2.0"
 
 set -u
 
@@ -244,6 +249,50 @@ _find_script() {
       return 0
     fi
   done
+  return 1
+}
+
+# Find a memory-health cron script (EMBEDDING-PREVENTION BUNDLE items 4-7).
+# These live in the persistent ~/.openclaw/scripts (or /data/.openclaw/scripts),
+# where install.sh + update-skills.sh land them. $1 = bare script name.
+_find_health_script() {
+  local name="$1" cand
+  for cand in \
+    "$OC_ROOT/scripts/$name" \
+    "${HOME}/.openclaw/scripts/$name" \
+    "/data/.openclaw/scripts/$name" \
+    "${OC_PERSISTENT_SCRIPTS_DIR:-}/$name"; do
+    [[ -n "$cand" ]] || continue
+    if [[ -f "$cand" ]]; then
+      printf '%s\n' "$cand"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Register ONE memory-health cron. $1 name, $2 schedule, $3 bare script name.
+# Resolves the script from the persistent scripts dir; SKIPs (returns 1) if the
+# script is not present (older bundle). Reuses the CLI-portable command-cron
+# registrar so it works on both the 2026.5.x and 2026.6.x CLI lines.
+_ensure_health_cron() {
+  local name="$1" schedule="$2" script_name="$3"
+  if _cron_present "$name"; then
+    _log "OK  $name cron already present"
+    return 0
+  fi
+  local script
+  script="$(_find_health_script "$script_name")" || true
+  if [[ -z "${script:-}" ]]; then
+    _log "SKIP $name — $script_name not found in persistent scripts dir (older bundle)"
+    return 1
+  fi
+  chmod +x "$script" 2>/dev/null || true
+  if _register_command_cron "$name" "$schedule" "$script"; then
+    _log "DONE $name cron registered ($schedule, $(_cli_supports_command && echo 'command mode' || echo 'agent-message fallback'))"
+    return 0
+  fi
+  _log "FAIL $name cron creation failed (openclaw cron add rc!=0 or name not in cron list)"
   return 1
 }
 
@@ -504,10 +553,23 @@ main() {
   # The message-mode resume cron last (its self-ping needs a non-operator chat).
   _ensure_workforce_build_resume   || fails=$((fails + 1))
 
+  # ── EMBEDDING-PREVENTION BUNDLE: memory-health crons (items 4-7) ───────────
+  # These are command-mode host crons (no owner chat needed). A missing script
+  # (older bundle) is a SKIP (counts toward fails as advisory, never fatal).
+  #   - index-model-drift-check       hourly  : config-vs-index model drift alarm
+  #   - orphan-temp-sweep             hourly  : clears failed-reindex *.sqlite.tmp
+  #   - disk-usage-alert              hourly  : >85% disk alert
+  #   - pre-july14-embedding-migration daily  : flags boxes still on dying 001 model
+  _ensure_health_cron "index-model-drift-check"  "17 * * * *" "index-model-drift-check.sh"               || fails=$((fails + 1))
+  _ensure_health_cron "orphan-temp-sweep"        "37 * * * *" "orphan-temp-sweep.sh"                      || fails=$((fails + 1))
+  _ensure_health_cron "disk-usage-alert"         "47 * * * *" "disk-usage-alert.sh"                       || fails=$((fails + 1))
+  _ensure_health_cron "pre-july14-embed-migrate" "23 9 * * *" "pre-july14-embedding-migration-check.sh"  || fails=$((fails + 1))
+
   # One-line audit of current cron presence (exact JSON match, no truncation).
   local present=""
   local _n
-  for _n in "workforce-build-resume" "interview-nudge" "closeout-readiness-watchdog" "closeout-resume"; do
+  for _n in "workforce-build-resume" "interview-nudge" "closeout-readiness-watchdog" "closeout-resume" \
+            "index-model-drift-check" "orphan-temp-sweep" "disk-usage-alert" "pre-july14-embed-migrate"; do
     _cron_present "$_n" && present="${present}${_n} "
   done
   present="${present% }"  # trim trailing space

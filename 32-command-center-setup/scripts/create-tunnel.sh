@@ -20,7 +20,16 @@ if ! command -v cloudflared >/dev/null 2>&1; then
 fi
 
 echo "[1/5] Requesting tunnel from Trevor's system..."
-RESPONSE=$(curl -s -X POST "$WEBHOOK_URL"   -H "Content-Type: application/json"   -d "{"clientName":"$CLIENT_SLUG","companyName":"$COMPANY_NAME","contactEmail":"$CONTACT_EMAIL"}")
+# Build the JSON body with python3 so embedded quotes/spaces/special chars in
+# the company name or email are escaped correctly. The previous inline
+# double-quoted heredoc-style body (-d "{"clientName":...}") collapsed the
+# inner quotes under shell parsing and sent an empty/invalid body, which the
+# non-idempotent webhook treated as a brand-new registration on every retry.
+REQUEST_BODY=$(CLIENT_SLUG="$CLIENT_SLUG" COMPANY_NAME="$COMPANY_NAME" CONTACT_EMAIL="$CONTACT_EMAIL" \
+  python3 -c 'import json,os; print(json.dumps({"clientName":os.environ["CLIENT_SLUG"],"companyName":os.environ["COMPANY_NAME"],"contactEmail":os.environ["CONTACT_EMAIL"]}))')
+RESPONSE=$(curl -s -X POST "$WEBHOOK_URL" \
+  -H "Content-Type: application/json" \
+  -d "$REQUEST_BODY")
 
 STATUS=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('status',''))")
 if [ "$STATUS" != "success" ]; then

@@ -45,7 +45,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v13.1.4"
+ONBOARDING_VERSION="v13.2.0"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -402,7 +402,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v13.1.4 - safe_json_edit
+# v13.2.0 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -908,7 +908,7 @@ main() {
     # "# Cleanup" rm -rf below). The cron-backfill block runs AFTER that cleanup,
     # so it must NOT depend on $ONBOARDING_DIR (the wiped clone) — it reads the
     # persistent copy instead. Same reason apply-fleet-standards.sh is here.
-    for _s in onboarding-state.sh ghl-mcp-autostart.sh configure-operator-telegram.sh resume-onboarding.sh apply-fleet-standards.sh ensure-pipeline-crons.sh diagnose-telegram-config.sh; do
+    for _s in onboarding-state.sh ghl-mcp-autostart.sh configure-operator-telegram.sh resume-onboarding.sh apply-fleet-standards.sh ensure-pipeline-crons.sh diagnose-telegram-config.sh index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh; do
       [ -f "$ONBOARDING_DIR/scripts/$_s" ] && cp -f "$ONBOARDING_DIR/scripts/$_s" "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
       [ -f "$_OC_SCRIPTS_DEST/$_s" ] && chmod +x "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
     done
