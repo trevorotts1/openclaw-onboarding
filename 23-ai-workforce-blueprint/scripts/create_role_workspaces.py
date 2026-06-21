@@ -1475,6 +1475,37 @@ def augment_role_folder(role_path, workspace_root, role_metadata=None):
     return {"written": written, "symlinked": symlinked}
 
 
+def _is_sops_library_dir(path):
+    """True when `path` is a NAMED-SET `sops/` SOP-LIBRARY container, not a role.
+
+    v13.1.2 (2026-06-20): NAMED-SET SOP-library departments (graphics, presentations,
+    quality-control, openclaw-maintenance) keep their SOP LIBRARY in a `sops/`
+    subdirectory holding 40+ real SOP--*.md / SOP-DIU-*.md (and *-sops.md) files plus,
+    at most, a small `[PENDING — FILL FROM LIBRARY]` stub how-to.md. The augment walker
+    below previously treated that container as a role and wrote a stub how-to.md into it,
+    which the closeout wiring gate (verify-wiring.sh) then failed as an unmaterialized
+    role (rc=2 `<dept>/sops:stub-NNNNB`), blocking ZHC closeout for every client with
+    named-set SOP depts. A `sops/` container is a LIBRARY, never a role, so it must be
+    skipped by the role walker.
+
+    A directory qualifies when BOTH hold:
+      1. its name is exactly "sops" (case-insensitive), AND
+      2. it contains >= 1 real SOP-library doc — a *.md file whose name starts with
+         "SOP-" (covers SOP--*, SOP-DIU-*, SOP-PITCH-*, SOP-IMG-*, sop-*) OR ends with
+         "-sops.md" (the role-suffixed library docs).
+    Deliberately tight: never skips a real role folder (real roles are never named
+    "sops") and never skips an empty `sops/` shell (which holds no SOP docs).
+    """
+    path = Path(path)
+    if not path.is_dir() or path.name.lower() != "sops":
+        return False
+    for md in path.glob("*.md"):
+        n = md.name.lower()
+        if n.startswith("sop-") or n.endswith("-sops.md"):
+            return True
+    return False
+
+
 def augment_all_existing_role_folders(dept_path, workspace_root, dry_run=False):
     """
     Walk every subfolder of dept_path. For each subfolder that looks like a role
@@ -1483,14 +1514,24 @@ def augment_all_existing_role_folders(dept_path, workspace_root, dry_run=False):
     """
     dept_path = Path(dept_path)
     workspace_root = Path(workspace_root)
+    # v13.1.2: align with _ROSTER_SKIP_FOLDERS so dept-level meta containers are never
+    # mistaken for roles. The named-set `sops/` SOP-library container is the load-bearing
+    # addition — without it the walker stub-augmented the library and the closeout wiring
+    # gate then failed it as an unmaterialized role (see _is_sops_library_dir).
     SKIP_NAMES = {"memory", "devils-advocate", "_archive", "_index",
-                  "_compliance_audit", "_pending_rewrite", "_stage1_drafts"}
+                  "_compliance_audit", "_pending_rewrite", "_stage1_drafts",
+                  "sops", "scripts", "roles", "_drafts", "artifacts",
+                  "templates", "assets"}
 
     results = []
     for entry in sorted(dept_path.iterdir()):
         if not entry.is_dir():
             continue
-        if entry.name in SKIP_NAMES or entry.name.startswith("."):
+        if entry.name.lower() in SKIP_NAMES or entry.name.startswith("."):
+            continue
+        # Defense-in-depth: also skip a SOP-library container regardless of exact
+        # name-set membership (covers any future named-set SOP dept).
+        if _is_sops_library_dir(entry):
             continue
 
         if dry_run:
