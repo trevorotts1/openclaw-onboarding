@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v13.2.0"
+ONBOARDING_VERSION="v13.2.1"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -1594,6 +1594,112 @@ PYEOF
 search_env_var() { search_env_var_mac "$@"; }
 build_env_locations() { :; }   # no-op kept for old call sites
 
+# ──────────────────────────────────────────────────────────────────────────────
+# has_usable_gemini_key — SMART Google/Gemini key detection (v13.2.1)
+# ──────────────────────────────────────────────────────────────────────────────
+# WHY THIS EXISTS (the v13.2.0 regression it fixes):
+#   v13.2.0's configure_active_memory HARD-PINNED gemini-embedding-2 as the
+#   embedding default whenever it ran. On 6 boxes that have NO usable Google key
+#   that pinned a model the box cannot serve — the embed index then fails on
+#   every search (it requests a model with no credential). The fix is to make the
+#   gemini default CONDITIONAL on a usable key. But "no key" must be a HIGH BAR:
+#   a single Google credential is the SAME key under THREE different env NAMES and
+#   can live in SEVERAL stores. We must check ALL of them before concluding
+#   "no key" (item: google-api-key-three-aliases + client-box-env-stores +
+#   credential-check-live-process-env-first).
+#
+# Aliases (ALL three are the SAME Google AI Studio key):
+#   GOOGLE_API_KEY  ==  GOOGLE_AI_STUDIO_API_KEY  ==  GEMINI_API_KEY
+#   (get_alias_list "GEMINI_API_KEY" already returns these three plus
+#    GOOGLE_GEMINI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY / GOOGLE_AI_API_KEY).
+#
+# Stores checked (first hit wins → return true):
+#   1. search_env_var "GEMINI_API_KEY"  — the bulletproof discovery path. On Mac
+#      this already covers: live shell env (printenv, all aliases), every .env /
+#      secrets / .envrc / shell-rc file under $HOME (incl. ~/.openclaw/secrets/.env,
+#      ~/clawd/secrets/.env, ~/.env …), openclaw.json env.vars, the
+#      models.providers.google.apiKey provider block, plugin configs, secrets.json,
+#      and a deep recursive scan. (Every value passes looks_like_real_key, which
+#      also enforces the AIza… shape — so a placeholder cannot register as "found".)
+#   2. ~/.openclaw/workspace/.env                — explicitly named store, not in
+#      the Mac walker's tier-1 list (it lives under workspace/, walker depth covers
+#      it but we check it explicitly for both platforms).
+#   3. VPS host /docker/<project>/.env           — the docker-compose env_file that
+#      feeds the container; NOT visible to the Mac $HOME walker.
+#   4. Live CONTAINER env (docker exec <ctr> printenv) — the definitive runtime
+#      env on a VPS; a key injected only at compose-time still shows here.
+#
+# Echoes the resolved key to stdout (so callers may reuse it) and returns 0 when
+# ANY alias is found in ANY store; returns 1 (and echoes nothing) when GENUINELY
+# absent everywhere.
+GEMINI_ALL_ALIASES="GEMINI_API_KEY GOOGLE_API_KEY GOOGLE_AI_STUDIO_API_KEY GOOGLE_GEMINI_API_KEY GOOGLE_GENERATIVE_AI_API_KEY GOOGLE_AI_API_KEY"
+
+has_usable_gemini_key() {
+    local _found=""
+
+    # 1. Bulletproof discovery (covers the 3 aliases + every Mac store + config).
+    _found=$(search_env_var "GEMINI_API_KEY" 2>/dev/null || true)
+    if [ -n "$_found" ]; then echo "$_found"; return 0; fi
+
+    # 2. ~/.openclaw/workspace/.env — explicitly named in the requirement.
+    local _wsenv="${HOME}/.openclaw/workspace/.env"
+    [ -f "/data/.openclaw/workspace/.env" ] && _wsenv="/data/.openclaw/workspace/.env"
+    if [ -f "$_wsenv" ]; then
+        for _a in $GEMINI_ALL_ALIASES; do
+            _found=$(grep -E "^[[:space:]]*(export[[:space:]]+)?${_a}=" "$_wsenv" 2>/dev/null \
+                | grep -vE "^[[:space:]]*#" \
+                | sed -E "s/^[[:space:]]*(export[[:space:]]+)?${_a}=//" \
+                | sed -E 's/[[:space:]]*#.*$//' | head -1 || true)
+            _found="${_found%\"}"; _found="${_found#\"}"
+            _found="${_found%\'}"; _found="${_found#\'}"
+            if [ -n "$_found" ] && looks_like_real_key "$_found" "GEMINI_API_KEY"; then
+                echo "    [src: workspace/.env:$_a → GEMINI_API_KEY]" >&2
+                echo "$_found"; return 0
+            fi
+        done
+    fi
+
+    # 3. VPS host docker-compose env_file: /docker/<project>/.env (+ /data/docker).
+    if [ -d "/docker" ] || [ -d "/data/docker" ]; then
+        local _ef
+        while IFS= read -r _ef; do
+            [ -z "$_ef" ] && continue
+            for _a in $GEMINI_ALL_ALIASES; do
+                _found=$(grep -E "^[[:space:]]*(export[[:space:]]+)?${_a}=" "$_ef" 2>/dev/null \
+                    | grep -vE "^[[:space:]]*#" \
+                    | sed -E "s/^[[:space:]]*(export[[:space:]]+)?${_a}=//" \
+                    | sed -E 's/[[:space:]]*#.*$//' | head -1 || true)
+                _found="${_found%\"}"; _found="${_found#\"}"
+                _found="${_found%\'}"; _found="${_found#\'}"
+                if [ -n "$_found" ] && looks_like_real_key "$_found" "GEMINI_API_KEY"; then
+                    echo "    [src: $_ef:$_a → GEMINI_API_KEY]" >&2
+                    echo "$_found"; return 0
+                fi
+            done
+        done < <(find /docker /data/docker -maxdepth 2 -name ".env" 2>/dev/null)
+    fi
+
+    # 4. Live CONTAINER env (definitive on a VPS — key may be injected at
+    #    compose-time only). Try the running OpenClaw container's printenv.
+    if command -v docker >/dev/null 2>&1; then
+        local _ctr
+        _ctr=$(docker ps --format '{{.Names}}' 2>/dev/null \
+            | grep -iE 'openclaw|clawd' | head -1 || true)
+        if [ -n "$_ctr" ]; then
+            for _a in $GEMINI_ALL_ALIASES; do
+                _found=$(docker exec "$_ctr" printenv "$_a" 2>/dev/null | head -1 || true)
+                if [ -n "$_found" ] && looks_like_real_key "$_found" "GEMINI_API_KEY"; then
+                    echo "    [src: docker exec $_ctr printenv $_a → GEMINI_API_KEY]" >&2
+                    echo "$_found"; return 0
+                fi
+            done
+        fi
+    fi
+
+    # Genuinely absent in every alias × every store.
+    return 1
+}
+
 discover_all_credentials() {
     step "Bulletproof Credential Discovery (v10.1.1 — Mac mini)"
     note "Lookup priority: shell env → \$HOME-wide .env / secrets / .envrc / shell-rc walk (depth 4) → sourced rc files (subshell) → openclaw.json env.vars/providers/plugins → auth-profiles.json → secrets.json → deep scan"
@@ -3102,19 +3208,46 @@ configure_active_memory() {
     # automatically.  Primary provider is Gemini; if OpenAI is also present it
     # becomes the fallback provider (lowest latency on rate-limit trip).  If
     # only OpenAI is present we promote it to primary with no fallback object.
-    local _GEMINI_KEY _OPENAI_KEY
-    _GEMINI_KEY=$(search_env_var "GEMINI_API_KEY" 2>/dev/null || true)
+    #
+    # v13.2.1 CONDITIONAL embedding-default: v13.2.0 HARD-PINNED gemini-embedding-2
+    # whenever this ran, which broke 6 boxes that have NO usable Google key (it
+    # pinned a model they cannot serve). The Gemini default is now CONDITIONAL on
+    # a usable key, detected via has_usable_gemini_key() — which checks all THREE
+    # Google aliases across every store + the live container env before ever
+    # concluding "no key". When NONE is found we keep the box's existing working
+    # embedding model (if non-dying) or fall back to whatever embedding-capable
+    # key the box DOES have. We NEVER pin a model the box has no key for.
+    local _GEMINI_KEY _OPENAI_KEY _OPENROUTER_KEY _GEMINI_OK
+    if _GEMINI_KEY=$(has_usable_gemini_key 2>/dev/null); then
+        _GEMINI_OK=1
+    else
+        _GEMINI_KEY=""
+        _GEMINI_OK=0
+    fi
     _OPENAI_KEY=$(search_env_var "OPENAI_API_KEY" 2>/dev/null || true)
+    _OPENROUTER_KEY=$(search_env_var "OPENROUTER_API_KEY" 2>/dev/null || true)
+
+    if [ "$_GEMINI_OK" = "1" ]; then
+        note "  Embedding default: usable Google/Gemini key FOUND → pinning gemini-embedding-2 @3072 (fleet standard)"
+    elif [ -n "$_OPENAI_KEY" ]; then
+        note "  Embedding default: NO usable Google/Gemini key (all 3 aliases × every store) → keeping/falling back to OpenAI text-embedding-3-small (never pin a keyless model)"
+    elif [ -n "$_OPENROUTER_KEY" ]; then
+        note "  Embedding default: NO usable Google/Gemini key → falling back to OpenRouter openai/text-embedding-3-large (never pin a keyless model)"
+    else
+        note "  Embedding default: NO usable Google/Gemini/OpenAI/OpenRouter key found → leaving any EXISTING working memorySearch model in place; not forcing gemini"
+    fi
 
     OPENCLAW_JSON="$OPENCLAW_JSON" \
     OC_GEMINI_KEY="$_GEMINI_KEY" \
     OC_OPENAI_KEY="$_OPENAI_KEY" \
+    OC_OPENROUTER_KEY="$_OPENROUTER_KEY" \
     python3 << 'PYEOF'
 import json, os, sys
 
-path        = os.environ['OPENCLAW_JSON']
-gemini_key  = os.environ.get('OC_GEMINI_KEY', '').strip()
-openai_key  = os.environ.get('OC_OPENAI_KEY', '').strip()
+path           = os.environ['OPENCLAW_JSON']
+gemini_key     = os.environ.get('OC_GEMINI_KEY', '').strip()
+openai_key     = os.environ.get('OC_OPENAI_KEY', '').strip()
+openrouter_key = os.environ.get('OC_OPENROUTER_KEY', '').strip()
 
 try:
     with open(path) as f:
@@ -3157,30 +3290,95 @@ try:
     # Sources: "memory" reads MEMORY.md + memory/ files; "qmd" reads cross-agent transcripts
     ms.setdefault('sources', ["memory"])
 
-    # Determine primary vs fallback provider from discovered keys.
-    # Gemini takes primary when present (fleet-confirmed fastest embedding).
+    # ── v13.2.1 CONDITIONAL embedding default ────────────────────────────────
+    # Determine primary provider/model from discovered keys. The rule:
+    #   • A usable Google/Gemini key (any of 3 aliases, any store, incl. live
+    #     container env) → PIN gemini-embedding-2 @3072 (fleet standard). This is
+    #     the v13.2.0 behavior, now GATED on the key actually being usable.
+    #   • Genuinely NO Gemini key anywhere → do NOT force gemini. Instead:
+    #       (a) keep the box's EXISTING working memorySearch provider/model if it
+    #           is already set and non-dying (e.g. openai/text-embedding-3-small,
+    #           or an openrouter embedding) — never disturb a working box;
+    #       (b) else pick a sane fallback based on the embedding-capable key the
+    #           box DOES have: OpenAI → text-embedding-3-small;
+    #           OpenRouter → openai/text-embedding-3-large.
+    #   • NEVER pin a model the box has no key for (the v13.2.0 bug).
+    #
+    # DYING_OR_LEGACY models we always migrate AWAY from when we own the choice:
+    #   - gemini-embedding-001 HARD-SHUTS-DOWN 2026-07-14.
+    #   - gemini-embedding-exp-03-07 (experimental, retired).
+    # NOTE: text-embedding-3-small is "legacy" ONLY relative to gemini — it is a
+    # perfectly serveable OpenAI model, so it is NOT migrated away from on a
+    # no-gemini box (that was the regression: forcing gemini over a working
+    # OpenAI model the box could actually serve).
+    CANON_EMBED_MODEL = "gemini-embedding-2"
+    CANON_EMBED_DIM   = 3072
+    # Models we MUST migrate off of even on a gemini box (truly dying/legacy).
+    GEMINI_DYING      = {"gemini-embedding-001", "gemini-embedding-exp-03-07"}
+    # Embedding models the runtime can serve WITHOUT a Google key (keep these).
+    NON_GEMINI_OK     = {"text-embedding-3-small", "text-embedding-3-large",
+                         "openai/text-embedding-3-small", "openai/text-embedding-3-large"}
+
     if gemini_key:
+        # Usable Google/Gemini key present → pin the GA fleet-standard embedding.
         ms['provider'] = "gemini"
-        # EMBEDDING-PREVENTION BUNDLE (item 1+7): Pin the GA embedding model so
-        # every new/updated box is BORN correct and cannot drift. We FORCE-SET
-        # (not setdefault) the canonical model and migrate the two dying/legacy
-        # values so a box re-running install can never be stranded:
-        #   - gemini-embedding-001 HARD-SHUTS-DOWN 2026-07-14 (item 7 migration).
-        #   - text-embedding-3-small left over from an OpenAI-first install.
-        # Canonical: gemini-embedding-2 @ 3072 dimensions (GA, fleet standard).
-        CANON_EMBED_MODEL = "gemini-embedding-2"
-        CANON_EMBED_DIM   = 3072
-        DYING_OR_LEGACY   = {"gemini-embedding-001", "text-embedding-3-small", "gemini-embedding-exp-03-07"}
         cur = ms.get('model')
-        if cur in DYING_OR_LEGACY or not cur:
+        # Force-set canonical when unset, on a dying gemini model, OR currently on
+        # a non-gemini model that we are now upgrading because a real key exists.
+        if (not cur) or (cur in GEMINI_DYING) or (cur != CANON_EMBED_MODEL):
             ms['model'] = CANON_EMBED_MODEL
             if cur and cur != CANON_EMBED_MODEL:
-                print(f"  ✓ memorySearch.model migrated {cur!r} → {CANON_EMBED_MODEL!r} (pre-2026-07-14 shutdown guard)")
-        # Pin dimensions to the GA spec so a rebuilt index matches the config.
+                print(f"  ✓ memorySearch.model migrated {cur!r} → {CANON_EMBED_MODEL!r} (usable Gemini key present; pre-2026-07-14 shutdown guard)")
         ms['dimensions'] = CANON_EMBED_DIM
-    elif openai_key:
-        ms['provider'] = "openai"
-        ms.setdefault('model', "text-embedding-3-small")
+    else:
+        # ── NO usable Gemini key anywhere — do NOT force gemini. ──────────────
+        cur_provider = str(ms.get('provider') or "").lower()
+        cur_model    = ms.get('model')
+
+        # CRITICAL UN-PIN: if a prior (v13.2.0) run hard-pinned gemini on this
+        # keyless box, that model can never be served. Repair it to whatever the
+        # box CAN serve. We treat provider=='gemini' OR model starting 'gemini'
+        # as "stranded on a keyless gemini pin".
+        stranded_on_gemini = (cur_provider == "gemini") or \
+                             (isinstance(cur_model, str) and cur_model.lower().startswith("gemini"))
+
+        if (not stranded_on_gemini) and cur_provider in ("openai", "openrouter") \
+           and isinstance(cur_model, str) and cur_model in NON_GEMINI_OK:
+            # (a) Box already has a working, serveable non-gemini embedding —
+            #     leave it exactly as-is (never disturb a working box).
+            ms['dimensions'] = ms.get('dimensions', 1536)
+            print(f"  ✓ No usable Gemini key — keeping existing working memorySearch {cur_provider}/{cur_model!r} (no false gemini pin)")
+        elif openai_key:
+            # (b) Fall back to OpenAI (text-embedding-3-small).
+            ms['provider'] = "openai"
+            ms['model']    = "text-embedding-3-small"
+            ms['dimensions'] = 1536
+            if stranded_on_gemini:
+                print(f"  ✓ No usable Gemini key — UN-PINNED keyless gemini → openai/text-embedding-3-small (box can serve this)")
+            else:
+                print(f"  ✓ No usable Gemini key — set memorySearch → openai/text-embedding-3-small")
+        elif openrouter_key:
+            # (b) Fall back to OpenRouter (openai/text-embedding-3-large).
+            ms['provider'] = "openrouter"
+            ms['model']    = "openai/text-embedding-3-large"
+            ms['dimensions'] = 3072
+            if stranded_on_gemini:
+                print(f"  ✓ No usable Gemini key — UN-PINNED keyless gemini → openrouter/openai/text-embedding-3-large")
+            else:
+                print(f"  ✓ No usable Gemini key — set memorySearch → openrouter/openai/text-embedding-3-large")
+        else:
+            # No embedding-capable key at all. Do NOT pin gemini. Keep whatever
+            # the box already has (it may have a manually-configured provider we
+            # don't recognize); only strip a stranded keyless gemini pin if we
+            # have literally nothing better — leaving provider unset is safer than
+            # pinning a model that 100% cannot resolve.
+            if stranded_on_gemini:
+                ms.pop('provider', None)
+                ms.pop('model', None)
+                ms.pop('dimensions', None)
+                print(f"  ⚠ No embedding-capable key (Gemini/OpenAI/OpenRouter) found — removed keyless gemini pin; memorySearch provider/model left UNSET until a key is added (avoids pinning an unservable model)")
+            else:
+                print(f"  ⚠ No embedding-capable key found — leaving existing memorySearch provider/model untouched")
 
     # ── PRD 2.6 / KNOWN-ISSUES #1: embeddings-stall mitigation ─────────────
     # When the primary provider rate-limits, the memory-search step blocks the
@@ -3216,12 +3414,16 @@ try:
 
         print("  ✓ memorySearch.fallback.{provider,model,apiKey} written (KNOWN-ISSUES #1 mitigation)")
         print("  ✓ memorySearch.cache.{enabled,maxEntries} written")
-    elif not gemini_key and openai_key:
-        # Only OpenAI — no fallback object needed; ensure legacy string absent.
-        ms.pop('fallback', None)
-    else:
-        # Only Gemini or no key yet — legacy string fallback kept for compat.
+    elif gemini_key and not openai_key:
+        # Gemini primary, no second provider — keep the legacy "openai" string
+        # fallback for compat (matches prior behavior; harmless name-only hint).
         ms.setdefault('fallback', "openai")
+    else:
+        # No gemini key. Do NOT leave a dangling "openai" string fallback when
+        # the box has no OpenAI key (v13.2.1): a name-only fallback to a keyless
+        # provider is misleading. The single resolved provider above stands on
+        # its own; strip any legacy fallback string/object pointing nowhere.
+        ms.pop('fallback', None)
 
     # ── EMBEDDING-PREVENTION BUNDLE item 2: DEFAULT INDEX SCOPING ────────────
     # The OpenClaw runtime UNIONS each agent's memorySearch.extraPaths onto
@@ -3241,9 +3443,28 @@ try:
     # A cycled-then-cleared embedding provider can land memorySearch.provider /
     # .model / .fallback on the literal string "none", which breaks the embed
     # index (multimodal-memory killer). No embedding/model field may be 'none'.
-    # If we find 'none', repair it to the canonical provider/model we just pinned.
-    _GUARD_PROVIDER = ms.get('provider') if ms.get('provider') not in (None, "", "none") else ("gemini" if gemini_key else ("openai" if openai_key else None))
-    _GUARD_MODEL    = "gemini-embedding-2" if (_GUARD_PROVIDER == "gemini") else ("text-embedding-3-small" if _GUARD_PROVIDER == "openai" else None)
+    # If we find 'none', repair it to a provider/model THE BOX CAN ACTUALLY SERVE
+    # (v13.2.1: never repair to gemini unless a usable Gemini key exists — that
+    # was the keyless-pin regression). Repair preference mirrors the conditional
+    # default above: gemini (only with key) → openai → openrouter.
+    if gemini_key:
+        _GUARD_DEFAULT_PROVIDER = "gemini"
+    elif openai_key:
+        _GUARD_DEFAULT_PROVIDER = "openai"
+    elif openrouter_key:
+        _GUARD_DEFAULT_PROVIDER = "openrouter"
+    else:
+        _GUARD_DEFAULT_PROVIDER = None
+    _GUARD_PROVIDER = ms.get('provider') if ms.get('provider') not in (None, "", "none") else _GUARD_DEFAULT_PROVIDER
+    # Never let the guard re-pin gemini on a keyless box.
+    if _GUARD_PROVIDER == "gemini" and not gemini_key:
+        _GUARD_PROVIDER = _GUARD_DEFAULT_PROVIDER
+    _GUARD_MODEL_MAP = {
+        "gemini": "gemini-embedding-2",
+        "openai": "text-embedding-3-small",
+        "openrouter": "openai/text-embedding-3-large",
+    }
+    _GUARD_MODEL = _GUARD_MODEL_MAP.get(_GUARD_PROVIDER)
     if str(ms.get('provider')).lower() == "none" and _GUARD_PROVIDER:
         ms['provider'] = _GUARD_PROVIDER
         print(f"  ✓ memorySearch.provider was 'none' → repaired to {_GUARD_PROVIDER!r} (provider-self-loop guard)")
