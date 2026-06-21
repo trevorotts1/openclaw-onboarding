@@ -28,7 +28,7 @@ A kit is **NOT done** until ALL of these are true. This is the literal enforceme
 
 ## A. THE FILE MANIFEST — exact files to produce
 
-Kit root: `/Users/blackceomacmini/Downloads/<Dept-Slug>-Class-Kit/`
+Kit root: `~/Downloads/<Dept-Slug>-Class-Kit/`
 
 Folders to create: kit root, `renders-light/`, `micro-infographics/` (with `micro-infographics/working/`).
 

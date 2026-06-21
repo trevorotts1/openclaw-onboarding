@@ -22,8 +22,7 @@ passed.
 import json, os, re, sys, tempfile, textwrap
 from pathlib import Path
 
-REPO = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(
-    "/Users/blackceomacmini/clawd/openclaw-onboarding")
+REPO = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parents[2]
 SCRIPTS = REPO / "23-ai-workforce-blueprint" / "scripts"
 QC = SCRIPTS / "qc-completeness.sh"
 GATE = SCRIPTS / "verify-library-gate.sh"
