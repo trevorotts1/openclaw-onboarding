@@ -1,3 +1,15 @@
+> LEGACY (v2.0) reference — SUPERSEDED by ghl-browser-builder-full.md (v3.0,
+> agent-browser PRIMARY). Retained only for historical click-path detail.
+> **D6 HEADLESS-ONLY OVERRIDE (binding):** every browser launch in this skill is
+> HEADLESS — `headless=True` always (Playwright) / `--headed false` always
+> (agent-browser). NEVER `headless=False`, dev OR client — a visible window is
+> forbidden (taking over a screen, esp. a client box). Any `headless=False` /
+> "switch to headless=False" / "keep the browser visible" text below is OBSOLETE
+> and MUST NOT be followed; first login + two-factor are handled by the headless
+> token-seed path (ghl-browser-builder-full.md §2), and a genuinely-blocked
+> two-factor PAUSES + screenshots + surfaces to the operator — it never opens a
+> window.
+
 How to install pages in the GHL/convert in Flow pages area or funnel area. These are the exact instructions. This assumes that you already have the HTML code written, and that you are merely going over to the section within Convert and Flow that allows you to insert that HTML code into a code block.This is very important that this is understood.
 ╔══════════════════════════════════════════════════════════════╗
   MANDATORY TYP CHECK - READ THIS BEFORE ANYTHING ELSE
@@ -253,7 +265,7 @@ Required Viewport Configuration
 with sync_playwright() as p:
     browser = p.chromium.launch_persistent_context(
         user_data_dir="./ghl_session",
-        headless=False,  # Set True for headless operation
+        headless=True,  # D6 HEADLESS-ONLY — NEVER False (no visible window, dev OR client)
         viewport={"width": 1440, "height": 900},  # REQUIRED - minimum 1280x800
         args=[
             "--window-size=1440,900",
@@ -264,7 +276,7 @@ with sync_playwright() as p:
 Why This Matters
 Below 1280px width: GHL's left sidebar may collapse into a hamburger menu, breaking all sidebar-based selectors
 Below 900px height: Modal dialogs may not fully render, cutting off buttons
-Headless mode: Some GHL components render differently in headless - if you encounter issues, switch to headless=False for debugging
+Headless mode: ALWAYS headless=True (D6 — never switch to headless=False, not even for debugging; a visible window is forbidden). Debug via screenshots/snapshots written to disk instead.
 Recommended Settings by Use Case
 
 3. SESSION MANAGEMENT
@@ -274,7 +286,7 @@ First-Time Login
 with sync_playwright() as p:
     browser = p.chromium.launch_persistent_context(
         user_data_dir="./ghl_session",
-        headless=False,
+        headless=True,  # D6 HEADLESS-ONLY — NEVER False, even first-time login (no visible window)
         viewport={"width": 1440, "height": 900}
     )
     page = browser.pages[0] if browser.pages else browser.new_page()
@@ -403,7 +415,7 @@ Detection
 Key Rules for 2FA
 NEVER attempt to bypass 2FA - always pause and wait for human intervention
 Set a generous timeout - the user may need to find their phone, open an authenticator app, etc. 5 minutes is the recommended minimum
-Keep the browser visible - set headless=False when 2FA might be required so the user can see and interact with the browser window
+Stay headless (D6 — OBSOLETE advice removed: never set headless=False, even for 2FA). A visible window is forbidden. If 2FA is genuinely required and cannot be satisfied headless, PAUSE, write a screenshot to disk, and surface to the operator — do not open a window. Prefer the headless token-seed path so the login form never renders.
 Save the session after 2FA - persistent context will remember the 2FA approval, reducing future interruptions
 Log the event - always print clear instructions so the user knows what to do
 

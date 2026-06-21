@@ -1,10 +1,34 @@
 {
-  "_doc": "Runtime selector-gate registry for the GoHighLevel browser builder (D8). Each gate is a UI node the builder must act on. status=captured means a real, live-snapshot-verified DOM node (do NOT re-snapshot blindly, but DO verify it still matches). status=runtime means the node is NOT captured and MUST be resolved at runtime by snapshotting the live DOM and picking the ref — NO invented CSS may ship as fact. The `find` hints are accessibility-role/name search seeds for `agent-browser find ...`, NOT confirmed CSS. The agent snapshots first, then matches against these hints, then acts on the returned @ref.",
+  "_doc": "Runtime selector-gate registry for the GoHighLevel browser builder (D8). Each gate is a UI node the builder must act on. status=captured means a real, live-snapshot-verified DOM node (do NOT re-snapshot blindly, but DO verify it still matches). status=runtime means the node is NOT DOM-captured and MUST be resolved at runtime by snapshotting the live DOM and picking the ref. The `find` hints are accessibility-role/name/visible-text search seeds for `agent-browser find ...`, NOT confirmed CSS. NO invented CSS may ship as fact. NEW (v13.2.4, D8): the `label` field now carries the REAL visible label + sequence wired from the operator's 15 live screenshots (Downloads/ghl-ui-map.md). `label_source` tells you whether that label is screenshot-confirmed-label (from the UI map) or still-runtime-snapshot (no screenshot yet). A screenshot-confirmed label is a visible-text/role target the agent confirms at runtime — it removes the GUESSING, it does NOT replace the runtime @ref capture.",
   "_legend": {
-    "captured": "Live-snapshot-verified real node (2026-06-21 capture pass).",
-    "runtime": "MUST capture-at-runtime: snapshot the live DOM, pick the @ref, act. Never hardcode invented CSS."
+    "captured": "Live-snapshot-verified real DOM node (2026-06-21 capture pass).",
+    "runtime": "MUST capture-at-runtime: snapshot the live DOM, pick the @ref, act. Never hardcode invented CSS.",
+    "label_source": {
+      "screenshot-confirmed-label": "Visible label + position verified against the operator's 15 live screenshots (Downloads/ghl-ui-map.md, 2026-06-21). Target this exact visible text/role; confirm the @ref at runtime.",
+      "still-runtime-snapshot": "No screenshot for this node yet. Snapshot the live DOM and resolve from the find-seed; label is a hint only."
+    }
   },
-  "_capture_pass": "2026-06-21 READ-ONLY pass, app.convertandflow.com, agent-browser 0.27.0, --session ghl-capture. HARD-BLOCKED at login by two-factor authentication: gates 1 and 27 captured; gates 2-26 and 28 BLOCKED behind the two-factor wall and remain runtime snapshot-gates. PENDING-LIVE-RUN.",
+  "_capture_pass": "2026-06-21 READ-ONLY pass, app.convertandflow.com, agent-browser 0.27.0, --session ghl-capture. HARD-BLOCKED at login by two-factor authentication: gates 1 and 27 are DOM-captured; gates 2-26 and 28 remain runtime snapshot-gates. SEPARATELY, the 2026-06-21 UI-MAP pass (15 screenshots, Downloads/ghl-ui-map.md) confirmed the VISIBLE LABELS + sequence for the funnel flow — those gates now carry screenshot-confirmed-label. The agent still resolves the live @ref at runtime. PENDING-LIVE-RUN for the end-to-end build.",
+  "_env": {
+    "_note": "Wired from the UI-map pass (Downloads/ghl-ui-map.md). BlackCEO LLC = test sub-account on this operator box; client boxes substitute the client's own sub-account label + location id (NO-COMINGLING).",
+    "test_subaccount_label": "BlackCEO LLC / Oxon Hill, MD",
+    "test_location_id": "Mct54Bwi1KlNouGXQcDX",
+    "preview_domain": "blackceolinks.com",
+    "preview_url_pattern": "https://www.blackceolinks.com/preview/<PAGE_ID>",
+    "funnels_list_url": "app.convertandflow.com/v2/location/<LOCID>/funnels-websites/funnels",
+    "funnel_url": "app.convertandflow.com/v2/location/<LOCID>/funnels-websites/funnels/<FUNNEL_ID>",
+    "page_builder_url": "app.convertandflow.com/location/<LOCID>/page-builder/<PAGE_ID>",
+    "websites_mirror_funnels": true,
+    "live_domain_note": "Going live (not preview) needs 'Connect Domain' — a CLIENT step, never automated."
+  },
+  "_label_coverage": {
+    "screenshot_confirmed_label": [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+    "still_runtime_snapshot": [2, 12, 22, 23, 24, 25, 26, 27, 28],
+    "count_screenshot_confirmed": 19,
+    "count_still_runtime": 9,
+    "total": 28,
+    "_note": "19 of 28 gates carry a screenshot-confirmed visible label (the full funnel-build click-path, gates 1+3-11+13-21). Gate 12 (editor iframe boundary) is structural with no visible label. Gate 27 is auth-storage (DOM-captured, no visible label). 23-26 (Websites flow) are screenshot-confirmed in PRINCIPLE (UI map says Websites mirrors Funnels) but the Website builder itself was NOT screenshotted, so they stay still-runtime-snapshot until a Website screenshot exists — re-verify, don't assume parity."
+  },
   "login_route": {
     "use": "https://app.convertandflow.com/",
     "do_not_use": "https://app.convertandflow.com/login",
@@ -13,6 +37,8 @@
   "gates": [
     {
       "id": 1, "spec": "A1.2", "name": "login_form", "status": "captured",
+      "label": "Sign in form (email + password + 'Sign in' button)",
+      "label_source": "screenshot-confirmed-label",
       "captured": {
         "email": "input#email (name=email, type=text, placeholder 'Your email address')",
         "password": "input#password (name=password, type=password, placeholder 'The password you picked')",
@@ -21,33 +47,185 @@
       },
       "find": "find role textbox name Email | find role textbox name Password | find role button name 'Sign in'"
     },
-    { "id": 2, "spec": "A2.2", "name": "account_switcher", "status": "runtime", "find": "find testid account-switcher | find text <current-subaccount-label> | per-row match by client name", "note": "HARD GATE A2.3: refuse on sub-account mismatch (no co-mingling)." },
-    { "id": 3, "spec": "A3.1", "name": "sidebar_sites", "status": "runtime", "find": "find role link name Sites | find text Sites (left nav)", "note": "May be a flyout vs inline; snapshot first." },
-    { "id": 4, "spec": "A3.2", "name": "tab_funnels", "status": "runtime", "find": "find role tab name Funnels | find text Funnels" },
-    { "id": 5, "spec": "A4.1", "name": "new_funnel_button", "status": "runtime", "find": "find role button name 'New Funnel' | find text '+ New Funnel'" },
-    { "id": 6, "spec": "A4.2", "name": "funnel_name_input", "status": "runtime", "find": "find role textbox name 'Funnel Name' | placeholder 'name'", "note": "Also disambiguate Blank-here vs Blank-at-step variant (A4.2 NOTE). Support BOTH." },
-    { "id": 7, "spec": "A4.3", "name": "create_button", "status": "runtime", "find": "find role button name Create" },
-    { "id": 8, "spec": "A6.1", "name": "add_new_step", "status": "runtime", "find": "find role button name 'Add New Step'", "note": "MUST positively distinguish from the adjacent 'Import' control — match exact name 'Add New Step', never a substring that also matches Import." },
-    { "id": 9, "spec": "A6.2", "name": "step_name_and_path_inputs", "status": "runtime", "find": "find role textbox name 'Step Name' | find role textbox name 'Path'", "note": "Path lowercase/hyphenated, unique within funnel." },
-    { "id": 10, "spec": "A7.1", "name": "blank_template", "status": "runtime", "find": "find text 'Blank' | find text 'Create from Blank'" },
-    { "id": 11, "spec": "A7.2", "name": "edit_page", "status": "runtime", "find": "find role button name 'Edit' | find text 'Edit Page'" },
-    { "id": 12, "spec": "A7.3", "name": "editor_iframe_boundary", "status": "runtime", "find": "frame @ref | frame main", "note": "agent-browser 0.27.0 auto-inlines iframes into the snapshot and exposes 'frame @ref' / 'frame main' — scope into the nested editor frame; never assume top frame." },
-    { "id": 13, "spec": "A8.1", "name": "add_section_blank", "status": "runtime", "find": "find text 'Blank Section' | find role button name Add (in section)" },
-    { "id": 14, "spec": "A9.1", "name": "full_width_toggle", "status": "runtime", "find": "find text 'Allow rows to take up full length' | find text 'Allow rows to take entire width' | find text 'Full Width'", "note": "Label drifts between variants. Match on EITHER label; verify by TOGGLE STATE (on), not by label text alone." },
-    { "id": 15, "spec": "A10.1", "name": "code_element", "status": "runtime", "find": "find text Code (under Custom) | find text 'Custom HTML/JavaScript'" },
-    { "id": 16, "spec": "A10.2", "name": "code_editor_instance", "status": "runtime", "find": "find role button name 'Open Code Editor' then locate CodeMirror/Monaco/textarea", "note": "Set large payloads via the editor's value API (eval), NOT key-by-key typing. The editor modal renders on the MAIN page, not inside the builder iframe." },
-    { "id": 17, "spec": "A10.3", "name": "code_element_save", "status": "runtime", "find": "find role button name Save (code editor modal)" },
-    { "id": 18, "spec": "A10-EDGE", "name": "dismiss_ai_popup", "status": "runtime", "find": "find role button name Close | find text 'Ask AI' then its X", "note": "Dismiss on first editor open or it eats the next click. Absent is fine — do not crash." },
-    { "id": 19, "spec": "A11.1", "name": "page_save", "status": "runtime", "find": "find role button name Save (top toolbar, main page)", "note": "Wait for the save-confirmation toast, not a fixed sleep." },
-    { "id": 20, "spec": "A12.1", "name": "preview", "status": "runtime", "find": "find role button name Preview | eyeball icon (top toolbar)" },
-    { "id": 21, "spec": "A13.2", "name": "publish", "status": "runtime", "find": "find role button name Publish", "note": "NEVER act on this gate without an explicit LIVE approval answer (A13.1)." },
-    { "id": 22, "spec": "A14.1", "name": "funnel_list_row_open", "status": "runtime", "find": "open by funnel_workspace_url (preferred) | find text <exact funnel name> in list row" },
-    { "id": 23, "spec": "B3", "name": "tab_websites", "status": "runtime", "find": "find role tab name Websites", "note": "NEEDS SCREENSHOT of live Website builder; do not assume Funnel parity." },
-    { "id": 24, "spec": "B4", "name": "new_website_button_and_name", "status": "runtime", "find": "find role button name 'New Website' | find role textbox name 'Website Name'" },
-    { "id": 25, "spec": "B6-B13", "name": "website_editor_selectors", "status": "runtime", "find": "snapshot each Website editor node independently", "note": "Website editor selectors may differ from Funnel editor selectors — snapshot both, assume nothing." },
-    { "id": 26, "spec": "C2", "name": "code_element_iframe_embed", "status": "runtime", "find": "same as gate 15 (Code element); payload = single responsive <iframe>", "note": "Mode 2 path." },
+    {
+      "id": 2, "spec": "A2.2", "name": "account_switcher", "status": "runtime",
+      "label": "Sub-account chevron, top-left (current label e.g. 'BlackCEO LLC / Oxon Hill, MD')",
+      "label_source": "still-runtime-snapshot",
+      "find": "find text <current-subaccount-label> (top-left, with chevron) | find testid account-switcher | per-row match by client name",
+      "note": "HARD GATE A2.3: refuse on sub-account mismatch (no co-mingling). UI map confirms the label sits top-left with a chevron, but the switcher list itself was not screenshotted — snapshot it."
+    },
+    {
+      "id": 3, "spec": "A3.1", "name": "sidebar_sites", "status": "runtime",
+      "label": "Sites (left sidebar; turns orange when active)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role link name Sites | find text Sites (left nav)",
+      "note": "Screenshot-confirmed: visible label 'Sites' in the left sidebar, goes orange when active. Snapshot for the live @ref."
+    },
+    {
+      "id": 4, "spec": "A3.2", "name": "tab_funnels", "status": "runtime",
+      "label": "Funnels (orange top-tab row: Funnels | Stores | Webinars | Analytics | Quizzes | QR Codes | Websites | Blogs | WordPress | Client Portal | Forms | Surveys | Chat Widget)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role tab name Funnels | find text Funnels (orange top-tab row)",
+      "note": "Screenshot-confirmed tab order. 'Funnels' is the leftmost tab; 'Websites' is in the same row (gate 23)."
+    },
+    {
+      "id": 5, "spec": "A4.1", "name": "new_funnel_button", "status": "runtime",
+      "label": "+ New funnel (top-right; 'Build with AI' sits beside it)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role button name 'New funnel' | find text '+ New funnel' (top-right)",
+      "note": "Screenshot-confirmed label is '+ New funnel' (lowercase 'funnel'). Do NOT click the adjacent 'Build with AI' button."
+    },
+    {
+      "id": 6, "spec": "A4.2", "name": "funnel_name_input", "status": "runtime",
+      "label": "'Funnel name *' input on the 'From blank' card (modal 'Create new funnel')",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role heading name 'Create new funnel' | within 'From blank' card -> find role textbox name 'Funnel name'",
+      "note": "Screenshot-confirmed: the 'Create new funnel' modal has THREE cards — 'From blank' (carries the 'Funnel name *' input), 'Build with AI' (Beta), 'From templates'. Use 'From blank'. Blank choice ALSO exists later at the step CONTROL box (gate 10) — support both."
+    },
+    {
+      "id": 7, "spec": "A4.3", "name": "create_button", "status": "runtime",
+      "label": "Create (on the 'From blank' card, after typing the name)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role button name Create (inside the 'Create new funnel' / 'From blank' modal)",
+      "note": "Screenshot-confirmed: 'Create' button on the From-blank card."
+    },
+    {
+      "id": 8, "spec": "A6.1", "name": "add_new_step", "status": "runtime",
+      "label": "+ Add new step or import (blue, inside the funnel)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role button name 'Add new step or import' | find text '+ Add new step or import' (blue)",
+      "note": "CORRECTED by UI map: it is ONE blue button '+ Add new step or import' — Import is NOT a separate button; it is an 'Import from ClickFunnels' URL field INSIDE the next modal. Match the full visible label; never a substring."
+    },
+    {
+      "id": 9, "spec": "A6.2", "name": "step_name_and_path_inputs", "status": "runtime",
+      "label": "'New step in funnel' modal -> 'Name for page' input + 'Path' input",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role heading name 'New step in funnel' | find role textbox name 'Name for page' | find role textbox name 'Path'",
+      "note": "Screenshot-confirmed: the page-name field is labeled 'Name for page' (NOT 'Step Name'). Path lowercase/hyphenated, unique within funnel. Modal also has the optional 'Import from ClickFunnels' URL field."
+    },
+    {
+      "id": 10, "spec": "A7.1", "name": "blank_template", "status": "runtime",
+      "label": "Step CONTROL box: 'Use existing' (blue) | 'Create from blank' -> click 'Create funnel step'",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role button name 'Create funnel step' | within control box find text 'Create from blank' (vs 'Use existing')",
+      "note": "Screenshot-confirmed: the step's CONTROL box shows 'Use existing' (blue) and 'Create from blank'. Use 'Create from blank' for a NEW page, then 'Create funnel step'. The box bottom has an 'Edit' dropdown that re-opens an existing page = the EDIT path (gate 11)."
+    },
+    {
+      "id": 11, "spec": "A7.2", "name": "edit_page", "status": "runtime",
+      "label": "'Edit' dropdown at the step CONTROL box bottom (re-opens an existing page)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role button name Edit (control box bottom) | dropdown -> open editor",
+      "note": "Screenshot-confirmed: 'Edit' is a dropdown at the bottom of the step control box — it is the UPDATE/edit path (A14), distinct from 'Create from blank'."
+    },
+    {
+      "id": 12, "spec": "A7.3", "name": "editor_iframe_boundary", "status": "runtime",
+      "label": "Page-builder editor frame (canvas)",
+      "label_source": "still-runtime-snapshot",
+      "find": "frame @ref | frame main",
+      "note": "agent-browser 0.27.0 auto-inlines iframes into the snapshot and exposes 'frame @ref' / 'frame main' — scope into the nested editor frame; never assume top frame. No visible label (structural)."
+    },
+    {
+      "id": 13, "spec": "A8.1", "name": "add_section_blank", "status": "runtime",
+      "label": "Canvas 'Blank Section' (center: 'Blank Section' | 'Insert Element' | 'Generate with AI') -> green Section with a '+ Add' button inside",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find text 'Blank Section' | after insert find role button name 'Add' (the '+ Add' inside the section)",
+      "note": "Screenshot-confirmed: click 'Blank Section' to drop an empty green Section; it shows a '+ Add' button inside (opens Quick Add, gate 15) plus a '+' below it to add another section."
+    },
+    {
+      "id": 14, "spec": "A9.1", "name": "full_width_toggle", "status": "runtime",
+      "label": "Section panel toggle 'Allow Rows to take entire width'",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find text 'Allow Rows to take entire width' (Section right-panel, General/Styles tabs)",
+      "note": "CONFIRMED by UI map — the label is 'Allow Rows to take entire width' (NOT 'take up full length'). Resolves the prior ambiguity. Still verify by TOGGLE STATE (on), not label text alone. Section panel also has Sticky + Background (Color/Image/Video)."
+    },
+    {
+      "id": 15, "spec": "A10.1", "name": "code_element", "status": "runtime",
+      "label": "Quick Add panel -> 'Custom' group -> 'Code' (</> icon) -> drops a 'Custom Code' element ('<> Custom HTML/Javascript') inside a '1 Column Row'",
+      "label_source": "screenshot-confirmed-label",
+      "find": "open Quick Add (gate 13 '+ Add') | scroll to 'Custom' group | find text 'Code' (</> icon)",
+      "note": "Screenshot-confirmed path: '+ Add' -> Quick Add panel (left groups: Quick Add, Sections, Rows, Elements, Prebuilt Sections, Saved Assets, Widget Marketplace, Buttons, Forms And Surveys, Social Media Icons, Countdown Timers, Images, Progress Bar) -> scroll to 'Custom' group -> 'Code'. Element label on canvas = 'Custom Code'."
+    },
+    {
+      "id": 16, "spec": "A10.2", "name": "code_editor_instance", "status": "runtime",
+      "label": "Custom Code element -> right-panel 'Open Code Editor' -> modal 'Custom Javascript/HTML' (dark textarea, placeholder 'Add your code here')",
+      "label_source": "screenshot-confirmed-label",
+      "find": "click 'Custom Code' element (right panel header 'Custom Code') | find role button name 'Open Code Editor' | then locate the 'Custom Javascript/HTML' modal textarea",
+      "note": "Screenshot-confirmed: clicking the element shows right-panel header 'Custom Code' with an 'Open Code Editor' button; that opens the 'Custom Javascript/HTML' modal. Set large payloads via the editor's value API (eval), NOT key-by-key typing. The modal renders on the MAIN page, not inside the builder iframe."
+    },
+    {
+      "id": 17, "spec": "A10.3", "name": "code_element_save", "status": "runtime",
+      "label": "Save (inside the 'Custom Javascript/HTML' code modal)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role button name Save (within the 'Custom Javascript/HTML' modal)",
+      "note": "Screenshot-confirmed: paste HTML into the modal textarea, then click 'Save' to commit the code element."
+    },
+    {
+      "id": 18, "spec": "A10-EDGE", "name": "dismiss_ai_popup", "status": "runtime",
+      "label": "'Ask AI' left panel (Assist/Build tabs, greeting 'Hi <user>, let us set the foundations') -> close via its X",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find text 'Ask AI' then its X | find text 'let us set the foundations' | find role button name Close (Ask AI panel)",
+      "note": "Screenshot-confirmed: the editor opens with the 'Ask AI' panel on the left (Assist/Build tabs; greeting personalizes to the logged-in user, so match on 'Ask AI' / 'let us set the foundations', not the name). Close it via its X on first editor open or it eats the next click. Absent is fine — do not crash."
+    },
+    {
+      "id": 19, "spec": "A11.1", "name": "page_save", "status": "runtime",
+      "label": "Top-right disk/save icon (note: 'Autosave off' -> manual save required)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role button name Save | top-right disk icon",
+      "note": "Screenshot-confirmed: save is the top-right DISK icon; autosave is OFF so a manual save is required. Wait for the save-confirmation toast, not a fixed sleep."
+    },
+    {
+      "id": 20, "spec": "A12.1", "name": "preview", "status": "runtime",
+      "label": "Top-right EYE icon (Preview)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role button name Preview | top-right eye icon",
+      "note": "Screenshot-confirmed: preview is the top-right EYE icon. Preview URL pattern uses the blackceolinks.com preview domain (see _env)."
+    },
+    {
+      "id": 21, "spec": "A13.2", "name": "publish", "status": "runtime",
+      "label": "Top-right blue 'Publish' button (APPROVAL ONLY; default leave draft)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role button name Publish (top-right, blue)",
+      "note": "Screenshot-confirmed: blue 'Publish' button top-right. NEVER act on this gate without an explicit LIVE approval answer (A13.1)."
+    },
+    {
+      "id": 22, "spec": "A14.1", "name": "funnel_list_row_open", "status": "runtime",
+      "label": "Funnel row in the Funnels list (open by exact funnel name)",
+      "label_source": "still-runtime-snapshot",
+      "find": "open by funnel_workspace_url (preferred) | find text <exact funnel name> in list row",
+      "note": "List row not individually screenshotted; prefer opening by the captured funnel_workspace_url."
+    },
+    {
+      "id": 23, "spec": "B3", "name": "tab_websites", "status": "runtime",
+      "label": "Websites (same orange top-tab row as Funnels)",
+      "label_source": "still-runtime-snapshot",
+      "find": "find role tab name Websites (orange top-tab row)",
+      "note": "UI map confirms 'Websites' IS in the same top-tab row as Funnels and the Websites builder MIRRORS Funnels, but the Website builder itself was NOT screenshotted. Re-verify each Website selector at runtime; do NOT assume Funnel parity."
+    },
+    {
+      "id": 24, "spec": "B4", "name": "new_website_button_and_name", "status": "runtime",
+      "label": "+ New website (top-right) -> name input (mirrors the '+ New funnel' flow)",
+      "label_source": "still-runtime-snapshot",
+      "find": "find role button name 'New website' | find text '+ New website' | then the name input in the create modal",
+      "note": "Inferred from the Funnels flow (UI map says Websites mirrors Funnels: substitute 'Websites' tab + '+ New website'). NOT screenshotted — snapshot to confirm the exact label."
+    },
+    {
+      "id": 25, "spec": "B6-B13", "name": "website_editor_selectors", "status": "runtime",
+      "label": "Website page-builder editor (mirrors the Funnel editor: Blank Section / Quick Add / Custom>Code / full-width / save / preview / publish)",
+      "label_source": "still-runtime-snapshot",
+      "find": "snapshot each Website editor node independently (gates 13-21 analogues)",
+      "note": "Website editor selectors MAY differ from Funnel editor selectors — snapshot both, assume nothing."
+    },
+    {
+      "id": 26, "spec": "C2", "name": "code_element_iframe_embed", "status": "runtime",
+      "label": "Same 'Custom Code' element as gate 15/16; payload = single responsive <iframe>",
+      "label_source": "still-runtime-snapshot",
+      "find": "same as gate 15 (Code element) -> gate 16 (Open Code Editor); payload = single responsive <iframe>",
+      "note": "Mode 2 path. Reuses the screenshot-confirmed Code path (gates 15-17) with an <iframe> payload instead of inline HTML."
+    },
     {
       "id": 27, "spec": "2.4", "name": "auth_storage_keys", "status": "captured",
+      "label": "(no visible UI label — IndexedDB auth storage)",
+      "label_source": "still-runtime-snapshot",
       "captured": {
         "indexeddb_database": "firebaseLocalStorageDb",
         "object_store": "firebaseLocalStorage",
@@ -57,8 +235,14 @@
         "localStorage": "deviceId, proxyLoginCount, debug_sentry, locale (NO token)",
         "firebase_api_key": "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE (hardcoded in Skill 44 transport.py; not an env var)"
       },
-      "note": "CORRECTS the GOAL spec §2.4 which assumed localStorage. Auth is in IndexedDB. Seed via seed-ghl-auth.py + inject-ghl-auth.sh. The exact fbase_key value + post-login session cookies still need a logged-in capture to confirm verbatim."
+      "note": "CORRECTS the GOAL spec §2.4 which assumed localStorage. Auth is in IndexedDB. Seed via seed-ghl-auth.py + inject-ghl-auth.sh (TOKEN-SEED-INTO-INDEXEDDB is the DEFAULT path — no UI login form is rendered; UI login is LAST-RESORT fallback only). The exact fbase_key value + post-login session cookies still need a logged-in capture to confirm verbatim."
     },
-    { "id": 28, "spec": "C3", "name": "ghl_published_domain_for_frame_ancestors", "status": "runtime", "find": "read the published page's own origin after first publish", "note": "Only knowable from a published page. Whitelist it in the Vercel app's frame-ancestors / X-Frame-Options for Mode 2 embeds." }
+    {
+      "id": 28, "spec": "C3", "name": "ghl_published_domain_for_frame_ancestors", "status": "runtime",
+      "label": "(no UI label — read the published page's own origin)",
+      "label_source": "still-runtime-snapshot",
+      "find": "read the published page's own origin after first publish",
+      "note": "Only knowable from a published page. Whitelist it in the Vercel app's frame-ancestors / X-Frame-Options for Mode 2 embeds."
+    }
   ]
 }

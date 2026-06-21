@@ -6,6 +6,25 @@
 (`ghl-install-pages-full.md`, v2.0), aligning Skill 06 to the Skill 03
 agent-browser-first convention (GOAL §2.2 / §4.2.2).
 
+> **D6 — HEADLESS-ONLY, HARD GUARD (non-negotiable, dev OR client).** Never open
+> a VISIBLE browser window — taking over a screen is forbidden, especially on a
+> client box. agent-browser is headless by default, but an inherited
+> `AGENT_BROWSER_HEADED` env var OR a `{"headed": true}` config file can silently
+> force a headed window (this is exactly how a live run once opened a visible
+> Chromium). EVERY agent-browser invocation in this skill MUST:
+> 1. start with **`agent-browser --headed false`** — `--headed false` is the
+>    documented override that also disables a config-file `"headed": true`
+>    (agent-browser 0.27.0); and
+> 2. run with the env stripped: **`unset AGENT_BROWSER_HEADED`** (the wrappers
+>    `tools/inject-ghl-auth.sh` and the `tools/ghl_builder.py headless-guard`
+>    helper do this and ABORT — exit 75 — if a headed signal survives).
+> There is NO supported path — not first login, not two-factor, not Playwright —
+> that may open a visible window. Two-factor that genuinely needs a human is
+> handled by the headless seed path (§2) so the form is never even rendered; a
+> truly-blocked two-factor PAUSES and surfaces to the operator, it does NOT pop a
+> window. Emit every browser line via `ghl_builder.py browser-cmd ...` (it
+> prepends `--headed false`) or by hand with the prefix above.
+
 > **STATUS — PENDING-LIVE-RUN.** Gate #1 (login form) and gate #27 (auth-storage
 > keys) are LIVE-CAPTURED and real. Gates #2–#26 and #28 are **runtime
 > snapshot-gates** (`gates.json` status=`runtime`) — they were BLOCKED behind
@@ -31,7 +50,9 @@ This is **Tier 4** in Skill 36's access chain (browser via Skill 03).
 
 ### 1.1 PRIMARY: agent-browser (Vercel Labs), headless
 - Already the repo's sanctioned tool (Skill 03) — no new dependency.
-- Headless by default (`--headed` only for an attended two-factor pause).
+- **HEADLESS-FORCED (D6)** — every invocation passes `--headed false` and runs
+  with `AGENT_BROWSER_HEADED` unset. `--headed` is NEVER used here, not even for
+  two-factor (see §2 — the headless token seed means no login form is rendered).
 - `--session <client-id>` → isolated instance + own profile dir. NEVER touches a
   personal Chrome. Enforces NO-COMINGLING.
 - Stable accessibility refs (`@e1`, `@e2`) survive GoHighLevel's React re-renders
@@ -44,27 +65,33 @@ This is **Tier 4** in Skill 36's access chain (browser via Skill 03).
   **IndexedDB**; `--state <file>` loads a saved auth state; `eval --stdin` writes
   IndexedDB directly; `--headers` sets the `token-id` header.
 
-Core commands (full surface in `agent-browser skills get core --full`):
+Core commands (full surface in `agent-browser skills get core --full`).
+**Note the `--headed false` on EVERY line (D6) — it is mandatory, not optional:**
 ```
-agent-browser --session <c> open <url>
-agent-browser --session <c> snapshot -i              # interactive refs only
-agent-browser --session <c> snapshot -i --json       # machine-parseable refs
-agent-browser --session <c> find role button name "Sign in" click
-agent-browser --session <c> fill @e1 "text"
-agent-browser --session <c> wait "<text>"            # poll for a node (NOT fixed sleep)
-agent-browser --session <c> eval --stdin             # write IndexedDB / set editor value
-agent-browser --session <c> state save ./auth.json   # persist a logged-in session
-agent-browser --session <c> --state ./auth.json open <url>
-agent-browser --session <c> screenshot out.png
+unset AGENT_BROWSER_HEADED          # D6: strip any inherited headed signal first
+agent-browser --headed false --session <c> open <url>
+agent-browser --headed false --session <c> snapshot -i              # interactive refs only
+agent-browser --headed false --session <c> snapshot -i --json       # machine-parseable refs
+agent-browser --headed false --session <c> find role button name "Sign in" click
+agent-browser --headed false --session <c> fill @e1 "text"
+agent-browser --headed false --session <c> wait "<text>"            # poll for a node (NOT fixed sleep)
+agent-browser --headed false --session <c> eval --stdin             # write IndexedDB / set editor value
+agent-browser --headed false --session <c> state save ./auth.json   # persist a logged-in session
+agent-browser --headed false --session <c> --state ./auth.json open <url>
+agent-browser --headed false --session <c> screenshot out.png
 ```
+Or emit any of these headless-forced via `python3 tools/ghl_builder.py browser-cmd
+--session <c> snapshot -i` (prepends `--headed false`; refuses with exit 75 if the
+env would force headed).
 
 ### 1.2 FALLBACK: Playwright (self-hosted, scripted)
 Drop to a deterministic Playwright script ONLY for flows too fiddly for
 ref-clicking (drag-drop canvas widgets, file uploads, a CodeMirror/Monaco value
 set that agent-browser cannot reach). Use `launchPersistentContext()` (never
-`launch()`), own `user-data-dir`, `headless=False` ONLY when a two-factor pause
-is possible, `--disable-blink-features=AutomationControlled`. Keep it a scripted
-escape hatch, NOT the default loop.
+`launch()`), own `user-data-dir`, **`headless=True` ALWAYS (D6 — never
+`headless=False`, no exception)**, `--disable-blink-features=AutomationControlled`.
+Keep it a scripted escape hatch, NOT the default loop. The headless token seed
+(§2) removes the only old reason `headless=False` was ever considered.
 
 Both engines may point at **Browserbase** as a remote CDP backend (`-p
 browserbase`) for fully detached/offloaded runs — that is the cloud tier, not a
@@ -87,6 +114,16 @@ babysit.
 ---
 
 ## 2. AUTH SEEDING — start already logged in (D7)
+
+> **D7 — TOKEN-SEED-INTO-INDEXEDDB IS THE DEFAULT (no UI login).** The DEFAULT
+> and ONLY-by-default auth path is: mint the Firebase ID/refresh token from the
+> client's refresh token, write it straight into IndexedDB
+> (`firebaseLocalStorageDb` → `firebaseLocalStorage` → `fbase_key` →
+> `value.stsTokenManager`), then navigate STRAIGHT INTO the dashboard. **No login
+> form is ever rendered** on this path — which is what tempted the earlier visible
+> window. **UI login (the Sign-in form, §2.2 / A1) is the LAST-RESORT FALLBACK
+> ONLY**, used solely when no usable refresh token exists; it is still headless
+> and still never opens a visible window (D6).
 
 **Corrected by the 2026-06-21 live capture:** GoHighLevel stores Firebase auth in
 **IndexedDB, NOT localStorage.** Seeding localStorage does nothing.
@@ -111,22 +148,33 @@ localStorage (origin): deviceId, proxyLoginCount, debug_sentry, locale  (NO toke
    `GHL_FIREBASE_REFRESH_TOKEN`). It does NOT import or modify Skill 44's engine.
 2. `bash tools/inject-ghl-auth.sh <session> /tmp/<session>/ghl-auth-seed.json --pre-open`
    — opens the GoHighLevel origin (so IndexedDB exists), writes the seed entry
-   into `firebaseLocalStorageDb`/`firebaseLocalStorage` via `eval`, reloads.
-3. `agent-browser --session <session> snapshot -i` → confirm the **dashboard**,
-   NOT the Sign in form. If the form shows → token revoked → fall back to A1.
-4. Once a real logged-in session exists, `agent-browser --session <session> state
-   save ./<client>-auth.json` and reuse via `--state` (captures the verbatim
-   post-login cookie set, which a freshly minted token alone cannot provide).
+   into `firebaseLocalStorageDb`/`firebaseLocalStorage` via `eval`, reloads. This
+   script is HEADLESS-FORCED (D6): it `unset`s `AGENT_BROWSER_HEADED`, runs every
+   agent-browser call through a wrapper that appends `--headed false`, and ABORTS
+   (exit 75) if a headed signal survives. No login form is rendered on this path.
+3. `agent-browser --headed false --session <session> snapshot -i` → confirm the
+   **dashboard**, NOT the Sign in form. If the form shows → token revoked → fall
+   back to A1 (the LAST-RESORT UI login, still headless).
+4. Once a real logged-in session exists, `agent-browser --headed false --session
+   <session> state save ./<client>-auth.json` and reuse via `--state` (captures
+   the verbatim post-login cookie set, which a freshly minted token alone cannot
+   provide).
 
 ID token is short-lived (~50–60 min). On a 401 mid-build, re-run
 `seed-ghl-auth.py` and re-inject (retry-once, mirrors transport.py).
 
-### 2.2 Documented fallback (attended)
-No usable refresh token → login form (A1) with `GHL_AGENCY_EMAIL` /
-`GHL_AGENCY_PASSWORD` (real fleet var names; `GHL_EMAIL`/`GHL_PASSWORD` also
-accepted). **Two-factor authentication PAUSES up to 5 minutes for a human and is
-NEVER bypassed.** Use `--headed` so the human can complete it; `state save`
-after so it persists.
+### 2.2 Documented fallback (LAST RESORT — UI login)
+**UI login is the LAST-RESORT fallback only** (the default is the headless token
+seed in §2.1; this path renders the Sign-in form and is used ONLY when no usable
+refresh token exists). No usable refresh token → login form (A1) with
+`GHL_AGENCY_EMAIL` / `GHL_AGENCY_PASSWORD` (real fleet var names;
+`GHL_EMAIL`/`GHL_PASSWORD` also accepted). The form is filled **headless** (D6 —
+still `--headed false`, still no visible window). **Two-factor authentication is
+NEVER bypassed:** if a code is genuinely required and cannot be satisfied
+headless, the run PAUSES, captures a screenshot to disk, and surfaces to the
+operator — it does NOT open a window. Prefer fixing auth by re-grabbing the
+client's refresh token (Token Grabber) so the default §2.1 seed path applies.
+`state save` after a successful login so it persists.
 
 ### 2.3 Credential model
 CLIENT keys ONLY. Every client box runs on the client's own funded GoHighLevel
@@ -169,9 +217,12 @@ Each step: ACTION / GATE (from gates.json) / VERIFY / EDGE. Resolve every
 - A0.2 Payloads exist on disk, one per page, self-contained (inline CSS/`<style>`,
   no React/build deps). `ghl_builder.build_manifest` enforces non-empty + file
   exists. A payload too rich for a code block → route to Mode 2 (Part C).
-- A0.3 Launch isolated session: `agent-browser --session <client> set viewport
-  1440 900` then open. (Playwright fallback: `launchPersistentContext`, never
-  `launch`, `--disable-blink-features=AutomationControlled`.)
+- A0.3 Launch isolated session, HEADLESS-FORCED (D6): `unset
+  AGENT_BROWSER_HEADED` then `agent-browser --headed false --session <client> set
+  viewport 1440 900` then open. (Playwright fallback: `launchPersistentContext`,
+  never `launch`, **`headless=True`**, `--disable-blink-features=AutomationControlled`.)
+  Optionally gate the whole launch with `python3 tools/ghl_builder.py
+  headless-guard` (exit 75 = headed would open → refuse).
 - A0.4 Build the MANIFEST up front (`ghl_builder.build_manifest`): ordered
   `{name, path, payload_path, mode}` — the loop driver AND resume ledger key.
 
@@ -181,10 +232,12 @@ Each step: ACTION / GATE (from gates.json) / VERIFY / EDGE. Resolve every
   Else fill `input#email` / `input#password` (captured) → click `button "Sign
   in"`.
 - A1.3 VERIFY: URL reaches the dashboard within timeout.
-- EDGE not-logged-in/expired: re-auth once; still failing → PAUSE + screenshot +
-  surface to operator. Never loop silently.
-- EDGE two-factor: detect the "Verify Security Code" screen → PAUSE up to 5 min
-  for a human (`--headed`). NEVER bypass. `state save` after.
+- EDGE not-logged-in/expired: re-auth once (prefer re-seeding the token, §2.1);
+  still failing → PAUSE + screenshot + surface to operator. Never loop silently.
+- EDGE two-factor: detect the "Verify Security Code" screen → PAUSE up to 5 min,
+  capture a screenshot to disk, and surface to the operator. **Stay headless
+  (D6) — NEVER open a window.** NEVER bypass. `state save` after the operator
+  resolves it.
 
 ### A2. Sub-account selection — HARD GATE
 - A2.1 Read the current sub-account label (top-left).
