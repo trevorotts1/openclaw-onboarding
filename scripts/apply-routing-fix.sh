@@ -259,11 +259,14 @@ else
     if ! grep -qF "$CEO_ROUTING_MARKER" "$TMPF"; then
       ORIG2=$(cat "$AGENTS_FILE")
       {
-        printf '<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->\n'
-        printf '## CEO ROUTING — NO LOOPHOLES\n\n'
-        printf 'The CEO'\''s ONLY permitted routing action: POST /api/tasks/ingest with department_slug.\n'
-        printf 'No trivial-task, quick-API-call, or spawn-sub-agent exceptions.\n\n'
-        printf '---\n\n'
+        printf '%s\n' '<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->'
+        printf '%s\n\n' '## CEO ROUTING — NO LOOPHOLES'
+        printf '%s\n' "The CEO's ONLY permitted routing action: POST /api/tasks/ingest with department_slug."
+        printf '%s\n\n' 'No trivial-task, quick-API-call, or spawn-sub-agent exceptions.'
+        # printf '%s' guard: a bare format string beginning with '-' (e.g. '---')
+        # is parsed as an option by printf and aborts under set -e. Pass it as a
+        # %s argument instead so the leading dashes are always literal.
+        printf '%s\n\n' '---'
         printf '%s' "$ORIG2"
       } > "$TMPF"
     fi
@@ -347,9 +350,9 @@ PDEOF
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
-# LAYER 2 — STRUCTURAL PPTX DENY (skills:[] on main agent)
+# LAYER 2 — STRUCTURAL PPTX DENY (skills:[] on the box's default agent)
 # ═════════════════════════════════════════════════════════════════════════════
-_log "--- LAYER 2: structural pptx deny (skills:[] on main agent) ---"
+_log "--- LAYER 2: structural pptx deny (skills:[] on the default agent) ---"
 
 L2_RESULT=$(python3 - "$OC_CONFIG" <<'PYEOF'
 import json, sys
@@ -359,31 +362,41 @@ cfg_path = Path(sys.argv[1])
 cfg = json.loads(cfg_path.read_text())
 
 agents_list = cfg.get("agents", {}).get("list", []) or []
-main_agent = None
-for ag in agents_list:
-    if isinstance(ag, dict) and ag.get("id") == "main":
-        main_agent = ag
-        break
 
-if main_agent is None:
+# DEFECT 2 (v13.1.3): target the box's ACTUAL default agent (default:true), else
+# fall back to id=="main". Some boxes' default agent is "dept-executive-office"
+# (default:true) rather than "main"; hardcoding "main" left those boxes ungated.
+default_agent = None
+for ag in agents_list:
+    if isinstance(ag, dict) and ag.get("default") is True:
+        default_agent = ag
+        break
+if default_agent is None:
+    for ag in agents_list:
+        if isinstance(ag, dict) and ag.get("id") == "main":
+            default_agent = ag
+            break
+
+if default_agent is None:
     print("NO_MAIN_AGENT")
     sys.exit(0)
 
-current_skills = main_agent.get("skills")
+_did = default_agent.get("id", "<unknown>")
+current_skills = default_agent.get("skills")
 # Already set to empty list or explicit pptx deny?
 if isinstance(current_skills, list) and len(current_skills) == 0:
     print("ALREADY_DENIED")
     sys.exit(0)
 
 # Emit the pending change summary for dry-run display
-print(f"WILL_SET: current skills={json.dumps(current_skills)} -> skills=[]")
+print(f"WILL_SET: agent id={_did} current skills={json.dumps(current_skills)} -> skills=[]")
 PYEOF
 ) || L2_RESULT="ERROR"
 
 if [ "$L2_RESULT" = "ALREADY_DENIED" ]; then
-  _log "L2: skills:[] already set on main agent — no-op"
+  _log "L2: skills:[] already set on the default agent — no-op"
 elif [ "$L2_RESULT" = "NO_MAIN_AGENT" ]; then
-  _warn "L2: no agent with id=main found in openclaw.json agents.list — skipping"
+  _warn "L2: no default agent (default:true) and no id=main found in openclaw.json agents.list — skipping"
 elif [[ "$L2_RESULT" == "ERROR" || "$L2_RESULT" == *"Traceback"* ]]; then
   _warn "L2: could not inspect openclaw.json — skipping pptx deny layer"
 else
@@ -398,15 +411,25 @@ cfg_path = Path(sys.argv[1])
 cfg = json.loads(cfg_path.read_text())
 
 agents_list = cfg.get("agents", {}).get("list", []) or []
+
+# DEFECT 2: default agent (default:true) first, else id=="main".
+target = None
 for ag in agents_list:
-    if isinstance(ag, dict) and ag.get("id") == "main":
-        ag["skills"] = []
+    if isinstance(ag, dict) and ag.get("default") is True:
+        target = ag
         break
+if target is None:
+    for ag in agents_list:
+        if isinstance(ag, dict) and ag.get("id") == "main":
+            target = ag
+            break
+if target is not None:
+    target["skills"] = []
+    print(f"[apply-routing-fix] L2: skills:[] set on default agent (id={target.get('id','<unknown>')})")
 
 cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
-print("[apply-routing-fix] L2: skills:[] set on main agent")
 PYEOF
-    _log "L2: pptx deny (skills:[]) applied to main agent in openclaw.json"
+    _log "L2: pptx deny (skills:[]) applied to default agent in openclaw.json"
   fi
 fi
 
@@ -426,10 +449,10 @@ fi
 # until the route-task MCP tool ships. verify-routing.sh G7 FAIL-WARNs on that
 # interim state so a box is never falsely marked clean.
 # Idempotent: skips if tools.deny already contains "write".
-_log "--- LAYER 5: CEO tool-gate (deny production tools on main agent) ---"
+_log "--- LAYER 5: CEO tool-gate (deny production tools on the default agent) ---"
 
 if [ "$DRY_RUN" = "1" ]; then
-  _dry "L5: would deny production tools (write/edit/apply_patch/browser/canvas/image/process) + GHL MCP on main agent (allow: read/web_fetch/web_search/messaging/sessions_*/exec-interim)"
+  _dry "L5: would deny production tools (write/edit/apply_patch/browser/canvas/image/process) + GHL MCP on the box's default agent (default:true, else main) (allow: read/web_fetch/web_search/messaging/sessions_*/exec-interim)"
 else
   L5_RESULT=$(python3 - "$OC_CONFIG" <<'PYEOF'
 import json, sys
@@ -480,11 +503,21 @@ if _ceo_consent_active():
     sys.exit(0)
 
 agents_list = cfg.get("agents", {}).get("list", []) or []
+
+# DEFECT 2 (v13.1.3): gate the box's ACTUAL default agent (default:true), else
+# fall back to id=="main". Boxes whose default agent is "dept-executive-office"
+# (default:true) were left with the CEO production tools wide open when this was
+# hardcoded to "main".
 main_agent = None
 for ag in agents_list:
-    if isinstance(ag, dict) and ag.get("id") == "main":
+    if isinstance(ag, dict) and ag.get("default") is True:
         main_agent = ag
         break
+if main_agent is None:
+    for ag in agents_list:
+        if isinstance(ag, dict) and ag.get("id") == "main":
+            main_agent = ag
+            break
 
 if main_agent is None:
     print("NO_MAIN_AGENT")
@@ -521,15 +554,15 @@ for prov, rule in CEO_MCP_DENY.items():
     by_provider[prov] = rule
 
 cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
-print("APPLIED")
+print("APPLIED:" + str(main_agent.get("id", "<unknown>")))
 PYEOF
 ) || L5_RESULT="ERROR"
 
   case "$L5_RESULT" in
-    ALREADY_GATED)      _log "L5: CEO tool-gate already present on main agent — no-op" ;;
+    ALREADY_GATED)      _log "L5: CEO tool-gate already present on default agent — no-op" ;;
     CONSENT_ACTIVE_SKIP) _log "L5: owner-consent carve-out ACTIVE — skipping CEO tool-gate (would revoke the owner's grant)" ;;
-    NO_MAIN_AGENT)      _warn "L5: no agent with id=main found — skipping CEO tool-gate" ;;
-    APPLIED)            _log "L5: CEO tool-gate applied to main agent (production tools denied; routing tools allowed)" ;;
+    NO_MAIN_AGENT)      _warn "L5: no default agent (default:true) and no id=main found — skipping CEO tool-gate" ;;
+    APPLIED:*)          _log "L5: CEO tool-gate applied to default agent (id=${L5_RESULT#APPLIED:}) — production tools denied; routing tools allowed" ;;
     *)                  _warn "L5: could not apply CEO tool-gate (result=$L5_RESULT) — skipping" ;;
   esac
 fi
