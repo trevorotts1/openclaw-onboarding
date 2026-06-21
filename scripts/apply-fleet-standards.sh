@@ -77,15 +77,70 @@ echo "[apply-fleet-standards] config: $OC_CONFIG"
 cp "$OC_CONFIG" "$OC_BACKUP"
 echo "[apply-fleet-standards] backed up to: $OC_BACKUP"
 
+# ─── 1b. Detect the running gateway binary version (D1 — schema-aware baseline) ──
+# DEFECT 1 (v13.1.3): OpenClaw 2026.6.8 REJECTS any agents.defaults.tools.* key at
+# config-validate ("agents.defaults: Invalid input"). Writing the GOAL-4 no-refusal
+# baseline as agents.defaults.tools.allow=["*"] therefore self-rolls-back (the
+# validate-fail rollback at the tail of this script restores the backup), leaving
+# the box UN-ungated; verify-routing.sh G7b then FATALs.
+#
+# Fix: on schemas that REJECT agents.defaults.tools.* (>= 2026.6.8), express the
+# no-refusal baseline ONLY with keys proven to validate clean:
+#   • root tools.exec.security=full + tools.exec.ask=off  (fleet-wide exec ungate)
+#   • agents.defaults.subagents.allowAgents=["*"] + requireAgentId=false (spawn ungate)
+# That functional ungate is the satisfied Goal-4 baseline on 2026.6.8. On schemas
+# that ACCEPT agents.defaults.tools.* (< 2026.6.8, or unknown) we ALSO write the
+# wildcard allow as before (legacy-permissive default keeps older boxes unchanged).
+#
+# OC_VERSION = parsed YYYY.M.P from `openclaw --version`, or "" when unknown.
+# FLEET_OC_VERSION_OVERRIDE pins the version for deterministic tests (bypasses the
+# live binary). Mirrors smoke-test-provider-capabilities.sh's detector.
+TOOLS_DEFAULTS_REJECTED_VERSION="2026.6.8"
+OC_VERSION=""
+if command -v openclaw >/dev/null 2>&1; then
+  _oc_raw="$(openclaw --version 2>&1 | tr -d '\r' | head -n1 || true)"
+  OC_VERSION="$(printf '%s' "$_oc_raw" | grep -oE '20[0-9]{2}\.[0-9]+\.[0-9]+' | head -n1 || true)"
+fi
+OC_VERSION="${FLEET_OC_VERSION_OVERRIDE:-$OC_VERSION}"
+
+# _ver_ge A B → 0 if version A >= version B (numeric YYYY.M.P compare).
+_ver_ge() {
+  printf '%s\n%s\n' "$2" "$1" | sort -t. -k1,1n -k2,2n -k3,3n -C
+}
+
+# WRITE_DEFAULTS_TOOLS=1 → this schema ACCEPTS agents.defaults.tools.* (write the
+# wildcard allow). =0 → this schema REJECTS it (>= 2026.6.8); rely on the
+# functional ungate instead. Unknown version → default to 1 (legacy-permissive):
+# older boxes keep their existing baseline, and the validate gate is the backstop.
+WRITE_DEFAULTS_TOOLS=1
+if [ -n "$OC_VERSION" ] && _ver_ge "$OC_VERSION" "$TOOLS_DEFAULTS_REJECTED_VERSION"; then
+  WRITE_DEFAULTS_TOOLS=0
+  echo "[apply-fleet-standards] gateway $OC_VERSION >= $TOOLS_DEFAULTS_REJECTED_VERSION — agents.defaults.tools.* is REJECTED; using functional-ungate baseline (root tools.exec full+off + subagents ungate), NOT agents.defaults.tools.allow"
+elif [ -n "$OC_VERSION" ]; then
+  echo "[apply-fleet-standards] gateway $OC_VERSION < $TOOLS_DEFAULTS_REJECTED_VERSION — writing agents.defaults.tools.allow=['*'] no-refusal baseline"
+else
+  echo "[apply-fleet-standards] gateway version unknown — defaulting to writing agents.defaults.tools.allow=['*'] (validate gate is the backstop if a newer schema rejects it)"
+fi
+export FLEET_WRITE_DEFAULTS_TOOLS="$WRITE_DEFAULTS_TOOLS"
+
 # ─── 2. Deep-merge the canonical fleet block into openclaw.json ──────────────
 python3 - "$OC_CONFIG" <<'PYEOF'
 import json
+import os
 import sys
 from pathlib import Path
 
 cfg_path = Path(sys.argv[1])
 cfg = json.loads(cfg_path.read_text())
 before_json = json.dumps(cfg, sort_keys=True, indent=2)
+
+# DEFECT 1 (v13.1.3): schema-version-aware no-refusal baseline.
+# FLEET_WRITE_DEFAULTS_TOOLS=1 → this schema accepts agents.defaults.tools.* so we
+#   write the wildcard allow (legacy / < 2026.6.8 / unknown-version default).
+# FLEET_WRITE_DEFAULTS_TOOLS=0 → schema REJECTS agents.defaults.tools.* (>= 2026.6.8)
+#   so we DO NOT write it; the functional ungate (root tools.exec full+off +
+#   agents.defaults.subagents ungate) IS the satisfied Goal-4 no-refusal baseline.
+WRITE_DEFAULTS_TOOLS = os.environ.get("FLEET_WRITE_DEFAULTS_TOOLS", "1") == "1"
 
 # CANONICAL FLEET STANDARD BLOCK
 # Verified against:
@@ -118,22 +173,22 @@ CANONICAL = {
             "subagents": {
                 "allowAgents": ["*"],
                 "requireAgentId": False
-            },
+            }
             # GOAL-4 D4 (4B+4C) — NO-REFUSAL TOOL BASELINE.
-            # agents.defaults.tools.allow=["*"] is the positive baseline that
-            # guarantees EVERY agent — departments + their sub-agents — can run
-            # exec / file ops / web / MCP / Kie HTTP without ever refusing a job.
-            #   • This is the VALID defaults-level key (allow), NOT the poison key
-            #     (exec). agents.defaults.tools.ALLOW validates on 2026.6.1+;
-            #     agents.defaults.tools.EXEC does not (see v11.3.1 note above).
+            # agents.defaults.tools.allow=["*"] is the positive baseline that, on
+            # schemas that ACCEPT it, guarantees EVERY agent — departments + their
+            # sub-agents — can run exec / file ops / web / MCP / Kie HTTP without
+            # ever refusing a job. It is APPENDED below (not inlined here) ONLY when
+            # WRITE_DEFAULTS_TOOLS is True, because OpenClaw 2026.6.8 REJECTS any
+            # agents.defaults.tools.* key with "agents.defaults: Invalid input"
+            # (DEFECT 1). On 2026.6.8 the functional ungate — root tools.exec
+            # full+off (above) + agents.defaults.subagents ungate (here) — IS the
+            # satisfied Goal-4 no-refusal baseline.
+            #   • When written, this is the VALID defaults-level key (allow), NOT the
+            #     poison key (exec). agents.defaults.tools.EXEC never validates.
             #   • Under RESTRICT-ONLY precedence the per-agent CEO deny (main)
             #     re-asserted below STILL wins, so this wildcard does NOT re-open
             #     the CEO's denied production tools.
-            #   • If a future gateway rejects ["*"] here, replace it with explicit
-            #     group grants: ["group:runtime","group:fs","group:web","group:plugins"].
-            "tools": {
-                "allow": ["*"]
-            }
         }
     },
     "channels": {
@@ -166,6 +221,28 @@ def deep_merge(dst, src):
 
 # Apply the canonical block.
 deep_merge(cfg, CANONICAL)
+
+# DEFECT 1 (v13.1.3) — schema-version-aware no-refusal baseline.
+_agents_defaults = cfg.setdefault("agents", {}).setdefault("defaults", {})
+if WRITE_DEFAULTS_TOOLS:
+    # Schema accepts agents.defaults.tools.* — write/refresh the wildcard allow.
+    _adt = _agents_defaults.setdefault("tools", {})
+    if not isinstance(_adt, dict):
+        _adt = {}
+        _agents_defaults["tools"] = _adt
+    _adt["allow"] = ["*"]
+    print("[apply-fleet-standards] GOAL-4 baseline: agents.defaults.tools.allow=['*'] written")
+else:
+    # Schema (>= 2026.6.8) REJECTS agents.defaults.tools.* — never write it, AND
+    # strip any pre-existing agents.defaults.tools so a box previously rolled with
+    # the poison key validates clean again (idempotent self-heal). The functional
+    # ungate (root tools.exec full+off + agents.defaults.subagents ungate) is the
+    # satisfied Goal-4 no-refusal baseline on this schema.
+    if "tools" in _agents_defaults:
+        del _agents_defaults["tools"]
+        print("[apply-fleet-standards] GOAL-4 baseline: stripped rejected agents.defaults.tools (2026.6.8 schema) — functional ungate is the baseline")
+    else:
+        print("[apply-fleet-standards] GOAL-4 baseline: agents.defaults.tools NOT written (2026.6.8 schema) — functional ungate is the baseline")
 
 # Fix per-agent subagents overrides: any agent with an explicit allowAgents
 # that is NOT ["*"] should be set to ["*"]. This is the critical piece that
@@ -231,29 +308,35 @@ def _ceo_consent_active():
 if _ceo_consent_active():
     print("[apply-fleet-standards] owner-consent carve-out ACTIVE — skipping CEO tool-gate re-assert (would revoke the owner's grant)")
 elif "agents" in cfg and "list" in cfg["agents"]:
-    for agent in cfg["agents"]["list"]:
-        if agent.get("id") == "main":
-            tools = agent.setdefault("tools", {})
-            deny = tools.setdefault("deny", [])
-            if not isinstance(deny, list):
-                deny = []; tools["deny"] = deny
-            for t in _CEO_TOOL_DENY:
-                if t not in deny:
-                    deny.append(t)
-            allow = tools.setdefault("allow", [])
-            if not isinstance(allow, list):
-                allow = []; tools["allow"] = allow
-            for t in _CEO_TOOL_ALLOW:
-                if t not in allow:
-                    allow.append(t)
-            tools["allow"] = [t for t in allow if t not in deny]  # deny wins
-            by_provider = tools.setdefault("byProvider", {})
-            if not isinstance(by_provider, dict):
-                by_provider = {}; tools["byProvider"] = by_provider
-            for prov, rule in _CEO_MCP_DENY.items():
-                by_provider[prov] = rule
-            print("[apply-fleet-standards] re-asserted CEO tool-gate on main agent (production tools denied)")
-            break
+    # DEFECT 2 (v13.1.3): re-assert the gate on the box's ACTUAL default agent
+    # (default:true), else fall back to id=="main" — matching apply-routing-fix.sh
+    # L5 and verify-routing.sh G7 so the gate target never drifts across the roll.
+    _agents = cfg["agents"]["list"]
+    _ceo_agent = next((a for a in _agents if isinstance(a, dict) and a.get("default") is True), None)
+    if _ceo_agent is None:
+        _ceo_agent = next((a for a in _agents if isinstance(a, dict) and a.get("id") == "main"), None)
+    if _ceo_agent is not None:
+        agent = _ceo_agent
+        tools = agent.setdefault("tools", {})
+        deny = tools.setdefault("deny", [])
+        if not isinstance(deny, list):
+            deny = []; tools["deny"] = deny
+        for t in _CEO_TOOL_DENY:
+            if t not in deny:
+                deny.append(t)
+        allow = tools.setdefault("allow", [])
+        if not isinstance(allow, list):
+            allow = []; tools["allow"] = allow
+        for t in _CEO_TOOL_ALLOW:
+            if t not in allow:
+                allow.append(t)
+        tools["allow"] = [t for t in allow if t not in deny]  # deny wins
+        by_provider = tools.setdefault("byProvider", {})
+        if not isinstance(by_provider, dict):
+            by_provider = {}; tools["byProvider"] = by_provider
+        for prov, rule in _CEO_MCP_DENY.items():
+            by_provider[prov] = rule
+        print(f"[apply-fleet-standards] re-asserted CEO tool-gate on default agent (id={agent.get('id','<unknown>')}; production tools denied)")
 
 after_json = json.dumps(cfg, sort_keys=True, indent=2)
 

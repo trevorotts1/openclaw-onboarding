@@ -213,6 +213,102 @@ PYEOF
 then _ok "F2: apply-fleet-standards.sh idempotent (baseline stable, deny not duplicated)"
 else _bad "F2: re-run drifted the baseline or duplicated the CEO deny"; fi
 
+# ── G. DEFECT 1 — schema-version-aware no-refusal baseline (2026.6.8) ──────────
+# OpenClaw 2026.6.8 REJECTS agents.defaults.tools.* . apply-fleet-standards.sh must
+# NOT write it on that schema (it would self-roll-back), and verify-routing.sh G7b
+# must accept the FUNCTIONAL UNGATE (root tools.exec full+off + agents.defaults.
+# subagents ungate) as the satisfied baseline instead.
+rm -f "$CEO_CONSENT_FILE"
+
+# G1: apply-fleet-standards.sh on a 2026.6.8 schema strips/omits agents.defaults.tools,
+#     keeps config valid, and still leaves the functional ungate + CEO gate.
+# Stub openclaw to REJECT agents.defaults.tools at validate (simulates 2026.6.8).
+cat > "$STUB/openclaw" <<STUBEOF
+#!/usr/bin/env python3
+import json, os, sys
+if len(sys.argv) >= 3 and sys.argv[1] == "config" and sys.argv[2] == "validate":
+    cfg = json.load(open(os.path.join(os.environ["HOME"], ".openclaw", "openclaw.json")))
+    if cfg.get("agents", {}).get("defaults", {}).get("tools") is not None:
+        sys.stderr.write("agents.defaults: Invalid input\n"); sys.exit(1)
+    print("config OK"); sys.exit(0)
+if len(sys.argv) >= 2 and sys.argv[1] == "--version":
+    print("openclaw 2026.6.8"); sys.exit(0)
+sys.exit(0)
+STUBEOF
+chmod +x "$STUB/openclaw"
+# Start with a pre-existing POISON agents.defaults.tools to prove it gets stripped.
+cat > "$HOME/.openclaw/openclaw.json" <<'JSON'
+{ "agents": { "defaults": { "tools": { "allow": ["*"] } }, "list": [ { "id": "main", "default": true, "skills": [] } ] } }
+JSON
+FLEET_OC_VERSION_OVERRIDE="2026.6.8" bash "$APPLY_STD" >/dev/null 2>&1 || true
+if python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
+import json,sys
+cfg=json.load(open(sys.argv[1]))
+adt=cfg.get("agents",{}).get("defaults",{}).get("tools")
+exec_ok=cfg.get("tools",{}).get("exec")=={"security":"full","ask":"off"}
+sub=cfg.get("agents",{}).get("defaults",{}).get("subagents",{}).get("allowAgents")
+m=[a for a in cfg["agents"]["list"] if a["id"]=="main"][0]
+deny=set(m.get("tools",{}).get("deny") or [])
+need={"write","edit","apply_patch","browser","canvas","image","process"}
+sys.exit(0 if (adt is None and exec_ok and sub==["*"] and need.issubset(deny)) else 1)
+PYEOF
+then _ok "G1: 2026.6.8 schema — agents.defaults.tools stripped/omitted, config valid (no rollback), functional ungate + CEO gate present"
+else _bad "G1: apply-fleet-standards.sh wrote/kept agents.defaults.tools on a 2026.6.8 schema (would self-roll-back)"; fi
+
+# G2: verify-routing.sh G7b PASSES on the functional ungate at 2026.6.8 (no
+#     agents.defaults.tools required). Provide AGENTS.md/SOUL.md/DB so the run
+#     reaches G7b (other gates may warn; we grep only the G7b line).
+printf '<!-- ROLE_DISCIPLINE_V1 -->\nCEO_ROUTING_NO_LOOPHOLES_V1\n' > "$HOME/.openclaw/workspace/AGENTS.md"
+printf '<!-- CEO_ORCHESTRATOR_RULE_V2 -->\n' > "$HOME/.openclaw/workspace/SOUL.md"
+G2_OUT=$(FLEET_OC_VERSION_OVERRIDE="2026.6.8" bash "$VERIFY" 2>&1 || true)
+if printf '%s' "$G2_OUT" | grep -qE "PASS  G7b: no-refusal baseline present via FUNCTIONAL UNGATE"; then
+  _ok "G2: verify-routing G7b PASSES via functional ungate on 2026.6.8 (no agents.defaults.tools)"
+else
+  _bad "G2: verify-routing G7b did NOT accept the functional ungate on 2026.6.8 — $(printf '%s' "$G2_OUT" | grep G7b | head -1)"
+fi
+# restore the no-op openclaw stub for the remaining tests
+printf '#!/bin/sh\nexit 0\n' > "$STUB/openclaw"; chmod +x "$STUB/openclaw"
+
+# ── H. DEFECT 2 — gate targets the box's ACTUAL default agent (not hardcoded main) ─
+# Some boxes' default agent is "dept-executive-office" (default:true). The CEO
+# gate (apply-routing-fix.sh L2+L5) and the verify checks (G4+G7) must target THAT
+# agent, not a hardcoded "main".
+rm -f "$CEO_CONSENT_FILE"
+# H includes a non-default "main" AND a default:true "dept-executive-office" to
+# prove default:true wins over a present "main".
+cat > "$HOME/.openclaw/openclaw.json" <<'JSON'
+{ "agents": { "list": [
+  { "id": "main", "skills": [] },
+  { "id": "dept-executive-office", "default": true, "skills": ["pptx"] }
+] } }
+JSON
+bash "$APPLY_FIX" >/dev/null 2>&1 || true
+if python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
+import json,sys
+cfg=json.load(open(sys.argv[1]))
+ag={a["id"]:a for a in cfg["agents"]["list"]}
+need={"write","edit","apply_patch","browser","canvas","image","process"}
+deo=ag["dept-executive-office"]; mn=ag["main"]
+deo_gated = need.issubset(set((deo.get("tools") or {}).get("deny") or [])) and \
+            (deo.get("tools",{}).get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"]) and \
+            deo.get("skills")==[]
+main_gated = need.issubset(set((mn.get("tools") or {}).get("deny") or []))
+sys.exit(0 if (deo_gated and not main_gated) else 1)
+PYEOF
+then _ok "H1: apply-routing-fix.sh gated the default:true agent (dept-executive-office), NOT the present 'main'"
+else _bad "H1: apply-routing-fix.sh gated the wrong agent (hardcoded main bug)"; fi
+
+# H2: verify-routing G4 + G7 report dept-executive-office (the default agent).
+printf '<!-- ROLE_DISCIPLINE_V1 -->\nCEO_ROUTING_NO_LOOPHOLES_V1\n' > "$HOME/.openclaw/workspace/AGENTS.md"
+printf '<!-- CEO_ORCHESTRATOR_RULE_V2 -->\n' > "$HOME/.openclaw/workspace/SOUL.md"
+H2_OUT=$(bash "$VERIFY" 2>&1 || true)
+if printf '%s' "$H2_OUT" | grep -qE "G4: default agent \(id=dept-executive-office\)" \
+   && printf '%s' "$H2_OUT" | grep -E "G7:" | grep -v "G7b" | grep -q "id=dept-executive-office"; then
+  _ok "H2: verify-routing G4+G7 target the default agent (dept-executive-office)"
+else
+  _bad "H2: verify-routing did NOT target dept-executive-office — G4=[$(printf '%s' "$H2_OUT"|grep 'G4:'|head -1)] G7=[$(printf '%s' "$H2_OUT"|grep -E 'G7:'|grep -v G7b|head -1)]"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 if [ "$FAILS" -eq 0 ]; then

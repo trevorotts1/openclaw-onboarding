@@ -16,6 +16,17 @@ if [ -z "$_DETECT_PLATFORM" ]; then
 fi
 export OPENCLAW_PLATFORM="$_DETECT_PLATFORM"
 
+# DEFECT 3 (v13.1.3) — PLATFORM unbound-variable guard.
+# A stale/dirty checkout of this script (pre-fix) referenced a bare $PLATFORM in
+# the stale-artifact detection block (~line 1431 of that version) that was never
+# assigned; under `set -euo pipefail` (active below) the first reference aborted
+# with "PLATFORM: unbound variable" and the .onboarding-version stamp never wrote.
+# Initialize PLATFORM here (aliased to the canonical OPENCLAW_PLATFORM) BEFORE any
+# possible use so the script is robust even if any code path references the bare
+# name. The canonical variable remains OPENCLAW_PLATFORM.
+PLATFORM="${PLATFORM:-$OPENCLAW_PLATFORM}"
+export PLATFORM
+
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_BOOTSTRAP="${_SCRIPT_DIR}/platform/${OPENCLAW_PLATFORM}/bootstrap.sh"
 if [ -f "$_PLATFORM_BOOTSTRAP" ]; then
@@ -34,9 +45,90 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v13.1.2"
+ONBOARDING_VERSION="v13.1.3"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
+
+# ----------------------------------------------------------
+# DEFECT 3 (v13.1.3) — SELF-SYNC GUARD (always wire from the intended version).
+# ----------------------------------------------------------
+# When this script is run from a LOCAL git checkout (e.g. the Sunday cron does
+# `bash ~/.../update-skills.sh`), a dirty/stale checkout would run OLD script
+# LOGIC even though the content-download step git-clones fresh files — and the
+# stale logic carried the PLATFORM bug that aborted before the version stamp.
+#
+# This guard runs BEFORE any wiring:
+#   • curl|bash (no local file / not a git tree) → SKIP (fresh by definition).
+#   • local git checkout, clean + up-to-date     → proceed.
+#   • local git checkout, dirty or behind:
+#       - OPENCLAW_UPDATE_AUTO_SYNC=1 → `git fetch origin main` +
+#         `git reset --hard origin/main`, then RE-EXEC this script so the
+#         intended version's logic runs.
+#       - otherwise (default, non-destructive) → FAIL LOUD with exact remediation.
+# Set OPENCLAW_UPDATE_SKIP_SELF_SYNC=1 to bypass (e.g. when intentionally testing
+# a local edit). Re-exec is gated by OPENCLAW_UPDATE_SELF_SYNCED to avoid a loop.
+self_sync_guard() {
+  [ "${OPENCLAW_UPDATE_SKIP_SELF_SYNC:-0}" = "1" ] && { echo "  [self-sync] skipped (OPENCLAW_UPDATE_SKIP_SELF_SYNC=1)"; return 0; }
+  [ "${OPENCLAW_UPDATE_SELF_SYNCED:-0}" = "1" ] && { echo "  [self-sync] already re-exec'd from origin/main — proceeding"; return 0; }
+
+  # Not invoked from a real file (curl|bash → BASH_SOURCE is empty or 'bash')?
+  local src="${BASH_SOURCE[0]:-}"
+  case "$src" in
+    ""|bash|sh|-bash|-sh) echo "  [self-sync] running via pipe (no local checkout) — fresh by definition, skipping"; return 0 ;;
+  esac
+  [ -f "$src" ] || { echo "  [self-sync] script path not a regular file — skipping"; return 0; }
+
+  command -v git >/dev/null 2>&1 || { echo "  [self-sync] git not available — skipping (cannot verify checkout currency)"; return 0; }
+
+  local repo_root
+  repo_root="$(cd "$_SCRIPT_DIR" && git rev-parse --show-toplevel 2>/dev/null || true)"
+  [ -n "$repo_root" ] || { echo "  [self-sync] not a git checkout — skipping (likely a copied script)"; return 0; }
+
+  # Confirm this is the onboarding repo (don't touch an unrelated repo).
+  local origin
+  origin="$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)"
+  case "$origin" in
+    *trevorotts1/openclaw-onboarding*) : ;;
+    *) echo "  [self-sync] checkout origin ($origin) is not the onboarding repo — skipping self-sync"; return 0 ;;
+  esac
+
+  # Determine dirty / behind state vs origin/main.
+  local dirty="" behind=""
+  [ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ] && dirty=1
+  git -C "$repo_root" fetch --quiet origin main 2>/dev/null || echo "  [self-sync] WARN: git fetch failed — currency check may be stale"
+  local local_sha remote_sha
+  local_sha="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || true)"
+  remote_sha="$(git -C "$repo_root" rev-parse origin/main 2>/dev/null || true)"
+  [ -n "$remote_sha" ] && [ "$local_sha" != "$remote_sha" ] && behind=1
+
+  if [ -z "$dirty" ] && [ -z "$behind" ]; then
+    echo "  [self-sync] local checkout is clean and current with origin/main — proceeding"
+    return 0
+  fi
+
+  if [ "${OPENCLAW_UPDATE_AUTO_SYNC:-0}" = "1" ]; then
+    echo "  [self-sync] checkout is $( [ -n "$dirty" ] && printf 'DIRTY ' )$( [ -n "$behind" ] && printf 'BEHIND ' )— OPENCLAW_UPDATE_AUTO_SYNC=1: hard-syncing to origin/main"
+    git -C "$repo_root" fetch origin main
+    git -C "$repo_root" reset --hard origin/main
+    echo "  [self-sync] re-syncing complete — re-exec'ing the intended version"
+    OPENCLAW_UPDATE_SELF_SYNCED=1 exec bash "$src" "${SELF_SYNC_ARGS[@]+"${SELF_SYNC_ARGS[@]}"}"
+  fi
+
+  # Non-destructive default: fail loud with exact remediation.
+  echo "" >&2
+  echo "ERROR (self-sync): refusing to wire from a $( [ -n "$dirty" ] && printf 'DIRTY ' )$( [ -n "$behind" ] && printf 'STALE/BEHIND ' )local checkout." >&2
+  echo "  Checkout: $repo_root" >&2
+  echo "  Local HEAD:  ${local_sha:-unknown}" >&2
+  echo "  origin/main: ${remote_sha:-unknown}" >&2
+  echo "" >&2
+  echo "  Wiring from a stale checkout installs the OLD version. Resolve, then re-run:" >&2
+  echo "    git -C \"$repo_root\" fetch origin main && git -C \"$repo_root\" reset --hard origin/main" >&2
+  echo "  OR run the curl path (always fresh):" >&2
+  echo "    curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh | bash" >&2
+  echo "  OR re-run with auto-sync (destructive — discards local changes):" >&2
+  echo "    OPENCLAW_UPDATE_AUTO_SYNC=1 bash \"$src\"" >&2
+  exit 1
+}
 
 # ----------------------------------------------------------
 # Telegram Progress Notification (mirrors install.sh)
@@ -310,7 +402,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v13.1.2 - safe_json_edit
+# v13.1.3 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -627,6 +719,11 @@ PYEOF
 # Main update logic
 # ----------------------------------------------------------
 main() {
+  # DEFECT 3 (v13.1.3): always wire from the intended version. Capture argv for a
+  # possible re-exec, then run the self-sync guard BEFORE any download/wiring.
+  SELF_SYNC_ARGS=("$@")
+  self_sync_guard
+
   # ----------------------------------------------------------
   # Parse CLI args: --only "05,06,35" installs only those skill folders
   # (number prefix matches skill folder name prefix)

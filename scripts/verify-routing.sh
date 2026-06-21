@@ -74,6 +74,26 @@ fi
 
 OC_CONFIG="$OC_ROOT/openclaw.json"
 
+# ─── Gateway version detection (D1 — schema-aware G7b) ───────────────────────
+# OpenClaw 2026.6.8 REJECTS agents.defaults.tools.* so apply-fleet-standards.sh
+# expresses the GOAL-4 no-refusal baseline via the functional ungate instead
+# (root tools.exec full+off + agents.defaults.subagents ungate). G7b must accept
+# that functional ungate as the satisfied baseline on 2026.6.8 rather than demand
+# the rejected agents.defaults.tools.allow. FLEET_OC_VERSION_OVERRIDE pins the
+# version for deterministic tests.
+TOOLS_DEFAULTS_REJECTED_VERSION="2026.6.8"
+OC_VERSION=""
+if command -v openclaw >/dev/null 2>&1; then
+  _oc_raw="$(openclaw --version 2>&1 | tr -d '\r' | head -n1 || true)"
+  OC_VERSION="$(printf '%s' "$_oc_raw" | grep -oE '20[0-9]{2}\.[0-9]+\.[0-9]+' | head -n1 || true)"
+fi
+OC_VERSION="${FLEET_OC_VERSION_OVERRIDE:-$OC_VERSION}"
+
+# _ver_ge A B → 0 if version A >= version B (numeric YYYY.M.P compare).
+_ver_ge() {
+  printf '%s\n%s\n' "$2" "$1" | sort -t. -k1,1n -k2,2n -k3,3n -C
+}
+
 # ─── Resolve main agent workspace ────────────────────────────────────────────
 
 WORKSPACE_DIR=""
@@ -374,13 +394,17 @@ try:
     cfg = json.loads(Path(sys.argv[1]).read_text())
     agents = cfg.get("agents", {}).get("list", []) or []
 
+    # DEFECT 2 (v13.1.3): resolve the box's ACTUAL default agent (default:true)
+    # FIRST, then fall back to id=="main", then known CEO ids. Boxes whose default
+    # agent is "dept-executive-office" (default:true) were previously checked on a
+    # different "main" agent — masking an ungated default agent.
     ceo = None
     for ag in agents:
-        if isinstance(ag, dict) and ag.get("id") == "main":
+        if isinstance(ag, dict) and ag.get("default") is True:
             ceo = ag; break
     if ceo is None:
         for ag in agents:
-            if isinstance(ag, dict) and ag.get("default") is True:
+            if isinstance(ag, dict) and ag.get("id") == "main":
                 ceo = ag; break
     if ceo is None:
         for ag in agents:
@@ -472,39 +496,81 @@ fi
 
 # ─── G7b: GOAL-4 D4 no-refusal baseline (departments/sub-agents never refuse) ─
 # The fleetwide ungate (4B+4C) must leave a positive no-refusal baseline so NO
-# department or sub-agent ever refuses a job. Asserts on openclaw.json:
-#   - agents.defaults.tools.allow == ["*"]            (wide-open baseline), OR the
-#     explicit group fallback ["group:runtime","group:fs","group:web","group:plugins"]
-# PAIRED with G7: this gate confirms "no refusals" while G7 confirms the CEO is
-# STILL gated. Together they are the per-box proof that the ungate and the CEO
-# tool-gate coexist (no refusals AND CEO gated).
-_info "G7b: checking GOAL-4 no-refusal baseline (agents.defaults.tools.allow)"
-G7B_RESULT=$(python3 - "$OC_CONFIG" <<'PYEOF'
-import json, sys
+# department or sub-agent ever refuses a job. There are TWO valid forms:
+#
+#   FORM A (legacy, < 2026.6.8): agents.defaults.tools.allow == ["*"]  (wide-open),
+#     OR the explicit group set ["group:runtime","group:fs","group:web","group:plugins"].
+#
+#   FORM B (FUNCTIONAL UNGATE, required on 2026.6.8+): OpenClaw 2026.6.8 REJECTS any
+#     agents.defaults.tools.* key ("agents.defaults: Invalid input"), so the
+#     baseline is expressed with the VALID levers instead —
+#         root tools.exec.security == "full" AND tools.exec.ask == "off"
+#         AND agents.defaults.subagents.allowAgents contains "*".
+#     That functional ungate IS the satisfied Goal-4 baseline on 2026.6.8.
+#
+# G7b PASSES when EITHER form is present. On 2026.6.8 the absence of
+# agents.defaults.tools.allow is EXPECTED (not a failure); the functional ungate
+# is what is checked. PAIRED with G7: this gate confirms "no refusals" while G7
+# confirms the CEO is STILL gated — the per-box proof both coexist.
+if [ -n "$OC_VERSION" ] && _ver_ge "$OC_VERSION" "$TOOLS_DEFAULTS_REJECTED_VERSION"; then
+  G7B_SCHEMA_REJECTS_TOOLS=1
+else
+  G7B_SCHEMA_REJECTS_TOOLS=0
+fi
+_info "G7b: checking GOAL-4 no-refusal baseline (schema_rejects_defaults_tools=$G7B_SCHEMA_REJECTS_TOOLS, version=${OC_VERSION:-unknown})"
+G7B_RESULT=$(G7B_SCHEMA_REJECTS_TOOLS="$G7B_SCHEMA_REJECTS_TOOLS" python3 - "$OC_CONFIG" <<'PYEOF'
+import json, os, sys
 from pathlib import Path
 try:
     cfg = json.loads(Path(sys.argv[1]).read_text())
-    allow = (cfg.get("agents", {}) or {}).get("defaults", {}).get("tools", {}).get("allow")
-    if allow == ["*"]:
+    schema_rejects = os.environ.get("G7B_SCHEMA_REJECTS_TOOLS", "0") == "1"
+
+    agents_defaults = (cfg.get("agents", {}) or {}).get("defaults", {}) or {}
+    allow = (agents_defaults.get("tools") or {}).get("allow")
+
+    # FORM A — agents.defaults.tools.allow (valid only on schemas that accept it).
+    form_a_wildcard = allow == ["*"]
+    form_a_groups = isinstance(allow, list) and set(allow) >= {
+        "group:runtime", "group:fs", "group:web", "group:plugins"
+    }
+
+    # FORM B — functional ungate (the satisfied baseline on 2026.6.8).
+    exec_cfg = (cfg.get("tools") or {}).get("exec") or {}
+    exec_full = exec_cfg.get("security") == "full" and exec_cfg.get("ask") == "off"
+    sub_allow = (agents_defaults.get("subagents") or {}).get("allowAgents") or []
+    sub_ungated = isinstance(sub_allow, list) and "*" in sub_allow
+    form_b = exec_full and sub_ungated
+
+    if form_a_wildcard:
         print("PASS:wildcard")
-    elif isinstance(allow, list) and set(allow) >= {"group:runtime", "group:fs", "group:web", "group:plugins"}:
+    elif form_a_groups:
         print("PASS:groups")
+    elif form_b:
+        print("PASS:functional")
+    elif schema_rejects:
+        # 2026.6.8: agents.defaults.tools.* is rejected, so its absence is expected;
+        # the failure here is a MISSING functional ungate.
+        print("MISSING_FUNCTIONAL:exec_full=%s sub_ungated=%s" % (exec_full, sub_ungated))
     elif allow is None:
         print("MISSING")
     else:
-        print("WEAK:" + ",".join(map(str, allow)) if isinstance(allow, list) else "WEAK:" + str(allow))
+        print("WEAK:" + (",".join(map(str, allow)) if isinstance(allow, list) else str(allow)))
 except Exception as e:
     print(f"ERROR:{e}")
 PYEOF
 ) || G7B_RESULT="ERROR:python3_failed"
 case "$G7B_RESULT" in
-  PASS:wildcard) _pass "G7b: no-refusal baseline present (agents.defaults.tools.allow=['*']) — departments + sub-agents never refuse" ;;
-  PASS:groups)   _pass "G7b: no-refusal baseline present (explicit group grant) — departments + sub-agents have runtime/fs/web/plugins" ;;
+  PASS:wildcard)   _pass "G7b: no-refusal baseline present (agents.defaults.tools.allow=['*']) — departments + sub-agents never refuse" ;;
+  PASS:groups)     _pass "G7b: no-refusal baseline present (explicit group grant) — departments + sub-agents have runtime/fs/web/plugins" ;;
+  PASS:functional) _pass "G7b: no-refusal baseline present via FUNCTIONAL UNGATE (root tools.exec full+off + agents.defaults.subagents ungate) — 2026.6.8-valid Goal-4 baseline; departments + sub-agents never refuse" ;;
+  MISSING_FUNCTIONAL:*)
+    _fail "G7b: functional-ungate baseline MISSING on a 2026.6.8 schema (${G7B_RESULT#MISSING_FUNCTIONAL:}) — run apply-fleet-standards.sh (sets root tools.exec full+off + agents.defaults.subagents ungate)"
+    FAILURES=$((FAILURES + 1)) ;;
   MISSING)
-    _fail "G7b: no-refusal baseline MISSING (agents.defaults.tools.allow unset) — run apply-fleet-standards.sh to set the GOAL-4 D4 baseline"
+    _fail "G7b: no-refusal baseline MISSING (agents.defaults.tools.allow unset and no functional ungate) — run apply-fleet-standards.sh to set the GOAL-4 D4 baseline"
     FAILURES=$((FAILURES + 1)) ;;
   WEAK:*)
-    _fail "G7b: no-refusal baseline WEAK (agents.defaults.tools.allow=${G7B_RESULT#WEAK:}) — not ['*'] nor the runtime/fs/web/plugins group set; departments may refuse jobs"
+    _fail "G7b: no-refusal baseline WEAK (agents.defaults.tools.allow=${G7B_RESULT#WEAK:}) — not ['*'] nor the runtime/fs/web/plugins group set, and no functional ungate; departments may refuse jobs"
     FAILURES=$((FAILURES + 1)) ;;
   ERROR:*)
     _fail "G7b: could not read openclaw.json: ${G7B_RESULT#ERROR:}"
