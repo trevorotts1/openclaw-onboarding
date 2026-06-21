@@ -11,6 +11,15 @@
 #       - NEVER clobbers existing hooks — merges by appending our matcher only if
 #         our command is not already wired.
 #
+#   AGENT SCOPING (v13.2.2 — closes the v13.1.3 PA-freeze defect):
+#     The wired hook is NOT a global all-sessions deny. The hook carries its own
+#     runtime AGENT-SCOPE self-guard: it ALLOWs (exit 0) for any agent that is NOT
+#     the router/CEO (personal assistant, owner agent, or any non-router) BEFORE
+#     any deny logic. So on a multi-agent box the matcher may fire for every
+#     PreToolUse, but only the router is ever gated. Additionally, on a box whose
+#     DEFAULT agent is a personal assistant (and no router agent exists), this
+#     installer SKIPS the matcher wire entirely (belt and suspenders).
+#
 #   • OPENCLAW boxes (no PreToolUse hook exists — goal doc line 87/97):
 #       - OpenClaw has no documented PreToolUse hook. The equivalent runtime block
 #         is the Layer-1 hard tool-deny (separate script). This installer does NOT
@@ -65,6 +74,56 @@ fi
 RUNTIME_HOOK_DIR="$OC_ROOT/hooks"
 RUNTIME_HOOK="$RUNTIME_HOOK_DIR/ceo-intent-gate.sh"
 
+# ─── v13.2.2 PA-FREEZE GUARD: never wire the gate on a personal-assistant box ──
+# The CEO intent-gate is a BLOCK-AND-REDIRECT deny hook. It must fire ONLY on the
+# ROUTER/CEO agent. If this box's default agent is a hands-on PERSONAL ASSISTANT
+# (not a router) — and there is no separate router agent — wiring the hook would
+# freeze the PA (exactly the v13.1.3 regression). On such a box we still STAGE the
+# hook+lib (harmless) but do NOT add the PreToolUse matcher.
+#
+# The hook also carries its OWN agent-scope self-guard (it ALLOWs any non-router
+# agent), so even if a matcher is wired the PA is not frozen — this installer skip
+# is the belt-and-suspenders complement to that self-guard, NOT a substitute.
+OC_CONFIG_FOR_TOPOLOGY=""
+for _cand in "$OC_ROOT/openclaw.json" "/data/.openclaw/openclaw.json" "$HOME/.openclaw/openclaw.json"; do
+  [ -f "$_cand" ] && OC_CONFIG_FOR_TOPOLOGY="$_cand" && break
+done
+IS_PA_DEFAULT_BOX="0"
+if [ -n "$OC_CONFIG_FOR_TOPOLOGY" ]; then
+  IS_PA_DEFAULT_BOX=$(python3 - "$OC_CONFIG_FOR_TOPOLOGY" <<'PYEOF'
+import json, sys
+from pathlib import Path
+ROUTER_IDS = {  # keep IN SYNC with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS
+    "main", "ceo", "dept-ceo",
+    "master-orchestrator", "dept-master-orchestrator",
+    "dept-executive-office",
+}
+def _is_router(ag):
+    if not isinstance(ag, dict):
+        return False
+    if ag.get("is_master") is True:
+        return True
+    if isinstance(ag.get("role"), str) and ag.get("role").strip().lower() == "router":
+        return True
+    return ag.get("id") in ROUTER_IDS
+try:
+    cfg = json.loads(Path(sys.argv[1]).read_text())
+    agents = cfg.get("agents", {}).get("list", []) or []
+    default_agent = next((a for a in agents if isinstance(a, dict) and a.get("default") is True), None)
+    if default_agent is None:
+        default_agent = next((a for a in agents if isinstance(a, dict) and a.get("id") == "main"), None)
+    if (default_agent is not None
+            and not _is_router(default_agent)
+            and not any(_is_router(a) for a in agents)):
+        print("1")
+    else:
+        print("0")
+except Exception:
+    print("0")
+PYEOF
+) || IS_PA_DEFAULT_BOX="0"
+fi
+
 # ─── Copy hook + lib to the stable runtime dir ────────────────────────────────
 if [ "$DRY_RUN" = "1" ]; then
   _dry "would copy hook+lib to $RUNTIME_HOOK_DIR/"
@@ -106,9 +165,22 @@ fi
 
 _log "Claude Code settings.json: $CC_SETTINGS"
 
+# ─── v13.2.2 PA-FREEZE GUARD: skip wiring on a personal-assistant-default box ──
+if [ "$IS_PA_DEFAULT_BOX" = "1" ] && [ "$FORCE_CC" != "1" ]; then
+  _log "PA-default box detected (default agent is a personal-assistant/non-router, no router agent present)."
+  _log "SKIPPING the PreToolUse matcher wire — the CEO intent-gate must not fire on a PA (it would freeze it). v13.2.2 PA-freeze guard."
+  _log "Hook + lib are staged at $RUNTIME_HOOK (harmless; the hook self-guards and no-ops on a non-router agent). Re-run with --claude-code to force-wire if this box is actually a router."
+  exit 0
+fi
+
 # ─── Deep-merge the PreToolUse hook entry (no clobber) ────────────────────────
+# NOTE (v13.2.2): the wired hook is AGENT-SCOPED at runtime by the hook's own
+# self-guard (hooks/ceo-intent-gate.sh ALLOWs any non-router agent before any
+# deny logic). This is NOT a global all-sessions deny: on a multi-agent box the
+# matcher fires for every PreToolUse, but the hook exits 0 (ALLOW) for every
+# non-router agent and only enforces the deny on the router/CEO.
 if [ "$DRY_RUN" = "1" ]; then
-  _dry "would deep-merge hooks.PreToolUse matcher 'Write|Edit|MultiEdit|NotebookEdit|Bash' -> $RUNTIME_HOOK into $CC_SETTINGS"
+  _dry "would deep-merge hooks.PreToolUse matcher 'Write|Edit|MultiEdit|NotebookEdit|Bash' -> $RUNTIME_HOOK into $CC_SETTINGS (runtime agent-scoped: the hook self-guards and ALLOWs non-router agents)"
   exit 0
 fi
 

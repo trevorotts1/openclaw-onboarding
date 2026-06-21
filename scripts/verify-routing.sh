@@ -174,11 +174,28 @@ fi
 # The "default agent" is the first entry in agents.list with default:true;
 # if none carries that flag, fall back to id=="main" (pre-v10 convention).
 # Boxes whose primary agent is named "ceo", "dept-master-orchestrator", or any
-# other id would previously trigger a false-FATAL here.
+# other router id are gated; a PERSONAL-ASSISTANT-default box (default agent is
+# NOT a router) is a VALID topology — skills:[] is NOT required there and its
+# absence must NOT FATAL (v13.2.2 PA-freeze guard).
 _info "G4: detecting default agent and checking skills:[] in $OC_CONFIG"
 G4_RESULT=$(python3 - "$OC_CONFIG" <<'PYEOF'
 import json, sys
 from pathlib import Path
+
+# Router identity — keep IN SYNC with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS.
+ROUTER_IDS = {
+    "main", "ceo", "dept-ceo",
+    "master-orchestrator", "dept-master-orchestrator",
+    "dept-executive-office",
+}
+def _is_router(ag):
+    if not isinstance(ag, dict):
+        return False
+    if ag.get("is_master") is True:
+        return True
+    if isinstance(ag.get("role"), str) and ag.get("role").strip().lower() == "router":
+        return True
+    return ag.get("id") in ROUTER_IDS
 
 try:
     cfg = json.loads(Path(sys.argv[1]).read_text())
@@ -203,6 +220,14 @@ try:
         sys.exit(0)
 
     agent_id = default_agent.get("id", "<unknown>")
+
+    # PA-DEFAULT topology: the default agent is a hands-on personal assistant /
+    # owner agent, NOT a router. skills:[] (the pptx router-deny) is intentionally
+    # NOT applied there — a PA needs its skills. This is a PASSING configuration.
+    if not _is_router(default_agent):
+        print(f"PA_DEFAULT_OK:{agent_id}")
+        sys.exit(0)
+
     skills = default_agent.get("skills")
     if isinstance(skills, list) and len(skills) == 0:
         print(f"PASS:{agent_id}")
@@ -219,6 +244,10 @@ case "$G4_RESULT" in
   PASS:*)
     _G4_ID="${G4_RESULT#PASS:}"
     _pass "G4: default agent (id=${_G4_ID}) skills:[] is set (pptx skill blocked)"
+    ;;
+  PA_DEFAULT_OK:*)
+    _G4_ID="${G4_RESULT#PA_DEFAULT_OK:}"
+    _pass "G4: default agent (id=${_G4_ID}) is a PERSONAL-ASSISTANT/non-router — pptx router-deny N/A; PA-default topology is valid (v13.2.2)"
     ;;
   MISSING_KEY:*)
     _G4_ID="${G4_RESULT#MISSING_KEY:}"
@@ -388,16 +417,28 @@ import json, sys
 from pathlib import Path
 
 REQUIRED_DENY = {"write", "edit", "apply_patch", "browser", "canvas", "image", "process"}
+# Router identity — keep IN SYNC with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS.
 CEO_IDS = ("main", "dept-ceo", "ceo", "master-orchestrator", "dept-master-orchestrator")
+ROUTER_IDS = set(CEO_IDS) | {"dept-executive-office"}
+def _is_router(ag):
+    if not isinstance(ag, dict):
+        return False
+    if ag.get("is_master") is True:
+        return True
+    if isinstance(ag.get("role"), str) and ag.get("role").strip().lower() == "router":
+        return True
+    return ag.get("id") in ROUTER_IDS
 
 try:
     cfg = json.loads(Path(sys.argv[1]).read_text())
     agents = cfg.get("agents", {}).get("list", []) or []
 
-    # DEFECT 2 (v13.1.3): resolve the box's ACTUAL default agent (default:true)
-    # FIRST, then fall back to id=="main", then known CEO ids. Boxes whose default
-    # agent is "dept-executive-office" (default:true) were previously checked on a
-    # different "main" agent — masking an ungated default agent.
+    # DEFECT 2 (v13.1.3) + v13.2.2 PA-FREEZE FIX: resolve the box's default agent
+    # (default:true FIRST, then id=="main", then a known CEO id). If that default
+    # agent is NOT a router (it is a hands-on personal assistant / owner agent),
+    # this is a PA-DEFAULT topology: the CEO tool-gate intentionally does NOT
+    # apply, so G7 PASSES (it must NOT FATAL on a PA default — that false-FATAL is
+    # what the v13.1.3 over-broadening caused downstream).
     ceo = None
     for ag in agents:
         if isinstance(ag, dict) and ag.get("default") is True:
@@ -414,6 +455,17 @@ try:
         print("NO_CEO_AGENT"); sys.exit(0)
 
     cid = ceo.get("id", "<unknown>")
+
+    # PA-DEFAULT topology → no CEO gate expected on the default agent. But if a
+    # SEPARATE router agent ALSO exists on the box (e.g. a dept-ceo alongside a PA
+    # default), gate-check THAT router instead so a real router is never missed.
+    if not _is_router(ceo):
+        router = next((a for a in agents if _is_router(a)), None)
+        if router is None:
+            print(f"PA_DEFAULT_OK:{cid}"); sys.exit(0)
+        ceo = router
+        cid = ceo.get("id", "<unknown>")
+
     tools = ceo.get("tools")
     if not isinstance(tools, dict):
         print(f"NO_TOOLS:{cid}"); sys.exit(0)
@@ -448,13 +500,17 @@ PYEOF
 # If an owner-consent carve-out is active, a lifted gate is expected → INFO only.
 if [ -n "$_CEO_CONSENT_FILE" ] && [ -f "$_CEO_CONSENT_FILE" ]; then
   case "$G7_RESULT" in
-    PASS:*) _pass "G7: CEO tool-gate present (id=${G7_RESULT#PASS:}) [consent sidecar also present]" ;;
-    *)      _info "G7: owner-consent carve-out ACTIVE ($_CEO_CONSENT_FILE) — CEO tool-gate is intentionally lifted; QC state-gate covers this box. Not failing." ;;
+    PASS:*)          _pass "G7: CEO tool-gate present (id=${G7_RESULT#PASS:}) [consent sidecar also present]" ;;
+    PA_DEFAULT_OK:*) _pass "G7: default agent (id=${G7_RESULT#PA_DEFAULT_OK:}) is a PERSONAL-ASSISTANT/non-router — CEO tool-gate N/A; PA-default topology is valid (v13.2.2)" ;;
+    *)               _info "G7: owner-consent carve-out ACTIVE ($_CEO_CONSENT_FILE) — CEO tool-gate is intentionally lifted; QC state-gate covers this box. Not failing." ;;
   esac
 else
   case "$G7_RESULT" in
     PASS:*)
       _pass "G7: CEO tool-gate present (id=${G7_RESULT#PASS:}) — production tools + GHL MCP denied, exec not exposed"
+      ;;
+    PA_DEFAULT_OK:*)
+      _pass "G7: default agent (id=${G7_RESULT#PA_DEFAULT_OK:}) is a PERSONAL-ASSISTANT/non-router — CEO tool-gate N/A; PA-default topology is valid (v13.2.2 PA-freeze guard)"
       ;;
     INTERIM_EXEC:*)
       # FAIL-WARN (visible, NOT a silent pass): the production denies ARE in
@@ -587,6 +643,46 @@ esac
 #       the agent workspace (so the CEO agent cannot author its own consent).
 _info "G8: checking CEO intent-gate hook + consent-path safety"
 
+# v13.2.2 PA-FREEZE GUARD: is this box's default agent a PERSONAL-ASSISTANT
+# (non-router)? On such a box the CEO PreToolUse intent-gate intentionally does
+# NOT apply — G8a must NOT force-wire the unscoped hook (that hook would fire on
+# the PA and freeze it). We compute this once and treat an unwired hook on a
+# PA-default box as a PASS, not a FATAL.
+_IS_PA_DEFAULT_BOX=$(python3 - "$OC_CONFIG" <<'PYEOF'
+import json, sys
+from pathlib import Path
+ROUTER_IDS = {  # keep IN SYNC with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS
+    "main", "ceo", "dept-ceo",
+    "master-orchestrator", "dept-master-orchestrator",
+    "dept-executive-office",
+}
+def _is_router(ag):
+    if not isinstance(ag, dict):
+        return False
+    if ag.get("is_master") is True:
+        return True
+    if isinstance(ag.get("role"), str) and ag.get("role").strip().lower() == "router":
+        return True
+    return ag.get("id") in ROUTER_IDS
+try:
+    cfg = json.loads(Path(sys.argv[1]).read_text())
+    agents = cfg.get("agents", {}).get("list", []) or []
+    default_agent = next((a for a in agents if isinstance(a, dict) and a.get("default") is True), None)
+    if default_agent is None:
+        default_agent = next((a for a in agents if isinstance(a, dict) and a.get("id") == "main"), None)
+    # PA-default box iff a default agent exists, it is NOT a router, AND there is
+    # no separate router agent on the box either.
+    if (default_agent is not None
+            and not _is_router(default_agent)
+            and not any(_is_router(a) for a in agents)):
+        print("1")
+    else:
+        print("0")
+except Exception:
+    print("0")
+PYEOF
+) || _IS_PA_DEFAULT_BOX="0"
+
 # 8a — locate a Claude Code settings.json (project then user level).
 CC_SETTINGS=""
 for _cand in \
@@ -621,8 +717,17 @@ PYEOF
   case "$G8A" in
     PASS) _pass "G8a: ceo-intent-gate.sh wired in $CC_SETTINGS hooks.PreToolUse" ;;
     MISSING)
-      _fail "G8a: PreToolUse intent-gate NOT wired in $CC_SETTINGS — run install-ceo-intent-gate.sh"
-      FAILURES=$((FAILURES + 1)) ;;
+      if [ "$_IS_PA_DEFAULT_BOX" = "1" ]; then
+        # v13.2.2 PA-FREEZE GUARD: the default agent is a personal assistant and
+        # there is no router on this box. The CEO PreToolUse intent-gate must NOT
+        # be force-wired here — wiring an unscoped deny hook would freeze the PA.
+        # An absent hook on a PA-default box is the CORRECT state → PASS.
+        _pass "G8a: PA-default box (no router agent) — CEO PreToolUse intent-gate intentionally NOT wired (the hook's own agent-scope guard also no-ops on a PA). Correct state (v13.2.2 PA-freeze guard)."
+      else
+        _fail "G8a: PreToolUse intent-gate NOT wired in $CC_SETTINGS — run install-ceo-intent-gate.sh"
+        FAILURES=$((FAILURES + 1))
+      fi
+      ;;
     ERROR:*)
       _fail "G8a: could not read $CC_SETTINGS: ${G8A#ERROR:}"
       FAILURES=$((FAILURES + 1)) ;;

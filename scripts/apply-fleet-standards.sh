@@ -308,13 +308,35 @@ def _ceo_consent_active():
 if _ceo_consent_active():
     print("[apply-fleet-standards] owner-consent carve-out ACTIVE — skipping CEO tool-gate re-assert (would revoke the owner's grant)")
 elif "agents" in cfg and "list" in cfg["agents"]:
-    # DEFECT 2 (v13.1.3): re-assert the gate on the box's ACTUAL default agent
-    # (default:true), else fall back to id=="main" — matching apply-routing-fix.sh
-    # L5 and verify-routing.sh G7 so the gate target never drifts across the roll.
+    # DEFECT 2 (v13.1.3) + v13.2.2 PA-FREEZE FIX: re-assert the gate on the box's
+    # default agent (default:true, else id=="main") ONLY IF it is a ROUTER —
+    # matching apply-routing-fix.sh L5 and verify-routing.sh G7 so the gate target
+    # never drifts across the roll. v13.1.3 re-asserted on ANY default:true agent,
+    # which froze a personal-assistant-default box. Router iff is_master /
+    # role=="router" / id in ROUTER_IDS; a non-router default agent is left alone.
+    ROUTER_IDS = {  # keep IN SYNC with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS
+        "main", "ceo", "dept-ceo",
+        "master-orchestrator", "dept-master-orchestrator",
+        "dept-executive-office",
+    }
+    def _is_router(a):
+        if not isinstance(a, dict):
+            return False
+        if a.get("is_master") is True:
+            return True
+        if isinstance(a.get("role"), str) and a.get("role").strip().lower() == "router":
+            return True
+        return a.get("id") in ROUTER_IDS
+
     _agents = cfg["agents"]["list"]
     _ceo_agent = next((a for a in _agents if isinstance(a, dict) and a.get("default") is True), None)
     if _ceo_agent is None:
         _ceo_agent = next((a for a in _agents if isinstance(a, dict) and a.get("id") == "main"), None)
+    if _ceo_agent is not None and not _is_router(_ceo_agent):
+        # PA-FREEZE GUARD: default agent is a personal assistant / owner agent —
+        # the CEO production lock would freeze it. Do NOT re-assert here.
+        print(f"[apply-fleet-standards] default agent (id={_ceo_agent.get('id','<unknown>')}) is a PERSONAL-ASSISTANT/non-router — SKIPPING CEO tool-gate re-assert (v13.2.2 PA-freeze guard)")
+        _ceo_agent = None
     if _ceo_agent is not None:
         agent = _ceo_agent
         tools = agent.setdefault("tools", {})

@@ -1,5 +1,5 @@
 # SOP-00 — Owner Task Routing
-**Version:** 1.1.0 | 2026-06-09
+**Version:** 1.3.0 | 2026-06-21
 **Applies to:** Master Orchestrator / CEO Agent (all installs — Mac and VPS)
 **Status:** CANONICAL — cross-platform fleet standard
 
@@ -201,6 +201,18 @@ This is the programmatic enforcement of R3 and R6 above. The SOP is the doctrine
 
 ---
 
+## Specialists are PERSISTENT department agents — they must survive a new owner message (R11)
+
+| Rule | Statement |
+|------|-----------|
+| **R11** | **Route to the PERSISTENT department agent — never to an ephemeral inline child.** Every department is built as its OWN persistent agent (`agents.list[].id = "dept-<slug>"`, with its own `workspace`, `agentDir`, `model`, and `subagents` block — see `build-workforce.py`), registered in `mission-control.db` with `is_master = 0`. Production work is dispatched via the task board (`POST /api/tasks/ingest` with `department_slug`), which routes to that PERSISTENT agent's session (`agent:<dept>`). It does NOT run inside the orchestrator's current turn. **Do NOT execute production work as an ephemeral sub-agent spawned as a child of the orchestrator's turn** — a turn-scoped child (controller = `agent:main:main`, spawn mode `run`) is torn down when the next owner message starts a new turn, so its work is abandoned mid-flight. The task board + the per-department persistent agent are the survival mechanism: a task on the board outlives any single turn, and the department agent picks it up and runs it to completion in its own session. |
+
+**Why this matters.** The failure this prevents: the owner sends a request, the orchestrator spawns a specialist inline to do the work, the owner sends a second message, the new turn tears down the first turn's children, and the specialist dies with the deliverable half-written. Routing through the board to the persistent `agent:<dept>` decouples the work's lifetime from the conversation turn.
+
+**Platform note (not settable from the onboarding scripts).** Whether a *directly spawned* sub-agent is detached/persistent vs. a turn-scoped child is a property of the gateway's spawn implementation (spawn mode + controller), NOT a key these onboarding scripts can write — the strict `AgentEntrySchema.subagents` accepts only `{ allowAgents, model }`. The repo-side guarantee is therefore: (1) the persistent per-department agents already exist (build-workforce.py), and (2) this SOP mandates routing production work to them via the board rather than spawning a turn-scoped child. The detached-spawn behavior for the direct-spawn path is specified for the platform in `platform/SPEC-persistent-department-spawn.md`.
+
+---
+
 ## Graphics department head — verified canonical name
 
 The graphics department head role is: **Chief Design Officer**
@@ -213,6 +225,7 @@ This is the role #0 entry in `suggested-roles/graphics-suggested-roles.md` in th
 
 | Version | Date | Change |
 |---------|------|--------|
+| 1.3.0 | 2026-06-21 | Added R11: route production work to the PERSISTENT per-department agent (`agent:<dept>` via the task board) — NEVER to an ephemeral turn-scoped inline child that dies when a new owner message starts a new turn. Documents the repo-side vs platform-side split for spawn persistence and cross-links `platform/SPEC-persistent-department-spawn.md`. Part of the v13.2.2 routing-gate hardening. |
 | 1.2.0 | 2026-06-15 | Added R10: Blocked column authority -- the orchestrator is the sole writer of status=blocked and only after the four-way classifier in SOP-01 passes. Workers hand back via the structured handback endpoint. Cross-links SOP-01-Blocked-vs-Return.md and N36. |
 | 1.1.0 | 2026-06-09 | G5 alignment: added R7 sub-agent-bypass clause (spawning a worker to execute is the same violation as executing yourself -- this was the orchestrator self-execution bug), R8 General Tasks fallback (route to general-task when no dept is obvious, never execute directly), R9 owner-explicit-permission exception. These three rules were present in the CEO_ORCHESTRATOR_RULE injected into MEMORY.md/SOUL.md/IDENTITY.md by build-workforce.py but absent from this SOP -- now aligned. |
 | 1.0.0 | 2026-06-09 | Initial canonical SOP. Adds route-not-execute doctrine, tool-lock enforcement explanation, ingest endpoint call spec, escalation path when CC unreachable. Fleet-wide: both Mac (openclaw-onboarding) and VPS (openclaw-onboarding-vps) repos. |
