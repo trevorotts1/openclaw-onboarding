@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v13.1.3"
+ONBOARDING_VERSION="v13.1.4"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)

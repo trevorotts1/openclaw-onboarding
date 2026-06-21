@@ -97,7 +97,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --dept)   FILTER_DEPTS+=("${2:-}"); shift 2 ;;
     --all)    shift ;;
-    --allow-missing-config) ALLOW_MISSING_CONFIG=1 ;;
+    --allow-missing-config) ALLOW_MISSING_CONFIG=1; shift ;;
     -h|--help)
       sed -n '2,50p' "$0"
       exit 0
