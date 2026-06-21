@@ -4,6 +4,15 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.2.5] - 2026-06-21 — Tier 4 realigned to agent-browser-first; page/funnel building delegated to Skill 06 (no parallel path)
+
+### Changed
+- `ghl-mcp-setup-full.md` Tier 4 section: PRIMARY browser engine is now **agent-browser** (Vercel Labs, Skill 03), headless + isolated `--session`; Playwright is the scripted fallback only (still `launchPersistentContext`, never `launch()`).
+- Removed the stale **"Browser MUST be Playwright + Kimi K2.5 model"** line (no longer the primary path).
+- Auth now prefers the seeded Firebase refresh token (logged-in session, no typing); `GHL_AGENCY_EMAIL` / `GHL_AGENCY_PASSWORD` documented as fallback only.
+- Login URL corrected to the white-label **root** (the login form mounts at `/`, not `/login`).
+- **Funnel / Website / Page building is explicitly owned by Skill 06 (`ghl-install-pages`)** — points at Skill 06's `ghl-browser-builder-full.md` (v3.0) + `tools/`; no parallel page-builder path is maintained in Skill 36.
+
 ## [v1.2.1] - 2026-06-11 — 5-tier → 6-tier label sweep (Tier 0 = Skill 44) across QC/INSTRUCTIONS/full doc
 
 ### Fixed

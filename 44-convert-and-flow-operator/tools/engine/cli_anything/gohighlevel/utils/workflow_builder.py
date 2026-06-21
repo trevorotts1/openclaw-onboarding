@@ -7,6 +7,7 @@ EXPERIMENTAL: Gated behind --experimental flag in CLI.
 """
 from __future__ import annotations
 
+import os
 import re
 import time
 import uuid
@@ -65,10 +66,44 @@ def _uid() -> str:
     return str(uuid.uuid4())
 
 
-def sms_step(name: str, body: str, **kw: Any) -> dict:
+def _resolve_sms_from_number(explicit: str = "") -> str:
+    """Resolve the SMS From-number.
+
+    WF-12 gap fix: the SMS step previously carried NO ``fromNumber`` field at
+    all, so the WF-12 mechanical assertion had nothing to read and a build
+    could silently ship an SMS node with no From-number (silent send failure).
+
+    We do NOT fabricate a server-side default we cannot prove. Resolution order:
+      1. An explicit ``from_number=`` kwarg passed to ``sms_step``.
+      2. ``CAF_SMS_FROM_NUMBER`` (the client's configured default From-number).
+      3. ``GOHIGHLEVEL_SMS_FROM_NUMBER`` (alias).
+      4. "" (empty) — left for GHL's location-default From-number resolution at
+         SEND time. An empty value is intentionally allowed here so existing
+         builds are unchanged; the WF-12 QC gate then surfaces the empty From
+         on any LIVE/published workflow for human/client confirmation rather
+         than blocking the build.
+
+    The KEY is always emitted (even when empty) so WF-12 can assert presence.
+    """
+    if explicit and explicit.strip():
+        return explicit.strip()
+    for var in ("CAF_SMS_FROM_NUMBER", "GOHIGHLEVEL_SMS_FROM_NUMBER"):
+        val = os.environ.get(var, "").strip()
+        if val:
+            return val
+    return ""
+
+
+def sms_step(name: str, body: str, from_number: str = "", **kw: Any) -> dict:
+    # WF-12: always emit a fromNumber key (resolved from kwarg/env, else empty
+    # for GHL location-default send-time resolution) so the QC gate can assert
+    # presence and surface an empty From on a published SMS node.
     return {
         "id": _uid(), "type": "sms", "name": f"SMS: {name}",
-        "attributes": {"body": body, "attachments": []}, **kw,
+        "attributes": {
+            "body": body, "attachments": [],
+            "fromNumber": _resolve_sms_from_number(from_number),
+        }, **kw,
     }
 
 

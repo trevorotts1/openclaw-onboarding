@@ -1,5 +1,43 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.0.17] - 2026-06-21 — feat: weighted workflow-quality rubric (SUPERSET overlay on WF-1..21) + SMS fromNumber WF-12 hardening
+
+### Added (Workflow-Quality Rubric — non-breaking SUPERSET overlay)
+- **references/workflow-quality-rubric.md** — an 8-dimension weighted 1–10 quality grade that
+  sits ON TOP of the binary WF-1..21 checklist. Dimensions + weights: D1 Goal-fit (20%),
+  D2 Trigger (15%), D3 Steps/ordering (15%), D4 Branching (12%), D5 Edge-cases (12%),
+  D6 Deliverability (10%), D7 Idempotency (8%), D8 Naming/testability (8%). Each dimension
+  defines its 1/5/10 anchors and CITES its existing WF-1..21 (or `link_steps()`) evidence
+  source, so the rubric cannot contradict the current QC and needs no new infrastructure.
+- **Ship threshold ≥ 8.5** (aligns with the binding OpenClaw QC Protocol). Below 8.5 → loop,
+  naming the specific low dimension. The rubric is computed AT STEP 9 AFTER WF-1..21, never
+  instead of it; a high rubric score can never buy back a hard WF FAIL.
+
+### Changed (Step 9 QC GATE wiring — SKILL.md + INSTRUCTIONS.md)
+- SKILL.md Step 9 summary + Teach-Yourself read-order + file manifest now reference the rubric.
+- INSTRUCTIONS.md adds Step 9.3b (rubric computed after WF-1..21) and updates Step 9.4 verdict
+  routing (WF FAIL → fix; rubric < 8.5 → loop naming the low dimension) and Step 9.6 hand-over
+  (filled checklist + weighted rubric score).
+- **qc-built-workflow.sh** now emits BOTH the WF-1..21 result AND the weighted rubric score
+  (a machine-knowable FLOOR per dimension + the human-grade-required flags + lowest dimension),
+  in both human-readable and `--json` modes, and logs the rubric floor to the build-events
+  ledger. D2 (Trigger) and D3 (Steps/ordering) are fully mechanical; D1/D4/D5/D6/D7/D8 emit a
+  conservative floor flagged for the QC sub-agent to grade 1/5/10 and recompute the final score.
+
+### Fixed (WF-12 SMS From-number gap)
+- **workflow_builder.py `sms_step`** now ALWAYS emits a `fromNumber` field in the SMS node
+  attributes (previously absent entirely → silent send-failure with nothing for WF-12 to read).
+  Resolution order: explicit `from_number=` kwarg → `CAF_SMS_FROM_NUMBER` →
+  `GOHIGHLEVEL_SMS_FROM_NUMBER` → "" (empty, left for GHL's location-default send-time
+  resolution — which is UNPROVEN and surfaced by QC for confirmation before going LIVE).
+- **qc-built-workflow.sh WF-12** hardened to mechanically assert every SMS node carries a
+  `fromNumber` KEY; on a LIVE/published workflow the value must additionally be NON-EMPTY (FAIL
+  otherwise); on a DRAFT an empty From is a surfaced WARNING (pass).
+
+### Non-breaking guarantee
+- NO change to `safety_gate.py`, `VERIFIED_ACTIONS` (still 56 types incl. `sms`), or
+  `link_steps()`. The rubric reads outputs only. Full existing pytest suite (119 tests) passes.
+
 ## [1.0.15] - 2026-06-13 — feat: PLAN→BUILD→QC protocol (plan mode + WF-21 checklist + independent MiniMax QC gate + hallucination escalation)
 
 ### Added (PLAN MODE — INSTRUCTIONS.md Step 0.5)

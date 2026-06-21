@@ -1,21 +1,37 @@
 ---
 name: ghl-install-pages
 description: >
-  How to deploy HTML pages into GHL (Go High Level) or Convert and Flow using
-  browser automation. This skill teaches the AI agent how to use Playwright to
-  log in, navigate the page builder, paste code, save, preview, and publish
-  funnel pages - all without the human needing to touch the builder themselves.
+  How to deploy HTML pages into GoHighLevel (Go High Level) or Convert and Flow
+  using browser automation. This skill teaches the AI agent how to use
+  agent-browser (Vercel Labs, Skill 03) as the primary engine — Playwright as a
+  fallback — to start a session already logged-in via a seeded Firebase token,
+  navigate the funnel/website page builder, paste code, save, preview, and
+  publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "1.0"
+  version: "3.0"
   priority: HIGH
 ---
 
-# GHL / Convert and Flow - Install Pages
+# GoHighLevel / Convert and Flow - Install Pages (Browser Builder)
 
-This skill is about deploying finished HTML code into the GHL (Go High Level)
-or Convert and Flow page builder using browser automation. The AI agent drives
-the browser, pastes the code, and handles all the clicks and navigation.
+This skill is about deploying finished HTML code into the GoHighLevel (Go High
+Level) or Convert and Flow page builder using browser automation. The AI agent
+drives the browser, pastes the code, and handles all the clicks and navigation.
+
+> **ENGINE (v3.0 overhaul):** PRIMARY = `agent-browser` (Vercel Labs, the
+> repo-sanctioned tool from Skill 03), run **headless** with an **isolated
+> `--session <client>`** so it never touches a personal browser. FALLBACK =
+> self-hosted Playwright, a scripted escape hatch for known-hard flows only.
+> The previous raw-Playwright-only stack is replaced. The full hardened
+> procedure is in `ghl-browser-builder-full.md` (v3.0).
+
+> **STATUS — PENDING-LIVE-RUN.** The login form (gate #1) and the auth-storage
+> schema (gate #27) are LIVE-CAPTURED. The other 26 in-app controls are
+> **runtime snapshot-gates** (`tools/gates.json`): the agent snapshots the live
+> DOM and picks the ref at runtime — NO invented CSS is shipped as fact. The
+> end-to-end funnel/website live test is NOT yet claimed (blocked on a fresh
+> Firebase refresh token or an attended two-factor-authentication run).
 
 This is NOT about writing or designing the HTML. The HTML is already done
 (usually from a SuperDesign export). This skill is purely about getting that
@@ -33,9 +49,14 @@ code into GHL so the page goes live.
 
 - Teach Yourself Protocol (TYP) must be learned first (skill 01)
 - Backup Protocol must be learned first (skill 02)
+- agent-browser must be installed (skill 03) - PRIMARY browser engine
 - GHL Setup must be complete (skill 05) - the account must already exist
-- Playwright must be installed for browser automation
-- GHL login credentials must be stored in ~/clawd/secrets/.env
+- Vercel Setup (skill 08) - only for Mode 2 iframe-embed of rich payloads
+- Playwright installed - FALLBACK engine for known-hard flows
+- GoHighLevel auth in ~/.openclaw/secrets/.env: a Firebase refresh token
+  (GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN, preferred — seeds a logged-in session)
+  OR the login fallback (GHL_AGENCY_EMAIL / GHL_AGENCY_PASSWORD;
+  GHL_EMAIL / GHL_PASSWORD also accepted). CLIENT keys only.
 
 ## What This Skill Covers
 
@@ -66,26 +87,45 @@ code into GHL so the page goes live.
 ## Files in This Folder (Reading Order)
 
 1. **SKILL.md** - You are here. Start with this file.
-2. **ghl-install-pages-full.md** - The complete reference with all Playwright
-   code, selector chains, helper functions, and step-by-step instructions.
-   Read this when you are actually about to deploy pages.
-3. **INSTRUCTIONS.md** - Additional operational instructions.
-4. **INSTALL.md** - Installation steps if any tools are missing.
-5. **EXAMPLES.md** - Example deployments and common scenarios.
-6. **CORE_UPDATES.md** - What to add to AGENTS.md, TOOLS.md, and MEMORY.md.
+2. **ghl-browser-builder-full.md** - The v3.0 hardened reference: agent-browser
+   engine, auth seeding, the 28-gate runtime contract, the full funnel +
+   website + Mode-2 iframe flows, and the ledger/resume mechanics. Read this
+   when you are actually about to deploy pages.
+3. **tools/** - The code:
+   - `seed-ghl-auth.py` - mints a Firebase ID token + browser auth seed (D7).
+   - `inject-ghl-auth.sh` - writes the seed into the browser's IndexedDB.
+   - `ghl_builder.py` - manifest, per-page ledger/resume, ZHC prefix, sub-account
+     gate, publish guard, marker-string verify, runtime-gate loader.
+   - `gates.json` - the 28-gate registry (2 captured, 26 runtime snapshot-gates).
+4. **ghl-install-pages-full.md** - LEGACY v2.0 raw-Playwright reference, kept for
+   historical click-path detail only. Superseded by ghl-browser-builder-full.md.
+5. **INSTRUCTIONS.md** - Operational quick-start.
+6. **INSTALL.md** - Installation steps if any tools are missing.
+7. **EXAMPLES.md** - Example deployments and common scenarios.
+8. **CORE_UPDATES.md** - What to add to AGENTS.md, TOOLS.md, and MEMORY.md.
 
 ## Critical Things to Know
 
-- Always use `launchPersistentContext()` in Playwright, never `launch()`.
-  Persistent context saves the login session so the user does not have to
-  log in every single time.
-- Always verify you are in the correct GHL sub-account before building.
-  Deploying in the wrong sub-account means the client will not see the pages.
+- PRIMARY engine is agent-browser, headless, with an isolated `--session
+  <client>`. It never touches a personal browser (NO-COMINGLING). Playwright is
+  the fallback only; if you use it, `launchPersistentContext()` never `launch()`.
+- Seed the session logged-in via the Firebase refresh token (tools/seed-ghl-auth.py
+  + tools/inject-ghl-auth.sh) BEFORE navigating. Auth lives in IndexedDB
+  (firebaseLocalStorageDb), NOT localStorage. Login form is the fallback; the
+  form renders at root `https://app.convertandflow.com/`, never `/login`.
+- Two-factor authentication PAUSES for a human (up to 5 min), never bypassed.
+- Always verify you are in the correct sub-account before building
+  (ghl_builder.py subaccount). Wrong sub-account = the client never sees pages.
+  REFUSE on mismatch.
 - Default to Funnels, not Websites, unless the user specifically says Website.
-- The GHL code editor has no size limit. Paste the entire HTML in one block.
-- GHL's builder needs time between actions. Wait for elements to load. Do not
-  click too fast or the builder will not keep up.
-- Every deployment ends with a report: what was built, preview screenshots at
-  desktop/tablet/mobile sizes, and whether publishing is approved.
-- Credentials go in ~/clawd/secrets/.env as GHL_EMAIL and GHL_PASSWORD.
-  Never hardcode credentials in scripts.
+- Every funnel/website/step name MUST carry the `zhc` prefix (standing build
+  approval) — use ghl_builder.py ensure_zhc_prefix.
+- NEVER hardcode invented CSS for an in-app control. Snapshot the live DOM and
+  pick the ref at runtime (the 26 runtime gates in tools/gates.json).
+- Set large HTML payloads via the code-editor value API (eval), never key-by-key.
+- Verify every save/preview/publish with a marker string from the payload, not
+  "no error" alone (ghl_builder.py verify).
+- NEVER publish without explicit approval. Default = draft + report the preview
+  URL (ghl_builder.py may-publish).
+- Long runs fire detached; the agent exits and resumes via the per-page ledger.
+- Credentials go in ~/.openclaw/secrets/.env. CLIENT keys only. Never hardcode.
