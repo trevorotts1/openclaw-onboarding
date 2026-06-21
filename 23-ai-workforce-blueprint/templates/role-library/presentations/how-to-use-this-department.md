@@ -88,11 +88,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Slide Image Creator** | Writes one 15-element image prompt per slide (Phase 2). |
 | **Slide Submitter** | Submits all prompts to Kie.ai GPT Image 2 (Phase 4). |
 | **Typography Architect** | Runs as a Phase-0.7/1.5 gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json. |
-| **Prompt Author** | You write each slide's rich image prompt to the 5,000-character prompt standard - the full per-slide specification. |
-| **Prompt QC Specialist** | Independently grades every per-slide prompt file before render -- verifies char floor, 15-element structure, spelling-locks, NEGATIVE BLOCK, and copy fidelity. |
-| **Image QC Specialist** | Independently grades rendered slide images with a real vision pass -- checks on-slide text accuracy, logo fidelity, AI artifacts, and representation. |
-| **Typography QC Specialist** | Independently grades the design system -- verifies weight ladder, archetype variety (anti-template), legibility, logo placement spec, and price-typography treatment. |
-| **Speech QC Specialist** | Independently grades the presenter speech -- verifies slide coverage, timing/pacing, claim fidelity, and audience-facing voice (no stage directions or pitch doctrine). |
+| **Prompt Author** | You write each slide's rich image prompt to the 5,000-character prompt standard  -  the full per-slide specification. |
 
 ### What each specialist is for, with an example request
 
@@ -188,7 +184,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **Prompt Author**
 
-- *What it is for:* You write each slide's rich image prompt to the 5,000-character prompt standard - the full per-slide specification.
+- *What it is for:* You write each slide's rich image prompt to the 5,000-character prompt standard  -  the full per-slide specification.
 - *Example request:* "Have the Prompt Author take this on: You write each slide's rich image prompt to the 5."
 
 
