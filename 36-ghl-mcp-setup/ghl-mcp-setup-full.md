@@ -635,12 +635,18 @@ curl -sS "https://services.leadconnectorhq.com/products/?locationId=$GOHIGHLEVEL
 
 Note: products module uses `Version: 2021-04-15`. Most others use `2021-07-28`. Always check `references/[module].md` per call.
 
-### Tier 4 — Playwright browser
+### Tier 4 — Browser (agent-browser FIRST, Playwright fallback)
 
-Use `launchPersistentContext` (NEVER `launch()`) so login state persists.
-- URL: `https://app.gohighlevel.com` or the client's white-label (e.g. `https://app.convertandflow.com`)
-- Creds: `GHL_AGENCY_EMAIL`, `GHL_AGENCY_PASSWORD` (or location-level creds) in `~/.openclaw/secrets/.env`
-- Browser MUST be Playwright + Kimi K2.5 model. Never Gemini with Playwright (documented incompatibility).
+PRIMARY engine is **agent-browser** (Vercel Labs, skill 03), headless + isolated
+`--session`. Playwright is the scripted fallback for known-hard flows only; if
+used, `launchPersistentContext` (NEVER `launch()`) so login state persists.
+- URL: the client's white-label root, e.g. `https://app.convertandflow.com/`
+  (the login form mounts at root, NOT `/login`), or `https://app.gohighlevel.com`.
+- Auth: prefer the seeded Firebase refresh token (logged-in session, no typing);
+  fallback creds `GHL_AGENCY_EMAIL` / `GHL_AGENCY_PASSWORD` in `~/.openclaw/secrets/.env`.
+- **Funnel / Website / Page building is the Tier-4 UI-only surface and is owned by
+  skill 06 (`ghl-install-pages`).** Use skill 06's `ghl-browser-builder-full.md`
+  (v3.0) + `tools/` — do NOT build a parallel page-builder path here.
 
 ### Tier 5 — Codex Computer Use
 

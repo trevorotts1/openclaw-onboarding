@@ -404,15 +404,36 @@ The QC sub-agent independently inspects the BUILT workflow:
   exact gap discovered in a client install and is the v12.3.6 deferred follow-up).
 
 The sub-agent runs `qc-built-workflow.sh <workflow-id>` (in the skill folder) which
-machine-asserts the mechanically-checkable items and returns per-item PASS/FAIL JSON.
+machine-asserts the mechanically-checkable items, returns per-item PASS/FAIL JSON, AND emits the
+weighted quality-rubric floor score (the `rubric` block).
 
 For EACH checklist item (WF-1..WF-21) the QC sub-agent returns an explicit PASS / FAIL with
 the observed value vs expected value.
 
+### Step 9.3b — Weighted quality rubric (SUPERSET overlay, AFTER WF-1..21)
+
+**Order is mandatory:** the rubric is computed ONLY after WF-1..21 has been evaluated. It is a
+SUPERSET overlay — it never runs *instead of* WF-1..21, and a high rubric score can NEVER buy
+back a hard WF FAIL.
+
+1. WF-1..21 must clear its mechanical gate first (Step 9.4 routing below).
+2. Then the QC sub-agent grades the 8 rubric dimensions per
+   `references/workflow-quality-rubric.md`. The script emits a machine-knowable FLOOR for every
+   dimension; the sub-agent raises the human-graded dimensions (D1 Goal-fit, D4 Branching,
+   D5 Edge-cases, D6 Deliverability, D7 Idempotency, D8 Naming) to their true 1/5/10 anchor by
+   reading the export against the PLAN A1/A2 values, then recomputes the final weighted 1–10
+   score:
+   `(D1*20 + D2*15 + D3*15 + D4*12 + D5*12 + D6*10 + D7*8 + D8*8) / 100`.
+3. **Ship threshold: weighted score ≥ 8.5** (aligns with the binding OpenClaw QC Protocol).
+
 ### Step 9.4 — QC verdict routing
 
-- All-PASS → proceed to Step 9.6.
-- Any FAIL → Step 9.5.
+- Any WF-1..21 FAIL → Step 9.5 (fix + re-run). The rubric is not consulted until WF-1..21 is clean.
+- WF-1..21 all-PASS AND final weighted rubric ≥ 8.5 → proceed to Step 9.6.
+- WF-1..21 all-PASS BUT final weighted rubric < 8.5 → **LOOP**: do NOT declare done. Report the
+  weighted score and **name the lowest-scoring dimension** (the script surfaces it as
+  `rubric.lowest_dimension`) plus the anchor it fell to, fix that dimension, and re-run QC from
+  Step 9.2. Below-threshold quality is treated like a FAIL for the purpose of "never declare done."
 
 ### Step 9.5 — On FAIL: fix and re-run QC
 
@@ -424,9 +445,10 @@ escalation below instead of the normal fix path.
 
 ### Step 9.6 — Declare done + hand over checklist
 
-Only after all-PASS: tell the client "QC passed — here is the verified workflow" and HAND THE
-CLIENT THE FILLED CHECKLIST (every item with its PASS + observed value) so the client can
-independently verify every setting themselves.
+Only after all WF-1..21 PASS AND the final weighted rubric ≥ 8.5: tell the client "QC passed —
+here is the verified workflow" and HAND THE CLIENT THE FILLED CHECKLIST (every item with its
+PASS + observed value) AND the weighted rubric score (8 dimensions + the final 1–10), so the
+client can independently verify every setting AND see the quality grade.
 
 ### Step 9.7 — Logging (build-events ledger)
 

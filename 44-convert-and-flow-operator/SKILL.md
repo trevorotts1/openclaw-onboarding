@@ -23,8 +23,11 @@ allow-multiple?). Rushing to a default build is NOT the best outcome and is a VI
 "done" until an independent MiniMax QC sub-agent passes all checklist items and the filled
 checklist is handed to the client. Sequence: announce to client → spawn MiniMax sub-agent
 (via sessions_send, verify model available first) → QC runs `caf workflows export` +
-`qc-built-workflow.sh <wf-id>` item-by-item → all-PASS → hand client the filled checklist.
-Any FAIL: fix + re-run QC. HALLUCINATION FAIL: hard stop + redo on reasoning-model thinking=HIGH.
+`qc-built-workflow.sh <wf-id>` item-by-item → all WF-1..21 PASS → THEN compute the **weighted
+quality rubric** (`references/workflow-quality-rubric.md`, 8 dimensions, ≥ 8.5 to ship) → hand
+client the filled checklist + the rubric score. The rubric is a SUPERSET OVERLAY computed AFTER
+WF-1..21, never instead of it. Any WF FAIL: fix + re-run QC. Rubric below 8.5: loop, naming the
+specific low dimension. HALLUCINATION FAIL: hard stop + redo on reasoning-model thinking=HIGH.
 
 ---
 
@@ -36,8 +39,11 @@ Any FAIL: fix + re-run QC. HALLUCINATION FAIL: hard stop + redo on reasoning-mod
    TRINITY routing, Step 9 QC GATE (including hallucination escalation), rollback
 4. **references/workflow-build-checklist-template.md** — canonical WF-1..WF-21 checklist
    (instantiate at PLAN MODE Step D; hand to client after QC passes)
-5. **qc-built-workflow.sh** — per-build QC script (mechanically asserts WF-3,4,5,6,7,12,15,18,21);
-   invoked by the MiniMax QC sub-agent at Step 9
+4b. **references/workflow-quality-rubric.md** — 8-dimension weighted quality rubric (SUPERSET
+   overlay on WF-1..21; each dimension cites its WF evidence source; ≥ 8.5 to ship; computed at
+   Step 9 AFTER WF-1..21)
+5. **qc-built-workflow.sh** — per-build QC script (mechanically asserts WF-3,4,5,6,7,12,15,18,21;
+   then emits the weighted rubric floor score); invoked by the MiniMax QC sub-agent at Step 9
 6. **CORE_UPDATES.md** — exact text to merge into AGENTS.md / TOOLS.md / MEMORY.md
 7. **QC.md** — human-readable checklist (authoritative install-QC script is `qc-convert-and-flow.sh`)
 8. **CHANGELOG.md** — skill version history
@@ -212,7 +218,8 @@ RECEIPTS to the operator ledger. Do NOT paste the runbook section to an owner.
 7. skill-version.txt
 8. qc-convert-and-flow.sh — automated install-level QC validator (static + live modes)
 9. qc-built-workflow.sh — per-build QC script (takes workflow-id, asserts WF-3/4/5/6/7/12/15/18/21,
-   emits per-item PASS/FAIL JSON; invoked by MiniMax QC sub-agent at Step 9)
+   emits per-item PASS/FAIL JSON AND the weighted quality-rubric floor score; invoked by MiniMax
+   QC sub-agent at Step 9)
 10. platform/mac/ — Mac-specific paths + auto-re-grab recipe
 11. platform/vps/ — VPS-specific paths
 12. tools/engine/ — de-branded CLI engine (vendored from Jay's zip)
@@ -221,3 +228,6 @@ RECEIPTS to the operator ledger. Do NOT paste the runbook section to an owner.
 15. references/fleet-announcement-template.md — standardized owner announcement (canonical 3-message template, `[OWNER_NAME]`/`[AGENT_NAME]`) + operator fleet-send runbook (gate, send mechanics, receipts)
 16. references/workflow-build-checklist-template.md — canonical WF-1..WF-21 reusable checklist
     (agent self-check at PLAN MODE Step D + client hand-over after QC passes)
+17. references/workflow-quality-rubric.md — 8-dimension weighted quality rubric (SUPERSET overlay
+    on WF-1..21; each dimension cites its WF evidence; ≥ 8.5 to ship; computed at Step 9 AFTER
+    WF-1..21)

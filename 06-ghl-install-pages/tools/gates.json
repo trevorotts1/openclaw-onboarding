@@ -1,0 +1,64 @@
+{
+  "_doc": "Runtime selector-gate registry for the GoHighLevel browser builder (D8). Each gate is a UI node the builder must act on. status=captured means a real, live-snapshot-verified DOM node (do NOT re-snapshot blindly, but DO verify it still matches). status=runtime means the node is NOT captured and MUST be resolved at runtime by snapshotting the live DOM and picking the ref — NO invented CSS may ship as fact. The `find` hints are accessibility-role/name search seeds for `agent-browser find ...`, NOT confirmed CSS. The agent snapshots first, then matches against these hints, then acts on the returned @ref.",
+  "_legend": {
+    "captured": "Live-snapshot-verified real node (2026-06-21 capture pass).",
+    "runtime": "MUST capture-at-runtime: snapshot the live DOM, pick the @ref, act. Never hardcode invented CSS."
+  },
+  "_capture_pass": "2026-06-21 READ-ONLY pass, app.convertandflow.com, agent-browser 0.27.0, --session ghl-capture. HARD-BLOCKED at login by two-factor authentication: gates 1 and 27 captured; gates 2-26 and 28 BLOCKED behind the two-factor wall and remain runtime snapshot-gates. PENDING-LIVE-RUN.",
+  "login_route": {
+    "use": "https://app.convertandflow.com/",
+    "do_not_use": "https://app.convertandflow.com/login",
+    "note": "CAPTURED 2026-06-21: the login FORM mounts ONLY at root '/'. The '/login' path renders a permanently-blank 'Initializing...' shell in automated Chromium (the form component never mounts). Always navigate to root."
+  },
+  "gates": [
+    {
+      "id": 1, "spec": "A1.2", "name": "login_form", "status": "captured",
+      "captured": {
+        "email": "input#email (name=email, type=text, placeholder 'Your email address')",
+        "password": "input#password (name=password, type=password, placeholder 'The password you picked')",
+        "submit": "button with exact text 'Sign in'",
+        "also_present": "button 'Sign in with Google', language combobox, link 'Forgot password?'"
+      },
+      "find": "find role textbox name Email | find role textbox name Password | find role button name 'Sign in'"
+    },
+    { "id": 2, "spec": "A2.2", "name": "account_switcher", "status": "runtime", "find": "find testid account-switcher | find text <current-subaccount-label> | per-row match by client name", "note": "HARD GATE A2.3: refuse on sub-account mismatch (no co-mingling)." },
+    { "id": 3, "spec": "A3.1", "name": "sidebar_sites", "status": "runtime", "find": "find role link name Sites | find text Sites (left nav)", "note": "May be a flyout vs inline; snapshot first." },
+    { "id": 4, "spec": "A3.2", "name": "tab_funnels", "status": "runtime", "find": "find role tab name Funnels | find text Funnels" },
+    { "id": 5, "spec": "A4.1", "name": "new_funnel_button", "status": "runtime", "find": "find role button name 'New Funnel' | find text '+ New Funnel'" },
+    { "id": 6, "spec": "A4.2", "name": "funnel_name_input", "status": "runtime", "find": "find role textbox name 'Funnel Name' | placeholder 'name'", "note": "Also disambiguate Blank-here vs Blank-at-step variant (A4.2 NOTE). Support BOTH." },
+    { "id": 7, "spec": "A4.3", "name": "create_button", "status": "runtime", "find": "find role button name Create" },
+    { "id": 8, "spec": "A6.1", "name": "add_new_step", "status": "runtime", "find": "find role button name 'Add New Step'", "note": "MUST positively distinguish from the adjacent 'Import' control — match exact name 'Add New Step', never a substring that also matches Import." },
+    { "id": 9, "spec": "A6.2", "name": "step_name_and_path_inputs", "status": "runtime", "find": "find role textbox name 'Step Name' | find role textbox name 'Path'", "note": "Path lowercase/hyphenated, unique within funnel." },
+    { "id": 10, "spec": "A7.1", "name": "blank_template", "status": "runtime", "find": "find text 'Blank' | find text 'Create from Blank'" },
+    { "id": 11, "spec": "A7.2", "name": "edit_page", "status": "runtime", "find": "find role button name 'Edit' | find text 'Edit Page'" },
+    { "id": 12, "spec": "A7.3", "name": "editor_iframe_boundary", "status": "runtime", "find": "frame @ref | frame main", "note": "agent-browser 0.27.0 auto-inlines iframes into the snapshot and exposes 'frame @ref' / 'frame main' — scope into the nested editor frame; never assume top frame." },
+    { "id": 13, "spec": "A8.1", "name": "add_section_blank", "status": "runtime", "find": "find text 'Blank Section' | find role button name Add (in section)" },
+    { "id": 14, "spec": "A9.1", "name": "full_width_toggle", "status": "runtime", "find": "find text 'Allow rows to take up full length' | find text 'Allow rows to take entire width' | find text 'Full Width'", "note": "Label drifts between variants. Match on EITHER label; verify by TOGGLE STATE (on), not by label text alone." },
+    { "id": 15, "spec": "A10.1", "name": "code_element", "status": "runtime", "find": "find text Code (under Custom) | find text 'Custom HTML/JavaScript'" },
+    { "id": 16, "spec": "A10.2", "name": "code_editor_instance", "status": "runtime", "find": "find role button name 'Open Code Editor' then locate CodeMirror/Monaco/textarea", "note": "Set large payloads via the editor's value API (eval), NOT key-by-key typing. The editor modal renders on the MAIN page, not inside the builder iframe." },
+    { "id": 17, "spec": "A10.3", "name": "code_element_save", "status": "runtime", "find": "find role button name Save (code editor modal)" },
+    { "id": 18, "spec": "A10-EDGE", "name": "dismiss_ai_popup", "status": "runtime", "find": "find role button name Close | find text 'Ask AI' then its X", "note": "Dismiss on first editor open or it eats the next click. Absent is fine — do not crash." },
+    { "id": 19, "spec": "A11.1", "name": "page_save", "status": "runtime", "find": "find role button name Save (top toolbar, main page)", "note": "Wait for the save-confirmation toast, not a fixed sleep." },
+    { "id": 20, "spec": "A12.1", "name": "preview", "status": "runtime", "find": "find role button name Preview | eyeball icon (top toolbar)" },
+    { "id": 21, "spec": "A13.2", "name": "publish", "status": "runtime", "find": "find role button name Publish", "note": "NEVER act on this gate without an explicit LIVE approval answer (A13.1)." },
+    { "id": 22, "spec": "A14.1", "name": "funnel_list_row_open", "status": "runtime", "find": "open by funnel_workspace_url (preferred) | find text <exact funnel name> in list row" },
+    { "id": 23, "spec": "B3", "name": "tab_websites", "status": "runtime", "find": "find role tab name Websites", "note": "NEEDS SCREENSHOT of live Website builder; do not assume Funnel parity." },
+    { "id": 24, "spec": "B4", "name": "new_website_button_and_name", "status": "runtime", "find": "find role button name 'New Website' | find role textbox name 'Website Name'" },
+    { "id": 25, "spec": "B6-B13", "name": "website_editor_selectors", "status": "runtime", "find": "snapshot each Website editor node independently", "note": "Website editor selectors may differ from Funnel editor selectors — snapshot both, assume nothing." },
+    { "id": 26, "spec": "C2", "name": "code_element_iframe_embed", "status": "runtime", "find": "same as gate 15 (Code element); payload = single responsive <iframe>", "note": "Mode 2 path." },
+    {
+      "id": 27, "spec": "2.4", "name": "auth_storage_keys", "status": "captured",
+      "captured": {
+        "indexeddb_database": "firebaseLocalStorageDb",
+        "object_store": "firebaseLocalStorage",
+        "keyPath": "fbase_key",
+        "token_path": "value.stsTokenManager.{refreshToken, accessToken, expirationTime}",
+        "uid_path": "value.uid",
+        "localStorage": "deviceId, proxyLoginCount, debug_sentry, locale (NO token)",
+        "firebase_api_key": "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE (hardcoded in Skill 44 transport.py; not an env var)"
+      },
+      "note": "CORRECTS the GOAL spec §2.4 which assumed localStorage. Auth is in IndexedDB. Seed via seed-ghl-auth.py + inject-ghl-auth.sh. The exact fbase_key value + post-login session cookies still need a logged-in capture to confirm verbatim."
+    },
+    { "id": 28, "spec": "C3", "name": "ghl_published_domain_for_frame_ancestors", "status": "runtime", "find": "read the published page's own origin after first publish", "note": "Only knowable from a published page. Whitelist it in the Vercel app's frame-ancestors / X-Frame-Options for Mode 2 embeds." }
+  ]
+}

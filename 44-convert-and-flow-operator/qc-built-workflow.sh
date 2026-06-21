@@ -204,40 +204,75 @@ else
   record_fail "WF-7" "0_action_nodes_found" ">=1 action nodes" "No recognizable action nodes found in export. Delivery chain may be empty."
 fi
 
-# ── WF-12: SMS From-number non-empty ─────────────────────────────────────────
-SMS_NODES_COUNT=$(echo "$EXPORT_OUT" | grep -ociE '"type"\s*:\s*"SMS\|"type"\s*:\s*"SEND_SMS' || echo 0)
-SMS_NODES_COUNT=$(echo "$SMS_NODES_COUNT" | tr -d ' ')
-SMS_WITHOUT_FROM=$(echo "$EXPORT_OUT" | python3 -c "
-import sys, json, re
+# ── WF-12: SMS From-number ────────────────────────────────────────────────────
+# WF-12 mechanical assertion (hardened): every SMS node MUST carry a fromNumber
+# KEY. On a LIVE/published workflow the value must additionally be NON-EMPTY
+# (an empty From silently fails to send). On a DRAFT workflow an empty From is a
+# WARNING the QC sub-agent must surface (GHL may resolve a location default at
+# send time, which is unproven and must be confirmed before going LIVE).
+# Output is three counts: "<missing_key> <empty_on_live> <empty_on_draft>".
+SMS_FROM_CHECK=$(echo "$EXPORT_OUT" | PUBLISH_INTENT="$PUBLISH_INTENT" python3 -c "
+import sys, json, os
 data = sys.stdin.read()
+live = os.environ.get('PUBLISH_INTENT','DRAFT').upper() == 'LIVE'
 try:
   obj = json.loads(data)
-  steps = obj.get('steps', obj.get('actions', obj.get('nodes', [])))
+  # Steps may live at several keys depending on export shape.
+  steps = obj.get('steps') or obj.get('actions') or obj.get('nodes') or []
+  wd = obj.get('workflowData') or {}
+  if isinstance(wd, dict) and wd.get('templates'):
+    steps = wd['templates']
   if not isinstance(steps, list):
     steps = []
-  count = 0
+  missing_key = empty_live = empty_draft = total_sms = 0
   for s in steps:
+    if not isinstance(s, dict):
+      continue
     t = (s.get('type','') or '').upper()
     if 'SMS' in t or 'SEND_SMS' in t:
-      from_num = s.get('fromNumber','') or s.get('from_number','') or s.get('phoneNumber','') or ''
-      if not from_num.strip():
-        count += 1
-  print(count)
-except:
-  print(-1)
-" 2>/dev/null || echo "-1")
+      total_sms += 1
+      attrs = s.get('attributes') if isinstance(s.get('attributes'), dict) else {}
+      has_key = ('fromNumber' in s) or ('from_number' in s) or ('phoneNumber' in s) \
+                or ('fromNumber' in attrs) or ('from_number' in attrs) or ('phoneNumber' in attrs)
+      val = (s.get('fromNumber') or s.get('from_number') or s.get('phoneNumber')
+             or attrs.get('fromNumber') or attrs.get('from_number') or attrs.get('phoneNumber') or '')
+      if not has_key:
+        missing_key += 1
+      elif not str(val).strip():
+        if live:
+          empty_live += 1
+        else:
+          empty_draft += 1
+  print('%d %d %d %d' % (missing_key, empty_live, empty_draft, total_sms))
+except Exception:
+  print('-1 -1 -1 -1')
+" 2>/dev/null || echo "-1 -1 -1 -1")
 
-if [ "$SMS_WITHOUT_FROM" = "-1" ]; then
+read -r SMS_MISSING_KEY SMS_EMPTY_LIVE SMS_EMPTY_DRAFT SMS_TOTAL <<< "$SMS_FROM_CHECK"
+
+if [ "$SMS_MISSING_KEY" = "-1" ]; then
   # Could not parse JSON — use text-grep fallback
-  if echo "$EXPORT_OUT" | grep -qi 'fromNumber.*""\|from_number.*""\|phoneNumber.*""'; then
-    record_fail "WF-12" "sms_node_with_empty_from_number" "from-number non-empty on all SMS nodes" "CRITICAL: SMS node with empty From-number detected — will silently fail to send"
+  if echo "$EXPORT_OUT" | grep -qiE '"type"\s*:\s*"(sms|send_sms)"'; then
+    if echo "$EXPORT_OUT" | grep -qi 'fromNumber.*""\|from_number.*""\|phoneNumber.*""'; then
+      record_fail "WF-12" "sms_node_with_empty_from_number" "fromNumber key present + non-empty on every SMS node" "CRITICAL: SMS node with empty From-number detected (text-grep fallback) — will silently fail to send"
+    elif echo "$EXPORT_OUT" | grep -qi 'fromNumber\|from_number\|phoneNumber'; then
+      record_pass "WF-12" "from_number_key_present" "fromNumber key present on every SMS node" "Text-grep fallback: a From-number key is present (human review recommended for full JSON parse)"
+    else
+      record_fail "WF-12" "sms_present_no_from_number_key" "fromNumber key present on every SMS node" "CRITICAL: SMS node(s) present but no From-number key found (text-grep fallback). sms_step must emit fromNumber."
+    fi
   else
-    record_pass "WF-12" "no_empty_from_numbers_detected" "from-number non-empty" "Text-grep fallback: no empty From-number patterns found (human review recommended for full JSON parse)"
+    record_pass "WF-12" "no_sms_nodes" "n/a — no SMS nodes" "No SMS nodes detected in export"
   fi
-elif [ "$SMS_WITHOUT_FROM" -gt 0 ]; then
-  record_fail "WF-12" "${SMS_WITHOUT_FROM}_sms_nodes_missing_from_number" "from-number non-empty on all SMS nodes" "CRITICAL: $SMS_WITHOUT_FROM SMS node(s) have no From-number — will silently fail to send"
+elif [ "$SMS_TOTAL" -eq 0 ]; then
+  record_pass "WF-12" "no_sms_nodes" "n/a — no SMS nodes" "No SMS nodes in this workflow"
+elif [ "$SMS_MISSING_KEY" -gt 0 ]; then
+  record_fail "WF-12" "${SMS_MISSING_KEY}_of_${SMS_TOTAL}_sms_nodes_missing_fromNumber_key" "fromNumber key present on every SMS node" "CRITICAL: $SMS_MISSING_KEY SMS node(s) have NO fromNumber key — sms_step must emit it (WF-12 gap)"
+elif [ "$SMS_EMPTY_LIVE" -gt 0 ]; then
+  record_fail "WF-12" "${SMS_EMPTY_LIVE}_of_${SMS_TOTAL}_sms_nodes_empty_from_on_LIVE" "non-empty From on every SMS node of a LIVE workflow" "CRITICAL: $SMS_EMPTY_LIVE SMS node(s) have an EMPTY From-number on a LIVE/published workflow — will silently fail to send. Set CAF_SMS_FROM_NUMBER or pass from_number."
+elif [ "$SMS_EMPTY_DRAFT" -gt 0 ]; then
+  record_pass "WF-12" "${SMS_EMPTY_DRAFT}_of_${SMS_TOTAL}_sms_nodes_empty_from_on_DRAFT" "fromNumber key present on every SMS node" "WARNING: fromNumber key present but EMPTY on $SMS_EMPTY_DRAFT SMS node(s) of a DRAFT workflow. GHL location-default at send time is UNPROVEN — confirm a From-number before going LIVE."
 else
-  record_pass "WF-12" "all_sms_nodes_have_from_number" "from-number non-empty on all SMS nodes" "All SMS nodes verified with a From-number"
+  record_pass "WF-12" "all_${SMS_TOTAL}_sms_nodes_have_nonempty_from_number" "fromNumber key present + non-empty" "All $SMS_TOTAL SMS node(s) carry a non-empty From-number"
 fi
 
 # ── WF-15: Delivery chain linkage ─────────────────────────────────────────────
@@ -291,21 +326,71 @@ record_human "WF-17" "Edge case decisions require QC agent review against plan"
 record_human "WF-19" "TRINITY completeness requires QC agent to check qc-trinity-registry.sh if conversational"
 record_human "WF-20" "Hallucination detection (WF-20) requires QC agent to reconcile all build-agent claims against export"
 
+# ── WEIGHTED QUALITY RUBRIC (references/workflow-quality-rubric.md) ────────────
+# SUPERSET OVERLAY computed AFTER WF-1..21 (never instead of). Each of the 8
+# dimensions maps to existing WF evidence. Dimensions whose WF evidence is fully
+# machine-asserted here get a mechanical anchor (1/5/10); dimensions that depend
+# on REQUIRES_HUMAN_REVIEW WF items emit a conservative machine FLOOR plus a
+# rubric_human_grade flag so the Step-9 QC sub-agent grades them 1/5/10 and
+# recomputes the final weighted score. The script's own weighted score is a
+# FLOOR (machine-knowable lower bound), surfaced alongside the WF result so a
+# real build emits BOTH numbers. Ship threshold (final, after human grading): >= 8.5.
+#
+# Weights: D1=20 D2=15 D3=15 D4=12 D5=12 D6=10 D7=8 D8=8  (sum=100)
+
+_wf() { echo "${ITEM_STATUS[$1]:-UNKNOWN}"; }
+
+# D2 Trigger correctness — fully mechanical (WF-3 + WF-4)
+if [ "$(_wf WF-3)" = "PASS" ] && [ "$(_wf WF-4)" = "PASS" ]; then D2=10
+elif [ "$(_wf WF-3)" = "PASS" ]; then D2=5
+else D2=1; fi
+
+# D3 Action completeness & ordering — fully mechanical (WF-7 + WF-15)
+if [ "$(_wf WF-7)" = "PASS" ] && [ "$(_wf WF-15)" = "PASS" ]; then D3=10
+elif [ "$(_wf WF-7)" = "PASS" ]; then D3=5
+else D3=1; fi
+
+# D6 Deliverability integrity — WF-12 is mechanical; WF-13/2/10/11 need human.
+# Machine FLOOR from WF-12: empty-on-LIVE => 1, key-present(empty draft / non-empty) => 5 floor.
+if [ "$(_wf WF-12)" = "FAIL" ]; then D6=1
+else D6=5; fi   # floor; QC sub-agent raises to 10 once senders + deps GET-verified
+D6_HUMAN=1
+
+# D8 Naming/testability — WF-5 + WF-18/21 mechanical; WF-1/WF-20 need human.
+if [ "$(_wf WF-5)" = "PASS" ] && [ "$(_wf WF-18)" = "PASS" ] && [ "$(_wf WF-21)" = "PASS" ]; then D8=5
+else D8=1; fi   # floor; QC sub-agent raises to 10 once names + WF-20 reviewed
+D8_HUMAN=1
+
+# D1 Goal-fit, D4 Branching, D5 Edge cases — depend on human-review WF items.
+# Emit a conservative floor of 5 (build mechanically present, quality ungraded)
+# and flag for human grading. NOT 10 — the script must never claim goal-fit.
+D1=5; D1_HUMAN=1
+D4=5; D4_HUMAN=1
+D5=5; D5_HUMAN=1
+
+# D7 Idempotency — WF-6 mechanical; Stop-on-Response (WF-16) needs human.
+if [ "$(_wf WF-6)" = "PASS" ]; then D7=5
+else D7=1; fi   # floor; QC sub-agent raises to 10 once Stop-on-Response reviewed
+D7_HUMAN=1
+
+# Weighted FLOOR score (machine lower bound, x100 to stay integer-safe in bash)
+RUBRIC_FLOOR_X100=$(( D1*20 + D2*15 + D3*15 + D4*12 + D5*12 + D6*10 + D7*8 + D8*8 ))
+# Format as N.NN
+RUBRIC_FLOOR=$(printf "%d.%02d" $(( RUBRIC_FLOOR_X100 / 100 )) $(( RUBRIC_FLOOR_X100 % 100 )))
+RUBRIC_NEEDS_HUMAN=$(( D1_HUMAN + D4_HUMAN + D5_HUMAN + D6_HUMAN + D7_HUMAN + D8_HUMAN ))
+
+# Identify the lowest scoring dimension(s) for the loop-back message.
+LOWEST_DIM=""; LOWEST_VAL=11
+for d in "D1:$D1" "D2:$D2" "D3:$D3" "D4:$D4" "D5:$D5" "D6:$D6" "D7:$D7" "D8:$D8"; do
+  v="${d#*:}"
+  if [ "$v" -lt "$LOWEST_VAL" ]; then LOWEST_VAL="$v"; LOWEST_DIM="${d%%:*}"; fi
+done
+
 # ── Output ─────────────────────────────────────────────────────────────────────
 MECHANICAL_ITEMS=("WF-3" "WF-4" "WF-5" "WF-6" "WF-7" "WF-12" "WF-15" "WF-18" "WF-21")
 HUMAN_ITEMS=("WF-1" "WF-2" "WF-8" "WF-9" "WF-10" "WF-11" "WF-13" "WF-14" "WF-16" "WF-17" "WF-19" "WF-20")
 
 if [ "$JSON_MODE" -eq 1 ]; then
-  # Emit JSON for QC sub-agent parsing
-  python3 -c "
-import json, sys
-
-mechanical = $(printf '%s\n' "${MECHANICAL_ITEMS[@]}" | python3 -c "import sys; print(json.dumps(sys.stdin.read().split()))")
-human = $(printf '%s\n' "${HUMAN_ITEMS[@]}" | python3 -c "import sys; print(json.dumps(sys.stdin.read().split()))")
-
-results = {}
-" 2>/dev/null || true
-
   # Build JSON manually (no python dependency required)
   echo "{"
   echo "  \"workflow_id\": \"$WORKFLOW_ID\","
@@ -333,6 +418,24 @@ results = {}
       "$item" "$STATUS" "$OBSERVED" "$EXPECTED" "$NOTES"
   done
   echo ""
+  echo "  },"
+  # Weighted quality rubric (SUPERSET overlay, computed AFTER WF-1..21)
+  echo "  \"rubric\": {"
+  echo "    \"weighted_floor\": $RUBRIC_FLOOR,"
+  echo "    \"ship_threshold\": 8.5,"
+  echo "    \"needs_human_grading\": $RUBRIC_NEEDS_HUMAN,"
+  echo "    \"lowest_dimension\": \"$LOWEST_DIM\","
+  echo "    \"note\": \"weighted_floor is the machine-knowable lower bound; the Step-9 QC sub-agent grades the human dimensions (D1/D4/D5/D6/D7/D8) 1/5/10 per references/workflow-quality-rubric.md and recomputes the final score. Ship only if final >= 8.5.\","
+  echo "    \"dimensions\": {"
+  echo "      \"D1_goal_fit\":       {\"weight\": 20, \"score_floor\": $D1, \"human_grade_required\": true},"
+  echo "      \"D2_trigger\":        {\"weight\": 15, \"score\": $D2, \"human_grade_required\": false},"
+  echo "      \"D3_steps_ordering\": {\"weight\": 15, \"score\": $D3, \"human_grade_required\": false},"
+  echo "      \"D4_branching\":      {\"weight\": 12, \"score_floor\": $D4, \"human_grade_required\": true},"
+  echo "      \"D5_edge_cases\":     {\"weight\": 12, \"score_floor\": $D5, \"human_grade_required\": true},"
+  echo "      \"D6_deliverability\": {\"weight\": 10, \"score_floor\": $D6, \"human_grade_required\": true},"
+  echo "      \"D7_idempotency\":    {\"weight\": 8,  \"score_floor\": $D7, \"human_grade_required\": true},"
+  echo "      \"D8_naming\":         {\"weight\": 8,  \"score_floor\": $D8, \"human_grade_required\": true}"
+  echo "    }"
   echo "  }"
   echo "}"
 else
@@ -368,6 +471,24 @@ else
     echo "  Mechanical QC PASSED — QC agent must still review human-review items above."
   fi
   echo ""
+  # Weighted quality rubric (SUPERSET overlay — computed AFTER WF-1..21, never instead of)
+  echo "── Weighted quality rubric (references/workflow-quality-rubric.md) ──"
+  printf "  %-22s w=%-3s %s\n" "D1 Goal-fit"        "20" "floor=$D1  [HUMAN GRADE REQUIRED]"
+  printf "  %-22s w=%-3s %s\n" "D2 Trigger"         "15" "score=$D2"
+  printf "  %-22s w=%-3s %s\n" "D3 Steps/ordering"  "15" "score=$D3"
+  printf "  %-22s w=%-3s %s\n" "D4 Branching"       "12" "floor=$D4  [HUMAN GRADE REQUIRED]"
+  printf "  %-22s w=%-3s %s\n" "D5 Edge cases"      "12" "floor=$D5  [HUMAN GRADE REQUIRED]"
+  printf "  %-22s w=%-3s %s\n" "D6 Deliverability"  "10" "floor=$D6  [HUMAN GRADE REQUIRED]"
+  printf "  %-22s w=%-3s %s\n" "D7 Idempotency"     "8"  "floor=$D7  [HUMAN GRADE REQUIRED]"
+  printf "  %-22s w=%-3s %s\n" "D8 Naming/testability" "8" "floor=$D8  [HUMAN GRADE REQUIRED]"
+  echo "  ─────────────────────────────────────────────"
+  echo "  WEIGHTED FLOOR SCORE: $RUBRIC_FLOOR / 10   (ship threshold: >= 8.5)"
+  echo "  Lowest dimension: $LOWEST_DIM"
+  echo "  NOTE: this is the machine-knowable FLOOR. The Step-9 QC sub-agent must grade the"
+  echo "        $RUBRIC_NEEDS_HUMAN human dimensions (D1/D4/D5/D6/D7/D8) 1/5/10 per the rubric and"
+  echo "        recompute the FINAL weighted score. Ship ONLY if the final score is >= 8.5;"
+  echo "        below 8.5 → loop, naming the low dimension ($LOWEST_DIM)."
+  echo ""
 fi
 
 # ── Append to build-events ledger ─────────────────────────────────────────────
@@ -375,7 +496,7 @@ mkdir -p "$(dirname "$BUILD_EVENTS_LEDGER")" 2>/dev/null || true
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")
 VERDICT="$([ "$FAIL_COUNT" -eq 0 ] && echo PASS || echo FAIL)"
 cat >> "$BUILD_EVENTS_LEDGER" 2>/dev/null << LEDGER_EOF
-{"event":"qc_run","timestamp":"${TIMESTAMP}","workflow_id":"${WORKFLOW_ID}","publish_intent":"${PUBLISH_INTENT}","re_entry":"${RE_ENTRY_DECISION}","mechanical_pass":${PASS_COUNT},"mechanical_fail":${FAIL_COUNT},"verdict":"${VERDICT}"}
+{"event":"qc_run","timestamp":"${TIMESTAMP}","workflow_id":"${WORKFLOW_ID}","publish_intent":"${PUBLISH_INTENT}","re_entry":"${RE_ENTRY_DECISION}","mechanical_pass":${PASS_COUNT},"mechanical_fail":${FAIL_COUNT},"verdict":"${VERDICT}","rubric_weighted_floor":${RUBRIC_FLOOR},"rubric_ship_threshold":8.5,"rubric_needs_human_grading":${RUBRIC_NEEDS_HUMAN},"rubric_lowest_dimension":"${LOWEST_DIM}"}
 LEDGER_EOF
 
 [ "$FAIL_COUNT" -gt 0 ] && exit 1

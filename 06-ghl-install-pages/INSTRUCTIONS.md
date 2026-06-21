@@ -2,10 +2,28 @@
 
 This document explains the step-by-step process for deploying HTML pages into GoHighLevel (Convert and Flow) using browser automation. If you have not completed the setup prerequisites, go read INSTALL.md first.
 
-This assumes your HTML code is already written and ready to paste. This guide is about the process of getting that code into GHL's page builder.
+This assumes your HTML code is already written and ready to paste. This guide is about the process of getting that code into GoHighLevel's page builder.
+
+> **v7.0.0 OVERHAUL — READ THIS FIRST.** The canonical procedure now lives in
+> **`ghl-browser-builder-full.md`** (v3.0), driven by **agent-browser** (PRIMARY)
+> with Playwright as fallback, and backed by the code in **`tools/`**. The
+> 10-phase text below is retained as the human-readable click-path narrative; the
+> mechanics (auth seeding, runtime gate selection, ledger/resume, ZHC naming,
+> sub-account gate, publish guard, marker verification) are implemented in code.
+>
+> **Quick start (agent):**
+> 1. `python3 tools/seed-ghl-auth.py --check` — pick auth path (refresh-token vs login).
+> 2. If refresh-token: `python3 tools/seed-ghl-auth.py --print-seed --out /tmp/<sess>/seed.json` then `bash tools/inject-ghl-auth.sh <sess> /tmp/<sess>/seed.json --pre-open`.
+> 3. Build the manifest + drive the funnel/website flow per `ghl-browser-builder-full.md`, resolving each runtime gate (`tools/gates.json`) by live snapshot.
+> 4. Ledger every phase via `tools/ghl_builder.py ledger-write ...`; verify with `ghl_builder.py verify <url> <marker>`; never publish unless `ghl_builder.py may-publish <approval>` returns PUBLISH.
 
 
-## The 10-Phase Deployment Process
+## The 10-Phase Deployment Process (human-readable click-path narrative)
+
+> NOTE: in code, navigation is snapshot-driven (runtime gates), NOT the fixed
+> CSS/text selectors implied below. The phases describe the human path; the agent
+> resolves each control live. The login route is root
+> `https://app.convertandflow.com/`, never `/login`.
 
 Deploying a page into GHL follows 10 phases in exact order. Do not skip phases. Do not change the order.
 
