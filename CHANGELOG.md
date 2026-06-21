@@ -43,6 +43,18 @@ Add `qc-class-kit-gate.sh` enforcing Gates A–D (kit completeness; deck ≥20 s
 - **Goal 5 (CEO Must Delegate):** CEO tool-gate on real tool names + `route_task` + block-redirect hook + QC provenance gate + owner-consent profile-swap + verify-routing G7–G11.
 - **Closeout robustness:** ghost-false-done guard + pending-slots + qc-rate-artifacts (8.5-release). Gate hardening: qc-completeness GATE-SCOPE + verify-library trio scoping.
 
+## v13.0.3 — 2026-06-20 — fix(zhc): closeout robustness
+
+Closeout-pipeline robustness hardening (ghost-false-done guard, pending-slots, QC rate-artifacts) on the path to the v13.1.0 release train.
+
+## v13.0.2 — 2026-06-20 — fix(cron): --json presence check for trigger registration
+
+Cron trigger registration uses a `--json` presence check so an existing trigger is detected reliably (idempotent registration), preventing duplicate or skipped pipeline-trigger crons.
+
+## v13.0.1 — 2026-06-20 — fix(fleet): cron registration fix
+
+Fleet cron-registration fix so pipeline trigger crons register correctly across boxes.
+
 ## v13.0.0 — 2026-06-20 — Zero-Human-Experience closeout reliability + presentation gate-measurement fixes
 
 Guarantees every client who completes the AI Workforce interview reliably receives their Zero-Human-Experience closeout, and fixes the build-completeness gate so genuinely-complete workforces stop reading as incomplete.
