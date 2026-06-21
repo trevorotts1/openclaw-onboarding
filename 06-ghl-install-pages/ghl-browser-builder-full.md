@@ -384,28 +384,74 @@ Write the per-page ledger after each phase (§5).
 
 ## PART B — WEBSITE PAGE BUILD (only when client says "Website")
 
-Default is Funnels. Website mirrors Part A with substitutions:
-- B3 Sites → Websites tab (GATE #23). B4 + New Website → `zhc` name → Blank →
-  Create (GATE #24); capture `website_workspace_url`.
-- B6–B13 same step/section/code/save/preview/publish flow (GATE #25). **Do NOT
-  assume Website selectors equal Funnel selectors — snapshot the Website editor
-  independently.** All runtime gates carry over.
+Default is Funnels. Website mirrors Part A but with the following DIFFERENCES,
+all **LIVE-CONFIRMED** by the 2026-06-21 D11 end-to-end run on the BlackCEO LLC
+operator test fixture (Website created → page built → Code element → preview
+HTTP 200 + marker rendered, left DRAFT):
+- B3 **Websites tab (GATE #23)** is an ANCHOR `<a href=".../funnels-websites/
+  websites">`, NOT an ARIA `role=tab` (so `find role tab name Websites` MISSES it).
+  Click the `<a>` whose exact trimmed text is `Websites` (same orange top-tab row
+  as Funnels). It navigates to `.../funnels-websites/websites`.
+- B4 **+ New website (GATE #24)**: blue `+ New website` button top-right (do NOT
+  click the adjacent `Build with AI`). The `Create new website` modal has TWO
+  cards only — `From blank` (carries the `Website name *` input, placeholder
+  `e.g. Sales website`) and `From templates` (NO `Build with AI` card inside the
+  modal). Type the `zhc` name → `Create`. The SPA then lands on the website
+  DETAIL view `.../funnels-websites/websites/<WEBSITE_ID>/pages` (sub-tabs
+  Pages|Stats|Sales|Security|Events|Settings) — it does NOT open a builder yet.
+- B5 **Add page (GATE #25)**: on the detail view click blue `+ Add new page` →
+  `New page for website` modal (`Name for page *`, `Path`, optional ClickFunnels
+  import) → `Create new page`. The new page appears as a CONTROL box (`Use
+  existing` | `Create from blank`); click **`Create from blank`** to open the
+  builder at `/location/<LOCID>/page-builder/<PAGE_ID>?source=website`.
+- B6–B13 the builder is the **SAME editor as the Funnel builder** — every editor
+  gate (13 Blank Section, 15 Quick Add→Custom→Code, 16 Open Code Editor, 17 modal
+  Save, 18 close Ask AI, 19 page Save disk, 20 Preview eye, 21 Publish) works
+  IDENTICALLY. The Quick Add `Custom` group → `Code` drops a `Custom HTML/
+  Javascript` element; right-panel `Open Code Editor` (renders on the MAIN page)
+  opens the `Custom Javascript/HTML` CodeMirror modal. Preview URL pattern:
+  `https://www.<preview-domain>/preview/<PAGE_ID>`.
+- **ENGINE LIMIT (same as Funnels):** the canvas + Quick Add live in a
+  CROSS-ORIGIN iframe (`page-builder.leadconnectorhq.com`) whose interior the
+  a11y snapshot does NOT enumerate. Drive the section `+` Add and the `Code` tile
+  with REAL pointer events (double-click-add); synthetic JS clicks / drag do NOT
+  land. Set the CodeMirror value via `.CodeMirror.setValue()` inside the editor
+  frame, not key-by-key. (Refs that the top-level snapshot DOES expose — e.g.
+  `Close Ask AI`, `Blank Section`, the main-page `Open Code Editor` — are
+  clickable normally.)
+- **Do NOT assume every Website selector equals the Funnel selector** — the
+  tab/create/add-page LABELS differ (above). The editor itself is identical.
 
 ---
 
 ## PART C — MODE 2: IFRAME EMBED (payload too rich for a Code block)
 
 For full Vercel builds (React/external deps) that cannot live in a Code element.
-- C1 Host externally on Vercel (Skill 08). VERIFY: public Vercel URL returns 200.
-- C2 In the GoHighLevel page (Part A through A9), the Code element's payload is a
-  single responsive `<iframe src="<vercel-url>">` sized to the section (GATE #26,
-  same element as A10).
-- C3 Save → Preview → Publish (A11–A13). VERIFY the Vercel URL directly (200 +
-  marker) AND visually confirm the embed renders inside the published page.
-- EDGE X-Frame-Options / CSP: if the Vercel app sends `X-Frame-Options: DENY` or
-  a restrictive `frame-ancestors`, the embed is blank → set the Vercel headers to
-  allow GoHighLevel's published domain as a frame ancestor (GATE #28 — the
-  domain is only knowable from a published page).
+**LIVE-CONFIRMED** by the 2026-06-21 D10 run on the BlackCEO LLC operator test
+fixture (iframe Code element built → preview rendered the embed live, embed
+child-frame HTTP 200 + real content, left DRAFT).
+- C1 Host externally on Vercel (Skill 08). VERIFY **first, with `curl -D-`**: the
+  target must return HTTP 200 AND carry NO `X-Frame-Options: DENY` and NO
+  restrictive CSP `frame-ancestors`. **Vercel trap:** a default Vercel deployment
+  has Deployment Protection (SSO) ON → it returns `HTTP 401` + a
+  `_vercel_sso_nonce` cookie + `x-frame-options: DENY` and is NOT embeddable. Only
+  a PUBLIC Vercel deployment (protection disabled) with no frame-blocking headers
+  can be embedded — confirm before building.
+- C2 In the GoHighLevel page (Part A through A9, or the Website builder Part B),
+  the Code element's payload is a single responsive
+  `<iframe src="<embeddable-url>" style="width:100%;height:600px;border:0">` sized
+  to the section (GATE #26, same element as A10/gate 16). Set it via CodeMirror
+  `.setValue()`.
+- C3 Save (gate 17) → page Save (gate 19) → Preview (gate 20). VERIFY both: (a)
+  `ghl_builder.verify_url(preview_url, <embed-src-substring>)` → 200 + the iframe
+  src present in the GHL page body; AND (b) load the preview in the headless
+  browser, locate the embed `<iframe>`, and confirm its CHILD FRAME actually
+  loaded (child-frame HTTP 200, real content text length > 0) — never report
+  "embed works" on the iframe tag alone. Publish only with approval (A13).
+- EDGE X-Frame-Options / CSP: if the source app sends `X-Frame-Options: DENY` or
+  a restrictive `frame-ancestors`, the embed is blank → set the source app's
+  headers to allow GoHighLevel's published domain as a frame ancestor (GATE #28 —
+  the domain is only knowable from a published page).
 
 ---
 

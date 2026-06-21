@@ -5,6 +5,7 @@
     "runtime": "MUST capture-at-runtime: snapshot the live DOM, pick the @ref, act. Never hardcode invented CSS.",
     "label_source": {
       "screenshot-confirmed-label": "Visible label + position verified against the operator's 15 live screenshots (Downloads/ghl-ui-map.md, 2026-06-21). Target this exact visible text/role; confirm the @ref at runtime.",
+      "live-confirmed-label": "Visible label + sequence verified by an END-TO-END LIVE RUN (2026-06-21 D10/D11 pass, BlackCEO LLC operator test fixture). The selector/flow was actually driven and produced the documented result (page saved + preview HTTP 200 + marker/embed rendered). Still resolve the live @ref at runtime; the engine limits (cross-origin iframe, real-pointer double-click-add) are noted inline.",
       "still-runtime-snapshot": "No screenshot for this node yet. Snapshot the live DOM and resolve from the find-seed; label is a hint only."
     }
   },
@@ -23,11 +24,13 @@
   },
   "_label_coverage": {
     "screenshot_confirmed_label": [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21],
-    "still_runtime_snapshot": [2, 12, 22, 23, 24, 25, 26, 27, 28],
+    "live_confirmed_label": [23, 24, 25, 26],
+    "still_runtime_snapshot": [2, 12, 22, 27, 28],
     "count_screenshot_confirmed": 19,
-    "count_still_runtime": 9,
+    "count_live_confirmed": 4,
+    "count_still_runtime": 5,
     "total": 28,
-    "_note": "19 of 28 gates carry a screenshot-confirmed visible label (the full funnel-build click-path, gates 1+3-11+13-21). Gate 12 (editor iframe boundary) is structural with no visible label. Gate 27 is auth-storage (DOM-captured, no visible label). 23-26 (Websites flow) are screenshot-confirmed in PRINCIPLE (UI map says Websites mirrors Funnels) but the Website builder itself was NOT screenshotted, so they stay still-runtime-snapshot until a Website screenshot exists — re-verify, don't assume parity."
+    "_note": "19 gates carry a screenshot-confirmed visible label (the full funnel-build click-path, gates 1+3-11+13-21). 4 gates (23-26, the Websites + Mode-2 embed flow) are now LIVE-CONFIRMED by the 2026-06-21 D10/D11 end-to-end run on the BlackCEO LLC operator test fixture (Website created + page built + Code element + preview HTTP 200 + marker rendered; Mode-2 iframe embed rendered live through preview). The Website builder is the SAME editor as the Funnel builder, with the URL/label/flow DIFFERENCES recorded inline on gate 25. Gate 12 (editor iframe boundary) is structural with no visible label. Gate 22 (funnel-list row) and gate 28 (published-page origin) remain runtime. Gate 27 is auth-storage (DOM-captured, no visible label)."
   },
   "login_route": {
     "use": "https://app.convertandflow.com/",
@@ -197,30 +200,30 @@
     {
       "id": 23, "spec": "B3", "name": "tab_websites", "status": "runtime",
       "label": "Websites (same orange top-tab row as Funnels)",
-      "label_source": "still-runtime-snapshot",
-      "find": "find role tab name Websites (orange top-tab row)",
-      "note": "UI map confirms 'Websites' IS in the same top-tab row as Funnels and the Websites builder MIRRORS Funnels, but the Website builder itself was NOT screenshotted. Re-verify each Website selector at runtime; do NOT assume Funnel parity."
+      "label_source": "live-confirmed-label",
+      "find": "find text Websites (orange top-tab row) -> it is an ANCHOR <a href='.../funnels-websites/websites'>, NOT an ARIA role=tab (find role tab name Websites MISSES it). Click the <a> whose trimmed text == 'Websites'.",
+      "note": "LIVE-CONFIRMED (D11, 2026-06-21, BlackCEO LLC operator test fixture): the Websites tab IS in the same top-tab row as Funnels (row: Funnels|Stores|Webinars|Analytics|Quizzes|QR Codes|Websites|Blogs|WordPress|Client Portal|Forms|Surveys). IMPORTANT: it is an anchor element with href '/v2/location/<LOCID>/funnels-websites/websites' — NOT role=tab. Resolve the @ref at runtime by exact anchor text 'Websites'."
     },
     {
       "id": 24, "spec": "B4", "name": "new_website_button_and_name", "status": "runtime",
-      "label": "+ New website (top-right) -> name input (mirrors the '+ New funnel' flow)",
-      "label_source": "still-runtime-snapshot",
-      "find": "find role button name 'New website' | find text '+ New website' | then the name input in the create modal",
-      "note": "Inferred from the Funnels flow (UI map says Websites mirrors Funnels: substitute 'Websites' tab + '+ New website'). NOT screenshotted — snapshot to confirm the exact label."
+      "label": "+ New website (top-right, blue) -> 'Create new website' modal -> 'From blank' card -> 'Website name *' input (placeholder 'e.g. Sales website') -> 'Create' button",
+      "label_source": "live-confirmed-label",
+      "find": "find text '+ New website' (top-right blue button; do NOT click adjacent 'Build with AI') -> modal heading 'Create new website' -> within 'From blank' card fill input[placeholder='e.g. Sales website'] -> click 'Create' (bottom-right; 'Cancel' beside it)",
+      "note": "LIVE-CONFIRMED (D11, 2026-06-21, BlackCEO LLC operator test fixture): button label is 'New website' (with + icon). Differs from Funnels: the 'Create new website' modal has TWO cards only — 'From blank' (carries the 'Website name *' input, placeholder 'e.g. Sales website') and 'From templates' — NO 'Build with AI' card inside the modal (that is a separate top-right button). After 'Create' the SPA navigates to '/v2/location/<LOCID>/funnels-websites/websites/<WEBSITE_ID>/pages' (the website DETAIL view), NOT directly into a builder."
     },
     {
       "id": 25, "spec": "B6-B13", "name": "website_editor_selectors", "status": "runtime",
-      "label": "Website page-builder editor (mirrors the Funnel editor: Blank Section / Quick Add / Custom>Code / full-width / save / preview / publish)",
-      "label_source": "still-runtime-snapshot",
-      "find": "snapshot each Website editor node independently (gates 13-21 analogues)",
-      "note": "Website editor selectors MAY differ from Funnel editor selectors — snapshot both, assume nothing."
+      "label": "Website detail (sub-tabs Pages|Stats|Sales|Security|Events|Settings) -> '+ Add new page' -> 'New page for website' modal ('Name for page *' + 'Path' + ClickFunnels import) -> 'Create new page' -> page CONTROL box ('Use existing' | 'Create from blank') -> 'Create from blank' opens the builder. Builder MIRRORS the Funnel editor.",
+      "label_source": "live-confirmed-label",
+      "find": "website detail: click '+ Add new page' (blue, top-right) -> fill input[placeholder='Name for page'] + input[placeholder='Path'] -> click 'Create new page' -> on the page control box click 'Create from blank' -> builder opens at '/location/<LOCID>/page-builder/<PAGE_ID>?source=website'. Then gates 13-21 analogues (Blank Section/Quick Add/Custom>Code/Open Code Editor/Save/Preview/Publish) work IDENTICALLY to the Funnel editor.",
+      "note": "LIVE-CONFIRMED (D11, 2026-06-21, BlackCEO LLC operator test fixture): the website page builder is the SAME editor as the Funnel builder (same toolbar: Autosave-off, top-right eye=Preview, disk=Save, blue Publish; same 'Ask AI' panel with a 'Close Ask AI' button; same canvas 'Blank Section'/'Insert Element'/'Generate with AI'; same Quick Add panel -> 'Custom' group -> 'Code' (</> => 'Custom HTML/Javascript' element) -> right-panel 'Open Code Editor' (renders on MAIN page) -> 'Custom Javascript/HTML' modal with a CodeMirror editor -> 'Save'). DIFFERENCES from Funnels: (a) website page-builder URL carries '?source=website'; (b) the page-create button is 'Add new page' / 'Create new page' (Funnel uses 'Add new step or import' / 'Create funnel step'); (c) creating a website page returns to the Pages list with a CONTROL box (does NOT auto-open the builder — click 'Create from blank'). ENGINE LIMITS (same as Funnel): the canvas + Quick Add live in a CROSS-ORIGIN iframe (page-builder.leadconnectorhq.com) whose interior the a11y snapshot does NOT enumerate; the section '+' Add and the Code tile must be driven by REAL pointer events (double-click-add) — synthetic JS clicks / drag do NOT land. Set the CodeMirror value via its API (.CodeMirror.setValue) inside the editor frame, not key-by-key. Preview URL pattern: https://www.<preview-domain>/preview/<PAGE_ID> (verified HTTP 200 + marker rendered)."
     },
     {
       "id": 26, "spec": "C2", "name": "code_element_iframe_embed", "status": "runtime",
       "label": "Same 'Custom Code' element as gate 15/16; payload = single responsive <iframe>",
-      "label_source": "still-runtime-snapshot",
-      "find": "same as gate 15 (Code element) -> gate 16 (Open Code Editor); payload = single responsive <iframe>",
-      "note": "Mode 2 path. Reuses the screenshot-confirmed Code path (gates 15-17) with an <iframe> payload instead of inline HTML."
+      "label_source": "live-confirmed-label",
+      "find": "same as gate 15 (Code element) -> gate 16 (Open Code Editor); set CodeMirror value to a single responsive <iframe src=<embeddable-url>>; gate 17 Save; gate 19 Save page; gate 20 Preview.",
+      "note": "LIVE-CONFIRMED (D10, 2026-06-21, BlackCEO LLC operator test fixture): Mode 2 path works end-to-end. Payload '<section><iframe ... src=\"<EMBEDDABLE_URL>\" style=\"width:100%;height:600px;border:0\"></iframe></section>' set via CodeMirror -> Save -> page Save -> Preview rendered the embedded page LIVE (embed child-frame HTTP 200, real content). HARD REQUIREMENT: the embed target must be a PUBLIC URL with NO X-Frame-Options:DENY and NO restrictive CSP frame-ancestors. NOTE on Vercel: default Vercel deployment-protection (SSO) returns HTTP 401 + 'x-frame-options: DENY' + a _vercel_sso_nonce cookie => NOT embeddable; only a public (protection-disabled) Vercel deployment with no frame-blocking headers can be embedded. Verify the target's headers (curl -D-) BEFORE building; if it blocks framing, the embed renders BLANK and the operator must set the source app's headers (gate 28 frame-ancestors) or pick a public URL."
     },
     {
       "id": 27, "spec": "2.4", "name": "auth_storage_keys", "status": "captured",
