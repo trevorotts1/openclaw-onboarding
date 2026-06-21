@@ -744,10 +744,62 @@
             "null"
           ],
           "description": "human-readable summary line"
+        },
+        "legacyExemption": {
+          "type": "object",
+          "description": "v12.4.0: result of the legacy/pre-standard count-floor exemption in qc-interview-completion.py. 'claimed' = the interview was flagged legacy (via --legacy-interview, state.legacyInterview.preStandard, or a transcript marker). 'granted' = the exemption was actually applied (claimed AND passed the anti-fabrication substance floor). The exemption lifts ONLY the 25-35 count floor; jargon/mandatory-field/no-fabrication checks always still apply.",
+          "properties": {
+            "claimed": {
+              "type": "boolean"
+            },
+            "granted": {
+              "type": "boolean"
+            },
+            "sources": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Evidence the interview was flagged legacy, e.g. ['state:legacyInterview.preStandard'], ['transcript:legacy-marker'], ['cli:--legacy-interview']."
+            }
+          },
+          "additionalProperties": false
         }
       },
       "required": [
         "status"
+      ],
+      "additionalProperties": false
+    },
+    "legacyInterview": {
+      "type": "object",
+      "description": "v12.4.0: marks a VERIFIED pre-standard / legacy interview that predates the 25-35 question standard. When preStandard==true (and the interview passes the anti-fabrication substance floor), qc-interview-completion.py exempts it from the check #1 count floor WITHOUT re-interviewing the client. This is the 'don't re-interview real clients' path: it applies ONLY to genuine, owner-authored interviews, never to empty/fabricated ones (an empty transcript carrying this flag still HARD-FAILs with 'legacy-flag-without-substance'). The remaining fields are an optional audit trail.",
+      "properties": {
+        "preStandard": {
+          "type": "boolean",
+          "description": "true = this is a verified interview that predates the 25-35 question standard; eligible for the count-floor exemption."
+        },
+        "ownerConfirmed": {
+          "type": "boolean",
+          "description": "true = the owner has confirmed this legacy interview is genuine and complete."
+        },
+        "confirmedBy": {
+          "type": "string"
+        },
+        "confirmedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "standardVersion": {
+          "type": "string",
+          "description": "The pre-standard the interview was conducted under, for the audit trail (e.g. 'pre-25Q')."
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "preStandard"
       ],
       "additionalProperties": false
     },

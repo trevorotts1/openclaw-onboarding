@@ -15,6 +15,12 @@
 #   T11: No direct api.telegram.org path in nudge files
 #   T12: Single-source-of-truth invariants (schema, jargon list, contract fence)
 #   T13: interviewComplete=true + recorded UUID → shim receives 'cron rm' (self-remove on next fire)
+#   T14: real 20-Q interview + --legacy-interview flag → PASS (count floor exempt)        [v12.4.0]
+#   T15: state.legacyInterview.preStandard=true exempts real 20-Q → PASS                  [v12.4.0]
+#   T16: transcript <!-- LEGACY-INTERVIEW --> marker exempts real 20-Q → PASS             [v12.4.0]
+#   T17: empty interview + legacy flag → HARD FAIL (legacy-flag-without-substance)        [v12.4.0]
+#   T18: 20-Q with NO legacy flag → HARD FAIL (exemption scoped; new interviews keep bar) [v12.4.0]
+#   T19: legacy flag does NOT bypass jargon check (#2 still applies)                      [v12.4.0]
 #
 # EXIT CODES:
 #   0  all tests PASS
@@ -610,6 +616,200 @@ EOF
 
   if [ "$all_ok" = "true" ]; then
     pass "T12: all single-source-of-truth invariants pass (jargon JSON, schema fields, contract fence, behavior keywords, build-workforce.py assertion, detector)"
+  fi
+)
+
+# ── Legacy / pre-standard exemption helpers (v12.4.0) ────────────────────────
+# Make a state file carrying state.legacyInterview.preStandard=true.
+make_legacy_state() {
+  local f="$1"
+  jq -n '{
+    "version": 1,
+    "interviewComplete": false,
+    "ownerChat": 9999999999,
+    "ownerName": "Test Owner",
+    "companyName": "TestCo LLC",
+    "industry": "personal-pro-dev",
+    "agentName": "TestCEO",
+    "brand_evokes": "confident",
+    "customer_feeling": "empowered",
+    "brand_descriptors": "bold, direct, warm",
+    "ideal_customer": "small business owners",
+    "unique_differentiator": "We build what big agencies ignore",
+    "departments": [{"slug": "marketing", "status": "pending"}],
+    "legacyInterview": {
+      "preStandard": true,
+      "ownerConfirmed": true,
+      "confirmedBy": "owner",
+      "confirmedAt": "2026-01-15T00:00:00Z",
+      "standardVersion": "pre-25Q",
+      "reason": "Genuine 20-question owner intake predating the 25-35 standard."
+    },
+    "interviewProgress": {
+      "lastQuestionNumber": 20,
+      "lastQuestionPhase": "phase5",
+      "lastQuestionAt": "2026-01-15T00:00:00Z"
+    }
+  }' > "$f"
+}
+
+# Transcript with N questions, each carrying a real owner-authored answer, and an
+# optional legacy marker line at the top.
+make_legacy_transcript() {
+  local f="$1"
+  local n="$2"
+  local marker="${3:-no}"   # "marker" adds the <!-- LEGACY-INTERVIEW --> line
+  {
+    echo "# Workforce Interview Answers"
+    if [ "$marker" = "marker" ]; then
+      echo "<!-- LEGACY-INTERVIEW: pre-standard owner-authored intake, owner-confirmed -->"
+    fi
+    echo ""
+    for i in $(seq 1 "$n"); do
+      echo "---"
+      echo "**Q** Question number $i: Tell me about your business approach."
+      echo ""
+      echo "My real answer for question $i: we focus on helping clients succeed and grow."
+      echo ""
+    done
+  } > "$f"
+}
+
+run_gate_json() {
+  # $1=transcript $2=state ; remaining args passed through (e.g. --legacy-interview)
+  local transcript="$1"; shift
+  local state="$1"; shift
+  python3 "$QC_GATE" \
+    --transcript "$transcript" \
+    --state "$state" \
+    --jargon-list "$JARGON_LIST" \
+    --branding-questions "$BRANDING_Q" \
+    --repo-root "$REPO_ROOT" \
+    --no-context-map \
+    --format json "$@" 2>/dev/null
+}
+
+# ── T14: --legacy-interview flag exempts a real 20-Q interview → PASS ─────────
+(
+  STATE="$TMPDIR_TEST/t14-state.json"
+  TRANSCRIPT="$TMPDIR_TEST/t14-transcript.md"
+  make_clean_state "$STATE"                 # NOT a legacy-flagged state
+  make_legacy_transcript "$TRANSCRIPT" 20 "no"
+  rc=0
+  out=$(run_gate_json "$TRANSCRIPT" "$STATE" --legacy-interview) || rc=$?
+  verdict=$(echo "$out" | python3 -c "import json,sys; print(json.load(sys.stdin).get('verdict',''))" 2>/dev/null || echo "")
+  granted=$(echo "$out" | python3 -c "import json,sys; print(json.load(sys.stdin).get('legacyExemption',{}).get('granted'))" 2>/dev/null || echo "")
+  if [ "$rc" -eq 0 ] && [ "$verdict" = "PASS" ] && [ "$granted" = "True" ]; then
+    pass "T14: real 20-Q interview + --legacy-interview → PASS (count floor exempt, exemption granted)"
+  else
+    fail "T14: expected exit=0+PASS+granted for legacy 20-Q, got exit=$rc verdict='$verdict' granted='$granted'"
+    info "Output: $(echo "$out" | head -8)"
+  fi
+)
+
+# ── T15: state.legacyInterview.preStandard=true exempts real 20-Q → PASS ─────
+(
+  STATE="$TMPDIR_TEST/t15-state.json"
+  TRANSCRIPT="$TMPDIR_TEST/t15-transcript.md"
+  make_legacy_state "$STATE"
+  make_legacy_transcript "$TRANSCRIPT" 20 "no"
+  rc=0
+  out=$(run_gate_json "$TRANSCRIPT" "$STATE") || rc=$?
+  verdict=$(echo "$out" | python3 -c "import json,sys; print(json.load(sys.stdin).get('verdict',''))" 2>/dev/null || echo "")
+  src=$(echo "$out" | python3 -c "import json,sys; print(','.join(json.load(sys.stdin).get('legacyExemption',{}).get('sources',[])))" 2>/dev/null || echo "")
+  if [ "$rc" -eq 0 ] && [ "$verdict" = "PASS" ] && echo "$src" | grep -q "state:legacyInterview.preStandard"; then
+    pass "T15: state.legacyInterview.preStandard=true exempts real 20-Q → PASS (detected via state)"
+  else
+    fail "T15: expected exit=0+PASS via state flag, got exit=$rc verdict='$verdict' sources='$src'"
+  fi
+)
+
+# ── T16: transcript <!-- LEGACY-INTERVIEW --> marker exempts real 20-Q → PASS ─
+(
+  STATE="$TMPDIR_TEST/t16-state.json"
+  TRANSCRIPT="$TMPDIR_TEST/t16-transcript.md"
+  make_clean_state "$STATE"                 # NOT legacy-flagged in state
+  make_legacy_transcript "$TRANSCRIPT" 20 "marker"
+  rc=0
+  out=$(run_gate_json "$TRANSCRIPT" "$STATE") || rc=$?   # NO --legacy-interview flag
+  verdict=$(echo "$out" | python3 -c "import json,sys; print(json.load(sys.stdin).get('verdict',''))" 2>/dev/null || echo "")
+  src=$(echo "$out" | python3 -c "import json,sys; print(','.join(json.load(sys.stdin).get('legacyExemption',{}).get('sources',[])))" 2>/dev/null || echo "")
+  if [ "$rc" -eq 0 ] && [ "$verdict" = "PASS" ] && echo "$src" | grep -q "transcript:legacy-marker"; then
+    pass "T16: transcript LEGACY-INTERVIEW marker exempts real 20-Q → PASS (detected via marker)"
+  else
+    fail "T16: expected exit=0+PASS via transcript marker, got exit=$rc verdict='$verdict' sources='$src'"
+  fi
+)
+
+# ── T17: ANTI-FABRICATION — empty interview + legacy flag → HARD FAIL ─────────
+# The exemption must NOT launder a faked/empty interview. 3 questions, no real
+# answers, but --legacy-interview set → must still HARD FAIL.
+(
+  STATE="$TMPDIR_TEST/t17-state.json"
+  TRANSCRIPT="$TMPDIR_TEST/t17-transcript.md"
+  make_clean_state "$STATE"
+  # 3 Q-blocks, NO answer lines (questions only, blank answers).
+  {
+    echo "# Workforce Interview Answers"
+    echo "<!-- LEGACY-INTERVIEW: pre-standard -->"
+    echo ""
+    for i in 1 2 3; do
+      echo "---"
+      echo "**Q** Question number $i: Tell me about your business."
+      echo ""
+    done
+  } > "$TRANSCRIPT"
+  rc=0
+  out=$(run_gate_json "$TRANSCRIPT" "$STATE" --legacy-interview) || rc=$?
+  verdict=$(echo "$out" | python3 -c "import json,sys; print(json.load(sys.stdin).get('verdict',''))" 2>/dev/null || echo "")
+  reason=$(echo "$out" | python3 -c "import json,sys; print(' '.join(json.load(sys.stdin).get('hardFailures',[])))" 2>/dev/null || echo "")
+  if [ "$rc" -eq 3 ] && [ "$verdict" = "FAIL" ] && echo "$reason" | grep -qi "legacy-flag-without-substance"; then
+    pass "T17: empty interview + legacy flag → HARD FAIL (legacy-flag-without-substance; flag cannot launder a fake)"
+  else
+    fail "T17: expected exit=3+FAIL+legacy-flag-without-substance for empty+flagged, got exit=$rc verdict='$verdict' reason='$reason'"
+  fi
+)
+
+# ── T18: REGRESSION — 20-Q WITHOUT any legacy flag still HARD FAILs ───────────
+# Confirms the exemption is scoped: NEW interviews keep the 25-35 bar.
+(
+  STATE="$TMPDIR_TEST/t18-state.json"
+  TRANSCRIPT="$TMPDIR_TEST/t18-transcript.md"
+  make_clean_state "$STATE"                 # NOT legacy-flagged
+  make_legacy_transcript "$TRANSCRIPT" 20 "no"   # real answers but NO legacy marker
+  rc=0
+  out=$(run_gate_json "$TRANSCRIPT" "$STATE") || rc=$?   # NO --legacy-interview flag
+  verdict=$(echo "$out" | python3 -c "import json,sys; print(json.load(sys.stdin).get('verdict',''))" 2>/dev/null || echo "")
+  granted=$(echo "$out" | python3 -c "import json,sys; print(json.load(sys.stdin).get('legacyExemption',{}).get('granted'))" 2>/dev/null || echo "")
+  if [ "$rc" -eq 3 ] && [ "$verdict" = "FAIL" ] && [ "$granted" = "False" ]; then
+    pass "T18: 20-Q with NO legacy flag → HARD FAIL (exemption scoped; new interviews keep 25-35 bar)"
+  else
+    fail "T18: expected exit=3+FAIL+granted=False for unflagged 20-Q, got exit=$rc verdict='$verdict' granted='$granted'"
+  fi
+)
+
+# ── T19: legacy flag does NOT bypass jargon check (check #2 still applies) ─────
+(
+  STATE="$TMPDIR_TEST/t19-state.json"
+  TRANSCRIPT="$TMPDIR_TEST/t19-transcript.md"
+  make_clean_state "$STATE"
+  # Real 20-Q legacy interview, but with AI-authored jargon appended.
+  make_legacy_transcript "$TRANSCRIPT" 20 "marker"
+  {
+    echo "---"
+    echo "**Q** Let's set up your sub-agent and define your SOP handoffs."
+    echo ""
+    echo "Client said: ok."
+    echo ""
+  } >> "$TRANSCRIPT"
+  rc=0
+  out=$(run_gate_json "$TRANSCRIPT" "$STATE" --legacy-interview) || rc=$?
+  verdict=$(echo "$out" | python3 -c "import json,sys; print(json.load(sys.stdin).get('verdict',''))" 2>/dev/null || echo "")
+  jargon_count=$(echo "$out" | python3 -c "import json,sys; print(len(json.load(sys.stdin).get('jargonHits',[])))" 2>/dev/null || echo "0")
+  if [ "$rc" -eq 3 ] && [ "$verdict" = "FAIL" ] && [ "$jargon_count" -gt 0 ]; then
+    pass "T19: legacy exemption does NOT bypass jargon check ($jargon_count hit(s) still HARD FAIL)"
+  else
+    fail "T19: expected exit=3+FAIL+jargon>0 even with legacy flag, got exit=$rc verdict='$verdict' hits=$jargon_count"
   fi
 )
 

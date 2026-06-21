@@ -1,3 +1,19 @@
+## v13.2.0 — 2026-06-21 — feat: embedding-prevention bundle + Command-Center duplicate guards + unified short-interview exemption + 12 personal-assistant SOPs
+
+Four independent reliability groups, all generic (no client names). Closes the disk-bloat/embedding-drift class of incidents, hardens Command-Center registration against duplicates, reconciles the interview-completion gate so legitimate short interviews stop false-failing, and expands the personal-assistant SOP coverage.
+
+- **(a) Embedding-prevention bundle (fleet-wide).** Four new health scripts are wired fleet-wide so the memory-DB bloat / re-embedding class of incidents is caught and prevented automatically: `index-model-drift-check` (flags an index built under a different embedding model than the one currently pinned), `orphan-temp-sweep` (reclaims orphaned temp/scratch artifacts left behind by interrupted embed runs), `disk-usage-alert` (thresholded alert before a box fills its disk), and `pre-july14-embedding-migration-check` (proactive guard ahead of the 2026-07-14 hard-shutdown of the legacy embedding model). The default embedding model is now pinned to `gemini-embedding-2` (@3072) so every box converges on one GA model; index scoping is constrained so a shared corpus is no longer re-embedded per department; a provider-self-loop guard prevents the embedding provider from cycling to `none` and corrupting the index; and Time-Machine memory exclusion keeps the memory store out of macOS backups (no backup-driven bloat or lock contention).
+- **(b) Command-Center duplicate-registration guards.** Eliminates duplicate Command-Center registrations from re-runs and mid-run crashes: `create-tunnel.sh` now carries a re-POST guard so re-invocation does not create a second tunnel/registration; `run-full-install.sh` phase 6b is gated so it does not re-register an already-registered box; and the social-media-planner registration is made idempotent with crash-window recovery so a crash between submit and confirm cannot leave a half-registered or doubled entry.
+- **(c) Unified short-interview exemption.** `23-ai-workforce-blueprint/scripts/qc-interview-completion.py` now recognizes a single unified exemption for legitimately-short interviews — both the legacy pre-standard interview shape and the tailored/founder-self-build path — so a genuinely complete short interview no longer false-fails the completion gate, with no weakening of the full-interview requirement. Backed by `build-state-schema.json` (schema for the exemption/build-state fields) and `test-interview-experience.sh` (regression tests covering the exempt and non-exempt paths).
+- **(d) 12 personal-assistant SOPs.** Twelve new SOPs added across the personal-assistant specialists: `task-priority-manager`, `personal-coach`, and `travel-logistics-specialist`, expanding their DMAIC SOP coverage. Additive to Skill 23 (does not modify it).
+
+## v13.1.4 — 2026-06-21 — fix(zhc): py3.9-compat build-state refresh + verify-wiring arg-shift (#293)
+
+Fixes two defects surfaced finishing a real client closeout (build-state schema drift). All generic; no client names.
+
+- **py3.9 compatibility:** `refresh-build-state-from-index.py` used Python 3.10+ `Path | None` union annotations, which raise `TypeError` on the py3.9 interpreters several client boxes resolve to — so the canonical build-state `.id` repair couldn't run (closeout's `verify-wiring` then rc=9 FATAL on legacy slug-keyed dept records). Replaced with `typing.Optional[Path]`.
+- **verify-wiring infinite loop:** `verify-wiring.sh` `--allow-missing-config` arg case never shifted, causing an infinite loop when that flag was passed; added the missing `shift`.
+
 ## v13.1.3 — 2026-06-20 — fix(fleet-roll): three v13.1.1-roll defects (2026.6.8 schema reject, hardcoded-main gate, stale-checkout updater)
 
 Fixes three defects exposed by the v13.1.1 roll across 27 boxes. All generic; no client names.
@@ -8,6 +24,36 @@ Fixes three defects exposed by the v13.1.1 roll across 27 boxes. All generic; no
 - **DEFECT 2: CEO tool-gate (Goal 5) was hardcoded to the `main` agent.** Some boxes' default agent is `dept-executive-office` (`default:true`), which was left ungated. `scripts/apply-routing-fix.sh` (Layer 2 skills:[] + Layer 5 tool-gate), `scripts/verify-routing.sh` (G7), and the `apply-fleet-standards.sh` CEO re-assert now target the box's ACTUAL default agent (`default:true`, else `main`) — `default:true` wins even when a `main` agent is also present. Also fixes a latent `printf '---\n\n'` (`printf: --: invalid option`) abort in apply-routing-fix.sh Layer 1 that aborted the run on stale boxes before the gate applied.
 - **DEFECT 3: `update-skills.sh` had no self-sync, wired from a stale checkout, and crashed with `PLATFORM: unbound variable`.** A new `self_sync_guard` runs before any wiring: curl|bash skips (fresh by definition); a clean+current local git checkout proceeds; a dirty/behind checkout **fails loud with exact remediation** (default, non-destructive) or, with `OPENCLAW_UPDATE_AUTO_SYNC=1`, hard-syncs to `origin/main` and re-execs the intended version. A `PLATFORM` guard (`PLATFORM="${PLATFORM:-$OPENCLAW_PLATFORM}"`) is initialized before any use so a bare `$PLATFORM` reference can never abort under `set -u`.
 - **Tests:** `scripts/test-ceo-tool-gate.sh` extended with G1/G2 (Defect 1 — 2026.6.8 strip + G7b functional-ungate pass) and H1/H2 (Defect 2 — gate + verify target `dept-executive-office` over a present `main`). All 18 checks pass. `bash -n` clean on all four touched scripts.
+
+## v13.1.2 — 2026-06-20 — fix(zhc): closeout gate regressions — named-set sops/ + old library markers (#291)
+
+Two 2026-06-20 skill-refresh regressions blocked ZHC closeout for clients whose role/SOP content is fully present (prove-floor passes). All generic; no client names.
+
+- **named-set sops/ walked as a role:** `verify-wiring.sh` + `create_role_workspaces.py` walked a dept's named-set `sops/` SOP-library folder as a role, writing a PENDING stub how-to.md and failing rc=2. Both walkers now skip a `sops/` dir holding real SOP docs; genuinely-empty roles still fail.
+- **old library-marker regex:** `qc-completeness.sh` LIBRARY_MARKER only matched the new markers, so ~33 real role files carrying the older "Instantiated from role-library vX" / `workforce-provenance source=role-library` markers counted as lib%=0. Broadened the marker regex; the AND-3KB substance floor is unchanged.
+
+## v13.1.1 — 2026-06-20 — feat(skill-23): Department Class-Kit enforcement gate + CI self-test (#290)
+
+Add `qc-class-kit-gate.sh` enforcing Gates A–D (kit completeness; deck ≥20 slides; Notion embedding when a page id is given; structure/auto-fail checks that REJECT text-only pages and placeholder/deferral language), ship `DEPT-KIT-TEMPLATE.md` as the canonical version-controlled standard, and add `.github/workflows/class-kit-gate.yml` self-testing the gate against baked-in GOOD/BAD fixtures. Generic department docs only; no client names.
+
+## v13.1.0 — 2026-06-20 — feat: presentation engines + Ship-Every-Time + fleet ungate + CEO router tool-gate + closeout robustness (#289)
+
+- **Goal 3 (Make the Promise True):** PIPELINE-MANIFEST v14, ordered pitch loop, un-inverted branded-methodology, cost-of-inaction/guarantee/scarcity auto-fails, intelligence + pitch + story engines.
+- **Goal 4 (Ship Every Time):** asset-intake + scratch-parser, pitchless-first-class, deterministic `run_signature_deck.py` (owner-auth skip + Kie preflight), overlay path eliminated, no-refusal baseline.
+- **Goal 5 (CEO Must Delegate):** CEO tool-gate on real tool names + `route_task` + block-redirect hook + QC provenance gate + owner-consent profile-swap + verify-routing G7–G11.
+- **Closeout robustness:** ghost-false-done guard + pending-slots + qc-rate-artifacts (8.5-release). Gate hardening: qc-completeness GATE-SCOPE + verify-library trio scoping.
+
+## v13.0.3 — 2026-06-20 — fix(zhc): closeout robustness
+
+Closeout-pipeline robustness hardening (ghost-false-done guard, pending-slots, QC rate-artifacts) on the path to the v13.1.0 release train.
+
+## v13.0.2 — 2026-06-20 — fix(cron): --json presence check for trigger registration
+
+Cron trigger registration uses a `--json` presence check so an existing trigger is detected reliably (idempotent registration), preventing duplicate or skipped pipeline-trigger crons.
+
+## v13.0.1 — 2026-06-20 — fix(fleet): cron registration fix
+
+Fleet cron-registration fix so pipeline trigger crons register correctly across boxes.
 
 ## v13.0.0 — 2026-06-20 — Zero-Human-Experience closeout reliability + presentation gate-measurement fixes
 

@@ -277,7 +277,18 @@ fi
 # ----------------------------------------------------------------------
 log "INFO" "phase=6b tunnel: starting"
 existing_url=$(state_get '.commandCenterUrl')
-if [[ -n "$existing_url" && "$existing_url" != "null" && "$existing_url" != "http://127.0.0.1:4000/" ]]; then
+phase6b_status=$(state_get '.commandCenterPhase6bStatus')
+# Re-POST guard: once we have registered (success OR a webhook failure that may
+# have already created a tunnel/notified Trevor), NEVER POST to the n8n
+# registration webhook again on resume. The webhook is the duplicate-CC source;
+# a failed POST can still have fired the Telegram/sheet side effects, so any
+# terminal phase-6b status blocks re-POST. Operators clear
+# .commandCenterPhase6bStatus to force a fresh registration.
+if [[ "$phase6b_status" == "failed-webhook" || "$phase6b_status" == "done" \
+   || "$phase6b_status" == "done-no-subdomain-recorded" \
+   || "$phase6b_status" == "skipped-script-missing" ]]; then
+  log "INFO" "phase=6b tunnel: prior registration attempt recorded (status=$phase6b_status) — NOT re-POSTing webhook (duplicate-CC guard)"
+elif [[ -n "$existing_url" && "$existing_url" != "null" && "$existing_url" != "http://127.0.0.1:4000/" ]]; then
   log "INFO" "phase=6b tunnel: commandCenterUrl already set ($existing_url) — skipping"
 else
   TUNNEL_SCRIPT="$SKILL_DIR/scripts/create-tunnel.sh"

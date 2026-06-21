@@ -283,17 +283,26 @@ Read brand info from core files, then ask only what's missing:
 
    **4a. Check MEMORY.md** for an existing `content_sheet_id` or `content_sheet_url`. If found, use it — never create a duplicate. Skip to step 4d.
 
+   **4a-bis. Crash-window recovery — check for a `content_sheet_pending` marker.** If MEMORY.md (or `~/.openclaw/data/skill35/.sheet-create.pending`) contains a `content_sheet_pending` entry, a previous run had already requested a sheet but crashed before recording the id. Do NOT blindly create a new sheet. Instead RECONCILE: re-POST the SAME idempotency key (step 4c) — the webhook returns the already-created sheet for that key instead of making a second one — then go to 4d. This closes the create-then-crash-then-rerun duplicate window.
+
    **4b. Check if an existing sheet ID was provided during onboarding** (the client may have shared one during their interview). If yes, adopt it — skip to 4d.
 
-   **4c. If no existing sheet:** create via n8n webhook (no client credentials required — the webhook uses the BlackCEO Automations service account):
+   **4c. If no existing sheet:** create via n8n webhook (no client credentials required — the webhook uses the BlackCEO Automations service account). **Write the pending marker BEFORE the POST so a crash mid-create is recoverable, and pass a stable `idempotencyKey` so the webhook never makes a second sheet for the same client:**
    ```bash
+   # Stable per-client key: same client slug => same key => at most one sheet, ever.
+   IDEMPOTENCY_KEY="skill35-sheet-${COMPANY_SLUG}"
+   # 1) Record intent FIRST (atomic write), so a crash before 4d is detectable in 4a-bis.
+   mkdir -p ~/.openclaw/data/skill35
+   printf 'content_sheet_pending: %s\n' "$IDEMPOTENCY_KEY" > ~/.openclaw/data/skill35/.sheet-create.pending.tmp
+   mv ~/.openclaw/data/skill35/.sheet-create.pending.tmp ~/.openclaw/data/skill35/.sheet-create.pending
+   # 2) Create (idempotent on the server by idempotencyKey).
    RESPONSE=$(curl -s -X POST "https://main.blackceoautomations.com/webhook/social-planner-sheet-create" \
      -H "Content-Type: application/json" \
-     -d "{\"brandName\":\"$BRAND_NAME\",\"clientEmail\":\"$CLIENT_EMAIL\"}")
+     -d "{\"brandName\":\"$BRAND_NAME\",\"clientEmail\":\"$CLIENT_EMAIL\",\"idempotencyKey\":\"$IDEMPOTENCY_KEY\"}")
    SHEET_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['sheetId'])")
    SHEET_URL=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['sheetUrl'])")
    ```
-   If the webhook fails after 3 retries: use the fleet template sheet ID `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c` as a fallback reference — tell the client to go to `https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c/edit`, click File → Make a Copy, rename it, share the link back.
+   If the webhook fails after 3 retries: use the fleet template sheet ID `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c` as a fallback reference — tell the client to go to `https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c/edit`, click File → Make a Copy, rename it, share the link back. (Leave the `content_sheet_pending` marker in place so the next run reconciles via the idempotency key rather than creating another sheet.)
 
    **4d. Record `content_sheet_id` and `content_sheet_url` in MEMORY.md and skill config:**
    ```bash
@@ -304,6 +313,10 @@ Read brand info from core files, then ask only what's missing:
    # Wire into openclaw config so the agent can read it at runtime
    openclaw config set env.vars.SKILL35_CONTENT_SHEET_ID "$SHEET_ID"
    openclaw config set env.vars.SKILL35_CONTENT_SHEET_URL "$SHEET_URL"
+
+   # Commit point: the id is now persisted — clear the pending marker LAST so the
+   # crash-window check in 4a-bis only fires when the id genuinely was not saved.
+   rm -f ~/.openclaw/data/skill35/.sheet-create.pending
    ```
 
    **4e. Verify the agent knows the link:**

@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v13.1.4"
+ONBOARDING_VERSION="v13.2.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -2615,6 +2615,18 @@ for SCRIPT in gemini-indexer.py gemini-search.py; do
     fi
 done
 
+# EMBEDDING-PREVENTION BUNDLE (items 4-7): persist the memory-health cron scripts
+# to ~/.openclaw/scripts (or /data/.openclaw/scripts) so ensure-pipeline-crons.sh
+# can resolve them on EVERY box, and so the registered crons survive a temp-clone
+# cleanup. ensure-pipeline-crons.sh wires them into cron fleet-wide (end of run).
+for SCRIPT in index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh ensure-pipeline-crons.sh; do
+    if [ -f "$ONBOARDING_DIR/scripts/$SCRIPT" ]; then
+        cp -f "$ONBOARDING_DIR/scripts/$SCRIPT" "$SCRIPTS_DIR/"
+        chmod +x "$SCRIPTS_DIR/$SCRIPT"
+        success "Installed memory-health cron script: $SCRIPT"
+    fi
+done
+
 # Install google-genai if needed
 if ! python3 -c "import google.genai" 2>/dev/null; then
     note "Installing google-genai package..."
@@ -3148,12 +3160,26 @@ try:
     # Determine primary vs fallback provider from discovered keys.
     # Gemini takes primary when present (fleet-confirmed fastest embedding).
     if gemini_key:
-        ms.setdefault('provider', "gemini")
-        # v10.13.12: Pin the embedding model. gemini-embedding-001 is the
-        # fleet-confirmed standard (verified across multiple Mac and VPS clients).
-        ms.setdefault('model', "gemini-embedding-001")
+        ms['provider'] = "gemini"
+        # EMBEDDING-PREVENTION BUNDLE (item 1+7): Pin the GA embedding model so
+        # every new/updated box is BORN correct and cannot drift. We FORCE-SET
+        # (not setdefault) the canonical model and migrate the two dying/legacy
+        # values so a box re-running install can never be stranded:
+        #   - gemini-embedding-001 HARD-SHUTS-DOWN 2026-07-14 (item 7 migration).
+        #   - text-embedding-3-small left over from an OpenAI-first install.
+        # Canonical: gemini-embedding-2 @ 3072 dimensions (GA, fleet standard).
+        CANON_EMBED_MODEL = "gemini-embedding-2"
+        CANON_EMBED_DIM   = 3072
+        DYING_OR_LEGACY   = {"gemini-embedding-001", "text-embedding-3-small", "gemini-embedding-exp-03-07"}
+        cur = ms.get('model')
+        if cur in DYING_OR_LEGACY or not cur:
+            ms['model'] = CANON_EMBED_MODEL
+            if cur and cur != CANON_EMBED_MODEL:
+                print(f"  ✓ memorySearch.model migrated {cur!r} → {CANON_EMBED_MODEL!r} (pre-2026-07-14 shutdown guard)")
+        # Pin dimensions to the GA spec so a rebuilt index matches the config.
+        ms['dimensions'] = CANON_EMBED_DIM
     elif openai_key:
-        ms.setdefault('provider', "openai")
+        ms['provider'] = "openai"
         ms.setdefault('model', "text-embedding-3-small")
 
     # ── PRD 2.6 / KNOWN-ISSUES #1: embeddings-stall mitigation ─────────────
@@ -3196,6 +3222,42 @@ try:
     else:
         # Only Gemini or no key yet — legacy string fallback kept for compat.
         ms.setdefault('fallback', "openai")
+
+    # ── EMBEDDING-PREVENTION BUNDLE item 2: DEFAULT INDEX SCOPING ────────────
+    # The OpenClaw runtime UNIONS each agent's memorySearch.extraPaths onto
+    # agents.defaults.memorySearch.extraPaths. A giant master-files corpus placed
+    # in defaults gets re-embedded into EVERY department's DB (multi-GB bloat per
+    # box). Keep the DEFAULT lean: declare an EMPTY extraPaths so new/updated boxes
+    # inherit a lean index. The shared corpus is attached ONCE to the main agent
+    # only (Skill 31 activate-memory-stack.sh). Defensive: if a legacy install
+    # planted ANY path into defaults.extraPaths, strip it back to empty here.
+    if not isinstance(ms.get('extraPaths'), list):
+        ms['extraPaths'] = []
+    elif ms['extraPaths']:
+        print(f"  ✓ memorySearch.extraPaths reset to [] in defaults (index-scoping; was {len(ms['extraPaths'])} path(s) — bloat source)")
+        ms['extraPaths'] = []
+
+    # ── EMBEDDING-PREVENTION BUNDLE item 3: PROVIDER-SELF-LOOP GUARDRAIL ──────
+    # A cycled-then-cleared embedding provider can land memorySearch.provider /
+    # .model / .fallback on the literal string "none", which breaks the embed
+    # index (multimodal-memory killer). No embedding/model field may be 'none'.
+    # If we find 'none', repair it to the canonical provider/model we just pinned.
+    _GUARD_PROVIDER = ms.get('provider') if ms.get('provider') not in (None, "", "none") else ("gemini" if gemini_key else ("openai" if openai_key else None))
+    _GUARD_MODEL    = "gemini-embedding-2" if (_GUARD_PROVIDER == "gemini") else ("text-embedding-3-small" if _GUARD_PROVIDER == "openai" else None)
+    if str(ms.get('provider')).lower() == "none" and _GUARD_PROVIDER:
+        ms['provider'] = _GUARD_PROVIDER
+        print(f"  ✓ memorySearch.provider was 'none' → repaired to {_GUARD_PROVIDER!r} (provider-self-loop guard)")
+    if str(ms.get('model')).lower() == "none" and _GUARD_MODEL:
+        ms['model'] = _GUARD_MODEL
+        print(f"  ✓ memorySearch.model was 'none' → repaired to {_GUARD_MODEL!r} (provider-self-loop guard)")
+    # fallback may legitimately be a provider-name string OR an object; only the
+    # literal 'none' is illegal (it disables fallback while looking configured).
+    if isinstance(ms.get('fallback'), str) and ms['fallback'].lower() == "none":
+        ms.pop('fallback', None)
+        print("  ✓ memorySearch.fallback was 'none' → removed (provider-self-loop guard)")
+    if isinstance(ms.get('fallback'), dict) and str(ms['fallback'].get('provider')).lower() == "none":
+        ms.pop('fallback', None)
+        print("  ✓ memorySearch.fallback.provider was 'none' → fallback removed (provider-self-loop guard)")
 
     # v10.x.6 recovery knob: hard agent-turn timeout in SECONDS.
     # Schema-confirmed (agents.defaults.timeoutSeconds, positive int, dist 2026.5.20).
@@ -3646,6 +3708,39 @@ fi
 unset _DNDM
 
 success "Backup folders created at $OC_BACKUPS, master files at $OC_DOWNLOADS/openclaw-master-files"
+
+# ----------------------------------------------------------
+# Step 9a: EMBEDDING-PREVENTION BUNDLE item 8 — exclude the memory index cache
+# from Time Machine (Mac only).
+# ----------------------------------------------------------
+# The OpenClaw memory index (~/.openclaw/memory) is a derived vector-DB cache:
+# large, churns constantly (every reindex/embed rewrites it), and is fully
+# rebuildable from MEMORY.md + the corpus. Letting Time Machine back it up wastes
+# backup space and slows snapshots — and a restored stale index is exactly the
+# kind of model-mismatched index this bundle exists to prevent. So we mark it as
+# a Time Machine exclusion. Idempotent (tmutil addexclusion is a no-op if already
+# excluded). Mac-only; best-effort (never fails the install).
+if [ "$OC_PLATFORM" = "mac" ]; then
+    step "Step 9a: Excluding memory index cache from Time Machine (~/.openclaw/memory)"
+    _MEM_DIR="$HOME/.openclaw/memory"
+    mkdir -p "$_MEM_DIR" 2>/dev/null || true
+    if command -v tmutil >/dev/null 2>&1; then
+        if tmutil addexclusion "$_MEM_DIR" >/dev/null 2>&1; then
+            success "Time Machine exclusion set: $_MEM_DIR (derived index cache — rebuildable, not backed up)"
+        else
+            # Sticky (path-based) fallback when the volume-scoped form is unavailable.
+            if tmutil addexclusion -p "$_MEM_DIR" >/dev/null 2>&1; then
+                success "Time Machine sticky exclusion set: $_MEM_DIR"
+            else
+                note "tmutil addexclusion returned non-zero for $_MEM_DIR (Full Disk Access may be required) — harmless; index cache is rebuildable either way"
+            fi
+        fi
+    else
+        note "tmutil not available — skipping Time Machine exclusion (non-Mac or stripped environment)"
+    fi
+    unset _MEM_DIR
+fi
+
 send_telegram_progress "✓ Security + backups configured. Almost done — finalizing your agent's playbook now…"
 
 # ----------------------------------------------------------

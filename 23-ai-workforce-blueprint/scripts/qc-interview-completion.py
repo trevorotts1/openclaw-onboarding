@@ -6,6 +6,14 @@ Checks that a completed interview transcript meets quality standards before
 the build pipeline is allowed to proceed. Five checks:
 
   1. Question count: 25-35 answered questions in the transcript.
+     LEGACY/PRE-STANDARD EXEMPTION (v12.4.0): a genuine, owner-authored interview
+     that PREDATES the 25-35 question standard is accepted as complete WITHOUT
+     meeting the count floor — but ONLY when (a) it is explicitly flagged as a
+     verified pre-standard/legacy interview AND (b) it passes an anti-fabrication
+     substance floor (real questions + real owner-authored answers). NEW interviews
+     (no legacy flag) still MUST meet 25-35. See is_legacy_interview() and
+     legacy_substance_ok() below. The exemption lifts ONLY the count floor; jargon,
+     mandatory fields, and no-fabrication (checks 2/3/5) still apply in full.
   2. Zero forbidden-jargon hits in AI-authored text (loads from forbidden-jargon.json).
   3. Every mandatory data field populated (branding required:true + structural fields).
   4. Nudge cadence wired: interview-nudge-cron.sh exists + install.sh registers it.
@@ -20,6 +28,31 @@ EXIT CODES (mirror qc-completeness.sh):
   2 — SOFT FAIL / needs human review (borderline count: 24 or 36)
   3 — HARD FAIL (jargon hit, missing mandatory field, count way off, nudges not wired,
                  or unconfirmed-context-as-answer)
+
+LEGACY/PRE-STANDARD INTERVIEW EXEMPTION (v12.4.0)
+  Why: real, owner-authored interviews that were conducted BEFORE the 25-35 question
+  standard existed (e.g. a genuine 20-question owner intake) are valid and must NOT be
+  blocked from closeout — "don't re-interview real clients". This exemption lets a
+  VERIFIED pre-standard interview pass check #1 without re-interviewing, while keeping
+  the full count bar for NEW interviews.
+
+  How an interview is detected as legacy/pre-standard (any ONE is sufficient):
+    (a) Operator flag:  --legacy-interview on the command line.
+    (b) State flag:     state.legacyInterview.preStandard == true
+                        (with optional ownerConfirmed / confirmedBy / confirmedAt /
+                        standardVersion / reason for the audit trail).
+    (c) Transcript marker: a fenced marker line in the transcript, case-insensitive:
+                        <!-- LEGACY-INTERVIEW: pre-standard ... -->
+                        or a line containing  "legacy-interview: pre-standard".
+
+  Anti-fabrication guard (NO exemption for empty/faked interviews):
+    Even when flagged, the exemption ONLY applies if the interview shows real substance:
+      - at least LEGACY_MIN_QUESTIONS real questions, AND
+      - at least LEGACY_MIN_ANSWERED_QUESTIONS questions that carry a non-trivial,
+        owner-authored answer (a real answer line, not just the Q-line).
+    An empty or near-empty transcript that merely carries the legacy flag is treated
+    as a HARD FAIL (reason 'legacy-flag-without-substance') — the flag cannot launder
+    a fabricated/empty interview past the gate.
 
 TRANSCRIPT FORMAT ASSUMPTIONS:
   The transcript (workforce-interview-answers.md) is written per SKILL.md protocol
@@ -36,7 +69,8 @@ TRANSCRIPT FORMAT ASSUMPTIONS:
 
 NO-FABRICATION: this script reads and reports; it never writes answers.
 
-PRD-2.15 + PRD-2.16 / v12.3.4
+PRD-2.15 + PRD-2.16 / v13.2.0 (unified short-interview exemption:
+legacy/pre-standard + tailored/founder-self-build)
 """
 
 from __future__ import annotations
@@ -151,6 +185,143 @@ def count_questions(transcript: str, state: dict) -> dict:
         "stateCount": state_qnum,
         "disagreeWarning": disagree_warning,
     }
+
+
+# ── Legacy / pre-standard exemption (v12.4.0) ─────────────────────────────────
+
+# Anti-fabrication substance floor for legacy interviews. The legacy flag lifts the
+# 25-35 count floor ONLY; it never lifts the requirement that the interview be REAL.
+# These floors are deliberately modest so a genuine pre-standard intake (e.g. a real
+# 20-question owner interview) passes, while an empty/near-empty transcript that merely
+# carries the flag does NOT.
+LEGACY_MIN_QUESTIONS = 8           # at least this many Q-blocks must be present
+LEGACY_MIN_ANSWERED_QUESTIONS = 8  # at least this many must carry a real owner answer
+LEGACY_MIN_ANSWER_CHARS = 12       # an "answer" must be at least this many chars to count
+
+
+# Transcript marker forms that mark a verified pre-standard interview.
+_LEGACY_MARKER_PATTERNS = [
+    r"<!--\s*legacy-interview\s*:\s*pre-standard",  # <!-- LEGACY-INTERVIEW: pre-standard ... -->
+    r"\blegacy-interview\s*:\s*pre-standard\b",      # legacy-interview: pre-standard
+]
+
+
+def is_legacy_interview(transcript: str, state: dict, cli_flag: bool) -> dict:
+    """
+    Determine whether this interview is a VERIFIED pre-standard / legacy interview
+    that is exempt from the 25-35 count floor.
+
+    Detected via ANY of (in precedence order, all equally sufficient):
+      (a) cli_flag (--legacy-interview) — operator asserts it for a verified real interview.
+      (b) state.legacyInterview.preStandard == true.
+      (c) a transcript marker line ('<!-- LEGACY-INTERVIEW: pre-standard -->' or
+          'legacy-interview: pre-standard').
+
+    Returns {"legacy": bool, "sources": [...], "meta": {...}}.
+    Reads only. Does NOT decide whether the exemption is GRANTED — that requires the
+    anti-fabrication substance check (legacy_substance_ok) to also pass. This function
+    only answers "was it CLAIMED to be legacy, and by what evidence".
+    """
+    sources = []
+    meta = {}
+
+    if cli_flag:
+        sources.append("cli:--legacy-interview")
+
+    legacy_obj = state.get("legacyInterview")
+    if isinstance(legacy_obj, dict) and legacy_obj.get("preStandard") is True:
+        sources.append("state:legacyInterview.preStandard")
+        # Capture audit-trail fields if present (none are required).
+        for k in ("ownerConfirmed", "confirmedBy", "confirmedAt", "standardVersion", "reason"):
+            if k in legacy_obj:
+                meta[k] = legacy_obj[k]
+
+    lowered = transcript.lower()
+    for pat in _LEGACY_MARKER_PATTERNS:
+        if re.search(pat, lowered):
+            sources.append("transcript:legacy-marker")
+            break
+
+    return {"legacy": len(sources) > 0, "sources": sources, "meta": meta}
+
+
+def legacy_substance_ok(transcript: str, count_result: dict) -> dict:
+    """
+    Anti-fabrication substance floor for the legacy exemption.
+
+    A legacy/pre-standard interview is only EXEMPT from the count floor if it is a
+    REAL, owner-authored interview — never an empty or faked one. We require:
+      - at least LEGACY_MIN_QUESTIONS real questions (Q-blocks), AND
+      - at least LEGACY_MIN_ANSWERED_QUESTIONS questions that carry a non-trivial
+        owner-authored answer line (>= LEGACY_MIN_ANSWER_CHARS of real text after the
+        Q-line, not itself a Q-line / heading / separator).
+
+    Returns {"ok": bool, "questions": int, "answered": int, "reason": str|None}.
+    Reads only.
+    """
+    questions = count_result.get("transcriptCount", 0)
+
+    # Count "answered" questions: a Q-block line followed (before the next Q-block /
+    # separator) by at least one substantive client/answer line.
+    lines = transcript.splitlines()
+    answered = 0
+    in_block = False
+    block_has_answer = False
+
+    def _is_q_line(s: str) -> bool:
+        s = s.strip()
+        return bool(
+            re.match(r"^\*\*Q", s, re.IGNORECASE)
+            or re.match(r"^Q-\w+", s)
+            or re.match(r"^#+\s*Question\s+\d+", s, re.IGNORECASE)
+            or re.match(r"^\d+\.\s+\*\*Q", s, re.IGNORECASE)
+        )
+
+    def _is_structural(s: str) -> bool:
+        s = s.strip()
+        return (not s) or bool(re.match(r"^---+$", s)) or bool(re.match(r"^#+\s", s))
+
+    def _close_block():
+        nonlocal answered, block_has_answer
+        if in_block and block_has_answer:
+            answered += 1
+
+    for raw in lines:
+        if _is_q_line(raw):
+            _close_block()
+            in_block = True
+            block_has_answer = False
+            continue
+        if not in_block:
+            continue
+        if _is_structural(raw):
+            continue
+        # A candidate answer line. Strip common answer markers for the length test.
+        text = raw.strip()
+        text = re.sub(r"^>+\s*", "", text)
+        text = re.sub(r"^\*\*A[:\*]\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"^A:\s*", "", text, flags=re.IGNORECASE)
+        if len(text.strip()) >= LEGACY_MIN_ANSWER_CHARS:
+            block_has_answer = True
+    _close_block()
+
+    ok = (questions >= LEGACY_MIN_QUESTIONS) and (answered >= LEGACY_MIN_ANSWERED_QUESTIONS)
+    reason = None
+    if not ok:
+        if questions < LEGACY_MIN_QUESTIONS:
+            reason = (
+                f"legacy-flag-without-substance: only {questions} question(s) "
+                f"(need >= {LEGACY_MIN_QUESTIONS}). A legacy flag cannot exempt an "
+                f"empty/near-empty interview from the count floor."
+            )
+        else:
+            reason = (
+                f"legacy-flag-without-substance: only {answered} answered question(s) "
+                f"with real owner text (need >= {LEGACY_MIN_ANSWERED_QUESTIONS}). "
+                f"A legacy flag cannot exempt a transcript with no real answers."
+            )
+
+    return {"ok": ok, "questions": questions, "answered": answered, "reason": reason}
 
 
 # ── Check 2: Forbidden jargon ─────────────────────────────────────────────────
@@ -430,17 +601,78 @@ def check_no_fabrication(transcript: str, context_map_path: Path | None) -> dict
 
 # ── Verdict assembly ──────────────────────────────────────────────────────────
 
+def is_tailored_short_interview(state: dict | None) -> tuple:
+    """
+    A LEGITIMATELY-SHORT, fully-grounded interview is NOT a shallow/generic one.
+
+    Some owners (notably a founder running their OWN self-build) already have most
+    discovery blocks grounded from a prior corpus, so a real, complete interview can
+    be a deliberately short "gap-only" pass (e.g. 9 questions) instead of 25-35.
+    Hard-failing those on the raw count is a FALSE NEGATIVE: it reads a genuinely
+    complete interview as "not done" and can trigger an erroneous re-interview.
+
+    This returns (is_tailored, basis_str) when the build-state EXPLICITLY records
+    such a tailored interview. It NEVER fabricates: it only trusts a signal the
+    interview engine itself wrote. Recognized signals (any one):
+      - interviewQc.overrideReason contains "tailored" or "founder" or "self-build"
+      - scope / interviewProgress.scope mentions founder self-build / gap-only
+      - interviewProgress.questionCountPlanned is a small positive int (< 24) AND
+        interviewComplete is true (a planned-short interview that genuinely finished)
+    """
+    if not state:
+        return (False, "")
+    prog = state.get("interviewProgress") or {}
+    qc = state.get("interviewQc") or {}
+    override = str(qc.get("overrideReason") or "").lower()
+    scope = (str(state.get("scope") or "") + " " + str(prog.get("scope") or "")).lower()
+    planned = prog.get("questionCountPlanned") or state.get("questionCountPlanned")
+    complete = bool(state.get("interviewComplete"))
+
+    for token in ("tailored", "founder", "self-build", "gap-only", "gap only"):
+        if token in override:
+            return (True, f"interviewQc.overrideReason={qc.get('overrideReason')!r}")
+        if token in scope:
+            return (True, f"scope={scope.strip()!r}")
+    if isinstance(planned, int) and 0 < planned < 24 and complete:
+        return (True, f"questionCountPlanned={planned} with interviewComplete=true")
+    return (False, "")
+
+
 def build_verdict(
     count_result: dict,
     jargon_hits: list,
     field_result: dict,
     nudge_result: dict,
     fabrication_result: dict | None = None,
+    legacy_result: dict | None = None,
+    legacy_substance: dict | None = None,
+    state: dict | None = None,
 ) -> tuple:
     """
     Returns (verdict_str, exit_code, details_dict).
     PASS=0, SOFT FAIL=2, HARD FAIL=3.
     Checks: 1=count, 2=jargon, 3=fields, 4=nudges, 5=no-fabrication (v12.3.4).
+
+    The 25-35 count floor (PRD-2.15) is lifted ONLY through the unified short-interview
+    exemption path, which covers TWO genuine cohorts (v13.2.0):
+
+      (A) LEGACY / pre-standard (v12.4.0): a VERIFIED owner-authored interview that
+          predates the 25-35 standard. Detected by is_legacy_interview() and gated by
+          the anti-fabrication substance floor (legacy_substance_ok). When the flag is
+          claimed but substance fails, it HARD-FAILS (a flag cannot launder a faked
+          interview). A granted legacy interview is treated as a PASS on the count
+          dimension (warning only).
+
+      (B) TAILORED / founder-self-build / gap-only (v13.2.0): a build-state that
+          EXPLICITLY records a tailored interview (see is_tailored_short_interview),
+          e.g. a founder running their own self-build with most blocks pre-grounded.
+          A low count here is DOWNGRADED to NEEDS-REVIEW (soft fail / exit 2), not a
+          hard fail, so a genuinely-complete short interview is never misread as
+          "not done".
+
+    Strictness is preserved for everyone else: an ORDINARY client with a short
+    interview and NO recorded legacy/tailored signal STILL hard-fails (exit 3), and an
+    over-long interview (count > 36) STILL hard-fails regardless of any exemption.
     """
     hard_failures = []
     soft_failures = []
@@ -448,11 +680,72 @@ def build_verdict(
 
     # Count check
     count = count_result["transcriptCount"]
-    if count < 24 or count > 36:
+
+    # ── Unified short-interview exemption (v13.2.0) ───────────────────────────
+    # The count floor is lifted for a low count ONLY when one of two genuine signals
+    # is present: a verified LEGACY/pre-standard interview (Edit A, v12.4.0) OR a
+    # build-state-recorded TAILORED/founder-self-build/gap-only interview (Edit B).
+
+    # (A) Legacy / pre-standard exemption (v12.4.0): a VERIFIED pre-standard interview
+    # is exempt from the 25-35 count floor, but ONLY if it passes the anti-fabrication
+    # substance floor. The flag NEVER launders an empty/faked interview.
+    legacy_claimed = bool(legacy_result and legacy_result.get("legacy"))
+    legacy_granted = False
+    if legacy_claimed:
+        if legacy_substance and legacy_substance.get("ok"):
+            legacy_granted = True
+            warnings.append(
+                f"[legacy-exemption GRANTED] Pre-standard owner-authored interview "
+                f"({count} questions, {legacy_substance.get('answered')} answered) is "
+                f"EXEMPT from the 25-35 count floor. "
+                f"Evidence: {', '.join(legacy_result.get('sources', []))}. "
+                f"Jargon, mandatory-field, and no-fabrication checks STILL applied."
+            )
+        else:
+            # Flag present but no real substance → HARD FAIL. The flag cannot launder
+            # an empty/fabricated interview past the gate.
+            sub_reason = (legacy_substance or {}).get(
+                "reason", "legacy-flag-without-substance: insufficient real content."
+            )
+            hard_failures.append(
+                f"[legacy-flag-without-substance] Legacy/pre-standard exemption CLAIMED "
+                f"(evidence: {', '.join(legacy_result.get('sources', []))}) but the "
+                f"interview does not show real owner-authored substance. {sub_reason}"
+            )
+
+    # (B) Tailored / founder-self-build / gap-only (v13.2.0): a build-state that
+    # explicitly records a tailored interview downgrades a LOW count to NEEDS-REVIEW.
+    tailored, tailored_basis = is_tailored_short_interview(state)
+
+    # The over-long ceiling is ABSOLUTE — no exemption lifts it.
+    if count > 36:
         hard_failures.append(
             f"Question count {count} is outside the acceptable range (25-35). "
-            f"{'Too few — interview may be too shallow / generic.' if count < 24 else 'Too many — interview may have drifted long.'}"
+            f"Too many — interview may have drifted long."
         )
+    elif legacy_granted:
+        # Count floor lifted for this verified pre-standard interview. We still record
+        # the count, and we still surface an unusually tiny interview as a soft note.
+        if count < LEGACY_MIN_QUESTIONS:
+            # Should be unreachable (substance floor would have failed) — defensive.
+            soft_failures.append(
+                f"Legacy interview question count {count} is unexpectedly low; review."
+            )
+    elif count < 24:
+        if tailored:
+            # Tailored/founder-self-build: downgrade low count to NEEDS-REVIEW (exit 2).
+            soft_failures.append(
+                f"Question count {count} is below the standard range (25-35) but the "
+                f"build-state records a tailored/founder-self-build interview "
+                f"({tailored_basis}); treating as NEEDS-REVIEW, not a hard fail. "
+                f"Verify the short interview is genuinely complete before building."
+            )
+        else:
+            # Ordinary client, no recorded signal → strictness preserved: HARD FAIL.
+            hard_failures.append(
+                f"Question count {count} is outside the acceptable range (25-35). "
+                f"Too few — interview may be too shallow / generic."
+            )
     elif count == 24 or count == 36:
         soft_failures.append(
             f"Question count {count} is borderline (target 25-35). Human review required."
@@ -511,6 +804,18 @@ def build_verdict(
         "verdict": verdict,
         "questionCount": count,
         "questionCountStateValue": count_result.get("stateCount"),
+        "legacyExemption": {
+            "claimed": legacy_claimed,
+            "granted": legacy_granted,
+            "sources": (legacy_result or {}).get("sources", []),
+            "meta": (legacy_result or {}).get("meta", {}),
+            "substance": legacy_substance or {},
+        },
+        "tailoredExemption": {
+            "recorded": tailored,
+            "basis": tailored_basis,
+            "applied": bool(tailored and count < 24 and count <= 36 and not legacy_granted),
+        },
         "jargonHits": jargon_hits,
         "missingFields": missing_fields,
         "checkedFields": field_result.get("checked", []),
@@ -522,7 +827,11 @@ def build_verdict(
         "warnings": warnings,
         "ranAt": datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "rubricVerdict": (
-            f"PASS: {count} questions, 0 jargon hits, all fields present, nudges wired"
+            (
+                f"PASS: {count} questions"
+                + (" [legacy/pre-standard exemption GRANTED]" if legacy_granted else "")
+                + ", 0 jargon hits, all fields present, nudges wired"
+            )
             if verdict == "PASS" else
             f"{verdict}: " + "; ".join(hard_failures + soft_failures)
         ),
@@ -547,9 +856,15 @@ def write_state_qc(state_path: Path, details: dict) -> None:
         "fail": "fail",
     }
 
+    _legacy = details.get("legacyExemption", {})
     state["interviewQc"] = {
         "status": qc_status_map.get(verdict_str, "fail"),
         "questionCount": details["questionCount"],
+        "legacyExemption": {
+            "claimed": bool(_legacy.get("claimed")),
+            "granted": bool(_legacy.get("granted")),
+            "sources": _legacy.get("sources", []),
+        },
         "jargonHits": [
             {"term": h["term"], "line": h["line"]}
             for h in details["jargonHits"]
@@ -630,6 +945,18 @@ def main():
         action="store_true",
         help="Skip check #5 (no-fabrication) even if a context map is present.",
     )
+    parser.add_argument(
+        "--legacy-interview",
+        action="store_true",
+        help=(
+            "Mark this as a VERIFIED pre-standard / legacy interview (predates the "
+            "25-35 question standard). Lifts the count floor (check #1) ONLY, and ONLY "
+            "if the interview passes the anti-fabrication substance floor. Jargon, "
+            "mandatory-field, and no-fabrication checks still apply. The same exemption "
+            "is also triggered by state.legacyInterview.preStandard==true or a "
+            "'<!-- LEGACY-INTERVIEW: pre-standard -->' marker in the transcript."
+        ),
+    )
     args = parser.parse_args()
 
     # Resolve paths
@@ -695,9 +1022,18 @@ def main():
     nudge_result = check_nudges_wired(repo_root)
     fabrication_result = check_no_fabrication(transcript, context_map_path)
 
+    # Legacy / pre-standard exemption (v12.4.0): detect claim, then verify substance.
+    legacy_result = is_legacy_interview(transcript, state, args.legacy_interview)
+    legacy_substance = (
+        legacy_substance_ok(transcript, count_result)
+        if legacy_result["legacy"]
+        else None
+    )
+
     # Assemble verdict
     verdict, exit_code, details = build_verdict(
-        count_result, jargon_hits, field_result, nudge_result, fabrication_result
+        count_result, jargon_hits, field_result, nudge_result, fabrication_result,
+        legacy_result, legacy_substance, state=state,
     )
 
     # Output
@@ -707,8 +1043,15 @@ def main():
         # Human-readable
         status_icon = {"PASS": "[PASS]", "NEEDS-REVIEW": "[NEEDS-REVIEW]", "FAIL": "[FAIL]"}.get(verdict, "[FAIL]")
         print(f"\n{status_icon} Interview QC Gate — PRD-2.15 + PRD-2.16 (v12.3.4)")
+        _legacy = details.get("legacyExemption", {})
+        _legacy_tag = ""
+        if _legacy.get("granted"):
+            _legacy_tag = " [LEGACY/pre-standard count floor EXEMPT]"
+        elif _legacy.get("claimed"):
+            _legacy_tag = " [LEGACY claimed — substance check FAILED]"
         print(f"  Question count : {details['questionCount']}"
-              + (f" (state: {details['questionCountStateValue']})" if details['questionCountStateValue'] else ""))
+              + (f" (state: {details['questionCountStateValue']})" if details['questionCountStateValue'] else "")
+              + _legacy_tag)
         print(f"  Jargon hits    : {len(details['jargonHits'])}")
         print(f"  Missing fields : {len(details['missingFields'])}")
         print(f"  Nudges wired   : {'yes' if details['nudgesWired'] else 'NO'}")

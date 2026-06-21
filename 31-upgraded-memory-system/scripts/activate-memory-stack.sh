@@ -11,7 +11,7 @@
 #
 # What it sets (canonical fleet-verified config):
 #   - agents.defaults.memorySearch       — gemini provider, openai fallback,
-#                                          gemini-embedding-001, hybrid search,
+#                                          gemini-embedding-2 @3072, hybrid search,
 #                                          session-memory + sync, an EMPTY
 #                                          extraPaths (memory-bloat guard), and a
 #                                          capped embedding cache (maxEntries=512).
@@ -38,7 +38,7 @@
 # Verification (success criteria):
 #   openclaw memory status   must show
 #     Provider: gemini (requested: gemini)
-#     Model:    gemini-embedding-001  (or just "gemini")
+#     Model:    gemini-embedding-2 @3072  (or just "gemini")
 #     Dreaming: 0 3 * * *
 #   openclaw config validate must exit clean.
 
@@ -107,7 +107,14 @@ CANONICAL = {
                     "watchDebounceMs": 1200,
                     "sessions": {"deltaBytes": 20000, "deltaMessages": 10},
                 },
-                "model": "gemini-embedding-001",
+                # EMBEDDING-PREVENTION BUNDLE (item 1+7): pin the GA embedding
+                # model + dimensions so every box is born correct and cannot
+                # drift. gemini-embedding-001 HARD-SHUTS-DOWN 2026-07-14, so we
+                # ship the GA successor gemini-embedding-2 @ 3072 dims. The
+                # reconcile step below also MIGRATES any box still on the dying
+                # 001 model (or a leftover text-embedding-3-small) to this value.
+                "model": "gemini-embedding-2",
+                "dimensions": 3072,
                 "query": {
                     "maxResults": 50,
                     "minScore": 0.18,
@@ -161,6 +168,42 @@ def deep_merge(dst, src):
 
 
 deep_merge(cfg, CANONICAL)
+
+# ── EMBEDDING-PREVENTION BUNDLE item 3: PROVIDER-SELF-LOOP GUARDRAIL ──────────
+# No agent's embedding provider/model/fallback may be the literal 'none' (a
+# cycled-then-cleared provider lands on 'none' and silently breaks the embed
+# index). Sweep defaults AND every per-agent memorySearch block; repair 'none'
+# provider/model back to the canonical gemini values, and drop a 'none' fallback.
+CANON_PROVIDER = "gemini"
+CANON_MODEL    = "gemini-embedding-2"
+DYING_MODELS   = {"gemini-embedding-001", "text-embedding-3-small", "gemini-embedding-exp-03-07"}
+
+def _heal_ms(ms, where):
+    if not isinstance(ms, dict):
+        return
+    if str(ms.get("provider")).lower() == "none":
+        ms["provider"] = CANON_PROVIDER
+        print(f"[activate-memory-stack] {where}.provider was 'none' → repaired to {CANON_PROVIDER!r} (provider-self-loop guard)")
+    m = ms.get("model")
+    if str(m).lower() == "none":
+        ms["model"] = CANON_MODEL
+        print(f"[activate-memory-stack] {where}.model was 'none' → repaired to {CANON_MODEL!r} (provider-self-loop guard)")
+    elif m in DYING_MODELS:
+        ms["model"] = CANON_MODEL
+        print(f"[activate-memory-stack] {where}.model migrated {m!r} → {CANON_MODEL!r} (pre-2026-07-14 shutdown guard)")
+    fb = ms.get("fallback")
+    if isinstance(fb, str) and fb.lower() == "none":
+        ms.pop("fallback", None)
+        print(f"[activate-memory-stack] {where}.fallback was 'none' → removed (provider-self-loop guard)")
+    elif isinstance(fb, dict) and str(fb.get("provider")).lower() == "none":
+        ms.pop("fallback", None)
+        print(f"[activate-memory-stack] {where}.fallback.provider was 'none' → fallback removed (provider-self-loop guard)")
+
+_heal_ms(cfg.get("agents", {}).get("defaults", {}).get("memorySearch"), "agents.defaults.memorySearch")
+for _a in cfg.get("agents", {}).get("list", []) or []:
+    if isinstance(_a, dict):
+        _heal_ms(_a.get("memorySearch"), f"agents.list[{_a.get('id','?')}].memorySearch")
+
 after = json.dumps(cfg, sort_keys=True)
 
 if before == after:
@@ -275,5 +318,5 @@ openclaw memory status || true
 echo ""
 echo "[activate-memory-stack] DONE. Verify the output above shows:"
 echo "  • Provider: gemini (requested: gemini)"
-echo "  • Model:    gemini-embedding-001  (or just 'gemini')"
+echo "  • Model:    gemini-embedding-2 @3072  (or just 'gemini')"
 echo "  • Dreaming: 0 3 * * *"
