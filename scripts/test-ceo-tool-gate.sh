@@ -309,6 +309,212 @@ else
   _bad "H2: verify-routing did NOT target dept-executive-office — G4=[$(printf '%s' "$H2_OUT"|grep 'G4:'|head -1)] G7=[$(printf '%s' "$H2_OUT"|grep -E 'G7:'|grep -v G7b|head -1)]"
 fi
 
+# ── I. v13.2.2 PA-FREEZE FIX — a PERSONAL-ASSISTANT-default box is NEVER gated ─
+# The v13.1.3 over-broadening (gate any default:true agent) froze a box whose
+# default agent is a hands-on personal assistant. The fix gates the default agent
+# ONLY if it is a ROUTER (is_master / role==router / known router id). A
+# PA-default box must come out of apply-routing-fix.sh + apply-fleet-standards.sh
+# with NO CEO production lock, NO skills:[], and NO byProvider GHL deny.
+rm -f "$CEO_CONSENT_FILE"
+_write_pa_default() {
+  cat > "$HOME/.openclaw/openclaw.json" <<'JSON'
+{ "agents": { "list": [
+  { "id": "personal-assistant", "default": true, "skills": ["inbox","calendar","deck"] }
+] } }
+JSON
+}
+
+# I1: apply-routing-fix.sh leaves a PA-default box completely ungated.
+_write_pa_default
+I1_OUT=$(bash "$APPLY_FIX" 2>&1 || true)
+if python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
+import json,sys
+pa=[a for a in json.load(open(sys.argv[1]))["agents"]["list"] if a["id"]=="personal-assistant"][0]
+t=pa.get("tools") or {}
+need={"write","edit","apply_patch","browser","canvas","image","process"}
+# NOT gated: no production deny, no GHL byProvider deny, skills untouched (not []).
+ungated = need.isdisjoint(set(t.get("deny") or [])) \
+          and not (t.get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"]) \
+          and pa.get("skills")==["inbox","calendar","deck"]
+sys.exit(0 if ungated else 1)
+PYEOF
+then _ok "I1: apply-routing-fix.sh did NOT gate the PA-default box (no CEO lock, no skills:[], no GHL deny)"
+else _bad "I1: apply-routing-fix.sh FROZE a personal-assistant-default box (v13.1.3 regression)"; fi
+
+# I1b: the run announces the PA-freeze skip on BOTH L2 and L5 (auditable).
+if printf '%s' "$I1_OUT" | grep -qi "PERSONAL-ASSISTANT/non-router" \
+   && printf '%s' "$I1_OUT" | grep -qiE "L2:.*SKIPPING" \
+   && printf '%s' "$I1_OUT" | grep -qiE "L5:.*SKIPPING"; then
+  _ok "I1b: apply-routing-fix.sh logged the PA-freeze SKIP on L2 and L5"
+else
+  _bad "I1b: apply-routing-fix.sh did not log the PA-freeze skip — L2/L5 — out=[$(printf '%s' "$I1_OUT" | grep -iE 'L2:|L5:' | tr '\n' '|')]"
+fi
+
+# I2: apply-fleet-standards.sh re-assert also SKIPS a PA-default box.
+_write_pa_default
+I2_OUT=$(bash "$APPLY_STD" 2>&1 || true)
+if printf '%s' "$I2_OUT" | grep -qi "PERSONAL-ASSISTANT/non-router" \
+   && python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
+import json,sys
+pa=[a for a in json.load(open(sys.argv[1]))["agents"]["list"] if a["id"]=="personal-assistant"][0]
+need={"write","edit","apply_patch","browser","canvas","image","process"}
+# CEO deny must NOT have been re-asserted onto the PA.
+sys.exit(0 if need.isdisjoint(set((pa.get("tools") or {}).get("deny") or [])) else 1)
+PYEOF
+then _ok "I2: apply-fleet-standards.sh re-assert SKIPPED the PA-default box (no CEO deny re-asserted)"
+else _bad "I2: apply-fleet-standards.sh re-asserted the CEO gate onto a PA (froze it)"; fi
+
+# I3: verify-routing.sh treats a PA-default box as PASSING (G4 + G7 not FATAL).
+_write_pa_default
+printf '<!-- ROLE_DISCIPLINE_V1 -->\nCEO_ROUTING_NO_LOOPHOLES_V1\n' > "$HOME/.openclaw/workspace/AGENTS.md"
+printf '<!-- CEO_ORCHESTRATOR_RULE_V2 -->\n' > "$HOME/.openclaw/workspace/SOUL.md"
+I3_OUT=$(bash "$VERIFY" 2>&1 || true)
+if printf '%s' "$I3_OUT" | grep -qE "PASS  G4: default agent \(id=personal-assistant\).*PERSONAL-ASSISTANT" \
+   && printf '%s' "$I3_OUT" | grep -E "G7:" | grep -v "G7b" | grep -qiE "PASS.*personal-assistant.*PERSONAL-ASSISTANT"; then
+  _ok "I3: verify-routing G4+G7 PASS on a PA-default box (no false FATAL)"
+else
+  _bad "I3: verify-routing did NOT pass a PA-default box — G4=[$(printf '%s' "$I3_OUT"|grep 'G4:'|head -1)] G7=[$(printf '%s' "$I3_OUT"|grep -E 'G7:'|grep -v G7b|head -1)]"
+fi
+
+# I4: G8a does NOT force-wire the unscoped hook on a PA-default box. Simulate a
+#     Claude-Code box (settings.json present) with NO hook wired → must PASS.
+_write_pa_default
+mkdir -p "$HOME/.claude"
+printf '{}\n' > "$HOME/.claude/settings.json"
+I4_OUT=$(CLAUDE_SETTINGS_FILE="$HOME/.claude/settings.json" bash "$VERIFY" 2>&1 || true)
+if printf '%s' "$I4_OUT" | grep -qE "PASS  G8a: PA-default box .* intentionally NOT wired"; then
+  _ok "I4: verify-routing G8a does NOT force-wire the hook on a PA-default box (PASS, not FATAL)"
+else
+  _bad "I4: verify-routing G8a wrongly demanded the hook on a PA-default box — [$(printf '%s' "$I4_OUT"|grep 'G8a:'|head -1)]"
+fi
+rm -f "$HOME/.claude/settings.json"
+
+# ── J. ROUTER-DEFAULT box still gets gated (the legitimate cases must not break) ─
+# A dept-master-orchestrator default, a dept-executive-office default, plus a
+# role:"router" / is_master:true marker — all must STILL be gated.
+for RID in "dept-master-orchestrator" "dept-executive-office"; do
+  rm -f "$CEO_CONSENT_FILE"
+  cat > "$HOME/.openclaw/openclaw.json" <<JSON
+{ "agents": { "list": [ { "id": "$RID", "default": true, "skills": ["pptx"] } ] } }
+JSON
+  bash "$APPLY_FIX" >/dev/null 2>&1 || true
+  if RID="$RID" python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
+import json,os,sys
+rid=os.environ["RID"]
+a=[x for x in json.load(open(sys.argv[1]))["agents"]["list"] if x["id"]==rid][0]
+t=a.get("tools") or {}
+need={"write","edit","apply_patch","browser","canvas","image","process"}
+ok = need.issubset(set(t.get("deny") or [])) \
+     and t.get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"] \
+     and a.get("skills")==[]
+sys.exit(0 if ok else 1)
+PYEOF
+  then _ok "J: router-default box (id=$RID) IS gated (deny set + GHL deny + skills:[])"
+  else _bad "J: router-default box (id=$RID) was NOT gated — legitimate router gating broke"; fi
+done
+
+# J2: an agent carrying role:"router" (id NOT in the known list) is STILL gated.
+rm -f "$CEO_CONSENT_FILE"
+cat > "$HOME/.openclaw/openclaw.json" <<'JSON'
+{ "agents": { "list": [ { "id": "orchestra-prime", "role": "router", "default": true, "skills": ["pptx"] } ] } }
+JSON
+bash "$APPLY_FIX" >/dev/null 2>&1 || true
+if python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
+import json,sys
+a=[x for x in json.load(open(sys.argv[1]))["agents"]["list"] if x["id"]=="orchestra-prime"][0]
+need={"write","edit","apply_patch","browser","canvas","image","process"}
+sys.exit(0 if need.issubset(set((a.get("tools") or {}).get("deny") or [])) else 1)
+PYEOF
+then _ok "J2: role:'router' agent (unknown id) IS gated (explicit router marker honored)"
+else _bad "J2: role:'router' marker was ignored — router not gated"; fi
+
+# J3: an agent carrying is_master:true is STILL gated.
+rm -f "$CEO_CONSENT_FILE"
+cat > "$HOME/.openclaw/openclaw.json" <<'JSON'
+{ "agents": { "list": [ { "id": "the-boss", "is_master": true, "default": true, "skills": ["pptx"] } ] } }
+JSON
+bash "$APPLY_FIX" >/dev/null 2>&1 || true
+if python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
+import json,sys
+a=[x for x in json.load(open(sys.argv[1]))["agents"]["list"] if x["id"]=="the-boss"][0]
+need={"write","edit","apply_patch","browser","canvas","image","process"}
+sys.exit(0 if need.issubset(set((a.get("tools") or {}).get("deny") or [])) else 1)
+PYEOF
+then _ok "J3: is_master:true agent (unknown id) IS gated (explicit master marker honored)"
+else _bad "J3: is_master:true marker was ignored — router not gated"; fi
+
+# ── K. The HOOK allows a non-router agent and still denies the router ──────────
+# ceo-intent-gate.sh must exit 0 (ALLOW) for a personal-assistant/owner agent on
+# a production tool, and only emit a deny for the router (with no consent).
+HOOK="$ONBOARDING_DIR/hooks/ceo-intent-gate.sh"
+rm -f "$CEO_CONSENT_FILE"
+
+# K1: PA agent (via env marker) → ALLOW (no deny JSON), even on a Write.
+K1_OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"/x"}}' \
+  | OPENCLAW_AGENT_ID="personal-assistant" bash "$HOOK" 2>/dev/null || true)
+if [ -z "$K1_OUT" ]; then
+  _ok "K1: hook ALLOWs a personal-assistant agent on Write (no deny emitted)"
+else
+  _bad "K1: hook did NOT allow a PA agent — emitted: [$K1_OUT]"
+fi
+
+# K1b: explicit role marker (non-router) → ALLOW.
+K1B_OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{}}' \
+  | OPENCLAW_AGENT_ROLE="assistant" OPENCLAW_AGENT_ID="inbox-manager" bash "$HOOK" 2>/dev/null || true)
+[ -z "$K1B_OUT" ] && _ok "K1b: hook ALLOWs a non-router role agent on Edit" || _bad "K1b: hook denied a non-router agent — [$K1B_OUT]"
+
+# K2: router agent (id=main via env marker), NO consent → DENY emitted.
+K2_OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"/x"}}' \
+  | OPENCLAW_AGENT_ID="main" bash "$HOOK" 2>/dev/null || true)
+if printf '%s' "$K2_OUT" | grep -q '"permissionDecision":"deny"' \
+   && printf '%s' "$K2_OUT" | grep -q '/api/tasks/ingest'; then
+  _ok "K2: hook DENIES + redirects the router (id=main) on Write with no consent"
+else
+  _bad "K2: hook did NOT deny the router — [$K2_OUT]"
+fi
+
+# K2b: router via is_master marker (unknown id) → DENY.
+K2B_OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"rm -rf /x"}}' \
+  | OPENCLAW_AGENT_IS_MASTER="true" OPENCLAW_AGENT_ID="the-boss" bash "$HOOK" 2>/dev/null || true)
+printf '%s' "$K2B_OUT" | grep -q '"permissionDecision":"deny"' \
+  && _ok "K2b: hook DENIES a router-by-is_master on non-routing Bash" \
+  || _bad "K2b: hook did not deny an is_master router — [$K2B_OUT]"
+
+# K3: OPENCLAW_CEO_GATE_SCOPE=non-router force-ALLOW even for id=main.
+K3_OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{}}' \
+  | OPENCLAW_AGENT_ID="main" OPENCLAW_CEO_GATE_SCOPE="non-router" bash "$HOOK" 2>/dev/null || true)
+[ -z "$K3_OUT" ] && _ok "K3: OPENCLAW_CEO_GATE_SCOPE=non-router force-ALLOWs even id=main" || _bad "K3: scope override non-router did not allow — [$K3_OUT]"
+
+# K4: router still ALLOWED to ROUTE — a curl to /api/tasks/ingest passes even gated.
+K4_OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"curl -s -X POST http://localhost:4000/api/tasks/ingest -d @t.json"}}' \
+  | OPENCLAW_AGENT_ID="main" bash "$HOOK" 2>/dev/null || true)
+[ -z "$K4_OUT" ] && _ok "K4: hook still ALLOWs the router's ingest-routing curl (routing not blocked)" || _bad "K4: hook blocked the router's routing curl — [$K4_OUT]"
+
+# ── L. lib router-detection canonical / drift ─────────────────────────────────
+# hooks/lib-ceo-tool-gate.sh exposes ceo_agent_is_router + CEO_ROUTER_IDS; assert
+# the canonical router-id set matches every embedded copy (apply-*, verify, hook).
+EXPECT_ROUTER_IDS="ceo dept-ceo dept-executive-office dept-master-orchestrator main master-orchestrator"
+LIB_ROUTER_IDS=$(printf '%s\n' "${CEO_ROUTER_IDS[@]}" | sort | tr '\n' ' ' | sed 's/ $//')
+[ "$LIB_ROUTER_IDS" = "$EXPECT_ROUTER_IDS" ] \
+  && _ok "L0: lib CEO_ROUTER_IDS canonical" \
+  || _bad "L0: CEO_ROUTER_IDS drift: [$LIB_ROUTER_IDS] != [$EXPECT_ROUTER_IDS]"
+
+# Every embedded ROUTER_IDS copy must contain all six canonical ids + the markers.
+for f in "$APPLY_FIX" "$APPLY_STD" "$VERIFY" "$ONBOARDING_DIR/hooks/ceo-intent-gate.sh" "$SCRIPT_DIR/install-ceo-intent-gate.sh"; do
+  for rid in "dept-master-orchestrator" "dept-executive-office" "master-orchestrator"; do
+    grep -q "\"$rid\"" "$f" || _bad "L: router id '$rid' missing from $(basename "$f")"
+  done
+  grep -q "is_master" "$f" || _bad "L: is_master marker missing from $(basename "$f")"
+done
+_ok "L: router-id set + is_master marker present in all 5 gate-target sites"
+
+# L2 (behavior): ceo_agent_is_router classifies router vs PA correctly.
+ceo_agent_is_router '{"id":"main"}'                 && _ok "L-fn: id=main → router"          || _bad "L-fn: id=main misclassified"
+ceo_agent_is_router '{"id":"dept-executive-office"}'&& _ok "L-fn: dept-executive-office → router" || _bad "L-fn: dept-executive-office misclassified"
+ceo_agent_is_router '{"id":"x","is_master":true}'   && _ok "L-fn: is_master → router"        || _bad "L-fn: is_master misclassified"
+ceo_agent_is_router '{"id":"x","role":"router"}'    && _ok "L-fn: role=router → router"      || _bad "L-fn: role=router misclassified"
+if ceo_agent_is_router '{"id":"personal-assistant"}'; then _bad "L-fn: personal-assistant wrongly classified as router"; else _ok "L-fn: personal-assistant → NOT router"; fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 if [ "$FAILS" -eq 0 ]; then

@@ -363,9 +363,25 @@ cfg = json.loads(cfg_path.read_text())
 
 agents_list = cfg.get("agents", {}).get("list", []) or []
 
-# DEFECT 2 (v13.1.3): target the box's ACTUAL default agent (default:true), else
-# fall back to id=="main". Some boxes' default agent is "dept-executive-office"
-# (default:true) rather than "main"; hardcoding "main" left those boxes ungated.
+# DEFECT 2 (v13.1.3) + v13.2.2 PA-FREEZE FIX: resolve the box's default agent,
+# then gate it ONLY if it is a ROUTER. v13.1.3 broadened the target to any
+# default:true agent, which FROZE a personal-assistant-default box (the PA is
+# default:true but is NOT a router). Router iff is_master / role=="router" /
+# id in ROUTER_IDS. A non-router default agent (PA / owner) is SKIPPED.
+ROUTER_IDS = {  # keep IN SYNC with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS
+    "main", "ceo", "dept-ceo",
+    "master-orchestrator", "dept-master-orchestrator",
+    "dept-executive-office",
+}
+def _is_router(ag):
+    if not isinstance(ag, dict):
+        return False
+    if ag.get("is_master") is True:
+        return True
+    if isinstance(ag.get("role"), str) and ag.get("role").strip().lower() == "router":
+        return True
+    return ag.get("id") in ROUTER_IDS
+
 default_agent = None
 for ag in agents_list:
     if isinstance(ag, dict) and ag.get("default") is True:
@@ -382,6 +398,14 @@ if default_agent is None:
     sys.exit(0)
 
 _did = default_agent.get("id", "<unknown>")
+
+# PA-FREEZE GUARD: if the default agent is NOT a router (a hands-on personal
+# assistant / owner agent), DO NOT apply the pptx skill-deny — that would gate a
+# PA the same way a CEO, which is the v13.1.3 freeze. Skip cleanly.
+if not _is_router(default_agent):
+    print(f"PA_DEFAULT_SKIP:{_did}")
+    sys.exit(0)
+
 current_skills = default_agent.get("skills")
 # Already set to empty list or explicit pptx deny?
 if isinstance(current_skills, list) and len(current_skills) == 0:
@@ -395,6 +419,8 @@ PYEOF
 
 if [ "$L2_RESULT" = "ALREADY_DENIED" ]; then
   _log "L2: skills:[] already set on the default agent — no-op"
+elif [[ "$L2_RESULT" == PA_DEFAULT_SKIP:* ]]; then
+  _log "L2: default agent (id=${L2_RESULT#PA_DEFAULT_SKIP:}) is a PERSONAL-ASSISTANT/non-router — SKIPPING pptx skill-deny (a PA is not a router; gating it would freeze it). v13.2.2 PA-freeze guard."
 elif [ "$L2_RESULT" = "NO_MAIN_AGENT" ]; then
   _warn "L2: no default agent (default:true) and no id=main found in openclaw.json agents.list — skipping"
 elif [[ "$L2_RESULT" == "ERROR" || "$L2_RESULT" == *"Traceback"* ]]; then
@@ -412,7 +438,22 @@ cfg = json.loads(cfg_path.read_text())
 
 agents_list = cfg.get("agents", {}).get("list", []) or []
 
-# DEFECT 2: default agent (default:true) first, else id=="main".
+# DEFECT 2 + v13.2.2 PA-FREEZE FIX: default agent (default:true) first, else
+# id=="main" — but gate ONLY if it is a ROUTER (matches the inspect block above).
+ROUTER_IDS = {  # keep IN SYNC with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS
+    "main", "ceo", "dept-ceo",
+    "master-orchestrator", "dept-master-orchestrator",
+    "dept-executive-office",
+}
+def _is_router(ag):
+    if not isinstance(ag, dict):
+        return False
+    if ag.get("is_master") is True:
+        return True
+    if isinstance(ag.get("role"), str) and ag.get("role").strip().lower() == "router":
+        return True
+    return ag.get("id") in ROUTER_IDS
+
 target = None
 for ag in agents_list:
     if isinstance(ag, dict) and ag.get("default") is True:
@@ -423,7 +464,8 @@ if target is None:
         if isinstance(ag, dict) and ag.get("id") == "main":
             target = ag
             break
-if target is not None:
+# Only gate a ROUTER. A non-router default agent (PA / owner) is left untouched.
+if target is not None and _is_router(target):
     target["skills"] = []
     print(f"[apply-routing-fix] L2: skills:[] set on default agent (id={target.get('id','<unknown>')})")
 
@@ -452,7 +494,7 @@ fi
 _log "--- LAYER 5: CEO tool-gate (deny production tools on the default agent) ---"
 
 if [ "$DRY_RUN" = "1" ]; then
-  _dry "L5: would deny production tools (write/edit/apply_patch/browser/canvas/image/process) + GHL MCP on the box's default agent (default:true, else main) (allow: read/web_fetch/web_search/messaging/sessions_*/exec-interim)"
+  _dry "L5: would deny production tools (write/edit/apply_patch/browser/canvas/image/process) + GHL MCP on the box's default agent ONLY IF it is a ROUTER (is_master / role=router / known router id); a personal-assistant/non-router default agent is SKIPPED (v13.2.2 PA-freeze guard). (allow: read/web_fetch/web_search/messaging/sessions_*/exec-interim)"
 else
   L5_RESULT=$(python3 - "$OC_CONFIG" <<'PYEOF'
 import json, sys
@@ -504,10 +546,25 @@ if _ceo_consent_active():
 
 agents_list = cfg.get("agents", {}).get("list", []) or []
 
-# DEFECT 2 (v13.1.3): gate the box's ACTUAL default agent (default:true), else
-# fall back to id=="main". Boxes whose default agent is "dept-executive-office"
-# (default:true) were left with the CEO production tools wide open when this was
-# hardcoded to "main".
+# DEFECT 2 (v13.1.3) + v13.2.2 PA-FREEZE FIX: gate the box's default agent
+# (default:true, else id=="main") ONLY IF it is a ROUTER. v13.1.3 broadened the
+# target to any default:true agent, which clamped the CEO production-lock onto a
+# personal-assistant-default box and FROZE the PA. Router iff is_master /
+# role=="router" / id in ROUTER_IDS. A non-router default agent is NOT gated.
+ROUTER_IDS = {  # keep IN SYNC with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS
+    "main", "ceo", "dept-ceo",
+    "master-orchestrator", "dept-master-orchestrator",
+    "dept-executive-office",
+}
+def _is_router(ag):
+    if not isinstance(ag, dict):
+        return False
+    if ag.get("is_master") is True:
+        return True
+    if isinstance(ag.get("role"), str) and ag.get("role").strip().lower() == "router":
+        return True
+    return ag.get("id") in ROUTER_IDS
+
 main_agent = None
 for ag in agents_list:
     if isinstance(ag, dict) and ag.get("default") is True:
@@ -521,6 +578,13 @@ if main_agent is None:
 
 if main_agent is None:
     print("NO_MAIN_AGENT")
+    sys.exit(0)
+
+# PA-FREEZE GUARD: a non-router default agent (personal assistant / owner agent)
+# must NEVER get the CEO production lock. Skip cleanly — the box is correctly
+# configured as a PA-default topology.
+if not _is_router(main_agent):
+    print("PA_DEFAULT_SKIP:" + str(main_agent.get("id", "<unknown>")))
     sys.exit(0)
 
 tools = main_agent.get("tools")
@@ -559,11 +623,12 @@ PYEOF
 ) || L5_RESULT="ERROR"
 
   case "$L5_RESULT" in
-    ALREADY_GATED)      _log "L5: CEO tool-gate already present on default agent — no-op" ;;
+    ALREADY_GATED)       _log "L5: CEO tool-gate already present on default agent — no-op" ;;
     CONSENT_ACTIVE_SKIP) _log "L5: owner-consent carve-out ACTIVE — skipping CEO tool-gate (would revoke the owner's grant)" ;;
-    NO_MAIN_AGENT)      _warn "L5: no default agent (default:true) and no id=main found — skipping CEO tool-gate" ;;
-    APPLIED:*)          _log "L5: CEO tool-gate applied to default agent (id=${L5_RESULT#APPLIED:}) — production tools denied; routing tools allowed" ;;
-    *)                  _warn "L5: could not apply CEO tool-gate (result=$L5_RESULT) — skipping" ;;
+    PA_DEFAULT_SKIP:*)   _log "L5: default agent (id=${L5_RESULT#PA_DEFAULT_SKIP:}) is a PERSONAL-ASSISTANT/non-router — SKIPPING CEO tool-gate (a PA is not a router; the production lock would freeze it). v13.2.2 PA-freeze guard." ;;
+    NO_MAIN_AGENT)       _warn "L5: no default agent (default:true) and no id=main found — skipping CEO tool-gate" ;;
+    APPLIED:*)           _log "L5: CEO tool-gate applied to default agent (id=${L5_RESULT#APPLIED:}) — production tools denied; routing tools allowed" ;;
+    *)                   _warn "L5: could not apply CEO tool-gate (result=$L5_RESULT) — skipping" ;;
   esac
 fi
 

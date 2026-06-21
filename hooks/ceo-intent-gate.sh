@@ -50,6 +50,96 @@ fi
 # ─── Read the hook event from stdin ───────────────────────────────────────────
 _EVENT_JSON="$(cat 2>/dev/null || true)"
 
+# ─── AGENT-SCOPE GUARD (v13.2.2 — closes the v13.1.3 PA-freeze defect) ─────────
+# This gate may ONLY fire on the ROUTER/CEO agent. On a box whose default (or
+# active) agent is a hands-on PERSONAL ASSISTANT or the OWNER agent, the gate
+# must NEVER fire — clamping the CEO production-lock onto a PA freezes it (that
+# is exactly the v13.1.3 regression). So BEFORE any production-tool / consent
+# logic: resolve the running agent's identity and ALLOW (exit 0) unless it is a
+# router.
+#
+# The agent identity is resolved from, in priority order:
+#   1. the hook event JSON (agent_id / agentId / role / is_master, if present),
+#   2. a gateway-set env marker:
+#        OPENCLAW_AGENT_ID / OPENCLAW_AGENT_ROLE / OPENCLAW_AGENT_IS_MASTER
+#        (also accepts CLAUDE_AGENT_ID / AGENT_ID as fallbacks),
+#   3. an explicit hook-scope override OPENCLAW_CEO_GATE_SCOPE:
+#        "router"     → force-treat this session as the router (gate ACTIVE)
+#        "non-router" → force-ALLOW (gate never fires here)
+#
+# IMPORTANT — fail-OPEN on this guard (not closed): if we cannot positively
+# identify the running agent as a router, we ALLOW. The consent library fails
+# CLOSED (a missing consent reader denies) because that protects the router; but
+# the AGENT-SCOPE guard fails OPEN because the failure mode we are fixing is a
+# wrongly-frozen personal assistant. A router with no identity marker is still
+# protected by its config-level tools.deny (Layer-1 brake) — the hook is the
+# backstop, not the only brake — so failing open here cannot un-gate a router's
+# actual production tools.
+_CEO_GATE_SCOPE="${OPENCLAW_CEO_GATE_SCOPE:-}"
+if [ "$_CEO_GATE_SCOPE" = "non-router" ]; then
+  exit 0
+fi
+if [ "$_CEO_GATE_SCOPE" != "router" ]; then
+  # Known router ids (kept in sync with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS).
+  _IS_ROUTER="$(EVENT_JSON="$_EVENT_JSON" python3 - <<'PYEOF'
+import json, os, sys
+
+ROUTER_IDS = {
+    "main", "ceo", "dept-ceo",
+    "master-orchestrator", "dept-master-orchestrator",
+    "dept-executive-office",
+}
+
+def _truthy(v):
+    return v is True or (isinstance(v, str) and v.strip().lower() in ("true", "1", "yes"))
+
+# 1) hook event JSON
+try:
+    ev = json.loads(os.environ.get("EVENT_JSON") or "{}")
+    if not isinstance(ev, dict):
+        ev = {}
+except Exception:
+    ev = {}
+
+agent_id = ev.get("agent_id") or ev.get("agentId") or ""
+role = ev.get("role") or ev.get("agent_role") or ""
+is_master = ev.get("is_master")
+
+# 2) gateway-set env markers (the gateway exports the active agent's identity)
+if not agent_id:
+    agent_id = (os.environ.get("OPENCLAW_AGENT_ID")
+                or os.environ.get("CLAUDE_AGENT_ID")
+                or os.environ.get("AGENT_ID") or "")
+if not role:
+    role = os.environ.get("OPENCLAW_AGENT_ROLE") or ""
+if is_master is None:
+    is_master = os.environ.get("OPENCLAW_AGENT_IS_MASTER")
+
+agent_id = (agent_id or "").strip()
+role = (role or "").strip().lower()
+
+# Router iff explicit master/role marker OR a known router id.
+if _truthy(is_master):
+    print("ROUTER"); sys.exit(0)
+if role == "router":
+    print("ROUTER"); sys.exit(0)
+if agent_id in ROUTER_IDS:
+    print("ROUTER"); sys.exit(0)
+
+# No positive router signal:
+#   - If we DID get an explicit non-router agent id/role → ALLOW (PA/owner).
+#   - If we got NOTHING at all (no id, no role, no marker) → also ALLOW
+#     (fail-OPEN on the agent-scope guard, per the comment above).
+print("NON_ROUTER")
+PYEOF
+)"
+  if [ "$_IS_ROUTER" != "ROUTER" ]; then
+    # Not the router (personal assistant, owner agent, or unidentifiable) →
+    # the intent-gate never fires here. Allow silently.
+    exit 0
+  fi
+fi
+
 # Extract tool_name + session_id with python3 (robust to absent fields).
 read -r TOOL_NAME SESSION_ID <<EOF
 $(EVENT_JSON="$_EVENT_JSON" python3 - <<'PYEOF'
