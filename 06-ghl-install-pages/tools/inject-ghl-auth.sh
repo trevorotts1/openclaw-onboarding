@@ -193,20 +193,57 @@ read -r -d '' INJECT_JS <<'JS' || true
     try { localStorage.setItem("deviceId", deviceId); } catch (e) {}
   }
   const lcHeaders = Object.assign({}, lc.headers, { "device-id": deviceId });
-  let i;
-  try {
-    const resp = await fetch(lc.url, { method: lc.method || "GET", headers: lcHeaders, mode: "cors", credentials: "omit" });
-    if (resp.status !== 200) {
-      const body = (await resp.text()).slice(0, 200);
-      throw new Error("LOGIN-CURRENT-" + resp.status + ": " + body);
-    }
-    i = await resp.json();
-  } catch (e) {
-    throw new Error("LOGIN-CURRENT-FAILED: " + (e && e.message || e));
+
+  // ── LAYER-2 HARDENING: bounded retry around the login/current fetch ─────────
+  // ROOT CAUSE of the intermittent Layer-2 failure (proven by the 2026-06-21
+  // run: 3 injects bounced to login, the 4th — after a settle — succeeded; the
+  // minted id_token was byte-perfect every time). The in-browser GET
+  // /oauth/2/login/current is a SINGLE-SHOT fetch that races against (a)
+  // Cloudflare's bot-check (error 1010) interstitial / a transient 5xx, and (b)
+  // the SPA's network stack still warming up right after open — either of which
+  // yields a non-200 OR a 200 whose body is a challenge/partial JSON that
+  // .json() coerces into an object with a present-but-WRONG apiKey. The old
+  // guard `if (!i.apiKey)` accepted any non-empty string, so a bad apiKey landed
+  // in cookie `a` and the SPA's own auth/get then rejected it -> login bounce.
+  // FIX (token-only, no login/2FA): retry up to 4 attempts with exponential
+  // backoff + jitter; treat anything that isn't a clean authoritative 200 as
+  // retryable; only fail loud after the budget is exhausted. The authoritative
+  // shape is asserted: apiKey must be a non-trivial key (>= 8 chars), userId
+  // must be present. This does NOT change the auth MODEL — same token-id header,
+  // same endpoint, same credentials:"omit" — it only makes the one transient
+  // network step reliable.
+  const LC_MAX_ATTEMPTS = 4;
+  function jitter(ms) { return Math.round(ms * (0.7 + Math.random() * 0.6)); }
+  function looksAuthoritative(o) {
+    return !!(o && typeof o.apiKey === "string" && o.apiKey.length >= 8 &&
+              typeof o.userId === "string" && o.userId.length >= 8);
   }
-  // The object `i` MUST carry the apiKey/userId/companyId that cookie `a` needs.
-  if (!i || !i.apiKey || !i.userId) {
-    throw new Error("LOGIN-CURRENT-NOFIELDS: missing apiKey/userId in response (got keys: " + Object.keys(i || {}).join(",") + ")");
+  let i = null, lastErr = "";
+  for (let attempt = 1; attempt <= LC_MAX_ATTEMPTS; attempt++) {
+    try {
+      const resp = await fetch(lc.url, { method: lc.method || "GET", headers: lcHeaders, mode: "cors", credentials: "omit" });
+      if (resp.status !== 200) {
+        const body = (await resp.text()).slice(0, 200);
+        // 401/403/1010 = bot-check/clearance not yet warm; 5xx/429 = transient.
+        // All retryable here (the token itself is valid — Layer 1 verified it).
+        lastErr = "LOGIN-CURRENT-" + resp.status + ": " + body;
+      } else {
+        const cand = await resp.json();
+        if (looksAuthoritative(cand)) { i = cand; break; }
+        // 200 but body is a challenge/partial — present apiKey is garbage.
+        lastErr = "LOGIN-CURRENT-NONAUTH: keys=" + Object.keys(cand || {}).join(",") +
+                  " apiKeyLen=" + ((cand && cand.apiKey && cand.apiKey.length) || 0);
+      }
+    } catch (e) {
+      // Network/CORS/parse error -> retryable.
+      lastErr = "LOGIN-CURRENT-FETCH: " + (e && e.message || e);
+    }
+    if (attempt < LC_MAX_ATTEMPTS) {
+      await new Promise(r => setTimeout(r, jitter(400 * Math.pow(2, attempt - 1)))); // ~400/800/1600ms +/- jitter
+    }
+  }
+  if (!i) {
+    throw new Error("LOGIN-CURRENT-FAILED after " + LC_MAX_ATTEMPTS + " attempts: " + lastErr);
   }
 
   // ── (A) Write the six SPA cookies from `i` — VERBATIM `An` setter template ──
@@ -309,24 +346,64 @@ echo "$RESULT"
 ACTIVATE_TARGET="${GHL_ACTIVATE_PATH:-/}"
 read -r -d '' ACTIVATE_JS <<'AJS' || true
 (async () => {
-  const el = document.querySelector('#app');
-  if (!el || !el.__vue_app__) throw new Error("ACTIVATE-NO-VUE-APP: SPA not mounted (open the GHL origin first / --pre-open)");
-  const gp = el.__vue_app__.config.globalProperties;
-  const store = gp.$store, router = gp.$router;
-  if (!store || !router) throw new Error("ACTIVATE-NO-STORE-ROUTER");
-  // auth/get reads the seeded cookie `a` (+ token cookies). If it rejects, the
-  // seed did not take — FAIL LOUD (the builder STOPS; no UI-login fallback).
-  let user;
-  try { user = await store.dispatch('auth/get'); }
-  catch (e) { throw new Error("ACTIVATE-AUTHGET-REJECT: " + (e && e.message || e)); }
-  if (!user || !user.apiKey || !user.userId) throw new Error("ACTIVATE-AUTHGET-NOUSER");
-  try { await store.dispatch('user/get'); } catch (e) { /* non-fatal: some accounts gate user/get */ }
-  try { await router.push({ path: window.__GHL_ACTIVATE_TARGET__ || '/' }); } catch (e) { /* router may redirect; check below */ }
-  await new Promise(r => setTimeout(r, 800));
-  const hasPwd = !!document.querySelector('input[type=password]');
-  const onLogin = /[?&]logout=true/.test(location.href) || /\/login(\b|$)/.test(location.pathname) || hasPwd;
-  if (onLogin) throw new Error("ACTIVATE-BOUNCED-TO-LOGIN: href=" + location.href + " hasPwd=" + hasPwd);
-  return "activated:userId=" + user.userId + "|href=" + location.href;
+  // ── LAYER-2 HARDENING: bounded retry around store/router activation ─────────
+  // ROOT CAUSE of ACTIVATE-BOUNCED-TO-LOGIN (the intermittent failure seen
+  // 2026-06-21): activation fired before the SPA's auth store had finished
+  // booting / re-reading the freshly written cookies. `store.dispatch('auth/get')`
+  // then resolved against a not-yet-warm store (or the just-set cookies were not
+  // yet visible to its cookie layer) and the router redirected to /login. A
+  // single 800ms settle was sometimes too short (3 fails) and sometimes enough
+  // (the 4th attempt, after a longer manual wait, succeeded). FIX (token-only,
+  // no login/2FA): poll for store+router readiness, then retry auth/get +
+  // router.push up to 4 times with exponential backoff + jitter, and only
+  // declare success once we are verifiably NOT on the login form AND auth/get
+  // returned a real user. Fail loud only after the budget is exhausted. Same
+  // SPA APIs, same cookies — no auth-model change.
+  const ACT_MAX_ATTEMPTS = 4;
+  function jitter(ms) { return Math.round(ms * (0.7 + Math.random() * 0.6)); }
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  // Wait (up to ~8s) for #app -> __vue_app__ -> $store + $router to all exist;
+  // activation has no meaning until the SPA store is mounted.
+  let store = null, router = null;
+  for (let w = 0; w < 16; w++) {
+    const el = document.querySelector('#app');
+    const gp = el && el.__vue_app__ && el.__vue_app__.config && el.__vue_app__.config.globalProperties;
+    if (gp && gp.$store && gp.$router) { store = gp.$store; router = gp.$router; break; }
+    await sleep(500);
+  }
+  if (!store || !router) throw new Error("ACTIVATE-NO-STORE-ROUTER: SPA store/router never mounted (open the GHL origin first / --pre-open)");
+
+  let user = null, lastErr = "";
+  for (let attempt = 1; attempt <= ACT_MAX_ATTEMPTS; attempt++) {
+    // auth/get reads the seeded cookie `a` (+ token cookies). A transient reject
+    // here (store not warm / cookies not yet visible) is RETRYABLE — it does NOT
+    // mean the token is bad (Layer 1 minted it fresh + verified).
+    try {
+      user = await store.dispatch('auth/get');
+    } catch (e) {
+      user = null; lastErr = "AUTHGET-REJECT: " + (e && e.message || e);
+    }
+    if (user && user.apiKey && user.userId) {
+      try { await store.dispatch('user/get'); } catch (e) { /* non-fatal: some accounts gate user/get */ }
+      try { await router.push({ path: window.__GHL_ACTIVATE_TARGET__ || '/' }); } catch (e) { /* router may redirect; verified below */ }
+      await sleep(900);
+      const hasPwd = !!document.querySelector('input[type=password]');
+      const onLogin = /[?&]logout=true/.test(location.href) || /\/login(\b|$)/.test(location.pathname) || hasPwd;
+      if (!onLogin) {
+        return "activated:userId=" + user.userId + "|href=" + location.href + "|attempt=" + attempt;
+      }
+      // auth/get returned a user but we still landed on login — the seed had not
+      // fully settled; re-seed-read on the next attempt.
+      lastErr = "BOUNCED-TO-LOGIN: href=" + location.href + " hasPwd=" + hasPwd;
+    } else if (!lastErr) {
+      lastErr = "AUTHGET-NOUSER";
+    }
+    if (attempt < ACT_MAX_ATTEMPTS) {
+      await sleep(jitter(600 * Math.pow(2, attempt - 1))); // ~600/1200/2400ms +/- jitter, lets the store warm
+    }
+  }
+  throw new Error("ACTIVATE-FAILED after " + ACT_MAX_ATTEMPTS + " attempts: " + lastErr);
 })()
 AJS
 

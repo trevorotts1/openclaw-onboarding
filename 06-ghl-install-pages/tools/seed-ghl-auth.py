@@ -142,6 +142,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
+import socket
 import ssl
 import sys
 import time
@@ -210,6 +212,23 @@ GHL_STATIC_HEADERS = {
 
 _CTX = ssl.create_default_context()
 
+# ── R6: Layer-1 mint resilience (bounded securetoken retry) ───────────────────
+# The securetoken POST is occasionally hit by a transient 5xx / 429 / network
+# blip; a single-shot urlopen turned that blip into a hard mint failure (the
+# Layer-1 mirror of the Layer-2 activation race that guard-ghl-activation-
+# resilience.sh prevents). We retry a BOUNDED number of times with exponential
+# backoff + jitter, but ONLY on transient faults — a revoked/expired token
+# (INVALID_REFRESH_TOKEN / TOKEN_EXPIRED / USER_DISABLED) is raised IMMEDIATELY
+# so the exit-3 "re-grab token" remediation is never masked behind retries.
+MINT_MAX_ATTEMPTS = 4          # total attempts (1 initial + 3 retries)
+MINT_BACKOFF_BASE = 0.5        # seconds; doubled each attempt (0.5, 1.0, 2.0…)
+MINT_BACKOFF_CAP = 4.0         # seconds; ceiling for the backoff term
+# HTTP statuses worth retrying (server-side / rate-limit transients).
+_MINT_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+# Google securetoken error-message tokens that mean the token is DEAD — never
+# retry these; raise at once so main() can surface the exit-3 remediation.
+_MINT_HARD_AUTH_MARKERS = ("INVALID_REFRESH_TOKEN", "TOKEN_EXPIRED", "USER_DISABLED")
+
 
 def _resolve_refresh_token() -> tuple[str, str]:
     """Return (token, env_var_name) for the first non-empty refresh-token var,
@@ -229,6 +248,16 @@ def _exchange(refresh_token: str) -> dict:
     (id_token, refresh_token, expires_in, user_id) because the browser seed
     needs all four to populate stsTokenManager + uid.
 
+    RESILIENCE (R6): the securetoken POST is wrapped in a BOUNDED retry loop
+    (MINT_MAX_ATTEMPTS) with exponential backoff + jitter. RETRY happens ONLY on
+    TRANSIENT faults — an HTTPError whose status is in _MINT_RETRYABLE_STATUS
+    (429/500/502/503/504), or a URLError / socket timeout (network blip). A HARD
+    AUTH failure (INVALID_REFRESH_TOKEN / TOKEN_EXPIRED / USER_DISABLED) is raised
+    IMMEDIATELY — never retried — so the caller's exit-3 "re-grab the token"
+    remediation is preserved and a revoked token is never masked behind retries.
+    On the LAST attempt any transient fault is raised as before. The RETURN
+    CONTRACT is unchanged (full dict: id_token, refresh_token, expires_in, user_id).
+
     Raises RuntimeError with the Google error code on failure (e.g.
     INVALID_REFRESH_TOKEN when the token has been revoked).
     """
@@ -239,18 +268,47 @@ def _exchange(refresh_token: str) -> dict:
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req, context=_CTX, timeout=10) as r:
-            return json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        detail = ""
+    # Bounded retry: attempts 1..MINT_MAX_ATTEMPTS. The last attempt re-raises.
+    for attempt in range(1, MINT_MAX_ATTEMPTS + 1):
+        last_attempt = attempt >= MINT_MAX_ATTEMPTS
         try:
-            detail = json.loads(e.read()).get("error", {}).get("message", "")
-        except Exception:
-            detail = str(e.code)
-        raise RuntimeError(f"securetoken exchange failed: HTTP {e.code} {detail}") from e
-    except Exception as e:  # network/timeout
-        raise RuntimeError(f"securetoken exchange failed: {e}") from e
+            with urllib.request.urlopen(req, context=_CTX, timeout=10) as r:
+                return json.loads(r.read())  # unchanged return contract
+        except urllib.error.HTTPError as e:
+            # Read the Google error message so we can classify hard-auth vs transient.
+            detail = ""
+            try:
+                detail = json.loads(e.read()).get("error", {}).get("message", "")
+            except Exception:
+                detail = str(e.code)
+            err = RuntimeError(f"securetoken exchange failed: HTTP {e.code} {detail}")
+            # HARD auth failure → raise NOW (never retry; preserve exit-3 path).
+            if any(marker in detail for marker in _MINT_HARD_AUTH_MARKERS):
+                raise err from e
+            # Transient server/rate-limit status → retry unless this was the last try.
+            if e.code in _MINT_RETRYABLE_STATUS and not last_attempt:
+                _mint_backoff(attempt)
+                continue
+            raise err from e
+        except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
+            # Network blip / timeout → transient; retry unless this was the last try.
+            if not last_attempt:
+                _mint_backoff(attempt)
+                continue
+            raise RuntimeError(f"securetoken exchange failed: {e}") from e
+    # Unreachable (the loop always returns or raises), but keeps callers safe.
+    raise RuntimeError("securetoken exchange failed: exhausted retries")
+
+
+def _mint_backoff(attempt: int) -> None:
+    """Sleep exponential backoff + jitter before the next mint retry (R6).
+
+    delay = min(MINT_BACKOFF_BASE * 2**(attempt-1), MINT_BACKOFF_CAP) plus up to
+    one extra backoff-unit of random jitter, so concurrent builders re-minting at
+    the same moment do not synchronize their retries into a thundering herd.
+    """
+    base = min(MINT_BACKOFF_BASE * (2 ** (attempt - 1)), MINT_BACKOFF_CAP)
+    time.sleep(base + random.uniform(0, MINT_BACKOFF_BASE))
 
 
 def build_seed(resp: dict, fbase_key: str) -> dict:
