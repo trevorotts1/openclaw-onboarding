@@ -180,11 +180,20 @@ localStorage (origin): deviceId, proxyLoginCount, debug_sentry, locale  (NO toke
    — opens the GoHighLevel origin (so IndexedDB exists), validates the seed has
    the required boolean fields + tokens (FAIL LOUD otherwise), writes the entry
    into `firebaseLocalStorageDb`/`firebaseLocalStorage` via `eval`, **reads it
-   back to confirm it persisted**, then reloads. This script is HEADLESS-FORCED
+   back to confirm it persisted**, fetches `/oauth/2/login/current` in-browser
+   (token-id header) to obtain the logged-in object and writes the six SPA
+   cookies from it, then **activates via the SPA's OWN `$store.dispatch('auth/get')`
+   + `$router.push('/')` — it NEVER reloads or re-opens the app root** (a reload
+   re-runs the boot IIFE, which `signOut()`s and wipes the seeded session →
+   login bounce). Activation is RESILIENT: a warm-store readiness gate (poll
+   `#app.__vue_app__` for `$store`+`$router`) plus a bounded jittered retry, and
+   success requires the decoded cookie `a` to carry an `apiKey` matching the
+   logged-in user (NOT merely "no password box"). This script is HEADLESS-FORCED
    (D6): it `unset`s `AGENT_BROWSER_HEADED`, runs every agent-browser call through
    a wrapper that appends `--headed false`, and ABORTS (exit 75) if a headed
    signal survives. No login form is rendered on this path. If the write/readback
-   fails it exits **non-zero** — the builder STOPS (no auto UI-login fallback).
+   or activation fails it exits **non-zero** — the builder STOPS (no auto UI-login
+   fallback). CI-enforced by `scripts/guard-ghl-activation-resilience.sh`.
 3. `agent-browser --headed false --session <session> snapshot -i` → confirm the
    **dashboard**, NOT the Sign in form. **If the form shows → token revoked → STOP
    and report (non-zero).** Do NOT auto-fill the form or trigger two-factor. The
@@ -219,6 +228,28 @@ successful manual login, `state save` so it persists and the §2.1 path resumes.
 CLIENT keys ONLY. Every client box runs on the client's own funded GoHighLevel
 creds + the client's own captured refresh token. The operator's keys must NEVER
 appear on a client box.
+
+### 2.4 DOCTRINE — Layer-2 activation MUST be resilient (CI-ENFORCED)
+> **STANDING RULE (BANNED REGRESSIONS, CI-enforced):** GHL Layer-2 activation
+> (the SPA app-session establishment + SPA activation in `inject-ghl-auth.sh`)
+> MUST be resilient — a **warm-store readiness gate** (wait until the SPA auth
+> store is booted AND cookie `a` is readable) + a **bounded jittered retry** (NOT
+> single-shot) + a **token-only cookie re-assert** (on a cookie-`a` wipe, re-fetch
+> `/oauth/2/login/current` with the same id_token and re-write the cookies —
+> never a UI login) + a **positive cookie-`a`+apiKey liveness check** (success
+> requires cookie `a` present and its decoded `apiKey` matching the logged-in
+> user). The Layer-1 mint (the securetoken POST in `seed-ghl-auth.py`) likewise
+> uses a bounded retry. **A single-shot activate** (`auth/get` + `router.push`
+> with no surrounding retry), **a post-seed reload / re-navigation to the app
+> root**, a **`hasPwd`-only ("no password box") liveness** test, and a
+> **hardcoded `/location/<id>` route** in the activate path are **BANNED
+> REGRESSIONS**. They caused the intermittent `ACTIVATE-BOUNCED-TO-LOGIN` race
+> (the activate fired before the Vuex auth store warmed up and re-read the
+> freshly-written cookies). All of the above is CI-enforced by
+> **`scripts/guard-ghl-activation-resilience.sh`**, which sits alongside the
+> auth-MODEL guard **`scripts/guard-ghl-token-only.sh`** (refresh-token seed
+> ONLY — no auto UI-login / password / 2FA). The two GHL auth guardrails are
+> companions: one protects the auth *model*, the other the activation *resilience*.
 
 ---
 
@@ -269,11 +300,20 @@ Each step: ACTION / GATE (from gates.json) / VERIFY / EDGE. Resolve every
 
 ### A1. Session — token-seed ONLY (no UI login)
 - A1.1 Seed auth via §2 (`seed-ghl-auth.py` → `inject-ghl-auth.sh`) BEFORE
-  navigating. The refresh token alone logs the SPA in.
-- A1.2 Navigate to root `https://app.convertandflow.com/`, then `snapshot -i` →
-  confirm the **dashboard**. Gate #1 (the Sign-in form) is captured ONLY so the
-  agent can DETECT it and STOP — it is **never filled** by the build loop.
-- A1.3 VERIFY: URL reaches the dashboard within timeout.
+  navigating. `inject-ghl-auth.sh` opens the origin ONCE (`--pre-open`, so
+  IndexedDB exists + the SPA mounts), then activates IN-APP via
+  `$store.dispatch('auth/get')` + `$router.push('/')`. The refresh token alone
+  logs the SPA in. **Do NOT reload or re-`open`/re-navigate to the app root after
+  the seed** — that re-runs the boot IIFE, which `signOut()`s and wipes the
+  seeded session (login bounce). Activate via the SPA's own router only.
+- A1.2 After activation, `snapshot -i` → confirm the **dashboard** (a manual
+  visual check). Gate #1 (the Sign-in form) is captured ONLY so the agent can
+  DETECT it and STOP — it is **never filled** by the build loop.
+- A1.3 VERIFY (positive liveness — NOT "no password box"): success requires
+  cookie `a` to be present AND its decoded `apiKey` to match the logged-in user
+  (the `inject-ghl-auth.sh` activation already asserts this and prints
+  `activated:userId=…`). Treat "no password field visible" alone as INSUFFICIENT.
+  CI-enforced by `scripts/guard-ghl-activation-resilience.sh`.
 - EDGE not-logged-in / expired token: re-seed ONCE (re-run §2.1 to mint a fresh
   ID token from the same refresh token). If the dashboard still does not appear →
   **STOP and report (non-zero)**. Do NOT fill the Sign-in form, do NOT trigger

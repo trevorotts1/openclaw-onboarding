@@ -1,0 +1,52 @@
+name: GHL activation resilience guard
+
+# Companion to ghl-token-only-guard.yml. That guard enforces the GHL auth MODEL
+# (refresh-token seed ONLY — no UI login / password / 2FA). THIS guard enforces
+# that the GHL Layer-2 ACTIVATION is RESILIENT and never regresses to the
+# single-shot pattern that caused the intermittent `ACTIVATE-BOUNCED-TO-LOGIN`
+# failure (confirmed 2026-06-21 root cause: the SPA Vuex auth store had not warmed
+# up / re-read the freshly-written cookies when a one-and-only activate fired).
+#
+# It FAILS the build if 06-ghl-install-pages/tools/inject-ghl-auth.sh /
+# seed-ghl-auth.py:
+#   - LOSE a required resilience marker (R1 bounded jittered retry, R2 warm-store
+#     readiness gate, R3 token-only cookie re-assert, R4 positive cookie-`a`+apiKey
+#     liveness, R5 no-reload $router.push activation, R6 Layer-1 mint bounded
+#     retry), OR
+#   - REINTRODUCE a banned regression (F1 single-shot activate, F2 hasPwd-only
+#     liveness, F3 post-seed reload/navigate, F4 hardcoded /location/<id> route).
+#
+# Triggers on every push to main and every PR targeting main.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ghl-activation-resilience-guard:
+    name: GHL Layer-2 activation resilience guard (no single-shot regression)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Run activation-resilience guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/guard-ghl-activation-resilience.sh
+          echo "✓ Skill 06 Layer-2 activation resilience enforced (no single-shot/reload/hasPwd-only/deep-route regression)"
+
+      - name: Run activation-resilience regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --disable-pip-version-check pytest
+          python3 -m pytest -q 06-ghl-install-pages/tests/test_ghl_activation_resilience.py
