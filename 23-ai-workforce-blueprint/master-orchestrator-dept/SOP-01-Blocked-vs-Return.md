@@ -1,5 +1,5 @@
 # SOP-01 -- Blocked vs Return-to-Orchestrator
-**Version:** 1.0.0 | 2026-06-15
+**Version:** 1.1.0 | 2026-06-22
 **Applies to:** ALL agents at ALL levels -- worker specialists, department heads, Master Orchestrator (fleet-wide, Mac and VPS)
 **Status:** CANONICAL -- cross-platform fleet standard
 
@@ -250,11 +250,11 @@ This event **bumps `last_progress_at`** on the parent epic (preventing false sta
 The parent `funnel_epic` card maintains a live rollup:
 
 ```
-"3/6 stages complete; current = P4 build (web-development)"
+"5/7 stages complete; current = P4 build (web-development)"
 ```
 
 The parent card moves to `done` status ONLY when:
-1. ALL six child cards are in `done`, `APPROVED`, or `verified` state, AND
+1. ALL seven child cards (P0, P1, P2, P2e, P3, P4, P5) are in `done`, `APPROVED`, or `verified` state, AND
 2. The canonical verifier (`ghl_builder.py verify-all`) has run and recorded `overall_pass:true`.
 
 If any child card reaches `FAILED`, the parent does NOT move to `done`. `funnel_rollback` runs (SOP-07 Section 7).
@@ -265,5 +265,5 @@ If any child card reaches `FAILED`, the parent does NOT move to `done`. `funnel_
 
 | Version | Date | Change |
 |---------|------|--------|
-| 1.1.0 | 2026-06-22 | Added Full-Funnel Kanban Schema Extension: new task schema columns (parent_task_id, stage, depends_on, task_type), depends_on ordering edges for P0→P5, waiting_on_dependency non-human sub-state (not counted against qc_reroute_attempts bounce cap — fixes Category-3 misclassification at line 67), first-class board handoff events at P-boundaries, and parent epic rollup rule (done only when all 6 children done + verify-all passed). Schema/migration/sweep code lands in deployed Command Center; this doc is the contract. |
+| 1.1.0 | 2026-06-22 | Added Full-Funnel Kanban Schema Extension: new task schema columns (parent_task_id, stage, depends_on, task_type), depends_on ordering edges for P0→P5, waiting_on_dependency non-human sub-state (not counted against qc_reroute_attempts bounce cap — fixes Category-3 misclassification at line 67), first-class board handoff events at P-boundaries, and parent epic rollup rule (done only when all 7 children — P0, P1, P2, P2e, P3, P4, P5 — done + verify-all passed). Schema/migration/sweep code lands in deployed Command Center; this doc is the contract. |
 | 1.0.0 | 2026-06-15 | Initial canonical SOP. Defines four-way classifier (needs-human / agent-fixable / broken-but-agent-could / stale), three mandatory Blocked fields, structured handback schema, orchestrator re-router algorithm, and stale sweep spec. Fleet-wide: both Mac and VPS. Pairs with BLOCKED-IS-GATED.md, N36 (AGENTS.md), and Command Center gate + stale sweep (canary/command-center). |

@@ -7,7 +7,7 @@
 
 ## Purpose
 
-This SOP is the single owner of the P0→P5 full-funnel value-stream. It is triggered by SOP-00 Step-2 when the owner's request is classified as full-funnel or website-factory intent (see SOP-00 for the trigger condition). It replaces the single-department routing in that context, creating a parent epic with six staged child cards and enforcing the stage-boundary ordering gates.
+This SOP is the single owner of the P0→P5 full-funnel value-stream. It is triggered by SOP-00 Step-2 when the owner's request is classified as full-funnel or website-factory intent (see SOP-00 for the trigger condition). It replaces the single-department routing in that context, creating a parent epic with seven staged child cards (P0, P1, P2, P2e, P3, P4, P5 — where P2e is the email-sequence card that runs in parallel with P2) and enforcing the stage-boundary ordering gates.
 
 The Master Orchestrator ROUTES and GATES. It never executes production work. All production stages are dispatched via `POST /api/tasks/ingest` to the PERSISTENT `agent:<dept>` for each department (SOP-00 R11). No inline turn-scoped child is used.
 
@@ -17,7 +17,7 @@ The Master Orchestrator ROUTES and GATES. It never executes production work. All
 
 | Rule | Statement |
 |------|-----------|
-| **F1** | The Master Orchestrator is the sole entity that creates the parent funnel epic and the six staged child cards. |
+| **F1** | The Master Orchestrator is the sole entity that creates the parent funnel epic and the seven staged child cards (P0, P1, P2, P2e, P3, P4, P5). |
 | **F2** | Child cards are dispatched to the PERSISTENT `agent:<dept>` via `POST /api/tasks/ingest` with `department_slug`. NEVER dispatch to an ephemeral inline child. |
 | **F3** | A downstream child card MUST NOT be moved to `in_progress` until every `depends_on` card is in `done` or `APPROVED` state. The orchestrator enforces this gate before each dispatch. |
 | **F4** | A child card whose upstream dependency is not yet complete is assigned `status=waiting_on_dependency` (see SOP-01 schema extension). This sub-state is NEVER counted against the `qc_reroute_attempts` bounce cap (cap = 3, per SOP-01 O4). |
@@ -41,7 +41,7 @@ The orchestrator applies this check BEFORE the normal single-department routing 
 **If full-funnel intent is detected:** do NOT single-route. Proceed to Step 2. Acknowledge to the owner:
 
 ```
-Got it — this is a full-funnel build. I'm spinning up the 6-stage pipeline for you now.
+Got it — this is a full-funnel build. I'm spinning up the 7-stage pipeline for you now.
 I'll keep you posted at each stage gate.
 ```
 
@@ -77,9 +77,9 @@ On success: capture `parent_task_id`. Log it.
 
 ---
 
-## Step 3 — Create Six Staged Child Cards
+## Step 3 — Create Seven Staged Child Cards
 
-For each stage below, POST one child card. Derive each child `idempotency_key` as `sha256(parent_task_id + ':' + stage_slug)`.
+For each of the seven stages below, POST one child card (P2e is the email-sequence card and runs in parallel with P2 — it is a full first-class card with its own idempotency key, depends_on, and verify gate, NOT a sub-task of P2). Derive each child `idempotency_key` as `sha256(parent_task_id + ':' + stage_slug)`.
 
 | Stage | Slug | Department | Artifact produced | Depends on |
 |-------|------|------------|-------------------|------------|
@@ -246,13 +246,13 @@ The parent epic tracks progress as a rollup:
 ```
 {
   "stages_complete": <count of children in done/APPROVED/verified>,
-  "stages_total": 6,
+  "stages_total": 7,
   "current_stage": "<slug of active in_progress stage>",
-  "rollup_status": "<N>/6 stages complete; current = <P?> build (<dept>)"
+  "rollup_status": "<N>/7 stages complete; current = <P?> build (<dept>)"
 }
 ```
 
-**Parent epic moves to `done` only when ALL six child cards are in `done`, `APPROVED`, or `verified` state AND the canonical verifier (`ghl_builder.py verify-all`) has run and logged `overall_pass:true`.**
+**Parent epic moves to `done` only when ALL seven child cards (P0, P1, P2, P2e, P3, P4, P5) are in `done`, `APPROVED`, or `verified` state AND the canonical verifier (`ghl_builder.py verify-all`) has run and logged `overall_pass:true`.**
 
 **Publish gate:** The parent epic NEVER marks any page as LIVE without explicit owner LIVE approval delivered via Telegram in the current conversation turn. Draft/preview only by default.
 
@@ -312,4 +312,4 @@ The `POST /api/tasks/ingest` endpoint returns `{ok:true, task_id:"...", deduped:
 
 | Version | Date | Change |
 |---------|------|--------|
-| 1.0.0 | 2026-06-22 | Initial canonical SOP. Defines P0→P5 value-stream: full-funnel intent detection, parent funnel_epic, 6 staged child cards with depends_on edges, waiting_on_dependency sub-state (not counted against bounce cap), Iron Rule (routes via POST /api/tasks/ingest to persistent agent:<dept>), funnel_rollback on child FAILED, and parent/child idempotency key derivation. Sibling to SOP-00 and SOP-01 in master-orchestrator-dept/. |
+| 1.0.0 | 2026-06-22 | Initial canonical SOP. Defines P0→P5 value-stream: full-funnel intent detection, parent funnel_epic, 7 staged child cards (P0, P1, P2, P2e, P3, P4, P5 — P2e is the parallel email-sequence card) with depends_on edges, waiting_on_dependency sub-state (not counted against bounce cap), Iron Rule (routes via POST /api/tasks/ingest to persistent agent:<dept>), funnel_rollback on child FAILED, and parent/child idempotency key derivation. Sibling to SOP-00 and SOP-01 in master-orchestrator-dept/. |

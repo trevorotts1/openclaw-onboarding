@@ -52,7 +52,17 @@ while [ $# -gt 0 ]; do
 done
 
 # ─── CANONICAL SELECTOR PATH (persona-selector-v2.py) ───────────────────────
-SELECTOR="$HOME/Downloads/openclaw-master-files/23-ai-workforce-blueprint/scripts/persona-selector-v2.py"
+# Resolution order (first existing file wins):
+#   1. SELECTOR env override (explicit pin, e.g. CI)
+#   2. The selector sitting beside THIS script (repo working tree OR an install
+#      dir — when the script runs from an install, SCRIPT_DIR *is* that install).
+#      This guarantees the test exercises the same copy it ships next to, so a
+#      repo-tree run validates the edited template rather than a stale install.
+#   3. ~/Downloads master-files install
+#   4. ~/.openclaw/skills install
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SELECTOR="${SELECTOR:-$SCRIPT_DIR/persona-selector-v2.py}"
+[ ! -f "$SELECTOR" ] && SELECTOR="$HOME/Downloads/openclaw-master-files/23-ai-workforce-blueprint/scripts/persona-selector-v2.py"
 [ ! -f "$SELECTOR" ] && SELECTOR="$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/persona-selector-v2.py"
 
 red()    { printf "\033[31m%s\033[0m\n" "$1"; }
@@ -61,8 +71,12 @@ yellow() { printf "\033[33m%s\033[0m\n" "$1"; }
 blue()   { printf "\033[34m%s\033[0m\n" "$1"; }
 
 # ─── PRE-FLIGHT ──────────────────────────────────────────────────────────────
-if [ ! -x "$SELECTOR" ]; then
-  red "ERROR: persona-selector-v2.py not found or not executable: $SELECTOR"
+# The selector is invoked as `python3 "$SELECTOR"` (see below), so it only needs
+# to EXIST and be readable — the executable bit is irrelevant and a readable-but-
+# non-executable install (e.g. a master-files copy shipped -rw-r--r--) must NOT
+# spuriously fail this preflight.
+if [ ! -f "$SELECTOR" ]; then
+  red "ERROR: persona-selector-v2.py not found: $SELECTOR"
   red "Run update-skills.sh --only 23 to install."
   exit 1
 fi
@@ -137,7 +151,7 @@ for entry in "${TASKS[@]}"; do
     continue
   fi
 
-  green "$persona (score=$score, funnel=$funnel_pool→$funnel_cat→$funnel_sem)"
+  green "$persona (score=$score, funnel=${funnel_pool}→${funnel_cat}→${funnel_sem})"
   results+=("PASS|$dept|$task|$persona|$score|$funnel_pool|$funnel_cat|$funnel_sem")
   personas_seen+=("$persona")
   breakdowns_seen+=("$score")

@@ -2007,6 +2007,31 @@ jobs:
           # disagrees with the computed floor.
           python3 scripts/check-floor-count-drift.py
 
+      - name: "Skill 32 — register-routing-dept writes sidecar, NEVER openclaw.json root (2026.6.8 schema)"
+        shell: bash
+        run: |
+          set -euo pipefail
+          # REGRESSION GUARD (fleet-critical): OpenClaw 2026.6.8 set the openclaw.json
+          # ROOT schema to additionalProperties:false. register-routing-dept.py used to
+          # append an `extension_registry` block to the config ROOT — that unknown root
+          # key makes `openclaw config validate` fail ("<root>: Invalid input"), which
+          # BLOCKS `openclaw message send` (Telegram) on every box where a department was
+          # registered. The fix writes the registry LEDGER to a SIDECAR file beside
+          # openclaw.json and NEVER adds a root key, and self-heals any box that already
+          # carries the legacy root block. This test asserts that contract end-to-end via
+          # subprocess (sidecar-only write, idempotency, dry-run no-op, root-block
+          # migration). It needs no live OpenClaw install — pure temp dirs.
+          python3 32-command-center-setup/scripts/test_register_routing_sidecar.py
+          # Belt-and-suspenders: the source must not regress to writing a root
+          # extension_registry. Allow the migration code path (which DELETES the root
+          # key) and comments; forbid any assignment INTO the config root.
+          if grep -nE 'config\[.extension_registry.\]\s*=' \
+                32-command-center-setup/scripts/register-routing-dept.py; then
+            echo "✗ register-routing-dept.py assigns extension_registry into the config root — fleet-critical regression"
+            exit 1
+          fi
+          echo "✓ Skill 32 register-routing sidecar contract enforced (no root-key write)"
+
       # ── NEW ENFORCEMENT GATES (all rules that existed as prose but had no auto-fail) ──
 
       - name: CRITICAL-1 — No real client names in tracked files
