@@ -4,6 +4,16 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v7.2.1] - June 21, 2026 — VERSION RECONCILIATION
+
+### Changed
+- SKILL.md frontmatter `version` updated to `7.2.1` to match skill-version.txt.
+- `qc-built-workflow.sh` (Skill 44): WF-4, WF-5, and WF-6 assertions that previously
+  called `record_pass` when the observed value was `unknown` now call `record_human`
+  (REQUIRES_HUMAN_REVIEW), ensuring unknown export fields never silently count as passes.
+
+---
+
 ## [v7.2.0] - June 21, 2026 — TOKEN-ONLY AUTH SEED (no UI login, no 2FA)
 
 The Firebase refresh token alone now produces a logged-in SPA session. Fixed the

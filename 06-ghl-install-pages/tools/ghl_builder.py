@@ -215,12 +215,169 @@ def resume_point(run_id: str, manifest: dict) -> list[dict]:
 
 # ── Sub-account hard gate (A2.3) ──────────────────────────────────────────────
 
-def subaccount_matches(current_label: str, target: str) -> bool:
-    """Case-insensitive contains. Caller MUST refuse to proceed on False
-    (NO-COMINGLING — never default to another client's sub-account)."""
-    if not current_label or not target:
-        return False
-    return target.strip().lower() in current_label.strip().lower()
+# Minimum length of a valid GoHighLevel location_id.  GHL location IDs are
+# 20-character alphanumeric strings.  Anything shorter is either a human label
+# fragment, a placeholder, or a generic word — all of which are REJECTED so the
+# guard can never be tricked into a false match via a too-short target.
+_LOCATION_ID_MIN_LEN = 8
+
+# Normalise a location_id candidate: strip whitespace, collapse internal
+# whitespace, lowercase.  Only characters that are valid in a GHL location ID
+# are kept (alphanumeric + hyphens + underscores).
+_LOCATION_ID_CLEAN_RE = re.compile(r"[^A-Za-z0-9_-]")
+
+
+def _normalise_location_id(value: str) -> str:
+    """Strip and lowercase a location_id candidate, removing non-ID characters."""
+    return _LOCATION_ID_CLEAN_RE.sub("", value.strip()).lower()
+
+
+# Generic/placeholder strings that are never valid location IDs.  Exact-match
+# after normalisation.
+_GENERIC_TARGETS: frozenset[str] = frozenset({
+    "test", "demo", "example", "placeholder", "unknown", "none", "null",
+    "undefined", "default", "account", "client", "location",
+})
+
+
+class MatchGuard:
+    """Return value of subaccount_matches().
+
+    Truth-value (bool) is True only when the match passes all gates, so
+    existing callers that do ``if subaccount_matches(...):`` continue to work
+    correctly.  The guard also carries structured fields that the build loop
+    MUST inspect before any write:
+
+        guard.ok        – bool  – True = safe to proceed
+        guard.reason    – str   – human-readable verdict (for logs / errors)
+        guard.target_id – str   – normalised location_id that was checked
+        guard.matched   – str   – normalised location_id extracted from current
+                                  (empty string when ok=False)
+
+    The build loop MUST NOT write to any sub-account when ``guard.ok`` is
+    False.  Treat it as a hard STOP, not an advisory warning.
+    """
+
+    __slots__ = ("ok", "reason", "target_id", "matched")
+
+    def __init__(self, ok: bool, reason: str,
+                 target_id: str = "", matched: str = "") -> None:
+        self.ok = ok
+        self.reason = reason
+        self.target_id = target_id
+        self.matched = matched
+
+    # ── bool / truthiness ────────────────────────────────────────────────────
+    def __bool__(self) -> bool:
+        return self.ok
+
+    # ── dict-like interface so callers can do guard["ok"] if they prefer ─────
+    def __getitem__(self, key: str):  # type: ignore[return]
+        return getattr(self, key)
+
+    def __repr__(self) -> str:
+        return (
+            f"MatchGuard(ok={self.ok!r}, reason={self.reason!r}, "
+            f"target_id={self.target_id!r}, matched={self.matched!r})"
+        )
+
+    def as_dict(self) -> dict:
+        """Serialisable representation for ledger / log writes."""
+        return {
+            "ok": self.ok,
+            "reason": self.reason,
+            "target_id": self.target_id,
+            "matched": self.matched,
+        }
+
+
+def subaccount_matches(current_location_id: str, target: str) -> MatchGuard:
+    """Hard gate: verify that *target* is the exact normalised location_id of
+    the currently-active GHL sub-account (A2.3 — NO-COMINGLING).
+
+    CHANGED from the old implementation:
+      - Operates on **location_id values** (the 20-char alphanumeric GHL ID),
+        NOT on human-readable label strings.  Pass the location_id captured
+        from the live sub-account selector, not its display name.
+      - Uses **exact equality** after normalisation, not substring/contains.
+      - Rejects targets that are too short (< _LOCATION_ID_MIN_LEN chars after
+        normalisation) or are known generic placeholders.
+      - Returns a ``MatchGuard`` object instead of a bare bool.  The guard
+        evaluates as ``True``/``False`` in boolean context so existing
+        ``if subaccount_matches(...):`` callers remain correct.  The build loop
+        MUST check ``guard.ok`` (or use the guard in a boolean expression) and
+        MUST NOT proceed on ``False``.
+
+    Args:
+        current_location_id: The location_id extracted from the live GHL UI
+            sub-account selector (NOT the human label / display name).
+        target: The expected location_id for the client being built.
+
+    Returns:
+        MatchGuard — always returned, never raises.  ok=False = hard stop.
+    """
+    if not current_location_id:
+        return MatchGuard(
+            ok=False,
+            reason="REJECT: current_location_id is empty — no active sub-account detected",
+        )
+    if not target:
+        return MatchGuard(
+            ok=False,
+            reason="REJECT: target location_id is empty — refusing to match against nothing",
+        )
+
+    norm_current = _normalise_location_id(current_location_id)
+    norm_target = _normalise_location_id(target)
+
+    if not norm_target:
+        return MatchGuard(
+            ok=False,
+            reason=f"REJECT: target {target!r} contains no valid location_id characters after normalisation",
+            target_id=norm_target,
+        )
+
+    if len(norm_target) < _LOCATION_ID_MIN_LEN:
+        return MatchGuard(
+            ok=False,
+            reason=(
+                f"REJECT: target {norm_target!r} is too short ({len(norm_target)} chars, "
+                f"minimum {_LOCATION_ID_MIN_LEN}) — generic or label fragment, not a real location_id"
+            ),
+            target_id=norm_target,
+        )
+
+    if norm_target in _GENERIC_TARGETS:
+        return MatchGuard(
+            ok=False,
+            reason=f"REJECT: target {norm_target!r} is a known generic/placeholder value, not a real location_id",
+            target_id=norm_target,
+        )
+
+    if not norm_current:
+        return MatchGuard(
+            ok=False,
+            reason=f"REJECT: current_location_id {current_location_id!r} contains no valid ID characters after normalisation",
+            target_id=norm_target,
+        )
+
+    if norm_current == norm_target:
+        return MatchGuard(
+            ok=True,
+            reason=f"PASS: exact location_id match ({norm_target!r})",
+            target_id=norm_target,
+            matched=norm_current,
+        )
+
+    return MatchGuard(
+        ok=False,
+        reason=(
+            f"MISMATCH: active sub-account location_id {norm_current!r} "
+            f"!= expected {norm_target!r} — HARD STOP (NO-COMINGLING)"
+        ),
+        target_id=norm_target,
+        matched=norm_current,
+    )
 
 
 # ── Publish guard (A13.1 / guardrail 4) ───────────────────────────────────────
@@ -326,8 +483,9 @@ def main() -> int:
     if args.cmd == "may-publish":
         ok = may_publish(args.approval); print("PUBLISH" if ok else "DRAFT"); return 0 if ok else 1
     if args.cmd == "subaccount":
-        ok = subaccount_matches(args.current, args.target)
-        print("MATCH" if ok else "MISMATCH"); return 0 if ok else 1
+        guard = subaccount_matches(args.current, args.target)
+        print(json.dumps(guard.as_dict(), indent=2))
+        return 0 if guard.ok else 1
     if args.cmd == "headless-guard":
         try:
             headless_guard()

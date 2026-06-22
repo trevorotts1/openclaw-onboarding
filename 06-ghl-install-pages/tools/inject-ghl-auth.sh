@@ -12,7 +12,7 @@
 #   2. inject-ghl-auth.sh <session-name> /tmp/<session>/ghl-auth-seed.json --pre-open
 #   3. (this script: seeds Firebase IndexedDB -> fetches /oauth/2/login/current
 #      in-page (token-id header) -> writes the six SPA cookies from the response
-#      -> reloads so the SPA rehydrates)
+#      -> activates via $store.dispatch('auth/get') + $router.push — NO page reload)
 #   4. snapshot -> confirm dashboard (NOT the login form).
 #
 # WHY BOTH COOKIES *AND* INDEXEDDB (bundle-verified chunk.DOYVEcZH.js):

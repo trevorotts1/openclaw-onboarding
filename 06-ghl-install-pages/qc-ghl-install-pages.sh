@@ -30,8 +30,11 @@ assert "gate registry has 2 captured gates"  "[ \"\$(python3 -c 'import json;pri
 assert "gate registry has 26 runtime gates"  "[ \"\$(python3 -c 'import json;print(sum(1 for g in json.load(open(\"$SK/tools/gates.json\"))[\"gates\"] if g.get(\"status\")==\"runtime\"))' 2>/dev/null)\" = '26' ]"
 assert "builder helper parses clean" "python3 -c \"import ast;ast.parse(open('$SK/tools/ghl_builder.py').read())\""
 assert "auth-seed module parses clean" "python3 -c \"import ast;ast.parse(open('$SK/tools/seed-ghl-auth.py').read())\""
-assert "GHL agency/login email set"     "[ -n \"$GHL_AGENCY_EMAIL\" ] || [ -n \"$GHL_EMAIL\" ]"
-assert "GHL agency/login password set"  "[ -n \"$GHL_AGENCY_PASSWORD\" ] || [ -n \"$GHL_PASSWORD\" ]"
+# TOKEN-ONLY doctrine (D7): the Firebase refresh token is the ONLY auth path.
+# GHL_AGENCY_EMAIL/PASSWORD are a MANUAL operator-only last resort — NOT required
+# for builds and NEVER auto-invoked. So they are warn-only, not a hard assert.
+warn_only "GHL manual-only login email set (operator last resort, optional)"     "[ -n \"$GHL_AGENCY_EMAIL\" ] || [ -n \"$GHL_EMAIL\" ]"
+warn_only "GHL manual-only login password set (operator last resort, optional)"  "[ -n \"$GHL_AGENCY_PASSWORD\" ] || [ -n \"$GHL_PASSWORD\" ]"
 assert "Secrets file chmod 600"         "[ \"\$(stat -f %A \"$SECRETS_ENV\" 2>/dev/null || stat -c %a \"$SECRETS_ENV\" 2>/dev/null)\" = '600' ]"
 assert "Node.js installed" "command -v node"
 assert "npm installed" "command -v npm"
@@ -41,6 +44,18 @@ warn_only "Firebase refresh token set (seeds logged-in session)" "[ -n \"\${GOHI
 warn_only "Chrome/Chromium present" "command -v chromium || command -v google-chrome || ls '/Applications/Google Chrome.app' 2>/dev/null"
 warn_only "Client white-label URL stored" "grep -qiE 'app\\.gohighlevel\\.com|app\\.convertandflow\\.com|app\\.[a-z0-9]+\\.com' \"$WORKSPACE/MEMORY.md\" 2>/dev/null"
 assert "GHL password NOT in workspace .md files" "! grep -rE 'GHL_(AGENCY_)?PASSWORD\\s*=\\s*[A-Za-z0-9]' \"$WORKSPACE\"/*.md 2>/dev/null | grep -v 'XXX\\|xxx'"
+
+# TOKEN-ONLY doctrine guard (D7): fails if seed-ghl-auth.py / inject-ghl-auth.sh
+# reintroduce an auto UI-login / 2FA fallback, or if the doctrine sentinel is
+# missing from the skill docs. Runs against the repo source when present (the
+# guard ships at <repo>/scripts/guard-ghl-token-only.sh, two levels up from this
+# skill dir). Skipped (warn-only) when the repo layout is absent on a client box.
+GUARD="$SKILL_DIR/../scripts/guard-ghl-token-only.sh"
+if [ -f "$GUARD" ]; then
+  assert "TOKEN-ONLY auth doctrine intact (no auto login/2FA; sentinel present)" "bash \"$GUARD\" --repo-root \"$(cd \"$SKILL_DIR/..\" && pwd)\""
+else
+  warn_only "TOKEN-ONLY auth doctrine guard available" "[ -f \"$GUARD\" ]"
+fi
 echo ""
 echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings ═══"
 [ $FAIL -gt 0 ] && { red "Skill 06 QC FAILED"; exit 1; } || { green "Skill 06 QC PASS"; exit 0; }

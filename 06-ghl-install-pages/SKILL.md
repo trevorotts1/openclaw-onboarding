@@ -9,7 +9,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "3.0"
+  version: "7.2.1"
   priority: HIGH
 ---
 
@@ -26,12 +26,14 @@ drives the browser, pastes the code, and handles all the clicks and navigation.
 > The previous raw-Playwright-only stack is replaced. The full hardened
 > procedure is in `ghl-browser-builder-full.md` (v3.0).
 
-> **STATUS — PENDING-LIVE-RUN.** The login form (gate #1) and the auth-storage
-> schema (gate #27) are LIVE-CAPTURED. The other 26 in-app controls are
-> **runtime snapshot-gates** (`tools/gates.json`): the agent snapshots the live
-> DOM and picks the ref at runtime — NO invented CSS is shipped as fact. The
-> end-to-end funnel/website live test is NOT yet claimed (blocked on a fresh
-> Firebase refresh token or an attended two-factor-authentication run).
+> **STATUS — PENDING-LIVE-RUN.** The login-form DOM (gate #1, used ONLY to DETECT
+> a failed seed and STOP — never to log in) and the auth-storage schema (gate #27)
+> are LIVE-CAPTURED. The other 26 in-app controls are **runtime snapshot-gates**
+> (`tools/gates.json`): the agent snapshots the live DOM and picks the ref at
+> runtime — NO invented CSS is shipped as fact. The end-to-end funnel/website
+> live test is NOT yet claimed (blocked ONLY on a fresh Firebase refresh token —
+> the token-seed is the sole auth path; there is NO login-form / two-factor run,
+> attended or otherwise, per the TOKEN-ONLY doctrine in §2/D7).
 
 This is NOT about writing or designing the HTML. The HTML is already done
 (usually from a SuperDesign export). This skill is purely about getting that
@@ -54,16 +56,23 @@ code into GHL so the page goes live.
 - Vercel Setup (skill 08) - only for Mode 2 iframe-embed of rich payloads
 - Playwright installed - FALLBACK engine for known-hard flows
 - GoHighLevel auth in ~/.openclaw/secrets/.env: a Firebase refresh token
-  (GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN, preferred — seeds a logged-in session)
-  OR the login fallback (GHL_AGENCY_EMAIL / GHL_AGENCY_PASSWORD;
-  GHL_EMAIL / GHL_PASSWORD also accepted). CLIENT keys only.
+  (GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN — the ONLY auth path; seeds a logged-in
+  session with NO login form, NO password, NO two-factor). CLIENT keys only.
+  GHL_AGENCY_EMAIL / GHL_AGENCY_PASSWORD (or GHL_EMAIL / GHL_PASSWORD) are a
+  DOCUMENTED, MANUAL last resort for a human operator ONLY — they are NEVER
+  auto-invoked by this skill, and there is NO automatic UI-login / 2FA fallback.
 
 ## What This Skill Covers
 
-1. **Browser setup** - Viewport size (minimum 1440x900), persistent sessions
-   so the user only logs in once, and anti-detection settings
-2. **Login and session management** - How to log in, handle expired sessions,
-   and deal with two-factor authentication (2FA) by pausing for the human
+1. **Browser setup** - Viewport size (minimum 1440x900), isolated headless
+   sessions, and anti-detection settings
+2. **Token-only session seeding (D7)** - GHL-AUTH-DOCTRINE: TOKEN-ONLY — the
+   Firebase refresh token ALONE seeds a logged-in session (mint id_token →
+   Firebase IndexedDB record + the six SPA cookies → navigate straight into the
+   dashboard). NO login form is rendered, NO password is typed, two-factor is
+   NEVER reached. On token failure the builder STOPS and reports — it NEVER
+   auto-opens the Sign-in form or a two-factor prompt and NEVER falls back to a
+   login/password.
 3. **GHL's iframe architecture** - The page builder loads inside nested
    iframes. You cannot just click elements on the main page. The skill
    explains how to find and switch into the correct iframe context.
@@ -109,11 +118,19 @@ code into GHL so the page goes live.
 - PRIMARY engine is agent-browser, headless, with an isolated `--session
   <client>`. It never touches a personal browser (NO-COMINGLING). Playwright is
   the fallback only; if you use it, `launchPersistentContext()` never `launch()`.
-- Seed the session logged-in via the Firebase refresh token (tools/seed-ghl-auth.py
-  + tools/inject-ghl-auth.sh) BEFORE navigating. Auth lives in IndexedDB
-  (firebaseLocalStorageDb), NOT localStorage. Login form is the fallback; the
-  form renders at root `https://app.convertandflow.com/`, never `/login`.
-- Two-factor authentication PAUSES for a human (up to 5 min), never bypassed.
+- GHL-AUTH-DOCTRINE: TOKEN-ONLY (D7) — refresh-token seed is the only auth path; NO auto UI-login / password / 2FA.
+  Seed the session logged-in via the Firebase
+  refresh token (tools/seed-ghl-auth.py + tools/inject-ghl-auth.sh) BEFORE
+  navigating. Auth lives in IndexedDB (firebaseLocalStorageDb) + the six SPA
+  cookies, NOT localStorage. The refresh token ALONE logs the SPA in — NO Sign-in
+  form is rendered, NO password is typed, two-factor is NEVER reached.
+- HARD RULE: NEVER ask for, type, or fall back to a GHL login/email/password or a
+  two-factor (2FA) prompt. On token failure (no token / revoked / seed does not
+  log in) the builder STOPS and reports (non-zero exit) — it MUST NOT auto-open
+  the Sign-in form or a two-factor prompt. Fix = re-grab a fresh refresh token via
+  the Convert and Flow Token Grabber Chrome extension, then retry the seed.
+  GHL_AGENCY_EMAIL / GHL_AGENCY_PASSWORD = MANUAL operator-only last resort, never
+  auto-invoked.
 - Always verify you are in the correct sub-account before building
   (ghl_builder.py subaccount). Wrong sub-account = the client never sees pages.
   REFUSE on mismatch.

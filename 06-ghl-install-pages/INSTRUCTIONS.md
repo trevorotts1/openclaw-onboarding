@@ -11,9 +11,20 @@ This assumes your HTML code is already written and ready to paste. This guide is
 > mechanics (auth seeding, runtime gate selection, ledger/resume, ZHC naming,
 > sub-account gate, publish guard, marker verification) are implemented in code.
 >
+> **GHL-AUTH-DOCTRINE: TOKEN-ONLY (D7) — refresh-token seed is the only auth path; NO auto UI-login / password / 2FA.**
+> The Firebase refresh token ALONE seeds a
+> logged-in session. There is NO "refresh-token vs login" choice: the token-seed
+> is the SOLE auth path. On token failure the builder STOPS and reports — it
+> NEVER auto-opens the Sign-in form or a two-factor prompt, and NEVER types a
+> login/password. Fix = re-grab a fresh refresh token via the Convert and Flow
+> Token Grabber Chrome extension, then retry the seed. GHL_AGENCY_EMAIL /
+> GHL_AGENCY_PASSWORD = MANUAL operator-only last resort, never auto-invoked.
+>
 > **Quick start (agent):**
-> 1. `python3 tools/seed-ghl-auth.py --check` — pick auth path (refresh-token vs login).
-> 2. If refresh-token: `python3 tools/seed-ghl-auth.py --print-seed --out /tmp/<sess>/seed.json` then `bash tools/inject-ghl-auth.sh <sess> /tmp/<sess>/seed.json --pre-open`.
+> 1. `python3 tools/seed-ghl-auth.py --check` — confirm a refresh token is present.
+>    (`--check` only REPORTS the path; it never authorizes a UI login. Exit 2 = no
+>    token → STOP, do NOT open the login form.)
+> 2. `python3 tools/seed-ghl-auth.py --print-seed --out /tmp/<sess>/seed.json` then `bash tools/inject-ghl-auth.sh <sess> /tmp/<sess>/seed.json --pre-open`. (On exit 3 = revoked/expired token → STOP + re-grab via the Token Grabber.)
 > 3. Build the manifest + drive the funnel/website flow per `ghl-browser-builder-full.md`, resolving each runtime gate (`tools/gates.json`) by live snapshot.
 > 4. Ledger every phase via `tools/ghl_builder.py ledger-write ...`; verify with `ghl_builder.py verify <url> <marker>`; never publish unless `ghl_builder.py may-publish <approval>` returns PUBLISH.
 
@@ -22,8 +33,12 @@ This assumes your HTML code is already written and ready to paste. This guide is
 
 > NOTE: in code, navigation is snapshot-driven (runtime gates), NOT the fixed
 > CSS/text selectors implied below. The phases describe the human path; the agent
-> resolves each control live. The login route is root
-> `https://app.convertandflow.com/`, never `/login`.
+> resolves each control live. The agent NEVER logs in: it arrives already
+> authenticated via the token seed (D7) and starts at the dashboard. The Sign-in
+> form (rendered at root `https://app.convertandflow.com/`, never `/login`) is
+> referenced ONLY as the failure signal — if it appears, the seed did not take,
+> the builder STOPS and reports, and the operator re-grabs a fresh refresh token.
+> The agent NEVER fills the form and NEVER reaches two-factor.
 
 Deploying a page into GHL follows 10 phases in exact order. Do not skip phases. Do not change the order.
 
