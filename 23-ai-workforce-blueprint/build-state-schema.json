@@ -46,7 +46,7 @@
     },
     "agentName": {
       "type": "string",
-      "description": "Master agent name (e.g. Temperance, NEXORA)"
+      "description": "Master agent name (e.g. Nova, Atlas)"
     },
     "buildPid": {
       "type": [

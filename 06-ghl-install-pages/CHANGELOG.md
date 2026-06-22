@@ -4,6 +4,11 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v7.2.3] - June 21, 2026 — VERSION RECONCILIATION (all three markers aligned)
+
+### Changed
+- Reconciled all three Skill-06 version markers to **v7.2.3** (skill-version.txt + SKILL.md frontmatter + this CHANGELOG) so they agree — closes the A7 mismatch the Goal-B independent verifier flagged (skill-version was v7.2.2 while frontmatter/CHANGELOG still said 7.2.1).
+
 ## [v7.2.1] - June 21, 2026 — VERSION RECONCILIATION
 
 ### Changed

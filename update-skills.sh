@@ -45,7 +45,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v13.5.0"
+ONBOARDING_VERSION="v13.5.1"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -402,7 +402,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v13.5.0 - safe_json_edit
+# v13.5.1 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1796,7 +1796,7 @@ with open('${_MANIFEST_TMP}', 'w') as f:
       # OPERATOR-REJECTING RESOLVER (mirrors install.sh resolve_telegram_target_universal).
       # BUG-FIX (v12.3.8/fix/v12.3.8-cron-resolver-parity): the prior inline
       # `print(allow[0])` took allowFrom[0] BLINDLY — on boxes where the operator
-      # ID is first in allowFrom (e.g. Dr Tola [5252140759, 8399116757,...]) this
+      # ID is first in allowFrom (e.g. allowFrom = [<operator-id>, <client-id>, ...]) this
       # regenerated the weekly-onboarding-update cron pointing to the OPERATOR
       # instead of the client owner. The resolver below mirrors the three-layer
       # guard from install.sh: S0 OPENCLAW_OWNER_CHAT_ID env override → first

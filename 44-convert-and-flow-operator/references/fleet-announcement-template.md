@@ -18,7 +18,7 @@ There are two parts to this file:
 | Placeholder | Replace with | Source |
 |---|---|---|
 | `[OWNER_NAME]` | The owner's first name | fleet roster |
-| `[AGENT_NAME]` | The box's AI agent name (e.g. Candace, Sir Jordan, Neil) | fleet roster |
+| `[AGENT_NAME]` | The box's AI agent name (from the fleet roster) | fleet roster |
 
 Substitute both everywhere they appear, in all three messages, before sending.
 
