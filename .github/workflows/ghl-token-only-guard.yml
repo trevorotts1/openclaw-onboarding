@@ -1,0 +1,30 @@
+name: GHL token-only auth guard
+
+# Goal-B C5: the GHL funnel/website/page builder (Skill 06) authenticates via the
+# Firebase refresh-token seed ONLY — NEVER a UI login / password / 2FA. This guard
+# FAILS the build if seed-ghl-auth.py / inject-ghl-auth.sh reintroduce an automatic
+# login/2FA fallback (password-field fill, headed launch, post-seed reload) or if the
+# token-only doctrine sentinel is missing from the Skill 06 docs / CORE_UPDATES.md.
+#
+# Triggers on every push to main and every PR targeting main.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ghl-token-only-guard:
+    name: GHL token-only auth guard (no login/2FA regression)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Run token-only guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/guard-ghl-token-only.sh
+          echo "✓ Skill 06 token-only auth doctrine enforced (no login/2FA fallback)"
