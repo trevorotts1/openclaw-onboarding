@@ -50,11 +50,36 @@ assert "GHL password NOT in workspace .md files" "! grep -rE 'GHL_(AGENCY_)?PASS
 # missing from the skill docs. Runs against the repo source when present (the
 # guard ships at <repo>/scripts/guard-ghl-token-only.sh, two levels up from this
 # skill dir). Skipped (warn-only) when the repo layout is absent on a client box.
+REPO="$(cd "$SKILL_DIR/.." 2>/dev/null && pwd)"
 GUARD="$SKILL_DIR/../scripts/guard-ghl-token-only.sh"
 if [ -f "$GUARD" ]; then
-  assert "TOKEN-ONLY auth doctrine intact (no auto login/2FA; sentinel present)" "bash \"$GUARD\" --repo-root \"$(cd \"$SKILL_DIR/..\" && pwd)\""
+  assert "TOKEN-ONLY auth doctrine intact (no auto login/2FA; sentinel present)" "bash \"$GUARD\" --repo-root \"$REPO\""
 else
   warn_only "TOKEN-ONLY auth doctrine guard available" "[ -f \"$GUARD\" ]"
+fi
+
+# Tier-1 ACTIVATION RESILIENCE guard (R1..R6, no F1..F4).
+GUARD_AR="$SKILL_DIR/../scripts/guard-ghl-activation-resilience.sh"
+if [ -f "$GUARD_AR" ]; then
+  assert "Tier-1 activation resilience intact (no single-shot regression)" "bash \"$GUARD_AR\" --repo-root \"$REPO\""
+else
+  warn_only "activation-resilience guard available" "[ -f \"$GUARD_AR\" ]"
+fi
+
+# Tier-2 EMAIL-2FA FALLBACK guard (containment, gate-before-login, bounded,
+# self-heal, no-secret-leak, client-store-only, Tier-1-primary, sentinel).
+GUARD_FB="$SKILL_DIR/../scripts/guard-ghl-auth-fallback.sh"
+if [ -f "$GUARD_FB" ]; then
+  assert "Tier-2 email-2FA fallback doctrine intact (gated, bounded, self-heals; sentinel present)" "bash \"$GUARD_FB\" --repo-root \"$REPO\""
+else
+  warn_only "Tier-2 auth-fallback guard available" "[ -f \"$GUARD_FB\" ]"
+fi
+
+# Tier-2 test layer (MOCK GHL + MOCK Gmail only — never a real account).
+T2_TESTS="$SKILL_DIR/tests"
+if command -v pytest >/dev/null 2>&1 && [ -f "$T2_TESTS/test_guard_ghl_auth_fallback.py" ]; then
+  warn_only "Tier-2 auth-fallback pytest suite passes (mock-only)" \
+    "( cd \"$SKILL_DIR\" && pytest -q tests/test_ghl_auth_orchestrator.py tests/test_ghl_auth_fallback_gates.py tests/test_ghl_auth_fallback_happy_and_selfheal.py tests/test_guard_ghl_auth_fallback.py tests/test_ghl_secret_hygiene.py )"
 fi
 echo ""
 echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings ═══"

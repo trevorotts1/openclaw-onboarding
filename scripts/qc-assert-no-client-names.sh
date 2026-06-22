@@ -174,6 +174,9 @@ while IFS= read -r f; do
     */tests/unit/library-gate-content.test.py)     continue ;;
     # Deep-health unit test contains a test-fixture URL with a client subdomain
     */tests/unit/deep-health.test.ts)              continue ;;
+    # GHL auth-fallback secret-hygiene test holds the operator-path string as its
+    # detection literal (it greps for /Users/blackceomacmini) — pattern, not leak
+    */06-ghl-install-pages/tests/test_ghl_secret_hygiene.py) continue ;;
     # Working / scratch ledger files — not shipped to clients
     */working/*)                                   continue ;;
   esac

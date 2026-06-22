@@ -372,6 +372,40 @@ These two guards plus `sync_check.py` run in CI
 (`.github/workflows/presentations-lockstep.yml`); a described-only rule, a no-op
 gate, an untested gate, or a resurrected retired value all fail the merge.
 
+### Rule 9d: GHL / Convert and Flow auth guard suite (Skill 06 / Skill 44)
+
+The GHL auth doctrine is enforced — never merely described — by three companion
+shell guards, each with a negative-test suite under
+`06-ghl-install-pages/tests/`. All three contribute to the "Wiring correctness"
+safety dimension and MUST run every build, looping until pass at the 8.5
+threshold:
+
+  - `scripts/guard-ghl-token-only.sh` — Tier-1 auth MODEL: `seed-ghl-auth.py` +
+    `inject-ghl-auth.sh` stay byte-clean (NO auto UI-login / password / 2FA) and
+    the TOKEN-ONLY sentinel is present in the skill docs.
+  - `scripts/guard-ghl-activation-resilience.sh` — Tier-1 ACTIVATION is resilient
+    (bounded retry, warm-store gate, positive liveness, no post-seed reload).
+  - `scripts/guard-ghl-auth-fallback.sh` — Tier-2 EMAIL-2FA FALLBACK doctrine:
+    login containment (ALL login/password/2FA code in EXACTLY
+    `ghl_auth_fallback.py` + `ghl_login_browser.py`, nowhere else), gate-before-
+    login ordering (the four gate sentinels + calls precede any login action),
+    bounded attempts (`MAX_LOGIN_ATTEMPTS <= 3` + backoff + lockout/captcha hard
+    stop), self-heal writes `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`, no-secret-leak,
+    client-store-only resolution, Tier-1-primary branch order, and the Tier-2
+    doctrine sentinel verbatim in SKILL.md / INSTRUCTIONS.md / CORE_UPDATES.md /
+    AGENTS.md / TOOLS.md. Negative tests:
+    `06-ghl-install-pages/tests/test_guard_ghl_auth_fallback.py` (GOOD fixture
+    passes; each BAD variant — containment leak, gate-after-login, attempts>3,
+    no-self-heal, secret-print, operator-path, fallback-before-tier1,
+    missing-sentinel — fails). The Tier-2 behavior itself is covered by
+    `test_ghl_auth_orchestrator.py`, `test_ghl_auth_fallback_gates.py`,
+    `test_ghl_auth_fallback_happy_and_selfheal.py`, and `test_ghl_secret_hygiene.py`
+    (MOCK GHL + MOCK Gmail only — never a real account, zero lockout risk).
+
+  `06-ghl-install-pages/qc-ghl-install-pages.sh` wires all three guards as hard
+  asserts plus a pytest run of the Tier-2 test files; `qc-assert-no-client-names.sh`
+  also covers the new files (no client name/id/email/location-id).
+
 ## PART 3 — CLOUDFLARE API KEY CHECK AT INSTALL
 
 ### Rule 10: Cloudflare API key is verified before install proceeds

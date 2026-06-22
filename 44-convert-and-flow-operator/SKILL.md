@@ -99,6 +99,24 @@ require the `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`. When that token is:
   no-token backstop, and the owner is nudged: "I need you to grab the Convert and Flow token to build
   workflows directly." Nothing is silent.
 
+> **GHL-AUTH-DOCTRINE: TIER-2 EMAIL-2FA FALLBACK — gated (auth+gmail-proven+email-2fa+creds), bounded, self-heals to TOKEN-ONLY.**
+> The canonical auth entry point Skill 44 calls when a workflow write needs a session is the shared
+> orchestrator `06-ghl-install-pages/tools/ghl_auth.py` (a 3-tier ladder) — Skill 06 and Skill 44 both call
+> it, never the fallback directly. Tier 1 (token-only — the `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` seed above)
+> stays PRIMARY; almost every build takes it. ONLY when Tier 1 has no usable token (absent / revoked /
+> expired) does the orchestrator evaluate the GATED Tier-2 email-2FA bootstrap: gate A a recorded client
+> authorization, gate B the box PROVES it can read the client's OWN Gmail via a live read BEFORE any login
+> (so a misconfigured box never starts a login it can't finish), gate C email is the selected 2FA method,
+> gate D agency creds resolve from the CLIENT's own secret store. On all four green it logs in headless,
+> reads the freshest email-2FA code from the client's own Gmail, submits it, and on success SELF-HEALS a
+> fresh `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` into the client store so the very next run is Tier 1 again.
+> Bounded: `MAX_LOGIN_ATTEMPTS <= 3`, backoff, hard-stop on any lockout/captcha. Any gate fail or hard
+> stop → Tier 3: fail loud, non-zero exit, precise client instruction (then the Tier-4 agent-browser
+> backstop / Token-Grabber nudge above). ALL login/password/2FA code lives in EXACTLY ONE module
+> (`tools/ghl_auth_fallback.py`) plus its browser helper (`tools/ghl_login_browser.py`); CI guard
+> `scripts/guard-ghl-auth-fallback.sh` locks the invariants. Client uses their OWN creds/keys ONLY;
+> secrets NEVER in repo/logs/stdout.
+
 ### Media
 
 The CLI has NO media upload commands. Media NEVER routes to Tier 0 — always Tier 3

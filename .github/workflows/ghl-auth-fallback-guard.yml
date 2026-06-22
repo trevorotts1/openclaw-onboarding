@@ -1,0 +1,94 @@
+name: GHL Tier-2 email-2FA auth-fallback guard
+
+# Third companion to ghl-token-only-guard.yml + ghl-activation-resilience-guard.yml.
+#
+#   - ghl-token-only-guard.yml            → Tier-1 auth MODEL (refresh-token seed
+#                                            ONLY; the two Tier-1 files stay clean).
+#   - ghl-activation-resilience-guard.yml → Tier-1 ACTIVATION is resilient.
+#   - ghl-auth-fallback-guard.yml (THIS)  → Tier-2 EMAIL-2FA FALLBACK is contained,
+#                                            gated-before-login, bounded, self-heals
+#                                            to token-only, leaks no secret, and is
+#                                            client-store-only.
+#
+# Tier 1 (token-only) stays PRIMARY. Tier 2 is a GATED, audited, one-time bootstrap
+# that logs in with email-2FA ONLY when there is no valid refresh token AND four
+# gates pass (authorization, gmail-PROVEN-before-login, email-2FA, creds), then
+# SELF-HEALS a fresh refresh token to the client store so the next run is Tier 1
+# again. ALL login/password/2FA code lives in EXACTLY ONE module
+# (06-ghl-install-pages/tools/ghl_auth_fallback.py) plus its thin browser helper
+# (ghl_login_browser.py).
+#
+# This guard FAILS the build if:
+#   - login/password/2FA patterns appear OUTSIDE the two allowlisted files;
+#   - the four gate sentinels/calls do NOT precede the first login action;
+#   - MAX_LOGIN_ATTEMPTS > 3, or backoff / lockout-captcha hard-stop is missing;
+#   - the success path does not write GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN (self-heal);
+#   - any password / 2FA code / token is printed/logged, or a secret literal exists;
+#   - credential resolution uses an operator path instead of the client SecretStore;
+#   - the orchestrator's Tier-1 token branch does NOT precede the fallback import;
+#   - the Tier-2 doctrine sentinel is missing from SKILL.md / INSTRUCTIONS.md /
+#     CORE_UPDATES.md / AGENTS.md / TOOLS.md;
+#   - OR either Tier-1 guard regresses (re-asserted here so a Tier-2 change can
+#     never disturb the Tier-1 invariant).
+#
+# Tests are MOCK GHL + MOCK Gmail ONLY — CI never drives a real account (no lockout
+# risk). Triggers on every push to main and every PR targeting main.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ghl-auth-fallback-guard:
+    name: GHL Tier-2 email-2FA auth-fallback guard (contained, gated, bounded, self-healing)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Run Tier-2 auth-fallback guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/guard-ghl-auth-fallback.sh
+          echo "✓ Skill 06/44 Tier-2 email-2FA fallback enforced (contained, gated-before-login, bounded, self-heals to token-only, leak-free, client-store-only)"
+
+      - name: Re-assert Tier-1 token-only guard still green (no regression)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/guard-ghl-token-only.sh
+          echo "✓ Tier-1 token-only doctrine intact (a Tier-2 change did not disturb the two Tier-1 files)"
+
+      - name: Re-assert Tier-1 activation-resilience guard still green (no regression)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/guard-ghl-activation-resilience.sh
+          echo "✓ Tier-1 activation resilience intact"
+
+      - name: No real client names / ids / emails in the Tier-2 files
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/qc-assert-no-client-names.sh
+          echo "✓ No real client name / id / email / location-id in the repo (incl. the new Tier-2 files)"
+
+      - name: Run Tier-2 auth-fallback tests (MOCK GHL + MOCK Gmail only — never a real account)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --disable-pip-version-check pytest
+          python3 -m pytest -q \
+            06-ghl-install-pages/tests/test_ghl_auth_orchestrator.py \
+            06-ghl-install-pages/tests/test_ghl_auth_fallback_gates.py \
+            06-ghl-install-pages/tests/test_ghl_auth_fallback_happy_and_selfheal.py \
+            06-ghl-install-pages/tests/test_guard_ghl_auth_fallback.py \
+            06-ghl-install-pages/tests/test_ghl_secret_hygiene.py
