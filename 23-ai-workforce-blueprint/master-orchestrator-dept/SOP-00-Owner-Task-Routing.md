@@ -1,5 +1,5 @@
 # SOP-00 — Owner Task Routing
-**Version:** 1.3.0 | 2026-06-21
+**Version:** 1.4.0 | 2026-06-22
 **Applies to:** Master Orchestrator / CEO Agent (all installs — Mac and VPS)
 **Status:** CANONICAL — cross-platform fleet standard
 
@@ -66,7 +66,7 @@ Before applying the single-department routing table below, check whether the req
 - Request describes a multi-stage conversion flow: capture → nurture → sales → automation.
 - Request uses any of: "full funnel," "build me a funnel," "sales funnel," "lead magnet + sequence," "funnel + emails," "website factory," "webinar funnel," "opt-in + follow-up."
 
-**If full-funnel intent is detected:** Do NOT single-route. Hand to SOP-07 (Full-Funnel Build Orchestration). SOP-07 creates the parent epic (`task_type: funnel_epic`) and the six staged child cards with `depends_on` edges. Idempotency: carry the parent `idempotency_key` on the epic; derive each child key as `sha256(parent_key + ':' + stage_slug)` so a Telegram retry cannot duplicate the funnel or any stage.
+**If full-funnel intent is detected:** Do NOT single-route. Hand to SOP-07 (Full-Funnel Build Orchestration). SOP-07 creates the parent epic (`task_type: funnel_epic`) and the seven staged child cards (P0, P1, P2, P2e, P3, P4, P5) with `depends_on` edges. Idempotency: carry the parent `idempotency_key` on the epic; derive each child key as `sha256(parent_key + ':' + stage_slug)` so a Telegram retry cannot duplicate the funnel or any stage.
 
 **If intent is ambiguous:** apply single-department routing below. When in doubt, single-route.
 
