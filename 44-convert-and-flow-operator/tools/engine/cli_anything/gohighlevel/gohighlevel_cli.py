@@ -562,6 +562,43 @@ def calendars_groups(ctx):
         _handle_error(e)
 
 
+@calendars.command("create")
+@click.option("--name", required=True, help="Calendar name (will be ZHC-prefixed for standing approval)")
+@click.option("--slot-duration", default=30, type=int, help="Slot duration in minutes (default 30)")
+@click.option("--slot-interval", default=30, type=int, help="Slot interval in minutes (default 30)")
+@click.option("--description", default=None, help="Calendar description")
+@click.option("--team-member", "team_members", multiple=True,
+              help="User ID of a team member assigned to this calendar (repeatable)")
+@click.option("--timezone", default="America/New_York", help="Calendar timezone")
+@click.pass_context
+def calendars_create(ctx, name, slot_duration, slot_interval, description, team_members, timezone):
+    """Create a new calendar (POST /calendars/, Version 2021-04-15).
+
+    The public Calendars API requires the calendar ``name`` plus a non-empty
+    ``teamMembers`` list (each ``{userId}``) on most accounts. ``slotDuration``
+    and ``slotInterval`` carry minute granularity. The safety gate
+    (CAF_ALLOWED_LOCATION_IDS + approval) runs inside ``api.post``; a non-ZHC
+    name with no CAF_APPROVAL_TOKEN is refused.
+    """
+    try:
+        body = {
+            "locationId": _loc(ctx),
+            "name": name,
+            "slotDuration": slot_duration,
+            "slotInterval": slot_interval,
+            "timezone": timezone,
+        }
+        if description:
+            body["description"] = description
+        if team_members:
+            body["teamMembers"] = [{"userId": uid} for uid in team_members]
+        # Version 2021-04-15 is auto-resolved by VERSION_MAP for /calendars/.
+        data = api.post("/calendars/", data=body)
+        _output(ctx, data, "Calendar Created")
+    except Exception as e:
+        _handle_error(e)
+
+
 # ===========================================================================
 # WORKFLOWS
 # ===========================================================================
@@ -1386,6 +1423,73 @@ def payments_create_invoice(ctx, contact_id, name, amount, due_date):
         }
         data = api.post("/invoices/", data=body)
         _output(ctx, data, "Invoice Created")
+    except Exception as e:
+        _handle_error(e)
+
+
+@payments.command("create-product")
+@click.option("--name", required=True, help="Product name (ZHC-prefixed for standing approval)")
+@click.option("--type", "product_type", default="SERVICE",
+              type=click.Choice(["SERVICE", "PHYSICAL", "DIGITAL"]),
+              help="Product type (default SERVICE)")
+@click.option("--description", default=None, help="Product description")
+@click.option("--image-url", default=None, help="Public image URL for the product")
+@click.pass_context
+def payments_create_product(ctx, name, product_type, description, image_url):
+    """Create a product (POST /payments/products, Version 2021-07-28).
+
+    A product is the catalog entry; attach one or more prices with
+    ``payments create-price --product-id <id>``. The safety gate runs inside
+    ``api.post``. The location is sent both as ``locationId`` (whitelist key)
+    and ``altId``/``altType`` (the payments-API tenant key) so both the gate
+    and GHL resolve the same sub-account.
+    """
+    try:
+        body = {
+            "locationId": _loc(ctx),
+            "altId": _loc(ctx),
+            "altType": "location",
+            "name": name,
+            "productType": product_type,
+        }
+        if description:
+            body["description"] = description
+        if image_url:
+            body["image"] = image_url
+        data = api.post("/payments/products", data=body)
+        _output(ctx, data, "Product Created")
+    except Exception as e:
+        _handle_error(e)
+
+
+@payments.command("create-price")
+@click.option("--product-id", required=True, help="Product ID from 'payments create-product'")
+@click.option("--name", required=True, help="Price name (e.g. 'Workshop Seat')")
+@click.option("--amount", required=True, type=int, help="Amount in the SMALLEST currency unit (cents)")
+@click.option("--currency", default="USD", help="ISO currency code (default USD)")
+@click.option("--type", "price_type", default="one_time",
+              type=click.Choice(["one_time", "recurring"]),
+              help="Price type (default one_time)")
+@click.pass_context
+def payments_create_price(ctx, product_id, name, amount, currency, price_type):
+    """Create a price on a product (POST /payments/products/{id}/prices).
+
+    ``amount`` is in the smallest currency unit (cents) — $49.00 = 4900. The
+    safety gate runs inside ``api.post``. Returns the created price record
+    (carries its own ``_id``).
+    """
+    try:
+        body = {
+            "locationId": _loc(ctx),
+            "altId": _loc(ctx),
+            "altType": "location",
+            "name": name,
+            "type": price_type,
+            "currency": currency,
+            "amount": amount,
+        }
+        data = api.post(f"/payments/products/{product_id}/prices", data=body)
+        _output(ctx, data, "Price Created")
     except Exception as e:
         _handle_error(e)
 

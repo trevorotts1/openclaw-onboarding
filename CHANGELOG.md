@@ -1,3 +1,13 @@
+## v13.7.0 — 2026-06-22 — feat(Skill 06/44): canvas-REST autosave integration + ecosystem/media/verify tooling + CAF calendar/product/price create
+
+Skill 06 (GHL install pages) gains the cracked token-only canvas-REST build path and supporting tooling; Skill 44 (convert-and-flow operator) gains the calendar / product / price create commands needed to stand up the full funnel ecosystem.
+
+- **Skill 06 — canvas-REST integration (#193):** new `tools/ghl_rest_canvas.py` (read → splice marker → autosave → verify → revert recipe) wired into `tools/ghl_builder.py` as `emit_rest_save_plan` — the token-id GET `/funnels/page` + POST `/funnels/builder/autosave` path, gated behind `subaccount_matches(current_location_id, <configured GHL location id>)` so a location mismatch emits zero steps. `gates.json` records the `REST_autosave` build-method block as `outcome_status: runtime` (PENDING-LIVE-RUN) — honestly NOT flipped to captured, since the wired path is mock-unit-tested only and not yet driven end-to-end.
+- **Skill 06 — new tooling:** `tools/ghl_ecosystem.py` (6/6 ecosystem build: calendar/product/price/opt-in form/workflow + wired trigger), `tools/ghl_media.py` (services.* Bearer-PIT media upload to the CDN), `tools/ghl_verify.py`, `tools/scrub_turn_telemetry.py`, `tools/v2_dispatcher.py` (resumable routing/task-record audit trail), `v2-autonomous-build-sop.md`. 7 new pytest modules (mock-only — no live CRM).
+- **Skill 44 — CAF ecosystem commands:** `caf calendars create` (POST `/calendars/` 2021-04-15), `caf payments create-product`, `caf payments create-price` — each routed through the CAF safety gate (`CAF_ALLOWED_LOCATION_IDS` + approval); a non-whitelisted/unapproved write is refused. New `tests/test_ecosystem_cli.py` (mock-only, network-guarded).
+- **Leak hygiene:** the operator's own GHL location id is read from `GHL_LOCATION_ID` / `CAF_LOCATION_ID` / `GOHIGHLEVEL_LOCATION_ID` (no hardcoded operator/client id baked into source); clients substitute their own funded location. (The pre-existing operator-fixture id references in `gates.json`/`CHANGELOG` evidence artifacts are unchanged; no NEW operator-id literal is introduced.)
+- **Versions:** 9 markers + cc-compat → v13.7.0; skill-version 06 `v7.2.6`→`v7.2.7`, 44 `v1.0.22`→`v1.0.23`.
+
 ## v13.6.0 — 2026-06-22 — feat(book-to-persona): fleet-wide gemini embed-path fix + register 8 book-author personas
 
 Two changes ship together: the fleet-wide fix that was silently leaving newly-built personas un-embedded (un-searchable by the persona selector), and the registration of 8 marketing/sales/copywriting book-author personas into the template library.

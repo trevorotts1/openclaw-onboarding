@@ -44,12 +44,53 @@ agent-browser-first convention (GOAL §2.2 / §4.2.2).
 
 ## 0. WHY BROWSER AUTOMATION (no shortcut)
 
-GoHighLevel exposes NO API — public or internal — for building Funnels,
-Websites, or Pages. The builder is a UI-only surface. The only way to create or
-edit a funnel/website page programmatically is to drive the browser through the
-human click-path. The Convert and Flow CLI (Skill 44) is relevant ONLY for the
-post-build verification READ of a published URL — never for the build itself.
-This is **Tier 4** in Skill 36's access chain (browser via Skill 03).
+> **SUPERSEDED for content edits (2026-06-22) — primary path is now REST autosave.**
+> The claim below that "the only way is to drive the canvas" held until the
+> internal SPA REST surface was cracked. Two capabilities once believed to need
+> canvas-driving are in fact plain `token-id`-authenticated XHRs against the GHL
+> SPA's own internal REST routes (proven live, lands-and-verifies, byte-identical
+> revert): **(1)** page/funnel/website content read+edit+SAVE via
+> `GET /funnels/page/<id>` + `POST /funnels/builder/autosave/<id>`, and **(2)**
+> workflow trigger read+rewire via `GET /workflow/<loc>/<wf>?includeTriggers=true`
+> + `PUT /workflow/<loc>/trigger/<id>`. **Primary = REST autosave** (see §0.1 and
+> the REST recipe at the end of Part A); **canvas-driving (Part A A8–A13 visual
+> click-path) is RETAINED as the documented FALLBACK** for any UI-only action
+> with no REST equivalent (placing a non-code visual element, drag-only widgets,
+> anything the page-data blob cannot express). Source of truth + raw evidence:
+> `Downloads/GHL-HEADLESS-CANVAS-SOLUTION-2026-06-22.md`.
+
+GoHighLevel exposes no *public* API for building Funnels, Websites, or Pages,
+and the builder presents as a UI-only surface — so the **fallback** path is to
+drive the browser through the human click-path. The Convert and Flow CLI
+(Skill 44) is relevant for the post-build verification READ of a published URL —
+never for the build itself. This is **Tier 4** in Skill 36's access chain
+(browser via Skill 03). The **primary** path below (§0.1) uses the SPA's own
+internal REST surface, executed *inside* the agent-browser (the routes are
+Cloudflare-WAF gated, so they must inherit the browser's CF clearance + UA).
+
+### 0.1 PRIMARY: REST autosave (the cracked canvas-REST path)
+
+For any content edit the page-data blob can express (image swap, Code/Custom-Code
+element value, tracking code), the canonical build/edit flow is the REST
+autosave recipe, wired into the tooling as
+`ghl_builder.emit_rest_save_plan` (orchestrating the proven
+`tools/ghl_rest_canvas.py` primitives). The agent runs the emitted, ordered
+eval-steps INSIDE the seeded agent-browser:
+
+**read → splice → autosave (DRAFT) → verify → revert-baseline.**
+
+- It is faster, deterministic, needs no pixel coordinates, survives UI redraws,
+  and round-trips to **byte-identical** (the canvas Save re-serializes the blob,
+  so a canvas round-trip is content-correct but NOT byte-identical — both live
+  validators used the REST path for the exact-bytes restore even after driving
+  the canvas).
+- The same module emits `emit_workflow_rewire_plan` (workflow trigger
+  read→rewire→re-read) and `emit_revert_plan` (byte-identical restore).
+- Every write plan is gated behind `subaccount_matches()` (MISMATCH = refuse,
+  zero steps), keeps the autosave a DRAFT via `may_publish()` (default), and
+  verifies the preview with `verify_url()` (HTTP 200 AND marker). The full
+  step-by-step recipe + the load-bearing gotchas are at the **end of Part A**
+  ("REST autosave recipe").
 
 ---
 
@@ -419,6 +460,99 @@ Write the per-page ledger after each phase (§5).
   verify as A11–A12.
 - EDGE multiple matching steps: refuse to guess; surface the list, require
   disambiguation.
+
+> **SUPERSEDED-FOR-CONTENT:** the A8–A13 visual click-path (blank section →
+> full-width → Custom Code element → paste → Save → Preview → Publish) is the
+> **fallback**. For any edit the page-data blob can express (image swap,
+> Custom-Code value, tracking code), use the **REST autosave recipe below** — it
+> is the primary path and round-trips to byte-identical. Keep A8–A13 only for
+> UI-only actions with no REST equivalent.
+
+### A-REST. REST autosave recipe (primary — the cracked canvas-REST path)
+
+The canonical content build/edit flow. Emitted as an ordered eval-step plan by
+`ghl_builder.emit_rest_save_plan(...)` (which orchestrates `tools/ghl_rest_canvas.py`);
+the agent runs each step's `eval`/`argv` **inside the seeded agent-browser**.
+All routes here are on `backend.leadconnectorhq.com` and are **Cloudflare-WAF
+gated (error 1010 from bare Python)** — they MUST run in-browser so the request
+inherits the CF clearance + browser UA. (The media-upload + Skill-44 ecosystem
+routes are a *separate* auth model — `services.leadconnectorhq.com` + a Bearer
+location PIT — and run from bare Python; never route those through this plan.)
+
+**0. Auth (token-only — reuse verbatim, never reload).** `seed-ghl-auth.py` mints
+   the Firebase `id_token`; that value is the `token-id` header on every call
+   here. `Authorization: Bearer <id_token>` is the WRONG scheme (401). Activate
+   the session via `inject-ghl-auth.sh` (`store.dispatch('auth/get')` +
+   `$router.push`) and navigate onto the GHL origin first — **never reload** (a
+   reload re-runs the boot IIFE → `signOut()` → login bounce).
+
+**1. Stage the token via a python-WRITTEN JS file** (`rc.write_token_js_file` →
+   `window.__VT = <json.dumps(token)>`), fed to `agent-browser eval --stdin`.
+   **NEVER bash `${VAR@Q}`** — zsh mangles a JWT under `${VAR@Q}` to an
+   empty/garbled token → a spurious 401 that looks exactly like an auth failure
+   but is not (this was the single thing that initially looked like auth breakage
+   in validation and wasn't).
+
+**2. READ** `GET /funnels/page/<PAGE_ID>?locationId=<LOC>` (`token-id`; channel
+   `APP`, source `WEB_USER`, version `2021-07-28`) → 200. The body carries the
+   **numeric** `pageVersion` (the LIVE pointer) and a signed
+   `pageDataDownloadUrl`. Fetch that signed URL **with NO auth header** to get
+   the editable DOM blob. Keep this pristine blob — it is the revert baseline.
+
+**3. SPLICE** the edit (pure transform, `rc.edit_element_customcode`): set
+   `sections[s].elements[e].extra.customCode.value.rawCustomCode` to the new
+   value (e.g. the marker + a real `<img src=<public CDN url>>`). The transform
+   returns a COPY — the pristine baseline is never mutated.
+
+**4. AUTOSAVE (DRAFT)** `POST /funnels/builder/autosave/<PAGE_ID>` with body
+   `{funnelId, pageData:<edited>, pageVersion:<numeric n+1>, pageType:"draft",
+   manualSave:true, integrations:<passthrough>}` → 201 (returns a new signed
+   `pageDataDownloadUrl` + `traceId`). `pageVersion` MUST be a **number** (a UUID
+   422s: "pageVersion must be a number"). `pageType:"draft"` is what keeps it
+   UNPUBLISHED — the LIVE `pageVersion` pointer never moves; only the append-only
+   draft `versionHistory` advances. `publish` is gated by `may_publish(approval)`
+   — **default DRAFT**.
+
+**5. VERIFY** — re-read the **canonical record's OWN** `pageDataDownloadUrl`
+   (re-issue step 2) and confirm the edit is present AND (when draft) the record
+   `pageVersion` is unchanged. For the preview, `ghl_builder.verify_url(preview_url,
+   marker)` → HTTP 200 AND marker present (never trust no-error). Ledger →
+   `previewed`.
+
+**6. REVERT (reversibility, byte-identical)** — re-POST the **pristine** baseline
+   `pageData` (the bytes from step 2) as a new draft version → 201; the canonical
+   re-read is byte-identical (`rc.is_byte_identical` / `blob_md5`). The live
+   pointer never moves. Residual: this appends a draft history row — there is no
+   clean single-version delete (GHL auto-prunes draft history at ~30); the
+   reversibility bar is "live pointer unchanged + content byte-identical", NOT
+   "zero extra draft rows".
+
+**Workflow read+rewire (`emit_workflow_rewire_plan`):**
+`GET /workflow/<LOC>/<WF>?includeTriggers=true` (read — the `?includeTriggers=true`
+query is **LOAD-BEARING**; the bare detail omits `triggers[]`, and a verifier
+reading the bare call sees zero triggers and wrongly reports the rewire failed)
+→ `PUT /workflow/<LOC>/trigger/<TR>` with the whole trigger record + the changed
+fields → 200 `{"status":"success","message":"Trigger updated successfully"}` →
+re-read WITH `?includeTriggers=true` and assert the changed field is present.
+
+**Load-bearing gotchas (both live validators hit these — §4 of the solution doc):**
+1. **Cloudflare WAF (1010):** the GET/POST/PUT MUST run inside the agent-browser
+   `eval` (it carries CF clearance + browser UA). Bare Python to the
+   funnels/builder origin is blocked. Navigate onto the GHL origin first.
+2. **Token staging — NOT bash `${VAR@Q}`** (mangles the JWT → spurious 401);
+   stage via a python-written JS file (`window.__VT = <json.dumps(token)>`).
+3. **`pageVersion` is a NUMBER** on the page record; draft save = `n+1`; a UUID
+   422s.
+4. **`pageType:"draft"` keeps it unpublished** — the live pointer never moves;
+   only append-only draft `versionHistory` rows accrue (auto-pruned ~30).
+5. **Signed page-data URL has no auth** — fetch the blob directly from the
+   read/save response's `pageDataDownloadUrl` (no header).
+6. **Never reload after seeding** (re-runs the boot IIFE → `signOut()` → login
+   bounce); activate via the SPA's own `$router.push`.
+
+**Honest residual (unchanged):** going LIVE still requires a CLIENT "Connect
+Domain" step — never automated. Automation only ever produces `/preview/<PAGE_ID>`
+URLs; preview + draft saves are the bar. Never fake go-live.
 
 ---
 

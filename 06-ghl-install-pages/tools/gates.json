@@ -11,7 +11,7 @@
   },
   "_capture_pass": "2026-06-21 READ-ONLY pass, app.convertandflow.com, agent-browser 0.27.0, --session ghl-capture. HARD-BLOCKED at login by two-factor authentication: gates 1 and 27 are DOM-captured; gates 2-26 and 28 remain runtime snapshot-gates. SEPARATELY, the 2026-06-21 UI-MAP pass (15 screenshots, Downloads/ghl-ui-map.md) confirmed the VISIBLE LABELS + sequence for the funnel flow — those gates now carry screenshot-confirmed-label. The agent still resolves the live @ref at runtime. PENDING-LIVE-RUN for the end-to-end build.",
   "_runtime_gate_baseline": {
-    "_doc": "END-TO-END runtime BUILD-OUTCOME baseline, promoted runtime -> captured on the strength of the 2026-06-21 Funnel-Factory re-run (A4-GATE-CAPTURE). DISTINCT from the per-gate `status` field above: `status` (captured=2 / runtime=26) tracks DOM-SELECTOR capture and is unchanged by this block. THIS block records the build-OUTCOME gates (preview HTTP 200 + marker present + asset renders + draft-not-published) that each build METHOD achieved on a real live run. `outcome_status` values mirror the gate legend: `captured` = verified live this run; `runtime` = not yet driven end-to-end. Every value here is supported by independent-curl / API evidence in A4-GATE-CAPTURE; NO value is asserted without that evidence. Operator fixture only: BlackCEO LLC test sub-account (Mct54Bwi1KlNouGXQcDX), the operator's own box — NO client data.",
+    "_doc": "END-TO-END runtime BUILD-OUTCOME baseline, promoted runtime -> captured on the strength of the 2026-06-21 Funnel-Factory re-run (A4-GATE-CAPTURE). DISTINCT from the per-gate `status` field above: `status` (captured=2 / runtime=26) tracks DOM-SELECTOR capture and is unchanged by this block. THIS block records the build-OUTCOME gates (preview HTTP 200 + marker present + asset renders + draft-not-published) that each build METHOD achieved on a real live run. `outcome_status` values mirror the gate legend: `captured` = verified live this run; `runtime` = not yet driven end-to-end. Every value here is supported by independent-curl / API evidence in A4-GATE-CAPTURE; NO value is asserted without that evidence. Operator fixture only: BlackCEO LLC test sub-account (FIXTURE0LOCATION0000), the operator's own box — NO client data.",
     "_evidence_source": "A4-GATE-CAPTURE (2026-06-21 Funnel-Factory re-run, BlackCEO LLC operator test fixture). Auth: token-only (Firebase refresh-token seed), headless, NO UI login / NO two-factor. Marker: ZHC-FACTORY-FUNNEL-0621.",
     "outcome_gates": ["preview_http_200", "marker_present", "asset_renders", "draft_not_published", "token_only_auth", "exact_location_verified"],
     "methods": {
@@ -23,7 +23,7 @@
         "asset_renders": {"result": "PASS", "evidence": "img src bac1ccb0-*.jpg -> HTTP/2 200, content-type image/jpeg"},
         "draft_not_published": {"result": "PASS", "evidence": "only /preview/ URL exists; no public-domain URL; Publish never clicked"},
         "token_only_auth": {"result": "PASS", "evidence": "Firebase refresh-token seed only; no UI login, no two-factor (headless)"},
-        "exact_location_verified": {"result": "PASS", "evidence": "BlackCEO LLC location Mct54Bwi1KlNouGXQcDX HARD-verified HTTP 200, name 'BlackCEO LLC'"}
+        "exact_location_verified": {"result": "PASS", "evidence": "BlackCEO LLC location FIXTURE0LOCATION0000 HARD-verified HTTP 200, name 'BlackCEO LLC'"}
       },
       "B_vercel_embed": {
         "label": "Page builder — single responsive <iframe> embed into a Custom Code element (Skill 06 Mode 2; gate 26)",
@@ -43,17 +43,28 @@
         "asset_renders": {"result": "PASS", "evidence": "img src d84694c4-*.png -> HTTP/2 200, content-type image/png"},
         "draft_not_published": {"result": "PASS", "evidence": "only /preview/ URL exists; no public-domain URL; Publish never clicked"},
         "token_only_auth": {"result": "PASS", "evidence": "Firebase refresh-token seed only; no UI login, no two-factor (headless)"},
-        "exact_location_verified": {"result": "PASS", "evidence": "BlackCEO LLC location Mct54Bwi1KlNouGXQcDX HARD-verified HTTP 200, name 'BlackCEO LLC'"}
+        "exact_location_verified": {"result": "PASS", "evidence": "BlackCEO LLC location FIXTURE0LOCATION0000 HARD-verified HTTP 200, name 'BlackCEO LLC'"}
+      },
+      "REST_autosave": {
+        "label": "Funnel / Page / Website builder — REST autosave (token-id GET /funnels/page + POST /funnels/builder/autosave; the cracked canvas-REST path, ghl_rest_canvas wired into ghl_builder.emit_rest_save_plan). Adds the image_renders gate (in-page <img> CDN HTTP 200).",
+        "outcome_status": "runtime",
+        "_note": "NOT YET driven end-to-end by the T1 wire-in (T1 is mock-unit-test only: NO live GHL, NO git). The read->splice->autosave->verify->revert recipe is PROVEN live in the headless-canvas solution doc (raw evidence: save_result.json 201, verify_write.json marker landed, byte-identical revert) — but THIS method's outcome_status stays `runtime` until the wired emit_rest_save_plan is driven end-to-end against the operator fixture under a fresh RUN_ID in the durable skill6-fix evidence root. NO fabrication: do not flip to `captured`/PASS without that fresh receipt.",
+        "preview_http_200": {"result": "PENDING-LIVE-RUN", "evidence": "verify_url(preview_url, marker) emitted by emit_rest_save_plan step 'verify_preview'; not yet driven end-to-end via the wired path"},
+        "marker_present": {"result": "PENDING-LIVE-RUN", "evidence": "marker spliced into rawCustomCode by edit_element_customcode; verify_url asserts marker-in-body; not yet driven end-to-end via the wired path"},
+        "image_renders": {"result": "PENDING-LIVE-RUN", "evidence": "in-page <img src=<public storage.googleapis.com/msgsndr CDN url>> must return HTTP 200; the CDN url comes from the services.* media-upload (T2), referenced via the autosave splice; not yet driven end-to-end"},
+        "draft_not_published": {"result": "PENDING-LIVE-RUN", "evidence": "autosave_body pageType='draft' by default; may_publish() gates publish; live pageVersion pointer never moves on a draft; not yet driven end-to-end"},
+        "token_only_auth": {"result": "PENDING-LIVE-RUN", "evidence": "token-id header (minted Firebase id_token), no Authorization: Bearer, no UI login / no two-factor; staged via python-written JS file (never bash ${VAR@Q}); not yet driven end-to-end via the wired path"},
+        "exact_location_verified": {"result": "PENDING-LIVE-RUN", "evidence": "emit_rest_save_plan gates the whole plan behind subaccount_matches(current_location_id, <configured GHL location id>) — MISMATCH emits zero steps; not yet driven end-to-end via the wired path"}
       }
     },
-    "_note": "All three build methods (A raw-code funnel/page, B vercel-embed, C website page) now hold a live end-to-end runtime PASS on the operator fixture. This promotes the A4 runtime gates to a captured baseline WITHOUT altering the 28-entry `gates` array or its captured/runtime counts (still 2 captured / 26 runtime, as the install QC asserts). Per-gate DOM selectors remain resolve-at-runtime; what is now captured is the build OUTCOME each method produces."
+    "_note": "Three build methods (A raw-code funnel/page, B vercel-embed, C website page) hold a live end-to-end runtime PASS on the operator fixture (outcome_status `captured`). The REST_autosave method is the cracked canvas-REST path wired in by T1 (ghl_rest_canvas -> ghl_builder.emit_rest_save_plan); its outcome_status is `runtime` (PENDING-LIVE-RUN) because T1 is mock-unit-test only and the wired path has NOT yet been driven end-to-end (the underlying recipe is proven live in the headless-canvas solution doc, but this method only flips to `captured` on a fresh end-to-end receipt under the durable skill6-fix evidence root). This block does NOT alter the 28-entry `gates` array or its captured/runtime counts (still 2 captured / 26 runtime, as the install QC asserts). Per-gate DOM selectors remain resolve-at-runtime; what is captured/runtime here is the build OUTCOME each method produces."
   },
   "_env": {
     "_note": "Wired from the UI-map pass (Downloads/ghl-ui-map.md). BlackCEO LLC = test sub-account on this operator box; client boxes substitute the client's own sub-account label + location id (NO-COMINGLING).",
-    "test_subaccount_label": "BlackCEO LLC / Oxon Hill, MD",
-    "test_location_id": "Mct54Bwi1KlNouGXQcDX",
-    "preview_domain": "blackceolinks.com",
-    "preview_url_pattern": "https://www.blackceolinks.com/preview/<PAGE_ID>",
+    "test_subaccount_label": "<AGENCY_TEST_SUBACCOUNT>",
+    "test_location_id": "FIXTURE0LOCATION0000",
+    "preview_domain": "<PREVIEW_DOMAIN>",
+    "preview_url_pattern": "https://www.<PREVIEW_DOMAIN>/preview/<PAGE_ID>",
     "funnels_list_url": "app.convertandflow.com/v2/location/<LOCID>/funnels-websites/funnels",
     "funnel_url": "app.convertandflow.com/v2/location/<LOCID>/funnels-websites/funnels/<FUNNEL_ID>",
     "page_builder_url": "app.convertandflow.com/location/<LOCID>/page-builder/<PAGE_ID>",
@@ -90,7 +101,7 @@
     },
     {
       "id": 2, "spec": "A2.2", "name": "account_switcher", "status": "runtime",
-      "label": "Sub-account chevron, top-left (current label e.g. 'BlackCEO LLC / Oxon Hill, MD')",
+      "label": "Sub-account chevron, top-left (current label e.g. '<Sub-account name> / <City, ST>')",
       "label_source": "still-runtime-snapshot",
       "find": "find text <current-subaccount-label> (top-left, with chevron) | find testid account-switcher | per-row match by client name",
       "note": "HARD GATE A2.3: refuse on sub-account mismatch (no co-mingling). UI map confirms the label sits top-left with a chevron, but the switcher list itself was not screenshotted — snapshot it."
@@ -219,7 +230,7 @@
       "label": "Top-right EYE icon (Preview)",
       "label_source": "screenshot-confirmed-label",
       "find": "find role button name Preview | top-right eye icon",
-      "note": "Screenshot-confirmed: preview is the top-right EYE icon. Preview URL pattern uses the blackceolinks.com preview domain (see _env)."
+      "note": "Screenshot-confirmed: preview is the top-right EYE icon. Preview URL pattern uses the configured preview domain (see _env preview_domain)."
     },
     {
       "id": 21, "spec": "A13.2", "name": "publish", "status": "runtime",

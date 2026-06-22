@@ -1,0 +1,316 @@
+# V2 Autonomous Funnels-Department Build SOP (Skill 06, T4)
+
+**Purpose.** Make the autonomous-agent (V2) build path actually **BUILD in
+GoHighLevel** — using the proven token-only REST autosave + the real image
+pipeline + the Skill-44 ecosystem — instead of emitting local-only HTML and
+"build-with-AI" prompt specs. This SOP is what the Funnels / Web-Dev department
+agent's instructions point to. It is the V2 counterpart of the V1 fixed build
+harness (`<OPERATOR_HOME>/clawd/skill6-fix/build.py`): the SAME canonical
+recipe, driven autonomously off the department board instead of a one-shot
+script.
+
+**Scope of THIS phase (T4).** SOP + tooling wire-in + the bounded dispatcher
+contract + the telemetry-scrub gate + the canonical verify contract. **NO live
+GHL** is run in this phase, and **NO git**. The SOP is written so that when it IS
+run live (a later phase, on the operator fixture only), a partial build still
+leaves verifiable on-disk evidence and the canonical verifier cannot be gamed.
+
+---
+
+## 0. The V2 gap this SOP closes (grounded in the prior run)
+
+The prior V2 run (`v2-client-agent/v2-…`) produced, per its own
+`scorecard/verify-summary.json`:
+
+| Stage | Prior V2 status | Why it failed |
+|---|---|---|
+| S1 route | DONE | routing worked (department=funnels, task assigned to the specialist, not CEO) — **keep as-is** |
+| S3 images | **ABSENT** | the agent never ran the image pipeline; `images/` empty |
+| S4 funnel | **SPEC-ONLY** | only a `build-with-ai-prompt.md`; no GHL funnel, no preview URL, no autosave 201 |
+| S5 website | **LOCAL-HTML-ONLY** | wrote `website/index.html` etc. to disk; nothing in GHL |
+| dispatch | **hung (HTTP 000)** | `POST /api/tasks/<id>/dispatch` hung; the task sat in `backlog`; no executor fired |
+| telemetry | **leaked** | captured turn telemetry carried `redacted-client__<verb>` MCP tool names |
+
+Two root causes, two fixes:
+
+1. **No live executor for the Funnels department** → the task never ran. Fix:
+   §1 (a live dept executor OR a bounded backlog dispatcher).
+2. **The agent, when it did run, produced local HTML** because its instructions
+   never pinned the canonical token-only REST autosave path. Fix: §2–§5 (this
+   SOP, pinned into the dept agent's instructions).
+
+Plus the evidence-hygiene fix: §6 (scrub the leaked client namespace) and §7
+(the ONE canonical verifier).
+
+---
+
+## 1. A live executor for the Funnels / Web-Dev department (the whole V2 gap)
+
+The department board had the task in `backlog` and `POST /api/tasks/<id>/dispatch`
+hung (HTTP 000), so no build ever fired. Close this with EITHER option; both are
+acceptable, the bounded dispatcher is the lower-risk default.
+
+### Option A — a live OpenClaw executor agent for the Funnels department
+Wire a department executor agent (the Funnels specialist) so a task assigned to
+the department is actually picked up and run on the department model. The agent's
+instructions MUST embed §2–§5 verbatim (the canonical build recipe).
+
+### Option B — a bounded backlog dispatcher (lower-risk default)
+A small, bounded loop/cron that pulls `backlog` tasks off the department board
+and runs them on the department model. **Bounded** = it MUST have:
+
+- a **max in-flight = 1** (one build at a time — mirrors the per-item ledger
+  doctrine; never fan out a second build over the same fixture),
+- a **per-task wall-clock cap** (default 1800s) after which the task is marked
+  `FAILED` with the partial evidence captured (never left hung at HTTP 000),
+- a **poll backoff** (default 30s) so it does not spin, and
+- a **pre-warm step** that triggers GHL tool discovery ONCE before the build turn
+  (the prior V2 timed out ~570s at tool-discovery; pre-warming the GHL MCP /
+  agent-browser session moves that cost out of the build turn).
+
+**Dispatcher contract (state, so a partial run is resumable — not prose):**
+
+```
+backlog -> dispatched -> building -> verified | FAILED
+```
+
+- `dispatched`: the dispatcher claimed the task (writes `routing/task-record.json`
+  with `claimed_at`, `max_inflight=1`).
+- `building`: the dept agent is running §2–§5; it writes `funnel/ledger.json`,
+  `website/ledger.json`, `images/manifest.json`, `ecosystem/*.json`, and
+  `logs/{funnel,website}-preview.log` **as it goes** (so even a crash leaves
+  evidence).
+- `verified`: the canonical verifier (§7) ran and `overall_pass` is recorded
+  (true OR false — a false is reported honestly, never massaged).
+- `FAILED`: the wall-clock cap hit, or a step refused (e.g. sub-account
+  MISMATCH); the partial evidence + the failure reason are written. **Never**
+  leave a task hung — a hang is a `FAILED` with `reason="dispatch timeout"`.
+
+**Raise the gateway build-turn timeout** for the dept agent (the prior V2 timed
+out at tool-discovery). The build turn needs headroom for: seed+activate, GHL
+tool discovery (pre-warmed), per-page read→splice→autosave→verify, image gen +
+upload, and ecosystem creation.
+
+---
+
+## 2. The canonical build recipe the dept agent MUST follow (NOT local HTML)
+
+This is the pinned recipe. It is the V1 *fixed* path (the solver doc §2 +
+`ghl_rest_canvas` + `ghl_builder.emit_rest_save_plan`), driven autonomously. The
+dept agent does NOT write standalone HTML files as the deliverable — local HTML
+is at most a scratch draft of the copy; the **deliverable is content saved into
+GHL pages via REST autosave, verified at a real `/preview/` URL.**
+
+### 2.0 Auth (token-only — reuse verbatim, never re-implement)
+```
+python3 06-ghl-install-pages/tools/seed-ghl-auth.py --print-seed --out <RUN>/ghl-auth-seed.json
+bash   06-ghl-install-pages/tools/inject-ghl-auth.sh <session> <RUN>/ghl-auth-seed.json --pre-open
+```
+- Mints the Firebase `id_token` (the `token-id` header value). Seeds Firebase
+  IndexedDB + the SPA cookies; activates via `store.dispatch('auth/get')` +
+  `$router.push`. **NEVER reload** (a reload re-runs the boot IIFE → signs the
+  seeded session out).
+- **HARD sub-account gate before ANY write:** read `GET /oauth/2/login/current`
+  → take the live location/company; assert
+  `ghl_builder.subaccount_matches(current_location_id, "$GHL_LOCATION_ID")`
+  is `ok`. On MISMATCH → refuse, mark the task `FAILED`, write the guard verdict.
+  (The plan emitters already gate on this; the agent must not bypass it.)
+
+### 2.1–2.6 Per page: read → splice → autosave → verify → revert
+The agent does NOT hand-roll the fetch. It calls
+`ghl_builder.emit_rest_save_plan(...)` to get the ordered, gated, draft-by-default
+plan and executes each step's `eval`/`argv` **inside the agent-browser** (the
+funnels/builder origin is Cloudflare-1010-gated for bare Python):
+
+1. **stage_token** — `ghl_rest_canvas.write_token_js_file(id_token, <RUN>/token.js)`;
+   feed to `agent-browser eval --stdin`. **NEVER** bash `${VAR@Q}` (mangles the
+   JWT → spurious 401).
+2. **page_read** — `GET /funnels/page/<id>`; fetch the signed
+   `pageDataDownloadUrl` (no auth header) for the editable blob; read numeric
+   `pageVersion`.
+3. **edit** — `edit_element_customcode(blob, {section_idx, element_idx}, new_html)`
+   where `new_html` carries the page marker **and the real `<img src="<CDN
+   url>">`** from §3. Pure splice; the pristine blob is kept as the revert
+   baseline.
+4. **page_autosave** — POST the edited blob as a **DRAFT**
+   (`publish=may_publish(approval)`, default DRAFT; `pageVersion` numeric n+1;
+   `pageType:"draft"` keeps the live pointer put). Expect **201**.
+5. **verify_preview** — `ghl_builder.verify_url(preview_url, marker)` → HTTP 200
+   AND marker in body. Advances the ledger to `previewed`. (NEVER report a page
+   good on no-error alone.)
+6. **revert_baseline** — re-POST the pristine baseline as a new draft version;
+   assert `ghl_rest_canvas.blob_md5(reread) == baseline_md5` (byte-identical;
+   live pointer unmoved). Reversibility bar per solver doc §7.2.
+
+**Ledger as you go.** `ghl_builder.ledger_write(run_id, surface, step, state)` at
+each landed step (`code-saved` → `page-saved` → `previewed`; `published` only on
+`may_publish`). Workflows use the parallel `wf-rewired` state. A crash mid-build
+leaves a truthful furthest-reached ledger.
+
+**No synthetic stubs.** Save the **fetched** preview DOM as `<step>-preview.html`
+(real capture via `ghl_verify.screenshot_plan`'s `dom` step), and **real PNG**
+screenshots (desktop 1440×900 + mobile 390×844) — never the V1 SVG placeholders,
+never a hand-written "preview" HTML that was never fetched.
+
+---
+
+## 3. Images (R2) — real rasters, real CDN, referenced in-page
+
+The dept agent MUST run the proven image pipeline (NOT write SVG placeholders,
+NOT leave `images/` empty):
+
+1. **Generate** real PNGs from copy-derived prompts via the repo's verified
+   generator (`23-ai-workforce-blueprint/templates/presentation-render/
+   kie_generate.py`, `mode:"t2i"` when there is no logo to seed) — it submits to
+   `api.kie.ai`, polls, downloads, and **verifies PNG magic bytes** (`b"\x89PNG"`,
+   FAIL-LOUD on non-PNG). Requires `KIE_API_KEY` in the client env store; **if
+   absent → honest FAIL recorded in `images/manifest.json`, never an SVG stub.**
+2. **Upload** each PNG to GHL media via `tools/ghl_media.py`
+   (`POST services.leadconnectorhq.com/medias/upload-file`, Bearer LOCATION PIT,
+   `Version: 2021-07-28`) → capture `{fileId, public url}`. **Auth-model split:**
+   media upload is the `services.*` origin with a Bearer PIT — **bare Python OK**
+   (NOT the Cloudflare-1010-gated funnels-builder origin).
+3. **Re-verify** each CDN URL is a genuine HTTP 200 and log it to
+   `logs/asset-cdn.log` (real `status=200 | <https url> | OK` lines — kill the
+   `LOCAL-SVG-PLACEHOLDER` line).
+4. **Reference** the public CDN `<img>` in-page via the §2 splice (step 3 above).
+5. `images/manifest.json` maps `{id, prompt, file, cdn_url(https),
+   cdn_http_status:200, used_on_page_id}` — **no `file://`, no placeholder note.**
+
+(T2 owns `ghl_media.py` + the manifest contract; this SOP pins that the dept
+agent USES it rather than stubbing.)
+
+---
+
+## 4. Ecosystem (R5) — real objects + a form→CRM proof
+
+Pre-req: `export CAF_ALLOWED_LOCATION_IDS="$GHL_LOCATION_ID"` (the configured GHL
+location id) + the LOCATION
+PIT so the Skill-44 safety gate passes. **Auth-model split:** calendars /
+products / forms / contacts are the `services.*` origin + Bearer PIT — **bare
+Python OK** (the Skill-44 CLI), NOT the WAF-gated funnels origin.
+
+The dept agent creates REAL objects and writes **creation receipts** (`status:201`,
+ids, re-GET 200) — NOT `status:"PLANNED"` stubs:
+
+1. **Calendar** — "Scent-Bar Workshop" via the Skill-44 CLI `calendars create`
+   (T3) → `ecosystem/calendar.json` receipt.
+2. **Product/price** — via `payments create-product` + `create-price` (T3) →
+   `ecosystem/product-price.json` receipts.
+3. **Opt-in form** — a real 3-field form embedded on the opt-in page (custom-code
+   element via the §2 splice), posting to GHL contact capture → `optin-form.json`
+   with the live `page_id` + the marker proving it rendered.
+4. **CRM contact + form→CRM PROOF (the dimension's hard requirement):**
+   - baseline `contacts search` → `before_count`;
+   - submit the opt-in (or `contacts create` with a unique
+     `…@<brand>-test.invalid` email + tags `workshop-registrant`, `soap-lead`);
+   - **prove the roundtrip**: `contacts search` by that email → assert the new id
+     exists AND carries both tags → re-GET `contacts/{id}`;
+   - write `ecosystem/contact-test.json` with `created_contact_id`,
+     `tags_confirmed:true`, `before_count`/`after_count` (after = before+1),
+     `submit_method`; then `contacts delete {id}` after proof, logged.
+5. **Workflow** — `POST /workflow/<loc>` + `/workflow/<loc>/trigger`; verify via
+   `?includeTriggers=true` (the load-bearing read). `workflow.json` is a real
+   receipt.
+
+---
+
+## 5. What the dept agent MUST NOT do (the local-HTML anti-pattern)
+
+- **MUST NOT** treat `website/index.html` (or any local HTML file) as the
+  deliverable. Local HTML is scratch at most; the deliverable is GHL page content
+  saved via REST autosave and verified at a real `/preview/` URL.
+- **MUST NOT** emit "build-with-AI prompt" specs in place of a build (the prior
+  S4 SPEC-ONLY failure).
+- **MUST NOT** write SVG image placeholders or synthetic "preview" HTML that was
+  never fetched (the R7 SVG-screenshot failure).
+- **MUST NOT** write `status:"PLANNED"` ecosystem stubs in place of real
+  creation receipts.
+- **MUST NOT** bypass `subaccount_matches` or `may_publish`, or publish without
+  explicit approval. Automation produces `/preview/` URLs only; true go-live
+  needs the client Connect-Domain step (NOT automatable — never faked).
+- **MUST NOT** reload the seeded session, or stage the token via bash `${VAR@Q}`.
+
+---
+
+## 6. Evidence hygiene — scrub leaked client namespaces (R7 P3)
+
+Before ANY captured turn telemetry lands under the V2 evidence root, run it
+through `tools/scrub_turn_telemetry.py` so a leaked client-namespaced MCP
+tool-name (`redacted-client__<verb>`, as seen in the prior V2 capture) is
+neutralised to `mcp__redacted__<verb>` (the tool VERB is preserved for debugging;
+the client namespace is removed):
+
+```
+python3 06-ghl-install-pages/tools/scrub_turn_telemetry.py <RUN>/logs/agent-turn-*.json
+# post-write gate (fail-loud if anything slipped through):
+python3 06-ghl-install-pages/tools/scrub_turn_telemetry.py --check <RUN>/logs/agent-turn-*.json
+```
+
+The repo + the durable evidence root are FLEET-WIDE — no client name/namespace
+may ever appear in them. The `--check` gate exits non-zero if a leak remains, so
+the dispatcher can refuse to mark a task `verified` while telemetry is dirty.
+
+---
+
+## 7. The ONE canonical verifier (R7 — kills the 6/6-vs-1/6 contradiction)
+
+V2 uses the SAME canonical verifier as V1 — `tools/ghl_verify.py`
+(`ghl_builder.py verify-all` delegates to it). There is exactly ONE source of
+truth and the summary is a guarded pure reduction of it:
+
+```
+python3 06-ghl-install-pages/tools/ghl_builder.py verify-all <RUN> <RUN>/pages.json \
+    --run-id <id> --version client-agent --brand "<fictional brand>"
+```
+
+- writes `logs/final-preview-verify.json` (raw per-page HTTP 200 + marker — the
+  source of truth) FIRST;
+- derives `scorecard/verify-summary.json` STRICTLY by reducing that array
+  (`passed = sum(1 for r if r.PASS)`); the summary can never claim more than the
+  raw log;
+- a hard guard (`ghl_verify.assert_consistent`) raises `VerifyContradiction` and
+  the CLI exits non-zero if the summary is EVER more optimistic than the raw log
+  (the exact 6/6-vs-1/6 defect is structurally impossible);
+- exits non-zero on `overall_pass:false` — a failing/partial build cannot read as
+  success.
+
+`pages.json` is the list the dept agent built (each `{step, page_id,
+preview_url, marker}`). The dispatcher marks the task `verified` ONLY after this
+runs and records the (honest) verdict.
+
+---
+
+## 8. V2 evidence root (no conflation, never /tmp)
+
+- V2 evidence: `<OPERATOR_HOME>/clawd/skill6-fix/v2-<RUN_ID>/` — a fresh
+  RUN_ID, **separate** from any V1 run dir (honor the no-conflation rule).
+- Subtree (written as the build proceeds): `routing/`, `copy/`, `images/`
+  (manifest + real PNGs), `funnel/` (ledger + `<step>-preview.html`), `website/`
+  (ledger + `<step>-preview.html`), `ecosystem/` (real receipts),
+  `screenshots/` (real PNGs), `logs/` (`{funnel,website}-preview.log`,
+  `asset-cdn.log`, scrubbed `agent-turn-*.json`, `final-preview-verify.json`),
+  `scorecard/verify-summary.json`.
+- Never `/tmp`. Reboot-survivable. The routing layer (S1) is unchanged — it
+  already worked.
+
+---
+
+## 9. Definition of done for the V2 build path (honest bar)
+
+A V2 build is DONE when, on the operator fixture only (a later live phase):
+
+1. the dept executor/dispatcher (§1) **picked up the task and ran it** (no hang;
+   `routing/task-record.json` shows `dispatched → building → verified|FAILED`);
+2. real GHL pages carry the marker + a real `<img>` and verify HTTP 200 at their
+   `/preview/` URLs (§2, §3) — confirmed by the canonical verifier (§7);
+3. the ecosystem objects are real creation receipts incl. the form→CRM
+   roundtrip proof (§4);
+4. telemetry is scrubbed and the `--check` gate is clean (§6);
+5. evidence is under `skill6-fix/v2-<RUN_ID>/`, no conflation (§8);
+6. the verdict (`overall_pass`) is whatever the raw log proves — a sub-8.5 result
+   is reported as FAIL, never massaged.
+
+Going live (a real public domain) remains a CLIENT Connect-Domain step and is
+NOT automated; preview URLs + draft saves are the bar.
+```
