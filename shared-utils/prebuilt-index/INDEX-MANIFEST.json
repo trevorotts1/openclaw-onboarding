@@ -2,7 +2,7 @@
   "model": "gemini-embedding-2",
   "dims": 3072,
   "provider": "gemini",
-  "persona_count": 40,
+  "persona_count": 48,
   "chunk_count": 6260,
   "file_count": 120,
   "sha256": "65864eb6b53a54818017b44b17c4c0647a543086aa833573b1f56cdf816ed0ad",
@@ -13,5 +13,5 @@
   "gz_size_mb": 71.65,
   "source_db_bytes": 85245952,
   "hormozi_leads_rows": 99,
-  "notes": "Full rebuild with GA gemini-embedding-2 @3072. Includes Hormozi $100M Leads (99 chunks) + $100M Offers. 40 personas / 6260 chunks. Clients download this asset instead of re-embedding (saves Gemini API credits). SHA256 verified at build time and must be verified before install."
+  "notes": "Full rebuild with GA gemini-embedding-2 @3072. Includes Hormozi $100M Leads (99 chunks) + $100M Offers. persona_count now 48 = 40 prior + 8 newly registered book-author personas (Brunson Lead-Funnels / Network-Marketing-Secrets / Funnel-Hackers-Cookbook / Traffic-Secrets / Marketing-Secrets-Blackbook, Miner NEPQ, Edwards Copywriting-Secrets, Dib 1-Page-Marketing-Plan). The sha256/asset_url/chunk_count below still describe the published prebuilt-index-v1.0.0 SQLite asset (40-persona embeddings); the 8 new personas are registered as repo TEMPLATES and embedded per-box by the book-to-persona pipeline — the next prebuilt-index asset rebuild will fold them into the downloadable SQLite. Clients download this asset instead of re-embedding (saves Gemini API credits). SHA256 verified at build time and must be verified before install."
 }

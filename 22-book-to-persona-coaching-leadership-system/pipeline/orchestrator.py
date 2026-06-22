@@ -1450,11 +1450,21 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
         # (/data/.openclaw/...) — so the indexer was silently skipped on
         # every modern install, leaving the new persona's blueprint
         # un-embedded and invisible to Layer 5 (semantic_task_fit).
-        # Now searches all 3 canonical locations.
+        #
+        # a71f6bbd fix: the canonical INSTALLED wrapper lives at
+        # ~/.openclaw/scripts/gemini-indexer.py (and /data/.openclaw/scripts/...
+        # on VPS). Put those at the FRONT and DEPRIORITIZE the ~/clawd legacy
+        # wrapper. ALSO: this phase used to print "Re-indexing complete" even
+        # when the indexer exited non-zero (the sys.path ModuleNotFoundError
+        # was swallowed) — that silent-success lie is the bug being fixed.
+        # Now FAIL-LOUD: on non-zero exit we log stderr, mark Phase 5 FAILED in
+        # pipeline-status.json, and DO NOT print "Re-indexing complete".
         indexer_candidates = [
+            Path.home() / ".openclaw" / "scripts" / "gemini-indexer.py",
+            Path("/data/.openclaw/scripts/gemini-indexer.py"),
             Path.home() / ".openclaw" / "workspace" / "scripts" / "gemini-indexer.py",
             Path("/data/.openclaw/workspace/scripts/gemini-indexer.py"),
-            Path.home() / "clawd" / "scripts" / "gemini-indexer.py",  # legacy
+            Path.home() / "clawd" / "scripts" / "gemini-indexer.py",  # legacy (deprioritized)
         ]
         indexer_path = next((p for p in indexer_candidates if p.exists()), None)
         if indexer_path is not None:
@@ -1466,10 +1476,23 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
                 check=False
             )
             if result_proc.returncode != 0:
-                log(f"  Warning: gemini-indexer.py exited with code {result_proc.returncode}: {result_proc.stderr[:300]}")
-            log("Phase 5: Re-indexing complete.")
+                _err = (result_proc.stderr or "").strip()
+                log(f"  [PHASE 5 FAILED] gemini-indexer.py ({indexer_path}) exited "
+                    f"with code {result_proc.returncode}: {_err[:1000]}")
+                mark_phase(status, folder, 5, "FAILED",
+                           f"indexer exit {result_proc.returncode}: {_err[:500]}")
+                # NOTE: deliberately NOT printing "Re-indexing complete" — the
+                # embed did not happen; the persona blueprint is NOT searchable.
+            else:
+                if (result_proc.stdout or "").strip():
+                    log(f"  [PHASE 5] {result_proc.stdout.strip()[:500]}")
+                mark_phase(status, folder, 5, "DONE")
+                log("Phase 5: Re-indexing complete.")
         else:
-            log(f"  Warning: gemini-indexer.py not found in any of {[str(c) for c in indexer_candidates]}, skipping re-indexing")
+            log(f"  [PHASE 5 FAILED] gemini-indexer.py not found in any of "
+                f"{[str(c) for c in indexer_candidates]} — persona NOT embedded")
+            mark_phase(status, folder, 5, "FAILED",
+                       f"indexer wrapper not found: {[str(c) for c in indexer_candidates]}")
 
         # Phase 6: Append new persona to persona-categories.json so the
         # selector's list_available_personas() can see it on the next run.

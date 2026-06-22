@@ -146,13 +146,33 @@ if not os.path.exists(PERSONAS_DIR):
 # ---------------------------------------------------------------------------
 
 def _read_secret(name: str) -> str:
-    """Read API key from secrets/.env, env var, then openclaw.json env block."""
-    env_path = os.path.join(WORKSPACE_ROOT, "secrets/.env")
-    if os.path.exists(env_path):
-        with open(env_path, "r") as f:
-            for line in f:
-                if line.startswith(f"{name}="):
-                    return line.strip().split("=", 1)[1].strip('"\'')
+    """Read API key from secrets/.env, env var, then openclaw.json env block.
+
+    a71f6bbd fix: probe ALL canonical secret stores, not just
+    WORKSPACE_ROOT/secrets/.env. On a Mac install the real key lives at
+    ~/.openclaw/secrets/.env while WORKSPACE_ROOT is ~/.openclaw/workspace
+    (so WORKSPACE_ROOT/secrets/.env is absent) — the auto-embed Phase-5
+    subprocess would otherwise never find the Gemini key.
+    """
+    _env_candidates = [
+        os.path.join(WORKSPACE_ROOT, "secrets/.env"),
+        os.path.expanduser("~/.openclaw/secrets/.env"),
+        "/data/.openclaw/secrets/.env",
+    ]
+    _seen = set()
+    for env_path in _env_candidates:
+        rp = os.path.realpath(env_path)
+        if rp in _seen:
+            continue
+        _seen.add(rp)
+        if os.path.exists(env_path):
+            with open(env_path, "r") as f:
+                for line in f:
+                    s = line.strip()
+                    if s.startswith("export "):
+                        s = s[len("export "):]
+                    if s.startswith(f"{name}="):
+                        return s.split("=", 1)[1].strip().strip('"\'')
     v = os.environ.get(name)
     if v:
         return v
