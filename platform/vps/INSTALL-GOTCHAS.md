@@ -112,9 +112,9 @@ Error: Invalid config at /data/.openclaw/openclaw.json:
 ```json
 {
   "telegram": {
-    "botName": "Temperance",
-    "botUsername": "TemperanceCEObot",
-    "ownerChatId": "8279177438"
+    "botName": "Northstar",
+    "botUsername": "NorthstarCEObot",
+    "ownerChatId": "100000001"
   }
 }
 ```
@@ -178,7 +178,7 @@ device is asking for more scopes than currently approved
 
 ## 11. 🔴 `meta` block in openclaw.json is schema-strict — sidecar pattern for owner identity
 
-**Symptom (discovered live during Maria's install):**
+**Symptom (discovered live during Northstar's install):**
 ```
 openclaw cron list
 OpenClaw config is invalid
@@ -207,15 +207,15 @@ Owner identity and bot identity metadata both belong in a **sidecar file** outsi
 ```json
 {
   "_about": "Channel + owner identity metadata — outside openclaw.json schema. Read by install.sh v10.14.5+.",
-  "ownerName": "Maria",
+  "ownerName": "Northstar",
   "telegram": {
-    "botName": "Sir Jordan",
-    "botUsername": "SirJordanbot"
+    "botName": "Northstar",
+    "botUsername": "NorthstarCEObot"
   }
 }
 ```
 
-install.sh v10.14.5+ reads this sidecar FIRST when resolving the owner's first name for the personalized greeting (Hi Maria! 👋), then falls back to `OPENCLAW_OWNER_NAME` env var, then to legacy openclaw.json fields (read-only fallback for backward compat). It **never writes** to openclaw.json's `meta` or `channels.telegram` blocks.
+install.sh v10.14.5+ reads this sidecar FIRST when resolving the owner's first name for the personalized greeting (Hi Northstar! 👋), then falls back to `OPENCLAW_OWNER_NAME` env var, then to legacy openclaw.json fields (read-only fallback for backward compat). It **never writes** to openclaw.json's `meta` or `channels.telegram` blocks.
 
 **Pre-install prep (recommended for client rollouts):** before running install.sh, write the sidecar:
 ```bash
@@ -223,8 +223,8 @@ docker exec -u node <container> python3 -c "
 import json, os
 META = '/data/.openclaw/channel-metadata.json'
 existing = json.load(open(META)) if os.path.exists(META) else {}
-existing['ownerName'] = 'Maria'
-existing.setdefault('telegram', {}).update({'botName': 'Sir Jordan', 'botUsername': '@SirJordanbot'})
+existing['ownerName'] = 'Northstar'
+existing.setdefault('telegram', {}).update({'botName': 'Northstar', 'botUsername': '@NorthstarCEObot'})
 json.dump(existing, open(META, 'w'), indent=2)
 print('Sidecar written:', existing)
 "

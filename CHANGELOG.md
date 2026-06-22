@@ -1,3 +1,13 @@
+## v13.5.1 — 2026-06-21 — fix(hygiene): scrub 3 client-name leaks from the fleet template + strengthen the banlist + reconcile Skill 06 version
+
+The repo is a GENERIC fleet template every client installs — it must carry ZERO real client/agent identities. An independent verifier found three pre-existing leaks that the no-client-names CI gate had missed; scrubbed all three and closed the gate gap so they can't recur.
+
+- **`update-skills.sh`** — a code comment used a real client name as an `allowFrom` example → replaced with `[<operator-id>, <client-id>, ...]`.
+- **`23-ai-workforce-blueprint/build-state-schema.json`** — a schema description used a real agent name as an example → replaced with fictional names.
+- **`platform/vps/INSTALL-GOTCHAS.md`** — owner-name / bot-name / chat-id examples used a real client's identity (and a real chat ID) → fully de-identified to the generic `Northstar` placeholder + a fake chat id.
+- **`scripts/qc-assert-no-client-names.sh`** — fixed a banlist pattern that required a trailing period (so a no-period variant of one name had slipped past) and added two missing agent-name patterns, so CI now catches these going forward (enforcement, not just a one-time scrub).
+- **Skill 06 version reconcile** — `skill-version.txt` + `SKILL.md` frontmatter + `CHANGELOG` all aligned to **v7.2.3** (closes the A7 mismatch the Goal-B verifier flagged: skill-version was v7.2.2 while the others said 7.2.1).
+
 ## v13.5.0 — 2026-06-21 — fix(skills 06+44): productionize the GHL builders — workflow-QC command bug, exact-ID sub-account guard, token-only auth doctrine + CI guard
 
 Goal-B productionization of the GHL build surfaces (independently re-verified before merge). All generic; no client names.
