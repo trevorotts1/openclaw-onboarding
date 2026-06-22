@@ -1,0 +1,6 @@
+{
+  "http_status": 201,
+  "id": "workflow-fixture-id",
+  "qc_passed": true,
+  "name": "workflow"
+}

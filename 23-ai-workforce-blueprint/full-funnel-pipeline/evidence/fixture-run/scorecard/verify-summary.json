@@ -1,0 +1,9 @@
+{
+  "run_id": "fixture-196",
+  "passed": 7,
+  "failed": 0,
+  "total": 7,
+  "overall_pass": true,
+  "rollup_status": "7/7 stages complete",
+  "derivation_note": "passed/failed/overall_pass are a pure reduction of logs/final-preview-verify.json"
+}

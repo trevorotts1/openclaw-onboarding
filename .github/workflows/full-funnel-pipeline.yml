@@ -1,0 +1,143 @@
+# full-funnel-pipeline.yml
+#
+# CI gate for the goal-#196 P0→P5 full-funnel pipeline. Before this workflow the
+# funnel work was unguarded prose: SOP-07 + persona grounding + the Kanban schema
+# had no test that ran in CI. Per the repo doctrine "a rule not auto-failed at the
+# QC gate doesn't exist", this workflow makes the funnel contract enforceable.
+#
+# Jobs (all OFFLINE — no live CRM / Gemini / network):
+#   persona-selector       — test-persona-selector.sh exits 0, A7 web-dev PASS.
+#   funnel-pipeline-pytest — T-1..T-9 integration + T-N1..T-N6 negatives +
+#                            funnel_rollback idempotency (24 tests).
+#   seed-normalize         — the seed-workspaces.py departments normalizer that
+#                            fixed the --converge Step-4 'str has no .get' crash.
+#   rubric-scorecard-gate  — runs the fixture harness, then scores all 11 rubrics
+#                            (R-COPY..R-CC-SYNC) from RAW evidence; FAILS if any
+#                            rubric < 8.5 or any evidence artifact is missing.
+#   funnel-rollback-prose-guard — fails if SOP-07 §7 funnel_rollback ever loses
+#                            its executable implementation (regression to prose).
+
+name: full-funnel pipeline (goal #196)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  persona-selector:
+    name: "persona-selector (web-dev funnel surface + A7)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Seed minimal persona fixture (clean CI has no OpenClaw install)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The canonical selector loads its persona pool from
+          # ~/.openclaw/workspace/data/coaching-personas, which only exists on an
+          # installed box. A clean CI checkout has none, so every task returns no
+          # persona. Seed a small leak-clean public-author fixture (committed at
+          # full-funnel-pipeline/ci-fixtures/coaching-personas) into a throwaway
+          # HOME so the test exercises the REAL selector against a real pool.
+          OC_HOME="${RUNNER_TEMP}/oc-home"
+          mkdir -p "${OC_HOME}/.openclaw/workspace/data"
+          cp -R 23-ai-workforce-blueprint/full-funnel-pipeline/ci-fixtures/coaching-personas \
+                "${OC_HOME}/.openclaw/workspace/data/coaching-personas"
+          {
+            echo "OC_TEST_HOME=${OC_HOME}"
+            echo "OPENCLAW_PLATFORM=mac"
+            echo "SCORING_MODE=heuristic"
+            echo "PERSONA_CATEGORIES_PATH=${OC_HOME}/.openclaw/workspace/data/coaching-personas/persona-categories.json"
+          } >> "$GITHUB_ENV"
+      - name: test-persona-selector.sh exits 0 with A7 PASS
+        shell: bash
+        env:
+          HOME: ${{ env.OC_TEST_HOME }}
+        run: |
+          set -euo pipefail
+          cd 23-ai-workforce-blueprint/scripts
+          bash test-persona-selector.sh | tee /tmp/tps.log
+          # Strip ANSI color codes before matching so the assertion is robust to
+          # terminal coloring. A7 = the web-dev funnel-surface tag-overlap check.
+          sed -E 's/\x1b\[[0-9;]*m//g' /tmp/tps.log > /tmp/tps.clean
+          grep -Eq "A7 Web-dev funnel-surface tags: +PASS" /tmp/tps.clean
+          echo "✓ persona selector functional; A7 web-dev funnel persona PASS"
+
+  funnel-pipeline-pytest:
+    name: "funnel pipeline pytest (T-1..T-9 + T-N1..T-N6 + rollback idempotency)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pytest
+        run: pip install pytest
+      - name: Run full-funnel pipeline tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pytest 23-ai-workforce-blueprint/full-funnel-pipeline/tests/ -q
+          echo "✓ P0→P5 integration + negative fixtures + rollback idempotency green"
+
+  seed-normalize:
+    name: "seed-workspaces departments normalizer (converge Step-4 crash fix)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pytest
+        run: pip install pytest
+      - name: Run normalizer regression test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pytest 32-command-center-setup/scripts/test_seed_workspaces_normalize.py -q
+          echo "✓ departments.json str/dict/dict-of-dicts shapes all normalize"
+
+  rubric-scorecard-gate:
+    name: "rubric scorecard gate (11 rubrics >= 8.5 from RAW evidence)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build fixture evidence + score 11 rubrics
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 23-ai-workforce-blueprint/full-funnel-pipeline
+          python3 funnel_fixture_harness.py --run-dir /tmp/ci-run
+          # --gate exits non-zero if any rubric scores below 8.5. The gate logic
+          # lives in funnel_rubrics.py (not an inline heredoc) so the CI step has
+          # no indentation-sensitive embedded script.
+          python3 funnel_rubrics.py --run-dir /tmp/ci-run \
+            --cc-invariant-ok 1 \
+            --cc-invariant-signal "INVARIANT_OK (CI fixture)" \
+            --gate
+          echo "✓ all 11 rubrics >= 8.5 from RAW evidence"
+
+  funnel-rollback-prose-guard:
+    name: "funnel_rollback executable (not prose-only)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert funnel_rollback has an executable implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f 23-ai-workforce-blueprint/full-funnel-pipeline/funnel_rollback.py
+          grep -q "def run_funnel_rollback" 23-ai-workforce-blueprint/full-funnel-pipeline/funnel_rollback.py
+          echo "✓ SOP-07 §7 funnel_rollback is implemented in code, not prose-only"

@@ -1,0 +1,8 @@
+{
+  "id": "R-KANBAN-CORRECTNESS",
+  "score": 9.4,
+  "threshold": 8.5,
+  "passed": true,
+  "evidence_path": "evidence/fixture-run/logs/final-preview-verify.json",
+  "raw_signal": "rollup=7/7 overall_pass=True summary_consistent=True"
+}

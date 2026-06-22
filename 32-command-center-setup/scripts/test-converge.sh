@@ -156,6 +156,32 @@ else
   fail "Invariant check should have detected drift. Got: $INVARIANT"
 fi
 
+# ─── Test 6: seed-workspaces.py accepts string-shape departments.json ────────
+# Regression for the --converge Step-4 crash: a departments.json with bare
+# string entries raised "'str' object has no attribute 'get'". The normalizer
+# must coerce strings → dicts so seed() runs.
+echo "$P Test 6: seed-workspaces.py normalizes string-shape departments.json..."
+SEED_PY="$SCRIPT_DIR/seed-workspaces.py"
+if [[ -f "$SEED_PY" ]]; then
+  NORMALIZE_OUT=$(python3 - "$SEED_PY" <<'PYEOF'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("sw", sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+out = m._normalize_departments(["marketing", "sales", "dept-finance"])
+assert all(isinstance(d, dict) and d.get("id") for d in out), out
+assert out[0] == {"id": "marketing", "name": "Marketing"}, out[0]
+print("OK")
+PYEOF
+)
+  if [[ "$NORMALIZE_OUT" == "OK" ]]; then
+    pass "seed-workspaces.py coerces string-shape departments.json (no .get crash)"
+  else
+    fail "seed-workspaces.py normalizer did not coerce strings. Got: $NORMALIZE_OUT"
+  fi
+else
+  fail "seed-workspaces.py not found at $SEED_PY"
+fi
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 echo ""
 echo "$P Results: $PASS passed, $FAIL failed"

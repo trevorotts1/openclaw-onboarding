@@ -1,0 +1,26 @@
+{
+  "status": "APPROVED",
+  "persona": "hormozi-100m-offers",
+  "emails": [
+    {
+      "day": 0,
+      "subject": "Scent-Bar follow-up 1"
+    },
+    {
+      "day": 1,
+      "subject": "Scent-Bar follow-up 2"
+    },
+    {
+      "day": 3,
+      "subject": "Scent-Bar follow-up 3"
+    },
+    {
+      "day": 5,
+      "subject": "Scent-Bar follow-up 4"
+    },
+    {
+      "day": 7,
+      "subject": "Scent-Bar follow-up 5"
+    }
+  ]
+}

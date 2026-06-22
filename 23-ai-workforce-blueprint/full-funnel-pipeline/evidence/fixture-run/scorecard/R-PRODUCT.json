@@ -1,0 +1,8 @@
+{
+  "id": "R-PRODUCT",
+  "score": 9.0,
+  "threshold": 8.5,
+  "passed": true,
+  "evidence_path": "evidence/fixture-run/working/funnels/scent-bar-workshop/offer-spec.json",
+  "raw_signal": "product=Scent-Bar Workshop prices=1"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "R-EMAILS",
+  "score": 9.0,
+  "threshold": 8.5,
+  "passed": true,
+  "evidence_path": "evidence/fixture-run/working/email/scent-bar-workshop/email-sequence.json",
+  "raw_signal": "email status=APPROVED count=5"
+}

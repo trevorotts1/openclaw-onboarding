@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "1.0",
+  "created": "2026-06-22",
+  "_doc": "CI-only minimal persona fixture for test-persona-selector.sh. Generic public-author personas; NO client data. Seeded into a temp HOME by the full-funnel-pipeline CI workflow so the canonical selector has a persona pool in a clean checkout.",
+  "domainTags": {},
+  "perspectiveTags": {},
+  "personas": {
+    "russell-brunson-the-funnel-hackers-cookbook": {
+      "author": "Russell Brunson",
+      "book": "The Funnel Hackers Cookbook",
+      "domain": [
+        "marketing",
+        "sales",
+        "strategy-innovation"
+      ],
+      "perspective": [],
+      "custom": [],
+      "source_type": "book"
+    },
+    "alex-hormozi-100m-offers": {
+      "author": "Alex Hormozi",
+      "book": "$100M Offers",
+      "domain": [
+        "marketing",
+        "sales",
+        "copywriting",
+        "strategy-innovation"
+      ],
+      "perspective": [],
+      "custom": [],
+      "source_type": "book"
+    },
+    "donald-miller-storybrand": {
+      "author": "Donald Miller",
+      "book": "Building a StoryBrand",
+      "domain": [
+        "marketing",
+        "copywriting"
+      ],
+      "perspective": [],
+      "custom": [],
+      "source_type": "book"
+    },
+    "michael-gerber-emyth": {
+      "author": "Michael Gerber",
+      "book": "The E-Myth Revisited",
+      "domain": [
+        "operations",
+        "productivity-systems"
+      ],
+      "perspective": [],
+      "custom": [],
+      "source_type": "book"
+    },
+    "patrick-lencioni-five-dysfunctions": {
+      "author": "Patrick Lencioni",
+      "book": "The Five Dysfunctions of a Team",
+      "domain": [
+        "leadership-management",
+        "strategy-innovation"
+      ],
+      "perspective": [],
+      "custom": [],
+      "source_type": "book"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "product_name": "Scent-Bar Workshop",
+  "deliverables": [
+    "2-hour in-person workshop",
+    "take-home scent kit",
+    "recipe card"
+  ],
+  "price_points": [
+    {
+      "name": "standard",
+      "amount_cents": 9900
+    }
+  ],
+  "guarantee": "Full refund if you don't leave with a finished scent.",
+  "bonuses": [
+    "Bonus: 15%-off refill voucher"
+  ],
+  "positioning": "The only hands-on scent-design class in town.",
+  "owner": "chief-sales-officer",
+  "stage": "p0-offer-spec"
+}
