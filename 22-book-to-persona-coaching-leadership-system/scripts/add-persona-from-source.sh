@@ -543,8 +543,18 @@ green "  Pipeline complete. Blueprint at: $PERSONA_FOLDER/persona-blueprint.md"
 # ─── RE-INDEX GEMINI ─────────────────────────────────────────────────────────
 if [ "$SKIP_INDEX" = "false" ]; then
   blue "── Re-indexing Gemini Engine (coaching-personas + workspace) ──"
+  # a71f6bbd path-drift fix: the canonical INSTALLED wrapper is
+  # $OC_ROOT/scripts/gemini-indexer.py (Mac: ~/.openclaw/scripts, VPS:
+  # /data/.openclaw/scripts). The pre-fix loop probed only
+  # $OC_ROOT/workspace/scripts/gemini-indexer.py — a path that does not exist on
+  # any current install — so this safety-net re-index silently printed
+  # "not found" even on healthy boxes. Candidate order now mirrors
+  # orchestrator.py Phase 5 (scripts/ first, workspace/scripts/ as legacy
+  # fallback). NOTE: orchestrator.py already runs Phase 5 re-indexing above;
+  # this block is an idempotent safety net (the indexer skips unchanged files
+  # by content hash) and honors --skip-index.
   INDEXER=""
-  for c in "$WORKSPACE/scripts/gemini-indexer.py" "$OC_ROOT/workspace/scripts/gemini-indexer.py"; do
+  for c in "$OC_ROOT/scripts/gemini-indexer.py" "$WORKSPACE/scripts/gemini-indexer.py" "$OC_ROOT/workspace/scripts/gemini-indexer.py"; do
     [ -f "$c" ] && INDEXER="$c" && break
   done
   if [ -n "$INDEXER" ]; then
@@ -552,7 +562,7 @@ if [ "$SKIP_INDEX" = "false" ]; then
     green "  Gemini index refreshed. New persona is now searchable."
   else
     yellow "  gemini-indexer.py not found; persona blueprint written but not yet indexed."
-    yellow "  Run manually: python3 $OC_ROOT/workspace/scripts/gemini-indexer.py"
+    yellow "  Run manually: python3 $OC_ROOT/scripts/gemini-indexer.py"
   fi
 fi
 
@@ -725,7 +735,7 @@ green "  ✓ Persona added: $SLUG"
 green "═══════════════════════════════════════════════════"
 echo "  Blueprint:          $PERSONA_FOLDER/persona-blueprint.md"
 echo "  Source text:        $TEXT_FILE"
-echo "  Searchable via:     python3 $OC_ROOT/workspace/scripts/gemini-search.py --query \"<task>\""
+echo "  Searchable via:     python3 $OC_ROOT/scripts/gemini-search.py --query \"<task>\""
 echo ""
 yellow "  NEXT STEP (optional): review domain[] and perspective[] tags in persona-categories.json"
 yellow "  for $SLUG.  Auto-classification has assigned initial tags from title/author/slug —"
