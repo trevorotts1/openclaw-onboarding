@@ -155,6 +155,14 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 **Steps:**
 
+**Step 0 — Persona grounding (MANDATORY for full-funnel P2e builds; recommended for all campaigns):**
+Before writing subject lines or body copy, select an email-copy persona and log the selection.
+
+0a. Read `persona-categories.json` domain tags for the email campaign task. Relevant domains: `marketing`, `copywriting`, `communication`.
+0b. Run: `gemini search '<email campaign type> + <funnel stage> + <ICP keywords>' -c coaching-personas` to surface the best-fit email persona.
+0c. Select the email-copy persona (e.g., `bly` for direct response sequences, `wiebe` for voice-of-customer subject lines, `hormozi` for value-stack nurture sequences). Ground the subject line approach, opening hook, and CTA framing in the selected persona's methodology.
+0d. Write a `persona-selection-log.md` entry per persona-matching-protocol.md line 127. Entry MUST include: task_id, date, selected_persona_id, rationale (one sentence connecting the persona's email methodology to this campaign type), domains_matched, and `staleness_checked`. **Staleness guard (persona-matching-protocol.md line 145):** if the log shows the same email-copy persona chosen 5+ times in a row for this department, flag for review and re-confirm a fresh 5-layer alignment. Record `staleness_checked: true` (and `staleness_flagged: true|false`) in the entry.
+
 1. **Define the campaign goal in one sentence.** "This email exists to drive registrations for the May 25 webinar." Every element of the email -- subject line, hero image, body copy, CTA -- must serve this single goal. IF the brief contains multiple goals --> prioritize one primary goal and make the rest secondary.
 
 2. **Select the target segment.** Choose the segment based on the campaign goal, not the entire list. IF this is a re-engagement offer --> send only to subscribers who have not clicked in 30+ days. IF this is a loyalty reward --> send only to customers with 2+ purchases. Sending to the wrong segment reduces relevance, increases unsubscribes, and damages sender reputation.
@@ -338,6 +346,7 @@ Every campaign must pass these 4 gates before deployment. A "fail" at any gate b
 | **Email Deliverability Specialist** | Spam complaint data, bounce data, blacklist alert triggers | Shared deliverability dashboard or Slack | Real-time for alerts; weekly summary for trend data | Data must be accurate and include the specific campaign or flow that triggered the alert. |
 | **Analytics Team** | UTM-tagged campaign data for cross-channel attribution analysis | GA4 export or analytics dashboard | Monthly, by the 5th | All UTM parameters must be correctly formatted and consistent across all emails in the period. |
 | **Content Team** | High-performing subject line and body copy examples for reuse in other channels | Shared swipe file (Notion or Google Drive) | Monthly, by the 10th | Examples must be annotated: what worked, why it likely worked, and applicable audience segments. |
+| **Automation Workflow Specialist (CRM)** | APPROVED nurture/follow-up email sequence copy for Skill-44 deployment. This is the P2e baton in the full-funnel value stream — the APPROVED email copy produced here is consumed by P5 (the Automation Workflow Specialist wires it into GHL workflows via Skill 44). Hand off after QC Specialist — Marketing stamps APPROVED. Frequency: per full-funnel build. | Email copy artifact (copy.md or equivalent sequence spec) | Per full-funnel P2e stage completion | All slots must be explicitly populated or marked `[CLIENT TO SUPPLY]`. Sequence must have QC APPROVED status before handoff. |
 
 ### Handoff Protocol
 

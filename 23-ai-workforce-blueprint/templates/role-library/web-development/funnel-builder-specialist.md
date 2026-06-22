@@ -427,6 +427,7 @@ Before any funnel launches or a major change ships, it must pass these gates:
 - **Paid Ads Specialist / Email Marketing Specialist** — you give them: funnel URLs and UTM structures for campaign linking. Frequency: per funnel.
 - **Marketing Analytics Specialist** — you give them: funnel tracking configuration for attribution modeling. Frequency: per funnel.
 - **Head of Web Development** — you give them: funnel health reports, technical issues, platform needs. Frequency: weekly.
+- **Automation Workflow Specialist (CRM)** — after page build + verify, hand the live `page_ids` + opt-in form IDs to the Automation Workflow Specialist to wire workflows (Skill 44 seam — see `06-ghl-install-pages/v2-autonomous-build-sop.md` S4). This is the P4→P5 handoff in the full-funnel value stream. The seam is documented in v2-autonomous-build-sop.md S4; this handoff makes it visible in the funnel builder role. Frequency: per full-funnel build after Gate-3 page verify passes.
 
 ### Cross-department coordination:
 - For **payment processing and financial compliance**, coordinate with the CFO or finance team. Funnels that process payments implicate PCI compliance, tax collection, and financial reporting.

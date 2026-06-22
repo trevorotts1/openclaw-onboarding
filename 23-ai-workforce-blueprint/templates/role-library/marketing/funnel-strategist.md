@@ -221,6 +221,81 @@ This role contributes to the company revenue cascade by: **optimizing the conver
 **Hand to:** CMO (audit findings and action plan approval), relevant specialists for each optimization action (Landing Page Specialist for landing page improvements, Email Campaign Strategist for nurture-conversion improvements, etc.)
 **Failure mode:** Optimizing the wrong end of the funnel. It's tempting to start with top-of-funnel conversion (landing pages) because they're the easiest to test and the fastest to show results. But a 10% improvement in visitor-to-lead conversion generates more leads that all go through the same low-converting downstream stages. Sometimes the highest-ROI fix is mid-funnel or bottom-funnel — where improving conversion generates revenue from leads you've already paid to acquire.
 
+### SOP 9.5 — Produce funnel-spec.json (P1)
+
+**When to run:** When the Chief Sales Officer's offer-spec.json has been delivered and the full-funnel build pipeline (SOP-07) has dispatched P1 to this role.
+**Frequency:** Per full-funnel build.
+**Inputs:** `working/funnels/<slug>/offer-spec.json` from the Chief Sales Officer (SOP 9.9). Contains: product name, deliverables, price points, guarantee, bonuses, positioning.
+**Steps:**
+1. **Read offer-spec.json.** Confirm all required fields are present: product_name, deliverables (array), price_points (at least one), guarantee, bonuses, positioning_statement. If any field is missing, return to orchestrator with a structured handback naming the exact missing field — do NOT proceed without a complete offer spec.
+
+2. **Select the funnel type.** Based on the offer's price point, complexity, and ICP, select EXACTLY ONE of the following funnel types (use the exact vocabulary — these are the terms the Conversion Copywriter expects, per conversion-copywriter.md lines 22 and 188):
+   - `short-form squeeze` — low-barrier lead magnet; single page; minimal copy; fast opt-in.
+   - `long-form sales` — high-ticket offer; detailed copy; social proof heavy; single scrolling page.
+   - `video-sales-letter` — VSL as hero; copy below the fold; strong guarantee.
+   - `application` — qualification-gated; form-forward; suited for high-ticket services.
+   - `webinar` — registration + live/replay flow; 2-3 page sequence.
+   - `2-step` — opt-in page → sales/thank-you page sequence.
+
+3. **Produce per-page section blueprint.** For each page in the funnel, define the ordered section slots. Required slot types (include all that apply for the selected funnel type):
+   - `hero` — headline + subhead + primary CTA
+   - `benefits` — benefit bullets
+   - `social-proof` — testimonials, case studies, logos
+   - `offer` — offer description, price, value stack
+   - `cta` — call-to-action block
+   - `checkout` — order form (if applicable)
+   - `upsell` — upsell page (if applicable)
+   - `downsell` — downsell page (if applicable)
+   - `thank-you` — confirmation + next step
+
+4. **Produce the offer map.** Define: price points (front-end, order-bump, upsell, downsell), order-bump logic (what triggers it, what it is), upsell sequence (page order, pricing), downsell fallback, and checkout routing.
+
+5. **Persona grounding (MANDATORY sub-step — required before writing any spec).** This step MUST run and produce a log entry before the funnel-spec.json is written.
+   - Read `persona-categories.json` domain tags for this role's task category. Relevant domains for funnel architecture: `marketing`, `sales`, `strategy-innovation`.
+   - Run: `gemini search '<funnel architecture task> + offer sequencing + <domain tags>' -c coaching-personas` — substituting the actual funnel type and ICP from the offer-spec.
+   - Select the persona whose methodology best matches the funnel structure task. For funnel architecture and offer sequencing, `hormozi-100m-offers` is the canonical persona (VERIFIED present in the 41-persona matrix). Select it when the task involves value ladder design, price-point sequencing, offer stack, or high-ticket offer architecture.
+   - Write a `persona-selection-log.md` entry per persona-matching-protocol.md line 127 (MANDATORY). The entry MUST include: task_id, date, selected_persona_id (`hormozi-100m-offers`), rationale (one sentence tying the persona's methodology to the specific funnel architecture decision), domains_matched.
+   - Ground the funnel structure, section blueprint, and offer map in the selected persona's methodology. For `hormozi-100m-offers`: apply the value ladder principle (ascension sequence), the offer stack framing (accumulate value before revealing price), and the guarantee structure (risk-reversal as a conversion lever). Do NOT deviate from the brand-voice-lock.md or the owner's stated values.
+   - **SINGLE-OWNER rule:** This role (Funnel Strategist) writes the `persona-selection-log.md` entry for funnel architecture. The Chief Sales Officer (N3/SOP 9.9) references the offer persona but does NOT write a duplicate entry. If the CSO has already referenced a persona in the offer-spec.json, acknowledge it here; do not duplicate the log entry.
+
+6. **Write funnel-spec.json.** Output to `working/funnels/<slug>/funnel-spec.json`. Required schema:
+   ```json
+   {
+     "slug": "<funnel slug>",
+     "funnel_type": "<exact type string from step 2>",
+     "offer_ref": "working/funnels/<slug>/offer-spec.json",
+     "persona_grounding": {
+       "selected_persona": "hormozi-100m-offers",
+       "log_entry": "working/funnels/<slug>/persona-selection-log.md"
+     },
+     "pages": [
+       {
+         "page_id": "<slug>-<page-number>",
+         "page_type": "<landing|upsell|downsell|thank-you|checkout>",
+         "sections": [
+           { "slot": "<slot_type>", "intent": "<one-line copy intent for this section>" }
+         ]
+       }
+     ],
+     "offer_map": {
+       "front_end_price": null,
+       "order_bump": null,
+       "upsell": null,
+       "downsell": null,
+       "checkout_routing": null
+     }
+   }
+   ```
+   All `null` fields MUST be populated from the offer-spec.json. No field may be left null in the delivered artifact. If a field cannot be determined from the offer spec, use `[CLIENT TO SUPPLY]` with the specific question.
+
+7. **Confirm the copywriter can consume this artifact.** Cross-check: does `funnel_type` use one of the five exact strings the Conversion Copywriter expects (conversion-copywriter.md line 22 vocabulary)? Does every page have at least a `hero` and a `cta` section slot? If not, fix before delivering.
+
+**Outputs:** `working/funnels/<slug>/funnel-spec.json` (the exact path the Conversion Copywriter reads — conversion-copywriter.md line 170), `working/funnels/<slug>/persona-selection-log.md` entry.
+**Hand to:** Conversion Copywriter (funnel-spec.json for P2 copy production); Automation Workflow Specialist — CRM (funnel structure for P5 CRM workflow wiring — see Section 11 handoffs update below).
+**Failure mode:** Delivering a funnel-spec.json with null fields, an unrecognized funnel_type string, or without the persona-selection-log.md entry. Any of these blocks P2 or P5 — the Conversion Copywriter rejects a spec without the exact funnel type vocabulary, and the Procedure Auditor flags a missing persona log. Log the missing items in a structured handback; do NOT guess or fill in values the offer-spec did not supply.
+
+---
+
 ### SOP 9.4 — Landing Page Optimization Framework
 
 **When to run:** When any landing page has been live for ≥30 days with ≥500 unique visitors, or when a new campaign requires a landing page
@@ -277,6 +352,8 @@ Before any funnel optimization ships, it must pass these gates:
 - **Lead Magnet Specialist** — you give them: landing page conversion benchmarks and best practices, A/B test results for conversion elements applicable to lead magnet pages. Frequency: monthly insights + per landing page test.
 - **CRM Platform Administrator** — you give them: lead scoring implementation requirements, MQL routing rule specifications, CRM stage progression automation requirements. Frequency: monthly calibration changes + per new funnel implementation.
 - **QC Specialist — Marketing** — you give them: conversion flow test results for quality verification, landing page pre-launch review requests. Frequency: per new conversion asset before launch.
+- **Conversion Copywriter** — you give them: `funnel-spec.json` (the P1 blueprint — funnel type, section blueprint per page, offer map). This is the structural brief the Conversion Copywriter writes inside of. Without it, no copy begins. Frequency: per full-funnel build (P1 → P2 handoff per SOP-07).
+- **Automation Workflow Specialist (CRM)** — you give them: `funnel-spec.json` (funnel structure, page sequence, offer map) for CRM workflow design (the P5 stage). The Automation Workflow Specialist already claims it receives strategy from the Marketing Funnel Strategist (automation-workflow-specialist.md lines 270 and 384); this handoff closes that reciprocal. Frequency: per full-funnel build (P1 → P5 seam).
 
 ### Cross-department coordination:
 - For **MQL definition and lead scoring threshold changes**, coordinate directly with CSO — any change to what constitutes an MQL must be jointly agreed because it affects sales team workload and pipeline quality.

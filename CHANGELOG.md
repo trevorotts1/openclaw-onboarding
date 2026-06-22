@@ -1,3 +1,22 @@
+## v13.8.0 — 2026-06-22 — feat(full-funnel): P0→P5 orchestration SOP + persona grounding + Kanban schema extension + web-dev tag widen
+
+Full-funnel pipeline architecture shipped across 12 components: SOP-07 (new), SOP-00/SOP-01/SOP-01 Kanban extension, funnel-strategist SOP 9.5, chief-sales-officer SOP 9.9, conversion-copywriter Step 0 persona grounding, email-campaign-strategist Skill-44 handoff + persona grounding, funnel-builder/landing-page Section-11 Skill-44 seam lines, v2-autonomous-build-sop P0/P1/P2 gates, Skill 6 ↔ Skill 44 bidirectional SKILL.md cross-references, persona-selector-v2.py web-development tag widen, test-persona-selector.sh A7 assertion.
+
+- **SOP-07 (NEW):** Single owner of P0→P5 value stream. Full-funnel intent detection in SOP-00 Step-2 hands here. Creates parent funnel_epic + 6 staged child cards with depends_on edges. Enforces P-boundary ordering gates. Introduces waiting_on_dependency non-human sub-state (not counted against 3-bounce cap). Iron Rule: routes via POST /api/tasks/ingest to persistent agent:<dept>, never inline. funnel_rollback on child FAILED (revert page baselines, delete ecosystem objects, delete test contact). Parent/child idempotency keys (sha256).
+- **SOP-00 Step-2 branch:** Full-funnel/website-factory intent detection added before single-department routing. Hands to SOP-07 when detected. Parent key + child key derivation documented.
+- **SOP-01 Kanban contract extension:** Documents new schema columns (parent_task_id, stage, depends_on, task_type), depends_on ordering edges, waiting_on_dependency sub-state (fixes Category-3 misclassification), first-class board handoff events, parent rollup rule.
+- **cross-dept-request-template.md:** Notes that at full-funnel P-boundaries, the handoff also emits a board handoff event (not only the CC message).
+- **funnel-strategist.md SOP 9.5:** Produces funnel-spec.json at P1. Persona grounding: hormozi-100m-offers selection mandatory, persona-selection-log.md entry required. Section-11 adds handoffs to Conversion Copywriter AND Automation Workflow Specialist.
+- **chief-sales-officer.md SOP 9.9:** Emits offer-spec.json at P0. Single-owner rule: CSO does not write duplicate persona-selection-log entry. Section-11 adds Funnel Strategist handoff.
+- **conversion-copywriter.md:** SOP 9.2 Step 0 persona grounding (bly/wiebe/miller/hormozi/cialdini). New Gate-1 checkbox. three-constraint envelope and line-210 PENDING-QC preserved.
+- **email-campaign-strategist.md:** Section-11 handoff to Automation Workflow Specialist (CRM, Skill 44). SOP-01 Step 0 persona grounding sub-step.
+- **funnel-builder-specialist.md + landing-page-specialist.md:** Section-11 line handing page_ids + opt-in form IDs to Automation Workflow Specialist (Skill-44 seam).
+- **v2-autonomous-build-sop.md:** P0 (offer-spec gate), P1 (funnel-spec gate + persona-log verify), P2 (copy APPROVED gate + copy-persona-log verify) inserted before S2. S3/S4/S6/S7/S8 unchanged.
+- **persona-selector-v2.py line 256:** web-development widened from ['operations','productivity-systems'] to ['marketing','sales','copywriting','strategy-innovation','operations']. app-development/graphics/video/audio unchanged.
+- **test-persona-selector.sh:** Added web-development task, webdev_result_personas array, A7 assertion (tag-intersection for funnel-surface domains), A7 wired into final gate condition and Summary block. Exit 3 on FAIL.
+- **Skill 6 SKILL.md + Skill 44 SKILL.md:** Bidirectional cross-references (Skill 6 → Skill 44 post-page-verify; Skill 44 → Skill 6 receives APPROVED copy + page IDs, never authors copy/business rules).
+- **Versions:** 9 markers → v13.8.0.
+
 ## v13.7.0 — 2026-06-22 — feat(Skill 06/44): canvas-REST autosave integration + ecosystem/media/verify tooling + CAF calendar/product/price create
 
 Skill 06 (GHL install pages) gains the cracked token-only canvas-REST build path and supporting tooling; Skill 44 (convert-and-flow operator) gains the calendar / product / price create commands needed to stand up the full funnel ecosystem.

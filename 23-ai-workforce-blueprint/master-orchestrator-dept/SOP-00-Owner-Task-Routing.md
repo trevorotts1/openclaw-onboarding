@@ -58,6 +58,20 @@ Full procedure: `universal-sops/answering-how-to-use-questions.md`. If the messa
 
 ### Step 2 — Classify the task
 
+**Full-funnel / website-factory branch (check FIRST, before single-department routing):**
+
+Before applying the single-department routing table below, check whether the request is a full-funnel or website-factory build. Full-funnel intent signals (any of the following):
+
+- Request names both a page/funnel deliverable AND a follow-up automation in the same message (e.g., "build me a landing page and email follow-up sequence," "create a funnel with workflows," "VSL funnel with automation").
+- Request describes a multi-stage conversion flow: capture → nurture → sales → automation.
+- Request uses any of: "full funnel," "build me a funnel," "sales funnel," "lead magnet + sequence," "funnel + emails," "website factory," "webinar funnel," "opt-in + follow-up."
+
+**If full-funnel intent is detected:** Do NOT single-route. Hand to SOP-07 (Full-Funnel Build Orchestration). SOP-07 creates the parent epic (`task_type: funnel_epic`) and the six staged child cards with `depends_on` edges. Idempotency: carry the parent `idempotency_key` on the epic; derive each child key as `sha256(parent_key + ':' + stage_slug)` so a Telegram retry cannot duplicate the funnel or any stage.
+
+**If intent is ambiguous:** apply single-department routing below. When in doubt, single-route.
+
+---
+
 Read `universal-sops/00-ROUTING.md` (company root) to map the request to the owning department and role. Apply these rules:
 
 | If the request is about… | Route to department |
@@ -225,6 +239,7 @@ This is the role #0 entry in `suggested-roles/graphics-suggested-roles.md` in th
 
 | Version | Date | Change |
 |---------|------|--------|
+| 1.4.0 | 2026-06-22 | Added Step-2 full-funnel/website-factory branch: when intent is detected, hand to SOP-07 (Full-Funnel Build Orchestration) instead of single-routing. Documents parent idempotency_key with child key derivation as sha256(parent_key+':'+stage_slug). Sibling SOP-07 added to master-orchestrator-dept/. |
 | 1.3.0 | 2026-06-21 | Added R11: route production work to the PERSISTENT per-department agent (`agent:<dept>` via the task board) — NEVER to an ephemeral turn-scoped inline child that dies when a new owner message starts a new turn. Documents the repo-side vs platform-side split for spawn persistence and cross-links `platform/SPEC-persistent-department-spawn.md`. Part of the v13.2.2 routing-gate hardening. |
 | 1.2.0 | 2026-06-15 | Added R10: Blocked column authority -- the orchestrator is the sole writer of status=blocked and only after the four-way classifier in SOP-01 passes. Workers hand back via the structured handback endpoint. Cross-links SOP-01-Blocked-vs-Return.md and N36. |
 | 1.1.0 | 2026-06-09 | G5 alignment: added R7 sub-agent-bypass clause (spawning a worker to execute is the same violation as executing yourself -- this was the orchestrator self-execution bug), R8 General Tasks fallback (route to general-task when no dept is obvious, never execute directly), R9 owner-explicit-permission exception. These three rules were present in the CEO_ORCHESTRATOR_RULE injected into MEMORY.md/SOUL.md/IDENTITY.md by build-workforce.py but absent from this SOP -- now aligned. |

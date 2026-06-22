@@ -278,6 +278,7 @@ Before any landing page launches or an optimization ships, it must pass these ga
 - **Campaign Manager** — you give them: confirmed live landing pages, performance updates. Frequency: per campaign.
 - **QC Specialist — Web Development** — you give them: new pages for final QA verification. Frequency: per page launch.
 - **Marketing Analytics Specialist** — you give them: tracking confirmation for cross-channel attribution. Frequency: per page.
+- **Automation Workflow Specialist (CRM)** — after page build + verify, hand the live `page_ids` + opt-in form IDs to the Automation Workflow Specialist to wire workflows (Skill 44 seam — see `06-ghl-install-pages/v2-autonomous-build-sop.md` S4). This is the P4→P5 handoff in the full-funnel value stream. The seam is documented in v2-autonomous-build-sop.md S4; this handoff makes it visible in the landing page specialist role. Frequency: per full-funnel build after Gate-3/4 page verify passes.
 
 ### Cross-department coordination:
 - For **paid social campaigns**, coordinate landing page URLs and tracking parameters with the Paid Ads Specialist in the Marketing department.
