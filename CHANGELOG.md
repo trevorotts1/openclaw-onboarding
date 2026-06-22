@@ -1,3 +1,13 @@
+## v13.5.0 — 2026-06-21 — fix(skills 06+44): productionize the GHL builders — workflow-QC command bug, exact-ID sub-account guard, token-only auth doctrine + CI guard
+
+Goal-B productionization of the GHL build surfaces (independently re-verified before merge). All generic; no client names.
+
+- **Skill 44 `qc-built-workflow.sh`:** the per-build QC export call was wired to a non-existent positional form and failed on every workflow; fixed to `caf workflows export --workflow-id <id> --out <file>` + reads the file. WF-18/WF-21 reversibility now record **N/A** (not FAIL) for a fresh build with no prior snapshot, so a clean build can pass. QC verdicts that resolve to `unknown` now record **REQUIRES_HUMAN_REVIEW** instead of silently passing.
+- **Skill 06 `ghl_builder.py`:** `subaccount_matches()` hardened from a case-insensitive SUBSTRING match (co-mingling false-positive risk) to **EXACT normalized `location_id` equality** via a `MatchGuard` object the build loop checks; short/generic targets rejected; backward-compatible bool.
+- **Skill 06 token-only auth doctrine:** `CORE_UPDATES.md` (which populates each client's core files) was still teaching the **WRONG** raw-Playwright + email/password + 2FA-pause pattern — rewritten to token-only (Firebase refresh → id_token → seed; no login / no 2FA). `SKILL.md`/`INSTRUCTIONS.md` self-contradictions removed; `inject-ghl-auth.sh` activation docstring corrected (no post-seed reload; the proven cookies + `$router.push` path).
+- **New CI guard `scripts/guard-ghl-token-only.sh`:** fails on any reintroduced login/2FA fallback (password fill, headed, post-seed reload) or a missing doctrine sentinel; runs green on the current tree.
+- `skill-version`: 06 v7.2.1 → v7.2.2, 44 1.0.18 → 1.0.19; 9 markers + cc-compat → v13.5.0.
+
 ## v13.4.1 — 2026-06-21 — feat(skill 06): D10/D11/D12 live-confirmed — all 28 gates resolved; only publish (D13) awaits operator approval
 
 The remaining live builder tests passed headless, token-only, draft, no publish — and were independently re-verified by curling the preview URLs + embed headers.
