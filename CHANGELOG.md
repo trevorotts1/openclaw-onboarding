@@ -1,3 +1,11 @@
+## v13.5.3 — 2026-06-21 — fix(hygiene): regenerate the marketing how-to-use guide via the canonical renderer (v13.5.2 hand-edit introduced em-dashes + drifted from the generator)
+
+The v13.5.2 C1 role-owner work added the new Conversion Copywriter to `marketing/how-to-use-this-department.md` by hand, which (a) introduced em-dashes the QC-static guide gate forbids and (b) made the committed guide stale vs `generate_how_to_use_docs.py`. The PR went green but the push-to-main "Skill 23 how-to-use guides … clean + wired" gate caught it. Fix: re-ran the canonical generator (no hand-edits) so the guide is current AND clean; the renderer picks up the new role automatically and emits no em-dashes.
+
+- **`marketing/how-to-use-this-department.md`** — regenerated via `23-ai-workforce-blueprint/scripts/generate_how_to_use_docs.py`; Conversion Copywriter now listed (3×), zero em-dashes, matches the renderer. `test-how-to-use-docs.sh` → 7 passed / 0 failed.
+- Process note: how-to-use guides are **generated**, never hand-edited — adding a role then regenerating is the only supported path.
+- Versions: 9 markers + 23 skill-version + cc-compat → v13.5.3.
+
 ## v13.5.2 — 2026-06-21 — feat(Goal B): GHL builder SOPs + 93-test pytest suite + role owners + Conversion Copywriter role + plain-language client phrasebook (Productionize + Institutionalize)
 
 Goal B's institutionalization + automated-test layer lands. All authoring on Opus 4.8; independently verified by a separate Opus agent — lockstep + repo-consistency + pytest all green, leak-scan clean (after a real client-id leak in a test fixture was caught and scrubbed).

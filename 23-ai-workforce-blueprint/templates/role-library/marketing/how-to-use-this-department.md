@@ -74,7 +74,6 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Brand Positioning Specialist** | Defines and maintains the company's unique selling proposition (USP), unique value proposition (UVP). |
 | **Content Marketing Strategist** | Long-form content (blog posts, articles, whitepapers, case studies). |
 | **Content Strategist** | Plans the overall content calendar. |
-| **Conversion Copywriter** | Owns all words on funnel pages, landing pages, and website pages — headlines, CTAs, body copy, upsell/downsell scripts, SEO meta copy. Supplies the approved copy artifact to Web Development builders before any page is built. |
 | **Customer Journey Architect** | Maps the full customer journey from first awareness to repeat buyer to advocate. |
 | **Email Campaign Strategist** | Owns marketing email strategy - campaign concept, segmentation, calendar, copy. |
 | **Funnel Strategist** | Designs the customer acquisition funnel from awareness to purchase. |
@@ -82,6 +81,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Lead Magnet Specialist** | Designs and produces the gated content that converts cold traffic into leads. |
 | **Marketing Analytics Specialist** | Owns measurement and attribution for marketing. |
 | **Webinar Event Marketing Specialist** | Plans and promotes webinars, virtual events, and in-person events. |
+| **Conversion Copywriter** | You own the words - every word - on every funnel page, landing page, website page, and checkout flow that deploys. |
 
 ### What each specialist is for, with an example request
 
@@ -104,11 +104,6 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* Plans the overall content calendar.
 - *Example request:* "Have the Content Strategist take this on: Plans the overall content calendar."
-
-**Conversion Copywriter**
-
-- *What it is for:* Writes all copy for funnel pages, landing pages, and website pages — hero headline, subhead, benefit bullets, offer description, single primary CTA, checkout copy, upsell/downsell scripts, SEO title/meta, and A/B headline variants. Supplies the approved copy.md artifact to Web Development before any page is built. The builder roles do not write or rewrite copy; the Conversion Copywriter owns the words.
-- *Example request:* "Have the Conversion Copywriter write the page copy for the new [offer name] funnel — I need headlines, CTA text, the full offer description, and two A/B headline variants."
 
 **Customer Journey Architect**
 
@@ -144,6 +139,11 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* Plans and promotes webinars, virtual events, and in-person events.
 - *Example request:* "Have the Webinar Event Marketing Specialist take this on: Plans and promotes webinars, virtual events, and in-person events."
+
+**Conversion Copywriter**
+
+- *What it is for:* You own the words - every word - on every funnel page, landing page, website page, and checkout flow that deploys.
+- *Example request:* "Have the Conversion Copywriter take this on: You own the words - every word - on every funnel page, landing page, website page."
 
 
 ---
