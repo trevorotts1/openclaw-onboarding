@@ -932,4 +932,13 @@ and `scripts/test-watchdog-loop.sh` (T8 full-passes, T8b shell-blocks the overal
 
 ---
 
+## GHL / Convert and Flow Auth Doctrine (Skill 06 / Skill 44)
+
+- GHL-AUTH-DOCTRINE: TOKEN-ONLY (D7) — refresh-token seed is the only auth path; NO auto UI-login / password / 2FA.
+  Funnel/website/page builds authenticate by minting a Firebase id_token from GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN and reconstructing the SPA session (Firebase IndexedDB record + the six SPA cookies), then navigating straight into the dashboard. NO login form, NO password, two-factor NEVER reached. On token failure the builder STOPS and reports; re-grab a fresh refresh token via the Token Grabber.
+- GHL-AUTH-DOCTRINE: TIER-2 EMAIL-2FA FALLBACK — gated (auth+gmail-proven+email-2fa+creds), bounded, self-heals to TOKEN-ONLY.
+  The canonical auth entry point is the orchestrator `06-ghl-install-pages/tools/ghl_auth.py` (a 3-tier ladder), which Skill 06 and Skill 44 both call — never the fallback directly. Tier 1 (token-only, above) stays PRIMARY. Tier 2 is a GATED, audited, ONE-TIME email-2FA bootstrap entered ONLY when there is no valid refresh token AND four gates pass: (A) a recorded client authorization, (B) the box PROVES it can read the client's OWN Gmail via a live read BEFORE any login (so a misconfigured box never starts a login it can't finish), (C) GHL's selected 2FA is email, (D) agency creds resolve from the CLIENT's own secret store. Tier 2 logs in headless, reads the freshest email-2FA code from the client's own Gmail, submits it, and on success SELF-HEALS a fresh refresh token into the client store so the next run is Tier 1 again. Bounded: MAX_LOGIN_ATTEMPTS <= 3, backoff, hard-stop on any lockout/captcha. Any gate fail or hard stop -> Tier 3: fail loud, non-zero exit, precise client instruction. ALL login/password/2FA code lives in EXACTLY ONE module (`tools/ghl_auth_fallback.py`) plus its browser helper (`tools/ghl_login_browser.py`); CI guard `scripts/guard-ghl-auth-fallback.sh` locks the invariants. Client uses their OWN creds/keys ONLY; secrets NEVER in repo/logs/stdout.
+
+---
+
 *Document version: 2026-03-13*

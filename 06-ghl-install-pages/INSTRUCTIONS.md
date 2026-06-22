@@ -20,11 +20,25 @@ This assumes your HTML code is already written and ready to paste. This guide is
 > Token Grabber Chrome extension, then retry the seed. GHL_AGENCY_EMAIL /
 > GHL_AGENCY_PASSWORD = MANUAL operator-only last resort, never auto-invoked.
 >
+> **GHL-AUTH-DOCTRINE: TIER-2 EMAIL-2FA FALLBACK — gated (auth+gmail-proven+email-2fa+creds), bounded, self-heals to TOKEN-ONLY.**
+> The canonical auth entry point is the orchestrator `tools/ghl_auth.py`, a 3-tier
+> ladder. Tier 1 (token-only, above) stays PRIMARY/default — a normal build only
+> ever takes Tier 1. Tier 2 is a GATED, audited, one-time email-2FA bootstrap that
+> the orchestrator evaluates ONLY when Tier 1 has no usable token AND four gates
+> pass (A authorization recorded, B Gmail-access PROVEN by a live read BEFORE any
+> login, C email is the selected 2FA method, D agency creds in the client store).
+> On success it SELF-HEALS a fresh refresh token to the client store so the next
+> run is Tier 1 again. Any gate fail / lockout → Tier 3: fail loud, non-zero exit,
+> precise client instruction. ALL login/2FA code is contained in
+> `tools/ghl_auth_fallback.py` (+ helper `tools/ghl_login_browser.py`); the CI
+> guard is `scripts/guard-ghl-auth-fallback.sh`.
+>
 > **Quick start (agent):**
 > 1. `python3 tools/seed-ghl-auth.py --check` — confirm a refresh token is present.
 >    (`--check` only REPORTS the path; it never authorizes a UI login. Exit 2 = no
 >    token → STOP, do NOT open the login form.)
 > 2. `python3 tools/seed-ghl-auth.py --print-seed --out /tmp/<sess>/seed.json` then `bash tools/inject-ghl-auth.sh <sess> /tmp/<sess>/seed.json --pre-open`. (On exit 3 = revoked/expired token → STOP + re-grab via the Token Grabber.)
+>    Equivalently, the canonical entry is `python3 tools/ghl_auth.py --session <sess> --out /tmp/<sess>/seed.json` — it runs Tier 1 (the seed→inject above) and ONLY on token-absent/invalid evaluates the gated Tier-2 ladder; then run `inject-ghl-auth.sh` on the seed exactly as today. The Tier-1 steps remain valid and unchanged.
 > 3. Build the manifest + drive the funnel/website flow per `ghl-browser-builder-full.md`, resolving each runtime gate (`tools/gates.json`) by live snapshot.
 > 4. Ledger every phase via `tools/ghl_builder.py ledger-write ...`; verify with `ghl_builder.py verify <url> <marker>`; never publish unless `ghl_builder.py may-publish <approval>` returns PUBLISH.
 

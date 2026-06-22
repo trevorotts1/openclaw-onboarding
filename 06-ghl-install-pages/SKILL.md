@@ -132,6 +132,22 @@ code into GHL so the page goes live.
   navigating. Auth lives in IndexedDB (firebaseLocalStorageDb) + the six SPA
   cookies, NOT localStorage. The refresh token ALONE logs the SPA in — NO Sign-in
   form is rendered, NO password is typed, two-factor is NEVER reached.
+- GHL-AUTH-DOCTRINE: TIER-2 EMAIL-2FA FALLBACK — gated (auth+gmail-proven+email-2fa+creds), bounded, self-heals to TOKEN-ONLY.
+  The canonical auth entry point is the orchestrator `tools/ghl_auth.py` (a 3-tier
+  ladder). Tier 1 (token-only, above) stays PRIMARY and is the only path a normal
+  build takes. Tier 2 is a GATED, audited, ONE-TIME bootstrap that runs ONLY when
+  there is no valid refresh token AND four gates pass — (A) recorded client
+  authorization, (B) the box PROVES it can read the client's own Gmail (a live
+  read, BEFORE any login, so a misconfigured box never starts a login it can't
+  finish), (C) GHL's selected 2FA is email, (D) agency creds are in the client
+  store. It logs in headless, reads the freshest email-2FA code from the client's
+  own Gmail, and on success SELF-HEALS a fresh refresh token to the client store
+  so the next run is Tier 1 again. Bounded (MAX_LOGIN_ATTEMPTS <= 3, backoff,
+  hard-stop on lockout/captcha). Any gate fail or hard stop -> Tier 3: fail loud,
+  non-zero exit, precise client instruction. ALL login/password/2FA code lives in
+  EXACTLY ONE module (tools/ghl_auth_fallback.py + its browser helper
+  tools/ghl_login_browser.py); CI guard `scripts/guard-ghl-auth-fallback.sh` locks
+  the invariants.
 - HARD RULE: NEVER ask for, type, or fall back to a GHL login/email/password or a
   two-factor (2FA) prompt. On token failure (no token / revoked / seed does not
   log in) the builder STOPS and reports (non-zero exit) — it MUST NOT auto-open
