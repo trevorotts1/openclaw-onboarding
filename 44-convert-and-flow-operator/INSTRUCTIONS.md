@@ -134,6 +134,17 @@ The publish answer maps to the build's status/trigger-active intent; the re-entr
 the workflow's allow-multiple / re-entry setting. NEITHER is guessed — both are recorded on the
 checklist with the client's answer.
 
+> **CLIENT-FACING LANGUAGE (MANDATORY translation layer).** Every message that reaches
+> the client — the gating questions above, the Step 9 announcements, any status update —
+> must be translated into plain 7th-grade words FIRST. Do NOT leak engineer terms
+> ("funnel", "website", "draft", "publish", "deploy", "preview URL", "sub-account", HTTP
+> codes, token/Firebase/IndexedDB, pixel sizes, IDs of any kind). Before sending, swap
+> every engineer term for its plain word and the delivery templates (draft-ready,
+> live, security-hold, pre-build confirm) using the shared phrasebook:
+> `../06-ghl-install-pages/references/client-facing-phrasebook.md`. The technical
+> checklist / QC rubric / export is OPERATOR-LOG language and is never quoted verbatim
+> to the client.
+
 **Only after the gating questions are answered may the agent proceed to TRINITY routing / the
 Per-operation decision rule.**
 

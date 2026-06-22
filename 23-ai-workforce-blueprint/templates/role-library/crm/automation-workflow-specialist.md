@@ -265,6 +265,128 @@ This role contributes to the company revenue cascade by: **accelerating revenue 
 **Hand to:** Stakeholder (form to review and submit), Director of CRM (for prioritization)
 **Failure mode:** Never build an automation from verbal agreement alone. Always get written confirmation of the process logic before building. "I thought you meant X" is the #1 cause of automation rework. The Automation Request Form is the contract — if it is not in the form, it does not get built.
 
+### SOP 9.6 — Build a GoHighLevel Workflow / Automation via the Skill-44 Convert-and-Flow Operator
+
+**When to run:** When the Marketing Funnel Strategist (Marketing dept) hands you a workflow/automation strategy — a stated outcome ("when X happens, the contact should end up Y"), the channels, the copy intent, and the offer/branch logic — and asks you to BUILD it in GoHighLevel. Also when the client directly requests a new follow-up / nurture / re-engagement / booking workflow. NOT for read-only review ("check / audit this workflow") and NOT for a single targeted patch to an already-existing workflow — those skip PLAN MODE (see Step 4 abort note).
+
+**Frequency:** On-demand (typically 2-8 new workflows/week, demand-driven).
+
+**Inputs:**
+- The strategist's written strategy: the desired result (A1), the client's pinned/hyper-specific constraints (A2 — exact copy, exact wait durations, exact tag names, exact channel SMS-vs-email-vs-both, exact business-hours windows), and the offer/branch logic.
+- The client's two gating answers (collected in Step 6): PUBLISH (draft vs live) and RE-ENTRY (once vs allow-multiple). If not yet collected, you will ask them — never guess.
+- A working `caf` (Convert-and-Flow) CLI on this client box, the client's own GHL_LOCATION_ID, and a healthy Firebase token (or you fall to the Tier 4 backstop, see Step 8).
+- The canonical checklist template `references/workflow-build-checklist-template.md` and rubric `references/workflow-quality-rubric.md` from the Skill 44 folder.
+
+**Steps:**
+
+1. **STEP 0 — Model pre-flight (before you touch anything that writes).**
+   - Action: Look at your current session's active model + thinking level.
+   - Verify: If the active model is a lighter/faster model (haiku, mini, flash, deepseek-flash, or any non-high-reasoning model) OR thinking is not HIGH, send the owner this exact recommendation ONCE: "GHL workflow builds are complex and error-prone on lighter models. It is HIGHLY RECOMMENDED to switch to a high-reasoning model (e.g. deepseek-v4-pro, or an Opus-tier model) with thinking set to HIGH before proceeding. Say 'proceed anyway' to continue, or switch first and re-run." Do not repeat it the same session after acknowledgement.
+   - Failure/abort: This is a recommendation, NOT a hard block — proceed once surfaced. EXCEPTION: if Step 16 (QC) later flags a HALLUCINATION-class fail, this flips to a HARD REQUIREMENT and the redo MUST be on a high-reasoning model at thinking=HIGH (see Step 18).
+
+2. **STEP 0.5 / PLAN MODE — THINK (A1, A2, A3). Do NOT write to GHL yet.**
+   - Action: Write down, in the client's own framing: **A1 DESIRED RESULT** (restate the outcome — pull from the conversation/strategy, do NOT invent goals); **A2 CLIENT EXPECTATIONS** (every pinned constraint — exact copy, exact waits, exact tag names, exact channel, exact business-hours; these are honored verbatim and never silently "improved"); **A3 BEST APPROACH** (which trigger — Contact Created vs Form Submitted vs Tag Added; SMS vs email vs both; If/Else branches; Wait durations; Stop-on-Response).
+   - Verify: A1 maps to a real stated outcome (not invented). A2 captures every hyper-specific value verbatim.
+   - Failure/abort: If the strategist's intent is ambiguous (e.g. "send a follow-up" with no template/timing/channel), STOP and ask the strategist/client specific questions before building. Do not build on an ambiguous spec.
+
+3. **DEPENDENCY PRE-CHECK (skill-41 dependency-first contract). GET-verify every dependency EXISTS before building.**
+   - Action: For EVERY tag, custom field, and custom value the A3 approach references, run a read-only GET via `caf` (e.g. `caf contacts ...` / the relevant `caf` lookup) and confirm it exists in this location. Record YES/NO per item.
+   - Verify: Each referenced tag/field/value returns an existing object (case-sensitive name match). ZHC-/ZHC_ objects carry standing approval.
+   - Failure/abort: If ANY dependency is missing, the plan MUST NOT propose a build on it. List each missing item in the plan as "must create first (will surface for approval)" and surface to the owner for approval BEFORE the build. Do not silently create non-ZHC objects.
+
+4. **OUTLINE the node graph (human-readable blueprint).**
+   - Action: Produce an ordered outline: Trigger (type + filters) -> each action/step in sequence (with its config: template/copy, recipient, channel, wait duration, branch conditions) -> exit.
+   - Verify: Every A1 outcome is reachable through the outline; every A2 pinned value appears in the outline verbatim.
+   - Failure/abort: If this is actually a REVIEW (no build intent) or a single targeted patch-email/patch-trigger on an existing workflow, PLAN MODE does not apply — stop here and route to the review/patch path instead (review = `caf workflows export --workflow-id <id> --out <file>` Tier-0 first). Do not run a fresh build for a review request.
+
+5. **CHECKLIST — instantiate WF-1..WF-21 for THIS workflow.**
+   - Action: Copy `references/workflow-build-checklist-template.md` into a per-workflow file. Fill the Build Metadata (Workflow Name including a `ZHC-` provenance prefix for a managed build, GHL Location ID, Build Date, Build Agent = your name+model). Fill every Expected value: trigger type+filters (WF-3), intended trigger-active state (WF-4), intended publish state (WF-5), intended re-entry setting (WF-6), expected node order (WF-7), each tag (WF-2)/field (WF-10)/value (WF-11), each SMS node's intended From-number (WF-12), each email sender (WF-13), edge cases (WF-17).
+   - Verify: Every Expected field is filled (Observed fields stay blank until QC). This is the artifact QC and the client both verify against.
+   - Failure/abort: If you cannot fill an Expected field because the spec is missing it, go back to Step 2 and resolve it with the strategist — do not leave an Expected field blank.
+
+6. **IMPROVEMENTS + GATING QUESTIONS — present the plan and WAIT.**
+   - Action: Send the client the restated A1 + A2, the outline, the filled checklist, and OPTIONAL recommendations (e.g. "add Stop-on-Response so repliers aren't re-texted", "guard the SMS behind business-hours"). Each recommendation is clearly a suggestion offered ALONGSIDE (never instead of) the client's exact spec; state you will build their spec unless they accept. Then ask the two MANDATORY gating questions and WAIT: **(1) PUBLISH:** "Publish and make it live, or build as a draft for you to review first?" **(2) RE-ENTRY:** "Should a contact be able to come through more than once (allow-multiple), or only once?"
+   - Verify: Both answers received and recorded on the checklist (WF-5 publish, WF-6 re-entry). Default if unanswered: PUBLISH=DRAFT (matches CAF_DRAFT_ONLY=true), RE-ENTRY=ONCE/off (safer default) — but only after a genuine wait, and recorded explicitly as a default.
+   - Failure/abort: Do NOT proceed to any build command until both gating questions are answered (or the recorded default applied after waiting). Publishing without an explicit YES is forbidden.
+
+7. **Choose the build path (token-aware). Decide tier AFTER PLAN MODE.**
+   - Action: Check the Firebase token health. If a media upload is involved -> that piece always goes Tier 3 (out of scope for a pure workflow build). For the workflow BUILD: Firebase token present + healthy -> `caf workflows build` (Tier 0 internal API).
+   - Verify: `caf doctor` (or equivalent) shows a healthy token; you have the client's GHL_LOCATION_ID set.
+   - Failure/abort: If the Firebase token is absent/expired, do NOT silently fail — fall to the Tier 4 agent-browser backstop and nudge the owner: "I need you to grab the Convert and Flow token to build workflows directly" (point to `references/owner-token-grabber-guide.md`). On a 429 from any tier: STOP, surface the `X-RateLimit-Daily-Reset` time ("Rate limited — back at HH:MM ET"), do NOT retry, do NOT fall through tiers.
+
+8. **TRINITY check (conversational node?).**
+   - Action: If the outline contains a conversational node, Skill 44 builds the GHL structure (the HANDS) and AUTO-INVOKES Skill 38 for the BRAIN (communications playbook + Build-with-AI prompt). For a purely mechanical workflow (no conversational node), skip — it builds standalone.
+   - Verify: For conversational builds, all three TRINITY legs are queued together (WF-19 will gate this).
+   - Failure/abort: For a conversational build, if any TRINITY leg cannot be produced, the build is NOT registered — do not ship the GHL structure alone. Mark WF-19 N/A only for genuinely mechanical workflows.
+
+9. **BUILD — run `caf workflows build` with order/parentKey/next set BEFORE the first save.**
+   - Action: Invoke the build per the plan. The engine sets each step's `order`/`parentKey`/`next` BEFORE the first save (this is the `link_steps()` fix for the "corrupted order" 400). Do NOT hand-edit `link_steps()`, `safety_gate.py`, or `VERIFIED_ACTIONS` — the engine owns step linking and the 56 allowed action types.
+   - Verify: The build returns a workflow id and exits 0 (no 400 "corrupted order"). Record the workflow id and the auto-written pre-mutation snapshot path (`~/.openclaw/tools/convert-and-flow-cli/data/snapshots/<location>/<workflow-id>/<timestamp>.json`) on the checklist.
+   - Failure/abort: A non-OK result fails loud (stderr + exit 1) — never a silent false success. If the build errors, read the error, fix the plan/dependency, and re-run; do not declare progress. A write with no `CAF_APPROVAL_TOKEN` and no ZHC- name is REFUSED — supply the token or use the ZHC- provenance name.
+
+10. **Apply publish/active state per the gating answer (draft/inactive by default).**
+    - Action: If the client chose DRAFT (or defaulted), leave status=draft and trigger active:false (CAF_DRAFT_ONLY=true ships exactly this). If the client explicitly chose LIVE, set status=published AND trigger active:true.
+    - Verify: The intended state on the checklist (WF-4 active, WF-5 publish) matches what was applied.
+    - Failure/abort: NEVER publish or set active:true without the explicit LIVE answer. If unsure, leave it draft/inactive.
+
+11. **SMS From-number guard (only if there is an SMS node).**
+    - Action: For every SMS node, ensure the `fromNumber` field is present. On a LIVE/published workflow it MUST be non-empty (resolved from `CAF_SMS_FROM_NUMBER` / `GOHIGHLEVEL_SMS_FROM_NUMBER`, else GHL's location-default at send-time leaves it empty).
+    - Verify: WF-12 — every SMS node carries the `fromNumber` key; on a LIVE workflow the value is non-empty.
+    - Failure/abort: A LIVE SMS node with an empty From-number silently fails to send — treat as a WF-12 FAIL and set the number (or downgrade to draft) before continuing. On a DRAFT, key-present-but-empty is acceptable.
+
+12. **STEP 9 / QC — Announce to the client BEFORE spawning QC (mandatory).**
+    - Action: Send via the client's own gateway (`openclaw message send --channel telegram`): "I've built the workflow. Before I call it done, I'm running an independent QC agent to verify it against the checklist item-by-item. One moment."
+    - Verify: The announce message was actually sent.
+    - Failure/abort: Do not declare done; do not skip the announce. (Sub-agents must use `caf` CLI for lookups, never MCP — MCP exists only in the orchestrating session.)
+
+13. **Spawn an INDEPENDENT QC sub-agent on a different model (MiniMax preferred).**
+    - Action: Dispatch a fresh sub-agent (via `sessions_send`) in a fresh session on an INDEPENDENT model — different from the build agent so QC cannot inherit the builder's hallucinations. Model order: prefer `minimax/minimax-2.7` (OpenRouter); else `minimax-m3:cloud`; VERIFY the model is configured + reachable (API key present, baseUrl correct) BEFORE spawning. Give the QC agent: the filled checklist, the workflow id, and read-only `caf` access.
+    - Verify: The chosen QC model is confirmed available; RECORD which model QC'd on the checklist (QC Agent field).
+    - Failure/abort: If no MiniMax model is available, fall back to the next independent high-reasoning model and RECORD which model QC'd — never QC on the same model that built.
+
+14. **QC runs WF-1..WF-21 item-by-item (mechanical gate FIRST).**
+    - Action: The QC sub-agent reads the BUILT workflow with the EXACT invocation `caf workflows export --workflow-id <id> --out <file>` (named flags — NOT positional `caf workflows export <id>`) and READS the written file. It runs `qc-built-workflow.sh <workflow-id>` (in the skill folder) which machine-asserts WF-3/4/5/6/7/12/15/18/21 and emits per-item PASS/FAIL JSON plus the `rubric` block. For each WF-1..WF-21 it returns explicit PASS/FAIL with observed-vs-expected.
+    - Verify: WF-4 active matches the publish decision; WF-7 shows link_steps ordering applied (no 400); WF-15 delivery chain wired trigger->steps->exit with no orphans; WF-12 SMS From-numbers correct.
+    - Failure/abort: **Fresh-build N/A rule** — a fresh build has no PRIOR snapshot, so any WF-18/WF-21 "reversible to a previous state" / "restore to prior snapshot" check is N/A for a fresh build; mark it N/A and do NOT deadlock waiting for a snapshot that cannot exist (the engine's own pre-mutation snapshot from Step 9 satisfies the "snapshot taken" sense). Any item QC cannot ground-truth (e.g. trigger-bucket state that export cannot show) is flagged **REQUIRES-HUMAN-REVIEW**, never auto-PASS.
+
+15. **QC computes the 8-dimension weighted rubric (SUPERSET overlay, AFTER WF-1..21).**
+    - Action: ONLY after WF-1..21 has been evaluated, grade the 8 rubric dimensions per `references/workflow-quality-rubric.md`, raising the human-graded dimensions (D1 Goal-fit, D4 Branching, D5 Edge-cases, D6 Deliverability, D7 Idempotency, D8 Naming) to their 1/5/10 anchor by reading the export against the PLAN A1/A2 values, then compute `weighted = (D1*20 + D2*15 + D3*15 + D4*12 + D5*12 + D6*10 + D7*8 + D8*8) / 100`. A genuinely N/A dimension (e.g. D4 on a no-branch workflow) scores 10.
+    - Verify: The rubric was computed AFTER WF-1..21 (never instead of it). D1 pinned-value compare ran if a `--pinned-values <file.json>` map was supplied.
+    - Failure/abort: If D1 has no pinned-values map (or any dimension lacks ground truth), mark it **REQUIRES-HUMAN-REVIEW** — do NOT score it PASS by assumption. A high rubric score can NEVER buy back a hard WF FAIL.
+
+16. **QC verdict routing.**
+    - Action: Apply the routing: any WF-1..21 FAIL -> Step 17 (fix + re-run); WF-1..21 all-PASS AND weighted >= 8.5 -> Step 19 (done); WF-1..21 all-PASS BUT weighted < 8.5 -> LOOP (do not declare done) — report the score and NAME the lowest-scoring dimension (`rubric.lowest_dimension`) + the anchor it fell to, fix that dimension, re-run QC from Step 13.
+    - Verify: The verdict is one of these three exact paths.
+    - Failure/abort: Below-threshold quality is treated like a FAIL for "never declare done." Never ship < 8.5.
+
+17. **On a REAL-GAP FAIL: fix and re-run QC.**
+    - Action: If the FAIL is a real gap (the build agent did NOT claim the item and QC's read shows it absent/misconfigured), fix the failing items (re-using snapshot/restore only if a prior state exists) and RE-RUN QC from Step 13.
+    - Verify: The re-run shows the item now PASS.
+    - Failure/abort: Do NOT declare done on a partial pass. If the FAIL is class=HALLUCINATION, jump to Step 18 instead.
+
+18. **On a HALLUCINATION-class FAIL (WF-20): hard stop, escalate model, re-verify ALL.**
+    - Action: Discriminator = (build-agent-claimed == TRUE) AND (QC-observed == FALSE/absent/different) — e.g. a reported link that 404s, a From-number the agent said it set that isn't on the node, a trigger the agent said it activated that export shows active:false, a tag/field/value/workflow-id GET cannot find. Then: (1) HARD STOP — do not let the same build agent "fix and continue"; (2) REQUIRE a high-reasoning model at thinking=HIGH for the redo (Step 0 recommendation FLIPPED to requirement); (3) RE-DO the affected steps, restoring from the pre-build snapshot if state is suspect; (4) RE-RUN QC from scratch against the FULL checklist (a hallucination invalidates the whole report); (5) DISCLOSE to the client: "QC caught that I reported something that wasn't actually true (<the specific item>). I've switched to a high-reasoning model with deep thinking and rebuilt + re-verified."; (6) LOG the hallucination event.
+    - Verify: The redo ran on a high-reasoning model at thinking=HIGH and ALL items re-verified clean.
+    - Failure/abort: A real gap (agent never claimed it) does NOT trigger model escalation — that is Step 17. Never silently retry a hallucination on the same agent.
+
+19. **Declare done + hand over the filled checklist + rubric.**
+    - Action: ONLY after all WF-1..21 PASS (or justified N/A) AND weighted rubric >= 8.5: tell the client "QC passed — here is the verified workflow" and hand over the FILLED checklist (every item with PASS + observed value) AND the weighted rubric (8 dimensions + the final 1-10).
+    - Verify: Every WF item carries an Observed value, not just an Expected; the rubric >= 8.5; the publish/active state matches the client's answer.
+    - Failure/abort: Done is NEVER declared before a clean WF-1..21 pass + rubric >= 8.5 + checklist handover. Any REQUIRES-HUMAN-REVIEW item must be resolved by a human before "done."
+
+20. **Log to the build-events ledger (recoverability).**
+    - Action: Append to `~/.openclaw/tools/convert-and-flow-cli/data/build-events.jsonl`: model used, per-item verdicts, pass/fail result, any escalation, workflow id, timestamp.
+    - Verify: The line is written (so a crash/limit mid-QC is recoverable).
+    - Failure/abort: If the ledger write fails, surface it — do not consider the build complete until logged.
+
+**Outputs:** A GoHighLevel workflow built to the strategist's A1 outcome and the client's verbatim A2 constraints; in the client's chosen state (DRAFT/inactive by default, LIVE/active only on explicit approval); a filled WF-1..WF-21 checklist (Expected + Observed per item) handed to the client; an 8-dimension weighted rubric >= 8.5; a pre-mutation snapshot on disk; a build-events ledger entry; and (for conversational workflows) the complete TRINITY (GHL structure + Skill 38 playbook + Build-with-AI prompt).
+
+**Hand to:** The client (verified workflow + filled checklist + rubric score, so they can independently verify every setting); the Marketing Funnel Strategist (confirmation the strategy is live/built as a draft and any recommendations they accepted or declined); Director of CRM (deployment notification + the Automation Registry entry per SOP 9.2).
+
+**Failure mode:** The "silent never-fires / silent never-sends" build — the agent reports "done and live" but the trigger shipped active:false (WF-4) so the workflow never fires, or a LIVE SMS node has an empty From-number (WF-12) so nothing sends, or the build agent CLAIMED a setting QC's independent read contradicts (WF-20 hallucination). The guard is non-negotiable: WF-1..21 mechanically FIRST, then the >= 8.5 rubric, run by an INDEPENDENT model that reads the workflow via `caf workflows export --workflow-id <id> --out <file>` — never trust the build agent's self-report, never declare done before a clean pass + checklist handover, and on a hallucination HARD-STOP and rebuild on a high-reasoning model at thinking=HIGH.
+
+**Governing skill (source of truth):** Skill 44 — Convert and Flow Operator. This SOP PINS to and is governed by `44-convert-and-flow-operator/INSTRUCTIONS.md` (Step 0 model pre-flight, Step 0.5 PLAN MODE + gating questions, the per-operation decision rule, the dependency-first contract, Step 9 QC GATE, and the HALLUCINATION escalation) and `44-convert-and-flow-operator/references/workflow-quality-rubric.md` (the 8-dimension weighted grade) + `references/workflow-build-checklist-template.md` (WF-1..WF-21). If this SOP and a Skill-44 library file ever disagree, the Skill-44 library file wins. Do NOT route the CRM department through LLM SOP authoring (it is a canonical dept); author this inline in the role template, re-hash, and pass the repo-consistency gate.
+
 ---
 
 ## 10. Quality Gates
@@ -289,21 +411,28 @@ The DA evaluates: (a) what happens if this workflow fails silently for 48 hours 
 
 ## 11. Handoffs (Value Stream Map)
 
+### GHL Workflow Build Ownership
+
+**OWNER: Automation Workflow Specialist (CRM)** — this role is the designated builder for all GoHighLevel automation workflows using the Skill 44 workflow factory (safety-gate, draft-first, ZHC-prefixed, snapshot-before-patch, per-build quality check). This includes: contact-tag triggers, wait steps, SMS/email/webhook/AI action steps, pipeline-stage moves, and conditional branches. The workflow builder runs API-only (token-only, never login/password/2-factor). Every deployed workflow must pass the per-build quality check (qc-built-workflow.sh) before being declared done — a workflow not passing the quality check is not done. The Procedure Auditor (Quality Control department) owns the external rubric that scores the quality of the workflow artifact; this role runs the mechanical build and the internal quality check, and hands completed artifacts to the Procedure Auditor for rubric scoring.
+
 ### You receive work from:
 - **Director of CRM** — gives you: prioritized Automation Request Forms, strategic automation direction, approval for complex workflow deployments, frequency: daily (queue prioritization) + weekly (1:1 review)
 - **Department Heads (Sales, Marketing, Customer Success)** — gives you: Automation Request Forms describing the process to automate, the business logic, and acceptance criteria, frequency: on-demand (typically 5-15 requests per month)
 - **CRM Platform Administrator** — gives you: notification of CRM field changes, picklist value updates, integration changes, or platform updates that may affect existing automations, frequency: on-demand (as changes occur)
 - **QC Specialist — CRM** — gives you: quality review findings on workflows, documentation gaps, test coverage issues, frequency: after each QC review (typically weekly)
+- **Procedure Auditor (Quality Control department)** — gives you: rubric scorecard results for built GHL workflows; any workflow scoring below the 8.5 floor is returned for remediation before it can be declared shipped, frequency: after each production GHL workflow build
 
 ### You hand work off to:
 - **Director of CRM** — you give them: weekly automation report (deployments, failures, queue status, Registry completeness), monthly performance report, quarterly audit results, escalation of unresolved failures or platform limitations, frequency: weekly (report) + on-demand (escalations)
 - **Requesting Stakeholder (Department Head)** — you give them: deployed production workflow, walkthrough/demo of the automation, notification of deployment, ongoing performance feedback, frequency: per deployment + as requested
 - **CRM Platform Administrator** — you give them: notification of new custom fields, data requirements, or integration configurations needed to support planned automations, frequency: on-demand (before builds that require platform changes)
 - **QC Specialist — CRM** — you give them: completed workflow builds for QC review before high-stakes deployments, updated Automation Registry for audit, frequency: per high-stakes build + monthly (Registry audit)
+- **Procedure Auditor (Quality Control department)** — you give them: every completed GHL workflow artifact (workflow ID, exported JSON, build ledger, quality-check receipt) for external rubric scoring; DOWNSTREAM HANDOFF: never declare a GHL workflow "done" without the Procedure Auditor's rubric scorecard present and showing a score of 8.5 or above, frequency: per GHL workflow build
 
 ### Cross-department coordination:
 - For automation that spans CRM + external platform (e.g., email marketing tool, billing system): you coordinate directly with the owner of the external platform. If the integration requires API access or credentials you do not have, escalate to the Director of CRM who coordinates with the relevant department head.
 - For automation requests that conflict with existing automations (two departments want contradictory actions for the same trigger): you flag both stakeholders, document the conflict, and escalate to the Director of CRM for resolution. Do not build either workflow until the conflict is resolved.
+- For GHL workflow token-liveness: the Token Manager / Furnace Watch Specialist (OpenClaw Maintenance) performs a daily token-liveness assertion on GHL auth credentials used by Skill 44. If the token is revoked or expired, the Automation Workflow Specialist must pause all GHL builds and await a confirmed-live token before resuming. Never attempt to re-seed tokens yourself; notify the Token Manager directly.
 
 ---
 

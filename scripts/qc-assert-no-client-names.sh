@@ -63,6 +63,9 @@ CLIENT_NAMES=(
   "Dr\.? Tola"
   "Temperance"
   "Sir ?Jordan"
+  # Client GHL location IDs (opaque but client-identifying)
+  "mQeLerCLRJzGKzAQoY2Y"
+  "Av6hNUcfFQcctNlekVy4"
   "Corey Sams"
   "Stephanie Wall"
   "Star Bobatoon"

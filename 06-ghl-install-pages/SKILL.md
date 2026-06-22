@@ -112,6 +112,14 @@ code into GHL so the page goes live.
 6. **INSTALL.md** - Installation steps if any tools are missing.
 7. **EXAMPLES.md** - Example deployments and common scenarios.
 8. **CORE_UPDATES.md** - What to add to AGENTS.md, TOOLS.md, and MEMORY.md.
+9. **references/client-facing-phrasebook.md** - MANDATORY translation layer.
+   Maps every engineer term (funnel, embed, draft, preview URL, HTTP, Firebase,
+   iframe, px, etc.) to the plain 7th-grade word the agent must use when
+   messaging the client. Also contains the four client delivery templates:
+   Template A (draft ready + tappable link + mobile screenshot), Template B
+   (live), Template C (security hold), and Template D (pre-build confirm).
+   Read this before sending any message to a client. NOTHING from the
+   Deployment Report goes to the client — operator log only.
 
 ## Critical Things to Know
 
