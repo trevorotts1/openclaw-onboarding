@@ -229,9 +229,27 @@ NEVER publish without explicit user approval. The publishing workflow is:
 7. Verify the live URLs are working after publishing
 
 
+## Client Message Rules — Read Before Sending Anything to a Client
+
+> **See `references/client-facing-phrasebook.md` for the full translation table
+> and the four delivery templates (A/B/C/D).** That file is the authoritative
+> source. Short rules here:
+>
+> - The Deployment Report below is the **operator/agent log only** — never send
+>   it to the client.
+> - At the `previewed` ledger state, fire Template A automatically:
+>   one sentence, one tappable link, bold **DRAFT**, bold **GO LIVE**, mobile screenshot.
+> - Forbidden words in any client message: funnel, website (as GHL product nouns),
+>   embed, iframe, sub-account, draft (alone), preview URL, deploy, HTTP, curl,
+>   200, px, Firebase, token, payload, render, CodeMirror, ZHC, ledger, gate.
+> - Replace with plain words — see the full table in the phrasebook.
+> - If a build stops for any operator reason (token expired, two-factor, mismatch),
+>   send Template C immediately. Never go silent.
+
+
 ## Deployment Report Template
 
-After completing any deployment (new or update), send the user a report in this format:
+After completing any deployment (new or update), **save this report to the operator log** (not the client). Format:
 
 ```
 DEPLOYMENT REPORT

@@ -1,3 +1,14 @@
+## v13.5.2 — 2026-06-21 — feat(Goal B): GHL builder SOPs + 93-test pytest suite + role owners + Conversion Copywriter role + plain-language client phrasebook (Productionize + Institutionalize)
+
+Goal B's institutionalization + automated-test layer lands. All authoring on Opus 4.8; independently verified by a separate Opus agent — lockstep + repo-consistency + pytest all green, leak-scan clean (after a real client-id leak in a test fixture was caught and scrubbed).
+
+- **A8 — pytest suite (NEW):** 93 tests across `06-ghl-install-pages/tests/` + `44-convert-and-flow-operator/tests/`, one module per Goal-B defect — exact-`location_id` sub-account guard (`subaccount_matches`/`MatchGuard`), `caf workflows export` command shape, WF-18/21 N/A-on-fresh-build, unknown→`REQUIRES_HUMAN_REVIEW`, and inject-auth no-post-seed-reload. Run against real source (no stubs of the unit under test).
+- **C3 — SOPs:** "Build & Deploy a GHL Funnel/Page via Skill-06" (SOP 9.5, Funnel Builder Specialist) and "Build a GHL Workflow via Skill-44" (SOP 9.6, CRM automation-workflow-specialist), placed inline per the repo add-process; lockstep + consistency gates pass at 416 roles.
+- **C1 — role owners + NEW role:** created **Conversion Copywriter** (`marketing/conversion-copywriter.md`) — the previously-dangling copy owner the web-dev builder roles hand off to — registered via the add-process; added owner/upstream/downstream handoffs for the GHL-build capability across web-development, crm, marketing, quality-control, and openclaw-maintenance roles.
+- **Part B — plain-language layer:** `06-ghl-install-pages/references/client-facing-phrasebook.md` — engineer→7th-grade term map + a plain-language delivery template (one-sentence reply, tappable link, bold draft-vs-live, no IDs); pointers wired from 06 SKILL.md + 44 INSTRUCTIONS.md.
+- **Hardening:** strengthened `scripts/qc-assert-no-client-names.sh` (period-optional Dr-Tola pattern, agent-name patterns, and two client GHL location IDs added to the banlist) — which then caught two real client location IDs a build agent had hardcoded into a test fixture; scrubbed to fabricated IDs.
+- **Versions:** skill-version 06 `v7.2.3`→`v7.2.4`, 44 `1.0.20`→`1.0.21`; 9 root markers + cc-compat → `v13.5.2`.
+
 ## v13.5.1 — 2026-06-21 — fix(hygiene): scrub 3 client-name leaks from the fleet template + strengthen the banlist + reconcile Skill 06 version
 
 The repo is a GENERIC fleet template every client installs — it must carry ZERO real client/agent identities. An independent verifier found three pre-existing leaks that the no-client-names CI gate had missed; scrubbed all three and closed the gate gap so they can't recur.

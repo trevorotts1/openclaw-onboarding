@@ -56,7 +56,8 @@ Every hour — or more frequently when anomalies are detected — run SOP 9.1 (F
 2. **Cron inventory diff (2 min):** Compare `openclaw cron list` against the last known-good snapshot. Any new cron that fires an `agentTurn` on a model heavier than flash-class for a task that completes in under 30 seconds needs review.
 3. **Dreaming state check (1 min):** `openclaw config get agents.defaults.memorySearch.dreaming.enabled` — any `true` is F2.
 4. **Heartbeat interval check (1 min):** `openclaw config get heartbeat.every` — any interval shorter than 4h is a loop risk on a session that grows unbounded.
-5. **Log to furnace watch ledger:** append a timestamped sweep record whether or not findings exist.
+5. **GHL token-liveness assertion (2 min — daily, run FIRST each morning before other checks):** Verify that the GoHighLevel Firebase refresh token used by Skill 44 is live and can mint a valid id_token. Run `python3 <SKILL_44_PATH>/seed-ghl-auth.py --check-only` (or equivalent probe per the installed version). If the probe returns SEED-INVALID or SEED-READBACK-FAILED: (a) notify the Automation Workflow Specialist (CRM) immediately via `openclaw message send` that GHL builds are BLOCKED pending token refresh; (b) notify the owner via `openclaw message send` with the plain message: "Your GoHighLevel connection needs a quick re-authorization before any automation builds can run today — I'll finish the moment you confirm it is refreshed"; (c) log the finding in `working/furnace-watch/furnace-findings.json` as class TK-GHL (token-liveness). Do NOT attempt to refresh the token yourself — the owner must supply the new refresh token per the Skill 44 secure-token exchange procedure. If the probe returns clean: log a timestamped PASS in the ledger with no notification (notify-on-change only).
+6. **Log to furnace watch ledger:** append a timestamped sweep record whether or not findings exist.
 
 ### Throughout-Day
 
@@ -128,6 +129,7 @@ Every hour — or more frequently when anomalies are detected — run SOP 9.1 (F
 | `working/furnace-watch/daily-ledger.md` | Running sweep log | File |
 | `working/furnace-watch/furnace-findings.json` | Machine-readable finding records | File |
 | `working/furnace-watch/backup/openclaw.json.bak` | Pre-merge config backup | File |
+| `<SKILL_44_PATH>/seed-ghl-auth.py --check-only` | Daily GHL token-liveness probe for Skill 44 auth credentials | CLI (read-only probe — never seeds or modifies tokens) |
 
 ---
 
@@ -265,8 +267,9 @@ See full procedure in `sops/sop-proactive-fix-guardrail.md`. Summary: before tou
 - Uptime / Connectivity Watchdog Specialist — F4/F5/F7 findings from sweep (process loops, gateway death events).
 - Healer (openclaw-maintenance) — any SOP failure that caused a furnace event (the healer patches the SOP so it cannot recur).
 - Director of OpenClaw Maintenance — weekly furnace reports, Tier 3 deletion proposals, open `needs_owner_decision` backlog.
-- Owner (via `openclaw message send`) — on-change-only notifications of applied fixes and open owner decisions.
+- Owner (via `openclaw message send`) — on-change-only notifications of applied fixes and open owner decisions; includes GHL token-liveness FAIL notices so the owner knows GHL builds are blocked.
 - Rescue Rangers (via `openclaw message send --channel telegram`) — ambiguous findings per SOP 9.6.
+- Automation Workflow Specialist (CRM department) — DOWNSTREAM HANDOFF: when the daily GHL token-liveness probe returns FAIL (class TK-GHL), you notify the Automation Workflow Specialist that all GoHighLevel builds are BLOCKED until the owner confirms the token is refreshed. When the probe returns PASS after a prior FAIL, you notify the Automation Workflow Specialist that GHL builds are UNBLOCKED and can resume. Frequency: daily (PASS logged silently; FAIL triggers immediate notification).
 
 ---
 

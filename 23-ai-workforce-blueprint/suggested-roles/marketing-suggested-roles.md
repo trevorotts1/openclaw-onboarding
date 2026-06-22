@@ -1,6 +1,6 @@
 # Suggested Roles — marketing-dept
-**Version:** 2.2.0 | 2026-06-12
-**Status:** v12.1.0 + Brainstorming Buddy (Step -1, new in v12.1.0); 18 roles
+**Version:** 2.3.0 | 2026-06-21
+**Status:** v12.1.0 + Brainstorming Buddy (Step -1, new in v12.1.0) + Conversion Copywriter (new in v2.3.0); 19 roles
 
 ## Department Purpose
 Generate awareness, attract leads, develop the company's unique selling and value propositions, manage brand positioning, and nurture prospects into sales-ready opportunities. Coordinates with Communications (PR), Social Media (organic), Paid Advertisement (paid), CRM (email/SMS execution), Graphics, Video, and Audio.
@@ -170,6 +170,20 @@ Added in v10.5.2 to bring Marketing to Fortune-500 operational depth: Influencer
 - 03-How-to-Identify-Emerging-Trends.md
 - 04-How-to-Summarize-Research-Into-Director-Briefs.md
 **Persona Trait Suggestions:** Voracious reader, synthesis-skilled, source-cite-rigorous.
+
+---
+
+## New Roles Added in v2.3.0
+
+### 19. Conversion Copywriter (NEW -- v2.3.0)
+**Slug:** conversion-copywriter
+**What it does:** Owns all conversion copy for funnel pages, landing pages, and website pages in the Funnel and Website Factory pipeline (P2 stage). Writes hero headline, subhead, benefit bullets, social-proof framing, offer description, single primary CTA per page, checkout copy, upsell/downsell scripts, SEO title/meta/alt-text briefs, and A/B hero/headline variants. Delivers an approved copy.md / copy.json artifact keyed by page + section + slot to the Landing Page Specialist and Funnel Builder Specialist (Web Development) before any build begins. Copy must be written inside the brand-voice-lock.md (from Brand Positioning Specialist) and the funnel-spec.json blueprint (from Funnel Strategist). Fills the dangling "Copywriter" handoff references in landing-page-specialist.md, funnel-builder-specialist.md, and conversion-rate-optimization-cro-specialist.md. Builders install approved copy verbatim; they never author or rewrite copy. If a builder finds a copy issue, they flag it back to this role.
+**Core SOPs to build:**
+- 01-SOP-Copy-Brief-Intake-and-Three-Constraint-Validation.md
+- 02-SOP-Page-Copy-Production-P2-Phase.md
+- 03-SOP-AB-Variant-Copy-Production.md
+- 04-SOP-Copy-Revision-QC-Flagback-or-Builder-Flagback.md
+**Persona Trait Suggestions:** Direct-response copywriting expertise, voice discipline, compliance-aware, single-CTA discipline, evidence-based (no fabricated claims), message-match obsession.
 
 ---
 
