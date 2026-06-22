@@ -120,8 +120,8 @@ real GoHighLevel UI labels from 15 live screenshots.
   "Allow Rows to take entire width" → eye=Preview / disk=Save / blue "Publish".
 - Each gate now carries `label` + `label_source` (screenshot-confirmed-label vs
   still-runtime-snapshot). **20 of 28 gates carry screenshot-confirmed labels.**
-- Recorded `_env`: BlackCEO LLC location id `Mct54Bwi1KlNouGXQcDX`, preview
-  domain `blackceolinks.com`, Websites mirrors Funnels.
+- Recorded `_env`: BlackCEO LLC location id `FIXTURE0LOCATION0000`, preview
+  domain `<PREVIEW_DOMAIN>`, Websites mirrors Funnels.
 - NO invented CSS: labels are visible-text/role targets the agent confirms at
   runtime; the runtime @ref capture is unchanged.
 
