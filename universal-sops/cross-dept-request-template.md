@@ -84,3 +84,27 @@ CC: master-orchestrator (auto-logged)
 3. Master orchestrator is always CC'd. It does not need to approve — it just needs to know.
 4. If a request cannot be fulfilled by the deadline, the receiving dept must notify the requesting dept immediately with a revised timeline.
 5. If fulfilling the request requires input from a third department, the receiving dept coordinates that — not the requesting dept.
+
+---
+
+## Full-Funnel Pipeline P-Boundary Handoffs
+
+When a cross-department handoff occurs at a full-funnel pipeline P-boundary (P0→P1, P1→P2, P1→P2e, P2→P3, P2+P3→P4, P2e+P4→P5), the handoff ALSO emits a **board handoff event** in addition to the standard CC message above.
+
+The board handoff event is emitted by the completing stage agent immediately after its task status changes to `done` or `APPROVED`. Format:
+
+```json
+{
+  "event_type": "board_handoff",
+  "from_dept": "<completing department slug>",
+  "to_dept": "<receiving department slug>",
+  "artifact": "<artifact name and path, e.g. 'offer-spec.json at working/funnels/<slug>/offer-spec.json'>",
+  "job_id": "<receiving stage task_id (the child card to be dispatched next)>",
+  "parent_task_id": "<parent funnel_epic task_id>",
+  "timestamp": "<ISO 8601>"
+}
+```
+
+This event is posted to `POST {COMMAND_CENTER_URL}/api/tasks/{parent_task_id}/events` and bumps `last_progress_at` on the parent epic. The orchestrator listens for it via the SSE stream (`/api/events`) to trigger the depends_on gate check for the next stage.
+
+**The board handoff event does NOT replace the CC message.** Both are emitted. The CC message is for human-readable activity logging; the board event is for the orchestrator's gate check and stale-detection reset.

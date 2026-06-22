@@ -7,6 +7,14 @@ description: Tier 0 GHL operator — the Convert and Flow CLI (caf/convertandflo
 
 ## READ-BEFORE-ACT — Model Check + PLAN MODE + QC GATE (workflow builds)
 
+**Full-Funnel Pipeline Role (P5 seam):** In a full-funnel build (SOP-07 P5 stage), this
+skill receives APPROVED copy + funnel page IDs from Skill 6 (06-ghl-install-pages). It
+does NOT author copy or business rules — it wires ONLY what P2e (Email Campaign Strategist)
+and P4 (Skill 6 / funnel builder) have produced and delivered. The P4→P5 handoff is:
+`page_ids` + opt-in form IDs from Skill 6, plus the APPROVED email sequence copy from P2e.
+The P5 task MUST verify: subaccount_matches (location whitelist gate), WF-1..21 PASS, rubric
+≥ 8.5. Never begin P5 without confirmed APPROVED copy from P2e and verified page_ids from P4.
+
 **Step 0 — Model Check (before any BUILD or MODIFY):** If the active session model is a
 lighter/non-high-reasoning model or thinking is not HIGH, surface the recommendation to the
 owner first, then proceed. Recommendation gate, not a hard block. Read-only ops skip this.

@@ -295,6 +295,53 @@ This role contributes to the company revenue cascade by: **directly generating 1
 **Hand to:** Competitive Intelligence Specialist (Research dept) for battle card updates
 **Failure mode:** Never trash-talk competitors. "They're terrible" without evidence loses credibility. Instead: "Here's what their customers typically tell us after switching — [specific pain point]. Let me connect you with two of them."
 
+### SOP 9.9 — Emit offer-spec.json
+
+**When to run:** When the Master Orchestrator (via SOP-07) dispatches the P0 stage of a full-funnel build to the Sales department. This SOP produces the machine-readable offer artifact that the Funnel Strategist (P1) consumes.
+**Frequency:** Per full-funnel build.
+**Inputs:** Owner's offer brief (from the task description in the P0 card), existing product/pricing documentation in the workspace, CRM opportunity data (if the offer has been sold before).
+**Steps:**
+1. **Gather offer details.** Read the task description. Identify: the product or service being offered, what the customer receives (deliverables list), the price structure (one-time, recurring, tiered), the guarantee (money-back period and conditions), any bonuses (names and values), and the positioning statement (who this is for and what problem it solves). If any of these six fields is missing, surface a specific request back via the structured handback — do NOT invent values.
+
+2. **Draft the offer structure.** Organize the details into the six required fields:
+   - `product_name` — the exact offer name the owner uses.
+   - `deliverables` — an ordered array of what the customer receives (e.g., "8-week group coaching program", "private Slack community access", "3 one-on-one calls").
+   - `price_points` — an array of `{label, amount, currency, billing_cadence}` objects. Include front-end price, any order-bump, and any upsell/downsell prices if known.
+   - `guarantee` — `{type, duration_days, conditions}`. If no guarantee, use `{type: "none"}`.
+   - `bonuses` — an array of `{name, claimed_value}` objects. If no bonuses, use `[]`.
+   - `positioning` — one sentence: who this offer is for, what transformation it delivers, and how it differs from alternatives.
+
+3. **Quality-check for funnel consumption.** Before writing the file, confirm: (a) `product_name` is the exact name to use on the landing page headline, (b) all `deliverables` are named concretely (no vague items like "support"), (c) `price_points` has at least one entry with a numeric `amount`, (d) `positioning` speaks to the ICP's pain, not the company's credentials. Anything vague is flagged to the owner via the task card for clarification — use `[CLIENT TO SUPPLY: <specific question>]` as the placeholder.
+
+4. **Persona reference (do NOT write a duplicate log entry).** The Funnel Strategist (SOP 9.5) owns the `persona-selection-log.md` entry for funnel architecture. This role (CSO) may reference a persona that informed the offer framing (e.g., hormozi-100m-offers if the offer stack was designed using the value-ladder framework), but does NOT write a persona-selection-log.md entry. Note the persona reference in the `persona_reference` field of offer-spec.json only.
+
+5. **Write offer-spec.json.** Output to `working/funnels/<slug>/offer-spec.json`. Required schema:
+   ```json
+   {
+     "slug": "<funnel slug derived from product_name — lowercase, hyphenated>",
+     "product_name": "<exact name>",
+     "deliverables": ["<item 1>", "<item 2>"],
+     "price_points": [
+       { "label": "front-end", "amount": 0, "currency": "USD", "billing_cadence": "one-time" }
+     ],
+     "guarantee": { "type": "money-back", "duration_days": 30, "conditions": "<one sentence>" },
+     "bonuses": [
+       { "name": "<bonus name>", "claimed_value": "<dollar value or 'priceless'>" }
+     ],
+     "positioning": "<one sentence ICP + transformation + differentiation>",
+     "persona_reference": "<persona id if offer framing was persona-grounded, else null>"
+   }
+   ```
+   All `null` values except `persona_reference` are invalid in the delivered artifact. Use `[CLIENT TO SUPPLY: <specific question>]` for any genuinely unknown field — never invent.
+
+6. **Hand to Funnel Strategist.** Update the P0 task card to `done`. The board handoff event (emitted by the orchestrator per SOP-07 F8) will trigger P1 dispatch. Confirm the file path in the task completion payload.
+
+**Outputs:** `working/funnels/<slug>/offer-spec.json` — the machine-readable offer artifact consumed by the Funnel Strategist at P1.
+**Hand to:** Funnel Strategist (Marketing) — the offer-spec.json is their P1 input.
+**Failure mode:** Delivering an offer-spec.json with invented values, vague deliverables, or a `positioning` statement that describes the company rather than the customer's transformation. The Funnel Strategist uses this artifact verbatim for funnel type selection and offer map design; vague inputs produce a vague funnel spec, which produces copy that fails QC. Surface gaps as `[CLIENT TO SUPPLY]` and return to orchestrator — never fill gaps with assumptions.
+
+---
+
 ### SOP 9.8 — Territory & Quota Assignment
 
 **When to run:** Quarterly, 3 weeks before quarter start. Also: when a rep leaves, when a new rep is hired, when market conditions shift significantly.
@@ -355,6 +402,8 @@ The DA evaluates: Is the forecast sandbagged? (Compare to historical accuracy an
 - **Account Manager (Post-Sale)** — you give them: closed-won deals with complete transition brief (sold scope, key contacts, promises made during sales, expansion opportunities identified). Format: CRM + 30-minute handoff call. Frequency: within 48 hours of each closed-won deal.
 - **Head of Customer Success** — you give them: forecast of upcoming closed deals (for capacity planning), at-risk expansion opportunities that need joint sales/CS engagement. Format: weekly forecast report + on-demand deal handoff. Frequency: weekly + on-demand.
 - **Master Orchestrator** — you give them: weekly forecast lock, monthly business review, quarterly territory plan, deal escalations requiring strategic decisions.
+
+- **Funnel Strategist (Marketing)** — you give them: `offer-spec.json` (product name, deliverables, price points, guarantee, bonuses, positioning) via SOP 9.9. This is the P0 artifact that initiates the full-funnel build pipeline (SOP-07 P1 stage). SINGLE-OWNER rule: the Funnel Strategist owns the persona-selection-log.md entry for funnel architecture; this role does NOT write a duplicate persona-selection-log entry. Frequency: per full-funnel build (P0 → P1 handoff).
 
 ### Cross-department coordination:
 - For lead quality issues: CSO → CMO with specific data (MQL-to-SQL conversion by source, examples of good vs. bad leads). Do not route through Master Orchestrator unless the issue persists for 2+ weeks without resolution.

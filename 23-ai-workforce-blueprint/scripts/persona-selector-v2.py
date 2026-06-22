@@ -253,7 +253,7 @@ DEPT_DOMAIN_TAGS = {
     "hr": ["leadership", "communication", "personal-development", "coaching"],
     "legal": ["operations", "strategy-innovation", "leadership"],
     "it": ["operations", "productivity-systems"],
-    "web-development": ["operations", "productivity-systems"],
+    "web-development": ["marketing", "sales", "copywriting", "strategy-innovation", "operations"],
     "app-development": ["operations", "productivity-systems"],
     "graphics": ["copywriting", "communication", "marketing"],
     "video": ["copywriting", "communication", "marketing"],

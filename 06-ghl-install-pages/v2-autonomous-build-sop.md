@@ -93,6 +93,78 @@ upload, and ecosystem creation.
 
 ---
 
+## P0. Offer Spec — consume offer-spec.json from Chief Sales Officer
+
+When this SOP is invoked as part of the full-funnel pipeline (SOP-07), the P0
+stage has already completed before this SOP runs. The dept agent MUST read the
+offer-spec.json produced by the Chief Sales Officer before beginning any build.
+
+```
+cat working/funnels/<slug>/offer-spec.json
+```
+
+Assert ALL six fields are present and non-null (no `[CLIENT TO SUPPLY]` surviving
+from the P0 handoff): `product_name`, `deliverables`, `price_points`, `guarantee`,
+`bonuses`, `positioning`. If any field is missing or still `[CLIENT TO SUPPLY]`,
+HALT and return a structured handback to the orchestrator — do NOT proceed to P1
+or the build with an incomplete offer spec. Write `routing/p0-gate.json`
+`{offer_spec_complete: true|false, missing_fields: [...]}`.
+
+---
+
+## P1. Funnel Spec — consume funnel-spec.json, persona-grounded on hormozi-100m-offers
+
+When invoked as part of the full-funnel pipeline, P1 (the Funnel Strategist) has
+already produced `working/funnels/<slug>/funnel-spec.json` before this SOP runs.
+The dept agent MUST:
+
+1. **Read funnel-spec.json.** Confirm: `funnel_type` is one of the five canonical
+   strings (`short-form squeeze`, `long-form sales`, `video-sales-letter`,
+   `application`, `webinar`, `2-step`). Confirm `pages` array is non-empty and
+   every page has at least a `hero` and `cta` section slot. If any check fails,
+   HALT with a structured handback — do NOT build against a malformed spec.
+
+2. **Verify persona-selection-log.md entry.** Read
+   `working/funnels/<slug>/persona-selection-log.md`. Confirm an entry exists with
+   `selected_persona: hormozi-100m-offers` for the funnel architecture task. If the
+   log entry is missing, HALT — the P1 stage is not done. Return to orchestrator.
+
+3. **Write P1 gate receipt.** `routing/p1-gate.json`:
+   `{funnel_spec_valid: true, funnel_type: "<type>", persona_log_verified: true,
+   persona_selected: "hormozi-100m-offers"}`.
+
+The dept agent does NOT re-run P1 persona selection. P1 persona grounding is owned
+by the Funnel Strategist. This step is GATE-ONLY: verify and proceed.
+
+---
+
+## P2. Copy Persona Attachment — verify copy.md persona grounding before build
+
+When invoked as part of the full-funnel pipeline, P2 copy (from the Conversion
+Copywriter) must be APPROVED before the build begins (SOP-07 P4 depends on P2
+APPROVED). The dept agent MUST:
+
+1. **Confirm copy.md status is APPROVED.** Read the artifact header. If status is
+   `PENDING-QC` or `REVISED-PENDING-QC`, HALT — P4 cannot begin until P2 is
+   APPROVED. Return `status: waiting_on_dependency` to the orchestrator.
+
+2. **Verify copy persona log.** Read `working/funnels/<slug>/persona-selection-log.md`.
+   Confirm an entry exists for the copy task (distinct from the P1 funnel-spec
+   entry). The copy persona must be one of: `bly`, `wiebe`, `miller`, `hormozi`,
+   `cialdini`. If the copy persona log entry is missing, HALT and return a
+   structured handback — the Conversion Copywriter's Gate 1 requires this entry and
+   its absence means copy QC was incomplete.
+
+3. **Write P2 attach receipt.** `routing/p2-persona-attach.json`:
+   `{copy_status: "APPROVED", copy_persona_verified: true,
+   copy_persona_selected: "<persona id>"}`.
+
+4. **Proceed to S2 (the canonical build recipe below).** All three pre-flight
+   gates (P0, P1, P2) must show `true` in their gate receipts before the first
+   GHL autosave call.
+
+---
+
 ## 2. The canonical build recipe the dept agent MUST follow (NOT local HTML)
 
 This is the pinned recipe. It is the V1 *fixed* path (the solver doc §2 +

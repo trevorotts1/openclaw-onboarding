@@ -39,6 +39,18 @@ This is NOT about writing or designing the HTML. The HTML is already done
 (usually from a SuperDesign export). This skill is purely about getting that
 code into GHL so the page goes live.
 
+## Full-Funnel Pipeline Integration (Skill 44 seam)
+
+When this skill runs as part of a full-funnel build (SOP-07 P4 stage), after page
+build and verify pass Gate-3, hand the live `page_ids` + opt-in form IDs to the
+Automation Workflow Specialist (CRM) to wire workflows. Invoke Skill 44
+(`44-convert-and-flow-operator`) for product creation, form wiring, and GHL
+workflow builds (see `06-ghl-install-pages/v2-autonomous-build-sop.md` S4 for the
+Skill-44 ecosystem seam). The P4→P5 handoff is documented in v2-autonomous-build-sop.md
+S4; do NOT skip this handoff or mark a full-funnel P4 task done without emitting
+the board handoff event `{from_dept: "web-development", to_dept: "crm",
+artifact: "page_ids+form_ids", job_id: "<P5 task id>"}`.
+
 ## When to Use This Skill
 
 - The user asks you to deploy, install, or publish a page in GHL

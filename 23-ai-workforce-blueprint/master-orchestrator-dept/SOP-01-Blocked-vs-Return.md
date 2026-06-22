@@ -191,8 +191,79 @@ A rule not auto-failed at the QC gate does not exist. See BLOCKED-IS-GATED.md (s
 
 ---
 
+## Full-Funnel Kanban Schema Extension
+
+The following schema additions are required by the full-funnel build pipeline (SOP-07). These additions are documented here (the board contract doc) for reference. The actual schema columns, API gate, and migration live in the deployed Command Center (mission-control.db / canary/command-center TypeScript) — NOT in this repo's markdown.
+
+### New task schema columns
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `parent_task_id` | UUID, nullable | Links a stage child card to its parent funnel epic. Null for standalone tasks. |
+| `stage` | string, nullable | Stage slug for funnel child cards: `p0-offer-spec`, `p1-funnel-spec`, `p2-copy`, `p2e-email-copy`, `p3-assets`, `p4-build`, `p5-automation`. Null for standalone tasks. |
+| `depends_on` | array of task_ids, nullable | Ordered list of upstream task_ids this card must wait for. |
+| `task_type` | enum | `funnel_epic` (parent) or `funnel_stage` (child) or `standard` (all existing tasks). |
+
+### depends_on ordering edges (funnel pipeline)
+
+The orchestrator enforces these ordering gates before moving any card to `in_progress`:
+
+| Stage | Depends on | Gate condition |
+|-------|-----------|----------------|
+| P0 | (none) | Dispatch immediately |
+| P1 | P0 task_id | P0 status = `done` |
+| P2 | P1 task_id | P1 status = `done` |
+| P2e | P1 task_id | P1 status = `done` (parallel with P2) |
+| P3 | P2 task_id | P2 status = `APPROVED` |
+| P4 | P2 task_id, P3 task_id | P2 = `APPROVED` AND P3 = `done` |
+| P5 | P2e task_id, P4 task_id | P2e = `APPROVED` AND P4 status = `verified` |
+
+### waiting_on_dependency sub-state (NEW, non-human)
+
+A child card whose `depends_on` conditions are not yet met is assigned `status=waiting_on_dependency`. This sub-state:
+
+- Is **distinct from human-blocked** — no `blocked_on_human` or `blocked_reason` field is required or valid.
+- Is **NOT counted against the `qc_reroute_attempts` bounce cap** (cap = 3, per O4). The cap tracks agent-attempt failures, not dependency-wait positions.
+- Shows the upstream `task_id` that is being waited on (visible on the board as "Waiting on: P2 [task_id]").
+- Has a **stale threshold equal to the upstream card's remaining time budget** (not the default column threshold). If the upstream card goes stale first, the orchestrator re-pings it — not the waiting card.
+- Fixes the SOP-01:67 Category-3 misclassification: "dependency on another task" was previously listed as `BROKEN-BUT-AGENT-COULD`, which would consume a bounce-cap slot. In the full-funnel pipeline, dependency-wait is a NORMAL state, not a failure. `waiting_on_dependency` is the correct classification.
+
+### First-class board handoff events
+
+Cross-department transitions at P-boundaries are FIRST-CLASS board events, not only activity-log messages. Each handoff emits:
+
+```json
+{
+  "event_type": "board_handoff",
+  "from_dept": "<completing department slug>",
+  "to_dept": "<receiving department slug>",
+  "artifact": "<artifact name and path>",
+  "job_id": "<receiving stage task_id>",
+  "timestamp": "<ISO 8601>"
+}
+```
+
+This event **bumps `last_progress_at`** on the parent epic (preventing false stale detection) and is visible on the board timeline. Today, cross-dept transitions are only logged as cross-dept-request-template.md activity-log messages — those messages remain, but they are now supplemented by the board event.
+
+### Parent epic rollup
+
+The parent `funnel_epic` card maintains a live rollup:
+
+```
+"3/6 stages complete; current = P4 build (web-development)"
+```
+
+The parent card moves to `done` status ONLY when:
+1. ALL six child cards are in `done`, `APPROVED`, or `verified` state, AND
+2. The canonical verifier (`ghl_builder.py verify-all`) has run and recorded `overall_pass:true`.
+
+If any child card reaches `FAILED`, the parent does NOT move to `done`. `funnel_rollback` runs (SOP-07 Section 7).
+
+---
+
 ## CHANGELOG
 
 | Version | Date | Change |
 |---------|------|--------|
+| 1.1.0 | 2026-06-22 | Added Full-Funnel Kanban Schema Extension: new task schema columns (parent_task_id, stage, depends_on, task_type), depends_on ordering edges for P0→P5, waiting_on_dependency non-human sub-state (not counted against qc_reroute_attempts bounce cap — fixes Category-3 misclassification at line 67), first-class board handoff events at P-boundaries, and parent epic rollup rule (done only when all 6 children done + verify-all passed). Schema/migration/sweep code lands in deployed Command Center; this doc is the contract. |
 | 1.0.0 | 2026-06-15 | Initial canonical SOP. Defines four-way classifier (needs-human / agent-fixable / broken-but-agent-could / stale), three mandatory Blocked fields, structured handback schema, orchestrator re-router algorithm, and stale sweep spec. Fleet-wide: both Mac and VPS. Pairs with BLOCKED-IS-GATED.md, N36 (AGENTS.md), and Command Center gate + stale sweep (canary/command-center). |

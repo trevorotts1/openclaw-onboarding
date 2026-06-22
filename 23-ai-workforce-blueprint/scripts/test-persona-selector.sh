@@ -100,12 +100,14 @@ TASKS=(
   "customer-support|Draft a polite response to a customer complaint about a delayed order"
   "ceo|Outline next quarter's strategic priorities for the leadership team"
   "research|Summarize the top 5 insights from the McKinsey 2026 SaaS benchmarks report"
+  "web-development|build the funnel value-ladder and checkout pages"
 )
 
 results=()
 personas_seen=()
 breakdowns_seen=()
 mkt_result_personas=()
+webdev_result_personas=()
 
 for entry in "${TASKS[@]}"; do
   dept=$(echo "$entry" | cut -d'|' -f1)
@@ -142,6 +144,10 @@ for entry in "${TASKS[@]}"; do
 
   if [ "$dept" = "marketing" ]; then
     mkt_result_personas+=("$persona")
+  fi
+
+  if [ "$dept" = "web-development" ]; then
+    webdev_result_personas+=("$persona")
   fi
 
   if [ "$VERBOSE" = "true" ]; then
@@ -288,6 +294,64 @@ if [ "$A6" = "PASS" ] && [ "$total" -gt 0 ]; then
   green "  ✓ A6  Funnel counts monotonically non-increasing across all $total tasks"
 fi
 
+# A7: web-development tasks → tag-intersection check (U1 widen verify)
+# Asserts that every persona returned for web-development tasks has domain tags
+# intersecting {marketing, sales, copywriting, strategy-innovation}.
+# FAIL if any returned persona has ZERO overlap with this funnel-surface tag set —
+# that would mean the U1 web-dev tag widen (line 256) was not applied or
+# was reverted. This assertion is IMPOSSIBLE to pass with the pre-U1 tags
+# ['operations','productivity-systems'].
+WEBDEV_DOMAINS="marketing sales copywriting strategy-innovation"
+A7=SKIP
+if [ "${#webdev_result_personas[@]}" -gt 0 ]; then
+  if [ -n "$PERSONA_CAT_FILE" ]; then
+    A7_FAIL=0
+    A7_PASS=0
+    for pid in "${webdev_result_personas[@]}"; do
+      tag_overlap=$(python3 - <<PYEOF 2>/dev/null
+import json, sys
+cat_file = "$PERSONA_CAT_FILE"
+pid = "$pid"
+webdev_set = {"marketing","sales","copywriting","strategy-innovation"}
+try:
+    data = json.loads(open(cat_file).read())
+    personas = data.get("personas", {})
+    info = personas.get(pid, {})
+    import re
+    def norm(s): return re.sub(r"[/ _]+", "-", s.lower()).strip("-")
+    ptags = {norm(t) for t in (info.get("domain") or info.get("domain_tags") or info.get("tags") or [])}
+    overlap = ptags & webdev_set
+    print(len(overlap))
+except Exception as e:
+    print(0)
+PYEOF
+)
+      if [ "$tag_overlap" = "0" ]; then
+        red "  ✗ A7  Persona '$pid' returned for web-development task has ZERO funnel-surface tag overlap"
+        red "       (marketing/sales/copywriting/strategy-innovation not represented — U1 widen not applied)"
+        A7_FAIL=$((A7_FAIL + 1))
+      else
+        A7_PASS=$((A7_PASS + 1))
+      fi
+    done
+    if [ "$A7_FAIL" -eq 0 ]; then
+      green "  ✓ A7  All web-development-task personas have funnel-surface tag overlap ($A7_PASS/$A7_PASS checked)"
+      A7=PASS
+    else
+      red "  ✗ A7  $A7_FAIL web-development persona(s) failed funnel-surface tag intersection check"
+      A7=FAIL
+    fi
+  else
+    yellow "  ⚠ A7  persona-categories.json not found — skipping web-dev tag-intersection check"
+    webdev_personas_str=$(printf '%s\n' "${webdev_result_personas[@]}" | sort -u | tr '\n' ',' | sed 's/,$//')
+    green "  ✓ A7  Web-development tasks returned: $webdev_personas_str (file check skipped)"
+    A7=PASS
+  fi
+else
+  yellow "  ⚠ A7  No web-development tasks succeeded; cannot verify U1 widen"
+  A7=SKIP
+fi
+
 echo
 blue "═══ Summary ═══"
 echo "  A1 Returns persona:              $A1"
@@ -296,9 +360,10 @@ echo "  A3 Breakdown variance:           $A3"
 echo "  A4 Category filter (mkt tags):   $A4"
 echo "  A5 Funnel counts in JSON:        $A5"
 echo "  A6 Monotonic funnel invariant:   $A6"
+echo "  A7 Web-dev funnel-surface tags:  $A7"
 echo
 
-if [ "$A1" = "PASS" ] && [ "$A2" != "FAIL" ] && [ "$A4" != "FAIL" ] && [ "$A6" != "FAIL" ]; then
+if [ "$A1" = "PASS" ] && [ "$A2" != "FAIL" ] && [ "$A4" != "FAIL" ] && [ "$A7" != "FAIL" ] && [ "$A6" != "FAIL" ]; then
   green "OVERALL: SELECTOR FUNCTIONAL ✓"
   echo "Quality of selection still requires human review of top-3 candidates per task."
   exit 0
