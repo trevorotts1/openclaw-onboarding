@@ -1,3 +1,5 @@
+## [v13.8.4]  -  2026-06-23  -  fleet-refresh on-box clone-path detection + set -u unbound-var guards + gemini-embedding-2 live-config pins
+
 ## [v13.8.3]  -  2026-06-23  -  fix(vps-installer): set LOG_FILE on VPS install path (LOG_FILE unbound-variable abort blocked the VPS payload roll)
 
 Hot-fix for the VPS install path. No change to skills, role/SOP libraries, or the routing/gating contract — only the installer log-file plumbing.
