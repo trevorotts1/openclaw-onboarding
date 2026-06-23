@@ -32,6 +32,7 @@ if _TOOLS_DIR not in sys.path:
 
 import pytest
 
+import browser_manager  # SINGLETON POOLED BROWSER gateway (session bracket)
 import ghl_rest_canvas as rc
 
 
@@ -349,7 +350,9 @@ class TestBuildFetchJs:
 
 class TestAgentBrowserEvalCmd:
     def test_argv_is_headless_forced(self):
-        argv = rc.agent_browser_eval_cmd("sess-fake", "1+1")
+        # Emitters must be bracketed by an active singleton session.
+        with browser_manager.browser_session("sess-fake"):
+            argv = rc.agent_browser_eval_cmd("sess-fake", "1+1")
         assert argv[0] == "agent-browser"
         # D6: --headed false MUST be present (no visible window can ever open).
         assert "--headed" in argv
@@ -374,7 +377,8 @@ class TestPageReadStep:
         assert "argv" not in step
 
     def test_argv_present_with_session(self):
-        step = rc.page_read(FAKE_PAGE_ID, session="sess-fake")
+        with browser_manager.browser_session("sess-fake"):
+            step = rc.page_read(FAKE_PAGE_ID, session="sess-fake")
         assert step["argv"][0] == "agent-browser"
         assert "--headed" in step["argv"]
 
@@ -515,9 +519,10 @@ class TestEvalCmdReusesBuilderHeadlessPrefix:
         import shlex
         import ghl_builder as b
         js = rc.build_fetch_js("GET", rc.page_read_path(FAKE_PAGE_ID))
-        argv = rc.agent_browser_eval_cmd("sess-fake", js)
-        # browser_cmd is the single source of truth for the headless prefix.
-        expected = shlex.split(b.browser_cmd("--session", "sess-fake", "eval", js))
+        with browser_manager.browser_session("sess-fake"):
+            argv = rc.agent_browser_eval_cmd("sess-fake", js)
+            # browser_cmd is the single source of truth for the headless prefix.
+            expected = shlex.split(b.browser_cmd("--session", "sess-fake", "eval", js))
         assert argv == expected
         # And it really carries the D6 headless override.
         assert argv[:3] == ["agent-browser", "--headed", "false"]

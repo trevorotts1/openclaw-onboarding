@@ -297,6 +297,32 @@ with open(p, "w") as f:
 PYEOF
 fi
 
+# 10. Script-embedded version markers (mirrors how ORPHAN_TEMP_SWEEP_VERSION is
+#     tracked). The browser-safety bundle adds BROWSER_MANAGER_VERSION (shell +
+#     .py), AGENT_BROWSER_REAPER_VERSION, and a guard marker; roll them so the
+#     version-consistency CI + pre-commit gate 5 stay green and these never drift.
+_roll_marker() {
+  # $1 = file (relative to repo root), $2 = marker name (e.g. FOO_VERSION)
+  local f="$REPO_ROOT/$1" marker="$2"
+  [ -f "$f" ] || return 0
+  python3 - "$f" "$marker" "$TARGET" <<'PYEOF'
+import re, sys
+path, marker, target = sys.argv[1], sys.argv[2], sys.argv[3]
+src = open(path).read()
+# Match: MARKER="vX.Y.Z"  (bash) or MARKER = "vX.Y.Z" (python)
+new = re.sub(
+    r'(' + re.escape(marker) + r'\s*=\s*")v[0-9]+\.[0-9]+\.[0-9]+(")',
+    r'\g<1>' + target + r'\g<2>',
+    src, count=1)
+if new != src:
+    open(path, "w").write(new)
+PYEOF
+}
+_roll_marker "06-ghl-install-pages/tools/browser_manager.sh" "BROWSER_MANAGER_VERSION"
+_roll_marker "06-ghl-install-pages/tools/browser_manager.py" "BROWSER_MANAGER_PY_VERSION"
+_roll_marker "scripts/agent-browser-reaper.sh"               "AGENT_BROWSER_REAPER_VERSION"
+_roll_marker "scripts/guard-agent-browser-managed.sh"        "GUARD_AGENT_BROWSER_MANAGED_VERSION"
+
 echo ""
 echo "Result:"
 print_state

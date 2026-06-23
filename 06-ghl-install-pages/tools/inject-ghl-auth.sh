@@ -68,8 +68,6 @@ set -euo pipefail
 unset AGENT_BROWSER_HEADED 2>/dev/null || true
 export AGENT_BROWSER_HEADED=false   # belt: any child that re-reads env sees false
 
-AB_BIN="$(command -v agent-browser || echo "$HOME/.npm-global/bin/agent-browser")"
-
 # Guard/assert: if a headed signal survived our strip, ABORT — never risk a
 # visible window. AGENT_BROWSER_HEADED must be exactly "false" (we just set it);
 # anything truthy means our strip failed and we refuse.
@@ -78,9 +76,17 @@ case "${AGENT_BROWSER_HEADED:-false}" in
   *) echo "REFUSE: AGENT_BROWSER_HEADED='${AGENT_BROWSER_HEADED}' would open a VISIBLE window. Headless is mandatory (D6). Aborting." >&2; exit 75 ;;
 esac
 
-# AB() — the ONLY way agent-browser is invoked in this script. Forces
-# `--headed false` on every call so no inherited config/env can open a window.
-AB() { command "$AB_BIN" --headed false "$@"; }
+# ── SINGLETON POOLED BROWSER — route ALL agent-browser calls through the gateway
+# (browser_manager.sh). It re-uses the D6 guard above VERBATIM and owns AB_BIN +
+# the lock-asserting AB() wrapper, the box-wide lock (lock=1), the lease, the
+# per-call + per-session TTL, the pool ceiling, the circuit-breaker, and the
+# GUARANTEED `trap _bm_teardown EXIT INT TERM HUP`. This closes the orphan gap:
+# the 4 non-zero aborts below (the REFUSE/exit 1 sites) now ALWAYS fire teardown
+# via the inherited EXIT trap. Sourcing must NOT clobber our set -euo pipefail
+# (the manager deliberately does NOT set -e at source time). [verified live
+# damage 2026-06-23: 22 orphan *.engine, 357M — no teardown existed in 06.]
+# shellcheck source=browser_manager.sh
+source "$(dirname "$0")/browser_manager.sh"
 
 SESSION="${1:-}"
 SEED_FILE="${2:-}"
@@ -94,6 +100,19 @@ if [ -z "$SESSION" ] || [ -z "$SEED_FILE" ]; then
 fi
 [ -f "$SEED_FILE" ] || { echo "seed file not found: $SEED_FILE" >&2; exit 66; }
 [ -x "$AB_BIN" ] || { echo "agent-browser not found (Skill 03 must be installed)" >&2; exit 69; }
+
+# SINGLETON SESSION: the canonical name is the gateway's single source of truth.
+# Validate the caller's $1 matches it (else exit 64 via bm_assert_session) so no
+# per-iteration session name (the verified 22-distinct-name leak) can slip in.
+# AB_SESSION_OVERRIDE=1 is the only escape and is recorded in the lease.
+bm_assert_session "$SESSION"
+SESSION="$(bm_session_name)"
+
+# Acquire the box-wide lock, write the lease, start the TTL self-kill timer, open
+# the canonical session, and INSTALL the EXIT/INT/TERM/HUP teardown trap — BEFORE
+# the first open. Every exit below (including the 4 non-zero REFUSE aborts) now
+# guarantees teardown (close + state clear) through this trap.
+bm_ensure
 
 # Ensure the origin is open + the SPA is MOUNTED before we seed: activation drives
 # the SPA's own store + router (#app.__vue_app__), which only exists once the app

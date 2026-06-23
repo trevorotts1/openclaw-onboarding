@@ -121,6 +121,32 @@ If the snapshot shows interactive elements with refs like `@e1`, `@e2`, installa
 - This tool is the preferred option for web automation steps in later skills.
 - If agent-browser is unavailable for any reason, later skills may fall back to Playwright with persistent context.
 
+## Lifecycle hygiene (orphan prevention)
+
+agent-browser keeps per-session engine descriptors under `~/.agent-browser/*.engine`
+and exposes maintenance verbs:
+
+```bash
+agent-browser doctor --fix            # auto-cleans stale socket/pid/version sidecars (--fix gates destructive purges)
+agent-browser state clean --older-than 1   # reap dead session state older than N days
+agent-browser close --all             # close every live session (blast-radius: only for a reaper / breaker trip)
+```
+
+A build that crashes before teardown leaks an `.engine` descriptor (and possibly
+a Chromium). Skill 06 prevents this two ways:
+
+- **Gateway:** every agent-browser call in Skill 06 routes through
+  `06-ghl-install-pages/tools/browser_manager.sh` (ONE canonical session, box-wide
+  lock, TTL, and a guaranteed `trap _bm_teardown EXIT` that runs `close` +
+  `state clean`/`state clear`).
+- **Host reaper backstop:** `scripts/agent-browser-reaper.sh` runs every 10
+  minutes (wired by `ensure-pipeline-crons.sh`): closes expired-lease sessions,
+  runs `doctor --fix` + `state clean --older-than`, sweeps dead descriptors, and
+  tripwires Chromium UNDER the agent-browser / Playwright profile tree ONLY
+  (never a bare `chrome`/`Chrome`/`Claude` process). Runs as the box user, never
+  root. **SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed
+  teardown, reaper backstop.**
+
 ---
 
 ## 🔴 GATEWAY RESTART PROTOCOL - NEVER TRIGGER AUTONOMOUSLY

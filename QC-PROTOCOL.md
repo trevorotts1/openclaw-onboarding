@@ -406,6 +406,32 @@ threshold:
   asserts plus a pytest run of the Tier-2 test files; `qc-assert-no-client-names.sh`
   also covers the new files (no client name/id/email/location-id).
 
+### Rule 9e: agent-browser SINGLETON POOLED BROWSER guard (Skill 06)
+
+A FOURTH Tier-1 guard runs every build alongside `guard-ghl-token-only.sh`:
+
+  - `scripts/guard-agent-browser-managed.sh` — enforces the SINGLETON POOLED
+    BROWSER doctrine. It FAILS the build (prints file:line) if any tracked
+    `*.sh`/`*.py` under `06-ghl-install-pages/` (excluding the gateway
+    `tools/browser_manager.sh` + the reaper) launches `agent-browser`
+    (open|eval|click|fill|type|snapshot|wait|find) or a bare `AB --session`
+    OUTSIDE the manager; if `browser_manager.sh` loses its `trap _bm_teardown
+    EXIT` / lock acquire / `close`+`state clear` / circuit-breaker; if a 06 doc
+    reintroduces a per-iteration session name (`--session …-diag` /
+    `…-$(date` / `…-clone`); or if the doctrine sentinel is missing from
+    SKILL.md / ghl-browser-builder-full.md / CORE_UPDATES.md. Negative tests:
+    `06-ghl-install-pages/tests/test_browser_manager_singleton.py` (raw-launch
+    fixture FAILS; managed-routing fixture PASSES; trap-stripped fixture FAILS;
+    per-iteration-name fixture FAILS) — all STATIC + a stubbed agent-browser on
+    PATH (NO real browser). CI: `.github/workflows/agent-browser-lifecycle-guard.yml`.
+
+  This guard contributes to the "Wiring correctness" safety dimension and MUST
+  run every build, looping until pass at the 8.5 threshold — a regression that
+  reintroduces the per-iteration-session orphan leak (verified live: 22 orphan
+  `~/.agent-browser/*.engine`, 357M) can NEVER reach a passing build. The
+  doctrine sentinel scored in the "Wiring correctness" dimension is:
+  `SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown, reaper backstop`.
+
 ## PART 3 — CLOUDFLARE API KEY CHECK AT INSTALL
 
 ### Rule 10: Cloudflare API key is verified before install proceeds

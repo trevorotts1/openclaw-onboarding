@@ -111,9 +111,39 @@ def browser_cmd(*args: str) -> str:
     Use this to emit any agent-browser invocation in a plan so no improvised
     call can ever drop `--headed false`. Example:
         browser_cmd("--session", "acme", "snapshot", "-i")
-        -> 'agent-browser --headed false --session acme snapshot -i'"""
+        -> 'agent-browser --headed false --session acme snapshot -i'
+
+    SINGLETON POOLED BROWSER gateway: this emitter REFUSES (exit 75 / RuntimeError)
+    if it is called outside an active ``browser_manager.browser_session()``
+    context — so no plan can ever be assembled without a single canonical session
+    + a guaranteed teardown step. Wrap callers in
+    ``with browser_manager.browser_session(slug) as session:``."""
+    import browser_manager  # lazy: keeps ghl_builder importable standalone
+    browser_manager.assert_session_active("ghl_builder.browser_cmd")
     parts = [AGENT_BROWSER_HEADLESS_PREFIX, *(str(a) for a in args)]
     return " ".join(parts)
+
+
+def _bracket_plan_with_teardown(plan: dict, session: str | None) -> dict:
+    """Append the MANDATORY final teardown step to a plan's ``steps`` list when a
+    session is in play (SINGLETON POOLED BROWSER gateway). Even a detach-and-exit
+    run then tears down, because the close rides INSIDE the plan the agent runs.
+    No-op when no session was supplied (the emitters then drive no browser)."""
+    if not session:
+        return plan
+    import browser_manager  # lazy
+    steps = plan.get("steps")
+    if isinstance(steps, list):
+        steps.append({
+            "step": "teardown_browser",
+            "action": "close_session",
+            "session": session,
+            "cmd": browser_manager.emit_teardown_step(session),
+            "note": "MANDATORY close of the singleton session — guaranteed "
+                    "teardown so no orphan agent-browser/Chromium survives the "
+                    "build (reaper is the host backstop).",
+        })
+    return plan
 
 
 # ── ZHC naming (guardrail 2 — carries standing build approval per Skill 44) ──
@@ -601,7 +631,7 @@ def emit_rest_save_plan(
                 "value.rawCustomCode; pristine baseline preserved for revert",
     }, save_step, verify_step, revert_plan["steps"][0]]
 
-    return {
+    return _bracket_plan_with_teardown({
         "plan": "rest_save",
         "ok": True,
         "publish": publish,
@@ -617,7 +647,7 @@ def emit_rest_save_plan(
             "edit": "code-saved",
             "verify_preview": "previewed",
         },
-    }
+    }, session)
 
 
 def emit_workflow_rewire_plan(
@@ -677,7 +707,7 @@ def emit_workflow_rewire_plan(
     )
     rewire_step["step"] = "rewire_trigger"
 
-    return {
+    return _bracket_plan_with_teardown({
         "plan": "workflow_rewire",
         "ok": True,
         "location_id": guard.target_id,
@@ -686,7 +716,7 @@ def emit_workflow_rewire_plan(
         "steps": [stage_step, read_step, rewire_step],
         # The rewire is a parallel ledger fact (not a page stage).
         "ledger_target": WORKFLOW_LEDGER_STATE,
-    }
+    }, session)
 
 
 def emit_revert_plan(
@@ -760,6 +790,11 @@ def emit_revert_plan(
     }
     if guard is not None:
         out["guard"] = guard.as_dict()
+    # Bracket only the STANDALONE revert plan with a teardown. When called as a
+    # sub-plan (``_skip_gate=True`` from emit_rest_save_plan, which consumes only
+    # steps[0]), the parent plan already carries the single mandatory teardown.
+    if not _skip_gate:
+        out = _bracket_plan_with_teardown(out, session)
     return out
 
 
@@ -794,7 +829,33 @@ def main() -> int:
             headless_guard()
         except RuntimeError as e:
             sys.stderr.write(str(e) + "\n"); return 75
-        print(browser_cmd(*sys.argv[2:])); return 0
+        # browser_cmd() asserts an active session (singleton gateway). Bracket
+        # this emit in a browser_session() so the canonical name is used and the
+        # mandatory teardown step is emitted on exit.
+        import browser_manager
+        try:
+            with browser_manager.browser_session():
+                print(browser_cmd(*sys.argv[2:]))
+        except RuntimeError as e:
+            sys.stderr.write(str(e) + "\n"); return 75
+        return 0
+
+    # `browser-session` — print the ONE canonical session name (so a shell caller
+    # can `SESSION="$(python3 ghl_builder.py browser-session)"`) plus the
+    # mandatory final teardown step, all inside a browser_session() bracket.
+    if len(sys.argv) >= 2 and sys.argv[1] == "browser-session":
+        try:
+            headless_guard()
+        except RuntimeError as e:
+            sys.stderr.write(str(e) + "\n"); return 75
+        import browser_manager
+        slug = sys.argv[2] if len(sys.argv) >= 3 else None
+        with browser_manager.browser_session(slug) as session:
+            print(session)
+            sys.stderr.write(
+                "teardown-step: " + browser_manager.emit_teardown_step(session) + "\n"
+            )
+        return 0
 
     ap = argparse.ArgumentParser(description="GoHighLevel builder mechanical helpers")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -835,6 +896,10 @@ def main() -> int:
     # browser-cmd is intercepted before argparse (top of main) so its args pass
     # through verbatim; registered here only so it appears in --help.
     sub.add_parser("browser-cmd", help="emit a headless-forced agent-browser line (--headed false prepended); all following args pass through")
+    # browser-session is intercepted before argparse (top of main); registered
+    # here only so it appears in --help. Prints the ONE canonical session name +
+    # the mandatory teardown step (SINGLETON POOLED BROWSER gateway).
+    sub.add_parser("browser-session", help="print the canonical singleton session name (+ mandatory teardown step on stderr)")
 
     args = ap.parse_args()
 

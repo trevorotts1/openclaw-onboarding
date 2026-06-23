@@ -9,7 +9,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "7.2.3"
+  version: "7.2.9"
   priority: HIGH
 ---
 
@@ -138,6 +138,14 @@ artifact: "page_ids+form_ids", job_id: "<P5 task id>"}`.
 - PRIMARY engine is agent-browser, headless, with an isolated `--session
   <client>`. It never touches a personal browser (NO-COMINGLING). Playwright is
   the fallback only; if you use it, `launchPersistentContext()` never `launch()`.
+- SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown, reaper backstop.
+  Route EVERY agent-browser call through the single mandatory
+  gateway `tools/browser_manager.sh` (`bash tools/browser_manager.sh ensure`
+  then `... eval|open|snapshot ...`); NEVER invoke `agent-browser` directly and
+  NEVER invent a per-iteration session name. The gateway owns the ONE canonical
+  session, the box-wide lock, the lease, the TTL, the pool ceiling, the
+  circuit-breaker, and a guaranteed `trap _bm_teardown EXIT`; the */10 host
+  reaper `scripts/agent-browser-reaper.sh` is the backstop for a hard crash.
 - GHL-AUTH-DOCTRINE: TOKEN-ONLY (D7) — refresh-token seed is the only auth path; NO auto UI-login / password / 2FA.
   Seed the session logged-in via the Firebase
   refresh token (tools/seed-ghl-auth.py + tools/inject-ghl-auth.sh) BEFORE

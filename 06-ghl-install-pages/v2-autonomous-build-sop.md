@@ -189,14 +189,22 @@ bash   06-ghl-install-pages/tools/inject-ghl-auth.sh <session> <RUN>/ghl-auth-se
   (The plan emitters already gate on this; the agent must not bypass it.)
 
 ### 2.1–2.6 Per page: read → splice → autosave → verify → revert
+**SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown,
+reaper backstop.** Before the first step, acquire the gateway once:
+`bash tools/browser_manager.sh ensure` (lock + lease + TTL + teardown trap), and
+route every step through it (`bash tools/browser_manager.sh eval -- --stdin`) —
+NEVER call `agent-browser` directly and NEVER invent a per-iteration session
+name. The python emitters refuse outside a `browser_manager.browser_session()`
+bracket, and each emitted plan ends with a guaranteed close step.
+
 The agent does NOT hand-roll the fetch. It calls
 `ghl_builder.emit_rest_save_plan(...)` to get the ordered, gated, draft-by-default
-plan and executes each step's `eval`/`argv` **inside the agent-browser** (the
+plan and executes each step's `eval`/`argv` **through the gateway** (the
 funnels/builder origin is Cloudflare-1010-gated for bare Python):
 
 1. **stage_token** — `ghl_rest_canvas.write_token_js_file(id_token, <RUN>/token.js)`;
-   feed to `agent-browser eval --stdin`. **NEVER** bash `${VAR@Q}` (mangles the
-   JWT → spurious 401).
+   feed to `bash tools/browser_manager.sh eval -- --stdin`. **NEVER** bash
+   `${VAR@Q}` (mangles the JWT → spurious 401).
 2. **page_read** — `GET /funnels/page/<id>`; fetch the signed
    `pageDataDownloadUrl` (no auth header) for the editable blob; read numeric
    `pageVersion`.

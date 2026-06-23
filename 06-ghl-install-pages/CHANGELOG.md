@@ -4,6 +4,18 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v7.2.9] - June 23, 2026 — SINGLETON POOLED BROWSER (one session, lock=1, TTL, guaranteed teardown, reaper backstop)
+
+### Added
+- **`tools/browser_manager.sh`** — THE single mandatory agent-browser gateway. Owns AB_BIN + the lock-asserting `AB()` wrapper (D6 headless guard re-used verbatim), ONE canonical session (`bm_session_name` = `ghl-skill6-<location-id>`, refuses non-canonical unless `AB_SESSION_OVERRIDE=1`), a portable box-wide lock (flock if present, else atomic-mkdir with dead-PID stale reclaim — flock is ABSENT on macOS), a lease (process+mtime liveness, never `.pid`), per-call (`AB_CALL_TIMEOUT`) + per-session (`AB_SESSION_TTL`) timeouts, a pool ceiling (`AB_MAX_SESSIONS`, default 1), a circuit-breaker (`AB_BREAKER_MAX` opens/window → PARK qc-failed + escalate to Rescue Rangers, parked NOT re-fired), and a GUARANTEED `trap _bm_teardown EXIT INT TERM HUP` that closes ONLY the canonical session + `state clear`. Verbs: ensure / eval|open|snapshot|wait|find|fill / run-detached / teardown / session-name.
+- **`tools/browser_manager.py`** — emitter-side analogue: `browser_session()` context (atexit + SIGTERM/SIGINT/SIGHUP), `assert_session_active()`, `session_name()` (matches the shell), `emit_teardown_step()`.
+- **`scripts/agent-browser-reaper.sh`** — host reaper (*/10 cron via ensure-pipeline-crons.sh): closes expired-lease sessions, `doctor --fix` + `state clean --older-than`, dead-descriptor sweep, and a Chromium tripwire scoped to the agent-browser/Playwright PROFILE TREE ONLY (NEVER a bare chrome/Chrome/Claude proc). Runs as the box user, never root.
+- **`scripts/guard-agent-browser-managed.sh`** + **`tests/test_browser_manager_singleton.py`** (24 static/stubbed tests) + **CI** `.github/workflows/agent-browser-lifecycle-guard.yml` + **pre-commit gate 6**.
+
+### Changed
+- **`tools/inject-ghl-auth.sh`** now `source`s the gateway and calls `bm_ensure` before the first open, so its 4 non-zero REFUSE aborts ALWAYS tear down via the inherited EXIT trap — closing the orphan gap (verified live: 22 `~/.agent-browser/*.engine`, 357M, on the operator box). D6 guard + D7 token-only auth model BYTE-FOR-BYTE unchanged.
+- **`tools/ghl_builder.py`** / **`tools/ghl_rest_canvas.py`** emitters refuse outside a `browser_session()` bracket (exit 75 / RuntimeError); every emitted plan ends with a mandatory close step. New `browser-session` CLI verb.
+
 ## [v7.2.3] - June 21, 2026 — VERSION RECONCILIATION (all three markers aligned)
 
 ### Changed

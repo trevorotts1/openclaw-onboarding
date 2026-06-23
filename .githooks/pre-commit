@@ -7,6 +7,8 @@
 #   3. N28 no destructive cron payloads (rm -rf on install paths / npm uninstall -g openclaw)
 #   4. chmod-600 coverage on .sh files that write secrets/.env
 #   5. Version consistency (version / install.sh / CHANGELOG.md)
+#   6. agent-browser singleton gateway (no raw launch outside browser_manager;
+#      teardown+lock+breaker present; sentinel present) — on staged 06-* changes
 
 # ── 0. Locate repo root ──────────────────────────────────────────────────────
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -86,6 +88,26 @@ while IFS= read -r f; do
   fi
 done < <(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep '\.sh$')
 [ "$C600_FAIL" -eq 1 ] && exit 1
+
+# ── 6. agent-browser singleton gateway (on staged 06-* / gateway changes) ─────
+# SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown,
+# reaper backstop. If any staged change touches Skill 06 or the gateway/reaper/
+# guard scripts, run the static guard and hard-fail on a regression (raw
+# agent-browser launch outside browser_manager.sh, lost teardown/lock/breaker,
+# per-iteration session name in a doc, or a missing doctrine sentinel).
+if [ -f "scripts/guard-agent-browser-managed.sh" ]; then
+  if git diff --cached --name-only --diff-filter=ACM 2>/dev/null \
+      | grep -Eq '^(06-ghl-install-pages/|scripts/agent-browser-reaper\.sh|scripts/guard-agent-browser-managed\.sh)'; then
+    if ! bash scripts/guard-agent-browser-managed.sh; then
+      echo ""
+      echo "PRE-COMMIT BLOCKED: agent-browser singleton gateway regression (see output above)."
+      echo "Route every agent-browser call through tools/browser_manager.sh; keep its"
+      echo "teardown trap + lock + close/state-clear + circuit-breaker; never invent a"
+      echo "per-iteration session name; restore the doctrine sentinel to the docs."
+      exit 1
+    fi
+  fi
+fi
 
 # ── 5. Version consistency ───────────────────────────────────────────────────
 VERSION=$(cat version 2>/dev/null)

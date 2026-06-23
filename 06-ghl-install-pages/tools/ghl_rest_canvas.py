@@ -734,6 +734,12 @@ def agent_browser_eval_cmd(session: str, js: str) -> list[str]:
         '<s>', 'eval', '<js>'].
     """
     _require(session, "session")
+    # SINGLETON POOLED BROWSER gateway: assert an active browser_session() before
+    # emitting, so this argv can never be assembled outside the one canonical
+    # session + guaranteed-teardown bracket. (browser_cmd asserts this too; we
+    # assert here directly so the contract holds even if the call path changes.)
+    import browser_manager  # noqa: WPS433 (intentional local import)
+    browser_manager.assert_session_active("ghl_rest_canvas.agent_browser_eval_cmd")
     # Lazy import keeps this module importable/standalone-testable and reuses the
     # single source of truth for the D6 headless prefix.
     from ghl_builder import browser_cmd  # noqa: WPS433 (intentional local import)
