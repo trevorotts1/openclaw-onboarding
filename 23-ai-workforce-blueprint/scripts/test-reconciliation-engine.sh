@@ -165,16 +165,24 @@ p2 = bw.capture_custom_sops("school-of-ai", {"name": "School of AI", "emoji": "\
 body2 = open(p2).read()
 check("CUSTOM" in body2 and "LLM-author" in body2, "custom SOP capture marked as authoring source")
 
-print("== R2.6 Capability 5: universal-primary vertical opt-out honored ==")
+print("== R2.6 Capability 5: universal-primary vertical opt-out honored (provenanced) ==")
 # Decline 'scheduling-dispatch' (service-industry universal primary) and prove it is skipped.
-_seed_state({"canonicalReconciliation": {"decisions": {"scheduling-dispatch": "no"}}})
+# Provenance gate (v10.16.26+): bare string 'no' is only honored with ownerDeclineConfirmed=true.
+# Use ownerDeclineConfirmed=true + bare string (backward-compat provenanced form).
+_seed_state({"canonicalReconciliation": {"ownerDeclineConfirmed": True, "decisions": {"scheduling-dispatch": "no"}}})
 sel6 = {}
 sel6 = bw.apply_vertical_packs(sel6, {"industry": "coaching", "company_name": "Acme"})
-check("scheduling-dispatch" not in sel6, "declined universal-primary 'scheduling-dispatch' SKIPPED")
+check("scheduling-dispatch" not in sel6, "declined universal-primary 'scheduling-dispatch' SKIPPED (provenanced)")
 check("presentations" in sel6, "non-declined universal-primary 'presentations' still added")
 st6 = _read_state()
 dv = st6.get("verticalPacks", {}).get("declinedVerticals", [])
 check(any(x["id"] == "scheduling-dispatch" for x in dv), "verticalPacks.declinedVerticals records the opt-out")
+
+# Also verify that a bare (unprovenanced) decline does NOT skip the vertical.
+_seed_state({"canonicalReconciliation": {"decisions": {"scheduling-dispatch": "no"}}})
+sel6b = {}
+sel6b = bw.apply_vertical_packs(sel6b, {"industry": "coaching", "company_name": "Acme"})
+check("scheduling-dispatch" in sel6b, "unprovenanced bare string 'no' does NOT skip vertical (provenance gate holds)")
 
 print("== CORRECTION: NO Ant Farm fold-in capability in the engine ==")
 src = open(os.path.join(SCRIPTS, "build-workforce.py")).read().lower()

@@ -237,18 +237,64 @@ def matched_vertical_pack_departments(nm, core_answers):
 
 def declined_set(build_state):
     """
-    The ONLY way to be below the mandatory floor: an EXPLICIT recorded decline.
-    Source of truth: build_state.canonicalReconciliation.decisions[cid] == "no"
-    OR a top-level build_state.declinedDepartments[] list (interview/config).
+    The ONLY way to be below the mandatory floor: an EXPLICIT, PROVENANCED decline.
+
+    PROVENANCE-GATED DECLINE MODEL (v10.16.26+ — mirrors build-workforce._canonical_decline_set):
+    A decline is ONLY honored when it carries an explicit owner-decision record.
+    The default (when provenance is absent) is NO decline — fail-safe to the
+    LARGER floor. Bare string 'no' or declinedDepartments[] entries without the
+    ownerDeclineConfirmed gate are REJECTED with a warning.
+
+    Accepted forms (either is sufficient):
+      1. decisions[cid] is the OBJECT form {decision: "no", source, decidedAt, decidedBy}.
+      2. ownerDeclineConfirmed == True + decisions[cid] == "no" (string or object).
+      3. ownerDeclineConfirmed == True + declinedDepartments[] (flat list).
+
+    WHY: closes the fabrication vector where a bare string 'no' or flat
+    declinedDepartments[] entry (written ad hoc by a non-owner actor) could
+    silently shrink the floor with no audit trail.
     """
     declined = set()
     bs = build_state or {}
     recon = bs.get("canonicalReconciliation", {}) or {}
+    if not isinstance(recon, dict):
+        recon = {}
+
+    owner_confirmed = bool(recon.get("ownerDeclineConfirmed"))
+
     for cid, dec in (recon.get("decisions", {}) or {}).items():
-        if str(dec).strip().lower() == "no":
-            declined.add(_norm(cid))
+        _cid = _norm(cid)
+        if isinstance(dec, dict):
+            required = ("decision", "source", "decidedAt", "decidedBy")
+            has_provenance = all(dec.get(k) for k in required)
+            if str(dec.get("decision", "")).strip().lower() == "no":
+                if has_provenance:
+                    declined.add(_cid)
+                else:
+                    print(
+                        f"[DECLINE REJECTED] '{cid}' missing provenance fields "
+                        f"(need decision/source/decidedAt/decidedBy). "
+                        f"Dept stays in floor (fail-safe).",
+                        file=sys.stderr)
+        elif str(dec).strip().lower() == "no":
+            if owner_confirmed:
+                declined.add(_cid)
+            else:
+                print(
+                    f"[DECLINE REJECTED] '{cid}' bare string 'no' without "
+                    f"ownerDeclineConfirmed=true. Dept stays in floor (fail-safe).",
+                    file=sys.stderr)
+
     for cid in (bs.get("declinedDepartments", []) or []):
-        declined.add(_norm(cid))
+        if owner_confirmed:
+            declined.add(_norm(cid))
+        else:
+            print(
+                f"[DECLINE REJECTED] declinedDepartments[] entry '{cid}' without "
+                f"ownerDeclineConfirmed=true. Dept stays in floor (fail-safe).",
+                file=sys.stderr)
+            break  # warn once; the outer caller already sees the list count
+
     return declined
 
 
