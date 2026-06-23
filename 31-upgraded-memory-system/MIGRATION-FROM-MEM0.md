@@ -74,7 +74,7 @@ Find and remove the `openclaw-mem0` entry from `plugins.entries`:
         "provider": "gemini",
         "config": {
           "apiKey": "${GEMINI_API_KEY}",
-          "model": "models/gemini-embedding-001"
+          "model": "models/gemini-embedding-2"
         }
       }
     }
