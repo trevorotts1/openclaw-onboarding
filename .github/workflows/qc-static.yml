@@ -807,6 +807,34 @@ jobs:
           bash 23-ai-workforce-blueprint/scripts/test-repo-consistency.sh
           echo "✓ Skill 23 repo-consistency: floor x roster x library x SOP x persona all consistent; gate proven to fail on drift"
 
+      - name: Skill 23 build-workforce x floor-prover alignment gate (slug parity + build-roundtrip)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # v13.8.14 PERMANENT FLEET-FLOOR REGRESSION GUARD. Two layers:
+          #
+          #  1. SLUG-DERIVATION PARITY (test-bw-prover-layout-parity.sh):
+          #     role_folder_basename() (explicit roster slug VERBATIM + _engine_slugify
+          #     fallback) and the prover's _normalize_role_name() agree on every
+          #     floor-manifest slug — no '.'/'&'/apostrophe/'--' corruption.
+          #
+          #  2. BUILD-ROUNDTRIP (test-bw-prover-build-roundtrip.sh) — the layer that
+          #     was MISSING when v13.8.13 shipped: builds representative departments
+          #     END-TO-END via build-workforce.create_role_workspace() (now rerouted
+          #     through create_role_workspaces.create_role_workspace, the SAME engine
+          #     floor-fill-driver.py uses), fills remaining role-library slugs via
+          #     that engine, and asserts EVERY canonical role slug — including the
+          #     historically-divergent ones (ai-voice-specialist-11-labs-play.ht,
+          #     fpanda--forecasting-analyst, subscription--recurring-revenue-specialist,
+          #     devils-advocate--*) — is COUNTED by the prover's role matcher.
+          #     Self-contained: runs in CI with no fleet-prover box. If a future edit
+          #     re-diverges build-workforce's folder writer from the engine/library
+          #     slugs, PHASE-1 assertion FAILS the build (proven against a regressed
+          #     copy: the play.ht→play-ht corruption is caught).
+          bash 23-ai-workforce-blueprint/scripts/test-bw-prover-layout-parity.sh
+          bash 23-ai-workforce-blueprint/scripts/test-bw-prover-build-roundtrip.sh
+          echo "✓ Skill 23 build-workforce ↔ floor-prover alignment: slug parity + build-roundtrip both pass; guard proven to bite on slug divergence"
+
       - name: Skill 23 artifact-coverage gate (org-chart x routing x command-center x dreaming x bootstrap x skills-count x version)
         shell: bash
         run: |

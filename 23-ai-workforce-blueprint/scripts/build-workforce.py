@@ -103,6 +103,26 @@ except Exception as _e:  # pragma: no cover - defensive
     print(f"[ROLE-LIBRARY WARNING] create_role_workspaces import failed "
           f"({_e}); falling back to stub+LLM SOP path", file=sys.stderr)
 
+# v13.8.14 PROVER-ALIGNMENT (single source of truth): per-role folder creation
+# routes through the SAME engine floor-fill-driver.py uses —
+# create_role_workspaces.create_role_workspace(). This guarantees the on-disk
+# folder slug is byte-identical to the role-library .md filename and the
+# floor-manifest slug (the engine slugs via role_metadata['slug'] VERBATIM, with
+# slugify() as the no-slug fallback). Eliminates the historic divergence where
+# build-workforce's own folder-writer produced "...play-ht" / "fp-a-..." that the
+# prover could not reconcile. If the engine import fails, the in-file legacy
+# writer is used as a defensive fallback (logged) so a build never hard-stops.
+try:
+    from create_role_workspaces import (
+        create_role_workspace as _crw_create_role_workspace,
+    )
+    _ENGINE_ROLE_WRITER_AVAILABLE = True
+except Exception as _e:  # pragma: no cover - defensive
+    _ENGINE_ROLE_WRITER_AVAILABLE = False
+    print(f"[ROLE-WORKSPACE WARNING] create_role_workspaces.create_role_workspace "
+          f"import failed ({_e}); falling back to in-file legacy folder writer",
+          file=sys.stderr)
+
 # ROOT-CAUSE FIX (2026-06-18): the disk-truth roster generator. write_department_
 # roster delegates to this so ROSTER.md lists exactly the role folders that EXIST
 # on disk (including custom/extra roles materialized via materialize_custom_roles
@@ -4005,16 +4025,52 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
     created_folders = []
 
     for role in roles:
-        # Build slug folder name: '00-chief-marketing-officer' or '02-social-media-manager'.
-        # DEFECT #1 FIX: the bare slug is the explicit roster **Slug:** (authoritative)
-        # or the defensively-cleaned role name — never the raw name. This strips
-        # decorations like "(NEW -- v1.7)", "&", "+", "'" that the old naive
-        # replace-chain baked into folder names. folder_name uses the single
-        # canonical helper so create and re-scan agree byte-for-byte.
-        folder_name = role_folder_basename(role)
+        # ── PROVER-ALIGNMENT (v13.8.14): route folder creation through the ENGINE ──
+        # Single source of truth for the on-disk folder slug: the SAME
+        # create_role_workspaces.create_role_workspace() floor-fill-driver.py uses.
+        # The engine slugs via role_metadata['slug'] VERBATIM (with slugify() as the
+        # no-slug fallback), so the folder name is byte-identical to the role-library
+        # .md filename and the floor-manifest slug. It also writes the unique
+        # IDENTITY/SOUL/MEMORY/HEARTBEAT files, the SOP/00-INDEX.md, and the shared
+        # AGENTS/TOOLS/USER symlinks. build-workforce then writes its EXTRA artifacts
+        # (how-to.md from the role-library, 00-START-HERE.md, governing-personas.md,
+        # and SOP stubs) INTO the engine-created role_path. role_dir/folder_name are
+        # derived FROM the engine result so the two paths can never drift again.
+        #
+        # DEFECT #1 FIX (retained): the bare slug is the explicit roster **Slug:**
+        # (authoritative) or the engine-slugified role name — never the raw name.
+        _role_number = role.get('number', 0)
+        try:
+            _role_number = int(_role_number)
+        except (TypeError, ValueError):
+            _role_number = 0
+        _role_metadata = {
+            "slug": (role.get('slug') or '').strip(),
+            "number": _role_number,
+            "is_ceo": (_role_number == 0 and (role.get('slug') or '').strip() == "master-orchestrator"),
+            "is_qc": bool(role.get('is_qc')),
+        }
+        if _ENGINE_ROLE_WRITER_AVAILABLE:
+            try:
+                _engine_path = _crw_create_role_workspace(
+                    dept_dir, role['name'], (COMPANY_DIR or WORKSPACE_ROOT),
+                    role_metadata=_role_metadata)
+                role_dir = str(_engine_path)
+                folder_name = os.path.basename(role_dir)
+            except Exception as _eng_err:  # pragma: no cover - defensive
+                print(f"[ROLE-WORKSPACE WARNING] engine create_role_workspace failed "
+                      f"for {role['name']} ({_eng_err}); using in-file folder writer",
+                      file=sys.stderr)
+                folder_name = role_folder_basename(role)
+                role_dir = os.path.join(dept_dir, folder_name)
+                os.makedirs(role_dir, exist_ok=True)
+        else:
+            # Legacy fallback (engine unavailable): in-file folder writer. Uses the
+            # SAME role_folder_basename() helper so the slug stays prover-aligned.
+            folder_name = role_folder_basename(role)
+            role_dir = os.path.join(dept_dir, folder_name)
+            os.makedirs(role_dir, exist_ok=True)
         role_slug = folder_name.split('-', 1)[1] if '-' in folder_name else folder_name
-        role_dir = os.path.join(dept_dir, folder_name)
-        os.makedirs(role_dir, exist_ok=True)
 
         # ── MSF Layer-2: resolve capability class for this role (v1.0.0) ────────
         # Infer the role's capability class from the MSF ruleset. This is a
@@ -4059,8 +4115,13 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
             # family (token-fill, NOT a free-form LLM essay). It is also collected
             # into the company-root PENDING-SOPS.md manifest so the orchestrator
             # knows what to fill - never silent.
+            # v13.8.14: the engine (create_role_workspace) already wrote a PENDING
+            # stub how-to.md when no library matched. Overwrite it with
+            # build-workforce's richer PENDING how-to (company/industry tokens +
+            # the company-root PENDING-SOPS.md one-shot fill instruction). Both
+            # carry the [PENDING - FILL FROM LIBRARY] marker the manifest scans for.
             how_to_path = os.path.join(role_dir, "how-to.md")
-            if not os.path.isfile(how_to_path):
+            if True:
                 pending_how_to = f"""# {role['name']} - how-to.md  [PENDING - FILL FROM LIBRARY]
 
 **Department:** {dept_info['name']} ({dept_info['emoji']})
