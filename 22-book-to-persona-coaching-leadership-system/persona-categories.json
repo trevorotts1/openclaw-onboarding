@@ -24,6 +24,13 @@
     "love-romantic-relationships"
   ],
   "personas": {
+    "allan-dib-the-1-page-marketing-plan": {
+      "author": "Allan Dib",
+      "book": "The 1-Page Marketing Plan",
+      "domain": ["marketing", "strategy-innovation", "sales"],
+      "perspective": [],
+      "custom": ["marketing-plan", "direct-response", "small-business-marketing"]
+    },
     "attwood-passion-test": {
       "author": "Janet Attwood",
       "book": "The Passion Test",
@@ -150,6 +157,20 @@
       "perspective": ["african-american-experience", "faith-spirituality", "family-relationships"],
       "custom": ["intuition"]
     },
+    "jeremy-miner-the-nepq-black-book-of-questions": {
+      "author": "Jeremy Miner",
+      "book": "The NEPQ Black Book of Questions",
+      "domain": ["sales", "communication", "copywriting", "coaching"],
+      "perspective": [],
+      "custom": ["nepq", "neuro-emotional-persuasion", "sales-questioning"]
+    },
+    "jim-edwards-copywriting-secrets": {
+      "author": "Jim Edwards",
+      "book": "Copywriting Secrets",
+      "domain": ["copywriting", "marketing", "sales"],
+      "perspective": [],
+      "custom": ["direct-response-copy", "sales-copy", "headlines"]
+    },
     "jones-exactly-what-to-say": {
       "author": "Phil Jones",
       "book": "Exactly What to Say",
@@ -261,6 +282,41 @@
       "domain": ["coaching", "personal-development", "communication"],
       "perspective": ["womens-challenges", "family-relationships", "love-romantic-relationships"],
       "custom": ["boundaries", "emotional-freedom"]
+    },
+    "russell-brunson-lead-funnels": {
+      "author": "Russell Brunson",
+      "book": "Lead Funnels",
+      "domain": ["marketing", "sales", "strategy-innovation"],
+      "perspective": [],
+      "custom": ["funnels", "lead-generation", "opt-in"]
+    },
+    "russell-brunson-marketing-secrets-blackbook": {
+      "author": "Russell Brunson",
+      "book": "Marketing Secrets Blackbook",
+      "domain": ["marketing", "sales", "strategy-innovation"],
+      "perspective": [],
+      "custom": ["marketing-maxims", "direct-response", "growth"]
+    },
+    "russell-brunson-network-marketing-secrets": {
+      "author": "Russell Brunson",
+      "book": "Network Marketing Secrets",
+      "domain": ["marketing", "sales", "communication"],
+      "perspective": [],
+      "custom": ["network-marketing", "funnels", "recruiting"]
+    },
+    "russell-brunson-the-funnel-hackers-cookbook": {
+      "author": "Russell Brunson",
+      "book": "The Funnel Hackers Cookbook",
+      "domain": ["marketing", "sales", "strategy-innovation"],
+      "perspective": [],
+      "custom": ["funnels", "funnel-recipes", "conversion"]
+    },
+    "russell-brunson-traffic-secrets": {
+      "author": "Russell Brunson",
+      "book": "Traffic Secrets",
+      "domain": ["marketing", "sales", "strategy-innovation"],
+      "perspective": [],
+      "custom": ["traffic", "dream-customer", "audience-acquisition"]
     },
     "samit-disrupt-yourself": {
       "author": "Jay Samit",

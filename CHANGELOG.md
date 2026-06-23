@@ -1,3 +1,24 @@
+## [v13.8.6]  -  2026-06-23  -  fix(persona-selector): wire 8 book-author personas into persona-categories.json (Stage-B tag filter now routes Brunson/Edwards/NEPQ/Dib for funnel/copy/sales) + purge last active gemini-embedding-001 ref (Skill-31 MIGRATION) -> gemini-embedding-2
+
+Wiring fix. No change to the routing/gating contract, the scoring layers, or the persona-library/_index.json — only the persona DOMAIN-TAG data the selector reads, plus one residual deprecated-model reference.
+
+- **FLEET-CRITICAL — the 8 new book-author personas were INSTALLED BUT UNSELECTABLE (FIX):** v13.6.0 registered 8 marketing/sales/copywriting book-author personas (Brunson Lead-Funnels / Network-Marketing-Secrets / Funnel-Hackers-Cookbook / Traffic-Secrets / Marketing-Secrets-Blackbook, Edwards *Copywriting Secrets*, Miner *NEPQ Black Book*, Dib *1-Page Marketing Plan*) as persona-library `.md` blueprints + `role-library/_index.json` entries + bumped `INDEX-MANIFEST` 40→48 — but **never added them to `22-book-to-persona-coaching-leadership-system/persona-categories.json`**. `persona-selector-v2.py` Stage B (`_category_filter`) intersects each persona's `domain` tags (read from persona-categories.json) with the department/task tag set. With no entry in that file, the 8 personas had no domain tags to match, so after #195 widened the web-development tag filter they were **filtered out before scoring** — installed yet impossible to route to for funnel/copy/sales work (only `hormozi-*` ever surfaced).
+- **FIX — add all 8 with accurate `domain` tags** drawn from the selector's real vocabulary (`DEPT_DOMAIN_TAGS` ∪ `_CATEGORY_DOMAINS`) and each persona's own `.md` Domain-tags header:
+  - `allan-dib-the-1-page-marketing-plan` → marketing, strategy-innovation, sales
+  - `jeremy-miner-the-nepq-black-book-of-questions` → sales, communication, copywriting, coaching
+  - `jim-edwards-copywriting-secrets` → copywriting, marketing, sales
+  - `russell-brunson-lead-funnels` → marketing, sales, strategy-innovation
+  - `russell-brunson-marketing-secrets-blackbook` → marketing, sales, strategy-innovation
+  - `russell-brunson-network-marketing-secrets` → marketing, sales, communication
+  - `russell-brunson-the-funnel-hackers-cookbook` → marketing, sales, strategy-innovation
+  - `russell-brunson-traffic-secrets` → marketing, sales, strategy-innovation
+
+  `persona-categories.json`: **41 → 49 personas**. Every assigned tag is a member of the file's own `domainTags` vocabulary AND a tag the selector actually filters on (no invented tags it ignores).
+- **LIVE PROOF (real `persona-selector-v2.py` `_category_filter`, 3 representative tasks):** "build a sales/opt-in funnel" (web-development), "write the funnel sales copy" (creative), "design the offer" (sales) each surfaced **0/8 → 8/8** of the new personas (BEFORE on origin/main → AFTER this release). End-to-end the selector CLI now **picks `russell-brunson-lead-funnels`** for the funnel task with the whole top-3 = the Brunson/Dib funnel family.
+- **Deprecated-model purge (residual):** the v13.8.4 fleet-refresh swept `gemini-embedding-001` → `gemini-embedding-2` across Skill-31 FULL-DOC.md / INSTALL.md but missed the embedder block in `31-upgraded-memory-system/MIGRATION-FROM-MEM0.md`. Fixed → `models/gemini-embedding-2` (GA @3072). **Zero active `gemini-embedding-001` references remain repo-wide**; every surviving mention is a denylist/guard/anti-pattern/migration-check that FORBIDS or DETECTS the dying model (hard shutdown 2026-07-14) and must stay.
+- **Index note (DEFERRED, not in this release):** the downloadable `prebuilt-index-v1.0.0` SQLite asset is still the 40-persona embedding set; the 8 new personas remain embedded per-box by the book-to-persona pipeline (now that they are SELECTABLE, that per-box embed is finally usable). A full 48-persona prebuilt-index rebuild (gemini-embedding-2 @3072, embed-once) + GitHub-Release publish + `INDEX-MANIFEST.json` asset-pointer update is a follow-up operator task — it does not gate this wiring fix.
+- **Versions:** 10 markers → v13.8.6; skill-version 22 v6.7.6 → v6.7.7 (persona-categories.json), skill-version 31 v7.2.4 → v7.2.5 (MIGRATION-FROM-MEM0.md).
+
 ## [v13.8.5]  -  2026-06-23  -  feat(release): release.sh auto-publishes a GitHub Release every run (close the v12->v13 badge gap)
 
 Repo-tooling fix. No change to skills, role/SOP/persona libraries, or the routing/gating contract — only the release pipeline.
