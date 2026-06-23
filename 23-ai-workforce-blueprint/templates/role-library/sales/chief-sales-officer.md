@@ -4,7 +4,7 @@
 **Reports to:** Master Orchestrator
 **Role type:** full-time-permanent
 **Persona:** {{ASSIGNED_PERSONA}} v{{ASSIGNED_PERSONA_VERSION}}
-**Version:** 1.0
+**Version:** 1.1
 **Last updated:** {{GENERATION_DATE}}
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
@@ -313,7 +313,7 @@ This role contributes to the company revenue cascade by: **directly generating 1
 
 3. **Quality-check for funnel consumption.** Before writing the file, confirm: (a) `product_name` is the exact name to use on the landing page headline, (b) all `deliverables` are named concretely (no vague items like "support"), (c) `price_points` has at least one entry with a numeric `amount`, (d) `positioning` speaks to the ICP's pain, not the company's credentials. Anything vague is flagged to the owner via the task card for clarification — use `[CLIENT TO SUPPLY: <specific question>]` as the placeholder.
 
-4. **Persona reference (do NOT write a duplicate log entry).** The Funnel Strategist (SOP 9.5) owns the `persona-selection-log.md` entry for funnel architecture. This role (CSO) may reference a persona that informed the offer framing (e.g., hormozi-100m-offers if the offer stack was designed using the value-ladder framework), but does NOT write a persona-selection-log.md entry. Note the persona reference in the `persona_reference` field of offer-spec.json only.
+4. **Persona reference (do NOT write a duplicate log entry).** The Funnel Strategist (SOP 9.5) owns the `persona-selection-log.md` entry for funnel architecture and selects the offer/funnel persona from the coaching-persona library via the persona selector (the pool includes `hormozi-100m-offers`, the `russell-brunson-*` funnel personas, and `allan-dib-the-1-page-marketing-plan` — not a single hardcoded default). This role (CSO) may reference whichever offer persona informed the offer framing (e.g., `hormozi-100m-offers` when the offer stack was designed using the value-ladder framework, or a `russell-brunson-*` persona for funnel-driven offers), but does NOT write a persona-selection-log.md entry. Note the persona reference in the `persona_reference` field of offer-spec.json only — mirror the slug the Funnel Strategist's selector returned rather than assuming one.
 
 5. **Write offer-spec.json.** Output to `working/funnels/<slug>/offer-spec.json`. Required schema:
    ```json
