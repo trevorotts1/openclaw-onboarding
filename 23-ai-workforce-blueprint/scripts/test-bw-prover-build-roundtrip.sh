@@ -205,6 +205,45 @@ for dept_id in depts:
 
 check(total_missing == 0, f"zero missing role slugs across {depts} (got {total_missing})")
 
+# ── PHASE 4: REAL CONTENT, NOT STUBS (ROLE_LIBRARY_PATH-misconfig guard) ──
+# A prover-passing-LOOKING folder full of "PENDING - FILL FROM LIBRARY" stubs is
+# WORSE than the slug bug: it counts as present but carries no real SOPs. The
+# library is resolved (by both build-workforce._instantiate_role_from_library and
+# create_role_workspaces._resolve_skill_dir) via ROLE_LIBRARY_PATH → skill-dir
+# root; if that root is gutted/empty the role gets a PENDING stub. These roles
+# (the entire audio+billing floor) ALL have a pre-written role-library template,
+# so EVERY built how-to.md MUST carry real library provenance and ZERO PENDING
+# markers. Assert it. This makes the guard bite on a future ROLE_LIBRARY_PATH
+# misconfiguration, not just a slug divergence.
+PENDING_MARKERS = ("PENDING - FILL FROM LIBRARY", "PENDING — FILL FROM LIBRARY",
+                   "how-to.md (stub)")
+MIN_HOWTO_BYTES = 1500  # a real library how-to is multi-KB; a stub is < this
+stub_roles = []
+no_provenance = []
+for dept_id in depts:
+    dept_dir = departments_dir / dept_id
+    if not dept_dir.is_dir():
+        continue
+    for sub in sorted(dept_dir.iterdir()):
+        ht = sub / "how-to.md"
+        if not ht.is_file():
+            continue
+        txt = ht.read_text(encoding="utf-8", errors="replace")
+        if any(m in txt for m in PENDING_MARKERS):
+            stub_roles.append(f"{dept_id}/{sub.name}")
+            continue
+        # real library content carries the workforce-provenance source marker
+        # AND is comfortably larger than a stub.
+        if "source=role-library" not in txt or len(txt.encode("utf-8")) < MIN_HOWTO_BYTES:
+            no_provenance.append(f"{dept_id}/{sub.name} (bytes={len(txt.encode('utf-8'))})")
+
+check(not stub_roles,
+      f"NO 'PENDING - FILL FROM LIBRARY' stub how-to.md (would mean a gutted "
+      f"ROLE_LIBRARY_PATH); offenders={stub_roles[:8]}")
+check(not no_provenance,
+      f"every built how-to.md carries real library provenance "
+      f"(source=role-library, >= {MIN_HOWTO_BYTES}B); offenders={no_provenance[:8]}")
+
 # Record the built workspace path for the optional real-prover phase.
 (tmp / "ws-path.txt").write_text(str(departments_dir), encoding="utf-8")
 
