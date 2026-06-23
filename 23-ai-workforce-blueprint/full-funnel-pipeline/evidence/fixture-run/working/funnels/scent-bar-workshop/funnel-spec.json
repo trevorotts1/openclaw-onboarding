@@ -1,0 +1,45 @@
+{
+  "funnel_name": "Scent-Bar Workshop Funnel",
+  "based_on_offer": "Scent-Bar Workshop",
+  "persona": "hormozi-100m-offers",
+  "pages": [
+    {
+      "id": "optin",
+      "type": "opt-in",
+      "slot_ids": [
+        "headline",
+        "subhead",
+        "cta"
+      ]
+    },
+    {
+      "id": "sales",
+      "type": "sales",
+      "slot_ids": [
+        "hero",
+        "stack",
+        "guarantee",
+        "cta"
+      ]
+    },
+    {
+      "id": "thankyou",
+      "type": "thank-you",
+      "slot_ids": [
+        "confirm"
+      ]
+    }
+  ],
+  "email_sequence": {
+    "emails": 5,
+    "cadence_days": [
+      0,
+      1,
+      3,
+      5,
+      7
+    ]
+  },
+  "owner": "funnel-strategist",
+  "stage": "p1-funnel-spec"
+}

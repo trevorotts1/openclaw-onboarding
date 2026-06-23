@@ -1,0 +1,8 @@
+{
+  "id": "R-PAGES",
+  "score": 9.1,
+  "threshold": 8.5,
+  "passed": true,
+  "evidence_path": "evidence/fixture-run/working/funnels/scent-bar-workshop/build-result.json",
+  "raw_signal": "page_ids=['optin', 'sales', 'thankyou'] gate3=True"
+}

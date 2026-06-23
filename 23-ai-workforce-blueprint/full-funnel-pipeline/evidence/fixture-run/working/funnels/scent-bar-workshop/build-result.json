@@ -1,0 +1,17 @@
+{
+  "page_ids": [
+    "optin",
+    "sales",
+    "thankyou"
+  ],
+  "optin_form_ids": [
+    "form-optin-1"
+  ],
+  "preview_urls": [
+    "https://preview.example/optin",
+    "https://preview.example/sales",
+    "https://preview.example/thankyou"
+  ],
+  "gate3_verbatim_match": true,
+  "stage": "p4-build"
+}

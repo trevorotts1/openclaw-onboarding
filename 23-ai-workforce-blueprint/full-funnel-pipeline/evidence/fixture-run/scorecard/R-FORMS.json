@@ -1,0 +1,8 @@
+{
+  "id": "R-FORMS",
+  "score": 9.0,
+  "threshold": 8.5,
+  "passed": true,
+  "evidence_path": "evidence/fixture-run/working/funnels/scent-bar-workshop/build-result.json",
+  "raw_signal": "optin_form_ids=['form-optin-1']"
+}

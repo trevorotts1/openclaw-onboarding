@@ -50,7 +50,7 @@ if [ ! -f "$REPO_ROOT/version" ] || [ ! -f "$REPO_ROOT/install.sh" ]; then
   exit 1
 fi
 
-# ─── The 8 locations (relative to repo root) ─────────────────────────────────
+# ─── The 10 version-marker locations (relative to repo root) ─────────────────
 F_VERSION="$REPO_ROOT/version"
 F_INSTALL="$REPO_ROOT/install.sh"
 F_SKILL_VERSION="$REPO_ROOT/23-ai-workforce-blueprint/skill-version.txt"
@@ -59,6 +59,10 @@ F_QC_SUMMARY="$REPO_ROOT/23-ai-workforce-blueprint/templates/role-library/_qc-su
 F_README="$REPO_ROOT/README.md"
 F_UPDATE_SKILLS="$REPO_ROOT/update-skills.sh"
 F_DIRECT_TO_AGENT="$REPO_ROOT/DIRECT-TO-AGENT-UPDATE-MESSAGE.md"
+# Marker #10 (v13.8.1) — cc-compat.json onboardingVersion. The repo-consistency
+# gate (qc-assert-repo-consistency.py) and CI both fail if this != /version, but
+# bump-version.sh historically did not roll it, so a bump silently drifted it.
+F_CC_COMPAT="$REPO_ROOT/cc-compat.json"
 
 # ─── Read current values ─────────────────────────────────────────────────────
 read_current() {
@@ -97,6 +101,12 @@ read_current() {
   else
     V_DIRECT="MISSING"
   fi
+  if [ -f "$F_CC_COMPAT" ]; then
+    V_CC_COMPAT=$(python3 -c "import json; print(json.load(open('$F_CC_COMPAT')).get('onboardingVersion','MISSING'))" 2>/dev/null || echo "MISSING")
+    if [ -z "$V_CC_COMPAT" ]; then V_CC_COMPAT="MISSING"; fi
+  else
+    V_CC_COMPAT="MISSING"
+  fi
 }
 
 # Normalize a version: strip leading 'v', collapse to X.Y.Z
@@ -115,6 +125,7 @@ print_state() {
   printf "  %-50s %s\n" "README.md (Current Version: vX.Y.Z)" "$V_README_CURRENT"
   printf "  %-50s %s\n" "update-skills.sh ONBOARDING_VERSION" "$V_UPDATE_SKILLS"
   printf "  %-50s %s\n" "DIRECT-TO-AGENT-UPDATE-MESSAGE.md (**vX.Y.Z**)" "$V_DIRECT"
+  printf "  %-50s %s\n" "cc-compat.json onboardingVersion" "$V_CC_COMPAT"
 }
 
 check_drift() {
@@ -128,10 +139,12 @@ check_drift() {
   N_README_CURRENT=$(norm "$V_README_CURRENT")
   N_UPDATE=$(norm "$V_UPDATE_SKILLS")
   N_DIRECT=$(norm "$V_DIRECT")
+  N_CC_COMPAT=$(norm "$V_CC_COMPAT")
   if [ "$N_ROOT" = "$N_INSTALL" ] && [ "$N_ROOT" = "$N_SKILL" ] && \
      [ "$N_ROOT" = "$N_INDEX" ] && [ "$N_ROOT" = "$N_QC" ] && \
      [ "$N_ROOT" = "$N_README" ] && [ "$N_ROOT" = "$N_README_CURRENT" ] && \
-     [ "$N_ROOT" = "$N_UPDATE" ] && [ "$N_ROOT" = "$N_DIRECT" ]; then
+     [ "$N_ROOT" = "$N_UPDATE" ] && [ "$N_ROOT" = "$N_DIRECT" ] && \
+     [ "$N_ROOT" = "$N_CC_COMPAT" ]; then
     return 0
   fi
   return 1
@@ -142,7 +155,7 @@ if [ "${1:-}" = "--check" ]; then
   print_state
   if check_drift; then
     echo ""
-    echo "All 9 version markers agree."
+    echo "All 10 version markers agree."
     exit 0
   else
     echo ""
@@ -268,6 +281,22 @@ open(p, "w").write(new)
 PYEOF
 fi
 
+# 9. /cc-compat.json onboardingVersion (with v prefix) — v13.8.1.
+#    The repo-consistency gate + CI fail if this != /version. Roll it on every
+#    bump so it can never silently drift again (caught in v13.8.1 QC).
+if [ -f "$F_CC_COMPAT" ]; then
+  python3 - <<PYEOF
+import json
+p = "$F_CC_COMPAT"
+target = "$TARGET"
+d = json.load(open(p))
+d["onboardingVersion"] = target
+with open(p, "w") as f:
+    json.dump(d, f, indent=2)
+    f.write("\n")
+PYEOF
+fi
+
 echo ""
 echo "Result:"
 print_state
@@ -279,7 +308,7 @@ if ! check_drift; then
 fi
 
 echo ""
-echo "All 9 version markers agree at $TARGET"
+echo "All 10 version markers agree at $TARGET"
 
 # ─── Optional: tag + push ───────────────────────────────────────────────────
 if [ "${2:-}" = "--tag" ] || [ "${3:-}" = "--tag" ]; then

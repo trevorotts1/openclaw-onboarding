@@ -1,0 +1,7 @@
+{
+  "slots": {
+    "hero": "https://cdn.example/hero.png",
+    "stack": "https://cdn.example/stack.png"
+  },
+  "stage": "p3-assets"
+}

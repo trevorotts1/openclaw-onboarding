@@ -1,0 +1,8 @@
+{
+  "id": "R-TAGS",
+  "score": 8.8,
+  "threshold": 8.5,
+  "passed": true,
+  "evidence_path": "evidence/fixture-run/ecosystem/product-price.json",
+  "raw_signal": "product-price http=201 qc=True"
+}

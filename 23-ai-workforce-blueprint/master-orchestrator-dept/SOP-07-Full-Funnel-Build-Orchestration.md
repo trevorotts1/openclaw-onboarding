@@ -1,5 +1,5 @@
 # SOP-07 — Full-Funnel Build Orchestration
-**Version:** 1.0.0 | 2026-06-22
+**Version:** 1.1.0 | 2026-06-22
 **Applies to:** Master Orchestrator / CEO Agent (all installs — Mac and VPS)
 **Status:** CANONICAL — cross-platform fleet standard
 
@@ -274,6 +274,8 @@ If any child card reaches `FAILED` terminal status:
 
 **Rollback is idempotent:** running it twice on the same failed build must not double-delete or double-revert. Check for existence before each delete.
 
+**Executable implementation:** this section is implemented in code at `full-funnel-pipeline/funnel_rollback.py` (`run_funnel_rollback`). It reverts each P4 page byte-identical (`ghl_rest_canvas.is_byte_identical` / `blob_md5`), deletes only created-but-UNVERIFIED ecosystem objects (qc-passed objects are kept), deletes the test contact, and writes `funnel_rollback.json` carrying `parent_task_id` + `idempotency_key` for replay-safe retry. The deleter/reverter clients are injected so the contract is unit-tested without a live CRM (see `tests/test_full_funnel_pipeline.py::test_rollback_is_idempotent`).
+
 ---
 
 ## Step 8 — Idempotency (Replay Safety)
@@ -305,6 +307,7 @@ The `POST /api/tasks/ingest` endpoint returns `{ok:true, task_id:"...", deduped:
 | conversion-copywriter.md SOP 9.2 | P2 owner SOP — produces copy.md/copy.json with persona grounding. |
 | email-campaign-strategist.md | P2e owner — produces email sequence copy with persona grounding. |
 | 44-convert-and-flow-operator | P5 owner — wires workflows (Skill 44, rubric ≥ 8.5). |
+| full-funnel-pipeline/ | Executable enforcement of this SOP: `funnel_rollback.py` (§7), `funnel_fixture_harness.py` (offline P0→P5 evidence run), `funnel_rubrics.py` (the 11 per-rubric scorecards R-COPY…R-CC-SYNC ≥ 8.5), and `tests/` (T-1..T-9 + T-N1..T-N6). Gated by `.github/workflows/full-funnel-pipeline.yml`. |
 
 ---
 
@@ -312,4 +315,5 @@ The `POST /api/tasks/ingest` endpoint returns `{ok:true, task_id:"...", deduped:
 
 | Version | Date | Change |
 |---------|------|--------|
+| 1.1.0 | 2026-06-22 | Added executable enforcement for the previously prose-only contract: `funnel_rollback.py` implements §7 (byte-identical revert + idempotent delete + `funnel_rollback.json`); `funnel_fixture_harness.py` runs the full P0→P5 value stream offline and emits the evidence tree (offer-spec.json, funnel-spec.json, hormozi persona-selection-log, copy.md APPROVED, ecosystem receipts, `logs/final-preview-verify.json` 7/7 rollup, `scorecard/verify-summary.json`); `funnel_rubrics.py` scores the 11 acceptance rubrics from RAW evidence; CI workflow `full-funnel-pipeline.yml` gates all of it. No change to the routing/gating contract below. |
 | 1.0.0 | 2026-06-22 | Initial canonical SOP. Defines P0→P5 value-stream: full-funnel intent detection, parent funnel_epic, 7 staged child cards (P0, P1, P2, P2e, P3, P4, P5 — P2e is the parallel email-sequence card) with depends_on edges, waiting_on_dependency sub-state (not counted against bounce cap), Iron Rule (routes via POST /api/tasks/ingest to persistent agent:<dept>), funnel_rollback on child FAILED, and parent/child idempotency key derivation. Sibling to SOP-00 and SOP-01 in master-orchestrator-dept/. |

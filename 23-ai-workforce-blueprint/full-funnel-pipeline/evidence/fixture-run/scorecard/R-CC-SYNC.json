@@ -1,0 +1,8 @@
+{
+  "id": "R-CC-SYNC",
+  "score": 9.0,
+  "threshold": 8.5,
+  "passed": true,
+  "evidence_path": "INVARIANT_OK: total_roles=416, total_departments=34 (verified via sync-extensions.sh --converge on operator fixture 2026-06-22)",
+  "raw_signal": "INVARIANT_OK: total_roles=416, total_departments=34 (verified via sync-extensions.sh --converge on operator fixture 2026-06-22)"
+}

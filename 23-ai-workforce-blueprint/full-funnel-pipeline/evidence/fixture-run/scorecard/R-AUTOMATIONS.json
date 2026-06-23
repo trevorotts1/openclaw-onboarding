@@ -1,0 +1,8 @@
+{
+  "id": "R-AUTOMATIONS",
+  "score": 9.1,
+  "threshold": 8.5,
+  "passed": true,
+  "evidence_path": "evidence/fixture-run/ecosystem/workflow.json",
+  "raw_signal": "workflow http=201 qc=True"
+}

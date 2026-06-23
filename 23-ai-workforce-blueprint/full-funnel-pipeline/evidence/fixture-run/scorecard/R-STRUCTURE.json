@@ -1,0 +1,8 @@
+{
+  "id": "R-STRUCTURE",
+  "score": 9.0,
+  "threshold": 8.5,
+  "passed": true,
+  "evidence_path": "evidence/fixture-run/working/funnels/scent-bar-workshop/funnel-spec.json",
+  "raw_signal": "funnel-spec pages=3"
+}

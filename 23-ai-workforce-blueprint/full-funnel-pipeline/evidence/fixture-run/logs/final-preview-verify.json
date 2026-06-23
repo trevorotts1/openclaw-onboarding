@@ -1,0 +1,45 @@
+{
+  "run_id": "fixture-196",
+  "parent_task_id": "epic",
+  "stages": [
+    {
+      "stage": "p0-offer-spec",
+      "status": "done",
+      "passed": true
+    },
+    {
+      "stage": "p1-funnel-spec",
+      "status": "done",
+      "passed": true
+    },
+    {
+      "stage": "p2-copy",
+      "status": "APPROVED",
+      "passed": true
+    },
+    {
+      "stage": "p2e-email-copy",
+      "status": "APPROVED",
+      "passed": true
+    },
+    {
+      "stage": "p3-assets",
+      "status": "done",
+      "passed": true
+    },
+    {
+      "stage": "p4-build",
+      "status": "verified",
+      "passed": true
+    },
+    {
+      "stage": "p5-automation",
+      "status": "verified",
+      "passed": true
+    }
+  ],
+  "stages_complete": 7,
+  "stages_total": 7,
+  "overall_pass": true,
+  "generated_at": "2026-06-22T22:28:30.545392+00:00"
+}

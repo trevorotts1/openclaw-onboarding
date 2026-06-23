@@ -1,0 +1,8 @@
+{
+  "id": "R-COPY",
+  "score": 9.2,
+  "threshold": 8.5,
+  "passed": true,
+  "evidence_path": "evidence/fixture-run/working/copy/scent-bar-workshop/copy.md",
+  "raw_signal": "copy.md status: APPROVED"
+}
