@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v13.8.2"
+ONBOARDING_VERSION="v13.8.3"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -65,6 +65,13 @@ else
         OC_INSTALL_LOG_DIR="/data/.openclaw/logs/install"
         OC_AUTH_PROFILES="/data/.openclaw/agents/main/agent/auth-profiles.json"
         OC_DOWNLOADS="/data/Downloads"
+        # v13.8.3: set LOG_FILE on the VPS curl-fallback path too. Without it,
+        # `note "Log file: $LOG_FILE"` (and every `>> "$LOG_FILE"`) aborts under
+        # `set -euo pipefail` with `LOG_FILE: unbound variable`. Mirrors the mac
+        # fallback branch below and platform/vps/bootstrap.sh §7.
+        mkdir -p "$OC_INSTALL_LOG_DIR"
+        LOG_FILE="$OC_INSTALL_LOG_DIR/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
+        exec 1> >(tee -a "$LOG_FILE") 2>&1
     else
         OC_PLATFORM="mac"
         OC_CONFIG="$HOME/.openclaw"
@@ -2156,7 +2163,11 @@ echo "║     OpenClaw Onboarding Installer        ║"
 echo "║              ${ONBOARDING_VERSION}                      ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
-note "Log file: $LOG_FILE"
+# v13.8.3: ${LOG_FILE:-} guard (defense-in-depth). LOG_FILE is set by the
+# platform bootstrap (mac/vps §log-file setup) or the install.sh curl-fallback;
+# this guard ensures the main header can never abort under `set -u` if a future
+# code path forgets to set it (the VPS-clone-path regression fixed in v13.8.3).
+note "Log file: ${LOG_FILE:-(not set — check platform bootstrap)}"
 
 # ----------------------------------------------------------
 # CLI Scope Auto-Repair (v10.0.3)

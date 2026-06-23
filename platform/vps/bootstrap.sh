@@ -163,3 +163,14 @@ OC_BACKUPS="/data/.openclaw/backups"
 OC_INSTALL_LOG_DIR="/data/.openclaw/logs/install"
 OC_AUTH_PROFILES="/data/.openclaw/agents/main/agent/auth-profiles.json"
 OC_DOWNLOADS="/data/Downloads"
+
+# ── 7. Log file setup ────────────────────────────────────────────────────────
+# Mirrors platform/mac/bootstrap.sh §4. The unified install.sh references
+# "$LOG_FILE" under `set -euo pipefail` (e.g. note "Log file: $LOG_FILE" and
+# every `>> "$LOG_FILE"`). The mac bootstrap set it; the vps bootstrap never
+# did, so the VPS clone path aborted with `LOG_FILE: unbound variable` at the
+# main header — before skill-wiring / extension_registry migration could run.
+# Persist install logs under /data so they survive a container restart. (v13.8.3)
+mkdir -p "$OC_INSTALL_LOG_DIR"
+LOG_FILE="$OC_INSTALL_LOG_DIR/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
+exec 1> >(tee -a "$LOG_FILE") 2>&1
