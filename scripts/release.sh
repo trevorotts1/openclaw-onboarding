@@ -27,6 +27,11 @@
 #   5.  Commits all changes with a conventional-commit message
 #   6.  Creates an annotated tag vX.Y.Z at the new commit
 #   7.  Pushes commit + tag to origin (unless --no-push)
+#   8.  Publishes a GitHub Release from the tag, notes drawn from the
+#       CHANGELOG section for vX.Y.Z (idempotent: skipped if the release
+#       already exists, or if --no-push, or if `gh` is unavailable). This
+#       keeps the GitHub "Latest" badge + the releases/latest API in lockstep
+#       with the newest tag so the repo never looks stuck on an old version.
 #
 # CI guards satisfied by this flow:
 #   G1 (version-without-tag): tag is created BEFORE the next push, so G1
@@ -208,7 +213,7 @@ info "Commit: $RELEASE_SHA"
 echo ""
 
 # ─── Step 6: create annotated tag ────────────────────────────────────────────
-echo "[6/6] Creating annotated tag $TARGET at $RELEASE_SHA ..."
+echo "[6/8] Creating annotated tag $TARGET at $RELEASE_SHA ..."
 git tag -a "$TARGET" "$RELEASE_SHA" \
   -m "$TARGET — $DESCRIPTION
 
@@ -218,21 +223,59 @@ Tagged by release.sh on $TODAY."
 info "Tag created: $TARGET"
 echo ""
 
-# ─── Push (unless --no-push) ─────────────────────────────────────────────────
+# ─── Step 7: push (unless --no-push) ─────────────────────────────────────────
 if [ "${NO_PUSH:-}" = "--no-push" ]; then
-  echo "Skipping push (--no-push). To push manually:"
+  echo "[7/8] Skipping push (--no-push). To push + publish manually:"
   echo "  git push origin main && git push origin $TARGET"
+  echo "  gh release create $TARGET --verify-tag --title \"$TARGET\" --notes-file <(scripts/extract-changelog-section.py $TARGET)"
 else
-  echo "Pushing commit + tag to origin ..."
+  echo "[7/8] Pushing commit + tag to origin ..."
   git push origin "$CURRENT_BRANCH"
   git push origin "$TARGET"
   echo "  Pushed commit and tag $TARGET."
 fi
-
 echo ""
+
+# ─── Step 8: publish GitHub Release from the tag ─────────────────────────────
+# Idempotent: skip if the release already exists, if we did not push (no tag on
+# origin to release from), or if the `gh` CLI is unavailable/unauthenticated.
+# Notes are the CHANGELOG section for this version. This keeps the GitHub
+# "Latest" badge + the releases/latest API in lockstep with the newest tag.
+echo "[8/8] Publishing GitHub Release $TARGET ..."
+if [ "${NO_PUSH:-}" = "--no-push" ]; then
+  info "Skipped (--no-push): no tag on origin to publish a Release from."
+elif ! command -v gh >/dev/null 2>&1; then
+  echo "  WARNING: 'gh' CLI not found on PATH — GitHub Release NOT published."
+  echo "  Install gh + run: gh release create $TARGET --verify-tag --title \"$TARGET\" --notes-file <notes>"
+elif ! gh auth status >/dev/null 2>&1; then
+  echo "  WARNING: 'gh' is not authenticated — GitHub Release NOT published."
+  echo "  Run 'gh auth login', then: gh release create $TARGET --verify-tag --title \"$TARGET\""
+elif gh release view "$TARGET" >/dev/null 2>&1; then
+  info "GitHub Release $TARGET already exists — skipping (idempotent)."
+else
+  # Extract the CHANGELOG section for $TARGET (header-format agnostic).
+  NOTES_FILE="$(mktemp -t release-notes-XXXXXX.md)"
+  if python3 "$SCRIPT_DIR/extract-changelog-section.py" "$TARGET" > "$NOTES_FILE" 2>/dev/null && [ -s "$NOTES_FILE" ]; then
+    : # notes extracted
+  else
+    # Fall back to a minimal note rather than fail the release.
+    printf '## %s\n\n%s\n' "$TARGET" "$DESCRIPTION" > "$NOTES_FILE"
+  fi
+  if gh release create "$TARGET" --verify-tag --title "$TARGET" --notes-file "$NOTES_FILE"; then
+    info "Published GitHub Release $TARGET (now 'Latest')."
+  else
+    echo "  WARNING: 'gh release create $TARGET' failed — tag is pushed but the"
+    echo "  GitHub Release was NOT published. Re-run manually:"
+    echo "    gh release create $TARGET --verify-tag --title \"$TARGET\" --notes-file <notes>"
+  fi
+  rm -f "$NOTES_FILE"
+fi
+echo ""
+
 echo "========================================"
 echo "  Release $TARGET complete."
 echo "  Merge SHA  : $RELEASE_SHA"
 echo "  Tag        : $TARGET"
+echo "  Release    : gh release view $TARGET"
 echo "  CHANGELOG  : edit $CHANGELOG to add release notes body"
 echo "========================================"
