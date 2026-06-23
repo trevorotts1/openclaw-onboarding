@@ -1,3 +1,16 @@
+## [v13.8.3]  -  2026-06-23  -  fix(vps-installer): set LOG_FILE on VPS install path (LOG_FILE unbound-variable abort blocked the VPS payload roll)
+
+Hot-fix for the VPS install path. No change to skills, role/SOP libraries, or the routing/gating contract — only the installer log-file plumbing.
+
+- **FLEET-CRITICAL — VPS install aborted with `LOG_FILE: unbound variable` (FIX):** `platform/vps/bootstrap.sh` set every `OC_*` canonical path (including `OC_INSTALL_LOG_DIR`) but **never set `LOG_FILE`** — whereas `platform/mac/bootstrap.sh` §4 (lines 61-62) does. The unified `install.sh` enables `set -euo pipefail` right after sourcing the platform bootstrap, then references `"$LOG_FILE"` at the main header (`note "Log file: $LOG_FILE"`) and in ~20 `>> "$LOG_FILE"` log appends. On the VPS clone path `LOG_FILE` was unbound, so the installer **aborted at the main header under `set -u`** — before skill-wiring and the Skill-32 `extension_registry` sidecar migration could run. Effect: the 9 VPS boxes in today's roll kept healthy gateways on the prior tag, but the new payload (skills/migrations) never applied.
+- **Three-layer fix (defense-in-depth):**
+  1. **`platform/vps/bootstrap.sh` §7 (new):** `mkdir -p "$OC_INSTALL_LOG_DIR"` + `LOG_FILE=...` + `exec 1> >(tee -a "$LOG_FILE") 2>&1`, mirroring `platform/mac/bootstrap.sh` §4 but rooted at the VPS `/data/.openclaw/logs/install` so logs survive a container restart.
+  2. **`install.sh` inline VPS curl-fallback branch:** the fallback used when no local repo clone exists (running straight from `curl | bash`) also missed `LOG_FILE` for VPS while the mac fallback branch set it — now mirrored there too.
+  3. **`install.sh` main header:** `note "Log file: ${LOG_FILE:-(not set — check platform bootstrap)}"` — a `${LOG_FILE:-}` guard so the header can never abort under `set -u` again even if a future path forgets to set it.
+- **Verification:** `bash -n` clean on both edited files; isolated `set -uo pipefail` sourcing test of `platform/vps/bootstrap.sh` sets `LOG_FILE` to a real `/data/.openclaw/logs/install/...log` path with no unbound-variable abort; same test passes for the `install.sh` inline VPS fallback branch.
+- **Per-box deploy note (NOT a repo code change):** one VPS box (the Step-4 ecosystem extractor) needs an in-container archive tool — install `unzip` (or `bsdtar`) in that container before re-rolling, otherwise the Step-4 extractor cannot unpack its payload. This is a per-box deploy prerequisite, tracked here for the operator running the re-roll.
+- **Re-roll readiness:** with v13.8.3 on `main`, the 9 VPS boxes blocked by the `LOG_FILE` abort can be re-rolled and the payload (skills + `extension_registry` sidecar migration) will now apply.
+
 ## v13.8.2 — 2026-06-22 — feat(full-funnel): executable funnel_rollback + offline P0→P5 evidence harness + 11 per-rubric scorecards + converge Step-4 crash fix + CI gate
 
 QC follow-up on #196. v13.8.0 shipped the full-funnel ORG WIRING (SOP-07 + persona-grounded SOPs + Kanban schema) but the acceptance bar also demanded an EVIDENCED end-to-end build, executable rollback, per-rubric scorecards, and CI coverage — none of which existed. This release adds the enforcement + evidence layer. No change to the v13.8.0 routing/gating contract or the role/SOP libraries.
