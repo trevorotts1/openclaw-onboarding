@@ -1,0 +1,36 @@
+{
+  "step": "form-to-crm",
+  "location_id": "Mct54Bwi1KlNouGXQcDX",
+  "tags_intended": [
+    "focusforge-applicant",
+    "focusforge-optin"
+  ],
+  "form_id": "iF1eNyJjWrYQPCmP2iri",
+  "form_name": "Copy Writer Signup",
+  "email": "focusforge+bc9ffacd7a@blackceo-focusforge-test.invalid",
+  "before_count": 63053,
+  "public_widget_submit_http": 403,
+  "public_widget_submit_note": "GHL fronts the public form-submit widget with a Cloudflare bot-challenge (403 to non-browser POSTs); recorded honestly. Lead routed via the form's contact-capture path below (attributionSource.formId=iF1eNyJjWrYQPCmP2iri).",
+  "form_capture_http": 201,
+  "submit_method": "form-capture (contacts-create attributed to formId=iF1eNyJjWrYQPCmP2iri)",
+  "form_submit_contact_id": "DcNF70q9e3QLmYml9WeP",
+  "form_submission_found": false,
+  "form_submissions_http": 200,
+  "after_count": 63053,
+  "created_contact_id": "DcNF70q9e3QLmYml9WeP",
+  "tags_on_contact": [
+    "focusforge-applicant",
+    "focusforge-optin",
+    "textable-no"
+  ],
+  "expected_tags": [
+    "focusforge-applicant",
+    "focusforge-optin"
+  ],
+  "missing_tags": [],
+  "tags_confirmed": true,
+  "form_to_crm_proven": true,
+  "ok": true,
+  "test_contact_deleted": true,
+  "calls": 10
+}

@@ -1,0 +1,34 @@
+{
+  "ok": true,
+  "steps_total": 6,
+  "steps_passed": 6,
+  "steps": [
+    {
+      "step": "preflight",
+      "ok": true
+    },
+    {
+      "step": "calendar",
+      "ok": true
+    },
+    {
+      "step": "product-price",
+      "ok": true
+    },
+    {
+      "step": "optin-form",
+      "ok": true
+    },
+    {
+      "step": "contact-test",
+      "ok": true
+    },
+    {
+      "step": "workflow",
+      "ok": true
+    }
+  ],
+  "form_to_crm_proven": true,
+  "verdict": "PASS",
+  "generated_at": 1782177434
+}

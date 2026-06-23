@@ -4,6 +4,62 @@
     "sales",
     "thankyou"
   ],
+  "pages": [
+    {
+      "page": "optin",
+      "page_id": "optin",
+      "slug": "scent-bar-optin",
+      "pageType": "draft",
+      "version": 2,
+      "draft_marker": "DRAFT-PREVIEW-DO-NOT-PUBLISH",
+      "has_real_img": true,
+      "img_src": "https://cdn.example/hero.png",
+      "autosave_http": 201,
+      "content_url_http": 200,
+      "preview_http": 200,
+      "marker_in_saved_blob": true,
+      "img_in_saved_blob": true,
+      "preview_marker_found": true,
+      "gate3_verbatim_copy_match": true,
+      "ok": true
+    },
+    {
+      "page": "sales",
+      "page_id": "sales",
+      "slug": "scent-bar-sales",
+      "pageType": "draft",
+      "version": 2,
+      "draft_marker": "DRAFT-PREVIEW-DO-NOT-PUBLISH",
+      "has_real_img": true,
+      "img_src": "https://cdn.example/hero.png",
+      "autosave_http": 201,
+      "content_url_http": 200,
+      "preview_http": 200,
+      "marker_in_saved_blob": true,
+      "img_in_saved_blob": true,
+      "preview_marker_found": true,
+      "gate3_verbatim_copy_match": true,
+      "ok": true
+    },
+    {
+      "page": "thankyou",
+      "page_id": "thankyou",
+      "slug": "scent-bar-thankyou",
+      "pageType": "draft",
+      "version": 2,
+      "draft_marker": "DRAFT-PREVIEW-DO-NOT-PUBLISH",
+      "has_real_img": true,
+      "img_src": "https://cdn.example/hero.png",
+      "autosave_http": 201,
+      "content_url_http": 200,
+      "preview_http": 200,
+      "marker_in_saved_blob": true,
+      "img_in_saved_blob": true,
+      "preview_marker_found": true,
+      "gate3_verbatim_copy_match": true,
+      "ok": true
+    }
+  ],
   "optin_form_ids": [
     "form-optin-1"
   ],

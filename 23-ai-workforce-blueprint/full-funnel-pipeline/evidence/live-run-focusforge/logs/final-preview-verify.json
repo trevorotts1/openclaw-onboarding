@@ -1,0 +1,29 @@
+[
+  {
+    "step": "optin",
+    "page_id": "x4EMI2HOvJ082BydvNlc",
+    "preview_url": "https://firebasestorage.googleapis.com/v0/b/highlevel-backend.appspot.com/o/funnel%2FhjkonQAM9UiLoNuY1src%2Fpage%2Fx4EMI2HOvJ082BydvNlc%2Fpage-data-046eb962-1594-4a27-85ca-02d747a6fd7a?alt=media&token=<redacted>",
+    "marker": "zhc-ff-optin-91dd3306",
+    "http_code": 200,
+    "marker_in_preview": true,
+    "PASS": true
+  },
+  {
+    "step": "sales",
+    "page_id": "CBEjKjyzcOHrpsLT9Gyq",
+    "preview_url": "https://firebasestorage.googleapis.com/v0/b/highlevel-backend.appspot.com/o/funnel%2FhjkonQAM9UiLoNuY1src%2Fpage%2FCBEjKjyzcOHrpsLT9Gyq%2Fpage-data-6819f355-5dde-4bad-8710-d21bd2f17e7f?alt=media&token=<redacted>",
+    "marker": "zhc-ff-sales-bc1f9bf8",
+    "http_code": 200,
+    "marker_in_preview": true,
+    "PASS": true
+  },
+  {
+    "step": "thankyou",
+    "page_id": "dgQNH9dgFruuS3rLfQIS",
+    "preview_url": "https://firebasestorage.googleapis.com/v0/b/highlevel-backend.appspot.com/o/funnel%2FhjkonQAM9UiLoNuY1src%2Fpage%2FdgQNH9dgFruuS3rLfQIS%2Fpage-data-f0fbb9d9-7624-4479-9b33-902990c9b8df?alt=media&token=<redacted>",
+    "marker": "zhc-ff-thankyou-6fe77dd9",
+    "http_code": 200,
+    "marker_in_preview": true,
+    "PASS": true
+  }
+]

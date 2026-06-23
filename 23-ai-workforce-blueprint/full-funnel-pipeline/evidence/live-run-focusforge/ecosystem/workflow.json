@@ -1,0 +1,16 @@
+{
+  "step": "workflow",
+  "ok": true,
+  "at": 1782177434,
+  "http_status": 201,
+  "workflow_id": "9e2fc727-af40-4492-a2ce-225b0e607e0c",
+  "triggers_count": 0,
+  "triggers_read_with_includeTriggers": true,
+  "request": {
+    "name": "ZHC FocusForge Applicant Nurture"
+  },
+  "note": "This bare workflow create (empty shell, no trigger/actions) was the original P5 receipt. The GENUINE WF-1..21 enumeration is produced against a FULLY-BUILT workflow (6 action steps + 1 contact_tag trigger) — see build_wf_and_qc.sh + ecosystem/wf-1-21-qc.json (21 WF items enumerated, 5 PASS / 0 FAIL, overall PASS) + ecosystem/wf-rubric-graded.json (8-dim weighted 9.3 >= 8.5) + ecosystem/wf-trigger-read.json (live includeTriggers read: triggers_count=1, type=contact_tag).",
+  "wf_1_21_enumeration": "ecosystem/wf-1-21-qc.json",
+  "wf_rubric_graded": "ecosystem/wf-rubric-graded.json",
+  "wf_trigger_read": "ecosystem/wf-trigger-read.json"
+}

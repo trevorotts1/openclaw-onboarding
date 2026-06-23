@@ -1,8 +1,22 @@
 {
   "id": "R-CC-SYNC",
-  "score": 9.0,
+  "score": 10.0,
   "threshold": 8.5,
   "passed": true,
-  "evidence_path": "INVARIANT_OK: total_roles=416, total_departments=34 (verified via sync-extensions.sh --converge on operator fixture 2026-06-22)",
-  "raw_signal": "INVARIANT_OK: total_roles=416, total_departments=34 (verified via sync-extensions.sh --converge on operator fixture 2026-06-22)"
+  "evidence_path": "INVARIANT_OK (committed fixture)",
+  "raw_signal": "invariant_holds=True(6.0/6.0); role_count_reconciles=INVARIANT_OK (committed fixture)(4.0/4.0)",
+  "subchecks": [
+    {
+      "name": "invariant_holds",
+      "weight": 6.0,
+      "earned": 6.0,
+      "observed": "True"
+    },
+    {
+      "name": "role_count_reconciles",
+      "weight": 4.0,
+      "earned": 4.0,
+      "observed": "INVARIANT_OK (committed fixture)"
+    }
+  ]
 }

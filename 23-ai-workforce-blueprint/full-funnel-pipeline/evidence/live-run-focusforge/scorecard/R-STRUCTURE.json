@@ -1,0 +1,34 @@
+{
+  "id": "R-STRUCTURE",
+  "score": 10.0,
+  "threshold": 8.5,
+  "passed": true,
+  "evidence_path": "evidence/live-run-focusforge/working/funnels/focusforge/funnel-spec.json",
+  "raw_signal": "pages_count=3(4.0/4.0); funnel_type_match=long-form sales(3.0/3.0); persona_grounded=True(2.0/2.0); offer_map_coherence=True(1.0/1.0)",
+  "subchecks": [
+    {
+      "name": "pages_count",
+      "weight": 4.0,
+      "earned": 4.0,
+      "observed": "3"
+    },
+    {
+      "name": "funnel_type_match",
+      "weight": 3.0,
+      "earned": 3.0,
+      "observed": "long-form sales"
+    },
+    {
+      "name": "persona_grounded",
+      "weight": 2.0,
+      "earned": 2.0,
+      "observed": "True"
+    },
+    {
+      "name": "offer_map_coherence",
+      "weight": 1.0,
+      "earned": 1.0,
+      "observed": "True"
+    }
+  ]
+}

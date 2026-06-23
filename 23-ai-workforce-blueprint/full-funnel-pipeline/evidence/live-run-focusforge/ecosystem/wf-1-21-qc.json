@@ -1,0 +1,48 @@
+{
+  "workflow_id": "17486457-001d-4d97-bca8-f90a0391bee6",
+  "publish_intent": "DRAFT",
+  "re_entry_decision": "ONCE",
+  "mechanical_pass": 5,
+  "mechanical_fail": 0,
+  "overall_mechanical": "PASS",
+  "items": {
+    "WF-3": {"status": "PASS", "observed": "trigger_found", "expected": "trigger present", "notes": "Trigger keyword found in export"},
+    "WF-4": {"status": "REQUIRES_HUMAN_REVIEW", "observed": "n/a", "expected": "n/a", "notes": "Trigger active state not visible in export — cannot machine-assert; requires human review per skill 36 for trigger-bucket state (MVP-deferred)"},
+    "WF-5": {"status": "REQUIRES_HUMAN_REVIEW", "observed": "n/a", "expected": "n/a", "notes": "Publish status not directly readable in export output — cannot machine-assert; requires human review"},
+    "WF-6": {"status": "PASS", "observed": "false", "expected": "false", "notes": "Re-entry setting matches client decision (ONCE)"},
+    "WF-7": {"status": "PASS", "observed": "5_action_nodes_present", "expected": ">=1 action nodes", "notes": "link_steps ordering verified by engine (caf builds apply link_steps before save)"},
+    "WF-12": {"status": "PASS", "observed": "all_1_sms_nodes_have_nonempty_from_number", "expected": "fromNumber key present + non-empty", "notes": "All 1 SMS node(s) carry a non-empty From-number"},
+    "WF-15": {"status": "PASS", "observed": "delivery_chain_links_present", "expected": "trigger->step->exit linkage present", "notes": "targetActionId/parentKey/nextStep link fields found — delivery chain wired"},
+    "WF-18": {"status": "N/A", "observed": "n/a", "expected": "n/a", "notes": "fresh-build: no prior snapshot exists for workflow 17486457-001d-4d97-bca8-f90a0391bee6 — reversibility is N/A for a first-time build. On a re-build this MUST be present."},
+    "WF-21": {"status": "N/A", "observed": "n/a", "expected": "n/a", "notes": "fresh-build: no snapshot on disk — N/A for a first-time build. caf workflows restore is not applicable until a snapshot is captured."},
+    "WF-1": {"status": "REQUIRES_HUMAN_REVIEW", "observed": "n/a", "expected": "n/a", "notes": "Workflow name must be verified against plan/outline by QC agent reading export output"},
+    "WF-2": {"status": "REQUIRES_HUMAN_REVIEW", "observed": "n/a", "expected": "n/a", "notes": "Tags must be verified by QC agent: check each tag in export against plan, GET-verify in GHL"},
+    "WF-8": {"status": "REQUIRES_HUMAN_REVIEW", "observed": "n/a", "expected": "n/a", "notes": "If/Else conditions (fields, operators, AND/OR logic) require QC agent review of export output"},
+    "WF-9": {"status": "REQUIRES_HUMAN_REVIEW", "observed": "n/a", "expected": "n/a", "notes": "Wait step durations require QC agent review of export output"},
+    "WF-10": {"status": "REQUIRES_HUMAN_REVIEW", "observed": "n/a", "expected": "n/a", "notes": "Custom fields (data type + exact name) require QC agent review of export output"},
+    "WF-11": {"status": "REQUIRES_HUMAN_REVIEW", "observed": "n/a", "expected": "n/a", "notes": "Custom values (non-empty + exact name) require QC agent review of export output"},
+    "WF-13": {"status": "REQUIRES_HUMAN_REVIEW", "observed": "n/a", "expected": "n/a", "notes": "Email From Name/From Email require QC agent review of export output"},
+    "WF-14": {"status": "REQUIRES_HUMAN_REVIEW", "observed": "n/a", "expected": "n/a", "notes": "Webhook URL/method/headers require QC agent review of export output"},
+    "WF-16": {"status": "REQUIRES_HUMAN_REVIEW", "observed": "n/a", "expected": "n/a", "notes": "Advanced settings (Stop-on-Response, time window, timezone) require QC agent review"},
+    "WF-17": {"status": "REQUIRES_HUMAN_REVIEW", "observed": "n/a", "expected": "n/a", "notes": "Edge case decisions require QC agent review against plan"},
+    "WF-19": {"status": "REQUIRES_HUMAN_REVIEW", "observed": "n/a", "expected": "n/a", "notes": "TRINITY completeness requires QC agent to check qc-trinity-registry.sh if conversational"},
+    "WF-20": {"status": "REQUIRES_HUMAN_REVIEW", "observed": "n/a", "expected": "n/a", "notes": "Hallucination detection (WF-20) requires QC agent to reconcile all build-agent claims against export"}
+  },
+  "rubric": {
+    "weighted_floor": 5.43,
+    "ship_threshold": 8.5,
+    "needs_human_grading": 6,
+    "lowest_dimension": "D8",
+    "note": "weighted_floor is the machine-knowable lower bound; the Step-9 QC sub-agent grades the human dimensions (D1/D4/D5/D6/D7/D8) 1/5/10 per references/workflow-quality-rubric.md and recomputes the final score. Ship only if final >= 8.5.",
+    "dimensions": {
+      "D1_goal_fit":       {"weight": 20, "score_floor": 5, "human_grade_required": true},
+      "D2_trigger":        {"weight": 15, "score": 5, "human_grade_required": false},
+      "D3_steps_ordering": {"weight": 15, "score": 10, "human_grade_required": false},
+      "D4_branching":      {"weight": 12, "score_floor": 5, "human_grade_required": true},
+      "D5_edge_cases":     {"weight": 12, "score_floor": 5, "human_grade_required": true},
+      "D6_deliverability": {"weight": 10, "score_floor": 5, "human_grade_required": true},
+      "D7_idempotency":    {"weight": 8,  "score_floor": 5, "human_grade_required": true},
+      "D8_naming":         {"weight": 8,  "score_floor": 1, "human_grade_required": true}
+    }
+  }
+}

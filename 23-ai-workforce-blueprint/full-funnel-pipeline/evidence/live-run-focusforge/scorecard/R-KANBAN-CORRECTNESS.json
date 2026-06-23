@@ -1,0 +1,28 @@
+{
+  "id": "R-KANBAN-CORRECTNESS",
+  "score": 10.0,
+  "threshold": 8.5,
+  "passed": true,
+  "evidence_path": "evidence/live-run-focusforge/kanban/board.json",
+  "raw_signal": "rollup_frac=3/3(4.0/4.0); summary_consistent=True(3.0/3.0); ordering_honored=True(3.0/3.0)",
+  "subchecks": [
+    {
+      "name": "rollup_frac",
+      "weight": 4.0,
+      "earned": 4.0,
+      "observed": "3/3"
+    },
+    {
+      "name": "summary_consistent",
+      "weight": 3.0,
+      "earned": 3.0,
+      "observed": "True"
+    },
+    {
+      "name": "ordering_honored",
+      "weight": 3.0,
+      "earned": 3.0,
+      "observed": "True"
+    }
+  ]
+}

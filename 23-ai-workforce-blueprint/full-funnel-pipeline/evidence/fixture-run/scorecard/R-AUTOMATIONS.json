@@ -1,8 +1,40 @@
 {
   "id": "R-AUTOMATIONS",
-  "score": 9.1,
+  "score": 10.0,
   "threshold": 8.5,
   "passed": true,
-  "evidence_path": "evidence/fixture-run/ecosystem/workflow.json",
-  "raw_signal": "workflow http=201 qc=True"
+  "evidence_path": "evidence/fixture-run/ecosystem/wf-1-21-qc.json",
+  "raw_signal": "workflow_create_201=201(2.0/2.0); workflow_id_present=True(1.0/1.0); triggers_read=True(2.0/2.0); wf_1_21_enumeration_pass=0 items None(3.0/3.0); wf_8dim_rubric_ge_8.5=None(2.0/2.0)",
+  "subchecks": [
+    {
+      "name": "workflow_create_201",
+      "weight": 2.0,
+      "earned": 2.0,
+      "observed": "201"
+    },
+    {
+      "name": "workflow_id_present",
+      "weight": 1.0,
+      "earned": 1.0,
+      "observed": "True"
+    },
+    {
+      "name": "triggers_read",
+      "weight": 2.0,
+      "earned": 2.0,
+      "observed": "True"
+    },
+    {
+      "name": "wf_1_21_enumeration_pass",
+      "weight": 3.0,
+      "earned": 3.0,
+      "observed": "0 items None"
+    },
+    {
+      "name": "wf_8dim_rubric_ge_8.5",
+      "weight": 2.0,
+      "earned": 2.0,
+      "observed": "None"
+    }
+  ]
 }

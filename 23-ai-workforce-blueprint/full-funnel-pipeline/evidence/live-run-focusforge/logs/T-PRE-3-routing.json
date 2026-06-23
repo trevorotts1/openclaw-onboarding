@@ -1,0 +1,20 @@
+{
+  "test": "T-PRE-3 (#195 routing widen + locking test)",
+  "web_development_dept_domain_tags": [
+    "marketing",
+    "sales",
+    "copywriting",
+    "strategy-innovation",
+    "operations"
+  ],
+  "widened": true,
+  "locking_test": "test-persona-selector.sh",
+  "locking_test_exit": 0,
+  "locking_assertions": {
+    "A4_category_filter": "PASS",
+    "A6_monotonic_funnel": "PASS",
+    "A7_web_dev_funnel_surface_tags": "PASS",
+    "A5_funnel_counts": "WARN (non-fatal)"
+  },
+  "overall": "SELECTOR FUNCTIONAL"
+}

@@ -1,0 +1,19 @@
+{
+  "claim": "The committed scorecards are GRADUATED (magnitude-computed), NOT a hardcoded constant.",
+  "scorer": "23-ai-workforce-blueprint/full-funnel-pipeline/funnel_rubrics.py (the SINGLE canonical scorer; score_rubrics.py in this tree is a thin adapter that calls it).",
+  "method": "Re-run the canonical funnel_rubrics.score_all against COPIES of THIS live FocusForge evidence tree with one sub-check's evidence degraded; observe the score change. A binary 'hi if ok else lo' card could only ever emit hi or lo — these intermediate, distinct values cannot be produced by a constant.",
+  "full_evidence_scores_all_10": true,
+  "cases": [
+    {"degradation": "1 of 3 pages preview_http=500", "rubric": "R-PAGES", "full_score": 10.0, "degraded_score": 8.67},
+    {"degradation": "email count 5 -> 2", "rubric": "R-EMAILS", "full_score": 10.0, "degraded_score": 8.2},
+    {"degradation": "contact loses FocusForge tags", "rubric": "R-FORMS", "full_score": 10.0, "degraded_score": 7.0},
+    {"degradation": "remove selector_ran marker", "rubric": "R-PERSONA-GROUNDING", "full_score": 10.0, "degraded_score": 5.0},
+    {"degradation": "drop wf-1-21-qc.json enumeration", "rubric": "R-AUTOMATIONS", "full_score": 10.0, "degraded_score": 7.0},
+    {"degradation": "drop funnel_type (load-bearing weight-3 sub-check -> hard_miss)", "rubric": "R-STRUCTURE", "full_score": 10.0, "degraded_score": 7.0, "degraded_passed": false}
+  ],
+  "distinct_degraded_scores": [5.0, 7.0, 8.2, 8.67],
+  "all_degraded_below_full": true,
+  "none_is_a_fixed_constant": true,
+  "hard_miss_gate": "A sub-check with weight >= 3.0 that earns 0 fails the rubric outright (proven by the funnel_type drop: score 7.0 AND passed=false), so a missing load-bearing artifact cannot be averaged away into a pass.",
+  "also_locked_by_pytest": "23-ai-workforce-blueprint/full-funnel-pipeline/tests/test_full_funnel_pipeline.py::test_rubric_pages_is_graduated_not_constant / _emails_score_scales_with_email_count / _forms_partial_evidence_scores_between_0_and_10 / _scores_are_not_all_one_constant / _structure_hard_miss_on_funnel_type"
+}

@@ -1,0 +1,38 @@
+{
+  "product_name": "FocusForge",
+  "tagline": "A 90-day deep-work coaching program for builders who keep getting interrupted.",
+  "deliverables": [
+    "12 weekly 1:1 deep-work coaching calls (60 min each)",
+    "A personalized focus operating system (attention audit + weekly block plan)",
+    "Async accountability via a shared progress log with same-day reviews",
+    "The Deep-Work Field Manual (workbook + template pack)"
+  ],
+  "price_points": [
+    {
+      "name": "FocusForge 90-Day Program",
+      "amount_cents": 150000,
+      "currency": "USD",
+      "type": "one_time"
+    }
+  ],
+  "guarantee": "Ship a real 90-day focus transformation or get a full refund: complete the first 4 weeks, and if your tracked deep-work hours have not at least doubled, we refund every dollar.",
+  "bonuses": [
+    "Bonus 1: a notification-detox setup session (worth $300)",
+    "Bonus 2: lifetime access to the template pack updates",
+    "Bonus 3: one emergency re-focus call when a launch week goes sideways"
+  ],
+  "positioning": "The only coaching program that rebuilds your attention as an operating system instead of selling you another productivity app.",
+  "icp": "Founders, senior engineers, and solo operators doing high-stakes creative work who lose 2+ hours a day to context-switching and want a guaranteed system, not tips.",
+  "offer_value_architecture": {
+    "grounded_in": "hormozi-100m-offers",
+    "dream_outcome": "Double your tracked deep-work hours in 90 days with a repeatable system you keep forever.",
+    "perceived_likelihood_of_achievement": "Doubled-hours-or-refund guarantee + weekly 1:1 + same-day async review reduce the risk of not achieving it.",
+    "time_delay": "Compressed: first measurable win in week 1 (attention audit), the headline outcome promised by day 90.",
+    "effort_and_sacrifice": "Reduced: done-with-you blocks and templates remove the planning burden; the program installs the system for them.",
+    "value_equation_note": "Maximize (dream outcome x perceived likelihood) / (time delay x effort) per Hormozi's value equation; the guarantee is the likelihood lever, the templates are the effort lever."
+  },
+  "owner": "chief-sales-officer",
+  "stage": "p0-offer-spec",
+  "persona_grounding_owner": "funnel-strategist",
+  "note": "Per N3 single-owner rule: the CSO references the offer persona but does NOT write the hormozi-100m-offers selection-log entry; the Funnel Strategist (P1) owns it."
+}

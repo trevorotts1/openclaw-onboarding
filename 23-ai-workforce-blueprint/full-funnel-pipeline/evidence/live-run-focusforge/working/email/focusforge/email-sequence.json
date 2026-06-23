@@ -1,0 +1,49 @@
+{
+  "sequence_name": "FocusForge Applicant Nurture",
+  "based_on_offer": "FocusForge",
+  "status": "APPROVED",
+  "approved_by": "Marketing QC Specialist",
+  "self_approved": false,
+  "copy_persona": "hormozi-100m-offers",
+  "persona_selection_log": "working/funnels/focusforge/persona-selection-log.md",
+  "cadence_days": [0, 1, 3, 5, 7],
+  "downstream_handoff": "-> Automation Workflow Specialist (CRM) to DEPLOY the sequence via Skill 44",
+  "compliance": "CAN-SPAM: physical address + one-click unsubscribe required in footer [CLIENT TO SUPPLY mailing address].",
+  "emails": [
+    {
+      "day": 0,
+      "subject": "Your FocusForge application is in — here's what happens next",
+      "hook": "You just took the first step most people never do: you decided your attention is worth defending.",
+      "body_summary": "Confirm receipt, set the expectation of the doubled-hours-or-refund guarantee, invite them to book the intake call.",
+      "single_cta": "Book your intake call"
+    },
+    {
+      "day": 1,
+      "subject": "The real reason you lose 2 hours a day (it isn't willpower)",
+      "hook": "It's not that you're undisciplined. Your environment is built to interrupt you.",
+      "body_summary": "Reframe the problem as a system problem (Hormozi: lower effort/sacrifice in the value equation), preview the focus operating system.",
+      "single_cta": "See how FocusForge fixes it"
+    },
+    {
+      "day": 3,
+      "subject": "What 'double your deep-work hours' actually looks like",
+      "hook": "Week 1: an attention audit. Week 12: a focus system you keep forever.",
+      "body_summary": "Make the dream outcome concrete and the time-delay short (first win in week 1); restate the guarantee as risk-reversal.",
+      "single_cta": "Apply for FocusForge"
+    },
+    {
+      "day": 5,
+      "subject": "Why we put the entire risk on us",
+      "hook": "If your tracked deep-work hours don't at least double in the first 4 weeks, you pay nothing.",
+      "body_summary": "Lead with the outcome-based guarantee (Hormozi risk-reversal) to raise perceived likelihood of achievement.",
+      "single_cta": "Apply for FocusForge"
+    },
+    {
+      "day": 7,
+      "subject": "Last call before this cohort closes",
+      "hook": "The 1:1 format means seats are limited. This is the last email before we close intake.",
+      "body_summary": "Scarcity grounded in a real constraint (1:1 capacity), final CTA.",
+      "single_cta": "Apply for FocusForge"
+    }
+  ]
+}

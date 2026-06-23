@@ -1,8 +1,34 @@
 {
   "id": "R-EMAILS",
-  "score": 9.0,
+  "score": 10.0,
   "threshold": 8.5,
   "passed": true,
   "evidence_path": "evidence/fixture-run/working/email/scent-bar-workshop/email-sequence.json",
-  "raw_signal": "email status=APPROVED count=5"
+  "raw_signal": "approved=APPROVED(3.0/3.0); persona_grounded=True(2.0/2.0); email_count_frac=5(3.0/3.0); cadence_present=True(2.0/2.0)",
+  "subchecks": [
+    {
+      "name": "approved",
+      "weight": 3.0,
+      "earned": 3.0,
+      "observed": "APPROVED"
+    },
+    {
+      "name": "persona_grounded",
+      "weight": 2.0,
+      "earned": 2.0,
+      "observed": "True"
+    },
+    {
+      "name": "email_count_frac",
+      "weight": 3.0,
+      "earned": 3.0,
+      "observed": "5"
+    },
+    {
+      "name": "cadence_present",
+      "weight": 2.0,
+      "earned": 2.0,
+      "observed": "True"
+    }
+  ]
 }

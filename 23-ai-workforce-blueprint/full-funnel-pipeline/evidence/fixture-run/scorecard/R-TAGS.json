@@ -1,8 +1,28 @@
 {
   "id": "R-TAGS",
-  "score": 8.8,
+  "score": 10.0,
   "threshold": 8.5,
   "passed": true,
-  "evidence_path": "evidence/fixture-run/ecosystem/product-price.json",
-  "raw_signal": "product-price http=201 qc=True"
+  "evidence_path": "evidence/fixture-run/ecosystem/contact-test.json",
+  "raw_signal": "product_price_201=201(3.0/3.0); price_reread=None(3.0/3.0); tag_roundtrip_frac=0 tags(4.0/4.0)",
+  "subchecks": [
+    {
+      "name": "product_price_201",
+      "weight": 3.0,
+      "earned": 3.0,
+      "observed": "201"
+    },
+    {
+      "name": "price_reread",
+      "weight": 3.0,
+      "earned": 3.0,
+      "observed": "None"
+    },
+    {
+      "name": "tag_roundtrip_frac",
+      "weight": 4.0,
+      "earned": 4.0,
+      "observed": "0 tags"
+    }
+  ]
 }

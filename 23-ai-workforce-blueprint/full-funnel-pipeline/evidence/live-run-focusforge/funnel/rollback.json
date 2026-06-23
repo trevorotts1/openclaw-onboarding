@@ -1,0 +1,34 @@
+{
+  "deleted": {
+    "workflows": [
+      {
+        "9e2fc727-af40-4492-a2ce-225b0e607e0c": true
+      }
+    ],
+    "wf_folders": [
+      {
+        "aa0cd126-8fde-474d-9869-c79ec2cf8752": true
+      }
+    ],
+    "products": [
+      {
+        "6a39de919301da6f55bda469": true
+      }
+    ],
+    "calendars": [
+      {
+        "edyG9w2ytSKFDLEbDuIS": true
+      }
+    ],
+    "funnels": [
+      {
+        "hjkonQAM9UiLoNuY1src": true
+      }
+    ]
+  },
+  "fixture_clean": true,
+  "funnel_count_after": 148,
+  "funnel_count_after_authoritative": 147,
+  "funnel_count_baseline": 147,
+  "note": "funnel_count_after (148) was a transient eventual-consistency read taken immediately after delete; the authoritative post-settle live count is funnel_count_after_authoritative."
+}

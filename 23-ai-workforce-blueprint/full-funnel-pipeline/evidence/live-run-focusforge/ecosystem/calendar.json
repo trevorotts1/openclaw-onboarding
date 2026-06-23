@@ -1,0 +1,16 @@
+{
+  "step": "calendar",
+  "ok": true,
+  "at": 1782177425,
+  "http_status": 201,
+  "calendar_id": "edyG9w2ytSKFDLEbDuIS",
+  "name": "ZHC FocusForge Intake Call",
+  "request": {
+    "locationId": "Mct54Bwi1KlNouGXQcDX",
+    "name": "ZHC FocusForge Intake Call",
+    "slotDuration": 30,
+    "slotInterval": 30,
+    "timezone": "America/New_York"
+  },
+  "reread_http_status": 200
+}

@@ -1,0 +1,7 @@
+{
+  "rows": 590,
+  "provider": "gemini",
+  "model": "gemini-embedding-2",
+  "dim": 3072,
+  "note": "offline fixture row count; live rebuild asserted by T-PRE-1"
+}

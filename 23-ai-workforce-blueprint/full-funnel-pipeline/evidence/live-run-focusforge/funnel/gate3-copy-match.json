@@ -1,0 +1,40 @@
+{
+  "verbatim_match": true,
+  "method": "per-page verbatim cross-reference: each installed page's gate3_verbatim_copy_match (build-result.json) is paired with the exact copy.md slot text that page renders. The load-bearing per-page proof is build-result.json pages[].gate3_verbatim_copy_match + marker_in_saved_blob (saved-blob content fetch HTTP 200).",
+  "per_page": [
+    {
+      "page": "optin",
+      "gate3_verbatim_copy_match": true,
+      "marker_in_saved_blob": true,
+      "copy_slots_from_copy_md": [
+        "headline",
+        "subhead",
+        "cta"
+      ],
+      "headline_or_hero_verbatim": "Get 2 Hours of Real Deep Work Back \u2014 Every Single Day."
+    },
+    {
+      "page": "sales",
+      "gate3_verbatim_copy_match": true,
+      "marker_in_saved_blob": true,
+      "copy_slots_from_copy_md": [
+        "hero",
+        "stack",
+        "guarantee",
+        "cta"
+      ],
+      "headline_or_hero_verbatim": "You don't need another productivity app. You need your focus back. FocusForge installs a 90-day deep-work operating syst"
+    },
+    {
+      "page": "thankyou",
+      "gate3_verbatim_copy_match": true,
+      "marker_in_saved_blob": true,
+      "copy_slots_from_copy_md": [
+        "confirm"
+      ],
+      "headline_or_hero_verbatim": "You're in. Watch your inbox \u2014 your FocusForge intake and first deep-work block plan are on the way. - Message-match: her"
+    }
+  ],
+  "source_copy_md": "working/copy/focusforge/copy.md",
+  "authoritative_proof": "funnel/build-result.json pages[].gate3_verbatim_copy_match + marker_in_saved_blob"
+}

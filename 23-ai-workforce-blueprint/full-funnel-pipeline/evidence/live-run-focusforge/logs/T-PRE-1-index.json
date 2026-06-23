@@ -1,0 +1,28 @@
+{
+  "test": "T-PRE-1 (index rebuild-then-assert)",
+  "db_path": "<OPERATOR_WORKSPACE>/data/coaching-personas/gemini-index.sqlite",
+  "rows": 590,
+  "distinct_persona_files": 11,
+  "schema_cols": [
+    "id",
+    "file_path",
+    "chunk_index",
+    "content",
+    "vector",
+    "last_updated",
+    "provider",
+    "model",
+    "dim"
+  ],
+  "has_provider_model_dim": true,
+  "distinct_provider_model_dim": [
+    [
+      "gemini",
+      "gemini-embedding-2",
+      3072
+    ]
+  ],
+  "rows_all_gemini_emb2_3072": 590,
+  "every_row_correct": true,
+  "note": "rebuilt against <OPERATOR_DOWNLOADS>/openclaw-master-files/coaching-personas/personas (41 personas); pinned model gemini-embedding-2 @ dim 3072 per shared-utils/embedding_engine.py. A second full rebuild was launched to index all 41 files; this snapshot reflects the live DB."
+}
