@@ -656,28 +656,88 @@ def _canonical_decline_set(build_state):
     """
     Return the set of canonical IDs the client EXPLICITLY declined.
 
-    EXPLICIT-DECLINE MODEL (v10.15.26 / v10.16.25): the ONLY sanctioned way for a
-    workforce to land below the mandatory floor (21 in v2.5.0) is a RECORDED
-    explicit decline.
-    Two equivalent recordings are honored (and kept in sync with the on-disk
-    enforcer department-floor.py.declined_set()):
-      1. build_state["canonicalReconciliation"]["decisions"][cid] == "no"
-         (the per-dept yes/no map written at interview/reconcile time)
-      2. build_state["declinedDepartments"] = [cid, ...]
-         (a flat list the interview/config may set directly)
-    Anything else (absent, "yes", null) means the canonical dept STAYS - there is
-    no implicit/silent way to drop a mandatory department.
+    PROVENANCE-GATED DECLINE MODEL (v10.16.26+):
+    A decline MUST carry an explicit, attributable owner-decision record.
+    The default is NO decline — any decline without provenance is IGNORED and
+    emits a loud stderr warning so it surfaces in logs and the prover output.
+
+    Accepted forms (either is sufficient):
+      1. build_state["canonicalReconciliation"]["decisions"][cid] is the OBJECT
+         form {decision: "no", source: "owner-interview"|"owner-explicit",
+         decidedAt: <iso>, decidedBy: <id>} — all four fields required.
+      2. build_state["canonicalReconciliation"]["ownerDeclineConfirmed"] == True
+         (an operator-level gate that marks the entire block as owner-confirmed)
+         combined with decisions[cid] == "no" (string form also accepted when
+         the block-level flag is present, for backward compatibility).
+      3. build_state["declinedDepartments"] entries are IGNORED unless accompanied
+         by build_state["canonicalReconciliation"]["ownerDeclineConfirmed"] == True.
+
+    BACKWARD COMPATIBILITY: bare string "no" without ownerDeclineConfirmed AND
+    bare declinedDepartments[] without ownerDeclineConfirmed are REJECTED with
+    a warning. This closes the fabrication vector: any actor that drops a bare
+    string into decisions[cid]='no' or declinedDepartments[] without the
+    owner-confirmed gate can no longer shrink the floor silently.
+
+    WHY: a discovered fleet floor flag revealed that a build-state-level fabricated
+    canonicalReconciliation block (declinedDepartments / intentionalScope
+    written ad hoc by the closeout/finisher agent) silently shrank the floor
+    because this reader imposed ZERO provenance requirement. Fix: fail-safe to
+    the LARGER floor when provenance is absent.
     """
     declined = set()
     bs = build_state or {}
     recon = bs.get("canonicalReconciliation", {})
+    if not isinstance(recon, dict):
+        recon = {}
+
+    # Check the block-level owner-confirmed gate (backward-compat fast path).
+    owner_confirmed = bool(recon.get("ownerDeclineConfirmed"))
+
     decisions = recon.get("decisions", {}) if isinstance(recon, dict) else {}
     if isinstance(decisions, dict):
         for cid, decision in decisions.items():
-            if str(decision).strip().lower() == "no":
-                declined.add(cid)
-    for cid in (bs.get("declinedDepartments", []) or []):
-        declined.add(str(cid).strip())
+            _cid = str(cid).strip()
+            if isinstance(decision, dict):
+                # Full provenance form: requires decision/source/decidedAt/decidedBy.
+                required = ("decision", "source", "decidedAt", "decidedBy")
+                has_provenance = all(decision.get(k) for k in required)
+                if decision.get("decision", "").strip().lower() == "no":
+                    if has_provenance:
+                        declined.add(_cid)
+                    else:
+                        print(
+                            f"[DECLINE REJECTED] '{_cid}' decisions entry is missing provenance "
+                            f"fields (need decision/source/decidedAt/decidedBy). "
+                            f"Decline IGNORED — dept stays in floor (fail-safe). "
+                            f"Provide owner-interview attribution to honor this decline.",
+                            file=sys.stderr)
+            elif str(decision).strip().lower() == "no":
+                # Bare string "no" — only honored when block is owner-confirmed.
+                if owner_confirmed:
+                    declined.add(_cid)
+                else:
+                    print(
+                        f"[DECLINE REJECTED] '{_cid}' has bare string decision='no' without "
+                        f"ownerDeclineConfirmed=true on the canonicalReconciliation block. "
+                        f"Decline IGNORED — dept stays in floor (fail-safe). "
+                        f"Set ownerDeclineConfirmed=true or use object-form provenance.",
+                        file=sys.stderr)
+
+    # declinedDepartments[] flat list: only honored with block-level owner gate.
+    flat_list = bs.get("declinedDepartments", []) or []
+    if flat_list:
+        if owner_confirmed:
+            for cid in flat_list:
+                declined.add(str(cid).strip())
+        else:
+            print(
+                f"[DECLINE REJECTED] declinedDepartments[] has {len(flat_list)} entr(ies) "
+                f"but canonicalReconciliation.ownerDeclineConfirmed is not true. "
+                f"ALL entries IGNORED — depts stay in floor (fail-safe). "
+                f"Set ownerDeclineConfirmed=true on the canonicalReconciliation block "
+                f"to honor a flat decline list.",
+                file=sys.stderr)
+
     return declined
 
 
@@ -3480,36 +3540,70 @@ def _clean_role_slug(name):
 
 
 def _legacy_naive_slug(name):
-    """The EXACT pre-fix slug chain. Preserved verbatim so rosters that do NOT
-    carry an explicit **Slug:** produce byte-identical folder names to what
-    already-built clients have on disk (backward safety: never rename their
-    folders on a re-scan)."""
+    """The EXACT pre-fix slug chain. KEPT only as a reference; no longer called
+    by role_folder_basename (see _engine_slugify below). Callers that depended
+    on the naive behavior should migrate to _engine_slugify for prover alignment.
+    """
     s = str(name or "").lower()
     s = s.replace(' ', '-').replace('(', '').replace(')', '').replace('/', '-')
     s = s.replace('--', '-').strip('-')
     return s
 
 
+def _engine_slugify(name):
+    """
+    PROVER-ALIGNED slug function: identical algorithm to create_role_workspaces.slugify().
+
+    Replaces every non-alphanumeric character with a single dash and strips
+    leading/trailing dashes. This is the SINGLE SOURCE OF TRUTH for the
+    no-explicit-slug fallback, shared with floor-fill-driver.py via the engine.
+
+    Why this function (not _legacy_naive_slug):
+      _legacy_naive_slug keeps apostrophes, '&', '.', '()', causing folder names
+      the prover cannot reconcile (e.g. "Devil's Advocate" -> devil's-advocate
+      vs the manifest slug devils-advocate). _engine_slugify collapses every
+      non-alnum to a single dash, which matches what create_role_workspaces and
+      the role-library .md filenames produce.
+    """
+    s = str(name or "").lower().strip()
+    out = []
+    prev_dash = False
+    for ch in s:
+        if ch.isalnum():
+            out.append(ch)
+            prev_dash = False
+        elif not prev_dash:
+            out.append("-")
+            prev_dash = True
+    return "".join(out).strip("-")
+
+
 def role_folder_basename(role):
     """
     Canonical folder basename for a role: `NN-<slug>`.
 
-    Slug precedence (BACKWARD-SAFE):
-      1. explicit role['slug'] from the roster **Slug:** line (authoritative).
-         Passed through _clean_role_slug as a defensive guard so even an
-         explicit slug can never carry decorations — this is the recurrence
-         guard the fix requires for any future spec.
-      2. NO explicit slug -> the EXACT legacy naive slug of role['name'], so
-         existing clients (whose rosters predate **Slug:**) keep byte-identical
-         folder names on any future build/re-scan. New decorated rosters opt
-         into clean slugs by adding a **Slug:** line.
+    PROVER-ALIGNED SLUG PRECEDENCE (floor-fill-driver / create_role_workspaces parity):
+      1. Explicit role['slug'] from the roster **Slug:** line (authoritative).
+         Used VERBATIM — never passed through _clean_role_slug — so the folder
+         name is byte-identical to the role-library .md filename and the prover
+         floor-manifest slug. (Previously _clean_role_slug changed '.' -> '-',
+         causing 'ai-voice-specialist-11-labs-play.ht' to land on disk as
+         '...-play-ht' and fail the prover.)
+      2. NO explicit slug -> _engine_slugify(role['name']): collapses every
+         non-alnum to a single dash, stripping apostrophes, '&', '.', etc.
+         This matches what create_role_workspaces.slugify() and the engine
+         produce, so the prover can always reconcile the folder.
+         (Previously _legacy_naive_slug kept apostrophes and '&' verbatim,
+         yielding folders like "devil's-advocate-presentations" and
+         "subscription-&-recurring-..." that the prover could not reconcile.)
     Number is zero-padded to 2 digits.
     """
     explicit = (role.get('slug') or '').strip()
     if explicit:
-        slug = _clean_role_slug(explicit) or _clean_role_slug(role.get('name') or '')
+        # Use the canonical roster slug VERBATIM — single source of truth.
+        slug = explicit or _engine_slugify(role.get('name') or '')
     else:
-        slug = _legacy_naive_slug(role.get('name') or '')
+        slug = _engine_slugify(role.get('name') or '')
     num = role.get('number', 0)
     try:
         num = int(num)
@@ -4086,9 +4180,14 @@ This file adds role-specific filtering on top of the department pool.
         role_was_instantiated = (
             os.path.abspath(role_dir) in _LIBRARY_INSTANTIATED_ROLE_DIRS)
         for sop_filename in ([] if role_was_instantiated else role['sops']):
-            sop_path = os.path.join(role_dir, sop_filename)
+            # SANITIZE (fleet bugfix): SOP titles parsed from suggested-roles
+            # files can contain path-unsafe chars (e.g. '(McKinsey/HBR/IBISWorld/
+            # Statista)'); a raw '/' makes os.path.join nest into a non-existent
+            # subdir and crashes the whole build with FileNotFoundError. Flatten.
+            _safe_sop = sop_filename.replace(os.sep, '-').replace('/', '-').strip()
+            sop_path = os.path.join(role_dir, _safe_sop)
             if not os.path.isfile(sop_path):
-                sop_name = sop_filename.replace('.md', '').replace('-', ' ').title()
+                sop_name = _safe_sop.replace('.md', '').replace('-', ' ').title()
                 sop_content = f"""# {sop_name}
 
 **Role:** {role['name']}
