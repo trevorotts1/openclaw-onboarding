@@ -10,7 +10,7 @@
   /*
    * Workforce Org Chart - v10.X.9 "true-tree" rebuild.
    *
-   * Why this changed (Teresa Pelham 2026-05-27 asset-quality upgrade):
+   * Why this changed (asset-quality upgrade, 2026-05-27):
    *   The previous template rendered 4 flat cluster cards in a grid with a
    *   single 18px stub line under the CEO node. It read as a category grid,
    *   NOT an org chart - no visible reporting hierarchy. That capped the

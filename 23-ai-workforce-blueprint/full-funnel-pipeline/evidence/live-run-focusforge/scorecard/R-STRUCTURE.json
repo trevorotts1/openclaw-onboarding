@@ -1,10 +1,10 @@
 {
   "id": "R-STRUCTURE",
-  "score": 10.0,
+  "score": 9.17,
   "threshold": 8.5,
   "passed": true,
-  "evidence_path": "evidence/live-run-focusforge/working/funnels/focusforge/funnel-spec.json",
-  "raw_signal": "pages_count=3(4.0/4.0); funnel_type_match=long-form sales(3.0/3.0); persona_grounded=True(2.0/2.0); offer_map_coherence=True(1.0/1.0)",
+  "evidence_path": "working/funnels/focusforge/funnel-spec.json",
+  "raw_signal": "pages_count=3(4.0/4.0); funnel_type_match=long-form sales(3.0/3.0); persona_grounded=True(2.0/2.0); offer_map_coherence=True(1.0/1.0); live_published_status=DRAFT-only (reversible)(1.0/2.0)",
   "subchecks": [
     {
       "name": "pages_count",
@@ -29,6 +29,12 @@
       "weight": 1.0,
       "earned": 1.0,
       "observed": "True"
+    },
+    {
+      "name": "live_published_status",
+      "weight": 2.0,
+      "earned": 1.0,
+      "observed": "DRAFT-only (reversible)"
     }
   ]
 }

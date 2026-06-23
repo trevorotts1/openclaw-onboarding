@@ -1,10 +1,10 @@
 {
   "id": "R-PERSONA-GROUNDING",
-  "score": 10.0,
+  "score": 8.2,
   "threshold": 8.5,
-  "passed": true,
-  "evidence_path": "evidence/live-run-focusforge/working/funnels/focusforge/persona-selection-log.md",
-  "raw_signal": "persona_named_surfaces=6/3 surfaces(5.0/5.0); selector_ran_marker=True(5.0/5.0)",
+  "passed": false,
+  "evidence_path": "working/funnels/focusforge/persona-selection-log.md",
+  "raw_signal": "persona_named_surfaces=6/3 surfaces(5.0/5.0); selector_grounding_strength=ran (DEGRADED: only task_fit live ~0.8; layers 1-4 neutral-0.6 floor -> layer-quality mean 0.64)(3.2/5.0)",
   "subchecks": [
     {
       "name": "persona_named_surfaces",
@@ -13,10 +13,10 @@
       "observed": "6/3 surfaces"
     },
     {
-      "name": "selector_ran_marker",
+      "name": "selector_grounding_strength",
       "weight": 5.0,
-      "earned": 5.0,
-      "observed": "True"
+      "earned": 3.2,
+      "observed": "ran (DEGRADED: only task_fit live ~0.8; layers 1-4 neutral-0.6 floor -> layer-quality mean 0.64)"
     }
   ]
 }

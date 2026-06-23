@@ -3,7 +3,7 @@
   "score": 10.0,
   "threshold": 8.5,
   "passed": true,
-  "evidence_path": "evidence/live-run-focusforge/kanban/board.json",
+  "evidence_path": "kanban/board.json",
   "raw_signal": "rollup_frac=3/3(4.0/4.0); summary_consistent=True(3.0/3.0); ordering_honored=True(3.0/3.0)",
   "subchecks": [
     {

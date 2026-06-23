@@ -1,10 +1,10 @@
 {
   "id": "R-PAGES",
-  "score": 10.0,
+  "score": 8.85,
   "threshold": 8.5,
   "passed": true,
-  "evidence_path": "evidence/live-run-focusforge/logs/final-preview-verify.json",
-  "raw_signal": "pages_http200_frac=3 pages(4.0/4.0); marker_in_blob_frac=per-page(2.0/2.0); real_img_frac=per-page(2.0/2.0); draft_version_frac=per-page(1.0/1.0); gate3_verbatim_frac=per-page(1.0/1.0)",
+  "evidence_path": "logs/final-preview-verify.json",
+  "raw_signal": "pages_http200_frac=3 pages(4.0/4.0); marker_in_blob_frac=per-page(2.0/2.0); real_img_frac=per-page(2.0/2.0); draft_version_frac=per-page(1.0/1.0); public_publish_frac=per-page publish status(1.5/3.0); gate3_verbatim_frac=per-page(1.0/1.0)",
   "subchecks": [
     {
       "name": "pages_http200_frac",
@@ -29,6 +29,12 @@
       "weight": 1.0,
       "earned": 1.0,
       "observed": "per-page"
+    },
+    {
+      "name": "public_publish_frac",
+      "weight": 3.0,
+      "earned": 1.5,
+      "observed": "per-page publish status"
     },
     {
       "name": "gate3_verbatim_frac",

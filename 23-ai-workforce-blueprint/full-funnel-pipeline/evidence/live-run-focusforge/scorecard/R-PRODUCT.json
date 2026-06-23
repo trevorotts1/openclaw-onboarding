@@ -3,7 +3,7 @@
   "score": 10.0,
   "threshold": 8.5,
   "passed": true,
-  "evidence_path": "evidence/live-run-focusforge/ecosystem/product-price.json",
+  "evidence_path": "ecosystem/product-price.json",
   "raw_signal": "product_named=FocusForge(3.0/3.0); price_point_present=1(3.0/3.0); amount_positive_cents=150000(4.0/4.0)",
   "subchecks": [
     {
