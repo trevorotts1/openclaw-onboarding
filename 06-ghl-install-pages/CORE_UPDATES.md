@@ -3,9 +3,10 @@
 Update ONLY the files listed below. Use the EXACT text provided.
 Do not update files marked NO UPDATE NEEDED.
 
-Doctrine sentinels (BOTH MUST appear verbatim in AGENTS.md + TOOLS.md after applying):
+Doctrine sentinels (ALL MUST appear verbatim in AGENTS.md + TOOLS.md after applying):
 `GHL-AUTH-DOCTRINE: TOKEN-ONLY (D7) — refresh-token seed is the only auth path; NO auto UI-login / password / 2FA`
 `GHL-AUTH-DOCTRINE: TIER-2 EMAIL-2FA FALLBACK — gated (auth+gmail-proven+email-2fa+creds), bounded, self-heals to TOKEN-ONLY`
+`SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown, reaper backstop`
 
 Sentinel: <!-- skill:06-ghl-install-pages:core-update-applied -->
 
@@ -19,6 +20,8 @@ Add:
 ## GHL Page Deployment [PRIORITY: HIGH]
 - Full guide: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/06-ghl-install-pages/ghl-browser-builder-full.md
 - Engine: agent-browser (PRIMARY, headless, isolated `--session <client>`); Playwright is FALLBACK only and uses launchPersistentContext (NEVER launch()).
+- SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown, reaper backstop.
+  Route EVERY agent-browser call through the single mandatory gateway tools/browser_manager.sh (`bash tools/browser_manager.sh ensure` then `... eval|open|snapshot ...`). NEVER invoke agent-browser directly, NEVER invent a per-iteration session name (that leaked 22 orphan ~/.agent-browser/*.engine descriptors, 357M). The gateway owns the ONE canonical session (bm_session_name = ghl-skill6-<location-id>), the box-wide lock (lock=1), the lease, the per-call + per-session TTL, the pool ceiling, the circuit-breaker (PARKS a flaky build after AB_BREAKER_MAX opens — loud STOP via Rescue Rangers, parked NOT re-fired), and a guaranteed `trap _bm_teardown EXIT`. The host reaper scripts/agent-browser-reaper.sh (*/10 cron) is the backstop for a hard crash (closes expired leases, doctor --fix, state clean, dead-descriptor sweep, scoped-Chromium tripwire — NEVER kills unrelated Chrome/Claude).
 - GHL-AUTH-DOCTRINE: TOKEN-ONLY (D7) — refresh-token seed is the only auth path; NO auto UI-login / password / 2FA.
   Funnel/website/page builds authenticate by minting a Firebase id_token from GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN, reconstructing the SPA session (Firebase IndexedDB record + the six SPA cookies), then navigating straight into the dashboard. NO login form is rendered, NO password is typed, two-factor is NEVER reached.
   HARD RULE: NEVER ask for, type, or fall back to a GHL login/email/password or a two-factor (2FA) prompt for a page build. On token failure (no token / revoked / seed does not log in) the builder STOPS and reports — it does NOT auto-open the Sign-in form. Re-grab a fresh refresh token via the Convert and Flow Token Grabber Chrome extension, then retry the seed.
@@ -39,6 +42,15 @@ Add:
 ## GHL Page Builder (Browser Automation)
 - Full guide: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/06-ghl-install-pages/ghl-browser-builder-full.md
 - Engine: agent-browser PRIMARY (headless, isolated `--session <client>`, never a personal browser); Playwright FALLBACK only (launchPersistentContext, never launch()).
+- SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown, reaper backstop.
+  THE single mandatory gateway is tools/browser_manager.sh (shell) + tools/browser_manager.py (the python emitter analogue). Use it for EVERY agent-browser call:
+  1. `bash tools/browser_manager.sh ensure` — circuit-breaker check → acquire the box-wide lock (flock if present, else atomic-mkdir; portable: flock is ABSENT on macOS) → write the lease → start the TTL self-kill timer → open the ONE canonical session → install `trap _bm_teardown EXIT INT TERM HUP`.
+  2. `bash tools/browser_manager.sh eval|open|snapshot|wait|find|fill -- <args>` — thin lock-asserting pass-throughs (force `--headed false`, per-call timeout).
+  3. `bash tools/browser_manager.sh run-detached -- <build-cmd>` — detach safely (the subtree owns lock+lease+TTL+trap, so detach-and-exit can never orphan).
+  4. `SESSION="$(bash tools/browser_manager.sh session-name)"` or `python3 tools/ghl_builder.py browser-session` — print the canonical name.
+  - The python emitters (ghl_builder.browser_cmd / ghl_rest_canvas.agent_browser_eval_cmd) REFUSE (exit 75) outside a `browser_manager.browser_session()` bracket, and every emitted plan ends with a mandatory close step (emit_teardown_step) so a detach-and-exit still tears down.
+  - ADVISORY config (openclaw.json `browser.agentBrowser`, deep-merged by install.sh): {maxSessions:1, idleReapMin:60, maxOpensPerHour:12, maxChromeProcs:3, sessionTtlSec:1800}. ADVISORY-ONLY — agent-browser ignores it natively; the REAL cap lives in the manager + reaper (env-overridable: AB_MAX_SESSIONS, AB_SESSION_TTL, AB_CALL_TIMEOUT, AB_BREAKER_MAX, AB_MAX_LIVE, AB_HARD_AGE_MIN, AB_PROC_HARD_AGE_MIN). browser.headless:true is untouched.
+  - Host reaper scripts/agent-browser-reaper.sh runs */10 (wired by ensure-pipeline-crons.sh): closes expired leases, runs `agent-browser doctor --fix` + `state clean --older-than`, sweeps dead *.engine descriptors, and tripwires Chromium UNDER the agent-browser/Playwright profile tree ONLY (AB_REAPER_PLAYWRIGHT_DIR for the Playwright profile) — it NEVER kills a bare chrome/Chrome/Claude process. Run as the box user, NEVER root.
 - GHL-AUTH-DOCTRINE: TOKEN-ONLY (D7) — refresh-token seed is the only auth path; NO auto UI-login / password / 2FA.
   How to authenticate a build:
   1. `python3 tools/seed-ghl-auth.py --print-seed --out /tmp/<sess>/seed.json` — mints a fresh Firebase id_token from GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN (env order: GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN → CAF_FIREBASE_REFRESH_TOKEN → GHL_FIREBASE_REFRESH_TOKEN) and emits the browser auth seed. NO password, NO 2FA.

@@ -30,6 +30,7 @@ if _TOOLS_DIR not in sys.path:
 
 import pytest
 
+import browser_manager  # SINGLETON POOLED BROWSER gateway (session bracket)
 import ghl_verify as gv
 
 
@@ -226,7 +227,8 @@ class TestVerifyAllOnePass:
 
 class TestScreenshotPlan:
     def test_emits_real_png_both_viewports(self, tmp_path):
-        steps = gv.screenshot_plan(str(tmp_path), [_page("home", url="u1")])
+        with browser_manager.browser_session("sess-fake"):
+            steps = gv.screenshot_plan(str(tmp_path), [_page("home", url="u1")])
         shots = [s for s in steps if s["kind"] == "screenshot"]
         # Desktop + mobile, both real .png (NOT .svg).
         assert {s["viewport"] for s in shots} == {"desktop", "mobile"}
@@ -238,7 +240,8 @@ class TestScreenshotPlan:
             assert s["argv"][s["argv"].index("--headed") + 1] == "false"
 
     def test_emits_fetched_dom_capture(self, tmp_path):
-        steps = gv.screenshot_plan(str(tmp_path), [_page("home", url="u1")])
+        with browser_manager.browser_session("sess-fake"):
+            steps = gv.screenshot_plan(str(tmp_path), [_page("home", url="u1")])
         doms = [s for s in steps if s["kind"] == "dom"]
         assert len(doms) == 1
         assert doms[0]["out"].endswith("home-preview.html")

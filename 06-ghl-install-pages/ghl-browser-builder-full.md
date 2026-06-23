@@ -113,24 +113,39 @@ eval-steps INSIDE the seeded agent-browser:
   **IndexedDB**; `--state <file>` loads a saved auth state; `eval --stdin` writes
   IndexedDB directly; `--headers` sets the `token-id` header.
 
+**SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown, reaper backstop.**
+Route EVERY agent-browser call through the single mandatory
+gateway `tools/browser_manager.sh` — NEVER invoke `agent-browser` (or a raw
+per-call `AB --session`) directly, and NEVER invent a per-iteration session name
+(that is exactly what leaked 22 orphan `~/.agent-browser/*.engine` descriptors,
+357M, on the operator box). The gateway owns the ONE canonical session
+(`bm_session_name` = `ghl-skill6-<location-id>`), the box-wide lock (lock=1), the
+lease, the per-call + per-session TTL, the pool ceiling, the circuit-breaker, and
+a GUARANTEED `trap _bm_teardown EXIT` (close + state clear). The host reaper
+(`scripts/agent-browser-reaper.sh`, */10 cron) is the backstop for a hard crash.
+
 Core commands (full surface in `agent-browser skills get core --full`).
-**Note the `--headed false` on EVERY line (D6) — it is mandatory, not optional:**
+**Note the `--headed false` on EVERY line (D6) — it is mandatory, not optional —
+and route them through the gateway:**
 ```
-unset AGENT_BROWSER_HEADED          # D6: strip any inherited headed signal first
-agent-browser --headed false --session <c> open <url>
-agent-browser --headed false --session <c> snapshot -i              # interactive refs only
-agent-browser --headed false --session <c> snapshot -i --json       # machine-parseable refs
-agent-browser --headed false --session <c> find role button name "Sign in" click
-agent-browser --headed false --session <c> fill @e1 "text"
-agent-browser --headed false --session <c> wait "<text>"            # poll for a node (NOT fixed sleep)
-agent-browser --headed false --session <c> eval --stdin             # write IndexedDB / set editor value
-agent-browser --headed false --session <c> state save ./auth.json   # persist a logged-in session
-agent-browser --headed false --session <c> --state ./auth.json open <url>
-agent-browser --headed false --session <c> screenshot out.png
+# 1. one canonical session, lock+lease+TTL+teardown-trap acquired here:
+bash tools/browser_manager.sh ensure
+# 2. then every verb goes through the gateway (it asserts the lock + forces
+#    --headed false; the EXIT trap guarantees teardown even on a non-zero abort):
+bash tools/browser_manager.sh open -- <url>
+bash tools/browser_manager.sh snapshot -- -i              # interactive refs only
+bash tools/browser_manager.sh snapshot -- -i --json       # machine-parseable refs
+bash tools/browser_manager.sh find -- role button name "Sign in" click
+bash tools/browser_manager.sh fill -- @e1 "text"
+bash tools/browser_manager.sh wait -- "<text>"            # poll for a node (NOT fixed sleep)
+bash tools/browser_manager.sh eval -- --stdin             # write IndexedDB / set editor value
 ```
-Or emit any of these headless-forced via `python3 tools/ghl_builder.py browser-cmd
---session <c> snapshot -i` (prepends `--headed false`; refuses with exit 75 if the
-env would force headed).
+Print the canonical session name for a shell caller via
+`SESSION="$(bash tools/browser_manager.sh session-name)"` (or
+`python3 tools/ghl_builder.py browser-session`). Or emit a single headless-forced
+line via `python3 tools/ghl_builder.py browser-cmd --session <c> snapshot -i`
+(prepends `--headed false`; refuses with exit 75 if the env would force headed OR
+if no `browser_session()` is active).
 
 ### 1.2 FALLBACK: Playwright (self-hosted, scripted)
 Drop to a deterministic Playwright script ONLY for flows too fiddly for
@@ -139,7 +154,13 @@ set that agent-browser cannot reach). Use `launchPersistentContext()` (never
 `launch()`), own `user-data-dir`, **`headless=True` ALWAYS (D6 — never
 `headless=False`, no exception)**, `--disable-blink-features=AutomationControlled`.
 Keep it a scripted escape hatch, NOT the default loop. The headless token seed
-(§2) removes the only old reason `headless=False` was ever considered.
+(§2) removes the only old reason `headless=False` was ever considered. **The
+SINGLETON POOLED BROWSER lifecycle covers Playwright too:** the reaper
+(`scripts/agent-browser-reaper.sh`) scopes its Chromium tripwire + leaked-proc
+kill to the Playwright `user-data-dir` (set `AB_REAPER_PLAYWRIGHT_DIR` to its
+profile path) as well as `~/.agent-browser`, and the circuit-breaker gates the
+build loop regardless of which engine drives it — so a Playwright escape hatch
+can never reopen the orphan path.
 
 Both engines may point at **Browserbase** as a remote CDP backend (`-p
 browserbase`) for fully detached/offloaded runs — that is the cloud tier, not a
@@ -155,9 +176,16 @@ different engine.
   front with a hard cap.
 
 ### 1.4 Silent / detached
-Headless, isolated `--session`. Long live-test runs fire DETACHED and the agent
-EXITS — resume via the per-page ledger (§5). Never hijack a screen, never
-babysit.
+Headless, ONE canonical `--session` (never a per-iteration name). Long live-test
+runs fire DETACHED THROUGH THE GATEWAY so the detached subtree OWNS the
+lock+lease+TTL+teardown-trap and a detach-and-exit can never orphan a browser:
+```
+bash tools/browser_manager.sh run-detached -- <build-cmd>
+```
+The agent then EXITS — resume via the per-page ledger (§5). The circuit-breaker
+PARKS a flaky build (qc-failed) after `AB_BREAKER_MAX` opens without a verified
+pass (loud STOP via Rescue Rangers, parked NOT re-fired); the */10 reaper sweeps
+any descriptor a hard crash still leaks. Never hijack a screen, never babysit.
 
 ---
 

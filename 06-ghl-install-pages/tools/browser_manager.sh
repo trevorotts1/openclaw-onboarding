@@ -1,0 +1,407 @@
+#!/usr/bin/env bash
+# browser_manager.sh — THE single mandatory gateway for every agent-browser
+# (Vercel Labs, 0.27.0) invocation in Skill 06. SINGLETON POOLED BROWSER — one
+# session, lock=1, TTL, guaranteed teardown, reaper backstop.
+#
+# WHY THIS EXISTS (verified live damage, operator box, 2026-06-23):
+#   22 orphan ~/.agent-browser/*.engine descriptors (357M, ZERO *.pid files) —
+#   the names show per-ITERATION sessions the agent invented on each retry
+#   (-diag / -diag2 / -clone / -clone2 / -clonefix / -fixprobe / -revcheck …).
+#   The 06 tools had ZERO teardown anywhere and a fresh session name per attempt,
+#   so every aborted build leaked a Chromium + its engine descriptor. This
+#   gateway kills BOTH root causes:
+#     (1) ONE deterministic canonical session per box (bm_session_name) — no more
+#         per-iteration multiplication.
+#     (2) GUARANTEED teardown via `trap _bm_teardown EXIT INT TERM HUP` — every
+#         non-zero abort (inject-ghl-auth.sh aborts at its lines 317/331/419/424)
+#         now ALWAYS closes the session + clears its state.
+#   Plus a true box-wide singleton LOCK (lock=1), a per-call + per-session
+#   TIMEOUT, a pool CEILING, and a CIRCUIT-BREAKER that PARKS a flaky build
+#   (loud STOP, never re-fired) — so an unbounded retry storm can never recur.
+#
+# PORTABILITY (decisive — fleet is half Macs): `flock` is ABSENT on macOS;
+#   `/usr/bin/shlock` is present. The lock is flock-if-present, else an
+#   atomic-mkdir fallback with a dead-PID stale-lock reclaim (mirrors how
+#   scripts/orphan-temp-sweep.sh handles BSD-vs-GNU `stat`). Liveness keys off
+#   PROCESS + descriptor mtime, NEVER a .pid file (there are none on the box).
+#
+# AUTH MODEL UNCHANGED: this gateway is purely a lifecycle wrapper. It does NOT
+#   touch the D7 token-only auth model and re-uses the D6 headless guard VERBATIM
+#   (the same unset+force AGENT_BROWSER_HEADED=false / exit-75 refusal / AB()
+#   wrapper that lived in inject-ghl-auth.sh lines 53-83).
+#
+# USAGE (callers source this, never invoke agent-browser directly):
+#   source "$(dirname "$0")/browser_manager.sh"
+#   SESSION="$(bm_session_name)"      # ONE canonical name per box
+#   bm_ensure                         # breaker-check → lock → lease → TTL → open → trap
+#   AB --session "$SESSION" eval ...  # thin, lock-asserting pass-through
+#   # teardown is automatic via the EXIT trap bm_ensure installed.
+#
+# VERBS (when run as a standalone command, e.g. via update-skills file set):
+#   bash browser_manager.sh ensure
+#   bash browser_manager.sh eval|open|snapshot|wait|find|fill -- <args...>
+#   bash browser_manager.sh run-detached -- <cmd...>
+#   bash browser_manager.sh teardown
+#   bash browser_manager.sh session-name
+#
+# Version marker (kept in sync by scripts/bump-version.sh):
+BROWSER_MANAGER_VERSION="v13.8.12"
+
+# Do NOT `set -e` at source time — sourcing into a caller that already set its
+# own options must not be clobbered. inject-ghl-auth.sh keeps its own
+# `set -euo pipefail`. We rely on explicit return-code checks here.
+
+# ── D6: HARD HEADLESS GUARD (VERBATIM from inject-ghl-auth.sh lines 53-83) ─────
+# HEADLESS-ONLY — never open a visible window; taking over a screen is forbidden
+# (esp. client boxes). agent-browser is headless by default, but an inherited
+# AGENT_BROWSER_HEADED env var OR a {"headed": true} config file silently forces
+# a headed window. We close that door three ways, on EVERY invocation:
+#   1. Strip the inherited env   -> unset AGENT_BROWSER_HEADED
+#   2. Force headless on the CLI -> AB() appends `--headed false`
+#   3. Refuse to proceed if headed could still be on (case-refuse, exit 75).
+unset AGENT_BROWSER_HEADED 2>/dev/null || true
+export AGENT_BROWSER_HEADED=false   # belt: any child that re-reads env sees false
+
+# Resolve AB_BIN HERE (the concept moved from inject-ghl-auth.sh line 73 so there
+# is one source of truth for the binary path across every 06 caller).
+AB_BIN="$(command -v agent-browser || echo "$HOME/.npm-global/bin/agent-browser")"
+
+case "${AGENT_BROWSER_HEADED:-false}" in
+  ""|0|false|False|FALSE|no|off) : ;;  # headless — OK
+  *) echo "REFUSE: AGENT_BROWSER_HEADED='${AGENT_BROWSER_HEADED}' would open a VISIBLE window. Headless is mandatory (D6). Aborting." >&2; exit 75 ;;
+esac
+
+# ── Tunables (env-overridable; advisory defaults mirror openclaw.json
+#    browser.agentBrowser — that config is ADVISORY-ONLY, agent-browser ignores
+#    it natively, so the REAL cap lives here in the manager + the reaper). ──────
+AB_LOCK_WAIT="${AB_LOCK_WAIT:-900}"          # flock -w seconds
+AB_SESSION_TTL="${AB_SESSION_TTL:-1800}"     # whole-phase wall (s); self-kill timer
+AB_CALL_TIMEOUT="${AB_CALL_TIMEOUT:-90}"     # per-call wall (s)
+AB_MAX_SESSIONS="${AB_MAX_SESSIONS:-1}"      # pool ceiling (matches the lock)
+AB_BREAKER_WINDOW="${AB_BREAKER_WINDOW:-7200}"   # rolling window (s)
+AB_BREAKER_MAX="${AB_BREAKER_MAX:-6}"        # opens-without-pass before trip
+AB_MAX_OPENS_PER_HOUR="${AB_MAX_OPENS_PER_HOUR:-12}"  # advisory upper bound
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+LOCKDIR="${TMPDIR:-/tmp}/agent-browser"
+mkdir -p "$LOCKDIR" 2>/dev/null || true
+chmod 700 "$LOCKDIR" 2>/dev/null || true
+mkdir -p "$LOCKDIR/leases" "$LOCKDIR/breaker" 2>/dev/null || true
+
+# Stable box id (host + the agent-browser engine root) for lease provenance.
+_bm_box_id() { printf '%s' "$(hostname 2>/dev/null || echo box):$HOME"; }
+
+# Canonical session name: ONE per box, deterministic, sanitized [a-z0-9-].
+# This is THE fix for the 22-distinct-name root cause. Any non-canonical session
+# is REFUSED (exit 64) unless AB_SESSION_OVERRIDE=1 (recorded in the lease so the
+# reaper can see overrides).
+bm_session_name() {
+  local raw="ghl-skill6-${GHL_LOCATION_ID:-${CLIENT_SLUG:-default}}"
+  # Lowercase + collapse anything outside [a-z0-9-] to '-', trim repeats/edges.
+  printf '%s' "$raw" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -e 's/[^a-z0-9-]/-/g' -e 's/-\{2,\}/-/g' -e 's/^-//' -e 's/-$//'
+}
+
+# Assert a caller-supplied session matches the canonical name (else exit 64).
+# Honors AB_SESSION_OVERRIDE=1 and records the override flag for the lease.
+_BM_OVERRIDE=0
+bm_assert_session() {
+  local want canonical
+  want="$1"
+  canonical="$(bm_session_name)"
+  if [ "$want" = "$canonical" ]; then
+    _BM_OVERRIDE=0
+    return 0
+  fi
+  if [ "${AB_SESSION_OVERRIDE:-0}" = "1" ]; then
+    _BM_OVERRIDE=1
+    echo "WARN: non-canonical session '$want' allowed via AB_SESSION_OVERRIDE=1 (recorded in lease)." >&2
+    return 0
+  fi
+  echo "REFUSE: session '$want' is not the canonical '$canonical'. One session per box (kills the 22-distinct-name leak). Set AB_SESSION_OVERRIDE=1 to override." >&2
+  exit 64
+}
+
+# ── AB() — the ONLY way agent-browser is invoked. Forces `--headed false` (D6),
+#    wraps each call in a per-call timeout, and ASSERTS the box lock is held. ───
+_BM_LOCK_HELD=0
+AB() {
+  if [ "$_BM_LOCK_HELD" != "1" ]; then
+    echo "REFUSE: AB() called without the browser_manager lock held. Call bm_ensure first." >&2
+    return 75
+  fi
+  # NOTE: invoke "$AB_BIN" DIRECTLY (it is always an absolute path resolved at
+  # load via `command -v agent-browser`, never the bare word, so there is no
+  # function-shadowing to guard against). Do NOT prefix with the `command`
+  # builtin: under `timeout` that makes the kernel try to exec a program literally
+  # named "command" — which exists on macOS (/usr/bin/command) but NOT on Linux,
+  # so on every VPS box `timeout command agent-browser …` failed exec (127), the
+  # `|| true` swallowed it, and `AB session list --json` returned EMPTY — silently
+  # defeating the pool-ceiling count. Calling "$AB_BIN" directly is portable.
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$AB_CALL_TIMEOUT" "$AB_BIN" --headed false "$@"
+  else
+    # graceful no-op if `timeout` is missing on the box (older macOS)
+    "$AB_BIN" --headed false "$@"
+  fi
+}
+
+# ── LOCK (portable, value=1, true singleton per box) ──────────────────────────
+_BM_LOCK_MODE=""   # "flock" | "mkdir"
+_bm_lock_acquire() {
+  if command -v flock >/dev/null 2>&1; then
+    _BM_LOCK_MODE="flock"
+    exec 9>"$LOCKDIR/ab.lock"
+    if ! flock -w "$AB_LOCK_WAIT" 9; then
+      echo "REFUSE: another agent-browser build holds the lock (waited ${AB_LOCK_WAIT}s)." >&2
+      exit 75
+    fi
+  else
+    # macOS / BSD: atomic-mkdir lock with dead-PID stale reclaim.
+    _BM_LOCK_MODE="mkdir"
+    local waited=0
+    while :; do
+      if mkdir "$LOCKDIR/ab.lock.d" 2>/dev/null; then
+        printf '%s' "$$" > "$LOCKDIR/ab.lock.d/pid" 2>/dev/null || true
+        break
+      fi
+      # Lock dir exists — is its owner still alive?
+      local pid=""
+      pid="$(cat "$LOCKDIR/ab.lock.d/pid" 2>/dev/null || echo '')"
+      if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        if [ "$waited" -ge "$AB_LOCK_WAIT" ]; then
+          echo "REFUSE: another agent-browser build holds the lock (pid $pid, waited ${AB_LOCK_WAIT}s)." >&2
+          exit 75
+        fi
+        sleep 1; waited=$((waited + 1))
+      else
+        # Stale lock (owner dead) — reclaim and retry.
+        echo "INFO: reclaiming stale agent-browser lock (dead pid '${pid:-none}')." >&2
+        rmdir "$LOCKDIR/ab.lock.d" 2>/dev/null || rm -rf "$LOCKDIR/ab.lock.d" 2>/dev/null || true
+      fi
+    done
+  fi
+  _BM_LOCK_HELD=1
+}
+
+# ── LEASE (Approach 0 graft) — process+mtime liveness, never .pid ─────────────
+_bm_now() { date -u +%s; }
+_bm_write_lease() {
+  local session="$1"
+  printf '{"session":"%s","manager_pid":%s,"started_epoch":%s,"ttl_sec":%s,"box_id":"%s","override":%s}\n' \
+    "$session" "$$" "$(_bm_now)" "$AB_SESSION_TTL" "$(_bm_box_id)" "$_BM_OVERRIDE" \
+    > "$LOCKDIR/leases/${session}.lease" 2>/dev/null || true
+}
+
+# ── POOL CEILING (Approach 1 graft) — never exceed AB_MAX_SESSIONS open ───────
+# Before any open, count active sessions; if at/over ceiling, close the oldest
+# idle one; if STILL at ceiling, REFUSE (exit 75). Ceiling=1 matches the lock.
+_bm_active_session_count() {
+  # `AB session list --json` shape varies by build; count session objects/lines
+  # defensively. Fall back to counting live lease files if list is unavailable.
+  # EXCLUDE this manager's OWN canonical session — bm_ensure writes its lease
+  # before the ceiling check, so counting our own lease would self-trip.
+  local out own count
+  own="$(bm_session_name)"
+  out="$(AB session list --json 2>/dev/null || true)"
+  if [ -n "$out" ]; then
+    # Count "session" keys (json), minus our own if it appears — portable grep.
+    count="$(printf '%s' "$out" | grep -o '"session"' | wc -l | tr -d '[:space:]')"
+    if printf '%s' "$out" | grep -q "\"$own\""; then
+      count=$((count - 1))
+    fi
+    [ "$count" -lt 0 ] && count=0
+    echo "$count"
+  else
+    # Count live lease files OTHER than our own.
+    count=0
+    local f base
+    for f in "$LOCKDIR/leases/"*.lease; do
+      [ -f "$f" ] || continue
+      base="$(basename "$f" .lease)"
+      [ "$base" = "$own" ] && continue
+      count=$((count + 1))
+    done
+    echo "$count"
+  fi
+}
+
+_bm_pool_ceiling_check() {
+  local active
+  active="$(_bm_active_session_count)"
+  [ -z "$active" ] && active=0
+  if [ "$active" -ge "$AB_MAX_SESSIONS" ]; then
+    # Try to close the oldest idle session (best-effort), then re-count.
+    local oldest
+    oldest="$(ls -1t "$LOCKDIR/leases/"*.lease 2>/dev/null | tail -1)"
+    if [ -n "$oldest" ]; then
+      local os
+      os="$(basename "$oldest" .lease)"
+      if [ "$os" != "$(bm_session_name)" ]; then
+        AB close --session "$os" 2>/dev/null || true
+        AB state clear "$os" 2>/dev/null || true
+        rm -f "$oldest" 2>/dev/null || true
+      fi
+    fi
+    active="$(_bm_active_session_count)"; [ -z "$active" ] && active=0
+    if [ "$active" -ge "$AB_MAX_SESSIONS" ]; then
+      echo "REFUSE: pool ceiling reached (active=$active >= AB_MAX_SESSIONS=$AB_MAX_SESSIONS)." >&2
+      exit 75
+    fi
+  fi
+}
+
+# ── CIRCUIT-BREAKER (Approach 0+1 graft) ──────────────────────────────────────
+# Rolling-window open counter per location. After AB_BREAKER_MAX opens (or the
+# advisory AB_MAX_OPENS_PER_HOUR) WITHOUT a verified QC pass in the window, the
+# breaker OPENS: REFUSE (exit 75), write a BLOCKED/qc-failed marker the */15
+# onboarding-resume cron HONORS (parked, NOT re-fired — FAIL-LOUD doctrine), and
+# escalate to Rescue Rangers. Resets on window-clear or a verified gate pass.
+_bm_breaker_file() { printf '%s' "$LOCKDIR/breaker/${GHL_LOCATION_ID:-default}.count"; }
+_bm_breaker_marker() { printf '%s' "$LOCKDIR/breaker/${GHL_LOCATION_ID:-default}.BLOCKED"; }
+
+# Record one open (called by bm_ensure after a successful open).
+_bm_breaker_record_open() {
+  local f now
+  f="$(_bm_breaker_file)"; now="$(_bm_now)"
+  printf '%s\n' "$now" >> "$f" 2>/dev/null || true
+}
+
+# Clear the breaker on a verified QC pass (callers invoke `bm_breaker_pass`).
+bm_breaker_pass() {
+  rm -f "$(_bm_breaker_file)" "$(_bm_breaker_marker)" 2>/dev/null || true
+}
+
+# Count opens still inside the rolling window.
+_bm_breaker_window_count() {
+  local f now cutoff cnt=0 line
+  f="$(_bm_breaker_file)"
+  [ -f "$f" ] || { echo 0; return 0; }
+  now="$(_bm_now)"; cutoff=$((now - AB_BREAKER_WINDOW))
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    if [ "$line" -ge "$cutoff" ] 2>/dev/null; then cnt=$((cnt + 1)); fi
+  done < "$f"
+  echo "$cnt"
+}
+
+bm_breaker_check() {
+  # If a BLOCKED marker exists, the build is PARKED — refuse immediately.
+  if [ -f "$(_bm_breaker_marker)" ]; then
+    echo "REFUSE: circuit-breaker is OPEN (build PARKED as qc-failed). Parked != re-fired; the */15 resume cron honors this marker. Clear via bm_breaker_pass after a verified gate pass." >&2
+    exit 75
+  fi
+  local cnt limit
+  cnt="$(_bm_breaker_window_count)"
+  limit="$AB_BREAKER_MAX"
+  [ "$AB_MAX_OPENS_PER_HOUR" -lt "$limit" ] 2>/dev/null && limit="$AB_MAX_OPENS_PER_HOUR"
+  if [ "$cnt" -ge "$limit" ]; then
+    # Trip the breaker.
+    printf 'BLOCKED: %s opens in %ss window without a verified QC pass (location=%s)\n' \
+      "$cnt" "$AB_BREAKER_WINDOW" "${GHL_LOCATION_ID:-default}" > "$(_bm_breaker_marker)" 2>/dev/null || true
+    # close --all is reserved for the reaper / a breaker trip (blast-radius safety).
+    AB close --all 2>/dev/null || true
+    # Escalate to Rescue Rangers (never bypass the gateway; uses openclaw message send).
+    if command -v openclaw >/dev/null 2>&1 && [ -n "${RESCUE_RANGERS_HELP_CHAT_ID:-}" ]; then
+      openclaw message send --channel telegram -t "${RESCUE_RANGERS_HELP_CHAT_ID}" \
+        "browser_manager circuit-breaker OPEN: $cnt agent-browser opens in ${AB_BREAKER_WINDOW}s without a QC pass (location=${GHL_LOCATION_ID:-default}). Skill-6 build PARKED (qc-failed). Needs a human." 2>/dev/null || true
+    fi
+    echo "REFUSE: circuit-breaker TRIPPED ($cnt opens / ${AB_BREAKER_WINDOW}s). Build PARKED (qc-failed). Escalated to Rescue Rangers. STOP." >&2
+    exit 75
+  fi
+}
+
+# ── TTL self-kill timer ───────────────────────────────────────────────────────
+# IMPORTANT: the timer subshell must NOT inherit the caller's stdout/stderr — a
+# detached `( sleep … ) &` that keeps those FDs open holds a parent pipe open and
+# can wedge a non-interactive caller (e.g. subprocess.run) until the TTL elapses.
+# We redirect all three FDs so the parent can exit the instant its trap kills us.
+_TTL_PID=""
+_bm_start_ttl() {
+  local session="$1"
+  ( sleep "$AB_SESSION_TTL"; command "$AB_BIN" --headed false close --session "$session" >/dev/null 2>&1 || true ) </dev/null >/dev/null 2>&1 &
+  _TTL_PID=$!
+  # Disown so a normal shell does not wait on it at exit (the EXIT trap kills it).
+  disown "$_TTL_PID" 2>/dev/null || true
+}
+
+# ── GUARANTEED TEARDOWN ───────────────────────────────────────────────────────
+# Closes ONLY the canonical session (NEVER close --all — blast-radius safety,
+# Approach 3 tradeoff; close --all is reserved for the reaper / breaker trip).
+_BM_SESSION=""
+_bm_teardown() {
+  [ -n "$_TTL_PID" ] && kill "$_TTL_PID" 2>/dev/null || true
+  flock -u 9 2>/dev/null || true
+  if [ "$_BM_LOCK_MODE" = "mkdir" ]; then
+    rmdir "$LOCKDIR/ab.lock.d" 2>/dev/null || true
+  fi
+  if [ -n "$_BM_SESSION" ]; then
+    command "$AB_BIN" --headed false close --session "$_BM_SESSION" 2>/dev/null || true
+    command "$AB_BIN" --headed false state clear "$_BM_SESSION" 2>/dev/null || true
+    rm -f "$LOCKDIR/leases/${_BM_SESSION}.lease" 2>/dev/null || true
+  fi
+  _BM_LOCK_HELD=0
+}
+
+# ── bm_ensure — the one entrypoint callers use before the first open ──────────
+# breaker-check → acquire lock → write lease → start TTL timer → open canonical
+# session → register the EXIT/INT/TERM/HUP teardown trap.
+bm_ensure() {
+  local session
+  session="$(bm_session_name)"
+  bm_assert_session "$session"
+  bm_breaker_check                 # before acquire — parked builds never start
+  _bm_lock_acquire                 # true box singleton
+  _BM_SESSION="$session"
+  _bm_write_lease "$session"
+  trap _bm_teardown EXIT INT TERM HUP
+  _bm_start_ttl "$session"
+  _bm_pool_ceiling_check           # never exceed AB_MAX_SESSIONS
+  AB --session "$session" open "${GHL_AGENCY_URL:-https://app.convertandflow.com}/" >/dev/null 2>&1 || true
+  _bm_breaker_record_open          # count this open toward the breaker window
+  return 0
+}
+
+# Manual teardown verb.
+bm_teardown() { _bm_teardown; }
+
+# ── Standalone verb dispatch (only when executed, not sourced) ────────────────
+# Detect "executed directly" portably: BASH_SOURCE[0] == $0.
+if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
+  _verb="${1:-}"; shift 2>/dev/null || true
+  case "$_verb" in
+    session-name)
+      bm_session_name; echo
+      ;;
+    ensure)
+      bm_ensure
+      echo "ENSURED: session=$(bm_session_name) lock=held ttl=${AB_SESSION_TTL}s — teardown trap installed."
+      ;;
+    eval|open|snapshot|wait|find|fill)
+      # Thin pass-throughs: assert lock by acquiring our own (singleton) then run.
+      bm_ensure
+      # Drop a leading literal "--" if the caller used `verb -- args`.
+      [ "${1:-}" = "--" ] && shift
+      AB --session "$(bm_session_name)" "$_verb" "$@"
+      ;;
+    run-detached)
+      # Approach 0 graft: launch a build through the manager in a DETACHED subtree
+      # that OWNS the lock+lease+TTL+trap, so detach-and-exit is safe (no orphan).
+      [ "${1:-}" = "--" ] && shift
+      bm_ensure
+      ( "$@" ) &
+      echo "DETACHED: pid=$! session=$(bm_session_name) — owns lock+lease+TTL+teardown."
+      ;;
+    teardown)
+      # Best-effort teardown of the canonical session even with no active lease.
+      _BM_SESSION="$(bm_session_name)"
+      _bm_teardown
+      echo "TORN-DOWN: session=$(bm_session_name)"
+      ;;
+    *)
+      echo "usage: browser_manager.sh {ensure|eval|open|snapshot|wait|find|fill|run-detached|teardown|session-name} [-- args...]" >&2
+      exit 64
+      ;;
+  esac
+fi

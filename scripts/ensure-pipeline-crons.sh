@@ -57,7 +57,7 @@
 # BUG-FIX v13.0.2 — JSON presence check, no text-table truncation
 # v13.2.0 — EMBEDDING-PREVENTION BUNDLE: wire 4 memory-health crons fleet-wide.
 # v13.3.0 — GHL token liveness cron: daily Skills 44+46 Firebase token health check.
-ENSURE_PIPELINE_CRONS_VERSION="v13.3.0"
+ENSURE_PIPELINE_CRONS_VERSION="v13.8.12"
 
 set -u
 
@@ -591,6 +591,10 @@ main() {
   _ensure_health_cron "orphan-temp-sweep"        "37 * * * *" "orphan-temp-sweep.sh"                      || fails=$((fails + 1))
   _ensure_health_cron "disk-usage-alert"         "47 * * * *" "disk-usage-alert.sh"                       || fails=$((fails + 1))
   _ensure_health_cron "pre-july14-embed-migrate" "23 9 * * *" "pre-july14-embedding-migration-check.sh"  || fails=$((fails + 1))
+  # SINGLETON POOLED BROWSER backstop: */10 reaper sweeps orphaned agent-browser
+  # sessions/descriptors + tripwires scoped Chromium (NEVER bare chrome/Claude).
+  # */10 (not */5) matches the hourly-family cadence + minimizes host load.
+  _ensure_health_cron "agent-browser-reaper"     "*/10 * * * *" "agent-browser-reaper.sh"                 || fails=$((fails + 1))
 
   # ── GHL TOKEN LIVENESS (Skills 44 + 46) ─────────────────────────────────────
   # Daily at 08:00 UTC: checks if the client's GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN
@@ -604,7 +608,7 @@ main() {
   local _n
   for _n in "workforce-build-resume" "interview-nudge" "closeout-readiness-watchdog" "closeout-resume" \
             "index-model-drift-check" "orphan-temp-sweep" "disk-usage-alert" "pre-july14-embed-migrate" \
-            "ghl-token-liveness"; do
+            "agent-browser-reaper" "ghl-token-liveness"; do
     _cron_present "$_n" && present="${present}${_n} "
   done
   present="${present% }"  # trim trailing space

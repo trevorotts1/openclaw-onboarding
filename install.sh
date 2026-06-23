@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v13.8.11"
+ONBOARDING_VERSION="v13.8.12"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -2736,13 +2736,61 @@ done
 # to ~/.openclaw/scripts (or /data/.openclaw/scripts) so ensure-pipeline-crons.sh
 # can resolve them on EVERY box, and so the registered crons survive a temp-clone
 # cleanup. ensure-pipeline-crons.sh wires them into cron fleet-wide (end of run).
-for SCRIPT in index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh ensure-pipeline-crons.sh; do
+for SCRIPT in index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh ensure-pipeline-crons.sh agent-browser-reaper.sh; do
     if [ -f "$ONBOARDING_DIR/scripts/$SCRIPT" ]; then
         cp -f "$ONBOARDING_DIR/scripts/$SCRIPT" "$SCRIPTS_DIR/"
         chmod +x "$SCRIPTS_DIR/$SCRIPT"
         success "Installed memory-health cron script: $SCRIPT"
     fi
 done
+
+# SINGLETON POOLED BROWSER backstop: ensure ~/.agent-browser exists (mode 700),
+# make the Skill-06 gateway + reaper executable, then ONE-SHOT reap any
+# pre-existing orphan agent-browser sessions/descriptors on first contact (the
+# */10 reaper cron is wired by ensure-pipeline-crons.sh at end of install). Pure
+# additive, env-default-gated, runs as the box user (NEVER root).
+mkdir -p "$HOME/.agent-browser" 2>/dev/null || true
+chmod 700 "$HOME/.agent-browser" 2>/dev/null || true
+_BM_GW="$ONBOARDING_DIR/skills/06-ghl-install-pages/tools/browser_manager.sh"
+[ -f "$_BM_GW" ] || _BM_GW="$ONBOARDING_DIR/06-ghl-install-pages/tools/browser_manager.sh"
+[ -f "$_BM_GW" ] && chmod +x "$_BM_GW" 2>/dev/null || true
+if [ -f "$SCRIPTS_DIR/agent-browser-reaper.sh" ]; then
+    chmod +x "$SCRIPTS_DIR/agent-browser-reaper.sh" 2>/dev/null || true
+    note "One-shot agent-browser reap (clears any pre-existing orphans on first contact)"
+    bash "$SCRIPTS_DIR/agent-browser-reaper.sh" 2>/dev/null || warn "one-shot agent-browser reap rc!=0 (non-fatal; the */10 cron backfills)"
+fi
+
+# SINGLETON POOLED BROWSER advisory config: deep-merge browser.agentBrowser into
+# openclaw.json (NEVER `config set` of nested keys — known nested-key-merge
+# failure). ADVISORY-ONLY: agent-browser ignores it natively; the REAL cap lives
+# in browser_manager.sh + agent-browser-reaper.sh (env-overridable). Leaves
+# browser.headless untouched. Idempotent (only fills missing keys).
+if [ -f "$OC_JSON" ]; then
+    OC_JSON="$OC_JSON" python3 - <<'PYEOF' 2>/dev/null && success "browser.agentBrowser advisory defaults present in openclaw.json" || warn "could not deep-merge browser.agentBrowser advisory (non-fatal; manager+reaper read env defaults)"
+import json, os
+p = os.environ["OC_JSON"]
+try:
+    d = json.load(open(p))
+except Exception:
+    raise SystemExit(1)
+defaults = {
+    "maxSessions": 1,
+    "idleReapMin": 60,
+    "maxOpensPerHour": 12,
+    "maxChromeProcs": 3,
+    "sessionTtlSec": 1800,
+}
+browser = d.setdefault("browser", {})
+ab = browser.setdefault("agentBrowser", {})
+changed = False
+for k, v in defaults.items():
+    if k not in ab:
+        ab[k] = v
+        changed = True
+if changed:
+    json.dump(d, open(p, "w"), indent=2)
+PYEOF
+fi
 
 # Install google-genai if needed
 if ! python3 -c "import google.genai" 2>/dev/null; then

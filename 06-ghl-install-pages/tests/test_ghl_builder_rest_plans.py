@@ -50,6 +50,7 @@ if _TOOLS_DIR not in sys.path:
 
 import pytest
 
+import browser_manager  # SINGLETON POOLED BROWSER gateway (session bracket)
 import ghl_builder as b
 import ghl_rest_canvas as rc
 
@@ -264,7 +265,9 @@ class TestRestSavePlanTokenScheme:
         assert "${VAR@Q}" in stage["note"]
 
     def test_session_adds_headless_forced_argv_to_each_step(self):
-        plan = b.emit_rest_save_plan(**_save_kwargs(session="sess-fake"))
+        # Emitters that produce argv must run inside the singleton session bracket.
+        with browser_manager.browser_session("sess-fake"):
+            plan = b.emit_rest_save_plan(**_save_kwargs(session="sess-fake"))
         for s in plan["steps"]:
             if "eval" in s:
                 assert s["argv"][0] == "agent-browser"
