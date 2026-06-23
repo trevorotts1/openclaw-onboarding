@@ -96,7 +96,7 @@ notion_curl() {
   local method="$1"; shift
   local url="$1"; shift
   curl -sS --fail-with-body -X "$method" "$url" \
-    -H "Authorization: Bearer $NOTION_API_TOKEN" \
+    -H "Authorization: Bearer ${NOTION_API_TOKEN:-}" \
     -H "Notion-Version: $NOTION_VERSION" \
     -H "Content-Type: application/json" \
     "$@"

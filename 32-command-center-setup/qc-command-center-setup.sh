@@ -25,7 +25,7 @@ warn_only "package.json exists in CC repo"     "find $HOME /data -maxdepth 4 -pa
 assert "Node.js installed" "command -v node"
 assert "npm installed" "command -v npm"
 warn_only "PM2 installed" "command -v pm2"
-warn_only "cloudflared installed (Mac only — VPS skip)" "[ \"$OPENCLAW_PLATFORM\" = 'vps' ] || command -v cloudflared"
+warn_only "cloudflared installed (Mac only — VPS skip)" "[ \"${OPENCLAW_PLATFORM:-}\" = 'vps' ] || command -v cloudflared"
 warn_only "Cloudflare tunnel token present" "[ -n \"$CLOUDFLARE_TUNNEL_TOKEN\" ] || [ -n \"$TUNNEL_TOKEN\" ]"
 warn_only "Port ${CC_PORT} reachable (CC running locally)" "curl -sS -m 3 http://localhost:${CC_PORT}/ -o /dev/null -w '%{http_code}' 2>/dev/null | grep -qE '^(200|301|302|404|307)'"
 assert "Python 3 installed" "command -v python3"

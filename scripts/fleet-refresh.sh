@@ -328,11 +328,9 @@ for e in entries:
     return 2
   fi
 
-  # Build the remote command (the runner + shared-utils must be on the remote box)
-  # The runner is invoked via SSH; shared-utils and repo-root are the remote paths
-  local remote_runner="${REMOTE_ONBOARDING_ROOT:-~/.openclaw/skills/onboarding}/shared-utils/fleet_refresh_runner.py"
-  local remote_su="${REMOTE_ONBOARDING_ROOT:-~/.openclaw/skills/onboarding}/shared-utils"
-  local remote_root="${REMOTE_ONBOARDING_ROOT:-~/.openclaw/skills/onboarding}"
+  # Remote clone-path resolution happens AFTER the SSH env (CF Access) is set up,
+  # so the detection probe reuses the same connection options.  See the
+  # detect-remote-onboarding-root block below (right before the runner invocation).
 
   # CF Access tunnel support
   local cf_prefix
@@ -355,6 +353,53 @@ for e in entries:
       ssh_extra_env="CF_ACCESS_CLIENT_ID=${!client_id_var} CF_ACCESS_CLIENT_SECRET=${!secret_var}"
     fi
   fi
+
+  # ── Detect the on-box onboarding clone location ─────────────────────────────
+  # The clone is NOT at a single fixed path across the fleet: legacy boxes keep it
+  # at ~/.openclaw/skills/onboarding, but the majority now live at
+  # ~/clawd/openclaw-onboarding (and a few at the install.sh CANDIDATES layouts).
+  # Probe the known candidates ON THE REMOTE BOX and use whichever actually holds
+  # shared-utils/fleet_refresh_runner.py.  An explicit REMOTE_ONBOARDING_ROOT
+  # override still wins (and is verified) so operators can force a path.
+  #
+  # The detection runs in a single SSH round-trip; the remote snippet prints the
+  # resolved clone root to stdout, or nothing if no candidate is valid.
+  local remote_root remote_su remote_runner
+  local remote_candidates
+  if [ -n "${REMOTE_ONBOARDING_ROOT:-}" ]; then
+    # Operator-forced path: still verify it carries the runner before using it.
+    # Normalize a leading '~/' to '$HOME/' so the remote shell expands it.
+    local forced="${REMOTE_ONBOARDING_ROOT/#\~\//\$HOME/}"
+    remote_candidates="\"$forced\""
+  else
+    # Probe order: legacy default first (backward-compatible), then the layout
+    # the majority of the fleet actually uses, then the install.sh CANDIDATES.
+    remote_candidates='"$HOME/.openclaw/skills/onboarding" "$HOME/clawd/openclaw-onboarding" "$HOME/openclaw-onboarding" "$HOME/.openclaw/onboarding"'
+  fi
+  # Remote snippet: walk the candidates, print the first that carries the runner.
+  local detect_script="for d in $remote_candidates; do
+  [ -f \"\$d/shared-utils/fleet_refresh_runner.py\" ] && { printf '%s\\n' \"\$d\"; exit 0; }
+done; exit 0"
+
+  # shellcheck disable=SC2086
+  remote_root=$(env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$detect_script" 2>/dev/null \
+    | head -1 | tr -d '\r')
+
+  if [ -z "$remote_root" ]; then
+    local probed
+    if [ -n "${REMOTE_ONBOARDING_ROOT:-}" ]; then
+      probed="REMOTE_ONBOARDING_ROOT=$REMOTE_ONBOARDING_ROOT"
+    else
+      probed="~/.openclaw/skills/onboarding, ~/clawd/openclaw-onboarding, ~/openclaw-onboarding, ~/.openclaw/onboarding"
+    fi
+    echo "{\"box\":\"$box\",\"result\":\"failed\",\"errors\":[\"onboarding clone not found on box: no candidate dir contains shared-utils/fleet_refresh_runner.py (probed: $probed). Clone trevorotts1/openclaw-onboarding to one of those paths, or set REMOTE_ONBOARDING_ROOT to its location, then retry.\"]}" > "$result_file"
+    return 2
+  fi
+
+  # Resolve the runner + shared-utils relative to the detected clone root.
+  remote_su="$remote_root/shared-utils"
+  remote_runner="$remote_su/fleet_refresh_runner.py"
+  echo "[fleet-refresh]   $box — using onboarding clone: $remote_root" >&2
 
   # shellcheck disable=SC2086
   env $ssh_extra_env ssh $ssh_opts "$ssh_target" \

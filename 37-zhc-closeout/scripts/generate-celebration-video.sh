@@ -432,7 +432,7 @@ submit_gemini_omni() {
     --argjson input "$input_obj" \
     '{model: $model, input: $input}')
   curl -sS --fail-with-body -X POST "$KIE_API_BASE/api/v1/jobs/createTask" \
-    -H "Authorization: Bearer $KIE_API_KEY" \
+    -H "Authorization: Bearer ${KIE_API_KEY:-}" \
     -H "Content-Type: application/json" \
     -d "$body"
 }
@@ -445,7 +445,7 @@ poll_gemini_omni() {
   while (( elapsed < timeout_sec )); do
     local resp
     resp=$(curl -sS "$KIE_API_BASE/api/v1/jobs/recordInfo?taskId=$task_id" \
-      -H "Authorization: Bearer $KIE_API_KEY" 2>/dev/null)
+      -H "Authorization: Bearer ${KIE_API_KEY:-}" 2>/dev/null)
     local state
     state=$(echo "$resp" | jq -r '.data.state // empty' 2>/dev/null)
     case "$state" in
@@ -493,7 +493,7 @@ submit_veo() {
     --argjson duration "$DURATION" \
     '{model: $model, prompt: $prompt, aspect_ratio: "9:16", duration: $duration, generate_audio: true}')
   curl -sS --fail-with-body -X POST "$KIE_API_BASE/api/v1/veo/generate" \
-    -H "Authorization: Bearer $KIE_API_KEY" \
+    -H "Authorization: Bearer ${KIE_API_KEY:-}" \
     -H "Content-Type: application/json" \
     -d "$body"
 }
@@ -511,7 +511,7 @@ poll_veo() {
     local resp http_code
     resp=$(curl -sS -w '\n__HTTP_CODE__%{http_code}' \
       "$KIE_API_BASE/api/v1/veo/record-info?taskId=$task_id" \
-      -H "Authorization: Bearer $KIE_API_KEY" 2>/dev/null)
+      -H "Authorization: Bearer ${KIE_API_KEY:-}" 2>/dev/null)
     http_code=$(printf '%s' "$resp" | awk -F'__HTTP_CODE__' 'END{print $2}')
     resp=$(printf '%s' "$resp" | sed 's/__HTTP_CODE__[0-9]*$//')
 

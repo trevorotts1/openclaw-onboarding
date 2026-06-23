@@ -1172,7 +1172,7 @@ Follow TYP rules: append only, never overwrite existing content.
 - Hybrid search: 75% vector / 25% text
 - memory-core: builtin backend (auto-capture on, auto-recall on)
   - LLM provider: gemini (model: gemini-3-flash-preview)
-  - Embedder provider: gemini (model: models/gemini-embedding-001)
+  - Embedder provider: gemini (model: models/gemini-embedding-2)
   - Requires: GEMINI_API_KEY
   - Note: Embedder uses "models/" prefix, LLM does not
 ```
