@@ -4,7 +4,7 @@
 **Reports to:** Chief Marketing Officer
 **Role type:** full-time-permanent
 **Persona:** {{ASSIGNED_PERSONA}} v{{ASSIGNED_PERSONA_VERSION}}
-**Version:** 1.0
+**Version:** 1.1
 **Last updated:** {{GENERATION_DATE}}
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
@@ -253,9 +253,9 @@ This role contributes to the company revenue cascade by: **optimizing the conver
 5. **Persona grounding (MANDATORY sub-step — required before writing any spec).** This step MUST run and produce a log entry before the funnel-spec.json is written.
    - Read `persona-categories.json` domain tags for this role's task category. Relevant domains for funnel architecture: `marketing`, `sales`, `strategy-innovation`.
    - Run: `gemini search '<funnel architecture task> + offer sequencing + <domain tags>' -c coaching-personas` — substituting the actual funnel type and ICP from the offer-spec.
-   - Select the persona whose methodology best matches the funnel structure task. For funnel architecture and offer sequencing, `hormozi-100m-offers` is the canonical persona (VERIFIED present in the 41-persona matrix). Select it when the task involves value ladder design, price-point sequencing, offer stack, or high-ticket offer architecture.
-   - Write a `persona-selection-log.md` entry per persona-matching-protocol.md line 127 (MANDATORY). The entry MUST include: task_id, date, selected_persona_id (`hormozi-100m-offers`), rationale (one sentence tying the persona's methodology to the specific funnel architecture decision), domains_matched.
-   - Ground the funnel structure, section blueprint, and offer map in the selected persona's methodology. For `hormozi-100m-offers`: apply the value ladder principle (ascension sequence), the offer stack framing (accumulate value before revealing price), and the guarantee structure (risk-reversal as a conversion lever). Do NOT deviate from the brand-voice-lock.md or the owner's stated values.
+   - Select the persona whose methodology best matches the funnel structure task **from the ranked search result** — do NOT default to a single persona by habit. The funnel/offer persona pool includes: `hormozi-100m-offers` (Alex Hormozi — value-ladder, offer-stack, price-point sequencing, high-ticket architecture), `russell-brunson-the-funnel-hackers-cookbook` (funnel-type selection and page-flow architecture), `russell-brunson-lead-funnels` (lead-capture / top-of-funnel sequencing), `russell-brunson-traffic-secrets` (traffic-to-offer congruence and funnel entry points), `russell-brunson-network-marketing-secrets` (relationship/ascension funnels), `russell-brunson-marketing-secrets-blackbook` (offer-narrative and conversion mechanics), and `allan-dib-the-1-page-marketing-plan` (lean funnel + single-page offer maps for small businesses). Ground on the **top-ranked persona the selector returns** for this specific funnel type and ICP; `hormozi-100m-offers` is the typical match for value-ladder / offer-stack / high-ticket tasks but is NOT the sole canonical — a Brunson funnel persona is the better match for funnel-type selection and page-flow tasks, and `allan-dib-the-1-page-marketing-plan` for lean single-offer funnels.
+   - Write a `persona-selection-log.md` entry per persona-matching-protocol.md line 127 (MANDATORY). The entry MUST include: task_id, date, selected_persona_id (the slug the selector returned — NOT a hardcoded default), rationale (one sentence tying the persona's methodology to the specific funnel architecture decision), domains_matched, and `staleness_checked`. **Staleness guard (persona-matching-protocol.md line 145):** if `persona-selection-log.md` shows the same funnel persona chosen 5+ times in a row for this department, flag for review and re-confirm a fresh 5-layer alignment rather than reusing by habit. Record `staleness_checked: true` (and `staleness_flagged: true|false`).
+   - Ground the funnel structure, section blueprint, and offer map in the **selected** persona's methodology. For `hormozi-100m-offers`: apply the value ladder principle (ascension sequence), the offer stack framing (accumulate value before revealing price), and the guarantee structure (risk-reversal as a conversion lever). For a `russell-brunson-*` funnel persona: apply the funnel-type selection logic, the hook–story–offer page flow, and the value-ladder ascension between funnel steps. For `allan-dib-the-1-page-marketing-plan`: collapse to the leanest funnel that still carries the before/during/after journey. Do NOT deviate from the brand-voice-lock.md or the owner's stated values.
    - **SINGLE-OWNER rule:** This role (Funnel Strategist) writes the `persona-selection-log.md` entry for funnel architecture. The Chief Sales Officer (N3/SOP 9.9) references the offer persona but does NOT write a duplicate entry. If the CSO has already referenced a persona in the offer-spec.json, acknowledge it here; do not duplicate the log entry.
 
 6. **Write funnel-spec.json.** Output to `working/funnels/<slug>/funnel-spec.json`. Required schema:
@@ -265,7 +265,7 @@ This role contributes to the company revenue cascade by: **optimizing the conver
      "funnel_type": "<exact type string from step 2>",
      "offer_ref": "working/funnels/<slug>/offer-spec.json",
      "persona_grounding": {
-       "selected_persona": "hormozi-100m-offers",
+       "selected_persona": "<slug returned by the persona selector in step 5 — e.g. hormozi-100m-offers, russell-brunson-the-funnel-hackers-cookbook, or allan-dib-the-1-page-marketing-plan>",
        "log_entry": "working/funnels/<slug>/persona-selection-log.md"
      },
      "pages": [

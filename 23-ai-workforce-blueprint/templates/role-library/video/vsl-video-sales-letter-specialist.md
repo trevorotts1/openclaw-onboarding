@@ -4,7 +4,7 @@
 **Reports to:** Head of Video Production
 **Role type:** full-time-permanent
 **Persona:** {{ASSIGNED_PERSONA}} v{{ASSIGNED_PERSONA_VERSION}}
-**Version:** 1.0
+**Version:** 1.1
 **Last updated:** {{GENERATION_DATE}}
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
@@ -391,7 +391,7 @@ The human owner reviews: the sales argument, the claims, the offer presentation,
 
 **Tier 4 — Role-specific:**
 - Robert Cialdini's "Influence: The Psychology of Persuasion" — Foundational persuasion principles applicable to VSL structure
-- Russell Brunson's frameworks (DotCom Secrets, Expert Secrets) — VSL and funnel methodology for direct-response marketing
+- Russell Brunson funnel frameworks — registered in the coaching-persona library as `russell-brunson-the-funnel-hackers-cookbook`, `russell-brunson-lead-funnels`, and `russell-brunson-traffic-secrets`; reach them via the persona selector (`gemini search '<task>' -c coaching-personas`) rather than from the books directly. VSL and funnel methodology for direct-response marketing
 - Dan Kennedy's direct-response marketing materials — Sales letter structure (the print ancestor of the VSL)
 
 ---
