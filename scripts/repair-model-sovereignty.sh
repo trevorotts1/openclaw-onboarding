@@ -43,11 +43,11 @@ SHARED_UTILS=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --config) CONFIG="$2"; shift 2;;
-    --box) BOX="$2"; shift 2;;
-    --receipt-dir) RECEIPT_DIR="$2"; shift 2;;
+    --config) CONFIG="${2:-}"; shift 2;;
+    --box) BOX="${2:-}"; shift 2;;
+    --receipt-dir) RECEIPT_DIR="${2:-}"; shift 2;;
     --apply) APPLY=1; shift;;
-    --shared-utils) SHARED_UTILS="$2"; shift 2;;
+    --shared-utils) SHARED_UTILS="${2:-}"; shift 2;;
     -h|--help) grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
     *) echo "[repair] unknown arg: $1" >&2; exit 2;;
   esac

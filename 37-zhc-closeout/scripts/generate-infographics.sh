@@ -265,7 +265,7 @@ submit_job() {
     --argjson prompt "$prompt_json" \
     '{model: $model, input: {prompt: $prompt, aspect_ratio: "16:9", resolution: "2K", output_format: "png"}}')
   curl -sS --fail-with-body -X POST "https://api.kie.ai/api/v1/jobs/createTask" \
-    -H "Authorization: Bearer $KIE_API_KEY" \
+    -H "Authorization: Bearer ${KIE_API_KEY:-}" \
     -H "Content-Type: application/json" \
     -d "$body"
 }
@@ -277,7 +277,7 @@ poll_job() {
   while (( elapsed < 600 )); do
     local resp
     resp=$(curl -sS "https://api.kie.ai/api/v1/jobs/recordInfo?taskId=$task_id" \
-      -H "Authorization: Bearer $KIE_API_KEY" 2>/dev/null)
+      -H "Authorization: Bearer ${KIE_API_KEY:-}" 2>/dev/null)
     local state
     state=$(echo "$resp" | jq -r '.data.state // empty' 2>/dev/null)
     case "$state" in

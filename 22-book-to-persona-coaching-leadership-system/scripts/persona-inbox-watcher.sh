@@ -184,7 +184,7 @@ for _source_file in "$INBOX_DIR"/*; do
         processed_count=$((processed_count + 1))
     else
         _rc=$?
-        echo "$(TS) [persona-inbox-watcher] FAILED (exit $rc): '$_slug'. Source file left in inbox for manual retry."
+        echo "$(TS) [persona-inbox-watcher] FAILED (exit $_rc): '$_slug'. Source file left in inbox for manual retry."
     fi
 
     # Release lock

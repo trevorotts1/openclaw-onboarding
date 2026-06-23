@@ -405,7 +405,7 @@ The script:
 
 **Success criteria** — `openclaw memory status` must show:
 - `Provider: gemini (requested: gemini)`
-- `Model: gemini-embedding-001` (or just `gemini`)
+- `Model: gemini-embedding-2` (or just `gemini`)
 - `Dreaming: 0 3 * * *`
 - `openclaw config validate` exits clean.
 
@@ -425,7 +425,7 @@ unless the script can't be used; the script is the source of truth):
         "fallback": "openai",
         "experimental": {"sessionMemory": true},
         "sync": {"onSessionStart": true, "onSearch": true, "watch": true, "watchDebounceMs": 1200, "sessions": {"deltaBytes": 20000, "deltaMessages": 10}},
-        "model": "gemini-embedding-001",
+        "model": "gemini-embedding-2",
         "query": {"maxResults": 50, "minScore": 0.18, "hybrid": {"enabled": true}}
       }
     }
