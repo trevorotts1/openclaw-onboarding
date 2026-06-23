@@ -1,0 +1,12 @@
+{
+  "workflow_id": "17486457-001d-4d97-bca8-f90a0391bee6",
+  "includeTriggers": true,
+  "http": 200,
+  "triggers_count": 1,
+  "trigger_present": true,
+  "trigger_types": [
+    "contact_tag"
+  ],
+  "workflow_status": null,
+  "allowMultiple": null
+}

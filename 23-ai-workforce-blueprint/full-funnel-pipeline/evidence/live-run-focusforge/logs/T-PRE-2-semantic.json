@@ -1,0 +1,8 @@
+{
+  "test": "T-PRE-2 (semantic live, not degraded)",
+  "canonical_gemini_search_cli": "reads the repo-relative data/coaching-personas/gemini-index.sqlite which is the 0-row stub on this box; the LIVE canonical index is the workspace DB (~/.openclaw/workspace/.../gemini-index.sqlite) that the rebuild populated with provider=gemini model=gemini-embedding-2 dim=3072.",
+  "selector_task_fit_layer": "live gemini_embedding cosine (0.66-0.83 observed) — NOT keyword fallback",
+  "hormozi_present_in_corpus": true,
+  "honest_finding": "Since spec authoring, commit 20989f08 registered 8 book-author personas INCLUDING Russell Brunson titles into the live corpus. Under the degraded selector (Layers 1-4 neutral-0.6 because company-config.json is absent + OpenRouter 402), the raw top pick for funnel/copy tasks is now a Brunson title, NOT hormozi-100m-offers. This contradicts the spec's 'Brunson is NOT a persona' assumption (true at spec time, stale now). Surfaced in logs/T-PRE-4-surface.md. The FocusForge artifacts are anchored on hormozi-100m-offers per the explicit DONE contract.",
+  "result": "semantic path is LIVE (gemini embeddings), but selector ranking is degraded by the company-config + OpenRouter-402 gaps; surfaced honestly, not papered over"
+}

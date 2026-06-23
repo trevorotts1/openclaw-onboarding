@@ -1,0 +1,21 @@
+{
+  "stage": "p3-assets",
+  "owner": "graphics-specialist",
+  "generator": "23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py (api.kie.ai, mode=t2i, gpt-image-2-text-to-image)",
+  "kie_api_key_present": true,
+  "images": [
+    {
+      "slot": "hero",
+      "page": "sales",
+      "prompt": "A clean, modern hero image for a deep-work coaching program called FocusForge...",
+      "task_id": "1d725bcdfe60ef19b109487d6b8f5a7f",
+      "kie_result_url": "https://tempfile.aiquickdraw.com/r/1d725bcdfe60ef19b109487d6b8f5a7f_1782177687_bbjebomx.png",
+      "local_path": "images/renders/1.png",
+      "bytes": 2625325,
+      "png_magic_verified": true,
+      "state": "success"
+    }
+  ],
+  "summary": {"succeeded": 1, "failed": 0},
+  "note": "Real PNG generated via the live KIE pipeline (PNG magic bytes verified). The in-page <img> on the built DRAFT pages references a GHL media-bucket CDN URL of the FocusForge hero; the marker+img-in-saved-blob proof confirmed both rendered into the saved page DRAFT. No SVG placeholder used."
+}

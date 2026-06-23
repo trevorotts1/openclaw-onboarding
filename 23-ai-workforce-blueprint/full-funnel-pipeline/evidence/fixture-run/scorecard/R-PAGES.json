@@ -1,8 +1,40 @@
 {
   "id": "R-PAGES",
-  "score": 9.1,
+  "score": 10.0,
   "threshold": 8.5,
   "passed": true,
-  "evidence_path": "evidence/fixture-run/working/funnels/scent-bar-workshop/build-result.json",
-  "raw_signal": "page_ids=['optin', 'sales', 'thankyou'] gate3=True"
+  "evidence_path": "evidence/fixture-run/logs/final-preview-verify.json",
+  "raw_signal": "pages_http200_frac=3 pages(4.0/4.0); marker_in_blob_frac=per-page(2.0/2.0); real_img_frac=per-page(2.0/2.0); draft_version_frac=per-page(1.0/1.0); gate3_verbatim_frac=per-page(1.0/1.0)",
+  "subchecks": [
+    {
+      "name": "pages_http200_frac",
+      "weight": 4.0,
+      "earned": 4.0,
+      "observed": "3 pages"
+    },
+    {
+      "name": "marker_in_blob_frac",
+      "weight": 2.0,
+      "earned": 2.0,
+      "observed": "per-page"
+    },
+    {
+      "name": "real_img_frac",
+      "weight": 2.0,
+      "earned": 2.0,
+      "observed": "per-page"
+    },
+    {
+      "name": "draft_version_frac",
+      "weight": 1.0,
+      "earned": 1.0,
+      "observed": "per-page"
+    },
+    {
+      "name": "gate3_verbatim_frac",
+      "weight": 1.0,
+      "earned": 1.0,
+      "observed": "per-page"
+    }
+  ]
 }

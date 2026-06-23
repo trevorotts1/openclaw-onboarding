@@ -1,0 +1,28 @@
+{
+  "id": "R-PRODUCT",
+  "score": 10.0,
+  "threshold": 8.5,
+  "passed": true,
+  "evidence_path": "ecosystem/product-price.json",
+  "raw_signal": "product_named=FocusForge(3.0/3.0); price_point_present=1(3.0/3.0); amount_positive_cents=150000(4.0/4.0)",
+  "subchecks": [
+    {
+      "name": "product_named",
+      "weight": 3.0,
+      "earned": 3.0,
+      "observed": "FocusForge"
+    },
+    {
+      "name": "price_point_present",
+      "weight": 3.0,
+      "earned": 3.0,
+      "observed": "1"
+    },
+    {
+      "name": "amount_positive_cents",
+      "weight": 4.0,
+      "earned": 4.0,
+      "observed": "150000"
+    }
+  ]
+}

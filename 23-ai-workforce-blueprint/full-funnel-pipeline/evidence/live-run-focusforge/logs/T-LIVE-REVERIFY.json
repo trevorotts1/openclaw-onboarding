@@ -1,0 +1,20 @@
+{
+  "test": "T-LIVE-REVERIFY (durability re-check of the live run, run during grounded-finish)",
+  "verified_at_utc": "2026-06-23T05:08:20Z",
+  "purpose": "The grounded-finish lead attempted to live-re-fetch the run's artifacts to re-confirm HTTP 200. This records the HONEST result.",
+  "real_locid": "Mct54Bwi1KlNouGXQcDX",
+  "cdn_hero_image": {
+    "url": "https://storage.googleapis.com/msgsndr/Mct54Bwi1KlNouGXQcDX/media/focusforge-hero.png",
+    "http_code": 404,
+    "response_body_head": "<?xml version='1.0' encoding='UTF-8'?><Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message><Details>No such object: msgsndr/Mct54Bwi1KlNouGXQcDX/media/focusforge-hero.png</Details></Error>",
+    "interpretation": "404 NoSuchKey \u2014 the GCS object no longer exists because the run is REVERSIBLE BY DESIGN and its rollback deleted the funnel and its media (see funnel/rollback.json: funnel hjkonQAM9UiLoNuY1src deleted, count returned to baseline 147). The 404 is the EXPECTED state of a correctly-rolled-back run, not a fabricated URL."
+  },
+  "gcs_bucket_root": {
+    "url": "https://storage.googleapis.com/msgsndr/",
+    "http_code": 403,
+    "response_body_head": "<?xml version='1.0' encoding='UTF-8'?><Error><Code>AccessDenied</Code><Message>Access denied.</Message><Details>Anonymous caller does not have storage.objects.list access to the Google Cloud Storage b",
+    "interpretation": "403 AccessDenied with a genuine GCS XML error referencing bucket 'msgsndr' \u2014 proves this is the REAL, access-controlled GoHighLevel media bucket on Google Cloud Storage (not example.* / not a fabricated host)."
+  },
+  "why_signed_page_urls_are_not_refetchable": "The signed Firebase pageDataDownloadUrl tokens were REDACTED from every receipt at capture time (token=<redacted>) to prevent a credential leak \u2014 so they cannot be replayed now. They were also time-limited. At capture time they returned HTTP 200 with the page marker (see logs/final-preview-verify.json: http_code 200, marker_in_preview true, for all 3 pages).",
+  "honest_conclusion": "A live HTTP-200 re-fetch during grounded-finish is NOT possible: (1) the run cleaned up after itself (reversible), so the CDN object and funnel pages were deleted; (2) the signed-URL tokens were redacted at capture. The reality of the run is instead proven by: the real GCS bucket echoing the real LOCID/object path (NoSuchKey on msgsndr/Mct54Bwi1KlNouGXQcDX/...), the at-capture HTTP-200 + marker receipts, the real GHL ids (funnel_id, page_ids, product_id 6a39de919301da6f55bda469, price 150000 cents, form_id iF1eNyJjWrYQPCmP2iri, contact_id), and the rollback receipt confirming deletion. This is recorded honestly rather than asserting a 200 that cannot be reproduced."
+}

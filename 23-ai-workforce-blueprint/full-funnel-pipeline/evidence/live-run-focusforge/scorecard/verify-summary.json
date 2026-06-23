@@ -1,0 +1,33 @@
+{
+  "run_id": "v2-20260622-204150",
+  "version": "",
+  "brand": "",
+  "verified_at": "2026-06-23T01:17:05Z",
+  "source_of_truth": "logs/final-preview-verify.json",
+  "verifier": "ghl_verify.verify_all (single canonical pass)",
+  "total": 3,
+  "passed": 3,
+  "failed": 0,
+  "overall_pass": true,
+  "pages": [
+    {
+      "step": "optin",
+      "PASS": true,
+      "http_code": 200,
+      "marker_in_preview": true
+    },
+    {
+      "step": "sales",
+      "PASS": true,
+      "http_code": 200,
+      "marker_in_preview": true
+    },
+    {
+      "step": "thankyou",
+      "PASS": true,
+      "http_code": 200,
+      "marker_in_preview": true
+    }
+  ],
+  "_contract": "passed/failed/overall_pass are a pure reduction of logs/final-preview-verify.json; the consistency guard rejects any summary more optimistic than that raw log."
+}

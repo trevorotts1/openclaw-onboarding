@@ -1,5 +1,9 @@
 # Changelog - Skill 37: ZHC Closeout
 
+## [1.3.1] - 2026-06-23 - v12.14.5: org-chart template comment genericized (fleet-wide no-client-names invariant)
+
+- `templates/workforce-org-chart/index.html.template`: removed a real client name from the v10.X.9 rebuild changelog code-comment (line 13) and replaced it with a generic, attribution-free phrasing. The fleet-wide leak gate (`scripts/qc-assert-no-client-names.sh`) previously did NOT scan `*.template` files, so this slipped past CI; the gate's file glob now includes `*.template` (and other doc/config extensions), closing the blind spot. No functional template change.
+
 ## [1.3.0] - 2026-06-13 - v12.3.10: interview-nudge cron self-removed at done-transition (interviewComplete=true)
 
 - `scripts/run-closeout.sh`: at the done-transition (alongside the existing closeout-resume cron self-remove), added a block that:

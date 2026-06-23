@@ -139,6 +139,8 @@ _list_files() {
     git -C "$root" ls-files \
       -- '*.md' '*.sh' '*.json' '*.txt' '*.yaml' '*.yml' '*.py' '*.mjs' \
          '*.js' '*.ts' '*.html' '*.css' '*.toml' '.env' '*.env' \
+         '*.template' '*.tmpl' '*.example' '*.sample' '*.tsx' '*.jsx' '*.cjs' \
+         '*.conf' '*.cfg' '*.ini' '*.xml' '*.csv' '*.plist' '*.tf' '*.env.template' \
       2>/dev/null \
       | while IFS= read -r rel; do printf '%s/%s\n' "$root" "$rel"; done
   else
@@ -150,43 +152,70 @@ _list_files() {
         -o -name "*.yaml" -o -name "*.yml" -o -name "*.py"  -o -name "*.mjs" \
         -o -name "*.js"   -o -name "*.ts"  -o -name "*.html" -o -name "*.css" \
         -o -name "*.toml" -o -name ".env"  -o -name "*.env" \
+        -o -name "*.template" -o -name "*.tmpl" -o -name "*.example" \
+        -o -name "*.sample" -o -name "*.tsx" -o -name "*.jsx" -o -name "*.cjs" \
+        -o -name "*.conf" -o -name "*.cfg" -o -name "*.ini" -o -name "*.xml" \
+        -o -name "*.csv" -o -name "*.plist" -o -name "*.tf" \
       \) \
       -type f 2>/dev/null
   fi
 }
 
-# ─── Scan files ──────────────────────────────────────────────────────────────
-while IFS= read -r f; do
-  # Path-anchored self-exclusions: skip files that hold client names as BANNED
-  # PATTERN DATA (enforcement tools, test fixtures). Anchored to exact path
-  # suffix so only the real enforcement scripts are excluded, not e.g. a stray
-  # copy in a subdirectory.
-  case "$f" in
+# ─── Self-exclusion predicate ─────────────────────────────────────────────────
+# Path-anchored self-exclusions: skip files that hold client names as BANNED
+# PATTERN DATA (enforcement tools, test fixtures). Anchored to exact path suffix
+# so only the real enforcement scripts are excluded, not e.g. a stray copy in a
+# subdirectory.
+_is_excluded() {
+  case "$1" in
     # Enforcement scripts — hold client names as scan patterns, not as content
-    */scripts/qc-assert-no-client-names.sh)        continue ;;
-    */scripts/qc-no-personal-data.sh)              continue ;;
-    *"/qc-assert-no-client-names.sh")              continue ;;
-    *"/qc-no-personal-data.sh")                    continue ;;
+    */scripts/qc-assert-no-client-names.sh)        return 0 ;;
+    */scripts/qc-no-personal-data.sh)              return 0 ;;
+    *"/qc-assert-no-client-names.sh")              return 0 ;;
+    *"/qc-no-personal-data.sh")                    return 0 ;;
     # Anti-commingling test fixtures — the fixture SCANS for client names as the
     # test subject; the names are detection patterns, not leaked data
-    */scripts/test-how-to-use-docs.sh)             continue ;;
-    */scripts/test-presentation-dept-welcome.sh)   continue ;;
-    */tests/unit/library-gate-content.test.py)     continue ;;
+    */scripts/test-how-to-use-docs.sh)             return 0 ;;
+    */scripts/test-presentation-dept-welcome.sh)   return 0 ;;
+    */tests/unit/library-gate-content.test.py)     return 0 ;;
     # Deep-health unit test contains a test-fixture URL with a client subdomain
-    */tests/unit/deep-health.test.ts)              continue ;;
+    */tests/unit/deep-health.test.ts)              return 0 ;;
     # GHL auth-fallback secret-hygiene test holds the operator-path string as its
     # detection literal (it greps for /Users/blackceomacmini) — pattern, not leak
-    */06-ghl-install-pages/tests/test_ghl_secret_hygiene.py) continue ;;
+    */06-ghl-install-pages/tests/test_ghl_secret_hygiene.py) return 0 ;;
     # Working / scratch ledger files — not shipped to clients
-    */working/*)                                   continue ;;
+    */working/*)                                   return 0 ;;
   esac
+  return 1
+}
 
-  # grep -E -i (case-insensitive); collect filename:lineno:line hits.
-  while IFS= read -r hit_line; do
-    OFFENDERS+=("  $f:$hit_line")
-    HITS=$((HITS + 1))
-  done < <(grep -E -in "$PATTERN" "$f" 2>/dev/null | head -20)
+# ─── Scan files ──────────────────────────────────────────────────────────────
+# Build the (self-exclusion-filtered) file list once, then grep it in a SINGLE
+# batched pass. A per-file grep loop spawns one process per file (thousands of
+# tracked files) and is pathologically slow; batching grep over the whole list
+# is functionally identical but orders of magnitude faster. Hits are read back
+# as `path:lineno:line` and the same `head -20`-per-file cap is reapplied so a
+# single noisy file cannot flood the report.
+FILES=()
+while IFS= read -r f; do
+  _is_excluded "$f" && continue
+  FILES+=("$f")
 done < <(_list_files "$REPO_ROOT")
+
+declare -A _PER_FILE_HITS=()
+if [ "${#FILES[@]}" -gt 0 ]; then
+  while IFS= read -r hit_line; do
+    [ -z "$hit_line" ] && continue
+    # grep -H output is `path:lineno:line`; split off the path (first field).
+    path="${hit_line%%:*}"
+    n=$(( ${_PER_FILE_HITS["$path"]:-0} + 1 ))
+    _PER_FILE_HITS["$path"]=$n
+    [ "$n" -gt 20 ] && continue   # per-file cap (matches prior head -20 behavior)
+    OFFENDERS+=("  $hit_line")
+    HITS=$((HITS + 1))
+  done < <(printf '%s\0' "${FILES[@]}" \
+             | xargs -0 grep -E -Hin "$PATTERN" 2>/dev/null)
+fi
 
 if [ "$HITS" -eq 0 ]; then
   echo "[qc-assert-no-client-names] PASS — no real client names found in tracked files."

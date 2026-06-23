@@ -1,0 +1,13 @@
+{
+  "workflow_id": "17486457-001d-4d97-bca8-f90a0391bee6",
+  "triggers_count": 0,
+  "action_steps": 6,
+  "trigger_present": false,
+  "note": "export.workflowData carries only `templates`; the tag-added TRIGGER lives on the workflow record and is read live via ?includeTriggers=true (ecosystem/wf-trigger-read.json). Authoritative trigger state is in that file, not this export shape.",
+  "authoritative_trigger_read": "ecosystem/wf-trigger-read.json",
+  "triggers_count_authoritative": 1,
+  "trigger_present_authoritative": true,
+  "trigger_types_authoritative": [
+    "contact_tag"
+  ]
+}

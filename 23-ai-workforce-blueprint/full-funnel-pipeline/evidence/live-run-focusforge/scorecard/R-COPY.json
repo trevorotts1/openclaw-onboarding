@@ -1,0 +1,40 @@
+{
+  "id": "R-COPY",
+  "score": 10.0,
+  "threshold": 8.5,
+  "passed": true,
+  "evidence_path": "working/copy/focusforge/copy.md",
+  "raw_signal": "approved=True(3.0/3.0); separate_actor_approval=True(2.0/2.0); persona_grounded=True(2.0/2.0); cta_slots_present=5(1.5/1.5); benefit_framing=True(1.5/1.5)",
+  "subchecks": [
+    {
+      "name": "approved",
+      "weight": 3.0,
+      "earned": 3.0,
+      "observed": "True"
+    },
+    {
+      "name": "separate_actor_approval",
+      "weight": 2.0,
+      "earned": 2.0,
+      "observed": "True"
+    },
+    {
+      "name": "persona_grounded",
+      "weight": 2.0,
+      "earned": 2.0,
+      "observed": "True"
+    },
+    {
+      "name": "cta_slots_present",
+      "weight": 1.5,
+      "earned": 1.5,
+      "observed": "5"
+    },
+    {
+      "name": "benefit_framing",
+      "weight": 1.5,
+      "earned": 1.5,
+      "observed": "True"
+    }
+  ]
+}

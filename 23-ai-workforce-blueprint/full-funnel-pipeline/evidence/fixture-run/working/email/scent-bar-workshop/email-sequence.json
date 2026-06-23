@@ -1,6 +1,14 @@
 {
   "status": "APPROVED",
   "persona": "hormozi-100m-offers",
+  "copy_persona": "hormozi-100m-offers",
+  "cadence_days": [
+    0,
+    1,
+    3,
+    5,
+    7
+  ],
   "emails": [
     {
       "day": 0,

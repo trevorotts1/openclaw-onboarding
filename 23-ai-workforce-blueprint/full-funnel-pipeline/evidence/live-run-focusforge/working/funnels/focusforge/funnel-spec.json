@@ -1,0 +1,58 @@
+{
+  "funnel_name": "FocusForge 90-Day Coaching Funnel",
+  "based_on_offer": "FocusForge",
+  "based_on_offer_spec": "working/funnels/focusforge/offer-spec.json",
+  "funnel_type": "long-form sales",
+  "funnel_type_rationale": "High-ticket ($1,500 one-time) commitment level -> per R-STRUCTURE dim 1 (offer price vs type), a high-ticket coaching offer maps to long-form sales (application/VSL-adjacent), NOT a short-form squeeze.",
+  "persona": "hormozi-100m-offers",
+  "pages": [
+    {
+      "id": "optin",
+      "type": "opt-in",
+      "slug": "focusforge-optin",
+      "sections": ["hero", "subhead", "cta"],
+      "slot_ids": ["headline", "subhead", "cta"]
+    },
+    {
+      "id": "sales",
+      "type": "sales",
+      "slug": "focusforge-apply",
+      "sections": ["hero", "benefits", "social-proof", "offer", "guarantee", "cta"],
+      "slot_ids": ["hero", "stack", "guarantee", "cta"]
+    },
+    {
+      "id": "thankyou",
+      "type": "thank-you",
+      "slug": "focusforge-booked",
+      "sections": ["confirm", "next-step"],
+      "slot_ids": ["confirm"]
+    }
+  ],
+  "offer_map": {
+    "main_offer_page": "sales",
+    "main_offer_price_cents": 150000,
+    "order_bump": null,
+    "upsell": null,
+    "downsell": null,
+    "note": "Single high-ticket offer; no order-bump/upsell on a $1,500 application funnel (R-STRUCTURE dim 3: offer-map coherence vs offer-spec — one price point in, one offer out)."
+  },
+  "value_architecture_grounding": {
+    "framework": "hormozi-100m-offers value equation + offer stack + guarantee",
+    "applied": {
+      "grand_slam_offer_stack": "Core 1:1 coaching + focus-OS + async accountability + field manual + 3 bonuses, each line stacked with a dollar value to inflate perceived value vs the $1,500 price.",
+      "guarantee_type": "conditional / outcome-based (double-your-hours-or-refund) — Hormozi's risk-reversal lever to raise perceived likelihood of achievement.",
+      "naming": "FocusForge = outcome-anchored magnetic name (forge = build/strengthen)."
+    }
+  },
+  "email_sequence": {
+    "emails": 5,
+    "cadence_days": [0, 1, 3, 5, 7]
+  },
+  "downstream_handoffs": [
+    "-> Conversion Copywriter (consumes this funnel-spec.json for P2 copy)",
+    "-> Automation Workflow Specialist / CRM (consumes offer-map + page IDs for P5 Skill-44 workflows)"
+  ],
+  "owner": "funnel-strategist",
+  "stage": "p1-funnel-spec",
+  "persona_selection_log": "working/funnels/focusforge/persona-selection-log.md"
+}

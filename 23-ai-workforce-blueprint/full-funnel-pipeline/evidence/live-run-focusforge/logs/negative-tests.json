@@ -1,0 +1,80 @@
+{
+  "all_negatives_bite": true,
+  "tests": {
+    "T-N1_wrong_locid_refuse_FAILED_zero_writes": {
+      "result": "PASS",
+      "ran": true,
+      "evidence": {
+        "call": "ghl_builder.subaccount_matches('WRONGLOCATION00000000','Mct54Bwi1KlNouGXQcDX')",
+        "guard_ok": false,
+        "guard_reason": "MISMATCH: active sub-account location_id 'wronglocation00000000' != expected 'mct54bwi1klnougxqcdx' \u2014 HARD STOP (NO-COMINGLING)",
+        "task_status_after_gate": "FAILED",
+        "writes_performed": 0,
+        "all_3_write_attempts_refused": true
+      }
+    },
+    "T-N2_placeholder_copy_refused": {
+      "result": "PASS",
+      "ran": true,
+      "evidence": {
+        "call": "placeholder_gate(<page body with [CLIENT TO SUPPLY]>)",
+        "bad_body_gate_ok": false,
+        "bad_body_found": [
+          "[CLIENT TO SUPPLY"
+        ],
+        "clean_body_gate_ok": true,
+        "note": "A page body carrying [CLIENT TO SUPPLY] is REFUSED (ok=False); a clean body passes."
+      }
+    },
+    "T-N4_false_summary_VerifyContradiction": {
+      "result": "PASS",
+      "ran": true,
+      "evidence": {
+        "call": "ghl_verify.assert_consistent({passed:3,total:3,overall_pass:True}, raw[1 FAIL])",
+        "raised_VerifyContradiction": true,
+        "reason": "summary.passed=3 is MORE OPTIMISTIC than the raw log (2 pages actually passed). A summary can never claim more than its evidence (logs/final-preview-verify.json"
+      }
+    },
+    "T-N5_ungrounded_copy_scores_below_8.5": {
+      "result": "PASS",
+      "ran": true,
+      "evidence": {
+        "call": "funnel_rubrics.score_all(<run with APPROVED-but-ungrounded copy>)['R-COPY']",
+        "r_copy_score": 3.0,
+        "r_copy_passed": false,
+        "missing": [
+          "separate_actor_approval",
+          "persona_grounded",
+          "cta_slots_present",
+          "benefit_framing"
+        ],
+        "note": "An APPROVED copy lacking persona-grounding/separate-actor/benefit framing scores < 8.5."
+      }
+    },
+    "T-N5b_persona_gate_fails_without_selector_marker": {
+      "result": "PASS",
+      "ran": true,
+      "evidence": {
+        "call": "funnel_rubrics.persona_grounding_gate(<log naming hormozi but NO selector_ran>)",
+        "gate_ok": false,
+        "gate_score": 5.0,
+        "reasons": [
+          "missing selector_ran marker (no real selector-output proof)"
+        ]
+      }
+    },
+    "T-N6_epic_idempotency_no_dup_on_replay": {
+      "result": "PASS",
+      "ran": true,
+      "evidence": {
+        "call": "ingest(epic_idempotency_key(src,title)) then REPLAY the same intake",
+        "created_on_first_intake": 8,
+        "created_on_replay": 0,
+        "same_parent_id": true,
+        "total_distinct_cards": 8,
+        "note": "Replayed intake deduped to the SAME parent+children (0 new) \u2014 no duplicate funnel."
+      }
+    }
+  },
+  "note": "Every negative is a RUNNABLE fail-closed test executed by a real function call (no ENFORCED-BY-DESIGN / MODELED prose). Each must produce its fail-closed outcome or this runner exits non-zero."
+}

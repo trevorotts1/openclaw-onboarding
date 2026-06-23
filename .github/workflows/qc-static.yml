@@ -2064,7 +2064,7 @@ jobs:
           # 1. JSON: plugins.entries.whatsapp.enabled must not be true
           # Use a one-liner to avoid multi-line Python indentation issues in YAML.
           while IFS= read -r f; do
-            if ! python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(1 if d.get('plugins',{}).get('entries',{}).get('whatsapp',{}).get('enabled') else 0)" "$f" 2>/dev/null; then
+            if ! python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(1 if isinstance(d, dict) and d.get('plugins',{}).get('entries',{}).get('whatsapp',{}).get('enabled') else 0)" "$f" 2>/dev/null; then
               echo "✗ $f: plugins.entries.whatsapp.enabled is true (fleet ban violation)"
               fail=1
             fi

@@ -1,0 +1,22 @@
+{
+  "id": "R-CC-SYNC",
+  "score": 10.0,
+  "threshold": 8.5,
+  "passed": true,
+  "evidence_path": "logs/cc-invariant.json",
+  "raw_signal": "invariant_holds=True(6.0/6.0); role_count_reconciles=416==416(4.0/4.0)",
+  "subchecks": [
+    {
+      "name": "invariant_holds",
+      "weight": 6.0,
+      "earned": 6.0,
+      "observed": "True"
+    },
+    {
+      "name": "role_count_reconciles",
+      "weight": 4.0,
+      "earned": 4.0,
+      "observed": "416==416"
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "id": "R-FORMS",
+  "score": 9.2,
+  "threshold": 8.5,
+  "passed": true,
+  "evidence_path": "ecosystem/contact-test.json",
+  "raw_signal": "optin_form_present=True(2.0/2.0); form_capture_201=201(3.0/3.0); form_to_crm_proven=substituted (public-widget 403); attribution+tags(1.2/2.0); expected_tags_routed=['focusforge-applicant', 'focusforge-optin', 'textable-no'](3.0/3.0)",
+  "subchecks": [
+    {
+      "name": "optin_form_present",
+      "weight": 2.0,
+      "earned": 2.0,
+      "observed": "True"
+    },
+    {
+      "name": "form_capture_201",
+      "weight": 3.0,
+      "earned": 3.0,
+      "observed": "201"
+    },
+    {
+      "name": "form_to_crm_proven",
+      "weight": 2.0,
+      "earned": 1.2,
+      "observed": "substituted (public-widget 403); attribution+tags"
+    },
+    {
+      "name": "expected_tags_routed",
+      "weight": 3.0,
+      "earned": 3.0,
+      "observed": "['focusforge-applicant', 'focusforge-optin', 'textable-no']"
+    }
+  ]
+}

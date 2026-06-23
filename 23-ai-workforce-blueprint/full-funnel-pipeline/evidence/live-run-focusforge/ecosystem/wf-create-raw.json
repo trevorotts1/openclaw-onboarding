@@ -1,0 +1,13 @@
+{
+  "workflows_created": 1,
+  "steps_saved": 6,
+  "triggers_created": 1,
+  "errors": [],
+  "start_time": 1782185448.2032452,
+  "end_time": 1782185452.611893,
+  "api_calls": 8,
+  "workflow_ids": {
+    "focusforge_applicant_nurture": "17486457-001d-4d97-bca8-f90a0391bee6"
+  },
+  "folder_id": "1b749c48-4152-4b76-9114-c63d1ca5aae8"
+}

@@ -1,0 +1,27 @@
+{
+  "step": "product-price",
+  "ok": true,
+  "at": 1782177425,
+  "http_status": 201,
+  "product_id": "6a39de919301da6f55bda469",
+  "price_id": "6a39de91d143b7f8fc0e2f4d",
+  "price_amount_cents": 150000,
+  "request_product": {
+    "locationId": "Mct54Bwi1KlNouGXQcDX",
+    "altId": "Mct54Bwi1KlNouGXQcDX",
+    "altType": "location",
+    "name": "ZHC FocusForge 90-Day Program",
+    "productType": "SERVICE",
+    "image": "https://storage.googleapis.com/msgsndr/Mct54Bwi1KlNouGXQcDX/media/focusforge-hero.png"
+  },
+  "request_price": {
+    "locationId": "Mct54Bwi1KlNouGXQcDX",
+    "altId": "Mct54Bwi1KlNouGXQcDX",
+    "altType": "location",
+    "name": "FocusForge 90-Day Program",
+    "type": "one_time",
+    "currency": "USD",
+    "amount": 150000
+  },
+  "reread_http_status": 200
+}
