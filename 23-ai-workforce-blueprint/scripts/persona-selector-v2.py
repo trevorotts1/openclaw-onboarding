@@ -985,6 +985,74 @@ def _persona_keywords(persona_id: str) -> list:
     return [p for p in parts if p and p not in stop]
 
 
+# Human-readable label keys, in priority order, for an object-shaped KPI /
+# value entry. company-config.json drifted between two schemas in the wild:
+#   schema A (template / upgrade-company-config.py): list[str]
+#       e.g. ["monthly recurring revenue", "client retention 90-day"]
+#   schema B (some live boxes, e.g. interview-generated):  list[dict]
+#       e.g. [{"name": "monthly recurring revenue", "target": "50000"}, ...]
+# The pre-v13.8.9 scoring layers did `", ".join(company_kpis)` assuming schema A,
+# which raised `TypeError: sequence item 0: expected str instance, dict found`
+# on every box carrying a schema-B config (crashing the whole selector).
+_KPI_LABEL_KEYS = ("name", "label", "kpi", "metric", "title", "text")
+
+
+def _kpi_labels(items) -> list:
+    """Coerce a company_kpis / owner_values / dept_kpis array to a list of
+    human-readable label strings, robust to BOTH config schemas.
+
+    - str item  → used as-is (stripped).
+    - dict item → first non-empty value among _KPI_LABEL_KEYS; if none of those
+                  keys is present, fall back to the first non-empty string value
+                  in the dict, else a compact JSON dump so nothing is silently
+                  lost.
+    - anything else → str(item).
+
+    Empty / None / non-list input returns []. Never raises — this is the guard
+    that keeps `" ".join(_kpi_labels(...))` from ever crashing the selector.
+    """
+    if not items:
+        return []
+    if not isinstance(items, (list, tuple)):
+        # Defensive: a bare string slipped through (pre-v2.0 comma form, etc.)
+        if isinstance(items, str):
+            return [p.strip() for p in items.split(",") if p.strip()]
+        return [str(items)]
+    out = []
+    for item in items:
+        if item is None:
+            continue
+        if isinstance(item, str):
+            s = item.strip()
+            if s:
+                out.append(s)
+        elif isinstance(item, dict):
+            label = None
+            for k in _KPI_LABEL_KEYS:
+                v = item.get(k)
+                if isinstance(v, str) and v.strip():
+                    label = v.strip()
+                    break
+            if label is None:
+                # No known label key — take the first non-empty string value,
+                # else compact-JSON the dict so the layer still has *something*.
+                for v in item.values():
+                    if isinstance(v, str) and v.strip():
+                        label = v.strip()
+                        break
+            if label is None:
+                try:
+                    label = json.dumps(item, ensure_ascii=False, sort_keys=True)
+                except Exception:
+                    label = str(item)
+            out.append(label)
+        else:
+            s = str(item).strip()
+            if s:
+                out.append(s)
+    return out
+
+
 def _heuristic_layer_scores(persona_id: str, task_text: str, owner_profile: str,
                              department_id: str, cc: dict, paths: dict) -> dict:
     """Keyword-hit baseline (SCORING_MODE=heuristic). Cheap, no LLM calls."""
@@ -1000,7 +1068,7 @@ def _heuristic_layer_scores(persona_id: str, task_text: str, owner_profile: str,
     else:
         mission_score = 0.6
 
-    values_text = " ".join(cc.get("owner_values") or []).lower()
+    values_text = " ".join(_kpi_labels(cc.get("owner_values"))).lower()
     if owner_profile:
         values_text += " " + owner_profile.lower()
     if values_text:
@@ -1009,7 +1077,7 @@ def _heuristic_layer_scores(persona_id: str, task_text: str, owner_profile: str,
     else:
         values_score = 0.6
 
-    company_kpis = cc.get("company_kpis") or []
+    company_kpis = _kpi_labels(cc.get("company_kpis"))
     if company_kpis:
         kpi_text = " ".join(company_kpis).lower()
         hits = sum(1 for kw in kws if kw in kpi_text)
@@ -1018,7 +1086,7 @@ def _heuristic_layer_scores(persona_id: str, task_text: str, owner_profile: str,
         company_kpi_score = 0.6
 
     dept_kpis_map = cc.get("dept_kpis") or {}
-    dept_kpis = dept_kpis_map.get(department_id) or dept_kpis_map.get(f"dept-{department_id}") or []
+    dept_kpis = _kpi_labels(dept_kpis_map.get(department_id) or dept_kpis_map.get(f"dept-{department_id}"))
     if dept_kpis:
         dept_kpi_text = " ".join(dept_kpis).lower()
         hits = sum(1 for kw in kws if kw in dept_kpi_text)
@@ -1061,14 +1129,14 @@ def _llm_layer_scores(persona_id: str, task_text: str, owner_profile: str,
     )
     mission_res = score_layer(persona_id, "mission", persona_summary, mission_ctx)
 
-    values_list = cc.get("owner_values") or []
+    values_list = _kpi_labels(cc.get("owner_values"))
     values_ctx = (
         f"Stated owner values: {', '.join(values_list) if values_list else '(none stated)'}\n\n"
         f"Owner behavioral profile (USER.md excerpt):\n{owner_profile[:1500] if owner_profile else '(no profile)'}"
     )
     values_res = score_layer(persona_id, "owner_values", persona_summary, values_ctx)
 
-    company_kpis = cc.get("company_kpis") or []
+    company_kpis = _kpi_labels(cc.get("company_kpis"))
     company_kpi_ctx = (
         f"Company-level KPIs: {', '.join(company_kpis) if company_kpis else '(none defined)'}\n"
         f"Company industry: {cc.get('industry') or '(unspecified)'}"
@@ -1076,7 +1144,7 @@ def _llm_layer_scores(persona_id: str, task_text: str, owner_profile: str,
     company_kpi_res = score_layer(persona_id, "company_kpis", persona_summary, company_kpi_ctx)
 
     dept_kpis_map = cc.get("dept_kpis") or {}
-    dept_kpis = dept_kpis_map.get(department_id) or dept_kpis_map.get(f"dept-{department_id}") or []
+    dept_kpis = _kpi_labels(dept_kpis_map.get(department_id) or dept_kpis_map.get(f"dept-{department_id}"))
     dept_kpi_ctx = (
         f"Department: {department_id}\n"
         f"Department KPIs: {', '.join(dept_kpis) if dept_kpis else '(none defined)'}"
