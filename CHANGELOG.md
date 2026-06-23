@@ -1,3 +1,14 @@
+## [v13.8.5]  -  2026-06-23  -  feat(release): release.sh auto-publishes a GitHub Release every run (close the v12->v13 badge gap)
+
+Repo-tooling fix. No change to skills, role/SOP/persona libraries, or the routing/gating contract — only the release pipeline.
+
+- **Root cause (the "stuck on v12" problem):** `scripts/release.sh` created + pushed an annotated git tag but **never published a GitHub Release**. So the git tags ran ahead to v13.8.x while the GitHub "Latest" badge — and the `GET /releases/latest` API that downstream `get_latest_release` checks hit — stayed pinned at the last manually-published release (v12.8.3). The repo looked months behind and any latest-release probe returned the wrong version.
+- **`release.sh` Step 8 (NEW) — publish a GitHub Release on every run:** after pushing the tag, release.sh now runs `gh release create <tag> --verify-tag --title <tag> --notes-file <changelog-section>`, drawing the notes from the CHANGELOG section for that version. This keeps the badge + the `releases/latest` API in lockstep with the newest tag permanently. **Idempotent + safe-to-degrade:** skips if the release already exists (`gh release view`), if `--no-push` (no tag on origin to release from), or if `gh` is missing / unauthenticated — it warns with the manual command instead of failing the release, so a publish hiccup never blocks the tag/release itself. Step labels renumbered ([6/6] → [6/8], push → [7/8]).
+- **`scripts/extract-changelog-section.py` (NEW):** prints the `CHANGELOG.md` section for a given version. Header-format agnostic — handles both the `## vX.Y.Z — …` (em-dash) and `## [vX.Y.Z]  -  …` (bracketed-dash) styles that coexist in this CHANGELOG. Exits 2 when the section is not found; release.sh falls back to a minimal note in that case rather than failing.
+- **Backfill (separate, already done via `gh` API):** the historical GitHub Releases for v13.0.3 / v13.1.4 / v13.2.4 / v13.3.0 / v13.4.1 / v13.5.5 / v13.6.0 / v13.7.0 / v13.8.2 / v13.8.3 / v13.8.4 were published so the release history no longer looks stuck at v12.8.3.
+- **Version note:** v13.8.4 was reserved for the concurrent fleet-refresh release; this change ships as v13.8.5 to avoid a version collision and rebases on top of v13.8.4. GitHub's `releases/latest` is semver-aware, so v13.8.5 is "Latest".
+- **Versions:** 10 markers + cc-compat → v13.8.5. No skill content changed (release.sh + a new repo script only), so no skill-version bump.
+
 ## [v13.8.4]  -  2026-06-23  -  fleet-refresh on-box clone-path detection + set -u unbound-var guards + gemini-embedding-2 live-config pins
 
 ## [v13.8.3]  -  2026-06-23  -  fix(vps-installer): set LOG_FILE on VPS install path (LOG_FILE unbound-variable abort blocked the VPS payload roll)
