@@ -1,3 +1,5 @@
+## [v13.8.8]  -  2026-06-23  -  repoint prebuilt-index manifest at full-48 asset (prebuilt-index-v2.0.0): 48 personas / 7615 chunks / gemini-embedding-2 @3072; clients download instead of re-embedding 8 books per box
+
 ## [v13.8.7]  -  2026-06-23  -  selector-based persona grounding across funnel/copy/offer SOPs — de-hardcode hormozi, reach 8 new book personas, restamp library manifest
 
 ## [v13.8.6]  -  2026-06-23  -  fix(persona-selector): wire 8 book-author personas into persona-categories.json (Stage-B tag filter now routes Brunson/Edwards/NEPQ/Dib for funnel/copy/sales) + purge last active gemini-embedding-001 ref (Skill-31 MIGRATION) -> gemini-embedding-2
