@@ -1,3 +1,5 @@
+## [v13.8.9]  -  2026-06-23  -  fix(persona-selector): harden company_kpis/owner_values/dept_kpis joins against schema drift (list[str] vs list[dict]) via _kpi_labels() helper at all 6 sites — kills TypeError that crashed the selector on every box with a schema-B company-config; adds dual-schema regression test
+
 ## [v13.8.8]  -  2026-06-23  -  repoint prebuilt-index manifest at full-48 asset (prebuilt-index-v2.0.0): 48 personas / 7615 chunks / gemini-embedding-2 @3072; clients download instead of re-embedding 8 books per box
 
 ## [v13.8.7]  -  2026-06-23  -  selector-based persona grounding across funnel/copy/offer SOPs — de-hardcode hormozi, reach 8 new book personas, restamp library manifest
