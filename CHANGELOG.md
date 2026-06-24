@@ -1,3 +1,5 @@
+## [v14.0.1]  -  2026-06-24  -  Skill 47 clone moved outside hashed skill dir + content-hash hardening — unblocks fleet version stamp (A3); G3-on-06 release gap closed
+
 ## [v14.0.0]  -  2026-06-24  -  feat(video): rename Skill 47 → Movie Producer + multi-SOP reframe + Pudovkin persona QC_PASS
 
 Rebrands Skill 47 from `47-openmontage-production/` to `47-movie-producer/` (the upstream OpenMontage AGPLv3 ENGINE name is retained where it names the engine/repo; only the skill-dir name and skill name change). The `video` department role keeps its registered slug `automated-video-production-specialist-openmontage` (file NOT renamed) and gets a new DISPLAY TITLE: "Movie Producer (Automated Video Production)". `scripts/qc-assert-no-client-names.sh` exit 0; all locking gates re-run green (register/hash/persona/skill-QC); INVARIANT_OK printed by sync-extensions converge.
