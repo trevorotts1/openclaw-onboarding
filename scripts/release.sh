@@ -185,12 +185,22 @@ echo ""
 
 # ─── Step 4: stage all changed files ─────────────────────────────────────────
 echo "[4/6] Staging changed files ..."
+# bump-version.sh ALSO rolls the four script-embedded browser-manager version
+# markers (_roll_marker: BROWSER_MANAGER_VERSION / BROWSER_MANAGER_PY_VERSION /
+# AGENT_BROWSER_REAPER_VERSION / GUARD_AGENT_BROWSER_MANAGED_VERSION). They were
+# missing from this git add, so a release left them unstaged and they drifted
+# one version behind /version on every release. version-consistency.yml does not
+# track them, so CI never caught it. Stage them here so a release captures them.
 git add version install.sh update-skills.sh CHANGELOG.md \
   "23-ai-workforce-blueprint/skill-version.txt" \
   "23-ai-workforce-blueprint/templates/role-library/_index.json" \
   "23-ai-workforce-blueprint/templates/role-library/_qc-summary.md" \
   README.md \
   DIRECT-TO-AGENT-UPDATE-MESSAGE.md \
+  "06-ghl-install-pages/tools/browser_manager.sh" \
+  "06-ghl-install-pages/tools/browser_manager.py" \
+  "scripts/agent-browser-reaper.sh" \
+  "scripts/guard-agent-browser-managed.sh" \
   ${CC_COMPAT:+cc-compat.json}
 echo "  Staged."
 echo ""
