@@ -38,6 +38,7 @@ SAFETY RULES (enforced here, never relax):
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from pathlib import Path
@@ -85,6 +86,38 @@ _DEFAULT_DURATION = "8"   # STRING — the 422 fix
 
 # Valid aspect ratios for KIE Gemini Omni (generate-celebration-video.sh line 425)
 _VALID_ASPECT_RATIOS = {"16:9", "9:16"}
+
+
+def _decode_result_json(raw: Any) -> dict[str, Any]:
+    """Normalise KIE's ``resultJson`` field into a parsed dict.
+
+    KIE's poll endpoints (/api/v1/jobs/recordInfo and /api/v1/veo/record-info)
+    return ``resultJson`` as a JSON-ENCODED STRING — a string whose contents are
+    themselves JSON — NOT an already-parsed object.  This mirrors the fleet
+    reference script generate-celebration-video.sh, which pipes
+    ``jq -r '.data.resultJson'`` (raw string) into a SECOND ``jq`` to parse it
+    (lines 499 and 592).  The original adapters read ``resultJson`` as if it
+    were already a dict and called ``.get()`` on the raw string, so the result
+    URL was never extracted on a client box (confirmed live against api.kie.ai
+    during the v14.1.x render proof).
+
+    Defensive contract:
+      - str   -> json.loads() (returns {} if it does not decode to a dict)
+      - dict  -> used as-is (tolerate an already-parsed object)
+      - other -> {} (None, list, number, etc.)
+    """
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+        except (ValueError, TypeError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    if isinstance(raw, dict):
+        return raw
+    return {}
 
 
 class KieVideo(BaseTool):
@@ -429,7 +462,11 @@ class KieVideo(BaseTool):
             state = data_block.get("state", "")
 
             if state == "success":
-                result_json = data_block.get("resultJson") or {}
+                # resultJson arrives as a JSON-ENCODED STRING from KIE; decode
+                # it before reading the result URL(s).  Tolerates an already-
+                # parsed dict.  (generate-celebration-video.sh line 499 pipes
+                # `jq -r .data.resultJson` into a SECOND jq to parse it.)
+                result_json = _decode_result_json(data_block.get("resultJson"))
                 result_urls = result_json.get("resultUrls") or []
                 if result_urls:
                     return result_urls[0]
@@ -591,21 +628,23 @@ class KieVideo(BaseTool):
             success_flag = str(data_block.get("successFlag") or "")
 
             if success_flag in ("1",):
-                # Extract result URL (mirrors poll_veo jq expressions)
+                # Extract result URL (mirrors poll_veo jq expressions:
+                # `.data.response.resultUrls[0] // .data.response.videoUrl
+                #  // .data.resultJson` — generate-celebration-video.sh line 592).
                 response_block = data_block.get("response") or {}
                 result_urls = response_block.get("resultUrls") or []
                 if result_urls:
                     return result_urls[0]
-                video_url = (
-                    response_block.get("videoUrl")
-                    or data_block.get("resultJson")
-                    or ""
-                )
-                if isinstance(video_url, dict):
+                video_url = response_block.get("videoUrl") or ""
+                if not video_url:
+                    # resultJson arrives as a JSON-ENCODED STRING from KIE;
+                    # decode it before reading the URL (tolerates a parsed dict).
+                    result_json = _decode_result_json(data_block.get("resultJson"))
                     video_url = (
-                        video_url.get("resultUrls", [None])[0]
-                        or video_url.get("videoUrl")
-                        or video_url.get("url")
+                        (result_json.get("resultUrls") or [None])[0]
+                        or result_json.get("videoUrl")
+                        or result_json.get("url")
+                        or result_json.get("resultUrl")
                         or ""
                     )
                 if video_url:

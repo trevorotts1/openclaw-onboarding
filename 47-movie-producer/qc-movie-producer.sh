@@ -137,6 +137,20 @@ assert "kie_image.py source gates on KIE_API_KEY (not an operator key value)" \
 assert "kie_video.py source gates on KIE_API_KEY (not an operator key value)" \
   "grep -q 'KIE_API_KEY' \"${ADAPTER_VID_SRC}\""
 
+# ---- resultJson JSON-string decode fix (v14.1.2) is present + proven (HARD) ----
+# KIE's poll endpoints return resultJson as a JSON-ENCODED STRING; both adapters
+# must json.loads()-decode it before reading the result URL. The decode test
+# exercises all three poll paths against a captured recordInfo response shape
+# (resultJson as a JSON string) with no network/key (tools.base_tool stubbed).
+assert "kie_image.py decodes resultJson JSON-string (json import + _decode_result_json)" \
+  "grep -q 'import json' \"${ADAPTER_IMG_SRC}\" && grep -q '_decode_result_json' \"${ADAPTER_IMG_SRC}\""
+assert "kie_video.py decodes resultJson JSON-string (json import + _decode_result_json)" \
+  "grep -q 'import json' \"${ADAPTER_VID_SRC}\" && grep -q '_decode_result_json' \"${ADAPTER_VID_SRC}\""
+assert "test_kie_adapter_resultjson_decode.py present" \
+  "[ -f \"${SELF_SKILL_DIR}/scripts/test_kie_adapter_resultjson_decode.py\" ]"
+assert "resultJson-decode test passes (all 3 poll paths extract URL from JSON-string)" \
+  "python3 \"${SELF_SKILL_DIR}/scripts/test_kie_adapter_resultjson_decode.py\""
+
 # ---- No operator KIE_API_KEY value committed in the skill payload (HARD) ----
 assert "No literal operator KIE_API_KEY value committed in skill payload" \
   "! grep -rIE 'KIE_API_KEY\\s*=\\s*[\"'\"'\"']?[A-Za-z0-9]{20,}' \"${SELF_SKILL_DIR}\" 2>/dev/null | grep -qv 'YOUR_CLIENT_KIE_API_KEY_HERE'"
