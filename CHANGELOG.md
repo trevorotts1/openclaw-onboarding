@@ -1,3 +1,5 @@
+## [v14.1.1]  -  2026-06-24  -  cron reconcile pass + agent-browser-reaper command-kind/hourly + bash-3.2 compat + CI delivery guard (fleet-wide announce-spam + token-furnace permanent fix)
+
 ## [v14.1.0]  -  2026-06-24  -  feat(video): Movie Producer anti-bypass enforcement layer — manifest + deterministic gate-and-attest driver + receipt validators + binary ruleset + lockstep/Guard-A/GOOD-BAD CI
 
 Promotes the Movie Producer (Video Production) department from PROSE-only doctrine (Rule-Zero, ffprobe, budget, "do not skip stages") to a MECHANICALLY-ENFORCED, un-bypassable pipeline — the same interlocking enforcement spine the Presentations department uses. A rule not auto-failed at a gate does not exist; every doctrine rule is now a manifest autofail WITH an enforcing py_symbol AND a triggering negative test. `scripts/qc-assert-no-client-names.sh` exit 0; existing locking gates re-run green (register/hash --check, presentations sync_check); the OpenMontage AGPLv3 source is NEVER vendored — `executive_producer.py` is OUR code that gates AROUND OpenMontage.
