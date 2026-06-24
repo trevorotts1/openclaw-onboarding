@@ -1,3 +1,5 @@
+## [v13.8.16]  -  2026-06-24  -  fix(crons): operator/maintenance/onboarding crons default to SILENT — no client auto-announce (PR #326)
+
 ## [v13.8.15]  -  2026-06-23  -  test(skill-23): harden the build→prove CI guard to catch a gutted ROLE_LIBRARY_PATH (PENDING-stub roles), not just slug divergence
 
 Follow-up hardening of the v13.8.14 build-roundtrip guard. The library is resolved (by both `build-workforce._instantiate_role_from_library` and `create_role_workspaces._resolve_skill_dir`) via `ROLE_LIBRARY_PATH` → the skill-dir root that contains `templates/role-library/_index.json`; if that root is gutted/empty the engine silently falls back and writes `PENDING — FILL FROM LIBRARY` stub how-to.md files. A role with a stub how-to.md still COUNTS as present to the prover (it only needs the file to exist) — so a prover-pass alone does NOT prove real content. That failure mode is worse than the slug bug (present-but-empty roles).
