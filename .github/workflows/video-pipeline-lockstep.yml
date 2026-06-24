@@ -1,0 +1,163 @@
+name: Video pipeline lockstep (Movie Producer)
+
+# Makes the Movie Producer (Video Production) anti-bypass layer fail loud forever.
+# Mirrors presentations-lockstep.yml (sync/test/Guard A) + class-kit-gate.yml
+# (GOOD/BAD fixture self-test). Any non-zero exit blocks the merge.
+#
+#   1. video_sync_check.py        — manifest <-> driver/build_check <-> ruleset <-> SOP
+#                                    lockstep; exit 4 on drift.
+#   2. test_video_preflight.py    — every executive_producer-enforced gate is tripped by
+#                                    a deliberately-failing fixture; emits af-coverage.json.
+#   3. video_gate_integrity_check.py — Guard A: declared == enforced == tested; exit 1 on
+#                                    a no-op / untested gate.
+#   4. GOOD/BAD fixture self-test — the driver ATTESTS the GOOD run (exit 0) and HARD-ABORTS
+#                                    the BAD bypass run (AF-VID-PHASE-SKIPPED, exit 2) so the
+#                                    gate provably bites (a no-op driver would pass both).
+#   5. qc-assert-no-client-names.sh — fleet-wide privacy invariant.
+#   6. qc-movie-producer.sh        — install QC stays green (no regression).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "47-movie-producer/scripts/executive_producer.py"
+      - "47-movie-producer/scripts/video_build_check.py"
+      - "47-movie-producer/scripts/video_sync_check.py"
+      - "47-movie-producer/scripts/video_gate_integrity_check.py"
+      - "47-movie-producer/scripts/test_video_preflight.py"
+      - "47-movie-producer/test-fixtures/make-video-fixtures.sh"
+      - "47-movie-producer/qc-movie-producer.sh"
+      - "universal-sops/video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json"
+      - "universal-sops/video-pipeline-craft/MASTER-VIDEO-QC-AUTOFAIL-RULESET.md"
+      - "23-ai-workforce-blueprint/templates/role-library/video/*.md"
+      - "23-ai-workforce-blueprint/templates/role-library/video/sops/*.md"
+      - ".github/workflows/video-pipeline-lockstep.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "47-movie-producer/scripts/executive_producer.py"
+      - "47-movie-producer/scripts/video_build_check.py"
+      - "47-movie-producer/scripts/video_sync_check.py"
+      - "47-movie-producer/scripts/video_gate_integrity_check.py"
+      - "47-movie-producer/scripts/test_video_preflight.py"
+      - "47-movie-producer/test-fixtures/make-video-fixtures.sh"
+      - "47-movie-producer/qc-movie-producer.sh"
+      - "universal-sops/video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json"
+      - "universal-sops/video-pipeline-craft/MASTER-VIDEO-QC-AUTOFAIL-RULESET.md"
+      - "23-ai-workforce-blueprint/templates/role-library/video/*.md"
+      - "23-ai-workforce-blueprint/templates/role-library/video/sops/*.md"
+      - ".github/workflows/video-pipeline-lockstep.yml"
+
+jobs:
+  video-pipeline-lockstep:
+    name: Movie Producer manifest/code/ruleset lockstep + GOOD/BAD self-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: video_sync_check.py — lockstep (exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          S="47-movie-producer/scripts/video_sync_check.py"
+          [ -f "$S" ] || { echo "FATAL: $S not found" >&2; exit 2; }
+          python3 "$S"
+          echo "video_sync_check: lockstep PASSED — manifest, driver, build-check, ruleset, roles, SOPs in sync."
+
+      - name: test_video_preflight.py — negative-test suite (exit 0 required, emits af-coverage)
+        shell: bash
+        run: |
+          set -euo pipefail
+          T="47-movie-producer/scripts/test_video_preflight.py"
+          [ -f "$T" ] || { echo "FATAL: $T not found" >&2; exit 2; }
+          python3 "$T"
+          echo "test_video_preflight: every executive_producer-enforced gate tripped its negative fixture (af-coverage emitted)."
+
+      - name: video_gate_integrity_check.py — Guard A (declared==enforced==tested, exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          G="47-movie-producer/scripts/video_gate_integrity_check.py"
+          COV="47-movie-producer/scripts/working/af-coverage.json"
+          [ -f "$G" ] || { echo "FATAL: $G not found" >&2; exit 2; }
+          [ -f "$COV" ] || { echo "FATAL: af-coverage.json not found — the test step must run first." >&2; exit 2; }
+          python3 "$G"
+          echo "video_gate_integrity_check: Guard A PASSED — no no-op / untested gates."
+
+      - name: Materialize the GOOD and BAD driver fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x 47-movie-producer/test-fixtures/make-video-fixtures.sh
+          bash 47-movie-producer/test-fixtures/make-video-fixtures.sh "$RUNNER_TEMP/vfix"
+          echo "GOOD MP4 bytes: $(wc -c < "$RUNNER_TEMP"/vfix/good-run/working/final.mp4)"
+
+      - name: GOOD run MUST ATTEST V-CONTROL (driver exit 0 through every phase)
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN="$RUNNER_TEMP/vfix/good-run"
+          DRV="47-movie-producer/scripts/executive_producer.py"
+          for ph in V-DEFINE V-MEASURE V-IMPROVE V-CONTROL; do
+            set +e
+            python3 "$DRV" --run-dir "$RUN" --phase "$ph"
+            rc=$?
+            set -e
+            echo "GOOD $ph driver exit: $rc"
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::Movie-Producer driver REJECTED the GOOD run at phase $ph (expected attest / exit 0, got $rc)"
+              exit 1
+            fi
+          done
+          echo "GOOD run attested every phase through V-CONTROL as expected."
+
+      - name: BAD run MUST HARD-ABORT (driver exit 2 — AF-VID-PHASE-SKIPPED)
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN="$RUNNER_TEMP/vfix/bad-run"
+          DRV="47-movie-producer/scripts/executive_producer.py"
+          set +e
+          python3 "$DRV" --run-dir "$RUN" --phase V-IMPROVE
+          rc=$?
+          set -e
+          echo "BAD V-IMPROVE driver exit: $rc"
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::Movie-Producer driver ATTESTED the BAD bypass run (expected HARD-ABORT / exit 2). The gate is not enforcing."
+            exit 1
+          fi
+          if [ "$rc" -ne 2 ]; then
+            echo "::error::BAD run aborted with exit $rc, expected the AF-VID-PHASE-SKIPPED precondition exit 2."
+            exit 1
+          fi
+          echo "BAD bypass run HARD-ABORTED with AF-VID-PHASE-SKIPPED (exit 2) as expected."
+
+      - name: qc-assert-no-client-names.sh — fleet privacy invariant (exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/qc-assert-no-client-names.sh
+          echo "no-client-names: PASS."
+
+      - name: qc-movie-producer.sh — install QC stays green (exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash 47-movie-producer/qc-movie-producer.sh
+          echo "qc-movie-producer: PASS."
+
+      - name: Summary
+        shell: bash
+        run: |
+          echo "Movie Producer enforcement self-test complete:"
+          echo "  lockstep (sync) -> PASS"
+          echo "  every gate negative-tested + Guard A -> PASS"
+          echo "  GOOD run -> ATTEST (exit 0)"
+          echo "  BAD bypass run -> HARD-ABORT (exit 2)"
+          echo "The anti-bypass layer is wired and self-testing in CI."

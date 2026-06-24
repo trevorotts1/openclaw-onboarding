@@ -210,5 +210,66 @@ pre_or_hard "No operator KIE_API_KEY value in clone .env (only var name / client
   "! grep -E '^KIE_API_KEY=.+' \"${CLONE_DIR}/.env\" 2>/dev/null | grep -v 'YOUR_CLIENT_KIE_API_KEY_HERE' | grep -qE '=[A-Za-z0-9]{20,}'"
 
 echo ""
+echo "--- v14.1.0 anti-bypass enforcement layer (HARD — always present in repo + post-install) ---"
+
+# The enforcement spine: manifest (single source of truth) + driver + receipt
+# validators + ruleset + lockstep/Guard-A/test + GOOD/BAD fixtures + CI workflow.
+REPO_ROOT_QC="${SELF_SKILL_DIR}/.."
+VID_MANIFEST="${REPO_ROOT_QC}/universal-sops/video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json"
+VID_RULESET="${REPO_ROOT_QC}/universal-sops/video-pipeline-craft/MASTER-VIDEO-QC-AUTOFAIL-RULESET.md"
+VID_DRIVER="${SELF_SKILL_DIR}/scripts/executive_producer.py"
+VID_BUILDCHK="${SELF_SKILL_DIR}/scripts/video_build_check.py"
+VID_SYNC="${SELF_SKILL_DIR}/scripts/video_sync_check.py"
+VID_GUARDA="${SELF_SKILL_DIR}/scripts/video_gate_integrity_check.py"
+VID_TEST="${SELF_SKILL_DIR}/scripts/test_video_preflight.py"
+VID_FIXTURES="${SELF_SKILL_DIR}/test-fixtures/make-video-fixtures.sh"
+VID_CI="${REPO_ROOT_QC}/.github/workflows/video-pipeline-lockstep.yml"
+
+assert "VIDEO-PIPELINE-MANIFEST.json present (single source of truth)" "[ -f \"${VID_MANIFEST}\" ]"
+assert "MASTER-VIDEO-QC-AUTOFAIL-RULESET.md present" "[ -f \"${VID_RULESET}\" ]"
+assert "executive_producer.py driver present" "[ -f \"${VID_DRIVER}\" ]"
+assert "video_build_check.py receipt validators present" "[ -f \"${VID_BUILDCHK}\" ]"
+assert "video_sync_check.py lockstep present" "[ -f \"${VID_SYNC}\" ]"
+assert "video_gate_integrity_check.py (Guard A) present" "[ -f \"${VID_GUARDA}\" ]"
+assert "test_video_preflight.py negative-test suite present" "[ -f \"${VID_TEST}\" ]"
+assert "make-video-fixtures.sh GOOD/BAD fixtures present" "[ -f \"${VID_FIXTURES}\" ]"
+assert "video-pipeline-lockstep.yml CI workflow present" "[ -f \"${VID_CI}\" ]"
+
+# The enforcement code must parse.
+assert "executive_producer.py parses" "python3 -c \"import ast; ast.parse(open('${VID_DRIVER}').read())\""
+assert "video_build_check.py parses" "python3 -c \"import ast; ast.parse(open('${VID_BUILDCHK}').read())\""
+
+# The manifest must declare exactly the 5 DMAIC phases in ascending order.
+assert "VIDEO-PIPELINE-MANIFEST declares 5 ordered DMAIC phases (V-DEFINE..V-CONTROL)" \
+  "python3 -c \"
+import json,sys
+m=json.load(open('${VID_MANIFEST}'))
+ids=[p['id'] for p in sorted(m['phases'],key=lambda p:p['order'])]
+sys.exit(0 if ids==['V-DEFINE','V-MEASURE','V-ANALYZE','V-IMPROVE','V-CONTROL'] else 1)\""
+
+# Lockstep + Guard A must pass (manifest<->driver<->ruleset in sync; every gate tested).
+assert "video_sync_check.py — manifest/code/ruleset LOCKSTEP (exit 0)" \
+  "python3 \"${VID_SYNC}\" >/dev/null 2>&1"
+assert "test_video_preflight.py — every gate negative-tested (exit 0, emits af-coverage)" \
+  "python3 \"${VID_TEST}\" >/dev/null 2>&1"
+assert "video_gate_integrity_check.py — Guard A declared==enforced==tested (exit 0)" \
+  "python3 \"${VID_GUARDA}\" >/dev/null 2>&1"
+
+# The driver must HARD-ABORT a bypass (AF-VID-PHASE-SKIPPED) and ATTEST a complete run.
+QC_TMP="$(mktemp -d 2>/dev/null || echo /tmp/mp-qc-$$)"
+if [ -f "${VID_FIXTURES}" ]; then
+  bash "${VID_FIXTURES}" "${QC_TMP}/vfix" >/dev/null 2>&1
+  assert "driver HARD-ABORTS the BAD bypass run (AF-VID-PHASE-SKIPPED, exit 2)" \
+    "python3 \"${VID_DRIVER}\" --run-dir \"${QC_TMP}/vfix/bad-run\" --phase V-IMPROVE >/dev/null 2>&1; [ \$? -eq 2 ]"
+  # GOOD run: attest the free path through every phase; final V-CONTROL must be exit 0.
+  GOOD_OK=1
+  for ph in V-DEFINE V-MEASURE V-IMPROVE V-CONTROL; do
+    python3 "${VID_DRIVER}" --run-dir "${QC_TMP}/vfix/good-run" --phase "$ph" >/dev/null 2>&1 || GOOD_OK=0
+  done
+  assert "driver ATTESTS the GOOD run through V-CONTROL (exit 0 each phase)" "[ \"${GOOD_OK}\" = 1 ]"
+  rm -rf "${QC_TMP}" 2>/dev/null
+fi
+
+echo ""
 echo "=== Result: $PASS passed | $FAIL failed | $WARN warnings | $PREFLAG pre-install notes ==="
 [ "$FAIL" -gt 0 ] && { red "Skill 47 QC FAILED"; exit 1; } || { green "Skill 47 QC PASS"; exit 0; }

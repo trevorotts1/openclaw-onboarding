@@ -1,0 +1,375 @@
+{
+  "manifest_version": 1,
+  "$schema_note": "SINGLE SOURCE OF TRUTH for the Movie Producer (Video Production) department pipeline. Mirrors the Presentations PIPELINE-MANIFEST.json enforcement spine (v14.1.0). Build-time lockstep (47-movie-producer/scripts/video_sync_check.py) validates executive_producer.py + video_build_check.py + the MASTER-VIDEO-QC-AUTOFAIL-RULESET.md Section-5 table + the video role-library/sops dirs against THIS file, in BOTH directions. The deterministic driver executive_producer.py walks phases[] in ascending `order`; before dispatching phase N, EVERY lower-order phase must carry an attestation in working/checkpoints/video_process_manifest.json AND its produces_artifact on disk, else HARD ABORT (AF-VID-PHASE-SKIPPED, exit 2). SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add an enforcing py_symbol in executive_producer.py / video_build_check.py, add the AF code to the MASTER ruleset Section-5 table, and add a negative test in test_video_preflight.py. video_sync_check.py exits 4 (drift) if any of those is skipped.",
+  "deliverables_required": [
+    {
+      "key": "job_manifest",
+      "filename": "job-manifest.json",
+      "label": "completed production brief / job manifest",
+      "min_bytes": 256,
+      "note": ">256 bytes; produced at V-DEFINE. Carries job_id, pipeline_selected, brief fields, requestor, created_at.",
+      "owning_phase": "V-DEFINE"
+    },
+    {
+      "key": "render_receipt",
+      "filename": "render-receipt.json",
+      "label": "ffprobe-validated render receipt",
+      "min_bytes": 256,
+      "note": ">256 bytes; produced at V-IMPROVE. Must carry ffprobe_pass:true + a real kie_task_id when Kie generation was in scope.",
+      "owning_phase": "V-IMPROVE"
+    },
+    {
+      "key": "final_mp4",
+      "filename": "*.mp4",
+      "label": "the finished, ffprobe-validated MP4 deliverable",
+      "min_bytes": 102400,
+      "note": ">100KB; a sub-100KB MP4 implies an empty/placeholder render. Produced at V-IMPROVE, delivered at V-CONTROL.",
+      "owning_phase": "V-IMPROVE"
+    }
+  ],
+  "phases": [
+    {
+      "id": "V-DEFINE",
+      "order": 1,
+      "name": "Define — Production Brief Intake + Pipeline Manifest Selection",
+      "owning_role": "automated-video-production-specialist-openmontage",
+      "sop_refs": [
+        "SOP--automated-video-production-specialist-openmontage-sops.md#9.1"
+      ],
+      "produces_artifact": "working/job-manifest.json",
+      "gate_codes": [
+        "AF-VID-BRIEF-INCOMPLETE"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_brief_complete",
+        "label": "job-manifest.json (brief_complete:true — topic, target_duration_sec, aspect_ratio, budget_ceiling_usd, tone all present)"
+      }
+    },
+    {
+      "id": "V-MEASURE",
+      "order": 2,
+      "name": "Measure — Pre-Flight, Provider Audit, Budget Measurement",
+      "owning_role": "automated-video-production-specialist-openmontage",
+      "sop_refs": [
+        "SOP--automated-video-production-specialist-openmontage-sops.md#9.2"
+      ],
+      "produces_artifact": "working/checkpoints/measure-receipt.json",
+      "gate_codes": [
+        "AF-VID-PREFLIGHT",
+        "AF-VID-PROVIDER-AUDIT",
+        "AF-VID-BUDGET-CAP"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_measure_receipt",
+        "label": "measure receipt (preflight_pass:true + provider_audit_pass:true + budget_gate_pass:true)"
+      },
+      "additional_preflights": [
+        {
+          "required": true,
+          "checker": "_chk_provider_audit",
+          "label": "provider audit (kie AVAILABLE; every native paid provider UNAVAILABLE; AF-VID-PROVIDER-AUDIT)"
+        },
+        {
+          "required": true,
+          "checker": "_chk_budget_cap",
+          "label": "budget cap (estimated_cost_usd <= budget_ceiling_usd; AF-VID-BUDGET-CAP)"
+        }
+      ]
+    },
+    {
+      "id": "V-ANALYZE",
+      "order": 3,
+      "name": "Analyze — Rule-Zero Announce + Approval Gate (paid only)",
+      "owning_role": "automated-video-production-specialist-openmontage",
+      "sop_refs": [
+        "SOP--automated-video-production-specialist-openmontage-sops.md#9.3",
+        "SOP--movie-producer-rule-zero-budget.md"
+      ],
+      "produces_artifact": "working/checkpoints/approval-receipt.json",
+      "gate_codes": [
+        "AF-VID-RULE-ZERO",
+        "AF-VID-APPROVAL-MISSING"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_rule_zero_approval",
+        "label": "Rule-Zero approval receipt (rule_zero_announced_at + approval_received_at + approved_by; CONDITIONAL on paid path — free documentary path defers via a logged owner-authorized skip)"
+      }
+    },
+    {
+      "id": "V-IMPROVE",
+      "order": 4,
+      "name": "Improve — Pipeline Execution, Render, ffprobe Validation",
+      "owning_role": "automated-video-production-specialist-openmontage",
+      "sop_refs": [
+        "SOP--automated-video-production-specialist-openmontage-sops.md#9.4",
+        "SOP--movie-producer-documentary-montage-pipeline.md"
+      ],
+      "produces_artifact": "working/checkpoints/render-receipt.json",
+      "gate_codes": [
+        "AF-VID-NO-FFPROBE",
+        "AF-VID-FABRICATED-RECEIPT",
+        "AF-VID-NATIVE-PROVIDER"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_render_receipt",
+        "label": "render receipt (ffprobe_pass:true + ffprobe_duration>0 + a video stream)"
+      },
+      "additional_preflights": [
+        {
+          "required": true,
+          "checker": "_chk_kie_receipt_real",
+          "label": "anti-fabrication (when kie_in_scope:true the render receipt carries a non-null, non-placeholder kie_task_id + kie_result_url; AF-VID-FABRICATED-RECEIPT)"
+        },
+        {
+          "required": true,
+          "checker": "_chk_native_provider",
+          "label": "native-provider ban (no FAL/Runway/HeyGen/OpenAI/Google native key was present at generation time; AF-VID-NATIVE-PROVIDER)"
+        }
+      ]
+    },
+    {
+      "id": "V-CONTROL",
+      "order": 5,
+      "name": "Control — Post-Render QC, Budget Reconciliation, Handoff",
+      "owning_role": "automated-video-production-specialist-openmontage",
+      "sop_refs": [
+        "SOP--automated-video-production-specialist-openmontage-sops.md#9.5",
+        "SOP--movie-producer-cross-role-handoff.md"
+      ],
+      "produces_artifact": "working/job-manifest.json",
+      "gate_codes": [
+        "AF-VID-DELIVERY-INCOMPLETE",
+        "AF-VID-BUDGET-OVERRUN"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_delivery_complete",
+        "label": "delivery completeness (job-manifest status:complete + final MP4 present + budget reconciled + handoff declared)"
+      },
+      "additional_preflights": [
+        {
+          "required": true,
+          "checker": "_chk_budget_overrun",
+          "label": "budget reconciliation (actual_cost_usd <= budget_ceiling_usd; AF-VID-BUDGET-OVERRUN)"
+        }
+      ]
+    }
+  ],
+  "autofails": [
+    {
+      "code": "AF-VID-BRIEF-INCOMPLETE",
+      "stage": "V-DEFINE",
+      "level": "JOB",
+      "in_ruleset": true,
+      "trigger": "the V-DEFINE job-manifest.json is missing or does not set brief_complete:true, OR is missing any required brief field (topic, target_duration_sec, aspect_ratio, budget_ceiling_usd, tone). A production job started on an incomplete brief routinely requires a full restart; the brief is the precondition for every downstream phase.",
+      "enforced_by": "executive_producer",
+      "py_symbol": "_chk_brief_complete",
+      "secondary_py_symbols": [
+        "REQUIRED_BRIEF_FIELDS"
+      ]
+    },
+    {
+      "code": "AF-VID-PREFLIGHT",
+      "stage": "V-MEASURE",
+      "level": "JOB",
+      "in_ruleset": true,
+      "trigger": "the V-MEASURE receipt is missing or does not set preflight_pass:true. The runtime-dependency preflight (ffmpeg / node>=18 / npx hyperframes / python deps) must pass before pipeline execution; a failing preflight is never worked around.",
+      "enforced_by": "executive_producer",
+      "py_symbol": "_chk_measure_receipt"
+    },
+    {
+      "code": "AF-VID-PROVIDER-AUDIT",
+      "stage": "V-MEASURE",
+      "level": "JOB",
+      "in_ruleset": true,
+      "trigger": "the provider availability audit did not pass: provider_audit_pass is not true, OR kie is not AVAILABLE, OR any native paid provider (FAL/Runway/HeyGen/OpenAI/Google/flux/veo/kling/minimax/xai) is reported AVAILABLE. An unexpected native key could route assets outside Kie.AI — assets must route ONLY through Kie on the client box.",
+      "enforced_by": "executive_producer",
+      "py_symbol": "_chk_provider_audit",
+      "secondary_py_symbols": [
+        "NATIVE_PAID_PROVIDERS"
+      ]
+    },
+    {
+      "code": "AF-VID-BUDGET-CAP",
+      "stage": "V-MEASURE",
+      "level": "JOB",
+      "in_ruleset": true,
+      "trigger": "the V-MEASURE budget gate failed: budget_gate_pass is not true, OR estimated_cost_usd exceeds the brief's budget_ceiling_usd (== config.yaml budget.total_usd). HARD STOP — switch to the free documentary-montage path or obtain an explicit budget-cap increase. V-ANALYZE refuses to run without budget_gate_pass.",
+      "enforced_by": "executive_producer",
+      "py_symbol": "_chk_budget_cap"
+    },
+    {
+      "code": "AF-VID-RULE-ZERO",
+      "stage": "V-ANALYZE",
+      "level": "JOB",
+      "in_ruleset": true,
+      "trigger": "a paid job (kie_in_scope:true) reached generation without a logged Rule-Zero announcement: the approval receipt lacks rule_zero_announced_at. Rule Zero is binding — provider + model + estimated USD must be announced BEFORE any paid call. The free documentary path defers this via a logged owner-authorized skip of V-ANALYZE.",
+      "enforced_by": "executive_producer",
+      "py_symbol": "_chk_rule_zero_approval",
+      "secondary_py_symbols": [
+        "_paid_in_scope"
+      ]
+    },
+    {
+      "code": "AF-VID-APPROVAL-MISSING",
+      "stage": "V-ANALYZE",
+      "level": "JOB",
+      "in_ruleset": true,
+      "trigger": "a paid job (kie_in_scope:true) reached generation without an explicit human approval: the approval receipt lacks approval_received_at and/or approved_by. The job must wait for an explicit APPROVE before any paid Kie call. V-IMPROVE refuses to render a paid job without this receipt.",
+      "enforced_by": "executive_producer",
+      "py_symbol": "_chk_rule_zero_approval",
+      "secondary_py_symbols": [
+        "_paid_in_scope"
+      ]
+    },
+    {
+      "code": "AF-VID-NO-FFPROBE",
+      "stage": "V-IMPROVE",
+      "level": "JOB",
+      "in_ruleset": true,
+      "trigger": "the render receipt does not prove an ffprobe validation: ffprobe_pass is not true, OR ffprobe_duration is missing / <= 0, OR no video stream is recorded. ffprobe MUST validate every rendered MP4 before delivery; a file that plays locally may fail silently on the client platform. The ffprobe JSON is the proof of a valid render.",
+      "enforced_by": "executive_producer",
+      "py_symbol": "_chk_render_receipt"
+    },
+    {
+      "code": "AF-VID-FABRICATED-RECEIPT",
+      "stage": "V-IMPROVE",
+      "level": "JOB",
+      "in_ruleset": true,
+      "trigger": "Kie generation was in scope (render receipt kie_in_scope:true) but the receipt carries no real kie_task_id / kie_result_url: the value is null, empty, or a placeholder token (e.g. 'TASK_ID', 'xxxx', 'TODO', 'fabricated', 'fake'). A missing/placeholder Kie task id means the generation either did not happen (fabrication) or was not recorded — both are unacceptable. The receipt is the anti-fabrication proof.",
+      "enforced_by": "executive_producer",
+      "py_symbol": "_chk_kie_receipt_real",
+      "secondary_py_symbols": [
+        "FABRICATED_TASK_ID_TOKENS",
+        "_paid_in_scope"
+      ]
+    },
+    {
+      "code": "AF-VID-NATIVE-PROVIDER",
+      "stage": "V-IMPROVE",
+      "level": "JOB",
+      "in_ruleset": true,
+      "trigger": "a native paid provider key (FAL_KEY/FAL_API_KEY/RUNWAY*/HEYGEN*/OPENAI_API_KEY/GOOGLE*/GEMINI*-for-imagery) was present in the recorded generation environment (render receipt generation_env / provider_used names a native provider). All generative assets MUST route through Kie.AI only; a native provider at generation time is a hard violation even if Kie was nominally selected.",
+      "enforced_by": "executive_producer",
+      "py_symbol": "_chk_native_provider",
+      "secondary_py_symbols": [
+        "NATIVE_PAID_PROVIDERS"
+      ]
+    },
+    {
+      "code": "AF-VID-DELIVERY-INCOMPLETE",
+      "stage": "V-CONTROL",
+      "level": "JOB",
+      "in_ruleset": true,
+      "trigger": "the V-CONTROL postflight completeness gate failed: job-manifest status is not 'complete', OR a required deliverable (job-manifest.json / render-receipt.json / the final MP4 above its min_bytes floor) is missing, OR no downstream handoff was declared (captions->Skill 26, TTS->Skill 30, edit->Skill 27, or delivery to Head of Video Production). The client package must be a complete, validated bundle.",
+      "enforced_by": "executive_producer",
+      "py_symbol": "run_postflight_gate",
+      "secondary_py_symbols": [
+        "DELIVERABLES_REQUIRED",
+        "HANDOFF_TARGETS"
+      ]
+    },
+    {
+      "code": "AF-VID-BUDGET-OVERRUN",
+      "stage": "V-CONTROL",
+      "level": "JOB",
+      "in_ruleset": true,
+      "trigger": "budget reconciliation failed at V-CONTROL: the job-manifest actual_cost_usd exceeds the brief's budget_ceiling_usd, or the cumulative spend crossed the config.yaml budget.total_usd cap without a circuit-breaker record. A run must never exceed the client's funded budget cap.",
+      "enforced_by": "executive_producer",
+      "py_symbol": "_chk_budget_overrun"
+    },
+    {
+      "code": "AF-VID-KIE-BALANCE",
+      "stage": "Phase-0",
+      "level": "JOB",
+      "in_ruleset": true,
+      "trigger": "Phase-0 Kie.ai balance pre-flight. For a paid job the live credit balance (GET https://api.kie.ai/api/v1/chat/credit) is below the estimated floor for this job (estimated_cost_usd x VID_KIE_BALANCE_FLOOR_MULTIPLIER), OR the balance could not be verified. HARD-ABORTS (exit 4) before any paid dispatch so a run never dies mid-production. An unverifiable balance is never treated as 'enough'.",
+      "enforced_by": "executive_producer",
+      "py_symbol": "kie_balance_preflight",
+      "secondary_py_symbols": [
+        "VID_KIE_CREDIT_URL",
+        "VID_KIE_BALANCE_FLOOR_MULTIPLIER",
+        "_fetch_kie_balance"
+      ]
+    },
+    {
+      "code": "AF-VID-PHASE-SKIPPED",
+      "stage": "Driver",
+      "level": "JOB",
+      "in_ruleset": true,
+      "trigger": "the deterministic driver (executive_producer.py) dispatched a phase without every lower-order phase having an attestation in working/checkpoints/video_process_manifest.json AND its produces_artifact present — and no logged OWNER-AUTHORIZED skip record (working/checkpoints/phase_skip_approvals.json owner_approved:true) covers the missing phase. Phase N+1 reads phase N's attestation as a precondition, so skipping/reordering (or running a phase under the wrong owning_role) is structurally impossible except via an explicit, logged owner authorization (e.g. the free documentary path's V-ANALYZE skip).",
+      "enforced_by": "driver",
+      "py_symbol": null
+    }
+  ],
+  "roles": [
+    {
+      "id": "automated-video-production-specialist-openmontage",
+      "display_title": "Movie Producer (Automated Video Production)",
+      "department": "video",
+      "skill": "47-movie-producer",
+      "owns_phase": "ALL",
+      "owns_phases": [
+        "V-DEFINE",
+        "V-MEASURE",
+        "V-ANALYZE",
+        "V-IMPROVE",
+        "V-CONTROL"
+      ],
+      "description": "The Movie Producer / pipeline operator. Takes a written brief or pipeline manifest and autonomously produces a finished, rendered, ffprobe-validated MP4 by driving the upstream OpenMontage engine (cloned on the client box). Owns every DMAIC phase of a production job; the Head of Video Production is the conductor/router, not the operator.",
+      "trigger_phrases": [
+        "produce a video",
+        "make a video from this script",
+        "finished MP4 from a script",
+        "documentary montage",
+        "documentary-style video",
+        "real-footage montage",
+        "render this video brief",
+        "turn this script into a video",
+        "autonomous video production"
+      ],
+      "routing_note": "Production-from-a-brief path (no human in the timeline). 'produce a video' / 'documentary montage' / 'finished MP4 from a script' -> Movie Producer (Skill 47). 'edit THIS footage' / hands-on cuts/color/timeline of supplied clips -> Video Editor (Skill 27). Captions on a finished MP4 -> Captioning Subtitling Specialist (Skill 26). Premium/expression TTS -> Fish Audio (Skill 30). Storyboard before production -> Storyboard Writer (Skill 24). The Head of Video Production routes the job here via the department conductor; the Movie Producer is the sole pipeline operator inside the job."
+    },
+    {
+      "id": "head-of-video-production",
+      "owns_phase": null,
+      "routing_note": "Department conductor / router. Receives the production request, routes it to the Movie Producer, and is the named approval authority for the Rule-Zero gate (V-ANALYZE) and the final delivery sign-off (V-CONTROL). Does NOT operate the pipeline."
+    }
+  ],
+  "handoff_targets": [
+    {
+      "trigger": "captions",
+      "skill": "26",
+      "role": "captioning--subtitling-specialist",
+      "note": "finished MP4 needs captions/subtitles burned in or as sidecar SRT"
+    },
+    {
+      "trigger": "tts",
+      "skill": "30",
+      "role": "fish-audio",
+      "note": "premium / expression-tagged TTS narration (beyond the free Piper path)"
+    },
+    {
+      "trigger": "edit",
+      "skill": "27",
+      "role": "video-editor",
+      "note": "hands-on editorial cuts / color grade / timeline work on supplied or assembled footage"
+    },
+    {
+      "trigger": "storyboard",
+      "skill": "24",
+      "role": "storyboard-writer",
+      "note": "a storyboard must be authored before production starts"
+    },
+    {
+      "trigger": "delivery",
+      "skill": null,
+      "role": "head-of-video-production",
+      "note": "final delivery sign-off and client handoff"
+    }
+  ]
+}
