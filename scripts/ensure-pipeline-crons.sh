@@ -68,7 +68,20 @@
 # BUG-FIX v13.0.2 — JSON presence check, no text-table truncation
 # v13.2.0 — EMBEDDING-PREVENTION BUNDLE: wire 4 memory-health crons fleet-wide.
 # v13.3.0 — GHL token liveness cron: daily Skills 44+46 Firebase token health check.
-ENSURE_PIPELINE_CRONS_VERSION="v13.8.12"
+# v14.1.1 — RECONCILE PASS (agent-browser-reaper-announce-spam fix): v13.8.16 made
+#   NEW crons silent, but this registrar only ever checked _cron_present and
+#   returned "already present" — it never inspected/repaired an EXISTING cron's
+#   delivery. So every box onboarded before the silent-cron change kept the old
+#   announce+last reaper (spamming the client every 10 min) and, where it was an
+#   agentTurn, burned ~1.4-1.66M client tokens/day. The reconcile pass below runs
+#   on every install.sh / update-skills.sh: for each MANAGED maintenance/health/
+#   onboarding cron that already exists, if its delivery resolves to
+#   mode==announce OR channel==last OR a client/operator --to is set, it flips it
+#   SILENT in place (`openclaw cron edit <id> --no-deliver`), converts an
+#   agentTurn reaper back to command-kind (zero LLM tokens), and throttles the
+#   reaper */10 -> hourly. Idempotent + logs every flip. This makes
+#   silent-by-default CONVERGE on already-deployed boxes, not just fresh installs.
+ENSURE_PIPELINE_CRONS_VERSION="v14.1.1"
 
 set -u
 
@@ -555,6 +568,209 @@ _persist_field() {
   fi
 }
 
+# ===========================================================================
+# RECONCILE PASS (v14.1.1 — agent-browser-reaper-announce-spam fix)
+# ===========================================================================
+# WHY: see the file header. _cron_present-only idempotency never repaired an
+# EXISTING cron's delivery, so boxes onboarded before the silent-cron change
+# kept the old announce+last reaper (client Telegram spam every 10 min) and, on
+# agentTurn boxes, a ~1.4-1.66M-token/day furnace on the CLIENT's funded key.
+#
+# WHAT: for each MANAGED maintenance/health/onboarding cron that already exists,
+# read its delivery + payload.kind. If delivery resolves to a chat
+# (mode==announce OR channel=="last" OR a non-empty `to`), flip it SILENT in
+# place with `openclaw cron edit <id> --no-deliver` (sets delivery.mode=none →
+# the runner stops fallback-delivering to any chat). For the reaper specifically:
+# also convert an agentTurn payload back to command-kind (zero LLM tokens) and
+# throttle a */10 schedule to hourly. Idempotent: a cron already silent (mode
+# none, no `to`) and on the right kind/schedule is left untouched and logged OK.
+#
+# SCOPE / SAFETY: ONLY the names in MANAGED_RECONCILE_CRONS below are touched.
+# Personal/client reminder crons on the same box are never inspected or edited.
+# Runs as the invoking (node/process) user — install.sh + update-skills.sh both
+# call this script un-elevated. Never root.
+#
+# The CLI in the field (2026.6.8) exposes `--no-deliver` (the authoritative
+# silencer; NO `--clear-channel`/`--clear-to` flag exists), `--cron <expr>`
+# (reschedule), and `--command <shell>` (set a command payload). We use exactly
+# those. `--no-deliver` leaves a vestigial `channel:"last"` string in the JSON
+# but with mode=none nothing is ever delivered.
+
+# The exact set of crons this registrar manages — the ONLY names reconcile may
+# edit. Keep in lockstep with the registrars + main() audit list above.
+MANAGED_RECONCILE_CRONS=(
+  "workforce-build-resume"
+  "interview-nudge"
+  "closeout-readiness-watchdog"
+  "closeout-resume"
+  "index-model-drift-check"
+  "orphan-temp-sweep"
+  "disk-usage-alert"
+  "pre-july14-embed-migrate"
+  "agent-browser-reaper"
+  "ghl-token-liveness"
+)
+
+# Emit one TSV row per managed cron that currently exists, with the fields the
+# reconcile pass needs. Columns (tab-separated):
+#   name  id  delivery_mode  delivery_channel  delivery_to  payload_kind  schedule_expr
+# Only rows whose name is in MANAGED_RECONCILE_CRONS are emitted. Uses the same
+# JSON path as _cron_present (jq → python3). Prints nothing if neither parser is
+# available or the list call fails (reconcile then no-ops, logged).
+#
+# EMPTY-FIELD SENTINEL: bash `read` treats TAB (a whitespace IFS char) as a
+# COLLAPSING delimiter, so two adjacent tabs (an empty middle field like an
+# absent `to`) would shift every later column left by one — silently mis-reading
+# kind/schedule. To keep columns aligned we emit the literal token "\x1e" (ASCII
+# RS, which can never appear in a cron name/id/mode/channel/chatId/kind/expr) in
+# place of any empty field, and the consumer (_reconcile_one) decodes it back to
+# "". This makes the row a true fixed-7-column record under `read`.
+_RECONCILE_EMPTY=$'\x1e'
+_reconcile_rows() {
+  local raw
+  raw=$(openclaw cron list --json 2>/dev/null) || raw=""
+  [[ -n "$raw" ]] || return 0
+
+  local names_csv
+  names_csv=$(printf '%s,' "${MANAGED_RECONCILE_CRONS[@]}")
+
+  if command -v python3 >/dev/null 2>&1; then
+    # Pass the JSON + the managed-name CSV via the ENVIRONMENT, not stdin.
+    # `python3 - <<'PY'` already consumes stdin to read the PROGRAM, so we must
+    # NOT also pipe the JSON to stdin (that would make python try to execute the
+    # JSON as the program → NameError). Env vars avoid the stdin collision.
+    OC_CRON_RAW="$raw" OC_CRON_NAMES="$names_csv" python3 - <<'PYEOF' 2>/dev/null
+import json, os
+managed = set(x for x in os.environ.get("OC_CRON_NAMES", "").split(",") if x)
+raw = os.environ.get("OC_CRON_RAW", "")
+try:
+    data = json.loads(raw)
+except Exception:
+    raise SystemExit(0)
+jobs = data if isinstance(data, list) else data.get("jobs", [])
+for j in jobs:
+    name = j.get("name", "")
+    if name not in managed:
+        continue
+    jid = j.get("id", "")
+    dl = j.get("delivery") or {}
+    mode = dl.get("mode")
+    chan = dl.get("channel")
+    to = dl.get("to")
+    pk = (j.get("payload") or {}).get("kind", "")
+    sch = (j.get("schedule") or {}).get("expr", "")
+    SENT = "\x1e"  # ASCII RS — empty-field sentinel (see shell comment)
+    def s(v):
+        return SENT if v is None or v == "" else str(v)
+    # Tab-separated, fixed 7 columns; empty fields become the RS sentinel so the
+    # shell `read` keeps columns aligned. Names/ids/exprs never contain tabs.
+    print("\t".join([s(name), s(jid), s(mode), s(chan), s(to), s(pk), s(sch)]))
+PYEOF
+    return 0
+  fi
+
+  # jq fallback (no python3). Same columns + same empty-field RS sentinel.
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$raw" | jq -r --arg names "$names_csv" '
+      def nz: if (. == null or . == "") then "\u001e" else (.|tostring) end;
+      ($names | split(",") | map(select(length>0))) as $m
+      | (if type=="array" then . else .jobs // [] end)
+      | map(select(.name as $n | $m | index($n)))
+      | .[]
+      | [ (.name|nz), (.id|nz), (.delivery.mode|nz),
+          (.delivery.channel|nz), (.delivery.to|nz),
+          (.payload.kind|nz), (.schedule.expr|nz) ]
+      | @tsv
+    ' 2>/dev/null
+    return 0
+  fi
+
+  _log "WARN reconcile: neither python3 nor jq available — cannot read cron deliveries; skipping reconcile"
+  return 0
+}
+
+# Reconcile a single cron row. Args = the 7 TSV columns.
+# Returns the number of edits made on stdout is NOT used; logs each action.
+_reconcile_one() {
+  local name="$1" id="$2" mode="$3" chan="$4" to="$5" kind="$6" expr="$7"
+  # Decode the empty-field RS sentinel back to "" (see _reconcile_rows comment).
+  local _s="$_RECONCILE_EMPTY"
+  [[ "$name" == "$_s" ]] && name=""
+  [[ "$id"   == "$_s" ]] && id=""
+  [[ "$mode" == "$_s" ]] && mode=""
+  [[ "$chan" == "$_s" ]] && chan=""
+  [[ "$to"   == "$_s" ]] && to=""
+  [[ "$kind" == "$_s" ]] && kind=""
+  [[ "$expr" == "$_s" ]] && expr=""
+  [[ -n "$id" ]] || { _log "RECONCILE skip $name — no id resolved"; return 0; }
+
+  # Build the edit-flag list. Empty = nothing to do.
+  local -a edit_flags=()
+  local reasons=""
+
+  # (a) Delivery resolves to a chat? announce mode, or channel "last", or any
+  #     non-empty `to`. Flip silent. (mode already "none" with no `to` = OK.)
+  if [[ "$mode" == "announce" || "$chan" == "last" || -n "$to" ]]; then
+    # Only act if it is not ALREADY fully silent. "Fully silent" = mode none AND
+    # no `to`. A vestigial channel:"last" with mode none + no to is harmless, but
+    # we still strip the announce/`to`; re-running --no-deliver on an already
+    # mode:none cron is a harmless no-op, so we gate on the meaningful signals.
+    if [[ "$mode" == "announce" || -n "$to" ]]; then
+      edit_flags+=(--no-deliver)
+      reasons="${reasons}delivery(mode=${mode:-none},to=${to:-none}) "
+    fi
+  fi
+
+  # (b) Reaper-specific: convert agentTurn -> command-kind (zero LLM tokens) and
+  #     throttle a */10 schedule to hourly.
+  if [[ "$name" == "agent-browser-reaper" ]]; then
+    if [[ "$kind" == "agentTurn" ]]; then
+      local rscript
+      rscript="$(_find_health_script "agent-browser-reaper.sh")" || true
+      if [[ -n "${rscript:-}" ]]; then
+        edit_flags+=(--command "bash $rscript")
+        reasons="${reasons}agentTurn->command "
+      else
+        _log "RECONCILE warn $name is agentTurn but agent-browser-reaper.sh not found in persistent scripts dir — cannot convert to command-kind this run"
+      fi
+    fi
+    if [[ "$expr" == "*/10 * * * *" ]]; then
+      edit_flags+=(--cron "13 * * * *")
+      reasons="${reasons}throttle(*/10->hourly) "
+    fi
+  fi
+
+  if [[ "${#edit_flags[@]}" -eq 0 ]]; then
+    _log "OK  reconcile $name — already silent + correct kind/schedule (no change)"
+    return 0
+  fi
+
+  if openclaw cron edit "$id" "${edit_flags[@]}" >/dev/null 2>&1; then
+    _log "DONE reconcile $name — flipped: ${reasons% } (cron edit $id ${edit_flags[*]})"
+  else
+    _log "WARN reconcile $name — cron edit rc!=0 (id=$id, flags: ${edit_flags[*]}); will retry next run"
+  fi
+  return 0
+}
+
+# Top-level reconcile pass. Idempotent; safe to re-run. Logs a one-line summary.
+_reconcile_managed_crons() {
+  command -v openclaw >/dev/null 2>&1 || return 0
+  _log "RECONCILE pass — repairing delivery/kind/schedule of pre-existing managed crons"
+  local rows
+  rows="$(_reconcile_rows)"
+  if [[ -z "$rows" ]]; then
+    _log "RECONCILE no managed crons present yet (or cron list unreadable) — nothing to reconcile"
+    return 0
+  fi
+  local IFS_OLD="$IFS"
+  while IFS=$'\t' read -r r_name r_id r_mode r_chan r_to r_kind r_expr; do
+    [[ -n "$r_name" ]] || continue
+    _reconcile_one "$r_name" "$r_id" "$r_mode" "$r_chan" "$r_to" "$r_kind" "$r_expr"
+  done <<< "$rows"
+  IFS="$IFS_OLD"
+}
+
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
@@ -588,10 +804,16 @@ main() {
   _ensure_health_cron "orphan-temp-sweep"        "37 * * * *" "orphan-temp-sweep.sh"                      || fails=$((fails + 1))
   _ensure_health_cron "disk-usage-alert"         "47 * * * *" "disk-usage-alert.sh"                       || fails=$((fails + 1))
   _ensure_health_cron "pre-july14-embed-migrate" "23 9 * * *" "pre-july14-embedding-migration-check.sh"  || fails=$((fails + 1))
-  # SINGLETON POOLED BROWSER backstop: */10 reaper sweeps orphaned agent-browser
+  # SINGLETON POOLED BROWSER backstop: HOURLY reaper sweeps orphaned agent-browser
   # sessions/descriptors + tripwires scoped Chromium (NEVER bare chrome/Claude).
-  # */10 (not */5) matches the hourly-family cadence + minimizes host load.
-  _ensure_health_cron "agent-browser-reaper"     "*/10 * * * *" "agent-browser-reaper.sh"                 || fails=$((fails + 1))
+  # v14.1.1: throttled */10 -> hourly (13 * * * *). The old */10 cadence ran the
+  # reaper 144x/day; on agentTurn boxes that was a ~1.4M-token/day furnace and the
+  # diagnostic noise was being announced to the client. Hourly is ample for a
+  # crash-leak backstop and joins the 17/37/47 hourly-health family. Registered
+  # via _ensure_health_cron, which always creates a COMMAND-kind cron (zero LLM
+  # tokens) on the 2026.6.x CLI. The reconcile pass below repairs pre-existing
+  # */10 / agentTurn / announce reapers on already-deployed boxes.
+  _ensure_health_cron "agent-browser-reaper"     "13 * * * *" "agent-browser-reaper.sh"                   || fails=$((fails + 1))
 
   # ── GHL TOKEN LIVENESS (Skills 44 + 46) ─────────────────────────────────────
   # Daily at 08:00 UTC: checks if the client's GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN
@@ -599,6 +821,15 @@ main() {
   # script sends a plain-English re-grab notification to the CLIENT's own chat.
   # A missing script (Skill 44 not installed) is a SKIP (advisory, not fatal).
   _ensure_ghl_token_liveness || fails=$((fails + 1))
+
+  # ── RECONCILE PASS (v14.1.1) ────────────────────────────────────────────────
+  # Repair the DELIVERY/KIND/SCHEDULE of any pre-existing managed cron that the
+  # presence-only registrars above left in the old announce+last (and agentTurn
+  # */10 reaper) shape. This is what converges silent-by-default on boxes
+  # onboarded before the silent-cron change — the registrars only ADD missing
+  # crons; this pass REPAIRS existing ones. Advisory (never fatal): a failed edit
+  # is logged WARN and retried on the next install/update run.
+  _reconcile_managed_crons
 
   # One-line audit of current cron presence (exact JSON match, no truncation).
   local present=""

@@ -51,8 +51,20 @@
 # DESIGN: host-level, idempotent, platform-detected OC_ROOT, dedicated log.
 #   Mirrors scripts/orphan-temp-sweep.sh (reaper shape). bash-not-zsh.
 #
+# BASH 3.2 COMPAT (v14.1.1 — agent-browser-reaper-announce-spam fix): macOS ships
+#   the system bash as 3.2.57, and the Gateway runs command-kind crons via
+#   `sh -lc`, which on macOS resolves to that bash 3.2 class. bash 3.2 has NO
+#   associative arrays (`declare -A`) and NO `mapfile`/`readarray`. The earlier
+#   reaper used both, so under bash 3.2 it died at `declare: -A: invalid option`
+#   and then `set -u` tripped on the (never-created) array — crashing EVERY run
+#   and (on boxes with failure-alerts) firing a "cron failed" notice to the
+#   client. This version uses ONLY bash-3.2-safe constructs: a plain indexed
+#   array of "known session" names with a small membership helper, and a
+#   while-read loop in place of mapfile. It is verified to RUN clean under both
+#   bash 3.2.57 and bash 5.x. Do NOT reintroduce `declare -A` / `mapfile` here.
+#
 # Version marker (kept in sync by scripts/bump-version.sh):
-AGENT_BROWSER_REAPER_VERSION="v14.1.0"
+AGENT_BROWSER_REAPER_VERSION="v14.1.1"
 
 set -u
 
@@ -96,6 +108,40 @@ _now() { date -u +%s; }
 # Headless-forced agent-browser call (D6) — the reaper also never opens a window.
 _AB() { command "$AB_BIN" --headed false "$@"; }
 
+# ── bash-3.2-safe "known live sessions" set ──────────────────────────────────
+# bash 3.2 has NO associative arrays. We model the set of currently-leased
+# session names as a plain indexed array (KNOWN_SESSIONS) plus three helpers:
+#   _known_add NAME    — record a session name (idempotent)
+#   _known_has NAME    — return 0 if NAME is recorded, 1 otherwise
+#   _known_del NAME    — drop NAME from the set (rebuild without it)
+#   _known_count       — echo the number of recorded sessions
+# These replace `declare -A`, `KNOWN_SESSIONS[$x]=1`, `${KNOWN_SESSIONS[$x]:-}`,
+# `unset 'KNOWN_SESSIONS[$x]'`, and `${#KNOWN_SESSIONS[@]}` one-for-one.
+KNOWN_SESSIONS=()
+_known_add() {
+  local n="$1" e
+  for e in ${KNOWN_SESSIONS[@]+"${KNOWN_SESSIONS[@]}"}; do
+    [[ "$e" == "$n" ]] && return 0
+  done
+  KNOWN_SESSIONS[${#KNOWN_SESSIONS[@]}]="$n"
+}
+_known_has() {
+  local n="$1" e
+  for e in ${KNOWN_SESSIONS[@]+"${KNOWN_SESSIONS[@]}"}; do
+    [[ "$e" == "$n" ]] && return 0
+  done
+  return 1
+}
+_known_del() {
+  local n="$1" e rebuilt=()
+  for e in ${KNOWN_SESSIONS[@]+"${KNOWN_SESSIONS[@]}"}; do
+    [[ "$e" == "$n" ]] && continue
+    rebuilt[${#rebuilt[@]}]="$e"
+  done
+  KNOWN_SESSIONS=(${rebuilt[@]+"${rebuilt[@]}"})
+}
+_known_count() { printf '%s' "${#KNOWN_SESSIONS[@]}"; }
+
 reclaimed_bytes=0
 reclaimed_procs=0
 removed_descriptors=0
@@ -124,7 +170,7 @@ fi
 
 # ── (1) Expired-lease close ───────────────────────────────────────────────────
 # Liveness keys off started_epoch + ttl_sec (process+mtime), NEVER a .pid file.
-declare -A KNOWN_SESSIONS=()
+# KNOWN_SESSIONS is a bash-3.2-safe indexed-array set (see _known_* helpers).
 if [[ -d "$LEASE_DIR" ]]; then
   for lease in "$LEASE_DIR"/*.lease; do
     [[ -f "$lease" ]] || continue
@@ -142,7 +188,7 @@ except Exception:
 PY
 )
     fi
-    KNOWN_SESSIONS["$session"]=1
+    _known_add "$session"
     expiry=$((started + ttl))
     now="$(_now)"
     if (( started > 0 && now > expiry )); then
@@ -155,7 +201,7 @@ PY
         log "SWEPT" "closed expired-lease session: $session (age $((now - started))s > ttl ${ttl}s)"
       fi
       closed_sessions=$((closed_sessions + 1))
-      unset 'KNOWN_SESSIONS[$session]'
+      _known_del "$session"
     fi
   done
 fi
@@ -185,7 +231,7 @@ if [[ -d "$AB_ENGINE_DIR" && "${LOCK_LIVE:-0}" != "1" ]]; then
     [[ -e "$eng" ]] || continue
     base="$(basename "$eng" .engine)"
     # A live lease for this session? then it is NOT orphaned — skip.
-    if [[ -n "${KNOWN_SESSIONS[$base]:-}" ]]; then
+    if _known_has "$base"; then
       continue
     fi
     mt="$(_mtime "$eng")"
@@ -212,13 +258,18 @@ profile_pat="$AB_ENGINE_DIR"
 [[ -n "$PLAYWRIGHT_DIR" ]] && profile_pat="$AB_ENGINE_DIR|$PLAYWRIGHT_DIR"
 
 # Collect PIDs of Chromium bound to a scoped profile dir. `ps -ww` for full args.
-mapfile -t SCOPED_PIDS < <(
+# bash 3.2 has no `mapfile`; read line-by-line into an indexed array instead.
+SCOPED_PIDS=()
+while IFS= read -r _pid; do
+  [[ -n "$_pid" ]] || continue
+  SCOPED_PIDS[${#SCOPED_PIDS[@]}]="$_pid"
+done < <(
   ps -axww -o pid=,etime=,command= 2>/dev/null \
     | grep -E "(--user-data-dir|--profile|profile-directory)[= ]?[^ ]*($AB_ENGINE_DIR|$PLAYWRIGHT_DIR)" \
     | grep -Ei 'chrom|headless_shell' \
     | grep -vi 'grep' \
     | awk '{print $1}'
-) 2>/dev/null || SCOPED_PIDS=()
+)
 
 live_count="${#SCOPED_PIDS[@]}"
 log "INFO" "Chromium under agent-browser/Playwright profile tree: $live_count (cap AB_MAX_LIVE=$MAX_LIVE)"
@@ -236,7 +287,8 @@ fi
 # proc age > AB_PROC_HARD_AGE_MIN. (etime parse is best-effort; if we cannot
 # confirm age we DO NOT kill — fail safe toward leaving it alive.)
 if [[ "${LOCK_LIVE:-0}" != "1" ]]; then
-  for pid in "${SCOPED_PIDS[@]}"; do
+  # bash-3.2-safe expansion of a possibly-empty array under `set -u`.
+  for pid in ${SCOPED_PIDS[@]+"${SCOPED_PIDS[@]}"}; do
     [[ -n "$pid" ]] || continue
     # proc age in seconds via ps etimes (Linux) or compute from etime (mac).
     age_sec="$(ps -o etimes= -p "$pid" 2>/dev/null | tr -d '[:space:]')"
@@ -250,7 +302,7 @@ if [[ "${LOCK_LIVE:-0}" != "1" ]]; then
     fi
     # Is there a live lease that could own this proc? If ANY lease is live we are
     # conservative and skip (the kill criterion is "owning session lease gone").
-    if (( ${#KNOWN_SESSIONS[@]} > 0 )); then
+    if (( $(_known_count) > 0 )); then
       log "INFO" "pid $pid: a live lease exists — NOT killing (could be owned)"
       continue
     fi
