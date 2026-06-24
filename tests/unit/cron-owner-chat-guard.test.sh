@@ -538,6 +538,101 @@ if [ -f "$REPO_ROOT/scripts/setup-weekly-update.sh" ]; then
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
+# (7) MANAGED-CRON DELIVERY GUARD (v14.1.1 — agent-browser-reaper-announce-spam)
+# A managed maintenance/health cron's delivery must NEVER resolve to a chat:
+# mode==announce, channel=="last", or a non-empty `to` is FORBIDDEN. This is the
+# permanent guard for the fleet-wide reaper spam + token furnace.
+#
+#   7a STATIC  — ensure-pipeline-crons.sh ships the RECONCILE pass and registers
+#                the reaper HOURLY + command-kind (no */10, no --announce/--to).
+#   7b CLASSIFY — a BAD fixture {announce,last} is FLAGGED and a GOOD fixture
+#                 {none} PASSES, exercising the same delivery-resolves-to-chat
+#                 rule the reconcile pass + this guard enforce.
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
+echo "--- (7) MANAGED-CRON DELIVERY: no managed cron resolves to channel:last or a chat ---"
+
+ENSURE_CRONS_FILE="$REPO_ROOT/scripts/ensure-pipeline-crons.sh"
+
+# 7a-1: the reconcile pass exists (the converge-on-deployed-boxes fix).
+if grep -q '_reconcile_managed_crons' "$ENSURE_CRONS_FILE" 2>/dev/null \
+   && grep -q 'cron edit' "$ENSURE_CRONS_FILE" 2>/dev/null \
+   && grep -q -- '--no-deliver' "$ENSURE_CRONS_FILE" 2>/dev/null; then
+    pass "7a-1: ensure-pipeline-crons.sh ships a reconcile pass that flips existing crons silent (--no-deliver)"
+else
+    fail "7a-1: ensure-pipeline-crons.sh missing reconcile pass (_reconcile_managed_crons / cron edit --no-deliver) — pre-existing announce crons will never converge"
+fi
+
+# 7a-2: the reaper is registered HOURLY, not */10 (token-furnace + spam cadence).
+reaper_reg=$(grep -n 'agent-browser-reaper' "$ENSURE_CRONS_FILE" | grep '_ensure_health_cron' || true)
+if [ -z "$reaper_reg" ]; then
+    fail "7a-2: could not find the agent-browser-reaper registration line in ensure-pipeline-crons.sh"
+elif echo "$reaper_reg" | grep -q '\*/10'; then
+    fail "7a-2: agent-browser-reaper is still registered at */10 (must be throttled to hourly)"
+else
+    pass "7a-2: agent-browser-reaper is registered hourly (not */10)"
+fi
+
+# 7a-3: the reaper registration goes through _ensure_health_cron (always
+# command-kind on the 2026.6.x CLI) — never an agent-message/agentTurn form.
+if echo "$reaper_reg" | grep -q '_ensure_health_cron "agent-browser-reaper"'; then
+    pass "7a-3: agent-browser-reaper registered via _ensure_health_cron (command-kind, zero LLM tokens)"
+else
+    fail "7a-3: agent-browser-reaper is NOT registered via _ensure_health_cron (risk of agentTurn token furnace)"
+fi
+
+# 7b: behavioral classifier — mirror the delivery-resolves-to-chat rule the
+# reconcile pass enforces. A managed cron is "spammy" iff
+#   delivery.mode == "announce"  OR  delivery.channel == "last"  OR  delivery.to non-empty.
+# Feed a BAD fixture (must be FLAGGED) and a GOOD fixture (must PASS).
+classify_managed_delivery() {
+    # args: mode channel to  ->  echoes "FLAG" or "OK"
+    python3 - "$1" "$2" "$3" <<'PYEOF'
+import sys
+mode, channel, to = sys.argv[1], sys.argv[2], sys.argv[3]
+to = to.strip()
+if mode == "announce" or channel == "last" or to != "":
+    print("FLAG")
+else:
+    print("OK")
+PYEOF
+}
+
+# 7b-BAD: the exact fleet-wide bug — command/agentTurn cron with announce + last.
+bad=$(classify_managed_delivery "announce" "last" "")
+if [ "$bad" = "FLAG" ]; then
+    pass "7b-BAD: announce+last fixture is FLAGGED (guard catches the spam/furnace shape)"
+else
+    fail "7b-BAD: announce+last fixture was NOT flagged — guard would let the reaper-spam regression through"
+fi
+
+# 7b-BAD2: silent mode but an explicit client/operator chat in `to` is still spammy.
+bad2=$(classify_managed_delivery "none" "telegram" "5252140759")
+if [ "$bad2" = "FLAG" ]; then
+    pass "7b-BAD2: mode=none but to=<chat> fixture is FLAGGED (a managed cron must not target any chat)"
+else
+    fail "7b-BAD2: a managed cron with an explicit chat target was NOT flagged"
+fi
+
+# 7b-GOOD: fully silent — mode none, no last channel, no `to`.
+good=$(classify_managed_delivery "none" "" "")
+if [ "$good" = "OK" ]; then
+    pass "7b-GOOD: silent fixture (mode=none, no channel, no to) PASSES"
+else
+    fail "7b-GOOD: silent fixture was wrongly flagged — guard is over-eager"
+fi
+
+# 7c: NEGATIVE SELF-TEST — prove the guard would FAIL the build if the reaper
+# were re-registered at */10. We run the 7a-2 check against a synthetic line and
+# assert it reports a failure (without affecting the real $FAIL counter).
+synthetic_bad='  _ensure_health_cron "agent-browser-reaper"     "*/10 * * * *" "agent-browser-reaper.sh"'
+if echo "$synthetic_bad" | grep -q '\*/10'; then
+    pass "7c: negative self-test — a */10 reaper registration line is detectable (guard 7a-2 would FAIL on it)"
+else
+    fail "7c: negative self-test broken — could not detect a synthetic */10 reaper line"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Summary
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""

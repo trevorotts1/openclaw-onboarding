@@ -2747,8 +2747,9 @@ done
 # SINGLETON POOLED BROWSER backstop: ensure ~/.agent-browser exists (mode 700),
 # make the Skill-06 gateway + reaper executable, then ONE-SHOT reap any
 # pre-existing orphan agent-browser sessions/descriptors on first contact (the
-# */10 reaper cron is wired by ensure-pipeline-crons.sh at end of install). Pure
-# additive, env-default-gated, runs as the box user (NEVER root).
+# HOURLY reaper cron is wired by ensure-pipeline-crons.sh at end of install, as a
+# SILENT command-kind job — v14.1.1 throttled it */10->hourly). Pure additive,
+# env-default-gated, runs as the box user (NEVER root).
 mkdir -p "$HOME/.agent-browser" 2>/dev/null || true
 chmod 700 "$HOME/.agent-browser" 2>/dev/null || true
 _BM_GW="$ONBOARDING_DIR/skills/06-ghl-install-pages/tools/browser_manager.sh"
@@ -2757,7 +2758,7 @@ _BM_GW="$ONBOARDING_DIR/skills/06-ghl-install-pages/tools/browser_manager.sh"
 if [ -f "$SCRIPTS_DIR/agent-browser-reaper.sh" ]; then
     chmod +x "$SCRIPTS_DIR/agent-browser-reaper.sh" 2>/dev/null || true
     note "One-shot agent-browser reap (clears any pre-existing orphans on first contact)"
-    bash "$SCRIPTS_DIR/agent-browser-reaper.sh" 2>/dev/null || warn "one-shot agent-browser reap rc!=0 (non-fatal; the */10 cron backfills)"
+    bash "$SCRIPTS_DIR/agent-browser-reaper.sh" 2>/dev/null || warn "one-shot agent-browser reap rc!=0 (non-fatal; the hourly cron backfills)"
 fi
 
 # SINGLETON POOLED BROWSER advisory config: deep-merge browser.agentBrowser into
