@@ -22,6 +22,22 @@ No agent decides what it will or will not do.
 This rule is role-scoped so it reinforces the CEO routing mandate WITHOUT gagging executing
 specialists. Both behaviors — the CEO routing and specialists executing — are equally required.
 
+<!-- SKILL_47_OPENMONTAGE_NOTE_V1 -->
+**Skill 47 — OpenMontage video production (autonomous produce + render).** The `video`
+department's **Automated Video Production Specialist (OpenMontage Pipeline Operator)** drives
+Skill `47-openmontage-production`, which clones the OpenMontage agentic video-production system
+(`github.com/calesthio/OpenMontage`, AGPLv3) onto the client box AT INSTALL TIME — its source is
+**never vendored into this template**. The operator runs OpenMontage's staged production pipelines
+(documentary-montage, short-form, VSL/talking-head) and renders finished MP4s via the FFmpeg
+documentary-montage path / Remotion / HyperFrames, validating every output with `ffprobe`. All PAID
+asset generation is rewired to the fleet **KIE.AI** standard via two BaseTool adapters
+(`kie_image.py` / `kie_video.py`) the skill installs into the clone; the install writes a
+`.env` exposing ONLY `KIE_API_KEY` so all native paid providers (FAL/Runway/HeyGen/OpenAI/Google)
+stay UNAVAILABLE. Free render engines, free Piper TTS, and the free public-domain stock corpus stay
+native. Captions hand off to Skill 26; TTS to Skill 30; hands-on footage editing to Skill 27
+(`video-editor.md`). Client-own keys only; operator keys never touch a client box. Rule Zero:
+announce provider/model/estimated-USD before any paid call; honor the `config.yaml` budget cap.
+
 ---
 
 <!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->

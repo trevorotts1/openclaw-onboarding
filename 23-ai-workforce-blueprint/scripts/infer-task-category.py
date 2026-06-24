@@ -17,6 +17,17 @@ CATEGORY_KEYWORDS = {
     "social-post":         ["social", "instagram", "linkedin", "facebook", "twitter", "tiktok", "pinterest", "post on", "reel", "story"],
     "content-write":       ["article", "blog", "essay", "long form", "long-form", "story", "write a", "writeup"],
     "video-script":        ["script", "video", "reel script", "ad creative", "vsl", "ad copy"],
+    # video-edit / montage: the PRODUCTION-craft category. Distinct from video-script
+    # (which is copy/writing). These keywords describe the hands-on edit, the cut,
+    # the montage rhythm, and footage assembly — NOT writing a script. They route to
+    # the production-domain persona pool {editing, montage, visual-storytelling} so an
+    # "edit the montage / pace the cut" task surfaces the editing-craft persona, while
+    # "write the video script/hook" (which has none of these tokens) keeps routing to
+    # the copy personas via video-script. Multi-word keys are weighted to win cleanly.
+    "video-edit":          ["montage", "footage", "edit raw", "b-roll", "b roll", "color grade",
+                            "color-grade", "rough cut", "pace the cut", "pacing", "cut the",
+                            "edit the", "sequence", "splice", "timeline edit", "documentary footage",
+                            "assembly cut", "edit documentary", "edit footage"],
     "research":            ["research", "analyze", "study", "investigate", "compile", "find out", "look into"],
     "strategy":            ["strategy", "plan", "roadmap", "vision", "framework", "approach"],
     "design":              ["design", "graphic", "logo", "layout", "mockup", "visual", "illustrate"],

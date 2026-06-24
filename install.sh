@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v13.8.18"
+ONBOARDING_VERSION="v13.8.19"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -665,7 +665,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 5 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/46-... (41 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/47-... (42 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -4208,7 +4208,7 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 41 active skills install in 5 dependency-aware waves, not by number order.
+The 42 active skills install in 5 dependency-aware waves, not by number order.
 Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
 A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
@@ -5893,6 +5893,54 @@ install_skill_44_convert_and_flow_operator_env() {
 }
 
 install_skill_44_convert_and_flow_operator_env
+
+# ----------------------------------------------------------
+# Skill 47: OpenMontage Production (autonomous multi-pipeline video)
+# ----------------------------------------------------------
+# AGPLv3 BOUNDARY: this template install ONLY copies the Skill 47 folder
+# (installer + wrapper + docs + our OWN Kie adapter files). It NEVER clones or
+# vendors OpenMontage source here. The actual `git clone OpenMontage` + `make
+# setup` + runtime-dep preflight happens on the CLIENT box per INSTALL.md, on the
+# client's own optional keys. We only mark the skill's scripts executable and
+# point the agent at the fail-loud preflight.
+install_skill_47_openmontage_production() {
+    local SKILL_SRC="$ONBOARDING_DIR/47-openmontage-production"
+    local SKILL_DEST="$SKILLS_DIR/47-openmontage-production"
+
+    if [ ! -d "$SKILL_SRC" ]; then
+        warn "Skill 47 source dir not found at $SKILL_SRC — skipping (older onboarding bundle?)"
+        return 0
+    fi
+
+    # Idempotent: skip if dest version matches src
+    if [ -f "$SKILL_DEST/skill-version.txt" ] && [ -d "$SKILL_DEST/kie-adapters" ]; then
+        local SKILL47_CURRENT SKILL47_SRC_VER
+        SKILL47_CURRENT=$(cat "$SKILL_DEST/skill-version.txt" 2>/dev/null | tr -d '[:space:]')
+        SKILL47_SRC_VER=$(cat "$SKILL_SRC/skill-version.txt" 2>/dev/null | tr -d '[:space:]')
+        if [ -n "$SKILL47_CURRENT" ] && [ "$SKILL47_CURRENT" = "$SKILL47_SRC_VER" ]; then
+            success "Skill 47 already installed at v${SKILL47_CURRENT}"
+            chmod +x "$SKILL_DEST/"*.sh 2>/dev/null || true
+            return 0
+        fi
+        note "Skill 47 present at v${SKILL47_CURRENT:-?}, source is v${SKILL47_SRC_VER:-?} — refreshing"
+    fi
+
+    mkdir -p "$SKILL_DEST"
+    cp -R "$SKILL_SRC/." "$SKILL_DEST/" 2>>"$LOG_FILE" || {
+        warn "Failed to copy Skill 47 from $SKILL_SRC -> $SKILL_DEST"
+        return 0
+    }
+    chmod +x "$SKILL_DEST/"*.sh 2>/dev/null || true
+
+    success "Skill 47 (OpenMontage Production) installed -> $SKILL_DEST"
+    note "Skill 47 powers the video dept Automated Video Production Specialist (OpenMontage Pipeline Operator)."
+    note "AGPLv3: OpenMontage is cloned on the CLIENT box at activation per INSTALL.md — its source is NEVER vendored into this template."
+    note "Before producing: run $SKILL_DEST/preflight.sh (fail-loud check for FFmpeg / Node>=18 / npx hyperframes / Piper); then INSTALL.md (clone + make setup + drop kie-adapters + KIE_API_KEY-only .env + low budget cap)."
+    note "All asset generation routes through Kie.AI on the CLIENT's own KIE_API_KEY; native paid providers stay UNAVAILABLE. Free render engines + free stock corpus + Piper TTS are preserved."
+    return 0
+}
+
+install_skill_47_openmontage_production
 
 # ----------------------------------------------------------
 # Step 15: Register Skill 32's materialize-dept-agents.sh (v10.13.18)

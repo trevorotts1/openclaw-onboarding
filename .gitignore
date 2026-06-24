@@ -1,5 +1,10 @@
 30-blackceo-voice-call-plugin-ARCHIVED/
 
+# Claude Code agent worktrees + local harness state. These contain per-agent worktree
+# copies of the repo (and can carry client-specific names from a live operator session);
+# they are scratch and MUST NEVER be committed to this fleet-wide template.
+.claude/
+
 __pycache__/
 *.pyc
 

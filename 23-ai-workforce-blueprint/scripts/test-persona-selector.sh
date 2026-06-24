@@ -115,6 +115,7 @@ TASKS=(
   "ceo|Outline next quarter's strategic priorities for the leadership team"
   "research|Summarize the top 5 insights from the McKinsey 2026 SaaS benchmarks report"
   "web-development|build the funnel value-ladder and checkout pages"
+  "video|Edit raw documentary footage into a montage sequence that tells a visual story"
 )
 
 results=()
@@ -122,6 +123,8 @@ personas_seen=()
 breakdowns_seen=()
 mkt_result_personas=()
 webdev_result_personas=()
+video_result_personas=()
+video_top3=""
 
 for entry in "${TASKS[@]}"; do
   dept=$(echo "$entry" | cut -d'|' -f1)
@@ -162,6 +165,14 @@ for entry in "${TASKS[@]}"; do
 
   if [ "$dept" = "web-development" ]; then
     webdev_result_personas+=("$persona")
+  fi
+
+  if [ "$dept" = "video" ]; then
+    video_result_personas+=("$persona")
+    # Capture the full top-3 candidate ids for this video task (queryability check).
+    # A video-domain persona must SURFACE in the funnel for a video task; variety
+    # sampling may pick a different top-1, so we assert presence in top-3, not win.
+    video_top3=$(echo "$output" | python3 -c "import sys,json; r=json.load(sys.stdin); print(' '.join(c.get('persona_id','') for c in r.get('breakdown',{}).get('top_3',[])))" 2>/dev/null)
   fi
 
   if [ "$VERBOSE" = "true" ]; then
@@ -366,6 +377,85 @@ else
   A7=SKIP
 fi
 
+# A8: video task → a video-domain persona is QUERYABLE (OpenMontage video widen verify)
+# The video department gained four domain tags {video, editing, montage,
+# visual-storytelling} (persona-categories.json + DEPT_DOMAIN_TAGS["video"]) so the
+# OpenMontage role can match a video-production persona. This asserts that for a
+# video task, a persona whose domain intersects those four tags SURFACES in the
+# funnel's top-3 candidates. We check top-3 presence (queryability), NOT top-1 win:
+# the funnel deliberately retains marketing/copywriting tags for the video dept and
+# the v10.14.28 variety sampler may pick a different #1, so demanding the winner be
+# the video persona would be brittle. Presence in top-3 proves the widen + tagging
+# made the video persona reachable.
+#
+# SKIP-SAFE: on a clean fleet box with NO video-domain persona ingested yet
+# (persona-categories.json ships ZERO video personas), the top-3 has no video-tag
+# persona to find, so this SKIPs rather than failing. It only FAILs once a
+# video-domain persona EXISTS in the library but does NOT reach the top-3 for a
+# video task — i.e. the widen was reverted.
+A8=SKIP
+if [ "${#video_result_personas[@]}" -gt 0 ] && [ -n "$video_top3" ]; then
+  if [ -n "$PERSONA_CAT_FILE" ]; then
+    # Is there ANY video-domain persona in the whole library?
+    lib_has_video=$(python3 - <<PYEOF 2>/dev/null
+import json
+cat_file = "$PERSONA_CAT_FILE"
+video_set = {"video","editing","montage","visual-storytelling"}
+import re
+def norm(s): return re.sub(r"[/ _]+", "-", s.lower()).strip("-")
+try:
+    data = json.loads(open(cat_file).read())
+    personas = data.get("personas", {})
+    n = sum(1 for v in personas.values()
+            if {norm(t) for t in (v.get("domain") or v.get("domain_tags") or v.get("tags") or [])} & video_set)
+    print(n)
+except Exception:
+    print(0)
+PYEOF
+)
+    if [ "${lib_has_video:-0}" = "0" ]; then
+      yellow "  ⚠ A8  No video-domain persona in the library yet — video queryability check skipped"
+      A8=SKIP
+    else
+      # A video-domain persona EXISTS; require it to surface in the video task's top-3.
+      top3_video_hit=$(python3 - <<PYEOF 2>/dev/null
+import json
+cat_file = "$PERSONA_CAT_FILE"
+top3 = "$video_top3".split()
+video_set = {"video","editing","montage","visual-storytelling"}
+import re
+def norm(s): return re.sub(r"[/ _]+", "-", s.lower()).strip("-")
+try:
+    data = json.loads(open(cat_file).read())
+    personas = data.get("personas", {})
+    hit = [pid for pid in top3
+           if {norm(t) for t in (personas.get(pid, {}).get("domain")
+               or personas.get(pid, {}).get("domain_tags")
+               or personas.get(pid, {}).get("tags") or [])} & video_set]
+    print(hit[0] if hit else "")
+except Exception:
+    print("")
+PYEOF
+)
+      if [ -n "$top3_video_hit" ]; then
+        green "  ✓ A8  Video-domain persona queryable for video task: '$top3_video_hit' in top-3"
+        A8=PASS
+      else
+        red "  ✗ A8  A video-domain persona exists but did NOT surface in the video task top-3"
+        red "       top-3 was: $video_top3"
+        red "       (video widen not applied or persona mis-tagged — video role would match nothing)"
+        A8=FAIL
+      fi
+    fi
+  else
+    yellow "  ⚠ A8  persona-categories.json not found — skipping video queryability check"
+    A8=SKIP
+  fi
+else
+  yellow "  ⚠ A8  No video task top-3 captured — video queryability check skipped"
+  A8=SKIP
+fi
+
 echo
 blue "═══ Summary ═══"
 echo "  A1 Returns persona:              $A1"
@@ -375,9 +465,10 @@ echo "  A4 Category filter (mkt tags):   $A4"
 echo "  A5 Funnel counts in JSON:        $A5"
 echo "  A6 Monotonic funnel invariant:   $A6"
 echo "  A7 Web-dev funnel-surface tags:  $A7"
+echo "  A8 Video-domain tags:            $A8"
 echo
 
-if [ "$A1" = "PASS" ] && [ "$A2" != "FAIL" ] && [ "$A4" != "FAIL" ] && [ "$A7" != "FAIL" ] && [ "$A6" != "FAIL" ]; then
+if [ "$A1" = "PASS" ] && [ "$A2" != "FAIL" ] && [ "$A4" != "FAIL" ] && [ "$A7" != "FAIL" ] && [ "$A8" != "FAIL" ] && [ "$A6" != "FAIL" ]; then
   green "OVERALL: SELECTOR FUNCTIONAL ✓"
   echo "Quality of selection still requires human review of top-3 candidates per task."
   exit 0
