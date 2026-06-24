@@ -9,7 +9,13 @@
 set -euo pipefail
 
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OPENMONTAGE_DIR="${OPENCLAW_OPENMONTAGE_DIR:-$HOME/.openclaw/skills/47-movie-producer/OpenMontage}"
+# A3 CONTENT-HASH FIX (v14.0.1): the OpenMontage clone (~56MB) MUST NOT live inside
+# the hashed skill dir (~/.openclaw/skills/47-movie-producer/). The onboarding
+# updater's A3 content-gate hashes that skill dir via skill-content-hash.sh; a clone
+# inside it makes the DEST hash never match the clean source manifest, so A3 FAILS and
+# the version stamp is BLOCKED fleet-wide. Clone OUTSIDE the skill dir, into a sibling
+# runtime dir. The OPENCLAW_OPENMONTAGE_DIR override still works for custom locations.
+OPENMONTAGE_DIR="${OPENCLAW_OPENMONTAGE_DIR:-$HOME/.openclaw/openmontage-runtime/OpenMontage}"
 SKILL_NAME="movie-producer"
 
 red()    { printf "\033[31mFAIL\033[0m %s\n" "$1"; }
@@ -37,6 +43,8 @@ echo ""
 # Step 2 — Clone OpenMontage onto the client box
 # ---------------------------------------------------------------------------
 echo "--- Step 2: Clone OpenMontage ---"
+# Ensure the runtime parent dir exists OUTSIDE the hashed skill dir (A3 fix, v14.0.1).
+mkdir -p "$(dirname "$OPENMONTAGE_DIR")"
 if [ -d "$OPENMONTAGE_DIR/.git" ]; then
   yellow "OpenMontage already cloned at $OPENMONTAGE_DIR — pulling latest."
   git -C "$OPENMONTAGE_DIR" pull --ff-only

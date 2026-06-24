@@ -39,10 +39,13 @@
 #      the tag always exists when CI sees the new version on main.
 #   G2 (tag-without-changelog): CHANGELOG entry is added in the same commit
 #      as the bump, so G2 passes immediately.
-#   G3 (skill-content-without-version-bump): release.sh does NOT change
-#      skill content; skill bumps happen in feature PRs before release.sh
-#      is called. If skill content is staged alongside release.sh the author
-#      must bump that skill's skill-version.txt themselves.
+#   G3 (skill-content-without-version-bump): bump-version.sh rolls two markers
+#      that live INSIDE the 06-ghl-install-pages/ skill dir (browser_manager.sh
+#      and browser_manager.py). To keep G3 green, bump-version.sh now ALSO rolls
+#      06-ghl-install-pages/skill-version.txt in the same run, and release.sh
+#      stages it below. (Before v14.0.1 this gap tripped G3 on every release that
+#      touched the browser-manager markers.) Any OTHER skill content change must
+#      still bump its own skill-version.txt in the feature PR before release.sh.
 #
 # To add release notes after running:
 #   Edit CHANGELOG.md — add the body below the header line that release.sh
@@ -191,6 +194,9 @@ echo "[4/6] Staging changed files ..."
 # missing from this git add, so a release left them unstaged and they drifted
 # one version behind /version on every release. version-consistency.yml does not
 # track them, so CI never caught it. Stage them here so a release captures them.
+# v14.0.1: two of those markers live inside the 06-ghl-install-pages/ skill dir,
+# so bump-version.sh also rolls 06-ghl-install-pages/skill-version.txt to keep CI
+# guard G3 green — stage it here too (closes the recurring G3-on-06 release gap).
 git add version install.sh update-skills.sh CHANGELOG.md \
   "23-ai-workforce-blueprint/skill-version.txt" \
   "23-ai-workforce-blueprint/templates/role-library/_index.json" \
@@ -199,6 +205,7 @@ git add version install.sh update-skills.sh CHANGELOG.md \
   DIRECT-TO-AGENT-UPDATE-MESSAGE.md \
   "06-ghl-install-pages/tools/browser_manager.sh" \
   "06-ghl-install-pages/tools/browser_manager.py" \
+  "06-ghl-install-pages/skill-version.txt" \
   "scripts/agent-browser-reaper.sh" \
   "scripts/guard-agent-browser-managed.sh" \
   ${CC_COMPAT:+cc-compat.json}
