@@ -102,6 +102,18 @@ _should_exclude() {
     # shipped content so excluding them restores A3 determinism without weakening
     # the integrity gate (all .py source files remain in scope).
     */__pycache__/*) return 0 ;;
+    # A3 CLONE-RACE FIX (v14.0.1): Skill 47 (Movie Producer) clones the upstream
+    # OpenMontage engine (~56MB, AGPLv3) onto the client box at install time. The
+    # v14.0.1 installer clones OUTSIDE the hashed skill dir, but legacy installs (and
+    # any future skill that clones a third-party repo into its own dir) would drop an
+    # OpenMontage/ tree, a node_modules/ tree, or a nested .git inside the skill dir.
+    # Those are runtime-fetched dependencies, NOT shipped skill content — they are
+    # absent from the clean source tree, so hashing them makes the DEST hash never
+    # match the SRC manifest and BLOCKS the version stamp fleet-wide. Prune them on
+    # BOTH sides so even a legacy in-dir clone can never break the content hash. All
+    # genuine shipped .md / .py / .sh skill files remain in scope.
+    */OpenMontage/*) return 0 ;;
+    */node_modules/*) return 0 ;;
   esac
   case "$base" in
     # Python compiled/optimised bytecode files — same rationale as __pycache__

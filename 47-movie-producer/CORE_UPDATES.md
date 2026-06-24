@@ -18,7 +18,7 @@ Add this section under the Video Skills Suite heading (create it if not present)
 
 ### Movie Producer — Automated Video Production (Skill 47)
 - Location: `~/.openclaw/skills/47-movie-producer/`
-- Clone location (client box): `~/.openclaw/skills/47-movie-producer/OpenMontage/`
+- Clone location (client box): `~/.openclaw/openmontage-runtime/OpenMontage/`
 - Purpose: autonomous multi-pipeline video production — free documentary montage (real public-domain footage) or Kie.AI-powered image/video generation
 - Use when: client needs a finished video produced end-to-end from a brief, script, or pipeline manifest
 - Free path: `pipeline_defs/documentary-montage.yaml` (zero API keys)
@@ -34,7 +34,7 @@ Add this pointer:
 ```md
 ## Video Skills Suite
 - Movie Producer — Automated Video Production (Skill 47): `~/.openclaw/skills/47-movie-producer/`
-  - Clone: `~/.openclaw/skills/47-movie-producer/OpenMontage/`
+  - Clone: `~/.openclaw/openmontage-runtime/OpenMontage/`
   - Free path: documentary-montage.yaml (zero keys)
   - Paid path: KIE_API_KEY only (client's own key)
 ```

@@ -5,14 +5,18 @@
 #   successfully and that NO vendoring is required. Records the §A conclusion.
 #
 # INVOCATION (after cloning + preflight):
-#   cd ~/.openclaw/skills/47-movie-producer/OpenMontage
-#   bash ../verify-deps.sh
+#   cd ~/.openclaw/openmontage-runtime/OpenMontage
+#   bash ~/.openclaw/skills/47-movie-producer/verify-deps.sh
 #
 # EXIT CODE 0 = all deps fetched, no vendoring required
 # EXIT CODE 1 = a dep failed to fetch (fix the install, do NOT vendor)
+#
+# v14.0.1: the OpenMontage clone lives OUTSIDE the hashed skill dir (A3 content-hash
+# fix). Default to the runtime path used by install.sh; honor CLONE_DIR and
+# OPENCLAW_OPENMONTAGE_DIR overrides.
 set -euo pipefail
 
-CLONE_DIR="${CLONE_DIR:-$(dirname "$0")/OpenMontage}"
+CLONE_DIR="${CLONE_DIR:-${OPENCLAW_OPENMONTAGE_DIR:-$HOME/.openclaw/openmontage-runtime/OpenMontage}}"
 if [ ! -d "$CLONE_DIR" ]; then
   echo "[ERROR] OpenMontage clone not found at: $CLONE_DIR" >&2
   echo "        Run: git clone https://github.com/calesthio/OpenMontage.git $CLONE_DIR" >&2

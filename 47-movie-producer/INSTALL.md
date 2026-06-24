@@ -53,15 +53,21 @@ Expected output ends with:
 
 ### Step 2 — Clone OpenMontage onto this client box
 
+> **Why this path?** The OpenMontage clone (~56MB) lives in a runtime dir
+> **outside** the hashed skill dir (`~/.openclaw/skills/47-movie-producer/`).
+> The onboarding updater hashes the skill dir for its content-integrity gate;
+> a clone inside it would break that hash and block fleet version stamps.
+
 ```bash
+mkdir -p ~/.openclaw/openmontage-runtime
 git clone https://github.com/calesthio/OpenMontage.git \
-  ~/.openclaw/skills/47-movie-producer/OpenMontage
+  ~/.openclaw/openmontage-runtime/OpenMontage
 ```
 
 Verify the clone is the correct remote:
 
 ```bash
-git -C ~/.openclaw/skills/47-movie-producer/OpenMontage \
+git -C ~/.openclaw/openmontage-runtime/OpenMontage \
   remote get-url origin
 ```
 
@@ -72,7 +78,7 @@ Expected: `https://github.com/calesthio/OpenMontage.git`
 ### Step 3 — Run `make setup` (fetches all dependencies)
 
 ```bash
-cd ~/.openclaw/skills/47-movie-producer/OpenMontage && make setup
+cd ~/.openclaw/openmontage-runtime/OpenMontage && make setup
 ```
 
 This installs:
@@ -87,17 +93,17 @@ This installs:
 
 ```bash
 cp ~/.openclaw/skills/47-movie-producer/kie-adapters/tools/graphics/kie_image.py \
-   ~/.openclaw/skills/47-movie-producer/OpenMontage/tools/graphics/kie_image.py
+   ~/.openclaw/openmontage-runtime/OpenMontage/tools/graphics/kie_image.py
 
 cp ~/.openclaw/skills/47-movie-producer/kie-adapters/tools/video/kie_video.py \
-   ~/.openclaw/skills/47-movie-producer/OpenMontage/tools/video/kie_video.py
+   ~/.openclaw/openmontage-runtime/OpenMontage/tools/video/kie_video.py
 ```
 
 Verify syntax:
 
 ```bash
-python3 -c "import ast; ast.parse(open('$HOME/.openclaw/skills/47-movie-producer/OpenMontage/tools/graphics/kie_image.py').read()); print('kie_image OK')"
-python3 -c "import ast; ast.parse(open('$HOME/.openclaw/skills/47-movie-producer/OpenMontage/tools/video/kie_video.py').read()); print('kie_video OK')"
+python3 -c "import ast; ast.parse(open('$HOME/.openclaw/openmontage-runtime/OpenMontage/tools/graphics/kie_image.py').read()); print('kie_image OK')"
+python3 -c "import ast; ast.parse(open('$HOME/.openclaw/openmontage-runtime/OpenMontage/tools/video/kie_video.py').read()); print('kie_video OK')"
 ```
 
 ### Step 5 — Write the client `.env` (Kie key only)
@@ -105,7 +111,7 @@ python3 -c "import ast; ast.parse(open('$HOME/.openclaw/skills/47-movie-producer
 Create a `.env` in the cloned OpenMontage directory with **only** the client's own Kie.AI key. No FAL, Runway, HeyGen, OpenAI, or Google keys — leaving those absent ensures native paid providers report UNAVAILABLE and all asset generation routes through Kie:
 
 ```bash
-cat > ~/.openclaw/skills/47-movie-producer/OpenMontage/.env << 'ENVEOF'
+cat > ~/.openclaw/openmontage-runtime/OpenMontage/.env << 'ENVEOF'
 # Kie.AI API key — client's own key. Get one at https://kie.ai
 # All image/video generation routes through Kie.AI when this is set.
 # Remove this line (or leave blank) to run the free stock-footage path only.
@@ -119,7 +125,7 @@ Replace `YOUR_CLIENT_KIE_API_KEY_HERE` with the client's actual key. If the clie
 
 ### Step 6 — Set a low budget cap in `config.yaml`
 
-Open `~/.openclaw/skills/47-movie-producer/OpenMontage/config.yaml` and set:
+Open `~/.openclaw/openmontage-runtime/OpenMontage/config.yaml` and set:
 
 ```yaml
 budget:
@@ -137,7 +143,7 @@ This enforces the Rule-Zero budget discipline: the system announces provider + m
 ### Step 7 — Verify provider routing
 
 ```bash
-cd ~/.openclaw/skills/47-movie-producer/OpenMontage && make preflight
+cd ~/.openclaw/openmontage-runtime/OpenMontage && make preflight
 ```
 
 With `KIE_API_KEY` set, the output should show `kie` listed under both `image_generation` and `video_generation`. Native paid providers (flux, veo, runway, heygen, openai, google) should all be UNAVAILABLE.
@@ -177,7 +183,7 @@ When a gateway restart is needed:
 ## Uninstall
 
 ```bash
-rm -rf ~/.openclaw/skills/47-movie-producer/OpenMontage
+rm -rf ~/.openclaw/openmontage-runtime/OpenMontage
 ```
 
 The skill wrapper files (`~/.openclaw/skills/47-movie-producer/`) are managed by `update-skills.sh` and are NOT removed by this command.

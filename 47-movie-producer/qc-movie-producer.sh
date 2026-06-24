@@ -67,7 +67,10 @@ pre_or_hard() {
 # ~/.openclaw/skills/47-movie-producer/ copy).
 SELF_SKILL_DIR="$SKILL_DIR"
 # The installed-clone path (only exists post-install).
-CLONE_DIR="${SKILLS_DIR_DEFAULT}/47-movie-producer/OpenMontage"
+# v14.0.1: the clone lives OUTSIDE the hashed skill dir (A3 content-hash fix), in a
+# sibling runtime dir, so a ~56MB clone can never break the skill's content hash.
+# Honor the OPENCLAW_OPENMONTAGE_DIR override first (matches install.sh).
+CLONE_DIR="${OPENCLAW_OPENMONTAGE_DIR:-$HOME/.openclaw/openmontage-runtime/OpenMontage}"
 CLONE_PRESENT=0; [ -d "${CLONE_DIR}" ] && CLONE_PRESENT=1
 
 # The Kie adapter SOURCE files always live in the skill payload (this folder),

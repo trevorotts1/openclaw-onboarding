@@ -323,6 +323,20 @@ _roll_marker "06-ghl-install-pages/tools/browser_manager.py" "BROWSER_MANAGER_PY
 _roll_marker "scripts/agent-browser-reaper.sh"               "AGENT_BROWSER_REAPER_VERSION"
 _roll_marker "scripts/guard-agent-browser-managed.sh"        "GUARD_AGENT_BROWSER_MANAGED_VERSION"
 
+# 11. G3-on-06 GAP FIX (v14.0.1): the two _roll_marker calls above rewrite files
+#     INSIDE the 06-ghl-install-pages/ skill dir (browser_manager.sh + .py). CI guard
+#     G3 (version-consistency.yml) fails any release where a file under a skill dir
+#     changes WITHOUT that skill's own skill-version.txt changing in the same diff.
+#     Because nothing bumped 06-ghl-install-pages/skill-version.txt, EVERY release that
+#     rolled the browser-manager markers tripped G3 (flagged on the v14.0.0 ship).
+#     Roll 06's skill-version.txt here, in lockstep with the markers it gates, so G3
+#     stays green on every release. The 06 skill version is intentionally tracked at
+#     the repo /version (with the v prefix) like 23-ai-workforce-blueprint/skill-version.txt.
+F_06_SKILL_VERSION="$REPO_ROOT/06-ghl-install-pages/skill-version.txt"
+if [ -f "$F_06_SKILL_VERSION" ]; then
+  echo "$TARGET" > "$F_06_SKILL_VERSION"
+fi
+
 echo ""
 echo "Result:"
 print_state

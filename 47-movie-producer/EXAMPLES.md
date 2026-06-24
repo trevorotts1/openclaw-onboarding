@@ -17,7 +17,7 @@ Zero API keys needed. Assembles real footage from Archive.org, NASA, Wikimedia, 
 
 ### 1 — Set a $1 budget cap
 
-In `~/.openclaw/skills/47-movie-producer/OpenMontage/config.yaml`:
+In `~/.openclaw/openmontage-runtime/OpenMontage/config.yaml`:
 
 ```yaml
 budget:
@@ -30,7 +30,7 @@ budget:
 ### 2 — Run the documentary-montage pipeline
 
 ```bash
-cd ~/.openclaw/skills/47-movie-producer/OpenMontage
+cd ~/.openclaw/openmontage-runtime/OpenMontage
 
 python3 -c "
 import yaml, json
@@ -55,7 +55,7 @@ With `KIE_API_KEY` set in `.env`, the `image_selector` auto-routes to Kie.
 ### Image-to-image edit (source image provided)
 
 ```python
-# Run from ~/.openclaw/skills/47-movie-producer/OpenMontage/
+# Run from ~/.openclaw/openmontage-runtime/OpenMontage/
 from tools.tool_registry import registry
 registry.discover()
 
@@ -153,7 +153,7 @@ Run this after every render — mandatory before handoff:
 ffprobe -v error \
   -show_entries "format=duration,format_name:stream=codec_type" \
   -of json \
-  ~/.openclaw/skills/47-movie-producer/OpenMontage/outputs/your-video.mp4
+  ~/.openclaw/openmontage-runtime/OpenMontage/outputs/your-video.mp4
 ```
 
 A passing result looks like:
@@ -197,7 +197,7 @@ Failure conditions (do NOT deliver): `duration` is `"0"` or missing, no `video` 
 Shows which providers are available in the registry:
 
 ```bash
-cd ~/.openclaw/skills/47-movie-producer/OpenMontage && make preflight
+cd ~/.openclaw/openmontage-runtime/OpenMontage && make preflight
 ```
 
 With `KIE_API_KEY` set, expected output (truncated):
@@ -229,7 +229,7 @@ Without `KIE_API_KEY` (free path), `image_generation` and `video_generation` sho
 Tests that Remotion and Node.js are wired correctly without any API keys:
 
 ```bash
-cd ~/.openclaw/skills/47-movie-producer/OpenMontage && make demo
+cd ~/.openclaw/openmontage-runtime/OpenMontage && make demo
 ```
 
 This renders zero-key animated chart/text/data-viz demos using Remotion components only. If this fails, check Node 18+ is installed (`node -v`) and `remotion-composer/node_modules` exists.
