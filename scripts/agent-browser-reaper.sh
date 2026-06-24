@@ -52,7 +52,7 @@
 #   Mirrors scripts/orphan-temp-sweep.sh (reaper shape). bash-not-zsh.
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-AGENT_BROWSER_REAPER_VERSION="v13.8.15"
+AGENT_BROWSER_REAPER_VERSION="v13.8.17"
 
 set -u
 
