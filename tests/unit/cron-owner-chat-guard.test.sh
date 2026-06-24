@@ -448,6 +448,96 @@ if [ -f "$nudge_shim" ]; then
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
+# (6) SILENT-OPERATOR-CRON INVARIANT (chore/silent-operator-crons)
+# The operator / maintenance / onboarding crons below are NON-announcing: they
+# must never auto-deliver internal traffic to the client chat. Their cron
+# registration MUST NOT carry --channel telegram, --to, or --announce. They run
+# either as silent main-session agent-message crons (--session-target main
+# --light-context) or as command-mode crons (--command). This is the
+# enforcement for the "operator/maintenance crons default to silent" doctrine.
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
+echo "--- (6) SILENT-OPERATOR-CRON: maintenance crons carry no --channel/--to/--announce ---"
+
+# Assert the registration block for a named cron has none of the forbidden
+# auto-delivery flags. We extract a window around each `--name "<cron>"` create
+# call and grep the create-flag lines for the forbidden flags.
+assert_silent_cron() {
+    local file="$1" cron_name="$2"
+    local fname
+    fname=$(basename "$file")
+    if [ ! -f "$file" ]; then
+        return 0
+    fi
+    # Find each line that names this cron in a registration array/call.
+    local name_lines
+    name_lines=$(grep -n -- "--name \"$cron_name\"" "$file" 2>/dev/null || true)
+    if [ -z "$name_lines" ]; then
+        # Not registered in this file — nothing to assert here.
+        return 0
+    fi
+    local any=0
+    while IFS= read -r nl; do
+        [ -n "$nl" ] || continue
+        any=1
+        local lineno start end block
+        lineno=$(echo "$nl" | cut -d: -f1)
+        start="$lineno"
+        end=$((lineno + 12))   # a cron-create flag array spans only a few lines
+        # Strip comment lines (leading-# after optional whitespace) so the
+        # SILENT-cron explainer comments — which legitimately mention the
+        # forbidden flag NAMES — never trip the grep. Only real flag lines count.
+        block=$(sed -n "${start},${end}p" "$file" 2>/dev/null | grep -vE '^\s*#' || true)
+        # The block must end at the next blank line or closing paren of the array;
+        # restrict to lines that look like flags to avoid bleeding into the next
+        # attempt's prose. We just check the forbidden flags within the window.
+        if echo "$block" | grep -qE -- '--channel telegram|--announce'; then
+            fail "$fname: '$cron_name' registration near line $lineno carries --channel telegram or --announce (auto-announce leak)"
+        elif echo "$block" | grep -qE -- '--to "\$|--to [0-9]'; then
+            fail "$fname: '$cron_name' registration near line $lineno carries --to (auto-delivery leak)"
+        else
+            pass "$fname: '$cron_name' registration near line $lineno is SILENT (no --channel/--to/--announce)"
+        fi
+    done <<< "$name_lines"
+    [ "$any" -eq 1 ] || true
+}
+
+for _cron in weekly-onboarding-update workforce-build-resume onboarding-resume \
+             watchdog-onboarding-loop reassert-presentation-deps; do
+    assert_silent_cron "$REPO_ROOT/install.sh" "$_cron"
+    assert_silent_cron "$REPO_ROOT/update-skills.sh" "$_cron"
+    assert_silent_cron "$REPO_ROOT/scripts/ensure-pipeline-crons.sh" "$_cron"
+done
+
+# 6b: update-skills.sh send_telegram_progress must NOT target the client default
+# chat (allowFrom). It must route to the operator escalation chat or log-only.
+if grep -n 'send_telegram_progress()' "$REPO_ROOT/update-skills.sh" >/dev/null 2>&1; then
+    # Strip comment lines (the SILENT-cron explainer legitimately names allowFrom[0]
+    # while explaining what it must NOT do).
+    stp_block=$(awk '/^send_telegram_progress\(\) \{/,/^}/' "$REPO_ROOT/update-skills.sh" 2>/dev/null | grep -vE '^\s*#' || true)
+    if echo "$stp_block" | grep -qE "allowFrom', \[\]\)|allow\[0\]|allowFrom.*\[0\]"; then
+        fail "6b: update-skills.sh send_telegram_progress still reads allowFrom[0] (client-chat auto-notify leak)"
+    else
+        pass "6b: update-skills.sh send_telegram_progress does not target client allowFrom"
+    fi
+    if echo "$stp_block" | grep -qE 'OPERATOR_ESCALATION_CHAT_ID|OPERATOR_HELP_CHAT_ID|--account operator|agent:main:operator|logged-no-operator-chat'; then
+        pass "6c: update-skills.sh send_telegram_progress routes to operator chat / log-only (not client)"
+    else
+        fail "6c: update-skills.sh send_telegram_progress is not operator-routed"
+    fi
+fi
+
+# 6d: setup-weekly-update.sh must NOT force a gateway restart to push updates
+# (updates push silently via the AGENTS.md UPDATE PENDING flag).
+if [ -f "$REPO_ROOT/scripts/setup-weekly-update.sh" ]; then
+    if grep -vE '^\s*#' "$REPO_ROOT/scripts/setup-weekly-update.sh" | grep -q 'openclaw gateway restart'; then
+        fail "6d: setup-weekly-update.sh still calls 'openclaw gateway restart' on update (disruptive forced push)"
+    else
+        pass "6d: setup-weekly-update.sh pushes updates silently (no gateway restart)"
+    fi
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Summary
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""

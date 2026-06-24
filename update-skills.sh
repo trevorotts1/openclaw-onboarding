@@ -131,40 +131,86 @@ self_sync_guard() {
 }
 
 # ----------------------------------------------------------
-# Telegram Progress Notification (mirrors install.sh)
+# Update-result notification — OPERATOR-ROUTED, NEVER the client chat.
 # ----------------------------------------------------------
+# SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons): a skill-UPDATE result
+# is INTERNAL maintenance traffic. The agent-facing push is the UPDATE PENDING
+# flag written into AGENTS.md (write_update_pending_flag) — the agent picks it
+# up on its next session and surfaces an owner-facing summary itself, on its own
+# terms. The Terminal backup block (printed unconditionally below) covers the
+# human running the updater by hand.
+#
+# The OLD form sent the raw "update applied / partial" result via
+# `message send --target allowFrom[0]`, which on most boxes is the CLIENT's own
+# chat (and on operator-first boxes, blindly the operator). Either way it
+# AUTO-PUSHED internal update chatter to a chat. Per OPERATOR-MAINTENANCE.md
+# (FIX 2 / v12.4.0): maintenance notifications use the OPERATOR session key /
+# operator escalation chat — NEVER the client default — and NO-OP when no
+# operator escalation chat is configured (no hardcoded default chat).
+#
+# Resolution: env.vars.OPERATOR_ESCALATION_CHAT_ID (written by
+# configure-operator-telegram.sh) → operator account/session. If unset, we
+# LOG-ONLY (no send) rather than fall back to any owner/allowFrom chat.
 TELEGRAM_LAST_RESULT=""
 send_telegram_progress() {
   local message="$1"
   local OCJSON="$HOME/.openclaw/openclaw.json"
-  local TELEGRAM_TARGET=""
+  [ -d "/data/.openclaw" ] && OCJSON="/data/.openclaw/openclaw.json"
+  local OPERATOR_CHAT=""
   TELEGRAM_LAST_RESULT="skipped"
-
-  if [ -f "$OCJSON" ] && command -v python3 >/dev/null 2>&1; then
-    TELEGRAM_TARGET=$(python3 -c "
-import json
-try:
-    cfg = json.load(open('$OCJSON'))
-    allow = cfg.get('channels', {}).get('telegram', {}).get('allowFrom', [])
-    if allow:
-        print(allow[0])
-except:
-    pass
-" 2>/dev/null)
-  fi
 
   if ! command -v openclaw >/dev/null 2>&1; then
     TELEGRAM_LAST_RESULT="no-openclaw-cli"
     return 0
   fi
-  if [ -z "$TELEGRAM_TARGET" ]; then
-    TELEGRAM_LAST_RESULT="no-telegram-target"
+
+  # Resolve the OPERATOR escalation chat only — never the client default chat.
+  if [ -f "$OCJSON" ] && command -v python3 >/dev/null 2>&1; then
+    OPERATOR_CHAT=$(OC_JSON="$OCJSON" python3 - <<'PYEOF' 2>/dev/null
+import json, os
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+except Exception:
+    cfg = {}
+env = (cfg.get("env", {}) or {}).get("vars", {}) or {}
+for k in ("OPERATOR_ESCALATION_CHAT_ID", "OPERATOR_HELP_CHAT_ID"):
+    v = str(env.get(k, "") or "").strip()
+    if v:
+        print(v); raise SystemExit(0)
+print("")
+PYEOF
+)
+  fi
+
+  if [ -z "$OPERATOR_CHAT" ]; then
+    # No operator escalation chat configured → LOG-ONLY (the AGENTS.md UPDATE
+    # PENDING flag + the Terminal backup block already cover the agent + human).
+    # We deliberately do NOT fall back to allowFrom[0] / the client chat.
+    {
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] update-result notification (operator escalation chat not configured — LOG-ONLY, NOT sent to any client chat):"
+      printf '%s\n' "$message"
+    } >> "$LOG_FILE" 2>&1
+    TELEGRAM_LAST_RESULT="logged-no-operator-chat"
     return 0
   fi
-  if openclaw message send --channel telegram --target "$TELEGRAM_TARGET" --message "$message" >> "$LOG_FILE" 2>&1; then
-    TELEGRAM_LAST_RESULT="sent:$TELEGRAM_TARGET"
+
+  # Send on the OPERATOR session key, reply out the operator account — mirrors
+  # the OPERATOR-MAINTENANCE.md operator-drive contract.
+  if openclaw message send \
+      --channel telegram \
+      --account operator \
+      --session-key agent:main:operator \
+      --target "$OPERATOR_CHAT" \
+      --message "$message" >> "$LOG_FILE" 2>&1; then
+    TELEGRAM_LAST_RESULT="sent-operator:$OPERATOR_CHAT"
   else
-    TELEGRAM_LAST_RESULT="failed:see-$LOG_FILE"
+    # Operator send failed (e.g. operator account has no token yet). Do NOT fall
+    # back to the client chat — LOG-ONLY.
+    {
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] update-result operator send FAILED (operator account likely missing token) — LOG-ONLY, NOT routed to any client chat:"
+      printf '%s\n' "$message"
+    } >> "$LOG_FILE" 2>&1
+    TELEGRAM_LAST_RESULT="failed-operator:see-$LOG_FILE"
   fi
 }
 
@@ -1790,125 +1836,55 @@ with open('${_MANIFEST_TMP}', 'w') as f:
     if openclaw cron list 2>/dev/null | grep -qi "weekly-onboarding-update"; then
       echo "  ✓ Sunday weekly update-check cron already installed"
     else
-      OCJSON="$HOME/.openclaw/openclaw.json"
-      [ -d "/data/.openclaw" ] && OCJSON="/data/.openclaw/openclaw.json"
-      TG_TARGET=""
-      # OPERATOR-REJECTING RESOLVER (mirrors install.sh resolve_telegram_target_universal).
-      # BUG-FIX (v12.3.8/fix/v12.3.8-cron-resolver-parity): the prior inline
-      # `print(allow[0])` took allowFrom[0] BLINDLY — on boxes where the operator
-      # ID is first in allowFrom (e.g. allowFrom = [<operator-id>, <client-id>, ...]) this
-      # regenerated the weekly-onboarding-update cron pointing to the OPERATOR
-      # instead of the client owner. The resolver below mirrors the three-layer
-      # guard from install.sh: S0 OPENCLAW_OWNER_CHAT_ID env override → first
-      # non-operator entry in allowFrom/ownerAllowFrom → fail-loud if empty.
-      TG_TARGET=$(python3 - <<'PYEOF' 2>/dev/null
-import json, os
-
-# OPERATOR chat IDs — MUST match install.sh OPERATOR_CHAT_IDS exactly.
-# These must NEVER be returned as a client owner-chat target.
-OPERATOR_CHAT_IDS = {"5252140759", "6663821679", "6771245262"}
-
-def is_valid_owner_chat(v, bot_id=""):
-    """Return the chat ID string if valid and non-operator, else empty string."""
-    if not isinstance(v, (str, int)):
-        return ""
-    s = str(v).strip().replace("telegram:", "").replace("tg:", "")
-    if not s:
-        return ""
-    digits = s.lstrip("-")
-    if not (digits.isdigit() and 6 <= len(digits) <= 20):
-        return ""
-    if bot_id and s == bot_id:
-        return ""
-    if s in OPERATOR_CHAT_IDS:
-        return ""
-    return s
-
-# Determine config path (Mac or VPS)
-home = os.path.expanduser("~")
-oc_json = os.path.join(home, ".openclaw", "openclaw.json")
-if os.path.isdir("/data/.openclaw"):
-    oc_json = "/data/.openclaw/openclaw.json"
-
-cfg = {}
-try:
-    cfg = json.load(open(oc_json))
-except Exception:
-    pass
-
-# Extract bot_id to exclude it
-bot_id = ""
-bt = cfg.get("channels", {}).get("telegram", {}).get("botToken", "") or ""
-if ":" in bt:
-    bot_id = bt.split(":")[0]
-
-# S0: OPENCLAW_OWNER_CHAT_ID env var — explicit operator override (wins first)
-s0 = os.environ.get("OPENCLAW_OWNER_CHAT_ID", "").strip()
-if s0:
-    cid = is_valid_owner_chat(s0, bot_id)
-    if cid:
-        print(cid)
-        raise SystemExit(0)
-
-# S1: channels.telegram.allowFrom — first non-operator entry
-for v in cfg.get("channels", {}).get("telegram", {}).get("allowFrom", []):
-    cid = is_valid_owner_chat(v, bot_id)
-    if cid:
-        print(cid)
-        raise SystemExit(0)
-
-# S2: commands.ownerAllowFrom — first non-operator entry
-for v in cfg.get("commands", {}).get("ownerAllowFrom", []):
-    cid = is_valid_owner_chat(v, bot_id)
-    if cid:
-        print(cid)
-        raise SystemExit(0)
-
-# No valid non-operator owner chat found — print empty (caller will fail-loud)
-print("")
-PYEOF
-)
-      # DEFENSE-IN-DEPTH GUARD: even if the resolver somehow returns an operator
-      # ID (future regression), abort before wiring the cron. Mirrors the identical
-      # case guard in install.sh install_weekly_onboarding_update_cron().
-      case "$TG_TARGET" in
-          5252140759|6663821679|6771245262)
-              echo "  ERROR: weekly-onboarding-update cron target resolved to an OPERATOR chat ID ($TG_TARGET) — refusing to install cron."
-              echo "  This would route every weekly update to the operator, not the client owner. Aborting cron install."
-              echo "  Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> before running update-skills.sh, or reorder allowFrom so the client owner appears before any operator ID."
-              TG_TARGET=""
-              ;;
-      esac
-      if [ -n "$TG_TARGET" ]; then
-        PROMPT_TMP="/tmp/openclaw-cron-prompt-$$.txt"
-        REPO_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main"
-        # Unified repo: same URL for both Mac and VPS platforms
-        if curl -fsSL --max-time 15 "${REPO_URL}/cron-prompt.txt" -o "$PROMPT_TMP" 2>/dev/null && [ -s "$PROMPT_TMP" ]; then
-          PROMPT_CONTENT=$(cat "$PROMPT_TMP")
-          if openclaw cron create \
-              --name "weekly-onboarding-update" \
-              --description "Sunday 2am ET -- check for OpenClaw onboarding + command-center updates and ask client permission before applying anything." \
-              --cron "0 3 * * 0" \
-              --tz "America/New_York" \
-              --exact \
-              --session isolated \
-              --announce \
-              --channel telegram \
-              --to "$TG_TARGET" \
-              --thinking high \
-              --timeout-seconds 7200 \
-              --message "$PROMPT_CONTENT" >/dev/null 2>&1; then
-            echo "  ✓ Sunday weekly update-check cron installed (Sundays 2am ET → telegram $TG_TARGET)"
-          else
-            echo "  ⚠ Cron install failed -- agent can retry manually"
-          fi
-          rm -f "$PROMPT_TMP"
+      # ── SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons) ───────────
+      # weekly-onboarding-update is a MAINTENANCE/update-check cron, NOT an
+      # owner-facing announcement. The old form registered it
+      # `--session isolated --announce --channel telegram --to <owner-chat>`,
+      # so the scheduler AUTO-DELIVERED the raw update-check prompt into the
+      # CLIENT chat every Sunday — internal operator traffic the owner was never
+      # meant to see (the leak OPERATOR-MAINTENANCE.md forbids). NOTE: the old
+      # `isolated + --announce + --channel` shape is ALSO rejected by the gateway
+      # on some builds (confirmed live; see 35-social-media-planner/INSTRUCTIONS.md).
+      #
+      # FIX: register a SILENT main-session agent-message cron — `--agent main
+      # --session-target main --light-context` with NO --channel/--to/--announce.
+      # The update-check runs in the agent's OWN context (log-only); the agent
+      # then decides, via its own deliberate `openclaw message send`, whether to
+      # surface an owner-facing "an update is available, may I apply it?" question.
+      # Nothing is auto-pushed to the client. No owner target needed, so the old
+      # operator-ID resolver/guard is removed entirely. Mirrors install.sh Step 12.
+      PROMPT_TMP="/tmp/openclaw-cron-prompt-$$.txt"
+      REPO_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main"
+      # Unified repo: same URL for both Mac and VPS platforms
+      if curl -fsSL --max-time 15 "${REPO_URL}/cron-prompt.txt" -o "$PROMPT_TMP" 2>/dev/null && [ -s "$PROMPT_TMP" ]; then
+        PROMPT_CONTENT=$(cat "$PROMPT_TMP")
+        if openclaw cron create \
+            --name "weekly-onboarding-update" \
+            --description "Sunday 3am ET -- SILENT update-check: look for OpenClaw onboarding + command-center updates; ask the owner permission (via your own message send) before applying anything." \
+            --agent main \
+            --cron "0 3 * * 0" \
+            --tz "America/New_York" \
+            --exact \
+            --session-target main \
+            --light-context \
+            --thinking high \
+            --timeout-seconds 7200 \
+            --message "$PROMPT_CONTENT" >/dev/null 2>&1; then
+          echo "  ✓ Sunday weekly update-check cron installed (Sundays 3am ET, SILENT main-session — no client auto-announce)"
+        elif openclaw cron create \
+            --name "weekly-onboarding-update" \
+            --agent main \
+            --cron "0 3 * * 0" \
+            --tz "America/New_York" \
+            --session-target main \
+            --message "$PROMPT_CONTENT" >/dev/null 2>&1; then
+          echo "  ✓ Sunday weekly update-check cron installed (silent main-session, minimal-flag fallback)"
         else
-          echo "  ⚠ Could not fetch cron-prompt.txt -- agent can install cron manually later"
+          echo "  ⚠ Cron install failed -- agent can retry manually (SILENT main-session form)"
         fi
+        rm -f "$PROMPT_TMP"
       else
-        echo "  ⚠ No telegram target configured (or all resolved to operator IDs) -- skipping cron install."
-        echo "  ⚠ Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> or configure Telegram with a non-operator allowFrom entry, then re-run."
+        echo "  ⚠ Could not fetch cron-prompt.txt -- agent can install cron manually later"
       fi
     fi
   fi
@@ -2026,10 +2002,10 @@ Paste this to your agent:
 (If you didn't get THIS Telegram note, the same instructions are also printed in your Terminal.)"
 
   case "$TELEGRAM_LAST_RESULT" in
-    sent:*)              echo "  ✓ Telegram sent to ${TELEGRAM_LAST_RESULT#sent:}" ;;
-    no-openclaw-cli)     echo "  ⚠ Telegram skipped -- openclaw CLI not on PATH" ;;
-    no-telegram-target)  echo "  ⚠ Telegram skipped -- no telegram.allowFrom configured in openclaw.json" ;;
-    failed:*)            echo "  ⚠ Telegram FAILED -- see $LOG_FILE (using backup block below)" ;;
+    sent-operator:*)        echo "  ✓ Update-result note sent to OPERATOR chat ${TELEGRAM_LAST_RESULT#sent-operator:} (not the client)" ;;
+    logged-no-operator-chat) echo "  ℹ Update-result note LOG-ONLY (no operator escalation chat configured) — agent picks up the AGENTS.md UPDATE PENDING flag; client is NOT auto-notified" ;;
+    no-openclaw-cli)        echo "  ⚠ Update-result note skipped -- openclaw CLI not on PATH (Terminal backup block below)" ;;
+    failed-operator:*)      echo "  ⚠ Update-result operator send FAILED -- see $LOG_FILE (NOT routed to client; Terminal backup block below)" ;;
   esac
 
   # Always print the backup block so client is never stranded

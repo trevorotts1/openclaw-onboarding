@@ -44,12 +44,20 @@ if ! curl -fsSL --max-time 60 "$UPDATE_SCRIPT_URL" -o "$_UPDATE_TMP" 2>>"$HOME/.
 fi
 bash "$_UPDATE_TMP" >> "$HOME/.openclaw/skills/.update-log" 2>&1
 
-# If the update flag exists, an update was staged — restart the gateway so the agent sees it
+# SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons): updates push SILENTLY.
+# update-skills.sh already wrote the UPDATE PENDING flag into the agent's
+# AGENTS.md — the agent reads it on its NEXT session naturally and surfaces an
+# owner-facing summary on its own terms. We deliberately do NOT
+# `openclaw gateway restart` here:
+#   (1) a restart is disruptive (it kills any in-flight session) and on Mac
+#       LaunchAgent boxes a mistimed restart can wedge the gateway DOWN; and
+#   (2) it was only ever a way to FORCE the agent to notice the flag — which the
+#       silent AGENTS.md flag already accomplishes without interrupting anyone.
+# Log the staged-vs-clean outcome only; no restart, no client-facing push.
 if [ -f "$HOME/.openclaw/skills/.update-pending" ]; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Update staged — restarting gateway to notify agent" >> "$HOME/.openclaw/skills/.update-log"
-    openclaw gateway restart >> "$HOME/.openclaw/skills/.update-log" 2>&1
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Update staged — UPDATE PENDING flag is in AGENTS.md; agent will pick it up on its next session (no gateway restart, no client auto-notify)" >> "$HOME/.openclaw/skills/.update-log"
 else
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] No update needed — skipping gateway restart" >> "$HOME/.openclaw/skills/.update-log"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] No update needed" >> "$HOME/.openclaw/skills/.update-log"
 fi
 RESTART_EOF
 chmod +x "$RESTART_SCRIPT"
@@ -102,9 +110,9 @@ echo "  Sunday 3:00 AM:"
 echo "    1. Downloads the latest update script from GitHub"
 echo "    2. Checks GitHub for new onboarding versions"
 echo "    3. Compares against your installed version"
-echo "    4. If update available: stages it, creates pending flag,"
-echo "       sends Telegram notification, and restarts gateway"
-echo "    5. Agent boots on latest OpenClaw, sees the flag"
+echo "    4. If update available: stages it + writes a SILENT UPDATE PENDING"
+echo "       flag into the agent's AGENTS.md (no gateway restart, no auto-notify)"
+echo "    5. Agent sees the flag on its NEXT session (silent pickup)"
 echo "    6. Agent validates config structure against current OpenClaw docs"
 echo "    7. Agent tells you what changed and asks for approval"
 echo "    8. If you say yes, agent applies the update and runs QC"
