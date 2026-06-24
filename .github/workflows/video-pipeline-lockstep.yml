@@ -61,6 +61,19 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install ffmpeg/ffprobe (runtime deps qc-movie-producer.sh HARD-asserts)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # qc-movie-producer.sh HARD-FAILS if ffmpeg/ffprobe are missing (they are
+          # required at render time in BOTH the repo and post-install states), so the
+          # CI runner must provision them the same way presentation-deps-gate.yml /
+          # class-kit-gate.yml apt-install their runtime deps. ffmpeg ships ffprobe.
+          sudo apt-get update -y
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -1
+          ffprobe -version | head -1
+
       - name: video_sync_check.py — lockstep (exit 0 required)
         shell: bash
         run: |
