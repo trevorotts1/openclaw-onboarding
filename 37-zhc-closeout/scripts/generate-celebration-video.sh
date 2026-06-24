@@ -145,16 +145,34 @@ _mime_for() {
 # _curl_retry: POST a JSON body with retry-with-backoff on transient failures.
 # Echoes the response body; returns non-zero only after all attempts fail.
 # Treats HTTP 5xx / 429 / 408 / connection failures as transient.
+#
+# Args: <url> <body> <label> [attempts] [body_file]
+#   body_file (5th arg, optional): when set, the request body is read FROM THIS
+#   FILE via curl --data-binary @file instead of being passed inline as a
+#   command-line argument. This is MANDATORY for the base64 image-upload body:
+#   a >~128KB base64 payload passed through argv ("-d $body") overflows ARG_MAX
+#   and the whole call dies with "Argument list too long" (the recurring brand
+#   reference-image upload failure). Reading the body from a file keeps the big
+#   payload off the argument list entirely. $body is ignored when $body_file set.
 _curl_retry_post() {
   local url="$1"; local body="$2"; local label="$3"
   local attempts="${4:-4}"
-  local i resp http_code
+  local body_file="${5:-}"
+  local i resp http_code rc
+  # Build the data argument array once: read from file (no argv limit) when a
+  # body_file is provided, otherwise inline the (small) body string.
+  local data_args
+  if [[ -n "$body_file" ]]; then
+    data_args=(--data-binary "@$body_file")
+  else
+    data_args=(-d "$body")
+  fi
   for (( i=1; i<=attempts; i++ )); do
     resp=$(curl -sS -m 60 -w '\n__HTTP_CODE__%{http_code}' -X POST "$url" \
       -H "Authorization: Bearer ${KIE_API_KEY:-}" \
       -H "Content-Type: application/json" \
-      -d "$body" 2>/dev/null)
-    local rc=$?
+      "${data_args[@]}" 2>/dev/null)
+    rc=$?
     http_code=$(printf '%s' "$resp" | awk -F'__HTTP_CODE__' 'END{print $2}')
     resp=$(printf '%s' "$resp" | sed 's/__HTTP_CODE__[0-9]*$//')
     if [[ $rc -eq 0 && "$http_code" =~ ^2 ]]; then
@@ -186,20 +204,48 @@ _upload_local_to_public() {
     log "WARN" "ref-upload: KIE_API_KEY unset; cannot upload local reference $path"
     return 1
   fi
-  local mime b64 fname body resp url
+  local mime fname resp url b64_file body_file
   mime="$(_mime_for "$path")"
-  b64=$(base64 < "$path" 2>/dev/null | tr -d '\n')
-  if [[ -z "$b64" ]]; then
+  fname="zhc-ref-$(date -u +%s)-$(basename "$path")"
+
+  # ARG-LIST-TOO-LONG fix (recurring brand-image failure): the reference image's
+  # base64 must NEVER touch the command line. Previously the full base64 was
+  # interpolated into `jq -n --arg data "data:...;base64,${b64}"` (and then into
+  # `curl -d "$body"`). For any image >~128KB this overflows ARG_MAX and the
+  # whole upload dies with "jq: Argument list too long", so the brand reference
+  # silently never reached the video model. FIX: stream the base64 to a temp
+  # file, read it INTO jq via --rawfile (no argv), build the JSON body to a
+  # second temp file, and POST it with curl --data-binary @file (no argv).
+  b64_file="$(mktemp "${TMPDIR:-/tmp}/zhc-ref-b64.XXXXXX")"
+  body_file="$(mktemp "${TMPDIR:-/tmp}/zhc-ref-body.XXXXXX")"
+  # base64 with no line wrapping. GNU coreutils uses -w0; BSD/macOS base64 has no
+  # -w flag and never wraps by default. Try -w0, fall back to plain + strip \n.
+  if ! base64 -w0 < "$path" > "$b64_file" 2>/dev/null; then
+    base64 < "$path" 2>/dev/null | tr -d '\n' > "$b64_file"
+  fi
+  if [[ ! -s "$b64_file" ]]; then
     log "WARN" "ref-upload: base64 of $path produced no data"
+    rm -f "$b64_file" "$body_file"
     return 1
   fi
-  fname="zhc-ref-$(date -u +%s)-$(basename "$path")"
-  body=$(jq -n \
-    --arg data "data:${mime};base64,${b64}" \
+  # --rawfile data <file> binds $data to the file's raw contents (the base64),
+  # bypassing the argument list entirely. The data: prefix is concatenated
+  # inside jq so the giant string is never an argv element.
+  if ! jq -n \
+    --rawfile data "$b64_file" \
+    --arg prefix "data:${mime};base64," \
     --arg p "images/zhc-closeout" \
     --arg f "$fname" \
-    '{base64Data: $data, uploadPath: $p, fileName: $f}')
-  resp=$(_curl_retry_post "$KIE_UPLOAD_BASE/api/file-base64-upload" "$body" "ref-upload(base64)") || return 1
+    '{base64Data: ($prefix + ($data | rtrimstr("\n"))), uploadPath: $p, fileName: $f}' \
+    > "$body_file"; then
+    log "WARN" "ref-upload: jq failed to build base64 upload body for $path"
+    rm -f "$b64_file" "$body_file"
+    return 1
+  fi
+  resp=$(_curl_retry_post "$KIE_UPLOAD_BASE/api/file-base64-upload" "" "ref-upload(base64)" 4 "$body_file") || {
+    rm -f "$b64_file" "$body_file"; return 1
+  }
+  rm -f "$b64_file" "$body_file"
   url=$(printf '%s' "$resp" | jq -r '.data.downloadUrl // .downloadUrl // .data.url // empty' 2>/dev/null)
   if [[ -n "$url" && "$url" == http* ]]; then
     printf '%s' "$url"
