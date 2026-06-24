@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Skill 47 — OpenMontage Production — Install QC
+# Skill 47 — Movie Producer (Automated Video Production) — Install QC
+# ("OpenMontage" below = the UPSTREAM engine cloned onto the client box; the skill dir is 47-movie-producer/.)
 # Mirrors the fail-loud pattern from Skill 26 (caption-creator) and
 # the presentation-deps-gate.yml CI gate.
 #
@@ -13,7 +14,7 @@
 #   headers) and treats the clone-dependent checks as:
 #     - HARD assertions when the clone IS present (post-install client box), and
 #     - informational PRE-INSTALL notes when the clone is ABSENT (repo / CI).
-#   Result: `bash qc-openmontage-production.sh` exits 0 in the repo / CI AND on a
+#   Result: `bash qc-movie-producer.sh` exits 0 in the repo / CI AND on a
 #   fully-installed client box, and FAILS loudly only on a genuine defect (a real
 #   missing binary, a broken adapter, vendored AGPLv3 source, or a post-install
 #   box with a broken clone). This is the receipt the rubric's 1C requires.
@@ -63,10 +64,10 @@ pre_or_hard() {
 }
 
 # The skill folder is THIS dir (works whether run from the repo or from an installed
-# ~/.openclaw/skills/47-openmontage-production/ copy).
+# ~/.openclaw/skills/47-movie-producer/ copy).
 SELF_SKILL_DIR="$SKILL_DIR"
 # The installed-clone path (only exists post-install).
-CLONE_DIR="${SKILLS_DIR_DEFAULT}/47-openmontage-production/OpenMontage"
+CLONE_DIR="${SKILLS_DIR_DEFAULT}/47-movie-producer/OpenMontage"
 CLONE_PRESENT=0; [ -d "${CLONE_DIR}" ] && CLONE_PRESENT=1
 
 # The Kie adapter SOURCE files always live in the skill payload (this folder),
@@ -75,7 +76,7 @@ ADAPTER_IMG_SRC="${SELF_SKILL_DIR}/kie-adapters/tools/graphics/kie_image.py"
 ADAPTER_VID_SRC="${SELF_SKILL_DIR}/kie-adapters/tools/video/kie_video.py"
 
 echo ""
-echo "=== Skill 47 -- OpenMontage Production -- Install QC ==="
+echo "=== Skill 47 -- Movie Producer (Automated Video Production) -- Install QC ==="
 if [ "$CLONE_PRESENT" = "1" ]; then
   echo "    (mode: POST-INSTALL — OpenMontage clone present; clone checks are HARD)"
 else
@@ -105,7 +106,7 @@ assert "install.sh present"      "[ -f \"${SELF_SKILL_DIR}/install.sh\" ]"
 assert "preflight.sh present"    "[ -f \"${SELF_SKILL_DIR}/preflight.sh\" ]"
 assert "verify-deps.sh present"  "[ -f \"${SELF_SKILL_DIR}/verify-deps.sh\" ]"
 assert "DEPENDENCY-MANIFEST.md present" "[ -f \"${SELF_SKILL_DIR}/DEPENDENCY-MANIFEST.md\" ]"
-assert "openmontage-production.skill bundle present" "[ -f \"${SELF_SKILL_DIR}/openmontage-production.skill\" ]"
+assert "movie-producer.skill bundle present" "[ -f \"${SELF_SKILL_DIR}/movie-producer.skill\" ]"
 
 # ---- Kie adapter SOURCE files in the skill payload (HARD — always present) ----
 assert "kie_image.py source present in skill payload" "[ -f \"${ADAPTER_IMG_SRC}\" ]"

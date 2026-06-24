@@ -14,7 +14,7 @@ the client's clone — no OpenMontage files are modified.
 ## Directory layout (inside this skill)
 
 ```
-47-openmontage-production/
+47-movie-producer/
   kie-adapters/
     INSTALL-COPY-STEP.md    ← this file
     tools/
@@ -134,6 +134,6 @@ EOF
   operator.  They are NOT a copy of OpenMontage source.
 - They are placed in the CLIENT's cloned OpenMontage tree at install time,
   which keeps the AGPLv3 obligation on the client's own deployment.
-- This directory (`47-openmontage-production/kie-adapters/`) contains ONLY
+- This directory (`47-movie-producer/kie-adapters/`) contains ONLY
   our adapter code.  No OpenMontage source (`tools/`, `pipeline_defs/`,
   `remotion-composer/`, `lib/`) is vendored into the fleet template.

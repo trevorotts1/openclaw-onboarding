@@ -5895,7 +5895,7 @@ install_skill_44_convert_and_flow_operator_env() {
 install_skill_44_convert_and_flow_operator_env
 
 # ----------------------------------------------------------
-# Skill 47: OpenMontage Production (autonomous multi-pipeline video)
+# Skill 47: Movie Producer (Automated Video Production — autonomous multi-pipeline video)
 # ----------------------------------------------------------
 # AGPLv3 BOUNDARY: this template install ONLY copies the Skill 47 folder
 # (installer + wrapper + docs + our OWN Kie adapter files). It NEVER clones or
@@ -5903,9 +5903,9 @@ install_skill_44_convert_and_flow_operator_env
 # setup` + runtime-dep preflight happens on the CLIENT box per INSTALL.md, on the
 # client's own optional keys. We only mark the skill's scripts executable and
 # point the agent at the fail-loud preflight.
-install_skill_47_openmontage_production() {
-    local SKILL_SRC="$ONBOARDING_DIR/47-openmontage-production"
-    local SKILL_DEST="$SKILLS_DIR/47-openmontage-production"
+install_skill_47_movie_producer() {
+    local SKILL_SRC="$ONBOARDING_DIR/47-movie-producer"
+    local SKILL_DEST="$SKILLS_DIR/47-movie-producer"
 
     if [ ! -d "$SKILL_SRC" ]; then
         warn "Skill 47 source dir not found at $SKILL_SRC — skipping (older onboarding bundle?)"
@@ -5932,7 +5932,7 @@ install_skill_47_openmontage_production() {
     }
     chmod +x "$SKILL_DEST/"*.sh 2>/dev/null || true
 
-    success "Skill 47 (OpenMontage Production) installed -> $SKILL_DEST"
+    success "Skill 47 (Movie Producer — Automated Video Production) installed -> $SKILL_DEST"
     note "Skill 47 powers the video dept Automated Video Production Specialist (OpenMontage Pipeline Operator)."
     note "AGPLv3: OpenMontage is cloned on the CLIENT box at activation per INSTALL.md — its source is NEVER vendored into this template."
     note "Before producing: run $SKILL_DEST/preflight.sh (fail-loud check for FFmpeg / Node>=18 / npx hyperframes / Piper); then INSTALL.md (clone + make setup + drop kie-adapters + KIE_API_KEY-only .env + low budget cap)."
@@ -5940,7 +5940,7 @@ install_skill_47_openmontage_production() {
     return 0
 }
 
-install_skill_47_openmontage_production
+install_skill_47_movie_producer
 
 # ----------------------------------------------------------
 # Step 15: Register Skill 32's materialize-dept-agents.sh (v10.13.18)

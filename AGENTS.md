@@ -22,10 +22,11 @@ No agent decides what it will or will not do.
 This rule is role-scoped so it reinforces the CEO routing mandate WITHOUT gagging executing
 specialists. Both behaviors — the CEO routing and specialists executing — are equally required.
 
-<!-- SKILL_47_OPENMONTAGE_NOTE_V1 -->
-**Skill 47 — OpenMontage video production (autonomous produce + render).** The `video`
-department's **Automated Video Production Specialist (OpenMontage Pipeline Operator)** drives
-Skill `47-openmontage-production`, which clones the OpenMontage agentic video-production system
+<!-- SKILL_47_MOVIE_PRODUCER_NOTE_V1 -->
+**Skill 47 — Movie Producer (Automated Video Production — autonomous produce + render).** The `video`
+department's **Movie Producer (Automated Video Production)** role (registered slug
+`automated-video-production-specialist-openmontage`) drives
+Skill `47-movie-producer`, which clones the OpenMontage agentic video-production engine
 (`github.com/calesthio/OpenMontage`, AGPLv3) onto the client box AT INSTALL TIME — its source is
 **never vendored into this template**. The operator runs OpenMontage's staged production pipelines
 (documentary-montage, short-form, VSL/talking-head) and renders finished MP4s via the FFmpeg

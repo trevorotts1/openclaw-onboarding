@@ -1,12 +1,19 @@
-# SOPs -- Automated Video Production Specialist (OpenMontage Pipeline Operator)
+# SOPs -- Movie Producer (Automated Video Production) — Master DMAIC Index + Rule-Zero
 
-**Source:** video/automated-video-production-specialist-openmontage.md
+**Source:** video/automated-video-production-specialist-openmontage.md (registered slug UNCHANGED; display title rebranded to "Movie Producer (Automated Video Production)").
 **Authority:** This file mirrors Section 9 (Standard Operating Procedures) of the role file. The role file is authoritative. If they diverge, the role file wins and this mirror must be regenerated.
 **Department:** Video
 **Reports to:** Head of Video Production
-**Skill:** 47-openmontage-production (installs OpenMontage on the client box at runtime — AGPLv3 source is NEVER vendored into this template)
+**Skill:** 47-movie-producer (installs the upstream OpenMontage engine on the client box at runtime — AGPLv3 source is NEVER vendored into this template)
 **Generated for:** {{COMPANY_NAME}}
 **Last updated:** {{GENERATION_DATE}}
+
+> **Multi-SOP set (v14.0.0).** This file is the MASTER DMAIC index and the binding Rule-Zero/budget control for the Movie Producer role. The per-pipeline-type production procedures and the cross-role handoff procedure live in sibling SOP files in this `sops/` folder, each carrying its own DMAIC structure:
+> - `SOP--movie-producer-rule-zero-budget.md` — Rule-Zero announce/approve + budget-cap control (the binding safety SOP, applies to every job).
+> - `SOP--movie-producer-documentary-montage-pipeline.md` — the free, zero-key real-footage documentary-montage pipeline (FFmpeg path).
+> - `SOP--movie-producer-short-form-pipeline.md` — short-form (9:16 Reels/Shorts/TikTok) production pipeline.
+> - `SOP--movie-producer-vsl-pipeline.md` — Video Sales Letter (talking-head / branded promotional) pipeline.
+> - `SOP--movie-producer-cross-role-handoff.md` — handoff contracts to/from Skill 26 (captions), Skill 30 (TTS), Skill 27 (Video Editor), Motion Graphics, Head of Video Production.
 
 > **Rule Zero (binding on every SOP in this file):** The specialist MUST announce the provider, model identifier, and estimated cost in USD BEFORE any paid API call is submitted. A human-approval checkpoint (see config.yaml `require_approval_for_new_paid_tool: true`, `single_action_approval_usd: 0.50`) MUST be passed before each paid action proceeds. `ffprobe` MUST validate every rendered MP4 before the file is delivered. The client budget cap defined in config.yaml (`budget.mode: cap`, `budget.total_usd`) MUST NOT be exceeded. Violations of Rule Zero are hard stops, not warnings.
 
@@ -83,7 +90,7 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 
 1. **Runtime dependency preflight (fail-loud):** Run the Skill 47 `verify-deps.sh` preflight:
    ```
-   bash [OPENCLAW_SKILLS]/47-openmontage-production/verify-deps.sh
+   bash [OPENCLAW_SKILLS]/47-movie-producer/verify-deps.sh
    ```
    This checks: `command -v ffmpeg` (FFmpeg present), `node -v` ≥ 18.0.0 (Node present), `npx --yes hyperframes --version` resolves (HyperFrames available), `python -c "import yaml,pydantic,PIL,requests"` (Python deps installed). If ANY check fails, the preflight exits non-zero with a precise error message naming the missing binary and the client's install command. **NEVER proceed to pipeline execution with a failing preflight.** Deliver the full preflight error output to the client with the exact install instruction; do not attempt a workaround.
 
@@ -181,11 +188,11 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 **DMAIC phase:** Improve
 **When to run:** After SOP 9.2 (free jobs) or SOP 9.3 approval receipt (paid jobs).
 **Frequency:** Per production job.
-**Inputs:** Approved `job-manifest.json`, selected `pipeline_defs/*.yaml`, OpenMontage skill directory on client box (`[OPENCLAW_SKILLS]/47-openmontage-production/`).
+**Inputs:** Approved `job-manifest.json`, selected `pipeline_defs/*.yaml`, the Movie Producer skill directory on client box (`[OPENCLAW_SKILLS]/47-movie-producer/`).
 
 **Pipeline execution steps:**
 
-1. **Set the OpenMontage working directory:** `cd` to the client's cloned OpenMontage directory (installed by Skill 47 at `~/openclaw-openmontage/` or the path configured during install). Verify the Kie adapters are present: `ls tools/graphics/kie_image.py tools/video/kie_video.py` — both must exist. If either is missing, re-run Skill 47 install (the adapters are dropped from `47-openmontage-production/kie-adapters/` into the clone's `tools/` directories).
+1. **Set the OpenMontage working directory:** `cd` to the client's cloned OpenMontage directory (installed by Skill 47 at `~/.openclaw/skills/47-movie-producer/OpenMontage/` or the path configured during install). Verify the Kie adapters are present: `ls tools/graphics/kie_image.py tools/video/kie_video.py` — both must exist. If either is missing, re-run Skill 47 install (the adapters are dropped from `47-movie-producer/kie-adapters/` into the clone's `tools/` directories).
 
 2. **Execute the pipeline via the OpenMontage stage-director skills:** Drive the pipeline per the selected `pipeline_defs/*.yaml` manifest using OpenMontage's skills orchestration. The AI coding assistant (the agent running this SOP) IS the orchestrator per OpenMontage README line 329: "There is no code orchestrator. Your AI coding assistant IS the orchestrator." Execute each stage in the YAML definition in order. Do not skip stages.
 

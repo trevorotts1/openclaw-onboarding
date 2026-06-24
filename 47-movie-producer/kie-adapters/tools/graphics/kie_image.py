@@ -7,7 +7,7 @@ image is supplied).
 
 INSTALL NOTE (Skill 47 INSTALL.md):
   This file is NOT part of OpenMontage source (AGPLv3).  It is an adapter
-  authored by the fleet operator and shipped inside 47-openmontage-production/
+  authored by the fleet operator and shipped inside 47-movie-producer/
   kie-adapters/tools/graphics/.  The Skill 47 installer drops it into the
   client's cloned OpenMontage tree at:
 

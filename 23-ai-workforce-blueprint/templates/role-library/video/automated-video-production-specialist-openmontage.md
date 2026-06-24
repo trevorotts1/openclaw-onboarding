@@ -1,4 +1,7 @@
-# Automated Video Production Specialist (OpenMontage Pipeline Operator)
+# Movie Producer (Automated Video Production)
+
+<!-- Registered slug: automated-video-production-specialist-openmontage (UNCHANGED — do not rename this file). Display title rebranded to "Movie Producer (Automated Video Production)". Formerly titled "Automated Video Production Specialist (OpenMontage Pipeline Operator)". Powered by Skill 47 (47-movie-producer/), which clones the upstream OpenMontage engine on the client box. -->
+
 
 **Department:** Video
 **Reports to:** Head of Video Production
@@ -89,7 +92,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 ## 5. Monthly Operations
 
-- **OpenMontage upstream review:** Pull the latest OpenMontage release. Review changes to `pipeline_defs/`, `tools/`, and `skills/`. Test any changed pipeline definitions against the client's installed clone. Update `47-openmontage-production/CORE_UPDATES.md` with observed changes.
+- **OpenMontage upstream review:** Pull the latest OpenMontage release. Review changes to `pipeline_defs/`, `tools/`, and `skills/`. Test any changed pipeline definitions against the client's installed clone. Update `47-movie-producer/CORE_UPDATES.md` with observed changes.
 - **Budget analysis:** Review per-client Kie.AI spend for the month. Were any runs over-budget? Did the budget cap prevent any needed production? Recommend cap adjustments to Head of Video Production.
 - **Pipeline manifest library audit:** Review the department's saved pipeline manifests. Which have been reused most? Which are stale or obsolete? Archive outdated manifests.
 - **Free stock corpus check:** Verify the free stock sources (archive.org, NASA, Wikimedia, Library of Congress, National Archives) are still accessible and returning results. Report any dead endpoints to the OpenMontage upstream.
@@ -100,7 +103,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 ## 6. Quarterly Operations
 
 - **Full pipeline audit:** Run each active `pipeline_defs/*.yaml` on a test brief to confirm all 13 pipeline definitions still execute without error. Document which are actively used, which are available but untested, and which are not applicable to {{COMPANY_NAME}}'s content needs.
-- **Dependency health check:** Run `47-openmontage-production/verify-deps.sh` on the client's installed clone. Confirm `make setup` still succeeds cleanly, all Python deps import, Remotion's `node_modules` is intact, and `npx hyperframes --version` resolves. Record the clean-setup receipt.
+- **Dependency health check:** Run `47-movie-producer/verify-deps.sh` on the client's installed clone. Confirm `make setup` still succeeds cleanly, all Python deps import, Remotion's `node_modules` is intact, and `npx hyperframes --version` resolves. Record the clean-setup receipt.
 - **Kie.AI adapter parity check:** Diff `kie_image.py` and `kie_video.py` against `37-zhc-closeout/scripts/generate-celebration-video.sh` and `46-kie-callback-relay/kie-slide-submitter.js` to confirm model IDs, endpoint paths, and parameter shapes remain in sync with the fleet's verified patterns.
 - **Tool evaluation:** Identify one new OpenMontage tool or pipeline definition that could benefit {{COMPANY_NAME}}'s video production. Report findings and recommendations to Head of Video Production.
 
@@ -153,7 +156,7 @@ This role contributes to the company revenue cascade by: **enabling {{COMPANY_NA
 
 | Tool | Purpose | Access via | Specifics |
 |------|---------|------------|-----------|
-| OpenMontage (Skill 47) | Agentic video production system — pipeline orchestration, tool registry, stage-director skills | Cloned to client box at `~/.openclaw/skills/openmontage-production/` via `install.sh` | `github.com/calesthio/OpenMontage` AGPLv3; 13 pipeline defs, 82+ tools, `make setup` installs all deps |
+| OpenMontage (Skill 47) | Agentic video production system — pipeline orchestration, tool registry, stage-director skills | Cloned to client box at `~/.openclaw/skills/47-movie-producer/` via `install.sh` | `github.com/calesthio/OpenMontage` AGPLv3; 13 pipeline defs, 82+ tools, `make setup` installs all deps |
 | Kie.AI (via `kie_image.py` + `kie_video.py` adapters) | Generative image and video asset production | `KIE_API_KEY` set in client `.env`; adapters auto-discovered by OpenMontage tool registry | Image: `gpt-image-2-image-to-image`; Video: `gemini-omni-video` (default) + `veo3_fast` (fallback); `POST https://api.kie.ai/api/v1/jobs/createTask`; poll `GET /api/v1/jobs/recordInfo?taskId=` |
 | Free Real-Footage Stock Corpus | Zero-cost documentary footage — archive.org, NASA, Wikimedia, Library of Congress, National Archives, NOAA, European Space Agency, JAXA, Pond5 public domain | Built into OpenMontage `tools/video/stock_sources/` | Powers `pipeline_defs/documentary-montage.yaml` at ~$1 budget; no API key required |
 | FFmpeg | Video composition, muxing, stream validation, export | System binary (fail-loud preflight in Skill 47 `install.sh`) | Every compose/stitch path; `ffprobe` for output validation |
@@ -171,7 +174,7 @@ This role contributes to the company revenue cascade by: **enabling {{COMPANY_NA
 
 **When to run:** When a new video production request arrives requiring an OpenMontage pipeline run
 **Frequency:** 1–5 times per week
-**Inputs:** Video production brief (topic, intended audience, desired duration, tone, any required visual style), access to client's installed OpenMontage clone at `~/.openclaw/skills/openmontage-production/`
+**Inputs:** Video production brief (topic, intended audience, desired duration, tone, any required visual style), access to client's installed OpenMontage clone at `~/.openclaw/skills/47-movie-producer/`
 **Steps:**
 1. **Brief completeness check (10 min):** Every pipeline request must specify: (a) Topic and narrative goal — what story does this video tell and for whom?, (b) Desired duration (seconds or minutes), (c) Tone (documentary, explainer, promotional, educational), (d) Any required brand assets (logo, color palette, voice style), (e) Publish deadline, (f) Budget ceiling for this run (confirm with Head of Video Production before starting any Kie.AI-powered run). Reject incomplete briefs — return to requester with the missing fields listed.
 2. **Pipeline definition selection (10 min):** Match the brief to the most appropriate `pipeline_defs/*.yaml` from the 13 available definitions. Documentary topics with no brand-new generative visuals → `documentary-montage.yaml` (free, ~$1 budget). Branded explainer or promotional video requiring generated visuals → a Kie-powered pipeline. Check the pipeline manifest library for any previously authored manifests on similar topics.
@@ -186,7 +189,7 @@ This role contributes to the company revenue cascade by: **enabling {{COMPANY_NA
 
 **When to run:** After SOP 9.1 is complete (manifest authored, budget approved, cost announced)
 **Frequency:** 1–5 pipeline runs per week
-**Inputs:** Authored pipeline manifest, OpenMontage clone at `~/.openclaw/skills/openmontage-production/`, Kie.AI API key in client `.env` (for generative runs)
+**Inputs:** Authored pipeline manifest, OpenMontage clone at `~/.openclaw/skills/47-movie-producer/`, Kie.AI API key in client `.env` (for generative runs)
 **Steps:**
 1. **Provider routing verification (5 min):** Before any generative run, confirm: (a) only `KIE_API_KEY` is present in the client `.env` (no FAL, Runway, HeyGen, OpenAI, or Google keys), (b) `python3 -c "from tools.graphics.kie_image import KieImage; from tools.video.kie_video import KieVideo; print(KieImage().get_status(), KieVideo().get_status())"` returns `available available`. If any native paid provider shows `available`, remove its key from `.env` and re-check.
 2. **Pipeline initiation (5 min):** Launch the pipeline via the OpenMontage stage-director skill appropriate to the pipeline definition (see `skills/pipelines/` in the OpenMontage clone). Log the start time and pipeline manifest path.
@@ -436,7 +439,7 @@ Before any rendered video is marked complete and delivered:
 ### Edge Case 17.3 — OpenMontage Upstream Breaking Change
 
 - **Trigger:** An upstream commit to `github.com/calesthio/OpenMontage` changes the `BaseTool` contract, a `pipeline_defs/*.yaml` schema, or a core tool file in a way that breaks the client's installed clone or the Kie adapter files.
-- **Action:** (1) Do not pull the upstream change immediately. (2) Document the breaking change: which files changed, what the behavioral difference is, which pipeline runs are affected. (3) Test the change in an isolated copy of the clone before applying to the production install. (4) If the Kie adapter files (`kie_image.py`, `kie_video.py`) require updates due to the `BaseTool` contract change, update them and re-run the syntax check (`python3 -c "import ast; ast.parse(open(p).read())"`) and the `get_status()` gate test. (5) Update `47-openmontage-production/CORE_UPDATES.md` with the change details and resolution.
+- **Action:** (1) Do not pull the upstream change immediately. (2) Document the breaking change: which files changed, what the behavioral difference is, which pipeline runs are affected. (3) Test the change in an isolated copy of the clone before applying to the production install. (4) If the Kie adapter files (`kie_image.py`, `kie_video.py`) require updates due to the `BaseTool` contract change, update them and re-run the syntax check (`python3 -c "import ast; ast.parse(open(p).read())"`) and the `get_status()` gate test. (5) Update `47-movie-producer/CORE_UPDATES.md` with the change details and resolution.
 - **Escalate to:** Head of Video Production (if pipeline capability is disrupted for more than 24 hours)
 
 ---
