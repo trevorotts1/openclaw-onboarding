@@ -42,6 +42,7 @@ SAFETY RULES (enforced here, never relax):
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from pathlib import Path
@@ -75,6 +76,37 @@ _MODEL_TEXT = "gpt-image-2-text-to-image"    # when no source image
 # Poll config (stay within 10 req/s status-query limit)
 _POLL_INTERVAL_SECONDS = 5
 _POLL_TIMEOUT_SECONDS = 300   # 5 min; matches kie-slide-submitter MODEL_TIMEOUTS
+
+
+def _decode_result_json(raw: Any) -> dict[str, Any]:
+    """Normalise KIE's ``resultJson`` field into a parsed dict.
+
+    KIE's recordInfo poll endpoint (/api/v1/jobs/recordInfo) returns
+    ``resultJson`` as a JSON-ENCODED STRING — a string whose contents are
+    themselves JSON — NOT an already-parsed object.  The original adapter read
+    it as if it were already a dict and called ``.get()`` on the raw string, so
+    the result URL was never extracted on a client box (confirmed live against
+    api.kie.ai during the v14.1.x render proof).  This mirrors the fleet
+    reference script generate-celebration-video.sh, which pipes
+    ``jq -r '.data.resultJson'`` (raw string) into a SECOND ``jq`` to parse it.
+
+    Defensive contract:
+      - str   -> json.loads() (returns {} if it does not decode to a dict)
+      - dict  -> used as-is (tolerate an already-parsed object)
+      - other -> {} (None, list, number, etc.)
+    """
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+        except (ValueError, TypeError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    if isinstance(raw, dict):
+        return raw
+    return {}
 
 
 class KieImage(BaseTool):
@@ -412,7 +444,11 @@ class KieImage(BaseTool):
 
             state = (body.get("data") or {}).get("state", "")
             if state == "success":
-                result_json = (body.get("data") or {}).get("resultJson") or {}
+                # resultJson arrives as a JSON-ENCODED STRING from KIE; decode
+                # it before reading the result URL(s).  Tolerates an already-
+                # parsed dict.  (generate-celebration-video.sh pipes
+                # `jq -r .data.resultJson` into a SECOND jq to parse it.)
+                result_json = _decode_result_json((body.get("data") or {}).get("resultJson"))
                 # Try resultUrls first (primary path per generate-celebration-video.sh)
                 result_urls = result_json.get("resultUrls") or []
                 if result_urls:

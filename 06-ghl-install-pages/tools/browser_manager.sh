@@ -45,7 +45,7 @@
 #   bash browser_manager.sh session-name
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_VERSION="v14.1.1"
+BROWSER_MANAGER_VERSION="v14.1.2"
 
 # Do NOT `set -e` at source time — sourcing into a caller that already set its
 # own options must not be clobbered. inject-ghl-auth.sh keeps its own
