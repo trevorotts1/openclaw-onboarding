@@ -3019,25 +3019,19 @@ REASSERT_EOF
             success "Presentation-deps re-assert cron already installed — skipping"
             return 0
         fi
-        if [ "$TELEGRAM_RESOLVED" != "true" ]; then
-            resolve_telegram_target_universal
+        # ── SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons) ──────────
+        # reassert-presentation-deps is PURE MAINTENANCE (re-install runtime
+        # deps that don't survive a Docker force-recreate). The old form wired
+        # `--channel telegram --to $TG_TARGET`, auto-delivering the reassert
+        # prompt to the CLIENT chat every 15 min — internal infra traffic the
+        # owner must never see. FIX: SILENT main-session agent-message cron
+        # (no --channel/--to/--announce). No owner target needed → no
+        # operator-ID strand. Output stays in the agent's own context (log-only).
+        local CHANNEL_AGENT="main"
+        if [ -n "${TELEGRAM_DEFAULT_AGENT_CACHED:-}" ]; then
+            CHANNEL_AGENT="$TELEGRAM_DEFAULT_AGENT_CACHED"
         fi
-        local TG_TARGET="$TELEGRAM_TARGET_CACHED"
-        if [ -z "$TG_TARGET" ]; then
-            warn "Telegram target not resolved — skipping presentation-deps re-assert cron. Manual fix below."
-            warn "  openclaw cron create --name reassert-presentation-deps --cron '*/15 * * * *' --channel telegram --to <owner-chat> --message '[PRESENTATION-DEPS] bash $_VPS_REASSERT_SCRIPT'"
-            return 0
-        fi
-        # REGRESSION GUARD (cron-owner-chat-routing): never wire an operator ID as cron target.
-        case "$TG_TARGET" in
-            5252140759|6663821679|6771245262)
-                warn "ERROR: presentation-deps cron target resolved to an OPERATOR chat ID ($TG_TARGET). Aborting cron install."
-                warn "Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> before running install.sh to force the correct target."
-                return 1
-                ;;
-        esac
         local REASSERT_PROMPT="[PRESENTATION-DEPS] Re-assert the presentation-pipeline runtime deps (libreoffice-impress, poppler-utils, reportlab, python-pptx) which do not survive a Docker force-recreate: bash $_VPS_REASSERT_SCRIPT . This is an idempotent maintenance script; it is a near-no-op once the deps are present."
-        local CHANNEL_ACCOUNT="$TELEGRAM_ACCOUNT_CACHED"
         local OUT="" RC=0
         # The OpenClaw scheduler is time-based (5-field cron), not a vixie-cron
         # daemon, so there is no @reboot hook to fire on container start. Instead
@@ -3048,35 +3042,35 @@ REASSERT_EOF
         # lives in the gateway config on /data and so survives force-recreate.
         local BASE=(
             --name "reassert-presentation-deps"
+            --agent "$CHANNEL_AGENT"
             --cron "*/15 * * * *"
             --tz "America/New_York"
-            --channel telegram
-            --to "$TG_TARGET"
+            --session-target main
+            --light-context
         )
-        [ -n "$CHANNEL_ACCOUNT" ] && BASE+=(--account "$CHANNEL_ACCOUNT")
         OUT=$(openclaw cron create "${BASE[@]}" --message "$REASSERT_PROMPT" 2>&1) || RC=$?
         echo "$OUT" >> "$LOG_FILE"
         if [ "$RC" -eq 0 ]; then
-            success "Presentation-deps re-assert cron installed (openclaw scheduler, @reboot — survives force-recreate)"
+            success "Presentation-deps re-assert cron installed (SILENT main-session, no client auto-announce — survives force-recreate)"
             return 0
         fi
-        local BASE_NO_ACCT=(
+        local BASE_NO_LC=(
             --name "reassert-presentation-deps"
+            --agent "$CHANNEL_AGENT"
             --cron "*/15 * * * *"
             --tz "America/New_York"
-            --channel telegram
-            --to "$TG_TARGET"
+            --session-target main
         )
-        OUT=$(openclaw cron create "${BASE_NO_ACCT[@]}" --message "$REASSERT_PROMPT" 2>&1) || RC=$?
+        OUT=$(openclaw cron create "${BASE_NO_LC[@]}" --message "$REASSERT_PROMPT" 2>&1) || RC=$?
         echo "$OUT" >> "$LOG_FILE"
         if [ "$RC" -eq 0 ]; then
-            success "Presentation-deps re-assert cron installed (no-account fallback)"
+            success "Presentation-deps re-assert cron installed (silent main-session, no-light-context fallback)"
             return 0
         fi
-        warn "Presentation-deps re-assert cron creation failed. Manual install:"
+        warn "Presentation-deps re-assert cron creation failed. Manual install (SILENT — no client auto-announce):"
         warn "  openclaw cron create --name reassert-presentation-deps \\"
-        warn "    --cron '*/15 * * * *' --tz America/New_York \\"
-        warn "    --channel telegram --to '$TG_TARGET' \\"
+        warn "    --agent $CHANNEL_AGENT --cron '*/15 * * * *' --tz America/New_York \\"
+        warn "    --session-target main --light-context \\"
         warn "    --message '[PRESENTATION-DEPS] bash $_VPS_REASSERT_SCRIPT'"
         return 0
     }
@@ -4909,11 +4903,29 @@ print(f'{account}|{agent_id}')
     local PROMPT_CONTENT
     PROMPT_CONTENT=$(cat "$PROMPT_FILE")
 
-    # Build escalating cron-create attempts. Start MINIMAL (most-likely-to-succeed
-    # across all OpenClaw versions); add richer flags on retry only if needed.
-    # CRITICAL: capture stderr and PRINT it to the terminal on failure so we can
-    # see the actual error instead of hiding it in a log file.
-    local CRON_ERR_TMP="/tmp/openclaw-cron-err-$$.log"
+    # ── SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons) ──────────────
+    # weekly-onboarding-update is a MAINTENANCE/update-check cron, NOT an
+    # owner-facing announcement. The old form registered it with
+    # `--channel telegram --to $TG_TARGET` (+ a final `--announce` attempt),
+    # which made the OpenClaw scheduler AUTO-DELIVER the raw maintenance prompt
+    # straight into the CLIENT's chat every Sunday — internal operator traffic
+    # the client was never meant to see (the exact leak OPERATOR-MAINTENANCE.md
+    # "operator-drive contract" forbids).
+    #
+    # FIX: register it as a SILENT AGENT-MESSAGE cron on the agent's OWN main
+    # session — `--agent <main> --session-target main --light-context` with NO
+    # `--channel`, NO `--to`, NO `--announce`. The cron fires the update-check
+    # in the agent's own context (log-only); the agent then decides, using its
+    # own deliberate `openclaw message send`, whether to surface an
+    # owner-facing "an update is available, may I apply it?" question. Nothing
+    # is auto-pushed to the client chat. This mirrors the silent main-session
+    # pattern used by Skill 35 (register-weekly-cron.sh) and the 5.x
+    # agent-message fallback in ensure-pipeline-crons.sh.
+    #
+    # $TG_TARGET is still resolved + operator-guarded above so the agent knows
+    # the owner chat to send to WHEN it decides to — we just never wire it as
+    # the cron's auto-delivery sink.
+    local CRON_AGENT="${DEFAULT_AGENT:-main}"
 
     try_cron_create() {
         local label="$1"; shift
@@ -4921,7 +4933,7 @@ print(f'{account}|{agent_id}')
         out=$(openclaw cron create "$@" --message "$PROMPT_CONTENT" 2>&1) || rc=$?
         echo "$out" >> "$LOG_FILE"
         if [ "$rc" -eq 0 ]; then
-            success "Sunday cron installed ($label) — Sundays 2am ET → telegram $TG_TARGET"
+            success "Sunday update-check cron installed ($label) — Sundays 3am ET, SILENT main-session (no client auto-announce)"
             return 0
         else
             warn "[$label] FAILED:"
@@ -4931,70 +4943,50 @@ print(f'{account}|{agent_id}')
         fi
     }
 
-    # ATTEMPT 1: MINIMAL — name, cron, tz, channel, to, message. No fancy flags.
+    # ATTEMPT 1: SILENT main-session agent-message cron (preferred, 2026.6.x+).
     local BASE=(
         --name "weekly-onboarding-update"
+        --agent "$CRON_AGENT"
         --cron "0 3 * * 0"
         --tz "America/New_York"
-        --channel telegram
-        --to "$TG_TARGET"
+        --session-target main
+        --light-context
     )
-    [ -n "$CHANNEL_ACCOUNT" ] && BASE+=(--account "$CHANNEL_ACCOUNT")
-
-    if try_cron_create "minimal+account" "${BASE[@]}"; then
+    if try_cron_create "silent-main+light-context" "${BASE[@]}"; then
         return 0
     fi
 
-    # ATTEMPT 2: minimal WITHOUT --account (in case account detection was wrong)
-    local BASE_NO_ACCT=(
+    # ATTEMPT 2: SILENT main-session without --light-context (older CLI may not
+    # advertise the flag). Still NO --channel/--to/--announce.
+    local BASE_NO_LC=(
         --name "weekly-onboarding-update"
+        --agent "$CRON_AGENT"
         --cron "0 3 * * 0"
         --tz "America/New_York"
-        --channel telegram
-        --to "$TG_TARGET"
+        --session-target main
     )
-    if try_cron_create "minimal-no-account" "${BASE_NO_ACCT[@]}"; then
+    if try_cron_create "silent-main" "${BASE_NO_LC[@]}"; then
         return 0
     fi
 
-    # ATTEMPT 3: minimal + --agent <detected>
-    if [ -n "$DEFAULT_AGENT" ]; then
-        local WITH_AGENT=(
-            --name "weekly-onboarding-update"
-            --agent "$DEFAULT_AGENT"
-            --cron "0 3 * * 0"
-            --tz "America/New_York"
-            --channel telegram
-            --to "$TG_TARGET"
-        )
-        [ -n "$CHANNEL_ACCOUNT" ] && WITH_AGENT+=(--account "$CHANNEL_ACCOUNT")
-        if try_cron_create "with-agent=$DEFAULT_AGENT" "${WITH_AGENT[@]}"; then
-            return 0
-        fi
-    fi
-
-    # ATTEMPT 4: --announce + delivery flags
-    local WITH_ANNOUNCE=(
+    # ATTEMPT 3: SILENT minimal — just name/agent/cron/tz (oldest CLI shape).
+    # NO --channel/--to/--announce: output stays in the agent's own context.
+    local BASE_MIN=(
         --name "weekly-onboarding-update"
+        --agent "$CRON_AGENT"
         --cron "0 3 * * 0"
         --tz "America/New_York"
-        --announce
-        --channel telegram
-        --to "$TG_TARGET"
     )
-    [ -n "$DEFAULT_AGENT" ] && WITH_ANNOUNCE+=(--agent "$DEFAULT_AGENT")
-    [ -n "$CHANNEL_ACCOUNT" ] && WITH_ANNOUNCE+=(--account "$CHANNEL_ACCOUNT")
-    if try_cron_create "with-announce" "${WITH_ANNOUNCE[@]}"; then
+    if try_cron_create "silent-minimal" "${BASE_MIN[@]}"; then
         return 0
     fi
 
-    # All 4 attempts failed — leave a recovery hint
-    warn "All cron creation attempts failed. Manual install command:"
+    # All silent attempts failed — leave a recovery hint (still SILENT: no
+    # --channel/--to/--announce in the manual command either).
+    warn "All cron creation attempts failed. Manual install command (SILENT — no client auto-announce):"
     warn "  openclaw cron create --name weekly-onboarding-update \\"
-    warn "    --cron '0 3 * * 0' --tz America/New_York \\"
-    warn "    --channel telegram --to '$TG_TARGET' \\"
-    [ -n "$CHANNEL_ACCOUNT" ] && warn "    --account $CHANNEL_ACCOUNT \\"
-    [ -n "$DEFAULT_AGENT" ] && warn "    --agent $DEFAULT_AGENT \\"
+    warn "    --agent $CRON_AGENT --cron '0 3 * * 0' --tz America/New_York \\"
+    warn "    --session-target main --light-context \\"
     warn "    --message \"\$(cat $PROMPT_FILE)\""
     warn ""
     warn "If that fails too, send Trevor the EXACT error message printed above —"
@@ -5034,75 +5026,62 @@ install_workforce_resume_cron() {
     local RESUME_SCRIPT="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
     [ -f "$RESUME_SCRIPT" ] && chmod +x "$RESUME_SCRIPT" 2>/dev/null || true
 
-    if [ "$TELEGRAM_RESOLVED" != "true" ]; then
-        resolve_telegram_target_universal
-    fi
-    local TG_TARGET="$TELEGRAM_TARGET_CACHED"
-    if [ -z "$TG_TARGET" ]; then
-        warn "Telegram target not resolved — skipping workforce-resume cron."
-        return 0
-    fi
-    # REGRESSION GUARD (fix/cron-owner-chat-routing): never wire an operator ID as
-    # the MESSAGE-mode self-ping target (it would spam the operator).
+    # ── SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons) ──────────────
+    # workforce-build-resume is a MAINTENANCE self-ping (resume a half-built
+    # workforce). The old form wired `--channel telegram --to $TG_TARGET`, so the
+    # scheduler AUTO-DELIVERED the raw resume prompt into the CLIENT chat every
+    # 15 min whenever the build state was dirty — internal operator/build traffic
+    # the owner was never meant to see.
     #
-    # v12.34.0 (ZHC-EXPERIENCE fix BREAK #2): RELAXED from hard-abort (return 1) to
-    # LOG + CONTINUE. The old `return 1` stranded the ENTIRE box: it not only
-    # skipped this message-mode cron but, because the closeout used to hang off
-    # this single cron, it silently disabled the whole closeout experience whenever
-    # no client owner chat had been configured yet. We now SKIP only this
-    # message-mode cron (return 0, install proceeds). The deterministic closeout
-    # trigger is the COMMAND-mode closeout-resume cron (Step 14 +
-    # ensure-pipeline-crons.sh), which needs no owner chat — so the box is NOT
-    # stranded.
-    case "$TG_TARGET" in
-        5252140759|6663821679|6771245262)
-            warn "NOTE: workforce-build-resume cron target resolved to an OPERATOR chat ID ($TG_TARGET)."
-            warn "Skipping ONLY this message-mode self-ping cron (it would route to the operator, not the client owner)."
-            warn "The closeout experience still fires via the command-mode closeout-resume cron (Step 14) — box is NOT stranded."
-            warn "Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> before running install.sh to wire the owner self-ping too."
-            return 0
-            ;;
-    esac
+    # FIX: register it as a SILENT main-session agent-message cron (--agent
+    # <main> --session-target main --light-context, NO --channel/--to/--announce).
+    # The resume runs in the agent's OWN context (log-only); the agent surfaces
+    # owner-facing progress ONLY through its own deliberate `message send`. This
+    # also REMOVES the old no-owner-chat strand entirely — a silent cron needs no
+    # owner target at all, so the historical operator-ID guard / "box stranded"
+    # branch is gone.
+    local CHANNEL_AGENT="main"
+    if [ -n "${TELEGRAM_DEFAULT_AGENT_CACHED:-}" ]; then
+        CHANNEL_AGENT="$TELEGRAM_DEFAULT_AGENT_CACHED"
+    fi
 
     local PROMPT_CONTENT
     PROMPT_CONTENT=$(cat "$RESUME_PROMPT_FILE")
-    local CHANNEL_ACCOUNT="$TELEGRAM_ACCOUNT_CACHED"
 
     local OUT="" RC=0
     local BASE=(
         --name "workforce-build-resume"
+        --agent "$CHANNEL_AGENT"
         --cron "*/15 * * * *"
         --tz "America/New_York"
-        --channel telegram
-        --to "$TG_TARGET"
+        --session-target main
+        --light-context
     )
-    [ -n "$CHANNEL_ACCOUNT" ] && BASE+=(--account "$CHANNEL_ACCOUNT")
     OUT=$(openclaw cron create "${BASE[@]}" --message "$PROMPT_CONTENT" 2>&1) || RC=$?
     echo "$OUT" >> "$LOG_FILE"
     if [ "$RC" -eq 0 ]; then
-        success "Workforce-build resume cron installed — every 15 min, fires only when build state is dirty"
+        success "Workforce-build resume cron installed — every 15 min, SILENT main-session (no client auto-announce); fires only when build state is dirty"
         return 0
     fi
 
-    local BASE_NO_ACCT=(
+    local BASE_NO_LC=(
         --name "workforce-build-resume"
+        --agent "$CHANNEL_AGENT"
         --cron "*/15 * * * *"
         --tz "America/New_York"
-        --channel telegram
-        --to "$TG_TARGET"
+        --session-target main
     )
-    OUT=$(openclaw cron create "${BASE_NO_ACCT[@]}" --message "$PROMPT_CONTENT" 2>&1) || RC=$?
+    OUT=$(openclaw cron create "${BASE_NO_LC[@]}" --message "$PROMPT_CONTENT" 2>&1) || RC=$?
     echo "$OUT" >> "$LOG_FILE"
     if [ "$RC" -eq 0 ]; then
-        success "Workforce-build resume cron installed (no-account fallback)"
+        success "Workforce-build resume cron installed (silent main-session, no-light-context fallback)"
         return 0
     fi
 
-    warn "Workforce-build resume cron creation failed. Manual install:"
+    warn "Workforce-build resume cron creation failed. Manual install (SILENT — no client auto-announce):"
     warn "  openclaw cron create --name workforce-build-resume \\"
-    warn "    --cron '*/15 * * * *' --tz America/New_York \\"
-    warn "    --channel telegram --to '$TG_TARGET' \\"
-    [ -n "$CHANNEL_ACCOUNT" ] && warn "    --account $CHANNEL_ACCOUNT \\"
+    warn "    --agent $CHANNEL_AGENT --cron '*/15 * * * *' --tz America/New_York \\"
+    warn "    --session-target main --light-context \\"
     warn "    --message \"\$(cat $RESUME_PROMPT_FILE)\""
     return 0
 }
@@ -5141,62 +5120,56 @@ install_onboarding_resume_cron() {
     chmod +x "$ONBOARDING_DIR/scripts/resume-onboarding.sh" 2>/dev/null || true
     chmod +x "$OC_CONFIG/scripts/resume-onboarding.sh" 2>/dev/null || true
 
-    if [ "$TELEGRAM_RESOLVED" != "true" ]; then
-        resolve_telegram_target_universal
+    # ── SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons) ──────────────
+    # onboarding-resume is a MAINTENANCE self-ping (re-run the onboarding
+    # activation + QC gate while any skill is still pending). The old form wired
+    # `--channel telegram --to $TG_TARGET`, auto-delivering the raw resume prompt
+    # to the CLIENT chat every 30 min. FIX: SILENT main-session agent-message
+    # cron (no --channel/--to/--announce). The gate runs in the agent's own
+    # context (log-only); the agent surfaces owner-facing status only via its own
+    # deliberate `message send`. No owner target needed → no operator-ID strand.
+    local CHANNEL_AGENT="main"
+    if [ -n "${TELEGRAM_DEFAULT_AGENT_CACHED:-}" ]; then
+        CHANNEL_AGENT="$TELEGRAM_DEFAULT_AGENT_CACHED"
     fi
-    local TG_TARGET="$TELEGRAM_TARGET_CACHED"
-    if [ -z "$TG_TARGET" ]; then
-        warn "Telegram target not resolved — skipping onboarding-resume cron."
-        return 0
-    fi
-    # REGRESSION GUARD (fix/cron-owner-chat-routing): never wire an operator ID as cron target.
-    case "$TG_TARGET" in
-        5252140759|6663821679|6771245262)
-            warn "ERROR: onboarding-resume cron target resolved to an OPERATOR chat ID ($TG_TARGET)."
-            warn "This would route cron deliveries to the operator, not the client owner. Aborting cron install."
-            warn "Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> before running install.sh to force the correct target."
-            return 1
-            ;;
-    esac
 
     local PROMPT_CONTENT
     PROMPT_CONTENT=$(cat "$RESUME_PROMPT_FILE")
-    local CHANNEL_ACCOUNT="$TELEGRAM_ACCOUNT_CACHED"
 
     local OUT="" RC=0
     local BASE=(
         --name "onboarding-resume"
+        --agent "$CHANNEL_AGENT"
         --cron "*/30 * * * *"
         --tz "America/New_York"
-        --channel telegram
-        --to "$TG_TARGET"
+        --session-target main
+        --light-context
     )
-    [ -n "$CHANNEL_ACCOUNT" ] && BASE+=(--account "$CHANNEL_ACCOUNT")
     OUT=$(openclaw cron create "${BASE[@]}" --message "$PROMPT_CONTENT" 2>&1) || RC=$?
     echo "$OUT" >> "$LOG_FILE"
     if [ "$RC" -eq 0 ]; then
-        success "onboarding-resume cron installed — every 30 min (interview gate + 2h backoff pre-interview in script)"
+        success "onboarding-resume cron installed — every 30 min, SILENT main-session (no client auto-announce); interview gate + 2h backoff pre-interview in script"
         return 0
     fi
 
-    local BASE_NO_ACCT=(
+    local BASE_NO_LC=(
         --name "onboarding-resume"
+        --agent "$CHANNEL_AGENT"
         --cron "*/30 * * * *"
         --tz "America/New_York"
-        --channel telegram
-        --to "$TG_TARGET"
+        --session-target main
     )
-    OUT=$(openclaw cron create "${BASE_NO_ACCT[@]}" --message "$PROMPT_CONTENT" 2>&1) || RC=$?
+    OUT=$(openclaw cron create "${BASE_NO_LC[@]}" --message "$PROMPT_CONTENT" 2>&1) || RC=$?
     echo "$OUT" >> "$LOG_FILE"
     if [ "$RC" -eq 0 ]; then
-        success "onboarding-resume cron installed (no-account fallback)"
+        success "onboarding-resume cron installed (silent main-session, no-light-context fallback)"
         return 0
     fi
 
-    warn "onboarding-resume cron creation failed. Manual install:"
+    warn "onboarding-resume cron creation failed. Manual install (SILENT — no client auto-announce):"
     warn "  openclaw cron create --name onboarding-resume \\"
-    warn "    --cron '*/30 * * * *' --tz America/New_York \\"
-    warn "    --channel telegram --to '$TG_TARGET' \\"
+    warn "    --agent $CHANNEL_AGENT --cron '*/30 * * * *' --tz America/New_York \\"
+    warn "    --session-target main --light-context \\"
     warn "    --message \"\$(cat $RESUME_PROMPT_FILE)\""
     return 0
 }
@@ -5233,36 +5206,30 @@ install_watchdog_loop_cron() {
     chmod +x "$WATCHDOG_SCRIPT" 2>/dev/null || true
     chmod +x "$ONBOARDING_DIR/scripts/loop-registry.sh" 2>/dev/null || true
 
-    if [ "$TELEGRAM_RESOLVED" != "true" ]; then
-        resolve_telegram_target_universal
+    # ── SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons) ──────────────
+    # watchdog-onboarding-loop is a MAINTENANCE self-ping (cheap state-file
+    # goal check; prompts the agent only when a wave is incomplete). The old
+    # form wired `--channel telegram --to $TG_TARGET`, auto-delivering the
+    # watchdog prompt to the CLIENT chat every 20 min. FIX: SILENT main-session
+    # agent-message cron (no --channel/--to/--announce). No owner target needed
+    # → no operator-ID strand. The watchdog itself drives the agent in its own
+    # context; any owner-facing message is the agent's own deliberate send.
+    local CHANNEL_AGENT="main"
+    if [ -n "${TELEGRAM_DEFAULT_AGENT_CACHED:-}" ]; then
+        CHANNEL_AGENT="$TELEGRAM_DEFAULT_AGENT_CACHED"
     fi
-    local TG_TARGET="$TELEGRAM_TARGET_CACHED"
-    if [ -z "$TG_TARGET" ]; then
-        warn "Telegram target not resolved — skipping watchdog-onboarding-loop cron."
-        return 0
-    fi
-    # REGRESSION GUARD (fix/cron-owner-chat-routing): never wire an operator ID as cron target.
-    case "$TG_TARGET" in
-        5252140759|6663821679|6771245262)
-            warn "ERROR: watchdog-onboarding-loop cron target resolved to an OPERATOR chat ID ($TG_TARGET)."
-            warn "This would route cron deliveries to the operator, not the client owner. Aborting cron install."
-            warn "Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> before running install.sh to force the correct target."
-            return 1
-            ;;
-    esac
 
     local WATCHDOG_PROMPT="[ONBOARDING-WATCHDOG] Run the onboarding watchdog: bash ~/.openclaw/scripts/watchdog-onboarding-loop.sh || bash /data/.openclaw/scripts/watchdog-onboarding-loop.sh 2>/dev/null || true. This is a cheap state-file check — it self-removes when the overall goal is verified."
 
-    local CHANNEL_ACCOUNT="$TELEGRAM_ACCOUNT_CACHED"
     local OUT="" RC=0
     local BASE=(
         --name "watchdog-onboarding-loop"
+        --agent "$CHANNEL_AGENT"
         --cron "*/20 * * * *"
         --tz "America/New_York"
-        --channel telegram
-        --to "$TG_TARGET"
+        --session-target main
+        --light-context
     )
-    [ -n "$CHANNEL_ACCOUNT" ] && BASE+=(--account "$CHANNEL_ACCOUNT")
     OUT=$(openclaw cron create "${BASE[@]}" --message "$WATCHDOG_PROMPT" 2>&1) || RC=$?
     echo "$OUT" >> "$LOG_FILE"
     if [ "$RC" -eq 0 ]; then
@@ -5275,28 +5242,28 @@ install_watchdog_loop_cron() {
             LOOP_REGISTRY_FILE="${OC_CONFIG}/workspace/.loop-registry.json" \
             lr_register "watchdog-onboarding-loop" "$CRON_UUID" "openclaw cron rm $CRON_UUID" 2>/dev/null || true
         fi
-        success "watchdog-onboarding-loop cron installed (PRD-2.13, */20) — interview gate + wave-backoff + shared dispatch lock; self-kills on overall goal pass"
+        success "watchdog-onboarding-loop cron installed (PRD-2.13, */20) — SILENT main-session (no client auto-announce); interview gate + wave-backoff + shared dispatch lock; self-kills on overall goal pass"
         return 0
     fi
 
-    local BASE_NO_ACCT=(
+    local BASE_NO_LC=(
         --name "watchdog-onboarding-loop"
+        --agent "$CHANNEL_AGENT"
         --cron "*/20 * * * *"
         --tz "America/New_York"
-        --channel telegram
-        --to "$TG_TARGET"
+        --session-target main
     )
-    OUT=$(openclaw cron create "${BASE_NO_ACCT[@]}" --message "$WATCHDOG_PROMPT" 2>&1) || RC=$?
+    OUT=$(openclaw cron create "${BASE_NO_LC[@]}" --message "$WATCHDOG_PROMPT" 2>&1) || RC=$?
     echo "$OUT" >> "$LOG_FILE"
     if [ "$RC" -eq 0 ]; then
-        success "watchdog-onboarding-loop cron installed (no-account fallback)"
+        success "watchdog-onboarding-loop cron installed (silent main-session, no-light-context fallback)"
         return 0
     fi
 
-    warn "watchdog-onboarding-loop cron creation failed. Manual install:"
+    warn "watchdog-onboarding-loop cron creation failed. Manual install (SILENT — no client auto-announce):"
     warn "  openclaw cron create --name watchdog-onboarding-loop \\"
-    warn "    --cron '*/20 * * * *' --tz America/New_York \\"
-    warn "    --channel telegram --to '$TG_TARGET' \\"
+    warn "    --agent $CHANNEL_AGENT --cron '*/20 * * * *' --tz America/New_York \\"
+    warn "    --session-target main --light-context \\"
     warn "    --message '[ONBOARDING-WATCHDOG] bash ~/.openclaw/scripts/watchdog-onboarding-loop.sh'"
     return 0
 }

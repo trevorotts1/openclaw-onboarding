@@ -18,7 +18,7 @@
 #   (after the wiring phase) so files AND triggers always land together.
 #
 # CRONS MANAGED (name-keyed, idempotent):
-#   1. workforce-build-resume          (*/15, MESSAGE mode)  — Skill 23 build resume + closeout exec
+#   1. workforce-build-resume          (*/15, SILENT main-session) — Skill 23 build resume + closeout exec
 #   2. interview-nudge                 (0 */6, COMMAND mode) — owner-facing idle-interview nudge
 #   3. closeout-readiness-watchdog     (0 */6, COMMAND mode) — operator-facing stall escalation
 #   4. closeout-resume                 (*/15, COMMAND mode)  — DEDICATED closeout trigger (REDUNDANT path)
@@ -28,6 +28,16 @@
 #   8. pre-july14-embed-migrate        (daily, COMMAND)      — flags any box still on dying gemini-embedding-001 (item 7)
 #   9. ghl-token-liveness              (daily 08:00 UTC, COMMAND) — Skills 44+46 Firebase token daily health check; notifies CLIENT if expired
 #
+# SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons): EVERY cron above is
+#   now non-announcing. NONE wires `--channel/--to/--announce`. The COMMAND-mode
+#   crons run pure shell (their scripts decide if/where to notify — operator
+#   channel or the client via the script's own resolver, never an auto-announce).
+#   The one agent-driven cron (workforce-build-resume) runs SILENT on the agent's
+#   main session (`--agent main --session-target main --light-context`): the
+#   agent works in its own context and surfaces owner-facing status only via its
+#   own deliberate `message send`. Result: a fresh box never auto-pushes
+#   internal maintenance/build/operator traffic to the CLIENT chat.
+#
 # REDUNDANCY (closes the single-point-of-failure): closeout fires if ANY of
 #   {workforce-build-resume cron, closeout-resume cron, watchdog} reaches the
 #   box. The closeout-resume cron is COMMAND mode (`bash resume-closeout-cron.sh`)
@@ -35,11 +45,12 @@
 #   owner chat. That removes the case where "no owner chat yet" silently disabled
 #   the entire closeout trigger.
 #
-# OPERATOR-CHAT SAFETY: only the MESSAGE-mode cron (workforce-build-resume) needs
-#   a non-operator owner target (its self-ping must not land in an operator chat).
-#   If the resolved target is an operator chat id we LOG + CONTINUE (we still
-#   register the command-mode triggers — we do NOT strand the box). We only SKIP
-#   the message-mode cron's self-ping wiring, not the deterministic exec path.
+# NO OWNER-CHAT DEPENDENCY: because workforce-build-resume is now SILENT (no
+#   auto-delivery), it no longer needs a non-operator owner target at all. The
+#   old "no owner chat → skip" / operator-ID strand branch is gone — every cron
+#   registers regardless of owner-chat resolution. The _resolve_owner_chat /
+#   _resolve_channel_account helpers below are retained for any FUTURE
+#   owner-facing cron but are no longer used by registrar #1.
 #
 # IDEMPOTENT: every registration is guarded by `openclaw cron list | grep -q
 #   <name>`; safe to call repeatedly. Fail-loud on a true error, near-no-op when
@@ -381,10 +392,22 @@ PYEOF
 # Returns 0 on present-or-registered, 1 on a real registration failure.
 # ---------------------------------------------------------------------------
 
-# 1. workforce-build-resume (MESSAGE mode, */15). Drives Skill 23 build resume
-#    AND in-process execs run-closeout.sh on the auto-complete hop. Needs a
-#    non-operator owner chat for the self-ping; if absent, we LOG + skip THIS
-#    cron only (the command-mode closeout-resume below still fires closeout).
+# 1. workforce-build-resume (SILENT main-session AGENT-MESSAGE mode, */15).
+#    Drives Skill 23 build resume AND in-process execs run-closeout.sh on the
+#    auto-complete hop.
+#
+#    SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons): this is a
+#    MAINTENANCE self-ping, NOT an owner-facing announcement. The old form wired
+#    `--channel telegram --to <owner-chat>`, so the scheduler AUTO-DELIVERED the
+#    raw resume prompt into the CLIENT chat every 15 min — internal build/operator
+#    traffic the owner was never meant to see. It is now a SILENT main-session
+#    agent-message cron (--agent main --session-target main --light-context, NO
+#    --channel/--to/--announce). The resume runs in the agent's own context
+#    (log-only); the agent surfaces owner-facing progress only via its own
+#    deliberate `message send`. Because nothing is auto-delivered, NO owner chat
+#    is required → the historical "no owner chat → skip" and operator-ID strand
+#    branches are gone. This matches the silent install.sh Step 13 form exactly
+#    (hot-patch parity).
 _ensure_workforce_build_resume() {
   if _cron_present "workforce-build-resume"; then
     _log "OK  workforce-build-resume cron already present"
@@ -398,42 +421,16 @@ _ensure_workforce_build_resume() {
     return 1
   fi
 
-  local target account
-  target="$(_resolve_owner_chat)"
-  account="$(_resolve_channel_account)"
-
-  if [[ -z "$target" ]]; then
-    _log "SKIP workforce-build-resume self-ping — no non-operator owner chat resolved."
-    _log "     (Set OPENCLAW_OWNER_CHAT_ID, or fix allowFrom, then re-run. The"
-    _log "      command-mode closeout-resume cron still fires closeout independently.)"
-    return 1
-  fi
-  # OPERATOR-CHAT GUARD: never wire the message-mode self-ping --to an operator
-  # chat. $OPERATOR_CHAT_IDS_RE matches exactly the operator ids
-  # 5252140759|6663821679|6771245262 ; if $target is one we LOG + CONTINUE (skip
-  # ONLY this cron's --to wiring below) so the operator is never spammed.
-  if [[ "$target" =~ $OPERATOR_CHAT_IDS_RE ]]; then
-    # RELAXED (was: hard-abort). Operator chat resolved → do not wire the
-    # message-mode self-ping to it (would spam the operator), but DO NOT strand
-    # the box: the command-mode triggers below still run closeout deterministically.
-    _log "NOTE workforce-build-resume target resolved to an OPERATOR chat ($target)."
-    _log "     LOG + CONTINUE: skipping ONLY the message-mode self-ping wiring;"
-    _log "     command-mode closeout-resume cron remains the deterministic trigger."
-    _log "     Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> to wire the owner self-ping."
-    return 1
-  fi
-
   local prompt
   prompt="$(cat "$prompt_file")"
-  local base=(--name "workforce-build-resume" --cron "*/15 * * * *" --tz "America/New_York" --channel telegram --to "$target")
-  [[ -n "$account" ]] && base+=(--account "$account")
+  local base=(--name "workforce-build-resume" --agent main --cron "*/15 * * * *" --tz "America/New_York" --session-target main --light-context)
   if openclaw cron create "${base[@]}" --message "$prompt" >/dev/null 2>&1; then
-    _log "DONE workforce-build-resume cron registered (*/15, telegram → $target)"
+    _log "DONE workforce-build-resume cron registered (*/15, SILENT main-session — no client auto-announce)"
     return 0
   fi
-  # account fallback
-  if openclaw cron create --name "workforce-build-resume" --cron "*/15 * * * *" --tz "America/New_York" --channel telegram --to "$target" --message "$prompt" >/dev/null 2>&1; then
-    _log "DONE workforce-build-resume cron registered (no-account fallback)"
+  # no-light-context fallback (older CLI may not advertise the flag)
+  if openclaw cron create --name "workforce-build-resume" --agent main --cron "*/15 * * * *" --tz "America/New_York" --session-target main --message "$prompt" >/dev/null 2>&1; then
+    _log "DONE workforce-build-resume cron registered (silent main-session, no-light-context fallback)"
     return 0
   fi
   _log "FAIL workforce-build-resume cron creation failed (openclaw cron create rc!=0)"
