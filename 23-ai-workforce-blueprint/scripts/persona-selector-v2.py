@@ -66,8 +66,23 @@ from adaptive_weights import get_weights_for_task, DEFAULT_WEIGHTS  # type: igno
 from canonical_slug import canonical_dept_slug  # type: ignore  # PRD 1.5: dept identity contract
 
 try:
-    from infer_task_category import infer_task_category  # type: ignore
-except ImportError:
+    # The category inferer ships as infer-task-category.py (HYPHENATED) — a name Python
+    # cannot import as a module via `import infer_task_category` (underscores). The old
+    # `from infer_task_category import ...` therefore ALWAYS raised ImportError and the
+    # stub below ran, so EVERY task inferred "general" and the category-derived domain
+    # tags (incl. the video-edit/montage production split) were never applied. Load the
+    # hyphenated file by path so the real inferer is used. Fall back to the safe
+    # "general" stub only if the file is genuinely absent (never-to-zero behavior).
+    import importlib.util as _ilu
+    _itc_path = Path(__file__).parent / "infer-task-category.py"
+    if _itc_path.is_file():
+        _itc_spec = _ilu.spec_from_file_location("infer_task_category_mod", str(_itc_path))
+        _itc_mod = _ilu.module_from_spec(_itc_spec)
+        _itc_spec.loader.exec_module(_itc_mod)  # type: ignore
+        infer_task_category = _itc_mod.infer_task_category  # type: ignore
+    else:
+        raise ImportError("infer-task-category.py not found")
+except Exception:
     def infer_task_category(task_text: str) -> str:
         return "general"
 
@@ -256,7 +271,7 @@ DEPT_DOMAIN_TAGS = {
     "web-development": ["marketing", "sales", "copywriting", "strategy-innovation", "operations"],
     "app-development": ["operations", "productivity-systems"],
     "graphics": ["copywriting", "communication", "marketing"],
-    "video": ["copywriting", "communication", "marketing"],
+    "video": ["video", "editing", "montage", "visual-storytelling", "copywriting", "communication", "marketing"],
     "audio": ["copywriting", "communication", "marketing"],
     "research": ["strategy-innovation", "productivity-systems", "operations"],
     "communications": ["communication", "copywriting", "marketing"],
@@ -279,6 +294,11 @@ _CATEGORY_DOMAINS: dict = {
     "social-post":      {"marketing", "copywriting", "communication"},
     "content-write":    {"copywriting", "communication"},
     "video-script":     {"copywriting", "marketing", "communication"},
+    # video-edit / montage routes to the PRODUCTION-craft domains so an editing/montage
+    # task surfaces the editing persona (e.g. Pudovkin), NOT a copy persona. This is the
+    # deterministic split between "write the video script" (video-script → copy family)
+    # and "edit the montage / pace the cut" (video-edit → production family).
+    "video-edit":       {"editing", "montage", "visual-storytelling", "video"},
     "research":         {"strategy-innovation", "productivity-systems"},
     "strategy":         {"strategy-innovation", "leadership", "operations"},
     "design":           {"copywriting", "strategy-innovation"},  # no "design" domain exists
@@ -386,24 +406,46 @@ def _category_filter(candidates: list, department: str, task_text: str,
 
     # Add task-category-derived domain tags (Defect 3)
     task_cat = infer_task_category(task_text)  # "general" when stub active
-    task_tags = _CATEGORY_DOMAINS.get(task_cat, set())
+    raw_task_tags = _CATEGORY_DOMAINS.get(task_cat, set())
+    task_tags = {_norm_tag(t) for t in raw_task_tags}
     filter_tags = dept_tags | task_tags
 
     if not filter_tags:
         return candidates  # never-to-zero: no tags to filter by
 
     personas_data = categories_data.get("personas", {}) or categories_data
-    filtered = []
-    for c in candidates:
-        info = personas_data.get(c, {})
-        # Primary key: `domain` (Defect 1 fix). Fallback keys kept so a future
-        # schema change producing domain_tags/tags still works; primary wins.
-        # IMPORTANT: do NOT change persona-categories.json to add domain_tags —
-        # fixing Defect 1 is selector-side only (see PRD 1.2 risk note §7.9).
-        raw_ptags = (info.get("domain") or info.get("domain_tags") or info.get("tags") or [])
-        ptags = {_norm_tag(t) for t in raw_ptags}
-        if ptags & filter_tags:
-            filtered.append(c)
+
+    def _match(tagset):
+        """Return candidates whose persona domain intersects `tagset`."""
+        out = []
+        for c in candidates:
+            info = personas_data.get(c, {})
+            # Primary key: `domain` (Defect 1 fix). Fallback keys kept so a future
+            # schema change producing domain_tags/tags still works; primary wins.
+            # IMPORTANT: do NOT change persona-categories.json to add domain_tags —
+            # fixing Defect 1 is selector-side only (see PRD 1.2 risk note §7.9).
+            raw_ptags = (info.get("domain") or info.get("domain_tags") or info.get("tags") or [])
+            ptags = {_norm_tag(t) for t in raw_ptags}
+            if ptags & tagset:
+                out.append(c)
+        return out
+
+    # PER-STAGE SPLIT (PRD Deliverable-7): when the inferred task category maps to a
+    # SPECIFIC, non-empty domain family (e.g. video-edit -> {editing,montage,
+    # visual-storytelling,video}; video-script -> {copywriting,marketing,communication}),
+    # PREFER narrowing to that family so a multi-family department (video spans BOTH the
+    # production-craft and the copy families in DEPT_DOMAIN_TAGS) routes deterministically:
+    # an "edit the montage / pace the cut" task surfaces the editing persona, while a
+    # "write the video script/hook" task surfaces a copy persona. Only when the
+    # task-family intersection is empty do we fall back to the broad dept-tag union
+    # (never-to-zero). When the task category is "general" (task_tags empty) the broad
+    # union path below is taken exactly as before — no behavior change for non-craft tasks.
+    if task_tags:
+        task_family_match = _match(task_tags)
+        if task_family_match:
+            return task_family_match
+
+    filtered = _match(filter_tags)
     return filtered if filtered else candidates  # never-to-zero guard
 
 

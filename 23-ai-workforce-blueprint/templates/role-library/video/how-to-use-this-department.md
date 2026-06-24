@@ -83,6 +83,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Video Editor** | Premiere / DaVinci / Final Cut / CapCut. |
 | **Video SEO Specialist** | YouTube metadata, titles, descriptions, tags, end screens, chapters. |
 | **VSL Video Sales Letter Specialist** | Long-form sales videos that convert cold to customer. |
+| **Automated Video Production Specialist (OpenMontage Pipeline Operator)** | You own the end-to-end operation of the OpenMontage agentic video production system - the only role in the video. |
 
 ### What each specialist is for, with an example request
 
@@ -150,6 +151,11 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* Long-form sales videos that convert cold to customer.
 - *Example request:* "Have the VSL Video Sales Letter Specialist take this on: Long-form sales videos that convert cold to customer."
+
+**Automated Video Production Specialist (OpenMontage Pipeline Operator)**
+
+- *What it is for:* You own the end-to-end operation of the OpenMontage agentic video production system - the only role in the video.
+- *Example request:* "Have the Automated Video Production Specialist (OpenMontage Pipeline Operator) take this on: You own the end-to-end operation of the OpenMontage agentic video production system."
 
 
 ---
