@@ -8,6 +8,8 @@
 **Generated for:** {{COMPANY_NAME}}
 **Last updated:** {{GENERATION_DATE}}
 
+> **Anti-bypass enforcement (v14.1.0 — BINDING).** Each DMAIC phase below ends with a mandatory `ATTEST` step that appends a phase attestation to `working/checkpoints/video_process_manifest.json` via the deterministic driver `47-movie-producer/scripts/executive_producer.py --run-dir DIR --phase <V-PHASE>`. The phases map to the single-source-of-truth `universal-sops/video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json`: SOP 9.1 → V-DEFINE, 9.2 → V-MEASURE, 9.3 → V-ANALYZE, 9.4 → V-IMPROVE, 9.5 → V-CONTROL. Before the driver attests phase N it asserts that EVERY lower-order phase is attested (by its owning_role) with its `produces_artifact` present on disk AND that the phase's receipt passes its `_chk_*` validator — otherwise it HARD-ABORTS (`AF-VID-PHASE-SKIPPED`, exit 2; receipt-validation failure exit 3; Phase-0 Kie balance abort exit 4). Skipping or reordering a phase is therefore STRUCTURALLY IMPOSSIBLE, not merely discouraged. The ONLY legitimate skip is a logged owner-authorized record in `working/checkpoints/phase_skip_approvals.json` (`owner_approved:true` + `approved_by` + `reason`) — this is exactly how the free documentary-montage path skips V-ANALYZE (no paid call = no Rule-Zero). The binary triggers are listed in `MASTER-VIDEO-QC-AUTOFAIL-RULESET.md` §5; `video_sync_check.py` keeps this SOP, the manifest, the driver, and the ruleset in lockstep.
+
 > **Multi-SOP set (v14.0.0).** This file is the MASTER DMAIC index and the binding Rule-Zero/budget control for the Movie Producer role. The per-pipeline-type production procedures and the cross-role handoff procedure live in sibling SOP files in this `sops/` folder, each carrying its own DMAIC structure:
 > - `SOP--movie-producer-rule-zero-budget.md` — Rule-Zero announce/approve + budget-cap control (the binding safety SOP, applies to every job).
 > - `SOP--movie-producer-documentary-montage-pipeline.md` — the free, zero-key real-footage documentary-montage pipeline (FFmpeg path).
@@ -67,9 +69,15 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 
 3. **Confirm pipeline feasibility (5 min):** Verify the selected pipeline's required inputs against what the brief provides. Flag any gap (e.g., `documentary-montage.yaml` requires a topic keyword list for CLIP-retrieval; a Kie video pipeline requires a text prompt or reference image URL).
 
-4. **Log the job manifest:** Write a `job-manifest.json` to the client's workspace with: `job_id`, `pipeline_selected`, `brief_summary`, `target_duration_sec`, `aspect_ratio`, `budget_ceiling_usd`, `estimated_cost_usd` (0.00 for free pipelines, non-zero for Kie pipelines — computed in SOP 9.2), `requestor`, `created_at`.
+4. **Log the job manifest:** Write `working/job-manifest.json` to the run dir with: `job_id`, `pipeline_selected`, `brief_summary`, `topic`, `target_duration_sec`, `aspect_ratio`, `budget_ceiling_usd`, `tone`, `kie_in_scope` (boolean — true for any Kie-routed pipeline, false for the free documentary path), `estimated_cost_usd` (0.00 for free pipelines, non-zero for Kie pipelines — computed in SOP 9.2), `requestor`, `created_at`, and `brief_complete: true` ONLY when every required field is present.
 
-**Outputs:** Completed `job-manifest.json`; gap list returned to requestor if brief is incomplete.
+5. **ATTEST V-DEFINE (mandatory — appends the phase attestation):** Run the driver to validate the brief receipt and append the V-DEFINE attestation:
+   ```
+   python3 47-movie-producer/scripts/executive_producer.py --run-dir [RUN_DIR] --phase V-DEFINE
+   ```
+   The driver runs `_chk_brief_complete` against `working/job-manifest.json`; an incomplete brief is `AF-VID-BRIEF-INCOMPLETE` and the phase does NOT attest. Until V-DEFINE is attested, the driver will HARD-ABORT any attempt to advance to V-MEASURE (`AF-VID-PHASE-SKIPPED`). This replaces the old prose instruction not to skip stages with a mechanical precondition.
+
+**Outputs:** Completed `working/job-manifest.json`; an appended V-DEFINE attestation in `working/checkpoints/video_process_manifest.json`; gap list returned to requestor if brief is incomplete.
 **Hand to:** SOP 9.2 (pre-flight and budget measurement).
 **Failure mode:** Starting pipeline execution without a complete brief. Always return the gap list immediately rather than guessing at intent. A production job started on an incomplete brief routinely requires full restart.
 
@@ -117,10 +125,16 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 
 4. **Budget gate:** Compare `estimated_cost_usd` against the client `config.yaml` `budget.total_usd` ceiling. If `estimated_cost_usd > budget.total_usd`: **HARD STOP**. Do not proceed. Notify the Head of Video Production with: the pipeline selected, the estimated cost, the configured budget cap, and a recommendation to either (a) switch to the free `documentary-montage.yaml` pipeline or (b) increase the budget cap with explicit client approval.
 
-5. **Update `job-manifest.json`:** Write `estimated_cost_usd`, `provider_audit_pass: true/false`, `preflight_pass: true/false`, `budget_gate_pass: true/false`, `measured_at` (ISO 8601 timestamp).
+5. **Write the measure receipt:** Write `working/checkpoints/measure-receipt.json` with `estimated_cost_usd`, `budget_ceiling_usd`, `provider_audit_pass: true/false`, `preflight_pass: true/false`, `budget_gate_pass: true/false`, `providers_available` (the list of AVAILABLE provider names — must include `kie` and NO native paid provider), `measured_at` (ISO 8601). Also mirror `estimated_cost_usd` / `provider_audit_pass` / `preflight_pass` / `budget_gate_pass` into `job-manifest.json`.
 
-**Outputs:** Updated `job-manifest.json` with measurement fields; provider audit output; preflight output. Hard stops with escalation message if any gate fails.
-**Hand to:** SOP 9.3 (Rule-Zero announce + approval gate) if any paid call is in scope; SOP 9.4 directly if free-only pipeline.
+6. **ATTEST V-MEASURE (mandatory):** Run the driver to validate the measure receipt and append the V-MEASURE attestation:
+   ```
+   python3 47-movie-producer/scripts/executive_producer.py --run-dir [RUN_DIR] --phase V-MEASURE
+   ```
+   The driver runs `_chk_measure_receipt` (preflight_pass), `_chk_provider_audit` (kie AVAILABLE + no native provider; `AF-VID-PROVIDER-AUDIT`), and `_chk_budget_cap` (estimated ≤ ceiling; `AF-VID-BUDGET-CAP`). A failed gate does NOT attest, and V-ANALYZE/V-IMPROVE cannot proceed without budget_gate_pass.
+
+**Outputs:** `working/checkpoints/measure-receipt.json`; an appended V-MEASURE attestation; updated `job-manifest.json`. Hard stops with escalation message if any gate fails.
+**Hand to:** SOP 9.3 (Rule-Zero announce + approval gate) if any paid call is in scope; SOP 9.4 directly if free-only pipeline (with a logged owner-authorized V-ANALYZE skip).
 **Failure mode:** Skipping the provider audit and discovering mid-pipeline that assets are routing to an unexpected provider. The two-minute provider audit here prevents a multi-dollar misdirected generation job downstream.
 
 ---
@@ -171,9 +185,23 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 
 4. **Single-action approval threshold:** Any single Kie API call estimated at ≥ $0.50 (the `single_action_approval_usd` value from `config.yaml`) requires its own individual approval before that specific call is submitted. If a pipeline produces multiple calls in sequence, each call at or above $0.50 gets its own prompt.
 
-5. **Record the approval:** Write to `job-manifest.json`: `rule_zero_announced_at`, `approval_received_at`, `approved_by`, `approved_total_usd`.
+5. **Record the approval:** Write `working/checkpoints/approval-receipt.json` with `rule_zero_announced_at`, `approval_received_at`, `approved_by`, `approved_total_usd`. (Mirror these into `job-manifest.json` for the audit trail.)
 
-**Outputs:** Approval receipt in `job-manifest.json`; or cancellation record if rejected.
+6. **ATTEST V-ANALYZE (mandatory for a paid job):** Run the driver to validate the approval receipt and append the V-ANALYZE attestation:
+   ```
+   python3 47-movie-producer/scripts/executive_producer.py --run-dir [RUN_DIR] --phase V-ANALYZE
+   ```
+   The driver runs `_chk_rule_zero_approval`: a paid job (`kie_in_scope:true`) MUST carry `rule_zero_announced_at` (`AF-VID-RULE-ZERO`) plus `approval_received_at` + `approved_by` (`AF-VID-APPROVAL-MISSING`), or it does NOT attest and V-IMPROVE cannot proceed.
+
+   **Free documentary-montage path (no paid call):** V-ANALYZE is NOT run. Instead, log an owner-authorized skip ONCE per job to `working/checkpoints/phase_skip_approvals.json`:
+   ```json
+   { "approvals": [ { "phase_id": "V-ANALYZE", "owner_approved": true,
+       "approved_by": "Head of Video Production",
+       "reason": "free documentary-montage path; zero paid Kie calls — Rule-Zero N/A" } ] }
+   ```
+   This logged skip is the ONLY way V-IMPROVE may run without a V-ANALYZE attestation. It is not a free flag — a malformed or `owner_approved:false` record does not authorize the skip.
+
+**Outputs:** `working/checkpoints/approval-receipt.json` + an appended V-ANALYZE attestation (paid path), OR a logged owner-authorized V-ANALYZE skip (free path); or a cancellation record if rejected.
 **Hand to:** SOP 9.4 (pipeline execution and rendering) upon approval.
 **Failure mode:** Submitting a Kie API call without the Rule-Zero announcement and approval. This is a hard violation — the job must be halted, the already-submitted call recorded as an unauthorized spend event in an incident log, and the Head of Video Production notified. Unauthorized spend events are escalated to the owner.
 
@@ -194,7 +222,7 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 
 1. **Set the OpenMontage working directory:** `cd` to the client's cloned OpenMontage directory (installed by Skill 47 at `~/.openclaw/skills/47-movie-producer/OpenMontage/` or the path configured during install). Verify the Kie adapters are present: `ls tools/graphics/kie_image.py tools/video/kie_video.py` — both must exist. If either is missing, re-run Skill 47 install (the adapters are dropped from `47-movie-producer/kie-adapters/` into the clone's `tools/` directories).
 
-2. **Execute the pipeline via the OpenMontage stage-director skills:** Drive the pipeline per the selected `pipeline_defs/*.yaml` manifest using OpenMontage's skills orchestration. The AI coding assistant (the agent running this SOP) IS the orchestrator per OpenMontage README line 329: "There is no code orchestrator. Your AI coding assistant IS the orchestrator." Execute each stage in the YAML definition in order. Do not skip stages.
+2. **Execute the pipeline via the OpenMontage stage-director skills:** Drive the pipeline per the selected `pipeline_defs/*.yaml` manifest using OpenMontage's skills orchestration. The AI coding assistant (the agent running this SOP) IS the orchestrator per OpenMontage README line 329: "There is no code orchestrator. Your AI coding assistant IS the orchestrator." Execute each stage in the YAML definition in order. (Stage-skipping is no longer governed by prose: the DMAIC phase order is enforced mechanically by `executive_producer.py`, which HARD-ABORTS `AF-VID-PHASE-SKIPPED` if V-IMPROVE is reached before V-DEFINE/V-MEASURE are attested and V-ANALYZE is attested-or-owner-skipped.)
 
 3. **Free documentary-montage path (zero Kie calls):** For `documentary-montage.yaml`, the pipeline retrieves real footage from the free public-domain corpus (Archive.org/NASA/Wikimedia/Library of Congress/National Archives/NOAA/European Space Agency/JAXA/Pond5 public domain) via CLIP-retrieval, assembles clips, runs Piper TTS for narration (offline, no API key), and stitches via FFmpeg. No Kie API calls are made. Confirm `budget.mode: cap` and `budget.total_usd` are configured before running even the free path (to prevent any accidental paid tool invocation).
 
@@ -282,23 +310,34 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 
    If ffprobe fails to parse the file, or any criterion is not met: **DO NOT DELIVER the file**. Log the failure to `_local/render-failures/[job_id]/`. Attempt one retry of the FFmpeg render command. If the second render also fails ffprobe validation, halt and escalate to Head of Video Production with the full ffprobe JSON output.
 
-8. **Record all render receipts:** For each rendered output, write to `_local/receipts/[job_id]/render-receipt.json`:
+8. **Record the render receipt:** Write `working/checkpoints/render-receipt.json` (and a copy at `working/render-receipt.json` for the delivery bundle):
    ```
    {
      "job_id":           "[job_id]",
-     "output_path":      "[absolute path to MP4]",
-     "kie_task_id":      "[kie_task_id or null]",
-     "kie_result_url":   "[kie_result_url or null]",
+     "output_path":      "[path to MP4]",
+     "kie_in_scope":     true|false,
+     "provider_used":    "kie" | "ffmpeg",
+     "generation_env":   { "KIE_API_KEY": "present" },
+     "kie_task_id":      "[REAL kie_task_id — null/placeholder is AF-VID-FABRICATED-RECEIPT]",
+     "kie_result_url":   "[REAL result url for a paid asset]",
      "ffprobe_pass":     true,
      "ffprobe_duration": [duration_seconds],
      "ffprobe_codec":    "[codec_name]",
      "ffprobe_width":    [width],
      "ffprobe_height":   [height],
+     "has_video_stream": true,
      "rendered_at":      "[ISO 8601]"
    }
    ```
+   `generation_env` records ONLY the provider key names that were present at generation time — it must NEVER contain a native paid provider key (`AF-VID-NATIVE-PROVIDER`). Never record a key VALUE.
 
-**Outputs:** Rendered and ffprobe-validated MP4 at `_local/outputs/[job_id]/`; `render-receipt.json` with all receipt fields; Kie task IDs and result URLs as anti-fabrication proof for any paid generation.
+9. **ATTEST V-IMPROVE (mandatory):** Run the driver to validate the render receipt and append the V-IMPROVE attestation:
+   ```
+   python3 47-movie-producer/scripts/executive_producer.py --run-dir [RUN_DIR] --phase V-IMPROVE
+   ```
+   The driver runs `_chk_render_receipt` (`ffprobe_pass:true` + duration>0 + a video stream; else `AF-VID-NO-FFPROBE`), `_chk_kie_receipt_real` (a paid job carries a REAL non-placeholder `kie_task_id` + `kie_result_url`; else `AF-VID-FABRICATED-RECEIPT`), and `_chk_native_provider` (no native key in `generation_env`; else `AF-VID-NATIVE-PROVIDER`). A present-but-invalid receipt is exit 3 — the phase does NOT attest and delivery cannot proceed.
+
+**Outputs:** Rendered and ffprobe-validated MP4; `working/checkpoints/render-receipt.json` with all receipt fields; an appended V-IMPROVE attestation; Kie task IDs and result URLs as anti-fabrication proof for any paid generation.
 **Hand to:** SOP 9.5 (post-render QC and handoff).
 **Failure mode:** Delivering an MP4 that has not passed ffprobe validation. The ffprobe step is non-negotiable — a file that plays on the specialist's local machine may fail silently on the client's delivery platform due to codec incompatibility or corruption. The ffprobe JSON is the proof of a valid render.
 
@@ -353,7 +392,13 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 
 6. **Archive job assets:** Move completed job assets to `_local/archive/[job_id]/` — MP4 output, all receipts, the job manifest, and Kie result URLs. Retain the `render-receipt.json` and `job-manifest.json` permanently (budget audit trail).
 
-**Outputs:** Delivered and QC-passed MP4; finalized `job-manifest.json` with `status: complete`; budget reconciliation entry; handoff notification to the next role in the pipeline.
+7. **ATTEST V-CONTROL (mandatory — closes the job):** Run the driver to run the postflight completeness gate and append the final attestation:
+   ```
+   python3 47-movie-producer/scripts/executive_producer.py --run-dir [RUN_DIR] --phase V-CONTROL
+   ```
+   The driver runs `run_postflight_gate` (`AF-VID-DELIVERY-INCOMPLETE`): `job-manifest.status == "complete"` AND every required deliverable present at/above its size floor (`job-manifest.json`, `render-receipt.json`, the final `.mp4` > 100KB) AND a downstream handoff declared (one of captions/tts/edit/storyboard/delivery), plus `_chk_budget_overrun` (`actual_cost_usd ≤ budget_ceiling_usd`; `AF-VID-BUDGET-OVERRUN`). V-CONTROL attests only when the bundle is complete; the attestation sets `finalized:true` in `video_process_manifest.json`. A job is not "done" until V-CONTROL is attested.
+
+**Outputs:** Delivered and QC-passed MP4; finalized `job-manifest.json` with `status: complete`; a `finalized:true` V-CONTROL attestation; budget reconciliation entry; handoff notification to the next role in the pipeline.
 **Hand to:** Captioning Subtitling Specialist (Skill 26) for captions; Video Editor (Skill 27) for post-editing; Head of Video Production for delivery approval and final sign-off.
 **Failure mode:** Treating a QC-fail as a pass because "it looks close enough." Any item failing the content QC checklist — especially a missing `kie_task_id`/`kie_result_url` where Kie generation was claimed — is a hard failure. Missing Kie receipts means either the generation did not happen (fabrication) or the receipts were not recorded (a logging failure). Either is unacceptable. Rerun the generation or recover the receipts from the API log before delivering.
 

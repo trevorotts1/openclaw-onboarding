@@ -23,6 +23,10 @@ tmp/
 # by gate_integrity_check.py; regenerated in CI, never committed.
 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/working/
 
+# Movie Producer (Skill 47) Guard A af-coverage artifact — emitted by test_video_preflight.py,
+# consumed by video_gate_integrity_check.py; regenerated in CI, never committed.
+47-movie-producer/scripts/working/
+
 .wrangler/
 
 # backup files from automated fixes
