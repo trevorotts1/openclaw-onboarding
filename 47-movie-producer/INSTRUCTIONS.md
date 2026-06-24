@@ -1,4 +1,4 @@
-# OpenMontage Production (Skill 47) — Instructions
+# Movie Producer — Automated Video Production (Skill 47) — Instructions
 
 ## Rule-Zero workflow (MANDATORY before any paid call)
 
@@ -43,7 +43,7 @@ This is the default and preferred path. It assembles real footage from public-do
 Run it:
 
 ```bash
-cd ~/.openclaw/skills/47-openmontage-production/OpenMontage
+cd ~/.openclaw/skills/47-movie-producer/OpenMontage
 
 # Edit documentary-montage.yaml with your brief and topic, then:
 python3 -c "

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Skill 47 — OpenMontage Production — FAIL-LOUD runtime-dependency preflight
+# Skill 47 — Movie Producer (Automated Video Production) — FAIL-LOUD runtime-dependency preflight
 #
 # Mirrors the pattern from:
 #   .github/workflows/presentation-deps-gate.yml
@@ -20,7 +20,7 @@ green() { printf "\033[32m%s\033[0m\n" "$1"; }
 info()  { printf "%s\n" "$1"; }
 
 info ""
-info "=== Skill 47 -- OpenMontage Production -- Runtime-Dep Preflight ==="
+info "=== Skill 47 -- Movie Producer (Automated Video Production) -- Runtime-Dep Preflight ==="
 info ""
 
 # ---- Helper ----

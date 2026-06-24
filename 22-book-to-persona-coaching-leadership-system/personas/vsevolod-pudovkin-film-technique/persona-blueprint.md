@@ -6,7 +6,8 @@
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
-**QC Status:** QC_PENDING
+**QC Status:** QC_PASS
+**QC Reviewed:** 2026-06-24 — all 14 spec sections present and filled; dual-mode (Coaching + Task) separation intact; Section 8 carries the full Leadership/Agent-Governance framework (execution standard, decision-logic table, QC protocol, failure-pattern + amateur-vs-expert tables, activation language); no `{{TOKEN}}`/TODO/placeholder leakage; six self-rating dimensions present (avg ~9.4/10); no client names or personal data; author voice (Soviet montage-theory craft discipline) is distinctive and source-faithful. Passes the persona QC bar.
 
 ---
 

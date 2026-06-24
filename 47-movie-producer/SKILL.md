@@ -1,11 +1,11 @@
 ---
-name: openmontage-production
-description: Autonomous multi-pipeline video production using the OpenMontage agentic system — real-footage documentary montage (free, zero-key), or Kie.AI-powered image/video generation. Operates on the client's own optional API keys only.
+name: movie-producer
+description: Autonomous multi-pipeline video production (the Movie Producer skill) using the OpenMontage agentic engine — real-footage documentary montage (free, zero-key), or Kie.AI-powered image/video generation. Operates on the client's own optional API keys only.
 ---
 
-# OpenMontage Production (Skill 47)
+# Movie Producer — Automated Video Production (Skill 47)
 
-Autonomous, multi-pipeline video production driven by OpenMontage — an open-source agentic video production system that the client clones on their own box at install time.
+Autonomous, multi-pipeline video production driven by the OpenMontage engine — an open-source agentic video production system that the client clones on their own box at install time. (This skill's directory is `47-movie-producer/`; "OpenMontage" throughout this doc names the UPSTREAM engine, not the skill.)
 
 ## What you get
 
@@ -51,7 +51,7 @@ This skill exposes **only `KIE_API_KEY`** in the client `.env`. Operator keys NE
 - `EXAMPLES.md` — copy-paste run examples (free path + Kie path)
 - `CORE_UPDATES.md` — which core files this skill may update
 - `skill-version.txt` — semver
-- `qc-openmontage-production.sh` — install QC (fail-loud)
+- `qc-movie-producer.sh` — install QC (fail-loud)
 - `verify-deps.sh` — clean-box dependency proof script
 - `DEPENDENCY-MANIFEST.md` — the §A no-vendoring decision
 - `kie-adapters/` — our two Kie.AI BaseTool adapters (copied into the clone at install)

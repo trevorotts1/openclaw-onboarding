@@ -1,0 +1,47 @@
+{
+  "proof_type": "kie_generative_asset",
+  "skill": "47-movie-producer",
+  "adapter": "kie-adapters/tools/video/kie_video.py",
+  "capability": "video_generation",
+  "provider": "kie",
+  "api_base": "https://api.kie.ai",
+  "create_endpoint": "/api/v1/jobs/createTask",
+  "poll_endpoint": "/api/v1/jobs/recordInfo",
+  "model": "gemini-omni-video",
+  "request_body": {
+    "model": "gemini-omni-video",
+    "input": {
+      "prompt": "A slow cinematic dolly across a quiet sunlit library, dust motes drifting in golden light, documentary tone",
+      "duration": "4",
+      "aspect_ratio": "16:9",
+      "generate_audio": true
+    }
+  },
+  "create_http_status": 200,
+  "kie_task_id": "a27542cb60343417e562afc2be65da5c",
+  "kie_result_url": "https://tempfile.aiquickdraw.com/v/a27542cb60343417e562afc2be65da5c_1782311674.mp4",
+  "poll_to_success_seconds": 90,
+  "downloaded_bytes": 1033416,
+  "downloaded_mp4_sha256": "8ea8ef8ac9c5cd69d2f3bc2ce166ccbc5489f0206473e4231daa1f7953f487a6",
+  "ffprobe": {
+    "format_duration": 4.01,
+    "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+    "video_stream": {
+      "codec_name": "h264",
+      "width": 1280,
+      "height": 720
+    },
+    "audio_stream": {
+      "codec_name": "aac"
+    },
+    "has_video_stream": true,
+    "duration_gt_zero": true
+  },
+  "browser_spawned": false,
+  "browser_proof": "pure requests HTTP only; no headless/remote-debugging/puppeteer/playwright process at any point; Chrome PID count unchanged (34->34); the only new PIDs were --type=renderer children of the pre-existing interactive Chrome root (PID 82759, started 2 days before the run), not a new automation browser",
+  "operator_key_note": "Rendered with the operator's KIE_API_KEY for operator-side adapter verification ONLY; production uses client-funded keys. The key value is never recorded here.",
+  "renderer": "ffprobe version 8.1.1 (Homebrew, FFmpeg 8.x)",
+  "run_date": "2026-06-24",
+  "reproduce": "Set KIE_API_KEY in the OpenMontage clone .env, then have OpenMontage invoke the kie_video tool (gemini-omni-video, duration as STRING, aspect_ratio always set) and confirm result.data contains kie_task_id + kie_result_url; ffprobe the downloaded MP4 for duration>0 + a video stream.",
+  "result": "PASS"
+}

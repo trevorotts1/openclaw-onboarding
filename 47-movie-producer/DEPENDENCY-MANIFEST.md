@@ -50,12 +50,12 @@ This is the AGPLv3-safe path AND keeps the fleet template clean.
 The vendoring escape hatch in the build spec is:
 > "Vendor ONLY a dep Skill 47 cannot fetch — into `47-…/vendor/` with its license, never AGPLv3 OpenMontage source."
 
-This contingency does NOT trigger because every dep is fetchable. If a future upstream change makes a dep unfetchable on the client box (e.g. a removed npm package), ONLY THEN does a vendored copy land in `47-openmontage-production/vendor/` with its license. AGPLv3 OpenMontage source is NEVER vendored.
+This contingency does NOT trigger because every dep is fetchable. If a future upstream change makes a dep unfetchable on the client box (e.g. a removed npm package), ONLY THEN does a vendored copy land in `47-movie-producer/vendor/` with its license. AGPLv3 OpenMontage source is NEVER vendored.
 
 ## Proof command (run on a clean box)
 
 ```bash
-bash ~/.openclaw/skills/47-openmontage-production/verify-deps.sh
+bash ~/.openclaw/skills/47-movie-producer/verify-deps.sh
 ```
 
 Expected output ends with:

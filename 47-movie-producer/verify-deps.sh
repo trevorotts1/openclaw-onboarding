@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Skill 47 — OpenMontage Production — Clean-box dependency proof
+# Skill 47 — Movie Producer (Automated Video Production) — Clean-box dependency proof
 #
 # PURPOSE: Prove on a clean box that `make setup` fetches every dependency
 #   successfully and that NO vendoring is required. Records the §A conclusion.
 #
 # INVOCATION (after cloning + preflight):
-#   cd ~/.openclaw/skills/47-openmontage-production/OpenMontage
+#   cd ~/.openclaw/skills/47-movie-producer/OpenMontage
 #   bash ../verify-deps.sh
 #
 # EXIT CODE 0 = all deps fetched, no vendoring required

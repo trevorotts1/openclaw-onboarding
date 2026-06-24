@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
-# Skill 47 — OpenMontage Production — Automated Installer
+# Skill 47 — Movie Producer (Automated Video Production) — Automated Installer
 # Mirrors the fail-loud pattern from presentation-deps-gate.yml + install.sh Step 6.5.
 # Run via: bash install.sh
 # Must be executed from the skill directory or with SKILL_DIR set.
+# NOTE: "OpenMontage" below refers to the UPSTREAM engine (github.com/calesthio/OpenMontage,
+# AGPLv3) that this Movie Producer skill clones onto the client box — not the skill dir name.
 
 set -euo pipefail
 
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OPENMONTAGE_DIR="${OPENCLAW_OPENMONTAGE_DIR:-$HOME/.openclaw/skills/47-openmontage-production/OpenMontage}"
-SKILL_NAME="openmontage-production"
+OPENMONTAGE_DIR="${OPENCLAW_OPENMONTAGE_DIR:-$HOME/.openclaw/skills/47-movie-producer/OpenMontage}"
+SKILL_NAME="movie-producer"
 
 red()    { printf "\033[31mFAIL\033[0m %s\n" "$1"; }
 green()  { printf "\033[32mPASS\033[0m %s\n" "$1"; }
 yellow() { printf "\033[33mWARN\033[0m %s\n" "$1"; }
 info()   { printf "     %s\n" "$1"; }
 
-echo "=== Skill 47 / OpenMontage Production — Install ==="
+echo "=== Skill 47 / Movie Producer (Automated Video Production) — Install ==="
 echo "    Skill dir:        $SKILL_DIR"
 echo "    Clone target:     $OPENMONTAGE_DIR"
 echo ""
@@ -146,13 +148,13 @@ echo ""
 # Step 8 — Run QC
 # ---------------------------------------------------------------------------
 echo "--- Step 8: Install QC ---"
-bash "$SKILL_DIR/qc-openmontage-production.sh" || {
+bash "$SKILL_DIR/qc-movie-producer.sh" || {
   red "QC failed. Review output above."
   exit 1
 }
 echo ""
 
-echo "=== Skill 47 / OpenMontage Production — INSTALL COMPLETE ==="
+echo "=== Skill 47 / Movie Producer (Automated Video Production) — INSTALL COMPLETE ==="
 echo ""
 echo "Next steps:"
 echo "  1. Edit $ENV_FILE — replace YOUR_CLIENT_KIE_API_KEY_HERE with the client's Kie.AI key."
