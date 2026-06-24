@@ -18,7 +18,9 @@ No new cron job is created here. Skill 37 piggy-backs on the existing `workforce
 | `KIE_API_KEY` | YES | `/docker/<project>/.env` (VPS) or `~/.openclaw/config/.env` (Mac) | KIE.AI calls (images + video) |
 | `NOTION_API_TOKEN` | YES | Same | Notion page-tree creation |
 | `NOTION_API_VERSION` | RECOMMENDED | Same | Defaults to `2022-06-28` |
-| `NOTION_CLOSEOUT_PARENT_PAGE_ID` | OPTIONAL | Same | If unset, the script auto-discovers a parent page |
+| `NOTION_CLOSEOUT_PARENT_PAGE_ID` | OPTIONAL | Same | Tier 1: explicit client parent page id. If unset, `ensure-notion-parent-page.sh` auto-discovers + pins one, or the builder fails clear + stages locally |
+| `ZHC_AGENCY_NOTION_TOKEN` | OPTIONAL (operator secret) | `~/.openclaw/secrets/.env` (operator only) | Tier 2 fallback: agency Notion integration token. NEVER a client token, NEVER committed. See README "Notion Delivery Tiers" |
+| `ZHC_AGENCY_NOTION_PARENT_PAGE_ID` | OPTIONAL (operator) | Same as above | Tier 2 fallback: the PRIVATE agency parent page id. Parent must be shared with the agency integration + Published-to-web view-only (one-time UI step). See README |
 | `OPENCLAW_TREVOR_CHAT` | OPTIONAL | Same | Escalation target if closeout fails 3+ times |
 
 ## Manual Hot-Patch (For Existing Boxes Pre-v10.14.17)

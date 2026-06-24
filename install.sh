@@ -5626,6 +5626,24 @@ install_skill_37_zhc_closeout() {
         warn "NOTION_API_TOKEN not set in current env — Skill 37's Notion step will fail. Set it in your shell rc or ~/.openclaw/config/.env to enable closeout docs."
     else
         success "NOTION_API_TOKEN present — Skill 37 Notion page-tree creation enabled"
+        # NOTION PARENT-PAGE PROVISIONING (root-page-create-failed permanent fix):
+        # An INTERNAL Notion integration CANNOT create a workspace-root page — it can
+        # only write UNDER a page that has been explicitly shared with it. Establish
+        # that shared parent ONCE here: if any page is already shared, pin it as
+        # NOTION_CLOSEOUT_PARENT_PAGE_ID; otherwise emit a crisp one-time client
+        # instruction. Non-fatal either way — the closeout re-checks every run and
+        # auto-completes the moment a page is shared.
+        local _NOTION_PARENT_SCRIPT="$SKILL_DEST/scripts/ensure-notion-parent-page.sh"
+        if [ -f "$_NOTION_PARENT_SCRIPT" ]; then
+            chmod +x "$_NOTION_PARENT_SCRIPT" 2>/dev/null || true
+            if bash "$_NOTION_PARENT_SCRIPT" >> "$LOG_FILE" 2>&1; then
+                success "Notion closeout parent page ensured (pinned an accessible page, or emitted the one-time share instruction — closeout will not fail on root-page-create)"
+            else
+                warn "ensure-notion-parent-page.sh returned non-zero (non-fatal — closeout's own fail-clear path will re-check and stage content)."
+            fi
+        else
+            warn "ensure-notion-parent-page.sh not found in Skill 37 scripts — closeout's in-script parent resolution + fail-clear staging still apply."
+        fi
     fi
 
     success "Skill 37 (ZHC Closeout) installed → $SKILL_DEST"
