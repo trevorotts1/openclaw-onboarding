@@ -786,6 +786,16 @@ fi
 # ----------------------------------------------------------------------
 # STEP 5 -- Notion Page Tree
 # ----------------------------------------------------------------------
+# NOTION PARENT-PAGE PROVISIONING (runs every closeout, idempotent): ensure a
+# shared parent page is pinned BEFORE building, so an internal integration never
+# hits "root-page-create-failed". No-op when already pinned; emits the one-time
+# share instruction when nothing is shared. Self-heals boxes that onboarded
+# before this fix shipped. Never blocks closeout.
+_ENSURE_PARENT="$SKILL_DIR/scripts/ensure-notion-parent-page.sh"
+if [[ -f "$_ENSURE_PARENT" ]]; then
+  ZHC_STATE_FILE="$STATE_FILE" bash "$_ENSURE_PARENT" >>"$LOG_FILE" 2>&1 \
+    || log "WARN" "step=5 notion: ensure-notion-parent-page.sh returned non-zero (non-fatal -- in-script resolution + fail-clear staging still apply)"
+fi
 if [[ -n "$(state_get '.notionRootPageUrl')" && "$(state_get '.notionRootPageUrl')" != "null" && "$(gate_get_score closeout_docs)" != "" ]] && rate_meets_gate "$(gate_get_score closeout_docs)" && [[ "$(gate_get_qc closeout_docs)" == "pass" ]]; then
   log "INFO" "step=5 notion: already done + gate-passed -- skipping"
   STEP_NOTION_STATUS=ok
