@@ -1,3 +1,5 @@
+## [v13.8.17]  -  2026-06-24  -  fix(closeout): permanently fix Notion root-page-create-failed via tiered delivery + fail-clear staging (PR #327)
+
 ## [v13.8.16]  -  2026-06-24  -  fix(crons): operator/maintenance/onboarding crons default to SILENT — no client auto-announce (PR #326)
 
 ## [v13.8.15]  -  2026-06-23  -  test(skill-23): harden the build→prove CI guard to catch a gutted ROLE_LIBRARY_PATH (PENDING-stub roles), not just slug divergence
