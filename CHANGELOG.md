@@ -7,6 +7,7 @@ Rebrands Skill 47 from `47-openmontage-production/` to `47-movie-producer/` (the
 - **Pudovkin "Film Technique" persona QC.** `22-book-to-persona-coaching-leadership-system/personas/vsevolod-pudovkin-film-technique/persona-blueprint.md` cleared `QC_PENDING → QC_PASS` after a real QC pass: 14/14 spec sections present, dual-mode separation intact, full Section-8 agent-governance framework, zero `{{TOKEN}}`/TODO/placeholder leakage, six self-ratings (avg ~9.4/10), no client names. QC-review note stamped in the header.
 - **Versions.** `47-movie-producer/skill-version.txt` bumped `v1.0.0 → v14.0.0`. Global onboarding `version`/`cc-compat.json` markers left for the operator's release step.
 
+## [v13.8.19]  -  2026-06-24  -  feat(video): OpenMontage Pipeline Operator role + Skill 47 autonomous video production + Kie.AI generative rewire
 
 Gives the ZHC `video` department the power to AUTONOMOUSLY PRODUCE AND RENDER finished client videos (not just plan them), including free real-footage documentary montage, by wrapping the open-source OpenMontage agentic video-production system (`github.com/calesthio/OpenMontage`, AGPLv3) as an installed CLIENT skill on the client's own optional keys. AGPLv3 source is NEVER vendored into this fleet-wide template — the skill clones OpenMontage onto the client box at install time and ships only our installer + wrapper + docs + our own Kie adapter files. `scripts/qc-assert-no-client-names.sh` exit 0; all locking gates green (register/hash/persona/skill-QC); REAL ffprobe render receipt captured (h264, 6.08s).
 
