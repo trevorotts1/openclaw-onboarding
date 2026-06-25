@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v14.1.2"
+ONBOARDING_VERSION="v14.1.3"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -156,6 +156,34 @@ error() {
     echo ""
     echo "  ✗ ERROR: $1"
     echo ""
+}
+
+# ----------------------------------------------------------
+# Cron-create positional-form fallback (v14.1.3 — 2026.6.8 flag drift)
+# ----------------------------------------------------------
+# DEFECT: every silent-cron chain in this installer registers crons with the
+# flag form `openclaw cron create --cron "<expr>" --message "<prompt>"
+# --session-target main [--light-context]`. On OpenClaw 2026.6.8 (verified
+# against docs.openclaw.ai/cli/cron) the CANONICAL surface is:
+#     openclaw cron create "<schedule>" "<prompt>" --name N --agent A --session main [--light-context] [--tz Z]
+# i.e. the schedule + prompt are POSITIONAL, and the session flag is `--session`
+# (NOT `--cron`/`--message`/`--session-target`). When the flag form is rejected
+# the cron silently fails to register (the chains are guarded so the install
+# does NOT abort, but the cron is simply absent). This helper provides the
+# docs-canonical positional form as a FINAL fallback the per-site chains call
+# after their existing flag-form attempts — strictly additive, so boxes where
+# the old flag form still works are untouched, and 2026.6.8 boxes recover the
+# cron. OS-portable (pure CLI). Returns 0 on success.
+#   $1=name  $2=agent  $3=cron-expr  $4=tz  $5=prompt  $6="lc" to add --light-context
+_cron_create_positional() {
+    local _name="$1" _agent="$2" _expr="$3" _tz="$4" _prompt="$5" _lc="${6:-}"
+    local _args=( "$_expr" "$_prompt" --name "$_name" --agent "$_agent" --session main )
+    [ -n "$_tz" ] && _args+=( --tz "$_tz" )
+    [ "$_lc" = "lc" ] && _args+=( --light-context )
+    local _out="" _rc=0
+    _out=$(openclaw cron create "${_args[@]}" 2>&1) || _rc=$?
+    echo "$_out" >> "${LOG_FILE:-/dev/null}"
+    return "$_rc"
 }
 
 # ----------------------------------------------------------
@@ -2535,6 +2563,56 @@ inject_shared_operator_secrets
 discover_all_credentials
 
 # ----------------------------------------------------------
+# Step 2.5: Base runtime tools (Linux containers) — jq, unzip, python3-pip
+# ----------------------------------------------------------
+# DEFECT (v14.1.3): a FRESH Contabo / Debian Bookworm OpenClaw container ships
+# node, npm, python3, git, curl — but NOT `jq`, NOT `unzip`, and often NOT
+# `python3-pip` (no `pip`/`pip3` and no `python3 -m pip`). The installer relies
+# on all three downstream:
+#   • unzip  — Step 4 extraction fallback (python3 zipfile now covers the gap,
+#              but unzip is faster and is the preferred Linux path)
+#   • jq     — cron-UUID capture + state-file writes (Steps 13.5/13.5b)
+#   • pip    — Gemini engine deps + presentation pipeline (reportlab/python-pptx)
+# Without them, a fresh container hit "unzip: command not found" / silent jq
+# no-ops / pip failures. We install them ONCE here, OS-aware, BEFORE the
+# download+extract step. NON-FATAL: missing apt or a failed install only warns
+# (python3 zipfile + `command -v jq` guards cover the absence downstream).
+#
+# Hostinger note: /usr/local/bin/apt-get is a Linuxbrew SHIM on those images
+# (INSTALL-GOTCHAS); /usr/bin/apt-get is the genuine dpkg-backed apt. We resolve
+# the real apt the same way Step 6.5 does. Mac: nothing to do — Homebrew + the
+# macOS base already provide unzip/ditto; jq/pip are handled by their own steps.
+if [ "$OC_PLATFORM" = "vps" ] || { [ -z "${OC_PLATFORM:-}" ] && [ "$(uname -s 2>/dev/null)" = "Linux" ]; }; then
+    step "Step 2.5: Installing base runtime tools (jq, unzip, python3-pip) — Linux"
+    _BASE_APT="/usr/bin/apt-get"
+    [ -x "$_BASE_APT" ] || _BASE_APT="$(command -v apt-get 2>/dev/null || true)"
+    _need_base=""
+    command -v jq    >/dev/null 2>&1 || _need_base="${_need_base}jq "
+    command -v unzip >/dev/null 2>&1 || _need_base="${_need_base}unzip "
+    # pip presence = either a pip3/pip binary OR `python3 -m pip` importable.
+    if ! command -v pip3 >/dev/null 2>&1 && ! command -v pip >/dev/null 2>&1 \
+         && ! python3 -m pip --version >/dev/null 2>&1; then
+        _need_base="${_need_base}python3-pip "
+    fi
+    if [ -z "$_need_base" ]; then
+        success "Base runtime tools already present (jq, unzip, pip)"
+    elif [ -n "$_BASE_APT" ] && [ -x "$_BASE_APT" ]; then
+        note "Installing missing base tools via real apt ($_BASE_APT): $_need_base"
+        # -o DPkg::Lock::Timeout=60: if another process holds the dpkg/apt lock
+        # (e.g. an unattended-upgrades run on a fresh Contabo/Debian container),
+        # wait up to 60s then fail-fast instead of hanging the whole installer.
+        # shellcheck disable=SC2086
+        ( "$_BASE_APT" -o DPkg::Lock::Timeout=60 update -y \
+          && DEBIAN_FRONTEND=noninteractive "$_BASE_APT" -o DPkg::Lock::Timeout=60 install -y --no-install-recommends $_need_base ) \
+            >> "$LOG_FILE" 2>&1 \
+            && success "Base runtime tools installed: $_need_base" \
+            || warn "apt install of base tools ($_need_base) failed — downstream guards (python3 zipfile / command -v jq) will cover the gap. Manual: $_BASE_APT install -y $_need_base"
+    else
+        warn "No usable apt-get found on Linux — could not auto-install base tools ($_need_base). Downstream guards cover the gap, but install jq/unzip/python3-pip manually for full functionality."
+    fi
+fi
+
+# ----------------------------------------------------------
 # Step 3: Download Package
 # ----------------------------------------------------------
 step "Step 3: Downloading Onboarding Package"
@@ -2566,18 +2644,41 @@ step "Step 4: Extracting Package"
 rm -rf "$TEMP_EXTRACT"
 mkdir -p "$TEMP_EXTRACT"
 
-# v10.13.2: switched from `unzip` to `ditto -x -k` — Mac's native extractor.
-# Info-ZIP's `unzip` mangles UTF-8 filenames (em-dashes etc.), partial-writes
-# the bad file, and then prompts "Continue? (y/n/^C)" — which hangs install.sh
-# forever when the operator isn't watching. `ditto` is UTF-8 clean and silent.
-if ditto -x -k "$TEMP_ZIP" "$TEMP_EXTRACT" 2>/dev/null; then
-    : # ditto succeeded
-else
-    # Last-ditch fallback: try unzip with auto-skip of name conflicts (`-n`)
-    # so it can't prompt. Still prefer ditto path above.
-    warn "ditto extraction failed; attempting unzip fallback (non-interactive)"
-    yes n 2>/dev/null | unzip -qn "$TEMP_ZIP" -d "$TEMP_EXTRACT" 2>/dev/null || true
-fi
+# OS-AWARE EXTRACTION (v14.1.3).
+# Mac (`ditto`): v10.13.2 switched from `unzip` to `ditto -x -k` — Mac's native
+# extractor. Info-ZIP's `unzip` mangles UTF-8 filenames (em-dashes etc.),
+# partial-writes the bad file, then prompts "Continue? (y/n/^C)" — which hangs
+# install.sh forever when the operator isn't watching. `ditto` is UTF-8 clean
+# and silent, so it stays the PREFERRED Mac path.
+# Linux (Hostinger/Contabo): `ditto` does NOT exist (it's a macOS tool). A fresh
+# Contabo Debian Bookworm container also ships WITHOUT `unzip` (INSTALL-GOTCHAS
+# #1). The previous code fell through `ditto`→`unzip` and, if `unzip` was also
+# absent, silently produced no extract dir → "Unexpected archive structure"
+# abort (this broke Beverly's Contabo onboarding). FIX: branch on $OC_PLATFORM,
+# and on Linux fall back to `python3` zipfile — python3 is ALWAYS present (the
+# platform bootstrap hard-requires it). All three methods are tested-equivalent
+# for the GitHub-archive zip we download.
+_extract_zip() {
+    # $1 = zip, $2 = dest dir. Returns 0 on success.
+    if [ "$OC_PLATFORM" = "mac" ] && command -v ditto >/dev/null 2>&1; then
+        ditto -x -k "$1" "$2" 2>/dev/null && return 0
+        warn "ditto extraction failed; falling back to unzip/python3"
+    fi
+    # Linux + Mac fallback chain: unzip (non-interactive, auto-skip conflicts)
+    # then python3 zipfile (always available; the INSTALL-GOTCHAS #1 fallback).
+    if command -v unzip >/dev/null 2>&1; then
+        yes n 2>/dev/null | unzip -qn "$1" -d "$2" 2>/dev/null && return 0
+        warn "unzip extraction failed; falling back to python3 zipfile"
+    fi
+    note "Extracting via python3 zipfile (unzip not available — normal on fresh Linux containers)"
+    SRC_ZIP="$1" DEST_DIR="$2" python3 - <<'PYEOF' 2>/dev/null && return 0
+import os, zipfile
+with zipfile.ZipFile(os.environ["SRC_ZIP"]) as z:
+    z.extractall(os.environ["DEST_DIR"])
+PYEOF
+    return 1
+}
+_extract_zip "$TEMP_ZIP" "$TEMP_EXTRACT" || warn "All extraction methods failed — the structure check below will catch it."
 
 if [ ! -d "$TEMP_EXTRACT/openclaw-onboarding-main" ]; then
     error "Unexpected archive structure"
@@ -2761,43 +2862,70 @@ if [ -f "$SCRIPTS_DIR/agent-browser-reaper.sh" ]; then
     bash "$SCRIPTS_DIR/agent-browser-reaper.sh" 2>/dev/null || warn "one-shot agent-browser reap rc!=0 (non-fatal; the hourly cron backfills)"
 fi
 
-# SINGLETON POOLED BROWSER advisory config: deep-merge browser.agentBrowser into
-# openclaw.json (NEVER `config set` of nested keys — known nested-key-merge
-# failure). ADVISORY-ONLY: agent-browser ignores it natively; the REAL cap lives
-# in browser_manager.sh + agent-browser-reaper.sh (env-overridable). Leaves
-# browser.headless untouched. Idempotent (only fills missing keys).
+# SINGLETON POOLED BROWSER advisory config — REMOVED + SELF-HEAL (v14.1.3).
+# DEFECT: the old block deep-merged a `browser.agentBrowser` object into
+# openclaw.json. OpenClaw 2026.6.8 tightened the config schema to strict
+# additionalProperties:false (same mechanism that rejected the root
+# `extension_registry` key and `agents.defaults.tools.*` — see CHANGELOG
+# v13.1.3 / register-routing-dept.py fix). `browser.agentBrowser` is an
+# UNKNOWN sub-key under the `browser` object, so on a fresh 2026.6.8 container
+# the gateway refuses to start → CRASH-LOOP (this took Beverly's Contabo box
+# down). The block's own comment admitted it was ADVISORY-ONLY: agent-browser
+# ignores it natively; the REAL session/process caps live in browser_manager.sh
+# + agent-browser-reaper.sh (env-overridable). So writing it gained nothing and
+# cost a crash-loop. We now: (1) never write the key, and (2) SELF-HEAL — strip
+# any pre-existing `browser.agentBrowser` left by an older installer, via a
+# safe, backed-up, atomic JSON round-trip, so an already-poisoned box repairs
+# itself on the next install/update run. OS-portable (python3 only; runs on Mac
+# + Linux identically). Non-fatal: any failure just warns.
 if [ -f "$OC_JSON" ]; then
-    OC_JSON="$OC_JSON" python3 - <<'PYEOF' 2>/dev/null && success "browser.agentBrowser advisory defaults present in openclaw.json" || warn "could not deep-merge browser.agentBrowser advisory (non-fatal; manager+reaper read env defaults)"
-import json, os
+    # The python block prints STRIPPED (a legacy key was actually removed) or
+    # NOOP (no legacy key present) to stdout, exiting 1 only on a JSON read
+    # failure. The shell branches on that token so the log message reflects what
+    # really happened — the no-op case no longer falsely claims it "stripped" a key.
+    _BROWSER_HEAL_OUT="$(OC_JSON="$OC_JSON" python3 - <<'PYEOF' 2>/dev/null
+import json, os, shutil
 p = os.environ["OC_JSON"]
 try:
     d = json.load(open(p))
 except Exception:
     raise SystemExit(1)
-defaults = {
-    "maxSessions": 1,
-    "idleReapMin": 60,
-    "maxOpensPerHour": 12,
-    "maxChromeProcs": 3,
-    "sessionTtlSec": 1800,
-}
-browser = d.setdefault("browser", {})
-ab = browser.setdefault("agentBrowser", {})
-changed = False
-for k, v in defaults.items():
-    if k not in ab:
-        ab[k] = v
-        changed = True
-if changed:
-    json.dump(d, open(p, "w"), indent=2)
+browser = d.get("browser")
+if isinstance(browser, dict) and "agentBrowser" in browser:
+    # Legacy poison key present — back up, strip, atomic-replace.
+    shutil.copy2(p, p + ".prebrowserheal.bak")
+    del browser["agentBrowser"]
+    # Drop an emptied browser object too, so we don't leave {} noise.
+    if not browser:
+        d.pop("browser", None)
+    tmp = p + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(d, f, indent=2)
+    os.replace(tmp, p)
+    print("STRIPPED")
+else:
+    print("NOOP")
 PYEOF
+)"
+    if [ "$_BROWSER_HEAL_OUT" = "STRIPPED" ]; then
+        success "browser.agentBrowser self-heal complete (key not written; legacy key stripped — caps live in browser_manager.sh/reaper)"
+    elif [ "$_BROWSER_HEAL_OUT" = "NOOP" ]; then
+        success "browser.agentBrowser self-heal complete (key not written; no legacy key found — caps live in browser_manager.sh/reaper)"
+    else
+        warn "browser.agentBrowser self-heal skipped (non-fatal; manager+reaper read env defaults)"
+    fi
+    unset _BROWSER_HEAL_OUT
 fi
 
-# Install google-genai if needed
+# Install google-genai if needed.
+# v14.1.3: use `python3 -m pip` (portable) instead of the bare `pip3` binary.
+# On a fresh Linux container python3-pip may be installed as a module with NO
+# `pip3` on PATH, so `pip3 install` would be "command not found". `python3 -m pip`
+# also guarantees the package lands in the SAME interpreter the import check uses.
 if ! python3 -c "import google.genai" 2>/dev/null; then
     note "Installing google-genai package..."
-    pip3 install google-genai --break-system-packages 2>/dev/null || \
-        pip3 install google-genai 2>/dev/null || \
+    python3 -m pip install google-genai --break-system-packages 2>/dev/null || \
+        python3 -m pip install google-genai 2>/dev/null || \
         warn "google-genai install failed - manual install required"
 else
     success "google-genai already installed"
@@ -2834,25 +2962,29 @@ _install_py_pkg_mac() {
         fi
     fi
 
-    # Attempt 2: pip3 --break-system-packages (macOS 13+ externally-managed python)
-    if pip3 install --user "$pkg" --break-system-packages >> "$LOG_FILE" 2>&1; then
+    # Attempt 2: pip --break-system-packages (macOS 13+ externally-managed python).
+    # v14.1.3: `python3 -m pip` instead of bare `pip3` — portable. Resolves to the
+    # SAME pip on Mac, and works on a fresh Linux container where pip is installed
+    # as a module with no `pip3` binary on PATH (this helper now also runs Skill 22
+    # deps on VPS, where bare `pip3` would have been "command not found").
+    if python3 -m pip install --user "$pkg" --break-system-packages >> "$LOG_FILE" 2>&1; then
         if python3 -c "import $import" 2>/dev/null; then
-            success "$display installed via pip3 --break-system-packages"
+            success "$display installed via pip --break-system-packages"
             return 0
         fi
     fi
 
-    # Attempt 3: pip3 without the flag (older macOS pip)
-    if pip3 install --user "$pkg" >> "$LOG_FILE" 2>&1; then
+    # Attempt 3: pip without the flag (older pip that lacks --break-system-packages)
+    if python3 -m pip install --user "$pkg" >> "$LOG_FILE" 2>&1; then
         if python3 -c "import $import" 2>/dev/null; then
-            success "$display installed via pip3"
+            success "$display installed via pip"
             return 0
         fi
     fi
 
     warn "WARN: $display installation failed after all attempts."
     warn "      Skill 22 book extraction may fail for formats requiring $display."
-    warn "      Manual fix: pip3 install --user $pkg --break-system-packages"
+    warn "      Manual fix: python3 -m pip install --user $pkg --break-system-packages"
     return 1
 }
 
@@ -3068,6 +3200,11 @@ REASSERT_EOF
             success "Presentation-deps re-assert cron installed (silent main-session, no-light-context fallback)"
             return 0
         fi
+        # v14.1.3: docs-canonical positional form (2026.6.8) — final attempt.
+        if _cron_create_positional "reassert-presentation-deps" "$CHANNEL_AGENT" "*/15 * * * *" "America/New_York" "$REASSERT_PROMPT" "lc"; then
+            success "Presentation-deps re-assert cron installed (positional 2026.6.8 form)"
+            return 0
+        fi
         warn "Presentation-deps re-assert cron creation failed. Manual install (SILENT — no client auto-announce):"
         warn "  openclaw cron create --name reassert-presentation-deps \\"
         warn "    --agent $CHANNEL_AGENT --cron '*/15 * * * *' --tz America/New_York \\"
@@ -3201,33 +3338,44 @@ fi
 # ────────────────────────────────────────────────────────────────────────────
 step "Step 6.7: Installing persona-inbox-watcher cron (Skill 22 auto-processing, Mac)"
 
-# On Mac, skills live at ~/.openclaw/skills/
-_MAC_SKILLS_DIR="$HOME/.openclaw/skills"
-_INBOX_WATCHER_SCRIPT_MAC="$_MAC_SKILLS_DIR/22-book-to-persona-coaching-leadership-system/scripts/persona-inbox-watcher.sh"
+# v14.1.3: MAC-GATED. This step uses the macOS skills path ($HOME/.openclaw/skills)
+# and the system `crontab` daemon. A VPS container has neither (skills live at
+# /data/.openclaw/skills and there is NO cron daemon — gateway is PID 1), so on
+# Linux it previously just emitted a spurious "not found at ~/.openclaw/skills"
+# warning and a no-op crontab attempt. Gate it to mac so the Linux run stays
+# clean; VPS persona auto-processing, if needed, is handled by an OpenClaw
+# scheduler cron elsewhere, not a system crontab.
+if [ "$OC_PLATFORM" = "mac" ]; then
+    # On Mac, skills live at ~/.openclaw/skills/
+    _MAC_SKILLS_DIR="$HOME/.openclaw/skills"
+    _INBOX_WATCHER_SCRIPT_MAC="$_MAC_SKILLS_DIR/22-book-to-persona-coaching-leadership-system/scripts/persona-inbox-watcher.sh"
 
-if [ -f "$_INBOX_WATCHER_SCRIPT_MAC" ]; then
-    chmod +x "$_INBOX_WATCHER_SCRIPT_MAC" 2>/dev/null || true
+    if [ -f "$_INBOX_WATCHER_SCRIPT_MAC" ]; then
+        chmod +x "$_INBOX_WATCHER_SCRIPT_MAC" 2>/dev/null || true
 
-    # Resolve canonical log path (Mac)
-    _WATCHER_LOG_MAC="$HOME/.openclaw/logs/persona-inbox-watcher.log"
-    mkdir -p "$(dirname "$_WATCHER_LOG_MAC")"
-    _CRON_LINE_MAC="*/10 * * * * bash $_INBOX_WATCHER_SCRIPT_MAC >> $_WATCHER_LOG_MAC 2>&1"
+        # Resolve canonical log path (Mac)
+        _WATCHER_LOG_MAC="$HOME/.openclaw/logs/persona-inbox-watcher.log"
+        mkdir -p "$(dirname "$_WATCHER_LOG_MAC")"
+        _CRON_LINE_MAC="*/10 * * * * bash $_INBOX_WATCHER_SCRIPT_MAC >> $_WATCHER_LOG_MAC 2>&1"
 
-    if crontab -l 2>/dev/null | grep -qF "persona-inbox-watcher.sh"; then
-        success "persona-inbox-watcher cron already installed — skipping"
+        if crontab -l 2>/dev/null | grep -qF "persona-inbox-watcher.sh"; then
+            success "persona-inbox-watcher cron already installed — skipping"
+        else
+            ( crontab -l 2>/dev/null | grep -v "persona-inbox-watcher"; echo "$_CRON_LINE_MAC" ) | crontab - 2>/dev/null \
+                && success "persona-inbox-watcher cron installed (*/10 min)" \
+                || warn "crontab install failed. Run manually: crontab -e and add: $_CRON_LINE_MAC"
+        fi
+
+        # Create inbox dir
+        _INBOX_DIR_MAC="$HOME/.openclaw/workspace/data/coaching-personas/inbox"
+        mkdir -p "$_INBOX_DIR_MAC" "$_INBOX_DIR_MAC/processed" "$_INBOX_DIR_MAC/.locks"
+        success "Persona inbox ready: $_INBOX_DIR_MAC"
+        note "Drop PDF/EPUB/video/text files here and the watcher will auto-convert them to personas."
     else
-        ( crontab -l 2>/dev/null | grep -v "persona-inbox-watcher"; echo "$_CRON_LINE_MAC" ) | crontab - 2>/dev/null \
-            && success "persona-inbox-watcher cron installed (*/10 min)" \
-            || warn "crontab install failed. Run manually: crontab -e and add: $_CRON_LINE_MAC"
+        warn "persona-inbox-watcher.sh not found at $_INBOX_WATCHER_SCRIPT_MAC — cron NOT installed."
     fi
-
-    # Create inbox dir
-    _INBOX_DIR_MAC="$HOME/.openclaw/workspace/data/coaching-personas/inbox"
-    mkdir -p "$_INBOX_DIR_MAC" "$_INBOX_DIR_MAC/processed" "$_INBOX_DIR_MAC/.locks"
-    success "Persona inbox ready: $_INBOX_DIR_MAC"
-    note "Drop PDF/EPUB/video/text files here and the watcher will auto-convert them to personas."
 else
-    warn "persona-inbox-watcher.sh not found at $_INBOX_WATCHER_SCRIPT_MAC — cron NOT installed."
+    note "persona-inbox-watcher cron skipped (VPS: no system crontab; gateway is PID 1)"
 fi
 
 # ----------------------------------------------------------
@@ -4982,6 +5130,12 @@ print(f'{account}|{agent_id}')
         return 0
     fi
 
+    # v14.1.3: docs-canonical positional form (2026.6.8) — final attempt.
+    if _cron_create_positional "weekly-onboarding-update" "$CRON_AGENT" "0 3 * * 0" "America/New_York" "$PROMPT_CONTENT" "lc"; then
+        success "Sunday update-check cron installed (positional 2026.6.8 form) — Sundays 3am ET, SILENT main-session"
+        return 0
+    fi
+
     # All silent attempts failed — leave a recovery hint (still SILENT: no
     # --channel/--to/--announce in the manual command either).
     warn "All cron creation attempts failed. Manual install command (SILENT — no client auto-announce):"
@@ -5079,6 +5233,12 @@ install_workforce_resume_cron() {
         return 0
     fi
 
+    # v14.1.3: docs-canonical positional form (2026.6.8) — final attempt.
+    if _cron_create_positional "workforce-build-resume" "$CHANNEL_AGENT" "*/15 * * * *" "America/New_York" "$PROMPT_CONTENT" "lc"; then
+        success "Workforce-build resume cron installed (positional 2026.6.8 form)"
+        return 0
+    fi
+
     warn "Workforce-build resume cron creation failed. Manual install (SILENT — no client auto-announce):"
     warn "  openclaw cron create --name workforce-build-resume \\"
     warn "    --agent $CHANNEL_AGENT --cron '*/15 * * * *' --tz America/New_York \\"
@@ -5164,6 +5324,12 @@ install_onboarding_resume_cron() {
     echo "$OUT" >> "$LOG_FILE"
     if [ "$RC" -eq 0 ]; then
         success "onboarding-resume cron installed (silent main-session, no-light-context fallback)"
+        return 0
+    fi
+
+    # v14.1.3: docs-canonical positional form (2026.6.8) — final attempt.
+    if _cron_create_positional "onboarding-resume" "$CHANNEL_AGENT" "*/30 * * * *" "America/New_York" "$PROMPT_CONTENT" "lc"; then
+        success "onboarding-resume cron installed (positional 2026.6.8 form)"
         return 0
     fi
 
@@ -5261,6 +5427,12 @@ install_watchdog_loop_cron() {
         return 0
     fi
 
+    # v14.1.3: docs-canonical positional form (2026.6.8) — final attempt.
+    if _cron_create_positional "watchdog-onboarding-loop" "$CHANNEL_AGENT" "*/20 * * * *" "America/New_York" "$WATCHDOG_PROMPT" "lc"; then
+        success "watchdog-onboarding-loop cron installed (positional 2026.6.8 form)"
+        return 0
+    fi
+
     warn "watchdog-onboarding-loop cron creation failed. Manual install (SILENT — no client auto-announce):"
     warn "  openclaw cron create --name watchdog-onboarding-loop \\"
     warn "    --agent $CHANNEL_AGENT --cron '*/20 * * * *' --tz America/New_York \\"
@@ -5330,6 +5502,17 @@ install_interview_nudge_cron() {
         --command "bash $_NUDGE_SCRIPT" \
         --json \
         2>&1) || RC=$?
+    # v14.1.3: docs-canonical positional form (2026.6.8) — the schedule is a
+    # POSITIONAL arg, NOT a `--schedule` flag (verified docs.openclaw.ai/cli/cron;
+    # `--json` is also not an add/create flag). Retry positionally if the flag
+    # form failed. Non-fatal either way.
+    if [ "$RC" -ne 0 ]; then
+        RC=0
+        OUT=$(openclaw cron create "0 */6 * * *" \
+            --name "interview-nudge" \
+            --command "bash $_NUDGE_SCRIPT" \
+            2>&1) || RC=$?
+    fi
     if [ "$RC" -eq 0 ]; then
         # Capture UUID and persist to build-state for self-removal at closeout
         local CRON_UUID
@@ -5415,6 +5598,13 @@ install_closeout_watchdog_cron() {
         --schedule "0 */6 * * *" \
         --command "bash $_WATCHDOG_SCRIPT" \
         --json 2>/dev/null || true)
+    # v14.1.3: docs-canonical positional fallback (2026.6.8) — schedule is a
+    # POSITIONAL arg, not `--schedule`; `--json` is not an add/create flag.
+    if [[ -z "$_WATCHDOG_CRON_OUT" ]]; then
+        _WATCHDOG_CRON_OUT=$(openclaw cron create "0 */6 * * *" \
+            --name "closeout-readiness-watchdog" \
+            --command "bash $_WATCHDOG_SCRIPT" 2>/dev/null || true)
+    fi
 
     if [[ -n "$_WATCHDOG_CRON_OUT" ]]; then
         _WATCHDOG_UUID=$(printf '%s' "$_WATCHDOG_CRON_OUT" | jq -r '.id // .uuid // empty' 2>/dev/null || true)
@@ -6077,6 +6267,18 @@ Then proceed with Wave 1."
          --agent main \
          --message "$full_msg" >> "$LOG_FILE" 2>&1; then
         success "Auto-kickoff (mechanism A: cron) scheduled — Wave 1 starts in ~3 min (cron '$cron_name' @ '$cron_expr' UTC)."
+        return 0
+    fi
+    # v14.1.3: docs-canonical positional form (2026.6.8) — schedule + prompt are
+    # POSITIONAL, not `--cron`/`--message` (verified docs.openclaw.ai/cli/cron).
+    # Retry positionally before falling through to mechanism B (spool write).
+    if openclaw cron create "$cron_expr" "$full_msg" \
+         --name "$cron_name" \
+         --tz UTC \
+         --channel telegram \
+         --to "$chat_id" \
+         --agent main >> "$LOG_FILE" 2>&1; then
+        success "Auto-kickoff (mechanism A: cron, positional 2026.6.8 form) scheduled — Wave 1 starts in ~3 min (cron '$cron_name' @ '$cron_expr' UTC)."
         return 0
     fi
     return 1
