@@ -41,12 +41,34 @@ import sys
 from typing import Iterator, Optional
 
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_PY_VERSION = "v14.3.9"
+BROWSER_MANAGER_PY_VERSION = "v14.3.10"
 
 # Tunables mirror browser_manager.sh / the ADVISORY openclaw.json
 # browser.agentBrowser block (agent-browser ignores that config natively — the
 # real cap lives in the manager + reaper, never in config).
 AB_MAX_SESSIONS_DEFAULT = 1
+
+# AB_SAVE_CONCURRENCY — parallel eval fan-out cap.  AB_MAX_SESSIONS STAYS 1.
+# Hard upper bound is 5 (proven safe in the live 5-concurrent-eval test).
+SAVE_CONCURRENCY_DEFAULT = 5
+SAVE_CONCURRENCY_MIN = 1
+SAVE_CONCURRENCY_MAX = 5
+
+
+def save_concurrency(env: Optional[dict] = None) -> int:
+    """Return the clamped save concurrency from the environment.
+
+    Reads ``AB_SAVE_CONCURRENCY``; falls back to ``SAVE_CONCURRENCY_DEFAULT``
+    (5).  Always returns an int in [``SAVE_CONCURRENCY_MIN``,
+    ``SAVE_CONCURRENCY_MAX``] = [1, 5].  AB_MAX_SESSIONS STAYS 1.
+    Mirrors ``bm_save_concurrency()`` in ``browser_manager.sh``."""
+    env = env if env is not None else os.environ
+    raw = env.get("AB_SAVE_CONCURRENCY", str(SAVE_CONCURRENCY_DEFAULT))
+    try:
+        n = int(raw)
+    except (ValueError, TypeError):
+        n = SAVE_CONCURRENCY_DEFAULT
+    return max(SAVE_CONCURRENCY_MIN, min(SAVE_CONCURRENCY_MAX, n))
 
 
 # ── D6 headless guard (Python side; mirrors ghl_builder.headless_guard) ───────

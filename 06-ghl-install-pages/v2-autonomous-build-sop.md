@@ -17,83 +17,6 @@ leaves verifiable on-disk evidence and the canonical verifier cannot be gamed.
 
 ---
 
-## INTAKE — Board card producer (run FIRST, before any gate)
-
-When a customer funnel or website request arrives, the dept agent MUST post ONE
-card to the Command Center Kanban board **before** running any gate (P0, P1, P2)
-or build step. Boarding is fail-soft — a board outage or missing credentials
-NEVER blocks the build; the build continues unregistered.
-
-```python
-# Run from the repo root (or the operator fixture's skill6-fix working dir).
-from tools.cc_board import ingest_task
-
-task_id = ingest_task(
-    title="<short card title, e.g. 'Sales Funnel Build — <brand>'",
-    description="<customer request brief, markdown OK>",
-    job_type="funnel",    # 'funnel' → department_slug='funnels'
-                          # 'website' → department_slug='web-development'
-    priority="high",      # low | medium | high | critical
-    # idempotency_key omitted → auto uuid4; supply a deterministic key for retries
-)
-# task_id is None if the board is unreachable — build continues either way.
-```
-
-**department_slug routing** (controlled by `job_type`):
-- `'funnel'`, `'sales-funnel'`, `'opt-in'`, `'multistep'` → `department_slug='funnels'`
-- `'website'`, `'landing-page'`, `'single-page'`, `'web-development'` → `department_slug='web-development'`
-
-**What the POST sends** to `POST /api/tasks/ingest`:
-```json
-{
-  "title": "<card title>",
-  "description": "<brief>",
-  "source": "funnel",
-  "department_slug": "funnels",
-  "idempotency_key": "<uuid4 or caller-supplied>",
-  "priority": "high"
-}
-```
-Fields intentionally OMITTED (the ingest route ignores them and the CC
-`TaskStatus` enum does NOT include them): `task_type`, `stage`, `parent_task_id`,
-`depends_on`, `waiting_on_dependency`. The ingest route always creates the task at
-`backlog` status and then calls `routeTask()` server-side — the producer never
-sets status.
-
-**Credentials from environment** (never hardcoded):
-```
-MISSION_CONTROL_URL   base URL of the Command Center (absent → board disabled, build continues)
-MC_API_TOKEN          long-lived bearer for the middleware layer (optional)
-WEBHOOK_SECRET        HMAC-SHA256 signing secret for the per-route layer (optional)
-CC_BOARD_TIMEOUT      per-request timeout in seconds (default 8)
-```
-
-**Verify the producer works** (no network required):
-```bash
-python3 06-ghl-install-pages/tools/cc_board.py --selftest
-# exits 0 on pass
-```
-
-**Live demo** (proves a real card lands on the board + routes off CEO):
-```bash
-MISSION_CONTROL_URL=https://<cc-url> MC_API_TOKEN=<tok> \
-  python3 06-ghl-install-pages/tools/cc_board.py --demo
-# prints {"ok": true, "task_id": "<uuid>", "idempotency_key": "skill6-demo-<uuid>"}
-```
-
-**Write the returned task_id into the routing receipt** so downstream steps
-can reference the board card:
-```bash
-echo '{"task_id":"'$TASK_ID'","department_slug":"funnels","source":"funnel"}' \
-  > routing/intake-receipt.json
-```
-
-**Scope note:** this step lands the card on the board (Goal A). It does NOT
-trigger the Skill-6 BUILD — that is Goal D (the dispatcher in §1 / `v2_dispatcher.py`),
-which is a separate, follow-on wiring step.
-
----
-
 ## 0. The V2 gap this SOP closes (grounded in the prior run)
 
 The prior V2 run (`v2-client-agent/v2-…`) produced, per its own
@@ -279,10 +202,22 @@ NEVER call `agent-browser` directly and NEVER invent a per-iteration session
 name. The python emitters refuse outside a `browser_manager.browser_session()`
 bracket, and each emitted plan ends with a guaranteed close step.
 
+**PARALLEL SAVES (cap 5) — PRIMARY approach:** When saving multiple pages, fan out
+up to `AB_SAVE_CONCURRENCY` (default 5, hard-clamped [1,5]) concurrent
+`agent-browser eval` calls against the SAME singleton session. `AB_MAX_SESSIONS`
+STAYS 1 (one browser — Cloudflare clearance shared). Use
+`ghl_builder.emit_batch_rest_save_plan(pages, session)` to emit the batch plan,
+then run it via `bash tools/parallel_saves.sh run-batch <spec.json>`. The batch
+plan carries EXACTLY ONE teardown_browser step at the end (no per-page teardown
+while the fan-out is in progress). The existing lock / TTL / breaker / EXIT-trap
+teardown guard from browser_manager.sh covers the entire batch unchanged.
+
 The agent does NOT hand-roll the fetch. It calls
-`ghl_builder.emit_rest_save_plan(...)` to get the ordered, gated, draft-by-default
-plan and executes each step's `eval`/`argv` **through the gateway** (the
-funnels/builder origin is Cloudflare-1010-gated for bare Python):
+`ghl_builder.emit_rest_save_plan(...)` (single page) or
+`ghl_builder.emit_batch_rest_save_plan(...)` (parallel, cap 5) to get the
+ordered, gated, draft-by-default plan and executes each step's `eval`/`argv`
+**through the gateway** (the funnels/builder origin is Cloudflare-1010-gated for
+bare Python):
 
 1. **stage_token** — `ghl_rest_canvas.write_token_js_file(id_token, <RUN>/token.js)`;
    feed to `bash tools/browser_manager.sh eval -- --stdin`. **NEVER** bash
