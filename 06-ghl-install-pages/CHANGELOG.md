@@ -4,6 +4,26 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.3.8] - 2026-06-26 — feat(skill6): cc_board.py producer + INTAKE SOP section — Goal A (card on board)
+
+Closes Goal A of the Skill-6 → Kanban demo path: a customer funnel/website request now becomes a real card on the Command Center Kanban board.
+
+### Added
+
+**`tools/cc_board.py`** — new file. Fail-soft board card producer for the Funnels / Web-Dev dept agent. Modeled on `48-facebook-ad-generator/scripts/cc_board.py`. Posts one card to `POST /api/tasks/ingest` (CC >= v4.52.0). Key design decisions:
+- **Fail-soft everywhere** — `ingest_task()` catches all exceptions and returns `None`. The build never stops because the board is unreachable.
+- **Single public function `ingest_task()`** — accepts `title`, `description`, `job_type`, `priority`, `idempotency_key`. Maps `job_type` to `department_slug` (`funnel`/`sales-funnel`/`opt-in`/`multistep` → `funnels`; everything else → `web-development`). Posts `title`, `description`, `source`, `department_slug`, `idempotency_key`, `priority` to the ingest route.
+- **Auth parity with Skill-48**: `Authorization: Bearer <MC_API_TOKEN>` (global middleware) + `x-webhook-signature: HMAC-SHA256(WEBHOOK_SECRET, rawBody)` (per-route). Both no-ops when unset.
+- **Stdlib only** (`urllib`, `hashlib`, `hmac`, `uuid`) — zero third-party deps.
+- **`--selftest` flag** (no network; exits 0 on pass — verified).
+- **`--demo` flag** for live board proof.
+
+**`v2-autonomous-build-sop.md` — INTAKE section added** (77 lines before `## 0`). Documents the `ingest_task()` call the dept agent MUST make before any gate (P0/P1/P2) or build step, the `job_type` → `department_slug` routing table, the exact JSON payload, credential env vars, selftest/demo CLI usage, and how to write the returned `task_id` to `routing/intake-receipt.json` for downstream steps. Scope note explicitly states this lands Goal A but NOT Goal D (dispatch trigger — that remains `v2_dispatcher.py`, a follow-on).
+
+Selftest: `python3 06-ghl-install-pages/tools/cc_board.py --selftest` exits 0.
+
+**Scope boundary (honest):** Goal A (card created on board) + Goal B routing (server-side `routeTask()` picks the right workspace when `department_slug` is supplied) are covered. Goal C (status moves Backlog → In Progress → Review → Done) depends on the CC dispatcher having a live dept runtime; that is the `~/.openclaw/agents/dept-funnels/` wire-in — separate operator step. Goal D (dispatch message triggers the Skill-6 build recipe) is a follow-on (`v2_dispatcher.py` exists; board dispatch message does not yet call it).
+
 ## [v14.1.5] - 2026-06-25 — fix(breaker): DURABLE park marker (survives reboot) + writes the box-level PARK marker on a trip
 
 The agent-browser circuit-breaker's PARK marker no longer lives in TMPDIR (it evaporated on reboot, silently un-parking a qc-failed build). `tools/browser_manager.sh` now keeps the breaker counter + BLOCKED marker AND a canonical box-level PARK marker under the box's DURABLE state dir (`<openclaw-root>/workspace/.park/`); the lock + leases correctly stay ephemeral. `bm_breaker_check` reads the box-level marker too, and a breaker trip WRITES it so the Skill-23 `*/15` resume cron (`resume-workforce-build.sh`) stops re-firing as well. Un-park is operator-only (`scripts/unpark-build.sh`). Falls back to the old ephemeral path when no onboarded root exists, so the 31 singleton tests stay hermetic. See root CHANGELOG v14.1.5.
