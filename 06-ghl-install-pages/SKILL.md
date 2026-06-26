@@ -83,6 +83,29 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
   GHL_AGENCY_EMAIL / GHL_AGENCY_PASSWORD (or GHL_EMAIL / GHL_PASSWORD) are a
   DOCUMENTED, MANUAL last resort for a human operator ONLY — they are NEVER
   auto-invoked by this skill, and there is NO automatic UI-login / 2FA fallback.
+- **GoHighLevel media/PIT credentials — where they live and how they resolve
+  (READ BEFORE the image step).** The image/media pipeline needs three values, all
+  in the env stores (resolution order: `~/.openclaw/secrets/.env` →
+  `~/clawd/secrets/.env` → `~/.openclaw/workspace/.env`):
+  - **LOCATION PIT** (media-scoped): `GOHIGHLEVEL_API_KEY` (preferred) → `GHL_API_KEY`
+    → `GOHIGHLEVEL_LOCATION_PIT` → `GHL_LOCATION_PIT`. This is the token media upload
+    REQUIRES. The **AGENCY** PIT (`GOHIGHLEVEL_AGENCY_PIT` /
+    `GOHIGHLEVEL_AGENCY_API_KEY` / `GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT` /
+    `GHL_AGENCY_PIT`) **401s for media** — never substitute it.
+  - **Location id**: `GOHIGHLEVEL_LOCATION_ID` → `GHL_LOCATION_ID` →
+    `GOHIGHLEVEL_ALLOWED_LOCATION_IDS` → `CAF_ALLOWED_LOCATION_IDS` (first id).
+  - **Image key**: `KIE_API_KEY`.
+  `ghl_media.resolve_location_pit()` / `resolve_location_id()` search EVERY alias
+  across the live env AND the stores above before raising; the image stage's
+  `_resolve_kie_api_key()` does the same for KIE. **HARD RULE — never record a GHL
+  credential as missing (`honest_fail`) on an empty env var alone.** An empty env
+  var means "not loaded", not "absent" — the value is almost always sitting in
+  `secrets/.env`. Run `set -a; source ~/.openclaw/secrets/.env; set +a` first, then
+  retry. An `honest_fail` is valid ONLY after the full alias × store search comes
+  back empty, and it MUST name exactly which vars and stores it checked (the
+  resolver's RuntimeError already does). This is the fix for the six-month
+  false-fail where the image step reported "GHL LOCATION PIT not found" on a token
+  that was in the store the whole time. See v2-autonomous-build-sop.md §2.0.1.
 
 ## What This Skill Covers
 

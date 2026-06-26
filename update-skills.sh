@@ -45,7 +45,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v14.3.12"
+ONBOARDING_VERSION="v14.3.13"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -448,7 +448,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v14.3.12 - safe_json_edit
+# v14.3.13 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
