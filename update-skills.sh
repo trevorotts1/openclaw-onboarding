@@ -1084,8 +1084,8 @@ main() {
   # v14.3.15 2026.x agent-dir fix: the old heuristic checked $HOME/clawd first — on VPS
   # boxes that still carry a legacy /data/clawd/ (or symlink at $HOME/clawd) the
   # sentinels and core-update blocks were written to that dead path while the
-  # running agent read from /data/.openclaw/agents/main/AGENTS.md. The gate then
-  # reported core-sentinel-missing even when the wiring ran cleanly.
+  # running agent read from the 2026.x agent dir, not the legacy workspace. The gate
+  # then reported core-sentinel-missing even when the wiring ran cleanly.
   # FIX: use obs_resolve_workspace (which honours openclaw.json agents[].workspace)
   # as the primary resolver; fall back to the legacy heuristic only when the CLI
   # helper is absent.  Then ALSO detect the active 2026.x agent dir and dual-write
