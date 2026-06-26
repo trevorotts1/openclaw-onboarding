@@ -63,7 +63,6 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
-import re
 import subprocess
 import sys
 import urllib.error
@@ -79,10 +78,7 @@ from typing import Any, Callable
 # returned URL is WAF-gated and runs in-browser; that is NOT this module.)
 GHL_SERVICES_ORIGIN = "https://services.leadconnectorhq.com"
 GHL_MEDIA_UPLOAD_PATH = "/medias/upload-file"
-# Per-run folder create endpoint (Skill 48 addition). Lets each ad-run's images land
-# in their own named folder; the "upload to root with a name prefix" fallback
-# (media_folder_name_prefix) covers a GHL plan that does not expose this endpoint.
-GHL_MEDIA_FOLDER_PATH = "/medias/folder"
+GHL_MEDIA_FOLDER_PATH = "/medias/folder"   # Skill 48 addition: per-run media folder
 GHL_MEDIA_VERSION = "2021-07-28"
 
 # The mandatory English/Latin-only pin — appended VERBATIM to every prompt that
@@ -514,23 +510,7 @@ def upload_media(
     }
 
 
-# ── 3b) create_media_folder — per-run named folder (Skill 48 addition) ────────
-
-def media_folder_name_prefix(folder_name: str) -> str:
-    """The FALLBACK namespacing when a real media folder cannot be created.
-
-    GHL media has no hard nested-folder requirement, so when ``create_media_folder``
-    cannot make a folder (an older plan / a non-2xx folder endpoint), a run's images
-    can still be grouped + kept findable by prepending this slug to every uploaded
-    file ``name`` (e.g. ``fbad-run-20260625__hero.png``). Returns ``"<slug>__"``.
-
-    Raises ValueError on an empty name (fail loud — never silently un-namespace)."""
-    _require(folder_name, "folder_name")
-    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", folder_name.strip()).strip("-")
-    if not slug:
-        raise ValueError(f"folder_name {folder_name!r} reduced to an empty slug")
-    return f"{slug}__"
-
+# ── 3b) create_media_folder — NET-NEW for Skill 48 (per-run media folder) ─────
 
 def create_media_folder(
     name: str,
@@ -539,65 +519,44 @@ def create_media_folder(
     *,
     parent_id: str | None = None,
     timeout: int = 60,
-    opener: Callable[[urllib.request.Request, int], Any] | None = None,
+    opener: "Callable[[urllib.request.Request, int], Any] | None" = None,
 ) -> dict:
-    """Create a named folder in the GHL media library and return ``{folderId, name, http}``.
+    """Create a named media-library FOLDER and return ``{folderId, name}``.
 
+    NET-NEW for Skill 48 (it does NOT exist in the Skill-06 module). Each ad run gets
+    its own named folder so the 10 hosted images are grouped under the run-id, never
+    scattered in the media root. Calls
     ``POST services.leadconnectorhq.com/medias/folder`` with
     ``Authorization: Bearer <LOCATION PIT>`` + ``Version: 2021-07-28`` and a JSON body
-    ``{name, altType:"location", altId:<locationId>, parentId?}``. Media operations
-    REQUIRE the LOCATION Private Integration Token (the Agency PIT 401s), and it must be
-    the CLIENT'S OWN location PIT — never the operator's key.
+    ``{name, locationId[, parentId]}`` — the same auth model as ``upload_media`` (the
+    LOCATION PIT with ``medias.write``; the Agency PIT 401s for media ops).
 
-    A per-run folder groups one ad-run's 10 finished images under one named, login-free,
-    shareable set. The returned ``folderId`` is passed as ``parent_id`` to
-    ``upload_media`` so each image lands inside the run's folder.
-
-    Sits on the bare-Python side of the auth split (``services.*`` + Bearer PIT is NOT
-    Cloudflare-WAF-gated), exactly like ``upload_media``.
-
-    FAIL-LOUD: a non-2xx response, or a 2xx with no recognizable folder id, raises (we
-    never fabricate a folder id). When the deployment's GHL plan does not expose a folder
-    endpoint, the caller catches the ``RuntimeError`` and falls back to uploading into the
-    media ROOT with ``media_folder_name_prefix(name)`` prepended to each file ``name``
-    (still grouped + still shareable).
-
-    Args:
-        name: Human-friendly folder name (e.g. the campaign / run id).
-        location_id: The GHL sub-account location id.
-        pit: The LOCATION Private Integration Token (Bearer) with ``medias.write`` scope.
-        parent_id: Optional parent folder id to nest under.
-        timeout: HTTP timeout seconds.
-        opener: Optional ``(Request, timeout) -> response-like`` for tests (mock the HTTP).
-            Default = ``urllib.request.urlopen`` (real call).
+    FALLBACK (the caller's contract, not an exception here): if folder creation is not
+    available on the box / location, the caller uploads to the media ROOT with a
+    ``name`` PREFIX (e.g. ``"<run-id> — ad 3"``) so the images are still grouped by name.
+    This function returns ``{"folderId": None, "fallback": "name-prefix", ...}`` on a
+    non-2xx response WITHOUT a folder id, so the caller can take the prefix path; it
+    raises only on a hard transport error (never fabricates a folder id).
 
     Returns:
-        ``{folderId, name, http}`` — ``folderId`` is the real GHL media folder id.
-
-    Raises:
-        ValueError: missing required args.
-        RuntimeError: non-2xx HTTP, a 2xx that is not JSON, or a 2xx missing a folder id
-            (the signal for the caller to use the name-prefix fallback).
+        ``{folderId, name, http}`` on success, or
+        ``{folderId: None, name, http, fallback: "name-prefix"}`` when the API declines
+        (the caller then uses the name-prefix fallback).
     """
     _require(name, "name")
     _require(location_id, "location_id")
     _require(pit, "pit")
 
-    payload: dict[str, Any] = {
-        "name": name,
-        "altType": "location",
-        "altId": location_id,
-    }
+    body_obj: dict[str, Any] = {"name": name, "locationId": location_id}
     if parent_id:
-        payload["parentId"] = parent_id
+        body_obj["parentId"] = parent_id
+    body = json.dumps(body_obj).encode("utf-8")
 
-    body = json.dumps(payload).encode("utf-8")
     url = GHL_SERVICES_ORIGIN.rstrip("/") + GHL_MEDIA_FOLDER_PATH
     req = urllib.request.Request(url, data=body, method="POST")
     req.add_header("Authorization", f"Bearer {pit}")
     req.add_header("Version", GHL_MEDIA_VERSION)
     req.add_header("Content-Type", "application/json")
-    req.add_header("Accept", "application/json")
 
     _opener = opener or (lambda r, t: urllib.request.urlopen(r, timeout=t))
     try:
@@ -607,41 +566,26 @@ def create_media_folder(
         if isinstance(raw, bytes):
             raw = raw.decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace") if hasattr(exc, "read") else ""
+        # API declined (e.g. folders unsupported on this location) -> name-prefix fallback.
+        return {"folderId": None, "name": name, "http": int(getattr(exc, "code", 0)),
+                "fallback": "name-prefix"}
+    except (urllib.error.URLError, OSError) as exc:
         raise RuntimeError(
-            f"media folder create HTTP {exc.code} for {name!r}: {detail[:300]} "
-            "(media ops REQUIRE the LOCATION PIT with medias.write scope; the Agency PIT "
-            "401s). If the folder endpoint is unavailable on this plan, fall back to "
-            "uploading into the media root with media_folder_name_prefix(name)."
+            f"media folder create transport error for {name!r}: {exc} "
+            "(LOCATION PIT with medias.write required)"
         ) from exc
 
     if not (200 <= int(code) < 300):
-        raise RuntimeError(
-            f"media folder create returned HTTP {code} for {name!r}: {raw[:300]} — "
-            "fall back to the name-prefix path."
-        )
-
+        return {"folderId": None, "name": name, "http": int(code), "fallback": "name-prefix"}
     try:
         data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(
-            f"media folder create {code} but body is not JSON for {name!r}: {raw[:300]}"
-        ) from exc
-
-    folder_id = (
-        data.get("folderId")
-        or data.get("id")
-        or data.get("_id")
-        or (data.get("folder") or {}).get("id")
-        or (data.get("media") or {}).get("id")
-    )
+    except json.JSONDecodeError:
+        return {"folderId": None, "name": name, "http": int(code), "fallback": "name-prefix"}
+    folder_id = (data.get("id") or data.get("folderId")
+                 or (data.get("folder") or {}).get("id")
+                 or (data.get("data") or {}).get("id"))
     if not folder_id:
-        raise RuntimeError(
-            f"media folder create {code} but response missing a folder id for {name!r}: "
-            f"{json.dumps(data)[:300]} — refusing to fabricate a folder id; use the "
-            "media_folder_name_prefix fallback."
-        )
-
+        return {"folderId": None, "name": name, "http": int(code), "fallback": "name-prefix"}
     return {"folderId": folder_id, "name": name, "http": int(code)}
 
 
@@ -732,6 +676,7 @@ __all__ = [
     "GHL_MEDIA_UPLOAD_PATH",
     "GHL_MEDIA_FOLDER_PATH",
     "GHL_MEDIA_VERSION",
+    "create_media_folder",
     "ENGLISH_LATIN_PIN",
     "PNG_MAGIC",
     "kie_generate_path",
@@ -741,8 +686,6 @@ __all__ = [
     "verify_png",
     "generate_images",
     "upload_media",
-    "create_media_folder",
-    "media_folder_name_prefix",
     "image_tag",
     "build_image_manifest",
 ]

@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v14.1.5"
+ONBOARDING_VERSION="v14.2.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -693,7 +693,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 5 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/47-... (42 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/48-... (43 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -4420,7 +4420,7 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 42 active skills install in 5 dependency-aware waves, not by number order.
+The 43 active skills install in 5 dependency-aware waves, not by number order.
 Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
 A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
@@ -6206,6 +6206,53 @@ install_skill_47_movie_producer() {
 }
 
 install_skill_47_movie_producer
+
+# ----------------------------------------------------------
+# Skill 48: Facebook & Instagram Ad Generator (paid-advertisement — 10-ad batch pipeline)
+# ----------------------------------------------------------
+# Self-contained: this template install copies the Skill 48 folder (foreman +
+# offline checkers + enforcement spine + vendored ghl_media.py + SOPs are read
+# repo-side). NO external clone. All paid calls route through the CLIENT's own
+# KIE_API_KEY (image gen) and the client's own location-scoped GoHighLevel PIT
+# (image hosting) — never the operator's keys. PLAI is the only ad path (no Meta
+# API). We mark the skill's scripts executable and point the agent at preflight.
+install_skill_48_facebook_ad_generator() {
+    local SKILL_SRC="$ONBOARDING_DIR/48-facebook-ad-generator"
+    local SKILL_DEST="$SKILLS_DIR/48-facebook-ad-generator"
+
+    if [ ! -d "$SKILL_SRC" ]; then
+        warn "Skill 48 source dir not found at $SKILL_SRC — skipping (older onboarding bundle?)"
+        return 0
+    fi
+
+    # Idempotent: skip if dest version matches src
+    if [ -f "$SKILL_DEST/skill-version.txt" ] && [ -f "$SKILL_DEST/scripts/ad_director.py" ]; then
+        local SKILL48_CURRENT SKILL48_SRC_VER
+        SKILL48_CURRENT=$(cat "$SKILL_DEST/skill-version.txt" 2>/dev/null | tr -d '[:space:]')
+        SKILL48_SRC_VER=$(cat "$SKILL_SRC/skill-version.txt" 2>/dev/null | tr -d '[:space:]')
+        if [ -n "$SKILL48_CURRENT" ] && [ "$SKILL48_CURRENT" = "$SKILL48_SRC_VER" ]; then
+            success "Skill 48 already installed at v${SKILL48_CURRENT}"
+            chmod +x "$SKILL_DEST/"*.sh 2>/dev/null || true
+            return 0
+        fi
+        note "Skill 48 present at v${SKILL48_CURRENT:-?}, source is v${SKILL48_SRC_VER:-?} — refreshing"
+    fi
+
+    mkdir -p "$SKILL_DEST"
+    cp -R "$SKILL_SRC/." "$SKILL_DEST/" 2>>"$LOG_FILE" || {
+        warn "Failed to copy Skill 48 from $SKILL_SRC -> $SKILL_DEST"
+        return 0
+    }
+    chmod +x "$SKILL_DEST/"*.sh 2>/dev/null || true
+
+    success "Skill 48 (Facebook & Instagram Ad Generator) installed -> $SKILL_DEST"
+    note "Skill 48 powers the paid-advertisement Facebook & Instagram Ad-Run Producer + Direct-Response Ad Copywriter seats (10-ad batch: overlays → pick-10 → bodies/headlines/prompts → Kie gpt-image-* → PLAI-shape targeting → GoHighLevel hosting → copy-paste ad-text doc → PLAI handoff)."
+    note "Image gen uses the CLIENT's own KIE_API_KEY; image hosting uses the client's own location-scoped GoHighLevel PIT (medias.write). PLAI is the only ad path — no direct Meta API."
+    note "Before producing: run $SKILL_DEST/preflight.sh (fail-loud: python3, department + live agent + copy-capable seat, Telegram topic, KIE_API_KEY, GoHighLevel location PIT, money ceiling); then INSTALL.md."
+    return 0
+}
+
+install_skill_48_facebook_ad_generator
 
 # ----------------------------------------------------------
 # Step 15: Register Skill 32's materialize-dept-agents.sh (v10.13.18)
