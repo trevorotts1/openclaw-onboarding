@@ -131,7 +131,12 @@ class TestManagerContract:
         src = _read(_MANAGER_SH)
         assert "bm_breaker_check" in src, "circuit-breaker check must exist."
         assert "AB_BREAKER_MAX" in src, "breaker must have a bounded open cap."
-        assert "RESCUE_RANGERS_HELP_CHAT_ID" in src, "breaker trip must escalate to Rescue Rangers."
+        # v14.3.2: escalation path is the n8n webhook (RESCUE_RANGERS_WEBHOOK_URL),
+        # not openclaw message send. Bots cannot read other bots, so the old Telegram
+        # path was silently dropped. The webhook is the ONLY path the rescue agent reads.
+        assert "RESCUE_RANGERS_WEBHOOK_URL" in src, (
+            "breaker trip must escalate to Rescue Rangers via the n8n webhook URL."
+        )
 
     def test_per_call_and_session_timeout(self):
         src = _read(_MANAGER_SH)
@@ -578,22 +583,28 @@ class TestRescueRangersOperatorOnly:
         assert ".agent-browser-reaper.tripwire.alerted" in src
         assert 'rm -f "$TRIPWIRE_STAMP"' in src, "stamp must clear on resolve (re-arm)."
 
-    def test_reaper_alarm_is_operator_group_only(self):
+    def test_reaper_alarm_uses_webhook(self):
+        # v14.3.2: escalation path switched from openclaw message send (bot-to-bot,
+        # silently dropped — bots cannot read other bots) to the n8n webhook
+        # (RESCUE_RANGERS_WEBHOOK_URL). Operator-group enforcement is now at the
+        # relay layer (n8n Brain), not at the script layer. Script-level check:
+        # the webhook env var must be present and guarded, no hardcoded chat id.
         src = _read(_REAPER)
-        # Must gate the send on the operator-group id shape (^-100…) and keep the
-        # strict no-empty guard — i.e. NEVER a fallback to a client/individual DM.
-        assert "^-100[0-9]+$" in src, "reaper alarm must require an operator GROUP id."
-        assert "RESCUE_RANGERS_HELP_CHAT_ID" in src
+        assert "RESCUE_RANGERS_WEBHOOK_URL" in src, (
+            "reaper alarm must escalate via the n8n webhook URL, not openclaw message send."
+        )
         assert not _CHAT_ID_FALLBACK_RE.search(src), (
-            "reaper must NOT add any fallback default (client/Trevor-DM) to the chat id."
+            "reaper must NOT add any fallback default to a chat id (chat-id path retired)."
         )
 
-    def test_browser_manager_breaker_alarm_is_operator_group_only(self):
+    def test_browser_manager_breaker_alarm_uses_webhook(self):
+        # v14.3.2: same escalation-path change as the reaper (see above).
         src = _read(_MANAGER_SH)
-        assert "^-100[0-9]+$" in src, "breaker alarm must require an operator GROUP id."
-        assert "RESCUE_RANGERS_HELP_CHAT_ID" in src
+        assert "RESCUE_RANGERS_WEBHOOK_URL" in src, (
+            "breaker alarm must escalate via the n8n webhook URL, not openclaw message send."
+        )
         assert not _CHAT_ID_FALLBACK_RE.search(src), (
-            "breaker alarm must NOT add any fallback default to the chat id."
+            "breaker alarm must NOT add any fallback default to a chat id."
         )
 
     def test_install_seeds_chat_id_operator_only_no_fallback(self):
