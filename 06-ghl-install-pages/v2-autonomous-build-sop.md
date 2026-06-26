@@ -270,6 +270,111 @@ bash   06-ghl-install-pages/tools/inject-ghl-auth.sh <session> <RUN>/ghl-auth-se
   is `ok`. On MISMATCH → refuse, mark the task `FAILED`, write the guard verdict.
   (The plan emitters already gate on this; the agent must not bypass it.)
 
+### 2.05 Method decision — classify before build (DEFAULT DIRECT; escalate to VERCEL or Skill-44)
+
+Before writing any page blob the build MUST classify each page and record the
+decision in `routing/method-decision.json`. Every page entry MUST have a
+justified method field.
+
+**Decision table:**
+
+| Page classifier score | Method | What it means |
+|---|---|---|
+| `SIMPLE` (static content, CSS fits GHL builder, no JS interactivity) | `DIRECT` — native GoHighLevel page blob | HTML fragment in a GoHighLevel code element; §2.06 theme object required |
+| `ADVANCED` (rich interactivity, third-party JS, complex CSS that GHL builder overrides) | `VERCEL_EMBED` — build/host on Vercel, iframe into GoHighLevel | See Vercel end-to-end flow below |
+| `CALENDAR` / `FORM` / `DATA_PUSH` (needs a real GoHighLevel calendar, form, or CRM write) | `SKILL44_WIDGET` — call Skill 44 to create the GoHighLevel object, embed the GoHighLevel-generated embed snippet | See Skill-44 widget flow below |
+
+`classify_page(page_spec)` (in `tools/ghl_rest_canvas.py`) returns one of
+`SIMPLE | ADVANCED | CALENDAR | FORM | DATA_PUSH`. Default is `SIMPLE` — the
+build escalates ONLY when the classifier positively scores `ADVANCED` or a
+widget type. Do NOT use Vercel for simple pages.
+
+**VERCEL end-to-end (for ADVANCED pages):**
+1. `vercel_build.prepare(page_spec)` — bundle the page assets
+2. `vercel_build.deploy(bundle)` — deploy; capture the Vercel deployment URL
+3. `vercel_build.disable_sso(deployment_url)` — hard gate: the deployment MUST be
+   publicly accessible without SSO/auth wall; if the gate fails, halt and flag
+4. `vercel_build.assert_embeddable(deployment_url)` — hard gate: `X-Frame-Options`
+   must NOT be `SAMEORIGIN`/`DENY`; if the gate fails, halt and flag
+5. Generate an iframe snippet: `<iframe src="<deployment_url>" width="100%" ...>`
+6. Paste the iframe snippet into a GoHighLevel DIRECT-method code element (the
+   page blob still needs the §2.06 theme object)
+
+**Skill-44 widget flow (for CALENDAR / FORM / DATA_PUSH pages):**
+1. Call Skill 44 (`44-convert-and-flow-operator`) to CREATE the real GoHighLevel
+   object (calendar, form, or workflow) — do NOT fake it or use a placeholder
+2. Capture the GoHighLevel-generated embed snippet (`form_embed.js` or calendar
+   widget JS) from the Skill-44 creation receipt
+3. Emit the embed snippet VERBATIM into the page's code element — do NOT add or
+   modify `integrity`/`crossorigin` attributes (GoHighLevel rotates the embed
+   script and SRI hashes would immediately break it)
+4. The GoHighLevel form or calendar object MUST have a creation receipt
+   (`status:201`, real id, re-GET 200) in `ecosystem/`; `status:"PLANNED"` is a
+   hard FAIL
+
+**`routing/method-decision.json` format:**
+```json
+[
+  {"page_id": "<id>", "page_slug": "<slug>", "classify_score": "SIMPLE",
+   "method": "DIRECT", "justification": "static landing page, no JS deps"},
+  {"page_id": "<id>", "page_slug": "<slug>", "classify_score": "FORM",
+   "method": "SKILL44_WIDGET", "justification": "opt-in form needs CRM write",
+   "skill44_receipt": "ecosystem/optin-form.json"}
+]
+```
+
+This section SUPERSEDES any prior framing that described Vercel as a "manual
+last resort" — it is now a first-class, automated, classified path.
+
+---
+
+### 2.06 Theme/colors object — MANDATORY for every page blob
+
+Every page blob POSTed to GoHighLevel MUST carry a populated `defaultSettings`
+block with a `colors` sub-object. Without it GoHighLevel's renderer reads
+`.colors` off `undefined` and returns HTTP 500 — the page cannot display even
+if bytes were stored successfully.
+
+**Required shape (minimum viable — fill real palette values):**
+```json
+{
+  "defaultSettings": {
+    "colors": {
+      "bodyBgColor": "#FFFFFF",
+      "btnBgColor":  "#0E8C8C",
+      "btnColor":    "#FFFFFF",
+      "headingColor":"#1A1A1A",
+      "textColor":   "#2B2B2B"
+    },
+    "font": { "family": "Inter" }
+  }
+}
+```
+
+This block MUST appear at the top level of every page blob alongside `sections`.
+
+**Golden-reference rule.** `ghl_rest_canvas.new_page_blob()` MUST load the
+canonical reference from `references/golden/` BEFORE constructing any blob, and
+MUST assert that the loaded reference carries a populated `colors` object
+(`assert len(ref["defaultSettings"]["colors"]) >= 3`). If the assertion fails,
+`new_page_blob` raises `GoldenReferenceError` and the build halts — it does NOT
+produce a theme-less blob and let the 500 happen at render time.
+
+**Fragment rule.** The `rawCustomCode` value inside a code element MUST be an
+HTML *fragment* (body-level markup only — `<div>`, `<section>`, etc.). A full
+`<!DOCTYPE html>…</html>` document stuffed inside a code element will not parse
+into visible builder content and the GoHighLevel editor will show a blank canvas.
+
+**Structure rule.** Elements MUST be nested `section → row → column → element`,
+NOT placed directly inside `section.elements`. Flat structure is not recognized
+by GoHighLevel's renderer.
+
+The `colors` field on a page blob MUST be the `defaultSettings.colors` OBJECT
+described above — NOT a flat list of hex strings (e.g. `"colors":["#abc","#def"]`
+is wrong; it causes the same `undefined` crash on a different code path).
+
+---
+
 ### 2.1–2.6 Per page: read → splice → autosave → verify → revert
 **SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown,
 reaper backstop.** Before the first step, acquire the gateway once:
@@ -297,9 +402,20 @@ funnels/builder origin is Cloudflare-1010-gated for bare Python):
 4. **page_autosave** — POST the edited blob as a **DRAFT**
    (`publish=may_publish(approval)`, default DRAFT; `pageVersion` numeric n+1;
    `pageType:"draft"` keeps the live pointer put). Expect **201**.
-5. **verify_preview** — `ghl_builder.verify_url(preview_url, marker)` → HTTP 200
-   AND marker in body. Advances the ledger to `previewed`. (NEVER report a page
-   good on no-error alone.)
+5. **verify_preview** — `ghl_verify.render_check(preview_url, marker)` → HTTP 200
+   AND marker present in the **RENDERED (hydrated) DOM**, AND zero render errors,
+   captured as real DOM snapshot + PNG screenshot + browser console artifacts.
+   Advances the ledger to `previewed` **only** on all three conditions.
+
+   **EXPLICITLY NOT ACCEPTABLE as pass criteria:**
+   - Raw HTTP shell returning 200 (does not load the JavaScript-rendered page)
+   - Marker found in stored blob / Firebase bytes (proves storage, NOT render)
+   - Hand-written ledger entry or `.md` file claiming the page verified
+   - Any non-200 HTTP status re-labeled as an "API difference"
+
+   Every page MUST produce on-disk artifacts: `<step>-preview.html` (real fetched
+   DOM), `<step>-preview-desktop.png` (1440×900), `<step>-preview-mobile.png`
+   (390×844), `<step>-console.json` (browser console, zero errors required).
 6. **revert_baseline** — re-POST the pristine baseline as a new draft version;
    assert `ghl_rest_canvas.blob_md5(reread) == baseline_md5` (byte-identical;
    live pointer unmoved). Reversibility bar per solver doc §7.2.
@@ -318,29 +434,58 @@ never a hand-written "preview" HTML that was never fetched.
 
 ## 3. Images (R2) — real rasters, real CDN, referenced in-page
 
-The dept agent MUST run the proven image pipeline (NOT write SVG placeholders,
-NOT leave `images/` empty):
+The dispatcher invokes the image pipeline via the NAMED callable entrypoint:
 
-1. **Generate** real PNGs from copy-derived prompts via the repo's verified
-   generator (`23-ai-workforce-blueprint/templates/presentation-render/
-   kie_generate.py`, `mode:"t2i"` when there is no logo to seed) — it submits to
-   `api.kie.ai`, polls, downloads, and **verifies PNG magic bytes** (`b"\x89PNG"`,
-   FAIL-LOUD on non-PNG). Requires `KIE_API_KEY` in the client env store; **if
-   absent → honest FAIL recorded in `images/manifest.json`, never an SVG stub.**
-2. **Upload** each PNG to GHL media via `tools/ghl_media.py`
-   (`POST services.leadconnectorhq.com/medias/upload-file`, Bearer LOCATION PIT,
-   `Version: 2021-07-28`) → capture `{fileId, public url}`. **Auth-model split:**
-   media upload is the `services.*` origin with a Bearer PIT — **bare Python OK**
-   (NOT the Cloudflare-1010-gated funnels-builder origin).
-3. **Re-verify** each CDN URL is a genuine HTTP 200 and log it to
-   `logs/asset-cdn.log` (real `status=200 | <https url> | OK` lines — kill the
-   `LOCAL-SVG-PLACEHOLDER` line).
-4. **Reference** the public CDN `<img>` in-page via the §2 splice (step 3 above).
-5. `images/manifest.json` maps `{id, prompt, file, cdn_url(https),
-   cdn_http_status:200, used_on_page_id}` — **no `file://`, no placeholder note.**
+```python
+from tools.ghl_image_stage import run_image_pipeline
 
-(T2 owns `ghl_media.py` + the manifest contract; this SOP pins that the dept
-agent USES it rather than stubbing.)
+manifest = run_image_pipeline(
+    prompts=page_copy_prompts,   # list of copy-derived image prompts
+    run_dir=RUN_DIR,             # evidence root — writes images/ subtree
+    location_id=GHL_LOCATION_ID,
+    pit_token=location_pit,
+)
+# manifest is a list of {id, prompt, file, cdn_url, cdn_http_status, used_on_page_id}
+# run_image_pipeline raises ImagePipelineError on any failure — never returns silently
+```
+
+**The dispatcher MUST call `run_image_pipeline`; it MUST NOT write its own image
+loop, call `kie_generate.py` directly, or hand-roll any of the four stages below.**
+Ban hand-rolled build scripts for these runs.
+
+Internally `run_image_pipeline` (in `tools/ghl_image_stage.py`) executes four
+stages in order:
+
+1. **Generate** — submits each prompt to `api.kie.ai`
+   (`gpt-image-2-image-to-image`, 16:9 2K) via `KIE_API_KEY` from the client env
+   store; polls until the job completes; downloads the result; **verifies PNG
+   magic bytes** (`b"\x89PNG"` — raises `ImagePipelineError` on non-PNG, NEVER
+   silently continues or substitutes an SVG stub).
+2. **Upload** — pushes each verified PNG to the GoHighLevel media library via
+   `tools/ghl_media.py` (`POST services.leadconnectorhq.com/medias/upload-file`,
+   Bearer LOCATION PIT, `Version: 2021-07-28`) → captures `{fileId, public url}`.
+   Auth-model split: media upload uses the `services.*` origin with a Bearer PIT —
+   bare Python is fine (NOT the Cloudflare-1010-gated funnels-builder origin).
+3. **Re-verify CDN** — confirms each upload URL returns genuine HTTP 200; logs to
+   `logs/asset-cdn.log` (`status=200 | <https url> | OK`). A non-200 CDN URL
+   raises `ImagePipelineError`.
+4. **Reference in-page** — returns the manifest so the §2.1–2.6 edit splice can
+   embed `<img src="<CDN url>">` in the page blob.
+
+`images/manifest.json` maps `{id, prompt, file, cdn_url(https),
+cdn_http_status:200, used_on_page_id}` — **no `file://`, no placeholder note.**
+
+**Un-fakeable gate:** After the page is saved and `ghl_verify.render_check` runs,
+the rendered DOM artifact MUST contain the `<img src="...">` tag pointing to a
+GoHighLevel CDN URL. If the image `src` does not appear in the rendered body, the
+page is FAIL — the image is confirmed only in the RENDERED page, not in stored bytes.
+
+If `KIE_API_KEY` is absent → `run_image_pipeline` raises `ImagePipelineError`
+with `reason:"missing_kie_api_key"` — the build records honest FAIL for images;
+it NEVER substitutes an SVG stub or a local placeholder.
+
+(T2 owns `ghl_media.py` + the manifest contract; T4 adds `ghl_image_stage.py`
+as the dispatcher-facing entrypoint.)
 
 ---
 
@@ -374,6 +519,30 @@ ids, re-GET 200) — NOT `status:"PLANNED"` stubs:
 5. **Workflow** — `POST /workflow/<loc>` + `/workflow/<loc>/trigger`; verify via
    `?includeTriggers=true` (the load-bearing read). `workflow.json` is a real
    receipt.
+
+### 4.1 Embed widget flow — how GoHighLevel objects land on pages
+
+When the §2.05 method decision routes a page to `SKILL44_WIDGET`, the ecosystem
+object creation (above) MUST precede the page splice:
+
+1. **Create** the GoHighLevel object via Skill 44 (calendar, form, or workflow
+   trigger). Capture the creation receipt: `status:201`, live `id`, re-GET 200.
+   Write to `ecosystem/<type>.json`.
+2. **Extract the embed snippet** from the Skill-44 receipt. GoHighLevel provides
+   a `form_embed.js` URL (for forms) or a calendar widget JS tag. Use the snippet
+   verbatim — do NOT invent your own embed code and do NOT add `integrity` or
+   `crossorigin` attributes (GoHighLevel rotates the embed script; SRI hashes
+   break immediately on the next GoHighLevel deploy).
+3. **Splice** the embed snippet into the page blob's code element via the §2.1–2.6
+   edit step — the same REST autosave path. The page blob MUST still carry the
+   §2.06 theme/colors object.
+4. **Verify** that the rendered page (via `ghl_verify.render_check`) loads the
+   embed snippet tag in the hydrated DOM — the `src` attribute of the script/iframe
+   tag must appear in the rendered body. This is confirmed by `render_check`'s DOM
+   artifact, not by storage grep.
+5. **Never fake a GoHighLevel object.** If Skill 44 returns an error, the build
+   records an honest FAIL for that page — it does NOT substitute a static HTML
+   mock of a form or calendar.
 
 ---
 
@@ -415,31 +584,57 @@ the dispatcher can refuse to mark a task `verified` while telemetry is dirty.
 
 ---
 
-## 7. The ONE canonical verifier (R7 — kills the 6/6-vs-1/6 contradiction)
+## 7. The ONE canonical verifier — sealed-mode contract (R7)
 
-V2 uses the SAME canonical verifier as V1 — `tools/ghl_verify.py`
-(`ghl_builder.py verify-all` delegates to it). There is exactly ONE source of
-truth and the summary is a guarded pure reduction of it:
+V2 uses `tools/ghl_verify.py` exclusively. The verdict is a machine-only output.
+
+**The sealed-mode contract (production runs MUST use `live=True`):**
 
 ```
 python3 06-ghl-install-pages/tools/ghl_builder.py verify-all <RUN> <RUN>/pages.json \
-    --run-id <id> --version client-agent --brand "<fictional brand>"
+    --run-id <id> --version client-agent --brand "<fictional brand>" --live
 ```
 
-- writes `logs/final-preview-verify.json` (raw per-page HTTP 200 + marker — the
-  source of truth) FIRST;
+- The `--live` flag sets `live=True` in `ghl_verify`; a mock verifier or any
+  verifier instance with `live=False` is REJECTED in a real production run with
+  a non-zero exit. A `trust:"MOCK"` entry in any summary CAN NEVER SHIP.
+- writes `logs/final-preview-verify.json` (raw per-page `render_check` results —
+  HTTP status, marker-in-rendered-DOM boolean, render-error count, artifact paths)
+  **FIRST**; this is the ONLY authoritative source of truth;
 - derives `scorecard/verify-summary.json` STRICTLY by reducing that array
-  (`passed = sum(1 for r if r.PASS)`); the summary can never claim more than the
-  raw log;
-- a hard guard (`ghl_verify.assert_consistent`) raises `VerifyContradiction` and
-  the CLI exits non-zero if the summary is EVER more optimistic than the raw log
-  (the exact 6/6-vs-1/6 defect is structurally impossible);
+  (`passed = sum(1 for r if r.render_pass)`); the summary CAN NEVER claim more
+  than the raw log (`ghl_verify.assert_consistent` raises `VerifyContradiction`
+  and exits non-zero if the summary is more optimistic than the evidence);
 - exits non-zero on `overall_pass:false` — a failing/partial build cannot read as
-  success.
+  success;
+- the dispatcher marks the task `verified` ONLY by reading `scorecard/verify-summary.json`
+  written by `ghl_verify` — NOT by reading any ledger, `.md` file, or hand-assembled
+  JSON. Ledgers and `.md` files are non-authoritative for the verdict and are
+  ignored by the gate reader;
+- `ghl_gate require-pass` is the ONLY mechanism that asserts the final verdict;
+  the dispatcher MUST call it before marking `verified`.
 
 `pages.json` is the list the dept agent built (each `{step, page_id,
-preview_url, marker}`). The dispatcher marks the task `verified` ONLY after this
-runs and records the (honest) verdict.
+preview_url, marker}`).
+
+---
+
+## 7.1 Forbidden verification shortcuts
+
+Each item below is a banned shortcut. The code guard that now rejects it is noted.
+
+| Shortcut | Why it fails | Code guard that rejects it |
+|---|---|---|
+| Marker found in stored Firebase blob | Proves bytes were stored; the page can 500 on load | `ghl_verify.render_check` — only checks the rendered DOM |
+| Marker found via raw HTTP shell (`curl`/`requests`) | Does not execute JavaScript; GoHighLevel pages need JS to render | `ghl_verify` requires a headless browser render pass |
+| Hand-written ledger or `.md` declaring PASS | Any human can write any string; not machine-derived | `ghl_gate require-pass` reads ONLY `scorecard/verify-summary.json` from `ghl_verify` |
+| Re-labeling HTTP 500 (or any non-200) as "API difference" | A non-200 is a render failure, full stop | `ghl_verify.render_check` treats any non-200 as `render_pass:false`, hard FAIL |
+| Re-using a mock verifier (`live=False`) in a real run | Mock returns a pre-canned answer, not a real page load | `--live` flag; `ghl_verify` exits non-zero if `trust=="MOCK"` in output |
+| Independent re-verifier that reads storage instead of loading the page | Same as marker-in-blob — does not detect 500s | The independent verifier MUST call `ghl_verify.render_check`, not a grep |
+
+**No build can self-declare PASS.** The producer runs `ghl_verify`; `ghl_verify`
+writes `scorecard/verify-summary.json`; `ghl_gate require-pass` reads it. Those
+three steps are the only path to a PASS verdict. Skipping any step = FAIL.
 
 ---
 

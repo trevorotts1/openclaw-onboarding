@@ -44,12 +44,22 @@ code into GHL so the page goes live.
 When this skill runs as part of a full-funnel build (SOP-07 P4 stage), after page
 build and verify pass Gate-3, hand the live `page_ids` + opt-in form IDs to the
 Automation Workflow Specialist (CRM) to wire workflows. Invoke Skill 44
-(`44-convert-and-flow-operator`) for product creation, form wiring, and GHL
-workflow builds (see `06-ghl-install-pages/v2-autonomous-build-sop.md` S4 for the
-Skill-44 ecosystem seam). The P4→P5 handoff is documented in v2-autonomous-build-sop.md
-S4; do NOT skip this handoff or mark a full-funnel P4 task done without emitting
+(`44-convert-and-flow-operator`) for product creation, form wiring, and GoHighLevel
+workflow builds (see `06-ghl-install-pages/v2-autonomous-build-sop.md` §4 for the
+Skill-44 ecosystem seam and §2.05 for the method-decision that routes
+CALENDAR/FORM/DATA_PUSH pages directly to Skill-44 widget creation before the
+page splice). The P4→P5 handoff is documented in v2-autonomous-build-sop.md §4;
+do NOT skip this handoff or mark a full-funnel P4 task done without emitting
 the board handoff event `{from_dept: "web-development", to_dept: "crm",
 artifact: "page_ids+form_ids", job_id: "<P5 task id>"}`.
+
+**Skill-44 widget create+embed flow (in brief):** classify the page (§2.05
+method-decision) → if `SKILL44_WIDGET`, call Skill 44 to CREATE the real
+GoHighLevel object (calendar, form, or workflow) BEFORE the page splice → capture
+the embed snippet from the creation receipt → embed the snippet VERBATIM (no SRI
+attributes) into the page blob's code element → verify the snippet tag appears in
+the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
+(status:201, re-GET 200); `status:"PLANNED"` stubs are a hard FAIL.
 
 ## When to Use This Skill
 
@@ -94,8 +104,13 @@ artifact: "page_ids+form_ids", job_id: "<P5 task id>"}`.
 5. **10-phase deployment process** - Navigate to Funnels, create a new funnel,
    add steps, open the builder, dismiss the AI popup, add a blank section with
    a code element, set full width, paste the HTML, save, and preview.
-6. **Iframe deployment method** - For complex pages where GHL's own CSS
-   conflicts with your code, host the HTML externally and embed it via iframe.
+6. **Phase-5 method decision** — Every page is classified before build.
+   DEFAULT = DIRECT (native GoHighLevel page blob). Escalate ONLY when the
+   classifier positively scores ADVANCED or a widget type. See decision table
+   in the "Phase-5 Method Decision" section below and in
+   v2-autonomous-build-sop.md §2.05. The old framing of Vercel as a "manual
+   last resort" is superseded — Vercel-embed is now a first-class automated
+   path for ADVANCED pages; Skill-44 widget is the path for CALENDAR/FORM/DATA_PUSH.
 7. **Multi-page funnels** - How to loop through multiple pages (landing, sales,
    checkout, thank you) in a single funnel deployment.
 8. **Updating existing pages** - How to find an existing funnel, open the page
@@ -184,9 +199,59 @@ artifact: "page_ids+form_ids", job_id: "<P5 task id>"}`.
 - NEVER hardcode invented CSS for an in-app control. Snapshot the live DOM and
   pick the ref at runtime (the 26 runtime gates in tools/gates.json).
 - Set large HTML payloads via the code-editor value API (eval), never key-by-key.
-- Verify every save/preview/publish with a marker string from the payload, not
-  "no error" alone (ghl_builder.py verify).
+- **MANDATORY theme/colors object on EVERY page blob.** Every page blob POSTed to
+  GoHighLevel MUST carry a populated `defaultSettings.colors` object. Without it
+  GoHighLevel reads `.colors` off `undefined` and returns HTTP 500 — the page
+  cannot display even if the bytes stored as 201. The `colors` field MUST be an
+  object (e.g. `{"bodyBgColor":"#FFF","btnBgColor":"#0E8C8C",...}`), NEVER a flat
+  hex list. Elements MUST nest `section → row → column → element`; flat structure
+  is not rendered. The `rawCustomCode` in a code element MUST be an HTML fragment,
+  not a full `<!DOCTYPE html>…</html>` document (a full document renders blank).
+  `ghl_rest_canvas.new_page_blob()` enforces the golden rule: it MUST load a
+  reference from `references/golden/`, assert a populated colors object
+  (`assert len(ref["defaultSettings"]["colors"]) >= 3`), and raise
+  `GoldenReferenceError` if the assertion fails — it NEVER produces a theme-less
+  blob. A 201 autosave status does NOT prove a page renders; it only proves bytes
+  were stored.
+- **Sealed un-fakeable verification.** A page PASS requires ONLY: `ghl_verify.render_check`
+  returns HTTP 200, marker present in the RENDERED (JavaScript-hydrated) DOM, and
+  zero render errors — captured as real DOM snapshot + PNG + console artifacts.
+  `ghl_gate require-pass` reads ONLY `scorecard/verify-summary.json` written by
+  `ghl_verify`; it ignores ledger files and `.md` files. A 201 autosave, a marker
+  grep on stored bytes, a hand-written ledger, or a non-200 re-labeled "API
+  difference" are each EXPLICITLY REJECTED as pass criteria. Any non-200 is a
+  hard FAIL with no escape. A build CANNOT self-declare PASS — the producer runs
+  `ghl_verify`, `ghl_verify` writes the scorecard, `ghl_gate` reads it.
 - NEVER publish without explicit approval. Default = draft + report the preview
   URL (ghl_builder.py may-publish).
 - Long runs fire detached; the agent exits and resumes via the per-page ledger.
 - Credentials go in ~/.openclaw/secrets/.env. CLIENT keys only. Never hardcode.
+
+---
+
+## Phase-5 Method Decision Table
+
+Every page MUST be classified before the build begins. The decision is recorded
+in `routing/method-decision.json` (required — no build proceeds without it).
+
+| Classifier score | Method | Path |
+|---|---|---|
+| `SIMPLE` — static content, CSS fits GoHighLevel builder, no third-party JS | `DIRECT` | Native GoHighLevel page blob with §2.06 theme/colors object and HTML fragment in code element |
+| `ADVANCED` — rich interactivity, third-party JavaScript, CSS that GoHighLevel builder overrides | `VERCEL_EMBED` | Build + host on Vercel; run `prepare → deploy → disable_sso → assert_embeddable` gates; paste iframe snippet into a DIRECT code element |
+| `CALENDAR` / `FORM` / `DATA_PUSH` — needs a real GoHighLevel calendar, form, or CRM write | `SKILL44_WIDGET` | Call Skill 44 to create the GoHighLevel object; embed the GoHighLevel-generated snippet verbatim (no SRI); verify snippet tag appears in RENDERED DOM |
+
+**DEFAULT is DIRECT.** Escalate only when the classifier positively scores ADVANCED
+or a widget type. Do NOT use Vercel-embed for simple static pages.
+
+For VERCEL_EMBED: `assert_embeddable` is a hard gate — if `X-Frame-Options` is
+`SAMEORIGIN` or `DENY`, the build halts and flags; it does NOT bypass and embed.
+The Vercel page MUST be publicly accessible (SSO wall disabled) before the iframe
+snippet is generated.
+
+For SKILL44_WIDGET: the GoHighLevel form embed snippet is emitted verbatim WITHOUT
+`integrity`/`crossorigin` attributes — GoHighLevel rotates the embed script and
+SRI hashes break on the next GoHighLevel deploy. The GoHighLevel object itself
+MUST be real (status:201, re-GET 200 in `ecosystem/`); a `status:"PLANNED"` stub
+is a hard FAIL.
+
+This table supersedes any prior description of Vercel as a "manual last resort."
