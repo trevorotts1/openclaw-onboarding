@@ -4,6 +4,20 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.3.14] - 2026-06-26 — fix(skill6): native page builds render REAL content again — nested section→row→col→custom-code blob (kills the v14.3.11 blank-page regression)
+
+Root cause: since v14.3.11, `new_page_blob()` (`tools/ghl_rest_canvas.py`) produced pages that stored fine (autosave 201, marker in the bytes) but rendered BLANK. The v14.3.11 "golden template" path loaded the captured funnel golden and re-minted every element id without rewriting the parent `child` arrays (`section.metaData.child → row.child → col.child`), orphaning the custom-code element from its row — so the renderer dropped the content.
+
+### Fixed (`tools/ghl_rest_canvas.py`)
+- `new_page_blob()` now builds the render-verified NESTED structure `section → row → col → custom-code`, minting fresh `section`/`row`/`col`/`custom-code` ids and wiring each `child` array + `metaData.child` to those SAME ids in one pass — the parent→child chain is always internally consistent, so the element can never be orphaned.
+- The page HTML lands in the `meta=custom-code` element's `extra.customCode.value.rawCustomCode` (the only node GoHighLevel renders custom HTML from; a flat `type=code` element directly in `section.elements` was proven live to render BLANK).
+- Inlines the authoritative theme captured live from the render-verified golden — `general.general.colors` (18-entry palette), top-level `pageStyles`, `settings.settings.typography.colors`, and the generic section `metaData`/`general` — so the hydration reads of `colors` and `metaData.title` resolve (absence 500s with "reading 'colors'" / "reading 'title'", both reproduced live). `trackingCode` header/footer/body are emptied so no template HTML leaks.
+- `assert_renderable_shape()` invariant 5 locates the custom-code element by its `rawCustomCode` PAYLOAD PATH instead of a type/meta label — validates the nested funnel shape and the flat website shape alike.
+
+### Verified (live)
+- Net-new funnel page built into operator scratch location `Mct54Bwi1KlNouGXQcDX` (Convert and Flow) through the real `funnel/create → create-step → autosave` path and viewed at its `/preview/<pageId>` URL in a headless browser: a real multi-section landing page rendered — visible hero (background image + headline + CTA), trust band, three feature cards, split section with a visible `<img>` (loaded, naturalWidth 1600), and a testimonial. HTTP 200, 0 console errors, no blank section. Full-page screenshot captured. Draft only; not published; not rolled to the fleet.
+- `tests/test_ghl_rest_canvas.py`: 63 passed.
+
 ## [v14.3.13] - 2026-06-26 — fix(skill6): GHL credential resolution searches every alias + every env store (kills the six-month image-step false-fail) + folds B7 SOP docs
 
 Root cause: the Skill-6 image/media step false-failed `"GHL LOCATION PIT not found"` on a LOCATION Private Integration Token the operator had used for SIX MONTHS. The token was in `~/.openclaw/secrets/.env` under `GOHIGHLEVEL_API_KEY` the whole time — but `ghl_media.resolve_location_pit()` only checked two env-var names in the LIVE process environment and never opened the canonical store. In a clean agent shell (where the gateway/launchd wrapper had not exported `secrets/.env`) both vars read empty and the tool fail-loud, treating "env var empty" as "credential missing" instead of "env not loaded".

@@ -580,18 +580,21 @@ def assert_renderable_shape(blob: dict, surface: str) -> None:
         "Invariant 4 FAIL: sections[0]['elements'] must be non-empty."
     )
 
-    # Invariant 5 — exactly one custom-code element
-    def _is_custom_code_elem(e: dict, surf: str) -> bool:
-        if surf == "funnel":
-            return (
-                isinstance(e, dict)
-                and e.get("type") == "element"
-                and e.get("meta") == "custom-code"
-            )
-        else:  # website
-            return isinstance(e, dict) and e.get("type") == "code" and e.get("elType") == "code"
+    # Invariant 5 — exactly one custom-code element, located by the rawCustomCode
+    # PAYLOAD PATH rather than a type/meta label. GoHighLevel renders any element
+    # carrying ``extra.customCode.value.rawCustomCode``: the flat funnel shape uses
+    # ``type=html``, the flat website shape uses ``type=code, elType=code``, and the
+    # nested golden uses ``type=element, meta=custom-code`` — all valid carriers.
+    def _has_raw_cc(e: dict) -> bool:
+        if not isinstance(e, dict):
+            return False
+        try:
+            v = e["extra"]["customCode"]["value"]["rawCustomCode"]
+        except (KeyError, TypeError):
+            return False
+        return isinstance(v, str)
 
-    cc_elems = [e for e in elements if _is_custom_code_elem(e, surface)]
+    cc_elems = [e for e in elements if _has_raw_cc(e)]
     assert len(cc_elems) == 1, (
         f"Invariant 5 FAIL: expected exactly 1 custom-code element for surface={surface!r}, "
         f"found {len(cc_elems)}: {[e.get('id') for e in cc_elems]}"
@@ -611,6 +614,51 @@ def assert_renderable_shape(blob: dict, surface: str) -> None:
         "document (starts with <!DOCTYPE or <html). "
         "Use html_fragment() to strip the full-document wrappers before calling new_page_blob()."
     )
+
+
+# ── Authoritative theme payload (B5 live golden capture, location
+# Mct54Bwi1KlNouGXQcDX — Trevor operator scratch, no client secrets) ───────────
+# These three constants are the EXACT ``general.general.colors`` palette, the
+# top-level ``pageStyles`` CSS, and ``settings.settings.typography.colors`` read
+# live from a render-verified GoHighLevel page. Inlining them keeps
+# ``new_page_blob`` a pure, self-contained function (no file I/O, no golden
+# template to orphan) while still giving the renderer the ``colors`` key whose
+# absence triggers the "Cannot read properties of undefined (reading 'colors')"
+# 500 / blank page.
+_FLAT_THEME_COLORS = [{'label': 'Transparent', 'value': 'transparent'}, {'label': 'Primary', 'value': '#37ca37'}, {'label': 'Secondary', 'value': '#188bf6'}, {'label': 'White', 'value': '#ffffff'}, {'label': 'Gray', 'value': '#cbd5e0'}, {'label': 'Black', 'value': '#000000'}, {'label': 'Red', 'value': '#e93d3d'}, {'label': 'Orange', 'value': '#f6ad55'}, {'label': 'Yellow', 'value': '#faf089'}, {'label': 'Green', 'value': '#9ae6b4'}, {'label': 'Teal', 'value': '#81e6d9'}, {'label': 'Malibu', 'value': '#63b3ed'}, {'label': 'Indigo', 'value': '#757BBD'}, {'label': 'Purple', 'value': '#d6bcfa'}, {'label': 'Pink', 'value': '#fbb6ce'}, {'label': 'Cobalt', 'value': '#155eef'}, {'label': 'Smoke', 'value': '#f5f5f5'}, {'label': 'Overlay', 'value': 'rgba(0, 0, 0, 0.5)'}]
+
+_FLAT_PAGE_STYLES = ":root{ --transparent: transparent;\n--primary: #37ca37;\n--secondary: #188bf6;\n--white: #ffffff;\n--gray: #cbd5e0;\n--black: #000000;\n--red: #e93d3d;\n--orange: #f6ad55;\n--yellow: #faf089;\n--green: #9ae6b4;\n--teal: #81e6d9;\n--malibu: #63b3ed;\n--indigo: #757BBD;\n--purple: #d6bcfa;\n--pink: #fbb6ce;\n--cobalt: #155eef;\n--smoke: #f5f5f5;\n--overlay: rgba(0, 0, 0, 0.5);\n--headlinefont: 'Inter';\n--contentfont: 'Inter';\n--text-color: #000000;\n--link-color: #188bf6; } .bg-fixed{bottom:0;top:0;left:0;right:0;position:fixed;overflow:auto;background-color:var(--white)} \n            \n            .drop-zone-draggable .hl_main_popup{box-shadow:none;padding:20px;margin-top:0;border-color:var(--gray);border-width:10px;border-style:solid;border-radius:0;background-color:var(--white)}\n            \n          \n#hl_main_popup.popup-body{position:absolute!important;left:50%!important;bottom:auto!important;transform:translate(-50%,0)!important;right:auto!important;box-shadow:none;padding:20px;margin-top:0;border-color:var(--gray);border-width:10px;border-style:solid;border-radius:0;background-color:var(--white);width:720px}.--mobile #hl_main_popup.popup-body{width:380px!important}@media screen and (min-width:0px) and (max-width:480px){#hl_main_popup.popup-body{width:380px!important}} \n "
+
+_FLAT_TYPOGRAPHY_COLORS = {'textColor': {'value': {'label': 'var(--black)', 'value': '#000000'}}, 'linkColor': {'value': {'label': 'var(--blue)', 'value': '#188bf6'}}}
+
+# The section scaffold (``metaData`` + ``general``) the renderer walks. The
+# renderer dereferences ``section.metaData.title`` (and other metaData fields)
+# during hydration; a section without ``metaData`` triggers the live 500
+# "Cannot read properties of undefined (reading 'title')". Captured from the
+# render-verified FLAT website golden (a single code element directly in
+# ``section.elements`` — NO row/col wrapper, so nothing can be orphaned).
+_FLAT_SECTION_ID_TOKEN = 'section-cFgrh5yXg8'
+
+_FLAT_SECTION_METADATA = {'id': 'section-cFgrh5yXg8', 'type': 'section', 'child': [], 'class': {'width': {'value': 'fullSection'}}, 'styles': {'boxShadow': {'value': 'none'}, 'paddingLeft': {'unit': 'px', 'value': 0}, 'paddingRight': {'value': 0, 'unit': 'px'}, 'paddingBottom': {'unit': 'px', 'value': 20}, 'paddingTop': {'unit': 'px', 'value': 20}, 'marginTop': {'unit': 'px', 'value': 0}, 'marginBottom': {'unit': 'px', 'value': 0}, 'marginLeft': {'unit': 'px', 'value': 0}, 'marginRight': {'unit': 'px', 'value': 0}, 'backgroundColor': {'value': 'var(--transparent)'}, 'background': {'value': 'none'}, 'backdropFilter': {'value': 'none'}, 'borderColor': {'value': 'var(--black)'}, 'borderWidth': {'value': '0px'}, 'borderStyle': {'value': 'none'}, 'borderRadius': {'value': '0px'}}, 'extra': {'sticky': {'value': 'noneSticky'}, 'visibility': {'value': {'hideDesktop': False, 'hideMobile': False}}, 'bgImage': {'value': {'mediaType': 'image', 'url': '', 'opacity': '1', 'options': 'bgCover', 'svgCode': '', 'videoUrl': '', 'videoThumbnail': '', 'videoLoop': True}}, 'allowRowMaxWidth': {'value': False}, 'customClass': {'value': []}, 'elementScreenshot': {'value': []}}, 'wrapper': {}, 'meta': 'section', 'tagName': 'c-section', 'title': 'Section', 'mobileStyles': {}, 'mobileWrapper': {}}
+
+_FLAT_SECTION_GENERAL = {'colors': [{'label': 'Transparent', 'value': 'transparent'}, {'label': 'Black', 'value': '#000000'}], 'fontsForPreview': [], 'rootVars': {'--transparent': 'transparent', '--black': '#000000'}, 'sectionStyles': ':root{--transparent:transparent;--black:#000000}.hl_page-preview--content .section-cFgrh5yXg8{box-shadow:none;padding:20px 0;margin:0;background-color:var(--transparent);backdrop-filter:none;border-color:var(--black);border-width:0;border-style:none;border-radius:0}#section-cFgrh5yXg8>.inner{max-width:1170px}', 'customFonts': []}
+
+# The NESTED row -> col -> custom-code element templates, captured from the
+# render-verified funnel golden. THIS is the structure GoHighLevel actually
+# RENDERS custom HTML from: a ``meta=custom-code`` element reached via the
+# ``section.metaData.child -> row.child -> col.child`` link chain (proven LIVE —
+# the rendered <body> contains the page content + image). A FLAT element placed
+# directly in ``section.elements`` does NOT render its rawCustomCode in the
+# preview (the website golden had to stash its HTML in trackingCode.footerCode);
+# only this nested chain renders content. new_page_blob mints fresh ids and
+# wires the ``child`` arrays to those SAME ids in one pass, so the parent->child
+# links can never be orphaned (the v14.3.11 bug was re-minting ids WITHOUT
+# rewriting the child arrays).
+_CC_ROW_TEMPLATE = {'type': 'row', 'child': [], 'class': {'alignRow': {'value': 'row-align-center'}}, 'styles': {'boxShadow': {'value': 'none'}, 'paddingLeft': {'value': 5, 'unit': 'px'}, 'paddingRight': {'value': 5, 'unit': 'px'}, 'paddingTop': {'value': 10, 'unit': 'px'}, 'paddingBottom': {'value': 10, 'unit': 'px'}, 'backgroundColor': {'value': 'var(--transparent)'}, 'background': {'value': 'none'}, 'backdropFilter': {'value': 'none'}, 'borderColor': {'value': 'var(--black)'}, 'borderWidth': {'value': '0px'}, 'borderStyle': {'value': 'none'}, 'borderRadius': {'value': '0px'}}, 'extra': {'visibility': {'value': {'hideDesktop': False, 'hideMobile': False}}, 'bgImage': {'value': {'mediaType': 'image', 'url': '', 'opacity': '1', 'options': 'bgCover', 'svgCode': '', 'videoUrl': '', 'videoThumbnail': '', 'videoLoop': True}}, 'rowWidth': {'value': 100, 'unit': '%'}, 'customClass': {'value': []}}, 'wrapper': {'marginTop': {'unit': 'px', 'value': 0}, 'marginBottom': {'unit': 'px', 'value': 0}, 'marginLeft': {'unit': '', 'value': 'auto'}, 'marginRight': {'unit': '', 'value': 'auto'}}, 'tagName': 'c-row', 'meta': 'row', 'mobileStyles': {}, 'mobileWrapper': {}, 'title': '1 Column Row'}
+
+_CC_COL_TEMPLATE = {'type': 'col', 'child': [], 'class': {}, 'styles': {'boxShadow': {'value': 'none'}, 'paddingLeft': {'value': 5, 'unit': 'px'}, 'paddingRight': {'value': 5, 'unit': 'px'}, 'paddingTop': {'value': 10, 'unit': 'px'}, 'paddingBottom': {'value': 10, 'unit': 'px'}, 'backgroundColor': {'value': 'var(--transparent)'}, 'background': {'value': 'none'}, 'backdropFilter': {'value': 'none'}, 'width': {'value': 100, 'unit': '%'}, 'borderColor': {'value': 'var(--black)'}, 'borderWidth': {'value': '0px'}, 'borderStyle': {'value': 'none'}, 'borderRadius': {'value': '0px'}}, 'extra': {'visibility': {'value': {'hideDesktop': False, 'hideMobile': False}}, 'bgImage': {'value': {'mediaType': 'image', 'url': '', 'opacity': '1', 'options': 'bgCover', 'svgCode': '', 'videoUrl': '', 'videoThumbnail': '', 'videoLoop': True}}, 'columnLayout': {'value': 'column'}, 'justifyContentColumnLayout': {'value': 'center'}, 'alignContentColumnLayout': {'value': 'inherit'}, 'forceColumnLayoutForMobile': {'value': True}, 'customClass': {'value': []}, 'elementVersion': {'value': 2}}, 'wrapper': {'marginLeft': {'unit': 'px', 'value': 0}, 'marginRight': {'unit': 'px', 'value': 0}, 'marginTop': {'unit': 'px', 'value': 0}, 'marginBottom': {'unit': 'px', 'value': 0}}, 'tagName': 'c-column', 'meta': 'col', 'mobileStyles': {}, 'mobileWrapper': {}, 'title': '1st Column', 'noOfColumns': 1}
+
+_CC_ELEMENT_TEMPLATE = {'extra': {'nodeId': '', 'visibility': {'value': {'hideDesktop': False, 'hideMobile': False}}, 'customCode': {'value': {'rawCustomCode': ''}}, 'customClass': {'value': []}}, 'class': {}, 'styles': {}, 'wrapper': {'marginTop': {'unit': 'px', 'value': 0}, 'marginBottom': {'unit': 'px', 'value': 0}, 'marginLeft': {'unit': 'px', 'value': 0}, 'marginRight': {'unit': 'px', 'value': 0}, 'width': {'value': 'auto', 'unit': ''}, 'height': {'value': 'auto', 'unit': ''}}, 'customCss': [], 'type': 'element', 'child': [], 'meta': 'custom-code', 'tagName': 'c-custom-code', 'title': 'Custom Code', 'tag': ''}
 
 
 def new_page_blob(raw_custom_code: str, *, surface: str = "funnel", head_code: str = "") -> dict:
@@ -675,71 +723,80 @@ def new_page_blob(raw_custom_code: str, *, surface: str = "funnel", head_code: s
             f"new_page_blob: surface must be one of {sorted(_VALID_SURFACES)}, got {surface!r}"
         )
 
-    # Normalise to fragment — strips <!DOCTYPE>/<html>/<body> wrappers, hoists
-    # <style> blocks from <head>, raises on empty result.
+    # Normalise to a body-level fragment — strips <!DOCTYPE>/<html>/<body>
+    # wrappers, hoists <style> blocks from <head>, raises on empty result.
     fragment = html_fragment(raw_custom_code)
 
-    # Deep-copy golden — never ship golden IDs verbatim.
-    blob = _load_golden(surface)
+    # ── NESTED section -> row -> col -> custom-code blob (the renderable shape) ─
+    #
+    # GoHighLevel renders custom HTML ONLY from a ``meta=custom-code`` element
+    # reached through the link chain ``section.metaData.child -> row.child ->
+    # col.child``. We mint fresh ids for the section/row/col/element and wire the
+    # ``child`` arrays to those SAME ids in a single pass, so the parent->child
+    # links are always internally consistent — the v14.3.11 blank-page bug was
+    # re-minting ids WITHOUT rewriting the ``child`` arrays, which orphaned the
+    # custom-code element. The captured section ``metaData``/``general`` provide
+    # the fields the renderer dereferences during hydration (e.g. metaData.title;
+    # absence 500s with "reading 'title'"), and ``general.general.colors`` +
+    # top-level ``pageStyles`` satisfy the colors hydration read (absence 500s
+    # with "reading 'colors'"). ``surface`` uses the identical schema
+    # (B5-confirmed), so this nested chain serves both funnel and website.
+    _hex = lambda: uuid.uuid4().hex[:10]
+    section_id = f"section-{_hex()}"
+    row_id = f"row-{_hex()}"
+    col_id = f"col-{_hex()}"
+    element_id = f"custom-code-{_hex()}"
 
-    # Re-mint all structural IDs so golden IDs never appear in production.
-    def _fresh_id(prefix: str) -> str:
-        return f"{prefix}-{uuid.uuid4().hex[:8]}"
+    row = copy.deepcopy(_CC_ROW_TEMPLATE)
+    row["id"] = row_id
+    row["child"] = [col_id]
 
-    sections = blob.get("sections", [])
-    for sec in sections:
-        if isinstance(sec, dict):
-            sec["id"] = _fresh_id("section")
-            for elem in sec.get("elements", []):
-                if not isinstance(elem, dict):
-                    continue
-                _etype = elem.get("type", "")
-                _emeta = elem.get("meta", "")
-                if _etype == "row" or _emeta == "row":
-                    elem["id"] = _fresh_id("row")
-                elif _etype == "col" or _emeta == "col":
-                    elem["id"] = _fresh_id("col")
-                elif _emeta == "custom-code" or (_etype == "code" and elem.get("elType") == "code"):
-                    elem["id"] = _fresh_id("elem")
-                else:
-                    elem["id"] = _fresh_id("elem")
+    col = copy.deepcopy(_CC_COL_TEMPLATE)
+    col["id"] = col_id
+    col["child"] = [element_id]
 
-    # Inject the fragment into the custom-code element.
-    elements = sections[0].get("elements", []) if sections else []
-    injected = False
-    for elem in elements:
-        if not isinstance(elem, dict):
-            continue
-        is_cc = (
-            (surface == "funnel" and elem.get("type") == "element" and elem.get("meta") == "custom-code")
-            or (surface == "website" and elem.get("type") == "code" and elem.get("elType") == "code")
-        )
-        if is_cc:
-            try:
-                elem["extra"]["customCode"]["value"]["rawCustomCode"] = fragment
-                injected = True
-            except (KeyError, TypeError):
-                # Path missing in golden — build it
-                elem.setdefault("extra", {})
-                elem["extra"].setdefault("customCode", {})
-                elem["extra"]["customCode"].setdefault("value", {})
-                elem["extra"]["customCode"]["value"]["rawCustomCode"] = fragment
-                injected = True
-            break
+    cc = copy.deepcopy(_CC_ELEMENT_TEMPLATE)
+    cc["id"] = element_id
+    cc["child"] = []
+    cc["extra"]["nodeId"] = f"c{element_id}"
+    cc["extra"]["customCode"]["value"]["rawCustomCode"] = fragment
 
-    if not injected:
-        raise AssertionError(
-            f"new_page_blob: could not locate a custom-code element in the golden blob "
-            f"for surface={surface!r}. The golden may be corrupted — recapture it."
+    metadata = copy.deepcopy(_FLAT_SECTION_METADATA)
+    metadata["id"] = section_id
+    metadata["child"] = [row_id]
+
+    section_general = copy.deepcopy(_FLAT_SECTION_GENERAL)
+    # Re-point the section-scoped CSS at the fresh section id so the padding /
+    # max-width rules still match this section.
+    if isinstance(section_general.get("sectionStyles"), str):
+        section_general["sectionStyles"] = section_general["sectionStyles"].replace(
+            _FLAT_SECTION_ID_TOKEN, section_id
         )
 
-    # Apply head_code if provided.
-    if head_code:
-        try:
-            blob["trackingCode"]["head"] = head_code
-        except (KeyError, TypeError):
-            blob.setdefault("trackingCode", {})
-            blob["trackingCode"]["head"] = head_code
+    blob = {
+        "sections": [
+            {
+                "id": section_id,
+                "metaData": metadata,
+                "elements": [row, col, cc],
+                "sequence": 0,
+                "pageId": "",
+                "funnelId": "",
+                "locationId": "",
+                "general": section_general,
+            }
+        ],
+        "settings": {
+            "settings": {"typography": {"colors": copy.deepcopy(_FLAT_TYPOGRAPHY_COLORS)}}
+        },
+        "general": {"general": {"colors": copy.deepcopy(_FLAT_THEME_COLORS)}},
+        "pageStyles": _FLAT_PAGE_STYLES,
+        # Clean tracking code — never leak header/footer/body HTML from a template.
+        "trackingCode": {"head": head_code or "", "body": "", "headerCode": "", "footerCode": ""},
+        "fontsForPreview": [],
+        "popups": [],
+        "popupsList": [],
+    }
 
     # Validate before returning — raises AssertionError with a clear message.
     assert_renderable_shape(blob, surface)
