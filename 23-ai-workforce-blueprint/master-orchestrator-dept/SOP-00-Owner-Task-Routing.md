@@ -79,6 +79,7 @@ Read `universal-sops/00-ROUTING.md` (company root) to map the request to the own
 | Images, graphics, design, visual assets | `graphics` |
 | Videos, reels, editing, captions | `video` |
 | Audio, TTS, voiceover, podcasting | `audio` |
+| Slide decks, pitch decks, keynotes, speeches, webinar decks, "turn this into a presentation" | `presentations` |
 | Written content, copy, emails, blogs | `communications` or `marketing` |
 | Social media posts/scheduling | `social-media` |
 | Paid ads, ad creative | `paid-advertisement` |

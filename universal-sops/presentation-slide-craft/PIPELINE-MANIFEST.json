@@ -25,21 +25,21 @@
     },
     {
       "key": "speech_md",
-      "filename": "PRESENTER-SPEECH.md",
+      "filename": "PRESENTERS-SPEECH.md",
       "label": "presenter speech markdown source (pure)",
       "min_bytes": 2048,
       "note": ">2KB; produced by Presenters Speech Writer (pure script). REQUIRED UPSTREAM STEP."
     },
     {
       "key": "speech_pdf",
-      "filename": "PRESENTER-SPEECH.pdf",
+      "filename": "PRESENTERS-SPEECH.pdf",
       "label": "presenter speech teleprompter PDF",
       "min_bytes": 20480,
       "note": ">20KB; produced by Presenters Speech Writer (teleprompter PDF render). REQUIRED UPSTREAM STEP."
     },
     {
       "key": "speech_fish_md",
-      "filename": "PRESENTER-SPEECH-FISH-TAGGED.md",
+      "filename": "PRESENTERS-SPEECH-FISH-TAGGED.md",
       "label": "presenter speech (Fish-Audio expression-tagged)",
       "min_bytes": 2048,
       "note": ">2KB; the (break)/(laugh)/emphasis-tagged script that feeds the audio render. Produced by Presenters Speech Writer / Fish Audio Expression Specialist. REQUIRED UPSTREAM STEP."
@@ -322,6 +322,24 @@
       ]
     },
     {
+      "id": "P-3.5-RESEARCH-MAP",
+      "order": 3.5,
+      "name": "Research-to-Slide Mapping",
+      "owning_role": "deep-research-specialist-presentations",
+      "sop_refs": [
+        "deep-research-specialist-presentations-sops.md"
+      ],
+      "produces_artifact": "working/research/research_map.json",
+      "gate_codes": [
+        "AF-RESEARCH-WEAVE"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_research_map",
+        "label": "research woven across the deck — research_map.json maps facts/quotes/stats to >=60% of non-exempt content slides; >=8 distinct items (AF-RESEARCH-WEAVE; defers until copy exists)"
+      }
+    },
+    {
       "id": "P4-COPY",
       "order": 4,
       "name": "Slide Copy",
@@ -487,7 +505,7 @@
       "sop_refs": [
         "presenters-speech-writer-sops.md"
       ],
-      "produces_artifact": "working/presenter-speech/PRESENTER-SPEECH.md",
+      "produces_artifact": "working/presenter-speech/PRESENTERS-SPEECH.md",
       "gate_codes": [
         "AF-SPEECH-SHORT"
       ],
@@ -1289,6 +1307,100 @@
         "OVERLAY_FORBIDDEN_FILES",
         "_delivered_pptx_native_text"
       ]
+    },
+    {
+      "code": "AF-FONT-FLOOR",
+      "stage": "Typography/Design",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the DECLARED type system (working/typography/type_layout_system.md) sets a body/subhead size below the 18pt-equivalent floor (22pt when client_dark_theme opt-in), declares a non-modular type scale (not 4-5 steps), or a text contrast below WCAG AA (4.5:1 normal; 7:1 when dark opt-in) — OR the type_layout_system.md tokens are missing once a design system exists (the R8 phantom-artifact hole). DETERMINISTIC numeric rejector that COMPLEMENTS the vision-opinion AF-TYPOGRAPHY-QC; it rejects a sub-floor declared design BEFORE any render.",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_font_floor",
+      "secondary_py_symbols": [
+        "FONT_BODY_PT_FLOOR",
+        "TYPE_SCALE_STEPS_MIN",
+        "TYPE_SCALE_STEPS_MAX",
+        "CONTRAST_RATIO_FLOOR_NORMAL"
+      ]
+    },
+    {
+      "code": "AF-RESEARCH-WEAVE",
+      "stage": "3.5/4/1Q",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "research is funnelled to one proof slide instead of woven across the deck. CONDITIONAL (defers until copy exists): once slides_copy.md exists, working/research/research_map.json must assign a real research item (verbatim anchor) to >= RESEARCH_WEAVE_FLOOR_PCT (60%) of NON-EXEMPT content slides, the copy must actually use the anchor on >= that floor of mapped slides, AND the deck must draw on >= MIN_DISTINCT_RESEARCH_ITEMS (8) distinct items so breadth cannot be faked by repeating one stat. Hook/pure-type/transition slides are exempt and excluded from the denominator. Replaces the toothless 'a pack exists' breadth logic of _chk_claims_without_citation (kept as the zero-research backstop).",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_research_map",
+      "secondary_py_symbols": [
+        "RESEARCH_WEAVE_FLOOR_PCT",
+        "MIN_DISTINCT_RESEARCH_ITEMS"
+      ]
+    },
+    {
+      "code": "AF-FACE-PROMPT-MISSING",
+      "stage": "Prompt-QC",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "a people-bearing image prompt carries no facial expression/emotion token (the intelligence-engine FACIAL check). Mechanical half; the vision verdict half (AF-FACE-MOOD) is owned by Image-QC.",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/intelligence_engines_check.py::check_prompts",
+      "sop_ref": "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md#intelligence-engines"
+    },
+    {
+      "code": "AF-WORLD-SCALE",
+      "stage": "Prompt-QC",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "a scene-bearing image prompt states no setting/world or no believability/scale grounding (the intelligence-engine WORLD check).",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/intelligence_engines_check.py::check_prompts",
+      "sop_ref": "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md#intelligence-engines"
+    },
+    {
+      "code": "AF-LIGHT-PROMPT-MISSING",
+      "stage": "Prompt-QC",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "a people/scene image prompt states no key/fill/rim lighting direction (the intelligence-engine LIGHTING check).",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/intelligence_engines_check.py::check_prompts",
+      "sop_ref": "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md#intelligence-engines"
+    },
+    {
+      "code": "AF-HAIR-INAUTHENTIC",
+      "stage": "Prompt-QC",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "a people-bearing prompt draws no hairstyle token from the authentic-representation catalog (the intelligence-engine REPRESENTATION check, mechanical half).",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/intelligence_engines_check.py::check_prompts",
+      "sop_ref": "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md#intelligence-engines"
+    },
+    {
+      "code": "AF-NO-FELT-STAKES",
+      "stage": "1Q",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the deck has no FELT_STAKES beat (a concrete, felt cost-of-staying-stuck), or it is mis-ordered (the intelligence-engine EMOTIONAL check, deck level). Also implemented in pitch_engines_check.chk_felt_stakes; intelligence_engines_check is the doctrinal owner.",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/intelligence_engines_check.py::check_copy",
+      "sop_ref": "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md#intelligence-engines"
+    },
+    {
+      "code": "AF-NO-VILLAIN",
+      "stage": "1Q",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the deck has no VILLAIN/antagonist beat, or the villain is introduced after the hero (the intelligence-engine STORY check, villain-before-hero ordering). Also implemented in pitch_engines_check.chk_villain; intelligence_engines_check is the doctrinal owner.",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/intelligence_engines_check.py::check_copy",
+      "sop_ref": "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md#intelligence-engines"
     }
   ],
   "roles": [

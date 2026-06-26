@@ -436,7 +436,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - working/copy/approval_record.json
 - working/copy/presenter_notes.json
 
-**Hand to:** Typography Architect (ROLE-18, Phase 1.5) and Brand Steward (LOGO_URL lock); THEN Slide Image Creator (Phase 2 prompt authoring, after the treatment table exists). Post-Phase-6: Presenter's Guide Specialist (ROLE-19), Presenter's Speech Writer (ROLE-20) + Fish Audio / Expression Specialist (ROLE-21), and Presenter Coach (ROLE-14) for the speaker-facing deliverables and audio demo.
+**Hand to:** Typography Architect (ROLE-18, Phase 1.5) and Brand Steward (LOGO_URL lock); THEN Slide Image Creator (Phase 2 prompt authoring, after the treatment table exists). Post-Phase-6: Presenter's Guide Specialist (ROLE-19), Presenter's Speech Writer (ROLE-20) + Fish Audio / Expression Specialist (ROLE-21), and Presenter Coach (ROLE-14) for the speaker-facing deliverables and audio demo. **FINALLY, dispatch the Delivery Concierge (ROLE-13) for the last mile (director SOP 9.6B): verify the AF-DELIVER prerequisites (guide + speech + audio + deck PDF + infographic present), hand ROLE-13 `final_deck_qc.json` + the build bundle dir, and DO NOT call the run "Done" until ROLE-13 returns `delivery_complete: true` and the mechanical `scripts/delivery_gate.py` enforcer passes.**
 
 **Failure mode:** If the operator requests changes to the copy, send the copy back to the Slide Copywriter with the exact change instructions. Re-run Phase 1Q QC after changes. Present the revised copy to the owner again. Do not skip the re-QC step even for minor changes.
 

@@ -77,7 +77,7 @@ The Slide Image Creator marks each PURE_TYPE_HOOK prompt with the treatment tag 
 1. Phase 5 image FAIL (footer hook detected, or competing imagery, or doubled/misspelled hook): QC loops the slide back to the Slide Image Creator with the exact trigger. The slide regenerates as pure type with the low-opacity image and the verbatim refrain.
 2. If the deck has no dedicated hook slide at all (deck-level AUTO-FAIL): QC returns to the Typography Architect (treatment table) and the Hook Strategist (anchor list); the hook anchors are added as PURE_TYPE_HOOK rows and the affected prompts are written.
 3. If the signature quote and the hook are conflated: split into two slides; regenerate both.
-4. Misspelled hook in render: this is also a text-render auto-fail. Re-render; if it fails twice, the hook text is composited as a native layer per the native-text fallback (see the Logo Consistency SOP and master SOP 7.4) so spelling is guaranteed.
+4. Misspelled hook in render: this is also a text-render auto-fail. Re-render via RE-PROMPT + RE-SEED; on persistent garble ESCALATE TO A HUMAN. The hook text is ALWAYS baked into the image, NEVER composited as a native layer — the native-text overlay path is eliminated (Decision 5C, AF-OVERLAY-DELIVERED). The only post-generation image-composite exception is the real LOGO image via the PIL path (SOP-IMG-05).
 5. 3 loops on the same slide: escalate to the Director, then the human owner. File a bug ticket.
 
 ---

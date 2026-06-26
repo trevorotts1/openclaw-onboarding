@@ -271,3 +271,44 @@ arc_beats_missing: [count from Category K]
 
 ---
 
+### SOP 9.5 -- Research-to-Slide Mapping (Phase 3.5, BEFORE copy)
+
+**When to run:** Phase 3.5, AFTER the Signature Presentation Architect locks `working/copy/arc_allocation.json` (the per-slide arc plan) and BEFORE the Slide Copywriter writes any copy (Phase 4). A short second pass -- the heavy discovery already ran at Phase -0.5; this pass only ASSIGNS the already-gathered findings to specific slides so the writer builds copy ON TOP of mapped research. Dispatched by the Director SOP 9.x right after the arc phase.
+
+**Why it exists:** the brief is real and early, but organised by CATEGORY (A-L), never mapped to a slide. That is the root cause of "ONE fact on ONE slide": the writer is handed a category bucket and funnels research to the proof beat. This SOP produces the missing slide-level artifact so research is woven ACROSS the deck.
+
+**Inputs:** working/copy/arc_allocation.json (the slide list + arc section per slide); working/research/brief-[DECK_SLUG].md (Categories C/D/G/H -- stats, corroboration, quotes, validated numbers).
+
+**Steps:**
+1. For EACH slide_id in arc_allocation.json, decide whether it should carry a research fact. Teaching, proof, story/villain, promise, and close slides SHOULD. Hook, pure-type, and transition slides should NOT -- mark them `"exempt": "<reason>"` (e.g. `hook_pure_type`).
+2. For each non-exempt slide, assign 1+ research items from the brief's Categories C/D/G/H. Each assignment carries: `item_id`, `type` (stat/quote/study), `anchor` (a SHORT VERBATIM token the copy gate can later find -- the figure "73%", the dollar "$48,000", a 4-6-word quote fragment, or the source domain), `claim`, `source_url`, `source_date`, `confidence`, `category`.
+3. Spread the assignments: draw on >= 8 DISTINCT items deck-wide and assign a real item to >= 60% of non-exempt content slides. NEVER fabricate to hit the floor -- if there are not enough verified items, surface the gap to the Director (the deck reframes or the client supplies more proof); never invent a number for an exempt slide.
+4. Write `working/research/research_map.json`:
+   ```json
+   {
+     "deck_slug": "...",
+     "slides": [
+       {"slide": 7, "section": "Teaching", "assigned": [
+         {"item_id": "C-03", "type": "stat", "anchor": "73%", "claim": "...",
+          "source_url": "https://...", "source_date": "2025-09", "confidence": "HIGH", "category": "C"}]},
+       {"slide": 4, "section": "Hook", "assigned": [], "exempt": "hook_pure_type"}
+     ],
+     "distinct_items_used": 11,
+     "content_slides_total": 30,
+     "content_slides_with_research": 21
+   }
+   ```
+
+**Enforcement check (what auto-fails -- AF-RESEARCH-WEAVE, `_chk_research_map`):**
+- research_map.json missing once copy exists = FAIL.
+- a mapped research item (verbatim anchor) on fewer than 60% of NON-EXEMPT content slides = FAIL.
+- the writer's copy does not actually contain the assigned anchor on >= 60% of mapped slides = FAIL.
+- fewer than 8 DISTINCT items drawn on deck-wide = FAIL.
+- every slide marked exempt (exemptions cannot cover the whole deck) = FAIL.
+
+**Outputs:** working/research/research_map.json.
+
+**Hand to:** the Slide Copywriter (Phase 4), who loads each slide's `assigned[]` items and weaves the anchor into the copy, recording the item_id in the per-slide RESEARCH_USED field.
+
+---
+

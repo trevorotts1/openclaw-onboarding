@@ -41,10 +41,10 @@ The root cause is in the system's own rules: the master SOP mandates the hook "A
 | HOOK-3: No dedicated typography hook slide exists | Count of dedicated hook slides = 0 = fail the DECK. | "AF-HOOK (HOOK-3): the deck has zero dedicated hook slides. Build 3 to 4 pure-typography hook slides at the named anchors." |
 | HOOK-4: Hook printed TWICE on one slide | On any single slide, the hook line appears 2 or more times (for example a bold copy plus a ghosted italic repeat, or headline plus footer). | "AF-HOOK (HOOK-4): slide N prints the hook [N] times. Print it exactly once. Remove the duplicate(s)." |
 | HOOK-5: Hook mutated, extended, reworded, or abbreviated | Compare every rendered/copy occurrence character-by-character against the canonical HOOK string in mission_prd.json. Any difference (added clause, dropped word, reordering) = fail. | "AF-HOOK (HOOK-5): slide N renders a mutated hook: '[rendered]' vs canonical '[canonical]'. The hook is a verbatim refrain. Restore the exact string." |
-| HOOK-6: Hook misspelled or garbled in a rendered image | On the rendered slide, the hook contains a misspelling or garbled glyph ("hclarity"). This is also AF-I1 at image QC; it is double-flagged here because the hook is sacred. | "AF-HOOK (HOOK-6): slide N renders the hook misspelled: '[rendered]'. Re-render; if it garbles twice, composite the hook as native text (see render-fallback)." |
+| HOOK-6: Hook misspelled or garbled in a rendered image | On the rendered slide, the hook contains a misspelling or garbled glyph ("hclarity"). This is also AF-I1 at image QC; it is double-flagged here because the hook is sacred. | "AF-HOOK (HOOK-6): slide N renders the hook misspelled: '[rendered]'. Re-render via RE-PROMPT + RE-SEED; on persistent garble ESCALATE TO A HUMAN — never a native text overlay (Decision 5C, AF-OVERLAY-DELIVERED)." |
 | HOOK-7: Signature quote conflated with the hook | The dedicated signature-quote slide also carries the control-vs-clarity hook. | "AF-HOOK (HOOK-7): slide N is the signature-quote beat but also carries the main hook. Keep them as two separate beats. Remove the main hook from the quote slide." |
 
-**Render-time guarantee against HOOK-6:** because the hook is sacred, the dedicated hook slides composite the hook line as a NATIVE text layer (not baked-into-image text) whenever a render garbles it twice, so spelling is guaranteed. This extends the existing price-only native-text fallback to the hook (master Section 7.4; slide-image-creator SOP 9.5 step 7).
+**Render-time guarantee against HOOK-6:** because the hook is sacred, a hook that garbles twice is fixed by the Slide Image Creator's RE-PROMPT + RE-SEED loop (tighten the per-line spelling-lock + negative block, new seed, re-render the SINGLE composed gpt-image-2 image), and on PERSISTENT garble is ESCALATED TO A HUMAN. The hook text is ALWAYS baked into the image and is NEVER composited as a native PPTX text run/layer — the legacy native-text overlay path is eliminated (Decision 5C; a `pptx_text_overlays.json` or any native on-slide text run is AF-OVERLAY-DELIVERED). See slide-image-creator SOP 9.5 step 7.
 
 ---
 
@@ -60,7 +60,7 @@ The root cause is in the system's own rules: the master SOP mandates the hook "A
 **PASS:** the canonical line is rendered verbatim, with nothing added.
 
 **FAIL (forensic-deck slide 23):** footer rendered a misspelled hook ("hclarity") -> AF-HOOK-6 (misspelled) and AF-HOOK-2 (footer).
-**PASS:** the hook is on a dedicated slide, composited as native text, spelled exactly.
+**PASS:** the hook is on a dedicated slide, baked into the image and spelled exactly (verified letter-for-letter by the OCR readback).
 
 **FAIL (forensic-deck slide 18):** the example signature quote ("We Walk Them Through How To Think About It") on its own slide BUT with the example signature hook footer stamped on top -> AF-HOOK-7 and AF-HOOK-2.
 **PASS:** the signature quote stands alone on its own beat (name-only attribution); the main hook is on its separate dedicated slides.
@@ -72,7 +72,7 @@ The root cause is in the system's own rules: the master SOP mandates the hook "A
 1. The Hook Strategist is the owner of the placement map and the hook-absent list. The Strategist's audit (in hook_package.json) must report: `hook_carrying_slides` (the 3 to 4 anchors with slide numbers), `footer_occurrences` (must be 0), `dedicated_slide_count` (3 to 4), `canonical_hook` (the exact string), and `verdict`. If the audit is missing or reports more than 4 carrying slides or any footer, Phase 1Q fails before scoring.
 2. On AF-HOOK-1/2/4 (overuse, footer, duplicate), the repair routes to the **Slide Copywriter** to strip the hook from all non-anchor slides, and to the **Slide Image Creator** to delete any footer-band render element.
 3. On AF-HOOK-3 (no dedicated slide), the **Director** reserves 3 to 4 dedicated hook slots in arc_allocation.json at the named beats, then the Copywriter writes them.
-4. On AF-HOOK-5/6 (mutation, misspelling), the canonical string in mission_prd.json is the single source of truth; the slide is re-rendered, and if it garbles twice the hook is composited as native text.
+4. On AF-HOOK-5/6 (mutation, misspelling), the canonical string in mission_prd.json is the single source of truth; the slide is re-rendered via RE-PROMPT + RE-SEED, and on persistent garble is ESCALATED TO A HUMAN — the hook is always baked into the image, never composited as native text (Decision 5C, AF-OVERLAY-DELIVERED).
 5. On AF-HOOK-7 (conflation), the main hook is removed from the signature-quote slide.
 6. Loop up to 3 times (shared Phase 1Q / Phase 5 budget). On the 4th failure escalate to the Director and ROLE-16 Healer per QC SOP 9.4.
 

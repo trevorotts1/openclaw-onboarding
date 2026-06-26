@@ -100,6 +100,7 @@ Review Tier 1 source list. Are all sources still authoritative and accessible? I
 - working/research/grounded-content-[DECK_SLUG].json (write -- Category E grounded image context; SOP 9.2)
 - working/research/design-brief-[DECK_SLUG].md (write -- Category F design + hook + pacing brief; SOP 9.3)
 - working/research/fact-validation-[DECK_SLUG].json (write -- Category H slide-claim verification ledger; SOP 9.4)
+- working/research/research_map.json (write -- Phase 3.5 research-to-slide map; maps facts/quotes/stats from Categories C/D/G/H to specific slides BEFORE copy so research is woven across the deck; enforced by AF-RESEARCH-WEAVE; SOP 9.5)
 - Deckfolio / design portfolio aggregators, Awwwards, Behance, competitor slide decks (for Category F design research)
 
 ---

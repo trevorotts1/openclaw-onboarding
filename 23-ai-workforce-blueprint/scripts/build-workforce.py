@@ -5797,7 +5797,13 @@ def add_agent_to_config(config, dept_id, dept_info):
     #   image_generate, video_generate, music_generate (confirmed in tools.deny
     #   on main agent). tts, exec, read, write, edit, web_fetch, web_search
     #   confirmed in docs.openclaw.ai/gateway/security.
-    GENERATION_DEPT_IDS = {"graphics", "video", "audio"}
+    # Fix #9 (presentation-dept hardening): presentations is a generation-class
+    # dept too — its deterministic build_deck.py renderer, Fish-Audio render, PDF
+    # export, and teleprompter build all need exec/read/write/edit/web_fetch/
+    # web_search. Without the explicit allow, a parent deny on `main` shadowed
+    # those tools and the dept agent stalled headless with "no permission." Grant
+    # presentations the SAME protective set so a per-agent allow re-grants them.
+    GENERATION_DEPT_IDS = {"graphics", "video", "audio", "presentations"}
     GENERATION_TOOLS_ALLOW = [
         "image_generate",
         "video_generate",

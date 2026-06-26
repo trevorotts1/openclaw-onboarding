@@ -14,7 +14,7 @@ Three CLI cases, all driven through the real CLI (subprocess), no network needed
 Plus unit assertions on the build_deck.py check functions directly (no subprocess):
   - COVERAGE (anti-compression, AF-COVERAGE-1).
   - RICH-PROMPT-REQUIRED (AF-P1): a slide with NO rich prompt FAILS, and a slide
-    whose rich prompt is < PROMPT_CHAR_FLOOR (1,500) chars FAILS; a >= 1,500-char
+    whose rich prompt is < PROMPT_CHAR_FLOOR (5,000) chars FAILS; a >= 5,000-char
     prompt PASSES. Also asserts load_rich_prompt raises on missing/short and
     returns the prompt verbatim when valid.
   - SPEECH-LENGTH (AF-SPEECH-SHORT): a speech below target_talk_minutes x 120 wpm
@@ -36,6 +36,7 @@ BUILD = HERE / "build_deck.py"
 # Import the module so unit tests can call its check functions directly.
 sys.path.insert(0, str(HERE))
 import build_deck  # noqa: E402
+import delivery_gate  # noqa: E402  (R9-F9 mechanical last-mile gate)
 
 SLIDES = [
     {"slide": 1, "scene": "A sunlit modern office, editorial photography.",
@@ -85,7 +86,7 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
     """Build a temp run dir. with_artifacts=True writes the full upstream set.
     rich_prompts=False omits the working/prompts/ files (to prove the
     rich-prompt-required gate fails); short_prompt=True writes a sub-floor prompt
-    (to prove the 1,500-char floor fails)."""
+    (to prove the 5,000-char floor fails)."""
     root = Path(tempfile.mkdtemp(prefix="deck_preflight_test_"))
     # The full-artifacts deck is sized to clear the AF-SLIDE-COUNT-FLOOR gate for the
     # 30-minute intake target (floor = ceil(30 x 1.3) = 39 slides). The bare/no-artifact
@@ -181,9 +182,29 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
         arc_beats[30]["arc_section"] = "final price"
         arc_beats[34]["arc_section"] = "re-pitch"
         (root / "working" / "copy" / "arc_allocation.json").write_text(json.dumps(arc_beats))
-        # Phase 4 — slide copy authored per doctrine (no banned cliche phrases).
+        # Phase 4 — slide copy authored per doctrine (no banned cliche phrases). The
+        # research anchors (stat-01..stat-10) are woven into the body so the
+        # AF-RESEARCH-WEAVE gate sees the writer actually used the mapped items.
+        _anchors_woven = " ".join(f"stat-{i:02d}" for i in range(1, 11))
         (root / "working" / "copy" / "slides_copy.md").write_text(
-            "# Slide copy\n" + ("Authored converting copy per doctrine. " * 40) + "\n")
+            "# Slide copy\n" + ("Authored converting copy per doctrine. " * 40)
+            + "\nRESEARCH_USED anchors: " + _anchors_woven + "\n")
+        # Phase 3.5 — research-to-slide map (AF-RESEARCH-WEAVE): 10 content slides each
+        # carry a DISTINCT research item whose verbatim anchor appears in the copy; the
+        # hook slide is exempt. Clears the 60% breadth floor + the 8-distinct-item floor.
+        (root / "working" / "research" / "research_map.json").write_text(json.dumps({
+            "deck_slug": "demo",
+            "slides": [{"slide": 1, "section": "Hook", "assigned": [],
+                        "exempt": "hook_pure_type"}]
+                      + [{"slide": i + 1, "section": "Teaching",
+                          "assigned": [{"item_id": f"C-{i:02d}", "type": "stat",
+                                        "anchor": f"stat-{i:02d}",
+                                        "source_url": "https://www.cdc.gov/x",
+                                        "confidence": "HIGH", "category": "C"}]}
+                         for i in range(1, 11)],
+            "distinct_items_used": 10,
+            "content_slides_total": _floor_slides,
+            "content_slides_with_research": 10}))
         # Phase F — typography/design brief (per-slide art direction).
         (root / "working" / "research" / "design-brief-demo.md").write_text(
             "# Design brief\n" + ("Per-slide art direction and typography. " * 20) + "\n")
@@ -194,6 +215,12 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
         (root / "working" / "typography" / "design_system.json").write_text(json.dumps({
             "per_slide": [{"slide": i, "archetype": archetypes[i % len(archetypes)]}
                           for i in range(1, _floor_slides + 1)]}))
+        # Phase F — the Typography Architect's deterministic type tokens
+        # (AF-FONT-FLOOR): 24pt body, a 5-step modular scale, 6.5:1 contrast — all
+        # above floor so the coded font-floor gate passes for a compliant deck.
+        (root / "working" / "typography" / "type_layout_system.md").write_text(
+            "# Type Layout System\nmin_body_pt: 24\ntype_scale_steps: 5\n"
+            "min_contrast_ratio: 6.5\n")
         # The FIVE QC reports (each INDEPENDENT-reviewer graded). Copy-QC plus the four
         # NEW QC gates (typography / prompt / image / speech). Each carries the
         # qc_independence provenance block proving an independent specialist graded it.
@@ -310,8 +337,8 @@ def _rich_prompt_run_dir(prompt_text) -> Path:
 def test_chk_rich_prompts():
     """RICH-PROMPT-REQUIRED (AF-P1) unit test (the two NEW required assertions):
       - a slide with NO rich prompt FAILS (missing-rich-prompt fails),
-      - a slide whose rich prompt is < 1,500 chars FAILS (sub-floor fails),
-      - a slide with a >= 1,500-char rich prompt PASSES,
+      - a slide whose rich prompt is < 5,000 chars FAILS (sub-floor fails),
+      - a slide with a >= 5,000-char rich prompt PASSES,
     plus load_rich_prompt raises on missing/short and returns the prompt verbatim
     when valid. Returns a list of failure strings ([] = all passed)."""
     fails = []
@@ -337,11 +364,11 @@ def test_chk_rich_prompts():
         if "AF-P1" not in str(exc):
             fails.append(f"RICHPROMPT: load_rich_prompt missing-raise wrong msg: {exc}")
 
-    # ---- NEW ASSERTION 2: a < 1,500-char rich prompt FAILS ----
+    # ---- NEW ASSERTION 2: a < 5,000-char rich prompt FAILS ----
     rd = _rich_prompt_run_dir(short)
     reason = build_deck._chk_rich_prompts(rd)
     if not reason:
-        fails.append("RICHPROMPT: a < 1,500-char rich prompt should FAIL but passed")
+        fails.append("RICHPROMPT: a < 5,000-char rich prompt should FAIL but passed")
     elif "AF-P1" not in reason or "floor" not in reason.lower():
         fails.append(f"RICHPROMPT: short-prompt fail message malformed: {reason!r}")
     try:
@@ -351,7 +378,7 @@ def test_chk_rich_prompts():
         if "AF-P1" not in str(exc):
             fails.append(f"RICHPROMPT: load_rich_prompt short-raise wrong msg: {exc}")
 
-    # ---- a valid >= 1,500-char rich prompt PASSES + is returned VERBATIM ----
+    # ---- a valid >= 5,000-char rich prompt PASSES + is returned VERBATIM ----
     rd = _rich_prompt_run_dir(valid)
     reason = build_deck._chk_rich_prompts(rd)
     if reason:
@@ -1557,11 +1584,11 @@ def test_h1_whitespace_only_prompt():
     measured on prompt.strip(), so blank/padded files can never satisfy it.
 
     Cases:
-      - a prompt of pure whitespace (spaces/newlines/tabs, > 1,500 raw chars)
+      - a prompt of pure whitespace (spaces/newlines/tabs, > 5,000 raw chars)
         -> _chk_rich_prompts FAILS and load_rich_prompt RAISES (AF-P1).
       - a prompt that is a few real words padded with thousands of spaces to exceed
-        1,500 RAW chars -> still FAILS (stripped length is tiny).
-      - control: a genuine >= 1,500 non-whitespace prompt with leading/trailing
+        5,000 RAW chars -> still FAILS (stripped length is tiny).
+      - control: a genuine >= 5,000 non-whitespace prompt with leading/trailing
         whitespace -> PASSES and is returned VERBATIM (whitespace preserved).
     """
     fails = []
@@ -2174,7 +2201,7 @@ def emit_af_coverage():
     record("AF-P1", build_deck._chk_rich_prompts(rd))
 
     # AF-PROMPT-FLOOR / AF-P1 — a sub-floor prompt FAILS _chk_rich_prompts; the
-    # 1,500-char floor is PROMPT_CHAR_FLOOR. (load_rich_prompt raises AF-P1 too.)
+    # 5,000-char floor is PROMPT_CHAR_FLOOR. (load_rich_prompt raises AF-P1 too.)
     rd = _rich_prompt_run_dir("way too thin")
     sub_reason = build_deck._chk_rich_prompts(rd)
     record("AF-P1", sub_reason)
@@ -2182,7 +2209,7 @@ def emit_af_coverage():
         build_deck.load_rich_prompt({"slide": 1, "scene": "x", "copy": ["y"]}, rd)
     except ValueError as exc:
         # The floor symbol (PROMPT_CHAR_FLOOR) gate surfaces as AF-P1; AF-PROMPT-FLOOR
-        # is its manifest twin (same 1,500 floor). Record both from the same proof.
+        # is its manifest twin (same 5,000 floor). Record both from the same proof.
         record("AF-P1", str(exc))
         if str(build_deck.PROMPT_CHAR_FLOOR) in str(exc) or "AF-P1" in str(exc):
             triggered.add("AF-PROMPT-FLOOR")
@@ -2392,6 +2419,27 @@ def emit_af_coverage():
     record("AF-PHASE-SKIPPED",
            build_deck.check_phase_preconditions(_ps_root, "P4-RENDER", ["P0A-INTAKE"]))
 
+    # AF-FONT-FLOOR — a DECLARED type system with a sub-floor body size (12pt < 18pt
+    # floor) drives check_font_floor to FAIL deterministically (no vision/OCR).
+    ff_root = Path(tempfile.mkdtemp(prefix="deck_font_floor_probe_"))
+    (ff_root / "working" / "typography").mkdir(parents=True, exist_ok=True)
+    (ff_root / "working" / "typography" / "type_layout_system.md").write_text(
+        "# Type Layout System\nmin_body_pt: 12\ntype_scale_steps: 5\nmin_contrast_ratio: 6.0\n")
+    record("AF-FONT-FLOOR", build_deck.check_font_floor(ff_root))
+
+    # AF-RESEARCH-WEAVE — copy exists but the research map weaves a research item onto
+    # 0% of content slides (below the 60% breadth floor) -> _chk_research_map FAILS.
+    rw_root = Path(tempfile.mkdtemp(prefix="deck_research_weave_probe_"))
+    (rw_root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    (rw_root / "working" / "research").mkdir(parents=True, exist_ok=True)
+    (rw_root / "working" / "copy" / "slides_copy.md").write_text("## Slide 1\nHEADLINE: x\n")
+    (rw_root / "working" / "research" / "research_map.json").write_text(json.dumps({
+        "deck_slug": "demo",
+        "slides": [{"slide": 7, "section": "Teaching", "assigned": []},
+                   {"slide": 8, "section": "Teaching", "assigned": []}],
+        "distinct_items_used": 0}))
+    record("AF-RESEARCH-WEAVE", build_deck._chk_research_map(rw_root))
+
     triggered_sorted = sorted(triggered)
     AF_COVERAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
     AF_COVERAGE_PATH.write_text(json.dumps(
@@ -2599,12 +2647,15 @@ def test_dark_ok_alias() -> list:
 
 
 def test_speech_name_lockstep() -> list:
-    """FG-1 item 5: the singular PRESENTER-SPEECH name is locked in lockstep across the
-    producer (presenters_speech_pdf --out default), the build_deck DELIVERABLES_REQUIRED
-    speech filenames, and the manifest deliverables list."""
+    """FG-1 item 5 / Fix #2: the PLURAL possessive PRESENTERS-SPEECH name is locked in
+    lockstep across the producer (presenters_speech_pdf --out default), the build_deck
+    DELIVERABLES_REQUIRED speech filenames, and the manifest deliverables list. PLURAL is
+    canonical because the producer role presenters-speech-writer.md emits the plural name
+    and build_teleprompter.py consumes it — a singular gate caused AF-BUNDLE-COMPLETE to
+    FATAL exit 5 on a real run."""
     failures = []
-    expected_pdf = "PRESENTER-SPEECH.pdf"
-    expected_md = "PRESENTER-SPEECH.md"
+    expected_pdf = "PRESENTERS-SPEECH.pdf"
+    expected_md = "PRESENTERS-SPEECH.md"
     # build_deck DELIVERABLES_REQUIRED.
     dr = {d["key"]: d["filename"] for d in build_deck.DELIVERABLES_REQUIRED}
     if dr.get("speech_pdf") != expected_pdf:
@@ -2634,19 +2685,223 @@ def test_speech_name_lockstep() -> list:
     return failures
 
 
+def test_delivery_gate() -> list:
+    """R9-F9: the mechanical last-mile gate (scripts/delivery_gate.py) actually BITES.
+    Delegates to its built-in fixtures (defer / clean-pass / extra-md AF-DH1 fail /
+    singular-speech AF-DH1 fail / no-GHL-upload-record fail / missing-mac-anchor fail /
+    incomplete-package fail) AND re-asserts the two demo-critical cases here so the
+    coverage is visible in this suite, not only in the standalone selftest."""
+    failures = []
+    if delivery_gate._selftest() != 0:
+        failures.append("DELIVERY-GATE: standalone selftest fixtures did not all pass")
+    # Re-assert the clean-pass and the AF-DH1 extra-file fail directly.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        pkg = delivery_gate._mk_pkg(base, delivery_gate.FIVE)
+        delivery_gate._write_media(base, {"pptx_ghl_media_id": "id1"})
+        delivery_gate._write_plan(base, {"destinations": [
+            {"type": "ghl"},
+            {"type": "mac_downloads", "verify_anchor": str(pkg / "demo-deck-FINAL.pptx")},
+        ]})
+        ok, reasons = delivery_gate.delivery_gate(base)
+        if not ok:
+            failures.append(f"DELIVERY-GATE-A: clean 5-file package should PASS, got {reasons}")
+        # Now drop in a stray script -> AF-DH1 must trigger.
+        (pkg / "fix_render.py").write_text("x")
+        ok2, reasons2 = delivery_gate.delivery_gate(base)
+        if ok2 or not any("AF-DH1" in r for r in reasons2):
+            failures.append(f"DELIVERY-GATE-B: stray .py in client package must FAIL AF-DH1, got ok={ok2} {reasons2}")
+    print(f"DELIVERY-GATE (R9-F9)        -> {'PASS' if not failures else 'FAIL'}")
+    return failures
+
+
+def test_chk_font_floor() -> list:
+    """Fix #6: the DETERMINISTIC font-floor gate (check_font_floor) BITES.
+    - sub-floor body size (12pt < 18) FAILS; missing token FAILS; non-modular scale
+      FAILS; below-WCAG contrast FAILS; dark-theme raises the floors.
+    - a compliant token file PASSES.
+    - pre-typography (no file, no design system) DEFERS (passes).
+    """
+    failures = []
+
+    def _layout(body, steps, contrast, dark=False):
+        root = Path(tempfile.mkdtemp(prefix="ff_"))
+        (root / "working" / "typography").mkdir(parents=True, exist_ok=True)
+        lines = []
+        if body is not None:
+            lines.append(f"min_body_pt: {body}")
+        if steps is not None:
+            lines.append(f"type_scale_steps: {steps}")
+        if contrast is not None:
+            lines.append(f"min_contrast_ratio: {contrast}")
+        (root / "working" / "typography" / "type_layout_system.md").write_text(
+            "# Type Layout System\n" + "\n".join(lines) + "\n")
+        if dark:
+            (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+            (root / "working" / "copy" / "intake.json").write_text(
+                json.dumps({"client_dark_theme": True}))
+        return root
+
+    # sub-floor body size -> FAIL
+    r = build_deck.check_font_floor(_layout(12, 5, 6.0))
+    if "AF-FONT-FLOOR" not in r or "min_body_pt" not in r:
+        failures.append(f"FONT-FLOOR-A: 12pt body must FAIL, got {r!r}")
+    # non-modular scale (7 steps) -> FAIL
+    r = build_deck.check_font_floor(_layout(24, 7, 6.0))
+    if "AF-FONT-FLOOR" not in r or "type_scale_steps" not in r:
+        failures.append(f"FONT-FLOOR-B: 7-step scale must FAIL, got {r!r}")
+    # below-WCAG contrast -> FAIL
+    r = build_deck.check_font_floor(_layout(24, 5, 3.0))
+    if "AF-FONT-FLOOR" not in r or "contrast" not in r:
+        failures.append(f"FONT-FLOOR-C: 3.0:1 contrast must FAIL, got {r!r}")
+    # missing token -> FAIL
+    r = build_deck.check_font_floor(_layout(None, 5, 6.0))
+    if "AF-FONT-FLOOR" not in r:
+        failures.append(f"FONT-FLOOR-D: missing min_body_pt must FAIL, got {r!r}")
+    # dark theme raises the floor: 18pt body (ok for light) FAILS under dark (22 floor)
+    r = build_deck.check_font_floor(_layout(18, 5, 7.5, dark=True))
+    if "AF-FONT-FLOOR" not in r:
+        failures.append(f"FONT-FLOOR-E: 18pt under dark (22pt floor) must FAIL, got {r!r}")
+    # compliant tokens -> PASS
+    r = build_deck.check_font_floor(_layout(20, 5, 4.5))
+    if r != "":
+        failures.append(f"FONT-FLOOR-F: compliant tokens must PASS, got {r!r}")
+    # pre-typography (no file, no design system) -> DEFER
+    empty = Path(tempfile.mkdtemp(prefix="ff_empty_"))
+    (empty / "working").mkdir(parents=True, exist_ok=True)
+    r = build_deck.check_font_floor(empty)
+    if r != "":
+        failures.append(f"FONT-FLOOR-G: pre-typography must DEFER (pass), got {r!r}")
+    print(f"FONT-FLOOR (Fix #6)          -> {'PASS' if not failures else 'FAIL'}")
+    return failures
+
+
+def test_chk_research_map() -> list:
+    """Fix #7: the research-WEAVE breadth gate (_chk_research_map) BITES.
+    - pre-copy DEFERS.
+    - copy + missing map FAILS.
+    - copy + map under the 60% breadth floor FAILS.
+    - copy + map with anchors NOT used in copy FAILS.
+    - copy + map with < 8 distinct items FAILS.
+    - a fully-woven map (>=60% mapped, anchors present, >=8 items) PASSES.
+    """
+    failures = []
+
+    def _root(copy_text=None, mapping=None):
+        root = Path(tempfile.mkdtemp(prefix="rw_"))
+        (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "research").mkdir(parents=True, exist_ok=True)
+        if copy_text is not None:
+            (root / "working" / "copy" / "slides_copy.md").write_text(copy_text)
+        if mapping is not None:
+            (root / "working" / "research" / "research_map.json").write_text(
+                json.dumps(mapping))
+        return root
+
+    # pre-copy -> DEFER
+    if build_deck._chk_research_map(_root()) != "":
+        failures.append("RW-A: pre-copy must DEFER")
+    # copy + missing map -> FAIL
+    r = build_deck._chk_research_map(_root(copy_text="## Slide 1\nx\n"))
+    if "AF-RESEARCH-WEAVE" not in r:
+        failures.append(f"RW-B: missing map must FAIL, got {r!r}")
+    # copy + 0% mapped -> FAIL
+    r = build_deck._chk_research_map(_root(copy_text="## Slide 1\nx\n", mapping={
+        "slides": [{"slide": 1, "assigned": []}, {"slide": 2, "assigned": []}],
+        "distinct_items_used": 0}))
+    if "AF-RESEARCH-WEAVE" not in r or "%" not in r:
+        failures.append(f"RW-C: 0%% breadth must FAIL, got {r!r}")
+    # copy + anchors not present in copy -> FAIL (writer didn't use it)
+    full_map = {"slides": [
+        {"slide": i, "assigned": [{"item_id": f"C-{i:02d}", "anchor": f"{40+i}%"}]}
+        for i in range(1, 11)], "distinct_items_used": 10}
+    r = build_deck._chk_research_map(_root(copy_text="## Slide 1\nnothing numeric here\n",
+                                           mapping=full_map))
+    if "AF-RESEARCH-WEAVE" not in r:
+        failures.append(f"RW-D: anchors-not-used must FAIL, got {r!r}")
+    # copy uses the anchors but only 3 distinct items -> FAIL on breadth
+    few = {"slides": [
+        {"slide": i, "assigned": [{"item_id": f"C-{(i % 3):02d}", "anchor": f"{40+i}%"}]}
+        for i in range(1, 11)], "distinct_items_used": 3}
+    copy_all = "## copy\n" + " ".join(f"{40+i}%" for i in range(1, 11)) + "\n"
+    r = build_deck._chk_research_map(_root(copy_text=copy_all, mapping=few))
+    if "AF-RESEARCH-WEAVE" not in r or "distinct" not in r:
+        failures.append(f"RW-E: <8 distinct items must FAIL, got {r!r}")
+    # fully woven -> PASS
+    r = build_deck._chk_research_map(_root(copy_text=copy_all, mapping=full_map))
+    if r != "":
+        failures.append(f"RW-F: fully-woven map must PASS, got {r!r}")
+    print(f"RESEARCH-WEAVE (Fix #7)      -> {'PASS' if not failures else 'FAIL'}")
+    return failures
+
+
+def test_engine_checks() -> list:
+    """Fix #11: the pitch-engine + intelligence-engine checks are not silent no-ops.
+    Drives a deliberately-broken fixture through pitch_engines_check (a price ladder
+    with no cost-of-inaction slot -> AF-NO-COST-OF-INACTION) and through
+    intelligence_engines_check (a people prompt with no facial/lighting token ->
+    AF-FACE-PROMPT-MISSING / AF-LIGHT-PROMPT-MISSING), asserting each really fires."""
+    failures = []
+    import importlib
+    pe = importlib.import_module("pitch_engines_check")
+    ie = importlib.import_module("intelligence_engines_check")
+
+    # --- pitch engine: a ladder with no cost_of_inaction_slide must FAIL ---
+    pr = Path(tempfile.mkdtemp(prefix="pe_"))
+    cp = pr / "working" / "copy"
+    cp.mkdir(parents=True, exist_ok=True)
+    (cp / "price_ladder.json").write_text(json.dumps({"rungs": [], "guarantee": {}}))
+    (cp / "slides_copy.md").write_text("## Slide 1\nplain copy, no arc tags\n")
+    run = pe.load_run(pr)
+    coi = pe.chk_cost_of_inaction(run)
+    if not any(r.get("code") == "AF-NO-COST-OF-INACTION" for r in coi):
+        failures.append(f"ENGINE-A: chk_cost_of_inaction must fire AF-NO-COST-OF-INACTION, got {coi!r}")
+    # every pitch check is callable and returns a list (no silent crash / non-list)
+    for fn in pe.ALL_CHECKS:
+        out = fn(run)
+        if not isinstance(out, list):
+            failures.append(f"ENGINE-B: {fn.__name__} did not return a list")
+
+    # --- intelligence engine: a people prompt missing expression/lighting must FAIL ---
+    ir = Path(tempfile.mkdtemp(prefix="ie_"))
+    (ir / "prompts").mkdir(parents=True, exist_ok=True)
+    (ir / "prompts" / "slide-01.txt").write_text(
+        "A confident professional woman standing in a modern office, editorial photo. "
+        "[ARCHETYPE: portrait] NEGATIVE BLOCK. Do not add text.")
+    problems = []
+    ie.check_prompts(ir, problems)
+    codes = {p.get("code") for p in problems if isinstance(p, dict)}
+    if "AF-FACE-PROMPT-MISSING" not in codes and "AF-LIGHT-PROMPT-MISSING" not in codes:
+        failures.append(f"ENGINE-C: intelligence check_prompts must fire a face/light "
+                        f"code on a bare people prompt, got {sorted(c for c in codes if c)}")
+    print(f"ENGINE-CHECKS (Fix #11)      -> {'PASS' if not failures else 'FAIL'}")
+    return failures
+
+
 def main():
     failures = []
+
+    # Fix #6 — deterministic font-floor / type-scale / contrast rejector.
+    failures += test_chk_font_floor()
+    # Fix #7 — research woven across the deck (breadth gate).
+    failures += test_chk_research_map()
+    # Fix #11 — pitch-engine + intelligence-engine checks actually bite.
+    failures += test_engine_checks()
 
     # FG-1 durability — structural-block gate, DARK_OK alias, speech-name lockstep.
     failures += test_structural_block_gate()
     failures += test_dark_ok_alias()
     failures += test_speech_name_lockstep()
 
+    # R9-F9 — mechanical last-mile delivery gate (AF-DH1 5-file whitelist + GHL
+    # upload record + SOP 9.4 ground-truth) actually rejects a dirty/partial package.
+    failures += test_delivery_gate()
+
     # Unit test — _chk_coverage anti-compression gate (no subprocess/network).
     failures += test_chk_coverage()
 
     # Unit test — rich-prompt-required gate (AF-P1): the TWO new required assertions
-    # (a < 1,500-char prompt FAILS, a missing rich prompt FAILS) plus verbatim load.
+    # (a < 5,000-char prompt FAILS, a missing rich prompt FAILS) plus verbatim load.
     failures += test_chk_rich_prompts()
 
     # Unit test — speech-length gate (AF-SPEECH-SHORT): below target x 120 wpm fails.
@@ -2817,7 +3072,7 @@ def main():
     print(f"CASE4 (no prompt)-> exit {r.returncode} (expected 3)  "
           f"{'PASS' if r.returncode == 3 and 'AF-P1' in out else 'FAIL'}")
 
-    # CASE 5 — full upstream artifacts BUT the rich prompt is < 1,500 chars =>
+    # CASE 5 — full upstream artifacts BUT the rich prompt is < 5,000 chars =>
     # refused, exit 3, AF-P1 floor (proves a SUB-FLOOR rich prompt fails through CLI).
     root = make_workdir(with_artifacts=True, rich_prompts=True, short_prompt=True)
     r = run(root)

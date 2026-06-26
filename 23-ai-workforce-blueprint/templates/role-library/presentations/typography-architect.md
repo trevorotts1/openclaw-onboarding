@@ -106,6 +106,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 - working/copy/slides_copy.md (read: per-slide PURPOSE, HEADLINE, EMPHASIS, LADDER, PEOPLE, HOOK_REFRAIN, TEXT_ANCHOR fields)
 - working/typography/design_system.json (write: machine-readable type tokens, archetype map, price rules, per-slide plan)
 - working/typography/design_system.md (write: human-readable design system spec)
+- working/typography/type_layout_system.md (write: the deterministic font-floor tokens — min_body_pt, type_scale_steps, min_contrast_ratio — parsed by the AF-FONT-FLOOR coded gate; mandatory once a design system exists)
 - working/typography/system_registry.json (maintain: per-client design system registry)
 - working/typography/lessons.md (write: recurring design-craft findings)
 - master SOP Sections 7.1 to 7.4 (archetypes, prompt design spec, strikethrough handling)
@@ -130,12 +131,19 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 2. Assign each weight a role and a default size band relative to slide height (hero headline 8 to 12 percent of slide height, sub-head 4 to 6 percent, label 2.5 to 3.5 percent, caption 2 to 2.5 percent). Sizes are guidance for the image prompt, not absolute pixels.
 3. Define the per-word color emphasis system: which word(s) in a headline take the accent color, and the rule that emphasis must change meaningfully slide to slide (not the same single accent word position every time). Record the accent-color roles already set by the STYLE BLOCK (Primary = money/value, Secondary = action/urgency/emphasis).
 4. Write the token system into design_system.json under `weight_ladder` and `emphasis_system`.
+5. **Emit the deterministic type tokens (AF-FONT-FLOOR gate-of-record).** Write `working/typography/type_layout_system.md` — the machine-readable file the coded font-floor gate parses. It carries one `key: value` per line:
+   - `min_body_pt:` the SMALLEST body/subhead size in the deck, as a pt-equivalent at a 1080-tall canvas. MUST be >= 18 (>= 22 when `client_dark_theme`/`DARK_OK` — projected dark text is washed out). Kicker/label/caption tiers are EXEMPT from this floor (they have their own ~12-13pt floor) — `min_body_pt` is the body+subhead floor only.
+   - `type_scale_steps:` the number of named steps in the modular scale (MUST be 4 or 5; a true modular scale uses a single ratio, e.g. 1.25 "perfect fourth").
+   - `min_contrast_ratio:` the smallest body/subhead text:background WCAG relative-luminance contrast ratio in the deck. MUST be >= 4.5 (>= 7.0 when dark opt-in).
+   - (optional) `min_large_contrast_ratio:` for large/headline text, MUST be >= 3.0.
+   This file is the artifact `check_font_floor` reads; it is NOT optional once a design system exists. Keep the numbers consistent with the SOP 9.1 step-2 size bands and the AF-DC4 contrast rule.
 
 **Enforcement check (what auto-fails):**
 - Fewer than 4 named weights in the ladder = FAIL.
 - Any weight without an assigned role = FAIL.
 - No per-word emphasis system defined = FAIL.
 - The emphasis rule permits the identical accent word/position on every slide (no variation clause) = FAIL.
+- **`working/typography/type_layout_system.md` absent, or `min_body_pt` below 18 (22 dark), or `type_scale_steps` not 4-5, or `min_contrast_ratio` below 4.5 (7.0 dark) = FAIL (AF-FONT-FLOOR, deterministic coded gate).**
 
 **PASS example:** weight_ladder = {Black: hero headlines like "Control vs Clarity"; ExtraBold: sub-heads; Bold: kicker labels like "SHIFT 1"; Medium-Italic: the signature-quote attribution "[Founder Name] and [Co-Founder Name]"}; emphasis_system rotates the accent word so "Clarity" is accented on the contrast slide and "Ownership" is accented on the methodology slide.
 
@@ -193,7 +201,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Steps:**
 1. List every LADDER slide and the price that is LIVE on it and the prices that are DEAD (struck) on it, cumulatively. Confirm against price_ladder.json.
 2. Define the gold gradient (for example #B8860B to #E6C66E), the glow treatment for the live price, and the drawn-gold double-strike for dead prices. Pull the exact gold hex from the STYLE BLOCK Primary.
-3. Specify that the strike is a DRAWN diagonal line composited as part of the price tag, never a font strikethrough that the image model may garble (cross-reference master SOP 7.4 and the native-text fallback).
+3. Specify that the strike is a DRAWN diagonal line composited as part of the price tag, never a font strikethrough that the image model may garble (the strike is part of the baked image; cross-reference master SOP Section 7 strikethrough handling — there is NO native-text fallback, which Decision 5C eliminated).
 4. Write the price-typography rule per ladder slide into design_system.json `price_typography`, each entry naming the live price, the struck prices, and the treatment.
 
 **Enforcement check (what auto-fails):**
