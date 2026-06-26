@@ -72,7 +72,11 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
+import re
 import shlex
+import uuid
+from pathlib import Path
 from typing import Any
 
 # The funnels/builder + workflow routes live on the backend origin. These calls
@@ -413,56 +417,334 @@ def funnel_delete_body(location_id: str, funnel_id: str, user_id: str) -> dict:
     return {"locationId": location_id, "funnelId": funnel_id, "userId": user_id}
 
 
-def new_page_blob(raw_custom_code: str, *, head_code: str = "") -> dict:
-    """Build a minimal-but-valid ``pageData`` blob for a freshly-created page.
+def html_fragment(raw: str) -> str:
+    """Normalise *raw* to a body-level HTML fragment.
 
-    A page created via ``step_create`` is an EMPTY shell — its record carries NO
-    ``pageDataDownloadUrl`` and NO ``sections`` until the first autosave (verified
-    live). So content on a net-new page cannot be produced by splicing an existing
-    blob (``edit_element_customcode`` needs one to splice); the first save must POST
-    a constructed blob. This returns that blob with a single custom-code section
-    holding ``raw_custom_code`` — the same custom-code node shape
-    ``edit_element_customcode`` targets, so subsequent edits work unchanged
-    (locator ``{"section_idx":0,"element_idx":0}``).
+    Strips ``<!DOCTYPE>``, ``<html>``, ``<head>``, ``<body>`` wrappers
+    case-insensitively.  ``<style>`` blocks found inside a ``<head>`` wrapper
+    are hoisted to the top of the returned fragment so that CSS survives
+    stripping.
 
-    PROVEN live: autosaving this blob to a new empty page returned 201, the re-read
-    record then had a ``pageDataDownloadUrl`` whose blob contained the content +
-    marker, with the live ``pageVersion`` unmoved (draft).
+    Raises ``TypeError`` on non-string input, ``ValueError`` on empty or
+    empty-after-strip result.
+
+    Fragment passthrough (no wrappers) is a no-op and incurs no cost.
+    """
+    if not isinstance(raw, str):
+        raise TypeError(f"html_fragment: expected str, got {type(raw).__name__}")
+    if not raw.strip():
+        raise ValueError("html_fragment: input is empty or blank")
+
+    text = raw
+
+    # Check for any document-structure wrappers (<!DOCTYPE>, <html>, or bare <head>).
+    lowered = text.lstrip().lower()
+    has_doctype = lowered.startswith("<!doctype")
+    has_html = lowered.startswith("<html")
+    has_head = bool(re.search(r"<head[\s>]", text[:200], flags=re.IGNORECASE))
+    has_body = bool(re.search(r"<body[\s>]", text[:200], flags=re.IGNORECASE))
+
+    # If there are no document-structure wrappers, return the raw text immediately.
+    if not (has_doctype or has_html or has_head or has_body):
+        return text
+
+    # Hoist <style> blocks from <head> so CSS survives stripping.
+    head_match = re.search(
+        r"<head[^>]*>(.*?)</head>",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    hoisted_styles = ""
+    if head_match:
+        head_content = head_match.group(1)
+        styles = re.findall(
+            r"<style[^>]*>.*?</style>",
+            head_content,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        hoisted_styles = "\n".join(styles)
+
+    # Extract <body> content if present.
+    body_match = re.search(
+        r"<body[^>]*>(.*?)</body>",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if body_match:
+        fragment = body_match.group(1).strip()
+    elif has_head:
+        # Has <head> but no <body> — strip <head>...</head> block entirely.
+        fragment = re.sub(r"<head[^>]*>.*?</head>", "", text, flags=re.IGNORECASE | re.DOTALL).strip()
+        # Strip any remaining outer wrappers.
+        fragment = re.sub(r"</?html[^>]*>", "", fragment, flags=re.IGNORECASE).strip()
+        fragment = re.sub(r"<!DOCTYPE[^>]*>", "", fragment, flags=re.IGNORECASE).strip()
+    else:
+        # No <body>, no <head> — strip outermost <html> wrapper only.
+        fragment = re.sub(r"<html[^>]*>|</html>", "", text, flags=re.IGNORECASE).strip()
+        # Also strip <!DOCTYPE ...>.
+        fragment = re.sub(r"<!DOCTYPE[^>]*>", "", fragment, flags=re.IGNORECASE).strip()
+
+    if hoisted_styles:
+        fragment = hoisted_styles + "\n" + fragment
+
+    # Strip <!DOCTYPE> from leading text in case it survived.
+    fragment = re.sub(r"^\s*<!DOCTYPE[^>]*>", "", fragment, flags=re.IGNORECASE).strip()
+
+    if not fragment:
+        raise ValueError(
+            "html_fragment: stripping full-document wrappers produced an empty result"
+        )
+    return fragment
+
+
+def _load_golden(surface: str) -> dict:
+    """Load a deep-copy of the captured golden page-data blob for *surface*.
+
+    Maps:
+      ``"funnel"``  → ``references/golden/funnel-optin.page-data.json``
+      ``"website"`` → ``references/golden/website-page.page-data.json``
+
+    Path is resolved relative to THIS file's location.
+
+    Raises ``FileNotFoundError`` with a 5-step capture procedure if absent.
+    Returns a ``copy.deepcopy()`` — callers mutate freely without touching the
+    cache.
+    """
+    _GOLDEN_FILES = {
+        "funnel": "funnel-optin.page-data.json",
+        "website": "website-page.page-data.json",
+    }
+    fname = _GOLDEN_FILES.get(surface)
+    if fname is None:
+        raise ValueError(f"_load_golden: unknown surface {surface!r}")
+
+    golden_dir = Path(__file__).parent.parent / "references" / "golden"
+    path = golden_dir / fname
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Golden reference missing: {path}\n"
+            f"To capture it, follow the 5-step procedure in\n"
+            f"  {golden_dir / 'README.md'}\n"
+            f"or run:  python tools/seed-ghl-auth.py --print-seed\n"
+            f"then use the agent-browser to fetch the live page-data URL.\n"
+            f"Until the golden exists, new_page_blob() refuses to emit a\n"
+            f"theme-less blob that would cause a 500 in GoHighLevel's renderer."
+        )
+    with open(path) as fh:
+        return copy.deepcopy(json.load(fh))
+
+
+def assert_renderable_shape(blob: dict, surface: str) -> None:
+    """Assert that *blob* satisfies the minimum shape GoHighLevel's renderer
+    requires.  Raises ``AssertionError`` naming the failing invariant.
+
+    Invariants checked:
+      1. blob is a dict
+      2. blob["general"]["general"]["colors"] is a non-empty list (the 18-entry
+         ``[{label, value}]`` palette the renderer reads — absence causes the
+         "Cannot read properties of undefined (reading 'colors')" 500).
+      3. blob["sections"] is non-empty
+      4. At least one element is reachable in sections[0]["elements"]
+      5. Exactly one element has the custom-code shape
+         (funnel: type=element meta=custom-code; website: type=code elType=code)
+      6. That element's rawCustomCode is non-empty
+      7. rawCustomCode does NOT start with ``<!doctype`` or ``<html``
+         (must be a fragment, not a full document)
+    """
+    assert isinstance(blob, dict), (
+        "Invariant 1 FAIL: blob must be a dict — got "
+        f"{type(blob).__name__}. This blob cannot be autosaved."
+    )
+
+    # Invariant 2 — colors palette
+    try:
+        colors = blob["general"]["general"]["colors"]
+    except (KeyError, TypeError):
+        colors = None
+    assert isinstance(colors, list) and len(colors) > 0, (
+        "Invariant 2 FAIL: blob['general']['general']['colors'] must be a non-empty list. "
+        "Absence causes the GoHighLevel 500 error "
+        "'Cannot read properties of undefined (reading \"colors\")'. "
+        "Use new_page_blob() which loads this from the golden reference."
+    )
+
+    # Invariant 3 — sections
+    sections = blob.get("sections", [])
+    assert isinstance(sections, list) and len(sections) > 0, (
+        "Invariant 3 FAIL: blob['sections'] must be a non-empty list."
+    )
+
+    # Invariant 4 — elements reachable
+    elements = sections[0].get("elements", [])
+    assert isinstance(elements, list) and len(elements) > 0, (
+        "Invariant 4 FAIL: sections[0]['elements'] must be non-empty."
+    )
+
+    # Invariant 5 — exactly one custom-code element
+    def _is_custom_code_elem(e: dict, surf: str) -> bool:
+        if surf == "funnel":
+            return (
+                isinstance(e, dict)
+                and e.get("type") == "element"
+                and e.get("meta") == "custom-code"
+            )
+        else:  # website
+            return isinstance(e, dict) and e.get("type") == "code" and e.get("elType") == "code"
+
+    cc_elems = [e for e in elements if _is_custom_code_elem(e, surface)]
+    assert len(cc_elems) == 1, (
+        f"Invariant 5 FAIL: expected exactly 1 custom-code element for surface={surface!r}, "
+        f"found {len(cc_elems)}: {[e.get('id') for e in cc_elems]}"
+    )
+
+    # Invariants 6 + 7 — rawCustomCode
+    try:
+        rawcc = cc_elems[0]["extra"]["customCode"]["value"]["rawCustomCode"]
+    except (KeyError, TypeError):
+        rawcc = None
+    assert isinstance(rawcc, str) and rawcc.strip(), (
+        "Invariant 6 FAIL: extra.customCode.value.rawCustomCode must be a non-empty string."
+    )
+    lowcc = rawcc.lstrip().lower()
+    assert not (lowcc.startswith("<!doctype") or lowcc.startswith("<html")), (
+        "Invariant 7 FAIL: rawCustomCode must be a body-level HTML FRAGMENT, not a full "
+        "document (starts with <!DOCTYPE or <html). "
+        "Use html_fragment() to strip the full-document wrappers before calling new_page_blob()."
+    )
+
+
+def new_page_blob(raw_custom_code: str, *, surface: str = "funnel", head_code: str = "") -> dict:
+    """Build a complete native ``pageData`` blob for a freshly-created page.
+
+    STORAGE vs RENDER (mandatory reading):
+    ---------------------------------------
+    A ``POST /funnels/builder/autosave/<pageId>`` returning HTTP 201 and the
+    marker being present in the *stored* bytes proves ONLY that the GoHighLevel
+    storage layer accepted the bytes. It does NOT prove the page renders.
+    GoHighLevel's renderer reads ``blob['general']['general']['colors']`` during
+    its React hydration cycle. If that key is absent the renderer throws:
+
+        TypeError: Cannot read properties of undefined (reading 'colors')
+
+    and returns HTTP 500 or a blank page — even though the autosave returned 201
+    and the marker is in the stored blob.
+
+    ``defaultSettings.colors`` does NOT exist in real GoHighLevel page blobs.
+    The correct path is ``general.general.colors`` — an 18-entry
+    ``[{label, value}]`` palette array.  ``pageStyles`` is a top-level CSS
+    string (```:root { --primary: #37ca37; ... }```), NOT a nested object.
+
+    Renderability is proven only by ``ghl_verify.render_check`` (HTTP 200 +
+    marker in the RENDERED JavaScript-hydrated DOM, not raw bytes).
+
+    Required structure rules:
+    - ``general.general.colors``: non-empty list of ``{label, value}`` dicts
+    - ``pageStyles``: top-level CSS string with ``--primary`` etc.
+    - Funnel element: ``type=element, meta=custom-code`` at
+      ``sections[0].elements[idx].extra.customCode.value.rawCustomCode``
+    - Website element: ``type=code, elType=code`` at
+      ``sections[0].elements[0].extra.customCode.value.rawCustomCode``
+    - ``rawCustomCode`` MUST be a body-level HTML FRAGMENT (no ``<!DOCTYPE>``
+      or ``<html>`` wrapper) — use ``html_fragment()`` to strip those.
 
     Args:
-        raw_custom_code: The page's HTML (e.g. the Lumiere hero markup + real
-            ``<img>`` CDN tag + the per-page marker).
+        raw_custom_code: The page's HTML fragment (e.g. the hero markup + real
+            ``<img>`` CDN tag + the per-page marker).  Full ``<!DOCTYPE html>``
+            documents are accepted and stripped automatically by ``html_fragment()``.
+        surface: ``"funnel"`` (default) or ``"website"``.  Determines which
+            golden reference is loaded and which element node shape is produced.
         head_code: Optional ``trackingCode.head`` content.
 
     Returns:
-        A ``pageData`` blob (top keys mirror a live page blob: ``sections``,
-        ``settings``, ``general``, ``pageStyles``, ``trackingCode``,
-        ``fontsForPreview``, ``popups``, ``popupsList``).
+        A complete ``pageData`` blob loaded from the golden reference, with
+        fresh IDs minted, the custom-code element's ``rawCustomCode`` set to
+        the normalised fragment, and the shape validated by
+        ``assert_renderable_shape`` before return.
+
+    Raises:
+        TypeError: if ``raw_custom_code`` is not a str.
+        ValueError: if ``surface`` is not ``"funnel"`` or ``"website"``.
+        ValueError: if ``raw_custom_code`` is empty after stripping wrappers.
+        FileNotFoundError: if the golden reference is absent (5-step capture
+            procedure included in the error message).
+        AssertionError: if the assembled blob fails any renderability invariant.
     """
-    if not isinstance(raw_custom_code, str):
-        raise TypeError("raw_custom_code must be a string (the page HTML)")
-    return {
-        "sections": [
-            {
-                "id": "section-1",
-                "type": "section",
-                "elements": [
-                    {
-                        "id": "element-1",
-                        "type": "html",
-                        "extra": {"customCode": {"value": {"rawCustomCode": raw_custom_code}}},
-                    }
-                ],
-            }
-        ],
-        "settings": {},
-        "general": {},
-        "pageStyles": {},
-        "trackingCode": {"head": head_code},
-        "fontsForPreview": [],
-        "popups": [],
-        "popupsList": [],
-    }
+    _VALID_SURFACES = {"funnel", "website"}
+    if surface not in _VALID_SURFACES:
+        raise ValueError(
+            f"new_page_blob: surface must be one of {sorted(_VALID_SURFACES)}, got {surface!r}"
+        )
+
+    # Normalise to fragment — strips <!DOCTYPE>/<html>/<body> wrappers, hoists
+    # <style> blocks from <head>, raises on empty result.
+    fragment = html_fragment(raw_custom_code)
+
+    # Deep-copy golden — never ship golden IDs verbatim.
+    blob = _load_golden(surface)
+
+    # Re-mint all structural IDs so golden IDs never appear in production.
+    def _fresh_id(prefix: str) -> str:
+        return f"{prefix}-{uuid.uuid4().hex[:8]}"
+
+    sections = blob.get("sections", [])
+    for sec in sections:
+        if isinstance(sec, dict):
+            sec["id"] = _fresh_id("section")
+            for elem in sec.get("elements", []):
+                if not isinstance(elem, dict):
+                    continue
+                _etype = elem.get("type", "")
+                _emeta = elem.get("meta", "")
+                if _etype == "row" or _emeta == "row":
+                    elem["id"] = _fresh_id("row")
+                elif _etype == "col" or _emeta == "col":
+                    elem["id"] = _fresh_id("col")
+                elif _emeta == "custom-code" or (_etype == "code" and elem.get("elType") == "code"):
+                    elem["id"] = _fresh_id("elem")
+                else:
+                    elem["id"] = _fresh_id("elem")
+
+    # Inject the fragment into the custom-code element.
+    elements = sections[0].get("elements", []) if sections else []
+    injected = False
+    for elem in elements:
+        if not isinstance(elem, dict):
+            continue
+        is_cc = (
+            (surface == "funnel" and elem.get("type") == "element" and elem.get("meta") == "custom-code")
+            or (surface == "website" and elem.get("type") == "code" and elem.get("elType") == "code")
+        )
+        if is_cc:
+            try:
+                elem["extra"]["customCode"]["value"]["rawCustomCode"] = fragment
+                injected = True
+            except (KeyError, TypeError):
+                # Path missing in golden — build it
+                elem.setdefault("extra", {})
+                elem["extra"].setdefault("customCode", {})
+                elem["extra"]["customCode"].setdefault("value", {})
+                elem["extra"]["customCode"]["value"]["rawCustomCode"] = fragment
+                injected = True
+            break
+
+    if not injected:
+        raise AssertionError(
+            f"new_page_blob: could not locate a custom-code element in the golden blob "
+            f"for surface={surface!r}. The golden may be corrupted — recapture it."
+        )
+
+    # Apply head_code if provided.
+    if head_code:
+        try:
+            blob["trackingCode"]["head"] = head_code
+        except (KeyError, TypeError):
+            blob.setdefault("trackingCode", {})
+            blob["trackingCode"]["head"] = head_code
+
+    # Validate before returning — raises AssertionError with a clear message.
+    assert_renderable_shape(blob, surface)
+
+    return blob
 
 
 # ── The GAP-1 edit: image-swap / Code-element value set (pure transform) ──────
@@ -1068,6 +1350,8 @@ __all__ = [
     "step_create_body",
     "created_page_id",
     "funnel_delete_body",
+    "html_fragment",
+    "assert_renderable_shape",
     "new_page_blob",
     "edit_element_customcode",
     "trigger_rewire_body",

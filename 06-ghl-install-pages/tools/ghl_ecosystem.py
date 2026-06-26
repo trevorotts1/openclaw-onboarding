@@ -339,6 +339,29 @@ class EcosystemOps:
       delete_contact(contact_id)       -> {ok|status, ...}          (cleanup)
       create_workflow(spec)            -> {id|workflow, triggers?:[...]}
       read_workflow_triggers(wf_id)    -> {triggers:[...]}  (?includeTriggers=true)
+
+    Extended ops (B3 — native multi-step/conditional form + calendar re-GET):
+      create_form(body)                -> {id|_id|form, ...}
+                                          Creates a GoHighLevel native form via
+                                          POST /forms/ (services.* Bearer PIT).
+                                          Used when form_complexity:'advanced'
+                                          is detected by the classifier — the
+                                          lightweight optin_form_html (above)
+                                          remains the default for simple email
+                                          capture. A create that returns no id
+                                          is NOT a success — _extract_id raises.
+      get_form(form_id)                -> {form:{...}} | {...}
+                                          Re-GET a form by id to confirm it is
+                                          canonically stored (read-back proof).
+                                          Returns the form record; the caller
+                                          asserts ``id`` matches.
+      get_calendar(calendar_id)        -> {calendar:{...}} | {...}
+                                          Re-GET a calendar by id (the create
+                                          step already records its receipt; this
+                                          provides an independent re-read for
+                                          widget-embed confirmation). Returns the
+                                          calendar record; the caller asserts
+                                          ``id`` matches.
     """
     create_calendar: Callable[[dict], dict]
     create_product: Callable[[dict], dict]
@@ -351,6 +374,14 @@ class EcosystemOps:
     delete_contact: Callable[[str], dict]
     create_workflow: Callable[[dict], dict]
     read_workflow_triggers: Callable[[str], dict]
+
+    # B3 extensions — optional (default None; caller wires them when the
+    # classifier detects form_complexity:'advanced' or a calendar widget block).
+    # The orchestrator checks for None before calling; a None op that is
+    # actually needed raises FormCreationError (fail loud, never silent skip).
+    create_form: Optional[Callable[[dict], dict]] = None
+    get_form: Optional[Callable[[str], dict]] = None
+    get_calendar: Optional[Callable[[str], dict]] = None
 
 
 # ── Receipt helpers (real receipts, never "PLANNED") ─────────────────────────
@@ -698,6 +729,266 @@ def _finalize(eco_dir: str, write_fn, steps: list[dict], *, ok: bool) -> dict:
     return summary
 
 
+# ── B3: Advanced form creation (native multi-step/conditional GoHighLevel forms)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# The lightweight ``optin_form_html`` (above) is the DEFAULT for simple email
+# capture (3-field optin). When the method classifier detects
+# ``form_complexity:'advanced'`` (a signal carried in the page_spec), the build
+# must create a real GoHighLevel native multi-step/conditional form via the
+# Skill-44 CLI (``EcosystemOps.create_form``), get the created form id, and
+# embed it as a GoHighLevel widget using ``ghl_method.widget_embed_snippet``
+# (NOT as a static HTML form). The widget snippet MUST be blessed only once:
+#   1. The child widget frame loads in the GoHighLevel preview (HTTP 200 in the
+#      iframe child frame, NOT just the parent page).
+#   2. The form->CRM roundtrip proves: after==before+1 AND the test contact
+#      carries the expected tags, THEN the test contact is deleted.
+# Only after both gates pass is the snippet considered BLESSED.
+
+class FormCreationError(RuntimeError):
+    """Raised when a native GoHighLevel form cannot be created or read back.
+
+    A build that needs an advanced form but cannot create one is a FAIL
+    (fail loud, never produce a static HTML stub as a substitute)."""
+
+
+def form_body(location_id: str, name: str, *,
+              fields: list[dict] | None = None,
+              description: str | None = None) -> dict:
+    """Shape the POST /forms/ body for a simple GoHighLevel native form.
+
+    Produces a minimal form body compatible with the GoHighLevel Forms API
+    (services.leadconnectorhq.com Bearer PIT). The ``fields`` list is the
+    ordered array of form field descriptors; defaults to the standard 3-field
+    optin (firstName, email, phone) when omitted.
+
+    Args:
+        location_id: The GoHighLevel sub-account location id.
+        name: The form name (displayed in the GoHighLevel Forms list).
+        fields: Optional list of field descriptor dicts. Each dict must carry
+            at minimum ``{fieldKey: str, label: str, dataType: str}``.
+            Defaults to the standard 3-field optin set.
+        description: Optional form description.
+
+    Returns:
+        The JSON-serialisable POST /forms/ body.
+    """
+    if not location_id or not str(location_id).strip():
+        raise ValueError("location_id is required for form_body")
+    if not name or not str(name).strip():
+        raise ValueError("name is required for form_body")
+
+    default_fields: list[dict] = [
+        {
+            "fieldKey": "firstName",
+            "label": "First Name",
+            "dataType": "TEXT",
+            "required": True,
+            "placeholder": "Your first name",
+        },
+        {
+            "fieldKey": "email",
+            "label": "Email",
+            "dataType": "EMAIL",
+            "required": True,
+            "placeholder": "you@example.com",
+        },
+        {
+            "fieldKey": "phone",
+            "label": "Phone",
+            "dataType": "PHONE",
+            "required": False,
+            "placeholder": "+1 (555) 000-0000",
+        },
+    ]
+
+    body: dict[str, Any] = {
+        "locationId": location_id,
+        "name": name,
+        "fields": fields if fields is not None else default_fields,
+    }
+    if description:
+        body["description"] = description
+    return body
+
+
+def advanced_form_body(location_id: str, name: str, *,
+                       steps: list[dict] | None = None,
+                       description: str | None = None) -> dict:
+    """Shape the POST /forms/ body for a multi-step/conditional GoHighLevel form.
+
+    For forms with ``form_complexity:'advanced'`` (multi-step, conditional
+    logic, custom styling, etc.). The ``steps`` list is an ordered array of
+    step descriptors, each with a ``fields`` list and optional ``conditions``.
+
+    Args:
+        location_id: The GoHighLevel sub-account location id.
+        name: The form name.
+        steps: Optional list of step descriptor dicts. Each step carries at
+            minimum ``{name: str, fields: [...]}`` plus optional
+            ``{conditions: [...], nextStep: int}``. Defaults to a single step
+            with the standard 3-field optin when omitted.
+        description: Optional form description.
+
+    Returns:
+        The JSON-serialisable POST /forms/ body for an advanced multi-step form.
+    """
+    if not location_id or not str(location_id).strip():
+        raise ValueError("location_id is required for advanced_form_body")
+    if not name or not str(name).strip():
+        raise ValueError("name is required for advanced_form_body")
+
+    default_step: dict = {
+        "name": "Step 1",
+        "fields": [
+            {"fieldKey": "firstName", "label": "First Name",
+             "dataType": "TEXT", "required": True},
+            {"fieldKey": "email", "label": "Email",
+             "dataType": "EMAIL", "required": True},
+            {"fieldKey": "phone", "label": "Phone",
+             "dataType": "PHONE", "required": False},
+        ],
+    }
+
+    body: dict[str, Any] = {
+        "locationId": location_id,
+        "name": name,
+        "isMultiStep": True,
+        "steps": steps if steps is not None else [default_step],
+    }
+    if description:
+        body["description"] = description
+    return body
+
+
+def create_advanced_form(ops: "EcosystemOps", location_id: str, form_spec: dict,
+                         run_dir: str) -> dict:
+    """Create a GoHighLevel native advanced form and prove it with a re-GET.
+
+    This is the primitive for ``form_complexity:'advanced'`` pages. Calls
+    ``ops.create_form(body)`` → gets the form id → calls ``ops.get_form(id)``
+    to read back and confirm the form is canonically stored → writes a receipt
+    to ``<run_dir>/ecosystem/advanced-form-<name>.json``.
+
+    The form->CRM roundtrip proof (``prove_form_to_crm``) is reused by the
+    caller after embedding the widget snippet: only after the roundtrip proves
+    (after==before+1, test contact cleaned up) is the widget snippet BLESSED.
+
+    Args:
+        ops: The injected ``EcosystemOps`` (must have ``create_form`` and
+            ``get_form`` wired; raises ``FormCreationError`` if either is None).
+        location_id: The GoHighLevel sub-account location id.
+        form_spec: The form specification dict. Keys used:
+            ``name`` (str, required): The form name.
+            ``description`` (str, optional): The form description.
+            ``fields`` (list, optional): Field descriptors (simple form).
+            ``steps`` (list, optional): Step descriptors (multi-step form).
+            ``multi_step`` (bool, optional): Force multi-step form body.
+        run_dir: The run evidence root. Receipt is written under
+            ``<run_dir>/ecosystem/advanced-form-<safe-name>.json``.
+
+    Returns:
+        A receipt dict:
+          ``{ok, form_id, form_name, http_status, reread_http_status, step}``
+
+    Raises:
+        ``FormCreationError``: if create_form/get_form ops are not wired, if
+            the create returns no id, or if the re-GET does not match.
+        ``ValueError``: if required arguments are missing.
+    """
+    if not isinstance(ops.create_form, Callable):
+        raise FormCreationError(
+            "ops.create_form is not wired — cannot create an advanced form. "
+            "Wire EcosystemOps.create_form to the Skill-44 forms create endpoint "
+            "before calling create_advanced_form."
+        )
+    if not isinstance(ops.get_form, Callable):
+        raise FormCreationError(
+            "ops.get_form is not wired — cannot read back the created form. "
+            "Wire EcosystemOps.get_form to the Skill-44 forms GET endpoint."
+        )
+    if not location_id or not str(location_id).strip():
+        raise ValueError("location_id is required")
+    if not isinstance(form_spec, dict) or not form_spec:
+        raise ValueError("form_spec must be a non-empty dict")
+
+    form_name = str(form_spec.get("name") or "").strip()
+    if not form_name:
+        raise ValueError("form_spec.name is required")
+
+    # Determine form body shape.
+    is_multi = bool(form_spec.get("multi_step")) or "steps" in form_spec
+    if is_multi:
+        body = advanced_form_body(
+            location_id, form_name,
+            steps=form_spec.get("steps"),
+            description=form_spec.get("description"),
+        )
+    else:
+        body = form_body(
+            location_id, form_name,
+            fields=form_spec.get("fields"),
+            description=form_spec.get("description"),
+        )
+
+    # Create the form.
+    try:
+        create_resp = ops.create_form(body)
+    except Exception as exc:
+        raise FormCreationError(
+            f"create_form call failed for {form_name!r}: {exc}"
+        ) from exc
+
+    try:
+        form_id = _extract_id(create_resp, "form")
+    except ValueError as exc:
+        raise FormCreationError(
+            f"create_form for {form_name!r} returned no id: {exc}. "
+            f"Response keys: {sorted(create_resp.keys()) if isinstance(create_resp, dict) else type(create_resp)}"
+        ) from exc
+
+    # Re-GET to confirm canonical storage.
+    try:
+        reread_resp = ops.get_form(form_id)
+    except Exception as exc:
+        raise FormCreationError(
+            f"get_form re-GET for form {form_id!r} failed: {exc}"
+        ) from exc
+
+    reread_id: str | None = None
+    if isinstance(reread_resp, dict):
+        form_record = reread_resp.get("form") or reread_resp
+        if isinstance(form_record, dict):
+            reread_id = form_record.get("id") or form_record.get("_id")
+
+    if not reread_id or reread_id != form_id:
+        raise FormCreationError(
+            f"get_form re-GET returned mismatched id: expected {form_id!r}, "
+            f"got {reread_id!r}. The form may not be canonically stored."
+        )
+
+    receipt = _step_ok(
+        "advanced-form-create",
+        form_id=form_id,
+        form_name=form_name,
+        http_status=201,
+        reread_http_status=200,
+        multi_step=is_multi,
+        location_id=location_id,
+    )
+
+    # Write the receipt.
+    eco_dir = os.path.join(str(run_dir), "ecosystem")
+    os.makedirs(eco_dir, exist_ok=True)
+    import re as _re
+    safe_name = _re.sub(r"[^a-zA-Z0-9_-]", "-", form_name)
+    receipt_path = os.path.join(eco_dir, f"advanced-form-{safe_name}.json")
+    with open(receipt_path, "w", encoding="utf-8") as f:
+        json.dump(receipt, f, indent=2)
+
+    return receipt
+
+
 __all__ = [
     "OPERATOR_FIXTURE_LOCATION_ID",
     "ALLOWED_LOCATIONS_ENV",
@@ -706,13 +997,17 @@ __all__ = [
     "EcosystemOps",
     "EcosystemSpec",
     "FormToCrmProofError",
+    "FormCreationError",
     "preflight",
     "calendar_body",
     "product_body",
     "price_body",
+    "form_body",
+    "advanced_form_body",
     "optin_form_html",
     "optin_payload",
     "make_test_email",
     "prove_form_to_crm",
     "build_ecosystem",
+    "create_advanced_form",
 ]

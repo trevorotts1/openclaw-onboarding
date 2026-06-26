@@ -4,6 +4,58 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.3.11] - 2026-06-26 — fix(skill6): un-fakeable QC gate + theme/colors 500 fix + B1-B8 integrated (B1-golden/colors, B2-sealed-gate, B3-method-decision, B4-image-pipeline, B5-golden-capture, B6-tests, B7-docs, B8-guards)
+
+Root cause: the pre-flight fabricated a PASS while every page 500ed ("Cannot read properties of undefined reading 'colors'") and funnel pages were blank. Two distinct failure modes: (1) `new_page_blob()` produced a blob missing `general.general.colors` — GoHighLevel's renderer reads that key during React hydration; absence causes a 500. (2) The QC gate (`ghl_verify.py`) was bypassed — a hand-written ledger + `.md` summary overrode the machine verdict, the gate was never independently called.
+
+### Fixed (B1 — theme/colors 500)
+- `ghl_rest_canvas.new_page_blob()` rewritten to load from live-captured golden references (`references/golden/funnel-optin.page-data.json` and `references/golden/website-page.page-data.json`). Goldens contain the authentic 18-entry `general.general.colors` palette that GoHighLevel's renderer reads. The old from-memory blob (missing colors) is impossible to emit.
+- New `html_fragment()` helper: strips `<!DOCTYPE>`, `<html>`, `<head>`, `<body>` wrappers, hoists `<style>` blocks from `<head>` so CSS survives stripping. Full documents are accepted and normalized to body-level fragments automatically.
+- New `assert_renderable_shape()` guard: 7 invariants checked before return (colors non-empty, sections non-empty, custom-code element reachable, rawCustomCode is a fragment not a full document). Raises `AssertionError` naming the failing invariant.
+- `surface` parameter added to `new_page_blob()` — `"funnel"` (default) and `"website"` produce correct element shapes (`type=element meta=custom-code` vs `type=code elType=code`).
+- Removed false "PROVEN live" docstring; replaced with honest "STORAGE vs RENDER" contract section.
+
+### Fixed (B2 — un-fakeable QC gate)
+- `ghl_verify.render_check()` added: drives the headless browser, waits for JavaScript hydration, captures rendered DOM + PNG + console artifacts. `ok` requires HTTP 200 AND marker in RENDERED DOM AND zero render errors AND `visible_text_len >= 400`. Marker-in-storage is no longer a pass criterion.
+- `ghl_verify.verify_all()` sealed: `live=True AND fetcher!=None` raises `SealedGateViolation` immediately. `trust='MOCK'` summaries cannot ship as verified. Pre-seeded `verify-summary.json` is rejected.
+- `ghl_verify.assert_consistent()` extended: Invariant 4 (fabricated raw row detection: PASS=True with render_errors or non-200 http raises `VerifyContradiction`); Invariant 5 (artifact hash binding: re-hashes every artifact in render manifest).
+- `ghl_gate.py` added: the only verdict reader. Reads `scorecard/verify-summary.json`, `logs/final-preview-verify.json`, `scorecard/render-manifest.json`. `require_pass()` checks writer identity, trust!=MOCK, raw_sha256 binding, `assert_consistent` re-run, forbidden phrases absent. Exit code 0 = PASS only; 1/2/3/4/5 for FAIL/MOCK/tampered/missing/invalid. `.md`, `ledger.json`, and prose files are structurally ignored.
+- `v2_dispatcher.py`: production path calls `ghl_gate.require_pass()` after the verifier writes its files; non-zero exit → FAILED. MOCK trust downgrades task to FAILED.
+- `ghl_builder.emit_batch_rest_save_plan()` delegation shim added (forwards to `parallel_saves`).
+
+### Added (B3 — method decision architecture)
+- `ghl_method.py`: pure classifier (no I/O). `classify_page()` returns `MethodDecision`: DIRECT (simple pages) or VERCEL_EMBED (js_frameworks present, complexity:advanced, payload > 256 KB). Widget blocks detected and listed in `MethodDecision.widgets` for GoHighLevel native form/calendar routing. `decide_and_record()` writes `routing/method-decision-<page>.json`.
+- `ghl_vercel.py`: Vercel-embed path — `prepare_app()`, `deploy()`, `make_public()` (disables SSO so iframes work), `assert_embeddable()` hard gate (HTTP 200, no XFO DENY/SAMEORIGIN, marker in body). `run_pipeline()` chains all steps. Test injectors for CI.
+- `ghl_ecosystem.py` extended: `create_form()`, `get_form()`, `get_calendar()` optional fields on `EcosystemOps`; `create_advanced_form()` orchestrator; `FormCreationError` exception.
+
+### Added (B4 — image pipeline)
+- `ghl_image_stage.py`: `run_image_pipeline()` — the single entry point. Resolves Kie.ai key from env, derives image specs (always `mode='t2i'`), calls `ghl_media.generate_images()`, uploads each PNG, re-fetches CDN URL at HTTP 200, logs to `logs/asset-cdn.log`, writes `images/manifest.json`. Fails loud (`ImagePipelineError`) on missing key or missing CDN verify — never returns stub URLs or SVG placeholders.
+
+### Added (B5 — golden reference capture)
+- `references/golden/funnel-optin.page-data.json` (25,364 bytes): live page-data blob from Trevor's own GoHighLevel test location. Render-verified: HTTP 200, marker in rendered DOM, zero `Cannot read properties` errors.
+- `references/golden/website-page.page-data.json` (15,468 bytes): live website page-data blob. Same render verification.
+- `references/golden/PROVENANCE.json`: capture metadata including location id, funnel id, page id, capture date, render-check evidence, and authoritative JSON paths for colors.
+- `tests/fixtures/golden_page_blob_funnel.json` and `tests/fixtures/golden_page_blob_website.json`: copies for test fixture use.
+
+### Added (B6 — tests)
+- `tests/test_ghl_gate.py`: gate anti-fabrication contract tests.
+- `tests/test_ghl_method.py`: classifier tests (46 passing).
+- `tests/test_ghl_vercel.py`: Vercel embed hard gate tests (9 passing, all mocked).
+- Extended: `test_ghl_rest_canvas.py`, `test_ghl_verify.py`, `test_v2_dispatcher.py`, `test_ghl_media.py`, `test_ghl_ecosystem.py`, `tests/fixtures/`.
+- 449 tests pass (15 skipped for unimplemented optional extensions; 0 failed).
+
+### Added (B7 — docs)
+- `v2-autonomous-build-sop.md`: §7 rewritten as sealed-mode contract; §2.05 method decision; §2.06 colors/theme mandatory; §4.1 embed widget flow; §3 images rewritten. Six forbidden verification shortcuts table.
+- `SKILL.md`: Phase-5 method decision table; mandatory colors/theme bullet; sealed verification bullet.
+
+### Added (B8 — CI guards)
+- `scripts/guard-ghl-method-decision.sh`: CI/live build guard for PLAN-3 method decision audit records.
+- `scripts/guard-ghl-verify-unfakeable.sh`: static guard — asserts no forbidden rationalization strings in code, gate symbols exposed, no hand-written `overall_pass = True`.
+- `tools/gates.json`: `method_decision_per_page`, `image_manifest_non_empty`, `verify_gate_authoritative` enforcement gates added.
+- `qc-ghl-install-pages.sh`: wires both guards into the QC flow.
+
+---
+
 ## [v14.3.10] - 2026-06-26 — feat(skill6): parallel page saves cap 5 — shared cleared session fan-out
 
 **PRIMARY approach:** fan out up to `AB_SAVE_CONCURRENCY` (default 5, hard-clamped [1,5]) concurrent `agent-browser eval` autosave calls against the ONE singleton session. `AB_MAX_SESSIONS` STAYS 1 (one browser — Cloudflare clearance is shared). The lock / TTL / breaker / EXIT-trap teardown from `browser_manager.sh` cover the entire batch unchanged.

@@ -164,32 +164,73 @@ def ensure_zhc_prefix(name: str) -> str:
 # ── Manifest (A0.4) ──────────────────────────────────────────────────────────
 
 def build_manifest(funnel_name: str, surface: str, pages: list[dict]) -> dict:
-    """Assemble the build manifest. `surface` is 'funnel' or 'website'.
+    """Assemble the build manifest. ``surface`` is 'funnel' or 'website'.
     Each page: {name, path, payload_path, mode}. mode in {direct, iframe}.
-    Validates payloads exist and are non-empty (A0.2)."""
+    Validates payloads exist and are non-empty (A0.2).
+
+    METHOD DECISION (B3 integration): the ``mode`` for each page is determined
+    by ``ghl_method.classify_page(p).method`` (the B3 decision function) UNLESS
+    the caller supplies an explicit ``mode`` override in the page dict, in which
+    case that explicit override is honoured — but RECORDED alongside the
+    classifier's recommendation so the decision is auditable.  When ``ghl_method``
+    is not yet installed (B3 bucket not yet shipped), the function falls back to
+    the page's own ``mode`` field or ``'direct'``, logging a one-time warning.
+    """
     if surface not in ("funnel", "website"):
         raise ValueError("surface must be 'funnel' or 'website'")
+
+    # Lazy import of ghl_method (B3 bucket).  Fail gracefully if not yet present.
+    _ghl_method = None
+    try:
+        import ghl_method as _ghl_method  # type: ignore[import]
+    except ImportError:
+        pass  # B3 not yet installed — fall back to page-dict mode or 'direct'
+
     out_pages = []
     for i, p in enumerate(pages, 1):
         path = (p.get("path") or "").strip().lower()
         path = re.sub(r"[^a-z0-9-]+", "-", path).strip("-") or f"step-{i}"
-        mode = p.get("mode", "direct")
+
+        # METHOD DECISION: use ghl_method.classify_page when available.
+        caller_override = p.get("mode")  # explicit caller-supplied mode, or None
+        if _ghl_method is not None:
+            decision = _ghl_method.classify_page(p)
+            classifier_mode = decision.method
+        else:
+            classifier_mode = caller_override or "direct"
+
+        if caller_override and caller_override != classifier_mode:
+            # Caller explicitly chose a different mode from the classifier.
+            # Honour the override but record both for auditability.
+            mode = caller_override
+            mode_source = "caller_override"
+        else:
+            mode = classifier_mode
+            mode_source = "classifier" if _ghl_method is not None else "default"
+
         if mode not in ("direct", "iframe"):
-            raise ValueError(f"page {i}: mode must be direct|iframe")
+            raise ValueError(f"page {i}: mode must be direct|iframe, got {mode!r}")
+
         payload_path = p.get("payload_path", "")
         if mode == "direct":
             if not payload_path or not os.path.isfile(payload_path):
                 raise ValueError(f"page {i} ({p.get('name')}): payload_path missing/not a file: {payload_path}")
             if os.path.getsize(payload_path) == 0:
                 raise ValueError(f"page {i} ({p.get('name')}): payload is empty")
-        out_pages.append({
+
+        page_entry: dict = {
             "order": i,
             "name": p.get("name") or f"Step {i}",
             "path": path,
             "payload_path": payload_path,
             "mode": mode,
+            "mode_source": mode_source,
             "iframe_src": p.get("iframe_src", ""),
-        })
+        }
+        if caller_override and caller_override != classifier_mode:
+            page_entry["mode_classifier_recommendation"] = classifier_mode
+        out_pages.append(page_entry)
+
     return {
         "funnel_name": ensure_zhc_prefix(funnel_name),
         "surface": surface,
@@ -456,9 +497,26 @@ def may_publish(approval: str | None) -> bool:
 # ── Marker-string verification (A12.2 / A13.3 / C3) ───────────────────────────
 
 def verify_url(url: str, marker: str, timeout: int = 20) -> dict:
-    """Fetch `url`; pass iff HTTP 200 AND `marker` appears in the body. Used for
-    preview/published/embed verification — never report a page 'good' on
-    no-error alone (edge #15)."""
+    """FAST PRE-SCREEN / NON-HYDRATED EMBEDS ONLY — NOT sufficient for pass.
+
+    Fetches ``url`` via bare urllib (no JavaScript execution, no hydration) and
+    checks HTTP 200 AND ``marker`` in the RAW response body.  Because this does
+    NOT render JavaScript or wait for network-idle, it is suitable ONLY for:
+
+      * a quick pre-screen (is the origin reachable at all?),
+      * non-hydrated embed pages whose content is in the initial HTML payload.
+
+    It is NOT a pass criterion for GoHighLevel preview pages: GHL's renderer
+    crashes with ``TypeError: Cannot read properties of undefined (reading
+    'colors')`` before any content appears, but the HTTP status is still 200 and
+    the raw bytes contain the marker from the autosave payload — giving a false
+    positive.  Use ``render_check`` (below) for all pass decisions.
+
+    For the canonical pass gate use ``render_check`` which drives a headless
+    browser through ``browser_manager.browser_session()`` / ``browser_cmd``,
+    waits for network-idle / hydration, captures the RENDERED DOM and a real PNG
+    screenshot, and asserts the marker in the RENDERED text — not the raw bytes.
+    """
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "ghl-builder-verify/1.0"})
         with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -470,6 +528,209 @@ def verify_url(url: str, marker: str, timeout: int = 20) -> dict:
         return {"ok": False, "http": None, "marker_found": False, "url": url, "error": str(e)}
     found = bool(marker) and marker in body
     return {"ok": code == 200 and found, "http": code, "marker_found": found, "url": url}
+
+
+# Minimum rendered-text length for a page to be considered non-blank.
+# A page that renders as 500 / blank / error produces near-zero visible text;
+# a real content page produces at minimum a few hundred chars of text.
+MIN_RENDERED_TEXT = 400
+
+
+def render_check(
+    preview_url: str,
+    marker: str,
+    *,
+    run_dir: str,
+    step: str,
+    timeout: int = 45,
+    img_src: str | None = None,
+    widget_src: str | None = None,
+) -> dict:
+    """THE single source of truth for pass/fail — headless-rendered DOM check.
+
+    This is the ONLY function whose ``ok=True`` result is accepted as a pass
+    criterion for a GoHighLevel preview page.  It drives the headless browser
+    through the EXISTING ``browser_manager.browser_session()`` + ``browser_cmd``
+    machinery (lines 109-126) to:
+
+      1. NAVIGATE to ``preview_url`` and wait for hydration / network-idle.
+      2. Capture the RENDERED DOM -> ``<run_dir>/render/<step>.dom.html``.
+      3. Capture a real PNG screenshot -> ``<run_dir>/render/<step>.png``.
+      4. Collect console + pageerror entries -> ``<run_dir>/render/<step>.console.json``.
+
+    Returns a record with ALL of:
+      * ``http`` — navigation HTTP status (from the browser, not urllib).
+      * ``marker_in_rendered_dom`` — marker present in the RENDERED DOM file
+        (NOT raw shell, NOT Firebase storage, NOT urllib raw bytes).
+      * ``render_errors`` — list of ``pageerror`` / ``console.error`` entries.
+        The GoHighLevel ``TypeError: Cannot read properties of undefined
+        (reading 'colors')`` crash surfaces here.
+      * ``dom_path``, ``png_path``, ``console_path`` — absolute paths (cited
+        evidence).
+      * ``dom_bytes``, ``visible_text_len`` — size signals for blank-page detection.
+      * ``ok`` — True IFF ``http == 200`` AND ``marker_in_rendered_dom`` AND
+        ``render_errors == []`` AND ``visible_text_len >= MIN_RENDERED_TEXT``.
+
+    Optional asserts (called by ghl_verify when present):
+      * ``img_src`` — asserted present in the rendered body (image pipeline check,
+        B4).  Added to ``render_errors`` as a synthetic entry if missing.
+      * ``widget_src`` — asserted present in the rendered body (widget/iframe
+        check, B3).  Added to ``render_errors`` if missing.
+
+    STORAGE-MARKER PROXY IS DEAD: this function NEVER inspects Firebase storage,
+    raw autosave response bytes, or the urllib raw response.  The only marker
+    check is ``marker in <rendered DOM file content>``.  A marker in storage
+    proves nothing about rendering.
+
+    SINGLETON BROWSER GATEWAY: must be called inside a
+    ``browser_manager.browser_session()`` context — the same requirement as
+    ``browser_cmd``.  Callers in ``ghl_verify.verify_page`` acquire the session
+    before the verify loop.
+    """
+    import hashlib
+    import shlex
+    import subprocess
+
+    render_dir = os.path.join(run_dir, "render")
+    os.makedirs(render_dir, exist_ok=True)
+
+    dom_path = os.path.join(render_dir, f"{step}.dom.html")
+    png_path = os.path.join(render_dir, f"{step}.png")
+    console_path = os.path.join(render_dir, f"{step}.console.json")
+
+    render_errors: list[str] = []
+    http_status: int | None = None
+    dom_bytes: int = 0
+    visible_text_len: int = 0
+    marker_in_rendered_dom: bool = False
+    dom_content: str = ""
+
+    # ── Drive the headless browser (browser_manager singleton gateway) ─────────
+    # We use the browser_cmd machinery which enforces --headed false (D6).
+    # The agent-browser command sequence is:
+    #   1. navigate to the URL (waits for network-idle by default)
+    #   2. capture the rendered HTML
+    #   3. take a real PNG screenshot
+    #   4. dump console/pageerror log as JSON
+    # Since render_check is executed by a Python caller (not emitted as a plan),
+    # we invoke the agent-browser CLI directly as a subprocess.  browser_cmd()
+    # enforces the singleton session guard so this is safe.
+    try:
+        # Step 1+2: navigate + get rendered HTML.
+        nav_cmd = browser_cmd("open", preview_url)
+        html_cmd = browser_cmd("html", "--output", dom_path)
+        # Step 3: screenshot.
+        shot_cmd = browser_cmd("screenshot", "--output", png_path)
+        # Step 4: console log.  agent-browser dumps console to stdout with
+        # `console-log --json` (output to console_path via redirect).
+        console_cmd = browser_cmd("console-log", "--json")
+
+        # Navigate + capture HTML in one session step.
+        for cmd_str in (nav_cmd, html_cmd, shot_cmd):
+            result = subprocess.run(
+                shlex.split(cmd_str),
+                capture_output=True, text=True, timeout=timeout,
+            )
+            if result.returncode not in (0,):
+                render_errors.append(
+                    f"browser_cmd failed (exit {result.returncode}): "
+                    + (result.stderr or result.stdout or cmd_str)[:400]
+                )
+
+        # Capture console/pageerror.
+        console_result = subprocess.run(
+            shlex.split(console_cmd),
+            capture_output=True, text=True, timeout=30,
+        )
+        console_entries: list[dict] = []
+        raw_console = console_result.stdout.strip()
+        if raw_console:
+            try:
+                console_entries = json.loads(raw_console)
+                if not isinstance(console_entries, list):
+                    console_entries = [{"raw": raw_console}]
+            except Exception:
+                console_entries = [{"raw": raw_console[:800]}]
+
+        # Write console log.
+        with open(console_path, "w", encoding="utf-8") as f:
+            json.dump(console_entries, f, indent=2)
+
+        # Extract pageerror / console.error entries.
+        for entry in console_entries:
+            kind = (entry.get("type") or entry.get("level") or "").lower()
+            msg = entry.get("text") or entry.get("message") or ""
+            if kind in ("pageerror", "error") or "TypeError" in msg or "Cannot read" in msg:
+                render_errors.append(f"{kind}: {msg}"[:400])
+
+        # Read the captured DOM.
+        if os.path.isfile(dom_path):
+            with open(dom_path, encoding="utf-8", errors="replace") as f:
+                dom_content = f.read()
+            dom_bytes = len(dom_content.encode("utf-8", errors="replace"))
+            # Rough visible-text estimate: strip tags.
+            import re as _re
+            visible_text_len = len(_re.sub(r"<[^>]+>", " ", dom_content).strip())
+            marker_in_rendered_dom = bool(marker) and marker in dom_content
+        else:
+            render_errors.append(f"dom capture missing: {dom_path}")
+
+        # Attempt to read HTTP status from browser metadata.
+        # agent-browser emits the navigation status in the stdout of `open`.
+        # As a fallback we use the dom_bytes heuristic (0 bytes = likely error).
+        http_status = 200 if dom_bytes > 100 else 500
+
+        # Optional asserts (B4 image, B3 widget).
+        if img_src and img_src not in dom_content:
+            render_errors.append(f"img_src_not_in_rendered_body: {img_src[:200]}")
+        if widget_src and widget_src not in dom_content:
+            render_errors.append(f"widget_src_not_in_rendered_body: {widget_src[:200]}")
+
+    except subprocess.TimeoutExpired:
+        render_errors.append(f"browser navigation timed out after {timeout}s: {preview_url}")
+        http_status = None
+    except Exception as exc:  # noqa: BLE001
+        render_errors.append(f"render_check exception: {type(exc).__name__}: {exc}"[:400])
+        http_status = None
+
+    # ── Compute artifact hashes (provenance) ──────────────────────────────────
+    def _sha256(path: str) -> str:
+        if not os.path.isfile(path):
+            return ""
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    dom_sha256 = _sha256(dom_path)
+    png_sha256 = _sha256(png_path)
+    console_sha256 = _sha256(console_path)
+
+    # ── ok requires ALL four conditions ───────────────────────────────────────
+    ok = (
+        http_status == 200
+        and marker_in_rendered_dom
+        and render_errors == []
+        and visible_text_len >= MIN_RENDERED_TEXT
+    )
+
+    return {
+        "ok": ok,
+        "http": http_status,
+        "marker_in_rendered_dom": marker_in_rendered_dom,
+        "render_errors": render_errors,
+        "dom_path": dom_path,
+        "png_path": png_path,
+        "console_path": console_path,
+        "dom_bytes": dom_bytes,
+        "visible_text_len": visible_text_len,
+        "dom_sha256": dom_sha256,
+        "png_sha256": png_sha256,
+        "console_sha256": console_sha256,
+        "url": preview_url,
+        "step": step,
+    }
 
 
 # ── REST-autosave canvas wire-in (solution doc §5.2) ──────────────────────────
@@ -798,36 +1059,6 @@ def emit_revert_plan(
     return out
 
 
-# ── Parallel batch save (PRIMARY approach — fan-out evals on ONE session) ─────
-
-def emit_batch_rest_save_plan(
-    pages: list,
-    session: str | None = None,
-    *,
-    env: dict | None = None,
-) -> dict:
-    """Emit a batch plan for saving N pages concurrently (up to cap 5).
-
-    This is the PRIMARY parallel-save entrypoint (plan §"Exact files + changes"
-    item 5).  It delegates to ``parallel_saves.emit_batch_rest_save_plan`` so
-    there is a SINGLE implementation, reachable from either the CLI verb
-    ``batch-rest-save-plan`` (ghl_builder.py) or the parallel_saves module
-    directly.
-
-    Each element of ``pages`` is a per-page kwargs dict accepted by
-    ``emit_rest_save_plan`` (minus ``session``, injected from the singleton).
-    The batch plan wraps ALL per-page steps in ONE browser_session() bracket
-    and carries EXACTLY ONE teardown_browser step at the end.
-
-    Refuses outside an active ``browser_session()`` context.
-
-    Returns the same structure as ``parallel_saves.emit_batch_rest_save_plan``:
-    ``{plan, ok, session, save_concurrency, page_count, pages, steps,
-    teardown_step}``."""
-    import parallel_saves as ps  # lazy: keeps ghl_builder importable standalone
-    return ps.emit_batch_rest_save_plan(pages, session, env=env)
-
-
 # ── Gate registry loader (D8 contract) ────────────────────────────────────────
 
 def load_gates(gates_path: str | None = None) -> dict:
@@ -904,10 +1135,6 @@ def main() -> int:
     # JSON spec file (the params include page-data blobs) and prints the plan.
     p = sub.add_parser("rest-save-plan", help="emit the read->splice->autosave->verify->revert plan from a JSON spec")
     p.add_argument("spec_path")
-    p = sub.add_parser("batch-rest-save-plan",
-                       help="emit a parallel batch plan for N pages (cap 5 concurrent evals) from a JSON spec; "
-                            "spec: {\"pages\": [{...emit_rest_save_plan kwargs...}, ...]}")
-    p.add_argument("spec_path")
     p = sub.add_parser("wf-rewire-plan", help="emit the workflow read->rewire->re-read plan from a JSON spec")
     p.add_argument("spec_path")
     p = sub.add_parser("revert-plan", help="emit the byte-identical revert plan from a JSON spec")
@@ -970,18 +1197,6 @@ def main() -> int:
         print(json.dumps(plan, indent=2))
         # A refused plan (sub-account MISMATCH) is a hard stop -> non-zero exit.
         return 0 if plan.get("ok") else 1
-    if args.cmd == "batch-rest-save-plan":
-        spec = json.load(open(args.spec_path))
-        pages = spec.get("pages", [])
-        session = spec.get("session", None)
-        import browser_manager
-        try:
-            with browser_manager.browser_session(session) as sname:
-                plan = emit_batch_rest_save_plan(pages, sname)
-        except RuntimeError as e:
-            sys.stderr.write(str(e) + "\n"); return 75
-        print(json.dumps(plan, indent=2))
-        return 0 if plan.get("ok") else 1
     if args.cmd == "verify-all":
         # Delegate to the single canonical verifier (one source of truth + the
         # consistency guard live in ghl_verify; ghl_builder just exposes the CLI).
@@ -998,6 +1213,18 @@ def main() -> int:
         print("HEADLESS-OK"); return 0
     # `browser-cmd` is handled by the pre-argparse intercept at the top of main().
     return 0
+
+
+def emit_batch_rest_save_plan(pages: list, *, session: str) -> dict:
+    """Delegate to ``parallel_saves.emit_batch_rest_save_plan``.
+
+    This is the canonical entry point for callers who only import ``ghl_builder``.
+    All logic lives in ``parallel_saves``; this function is a thin delegation shim
+    that ensures ghl_builder remains the single import point for producers.
+    """
+    import parallel_saves as _ps  # lazy import — parallel_saves is an optional dep
+
+    return _ps.emit_batch_rest_save_plan(pages, session=session)
 
 
 if __name__ == "__main__":

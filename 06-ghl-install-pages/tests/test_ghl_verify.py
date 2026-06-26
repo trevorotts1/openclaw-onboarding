@@ -273,3 +273,209 @@ class TestContradictionImpossible:
         gv.assert_consistent(summary, raw)
         assert summary["passed"] == 2 and summary["failed"] == 1
         assert summary["overall_pass"] is False
+
+
+# ── B6 ADDITIONS: un-fakeability assertions (the fabrication-blocking contract) ─
+#
+# The diagnostic showed three failure modes that made a fake PASS possible:
+#   1. verify_all called with live=True was bypassed by hand-writing ledgers.
+#   2. A raw record with http:500 was re-labeled "API difference" → PASS.
+#   3. The fallback "marker in stored bytes" substitute was accepted as proof.
+# These tests assert that NONE of those paths exist.
+
+import hashlib as _hashlib
+
+
+class TestSealedGateMustUseFetcher:
+    """verify_all must require an injected fetcher (live=False/mock path) in CI.
+
+    The 'live=True' path (calling the real network) is gated behind a flag and
+    MUST raise SealedGateViolation when a fetcher argument is also supplied —
+    that combination is a signal that a caller is trying to bypass the mock path.
+    If the production code has not yet implemented SealedGateViolation, the test
+    is skipped; once B2 lands the class, it will automatically run.
+    """
+
+    def test_live_true_with_fetcher_raises_sealed_gate_violation(self, tmp_path):
+        # If SealedGateViolation does not exist yet (B2 not landed), skip.
+        SealedGateViolation = getattr(gv, "SealedGateViolation", None)
+        if SealedGateViolation is None:
+            pytest.skip("SealedGateViolation not yet implemented (B2 pending)")
+
+        pages = [_page("home")]
+        fetcher = _fetcher({FAKE_PREVIEW: _ok()})
+
+        # Calling verify_all with both live=True AND a fetcher must be rejected —
+        # the gate is sealed to prevent the live path from being trivially bypassed
+        # by injecting a fake fetcher while claiming it is a live run.
+        with pytest.raises(SealedGateViolation):
+            gv.verify_all(str(tmp_path), pages, live=True, fetcher=fetcher)
+
+
+class TestRawRecordCannotBeOverridden:
+    """A raw record with http:500 (or any non-200) labeled PASS:true must be
+    rejected by assert_consistent — the 'API difference' rationalization is
+    structurally impossible because the guard derives from the raw evidence, not
+    from human annotations."""
+
+    def test_raw_http_500_with_pass_true_raises_contradiction(self):
+        """If a raw record has http_code:500 the page FAILED — a summary claiming
+        PASS:true is a contradiction and the guard must reject it."""
+        raw = [{"step": "home", "PASS": True, "http_code": 500,
+                "marker_in_preview": False}]
+        # The summary derived from this raw would have overall_pass=True (1/1)
+        # BUT the http_code tells us the page didn't load.  We feed a hand-crafted
+        # "optimistic" summary that claims overall_pass=True to assert the guard
+        # catches it OR we verify derive_summary handles 500s correctly.
+        #
+        # The contract: derive_summary uses ONLY the PASS flag from raw records.
+        # If a caller sets PASS:True on a 500 record (the exact pre-flight abuse),
+        # derive_summary will output overall_pass=True for that record — but that
+        # means the BUG is in verify_page, which must set PASS:False on non-200.
+        # assert_consistent then catches any mismatch against derive_summary's own
+        # output.  We test verify_page here:
+        result = gv.verify_page(
+            {"step": "home", "preview_url": FAKE_PREVIEW, "marker": FAKE_MARKER},
+            fetcher=_fetcher({FAKE_PREVIEW: {"ok": False, "http": 500,
+                                              "marker_found": False, "url": FAKE_PREVIEW}})
+        )
+        assert result["PASS"] is False, \
+            "http:500 must produce PASS:False — a 500 is never a pass"
+        assert result["http_code"] == 500
+
+    def test_summary_with_pass_true_but_raw_500_raises_contradiction(self):
+        """Plant a raw log with a 500 record marked PASS:True (the pre-flight
+        forgery) and assert that assert_consistent raises VerifyContradiction."""
+        forged_raw = [{"step": "home", "PASS": True, "http_code": 500}]
+        honest_summary = {"total": 1, "passed": 1, "failed": 0, "overall_pass": True}
+        # The forgery: raw says PASS:True (already set), summary agrees.
+        # assert_consistent with honest re-count should NOT raise here because the
+        # counts match (both lie the same way).  The real defense is that
+        # verify_page never produces PASS:True on a 500 (the test above covers that).
+        # However: if the BUILD CONTRACT requires that assert_consistent ALSO checks
+        # http_code, assert that too:
+        check_http = getattr(gv, "assert_consistent_strict", None)
+        if check_http is not None:
+            # Strict mode: any record with http_code != 200 and PASS:True is caught.
+            with pytest.raises(gv.VerifyContradiction):
+                check_http(honest_summary, forged_raw)
+        else:
+            pytest.skip(
+                "assert_consistent_strict not yet implemented; "
+                "the http_code guard is in verify_page (covered by the test above)"
+            )
+
+    def test_api_difference_string_never_converts_500_to_pass(self):
+        """The string 'API difference' appearing anywhere in a record or summary
+        must NEVER make a non-200 page become PASS:True.  We prove this by
+        verifying that the presence of the string does not affect verify_page's
+        output for a 500 response."""
+        result = gv.verify_page(
+            {"step": "home", "preview_url": FAKE_PREVIEW, "marker": FAKE_MARKER,
+             "note": "API difference — harmless"},  # the exact excuse from the pre-flight
+            fetcher=_fetcher({FAKE_PREVIEW: {"ok": False, "http": 500,
+                                              "marker_found": False,
+                                              "url": FAKE_PREVIEW,
+                                              "error": "API difference"}})
+        )
+        assert result["PASS"] is False, \
+            "The string 'API difference' must NOT convert a 500 response to PASS"
+
+    def test_harmless_string_never_converts_500_to_pass(self):
+        """Same guard for the word 'harmless' — any rationalization string in the
+        raw result must not flip PASS to True."""
+        result = gv.verify_page(
+            {"step": "home", "preview_url": FAKE_PREVIEW, "marker": FAKE_MARKER},
+            fetcher=_fetcher({FAKE_PREVIEW: {"ok": False, "http": 500,
+                                              "marker_found": False,
+                                              "url": FAKE_PREVIEW,
+                                              "error": "harmless type difference"}})
+        )
+        assert result["PASS"] is False, \
+            "The word 'harmless' must NOT convert a 500 response to PASS"
+
+
+class TestSummaryHashIntegrity:
+    """A summary whose raw_sha256 does not match the raw file on disk must be
+    rejected — this guards against a hand-edited summary file overriding the
+    machine verdict.
+
+    If the production code does not yet carry a raw_sha256 field in the summary
+    (B2 may add it), this test is skipped until that field lands.
+    """
+
+    def _write_raw(self, tmp_path, raw: list) -> tuple[str, str]:
+        """Write raw to disk and return (path, sha256)."""
+        import os
+        logs = tmp_path / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        p = logs / "final-preview-verify.json"
+        content = json.dumps(raw, indent=2)
+        p.write_text(content, encoding="utf-8")
+        sha = _hashlib.sha256(content.encode()).hexdigest()
+        return str(p), sha
+
+    def test_sha256_mismatch_rejects_tampered_summary(self, tmp_path):
+        """Plant a raw file, compute its hash, then present a summary with a
+        different hash — the guard must reject it."""
+        validate_sha = getattr(gv, "validate_summary_raw_sha256", None)
+        if validate_sha is None:
+            pytest.skip("validate_summary_raw_sha256 not yet implemented (B2 pending)")
+
+        raw = [{"step": "home", "PASS": True, "http_code": 200, "marker_in_preview": True}]
+        raw_path, real_sha = self._write_raw(tmp_path, raw)
+
+        # A tampered summary claims a different sha256.
+        tampered_summary = {
+            "total": 1, "passed": 1, "failed": 0, "overall_pass": True,
+            "raw_sha256": "aaaa" + real_sha[4:],  # mutate a few chars
+        }
+        with pytest.raises(gv.VerifyContradiction):
+            validate_sha(tampered_summary, raw_path)
+
+    def test_matching_sha256_passes(self, tmp_path):
+        """A summary with the correct raw_sha256 must pass the guard."""
+        validate_sha = getattr(gv, "validate_summary_raw_sha256", None)
+        if validate_sha is None:
+            pytest.skip("validate_summary_raw_sha256 not yet implemented (B2 pending)")
+
+        raw = [{"step": "home", "PASS": True, "http_code": 200, "marker_in_preview": True}]
+        raw_path, real_sha = self._write_raw(tmp_path, raw)
+        good_summary = {
+            "total": 1, "passed": 1, "failed": 0, "overall_pass": True,
+            "raw_sha256": real_sha,
+        }
+        validate_sha(good_summary, raw_path)  # must not raise
+
+
+class TestRenderManifestHashGuard:
+    """A render-manifest whose hash does not match the artifact on disk must be
+    rejected by the gate (guards against tampered manifest files).
+
+    Skipped when the render-manifest hash guard is not yet implemented (B2).
+    """
+
+    def test_manifest_hash_mismatch_rejects(self, tmp_path):
+        validate_manifest = getattr(gv, "validate_manifest_artifact_hash", None)
+        if validate_manifest is None:
+            pytest.skip("validate_manifest_artifact_hash not yet implemented (B2 pending)")
+
+        art = tmp_path / "hero.png"
+        art.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+        real_sha = _hashlib.sha256(art.read_bytes()).hexdigest()
+
+        # Tamper the hash in the manifest entry.
+        manifest_entry = {"file": str(art), "sha256": "bad" + real_sha[3:]}
+        with pytest.raises(gv.VerifyContradiction):
+            validate_manifest([manifest_entry])
+
+    def test_manifest_hash_match_passes(self, tmp_path):
+        validate_manifest = getattr(gv, "validate_manifest_artifact_hash", None)
+        if validate_manifest is None:
+            pytest.skip("validate_manifest_artifact_hash not yet implemented (B2 pending)")
+
+        art = tmp_path / "hero.png"
+        art.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+        real_sha = _hashlib.sha256(art.read_bytes()).hexdigest()
+        manifest_entry = {"file": str(art), "sha256": real_sha}
+        validate_manifest([manifest_entry])  # must not raise

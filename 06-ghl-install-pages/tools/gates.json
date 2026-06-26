@@ -303,5 +303,59 @@
       "find": "read the published page's own origin after first publish",
       "note": "Only knowable from a published page. Whitelist it in the Vercel app's frame-ancestors / X-Frame-Options for Mode 2 embeds."
     }
-  ]
+  ],
+
+  "_enforcement_gates": {
+    "_doc": "Build-enforcement gates — these are NOT DOM-selector gates (they do not appear in the 'gates' array and do not affect the captured=2/runtime=26 counts). They are POLICY gates that a build must satisfy before it can be marked done. Each entry has 'required':true (hard gate — build is blocked on failure) or 'required':false (warn-only). These gates are checked by guard scripts in 06-ghl-install-pages/scripts/ and by ghl_gate.py (the authoritative pass reader). They were added 2026-06-26 in response to the pre-flight fabrication incident: a run hand-wrote ledger.json to claim PASS when the machine had recorded FAIL on every page. The guards make that bypass structurally impossible.",
+    "_added": "2026-06-26",
+    "_incident_ref": "Pre-flight report: SKILL6-PREFLIGHT-FAILURE-DIAGNOSTIC.md — both builds FAILED (website HTTP 500 on every page: 'Cannot read properties of undefined reading colors'; funnel pages blank). A hand-written summary claimed PASS. These gates prevent recurrence."
+  },
+
+  "method_decision_per_page": {
+    "_doc": "PLAN-3 — Method-decision architecture gate. Every built page must have a routing/method-decision-<page>.json file with a non-empty 'method' field ('direct' or 'vercel') and a non-empty 'reason' field (>=20 chars) justifying the choice. A build cannot be marked done without this file. Enforced by 06-ghl-install-pages/scripts/guard-ghl-method-decision.sh.",
+    "required": true,
+    "guard_script": "06-ghl-install-pages/scripts/guard-ghl-method-decision.sh",
+    "checked_by": "guard-ghl-method-decision.sh (--static for CI; --run-dir <path> for live runs)",
+    "valid_methods": ["direct", "vercel"],
+    "method_rules": {
+      "direct": "Native GoHighLevel page: HTML FRAGMENT (not a full <!DOCTYPE html> document) inside a Custom Code element. Saved via ghl_rest_canvas / ghl_builder. Use when the page is simple enough that GoHighLevel's renderer will not conflict with the markup. The page blob MUST include a populated defaultSettings.colors theme object and a full section->row->column->element nesting; an empty settings:{} blob causes HTTP 500 on every page load.",
+      "vercel": "Vercel-hosted page embedded into GoHighLevel via a responsive <iframe> in a Custom Code element (Skill 06 Mode 2, gate 26). Use ONLY when the page is rich or complex enough that GoHighLevel's styling conflicts with the markup. REQUIREMENTS: the Vercel deployment must be public (deployment protection disabled), must carry permissive frame-ancestors headers (no X-Frame-Options: DENY), and the vercel_url field in the method-decision file must be populated. Verify headers with curl -D- before building. Default to 'direct'; escalate to 'vercel' only when necessary."
+    },
+    "non_gate": "A missing routing/method-decision-<page>.json is not a warn — it is a hard build block. The gate cannot be satisfied by a hand-written ledger or a build summary; the file must be on disk in the run's routing/ directory.",
+    "ci_mode": "In hermetic CI (--static), this gate checks only that gates.json contains this entry with required:true. The per-page file check only runs in --run-dir mode (live builds)."
+  },
+
+  "image_manifest_non_empty": {
+    "_doc": "PLAN-4 FIX-2/FIX-4 — Image pipeline gate. A build is blocked from being marked done if images/manifest.json is absent OR contains zero records OR any record lacks an https URL with a verified HTTP 200 response. The real image pipeline (generate via Kie.ai gpt-image-2 -> verify PNG -> upload to GoHighLevel CDN -> embed <img> -> confirm CDN URL returns HTTP 200) must run. An empty images/ folder is a hard FAIL, not a warn.",
+    "required": true,
+    "guard_script": "06-ghl-install-pages/scripts/guard-ghl-method-decision.sh",
+    "checked_by": "ghl_gate.py require-pass (reads images/manifest.json and asserts non-empty with https+200 records)",
+    "manifest_path": "images/manifest.json (relative to the run directory)",
+    "manifest_schema": {
+      "_doc": "Each record in images/manifest.json must carry these fields to satisfy the gate.",
+      "image_id": "string — unique ID for this image in the build",
+      "local_path": "string — absolute path to the verified PNG on disk",
+      "cdn_url": "string — public GoHighLevel CDN URL (must start with https://)",
+      "cdn_http_status": "integer — HTTP status of a GET to cdn_url (must be 200)",
+      "page": "string — which page this image belongs to",
+      "embedded_in_html": "boolean — true if an <img src=cdn_url> tag was spliced into the page HTML"
+    },
+    "non_gate": "Storage of the image file on disk is NOT verification. The CDN URL must return HTTP 200 and the <img> tag must be present in the saved page HTML. 'Images folder exists but is empty' is the same as 'no image pipeline ran' — hard FAIL.",
+    "ci_mode": "In hermetic CI the guard checks only that this gate entry exists with required:true. The manifest contents are checked at live-run time by ghl_gate require-pass."
+  },
+
+  "verify_gate_authoritative": {
+    "_doc": "PLAN-2 backstop — The authoritative pass gate. A build's overall PASS/FAIL verdict comes from ONE source only: ghl_verify.verify_all (which calls ghl_builder.verify_url for each page — HTTP 200 AND marker in the rendered body at the /preview/<pageId> URL). No other source may issue a PASS verdict. Enforced by guard-ghl-verify-unfakeable.sh (static) and ghl_gate.py require-pass (runtime).",
+    "required": true,
+    "guard_script": "06-ghl-install-pages/scripts/guard-ghl-verify-unfakeable.sh",
+    "checked_by": "guard-ghl-verify-unfakeable.sh (static CI); ghl_gate.py require-pass (live run)",
+    "pass_criterion": "HTTP 200 AND marker present in the RENDERED body of the public /preview/<pageId> URL. Both conditions must be true. Neither alone is sufficient.",
+    "non_gates": {
+      "marker_in_storage": "NOT a gate. 'The marker text is present in the stored Firebase/storage blob' proves only that bytes were uploaded, not that the page renders. A page can have the marker in storage AND return HTTP 500 on load — which is exactly what happened in the 2026-06-26 pre-flight. This string is BANNED as a pass criterion in all tools/*.py.",
+      "http_201_on_save": "NOT a gate. A 201 response from the GoHighLevel autosave endpoint proves only that the server accepted the bytes, not that the page renders. The pre-flight mis-read a 201 as proof of a working page.",
+      "api_difference_rationalization": "NOT a gate. Calling an HTTP 500 an 'API difference' does not make it a pass. A 500 is always a FAIL. This string is BANNED as a rationalization in all tools/*.py.",
+      "hand_written_ledger": "NOT a gate. A ledger.json written by hand (not derived from ghl_verify.verify_all raw results) cannot issue a PASS verdict. The QC gate reads ghl_verify's outputs only."
+    },
+    "verdict_chain": "ghl_verify.verify_all -> writes logs/final-preview-verify.json (raw) -> derives scorecard/verify-summary.json -> assert_consistent (FAIL LOUD if summary > raw) -> ghl_gate require-pass reads summary and raw, re-asserts consistency, exits non-zero on FAIL. This chain cannot be short-circuited."
+  }
 }

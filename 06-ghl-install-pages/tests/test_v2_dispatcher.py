@@ -194,3 +194,117 @@ class TestWithRealVerifier:
         raw = json.load(open(os.path.join(tmp_path, "logs", "final-preview-verify.json")))
         summary = json.load(open(os.path.join(tmp_path, "scorecard", "verify-summary.json")))
         gv.assert_consistent(summary, raw)
+
+
+# ── B6 ADDITIONS: gate-tamper and MOCK-trust assertions ──────────────────────
+#
+# The diagnostic showed the gate could be bypassed by hand-writing ledgers.
+# These tests assert that:
+#   (a) a build whose gate output is tampered becomes FAILED (never VERIFIED),
+#   (b) a trust:'MOCK' / MOCK-DO-NOT-SHIP run can never be presented as shippable.
+
+class TestGateTamperBecomesFailedState:
+    """dispatch_one reaching 'verified' requires the gate output to be clean.
+
+    Feed a build whose canonical verify output is tampered (summary.overall_pass
+    flipped from False to True by hand) and assert the task becomes FAILED, not
+    VERIFIED.  This tests the dispatcher's ability to re-validate the gate output
+    rather than trusting the summary it reads from disk.
+
+    If the dispatcher does not yet call a gate re-validator (B2 not landed), the
+    test is skipped.
+    """
+
+    def test_tampered_gate_output_is_failed_not_verified(self, tmp_path):
+        # Check whether the dispatcher supports a gate_validator injection.
+        if not hasattr(disp, "dispatch_one") or "gate_validator" not in str(
+            disp.dispatch_one.__code__.co_varnames
+        ):
+            pytest.skip(
+                "dispatch_one does not yet accept gate_validator (B2 pending)"
+            )
+
+        pages = [{"step": "optin", "preview_url": "u1", "marker": "m"}]
+        # The "honest" fetcher: page 500s → overall_pass = False.
+        results = {"u1": {"ok": False, "http": 500, "marker_found": False, "url": "u1"}}
+
+        def _fetch(url, marker):
+            return results.get(url, {"ok": False, "http": None,
+                                     "marker_found": False, "url": url})
+
+        def _real_verifier(evidence_root, pgs, **kw):
+            out = gv.verify_all(evidence_root, pgs, fetcher=_fetch, **kw)
+            # Tamper the on-disk summary to claim overall_pass=True (the forgery).
+            summary_path = out["summary_path"]
+            forged = json.load(open(summary_path))
+            forged["overall_pass"] = True        # the lie
+            forged["passed"] = forged["total"]   # cover the counts
+            forged["failed"] = 0
+            with open(summary_path, "w") as f:
+                json.dump(forged, f)
+            return out
+
+        def _gate_validator(summary_path, raw_path):
+            """Re-derive from raw and reject if summary is more optimistic."""
+            raw = json.load(open(raw_path))
+            summary = json.load(open(summary_path))
+            gv.assert_consistent(summary, raw)  # raises VerifyContradiction
+
+        res = disp.dispatch_one(
+            FAKE_TASK, str(tmp_path),
+            builder=_builder_ok(pages=pages),
+            verifier=_real_verifier,
+            gate_validator=_gate_validator,
+        )
+        assert res.state == disp.STATE_FAILED, \
+            "a tampered gate output must FAIL the build, not reach VERIFIED"
+        assert "tamper" in res.reason.lower() or "contradiction" in res.reason.lower() \
+               or "consistent" in res.reason.lower(), \
+            f"reason must mention the contradiction; got: {res.reason!r}"
+
+
+class TestMockTrustCannotShipAsVerified:
+    """A run with trust:'MOCK' in the task or in the build output must never be
+    presented as shippable/verified — it is test scaffolding only.
+
+    The MOCK-DO-NOT-SHIP sentinel prevents a mock run from accidentally being
+    promoted to a real build.  If the dispatcher does not yet check this flag,
+    the test is skipped.
+    """
+
+    def test_mock_task_cannot_reach_verified(self, tmp_path):
+        mock_task = dict(FAKE_TASK, trust="MOCK")
+        if not hasattr(disp, "MOCK_DO_NOT_SHIP"):
+            pytest.skip("MOCK_DO_NOT_SHIP sentinel not yet implemented (B2 pending)")
+
+        res = disp.dispatch_one(
+            mock_task, str(tmp_path),
+            builder=_builder_ok(),
+            verifier=_fake_verifier(True),
+        )
+        # A MOCK task must never reach STATE_VERIFIED (it is not shippable).
+        assert res.state != disp.STATE_VERIFIED, \
+            "a trust:'MOCK' task must not reach STATE_VERIFIED"
+
+    def test_mock_sentinel_in_build_output_blocks_verified(self, tmp_path):
+        """If the builder returns trust:'MOCK' in its output, the dispatcher must
+        block the build from reaching STATE_VERIFIED."""
+        if not hasattr(disp, "MOCK_DO_NOT_SHIP"):
+            pytest.skip("MOCK_DO_NOT_SHIP sentinel not yet implemented (B2 pending)")
+
+        def _mock_builder(task, root):
+            os.makedirs(os.path.join(root, "funnel"), exist_ok=True)
+            return {
+                "pages": [{"step": "optin", "preview_url": "u", "marker": "m"}],
+                "location_gate_ok": True,
+                "duration_s": 5.0,
+                "trust": disp.MOCK_DO_NOT_SHIP,  # the sentinel
+            }
+
+        res = disp.dispatch_one(
+            FAKE_TASK, str(tmp_path),
+            builder=_mock_builder,
+            verifier=_fake_verifier(True),
+        )
+        assert res.state != disp.STATE_VERIFIED, \
+            "a build with MOCK_DO_NOT_SHIP trust must not reach STATE_VERIFIED"

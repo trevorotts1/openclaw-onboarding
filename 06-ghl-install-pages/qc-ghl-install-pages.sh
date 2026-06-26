@@ -81,6 +81,30 @@ if command -v pytest >/dev/null 2>&1 && [ -f "$T2_TESTS/test_guard_ghl_auth_fall
   warn_only "Tier-2 auth-fallback pytest suite passes (mock-only)" \
     "( cd \"$SKILL_DIR\" && pytest -q tests/test_ghl_auth_orchestrator.py tests/test_ghl_auth_fallback_gates.py tests/test_ghl_auth_fallback_happy_and_selfheal.py tests/test_guard_ghl_auth_fallback.py tests/test_ghl_secret_hygiene.py )"
 fi
+
+# B8 ENFORCEMENT GUARDS (2026-06-26): CI-time static checks that no fake-pass
+# shortcut or missing method-decision file can slip through.
+# These guards live in $SKILL_DIR/scripts/ (skill-level, not repo-level) because
+# they are specific to Skill 06 and not shared across the fleet.
+GUARD_MD="$SKILL_DIR/scripts/guard-ghl-method-decision.sh"
+GUARD_VU="$SKILL_DIR/scripts/guard-ghl-verify-unfakeable.sh"
+
+if [ -f "$GUARD_MD" ]; then
+  assert "B8: method-decision gate present and required in gates.json" \
+    "bash \"$GUARD_MD\" --static"
+else
+  warn_only "B8 method-decision guard available (scripts/guard-ghl-method-decision.sh)" \
+    "[ -f \"$GUARD_MD\" ]"
+fi
+
+if [ -f "$GUARD_VU" ]; then
+  assert "B8: verify-layer cannot be faked (VerifyContradiction + no storage-marker pass)" \
+    "bash \"$GUARD_VU\""
+else
+  warn_only "B8 verify-unfakeable guard available (scripts/guard-ghl-verify-unfakeable.sh)" \
+    "[ -f \"$GUARD_VU\" ]"
+fi
+
 echo ""
 echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings ═══"
 [ $FAIL -gt 0 ] && { red "Skill 06 QC FAILED"; exit 1; } || { green "Skill 06 QC PASS"; exit 0; }
