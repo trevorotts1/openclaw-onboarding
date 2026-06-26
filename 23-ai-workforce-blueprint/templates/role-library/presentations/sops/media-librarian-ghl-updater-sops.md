@@ -14,11 +14,13 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 > For every deck whose client has GHL (`intake.json` does NOT set `has_ghl: false`),
 > all three GHL actions below are MANDATORY and GATED — a deck is NOT done until each
 > is recorded in `working/checkpoints/media_library.json`:
-> 1. **GHL media destination resolved** (SOP 9.3, run-once) — `ghl_folder_id` set to a
->    human-supplied pre-made folder id OR to `"root"` (the shareable media root). `"root"`
->    is a PASSING value. The agent NEVER creates a folder via API (the folder-create
->    endpoint returns 404). A null/empty `ghl_folder_id` is the unset Step-0 seed and does
->    NOT satisfy the gate.
+> 1. **GHL media destination resolved** (SOP 9.3, run-once) — `ghl_folder_id` set by
+>    CREATING a per-deck folder via the verified `ghl_media.create_media_folder`
+>    (POST `/medias/folder`, Version 2021-07-28, LOCATION PIT) — the system makes the
+>    folder by software. Only if that call genuinely declines does it fall back to a
+>    human-supplied folder id, then to `"root"` (the shareable media root; a PASSING
+>    value). A null/empty `ghl_folder_id` is the unset Step-0 seed and does NOT satisfy
+>    the gate. NEVER drive the GHL UI in a browser.
 > 2. **Per-slide PNG upload** (SOP 9.3) — every passed slide carries a real
 >    `ghl_media_id` and `ghl_upload_status: "complete"`.
 > 3. **Final PPTX upload** (SOP 9.6) — the assembled deck is uploaded with
@@ -191,15 +193,18 @@ destination MUST be resolved and every passed slide PNG MUST be uploaded, with `
 Skipping this step is only permitted under the `has_ghl: false` carve-out (write
 `ghl_delivery_skipped: true`). A deck that omits these records is NOT done.
 
-> **BINDING -- GHL is touched ONE WAY ONLY.** The GHL media library is touched EXCLUSIVELY via
-> the Tier-3 REST call `POST https://services.leadconnectorhq.com/medias/upload-file`
-> (Version: 2021-07-28, multipart/form-data; fields `file` + `locationId` + `name` + `hosted=false`
-> + OPTIONAL `parentId`), authenticated with the CLIENT's GHL **LOCATION** Private Integration
-> Token (the Agency token 401s for media ops). Token: `GOHIGHLEVEL_API_KEY` (preferred) or legacy
-> `GHL_API_KEY`; location id: `GOHIGHLEVEL_LOCATION_ID` (preferred) or `GHL_LOCATION_ID`. **The
-> agent NEVER creates a folder** -- `POST /medias/folder` and `POST /medias/` return 404
-> (`29-ghl-convert-and-flow/references/medias.md` lines 45-51); folders are made by a human in the
-> GHL UI. Agent-browser / Playwright / any UI automation of GHL is **FORBIDDEN**.
+> **BINDING -- GHL is touched ONE WAY ONLY: the Tier-3 REST API via the SHARED
+> `scripts/ghl_media.py` tool.** Two calls, both with the CLIENT's GHL **LOCATION** PIT
+> (the Agency token 401s for media; token `GOHIGHLEVEL_API_KEY` (preferred) / legacy
+> `GHL_API_KEY`; location id `GOHIGHLEVEL_LOCATION_ID` (preferred) / `GHL_LOCATION_ID`):
+> (1) **CREATE the per-deck folder** `ghl_media.create_media_folder(name, location_id, pit)`
+> -> `POST https://services.leadconnectorhq.com/medias/folder` (Version: 2021-07-28,
+> JSON `{name, locationId[, parentId]}`) — the SAME call Skill-48 VERIFIED returns 201; the
+> system makes the folder by software. (2) **UPLOAD** `ghl_media.upload_media(...)` ->
+> `POST .../medias/upload-file` (Version: 2021-07-28, multipart; `file` + `locationId` +
+> `name` + `hosted=false` + `parentId=<folderId>`). FALLBACK only when create genuinely
+> declines: human-supplied folder id, else media **root**. Driving the GHL UI in a browser
+> (agent-browser / Playwright / Puppeteer / any UI automation) is **STRICTLY FORBIDDEN**.
 
 **When to run:** Immediately after each image is intaked (SOP 9.2), and after SOP 9.1 records the media destination.
 
@@ -209,11 +214,12 @@ Skipping this step is only permitted under the `has_ghl: false` carve-out (write
 - working/media-library/slide-NN.png (the image to upload)
 - GHL **LOCATION** PIT from the client's env stores (`GOHIGHLEVEL_API_KEY` / legacy `GHL_API_KEY`) + location id (`GOHIGHLEVEL_LOCATION_ID` / legacy `GHL_LOCATION_ID`)
 
-**Steps (Resolve the GHL media destination -- run once per deck run; NEVER create a folder):**
-1. If media_library.json still has `ghl_folder_id: null`, resolve the destination:
-   a. **Human-supplied pre-made folder id present** (`ghl_media_folder_id` in intake.json or an id already in media_library.json -- created by a person in the GHL UI): set `ghl_folder_id` to that id; it is passed as `parentId` on every upload.
-   b. **Otherwise:** omit `parentId` and upload to the shareable GHL media **root**. Set `ghl_folder_id: "root"` in media_library.json. `"root"` is a PASSING value (it satisfies the gate; it is NOT a failure).
-   c. **Never call a folder-create API.** If the client wants a dedicated folder, ask them to create it in the GHL UI and supply its id; upload to root until then.
+**Steps (Resolve the GHL media destination -- run once per deck run; CREATE the folder BY SOFTWARE):**
+1. If media_library.json still has `ghl_folder_id: null`, resolve the destination (or just run `scripts/ghl_media_push.py`, which does this + the uploads):
+   a. **CREATE the per-deck folder (PRIMARY):** `ghl_media.create_media_folder("DECK <deck-slug>", location_id, pit)` (POST `/medias/folder`, Version 2021-07-28, LOCATION PIT). On success set `ghl_folder_id` to the returned `folderId`; it is passed as `parentId` on every upload.
+   b. **If create DECLINES** AND a human supplied `ghl_media_folder_id` in intake.json: use that id as `parentId`.
+   c. **Else:** omit `parentId` and upload to the shareable GHL media **root**; set `ghl_folder_id: "root"` (a PASSING value), prefixing each upload `name` with `"<deck-slug> — "`.
+   d. **Never drive the GHL web UI in a browser** -- folder-create is the REST API (step a), not UI automation.
 
 **Steps (Upload Each Image):**
 1. For the image at working/media-library/slide-NN.png:

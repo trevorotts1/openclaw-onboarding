@@ -242,7 +242,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Privacy interaction:** SOP 9.4B runs AFTER the SOP 9.2 mode-aware privacy redaction. In GENERAL mode, extracted `proof_assets` and `offer_intelligence` carry zero third-party identities. In ONE-PERSON mode only `recipient_name` may appear. Re-state `privacy_mode` on the `persuasion_intelligence` block so the downstream QC gate can check it.
 
-**No-own-image-path invariant:** This SOP produces a `persuasion_intelligence` block for the brief only. It does NOT produce, select, or influence image prompts, model choices, or renderer settings. The Content-to-Presentation pipeline NEVER owns a renderer, model choice, text-baking path, prompt-writer, or QC log. All image work routes through the shared Slide Image Creator and canonical `render_deck.py`. A converter-specific image path is a hard doctrine violation. The image gates (AF-RENDERER, AF-MODEL-SOVEREIGNTY, AF-BAKED, AF-PROMPT-FLOOR, AF-NO-VISION-QC) apply to converter runs through the shared pipeline exactly as they apply to regular builds.
+**No-own-image-path invariant:** This SOP produces a `persuasion_intelligence` block for the brief only. It does NOT produce, select, or influence image prompts, model choices, or renderer settings. The Content-to-Presentation pipeline NEVER owns a renderer, model choice, text-baking path, prompt-writer, or QC log. All image work routes through the shared Slide Image Creator and the canonical renderer `build_deck.py` (the retired `render_deck.py` is an orphan — see `docs/LEGACY-RETIREMENT.md`). A converter-specific image path is a hard doctrine violation. The image gates (AF-RENDERER, AF-MODEL-SOVEREIGNTY, AF-BAKED, AF-PROMPT-FLOOR, AF-NO-VISION-QC) apply to converter runs through the shared pipeline exactly as they apply to regular builds.
 
 **Inputs:**
 - de-fluffed `signal_text` from SOP 9.3
@@ -543,7 +543,7 @@ When the source contains an offer with pricing, guarantee, or scarcity: `offer_i
 `proof_assets` records the source's OWN proof (testimonials, stated results, case study outcomes in the signal text). `proof_flags` records claims that need EXTERNAL corroboration from ROLE-04. The two arrays are distinct and not interchanged. (SOP 9.4B)
 
 ### Gate 18 -- No Converter-Owned Image Path
-This role produces no image prompts, makes no model choices, and defines no rendering path. The `persuasion_intelligence` block feeds downstream roles through the Director; it does not route any image work through a converter-specific path. All image work routes through the shared Slide Image Creator and canonical `render_deck.py`. (SOP 9.4B invariant / AF-CONVERTER-PARITY)
+This role produces no image prompts, makes no model choices, and defines no rendering path. The `persuasion_intelligence` block feeds downstream roles through the Director; it does not route any image work through a converter-specific path. All image work routes through the shared Slide Image Creator and the canonical renderer `build_deck.py` (the retired `render_deck.py` is an orphan — see `docs/LEGACY-RETIREMENT.md`). (SOP 9.4B invariant / AF-CONVERTER-PARITY)
 
 ---
 

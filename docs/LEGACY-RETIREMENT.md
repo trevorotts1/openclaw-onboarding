@@ -20,6 +20,19 @@ comma) will FAIL the build.
 
 ---
 
+## Retired orphan modules (no longer the source of truth)
+
+These modules have been superseded by a live replacement. They are kept on disk only
+so historical runs/references resolve, and are explicitly documented here so the
+renderer-identity gates (`AF-RENDERER`, `AF-CONVERTER-PARITY`) and the department docs
+can distinguish "retired orphan" from "live builder."
+
+| Retired module | Replaced by | Status / notes |
+|----------------|-------------|----------------|
+| `23-ai-workforce-blueprint/templates/presentation-render/render_deck.py` | `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py` (the ONE canonical renderer) | RETIRED — orphan: nothing imports it. Its prompt char-floor / structural-block / model-sovereignty checks were folded into `build_deck.py`. `build_deck.py` writes the authoritative render record to `working/checkpoints/process_manifest.json` via `write_process_manifest()`; the old `render_manifest.json` is no longer written or read. `sync_check.py` (V1) still pins `render_deck.py`'s `PROMPT_CHAR_FLOOR/CEILING` constants equal to `build_deck.py`'s as a drift-detection backstop until the orphan file is deleted. **Do not key any gate off `render_manifest.json`.** Remove the orphan file (and the V1 drift pin) in a cleanup release once no fleet box references the old path. |
+
+---
+
 ## Tracked files with local candidate loops (pending removal)
 
 ### 32-command-center-setup (primary AF3 scope)

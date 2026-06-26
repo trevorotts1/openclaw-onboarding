@@ -18,13 +18,13 @@ A .pptx IS NOT A DELIVERED PRESENTATION. THIS SCRIPT IS ONLY THE PHASE-4 RENDERE
 Producing only a .pptx with this script is NOT a delivered presentation and is NOT
 a complete deliverable. build_deck.py renders slide images and assembles a bare
 .pptx — and NOTHING ELSE. It does NOT produce the presenter guide PDF, the presenter
-speech (PRESENTER-SPEECH.md/.pdf/-FISH-TAGGED.md), the presenter audio
+speech (PRESENTERS-SPEECH.md/.pdf/-FISH-TAGGED.md), the presenter audio
 (PRESENTER-AUDIO.mp3), the teleprompter app, the deck PDF export, the infographic
 checklist slide, or the GHL media upload. The FULL deliverable downstream is the
 NINE-MEMBER bundle —
     [Deck-Title]-FINAL.pptx, [Deck-Title]-FINAL.pdf, PRESENTER-GUIDE.pdf,
-    PRESENTER-SPEECH.md (pure), PRESENTER-SPEECH.pdf (teleprompter PDF),
-    PRESENTER-SPEECH-FISH-TAGGED.md (fish-tagged), PRESENTER-AUDIO.mp3,
+    PRESENTERS-SPEECH.md (pure), PRESENTERS-SPEECH.pdf (teleprompter PDF),
+    PRESENTERS-SPEECH-FISH-TAGGED.md (fish-tagged), PRESENTER-AUDIO.mp3,
     infographic.png, presenter-teleprompter.html (the teleprompter web app).
 The .pptx this script emits is an INTERMEDIATE artifact. The Director/Delivery flow
 MUST run the guide / speech / audio / PDF / infographic / teleprompter roles, and the
@@ -37,8 +37,8 @@ sops/SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md (AF-DELIVERY-COMPLETE).
 UPSTREAM STEPS THAT PRODUCE THE REQUIRED OUTPUTS:
     - [Deck-Title]-FINAL.pdf            : produced by PPTX Assembly Specialist (PDF export)
     - PRESENTER-GUIDE.pdf               : produced by Presenters Guide Specialist
-    - PRESENTER-SPEECH.md/.pdf          : produced by Presenters Speech Writer
-    - PRESENTER-SPEECH-FISH-TAGGED.md   : produced by Presenters Speech Writer / Fish Audio
+    - PRESENTERS-SPEECH.md/.pdf          : produced by Presenters Speech Writer
+    - PRESENTERS-SPEECH-FISH-TAGGED.md   : produced by Presenters Speech Writer / Fish Audio
     - PRESENTER-AUDIO.mp3               : produced by Audio Demonstration Specialist
     - infographic.png                   : produced by infographic-checklist role
     - presenter-teleprompter.html       : produced by build_teleprompter.py (teleprompter role)
@@ -356,6 +356,52 @@ MIN_CITED_SOURCES = 8   # HARD floor (AF-RESEARCH-UNCITED): fewer real URLs = FA
 #   * example.* placeholder domains (example.com / example.org / example-source-*)
 MIN_DISTINCT_DOMAINS = 6   # HARD floor on DISTINCT REAL PUBLIC domains (AF-RESEARCH-UNCITED)
 
+# ---------------------------------------------------------------------------
+# DETERMINISTIC TYPOGRAPHY FLOORS (AF-FONT-FLOOR) — the CODED size/scale/contrast
+# rejector that the vision-opinion Typography-QC gate never was.
+# ---------------------------------------------------------------------------
+# R8 Gap 1+2: the font-floor, type-scale and contrast rules (the qc-specialist
+# vision codes F12 / F13 / DC4, kept as the semantic backstop) were written as
+# "coded mechanical asserts" but no code implemented them, and
+# they pointed at a phantom artifact the Typography Architect never emitted. This
+# gate closes both holes deterministically WITHOUT vision/OCR: the Typography
+# Architect now emits machine-readable size/scale/contrast tokens to
+# working/typography/type_layout_system.md, and check_font_floor() parses those
+# tokens and REJECTS a design system that declares a sub-floor body size, a
+# non-modular type scale, or a below-WCAG text contrast — before any render burns a
+# KIE credit. This is a numeric floor on the DECLARED type system; the per-pixel
+# OCR/SSIM verification stays with the (independent) vision Typography-QC pass, so
+# the two layers are complementary, not duplicative. Tokens are pt-EQUIVALENT (the
+# architect declares sizes relative to a 1080-tall canvas; "18pt" == 1.6% cap-height).
+FONT_BODY_PT_FLOOR = 18            # absolute body/subhead floor (pt-equiv at 1080px tall); WCAG large-text boundary
+TYPE_SCALE_STEPS_MIN = 4           # a modular type scale must declare 4..5 named steps (no more, no fewer)
+TYPE_SCALE_STEPS_MAX = 5
+CONTRAST_RATIO_FLOOR_NORMAL = 4.5  # WCAG 2.2 AA — normal text
+CONTRAST_RATIO_FLOOR_LARGE = 3.0   # WCAG 2.2 AA — large text (>= body floor & bold-or-bigger)
+DARK_THEME_BODY_PT_FLOOR = 22      # +~20% projection-dispersion compensation when client_dark_theme opt-in
+DARK_THEME_CONTRAST_FLOOR = 7.0    # AAA when dark is opt-in/premium (dark slides are washed out at projection)
+TYPE_LAYOUT_SYSTEM_REL = "working/typography/type_layout_system.md"  # the gate-of-record artifact
+
+# ---------------------------------------------------------------------------
+# RESEARCH-WEAVE / BREADTH GATE (AF-RESEARCH-WEAVE) — research distributed ACROSS
+# the deck, not funnelled to one proof slide.
+# ---------------------------------------------------------------------------
+# R3 root cause of "ONE fact in ONE spot": the brief is real + early, but it never
+# reaches most slides — the writer SOP funnels research to proof beats, the brief is
+# category-organised (never slide-mapped), and the only enforcement is a deck-level
+# "a research pack exists" presence check with NO breadth floor. This gate enforces
+# the missing third leg: the Deep Research Specialist now emits a slide-assignment
+# map (working/research/research_map.json) BEFORE copy, the copy template carries a
+# RESEARCH_USED tag, and _chk_research_map() REJECTS a deck that weaves a mapped
+# research item into fewer than RESEARCH_WEAVE_FLOOR_PCT of non-exempt content
+# slides, or draws on fewer than MIN_DISTINCT_RESEARCH_ITEMS distinct items deck-wide
+# (so the breadth cannot be satisfied by repeating one stat). Hook/pure-type/
+# transition slides are EXEMPT and excluded from the denominator so the gate never
+# pressures fabrication onto a slide that should not carry a stat.
+RESEARCH_WEAVE_FLOOR_PCT = 60      # >= 60% of NON-EXEMPT content slides must weave a mapped research item (anchor present in copy)
+MIN_DISTINCT_RESEARCH_ITEMS = 8    # the deck must draw on >= 8 DISTINCT research items (mirrors MIN_CITED_SOURCES)
+RESEARCH_MAP_REL = "working/research/research_map.json"  # the slide-assignment artifact
+
 # AF-I14: a real KIE-baked 2K slide PNG is hundreds of KB; a flat-fill / native-render
 # placeholder (a solid colour, a Pillow/PPTX-drawn text card, or a tiny stub) is far
 # smaller. 50 KiB is a conservative floor that any genuine model-baked slide clears
@@ -591,21 +637,21 @@ DELIVERABLES_REQUIRED = [
     },
     {
         "key": "speech_md",
-        "filename": "PRESENTER-SPEECH.md",
+        "filename": "PRESENTERS-SPEECH.md",
         "label": "presenter speech markdown source (pure)",
         "min_bytes": 2_048,              # 2 KB — word-for-word script stub floor
         "note": ">2KB; produced by Presenters Speech Writer (pure script). REQUIRED UPSTREAM STEP.",
     },
     {
         "key": "speech_pdf",
-        "filename": "PRESENTER-SPEECH.pdf",
+        "filename": "PRESENTERS-SPEECH.pdf",
         "label": "presenter speech teleprompter PDF",
         "min_bytes": 20_480,             # 20 KB — PDF of a real multi-page script
         "note": ">20KB; produced by Presenters Speech Writer (teleprompter PDF render). REQUIRED UPSTREAM STEP.",
     },
     {
         "key": "speech_fish_md",
-        "filename": "PRESENTER-SPEECH-FISH-TAGGED.md",
+        "filename": "PRESENTERS-SPEECH-FISH-TAGGED.md",
         "label": "presenter speech (Fish-Audio expression-tagged)",
         "min_bytes": 2_048,              # 2 KB — fish-tagged variant of the script floor
         "note": ">2KB; produced by Presenters Speech Writer / Fish Audio Expression "
@@ -1150,16 +1196,16 @@ def discover_speech_chunks(run_dir: Path, bundle_dir: Path) -> Optional[dict]:
 
     Search order (first hit wins): the working-dir locations the speech roles write
     to, then the delivered bundle copy. Filenames use the standardized possessive
-    singular PRESENTER-SPEECH.md (canonical); the legacy possessive PRESENTERS-SPEECH.md
+    plural PRESENTERS-SPEECH.md (canonical); the legacy singular PRESENTER-SPEECH.md
     and the speech.md scratch name are also accepted."""
     candidates = [
         run_dir / "working/presenter-speech/speech.md",
-        run_dir / "working/delivery/PRESENTER-SPEECH.md",
-        run_dir / "working/presenter-speech/PRESENTER-SPEECH.md",
-        bundle_dir / "PRESENTER-SPEECH.md",
         run_dir / "working/delivery/PRESENTERS-SPEECH.md",
         run_dir / "working/presenter-speech/PRESENTERS-SPEECH.md",
         bundle_dir / "PRESENTERS-SPEECH.md",
+        run_dir / "working/delivery/PRESENTER-SPEECH.md",
+        run_dir / "working/presenter-speech/PRESENTER-SPEECH.md",
+        bundle_dir / "PRESENTER-SPEECH.md",
     ]
     for path in candidates:
         try:
@@ -2332,16 +2378,17 @@ def _chk_speech_length(run_dir: Path) -> str:
         return ""
 
     # Locate the speech artifact. Absent => deferred to delivery (pass here).
-    # Filenames standardized to the SINGULAR PRESENTER-SPEECH.md (canonical, matching
-    # the AF-DH1 client-package whitelist + PRESENTER-GUIDE/PRESENTER-AUDIO); the legacy
-    # possessive (PRESENTERS-SPEECH.md) and scratch speech.md names are still accepted
-    # so the gate keeps finding a speech written by an older flow.
+    # Filenames standardized to the PLURAL possessive PRESENTERS-SPEECH.md (canonical,
+    # matching the AF-DH1 client-package whitelist + the producer presenters-speech-writer
+    # role + PRESENTER-GUIDE/PRESENTER-AUDIO); the legacy singular (PRESENTER-SPEECH.md)
+    # and scratch speech.md names are still accepted so the gate keeps finding a speech
+    # written by an older flow.
     speech = None
     for rel in ("working/presenter-speech/speech.md",
-                "working/delivery/PRESENTER-SPEECH.md",
-                "working/presenter-speech/PRESENTER-SPEECH.md",
                 "working/delivery/PRESENTERS-SPEECH.md",
-                "working/presenter-speech/PRESENTERS-SPEECH.md"):
+                "working/presenter-speech/PRESENTERS-SPEECH.md",
+                "working/delivery/PRESENTER-SPEECH.md",
+                "working/presenter-speech/PRESENTER-SPEECH.md"):
         p = run_dir / rel
         if p.exists():
             speech = p
@@ -2557,12 +2604,12 @@ PACKAGE_CLEAN_FORBIDDEN_DIR_NAMES = frozenset({
     "tasks", "working", "prompts", "images", "renders", "qc", "scripts", "checkpoints",
 })
 # Intermediate .md draft pattern: a working draft that is NOT a canonical deliverable.
-# Canonical deliverable .md files are PRESENTER-SPEECH.md and PRESENTER-SPEECH-FISH-TAGGED.md
-# (singular — matches DELIVERABLES_REQUIRED + the AF-DH1 whitelist). The legacy
-# possessive spellings are still accepted so an older bundle is not flagged dirty.
+# Canonical deliverable .md files are PRESENTERS-SPEECH.md and PRESENTERS-SPEECH-FISH-TAGGED.md
+# (plural — matches DELIVERABLES_REQUIRED + the AF-DH1 whitelist + the producer role). The
+# legacy singular spellings are still accepted so an older bundle is not flagged dirty.
 PACKAGE_CLEAN_CANONICAL_MD_FILES = frozenset({
-    "PRESENTER-SPEECH.md", "PRESENTER-SPEECH-FISH-TAGGED.md",
     "PRESENTERS-SPEECH.md", "PRESENTERS-SPEECH-FISH-TAGGED.md",
+    "PRESENTER-SPEECH.md", "PRESENTER-SPEECH-FISH-TAGGED.md",
 })
 # Intermediate-draft naming patterns (numbered drafts, *-draft.md, *-working.md, etc.)
 PACKAGE_CLEAN_DRAFT_MD_RE = re.compile(
@@ -3468,6 +3515,203 @@ def _chk_no_overlay(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     return ""
 
 
+def _read_dark_optin(run_dir: Path) -> bool:
+    """True iff intake.json records a dark-theme opt-in via the canonical
+    client_dark_theme key OR the role-doc DARK_OK alias (same intent). Shared by the
+    no-dark gate and the font-floor dark-mode size/contrast compensation."""
+    def _truthy(val) -> bool:
+        if val is True:
+            return True
+        return isinstance(val, str) and val.strip().lower() in ("true", "yes", "1")
+    for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
+        p = run_dir / rel
+        if p.exists():
+            obj = _read_json(p)
+            if isinstance(obj, dict) and "__parse_error__" not in obj:
+                return _truthy(obj.get("client_dark_theme")) or _truthy(obj.get("DARK_OK"))
+            return False
+    return False
+
+
+def check_font_floor(run_dir: Path) -> str:
+    """AF-FONT-FLOOR — DETERMINISTIC numeric type-system rejector (R8 Gap 1+2).
+
+    Parses the Typography Architect's machine-readable tokens from
+    working/typography/type_layout_system.md and FAILS LOUD when the DECLARED type
+    system violates a hard numeric floor — before any render. This is the coded
+    floor that the vision-opinion Typography-QC gate never was; it does NOT do
+    OCR/pixel work (that stays with the independent vision pass), it rejects a
+    design system whose own declared tokens are below floor.
+
+    Tokens parsed (one per line, `key: value`, case-insensitive key):
+        min_body_pt:           <int>   smallest body/subhead size (pt-equiv @1080)
+        type_scale_steps:      <int>   number of named modular steps (must be 4..5)
+        min_contrast_ratio:    <float> smallest body/subhead text:bg contrast ratio
+       [min_large_contrast_ratio: <float>]  optional, for large/headline text
+
+    FLOORS (raised when client_dark_theme/DARK_OK opt-in — projection dispersion):
+        body pt   >= FONT_BODY_PT_FLOOR (18)   | dark: DARK_THEME_BODY_PT_FLOOR (22)
+        scale     in [TYPE_SCALE_STEPS_MIN..MAX] (4..5)
+        contrast  >= CONTRAST_RATIO_FLOOR_NORMAL (4.5) | dark: DARK_THEME_CONTRAST_FLOOR (7.0)
+
+    DEFER (return "") only when NO type system has been produced yet (pre-typography
+    phase). Once a design system exists (working/typography/design_system.json or a
+    design-brief), the type_layout_system.md tokens are MANDATORY — a missing file or
+    missing token then FAILS (closes R8 Gap 1: the phantom artifact). Run-dir-scoped.
+    """
+    layout = run_dir / TYPE_LAYOUT_SYSTEM_REL
+    design_present = (
+        (run_dir / "working" / "typography" / "design_system.json").exists()
+        or any((run_dir / "working" / "research").glob("design-brief-*.md"))
+        if (run_dir / "working").exists() else False
+    )
+
+    if not layout.exists():
+        if design_present:
+            return (
+                f"AF-FONT-FLOOR: a design system exists but the deterministic type "
+                f"tokens file {TYPE_LAYOUT_SYSTEM_REL} is MISSING. The Typography "
+                f"Architect MUST emit it with min_body_pt / type_scale_steps / "
+                f"min_contrast_ratio so the font-floor gate has real data (R8 Gap 1).")
+        return ""  # pre-typography: defer
+
+    text = layout.read_text(encoding="utf-8", errors="replace")
+
+    def _num(key):
+        m = re.search(rf'(?im)^\s*{re.escape(key)}\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)', text)
+        return float(m.group(1)) if m else None
+
+    dark = _read_dark_optin(run_dir)
+    pt_floor = DARK_THEME_BODY_PT_FLOOR if dark else FONT_BODY_PT_FLOOR
+    contrast_floor = DARK_THEME_CONTRAST_FLOOR if dark else CONTRAST_RATIO_FLOOR_NORMAL
+
+    min_body_pt = _num("min_body_pt")
+    type_scale_steps = _num("type_scale_steps")
+    min_contrast = _num("min_contrast_ratio")
+
+    problems = []
+    if min_body_pt is None:
+        problems.append(f"missing token min_body_pt (declare the smallest body/subhead "
+                        f"size, pt-equivalent at 1080px tall)")
+    elif min_body_pt < pt_floor:
+        problems.append(f"min_body_pt={min_body_pt:g} is below the {pt_floor:g}pt "
+                        f"{'dark-theme ' if dark else ''}body/subhead floor "
+                        f"(FONT_BODY_PT_FLOOR={FONT_BODY_PT_FLOOR})")
+    if type_scale_steps is None:
+        problems.append("missing token type_scale_steps (declare the number of modular "
+                        "type-scale steps)")
+    elif not (TYPE_SCALE_STEPS_MIN <= int(type_scale_steps) <= TYPE_SCALE_STEPS_MAX):
+        problems.append(f"type_scale_steps={int(type_scale_steps)} is not a modular "
+                        f"{TYPE_SCALE_STEPS_MIN}-{TYPE_SCALE_STEPS_MAX}-step scale")
+    if min_contrast is None:
+        problems.append("missing token min_contrast_ratio (declare the smallest "
+                        "text:background contrast ratio, WCAG relative-luminance)")
+    elif min_contrast < contrast_floor:
+        problems.append(f"min_contrast_ratio={min_contrast:g} is below the "
+                        f"{contrast_floor:g}:1 {'dark-theme AAA ' if dark else 'WCAG AA '}"
+                        f"floor (CONTRAST_RATIO_FLOOR_NORMAL={CONTRAST_RATIO_FLOOR_NORMAL})")
+
+    if problems:
+        return ("AF-FONT-FLOOR: the declared type system "
+                f"({TYPE_LAYOUT_SYSTEM_REL}) violates the deterministic floor — "
+                + "; ".join(problems) + ". Raise the offending token(s) and re-emit; "
+                "the font-floor gate rejects a sub-floor design BEFORE render.")
+    return ""
+
+
+def _chk_research_map(run_dir: Path) -> str:
+    """AF-RESEARCH-WEAVE — research woven ACROSS the deck, not funnelled to one slide.
+
+    The R3 breadth gate. CONDITIONAL: defers (returns "") until copy exists
+    (working/copy/slides_copy.md). Once copy exists it requires
+    working/research/research_map.json and enforces THREE independent conditions:
+
+      1. MAP EXISTS + BREADTH — the map assigns >= 1 real research item (with a
+         verbatim `anchor` token) to at least RESEARCH_WEAVE_FLOOR_PCT (60%) of
+         NON-EXEMPT content slides. Hook/pure-type/transition slides carry
+         `"exempt": <reason>` and are excluded from the denominator (so the gate
+         never pressures fabrication onto a slide that should not carry a stat).
+      2. WRITER USED IT — for >= that floor of mapped non-exempt slides, the slide's
+         anchor token actually appears in slides_copy.md (the slide block or a
+         RESEARCH_USED tag). Mechanical, not semantic; the anchor is a verbatim
+         figure / dollar / short quote fragment / source domain.
+      3. WHOLE-BRIEF BREADTH — the deck draws on >= MIN_DISTINCT_RESEARCH_ITEMS (8)
+         DISTINCT items, so breadth cannot be faked by repeating one stat.
+
+    Replaces the toothless "a pack exists" logic of _chk_claims_without_citation with
+    a true coverage gate (that check is kept as the zero-research backstop). Run-dir-scoped.
+    """
+    copy_path = run_dir / "working" / "copy" / "slides_copy.md"
+    if not copy_path.exists():
+        return ""  # pre-copy: defer (research-before-content is enforced by AF-PHASE-SKIPPED)
+
+    map_path = run_dir / RESEARCH_MAP_REL
+    if not map_path.exists():
+        return (f"AF-RESEARCH-WEAVE: copy exists but {RESEARCH_MAP_REL} is MISSING. "
+                "The Deep Research Specialist MUST map research facts/quotes/stats to "
+                "specific slides (SOP 9.5) BEFORE copy so research is woven across the "
+                "deck, not funnelled to one proof slide.")
+    obj = _read_json(map_path)
+    if not isinstance(obj, dict) or "__parse_error__" in obj:
+        return (f"AF-RESEARCH-WEAVE: {RESEARCH_MAP_REL} is missing or not valid JSON.")
+
+    slides = obj.get("slides")
+    if not isinstance(slides, list) or not slides:
+        return (f"AF-RESEARCH-WEAVE: {RESEARCH_MAP_REL} has no slides[] assignment "
+                "array — the research-to-slide map is empty.")
+
+    copy_text = copy_path.read_text(encoding="utf-8", errors="replace")
+    copy_lc = copy_text.lower()
+
+    non_exempt = [s for s in slides if isinstance(s, dict) and not s.get("exempt")]
+    if not non_exempt:
+        return ("AF-RESEARCH-WEAVE: every slide in the research map is marked exempt — "
+                "exemptions cannot cover the whole deck; map research onto the content "
+                "(teaching/proof/story) slides.")
+
+    def _anchors(s):
+        out = []
+        for a in (s.get("assigned") or []):
+            if isinstance(a, dict):
+                anc = str(a.get("anchor", "")).strip()
+                if anc:
+                    out.append((str(a.get("item_id", "")).strip(), anc))
+        return out
+
+    mapped = [s for s in non_exempt if _anchors(s)]
+    mapped_pct = (len(mapped) / len(non_exempt)) * 100.0
+    if mapped_pct < RESEARCH_WEAVE_FLOOR_PCT:
+        return (f"AF-RESEARCH-WEAVE: only {len(mapped)}/{len(non_exempt)} "
+                f"({mapped_pct:.0f}%) of non-exempt content slides have a research item "
+                f"assigned, below the {RESEARCH_WEAVE_FLOOR_PCT}% breadth floor. Map "
+                "facts/quotes/stats onto the teaching body, not just the proof slide.")
+
+    used = 0
+    for s in mapped:
+        if any(anc.lower() in copy_lc for _id, anc in _anchors(s)):
+            used += 1
+    used_pct = (used / len(mapped)) * 100.0 if mapped else 0.0
+    if used_pct < RESEARCH_WEAVE_FLOOR_PCT:
+        return (f"AF-RESEARCH-WEAVE: only {used}/{len(mapped)} ({used_pct:.0f}%) of "
+                f"mapped slides actually weave their assigned anchor into slides_copy.md, "
+                f"below the {RESEARCH_WEAVE_FLOOR_PCT}% floor. The writer must USE the "
+                "mapped item (anchor verbatim in the slide block or a RESEARCH_USED tag).")
+
+    distinct = obj.get("distinct_items_used")
+    if not isinstance(distinct, int):
+        ids = set()
+        for s in non_exempt:
+            for _id, _anc in _anchors(s):
+                if _id:
+                    ids.add(_id)
+        distinct = len(ids)
+    if distinct < MIN_DISTINCT_RESEARCH_ITEMS:
+        return (f"AF-RESEARCH-WEAVE: the deck draws on only {distinct} distinct research "
+                f"items, below the floor of {MIN_DISTINCT_RESEARCH_ITEMS}. Breadth cannot "
+                "be satisfied by repeating one stat — draw on the whole brief.")
+    return ""
+
+
 PREFLIGHT_REQUIRED = [
     ("working/copy/intake.json",
      "intake.json (interview_confirmed:true, presentation_mode one-person|general)",
@@ -3497,6 +3741,18 @@ PREFLIGHT_REQUIRED = [
      "claims-without-citation — slide copy claim markers must have a cited research pack",
      "Phase -0.5 — Deep Research Specialist SOP 9.1/9.4 (AF-RESEARCH-UNCITED)",
      _chk_claims_without_citation),
+    # RESEARCH-WEAVE / BREADTH gate (AF-RESEARCH-WEAVE). Research must be woven ACROSS
+    # the deck, not funnelled to one proof slide. CONDITIONAL: defers until copy exists,
+    # then requires working/research/research_map.json mapping research items to >=60%
+    # of non-exempt content slides, the writer actually using the anchors in
+    # slides_copy.md, and >=8 distinct items deck-wide. Run-dir-scoped (None sentinel).
+    (None,
+     "research woven across the deck — research_map.json maps facts/quotes/stats to "
+     ">=60% of non-exempt content slides, the copy uses the anchors, and the deck draws "
+     "on >=8 distinct items (AF-RESEARCH-WEAVE)",
+     "Phase 3.5 — Deep Research Specialist SOP 9.5 (research-to-slide map) + Slide "
+     "Copywriter (RESEARCH_USED) (AF-RESEARCH-WEAVE)",
+     _chk_research_map),
     ("working/qc/copy_qc_report.json",
      "copy QC report (gate Phase 1Q, average >= 8.5, no AF-* triggered)",
      "Phase 1Q — QC Specialist SOP 9.1 / SOP-SLIDE-00",
@@ -3519,6 +3775,16 @@ PREFLIGHT_REQUIRED = [
      "typography QC report (gate Phase Typography-QC, average >= 8.5, independent reviewer)",
      "Phase Typography-QC — Typography QC Specialist (AF-TYPOGRAPHY-QC)",
      _chk_typography_qc),
+    # FONT-FLOOR gate (AF-FONT-FLOOR). DETERMINISTIC numeric rejector of the declared
+    # type system: parses working/typography/type_layout_system.md tokens (min_body_pt,
+    # type_scale_steps, min_contrast_ratio) and FAILS a sub-floor body size / non-modular
+    # scale / below-WCAG contrast BEFORE render. Defers pre-typography; once a design
+    # system exists, the tokens are mandatory. Run-dir-scoped (None sentinel).
+    (None,
+     "font floor — declared type system meets the 18pt body floor, a 4-5 step modular "
+     "scale, and WCAG-AA contrast (raised when client_dark_theme); AF-FONT-FLOOR",
+     "Phase F — Typography Architect SOP 9.1 (emits type_layout_system.md tokens) (AF-FONT-FLOOR)",
+     check_font_floor),
     # PROMPT-QC gate (AF-PROMPT-QC). After Prompt-Authoring, an INDEPENDENT QC
     # specialist grades every per-slide prompt against the 5,000-char prompt standard.
     ("working/qc/prompt_qc_report.json",

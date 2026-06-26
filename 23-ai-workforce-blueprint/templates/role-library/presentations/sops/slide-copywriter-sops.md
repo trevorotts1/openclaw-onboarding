@@ -21,6 +21,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - STYLE BLOCK (brand voice, tone, color, type -- used to ensure copy tone matches brand voice)
 - Proof inventory (extracted from intake.json)
 - working/research/brief-[DECK_SLUG].md (Categories C and D from ROLE-04 Phase -0.5 -- proof statistics and external corroboration; load before writing any proof slide)
+- working/research/research_map.json (ROLE-04 Phase 3.5 -- the per-slide research assignment. For EVERY slide, load its `assigned[]` items and weave each `anchor` (a verbatim figure / $-amount / short quote fragment / source) into that slide's HEADLINE, SUBHEAD, SUPPORTING, or PRESENTER NOTE, then record the item_id(s) in the RESEARCH_USED field. Research is woven ACROSS the deck, not parked on one proof slide -- the AF-RESEARCH-WEAVE gate REJECTS a deck that weaves a mapped item into fewer than 60% of non-exempt content slides, or that uses fewer than 8 distinct items. Hook/pure-type/transition slides are exempt and excluded; never invent a number to fill an exempt slide.)
 
 **Authored-narrative requirements (AF-C10 and AF-C11):** The transcript or source material is INPUT. You AUTHOR slide copy from it; you never paste transcript lines. Verbatim/near-verbatim transcript lines are forbidden (AF-C10). The deck must carry all five arc beats: hook + stakes + promise + proof + CTA (AF-C11). Tag each beat in slides_copy.md so QC can assert them mechanically.
 
@@ -40,6 +41,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    SUBHEAD: [max 18 words, one line, optional -- only if the headline needs support]
    SUPPORTING: [third text block if any -- stat, label, or CTA chip -- or NONE]
    PROOF USED: [testimonial or stat name from proof inventory, or "none"]
+   RESEARCH_USED: [the research item_id(s) from research_map.json assigned to THIS slide, with the verbatim anchor (a figure, $-amount, short quote fragment, or source) woven into the copy above; or "none" if this slide is exempt (hook/pure-type/transition)]
    PEOPLE: [yes/no; if yes, which REPRESENTATION_MIX group this slide draws from]
    HOOK_REFRAIN: [yes/no; if yes, where the hook line sits on the slide]
    TEXT_ANCHOR: [bottom band | left block | right block | center punch]
@@ -56,6 +58,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - No em dashes anywhere in any field. Use a comma or parenthesis instead.
    - No fabricated proof: if a slide calls for a testimonial and none is in the proof inventory, write `[TESTIMONIAL PENDING -- client must supply]` as a placeholder. Never invent a quote or a number.
 4. For every slide in the Proof section (per arc_allocation.json), include PROOF USED field referencing a specific item from the proof inventory.
+4a. For every NON-EXEMPT content slide that research_map.json assigns an item to, weave the assigned `anchor` verbatim into one of the slide's text fields (or the PRESENTER NOTE) and record the item_id in RESEARCH_USED. This is what distributes research across the deck instead of funnelling it to one proof slide (AF-RESEARCH-WEAVE). Mark hook/pure-type/transition slides RESEARCH_USED: none.
 5. For every slide in the Offer Stack and Price Ladder sections, coordinate with the Offer Price Strategist's output in working/copy/price_ladder.json. Do not write price numbers yourself -- pull them from price_ladder.json.
 6. **(Density-floor overhaul) Place the hook ONLY on the 3 to 4 dedicated slides from hook_package.json** (SOP 9.2). Track in a comment at the top of slides_copy.md: `# HOOK-CARRYING SLIDES: [N, N, N]` (must be 3 to 4). Every other slide is `HOOK_REFRAIN: no`. Do NOT insert refrains to reach a count; there is no count floor anymore, there is a ceiling of 4.
 7. **(Density-floor overhaul) Run the AUDIENCE / SAY tagging pass** (SOP 9.7a): tag every line of every slide AUDIENCE (stays on the slide) or SAY (routes to the Presenter's Speech and Guide). Delete meta-telegraphing, internal pitch-doctrine, and image-narration lines (they belong nowhere). The word "webinar" and any technique self-label are banned on the face. Write the result to working/copy/audience_say_tags.json so QC can verify the pass ran (its absence fails the deck). Confirm one big idea per slide before finalizing each slide (a diagnosis+method+outcome is three slides; a value trio is four; a gap+reframe is two; four pains are four slides).

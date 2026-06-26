@@ -91,7 +91,7 @@ These five are the spine. A deck that trips any of them is NOT final, full stop.
 - **Trigger 4b (AF-HOOK-5):** the hook mutated, extended, reworded, or abbreviated. Detection: character-exact compare of every occurrence against the canonical HOOK string in mission_prd.json; any difference fails.
   - Failure message: `AF-HOOK-5: slide {N} renders a mutated hook: "{rendered}" vs canonical "{canonical}". Restore the exact string.`
 - **Trigger 4c (AF-HOOK-6):** the hook misspelled or garbled in a rendered image (e.g. "hclarity"). Detection: spell/glyph check on the rendered hook line (also caught by AF-I1; double-flagged because the hook is sacred).
-  - Failure message: `AF-HOOK-6: slide {N} renders the hook misspelled: "{rendered}". Re-render; composite as native text if it garbles twice.`
+  - Failure message: `AF-HOOK-6: slide {N} renders the hook misspelled: "{rendered}". Re-render via RE-PROMPT + RE-SEED; on persistent garble escalate to a human (never a native text overlay — Decision 5C, AF-OVERLAY-DELIVERED).`
 - **Trigger 4d (AF-HOOK-7):** the signature quote slide also carries the main hook. Detection: the dedicated signature-quote slide contains the control-vs-clarity-style main hook.
   - Failure message: `AF-HOOK-7: slide {N} conflates the signature quote with the main hook. Keep them as separate beats.`
 
@@ -142,7 +142,7 @@ These are deck-level and are evaluated against arc_allocation.json and slide ord
 3. **Add the Density auto-fail table** (Section 2) as a new deck-level gate run at Phase 1Q and re-verified at Phase 6.
 4. **Replace AF-C2** (the current "hook count BELOW 7 = auto-fail" floor) with RULE 1 (the ceiling). This is the single most important change: the old floor PRODUCED the 40-slide stamping.
 5. **Promote one-big-idea (criterion 1) and audience-facing (criterion 13) from scored criteria to double-weighted auto-fails** via RULE 5 and RULE 2; they no longer average away.
-6. **Add the placeholder-on-render ban as a hard finishing failure that blocks FINAL status** (RULE 3), and extend the native-text fallback from price-only to the hook line (so RULE 4c cannot recur).
+6. **Add the placeholder-on-render ban as a hard finishing failure that blocks FINAL status** (RULE 3), and guarantee the hook line via the RE-PROMPT + RE-SEED loop then human escalation — the hook is always baked into the image, never a native-text overlay (Decision 5C, AF-OVERLAY-DELIVERED), so RULE 4c cannot recur.
 7. **Update the QC role KPI** "Auto-fail detections caught before owner sees work = 100%" to explicitly include the new codes, and add to the weekly QC Trend Report a per-code count for AF-HOOK, AF-AUD, AF-PLACEHOLDER, AF-OBI, and AF-DEN.
 
 ---
@@ -215,6 +215,14 @@ These are deck-level and are evaluated against arc_allocation.json and slide ord
 | AF-KIE-BALANCE | Phase-0 | DECK | Kie.ai credit balance below the estimated floor for this deck (or unverifiable) before any render | kie_balance_preflight(run_dir, slide_count, api_key): GET https://api.kie.ai/api/v1/chat/credit; estimated_floor = slide_count x PER_SLIDE_CREDIT_ESTIMATE x KIE_BALANCE_FLOOR_MULTIPLIER; balance < floor OR unverifiable = HARD ABORT before any slide is dispatched (Decision 3C) |
 | AF-PHASE-SKIPPED | Runner | DECK | The signature runner dispatched a phase before all lower-order phases were attested, with no logged owner-authorized skip | run_signature_deck.py check_phase_preconditions: phase N+1 reads phase N's attestation (working/checkpoints/process_manifest.json) + produces_artifact as a precondition; missing prior attestation without an owner_approved:true record in phase_skip_approvals.json = HARD ABORT; skipping/reordering is structurally impossible except via explicit logged owner authorization (Decision 3C) |
 | AF-OVERLAY-DELIVERED | 5/6/Postflight | slide | A delivered slide ships native on-slide text (or a pptx_text_overlays.json is present) instead of a single composed gpt-image-2 image | _chk_no_overlay(run_dir): fails if any eliminated pptx_text_overlays.json file is present OR the delivered PPTX carries any native (non-notes) on-slide text run; the native-overlay path is eliminated by construction; persistent garble re-prompts/re-seeds then escalates to a human, never a native overlay; strengthens AF-BAKED/AF-I14 (Decision 5C) |
+| AF-FONT-FLOOR | Typography/Design | DECK | The DECLARED type system sets a body/subhead size below the 18pt-equivalent floor (22pt when client_dark_theme), a non-modular type scale (not 4-5 steps), or a text contrast below WCAG AA (4.5:1 normal; 7:1 dark) — OR the type_layout_system.md tokens are missing once a design system exists | check_font_floor(run_dir): parses working/typography/type_layout_system.md tokens (min_body_pt, type_scale_steps, min_contrast_ratio) and rejects a sub-floor declared design BEFORE render; DETERMINISTIC numeric rejector that complements the vision-opinion AF-TYPOGRAPHY-QC; defers pre-typography |
+| AF-RESEARCH-WEAVE | 3.5/4/1Q | DECK | Research funnelled to one proof slide instead of woven across the deck | _chk_research_map(run_dir): once slides_copy.md exists, working/research/research_map.json must assign a verbatim research anchor to >= RESEARCH_WEAVE_FLOOR_PCT (60%) of NON-EXEMPT content slides, the copy must use the anchor on >= that floor of mapped slides, AND the deck must draw on >= MIN_DISTINCT_RESEARCH_ITEMS (8) distinct items; hook/pure-type/transition slides exempt; defers until copy exists |
+| AF-FACE-PROMPT-MISSING | Prompt-QC | slide | A people-bearing image prompt carries no facial expression/emotion token | intelligence_engines_check.py check_prompts: mechanical FACIAL half; vision verdict (AF-FACE-MOOD) owned by Image-QC |
+| AF-WORLD-SCALE | Prompt-QC | slide | A scene-bearing prompt states no setting/world or no believability/scale grounding | intelligence_engines_check.py check_prompts: mechanical WORLD half |
+| AF-LIGHT-PROMPT-MISSING | Prompt-QC | slide | A people/scene prompt states no key/fill/rim lighting direction | intelligence_engines_check.py check_prompts: mechanical LIGHTING half |
+| AF-HAIR-INAUTHENTIC | Prompt-QC | slide | A people-bearing prompt draws no hairstyle token from the authentic-representation catalog | intelligence_engines_check.py check_prompts: mechanical REPRESENTATION half |
+| AF-NO-FELT-STAKES | 1Q | DECK | The deck has no FELT_STAKES beat (a concrete, felt cost-of-staying-stuck) or it is mis-ordered | intelligence_engines_check.py check_copy (doctrinal owner; also pitch_engines_check.chk_felt_stakes) |
+| AF-NO-VILLAIN | 1Q | DECK | The deck has no VILLAIN/antagonist beat, or the villain is introduced after the hero | intelligence_engines_check.py check_copy (villain-before-hero ordering; also pitch_engines_check.chk_villain) |
 
 Every row is a binary trigger with an exact detection method and a verbatim failure message (Section 1 and 2). Wire them as auto-fails, checked before scoring. A deck that trips any DECK-level row, or any slide that trips a slide-level row, cannot be marked final.
 
@@ -349,7 +357,7 @@ These ten codes close the remaining gaps found in the Presentation Department V2
   [Deck-Title]-FINAL.pptx          # assembled deck
   [Deck-Title]-FINAL.pdf           # portable-document export
   PRESENTER-GUIDE.pdf              # rendered from working/deliverables/PRESENTER-GUIDE.md
-  PRESENTER-SPEECH.pdf             # rendered from working/deliverables/PRESENTER-SPEECH.md
+  PRESENTERS-SPEECH.pdf             # rendered from working/deliverables/PRESENTERS-SPEECH.md
   PRESENTER-AUDIO.mp3              # Fish Audio S2 render
 ```
 
@@ -380,7 +388,7 @@ These ten codes close the remaining gaps found in the Presentation Department V2
    [Deck-Title]-FINAL.pptx          # assembled deck (the build_deck.py output, post-processed)
    [Deck-Title]-FINAL.pdf           # portable-document export of the deck
    PRESENTER-GUIDE.pdf              # rendered from working/deliverables/PRESENTER-GUIDE.md (PDF, never .md)
-   PRESENTER-SPEECH.pdf             # rendered from working/deliverables/PRESENTER-SPEECH.md (PDF, never .md)
+   PRESENTERS-SPEECH.pdf             # rendered from working/deliverables/PRESENTERS-SPEECH.md (PDF, never .md)
    PRESENTER-AUDIO.mp3              # Fish Audio S2 full voiced reading (>=100KB; never the stub silence file)
    ```
    This re-asserts AF-DELIVER (the three presenter artifacts EXIST) and AF-DH1 (ONLY the five exist) as the bundle precondition of "Done."

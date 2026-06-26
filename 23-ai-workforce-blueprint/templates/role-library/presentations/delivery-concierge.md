@@ -124,10 +124,12 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 > `2021-07-28`, multipart/form-data, optional `parentId`), authenticated with the CLIENT's GHL
 > **LOCATION** Private Integration Token (NOT the agency token -- it 401s for media ops). Token:
 > `GOHIGHLEVEL_API_KEY` (preferred) or legacy `GHL_API_KEY`; location id:
-> `GOHIGHLEVEL_LOCATION_ID` (preferred) or `GHL_LOCATION_ID`. NEVER create a GHL folder (the
-> folder-create endpoint returns 404 -- the Media Librarian resolved `ghl_folder_id` to a
-> human-made folder id or `"root"`). Agent-browser / Playwright / any UI automation of GHL is
-> FORBIDDEN. Reference: `29-ghl-convert-and-flow/references/medias.md`.
+> `GOHIGHLEVEL_LOCATION_ID` (preferred) or `GHL_LOCATION_ID`. The Delivery Concierge does NOT
+> create the folder itself -- it uploads the final package INTO the `ghl_folder_id` the Media
+> Librarian already CREATED by software (`ghl_media.create_media_folder` -> `POST /medias/folder`,
+> Version 2021-07-28; "root" only if that genuinely declined). Driving the GHL UI in a browser
+> (agent-browser / Playwright / Puppeteer / ANY GHL UI automation) is STRICTLY FORBIDDEN.
+> Reference: `29-ghl-convert-and-flow/references/medias.md`.
 
 > **The OPERATOR build bundle vs the CLIENT package.** `build_deck.py` writes a NINE-file
 > OPERATOR build bundle to `~/Downloads/<client-slug>-<deck-slug>/` (`<deck-slug>-FINAL.pptx`,
@@ -418,6 +420,9 @@ The delivery notification is sent exclusively via `openclaw message send`. Raw T
 
 ### Gate 5 -- Teleprompter Live-URL Gate
 The teleprompter public URL must return HTTP 200 (ground-truth live GET, not a self-report) before the link is delivered to the client. `teleprompter_publish.json` must show `status: "published"` and `verified_http_status: 200`. A teleprompter delivered as a local file copy, or a dead/unverified link, is a delivery failure. This gate is also enforced mechanically by `build_deck.py`'s postflight gate (the TELEPROMPTER-PUBLISH sub-check of AF-BUNDLE-COMPLETE, exit 5).
+
+### Gate 6 -- Mechanical Last-Mile Gate (`scripts/delivery_gate.py`) (R9-F9)
+The client-facing last mile is enforced MECHANICALLY, not just by following SOPs. Run `python3 scripts/delivery_gate.py <run_dir>` (exit 0 = pass, 1 = fail) before sending the delivery notification. It deterministically asserts: (a) AF-DH1 — the resolved `delivery/[DECK_SLUG]-FINAL/` client package contains EXACTLY the five whitelisted, correctly-named files and nothing else (no extras, no `working/` dirs, no `.md` guide/speech, `-FINAL` suffix on pptx/pdf); (b) when a `ghl` destination is resolved, `media_library.json` carries a non-null `pptx_ghl_media_id` (the upload actually happened); (c) every destination in `delivery_plan.json` is ground-truth verified (a `mac_downloads` `verify_anchor` exists on disk; `ghl`/`drive` have their recorded ids). A FAIL here blocks `delivery_complete: true`. (Pre-delivery runs, with no package and no plan, DEFER and pass.)
 
 ---
 

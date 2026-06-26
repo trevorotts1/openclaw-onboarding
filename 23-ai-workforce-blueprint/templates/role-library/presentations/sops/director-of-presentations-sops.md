@@ -59,6 +59,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - Category L (Compliance Flags) -> Director AND Devil's Advocate (Director flags any compliance-sensitive claim before Phase 1; Devil's Advocate monitors throughout)
    If the brief carries `external_proof_count: 0` (GP-8 ALERT), surface to the operator before Phase 1 for a supply-or-approve decision. Categories G, H, I, K, and L are MANDATORY for the research brief to be considered complete (AF-RESEARCH-GATE); a brief that omits any of these categories routes back to ROLE-04 for completion before Phase 1 proceeds.
 
+5b. **Dispatch ROLE-04 again for Phase 3.5 Research-to-Slide Mapping (AFTER the arc, BEFORE copy).** Once the Signature Presentation Architect has locked `working/copy/arc_allocation.json`, dispatch ROLE-04's SOP 9.5 to produce `working/research/research_map.json` — the per-slide assignment of the already-gathered facts/quotes/stats. This is a short second pass (the heavy discovery already ran at Phase -0.5); its job is to map research to SPECIFIC slides so the Slide Copywriter writes copy ON TOP of mapped research instead of funnelling everything to the proof beat. BLOCK Phase 4 (copy) until research_map.json exists. The gate **AF-RESEARCH-WEAVE** (`_chk_research_map`) then fails any deck that weaves a mapped item into fewer than 60% of non-exempt content slides, whose copy does not actually carry the assigned anchors, or that draws on fewer than 8 distinct items — research woven ACROSS the deck, the #1 fidelity requirement.
+
 **Outputs:**
 - working/copy/intake.json (populated from deck_brief.json plus, when originating from ROLE-23: `source_brief_origin: "content-to-presentation-architect"`, `presentation_mode`, `recipient_name`, `deliverable_bundle`, `checklist_items`, AND all propagated persuasion-intelligence variables -- TRANSFORMATION_PROMISE, PRIMARY_OBJECTION, GOAL, CTA_ACTION, TARGET_FEELING, TONE, HOOK seed, OFFER_NAME, PRICE_MODE, FINAL_PRICE, PRICE_ANCHOR, OFFER_STACK, VIP_TIER, PROOF_ASSETS -- mapped from `source_brief.json.persuasion_intelligence`; interview_confirmed: true)
 
@@ -253,9 +255,31 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - working/copy/approval_record.json
 - working/copy/presenter_notes.json
 
-**Hand to:** Typography Architect (ROLE-18, Phase 1.5) and Brand Steward (LOGO_URL lock); THEN Slide Image Creator (Phase 2 prompt authoring, after the treatment table exists). Post-Phase-6: Presenter's Guide Specialist (ROLE-19), Presenter's Speech Writer (ROLE-20) + Fish Audio / Expression Specialist (ROLE-21), and Presenter Coach (ROLE-14) for the speaker-facing deliverables and audio demo.
+**Hand to:** Typography Architect (ROLE-18, Phase 1.5) and Brand Steward (LOGO_URL lock); THEN Slide Image Creator (Phase 2 prompt authoring, after the treatment table exists). Post-Phase-6: Presenter's Guide Specialist (ROLE-19), Presenter's Speech Writer (ROLE-20) + Fish Audio / Expression Specialist (ROLE-21), and Presenter Coach (ROLE-14) for the speaker-facing deliverables and audio demo. **FINALLY (the last mile — see SOP 9.6B): dispatch the Delivery Concierge (ROLE-13).**
 
 **Failure mode:** If the operator requests changes to the copy, send the copy back to the Slide Copywriter with the exact change instructions. Re-run Phase 1Q QC after changes. Present the revised copy to the owner again. Do not skip the re-QC step even for minor changes.
+
+---
+
+### SOP 9.6B -- Final-Hop Dispatch to the Delivery Concierge (the last mile)
+
+**When to run:** ONCE, after final Phase-6 QC PASS and after ALL speaker-facing deliverables exist. This is the step that connects the assembled deck to the client. R9-F7: without it the orchestration graph completes at the speaker-facing deliverables and the delivery hop never fires.
+
+**Inputs:**
+- `final_deck_qc.json` (qc-specialist Phase-6 PASS, score >= 8.5)
+- The OPERATOR build bundle dir (`~/Downloads/<client-slug>-<deck-slug>/`, the NINE `build_bundle_files` from build_deck.py) — guide + speech (`PRESENTERS-SPEECH.md/.pdf/-FISH-TAGGED.md`) + audio + infographic + teleprompter all present.
+
+**Steps:**
+1. **Verify the AF-DELIVER prerequisites** before dispatch: confirm the guide PDF, the speech (`PRESENTERS-SPEECH.pdf`), the audio MP3, the deck PDF, and the infographic all exist and are non-empty (these are the upstream inputs SOP 9.0 curates the five-file CLIENT package from). If any is missing, route back to its producing role — do NOT dispatch delivery on a partial bundle.
+2. **Dispatch ROLE-13 Delivery Concierge** with `final_deck_qc.json` + the build bundle dir. The Concierge runs SOP 9.0 (curate the clean five-file client package + AF-DH1), SOP 9.1 (destination resolution), SOP 9.2 (multi-destination upload — the WHOLE five-file package, not just the pptx), SOP 9.4 (ground-truth verify), SOP 9.5 (teleprompter publish), SOP 9.3 (notify).
+3. **Do NOT call the run "Done"** until ROLE-13 returns `delivery_complete: true` (Gates 1–5 in delivery-concierge.md all green; the mechanical `scripts/delivery_gate.py` enforcer passes). A run that stops at "deck assembled + QC passed" with no `delivery_complete` is an incomplete run (AF-DELIVER / AF-DELIVERY-COMPLETE).
+
+**Outputs:**
+- ROLE-13 `delivery_plan.json` + `delivery_complete: true` returned to the Director.
+
+**Hand to:** Delivery Concierge (ROLE-13). The Director holds the run open until ROLE-13 confirms delivery.
+
+**Failure mode:** If ROLE-13 reports the clean client package is missing/incomplete, or a destination cannot be verified, the run is NOT Done — block on the specific failing artifact/destination and re-dispatch only the failing hop. Never send a "done" notification before `delivery_complete: true`.
 
 ---
 
