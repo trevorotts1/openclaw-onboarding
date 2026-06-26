@@ -528,14 +528,16 @@ def main():
         # return 4 = "queued, NOT authored" so the caller keeps the status at
         # authoring and the resume cron re-fires until verify-library-gate.sh
         # confirms real, substantive SOPs on disk.
-        print(f"\n[POPULATE-SOPS] {total} departments QUEUED via inline work files — but NO SOPs are "
-              f"authored yet. The AI agent running this install MUST pick up each dept's "
+        print(f"\n[POPULATE-SOPS] {dispatched} department(s) QUEUED via inline work files "
+              f"({authored_skips} already-authored skipped) — but NO new SOPs are authored yet. "
+              f"The AI agent running this install MUST pick up each queued dept's "
               f".sop-write-queue/ folder and write the real DMAIC SOPs. Returning rc=4 "
               f"(queued-not-authored): the SOP library is NOT done until the substance gate passes.",
               file=sys.stderr)
         return 4
 
-    print(f"\n[POPULATE-SOPS] All {total} departments completed (openclaw sub-agents reported success).",
+    print(f"\n[POPULATE-SOPS] {dispatched} department(s) authored via openclaw sub-agents "
+          f"(reported success); {authored_skips} already-authored skipped. {total} custom dept(s) total.",
           file=sys.stderr)
     return 0
 

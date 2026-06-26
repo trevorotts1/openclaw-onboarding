@@ -69,12 +69,22 @@ except ImportError:
 # Mac  → ~/.openclaw/workspace/data/coaching-personas
 # The old ~/Downloads/openclaw-master-files path is kept as last-resort legacy.
 def _resolve_canonical_base() -> Path:
-    vps_root = Path("/data/.openclaw/master-files/coaching-personas")
-    if vps_root.parent.exists():  # /data/.openclaw/master-files exists
-        return vps_root
-    mac_root = Path.home() / ".openclaw" / "workspace" / "data" / "coaching-personas"
-    if mac_root.parent.parent.exists():  # ~/.openclaw/workspace exists
-        return mac_root
+    # G6 FIX (data-loss crash): mirror add-persona-from-source.sh:100-118 EXACTLY
+    # so the shell's WRITE-root and the orchestrator's READ-root are the SAME
+    # directory. Previously the shell wrote source.json under
+    # <OC_ROOT>/master-files/coaching-personas whenever master-files/ existed,
+    # while the orchestrator only honored that on the VPS root and otherwise fell
+    # straight through to <OC_ROOT>/workspace/data/coaching-personas. On any Mac
+    # box that had a ~/.openclaw/master-files dir, write-root != read-root →
+    # source.json FileNotFoundError → the persona never built. Resolution per
+    # OC_ROOT (VPS first, then Mac), identical ordering to the shell:
+    #   1. <OC_ROOT>/master-files/coaching-personas    (when master-files/ exists)
+    #   2. <OC_ROOT>/workspace/data/coaching-personas   (fallback)
+    for oc_root in (Path("/data/.openclaw"), Path.home() / ".openclaw"):
+        if (oc_root / "master-files").is_dir():
+            return oc_root / "master-files" / "coaching-personas"
+        if (oc_root / "workspace").is_dir():
+            return oc_root / "workspace" / "data" / "coaching-personas"
     # Legacy path kept for backward compat on old setups
     return Path.home() / "Downloads" / "openclaw-master-files" / "coaching-personas"
 
@@ -349,6 +359,79 @@ def _ledger_append_phase6b_skip(folder: str, detail: str) -> None:
         pass  # Best-effort
 
 
+def _auto_classify_persona_tags(folder: str, book: dict,
+                                domain_vocab: list, perspective_vocab: list):
+    """G6 FIX (routing-invisibility): deterministically classify a new persona's
+    domain[] + perspective[] from its own synthesized text against the controlled
+    vocab, so the dept-scope filter can route to it WITHOUT a manual tagging step.
+
+    No model call (no token furnace, fully offline + idempotent). Returns
+    (domain_tags, perspective_tags). domain[] is GUARANTEED non-empty — the
+    dept-scope filter excludes any persona with no matching domain, so an empty
+    domain is exactly the "invisible to routing" failure this fixes; we fall back
+    to the universal 'coaching' domain (every book in this skill is a
+    coaching/leadership work) when nothing more specific matches.
+    """
+    import re
+
+    # Densest synthesized source first, then the analysis, then raw extraction.
+    text_parts = [str(book.get("title", "")), str(book.get("author", ""))]
+    for fname in ("persona-blueprint.md", "analysis-notes.md", "extraction-notes.md"):
+        p = PERSONAS_DIR / folder / fname
+        if p.exists():
+            try:
+                text_parts.append(p.read_text(errors="ignore"))
+            except Exception:
+                pass
+            break  # one source is enough; blueprint is the synthesized superset
+    text = " ".join(text_parts).lower()
+
+    def _count(term: str) -> int:
+        # Word-boundary match so short tokens (e.g. 'men') don't match inside
+        # 'management'/'women'. Phrases match as whole phrases.
+        return len(re.findall(r"\b" + re.escape(term) + r"\b", text))
+
+    # ── domain[] : direct vocab match (tag, de-hyphenated, joined) ──────────
+    domain_scores = {}
+    for tag in (domain_vocab or []):
+        variants = {tag, tag.replace("-", " "), tag.replace("-", "")}
+        score = sum(_count(v) for v in variants)
+        if score >= 2:  # threshold trims one-off noise mentions
+            domain_scores[tag] = score
+    domain_tags = [t for t, _ in sorted(domain_scores.items(),
+                                        key=lambda kv: kv[1], reverse=True)][:6]
+    if not domain_tags:
+        if "coaching" in (domain_vocab or []):
+            domain_tags = ["coaching"]
+        elif domain_vocab:
+            domain_tags = [domain_vocab[0]]
+        else:
+            domain_tags = ["coaching"]
+
+    # ── perspective[] : keyword map, restricted to the controlled vocab ─────
+    _PERSPECTIVE_KEYWORDS = {
+        "african-american-experience": ["african american", "black community",
+                                        "black men", "black women", "systemic racism"],
+        "womens-challenges": ["women", "woman", "female", "motherhood"],
+        "mens-challenges": ["men", "man", "masculinity", "fatherhood", "brotherhood"],
+        "family-relationships": ["family", "parenting", "marriage", "household"],
+        "faith-spirituality": ["faith", "spiritual", "prayer", "scripture", "biblical"],
+        "love-romantic-relationships": ["romantic", "dating", "intimacy", "courtship"],
+    }
+    perspective_scores = {}
+    for tag in (perspective_vocab or []):
+        kws = _PERSPECTIVE_KEYWORDS.get(tag)
+        if not kws:
+            continue
+        score = sum(_count(k) for k in kws)
+        if score >= 2:
+            perspective_scores[tag] = score
+    perspective_tags = [t for t, _ in sorted(perspective_scores.items(),
+                                             key=lambda kv: kv[1], reverse=True)][:3]
+
+    return domain_tags, perspective_tags
+
+
 def _append_persona_to_categories(book: dict, folder: str) -> None:
     """Append a new persona entry to persona-categories.json (idempotent).
 
@@ -395,17 +478,28 @@ def _append_persona_to_categories(book: dict, folder: str) -> None:
     if folder in data["personas"]:
         return  # Already present — idempotent no-op.
 
+    # G6 FIX: auto-classify domain[]/perspective[] against the controlled vocab
+    # so the persona is immediately routable. domain[] is guaranteed non-empty —
+    # an empty domain is precisely what made prior auto-added personas invisible
+    # to the dept-scope filter. autoTagged flags it for optional operator refining.
+    domain_tags, perspective_tags = _auto_classify_persona_tags(
+        folder, book,
+        data.get("domainTags", []),
+        data.get("perspectiveTags", []),
+    )
     data["personas"][folder] = {
         "author": book.get("author", "unknown"),
         "book": book.get("title", folder),
-        "domain": [],          # Tag manually before dept filter will include this persona
-        "perspective": [],
+        "domain": domain_tags,
+        "perspective": perspective_tags,
         "custom": [],
+        "autoTagged": True,    # set by orchestrator auto-classifier; operator may refine
         "added": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     with open(cat_path, "w") as f:
         json.dump(data, f, indent=2)
-    print(f"[orchestrator] Appended {folder} to {cat_path} (no tags yet — operator must add domain + perspective).")
+    print(f"[orchestrator] Appended {folder} to {cat_path} "
+          f"(auto-tagged domain={domain_tags} perspective={perspective_tags}; operator may refine).")
 
 
 # ─── LOGGING ──────────────────────────────────────────────────────────────────
@@ -1237,28 +1331,33 @@ A final synthesis pass will combine all chunk analyses.
 
 {chunk}"""
                 # v9.6.2: resolve model per chunk based on chunk size, route accordingly
-            per_chunk_model, per_chunk_route = resolve_phase_model("phase2", input_chars=len(chunk))
-            log(f"    Model for chunk {i}: {per_chunk_model} via {per_chunk_route}")
-            _ana_sys = _analysis_system()
-            if per_chunk_route == "openai-responses":
-                if "call_openai_responses" in globals():
-                    chunk_result = await call_openai_responses(session, per_chunk_model, _ana_sys, user_prompt, max_tokens=16000)
+                # G6 FIX (HIGH, data loss): the model-call + append BELOW were
+                # dedented OUTSIDE this for-loop, so for any book whose extraction
+                # notes exceeded the chunk limit only the LAST chunk was ever
+                # analyzed and every earlier chunk was silently dropped. Re-indented
+                # back INSIDE the loop so EVERY chunk is analyzed and concatenated.
+                per_chunk_model, per_chunk_route = resolve_phase_model("phase2", input_chars=len(chunk))
+                log(f"    Model for chunk {i}: {per_chunk_model} via {per_chunk_route}")
+                _ana_sys = _analysis_system()
+                if per_chunk_route == "openai-responses":
+                    if "call_openai_responses" in globals():
+                        chunk_result = await call_openai_responses(session, per_chunk_model, _ana_sys, user_prompt, max_tokens=16000)
+                    else:
+                        chunk_result = await call_codex(session, user_prompt, max_tokens=16000)
+                elif per_chunk_route == "ollama":
+                    # v10.3.0: Ollama Cloud is now a real route
+                    ollama_model = per_chunk_model.replace("ollama/", "", 1)
+                    try:
+                        chunk_result = await call_ollama_cloud(session, ollama_model, _ana_sys, user_prompt, max_tokens=16000)
+                    except Exception as e:
+                        log(f"    Ollama Cloud chunk call failed ({e}); falling back to OpenRouter")
+                        fallback_model = per_chunk_model.replace("ollama/", "openrouter/").replace(":cloud", "")
+                        chunk_result = await call_openrouter(session, fallback_model, _ana_sys, user_prompt, max_tokens=16000)
                 else:
-                    chunk_result = await call_codex(session, user_prompt, max_tokens=16000)
-            elif per_chunk_route == "ollama":
-                # v10.3.0: Ollama Cloud is now a real route
-                ollama_model = per_chunk_model.replace("ollama/", "", 1)
-                try:
-                    chunk_result = await call_ollama_cloud(session, ollama_model, _ana_sys, user_prompt, max_tokens=16000)
-                except Exception as e:
-                    log(f"    Ollama Cloud chunk call failed ({e}); falling back to OpenRouter")
-                    fallback_model = per_chunk_model.replace("ollama/", "openrouter/").replace(":cloud", "")
-                    chunk_result = await call_openrouter(session, fallback_model, _ana_sys, user_prompt, max_tokens=16000)
-            else:
-                or_model = per_chunk_model.replace("openrouter/", "", 1)
-                chunk_result = await call_openrouter(session, or_model, _ana_sys, user_prompt, max_tokens=16000)
-            chunk_analyses.append(f"## CHUNK {i} ANALYSIS\n\n{chunk_result}")
-            await asyncio.sleep(2)  # Brief pause between chunks
+                    or_model = per_chunk_model.replace("openrouter/", "", 1)
+                    chunk_result = await call_openrouter(session, or_model, _ana_sys, user_prompt, max_tokens=16000)
+                chunk_analyses.append(f"## CHUNK {i} ANALYSIS\n\n{chunk_result}")
+                await asyncio.sleep(2)  # Brief pause between chunks
 
             # Final synthesis of all chunk analyses
             log(f"  Synthesizing {len(chunks)} chunk analyses into unified analysis...")

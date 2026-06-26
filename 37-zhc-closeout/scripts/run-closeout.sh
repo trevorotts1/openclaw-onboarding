@@ -89,6 +89,37 @@ for cmd in jq curl openclaw; do
     exit 1
   fi
 done
+
+# ---- G3-CLOSEOUT-LOCK: per-client concurrency guard (prevents 2-3x paid spend) ----
+# run-closeout.sh is launched from TWO */15 paths: resume-closeout-cron.sh (which
+# acquires .closeout-resume.lock at 124-135) AND resume-workforce-build.sh:802,
+# which nohup-launches this script directly and BYPASSES that lock. Worse, even
+# the cron's own lock is released the moment that short-lived parent shell exits,
+# while the detached run-closeout child keeps running for the multi-minute paid
+# window. With no lock OWNED by run-closeout.sh itself, two concurrent runs for the
+# SAME client both observe an unset result-URL during that window and BOTH call
+# KIE.AI image + Veo video -> 2-3x spend per closeout.
+# This guard makes the lock the script's own, so it covers EVERY invocation path.
+# Pattern mirrors resume-closeout-cron.sh:124-135 (touch + mtime-age staleness).
+# Keyed on the CLIENT/company slug -- NOT global -- so different clients still run
+# in parallel; only same-client double-fires are serialized.
+ZHC_STALE_LOCK_MINUTES="${ZHC_STALE_LOCK_MINUTES:-20}"
+_lock_slug="$(jq -r '.companySlug // .companyName // empty' "$STATE_FILE" 2>/dev/null \
+  | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//')"
+[[ -z "$_lock_slug" ]] && _lock_slug="default"
+RUN_CLOSEOUT_LOCK_FILE="$OC_ROOT/workspace/.run-closeout.${_lock_slug}.lock"
+if [[ -f "$RUN_CLOSEOUT_LOCK_FILE" ]]; then
+  _rc_lock_age=$(( $(date -u +%s) - $(date -u -r "$RUN_CLOSEOUT_LOCK_FILE" +%s 2>/dev/null || date -u +%s) ))
+  if (( _rc_lock_age < ZHC_STALE_LOCK_MINUTES * 60 )); then
+    log "INFO" "G3-CLOSEOUT-LOCK held for slug='$_lock_slug' (${_rc_lock_age}s old, limit=${ZHC_STALE_LOCK_MINUTES}m) -- another closeout for this client is in flight; exiting to avoid duplicate paid generation"
+    exit 0
+  fi
+  log "WARN" "G3-CLOSEOUT-LOCK stale lock for slug='$_lock_slug' removed (${_rc_lock_age}s old)"
+  rm -f "$RUN_CLOSEOUT_LOCK_FILE"
+fi
+touch "$RUN_CLOSEOUT_LOCK_FILE"
+trap 'rm -f "$RUN_CLOSEOUT_LOCK_FILE"' EXIT
+
 # ---- PRD-2.15 (v12.3.12): EARLY interviewQc check (before API-key preflight) ----
 # If the interview QC hasn't passed, refuse immediately - no point checking API keys
 # for a closeout we're about to refuse. This is a cheap token-free read.
@@ -537,6 +568,20 @@ generate_rate_gate() {
   local script="$1"; shift
 
   local attempt=0 score qc
+
+  # G3-CLOSEOUT-LOCK (re-entry guard): if this artifact is ALREADY on the held
+  # list, a prior run exhausted its attempts (or it failed an assertion) and it
+  # is awaiting human review. Re-invoking the generator here would RE-SPEND on the
+  # paid backend (KIE.AI image / Veo video) on every resume-cron re-entry. Stay
+  # held -- do NOT regenerate. An operator releases it by clearing the artifact
+  # from .qualityHeld (and/or writing a passing .qualityRatings.<key>), after which
+  # the per-step idempotency guard or a cleared hold lets a fresh cycle run.
+  if state_get '.qualityHeld // [] | index("'"$key"'")' | grep -q '[0-9]'; then
+    log "WARN" "gate[$key]: already HELD (in .qualityHeld) from a prior run -- skipping regeneration to avoid duplicate paid generation; awaiting operator review"
+    eval "GATE_${name}_RESULT=held"
+    return 0
+  fi
+
   while (( attempt < ZHC_QUALITY_MAX_ATTEMPTS )); do
     attempt=$((attempt + 1))
     log "INFO" "gate[$key]: generate attempt $attempt/$ZHC_QUALITY_MAX_ATTEMPTS ($script $*)"

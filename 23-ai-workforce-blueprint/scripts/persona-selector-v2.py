@@ -105,6 +105,17 @@ except ImportError:
     def semantic_task_fit(persona_id, task_text, paths, persona_summary=""):  # type: ignore
         return {"score": 0.6, "method": "module_missing", "detail": "semantic_task_fit not importable"}
 
+try:
+    # G13: in-process Stage-C retrieval that shares ONE task embedding with
+    # Layer-5 semantic_task_fit (same module cache). Replaces the gemini-search
+    # subprocess as the primary path (subprocess kept as fallback).
+    from semantic_task_fit import semantic_persona_ids  # type: ignore
+    SEMANTIC_PERSONA_IDS_AVAILABLE = True
+except ImportError:
+    SEMANTIC_PERSONA_IDS_AVAILABLE = False
+    def semantic_persona_ids(task_text, paths, top_k=10):  # type: ignore
+        return None
+
 
 # When env var SCORING_MODE=llm, use LLM evaluation for Layers 1-4.
 # When SCORING_MODE=heuristic (default), use the keyword-hit baseline.
@@ -242,6 +253,23 @@ VARIETY_PENALTY_CAP_USES = 5   # penalty saturates at 5 uses (= 40% cap)
 VARIETY_DOMINANCE_RATIO = 1.5  # top-1 must be ≥1.5x top-3 to skip sampling
 VARIETY_SAMPLE_TOP_N = 3       # weighted-sample pool size when sampling
 VARIETY_SAMPLE_SEED_ENV = "PERSONA_VARIETY_SEED"  # set for deterministic tests
+
+# ─── G13: Stage-D fan-out backstop (token-furnace guard) ───────────────────
+# On a FRESH box (no governing-personas.md, no domain-tag coverage) the funnel
+# can hand the FULL persona library to Stage D. With SCORING_MODE='llm' that is
+# 4 LLM calls per persona → ~160 calls on ONE task (the F7 furnace). Two guards
+# enforced at the scoring gate in select_persona():
+#   1. LLM GATE — LLM layer-scoring only runs when the candidate set can be
+#      BOUNDED: a governing pool exists OR an in-process semantic ranking is
+#      available to cap finalists. Otherwise this selection silently uses the
+#      cheap heuristic path (zero API fan-out). Root-cause kill; no cron, no
+#      self-resurrect — the burn simply cannot start on an unbounded fresh box.
+#   2. FINALIST CAP — even when bounded, never LLM-score more than
+#      STAGE_D_LLM_FINALIST_CAP personas; keep the top-cap by semantic rank.
+# Heuristic mode is unaffected (it is already cheap: keyword layers + one shared
+# task embed reused across personas), so the full survivor list still scores
+# there and selection quality on bounded boxes is preserved.
+STAGE_D_LLM_FINALIST_CAP = max(1, int(os.environ.get("STAGE_D_LLM_FINALIST_CAP", "12")))
 
 # ─── PRE-SCORING FUNNEL (PRD item 1.2 — rebuilt funnel) ─────────────────────
 # Stage A: governing-personas.md → candidate pool (or all personas fallback)
@@ -450,17 +478,25 @@ def _category_filter(candidates: list, department: str, task_text: str,
     return filtered if filtered else candidates  # never-to-zero guard
 
 
-def _semantic_candidate_retrieval(task_text: str, top_k: int = 10) -> "list | None":
+def _semantic_candidate_retrieval(task_text: str, paths: dict, top_k: int = 10) -> "list | None":
     """
-    Stage C: call gemini-search.py and return an ordered list of persona IDs,
+    Stage C: return an ordered list of persona IDs most similar to the task,
     or None if the search engine is unavailable/errors.
 
-    CLI contract matched to gemini-search.py as it exists (PRD item 1.2 Defect 4
-    fix).  The prior call used --collection/--query/--top-k/--format=json which
-    do NOT exist in gemini-search.py argparse → returncode != 0 → Stage C was
-    always dark.
+    G13 / PRD item 1.8 — PRIMARY path is now the in-process programmatic API
+    semantic_task_fit.semantic_persona_ids(). It embeds the task ONCE and caches
+    that embedding in the shared module-level cache, so Layer-5 task-fit reuses
+    the SAME vector instead of paying for a second embed. The prior design
+    embedded the task twice per selection: once inside the gemini-search.py
+    subprocess here, and again in-process for Layer 5. Routing Stage C through
+    the shared API collapses that to a single embed (the core G13 efficiency win)
+    AND removes a subprocess spawn from the hot path.
 
-    Correct contract:
+    FALLBACK path (unchanged contract) — gemini-search.py subprocess, used only
+    when the programmatic API is unavailable or returns no candidates (e.g. the
+    semantic_task_fit module is not importable, or numpy/genai is missing but the
+    standalone script still works). CLI contract matched to gemini-search.py as
+    it exists (PRD item 1.2 Defect 4 fix):
       argv: [python3, gemini-search.py, "--", task_text, "--limit", N]
       stdout: human text; both semantic and keyword-fallback paths print
               "PERSONA: <id>" on each result line — one regex catches both:
@@ -469,16 +505,21 @@ def _semantic_candidate_retrieval(task_text: str, top_k: int = 10) -> "list | No
       The "--" before task_text guards against task descriptions that begin
       with "-" being parsed by argparse as flags.
 
-    NOTE: item 1.8 will replace this subprocess call with the shared
-    embedding_engine.semantic_persona_ids() programmatic API.  Keep ALL
-    the call contract isolated inside this one function body so that swap
-    only touches here.
-
     ID-convention note: the index stores persona FOLDER names as IDs (e.g.
     "hormozi-100m-offers").  These are the same IDs used as keys in
     persona-categories.json, so Stage C's intersection with pool_b self-heals
     naming mismatches via never-to-zero (empty intersection → keep pool_b).
     """
+    # PRIMARY (G13): in-process, single shared task embedding.
+    if SEMANTIC_PERSONA_IDS_AVAILABLE:
+        try:
+            ids = semantic_persona_ids(task_text, paths, top_k=top_k)
+            if ids:
+                return ids
+        except Exception:
+            pass  # fall through to subprocess fallback (never-to-zero)
+
+    # FALLBACK: gemini-search.py subprocess (legacy contract).
     import re as _re
     import subprocess as _subprocess
     sp = _find_gemini_search()
@@ -507,7 +548,12 @@ def _semantic_candidate_retrieval(task_text: str, top_k: int = 10) -> "list | No
 def build_candidate_pool(task_text: str, department: str, all_personas: list,
                           paths: dict) -> tuple:
     """
-    Run the three-stage pre-scoring funnel and return (candidate_list, funnel_dict).
+    Run the three-stage pre-scoring funnel and return
+    (candidate_list, funnel_dict, semantic_order).
+
+    semantic_order (G13): the funnel survivors ordered by semantic rank (best
+    task-match first), or [] when no semantic signal was available. select_persona
+    uses it to cap Stage-D LLM finalists to the most task-relevant personas.
 
     Safety invariant: each stage count is >= 1 whenever all_personas is non-empty,
     and counts are monotonically non-increasing (pool >= category >= semantic)
@@ -551,8 +597,9 @@ def build_candidate_pool(task_text: str, department: str, all_personas: list,
     # Stage B — category-tag filter (Defects 1-3 fixed; task_text feeds infer_task_category)
     pool_b = _category_filter(pool_a, department, task_text, categories_data)
 
-    # Stage C — semantic retrieval (Defect 4 fixed: correct CLI contract)
-    semantic_ids = _semantic_candidate_retrieval(task_text, top_k=10)
+    # Stage C — semantic retrieval (G13: in-process shared-embed primary;
+    # gemini-search subprocess fallback — Defect 4 CLI contract preserved there)
+    semantic_ids = _semantic_candidate_retrieval(task_text, paths, top_k=10)
     if semantic_ids:
         semantic_set = set(semantic_ids)
         intersection = [p for p in pool_b if p in semantic_set]
@@ -562,6 +609,12 @@ def build_candidate_pool(task_text: str, department: str, all_personas: list,
         pool_c = pool_b
         semantic_note = "unavailable (fallback to Stage B)"
 
+    # G13: survivors ranked by semantic relevance (best first). Used by
+    # select_persona to keep the top-N finalists when capping LLM fan-out.
+    # Empty when there was no semantic signal (caller degrades gracefully).
+    pool_c_set = set(pool_c)
+    semantic_order = [p for p in (semantic_ids or []) if p in pool_c_set]
+
     # Emit canonical 3 keys (PRD 1.2 §3 output contract) + 2 additive diagnostics
     funnel = {
         "pool": len(pool_a),
@@ -570,7 +623,7 @@ def build_candidate_pool(task_text: str, department: str, all_personas: list,
         "pool_source": pool_note,
         "semantic_engine": semantic_note,
     }
-    return pool_c, funnel
+    return pool_c, funnel, semantic_order
 
 
 def read_recent_use_counts(department_id: str, task_category: str,
@@ -1222,15 +1275,20 @@ def _llm_layer_scores(persona_id: str, task_text: str, owner_profile: str,
 
 
 def compute_layer_scores(persona_id: str, task_text: str, owner_profile: str,
-                          department_id: str, paths: dict) -> dict:
+                          department_id: str, paths: dict,
+                          scoring_mode: str = None) -> dict:
     """
-    Dispatch to heuristic or LLM-based scoring depending on SCORING_MODE.
-    Default: 'llm' when llm_score module is importable, else 'heuristic'.
-    Override with `SCORING_MODE=heuristic` env var (for offline tests or
-    when API keys are missing).
+    Dispatch to heuristic or LLM-based scoring depending on the EFFECTIVE mode.
+    Default mode: 'llm' when llm_score module is importable, else 'heuristic'.
+    Override globally with the `SCORING_MODE=heuristic` env var.
+
+    G13: `scoring_mode` lets select_persona() force the cheap heuristic path for
+    a SINGLE selection (the LLM fan-out gate) WITHOUT mutating the process-global
+    SCORING_MODE. None → fall back to the global SCORING_MODE (unchanged default).
     """
+    effective = (scoring_mode or SCORING_MODE)
     cc = load_company_config(paths)
-    if SCORING_MODE == "llm" and LLM_AVAILABLE:
+    if effective == "llm" and LLM_AVAILABLE:
         return _llm_layer_scores(persona_id, task_text, owner_profile,
                                    department_id, cc, paths)
     return _heuristic_layer_scores(persona_id, task_text, owner_profile,
@@ -1238,9 +1296,15 @@ def compute_layer_scores(persona_id: str, task_text: str, owner_profile: str,
 
 
 def score_persona(persona_id: str, task_text: str, owner_profile: str,
-                  department_id: str, weights: dict, paths: dict, db_path: Path) -> dict:
-    """Compute total weighted score with override applied."""
-    layers = compute_layer_scores(persona_id, task_text, owner_profile, department_id, paths)
+                  department_id: str, weights: dict, paths: dict, db_path: Path,
+                  scoring_mode: str = None) -> dict:
+    """Compute total weighted score with override applied.
+
+    G13: `scoring_mode` is threaded to compute_layer_scores so the caller can
+    bound LLM fan-out per selection (None → process-global SCORING_MODE).
+    """
+    layers = compute_layer_scores(persona_id, task_text, owner_profile,
+                                   department_id, paths, scoring_mode=scoring_mode)
     base = (
         layers["mission"]      * weights["mission"] +
         layers["owner_values"] * weights["owner_values"] +
@@ -1297,10 +1361,46 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
         }
 
     # Stages A-C: build candidate pool via funnel
-    personas, funnel = build_candidate_pool(task, department, all_personas, paths)
+    personas, funnel, semantic_order = build_candidate_pool(task, department, all_personas, paths)
+
+    # ─── G13: bound LLM fan-out BEFORE Stage-D scoring (token-furnace guard) ──
+    # Enforced here at the scoring gate (a rule not enforced does not exist):
+    #   • LLM GATE — when SCORING_MODE='llm' but the candidate set cannot be
+    #     bounded (no governing pool AND no semantic ranking), force the cheap
+    #     heuristic path for THIS selection. A fresh, unbounded box therefore
+    #     cannot fan out to ~160 LLM calls. No cron, no resume — the burn never
+    #     starts. Bounded boxes are unaffected (full quality preserved).
+    #   • FINALIST CAP — when bounded but the survivor set still exceeds
+    #     STAGE_D_LLM_FINALIST_CAP, LLM-score only the top-cap survivors by
+    #     semantic rank (most task-relevant first).
+    effective_scoring_mode = SCORING_MODE
+    governing_pool_exists = funnel.get("pool_source") == "governing-personas.md"
+    have_semantic_rank = bool(semantic_order)
+    funnel["scoring_mode_requested"] = SCORING_MODE
+    if SCORING_MODE == "llm" and LLM_AVAILABLE:
+        if not (governing_pool_exists or have_semantic_rank):
+            effective_scoring_mode = "heuristic"
+            funnel["llm_gate"] = "downgraded-heuristic:unbounded-fresh-box"
+        elif len(personas) > STAGE_D_LLM_FINALIST_CAP:
+            if semantic_order:
+                personas_set = set(personas)
+                ranked = [p for p in semantic_order if p in personas_set]
+                tail = [p for p in personas if p not in set(ranked)]
+                personas = (ranked + tail)[:STAGE_D_LLM_FINALIST_CAP]
+            else:
+                # Bounded by a governing pool but no semantic order to rank by;
+                # keep the governing-curated head (deterministic, bounded).
+                personas = personas[:STAGE_D_LLM_FINALIST_CAP]
+            funnel["llm_gate"] = "capped"
+            funnel["llm_finalists"] = len(personas)
+        else:
+            funnel["llm_gate"] = "ok"
+    funnel["scoring_mode_effective"] = effective_scoring_mode
 
     # Stage D: 5-layer scoring on funnel survivors only
-    scored = [score_persona(p, task, owner_profile, department, weights, paths, db_path) for p in personas]
+    scored = [score_persona(p, task, owner_profile, department, weights, paths,
+                            db_path, scoring_mode=effective_scoring_mode)
+              for p in personas]
 
     task_category = infer_task_category(task)
 

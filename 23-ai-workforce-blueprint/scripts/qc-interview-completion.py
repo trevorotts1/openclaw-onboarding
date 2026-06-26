@@ -129,6 +129,50 @@ def load_transcript(path: Path) -> str:
         sys.exit(1)
 
 
+# ── G1-FAB-ENFORCE: owner-consent provenance (mirrors build-workforce.py) ───────
+# Header that build_from_config() stamps onto a synthetically-built (non-interactive)
+# transcript. A transcript bearing this header was assembled FROM CONFIG, not from
+# live client turns — it is a fabricated transcript UNLESS an explicit owner consent
+# record (self-setup / fast opt-in) is present in build-state.
+NON_INTERACTIVE_ANSWERS_HEADER = "# Workforce Interview Answers (Non-Interactive)"
+
+# Decision tokens that count as an EXPLICIT owner opt-in to a self-setup / fast build.
+_CONSENT_OPT_IN_DECISIONS = frozenset({
+    "self-setup", "self_setup", "selfsetup",
+    "fast", "fast-mode", "fast_mode", "fastmode",
+    "decline-interview", "decline_interview", "skip-interview", "skip_interview",
+    "opt-in", "opt_in", "optin",
+})
+
+
+def _validate_owner_consent(state: dict | None) -> tuple:
+    """
+    Validate a session-bound ownerConsent record using the SAME provenance rule as
+    the build-workforce.py decline/consent validators: every required field must be
+    present and truthy, and the decision must be an explicit self-setup/fast opt-in.
+
+    Required: decision, source, decidedAt, decidedBy, sessionId (read from
+    state["ownerConsent"]). Returns (ok: bool, reason: str, consent: dict|None).
+    Never raises.
+    """
+    required = ("decision", "source", "decidedAt", "decidedBy", "sessionId")
+    consent = (state or {}).get("ownerConsent")
+    if not isinstance(consent, dict):
+        return (False,
+                "no ownerConsent record in build-state "
+                "(need {decision,source,decidedAt,decidedBy,sessionId})",
+                None)
+    missing = [k for k in required if not consent.get(k)]
+    if missing:
+        return (False, f"ownerConsent missing/empty fields: {', '.join(missing)}", consent)
+    decision = str(consent.get("decision", "")).strip().lower()
+    if decision not in _CONSENT_OPT_IN_DECISIONS:
+        return (False,
+                f"ownerConsent.decision='{decision}' is not an explicit self-setup/fast opt-in",
+                consent)
+    return (True, "ok", consent)
+
+
 # ── Check 1: Question count ───────────────────────────────────────────────────
 
 def count_questions(transcript: str, state: dict) -> dict:
@@ -513,9 +557,17 @@ def check_nudges_wired(repo_root: Path) -> dict:
 
 # ── Check 5: No-fabrication (v12.3.4) ────────────────────────────────────────
 
-def check_no_fabrication(transcript: str, context_map_path: Path | None) -> dict:
+def check_no_fabrication(transcript: str, context_map_path: Path | None,
+                         state: dict | None = None) -> dict:
     """
-    Check #5 (v12.3.4): NO-FABRICATION guardrail.
+    Check #5 (v12.3.4 + G1-FAB-ENFORCE): NO-FABRICATION guardrail.
+
+    (G1) SYNTHETIC-TRANSCRIPT gate: if the transcript bears the non-interactive
+    synthetic header (i.e. it was assembled FROM CONFIG by build_from_config, not from
+    live client turns) it is a FABRICATED transcript and HARD-FAILS (exit 3) UNLESS an
+    explicit ownerConsent self-setup/fast record is present in build-state. This closes
+    the silent-pass hole where a synthetic transcript with no context-map slipped
+    through the old early skip below.
 
     If interview-context-map.json exists and a known/partial context snippet appears
     verbatim in workforce-interview-answers.md WITHOUT a 'confirmed-from-context:'
@@ -525,11 +577,34 @@ def check_no_fabrication(transcript: str, context_map_path: Path | None) -> dict
     An answer block that DOES contain 'confirmed-from-context: <source>' PASSES — the
     client confirmed it live and the agent tagged it correctly.
 
-    If context-map is absent → check skips (returns pass). This is intentional:
-    on a fresh install or when context-ingest was not run, there is nothing to verify.
+    If context-map is absent (and no synthetic header) → check skips (returns pass).
+    This is intentional: on a fresh install or when context-ingest was not run, there
+    is nothing to verify.
 
     Reads only. Never writes.
     """
+    # (G1) Synthetic non-interactive transcript without consent = fabrication.
+    if NON_INTERACTIVE_ANSWERS_HEADER in (transcript or ""):
+        consent_ok, consent_reason, _consent = _validate_owner_consent(state)
+        if not consent_ok:
+            return {
+                "violations": [{
+                    "theme_id": "non-interactive-synthetic-transcript",
+                    "source": "build_from_config",
+                    "snippet_preview": NON_INTERACTIVE_ANSWERS_HEADER,
+                    "reason": (
+                        "Transcript bears the non-interactive synthetic header but no "
+                        "valid ownerConsent record is present in build-state. This is a "
+                        "fabricated transcript (config recorded as client answers without "
+                        "an explicit self-setup/fast opt-in). " + consent_reason
+                    ),
+                }],
+                "skipped": False,
+                "note": "Synthetic non-interactive transcript without consent — HARD FAIL.",
+            }
+        # Consent present: a synthetic transcript is legitimate here. Do not silently
+        # skip — note it and continue to the context-map check below.
+
     if context_map_path is None or not context_map_path.exists():
         return {"violations": [], "skipped": True,
                 "note": "interview-context-map.json not found; check #5 skipped (not a failure)."}
@@ -633,8 +708,18 @@ def is_tailored_short_interview(state: dict | None) -> tuple:
             return (True, f"interviewQc.overrideReason={qc.get('overrideReason')!r}")
         if token in scope:
             return (True, f"scope={scope.strip()!r}")
+    # G1-FAB-ENFORCE: a bare questionCountPlanned<24 + interviewComplete=true is
+    # EXACTLY what the fabricating path sets, so it can self-grant this exemption.
+    # Require explicit consent provenance (a session-bound ownerConsent self-setup/
+    # fast opt-in) before honoring the planned-short signal. The override/scope text
+    # paths above already carry their own provenance and are unaffected.
     if isinstance(planned, int) and 0 < planned < 24 and complete:
-        return (True, f"questionCountPlanned={planned} with interviewComplete=true")
+        consent_ok, _creason, _consent = _validate_owner_consent(state)
+        if consent_ok:
+            return (True,
+                    f"questionCountPlanned={planned} with interviewComplete=true and "
+                    f"ownerConsent(sessionId={_consent.get('sessionId')})")
+        # No consent provenance → do NOT grant the tailored exemption (fail-safe).
     return (False, "")
 
 
@@ -1020,7 +1105,7 @@ def main():
     jargon_hits = scan_jargon(transcript, jargon_terms)
     field_result = check_mandatory_fields(state, branding_path)
     nudge_result = check_nudges_wired(repo_root)
-    fabrication_result = check_no_fabrication(transcript, context_map_path)
+    fabrication_result = check_no_fabrication(transcript, context_map_path, state)
 
     # Legacy / pre-standard exemption (v12.4.0): detect claim, then verify substance.
     legacy_result = is_legacy_interview(transcript, state, args.legacy_interview)

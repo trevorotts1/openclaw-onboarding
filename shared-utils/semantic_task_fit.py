@@ -30,6 +30,13 @@ from pathlib import Path
 _TASK_EMBED_CACHE: dict = {}
 _GENAI_AVAILABLE = None  # tri-state: None=unknown, True=imported, False=failed
 
+# G13: number of persona blueprint chunks to AVERAGE into the persona's
+# representative vector (was LIMIT 1 — whichever chunk sqlite returned first).
+# Averaging a handful of chunks gives a stable, whole-blueprint centroid so the
+# Layer-5 cosine reflects the persona as a whole, not one arbitrary fragment.
+# Bounded so a huge blueprint can't pull unbounded rows per persona.
+_PERSONA_TOPK_CHUNKS = max(1, int(os.environ.get("SEMANTIC_TASK_FIT_TOPK", "8")))
+
 
 def _try_import_genai():
     global _GENAI_AVAILABLE
@@ -128,24 +135,58 @@ def _cosine(v1, v2) -> float:
         return 0.0
 
 
-def _persona_embedding_from_index(persona_id: str, db_path: Path):
-    """Pull persona's embedding from gemini-index.sqlite. Returns vector or None."""
+def _persona_embedding_from_index(persona_id: str, db_path: Path, top_k: int = None):
+    """Pull the persona's representative embedding from gemini-index.sqlite.
+
+    G13 fix: AVERAGE up to `top_k` chunk vectors for the persona instead of the
+    old `LIMIT 1` (which returned whichever single chunk sqlite happened to order
+    first — usually the cover/intro, not the methodology). The mean of the first
+    `top_k` chunks (ordered by chunk_index for determinism) is a stable centroid
+    of the whole blueprint, so the Layer-5 cosine reflects the persona overall.
+
+    Robust to ragged/mixed-dimension legacy rows: keeps only the vectors whose
+    dimension matches the modal dimension so np.mean never raises. Returns the
+    averaged float32 vector, or None when the persona has no usable rows.
+    """
     if not db_path.exists():
         return None
+    if top_k is None:
+        top_k = _PERSONA_TOPK_CHUNKS
     try:
         import numpy as np
         conn = sqlite3.connect(str(db_path), timeout=10.0)
         cur = conn.cursor()
-        # The indexer keys by file_path; persona blueprint files include persona_id
+        # The indexer keys by file_path; persona blueprint files include persona_id.
+        # Order by chunk_index so the averaged set is deterministic across calls.
         cur.execute(
-            "SELECT vector FROM embeddings WHERE file_path LIKE ? LIMIT 1",
-            (f"%{persona_id}%",),
+            "SELECT vector FROM embeddings WHERE file_path LIKE ? "
+            "ORDER BY chunk_index ASC LIMIT ?",
+            (f"%{persona_id}%", int(top_k)),
         )
-        row = cur.fetchone()
+        rows = cur.fetchall()
         conn.close()
-        if not row:
+        if not rows:
             return None
-        return np.frombuffer(row[0], dtype="float32")
+        vecs = []
+        for r in rows:
+            if not r or r[0] is None:
+                continue
+            try:
+                vecs.append(np.frombuffer(r[0], dtype="float32"))
+            except Exception:
+                continue
+        if not vecs:
+            return None
+        # Guard against mixed-dim rows (e.g. legacy openai 1536 next to gemini
+        # 3072): keep only the modal dimension before averaging.
+        from collections import Counter
+        modal_dim = Counter(v.shape[0] for v in vecs).most_common(1)[0][0]
+        vecs = [v for v in vecs if v.shape[0] == modal_dim]
+        if not vecs:
+            return None
+        if len(vecs) == 1:
+            return vecs[0]
+        return np.mean(np.stack(vecs), axis=0).astype("float32")
     except sqlite3.Error:
         return None
 
@@ -236,6 +277,82 @@ def semantic_task_fit(
         "method": "neutral_fallback",
         "detail": "no embedding infra and no token overlap signal available",
     }
+
+
+def semantic_persona_ids(task_text: str, paths: dict, top_k: int = 10) -> "list | None":
+    """Programmatic Stage-C retrieval (G13 / PRD item 1.8).
+
+    Return an ordered list of the `top_k` persona IDs most semantically similar
+    to `task_text`, computed ENTIRELY IN-PROCESS so the task is embedded ONCE and
+    that embedding is SHARED with semantic_task_fit() (Layer 5) via the
+    module-level `_TASK_EMBED_CACHE`. This is the whole point of G13: the prior
+    selector embedded the task twice per selection — once inside the
+    gemini-search.py subprocess (Stage C) and again here in-process (Layer 5).
+    Routing Stage C through this function collapses that to a single embed.
+
+    Persona score = MAX cosine over that persona's chunk vectors (standard
+    retrieval semantics — a task that strongly matches any one chunk surfaces
+    the persona). Returns None — never an empty list — when embedding infra is
+    unavailable, so the caller falls back to the subprocess / keyword path
+    (never-to-zero).
+    """
+    if not _try_import_genai():
+        return None
+    api_key = _get_google_api_key(paths)
+    db_path = _gemini_index_path(paths)
+    if not api_key or not db_path.exists():
+        return None
+
+    # Shared task embedding — SAME cache key semantic_task_fit() uses.
+    cache_key = ("task", task_text)
+    task_vec = _TASK_EMBED_CACHE.get(cache_key)
+    if task_vec is None:
+        task_vec = _embed_text(task_text, api_key)
+        if task_vec is None:
+            return None
+        _TASK_EMBED_CACHE[cache_key] = task_vec
+
+    try:
+        import numpy as np
+        tnorm = np.linalg.norm(task_vec)
+        if tnorm == 0:
+            return None
+        conn = sqlite3.connect(str(db_path), timeout=10.0)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT file_path, vector FROM embeddings "
+            "WHERE file_path LIKE '%coaching-personas/personas/%'"
+        )
+        rows = cur.fetchall()
+        conn.close()
+    except sqlite3.Error:
+        return None
+
+    best: dict = {}  # persona_id -> max cosine over its chunks
+    for file_path, blob in rows:
+        if not file_path or blob is None:
+            continue
+        try:
+            vec = np.frombuffer(blob, dtype="float32")
+        except Exception:
+            continue
+        if vec.shape[0] != task_vec.shape[0]:
+            continue  # skip ragged / mixed-provider rows (never cross-dim cosine)
+        # persona id == parent folder name (matches embedding_engine.get_persona_name)
+        pid = os.path.basename(os.path.dirname(file_path))
+        if not pid or pid == "personas":
+            continue
+        n = np.linalg.norm(vec)
+        if n == 0:
+            continue
+        cos = float(np.dot(task_vec, vec) / (tnorm * n))
+        if pid not in best or cos > best[pid]:
+            best[pid] = cos
+
+    if not best:
+        return None
+    ranked = sorted(best.items(), key=lambda kv: kv[1], reverse=True)
+    return [pid for pid, _ in ranked[: max(1, int(top_k))]]
 
 
 def clear_cache():
