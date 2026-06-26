@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "onboardingVersion": "v14.3.2",
+  "onboardingVersion": "v14.3.3",
   "commandCenter": {
-    "minVersion": "v4.39.0",
+    "minVersion": "v4.50.0",
     "maxVersion": null,
     "repo": "trevorotts1/blackceo-command-center",
-    "pinnedTag": "v4.39.0"
+    "pinnedTag": "v4.50.0"
   },
-  "notes": "Version compatibility contract between openclaw-onboarding and blackceo-command-center. fleet-refresh.sh reads pinnedTag (or resolves latest >= minVersion when pinnedTag is null) and checks out that tag. The skill-32 installer refuses to clone a CC older than minVersion. CI fails if onboardingVersion != /version or if pinnedTag < minVersion. v11.19.0 adds self-service add+wire (roles/SOPs/personas + converge); requires CC v4.39.0 for /api/system/converge endpoint. If CC is older, converge falls back to on-box seed-workspaces.py + ingest-sop-library.sh (graceful degradation, \u00a71.6 step 5)."
+  "notes": "Version compatibility contract between openclaw-onboarding and blackceo-command-center. fleet-refresh.sh reads pinnedTag (or resolves latest >= minVersion when pinnedTag is null) and checks out that tag. The skill-32 installer refuses to clone a CC older than minVersion. CI fails if onboardingVersion != /version or if pinnedTag < minVersion. v11.19.0 adds self-service add+wire (roles/SOPs/personas + converge); requires CC v4.39.0 for /api/system/converge endpoint. Skill 48 (facebook-ad-generator) lands ad runs on the Kanban board via the producer-side caller scripts/cc_board.py, which requires the POST/PATCH /api/ad-campaigns endpoints introduced in CC v4.50.0 (merge 89b6d5e); minVersion + pinnedTag are bumped to v4.50.0 so fleet-refresh + the skill-32 installer guarantee the endpoint is present. The board hookup is FAIL-SOFT: on a CC older than minVersion (or an unreachable board) the run degrades to ungrouped cards and logs it (INSTALL.md graceful degradation), it never fails an ad job. If CC is older, converge falls back to on-box seed-workspaces.py + ingest-sop-library.sh (graceful degradation, \u00a71.6 step 5)."
 }

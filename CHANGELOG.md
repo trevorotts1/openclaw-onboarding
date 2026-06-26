@@ -1,3 +1,13 @@
+## [v14.3.3]  -  2026-06-26  -  feat(paid-advertisement): Skill 48 producer-side Command Center board caller (ad jobs land + move on the Kanban, fail-soft)
+
+Skill 48 (`48-facebook-ad-generator`) now actually posts each ad job to the Command Center board, so ad jobs appear as Kanban cards and move across statuses as the run progresses. This is the producer side of the live `POST/PATCH /api/ad-campaigns` endpoints shipped in Command Center v4.50.0 (merge `89b6d5e`); previously only the docs, a skipped smoke test, and a QC check referenced the board — no caller existed.
+
+NEW — `48-facebook-ad-generator/scripts/cc_board.py`: a stdlib-only (`urllib`) caller that creates a campaign card and updates its stage/status. It is FAIL-SOFT by construction — a board outage, an unreachable host, or a missing token NEVER blocks or fails an ad job: every network path is double-guarded (inner `try/except` returns `None`/`False`, outer `except` in the director swallows), failures are emitted as greppable `[cc_board] ... failed; run continues ungrouped` stderr lines, and the `campaign_id` is still stamped into `s7-deliver-receipt.json` so S7-DELIVER and the `AF-FBAD-BOARD` QC check stay green offline.
+
+AUTH PARITY — the caller signs the EXACT bytes it sends with `hmac.new(WEBHOOK_SECRET, raw_body, sha256).hexdigest()` into `x-webhook-signature` and sends `Authorization: Bearer MC_API_TOKEN`, byte-for-byte matching what the Command Center verifies (`createHmac('sha256', WEBHOOK_SECRET).update(rawBody)`); both are no-ops when the secret/token are unset. The caller's legal status transitions are a verified subset of the server's `LEGAL_TRANSITIONS`. Credentials are read from env/config only — never hardcoded, fail-soft if absent.
+
+WIRING — `ad_director.py` calls `cc_board.create_campaign` / `set_stage_status` around the S7-DELIVER path (`_board_ensure_campaign` / `_board_move`); `cc-compat.json` `minVersion` + `pinnedTag` bump to `v4.50.0` so fleet-refresh and the skill-32 installer guarantee the endpoint is present (graceful degradation to ungrouped cards on an older board). Tests: `scripts/test_cc_board.py` (14 cases). Skill 48 QC and the manifest↔code↔ruleset lockstep remain green.
+
 ## [v14.3.2]  -  2026-06-26  -  fix(rescue-rangers): migrate maintenance-roles doc escalation path from deprecated Telegram message-send to n8n webhook
 
 Completes the Rescue Rangers pipeline end-to-end review (`feat/rescue-rangers-pipeline-fixes`). All three fix buckets confirmed and integrated; routing test PASSED with evidence (receipt + n8n relay execution + real-time push + rescue agent ACK + clean close — no client touched, no live remediation).
