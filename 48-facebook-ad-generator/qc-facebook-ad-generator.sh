@@ -45,6 +45,8 @@ AD_GUARDA="${SKILL_DIR}/scripts/ad_gate_integrity_check.py"
 AD_TEST="${SKILL_DIR}/scripts/test_ad_preflight.py"
 AD_RECOVERY="${SKILL_DIR}/scripts/ad_recovery.py"
 AD_RECOVERY_TEST="${SKILL_DIR}/scripts/test_ad_recovery.py"
+CC_BOARD="${SKILL_DIR}/scripts/cc_board.py"
+CC_BOARD_TEST="${SKILL_DIR}/scripts/test_cc_board.py"
 AD_UNPARK="${REPO_ROOT}/scripts/unpark-ad-run.sh"
 AD_FIXTURES="${SKILL_DIR}/test-fixtures/make-ad-fixtures.sh"
 AD_CI="${REPO_ROOT}/.github/workflows/ad-pipeline-lockstep.yml"
@@ -58,6 +60,8 @@ assert "ad_gate_integrity_check.py (Guard A) present" "[ -f \"${AD_GUARDA}\" ]"
 assert "test_ad_preflight.py negative-test suite present" "[ -f \"${AD_TEST}\" ]"
 assert "ad_recovery.py self-correct/park engine present" "[ -f \"${AD_RECOVERY}\" ]"
 assert "test_ad_recovery.py recovery proof suite present" "[ -f \"${AD_RECOVERY_TEST}\" ]"
+assert "cc_board.py producer-side board caller present" "[ -f \"${CC_BOARD}\" ]"
+assert "test_cc_board.py board-caller test suite present" "[ -f \"${CC_BOARD_TEST}\" ]"
 assert "unpark-ad-run.sh operator un-park tool present" "[ -f \"${AD_UNPARK}\" ]"
 assert "make-ad-fixtures.sh GOOD/BAD fixtures present" "[ -f \"${AD_FIXTURES}\" ]"
 assert "ad-pipeline-lockstep.yml CI workflow present" "[ -f \"${AD_CI}\" ]"
@@ -103,6 +107,8 @@ assert "test_ad_preflight.py — every gate negative-tested (exit 0, emits af-co
   "python3 \"${AD_TEST}\" >/dev/null 2>&1"
 assert "test_ad_recovery.py — self-correct/park proven (exit 0, emits recovery-coverage)" \
   "python3 \"${AD_RECOVERY_TEST}\" >/dev/null 2>&1"
+assert "test_cc_board.py — board caller fail-soft + auth/HMAC parity + legal-path (exit 0)" \
+  "python3 \"${CC_BOARD_TEST}\" >/dev/null 2>&1"
 assert "ad_gate_integrity_check.py — Guard A declared==enforced==tested+recovery (exit 0)" \
   "python3 \"${AD_GUARDA}\" >/dev/null 2>&1"
 

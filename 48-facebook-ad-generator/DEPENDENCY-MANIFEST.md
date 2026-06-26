@@ -20,6 +20,18 @@
 - `GOHIGHLEVEL_API_KEY` / `GHL_API_KEY` (LOCATION Private Integration Token, `medias.write`)
   + `GHL_LOCATION_ID` — image hosting.
 
+## Command Center board (OPTIONAL — all three absent ⇒ clean no-op)
+The producer-side board caller `scripts/cc_board.py` (stdlib `urllib`, zero third-party
+deps) files each run on the Kanban board via `POST /api/ad-campaigns` + moves cards via
+`PATCH /api/ad-campaigns/{job_id}` (Command Center ≥ v4.50.0; see `/cc-compat.json`). It is
+FAIL-SOFT — a board outage, a missing token, or a CC older than the endpoint degrades the
+run to ungrouped cards and logs it; it NEVER fails an ad job.
+- `MISSION_CONTROL_URL` — base URL of the box's Command Center. ABSENT ⇒ board disabled.
+- `MC_API_TOKEN` — Bearer token (the CC middleware layer). Optional; matches the CC.
+- `WEBHOOK_SECRET` — HMAC secret for `x-webhook-signature = HMAC-SHA256(secret, body)`
+  (the per-route layer, mirrors `/api/tasks/ingest`). Optional; matches the CC.
+- `CC_BOARD_TIMEOUT` — per-request seconds (default 8).
+
 ## Re-indexing — NONE
 Skill 48 adds no persona blueprint and runs no indexer. Verified no-op: the search box is
 built only from author blueprint files; this skill reuses the 42 built authors and is read

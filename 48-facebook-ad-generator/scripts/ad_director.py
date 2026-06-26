@@ -99,6 +99,101 @@ HERE = Path(__file__).resolve().parent  # .../48-facebook-ad-generator/scripts
 
 # Receipt validators + Phase-0 balance live in our sibling library (OUR code).
 import ad_build_check as abc
+# Producer-side Command Center board caller (OUR code). FAIL-SOFT by contract:
+# every cc_board call catches its own errors and returns a value, so a board
+# outage / missing token NEVER affects this foreman's exit codes or flow.
+import cc_board
+
+
+# ---------------------------------------------------------------------------
+# Command Center board hookup (FAIL-SOFT). Lands the run on the Kanban board as
+# one campaign + one card per phase, and moves cards through the lifecycle:
+#   job start         -> create campaign (cards in backlog) + stamp campaign_id
+#   phase in progress -> card in_progress     (PRODUCE step)
+#   human pause       -> card review          (PICK-10 / PUBLISH await)
+#   phase attested    -> card done
+#   dangerous park    -> card blocked (reason + ask)
+# A disabled board (no MISSION_CONTROL_URL) makes all of this a clean no-op, and
+# a stamped deterministic job_id keeps the offline board check satisfied.
+# ---------------------------------------------------------------------------
+
+# Once-per-run marker so we POST the campaign only once (server is idempotent on
+# job_id too, but this avoids needless calls/logs).
+def _board_marker(run_dir: Path) -> Path:
+    return run_dir / "working" / "checkpoints" / "cc-board.created"
+
+
+def _board_stage_slug(phase_id: str) -> str:
+    """Stable card slug for a manifest phase id (lowercased; <=64 chars)."""
+    return str(phase_id).lower()[:64]
+
+
+def _board_stages(phases: list) -> list:
+    return [{"slug": _board_stage_slug(p["id"]), "title": p.get("name") or p["id"]}
+            for p in sorted(phases, key=lambda x: x.get("order", 0))]
+
+
+# park_class (from _PARK_CLASS) -> CC blocked_reason vocabulary
+# {decision, approval, credential, payment}.
+_BLOCKED_REASON = {
+    "money": "payment",
+    "budget_exhausted": "payment",
+    "fabrication": "approval",
+    "integrity": "approval",
+    "no_progress": "decision",
+    "await_human": "decision",
+}
+
+
+def _board_ensure_campaign(run_dir: Path, manifest: dict) -> None:
+    """Create the campaign + stamp campaign_id into the deliver receipt. Idempotent
+    via a marker file. ALWAYS stamps the deterministic job_id (the receipt-number)
+    so the offline AF-FBAD-BOARD check passes whether or not the live POST landed."""
+    try:
+        job_id = _job_id(run_dir)
+        if not job_id:
+            return
+        marker = _board_marker(run_dir)
+        if marker.exists():
+            return
+        jm = abc._load_job_manifest(run_dir)
+        jm = jm if isinstance(jm, dict) else {}
+        campaign_id = cc_board.create_campaign(
+            job_id,
+            str(jm.get("show_name") or job_id),
+            stages=_board_stages(manifest.get("phases", [])),
+            owner=jm.get("owner"),
+            department=jm.get("department") or "paid-advertisement",
+            workspace=jm.get("workspace"),
+            agent_id=jm.get("agent_id"),
+            money_ceiling_usd=jm.get("money_ceiling_usd"),
+            estimated_cost_usd=jm.get("estimated_cost_usd"),
+            show_date=jm.get("show_date"),
+        )
+        # campaign_id == job_id on the server; fall back to job_id when the board
+        # is down so the run still groups under its receipt-number.
+        cc_board.stamp_campaign_id(run_dir, campaign_id or job_id)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(campaign_id or job_id)
+    except Exception:  # noqa: BLE001 — board hookup must NEVER break the foreman.
+        pass
+
+
+def _board_move(run_dir: Path, phase_id: str, status: str, *, reason: str = "",
+                blocked_reason=None, ask=None) -> None:
+    """Drive one phase card to `status` (fail-soft, never raises)."""
+    try:
+        job_id = _job_id(run_dir)
+        if not job_id:
+            return
+        cc_board.set_stage_status(
+            job_id, _board_stage_slug(phase_id), status,
+            reason=reason or None, blocked_reason=blocked_reason,
+            blocked_on_human=("owner" if phase_id in ("PICK-10", "PUBLISH") else "operator"),
+            ask=ask,
+        )
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +287,10 @@ def attest_phase(run_dir: Path, phase_id: str, role: str, status: str,
     })
     obj["finalized"] = (phase_id == "PUBLISH" and status == "attested")
     p.write_text(json.dumps(obj, indent=2))
+    # Board: an attested phase's card moves to done (fail-soft no-op when the
+    # board is disabled / unreachable).
+    if status == "attested":
+        _board_move(run_dir, phase_id, "done", reason=(note or f"{phase_id} attested"))
 
 
 # ---------------------------------------------------------------------------
@@ -561,6 +660,11 @@ def _handle_fail(run_dir: Path, manifest: dict, phase: dict, reason: str, item):
         park_class = "budget_exhausted"
         waiting = (f"the auto-fix budget ({decision.get('max', '?')}) for {af} is spent "
                    f"({park_reason}); a human must fix the artifact, then --resume")
+    # Board: a dangerous park blocks the card with a structured reason + the ask.
+    _board_move(run_dir, pid, "blocked",
+                reason=reason,
+                blocked_reason=_BLOCKED_REASON.get(park_class, "decision"),
+                ask=waiting)
     return (_do_park(run_dir, manifest, parked_by=af, park_class=park_class, phase=pid,
                      waiting_for=waiting, resume_clears_when=_phase_checker_names(phase),
                      feedback=reason), 5)
@@ -575,6 +679,8 @@ def _recover_loop(run_dir: Path, manifest: dict, item):
         attested = _attested_phase_ids(run_dir)
         ph = rec.next_actionable_phase(phases, attested)
         if ph is None:
+            # Whole run complete — close the epic card (CC marks the campaign complete).
+            _board_move(run_dir, "epic", "done", reason="run complete (PUBLISH attested)")
             return ({"action": "DONE", "attested": sorted(attested),
                      "note": "every phase attested through PUBLISH; the run is complete."}, 0)
         pid = ph["id"]
@@ -597,9 +703,14 @@ def _recover_loop(run_dir: Path, manifest: dict, item):
                                resume_clears_when=_phase_checker_names(ph),
                                feedback=(reason or f"{af}: awaiting human input at {pid}."))
             verdict["action"] = "AWAIT_HUMAN"
+            # Board: a human pause (PICK-10 / PUBLISH) parks the card in review.
+            _board_move(run_dir, pid, "review",
+                        reason=verdict.get("waiting_for") or f"{pid} awaiting human")
             return (verdict, 5)
 
         if not present:
+            # Board: this phase is now the one being worked.
+            _board_move(run_dir, pid, "in_progress", reason=f"producing {pid}")
             return ({"action": "PRODUCE", "phase": pid,
                      "owning_role": ph.get("owning_role"), "sop_refs": ph.get("sop_refs", []),
                      "produces_artifact": ph.get("produces_artifact"),
@@ -615,6 +726,9 @@ def _recover_loop(run_dir: Path, manifest: dict, item):
 
 def cmd_recover(run_dir: Path, manifest: dict, item=None, allow_ephemeral=False):
     import ad_recovery as rec
+    # Board: file the run as one campaign (one card per phase) on first entry,
+    # and stamp campaign_id into the deliver receipt. Fail-soft no-op when disabled.
+    _board_ensure_campaign(run_dir, manifest)
     paid = abc._paid_in_scope(run_dir)
     refusal = rec.refuse_paid_tmp(run_dir, paid, allow_ephemeral)
     if refusal:
@@ -764,6 +878,10 @@ def main():
         if target is None:
             print(f"FATAL: unknown phase id {args.phase!r}.", file=sys.stderr)
             sys.exit(2)
+
+        # Board: ensure the campaign + cards exist (idempotent) before we attest
+        # this phase. attest_phase() then moves the attested card to done.
+        _board_ensure_campaign(run_dir, manifest)
 
         is_human = bool(target.get("human_gate"))
         # A human gate is NEVER relaxed by --adhoc; a non-human phase is.

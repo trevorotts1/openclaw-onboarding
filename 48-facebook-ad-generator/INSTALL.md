@@ -22,6 +22,12 @@ or updating a skill never runs the Gemini indexer (skill files are read by direc
 There is nothing to re-index.
 
 ## Graceful degradation
-If the box's Command Center predates the `POST /api/ad-campaigns` endpoint, the run files
-ungrouped cards on the marketing board and logs it. If no Meta interest resolver/key
-exists, targeting interests degrade to `flagged_unverified` so the package still ships.
+The board hookup runs through the FAIL-SOFT producer caller `scripts/cc_board.py` (see the
+"Command Center board" section of `DEPENDENCY-MANIFEST.md` for the env vars). If
+`MISSION_CONTROL_URL` is unset, or the box's Command Center predates the
+`POST /api/ad-campaigns` endpoint (it ships in CC ≥ v4.50.0, pinned in `/cc-compat.json`),
+or the board is simply unreachable, the run records its deterministic `campaign_id`
+(== the receipt-number) into `working/checkpoints/s7-deliver-receipt.json`, degrades to
+ungrouped cards, and logs it — it NEVER fails an ad job (the offline `AF-FBAD-BOARD` check
+only requires the `campaign_id` be recorded). If no Meta interest resolver/key exists,
+targeting interests degrade to `flagged_unverified` so the package still ships.

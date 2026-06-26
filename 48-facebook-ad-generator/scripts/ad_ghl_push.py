@@ -81,6 +81,23 @@ def push(run_dir: Path, images: list, opener=None) -> dict:
         ledger.record(run_dir, "upload", key, 0.0, entry)
 
     receipt["delivered"] = [by_idx[k] for k in sorted(by_idx)]
+    # Board: if no campaign_id has been stamped yet (e.g. ghl push ran before the
+    # foreman filed the campaign), record the deterministic job_id (== campaign_id
+    # == receipt-number) so the run groups on the board. Fail-soft: a missing
+    # job-manifest or cc_board import never breaks delivery.
+    if not str(receipt.get("campaign_id", "") or "").strip():
+        try:
+            jm_path = run_dir / "working" / "job-manifest.json"
+            job_id = ""
+            if jm_path.exists():
+                job_id = str(json.loads(jm_path.read_text()).get("job_id", "") or "").strip()
+            job_id = job_id or run_id
+            if job_id:
+                import cc_board  # local import keeps delivery decoupled from the board
+                cc_board.stamp_campaign_id(run_dir, job_id)
+                receipt = _load_receipt(run_dir)  # re-read the stamped receipt
+        except Exception:  # noqa: BLE001 — board stamping must never fail delivery
+            pass
     _save_receipt(run_dir, receipt)
     return receipt
 
