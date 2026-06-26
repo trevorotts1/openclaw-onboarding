@@ -1,5 +1,30 @@
 #!/usr/bin/env bash
-# verify-wiring.sh — v1.0.3 (WIRING GATE: materialized + registered + reachable + connected)
+# verify-wiring.sh — v1.0.5 (WIRING GATE: materialized + registered[+runtime-dir] + reachable + connected)
+# v1.0.5  2026-06-26  fix(Gap E): REGISTERED check now also asserts the per-dept RUNTIME
+#                     agent dir $OC_ROOT/agents/dept-<slug>/ exists — the directory the
+#                     gateway dispatcher keys task routing on. Verified on a live box
+#                     (2026-06-26): state .id "coaching" -> runtime dir
+#                     $HOME/.openclaw/agents/dept-coaching/ (holds sessions/); the dir
+#                     name is the agent id "dept-<slug>". When that dir is ABSENT the
+#                     dispatcher SILENTLY falls back to agent:main (the CEO), so a dept
+#                     could pass openclaw.json registration yet have every task misroute
+#                     to the CEO. The new sub-assertion FAILS LOUD (exit 3, registration
+#                     category) so a dept can never pass wiring while still misrouting. It
+#                     runs independent of openclaw.json presence (the dispatcher reads the
+#                     dir, not the config, at routing time) and has a case-insensitive
+#                     fallback for mixed-case slugs (e.g. AI-Workforce-Build-Office) on a
+#                     case-sensitive filesystem.
+# v1.0.4  2026-06-25  feat: connection-point resolver now (a) honors an optional
+#                     "cfg_key_aliases" array on a hook — a required hook PASSES when the
+#                     canonical cfg_key OR any alias resolves (mirrors the GHL upload tool
+#                     ghl_media.py, which reads GOHIGHLEVEL_API_KEY then the legacy GHL_API_KEY,
+#                     and GOHIGHLEVEL_LOCATION_ID then GHL_LOCATION_ID), so renaming the manifest
+#                     to the canonical names never breaks a working upload that set the legacy
+#                     alias; and (b) honors an optional "assert_contains_dept": true on a hook —
+#                     after the hook's cfg_key resolves to a JSON file path, the resolved file
+#                     must exist AND contain an entry for THIS dept's slug (Command Center
+#                     departments.json board-entry assertion). The dept slug is passed to the
+#                     python checker as a third arg.
 # v1.0.3  2026-06-20  fix: materialization walker no longer mis-classifies a NAMED-SET
 #                     `sops/` SOP-library container (graphics/presentations/quality-control/
 #                     openclaw-maintenance) as an unmaterialized role. Such a `sops/` dir
@@ -24,6 +49,9 @@
 #                          (>= 3KB, no [PENDING] marker, library-filled flag set)
 #     (b) REGISTERED    — the department agent is present in openclaw.json
 #                          agents.list AND its workspace path resolves on disk
+#                          AND its RUNTIME agent dir $OC_ROOT/agents/dept-<slug>/
+#                          exists (the dir the dispatcher keys routing on — when
+#                          absent the gateway silently falls back to the CEO)
 #     (c) REACHABLE     — the department has a Director-class entry point role
 #                          (a folder whose slug contains "director", "head",
 #                           "lead", or "architect" if no director exists)
@@ -42,8 +70,9 @@
 # EXIT CODES:
 #   0  — ALL depts pass (materialized + registered + reachable + connected)
 #   2  — one or more roles NOT materialized (stub / empty how-to.md)
-#   3  — one or more depts NOT registered (agent missing from openclaw.json
-#         or workspace path missing on disk)
+#   3  — one or more depts NOT registered (agent missing from openclaw.json,
+#         workspace path missing on disk, or RUNTIME agent dir
+#         $OC_ROOT/agents/dept-<slug>/ missing — would misroute to the CEO)
 #   4  — one or more depts NOT reachable (no Director / head / lead entry point)
 #   5  — one or more connection-point assertions FAILED
 #   6  — mixed failures (multiple categories)
@@ -367,6 +396,45 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
     fi
   fi
 
+  # --------------------------------------------------------------------------
+  # (b2) RUNTIME-DIR CHECK (Gap E) — part of REGISTERED
+  # The gateway dispatcher keys per-task routing on the RUNTIME agent dir
+  #   $OC_ROOT/agents/<agent-id>/   where <agent-id> == dept-<slug>
+  # (verified on a live box 2026-06-26: state .id "coaching" ->
+  #  $HOME/.openclaw/agents/dept-coaching/, which holds sessions/). If that dir
+  # is ABSENT the dispatcher SILENTLY falls back to agent:main (the CEO): the
+  # dept passes openclaw.json registration + workspace-path checks yet every
+  # task routed to it lands on the CEO. This assertion makes that impossible —
+  # a missing runtime dir is a REGISTERED failure (exit 3). It runs regardless
+  # of openclaw.json presence because the dispatcher reads the dir, not the
+  # config, at routing time. A case-insensitive fallback covers mixed-case
+  # slugs (e.g. AI-Workforce-Build-Office) on a case-sensitive filesystem.
+  RUNTIME_AGENT_ID="dept-${DEPT_SLUG}"
+  RUNTIME_DIR="$OC_ROOT/agents/$RUNTIME_AGENT_ID"
+  if [[ -d "$RUNTIME_DIR" ]]; then
+    echo "  [RUNTIME-DIR]  OK:   $RUNTIME_DIR exists (dispatcher entry point)"
+  else
+    RUNTIME_DIR_CI=""
+    if [[ -d "$OC_ROOT/agents" ]]; then
+      _want_lc="$(printf '%s' "$RUNTIME_AGENT_ID" | tr '[:upper:]' '[:lower:]')"
+      while IFS= read -r _cand; do
+        [[ -d "$_cand" ]] || continue
+        if [[ "$(printf '%s' "$(basename "$_cand")" | tr '[:upper:]' '[:lower:]')" == "$_want_lc" ]]; then
+          RUNTIME_DIR_CI="$_cand"; break
+        fi
+      done < <(find "$OC_ROOT/agents" -maxdepth 1 -mindepth 1 -type d 2>/dev/null)
+    fi
+    if [[ -n "$RUNTIME_DIR_CI" ]]; then
+      echo "  [RUNTIME-DIR]  OK:   $RUNTIME_DIR_CI exists (case-insensitive match for $RUNTIME_AGENT_ID)"
+    else
+      echo "  [RUNTIME-DIR]  FAIL: no runtime agent dir at $RUNTIME_DIR — the gateway dispatcher will SILENTLY fall back to agent:main (the CEO) for every task routed to '$DEPT_SLUG'. This dept is NOT wired." >&2
+      echo "                       FIX: re-run build-workforce.py (or add-role.sh) so the agent registers and its runtime dir materializes, then re-check." >&2
+      REG_PASS=0
+      REG_GAPS+=("runtime-agent-dir-missing:$RUNTIME_DIR")
+      FAIL_REGISTERED+=("$DEPT_SLUG:runtime-agent-dir-missing")
+    fi
+  fi
+
   [[ $REG_PASS -eq 0 ]] && DEPT_FAIL=1 && DEPT_WIRING_FAIL_REASONS+=("registered:${REG_GAPS[*]}")
 
   # --------------------------------------------------------------------------
@@ -419,12 +487,13 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
   if [[ -f "$MANIFEST_FILE" ]]; then
     echo "  [CONNECTION]   manifest found: $MANIFEST_FILE"
     # Python does the heavy lifting: parse manifest, check each required hook
-    CONN_RESULT=$(python3 - "$MANIFEST_FILE" "$OPENCLAW_CFG" <<'PYEOF' 2>&1
+    CONN_RESULT=$(python3 - "$MANIFEST_FILE" "$OPENCLAW_CFG" "$DEPT_SLUG" <<'PYEOF' 2>&1
 import json, os, sys
 from pathlib import Path
 
 manifest_path = sys.argv[1]
 cfg_path = sys.argv[2] if len(sys.argv) > 2 else ""
+dept_slug = sys.argv[3] if len(sys.argv) > 3 else ""
 
 try:
     manifest = json.loads(Path(manifest_path).read_text())
@@ -461,6 +530,50 @@ def resolve_value(key_path: str) -> str:
         return str(node)
     return ""
 
+def resolve_any(keys) -> tuple:
+    """Resolve the first non-empty value across an ordered list of dot-path keys.
+    Returns (value, key_that_resolved) or ('', '')."""
+    for k in keys:
+        if not k:
+            continue
+        v = resolve_value(k)
+        if v:
+            return v, k
+    return "", ""
+
+def dept_in_departments_json(path: str, slug: str) -> bool:
+    """True iff the JSON file at `path` exists and carries an entry for this dept slug.
+    Tolerant of common shapes: a top-level list, or a dict with a 'departments' list,
+    where each entry is either a string slug or an object with id/slug/name/dept."""
+    try:
+        data = json.loads(Path(os.path.expanduser(path)).read_text())
+    except Exception:
+        return False
+    want = (slug or "").strip().lower()
+    if not want:
+        return False
+    entries = []
+    if isinstance(data, list):
+        entries = data
+    elif isinstance(data, dict):
+        for container_key in ("departments", "depts", "items", "list"):
+            if isinstance(data.get(container_key), list):
+                entries = data[container_key]
+                break
+        else:
+            # dict keyed by slug
+            if want in {str(k).strip().lower() for k in data.keys()}:
+                return True
+    for e in entries:
+        if isinstance(e, str) and e.strip().lower() == want:
+            return True
+        if isinstance(e, dict):
+            for field in ("id", "slug", "name", "dept", "key"):
+                val = e.get(field)
+                if isinstance(val, str) and val.strip().lower() == want:
+                    return True
+    return False
+
 hooks = manifest.get("connection_points", [])
 gaps = []
 all_pass = True
@@ -469,21 +582,34 @@ for hook in hooks:
     name = hook.get("name", "unnamed")
     required = hook.get("required", False)
     cfg_key = hook.get("cfg_key", "")
+    aliases = hook.get("cfg_key_aliases", []) or []
+    assert_contains_dept = hook.get("assert_contains_dept", False)
     description = hook.get("description", "")
 
     if not required:
         continue  # optional hooks are advisory
 
-    resolved = ""
-    if cfg_key:
-        resolved = resolve_value(cfg_key)
+    # Canonical key first, then any aliases (mirrors the upload tool's read order).
+    resolved, resolved_key = resolve_any([cfg_key] + list(aliases))
 
-    if resolved:
-        print(f"  connection OK:   {name} ({cfg_key}) = resolved")
-    else:
+    if not resolved:
         all_pass = False
-        gaps.append(f"{name}:{cfg_key or 'no-cfg-key'}")
-        print(f"  connection FAIL: {name} — {description} (cfg_key={cfg_key!r}) not resolved", file=sys.stderr)
+        keylist = "/".join([k for k in [cfg_key] + list(aliases) if k]) or "no-cfg-key"
+        gaps.append(f"{name}:{keylist}")
+        print(f"  connection FAIL: {name} — {description} (keys tried: {keylist}) not resolved", file=sys.stderr)
+        continue
+
+    via = "" if resolved_key == cfg_key else f" via alias {resolved_key}"
+    print(f"  connection OK:   {name} ({cfg_key}{via}) = resolved")
+
+    # Optional: the resolved value is a path to a departments.json that must list this dept.
+    if assert_contains_dept:
+        if dept_in_departments_json(resolved, dept_slug):
+            print(f"  connection OK:   {name} — dept '{dept_slug}' present in {resolved}")
+        else:
+            all_pass = False
+            gaps.append(f"{name}:dept-not-in-departments-json")
+            print(f"  connection FAIL: {name} — dept '{dept_slug}' is NOT seeded in the Command Center departments.json at {resolved!r} (file missing or no matching entry). Seed an entry for '{dept_slug}' so the client can monitor this dept from the dashboard.", file=sys.stderr)
 
 print(json.dumps({"pass": all_pass, "gaps": gaps}))
 PYEOF

@@ -2541,8 +2541,106 @@ def test_dark_slide_with_client_flag_passes() -> list:
     return failures
 
 
+def test_structural_block_gate() -> list:
+    """FG-1 item 3 (folded from render_deck.py): a prompt that clears the 5,000-char
+    floor but is MISSING a required structural block ([ARCHETYPE / NEGATIVE BLOCK /
+    'Do not ']) FAILS _chk_rich_prompts AND raises in load_rich_prompt; a real
+    structured RICH_PROMPT passes."""
+    failures = []
+    # Blockless filler well over the floor (no [ARCHETYPE, no NEGATIVE BLOCK, no "Do not ").
+    blockless = ("This is a long descriptive paragraph about a slide scene. " * 120)
+    assert len(blockless) >= build_deck.PROMPT_CHAR_FLOOR
+    rd = _rich_prompt_run_dir(blockless)
+    reason = build_deck._chk_rich_prompts(rd)
+    if not reason or "structural block" not in reason:
+        failures.append(f"STRUCT-A: blockless prompt should fail _chk_rich_prompts on structural block, got: {reason!r}")
+    try:
+        build_deck.load_rich_prompt({"slide": 1, "scene": "x", "copy": ["y"]}, rd)
+        failures.append("STRUCT-B: load_rich_prompt should RAISE on a blockless prompt")
+    except ValueError as exc:
+        if "structural-block" not in str(exc).lower() and "structural block" not in str(exc).lower():
+            failures.append(f"STRUCT-B: load_rich_prompt blockless-raise wrong msg: {exc}")
+    # Control: a full structured prompt passes.
+    rd2 = _rich_prompt_run_dir(RICH_PROMPT)
+    if build_deck._chk_rich_prompts(rd2):
+        failures.append("STRUCT-C: a full structured RICH_PROMPT should PASS")
+    try:
+        build_deck.load_rich_prompt({"slide": 1, "scene": "x", "copy": ["y"]}, rd2)
+    except ValueError as exc:
+        failures.append(f"STRUCT-C: load_rich_prompt raised on a valid structured prompt: {exc}")
+    print(f"STRUCTURAL-BLOCK gate        -> {'PASS' if not failures else 'FAIL'}")
+    return failures
+
+
+def test_dark_ok_alias() -> list:
+    """FG-1 item 4: the no-dark gate aliases the role-doc key DARK_OK -> client_dark_theme.
+    A dark prompt with intake {"DARK_OK": true} is HONORED (passes); with no opt-in it
+    fails. Proves an opt-in recorded under the legacy key is not spuriously auto-failed."""
+    failures = []
+    root = _dark_slide_run_dir(dark=True, client_dark_theme=False)
+    # Overwrite intake to use the legacy DARK_OK key (true) instead of client_dark_theme.
+    (root / "working" / "copy" / "intake.json").write_text(json.dumps({
+        "interview_confirmed": True, "DARK_OK": True}))
+    res = build_deck._chk_no_dark_slides(root)
+    if res:
+        failures.append(f"DARK-OK-A: DARK_OK:true should be honored (pass), got fail: {res!r}")
+    # DARK_OK as the truthy string "true" is also honored.
+    (root / "working" / "copy" / "intake.json").write_text(json.dumps({
+        "interview_confirmed": True, "DARK_OK": "true"}))
+    if build_deck._chk_no_dark_slides(root):
+        failures.append("DARK-OK-B: DARK_OK:'true' string should be honored (pass)")
+    # Neither key set -> dark prompt still FAILS (alias did not weaken the gate).
+    (root / "working" / "copy" / "intake.json").write_text(json.dumps({
+        "interview_confirmed": True}))
+    if not build_deck._chk_no_dark_slides(root):
+        failures.append("DARK-OK-C: dark prompt with NO opt-in must still FAIL")
+    print(f"DARK_OK alias                -> {'PASS' if not failures else 'FAIL'}")
+    return failures
+
+
+def test_speech_name_lockstep() -> list:
+    """FG-1 item 5: the singular PRESENTER-SPEECH name is locked in lockstep across the
+    producer (presenters_speech_pdf --out default), the build_deck DELIVERABLES_REQUIRED
+    speech filenames, and the manifest deliverables list."""
+    failures = []
+    expected_pdf = "PRESENTER-SPEECH.pdf"
+    expected_md = "PRESENTER-SPEECH.md"
+    # build_deck DELIVERABLES_REQUIRED.
+    dr = {d["key"]: d["filename"] for d in build_deck.DELIVERABLES_REQUIRED}
+    if dr.get("speech_pdf") != expected_pdf:
+        failures.append(f"SPEECH-NAME-A: build_deck speech_pdf filename {dr.get('speech_pdf')!r} != {expected_pdf!r}")
+    if dr.get("speech_md") != expected_md:
+        failures.append(f"SPEECH-NAME-A: build_deck speech_md filename {dr.get('speech_md')!r} != {expected_md!r}")
+    # producer default (presenters_speech_pdf.py --out default) — plain-string check
+    # (test_preflight does not import re).
+    producer_src = (HERE / "presenters_speech_pdf.py").read_text()
+    if f'"--out", default="{expected_pdf}"' not in producer_src:
+        failures.append(f"SPEECH-NAME-B: presenters_speech_pdf --out default is not {expected_pdf!r}")
+    # manifest deliverables list.
+    repo_root = HERE
+    for _ in range(12):
+        if (repo_root / "universal-sops").is_dir():
+            break
+        repo_root = repo_root.parent
+    mpath = repo_root / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
+    if mpath.exists():
+        man = json.loads(mpath.read_text())
+        md = {d["key"]: d.get("filename") for d in man.get("deliverables_required", [])}
+        if md.get("speech_pdf") != expected_pdf:
+            failures.append(f"SPEECH-NAME-C: manifest speech_pdf filename {md.get('speech_pdf')!r} != {expected_pdf!r}")
+        if md.get("speech_md") != expected_md:
+            failures.append(f"SPEECH-NAME-C: manifest speech_md filename {md.get('speech_md')!r} != {expected_md!r}")
+    print(f"SPEECH-NAME lockstep         -> {'PASS' if not failures else 'FAIL'}")
+    return failures
+
+
 def main():
     failures = []
+
+    # FG-1 durability — structural-block gate, DARK_OK alias, speech-name lockstep.
+    failures += test_structural_block_gate()
+    failures += test_dark_ok_alias()
+    failures += test_speech_name_lockstep()
 
     # Unit test — _chk_coverage anti-compression gate (no subprocess/network).
     failures += test_chk_coverage()

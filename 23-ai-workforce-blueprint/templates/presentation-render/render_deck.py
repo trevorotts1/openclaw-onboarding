@@ -1,4 +1,26 @@
 """
+================================================================================
+DEPRECATED / RETIRED — DO NOT USE FOR NEW WORK.
+
+This module is NO LONGER the canonical renderer. The ONE canonical renderer is now:
+    23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py
+
+build_deck.py is the live, SOP-locked enforcer (guarded by sync_check.py +
+gate_integrity_check.py). It renders each slide via Kie.ai gpt-image-2 and writes the
+authoritative render record to working/checkpoints/process_manifest.json
+(phase=="render", tool=="build_deck.py"). The AF-RENDERER / AF-MODEL-SOVEREIGNTY /
+AF-CONVERTER-PARITY gates now key off process_manifest.json, NOT off this module's
+render_manifest.json + module_version.
+
+This file is a TRUE ORPHAN — nothing imports it (verified) and no gate reads its
+render_manifest.json any more. Its two real invariants — the PROMPT_CHAR_FLOOR/CEILING
+band (5,000–18,000) and the REQUIRED_STRUCTURAL_BLOCKS check ([ARCHETYPE / NEGATIVE
+BLOCK / "Do not "]) — have been FOLDED INTO build_deck.py's per-slide gate
+(load_rich_prompt + _chk_rich_prompts). The constants below are kept ONLY so sync_check.py
+can assert this retired module's floor/ceiling never silently diverge from build_deck.py's.
+Retained for reference + drift-detection; do not extend, do not call.
+================================================================================
+
 CANONICAL RENDER MODULE — all client presentation decks MUST call this module.
 Per-deck renderers are FORBIDDEN. See AF-RENDERER auto-fail in QC gate.
 

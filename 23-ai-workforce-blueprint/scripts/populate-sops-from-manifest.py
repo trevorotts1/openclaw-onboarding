@@ -270,6 +270,59 @@ def spawn_inline(dept_entry, prompt, model_id, timeout, dry_run=False):
     return work_file
 
 
+# ─── ALREADY-AUTHORED SUBSTANCE SKIP (FURNACE GUARD) ──────────────────────────
+# A resume fire re-runs this script. Without a skip, EVERY custom dept gets a fresh
+# heavy-tier authoring sub-agent (1800s each) on every fire even when its SOPs are
+# already written — the SOP furnace. Mirror the on-disk substance check the resume
+# cron already trusts (resume-workforce-build.sh:442,476-479: a how-to.md only
+# counts as real when it is >= HOW_TO_MIN bytes AND contains no "[PENDING" marker).
+# A dept whose SOP files already clear that bar is skipped — no sub-agent spawned.
+SOP_SUBSTANCE_MIN = 256  # bytes — mirrors HOW_TO_MIN in resume-workforce-build.sh:442
+# Placeholder markers that prove a SOP file is still a stub (the authoring step
+# replaces "[Step 1 - to be personalized]" / "[PENDING ...]" with real DMAIC content).
+_SOP_PLACEHOLDER_MARKERS = ("[PENDING", "to be personalized", "[Step 1 -")
+
+
+def _sop_path_for(entry, sf):
+    """Resolve a single SOP file's on-disk path from a manifest sop_files item.
+    Prefers the absolute role_dir written by build-workforce.py; falls back to
+    dept_dir/role_folder."""
+    sop_file = sf.get("sop_file", "")
+    if not sop_file:
+        return None
+    role_dir = sf.get("role_dir", "")
+    if role_dir:
+        return Path(role_dir) / sop_file
+    role_folder = sf.get("role_folder", "")
+    base = Path(entry.get("dept_dir", ""))
+    return (base / role_folder / sop_file) if role_folder else (base / sop_file)
+
+
+def dept_already_authored(entry):
+    """True iff EVERY SOP file for this dept already exists on disk with real
+    substance (>= SOP_SUBSTANCE_MIN bytes AND no placeholder markers). Used to
+    skip re-spawning the authoring sub-agent on a resume re-fire (furnace guard).
+    Conservative: any missing / undersized / stub file → False (author it)."""
+    sop_files = entry.get("sop_files", [])
+    if not sop_files:
+        # No stub files queued → nothing for the authoring path to write; treat as
+        # already-handled so we don't spawn a sub-agent with no work.
+        return True
+    for sf in sop_files:
+        path = _sop_path_for(entry, sf)
+        if path is None:
+            return False
+        try:
+            if not path.is_file() or path.stat().st_size < SOP_SUBSTANCE_MIN:
+                return False
+            content = path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return False
+        if any(marker in content for marker in _SOP_PLACEHOLDER_MARKERS):
+            return False
+    return True
+
+
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -368,6 +421,8 @@ def main():
     # 4. Spawn (batched up to max_parallel at a time)
     failures = []
     processes_inflight = []
+    authored_skips = 0   # depts whose SOPs are already substantive on disk (furnace guard)
+    dispatched = 0       # depts actually spawned/queued this run
 
     def reap():
         nonlocal processes_inflight
@@ -399,6 +454,19 @@ def main():
             )
             continue
 
+        # FURNACE GUARD: skip depts whose SOPs are already authored on disk. On a
+        # resume re-fire this is what stops a fresh 1800s heavy-tier sub-agent from
+        # re-authoring a dept that is already done. --dry-run still reports the skip.
+        if dept_already_authored(entry):
+            authored_skips += 1
+            print(
+                f"[POPULATE-SOPS] SKIP {dept_id}: all {len(entry.get('sop_files', []))} SOP file(s) "
+                f"already authored on disk (>= {SOP_SUBSTANCE_MIN}B, no placeholders). "
+                f"NOT spawning the authoring sub-agent (resume idempotency / furnace guard).",
+                file=sys.stderr,
+            )
+            continue
+
         # Throttle
         while len(processes_inflight) >= max_parallel:
             reap()
@@ -416,11 +484,13 @@ def main():
             try:
                 p = spawn_via_openclaw(entry, prompt, model_id, args.timeout)
                 processes_inflight.append((p, dept_id))
+                dispatched += 1
             except Exception as e:
                 print(f"[POPULATE-SOPS] Spawn error for {dept_id}: {e}", file=sys.stderr)
                 failures.append((dept_id, -1, str(e)))
         else:
             spawn_inline(entry, prompt, model_id, args.timeout, dry_run=args.dry_run)
+            dispatched += 1
 
     # Drain remaining
     while processes_inflight:
@@ -437,6 +507,19 @@ def main():
         for dept_id, rc, err in failures:
             print(f"  FAIL: {dept_id} (rc={rc})", file=sys.stderr)
         return 2
+
+    # FURNACE GUARD: if every eligible dept was already authored on disk (nothing
+    # actually dispatched this run), there is no pending work — return 0 instead of
+    # the inline rc=4 "queued-not-authored". A resume that finds the SOPs already
+    # substantive must NOT keep the library stuck at 'authoring' forever.
+    if dispatched == 0:
+        print(
+            f"\n[POPULATE-SOPS] {total} custom dept(s) in manifest; {authored_skips} already "
+            f"authored on disk, 0 dispatched. SOP substance already present — nothing to author. "
+            f"Exiting 0.",
+            file=sys.stderr,
+        )
+        return 0
 
     if not use_openclaw:
         # v10.15.18: inline mode only WROTE work files — it did NOT author any

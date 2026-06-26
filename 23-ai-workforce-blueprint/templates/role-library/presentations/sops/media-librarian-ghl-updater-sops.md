@@ -14,9 +14,11 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 > For every deck whose client has GHL (`intake.json` does NOT set `has_ghl: false`),
 > all three GHL actions below are MANDATORY and GATED — a deck is NOT done until each
 > is recorded in `working/checkpoints/media_library.json`:
-> 1. **GHL folder creation** (SOP 9.3, run-once) — `ghl_folder_id` set to a real id
->    (or `"root_fallback"` only after a logged API failure). A null/empty `ghl_folder_id`
->    is the unset Step-0 seed and does NOT satisfy the gate.
+> 1. **GHL media destination resolved** (SOP 9.3, run-once) — `ghl_folder_id` set to a
+>    human-supplied pre-made folder id OR to `"root"` (the shareable media root). `"root"`
+>    is a PASSING value. The agent NEVER creates a folder via API (the folder-create
+>    endpoint returns 404). A null/empty `ghl_folder_id` is the unset Step-0 seed and does
+>    NOT satisfy the gate.
 > 2. **Per-slide PNG upload** (SOP 9.3) — every passed slide carries a real
 >    `ghl_media_id` and `ghl_upload_status: "complete"`.
 > 3. **Final PPTX upload** (SOP 9.6) — the assembled deck is uploaded with
@@ -35,9 +37,10 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 > entry-point and produces NO research, NO QC records, and NO GHL upload. Running
 > `build_deck.py` against a hand-fed `slides.json` is the bypass this gate exists to
 > catch: such a deck has no GHL media-upload record and is therefore NOT done. The
-> Command Center QC scorer enforces this independently as **AF-PIPELINE-COMPLETE**
-> (blocks review→Done when the research brief, copy/image QC log, or GHL
-> media-upload record are absent).
+> in-department `build_deck.py` postflight + delivery gates are the BINDING enforcement
+> here (AF-BUNDLE-COMPLETE / AF-DELIVERY-COMPLETE). A Command Center QC-scorer mirror of
+> **AF-PIPELINE-COMPLETE** is ROADMAP, not shipped in this repo, and must not be relied on
+> as the enforcing gate.
 
 ### SOP 9.0 -- Client-Asset Ingest + Scratch-Deck Parser (Decision 1C)
 
@@ -182,37 +185,42 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.3 -- GHL-Drive Upload (REQUIRED, GATED)
 
-**Status:** MANDATORY for every GHL-enabled client. This SOP is a hard gate: the GHL
-folder MUST be created and every passed slide PNG MUST be uploaded, with `ghl_folder_id`
-and each `ghl_media_id` recorded in media_library.json. Skipping this step is only
-permitted under the `has_ghl: false` carve-out (write `ghl_delivery_skipped: true`).
-A deck that omits these records is NOT done — enforced as AF-PIPELINE-COMPLETE.
+**Status:** MANDATORY for every GHL-enabled client. This SOP is a hard gate: the GHL media
+destination MUST be resolved and every passed slide PNG MUST be uploaded, with `ghl_folder_id`
+(a real pre-made folder id OR `"root"`) and each `ghl_media_id` recorded in media_library.json.
+Skipping this step is only permitted under the `has_ghl: false` carve-out (write
+`ghl_delivery_skipped: true`). A deck that omits these records is NOT done.
 
-**When to run:** Immediately after each image is intaked (SOP 9.2), and after SOP 9.1 creates the GHL folder.
+> **BINDING -- GHL is touched ONE WAY ONLY.** The GHL media library is touched EXCLUSIVELY via
+> the Tier-3 REST call `POST https://services.leadconnectorhq.com/medias/upload-file`
+> (Version: 2021-07-28, multipart/form-data; fields `file` + `locationId` + `name` + `hosted=false`
+> + OPTIONAL `parentId`), authenticated with the CLIENT's GHL **LOCATION** Private Integration
+> Token (the Agency token 401s for media ops). Token: `GOHIGHLEVEL_API_KEY` (preferred) or legacy
+> `GHL_API_KEY`; location id: `GOHIGHLEVEL_LOCATION_ID` (preferred) or `GHL_LOCATION_ID`. **The
+> agent NEVER creates a folder** -- `POST /medias/folder` and `POST /medias/` return 404
+> (`29-ghl-convert-and-flow/references/medias.md` lines 45-51); folders are made by a human in the
+> GHL UI. Agent-browser / Playwright / any UI automation of GHL is **FORBIDDEN**.
+
+**When to run:** Immediately after each image is intaked (SOP 9.2), and after SOP 9.1 records the media destination.
 
 **Inputs:**
-- media_library.json (ghl_folder_id -- if still null, create the folder first)
+- media_library.json (`ghl_folder_id` -- a pre-made folder id, or `"root"`; resolved in the first step below)
+- intake.json (optional `ghl_media_folder_id` -- a folder a human created in the GHL UI for this deck)
 - working/media-library/slide-NN.png (the image to upload)
-- GHL credentials from client's env stores
+- GHL **LOCATION** PIT from the client's env stores (`GOHIGHLEVEL_API_KEY` / legacy `GHL_API_KEY`) + location id (`GOHIGHLEVEL_LOCATION_ID` / legacy `GHL_LOCATION_ID`)
 
-**Steps (Create GHL Folder -- run once per deck run):**
-1. If media_library.json has `ghl_folder_id: null`: create the GHL media library folder.
-   a. Folder name: `<Client> <Deck> v<N>` (use the values from media_library.json).
-   b. Call the GHL media library folder-create API. The CORRECT endpoint is:
-      POST https://services.leadconnectorhq.com/medias/folder
-      Headers: Authorization: Bearer <LOCATION_PIT>, Version: 2021-07-28, Content-Type: application/json
-      Body: {"altId": "<locationId>", "altType": "location", "name": "<folder name>"}
-      IMPORTANT: do NOT use POST /medias/ — that path does not exist and returns 404.
-      The successful response is a folder object; capture the _id field as the folder_id.
-   c. If the API call fails: log the failure, upload to Media Library root, and note in media_library.json: `ghl_folder_creation_failed: true, fallback: "media_library_root"`.
-   d. Update media_library.json: `ghl_folder_id: "[returned_id or 'root_fallback']"`.
+**Steps (Resolve the GHL media destination -- run once per deck run; NEVER create a folder):**
+1. If media_library.json still has `ghl_folder_id: null`, resolve the destination:
+   a. **Human-supplied pre-made folder id present** (`ghl_media_folder_id` in intake.json or an id already in media_library.json -- created by a person in the GHL UI): set `ghl_folder_id` to that id; it is passed as `parentId` on every upload.
+   b. **Otherwise:** omit `parentId` and upload to the shareable GHL media **root**. Set `ghl_folder_id: "root"` in media_library.json. `"root"` is a PASSING value (it satisfies the gate; it is NOT a failure).
+   c. **Never call a folder-create API.** If the client wants a dedicated folder, ask them to create it in the GHL UI and supply its id; upload to root until then.
 
 **Steps (Upload Each Image):**
 1. For the image at working/media-library/slide-NN.png:
-   a. GHL remote name MUST be: `Slide NN v<version_number>` (zero-padded, human-readable). Example: `Slide 01 v1`, `Slide 23 v2`.
-   b. Call the GHL upload API with the file content, the GHL folder ID (or root if fallback), and the remote name.
-   c. Record the GHL media_id returned by the API.
-2. Update media_library.json for this image: `{ "ghl_upload_status": "complete", "ghl_media_id": "...", "ghl_remote_name": "Slide NN v<N>", "uploaded_at": "ISO timestamp" }`.
+   a. GHL remote name (`name`) MUST be: `Slide NN v<version_number>` (zero-padded). Example: `Slide 01 v1`, `Slide 23 v2`.
+   b. Call `POST /medias/upload-file` (Version: 2021-07-28, multipart) with the LOCATION PIT as Bearer, `file=@slide-NN.png`, `locationId=<location id>`, `name=Slide NN v<N>`, `hosted=false`, and `parentId=<ghl_folder_id>` ONLY when `ghl_folder_id` is a real folder id (omit `parentId` when it is `"root"`).
+   c. Read the `fileId` (the GHL media id) and the `url` from the response and record them.
+2. Update media_library.json for this image: `{ "ghl_upload_status": "complete", "ghl_media_id": "...", "ghl_url": "...", "ghl_remote_name": "Slide NN v<N>", "uploaded_at": "ISO timestamp" }`.
 3. If the client uses Google Drive (has `use_drive: true` in intake.json): also upload to the Drive folder at the path recorded in media_library.json. Record Drive file_id.
 4. If the GHL upload fails: retry once after 30 seconds. If second attempt fails: mark `ghl_upload_status: "failed"` and flag to the Director. Do not skip the delivery verification until the failure is resolved.
 
@@ -317,30 +325,29 @@ Note: if a ROLE-13 Delivery Concierge role is added to this department in a futu
 
 1. Confirm the final QC score is >= 8.5. Do not deliver a deck that has not passed final QC.
 
-2. Determine delivery path:
-   a. **Mac client (Mac mini or MacBook):** copy the PPTX to the client's ~/Downloads/ folder.
-      - Command: `cp output/[DECK_SLUG].pptx ~/Downloads/[DECK_SLUG]_final.pptx`
-      - Verify: `ls -lh ~/Downloads/[DECK_SLUG]_final.pptx` must show the file with a non-zero size.
+2. Determine delivery path (the unified, folder-aware Mac path matches the builder's bundle dir):
+   a. **Mac client (Mac mini or MacBook):** the client package lands in `~/Downloads/<client-slug>-<deck-slug>/` (the SAME predictable location `build_deck.py` writes to).
+      - Verify the assembled deck: `ls -lh ~/Downloads/<client-slug>-<deck-slug>/<deck-slug>-FINAL.pptx` must show the file with a non-zero size.
       - Record the exact path.
    b. **Non-Mac or environment unclear:** do NOT assume a delivery location. Ask the client explicitly: "Where would you like the PowerPoint delivered: email, Google Drive, GHL, or somewhere else?" Then deliver to their stated destination. Record the destination.
 
-3. Upload the final PPTX to the client's GHL media library (REQUIRED, not optional for GHL-enabled clients):
-   - Upload to the same GHL folder used for the slide images (ghl_folder_id from media_library.json).
-   - Remote name: `[Deck Title] FINAL v<N>.pptx`.
-   - Record the returned GHL media_id and URL in media_library.json: `"pptx_ghl_media_id": "...", "pptx_ghl_url": "..."`.
+3. Upload the final PPTX to the client's GHL media library (REQUIRED, not optional for GHL-enabled clients; via `POST /medias/upload-file` -- see the BINDING note in SOP 9.3; LOCATION PIT, optional `parentId`, never a folder-create call):
+   - Upload to the same GHL destination used for the slide images (`parentId=ghl_folder_id` when it is a real folder id; omit `parentId` when it is `"root"`).
+   - Remote name (`name`): `[Deck Title] FINAL v<N>.pptx`.
+   - Record the returned GHL media_id (`fileId`) and URL in media_library.json: `"pptx_ghl_media_id": "...", "pptx_ghl_url": "..."`.
    - The deck is NOT delivered until `pptx_ghl_media_id` is recorded (or the `has_ghl: false`
      carve-out applies and `ghl_delivery_skipped: true` is set). A self-report without the
      recorded media_id is not ground truth.
 
 4. Verify every destination before reporting done:
-   - Mac download: `ls -lh ~/Downloads/[DECK_SLUG]_final.pptx` (non-empty file must exist).
-   - GHL: call the GHL API to confirm the PPTX file exists in the folder by its media_id. A self-report without an API confirmation is not ground truth.
+   - Mac download: `ls -lh ~/Downloads/<client-slug>-<deck-slug>/<deck-slug>-FINAL.pptx` (non-empty file must exist).
+   - GHL: call the GHL API to confirm the PPTX file exists by its media_id (`fileId`). A self-report without an API confirmation is not ground truth.
    - Additional destinations (Drive, email, etc.): confirm via the relevant API or service before reporting.
 
 5. Send a delivery notification via `openclaw message send` (never raw Telegram API):
    - Include every verified destination path or URL.
    - Include the final QC score.
-   - Example message: "Your webinar deck is ready. Final QC score: [SCORE]/10. File locations: (1) ~/Downloads/[DECK_SLUG]_final.pptx on your Mac, (2) GHL media library folder '[FOLDER_NAME]' as '[REMOTE_NAME]'. Both locations confirmed."
+   - Example message: "Your webinar deck is ready. Final QC score: [SCORE]/10. File locations: (1) ~/Downloads/<client-slug>-<deck-slug>/<deck-slug>-FINAL.pptx on your Mac, (2) GHL media library as '[REMOTE_NAME]'. Both locations confirmed."
 
 6. Update media_library.json: add `"delivery_complete": true, "delivery_verified_at": "ISO timestamp", "delivery_destinations": [{"type": "...", "path_or_url": "...", "verified": true}]`.
 

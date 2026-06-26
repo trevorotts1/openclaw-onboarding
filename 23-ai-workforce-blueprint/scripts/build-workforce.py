@@ -261,6 +261,13 @@ def load_non_interactive_config(config_file):
         print(f"[NON-INTERACTIVE ERROR] Missing required config keys: {', '.join(missing)}", file=sys.stderr)
         sys.exit(1)
 
+    # G1-FAB-ENFORCE (anti-fabrication): read config['option'] and REFUSE to load a
+    # config that would fabricate client answers. A non-interactive build is allowed
+    # ONLY with a genuine interview transcript OR an explicit ownerConsent self-setup/
+    # fast opt-in. Without proof this exits non-zero and writes INTERVIEW_PENDING —
+    # the build never reaches build_from_config() to stamp interviewComplete=true.
+    _enforce_consent_or_refuse(config)
+
     # PRD-2.15: assert industryPack.slug is present in build state before building.
     # This enforces that the interview ran with industry customization - an interview
     # with no recorded pack is not industry-custom and must not proceed blindly.
@@ -786,6 +793,202 @@ def _load_build_state():
         return {}
 
 
+# ============================================================
+# OWNER-CONSENT GATE (G1-FAB-ENFORCE) — anti-fabrication enforcement
+# ============================================================
+# The non-interactive build path (load_non_interactive_config -> build_from_config)
+# synthesizes a Q/A transcript from config (workforce-interview-answers.md) and
+# stamps interviewComplete=true. That is ONLY legitimate when EITHER (a) a genuine
+# conversational interview already produced a real transcript, OR (b) the owner
+# EXPLICITLY opted into a self-setup / fast (decline-the-interview) mode. Without
+# one of those, recording config as "client answers" FABRICATES results the client
+# never gave. This gate enforces the SKILL.md prose ("never fabricate — client words
+# only") in code: no consent proof AND no genuine transcript => REFUSE the build
+# (fail-safe: blocking a build is always preferable to fabricating one).
+
+# Header stamped onto the synthetic answers file written by build_from_config. Used
+# both at the write site AND by the gate / QC to detect a fabricated transcript.
+NON_INTERACTIVE_ANSWERS_HEADER = "# Workforce Interview Answers (Non-Interactive)"
+
+# Exit code emitted when the build is refused for missing owner consent. Distinct
+# from the generic exit(1) so callers / CI can branch on "interview pending".
+EXIT_INTERVIEW_PENDING = 87
+
+# Decision tokens that count as an EXPLICIT owner opt-in to a self-setup / fast
+# (decline-the-interview) build. Anything else is rejected.
+_CONSENT_OPT_IN_DECISIONS = frozenset({
+    "self-setup", "self_setup", "selfsetup",
+    "fast", "fast-mode", "fast_mode", "fastmode",
+    "decline-interview", "decline_interview", "skip-interview", "skip_interview",
+    "opt-in", "opt_in", "optin",
+})
+
+
+def _validate_owner_consent(config, build_state):
+    """
+    Validate a session-bound ownerConsent record using the SAME provenance rule as
+    the decline-path validator (_canonical_decline_set, lines ~720-733): every
+    required field must be present and truthy.
+
+    Required fields: decision, source, decidedAt, decidedBy, sessionId.
+    The decision must be an explicit opt-in to self-setup / fast mode
+    (_CONSENT_OPT_IN_DECISIONS). The record may live in config["ownerConsent"] or
+    build_state["ownerConsent"]. config takes precedence.
+
+    Returns (ok: bool, reason: str, consent: dict|None). Never raises.
+    """
+    required = ("decision", "source", "decidedAt", "decidedBy", "sessionId")
+    consent = None
+    if isinstance((config or {}).get("ownerConsent"), dict):
+        consent = config["ownerConsent"]
+    elif isinstance((build_state or {}).get("ownerConsent"), dict):
+        consent = build_state["ownerConsent"]
+    if not isinstance(consent, dict):
+        return (False,
+                "no ownerConsent record present "
+                "(need {decision,source,decidedAt,decidedBy,sessionId})",
+                None)
+    missing = [k for k in required if not consent.get(k)]
+    if missing:
+        return (False,
+                f"ownerConsent missing/empty fields: {', '.join(missing)}",
+                consent)
+    decision = str(consent.get("decision", "")).strip().lower()
+    if decision not in _CONSENT_OPT_IN_DECISIONS:
+        return (False,
+                f"ownerConsent.decision='{decision}' is not an explicit self-setup/fast "
+                f"opt-in (expected one of: {', '.join(sorted(_CONSENT_OPT_IN_DECISIONS))})",
+                consent)
+    return (True, "ok", consent)
+
+
+def _genuine_interview_answers_file():
+    """
+    Return the path of a GENUINE conversational-interview transcript if one exists,
+    else None.
+
+    Genuine = >=3 real **Q:** blocks, size > 512 bytes, and NOT bearing the
+    non-interactive synthetic header (so a previously-fabricated transcript does NOT
+    count). Deliberately IGNORES the bare interviewComplete flag — a flag is not
+    proof and the fabricating path sets it too. This closes the re-run vector where
+    a prior synthetic build would otherwise be read back as a "real" interview.
+    """
+    home = os.path.expanduser("~")
+    candidates = []
+    bs = _load_build_state()
+    recorded = (bs.get("interviewProgress") or {}).get("answersFilePath")
+    if recorded:
+        candidates.append(str(recorded))
+    if COMPANY_DISCOVERY_DIR:
+        candidates.append(os.path.join(COMPANY_DISCOVERY_DIR, "workforce-interview-answers.md"))
+    for base in ("/data/.openclaw/workspace", os.path.join(home, ".openclaw", "workspace")):
+        candidates.append(os.path.join(base, "company-discovery", "workforce-interview-answers.md"))
+    for cand in candidates:
+        if not os.path.isfile(cand):
+            continue
+        try:
+            size = os.path.getsize(cand)
+            text = open(cand, errors="ignore").read()
+        except OSError:
+            continue
+        if NON_INTERACTIVE_ANSWERS_HEADER in text:
+            continue  # synthetic / fabricated transcript — does NOT count as genuine
+        q_count = len([ln for ln in text.splitlines() if ln.strip().startswith("**Q:**")])
+        if q_count >= 3 and size > 512:
+            return cand
+    return None
+
+
+def _refuse_interview_pending(reason, option):
+    """
+    Fail-safe: no consent proof AND no genuine interview => REFUSE the build.
+
+    Writes status:INTERVIEW_PENDING to interview-handoff.md (best-effort), records
+    interviewBuildStatus in build-state (additive), and exits non-zero. NEVER writes
+    interviewComplete=true. This is the "no consent proof = no build" guarantee.
+    """
+    msg = (
+        "[FABRICATION-GUARD] REFUSING build: no genuine interview transcript and no "
+        f"valid owner consent.\n  Reason: {reason}\n  option={option!r}\n"
+        "  A non-interactive build may proceed ONLY with (a) a real conversational "
+        "interview transcript (>=3 Q/A, not the synthetic header), or (b) an explicit "
+        "ownerConsent{decision,source,decidedAt,decidedBy,sessionId} opting into "
+        "self-setup/fast mode. Fabricating client answers is forbidden."
+    )
+    print(msg, file=sys.stderr)
+
+    # interview-handoff.md (best-effort; the non-zero exit is the hard guarantee).
+    try:
+        discovery_dir = _ensure_company_discovery_dir()
+    except Exception:  # noqa: BLE001
+        discovery_dir = None
+    if not discovery_dir:
+        try:
+            discovery_dir = os.path.dirname(_build_state_path())
+            os.makedirs(discovery_dir, exist_ok=True)
+        except Exception:  # noqa: BLE001
+            discovery_dir = None
+    if discovery_dir:
+        try:
+            handoff_path = os.path.join(discovery_dir, "interview-handoff.md")
+            with open(handoff_path, "w") as f:
+                f.write("# Interview Handoff\n")
+                f.write(f"## Last Updated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}\n\n")
+                f.write("status: INTERVIEW_PENDING\n\n")
+                f.write(f"## Option Selected: {option}\n\n")
+                f.write("## Build refused (fabrication guard):\n")
+                f.write(f"{reason}\n\n")
+                f.write("The owner must EITHER complete the interview (>=3 real Q/A) OR "
+                        "record an explicit ownerConsent self-setup/fast opt-in "
+                        "({decision,source,decidedAt,decidedBy,sessionId}) before the "
+                        "non-interactive build can run.\n")
+            print(f"[FABRICATION-GUARD] Wrote status:INTERVIEW_PENDING -> {handoff_path}",
+                  file=sys.stderr)
+        except OSError as e:
+            print(f"[FABRICATION-GUARD] Could not write handoff: {e}", file=sys.stderr)
+
+    # Record build-state status (additive; NEVER sets interviewComplete).
+    try:
+        path = _build_state_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        state = _load_build_state()
+        state["interviewBuildStatus"] = "INTERVIEW_PENDING"
+        state["interviewBuildRefusedReason"] = reason
+        state["interviewBuildRefusedAt"] = datetime.now().isoformat()
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2)
+    except OSError as e:
+        print(f"[FABRICATION-GUARD] Could not record interviewBuildStatus: {e}", file=sys.stderr)
+
+    sys.exit(EXIT_INTERVIEW_PENDING)
+
+
+def _enforce_consent_or_refuse(config):
+    """
+    G1-FAB-ENFORCE gate. Permit the non-interactive build ONLY when a genuine
+    conversational interview already exists OR an explicit owner consent record is
+    present. Otherwise REFUSE (write INTERVIEW_PENDING handoff, exit non-zero).
+
+    Called at the TOP of both load_non_interactive_config() and build_from_config()
+    so the build is blocked BEFORE any synthetic transcript is written or
+    interviewComplete=true is stamped. Idempotent: it passes or refuses consistently.
+    """
+    option = str((config or {}).get("option", "")).strip()
+    genuine = _genuine_interview_answers_file()
+    if genuine:
+        print(f"[FABRICATION-GUARD] Genuine interview transcript found ({genuine}); "
+              f"build permitted (full-interview path).", file=sys.stderr)
+        return
+    ok, reason, consent = _validate_owner_consent(config, _load_build_state())
+    if ok:
+        print(f"[FABRICATION-GUARD] Owner consent verified "
+              f"(decision={str(consent.get('decision')).strip().lower()}, "
+              f"sessionId={consent.get('sessionId')}); self-setup/fast build permitted.",
+              file=sys.stderr)
+        return
+    _refuse_interview_pending(reason, option)
+
+
 def _resolve_role_library_index():
     """
     Resolve the repo/skill _index.json (the content-manifest source of truth) so
@@ -1032,10 +1235,13 @@ def verify_interview_complete(answers_path=None):
     flag = bool(state.get("interviewComplete"))
     result["flag_set"] = flag
     if flag:
-        result["complete"] = True
+        # G1-FAB-ENFORCE: a bare interviewComplete flag is NOT proof of a real
+        # interview (the fabricating path sets it too). Record it PROVISIONALLY;
+        # do NOT mark complete until it is corroborated by >=3 real Q/A blocks
+        # (Check 2 / Check 3) or a valid ownerConsent record (corroboration gate
+        # at the end of this function). Never trust a bare flag.
         result["method"] = "flag"
-        # Also try to confirm the answers file exists with real content
-        # (don't just trust the flag - provide the file evidence too).
+        # Below we try to confirm the answers file exists with real content.
 
     # Check 2: answers file with real content
     # Candidate paths: caller-supplied > build-state recorded path > standard discovery dirs
@@ -1099,8 +1305,29 @@ def verify_interview_complete(answers_path=None):
             except OSError:
                 continue
 
-    if flag and result["method"] == "flag":
-        return result  # Flag set, no file evidence found but trust the flag.
+    # G1-FAB-ENFORCE corroboration gate: the flag was set but Check 2/Check 3 did
+    # NOT already return complete from real evidence. A bare flag is never trusted —
+    # require >=3 real Q/A blocks OR a valid ownerConsent record, else REFUSE to
+    # report complete (fail-safe against fabricated completion).
+    if flag and result["complete"] is not True:
+        if result.get("question_count", 0) >= 3:
+            result["complete"] = True
+            result["method"] = "flag+answers"
+        else:
+            consent_ok, _creason, _consent = _validate_owner_consent({}, state)
+            if consent_ok:
+                result["complete"] = True
+                result["method"] = "consent"
+            else:
+                result["complete"] = False
+                result["method"] = "flag_rejected_no_evidence"
+                print(
+                    "[INTERVIEW] interviewComplete flag is set but NO real transcript "
+                    "(>=3 Q/A) and NO valid ownerConsent record was found — refusing to "
+                    "treat the interview as complete (fail-safe against fabricated "
+                    f"completion). reason: {_creason}",
+                    file=sys.stderr,
+                )
 
     return result
 
@@ -1816,6 +2043,14 @@ def build_from_config(config):
     print(f"[ZHC] Company folder: {COMPANY_DIR}", file=sys.stderr)
     print(f"[ZHC] Departments folder: {DEPARTMENTS_DIR}", file=sys.stderr)
 
+    # G1-FAB-ENFORCE (anti-fabrication): defense-in-depth gate. Even if
+    # build_from_config() is invoked directly (bypassing load_non_interactive_config),
+    # REFUSE before any synthetic transcript is written or interviewComplete=true is
+    # stamped unless a genuine interview OR explicit ownerConsent self-setup/fast
+    # opt-in is present. Now COMPANY_DISCOVERY_DIR is resolved so any INTERVIEW_PENDING
+    # handoff lands in this client's discovery folder.
+    _enforce_consent_or_refuse(config)
+
     industry = config.get("industry", "")
     company_description = config.get("company_description", "")
     tools = config.get("tools", "")
@@ -1838,7 +2073,7 @@ def build_from_config(config):
     if discovery_dir:
         answers_path = os.path.join(discovery_dir, "workforce-interview-answers.md")
         with open(answers_path, 'w') as f:
-            f.write(f"# Workforce Interview Answers (Non-Interactive)\n\n")
+            f.write(f"{NON_INTERACTIVE_ANSWERS_HEADER}\n\n")
             f.write(f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}\n\n---\n\n")
             f.write(f"**Q:** What is the name of your business?\n**A:** {company_name}\n\n---\n\n")
             f.write(f"**Q:** What industry are you in?\n**A:** {industry}\n\n---\n\n")

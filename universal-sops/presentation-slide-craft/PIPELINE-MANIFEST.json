@@ -25,21 +25,21 @@
     },
     {
       "key": "speech_md",
-      "filename": "PRESENTERS-SPEECH.md",
+      "filename": "PRESENTER-SPEECH.md",
       "label": "presenter speech markdown source (pure)",
       "min_bytes": 2048,
       "note": ">2KB; produced by Presenters Speech Writer (pure script). REQUIRED UPSTREAM STEP."
     },
     {
       "key": "speech_pdf",
-      "filename": "PRESENTERS-SPEECH.pdf",
+      "filename": "PRESENTER-SPEECH.pdf",
       "label": "presenter speech teleprompter PDF",
       "min_bytes": 20480,
       "note": ">20KB; produced by Presenters Speech Writer (teleprompter PDF render). REQUIRED UPSTREAM STEP."
     },
     {
       "key": "speech_fish_md",
-      "filename": "PRESENTERS-SPEECH-FISH-TAGGED.md",
+      "filename": "PRESENTER-SPEECH-FISH-TAGGED.md",
       "label": "presenter speech (Fish-Audio expression-tagged)",
       "min_bytes": 2048,
       "note": ">2KB; the (break)/(laugh)/emphasis-tagged script that feeds the audio render. Produced by Presenters Speech Writer / Fish Audio Expression Specialist. REQUIRED UPSTREAM STEP."
@@ -67,6 +67,14 @@
       "min_bytes": 10240,
       "note": ">10KB; the standalone scrolling teleprompter app (HTML + inline CSS/JS). Produced by build_teleprompter.py (teleprompter role). REQUIRED UPSTREAM STEP."
     }
+  ],
+  "$bundle_note": "TWO distinct file sets, explicitly separated so 'the bundle' is never ambiguous. build_bundle_files = the NINE operator-side build artifacts (the full DELIVERABLES_REQUIRED key set in build_deck.py) that must all exist + clear their min_bytes before closeout. client_package_files = the FIVE files the client actually receives in delivery/[DECK_SLUG]-FINAL/ (the AF-DH1 whitelist). The four build-only artifacts (speech_md, speech_fish_md, infographic_png, teleprompter_html) are inputs/working products, not loose client files. AF-DELIVER + AF-DH1 + AF-DELIVERY-COMPLETE all read client_package_files (FIVE); the per-artifact existence/size gate reads build_bundle_files (NINE).",
+  "build_bundle_files": [
+    "deck_pptx", "deck_pdf", "guide_pdf", "speech_md", "speech_pdf",
+    "speech_fish_md", "audio_mp3", "infographic_png", "teleprompter_html"
+  ],
+  "client_package_files": [
+    "deck_pptx", "deck_pdf", "guide_pdf", "speech_pdf", "audio_mp3"
   ],
   "phases": [
     {
@@ -532,7 +540,7 @@
       "stage": "Render",
       "level": "slide",
       "in_ruleset": false,
-      "trigger": "rich prompt missing or under the 1500-char floor",
+      "trigger": "rich prompt missing, under the reconciled 5,000-char floor (PROMPT_CHAR_FLOOR), or missing a required structural block ([ARCHETYPE ...] / NEGATIVE BLOCK / 'Do not ')",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_rich_prompts"
     },
@@ -608,7 +616,7 @@
       "stage": "Done",
       "level": "DECK",
       "in_ruleset": false,
-      "trigger": "delivery interlock \u2014 six-file bundle not assembled",
+      "trigger": "delivery interlock \u2014 the five-file client package (client_package_files) is not assembled / a required artifact is missing or empty",
       "enforced_by": "closeout_gate",
       "py_symbol": null
     },

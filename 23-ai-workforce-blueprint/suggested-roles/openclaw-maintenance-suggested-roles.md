@@ -23,13 +23,15 @@ The Token Manager / Furnace Watch Specialist (role 13) performs an **hourly, rea
 
 #### Rescue Rangers Escalation (applies to all 4 specialists)
 
-Every specialist in this department (including the 4 new ones) escalates ambiguous or feature-bearing findings via:
+Every specialist in this department (including the 4 new ones) escalates ambiguous or feature-bearing findings via the **n8n webhook** (`$RESCUE_RANGERS_WEBHOOK_URL`):
 
-```
-openclaw message send --channel telegram -t "${RESCUE_RANGERS_HELP_CHAT_ID}"
+```bash
+curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"<ROLE_ID>\",\"message\":\"<escalation text>\"}"
 ```
 
-Message must include: box identifier, driver/symptom, evidence (log excerpt or metric), proposed fix, and why the specialist is unsure. **NEVER bypass OpenClaw's gateway for Telegram** — no direct curl to api.telegram.org. Propagation script: `~/clawd/fleet-heartbeat/scripts/propagate-rescue-chat-id.sh`. This mirrors the fleet-wide Rescue Rangers setup (`~/clawd/fleet-heartbeat/rescue-rangers-setup.md`).
+Message must include: box identifier, driver/symptom, evidence (log excerpt or metric), proposed fix, and why the specialist is unsure. **Do NOT use `openclaw message send -t $RESCUE_RANGERS_HELP_CHAT_ID`** — bots cannot read other bots and that path is silently dropped. The webhook is a standard outbound HTTPS call that works even when the gateway is DOWN (no gateway needed). See the canonical escalation SOP: `SOP-MAINT-RESCUE-RANGERS-ESCALATION` (`sops/sop-rescue-rangers-escalation.md`).
 
 #### Platform-Specific Guardrails for Uptime Watchdog (role 16)
 
@@ -148,11 +150,11 @@ Message must include: box identifier, driver/symptom, evidence (log excerpt or m
 ---
 
 ### 13. Token Manager / Furnace Watch Specialist (full-time-permanent)
-**Owns:** The #1 cost-protection job. Sweeps the box **≥ hourly** for runaway-agent and token-furnace conditions — heartbeat-poll loops, memory-dreaming accumulation, GHL-MCP autostart agentTurn furnace, broken resume/build crons, duplicate/orphan crons, and gateway-crash instance-backup loops. Kills confirmed furnaces. Escalates ambiguous or feature-bearing findings to Rescue Rangers (`${RESCUE_RANGERS_HELP_CHAT_ID}`) before touching anything. Notify-on-change-only; never deletes a critical feature.
+**Owns:** The #1 cost-protection job. Sweeps the box **≥ hourly** for runaway-agent and token-furnace conditions — heartbeat-poll loops, memory-dreaming accumulation, GHL-MCP autostart agentTurn furnace, broken resume/build crons, duplicate/orphan crons, and gateway-crash instance-backup loops. Kills confirmed furnaces. Escalates ambiguous or feature-bearing findings to Rescue Rangers via the n8n webhook (`$RESCUE_RANGERS_WEBHOOK_URL`) before touching anything. Notify-on-change-only; never deletes a critical feature.
 **Cadence:** ≥ hourly lightweight read-only probe; notify-on-change-only.
 **Primary KPIs:** Token burn variance (target ≤15% MoM); furnace incidents detected before budget impact; zero critical-feature deletions.
 **SOPs:** `SOP-MAINT-FURNACE-WATCH` (primary); co-owns `SOP-MAINT-RESCUE-RANGERS-ESCALATION`, `SOP-MAINT-PROACTIVE-FIX-GUARDRAIL`.
-**Tools:** OpenClaw health dashboard, token burn analyzer, cron inspector, `openclaw message send` (Rescue Rangers only — no direct Telegram API calls).
+**Tools:** OpenClaw health dashboard, token burn analyzer, cron inspector, curl (webhook POST to `$RESCUE_RANGERS_WEBHOOK_URL` for Rescue Rangers escalations — do NOT use `openclaw message send -t <group>` for escalations; owner on-change notifications still use `openclaw message send`).
 
 ---
 

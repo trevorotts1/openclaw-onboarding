@@ -12,6 +12,10 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 > Hybrid-delivery handoff (DOCTRINE -- HYBRID PRESENTATION, live -> record -> live; SOP-ENGINE-00 Section 4). This role owns the RECORDING handoff half of the hybrid model. A deck's recording is cut ONLY after the presenter has delivered it LIVE at least THREE times (the Presenter Coach logs these in working/presenter-coach/delivery_plan.json, `live_runs >= 3`; see presenter-coach-sops.md SOP 9.5). Do NOT accept a recording-cut handoff before the 3rd logged live run unless the owner has explicitly accepted the rust/pacing risk (logged as an exception). After the recording is deployed for scale, the plan schedules the presenter's RETURN to live for high-value rooms; the cadence is live -> record -> live, never live-once-then-recorded-forever.
 
+> **BINDING -- how GHL is touched.** Any GHL upload goes EXCLUSIVELY through `POST https://services.leadconnectorhq.com/medias/upload-file` (Version `2021-07-28`, multipart, optional `parentId`) with the CLIENT's GHL **LOCATION** PIT (the agency token 401s for media). Token: `GOHIGHLEVEL_API_KEY` (preferred) / legacy `GHL_API_KEY`; location id: `GOHIGHLEVEL_LOCATION_ID` (preferred) / `GHL_LOCATION_ID`. NEVER create a GHL folder (folder-create returns 404; the Media Librarian resolved `ghl_folder_id` to a human-made folder id or `"root"`). Agent-browser / Playwright / any GHL UI automation is FORBIDDEN. Reference: `29-ghl-convert-and-flow/references/medias.md`.
+
+> **OPERATOR build bundle (9 files) vs CLIENT package (5 files).** `build_deck.py` writes a NINE-file OPERATOR build bundle to `~/Downloads/<client-slug>-<deck-slug>/` (`<deck-slug>-FINAL.pptx`, `<deck-slug>-FINAL.pdf`, `PRESENTER-GUIDE.pdf`, `PRESENTERS-SPEECH.md`, `PRESENTERS-SPEECH.pdf`, `PRESENTERS-SPEECH-FISH-TAGGED.md`, `PRESENTER-AUDIO.mp3`, `infographic.png`, `presenter-teleprompter.html`). SOP 9.0 CURATES the FIVE-file CLIENT package from those build artifacts. See `sops/SOP-PITCH-05-DELIVERABLE-BUNDLE.md`.
+
 ### SOP 9.0 -- Package Assembly and Hygiene Sweep (RUNS BEFORE SOP 9.1)
 
 **When to run:** FIRST, immediately upon receiving a QC-passed deck, BEFORE SOP 9.1 (Destination Resolution) and BEFORE any file is moved or uploaded. This step is the AF-DH1 gate.
@@ -21,23 +25,23 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - output/[DECK_SLUG].pptx (assembled deck)
 - output/[DECK_SLUG].pdf (portable-document export)
 - working/deliverables/PRESENTER-GUIDE.pdf (rendered from PRESENTER-GUIDE.md by the Presenters Guide Specialist)
-- working/deliverables/PRESENTER-SPEECH.pdf (rendered from PRESENTER-SPEECH.md by the Presenters Speech Writer)
-- working/deliverables/PRESENTER-AUDIO.mp3 (Fish Audio S2 render)
+- working/presenter-speech/PRESENTERS-SPEECH.pdf (teleprompter PDF, Presenters Speech Writer)
+- working/presenter-speech/audio/PRESENTER-AUDIO.mp3 (Fish Audio S2 render)
 - sops/SOP-PITCH-05-DELIVERABLE-BUNDLE.md (the five-file whitelist and the blocklist)
 
 **Steps:**
 1. Create a clean, empty `delivery/[DECK_SLUG]-FINAL/` directory. This directory is NOT under `working/`. If it already exists from a prior run, empty it first.
-2. Copy ONLY the five allowed files into `delivery/[DECK_SLUG]-FINAL/`:
-   - `output/[DECK_SLUG].pptx` -> `delivery/[DECK_SLUG]-FINAL/[Deck-Title]-FINAL.pptx`
-   - `output/[DECK_SLUG].pdf` -> `delivery/[DECK_SLUG]-FINAL/[Deck-Title]-FINAL.pdf`
+2. Copy ONLY the five allowed CLIENT files into `delivery/[DECK_SLUG]-FINAL/`:
+   - `output/[DECK_SLUG].pptx` -> `delivery/[DECK_SLUG]-FINAL/<deck-slug>-FINAL.pptx`
+   - `output/[DECK_SLUG].pdf` -> `delivery/[DECK_SLUG]-FINAL/<deck-slug>-FINAL.pdf`
    - `working/deliverables/PRESENTER-GUIDE.pdf` -> `delivery/[DECK_SLUG]-FINAL/PRESENTER-GUIDE.pdf`
-   - `working/deliverables/PRESENTER-SPEECH.pdf` -> `delivery/[DECK_SLUG]-FINAL/PRESENTER-SPEECH.pdf`
-   - `working/deliverables/PRESENTER-AUDIO.mp3` -> `delivery/[DECK_SLUG]-FINAL/PRESENTER-AUDIO.mp3`
+   - `working/presenter-speech/PRESENTERS-SPEECH.pdf` -> `delivery/[DECK_SLUG]-FINAL/PRESENTERS-SPEECH.pdf`
+   - `working/presenter-speech/audio/PRESENTER-AUDIO.mp3` -> `delivery/[DECK_SLUG]-FINAL/PRESENTER-AUDIO.mp3`
    If any of the five source files does not exist or is empty: halt, notify the Director which artifact is missing, do NOT proceed to delivery.
 3. **Run AF-DH1 (deliverable hygiene gate).** Enumerate every file in `delivery/[DECK_SLUG]-FINAL/`. For each file, check:
-   a. **Whitelist check (primary):** Every file must match one of these exact name patterns: `*-FINAL.pptx`, `*-FINAL.pdf`, `PRESENTER-GUIDE.pdf`, `PRESENTER-SPEECH.pdf`, `PRESENTER-AUDIO.mp3`. Any file not matching = AF-DH1 FAIL.
+   a. **Whitelist check (primary):** Every file must match one of these exact name patterns: `*-FINAL.pptx`, `*-FINAL.pdf`, `PRESENTER-GUIDE.pdf`, `PRESENTERS-SPEECH.pdf`, `PRESENTER-AUDIO.mp3`. Any file not matching = AF-DH1 FAIL.
    b. **Blocklist check (belt-and-suspenders):** Fail immediately if any file matches: `*.py`, `*.log`, `*.txt` (prompt files), `*_manifest.json`, `*_qc_log.json`, `*_run.log`, `fix_*.py`, `run_*.py`, `write_*.py`, `validate_*.py`, `assemble_*.py`, `post_render*.py`, `*QC-FINAL.md`, `vision_qc_log.json`, `render_manifest.json`. Fail immediately if any of these directories exist inside the package: `working/`, `prompts/`, `images/`, `renders/`, `qc/`, `scripts/`, `checkpoints/`.
-   c. **Format check:** Any PRESENTER-GUIDE or PRESENTER-SPEECH file present as `.md` (not `.pdf`) = AF-DH1 FAIL.
+   c. **Format check:** Any PRESENTER-GUIDE or PRESENTERS-SPEECH file present as `.md` (not `.pdf`) = AF-DH1 FAIL.
    d. **Audio check:** PRESENTER-AUDIO.mp3 missing = AF-DH1 FAIL (also caught by AF-DELIVER; both gates are required).
 4. **If AF-DH1 triggers:** halt all delivery. Record the failure in `working/checkpoints/delivery_plan.json` as `"af_dh1_triggered": true, "af_dh1_details": "<specific file or dir that failed>"`. Notify the Director: "AF-DH1: DELIVERY BLOCKED. Package hygiene fail: {details}. The client package must contain exactly the five allowed files. Remove all dev artifacts before re-running SOP 9.0." Do NOT proceed to SOP 9.1 until SOP 9.0 passes cleanly.
 5. **If AF-DH1 passes:** record `"af_dh1_pass": true` in the delivery plan. Proceed to SOP 9.1.
@@ -48,7 +52,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Hand to:** SOP 9.1 (Destination Resolution) -- only if AF-DH1 passed.
 
-**Failure mode:** If any of the five required source files does not exist: halt immediately, notify the Director which artifact is missing. Check: (1) Was the PPTX Assembly Specialist's SOP 9.2 portable-document export run and recorded in render_log.json? (2) Did the Presenters Guide Specialist render PRESENTER-GUIDE.pdf? (3) Did the Presenters Speech Writer render PRESENTER-SPEECH.pdf? (4) Did the Audio Demonstration Specialist produce PRESENTER-AUDIO.mp3? Each missing artifact routes back to its owning role.
+**Failure mode:** If any of the five required source files does not exist: halt immediately, notify the Director which artifact is missing. Check: (1) Was the PPTX Assembly Specialist's SOP 9.2 portable-document export run and recorded in render_log.json? (2) Did the Presenters Guide Specialist render PRESENTER-GUIDE.pdf? (3) Did the Presenters Speech Writer render PRESENTERS-SPEECH.pdf? (4) Did the Audio Demonstration Specialist produce PRESENTER-AUDIO.mp3? Each missing artifact routes back to its owning role.
 
 ---
 
@@ -64,24 +68,26 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Steps:**
 1. Read intake.json. Check the `box_type` field.
 2. **If `box_type` is `mac` (Mac mini or MacBook):**
-   a. Primary destination: `~/Downloads/[DECK_SLUG]_final.pptx` on the client's Mac.
-   b. Secondary destination: GHL media library (same folder used for slide images, per ghl_folder_id in media_library.json).
+   a. Primary destination: the folder `~/Downloads/<client-slug>-<deck-slug>/` on the client's Mac (the SAME folder-aware location `build_deck.py` writes to). The whole clean five-file CLIENT package lands here; verify anchor `~/Downloads/<client-slug>-<deck-slug>/<deck-slug>-FINAL.pptx`.
+   b. Secondary destination: GHL media library (same `ghl_folder_id`/`"root"` resolved by the Media Librarian).
    c. Tertiary destination: Google Drive mirror folder (if `use_drive: true`).
-   d. Record all three destinations in a local `delivery_plan.json` before proceeding.
+   d. Record all destinations in a local `delivery_plan.json` before proceeding.
 3. **If `box_type` is NOT mac, or is missing or unclear:**
    a. DO NOT assume a delivery location.
    b. Ask the client explicitly via `openclaw message send`: "Where would you like the PowerPoint delivered: email, Google Drive, GHL, or somewhere else?" Wait for their reply before proceeding.
    c. Record their stated destination in `delivery_plan.json`.
    d. Deliver only to the destination(s) they confirm.
+   e. **Fallback file channel:** if the client has neither GHL (`has_ghl: false`) nor Drive (`use_drive: false`) and no other reachable file destination, add a `telegram_documents` destination so the five client files still reach them as document attachments (SOP 9.2). If even that is unreachable, hard-escalate "no reachable file channel" to the Director (never silently mark done).
 4. Write `delivery_plan.json` to working/checkpoints/:
    ```json
    {
      "deck_slug": "...",
      "qc_score": 9.2,
      "destinations": [
-       {"type": "mac_downloads", "path": "~/Downloads/[DECK_SLUG]_final.pptx", "status": "pending"},
-       {"type": "ghl", "ghl_folder_id": "...", "remote_name": "[Deck Title] FINAL v<N>.pptx", "status": "pending"},
-       {"type": "drive", "drive_folder_id": "...", "status": "pending"}
+       {"type": "mac_downloads", "dir": "~/Downloads/<client-slug>-<deck-slug>/", "verify_anchor": "~/Downloads/<client-slug>-<deck-slug>/<deck-slug>-FINAL.pptx", "status": "pending"},
+       {"type": "ghl", "ghl_folder_id": "... or root", "remote_name": "[Deck Title] FINAL v<N>.pptx", "status": "pending"},
+       {"type": "drive", "drive_folder_id": "...", "status": "pending"},
+       {"type": "telegram_documents", "status": "pending"}
      ],
      "created_at": "ISO timestamp"
    }
@@ -102,46 +108,53 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **When to run:** Immediately after delivery_plan.json is written (SOP 9.1 complete). Run all deliveries; do not skip any destination in the plan.
 
 **Inputs:**
-- working/checkpoints/delivery_plan.json (all destinations; af_dh1_pass must be true before this SOP runs)
-- delivery/[DECK_SLUG]-FINAL/ (the AF-DH1-verified clean package -- copy FROM here, never from working/ or the build root directly)
-- media_library.json (ghl_folder_id, version_number)
-- GHL credentials from client's env stores
-- Google Drive credentials (if applicable)
+- working/checkpoints/delivery_plan.json (all destinations; `af_dh1_pass` must be true before this SOP runs)
+- delivery/[DECK_SLUG]-FINAL/ (the AF-DH1-verified clean FIVE-file CLIENT package -- copy/upload FROM here, NEVER from `output/`, `working/`, or the build root)
+- media_library.json (ghl_folder_id `or "root"`, version_number)
+- GHL **LOCATION** PIT from client's env stores; Google Drive credentials (if applicable)
+
+> Every destination receives the ENTIRE five-file client package, not just the pptx: `<deck-slug>-FINAL.pptx`, `<deck-slug>-FINAL.pdf`, `PRESENTER-GUIDE.pdf`, `PRESENTERS-SPEECH.pdf`, `PRESENTER-AUDIO.mp3`.
 
 **Steps (Mac Downloads destination):**
 1. If `type: "mac_downloads"` is in delivery_plan.json:
-   a. Copy the entire clean package from `delivery/[DECK_SLUG]-FINAL/` to the client's Downloads folder:
+   a. Copy the entire clean package into the folder-aware Downloads dir (the same dir the builder uses):
       ```bash
-      cp -r delivery/[DECK_SLUG]-FINAL/ ~/Downloads/[DECK_SLUG]_final/
+      mkdir -p ~/Downloads/<client-slug>-<deck-slug>/
+      cp delivery/[DECK_SLUG]-FINAL/* ~/Downloads/<client-slug>-<deck-slug>/
       ```
-   b. Verify: `ls -lh ~/Downloads/[DECK_SLUG]_final.pptx` must return the file with a non-zero size.
-   c. Update delivery_plan.json for this destination: `"status": "uploaded", "verified_size_bytes": N, "uploaded_at": "ISO timestamp"`.
+   b. Verify: `ls -lh ~/Downloads/<client-slug>-<deck-slug>/<deck-slug>-FINAL.pptx` must return the file with a non-zero size; confirm all five files are present.
+   c. Update delivery_plan.json for this destination: `"status": "uploaded", "files_copied": 5, "uploaded_at": "ISO timestamp"`.
    d. If the copy fails (permission error, disk full): record the error, notify the Director immediately. Continue with other destinations.
 
 **Steps (GHL destination):**
 1. If a GHL destination is in delivery_plan.json:
-   a. GHL remote name: `[Deck Title] FINAL v<N>.pptx` (use version_number from media_library.json).
-   b. Call the GHL upload API: upload output/[DECK_SLUG].pptx to the GHL folder (ghl_folder_id). Use the CLIENT's GHL credentials, not the operator's.
-   c. Record the GHL media_id returned by the API.
-   d. Update delivery_plan.json: `"status": "uploaded", "ghl_media_id": "...", "uploaded_at": "ISO timestamp"`.
-   e. Update media_library.json: `"pptx_ghl_media_id": "...", "pptx_ghl_remote_name": "[Deck Title] FINAL v<N>.pptx"`.
-   f. If the GHL upload fails: retry once after 30 seconds. If the second attempt fails: mark status `"failed"`, log the error, and notify the Director. Do not send a delivery notification until the failure is resolved or explicitly overridden by the Director.
+   a. Upload ALL FIVE files from `delivery/[DECK_SLUG]-FINAL/` via `POST /medias/upload-file` (LOCATION PIT Bearer, `Version: 2021-07-28`, multipart `file=@<each>`, `locationId`, `name`, `hosted=false`, and `parentId=<ghl_folder_id>` ONLY when it is a real folder id -- omit when `"root"`). Use the CLIENT's credentials, not the operator's. The pptx `name` is `[Deck Title] FINAL v<N>.pptx`.
+   b. Record each returned `fileId` and `url`.
+   c. Update delivery_plan.json: `"status": "uploaded", "ghl_media_ids": {"pptx":"...","pdf":"...","guide":"...","speech":"...","audio":"..."}, "uploaded_at": "ISO timestamp"`.
+   d. Update media_library.json: `"pptx_ghl_media_id": "...", "pptx_ghl_remote_name": "[Deck Title] FINAL v<N>.pptx"`.
+   e. If any GHL upload fails: retry once after 30 seconds. If the second attempt fails: mark status `"failed"`, log the error, notify the Director. Do not send a notification until resolved or overridden.
 
 **Steps (Google Drive destination):**
 1. If `use_drive: true` and a Drive destination is in delivery_plan.json:
-   a. Upload output/[DECK_SLUG].pptx to the client's Drive folder (drive_folder_id from media_library.json).
-   b. Record the Drive file_id returned by the API.
-   c. Update delivery_plan.json: `"status": "uploaded", "drive_file_id": "...", "uploaded_at": "ISO timestamp"`.
-   d. If the Drive upload fails: retry once after 30 seconds. If the second attempt fails: mark status `"failed"` and notify the Director.
+   a. Upload ALL FIVE files from `delivery/[DECK_SLUG]-FINAL/` to the client's Drive folder (drive_folder_id from media_library.json).
+   b. Record each Drive file_id.
+   c. Update delivery_plan.json: `"status": "uploaded", "drive_file_ids": {...}, "uploaded_at": "ISO timestamp"`.
+   d. If a Drive upload fails: retry once after 30 seconds. If the second attempt fails: mark status `"failed"` and notify the Director.
+
+**Steps (Telegram-documents fallback -- no GHL, no Drive, no other file channel):**
+1. If `type: "telegram_documents"` is in delivery_plan.json:
+   a. Send each of the five files in `delivery/[DECK_SLUG]-FINAL/` to the client as a DOCUMENT attachment via `openclaw message send` (NEVER the raw Telegram API).
+   b. Update delivery_plan.json: `"status": "uploaded", "telegram_files_sent": 5, "uploaded_at": "ISO timestamp"`.
+   c. If `openclaw message send` cannot attach files on this box, hard-escalate "no reachable file channel" to the Director and hold delivery.
 
 **Outputs:**
-- PPTX file at every successfully uploaded destination
+- The five-file client package at every successfully delivered destination
 - delivery_plan.json (updated with uploaded status and IDs for each destination)
 - media_library.json (updated with pptx_ghl_media_id)
 
 **Hand to:** SOP 9.3 (Notification) and SOP 9.4 (Ground-Truth Verification) -- run SOP 9.4 first, then SOP 9.3.
 
-**Failure mode:** If the output PPTX file is missing or has zero size at output/[DECK_SLUG].pptx: halt all delivery immediately. Notify the Director: "Delivery blocked: output/[DECK_SLUG].pptx is missing or empty. PPTX Assembly Specialist must re-verify assembly." Do not attempt delivery of a missing or empty file.
+**Failure mode:** If the clean package `delivery/[DECK_SLUG]-FINAL/` is missing, incomplete, or any file is zero size: halt all delivery. Notify the Director: "Delivery blocked: the clean client package is missing or incomplete. Re-run SOP 9.0." Never deliver from `output/` or `working/` directly.
 
 ---
 
@@ -160,7 +173,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    a. Every verified destination path or URL (human-readable).
    b. The final QC score.
    c. Example notification text (adapt per actual destinations):
-      "Your webinar deck is ready. Final QC score: [SCORE]/10. File locations: (1) ~/Downloads/[DECK_SLUG]_final.pptx on your Mac, (2) GHL media library folder '[FOLDER_NAME]' as '[REMOTE_NAME]'. Both locations confirmed."
+      "Your webinar deck is ready. Final QC score: [SCORE]/10. File locations: (1) the folder ~/Downloads/<client-slug>-<deck-slug>/ on your Mac (deck, PDF, presenter guide, speech, and audio), (2) GHL media library as '[REMOTE_NAME]'. Both locations confirmed."
 3. Send the notification using `openclaw message send` to the client's normal channel.
    - NEVER use the raw Telegram API (curl to api.telegram.org or equivalent).
    - NEVER use a hardcoded channel ID or token outside of OpenClaw's message routing.
@@ -187,22 +200,26 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Steps:**
 1. **Mac Downloads verification (if applicable):**
-   a. Run: `ls -lh ~/Downloads/[DECK_SLUG]_final.pptx`.
-   b. The file must exist and show a non-zero size. A missing file or a zero-byte file is a verification failure.
-   c. Update delivery_plan.json: `"status": "verified", "verified_at": "ISO timestamp"` for this destination.
+   a. Run: `ls -lh ~/Downloads/<client-slug>-<deck-slug>/`.
+   b. All FIVE client files must exist and be non-zero, specifically `~/Downloads/<client-slug>-<deck-slug>/<deck-slug>-FINAL.pptx`. A missing or zero-byte file is a verification failure.
+   c. Update delivery_plan.json: `"status": "verified", "verified_at": "ISO timestamp", "files_verified": 5` for this destination.
 
 2. **GHL verification (if applicable):**
-   a. Call the GHL API: fetch the file record by ghl_media_id from delivery_plan.json.
-   b. The API must return the file record with a non-null URL. A 404 or empty response is a verification failure.
-   c. A self-report ("I uploaded it") is NOT sufficient. An API confirmation is required.
-   d. Update delivery_plan.json: `"status": "verified", "verified_at": "ISO timestamp"` for this destination.
+   a. Call the GHL API: fetch the file record for EACH of the five uploaded media ids in delivery_plan.json.
+   b. Each must return a file record with a non-null `url`. Any 404 or empty response for any of the five is a verification failure.
+   c. A self-report ("I uploaded it") is NOT sufficient. An API confirmation per file is required.
+   d. Update delivery_plan.json: `"status": "verified", "verified_at": "ISO timestamp", "files_verified": 5` for this destination.
 
 3. **Google Drive verification (if applicable):**
-   a. Call the Drive API: fetch the file metadata by drive_file_id from delivery_plan.json.
-   b. The API must return the file metadata with a non-null name and size. A 404 or empty response is a verification failure.
-   c. Update delivery_plan.json: `"status": "verified", "verified_at": "ISO timestamp"` for this destination.
+   a. Call the Drive API: fetch the file metadata for EACH of the five uploaded file ids in delivery_plan.json.
+   b. Each must return metadata with a non-null name and size. Any 404 or empty response is a verification failure.
+   c. Update delivery_plan.json: `"status": "verified", "verified_at": "ISO timestamp", "files_verified": 5` for this destination.
 
-4. **Final check:**
+4. **Telegram-documents verification (if applicable):**
+   a. Confirm the send result reported success for all five document attachments (the `openclaw message send` result, not a self-report). Any failed attachment is a verification failure -- re-send once, then escalate.
+   b. Update delivery_plan.json: `"status": "verified", "verified_at": "ISO timestamp", "files_verified": 5` for this destination.
+
+5. **Final check:**
    a. Every destination in delivery_plan.json must show `"status": "verified"`.
    b. If all destinations are verified: write to media_library.json:
       ```json
@@ -210,9 +227,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
         "delivery_complete": true,
         "delivery_verified_at": "ISO timestamp",
         "delivery_destinations": [
-          {"type": "mac_downloads", "path": "~/Downloads/[DECK_SLUG]_final.pptx", "verified": true},
-          {"type": "ghl", "ghl_media_id": "...", "remote_name": "...", "verified": true},
-          {"type": "drive", "drive_file_id": "...", "verified": true}
+          {"type": "mac_downloads", "dir": "~/Downloads/<client-slug>-<deck-slug>/", "files_verified": 5, "verified": true},
+          {"type": "ghl", "pptx_ghl_media_id": "...", "files_verified": 5, "verified": true},
+          {"type": "drive", "files_verified": 5, "verified": true}
         ]
       }
       ```
