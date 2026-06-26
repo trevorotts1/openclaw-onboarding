@@ -1,3 +1,7 @@
+## [v14.1.5] - 2026-06-25 - fix(resume-cron): durable PARK gate + consecutive-stuck hard cap (kills the never-stop furnace)
+
+`scripts/resume-workforce-build.sh` no longer re-fires a stuck build forever. The old "Rule 8 / NEVER-STOP run accounting" (slow-to-2h-and-retry-forever) is replaced by: (1) a durable PARK gate — if the box-level park marker is set (an operator park, or an agent-browser breaker trip), the cron STOPS and self-removes; (2) a consecutive-no-progress hard cap (`MAX_STUCK_FIRES`, default 24, override `WORKFORCE_RESUME_MAX_STUCK_FIRES`) that PARKS + escalates once + DISABLES the cron. A progressing build never trips it (the counter resets the moment build state advances); pre-interview / pre-seed phases are never parked. `resume-prompt.txt` gains a PARK-STOP so the current agent fire stops too. Un-park is operator-only (`scripts/unpark-build.sh`). See root CHANGELOG v14.1.5.
+
 ## [v12.17.2 / skill build] - 2026-06-15 - fix(sop-gate): widen SOP_BLOCK_RE + extend fill_tokens token map (0/406 → 327/406 SOP floor)
 
 See root CHANGELOG.md for full details. Two deterministic fixes: (1) qc-completeness.sh SOP_BLOCK_RE widened to match `### SOP-01:` / `### SOP-AUDIO-001:` / `### SOP-01 —` formats in addition to dotted `### SOP 9.x`; (2) fill_tokens in create_role_workspaces.py extended from ~8 to 400+ tokens, eliminating all TOKEN_LEAK_RE hits in built output.
