@@ -114,6 +114,15 @@ _should_exclude() {
     # genuine shipped .md / .py / .sh skill files remain in scope.
     */OpenMontage/*) return 0 ;;
     */node_modules/*) return 0 ;;
+    # A3 SELF-TEST RACE FIX (v14.3.15): Skill 48's installer self-tests write
+    # scripts/working/af-coverage.json (and potentially other ephemeral artifacts)
+    # into the hashed skill dir at install time.  These files are absent from the
+    # clean source tree, so their presence made DEST!=SRC digest, causing A3 to
+    # fail and the version stamp to never write.  Exclude the
+    # entire */working/* subtree on both sides — it mirrors the same rationale as
+    # */node_modules/* above.  Genuine shipped skill content (.md/.py/.sh) is
+    # never placed in a working/ dir, so this exclusion does not weaken the gate.
+    */working/*) return 0 ;;
   esac
   case "$base" in
     # Python compiled/optimised bytecode files — same rationale as __pycache__

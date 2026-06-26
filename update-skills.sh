@@ -45,7 +45,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v14.3.14"
+ONBOARDING_VERSION="v14.3.15"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -448,7 +448,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v14.3.14 - safe_json_edit
+# v14.3.15 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1080,10 +1080,42 @@ main() {
   # never clobbers existing AGENTS.md sections -- only appends new ones.
   # ----------------------------------------------------------
 
-  # Resolve workspace directory (mirrors write_update_pending_flag)
-  WIRE_WORKSPACE_DIR="$HOME/clawd"
-  [ ! -d "$WIRE_WORKSPACE_DIR" ] && WIRE_WORKSPACE_DIR="$HOME/.openclaw/workspace"
+  # Resolve workspace directory (2026.x-aware; mirrors write_update_pending_flag).
+  # v14.3.15 2026.x agent-dir fix: the old heuristic checked $HOME/clawd first — on VPS
+  # boxes that still carry a legacy /data/clawd/ (or symlink at $HOME/clawd) the
+  # sentinels and core-update blocks were written to that dead path while the
+  # running agent read from the 2026.x agent dir, not the legacy workspace. The gate
+  # then reported core-sentinel-missing even when the wiring ran cleanly.
+  # FIX: use obs_resolve_workspace (which honours openclaw.json agents[].workspace)
+  # as the primary resolver; fall back to the legacy heuristic only when the CLI
+  # helper is absent.  Then ALSO detect the active 2026.x agent dir and dual-write
+  # sentinels there so both the legacy-workspace path AND the agent-dir path are
+  # covered — whichever path the running agent reads from will see the sentinel.
+  WIRE_WORKSPACE_DIR=""
+  if command -v obs_resolve_workspace >/dev/null 2>&1; then
+    WIRE_WORKSPACE_DIR="$(obs_resolve_workspace 2>/dev/null || true)"
+  fi
+  if [ -z "$WIRE_WORKSPACE_DIR" ]; then
+    WIRE_WORKSPACE_DIR="$HOME/clawd"
+    [ ! -d "$WIRE_WORKSPACE_DIR" ] && WIRE_WORKSPACE_DIR="$HOME/.openclaw/workspace"
+  fi
   mkdir -p "$WIRE_WORKSPACE_DIR"
+
+  # Detect the active 2026.x agent dir for dual-write.
+  # On VPS the agent reads from /data/.openclaw/agents/<name>/AGENTS.md;
+  # on Mac from $HOME/.openclaw/agents/<name>/AGENTS.md.  Prefer /data prefix.
+  _OC_AGENTS_ROOT="$HOME/.openclaw/agents"
+  [ -d "/data/.openclaw/agents" ] && _OC_AGENTS_ROOT="/data/.openclaw/agents"
+  WIRE_AGENT_DIR=""
+  if [ -d "$_OC_AGENTS_ROOT/main" ]; then
+    WIRE_AGENT_DIR="$_OC_AGENTS_ROOT/main"
+  else
+    for _oa in "$_OC_AGENTS_ROOT"/*/; do
+      [ -d "${_oa%/}" ] && { WIRE_AGENT_DIR="${_oa%/}"; break; }
+    done
+    unset _oa
+  fi
+  unset _OC_AGENTS_ROOT
 
   # Brew path (Mac only; VPS branch kept out, VPS uses update-skills-vps.sh)
   BREW_CMD="$(command -v brew 2>/dev/null || echo '')"
@@ -1109,14 +1141,17 @@ main() {
     touch "$AGENTS_FILE" "$TOOLS_FILE" "$MEMORY_FILE" "$SOUL_FILE" \
           "$IDENTITY_FILE" "$USER_FILE" 2>/dev/null || true
 
-    # Sentinel: skip if this skill's core updates are already merged
+    # Sentinel: skip if this skill's core updates are already merged.
+    # v14.3.15: also check the 2026.x agent dir AGENTS.md so a box that was
+    # previously wired via the agent-dir path is not re-wired into the workspace.
     local SENTINEL="<!-- skill:${SKILL_FOLDER}:core-update-applied -->"
     if grep -qF "$SENTINEL" "$AGENTS_FILE" 2>/dev/null || \
        grep -qF "$SENTINEL" "$TOOLS_FILE" 2>/dev/null || \
        grep -qF "$SENTINEL" "$MEMORY_FILE" 2>/dev/null || \
        grep -qF "$SENTINEL" "$SOUL_FILE" 2>/dev/null || \
        grep -qF "$SENTINEL" "$IDENTITY_FILE" 2>/dev/null || \
-       grep -qF "$SENTINEL" "$USER_FILE" 2>/dev/null; then
+       grep -qF "$SENTINEL" "$USER_FILE" 2>/dev/null || \
+       ([ -n "$WIRE_AGENT_DIR" ] && grep -qF "$SENTINEL" "$WIRE_AGENT_DIR/AGENTS.md" 2>/dev/null); then
       return 0
     fi
 
@@ -1365,6 +1400,20 @@ if sentinel not in existing:
         fh.write('\n' + sentinel + '\n')
 
 PYEOF
+    # v14.3.15 dual-write: stamp sentinel to the 2026.x agent dir AGENTS.md too.
+    # On VPS boxes that have a legacy $HOME/clawd/ (or /data/clawd/), the Python
+    # block above writes to WIRE_WORKSPACE_DIR/AGENTS.md.  If the running agent
+    # reads from $HOME/.openclaw/agents/<name>/AGENTS.md instead, the gate sees
+    # core-sentinel-missing.  Writing to BOTH paths is safe (idempotent grep check
+    # guards against duplicates) and ensures the sentinel is visible regardless of
+    # which read-path the agent uses.
+    if [ -n "$WIRE_AGENT_DIR" ] && \
+       [ "$WIRE_AGENT_DIR/AGENTS.md" != "$AGENTS_FILE" ]; then
+      touch "$WIRE_AGENT_DIR/AGENTS.md" 2>/dev/null || true
+      if ! grep -qF "$SENTINEL" "$WIRE_AGENT_DIR/AGENTS.md" 2>/dev/null; then
+        printf '\n%s\n' "$SENTINEL" >> "$WIRE_AGENT_DIR/AGENTS.md" 2>/dev/null || true
+      fi
+    fi
     echo "    Wired CORE_UPDATES.md: $SKILL_FOLDER"
   }
 
