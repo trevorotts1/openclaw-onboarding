@@ -64,7 +64,7 @@
 #   bash 3.2.57 and bash 5.x. Do NOT reintroduce `declare -A` / `mapfile` here.
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-AGENT_BROWSER_REAPER_VERSION="v14.3.7"
+AGENT_BROWSER_REAPER_VERSION="v14.3.8"
 
 set -u
 
@@ -289,6 +289,7 @@ if (( live_count > MAX_LIVE )); then
       local _esc_msg="${msg//\\/\\\\}"; _esc_msg="${_esc_msg//\"/\\\"}"
       curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
         -H 'Content-Type: application/json' \
+        ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
         -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"agent-browser-reaper\",\"message\":\"${_esc_msg}\"}" \
         --max-time 15 >/dev/null 2>&1 || log "WARN" "rescue-rangers webhook escalation failed (non-fatal)"
     fi

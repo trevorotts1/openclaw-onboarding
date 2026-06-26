@@ -156,6 +156,7 @@ if [[ "$rc" -eq 7 ]]; then
     _esc_msg="${_esc_msg//\\/\\\\}"; _esc_msg="${_esc_msg//\"/\\\"}"
     curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
       -H 'Content-Type: application/json' \
+      ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
       -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"pre-july14-embedding-migration-check\",\"message\":\"${_esc_msg}\"}" \
       --max-time 15 >/dev/null 2>&1 || log "WARN" "rescue-rangers webhook escalation failed (non-fatal)"
   fi

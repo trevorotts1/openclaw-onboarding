@@ -138,6 +138,7 @@ _alert_operator() {
   local _esc="${msg//\\/\\\\}"; _esc="${_esc//\"/\\\"}"
   curl -s -X POST "$url" \
     -H 'Content-Type: application/json' \
+    ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
     -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"check-company-root\",\"message\":\"${_esc}\"}" \
     --max-time 15 >/dev/null 2>&1 || true
 }

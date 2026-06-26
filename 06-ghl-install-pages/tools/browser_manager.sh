@@ -45,7 +45,7 @@
 #   bash browser_manager.sh session-name
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_VERSION="v14.3.7"
+BROWSER_MANAGER_VERSION="v14.3.8"
 
 # B1 VERSION-GATE FLOOR (v14.1.4) — the version where the BOX-LEVEL headless LOCK
 # landed (install.sh pins AGENT_BROWSER_HEADED=false in the gateway-inherited env,
@@ -365,6 +365,7 @@ bm_breaker_check() {
       local _bm_esc="${_bm_msg//\\/\\\\}"; _bm_esc="${_bm_esc//\"/\\\"}"
       curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
         -H 'Content-Type: application/json' \
+        ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
         -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"browser_manager\",\"message\":\"${_bm_esc}\"}" \
         --max-time 15 >/dev/null 2>&1 || true
     fi
