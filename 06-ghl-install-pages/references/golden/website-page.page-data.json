@@ -1,0 +1,461 @@
+{
+  "sections": [
+    {
+      "id": "section-cFgrh5yXg8",
+      "metaData": {
+        "id": "section-cFgrh5yXg8",
+        "type": "section",
+        "child": [],
+        "class": {
+          "width": {
+            "value": "fullSection"
+          }
+        },
+        "styles": {
+          "boxShadow": {
+            "value": "none"
+          },
+          "paddingLeft": {
+            "unit": "px",
+            "value": 0
+          },
+          "paddingRight": {
+            "value": 0,
+            "unit": "px"
+          },
+          "paddingBottom": {
+            "unit": "px",
+            "value": 20
+          },
+          "paddingTop": {
+            "unit": "px",
+            "value": 20
+          },
+          "marginTop": {
+            "unit": "px",
+            "value": 0
+          },
+          "marginBottom": {
+            "unit": "px",
+            "value": 0
+          },
+          "marginLeft": {
+            "unit": "px",
+            "value": 0
+          },
+          "marginRight": {
+            "unit": "px",
+            "value": 0
+          },
+          "backgroundColor": {
+            "value": "var(--transparent)"
+          },
+          "background": {
+            "value": "none"
+          },
+          "backdropFilter": {
+            "value": "none"
+          },
+          "borderColor": {
+            "value": "var(--black)"
+          },
+          "borderWidth": {
+            "value": "0px"
+          },
+          "borderStyle": {
+            "value": "none"
+          },
+          "borderRadius": {
+            "value": "0px"
+          }
+        },
+        "extra": {
+          "sticky": {
+            "value": "noneSticky"
+          },
+          "visibility": {
+            "value": {
+              "hideDesktop": false,
+              "hideMobile": false
+            }
+          },
+          "bgImage": {
+            "value": {
+              "mediaType": "image",
+              "url": "",
+              "opacity": "1",
+              "options": "bgCover",
+              "svgCode": "",
+              "videoUrl": "",
+              "videoThumbnail": "",
+              "videoLoop": true
+            }
+          },
+          "allowRowMaxWidth": {
+            "value": false
+          },
+          "customClass": {
+            "value": []
+          },
+          "elementScreenshot": {
+            "value": []
+          }
+        },
+        "wrapper": {},
+        "meta": "section",
+        "tagName": "c-section",
+        "title": "Section",
+        "mobileStyles": {},
+        "mobileWrapper": {}
+      },
+      "elements": [
+        {
+          "type": "code",
+          "elType": "code",
+          "extra": {
+            "customCode": {
+              "value": {
+                "rawCustomCode": "<!-- MBSS-WEB-HOME-v1-20260622-135617 -->"
+              }
+            }
+          },
+          "id": "mbss-marker-5ZhuqVIP"
+        }
+      ],
+      "sequence": 0,
+      "pageId": "5ZhuqVIP1hNFqEZuHoR0",
+      "funnelId": "O8GIuyGBq25niflFfgbo",
+      "locationId": "Mct54Bwi1KlNouGXQcDX",
+      "general": {
+        "colors": [
+          {
+            "label": "Transparent",
+            "value": "transparent"
+          },
+          {
+            "label": "Black",
+            "value": "#000000"
+          }
+        ],
+        "fontsForPreview": [],
+        "rootVars": {
+          "--transparent": "transparent",
+          "--black": "#000000"
+        },
+        "sectionStyles": ":root{--transparent:transparent;--black:#000000}.hl_page-preview--content .section-cFgrh5yXg8{box-shadow:none;padding:20px 0;margin:0;background-color:var(--transparent);backdrop-filter:none;border-color:var(--black);border-width:0;border-style:none;border-radius:0}#section-cFgrh5yXg8>.inner{max-width:1170px}",
+        "customFonts": []
+      }
+    }
+  ],
+  "settings": {
+    "settings": {
+      "typography": {
+        "fonts": {
+          "headlineFont": {
+            "id": "headlinefont",
+            "text": "Headline Font",
+            "value": {
+              "text": "Inter",
+              "value": "var(--inter)"
+            }
+          },
+          "contentFont": {
+            "id": "contentfont",
+            "text": "Content Font",
+            "value": {
+              "text": "Inter",
+              "value": "var(--inter)"
+            }
+          }
+        },
+        "colors": {
+          "textColor": {
+            "value": {
+              "label": "var(--black)",
+              "value": "#000000"
+            }
+          },
+          "linkColor": {
+            "value": {
+              "label": "var(--blue)",
+              "value": "#188bf6"
+            }
+          }
+        }
+      },
+      "background": {
+        "bgImage": {
+          "value": {
+            "url": "",
+            "options": "bgCover"
+          }
+        },
+        "backgroundColor": {
+          "value": "var(--white)"
+        }
+      },
+      "percentWidth": [
+        {
+          "text": "0 Percent",
+          "value": "progress0"
+        },
+        {
+          "text": "10 Percent",
+          "value": "progress10"
+        },
+        {
+          "text": "20 Percent",
+          "value": "progress20"
+        },
+        {
+          "text": "30 Percent",
+          "value": "progress30"
+        },
+        {
+          "text": "40 Percent",
+          "value": "progress40"
+        },
+        {
+          "text": "50 Percent",
+          "value": "progress50"
+        },
+        {
+          "text": "60 Percent",
+          "value": "progress60"
+        },
+        {
+          "text": "70 Percent",
+          "value": "progress70"
+        },
+        {
+          "text": "80 Percent",
+          "value": "progress80"
+        },
+        {
+          "text": "90 Percent",
+          "value": "progress90"
+        },
+        {
+          "text": "100 Percent",
+          "value": "progress100"
+        }
+      ],
+      "offsetColor": [
+        {
+          "text": "White",
+          "value": "progressbarOffsetWhite"
+        },
+        {
+          "text": "Transparent White",
+          "value": "progressbarOffsetTransparentWhite"
+        },
+        {
+          "text": "Black",
+          "value": "progressbarOffsetBlack"
+        },
+        {
+          "text": "Transparent Black",
+          "value": "progressbarOffsetTransparentBlack"
+        }
+      ],
+      "progressBarSize": [
+        {
+          "text": "Small",
+          "value": "progressbarSmall"
+        },
+        {
+          "text": "Medium",
+          "value": "progressbarMedium"
+        },
+        {
+          "text": "Large",
+          "value": "progressbarLarge"
+        }
+      ]
+    }
+  },
+  "general": {
+    "general": {
+      "colors": [
+        {
+          "label": "Transparent",
+          "value": "transparent"
+        },
+        {
+          "label": "Primary",
+          "value": "#37ca37"
+        },
+        {
+          "label": "Secondary",
+          "value": "#188bf6"
+        },
+        {
+          "label": "White",
+          "value": "#ffffff"
+        },
+        {
+          "label": "Gray",
+          "value": "#cbd5e0"
+        },
+        {
+          "label": "Black",
+          "value": "#000000"
+        },
+        {
+          "label": "Red",
+          "value": "#e93d3d"
+        },
+        {
+          "label": "Orange",
+          "value": "#f6ad55"
+        },
+        {
+          "label": "Yellow",
+          "value": "#faf089"
+        },
+        {
+          "label": "Green",
+          "value": "#9ae6b4"
+        },
+        {
+          "label": "Teal",
+          "value": "#81e6d9"
+        },
+        {
+          "label": "Malibu",
+          "value": "#63b3ed"
+        },
+        {
+          "label": "Indigo",
+          "value": "#757BBD"
+        },
+        {
+          "label": "Purple",
+          "value": "#d6bcfa"
+        },
+        {
+          "label": "Pink",
+          "value": "#fbb6ce"
+        },
+        {
+          "label": "Cobalt",
+          "value": "#155eef"
+        },
+        {
+          "label": "Smoke",
+          "value": "#f5f5f5"
+        },
+        {
+          "label": "Overlay",
+          "value": "rgba(0, 0, 0, 0.5)"
+        }
+      ],
+      "fontsToLoad": [],
+      "fontsToLoadForPreview": [],
+      "pageStyles": "",
+      "customFonts": []
+    }
+  },
+  "pageStyles": ":root{ --transparent: transparent;\n--primary: #37ca37;\n--secondary: #188bf6;\n--white: #ffffff;\n--gray: #cbd5e0;\n--black: #000000;\n--red: #e93d3d;\n--orange: #f6ad55;\n--yellow: #faf089;\n--green: #9ae6b4;\n--teal: #81e6d9;\n--malibu: #63b3ed;\n--indigo: #757BBD;\n--purple: #d6bcfa;\n--pink: #fbb6ce;\n--cobalt: #155eef;\n--smoke: #f5f5f5;\n--overlay: rgba(0, 0, 0, 0.5);\n--headlinefont: 'Inter';\n--contentfont: 'Inter';\n--text-color: #000000;\n--link-color: #188bf6; } .bg-fixed{bottom:0;top:0;left:0;right:0;position:fixed;overflow:auto;background-color:var(--white)} \n            \n            .drop-zone-draggable .hl_main_popup{box-shadow:none;padding:20px;margin-top:0;border-color:var(--gray);border-width:10px;border-style:solid;border-radius:0;background-color:var(--white)}\n            \n          \n#hl_main_popup.popup-body{position:absolute!important;left:50%!important;bottom:auto!important;transform:translate(-50%,0)!important;right:auto!important;box-shadow:none;padding:20px;margin-top:0;border-color:var(--gray);border-width:10px;border-style:solid;border-radius:0;background-color:var(--white);width:720px}.--mobile #hl_main_popup.popup-body{width:380px!important}@media screen and (min-width:0px) and (max-width:480px){#hl_main_popup.popup-body{width:380px!important}} \n ",
+  "trackingCode": {
+    "headerCode": "",
+    "footerCode": "<!-- ZHC-FACTORY-WEB-0621 | Riverbend Bread Co. | HOME -->\n<style>\n  .rb-wrap{font-family:Georgia,'Times New Roman',serif;color:#3b2a1a;margin:0;line-height:1.6}\n  .rb-nav{display:flex;justify-content:space-between;align-items:center;padding:18px 6%;background:#fff7ec;border-bottom:2px solid #e3c9a0;flex-wrap:wrap}\n  .rb-brand{font-size:1.5rem;font-weight:bold;color:#8a4b1f;letter-spacing:.5px}\n  .rb-links a{margin-left:26px;text-decoration:none;color:#5a3d23;font-size:1.05rem}\n  .rb-links a:hover{color:#c2691b;text-decoration:underline}\n  .rb-hero{position:relative;min-height:70vh;display:flex;align-items:center;justify-content:center;text-align:center;\n    background:linear-gradient(rgba(40,22,8,.45),rgba(40,22,8,.55)),url('https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/576380d8-20b2-491c-9b35-289f6b615dca.png') center/cover no-repeat;color:#fff}\n  .rb-hero h1{font-size:3rem;margin:.2em 0;max-width:14ch}\n  .rb-hero p{font-size:1.35rem;max-width:32ch;margin:.4em auto 1.2em}\n  .rb-cta{display:inline-block;background:#c2691b;color:#fff;padding:16px 38px;border-radius:40px;font-size:1.15rem;\n    text-decoration:none;font-weight:bold;box-shadow:0 6px 18px rgba(0,0,0,.25)}\n  .rb-cta:hover{background:#a9550f}\n  .rb-sec{padding:64px 8%;max-width:1100px;margin:0 auto;text-align:center}\n  .rb-sec h2{font-size:2rem;color:#8a4b1f}\n  .rb-grid{display:flex;gap:28px;flex-wrap:wrap;justify-content:center;margin-top:34px}\n  .rb-card{flex:1 1 240px;max-width:300px;background:#fffaf2;border:1px solid #ecd9bb;border-radius:14px;padding:26px}\n  .rb-card h3{color:#c2691b;margin-top:0}\n  .rb-band{background:#8a4b1f;color:#fff;text-align:center;padding:56px 8%}\n  .rb-band .rb-cta{background:#fff;color:#8a4b1f;margin-top:18px}\n  .rb-foot{background:#3b2a1a;color:#e8d6bf;text-align:center;padding:28px 8%;font-size:.95rem}\n  .rb-foot a{color:#f2c98a;text-decoration:none;margin:0 10px}\n</style>\n<div class=\"rb-wrap\">\n  <nav class=\"rb-nav\">\n    <span class=\"rb-brand\">Riverbend Bread Co.</span>\n    <span class=\"rb-links\"><a href=\"/\">Home</a><a href=\"/about\">About</a><a href=\"/contact\">Contact</a></span>\n  </nav>\n  <header class=\"rb-hero\">\n    <div>\n      <h1>Bread Worth Walking Across Town For</h1>\n      <p>Small-batch sourdough and pastries, baked fresh every morning in your neighborhood.</p>\n      <a class=\"rb-cta\" href=\"/contact\">Reserve a Tasting</a>\n    </div>\n  </header>\n  <section class=\"rb-sec\">\n    <h2>Why Riverbend</h2>\n    <div class=\"rb-grid\">\n      <div class=\"rb-card\"><h3>Naturally Leavened</h3><p>A living sourdough starter, slow-fermented 24 hours for deep flavor and an easy-to-digest crumb.</p></div>\n      <div class=\"rb-card\"><h3>Milled This Week</h3><p>Stone-milled regional grain, never bleached, never rushed. You taste the difference in every slice.</p></div>\n      <div class=\"rb-card\"><h3>Baked at Dawn</h3><p>Out of the oven by 6am, on your table by breakfast. We sell out most days, so come early.</p></div>\n    </div>\n  </section>\n  <section class=\"rb-band\">\n    <h2 style=\"margin-top:0\">Hungry yet?</h2>\n    <p>Book a free in-shop tasting and custom-order consultation.</p>\n    <a class=\"rb-cta\" href=\"/contact\">Reserve a Tasting</a>\n  </section>\n  <footer class=\"rb-foot\">\n    Riverbend Bread Co. &middot; 114 Mill Street &middot; Open Tue&ndash;Sun, 7am&ndash;2pm\n    <div><a href=\"/\">Home</a><a href=\"/about\">About</a><a href=\"/contact\">Contact</a></div>\n  </footer>\n</div>",
+    "head": "\n<!-- MBSS-WEB-HOME-v1-20260622-135617 Marisol Brightwater Sea-Salt Soap Co. website-home -->",
+    "body": "<div id=\"MBSS-WEB-HOME-v1-20260622-135617\" style=\"display:none\" data-marker=\"MBSS-WEB-HOME-v1-20260622-135617\">MBSS-V1-MARKER</div><span style=\"position:absolute;opacity:0;pointer-events:none;font-size:0\" aria-hidden=\"true\">MBSS-WEB-HOME-v1-20260622-135617</span>"
+  },
+  "fontsForPreview": [],
+  "popups": [
+    {
+      "extra": {
+        "bgImage": {
+          "value": {
+            "mediaType": "image",
+            "url": "",
+            "opacity": "1",
+            "options": "bgCover",
+            "svgCode": "",
+            "videoUrl": "",
+            "videoThumbnail": "",
+            "videoLoop": true
+          }
+        },
+        "overlayColor": {
+          "value": "var(--overlay)"
+        },
+        "left": {
+          "value": 50,
+          "unit": "%"
+        },
+        "popupDisabled": {
+          "value": false
+        },
+        "popupHide": {
+          "value": false
+        },
+        "minWidth": {
+          "value": "medium-page"
+        },
+        "showPopupOnMouseOut": {
+          "value": "exit",
+          "delay": 1
+        },
+        "customClass": {
+          "value": []
+        },
+        "position": {
+          "value": "center"
+        }
+      },
+      "class": {},
+      "styles": {
+        "boxShadow": {
+          "value": "none"
+        },
+        "paddingTop": {
+          "unit": "px",
+          "value": 20
+        },
+        "paddingBottom": {
+          "unit": "px",
+          "value": 20
+        },
+        "paddingLeft": {
+          "unit": "px",
+          "value": 20
+        },
+        "paddingRight": {
+          "value": 20,
+          "unit": "px"
+        },
+        "marginTop": {
+          "unit": "px",
+          "value": 0
+        },
+        "borderColor": {
+          "value": "var(--gray)"
+        },
+        "borderWidth": {
+          "value": "10px"
+        },
+        "borderStyle": {
+          "value": "solid"
+        },
+        "borderRadius": {
+          "value": "0px"
+        },
+        "backgroundColor": {
+          "value": "var(--white)"
+        }
+      },
+      "wrapper": {},
+      "customCss": [],
+      "id": "hl_main_popup",
+      "child": [],
+      "meta": "hl_main_popup",
+      "title": "Popup",
+      "tag": "",
+      "updated": true
+    }
+  ],
+  "popupsList": []
+}

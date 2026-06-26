@@ -1,0 +1,88 @@
+{
+  "_note": "AUTHORITATIVE: These goldens were captured LIVE via API GET /funnels/page/<id> + Firebase Storage download. Colors path here is AUTHORITATIVE over any spec guess.",
+  "capture_date": "2026-06-26",
+  "captured_by": "B5 golden capture — Skill 6 fix bucket",
+  "location_id": "Mct54Bwi1KlNouGXQcDX",
+  "location_name": "BlackCEO LLC test location (Trevor operator scratch)",
+  "funnel_golden": {
+    "file": "funnel-optin.page-data.json",
+    "page_id": "0JQUYDGAjSPmdZcCuQDi",
+    "funnel_id": "e2m518scyrGxL0D9dcAq",
+    "funnel_type": "funnel",
+    "page_url_slug": "/optin-funnel",
+    "template_type": "optin_funnel_page",
+    "capture_method": "GET /funnels/page/0JQUYDGAjSPmdZcCuQDi?locationId=Mct54Bwi1KlNouGXQcDX via token-id auth in-browser, then Firebase Storage signed-URL download",
+    "firebase_path": "funnel/e2m518scyrGxL0D9dcAq/page/0JQUYDGAjSPmdZcCuQDi/page-data-89275922-71f2-43df-99ed-f4d53378c6a1",
+    "blob_bytes": 13483,
+    "render_verified": true,
+    "render_check": {
+      "preview_url": "https://www.blackceolinks.com/preview/0JQUYDGAjSPmdZcCuQDi",
+      "http_status": 200,
+      "marker_in_rendered_body": true,
+      "marker": "MBSS-FUNNEL-OPTIN-v1-20260622-135617",
+      "verified_methods": [
+        "python urllib HTTP 200 + marker",
+        "playwright browser_navigate + evaluate marker_in_body=true"
+      ],
+      "render_errors": 0
+    },
+    "colors_path": {
+      "AUTHORITATIVE_theme_palette": "general.general.colors",
+      "AUTHORITATIVE_theme_palette_description": "18-entry array of {label, value} objects — the full GHL color palette (Transparent, Primary, Secondary, White, Gray, Black, Red, Orange, Yellow, Green, Teal, Malibu, Indigo, Purple, Pink, Cobalt, Smoke, Overlay). THIS is the colors object the renderer reads — not defaultSettings.colors (which does not exist in the blob).",
+      "typography_colors": "settings.settings.typography.colors",
+      "typography_colors_description": "Object with textColor and linkColor sub-keys (each {value:{label,value}}). Controls text and link color for the page typography system.",
+      "pageStyles": "pageStyles (TOP-LEVEL key, NOT settings.pageStyles)",
+      "pageStyles_description": "CSS string at the TOP LEVEL of the blob (not nested under settings). Contains :root{ --primary: ...; --secondary: ...; ... } and all color CSS variables. settings.pageStyles is an EMPTY string in the fetched blob — the real CSS is at blob.pageStyles (length=1277). Required for GHL renderer to resolve var(--primary) etc.",
+      "section_colors": "sections[N].general.colors",
+      "section_colors_description": "Per-section minimal color list (only Transparent and Black in this page; the full palette lives in general.general.colors)",
+      "WRONG_paths": [
+        "defaultSettings.colors — does NOT exist in any fetched page blob.",
+        "settings.pageStyles — this key EXISTS but is EMPTY STRING; the real CSS is at top-level pageStyles."
+      ]
+    },
+    "structure_nesting": "sections[0].elements[] contains mixed row/col/element nodes; the custom-code element has meta=custom-code and extra.customCode.value.rawCustomCode. NOT sections[0].elements[0].extra.customCode directly — the custom-code node is third in elements[], after two row/col nodes.",
+    "content_type": "Vercel embed (iframe) + marker in rawCustomCode (HTML fragment, NOT full DOCTYPE document)"
+  },
+  "website_golden": {
+    "file": "website-page.page-data.json",
+    "page_id": "5ZhuqVIP1hNFqEZuHoR0",
+    "funnel_id": "O8GIuyGBq25niflFfgbo",
+    "funnel_type": "website",
+    "page_url_slug": "/home",
+    "template_type": "optin_funnel_page (website funnel step type)",
+    "capture_method": "GET /funnels/page/5ZhuqVIP1hNFqEZuHoR0?locationId=Mct54Bwi1KlNouGXQcDX via token-id auth in-browser, then Firebase Storage signed-URL download",
+    "firebase_path": "funnel/O8GIuyGBq25niflFfgbo/page/5ZhuqVIP1hNFqEZuHoR0/page-data-3dd39fed-a439-4d1c-869a-1c0bb4023cac",
+    "blob_bytes": 10542,
+    "render_verified": true,
+    "render_check": {
+      "preview_url": "https://www.blackceolinks.com/preview/5ZhuqVIP1hNFqEZuHoR0",
+      "http_status": 200,
+      "marker_in_rendered_body": true,
+      "marker": "MBSS-WEB-HOME-v1-20260622-135617",
+      "verified_methods": [
+        "python urllib HTTP 200 + marker_in_preview=True + has_colors_css=True + no render errors"
+      ],
+      "render_errors": 0,
+      "note": "In final-preview-verify.json from deep-test run, this page showed marker_in_preview=false because the marker was only in trackingCode.head (not in rendered body innerHTML). Re-verified 2026-06-26: urllib fetch returns HTTP 200 + marker IS in full page text + colors CSS present + no Cannot-read-properties error."
+    },
+    "colors_path": {
+      "AUTHORITATIVE_theme_palette": "general.general.colors",
+      "AUTHORITATIVE_theme_palette_description": "18-entry array identical to funnel golden. SAME structure across both funnel and website page types.",
+      "typography_colors": "settings.settings.typography.colors",
+      "pageStyles": "pageStyles (TOP-LEVEL key, NOT settings.pageStyles)",
+      "pageStyles_description": "CSS :root{} string at the TOP LEVEL of the blob. Identical structure to funnel golden. settings.pageStyles is empty string.",
+      "WRONG_paths": [
+        "defaultSettings.colors — does not exist.",
+        "settings.pageStyles — exists but is empty string; real CSS is at blob.pageStyles."
+      ],
+      "CONFIRMED": "Website pages and funnel pages use IDENTICAL colors schema. No difference in schema between the two surface types."
+    },
+    "structure_nesting": "sections[0].elements[] contains a single code-type element (elType=code, extra.customCode.value.rawCustomCode). This page has NO row/col wrapper — the element sits directly in section.elements. This is valid GHL structure for a section with a single code block.",
+    "content_type": "HTML fragment (trackingCode.footerCode has the full page HTML; sections element has only a marker comment). NOT a full DOCTYPE document in rawCustomCode."
+  },
+  "ci_fixture": {
+    "note": "A CI-safe minimal fixture is embedded in B6 tests (tests/fixtures/). The production goldens here are the full live blobs; do not scrub them — they contain no client secrets (only Trevor operator scratch location). The locationId Mct54Bwi1KlNouGXQcDX is Trevor own test scratch and safe to commit.",
+    "b1_new_page_blob_loads_these": true,
+    "instruction_for_b1": "B1 new_page_blob() MUST include: (1) general.general.colors = the 18-entry palette from here, (2) pageStyles (TOP-LEVEL, not settings.pageStyles) = the :root{} CSS string with all --primary/--secondary/etc. variables, (3) settings.settings.typography.colors with textColor+linkColor, (4) sections[].elements[] with proper row->col->element nesting (not element directly in section). See funnel-optin.page-data.json as the canonical template."
+  }
+}

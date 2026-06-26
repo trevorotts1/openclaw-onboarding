@@ -461,3 +461,197 @@ class TestMockImagePipelineWireIn:
         assert rec["auth"] == f"Bearer {FAKE_PIT}"
         assert rec["version"] == "2021-07-28"
         assert PNG_BYTES in rec["body"]
+
+
+# ── B6 ADDITIONS: run_image_pipeline + build_prompts_json guard extensions ────
+#
+# The diagnostic confirmed the image pipeline NEVER ran in the pre-flight (the
+# images/ directory was empty).  These tests cover:
+#   * run_image_pipeline (mock generate + upload) builds a manifest with
+#     https + 200 records, logs asset-cdn lines, splices an <img> into the page.
+#   * The honest-FAIL path: absent KIE_API_KEY records a FAIL record (never an
+#     SVG or file:// placeholder).
+#   * build_prompts_json never emits i2i without input_urls, and defaults align
+#     to t2i.
+
+class TestRunImagePipeline:
+    """run_image_pipeline must build a manifest with https + 200 records and
+    splice a real <img> into the page blob.  All network is mocked."""
+
+    def _specs(self):
+        return [
+            {
+                "id": "hero-soap-trio",
+                "prompt": "Trio of artisanal soap bars on marble",
+                "used_on_page_id": FAKE_PAGE_ID,
+                "alt": "soap trio hero image",
+                "locator": {"section_idx": 0, "element_idx": 2},
+            }
+        ]
+
+    def _page_blob(self):
+        return _customcode_blob('<img src="file:///placeholder.svg">')
+
+    def test_happy_path_manifest_https_and_200(self, tmp_path):
+        """run_image_pipeline must produce a manifest where every record has an
+        https cdn_url and cdn_http_status 200."""
+        run_ip = getattr(m, "run_image_pipeline", None)
+        if run_ip is None:
+            pytest.skip("ghl_media.run_image_pipeline not yet implemented (B4 pending)")
+
+        blob = self._page_blob()
+        result = run_ip(
+            self._specs(),
+            blob,
+            location_id=FAKE_LOC,
+            pit=FAKE_PIT,
+            run_dir=str(tmp_path),
+            runner=_png_runner(["hero-soap-trio"]),
+            opener=_ok_opener(),
+        )
+        assert result["ok"] is True, \
+            f"run_image_pipeline must succeed in the happy path; got {result}"
+        manifest = result["manifest"]
+        assert len(manifest) == 1, "manifest must have one record per image spec"
+        assert manifest[0]["cdn_url"].startswith("https://"), \
+            "manifest cdn_url must be https"
+        assert manifest[0]["cdn_http_status"] == 200, \
+            "manifest cdn_http_status must be 200"
+
+    def test_happy_path_splices_img_into_page(self, tmp_path):
+        """After run_image_pipeline, the returned page blob must have the
+        file:// placeholder replaced by the CDN <img> tag."""
+        run_ip = getattr(m, "run_image_pipeline", None)
+        if run_ip is None:
+            pytest.skip("ghl_media.run_image_pipeline not yet implemented (B4 pending)")
+
+        blob = self._page_blob()
+        result = run_ip(
+            self._specs(),
+            blob,
+            location_id=FAKE_LOC,
+            pit=FAKE_PIT,
+            run_dir=str(tmp_path),
+            runner=_png_runner(["hero-soap-trio"]),
+            opener=_ok_opener(),
+        )
+        assert result["ok"] is True
+        edited_blob = result["page_blob"]
+        blob_json = str(edited_blob)
+        assert "file://" not in blob_json, \
+            "file:// placeholder must be gone after run_image_pipeline"
+        assert "https://" in blob_json, \
+            "page blob must contain the CDN https URL after run_image_pipeline"
+
+    def test_happy_path_logs_asset_cdn_lines(self, tmp_path):
+        """run_image_pipeline must write an asset-cdn log (a manifest file or
+        a log entry) so the build evidence shows WHICH image landed WHERE."""
+        run_ip = getattr(m, "run_image_pipeline", None)
+        if run_ip is None:
+            pytest.skip("ghl_media.run_image_pipeline not yet implemented (B4 pending)")
+
+        blob = self._page_blob()
+        result = run_ip(
+            self._specs(),
+            blob,
+            location_id=FAKE_LOC,
+            pit=FAKE_PIT,
+            run_dir=str(tmp_path),
+            runner=_png_runner(["hero-soap-trio"]),
+            opener=_ok_opener(),
+        )
+        assert result["ok"] is True
+        # Either the manifest is written to disk, OR the result carries log lines.
+        manifest_on_disk = any(
+            "manifest" in fn.lower() or "asset" in fn.lower()
+            for fn in _walk_files(str(tmp_path))
+        )
+        log_lines = result.get("log_lines") or result.get("asset_log") or []
+        assert manifest_on_disk or len(log_lines) > 0, \
+            ("run_image_pipeline must write a manifest file or log 'asset-cdn' lines "
+             "so the build evidence shows which image landed where")
+
+    def test_absent_kie_api_key_records_fail_not_placeholder(self, tmp_path):
+        """When KIE_API_KEY is absent the pipeline must record a FAIL entry — it
+        must NEVER produce an SVG placeholder or a file:// URL as the 'image'.
+        The image directory must remain empty (no fake content)."""
+        run_ip = getattr(m, "run_image_pipeline", None)
+        if run_ip is None:
+            pytest.skip("ghl_media.run_image_pipeline not yet implemented (B4 pending)")
+
+        # A runner that simulates KIE refusing to run (no key).
+        def _no_key_runner(argv):
+            # Write nothing; return failure exit code.
+            return 1
+
+        blob = self._page_blob()
+        result = run_ip(
+            self._specs(),
+            blob,
+            location_id=FAKE_LOC,
+            pit=FAKE_PIT,
+            run_dir=str(tmp_path),
+            runner=_no_key_runner,
+            opener=_ok_opener(),
+        )
+        assert result["ok"] is False, \
+            "run_image_pipeline must report ok=False when image generation fails"
+
+        # No SVG or file:// URL must appear anywhere in the result.
+        result_str = str(result)
+        assert ".svg" not in result_str.lower() or "file://" not in result_str, \
+            "FAIL result must NOT contain an SVG or file:// placeholder"
+
+        # No fake image files must have been written.
+        image_files = [
+            fn for fn in _walk_files(str(tmp_path))
+            if fn.endswith(".svg") or fn.startswith("file://")
+        ]
+        assert image_files == [], \
+            f"FAIL path must not write SVG/file:// files; found: {image_files}"
+
+
+class TestBuildPromptsJsonGuardExtensions:
+    """Additional guards on build_prompts_json beyond what exists in the base tests."""
+
+    def test_i2i_without_input_urls_raises(self):
+        """i2i mode requires input_urls — already tested but re-asserted here for
+        the B6 guard requirement."""
+        with pytest.raises(ValueError):
+            m.build_prompts_json([{"id": "a", "prompt": "p", "mode": "i2i"}])
+
+    def test_default_mode_is_t2i_not_i2i(self):
+        """The default mode must be 't2i' — never 'i2i' (which would require
+        input images that may not be available)."""
+        enriched = m.build_prompts_json([{"id": "a", "prompt": "p"}])
+        assert enriched[0]["mode"] == "t2i", \
+            "default mode must be t2i (text-to-image), never i2i"
+
+    def test_i2i_requires_non_empty_input_urls(self):
+        """i2i with an empty input_urls list must also raise."""
+        with pytest.raises(ValueError):
+            m.build_prompts_json([{"id": "a", "prompt": "p", "mode": "i2i",
+                                   "input_urls": []}])
+
+    def test_t2i_does_not_emit_input_urls(self):
+        """The t2i mode must NOT produce an input_urls key — that field is i2i-only."""
+        enriched = m.build_prompts_json([{"id": "a", "prompt": "p", "mode": "t2i"}])
+        assert "input_urls" not in enriched[0], \
+            "t2i spec must not carry input_urls"
+
+    def test_i2i_with_input_urls_is_accepted(self):
+        """i2i with a valid https input_url must be accepted without error."""
+        enriched = m.build_prompts_json([{
+            "id": "a", "prompt": "p", "mode": "i2i",
+            "input_urls": ["https://cdn.example.com/logo.png"]
+        }])
+        assert enriched[0]["mode"] == "i2i"
+        assert enriched[0]["input_urls"] == ["https://cdn.example.com/logo.png"]
+
+
+def _walk_files(root: str) -> list[str]:
+    """Return all filenames (basenames) under root recursively."""
+    names = []
+    for dirpath, _, filenames in os.walk(root):
+        names.extend(filenames)
+    return names

@@ -47,6 +47,7 @@ if _TOOLS_DIR not in sys.path:
     sys.path.insert(0, _TOOLS_DIR)
 
 import ghl_verify  # noqa: E402
+import ghl_gate  # noqa: E402
 import scrub_turn_telemetry as scrub  # noqa: E402
 
 
@@ -111,6 +112,7 @@ def dispatch_one(
     inflight_now: int = 0,
     wallclock_cap_s: int = DEFAULT_WALLCLOCK_CAP_S,
     clock: Callable[[], float] | None = None,
+    live: bool = True,
 ) -> DispatchResult:
     """Dispatch and run ONE department build task, bounded.
 
@@ -135,6 +137,11 @@ def dispatch_one(
         wallclock_cap_s: build wall-clock cap; exceeding it = FAILED (the hang
             fix — a stalled/over-long build becomes a recorded failure).
         clock: INJECTED monotonic clock (defaults to time.monotonic) for tests.
+        live: Threaded to ``ghl_verify.verify_all`` as ``live=True`` (production,
+            uses the real render_check) or ``live=False`` (test/CI, uses the
+            injected verifier / mock path).  In PRODUCTION, ``live=True`` is the
+            ONLY valid value — passing ``live=False`` with a real verifier
+            produces a MOCK verdict that is immediately downgraded to FAILED.
 
     Returns:
         ``DispatchResult`` (truthy only on verified + overall_pass True).
@@ -204,17 +211,97 @@ def dispatch_one(
                                           evidence_root=evidence_root, record_path=rp)
 
     # ── building -> verified (the ONE canonical verifier) ─────────────────────
+    # In the PRODUCTION path (live=True), the verifier is called with NO injected
+    # fetcher — the production verifier must use the real render_check.  The
+    # building->verified transition is then GATED on ghl_gate.require_pass()
+    # re-reading and re-validating the written scorecard/verify-summary.json from
+    # disk (not from memory), including artifact hash binding.  A task that reaches
+    # "verified" state while trust=='MOCK' is immediately downgraded to FAILED.
     pages = build.get("pages", [])
-    verify_out = verifier(evidence_root, pages, run_id=task_id,
-                          version="client-agent", brand=task.get("brand", ""))
-    summary = verify_out["summary"] if isinstance(verify_out, dict) and "summary" in verify_out else verify_out
 
-    rec.update({"state": STATE_VERIFIED, "build_duration_s": duration,
-                "verify_overall_pass": bool(summary.get("overall_pass")),
-                "verify_passed": summary.get("passed"),
-                "verify_total": summary.get("total"),
-                "reason": "verified (overall_pass recorded honestly — "
-                          "FAIL is reported, never massaged)"})
+    if live and verifier is None:
+        # Production path: call ghl_verify.verify_all directly, live=True, no fetcher.
+        try:
+            verify_out = ghl_verify.verify_all(
+                evidence_root, pages, live=True,
+                run_id=task_id, version="client-agent", brand=task.get("brand", ""),
+            )
+        except (ghl_verify.SealedGateViolation, ghl_verify.VerifyContradiction) as exc:
+            rec.update({"state": STATE_FAILED,
+                        "reason": f"verify_all integrity failure: {type(exc).__name__}: {exc}"})
+            rp = _write_record(evidence_root, rec)
+            return DispatchResult(task_id, STATE_FAILED, rec["reason"],
+                                  evidence_root=evidence_root, record_path=rp)
+    else:
+        # Test/CI path: use the injected verifier (live=False).
+        _actual_verifier = verifier or ghl_verify.verify_all
+        try:
+            verify_out = _actual_verifier(
+                evidence_root, pages, run_id=task_id,
+                version="client-agent", brand=task.get("brand", ""),
+            )
+        except Exception as exc:  # noqa: BLE001
+            rec.update({"state": STATE_FAILED,
+                        "reason": f"verifier raised: {type(exc).__name__}: {exc}"})
+            rp = _write_record(evidence_root, rec)
+            return DispatchResult(task_id, STATE_FAILED, rec["reason"],
+                                  evidence_root=evidence_root, record_path=rp)
+
+    summary = (
+        verify_out["summary"]
+        if isinstance(verify_out, dict) and "summary" in verify_out
+        else verify_out
+    )
+
+    # ── GATE: re-validate the WRITTEN scorecard (not the in-memory dict) ──────
+    # ghl_gate.require_pass() reads only the machine-written JSON files and
+    # re-runs assert_consistent + artifact hashes.  It never reads .md / ledger.
+    # ONLY invoked on the production path (live=True AND no injected verifier)
+    # because the gate validates the writer/run_nonce of ghl_verify.verify_all,
+    # which only appears when the production verifier ran.
+    _production_path = live and verifier is None
+    if _production_path:
+        gate_rc = ghl_gate.require_pass(evidence_root)
+        if gate_rc != 0:
+            rec.update({"state": STATE_FAILED, "build_duration_s": duration,
+                        "reason": f"ghl_gate.require_pass returned rc={gate_rc} — "
+                                  "the written scorecard failed re-validation "
+                                  "(not the in-memory dict).  Build is FAILED."})
+            rp = _write_record(evidence_root, rec)
+            return DispatchResult(task_id, STATE_FAILED, rec["reason"],
+                                  evidence_root=evidence_root, record_path=rp)
+
+    # ── MOCK VERDICT DOWNGRADE ─────────────────────────────────────────────────
+    # A task on the PRODUCTION path that reaches verified-state while
+    # trust=='MOCK' is downgraded to FAILED — a mock verifier cannot produce a
+    # shippable verdict.  This check is only active on the production path
+    # (_production_path=True, meaning live=True AND no injected verifier) because
+    # the trust='MOCK' stamp is only added by ghl_verify.verify_all when
+    # live=False — which the production path never uses.  When a test injects a
+    # verifier explicitly, the caller is responsible for the trust value.
+    verdict_trust = summary.get("trust", "LIVE") if isinstance(summary, dict) else "LIVE"
+    if _production_path and verdict_trust == "MOCK":
+        rec.update({"state": STATE_FAILED, "build_duration_s": duration,
+                    "reason": "MOCK VERDICT DOWNGRADE: the production verifier "
+                              "returned trust='MOCK'.  A mock verdict cannot be "
+                              "accepted as a shippable build pass — task is FAILED."})
+        rp = _write_record(evidence_root, rec)
+        return DispatchResult(task_id, STATE_FAILED, rec["reason"],
+                              evidence_root=evidence_root, record_path=rp)
+
+    # Tag the ledger as authoritative:false + verdict_source pointer so callers
+    # know the single authoritative verdict lives in the scorecard, not here.
+    rec.update({
+        "state": STATE_VERIFIED,
+        "build_duration_s": duration,
+        "verify_overall_pass": bool(summary.get("overall_pass")) if isinstance(summary, dict) else False,
+        "verify_passed": summary.get("passed") if isinstance(summary, dict) else None,
+        "verify_total": summary.get("total") if isinstance(summary, dict) else None,
+        "authoritative": False,
+        "verdict_source": os.path.join(evidence_root, ghl_verify.SUMMARY_REL),
+        "reason": "verified (overall_pass recorded honestly — "
+                  "FAIL is reported, never massaged)",
+    })
     rp = _write_record(evidence_root, rec)
     return DispatchResult(task_id, STATE_VERIFIED, rec["reason"], verify=summary,
                           evidence_root=evidence_root, record_path=rp)
@@ -250,7 +337,7 @@ def _selftest() -> int:
     with tempfile.TemporaryDirectory() as d:
         # 1) HARD max_inflight gate — a second concurrent build is refused.
         r = dispatch_one(task, d, builder=_stub_builder, verifier=_stub_verifier,
-                         max_inflight=1, inflight_now=1)
+                         max_inflight=1, inflight_now=1, live=False)
         ok &= (r.state == STATE_BACKLOG)
         print("  [%s] max_inflight=1 gate -> %s" % ("ok" if r.state == STATE_BACKLOG else "FAIL", r.state))
 
@@ -259,14 +346,14 @@ def _selftest() -> int:
         r = dispatch_one(
             task, d,
             builder=lambda t, root: _stub_builder(t, root, duration=DEFAULT_WALLCLOCK_CAP_S + 1),
-            verifier=_stub_verifier, wallclock_cap_s=DEFAULT_WALLCLOCK_CAP_S)
+            verifier=_stub_verifier, wallclock_cap_s=DEFAULT_WALLCLOCK_CAP_S, live=False)
         passed = (r.state == STATE_FAILED and "timeout" in r.reason)
         ok &= passed
         print("  [%s] wallclock_cap=%ds -> %s" % ("ok" if passed else "FAIL", DEFAULT_WALLCLOCK_CAP_S, r.state))
 
     with tempfile.TemporaryDirectory() as d:
         # 3) happy path — verified + overall_pass True (truthy result).
-        r = dispatch_one(task, d, builder=_stub_builder, verifier=_stub_verifier)
+        r = dispatch_one(task, d, builder=_stub_builder, verifier=_stub_verifier, live=False)
         passed = (r.state == STATE_VERIFIED and bool(r))
         ok &= passed
         print("  [%s] happy path -> %s (truthy=%s)" % ("ok" if passed else "FAIL", r.state, bool(r)))

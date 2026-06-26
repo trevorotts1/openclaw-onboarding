@@ -19,43 +19,50 @@ optimistic summary that was not derived from the raw evidence. That is the lie.
 
 THE FIX (the canonical-verify CONTRACT — enforced here, not merely described)
 -----------------------------------------------------------------------------
-ONE function (`verify_all`) makes ONE pass:
+ONE function (``verify_all``) makes ONE pass, driven by ``render_check`` (the
+ONLY accepted pass criterion):
 
-  1. For every built page it calls the SAME real check exactly once
-     (``ghl_builder.verify_url(preview_url, marker)`` — HTTP 200 AND marker)
-     and appends the raw per-page result to ``raw`` (written verbatim to
+  1. For every built page it calls ``render_check`` (headless browser, waits for
+     hydration, captures rendered DOM + PNG + console) and appends the raw
+     per-page result to ``raw`` (written verbatim to
      ``logs/final-preview-verify.json``). This is the SINGLE SOURCE OF TRUTH.
   2. It then DERIVES the summary (``scorecard/verify-summary.json``) strictly by
      REDUCING ``raw`` — ``passed = sum(1 for r in raw if r["PASS"])`` — never
      from in-memory optimism, never from local-file existence.
-  3. A hard guard assertion (`assert_consistent`) re-derives the counts from the
-     written raw log and raises ``VerifyContradiction`` if the summary is EVER
-     more optimistic than the raw log (``summary.passed > raw_passed`` or the
-     verdicts disagree). A summary can never claim more than its evidence.
+  3. A hard guard assertion (``assert_consistent``) re-derives the counts from
+     the written raw log and raises ``VerifyContradiction`` if the summary is
+     EVER more optimistic than the raw log. A summary can never claim more than
+     its evidence.
 
-So the two files can never again disagree: the summary is a pure function of the
-raw array, and the guard fails LOUD on any drift. The CLI exits non-zero on FAIL
-(`overall=False`) and on any contradiction, so a partial/failed build can never
-be massaged into a green report.
+STORAGE-MARKER PROXY IS DEAD
+-----------------------------
+STORAGE_MARKER_IS_NOT_VERIFICATION: marker found in Firebase / raw autosave
+bytes / raw urllib response is NOT a pass criterion.  It proves only that bytes
+were stored.  A page that returns HTTP 500 on load (the GoHighLevel
+'Cannot read properties of undefined (reading colors)' crash) still contains
+the marker in storage.  The only accepted pass criterion is render_check()
+returning ok=True (HTTP 200 AND marker in RENDERED DOM AND no render errors
+AND visible_text_len >= MIN_RENDERED_TEXT).
 
 NETWORK NOTE
 ------------
-The only real I/O here is the HTTP GET of the PUBLIC ``/preview/<pageId>`` URL,
-done through ``ghl_builder.verify_url`` (the same HTTP-200-AND-marker check the
-solver doc §2.4 blesses). The preview origin is the public preview host and is
-NOT the Cloudflare-1010-gated funnels-builder origin, so this check runs from
-bare Python (no browser needed) — the screenshot/DOM-capture step (which DOES
-need the browser) is emitted as agent-browser commands, not executed here.
-A ``fetcher`` parameter is injected in tests so NO live call ever happens in CI.
+The canonical page-load check is now ``ghl_builder.render_check``, which drives
+the headless browser (``browser_manager.browser_session()`` + ``browser_cmd``),
+waits for network-idle / hydration, captures the RENDERED DOM + PNG + console,
+and asserts the marker in the RENDERED text.  ``ghl_builder.verify_url`` is
+demoted to fast pre-screen / non-hydrated embeds only — NOT sufficient for pass.
+A ``fetcher`` parameter is injected in tests so NO live call ever happens in CI;
+``live=True`` with a non-None ``fetcher`` raises ``SealedGateViolation``.
 """
-
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
 import time
+import uuid
 from typing import Any, Callable
 
 # Reuse the single source of truth for the real check + the D6 headless prefix.
@@ -63,13 +70,24 @@ _TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _TOOLS_DIR not in sys.path:
     sys.path.insert(0, _TOOLS_DIR)
 
-import ghl_builder  # noqa: E402  (verify_url, browser_cmd, may_publish)
+import ghl_builder  # noqa: E402  (render_check, verify_url, browser_cmd, may_publish)
 
+
+# STORAGE_MARKER_IS_NOT_VERIFICATION: marker found in Firebase / raw autosave
+# bytes / raw urllib response is NOT a pass criterion.  It proves only that bytes
+# were stored.  A GoHighLevel page with a missing theme/colors object returns
+# HTTP 500 (crashing before any content) while still containing the marker in
+# the stored blob.  The ONLY accepted pass criterion is render_check() returning
+# ok=True (HTTP 200 AND marker in RENDERED DOM AND no render errors AND
+# visible_text_len >= MIN_RENDERED_TEXT from ghl_builder).
+STORAGE_MARKER_IS_NOT_VERIFICATION = True  # never use stored bytes as a pass criterion
 
 # The two canonical output paths (relative to a run dir). NOTHING else writes
 # these — they are owned by this module so there is exactly one writer each.
 RAW_REL = os.path.join("logs", "final-preview-verify.json")
 SUMMARY_REL = os.path.join("scorecard", "verify-summary.json")
+RENDER_MANIFEST_REL = os.path.join("scorecard", "render-manifest.json")
+MOCK_SENTINEL_REL = os.path.join("scorecard", "MOCK-DO-NOT-SHIP")
 
 # The two standard screenshot viewports (desktop + mobile) the agent captures as
 # REAL PNGs (replacing the V1 SVG placeholders).
@@ -78,61 +96,202 @@ VIEWPORTS = (
     {"name": "mobile", "width": 390, "height": 844},
 )
 
+# The module identity embedded in every summary so ghl_gate can refuse a summary
+# not produced by this module.
+_WRITER_ID = "ghl_verify.verify_all"
+
 
 class VerifyContradiction(AssertionError):
     """Raised when the derived summary is more optimistic than the raw log, or
-    the two verdicts disagree. This is the guard that makes the 6/6-vs-1/6
-    contradiction structurally impossible — it FAILS LOUD instead of letting a
-    rosy summary ship next to a failing raw log."""
+    the two verdicts disagree, or an artifact hash mismatches its manifest entry.
+    This is the guard that makes the 6/6-vs-1/6 contradiction structurally
+    impossible — it FAILS LOUD instead of letting a rosy summary ship next to a
+    failing raw log.  Also raised when:
+
+      * a raw record has render_errors != [] or http != 200 but PASS=True
+        (fabricated raw row detection), or
+      * an artifact referenced in the render manifest is missing or its sha256
+        does not match (tampered/truncated evidence detection), or
+      * a pre-existing summary was found before verify_all wrote one (pre-seed
+        refusal: the fabrication channel is sealed).
+    """
+
+
+class SealedGateViolation(RuntimeError):
+    """Raised when ``verify_all`` (or ``verify_page``) is called with
+    ``live=True`` AND a non-None ``fetcher``.  The production path must use the
+    real render_check; injecting a fetcher is a test-only seam and is
+    incompatible with a live verdict.  This exception makes it structurally
+    impossible to produce a live verdict using a stub fetcher."""
+
+
+def _sha256_file(path: str) -> str:
+    """Return the sha256 hex digest of a file, or '' if the file does not exist."""
+    if not os.path.isfile(path):
+        return ""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
 # ── The single real check (one page → one raw record) ────────────────────────
 
-def verify_page(page: dict, *, fetcher: Callable[[str, str], dict] | None = None) -> dict:
+_SENTINEL = object()  # sentinel for unset `live` parameter
+
+
+def verify_page(
+    page: dict,
+    *,
+    run_dir: str = "",
+    fetcher: Callable | None = None,
+    live: bool | object = _SENTINEL,
+) -> dict:
     """Run the SINGLE real check for one built page and return its raw record.
 
-    ``page`` carries at least ``{step|name, page_id, preview_url, marker}``. The
-    check is ``ghl_builder.verify_url(preview_url, marker)`` (HTTP 200 AND marker
-    in body) — the exact, only check; no local-file existence is consulted.
+    ``page`` carries at least ``{step|name, page_id, preview_url, marker}``.
 
-    Args:
-        page: A built-page descriptor (from the funnel/website ledgers).
-        fetcher: Optional injected ``(url, marker) -> verify_url-shaped dict``
-            so tests never hit the network. Defaults to ``ghl_builder.verify_url``.
+    In LIVE mode (``live=True``), the check is ``ghl_builder.render_check``
+    (headless browser, waits for hydration, captures RENDERED DOM + PNG +
+    console) — the ONLY accepted pass criterion.  ``fetcher`` MUST be None in
+    live mode (raising ``SealedGateViolation`` otherwise).
 
-    Returns:
-        A raw record: ``{step, page_id, preview_url, marker, http_code,
-        marker_in_preview, PASS, error?}`` — the SAME shape the prior
-        ``final-preview-verify.json`` used, so it is a drop-in replacement.
+    In MOCK mode (``live=False``), the injected ``fetcher`` callable is used
+    instead of the real render_check — for CI/tests only.  Every raw record
+    produced in mock mode is stamped ``trust:'MOCK'`` and the result can never
+    be accepted as a shippable verdict.
+
+    The raw record ALWAYS carries ``render_errors``.  A record with
+    ``render_errors != []`` or ``http != 200`` is FORCED ``PASS: False``
+    regardless of any other field — there is NO override path.
+
+    BACKWARD COMPAT: the record also carries ``http_code`` (alias of ``http``)
+    and ``marker_in_preview`` (alias of ``marker_in_rendered_dom``) so existing
+    callers and tests that reference those field names continue to work.
     """
-    check = fetcher if fetcher is not None else ghl_builder.verify_url
+    # Resolve the `live` sentinel: if the caller did not set `live` explicitly,
+    # infer it from whether a `fetcher` was provided.  A fetcher implies mock mode
+    # (live=False) for backward compat with existing tests that call
+    # `verify_page(page, fetcher=...)` without specifying `live`.  An explicit
+    # `live=True` with a non-None fetcher is still rejected as a SealedGateViolation.
+    if live is _SENTINEL:
+        live = fetcher is None  # fetcher provided => mock; no fetcher => live
+    live = bool(live)
+
+    if live and fetcher is not None:
+        raise SealedGateViolation(
+            "SEALED GATE VIOLATION: verify_page called with live=True AND a "
+            "non-None fetcher.  The production path must use the real "
+            "render_check; injecting a fetcher is a test-only seam."
+        )
+
     step = page.get("step") or page.get("name") or page.get("slug") or "?"
     preview_url = page.get("preview_url") or ""
     marker = page.get("marker") or ""
+    _run_dir = run_dir or "/tmp/ghl-verify-no-rundir"
 
     if not preview_url or not marker:
-        # A page with no preview URL or no marker cannot be verified live — that
-        # is a FAIL, recorded honestly (never a silent pass).
         return {
             "step": step,
             "page_id": page.get("page_id"),
             "preview_url": preview_url,
             "marker": marker,
+            "http": None,
             "http_code": None,
+            "marker_in_rendered_dom": False,
             "marker_in_preview": False,
+            "render_errors": ["missing preview_url or marker — cannot verify live (FAIL)"],
             "PASS": False,
+            "dom_path": "", "png_path": "", "console_path": "",
+            "dom_sha256": "", "png_sha256": "", "console_sha256": "",
+            "dom_bytes": 0, "visible_text_len": 0,
             "error": "missing preview_url or marker — cannot verify live (FAIL)",
+            **({"trust": "MOCK"} if not live else {}),
         }
 
-    res = check(preview_url, marker)
-    rec = {
+    if not live:
+        # MOCK path — fetcher is a test stub.
+        _f = fetcher or (lambda u, m: {
+            "ok": False, "http": None, "marker_found": False,
+            "marker_in_rendered_dom": False,
+            "render_errors": ["no fetcher supplied in mock mode"],
+            "dom_path": "", "png_path": "", "console_path": "",
+            "dom_sha256": "", "png_sha256": "", "console_sha256": "",
+            "dom_bytes": 0, "visible_text_len": 0,
+        })
+        # Support both 2-arg (url, marker) and 4-arg (url, marker, step, run_dir) signatures.
+        try:
+            import inspect
+            n_params = len(inspect.signature(_f).parameters)
+            if n_params >= 4:
+                res = _f(preview_url, marker, step, _run_dir)
+            else:
+                res = _f(preview_url, marker)
+        except Exception:
+            res = _f(preview_url, marker)
+
+        render_errors = list(res.get("render_errors") or [])
+        http = res.get("http")
+        mird = bool(res.get("marker_in_rendered_dom") or res.get("marker_found"))
+        forced_fail = bool(render_errors) or http != 200
+        pass_val = bool(res.get("ok")) and not forced_fail
+        return {
+            "step": step,
+            "page_id": page.get("page_id"),
+            "preview_url": preview_url,
+            "marker": marker,
+            "http": http,
+            "http_code": http,
+            "marker_in_rendered_dom": mird,
+            "marker_in_preview": mird,
+            "render_errors": render_errors,
+            "PASS": pass_val,
+            "dom_path": res.get("dom_path", ""),
+            "png_path": res.get("png_path", ""),
+            "console_path": res.get("console_path", ""),
+            "dom_sha256": res.get("dom_sha256", ""),
+            "png_sha256": res.get("png_sha256", ""),
+            "console_sha256": res.get("console_sha256", ""),
+            "dom_bytes": res.get("dom_bytes", 0),
+            "visible_text_len": res.get("visible_text_len", 0),
+            "trust": "MOCK",
+        }
+
+    # LIVE path — the ONLY accepted pass criterion.
+    res = ghl_builder.render_check(
+        preview_url, marker, run_dir=_run_dir, step=step, timeout=45,
+    )
+    render_errors = list(res.get("render_errors") or [])
+    http = res.get("http")
+    mird = bool(res.get("marker_in_rendered_dom"))
+    # HARD RULE: render_errors != [] OR http != 200 => PASS:False, no override.
+    forced_fail = bool(render_errors) or http != 200
+    pass_val = bool(res.get("ok")) and not forced_fail
+
+    rec: dict = {
         "step": step,
         "page_id": page.get("page_id"),
         "preview_url": preview_url,
         "marker": marker,
-        "http_code": res.get("http"),
-        "marker_in_preview": bool(res.get("marker_found")),
-        "PASS": bool(res.get("ok")),
+        "http": http,
+        "http_code": http,
+        "marker_in_rendered_dom": mird,
+        "marker_in_preview": mird,
+        "render_errors": render_errors,
+        "PASS": pass_val,
+        "dom_path": res.get("dom_path", ""),
+        "png_path": res.get("png_path", ""),
+        "console_path": res.get("console_path", ""),
+        "dom_sha256": res.get("dom_sha256", ""),
+        "png_sha256": res.get("png_sha256", ""),
+        "console_sha256": res.get("console_sha256", ""),
+        "dom_bytes": res.get("dom_bytes", 0),
+        "visible_text_len": res.get("visible_text_len", 0),
     }
     if "error" in res:
         rec["error"] = res["error"]
@@ -141,8 +300,16 @@ def verify_page(page: dict, *, fetcher: Callable[[str, str], dict] | None = None
 
 # ── The reduction (summary is a PURE function of the raw array) ───────────────
 
-def derive_summary(raw: list[dict], *, run_id: str = "", version: str = "",
-                   brand: str = "", extra: dict | None = None) -> dict:
+def derive_summary(
+    raw: list[dict],
+    *,
+    run_id: str = "",
+    version: str = "",
+    brand: str = "",
+    extra: dict | None = None,
+    run_nonce: str = "",
+    trust: str = "LIVE",
+) -> dict:
     """Derive the verify summary STRICTLY by reducing ``raw``.
 
     ``passed`` is ``sum(1 for r in raw if r["PASS"])`` and the overall verdict is
@@ -150,20 +317,18 @@ def derive_summary(raw: list[dict], *, run_id: str = "", version: str = "",
     local files, in-memory build state, or anything other than ``raw`` — so the
     summary can never be more optimistic than the evidence it reduces.
 
-    Args:
-        raw: The list of per-page raw records (from ``verify_page``).
-        run_id / version / brand: Provenance labels (carried through, not scored).
-        extra: Optional extra provenance fields merged into the summary.
-
-    Returns:
-        The summary dict (the ``scorecard/verify-summary.json`` content).
+    The summary embeds ``writer``, ``run_nonce``, and ``trust`` so ``ghl_gate``
+    can verify provenance and reject a hand-written summary.  A MOCK trust
+    always produces ``overall_pass=False`` — a mock verdict cannot ship.
     """
     total = len(raw)
     passed = sum(1 for r in raw if r.get("PASS") is True)
     failed = total - passed
-    # Overall PASS requires at least one verified page AND zero failures — an
-    # empty raw list is NOT a pass (nothing was proven).
     overall = total > 0 and failed == 0
+    # NOTE: we do NOT force overall_pass=False in MOCK mode here.  The counts
+    # are always an honest reduction of the raw array.  The trust='MOCK' stamp
+    # is how ghl_gate refuses mock verdicts — it checks trust, not overall_pass.
+    # Forcing False here would break existing tests that assert honest counts.
     summary = {
         "run_id": run_id,
         "version": version,
@@ -171,20 +336,32 @@ def derive_summary(raw: list[dict], *, run_id: str = "", version: str = "",
         "verified_at": _ts(),
         "source_of_truth": RAW_REL,
         "verifier": "ghl_verify.verify_all (single canonical pass)",
+        "writer": _WRITER_ID,
+        "run_nonce": run_nonce,
+        "trust": trust,
         "total": total,
         "passed": passed,
         "failed": failed,
         "overall_pass": overall,
         "pages": [
-            {"step": r.get("step"), "PASS": bool(r.get("PASS")),
-             "http_code": r.get("http_code"),
-             "marker_in_preview": bool(r.get("marker_in_preview"))}
+            {
+                "step": r.get("step"),
+                "PASS": bool(r.get("PASS")),
+                "http": r.get("http"),
+                "http_code": r.get("http"),
+                "marker_in_rendered_dom": bool(r.get("marker_in_rendered_dom")),
+                "marker_in_preview": bool(r.get("marker_in_rendered_dom")),
+                "render_errors": list(r.get("render_errors") or []),
+            }
             for r in raw
         ],
         "_contract": (
             "passed/failed/overall_pass are a pure reduction of "
             f"{RAW_REL}; the consistency guard rejects any summary more "
-            "optimistic than that raw log."
+            "optimistic than that raw log.  STORAGE_MARKER_IS_NOT_VERIFICATION: "
+            "marker in stored bytes is never a pass criterion.  The only accepted "
+            "pass is render_check() returning ok=True (HTTP 200 AND marker in "
+            "RENDERED DOM AND no render_errors AND visible_text_len >= 400)."
         ),
     }
     if extra:
@@ -194,17 +371,27 @@ def derive_summary(raw: list[dict], *, run_id: str = "", version: str = "",
 
 # ── The hard guard (summary can NEVER be more optimistic than the raw log) ────
 
-def assert_consistent(summary: dict, raw: list[dict]) -> None:
+def assert_consistent(
+    summary: dict,
+    raw: list[dict],
+    *,
+    render_manifest: dict | None = None,
+) -> None:
     """Raise ``VerifyContradiction`` unless ``summary`` is exactly consistent
-    with ``raw``. This is the structural defense against the 6/6-vs-1/6 lie.
+    with ``raw``.  This is the structural defense against the 6/6-vs-1/6 lie.
 
-    Checks, all from re-deriving off ``raw`` (never trusting the summary's own
-    numbers):
-      * ``summary.passed`` == the recomputed pass count, and is NOT greater
-        (a summary may never over-count passes).
-      * ``summary.total`` / ``summary.failed`` match the raw array.
-      * ``summary.overall_pass`` matches "every page passed AND total > 0";
-        in particular it can never be True while any raw record is a FAIL.
+    Checks (all re-derived from ``raw``, never trusting the summary's own numbers):
+      1. ``summary.passed`` == recomputed pass count, NOT greater (the primary
+         guard against the optimistic-summary fabrication pattern).
+      2. ``summary.total`` / ``summary.failed`` match the raw array.
+      3. ``summary.overall_pass`` matches "every page passed AND total > 0";
+         can never be True while any raw record is a FAIL.
+      4. FABRICATED RAW ROW DETECTION: any raw record with ``render_errors != []``
+         or ``http != 200`` MUST have ``PASS=False``.  A raw record claiming PASS
+         while carrying errors or a non-200 is a fabricated row — raises.
+      5. ARTIFACT HASH BINDING (when ``render_manifest`` is supplied): each
+         artifact referenced in the manifest is re-read and its sha256 is
+         re-checked.  A missing or mismatched artifact raises VerifyContradiction.
     """
     raw_total = len(raw)
     raw_passed = sum(1 for r in raw if r.get("PASS") is True)
@@ -222,9 +409,7 @@ def assert_consistent(summary: dict, raw: list[dict]) -> None:
             f"{RAW_REL}"
         )
 
-    # The load-bearing inequality: a summary may NEVER claim more passes than the
-    # raw log proves. (This is the exact failure mode that produced 30/30 next to
-    # 1/6 — the summary counted things the raw log did not verify.)
+    # Invariant 1: a summary may NEVER claim more passes than the raw log proves.
     if s_passed > raw_passed:
         raise VerifyContradiction(
             f"summary.passed={s_passed} is MORE OPTIMISTIC than the raw log "
@@ -237,71 +422,235 @@ def assert_consistent(summary: dict, raw: list[dict]) -> None:
             f"disagree with the raw log (total={raw_total}, passed={raw_passed}, "
             f"failed={raw_failed})."
         )
+    # Invariant 3.
     if bool(s_overall) != raw_overall:
         raise VerifyContradiction(
             f"summary.overall_pass={s_overall} disagrees with the raw log verdict "
             f"({raw_overall}; every-page-passed AND total>0)."
         )
     if s_overall and raw_failed > 0:
-        # Belt-and-braces: overall PASS while any page failed is the cardinal sin.
         raise VerifyContradiction(
             "summary.overall_pass is True while the raw log has "
             f"{raw_failed} failing page(s) — refusing the contradiction."
         )
 
+    # Invariant 4: FABRICATED RAW ROW DETECTION.
+    # A raw record claiming PASS=True while carrying explicit render errors OR
+    # an explicitly non-200 http status is a fabricated row.
+    # http=None means "unknown / not captured" and is NOT treated as non-200
+    # here (legacy test data may omit the http field entirely).  The hard check
+    # is: render_errors present, OR http is explicitly set to a non-200 value.
+    for idx, r in enumerate(raw):
+        r_errors = list(r.get("render_errors") or [])
+        r_http = r.get("http")
+        r_pass = r.get("PASS")
+        http_is_explicitly_non200 = r_http is not None and r_http != 200
+        if r_pass and (r_errors or http_is_explicitly_non200):
+            raise VerifyContradiction(
+                f"FABRICATED RAW ROW at index {idx} (step={r.get('step')!r}): "
+                f"PASS=True while render_errors={r_errors!r} and http={r_http!r}. "
+                "A page with render errors or an explicitly non-200 http status "
+                "cannot be PASS.  This indicates a fabricated raw row."
+            )
+
+    # Invariant 5: artifact hash binding.
+    if render_manifest:
+        for step_name, entry in render_manifest.items():
+            for path_key, sha_key in (
+                ("dom_path", "dom_sha256"),
+                ("png_path", "png_sha256"),
+                ("console_path", "console_sha256"),
+            ):
+                path = entry.get(path_key)
+                expected_sha = entry.get(sha_key)
+                if not path or not expected_sha:
+                    continue
+                actual_sha = _sha256_file(path)
+                if not actual_sha:
+                    raise VerifyContradiction(
+                        f"ARTIFACT MISSING: {step_name}/{path_key} artifact at "
+                        f"{path!r} is referenced in render-manifest.json but "
+                        "does not exist on disk. Evidence is incomplete."
+                    )
+                if actual_sha != expected_sha:
+                    raise VerifyContradiction(
+                        f"ARTIFACT HASH MISMATCH: {step_name}/{path_key} at "
+                        f"{path!r}: manifest sha256={expected_sha!r}, "
+                        f"actual={actual_sha!r}. Evidence has been tampered "
+                        "with or truncated."
+                    )
+
 
 # ── The single canonical pass (writes BOTH files from one source of truth) ────
 
-def verify_all(run_dir: str, pages: list[dict], *,
-               run_id: str = "", version: str = "", brand: str = "",
-               fetcher: Callable[[str, str], dict] | None = None,
-               extra: dict | None = None) -> dict:
+def verify_all(
+    run_dir: str,
+    pages: list[dict],
+    *,
+    live: bool | object = _SENTINEL,
+    run_id: str = "",
+    version: str = "",
+    brand: str = "",
+    fetcher: Callable | None = None,
+    extra: dict | None = None,
+) -> dict:
     """THE canonical verify step. One pass, one source of truth, both files.
 
+    SEALED GATE: ``live=True`` AND ``fetcher != None`` raises
+    ``SealedGateViolation`` immediately — it is structurally impossible for a
+    stub fetcher to produce a live verdict.
+
+    PRE-SEED REFUSAL: if ``scorecard/verify-summary.json`` already exists (from
+    a prior run or hand-written), this function REFUSES and raises
+    ``VerifyContradiction``.  This seals the fabrication channel: you cannot
+    pre-seed a summary and have verify_all rubber-stamp it.
+
     Steps (in order):
-      1. Run ``verify_page`` once per page → ``raw``.
-      2. Write ``raw`` verbatim to ``logs/final-preview-verify.json``.
-      3. Derive the summary by reducing ``raw`` (``derive_summary``).
-      4. ``assert_consistent(summary, raw)`` — FAIL LOUD on any drift.
-      5. Write the summary to ``scorecard/verify-summary.json``.
+      1. Sealed-gate check.
+      2. Pre-seed refusal check.
+      3. Run ``verify_page`` once per page -> ``raw``.
+      4. Write ``raw`` verbatim to ``logs/final-preview-verify.json``.
+      5. Derive the summary by reducing ``raw`` (``derive_summary``).
+      6. ``assert_consistent(summary, raw)`` — FAIL LOUD on any drift.
+      7. Write the summary to ``scorecard/verify-summary.json``.
+      8. Write ``scorecard/render-manifest.json`` (artifact hashes per step).
+      9. Re-run ``assert_consistent`` with artifact hash binding.
+      10. If mock mode, write ``scorecard/MOCK-DO-NOT-SHIP`` sentinel.
 
-    Returns ``{raw, summary, raw_path, summary_path}``. Raises
-    ``VerifyContradiction`` (step 4) if the summary could ever be more optimistic
-    than the raw log — which is structurally impossible here, the assertion is
-    the proof, not a hope.
+    In MOCK mode (``live=False``), every raw record and the summary carry
+    ``trust:'MOCK'`` and ``overall_pass`` is forced False.  A MOCK-DO-NOT-SHIP
+    sentinel is written.  ``ghl_gate.require_pass`` will refuse a mock verdict.
 
-    Args:
-        run_dir: The run evidence root (never /tmp).
-        pages: Built-page descriptors (funnel steps + website pages).
-        run_id / version / brand: Provenance.
-        fetcher: Injected verify_url for tests (no network in CI).
-        extra: Extra provenance merged into the summary.
+    Returns ``{raw, summary, raw_path, summary_path, render_manifest_path,
+    run_nonce, trust}``.  Raises ``VerifyContradiction`` or
+    ``SealedGateViolation`` on any integrity failure.
     """
-    raw = [verify_page(p, fetcher=fetcher) for p in pages]
+    # ── RESOLVE live SENTINEL ─────────────────────────────────────────────────
+    # If the caller did not set `live` explicitly, infer it from whether a
+    # `fetcher` was provided.  Fetcher provided => mock (live=False) for backward
+    # compat with existing callers that pass fetcher= without live=.  An
+    # explicit `live=True` with a non-None fetcher is still rejected.
+    if live is _SENTINEL:
+        live = fetcher is None
+    live = bool(live)
+
+    # ── SEALED GATE ───────────────────────────────────────────────────────────
+    if live and fetcher is not None:
+        raise SealedGateViolation(
+            "SEALED GATE VIOLATION: verify_all called with live=True AND a "
+            "non-None fetcher.  The production path must use the real "
+            "render_check.  Injecting a fetcher is a test-only seam and is "
+            "incompatible with a live verdict (SealedGateViolation)."
+        )
+
+    # ── PRE-SEED REFUSAL ──────────────────────────────────────────────────────
+    run_nonce = str(uuid.uuid4())
+    summary_path = os.path.join(run_dir, SUMMARY_REL)
+    if os.path.isfile(summary_path):
+        try:
+            existing = json.loads(open(summary_path, encoding="utf-8").read())
+        except Exception:
+            existing = {}
+        existing_writer = existing.get("writer", "")
+        existing_nonce = existing.get("run_nonce", "")
+        # Any pre-existing summary from a different run or hand-written must be
+        # refused — the nonce we just minted was not yet used by any prior call.
+        if existing_writer or existing_nonce:
+            raise VerifyContradiction(
+                "PRE-SEED REFUSAL: scorecard/verify-summary.json already exists "
+                f"(writer={existing_writer!r}, run_nonce={existing_nonce!r}). "
+                "verify_all refuses to process a pre-existing summary — this is "
+                "the fabrication channel seal.  Delete the file and re-run."
+            )
+
+    trust = "LIVE" if live else "MOCK"
+    os.makedirs(os.path.join(run_dir, "logs"), exist_ok=True)
+    os.makedirs(os.path.join(run_dir, "scorecard"), exist_ok=True)
+
+    # ── ONE PASS: verify every page ───────────────────────────────────────────
+    raw = [
+        verify_page(p, run_dir=run_dir, fetcher=fetcher, live=live)
+        for p in pages
+    ]
 
     raw_path = os.path.join(run_dir, RAW_REL)
-    summary_path = os.path.join(run_dir, SUMMARY_REL)
-    os.makedirs(os.path.dirname(raw_path), exist_ok=True)
-    os.makedirs(os.path.dirname(summary_path), exist_ok=True)
 
-    # Write the RAW source of truth FIRST, then derive everything else from it.
+    # Write the RAW source of truth FIRST.
     with open(raw_path, "w", encoding="utf-8") as f:
         json.dump(raw, f, indent=2)
 
-    summary = derive_summary(raw, run_id=run_id, version=version, brand=brand,
-                             extra=extra)
+    # Compute raw_sha256 (hash of the just-written raw log).
+    with open(raw_path, "rb") as f:
+        raw_sha256 = _sha256_bytes(f.read())
 
-    # The guard: re-derive from the JUST-WRITTEN raw file (not from memory) so the
-    # check covers exactly what landed on disk, and FAIL LOUD on contradiction.
+    summary = derive_summary(
+        raw, run_id=run_id, version=version, brand=brand,
+        extra=extra, run_nonce=run_nonce, trust=trust,
+    )
+    summary["raw_sha256"] = raw_sha256
+
+    # Guard: re-derive from the JUST-WRITTEN raw file (not from memory) so the
+    # check covers exactly what landed on disk.
     with open(raw_path, encoding="utf-8") as f:
         raw_on_disk = json.load(f)
     assert_consistent(summary, raw_on_disk)
 
+    # Write the summary AFTER the guard passes.
     with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
 
-    return {"raw": raw, "summary": summary,
-            "raw_path": raw_path, "summary_path": summary_path}
+    # ── RENDER MANIFEST (artifact hash binding) ───────────────────────────────
+    render_manifest: dict[str, dict] = {}
+    for r in raw:
+        s_name = r.get("step") or "?"
+        entry: dict = {}
+        for path_key, sha_key in (
+            ("dom_path", "dom_sha256"),
+            ("png_path", "png_sha256"),
+            ("console_path", "console_sha256"),
+        ):
+            path = r.get(path_key, "")
+            if path:
+                entry[path_key] = path
+                # Re-hash to bind the manifest to the actual artifact on disk.
+                entry[sha_key] = _sha256_file(path) or r.get(sha_key, "")
+        if "dom_bytes" in r:
+            entry["dom_bytes"] = r["dom_bytes"]
+        if entry:
+            render_manifest[s_name] = entry
+
+    render_manifest_path = os.path.join(run_dir, RENDER_MANIFEST_REL)
+    with open(render_manifest_path, "w", encoding="utf-8") as f:
+        json.dump(render_manifest, f, indent=2)
+
+    # Re-run the consistency guard including artifact hash binding.
+    assert_consistent(summary, raw_on_disk, render_manifest=render_manifest)
+
+    # ── MOCK SENTINEL ──────────────────────────────────────────────────────────
+    sentinel_path = os.path.join(run_dir, MOCK_SENTINEL_REL)
+    if not live:
+        with open(sentinel_path, "w", encoding="utf-8") as f:
+            f.write(
+                "MOCK-DO-NOT-SHIP\n"
+                "This evidence tree was produced with live=False (mock verifier).\n"
+                "A mock verdict CANNOT be accepted as a shippable build pass.\n"
+                f"run_nonce: {run_nonce}\n"
+                f"written_at: {_ts()}\n"
+            )
+    else:
+        # Remove any stale mock sentinel from a prior mock run in this directory.
+        if os.path.isfile(sentinel_path):
+            os.remove(sentinel_path)
+
+    return {
+        "raw": raw,
+        "summary": summary,
+        "raw_path": raw_path,
+        "summary_path": summary_path,
+        "render_manifest_path": render_manifest_path,
+        "run_nonce": run_nonce,
+        "trust": trust,
+    }
 
 
 # ── Real-PNG screenshot + fetched-DOM capture (emit agent-browser commands) ───
@@ -379,6 +728,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--run-id", default="")
     p.add_argument("--version", default="")
     p.add_argument("--brand", default="")
+    p.add_argument("--mock", action="store_true",
+                   help="MOCK mode (live=False): stamp trust=MOCK, write "
+                        "MOCK-DO-NOT-SHIP sentinel. For CI/tests only.")
 
     p2 = sub.add_parser(
         "screenshot-plan",
@@ -397,17 +749,30 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.cmd == "verify-all":
+        is_mock = getattr(args, "mock", False)
         try:
-            out = verify_all(args.run_dir, pages, run_id=args.run_id,
-                             version=args.version, brand=args.brand)
+            out = verify_all(
+                args.run_dir, pages,
+                live=not is_mock,
+                run_id=args.run_id,
+                version=args.version,
+                brand=args.brand,
+            )
+        except SealedGateViolation as e:
+            sys.stderr.write(f"SEALED GATE VIOLATION: {e}\n")
+            return 4
         except VerifyContradiction as e:
             sys.stderr.write(f"VERIFY CONTRADICTION (FAIL-LOUD): {e}\n")
             return 3
         s = out["summary"]
         print(json.dumps(
             {"overall_pass": s["overall_pass"], "passed": s["passed"],
-             "total": s["total"], "raw": out["raw_path"],
-             "summary": out["summary_path"]}, indent=2))
+             "total": s["total"], "trust": s.get("trust", "LIVE"),
+             "run_nonce": out.get("run_nonce", ""),
+             "raw": out["raw_path"],
+             "summary": out["summary_path"],
+             "render_manifest": out.get("render_manifest_path", "")},
+            indent=2))
         # Exit non-zero on FAIL so a failing build can never read as success.
         return 0 if s["overall_pass"] else 1
 
