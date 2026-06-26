@@ -46,6 +46,7 @@ HERE = Path(__file__).resolve().parent
 AD_DIRECTOR = HERE / "ad_director.py"
 BUILD_CHECK = HERE / "ad_build_check.py"
 AF_COVERAGE = HERE / "working" / "af-coverage.json"
+RECOVERY_COVERAGE = HERE / "working" / "recovery-coverage.json"
 
 AF_RE = re.compile(r"AF-FBAD-[A-Z0-9]+(?:-[A-Z0-9]+)*")
 DRIVER_ENFORCER = "ad_director"
@@ -142,6 +143,45 @@ def load_coverage():
     return set(cov.get("triggered", []))
 
 
+def load_recovery_coverage():
+    if not RECOVERY_COVERAGE.exists():
+        _fatal(f"recovery-coverage.json not found (looked at {RECOVERY_COVERAGE}). Run "
+               "`python3 test_ad_recovery.py` FIRST to emit it.")
+    try:
+        cov = json.loads(RECOVERY_COVERAGE.read_text())
+    except Exception as exc:  # noqa: BLE001
+        _fatal(f"recovery-coverage.json is not valid JSON: {exc}")
+    return ({"auto_redo": set(cov.get("auto_redo", [])),
+             "auto_budget_park": set(cov.get("auto_budget_park", [])),
+             "park_immediate": set(cov.get("park_immediate", []))})
+
+
+def check_recovery(manifest, rcov, problems):
+    """Extend 'declared==enforced==tested' to the recovery policy: every autofail's
+    recovery class must be PROVEN by a recovery-path test. auto => a REDO probe AND a
+    budget->PARK probe tripped; park => an immediate-park-no-retry probe tripped."""
+    for a in manifest.get("autofails", []):
+        code = a.get("code", "<no-code>")
+        recovery = a.get("recovery")
+        if recovery == "auto":
+            if code not in rcov["auto_redo"]:
+                problems.append({"code": code, "kind": "recovery-untested",
+                                 "detail": "recovery:auto but no REDO probe in "
+                                           "recovery-coverage.auto_redo."})
+            if code not in rcov["auto_budget_park"]:
+                problems.append({"code": code, "kind": "recovery-untested",
+                                 "detail": "recovery:auto but no budget->PARK probe in "
+                                           "recovery-coverage.auto_budget_park."})
+        elif recovery == "park":
+            if code not in rcov["park_immediate"]:
+                problems.append({"code": code, "kind": "recovery-untested",
+                                 "detail": "recovery:park but no immediate-park probe in "
+                                           "recovery-coverage.park_immediate."})
+        else:
+            problems.append({"code": code, "kind": "recovery-undeclared",
+                             "detail": f"recovery is {recovery!r}; must be 'auto' or 'park'."})
+
+
 def run_check(manifest, defined, refs, af_strings, covered):
     problems = []
 
@@ -191,9 +231,11 @@ def main():
     manifest = load_manifest()
     defined, refs, af_strings = parse_code()
     covered = load_coverage()
+    rcov = load_recovery_coverage()
 
     in_scope = [a["code"] for a in manifest.get("autofails", [])]
     problems = run_check(manifest, defined, refs, af_strings, covered)
+    check_recovery(manifest, rcov, problems)
 
     if as_json:
         print(json.dumps({
@@ -207,9 +249,13 @@ def main():
             print("=== ad_gate_integrity_check: DECLARED == ENFORCED == TESTED (Guard A) ===")
             print(f"manifest autofails:          {len(in_scope)}")
             print(f"af-coverage triggered codes: {len(covered)}")
-            print("OK — every autofail is tested (a negative fixture triggers it), and "
-                  "every ad_director-enforced gate has a referenced enforcing symbol "
-                  "that names its own AF code. No no-op / untested gates.")
+            print(f"recovery-coverage: auto-redo={len(rcov['auto_redo'])} "
+                  f"auto-budget-park={len(rcov['auto_budget_park'])} "
+                  f"park-immediate={len(rcov['park_immediate'])}")
+            print("OK — every autofail is tested (a negative fixture triggers it), every "
+                  "ad_director-enforced gate has a referenced enforcing symbol that names "
+                  "its own AF code, AND every recovery class is proven by a recovery-path "
+                  "test. No no-op / untested / recovery-untested gates.")
         else:
             print("=== ad_gate_integrity_check: GATE INTEGRITY VIOLATION (Guard A) ===",
                   file=sys.stderr)

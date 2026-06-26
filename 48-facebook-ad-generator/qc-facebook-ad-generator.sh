@@ -43,6 +43,9 @@ AD_BUILDCHK="${SKILL_DIR}/scripts/ad_build_check.py"
 AD_SYNC="${SKILL_DIR}/scripts/ad_sync_check.py"
 AD_GUARDA="${SKILL_DIR}/scripts/ad_gate_integrity_check.py"
 AD_TEST="${SKILL_DIR}/scripts/test_ad_preflight.py"
+AD_RECOVERY="${SKILL_DIR}/scripts/ad_recovery.py"
+AD_RECOVERY_TEST="${SKILL_DIR}/scripts/test_ad_recovery.py"
+AD_UNPARK="${REPO_ROOT}/scripts/unpark-ad-run.sh"
 AD_FIXTURES="${SKILL_DIR}/test-fixtures/make-ad-fixtures.sh"
 AD_CI="${REPO_ROOT}/.github/workflows/ad-pipeline-lockstep.yml"
 
@@ -53,13 +56,18 @@ assert "ad_build_check.py receipt validators present" "[ -f \"${AD_BUILDCHK}\" ]
 assert "ad_sync_check.py lockstep present" "[ -f \"${AD_SYNC}\" ]"
 assert "ad_gate_integrity_check.py (Guard A) present" "[ -f \"${AD_GUARDA}\" ]"
 assert "test_ad_preflight.py negative-test suite present" "[ -f \"${AD_TEST}\" ]"
+assert "ad_recovery.py self-correct/park engine present" "[ -f \"${AD_RECOVERY}\" ]"
+assert "test_ad_recovery.py recovery proof suite present" "[ -f \"${AD_RECOVERY_TEST}\" ]"
+assert "unpark-ad-run.sh operator un-park tool present" "[ -f \"${AD_UNPARK}\" ]"
 assert "make-ad-fixtures.sh GOOD/BAD fixtures present" "[ -f \"${AD_FIXTURES}\" ]"
 assert "ad-pipeline-lockstep.yml CI workflow present" "[ -f \"${AD_CI}\" ]"
 
 # ---- The enforcement code must parse ----
-for py in "${AD_DRIVER}" "${AD_BUILDCHK}" "${AD_SYNC}" "${AD_GUARDA}" "${AD_TEST}"; do
+for py in "${AD_DRIVER}" "${AD_BUILDCHK}" "${AD_SYNC}" "${AD_GUARDA}" "${AD_TEST}" \
+          "${AD_RECOVERY}" "${AD_RECOVERY_TEST}"; do
   assert "$(basename "$py") parses" "python3 -c \"import ast; ast.parse(open('${py}').read())\""
 done
+assert "unpark-ad-run.sh is valid bash" "bash -n \"${AD_UNPARK}\""
 
 # ---- The 8 creative SOPs exist ----
 for n in 01-INTAKE 02-OVERLAYS 03-PICK-10 04-PRIMARY-TEXT 05-HEADLINES \
@@ -80,12 +88,22 @@ m=json.load(open('${AD_MANIFEST}'))
 ids=[p['id'] for p in sorted(m['phases'],key=lambda p:p['order'])]
 sys.exit(0 if ids==['S0-INTAKE','S1-OVERLAYS','PICK-10','S2-PRIMARY-TEXT','S3-HEADLINES','S4-IMAGE-PROMPTS','S5-IMAGE-GEN','S6-TARGETING','S7-DELIVER','PUBLISH'] else 1)\""
 
-# ---- Lockstep + negative suite + Guard A must pass ----
-assert "ad_sync_check.py — manifest/code/ruleset LOCKSTEP (exit 0)" \
+# ---- Every autofail must declare a recovery policy (two-tier self-correct/park) ----
+assert "every AD-PIPELINE-MANIFEST autofail carries a recovery field (auto|park)" \
+  "python3 -c \"
+import json,sys
+m=json.load(open('${AD_MANIFEST}'))
+bad=[a['code'] for a in m['autofails'] if a.get('recovery') not in ('auto','park')]
+sys.exit(0 if (not bad and isinstance(m.get('recovery_policy'),dict)) else 1)\""
+
+# ---- Lockstep + negative suite + recovery suite + Guard A must pass ----
+assert "ad_sync_check.py — manifest/code/ruleset LOCKSTEP incl recovery R1-R4 (exit 0)" \
   "python3 \"${AD_SYNC}\" >/dev/null 2>&1"
 assert "test_ad_preflight.py — every gate negative-tested (exit 0, emits af-coverage)" \
   "python3 \"${AD_TEST}\" >/dev/null 2>&1"
-assert "ad_gate_integrity_check.py — Guard A declared==enforced==tested (exit 0)" \
+assert "test_ad_recovery.py — self-correct/park proven (exit 0, emits recovery-coverage)" \
+  "python3 \"${AD_RECOVERY_TEST}\" >/dev/null 2>&1"
+assert "ad_gate_integrity_check.py — Guard A declared==enforced==tested+recovery (exit 0)" \
   "python3 \"${AD_GUARDA}\" >/dev/null 2>&1"
 
 # ---- The foreman must HARD-ABORT a bypass and ATTEST a complete run ----
