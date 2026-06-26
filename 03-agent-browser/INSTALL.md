@@ -107,9 +107,10 @@ agent-browser --help | head -20
 
 ## Step 4 - Smoke test a simple browser session
 
-Run:
+Run (HEADLESS — `--headed false` is mandatory; a visible browser window must NEVER
+open on a client box, even for a smoke test):
 ```bash
-agent-browser open https://example.com
+agent-browser --headed false open https://example.com
 agent-browser snapshot -i
 agent-browser close
 ```

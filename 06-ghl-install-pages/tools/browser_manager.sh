@@ -45,7 +45,18 @@
 #   bash browser_manager.sh session-name
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_VERSION="v14.1.3"
+BROWSER_MANAGER_VERSION="v14.1.4"
+
+# B1 VERSION-GATE FLOOR (v14.1.4) — the version where the BOX-LEVEL headless LOCK
+# landed (install.sh pins AGENT_BROWSER_HEADED=false in the gateway-inherited env,
+# the headed config scrub, and this very gate). The build path (bm_ensure) REFUSES
+# to launch a browser through a browser_manager.sh OLDER than this floor — an
+# old-guard box could otherwise open a VISIBLE window. This is a FIXED floor (NOT a
+# rolled marker — it has no _VERSION suffix, so bump-version.sh never touches it);
+# raise it deliberately in future to force-refuse builds below a new safety
+# baseline. It also blocks the legacy silent-hourly-agentTurn furnace shape: any
+# auto-fired build must pass through bm_ensure → this gate.
+BM_HEADLESS_LOCK_FLOOR="v14.1.4"
 
 # Do NOT `set -e` at source time — sourcing into a caller that already set its
 # own options must not be clobbered. inject-ghl-auth.sh keeps its own
@@ -344,10 +355,51 @@ _bm_teardown() {
   _BM_LOCK_HELD=0
 }
 
+# ── B1 VERSION-GATE — refuse to launch a browser build through an old/headed guard
+# Portable dotted-numeric "is $1 < $2" (BSD + GNU awk; bash 3.2 safe). Returns 0
+# (true) only when strictly less-than; equal or greater → 1.
+_bm_ver_lt() {
+  awk -v a="${1#v}" -v b="${2#v}" 'BEGIN{
+    na=split(a,A,"."); nb=split(b,B,".");
+    n=(na>nb)?na:nb;
+    for(i=1;i<=n;i++){x=(i<=na)?A[i]+0:0; y=(i<=nb)?B[i]+0:0;
+      if(x<y) exit 0; if(x>y) exit 1}
+    exit 1   # equal -> not less-than
+  }'
+}
+
+# bm_require_current_guard — called FIRST in bm_ensure, BEFORE any lock/open. Two
+# refusals, either of which means "do NOT open a browser on this box":
+#   (1) HEADLESS LOCK active: AGENT_BROWSER_HEADED must resolve falsey (the source
+#       guard forced it; re-assert here as the build-path belt). A truthy value
+#       would open a VISIBLE window → refuse (75).
+#   (2) GUARD FRESHNESS: this browser_manager.sh must be at/above BM_HEADLESS_LOCK_FLOOR.
+#       An older guard predates the box-level lock + scrub + this gate, so the build
+#       path must NOT launch through it (76). On a truly pre-lock bundle this very
+#       function is absent and the gateway-inherited AGENT_BROWSER_HEADED=false pin
+#       (install.sh) is the backstop; once the current bundle lands, this gate is
+#       the in-build belt.
+bm_require_current_guard() {
+  case "${AGENT_BROWSER_HEADED:-false}" in
+    ""|0|false|False|FALSE|no|off) : ;;
+    *) echo "REFUSE: AGENT_BROWSER_HEADED='${AGENT_BROWSER_HEADED}' would open a VISIBLE window. Box-level headless lock is mandatory (B1/D6). Aborting." >&2; return 75 ;;
+  esac
+  if [ -z "${BROWSER_MANAGER_VERSION:-}" ]; then
+    echo "REFUSE: BROWSER_MANAGER_VERSION missing — this browser_manager.sh predates the headless lock (B1). Update Skill 06 before any browser build." >&2
+    return 76
+  fi
+  if _bm_ver_lt "$BROWSER_MANAGER_VERSION" "$BM_HEADLESS_LOCK_FLOOR"; then
+    echo "REFUSE: browser_manager.sh $BROWSER_MANAGER_VERSION is older than the headless-lock floor $BM_HEADLESS_LOCK_FLOOR (B1). An old guard could open a VISIBLE window — refusing to launch. Update Skill 06." >&2
+    return 76
+  fi
+  return 0
+}
+
 # ── bm_ensure — the one entrypoint callers use before the first open ──────────
 # breaker-check → acquire lock → write lease → start TTL timer → open canonical
 # session → register the EXIT/INT/TERM/HUP teardown trap.
 bm_ensure() {
+  bm_require_current_guard || return $?   # B1: refuse old-guard / headed launch
   local session
   session="$(bm_session_name)"
   bm_assert_session "$session"
@@ -375,12 +427,12 @@ if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
       bm_session_name; echo
       ;;
     ensure)
-      bm_ensure
+      bm_ensure || exit $?    # B1 gate refusal (75/76) must NOT print "ENSURED"
       echo "ENSURED: session=$(bm_session_name) lock=held ttl=${AB_SESSION_TTL}s — teardown trap installed."
       ;;
     eval|open|snapshot|wait|find|fill)
       # Thin pass-throughs: assert lock by acquiring our own (singleton) then run.
-      bm_ensure
+      bm_ensure || exit $?    # B1 gate refusal short-circuits before any open
       # Drop a leading literal "--" if the caller used `verb -- args`.
       [ "${1:-}" = "--" ] && shift
       AB --session "$(bm_session_name)" "$_verb" "$@"
@@ -389,7 +441,7 @@ if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
       # Approach 0 graft: launch a build through the manager in a DETACHED subtree
       # that OWNS the lock+lease+TTL+trap, so detach-and-exit is safe (no orphan).
       [ "${1:-}" = "--" ] && shift
-      bm_ensure
+      bm_ensure || exit $?    # B1 gate refusal: never detach a build through an old guard
       ( "$@" ) &
       echo "DETACHED: pid=$! session=$(bm_session_name) — owns lock+lease+TTL+teardown."
       ;;

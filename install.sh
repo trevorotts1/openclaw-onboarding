@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v14.1.3"
+ONBOARDING_VERSION="v14.1.4"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -954,6 +954,28 @@ PYEOF
     _shared_write_env "RESCUE_RANGERS_WEBHOOK_URL" "$RR_WEBHOOK"
     _shared_write_ocjson "RESCUE_RANGERS_WEBHOOK_URL" "$RR_WEBHOOK"
     success "Rescue Rangers escalation webhook seeded (RESCUE_RANGERS_WEBHOOK_URL=$RR_WEBHOOK)"
+    injected_count=$((injected_count + 1))
+
+    # ── BOX-LEVEL HEADLESS PIN (v14.1.4) ─────────────────────────────────────
+    # THE CORE LOCK. agent-browser is headless by DEFAULT, but a single inherited
+    # AGENT_BROWSER_HEADED env var OR a {"headed":true} config can silently open a
+    # VISIBLE Chromium window on a client screen. Skill 06 forced headless only
+    # INSIDE its own wrappers (browser_manager.sh `--headed false`), so three paths
+    # bypassed it: (1) a raw agent-typed `agent-browser open`; (2) the Skill-03
+    # install smoke test; (3) an inherited/leftover {"headed":true}. We close that
+    # at the BOX level by pinning AGENT_BROWSER_HEADED=false in the GATEWAY-INHERITED
+    # env (openclaw.json env.vars — the SAME mechanism that delivers PODBEAN_* /
+    # RESCUE_RANGERS_* / Skill-44 GHL creds to every gateway child, confirmed
+    # gateway-inherited on BOTH Mac and VPS) PLUS secrets/.env as a belt. EVERY
+    # browser the gateway spawns — including a raw `agent-browser open` and an
+    # OLD-guard Skill-6 call — now defaults to headless. There is NO legitimate
+    # headed use on any client box: the GHL headless-canvas wall was cracked, so
+    # everything runs headless. Schema-safe: env.vars is an established key (unlike
+    # the removed browser.agentBrowser, which crashed 2026.6.8's strict schema).
+    # OS-portable: python3 + a plain VAR=value line, identical Mac + Linux.
+    _shared_write_env "AGENT_BROWSER_HEADED" "false"
+    _shared_write_ocjson "AGENT_BROWSER_HEADED" "false"
+    success "Box-level headless pin set (AGENT_BROWSER_HEADED=false in gateway-inherited env + secrets/.env — no visible browser window can open on this box)"
     injected_count=$((injected_count + 1))
 
     # (future shared secrets get added here — same pattern)
@@ -2862,7 +2884,10 @@ if [ -f "$SCRIPTS_DIR/agent-browser-reaper.sh" ]; then
     bash "$SCRIPTS_DIR/agent-browser-reaper.sh" 2>/dev/null || warn "one-shot agent-browser reap rc!=0 (non-fatal; the hourly cron backfills)"
 fi
 
-# SINGLETON POOLED BROWSER advisory config — REMOVED + SELF-HEAL (v14.1.3).
+# SINGLETON POOLED BROWSER advisory config — REMOVED + SELF-HEAL (v14.1.3),
+# plus HEADED SCRUB (v14.1.4): also strips any truthy `headed` key anywhere in
+# openclaw.json (browser.*.headed / {"headed":true}) so a leftover/inherited
+# headed config can never override the box-level AGENT_BROWSER_HEADED=false pin.
 # DEFECT: the old block deep-merged a `browser.agentBrowser` object into
 # openclaw.json. OpenClaw 2026.6.8 tightened the config schema to strict
 # additionalProperties:false (same mechanism that rejected the root
@@ -2890,30 +2915,68 @@ try:
     d = json.load(open(p))
 except Exception:
     raise SystemExit(1)
+
+changed = []
+
+# (a) Legacy poison key: browser.agentBrowser (crashed strict 2026.6.8 schema).
 browser = d.get("browser")
 if isinstance(browser, dict) and "agentBrowser" in browser:
-    # Legacy poison key present — back up, strip, atomic-replace.
-    shutil.copy2(p, p + ".prebrowserheal.bak")
     del browser["agentBrowser"]
+    changed.append("browser.agentBrowser")
     # Drop an emptied browser object too, so we don't leave {} noise.
     if not browser:
         d.pop("browser", None)
+
+# (b) HEADED SCRUB (v14.1.4): ANY truthy "headed" key anywhere in openclaw.json
+#     (top-level, browser.headed, browser.<sub>.headed, …) would silently force a
+#     VISIBLE window and OVERRIDE the box-level AGENT_BROWSER_HEADED=false pin.
+#     Remove every truthy "headed" so the headless default + the env pin govern.
+#     A benign "headed": false is left untouched (already headless, no churn).
+def _truthy(v):
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes", "on")
+    if isinstance(v, (int, float)):
+        return v != 0
+    return False
+
+def _scrub(node, path):
+    if isinstance(node, dict):
+        if "headed" in node and _truthy(node.get("headed")):
+            del node["headed"]
+            changed.append((path + ".headed").lstrip("."))
+        for k, v in list(node.items()):
+            _scrub(v, path + "." + k)
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            _scrub(v, path + "[" + str(i) + "]")
+
+_scrub(d, "")
+
+if changed:
+    # Back up once, strip, atomic-replace.
+    shutil.copy2(p, p + ".prebrowserheal.bak")
     tmp = p + ".tmp"
     with open(tmp, "w") as f:
         json.dump(d, f, indent=2)
     os.replace(tmp, p)
-    print("STRIPPED")
+    print("STRIPPED:" + ",".join(changed))
 else:
     print("NOOP")
 PYEOF
 )"
-    if [ "$_BROWSER_HEAL_OUT" = "STRIPPED" ]; then
-        success "browser.agentBrowser self-heal complete (key not written; legacy key stripped — caps live in browser_manager.sh/reaper)"
-    elif [ "$_BROWSER_HEAL_OUT" = "NOOP" ]; then
-        success "browser.agentBrowser self-heal complete (key not written; no legacy key found — caps live in browser_manager.sh/reaper)"
-    else
-        warn "browser.agentBrowser self-heal skipped (non-fatal; manager+reaper read env defaults)"
-    fi
+    case "$_BROWSER_HEAL_OUT" in
+        STRIPPED:*)
+            success "browser config self-heal: stripped ${_BROWSER_HEAL_OUT#STRIPPED:} (legacy agentBrowser and/or any truthy 'headed' removed — headless is now governed by the box-level AGENT_BROWSER_HEADED=false pin)"
+            ;;
+        NOOP)
+            success "browser config self-heal: clean (no legacy agentBrowser key, no truthy 'headed' — headless governed by the box-level pin)"
+            ;;
+        *)
+            warn "browser config self-heal skipped (non-fatal; manager+reaper+env pin still force headless)"
+            ;;
+    esac
     unset _BROWSER_HEAL_OUT
 fi
 
