@@ -357,15 +357,16 @@ bm_breaker_check() {
       "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$cnt" "$AB_BREAKER_WINDOW" "${GHL_LOCATION_ID:-default}" > "$BM_BOX_PARK_MARKER" 2>/dev/null || true
     # close --all is reserved for the reaper / a breaker trip (blast-radius safety).
     AB close --all 2>/dev/null || true
-    # Escalate to Rescue Rangers (never bypass the gateway; uses openclaw message send).
-    # OPERATOR-ONLY: send ONLY when the chat id is the operator GROUP (a Telegram
-    # supergroup, ^-100…) — NEVER an individual DM (a client or Trevor). Empty or
-    # non-group id => stay silent (no client fallback, no wrong target). This alert
-    # is self-deduping: the breaker trips once, then `exit 75` PARKs the build.
-    if command -v openclaw >/dev/null 2>&1 && [ -n "${RESCUE_RANGERS_HELP_CHAT_ID:-}" ] \
-       && printf '%s' "${RESCUE_RANGERS_HELP_CHAT_ID}" | grep -Eq '^-100[0-9]+$'; then
-      openclaw message send --channel telegram -t "${RESCUE_RANGERS_HELP_CHAT_ID}" \
-        "browser_manager circuit-breaker OPEN: $cnt agent-browser opens in ${AB_BREAKER_WINDOW}s without a QC pass (location=${GHL_LOCATION_ID:-default}). Skill-6 build PARKED (qc-failed) + box-level PARK marker written, so the */15 resume cron will STOP too. Needs a human — un-park with scripts/unpark-build.sh." 2>/dev/null || true
+    # Escalate to Rescue Rangers via the n8n webhook — the ONLY path the rescue
+    # agent reads. Never use openclaw message send to a Telegram group for escalation:
+    # bots cannot read other bots, so that path is silently dropped.
+    if [ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" ]; then
+      local _bm_msg="browser_manager circuit-breaker OPEN: $cnt agent-browser opens in ${AB_BREAKER_WINDOW}s without a QC pass (location=${GHL_LOCATION_ID:-default}). Skill-6 build PARKED (qc-failed) + box-level PARK marker written, so the */15 resume cron will STOP too. Needs a human — un-park with scripts/unpark-build.sh."
+      local _bm_esc="${_bm_msg//\\/\\\\}"; _bm_esc="${_bm_esc//\"/\\\"}"
+      curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
+        -H 'Content-Type: application/json' \
+        -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"browser_manager\",\"message\":\"${_bm_esc}\"}" \
+        --max-time 15 >/dev/null 2>&1 || true
     fi
     echo "REFUSE: circuit-breaker TRIPPED ($cnt opens / ${AB_BREAKER_WINDOW}s). Build PARKED (qc-failed) — durable box-level PARK written; the resume cron will STOP. Escalated to Rescue Rangers. STOP." >&2
     exit 75

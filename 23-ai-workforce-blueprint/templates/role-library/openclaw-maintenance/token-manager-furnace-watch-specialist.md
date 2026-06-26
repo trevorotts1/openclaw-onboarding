@@ -232,7 +232,7 @@ Every hour — or more frequently when anomalies are detected — run SOP 9.1 (F
 
 ### SOP 9.6 — Rescue Rangers Escalation (cross-cutting)
 
-See full procedure in `sops/sop-rescue-rangers-escalation.md`. Summary: when a furnace finding is ambiguous (could be a needed feature, could require an owner-supplied secret, or could require a non-obvious fix), send a structured message via `openclaw message send --channel telegram -t "${RESCUE_RANGERS_HELP_CHAT_ID}"` with: box ID, driver class, evidence (cron name, model, schedule, error log excerpt), proposed fix, and why this role is unsure. Never bypass the gateway for Telegram. Wait for Rescue Rangers guidance before applying the fix.
+See full procedure in `sops/sop-rescue-rangers-escalation.md`. Summary: when a furnace finding is ambiguous (could be a needed feature, could require an owner-supplied secret, or could require a non-obvious fix), POST via the n8n webhook (`curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" ...`) with: box ID, driver class, evidence (cron name, model, schedule, error log excerpt), proposed fix, and why this role is unsure. Do NOT use `openclaw message send -t $RESCUE_RANGERS_HELP_CHAT_ID` — that path does not reach the rescue agent. Wait for Rescue Rangers guidance before applying the fix.
 
 ---
 
@@ -268,7 +268,7 @@ See full procedure in `sops/sop-proactive-fix-guardrail.md`. Summary: before tou
 - Healer (openclaw-maintenance) — any SOP failure that caused a furnace event (the healer patches the SOP so it cannot recur).
 - Director of OpenClaw Maintenance — weekly furnace reports, Tier 3 deletion proposals, open `needs_owner_decision` backlog.
 - Owner (via `openclaw message send`) — on-change-only notifications of applied fixes and open owner decisions; includes GHL token-liveness FAIL notices so the owner knows GHL builds are blocked.
-- Rescue Rangers (via `openclaw message send --channel telegram`) — ambiguous findings per SOP 9.6.
+- Rescue Rangers (via n8n webhook `$RESCUE_RANGERS_WEBHOOK_URL`) — ambiguous findings per SOP 9.6.
 - Automation Workflow Specialist (CRM department) — DOWNSTREAM HANDOFF: when the daily GHL token-liveness probe returns FAIL (class TK-GHL), you notify the Automation Workflow Specialist that all GoHighLevel builds are BLOCKED until the owner confirms the token is refreshed. When the probe returns PASS after a prior FAIL, you notify the Automation Workflow Specialist that GHL builds are UNBLOCKED and can resume. Frequency: daily (PASS logged silently; FAIL triggers immediate notification).
 
 ---

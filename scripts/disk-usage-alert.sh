@@ -99,13 +99,13 @@ if [[ "$alert" -eq 1 ]]; then
     log "INFO" "    $line"
   done
 
-  if [[ "${OC_DISK_ESCALATE:-0}" == "1" ]] && command -v openclaw >/dev/null 2>&1; then
-    _RR="${RESCUE_RANGERS_HELP_CHAT_ID:-}"
-    if [[ -n "$_RR" ]]; then
-      openclaw message send --channel telegram -t "$_RR" \
-        "[disk-alert] $(hostname): OpenClaw disk >= ${THRESHOLD}% used. Check the memory index / orphan temp files before the gateway is starved. See $DISK_LOG." \
-        >/dev/null 2>&1 || log "WARN" "operator escalation send failed (non-fatal)"
-    fi
+  if [[ "${OC_DISK_ESCALATE:-0}" == "1" ]] && [[ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" ]]; then
+    _esc_msg="[disk-alert] $(hostname): OpenClaw disk >= ${THRESHOLD}% used. Check the memory index / orphan temp files before the gateway is starved. See $DISK_LOG."
+    _esc_msg="${_esc_msg//\\/\\\\}"; _esc_msg="${_esc_msg//\"/\\\"}"
+    curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
+      -H 'Content-Type: application/json' \
+      -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"disk-usage-alert\",\"message\":\"${_esc_msg}\"}" \
+      --max-time 15 >/dev/null 2>&1 || log "WARN" "rescue-rangers webhook escalation failed (non-fatal)"
   fi
   exit 6
 fi

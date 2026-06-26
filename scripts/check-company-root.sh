@@ -125,15 +125,19 @@ fi
 
 exit 0
 
-# ── internal: send Telegram alert if configured ───────────────────────────────
+# ── internal: escalate to Rescue Rangers via webhook ─────────────────────────
+# NOTE: this function is defined after exit 0 above and is currently dead code.
+# Kept for reference; the correct escalation path is the n8n webhook, not
+# openclaw message send to a Telegram chat id.
 _alert_operator() {
   local msg="$1"
-  local chat_id="${TELEGRAM_OPERATOR_CHAT_ID:-${RESCUE_RANGERS_HELP_CHAT_ID:-}}"
-  if [ -z "$chat_id" ]; then
+  local url="${RESCUE_RANGERS_WEBHOOK_URL:-}"
+  if [ -z "$url" ]; then
     return 0
   fi
-  if command -v openclaw >/dev/null 2>&1; then
-    openclaw message send --channel telegram -t "$chat_id" \
-      -m "$msg" 2>/dev/null || true
-  fi
+  local _esc="${msg//\\/\\\\}"; _esc="${_esc//\"/\\\"}"
+  curl -s -X POST "$url" \
+    -H 'Content-Type: application/json' \
+    -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"check-company-root\",\"message\":\"${_esc}\"}" \
+    --max-time 15 >/dev/null 2>&1 || true
 }

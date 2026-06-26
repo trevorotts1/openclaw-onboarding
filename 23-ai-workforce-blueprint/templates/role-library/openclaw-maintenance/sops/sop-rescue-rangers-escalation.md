@@ -5,7 +5,7 @@
 **Authority:** This SOP is authoritative for all roles in openclaw-maintenance. Role files embed it by reference. This file is the canonical copy.
 **Type:** Cross-cutting escalation SOP -- always-on
 **Triggers:** Any ambiguous, feature-bearing, or unresolvable finding from any maintenance specialist
-**HARD RULE:** NEVER bypass the OpenClaw gateway for Telegram. All messages go through `openclaw message send` (per memory `feedback-never-bypass-openclaw-telegram.md`).
+**HARD RULE:** Rescue Rangers escalations go via the **n8n webhook** (`$RESCUE_RANGERS_WEBHOOK_URL`), NOT via `openclaw message send`. The webhook is the ONLY path the rescue agent reads. Owner/Director notifications still go through `openclaw message send` — the webhook rule applies to Rescue Rangers escalations only.
 
 ---
 
@@ -46,13 +46,19 @@
    Why escalating: {the specific reason this is Tier 3 / ambiguous / unresolved}
    Action needed: {what the operator should decide or approve}
    ```
-2. Send via: `openclaw message send --channel telegram -t "${RESCUE_RANGERS_HELP_CHAT_ID}"` (the shared Rescue Rangers HQ Telegram group).
+2. Send via the n8n webhook (the ONLY path the rescue agent reads):
+   ```bash
+   curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
+     -H 'Content-Type: application/json' \
+     -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"<ROLE_ID>\",\"message\":\"<escalation text from step 1>\"}"
+   ```
+   `RESCUE_RANGERS_WEBHOOK_URL` is seeded by install.sh (default: `https://main.blackceoautomations.com/webhook/rescue-rangers`). Do NOT use `openclaw message send -t <group>` — bots cannot read other bots and the old Telegram group path is silently dropped.
 3. Log the escalation to `working/maintenance/escalations/esc-YYYYMMDD-HHMMSS.json`.
 4. After sending: HALT this fix thread and wait for operator response. Do NOT retry the fix without operator direction.
 
-**Outputs:** Escalation message delivered to Rescue Rangers HQ; local escalation log entry.
+**Outputs:** Escalation message delivered to Rescue Rangers HQ via n8n relay; local escalation log entry.
 
-**Hand to:** Operator (human decision required). **Failure mode:** `openclaw message send` itself fails (gateway down): execute SOP-MAINT-UPTIME (S4) first to restore gateway, then send the escalation. If gateway cannot be restored: write the escalation to `working/maintenance/escalations/UNSENT-esc-YYYYMMDD-HHMMSS.json` and retry on next probe.
+**Hand to:** Operator (human decision required). **Failure mode:** curl fails (network/n8n down): write the escalation to `working/maintenance/escalations/UNSENT-esc-YYYYMMDD-HHMMSS.json` and retry on next probe. Do NOT fall back to `openclaw message send -t $RESCUE_RANGERS_HELP_CHAT_ID` — that path does not reach the rescue agent.
 
 ---
 
