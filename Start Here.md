@@ -1013,7 +1013,7 @@ onboarding package work in both. No changes needed.
 | `brew install X` | `sudo apt-get install -y X` |
 | `~/Downloads/` | `~/` (home directory) |
 | `open <file>` | `xdg-open <file>` (skip if headless) |
-| Playwright headless: false | Playwright headless: true + --no-sandbox |
+| Playwright headless: true (mandatory on macOS too — never headed) | Playwright headless: true + --no-sandbox |
 | `uname -s` → Darwin | `uname -s` → Linux |
 
 ---
@@ -1667,18 +1667,21 @@ To check sessions: `agent-browser state list`
 To reset a session: `agent-browser state clear <skill-name>`
 
 **Playwright (Priority 2 - fallback):**
-ALWAYS use `launchPersistentContext` - NEVER use regular `launch()`:
+ALWAYS use `launchPersistentContext` - NEVER use regular `launch()`. ALWAYS run
+HEADLESS (`headless: true`) — a visible browser window must NEVER open on any box,
+client OR operator (Macs have a display, so a headed launch takes over a client
+screen). Everything runs headless now; there is no headed exception:
 ```javascript
 const browser = await chromium.launchPersistentContext(
   path.join(os.homedir(), '.openclaw', 'playwright-data', '<skill-name>'),
-  { headless: false }
+  { headless: true }
 );
 ```
 Or in Python (sync):
 ```python
 browser = p.chromium.launch_persistent_context(
     user_data_dir=os.path.expanduser("~/.openclaw/playwright-data/<skill-name>"),
-    headless=False,
+    headless=True,
 )
 ```
 Sessions saved to: `~/.openclaw/playwright-data/<skill-name>/`
@@ -1693,9 +1696,11 @@ Session (cookies, logins) is saved automatically to the openclaw profile.
 To use a skill-specific profile: `--browser-profile google-setup`
 To reset: delete or clear the profile via OpenClaw gateway settings.
 
-**On Linux/cloud servers:**
-Add `headless=True` and `args=['--no-sandbox', '--disable-dev-shm-usage']` to Playwright.
-agent-browser also works headlessly on Linux.
+**Headless is universal (all boxes):**
+`headless=True` is mandatory on EVERY box (Mac client boxes included), not just
+Linux/cloud. On Linux/cloud also add `args=['--no-sandbox', '--disable-dev-shm-usage']`.
+agent-browser is headless by default; the gateway also pins `AGENT_BROWSER_HEADED=false`
+box-level, so a raw `agent-browser open` never opens a visible window either.
 
 **Why this matters:**
 Without persistent sessions, every automation run requires a manual login.
