@@ -17,6 +17,83 @@ leaves verifiable on-disk evidence and the canonical verifier cannot be gamed.
 
 ---
 
+## INTAKE — Board card producer (run FIRST, before any gate)
+
+When a customer funnel or website request arrives, the dept agent MUST post ONE
+card to the Command Center Kanban board **before** running any gate (P0, P1, P2)
+or build step. Boarding is fail-soft — a board outage or missing credentials
+NEVER blocks the build; the build continues unregistered.
+
+```python
+# Run from the repo root (or the operator fixture's skill6-fix working dir).
+from tools.cc_board import ingest_task
+
+task_id = ingest_task(
+    title="<short card title, e.g. 'Sales Funnel Build — <brand>'",
+    description="<customer request brief, markdown OK>",
+    job_type="funnel",    # 'funnel' → department_slug='funnels'
+                          # 'website' → department_slug='web-development'
+    priority="high",      # low | medium | high | critical
+    # idempotency_key omitted → auto uuid4; supply a deterministic key for retries
+)
+# task_id is None if the board is unreachable — build continues either way.
+```
+
+**department_slug routing** (controlled by `job_type`):
+- `'funnel'`, `'sales-funnel'`, `'opt-in'`, `'multistep'` → `department_slug='funnels'`
+- `'website'`, `'landing-page'`, `'single-page'`, `'web-development'` → `department_slug='web-development'`
+
+**What the POST sends** to `POST /api/tasks/ingest`:
+```json
+{
+  "title": "<card title>",
+  "description": "<brief>",
+  "source": "funnel",
+  "department_slug": "funnels",
+  "idempotency_key": "<uuid4 or caller-supplied>",
+  "priority": "high"
+}
+```
+Fields intentionally OMITTED (the ingest route ignores them and the CC
+`TaskStatus` enum does NOT include them): `task_type`, `stage`, `parent_task_id`,
+`depends_on`, `waiting_on_dependency`. The ingest route always creates the task at
+`backlog` status and then calls `routeTask()` server-side — the producer never
+sets status.
+
+**Credentials from environment** (never hardcoded):
+```
+MISSION_CONTROL_URL   base URL of the Command Center (absent → board disabled, build continues)
+MC_API_TOKEN          long-lived bearer for the middleware layer (optional)
+WEBHOOK_SECRET        HMAC-SHA256 signing secret for the per-route layer (optional)
+CC_BOARD_TIMEOUT      per-request timeout in seconds (default 8)
+```
+
+**Verify the producer works** (no network required):
+```bash
+python3 06-ghl-install-pages/tools/cc_board.py --selftest
+# exits 0 on pass
+```
+
+**Live demo** (proves a real card lands on the board + routes off CEO):
+```bash
+MISSION_CONTROL_URL=https://<cc-url> MC_API_TOKEN=<tok> \
+  python3 06-ghl-install-pages/tools/cc_board.py --demo
+# prints {"ok": true, "task_id": "<uuid>", "idempotency_key": "skill6-demo-<uuid>"}
+```
+
+**Write the returned task_id into the routing receipt** so downstream steps
+can reference the board card:
+```bash
+echo '{"task_id":"'$TASK_ID'","department_slug":"funnels","source":"funnel"}' \
+  > routing/intake-receipt.json
+```
+
+**Scope note:** this step lands the card on the board (Goal A). It does NOT
+trigger the Skill-6 BUILD — that is Goal D (the dispatcher in §1 / `v2_dispatcher.py`),
+which is a separate, follow-on wiring step.
+
+---
+
 ## 0. The V2 gap this SOP closes (grounded in the prior run)
 
 The prior V2 run (`v2-client-agent/v2-…`) produced, per its own
