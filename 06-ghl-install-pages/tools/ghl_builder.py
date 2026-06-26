@@ -616,41 +616,76 @@ def render_check(
     # we invoke the agent-browser CLI directly as a subprocess.  browser_cmd()
     # enforces the singleton session guard so this is safe.
     try:
-        # Step 1+2: navigate + get rendered HTML.
+        # Step 1: navigate to URL (waits for network-idle by default).
         nav_cmd = browser_cmd("open", preview_url)
-        html_cmd = browser_cmd("html", "--output", dom_path)
-        # Step 3: screenshot.
-        shot_cmd = browser_cmd("screenshot", "--output", png_path)
-        # Step 4: console log.  agent-browser dumps console to stdout with
-        # `console-log --json` (output to console_path via redirect).
-        console_cmd = browser_cmd("console-log", "--json")
+        # Step 2: capture rendered HTML. agent-browser 0.27.0 uses `get html html`
+        # (not `html --output`); stdout is the rendered HTML, redirect to dom_path.
+        html_cmd = browser_cmd("get", "html", "html")
+        # Step 3: screenshot. agent-browser 0.27.0 `screenshot` with no --output
+        # saves to a temp path printed on stdout; capture stdout to know the path.
+        shot_cmd = browser_cmd("screenshot")
+        # Step 4: console log. agent-browser 0.27.0 uses `console` (not
+        # `console-log --json`); output is plain text, not JSON.
+        console_cmd = browser_cmd("console")
 
-        # Navigate + capture HTML in one session step.
-        for cmd_str in (nav_cmd, html_cmd, shot_cmd):
-            result = subprocess.run(
-                shlex.split(cmd_str),
-                capture_output=True, text=True, timeout=timeout,
+        # Navigate first.
+        nav_result = subprocess.run(
+            shlex.split(nav_cmd),
+            capture_output=True, text=True, timeout=timeout,
+        )
+        if nav_result.returncode not in (0,):
+            render_errors.append(
+                f"browser_cmd failed (exit {nav_result.returncode}): "
+                + (nav_result.stderr or nav_result.stdout or nav_cmd)[:400]
             )
-            if result.returncode not in (0,):
-                render_errors.append(
-                    f"browser_cmd failed (exit {result.returncode}): "
-                    + (result.stderr or result.stdout or cmd_str)[:400]
-                )
 
-        # Capture console/pageerror.
+        # Capture rendered HTML via `get html html` (stdout → dom_path).
+        html_result = subprocess.run(
+            shlex.split(html_cmd),
+            capture_output=True, text=True, timeout=timeout,
+        )
+        if html_result.returncode not in (0,):
+            render_errors.append(
+                f"browser_cmd failed (exit {html_result.returncode}): "
+                + (html_result.stderr or html_result.stdout or html_cmd)[:400]
+            )
+        elif html_result.stdout:
+            with open(dom_path, "w", encoding="utf-8") as f:
+                f.write(html_result.stdout)
+
+        # Screenshot (saves to agent-browser tmp dir; path printed on stdout).
+        shot_result = subprocess.run(
+            shlex.split(shot_cmd),
+            capture_output=True, text=True, timeout=timeout,
+        )
+        if shot_result.returncode not in (0,):
+            render_errors.append(
+                f"browser_cmd failed (exit {shot_result.returncode}): "
+                + (shot_result.stderr or shot_result.stdout or shot_cmd)[:400]
+            )
+        else:
+            # Copy from agent-browser tmp to the expected png_path.
+            import re as _re_png
+            match = _re_png.search(r'/[^\s]+\.png', shot_result.stdout)
+            if match:
+                tmp_png = match.group(0).strip()
+                if os.path.isfile(tmp_png):
+                    import shutil
+                    shutil.copy2(tmp_png, png_path)
+
+        # Capture console/pageerror. `console` in 0.27.0 outputs plain text.
         console_result = subprocess.run(
             shlex.split(console_cmd),
             capture_output=True, text=True, timeout=30,
         )
         console_entries: list[dict] = []
-        raw_console = console_result.stdout.strip()
+        raw_console = (console_result.stdout or "").strip()
         if raw_console:
-            try:
-                console_entries = json.loads(raw_console)
-                if not isinstance(console_entries, list):
-                    console_entries = [{"raw": raw_console}]
-            except Exception:
-                console_entries = [{"raw": raw_console[:800]}]
+            # agent-browser `console` emits plain-text lines; wrap each as a record.
+            for line in raw_console.splitlines():
+                line = line.strip()
+                if line:
+                    console_entries.append({"raw": line, "text": line})
 
         # Write console log.
         with open(console_path, "w", encoding="utf-8") as f:
@@ -659,7 +694,7 @@ def render_check(
         # Extract pageerror / console.error entries.
         for entry in console_entries:
             kind = (entry.get("type") or entry.get("level") or "").lower()
-            msg = entry.get("text") or entry.get("message") or ""
+            msg = entry.get("text") or entry.get("message") or entry.get("raw") or ""
             if kind in ("pageerror", "error") or "TypeError" in msg or "Cannot read" in msg:
                 render_errors.append(f"{kind}: {msg}"[:400])
 

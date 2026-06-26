@@ -340,8 +340,15 @@ def generate_images(
     argv = [python_exe or sys.executable, gen, prompts_path, out_dir]
 
     if runner is None:
-        proc = subprocess.run(argv, capture_output=True, text=True)
-        exit_code = proc.returncode
+        # KIE.ai generate can take 5–15 min (submit + 5-min initial wait + polling).
+        # Hard timeout: 1800 s (30 min) — generous enough for normal latency while
+        # preventing a hung process from stalling the build indefinitely.
+        _kie_timeout = int(os.environ.get("KIE_SUBPROCESS_TIMEOUT", "1800"))
+        try:
+            proc = subprocess.run(argv, capture_output=True, text=True, timeout=_kie_timeout)
+            exit_code = proc.returncode
+        except subprocess.TimeoutExpired:
+            exit_code = 1
     else:
         exit_code = int(runner(argv))
 

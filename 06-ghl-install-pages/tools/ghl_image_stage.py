@@ -448,21 +448,44 @@ def run_image_pipeline(
     expected_ids = [s["slide"] for s in enriched_specs]
 
     # ── Step 4: Generate images (shells kie_generate.py, verifies PNG bytes). ──
-    try:
-        gen_result = ghl_media.generate_images(
-            prompts_path,
-            images_dir,
-            expected_ids=expected_ids,
-            runner=_generate_runner,  # None in production (real subprocess)
-        )
-    except (ValueError, FileNotFoundError, RuntimeError) as exc:
-        logger.error("IMAGE PIPELINE FAIL (generate_images): %s", exc)
-        return _fail(str(exc), honest=True)
+    # Retry up to 3 attempts with 30-second backoff to handle transient KIE latency.
+    # NEVER returns a stub — any genuine failure after all retries is an honest FAIL.
+    _KIE_MAX_ATTEMPTS = 3
+    _KIE_BACKOFF_S = 30
+    gen_result: dict | None = None
+    gen_exc: Exception | None = None
+    for _attempt in range(1, _KIE_MAX_ATTEMPTS + 1):
+        try:
+            gen_result = ghl_media.generate_images(
+                prompts_path,
+                images_dir,
+                expected_ids=expected_ids,
+                runner=_generate_runner,  # None in production (real subprocess)
+            )
+            if gen_result["ok"]:
+                break  # success — exit retry loop
+            if _attempt < _KIE_MAX_ATTEMPTS:
+                logger.warning(
+                    "IMAGE PIPELINE attempt %d/%d incomplete (missing=%s); retrying in %ds",
+                    _attempt, _KIE_MAX_ATTEMPTS,
+                    gen_result.get("missing"), _KIE_BACKOFF_S,
+                )
+                import time as _time
+                _time.sleep(_KIE_BACKOFF_S)
+        except (ValueError, FileNotFoundError, RuntimeError) as exc:
+            gen_exc = exc
+            logger.error("IMAGE PIPELINE attempt %d/%d exception: %s", _attempt, _KIE_MAX_ATTEMPTS, exc)
+            if _attempt < _KIE_MAX_ATTEMPTS:
+                import time as _time
+                _time.sleep(_KIE_BACKOFF_S)
+    if gen_exc is not None and gen_result is None:
+        return _fail(str(gen_exc), honest=True)
 
-    if not gen_result["ok"] or gen_result["missing"]:
-        missing_str = ", ".join(gen_result["missing"]) if gen_result["missing"] else "unknown"
+    if gen_result is None or not gen_result["ok"] or gen_result["missing"]:
+        missing_str = ", ".join(gen_result["missing"]) if gen_result and gen_result["missing"] else "unknown"
         reason = (
-            f"KIE image generation failed (exit={gen_result['exit_code']}); "
+            f"KIE image generation failed after {_KIE_MAX_ATTEMPTS} attempts "
+            f"(exit={gen_result['exit_code'] if gen_result else 'N/A'}); "
             f"missing PNGs: {missing_str}"
         )
         logger.error("IMAGE PIPELINE FAIL (generate_images result): %s", reason)
