@@ -63,11 +63,41 @@ PARK_DIR="$OC_ROOT/workspace/.park"
 BOX_PARK_MARKER="$PARK_DIR/workforce-build.parked"
 STUCK_COUNT_FILE="$OC_ROOT/workspace/.workforce-build-resume-stuck.count"
 PROGRESS_FP_FILE="$OC_ROOT/workspace/.workforce-build-resume-progress.fp"
+# v14.x: MONOTONIC progress high-water mark + dispatch-overlap marker.
+# PROGRESS_HWM_FILE holds the highest progress SCORE ever observed for this build
+# (see progress_score). The stuck counter resets ONLY when the score EXCEEDS this
+# high-water mark, so status OSCILLATION (a fingerprint that churns without net
+# forward motion) can no longer reset the stuck-cap. The mark NEVER decreases.
+PROGRESS_HWM_FILE="$OC_ROOT/workspace/.workforce-build-resume-progress.hwm"
+# INFLIGHT_MARKER is stamped at every successful dispatch. A resume self-ping fires
+# an async agentTurn that can run for minutes, but this script exits ~1s after the
+# send and drops its lock — so without this marker the next */15 fire stacks a
+# SECOND overlapping turn (the overlap furnace). A fresh marker blocks a new
+# dispatch; it TTL-expires so a genuinely-dead turn still recovers.
+INFLIGHT_MARKER="$OC_ROOT/workspace/.workforce-build-resume.inflight"
 # Default 24 consecutive no-progress fires = 6h of literally-zero state change =
 # unambiguously stuck. Override with WORKFORCE_RESUME_MAX_STUCK_FIRES (floor 2).
 MAX_STUCK_FIRES="${WORKFORCE_RESUME_MAX_STUCK_FIRES:-24}"
 case "$MAX_STUCK_FIRES" in ""|*[!0-9]*) MAX_STUCK_FIRES=24 ;; esac
 [ "$MAX_STUCK_FIRES" -lt 2 ] 2>/dev/null && MAX_STUCK_FIRES=2
+
+# v14.x: ABSOLUTE ceiling on TOTAL resume self-pings dispatched for ONE build,
+# independent of progress. The consecutive-stuck cap resets on every real advance,
+# so a build that crawls forward just under it could otherwise self-ping forever
+# (a slow furnace). At this ceiling we PARK + escalate + self-remove exactly like
+# the stuck-cap. Counted in RUN_COUNT_FILE (reset by self_remove_cron). Default 240
+# (≈ a very generous slow build); override WORKFORCE_RESUME_MAX_TOTAL_PINGS (floor 24).
+MAX_TOTAL_RESUME_PINGS="${WORKFORCE_RESUME_MAX_TOTAL_PINGS:-240}"
+case "$MAX_TOTAL_RESUME_PINGS" in ""|*[!0-9]*) MAX_TOTAL_RESUME_PINGS=240 ;; esac
+[ "$MAX_TOTAL_RESUME_PINGS" -lt 24 ] 2>/dev/null && MAX_TOTAL_RESUME_PINGS=24
+
+# v14.x: dispatch-overlap TTL (minutes). A new resume self-ping is blocked while
+# the in-flight marker is younger than this. Sized to outlast a normal resume
+# agentTurn yet still recover from a dead one. Override
+# WORKFORCE_RESUME_INFLIGHT_TTL_MINUTES (floor 5).
+RESUME_INFLIGHT_TTL_MINUTES="${WORKFORCE_RESUME_INFLIGHT_TTL_MINUTES:-20}"
+case "$RESUME_INFLIGHT_TTL_MINUTES" in ""|*[!0-9]*) RESUME_INFLIGHT_TTL_MINUTES=20 ;; esac
+[ "$RESUME_INFLIGHT_TTL_MINUTES" -lt 5 ] 2>/dev/null && RESUME_INFLIGHT_TTL_MINUTES=5
 
 log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG_FILE"
@@ -117,10 +147,12 @@ self_remove_cron() {
   log "self_remove_cron($reason): removing cron $uuid"
   if openclaw cron rm "$uuid" 2>>"$LOG_FILE"; then
     log "self_remove_cron($reason): removed $uuid"
-    # Reset the run/stuck counters so a future (operator-un-parked) build starts
-    # fresh. NEVER delete BOX_PARK_MARKER here — a park must persist until an
-    # operator runs scripts/unpark-build.sh (auto-resume never happens silently).
-    rm -f "$RUN_COUNT_FILE" "$STUCK_COUNT_FILE" "$PROGRESS_FP_FILE" 2>/dev/null || true
+    # Reset the run/stuck counters + progress high-water mark + in-flight marker so a
+    # future (operator-un-parked) build starts fresh. NEVER delete BOX_PARK_MARKER
+    # here — a park must persist until an operator runs scripts/unpark-build.sh
+    # (auto-resume never happens silently).
+    rm -f "$RUN_COUNT_FILE" "$STUCK_COUNT_FILE" "$PROGRESS_FP_FILE" \
+          "$PROGRESS_HWM_FILE" "$INFLIGHT_MARKER" 2>/dev/null || true
   else
     log "self_remove_cron($reason): openclaw cron rm $uuid FAILED - see errors above"
   fi
@@ -213,6 +245,27 @@ progress_fingerprint() {
   fi
 }
 
+# MONOTONIC progress SCORE — a single non-decreasing integer that only RISES when
+# the build genuinely advances: a department reaches done, a library/comms/closeout
+# gate closes, or the build completes. Status OSCILLATION (a dept flapping
+# building<->pending, a fingerprint that churns without net forward motion) does
+# NOT raise it. Used as a high-water mark so the stuck-cap can no longer be defeated
+# by churn: the stuck counter resets ONLY when this score EXCEEDS the stored mark.
+progress_score() {
+  if command -v jq >/dev/null 2>&1 && [[ -f "$STATE_FILE" ]]; then
+    jq -r '
+      ([.departments[]? | select(.status == "done")] | length)
+      + (if ((.roleLibraryStatus // "") == "done") then 1 else 0 end)
+      + (if ((.sopLibraryStatus // "") == "done") then 1 else 0 end)
+      + (if ((.commsAutomationStatus // "") | IN("done","not-applicable")) then 1 else 0 end)
+      + (if ((.closeoutStatus // "") | IN("done","sent")) then 1 else 0 end)
+      + (if ((.buildCompletedAt // "") != "") then 1 else 0 end)
+    ' "$STATE_FILE" 2>/dev/null || echo 0
+  else
+    echo 0
+  fi
+}
+
 # (1) ALREADY PARKED → STOP unconditionally. The agent-browser breaker or a prior
 #     stuck-cap wrote BOX_PARK_MARKER and no operator has un-parked. Do NOT resume;
 #     remove the cron so future fires stop too. Un-park is operator-only.
@@ -232,16 +285,31 @@ if command -v jq >/dev/null 2>&1 && [[ -f "$STATE_FILE" ]]; then
   _ndept=$(jq -r '(.departments // []) | length' "$STATE_FILE" 2>/dev/null || echo 0)
 fi
 if [[ "$_ic" == "true" ]] && [[ "${_ndept:-0}" =~ ^[0-9]+$ ]] && (( _ndept > 0 )); then
-  _cur_fp="$(progress_fingerprint)"
-  _prev_fp=""
-  [[ -f "$PROGRESS_FP_FILE" ]] && _prev_fp="$(cat "$PROGRESS_FP_FILE" 2>/dev/null || echo '')"
-  if [[ -n "$_prev_fp" && "$_cur_fp" == "$_prev_fp" ]]; then
+  _cur_fp="$(progress_fingerprint)"            # human-readable only (logged below)
+  # MONOTONIC high-water-mark stuck detection (v14.x). The OLD logic reset the stuck
+  # counter on ANY fingerprint change, so a build whose status OSCILLATED (the
+  # fingerprint churned A->B->A->B...) never accrued stuck and the cap was defeated.
+  # Now the reset is gated on a non-decreasing progress SCORE beating its high-water
+  # mark; oscillation that makes no NET forward progress keeps incrementing stuck.
+  _cur_score="$(progress_score)"
+  case "$_cur_score" in ""|*[!0-9]*) _cur_score=0 ;; esac
+  _prev_hwm=""
+  [[ -f "$PROGRESS_HWM_FILE" ]] && _prev_hwm=$(cat "$PROGRESS_HWM_FILE" 2>/dev/null | tr -dc '0-9' | head -c 9)
+  if [[ -z "$_prev_hwm" ]]; then
+    # First active-build observation — establish the high-water mark; no stuck yet.
+    _stuck=0
+    echo "$_cur_score" > "$PROGRESS_HWM_FILE" 2>/dev/null || true
+  elif (( _cur_score > _prev_hwm )); then
+    # GENUINE forward progress — raise the (monotonic) high-water mark, reset stuck.
+    _stuck=0
+    echo "$_cur_score" > "$PROGRESS_HWM_FILE" 2>/dev/null || true
+  else
+    # No NET progress beyond the high-water mark (score flat, or dropped and came
+    # back via oscillation). The mark is NEVER lowered here. Count this as stuck.
     _stuck=0
     [[ -f "$STUCK_COUNT_FILE" ]] && _stuck=$(cat "$STUCK_COUNT_FILE" 2>/dev/null | tr -dc '0-9' | head -c 6)
     [[ -z "$_stuck" ]] && _stuck=0
     _stuck=$((_stuck + 1))
-  else
-    _stuck=0
   fi
   echo "$_stuck" > "$STUCK_COUNT_FILE" 2>/dev/null || true
   printf '%s' "$_cur_fp" > "$PROGRESS_FP_FILE" 2>/dev/null || true
@@ -271,14 +339,14 @@ if [[ "$_ic" == "true" ]] && [[ "${_ndept:-0}" =~ ^[0-9]+$ ]] && (( _ndept > 0 )
     exit 0
   fi
   if (( _stuck == 0 )); then
-    log "stuck-watch: progress fingerprint CHANGED — build advanced; stuck counter reset to 0/$MAX_STUCK_FIRES."
+    log "stuck-watch: progress score ${_cur_score} >= high-water mark — build advanced (mark raised); stuck counter reset to 0/$MAX_STUCK_FIRES."
   else
-    log "stuck-watch: NO progress since last fire — stuck counter $_stuck/$MAX_STUCK_FIRES (parks + disables cron at the cap)."
+    log "stuck-watch: NO net progress (score ${_cur_score} <= high-water ${_prev_hwm:-?}; fingerprint may have churned) — stuck counter $_stuck/$MAX_STUCK_FIRES (parks + disables cron at the cap)."
   fi
 else
-  # No active build to be stuck on (pre-interview / pre-seed). Keep the counters
-  # clean so a later real build starts fresh; never park this phase.
-  rm -f "$STUCK_COUNT_FILE" "$PROGRESS_FP_FILE" 2>/dev/null || true
+  # No active build to be stuck on (pre-interview / pre-seed). Keep the counters +
+  # high-water mark clean so a later real build starts fresh; never park this phase.
+  rm -f "$STUCK_COUNT_FILE" "$PROGRESS_FP_FILE" "$PROGRESS_HWM_FILE" 2>/dev/null || true
 fi
 
 # ---- v10.14.20: heal config before any gateway interaction ----
@@ -724,6 +792,55 @@ if (( library_dirty == 1 )) && (( attempts >= near_cap_threshold )); then
   fi
 fi
 
+# ---- v14.x: ABSOLUTE total-resume-ping ceiling (FURNACE HARD STOP) ----
+# Independent of the consecutive-stuck cap (which resets on every real advance): even
+# a build that crawls forward just under the stuck cap must not self-ping forever. We
+# count EVERY dispatch in RUN_COUNT_FILE; at the ceiling we PARK (durable) + escalate
+# once + self-remove the cron — the same hard stop as the stuck-cap. This is checked
+# BEFORE bumping attempts / dispatching so the furnace can never light again.
+_total_pings=0
+[[ -f "$RUN_COUNT_FILE" ]] && _total_pings=$(cat "$RUN_COUNT_FILE" 2>/dev/null | tr -dc '0-9' | head -c 9)
+[[ -z "$_total_pings" ]] && _total_pings=0
+if (( _total_pings >= MAX_TOTAL_RESUME_PINGS )); then
+  log "PING-CEILING: $_total_pings total resume self-pings dispatched for this build (ceiling=$MAX_TOTAL_RESUME_PINGS). PARKING (durable) + escalating once, then DISABLING this cron. Absolute furnace stop independent of progress. Un-park is operator-only (scripts/unpark-build.sh)."
+  park_set "ping-ceiling:${_total_pings}-total-resume-pings"
+  if command -v openclaw >/dev/null 2>&1; then
+    _pc_esc=$(jq -r '.pingCeilingEscalated // false' "$STATE_FILE" 2>/dev/null || echo false)
+    if [[ "$_pc_esc" != "true" ]]; then
+      _rr_webhook="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rescue-rangers}"
+      if [[ -n "$_rr_webhook" ]] && command -v curl >/dev/null 2>&1; then
+        _rr_msg="workforce-build-resume on $(hostname) hit the ABSOLUTE ping ceiling: ${_total_pings} total resume self-pings (cap ${MAX_TOTAL_RESUME_PINGS}). Build PARKED + cron DISABLED (v14.x). Investigate on the box, then un-park with scripts/unpark-build.sh. State: $STATE_FILE."
+        _rr_payload=$(jq -nc --arg c "$(hostname)" --arg a "main" --arg m "$_rr_msg" '{action:"escalate",client:$c,agent:$a,message:$m}' 2>/dev/null || echo '')
+        [[ -n "$_rr_payload" ]] && curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
+      fi
+      _operator_chat="$(resolve_operator_chat_id)"
+      [[ -n "$_operator_chat" ]] && openclaw message send --channel telegram -t "$_operator_chat" \
+        -m "⛔ workforce-build-resume on $(hostname) PARKED + DISABLED after ${_total_pings} total resume self-pings (absolute ceiling ${MAX_TOTAL_RESUME_PINGS}). It will NOT re-fire until you un-park: scripts/unpark-build.sh. State: $STATE_FILE" >>"$LOG_FILE" 2>&1 || true
+      _tmp_pc=$(mktemp); jq '.pingCeilingEscalated = true' "$STATE_FILE" > "$_tmp_pc" 2>/dev/null && mv "$_tmp_pc" "$STATE_FILE" || rm -f "$_tmp_pc"
+    fi
+  fi
+  echo "PARKED + DISABLED — ${_total_pings} total resume pings hit the absolute ceiling ($MAX_TOTAL_RESUME_PINGS). The resume cron is removed; un-park is operator-only (scripts/unpark-build.sh). STOP."
+  self_remove_cron "ping-ceiling"
+  exit 0
+fi
+
+# ---- v14.x: DISPATCH-OVERLAP gate (durable in-flight marker) ----
+# The async agentTurn a resume self-ping triggers can run for minutes; this script
+# drops its lock ~1s after the send, so without this gate the next */15 fire stacks a
+# second overlapping turn (the overlap furnace). Refuse to dispatch while a FRESH
+# in-flight marker exists; the marker TTL-expires so a genuinely-dead turn still
+# recovers. No attempt bump / no ping count on a skipped fire — this is a no-op cycle.
+if [[ -f "$INFLIGHT_MARKER" ]]; then
+  _if_mtime=$(stat -c %Y "$INFLIGHT_MARKER" 2>/dev/null || stat -f %m "$INFLIGHT_MARKER" 2>/dev/null || echo 0)
+  _if_age=$(( $(date +%s) - _if_mtime ))
+  _if_ttl=$(( RESUME_INFLIGHT_TTL_MINUTES * 60 ))
+  if (( _if_age < _if_ttl )); then
+    log "IN-FLIGHT: previous resume agentTurn marker is ${_if_age}s old (< ${_if_ttl}s TTL) — a resume turn is likely still running. SKIPPING dispatch this fire to avoid overlapping agentTurns (no attempt bump). Will dispatch once the marker expires or the agent clears it ($INFLIGHT_MARKER)."
+    exit 0
+  fi
+  log "IN-FLIGHT: marker is ${_if_age}s old (>= ${_if_ttl}s TTL) — prior resume turn presumed finished/dead; proceeding with a fresh dispatch."
+fi
+
 # ---- bump attempt counter atomically ----
 tmp_state=$(mktemp)
 jq ".resumeAttempts = $((attempts + 1))" "$STATE_FILE" > "$tmp_state" && mv "$tmp_state" "$STATE_FILE"
@@ -811,7 +928,13 @@ fi
 
 log "dispatching resume to chat $TARGET_CHAT (attempt $((attempts + 1))/$max_attempts; pending='$pending_list'; stale='$stale_list'; library_dirty=$library_dirty roleLib='$role_library_status' sopLib='$sop_library_status'; comms_automation_dirty=$comms_automation_dirty comms_automation_status='$comms_automation_status'; closeout_dirty=$closeout_dirty closeout_status='$closeout_status')"
 if openclaw message send --channel telegram -t "$TARGET_CHAT" -m "$msg" 2>>"$LOG_FILE"; then
-  log "resume dispatch ok"
+  # A resume turn was actually triggered. Record it: bump the ABSOLUTE ping counter
+  # (furnace ceiling) and stamp the in-flight overlap marker so the next */15 fire
+  # cannot stack a second agentTurn until it TTL-expires or the agent clears it.
+  _total_pings=$(( ${_total_pings:-0} + 1 ))
+  echo "$_total_pings" > "$RUN_COUNT_FILE" 2>/dev/null || true
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$INFLIGHT_MARKER" 2>/dev/null || true
+  log "resume dispatch ok (total resume pings this build: $_total_pings/$MAX_TOTAL_RESUME_PINGS; in-flight marker set, TTL ${RESUME_INFLIGHT_TTL_MINUTES}m)"
 else
   log "resume dispatch FAILED (non-fatal: in-process exec already fired above if closeout_dirty)"
 fi

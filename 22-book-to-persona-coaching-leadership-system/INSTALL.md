@@ -393,7 +393,7 @@ If Codex OAuth is not found or expired: reconnect via OpenClaw settings using yo
 
 ## Step 5 - Install Gemini Vector Index (coaching-personas) — DOWNLOAD PREBUILT (DEFAULT)
 
-> **DEFAULT PATH: download the prebuilt index.** This avoids re-embedding 6260 chunks and saves your Gemini API credits.
+> **DEFAULT PATH: download the prebuilt index.** This avoids re-embedding ~7615 chunks (48 personas) and saves your Gemini API credits.
 > Only fall back to local embedding (Step 5-FALLBACK) if the download fails or you are adding new books that are not in the prebuilt set.
 
 ### Step 5-A: Detect install path (Mac vs VPS)
@@ -411,11 +411,24 @@ mkdir -p "$COACHING_DB_DIR"
 ### Step 5-B: Download prebuilt index from GitHub Release
 
 ```bash
-ASSET_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v1.0.0/gemini-index.sqlite.gz"
-EXPECTED_SHA256="65864eb6b53a54818017b44b17c4c0647a543086aa833573b1f56cdf816ed0ad"
+# Single source of truth: shared-utils/prebuilt-index/INDEX-MANIFEST.json on the
+# default branch. We read asset_url + sha256 from the manifest so this never
+# drifts when a newer prebuilt index is released. If the manifest can't be
+# fetched (offline box), fall back to the pinned v2.0.0 / 48-persona values.
+MANIFEST_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/shared-utils/prebuilt-index/INDEX-MANIFEST.json"
+MANIFEST_JSON="$(curl -fsSL "$MANIFEST_URL" 2>/dev/null)"
+ASSET_URL="$(printf '%s' "$MANIFEST_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["asset_url"])' 2>/dev/null)"
+EXPECTED_SHA256="$(printf '%s' "$MANIFEST_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha256"])' 2>/dev/null)"
+if [ -z "$ASSET_URL" ] || [ -z "$EXPECTED_SHA256" ]; then
+  echo "Manifest unavailable — using pinned v2.0.0 / 48-persona values"
+  ASSET_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v2.0.0/gemini-index.sqlite.gz"
+  EXPECTED_SHA256="5554ec1efd99819c46a149b4d3d1dd5abd70649317ae6c54a0b0e9ebab0c09ff"
+fi
+echo "Index asset:     $ASSET_URL"
+echo "Expected sha256: $EXPECTED_SHA256"
 GZ_PATH="/tmp/gemini-index.sqlite.gz"
 
-echo "Downloading prebuilt persona index (~71 MB)..."
+echo "Downloading prebuilt persona index (~87 MB, 48 personas)..."
 curl -L --retry 3 --retry-delay 5 --fail \
   -H "Accept: application/octet-stream" \
   "$ASSET_URL" -o "$GZ_PATH"
@@ -477,10 +490,13 @@ try:
     row = conn.execute("SELECT COUNT(*) FROM embeddings").fetchone()
     chunk_count = row[0]
     print(f"Index verified: {chunk_count} chunks in embeddings table")
-    if chunk_count < 6000:
-        print(f"WARNING: expected ~6260 chunks, got {chunk_count}. Re-run download.")
+    if chunk_count < 7000:
+        print(f"FAIL: expected ~7615 chunks (48-persona v2.0.0 index), got {chunk_count}.")
+        print("      This looks like the OLD 40-persona index — the 8 book-author")
+        print("      personas are MISSING. Delete the DB and re-run the download.")
+        sys.exit(1)
     else:
-        print("PASS: prebuilt index ready for use")
+        print("PASS: prebuilt 48-persona index ready for use")
 except Exception as e:
     print(f"FAIL: could not query embeddings table: {e}")
     sys.exit(1)
@@ -489,7 +505,7 @@ finally:
 EOF
 ```
 
-**Expected output:** `PASS: prebuilt index ready for use` with ~6260 chunks.
+**Expected output:** `PASS: prebuilt 48-persona index ready for use` with ~7615 chunks.
 
 ---
 
@@ -499,7 +515,7 @@ Use this path ONLY when:
 - The GitHub Release download above failed and cannot be retried
 - You are adding client-specific books not in the prebuilt set (incremental indexing)
 
-**Note:** This consumes Gemini API credits (one embedding call per chunk). With 6260 chunks the full rebuild costs ~$0.50–$1.00 at GA pricing.
+**Note:** This consumes Gemini API credits (one embedding call per chunk). With ~7615 chunks the full rebuild costs ~$0.60–$1.20 at GA pricing.
 
 **Run the indexer after Step 5b-Deploy is complete:**
 ```bash
@@ -852,12 +868,16 @@ One-liner for copy-paste (Mac):
 ```bash
 COACHING_DB_DIR="$HOME/.openclaw/workspace/data/coaching-personas"
 mkdir -p "$COACHING_DB_DIR"
-ASSET_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v1.0.0/gemini-index.sqlite.gz"
-EXPECTED_SHA="65864eb6b53a54818017b44b17c4c0647a543086aa833573b1f56cdf816ed0ad"
+MANIFEST_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/shared-utils/prebuilt-index/INDEX-MANIFEST.json"
+MJSON="$(curl -fsSL "$MANIFEST_URL" 2>/dev/null)"
+ASSET_URL="$(printf '%s' "$MJSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["asset_url"])' 2>/dev/null)"
+EXPECTED_SHA="$(printf '%s' "$MJSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha256"])' 2>/dev/null)"
+[ -z "$ASSET_URL" ] && ASSET_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v2.0.0/gemini-index.sqlite.gz"
+[ -z "$EXPECTED_SHA" ] && EXPECTED_SHA="5554ec1efd99819c46a149b4d3d1dd5abd70649317ae6c54a0b0e9ebab0c09ff"
 GZ=/tmp/gemini-index.sqlite.gz
 curl -L --retry 3 --fail "$ASSET_URL" -o "$GZ" && \
 ACTUAL=$(shasum -a 256 "$GZ" | awk '{print $1}') && \
-[ "$ACTUAL" = "$EXPECTED_SHA" ] && echo "SHA256 OK" || { echo "SHA256 MISMATCH — aborting"; exit 1; } && \
+{ [ "$ACTUAL" = "$EXPECTED_SHA" ] && echo "SHA256 OK" || { echo "SHA256 MISMATCH — aborting"; exit 1; }; } && \
 gunzip -c "$GZ" > "$COACHING_DB_DIR/gemini-index.sqlite" && \
 rm -f "$GZ" && \
 echo "Index installed at $COACHING_DB_DIR/gemini-index.sqlite"
@@ -867,12 +887,16 @@ VPS path — replace `$HOME/.openclaw` with `/data/.openclaw`:
 ```bash
 COACHING_DB_DIR="/data/.openclaw/workspace/data/coaching-personas"
 mkdir -p "$COACHING_DB_DIR"
-ASSET_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v1.0.0/gemini-index.sqlite.gz"
-EXPECTED_SHA="65864eb6b53a54818017b44b17c4c0647a543086aa833573b1f56cdf816ed0ad"
+MANIFEST_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/shared-utils/prebuilt-index/INDEX-MANIFEST.json"
+MJSON="$(curl -fsSL "$MANIFEST_URL" 2>/dev/null)"
+ASSET_URL="$(printf '%s' "$MJSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["asset_url"])' 2>/dev/null)"
+EXPECTED_SHA="$(printf '%s' "$MJSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha256"])' 2>/dev/null)"
+[ -z "$ASSET_URL" ] && ASSET_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v2.0.0/gemini-index.sqlite.gz"
+[ -z "$EXPECTED_SHA" ] && EXPECTED_SHA="5554ec1efd99819c46a149b4d3d1dd5abd70649317ae6c54a0b0e9ebab0c09ff"
 GZ=/tmp/gemini-index.sqlite.gz
 curl -L --retry 3 --fail "$ASSET_URL" -o "$GZ" && \
 ACTUAL=$(sha256sum "$GZ" | awk '{print $1}') && \
-[ "$ACTUAL" = "$EXPECTED_SHA" ] && echo "SHA256 OK" || { echo "SHA256 MISMATCH — aborting"; exit 1; } && \
+{ [ "$ACTUAL" = "$EXPECTED_SHA" ] && echo "SHA256 OK" || { echo "SHA256 MISMATCH — aborting"; exit 1; }; } && \
 gunzip -c "$GZ" > "$COACHING_DB_DIR/gemini-index.sqlite" && \
 rm -f "$GZ" && \
 echo "Index installed at $COACHING_DB_DIR/gemini-index.sqlite"
@@ -884,7 +908,7 @@ echo "Index installed at $COACHING_DB_DIR/gemini-index.sqlite"
 ```bash
 python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status
 ```
-Expected: Shows "coaching-personas" collection with 40+ documents (6260 chunks).
+Expected: Shows "coaching-personas" collection with 48 personas (7615 chunks).
 
 #### Step 5: APPLY CORE_UPDATES.md
 Add entries from CORE_UPDATES.md to:
