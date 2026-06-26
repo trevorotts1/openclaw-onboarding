@@ -114,7 +114,7 @@ def board_config(env: Optional[dict] = None) -> Optional[dict]:
     return {
         "base_url": base,
         "token": (env.get("MC_API_TOKEN") or "").strip(),
-        "secret": (env.get("WEBHOOK_SECRET") or "").strip(),
+        "secret": (env.get("WEBHOOK_SECRET") or env.get("CC_WEBHOOK_SECRET") or "").strip(),
         "timeout": timeout,
     }
 
