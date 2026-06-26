@@ -25,6 +25,9 @@ on:
       - "48-facebook-ad-generator/scripts/ad_sync_check.py"
       - "48-facebook-ad-generator/scripts/ad_gate_integrity_check.py"
       - "48-facebook-ad-generator/scripts/test_ad_preflight.py"
+      - "48-facebook-ad-generator/scripts/ad_recovery.py"
+      - "48-facebook-ad-generator/scripts/test_ad_recovery.py"
+      - "scripts/unpark-ad-run.sh"
       - "48-facebook-ad-generator/test-fixtures/make-ad-fixtures.sh"
       - "48-facebook-ad-generator/qc-facebook-ad-generator.sh"
       - "universal-sops/fb-ad-craft/AD-PIPELINE-MANIFEST.json"
@@ -40,6 +43,9 @@ on:
       - "48-facebook-ad-generator/scripts/ad_sync_check.py"
       - "48-facebook-ad-generator/scripts/ad_gate_integrity_check.py"
       - "48-facebook-ad-generator/scripts/test_ad_preflight.py"
+      - "48-facebook-ad-generator/scripts/ad_recovery.py"
+      - "48-facebook-ad-generator/scripts/test_ad_recovery.py"
+      - "scripts/unpark-ad-run.sh"
       - "48-facebook-ad-generator/test-fixtures/make-ad-fixtures.sh"
       - "48-facebook-ad-generator/qc-facebook-ad-generator.sh"
       - "universal-sops/fb-ad-craft/AD-PIPELINE-MANIFEST.json"
@@ -79,16 +85,27 @@ jobs:
           python3 "$T"
           echo "test_ad_preflight: every ad_director-enforced gate tripped its negative fixture (af-coverage emitted)."
 
-      - name: ad_gate_integrity_check.py — Guard A (declared==enforced==tested, exit 0 required)
+      - name: test_ad_recovery.py — self-correct/park proof (exit 0 required, emits recovery-coverage)
+        shell: bash
+        run: |
+          set -euo pipefail
+          R="48-facebook-ad-generator/scripts/test_ad_recovery.py"
+          [ -f "$R" ] || { echo "FATAL: $R not found" >&2; exit 2; }
+          python3 "$R"
+          echo "test_ad_recovery: recoverable self-heals; non-recoverable parks+resumes with no re-charge; dangerous gate stops (recovery-coverage emitted)."
+
+      - name: ad_gate_integrity_check.py — Guard A (declared==enforced==tested+recovery, exit 0 required)
         shell: bash
         run: |
           set -euo pipefail
           G="48-facebook-ad-generator/scripts/ad_gate_integrity_check.py"
           COV="48-facebook-ad-generator/scripts/working/af-coverage.json"
+          RCOV="48-facebook-ad-generator/scripts/working/recovery-coverage.json"
           [ -f "$G" ] || { echo "FATAL: $G not found" >&2; exit 2; }
           [ -f "$COV" ] || { echo "FATAL: af-coverage.json not found — the test step must run first." >&2; exit 2; }
+          [ -f "$RCOV" ] || { echo "FATAL: recovery-coverage.json not found — the recovery test step must run first." >&2; exit 2; }
           python3 "$G"
-          echo "ad_gate_integrity_check: Guard A PASSED — no no-op / untested gates."
+          echo "ad_gate_integrity_check: Guard A PASSED — no no-op / untested / recovery-untested gates."
 
       - name: Materialize the GOOD and BAD foreman fixtures
         shell: bash

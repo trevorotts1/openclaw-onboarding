@@ -225,6 +225,52 @@ def parse_ruleset_section5():
     return codes
 
 
+def parse_ruleset_recovery():
+    """Parse the Recovery column of the MACHINE-CHECKABLE SUMMARY TABLE into
+    {AF code: recovery_value} where recovery_value is "park" or "auto:<N>". Locates the
+    Recovery column by the header so a future column re-order does not silently break it."""
+    lines = MASTER_RULESET.read_text().splitlines()
+    start = None
+    for i, ln in enumerate(lines):
+        if "MACHINE-CHECKABLE SUMMARY TABLE" in ln.upper():
+            start = i
+            break
+    if start is None:
+        _fatal("MASTER-AD ruleset has no machine-checkable table for the Recovery column.")
+    end = len(lines)
+    for j in range(start + 1, len(lines)):
+        if lines[j].startswith("## "):
+            end = j
+            break
+    rec_idx = None
+    out = {}
+    for ln in lines[start:end]:
+        s = ln.strip()
+        if not s.startswith("|"):
+            continue
+        cells = [c.strip() for c in s.strip("|").split("|")]
+        if rec_idx is None:
+            if any(c.lower() == "code" for c in cells):
+                for k, c in enumerate(cells):
+                    if c.lower() == "recovery":
+                        rec_idx = k
+                        break
+                if rec_idx is None:
+                    _fatal("The machine-checkable table has no 'Recovery' column header — "
+                           "add it so the recovery policy stays in lockstep (R3).")
+            continue
+        if set(cells[0]) <= set("-:") and cells[0]:
+            continue  # separator row
+        codes = AF_RE.findall(cells[0])
+        if not codes:
+            continue
+        val = cells[rec_idx] if rec_idx < len(cells) else ""
+        out[codes[0]] = val
+    if not out:
+        _fatal("Recovery column parsed but no AF rows carried a value.")
+    return out
+
+
 # ---------------------------------------------------------------------------
 # 4. Role / SOP roster on disk
 # ---------------------------------------------------------------------------
@@ -244,7 +290,17 @@ def scan_roles_and_sops():
 # ---------------------------------------------------------------------------
 # DRIFT CHECKS
 # ---------------------------------------------------------------------------
-def run_checks(manifest, code, ruleset_codes, role_stems, sop_files):
+# The DANGEROUS set: codes that MUST be recovery:"park" — a future edit physically
+# cannot downgrade one to "auto" without ad_sync_check exit 4 (R4). It is (a) every
+# gate_code of a human_gate_phases phase (derived below) PLUS (b) this explicit anchor.
+_DANGEROUS_ANCHOR = {
+    "AF-FBAD-BRIEF-INCOMPLETE", "AF-FBAD-COST-CEILING", "AF-FBAD-KIE-BALANCE",
+    "AF-FBAD-TALLY-CROSS", "AF-FBAD-IMAGE-TASKID", "AF-FBAD-TARGETING-REAL",
+    "AF-FBAD-GHL-URL", "AF-FBAD-QC-INDEPENDENCE", "AF-FBAD-DEP-SKIPPED",
+}
+
+
+def run_checks(manifest, code, ruleset_codes, role_stems, sop_files, ruleset_recovery):
     drift = []
 
     def add(check, item, detail):
@@ -349,6 +405,59 @@ def run_checks(manifest, code, ruleset_codes, role_stems, sop_files):
             add("B2", c, f"the enforcement code cites {c} but it is absent from "
                          "AD-PIPELINE-MANIFEST.autofails.")
 
+    # ---- (R) RECOVERY-POLICY LOCKSTEP (manifest <-> ruleset Recovery column) ----
+    af_by_code = {a["code"]: a for a in autofails}
+    # R1/R2: every autofail declares a valid recovery + max_fix_attempts.
+    for a in autofails:
+        rc = a.get("recovery")
+        mx = a.get("max_fix_attempts")
+        if rc not in ("auto", "park"):
+            add("R1", a["code"], f"AF {a['code']} recovery is {rc!r}; must be 'auto' or 'park'.")
+            continue
+        if rc == "auto":
+            if not isinstance(mx, int) or isinstance(mx, bool) or mx < 1:
+                add("R2", a["code"], f"AF {a['code']} recovery:auto needs an integer "
+                                     f"max_fix_attempts >= 1 (got {mx!r}).")
+        else:  # park
+            if mx not in (0, None):
+                add("R2", a["code"], f"AF {a['code']} recovery:park must carry "
+                                     f"max_fix_attempts 0 (got {mx!r}) — a park gets no retry.")
+    # recovery_policy block presence.
+    if not isinstance(manifest.get("recovery_policy"), dict):
+        add("R1", "recovery_policy", "the manifest is missing the top-level "
+                                     "recovery_policy{} block.")
+    # R3: manifest recovery value == ruleset Recovery column, BOTH directions.
+    def _manifest_recovery_str(a):
+        return f"auto:{a.get('max_fix_attempts')}" if a.get("recovery") == "auto" else "park"
+    for a in autofails:
+        want = _manifest_recovery_str(a)
+        have = ruleset_recovery.get(a["code"])
+        if have is None:
+            add("R3", a["code"], f"AF {a['code']} has no Recovery cell in the MASTER-AD "
+                                 "ruleset machine-checkable table.")
+        elif have != want:
+            add("R3", a["code"], f"AF {a['code']} Recovery drift: manifest={want!r} but "
+                                 f"ruleset table={have!r}.")
+    for c in sorted(ruleset_recovery):
+        if c not in af_by_code:
+            add("R3", c, f"AF {c} has a Recovery cell in the ruleset table but is absent "
+                         "from manifest.autofails.")
+    # R4: the DANGEROUS set (human-gate codes + the explicit anchor) MUST be park.
+    human_gate_ids = set(manifest.get("human_gate_phases", []) or [])
+    dangerous = set(_DANGEROUS_ANCHOR)
+    for ph in phases:
+        if ph["id"] in human_gate_ids:
+            dangerous |= set(ph.get("gate_codes", []) or [])
+    for c in sorted(dangerous):
+        a = af_by_code.get(c)
+        if a is None:
+            add("R4", c, f"the dangerous-gate anchor names {c} but it is not a manifest "
+                         "autofail.")
+        elif a.get("recovery") != "park":
+            add("R4", c, f"AF {c} is a DANGEROUS gate (overspend / fabrication / human "
+                         f"approval) and MUST be recovery:park, but is {a.get('recovery')!r}. "
+                         "A dangerous gate can never be downgraded to self-correct.")
+
     # ---- (D) DELIVERABLE-SET DRIFT ----
     manifest_deliv = {d["key"] for d in manifest.get("deliverables_required", [])
                       if isinstance(d, dict) and "key" in d}
@@ -380,10 +489,12 @@ def report_human(drift, manifest):
     a = [d for d in drift if d["check"].startswith("A")]
     b = [d for d in drift if d["check"].startswith("B")]
     dd = [d for d in drift if d["check"].startswith("D")]
+    rr = [d for d in drift if d["check"].startswith("R")]
     print("=== ad_sync_check: DRIFT DETECTED — LOCKSTEP BROKEN (AF-FBAD-SYNC) ===",
           file=sys.stderr)
     for label, group in (("(A) STACK-AHEAD-OF-CODE", a),
                          ("(B) CODE-AHEAD-OF-STACK", b),
+                         ("(R) RECOVERY-POLICY LOCKSTEP", rr),
                          ("(D) DELIVERABLE-SET DRIFT", dd)):
         if group:
             print(f"\n{label}:", file=sys.stderr)
@@ -399,8 +510,10 @@ def main():
     manifest = load_manifest()
     code = parse_code()
     ruleset_codes = parse_ruleset_section5()
+    ruleset_recovery = parse_ruleset_recovery()
     role_stems, sop_files = scan_roles_and_sops()
-    drift = run_checks(manifest, code, ruleset_codes, role_stems, sop_files)
+    drift = run_checks(manifest, code, ruleset_codes, role_stems, sop_files,
+                       ruleset_recovery)
 
     if as_json:
         print(json.dumps({

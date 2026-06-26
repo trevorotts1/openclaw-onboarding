@@ -43,18 +43,45 @@ MONEY MODEL (LOCKED DECISIONS) — enforced via the receipt checkers, not here:
   balance preflight at start (AF-FBAD-KIE-BALANCE). NOT a balance call per image.
 
 EXIT CODES
-    0 — clean: the phase attested (or owner-authorized skips), pre-flight clean.
-    2 — dependency-precondition violation (AF-FBAD-DEP-SKIPPED), usage error, or a
-        refused --adhoc.
+    0 — clean: the phase attested (or owner-authorized skips), pre-flight clean; OR a
+        --recover/--resume actionable step (DONE / PRODUCE / REDO) — read the JSON
+        verdict's "action".
+    2 — dependency-precondition violation (AF-FBAD-DEP-SKIPPED), usage error, a
+        refused --adhoc, or a refused paid run pinned to a reboot-wiped tmp dir.
     3 — a receipt failed VALIDATION (the produces_artifact is present but its
         checker rejected it — e.g. AF-FBAD-IMAGE-TASKID / AF-FBAD-COPY-QC).
-    4 — Phase-0 balance abort (AF-FBAD-KIE-BALANCE).
+    4 — Phase-0 balance abort (AF-FBAD-KIE-BALANCE) on the legacy --phase path.
+    5 — PARKED (--recover/--resume): a durable save-point was written (PARKED.json +
+        a box-level pointer) and the job PAUSED at a non-recoverable / human-gated /
+        budget-exhausted condition. Nothing is discarded. Clear the blocker, then
+        --resume to re-enter at the exact last-incomplete phase (idempotent on the
+        run-id ledger — never re-charges, never re-uploads).
+
+SELF-CORRECT + PARK-AND-RESUME (opt-in; the legacy --phase 0/2/3/4 path is untouched)
+    --recover  drive the next actionable step. The engine (ad_recovery.py) reads the
+               per-gate recovery policy from the manifest and returns ONE verdict:
+                 PRODUCE  — make this phase's artifact, then call --recover again
+                 ADVANCE  — (internal) a phase just attested; the loop continues
+                 REDO     — a recovery:"auto" gate failed; redo ONLY the failing
+                            artifact with "feedback", up to "max" attempts, re-call
+                 PARK     — a recovery:"park" gate, an exhausted budget, or no-progress
+                            wrote a durable checkpoint (exit 5)
+                 AWAIT_HUMAN — a human gate (PICK-10 / PUBLISH) is waiting (exit 5)
+                 DONE     — every phase attested
+    --resume   re-run the parked checkpoint's clearing checker(s); if they pass, clear
+               the park and continue from the last-incomplete phase; else stay parked.
+    --status   print attested phases, spend tally, park state, attempt counters, next.
 
 USAGE
     python3 ad_director.py --run-dir DIR
         [--plan]                 # print the resolved dependency plan + readiness
-        [--phase S5-IMAGE-GEN]   # advance to / attest a single phase
+        [--phase S5-IMAGE-GEN]   # advance to / attest a single phase (legacy gate)
         [--adhoc]                # owner-authorized + logged escape (refused without it)
+        [--recover]              # self-correct/park foreman: drive the next step
+        [--resume]               # resume a parked run once the blocker clears
+        [--status]               # report attested/spend/park/attempt state
+        [--item N]               # per-item budget key for a per-image gate (S5)
+        [--allow-ephemeral]      # permit a paid run under a tmp dir (dry/test only)
 
 AF-FBAD-DEP-SKIPPED is enforced_by:driver with py_symbol:null (the foreman's
 check_dependency_preconditions is the enforcer; the manifest does not require a
@@ -388,6 +415,288 @@ def assert_adhoc_authorized(run_dir: Path) -> None:
     print(bar + "\n", flush=True)
 
 
+# ===========================================================================
+# SELF-CORRECT + PARK-AND-RESUME FOREMAN (--recover / --resume / --status)
+# Thin orchestration over ad_recovery.py (the engine) + ad_build_check (the real
+# checkers). The legacy --phase 0/2/3/4 path above is deliberately untouched.
+# ===========================================================================
+
+# park_class label per dangerous AF code. Every code here is a REAL manifest code
+# (so ad_sync_check B2 stays clean); a park code not listed defaults to await_human.
+# The invariant that these codes MUST be recovery:"park" is enforced in the manifest
+# and locked by ad_sync_check R4 — NOT by this cosmetic label map.
+_PARK_CLASS = {
+    "AF-FBAD-BRIEF-INCOMPLETE": "await_human",
+    "AF-FBAD-SELECTION-COUNT": "await_human",
+    "AF-FBAD-SELECTION-SUBSET": "await_human",
+    "AF-FBAD-APPROVE": "await_human",
+    "AF-FBAD-DEP-SKIPPED": "await_human",
+    "AF-FBAD-COST-CEILING": "money",
+    "AF-FBAD-KIE-BALANCE": "money",
+    "AF-FBAD-TALLY-CROSS": "money",
+    "AF-FBAD-IMAGE-TASKID": "fabrication",
+    "AF-FBAD-TARGETING-REAL": "fabrication",
+    "AF-FBAD-GHL-URL": "fabrication",
+    "AF-FBAD-QC-INDEPENDENCE": "integrity",
+}
+
+
+def _phase_checker_names(phase: dict) -> list:
+    names = []
+    pf = phase.get("preflight")
+    if pf and pf.get("checker"):
+        names.append(pf["checker"])
+    for ap in phase.get("additional_preflights", []) or []:
+        if ap.get("checker"):
+            names.append(ap["checker"])
+    return names
+
+
+def _waiting_for(af: str, phase_id: str) -> str:
+    if phase_id == "PICK-10":
+        return "owner must reply with a valid 10-pick (PICK: n,n,...)"
+    if phase_id == "PUBLISH":
+        return "owner must approve-to-publish (named approval + timestamp + confirmed)"
+    cls = _PARK_CLASS.get(af, "await_human")
+    if af == "AF-FBAD-KIE-BALANCE":
+        return "top up the Kie.ai balance (or fix the API key), then --resume"
+    if cls == "money":
+        return "raise the per-job money ceiling or cut the batch so the estimate fits"
+    if cls == "fabrication":
+        return ("correct the flagged artifact so it carries a REAL, verifiable value "
+                "(a real task-id / real Meta id / real hosted link), then --resume")
+    if cls == "integrity":
+        return "assign a genuinely independent grader (grader != maker), then --resume"
+    if af == "AF-FBAD-BRIEF-INCOMPLETE":
+        return "owner must supply the missing intake-brief field, then --resume"
+    return "human input required to clear the blocker, then --resume"
+
+
+def _artifact_bytes(run_dir: Path, phase: dict) -> bytes:
+    """Bytes of the phase's produces_artifact (the progress fingerprint source).
+    Empty when absent — the engine treats first-seen as 'changed'."""
+    spec = (phase.get("produces_artifact") or "").strip()
+    if not spec:
+        return b""
+    cands = []
+    p = run_dir / spec
+    if p.exists():
+        cands.append(p)
+    else:
+        cands = sorted(run_dir.glob("**/" + spec.split("/")[-1]))
+    blob = b""
+    for c in cands:
+        try:
+            blob += c.read_bytes()
+        except Exception:  # noqa: BLE001
+            pass
+    return blob
+
+
+def _balance_reason(run_dir: Path, manifest: dict) -> str:
+    """Non-exiting Phase-0 balance preflight (a money PARK in recover, not exit 4)."""
+    if not abc._paid_in_scope(run_dir):
+        return ""
+    est = _estimated_cost(run_dir)
+    api_key = _load_kie_api_key()
+    return abc.kie_balance_preflight(run_dir, est, api_key or None)
+
+
+def _do_park(run_dir: Path, manifest: dict, *, parked_by: str, park_class: str,
+             phase: str, waiting_for: str, resume_clears_when, feedback: str) -> dict:
+    import ad_recovery as rec
+    run_id = _job_id(run_dir)
+    attested = sorted(_attested_phase_ids(run_dir))
+    led = abc._ledger(run_dir)
+    led = led if isinstance(led, dict) else {}
+    spent = led.get("spent_usd", 0.0)
+    done = [e.get("key") for e in (led.get("events", []) or [])
+            if isinstance(e, dict) and e.get("key")]
+    sel = abc._selection(run_dir)
+    selections = {"pick10": sel.get("selection")} if isinstance(sel, dict) else {}
+    rec.write_park(run_dir, run_id=run_id, parked_by_af=parked_by, park_class=park_class,
+                   phase=phase, waiting_for=waiting_for, resume_clears_when=resume_clears_when,
+                   feedback=feedback, attested_phases=attested, selections=selections,
+                   spent_usd=spent, ledger_done_keys=done)
+    return {
+        "action": "PARK", "parked_by": parked_by, "park_class": park_class,
+        "phase": phase, "waiting_for": waiting_for,
+        "resume_clears_when": resume_clears_when, "feedback": feedback,
+        "attested_phases": attested, "spent_usd": spent,
+        "note": ("durable save-point written (PARKED.json + box pointer). No work "
+                 "discarded — attested phases + paid ledger keys are preserved. Clear the "
+                 "blocker, then run --resume to re-enter at the last-incomplete phase "
+                 "(idempotent on the run-id ledger; never re-charges / re-uploads)."),
+    }
+
+
+def _handle_fail(run_dir: Path, manifest: dict, phase: dict, reason: str, item):
+    """Map a REAL failing check to a verdict via the recovery engine. Returns
+    (verdict_dict, exit_code). REDO => exit 0 (agent redoes the one artifact and
+    re-calls). PARK/AWAIT => exit 5 (durable checkpoint)."""
+    import ad_recovery as rec
+    pid = phase["id"]
+    af = rec.af_from_reason(reason) or (phase.get("gate_codes") or ["AF-FBAD-DEP-SKIPPED"])[0]
+    decision = rec.classify_fail(run_dir, manifest, pid, af, item=item,
+                                 artifact_bytes=_artifact_bytes(run_dir, phase))
+    if decision["decision"] == "REDO":
+        return ({
+            "action": "REDO", "phase": pid, "failing_af": af, "feedback": reason,
+            "attempt": decision["attempt"], "max": decision["max"], "item": item,
+            "note": ("redo ONLY the failing artifact using the gate feedback, then call "
+                     "--recover again. The re-call re-runs the REAL checker — there is no "
+                     "fabricated pass."),
+        }, 0)
+    # PARK
+    park_reason = decision.get("reason", "park_gate")
+    if park_reason == "park_gate":
+        park_class = _PARK_CLASS.get(af, "await_human")
+        waiting = _waiting_for(af, pid)
+    elif park_reason == "no_progress":
+        park_class = "no_progress"
+        waiting = (f"the redo for {af} resubmitted a byte-identical artifact "
+                   f"{decision.get('no_progress')}x — it is not changing anything; human "
+                   "help needed, then --resume")
+    else:  # budget_exhausted / total_budget_exhausted
+        park_class = "budget_exhausted"
+        waiting = (f"the auto-fix budget ({decision.get('max', '?')}) for {af} is spent "
+                   f"({park_reason}); a human must fix the artifact, then --resume")
+    return (_do_park(run_dir, manifest, parked_by=af, park_class=park_class, phase=pid,
+                     waiting_for=waiting, resume_clears_when=_phase_checker_names(phase),
+                     feedback=reason), 5)
+
+
+def _recover_loop(run_dir: Path, manifest: dict, item):
+    """Advance the run one ACTIONABLE step. Attesting a passed phase loops to the next;
+    PRODUCE / REDO / PARK / AWAIT_HUMAN / DONE return a verdict to the agent."""
+    import ad_recovery as rec
+    phases = manifest["phases"]
+    while True:
+        attested = _attested_phase_ids(run_dir)
+        ph = rec.next_actionable_phase(phases, attested)
+        if ph is None:
+            return ({"action": "DONE", "attested": sorted(attested),
+                     "note": "every phase attested through PUBLISH; the run is complete."}, 0)
+        pid = ph["id"]
+        is_human = bool(ph.get("human_gate"))
+        present = _artifact_present(run_dir, ph.get("produces_artifact", ""))
+
+        if is_human:
+            # A human gate is NEVER auto-made or auto-redone — the human must supply it.
+            ok, reason = (False, "")
+            if present:
+                ok, reason = validate_phase_receipt(run_dir, ph)
+            if present and ok:
+                attest_phase(run_dir, pid, ph.get("owning_role", ""), "attested",
+                             checker=(ph.get("preflight") or {}).get("checker", ""))
+                continue
+            af = (rec.af_from_reason(reason) if reason else None) \
+                or (ph.get("gate_codes") or ["AF-FBAD-DEP-SKIPPED"])[0]
+            verdict = _do_park(run_dir, manifest, parked_by=af, park_class="await_human",
+                               phase=pid, waiting_for=_waiting_for(af, pid),
+                               resume_clears_when=_phase_checker_names(ph),
+                               feedback=(reason or f"{af}: awaiting human input at {pid}."))
+            verdict["action"] = "AWAIT_HUMAN"
+            return (verdict, 5)
+
+        if not present:
+            return ({"action": "PRODUCE", "phase": pid,
+                     "owning_role": ph.get("owning_role"), "sop_refs": ph.get("sop_refs", []),
+                     "produces_artifact": ph.get("produces_artifact"),
+                     "note": "produce this artifact, then call --recover again."}, 0)
+
+        ok, reason = validate_phase_receipt(run_dir, ph)
+        if ok:
+            attest_phase(run_dir, pid, ph.get("owning_role", ""), "attested",
+                         checker=(ph.get("preflight") or {}).get("checker", ""))
+            continue
+        return _handle_fail(run_dir, manifest, ph, reason, item)
+
+
+def cmd_recover(run_dir: Path, manifest: dict, item=None, allow_ephemeral=False):
+    import ad_recovery as rec
+    paid = abc._paid_in_scope(run_dir)
+    refusal = rec.refuse_paid_tmp(run_dir, paid, allow_ephemeral)
+    if refusal:
+        return ({"action": "REFUSE", "reason": refusal}, 2)
+    parked = rec.read_park(run_dir)
+    if parked:
+        return ({"action": "PARKED", "parked_by": parked.get("parked_by_af"),
+                 "park_class": parked.get("park_class"),
+                 "waiting_for": parked.get("waiting_for"),
+                 "note": "run is parked; clear the blocker and call --resume."}, 5)
+    # Phase-0 balance preflight for a paid job — a money PARK, never a hard abort.
+    if paid:
+        breason = _balance_reason(run_dir, manifest)
+        if breason:
+            return (_do_park(run_dir, manifest, parked_by="AF-FBAD-KIE-BALANCE",
+                             park_class="money", phase="Phase-0",
+                             waiting_for=_waiting_for("AF-FBAD-KIE-BALANCE", "Phase-0"),
+                             resume_clears_when=["kie_balance_preflight"],
+                             feedback=breason), 5)
+    return _recover_loop(run_dir, manifest, item)
+
+
+def _clears_blocking(run_dir: Path, manifest: dict, clears) -> list:
+    """Re-run the parked checkpoint's clearing checker(s). Return the list of still-
+    failing (token, reason) — empty means the blocker is genuinely cleared."""
+    still = []
+    for token in (clears or []):
+        if token == "kie_balance_preflight":
+            reason = _balance_reason(run_dir, manifest)
+        else:
+            fn = abc.CHECKERS.get(token)
+            reason = fn(run_dir) if fn else f"unknown clearing checker {token!r}"
+        if reason:
+            still.append({"checker": token, "reason": reason})
+    return still
+
+
+def cmd_resume(run_dir: Path, manifest: dict, item=None, allow_ephemeral=False):
+    import ad_recovery as rec
+    parked = rec.read_park(run_dir)
+    if parked is None:
+        # nothing parked — resume is a no-op alias for recover (idempotent).
+        return cmd_recover(run_dir, manifest, item, allow_ephemeral)
+    still = _clears_blocking(run_dir, manifest, parked.get("resume_clears_when"))
+    if still:
+        return ({"action": "STILL_PARKED", "parked_by": parked.get("parked_by_af"),
+                 "park_class": parked.get("park_class"),
+                 "waiting_for": parked.get("waiting_for"), "blocking": still,
+                 "note": ("the blocker is NOT cleared yet — the real checker still fails. "
+                          "Supply/correct it, then run --resume again. A park is never "
+                          "auto-cleared without the real check passing.")}, 5)
+    rec.clear_park(run_dir, run_id=parked.get("run_id"))
+    # Re-enter via recover: re-checks balance, skips attested phases + paid ledger keys.
+    return cmd_recover(run_dir, manifest, item, allow_ephemeral)
+
+
+def cmd_status(run_dir: Path, manifest: dict):
+    import ad_recovery as rec
+    attested = sorted(_attested_phase_ids(run_dir))
+    led = abc._ledger(run_dir)
+    led = led if isinstance(led, dict) else {}
+    parked = rec.read_park(run_dir)
+    st = rec.load_state(run_dir)
+    nxt = rec.next_actionable_phase(manifest["phases"], set(attested))
+    return ({
+        "run_dir": str(Path(run_dir).resolve()),
+        "run_id": _job_id(run_dir),
+        "attested_phases": attested,
+        "spent_usd": led.get("spent_usd", 0.0),
+        "ledger_done_keys": [e.get("key") for e in (led.get("events", []) or [])
+                             if isinstance(e, dict) and e.get("key")],
+        "parked": ({"parked_by": parked.get("parked_by_af"),
+                    "park_class": parked.get("park_class"),
+                    "waiting_for": parked.get("waiting_for"),
+                    "resume_clears_when": parked.get("resume_clears_when")}
+                   if parked else None),
+        "attempt_counters": st.get("attempts", {}),
+        "no_progress_counters": st.get("no_progress", {}),
+        "next_action": (None if parked else (nxt["id"] if nxt else "DONE")),
+    }, 0)
+
+
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
@@ -402,6 +711,16 @@ def main():
     ap.add_argument("--adhoc", action="store_true",
                     help="owner-authorized + logged escape (refused without the record; "
                          "never bypasses a human gate)")
+    ap.add_argument("--recover", action="store_true",
+                    help="self-correct/park foreman: drive the next actionable step")
+    ap.add_argument("--resume", action="store_true",
+                    help="resume a parked run once its blocker clears")
+    ap.add_argument("--status", action="store_true",
+                    help="report attested/spend/park/attempt state (JSON)")
+    ap.add_argument("--item", type=int, default=None,
+                    help="per-item budget key for a per-image gate (S5)")
+    ap.add_argument("--allow-ephemeral", action="store_true",
+                    help="permit a paid run under a tmp dir (dry/test only)")
     args = ap.parse_args()
 
     run_dir = Path(args.run_dir).resolve()
@@ -415,6 +734,24 @@ def main():
     if args.plan:
         print_plan(run_dir, phases)
         sys.exit(0)
+
+    # Self-correct + park-and-resume modes (opt-in). They own exit code 5 (PARKED) and
+    # do their OWN non-exiting balance preflight — the legacy --phase 0/2/3/4 path below
+    # is left byte-for-byte unchanged so the CI GOOD/BAD self-test stays green.
+    if args.status:
+        verdict, code = cmd_status(run_dir, manifest)
+        print(json.dumps(verdict, indent=2))
+        sys.exit(code)
+    if args.recover:
+        verdict, code = cmd_recover(run_dir, manifest, item=args.item,
+                                    allow_ephemeral=args.allow_ephemeral)
+        print(json.dumps(verdict, indent=2))
+        sys.exit(code)
+    if args.resume:
+        verdict, code = cmd_resume(run_dir, manifest, item=args.item,
+                                   allow_ephemeral=args.allow_ephemeral)
+        print(json.dumps(verdict, indent=2))
+        sys.exit(code)
 
     if args.adhoc:
         assert_adhoc_authorized(run_dir)

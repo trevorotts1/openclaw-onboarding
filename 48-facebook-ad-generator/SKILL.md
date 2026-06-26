@@ -29,8 +29,9 @@ at exactly two human gates.
 - **Foreman:** `scripts/ad_director.py` — a DEPENDENCY-MAP gate-and-attest driver (NOT Skill 47's straight line): S2/S3/S4 run in parallel after PICK-10; S5 waits on S4; S6 on S2+S3; S7 on S5+S6. The two human gates (PICK-10, PUBLISH) are NON-skippable.
 - **Receipt validators + money gates:** `scripts/ad_build_check.py` — 35 offline checkers + the Phase-0 Kie balance preflight.
 - **Rule book:** `universal-sops/fb-ad-craft/MASTER-AD-QC-AUTOFAIL-RULESET.md` — one machine-checkable row per autofail.
-- **Lockstep + Guard A + negative suite:** `scripts/ad_sync_check.py`, `scripts/ad_gate_integrity_check.py`, `scripts/test_ad_preflight.py` (37 autofails, all negative-tested).
-- **CI:** `.github/workflows/ad-pipeline-lockstep.yml` — sync + test + Guard A + GOOD/BAD fixture self-test on every change.
+- **Lockstep + Guard A + negative suite:** `scripts/ad_sync_check.py` (incl. recovery R1-R4), `scripts/ad_gate_integrity_check.py`, `scripts/test_ad_preflight.py` (37 autofails, all negative-tested).
+- **Self-correct + park-and-resume:** `scripts/ad_recovery.py` (the engine) + `ad_director.py --recover/--resume/--status`. A recoverable (`recovery:auto`) failure redoes ONLY the failing artifact with the gate feedback, re-runs the REAL check, up to a bounded budget, then continues; a non-recoverable (`recovery:park`) condition — over the money ceiling / out of balance, a fabrication/tampering check, a missing human approval — writes a DURABLE save-point (`PARKED.json` + a box pointer under `OC_ROOT/workspace/.park/fbad/`, exit 5) and PAUSES, never self-correcting past it. `--resume` re-enters at the exact last-incomplete phase, idempotent on the run-id ledger (never re-charges, never re-uploads). Per-gate policy lives in the manifest (`recovery` + `max_fix_attempts`), is mirrored in the ruleset Section-7 + Recovery column, and is proven by `scripts/test_ad_recovery.py`. Operators inspect/clear parks with `scripts/unpark-ad-run.sh`.
+- **CI:** `.github/workflows/ad-pipeline-lockstep.yml` — sync + negative test + recovery proof + Guard A + GOOD/BAD fixture self-test on every change.
 
 ## Money control (LOCKED)
 
@@ -54,6 +55,6 @@ Five scored gates (Words / Image Prompts / Images / Targeting / Package). A gate
 
 - `SKILL.md` / `INSTALL.md` / `INSTRUCTIONS.md` / `EXAMPLES.md` / `CORE_UPDATES.md` / `DEPENDENCY-MANIFEST.md` / `skill-version.txt` / `facebook-ad-generator.skill`
 - `install.sh` / `preflight.sh` / `verify-deps.sh` / `qc-facebook-ad-generator.sh`
-- `scripts/` — `ad_director.py`, `ad_build_check.py`, `ad_sync_check.py`, `ad_gate_integrity_check.py`, `test_ad_preflight.py`, plus the live-integration helpers `ad_run_ledger.py`, `ad_selection.py`, `ad_ghl_push.py`, `ad_targeting_resolve.py`, `build_ad_text_doc.py`, `build_plai_brief.py`, and `test_kie_adapter_resultjson_decode.py` (reused)
+- `scripts/` — `ad_director.py`, `ad_build_check.py`, `ad_sync_check.py`, `ad_gate_integrity_check.py`, `test_ad_preflight.py`, `ad_recovery.py` (self-correct/park engine), `test_ad_recovery.py` (recovery proof), plus the live-integration helpers `ad_run_ledger.py`, `ad_selection.py`, `ad_ghl_push.py`, `ad_targeting_resolve.py`, `build_ad_text_doc.py`, `build_plai_brief.py`, and `test_kie_adapter_resultjson_decode.py` (reused). Operator un-park tool: repo-root `scripts/unpark-ad-run.sh`.
 - `tools/ghl_media.py` (reused + the new `create_media_folder()`)
 - `test-fixtures/make-ad-fixtures.sh`
