@@ -1,0 +1,162 @@
+name: FB/IG ad pipeline lockstep (Skill 48)
+
+# Makes the Facebook & Instagram Ad Generator anti-bypass layer fail loud forever.
+# Mirrors video-pipeline-lockstep.yml (sync/test/Guard A + GOOD/BAD fixture self-test).
+# Any non-zero exit blocks the merge.
+#
+#   1. ad_sync_check.py            — manifest <-> driver/build_check <-> ruleset <-> roles/SOPs
+#                                    lockstep; exit 4 on drift.
+#   2. test_ad_preflight.py        — every ad_director-enforced gate is tripped by a
+#                                    deliberately-failing fixture; emits af-coverage.json.
+#   3. ad_gate_integrity_check.py  — Guard A: declared == enforced == tested; exit 1 on
+#                                    a no-op / untested gate.
+#   4. GOOD/BAD fixture self-test  — the foreman ATTESTS the GOOD run through PUBLISH
+#                                    (exit 0) and HARD-ABORTS the BAD bypass run
+#                                    (AF-FBAD-DEP-SKIPPED, exit 2) so the gate provably bites.
+#   5. qc-assert-no-client-names.sh — fleet-wide privacy invariant.
+#   6. qc-facebook-ad-generator.sh — install QC stays green (no regression).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "48-facebook-ad-generator/scripts/ad_director.py"
+      - "48-facebook-ad-generator/scripts/ad_build_check.py"
+      - "48-facebook-ad-generator/scripts/ad_sync_check.py"
+      - "48-facebook-ad-generator/scripts/ad_gate_integrity_check.py"
+      - "48-facebook-ad-generator/scripts/test_ad_preflight.py"
+      - "48-facebook-ad-generator/test-fixtures/make-ad-fixtures.sh"
+      - "48-facebook-ad-generator/qc-facebook-ad-generator.sh"
+      - "universal-sops/fb-ad-craft/AD-PIPELINE-MANIFEST.json"
+      - "universal-sops/fb-ad-craft/MASTER-AD-QC-AUTOFAIL-RULESET.md"
+      - "universal-sops/fb-ad-craft/SOP-FBAD-*.md"
+      - "23-ai-workforce-blueprint/templates/role-library/paid-advertisement/*.md"
+      - ".github/workflows/ad-pipeline-lockstep.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "48-facebook-ad-generator/scripts/ad_director.py"
+      - "48-facebook-ad-generator/scripts/ad_build_check.py"
+      - "48-facebook-ad-generator/scripts/ad_sync_check.py"
+      - "48-facebook-ad-generator/scripts/ad_gate_integrity_check.py"
+      - "48-facebook-ad-generator/scripts/test_ad_preflight.py"
+      - "48-facebook-ad-generator/test-fixtures/make-ad-fixtures.sh"
+      - "48-facebook-ad-generator/qc-facebook-ad-generator.sh"
+      - "universal-sops/fb-ad-craft/AD-PIPELINE-MANIFEST.json"
+      - "universal-sops/fb-ad-craft/MASTER-AD-QC-AUTOFAIL-RULESET.md"
+      - "universal-sops/fb-ad-craft/SOP-FBAD-*.md"
+      - "23-ai-workforce-blueprint/templates/role-library/paid-advertisement/*.md"
+      - ".github/workflows/ad-pipeline-lockstep.yml"
+
+jobs:
+  ad-pipeline-lockstep:
+    name: FB/IG ad manifest/code/ruleset lockstep + GOOD/BAD self-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: ad_sync_check.py — lockstep (exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          S="48-facebook-ad-generator/scripts/ad_sync_check.py"
+          [ -f "$S" ] || { echo "FATAL: $S not found" >&2; exit 2; }
+          python3 "$S"
+          echo "ad_sync_check: lockstep PASSED — manifest, foreman, build-check, ruleset, roles, SOPs in sync."
+
+      - name: test_ad_preflight.py — negative-test suite (exit 0 required, emits af-coverage)
+        shell: bash
+        run: |
+          set -euo pipefail
+          T="48-facebook-ad-generator/scripts/test_ad_preflight.py"
+          [ -f "$T" ] || { echo "FATAL: $T not found" >&2; exit 2; }
+          python3 "$T"
+          echo "test_ad_preflight: every ad_director-enforced gate tripped its negative fixture (af-coverage emitted)."
+
+      - name: ad_gate_integrity_check.py — Guard A (declared==enforced==tested, exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          G="48-facebook-ad-generator/scripts/ad_gate_integrity_check.py"
+          COV="48-facebook-ad-generator/scripts/working/af-coverage.json"
+          [ -f "$G" ] || { echo "FATAL: $G not found" >&2; exit 2; }
+          [ -f "$COV" ] || { echo "FATAL: af-coverage.json not found — the test step must run first." >&2; exit 2; }
+          python3 "$G"
+          echo "ad_gate_integrity_check: Guard A PASSED — no no-op / untested gates."
+
+      - name: Materialize the GOOD and BAD foreman fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x 48-facebook-ad-generator/test-fixtures/make-ad-fixtures.sh
+          bash 48-facebook-ad-generator/test-fixtures/make-ad-fixtures.sh "$RUNNER_TEMP/adfix"
+
+      - name: GOOD run MUST ATTEST every phase through PUBLISH (foreman exit 0)
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN="$RUNNER_TEMP/adfix/good-run"
+          DRV="48-facebook-ad-generator/scripts/ad_director.py"
+          for ph in S0-INTAKE S1-OVERLAYS PICK-10 S2-PRIMARY-TEXT S3-HEADLINES S4-IMAGE-PROMPTS S5-IMAGE-GEN S6-TARGETING S7-DELIVER PUBLISH; do
+            set +e
+            python3 "$DRV" --run-dir "$RUN" --phase "$ph"
+            rc=$?
+            set -e
+            echo "GOOD $ph foreman exit: $rc"
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::FB/IG-ad foreman REJECTED the GOOD run at phase $ph (expected attest / exit 0, got $rc)"
+              exit 1
+            fi
+          done
+          echo "GOOD run attested every phase through PUBLISH as expected."
+
+      - name: BAD run MUST HARD-ABORT (foreman exit 2 — AF-FBAD-DEP-SKIPPED)
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN="$RUNNER_TEMP/adfix/bad-run"
+          DRV="48-facebook-ad-generator/scripts/ad_director.py"
+          set +e
+          python3 "$DRV" --run-dir "$RUN" --phase S5-IMAGE-GEN
+          rc=$?
+          set -e
+          echo "BAD S5-IMAGE-GEN foreman exit: $rc"
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::FB/IG-ad foreman ATTESTED the BAD bypass run (expected HARD-ABORT / exit 2). The gate is not enforcing."
+            exit 1
+          fi
+          if [ "$rc" -ne 2 ]; then
+            echo "::error::BAD run aborted with exit $rc, expected the AF-FBAD-DEP-SKIPPED precondition exit 2."
+            exit 1
+          fi
+          echo "BAD bypass run HARD-ABORTED with AF-FBAD-DEP-SKIPPED (exit 2) as expected."
+
+      - name: qc-assert-no-client-names.sh — fleet privacy invariant (exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/qc-assert-no-client-names.sh
+          echo "no-client-names: PASS."
+
+      - name: qc-facebook-ad-generator.sh — install QC stays green (exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash 48-facebook-ad-generator/qc-facebook-ad-generator.sh
+          echo "qc-facebook-ad-generator: PASS."
+
+      - name: Summary
+        shell: bash
+        run: |
+          echo "FB/IG Ad Generator enforcement self-test complete:"
+          echo "  lockstep (sync) -> PASS"
+          echo "  every gate negative-tested + Guard A -> PASS"
+          echo "  GOOD run -> ATTEST through PUBLISH (exit 0)"
+          echo "  BAD bypass run -> HARD-ABORT (AF-FBAD-DEP-SKIPPED, exit 2)"
+          echo "The anti-bypass layer is wired and self-testing in CI."

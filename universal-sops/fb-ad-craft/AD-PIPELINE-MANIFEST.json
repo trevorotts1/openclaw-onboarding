@@ -1,0 +1,266 @@
+{
+  "manifest_version": 1,
+  "$schema_note": "SINGLE SOURCE OF TRUTH for the Facebook & Instagram Ad Generator (Skill 48) pipeline. Mirrors the Movie Producer VIDEO-PIPELINE-MANIFEST.json enforcement spine. NOT a file-for-file copy: the driver (48-facebook-ad-generator/scripts/ad_director.py) gates on an explicit per-phase depends_on map (S2/S3/S4 run in parallel after PICK-10; S5 after S4; S6 after S2,S3; S7 after S5,S6), NOT Skill 47's straight 'every lower-order phase' rule. Build-time lockstep (ad_sync_check.py) validates ad_director.py + ad_build_check.py + the MASTER-AD-QC-AUTOFAIL-RULESET.md Section-5 table + the paid-advertisement role-library + the fb-ad-craft SOP set against THIS file, in BOTH directions, and exits 4 on drift. Before dispatching phase N the driver requires EVERY phase in N.depends_on to carry an attestation in working/checkpoints/ad_process_manifest.json AND its produces_artifact on disk, else HARD ABORT (AF-FBAD-DEP-SKIPPED, exit 2). The two human gates PICK-10 and PUBLISH are NON-SKIPPABLE: no owner-authorized skip and no --adhoc relaxation can bypass them. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (+bump manifest_version), add an enforcing py_symbol in ad_director.py / ad_build_check.py, add the AF code to the MASTER ruleset Section-5 table, and add a negative test in test_ad_preflight.py. ad_sync_check.py exits 4 if any of those is skipped.",
+  "driver_enforcer": "ad_director",
+  "human_gate_phases": ["PICK-10", "PUBLISH"],
+  "deliverables_required": [
+    {
+      "key": "job_manifest",
+      "filename": "job-manifest.json",
+      "label": "completed intake brief / job manifest",
+      "min_bytes": 256,
+      "note": ">256 bytes; produced at S0-INTAKE. Carries job_id (the run-id / receipt-number), show name, audience profile reference, money ceiling, estimated cost, requestor.",
+      "owning_phase": "S0-INTAKE"
+    },
+    {
+      "key": "run_ledger",
+      "filename": "ad_run_ledger.json",
+      "label": "run-id no-double-charge ledger",
+      "min_bytes": 64,
+      "note": ">64 bytes; produced at S0-INTAKE. Carries run_id (== job_id), spent_usd running tally, and an events[] log so a retry skips paid work and never charges twice.",
+      "owning_phase": "S0-INTAKE"
+    },
+    {
+      "key": "image_receipt",
+      "filename": "s5-image-receipt.json",
+      "label": "Kie image generation receipt (10 real task-ids, 1500x1500, gpt-image-* model)",
+      "min_bytes": 256,
+      "note": ">256 bytes; produced at S5-IMAGE-GEN. Carries one entry per image with a real kie_task_id, width/height 1500, and a gpt-image-* model id.",
+      "owning_phase": "S5-IMAGE-GEN"
+    },
+    {
+      "key": "plai_brief",
+      "filename": "s7-plai-brief.json",
+      "label": "PLAI-ready handoff package",
+      "min_bytes": 256,
+      "note": ">256 bytes; produced at S7-DELIVER. Hosted image links + copy variants + 3-tier targeting table with every required PLAI builder field.",
+      "owning_phase": "S7-DELIVER"
+    }
+  ],
+  "phases": [
+    {
+      "id": "S0-INTAKE",
+      "order": 1,
+      "depends_on": [],
+      "human_gate": false,
+      "name": "Intake — Read the two inputs, open the campaign, set the receipt-number + money ceiling",
+      "owning_role": "facebook-instagram-ad-run-producer",
+      "sop_refs": ["SOP-FBAD-01-INTAKE.md"],
+      "produces_artifact": "working/job-manifest.json",
+      "gate_codes": ["AF-FBAD-BRIEF-INCOMPLETE", "AF-FBAD-COST-CEILING", "AF-FBAD-RECEIPT-NAMESPACE"],
+      "preflight": {"required": true, "checker": "_chk_brief_complete", "label": "job-manifest.json (brief_complete:true — job_id, show_name, audience_profile_ref, money_ceiling_usd, estimated_cost_usd, owner all present)"},
+      "additional_preflights": [
+        {"required": true, "checker": "_chk_cost_ceiling", "label": "money estimate <= ceiling BEFORE any spend (AF-FBAD-COST-CEILING)"},
+        {"required": true, "checker": "_chk_run_ledger", "label": "run-id ledger present + namespaced by job_id with an events[] log (AF-FBAD-RECEIPT-NAMESPACE)"}
+      ]
+    },
+    {
+      "id": "S1-OVERLAYS",
+      "order": 2,
+      "depends_on": ["S0-INTAKE"],
+      "human_gate": false,
+      "name": "Overlays — Write the ~70 baked-in overlay lines (Brendan Kane + Phil Jones + Shelle Rose Charvet)",
+      "owning_role": "direct-response-ad-copywriter",
+      "sop_refs": ["SOP-FBAD-02-OVERLAYS.md"],
+      "produces_artifact": "working/s1-overlays.md",
+      "gate_codes": ["AF-FBAD-OVERLAY-COUNT", "AF-FBAD-OVERLAY-WORDCOUNT", "AF-FBAD-OVERLAY-TOPLINE", "AF-FBAD-ON-MISSION", "AF-FBAD-AUDIENCE-WORDING"],
+      "preflight": {"required": true, "checker": "_chk_overlay_count", "label": "overlay count == the locked OVERLAY_COUNT_LOCKED (default 70) (AF-FBAD-OVERLAY-COUNT)"},
+      "additional_preflights": [
+        {"required": true, "checker": "_chk_overlay_wordcount", "label": "every overlay line is OVERLAY_WORD_MIN..OVERLAY_WORD_MAX words (AF-FBAD-OVERLAY-WORDCOUNT)"},
+        {"required": true, "checker": "_chk_overlay_topline", "label": "the fixed locked top line is present (AF-FBAD-OVERLAY-TOPLINE)"},
+        {"required": true, "checker": "_chk_on_mission", "label": "copy is on-mission: feature the guest/show, never 'sell a product' (AF-FBAD-ON-MISSION)"},
+        {"required": true, "checker": "_chk_audience_wording", "label": "the client's exact audience wording is preserved verbatim (AF-FBAD-AUDIENCE-WORDING)"}
+      ]
+    },
+    {
+      "id": "PICK-10",
+      "order": 3,
+      "depends_on": ["S1-OVERLAYS"],
+      "human_gate": true,
+      "name": "Pick-10 — FIRST human pause: owner replies PICK: n,n,... and the ten are saved",
+      "owning_role": "facebook-instagram-ad-run-producer",
+      "sop_refs": ["SOP-FBAD-03-PICK-10.md"],
+      "produces_artifact": "working/s1-selection.json",
+      "gate_codes": ["AF-FBAD-SELECTION-COUNT", "AF-FBAD-SELECTION-SUBSET"],
+      "preflight": {"required": true, "checker": "_chk_selection_count", "label": "selection is exactly SELECTION_COUNT_LOCKED (default 10) distinct picks (AF-FBAD-SELECTION-COUNT)"},
+      "additional_preflights": [
+        {"required": true, "checker": "_chk_selection_subset", "label": "every pick is a real in-range index of the overlays (a true subset) (AF-FBAD-SELECTION-SUBSET)"}
+      ]
+    },
+    {
+      "id": "S2-PRIMARY-TEXT",
+      "order": 4,
+      "depends_on": ["PICK-10"],
+      "human_gate": false,
+      "name": "Primary text — Write the 10 ad bodies (Robert Bly + Joanna Wiebe + Donald Miller + Alex Hormozi)",
+      "owning_role": "direct-response-ad-copywriter",
+      "sop_refs": ["SOP-FBAD-04-PRIMARY-TEXT.md"],
+      "produces_artifact": "working/s2-primary-text.md",
+      "gate_codes": ["AF-FBAD-BODY-HOOK", "AF-FBAD-BODY-CTA", "AF-FBAD-BODY-EMOJI", "AF-FBAD-COPY-QC"],
+      "preflight": {"required": true, "checker": "_chk_body_hook", "label": "every body opens with a hook <= BODY_HOOK_MAX_CHARS (default 125) chars (AF-FBAD-BODY-HOOK)"},
+      "additional_preflights": [
+        {"required": true, "checker": "_chk_body_cta", "label": "every body carries exactly BODY_CTA_COUNT (default 3) calls-to-action (AF-FBAD-BODY-CTA)"},
+        {"required": true, "checker": "_chk_body_emoji", "label": "every body's emoji count is within BODY_EMOJI_MIN..BODY_EMOJI_MAX (AF-FBAD-BODY-EMOJI)"},
+        {"required": true, "checker": "_chk_copy_qc", "label": "Gate A (The Words) independent QC scorecard >= 8.5, no category < 7 (AF-FBAD-COPY-QC)"}
+      ]
+    },
+    {
+      "id": "S3-HEADLINES",
+      "order": 5,
+      "depends_on": ["PICK-10"],
+      "human_gate": false,
+      "name": "Headlines — Write the 10 headlines in only the locked shapes (Robert Bly + Brendan Kane)",
+      "owning_role": "direct-response-ad-copywriter",
+      "sop_refs": ["SOP-FBAD-05-HEADLINES.md"],
+      "produces_artifact": "working/s3-headlines.md",
+      "gate_codes": ["AF-FBAD-HEADLINE-SHAPE"],
+      "preflight": {"required": true, "checker": "_chk_headline_shape", "label": "every headline conforms to one of HEADLINE_SHAPES_LOCKED (AF-FBAD-HEADLINE-SHAPE)"},
+      "additional_preflights": []
+    },
+    {
+      "id": "S4-IMAGE-PROMPTS",
+      "order": 6,
+      "depends_on": ["PICK-10"],
+      "human_gate": false,
+      "name": "Image prompts — Write the 10 image-instruction prompts (AI Image Generator Specialist + Design Intelligence Unit)",
+      "owning_role": "ai-image-generator-specialist",
+      "sop_refs": ["SOP-FBAD-06-IMAGE-PROMPTS.md"],
+      "produces_artifact": "working/s4-image-prompts.md",
+      "gate_codes": ["AF-FBAD-PROMPT-ORDER", "AF-FBAD-PROMPT-RICHNESS", "AF-FBAD-PROMPT-STYLEBLOCK", "AF-FBAD-PROMPT-QC"],
+      "preflight": {"required": true, "checker": "_chk_prompt_richness", "label": "every prompt is PROMPT_MIN_CHARS..PROMPT_MAX_CHARS chars (default 3500..18000) (AF-FBAD-PROMPT-RICHNESS)"},
+      "additional_preflights": [
+        {"required": true, "checker": "_chk_prompt_order", "label": "every prompt follows the fixed PROMPT_BUILD_ORDER sections in order (AF-FBAD-PROMPT-ORDER)"},
+        {"required": true, "checker": "_chk_prompt_styleblock", "label": "the brand style-block + the exact baked-in words are spelled out per prompt (AF-FBAD-PROMPT-STYLEBLOCK)"},
+        {"required": true, "checker": "_chk_prompt_qc", "label": "Gate B (Image Prompts) independent QC scorecard >= 8.5, no category < 7 (AF-FBAD-PROMPT-QC)"}
+      ]
+    },
+    {
+      "id": "S5-IMAGE-GEN",
+      "order": 7,
+      "depends_on": ["S4-IMAGE-PROMPTS"],
+      "human_gate": false,
+      "name": "Image generation — Make the 10 square images via Kie gpt-image-* (text baked in)",
+      "owning_role": "ai-image-generator-specialist",
+      "sop_refs": ["SOP-FBAD-06-IMAGE-PROMPTS.md"],
+      "produces_artifact": "working/checkpoints/s5-image-receipt.json",
+      "gate_codes": ["AF-FBAD-IMAGE-TASKID", "AF-FBAD-IMAGE-SIZE", "AF-FBAD-IMAGE-MODEL", "AF-FBAD-TALLY-CROSS", "AF-FBAD-IMAGE-QC"],
+      "preflight": {"required": true, "checker": "_chk_image_taskid", "label": "every image carries a real (non-placeholder) kie_task_id (AF-FBAD-IMAGE-TASKID)"},
+      "additional_preflights": [
+        {"required": true, "checker": "_chk_image_size", "label": "every image is IMAGE_EDGE_PX x IMAGE_EDGE_PX (default 1500x1500, 1:1) (AF-FBAD-IMAGE-SIZE)"},
+        {"required": true, "checker": "_chk_image_model", "label": "every image model id starts with GPT_IMAGE_MODEL_PREFIX (gpt-image-) so any future gpt-image-N is accepted (AF-FBAD-IMAGE-MODEL)"},
+        {"required": true, "checker": "_chk_tally_ceiling", "label": "the running spend tally never crosses the ceiling (cheap local arithmetic, not a balance call) (AF-FBAD-TALLY-CROSS)"},
+        {"required": true, "checker": "_chk_image_qc", "label": "Gate C (Images) independent VISION QC scorecard >= 8.5, no category < 7 — judges baked-in text legibility (AF-FBAD-IMAGE-QC)"}
+      ]
+    },
+    {
+      "id": "S6-TARGETING",
+      "order": 8,
+      "depends_on": ["S2-PRIMARY-TEXT", "S3-HEADLINES"],
+      "human_gate": false,
+      "name": "Targeting — Build the verified audience brief in PLAI's three-tier shape (Audience Research Specialist)",
+      "owning_role": "audience-research-specialist",
+      "sop_refs": ["SOP-FBAD-07-TARGETING.md"],
+      "produces_artifact": "working/checkpoints/s6-targeting.json",
+      "gate_codes": ["AF-FBAD-TARGETING-SHAPE", "AF-FBAD-TARGETING-REAL", "AF-FBAD-TARGETING-QC"],
+      "preflight": {"required": true, "checker": "_chk_targeting_shape", "label": "the brief is the 3-tier Group->Layer1/2/3 shape with an explanation per group (AF-FBAD-TARGETING-SHAPE)"},
+      "additional_preflights": [
+        {"required": true, "checker": "_chk_targeting_real", "label": "every interest resolves to a real Meta entity OR is marked flagged-unverified (never invented) (AF-FBAD-TARGETING-REAL)"},
+        {"required": true, "checker": "_chk_targeting_qc", "label": "Gate D (Targeting) independent QC scorecard >= 8.5, no category < 7 (AF-FBAD-TARGETING-QC)"}
+      ]
+    },
+    {
+      "id": "S7-DELIVER",
+      "order": 9,
+      "depends_on": ["S5-IMAGE-GEN", "S6-TARGETING"],
+      "human_gate": false,
+      "name": "Deliver — Host images in GoHighLevel, build the ad-text doc + PLAI brief, board the campaign",
+      "owning_role": "facebook-ads-specialist",
+      "sop_refs": ["SOP-FBAD-08-DELIVERY.md"],
+      "produces_artifact": "working/checkpoints/s7-deliver-receipt.json",
+      "gate_codes": ["AF-FBAD-FANOUT", "AF-FBAD-GHL-URL", "AF-FBAD-ADTEXT-DOC", "AF-FBAD-PLAI-FIELDS", "AF-FBAD-BOARD", "AF-FBAD-PACKAGE-QC", "AF-FBAD-QC-INDEPENDENCE"],
+      "preflight": {"required": true, "checker": "_chk_fanout", "label": "selection == bodies == headlines == prompts == images, matched 1:1 (AF-FBAD-FANOUT)"},
+      "additional_preflights": [
+        {"required": true, "checker": "_chk_ghl_url", "label": "every image hosted in GoHighLevel with a real public URL + HTTP-200 recorded (AF-FBAD-GHL-URL)"},
+        {"required": true, "checker": "_chk_adtext_doc", "label": "the ad-text doc has 10 separate Headline+Body block pairs matching the approved copy (AF-FBAD-ADTEXT-DOC)"},
+        {"required": true, "checker": "_chk_plai_fields", "label": "every REQUIRED_PLAI_FIELDS field is present in the PLAI brief (AF-FBAD-PLAI-FIELDS)"},
+        {"required": true, "checker": "_chk_board", "label": "the job is on the Command Center board (campaign_id recorded) (AF-FBAD-BOARD)"},
+        {"required": true, "checker": "_chk_package_qc", "label": "Gate E (Final Package) independent Devil's-Advocate scorecard >= 8.5, no category < 7 (AF-FBAD-PACKAGE-QC)"},
+        {"required": true, "checker": "_chk_qc_independence", "label": "every QC scorecard is independent: grader != maker, independent:true, block present (AF-FBAD-QC-INDEPENDENCE)"}
+      ]
+    },
+    {
+      "id": "PUBLISH",
+      "order": 10,
+      "depends_on": ["S7-DELIVER"],
+      "human_gate": true,
+      "name": "Approve-to-publish — SECOND human pause: owner approves, then the PLAI handoff happens",
+      "owning_role": "facebook-instagram-ad-run-producer",
+      "sop_refs": ["SOP-FBAD-08-DELIVERY.md"],
+      "produces_artifact": "working/checkpoints/approval-receipt.json",
+      "gate_codes": ["AF-FBAD-APPROVE"],
+      "preflight": {"required": true, "checker": "_chk_approve", "label": "approval receipt carries approved_by + approval_received_at + owner_confirmed:true (AF-FBAD-APPROVE)"},
+      "additional_preflights": []
+    }
+  ],
+  "autofails": [
+    {"code": "AF-FBAD-BRIEF-INCOMPLETE", "stage": "S0-INTAKE", "level": "JOB", "in_ruleset": true, "trigger": "the S0-INTAKE job-manifest.json is missing or does not set brief_complete:true, OR is missing any required field (job_id, show_name, audience_profile_ref, money_ceiling_usd, estimated_cost_usd, owner). The intake brief is the precondition for every downstream stage; never guess at a missing input.", "enforced_by": "ad_director", "py_symbol": "_chk_brief_complete", "secondary_py_symbols": ["REQUIRED_BRIEF_FIELDS"]},
+    {"code": "AF-FBAD-COST-CEILING", "stage": "S0-INTAKE", "level": "JOB", "in_ruleset": true, "trigger": "the up-front cost estimate is over the per-job ceiling BEFORE any money is spent: job-manifest cost_estimate_approved is not true OR estimated_cost_usd > money_ceiling_usd. HARD STOP — the estimate is announced and gated before the first paid image.", "enforced_by": "ad_director", "py_symbol": "_chk_cost_ceiling"},
+    {"code": "AF-FBAD-RECEIPT-NAMESPACE", "stage": "S0-INTAKE", "level": "JOB", "in_ruleset": true, "trigger": "the run-id ledger ad_run_ledger.json is missing, OR its run_id does not equal the job_id, OR it carries no events[] log. Every paid receipt must be namespaced by the unique run-id so a retry never re-spends or double-uploads; the 'what already happened' log is that guarantee.", "enforced_by": "ad_director", "py_symbol": "_chk_run_ledger"},
+    {"code": "AF-FBAD-OVERLAY-COUNT", "stage": "S1-OVERLAYS", "level": "JOB", "in_ruleset": true, "trigger": "the S1 overlays receipt overlay_count is not exactly OVERLAY_COUNT_LOCKED (default 70). The human picks 10 from this fixed set; a short or padded set breaks the pick-10 contract.", "enforced_by": "ad_director", "py_symbol": "_chk_overlay_count", "secondary_py_symbols": ["OVERLAY_COUNT_LOCKED"]},
+    {"code": "AF-FBAD-OVERLAY-WORDCOUNT", "stage": "S1-OVERLAYS", "level": "JOB", "in_ruleset": true, "trigger": "one or more overlay lines fall outside OVERLAY_WORD_MIN..OVERLAY_WORD_MAX words. An overlay that is too long does not bake legibly into a 1:1 image; too short loses the hook.", "enforced_by": "ad_director", "py_symbol": "_chk_overlay_wordcount", "secondary_py_symbols": ["OVERLAY_WORD_MIN", "OVERLAY_WORD_MAX"]},
+    {"code": "AF-FBAD-OVERLAY-TOPLINE", "stage": "S1-OVERLAYS", "level": "JOB", "in_ruleset": true, "trigger": "the S1 overlays receipt does not record top_line_present:true — the fixed locked top line (the recurring lead line every overlay set must open with) is missing.", "enforced_by": "ad_director", "py_symbol": "_chk_overlay_topline"},
+    {"code": "AF-FBAD-ON-MISSION", "stage": "S1-OVERLAYS", "level": "JOB", "in_ruleset": true, "trigger": "the copy receipt does not record on_mission:true — the copy must FEATURE the guest/show (recruit, spotlight), never 'sell a product'. Off-mission copy is rejected before pick-10.", "enforced_by": "ad_director", "py_symbol": "_chk_on_mission"},
+    {"code": "AF-FBAD-AUDIENCE-WORDING", "stage": "S1-OVERLAYS", "level": "JOB", "in_ruleset": true, "trigger": "the copy receipt does not record audience_wording_preserved:true — the client's exact audience wording (their words for who it is for) must be carried verbatim, never paraphrased away.", "enforced_by": "ad_director", "py_symbol": "_chk_audience_wording"},
+    {"code": "AF-FBAD-COPY-QC", "stage": "S2-PRIMARY-TEXT", "level": "JOB", "in_ruleset": true, "trigger": "Gate A (The Words) failed: the copy-qc scorecard is missing, pass is not true, average < 8.5, or any category < 7. The 70 overlays + 10 bodies + 10 headlines are graded by an independent reviewer (a different worker than the copywriter).", "enforced_by": "ad_director", "py_symbol": "_chk_copy_qc", "secondary_py_symbols": ["QC_MIN_AVERAGE", "QC_MIN_CATEGORY"]},
+    {"code": "AF-FBAD-SELECTION-COUNT", "stage": "PICK-10", "level": "JOB", "in_ruleset": true, "trigger": "the saved selection is not exactly SELECTION_COUNT_LOCKED (default 10) distinct picks. The owner's reply is checked for count, de-duplicated, and echoed back; a second reply replaces the first (never adds).", "enforced_by": "ad_director", "py_symbol": "_chk_selection_count", "secondary_py_symbols": ["SELECTION_COUNT_LOCKED"]},
+    {"code": "AF-FBAD-SELECTION-SUBSET", "stage": "PICK-10", "level": "JOB", "in_ruleset": true, "trigger": "a pick is not a real in-range index of the overlay set (out of 1..overlay_count). The selection must be a genuine subset of the overlays the owner was shown.", "enforced_by": "ad_director", "py_symbol": "_chk_selection_subset"},
+    {"code": "AF-FBAD-BODY-HOOK", "stage": "S2-PRIMARY-TEXT", "level": "JOB", "in_ruleset": true, "trigger": "one or more bodies do not open with a hook within BODY_HOOK_MAX_CHARS (default 125) characters. The first 125 characters are what shows above the fold before 'See more'.", "enforced_by": "ad_director", "py_symbol": "_chk_body_hook", "secondary_py_symbols": ["BODY_HOOK_MAX_CHARS"]},
+    {"code": "AF-FBAD-BODY-CTA", "stage": "S2-PRIMARY-TEXT", "level": "JOB", "in_ruleset": true, "trigger": "one or more bodies do not carry exactly BODY_CTA_COUNT (default 3) calls-to-action. Direct-response bodies use a fixed CTA cadence; a body with the wrong number is rejected.", "enforced_by": "ad_director", "py_symbol": "_chk_body_cta", "secondary_py_symbols": ["BODY_CTA_COUNT"]},
+    {"code": "AF-FBAD-BODY-EMOJI", "stage": "S2-PRIMARY-TEXT", "level": "JOB", "in_ruleset": true, "trigger": "one or more bodies have an emoji count outside BODY_EMOJI_MIN..BODY_EMOJI_MAX. Emoji are a controlled scannability device, not decoration; over/under use both fail.", "enforced_by": "ad_director", "py_symbol": "_chk_body_emoji", "secondary_py_symbols": ["BODY_EMOJI_MIN", "BODY_EMOJI_MAX"]},
+    {"code": "AF-FBAD-HEADLINE-SHAPE", "stage": "S3-HEADLINES", "level": "JOB", "in_ruleset": true, "trigger": "one or more headlines do not match any of the locked HEADLINE_SHAPES_LOCKED shapes recorded in the receipt. Headlines may only use the locked shapes; an off-shape headline is rejected.", "enforced_by": "ad_director", "py_symbol": "_chk_headline_shape", "secondary_py_symbols": ["HEADLINE_SHAPES_LOCKED"]},
+    {"code": "AF-FBAD-PROMPT-ORDER", "stage": "S4-IMAGE-PROMPTS", "level": "JOB", "in_ruleset": true, "trigger": "one or more image prompts do not declare the fixed PROMPT_BUILD_ORDER sections in order (the receipt's sections list per prompt is wrong). The build order is what keeps the 10 images one cohesive campaign.", "enforced_by": "ad_director", "py_symbol": "_chk_prompt_order", "secondary_py_symbols": ["PROMPT_BUILD_ORDER"]},
+    {"code": "AF-FBAD-PROMPT-RICHNESS", "stage": "S4-IMAGE-PROMPTS", "level": "JOB", "in_ruleset": true, "trigger": "one or more image prompts fall outside PROMPT_MIN_CHARS..PROMPT_MAX_CHARS (default 3500..18000) characters. A thin prompt yields generic art; an over-long one confuses the model. Richness is the floor that encodes creativity/typography/color-grading/quality/facial-intelligence.", "enforced_by": "ad_director", "py_symbol": "_chk_prompt_richness", "secondary_py_symbols": ["PROMPT_MIN_CHARS", "PROMPT_MAX_CHARS"]},
+    {"code": "AF-FBAD-PROMPT-STYLEBLOCK", "stage": "S4-IMAGE-PROMPTS", "level": "JOB", "in_ruleset": true, "trigger": "one or more image prompts do not spell out the brand style-block AND the exact words to bake into the image (the receipt's styleblock_ok / baked_text_present per prompt is not true). The model bakes the text, so the exact text must be in the prompt.", "enforced_by": "ad_director", "py_symbol": "_chk_prompt_styleblock"},
+    {"code": "AF-FBAD-PROMPT-QC", "stage": "S4-IMAGE-PROMPTS", "level": "JOB", "in_ruleset": true, "trigger": "Gate B (Image Prompts) failed: the prompt-qc scorecard is missing, pass is not true, average < 8.5, or any category < 7. The prompts are graded by an independent prompt reviewer (not the prompt author).", "enforced_by": "ad_director", "py_symbol": "_chk_prompt_qc", "secondary_py_symbols": ["QC_MIN_AVERAGE", "QC_MIN_CATEGORY"]},
+    {"code": "AF-FBAD-IMAGE-TASKID", "stage": "S5-IMAGE-GEN", "level": "JOB", "in_ruleset": true, "trigger": "an image entry carries no real kie_task_id: the value is null, empty, or a placeholder token (TASK_ID, xxxx, TODO, fake, ...). A missing/placeholder task id means the image was not really generated (fabrication) or not recorded — both fail. The task id is the anti-fabrication proof.", "enforced_by": "ad_director", "py_symbol": "_chk_image_taskid", "secondary_py_symbols": ["FABRICATED_TASK_ID_TOKENS"]},
+    {"code": "AF-FBAD-IMAGE-SIZE", "stage": "S5-IMAGE-GEN", "level": "JOB", "in_ruleset": true, "trigger": "an image is not IMAGE_EDGE_PX x IMAGE_EDGE_PX (default 1500x1500, a 1:1 square). The Facebook/Instagram feed ad requires the locked square size; a non-square or wrong-size asset is rejected.", "enforced_by": "ad_director", "py_symbol": "_chk_image_size", "secondary_py_symbols": ["IMAGE_EDGE_PX"]},
+    {"code": "AF-FBAD-IMAGE-MODEL", "stage": "S5-IMAGE-GEN", "level": "JOB", "in_ruleset": true, "trigger": "an image's recorded model id does not start with GPT_IMAGE_MODEL_PREFIX ('gpt-image-'). The check accepts gpt-image-2 AND any future gpt-image-N (gpt-image-3, gpt-image-2-image-to-image, ...) with no code change, but rejects a non-gpt-image provider so generation stays on the Kie gpt-image family.", "enforced_by": "ad_director", "py_symbol": "_chk_image_model", "secondary_py_symbols": ["GPT_IMAGE_MODEL_PREFIX"]},
+    {"code": "AF-FBAD-TALLY-CROSS", "stage": "S5-IMAGE-GEN", "level": "JOB", "in_ruleset": true, "trigger": "the cheap running spend tally crossed the ceiling: ledger spent_usd > money_ceiling_usd, OR an image entry recorded would_cross:true (the next paid image would have crossed the ceiling so it must STOP). This is local arithmetic, not a live balance lookup per image.", "enforced_by": "ad_director", "py_symbol": "_chk_tally_ceiling"},
+    {"code": "AF-FBAD-IMAGE-QC", "stage": "S5-IMAGE-GEN", "level": "JOB", "in_ruleset": true, "trigger": "Gate C (Images) failed: the image-qc scorecard is missing, pass is not true, average < 8.5, or any category < 7. A worker that can SEE the picture and did not generate it grades it — this is where baked-in text legibility is judged now that the separate OCR step is dropped.", "enforced_by": "ad_director", "py_symbol": "_chk_image_qc", "secondary_py_symbols": ["QC_MIN_AVERAGE", "QC_MIN_CATEGORY"]},
+    {"code": "AF-FBAD-TARGETING-SHAPE", "stage": "S6-TARGETING", "level": "JOB", "in_ruleset": true, "trigger": "the targeting brief is not the PLAI three-tier shape: a group is missing its Layer 1/2/3 structure or its plain-English explanation. PLAI's builder expects Group -> three interest layers with a why per group.", "enforced_by": "ad_director", "py_symbol": "_chk_targeting_shape"},
+    {"code": "AF-FBAD-TARGETING-REAL", "stage": "S6-TARGETING", "level": "JOB", "in_ruleset": true, "trigger": "an interest entry is neither resolved to a real Meta entity (a real audience id) NOR marked flagged-unverified. Inventing a Meta interest is forbidden; when no resolver/key exists the entry degrades to flagged-unverified so the package can still ship — it is never fabricated.", "enforced_by": "ad_director", "py_symbol": "_chk_targeting_real"},
+    {"code": "AF-FBAD-TARGETING-QC", "stage": "S6-TARGETING", "level": "JOB", "in_ruleset": true, "trigger": "Gate D (Targeting) failed: the targeting-qc scorecard is missing, pass is not true, average < 8.5, or any category < 7. The brief is graded by an independent targeting reviewer (not the audience researcher).", "enforced_by": "ad_director", "py_symbol": "_chk_targeting_qc", "secondary_py_symbols": ["QC_MIN_AVERAGE", "QC_MIN_CATEGORY"]},
+    {"code": "AF-FBAD-FANOUT", "stage": "S7-DELIVER", "level": "JOB", "in_ruleset": true, "trigger": "the 1:1 fan-out is broken: the counts of selection, bodies, headlines, prompts, and images are not all equal (and == SELECTION_COUNT_LOCKED). Every chosen overlay must map to exactly one body, one headline, one prompt, and one image.", "enforced_by": "ad_director", "py_symbol": "_chk_fanout", "secondary_py_symbols": ["SELECTION_COUNT_LOCKED"]},
+    {"code": "AF-FBAD-GHL-URL", "stage": "S7-DELIVER", "level": "JOB", "in_ruleset": true, "trigger": "an image was not hosted in GoHighLevel with a real public link: a deliver entry carries no https GoHighLevel URL, the URL is a placeholder token, or no HTTP-200 verification was recorded. A fabricated link is never accepted.", "enforced_by": "ad_director", "py_symbol": "_chk_ghl_url", "secondary_py_symbols": ["FABRICATED_URL_TOKENS"]},
+    {"code": "AF-FBAD-ADTEXT-DOC", "stage": "S7-DELIVER", "level": "JOB", "in_ruleset": true, "trigger": "the copy-paste ad-text document does not carry SELECTION_COUNT_LOCKED Headline+Body block pairs matching the approved copy: the deliver receipt's adtext_block_pairs is not the locked count, or adtext_matches_copy is not true. Each ad must be two separate copy-paste blocks.", "enforced_by": "ad_director", "py_symbol": "_chk_adtext_doc", "secondary_py_symbols": ["SELECTION_COUNT_LOCKED"]},
+    {"code": "AF-FBAD-PLAI-FIELDS", "stage": "S7-DELIVER", "level": "JOB", "in_ruleset": true, "trigger": "the PLAI brief is missing one or more REQUIRED_PLAI_FIELDS. PLAI's builder asks for every field; a brief missing a field cannot be finished in PLAI.", "enforced_by": "ad_director", "py_symbol": "_chk_plai_fields", "secondary_py_symbols": ["REQUIRED_PLAI_FIELDS"]},
+    {"code": "AF-FBAD-BOARD", "stage": "S7-DELIVER", "level": "JOB", "in_ruleset": true, "trigger": "the job is not on the Command Center board: the deliver receipt carries no campaign_id (the receipt-number that groups the cards). The campaign must be visible as one grouped campaign on the board.", "enforced_by": "ad_director", "py_symbol": "_chk_board"},
+    {"code": "AF-FBAD-PACKAGE-QC", "stage": "S7-DELIVER", "level": "JOB", "in_ruleset": true, "trigger": "Gate E (Final Package) failed: the package-qc scorecard is missing, pass is not true, average < 8.5, or any category < 7. The whole bundle is graded by the department's Devil's Advocate before the approve pause.", "enforced_by": "ad_director", "py_symbol": "_chk_package_qc", "secondary_py_symbols": ["QC_MIN_AVERAGE", "QC_MIN_CATEGORY"]},
+    {"code": "AF-FBAD-QC-INDEPENDENCE", "stage": "S7-DELIVER", "level": "JOB", "in_ruleset": true, "trigger": "a QC scorecard is self-graded: its independence block is missing, independent is not true, or the grader name equals the maker name. Every grade must be written by a different worker than the one that produced the work (mirrors the presentations AF-QC-INDEPENDENCE rule).", "enforced_by": "ad_director", "py_symbol": "_chk_qc_independence"},
+    {"code": "AF-FBAD-APPROVE", "stage": "PUBLISH", "level": "JOB", "in_ruleset": true, "trigger": "the PLAI handoff was reached without a recorded approval: the approval receipt lacks approved_by, approval_received_at, or owner_confirmed:true. The second human pause cannot be skipped; publish only happens after an explicit owner approval (who + when).", "enforced_by": "ad_director", "py_symbol": "_chk_approve"},
+    {"code": "AF-FBAD-KIE-BALANCE", "stage": "Phase-0", "level": "JOB", "in_ruleset": true, "trigger": "Phase-0 Kie.ai balance preflight (run ONCE at start). For a paid job the live credit balance (GET the Kie credit endpoint) is below the estimated floor (estimated_cost_usd x FBAD_CREDIT_PER_USD x FBAD_KIE_BALANCE_FLOOR_MULTIPLIER), OR the balance could not be verified. HARD-ABORTS (exit 4) before any paid dispatch so a run never dies mid-batch. An unverifiable balance is never treated as 'enough'.", "enforced_by": "ad_director", "py_symbol": "kie_balance_preflight", "secondary_py_symbols": ["FBAD_KIE_CREDIT_URL", "FBAD_KIE_BALANCE_FLOOR_MULTIPLIER", "FBAD_CREDIT_PER_USD", "_fetch_kie_balance"]},
+    {"code": "AF-FBAD-DEP-SKIPPED", "stage": "Driver", "level": "JOB", "in_ruleset": true, "trigger": "the dependency-map driver (ad_director.py) dispatched a phase before EVERY phase in its depends_on list had an attestation in working/checkpoints/ad_process_manifest.json AND its produces_artifact present — and no logged owner-authorized skip (working/checkpoints/phase_skip_approvals.json owner_approved:true) covers a missing NON-human-gate dependency. The two human gates PICK-10 and PUBLISH can NEVER be skipped (no skip record and no --adhoc relaxes them). Phase N reads its dependencies' attestations as a precondition, so skipping/reordering/wrong-owning_role is structurally impossible.", "enforced_by": "driver", "py_symbol": null}
+  ],
+  "roles": [
+    {"id": "facebook-instagram-ad-run-producer", "display_title": "Facebook & Instagram Ad-Run Producer", "department": "paid-advertisement", "skill": "48-facebook-ad-generator", "owns_phase": "CONDUCTOR", "owns_phases": ["S0-INTAKE", "PICK-10", "PUBLISH"], "description": "NEW seat — the conductor. Reads the two inputs, files the job on the board as one campaign with one card per stage, gives the run its receipt-number, estimates cost up front and sets the ceiling, watches the running tally and stops before crossing, runs the foreman (ad_director.py), starts the parallel stages once the 10 are picked, and parks the job at the two human pauses. Does none of the writing/design/pushing itself. Mirrors Skill 47's Movie Producer.", "trigger_phrases": ["make facebook ads", "facebook ad batch", "instagram ad batch", "guest-recruit ad campaign", "10 facebook ads from my bio", "run the ad generator"], "routing_note": "The Producer is the sole pipeline operator inside a Skill 48 job. The Director of Paid Advertisement owns the parent campaign rollup and is where escalations land; the Producer drives the foreman."},
+    {"id": "direct-response-ad-copywriter", "display_title": "Direct-Response Ad Copywriter", "department": "paid-advertisement", "skill": "48-facebook-ad-generator", "owns_phase": "COPY", "owns_phases": ["S1-OVERLAYS", "S2-PRIMARY-TEXT", "S3-HEADLINES"], "description": "NEW seat — the words. Writes the 70 overlays (Brendan Kane lead; Phil Jones short directive lines; Shelle Rose Charvet tonal variety), the 10 bodies (Robert Bly lead; Joanna Wiebe + Donald Miller + Alex Hormozi co-pilots), and the 10 headlines (Robert Bly + Brendan Kane), each wearing a named author-persona hat. A dedicated seat because the Facebook Ads Specialist's own job description says it does not produce copy.", "trigger_phrases": [], "routing_note": "Copy stages only. The independent copy QC (Gate A) is graded by a different critic, never by this seat."},
+    {"id": "ai-image-generator-specialist", "department": "graphics", "owns_phase": "IMAGE", "owns_phases": ["S4-IMAGE-PROMPTS", "S5-IMAGE-GEN"], "routing_note": "REUSED seat (graphics). Writes the image prompts (the 'Prompt Author' method governed by the Design Intelligence Unit / Skill 45) AND makes the images via Kie gpt-image-* with the text baked in. Auto-adopts future gpt-image versions. NEVER a book-author persona; never Vsevolod Pudovkin (that persona is for video/film editing)."},
+    {"id": "audience-research-specialist", "department": "paid-advertisement", "owns_phase": "TARGETING", "owns_phases": ["S6-TARGETING"], "routing_note": "REUSED seat. Builds the targeting brief in PLAI's three-tier shape; every interest must be real, or marked flagged-unverified — never invented."},
+    {"id": "facebook-ads-specialist", "department": "paid-advertisement", "owns_phase": "DELIVER", "owns_phases": ["S7-DELIVER"], "routing_note": "REUSED lead seat (with the Instagram Ads Specialist). Owns the final handoff: host images in GoHighLevel, build the copy-paste ad-text document from the Copywriter's exact words, assemble the PLAI package. Does not write the copy."},
+    {"id": "devils-advocate--paid-advertisement", "owns_phase": null, "routing_note": "REUSED silent seat. The human-eyeball quality check the machine can't do (Gate E maker-side critic role) — does the baked-in text read, is it on-brand, do the 10 picks differ. Never surfaced to the client."},
+    {"id": "qc-role--paid-advertisement", "owns_phase": null, "routing_note": "REUSED seat. Confirms the machine-checked rules passed and moves cards to Done (workers never approve their own card; the board's boss-only rule enforces it)."},
+    {"id": "director-of-paid-advertisement", "owns_phase": null, "routing_note": "REUSED conductor/router. Owns the parent campaign card (the rollup) and is where escalations land. Does NOT operate the pipeline."}
+  ],
+  "personas": {
+    "note": "PINNED per stage (the runtime picker honors a pinned choice first). Only the 42 BUILT author blueprints are runnable; name-only entries (Russell Brunson, Jim Edwards, Jeremy Miner, Allan Dib) must NEVER be picked to run. The image-prompt stage uses NO book author. The foreman rejects any copy stage whose pinned persona has no persona-blueprint.md on disk.",
+    "S1-OVERLAYS": ["brendan-kane", "phil-jones", "shelle-rose-charvet"],
+    "S2-PRIMARY-TEXT": ["robert-bly", "joanna-wiebe", "donald-miller", "alex-hormozi"],
+    "S3-HEADLINES": ["robert-bly", "brendan-kane"],
+    "S4-IMAGE-PROMPTS": ["__image_role_no_book_author__"]
+  },
+  "handoff_targets": [
+    {"trigger": "plai", "skill": null, "role": "facebook-ads-specialist", "note": "the finished PLAI-ready package is handed to a human to finish in PLAI's builder; PLAI is the ONLY ad path (no direct Meta/Facebook API)."},
+    {"trigger": "crm", "skill": "44", "role": null, "note": "wiring responders into the CRM is downstream Skill 44, not this skill."},
+    {"trigger": "results", "skill": null, "role": "director-of-paid-advertisement", "note": "a future results/winner feedback loop; only a named handoff is left for it."}
+  ]
+}

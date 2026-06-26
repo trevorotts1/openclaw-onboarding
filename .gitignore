@@ -27,6 +27,10 @@ tmp/
 # consumed by video_gate_integrity_check.py; regenerated in CI, never committed.
 47-movie-producer/scripts/working/
 
+# Facebook Ad Generator (Skill 48) Guard A af-coverage artifact — emitted by test_ad_preflight.py,
+# consumed by ad_gate_integrity_check.py; regenerated in CI, never committed.
+48-facebook-ad-generator/scripts/working/
+
 .wrangler/
 
 # backup files from automated fixes

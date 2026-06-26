@@ -260,6 +260,7 @@ VARIETY_SAMPLE_SEED_ENV = "PERSONA_VARIETY_SEED"  # set for deterministic tests
 # Both sides are routed through _norm_tag() before comparison (Defect 2 guard).
 DEPT_DOMAIN_TAGS = {
     "marketing": ["marketing", "copywriting", "communication", "sales", "strategy-innovation"],
+    "paid-advertisement": ["marketing", "copywriting", "strategy-innovation"],
     "sales": ["sales", "communication", "strategy-innovation", "marketing"],
     "billing": ["finance", "operations"],
     "customer-support": ["communication", "operations", "coaching"],

@@ -87,6 +87,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **TikTok Ads Specialist** | You own the end-to-end execution of TikTok advertising campaigns across In-Feed Ads. |
 | **Twitter X Ads Specialist** | You own the end-to-end execution of advertising campaigns on X (formerly Twitter) across Promoted Ads (text, image. |
 | **YouTube Ads Specialist** | You own the entire YouTube and Google video advertising channel - from campaign architecture and audience targeting. |
+| **Direct-Response Ad Copywriter** | **the words** for a Facebook/Instagram ad run. |
+| **Facebook & Instagram Ad-Run Producer** | **conductor** of a Facebook/Instagram ad run - the seat that takes two client documents (a show/product bio. |
 
 ### What each specialist is for, with an example request
 
@@ -174,6 +176,16 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* You own the entire YouTube and Google video advertising channel - from campaign architecture and audience targeting.
 - *Example request:* "Have the YouTube Ads Specialist take this on: You own the entire YouTube and Google video advertising channel - from campaign."
+
+**Direct-Response Ad Copywriter**
+
+- *What it is for:* **the words** for a Facebook/Instagram ad run.
+- *Example request:* "Have the Direct-Response Ad Copywriter take this on: **the words** for a Facebook/Instagram ad run."
+
+**Facebook & Instagram Ad-Run Producer**
+
+- *What it is for:* **conductor** of a Facebook/Instagram ad run - the seat that takes two client documents (a show/product bio.
+- *Example request:* "Have the Facebook & Instagram Ad-Run Producer take this on: **conductor** of a Facebook/Instagram ad run - the seat that takes two client documents."
 
 
 ---
