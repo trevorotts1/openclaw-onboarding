@@ -1081,7 +1081,7 @@ main() {
   # ----------------------------------------------------------
 
   # Resolve workspace directory (2026.x-aware; mirrors write_update_pending_flag).
-  # v14.3.15 Evelyn bug fix: the old heuristic checked $HOME/clawd first — on VPS
+  # v14.3.15 2026.x agent-dir fix: the old heuristic checked $HOME/clawd first — on VPS
   # boxes that still carry a legacy /data/clawd/ (or symlink at $HOME/clawd) the
   # sentinels and core-update blocks were written to that dead path while the
   # running agent read from /data/.openclaw/agents/main/AGENTS.md. The gate then

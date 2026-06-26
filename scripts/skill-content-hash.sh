@@ -118,7 +118,7 @@ _should_exclude() {
     # scripts/working/af-coverage.json (and potentially other ephemeral artifacts)
     # into the hashed skill dir at install time.  These files are absent from the
     # clean source tree, so their presence made DEST!=SRC digest, causing A3 to
-    # fail and the version stamp to never write (the Talaya bug).  Exclude the
+    # fail and the version stamp to never write.  Exclude the
     # entire */working/* subtree on both sides — it mirrors the same rationale as
     # */node_modules/* above.  Genuine shipped skill content (.md/.py/.sh) is
     # never placed in a working/ dir, so this exclusion does not weaken the gate.
