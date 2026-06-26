@@ -4,6 +4,21 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.3.8] - 2026-06-26 — feat(skill6): parallel page saves cap 5 — shared cleared session fan-out
+
+**PRIMARY approach:** fan out up to `AB_SAVE_CONCURRENCY` (default 5, hard-clamped [1,5]) concurrent `agent-browser eval` autosave calls against the ONE singleton session. `AB_MAX_SESSIONS` STAYS 1 (one browser — Cloudflare clearance is shared). The lock / TTL / breaker / EXIT-trap teardown from `browser_manager.sh` cover the entire batch unchanged.
+
+### Added
+- **`tools/parallel_saves.sh`** — bash fan-out executor. Sources `browser_manager.sh` (gets `AB()`, `bm_ensure`, EXIT-trap teardown). `bm_save_concurrency()` clamps `AB_SAVE_CONCURRENCY` to [1,5]. `ps_fan_out()` issues N eval background jobs with a slot-counting concurrency cap (macOS bash 3.2 safe, no GNU parallel). `ps_run_batch()` standalone verb reads a JSON spec, calls `bm_ensure` once, fans out, collects results, exits 0 iff all pages succeed.
+- **`tools/parallel_saves.py`** — pure emitter analogue. `save_concurrency(env)` clamps to [1,5]. `emit_batch_rest_save_plan(pages, session)` wraps all per-page steps in ONE `browser_session()` bracket with EXACTLY ONE `teardown_browser` step at the end. Refuses outside an active `browser_session()` context. Never calls `subprocess.run` / `os.system` with `agent-browser` — pure emitter.
+
+### Changed
+- **`tools/browser_manager.sh`** — added `AB_SAVE_CONCURRENCY` tunable (comment line, default 5) and `bm_save_concurrency()` clamp helper. `AB_MAX_SESSIONS` stays 1 and all existing lock / lease / TTL / breaker / teardown bodies are VERBATIM unchanged.
+- **`tools/browser_manager.py`** — added `SAVE_CONCURRENCY_DEFAULT`, `SAVE_CONCURRENCY_MIN`, `SAVE_CONCURRENCY_MAX`, and `save_concurrency(env)` mirroring the shell helper.
+- **`tools/ghl_builder.py`** — added `emit_batch_rest_save_plan(pages, session)` delegating to `parallel_saves.emit_batch_rest_save_plan`; added `batch-rest-save-plan` CLI verb.
+- **`v2-autonomous-build-sop.md`** §2.1–2.6 — PARALLEL SAVES (cap 5) note; sentinel verbatim intact.
+- **`ghl-browser-builder-full.md`** A5 — PARALLEL SAVES (cap 5) note; sentinel verbatim intact.
+
 ## [v14.1.5] - 2026-06-25 — fix(breaker): DURABLE park marker (survives reboot) + writes the box-level PARK marker on a trip
 
 The agent-browser circuit-breaker's PARK marker no longer lives in TMPDIR (it evaporated on reboot, silently un-parking a qc-failed build). `tools/browser_manager.sh` now keeps the breaker counter + BLOCKED marker AND a canonical box-level PARK marker under the box's DURABLE state dir (`<openclaw-root>/workspace/.park/`); the lock + leases correctly stay ephemeral. `bm_breaker_check` reads the box-level marker too, and a breaker trip WRITES it so the Skill-23 `*/15` resume cron (`resume-workforce-build.sh`) stops re-firing as well. Un-park is operator-only (`scripts/unpark-build.sh`). Falls back to the old ephemeral path when no onboarded root exists, so the 31 singleton tests stay hermetic. See root CHANGELOG v14.1.5.

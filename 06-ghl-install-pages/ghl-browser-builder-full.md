@@ -424,6 +424,17 @@ Each step: ACTION / GATE (from gates.json) / VERIFY / EDGE. Resolve every
 ### A5. Loop — FOR EACH page in manifest (A6–A13)
 Write the per-page ledger after each phase (§5).
 
+**PARALLEL SAVES (cap 5) — PRIMARY approach:** SINGLETON POOLED BROWSER — one
+session, lock=1, TTL, guaranteed teardown, reaper backstop. When executing REST
+autosave (§5.2) across multiple pages, use
+`ghl_builder.emit_batch_rest_save_plan(pages, session)` + `parallel_saves.sh
+run-batch` to fan out up to `AB_SAVE_CONCURRENCY` (default 5, hard-clamped
+[1,5]) concurrent `agent-browser eval` calls against the ONE singleton session.
+`AB_MAX_SESSIONS` STAYS 1. The batch plan carries EXACTLY ONE teardown_browser
+step at the end. The lock / TTL / breaker / EXIT-trap teardown from
+browser_manager.sh cover the entire batch unchanged — no per-iteration session
+names, no per-page teardown during the fan-out.
+
 ### A6. Add new step (NOT Import)
 - A6.1 Click Add New Step (GATE #8 — must positively distinguish from the
   adjacent Import control; match exact name).

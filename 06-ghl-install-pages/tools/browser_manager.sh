@@ -45,7 +45,7 @@
 #   bash browser_manager.sh session-name
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_VERSION="v14.3.7"
+BROWSER_MANAGER_VERSION="v14.3.8"
 
 # B1 VERSION-GATE FLOOR (v14.1.4) — the version where the BOX-LEVEL headless LOCK
 # landed (install.sh pins AGENT_BROWSER_HEADED=false in the gateway-inherited env,
@@ -88,7 +88,8 @@ esac
 AB_LOCK_WAIT="${AB_LOCK_WAIT:-900}"          # flock -w seconds
 AB_SESSION_TTL="${AB_SESSION_TTL:-1800}"     # whole-phase wall (s); self-kill timer
 AB_CALL_TIMEOUT="${AB_CALL_TIMEOUT:-90}"     # per-call wall (s)
-AB_MAX_SESSIONS="${AB_MAX_SESSIONS:-1}"      # pool ceiling (matches the lock)
+AB_MAX_SESSIONS="${AB_MAX_SESSIONS:-1}"      # pool ceiling (matches the lock) — STAYS 1
+AB_SAVE_CONCURRENCY="${AB_SAVE_CONCURRENCY:-5}"  # parallel eval fan-out cap [1,5]; AB_MAX_SESSIONS STAYS 1
 AB_BREAKER_WINDOW="${AB_BREAKER_WINDOW:-7200}"   # rolling window (s)
 AB_BREAKER_MAX="${AB_BREAKER_MAX:-6}"        # opens-without-pass before trip
 AB_MAX_OPENS_PER_HOUR="${AB_MAX_OPENS_PER_HOUR:-12}"  # advisory upper bound
@@ -133,6 +134,18 @@ BM_BOX_PARK_MARKER="$PARK_DIR/workforce-build.parked"
 
 # Stable box id (host + the agent-browser engine root) for lease provenance.
 _bm_box_id() { printf '%s' "$(hostname 2>/dev/null || echo box):$HOME"; }
+
+# ── bm_save_concurrency() — clamp AB_SAVE_CONCURRENCY to [1,5] ───────────────
+# AB_MAX_SESSIONS STAYS 1 (one browser).  This is a SEPARATE cap on in-flight
+# eval calls issued by parallel_saves.sh.  Hard upper bound is 5.
+bm_save_concurrency() {
+  local raw="${AB_SAVE_CONCURRENCY:-5}" n
+  n="$(printf '%s' "$raw" | tr -cd '0-9')"
+  [ -z "$n" ] && n=5
+  [ "$n" -lt 1 ] 2>/dev/null && n=1
+  [ "$n" -gt 5 ] 2>/dev/null && n=5
+  printf '%s' "$n"
+}
 
 # Canonical session name: ONE per box, deterministic, sanitized [a-z0-9-].
 # This is THE fix for the 22-distinct-name root cause. Any non-canonical session

@@ -798,6 +798,36 @@ def emit_revert_plan(
     return out
 
 
+# ── Parallel batch save (PRIMARY approach — fan-out evals on ONE session) ─────
+
+def emit_batch_rest_save_plan(
+    pages: list,
+    session: str | None = None,
+    *,
+    env: dict | None = None,
+) -> dict:
+    """Emit a batch plan for saving N pages concurrently (up to cap 5).
+
+    This is the PRIMARY parallel-save entrypoint (plan §"Exact files + changes"
+    item 5).  It delegates to ``parallel_saves.emit_batch_rest_save_plan`` so
+    there is a SINGLE implementation, reachable from either the CLI verb
+    ``batch-rest-save-plan`` (ghl_builder.py) or the parallel_saves module
+    directly.
+
+    Each element of ``pages`` is a per-page kwargs dict accepted by
+    ``emit_rest_save_plan`` (minus ``session``, injected from the singleton).
+    The batch plan wraps ALL per-page steps in ONE browser_session() bracket
+    and carries EXACTLY ONE teardown_browser step at the end.
+
+    Refuses outside an active ``browser_session()`` context.
+
+    Returns the same structure as ``parallel_saves.emit_batch_rest_save_plan``:
+    ``{plan, ok, session, save_concurrency, page_count, pages, steps,
+    teardown_step}``."""
+    import parallel_saves as ps  # lazy: keeps ghl_builder importable standalone
+    return ps.emit_batch_rest_save_plan(pages, session, env=env)
+
+
 # ── Gate registry loader (D8 contract) ────────────────────────────────────────
 
 def load_gates(gates_path: str | None = None) -> dict:
@@ -874,6 +904,10 @@ def main() -> int:
     # JSON spec file (the params include page-data blobs) and prints the plan.
     p = sub.add_parser("rest-save-plan", help="emit the read->splice->autosave->verify->revert plan from a JSON spec")
     p.add_argument("spec_path")
+    p = sub.add_parser("batch-rest-save-plan",
+                       help="emit a parallel batch plan for N pages (cap 5 concurrent evals) from a JSON spec; "
+                            "spec: {\"pages\": [{...emit_rest_save_plan kwargs...}, ...]}")
+    p.add_argument("spec_path")
     p = sub.add_parser("wf-rewire-plan", help="emit the workflow read->rewire->re-read plan from a JSON spec")
     p.add_argument("spec_path")
     p = sub.add_parser("revert-plan", help="emit the byte-identical revert plan from a JSON spec")
@@ -935,6 +969,18 @@ def main() -> int:
             plan = emit_revert_plan(**spec)
         print(json.dumps(plan, indent=2))
         # A refused plan (sub-account MISMATCH) is a hard stop -> non-zero exit.
+        return 0 if plan.get("ok") else 1
+    if args.cmd == "batch-rest-save-plan":
+        spec = json.load(open(args.spec_path))
+        pages = spec.get("pages", [])
+        session = spec.get("session", None)
+        import browser_manager
+        try:
+            with browser_manager.browser_session(session) as sname:
+                plan = emit_batch_rest_save_plan(pages, sname)
+        except RuntimeError as e:
+            sys.stderr.write(str(e) + "\n"); return 75
+        print(json.dumps(plan, indent=2))
         return 0 if plan.get("ok") else 1
     if args.cmd == "verify-all":
         # Delegate to the single canonical verifier (one source of truth + the

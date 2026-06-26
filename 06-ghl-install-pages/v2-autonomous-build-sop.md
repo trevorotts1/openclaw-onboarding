@@ -202,10 +202,22 @@ NEVER call `agent-browser` directly and NEVER invent a per-iteration session
 name. The python emitters refuse outside a `browser_manager.browser_session()`
 bracket, and each emitted plan ends with a guaranteed close step.
 
+**PARALLEL SAVES (cap 5) — PRIMARY approach:** When saving multiple pages, fan out
+up to `AB_SAVE_CONCURRENCY` (default 5, hard-clamped [1,5]) concurrent
+`agent-browser eval` calls against the SAME singleton session. `AB_MAX_SESSIONS`
+STAYS 1 (one browser — Cloudflare clearance shared). Use
+`ghl_builder.emit_batch_rest_save_plan(pages, session)` to emit the batch plan,
+then run it via `bash tools/parallel_saves.sh run-batch <spec.json>`. The batch
+plan carries EXACTLY ONE teardown_browser step at the end (no per-page teardown
+while the fan-out is in progress). The existing lock / TTL / breaker / EXIT-trap
+teardown guard from browser_manager.sh covers the entire batch unchanged.
+
 The agent does NOT hand-roll the fetch. It calls
-`ghl_builder.emit_rest_save_plan(...)` to get the ordered, gated, draft-by-default
-plan and executes each step's `eval`/`argv` **through the gateway** (the
-funnels/builder origin is Cloudflare-1010-gated for bare Python):
+`ghl_builder.emit_rest_save_plan(...)` (single page) or
+`ghl_builder.emit_batch_rest_save_plan(...)` (parallel, cap 5) to get the
+ordered, gated, draft-by-default plan and executes each step's `eval`/`argv`
+**through the gateway** (the funnels/builder origin is Cloudflare-1010-gated for
+bare Python):
 
 1. **stage_token** — `ghl_rest_canvas.write_token_js_file(id_token, <RUN>/token.js)`;
    feed to `bash tools/browser_manager.sh eval -- --stdin`. **NEVER** bash
