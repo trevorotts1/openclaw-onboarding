@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v14.3.3"
+ONBOARDING_VERSION="v14.3.5"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -955,6 +955,29 @@ PYEOF
     _shared_write_ocjson "RESCUE_RANGERS_WEBHOOK_URL" "$RR_WEBHOOK"
     success "Rescue Rangers escalation webhook seeded (RESCUE_RANGERS_WEBHOOK_URL=$RR_WEBHOOK)"
     injected_count=$((injected_count + 1))
+
+    # Rescue Rangers webhook SHARED SECRET (n8n entry-webhook authentication).
+    # The n8n relay can require an `X-Rescue-Secret` header on the escalation
+    # webhook so a stranger who learns the public URL cannot inject tickets. Every
+    # escalation SENDER on this box (the AGENTS.md curl + the Skill-6 safety alarms
+    # + the resume/closeout watchdogs) includes that header ONLY WHEN this var is
+    # set (`${RESCUE_RANGERS_WEBHOOK_SECRET:+...}`) — so seeding it here makes the
+    # box's escalations survive the webhook's auth enforcement, and leaving it
+    # unset stays fully backward-compatible (no header; the relay accepts it during
+    # the soft phase). UNLIKE the webhook URL above, the secret is NEVER a committed
+    # default — it flows ONLY from the operator's OWN env var of the same name at
+    # install time, gateway-inherited via openclaw.json env.vars (the SAME mechanism
+    # that delivers RESCUE_RANGERS_WEBHOOK_URL / RESCUE_RANGERS_HELP_CHAT_ID /
+    # PODBEAN_*). Empty => escalations post unauthenticated; the box picks the secret
+    # up on its next install/update once the operator's env carries it.
+    if [ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ]; then
+        _shared_write_env    "RESCUE_RANGERS_WEBHOOK_SECRET" "$RESCUE_RANGERS_WEBHOOK_SECRET"
+        _shared_write_ocjson "RESCUE_RANGERS_WEBHOOK_SECRET" "$RESCUE_RANGERS_WEBHOOK_SECRET"
+        success "Rescue Rangers webhook secret seeded (gateway-inherited; escalations will be authenticated)"
+        injected_count=$((injected_count + 1))
+    else
+        warn "RESCUE_RANGERS_WEBHOOK_SECRET not in operator env — escalations from this box post UNauthenticated (fine until the n8n webhook enforces auth; backfill on the next install/update once the operator env carries it)."
+    fi
 
     # Rescue Rangers escalation CHAT ID (operator Telegram GROUP). The Skill-6
     # safety alarms (browser_manager.sh circuit-breaker trip + agent-browser-reaper.sh

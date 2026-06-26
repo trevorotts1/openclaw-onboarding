@@ -382,7 +382,7 @@ if (( _run_count > MAX_RUNS_BEFORE_ESCALATE )); then
     _rr_msg="onboarding-resume on $(hostname) hit hard cap (${_run_count} runs, max ${MAX_RUNS_BEFORE_ESCALATE}). Gate did not pass. Cron self-deleted. Re-run update-skills.sh to restart. State: $STATE_FILE. Version: $(openclaw --version 2>/dev/null | head -1)"
     _rr_payload=$(jq -nc --arg c "$(hostname)" --arg a "main" --arg m "$_rr_msg" \
       '{action:"escalate",client:$c,agent:$a,message:$m}' 2>/dev/null)
-    curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
+    curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
   fi
   if command -v jq >/dev/null 2>&1; then
     _tmp="$(mktemp)"; jq '.resumeEscalated = true' "$STATE_FILE" > "$_tmp" 2>/dev/null && mv "$_tmp" "$STATE_FILE" || rm -f "$_tmp"
