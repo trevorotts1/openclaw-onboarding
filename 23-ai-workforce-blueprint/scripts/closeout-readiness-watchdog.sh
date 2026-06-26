@@ -350,6 +350,7 @@ if command -v curl >/dev/null 2>&1 && [[ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" &&
   log "posting to Rescue Rangers webhook"
   curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
     -H "Content-Type: application/json" \
+    ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
     -d "${RR_PAYLOAD}" >>"${LOG_FILE}" 2>&1 \
     || log "WARN: Rescue Rangers webhook POST failed (non-fatal)"
 fi

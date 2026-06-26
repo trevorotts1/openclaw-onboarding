@@ -324,7 +324,7 @@ if [[ "$_ic" == "true" ]] && [[ "${_ndept:-0}" =~ ^[0-9]+$ ]] && (( _ndept > 0 )
         if [[ -n "$_rr_webhook" ]] && command -v curl >/dev/null 2>&1; then
           _rr_msg="workforce-build-resume on $(hostname) made ZERO progress for ${_stuck} consecutive fires. Build PARKED + cron DISABLED (v14.1.5 hard stuck-cap). Investigate on the box, then un-park with scripts/unpark-build.sh. State: $STATE_FILE. OpenClaw: $(openclaw --version 2>/dev/null | head -1)"
           _rr_payload=$(jq -nc --arg c "$(hostname)" --arg a "main" --arg m "$_rr_msg" '{action:"escalate",client:$c,agent:$a,message:$m}' 2>/dev/null || echo '')
-          [[ -n "$_rr_payload" ]] && curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
+          [[ -n "$_rr_payload" ]] && curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
         fi
         _operator_chat="$(resolve_operator_chat_id)"
         if [[ -n "$_operator_chat" ]]; then
@@ -749,7 +749,7 @@ if (( attempts >= max_attempts )); then
       _rr_msg="workforce build on $(hostname) past ${attempts} resume attempts without completing.${_lib_note} Now slow-retrying (Rule 8 never-stop). Run scripts/verify-zhc-standard.sh on the box. State: $STATE_FILE. OpenClaw version: $(openclaw --version 2>/dev/null | head -1)"
       _rr_payload=$(jq -nc --arg c "$(hostname)" --arg a "main" --arg m "$_rr_msg" \
         '{action:"escalate",client:$c,agent:$a,message:$m}' 2>/dev/null)
-      curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
+      curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
     fi
     _tmp_cap=$(mktemp)
     jq '.resumeCapEscalated = true' "$STATE_FILE" > "$_tmp_cap" 2>/dev/null && mv "$_tmp_cap" "$STATE_FILE" || rm -f "$_tmp_cap"
@@ -811,7 +811,7 @@ if (( _total_pings >= MAX_TOTAL_RESUME_PINGS )); then
       if [[ -n "$_rr_webhook" ]] && command -v curl >/dev/null 2>&1; then
         _rr_msg="workforce-build-resume on $(hostname) hit the ABSOLUTE ping ceiling: ${_total_pings} total resume self-pings (cap ${MAX_TOTAL_RESUME_PINGS}). Build PARKED + cron DISABLED (v14.x). Investigate on the box, then un-park with scripts/unpark-build.sh. State: $STATE_FILE."
         _rr_payload=$(jq -nc --arg c "$(hostname)" --arg a "main" --arg m "$_rr_msg" '{action:"escalate",client:$c,agent:$a,message:$m}' 2>/dev/null || echo '')
-        [[ -n "$_rr_payload" ]] && curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
+        [[ -n "$_rr_payload" ]] && curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
       fi
       _operator_chat="$(resolve_operator_chat_id)"
       [[ -n "$_operator_chat" ]] && openclaw message send --channel telegram -t "$_operator_chat" \

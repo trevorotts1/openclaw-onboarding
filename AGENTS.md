@@ -519,11 +519,15 @@ After these events, **ALWAYS** run: `python3 ~/clawd/scripts/gemini-indexer.py`
 **HOW TO ESCALATE (the ONLY supported method).** When you hit a problem you cannot solve on your own, escalate to Rescue Rangers by POSTing to the n8n webhook. Your gateway CAN reach this public URL outbound. Do **NOT** use `openclaw message send -t <group/chat>` to escalate — bots cannot read other bots, so the old bot-to-bot Telegram group post NEVER reached the rescue agent.
 
 ```bash
+_RR_SECRET_ARGS=()
+[ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
 curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" -H "Content-Type: application/json" \
+  "${_RR_SECRET_ARGS[@]}" \
   -d '{"action":"escalate","client":"<CLIENT_NAME>","agent":"<AGENT_NAME>","message":"<concise problem + what you already tried + your EXACT OpenClaw version>"}'
 ```
 
 - `RESCUE_RANGERS_WEBHOOK_URL` is seeded into your env on install (default `https://main.blackceoautomations.com/webhook/rescue-rangers`). Reference the env var, never a hardcoded URL.
+- `RESCUE_RANGERS_WEBHOOK_SECRET` is also seeded at install. The array pattern above correctly passes `-H` and the header value as two separate arguments to curl, and skips the header entirely when the var is unset (backward-compatible with boxes not yet provisioned with the secret).
 - Your `message` MUST be concise and include: the problem, what you already tried, and your **EXACT** OpenClaw version (`openclaw --version`).
 - The rescue agent will reply with a solution (delivered back to you via the poller or push); apply the fix, and when it works POST the resolution signal (below) to close the loop — always via `$RESCUE_RANGERS_WEBHOOK_URL`, same as the escalation. You CANNOT post directly to the Rescue Rangers Telegram group (bots cannot post to other bots' groups).
 

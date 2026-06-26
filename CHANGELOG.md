@@ -1,3 +1,19 @@
+## [v14.3.8]  -  2026-06-26  -  feat(rescue-rangers): X-Rescue-Secret sender plumbing + install-time secret seeding (backward-compatible; enforcement OFF)
+
+Closes the long-open Rescue Rangers webhook-auth gap: every escalation sender now reads `RESCUE_RANGERS_WEBHOOK_SECRET` from its env and adds an `X-Rescue-Secret` header ONLY when the var is set — so boxes with the secret authenticate to the n8n relay while boxes without it continue to escalate unauthenticated (backward-compatible). The n8n relay enforcement switch stays OFF; this commit is the sender (box) half only.
+
+CANONICAL FORM — AGENTS.md uses the bash-array `_RR_SECRET_ARGS` pattern (two distinct argv tokens `-H` and `X-Rescue-Secret: <val>` — correct curl argument passing, no word-splitting risk). All script senders (all verified `#!/usr/bin/env bash`) use the `${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}}` form (tokenizes cleanly because the secret is a hex/alphanumeric string with no spaces).
+
+SEEDING — `install.sh` now seeds `RESCUE_RANGERS_WEBHOOK_SECRET` into the box's gateway-inherited env (`openclaw.json` env.vars) + `secrets/.env` from the operator's own env var of the same name — mirroring the existing `RESCUE_RANGERS_HELP_CHAT_ID` pattern. Empty operator env => box escalates unauthenticated; picks up the secret on next install/update.
+
+SENDERS UPDATED: `AGENTS.md` (canonical client-agent escalation curl + doc note), `install.sh` (seeding), and the full script sender set: `scripts/disk-usage-alert.sh`, `scripts/agent-browser-reaper.sh`, `scripts/index-model-drift-check.sh`, `scripts/pre-july14-embedding-migration-check.sh`, `scripts/check-company-root.sh`, `06-ghl-install-pages/tools/browser_manager.sh`, `scripts/resume-onboarding.sh`, `23-ai-workforce-blueprint/scripts/resume-workforce-build.sh` (×3 sites), `23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh`.
+
+ENFORCEMENT OFF: no relay-side reject of unauthenticated calls is included here. Escalation works with or without the var set. The n8n webhook soft→enforce flip is an out-of-repo operator decision, handled after the secret is distributed fleet-wide.
+
+NO SECRET VALUE COMMITTED. `RESCUE_RANGERS_WEBHOOK_SECRET` is referenced as an env-var name only; no literal value appears in git. All 10 version markers at v14.3.8 via `scripts/bump-version.sh v14.3.8`. `bash -n` clean on all modified scripts. Diff scanned: no secret value, no client name.
+
+Supersedes and closes PR #346 (`feat/rescue-rangers-gaps`, base v14.3.3) — the new safer bash-array AGENTS.md form replaces the older `${VAR:+-H ...}` form from that PR; the script senders carry the same additive backward-compatible change.
+
 ## [v14.3.7]  -  2026-06-26  -  fix(workforce-engine): correct the v14.3.4 CHANGELOG commit references + confirm the installer index auto-provisioning is already live
 
 Closeout of the two real follow-ups from the Workforce-Engine review. Documentation/changelog truth only — no runtime/skill logic changed in this release; the global version rolls v14.3.5 -> v14.3.7 across all 10 markers via `scripts/bump-version.sh` (the patch skips v14.3.6 because `06-ghl-install-pages/skill-version.txt` was already decoupled to v14.3.6 by the v14.3.5 presentation ship — bumping to v14.3.6 would have left the 06 browser-manager markers changed without an 06 skill-version bump and tripped CI guard G3, so the global line steps to v14.3.7 to roll 06's skill-version in lockstep).
