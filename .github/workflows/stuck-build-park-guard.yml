@@ -1,0 +1,54 @@
+name: stuck-build-park-guard
+
+# Fails the build if the STUCK-BUILD PARK LOOP fix regresses: the workforce-build
+# resume cron must self-disable when parked or after a consecutive-stuck hard cap,
+# the PARK marker must be DURABLE (not TMPDIR), every actor must honor the same
+# marker, and an operator un-park path must exist.
+# v14.1.5 / fix/stuck-build-park-loop-durable
+
+on:
+  push:
+    paths:
+      - 23-ai-workforce-blueprint/scripts/resume-workforce-build.sh
+      - 23-ai-workforce-blueprint/resume-prompt.txt
+      - scripts/ensure-pipeline-crons.sh
+      - scripts/unpark-build.sh
+      - 06-ghl-install-pages/tools/browser_manager.sh
+      - install.sh
+      - tests/unit/bounded-workforce-build-resume.test.sh
+      - .github/workflows/stuck-build-park-guard.yml
+  pull_request:
+    paths:
+      - 23-ai-workforce-blueprint/scripts/resume-workforce-build.sh
+      - 23-ai-workforce-blueprint/resume-prompt.txt
+      - scripts/ensure-pipeline-crons.sh
+      - scripts/unpark-build.sh
+      - 06-ghl-install-pages/tools/browser_manager.sh
+      - install.sh
+      - tests/unit/bounded-workforce-build-resume.test.sh
+      - .github/workflows/stuck-build-park-guard.yml
+
+jobs:
+  stuck-build-park-guard:
+    name: Stuck-build PARK loop guard (durable park + bounded resume cron)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax-check the touched scripts (bash -n)
+        run: |
+          set -euo pipefail
+          for f in \
+            23-ai-workforce-blueprint/scripts/resume-workforce-build.sh \
+            scripts/ensure-pipeline-crons.sh \
+            scripts/unpark-build.sh \
+            06-ghl-install-pages/tools/browser_manager.sh; do
+            bash -n "$f"
+            echo "bash -n OK: $f"
+          done
+
+      - name: Run bounded-workforce-build-resume guard
+        run: |
+          chmod +x tests/unit/bounded-workforce-build-resume.test.sh
+          bash tests/unit/bounded-workforce-build-resume.test.sh

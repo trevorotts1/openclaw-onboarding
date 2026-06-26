@@ -81,7 +81,7 @@
 #   agentTurn reaper back to command-kind (zero LLM tokens), and throttles the
 #   reaper */10 -> hourly. Idempotent + logs every flip. This makes
 #   silent-by-default CONVERGE on already-deployed boxes, not just fresh installs.
-ENSURE_PIPELINE_CRONS_VERSION="v14.1.1"
+ENSURE_PIPELINE_CRONS_VERSION="v14.1.5"
 
 set -u
 
@@ -100,6 +100,15 @@ fi
 
 SKILLS_DIR="$OC_ROOT/skills"
 STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+
+# v14.1.5 — DURABLE PARK marker (the SAME file the Skill-23 resume cron
+# resume-workforce-build.sh and the agent-browser circuit-breaker
+# 06-ghl-install-pages/tools/browser_manager.sh read/write). If present, this
+# box's build is intentionally PARKED: this registrar must NOT (re)register the
+# workforce-build-resume cron — doing so would resurrect, on the weekly
+# update-skills.sh run, the very furnace an operator parked. Operator un-park:
+# scripts/unpark-build.sh.
+BOX_PARK_MARKER="$OC_ROOT/workspace/.park/workforce-build.parked"
 
 # OPERATOR chat ids — MUST match install.sh OPERATOR_CHAT_IDS exactly.
 OPERATOR_CHAT_IDS_RE='^(5252140759|6663821679|6771245262)$'
@@ -422,6 +431,14 @@ PYEOF
 #    branches are gone. This matches the silent install.sh Step 13 form exactly
 #    (hot-patch parity).
 _ensure_workforce_build_resume() {
+  # PARK-AWARE (v14.1.5): never resurrect a parked box's resume cron. This is the
+  # backstop that makes the resume cron's self-disable STICK across the weekly
+  # update-skills.sh / install.sh backfill — without it, a parked cron would be
+  # re-added within a week and the loop would return.
+  if [[ -f "$BOX_PARK_MARKER" ]]; then
+    _log "SKIP workforce-build-resume — build is PARKED ($BOX_PARK_MARKER). NOT re-registering (would resurrect the furnace an operator parked). Un-park: scripts/unpark-build.sh."
+    return 0
+  fi
   if _cron_present "workforce-build-resume"; then
     _log "OK  workforce-build-resume cron already present"
     return 0

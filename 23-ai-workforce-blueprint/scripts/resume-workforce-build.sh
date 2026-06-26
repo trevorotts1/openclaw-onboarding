@@ -43,11 +43,31 @@ LOG_FILE="$OC_ROOT/workspace/.workforce-build-state.log"
 RUN_COUNT_FILE="$OC_ROOT/workspace/.workforce-build-resume-runs.count"
 MAX_ATTEMPTS_DEFAULT=12
 STALE_BUILDING_MINUTES=15
-# v10.14.36 - defense-in-depth max-runs cap.
-# After 24 fires (6h at 15-min intervals) the cron auto-removes itself
-# regardless of state. A workforce build that hasn't completed in 6 hours
-# is stuck; the cron is no longer useful, kill it.
-MAX_RUNS_BEFORE_SELF_REMOVE=24
+
+# ---- v14.1.5: DURABLE PARK state + consecutive-STUCK hard cap ----
+# THE LOOP FIX. The old v10.15.18 "Rule 8 / NEVER STOP" accounting only SLOWED a
+# stuck build to ~every 2h and re-fired it FOREVER (≈96 agent turns/day into the
+# gateway's refusal — the token furnace that drained idle boxes). It is replaced
+# by a real hard stop:
+#   • PARK_DIR / BOX_PARK_MARKER are the SAME durable files the agent-browser
+#     circuit-breaker (06-ghl-install-pages/tools/browser_manager.sh) and the
+#     cron registrar (scripts/ensure-pipeline-crons.sh) read/write. Durable =
+#     survives a reboot (lives in the box's OpenClaw state dir, NOT TMPDIR).
+#   • After MAX_STUCK_FIRES CONSECUTIVE fires with ZERO build-state progress, this
+#     cron PARKS the build (writes BOX_PARK_MARKER), escalates ONCE, and DISABLES
+#     ITSELF (self_remove_cron). A PROGRESSING build never trips it — the counter
+#     resets to 0 the instant the state fingerprint changes.
+#   • Un-park is OPERATOR-ONLY (scripts/unpark-build.sh). Auto-resume never
+#     happens silently.
+PARK_DIR="$OC_ROOT/workspace/.park"
+BOX_PARK_MARKER="$PARK_DIR/workforce-build.parked"
+STUCK_COUNT_FILE="$OC_ROOT/workspace/.workforce-build-resume-stuck.count"
+PROGRESS_FP_FILE="$OC_ROOT/workspace/.workforce-build-resume-progress.fp"
+# Default 24 consecutive no-progress fires = 6h of literally-zero state change =
+# unambiguously stuck. Override with WORKFORCE_RESUME_MAX_STUCK_FIRES (floor 2).
+MAX_STUCK_FIRES="${WORKFORCE_RESUME_MAX_STUCK_FIRES:-24}"
+case "$MAX_STUCK_FIRES" in ""|*[!0-9]*) MAX_STUCK_FIRES=24 ;; esac
+[ "$MAX_STUCK_FIRES" -lt 2 ] 2>/dev/null && MAX_STUCK_FIRES=2
 
 log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG_FILE"
@@ -97,7 +117,10 @@ self_remove_cron() {
   log "self_remove_cron($reason): removing cron $uuid"
   if openclaw cron rm "$uuid" 2>>"$LOG_FILE"; then
     log "self_remove_cron($reason): removed $uuid"
-    rm -f "$RUN_COUNT_FILE" 2>/dev/null || true
+    # Reset the run/stuck counters so a future (operator-un-parked) build starts
+    # fresh. NEVER delete BOX_PARK_MARKER here — a park must persist until an
+    # operator runs scripts/unpark-build.sh (auto-resume never happens silently).
+    rm -f "$RUN_COUNT_FILE" "$STUCK_COUNT_FILE" "$PROGRESS_FP_FILE" 2>/dev/null || true
   else
     log "self_remove_cron($reason): openclaw cron rm $uuid FAILED - see errors above"
   fi
@@ -153,55 +176,109 @@ if [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
   fi
 fi
 
-# ---- v10.15.18: NEVER-STOP run accounting (Rule 8) ----
-# PRIOR BEHAVIOR (v10.14.36): after MAX_RUNS_BEFORE_SELF_REMOVE the cron
-# auto-REMOVED itself - a stall trap that let a half-built workforce sit forever
-# while the client never found out. Rule 8 forbids stopping: the only legitimate
-# terminal state is a REAL completion (build done + closeout confirmed), which is
-# handled by the BELT terminal-state check above (self_remove_cron). When we
-# instead just hit the run cap WITHOUT completing, we ESCALATE to Rescue Rangers
-# (once) and KEEP RETRYING in a slow-backoff posture - we never self-remove on a
-# run count.
-mkdir -p "$(dirname "$RUN_COUNT_FILE")" 2>/dev/null || true
-_run_count=0
-if [[ -f "$RUN_COUNT_FILE" ]]; then
-  _run_count=$(cat "$RUN_COUNT_FILE" 2>/dev/null | tr -dc '0-9' | head -c 6)
-  [[ -z "$_run_count" ]] && _run_count=0
+# ---- v14.1.5: DURABLE PARK gate + consecutive-STUCK hard cap (THE LOOP FIX) ----
+# Replaces the old v10.15.18 "Rule 8 / NEVER STOP" run-accounting, which only
+# SLOWED a stuck build to ~every 2h and re-fired it FOREVER (the token furnace).
+mkdir -p "$PARK_DIR" 2>/dev/null || true
+
+park_is_set() { [[ -f "$BOX_PARK_MARKER" ]]; }
+
+park_set() {
+  # $1 = reason. Durable, human-readable park marker. Operator-cleared ONLY.
+  mkdir -p "$PARK_DIR" 2>/dev/null || true
+  printf 'PARKED %s host=%s reason=%s\nUn-park (operator only): run scripts/unpark-build.sh on this box.\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(hostname 2>/dev/null || echo box)" "$1" \
+    > "$BOX_PARK_MARKER" 2>/dev/null || true
+}
+
+# Compact fingerprint of build PROGRESS. Deliberately EXCLUDES volatile fields
+# (resumeAttempts, timestamps) that change every fire and would mask a stuck
+# build. If it changes between fires, the build advanced and the stuck counter
+# resets to 0; a progressing build therefore never trips the cap.
+progress_fingerprint() {
+  if command -v jq >/dev/null 2>&1 && [[ -f "$STATE_FILE" ]]; then
+    jq -rS '[
+      ((.departments // []) | map(((.id // .slug // "?")|tostring) + ":" + ((.status // "?")|tostring)) | sort | join(",")),
+      (.roleLibraryStatus // "?"),
+      (.sopLibraryStatus // "?"),
+      (.commsAutomationStatus // "?"),
+      (.closeoutStatus // "?"),
+      (.buildCompletedAt // "?")
+    ] | join("||")' "$STATE_FILE" 2>/dev/null || echo "jqerr"
+  elif [[ -f "$STATE_FILE" ]]; then
+    printf '%s|%s' "$(wc -c < "$STATE_FILE" 2>/dev/null | tr -d '[:space:]')" \
+      "$(stat -c %Y "$STATE_FILE" 2>/dev/null || stat -f %m "$STATE_FILE" 2>/dev/null || echo 0)"
+  else
+    echo "nostate"
+  fi
+}
+
+# (1) ALREADY PARKED → STOP unconditionally. The agent-browser breaker or a prior
+#     stuck-cap wrote BOX_PARK_MARKER and no operator has un-parked. Do NOT resume;
+#     remove the cron so future fires stop too. Un-park is operator-only.
+if park_is_set; then
+  log "PARKED: $BOX_PARK_MARKER present — build is intentionally parked. NOT resuming; removing the resume cron. Un-park is operator-only (scripts/unpark-build.sh)."
+  echo "PARKED — build is parked ($BOX_PARK_MARKER). STOP: do NOT continue this resume; an operator must run scripts/unpark-build.sh. The resume cron is being removed."
+  self_remove_cron "parked"
+  exit 0
 fi
-_run_count=$((_run_count + 1))
-echo "$_run_count" > "$RUN_COUNT_FILE" 2>/dev/null || true
-if (( _run_count > MAX_RUNS_BEFORE_SELF_REMOVE )); then
-  # Backoff: only ACT every Nth fire past the cap so we slow down (preserving
-  # tokens / avoiding 429 churn) but NEVER stop. With a */15 cron, acting every
-  # 8th fire ≈ once every 2 hours (the spec's 2h-backoff-retry).
-  _over=$(( _run_count - MAX_RUNS_BEFORE_SELF_REMOVE ))
-  if (( _over % 8 != 1 )); then
-    log "NEVER-STOP: run #$_run_count past cap ($MAX_RUNS_BEFORE_SELF_REMOVE) - in 2h-backoff slow mode, skipping this fire (will act on the next 2h boundary). NOT self-removing."
+
+# (2) CONSECUTIVE-STUCK hard cap — ONLY for an ACTIVE build (interview done AND
+#     departments seeded). Pre-interview / pre-seed phases own their own nudge +
+#     watchdog crons and must never be parked here.
+_ic="false"; _ndept="0"
+if command -v jq >/dev/null 2>&1 && [[ -f "$STATE_FILE" ]]; then
+  _ic=$(jq -r '.interviewComplete // false' "$STATE_FILE" 2>/dev/null || echo false)
+  _ndept=$(jq -r '(.departments // []) | length' "$STATE_FILE" 2>/dev/null || echo 0)
+fi
+if [[ "$_ic" == "true" ]] && [[ "${_ndept:-0}" =~ ^[0-9]+$ ]] && (( _ndept > 0 )); then
+  _cur_fp="$(progress_fingerprint)"
+  _prev_fp=""
+  [[ -f "$PROGRESS_FP_FILE" ]] && _prev_fp="$(cat "$PROGRESS_FP_FILE" 2>/dev/null || echo '')"
+  if [[ -n "$_prev_fp" && "$_cur_fp" == "$_prev_fp" ]]; then
+    _stuck=0
+    [[ -f "$STUCK_COUNT_FILE" ]] && _stuck=$(cat "$STUCK_COUNT_FILE" 2>/dev/null | tr -dc '0-9' | head -c 6)
+    [[ -z "$_stuck" ]] && _stuck=0
+    _stuck=$((_stuck + 1))
+  else
+    _stuck=0
+  fi
+  echo "$_stuck" > "$STUCK_COUNT_FILE" 2>/dev/null || true
+  printf '%s' "$_cur_fp" > "$PROGRESS_FP_FILE" 2>/dev/null || true
+
+  if (( _stuck >= MAX_STUCK_FIRES )); then
+    log "STUCK-CAP: $_stuck consecutive cron fires with ZERO build-state progress (cap=$MAX_STUCK_FIRES). PARKING the build (durable) + escalating once, then DISABLING this cron (self-remove). Hard stop for a wedged build (replaces the old forever-firing furnace). Un-park is operator-only (scripts/unpark-build.sh)."
+    park_set "stuck:${_stuck}-consecutive-fires-zero-progress"
+    if command -v openclaw >/dev/null 2>&1; then
+      _already_esc=$(jq -r '.stuckParkEscalated // false' "$STATE_FILE" 2>/dev/null || echo false)
+      if [[ "$_already_esc" != "true" ]]; then
+        _rr_webhook="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rescue-rangers}"
+        if [[ -n "$_rr_webhook" ]] && command -v curl >/dev/null 2>&1; then
+          _rr_msg="workforce-build-resume on $(hostname) made ZERO progress for ${_stuck} consecutive fires. Build PARKED + cron DISABLED (v14.1.5 hard stuck-cap). Investigate on the box, then un-park with scripts/unpark-build.sh. State: $STATE_FILE. OpenClaw: $(openclaw --version 2>/dev/null | head -1)"
+          _rr_payload=$(jq -nc --arg c "$(hostname)" --arg a "main" --arg m "$_rr_msg" '{action:"escalate",client:$c,agent:$a,message:$m}' 2>/dev/null || echo '')
+          [[ -n "$_rr_payload" ]] && curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
+        fi
+        _operator_chat="$(resolve_operator_chat_id)"
+        if [[ -n "$_operator_chat" ]]; then
+          openclaw message send --channel telegram -t "$_operator_chat" \
+            -m "⛔ workforce-build-resume on $(hostname) PARKED + DISABLED after ${_stuck} consecutive no-progress fires (v14.1.5 hard stuck-cap). It will NOT re-fire until you un-park: scripts/unpark-build.sh. State: $STATE_FILE" >>"$LOG_FILE" 2>&1 || true
+        fi
+        _tmp_se=$(mktemp); jq '.stuckParkEscalated = true' "$STATE_FILE" > "$_tmp_se" 2>/dev/null && mv "$_tmp_se" "$STATE_FILE" || rm -f "$_tmp_se"
+      fi
+    fi
+    echo "PARKED + DISABLED — ${_stuck} consecutive no-progress fires hit the hard cap ($MAX_STUCK_FIRES). The resume cron is removed; un-park is operator-only (scripts/unpark-build.sh). STOP."
+    self_remove_cron "stuck-cap"
     exit 0
   fi
-  log "NEVER-STOP: run #$_run_count past cap - slow-retry fire. Escalating to Rescue Rangers (once) and continuing; will NOT self-remove on run count."
-  if command -v openclaw >/dev/null 2>&1; then
-    _already_escalated=$(jq -r '.rescueRangersEscalated // false' "$STATE_FILE" 2>/dev/null)
-    if [[ "$_already_escalated" != "true" ]]; then
-      # Escalate via the n8n Rescue Rangers webhook (NOT bot-to-bot Telegram -
-      # bots can't read other bots, so the old group post never reached the rescue agent).
-      _rr_webhook="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rescue-rangers}"
-      if [[ -n "$_rr_webhook" ]] && command -v curl >/dev/null 2>&1; then
-        _rr_msg="workforce-build-resume on $(hostname) has run $_run_count times without reaching a real completion. roleLibraryStatus=${role_library_status:-unset}, sopLibraryStatus=${sop_library_status:-unset}. Now in 2h-backoff slow-retry (NOT stopped - Rule 8). Run scripts/verify-zhc-standard.sh + verify-library-gate.sh on the box. State: $STATE_FILE. OpenClaw version: $(openclaw --version 2>/dev/null | head -1)"
-        _rr_payload=$(jq -nc --arg c "$(hostname)" --arg a "main" --arg m "$_rr_msg" \
-          '{action:"escalate",client:$c,agent:$a,message:$m}' 2>/dev/null)
-        curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
-      fi
-      _operator_chat="$(resolve_operator_chat_id)"
-      if [[ -n "$_operator_chat" ]]; then
-        openclaw message send --channel telegram -t "$_operator_chat" \
-          -m "⚠️ workforce-build-resume on $(hostname) hit $_run_count runs without completing - escalated to Rescue Rangers and switched to 2h-backoff slow-retry. It will KEEP retrying until libraries + closeout are real (it does NOT stop). State: $STATE_FILE" 2>>"$LOG_FILE" || true
-      fi
-      _tmp_esc=$(mktemp)
-      jq '.rescueRangersEscalated = true' "$STATE_FILE" > "$_tmp_esc" 2>/dev/null && mv "$_tmp_esc" "$STATE_FILE" || rm -f "$_tmp_esc"
-    fi
+  if (( _stuck == 0 )); then
+    log "stuck-watch: progress fingerprint CHANGED — build advanced; stuck counter reset to 0/$MAX_STUCK_FIRES."
+  else
+    log "stuck-watch: NO progress since last fire — stuck counter $_stuck/$MAX_STUCK_FIRES (parks + disables cron at the cap)."
   fi
-  # fall through and keep working - do NOT self_remove_cron on a run count
+else
+  # No active build to be stuck on (pre-interview / pre-seed). Keep the counters
+  # clean so a later real build starts fresh; never park this phase.
+  rm -f "$STUCK_COUNT_FILE" "$PROGRESS_FP_FILE" 2>/dev/null || true
 fi
 
 # ---- v10.14.20: heal config before any gateway interaction ----

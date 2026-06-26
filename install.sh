@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v14.1.4"
+ONBOARDING_VERSION="v14.1.5"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -5228,6 +5228,17 @@ step "Step 13: Installing workforce-build resume cron (15-min check, fires only 
 install_workforce_resume_cron() {
     if ! command -v openclaw >/dev/null 2>&1; then
         warn "openclaw CLI not on PATH — skipping workforce-resume cron. Re-run update-skills.sh later."
+        return 0
+    fi
+
+    # PARK-AWARE (v14.1.5): never (re)install a parked box's resume cron. A stuck
+    # build writes a DURABLE park marker + disables this cron on purpose; resuming
+    # is operator-only (scripts/unpark-build.sh). Respect it here too so a manual
+    # re-install cannot resurrect the furnace an operator intentionally parked.
+    local _PARK_MARKER
+    _PARK_MARKER="$(dirname "$SKILLS_DIR")/workspace/.park/workforce-build.parked"
+    if [ -f "$_PARK_MARKER" ]; then
+        warn "Workforce-build resume cron NOT installed — build is PARKED ($_PARK_MARKER). Un-park is operator-only: scripts/unpark-build.sh"
         return 0
     fi
 

@@ -4,6 +4,10 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.1.5] - 2026-06-25 — fix(breaker): DURABLE park marker (survives reboot) + writes the box-level PARK marker on a trip
+
+The agent-browser circuit-breaker's PARK marker no longer lives in TMPDIR (it evaporated on reboot, silently un-parking a qc-failed build). `tools/browser_manager.sh` now keeps the breaker counter + BLOCKED marker AND a canonical box-level PARK marker under the box's DURABLE state dir (`<openclaw-root>/workspace/.park/`); the lock + leases correctly stay ephemeral. `bm_breaker_check` reads the box-level marker too, and a breaker trip WRITES it so the Skill-23 `*/15` resume cron (`resume-workforce-build.sh`) stops re-firing as well. Un-park is operator-only (`scripts/unpark-build.sh`). Falls back to the old ephemeral path when no onboarded root exists, so the 31 singleton tests stay hermetic. See root CHANGELOG v14.1.5.
+
 ## [v7.2.9] - June 23, 2026 — SINGLETON POOLED BROWSER (one session, lock=1, TTL, guaranteed teardown, reaper backstop)
 
 ### Added

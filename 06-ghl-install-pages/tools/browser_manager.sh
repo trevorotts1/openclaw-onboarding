@@ -45,7 +45,7 @@
 #   bash browser_manager.sh session-name
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_VERSION="v14.1.4"
+BROWSER_MANAGER_VERSION="v14.1.5"
 
 # B1 VERSION-GATE FLOOR (v14.1.4) — the version where the BOX-LEVEL headless LOCK
 # landed (install.sh pins AGENT_BROWSER_HEADED=false in the gateway-inherited env,
@@ -94,10 +94,42 @@ AB_BREAKER_MAX="${AB_BREAKER_MAX:-6}"        # opens-without-pass before trip
 AB_MAX_OPENS_PER_HOUR="${AB_MAX_OPENS_PER_HOUR:-12}"  # advisory upper bound
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
+# LOCK + LEASES are EPHEMERAL by design — a lock or lease that survived a reboot
+# would be a stale-lock bug (a dead PID still "owning" the box). They live under
+# TMPDIR and the dead-PID stale-lock reclaim handles a crash. (Keep the literal
+# `mkdir "$LOCKDIR/ab.lock.d"` — test_browser_manager_singleton.py asserts it.)
 LOCKDIR="${TMPDIR:-/tmp}/agent-browser"
 mkdir -p "$LOCKDIR" 2>/dev/null || true
 chmod 700 "$LOCKDIR" 2>/dev/null || true
-mkdir -p "$LOCKDIR/leases" "$LOCKDIR/breaker" 2>/dev/null || true
+mkdir -p "$LOCKDIR/leases" 2>/dev/null || true
+
+# ── DURABLE PARK / BREAKER STATE (v14.1.5 — survives a reboot) ─────────────────
+# The circuit-breaker's PARK marker MUST outlive a reboot, otherwise a parked,
+# qc-failed build silently un-parks the instant the box restarts: TMPDIR is wiped
+# on boot (/var/folders/* on macOS, tmpfs /tmp on most Linux). So the breaker
+# counter + BLOCKED marker, and the canonical box-level PARK marker, live in the
+# box's DURABLE OpenClaw state dir, NOT TMPDIR. Detection mirrors every pipeline
+# script (VPS /data first, then Mac $HOME). When no onboarded root exists (CI / a
+# dev checkout) we fall back to the ephemeral LOCKDIR so the hermetic tests keep
+# their old TMPDIR-only behavior.
+_bm_durable_root() {
+  if [ -d /data/.openclaw ]; then printf '%s' "/data/.openclaw"
+  elif [ -d "${HOME:-}/.openclaw" ]; then printf '%s' "${HOME}/.openclaw"
+  else printf '%s' ""; fi
+}
+_BM_DURABLE_ROOT="$(_bm_durable_root)"
+if [ -n "$_BM_DURABLE_ROOT" ]; then
+  PARK_DIR="$_BM_DURABLE_ROOT/workspace/.park"
+else
+  PARK_DIR="$LOCKDIR/breaker"   # fallback: ephemeral (no onboarded root — CI/tests)
+fi
+mkdir -p "$PARK_DIR" 2>/dev/null || true
+chmod 700 "$PARK_DIR" 2>/dev/null || true
+# Canonical BOX-LEVEL park marker — the SINGLE file the Skill-23 resume cron
+# (resume-workforce-build.sh) and the cron registrar (ensure-pipeline-crons.sh)
+# both read before they re-fire a build. A breaker trip writes it; ONLY an
+# operator (scripts/unpark-build.sh) clears it. Auto-resume never happens.
+BM_BOX_PARK_MARKER="$PARK_DIR/workforce-build.parked"
 
 # Stable box id (host + the agent-browser engine root) for lease provenance.
 _bm_box_id() { printf '%s' "$(hostname 2>/dev/null || echo box):$HOME"; }
@@ -266,11 +298,16 @@ _bm_pool_ceiling_check() {
 # ── CIRCUIT-BREAKER (Approach 0+1 graft) ──────────────────────────────────────
 # Rolling-window open counter per location. After AB_BREAKER_MAX opens (or the
 # advisory AB_MAX_OPENS_PER_HOUR) WITHOUT a verified QC pass in the window, the
-# breaker OPENS: REFUSE (exit 75), write a BLOCKED/qc-failed marker the */15
-# onboarding-resume cron HONORS (parked, NOT re-fired — FAIL-LOUD doctrine), and
-# escalate to Rescue Rangers. Resets on window-clear or a verified gate pass.
-_bm_breaker_file() { printf '%s' "$LOCKDIR/breaker/${GHL_LOCATION_ID:-default}.count"; }
-_bm_breaker_marker() { printf '%s' "$LOCKDIR/breaker/${GHL_LOCATION_ID:-default}.BLOCKED"; }
+# breaker OPENS: REFUSE (exit 75), write a DURABLE BLOCKED/qc-failed marker AND
+# the canonical box-level PARK marker (both under PARK_DIR, which survives a
+# reboot) that the */15 resume cron (resume-workforce-build.sh) + the registrar
+# (ensure-pipeline-crons.sh) BOTH read and STOP on (parked, NOT re-fired —
+# FAIL-LOUD doctrine), and escalate to Rescue Rangers. The per-location breaker
+# resets on window-clear or a verified gate pass (bm_breaker_pass); the box-level
+# PARK marker is operator-cleared ONLY (scripts/unpark-build.sh) — auto-resume
+# never happens silently.
+_bm_breaker_file() { printf '%s' "$PARK_DIR/agent-browser-${GHL_LOCATION_ID:-default}.count"; }
+_bm_breaker_marker() { printf '%s' "$PARK_DIR/agent-browser-${GHL_LOCATION_ID:-default}.BLOCKED"; }
 
 # Record one open (called by bm_ensure after a successful open).
 _bm_breaker_record_open() {
@@ -298,9 +335,12 @@ _bm_breaker_window_count() {
 }
 
 bm_breaker_check() {
-  # If a BLOCKED marker exists, the build is PARKED — refuse immediately.
-  if [ -f "$(_bm_breaker_marker)" ]; then
-    echo "REFUSE: circuit-breaker is OPEN (build PARKED as qc-failed). Parked != re-fired; the */15 resume cron honors this marker. Clear via bm_breaker_pass after a verified gate pass." >&2
+  # PARK is durable + cross-honored. Refuse immediately if EITHER:
+  #   (a) this location's breaker BLOCKED marker exists, OR
+  #   (b) the canonical box-level PARK marker exists (an operator park, or a
+  #       Skill-23 stuck-build park) — so a parked box never opens a browser.
+  if [ -f "$(_bm_breaker_marker)" ] || [ -f "$BM_BOX_PARK_MARKER" ]; then
+    echo "REFUSE: build is PARKED (durable marker present). Parked != re-fired — the */15 resume cron (resume-workforce-build.sh) and the cron registrar both read this SAME marker and STOP too. Un-park is operator-only: scripts/unpark-build.sh." >&2
     exit 75
   fi
   local cnt limit
@@ -308,17 +348,21 @@ bm_breaker_check() {
   limit="$AB_BREAKER_MAX"
   [ "$AB_MAX_OPENS_PER_HOUR" -lt "$limit" ] 2>/dev/null && limit="$AB_MAX_OPENS_PER_HOUR"
   if [ "$cnt" -ge "$limit" ]; then
-    # Trip the breaker.
+    # Trip the breaker — write BOTH the per-location BLOCKED marker AND the
+    # canonical box-level PARK marker (both durable), so the Skill-23 resume cron
+    # and the registrar STOP re-firing this box's build, not just the browser path.
     printf 'BLOCKED: %s opens in %ss window without a verified QC pass (location=%s)\n' \
       "$cnt" "$AB_BREAKER_WINDOW" "${GHL_LOCATION_ID:-default}" > "$(_bm_breaker_marker)" 2>/dev/null || true
+    printf 'PARKED %s: agent-browser circuit-breaker tripped (%s opens / %ss, location=%s). Un-park: scripts/unpark-build.sh\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$cnt" "$AB_BREAKER_WINDOW" "${GHL_LOCATION_ID:-default}" > "$BM_BOX_PARK_MARKER" 2>/dev/null || true
     # close --all is reserved for the reaper / a breaker trip (blast-radius safety).
     AB close --all 2>/dev/null || true
     # Escalate to Rescue Rangers (never bypass the gateway; uses openclaw message send).
     if command -v openclaw >/dev/null 2>&1 && [ -n "${RESCUE_RANGERS_HELP_CHAT_ID:-}" ]; then
       openclaw message send --channel telegram -t "${RESCUE_RANGERS_HELP_CHAT_ID}" \
-        "browser_manager circuit-breaker OPEN: $cnt agent-browser opens in ${AB_BREAKER_WINDOW}s without a QC pass (location=${GHL_LOCATION_ID:-default}). Skill-6 build PARKED (qc-failed). Needs a human." 2>/dev/null || true
+        "browser_manager circuit-breaker OPEN: $cnt agent-browser opens in ${AB_BREAKER_WINDOW}s without a QC pass (location=${GHL_LOCATION_ID:-default}). Skill-6 build PARKED (qc-failed) + box-level PARK marker written, so the */15 resume cron will STOP too. Needs a human — un-park with scripts/unpark-build.sh." 2>/dev/null || true
     fi
-    echo "REFUSE: circuit-breaker TRIPPED ($cnt opens / ${AB_BREAKER_WINDOW}s). Build PARKED (qc-failed). Escalated to Rescue Rangers. STOP." >&2
+    echo "REFUSE: circuit-breaker TRIPPED ($cnt opens / ${AB_BREAKER_WINDOW}s). Build PARKED (qc-failed) — durable box-level PARK written; the resume cron will STOP. Escalated to Rescue Rangers. STOP." >&2
     exit 75
   fi
 }

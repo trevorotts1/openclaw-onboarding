@@ -8,18 +8,19 @@ RULE 8 - NEVER STOP (binding for every resume fire)
 - NEVER call sessions_yield, and NEVER end your turn declaring the build "done" unless verify-zhc-standard.sh exits 0 (libraries substantive on disk + closeout confirmed). "No sub-agents running" is NOT done.
 - On a timeout / 429 / model failure: do NOT stop. Back off ~2 hours, retry; if it still fails, +2h and retry again - keep going. The recurring cron is your retry engine; it is idempotent and will re-fire.
 - The ONLY legitimate stop is a REAL terminal state: every department done AND roleLibraryStatus=done AND sopLibraryStatus=done AND closeout confirmed (messagesDelivered non-empty). The shell guard removes the cron only then.
-- After K failed attempts, escalate to Rescue Rangers (the shell guard does this for you by POSTing to the n8n webhook $RESCUE_RANGERS_WEBHOOK_URL - NOT a bot-to-bot Telegram group post, which bots cannot read) and KEEP RETRYING in slow-backoff. The client must NEVER discover the job wasn't finished.
+- BUT a build nobody is advancing must NOT re-fire forever: after MAX_STUCK_FIRES CONSECUTIVE fires with ZERO build-state progress, the shell guard PARKS the build (a durable marker that survives a reboot), escalates ONCE to Rescue Rangers (by POSTing to the n8n webhook $RESCUE_RANGERS_WEBHOOK_URL - NOT a bot-to-bot Telegram group post, which bots cannot read), and DISABLES this cron. That is the intended HARD STOP for a wedged build - it kills the token furnace that used to re-fire ~96x/day on idle boxes. Resuming after a park is OPERATOR-ONLY (a human runs scripts/unpark-build.sh on the box); auto-resume never happens silently. A genuinely progressing build never trips this - the counter resets to 0 the moment the build state advances.
 
 ═══════════════════════════════════════════════════════════════════
 STEP -1 (v10.14.36) - RUN THE SHELL GUARD FIRST
 ═══════════════════════════════════════════════════════════════════
 
 BEFORE doing anything else, invoke the shell-level resume guard. It has
-defense-in-depth checks (belt: terminal-state self-stop; suspenders:
-max-runs counter) that auto-remove this cron when it's no longer useful.
-Running it costs <1 second and prevents the v10.14.16–v10.14.35 bug where
-this cron kept firing every 15 min on done builds (multi-client incident,
-2026-05-24).
+defense-in-depth checks (belt: terminal-state self-stop; suspenders: a durable
+PARK gate + a consecutive-stuck hard cap) that auto-remove this cron when it is
+no longer useful OR when the build is wedged. Running it costs <1 second and
+prevents BOTH the v10.14.16–v10.14.35 bug where this cron kept firing every 15
+min on done builds (multi-client incident, 2026-05-24) AND the stuck-build
+furnace where it re-fired ~96x/day on a box nobody was advancing.
 
 ```bash
 bash /data/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh 2>/dev/null \
@@ -27,8 +28,17 @@ bash /data/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-b
   || true
 ```
 
-If that script already self-removed the cron, you'll receive no more
-messages from it. If it determined there's work to do, continue below.
+PARK-STOP (v14.1.5) — READ THE GUARD OUTPUT: if it printed "PARKED" or
+"PARKED + DISABLED" (or otherwise told you to STOP), the build is INTENTIONALLY
+PARKED — a durable park marker is set because the agent-browser circuit-breaker
+tripped OR this cron hit its consecutive-stuck hard cap. STOP RIGHT HERE: do NOT
+continue below, do NOT resume, do NOT rebuild. The resume cron has been removed
+and will NOT re-fire. Resuming is OPERATOR-ONLY — a human must investigate and
+run scripts/unpark-build.sh on the box. End your turn now.
+
+Otherwise: if the script already self-removed the cron (REAL terminal
+completion), you'll receive no more messages from it. If it determined there is
+work to do, continue below.
 
 ═══════════════════════════════════════════════════════════════════
 STEP 0 - DECIDE WHICH FLOW YOU'RE IN
