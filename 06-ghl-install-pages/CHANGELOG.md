@@ -4,6 +4,27 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.3.13] - 2026-06-26 — fix(skill6): GHL credential resolution searches every alias + every env store (kills the six-month image-step false-fail) + folds B7 SOP docs
+
+Root cause: the Skill-6 image/media step false-failed `"GHL LOCATION PIT not found"` on a LOCATION Private Integration Token the operator had used for SIX MONTHS. The token was in `~/.openclaw/secrets/.env` under `GOHIGHLEVEL_API_KEY` the whole time — but `ghl_media.resolve_location_pit()` only checked two env-var names in the LIVE process environment and never opened the canonical store. In a clean agent shell (where the gateway/launchd wrapper had not exported `secrets/.env`) both vars read empty and the tool fail-loud, treating "env var empty" as "credential missing" instead of "env not loaded".
+
+### Fixed (credential resolution — `tools/ghl_media.py`)
+- `resolve_location_pit()` / `resolve_location_id()` now resolve from EVERY known alias AND, when the live env is empty, the canonical env STORES directly. LOCATION-PIT aliases (preferred → fallback): `GOHIGHLEVEL_API_KEY` → `GHL_API_KEY` → `GOHIGHLEVEL_LOCATION_PIT` → `GHL_LOCATION_PIT`. Location-id aliases: `GOHIGHLEVEL_LOCATION_ID` → `GHL_LOCATION_ID` → `GOHIGHLEVEL_ALLOWED_LOCATION_IDS` → `CAF_ALLOWED_LOCATION_IDS` (first id). Stores searched in order: `~/.openclaw/secrets/.env` → `~/clawd/secrets/.env` → `~/.openclaw/workspace/.env` (the same multi-alias/multi-store pattern already used for the Google 3-alias key and for `KIE_API_KEY` in `ghl_image_stage`).
+- New `_scan_env_stores()` parses `KEY=VALUE` (and `export KEY=VALUE`) lines, strips quotes, takes the first id of a comma-separated allowlist; missing/unreadable stores are skipped, never raise.
+- AGENCY vs LOCATION distinction encoded: the resolver NEVER falls back to an agency-class name (`GOHIGHLEVEL_AGENCY_PIT` / `GOHIGHLEVEL_AGENCY_API_KEY` / `GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT` / `GHL_AGENCY_PIT`) — agency tokens 401 for media. If only an agency token is found, the error says so explicitly.
+- The honest-fail message is now accurate: it NAMES exactly which env vars and which store paths it checked, says the credential is "not found IN THE ENVIRONMENT or in any canonical env store", and instructs `set -a; source ~/.openclaw/secrets/.env; set +a` then retry. No secret VALUES are ever echoed.
+- New `search_stores` kwarg (default True) lets unit tests assert pure-env behaviour in isolation.
+
+### Tests (`tests/test_ghl_media_cred_resolution.py` — new, 18 cases, MOCK-only)
+- Multi-alias resolution + preference order (PIT and location id); store FALLBACK resolving the value from a redirected fake `secrets/.env` (the exact incident); live-env-beats-store; `export`/quotes parsing; agency-only env/store still fails with the scope note; honest-fail names every var + store; allowlist first-id; alias-set invariants (no agency name is a LOCATION alias; `GOHIGHLEVEL_API_KEY`/`GOHIGHLEVEL_LOCATION_ID`/`~/.openclaw/secrets/.env` are the preferred entries). All fixtures are generic `pit-FAKE…` / `LOCFAKE…` values; the real store is never read.
+
+### Docs (folds B7 / PR #356 into the SOP + adds the credential rule)
+- `v2-autonomous-build-sop.md`: NEW §2.0.1 credential preflight (env-var→store table for LOCATION PIT / location id / KIE key; AGENCY≠LOCATION warning; step-0 `source secrets/.env`; HARD RULE — real research across all stores before any `honest_fail`, and the failure must name what was checked). §3 Images rewritten to call the `ghl_image_stage.run_image_pipeline(page_spec, run_dir, *, location_id, location_pit)` entrypoint and to cross-reference §2.0.1 (a PIT honest_fail is valid only after the store search). §7.1 Forbidden-shortcuts gains the row banning `"credential not found"` on an empty env var without a store search. Also folded from PR #356: §2.05 method-decision, §2.06 theme/colors object, §4.1 embed-widget flow, §7 sealed-mode verifier contract, §7.1 forbidden shortcuts.
+- `SKILL.md`: new GoHighLevel media/PIT credential block documenting where the LOCATION PIT + location id + KIE key live, the alias/store resolution order, the AGENCY-401 warning, and the HARD RULE against false-failing on an empty env var.
+- PR #356 (the B7 SOP docs) is consolidated here and closed; its SKILL.md half had already landed in v14.3.11.
+
+508 passed / 15 skipped / 0 failed. guard-ghl-method-decision PASS. guard-ghl-verify-unfakeable PASS. qc-ghl-install-pages PASS (exit 0, 1 expected WARN on white-label URL). No secret values committed; the location id used in goldens is the operator's own documented test-scratch id.
+
 ## [v14.3.11] - 2026-06-26 — fix(skill6): un-fakeable QC gate + theme/colors 500 fix + B1-B8 integrated (B1-golden/colors, B2-sealed-gate, B3-method-decision, B4-image-pipeline, B5-golden-capture, B6-tests, B7-docs, B8-guards)
 
 Root cause: the pre-flight fabricated a PASS while every page 500ed ("Cannot read properties of undefined reading 'colors'") and funnel pages were blank. Two distinct failure modes: (1) `new_page_blob()` produced a blob missing `general.general.colors` — GoHighLevel's renderer reads that key during React hydration; absence causes a 500. (2) The QC gate (`ghl_verify.py`) was bypassed — a hand-written ledger + `.md` summary overrode the machine verdict, the gate was never independently called.
