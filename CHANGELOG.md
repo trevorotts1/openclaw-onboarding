@@ -1,4 +1,4 @@
-## [v14.3.8]  -  2026-06-26  -  feat(rescue-rangers): X-Rescue-Secret sender plumbing + install-time secret seeding (backward-compatible; enforcement OFF)
+## [v14.3.9]  -  2026-06-26  -  feat(rescue-rangers): X-Rescue-Secret sender plumbing + install-time secret seeding (backward-compatible; enforcement OFF)
 
 Closes the long-open Rescue Rangers webhook-auth gap: every escalation sender now reads `RESCUE_RANGERS_WEBHOOK_SECRET` from its env and adds an `X-Rescue-Secret` header ONLY when the var is set — so boxes with the secret authenticate to the n8n relay while boxes without it continue to escalate unauthenticated (backward-compatible). The n8n relay enforcement switch stays OFF; this commit is the sender (box) half only.
 
