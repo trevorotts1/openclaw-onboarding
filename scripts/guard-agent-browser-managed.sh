@@ -35,6 +35,14 @@
 #       `--session ghl-...-$(date`, `--session ...-clone`).
 #   (4) DOCTRINE SENTINEL — present verbatim in SKILL.md /
 #       ghl-browser-builder-full.md / CORE_UPDATES.md.
+#   (5) HEADLESS-ONLY (D6) — the backup/Playwright path must NEVER open a visible
+#       window. Fails on `headless = False|0` or a bare Playwright `launch(`
+#       (NOT launch_persistent_context / launchPersistentContext) in any tracked
+#       *.py/*.sh under 06, AND inside any CODE-LANGUAGE fence (```python /
+#       ```bash …) in any 06 *.md. Bare ``` prose blocks (e.g. CORE_UPDATES.md
+#       copy-paste content that legitimately says "NEVER launch()") are NOT code
+#       and are skipped — closing the doc-prose-only enforcement gap without false
+#       positives.
 #
 # Modeled on: scripts/guard-ghl-token-only.sh (same arg parse / comment stripping
 #   / self-exclusion / exit conventions).
@@ -51,7 +59,7 @@
 set -uo pipefail
 
 # Version marker (kept in sync by scripts/bump-version.sh):
-GUARD_AGENT_BROWSER_MANAGED_VERSION="v14.3.0"
+GUARD_AGENT_BROWSER_MANAGED_VERSION="v14.3.1"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -130,9 +138,19 @@ def erase(start, end):
         c1 = ec if r == er else len(row)
         for c in range(c0, min(c1, len(row))):
             row[c] = " "
+# Erase comments + ALL string content. On Python 3.12+ an f-string is NOT a single
+# STRING token — it is FSTRING_START/FSTRING_MIDDLE/FSTRING_END, so the literal
+# TEXT of an f-string (e.g. an f"headless=False …" assert message) would otherwise
+# survive stripping and false-positive. Erase the f-string text tokens too; the
+# replacement-field `{expr}` tokens are NAME/OP and stay (they are real code).
+_ERASE = {tokenize.COMMENT, tokenize.STRING}
+for _name in ("FSTRING_START", "FSTRING_MIDDLE", "FSTRING_END"):
+    _t = getattr(tokenize, _name, None)
+    if _t is not None:
+        _ERASE.add(_t)
 try:
     for tok in tokenize.generate_tokens(io.StringIO(src).readline):
-        if tok.type in (tokenize.COMMENT, tokenize.STRING):
+        if tok.type in _ERASE:
             erase(tok.start, tok.end)
 except (tokenize.TokenError, IndentationError, SyntaxError):
     sys.stdout.write("0:GUARD-ERROR-UNPARSEABLE-PYTHON agent-browser open\n")
@@ -385,9 +403,115 @@ for doc in "${REQUIRED_SENTINEL_DOCS[@]}"; do
   fi
 done
 
+# ── 5. HEADLESS-ONLY (D6) — no headless=False / bare Playwright launch() ───────
+# The backup/Playwright fallback path must NEVER open a visible window. Until now
+# this was DOC-PROSE only (the guard only knew the agent-browser binary). This
+# section makes a visible-window regression a BUILD FAILURE.
+echo ""
+echo "── (5) headless-only: no headless=False / bare launch() (D6 — no visible window) ──"
+headless_fail=0
+
+# A real headless-off assignment (False or 0), NOT `headless=True`.
+HEADLESS_FALSE_RE='headless[[:space:]]*=[[:space:]]*([Ff]alse|0)([^A-Za-z0-9_]|$)'
+# A bare Playwright launch(. `(^|[^A-Za-z_])launch\(` matches `chromium.launch(` /
+# `.launch(` but NOT `launch_persistent_context(` / `launchPersistentContext(`
+# (the char after `launch` there is `_`/`P`, never `(`).
+BARE_LAUNCH_RE='(^|[^A-Za-z_])launch\('
+
+# Code-file scan: reuse the stripped-line strippers (comments/strings erased), so
+# only REAL code lines are tested (a docstring "no chromium.launch" never trips).
+scan_headless_code() {
+  local file="$1" stripper="$2"
+  local rel="${file#$REPO_ROOT/}"
+  local hits=0 codeln lineno code
+  while IFS= read -r codeln; do
+    lineno="${codeln%%:*}"
+    code="${codeln#*:}"
+    [ -z "$code" ] && continue
+    if printf '%s' "$code" | grep -Eq "$HEADLESS_FALSE_RE"; then
+      red "  ✗ FAIL — $rel:$lineno headless=False / headless off (D6 forbids a visible window):"
+      echo "          $(printf '%s' "$code" | sed 's/^[[:space:]]*//' | cut -c1-120)"
+      hits=$((hits + 1))
+    fi
+    if printf '%s' "$code" | grep -Eq "$BARE_LAUNCH_RE"; then
+      red "  ✗ FAIL — $rel:$lineno bare Playwright launch() (use launch_persistent_context, headless=True):"
+      echo "          $(printf '%s' "$code" | sed 's/^[[:space:]]*//' | cut -c1-120)"
+      hits=$((hits + 1))
+    fi
+  done < <("$stripper" "$file")
+  return "$hits"
+}
+
+while IFS= read -r f; do
+  [ -f "$f" ] || continue
+  case "$f" in
+    *.py) scan_headless_code "$f" strip_python || headless_fail=$((headless_fail + $?)) ;;
+    *.sh) scan_headless_code "$f" strip_bash   || headless_fail=$((headless_fail + $?)) ;;
+  esac
+done < <(find "$SKILL_DIR" -type f \( -name '*.sh' -o -name '*.py' \) 2>/dev/null)
+
+# Markdown CODE-FENCE scan (Python is already a guard dependency). Only enters
+# fences opened with a code-language tag (```python / ```bash / …); bare ``` prose
+# blocks are skipped (they hold copy-paste doctrine that says "NEVER launch()").
+while IFS= read -r m; do
+  [ -z "$m" ] && continue
+  red "  ✗ FAIL — $m"
+  headless_fail=$((headless_fail + 1))
+done < <(python3 - "$SKILL_DIR" "$REPO_ROOT" <<'PY'
+import os, re, sys
+root, repo_root = sys.argv[1], sys.argv[2]
+HEADLESS_RE = re.compile(r"headless\s*=\s*(False|0)\b")
+LAUNCH_RE = re.compile(r"(?<![A-Za-z_])launch\s*\(")
+EXCLUDE_RE = re.compile(r"launch_persistent_context|launchPersistentContext")
+CODE_LANGS = ("python", "py", "python3", "bash", "sh", "shell")
+FENCE_RE = re.compile(r"(`{3,}|~{3,})[ \t]*([A-Za-z0-9_+-]*)")
+def scan(path, rel):
+    in_fence = False; fch = None; out = []
+    try:
+        fh = open(path, encoding="utf-8", errors="replace")
+    except OSError:
+        return out
+    with fh:
+        for i, line in enumerate(fh, 1):
+            m = FENCE_RE.match(line.lstrip())
+            if m:
+                ch = m.group(1)[0]; lang = (m.group(2) or "").lower()
+                if not in_fence:
+                    if lang in CODE_LANGS:
+                        in_fence = True; fch = ch
+                elif ch == fch and lang == "":
+                    in_fence = False; fch = None
+                continue
+            if not in_fence:
+                continue
+            if HEADLESS_RE.search(line):
+                out.append("%s:%d headless=False inside a code fence (D6 forbids a visible window): %s"
+                           % (rel, i, line.strip()[:100]))
+            for mm in LAUNCH_RE.finditer(line):
+                seg = line[max(0, mm.start()-30):mm.end()+10]
+                if EXCLUDE_RE.search(seg):
+                    continue
+                out.append("%s:%d bare Playwright launch() inside a code fence (use launch_persistent_context, headless=True): %s"
+                           % (rel, i, line.strip()[:100]))
+    return out
+for dirpath, _, files in os.walk(root):
+    for fn in sorted(files):
+        if fn.endswith(".md"):
+            p = os.path.join(dirpath, fn)
+            rel = os.path.relpath(p, repo_root)
+            for h in scan(p, rel):
+                sys.stdout.write(h + "\n")
+PY
+)
+if [ "$headless_fail" -eq 0 ]; then
+  green "  ✓ PASS — no headless=False / bare launch() in 06 code or code-fenced docs."
+else
+  FAILS=$((FAILS + headless_fail))
+fi
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then
-  green "guard-agent-browser-managed PASS — singleton gateway intact (managed-only, teardown+lock+breaker present, no per-run names, sentinel present)."
+  green "guard-agent-browser-managed PASS — singleton gateway intact (managed-only, teardown+lock+breaker present, no per-run names, sentinel present, headless-only enforced)."
   exit 0
 else
   red "guard-agent-browser-managed FAILED — $FAILS violation(s)."

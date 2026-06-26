@@ -122,7 +122,7 @@ per-call `AB --session`) directly, and NEVER invent a per-iteration session name
 (`bm_session_name` = `ghl-skill6-<location-id>`), the box-wide lock (lock=1), the
 lease, the per-call + per-session TTL, the pool ceiling, the circuit-breaker, and
 a GUARANTEED `trap _bm_teardown EXIT` (close + state clear). The host reaper
-(`scripts/agent-browser-reaper.sh`, */10 cron) is the backstop for a hard crash.
+(`scripts/agent-browser-reaper.sh`, hourly cron — `13 * * * *`) is the backstop for a hard crash.
 
 Core commands (full surface in `agent-browser skills get core --full`).
 **Note the `--headed false` on EVERY line (D6) — it is mandatory, not optional —
@@ -184,7 +184,7 @@ bash tools/browser_manager.sh run-detached -- <build-cmd>
 ```
 The agent then EXITS — resume via the per-page ledger (§5). The circuit-breaker
 PARKS a flaky build (qc-failed) after `AB_BREAKER_MAX` opens without a verified
-pass (loud STOP via Rescue Rangers, parked NOT re-fired); the */10 reaper sweeps
+pass (loud STOP via Rescue Rangers, parked NOT re-fired); the hourly reaper sweeps
 any descriptor a hard crash still leaks. Never hijack a screen, never babysit.
 
 ---

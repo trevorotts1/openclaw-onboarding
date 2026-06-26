@@ -222,3 +222,84 @@ def dispatch_one(
 
 def _ts() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+# ---------------------------------------------------------------------------
+# CLI entrypoint — makes Option B (the bounded dispatcher) a REFERENCEABLE,
+# SELF-PROVING default rather than a library with no entrypoint. This is GLUE:
+# the real per-task build is an INJECTED `builder` supplied by the dept agent via
+# dispatch_one(); a standalone cron cannot build without it. So this CLI exposes
+# the bounded config (--print-config) and a hermetic selftest (--selftest) that
+# proves the three bounds fire (max_inflight=1, 1800s wall-clock, verified happy
+# path). No network, no browser — safe to run anywhere.
+# ---------------------------------------------------------------------------
+
+def _selftest() -> int:
+    """Prove the bounded gates are wired, with stub builder/verifier (no network)."""
+    import tempfile
+    ok = True
+
+    def _stub_builder(task, root, *, duration=1.0, gate=True):
+        return {"pages": ["home"], "location_gate_ok": gate, "duration_s": duration}
+
+    def _stub_verifier(root, pages, **kw):
+        return {"overall_pass": True, "passed": len(pages), "total": len(pages)}
+
+    task = {"id": "selftest", "brand": "Fixture", "location_id": "FIXTURE0LOCATION0000"}
+
+    with tempfile.TemporaryDirectory() as d:
+        # 1) HARD max_inflight gate — a second concurrent build is refused.
+        r = dispatch_one(task, d, builder=_stub_builder, verifier=_stub_verifier,
+                         max_inflight=1, inflight_now=1)
+        ok &= (r.state == STATE_BACKLOG)
+        print("  [%s] max_inflight=1 gate -> %s" % ("ok" if r.state == STATE_BACKLOG else "FAIL", r.state))
+
+    with tempfile.TemporaryDirectory() as d:
+        # 2) wall-clock cap — an over-long/hung build becomes FAILED (HTTP-000 fix).
+        r = dispatch_one(
+            task, d,
+            builder=lambda t, root: _stub_builder(t, root, duration=DEFAULT_WALLCLOCK_CAP_S + 1),
+            verifier=_stub_verifier, wallclock_cap_s=DEFAULT_WALLCLOCK_CAP_S)
+        passed = (r.state == STATE_FAILED and "timeout" in r.reason)
+        ok &= passed
+        print("  [%s] wallclock_cap=%ds -> %s" % ("ok" if passed else "FAIL", DEFAULT_WALLCLOCK_CAP_S, r.state))
+
+    with tempfile.TemporaryDirectory() as d:
+        # 3) happy path — verified + overall_pass True (truthy result).
+        r = dispatch_one(task, d, builder=_stub_builder, verifier=_stub_verifier)
+        passed = (r.state == STATE_VERIFIED and bool(r))
+        ok &= passed
+        print("  [%s] happy path -> %s (truthy=%s)" % ("ok" if passed else "FAIL", r.state, bool(r)))
+
+    print("v2_dispatcher selftest bounds: max_inflight=%d wallclock_cap_s=%d poll_backoff_s=%d"
+          % (DEFAULT_MAX_INFLIGHT, DEFAULT_WALLCLOCK_CAP_S, DEFAULT_POLL_BACKOFF_S))
+    print("SELFTEST PASS" if ok else "SELFTEST FAIL")
+    return 0 if ok else 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+    ap = argparse.ArgumentParser(
+        prog="v2_dispatcher",
+        description="Bounded backlog dispatcher (Skill 06 SOP §1 Option B — REQUIRED "
+                    "DEFAULT). GLUE only: the real per-task build is an INJECTED builder "
+                    "supplied by the dept agent via dispatch_one(); this CLI exposes the "
+                    "bounded config and a hermetic selftest.")
+    ap.add_argument("--print-config", action="store_true",
+                    help="print the bounded caps (max_inflight/wallclock_cap_s/poll_backoff_s) as JSON")
+    ap.add_argument("--selftest", action="store_true",
+                    help="prove the bounded gates fire (inflight=1 refuse, wallclock->FAILED, happy->verified)")
+    args = ap.parse_args(argv)
+    if args.print_config:
+        print(json.dumps({"max_inflight": DEFAULT_MAX_INFLIGHT,
+                          "wallclock_cap_s": DEFAULT_WALLCLOCK_CAP_S,
+                          "poll_backoff_s": DEFAULT_POLL_BACKOFF_S}, indent=2))
+        return 0
+    if args.selftest:
+        return _selftest()
+    ap.print_help()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

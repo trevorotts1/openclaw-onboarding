@@ -487,3 +487,126 @@ class TestTeardownFiresOnAbort:
         assert "state clear ghl-skill6-abortloc" in logged, (
             f"teardown must state-clear the canonical session on abort.\nargv log:\n{logged}"
         )
+
+
+# ---------------------------------------------------------------------------
+# (g) HEADLESS-ONLY (D6) guard — section 5: the backup/Playwright path can never
+# open a visible window. A deliberately-headed snippet (code OR a code-language
+# markdown fence) must FAIL; a guarded launch_persistent_context(headless=True)
+# and bare ``` prose blocks that say "NEVER launch()" must PASS (no false pos).
+# ---------------------------------------------------------------------------
+
+class TestHeadlessOnlyGuard:
+    def test_clean_scaffold_passes(self, tmp_path):
+        repo = _scaffold_repo(tmp_path)
+        res = _run_guard(repo)
+        assert res.returncode == 0, f"clean scaffold must PASS.\n{res.stdout}\n{res.stderr}"
+
+    def test_py_headless_false_fails(self, tmp_path):
+        repo = _scaffold_repo(tmp_path)
+        bad = repo / "06-ghl-install-pages" / "tools" / "headed.py"
+        bad.write_text(
+            "from playwright.sync_api import sync_playwright\n"
+            "b = p.chromium.launch(headless=False)\n",
+            encoding="utf-8",
+        )
+        res = _run_guard(repo)
+        assert res.returncode == 1, f"headless=False in .py must FAIL.\n{res.stdout}\n{res.stderr}"
+        assert "headless=False / headless off" in res.stdout
+        assert "bare Playwright launch()" in res.stdout
+
+    def test_py_launch_persistent_headless_true_passes(self, tmp_path):
+        repo = _scaffold_repo(tmp_path)
+        good = repo / "06-ghl-install-pages" / "tools" / "guarded.py"
+        good.write_text(
+            "b = p.chromium.launch_persistent_context(user_data_dir='x', headless=True)\n",
+            encoding="utf-8",
+        )
+        res = _run_guard(repo)
+        assert res.returncode == 0, (
+            f"launch_persistent_context(headless=True) must PASS.\n{res.stdout}\n{res.stderr}"
+        )
+
+    def test_md_python_fence_headed_fails(self, tmp_path):
+        repo = _scaffold_repo(tmp_path)
+        doc = repo / "06-ghl-install-pages" / "ghl-browser-builder-full.md"
+        doc.write_text(
+            doc.read_text(encoding="utf-8")
+            + "\n```python\nbrowser = p.chromium.launch(headless=False)\n```\n",
+            encoding="utf-8",
+        )
+        res = _run_guard(repo)
+        assert res.returncode == 1, f"headed snippet in a ```python fence must FAIL.\n{res.stdout}"
+        assert "inside a code fence" in res.stdout
+
+    def test_md_bare_prose_fence_passes(self, tmp_path):
+        """A bare ``` fence holding doctrine PROSE that literally says
+        'NEVER launch()' / 'headless=False' must NOT trip (no language tag)."""
+        repo = _scaffold_repo(tmp_path)
+        doc = repo / "06-ghl-install-pages" / "CORE_UPDATES.md"
+        doc.write_text(
+            doc.read_text(encoding="utf-8")
+            + "\n```\n- Playwright FALLBACK uses launchPersistentContext (NEVER launch()).\n"
+              "- NEVER headless=False — a visible window is forbidden.\n```\n",
+            encoding="utf-8",
+        )
+        res = _run_guard(repo)
+        assert res.returncode == 0, (
+            f"bare-fence doctrine prose must NOT false-positive.\n{res.stdout}\n{res.stderr}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# (h) FIX #2 — the Skill-6 safety alarm is wired OPERATOR-ONLY + deduped. These
+# are static source assertions (no live Telegram send).
+# ---------------------------------------------------------------------------
+
+_INSTALL_SH = _REPO_ROOT / "install.sh"
+# A Telegram supergroup id literal (-100 followed by ≥9 digits). The operator GROUP
+# id must NEVER be hardcoded into a tracked file — so we match the SHAPE with a
+# regex and never write the literal id into this committed test.
+_GROUP_ID_LITERAL_RE = re.compile(r"-100\d{9,}")
+# No fallback default: `RESCUE_RANGERS_HELP_CHAT_ID:-` may ONLY be followed by `}`
+# (the strict empty-guard `${VAR:-}`) — never a client/Trevor-DM default value.
+_CHAT_ID_FALLBACK_RE = re.compile(r"RESCUE_RANGERS_HELP_CHAT_ID:-[^}]")
+
+
+class TestRescueRangersOperatorOnly:
+    def test_reaper_has_dedup_stamp(self):
+        src = _read(_REAPER)
+        assert "TRIPWIRE_STAMP" in src, "reaper must have a durable tripwire dedup stamp."
+        assert ".agent-browser-reaper.tripwire.alerted" in src
+        assert 'rm -f "$TRIPWIRE_STAMP"' in src, "stamp must clear on resolve (re-arm)."
+
+    def test_reaper_alarm_is_operator_group_only(self):
+        src = _read(_REAPER)
+        # Must gate the send on the operator-group id shape (^-100…) and keep the
+        # strict no-empty guard — i.e. NEVER a fallback to a client/individual DM.
+        assert "^-100[0-9]+$" in src, "reaper alarm must require an operator GROUP id."
+        assert "RESCUE_RANGERS_HELP_CHAT_ID" in src
+        assert not _CHAT_ID_FALLBACK_RE.search(src), (
+            "reaper must NOT add any fallback default (client/Trevor-DM) to the chat id."
+        )
+
+    def test_browser_manager_breaker_alarm_is_operator_group_only(self):
+        src = _read(_MANAGER_SH)
+        assert "^-100[0-9]+$" in src, "breaker alarm must require an operator GROUP id."
+        assert "RESCUE_RANGERS_HELP_CHAT_ID" in src
+        assert not _CHAT_ID_FALLBACK_RE.search(src), (
+            "breaker alarm must NOT add any fallback default to the chat id."
+        )
+
+    def test_install_seeds_chat_id_operator_only_no_fallback(self):
+        src = _read(_INSTALL_SH)
+        assert "RESCUE_RANGERS_HELP_CHAT_ID" in src, "install.sh must seed the help chat id."
+        # Seeded ONLY from the operator's own env var; no committed default value.
+        assert "${RESCUE_RANGERS_HELP_CHAT_ID:-}" in src
+        assert "^-100[0-9]+$" in src, "install.sh must validate it is an operator GROUP id."
+
+    def test_no_hardcoded_operator_chat_id_in_tracked_files(self):
+        """No operator GROUP chat id literal may appear in the send sites or the
+        installer (it is provisioned from operator env only — never committed)."""
+        for f in (_INSTALL_SH, _REAPER, _MANAGER_SH):
+            assert not _GROUP_ID_LITERAL_RE.search(_read(f)), (
+                f"a Telegram group-id literal (-100…) must NOT be hardcoded in {f}"
+            )

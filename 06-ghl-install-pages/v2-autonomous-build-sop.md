@@ -47,17 +47,22 @@ Plus the evidence-hygiene fix: §6 (scrub the leaked client namespace) and §7
 ## 1. A live executor for the Funnels / Web-Dev department (the whole V2 gap)
 
 The department board had the task in `backlog` and `POST /api/tasks/<id>/dispatch`
-hung (HTTP 000), so no build ever fired. Close this with EITHER option; both are
-acceptable, the bounded dispatcher is the lower-risk default.
+hung (HTTP 000), so no build ever fired.
 
-### Option A — a live OpenClaw executor agent for the Funnels department
-Wire a department executor agent (the Funnels specialist) so a task assigned to
-the department is actually picked up and run on the department model. The agent's
-instructions MUST embed §2–§5 verbatim (the canonical build recipe).
+> **REQUIRED DEFAULT — Option B (the bounded coded dispatcher).** Under the resume
+> path the executor MUST default to the bounded dispatcher
+> `tools/v2_dispatcher.py` (`dispatch_one`) — it is the CODED enforcement of the
+> bounds below: a HARD `max_inflight = 1`, a `1800s` wall-clock cap that converts
+> a hang into a recorded `FAILED` (the HTTP-000 fix), and a `30s` poll backoff
+> (`DEFAULT_MAX_INFLIGHT` / `DEFAULT_WALLCLOCK_CAP_S` / `DEFAULT_POLL_BACKOFF_S`).
+> Self-check the wiring with `python3 tools/v2_dispatcher.py --selftest`. Option A
+> is an explicit OPERATOR OPT-IN only (the "3 retries" prose path is
+> agent-discretionary and is NOT the default); do not fall back to it implicitly.
 
-### Option B — a bounded backlog dispatcher (lower-risk default)
+### Option B — the bounded coded dispatcher (REQUIRED DEFAULT)
 A small, bounded loop/cron that pulls `backlog` tasks off the department board
-and runs them on the department model. **Bounded** = it MUST have:
+and runs them on the department model, driven by `tools/v2_dispatcher.py`
+(`dispatch_one`) — never an unbounded ad-hoc loop. **Bounded** = it MUST have:
 
 - a **max in-flight = 1** (one build at a time — mirrors the per-item ledger
   doctrine; never fan out a second build over the same fixture),
