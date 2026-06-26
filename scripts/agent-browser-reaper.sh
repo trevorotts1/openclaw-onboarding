@@ -64,7 +64,7 @@
 #   bash 3.2.57 and bash 5.x. Do NOT reintroduce `declare -A` / `mapfile` here.
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-AGENT_BROWSER_REAPER_VERSION="v14.3.0"
+AGENT_BROWSER_REAPER_VERSION="v14.3.1"
 
 set -u
 
@@ -274,13 +274,30 @@ done < <(
 live_count="${#SCOPED_PIDS[@]}"
 log "INFO" "Chromium under agent-browser/Playwright profile tree: $live_count (cap AB_MAX_LIVE=$MAX_LIVE)"
 
+# Durable, reboot-surviving dedup stamp under OC_ROOT (NOT volatile $TMPDIR), so
+# the hourly tripwire alerts ONCE per breach episode — not every hour while the
+# leak persists. Cleared when live_count drops back under cap (re-arms the alert).
+TRIPWIRE_STAMP="$OC_ROOT/.agent-browser-reaper.tripwire.alerted"
 if (( live_count > MAX_LIVE )); then
   msg="agent-browser-reaper tripwire: $live_count Chromium procs under the agent-browser/Playwright profile tree (cap $MAX_LIVE) on $(hostname 2>/dev/null || echo box). Possible leak."
   log "WARN" "$msg"
-  # MESSAGE Rescue Rangers (never bypass the gateway; never blind-kill).
-  if command -v openclaw >/dev/null 2>&1 && [[ -n "${RESCUE_RANGERS_HELP_CHAT_ID:-}" && "$DRY_RUN" != "1" ]]; then
-    openclaw message send --channel telegram -t "${RESCUE_RANGERS_HELP_CHAT_ID}" "$msg" 2>/dev/null || true
+  if [[ ! -f "$TRIPWIRE_STAMP" ]]; then
+    # Rising edge only. MESSAGE Rescue Rangers (never bypass the gateway; never
+    # blind-kill). OPERATOR-ONLY: send ONLY when the chat id is the operator GROUP
+    # (a Telegram supergroup, ^-100…) — NEVER an individual DM (a client or Trevor).
+    # Empty or non-group id => stay silent (no client fallback, no wrong target).
+    if [[ -n "${RESCUE_RANGERS_HELP_CHAT_ID:-}" && ! "${RESCUE_RANGERS_HELP_CHAT_ID}" =~ ^-100[0-9]+$ ]]; then
+      log "WARN" "RESCUE_RANGERS_HELP_CHAT_ID is not an operator group id (^-100…) — refusing to send (the alarm must never DM a client/individual)."
+    elif command -v openclaw >/dev/null 2>&1 && [[ -n "${RESCUE_RANGERS_HELP_CHAT_ID:-}" && "$DRY_RUN" != "1" ]]; then
+      openclaw message send --channel telegram -t "${RESCUE_RANGERS_HELP_CHAT_ID}" "$msg" 2>/dev/null || true
+    fi
+    [[ "$DRY_RUN" != "1" ]] && date -u +%Y-%m-%dT%H:%M:%SZ > "$TRIPWIRE_STAMP" 2>/dev/null || true
+  else
+    log "INFO" "tripwire still breached — alert already sent (stamp $TRIPWIRE_STAMP); not re-alerting hourly"
   fi
+else
+  # Condition cleared → re-arm so the NEXT breach episode alerts again.
+  rm -f "$TRIPWIRE_STAMP" 2>/dev/null || true
 fi
 
 # Only SIGKILL a scoped Chromium whose owning session lease is GONE AND whose

@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v14.3.0"
+ONBOARDING_VERSION="v14.3.1"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -955,6 +955,29 @@ PYEOF
     _shared_write_ocjson "RESCUE_RANGERS_WEBHOOK_URL" "$RR_WEBHOOK"
     success "Rescue Rangers escalation webhook seeded (RESCUE_RANGERS_WEBHOOK_URL=$RR_WEBHOOK)"
     injected_count=$((injected_count + 1))
+
+    # Rescue Rangers escalation CHAT ID (operator Telegram GROUP). The Skill-6
+    # safety alarms (browser_manager.sh circuit-breaker trip + agent-browser-reaper.sh
+    # leak tripwire) read $RESCUE_RANGERS_HELP_CHAT_ID and otherwise no-op SILENTLY,
+    # so without this seed both alarms are dead. UNLIKE the webhook URL above, a chat
+    # id is NEVER hardcoded as a committed default — it flows ONLY from the operator's
+    # own env var of the same name at install time, gateway-inherited via openclaw.json
+    # env.vars (the SAME mechanism that delivers RESCUE_RANGERS_WEBHOOK_URL / PODBEAN_*
+    # to every gateway child on Mac AND VPS). It MUST be the operator GROUP id (a
+    # Telegram supergroup, ^-100…) — NEVER a client and NEVER an individual DM. There
+    # is no fallback: empty => the alarms stay silent (never a wrong target).
+    if [ -n "${RESCUE_RANGERS_HELP_CHAT_ID:-}" ]; then
+        if printf '%s' "$RESCUE_RANGERS_HELP_CHAT_ID" | grep -Eq '^-100[0-9]+$'; then
+            _shared_write_env   "RESCUE_RANGERS_HELP_CHAT_ID" "$RESCUE_RANGERS_HELP_CHAT_ID"
+            _shared_write_ocjson "RESCUE_RANGERS_HELP_CHAT_ID" "$RESCUE_RANGERS_HELP_CHAT_ID"
+            success "Rescue Rangers help chat id seeded (operator group, gateway-inherited)"
+            injected_count=$((injected_count + 1))
+        else
+            warn "RESCUE_RANGERS_HELP_CHAT_ID is set but is NOT an operator group id (^-100…) — refusing to seed it (the safety alarm must never DM a client or individual). Skill-6 alarms will stay silent on this box."
+        fi
+    else
+        warn "RESCUE_RANGERS_HELP_CHAT_ID not in operator env — Skill-6 safety alarms (breaker trip + reaper leak tripwire) will stay SILENT on this box (no client fallback). Backfill with ~/clawd/fleet-heartbeat/scripts/propagate-rescue-chat-id.sh."
+    fi
 
     # ── BOX-LEVEL HEADLESS PIN (v14.1.4) ─────────────────────────────────────
     # THE CORE LOCK. agent-browser is headless by DEFAULT, but a single inherited
