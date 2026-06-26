@@ -1,5 +1,9 @@
 ## [v14.3.9]  -  2026-06-26  -  feat(rescue-rangers): X-Rescue-Secret sender plumbing + install-time secret seeding (backward-compatible; enforcement OFF)
 
+## [v14.3.8]  -  2026-06-26  -  feat(skill6): cc_board.py producer + INTAKE SOP section — Goal A (per-skill tag; global version stays at v14.3.7)
+
+Per-skill release for `06-ghl-install-pages` (skill-version.txt → v14.3.8). Global version markers stay at v14.3.7 — this tag tracks the skill-6 cc_board.py producer ship only. NEW `06-ghl-install-pages/tools/cc_board.py`: fail-soft board card producer that posts to `POST /api/tasks/ingest` (Command Center >= v4.52.0); stdlib only; `job_type` → department slug routing; `--selftest` exits 0 (no network); `--demo` for live board proof. NEW `06-ghl-install-pages/v2-autonomous-build-sop.md` INTAKE section (run FIRST, before P0/P1/P2 gates). Per `06-ghl-install-pages/CHANGELOG.md` for the full per-skill entry. PR #349.
+
 Closes the long-open Rescue Rangers webhook-auth gap: every escalation sender now reads `RESCUE_RANGERS_WEBHOOK_SECRET` from its env and adds an `X-Rescue-Secret` header ONLY when the var is set — so boxes with the secret authenticate to the n8n relay while boxes without it continue to escalate unauthenticated (backward-compatible). The n8n relay enforcement switch stays OFF; this commit is the sender (box) half only.
 
 CANONICAL FORM — AGENTS.md uses the bash-array `_RR_SECRET_ARGS` pattern (two distinct argv tokens `-H` and `X-Rescue-Secret: <val>` — correct curl argument passing, no word-splitting risk). All script senders (all verified `#!/usr/bin/env bash`) use the `${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}}` form (tokenizes cleanly because the secret is a hex/alphanumeric string with no spaces).
