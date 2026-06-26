@@ -4,6 +4,23 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.3.10] - 2026-06-26 — feat(skill6): parallel page saves cap 5 — shared cleared session fan-out
+
+**PRIMARY approach:** fan out up to `AB_SAVE_CONCURRENCY` (default 5, hard-clamped [1,5]) concurrent `agent-browser eval` autosave calls against the ONE singleton session. `AB_MAX_SESSIONS` STAYS 1 (one browser — Cloudflare clearance is shared). The lock / TTL / breaker / EXIT-trap teardown from `browser_manager.sh` cover the entire batch unchanged.
+
+### Added
+- **`tools/parallel_saves.sh`** — bash fan-out executor. Sources `browser_manager.sh`. `bm_save_concurrency()` clamps `AB_SAVE_CONCURRENCY` to [1,5]. `ps_fan_out()` issues N eval background jobs with a slot-counting concurrency cap (macOS bash 3.2 safe). `ps_run_batch()` reads JSON spec, calls `bm_ensure` once, fans out, collects results.
+- **`tools/parallel_saves.py`** — pure emitter. `save_concurrency(env)` clamps to [1,5]. `emit_batch_rest_save_plan(pages, session)` wraps all per-page steps in ONE `browser_session()` bracket with EXACTLY ONE `teardown_browser` at the end.
+- **`tests/test_parallel_saves.py`** — 41 tests: concurrency clamp (shell + Python), AB_MAX_SESSIONS=1 static, sh contract, batch plan emitter (K pages = exactly 1 teardown), hermetic concurrency (peak ≤5, teardown on failure, one-browser invariant).
+
+### Changed
+- **`tools/browser_manager.sh`** — added `AB_SAVE_CONCURRENCY` tunable + `bm_save_concurrency()` clamp. `AB_MAX_SESSIONS` stays 1; all lock/lease/TTL/breaker/teardown bodies verbatim unchanged.
+- **`tools/browser_manager.py`** — mirror `save_concurrency()`.
+- **`tools/ghl_builder.py`** — added `emit_batch_rest_save_plan()` + `batch-rest-save-plan` CLI verb.
+- **`v2-autonomous-build-sop.md`** + **`ghl-browser-builder-full.md`** — PARALLEL SAVES (cap 5) note; sentinel verbatim intact.
+
+---
+
 ## [v14.3.8] - 2026-06-26 — feat(skill6): cc_board.py producer + INTAKE SOP section — Goal A (card on board)
 
 Closes Goal A of the Skill-6 → Kanban demo path: a customer funnel/website request now becomes a real card on the Command Center Kanban board.

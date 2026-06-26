@@ -1,3 +1,7 @@
+## [v14.3.10]  -  2026-06-26  -  feat(skill6): parallel page saves cap 5 — shared cleared session fan-out
+
+Skill 06 autosave now fans out up to AB_SAVE_CONCURRENCY (default 5, hard-clamped [1,5]) concurrent agent-browser eval calls against the ONE singleton Cloudflare-cleared session. AB_MAX_SESSIONS stays 1 (one browser). Lock/TTL/circuit-breaker/EXIT-trap teardown from browser_manager.sh cover the entire batch unchanged. New: parallel_saves.sh (fan-out executor), parallel_saves.py (pure emitter), test_parallel_saves.py (41 tests). Guard 5/5 checks pass. bash -n clean. 41/41 parallel-saves tests pass.
+
 ## [v14.3.9]  -  2026-06-26  -  feat(rescue-rangers): X-Rescue-Secret sender plumbing + install-time secret seeding (backward-compatible; enforcement OFF)
 
 ## [v14.3.8]  -  2026-06-26  -  feat(skill6): cc_board.py producer + INTAKE SOP section — Goal A (per-skill tag; global version stays at v14.3.7)
