@@ -37,7 +37,7 @@
 
 **Hand to:** SOP 9.2 on any finding; SOP-MAINT-RESCUE-RANGERS-ESCALATION (S5) if triage is ambiguous.
 
-**Failure mode:** If the probe script itself fails (cron host not running, disk unreadable), alert via `openclaw message send --channel telegram -t "${RESCUE_RANGERS_HELP_CHAT_ID}"` and do NOT suppress the error.
+**Failure mode:** If the probe script itself fails (cron host not running, disk unreadable), escalate via the n8n webhook (`curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" -H 'Content-Type: application/json' -d '{"action":"escalate","client":"<box>","agent":"furnace-watch","message":"probe script failed: <error>"}'`) and do NOT suppress the error. Do NOT use `openclaw message send -t $RESCUE_RANGERS_HELP_CHAT_ID` — that path does not reach the rescue agent.
 
 ---
 

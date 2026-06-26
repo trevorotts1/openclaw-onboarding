@@ -200,7 +200,7 @@ Full procedure is in `sops/sop-model-overkill-daily.md`; the canonical steps are
 
 ### SOP 9.5 — Rescue Rangers Escalation (cross-cutting)
 
-See full procedure in `sops/sop-rescue-rangers-escalation.md`. Summary: when a model change requires an owner-supplied secret (missing API key), or when the right-size recommendation conflicts with a revenue task or by-design primary, send a structured message via `openclaw message send --channel telegram -t "${RESCUE_RANGERS_HELP_CHAT_ID}"` with: box ID, driver class (F8 or F9), evidence (cron name, current model, recommended model or missing key, burn estimate), proposed fix, and why this role cannot auto-apply it. Never bypass the gateway for Telegram.
+See full procedure in `sops/sop-rescue-rangers-escalation.md`. Summary: when a model change requires an owner-supplied secret (missing API key), or when the right-size recommendation conflicts with a revenue task or by-design primary, POST via the n8n webhook (`curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" ...`) with: box ID, driver class (F8 or F9), evidence (cron name, current model, recommended model or missing key, burn estimate), proposed fix, and why this role cannot auto-apply it. Do NOT use `openclaw message send -t $RESCUE_RANGERS_HELP_CHAT_ID` — that path does not reach the rescue agent.
 
 ---
 
@@ -233,7 +233,7 @@ See full procedure in `sops/sop-proactive-fix-guardrail.md`. Summary: back up `o
 - Healer (openclaw-maintenance) — any SOP failure that caused a cost overrun (healer patches the SOP).
 - Director of OpenClaw Maintenance — weekly cost report, Tier 3 proposals, open `needs_owner_decision` items.
 - Owner (via `openclaw message send`) — on-change notifications of applied right-sizes and open proposals.
-- Rescue Rangers (via `openclaw message send --channel telegram`) — missing API key escalations and ambiguous revenue-task model questions per SOP 9.5.
+- Rescue Rangers (via n8n webhook `$RESCUE_RANGERS_WEBHOOK_URL`) — missing API key escalations and ambiguous revenue-task model questions per SOP 9.5.
 
 ---
 

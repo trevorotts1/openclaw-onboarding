@@ -525,11 +525,11 @@ curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" -H "Content-Type: application/json
 
 - `RESCUE_RANGERS_WEBHOOK_URL` is seeded into your env on install (default `https://main.blackceoautomations.com/webhook/rescue-rangers`). Reference the env var, never a hardcoded URL.
 - Your `message` MUST be concise and include: the problem, what you already tried, and your **EXACT** OpenClaw version (`openclaw --version`).
-- The rescue answer posts back into the Rescue Rangers group; apply the fix, and when it works reply the resolution signal (below) to close the loop.
+- The rescue agent will reply with a solution (delivered back to you via the poller or push); apply the fix, and when it works POST the resolution signal (below) to close the loop — always via `$RESCUE_RANGERS_WEBHOOK_URL`, same as the escalation. You CANNOT post directly to the Rescue Rangers Telegram group (bots cannot post to other bots' groups).
 
 Once a rescue agent helps you, you MUST cooperate with the resolution protocol so the loop ends as soon as the problem is fixed (and never runs to the cap unnecessarily):
 
-- **When the rescue fix works:** post `✅ RESOLVED: <one-line what fixed it>` to the Rescue Rangers group and **STOP escalating.** Do NOT keep messaging, do NOT re-describe the problem, do NOT thank-then-continue. Posting the resolution closes the loop.
+- **When the rescue fix works:** POST `✅ RESOLVED: <one-line what fixed it>` to `$RESCUE_RANGERS_WEBHOOK_URL` (same curl command, same `client`/`agent` fields) and **STOP escalating.** The relay detects the resolution sentinel and closes the ticket. Do NOT keep messaging, do NOT re-describe the problem, do NOT thank-then-continue.
 - **A message is a RESOLUTION SIGNAL** (case-insensitive) if it contains the sentinel `✅ RESOLVED` OR any of: "resolved", "problem solved", "problem complete", "problem completed", "problem done", "issue resolved", "issue fixed", "it's fixed", "fixed it", "working now", "back to working", "all good now", "we're good", "no longer needed". Once a resolution signal is posted, the back-and-forth is OVER — neither side produces another fix.
 - **If still broken after the rescue agent replies:** POST ONE focused follow-up to the same `$RESCUE_RANGERS_WEBHOOK_URL` (what's still failing + the exact new error), then wait. Do not spam.
 - **Hard cap: 25 exchanges per client per day** — the backstop for conversations that never resolve / loop. Resolve early; don't run to the cap.

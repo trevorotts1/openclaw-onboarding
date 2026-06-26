@@ -178,6 +178,11 @@ def ensure_v2_1_schema(conn):
         ("persona_version", "INTEGER DEFAULT 1"),
         ("unit_type", "TEXT DEFAULT 'chunk'"),
         ("unit_metadata", "TEXT"),
+        # md5 of the WHOLE blueprint at index time. Lets index_blueprint() skip a
+        # re-embed when the source content is byte-identical to what's already
+        # stored (furnace guard — see the HASH-SKIP block). NULL on rows written
+        # before this column existed; they re-index once, then populate it.
+        ("content_hash", "TEXT"),
     ]
     for col, col_type in new_cols:
         try:
@@ -193,7 +198,9 @@ def ensure_v2_1_schema(conn):
 
 
 # ---- Main indexing ----
-def index_blueprint(conn, blueprint_path: Path, dry_run: bool = False) -> int:
+def index_blueprint(conn, blueprint_path: Path, dry_run: bool = False, force: bool = False) -> int:
+    """Returns the number of sections indexed, or -1 if the blueprint was
+    HASH-SKIPped (content byte-identical to what's already in the index)."""
     meta = parse_persona_metadata(blueprint_path)
     if not meta["persona_id"]:
         print(f"  SKIP {blueprint_path}: cannot parse persona_id from path")
@@ -201,6 +208,28 @@ def index_blueprint(conn, blueprint_path: Path, dry_run: bool = False) -> int:
 
     content = blueprint_path.read_text(encoding="utf-8", errors="replace")
     cur = conn.cursor()
+
+    # ---- md5 content-hash skip (FURNACE GUARD) ----
+    # Mirrors embedding_engine.py:920-929: re-embedding every section on every run
+    # is pure token/compute bloat, and this indexer can sit behind a recurring
+    # trigger. If a section row for this persona already carries this exact md5,
+    # the source is unchanged → do NOT re-embed. A genuine edit changes the md5
+    # (no matching row → re-index); `--force` bypasses the skip entirely. The check
+    # runs BEFORE the destructive chunk-row DELETE so a skip leaves the index intact.
+    content_hash = hashlib.md5(content.encode("utf-8")).hexdigest()
+    if not force and not dry_run:
+        cur.execute(
+            "SELECT 1 FROM embeddings "
+            "WHERE persona_id = ? AND unit_type = 'section' AND content_hash = ? LIMIT 1",
+            (meta["persona_id"], content_hash),
+        )
+        if cur.fetchone():
+            print(
+                f"  HASH-SKIP {meta['persona_id']}: content unchanged "
+                f"(md5={content_hash[:12]}…) — already indexed; not re-embedding. "
+                f"Use --force to override."
+            )
+            return -1
 
     # First, delete any existing CHUNK rows for this persona (we're replacing with section-level)
     cur.execute(
@@ -226,13 +255,13 @@ def index_blueprint(conn, blueprint_path: Path, dry_run: bool = False) -> int:
               (id, file_path, chunk_index, content, vector, last_updated,
                persona_id, author, book_title, section_number, section_name,
                mode, source_type, source_depth, confidence, schema_version,
-               unit_type, unit_metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, 'section', ?)
+               unit_type, unit_metadata, content_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, 'section', ?, ?)
         """, (
             chunk_id, str(blueprint_path), section_num, full_text, vector_bytes, time.time(),
             meta["persona_id"], meta["author"], meta["book_title"], section_num, section_name,
             mode, meta["source_type"], meta["source_depth"], meta["confidence"],
-            json.dumps({"word_count": word_count}),
+            json.dumps({"word_count": word_count}), content_hash,
         ))
         count += 1
         print(f"  indexed section {section_num:02d}: {section_name[:60]} ({word_count}w, {mode})")
@@ -245,6 +274,9 @@ def main():
     parser.add_argument("--reindex-all", action="store_true", help="Re-index every persona at section level")
     parser.add_argument("--persona-id", help="Index only a specific persona by id")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--force", action="store_true",
+                        help="Bypass the md5 content-hash skip and re-embed every section, "
+                             "even if the source blueprint is unchanged")
     args = parser.parse_args()
 
     paths = get_openclaw_paths()
@@ -281,17 +313,22 @@ def main():
     print()
 
     total = 0
+    skipped = 0
     for bp in targets:
         print(f"=== {bp.parent.name} ===")
-        n = index_blueprint(conn, bp, dry_run=args.dry_run)
-        total += n
-        print(f"  -> {n} sections indexed")
+        n = index_blueprint(conn, bp, dry_run=args.dry_run, force=args.force)
+        if n < 0:
+            skipped += 1
+            print("  -> unchanged (hash-skip; no re-embed)")
+        else:
+            total += n
+            print(f"  -> {n} sections indexed")
         print()
 
     conn.close()
 
     print("=" * 60)
-    print(f"Total sections indexed: {total}")
+    print(f"Total sections indexed: {total}  (personas skipped unchanged: {skipped})")
     print("=" * 60)
     return 0
 

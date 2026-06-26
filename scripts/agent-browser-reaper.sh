@@ -64,7 +64,7 @@
 #   bash 3.2.57 and bash 5.x. Do NOT reintroduce `declare -A` / `mapfile` here.
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-AGENT_BROWSER_REAPER_VERSION="v14.3.1"
+AGENT_BROWSER_REAPER_VERSION="v14.3.2"
 
 set -u
 
@@ -282,14 +282,15 @@ if (( live_count > MAX_LIVE )); then
   msg="agent-browser-reaper tripwire: $live_count Chromium procs under the agent-browser/Playwright profile tree (cap $MAX_LIVE) on $(hostname 2>/dev/null || echo box). Possible leak."
   log "WARN" "$msg"
   if [[ ! -f "$TRIPWIRE_STAMP" ]]; then
-    # Rising edge only. MESSAGE Rescue Rangers (never bypass the gateway; never
-    # blind-kill). OPERATOR-ONLY: send ONLY when the chat id is the operator GROUP
-    # (a Telegram supergroup, ^-100…) — NEVER an individual DM (a client or Trevor).
-    # Empty or non-group id => stay silent (no client fallback, no wrong target).
-    if [[ -n "${RESCUE_RANGERS_HELP_CHAT_ID:-}" && ! "${RESCUE_RANGERS_HELP_CHAT_ID}" =~ ^-100[0-9]+$ ]]; then
-      log "WARN" "RESCUE_RANGERS_HELP_CHAT_ID is not an operator group id (^-100…) — refusing to send (the alarm must never DM a client/individual)."
-    elif command -v openclaw >/dev/null 2>&1 && [[ -n "${RESCUE_RANGERS_HELP_CHAT_ID:-}" && "$DRY_RUN" != "1" ]]; then
-      openclaw message send --channel telegram -t "${RESCUE_RANGERS_HELP_CHAT_ID}" "$msg" 2>/dev/null || true
+    # Rising edge only. ESCALATE to Rescue Rangers via the n8n webhook — the ONLY
+    # path the rescue agent reads. Never use openclaw message send to a Telegram group
+    # for escalation: bots cannot read other bots, so that path is silently dropped.
+    if [[ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" && "$DRY_RUN" != "1" ]]; then
+      local _esc_msg="${msg//\\/\\\\}"; _esc_msg="${_esc_msg//\"/\\\"}"
+      curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
+        -H 'Content-Type: application/json' \
+        -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"agent-browser-reaper\",\"message\":\"${_esc_msg}\"}" \
+        --max-time 15 >/dev/null 2>&1 || log "WARN" "rescue-rangers webhook escalation failed (non-fatal)"
     fi
     [[ "$DRY_RUN" != "1" ]] && date -u +%Y-%m-%dT%H:%M:%SZ > "$TRIPWIRE_STAMP" 2>/dev/null || true
   else

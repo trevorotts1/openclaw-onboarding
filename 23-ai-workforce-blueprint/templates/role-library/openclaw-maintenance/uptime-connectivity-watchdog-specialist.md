@@ -265,7 +265,7 @@ fi
 
 ### SOP 9.5 — Rescue Rangers Escalation (cross-cutting)
 
-See full procedure in `sops/sop-rescue-rangers-escalation.md`. Summary: when gateway recovery fails, or when the safe restart path requires a Mac gateway restart (which cannot be done safely over SSH), or when the root cause of gateway-down is unclear and may affect multiple boxes, send a structured message via `openclaw message send --channel telegram -t "${RESCUE_RANGERS_HELP_CHAT_ID}"` with: box ID, gateway state (DOWN/cycling), crash log excerpt, what recovery was attempted, what failed, current box state. If the gateway is DOWN, `openclaw message send` is unavailable — use an alternate channel (direct Telegram API from a different box, or phone the operator). This is the one exception to the "never bypass the gateway" rule: if the gateway is DOWN, the gateway cannot send the message.
+See full procedure in `sops/sop-rescue-rangers-escalation.md`. Summary: when gateway recovery fails, or when the safe restart path requires a Mac gateway restart (which cannot be done safely over SSH), or when the root cause of gateway-down is unclear and may affect multiple boxes, POST via the n8n webhook (`curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" ...`) with: box ID, gateway state (DOWN/cycling), crash log excerpt, what recovery was attempted, what failed, current box state. If the box has outbound internet access (even with the gateway DOWN), the webhook is still reachable via curl. If the box has no outbound access at all: write to `working/maintenance/escalations/UNSENT-esc-<ts>.json` and retry on recovery. Do NOT use `openclaw message send -t $RESCUE_RANGERS_HELP_CHAT_ID` — that path does not reach the rescue agent.
 
 ---
 
@@ -299,7 +299,7 @@ See full procedure in `sops/sop-proactive-fix-guardrail.md`. Summary: back up `o
 - Healer (openclaw-maintenance) — watchdog script defects found during recovery (healer patches the watchdog SOP).
 - Director of OpenClaw Maintenance — weekly uptime report, Rescue Rangers escalations, F4/F5/F7 resolution confirmations.
 - Owner (via `openclaw message send`) — on-change gateway state notifications.
-- Rescue Rangers (via `openclaw message send --channel telegram`, or alternate channel if gateway is DOWN) — recovery failures per SOP 9.5.
+- Rescue Rangers (via n8n webhook `$RESCUE_RANGERS_WEBHOOK_URL`) — recovery failures per SOP 9.5. The webhook is reachable via curl even when the gateway is DOWN, as long as the box has outbound internet access.
 
 ---
 

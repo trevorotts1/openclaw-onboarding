@@ -91,10 +91,17 @@ fi
 
 # Check 2: personas directory exists and is non-empty (fallback check)
 if [[ "$SKILL22_OK" == "false" ]]; then
+  # A3 fix: probe the REAL persona-index locations. The canonical install path is
+  # the master-files collection (mirrors INSTALL.md Step 2's persona-blueprint path
+  # ~/Downloads/openclaw-master-files/coaching-personas/personas/<id>/persona-blueprint.md);
+  # the Skill-22 bundle and the runtime data dir are the two other real fallbacks.
+  # The old probe pointed at ~/.openclaw/workspace/coaching-personas/personas and
+  # ~/clawd/coaching-personas/personas — neither is ever written, so a fully
+  # installed Skill 22 still tripped the HARD STOP.
   for PDIR in \
-      ~/.openclaw/workspace/coaching-personas/personas \
-      ~/clawd/coaching-personas/personas \
-      ~/Downloads/openclaw-master-files/coaching-personas/personas
+      ~/Downloads/openclaw-master-files/coaching-personas/personas \
+      ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/personas \
+      ~/.clawdbot/workspace/data/coaching-personas/personas
   do
     if [[ -d "$PDIR" ]] && [[ -n "$(ls -A "$PDIR" 2>/dev/null)" ]]; then
       SKILL22_OK=true

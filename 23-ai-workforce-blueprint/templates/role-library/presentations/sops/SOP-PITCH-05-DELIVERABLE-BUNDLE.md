@@ -16,7 +16,7 @@ A deck build is NOT closed out until all three of the following artifacts exist 
 | Artifact | Format | Source file | Required |
 |---------|--------|-------------|---------|
 | Presenter Guide | PDF | `working/deliverables/PRESENTER-GUIDE.md` rendered to PDF | REQUIRED |
-| Word-for-Word Script | PDF | `working/deliverables/PRESENTER-SPEECH.md` rendered to PDF | REQUIRED |
+| Word-for-Word Script | PDF | `working/deliverables/PRESENTERS-SPEECH.md` rendered to PDF | REQUIRED |
 | Audio Rendition | MP3 or M4A | Fish Audio S2 render of the word-for-word script | REQUIRED |
 
 Missing any of these three triggers AF-DELIVER (closeout auto-fail). The deck cannot be delivered to the client until all three are present and non-empty.
@@ -36,12 +36,12 @@ The Presenters Guide Specialist (ROLE-19, SOP 9.2) authors `PRESENTER-GUIDE.md` 
 
 ## 3. WORD-FOR-WORD SCRIPT PDF (the oral rendition source)
 
-The Presenters Speech Writer (ROLE-20, SOP 9.2) authors `PRESENTER-SPEECH.md` -- the complete word-for-word spoken script, with slide-by-slide sections, timing, and expression cues. The Presenters Speech Writer also renders it to PDF using the same method as the guide (step 2 above, substitute PRESENTER-SPEECH.md/pdf).
+The Presenters Speech Writer (ROLE-20, SOP 9.2) authors `PRESENTERS-SPEECH.md` -- the complete word-for-word spoken script, with slide-by-slide sections, timing, and expression cues. The Presenters Speech Writer also renders it to PDF using the same method as the guide (step 2 above, substitute PRESENTERS-SPEECH.md/pdf).
 
-1. Confirm `working/deliverables/PRESENTER-SPEECH.md` exists and is non-empty (at least 5KB -- a full webinar script is typically 5,000-15,000 words).
+1. Confirm `working/deliverables/PRESENTERS-SPEECH.md` exists and is non-empty (at least 5KB -- a full webinar script is typically 5,000-15,000 words).
 2. Render to PDF via pandoc or LibreOffice.
 3. Verify the output PDF is non-empty (> 20KB).
-4. Record in `deliverable_bundle.json`: `{"artifact": "script", "path": "working/deliverables/PRESENTER-SPEECH.pdf", "size_bytes": N, "status": "ready"}`.
+4. Record in `deliverable_bundle.json`: `{"artifact": "script", "path": "working/deliverables/PRESENTERS-SPEECH.pdf", "size_bytes": N, "status": "ready"}`.
 
 ---
 
@@ -51,7 +51,7 @@ The audio rendition is a FULL voiced reading of the presenter script, rendered v
 
 ### 4.1 Source
 
-The source text is `working/deliverables/PRESENTER-SPEECH.md`. The Presenters Speech Writer (ROLE-20) reads the script, chunks it by section (each `## Slide N` heading starts a new chunk), and adds Fish Audio S2 expression tags to each chunk for directed vocal performance.
+The source text is `working/deliverables/PRESENTERS-SPEECH.md`. The Presenters Speech Writer (ROLE-20) reads the script, chunks it by section (each `## Slide N` heading starts a new chunk), and adds Fish Audio S2 expression tags to each chunk for directed vocal performance.
 
 ### 4.2 Expression Tags (required -- not flat TTS)
 
@@ -95,7 +95,7 @@ The Presenters Guide Specialist (ROLE-19) records the guide artifact and the Pre
 ```json
 {
   "presenter_guide": {"path": "working/deliverables/PRESENTER-GUIDE.pdf", "size_bytes": N, "status": "ready"},
-  "script": {"path": "working/deliverables/PRESENTER-SPEECH.pdf", "size_bytes": N, "status": "ready"},
+  "script": {"path": "working/deliverables/PRESENTERS-SPEECH.pdf", "size_bytes": N, "status": "ready"},
   "audio": {
     "path": "working/deliverables/PRESENTER-AUDIO.mp3",
     "size_bytes": N,
@@ -131,18 +131,27 @@ This SOP is owned jointly by the Presenters Guide Specialist (ROLE-19, SOP 9.2) 
 
 ## 8. THE CLIENT PACKAGE -- EXACT ALLOWED FILE SET (v2.0 -- Deliverable Hygiene)
 
+**Two file sets, two counts (deliberate).** `build_deck.py` writes a NINE-file OPERATOR BUILD
+bundle to `~/Downloads/<client-slug>-<deck-slug>/` (`<deck-slug>-FINAL.pptx`, `<deck-slug>-FINAL.pdf`,
+`PRESENTER-GUIDE.pdf`, `PRESENTERS-SPEECH.md`, `PRESENTERS-SPEECH.pdf`, `PRESENTERS-SPEECH-FISH-TAGGED.md`,
+`PRESENTER-AUDIO.mp3`, `infographic.png`, `presenter-teleprompter.html` -- the `build_bundle_files`
+set). The Delivery Concierge SOP 9.0 then CURATES the FIVE-file CLIENT package (the
+`client_package_files` set) from that build bundle. Nine build, five client -- the difference is
+intentional (the `.md` sources, the fish-tagged script, the infographic, and the teleprompter HTML
+are operator-side artifacts, not part of the clean client hand-off).
+
 The client-deliverable package must contain EXACTLY these five files and NOTHING ELSE:
 
 ```
 [DECK_SLUG]-FINAL/
-  [Deck-Title]-FINAL.pptx          # assembled deck (from output/[DECK_SLUG].pptx)
-  [Deck-Title]-FINAL.pdf           # portable-document export (from output/[DECK_SLUG].pdf)
+  <deck-slug>-FINAL.pptx           # assembled deck (from output/[DECK_SLUG].pptx)
+  <deck-slug>-FINAL.pdf            # portable-document export (from output/[DECK_SLUG].pdf)
   PRESENTER-GUIDE.pdf              # rendered from working/deliverables/PRESENTER-GUIDE.md
-  PRESENTER-SPEECH.pdf             # rendered from working/deliverables/PRESENTER-SPEECH.md
-  PRESENTER-AUDIO.mp3              # Fish Audio S2 render (from working/deliverables/PRESENTER-AUDIO.mp3)
+  PRESENTERS-SPEECH.pdf            # rendered from working/presenter-speech/PRESENTERS-SPEECH.md (locked plural name; matches build_deck.py)
+  PRESENTER-AUDIO.mp3              # Fish Audio S2 render (from working/presenter-speech/audio/PRESENTER-AUDIO.mp3)
 ```
 
-**Five files. Nothing else.** No scripts, logs, prompts, loose PNGs, JSON manifests, QC reports, or `.md` source files. `PRESENTER-GUIDE` and `PRESENTER-SPEECH` ship as **PDF only** -- clients do not open markdown.
+**Five files. Nothing else.** No scripts, logs, prompts, loose PNGs, JSON manifests, QC reports, or `.md` source files. `PRESENTER-GUIDE` and `PRESENTERS-SPEECH` ship as **PDF only** -- clients do not open markdown. (The `*-FINAL.pptx` / `*-FINAL.pdf` AF-DH1 whitelist patterns are unchanged.)
 
 **Hygiene gate (AF-DH1):** Before any delivery action, the Delivery Concierge runs SOP 9.0 (Package Assembly and Hygiene Sweep) which creates a clean `delivery/[DECK_SLUG]-FINAL/` directory, copies only the five allowed files into it, and runs AF-DH1. Hard-stop on any AF-DH1 failure -- delivery cannot proceed.
 
@@ -160,7 +169,7 @@ The operator-side build workspace that the client NEVER receives:
     scripts/        # assembly + render scripts (assemble_pptx.py lives HERE, not at root)
     qc/             # QC reports, vision_qc_log.json, copy_qc_report.json -- never delivered
     checkpoints/    # run_ledger.json, model_manifest.json, delivery_plan.json
-    deliverables/   # PRESENTER-GUIDE.md, PRESENTER-SPEECH.md, PRESENTER-AUDIO.mp3 (source files)
+    deliverables/   # PRESENTER-GUIDE.md, PRESENTERS-SPEECH.md, PRESENTER-AUDIO.mp3 (source files)
     logs/           # all log files -- never delivered
     audio/          # chunk-NN.mp3 files before stitching
   output/
@@ -173,7 +182,7 @@ The operator-side build workspace that the client NEVER receives:
       [Deck-Title]-FINAL.pptx
       [Deck-Title]-FINAL.pdf
       PRESENTER-GUIDE.pdf
-      PRESENTER-SPEECH.pdf
+      PRESENTERS-SPEECH.pdf
       PRESENTER-AUDIO.mp3
 ```
 

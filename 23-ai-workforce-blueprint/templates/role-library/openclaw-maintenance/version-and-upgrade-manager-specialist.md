@@ -231,7 +231,7 @@ The weekly upgrade safety evaluation is the core job of this role.
 
 ### SOP 9.5 — Rescue Rangers Escalation (cross-cutting)
 
-See full procedure in `sops/sop-rescue-rangers-escalation.md`. Summary: when an upgrade fails validation or live-turn verification, or a hold advisory's known issue is actively affecting the box, or a rollback itself fails, send a structured message via `openclaw message send --channel telegram -t "${RESCUE_RANGERS_HELP_CHAT_ID}"` with: box ID, current version, target version (if applicable), specific failure (exact error text), what was tried, and the current box state (running/degraded/down). Never bypass the gateway for Telegram.
+See full procedure in `sops/sop-rescue-rangers-escalation.md`. Summary: when an upgrade fails validation or live-turn verification, or a hold advisory's known issue is actively affecting the box, or a rollback itself fails, POST via the n8n webhook (`curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" ...`) with: box ID, current version, target version (if applicable), specific failure (exact error text), what was tried, and the current box state (running/degraded/down). Do NOT use `openclaw message send -t $RESCUE_RANGERS_HELP_CHAT_ID` — that path does not reach the rescue agent.
 
 ---
 
@@ -267,7 +267,7 @@ See full procedure in `sops/sop-proactive-fix-guardrail.md`. Summary: back up `o
 - Uptime / Connectivity Watchdog Specialist — gateway restart coordination (watchdog manages the restart window; version manager provides the upgrade artifact).
 - Director of OpenClaw Maintenance — weekly version report, Tier 2/3 proposals, hold advisories.
 - Owner (via `openclaw message send`) — on-change notifications of applied upgrades.
-- Rescue Rangers (via `openclaw message send --channel telegram`) — upgrade failures and rollback escalations per SOP 9.5.
+- Rescue Rangers (via n8n webhook `$RESCUE_RANGERS_WEBHOOK_URL`) — upgrade failures and rollback escalations per SOP 9.5.
 
 ---
 

@@ -94,6 +94,17 @@ def _find_repo_root(start: Path):
 _REPO_ROOT = _find_repo_root(HERE)
 _CLUSTER_REPO = (_REPO_ROOT / "universal-sops" / "presentation-slide-craft") if _REPO_ROOT else None
 
+# The RETIRED render module (templates/presentation-render/render_deck.py). It is no
+# longer the canonical renderer, but sync_check still AST-asserts that its
+# PROMPT_CHAR_FLOOR/CEILING band never silently diverges from build_deck.py's — a
+# divergence is exactly the class of drift that let the 1,500-vs-5,000 floor split
+# go unnoticed. Resolved relative to the repo root (repo layout) or, on a deployed
+# client box where the render-template tree may be absent, simply skipped.
+RENDER_DECK = (
+    (_REPO_ROOT / "23-ai-workforce-blueprint" / "templates" / "presentation-render"
+     / "render_deck.py") if _REPO_ROOT else None
+)
+
 MANIFEST = _first_existing([
     *( [_CLUSTER_REPO / "PIPELINE-MANIFEST.json"] if _CLUSTER_REPO else [] ),
     SOPS_DIR / "PIPELINE-MANIFEST.json",
@@ -310,6 +321,96 @@ EXTENSION_STEP = {
 }
 
 
+# ---------------------------------------------------------------------------
+# (V) VALUE-LEVEL DRIFT — the cited NUMBER must match the code constant.
+# The original sync_check proved that the SAME NAMES exist on both sides, but not
+# that the SAME VALUES do. That gap is what let PROMPT_CHAR_FLOOR drift: the manifest
+# said "1500-char floor" while build_deck.py's constant was 5000, and the names all
+# lined up so nothing failed. These checks close that gap.
+# ---------------------------------------------------------------------------
+def _const_int_values(py_path):
+    """AST-parse a python file and return {UPPER_CONST_NAME: int_value} for every
+    module-level `NAME = <int literal>` assignment. Booleans are excluded (bool is an
+    int subclass). Returns {} if the file is absent/unparseable (caller decides)."""
+    out = {}
+    try:
+        tree = ast.parse(Path(py_path).read_text())
+    except Exception:  # noqa: BLE001
+        return out
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for tgt in node.targets:
+            if (isinstance(tgt, ast.Name) and tgt.id.isupper()
+                    and isinstance(node.value, ast.Constant)
+                    and isinstance(node.value.value, int)
+                    and not isinstance(node.value.value, bool)):
+                out[tgt.id] = node.value.value
+    return out
+
+
+def value_checks(manifest_text):
+    """V1: render_deck.py's PROMPT_CHAR_FLOOR/CEILING == build_deck.py's (the retired
+    render module must never carry a stale prompt band).
+    V2: every floor/standard/ceiling integer the manifest CITES in prose must equal the
+    corresponding build_deck.py constant (PROMPT_CHAR_FLOOR / PROMPT_CHAR_CEILING).
+    Returns a list of drift dicts (check 'V1'/'V2')."""
+    drift = []
+
+    def add(check, item, detail):
+        drift.append({"check": check, "item": item, "detail": detail})
+
+    bd_vals = _const_int_values(BUILD_DECK)
+    floor = bd_vals.get("PROMPT_CHAR_FLOOR")
+    ceiling = bd_vals.get("PROMPT_CHAR_CEILING")
+
+    if floor is None:
+        add("V2", "PROMPT_CHAR_FLOOR",
+            "build_deck.py has no module-level integer PROMPT_CHAR_FLOOR constant — the "
+            "value-level floor check cannot anchor. Restore the constant.")
+    if ceiling is None:
+        add("V2", "PROMPT_CHAR_CEILING",
+            "build_deck.py has no module-level integer PROMPT_CHAR_CEILING constant — the "
+            "value-level ceiling check cannot anchor. Restore the constant.")
+
+    # V1 — retired render module band == canonical band.
+    if RENDER_DECK and RENDER_DECK.exists():
+        rd_vals = _const_int_values(RENDER_DECK)
+        for name, bdv in (("PROMPT_CHAR_FLOOR", floor), ("PROMPT_CHAR_CEILING", ceiling)):
+            if bdv is None:
+                continue
+            rdv = rd_vals.get(name)
+            if rdv is None:
+                add("V1", name,
+                    f"render_deck.py (retired render module) is missing the {name} "
+                    f"constant; build_deck.py has {name}={bdv}. Keep the constant in "
+                    f"render_deck.py so the bands can be proven equal.")
+            elif rdv != bdv:
+                add("V1", name,
+                    f"render_deck.py {name}={rdv} != build_deck.py {name}={bdv}. The "
+                    f"retired render module's prompt band must never silently diverge "
+                    f"from the canonical renderer's. Reconcile render_deck.py to {bdv}.")
+
+    # V2 — manifest-cited floor/standard/ceiling integers == code constants.
+    if floor is not None:
+        for m in re.finditer(r'([0-9][0-9,]*)-char (floor|standard)', manifest_text):
+            n = int(m.group(1).replace(",", ""))
+            if n != floor:
+                add("V2", f"{m.group(0)}",
+                    f"PIPELINE-MANIFEST.json cites a {n}-char {m.group(2)} but "
+                    f"build_deck.py PROMPT_CHAR_FLOOR={floor}. The manifest's cited floor "
+                    f"integer must equal the code constant (this is the exact 1,500-vs-5,000 "
+                    f"drift class). Reconcile the manifest prose to {floor}.")
+    if ceiling is not None:
+        for m in re.finditer(r'([0-9][0-9,]*)-char ceiling', manifest_text):
+            n = int(m.group(1).replace(",", ""))
+            if n != ceiling:
+                add("V2", f"{m.group(0)}",
+                    f"PIPELINE-MANIFEST.json cites a {n}-char ceiling but build_deck.py "
+                    f"PROMPT_CHAR_CEILING={ceiling}. Reconcile the manifest prose to {ceiling}.")
+    return drift
+
+
 def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
     drift = []  # list of {check, item, detail}
 
@@ -505,6 +606,7 @@ def report_human(drift, manifest, explain):
         return
     a = [d for d in drift if d["check"].startswith("A")]
     b = [d for d in drift if d["check"].startswith("B")]
+    v = [d for d in drift if d["check"].startswith("V")]
     print("=== sync_check: DRIFT DETECTED — LOCKSTEP BROKEN (AF-SYNC) ===", file=sys.stderr)
     if a:
         print("\n(A) STACK-AHEAD-OF-CODE — the SOP/role/gate stack moved; build_deck.py "
@@ -515,6 +617,11 @@ def report_human(drift, manifest, explain):
         print("\n(B) CODE-AHEAD-OF-STACK — build_deck.py moved; the manifest/ruleset "
               "did not:", file=sys.stderr)
         for d in b:
+            print(f"  DRIFT {d['check']}: [{d['item']}] {d['detail']}", file=sys.stderr)
+    if v:
+        print("\n(V) VALUE DRIFT — the names match but the NUMBERS do not (the cited "
+              "floor/ceiling integer != the code constant):", file=sys.stderr)
+        for d in v:
             print(f"  DRIFT {d['check']}: [{d['item']}] {d['detail']}", file=sys.stderr)
     print(f"\n{len(drift)} drift item(s). See SOP-SLIDE-06-EXTENSION-AND-SYNC: any "
           "change to a Presentations SOP/role/gate MUST update PIPELINE-MANIFEST.json "
@@ -533,6 +640,8 @@ def main():
     role_stems, sop_files = scan_roles_and_sops()
 
     drift = run_checks(manifest, bd, ruleset_codes, role_stems, sop_files)
+    # (V) value-level drift — the cited NUMBER must equal the code constant.
+    drift += value_checks(MANIFEST.read_text())
 
     if as_json:
         print(json.dumps({

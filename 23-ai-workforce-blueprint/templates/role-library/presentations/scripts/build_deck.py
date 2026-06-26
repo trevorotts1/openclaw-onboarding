@@ -18,13 +18,13 @@ A .pptx IS NOT A DELIVERED PRESENTATION. THIS SCRIPT IS ONLY THE PHASE-4 RENDERE
 Producing only a .pptx with this script is NOT a delivered presentation and is NOT
 a complete deliverable. build_deck.py renders slide images and assembles a bare
 .pptx — and NOTHING ELSE. It does NOT produce the presenter guide PDF, the presenter
-speech (PRESENTERS-SPEECH.md/.pdf/-FISH-TAGGED.md), the presenter audio
+speech (PRESENTER-SPEECH.md/.pdf/-FISH-TAGGED.md), the presenter audio
 (PRESENTER-AUDIO.mp3), the teleprompter app, the deck PDF export, the infographic
 checklist slide, or the GHL media upload. The FULL deliverable downstream is the
 NINE-MEMBER bundle —
     [Deck-Title]-FINAL.pptx, [Deck-Title]-FINAL.pdf, PRESENTER-GUIDE.pdf,
-    PRESENTERS-SPEECH.md (pure), PRESENTERS-SPEECH.pdf (teleprompter PDF),
-    PRESENTERS-SPEECH-FISH-TAGGED.md (fish-tagged), PRESENTER-AUDIO.mp3,
+    PRESENTER-SPEECH.md (pure), PRESENTER-SPEECH.pdf (teleprompter PDF),
+    PRESENTER-SPEECH-FISH-TAGGED.md (fish-tagged), PRESENTER-AUDIO.mp3,
     infographic.png, presenter-teleprompter.html (the teleprompter web app).
 The .pptx this script emits is an INTERMEDIATE artifact. The Director/Delivery flow
 MUST run the guide / speech / audio / PDF / infographic / teleprompter roles, and the
@@ -37,8 +37,8 @@ sops/SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md (AF-DELIVERY-COMPLETE).
 UPSTREAM STEPS THAT PRODUCE THE REQUIRED OUTPUTS:
     - [Deck-Title]-FINAL.pdf            : produced by PPTX Assembly Specialist (PDF export)
     - PRESENTER-GUIDE.pdf               : produced by Presenters Guide Specialist
-    - PRESENTERS-SPEECH.md/.pdf         : produced by Presenters Speech Writer
-    - PRESENTERS-SPEECH-FISH-TAGGED.md  : produced by Presenters Speech Writer / Fish Audio
+    - PRESENTER-SPEECH.md/.pdf          : produced by Presenters Speech Writer
+    - PRESENTER-SPEECH-FISH-TAGGED.md   : produced by Presenters Speech Writer / Fish Audio
     - PRESENTER-AUDIO.mp3               : produced by Audio Demonstration Specialist
     - infographic.png                   : produced by infographic-checklist role
     - presenter-teleprompter.html       : produced by build_teleprompter.py (teleprompter role)
@@ -60,7 +60,7 @@ WHAT IT DOES (zero AI judgement at runtime):
     1. Reads a slides.json (see slides.schema.json) and an output .pptx path.
     2. For EACH slide, LOADS the per-slide RICH prompt VERBATIM from
          working/prompts/slide-NN.txt  (or the SOP-named  slide-NN-prompt.txt).
-       This is the Slide Image Creator's hand-authored output — a 1,500–18,000-char
+       This is the Slide Image Creator's hand-authored output — a 5,000–18,000-char
        prompt that already carries the typography (per-line weight + pt size),
        placement, usage, the logo(s), the scene, the verbatim copy, the negative
        block, and everything else that appears on the slide. build_deck.py renders
@@ -148,7 +148,7 @@ PROCESS PREFLIGHT (un-bypassable by default):
 
     The preflight enforces EVERY SOP artifact: intake, research brief, converting
     arc, slides_copy, design/typography brief, copy QC (pass), anti-compression
-    coverage, AND a >=1,500-char RICH prompt for EVERY slide in working/prompts/
+    coverage, AND a >=5,000-char RICH prompt for EVERY slide in working/prompts/
     (the Slide Image Creator's output). Any missing/short/deviation → refuse to
     render, exit 3, loud. There is no path past the gate with a thin or absent
     per-slide prompt.
@@ -297,7 +297,7 @@ ENGLISH_PIN = (
 #     that ceiling so a prompt is never rejected or truncated by the platform.
 #     This ceiling is UNIVERSAL: it applies to every prompt path. A prompt over
 #     it is an AF-P2 auto-fail.
-#   * The FLOOR is 1,500 chars and it is HARD (AF-P1). build_deck.py does NOT
+#   * The FLOOR is 5,000 chars and it is HARD (AF-P1). build_deck.py does NOT
 #     compose its own thin prompt any more — it renders the Slide Image Creator's
 #     hand-authored RICH per-slide prompt VERBATIM (working/prompts/slide-NN.txt).
 #     That prompt carries the full 15-element spec (typography size + per-line
@@ -312,6 +312,16 @@ ENGLISH_PIN = (
 #     this standard and the Prompt-QC phase (P4-PROMPT-QC) verifies it independently.
 PROMPT_CHAR_FLOOR = 5000      # HARD floor (AF-P1/AF-PROMPT-FLOOR): any rich prompt under the 5,000-char standard is NOT run/rendered/updated — FAIL LOUD
 PROMPT_CHAR_CEILING = 18000   # UNIVERSAL hard maximum (AF-P2; 2,000 under the 20,000 API ceiling)
+
+# REQUIRED STRUCTURAL BLOCKS (AF-P1). A real rich prompt is not just long enough — it
+# carries the load-bearing structural scaffolding: an [ARCHETYPE ...] layout declaration,
+# an explicit NEGATIVE BLOCK, and at least one "Do not " imperative inside it. A
+# 5,000-char file with none of these is a verbose stub, not a slide spec. This is the
+# structural-block check FOLDED IN from the retired presentation-render/render_deck.py
+# (_validate_prompt) so build_deck.py is the ONE canonical renderer — it now enforces
+# every invariant render_deck.py used to, with no separate render module to drift.
+# Matched case-insensitively, on the same STRIPPED text the char-count gate measures.
+REQUIRED_STRUCTURAL_BLOCKS = ["[ARCHETYPE", "NEGATIVE BLOCK", "Do not "]
 
 # ---------------------------------------------------------------------------
 # RESEARCH-CITATION GATE (AF-RESEARCH-UNCITED) — the minimum cited-URL floor
@@ -581,21 +591,21 @@ DELIVERABLES_REQUIRED = [
     },
     {
         "key": "speech_md",
-        "filename": "PRESENTERS-SPEECH.md",
+        "filename": "PRESENTER-SPEECH.md",
         "label": "presenter speech markdown source (pure)",
         "min_bytes": 2_048,              # 2 KB — word-for-word script stub floor
         "note": ">2KB; produced by Presenters Speech Writer (pure script). REQUIRED UPSTREAM STEP.",
     },
     {
         "key": "speech_pdf",
-        "filename": "PRESENTERS-SPEECH.pdf",
+        "filename": "PRESENTER-SPEECH.pdf",
         "label": "presenter speech teleprompter PDF",
         "min_bytes": 20_480,             # 20 KB — PDF of a real multi-page script
         "note": ">20KB; produced by Presenters Speech Writer (teleprompter PDF render). REQUIRED UPSTREAM STEP.",
     },
     {
         "key": "speech_fish_md",
-        "filename": "PRESENTERS-SPEECH-FISH-TAGGED.md",
+        "filename": "PRESENTER-SPEECH-FISH-TAGGED.md",
         "label": "presenter speech (Fish-Audio expression-tagged)",
         "min_bytes": 2_048,              # 2 KB — fish-tagged variant of the script floor
         "note": ">2KB; produced by Presenters Speech Writer / Fish Audio Expression "
@@ -757,11 +767,11 @@ def load_rich_prompt(slide: dict, run_dir: Path) -> str:
             f"fragment '{DEAD_ENDPOINT_FRAGMENT}'. Refusing."
         )
 
-    # PROMPT CHAR-COUNT GATE (fail-loud). The floor is HARD (1,500): a prompt under
+    # PROMPT CHAR-COUNT GATE (fail-loud). The floor is HARD (5,000): a prompt under
     # it is a thin stub / truncated file, NOT a real slide prompt — never run it.
     # H1: measure the STRIPPED length so a file padded with whitespace (or one that is
     # whitespace-only) can never satisfy the floor. len(prompt) over raw bytes would
-    # let "   \n   ... 1500 spaces ..." pass as a "1,500-char prompt".
+    # let "   \n   ... 5000 spaces ..." pass as a "5,000-char prompt".
     if not prompt.strip():
         raise ValueError(
             f"slide {ordinal}: rich prompt {prompt_path} is empty / whitespace-only. "
@@ -786,6 +796,21 @@ def load_rich_prompt(slide: dict, run_dir: Path) -> str:
             f"ceiling, MODEL-SPECS). The prompt is too long; tighten redundant phrasing "
             f"(never delete the negative block or any spelling-lock). Refusing "
             f"(prompt char-count gate, AF-P2 ceiling)."
+        )
+    # STRUCTURAL-BLOCK GATE (fail-loud, AF-P1). Folded in from the retired
+    # render_deck.py: a long file is not enough — the rich prompt MUST carry the
+    # load-bearing scaffolding (an [ARCHETYPE ...] layout declaration, a NEGATIVE
+    # BLOCK, and at least one "Do not " imperative). A prompt that clears the floor
+    # but is missing any of these is a verbose stub, not a slide spec — never run it.
+    prompt_lc = prompt.lower()
+    missing_blocks = [b for b in REQUIRED_STRUCTURAL_BLOCKS if b.lower() not in prompt_lc]
+    if missing_blocks:
+        raise ValueError(
+            f"slide {ordinal}: rich prompt {prompt_path} clears the char floor but is "
+            f"MISSING required structural block(s): {', '.join(missing_blocks)}. A real "
+            f"rich prompt declares its [ARCHETYPE ...] layout, carries an explicit NEGATIVE "
+            f"BLOCK, and states 'Do not ...' imperatives. Re-author the rich prompt with "
+            f"the full 15-element structure. Refusing (structural-block gate, AF-P1)."
         )
     return prompt
 
@@ -1125,9 +1150,13 @@ def discover_speech_chunks(run_dir: Path, bundle_dir: Path) -> Optional[dict]:
 
     Search order (first hit wins): the working-dir locations the speech roles write
     to, then the delivered bundle copy. Filenames use the standardized possessive
-    (PRESENTERS-SPEECH.md); the legacy speech.md scratch name is also accepted."""
+    singular PRESENTER-SPEECH.md (canonical); the legacy possessive PRESENTERS-SPEECH.md
+    and the speech.md scratch name are also accepted."""
     candidates = [
         run_dir / "working/presenter-speech/speech.md",
+        run_dir / "working/delivery/PRESENTER-SPEECH.md",
+        run_dir / "working/presenter-speech/PRESENTER-SPEECH.md",
+        bundle_dir / "PRESENTER-SPEECH.md",
         run_dir / "working/delivery/PRESENTERS-SPEECH.md",
         run_dir / "working/presenter-speech/PRESENTERS-SPEECH.md",
         bundle_dir / "PRESENTERS-SPEECH.md",
@@ -2096,9 +2125,11 @@ def _chk_rich_prompts(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     floor, is an AF-P1 auto-fail: build_deck.py renders the rich prompt VERBATIM and
     NEVER composes a thin fallback, so a thin/absent prompt means the slide cannot be
     rendered at all. Returns "" on pass, or a fatal AF-P1 message (run_preflight maps
-    a returned reason to exit 3). The 18,000 ceiling (AF-P2) is enforced per-slide at
-    render time in load_rich_prompt (a too-long prompt still passes preflight; it is
-    the floor + presence that are the un-bypassable pre-render gate here)."""
+    a returned reason to exit 3). The 18,000 ceiling (AF-P2) AND the required structural
+    blocks ([ARCHETYPE ...] / NEGATIVE BLOCK / "Do not ", folded in from render_deck.py)
+    are ALSO enforced here at preflight — not only per-slide at render time in
+    load_rich_prompt — so a too-long or structurally-empty prompt is caught at exit 3
+    BEFORE any KIE dispatch, never mid-render."""
     # H3: count the ACTUAL rendered slides.json (positional) when threaded in, so the
     # rich-prompt gate verifies a prompt for every slide that will actually render.
     n = _count_output_slides(run_dir, slides_path)
@@ -2114,11 +2145,25 @@ def _chk_rich_prompts(run_dir: Path, slides_path: Optional[Path] = None) -> str:
             continue
         # H1: measure the STRIPPED length so a whitespace-padded / whitespace-only
         # prompt file can never satisfy the floor.
-        length = len(p.read_text(errors="replace").strip())
+        stripped = p.read_text(errors="replace").strip()
+        length = len(stripped)
         if length < PROMPT_CHAR_FLOOR:
             problems.append(
                 f"slide {ordinal:02d}: rich prompt {p.name} is {length} non-whitespace "
                 f"chars, under the {PROMPT_CHAR_FLOOR}-char HARD floor")
+            continue
+        if length > PROMPT_CHAR_CEILING:
+            problems.append(
+                f"slide {ordinal:02d}: rich prompt {p.name} is {length} chars, OVER the "
+                f"{PROMPT_CHAR_CEILING}-char HARD ceiling (AF-P2)")
+            continue
+        missing_blocks = [b for b in REQUIRED_STRUCTURAL_BLOCKS
+                          if b.lower() not in stripped.lower()]
+        if missing_blocks:
+            problems.append(
+                f"slide {ordinal:02d}: rich prompt {p.name} clears the floor but is missing "
+                f"required structural block(s): {', '.join(missing_blocks)} "
+                f"([ARCHETYPE ...] / NEGATIVE BLOCK / 'Do not ')")
     if problems:
         head = (f"AF-P1: rich-prompt-required gate FAILED for {len(problems)} of {n} "
                 f"slides. build_deck.py renders the Slide Image Creator's rich prompt "
@@ -2287,15 +2332,16 @@ def _chk_speech_length(run_dir: Path) -> str:
         return ""
 
     # Locate the speech artifact. Absent => deferred to delivery (pass here).
-    # Filenames standardized to the possessive (PRESENTERS-SPEECH.md); the legacy
-    # singular (PRESENTER-SPEECH.md) and scratch speech.md names are still accepted
+    # Filenames standardized to the SINGULAR PRESENTER-SPEECH.md (canonical, matching
+    # the AF-DH1 client-package whitelist + PRESENTER-GUIDE/PRESENTER-AUDIO); the legacy
+    # possessive (PRESENTERS-SPEECH.md) and scratch speech.md names are still accepted
     # so the gate keeps finding a speech written by an older flow.
     speech = None
     for rel in ("working/presenter-speech/speech.md",
-                "working/delivery/PRESENTERS-SPEECH.md",
-                "working/presenter-speech/PRESENTERS-SPEECH.md",
                 "working/delivery/PRESENTER-SPEECH.md",
-                "working/presenter-speech/PRESENTER-SPEECH.md"):
+                "working/presenter-speech/PRESENTER-SPEECH.md",
+                "working/delivery/PRESENTERS-SPEECH.md",
+                "working/presenter-speech/PRESENTERS-SPEECH.md"):
         p = run_dir / rel
         if p.exists():
             speech = p
@@ -2511,8 +2557,11 @@ PACKAGE_CLEAN_FORBIDDEN_DIR_NAMES = frozenset({
     "tasks", "working", "prompts", "images", "renders", "qc", "scripts", "checkpoints",
 })
 # Intermediate .md draft pattern: a working draft that is NOT a canonical deliverable.
-# Canonical deliverable .md files are PRESENTERS-SPEECH.md and PRESENTERS-SPEECH-FISH-TAGGED.md.
+# Canonical deliverable .md files are PRESENTER-SPEECH.md and PRESENTER-SPEECH-FISH-TAGGED.md
+# (singular — matches DELIVERABLES_REQUIRED + the AF-DH1 whitelist). The legacy
+# possessive spellings are still accepted so an older bundle is not flagged dirty.
 PACKAGE_CLEAN_CANONICAL_MD_FILES = frozenset({
+    "PRESENTER-SPEECH.md", "PRESENTER-SPEECH-FISH-TAGGED.md",
     "PRESENTERS-SPEECH.md", "PRESENTERS-SPEECH-FISH-TAGGED.md",
 })
 # Intermediate-draft naming patterns (numbered drafts, *-draft.md, *-working.md, etc.)
@@ -2869,7 +2918,14 @@ def _chk_no_dark_slides(run_dir: Path) -> str:
     by client request only.
 
     This gate:
-      1. Reads intake.json for client_dark_theme (default False).
+      1. Reads intake.json for client_dark_theme (default False). The role docs
+         (Director intake Q-bank, Brand Steward style_block, Slide Image Creator,
+         Prompt Author / Prompt-QC) record the SAME opt-in under the legacy key name
+         `DARK_OK`. The two are the SAME INTENT: "the client authorized a dark theme."
+         This gate aliases `DARK_OK` -> `client_dark_theme` so an opt-in recorded
+         EITHER way is honored (a deck the roles cleared for dark via DARK_OK is not
+         spuriously auto-failed because the gate only read the other key name).
+         `client_dark_theme` is the CANONICAL key; DARK_OK is the accepted alias.
       2. Scans image prompts (working/prompts/*.txt) AND the design brief
          (working/research/design-brief-*.md) for dark background keywords and
          near-black hex/rgb color references.
@@ -2879,15 +2935,26 @@ def _chk_no_dark_slides(run_dir: Path) -> str:
 
     Returns "" on pass, or a fatal AF-DARK-SLIDE message on fail.
     """
-    # Step 1: read client_dark_theme from intake.json.
+    # Step 1: read client_dark_theme from intake.json, aliasing the role-doc key
+    # DARK_OK -> client_dark_theme (same intent: client authorized a dark theme).
+    def _is_dark_optin(val) -> bool:
+        # Accept a JSON true, or a truthy string ("true"/"yes"/"1") the roles may
+        # write when they mirror style_block.md's `DARK_OK = true`.
+        if val is True:
+            return True
+        if isinstance(val, str) and val.strip().lower() in ("true", "yes", "1"):
+            return True
+        return False
+
     client_dark_theme = False
     for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
         p = run_dir / rel
         if p.exists():
             obj = _read_json(p)
             if isinstance(obj, dict) and "__parse_error__" not in obj:
-                val = obj.get("client_dark_theme")
-                if val is True:
+                # canonical key OR the DARK_OK alias honors the opt-in.
+                if _is_dark_optin(obj.get("client_dark_theme")) or \
+                        _is_dark_optin(obj.get("DARK_OK")):
                     client_dark_theme = True
             break
 
@@ -3499,11 +3566,11 @@ PREFLIGHT_REQUIRED = [
      "Mission PRD — source_slide_count (Mode A=0 always passes)",
      _chk_coverage),
     # 8th check — RICH-PROMPT-REQUIRED gate (AF-P1). EVERY slide must have a
-    # hand-authored rich prompt >= 1,500 chars in working/prompts/. Like coverage,
+    # hand-authored rich prompt >= 5,000 chars in working/prompts/. Like coverage,
     # this needs the whole run dir (it counts slides AND reads every prompt file),
     # so it uses the rel sentinel None.
     (None,
-     "rich per-slide prompt — every slide has a >=1,500-char prompt in working/prompts/ (rendered VERBATIM)",
+     "rich per-slide prompt — every slide has a >=5,000-char prompt in working/prompts/ (rendered VERBATIM)",
      "Phase 2 — Slide Image Creator SOP 9.1 (15-element rich prompt; rendered verbatim, no thin fallback)",
      _chk_rich_prompts),
     # KIE-BAKED gate (AF-I14). Once a render record exists, EVERY rendered slide must

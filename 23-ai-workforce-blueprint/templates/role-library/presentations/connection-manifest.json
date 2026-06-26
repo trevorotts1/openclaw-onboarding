@@ -1,7 +1,7 @@
 {
-  "_comment": "Connection-manifest for the Presentations department. Every 'required: true' entry must resolve to a non-empty value in openclaw.json before this dept may be marked done. verify-wiring.sh reads this file and checks each cfg_key.",
+  "_comment": "Connection-manifest for the Presentations department. Every 'required: true' entry must resolve to a non-empty value in openclaw.json before this dept may be marked done. verify-wiring.sh reads this file and checks each cfg_key (and each listed cfg_key_alias). A hook may also carry assert_contains_dept:true to require that this dept's slug is present in the resolved JSON file.",
   "dept": "presentations",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "connection_points": [
     {
       "name": "kie-api-key",
@@ -17,21 +17,24 @@
     },
     {
       "name": "ghl-api-key",
-      "description": "GoHighLevel API key used by the Media Librarian role to upload completed slide assets into the GHL media library.",
-      "cfg_key": "env.vars.GHL_API_KEY",
+      "description": "GoHighLevel LOCATION Private Integration Token (PIT) used by the Media Librarian + Delivery Concierge to upload slide PNGs and the final deliverables to the GHL media library via POST services.leadconnectorhq.com/medias/upload-file. MUST be the LOCATION token, NOT an agency token (the agency PIT returns 401 for media ops). The upload tool (ghl_media.py) reads GOHIGHLEVEL_API_KEY first, then the legacy alias GHL_API_KEY; verify-wiring accepts either.",
+      "cfg_key": "env.vars.GOHIGHLEVEL_API_KEY",
+      "cfg_key_aliases": ["env.vars.GHL_API_KEY"],
       "required": true
     },
     {
       "name": "ghl-location-id",
-      "description": "GHL location (sub-account) ID so the Media Librarian targets the correct media library.",
-      "cfg_key": "env.vars.GHL_LOCATION_ID",
+      "description": "GHL location (sub-account) ID so the media upload targets the correct media library (multipart field locationId). The upload tool reads GOHIGHLEVEL_LOCATION_ID first, then the legacy alias GHL_LOCATION_ID; verify-wiring accepts either.",
+      "cfg_key": "env.vars.GOHIGHLEVEL_LOCATION_ID",
+      "cfg_key_aliases": ["env.vars.GHL_LOCATION_ID"],
       "required": true
     },
     {
       "name": "command-center-board-entry",
-      "description": "The Presentations department must be listed in the Command Center departments.json so the client can monitor pipeline status from the dashboard.",
+      "description": "The Presentations department must be listed in the Command Center departments.json so the client can monitor pipeline status from the dashboard. cfg_key resolves to the departments.json path; assert_contains_dept requires that an entry for this dept (slug 'presentations') is present (seeded) in that file.",
       "cfg_key": "commandCenter.departmentsJsonPath",
-      "required": false
+      "assert_contains_dept": true,
+      "required": true
     },
     {
       "name": "delivery-destination-drive",

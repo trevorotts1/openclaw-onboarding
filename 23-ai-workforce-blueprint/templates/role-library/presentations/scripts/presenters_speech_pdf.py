@@ -64,13 +64,14 @@ Shape (unchanged from the prior version -- backward compatible):
 
 USAGE
 -----
-  python3 presenters_speech_pdf.py --spec speech_spec.json --out PRESENTERS-SPEECH.pdf
+  python3 presenters_speech_pdf.py --spec speech_spec.json --out PRESENTER-SPEECH.pdf
   python3 presenters_speech_pdf.py --sample --out SAMPLE.pdf      # render built-in stub
   python3 presenters_speech_pdf.py --emit-sample-spec spec.json   # write the stub spec
 
 OUTPUT FILENAME
 ---------------
-The canonical shipped name is PRESENTERS-SPEECH.pdf (SOP 9.2).
+The canonical shipped name is PRESENTER-SPEECH.pdf (singular; SOP 9.2, matching the
+AF-DH1 client-package whitelist + PRESENTER-GUIDE/PRESENTER-AUDIO).
 
 ENFORCEMENT (mirrors SOP 9.2 auto-fails)
 - 14pt teleprompter floor enforced in code (MIN_FONT_PT). Any style below it raises.
@@ -740,7 +741,7 @@ SAMPLE_SPEC = {
 def main():
     ap = argparse.ArgumentParser(description="Presenter's Speech teleprompter PDF generator")
     ap.add_argument("--spec", help="path to speech-spec JSON")
-    ap.add_argument("--out", default="PRESENTERS-SPEECH.pdf", help="output PDF path")
+    ap.add_argument("--out", default="PRESENTER-SPEECH.pdf", help="output PDF path")
     ap.add_argument("--sample", action="store_true", help="render the built-in stub speech")
     ap.add_argument("--design-system",
                     help="path to design_system.json; injects the locked brand "

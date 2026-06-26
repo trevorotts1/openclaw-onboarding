@@ -151,13 +151,13 @@ rc=$?
 
 if [[ "$rc" -eq 7 ]]; then
   log "FLAG" "dying model $DYING_MODEL still present (deadline $DEADLINE) — migration required"
-  if [[ "${OC_MIGRATE_ESCALATE:-0}" == "1" ]] && command -v openclaw >/dev/null 2>&1; then
-    _RR="${RESCUE_RANGERS_HELP_CHAT_ID:-}"
-    if [[ -n "$_RR" ]]; then
-      openclaw message send --channel telegram -t "$_RR" \
-        "[embed-migration] $(hostname): still on $DYING_MODEL which HARD-SHUTS-DOWN $DEADLINE. Migrate to $CANON_MODEL + reindex before then. See $MIG_LOG." \
-        >/dev/null 2>&1 || log "WARN" "operator escalation send failed (non-fatal)"
-    fi
+  if [[ "${OC_MIGRATE_ESCALATE:-0}" == "1" ]] && [[ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" ]]; then
+    _esc_msg="[embed-migration] $(hostname): still on $DYING_MODEL which HARD-SHUTS-DOWN $DEADLINE. Migrate to $CANON_MODEL + reindex before then. See $MIG_LOG."
+    _esc_msg="${_esc_msg//\\/\\\\}"; _esc_msg="${_esc_msg//\"/\\\"}"
+    curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
+      -H 'Content-Type: application/json' \
+      -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"pre-july14-embedding-migration-check\",\"message\":\"${_esc_msg}\"}" \
+      --max-time 15 >/dev/null 2>&1 || log "WARN" "rescue-rangers webhook escalation failed (non-fatal)"
   fi
 elif [[ "$rc" -eq 0 && "$FORCE" == "1" ]]; then
   log "OK" "forced-migration pass complete (or already clean)"

@@ -27,8 +27,8 @@
 > | `[Deck-Title]-FINAL.pptx` | > 1 MB | build_deck.py (PPTX Assembly) |
 > | `[Deck-Title]-FINAL.pdf` | > 50 KB | PPTX Assembly Specialist (PDF export) |
 > | `PRESENTER-GUIDE.pdf` | > 50 KB | Presenters Guide Specialist |
-> | `PRESENTER-SPEECH.md` | > 2 KB | Presenters Speech Writer |
-> | `PRESENTER-SPEECH.pdf` | > 20 KB | Presenters Speech Writer (PDF render) |
+> | `PRESENTERS-SPEECH.md` | > 2 KB | Presenters Speech Writer |
+> | `PRESENTERS-SPEECH.pdf` | > 20 KB | Presenters Speech Writer (PDF render) |
 > | `PRESENTER-AUDIO.mp3` | > 500 KB | Audio Demonstration Specialist |
 >
 > **PLUS** `infographic.png` (> 100 KB — produced by infographic-checklist role).
@@ -251,8 +251,8 @@ exists at `outputPath` before reporting.
 > Hand off to the Director/Delivery flow:
 > ```
 > [ ] D.1  PRESENTER-GUIDE.pdf present in bundle dir (Presenters Guide Specialist) — >50KB; CANNOT be silently skipped
-> [ ] D.2  PRESENTER-SPEECH.md present (Presenters Speech Writer) — >2KB source
-> [ ] D.3  PRESENTER-SPEECH.pdf present (Presenters Speech Writer) — >20KB PDF render
+> [ ] D.2  PRESENTERS-SPEECH.md present (Presenters Speech Writer) — >2KB source
+> [ ] D.3  PRESENTERS-SPEECH.pdf present (Presenters Speech Writer) — >20KB PDF render
 > [ ] D.4  PRESENTER-AUDIO.mp3 present (Audio Demonstration Specialist) — Fish Audio S2, >500KB
 > [ ] D.5  [Deck-Title]-FINAL.pdf present (PPTX Assembly Specialist PDF export) — >50KB
 > [ ] D.6  infographic.png present in bundle dir (infographic-checklist role) — >100KB; CANNOT be silently skipped
@@ -302,13 +302,13 @@ reported as "done" or "complete."
 - `[Deck-Title]-FINAL.pptx` — > 1 MB — assembled deck (this script)
 - `[Deck-Title]-FINAL.pdf` — > 50 KB — PDF export (PPTX Assembly Specialist)
 - `PRESENTER-GUIDE.pdf` — > 50 KB — Presenters Guide Specialist **(HARD REQUIRED)**
-- `PRESENTER-SPEECH.md` — > 2 KB — Presenters Speech Writer
-- `PRESENTER-SPEECH.pdf` — > 20 KB — Presenters Speech Writer (PDF render)
+- `PRESENTERS-SPEECH.md` — > 2 KB — Presenters Speech Writer
+- `PRESENTERS-SPEECH.pdf` — > 20 KB — Presenters Speech Writer (PDF render)
 - `PRESENTER-AUDIO.mp3` — > 500 KB — Audio Demonstration Specialist
 
 **PLUS** `infographic.png` (> 100 KB — infographic-checklist role) **(HARD REQUIRED)**
 
-`build_deck.py` does NOT produce PRESENTER-GUIDE.pdf, PRESENTER-SPEECH.md/.pdf,
+`build_deck.py` does NOT produce PRESENTER-GUIDE.pdf, PRESENTERS-SPEECH.md/.pdf,
 PRESENTER-AUDIO.mp3, or infographic.png — these are REQUIRED UPSTREAM STEPS. The gate
 enforces that ALL of them exist before a run can complete successfully.
 
@@ -318,13 +318,22 @@ enforces that ALL of them exist before a run can complete successfully.
 passes, the closeout DELIVERY INTERLOCK must also pass before review->Done:
 
 - **AF-DELIVER** — the presenter artifacts exist and are non-empty (PRESENTER-GUIDE.pdf,
-  PRESENTER-SPEECH.pdf, PRESENTER-AUDIO.mp3 > 500KB). See `SOP-PITCH-05-DELIVERABLE-BUNDLE.md`.
+  PRESENTERS-SPEECH.pdf, PRESENTER-AUDIO.mp3 > 500KB). See `SOP-PITCH-05-DELIVERABLE-BUNDLE.md`.
 - **AF-DH1** — the client package `delivery/[DECK_SLUG]-FINAL/` contains EXACTLY the six
   allowed files and NO dev artifacts. Run by the Delivery Concierge at SOP 9.0.
 - **AF-DELIVERY-COMPLETE** — the consolidating Done-gate: (1) the six-file bundle is complete
   and `deliverables.json` all-verified, (2) the infographic.png is present and verified, and
   (3) the GHL media upload is recorded (`pptx_ghl_media_id`) and ground-truth verified. See
   `SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md`.
+
+> **BINDING — how GHL is touched.** The GoHighLevel media library is touched EXCLUSIVELY via the
+> Tier-3 REST call `POST https://services.leadconnectorhq.com/medias/upload-file` (Version
+> `2021-07-28`, multipart/form-data, optional `parentId`), authenticated with the CLIENT's GHL
+> **LOCATION** Private Integration Token (NOT the agency token — the agency token returns 401 for
+> media operations). The agent NEVER creates a GHL folder (the folder-create endpoint returns 404;
+> folders are made by a human in the GHL UI and the id is passed as `parentId`, else upload to the
+> shareable media root). Driving the GoHighLevel UI in a browser — agent-browser, Playwright, or any
+> UI automation of GHL — is FORBIDDEN. Reference: `29-ghl-convert-and-flow/references/medias.md`.
 
 The Director MUST run the Director/Delivery flow (guide + speech + audio + PDF export +
 infographic PNG + GHL upload). The Director may NOT mark Done, register a final deliverable,
