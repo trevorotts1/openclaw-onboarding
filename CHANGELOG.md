@@ -1,3 +1,37 @@
+## [v14.17.1]  -  2026-06-27  -  fix: cross-agent routing default visibility=all + routable department agents
+
+Two defects caused every new client box to silently break cross-agent routing
+on first provision, regardless of which version of build-workforce.py ran.
+
+**Defect 1 — gateway "tree" visibility default blocks department handoffs**
+
+The OpenClaw gateway defaults `tools.sessions.visibility` to `"tree"` (the
+routing agent can only see sessions it directly spawned). Cross-agent
+department routing requires `"all"` so the routing agent can locate and hand
+off to independently-registered department agents. This default was never
+overridden at any write-site, so every fresh box silently blocked handoffs.
+
+**Defect 2 — missing agentDir prevents department agent resolution**
+
+`materialize-dept-agents.sh` registered department agents in `agents.list[]`
+without an `agentDir` field. Without a filesystem anchor the gateway cannot
+resolve the department agent's state directory at startup, so runtime routing
+to any department agent failed silently.
+
+**Fix (five files, two changes)**
+
+*sessions.visibility=all* added to four write-sites that must stay in sync:
+- `23-ai-workforce-blueprint/scripts/build-workforce.py` — build-time origin
+- `scripts/apply-routing-fix.sh` Layer 5 — already-built box self-heal
+- `scripts/apply-fleet-standards.sh` CEO re-assert — fleet-wide roll
+- `hooks/lib-ceo-tool-gate.sh` `ceo_gate_tools_json()` — revoke/restore path
+
+*agentDir* field added to `32-command-center-setup/scripts/materialize-dept-agents.sh`:
+- New entries receive `agentDir: OC_ROOT/agents/<agent-id>` and `os.makedirs`
+- Existing entries back-filled idempotently so fleet self-heals on next run
+
+---
+
 ## [v14.17.0]  -  2026-06-27  -  feat(skill6): consolidated self-check checklist + SEO keyword-in-copy gate
 
 Skill 6 (ghl-install-pages) gets a per-phase SELF-CHECK CHECKLIST plus the one
