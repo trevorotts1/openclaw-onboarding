@@ -1,3 +1,28 @@
+## [v14.19.3]  -  2026-06-27  -  feat: fleet embedding canary probe + HEARTBEAT.md semantic-probe section
+
+Adds a semantic-vs-keyword embedding health probe to the Skill 32 Command
+Center toolset. The probe runs every 6 hours via an OpenClaw cron and writes
+one row per fire into a new `system_status` table in mission-control.db.
+Rescue Rangers is alerted when a box goes dark (embeddings missing, empty,
+or more than 30 days stale).
+
+**New file:**
+`32-command-center-setup/scripts/heartbeat-canary-probe.py` — pure stdlib,
+no external deps. Checks `sop_embeddings` count, `persona_index` count,
+embedding coverage ratio, staleness, and semantic-vs-keyword recall ratio
+for the canary phrase "onboard". Writes to `system_status` (DDL auto-applied
+on first run, idempotent). Exit: 0=healthy 1=degraded 2=dark 3=error.
+
+**Updated file:**
+`HEARTBEAT.md` — new section "FLEET EMBEDDING CANARY" with status-level
+table, manual trigger commands (Mac + VPS), system_status query snippet,
+full DDL, Rescue Rangers alert format, OpenClaw cron wiring command, and
+recovery runbook.
+
+No client names, no secrets, no live DB writes in this PR.
+
+---
+
 ## [v14.19.2]  -  2026-06-27  -  fix: cross-agent routing default visibility=all + routable department agents
 
 Two defects caused every new client box to silently break cross-agent routing
