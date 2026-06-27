@@ -1,3 +1,25 @@
+## [v14.18.0]  -  2026-06-27  -  feat(skill6): per-client brand palette injection into general.general.colors + pageStyles
+
+Skill 6 (ghl-install-pages) `new_page_blob()` gains two optional keyword-only
+parameters — `primary_color` and `secondary_color` — that inject the client's
+brand hex colors into `general.general.colors` (the ``Primary`` / ``Secondary``
+entries of the 18-entry `{label, value}` palette) AND the top-level `pageStyles`
+CSS ``--primary`` / ``--secondary`` custom properties.
+
+The 18-entry palette shape is preserved exactly (no entries added or dropped) so
+`assert_renderable_shape` Invariant 2 and the GoHighLevel renderer's hydration
+read both continue to resolve. All 16 non-brand entries pass through verbatim.
+A new private helper `_apply_brand_palette` performs the substitution with a
+regex anchored to the CSS property name (immune to future default-value changes)
+and validates supplied values as CSS hex colors before any blob is assembled.
+The None-default path is a zero-copy identity pass, so all existing callers are
+unaffected. 19 new unit tests (`TestBrandPaletteInjection`); all 99 suite tests
+pass.
+
+FILES: `06-ghl-install-pages/tools/ghl_rest_canvas.py`,
+`06-ghl-install-pages/tests/test_ghl_rest_canvas.py`. No client names, no
+operator-local paths, no secret values committed.
+
 ## [v14.17.0]  -  2026-06-27  -  feat(skill6): consolidated self-check checklist + SEO keyword-in-copy gate
 
 Skill 6 (ghl-install-pages) gets a per-phase SELF-CHECK CHECKLIST plus the one

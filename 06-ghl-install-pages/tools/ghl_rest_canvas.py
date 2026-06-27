@@ -946,6 +946,89 @@ _CC_COL_TEMPLATE = {'type': 'col', 'child': [], 'class': {}, 'styles': {'boxShad
 
 _CC_ELEMENT_TEMPLATE = {'extra': {'nodeId': '', 'visibility': {'value': {'hideDesktop': False, 'hideMobile': False}}, 'customCode': {'value': {'rawCustomCode': ''}}, 'customClass': {'value': []}}, 'class': {}, 'styles': {}, 'wrapper': {'marginTop': {'unit': 'px', 'value': 0}, 'marginBottom': {'unit': 'px', 'value': 0}, 'marginLeft': {'unit': 'px', 'value': 0}, 'marginRight': {'unit': 'px', 'value': 0}, 'width': {'value': 'auto', 'unit': ''}, 'height': {'value': 'auto', 'unit': ''}}, 'customCss': [], 'type': 'element', 'child': [], 'meta': 'custom-code', 'tagName': 'c-custom-code', 'title': 'Custom Code', 'tag': ''}
 
+# ── CSS hex-color regex (GoHighLevel uses #rgb, #rrggbb, or #rrggbbaa) ──────
+_HEX_COLOR_RE = re.compile(
+    r'^#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3}(?:[0-9a-fA-F]{2})?)?$'
+)
+
+
+def _apply_brand_palette(
+    colors: list,
+    page_styles: str,
+    primary_color: str | None,
+    secondary_color: str | None,
+) -> tuple[list, str]:
+    """Return (colors, page_styles) with Primary/Secondary entries replaced.
+
+    Substitutes the client's brand Primary and/or Secondary hex colors into
+    the 18-entry ``general.general.colors`` palette list and the top-level
+    ``pageStyles`` CSS ```:root``` block.  All other 16 entries are preserved
+    verbatim so the 18-entry shape that ``assert_renderable_shape`` (Invariant
+    2) and the GoHighLevel renderer require is never broken.
+
+    The ``pageStyles`` replacement uses a regex anchored to the CSS custom-
+    property name so it is immune to future changes in the operator-scratch
+    default values (``#37ca37`` / ``#188bf6``).
+
+    Args:
+        colors: A deep copy of ``_FLAT_THEME_COLORS`` (18-entry
+            ``[{label, value}]`` list).
+        page_styles: A copy of ``_FLAT_PAGE_STYLES`` (the CSS ``:root`` block
+            string).
+        primary_color: Hex color string (e.g. ``'#c0392b'``) or ``None`` to
+            keep the operator-scratch default (``#37ca37``).
+        secondary_color: Hex color string or ``None`` to keep the default
+            (``#188bf6``).
+
+    Returns:
+        ``(patched_colors, patched_page_styles)`` — new objects; inputs are
+        not mutated.
+
+    Raises:
+        ValueError: if a supplied color string is not a valid CSS hex color
+            (``#rgb``, ``#rrggbb``, or ``#rrggbbaa``).
+    """
+    for name, val in (("primary_color", primary_color), ("secondary_color", secondary_color)):
+        if val is not None and not _HEX_COLOR_RE.match(val):
+            raise ValueError(
+                f"new_page_blob: {name} must be a CSS hex color "
+                f"(#rgb, #rrggbb, or #rrggbbaa), got {val!r}"
+            )
+
+    if primary_color is None and secondary_color is None:
+        return colors, page_styles
+
+    # ── Patch the colors list ─────────────────────────────────────────────────
+    label_map: dict[str, str] = {}
+    if primary_color is not None:
+        label_map["Primary"] = primary_color
+    if secondary_color is not None:
+        label_map["Secondary"] = secondary_color
+
+    patched_colors = []
+    for entry in colors:
+        e = dict(entry)
+        if e.get("label") in label_map:
+            e["value"] = label_map[e["label"]]
+        patched_colors.append(e)
+
+    # ── Patch the pageStyles CSS string ──────────────────────────────────────
+    patched_styles = page_styles
+    if primary_color is not None:
+        patched_styles = re.sub(
+            r'(--primary:\s*)#[0-9a-fA-F]{3,8}',
+            lambda m: m.group(1) + primary_color,
+            patched_styles,
+        )
+    if secondary_color is not None:
+        patched_styles = re.sub(
+            r'(--secondary:\s*)#[0-9a-fA-F]{3,8}',
+            lambda m: m.group(1) + secondary_color,
+            patched_styles,
+        )
+
+    return patched_colors, patched_styles
+
 
 def new_page_blob(
     raw_custom_code: str,
@@ -953,6 +1036,8 @@ def new_page_blob(
     surface: str = "funnel",
     head_code: str = "",
     allow_row_max_width: bool = False,
+    primary_color: str | None = None,
+    secondary_color: str | None = None,
 ) -> dict:
     """Build a complete native ``pageData`` blob for a freshly-created page.
 
@@ -1004,18 +1089,30 @@ def new_page_blob(
             alone. When ``True``, this lifts that inner ``max-width`` cap so the
             row can span the full page width. NOTE: true full-bleed rendering is
             NOT yet confirmed by a live save round-trip — keep the default.
+        primary_color: Client brand primary color as a CSS hex string (e.g.
+            ``'#c0392b'``).  When supplied, replaces the ``Primary`` entry in
+            ``general.general.colors`` AND the ``--primary`` CSS custom property
+            in ``pageStyles``, so the 18-entry palette shape is preserved and
+            the rendered page inherits the client's brand color. ``None``
+            (default) keeps the operator-scratch green ``#37ca37``.
+        secondary_color: Client brand secondary color as a CSS hex string.
+            Replaces the ``Secondary`` palette entry and ``--secondary`` in
+            ``pageStyles``. ``None`` (default) keeps ``#188bf6``.
 
     Returns:
         A complete ``pageData`` blob ASSEMBLED FROM THE INLINED ``_FLAT_*`` /
         ``_CC_*`` constants (NOT loaded from a golden file — ``_load_golden`` is
         retained only as a fallback capture helper), with fresh IDs minted, the
         custom-code element's ``rawCustomCode`` set to the normalised fragment,
-        and the shape validated by ``assert_renderable_shape`` before return.
+        brand colors injected when supplied, and the shape validated by
+        ``assert_renderable_shape`` before return.
 
     Raises:
         TypeError: if ``raw_custom_code`` is not a str.
         ValueError: if ``surface`` is not ``"funnel"`` or ``"website"``.
         ValueError: if ``raw_custom_code`` is empty after stripping wrappers.
+        ValueError: if ``primary_color`` or ``secondary_color`` is not a valid
+            CSS hex color (``#rgb``, ``#rrggbb``, or ``#rrggbbaa``).
         FileNotFoundError: if the golden reference is absent (5-step capture
             procedure included in the error message).
         AssertionError: if the assembled blob fails any renderability invariant.
@@ -1086,6 +1183,18 @@ def new_page_blob(
                 "max-width:1170px", "max-width:100%"
             )
 
+    # ── Brand palette injection ───────────────────────────────────────────────
+    # Apply client brand colors to the 18-entry colors list and the pageStyles
+    # CSS block.  When neither color is supplied this is a fast identity pass
+    # (no copying, no regex).  Validation runs inside _apply_brand_palette and
+    # raises ValueError on a bad hex string before any blob is assembled.
+    theme_colors, page_styles = _apply_brand_palette(
+        copy.deepcopy(_FLAT_THEME_COLORS),
+        _FLAT_PAGE_STYLES,
+        primary_color,
+        secondary_color,
+    )
+
     blob = {
         "sections": [
             {
@@ -1102,8 +1211,8 @@ def new_page_blob(
         "settings": {
             "settings": {"typography": {"colors": copy.deepcopy(_FLAT_TYPOGRAPHY_COLORS)}}
         },
-        "general": {"general": {"colors": copy.deepcopy(_FLAT_THEME_COLORS)}},
-        "pageStyles": _FLAT_PAGE_STYLES,
+        "general": {"general": {"colors": theme_colors}},
+        "pageStyles": page_styles,
         # Clean tracking code — never leak header/footer/body HTML from a template.
         "trackingCode": {"head": head_code or "", "body": "", "headerCode": "", "footerCode": ""},
         "fontsForPreview": [],
@@ -2053,6 +2162,7 @@ __all__ = [
     "find_non_ghl_images",
     "assert_images_are_ghl_media",
     "assert_renderable_shape",
+    "_apply_brand_palette",
     "new_page_blob",
     "edit_element_customcode",
     "SEO_TITLE_MAX",
