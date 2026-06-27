@@ -47,6 +47,13 @@ to Skill 44 for complete-funnel builds.
 - `USE_TEMPLATE` and `CREATE_NEW` decisions continue to fire identically.
 - All previously passing selftests continue to pass (13/13).
 
+### Fixed (funnel_matcher_cli.py — v14.7.0 consolidation)
+- `selftest()` positive_decision check updated from `("USE_TEMPLATE", "HONORED_EXPLICIT")`
+  to `("USE_TEMPLATE", "SUGGEST_TEMPLATE", "HONOR_USER", "HONORED_EXPLICIT")`. The default
+  request mode (no explicit "just do it" cue) is UNSURE -> SUGGEST_TEMPLATE; the old
+  check reported 2/13 passing because it didn't recognise SUGGEST_TEMPLATE or HONOR_USER
+  as a positive result. Fixed: 13/13 cases now pass.
+
 ---
 
 ## [v14.6.0] - 2026-06-27 — feat(skill6): flexibility retrofit — three-mode GUIDE-NOT-RULE matcher
