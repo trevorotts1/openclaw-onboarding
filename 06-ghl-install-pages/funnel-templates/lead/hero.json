@@ -1,0 +1,146 @@
+{
+  "id": "hero",
+  "name": "Hero Funnel",
+  "aliases": [
+    "Personal Brand Funnel",
+    "Origin Story Funnel",
+    "Attractive Character Funnel"
+  ],
+  "category": "Lead Funnels",
+  "skill": "Skill 6",
+  "lengthClass": "short-form",
+  "libraryEntry": 18,
+  "books": [
+    "The Funnel Hacker's Cookbook"
+  ],
+  "whenToUse": {
+    "summary": "Showcases the entrepreneur's biography and origin story to build an email list and drive social media follows. Typically linked from email signatures and social bios. The thank-you page delivers the first email and pushes follow buttons - the personal-brand front door.",
+    "goals": [
+      "Build a personal-brand email list",
+      "Grow social following",
+      "Introduce the Attractive Character",
+      "Capture from email signature / social bios"
+    ],
+    "keywords": [
+      "about me",
+      "my story",
+      "personal brand",
+      "follow me",
+      "bio link",
+      "origin story",
+      "build my audience",
+      "influencer",
+      "link in bio"
+    ],
+    "signals": [
+      "The business is personal-brand-led",
+      "You are linking from a social bio / email signature",
+      "You want follows AND email together"
+    ],
+    "doNotUseWhen": [
+      "The business is product-led with no personal brand (use Homepage/Storefront)",
+      "You need a direct-response sale (use a sales funnel)"
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Hero Story / Bio Opt-in Page",
+      "purpose": "Tell the origin story and capture the email.",
+      "blocks": [
+        "Hero photo",
+        "Origin narrative (Attractive Character backstory + flaws + polarity)",
+        "What you stand for / your mission",
+        "Opt-in form for the 'first email' or a free thing",
+        "Social proof"
+      ]
+    },
+    {
+      "order": 2,
+      "page": "Thank-You + Follow Page",
+      "purpose": "Deliver the first email and push social follows.",
+      "blocks": [
+        "Confirmation",
+        "Social follow buttons (all platforms)",
+        "'Here's where to find me'",
+        "First Soap Opera email trigger"
+      ]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "funnel-architect",
+    "supportingPersonas": [
+      "expert-guide",
+      "story-brander"
+    ],
+    "script": "The Attractive Character (DotCom Secrets: backstory, parables, character flaws, polarizing stances) told as an Epiphany Bridge (Expert Secrets); StoryBrand framing positions you as the Guide who was once the hero.",
+    "structure": [
+      "Relatable origin",
+      "Struggle",
+      "Epiphany",
+      "Mission",
+      "'Follow / join me'"
+    ],
+    "notes": "Authenticity plus polarity build connection. The goal is a relationship (list + follows), not an immediate sale.",
+    "primaryPersonaResolved": {
+      "id": "funnel-architect",
+      "label": "The Funnel Architect",
+      "author": "Russell Brunson",
+      "book": "DotCom Secrets",
+      "owns_scripts": [
+        "Star/Story/Solution (sales-letter script)",
+        "Hook-Story-Offer",
+        "The Attractive Character (backstory, parables, character flaws, polarity)",
+        "The Value Ladder",
+        "Who/What/Why/How opt-in framing",
+        "Survey funnel mechanics"
+      ],
+      "voice": "Direct-response funnel mechanics; sequence the visitor from curiosity to conversion."
+    },
+    "supportingPersonasResolved": [
+      {
+        "id": "expert-guide",
+        "label": "The Expert Guide",
+        "author": "Russell Brunson",
+        "book": "Expert Secrets",
+        "owns_scripts": [
+          "Epiphany Bridge Script (Backstory > Journey > New Opportunity > Framework > Achievement > Transformation)",
+          "Perfect Webinar (Big Domino + 3 Secrets + The Stack + Close)",
+          "The New Opportunity / New Vehicle",
+          "Breaking & rebuilding false-belief patterns"
+        ],
+        "voice": "Belief-shifting storytelling; transfer your conviction in the vehicle to the prospect."
+      },
+      {
+        "id": "story-brander",
+        "label": "The Story Brander",
+        "author": "Donald Miller",
+        "book": "Building a StoryBrand (StoryBrand SB7 / BrandScript)",
+        "owns_scripts": [
+          "SB7 BrandScript: Character > Problem (external/internal/philosophical) > Guide (empathy + authority) > Plan > Call to Action (direct + transitional) > Success > Failure/Stakes",
+          "StoryBrand homepage wireframe (header, stakes, value prop, guide, plan, explanatory, junk-drawer)"
+        ],
+        "voice": "Customer is the hero; the brand is the guide. Clarity over cleverness; no dead ends."
+      }
+    ]
+  },
+  "ghlBuild": {
+    "platform": "GoHighLevel",
+    "pages": [
+      "Step 1: Bio opt-in page",
+      "Step 2: Thank-You / Follow page"
+    ],
+    "skill44Widgets": [
+      "Opt-in Form widget",
+      "Social-follow button block",
+      "Optional newsletter signup"
+    ],
+    "automations": [
+      "Tag 'hero-subscriber'",
+      "Soap Opera Sequence",
+      "Social retarget pixel"
+    ],
+    "notes": "Link this from every bio and email signature. Keep it evergreen and feature your current mission."
+  },
+  "group": "lead"
+}

@@ -1,0 +1,220 @@
+{
+  "id": "follow-up-funnel",
+  "name": "Follow-Up Funnel (Soap Opera + Seinfeld)",
+  "aliases": [
+    "Follow-Up Funnel",
+    "Automation and Follow-Up Funnels",
+    "Communication Funnel",
+    "Email Epiphany Follow-Up Funnel",
+    "Soap Opera Sequence",
+    "Daily Seinfeld Sequence",
+    "Soap Opera + Seinfeld Sequence",
+    "Nurture Sequence",
+    "Indoctrination Sequence",
+    "Email Nurture Funnel"
+  ],
+  "category": "retention-followup",
+  "library_entry": 24,
+  "source_books": [
+    "The Funnel Hacker's Cookbook",
+    "Marketing Secrets Blackbook",
+    "Lead Funnels (Swipe File)",
+    "DotCom Secrets",
+    "Expert Secrets",
+    "Traffic Secrets"
+  ],
+  "funnel_length_class": "long-form",
+  "length_rationale": "Not a single landing page but a 30–60+ day automated multi-channel sequence: a 5-email Soap Opera Sequence to bond the new lead, followed by an ongoing daily Seinfeld Sequence to maintain engagement and re-pitch across the value ladder. This is the longest-running, highest-touch asset in the library.",
+  "when_to_use": {
+    "summary": "Deploy immediately after any opt-in or purchase to bond the new lead/buyer to the Attractive Character, ascend them up the value ladder, and monetize the list over time. It is the engine that sits BEHIND every front-end funnel, not a standalone traffic destination.",
+    "goals": [
+      "Bond a brand-new subscriber to the Attractive Character before pitching",
+      "Convert opt-ins who did not buy on the front end into customers over 5–14 days",
+      "Maximize lifetime value / ascend buyers to the next rung of the value ladder",
+      "Recover abandoned carts and unconverted webinar registrants",
+      "Keep a list warm, engaged, and responsive between launches",
+      "Re-monetize an existing email list that has gone cold"
+    ],
+    "keywords": [
+      "follow-up sequence",
+      "email sequence",
+      "nurture sequence",
+      "soap opera sequence",
+      "seinfeld sequence",
+      "drip campaign",
+      "autoresponder",
+      "welcome sequence",
+      "indoctrination emails",
+      "onboarding emails",
+      "list monetization",
+      "email marketing",
+      "abandoned cart",
+      "lead nurturing",
+      "SMS sequence",
+      "broadcast emails"
+    ],
+    "signals": [
+      "Request mentions email, SMS, Messenger, or 'what do we send after they sign up?'",
+      "A lead-capture or order funnel already exists and the ask is 'what happens next / the backend'",
+      "Client wants to 'warm up' cold or unengaged subscribers before selling",
+      "Need to bond, build relationship, or tell the founder's story over multiple touches",
+      "Goal framed as lifetime value, ascension, or 'making money from the list'",
+      "Phrase 'they opt in but don't buy' or 'we get leads but no follow-up'"
+    ],
+    "anti_signals": [
+      "Single-touch landing page with no list or no automation platform → use the relevant front-end funnel instead",
+      "Customer is actively trying to cancel/refund → use the Cancellation Funnel (objection-specific save), then route survivors back into this sequence",
+      "Cold-traffic pre-frame before opt-in → use Bridge / Cold Traffic Article Pre-Frame Funnel"
+    ]
+  },
+  "page_structure": [
+    {
+      "order": 0,
+      "node": "Entry Trigger (supporting page, usually borrowed from the feeder funnel)",
+      "type": "automation-trigger",
+      "purpose": "Defines who enters the sequence and resets timing. Fires on opt-in form submit, purchase, webinar registration, or cart abandonment from the upstream funnel.",
+      "key_elements": [
+        "Trigger event: form submit / order placed / tag applied / cart abandoned",
+        "Thank-you / delivery page that sets the expectation 'check your inbox' (bridges the lead into Email 1)",
+        "Tag + segment assignment so behavior branching is possible later",
+        "Timer reset on entry so the Soap Opera starts at Day 0"
+      ]
+    },
+    {
+      "order": 1,
+      "node": "Soap Opera Email 1 — Set the Stage",
+      "type": "email",
+      "send_timing": "Immediately on entry (Day 0)",
+      "purpose": "Welcome, deliver what was promised, set the hook for the drama to come, and tell them to watch their inbox. Builds the 'open loop' that makes the next four emails get opened.",
+      "key_elements": [
+        "Warm welcome + deliver the lead magnet / receipt",
+        "Set expectations: 'over the next few days I'm going to share something that changed everything for me'",
+        "Open a curiosity loop (the cliffhanger that pays off in Email 3)",
+        "Single soft link / no hard pitch yet"
+      ]
+    },
+    {
+      "order": 2,
+      "node": "Soap Opera Email 2 — High Drama / Backstory & the Wall",
+      "type": "email",
+      "send_timing": "Day 1",
+      "purpose": "Open with the highest-drama moment, then rewind to the backstory and the wall (the problem) the Attractive Character hit. Maximum emotional engagement; the reader sees themselves in the struggle.",
+      "key_elements": [
+        "In-media-res dramatic open ('I was $250k in debt and out of options...')",
+        "Relatable backstory + the wall / problem they were stuck against",
+        "Mirror the reader's own pain (false beliefs surfaced here)",
+        "Tease that tomorrow they discover the epiphany"
+      ]
+    },
+    {
+      "order": 3,
+      "node": "Soap Opera Email 3 — Epiphany",
+      "type": "email",
+      "send_timing": "Day 2",
+      "purpose": "Reveal the epiphany — the new opportunity / 'aha' that broke through the wall. This is the Epiphany Bridge payoff and the first real introduction of the offer as the vehicle of the epiphany.",
+      "key_elements": [
+        "The discovery moment / new opportunity reveal",
+        "Epiphany Bridge: the emotional + logical shift in belief",
+        "Connect the epiphany directly to the product/offer",
+        "First clear call to action / link to the offer"
+      ]
+    },
+    {
+      "order": 4,
+      "node": "Soap Opera Email 4 — Hidden Benefits",
+      "type": "email",
+      "send_timing": "Day 3",
+      "purpose": "Reveal benefits the reader had not even considered — overcome secondary false beliefs and stack reasons to act. Handles the 'yeah but...' objections.",
+      "key_elements": [
+        "Unexpected / hidden benefits of the offer",
+        "Crush a secondary false belief (vehicle, internal, external)",
+        "Social proof / mini case study",
+        "Stronger CTA back to the offer"
+      ]
+    },
+    {
+      "order": 5,
+      "node": "Soap Opera Email 5 — Urgency & CTA",
+      "type": "email",
+      "send_timing": "Day 4",
+      "purpose": "Real scarcity/urgency close. Give a deadline or disappearing bonus and drive the final hard CTA. Closes the Emotion phase of the 3 Closes.",
+      "key_elements": [
+        "Genuine urgency: deadline, expiring bonus, price increase, or closing cohort",
+        "Restate the transformation + the cost of inaction",
+        "Direct, unambiguous CTA (buy / book / apply now)",
+        "Branch: buyers exit to ascension; non-buyers roll into the Seinfeld sequence"
+      ]
+    },
+    {
+      "order": 6,
+      "node": "Daily Seinfeld Sequence — Ongoing Engagement Emails (recurring)",
+      "type": "email-series",
+      "send_timing": "Begins Day 5+, sent daily or near-daily, indefinitely",
+      "purpose": "Maintain the relationship 'about nothing' — entertaining, story-driven daily emails that always tie back to an offer via Hook-Story-Offer. Keeps the list warm and continuously monetized; each email re-pitches across the value ladder.",
+      "key_elements": [
+        "Hook (curiosity subject line + open) → Story (entertaining everyday parable) → Offer (CTA)",
+        "Rotate Attractive Character storylines: Loss & Redemption, Us vs Them, Before & After, Amazing Discovery, Secret Telling, Third-Person Testimonial",
+        "Rotate email purposes: curiosity, content/value, social proof, urgency, direct offer",
+        "Each email links to a current offer/promotion; offers rotate by value-ladder rung"
+      ]
+    },
+    {
+      "order": 7,
+      "node": "3 Closes Spine + Multi-Channel Layer (overlay across the whole sequence)",
+      "type": "automation-overlay",
+      "purpose": "Across the 30–60 day arc, sequence the three core closes and mirror key messages across additional channels so the message reaches leads who ignore email.",
+      "key_elements": [
+        "Emotion close = Soap Opera Sequence (story/epiphany)",
+        "Logic close = case studies, ROI math, feature/benefit detail emails",
+        "Fear close = scarcity / loss-aversion / deadline emails",
+        "Channels: Email + SMS + Facebook Messenger + desktop push + retargeting ads + direct mail",
+        "Behavior branches: opened/clicked, watched-to-end, bought vs not-bought, cart-abandoned"
+      ]
+    }
+  ],
+  "copy_framework": {
+    "primary_persona": "The Attractive Character (DotCom Secrets / Expert Secrets) — the relatable, polarizing brand persona the entire list bonds with. All emails are written in this voice with its backstory, character flaws, parables, and polarity.",
+    "primary_script": "Soap Opera Sequence (5-email Set-the-Stage → High-Drama → Epiphany → Hidden-Benefits → Urgency arc) for the bonding phase, then the Daily Seinfeld Sequence (Hook-Story-Offer) for ongoing engagement.",
+    "secondary_scripts": [
+      "Epiphany Bridge — drives Email 3 (the epiphany) and re-used in Seinfeld emails to reframe false beliefs",
+      "3 Closes framework — Emotion (Soap Opera) → Logic (case-study/ROI emails) → Fear (scarcity emails) sequenced across 30–60 days",
+      "Copywriting Secrets (Jim Edwards) — subject-line / open-rate formulas, curiosity hooks, P.S. close, one-idea-per-email discipline",
+      "Hook-Story-Offer — the unit structure of every Seinfeld email"
+    ],
+    "attractive_character_elements": {
+      "identities": ["Leader", "Adventurer/Crusader", "Reporter/Evangelist", "Reluctant Hero"],
+      "storylines": ["Loss & Redemption", "Us vs Them", "Before & After", "Amazing Discovery", "Secret Telling", "Third-Person Testimonial"],
+      "must_have": ["backstory", "parables", "character flaws", "polarity"]
+    },
+    "per_step_assignment": [
+      { "step": "Email 1 Set the Stage", "persona": "Attractive Character", "script": "Soap Opera Email 1 + open-loop curiosity hook (Copywriting Secrets)" },
+      { "step": "Email 2 High Drama", "persona": "Attractive Character", "script": "Soap Opera Email 2 — in-media-res backstory + the wall" },
+      { "step": "Email 3 Epiphany", "persona": "Attractive Character", "script": "Soap Opera Email 3 + Epiphany Bridge" },
+      { "step": "Email 4 Hidden Benefits", "persona": "Attractive Character", "script": "Soap Opera Email 4 — false-belief breaking + proof" },
+      { "step": "Email 5 Urgency", "persona": "Attractive Character", "script": "Soap Opera Email 5 — Fear/Urgency close" },
+      { "step": "Daily Seinfeld emails", "persona": "Attractive Character", "script": "Hook-Story-Offer, rotating storylines; Logic + Fear closes layered in" }
+    ],
+    "notes": "Copy lives in the messages, not on pages. One idea per email. Every email (including pure-value Seinfeld emails) ends with a single CTA. Polarity is required — bland emails get ignored and never get opened again."
+  },
+  "ghl_build_notes": {
+    "skill6_role": "Skill 6 wires the supporting pages and hands the sequence body to GHL Workflows/Automations. Unlike page-based funnels, the deliverable here is mostly a Workflow, not a set of funnel steps.",
+    "skill6_pages": [
+      "Thank-you / delivery page bridging the opt-in into Email 1 (often inherited from the feeder funnel)",
+      "Optional: preferences / manage-subscription page",
+      "Optional: offer/order pages referenced by the email CTAs (built by their own funnel templates and linked, not duplicated here)"
+    ],
+    "skill44_widgets": [
+      "Opt-in form widget on the feeder page (Skill 44) — submission is the entry trigger",
+      "Calendar widget (Skill 44) only if the CTA books a call (e.g. ascending to an Application Funnel)",
+      "No quiz/survey widget required for the core sequence"
+    ],
+    "automations": [
+      "GHL Workflow 'Soap Opera Sequence': trigger = opt-in/purchase tag → Email 1 (immediate) → wait 1 day → Email 2 → ... → Email 5 (Day 4)",
+      "GHL Workflow 'Daily Seinfeld': enroll non-buyers after Soap Opera completes → recurring daily email step (or scheduled broadcasts) → Hook-Story-Offer content",
+      "Branch conditions on tags/events: bought → remove from selling sequence, enroll in ascension; clicked-but-no-buy → re-pitch; cart-abandoned → urgency sub-sequence",
+      "Multi-channel steps inside the workflow: SMS step, Facebook Messenger step, desktop push, and ad-audience sync for retargeting; direct-mail trigger via integration if used",
+      "Suppression/exit rules: unsubscribe, purchase of higher rung, hard bounce"
+    ],
+    "notes": "Set a sensible send-window and timezone on the workflow. Tag every behavior (open/click/watch/buy) so the 3 Closes can branch. Keep the Seinfeld workflow as evergreen daily steps or feed it via scheduled broadcasts; either is valid in GHL."
+  }
+}

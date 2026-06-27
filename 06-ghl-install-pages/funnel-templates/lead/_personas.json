@@ -1,0 +1,70 @@
+{
+  "group": "lead",
+  "personas": {
+    "funnel-architect": {
+      "id": "funnel-architect",
+      "label": "The Funnel Architect",
+      "author": "Russell Brunson",
+      "book": "DotCom Secrets",
+      "owns_scripts": [
+        "Star/Story/Solution (sales-letter script)",
+        "Hook-Story-Offer",
+        "The Attractive Character (backstory, parables, character flaws, polarity)",
+        "The Value Ladder",
+        "Who/What/Why/How opt-in framing",
+        "Survey funnel mechanics"
+      ],
+      "voice": "Direct-response funnel mechanics; sequence the visitor from curiosity to conversion."
+    },
+    "expert-guide": {
+      "id": "expert-guide",
+      "label": "The Expert Guide",
+      "author": "Russell Brunson",
+      "book": "Expert Secrets",
+      "owns_scripts": [
+        "Epiphany Bridge Script (Backstory > Journey > New Opportunity > Framework > Achievement > Transformation)",
+        "Perfect Webinar (Big Domino + 3 Secrets + The Stack + Close)",
+        "The New Opportunity / New Vehicle",
+        "Breaking & rebuilding false-belief patterns"
+      ],
+      "voice": "Belief-shifting storytelling; transfer your conviction in the vehicle to the prospect."
+    },
+    "traffic-strategist": {
+      "id": "traffic-strategist",
+      "label": "The Traffic Strategist",
+      "author": "Russell Brunson",
+      "book": "Traffic Secrets",
+      "owns_scripts": [
+        "Dream 100",
+        "Hook-bait for cold traffic",
+        "Pre-frame bridge for the unaware"
+      ],
+      "voice": "Meet cold traffic at its awareness level and pre-frame before the offer."
+    },
+    "story-brander": {
+      "id": "story-brander",
+      "label": "The Story Brander",
+      "author": "Donald Miller",
+      "book": "Building a StoryBrand (StoryBrand SB7 / BrandScript)",
+      "owns_scripts": [
+        "SB7 BrandScript: Character > Problem (external/internal/philosophical) > Guide (empathy + authority) > Plan > Call to Action (direct + transitional) > Success > Failure/Stakes",
+        "StoryBrand homepage wireframe (header, stakes, value prop, guide, plan, explanatory, junk-drawer)"
+      ],
+      "voice": "Customer is the hero; the brand is the guide. Clarity over cleverness; no dead ends."
+    },
+    "copy-closer": {
+      "id": "copy-closer",
+      "label": "The Copy Closer",
+      "author": "Jim Edwards",
+      "book": "Copywriting Secrets",
+      "owns_scripts": [
+        "Headline formulas (4 U's: Useful, Urgent, Unique, Ultra-specific; How-To; Who-Else-Wants; curiosity gap)",
+        "Fascination / bullet formulas",
+        "One-Sentence Persuasion (F-O-R-C-E)",
+        "The 13-link sales chain",
+        "The Godfather offer / value stack"
+      ],
+      "voice": "Curiosity-driven headlines and irresistible bullets; sell the click and the open."
+    }
+  }
+}

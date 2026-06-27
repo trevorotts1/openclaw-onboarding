@@ -1,0 +1,27 @@
+{
+  "group": "event",
+  "category": "Event Funnels",
+  "source": "BRUNSON-FUNNEL-LIBRARY.md (7 Russell Brunson / ClickFunnels books)",
+  "personasRef": "_PERSONAS.md",
+  "templateCount": 11,
+  "templates": [
+    {"id": "invisible-funnel", "name": "Invisible Funnel", "libraryRef": "#14", "length": "medium-form", "files": ["invisible-funnel.json", "invisible-funnel.md"]},
+    {"id": "webinar-funnel", "name": "Webinar Funnel (Live / Perfect Webinar)", "libraryRef": "#15", "length": "long-form", "files": ["webinar-funnel.json", "webinar-funnel.md"]},
+    {"id": "autowebinar-funnel", "name": "AutoWebinar Funnel (Evergreen Webinar)", "libraryRef": "#16", "length": "long-form", "files": ["autowebinar-funnel.json", "autowebinar-funnel.md"]},
+    {"id": "product-launch-funnel", "name": "Product Launch Funnel", "libraryRef": "#17", "length": "long-form", "files": ["product-launch-funnel.json", "product-launch-funnel.md"]},
+    {"id": "summit-funnel", "name": "Summit Funnel", "libraryRef": "#22", "length": "long-form", "files": ["summit-funnel.json", "summit-funnel.md"]},
+    {"id": "telesummit-funnel", "name": "Telesummit Funnel", "libraryRef": "#27", "length": "medium-form", "files": ["telesummit-funnel.json", "telesummit-funnel.md"]},
+    {"id": "teleseminar-funnel", "name": "Teleseminar Funnel", "libraryRef": "#28", "length": "medium-form", "files": ["teleseminar-funnel.json", "teleseminar-funnel.md"]},
+    {"id": "live-demo-home-party-funnel", "name": "Live Demo / Home Party Funnel", "libraryRef": "#23", "length": "short-to-medium-form", "files": ["live-demo-home-party-funnel.json", "live-demo-home-party-funnel.md"]},
+    {"id": "perfect-webinar-shortcut-funnel", "name": "Perfect Webinar Shortcut (Facebook/Instagram Live Funnel)", "libraryRef": "#33", "length": "short-form", "files": ["perfect-webinar-shortcut-funnel.json", "perfect-webinar-shortcut-funnel.md"]},
+    {"id": "five-minute-perfect-webinar-funnel", "name": "5-Minute Perfect Webinar", "libraryRef": "#34", "length": "short-form", "files": ["five-minute-perfect-webinar-funnel.json", "five-minute-perfect-webinar-funnel.md"]},
+    {"id": "hotel-meeting-funnel", "name": "Hotel Meeting Funnel (Network Marketing Variant)", "libraryRef": "#37", "length": "medium-form", "files": ["hotel-meeting-funnel.json", "hotel-meeting-funnel.md"]}
+  ],
+  "schema": {
+    "fields": ["id", "name", "aliases", "category", "libraryRef", "sourceBooks", "lengthClass", "origin", "whenToUse", "pageStructure", "copyFramework", "ghlBuild"],
+    "whenToUse": ["summary", "goals", "keywords", "signals", "antiSignals"],
+    "pageStructure[]": ["order", "page", "purpose", "keyElements", "skill44Widgets"],
+    "copyFramework": ["primaryPersona", "supportingPersonas", "scripts", "notes"],
+    "ghlBuild": ["funnelType", "pages", "skill44Widgets", "automations", "products", "notes"]
+  }
+}

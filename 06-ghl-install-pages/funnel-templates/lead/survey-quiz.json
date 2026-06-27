@@ -1,0 +1,145 @@
+{
+  "id": "survey-quiz",
+  "name": "Survey / Quiz Funnel",
+  "aliases": [
+    "Quiz Funnel",
+    "Segmentation Funnel"
+  ],
+  "category": "Lead Funnels",
+  "skill": "Skill 6",
+  "lengthClass": "medium-form",
+  "libraryEntry": 5,
+  "books": [
+    "The Funnel Hacker's Cookbook",
+    "DotCom Secrets",
+    "Expert Secrets"
+  ],
+  "whenToUse": {
+    "summary": "A multi-question quiz used as a pre-frame bridge and segmentation tool before the main offer. Micro-commitments increase engagement; branching answers route visitors to different offer pages or email sequences based on their profile.",
+    "goals": [
+      "Segment the audience by profile",
+      "Increase engagement via micro-commitments",
+      "Personalize the offer/result",
+      "Route by answer to the right funnel/sequence",
+      "Pre-frame the offer"
+    ],
+    "keywords": [
+      "quiz",
+      "survey",
+      "find out which",
+      "what's your type",
+      "personalized recommendation",
+      "segment",
+      "diagnostic",
+      "assessment"
+    ],
+    "signals": [
+      "Multiple buyer types / multiple paths exist",
+      "You want personalization",
+      "You want higher engagement than a flat opt-in",
+      "You want data-driven routing"
+    ],
+    "doNotUseWhen": [
+      "A single offer fits everyone (use Lead Magnet/Squeeze)",
+      "The intent is open-ended research (use Ask Campaign)"
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Quiz Start / Hook Page",
+      "purpose": "Promise a personalized result to earn the first click.",
+      "blocks": [
+        "Outcome headline ('Discover your ___')",
+        "Start button",
+        "Social proof / number who've taken it",
+        "What they'll learn"
+      ]
+    },
+    {
+      "order": 2,
+      "page": "Multi-Step Quiz (3-20 questions)",
+      "purpose": "Stack micro-commitments and capture segmentation data.",
+      "blocks": [
+        "One question per step",
+        "Progress bar",
+        "Conditional branching logic",
+        "Optional email gate before showing results"
+      ]
+    },
+    {
+      "order": 3,
+      "page": "Results + Routed Offer Page",
+      "purpose": "Deliver the personalized result and the matched CTA.",
+      "blocks": [
+        "Personalized result copy",
+        "Matched offer / lead magnet / sales page",
+        "CTA",
+        "Segment-specific follow-up trigger"
+      ]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "funnel-architect",
+    "supportingPersonas": [
+      "story-brander"
+    ],
+    "script": "Survey funnel mechanics (DotCom Secrets) - a micro-commitment ladder - with the results page using the StoryBrand Plan > Call-to-Action for the matched segment.",
+    "structure": [
+      "Curiosity hook ('Discover your ___')",
+      "Effortless first question",
+      "Escalating-relevance questions",
+      "Email gate",
+      "Personalized plan/offer per segment"
+    ],
+    "notes": "The first question must be effortless to earn momentum; each answer is a tiny 'yes.' The segment determines both the offer and the email path.",
+    "primaryPersonaResolved": {
+      "id": "funnel-architect",
+      "label": "The Funnel Architect",
+      "author": "Russell Brunson",
+      "book": "DotCom Secrets",
+      "owns_scripts": [
+        "Star/Story/Solution (sales-letter script)",
+        "Hook-Story-Offer",
+        "The Attractive Character (backstory, parables, character flaws, polarity)",
+        "The Value Ladder",
+        "Who/What/Why/How opt-in framing",
+        "Survey funnel mechanics"
+      ],
+      "voice": "Direct-response funnel mechanics; sequence the visitor from curiosity to conversion."
+    },
+    "supportingPersonasResolved": [
+      {
+        "id": "story-brander",
+        "label": "The Story Brander",
+        "author": "Donald Miller",
+        "book": "Building a StoryBrand (StoryBrand SB7 / BrandScript)",
+        "owns_scripts": [
+          "SB7 BrandScript: Character > Problem (external/internal/philosophical) > Guide (empathy + authority) > Plan > Call to Action (direct + transitional) > Success > Failure/Stakes",
+          "StoryBrand homepage wireframe (header, stakes, value prop, guide, plan, explanatory, junk-drawer)"
+        ],
+        "voice": "Customer is the hero; the brand is the guide. Clarity over cleverness; no dead ends."
+      }
+    ]
+  },
+  "ghlBuild": {
+    "platform": "GoHighLevel",
+    "pages": [
+      "Step 1: Quiz start/hook",
+      "Step 2: Multi-step quiz",
+      "Step 3: Results page (one variant per segment)"
+    ],
+    "skill44Widgets": [
+      "Multi-step Survey/Quiz widget with conditional logic",
+      "Email-field gate",
+      "Conditional redirect by score/segment"
+    ],
+    "automations": [
+      "Tag per answer/segment",
+      "Branch email sequences by segment",
+      "Route to the matched sales page"
+    ],
+    "notes": "Store answers as contact fields and tags. Use conditional redirects per score/segment. Results pages can be cloned per segment."
+  },
+  "group": "lead"
+}

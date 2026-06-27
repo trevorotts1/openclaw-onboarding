@@ -4,6 +4,93 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.4.0] - 2026-06-26 — feat(skill6): funnel-template library + template-first matcher (STEP 0)
+
+Adds a 38-template funnel catalog and a template-first matcher that makes
+`dispatch_one()` check the Brunson funnel-template library before generating
+any net-new funnel.
+
+### Added
+
+**`06-ghl-install-pages/funnel-templates/`** — the catalog (38 templates, 5 groups)
+
+| Group | Templates | Description |
+|---|---|---|
+| `buyer/` | 8 | Transaction / product-purchase funnels |
+| `event/` | 11 | Webinar, summit, product-launch, meeting |
+| `lead/` | 9 | List-building and opt-in funnels |
+| `retention-followup/` | 2 | Cancellation save and follow-up |
+| `traffic-advanced/` | 8 | Cold-traffic pre-frame and funnel hub |
+
+Each template carries: `whenToUse` (goals / keywords / signals / antiSignals),
+`pageStructure` (ordered pages with blocks and Skill 44 widget hints),
+`copyFramework` (primary persona + supporting personas + scripts), `ghlBuild`
+(platform wiring notes). Two schema dialects coexist (camelCase and snake_case);
+the matcher normalizes both.
+
+**`06-ghl-install-pages/tools/funnel_matcher.py`** — the matcher engine
+
+Stdlib-only, deterministic, no network. Provides:
+- `Catalog.load(root)` / `from_index(path)` / `save_index(path)` — loads all
+  template JSONs into a searchable in-memory index; normalizes both schema dialects
+  and both persona shapes (string / object).
+- `classify(request)` — extracts goal / category / funnel-type tokens from free
+  text or structured intent.
+- `score_template(t, feats)` — weighted lexical scorer: full keyword-phrase hits
+  dominate; head-nouns, goal/signal token overlap, structured-category bonus add;
+  anti-signal penalty subtracts. Raw score → confidence `0..1`.
+- `match_funnel(request, catalog, threshold=0.55)` — classify → score every
+  template → decide USE_TEMPLATE or CREATE_NEW. Returns the full decision record
+  (matched template, confidence, score breakdown, ranked runners-up, chosen copy
+  persona, instantiated page plan, rationale).
+- `instantiate_pages(tmpl)` — turns a matched template's `pageStructure` into a
+  build plan ready for `ghl_builder.build_manifest` with copy persona attached.
+- `save_new_template(spec, root)` — persists a CREATE_NEW funnel as a new
+  template so the library grows after each net-new build.
+- `log_decision(...)` — appends a JSONL audit line (decision + matched + score).
+- `step0_match(task, evidence_root, ...)` — the wiring entrypoint (see below).
+- `EmbeddingReranker` — scaffolded optional semantic re-rank hook; the lexical
+  path is the one wired and proven.
+
+**`06-ghl-install-pages/tools/funnel_matcher_cli.py`** — the CLI
+
+`python3 funnel_matcher_cli.py --build-index` — builds `tools/catalog-index.json`
+(excluded from git; rebuilds on the target system from the catalog root).
+`python3 funnel_matcher_cli.py --selftest` — proves 13/13 match-quality cases
+(squeeze, reverse-squeeze, lead-magnet, webinar, autowebinar, book, application,
+cancellation, funnel-hub, survey/quiz, tripwire — plus 2 off-topic requests that
+correctly return CREATE_NEW).
+
+### Changed
+
+**`06-ghl-install-pages/tools/v2_dispatcher.py`** — STEP 0 wiring (no breaking changes)
+
+- Added `step0_matcher` optional kwarg to `dispatch_one()`. Called right after
+  the `max_inflight` gate and before `backlog -> dispatched`. Advisory: a matcher
+  error or SKIPPED result never blocks a build.
+- Added `_resolve_step0(step0_matcher)` helper: returns the injected matcher if
+  supplied; else auto-configures from `GHL_FUNNEL_CATALOG` or `GHL_FUNNEL_INDEX`
+  env vars when `funnel_matcher` is importable; else returns None (no-op).
+- On USE_TEMPLATE: mutates `task['pages']` = instantiated plan,
+  `task['copy_persona']`, `task['template_match']` before the builder runs.
+- On CREATE_NEW: builder generates net-new; result saved back to grow the library.
+- Added lazy optional import of `funnel_matcher` so unit tests without the catalog
+  configured are completely unaffected.
+
+**`skill-version.txt`**: bumped v14.3.19 → v14.4.0.
+
+### Verified
+
+- `funnel_matcher_cli.py --selftest`: **13/13 cases pass**.
+- `v2_dispatcher.py --selftest`: **3/3 bounds pass** (max_inflight=1, wallclock
+  cap, happy path) — existing gate logic unaffected by STEP 0 kwarg addition.
+- Leak scan: no client names, no operator paths, no scratchpad paths in any
+  committed file. Generated `catalog-index.json` excluded from git (`.gitignore`).
+- Template count: **38 templates** (not stubs — each has full `whenToUse`,
+  `pageStructure` with named blocks, and `copyFramework` with persona + scripts).
+
+---
+
 ## [v14.3.14] - 2026-06-26 — fix(skill6): native page builds render REAL content again — nested section→row→col→custom-code blob (kills the v14.3.11 blank-page regression)
 
 Root cause: since v14.3.11, `new_page_blob()` (`tools/ghl_rest_canvas.py`) produced pages that stored fine (autosave 201, marker in the bytes) but rendered BLANK. The v14.3.11 "golden template" path loaded the captured funnel golden and re-minted every element id without rewriting the parent `child` arrays (`section.metaData.child → row.child → col.child`), orphaning the custom-code element from its row — so the renderer dropped the content.

@@ -1,0 +1,128 @@
+{
+  "id": "reverse-squeeze-page",
+  "name": "Reverse Squeeze Page Funnel",
+  "aliases": [
+    "Give-Before-You-Take Funnel",
+    "Content-First Opt-in"
+  ],
+  "category": "Lead Funnels",
+  "skill": "Skill 6",
+  "lengthClass": "short-form",
+  "libraryEntry": 2,
+  "books": [
+    "The Funnel Hacker's Cookbook"
+  ],
+  "whenToUse": {
+    "summary": "Give valuable content (a free video or article) BEFORE asking for the opt-in - 'give before you take.' Lower raw conversion than a standard squeeze, but produces higher-quality, pre-sold leads because the visitor's walls drop first.",
+    "goals": [
+      "Qualify leads / raise lead quality",
+      "Build trust before capture",
+      "Warm a skeptical audience",
+      "Prioritize quality of leads over raw volume"
+    ],
+    "keywords": [
+      "give value first",
+      "free training video",
+      "watch then opt in",
+      "qualified leads",
+      "demonstrate expertise",
+      "content-first"
+    ],
+    "signals": [
+      "Audience is skeptical of opt-ins",
+      "You have a strong teaching/demo asset",
+      "Brand-building is a priority",
+      "Quality matters more than volume"
+    ],
+    "doNotUseWhen": [
+      "You are optimizing for pure list volume (use Squeeze)",
+      "Traffic is so cold it won't watch a video (use the article Bridge variant)"
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Content-First Landing Page",
+      "purpose": "Deliver an epiphany/value upfront with no gate, lowering the visitor's resistance.",
+      "blocks": [
+        "Headline naming the result the free video/article delivers",
+        "Embedded free video OR full article",
+        "Brief credibility intro",
+        "Soft 'want more?' transitional CTA placed BELOW the content"
+      ]
+    },
+    {
+      "order": 2,
+      "page": "Gated Opt-in / Bonus Page",
+      "purpose": "Capture the email to unlock a bonus or continuation of the content.",
+      "blocks": [
+        "Bonus value-stack (what they unlock)",
+        "Opt-in form",
+        "Submit button",
+        "Redirect to bonus delivery / thank-you"
+      ]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "expert-guide",
+    "supportingPersonas": [
+      "story-brander"
+    ],
+    "script": "Epiphany Bridge delivered IN the free content (so the viewer adopts the new belief), followed by a StoryBrand transitional Call-to-Action to opt in for more.",
+    "structure": [
+      "Backstory",
+      "Desire",
+      "External + Internal struggle",
+      "The Wall",
+      "The Epiphany",
+      "New Opportunity",
+      "Opt-in to go deeper"
+    ],
+    "notes": "The content must be genuinely valuable; the opt-in is the natural next step after the epiphany, not a gate slammed in the visitor's face.",
+    "primaryPersonaResolved": {
+      "id": "expert-guide",
+      "label": "The Expert Guide",
+      "author": "Russell Brunson",
+      "book": "Expert Secrets",
+      "owns_scripts": [
+        "Epiphany Bridge Script (Backstory > Journey > New Opportunity > Framework > Achievement > Transformation)",
+        "Perfect Webinar (Big Domino + 3 Secrets + The Stack + Close)",
+        "The New Opportunity / New Vehicle",
+        "Breaking & rebuilding false-belief patterns"
+      ],
+      "voice": "Belief-shifting storytelling; transfer your conviction in the vehicle to the prospect."
+    },
+    "supportingPersonasResolved": [
+      {
+        "id": "story-brander",
+        "label": "The Story Brander",
+        "author": "Donald Miller",
+        "book": "Building a StoryBrand (StoryBrand SB7 / BrandScript)",
+        "owns_scripts": [
+          "SB7 BrandScript: Character > Problem (external/internal/philosophical) > Guide (empathy + authority) > Plan > Call to Action (direct + transitional) > Success > Failure/Stakes",
+          "StoryBrand homepage wireframe (header, stakes, value prop, guide, plan, explanatory, junk-drawer)"
+        ],
+        "voice": "Customer is the hero; the brand is the guide. Clarity over cleverness; no dead ends."
+      }
+    ]
+  },
+  "ghlBuild": {
+    "platform": "GoHighLevel",
+    "pages": [
+      "Step 1: Content page (ungated)",
+      "Step 2: Bonus opt-in / Thank-You page"
+    ],
+    "skill44Widgets": [
+      "Video embed on the content page",
+      "Opt-in Form widget on the gate",
+      "Optional Calendar widget if the bonus is a booked session"
+    ],
+    "automations": [
+      "Tag 'reverse-squeeze-qualified' on opt-in",
+      "Nurture sequence",
+      "Track video watch where possible"
+    ],
+    "notes": "Place the opt-in below the fold after the value is delivered. Segment those who actually consumed the content."
+  },
+  "group": "lead"
+}

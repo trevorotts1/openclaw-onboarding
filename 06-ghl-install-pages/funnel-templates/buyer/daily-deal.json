@@ -1,0 +1,139 @@
+{
+  "id": "daily-deal",
+  "name": "Daily Deal Funnel",
+  "aliases": [
+    "Daily Deal Funnel",
+    "Groupon-Style Funnel",
+    "LivingSocial-Style Funnel",
+    "Deal of the Day Funnel",
+    "Flash Deal Funnel"
+  ],
+  "category": "Buyer Funnel",
+  "group": "buyer",
+  "lengthClass": "short-form",
+  "libraryRef": "#13",
+  "sourceBooks": [
+    "The Funnel Hacker's Cookbook"
+  ],
+  "whenToUse": {
+    "summary": "A deeply discounted front-end offer used to acquire new customers (the Groupon/LivingSocial model). The thank-you page encourages buyers to SHARE the same deal with their network, creating built-in viral distribution. Use when the goal is fast customer acquisition + organic spread from an irresistible, time-boxed discount.",
+    "goals": [
+      "Acquire many new customers fast with a deep discount",
+      "Trigger viral/word-of-mouth distribution from buyers",
+      "Move excess inventory or fill capacity (local service)",
+      "Seed a buyer list cheaply with urgency"
+    ],
+    "keywords": [
+      "daily deal",
+      "deal of the day",
+      "flash sale",
+      "groupon style",
+      "deep discount",
+      "limited time deal",
+      "today only",
+      "share the deal",
+      "refer a friend deal",
+      "viral discount"
+    ],
+    "signals": [
+      "Offer is a steep/limited-time discount, not a free sample",
+      "Goal includes sharing / referral / viral spread",
+      "Time-boxed urgency is core to the pitch",
+      "Local service or product with capacity to fill"
+    ],
+    "antiSignals": [
+      "Free/just-shipping front end -> 2-Step Tripwire",
+      "Recurring subscription -> Membership/Continuity",
+      "Long convincing required -> VSL or Sales Letter Funnel",
+      "Free physical book -> Book Funnel"
+    ]
+  },
+  "pageStructure": [
+    {
+      "step": 1,
+      "page": "Deal Order Page",
+      "purpose": "Present one irresistible, deeply discounted, time-boxed deal and convert fast on a simple order form.",
+      "keyElements": [
+        "Deal headline with the discount/savings framed (was/now price)",
+        "Single hero offer + benefit bullets (short copy)",
+        "Prominent COUNTDOWN TIMER (today-only / limited urgency)",
+        "Scarcity (limited quantity / claimed-count)",
+        "Simple order form (low friction)",
+        "Trust badges + a couple of testimonials"
+      ],
+      "widgets": [
+        "Skill 44: Order Form (single-step, low friction)",
+        "Custom HTML/JS countdown timer in code block",
+        "GHL Payments: discounted deal product"
+      ]
+    },
+    {
+      "step": 2,
+      "page": "Social Share Thank-You Page",
+      "purpose": "Confirm the purchase and immediately incentivize the buyer to SHARE the same deal with their network via pre-filled referral links and share buttons (viral loop).",
+      "keyElements": [
+        "Thank-you + deal-claimed confirmation",
+        "'Share this deal with friends' incentive (unlock bonus / give-a-discount)",
+        "Pre-filled referral / share links (Facebook, X, WhatsApp, email, copy-link)",
+        "Personal referral link with tracking",
+        "Delivery/redemption instructions"
+      ],
+      "widgets": [
+        "Custom HTML social-share buttons + pre-filled referral links",
+        "Skill 44: Tag-on-purchase + referral/follow-up workflow trigger",
+        "Optional GHL affiliate/referral tracking link"
+      ]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": {
+      "slug": "edwards-copywriting-secrets",
+      "book": "Copywriting Secrets",
+      "script": "Urgency + scarcity + deadline formulas; deep-discount/value-framing; short punchy benefit copy",
+      "role": "Writes the high-urgency deal copy and the share-to-unlock incentive copy"
+    },
+    "salesScript": {
+      "script": "Hook / Story / Offer (compressed) + urgency/scarcity close",
+      "source": "Lead Funnels",
+      "why": "A daily deal needs a fast hook and a tight offer; the story is minimal and the urgency does the closing."
+    },
+    "supportingPersonas": [
+      {
+        "slug": "russell-brunson-lead-funnels",
+        "book": "Lead Funnels",
+        "script": "Hook / Story / Offer + unique-mechanism framing",
+        "role": "Frames the deal hook and the why-this-is-special angle"
+      },
+      {
+        "slug": "leland-brand-mapping-strategy",
+        "book": "The Brand Mapping Strategy",
+        "script": "Brand voice consistency (Be/Do/Have, Signature Story)",
+        "role": "Keeps the discount on-brand so it builds equity rather than cheapening the brand"
+      },
+      {
+        "slug": "miller-building-storybrand",
+        "book": "Building a StoryBrand",
+        "script": "SB7 Call-to-Action / invite-others framing on the share page",
+        "role": "Writes the share/referral CTA so the buyer becomes a guide inviting friends"
+      }
+    ],
+    "notes": "Copywriting Secrets drives the urgency/scarcity deal copy; Lead Funnels supplies the compressed Hook/Story/Offer; Brand Mapping keeps the discount on-brand; StoryBrand writes the share-the-deal CTA. Keep everything short — urgency and the deal do the selling."
+  },
+  "ghlBuild": {
+    "funnelType": "GHL Funnel (2 steps)",
+    "skill6Steps": [
+      "Create Funnel -> name with client prefix -> Create",
+      "Add New Step 1 = 'Deal Order Page' (countdown timer via custom HTML/JS in code block)",
+      "Add New Step 2 = 'Social Share Thank-You Page' (share buttons + pre-filled referral links)"
+    ],
+    "skill44Widgets": [
+      "Single-step Order Form on Step 1",
+      "Tags + referral/follow-up workflow",
+      "Optional referral/affiliate tracking links"
+    ],
+    "products": [
+      "Discounted deal product in GHL Payments"
+    ],
+    "notes": "The countdown timer and social-share/referral buttons are custom HTML/JS in the code-block element; build heavier versions in Vercel and embed. Pre-build the order form, tags, and referral tracking via Skill 44 (or GHL MCP/API). The viral loop lives on the thank-you page: pre-fill the share links with the buyer's personal referral code."
+  }
+}

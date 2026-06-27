@@ -1,0 +1,134 @@
+{
+  "id": "homepage",
+  "name": "Homepage Funnel",
+  "aliases": [
+    "Homepage-Style Lead Funnel",
+    "Funnel Hub Home",
+    "Branded Home Funnel"
+  ],
+  "category": "Lead Funnels",
+  "skill": "Skill 6",
+  "lengthClass": "medium-form",
+  "libraryEntry": 19,
+  "books": [
+    "The Funnel Hacker's Cookbook"
+  ],
+  "whenToUse": {
+    "summary": "Gives the feel of a traditional website homepage while functioning as a lead funnel. Highlights the business origin story and features top products, routing visitors into individual product funnels or onto the email list.",
+    "goals": [
+      "Look like a legitimate website (PR/credibility)",
+      "Route traffic into individual product funnels",
+      "Capture email",
+      "Serve as a central brand hub"
+    ],
+    "keywords": [
+      "homepage",
+      "website",
+      "brand site",
+      "main site",
+      "hub",
+      "looks like a real website",
+      "feature my products",
+      "professional presence"
+    ],
+    "signals": [
+      "You need a legitimate-looking home base",
+      "You have multiple products/funnels to route to",
+      "You want a browsing feel plus capture"
+    ],
+    "doNotUseWhen": [
+      "You have a single-offer direct-response play (use Squeeze/Lead Magnet)",
+      "It's purely a personal brand (use Hero)"
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Homepage (single long page, StoryBrand wireframe)",
+      "purpose": "Deliver the feel of a real website while routing to funnels and capturing email.",
+      "blocks": [
+        "Header: clear one-liner + primary CTA + light branded nav stubs",
+        "Stakes: what's at risk / the problem",
+        "Value proposition",
+        "Guide: empathy + authority (brief origin story)",
+        "Plan: 3 simple steps",
+        "Featured products/funnels grid (each card routes into its own funnel)",
+        "Explanatory paragraph",
+        "Lead-capture / email section ('junk drawer' + opt-in)",
+        "Footer"
+      ]
+    },
+    {
+      "order": 2,
+      "page": "Routed Individual Product Funnels",
+      "purpose": "Each featured product links to its dedicated funnel (Lead Magnet, VSL, Webinar, etc.).",
+      "blocks": [
+        "Product card link -> dedicated funnel URL per featured offer"
+      ]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "story-brander",
+    "supportingPersonas": [
+      "funnel-architect"
+    ],
+    "script": "StoryBrand SB7 BrandScript mapped to the StoryBrand homepage wireframe; supported by Brunson's Funnel Hub concept.",
+    "structure": [
+      "Character (the customer is the hero)",
+      "Problem (external/internal/philosophical)",
+      "Guide (you - empathy + authority)",
+      "Plan",
+      "Call to Action (direct + transitional)",
+      "Success",
+      "Failure / Stakes"
+    ],
+    "notes": "Customer is the hero; the brand is the guide. Every section drives to a CTA or a product funnel - no dead ends, avoiding the brochure-site trap.",
+    "primaryPersonaResolved": {
+      "id": "story-brander",
+      "label": "The Story Brander",
+      "author": "Donald Miller",
+      "book": "Building a StoryBrand (StoryBrand SB7 / BrandScript)",
+      "owns_scripts": [
+        "SB7 BrandScript: Character > Problem (external/internal/philosophical) > Guide (empathy + authority) > Plan > Call to Action (direct + transitional) > Success > Failure/Stakes",
+        "StoryBrand homepage wireframe (header, stakes, value prop, guide, plan, explanatory, junk-drawer)"
+      ],
+      "voice": "Customer is the hero; the brand is the guide. Clarity over cleverness; no dead ends."
+    },
+    "supportingPersonasResolved": [
+      {
+        "id": "funnel-architect",
+        "label": "The Funnel Architect",
+        "author": "Russell Brunson",
+        "book": "DotCom Secrets",
+        "owns_scripts": [
+          "Star/Story/Solution (sales-letter script)",
+          "Hook-Story-Offer",
+          "The Attractive Character (backstory, parables, character flaws, polarity)",
+          "The Value Ladder",
+          "Who/What/Why/How opt-in framing",
+          "Survey funnel mechanics"
+        ],
+        "voice": "Direct-response funnel mechanics; sequence the visitor from curiosity to conversion."
+      }
+    ]
+  },
+  "ghlBuild": {
+    "platform": "GoHighLevel",
+    "pages": [
+      "Step 1: Homepage",
+      "Links out to each product funnel"
+    ],
+    "skill44Widgets": [
+      "Inline Opt-in Form widget in the capture section",
+      "Product cards linking to funnels",
+      "Optional chat / booking widget"
+    ],
+    "automations": [
+      "Tag 'homepage-lead'",
+      "Route by product interest",
+      "Newsletter sequence"
+    ],
+    "notes": "Branded nav stubs as anchor links or sub-pages. Repeat the primary CTA top and bottom. Each product card links to its own funnel URL."
+  },
+  "group": "lead"
+}

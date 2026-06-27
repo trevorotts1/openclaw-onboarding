@@ -1,0 +1,156 @@
+{
+  "id": "self-liquidating-offer-slo",
+  "name": "Self-Liquidating Offer (SLO) Funnel",
+  "aliases": [
+    "SLO Funnel",
+    "Self Liquidating Offer",
+    "Break-Even Front-End Funnel",
+    "Tripwire SLO",
+    "Liquidator Funnel"
+  ],
+  "category": "Buyer Funnel",
+  "group": "buyer",
+  "lengthClass": "medium-form",
+  "libraryRef": "#9",
+  "sourceBooks": [
+    "DotCom Secrets"
+  ],
+  "whenToUse": {
+    "summary": "A front-end product priced $27-$97 designed specifically to BREAK EVEN on cold ad spend so all upsell revenue becomes pure profit. A squeeze/lead page leads to the core product via a VSL or long-form sales letter, with an order-form bump and an OTO sequence. Distinct from the tripwire in price point and margin structure: SLO carries real margin and aims to recover the full cost of acquiring a customer at the order page.",
+    "goals": [
+      "Recover 100% of cold ad spend on the front-end before any follow-up runs",
+      "Sell a $27-$97 info/digital product to cold traffic",
+      "Build a buyer list while breaking even",
+      "Fund unlimited paid-traffic scaling"
+    ],
+    "keywords": [
+      "self liquidating offer",
+      "SLO",
+      "break even funnel",
+      "$1 in $1 out",
+      "$27 offer",
+      "$47 offer",
+      "$97 offer",
+      "front end profit",
+      "liquidate ad spend",
+      "cold traffic offer"
+    ],
+    "signals": [
+      "Front-end price stated in the $27-$97 band",
+      "Explicit goal of breaking even on ad spend / 'pay for itself'",
+      "Digital/info product (course, toolkit, templates) rather than a free sample",
+      "Cold paid traffic with a defined upsell ladder"
+    ],
+    "antiSignals": [
+      "Front-end is free/just-shipping -> route to 2-Step Tripwire/Free-Plus-Shipping",
+      "A video alone makes the whole sale -> consider VSL Funnel as the order page modality",
+      "The core product is a recurring subscription -> Membership/Continuity",
+      "The front-end is a physical book at just-shipping -> Book Funnel"
+    ]
+  },
+  "pageStructure": [
+    {
+      "step": 1,
+      "page": "Squeeze / Lead Page",
+      "purpose": "Capture the email first with a curiosity hook (or deliver a lead magnet), so even non-buyers enter the follow-up sequence; redirect opt-ins to the sales/order page.",
+      "keyElements": [
+        "Curiosity headline tied to the core-product promise",
+        "Single email opt-in field (or lead-magnet offer)",
+        "Zero navigation / no distractions",
+        "Auto-redirect to the sales/order page"
+      ],
+      "widgets": [
+        "Skill 44: Opt-in Form (single email field)",
+        "Skill 44: Tag-on-optin + redirect to step 2"
+      ]
+    },
+    {
+      "step": 2,
+      "page": "VSL or Long-Form Sales Letter Order Page",
+      "purpose": "Sell the $27-$97 core product with a Video Sales Letter or written long-form letter, then convert on an order form with an order bump that lifts AOV toward break-even.",
+      "keyElements": [
+        "Big-promise headline + subhead",
+        "VSL (autoplay, timed CTA reveal) OR Star/Story/Solution long-form copy",
+        "Unique-mechanism reveal (why this is different)",
+        "Value stack with price anchor and $27-$97 reveal",
+        "Order form with ORDER BUMP (mini-offer checkbox)",
+        "Guarantee + testimonials + FAQ"
+      ],
+      "widgets": [
+        "Skill 44: Order Form with Order Bump element",
+        "GHL Payments: $27-$97 core product + bump product",
+        "Video embed (Vercel-built VSL page or video element) if VSL modality"
+      ]
+    },
+    {
+      "step": 3,
+      "page": "OTO / Upsell Page",
+      "purpose": "Push average order value above the break-even line with a one-click upsell (higher-tier course, done-for-you version, or bundle).",
+      "keyElements": [
+        "'Your order isn't finished' interrupt headline",
+        "Upsell VSL or short copy with stacked value",
+        "One-click accept button + decline link",
+        "Optional downsell on decline"
+      ],
+      "widgets": [
+        "Skill 44: One-Click Upsell element",
+        "GHL Payments: OTO product (and optional downsell)"
+      ]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": {
+      "slug": "russell-brunson-the-funnel-hackers-cookbook",
+      "book": "The Funnel Hacker's Cookbook",
+      "script": "SLO recipe + break-even math; order-bump and OTO placement",
+      "role": "Governs structure, element checklist, and break-even calibration"
+    },
+    "salesScript": {
+      "script": "Star / Story / Solution (written) OR 5-Minute / full Perfect Webinar (if VSL)",
+      "source": "DotCom Secrets (Star/Story/Solution) · Expert Secrets (Perfect Webinar)",
+      "why": "The order page can be a long-form letter (Star/Story/Solution) or a video (Perfect Webinar). Choose the modality the audience will consume."
+    },
+    "supportingPersonas": [
+      {
+        "slug": "brunson-marketing-secrets-blackbook",
+        "book": "Marketing Secrets Blackbook",
+        "script": "Value Ladder positioning + Attractive Character",
+        "role": "Positions the SLO as rung one and defines the upsell ladder economics"
+      },
+      {
+        "slug": "edwards-copywriting-secrets",
+        "book": "Copywriting Secrets",
+        "script": "Headline + benefit-stack formulas; bump and OTO microcopy; price-justification copy",
+        "role": "Writes the order-page copy, bump, and OTO"
+      },
+      {
+        "slug": "miller-building-storybrand",
+        "book": "Building a StoryBrand",
+        "script": "SB7 clarity pass (customer as hero)",
+        "role": "Final clarity filter so the offer reads as the customer's transformation, not the product's features"
+      }
+    ],
+    "notes": "Cookbook governs structure and break-even math; Blackbook sets the Value Ladder; Copywriting Secrets writes the page; StoryBrand keeps the customer as the hero. Pricing + bump + OTO values must be calibrated to hit $1-in/$1-out on cold traffic."
+  },
+  "ghlBuild": {
+    "funnelType": "GHL Funnel (3 steps)",
+    "skill6Steps": [
+      "Create Funnel -> name with client prefix -> Create",
+      "Add New Step 1 = 'Squeeze / Lead Page' (opt-in)",
+      "Add New Step 2 = 'VSL / Sales Letter Order Page' (build naked HTML in code block, or Vercel embed for a VSL-heavy page)",
+      "Add New Step 3 = 'OTO / Upsell Page'"
+    ],
+    "skill44Widgets": [
+      "Opt-in Form on Step 1",
+      "Order Form + Order Bump on Step 2",
+      "One-Click Upsell on Step 3",
+      "Tags + follow-up workflow trigger (optins and buyers segmented)"
+    ],
+    "products": [
+      "Core product priced $27-$97 in GHL Payments",
+      "Order-bump product",
+      "OTO product (+ optional downsell)"
+    ],
+    "notes": "Pre-build forms/tags/products via Skill 44 (or GHL MCP/API). If the order page is a VSL, build it in Vercel and pull in via embed link; a written letter can live as GHL-compatible HTML in the code-block element. Calibrate price/bump/OTO so the front end recovers ad cost before any email sequence runs."
+  }
+}

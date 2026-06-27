@@ -1,0 +1,127 @@
+{
+  "id": "cancellation-funnel",
+  "name": "Cancellation Funnel",
+  "aliases": [
+    "Cancellation Funnel",
+    "Save-the-Sale Funnel",
+    "Retention Funnel",
+    "Churn-Save Funnel",
+    "Refund Deflection Funnel",
+    "Cancel-Flow Funnel",
+    "Win-Back Save Funnel"
+  ],
+  "category": "retention-followup",
+  "library_entry": 20,
+  "source_books": [
+    "The Funnel Hacker's Cookbook"
+  ],
+  "funnel_length_class": "short-form",
+  "length_rationale": "A tight 2-page reactive funnel — a single branching survey page plus one personalized save page per branch. Intentionally minimal so it loads instantly inside the cancel/refund flow and resolves the objection in one or two clicks.",
+  "when_to_use": {
+    "summary": "Intercept a customer at the moment they try to cancel, refund, return, or downgrade. A quiz pinpoints the exact reason, then a tailored save page addresses that specific concern and offers a reason to stay — drastically reducing refund rate and churn.",
+    "goals": [
+      "Reduce refund and chargeback rate on front-end and core offers",
+      "Reduce subscription / membership churn",
+      "Deflect cancellations by resolving the specific objection that triggered them",
+      "Down-sell / pause instead of losing the customer entirely (save partial revenue)",
+      "Capture structured cancellation-reason data for product and offer improvement"
+    ],
+    "keywords": [
+      "cancellation",
+      "cancel flow",
+      "save the sale",
+      "retention",
+      "churn",
+      "reduce refunds",
+      "refund deflection",
+      "win-back",
+      "exit survey",
+      "stop cancellations",
+      "membership retention",
+      "downsell to save",
+      "pause subscription"
+    ],
+    "signals": [
+      "Customer clicks 'Cancel', 'Refund', 'Return', or 'Downgrade'",
+      "High refund or churn rate is the stated problem",
+      "Subscription / membership / continuity business losing members",
+      "Request mentions 'keep customers from leaving' or 'save the sale'",
+      "Need a branching 'why are you leaving?' survey with a tailored response"
+    ],
+    "anti_signals": [
+      "Acquiring new leads or buyers → use a front-end Lead/Tripwire/Webinar funnel",
+      "Nurturing/ascending an existing happy customer → use the Follow-Up Funnel",
+      "General feedback collection with no save intent → use Ask Campaign / Survey Funnel"
+    ]
+  },
+  "page_structure": [
+    {
+      "order": 1,
+      "page": "Cancellation Reason Survey (branching quiz)",
+      "purpose": "Catch the customer at the cancel/refund click and diagnose the single real reason they are leaving, so the next page can speak to exactly that objection. Each branch routes to a different save page.",
+      "key_elements": [
+        "Empathetic, non-defensive headline ('Before you go — quick question so we can help')",
+        "Single-select reason quiz with the common churn reasons as branches: Too expensive / Didn't have time to use it / Didn't get results / Too complicated / Found another solution / Just exploring / Other",
+        "Conditional logic: each answer routes to its matching save page (Skill 44 quiz branching)",
+        "No multi-field friction — one tap to answer",
+        "Reason captured as structured data (tag/field) for reporting"
+      ]
+    },
+    {
+      "order": 2,
+      "page": "Personalized Save Page (one variant per reason branch)",
+      "purpose": "Address the exact concern the customer selected with empathy, a reframe, and a concrete reason to stay. This is the save-the-sale moment.",
+      "key_elements": [
+        "Empathy open that names their specific concern (StoryBrand: acknowledge their problem, position brand as the guide)",
+        "Targeted reframe / false-belief break for that objection (Epiphany Bridge mini-story or proof)",
+        "A stay-incentive matched to the reason: bonus, onboarding help, extended trial, discount/downsell, pause option, or done-for-you setup",
+        "Short proof element (testimonial / result) relevant to that objection",
+        "Primary CTA: 'Keep my account & get [bonus]' (stay)",
+        "Secondary/last-resort CTA: confirm cancel (with downsell offered first), so the flow still completes cleanly"
+      ],
+      "branch_variants": [
+        { "reason": "Too expensive", "save_play": "Downsell to a lower tier, annual discount, or pause; reframe cost vs value with ROI proof" },
+        { "reason": "No time to use it", "save_play": "Offer pause/freeze, a quick-start path, or concierge onboarding so it isn't wasted" },
+        { "reason": "Didn't get results", "save_play": "Onboarding call, success roadmap, or extended access guarantee; reframe expectations with a case study" },
+        { "reason": "Too complicated", "save_play": "Free setup / done-for-you help, simplified plan, or tutorial bundle" },
+        { "reason": "Found another solution", "save_play": "Differentiation reframe + matching offer or unique bonus they can't get elsewhere" },
+        { "reason": "Just exploring / Other", "save_play": "Soft re-engagement: best-of content, extended trial, or route back into the Follow-Up Funnel" }
+      ]
+    }
+  ],
+  "copy_framework": {
+    "primary_persona": "The Attractive Character as empathetic Guide — written in the brand's established voice but in service of the customer. Tone is understanding and helpful, never defensive or guilt-tripping.",
+    "primary_script": "StoryBrand SB7 — frame the CUSTOMER as the hero who is about to fail at their goal, position the brand/product as the GUIDE with a plan that gets them the win, and make staying the clear call to action that avoids the failure of leaving.",
+    "secondary_scripts": [
+      "Epiphany Bridge — a short story or proof per branch that breaks the specific false belief behind that objection",
+      "Copywriting Secrets (Jim Edwards) — objection-crushing and 'reason why' formulas, risk-reversal/guarantee language, and the downsell pitch",
+      "Expert Secrets false-belief pattern — identify the vehicle/internal/external false belief tied to each cancellation reason and rewrite it"
+    ],
+    "per_page_assignment": [
+      { "page": "Reason Survey", "persona": "Attractive Character (empathetic Guide)", "script": "StoryBrand acknowledgment open — name the problem, offer to help; minimal copy, maximum empathy" },
+      { "page": "Save Page (each branch)", "persona": "Attractive Character (empathetic Guide)", "script": "StoryBrand SB7 (Problem→Guide→Plan→CTA→Success/avoid-Failure) + Epiphany Bridge reframe + Copywriting Secrets objection-crush and downsell" }
+    ],
+    "notes": "One objection, one page, one tailored offer. Lead with empathy, never argue. Stakes (StoryBrand failure) = the result they'll miss by leaving. Always give the stay-CTA more prominence than the cancel-CTA, but never trap the customer — the cancel path must remain available."
+  },
+  "ghl_build_notes": {
+    "skill6_role": "Skill 6 instantiates a 2-step funnel: a survey/quiz step and a dynamic save step whose content swaps per branch (either separate save pages per reason, or one page with conditional sections).",
+    "skill6_pages": [
+      "Page 1: Cancellation Reason Survey page",
+      "Page 2: Save page(s) — either N save pages (one per reason) linked by survey logic, or a single save page with conditional content blocks driven by the captured reason"
+    ],
+    "skill44_widgets": [
+      "Survey/Quiz widget (Skill 44) with single-select reason options and conditional routing to the matching save page",
+      "Reason answer mapped to a contact field/tag for segmentation and reporting",
+      "Calendar widget (Skill 44) embedded on 'no results' / 'too complicated' branches for an onboarding or save call",
+      "Order/downsell form widget (Skill 44) for the 'too expensive' branch (lower-tier or discounted plan), and a pause/freeze action where the billing platform supports it"
+    ],
+    "automations": [
+      "GHL trigger: cancel/refund/downgrade button or link enters the contact into the funnel and tags 'cancel-intent'",
+      "Workflow branch on survey answer → apply reason tag → show/route to matching save page",
+      "On 'stay' CTA: apply 'saved' tag, grant the promised bonus/discount/pause, remove cancel-intent, and (optionally) re-enroll into the Follow-Up Funnel nurture",
+      "On confirmed cancel: process cancellation, tag 'churned', and enroll in a win-back sequence",
+      "Reporting view: cancellation reasons + save-rate per branch for offer optimization"
+    ],
+    "notes": "Keep both pages instant-loading and mobile-first — they appear mid-frustration. Surface the downsell/pause BEFORE the final cancel confirmation on every branch. Pipe all reason data to a report so the team can fix the upstream causes of churn."
+  }
+}

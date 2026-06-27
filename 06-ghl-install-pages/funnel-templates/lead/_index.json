@@ -1,0 +1,120 @@
+{
+  "group": "lead",
+  "category": "Lead Funnels",
+  "skill": "Skill 6",
+  "count": 9,
+  "templates": [
+    {
+      "id": "squeeze-page",
+      "name": "Squeeze Page Funnel",
+      "aliases": [
+        "Opt-in Funnel",
+        "Lead Squeeze Funnel"
+      ],
+      "lengthClass": "short-form",
+      "primaryPersona": "The Copy Closer",
+      "script": "Curiosity-Gap Headline formula + the compressed 'Hook' of Hook-Story-Offer (story and offer are deferred to the follow-up).",
+      "libraryEntry": 1
+    },
+    {
+      "id": "reverse-squeeze-page",
+      "name": "Reverse Squeeze Page Funnel",
+      "aliases": [
+        "Give-Before-You-Take Funnel",
+        "Content-First Opt-in"
+      ],
+      "lengthClass": "short-form",
+      "primaryPersona": "The Expert Guide",
+      "script": "Epiphany Bridge delivered IN the free content (so the viewer adopts the new belief), followed by a StoryBrand transitional Call-to-Action to opt in for more.",
+      "libraryEntry": 2
+    },
+    {
+      "id": "lead-magnet",
+      "name": "Lead Magnet Funnel",
+      "aliases": [
+        "Epiphany Lead Funnel",
+        "Lead Funnel"
+      ],
+      "lengthClass": "short-form",
+      "primaryPersona": "The Copy Closer",
+      "script": "Hook-Story-Offer (DotCom Secrets) wrapped around Jim Edwards' fascination-bullet formula for the 'what's inside' section.",
+      "libraryEntry": 3
+    },
+    {
+      "id": "bridge",
+      "name": "Bridge Funnel",
+      "aliases": [
+        "Presell Page Funnel",
+        "Cold Traffic Article Pre-Frame Funnel"
+      ],
+      "lengthClass": "medium-form",
+      "primaryPersona": "The Expert Guide",
+      "script": "Epiphany Bridge Script (Expert Secrets) - the canonical home of the Epiphany Bridge.",
+      "libraryEntry": 4
+    },
+    {
+      "id": "survey-quiz",
+      "name": "Survey / Quiz Funnel",
+      "aliases": [
+        "Quiz Funnel",
+        "Segmentation Funnel"
+      ],
+      "lengthClass": "medium-form",
+      "primaryPersona": "The Funnel Architect",
+      "script": "Survey funnel mechanics (DotCom Secrets) - a micro-commitment ladder - with the results page using the StoryBrand Plan > Call-to-Action for the matched segment.",
+      "libraryEntry": 5
+    },
+    {
+      "id": "ask-campaign",
+      "name": "Ask Campaign Funnel",
+      "aliases": [
+        "Deep-Dive Survey",
+        "Voice-of-Customer Funnel"
+      ],
+      "lengthClass": "short-form",
+      "primaryPersona": "The Funnel Architect",
+      "script": "Single open-ended question with deliberately minimal copy so answers stay unbiased. No selling on Page 1 (exploratory voice rooted in the Ask method).",
+      "libraryEntry": 6
+    },
+    {
+      "id": "application",
+      "name": "Application Funnel",
+      "aliases": [
+        "High-Ticket Funnel",
+        "Phone Funnel",
+        "Backend Funnel",
+        "Three-Step Application Funnel"
+      ],
+      "lengthClass": "long-form",
+      "primaryPersona": "The Expert Guide",
+      "script": "Page-1 VSL = a condensed Perfect Webinar (Big Domino + proof + take-away CTA). Credibility story uses Star/Story/Solution. The call uses a setter-then-closer phone script.",
+      "libraryEntry": 7
+    },
+    {
+      "id": "hero",
+      "name": "Hero Funnel",
+      "aliases": [
+        "Personal Brand Funnel",
+        "Origin Story Funnel",
+        "Attractive Character Funnel"
+      ],
+      "lengthClass": "short-form",
+      "primaryPersona": "The Funnel Architect",
+      "script": "The Attractive Character (DotCom Secrets: backstory, parables, character flaws, polarizing stances) told as an Epiphany Bridge (Expert Secrets); StoryBrand framing positions you as the Guide who was once the hero.",
+      "libraryEntry": 18
+    },
+    {
+      "id": "homepage",
+      "name": "Homepage Funnel",
+      "aliases": [
+        "Homepage-Style Lead Funnel",
+        "Funnel Hub Home",
+        "Branded Home Funnel"
+      ],
+      "lengthClass": "medium-form",
+      "primaryPersona": "The Story Brander",
+      "script": "StoryBrand SB7 BrandScript mapped to the StoryBrand homepage wireframe; supported by Brunson's Funnel Hub concept.",
+      "libraryEntry": 19
+    }
+  ]
+}

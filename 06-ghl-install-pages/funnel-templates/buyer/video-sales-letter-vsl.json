@@ -1,0 +1,160 @@
+{
+  "id": "video-sales-letter-vsl",
+  "name": "Video Sales Letter (VSL) Funnel",
+  "aliases": [
+    "VSL Funnel",
+    "Video Sales Letter",
+    "Sales Video Funnel",
+    "Auto-Play VSL Funnel"
+  ],
+  "category": "Buyer Funnel",
+  "group": "buyer",
+  "lengthClass": "medium-form",
+  "libraryRef": "#10",
+  "sourceBooks": [
+    "The Funnel Hacker's Cookbook",
+    "Marketing Secrets Blackbook",
+    "Expert Secrets"
+  ],
+  "whenToUse": {
+    "summary": "A video makes the primary sale on a landing page. The Add-to-Cart button can be hidden until after the price reveal to force watch-through. Includes an order form with a bump and a post-purchase OTO/downsell sequence. Use when video out-converts written copy for the audience/offer, or when the story is best carried on camera.",
+    "goals": [
+      "Sell a product where a single sales video does the convincing",
+      "Force watch-through with a timed/hidden CTA reveal",
+      "Maximize AOV with bump + OTO after the video sale",
+      "Run a high-converting front or mid-ladder buyer offer"
+    ],
+    "keywords": [
+      "VSL",
+      "video sales letter",
+      "sales video",
+      "auto-play video page",
+      "timed CTA reveal",
+      "hidden buy button",
+      "watch this video",
+      "video pitch"
+    ],
+    "signals": [
+      "Client has (or wants) a sales VIDEO as the primary pitch",
+      "Audience responds to video over long written copy",
+      "Offer benefits from a delayed/timed CTA reveal",
+      "Story-driven, demonstration-driven, or face-to-camera pitch"
+    ],
+    "antiSignals": [
+      "Audience won't sit through video / prefers to read -> route to Sales Letter Funnel",
+      "Offer is a free/just-shipping front end -> 2-Step Tripwire (a 5-min VSL can still be the page video)",
+      "Offer is a live/registered event -> Webinar Funnel (event group)",
+      "Recurring subscription is the core -> Membership/Continuity"
+    ]
+  },
+  "pageStructure": [
+    {
+      "step": 1,
+      "page": "VSL Sales Page",
+      "purpose": "The autoplay Video Sales Letter makes the sale; the CTA/order button reveals on a timer (after the price reveal) to force watch-through, then the order form with bump converts.",
+      "keyElements": [
+        "Curiosity headline above the player (minimal distraction)",
+        "Autoplay VSL embed (Perfect Webinar / Star-Story-Solution script)",
+        "Timed CTA button reveal (hidden until price reveal in the video)",
+        "Order form with ORDER BUMP appearing with/after the CTA",
+        "Guarantee, testimonials, FAQ below the fold for skimmers",
+        "Optional read-along transcript toggle"
+      ],
+      "widgets": [
+        "Video embed (Vercel-built VSL page pulled in via embed link recommended for timed-reveal JS)",
+        "Skill 44: Order Form with Order Bump element",
+        "Custom HTML/JS in code block for the timed CTA reveal logic"
+      ]
+    },
+    {
+      "step": 2,
+      "page": "OTO / Upsell Page",
+      "purpose": "Raise average order value with a one-click upsell (next-tier product, bundle, or done-for-you) immediately after the video sale.",
+      "keyElements": [
+        "Interrupt headline ('Before you go...')",
+        "Upsell mini-VSL or short copy",
+        "One-click accept button + decline link"
+      ],
+      "widgets": [
+        "Skill 44: One-Click Upsell element",
+        "GHL Payments: OTO product"
+      ]
+    },
+    {
+      "step": 3,
+      "page": "Downsell Page",
+      "purpose": "Recover OTO decliners with a lower-priced or payment-plan version of the upsell.",
+      "keyElements": [
+        "Downsell offer (lite version / payment plan)",
+        "One-click accept + decline link"
+      ],
+      "widgets": [
+        "Skill 44: One-Click Upsell element",
+        "GHL Payments: downsell product"
+      ]
+    },
+    {
+      "step": 4,
+      "page": "Confirmation / Thank-You Page",
+      "purpose": "Confirm purchase, deliver access, bond with the buyer, and bridge to the next offer.",
+      "keyElements": [
+        "Order summary + access/delivery instructions",
+        "Attractive-Character welcome message",
+        "Next-step CTA into the value ladder"
+      ],
+      "widgets": [
+        "Skill 44: Tag-on-purchase + follow-up workflow trigger",
+        "Optional Skill 44: Calendar widget if backend is a call"
+      ]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": {
+      "slug": "edwards-copywriting-secrets",
+      "book": "Copywriting Secrets",
+      "script": "VSL script formula + headline + benefit-stacking + objection-preemption; bump/OTO copy",
+      "role": "Writes the VSL script and the page copy (Copywriting Secrets has a dedicated VSL chapter)"
+    },
+    "videoScript": {
+      "script": "5-Minute Perfect Webinar (under $100) or full Perfect Webinar (higher ticket), with an Epiphany Bridge story",
+      "source": "Expert Secrets",
+      "why": "The Perfect Webinar (intro + story + one or three secrets + stack/close) is the proven structure for a sales video; the 5-minute version fits low-ticket VSLs."
+    },
+    "supportingPersonas": [
+      {
+        "slug": "russell-brunson-the-funnel-hackers-cookbook",
+        "book": "The Funnel Hacker's Cookbook",
+        "script": "VSL recipe — hidden/timed CTA reveal, order-form + bump + OTO placement",
+        "role": "Governs the page structure and the CTA-reveal mechanic"
+      },
+      {
+        "slug": "brunson-marketing-secrets-blackbook",
+        "book": "Marketing Secrets Blackbook",
+        "script": "Attractive Character + Epiphany Bridge storytelling",
+        "role": "Shapes the on-camera story and the bonding voice"
+      }
+    ],
+    "notes": "Copywriting Secrets writes the script and page copy; the video follows a Perfect Webinar / Epiphany Bridge structure; the Cookbook governs the timed-reveal page mechanic. The CTA is hidden until the price reveal in the video."
+  },
+  "ghlBuild": {
+    "funnelType": "GHL Funnel (4 steps)",
+    "skill6Steps": [
+      "Create Funnel -> name with client prefix -> Create",
+      "Add New Step 1 = 'VSL Sales Page' (build in Vercel for the timed-reveal JS, pull in via embed link)",
+      "Add New Step 2 = 'OTO / Upsell Page'",
+      "Add New Step 3 = 'Downsell Page'",
+      "Add New Step 4 = 'Confirmation / Thank-You'"
+    ],
+    "skill44Widgets": [
+      "Order Form + Order Bump on Step 1",
+      "One-Click Upsell on Steps 2 and 3",
+      "Tags + purchase-trigger workflow"
+    ],
+    "products": [
+      "Core product in GHL Payments",
+      "OTO product",
+      "Downsell product"
+    ],
+    "notes": "The timed CTA reveal needs custom JS, so build the VSL page in Vercel and pull into the GHL step via embed link (the code-block element alone may not render the timed-reveal cleanly). Pre-build the order form, tags, and products via Skill 44 (or GHL MCP/API) and embed them. Host the video on Vimeo/Wistia/YouTube and embed."
+  }
+}

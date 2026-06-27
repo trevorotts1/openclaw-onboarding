@@ -1,0 +1,111 @@
+{
+  "id": "teleseminar-funnel",
+  "name": "Teleseminar Funnel",
+  "aliases": ["Tele-Seminar", "Audio Seminar Funnel", "Conference Call Selling Funnel"],
+  "category": "Event Funnels",
+  "libraryRef": "#28",
+  "sourceBooks": ["Marketing Secrets Blackbook"],
+  "lengthClass": "medium-form",
+  "origin": "Phone or audio-based seminar used as a teaching and selling mechanism — a recognized standalone revenue-generating selling format, distinct from video webinars. Single presenter (vs. the multi-speaker Telesummit).",
+  "whenToUse": {
+    "summary": "Use for a single-presenter audio/dial-in selling seminar — a Perfect-Webinar-style teach-then-pitch delivered by voice only (no slides), ideal for audio-native audiences or low-production setups.",
+    "goals": [
+      "Sell an offer via a single-presenter audio teaching call",
+      "Reach an audio-first audience (commuters, coaching/consulting niches)",
+      "Run a webinar-style close without slides or video production"
+    ],
+    "keywords": ["teleseminar", "tele-seminar", "conference call", "audio training", "dial in", "live call", "register for the call", "replay line"],
+    "signals": [
+      "Single host, no slides, audio-only delivery",
+      "Audience prefers/consumes audio",
+      "Coaching, consulting, network-marketing, faith/voice-driven niches",
+      "Wants the Perfect Webinar close in audio form"
+    ],
+    "antiSignals": [
+      "Needs visual demo/slides (use Webinar Funnel)",
+      "Multiple speakers (use Telesummit)",
+      "Sub-$100 impulse buy (use VSL/5-Minute Perfect Webinar)"
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Registration Page",
+      "purpose": "Capture the registration with a curiosity promise and the dial-in promise.",
+      "keyElements": [
+        "Curiosity Big-Promise headline + call date/time",
+        "3 fascination bullets teasing the 3 secrets (taught by voice)",
+        "Opt-in form (email + phone for dial-in/SMS)",
+        "Host credibility blurb"
+      ],
+      "skill44Widgets": ["Registration opt-in form (email + phone)", "Countdown to call start"]
+    },
+    {
+      "order": 2,
+      "page": "Confirmation Page (dial-in details)",
+      "purpose": "Deliver the dial-in / access details and maximize show-up.",
+      "keyElements": [
+        "Dial-in number / access link + PIN",
+        "Add-to-calendar + SMS reminders",
+        "Short pre-frame audio/video + 'what you'll learn'",
+        "'Call in 5 minutes early' instruction"
+      ],
+      "skill44Widgets": ["Add-to-calendar", "SMS/email reminder opt-in"]
+    },
+    {
+      "order": 3,
+      "page": "Replay Audio Page",
+      "purpose": "Host the recorded call for those who missed it, within a window.",
+      "keyElements": [
+        "Audio replay player",
+        "Replay availability countdown (expires)",
+        "Offer CTA below the player",
+        "Stack recap text"
+      ],
+      "skill44Widgets": ["Audio player embed", "Replay-expiry countdown", "Order CTA block"]
+    },
+    {
+      "order": 4,
+      "page": "Post-Seminar Offer Page",
+      "purpose": "Present the order with the Stack and a deadline.",
+      "keyElements": [
+        "Stack recap + bonuses + guarantee",
+        "Order form with bump",
+        "Cart-close countdown",
+        "FAQ + testimonials"
+      ],
+      "skill44Widgets": ["Order form with bump", "Cart-close countdown timer", "FAQ accordion"]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "perfect-webinar",
+    "supportingPersonas": ["epiphany-bridge", "copywriting-secrets", "star-story-solution"],
+    "scripts": [
+      "The call = Perfect Webinar delivered by voice (Intro/Hook → 3 Secrets → Stack → Close), no slides",
+      "Call open = Epiphany Bridge origin story",
+      "Registration headline + bullets + replay urgency = Copywriting Secrets",
+      "Offer page recap = Star/Story/Solution"
+    ],
+    "notes": "It is the Perfect Webinar without visuals — the verbal storytelling and the verbal Stack must carry the whole close. Strong Epiphany Bridge delivery matters even more without slides."
+  },
+  "ghlBuild": {
+    "funnelType": "Funnel (4 pages) + reminder/follow-up automations",
+    "pages": ["Registration", "Confirmation (dial-in)", "Replay Audio", "Post-Seminar Offer"],
+    "skill44Widgets": [
+      "Registration opt-in form (email + phone)",
+      "Add-to-calendar + SMS/email reminder opt-in",
+      "Audio replay player embed",
+      "Order form with bump",
+      "Replay-expiry + cart-close countdown timers",
+      "FAQ accordion"
+    ],
+    "automations": [
+      "Register → dial-in details + reminders (24h / 1h / starting-now)",
+      "Attended vs no-show tag → replay sequence",
+      "Cart-close countdown → 3 Closes follow-up (emotion/logic/fear)",
+      "Purchase → fulfillment + exit sales sequence"
+    ],
+    "products": ["Core seminar offer", "Order bump", "Optional OTO"],
+    "notes": "Skill 6 builds the 4 pages with the dial-in delivery and audio replay; Skill 44 generates the opt-in form (email + phone), the audio player, the order form + bump, and the replay-expiry / cart-close countdowns."
+  }
+}

@@ -1,0 +1,176 @@
+{
+  "id": "2-step-tripwire-free-plus-shipping",
+  "name": "2-Step Tripwire / Free-Plus-Shipping Funnel",
+  "aliases": [
+    "Tripwire Funnel",
+    "Unboxing Funnel",
+    "Two-Step Free-Plus-Shipping Funnel",
+    "Free Plus Shipping Funnel",
+    "Free + Shipping Offer"
+  ],
+  "category": "Buyer Funnel",
+  "group": "buyer",
+  "lengthClass": "short-form",
+  "libraryRef": "#8",
+  "sourceBooks": [
+    "The Funnel Hacker's Cookbook",
+    "Marketing Secrets Blackbook",
+    "DotCom Secrets",
+    "Expert Secrets"
+  ],
+  "whenToUse": {
+    "summary": "Acquire a NEW buyer at zero net cost on cold traffic by leading with an irresistibly cheap or free front-end (physical product, sample, or low-cost info product) where the customer pays only shipping. The 2-step order form captures the lead on step 1 (abandoned-cart recovery) before billing on step 2. All OTO/downsell revenue is pure profit.",
+    "goals": [
+      "Convert cold/paid traffic into first-time buyers cheaply",
+      "Build a buyer list (not just a lead list)",
+      "Acquire customers at break-even or better via order bump + OTOs",
+      "Liquidate ad spend so backend revenue is profit"
+    ],
+    "keywords": [
+      "free plus shipping",
+      "free + shipping",
+      "tripwire",
+      "low ticket front end",
+      "$1 offer",
+      "sample offer",
+      "unboxing",
+      "physical product front end",
+      "just pay shipping",
+      "buyer list",
+      "customer acquisition funnel"
+    ],
+    "signals": [
+      "Client has a cheap/physical front-end product or sample to give away",
+      "Goal stated as 'get customers' or 'self-liquidate ad spend', not 'collect leads'",
+      "Cold paid traffic is the intended source",
+      "There is a clear backend value ladder to upsell into"
+    ],
+    "antiSignals": [
+      "Front-end price is $27-$97 with margin goals -> route to Self-Liquidating Offer (SLO) Funnel",
+      "The free item is a book at just-pay-shipping -> route to Book Funnel",
+      "No payment is collected at all (email only) -> route to a Lead/Squeeze Funnel",
+      "Recurring subscription is the core offer -> route to Membership/Continuity Funnel"
+    ]
+  },
+  "pageStructure": [
+    {
+      "step": 1,
+      "page": "2-Step Order Form Page",
+      "purpose": "Sell the irresistible free/cheap front-end and capture the buyer. Step 1 collects name + shipping address (creates an abandoned-cart lead even if they bail); Step 2 reveals billing + the order bump.",
+      "keyElements": [
+        "Curiosity/benefit hook headline + subheadline",
+        "Product hero shot / unboxing image or short sales video (5-Minute Perfect Webinar)",
+        "What's-included value stack with stacked dollar value vs. 'you pay only shipping'",
+        "Step 1: contact + shipping-address form fields",
+        "Step 2: payment fields + ORDER BUMP checkbox with its own mini-sales copy",
+        "Scarcity/urgency (limited inventory / today-only)",
+        "Risk-reversal guarantee block",
+        "Social proof: testimonials, ratings, recognizable logos"
+      ],
+      "widgets": [
+        "Skill 44: Two-Step Order Form (contact step -> payment step)",
+        "Skill 44: Order Bump element on payment step",
+        "GHL Payments: free-plus-shipping front-end product"
+      ]
+    },
+    {
+      "step": 2,
+      "page": "OTO 1 (One-Click Upsell) Page",
+      "purpose": "Immediately after purchase, present a higher-value complementary product as a one-click add-on (card already on file) to raise average order value.",
+      "keyElements": [
+        "'Wait — your order is not complete' interrupt headline",
+        "Upsell VSL or short sales copy for the complementary product",
+        "One-click 'Yes, add this to my order' button",
+        "Plain 'No thanks' decline link beneath the button"
+      ],
+      "widgets": [
+        "Skill 44: One-Click Upsell element",
+        "GHL Payments: OTO 1 product"
+      ]
+    },
+    {
+      "step": 3,
+      "page": "OTO 2 / Downsell Page",
+      "purpose": "Offer a second upsell, or downsell OTO 1 (payment plan or 'lite' version) to recover buyers who declined.",
+      "keyElements": [
+        "Second upsell offer OR downsell of OTO 1 (lower price / payment plan)",
+        "One-click accept button",
+        "Decline link"
+      ],
+      "widgets": [
+        "Skill 44: One-Click Upsell element",
+        "GHL Payments: OTO 2 / downsell product"
+      ]
+    },
+    {
+      "step": 4,
+      "page": "Confirmation / Offer-Wall Page",
+      "purpose": "Confirm the order, deliver/ship details, hand off any digital bonus, and bridge the new buyer to the next rung of the value ladder.",
+      "keyElements": [
+        "Thank-you + order summary",
+        "Shipping/delivery expectation + digital bonus access (if any)",
+        "Attractive-Character bonding message",
+        "Next-step CTA into the backend offer (value ladder bridge)"
+      ],
+      "widgets": [
+        "Skill 44: Tag-on-purchase + follow-up workflow trigger",
+        "Optional Skill 44: Calendar widget if backend is a call"
+      ]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": {
+      "slug": "russell-brunson-the-funnel-hackers-cookbook",
+      "book": "The Funnel Hacker's Cookbook",
+      "script": "Tripwire recipe — required-element placement, order-bump + OTO/downsell rules",
+      "role": "Governs funnel TYPE selection and exact page-element checklist"
+    },
+    "salesVideoScript": {
+      "script": "5-Minute Perfect Webinar (origin story + one secret + close)",
+      "source": "Expert Secrets",
+      "why": "Brunson prescribes the 5-minute Perfect Webinar as the sales video on unboxing/tripwire pages for products under $100 (library #34)."
+    },
+    "supportingPersonas": [
+      {
+        "slug": "edwards-copywriting-secrets",
+        "book": "Copywriting Secrets",
+        "script": "Fill-in-the-blank headline + benefit-stack formulas; order-bump and OTO microcopy; P.S. close",
+        "role": "Writes the page headline, value stack, bump copy, and upsell copy"
+      },
+      {
+        "slug": "russell-brunson-lead-funnels",
+        "book": "Lead Funnels",
+        "script": "Hook / Story / Offer (hook + story + unique mechanism + offer + follow-up)",
+        "role": "Frames the front-end hook and the unique-mechanism angle"
+      },
+      {
+        "slug": "brunson-marketing-secrets-blackbook",
+        "book": "Marketing Secrets Blackbook",
+        "script": "Attractive Character + Value Ladder + value-stack framing",
+        "role": "Bonds the buyer and positions the front-end as rung one of the ladder"
+      }
+    ],
+    "notes": "Copywriting Secrets writes the words; Funnel Hacker's Cookbook governs the structure and element placement; the sales video is a 5-Minute Perfect Webinar. Keep it short, punchy, impulse-driven — this is a low-friction front end, not a long pitch."
+  },
+  "ghlBuild": {
+    "funnelType": "GHL Funnel (4 steps)",
+    "skill6Steps": [
+      "Create Funnel -> name with client prefix (e.g. ZHC) -> Create",
+      "Add New Step 1 = '2-Step Order Form Page' -> build (custom HTML in code block, or Vercel-built page pulled in via embed if heavy)",
+      "Add New Step 2 = 'OTO 1' (upsell page type)",
+      "Add New Step 3 = 'OTO 2 / Downsell'",
+      "Add New Step 4 = 'Confirmation / Offer Wall'"
+    ],
+    "skill44Widgets": [
+      "Two-Step Order Form (contact step then payment step) on Step 1",
+      "Order Bump element on the payment step",
+      "One-Click Upsell elements on Steps 2 and 3",
+      "Tags + purchase-trigger workflow for follow-up sequence"
+    ],
+    "products": [
+      "Front-end: free-plus-shipping product (charge shipping only)",
+      "OTO 1, OTO 2/downsell products in GHL Payments"
+    ],
+    "notes": "Build forms/tags/products in advance via Skill 44 (or GHL community/official MCP/API), then embed into Skill 6 pages. Pages built either as naked GHL-compatible HTML in the code-block element or in Vercel and pulled in via embed link when the page has heavy features. Order math: front-end shipping + bump + OTOs calibrated to break even on cold ad spend."
+  }
+}

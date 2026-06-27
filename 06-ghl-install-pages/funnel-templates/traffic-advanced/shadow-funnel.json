@@ -1,0 +1,137 @@
+{
+  "id": "shadow-funnel",
+  "name": "Shadow Funnel",
+  "aliases": [
+    "Shadow Funnel Capture",
+    "Organic Research Journey",
+    "Branded-Search Capture",
+    "Reputation Funnel"
+  ],
+  "category": "Traffic / Advanced \u2014 Strategy (presence optimization, not a built funnel)",
+  "sourceBooks": [
+    "Traffic Secrets"
+  ],
+  "libraryEntry": 31,
+  "lengthClass": "n/a \u2014 strategy / presence-optimization overlay (no linear page sequence)",
+  "buildable": true,
+  "buildableNote": "Not a funnel the marketer builds page-by-page. It is the invisible research journey prospects take after exposure; you 'build' it by OWNING and optimizing the properties they land on.",
+  "whenToUse": {
+    "goals": [
+      "Ensure that when a prospect researches the brand/person/product after seeing an ad, every search result is an owned property with a clear opt-in and no dead ends.",
+      "Convert the large share of buyers who do NOT click the ad but instead Google the name later.",
+      "Dominate the branded SERP and review surfaces so the research journey funnels back into the value ladder."
+    ],
+    "keywords": [
+      "shadow funnel",
+      "people google my name",
+      "branded search",
+      "reputation",
+      "what comes up when you search me",
+      "research journey",
+      "capture the lookers",
+      "own the search results",
+      "review management funnel"
+    ],
+    "signals": [
+      "Client runs ads but conversion attribution is murky \u2014 many buyers arrive via 'how did you hear about us: searched your name'.",
+      "Searching the brand returns third-party pages, dead ends, or nothing the brand controls.",
+      "Client has a Funnel Hub or social profiles that are not optimized as capture points."
+    ],
+    "antiSignals": [
+      "No brand awareness / no ad traffic yet \u2014 there is no shadow to capture; build front-end traffic first."
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Node: Funnel Hub (anchor property)",
+      "purpose": "Be the #1 organic result for the brand name; the central capture point for all shadow traffic.",
+      "elements": [
+        "Optimized title/meta for brand + founder name",
+        "Clear primary opt-in path",
+        "Links to every front-end funnel"
+      ]
+    },
+    {
+      "order": 2,
+      "page": "Node: Owned social profiles (Dream 100 anchors)",
+      "purpose": "Rank for branded searches and route profile visitors to the Hub / a lead funnel.",
+      "elements": [
+        "Consistent handle, bio one-liner, and profile imagery across platforms",
+        "Bio link -> lead magnet or Hub",
+        "Pinned post/story highlight that pre-frames the core offer"
+      ]
+    },
+    {
+      "order": 3,
+      "page": "Node: Reviews & reputation surfaces",
+      "purpose": "Make sure third-party results (Google Business, YouTube, podcasts, press) reinforce trust and link back to owned properties.",
+      "elements": [
+        "Google Business profile / review requests",
+        "Authority placements (podcast guesting, press) pointing to the Hub",
+        "Branded YouTube channel optimized for name search"
+      ]
+    },
+    {
+      "order": 4,
+      "page": "Node: Branded-search SERP coverage",
+      "purpose": "Occupy the first page of search for the brand, founder, product, and '[brand] reviews/scam' queries.",
+      "elements": [
+        "Hub + blog content targeting brand-name and '[brand] review' queries",
+        "FAQ / about content answering common research questions",
+        "No dead-end pages \u2014 every owned result has an opt-in"
+      ]
+    },
+    {
+      "order": 5,
+      "page": "Node: Retargeting recapture layer",
+      "purpose": "Re-present the front-end offer to people who researched but did not opt in.",
+      "elements": [
+        "Pixels on Hub + all owned properties",
+        "Retargeting ad audiences segmented by page visited",
+        "Bridge ad creative back to the #1 front-end funnel"
+      ]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "Russell Brunson \u2014 Traffic Secrets persona (The Traffic Strategist): Dream 100, Hook-Story-Offer for native content, the Funnel Hub + Shadow Funnel capture doctrine.",
+    "supportingPersonas": [
+      "Donald Miller \u2014 StoryBrand persona (The Brand Clarifier): the SB7 framework \u2014 (1) a Character who (2) has a Problem, (3) meets a Guide, (4) who gives them a Plan, (5) and calls them to Action, (6) that ends in Success and (7) helps them avoid Failure \u2014 plus the one-liner and the grunt test.",
+      "Russell Brunson \u2014 Expert Secrets persona (The Attractive Character / Expert): Epiphany Bridge story script, the Big Domino, false-belief patterns (vehicle/internal/external), Perfect Webinar, The Stack and Close, Hook-Story-Offer."
+    ],
+    "scripts": [
+      "One consistent StoryBrand one-liner used as the bio/meta description across EVERY owned property (consistency is the whole game).",
+      "Attractive Character bio (Expert Secrets) reused on each profile so the researcher meets the same person everywhere.",
+      "Hook-Story-Offer retargeting ad copy to recapture researchers who didn't opt in."
+    ],
+    "notes": "There is no new sales copy to write here \u2014 the work is consistency and coverage. Audit every place the brand name appears and make sure the message, one-liner, and opt-in path are identical and unbroken.",
+    "primaryPersonaKey": "strategist",
+    "supportingPersonaKeys": [
+      "storybrand",
+      "expert"
+    ]
+  },
+  "ghlBuild": {
+    "pages": [
+      "No new GHL pages of its own \u2014 this overlays the Funnel Hub (built separately) plus external profiles.",
+      "In GHL, ensure the Hub Website SEO titles/meta target brand + founder name."
+    ],
+    "skill44Widgets": [
+      "Skill 44 Form widget reused as the universal opt-in destination linked from every external bio.",
+      "Skill 44 review-request form/workflow to push happy customers to Google reviews."
+    ],
+    "automations": [
+      "Workflow: 'How did you hear about us = searched name' tag -> attribute to shadow funnel for reporting.",
+      "Retargeting audience sync from Hub pixel -> recapture ad set."
+    ],
+    "notes": "Skill 6 does not create a standalone funnel here; it configures the Hub's SEO + a single canonical opt-in (Skill 44 form) that every owned property links to. Deliverable is an audit + a presence map, not a page build."
+  },
+  "metrics": [
+    "Share of first-page branded-search results that are owned",
+    "Branded-search -> Hub sessions",
+    "Recapture-retargeting conversion rate",
+    "Review volume/rating trend"
+  ],
+  "group": "traffic-advanced",
+  "generated": "2026-06-26"
+}

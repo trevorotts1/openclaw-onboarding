@@ -1,0 +1,112 @@
+{
+  "id": "telesummit-funnel",
+  "name": "Telesummit Funnel",
+  "aliases": ["Tele-Summit", "Audio Summit Funnel", "Interview Series Summit"],
+  "category": "Event Funnels",
+  "libraryRef": "#27",
+  "sourceBooks": ["Marketing Secrets Blackbook"],
+  "lengthClass": "medium-form",
+  "origin": "Online event-based selling format featuring multiple expert speakers in sequence — the audio/phone-era ancestor of the video summit. Listed alongside webinars, sales pages, and VSLs as a primary online selling modality.",
+  "whenToUse": {
+    "summary": "Use for a multi-speaker interview-series event delivered primarily by audio/dial-in (or low-production audio interviews), with a paid all-access recordings upgrade — when video production is impractical or the audience prefers listen-on-the-go.",
+    "goals": [
+      "Run a multi-speaker event without video production overhead",
+      "Reach a listen-while-busy audience via audio/dial-in interviews",
+      "Build a list and monetize via paid all-access recordings"
+    ],
+    "keywords": ["telesummit", "tele-summit", "audio summit", "interview series", "dial in", "listen in", "speaker schedule", "all-access recordings"],
+    "signals": [
+      "Multiple speakers but low video-production capacity",
+      "Audience consumes audio (commuters, busy professionals)",
+      "Interview/conversation format rather than slide presentation",
+      "Wants list growth + recordings upsell like a summit"
+    ],
+    "antiSignals": [
+      "Needs visual demo/slides (use Summit or Webinar)",
+      "Single presenter (use Teleseminar)",
+      "Hard high-ticket close required (use Webinar/Application)"
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Telesummit Registration Page",
+      "purpose": "Sell the free registration with the speaker schedule and the audio-event promise.",
+      "keyElements": [
+        "Big-promise headline + event dates",
+        "Speaker schedule (names, topics, session times)",
+        "Free opt-in form (email + phone for dial-in/SMS)",
+        "How-it-works: dial in or stream audio"
+      ],
+      "skill44Widgets": ["Free registration opt-in form", "Speaker schedule block", "Countdown to first session"]
+    },
+    {
+      "order": 2,
+      "page": "Access Delivery / Confirmation Page",
+      "purpose": "Deliver dial-in details and session links, and pitch the all-access upgrade.",
+      "keyElements": [
+        "Dial-in number / access links + schedule",
+        "Add-to-calendar + SMS reminders",
+        "All-access recordings upgrade pitch (OTO)",
+        "Order form with bump for the upgrade"
+      ],
+      "skill44Widgets": ["Add-to-calendar", "SMS reminder opt-in", "All-access order form with bump"]
+    },
+    {
+      "order": 3,
+      "page": "Session / Interview Pages",
+      "purpose": "Host each audio interview for its live/available window.",
+      "keyElements": [
+        "Audio player per session (or dial-in)",
+        "Speaker bio + their free gift/lead-magnet link",
+        "Availability window note (expires to drive upgrade)",
+        "All-access CTA beside the player"
+      ],
+      "skill44Widgets": ["Audio player embed", "Speaker bio block", "All-access CTA block"]
+    },
+    {
+      "order": 4,
+      "page": "Paid All-Access / Recordings Upgrade Page",
+      "purpose": "Sell the full recordings bundle to those who want permanent access.",
+      "keyElements": [
+        "All-access value stack (recordings, transcripts, bonuses)",
+        "Order form with bump",
+        "Price-rise / closing countdown",
+        "Guarantee + FAQ"
+      ],
+      "skill44Widgets": ["Order form with bump", "Countdown / price-rise timer", "FAQ accordion"]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "storybrand-sb7",
+    "supportingPersonas": ["copywriting-secrets", "epiphany-bridge", "star-story-solution"],
+    "scripts": [
+      "Registration positioning = StoryBrand SB7 (clear promise for a multi-speaker event)",
+      "Headline + speaker fascinations = Copywriting Secrets",
+      "Host intro / interview framing = Epiphany Bridge",
+      "All-access upgrade = Star/Story/Solution + Stack"
+    ],
+    "notes": "Same authority/list mechanics as the video Summit, but copy must sell the audio/dial-in convenience ('listen on your commute'). The recordings upsell carries the monetization."
+  },
+  "ghlBuild": {
+    "funnelType": "Funnel (multi-page) + audio delivery + upgrade upsell",
+    "pages": ["Registration", "Access Delivery/Confirmation + Upsell", "Session/Interview pages", "All-Access Upgrade"],
+    "skill44Widgets": [
+      "Free registration opt-in form (email + phone)",
+      "Speaker schedule block",
+      "Add-to-calendar + SMS reminders",
+      "Audio player embeds",
+      "All-access order form with bump",
+      "Countdown / price-rise timer",
+      "FAQ accordion"
+    ],
+    "automations": [
+      "Register → dial-in details + daily 'session live' SMS/email sequence",
+      "Tag by sessions attended → tailored upgrade offers",
+      "All-access purchase → grant recordings access + exit upsell",
+      "Post-event → expiring recordings offer to free registrants"
+    ],
+    "products": ["Free registration", "All-Access recordings upgrade", "Order bump", "Speaker/host backend offers"],
+    "notes": "Skill 6 builds the registration, delivery/upsell, session, and upgrade pages with audio players; Skill 44 generates the opt-in form, audio player embeds, the all-access order form + bump, the SMS reminder widget, and the upgrade countdown."
+  }
+}

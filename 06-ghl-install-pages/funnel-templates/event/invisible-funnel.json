@@ -1,0 +1,111 @@
+{
+  "id": "invisible-funnel",
+  "name": "Invisible Funnel",
+  "aliases": ["Invisible Funnel Webinar", "Pay-If-You-Like-It Funnel", "Try-Before-You-Buy Webinar"],
+  "category": "Event Funnels",
+  "libraryRef": "#14",
+  "sourceBooks": ["The Funnel Hacker's Cookbook", "DotCom Secrets"],
+  "lengthClass": "medium-form",
+  "origin": "Created by Daegan Smith. Training/event is positioned as FREE upfront; attendee registers and enters a credit card, but is only charged if they liked the content.",
+  "whenToUse": {
+    "summary": "Use when the offer is a paid training/event but the client wants maximum registration volume and is willing to use a reverse-risk 'only charged if you liked it' billing model, then soft-sell a high-ticket backend.",
+    "goals": [
+      "Maximize webinar/event registrations by removing the pay-wall friction upfront",
+      "Convert on the strength of content quality, not the sales page",
+      "Feed a high-ticket backend application after the event"
+    ],
+    "keywords": ["invisible funnel", "pay if you like it", "only charged if", "try before you buy", "free unless", "risk-free training", "card now charge later"],
+    "signals": [
+      "Client says 'I want people to pay only if they get value'",
+      "High-quality training/event with strong content confidence",
+      "Wants both volume (free frame) AND revenue (conditional charge)",
+      "Plans a high-ticket coaching/consulting backend offer"
+    ],
+    "antiSignals": [
+      "Pure free lead magnet with no charge intent (use Squeeze/Lead Magnet)",
+      "Standard paid webinar with normal checkout (use Webinar Funnel)",
+      "Client uncomfortable storing cards for delayed billing"
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Registration Page (conditional billing)",
+      "purpose": "Get the visitor to register AND enter a credit card under the 'only billed if you liked it' frame.",
+      "keyElements": [
+        "Curiosity 'Big Promise' headline + sub-headline naming the result",
+        "Plain-language billing explainer block: 'Enter your card to reserve a seat. Do nothing and your card is billed in 2 days — if you didn't love it, just tell us and you owe nothing.'",
+        "Fascination bullets teasing what will be taught (the 3 secrets)",
+        "Risk-reversal / guarantee block",
+        "Registration + payment form (name, email, card)"
+      ],
+      "skill44Widgets": ["Registration form (name/email/phone)", "Order/payment form with conditional/delayed billing", "Trust-badge / guarantee block"]
+    },
+    {
+      "order": 2,
+      "page": "Confirmation / Indoctrination Page",
+      "purpose": "Confirm the seat, restate the billing terms, and pre-frame the event so they show up and pay attention.",
+      "keyElements": [
+        "Access details + 'add to calendar'",
+        "Short indoctrination video from the Attractive Character",
+        "Re-state of the pay-if-you-like-it terms (transparency builds trust)",
+        "What to bring / why to attend live"
+      ],
+      "skill44Widgets": ["Add-to-calendar widget", "Reminder opt-in (SMS/email)"]
+    },
+    {
+      "order": 3,
+      "page": "Event Delivery Page",
+      "purpose": "Deliver the actual training/webinar so the content earns the charge.",
+      "keyElements": [
+        "Live or prerecorded event embed (Zoom/GoToWebinar/Vimeo)",
+        "Perfect Webinar body: Intro hook → 3 Secrets → Stack → soft transition to backend",
+        "Live chat / Q&A",
+        "Soft-sell CTA to the high-ticket application near the close"
+      ],
+      "skill44Widgets": ["Video embed block", "Live chat embed"]
+    },
+    {
+      "order": 4,
+      "page": "Charge-or-Cancel + High-Ticket Application Page",
+      "purpose": "Run the conditional-billing logic (charge after 2 days unless they cancel) and route happy attendees into a high-ticket application.",
+      "keyElements": [
+        "'Loved it? Do nothing.' / 'Not for you? Cancel here' branching",
+        "Soft-sell application CTA for the higher-ticket backend offer",
+        "Application form that gets the prospect to qualify/sell themselves",
+        "Calendar booking for the qualification call"
+      ],
+      "skill44Widgets": ["Cancel/keep survey", "Multi-field application form", "Calendar booking widget"]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "perfect-webinar",
+    "supportingPersonas": ["copywriting-secrets", "epiphany-bridge", "star-story-solution"],
+    "scripts": [
+      "Event body = Perfect Webinar (Intro/Hook → 3 Secrets → Stack → Close)",
+      "Registration page = Copywriting Secrets Big-Promise headline + fascination bullets + risk-reversal block (the conditional-billing frame IS the risk reversal)",
+      "Indoctrination + event open = Epiphany Bridge origin story",
+      "High-ticket application copy = Star/Story/Solution take-away frame"
+    ],
+    "notes": "The conditional-billing language is the load-bearing copy element. Keep it transparent and repeated on pages 1, 2, and 4 — trust is what makes attendees allow the charge."
+  },
+  "ghlBuild": {
+    "funnelType": "Funnel (4 pages) + automations",
+    "pages": ["Registration (with payment element)", "Confirmation/Indoctrination", "Event Delivery", "Charge-or-Cancel + Application"],
+    "skill44Widgets": [
+      "Registration form widget (name/email/phone)",
+      "Order form widget configured for authorize-now / capture-later (delayed billing)",
+      "Add-to-calendar + reminder widgets",
+      "Application form widget (multi-field qualification)",
+      "Calendar/booking widget for the closer call"
+    ],
+    "automations": [
+      "Tag on register; SMS/email reminder sequence pre-event",
+      "Post-event delay timer (2 days) → capture charge unless 'cancel' tag set",
+      "Cancel link sets 'invisible-cancel' tag and voids capture",
+      "On application submit → notify closer + booking confirmation"
+    ],
+    "products": ["Event price (conditional capture)", "High-ticket backend (sold by application/phone)"],
+    "notes": "Skill 6 builds the 4 pages and wires the payment element for delayed capture; Skill 44 generates the registration form, the application form, the calendar booking widget, and the cancel/keep survey."
+  }
+}

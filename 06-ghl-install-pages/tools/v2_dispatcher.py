@@ -50,6 +50,42 @@ import ghl_verify  # noqa: E402
 import ghl_gate  # noqa: E402
 import scrub_turn_telemetry as scrub  # noqa: E402
 
+# ── STEP 0 — template-first funnel matcher (env-gated; never blocks a build) ─
+# Import is lazy / optional so unit tests that do not set GHL_FUNNEL_CATALOG (or
+# GHL_FUNNEL_INDEX) are completely unaffected — the matcher is a no-op when
+# neither env var is set AND no step0_matcher is injected.
+try:
+    import funnel_matcher as _fm  # type: ignore[import]
+    _FM_AVAILABLE = True
+except ImportError:
+    _fm = None  # type: ignore[assignment]
+    _FM_AVAILABLE = False
+
+
+def _resolve_step0(
+    step0_matcher: "Callable[[dict, str], dict] | None",
+) -> "Callable[[dict, str], dict] | None":
+    """Return the STEP-0 callable to use, or None if none is configured.
+
+    Priority: injected ``step0_matcher`` kwarg > env-gated auto-configure
+    (``GHL_FUNNEL_INDEX`` or ``GHL_FUNNEL_CATALOG`` set) > None (no-op).
+    The auto-configure path requires ``funnel_matcher`` to be importable.
+    """
+    if step0_matcher is not None:
+        return step0_matcher
+    if _FM_AVAILABLE:
+        index_path = os.environ.get("GHL_FUNNEL_INDEX", "")
+        catalog_root = os.environ.get("GHL_FUNNEL_CATALOG", "")
+        if index_path or catalog_root:
+            def _auto_step0(task: dict, evidence_root: str) -> dict:
+                return _fm.step0_match(
+                    task, evidence_root,
+                    catalog_root=catalog_root or None,
+                    index_path=index_path or None,
+                )
+            return _auto_step0
+    return None
+
 
 # The bounded-dispatcher state machine (SOP §1). These are the ONLY task states.
 STATE_BACKLOG = "backlog"
@@ -113,6 +149,7 @@ def dispatch_one(
     wallclock_cap_s: int = DEFAULT_WALLCLOCK_CAP_S,
     clock: Callable[[], float] | None = None,
     live: bool = True,
+    step0_matcher: "Callable[[dict, str], dict] | None" = None,
 ) -> DispatchResult:
     """Dispatch and run ONE department build task, bounded.
 
@@ -142,6 +179,15 @@ def dispatch_one(
             injected verifier / mock path).  In PRODUCTION, ``live=True`` is the
             ONLY valid value — passing ``live=False`` with a real verifier
             produces a MOCK verdict that is immediately downgraded to FAILED.
+        step0_matcher: OPTIONAL INJECTED callable ``(task, evidence_root) -> decision``
+            that makes Skill 6 template-first.  If supplied, it is called right after
+            the max_inflight gate and before ``backlog -> dispatched``.  On a
+            USE_TEMPLATE decision it mutates ``task['pages']`` / ``task['copy_persona']``
+            so the injected builder receives an instantiated plan instead of building
+            from scratch.  On CREATE_NEW it is a no-op (builder generates net-new).
+            A SKIPPED result (matcher error or not configured) never blocks the build.
+            Defaults to None; auto-configured from env vars GHL_FUNNEL_CATALOG /
+            GHL_FUNNEL_INDEX when funnel_matcher is importable (see _resolve_step0).
 
     Returns:
         ``DispatchResult`` (truthy only on verified + overall_pass True).
@@ -158,6 +204,21 @@ def dispatch_one(
         rp = _write_record(evidence_root, rec)
         return DispatchResult(task_id, STATE_BACKLOG, rec["reason"],
                               evidence_root=evidence_root, record_path=rp)
+
+    # ── STEP 0 — template-first funnel matcher (advisory, never blocks) ──────
+    # Runs AFTER the max_inflight gate and BEFORE backlog->dispatched so that
+    # when a template is matched the builder sees an already-instantiated page plan
+    # (task['pages'] / task['copy_persona'] / task['template_match']).  A SKIPPED
+    # or errored result is recorded but NEVER causes a build failure.
+    _s0 = _resolve_step0(step0_matcher)
+    if _s0 is not None:
+        try:
+            _step0_result = _s0(task, evidence_root)
+        except Exception as _s0_exc:  # noqa: BLE001
+            _step0_result = {"decision": "SKIPPED",
+                             "reason": f"step0 raised: {type(_s0_exc).__name__}: {_s0_exc}"}
+        task.setdefault("template_match", _step0_result.get("template_match",
+                        {"decision": _step0_result.get("decision", "SKIPPED")}))
 
     # ── backlog -> dispatched ─────────────────────────────────────────────────
     started = clock()

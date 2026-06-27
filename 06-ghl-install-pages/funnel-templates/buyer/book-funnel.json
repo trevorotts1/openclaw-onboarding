@@ -1,0 +1,172 @@
+{
+  "id": "book-funnel",
+  "name": "Book Funnel",
+  "aliases": [
+    "Book Funnel",
+    "Free-Plus-Shipping Book Funnel",
+    "Free Book Funnel",
+    "Just Pay Shipping Book Funnel"
+  ],
+  "category": "Buyer Funnel",
+  "group": "buyer",
+  "lengthClass": "medium-form",
+  "libraryRef": "#25",
+  "sourceBooks": [
+    "Marketing Secrets Blackbook",
+    "Lead Funnels",
+    "Expert Secrets",
+    "Traffic Secrets"
+  ],
+  "whenToUse": {
+    "summary": "A free-plus-shipping physical book offer where the prospect pays only shipping (typically $7.95). The book acquires a buyer-quality lead; an order bump on the payment step and two OTOs after purchase cover ad costs and generate profit. The confirmation page delivers high-value bonus training that bridges to a higher-priced backend offer. Use when the client has (or can produce) a book and wants to build a premium buyer list while liquidating ad spend.",
+    "goals": [
+      "Acquire buyer-quality leads via a free book (pay shipping only)",
+      "Establish the author as the expert / Attractive Character",
+      "Cover ad costs with the order bump + 2 OTOs",
+      "Bridge new buyers into a higher-priced backend offer"
+    ],
+    "keywords": [
+      "free book",
+      "free plus shipping book",
+      "just pay shipping",
+      "$7.95 shipping",
+      "get my book free",
+      "book funnel",
+      "author funnel",
+      "free copy of my book"
+    ],
+    "signals": [
+      "Client has or is writing a book / printed asset",
+      "Goal is a premium buyer list + authority positioning",
+      "Cold paid traffic with a defined backend (course/coaching/event)",
+      "Willing to ship a physical product for the cost of shipping"
+    ],
+    "antiSignals": [
+      "Front end is a non-book digital product $27-$97 -> SLO Funnel",
+      "Front end is a non-book physical sample -> 2-Step Tripwire",
+      "No physical/printed asset, just a lead magnet -> Lead Magnet Funnel (lead group)",
+      "Recurring subscription is the core -> Membership/Continuity"
+    ]
+  },
+  "pageStructure": [
+    {
+      "step": 1,
+      "page": "Free-Book 2-Step Order Page",
+      "purpose": "Sell the free book (pay shipping only) with a 2-step order form: Step 1 captures shipping address (abandoned-cart lead), Step 2 collects shipping payment + the order bump.",
+      "keyElements": [
+        "Hook headline ('Get my book FREE — just cover shipping')",
+        "3D book mockup + what's-inside bullets",
+        "Author Epiphany Bridge story (why the book exists)",
+        "Value framing: book free, you pay only $7.95 shipping",
+        "Step 1: name + shipping address",
+        "Step 2: payment + ORDER BUMP (audiobook / companion workbook)",
+        "Testimonials / endorsements, guarantee",
+        "Scarcity (limited print run)"
+      ],
+      "widgets": [
+        "Skill 44: Two-Step Order Form (address step -> shipping-payment step)",
+        "Skill 44: Order Bump element on the payment step",
+        "GHL Payments: free book (charge $7.95 shipping only) + bump product"
+      ]
+    },
+    {
+      "step": 2,
+      "page": "OTO 1 Page",
+      "purpose": "Immediately after purchase, present a one-click upsell (audiobook, companion course, or live training) to cover ad cost.",
+      "keyElements": [
+        "'Wait — add this to your book order' interrupt headline",
+        "Upsell VSL or short copy (audiobook / course)",
+        "One-click accept button + decline link"
+      ],
+      "widgets": [
+        "Skill 44: One-Click Upsell element",
+        "GHL Payments: OTO 1 product"
+      ]
+    },
+    {
+      "step": 3,
+      "page": "OTO 2 / Downsell Page",
+      "purpose": "Second upsell or a downsell of OTO 1 (payment plan / lite version) to maximize and recover order value.",
+      "keyElements": [
+        "Second upsell offer OR downsell of OTO 1",
+        "One-click accept button + decline link"
+      ],
+      "widgets": [
+        "Skill 44: One-Click Upsell element",
+        "GHL Payments: OTO 2 / downsell product"
+      ]
+    },
+    {
+      "step": 4,
+      "page": "Confirmation / Bonus Training Page",
+      "purpose": "Confirm the order, deliver high-value bonus training, and bridge the new buyer to a higher-priced backend offer.",
+      "keyElements": [
+        "Order/shipping confirmation",
+        "High-value BONUS training delivery (video/training)",
+        "Attractive-Character bonding + authority reinforcement",
+        "High-ticket backend CTA (book a call / apply / next offer)"
+      ],
+      "widgets": [
+        "Skill 44: Tag-on-purchase + follow-up/nurture workflow",
+        "Skill 44: Calendar widget (book a backend call) if backend is high-ticket"
+      ]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": {
+      "slug": "russell-brunson-the-funnel-hackers-cookbook",
+      "book": "The Funnel Hacker's Cookbook",
+      "script": "Free-plus-shipping book recipe — 2-step order, bump + 2 OTOs, bonus-bridge to backend",
+      "role": "Governs the page structure, element checklist, and bump/OTO placement"
+    },
+    "salesScript": {
+      "script": "Hook / Story / Offer with the author's Epiphany Bridge selling the book; Star/Story/Solution on the order page",
+      "source": "Lead Funnels (Hook/Story/Offer) · Expert Secrets (Epiphany Bridge)",
+      "why": "The book sells on the author's story (why they wrote it) and a compelling hook; the Epiphany Bridge carries the emotional sell while the offer frames the free-plus-shipping deal."
+    },
+    "supportingPersonas": [
+      {
+        "slug": "edwards-copywriting-secrets",
+        "book": "Copywriting Secrets",
+        "script": "Headline + benefit-stack formulas; order-bump and OTO microcopy",
+        "role": "Writes the order-page copy, bump, and upsells"
+      },
+      {
+        "slug": "brunson-marketing-secrets-blackbook",
+        "book": "Marketing Secrets Blackbook",
+        "script": "Attractive Character authority + Value Ladder bonus-bridge",
+        "role": "Positions the author as the expert and bridges the bonus into the backend"
+      },
+      {
+        "slug": "russell-brunson-lead-funnels",
+        "book": "Lead Funnels",
+        "script": "Hook / Story / Offer + unique mechanism",
+        "role": "Frames the front-end hook and the book's unique-mechanism promise"
+      }
+    ],
+    "notes": "The Cookbook governs the free-plus-shipping recipe; the author's Epiphany Bridge story sells the book; Copywriting Secrets writes the order/bump/OTO copy; Blackbook positions authority and bridges the confirmation-page bonus into the backend. The book is a buyer-list builder and authority play, not a profit center on its own."
+  },
+  "ghlBuild": {
+    "funnelType": "GHL Funnel (4 steps)",
+    "skill6Steps": [
+      "Create Funnel -> name with client prefix -> Create",
+      "Add New Step 1 = 'Free-Book 2-Step Order Page'",
+      "Add New Step 2 = 'OTO 1 Page'",
+      "Add New Step 3 = 'OTO 2 / Downsell Page'",
+      "Add New Step 4 = 'Confirmation / Bonus Training Page'"
+    ],
+    "skill44Widgets": [
+      "Two-Step Order Form (address step -> shipping-payment step) on Step 1",
+      "Order Bump element on the payment step",
+      "One-Click Upsell elements on Steps 2 and 3",
+      "Calendar widget on Step 4 if the backend is a high-ticket call",
+      "Tags + follow-up/nurture workflow"
+    ],
+    "products": [
+      "Free book product charging $7.95 shipping only in GHL Payments",
+      "Order-bump product (audiobook / workbook)",
+      "OTO 1 and OTO 2 / downsell products"
+    ],
+    "notes": "Pre-build the 2-step order form, order bump, one-click upsells, products, tags, and (if high-ticket backend) the calendar via Skill 44 (or GHL MCP/API). Charge shipping only on the book product. The confirmation page hosts bonus training + the backend bridge; if the backend is a call, embed the Skill 44 calendar there. Pages build as GHL-compatible HTML in the code block, or Vercel-built and embedded when heavy."
+  }
+}

@@ -1,0 +1,161 @@
+{
+  "id": "membership-continuity",
+  "name": "Membership / Continuity Funnel",
+  "aliases": [
+    "Membership Funnel",
+    "Continuity Funnel",
+    "Subscription Funnel",
+    "Recurring Revenue Funnel",
+    "Trial Funnel",
+    "Membership Site Funnel"
+  ],
+  "category": "Buyer Funnel",
+  "group": "buyer",
+  "lengthClass": "medium-form",
+  "libraryRef": "#12",
+  "sourceBooks": [
+    "The Funnel Hacker's Cookbook",
+    "Marketing Secrets Blackbook",
+    "DotCom Secrets"
+  ],
+  "whenToUse": {
+    "summary": "Sells access to a recurring subscription — membership site, SaaS, newsletter, or info-product continuity. Often led in with a free trial, $1 trial, or free-plus-shipping box. Stick rate improves when deployed as a SECOND funnel after buyers have already bonded with the Attractive Character. A VSL or sales page sells the subscription; member account creation happens on the thank-you page with an automated content drip.",
+    "goals": [
+      "Sell recurring/subscription access (monthly or annual)",
+      "Add predictable recurring revenue (MRR) to the value ladder",
+      "Convert existing buyers into members (stick rate)",
+      "Onboard members and drip content automatically"
+    ],
+    "keywords": [
+      "membership",
+      "continuity",
+      "subscription",
+      "recurring",
+      "monthly",
+      "free trial",
+      "$1 trial",
+      "membership site",
+      "members area",
+      "SaaS",
+      "newsletter subscription",
+      "MRR"
+    ],
+    "signals": [
+      "Offer is recurring (monthly/annual) rather than one-time",
+      "Client wants MRR / predictable revenue",
+      "There is gated content, software, or a community to deliver continuously",
+      "Best deployed to an audience that already bought / already bonded"
+    ],
+    "antiSignals": [
+      "One-time digital product -> SLO or Sales Letter / VSL Funnel",
+      "Free/just-shipping physical front end -> 2-Step Tripwire (can lead INTO continuity)",
+      "Deeply discounted one-time deal -> Daily Deal Funnel",
+      "High-ticket application/coaching -> Application Funnel (other group)"
+    ]
+  },
+  "pageStructure": [
+    {
+      "step": 1,
+      "page": "Sales / VSL Page (Subscription Offer)",
+      "purpose": "Sell the recurring membership, framing the ongoing transformation. Lead with a free trial, $1 trial, or free-plus-shipping box to lower the join barrier.",
+      "keyElements": [
+        "Headline framing the ongoing transformation (not a one-time fix)",
+        "VSL or sales copy selling the subscription value over time",
+        "Trial offer framing (free / $1 / free-plus-shipping box)",
+        "What members get each month (recurring value stack)",
+        "Cancel-anytime risk reversal + community/social proof",
+        "FAQ on billing cadence and cancellation"
+      ],
+      "widgets": [
+        "Video embed (Vercel-built page if VSL) or GHL-compatible HTML",
+        "Skill 44: CTA routing to the recurring order/checkout step"
+      ]
+    },
+    {
+      "step": 2,
+      "page": "Order / Checkout Page (Recurring Billing)",
+      "purpose": "Collect payment on a recurring billing schedule (with trial logic if used) and optionally an order bump (annual upgrade or add-on).",
+      "keyElements": [
+        "Recurring subscription order form (trial -> recurring rebill)",
+        "Optional ORDER BUMP (annual prepay discount / add-on)",
+        "Plan selector (monthly vs annual) if applicable",
+        "Trial terms + first-charge date clearly stated"
+      ],
+      "widgets": [
+        "Skill 44: Order Form configured for recurring billing / subscription",
+        "GHL Payments: recurring/subscription product (with trial)",
+        "Optional Skill 44: Order Bump (annual upgrade)"
+      ]
+    },
+    {
+      "step": 3,
+      "page": "Member Account Creation / Welcome Thank-You Page",
+      "purpose": "Create the member login, deliver first access, and trigger the automated content drip and onboarding sequence.",
+      "keyElements": [
+        "Account/login creation (set password)",
+        "Welcome + first-content access + quick-start guide",
+        "Attractive-Character onboarding message (stick rate)",
+        "Drip schedule explanation + community invite"
+      ],
+      "widgets": [
+        "GHL Memberships: member account creation + content drip setup",
+        "Skill 44: Tag-on-purchase + onboarding workflow trigger"
+      ]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": {
+      "slug": "brunson-marketing-secrets-blackbook",
+      "book": "Marketing Secrets Blackbook",
+      "script": "Attractive Character + Soap Opera Sequence (bonding) + Value Ladder",
+      "role": "Governs stick rate — continuity converts best after bonding; the Soap Opera Sequence onboards and the Attractive Character keeps members engaged"
+    },
+    "salesScript": {
+      "script": "VSL or Sales Letter selling continuity — Perfect Webinar or Star/Story/Solution framing the ongoing transformation",
+      "source": "Expert Secrets / DotCom Secrets",
+      "why": "The membership sale must sell the recurring transformation over time, not a single deliverable; the Perfect Webinar / Star-Story-Solution structures both work."
+    },
+    "supportingPersonas": [
+      {
+        "slug": "miller-building-storybrand",
+        "book": "Building a StoryBrand",
+        "script": "SB7 — customer = Hero on a continuing journey; the membership is the Plan/Guide",
+        "role": "Frames the subscription as the customer's ongoing success path"
+      },
+      {
+        "slug": "edwards-copywriting-secrets",
+        "book": "Copywriting Secrets",
+        "script": "Trial-offer framing, recurring-value stacking, cancellation/objection copy",
+        "role": "Writes the offer page, trial terms, and retention copy"
+      },
+      {
+        "slug": "miller-coach-builder",
+        "book": "Coach Builder",
+        "script": "Productized recurring offer structuring (entry/core/premium tiers)",
+        "role": "Used when the continuity is a coaching/mastermind membership — structures the tiers"
+      }
+    ],
+    "notes": "Blackbook governs the bonding + stick rate (Soap Opera Sequence onboarding, Attractive Character retention). StoryBrand frames the ongoing journey; Copywriting Secrets writes the trial and retention copy; Coach Builder structures tiers when it's a coaching membership. Deploy as a SECOND funnel after buyers bond for the best stick rate."
+  },
+  "ghlBuild": {
+    "funnelType": "GHL Funnel (3 steps) + GHL Membership area",
+    "skill6Steps": [
+      "Create Funnel -> name with client prefix -> Create",
+      "Add New Step 1 = 'Sales / VSL Page (Subscription Offer)'",
+      "Add New Step 2 = 'Order / Checkout Page (Recurring Billing)'",
+      "Add New Step 3 = 'Member Account Creation / Welcome Thank-You'",
+      "Build the gated Membership area (GHL Memberships) and the content drip"
+    ],
+    "skill44Widgets": [
+      "Order Form configured for recurring/subscription billing (with trial) on Step 2",
+      "Optional Order Bump (annual upgrade) on Step 2",
+      "Tags + onboarding/retention workflow",
+      "GHL Memberships: account creation + drip on Step 3"
+    ],
+    "products": [
+      "Recurring/subscription product in GHL Payments (trial -> rebill)",
+      "Optional annual prepay / add-on bump product"
+    ],
+    "notes": "Use a GHL recurring product (subscription) with trial logic; member account creation and content drip use GHL Memberships, set up in advance. Pre-build the order form, tags, membership offer, and workflows via Skill 44 (or GHL MCP/API). The sales page can be GHL-compatible HTML in the code block, or Vercel-built if it's a heavy VSL."
+  }
+}
