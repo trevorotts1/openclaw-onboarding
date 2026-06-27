@@ -154,27 +154,51 @@ def detect_interaction_mode(task_description: str) -> str:
 # The local copy was removed to eliminate divergent candidate lists.
 
 def check_sticky_assignment(department_id: str, task_category: str, db_path: Path):
-    """Returns sticky assignment dict or None."""
+    """Returns sticky assignment dict or None.
+
+    Anti-staleness ENFORCEMENT (v14.23.3): a row flagged needs_review=1 — set by
+    write_persona_assignment_db() once the SAME persona is picked
+    ANTI_STALENESS_THRESHOLD times in a row WITHOUT a switch — is NOT trusted.
+    We return None so main() re-scores from scratch.
+
+    Before this, needs_review was descriptive only: the gate kept serving the
+    stale pick forever even after a better candidate emerged. That is exactly
+    how a (operations, design) row locked onto sinek-start-with-why (0.5915)
+    kept being returned after the v14.15 craft-domain bonus had already made
+    rohde-the-sketchnote-workbook (0.6896) the correct fresh-score winner — the
+    selector "went deaf" to its own raised flag. Enforcement, not description.
+    """
     if not db_path or not db_path.exists():
         return None
     try:
         conn = sqlite3.connect(str(db_path))
+        # needs_review may be absent on very old installs; tolerate that.
+        try:
+            cols = {c[1] for c in conn.execute("PRAGMA table_info(persona_assignment)").fetchall()}
+        except sqlite3.Error:
+            cols = set()
+        nr_select = ", needs_review" if "needs_review" in cols else ""
         cur = conn.cursor()
-        cur.execute("""
-            SELECT persona_id, persona_name, persona_mode, persona_version, last_score
-            FROM persona_assignment
-            WHERE department_id = ? AND task_category = ?
-        """, (department_id, task_category))
+        cur.execute(
+            "SELECT persona_id, persona_name, persona_mode, persona_version, last_score"
+            + nr_select +
+            " FROM persona_assignment WHERE department_id = ? AND task_category = ?",
+            (department_id, task_category),
+        )
         row = cur.fetchone()
         conn.close()
-        if row and row[4] is not None and row[4] >= 0.5:
-            return {
-                "persona_id": row[0],
-                "persona_name": row[1] or row[0],
-                "persona_mode": row[2],
-                "persona_version": row[3] or 1,
-                "last_score": row[4],
-            }
+        if not row or row[4] is None or row[4] < 0.5:
+            return None
+        # Busted cache: a flagged-stale row forces a fresh re-score upstream.
+        if nr_select and len(row) > 5 and row[5] == 1:
+            return None
+        return {
+            "persona_id": row[0],
+            "persona_name": row[1] or row[0],
+            "persona_mode": row[2],
+            "persona_version": row[3] or 1,
+            "last_score": row[4],
+        }
     except sqlite3.Error:
         return None
     return None
@@ -1058,7 +1082,7 @@ def write_persona_assignment_db(db_path: Path, entry: dict):
         cur = conn.cursor()
 
         cur.execute(
-            "SELECT persona_id, switch_count, consecutive_count "
+            "SELECT persona_id, switch_count, consecutive_count, needs_review "
             "FROM persona_assignment "
             "WHERE department_id = ? AND task_category = ?",
             (entry["department"], entry["task_category"]),
@@ -1067,13 +1091,22 @@ def write_persona_assignment_db(db_path: Path, entry: dict):
         switch_count = 0
         consecutive_count = 1
         if existing:
-            existing_persona_id, existing_switch_count, existing_consecutive = existing
+            (existing_persona_id, existing_switch_count,
+             existing_consecutive, existing_needs_review) = existing
             switch_count = existing_switch_count or 0
-            if existing_persona_id == entry["persona_id"]:
-                consecutive_count = (existing_consecutive or 0) + 1
-            else:
+            if existing_persona_id != entry["persona_id"]:
+                # Persona switched — fresh streak (and a switch heals the flag).
                 switch_count += 1
                 consecutive_count = 1
+            elif existing_needs_review == 1:
+                # Post-flag re-score CONFIRMED the same persona: the v14.23.3 gate
+                # busted the stale cache, main() re-scored, and this persona
+                # genuinely won again. Reset the streak so it earns a fresh trust
+                # window instead of immediately re-flagging — periodic re-validation,
+                # no thrash.
+                consecutive_count = 1
+            else:
+                consecutive_count = (existing_consecutive or 0) + 1
 
         # Anti-staleness flag: same persona ≥ THRESHOLD in a row WITHOUT a switch
         needs_review = 1 if consecutive_count >= ANTI_STALENESS_THRESHOLD else 0
@@ -1102,10 +1135,7 @@ def write_persona_assignment_db(db_path: Path, entry: dict):
                 last_assigned_at  = excluded.last_assigned_at,
                 switch_count      = excluded.switch_count,
                 consecutive_count = excluded.consecutive_count,
-                needs_review      = CASE
-                                      WHEN excluded.needs_review = 1 THEN 1
-                                      ELSE persona_assignment.needs_review
-                                    END
+                needs_review      = excluded.needs_review
             """,
             (
                 entry["department"],
@@ -1782,15 +1812,39 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
     if variety:
         recent_uses = read_recent_use_counts(department, task_category,
                                               VARIETY_WINDOW_HOURS, db_path)
+        # ── Craft/specialty specialist protection (v14.23.3) ──────────────────
+        # On a GENUINE craft/specialty task the true specialist must win, every
+        # time — that is the entire purpose of the v14.15 craft-domain bonus and
+        # the v14.22 specialty-tag bonus. Anti-repetition variety must NOT demote
+        # (penalty) or sample-away that specialist below a generalist, because the
+        # next call's stickiness would then LOCK the generalist in (this is how a
+        # sketchnote task could end up served by an offers/why persona). We protect
+        # ONLY the specialist that is already the top candidate by PRE-variety base
+        # score AND earned a craft_domain_bonus / specialty_tag_bonus for THIS task.
+        # Gated on bonus presence => provably inert on non-craft tasks (sales,
+        # strategy, general): no bonus is awarded there, so protected_id stays None
+        # and variety behaves exactly as before.
+        protected_id = None
+        if scored:
+            top_base = max(scored, key=lambda x: x["base_score"])
+            if top_base.get("craft_domain_bonus", 0) or top_base.get("specialty_tag_bonus", 0):
+                protected_id = top_base["persona_id"]
         for s in scored:
             uses = recent_uses.get(s["persona_id"], 0)
             factor = variety_penalty_factor(uses)
+            if s["persona_id"] == protected_id:
+                factor = 1.0  # craft/specialty specialist exempt from variety penalty
             s["base_score_pre_variety"] = s["score"]
             s["recent_use_count"]      = uses
             s["variety_factor"]        = round(factor, 4)
             s["score"]                 = round(s["score"] * factor, 4)
         scored.sort(key=lambda x: x["score"], reverse=True)
-        picked, picked_idx, was_sampled = pick_with_variety(scored)
+        if protected_id is not None and scored and scored[0]["persona_id"] == protected_id:
+            # Specialist is the rightful top after exemption — pick it
+            # deterministically, bypassing variety sampling.
+            picked, picked_idx, was_sampled = scored[0], 0, False
+        else:
+            picked, picked_idx, was_sampled = pick_with_variety(scored)
         variety_applied = True
     else:
         scored.sort(key=lambda x: x["score"], reverse=True)

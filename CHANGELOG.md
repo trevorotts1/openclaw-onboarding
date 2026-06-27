@@ -1,3 +1,26 @@
+## [v14.23.3]  -  2026-06-27  -  fix(persona-selector): enforce the anti-staleness flag (sticky cache no longer "goes deaf") + protect the craft specialist from variety
+
+Live regression on the operator box: the persona-selector picked `sinek-start-with-why` (0.5915)
+instead of `rohde-the-sketchnote-workbook` (0.6896) for "Visually sketchnote and map our
+customer-onboarding process" `--department operations`, even though the v14.15 craft-domain bonus
+and gemini-search both rank rohde #1. Craft routing was NOT broken (`--skip-stickiness --no-variety`
+still returned rohde) — the fault was the `persona_assignment` stickiness cache going deaf to its own
+anti-staleness flag: `check_sticky_assignment()` never read `needs_review`, so a row the selector
+itself flagged stale (>= `ANTI_STALENESS_THRESHOLD` identical picks in a row) was served forever, and
+the sticky early-return path's own `record_selection()` kept re-writing it. Compounding it,
+anti-repetition variety could penalise/sample-away the genuine craft specialist below a generalist on
+its own craft task, which stickiness would then re-lock.
+
+Fix (enforcement, not description): (1) `check_sticky_assignment()` now reads `needs_review` and busts
+the cache on a flagged row -> forces a re-score (tolerant of installs without the column); (2) on a
+genuine craft/specialty task, the specialist that is the top PRE-variety candidate carrying a
+`craft_domain_bonus` / `specialty_tag_bonus` is exempt from the variety penalty and picked
+deterministically — gated on bonus presence, so it is provably inert on non-craft tasks
+(sales/strategy/general); (3) `write_persona_assignment_db()` resets the streak on a post-flag
+re-score and lets `needs_review` clear, so a re-validated row earns a fresh trust window. New hermetic
+regression guard `test-persona-selector-stickiness-staleness.sh` wired into `full-funnel-pipeline.yml`.
+Full detail in `23-ai-workforce-blueprint/CHANGELOG.md`. No client names or secret values.
+
 ## [v14.23.2]  -  2026-06-27  -  fix: update-skills.sh now delivers complete routing fix (routing-fix + dept registration + conditional restart)
 
 Closes the gap where `update-skills.sh` applied `apply-fleet-standards.sh` but

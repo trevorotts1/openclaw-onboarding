@@ -90,6 +90,16 @@ jobs:
           # temp HOME and runs the heuristic path. Proves a clearly-named specialist is
           # reachable regardless of department (the v14.22.0 routing fix).
           bash 23-ai-workforce-blueprint/scripts/test-persona-selector-specialist-routing.sh
+      - name: sticky-cache staleness is enforced (needs_review busts; craft survives variety)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Hermetic: temp HOME + temp sqlite DB, heuristic path. Regression guard for the
+          # v14.23.3 fix — a flagged-stale (needs_review=1) sticky row must bust the cache
+          # and re-score (so a (operations, design) row cannot stay locked on sinek after
+          # the craft fix made rohde the winner), the craft specialist must survive
+          # anti-repetition variety, and trusted rows must still be honored.
+          bash 23-ai-workforce-blueprint/scripts/test-persona-selector-stickiness-staleness.sh
 
   funnel-pipeline-pytest:
     name: "funnel pipeline pytest (T-1..T-9 + T-N1..T-N6 + T-PRE-1/4 + T-N5 + graduation)"
