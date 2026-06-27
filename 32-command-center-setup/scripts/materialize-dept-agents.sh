@@ -189,6 +189,12 @@ updated = 0
 for slug, workspace_path in discovered.items():
     agent_id = f"dept-{slug}"
     name = pretty_name(slug)
+    # FIX (v14.19.0): derive agentDir from OC_ROOT/agents/<agent-id> so the
+    # routing agent can resolve this dept agent at runtime.  Without agentDir
+    # the gateway has no filesystem anchor for the agent's internal state and
+    # cross-agent routing silently fails — the main agent sees no dept agent
+    # to hand off to (Presentations, Graphics, etc.).
+    agent_dir = os.path.join(OC_ROOT, "agents", agent_id)
 
     # BUG FIX (v12.9.4): multimodal.enabled MUST be false when the configured
     # embedding provider is text-only (openai-compatible / text-embedding-3-small).
@@ -200,6 +206,7 @@ for slug, workspace_path in discovered.items():
         "id": agent_id,
         "name": name,
         "workspace": workspace_path,
+        "agentDir": agent_dir,
         "memorySearch": {
             "extraPaths": [],
             "multimodal": {"enabled": False, "modalities": []},
@@ -211,6 +218,8 @@ for slug, workspace_path in discovered.items():
         # breaking openclaw gateway status / openclaw agents list.  Removed.
         # Per-agent doc/wiki-search capability is expressed via memorySearch.
     }
+    # Ensure agentDir exists on disk so the gateway can resolve it at startup.
+    os.makedirs(agent_dir, exist_ok=True)
 
     existing = by_id.get(agent_id)
     if existing is None:
@@ -228,6 +237,12 @@ for slug, workspace_path in discovered.items():
             changed = True
         if existing.get("workspace") != workspace_path:
             existing["workspace"] = workspace_path
+            changed = True
+        # IDEMPOTENT MIGRATION (v14.19.0): back-fill agentDir on entries written
+        # before this version so existing boxes self-heal on the next materialize
+        # run — no manual intervention required.
+        if not existing.get("agentDir"):
+            existing["agentDir"] = agent_dir
             changed = True
         # Ensure memorySearch block exists (don't overwrite curated extras).
         # NOTE: "wiki" backfill deliberately removed -- "wiki" is not a valid

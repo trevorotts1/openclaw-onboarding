@@ -1,3 +1,31 @@
+## [v14.19.0]  -  2026-06-27  -  fix: cross-agent routing default visibility=all + routable department agents
+
+Cross-agent department handoffs were silently failing for two independent reasons,
+both fixed here (supersedes the narrower #383, which only carried the agentDir half).
+
+ROOT CAUSE 1 — `tools.sessions.visibility` wrong default. When unset the OpenClaw
+gateway defaults a routing agent to `"tree"` visibility (its own spawned children
+only), so a CEO/master-orchestrator agent cannot see independently-registered
+department agents in `agents.list[]`; `sessions_list`/`sessions_send` to a dept agent
+returns empty and the main agent falls back to self-executing department work. Fixed
+at all four write-sites that emit the CEO tool-gate so the value is identical and
+self-heals on install/update/standards-reassert:
+`23-ai-workforce-blueprint/scripts/build-workforce.py` (build-time `add_agent_to_config`,
+scoped to `is_ceo_agent` only — regular dept agents are NOT over-shared),
+`hooks/lib-ceo-tool-gate.sh` (canonical gate JSON), `scripts/apply-fleet-standards.sh`
+(CEO re-assert), and `scripts/apply-routing-fix.sh` (L5). Each now sets
+`tools.sessions.visibility = "all"`.
+
+ROOT CAUSE 2 — `agentDir` missing from `materialize-dept-agents.sh` `desired_entry`.
+The gateway uses `agentDir` as the filesystem anchor for a department agent's internal
+state; without it the runtime cannot resolve the dept agent at all (regardless of
+sessions.visibility), so handoff returns "agent not found." Now derived as
+`OC_ROOT/agents/dept-<slug>`, created on disk (`os.makedirs(..., exist_ok=True)`),
+written into every new entry, and idempotently back-filled onto pre-existing entries
+so existing boxes self-heal on the next Skill 32 materialize pass.
+
+No client names, no operator-local paths, no secret values.
+
 ## [v14.18.0]  -  2026-06-27  -  feat(skill6): per-client brand palette injection into general.general.colors + pageStyles
 
 Skill 6 (ghl-install-pages) `new_page_blob()` gains two optional keyword-only

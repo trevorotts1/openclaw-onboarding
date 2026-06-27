@@ -616,6 +616,15 @@ if not isinstance(by_provider, dict):
     tools["byProvider"] = by_provider
 for prov, rule in CEO_MCP_DENY.items():
     by_provider[prov] = rule
+# Cross-agent routing: routing agent MUST see all sessions so it can locate
+# and hand off to any department agent. Default gateway behaviour is "tree"
+# (spawned-children only) which silently blocks department handoffs.
+sessions_cfg = tools.setdefault("sessions", {})
+if not isinstance(sessions_cfg, dict):
+    sessions_cfg = {}
+    tools["sessions"] = sessions_cfg
+if sessions_cfg.get("visibility") != "all":
+    sessions_cfg["visibility"] = "all"
 
 cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
 print("APPLIED:" + str(main_agent.get("id", "<unknown>")))
