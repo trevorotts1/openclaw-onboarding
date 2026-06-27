@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v14.19.0"
+ONBOARDING_VERSION="v14.19.1"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -5121,10 +5121,49 @@ install_weekly_cron() {
     # (their daily Telegram usage requires it). `openclaw cron create` works
     # directly without scope manipulation.
 
-    # Skip if cron already exists (idempotent)
+    # CRON REWRITE MIGRATION (fix/existing-box-cron-rewrite v14.19.1):
+    # Boxes provisioned BEFORE the silent-cron fix (v14.10.2) carry the OLD
+    # weekly-onboarding-update cron wired with --announce --channel telegram
+    # --to <client-chat-id>.  The scheduler auto-delivers raw maintenance traffic
+    # into the CLIENT's Telegram chat every Sunday.  A plain "already installed"
+    # skip leaves the leaking cron in place on every pre-existing box.  Fix:
+    # detect old delivery wiring via openclaw cron list --json and delete the
+    # stale entry so the creation code below always lands the SILENT main-session
+    # form.  If python3 is absent, the detection conservatively skips deletion
+    # (ensure-pipeline-crons.sh reconcile pass then catches it via --no-deliver).
     if openclaw cron list 2>/dev/null | grep -qi "weekly-onboarding-update"; then
-        success "Sunday weekly update-check cron already installed"
-        return 0
+        local _cron_has_old_wiring=false
+        if command -v python3 >/dev/null 2>&1; then
+            local _oc_raw_json
+            _oc_raw_json=$(openclaw cron list --json 2>/dev/null) || _oc_raw_json=""
+            if [ -n "$_oc_raw_json" ] && \
+               OC_CRON_JSON="$_oc_raw_json" python3 - <<'PYEOF' 2>/dev/null
+import json, os, sys
+raw = os.environ.get('OC_CRON_JSON', '')
+try:
+    data = json.loads(raw)
+except Exception:
+    sys.exit(1)
+jobs = data if isinstance(data, list) else data.get('jobs', [])
+for j in jobs:
+    if j.get('name') == 'weekly-onboarding-update':
+        dl = j.get('delivery') or {}
+        if dl.get('mode') == 'announce' or dl.get('to'):
+            sys.exit(0)  # old auto-announce wiring detected
+sys.exit(1)
+PYEOF
+            then
+                _cron_has_old_wiring=true
+            fi
+        fi
+        if [ "$_cron_has_old_wiring" = "true" ]; then
+            warn "Existing weekly-onboarding-update cron has old auto-announce delivery — deleting for silent-form recreate"
+            openclaw cron delete --name "weekly-onboarding-update" >/dev/null 2>&1 || true
+            # Fall through to creation logic below (cron is now absent)
+        else
+            success "Sunday weekly update-check cron already installed (SILENT — no client auto-announce)"
+            return 0
+        fi
     fi
 
     # Reuse the bulletproof 23-location resolver from the top of this script.

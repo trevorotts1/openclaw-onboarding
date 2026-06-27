@@ -1,3 +1,33 @@
+## [v14.19.1]  -  2026-06-27  -  fix: existing-box cron-rewrite migration — idempotency guard detects and replaces old auto-announce weekly-onboarding-update cron
+
+The silent-cron fix (v14.10.2, PR #379) gated new cron creation behind
+`OPENCLAW_UPDATE_NOTIFY` and prevented fresh installs from auto-announcing
+to the client. However, the idempotency guards in both `install.sh` and
+`update-skills.sh` only checked whether the cron NAME existed, not whether
+its delivery was wired for auto-announce. Boxes provisioned before v14.10.2
+kept their old `weekly-onboarding-update` cron with `--announce --channel
+telegram --to <client-chat-id>`, causing the scheduler to auto-deliver raw
+maintenance prompts into the client's Telegram chat every Sunday — the
+exact leak PR #379 was meant to stop.
+
+**Root cause**: `if openclaw cron list | grep -qi weekly-onboarding-update;
+then "already installed"; return 0` — no delivery inspection, no migration.
+
+**Fix (three-layer)**:
+1. `update-skills.sh` — idempotency guard now queries
+   `openclaw cron list --json`, detects `delivery.mode==announce` or a
+   non-empty `delivery.to`, and deletes the stale cron before falling
+   through to the silent-form creation block. Already-silent crons skip.
+2. `install.sh` (`install_weekly_cron`) — identical detection+delete guard,
+   then falls through to the multi-attempt silent cron create logic.
+3. `scripts/ensure-pipeline-crons.sh` (v14.1.6) — adds
+   `weekly-onboarding-update` to `MANAGED_RECONCILE_CRONS` as a
+   belt-and-suspenders backstop: if delete fails (python3 absent or CLI
+   error), the reconcile pass silences delivery in-place via
+   `openclaw cron edit <id> --no-deliver`.
+
+Fresh installs are unaffected. Diff is clean of client names and secrets.
+
 ## [v14.19.0]  -  2026-06-27  -  fix(skill6): agent-browser version-pin guard — Python-side REFUSE on 0.27.0 drift
 
 Skill 6 (ghl-install-pages) ships a Python-side runtime version-pin assertion so
