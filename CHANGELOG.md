@@ -34,6 +34,23 @@ agents are registered in openclaw.json on every update.
 
 **Version bump:** v14.23.1 → v14.23.2 (ONBOARDING_VERSION in update-skills.sh).
 
+## [v14.23.1]  -  2026-06-27  -  fix: dept agents now registered after every build (materialize-dept-agents path fix)
+
+Fixes the path-mismatch defect that caused `materialize-dept-agents.sh` to
+find ZERO department folders and register ZERO agents even after a successful
+Skill 23 build. The script now scans the canonical master-files ZHC tree
+(`~/Downloads/openclaw-master-files/zero-human-company/` on Mac,
+`/data/openclaw-master-files/zero-human-company/` on VPS) in addition to the
+legacy `$OC_ROOT/workspace/departments` and `$OC_ROOT/workspaces/command-center`
+paths. Every client onboarded under v9.6.0–v14.22.2 was silently broken;
+this corrects it on the next `materialize-dept-agents.sh` run.
+
+Also: `build-workforce.py` now calls `materialize-dept-agents.sh` at the end of
+every build so department agents are registered immediately after a workforce
+build without requiring a separate manual step.
+
+Skill bumps: 23-ai-workforce-blueprint → v14.23.1, 32-command-center-setup → v12.9.14.
+
 ## [v14.23.0]  -  2026-06-27  -  feat: CC harmony — key-gated persona-index build, embedding canary probe, Gemini path/DB-path doc fixes
 
 Consolidates the net-new content from three open PRs (#400, #401, #402) onto a
