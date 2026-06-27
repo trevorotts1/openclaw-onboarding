@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-06-16T00:00:00Z",
-  "version": "14.3.15",
+  "version": "14.3.16",
   "total_roles": 419,
   "total_departments": 34,
   "departments": {
@@ -8301,13 +8301,6 @@
       "content_hashed_at": "2026-06-26T12:29:26.637379+00:00"
     },
     {
-      "slug": "jim-edwards-copywriting-secrets",
-      "path": "templates/persona-library/jim-edwards-copywriting-secrets.md",
-      "content_sha": "sha256:a8a1ce8e3ece259f8a1a97aad17eed5eebdb20c1d6d1cae0f25b621526f63670",
-      "content_version": "1.0.0",
-      "content_hashed_at": "2026-06-26T12:29:26.637379+00:00"
-    },
-    {
       "slug": "operations-systemizer",
       "path": "templates/persona-library/operations-systemizer.md",
       "content_sha": "sha256:52ac71798928d3b4fb2edffa338ae5d9ee5114dbde6d50643c66bc6816c9f304",
@@ -8329,20 +8322,6 @@
       "content_hashed_at": "2026-06-26T12:29:26.637379+00:00"
     },
     {
-      "slug": "russell-brunson-marketing-secrets-blackbook",
-      "path": "templates/persona-library/russell-brunson-marketing-secrets-blackbook.md",
-      "content_sha": "sha256:06b98f1857885ee6c3c8c6797da3c135547625ae47a30f332516827803b6ad83",
-      "content_version": "1.0.0",
-      "content_hashed_at": "2026-06-26T12:29:26.637379+00:00"
-    },
-    {
-      "slug": "russell-brunson-network-marketing-secrets",
-      "path": "templates/persona-library/russell-brunson-network-marketing-secrets.md",
-      "content_sha": "sha256:d8ac3e9aa90bd3370a55d0cef69e5834148c7257dd2b05fd6eb4bc926529f532",
-      "content_version": "1.0.0",
-      "content_hashed_at": "2026-06-26T12:29:26.637379+00:00"
-    },
-    {
       "slug": "russell-brunson-the-funnel-hackers-cookbook",
       "path": "templates/persona-library/russell-brunson-the-funnel-hackers-cookbook.md",
       "content_sha": "sha256:ef0a39295777fa391a23f6a97c70d4feca324b80f785b8f90e04e4a2b80f3d5d",
@@ -8355,6 +8334,62 @@
       "content_sha": "sha256:aae7e02b273928a177a60e349e03b6c0a04c3eb7371b44e0921756ae9ebc7f18",
       "content_version": "1.0.0",
       "content_hashed_at": "2026-06-26T12:29:26.637379+00:00"
+    },
+    {
+      "slug": "edwards-copywriting-secrets",
+      "path": "templates/persona-library/edwards-copywriting-secrets.md",
+      "content_sha": "sha256:a7bc22c3d2bcd78ad1798622b3781e9c330a07323d8bcea17403b267b1d52d73",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-06-27T00:30:56.077398+00:00"
+    },
+    {
+      "slug": "brunson-marketing-secrets-blackbook",
+      "path": "templates/persona-library/brunson-marketing-secrets-blackbook.md",
+      "content_sha": "sha256:4456e722039e22eecd198c88e2db3362b3e4f4b66cab24dad12551be2f3eb2a7",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-06-27T00:30:56.077398+00:00"
+    },
+    {
+      "slug": "brunson-network-marketing-secrets",
+      "path": "templates/persona-library/brunson-network-marketing-secrets.md",
+      "content_sha": "sha256:f5958283d00073361b75afa7369cb0bc2ce1cf47adb6cccea9f196a646fbb5b2",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-06-27T00:30:56.077398+00:00"
+    },
+    {
+      "slug": "acuff-miner-new-model-of-selling",
+      "path": "templates/persona-library/acuff-miner-new-model-of-selling.md",
+      "content_sha": "sha256:e11687e4f7b3e821af3474df23294efc9105230544ff3e6b7cef4e6c4bd50a4a",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-06-27T00:30:56.077398+00:00"
+    },
+    {
+      "slug": "leland-brand-mapping-strategy",
+      "path": "templates/persona-library/leland-brand-mapping-strategy.md",
+      "content_sha": "sha256:87c48809508a5ae85e68037e43b158b17680fcd17367854a11d6dec2ec76fa7a",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-06-27T00:30:56.077398+00:00"
+    },
+    {
+      "slug": "miller-coach-builder",
+      "path": "templates/persona-library/miller-coach-builder.md",
+      "content_sha": "sha256:d07e0c0c753d84d8a29d9dffdd1eda217a2a5b6bb01706a0622eb7be5337f08f",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-06-27T00:30:56.077398+00:00"
+    },
+    {
+      "slug": "miller-building-storybrand",
+      "path": "templates/persona-library/miller-building-storybrand.md",
+      "content_sha": "sha256:43980186568ca0a7268278a619e66a73a8fdb16f6c732b041f8042e6d1a8d1af",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-06-27T00:30:56.077398+00:00"
+    },
+    {
+      "slug": "rohde-the-sketchnote-workbook",
+      "path": "templates/persona-library/rohde-the-sketchnote-workbook.md",
+      "content_sha": "sha256:61317040c1fcc05ff33959ac2e3e49061a0b0b960b233fe12b71c3d0b58ca8b7",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-06-27T00:30:56.077398+00:00"
     }
   ]
 }

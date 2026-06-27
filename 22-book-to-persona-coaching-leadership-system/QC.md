@@ -39,7 +39,7 @@ Confirm these specific folders exist inside the personas directory:
 - [ ] `hormozi-100m-offers/`
 - [ ] `cialdini-influence/`
 - [ ] `goggins-cant-hurt-me/`
-- [ ] `miller-building-storybrand-1/` or `miller-building-storybrand-2/`
+- [ ] `miller-building-storybrand/`
 
 ### Pipeline Orchestrator
 - [ ] `pipeline/orchestrator.py` exists (or equivalent pipeline script)
@@ -198,7 +198,7 @@ Run these prompts and evaluate the agent's actual output against the expected be
 
 **Expected behavior:**
 1. Agent identifies this as a Marketing & Content task
-2. Routes to `miller-building-storybrand-1` or `miller-building-storybrand-2`
+2. Routes to `miller-building-storybrand``
 3. Applies StoryBrand framework: customer as hero, clarify the message
 
 **FAIL signal:** Agent routes to a sales or productivity persona, or applies no persona at all.

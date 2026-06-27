@@ -17,7 +17,8 @@
     "video",
     "editing",
     "montage",
-    "visual-storytelling"
+    "visual-storytelling",
+    "visual-communication"
   ],
   "perspectiveTags": [
     "african-american-experience",
@@ -317,21 +318,6 @@
         "sales-questioning"
       ]
     },
-    "jim-edwards-copywriting-secrets": {
-      "author": "Jim Edwards",
-      "book": "Copywriting Secrets",
-      "domain": [
-        "copywriting",
-        "marketing",
-        "sales"
-      ],
-      "perspective": [],
-      "custom": [
-        "direct-response-copy",
-        "sales-copy",
-        "headlines"
-      ]
-    },
     "jones-exactly-what-to-say": {
       "author": "Phil Jones",
       "book": "Exactly What to Say",
@@ -386,34 +372,6 @@
       "custom": [
         "cash-flow",
         "small-business-finance"
-      ]
-    },
-    "miller-building-storybrand-1": {
-      "author": "Donald Miller",
-      "book": "Building a StoryBrand",
-      "domain": [
-        "marketing",
-        "communication",
-        "copywriting"
-      ],
-      "perspective": [],
-      "custom": [
-        "storytelling",
-        "brand-messaging"
-      ]
-    },
-    "miller-building-storybrand-2": {
-      "author": "Donald Miller",
-      "book": "Building a StoryBrand (Part 2)",
-      "domain": [
-        "marketing",
-        "communication",
-        "copywriting"
-      ],
-      "perspective": [],
-      "custom": [
-        "storytelling",
-        "brand-messaging"
       ]
     },
     "moran-12-week-year": {
@@ -574,46 +532,33 @@
       "author": "Russell Brunson",
       "book": "Lead Funnels",
       "domain": [
+        "copywriting",
         "marketing",
         "sales",
         "strategy-innovation"
       ],
       "perspective": [],
       "custom": [
+        "clickfunnels",
+        "curiosity-hook",
+        "follow-up-funnel",
+        "funnel-hacking",
         "funnels",
+        "landing-page",
+        "lead-funnels",
         "lead-generation",
-        "opt-in"
-      ]
-    },
-    "russell-brunson-marketing-secrets-blackbook": {
-      "author": "Russell Brunson",
-      "book": "Marketing Secrets Blackbook",
-      "domain": [
-        "marketing",
-        "sales",
-        "strategy-innovation"
+        "lead-magnet",
+        "list-building",
+        "opt-in",
+        "squeeze-page",
+        "thank-you-page",
+        "value-ladder"
       ],
-      "perspective": [],
-      "custom": [
-        "marketing-maxims",
-        "direct-response",
-        "growth"
-      ]
-    },
-    "russell-brunson-network-marketing-secrets": {
-      "author": "Russell Brunson",
-      "book": "Network Marketing Secrets",
-      "domain": [
-        "marketing",
-        "sales",
-        "communication"
-      ],
-      "perspective": [],
-      "custom": [
-        "network-marketing",
-        "funnels",
-        "recruiting"
-      ]
+      "source_type": "pdf",
+      "added": "2026-06-26",
+      "coaching_mode": "BUILT",
+      "task_mode": "BUILT",
+      "blueprint": "personas/russell-brunson-lead-funnels/persona-blueprint.md"
     },
     "russell-brunson-the-funnel-hackers-cookbook": {
       "author": "Russell Brunson",
@@ -766,6 +711,245 @@
       "custom": [
         "conversion-copy"
       ]
+    },
+    "acuff-miner-new-model-of-selling": {
+      "author": "Jerry Acuff & Jeremy Miner",
+      "book": "The New Model of Selling: Selling to an Unsellable Generation",
+      "domain": [
+        "sales",
+        "communication",
+        "copywriting",
+        "marketing"
+      ],
+      "perspective": [],
+      "custom": [
+        "nepq",
+        "neuro-emotional-selling",
+        "consultative-selling",
+        "question-led-selling",
+        "post-trust-selling",
+        "objection-prevention",
+        "discovery-call",
+        "sales-script"
+      ],
+      "modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "two_sided": true,
+      "source_type": "epub",
+      "added": "2026-06-26",
+      "blueprint": "personas/acuff-miner-new-model-of-selling/persona-blueprint.md",
+      "needs_tags": false
+    },
+    "brunson-marketing-secrets-blackbook": {
+      "author": "Russell Brunson",
+      "book": "Marketing Secrets Blackbook",
+      "persona_name": "The Funnel & Offer Strategist",
+      "domain": [
+        "marketing",
+        "sales",
+        "copywriting",
+        "strategy-innovation"
+      ],
+      "perspective": [],
+      "custom": [
+        "sales-funnels",
+        "value-ladder",
+        "offer-creation",
+        "one-big-domino",
+        "hook-story-offer",
+        "attractive-character",
+        "dream-100",
+        "direct-response-copywriting",
+        "urgency-scarcity",
+        "offer-stacking",
+        "funnel-kpis",
+        "polarity-positioning",
+        "imperfect-action"
+      ],
+      "source_type": "pdf",
+      "added": "2026-06-26",
+      "blueprint": "personas/brunson-marketing-secrets-blackbook/persona-blueprint.md",
+      "coaching_mode": "BUILT",
+      "task_mode": "BUILT"
+    },
+    "brunson-network-marketing-secrets": {
+      "author": "Russell Brunson",
+      "book": "Network Marketing Secrets",
+      "domain": [
+        "marketing",
+        "sales",
+        "copywriting"
+      ],
+      "perspective": [],
+      "custom": [
+        "network-marketing",
+        "mlm",
+        "sales-funnels",
+        "recruiting",
+        "direct-sales",
+        "duplication",
+        "epiphany-bridge",
+        "viral-loop",
+        "lead-generation"
+      ],
+      "source_type": "pdf",
+      "added": "2026-06-26",
+      "blueprint": "personas/brunson-network-marketing-secrets/persona-blueprint.md",
+      "interaction_modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ]
+    },
+    "edwards-copywriting-secrets": {
+      "author": "Jim Edwards",
+      "book": "Copywriting Secrets",
+      "domain": [
+        "copywriting",
+        "marketing",
+        "sales"
+      ],
+      "perspective": [],
+      "custom": [
+        "direct-response",
+        "sales-letters",
+        "headlines",
+        "funnel-copy",
+        "website-copy",
+        "email-copy",
+        "vsl-scripts",
+        "ad-copy",
+        "social-copy",
+        "offers-and-bullets"
+      ],
+      "source_type": "epub",
+      "added": "2026-06-26",
+      "interaction_modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "coaching_mode": "BUILT",
+      "task_mode": "BUILT",
+      "needs_tags": false
+    },
+    "leland-brand-mapping-strategy": {
+      "author": "Karen Tiber Leland",
+      "book": "The Brand Mapping Strategy",
+      "domain": [
+        "marketing",
+        "strategy-innovation",
+        "communication"
+      ],
+      "perspective": [],
+      "custom": [
+        "personal-branding",
+        "brand-strategy",
+        "brand-architecture",
+        "thought-leadership",
+        "positioning",
+        "ceo-brand",
+        "brand-consistency"
+      ],
+      "source_type": "pdf",
+      "added": "2026-06-26"
+    },
+    "miller-building-storybrand": {
+      "author": "Donald Miller",
+      "book": "Building a StoryBrand",
+      "domain": [
+        "marketing",
+        "communication",
+        "copywriting"
+      ],
+      "perspective": [],
+      "custom": [
+        "storytelling",
+        "brand-messaging",
+        "sb7-framework",
+        "brandscript",
+        "funnel-copy",
+        "website-wireframe",
+        "one-liner",
+        "grunt-test"
+      ],
+      "modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "two_sided": true,
+      "source_type": "epub",
+      "added": "2026-06-26",
+      "blueprint": "personas/miller-building-storybrand/persona-blueprint.md",
+      "needs_tags": false
+    },
+    "miller-coach-builder": {
+      "author": "Donald Miller",
+      "book": "Coach Builder",
+      "domain": [
+        "coaching",
+        "marketing",
+        "sales",
+        "strategy-innovation",
+        "leadership"
+      ],
+      "perspective": [],
+      "custom": [
+        "coaching-business",
+        "productized-services",
+        "offer-menu",
+        "lead-generation",
+        "sales-funnel",
+        "customer-is-the-hero",
+        "product-ladder",
+        "website-wireframe"
+      ],
+      "modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "two_sided": true,
+      "source_type": "epub",
+      "added": "2026-06-26",
+      "blueprint": "personas/miller-coach-builder/persona-blueprint.md",
+      "needs_tags": false
+    },
+    "rohde-the-sketchnote-workbook": {
+      "author": "Mike Rohde",
+      "book": "The Sketchnote Workbook",
+      "domain": [
+        "visual-storytelling",
+        "communication",
+        "productivity-systems"
+      ],
+      "perspective": [],
+      "custom": [
+        "sketchnoting",
+        "visual-thinking",
+        "idea-mapping",
+        "infographics",
+        "notes-plus",
+        "visual-hierarchy",
+        "icon-systems"
+      ],
+      "source_type": "pdf",
+      "added": "2026-06-26",
+      "interaction_modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "coaching_mode": "BUILT",
+      "task_mode": "BUILT",
+      "two_sided": true,
+      "blueprint": "personas/rohde-the-sketchnote-workbook/persona-blueprint.md",
+      "summary": "Mike Rohde's Notes-Plus visual-thinking method: 'ideas, not art.' Coaches founders to distill and map big ideas visually; governs Graphics/Presentations/Video/Research and the visual-explainer layers of Skill 6 (pages) and Skill 35 (social) to a structure-first, one-big-idea, hierarchy-driven standard.",
+      "needs_tags": false
     }
   }
 }
