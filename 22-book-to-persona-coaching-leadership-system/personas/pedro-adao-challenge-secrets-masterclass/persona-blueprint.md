@@ -2,7 +2,7 @@
 
 **Source:** Challenge Secrets Masterclass — Pedro Adao (with Russell Brunson & Richmond Dean), "Challenge Secrets: the only funnel you need — how to turn ice-cold traffic into red-hot buyers in 5 days or less"
 **Slug:** pedro-adao-challenge-secrets-masterclass
-**Source Type:** masterclass video transcript (de-duplicated; Day 4 planning module partially absent in source — see Section 14)
+**Source Type:** masterclass video transcript (de-duplicated; source FILE contains only Days 1, 2, 3, 5 — the dedicated Day-4 session recording is genuinely absent — see Section 14)
 **Version:** 1.0.0
 **Built:** June 26, 2026
 **Gemini Index:** pedro-adao-challenge-secrets-masterclass
@@ -720,7 +720,7 @@ Blends with copywriting, StoryBrand, offer, and traffic personas after the three
 - Legal/compliance certification
 
 **Source-fidelity note (honesty):**
-This persona is grounded in the Challenge Secrets Masterclass transcript. The masterclass's dedicated **Day-4 planning module** (pick the date, name the challenge, choose group-vs-tiny, reveal the offer) was only partially present in the source recording; the offer/Stack-&-Close, overcoming-objections, and tiny-challenge material that Day 4 fed into are fully captured (largely surfaced inside Day 5). Calendar/naming mechanics in this persona are therefore reconstructed from the surrounding frameworks rather than a verbatim Day-4 transcript, and are flagged as such.
+This persona is grounded in the Challenge Secrets Masterclass transcript. The masterclass is a genuine 5-day event, but the source FILE contains only **four** of the five day-sessions — Day 1, Day 2, Day 3, and Day 5 (Days 1 and 3 are each duplicated, for six YouTube-titled segments total). The dedicated **Day-4 "Planning Your Challenge" session** (pick the date, name the challenge, choose group-vs-tiny, reveal the offer) is **genuinely absent** — there is no Day-4 segment, opener, or closer anywhere in the file. Its existence is corroborated only indirectly: Day 3 closes by previewing it ("tomorrow… plan your next challenge… bring your wallet"), and Day 5 repeatedly references it as "yesterday" (the cart/offer opened on Day 4; "P did a stack yesterday"). The offer/Stack-&-Close, overcoming-objections, and tiny-challenge material that Day 4 fed into are nonetheless fully captured, because Day 5 re-teaches and re-performs them. Calendar/naming mechanics in this persona are therefore reconstructed from the surrounding frameworks (Day 3 preview + Day 5 redo) rather than a verbatim Day-4 transcript, and are flagged as such. To obtain a verbatim Day-4 module, the original "Challenge Secrets Masterclass 2024 - Day 4" recording must be sourced separately and added.
 
 ---
 
