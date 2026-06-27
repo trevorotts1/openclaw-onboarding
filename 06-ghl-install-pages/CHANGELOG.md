@@ -4,6 +4,36 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.19.0] - 2026-06-27 — fix(skill6): agent-browser version-pin guard — Python-side REFUSE on 0.27.0 drift
+
+### Added — `browser_manager.assert_agent_browser_version()` (P2-4)
+- New `assert_agent_browser_version()` in `tools/browser_manager.py`: reads the
+  pinned version from `gates.json` (`agent_browser_version_pin.pinned_version`,
+  currently `0.27.0`) and runs `agent-browser --version` at runtime. On drift it
+  **raises `RuntimeError`** (exit-70 contract) BEFORE any `render_check` subprocess
+  fires — the same hard-refuse semantics as the shell-side gate in
+  `inject-ghl-auth.sh`.
+- The 0.27.0-specific command spellings baked into `render_check` — `get html html`
+  (not `html --output`), `screenshot` (stdout path), and `console` (plain-text
+  output, not `console-log --json`) — are API-unstable. An unverified agent-browser
+  upgrade can silently mis-capture HTML, screenshots, or console logs without any
+  error, which would pass the render gate on fabricated data. The guard makes that
+  impossible.
+- Called from `render_check()` immediately before the 0.27.0-specific subprocesses
+  are launched (not from `browser_session()`, which is emitter-only and does not
+  spawn a live binary, so tests can use it without agent-browser installed).
+- Helper functions: `_read_pinned_agent_browser_version()` (env override →
+  gates.json → hard-coded fallback `"0.27.0"`) and `_read_live_agent_browser_version()`
+  (runs `agent-browser --version`, returns `None` on missing binary/timeout).
+- Override: `GHL_AB_ALLOW_VERSION_DRIFT=1` downgrades the error to a `stderr` WARN
+  for deliberate re-capture runs. `GHL_AB_PINNED_VERSION` re-pins to a new version
+  without editing gates.json.
+
+### Changed — `gates.json` `agent_browser_version_pin.enforced_in`
+- Updated `enforced_in` to list both `tools/inject-ghl-auth.sh` (shell side) and
+  `tools/browser_manager.py assert_agent_browser_version()` (Python side), and
+  updated `_doc` to reflect that both enforce the pin.
+
 ## [v14.18.0] - 2026-06-27 — feat(skill6): per-client brand palette injection into general.general.colors + pageStyles
 
 ### Added — brand palette injection (`ghl_rest_canvas.py`)

@@ -34,14 +34,16 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import json
 import os
 import re
 import signal
+import subprocess
 import sys
 from typing import Iterator, Optional
 
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_PY_VERSION = "v14.17.0"
+BROWSER_MANAGER_PY_VERSION = "v14.19.0"
 
 # Tunables mirror browser_manager.sh / the ADVISORY openclaw.json
 # browser.agentBrowser block (agent-browser ignores that config natively — the
@@ -88,6 +90,133 @@ def headless_guard(env: Optional[dict] = None) -> None:
             "mandatory. Run: unset AGENT_BROWSER_HEADED and always pass "
             "`--headed false`."
         )
+
+
+# ── P2-4: agent-browser version-pin guard (Python side) ───────────────────────
+# The command spellings used in render_check (``get html html``, ``screenshot``,
+# ``console``) and the eval/snapshot JSON encoding were captured and proven
+# against agent-browser 0.27.0.  An unverified upgrade can silently break those
+# commands.  This guard REFUSES (RuntimeError) when the live binary drifts from
+# the pinned version — exactly like the shell-side gate in inject-ghl-auth.sh —
+# so mis-capturing can never happen silently.
+#
+# Override: set GHL_AB_ALLOW_VERSION_DRIFT=1 to downgrade to a WARN (risk
+# acknowledged).  The pinned version is read from gates.json
+# (agent_browser_version_pin.pinned_version) so the shell and Python sides share
+# one source of truth; set GHL_AB_PINNED_VERSION to re-pin after a deliberate
+# re-capture.
+
+_GATES_JSON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gates.json")
+
+
+def _read_pinned_agent_browser_version(env: Optional[dict] = None) -> str:
+    """Return the pinned agent-browser version string.
+
+    Precedence (highest first):
+      1. ``GHL_AB_PINNED_VERSION`` env var (operator override after re-capture).
+      2. ``agent_browser_version_pin.pinned_version`` in ``gates.json``.
+      3. Hard-coded fallback ``"0.27.0"`` (matches gates.json at ship time).
+    """
+    env = env if env is not None else os.environ
+    if env.get("GHL_AB_PINNED_VERSION"):
+        return str(env["GHL_AB_PINNED_VERSION"]).strip()
+    try:
+        with open(_GATES_JSON_PATH, encoding="utf-8") as fh:
+            data = json.load(fh)
+        version = data["agent_browser_version_pin"]["pinned_version"]
+        if version and isinstance(version, str):
+            return version.strip()
+    except (OSError, KeyError, ValueError, json.JSONDecodeError):
+        pass
+    return "0.27.0"
+
+
+def _read_live_agent_browser_version() -> Optional[str]:
+    """Run ``agent-browser --version`` and extract the semver string.
+
+    Returns the version string (e.g. ``"0.27.0"``) or ``None`` when the binary
+    is absent or its output does not contain a recognisable semver."""
+    try:
+        result = subprocess.run(
+            ["agent-browser", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        raw = (result.stdout or result.stderr or "").strip()
+        match = re.search(r"\d+\.\d+\.\d+", raw)
+        if match:
+            return match.group(0)
+        return None
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+
+
+def assert_agent_browser_version(env: Optional[dict] = None) -> None:
+    """REFUSE when the live agent-browser version drifts from the pin (P2-4).
+
+    The command spellings proven against agent-browser 0.27.0 — ``get html html``,
+    ``screenshot``, and ``console`` — are NOT guaranteed stable across versions.
+    A silent drift would mis-capture rendered HTML, screenshots, or console logs
+    without any error, defeating the render_check gate entirely.
+
+    Behaviour:
+      * Live version matches pin  → no-op (fast path).
+      * Live version unreadable + ``GHL_AB_ALLOW_VERSION_DRIFT=1``
+          → WARN to stderr, proceed.
+      * Live version unreadable (no override)
+          → REFUSE (RuntimeError, exit-70 contract).
+      * Version mismatch + ``GHL_AB_ALLOW_VERSION_DRIFT=1``
+          → WARN to stderr, proceed.
+      * Version mismatch (no override)
+          → REFUSE (RuntimeError, exit-70 contract).
+
+    Called automatically by ``browser_session()``; callers that drive the
+    browser without a session context may call it explicitly."""
+    env = env if env is not None else os.environ
+    allow_drift = str(env.get("GHL_AB_ALLOW_VERSION_DRIFT", "")).strip() not in (
+        "", "0", "false", "no", "off"
+    )
+    pinned = _read_pinned_agent_browser_version(env)
+    live = _read_live_agent_browser_version()
+
+    if live is None:
+        msg = (
+            f"REFUSE (P2-4 version-pin guard): could not determine agent-browser "
+            f"version. This flow is PINNED to {pinned}; an unverifiable engine "
+            f"cannot be trusted. Set GHL_AB_ALLOW_VERSION_DRIFT=1 to override "
+            f"(operator-acknowledged, risk accepted). STOP."
+        )
+        if allow_drift:
+            sys.stderr.write(
+                f"[browser_manager] WARN (P2-4): could not read agent-browser "
+                f"version; GHL_AB_ALLOW_VERSION_DRIFT=1 — proceeding unpinned "
+                f"(risk acknowledged). Pinned version: {pinned}\n"
+            )
+            return
+        raise RuntimeError(msg)
+
+    if live == pinned:
+        return  # fast path — versions match, all good
+
+    msg = (
+        f"REFUSE (P2-4 version-pin guard): agent-browser version drift — "
+        f"found {live}, pinned {pinned}. The render_check command spellings "
+        f"(`get html html`, `screenshot`, `console`) and eval/snapshot semantics "
+        f"were captured against {pinned}; an unverified upgrade can silently "
+        f"mis-capture HTML, screenshots, or console logs, defeating the render "
+        f"gate. Re-capture the gates against the new version and re-pin via "
+        f"GHL_AB_PINNED_VERSION (or update pinned_version in gates.json), then "
+        f"set GHL_AB_ALLOW_VERSION_DRIFT=1 to override during re-capture. STOP."
+    )
+    if allow_drift:
+        sys.stderr.write(
+            f"[browser_manager] WARN (P2-4): agent-browser {live} != pinned "
+            f"{pinned}; GHL_AB_ALLOW_VERSION_DRIFT=1 — proceeding despite drift "
+            f"(risk acknowledged).\n"
+        )
+        return
+    raise RuntimeError(msg)
 
 
 # ── Canonical session name (mirrors bm_session_name in browser_manager.sh) ────
@@ -161,7 +290,13 @@ def browser_session(slug: Optional[str] = None) -> Iterator[str]:
     atexit + SIGTERM/SIGINT/SIGHUP handlers, set ``_SESSION_ACTIVE``, yield the
     canonical session name. On exit (try/finally): emit (NOT execute) the
     teardown step — so the plan/run always carries its mandatory close even on
-    an exception or signal."""
+    an exception or signal.
+
+    Note: the P2-4 agent-browser version-pin check (``assert_agent_browser_version``)
+    is NOT called here because ``browser_session`` is an EMITTER-ONLY bracket —
+    no live agent-browser binary is spawned inside it. The version check is called
+    by ``ghl_builder.render_check`` immediately before the 0.27.0-specific
+    subprocesses (``get html html``, ``screenshot``, ``console``) are launched."""
     global _SESSION_ACTIVE, _ACTIVE_SESSION_NAME, _TEARDOWN_EMITTED
     headless_guard()
     name = session_name(slug)

@@ -448,10 +448,10 @@
   },
 
   "agent_browser_version_pin": {
-    "_doc": "P2-4 — agent-browser is PINNED to this version. Every gate selector + the eval JSON-encoding + the auto-inlined-iframe snapshot shape + the '--headed false' override semantics were captured/proven against it. tools/inject-ghl-auth.sh FAILS LOUD (exit 70) when the live agent-browser version drifts from this pin, unless the operator acknowledges the risk.",
+    "_doc": "P2-4 — agent-browser is PINNED to this version. Every gate selector + the eval JSON-encoding + the auto-inlined-iframe snapshot shape + the '--headed false' override semantics were captured/proven against it. tools/inject-ghl-auth.sh FAILS LOUD (exit 70) and browser_manager.py assert_agent_browser_version() raises RuntimeError when the live agent-browser version drifts from this pin, unless the operator acknowledges the risk.",
     "pinned_version": "0.27.0",
-    "enforced_in": "tools/inject-ghl-auth.sh (version-pin guard, runs before the seed)",
+    "enforced_in": "tools/inject-ghl-auth.sh (version-pin guard, runs before the seed) + tools/browser_manager.py assert_agent_browser_version() (called at browser_session() entry — fires before any render_check command is emitted)",
     "override_env": "GHL_AB_ALLOW_VERSION_DRIFT=1 (warn instead of refuse); GHL_AB_PINNED_VERSION to re-pin after a deliberate re-capture",
-    "on_drift": "REFUSE (exit 70). Re-capture the gates against the new version, then re-pin pinned_version + GHL_AB_PINNED_VERSION."
+    "on_drift": "REFUSE (exit 70 / RuntimeError). Re-capture the gates against the new version, then re-pin pinned_version + GHL_AB_PINNED_VERSION."
   }
 }

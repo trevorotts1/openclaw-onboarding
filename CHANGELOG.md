@@ -1,3 +1,18 @@
+## [v14.19.0]  -  2026-06-27  -  fix(skill6): agent-browser version-pin guard — Python-side REFUSE on 0.27.0 drift
+
+Skill 6 (ghl-install-pages) ships a Python-side runtime version-pin assertion so
+the 0.27.0-specific render_check command spellings (`get html html`, `screenshot`,
+`console`) fail LOUD on agent-browser drift instead of silently mis-capturing.
+
+NEW — `browser_manager.assert_agent_browser_version()`: reads the pinned version
+from `gates.json` (`agent_browser_version_pin.pinned_version = "0.27.0"`) and runs
+`agent-browser --version` in `render_check()` immediately before the 0.27.0-specific
+subprocesses fire. Raises `RuntimeError` (exit-70 contract) on any version drift.
+Mirrors the existing shell-side gate in `inject-ghl-auth.sh`. Override:
+`GHL_AB_ALLOW_VERSION_DRIFT=1` (WARN instead of REFUSE); `GHL_AB_PINNED_VERSION`
+to re-pin after a deliberate re-capture. `gates.json` `agent_browser_version_pin`
+updated to name both enforcement points.
+
 ## [v14.18.0]  -  2026-06-27  -  feat(skill6): per-client brand palette injection into general.general.colors + pageStyles
 
 Skill 6 (ghl-install-pages) `new_page_blob()` gains two optional keyword-only
