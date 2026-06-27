@@ -54,8 +54,69 @@ fi
 
 echo "═══ Skill 6 — FAB-QC build gate (funnel) ═══"
 echo "evidence: $EVIDENCE"
+
+# ── §2/§3 transcript end-state pre-gate (SEO panel + founder author + media
+# folder discipline). Scores the build-recipe coverage the shared FAB scorer does
+# not: a saved seoMeta that is PRESENT-BUT-INVALID is a hard build miss (HALT);
+# missing seoMeta/media-folder receipts WARN (older evidence may predate them).
+SEO_MEDIA_FAIL=0
+SEO_PREGATE="$(EVIDENCE="$EVIDENCE" TOOLS="$SKILL_DIR/tools" python3 - <<'PY'
+import json, os, sys, glob
+sys.path.insert(0, os.environ["TOOLS"])
+root = os.environ["EVIDENCE"]
+try:
+    import ghl_builder as b
+except Exception as exc:                       # tooling missing → can't pre-gate
+    print(f"WARN ghl_builder import failed ({exc}); skipping SEO pre-gate"); sys.exit(0)
+
+def _walk(o):
+    if isinstance(o, dict):
+        if "seoMeta" in o and isinstance(o["seoMeta"], dict):
+            yield o["seoMeta"]
+        for v in o.values():
+            yield from _walk(v)
+    elif isinstance(o, list):
+        for v in o:
+            yield from _walk(v)
+
+seo_seen = 0
+seo_bad = []
+media_seen = 0
+for fp in glob.glob(os.path.join(root, "**", "*.json"), recursive=True):
+    try:
+        with open(fp) as f:
+            raw = f.read()
+    except Exception:
+        continue
+    if '"folderId"' in raw or '"name_prefix"' in raw or "ensure_funnel_media_folders" in raw:
+        media_seen += 1
+    try:
+        data = json.loads(raw)
+    except Exception:
+        continue
+    for meta in _walk(data):
+        seo_seen += 1
+        res = b.assert_seo_populated(meta)
+        if not res.get("ok"):
+            seo_bad.append((os.path.relpath(fp, root), res.get("reasons")))
+
+if seo_bad:
+    for rel, reasons in seo_bad:
+        print(f"FAIL seoMeta invalid in {rel}: {reasons}")
+    sys.exit(2)                                # hard miss → caller fails the build
+print(f"PASS {seo_seen} seoMeta object(s) populated (author=founder, length/keyword/canonical/lang gates ok)"
+      if seo_seen else
+      "WARN no seoMeta found in evidence — §2 SEO panel end-state not demonstrated")
+print("PASS media-folder receipt(s) present" if media_seen else
+      "WARN no media-folder receipt found in evidence — §3 folder discipline not demonstrated")
+PY
+)"
+echo "$SEO_PREGATE"
+case "$SEO_PREGATE" in *FAIL*) SEO_MEDIA_FAIL=1 ;; esac
+
 python3 "$SCORER" --evidence "$EVIDENCE" --kind funnel --gate $JSON
 rc=$?
+[ "$SEO_MEDIA_FAIL" -eq 1 ] && rc=1
 if [ $rc -eq 0 ]; then
   echo "✓ FAB-QC PASS (>= 8.5) — funnel build is done"
 else

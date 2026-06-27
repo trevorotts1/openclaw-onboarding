@@ -187,10 +187,15 @@ cat working/funnels/<slug>/offer-spec.json
 
 Assert ALL six fields are present and non-null (no `[CLIENT TO SUPPLY]` surviving
 from the P0 handoff): `product_name`, `deliverables`, `price_points`, `guarantee`,
-`bonuses`, `positioning`. If any field is missing or still `[CLIENT TO SUPPLY]`,
+`bonuses`, `positioning`. **Plus `founder_name`** — the SEO/AI-search author
+(§2.07) and a required pre-flight input that MUST be the FOUNDER's personal name,
+sourced from the client / GoHighLevel location record (never free-typed, never the
+brand). If any field is missing or still `[CLIENT TO SUPPLY]`,
 HALT and return a structured handback to the orchestrator — do NOT proceed to P1
 or the build with an incomplete offer spec. Write `routing/p0-gate.json`
-`{offer_spec_complete: true|false, missing_fields: [...]}`.
+`{offer_spec_complete: true|false, founder_name_present: true|false, missing_fields: [...]}`.
+(If the upstream offer-spec lacks `founder_name`, P1 step 1.1 obtains it from the
+client/GHL record before the build — it is fail-closed there too.)
 
 ---
 
@@ -225,6 +230,18 @@ The dept agent MUST:
    every page has at least a `hero` and `cta` section slot. If any check fails,
    HALT with a structured handback — do NOT build against a malformed spec.
 
+1.1. **`founder_name` is a REQUIRED build input — fail-closed (transcript §2).**
+   The funnel-spec schema MUST carry a non-empty, non-placeholder `founder_name`.
+   It is the SEO/AI-search **author** (§2.07) and a build-time data dependency:
+   the SEO author MUST be the FOUNDER's personal name, sourced from the client /
+   GoHighLevel location record (company owner) — **never free-typed, never the
+   brand**. Assert it in this S1/P1 pre-flight with
+   `ghl_builder.validate_founder_name(spec["founder_name"], brand=<brand>)`; on a
+   missing / placeholder / equals-brand value it raises `SeoValidationError` —
+   **HALT** with a structured handback (the build cannot reach the §2 SEO
+   end-state without it). If the upstream offer-spec (P0) did not already carry
+   `founder_name`, P1 must obtain it from the client/GHL record before building.
+
 1.5. **Verify `funnel_template_id` (template-first).** Confirm funnel-spec.json carries
    `funnel_template_id` (set by the Funnel Strategist at SOP 9.5 step 1.5). If present,
    use the matched template's `pageStructure` from
@@ -241,7 +258,10 @@ The dept agent MUST:
 
 3. **Write P1 gate receipt.** `routing/p1-gate.json`:
    `{funnel_spec_valid: true, funnel_type: "<type>", funnel_template_id: "<id|null>",
-   persona_log_verified: true, persona_selected: "<slug from the log>"}`.
+   persona_log_verified: true, persona_selected: "<slug from the log>",
+   founder_name_present: true, founder_name: "<the validated founder name>"}`.
+   `founder_name_present` MUST be `true` before the first GHL autosave (the §2.07
+   SEO author binds to it).
 
 The dept agent does NOT re-run P1 persona selection. P1 persona grounding is owned
 by the Funnel Strategist. This step is GATE-ONLY: verify and proceed.
@@ -282,6 +302,21 @@ This is the pinned recipe. It is the V1 *fixed* path (the solver doc §2 +
 dept agent does NOT write standalone HTML files as the deliverable — local HTML
 is at most a scratch draft of the copy; the **deliverable is content saved into
 GHL pages via REST autosave, verified at a real `/preview/` URL.**
+
+> **CANONICAL RECIPE — read first.** The authoritative, transcript-derived
+> step-by-step (Sites → Funnels → ZHC funnel → step → Create-from-blank → close
+> Ask AI → Code Block → **Allow Rows to take entire width** → paste → **two saves
+> (CODE then PAGE)** → **SEO panel** → next step) is
+> `references/ghl-build-spec-from-transcript.md`. Where this REST-first path and
+> the transcript disagree on *coverage*, the transcript wins on *what must be true
+> at the end*; the REST path below reaches that same end-state autonomously.
+
+> **ZHC naming (transcript ~03:28, step 20).** Every funnel/website/step name
+> carries the **UPPERCASE `ZHC ` prefix** (emitted by
+> `ghl_builder.ensure_zhc_prefix`; matching is case-insensitive so an existing
+> `zhc`/`Zhc` is never double-prefixed). Multi-step funnels auto-number each
+> created step **`ZHC part 2` … `ZHC part N`** via
+> `ghl_builder.zhc_step_name(name, order)` when no step name is supplied.
 
 ### 2.0 Auth (token-only — reuse verbatim, never re-implement)
 ```
@@ -454,6 +489,43 @@ is wrong; it causes the same `undefined` crash on a different code path).
 
 ---
 
+### 2.07 SEO / AI-search "Content" panel — REQUIRED, gated populated (transcript §2)
+
+After the two saves the transcript fills the **SEO and AI-search optimization →
+Content** panel (~09:05–10:16): *"content keywords authors and meta links tags and
+canonical links are added — this is really key."* The autonomous REST path now
+populates it. The `seoMeta` rides **inside the `pageData` autosave** (no separate
+endpoint) and is emitted as an **ordered save step AFTER the page save**.
+
+**How it is wired (no hand-rolling):** pass a `seo` spec to
+`ghl_builder.emit_rest_save_plan(..., seo=<spec>)`. The plan then:
+1. builds a VALIDATED `seoMeta` via `ghl_builder.build_seo_meta(**seo)` — which
+   **HALTs (`SeoValidationError`) before autosave** on any unmet gate;
+2. splices it onto the edited blob (`edited["seoMeta"]`) so the page autosave
+   persists it; and
+3. appends an ordered `seo_apply` step carrying the `seoMeta` + its expectations.
+
+**The gates `build_seo_meta` enforces (transcript + audit overlookedImprovements):**
+
+| Field | Rule (fail-closed) |
+|-------|--------------------|
+| `title` | non-empty, **≤ 60 chars** (`SEO_TITLE_MAX`) |
+| `description` | non-empty, **≤ 160 chars** (`SEO_DESC_MAX`) |
+| `keywords` | **RESEARCHED**: ≥ 3 distinct, non-placeholder terms (`SEO_MIN_DISTINCT_KEYWORDS`) — no `[CLIENT TO SUPPLY]`/`keyword`/`lorem` filler |
+| `author` | **:= `founder_name`** — the FOUNDER's name (P0/P1 §1.1), never the brand, never blank (`validate_founder_name`) |
+| `canonicalUrl` | absolute **`https`**, host = the page's preview/live domain, **NOT** a Firebase/storage host (`_FORBIDDEN_CANONICAL_HOST_FRAGMENTS`) |
+| `ogImage` | a GHL media-storage CDN URL that **re-verifies HTTP 200** (reuse the §3 asset-cdn re-verify — the `seo_apply` step's `og_image_http_200` expectation) |
+| `language` | set **explicitly `en`** (`SEO_DEFAULT_LANGUAGE`) — never inherit the GHL default |
+| `links` / `tags` | absolute http(s) links; non-placeholder tags |
+
+**Gate the end-state.** `ghl_builder.assert_seo_populated(seo_meta)` (and
+`ghl_rest_canvas.assert_seo_populated(page_data, founder_name=...)`) re-assert a
+saved `seoMeta` is fully populated with `author == founder_name` — the QC scripts
+call this so a build that skipped or stubbed the panel scores a §2 miss. A blank
+or placeholder SEO panel is a HARD FAIL, not a warning.
+
+---
+
 ### 2.1–2.6 Per page: read → splice → autosave → verify → revert
 **SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown,
 reaper backstop.** Before the first step, acquire the gateway once:
@@ -544,6 +616,20 @@ result = run_image_pipeline(
 # it NEVER returns a synthetic/stub cdn_url, file://, or SVG placeholder.
 ```
 
+**Media-storage folder discipline (transcript §3, ~01:14–02:42 — the per-build
+STEP).** Trevor's rule: **one clearly-named folder per funnel/website, with
+per-page subfolders as needed** ("clear organization is the main point"). Media
+storage and the media library are the SAME area (Trevor uses both names). Create
+the structure ONCE per build, BEFORE the upload stage, via
+`ghl_media.ensure_funnel_media_folders(funnel_name, location_id, pit,
+page_names=[...])` — it makes the funnel folder + a subfolder per page on the
+`services.*` + Bearer **LOCATION**-PIT path (the same auth split as upload), and
+**NO browser control** is ever used for media (API / MCP / Skill 44 only). Pass
+the returned per-page `folderId` as `upload_media(parent_id=...)` so each page's
+images land in its subfolder. **Fail-soft:** if the GHL plan exposes no folder
+endpoint, the wrapper returns `mode:"name-prefix"` and the images stay grouped via
+`media_folder_name_prefix(...)` prepended to each file name (still findable).
+
 Internally `run_image_pipeline` executes four stages in order:
 
 1. **Generate** real PNGs from copy-derived prompts via the repo's verified
@@ -553,7 +639,8 @@ Internally `run_image_pipeline` executes four stages in order:
    FAIL-LOUD on non-PNG). Requires `KIE_API_KEY` resolved per §2.0.1; **if truly
    absent (after the store search) → honest FAIL recorded in
    `images/manifest.json`, never an SVG stub.**
-2. **Upload** each PNG to GHL media via `tools/ghl_media.py`
+2. **Upload** each PNG (into the funnel's media folder / per-page subfolder from
+   the discipline step above) via `tools/ghl_media.py`
    (`POST services.leadconnectorhq.com/medias/upload-file`, **Bearer LOCATION
    PIT** — the agency PIT 401s, `Version: 2021-07-28`) → capture
    `{fileId, public url}`. **Auth-model split:** media upload is the `services.*`
@@ -754,6 +841,15 @@ A V2 build is DONE when, on the operator fixture only (a later live phase):
    `routing/task-record.json` shows `dispatched → building → verified|FAILED`);
 2. real GHL pages carry the marker + a real `<img>` and verify HTTP 200 at their
    `/preview/` URLs (§2, §3) — confirmed by the canonical verifier (§7);
+2a. each page's `seoMeta` is **populated + validated** (§2.07): title ≤ 60,
+   description ≤ 160, ≥ 3 researched keywords, **author == the intake
+   `founder_name`**, `https` canonical on the page's own domain, `ogImage` 200,
+   `language == "en"` — `ghl_builder.assert_seo_populated` passes (a blank/stub SEO
+   panel is a FAIL, not a warning);
+2b. the build's media lives under **one named funnel folder (+ per-page subfolders
+   where used)** created via `ghl_media.ensure_funnel_media_folders` on the
+   non-browser `services.*` path (§3), or the `name-prefix` fallback when the plan
+   has no folder endpoint;
 3. the ecosystem objects are real creation receipts incl. the form→CRM
    roundtrip proof (§4);
 4. telemetry is scrubbed and the `--check` gate is clean (§6);
