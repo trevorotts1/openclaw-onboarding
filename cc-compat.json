@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "onboardingVersion": "v14.10.0",
+  "onboardingVersion": "v14.10.1",
   "commandCenter": {
     "minVersion": "v4.50.0",
     "maxVersion": null,
