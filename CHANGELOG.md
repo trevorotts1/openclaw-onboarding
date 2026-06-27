@@ -1,3 +1,15 @@
+## [v14.22.1]  -  2026-06-27  -  chore(release): roll version markers so the post-merge tip carries the v14.22.0 content + version bump in one commit (G3 push-mode)
+
+No functional change. The v14.22.0 work merged to main via rebase, which preserves
+individual commits; the version-consistency G3 guard diffs the pushed tip against its
+PARENT only, and the trailing content-manifest-regeneration commit changed skill-23
+content (`role-library/_index.json`) without a same-commit `skill-version.txt` bump.
+This single commit rolls all 10 version markers to v14.22.1 so the tip's parent-diff
+carries both the skill content and its `skill-version.txt` together, keeping G1/G2/G3 +
+the 9-marker agreement green on main. The v14.22.0 changes are unchanged.
+
+---
+
 ## [v14.22.0]  -  2026-06-27  -  fix: complete gemini dead-path sweep + reproducible section tagging + canonical persona categories + department-agnostic specialist routing
 
 Closes the persona-system repo-comprehensive review. Four reconciliations:
