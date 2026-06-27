@@ -1,3 +1,41 @@
+## [v14.23.3] - 2026-06-27 - fix(persona-selector): enforce the anti-staleness flag (sticky cache no longer "goes deaf") + protect the craft specialist from variety
+
+Root cause (live regression, operator box): the persona-selector picked `sinek-start-with-why`
+(0.5915) instead of `rohde-the-sketchnote-workbook` (0.6896) for "Visually sketchnote and map our
+customer-onboarding process" `--department operations`, even though the v14.15 craft-domain bonus
+and gemini-search both rank rohde #1. The craft routing was NOT broken — `--skip-stickiness
+--no-variety` still returned rohde. The fault was the `persona_assignment` STICKINESS cache:
+
+1. `check_sticky_assignment()` selected only `last_score` and gated on `>= 0.5`. It never read
+   `needs_review`. The anti-staleness machinery raised `needs_review=1` after
+   `ANTI_STALENESS_THRESHOLD` identical picks in a row (it even logged the FLAG), but the gate
+   ignored the flag it itself set and kept serving the stale pick forever — detection without
+   enforcement. A `(operations, design)` row that had locked onto sinek during the day's noisy
+   LLM-scored runs was therefore returned on every call; the sticky early-return path's own
+   `record_selection()` kept re-writing it, ratcheting `consecutive_count` to 6.
+2. Compounding it, anti-repetition variety could PENALISE / SAMPLE-AWAY the genuine craft
+   specialist below a generalist on its own craft task (rohde 0.6896 vs a near-3-way tie), and
+   stickiness would then re-lock the wrong persona — defeating the purpose of craft routing.
+3. The upsert's `needs_review` CASE latched the flag at 1 forever (never cleared, even on a switch).
+
+Fix (enforcement, not description):
+  - `check_sticky_assignment()` now reads `needs_review`; a flagged row (`needs_review=1`) busts the
+    cache and returns None so `main()` re-scores. Tolerant of installs without the column.
+  - On a genuine craft/specialty task, the specialist that is the top PRE-variety candidate AND
+    carries a `craft_domain_bonus` / `specialty_tag_bonus` is exempt from the variety penalty and
+    picked deterministically (bypassing sampling). Gated on bonus presence -> provably inert on
+    non-craft tasks (sales, strategy, general): no bonus is awarded there, so variety is unchanged.
+  - `write_persona_assignment_db()` resets the streak on a post-flag re-score and the upsert now
+    lets `needs_review` clear (switch or reset), so a re-validated row earns a fresh trust window
+    (periodic re-validation, no thrash).
+
+Proof: live deployed selector now returns `rohde-the-sketchnote-workbook` (0.6896, deterministic)
+for the sketchnote task and the poisoned row heals to `needs_review=0`. Zero regression: sales
+follow-up -> a sales persona, strategy -> a strategist (variety still samples normally), video-edit
+-> `vsevolod-pudovkin-film-technique` (the correct editing specialist, NOT rohde). New hermetic
+regression guard: `test-persona-selector-stickiness-staleness.sh` (wired into full-funnel-pipeline).
+(Was authored as v14.23.2; rebased to v14.23.3 because v14.23.2 shipped concurrently in PR #406.)
+
 ## [v14.23.1] - 2026-06-27 - fix(build-materialize-handoff): dept agents now registered in openclaw.json after every successful build
 
 Root cause (two live boxes confirmed): `materialize-dept-agents.sh` (Skill 32) scanned only
