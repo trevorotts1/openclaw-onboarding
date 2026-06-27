@@ -1105,7 +1105,7 @@
       "needs_tags": false
     },
     "pedro-adao-challenge-secrets-masterclass": {
-      "author": "Pedro Adao (with Russell Brunson & Richmond Dean)",
+      "author": "Pedro Adao (with Russell Brunson & Richmond Dinh)",
       "book": "Challenge Secrets Masterclass",
       "persona_name": "The Challenge Architect",
       "domain": [
@@ -1149,7 +1149,9 @@
       "blueprint": "personas/pedro-adao-challenge-secrets-masterclass/persona-blueprint.md",
       "summary": "Pedro Adao's Challenge Secrets: the 5-day challenge funnel as 'the only funnel you need' — one funnel that replaces the whole 4-funnel value ladder (registration > VIP upsell > 5 live days > offer + Stack & Close > core sales > high-ticket application). Coaches founders to launch a challenge on a single micro niche with a scroll-stopping Big Idea and a movement, produce a real result in 5 days, and close with a Foolproof Offer; governs Marketing/Web-Development/Launch-Operations/Social-Media/CRM agents to build challenge funnels (Skill 6 pages + brand copy) and promo (Skill 35) to a Big-Idea/Micro-Niche/Movement, result-arc, buyer-making-VIP, Stack-before-price, truth-based-belief, anti-thin-copy standard. Includes the Tiny Challenge organic playbook.",
       "appendix": "personas/pedro-adao-challenge-secrets-masterclass/PLAYBOOK-APPENDIX.md",
-      "appendix_status": "COMPLETE_WITH_WARNINGS",
+      "appendix_status": "COMPLETE",
+      "day4_added": "2026-06-27",
+      "appendix_notes": "Complete 5-day arc (Days 1-5). The Day-4 'How to Plan Your First or Next Challenge' session + the original cart-open Foolproof Offer were added 2026-06-27 from the provided Day-4 recording (appendix sections 16-22; blueprint Section 2 day-by-day arc, Section 11 planning tools, Section 14 source-fidelity note). No longer a source gap.",
       "appendix_richness": {
         "rich": [
           "challenge funnel page map + build order (0)",
@@ -1161,14 +1163,19 @@
           "Tiny-Challenge organic playbook + scripts + math (10)",
           "social promo calendar (11)",
           "business models + challenge KPIs (12-13)",
-          "verbatim Big-Idea / micro-niche / movement swipe (2, 15)"
+          "verbatim Big-Idea / micro-niche / movement swipe (2, 15)",
+          "Day-4 4-step planning sequence + pick-your-date/launch-timing recipe (16-17)",
+          "Day-4 what-to-sell tiered menu + duration + 'one con' follow-up scripts (18)",
+          "Day-4 challenge-name recipe (4 ingredients) + worked swipe (19)",
+          "Day-4 group-vs-tiny decision + Richmond's tiny-challenge foundation (7-benefit objection stack, 10-tiny data engine, 80-student stats) (20)",
+          "Day-4 cart-open: Challenge Secrets Intensive Foolproof Offer worked example (6-week curriculum + 7-bonus stack + price-anchoring ladder) (21)"
         ],
         "absent": [
-          "verbatim Day-4 planning-module transcript (date/name/group-vs-tiny reveal) — reconstructed from surrounding frameworks and flagged inline"
+          "literal email/SMS templates — none exist in the source (Day 4 or Day 5); every script is a verbal DM/feedback/offer/application/start-call line, captured as such"
         ]
       },
       "needs_tags": false
     }
   },
-  "lastUpdated": "2026-06-26"
+  "lastUpdated": "2026-06-27"
 }
