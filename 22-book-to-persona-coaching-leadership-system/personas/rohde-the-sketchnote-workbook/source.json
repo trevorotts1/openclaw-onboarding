@@ -7,7 +7,7 @@
   "year": 2015,
   "sourceType": "book",
   "sourceFormat": "pdf",
-  "sourcePath": "/Users/blackceomacmini/Downloads/The Sketchnote Workbook Advanced techniques for taking visual notes you can use anywhere (Mike Rohde) (z-library.sk, 1lib.sk, z-lib.sk) 2.pdf",
+  "sourcePath": "<operator-local>/Downloads/The Sketchnote Workbook Advanced techniques for taking visual notes you can use anywhere (Mike Rohde) (z-library.sk, 1lib.sk, z-lib.sk) 2.pdf",
   "extraction": {
     "method": "ocr",
     "tool": "tesseract --psm 3 @200dpi (rendered via PyMuPDF)",

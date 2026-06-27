@@ -7,7 +7,7 @@
   "isbn_asin": "B082L4R78V / 1640854622",
   "source_type": "book",
   "source_format": "epub",
-  "source_path": "/Users/blackceomacmini/Downloads/Copywriting Secrets How Everyone Can Use the Power of Words to Get More Clicks, Sales and Profits . . . No Matter What You… (Jim Edwards) (z-library.sk, 1lib.sk, z-lib.sk) 2.epub",
+  "source_path": "<operator-local>/Downloads/Copywriting Secrets How Everyone Can Use the Power of Words to Get More Clicks, Sales and Profits . . . No Matter What You… (Jim Edwards) (z-library.sk, 1lib.sk, z-lib.sk) 2.epub",
   "extraction_method": "unzip + xhtml-to-text (python re/html.unescape)",
   "extracted_chars": 405723,
   "extracted_words": 68585,

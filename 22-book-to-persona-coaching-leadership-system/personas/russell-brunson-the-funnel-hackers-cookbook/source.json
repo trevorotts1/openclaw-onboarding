@@ -5,7 +5,7 @@
   "year": 2017,
   "sourceType": "book",
   "sourceFormat": "pdf",
-  "sourcePath": "/Users/blackceomacmini/Downloads/The Funnel Hackers Cookbook (Russell Brunson) (z-library.sk, 1lib.sk, z-lib.sk) 3.pdf",
+  "sourcePath": "<operator-local>/Downloads/The Funnel Hackers Cookbook (Russell Brunson) (z-library.sk, 1lib.sk, z-lib.sk) 3.pdf",
   "pages": 307,
   "extractionTool": "pymupdf (fitz) page.get_text()",
   "extractionCharCount": 182516,
