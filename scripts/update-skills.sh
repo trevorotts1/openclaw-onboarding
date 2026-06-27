@@ -446,8 +446,10 @@ PYEOF
 fi
 
 # ── Telegram notification ──
+# Gated: only fires when OPENCLAW_UPDATE_NOTIFY=1 is explicitly set.
+# Fresh installs default to OFF so boxes never auto-DM the client on update.
 TELEGRAM_SENT=false
-if [ -f "$OPENCLAW_CONFIG" ] && command -v python3 &>/dev/null; then
+if [ "${OPENCLAW_UPDATE_NOTIFY:-0}" = "1" ] && [ -f "$OPENCLAW_CONFIG" ] && command -v python3 &>/dev/null; then
   BOT_TOKEN=$(python3 -c "
 import json
 with open('$OPENCLAW_CONFIG') as f: d = json.load(f)
