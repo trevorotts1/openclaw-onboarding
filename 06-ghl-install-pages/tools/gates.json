@@ -188,7 +188,7 @@
       "label": "Section panel toggle 'Allow Rows to take entire width'",
       "label_source": "screenshot-confirmed-label",
       "find": "find text 'Allow Rows to take entire width' (Section right-panel, General/Styles tabs)",
-      "note": "CONFIRMED by UI map — the label is 'Allow Rows to take entire width' (NOT 'take up full length'). Resolves the prior ambiguity. Still verify by TOGGLE STATE (on), not label text alone. Section panel also has Sticky + Background (Color/Image/Video)."
+      "note": "CONFIRMED by UI map — the label is 'Allow Rows to take entire width' (NOT 'take up full length'). Resolves the prior ambiguity. Still verify by TOGGLE STATE (on), not label text alone. Section panel also has Sticky + Background (Color/Image/Video). LIVE-MEASURED (2026-06-27 probe): allowRowMaxWidth=False renders a CENTERED ~1170px column visually IDENTICAL to True — the visible 1170 cap comes from the sectionStyles CSS rule, NOT the flag (see _live_render_findings.allowRowMaxWidth_false). ALTERNATE ROUTE: the 'Show settings' icon under Publish reaches this same toggle (see playwright_fallback_recipes.show_settings_full_width_route)."
     },
     {
       "id": 15, "spec": "A10.1", "name": "code_element", "status": "runtime",
@@ -370,5 +370,88 @@
       "hand_written_ledger": "NOT a gate. A ledger.json written by hand (not derived from ghl_verify.verify_all raw results) cannot issue a PASS verdict. The QC gate reads ghl_verify's outputs only."
     },
     "verdict_chain": "ghl_verify.verify_all -> writes logs/final-preview-verify.json (raw) -> derives scorecard/verify-summary.json -> assert_consistent (FAIL LOUD if summary > raw) -> ghl_gate require-pass reads summary and raw, re-asserts consistency, exits non-zero on FAIL. This chain cannot be short-circuited."
+  },
+
+  "_live_render_findings": {
+    "_doc": "PRIORS from the 2026-06-27 live /preview/ probe on the operator fixture (BlackCEO LLC). SNAPSHOT/PROBE-CONFIRMED priors, NOT hard build gates: they record what GHL's preview renderer actually did with probe constructs so the REST/golden path + any lint can stop guessing. They neither ban nor assert anything that blocks a build. The authoritative pass gate stays verify_gate_authoritative (HTTP 200 + marker in /preview/).",
+    "_probe_pass": "2026-06-27 live probe, app.convertandflow.com /preview/, token-only seed, 2 probe sections, 0 console errors.",
+    "iframe": {
+      "finding": "SURVIVES",
+      "evidence": "document.querySelectorAll('iframe').length===2; data-zhc attributes intact; src kept. GHL preview does NOT strip <iframe> from custom-code elements.",
+      "implication": "Do NOT add a sanitizer lint that bans <iframe>; ghl_method.iframe_embed_snippet (gate 26) is safe. (Confirms the video #2 lean toward embeds working.)"
+    },
+    "script": {
+      "finding": "SURVIVES_AND_EXECUTES",
+      "evidence": "2 <script data-zhc> tags ran: target divs read ZHC-SCRIPT-EXECUTED-A/B (script rewrote the SCRIPT-DID-NOT-RUN placeholder); window.__ZHC_SCRIPT_RAN_A/B===true; executed text visible in preview-container.innerText.",
+      "implication": "Inline <script> in custom-code blocks is not sanitized/blocked in /preview/."
+    },
+    "externalCss": {
+      "finding": "SURVIVES_AND_APPLIES",
+      "evidence": "external <link rel=stylesheet animate.css@4.1.1> rendered (2/2); inline <style> with @import url(google fonts) ALSO applied — .zhc-ext-A computed color rgb(102,51,153)=rebeccapurple, font-weight 700.",
+      "implication": "External + inline CSS is not stripped."
+    },
+    "emptyBlank": {
+      "finding": "NO_BLANK",
+      "evidence": "every probe element rendered (2 headlines, rich paragraphs, 2 anchors, 2 images, styled paragraph, 2 iframes, 2 executed scripts); autosave HTTP 201 with valid pageDataDownloadUrl; Nuxt SPA hydrated with 0 console errors.",
+      "implication": "Nothing rendered blank. assert_renderable_shape invariant 6 (no empty rawCustomCode) remains the structural guard."
+    },
+    "allowRowMaxWidth_false": {
+      "finding": "CENTERED_1170_NOT_THIN",
+      "evidence": "viewport 1720px: BOTH the False section (section-1ce579e752) and the True section (section-25848cb917) render outer .fullSection.c-section full-width (w=1720,left=0) with the immediate child div.inner w=1170,left=275,max-width:1170px,margin 275px auto — IDENTICAL. The 1170 cap is driven by the sectionStyles CSS rule '#section-...>.inner{max-width:1170px}' the golden writes into BOTH sections; the extra.allowRowMaxWidth flag alone produced NO observable width difference.",
+      "implication": "DISPROVES the 'False collapses to a thin strip' worry. =False = standard centered-1170, visually identical to =True. Full-width is governed by the sectionStyles CSS rule, NOT the flag; defaulting the flag True is a fidelity preference, not a fix for a broken render."
+    }
+  },
+
+  "playwright_fallback_recipes": {
+    "_doc": "P2-3 — SNAPSHOT-FIRST PRIORS (research selectors) + interaction recipes for the Playwright FALLBACK path (ghl_builder uses agent-browser PRIMARY / Playwright FALLBACK). These are PRIORS, not asserted DOM fact: the fallback MUST still snapshot the live DOM and resolve the real handle at runtime; the selectors below are find-seeds + the proven interaction SHAPE, not hardcoded CSS to trust blindly. NO invented CSS ships as fact.",
+    "_status": "research-prior",
+    "code_element_drag_drop": {
+      "_doc": "The Quick-Add 'Code' tile (gate 15) lives in a CROSS-ORIGIN builder iframe (page-builder.leadconnectorhq.com). Synthetic single JS click()/HTML5 drag events do NOT land (engine limit, gate 25). A REAL-POINTER drag with INTERPOLATED moves is required so GHL's drag sensor (pointer-distance + dragstart threshold) fires.",
+      "find_seed": "frame(page-builder.leadconnectorhq.com) -> Quick Add panel -> 'Custom' group -> tile with text 'Code' (</> icon)",
+      "drop_target_seed": "canvas '1 Column Row' inside the active Blank Section (gate 13)",
+      "recipe": "Resolve the source tile bbox + drop-target bbox at runtime. mouse.move(srcX,srcY); mouse.down(); then >=20 INTERPOLATED mouse.move() steps from source to target (linear interpolation of the two bbox centers, ~16ms apart) so the pointer crosses the drag-activation distance and GHL registers a real dragover; a final settle mouse.move(targetX,targetY); mouse.up(). A single down->up move does NOT trip the sensor.",
+      "interpolated_moves_min": 20,
+      "move_interval_ms": 16,
+      "fallback_if_drag_fails": "double-click the 'Code' tile (gate 25 notes double-click-add lands when synthetic drag does not).",
+      "prior_only": true
+    },
+    "codemirror_set_value": {
+      "_doc": "Set the Custom Javascript/HTML code payload via the CodeMirror API, NEVER key-by-key typing (large payloads + special chars corrupt under typing). The editor modal renders on the MAIN page (not inside the builder iframe).",
+      "find_seed": "modal 'Custom Javascript/HTML' (gate 16) -> CodeMirror root '.CodeMirror'",
+      "recipe": "Inside the editor document, stash the live editor instance on window.__cmEditorRef (window.__cmEditorRef = document.querySelector('.CodeMirror').CodeMirror), then window.__cmEditorRef.setValue(<payload>) and trigger its change so the SPA marks the field dirty. Read window.__cmEditorRef.getValue() back and assert it === <payload> BEFORE clicking Save (gate 17). If '.CodeMirror' is absent (newer editor build), fall back to setting the underlying textarea value + dispatching an 'input' event.",
+      "window_ref": "window.__cmEditorRef",
+      "verify_before_save": "window.__cmEditorRef.getValue() === payload",
+      "prior_only": true
+    },
+    "show_settings_full_width_route": {
+      "_doc": "P2 (video #2) — the 'Show settings / Hide settings' icon directly under the Publish button is the NEWER/easier route to the full-width toggle (gate 14), distinct from the OLD route (click the green Section box -> Sections right-panel). PRIOR ONLY — not screenshot-captured; snapshot to resolve the live handle.",
+      "find_seed": "find text 'Show settings' (or 'Hide settings') directly under/near the top-right 'Publish' button -> opens a settings panel carrying 'Allow Rows to take entire width' (gate 14)",
+      "relationship_to_gate_14": "Alternate PATH to the same toggle gate 14 encodes; either route flips the same section-level setting. Prefer whichever the runtime snapshot exposes.",
+      "source": "Trevor video #2 ~12:06-12:26, ~18:10-18:25 ('an update, an easier way to do this')",
+      "prior_only": true
+    }
+  },
+
+  "rate_limit_governor": {
+    "_doc": "P2-4 — client-side rate governor for the browser/REST build loop. GHL throttles rapid autosaves/publishes; bursting trips 429s and (worse) silent dropped writes. The governor spaces write actions and backs off on 429. These POLICY values are the single source of truth; tools/v2_dispatcher.py RateGovernor reads the same defaults (kept in sync).",
+    "min_save_interval_s": 6,
+    "min_publish_interval_s": 15,
+    "honor_retry_after_header": true,
+    "default_429_cooldown_s": 30,
+    "_note": "On HTTP 429: sleep max(Retry-After header, default_429_cooldown_s) before the next attempt. Saves are spaced >= min_save_interval_s apart; publishes >= min_publish_interval_s. These are MINIMUMS — a build may go slower; it must NEVER go faster.",
+    "session_keepalive": {
+      "_doc": "Keep the seeded agent-browser session warm during a long build so it does not idle out. A NO-OP keepalive (cheap eval / harmless read) every interval_minutes; NEVER a navigate/open/reload (that re-runs the boot IIFE and logs the seeded session out — see inject-ghl-auth.sh DO NOT RELOAD).",
+      "interval_minutes": 30,
+      "action": "no-op (e.g. AB --session <s> eval 'true') — NEVER open/navigate/reload",
+      "implemented_in": "tools/v2_dispatcher.py SessionKeepalive"
+    }
+  },
+
+  "agent_browser_version_pin": {
+    "_doc": "P2-4 — agent-browser is PINNED to this version. Every gate selector + the eval JSON-encoding + the auto-inlined-iframe snapshot shape + the '--headed false' override semantics were captured/proven against it. tools/inject-ghl-auth.sh FAILS LOUD (exit 70) when the live agent-browser version drifts from this pin, unless the operator acknowledges the risk.",
+    "pinned_version": "0.27.0",
+    "enforced_in": "tools/inject-ghl-auth.sh (version-pin guard, runs before the seed)",
+    "override_env": "GHL_AB_ALLOW_VERSION_DRIFT=1 (warn instead of refuse); GHL_AB_PINNED_VERSION to re-pin after a deliberate re-capture",
+    "on_drift": "REFUSE (exit 70). Re-capture the gates against the new version, then re-pin pinned_version + GHL_AB_PINNED_VERSION."
   }
 }

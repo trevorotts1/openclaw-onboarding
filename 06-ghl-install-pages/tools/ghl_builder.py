@@ -883,7 +883,225 @@ def verify_url(url: str, marker: str, timeout: int = 20) -> dict:
 # Minimum rendered-text length for a page to be considered non-blank.
 # A page that renders as 500 / blank / error produces near-zero visible text;
 # a real content page produces at minimum a few hundred chars of text.
+#
+# IMPORTANT (P0-1b): this is measured over the SCRIPT/STYLE-STRIPPED text, never
+# the raw DOM. A blank GoHighLevel render still ships a large Nuxt hydration
+# <script>__NUXT__={...}</script> blob plus inline <style>; counting the raw DOM
+# would credit that machinery as "content" and mask a blank page.
 MIN_RENDERED_TEXT = 400
+
+# Minimum count of block-level layout elements a real content page carries
+# (P1-3 content-richness floor). A blank / error render collapses to ~0 block
+# elements; a real funnel/website page has many. This is a STRUCTURAL signal
+# that a bare visible-char count cannot spoof (whitespace runs inflate chars but
+# not block elements).
+MIN_BLOCK_ELEMENTS = 3
+
+
+# ── Anti-fabricated-pass render-signal helpers (P0-1 / P0-2 / P1-3) ───────────
+# These are pure, side-effect-free functions so they are unit-testable WITHOUT a
+# browser session (render_check itself needs the singleton agent-browser).
+
+# <script>/<style>/<template>/<noscript> blocks + HTML comments are NON-VISIBLE:
+# their bytes never become rendered text. They MUST be removed before any
+# visible-text / marker / richness measurement, or a blank page's hydration
+# machinery would be miscounted as content (the core fabricated-pass surface).
+_NON_VISIBLE_RE = re.compile(
+    r"<(script|style|template|noscript)\b[^>]*>.*?</\1\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+# Orphan opening tag with no matching close (truncated capture) — strip to EOF.
+_NON_VISIBLE_OPEN_RE = re.compile(
+    r"<(script|style|template|noscript)\b[^>]*>.*\Z",
+    re.IGNORECASE | re.DOTALL,
+)
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+_TAG_RE = re.compile(r"<[^>]+>")
+_WS_RE = re.compile(r"\s+")
+_IMG_SRC_RE = re.compile(r"<img\b[^>]*?\bsrc\s*=\s*['\"]?\s*([^'\"\s>]+)", re.IGNORECASE)
+_HEADLINE_RE = re.compile(r"<h[1-6]\b", re.IGNORECASE)
+_BLOCK_RE = re.compile(
+    r"<(?:div|section|p|article|header|footer|main|ul|ol|li|h[1-6]|table|tr|td|form|nav|figure|figcaption|blockquote|aside)\b",
+    re.IGNORECASE,
+)
+
+
+def strip_non_visible_html(html: str) -> str:
+    """Remove <script>/<style>/<template>/<noscript> blocks and HTML comments.
+
+    The remaining markup still carries every VISIBLE tag (so attribute-borne
+    markers and block-element structure survive), but the non-rendered
+    machinery — most importantly the large Nuxt ``__NUXT__`` hydration script and
+    inline <style> — is gone. This is the substrate for the visible-text length,
+    the marker check, and the content-richness count (P0-1b / P0-1c / P1-3)."""
+    if not html:
+        return ""
+    out = _NON_VISIBLE_RE.sub(" ", html)
+    out = _NON_VISIBLE_OPEN_RE.sub(" ", out)  # truncated / unclosed tail
+    out = _HTML_COMMENT_RE.sub(" ", out)
+    return out
+
+
+def visible_text(html: str) -> str:
+    """Script/style-stripped, tag-stripped, entity-decoded, whitespace-collapsed
+    visible text of a rendered DOM. Length of this is the blank-page signal."""
+    from html import unescape
+    stripped = strip_non_visible_html(html)
+    text = _TAG_RE.sub(" ", stripped)
+    text = unescape(text)
+    return _WS_RE.sub(" ", text).strip()
+
+
+def content_richness(stripped_html: str) -> dict:
+    """Structural content signals over already-script-stripped markup (P1-3).
+
+    Returns ``img_count`` (number of <img> carrying a non-empty src — our static
+    proxy for a loaded image), ``block_count`` (block-level layout elements), and
+    ``has_headline`` (any <h1>–<h6>). A blank / error render scores ~0 on all
+    three; a real funnel/website page scores high — a signal a bare visible-char
+    count (which whitespace can inflate) cannot fabricate."""
+    if not stripped_html:
+        return {"img_count": 0, "block_count": 0, "has_headline": False}
+    img_count = sum(1 for m in _IMG_SRC_RE.finditer(stripped_html) if m.group(1).strip())
+    block_count = len(_BLOCK_RE.findall(stripped_html))
+    has_headline = bool(_HEADLINE_RE.search(stripped_html))
+    return {"img_count": img_count, "block_count": block_count, "has_headline": has_headline}
+
+
+# Plausible HTTP status range; anything outside is treated as "no status found".
+_HTTP_STATUS_RE = re.compile(
+    r"(?:\"?status(?:_?code)?\"?\s*[:=]\s*|HTTP/\d(?:\.\d)?\s+|"
+    r"(?:response|navigat\w*|http)\b[^0-9\n]{0,24})(\d{3})\b",
+    re.IGNORECASE,
+)
+
+
+def parse_nav_http_status(*streams: str) -> int | None:
+    """Extract a REAL navigation HTTP status from agent-browser `open` output.
+
+    Scans the navigate command's stdout/stderr for a status code reported next to
+    a status/response/navigation/HTTP keyword (handles ``status: 200``,
+    ``"statusCode":404``, ``HTTP/1.1 500``, ``response 200``). Returns the int
+    status, or ``None`` when nothing plausible is found — render_check then
+    FAILS CLOSED (falls back to a real urllib probe, never a byte heuristic).
+
+    A bare 3-digit token with no nearby keyword is ignored on purpose (a page
+    body can contain any number); only a keyword-anchored 100–599 counts."""
+    for stream in streams:
+        if not stream:
+            continue
+        for m in _HTTP_STATUS_RE.finditer(stream):
+            code = int(m.group(1))
+            if 100 <= code <= 599:
+                return code
+    return None
+
+
+# Console-line severity tokens. agent-browser's `console` emits PLAIN TEXT lines
+# (no structured type/level), so a blank/crashed page's ``TypeError`` surfaces as
+# text — we MUST parse severity from the text or every console.error is silently
+# dropped (the exact fabricated-pass surface P0-1d closes).
+_CONSOLE_ERROR_RE = re.compile(
+    r"(?:^\s*\[?\s*(?:page\s*)?error\b|^\s*\[?\s*severe\b|"
+    r"\b(?:uncaught|unhandled)\b|"
+    r"\b(?:Type|Reference|Syntax|Range|Eval|URI)Error\b|"
+    r"Cannot\s+read\s+propert|is\s+not\s+a\s+function|is\s+not\s+defined)",
+    re.IGNORECASE,
+)
+
+
+def console_line_is_error(text: str) -> bool:
+    """True if a plain-text console line denotes a page error / console.error.
+
+    Conservative-but-robust: matches a leading ``error``/``[error]``/``pageerror``
+    /``severe`` severity token, an ``Uncaught``/``Unhandled`` prefix, any JS error
+    constructor name (TypeError/ReferenceError/…), or the GoHighLevel
+    ``Cannot read properties of undefined`` crash. Treats ANY such line as fail
+    (P0-1d). A leading keyword anchor keeps benign lines that merely contain the
+    word 'error' deeper in a sentence from tripping it."""
+    if not text:
+        return False
+    return bool(_CONSOLE_ERROR_RE.search(text))
+
+
+def png_blank_report(
+    path: str,
+    *,
+    min_width: int = 64,
+    min_height: int = 64,
+    single_color_fraction: float = 0.98,
+) -> dict:
+    """Pixel-inspect a screenshot PNG for a blank render (P0-2).
+
+    Rejects (``blank=True``) when the image is below ``min_width`` × ``min_height``
+    (a truncated/failed capture) OR when a single colour covers
+    ``single_color_fraction`` (default 98%) or more of the pixels (a white/blank
+    error page). Uses Pillow when present for an exact dominant-colour fraction;
+    falls back to a header-only IHDR dimension read (dimension reject only) when
+    Pillow is unavailable so the helper never hard-depends on it.
+
+    ``determinable=False`` means we could not inspect (missing/corrupt file or no
+    decoder) — the caller treats that as NON-fatal (best-effort screenshot), only
+    a POSITIVE blank verdict feeds ``ok``."""
+    report: dict = {
+        "blank": False,
+        "determinable": False,
+        "reason": "",
+        "width": None,
+        "height": None,
+        "dominant_fraction": None,
+    }
+    if not path or not os.path.isfile(path) or os.path.getsize(path) == 0:
+        report["reason"] = "png_missing_or_empty"
+        return report
+
+    # Try Pillow (exact dominant-colour fraction + dimensions).
+    try:
+        from PIL import Image  # type: ignore[import]
+    except Exception:  # noqa: BLE001
+        Image = None  # type: ignore[assignment]
+
+    if Image is not None:
+        try:
+            with Image.open(path) as im:
+                im.load()
+                width, height = im.size
+                report["width"], report["height"] = width, height
+                report["determinable"] = True
+                if width < min_width or height < min_height:
+                    report["blank"] = True
+                    report["reason"] = f"below_min_dims_{width}x{height}"
+                    return report
+                rgb = im.convert("RGB")
+                total = width * height
+                colors = rgb.getcolors(maxcolors=total)  # None if all-unique
+                if colors:
+                    top = max(c[0] for c in colors)
+                    frac = top / total if total else 0.0
+                    report["dominant_fraction"] = round(frac, 4)
+                    if frac >= single_color_fraction:
+                        report["blank"] = True
+                        report["reason"] = f"single_color_{report['dominant_fraction']}"
+                return report
+        except Exception as exc:  # noqa: BLE001
+            report["reason"] = f"pillow_error:{type(exc).__name__}"
+            # fall through to header-only parse
+
+    # Header-only fallback: parse IHDR for width/height (bytes 16..24).
+    try:
+        with open(path, "rb") as f:
+            head = f.read(33)
+        if len(head) >= 24 and head[:8] == b"\x89PNG\r\n\x1a\n" and head[12:16] == b"IHDR":
+            width = int.from_bytes(head[16:20], "big")
+            height = int.from_bytes(head[20:24], "big")
+            report["width"], report["height"] = width, height
+            report["determinable"] = True
+            if width < min_width or height < min_height:
+                report["blank"] = True
+                report["reason"] = f"below_min_dims_{width}x{height}"
+    except Exception as exc:  # noqa: BLE001
+        report["reason"] = f"png_header_error:{type(exc).__name__}"
+    return report
 
 
 def render_check(
@@ -895,6 +1113,10 @@ def render_check(
     timeout: int = 45,
     img_src: str | None = None,
     widget_src: str | None = None,
+    min_block_elements: int = MIN_BLOCK_ELEMENTS,
+    require_headline: bool = False,
+    min_images: int = 0,
+    inspect_screenshot: bool = True,
 ) -> dict:
     """THE single source of truth for pass/fail — headless-rendered DOM check.
 
@@ -918,8 +1140,31 @@ def render_check(
       * ``dom_path``, ``png_path``, ``console_path`` — absolute paths (cited
         evidence).
       * ``dom_bytes``, ``visible_text_len`` — size signals for blank-page detection.
-      * ``ok`` — True IFF ``http == 200`` AND ``marker_in_rendered_dom`` AND
-        ``render_errors == []`` AND ``visible_text_len >= MIN_RENDERED_TEXT``.
+        ``visible_text_len`` is measured over the SCRIPT/STYLE-STRIPPED text
+        (P0-1b), so a blank page's Nuxt hydration <script> blob never counts.
+      * ``content_richness`` — {img_count, block_count, has_headline} structural
+        signals (P1-3) a whitespace-padded char count cannot fabricate.
+      * ``png_blank`` — the screenshot pixel-inspection verdict (P0-2).
+      * ``ok`` — True IFF ALL of:
+          - ``http == 200`` (a REAL nav status / urllib fallback, never the old
+            ``dom_bytes > 100`` heuristic — fail-closed on unknown, P0-1a);
+          - ``marker_in_rendered_dom`` (marker present in the SCRIPT-STRIPPED
+            DOM, not the raw bytes — P0-1c);
+          - ``render_errors == []`` (this ALSO absorbs any console.error /
+            pageerror — P0-1d — and a POSITIVE blank-screenshot verdict — P0-2);
+          - ``visible_text_len >= MIN_RENDERED_TEXT``;
+          - ``content_richness['block_count'] >= min_block_elements`` (P1-3);
+          - ``has_headline`` when ``require_headline`` (default False — see note);
+          - ``img_count >= min_images`` (default 0 — see note).
+
+    Content-richness floor (P1-3): ``min_block_elements`` (default 3) and the
+    stripped visible-text floor harden the bare char count for EVERY page. The
+    stronger probe signals — ``require_headline`` and ``min_images`` — default to
+    the SAFE values (off / 0) because "every built page carries a headline / a
+    loaded <img>" is NOT a confirmed universal invariant (a thank-you / redirect
+    page legitimately may not), and the project RULE forbids hard-gating an
+    unconfirmed claim. Probe/verification callers that KNOW their page is
+    content-rich pass ``require_headline=True`` / ``min_images=1``.
 
     Optional asserts (called by ghl_verify when present):
       * ``img_src`` — asserted present in the rendered body (image pipeline check,
@@ -954,6 +1199,8 @@ def render_check(
     visible_text_len: int = 0
     marker_in_rendered_dom: bool = False
     dom_content: str = ""
+    richness: dict = {"img_count": 0, "block_count": 0, "has_headline": False}
+    png_blank: dict = {"blank": False, "determinable": False, "reason": "not_inspected"}
 
     # ── Drive the headless browser (browser_manager singleton gateway) ─────────
     # We use the browser_cmd machinery which enforces --headed false (D6).
@@ -1041,29 +1288,50 @@ def render_check(
         with open(console_path, "w", encoding="utf-8") as f:
             json.dump(console_entries, f, indent=2)
 
-        # Extract pageerror / console.error entries.
+        # Extract pageerror / console.error entries (P0-1d). agent-browser's
+        # `console` emits PLAIN TEXT (kind is usually empty), so structured
+        # type/level is checked FIRST, then a robust text-severity parse — ANY
+        # pageerror / console.error fails the render, never silently dropped.
         for entry in console_entries:
             kind = (entry.get("type") or entry.get("level") or "").lower()
             msg = entry.get("text") or entry.get("message") or entry.get("raw") or ""
-            if kind in ("pageerror", "error") or "TypeError" in msg or "Cannot read" in msg:
-                render_errors.append(f"{kind}: {msg}"[:400])
+            if kind in ("pageerror", "error", "severe") or console_line_is_error(msg):
+                render_errors.append(f"{kind or 'console'}: {msg}"[:400])
 
         # Read the captured DOM.
         if os.path.isfile(dom_path):
             with open(dom_path, encoding="utf-8", errors="replace") as f:
                 dom_content = f.read()
             dom_bytes = len(dom_content.encode("utf-8", errors="replace"))
-            # Rough visible-text estimate: strip tags.
-            import re as _re
-            visible_text_len = len(_re.sub(r"<[^>]+>", " ", dom_content).strip())
-            marker_in_rendered_dom = bool(marker) and marker in dom_content
+            # P0-1b/c: strip <script>/<style>/<template>/<noscript>/comments
+            # BEFORE measuring, so a blank page's Nuxt hydration <script> blob
+            # cannot pose as content and the marker must be in VISIBLE markup
+            # (not the raw autosave bytes echoed into a hydration <script>).
+            stripped_html = strip_non_visible_html(dom_content)
+            visible_text_len = len(visible_text(dom_content))
+            marker_in_rendered_dom = bool(marker) and marker in stripped_html
+            richness = content_richness(stripped_html)
         else:
             render_errors.append(f"dom capture missing: {dom_path}")
 
-        # Attempt to read HTTP status from browser metadata.
-        # agent-browser emits the navigation status in the stdout of `open`.
-        # As a fallback we use the dom_bytes heuristic (0 bytes = likely error).
-        http_status = 200 if dom_bytes > 100 else 500
+        # REAL navigation HTTP status (P0-1a): parse the actual status agent-
+        # browser reported on `open`; if none is parseable, FAIL CLOSED via a
+        # real urllib status probe — NEVER the old ``dom_bytes > 100`` heuristic
+        # (which credited any non-empty error page as 200).
+        http_status = parse_nav_http_status(nav_result.stdout, nav_result.stderr)
+        if http_status is None:
+            fallback = verify_url(preview_url, marker, timeout=min(timeout, 20))
+            http_status = fallback.get("http")  # int or None; None => ok=False
+
+        # Screenshot pixel-inspection (P0-2): reject a blank / single-colour /
+        # undersized render. Feeds ``ok`` via render_errors. Only a POSITIVE
+        # blank verdict fails; an undeterminable capture is non-fatal.
+        if inspect_screenshot:
+            png_blank = png_blank_report(png_path)
+            if png_blank.get("blank"):
+                render_errors.append(
+                    f"screenshot_blank_render: {png_blank.get('reason') or 'single_color'}"
+                )
 
         # Optional asserts (B4 image, B3 widget).
         if img_src and img_src not in dom_content:
@@ -1092,12 +1360,15 @@ def render_check(
     png_sha256 = _sha256(png_path)
     console_sha256 = _sha256(console_path)
 
-    # ── ok requires ALL four conditions ───────────────────────────────────────
+    # ── ok requires ALL conditions (any failure already pushed render_errors) ──
     ok = (
         http_status == 200
         and marker_in_rendered_dom
         and render_errors == []
         and visible_text_len >= MIN_RENDERED_TEXT
+        and richness["block_count"] >= min_block_elements
+        and (not require_headline or richness["has_headline"])
+        and richness["img_count"] >= min_images
     )
 
     return {
@@ -1110,6 +1381,8 @@ def render_check(
         "console_path": console_path,
         "dom_bytes": dom_bytes,
         "visible_text_len": visible_text_len,
+        "content_richness": richness,
+        "png_blank": png_blank,
         "dom_sha256": dom_sha256,
         "png_sha256": png_sha256,
         "console_sha256": console_sha256,

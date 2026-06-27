@@ -19,6 +19,19 @@ Three native methods exist for landing content on a GoHighLevel page:
       ``ghl_vercel.py`` owns the deploy/assert path; this module produces
       the iframe snippet and the routing decision.
 
+      IFRAME SURVIVAL — CONFIRMED BY LIVE PROBE (2026-06-27, authenticated
+      ``/preview/`` round-trip). GoHighLevel's preview renderer does NOT strip
+      ``<iframe>`` from custom-code elements: a probe page with two
+      ``<iframe data-zhc src="…">`` elements rendered both verbatim
+      (``document.querySelectorAll('iframe').length === 2``; ``data-zhc``
+      attributes intact; ``src`` preserved). The same probe confirmed inline
+      ``<script data-zhc>`` survives AND executes, external ``<link
+      rel="stylesheet">`` + inline ``<style>@import…</style>`` survive and
+      apply, and no element rendered blank (autosave 201, Nuxt hydrated, 0
+      console errors). The earlier research worry that GHL strips iframes on
+      save is therefore DISPROVEN for the preview render path, and this
+      VERCEL-EMBED escape hatch is the supported route for ADVANCED pages.
+
   (c) WIDGET — calendar or form blocks, regardless of overall page method,
       MUST use GoHighLevel's own native widget embed built from a real
       Skill-44-created object (calendar id / form id). Faking a calendar or
@@ -431,6 +444,12 @@ def iframe_embed_snippet(url: str, *, height_px: int = 600,
     DENY, no restrictive frame-ancestors) by ``ghl_vercel.assert_embeddable``
     BEFORE this snippet is spliced into a GoHighLevel page.
 
+    IFRAME SURVIVES THE PREVIEW RENDER — CONFIRMED. A live authenticated
+    ``/preview/`` probe (2026-06-27) rendered ``<iframe data-zhc>`` elements
+    verbatim with ``src`` intact and no stripping. This snippet is the
+    supported VERCEL-EMBED carrier; do not gate it behind a sanitizer that
+    bans ``<iframe>``.
+
     Args:
         url: The public Vercel deployment URL (embeddable, protection off).
         height_px: The iframe height in pixels (default 600).
@@ -611,6 +630,297 @@ def decide_and_record(page_spec: Any, page_name: str, run_dir: str, *,
     return decision
 
 
+# ── Per-client brand/theme (parameterize general.general.colors) ──────────────
+#
+# GoHighLevel's renderer reads ``blob['general']['general']['colors']`` — an
+# 18-entry list of ``{label, value}`` dicts (NOT a ``defaultSettings.colors``
+# object; that key does not exist in real GHL page blobs). The renderer crashes
+# with ``Cannot read properties of undefined (reading 'colors')`` (HTTP 500) if
+# this list is absent. ``ghl_rest_canvas._FLAT_THEME_COLORS`` is the canonical
+# default palette and ``ghl_rest_canvas.new_page_blob`` writes it verbatim today.
+#
+# These helpers let a build inject a CLIENT palette while KEEPING THE EXACT
+# 18-entry shape and label order GoHighLevel expects — overriding only the
+# values the client supplied, never adding/removing entries. The canonical
+# caller is ``new_page_blob`` (in ghl_rest_canvas.py): it passes its own
+# authoritative ``_FLAT_THEME_COLORS`` as ``base`` so this module never has to
+# duplicate-and-drift the source of truth.
+
+# The 18 canonical theme labels, in GoHighLevel's required order. The CSS custom
+# property for each is the lower-cased label (``--primary``, ``--secondary``, …).
+THEME_COLOR_LABELS = (
+    "Transparent", "Primary", "Secondary", "White", "Gray", "Black", "Red",
+    "Orange", "Yellow", "Green", "Teal", "Malibu", "Indigo", "Purple", "Pink",
+    "Cobalt", "Smoke", "Overlay",
+)
+
+# A built-in copy of the canonical default palette, kept ONLY as a fallback for
+# ``base=None`` callers and tests. The authoritative source is
+# ``ghl_rest_canvas._FLAT_THEME_COLORS``; production callers pass that as ``base``.
+_DEFAULT_THEME_COLORS = [
+    {"label": "Transparent", "value": "transparent"},
+    {"label": "Primary", "value": "#37ca37"},
+    {"label": "Secondary", "value": "#188bf6"},
+    {"label": "White", "value": "#ffffff"},
+    {"label": "Gray", "value": "#cbd5e0"},
+    {"label": "Black", "value": "#000000"},
+    {"label": "Red", "value": "#e93d3d"},
+    {"label": "Orange", "value": "#f6ad55"},
+    {"label": "Yellow", "value": "#faf089"},
+    {"label": "Green", "value": "#9ae6b4"},
+    {"label": "Teal", "value": "#81e6d9"},
+    {"label": "Malibu", "value": "#63b3ed"},
+    {"label": "Indigo", "value": "#757BBD"},
+    {"label": "Purple", "value": "#d6bcfa"},
+    {"label": "Pink", "value": "#fbb6ce"},
+    {"label": "Cobalt", "value": "#155eef"},
+    {"label": "Smoke", "value": "#f5f5f5"},
+    {"label": "Overlay", "value": "rgba(0, 0, 0, 0.5)"},
+]
+
+
+class ThemeError(ValueError):
+    """Raised when a client palette would break the 18-entry colors shape:
+    an unknown label, a non-string/empty override value, or a ``base`` list
+    whose shape is not the canonical 18-entry ``{label, value}`` form. The
+    caller MUST surface this as a build FAIL — we never silently drop a client
+    color or change the entry count GoHighLevel depends on."""
+
+
+def _normalize_palette_keys(palette: dict) -> dict[str, str]:
+    """Lower-case + strip palette keys for case-insensitive label matching.
+    Raises ThemeError on a non-dict palette or a non-string/empty value."""
+    if not isinstance(palette, dict):
+        raise ThemeError(
+            f"palette must be a dict of label->color, got {type(palette).__name__!r}."
+        )
+    norm: dict[str, str] = {}
+    for k, v in palette.items():
+        key = str(k).strip().lower()
+        if not isinstance(v, str) or not v.strip():
+            raise ThemeError(
+                f"palette[{k!r}] must be a non-empty color string, got {v!r}."
+            )
+        norm[key] = v.strip()
+    return norm
+
+
+def build_theme_colors(palette: dict, *, base: list | None = None) -> list[dict]:
+    """Return an 18-entry ``general.general.colors`` list with the client
+    ``palette`` merged onto ``base``, preserving the EXACT shape and order.
+
+    ``palette`` maps a theme label (case-insensitive — e.g. ``"primary"``,
+    ``"Secondary"``, ``"overlay"``) to a CSS color value. Only the labels the
+    client supplies are overridden; every other entry keeps its ``base`` value.
+
+    ``base`` is the canonical 18-entry list to start from. Production callers
+    (``ghl_rest_canvas.new_page_blob``) MUST pass their authoritative
+    ``_FLAT_THEME_COLORS`` so this function never duplicates the source of
+    truth; ``base=None`` falls back to ``_DEFAULT_THEME_COLORS`` (tests only).
+
+    Raises ``ThemeError`` if ``palette`` names a label not in ``base``, if any
+    override value is not a non-empty string, or if ``base`` is not a list of
+    ``{label, value}`` dicts. The returned list is ALWAYS ``len(base)`` entries
+    — a client palette can never add or drop a color (that would re-introduce
+    the ``reading 'colors'`` 500).
+    """
+    src = _DEFAULT_THEME_COLORS if base is None else base
+    if not isinstance(src, list) or not src:
+        raise ThemeError("base must be a non-empty list of {label, value} dicts.")
+
+    out: list[dict] = []
+    known_labels: set[str] = set()
+    for i, entry in enumerate(src):
+        if not isinstance(entry, dict) or "label" not in entry or "value" not in entry:
+            raise ThemeError(
+                f"base[{i}] must be a {{'label', 'value'}} dict, got {entry!r}."
+            )
+        known_labels.add(str(entry["label"]).strip().lower())
+        out.append({"label": entry["label"], "value": entry["value"]})
+
+    overrides = _normalize_palette_keys(palette)
+    unknown = sorted(k for k in overrides if k not in known_labels)
+    if unknown:
+        raise ThemeError(
+            f"palette references unknown theme label(s): {unknown}. "
+            f"Valid labels (case-insensitive): "
+            f"{sorted(known_labels)}. Refusing to change the 18-entry shape."
+        )
+
+    for entry in out:
+        key = str(entry["label"]).strip().lower()
+        if key in overrides:
+            entry["value"] = overrides[key]
+    return out
+
+
+def apply_palette_to_page_styles(page_styles_css: str, palette: dict) -> str:
+    """Rewrite the ``:root{ --primary: …; … }`` custom-property declarations in
+    a ``pageStyles`` CSS string to match the client ``palette``, keeping the
+    colors list and the CSS variables in sync.
+
+    Only the ``--<label>:`` declarations whose label is in ``palette`` are
+    rewritten (e.g. ``palette={'primary': '#abc'}`` rewrites ``--primary: …;``).
+    Non-color vars (``--headlinefont``, ``--text-color``, etc.) are untouched
+    unless explicitly present in ``palette``. Returns the rewritten CSS; the
+    input is never mutated.
+
+    Raises ``ThemeError`` on a non-string CSS input or an invalid palette.
+    """
+    if not isinstance(page_styles_css, str):
+        raise ThemeError(
+            f"page_styles_css must be a str, got {type(page_styles_css).__name__!r}."
+        )
+    overrides = _normalize_palette_keys(palette)
+    if not overrides:
+        return page_styles_css
+
+    import re
+
+    def _sub(match: "re.Match") -> str:
+        var = match.group("var").strip().lower()
+        if var in overrides:
+            return f"--{match.group('var')}: {overrides[var]};"
+        return match.group(0)
+
+    # Match `--<name>: <value>;` declarations (value = anything up to the `;`).
+    return re.sub(
+        r"--(?P<var>[A-Za-z0-9_-]+)\s*:\s*[^;]*;",
+        _sub,
+        page_styles_css,
+    )
+
+
+# ── Idempotent re-install (detect existing ZHC page by marker → update-in-place)
+
+class InstallTargetError(ValueError):
+    """Raised when the install target cannot be resolved unambiguously — e.g.
+    more than one existing page already carries the same build marker. Updating
+    a random one of several duplicates is dangerous, so we fail loud and ask for
+    manual cleanup rather than guess."""
+
+
+@dataclass
+class InstallTarget:
+    """The idempotent install decision for one page.
+
+    ``action``: ``"update"`` (re-install in place over an existing ZHC page) or
+        ``"create"`` (no existing page found — make a new one).
+    ``page_id``: the existing page id to update (empty when ``action='create'``).
+    ``matched_by``: ``"marker"`` | ``"name"`` | ``""`` — how the existing page
+        was identified.
+    ``reason``: human-readable explanation for the audit trail.
+    """
+    action: str
+    page_id: str
+    matched_by: str
+    reason: str
+
+
+def _page_carries_marker(page: dict, marker: str, *, marker_field: str = "marker") -> bool:
+    """True if ``page`` carries ``marker`` either in its explicit ``marker``
+    field or embedded in its stored HTML (``rawCustomCode`` / ``html`` /
+    ``content``). The marker is the unique ZHC build fingerprint."""
+    if not marker:
+        return False
+    declared = str(page.get(marker_field) or "")
+    if marker == declared or (declared and marker in declared):
+        return True
+    for html_key in ("rawCustomCode", "html", "content", "raw_custom_code"):
+        body = page.get(html_key)
+        if isinstance(body, str) and marker in body:
+            return True
+    return False
+
+
+def resolve_install_target(
+    existing_pages: list,
+    marker: str,
+    *,
+    page_name: str = "",
+    marker_field: str = "marker",
+) -> InstallTarget:
+    """Decide whether to UPDATE an existing ZHC page in place or CREATE a new
+    one — the idempotent re-install primitive.
+
+    Re-running a build must NOT pile up duplicate pages. This function inspects
+    the sub-account's ``existing_pages`` and:
+
+      1. UPDATE if exactly one existing page carries ``marker`` (the stable ZHC
+         build fingerprint, in its ``marker`` field or its stored HTML). This is
+         the idempotent re-install path: same marker → same page, updated.
+      2. Raise ``InstallTargetError`` if MORE THAN ONE existing page carries the
+         marker (ambiguous — a prior run left duplicates; manual cleanup needed).
+      3. Else, if ``page_name`` is given and exactly one existing page has that
+         exact name, UPDATE it (``matched_by='name'``) — a softer fallback for
+         pages created before markers were stamped.
+      4. Else CREATE.
+
+    For idempotency the caller MUST pass a STABLE marker (derived from the
+    funnel/page slug), NOT a per-run nonce — otherwise every run looks new and
+    re-creates the page. ``existing_pages`` items are dicts carrying at least an
+    id (``id`` or ``page_id``) and optionally ``name`` / ``marker`` / stored HTML.
+
+    Raises ``InstallTargetError`` on ambiguous matches or a missing id on the
+    matched page; ``ValueError`` if ``marker`` is empty.
+    """
+    if not marker or not str(marker).strip():
+        raise ValueError("marker is required (the stable ZHC build fingerprint).")
+    if existing_pages is None:
+        existing_pages = []
+    if not isinstance(existing_pages, list):
+        raise InstallTargetError(
+            f"existing_pages must be a list, got {type(existing_pages).__name__!r}."
+        )
+
+    def _pid(p: dict) -> str:
+        return str(p.get("id") or p.get("page_id") or "")
+
+    marker_hits = [
+        p for p in existing_pages
+        if isinstance(p, dict) and _page_carries_marker(p, marker, marker_field=marker_field)
+    ]
+    if len(marker_hits) > 1:
+        ids = [_pid(p) for p in marker_hits]
+        raise InstallTargetError(
+            f"AMBIGUOUS RE-INSTALL: {len(marker_hits)} existing pages carry marker "
+            f"{marker!r} (ids={ids}). A prior run left duplicates — refusing to "
+            "guess which to update. Remove the extras, then re-run."
+        )
+    if len(marker_hits) == 1:
+        pid = _pid(marker_hits[0])
+        if not pid:
+            raise InstallTargetError(
+                f"existing page carries marker {marker!r} but has no id/page_id — "
+                "cannot target it for update."
+            )
+        return InstallTarget(
+            action="update", page_id=pid, matched_by="marker",
+            reason=f"existing page {pid} carries marker {marker!r}; updating in place.",
+        )
+
+    if page_name and str(page_name).strip():
+        target = str(page_name).strip()
+        name_hits = [
+            p for p in existing_pages
+            if isinstance(p, dict) and str(p.get("name") or "").strip() == target
+        ]
+        if len(name_hits) == 1 and _pid(name_hits[0]):
+            pid = _pid(name_hits[0])
+            return InstallTarget(
+                action="update", page_id=pid, matched_by="name",
+                reason=(
+                    f"no marker match; exactly one existing page named {target!r} "
+                    f"({pid}); updating in place (pre-marker page)."
+                ),
+            )
+
+    return InstallTarget(
+        action="create", page_id="", matched_by="",
+        reason=f"no existing page carries marker {marker!r}; creating a new page.",
+    )
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _now() -> str:
@@ -642,4 +952,13 @@ __all__ = [
     "iframe_embed_snippet",
     "widget_embed_snippet",
     "decide_and_record",
+    # Per-client brand/theme (parameterize general.general.colors).
+    "THEME_COLOR_LABELS",
+    "ThemeError",
+    "build_theme_colors",
+    "apply_palette_to_page_styles",
+    # Idempotent re-install.
+    "InstallTarget",
+    "InstallTargetError",
+    "resolve_install_target",
 ]

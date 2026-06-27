@@ -9,7 +9,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "7.3.0"
+  version: "14.13.0"
   priority: HIGH
 ---
 
@@ -297,23 +297,38 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
 - NEVER hardcode invented CSS for an in-app control. Snapshot the live DOM and
   pick the ref at runtime (the 26 runtime gates in tools/gates.json).
 - Set large HTML payloads via the code-editor value API (eval), never key-by-key.
-- **MANDATORY theme/colors object on EVERY page blob.** Every page blob POSTed to
-  GoHighLevel MUST carry a populated `defaultSettings.colors` object. Without it
+- **MANDATORY theme/colors list on EVERY page blob.** Every page blob POSTed to
+  GoHighLevel MUST carry a populated `general.general.colors` list. Without it
   GoHighLevel reads `.colors` off `undefined` and returns HTTP 500 — the page
-  cannot display even if the bytes stored as 201. The `colors` field MUST be an
-  object (e.g. `{"bodyBgColor":"#FFF","btnBgColor":"#0E8C8C",...}`), NEVER a flat
-  hex list. Elements MUST nest `section → row → column → element`; flat structure
-  is not rendered. The `rawCustomCode` in a code element MUST be an HTML fragment,
-  not a full `<!DOCTYPE html>…</html>` document (a full document renders blank).
-  `ghl_rest_canvas.new_page_blob()` enforces the golden rule: it MUST load a
-  reference from `references/golden/`, assert a populated colors object
-  (`assert len(ref["defaultSettings"]["colors"]) >= 3`), and raise
-  `GoldenReferenceError` if the assertion fails — it NEVER produces a theme-less
-  blob. A 201 autosave status does NOT prove a page renders; it only proves bytes
-  were stored.
+  cannot display even if the bytes stored as 201. (NOTE: `defaultSettings.colors`
+  does NOT exist in real GoHighLevel page blobs — the live path is
+  `general.general.colors`.) The `colors` field is an **18-entry list of
+  `{label, value}` dicts** (Transparent, Primary, Secondary, White, Gray, Black,
+  Red, Orange, Yellow, Green, Teal, Malibu, Indigo, Purple, Pink, Cobalt, Smoke,
+  Overlay) — the exact shape GoHighLevel's renderer walks. Elements MUST nest
+  `section → row → column → element`; flat structure is not rendered. The
+  `rawCustomCode` in a code element MUST be an HTML fragment, not a full
+  `<!DOCTYPE html>…</html>` document (a full document renders blank).
+  `ghl_rest_canvas.new_page_blob()` is a **pure, self-contained** function: it
+  assembles the blob from the inlined `_FLAT_*` constants (theme colors, page
+  styles, section scaffold) — there is NO file I/O and it does NOT load from
+  `references/golden/` at build time. `tools/ghl_rest_canvas.py::assert_renderable`
+  enforces the invariant that `general.general.colors` is a non-empty list before
+  any save. **Per-client brand:** `ghl_method.build_theme_colors(palette,
+  base=_FLAT_THEME_COLORS)` injects a client palette into that list while keeping
+  the exact 18-entry shape (and `apply_palette_to_page_styles` keeps the
+  `:root{--primary:…}` CSS vars in sync). A 201 autosave status does NOT prove a
+  page renders; it only proves bytes were stored.
 - **Sealed un-fakeable verification.** A page PASS requires ONLY: `ghl_verify.render_check`
   returns HTTP 200, marker present in the RENDERED (JavaScript-hydrated) DOM, and
   zero render errors — captured as real DOM snapshot + PNG + console artifacts.
+  **Copy-fidelity (P1-4):** when a page carries `copy_tokens` (approved phrases)
+  or `copy_md_path` (the approved copy.md), `ghl_verify.verify_page` additionally
+  asserts every approved copy token appears in the rendered visible text
+  (scripts/styles stripped); a missing token folds into `render_errors` → PASS
+  False. This catches a page that renders 200 + marker but ships stale or
+  placeholder copy. The gate is opt-in (pages without copy assertions are
+  unaffected).
   `ghl_gate require-pass` reads ONLY `scorecard/verify-summary.json` written by
   `ghl_verify`; it ignores ledger files and `.md` files. A 201 autosave, a marker
   grep on stored bytes, a hand-written ledger, or a non-200 re-labeled "API
@@ -334,7 +349,7 @@ in `routing/method-decision.json` (required — no build proceeds without it).
 
 | Classifier score | Method | Path |
 |---|---|---|
-| `SIMPLE` — static content, CSS fits GoHighLevel builder, no third-party JS | `DIRECT` | Native GoHighLevel page blob with §2.06 theme/colors object and HTML fragment in code element |
+| `SIMPLE` — static content, CSS fits GoHighLevel builder, no third-party JS | `DIRECT` | Native GoHighLevel page blob with §2.06 `general.general.colors` list and HTML fragment in code element |
 | `ADVANCED` — rich interactivity, third-party JavaScript, CSS that GoHighLevel builder overrides | `VERCEL_EMBED` | Build + host on Vercel; run `prepare → deploy → disable_sso → assert_embeddable` gates; paste iframe snippet into a DIRECT code element |
 | `CALENDAR` / `FORM` / `DATA_PUSH` — needs a real GoHighLevel calendar, form, or CRM write | `SKILL44_WIDGET` | Call Skill 44 to create the GoHighLevel object; embed the GoHighLevel-generated snippet verbatim (no SRI); verify snippet tag appears in RENDERED DOM |
 

@@ -394,7 +394,7 @@ justified method field.
 
 | Page classifier score | Method | What it means |
 |---|---|---|
-| `SIMPLE` (static content, CSS fits GHL builder, no JS interactivity) | `DIRECT` — native GoHighLevel page blob | HTML fragment in a GoHighLevel code element; §2.06 theme object required |
+| `SIMPLE` (static content, CSS fits GHL builder, no JS interactivity) | `DIRECT` — native GoHighLevel page blob | HTML fragment in a GoHighLevel code element; §2.06 `general.general.colors` list required |
 | `ADVANCED` (rich interactivity, third-party JS, complex CSS that GHL builder overrides) | `VERCEL_EMBED` — build/host on Vercel, iframe into GoHighLevel | See Vercel end-to-end flow below |
 | `CALENDAR` / `FORM` / `DATA_PUSH` (needs a real GoHighLevel calendar, form, or CRM write) | `SKILL44_WIDGET` — call Skill 44 to create the GoHighLevel object, embed the GoHighLevel-generated embed snippet | See Skill-44 widget flow below |
 
@@ -410,9 +410,19 @@ widget type. Do NOT use Vercel for simple pages.
    publicly accessible without SSO/auth wall; if the gate fails, halt and flag
 4. `vercel_build.assert_embeddable(deployment_url)` — hard gate: `X-Frame-Options`
    must NOT be `SAMEORIGIN`/`DENY`; if the gate fails, halt and flag
-5. Generate an iframe snippet: `<iframe src="<deployment_url>" width="100%" ...>`
+5. Generate an iframe snippet via `ghl_method.iframe_embed_snippet(url)`:
+   `<iframe src="<deployment_url>" width="100%" ...>`
 6. Paste the iframe snippet into a GoHighLevel DIRECT-method code element (the
-   page blob still needs the §2.06 theme object)
+   page blob still needs the §2.06 theme colors list)
+
+> **IFRAME SURVIVES — CONFIRMED (live probe, 2026-06-27).** A live authenticated
+> `/preview/` round-trip rendered `<iframe data-zhc src="…">` elements verbatim
+> (2 of 2, `src` intact, no stripping); inline `<script data-zhc>` survived AND
+> executed; external `<link rel="stylesheet">` + inline `<style>@import…</style>`
+> survived and applied; nothing rendered blank. GoHighLevel's preview renderer
+> does NOT sanitize iframes/scripts/CSS in custom-code blocks, so the
+> VERCEL_EMBED iframe escape hatch is sound. Do NOT add a sanitizer that bans
+> `<iframe>`.
 
 **Skill-44 widget flow (for CALENDAR / FORM / DATA_PUSH pages):**
 1. Call Skill 44 (`44-convert-and-flow-operator`) to CREATE the real GoHighLevel
@@ -442,37 +452,54 @@ last resort" — it is now a first-class, automated, classified path.
 
 ---
 
-### 2.06 Theme/colors object — MANDATORY for every page blob
+### 2.06 Theme/colors list — MANDATORY for every page blob
 
-Every page blob POSTed to GoHighLevel MUST carry a populated `defaultSettings`
-block with a `colors` sub-object. Without it GoHighLevel's renderer reads
-`.colors` off `undefined` and returns HTTP 500 — the page cannot display even
-if bytes were stored successfully.
+Every page blob POSTed to GoHighLevel MUST carry a populated
+`general.general.colors` list. Without it GoHighLevel's renderer reads `.colors`
+off `undefined` and returns HTTP 500 — the page cannot display even if bytes
+were stored successfully.
 
-**Required shape (minimum viable — fill real palette values):**
+> **DOC-TRUTH.** `defaultSettings.colors` does NOT exist in real GoHighLevel
+> page blobs (see `ghl_rest_canvas.new_page_blob` docstring). The live render
+> path is `general.general.colors`, and the value is an **18-entry list of
+> `{label, value}` dicts**, NOT a `{bodyBgColor, btnBgColor, …}` object.
+
+**Required shape (the canonical 18-entry palette — `_FLAT_THEME_COLORS`):**
 ```json
 {
-  "defaultSettings": {
-    "colors": {
-      "bodyBgColor": "#FFFFFF",
-      "btnBgColor":  "#0E8C8C",
-      "btnColor":    "#FFFFFF",
-      "headingColor":"#1A1A1A",
-      "textColor":   "#2B2B2B"
-    },
-    "font": { "family": "Inter" }
+  "general": {
+    "general": {
+      "colors": [
+        {"label": "Transparent", "value": "transparent"},
+        {"label": "Primary",     "value": "#37ca37"},
+        {"label": "Secondary",   "value": "#188bf6"},
+        {"label": "White",       "value": "#ffffff"},
+        {"label": "Gray",        "value": "#cbd5e0"},
+        {"label": "Black",       "value": "#000000"}
+        /* …12 more: Red, Orange, Yellow, Green, Teal, Malibu, Indigo,
+           Purple, Pink, Cobalt, Smoke, Overlay — 18 entries total */
+      ]
+    }
   }
 }
 ```
 
-This block MUST appear at the top level of every page blob alongside `sections`.
+**Assembly rule (pure, not golden-loaded).** `ghl_rest_canvas.new_page_blob()`
+is a **pure, self-contained** function: it assembles the blob from the inlined
+`_FLAT_*` constants (`_FLAT_THEME_COLORS`, `_FLAT_PAGE_STYLES`,
+`_FLAT_SECTION_METADATA`/`_FLAT_SECTION_GENERAL`) — there is NO file I/O at build
+time and it does NOT load a `references/golden/` reference (the golden capture is
+historical provenance only). `ghl_rest_canvas.py::assert_renderable` enforces the
+invariant that `general.general.colors` is a non-empty list of `{label, value}`
+dicts before any save; a theme-less blob never reaches GoHighLevel.
 
-**Golden-reference rule.** `ghl_rest_canvas.new_page_blob()` MUST load the
-canonical reference from `references/golden/` BEFORE constructing any blob, and
-MUST assert that the loaded reference carries a populated `colors` object
-(`assert len(ref["defaultSettings"]["colors"]) >= 3`). If the assertion fails,
-`new_page_blob` raises `GoldenReferenceError` and the build halts — it does NOT
-produce a theme-less blob and let the 500 happen at render time.
+**Per-client brand.** To ship a client palette, call
+`ghl_method.build_theme_colors(palette, base=_FLAT_THEME_COLORS)` — it overrides
+only the labels the client supplies (case-insensitive: `primary`, `secondary`,
+…) and returns the SAME 18-entry list, so the shape GoHighLevel depends on is
+preserved. Pair it with `ghl_method.apply_palette_to_page_styles(_FLAT_PAGE_STYLES,
+palette)` so the `:root{--primary:…}` CSS variables stay in sync with the colors
+list. (Wiring these into `new_page_blob` lives in `ghl_rest_canvas.py`.)
 
 **Fragment rule.** The `rawCustomCode` value inside a code element MUST be an
 HTML *fragment* (body-level markup only — `<div>`, `<section>`, etc.). A full
@@ -482,10 +509,6 @@ into visible builder content and the GoHighLevel editor will show a blank canvas
 **Structure rule.** Elements MUST be nested `section → row → column → element`,
 NOT placed directly inside `section.elements`. Flat structure is not recognized
 by GoHighLevel's renderer.
-
-The `colors` field on a page blob MUST be the `defaultSettings.colors` OBJECT
-described above — NOT a flat list of hex strings (e.g. `"colors":["#abc","#def"]`
-is wrong; it causes the same `undefined` crash on a different code path).
 
 ---
 
@@ -546,6 +569,17 @@ funnels/builder origin is Cloudflare-1010-gated for bare Python):
 2. **page_read** — `GET /funnels/page/<id>`; fetch the signed
    `pageDataDownloadUrl` (no auth header) for the editable blob; read numeric
    `pageVersion`.
+
+   **IDEMPOTENT RE-INSTALL (no duplicates).** Before creating a NEW page, list
+   the sub-account's existing pages and call
+   `ghl_method.resolve_install_target(existing_pages, marker, page_name=…)`. If
+   an existing page already carries the page's **stable** ZHC marker (in its
+   marker field or stored HTML), it returns `action="update"` with that
+   `page_id` — re-install IN PLACE over it instead of creating a duplicate. Use
+   a STABLE marker derived from the funnel/page slug (NOT a per-run nonce) so
+   re-runs converge on the same page. More than one page carrying the same
+   marker raises `InstallTargetError` (a prior run left duplicates → halt for
+   manual cleanup, never guess).
 3. **edit** — `edit_element_customcode(blob, {section_idx, element_idx}, new_html)`
    where `new_html` carries the page marker **and the real `<img src="<CDN
    url>">`** from §3. Pure splice; the pristine blob is kept as the revert
@@ -557,6 +591,14 @@ funnels/builder origin is Cloudflare-1010-gated for bare Python):
    AND marker present in the **RENDERED (hydrated) DOM**, AND zero render errors,
    captured as real DOM snapshot + PNG screenshot + browser console artifacts.
    Advances the ledger to `previewed` **only** on all three conditions.
+
+   **COPY-FIDELITY (P1-4).** Pass the page's approved copy to `verify_page` via
+   `copy_tokens` (a list of approved phrases) or `copy_md_path` (the APPROVED
+   copy.md from P2). `ghl_verify` then asserts every approved copy token appears
+   in the rendered visible text (scripts/styles stripped); a missing token folds
+   into `render_errors` → PASS False. This catches a page that renders 200 +
+   marker but ships stale/placeholder copy instead of the approved P2 copy. The
+   gate is opt-in — omit the tokens to skip it (marker-only verify, unchanged).
 
    **EXPLICITLY NOT ACCEPTABLE as pass criteria:**
    - Raw HTTP shell returning 200 (does not load the JavaScript-rendered page)

@@ -4,6 +4,117 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.13.0] - 2026-06-27 — feat(skill6): harden render gate (un-fakeable) — P0-1a/b/c/d + P0-2 + P1-3 + sanitizer/full-width fidelity + auth/dispatch/docs
+
+### Fixed (render-gate anti-fabrication, P0-1)
+- **P0-1a — real HTTP status, fail-closed**: `render_check` now extracts the
+  navigation HTTP status from agent-browser `open` output via
+  `parse_nav_http_status()` (keyword-anchored regex: `status: 200`,
+  `"statusCode":404`, `HTTP/1.1 500`, `response 301`). When no status is
+  parseable the function FAILS CLOSED by falling back to a real `urllib` probe
+  — NEVER the old `dom_bytes > 100` heuristic that credited any non-empty error
+  page as HTTP 200.
+- **P0-1b — visible text over stripped DOM**: `visible_text_len` is now measured
+  by `visible_text(dom_content)` which calls `strip_non_visible_html()` first.
+  The old code (`re.sub(r'<[^>]+>', ' ', dom_content)`) stripped only HTML tags
+  but left `<script>` and `<style>` TEXT CONTENT in place, so a blank page's
+  large Nuxt `__NUXT__` hydration blob inflated `visible_text_len` to ≥400 and
+  passed the blank-page guard.
+- **P0-1c — marker must be in VISIBLE markup**: `marker_in_rendered_dom` is now
+  checked against `stripped_html` (the script/style-stripped DOM) rather than
+  raw `dom_content`. The old code matched the marker inside hydration JSON stored
+  in `<script id="__NEXT_DATA__">` — content that is never rendered — giving a
+  false marker-present verdict.
+- **P0-1d — plain-text console errors not silently dropped**: `render_check` now
+  passes each console entry through `console_line_is_error()` which parses
+  severity from the raw text (leading `[error]`/`pageerror`/`severe` token,
+  `Uncaught`/`Unhandled` prefix, any JS error constructor, GoHighLevel's
+  `Cannot read properties of undefined` crash message). The old code checked
+  only a structured `type`/`level` field — agent-browser's `console` emits PLAIN
+  TEXT with no type field, so these errors were silently dropped.
+
+### Added (render-gate signal helpers, P0-2 / P1-3)
+- **P0-2 — screenshot pixel-inspection**: `png_blank_report()` pixel-inspects the
+  captured screenshot PNG. Rejects (blank=True) when the image is below
+  64×64 px (truncated/failed capture) OR when a single colour covers ≥98% of
+  pixels (white/blank error page). Uses Pillow when available for exact
+  dominant-colour fraction; falls back to header-only IHDR dimension read.
+- **P1-3 — structural content-richness floor**: `content_richness()` counts
+  `img_count` (non-empty `src` images), `block_count` (block-level layout
+  elements), and `has_headline` (any `<h1>`–`<h6>`) over the script-stripped DOM.
+  `render_check` now requires `block_count >= MIN_BLOCK_ELEMENTS` (3) — a
+  structural signal that a bare visible-char count or a whitespace-inflated page
+  cannot satisfy.
+- `strip_non_visible_html()` — removes `<script>`, `<style>`, `<template>`,
+  `<noscript>` blocks and HTML comments (handles truncated/unclosed tags); shared
+  substrate for P0-1b, P0-1c, and P1-3.
+- `visible_text()` — script-stripped, tag-stripped, entity-decoded,
+  whitespace-collapsed visible text; used for `visible_text_len` (P0-1b).
+- `MIN_BLOCK_ELEMENTS = 3` constant (exported, matches `render_check` default).
+- Unit tests: `tests/test_ghl_builder_render_signals.py` — 21 mock-only cases
+  covering all five helpers (`strip_non_visible_html`, `visible_text`,
+  `content_richness`, `parse_nav_http_status`, `console_line_is_error`,
+  `png_blank_report`). Anti-fabrication proof: all three spoof cases (blank page,
+  hydration-JSON-only, console-error page) now correctly return `ok=False`.
+
+---
+
+## [v14.11.0] - 2026-06-27 — feat(skill6): copy-fidelity verify gate + per-client theme + idempotent re-install + iframe-confirmed + doc-truth
+
+### Added
+- **Copy-fidelity gate (P1-4)** in `ghl_verify.verify_page`: when a page carries
+  `copy_tokens` (approved phrases) or `copy_md_path` (the approved copy.md), every
+  approved token MUST appear in the RENDERED preview DOM (visible text;
+  `<script>/<style>/<template>/<noscript>` stripped). A missing token folds into
+  `render_errors` → `PASS=False`, catching a page that renders 200 + marker but
+  ships stale/placeholder copy. Opt-in: pages with no copy assertion are
+  unaffected. New helpers: `extract_copy_tokens`, `find_missing_copy_tokens`,
+  `_strip_to_visible_text`, `_resolve_rendered_text`. Fail-closed when no rendered
+  evidence is available (cannot prove copy → not a pass).
+- **Per-client brand/theme** helpers in `ghl_method.py`: `build_theme_colors(palette,
+  base=_FLAT_THEME_COLORS)` injects a client palette into `general.general.colors`
+  while preserving the EXACT 18-entry `{label, value}` shape GoHighLevel's renderer
+  requires (case-insensitive labels; unknown label / empty value → `ThemeError`;
+  never adds/drops an entry). `apply_palette_to_page_styles` keeps the
+  `:root{--primary:…}` CSS variables in sync. `THEME_COLOR_LABELS` exported.
+- **Idempotent re-install** in `ghl_method.py`: `resolve_install_target(existing_pages,
+  marker, page_name=…)` detects an existing ZHC page by its stable marker (marker
+  field or stored HTML) and returns `action="update"` with the `page_id` to
+  re-install in place — no duplicate pages on re-runs. Ambiguous duplicate markers
+  raise `InstallTargetError` (halt for cleanup, never guess). New `InstallTarget`
+  dataclass.
+- Tests: `tests/test_ghl_method.py` (TestBuildThemeColors, TestApplyPaletteToPageStyles,
+  TestResolveInstallTarget) and `tests/test_ghl_verify.py` (TestCopyFidelityHelpers,
+  TestCopyFidelityGate) — 27 new cases, all MOCK-only.
+
+### Changed
+- **IFRAME / SCRIPT / external-CSS survival CONFIRMED** by a live authenticated
+  `/preview/` probe (2026-06-27): GoHighLevel's preview renderer does NOT strip
+  `<iframe>`/`<script>`/external CSS from custom-code elements (2-of-2 iframes
+  rendered verbatim with `src` intact; inline scripts ran; external/inline CSS
+  applied; nothing rendered blank). The VERCEL_EMBED `iframe_embed_snippet` escape
+  hatch is the supported path for ADVANCED pages and is documented as such in
+  `ghl_method.py`, `SKILL.md`, and `v2-autonomous-build-sop.md`. The prior
+  "GHL strips iframe" research worry is disproven for the preview render path.
+
+### Fixed (doc-truth, P2-5)
+- `SKILL.md` + `v2-autonomous-build-sop.md §2.06`: corrected the stale
+  `defaultSettings.colors` OBJECT claim — the real render path is
+  `general.general.colors`, an **18-entry list of `{label, value}` dicts** (NOT a
+  `{bodyBgColor,…}` object). `defaultSettings.colors` does not exist in real GHL
+  blobs.
+- Corrected the stale "golden-reference rule": `ghl_rest_canvas.new_page_blob()` is
+  a **pure, self-contained** function that assembles from inlined `_FLAT_*`
+  constants — it does NOT load `references/golden/` at build time and does not raise
+  `GoldenReferenceError`. The render invariant is enforced by `assert_renderable`.
+- `SKILL.md` reading order now SURFACES `v2-autonomous-build-sop.md` (the canonical
+  autonomous build SOP) as item 2, and lists `ghl_method.py` / `ghl_verify.py` under
+  `tools/`.
+- Version drift reconciled: `SKILL.md` metadata `7.2.9` → `14.11.0`;
+  `skill-version.txt` → `v14.11.0`.
+
+---
+
 ## [v14.8.0] - 2026-06-27 — feat(skill6): funnel library wired into roles/SOPs + FAB-QC ≥ 8.5 build gate + portable committed index
 
 ### Fixed

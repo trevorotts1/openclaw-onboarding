@@ -377,5 +377,131 @@ class TestMethodDecisionShape:
         assert d.threshold == m.ADVANCED_THRESHOLD
 
 
+# ── Per-client brand/theme: build_theme_colors / apply_palette_to_page_styles ─
+
+class TestBuildThemeColors:
+    """build_theme_colors must inject a client palette while preserving the
+    exact 18-entry general.general.colors shape GoHighLevel requires."""
+
+    def test_default_returns_18_entries(self):
+        colors = m.build_theme_colors({})
+        assert len(colors) == 18
+        assert all("label" in c and "value" in c for c in colors)
+
+    def test_override_changes_only_named_value(self):
+        colors = m.build_theme_colors({"primary": "#abcdef"})
+        by_label = {c["label"]: c["value"] for c in colors}
+        assert by_label["Primary"] == "#abcdef"
+        assert by_label["Secondary"] == "#188bf6"   # untouched default
+        assert len(colors) == 18
+
+    def test_case_insensitive_label(self):
+        colors = m.build_theme_colors({"SECONDARY": "#111111"})
+        by_label = {c["label"]: c["value"] for c in colors}
+        assert by_label["Secondary"] == "#111111"
+
+    def test_preserves_label_order(self):
+        colors = m.build_theme_colors({"overlay": "rgba(1,1,1,0.2)"})
+        labels = tuple(c["label"] for c in colors)
+        assert labels == m.THEME_COLOR_LABELS
+
+    def test_unknown_label_raises(self):
+        with pytest.raises(m.ThemeError):
+            m.build_theme_colors({"brandTeal": "#0E8C8C"})
+
+    def test_empty_value_raises(self):
+        with pytest.raises(m.ThemeError):
+            m.build_theme_colors({"primary": ""})
+
+    def test_custom_base_is_authoritative(self):
+        base = [
+            {"label": "Primary", "value": "#000"},
+            {"label": "Secondary", "value": "#fff"},
+        ]
+        colors = m.build_theme_colors({"primary": "#abc"}, base=base)
+        assert len(colors) == 2
+        assert {c["label"]: c["value"] for c in colors}["Primary"] == "#abc"
+
+    def test_does_not_mutate_default(self):
+        before = m.build_theme_colors({})
+        m.build_theme_colors({"primary": "#999999"})
+        after = m.build_theme_colors({})
+        assert before == after
+
+
+class TestApplyPaletteToPageStyles:
+    CSS = ":root{ --primary: #37ca37;\n--secondary: #188bf6;\n--headlinefont: 'Inter'; }"
+
+    def test_rewrites_named_var(self):
+        out = m.apply_palette_to_page_styles(self.CSS, {"primary": "#abcdef"})
+        assert "--primary: #abcdef;" in out
+        assert "--secondary: #188bf6;" in out          # untouched
+        assert "--headlinefont: 'Inter';" in out        # non-color var untouched
+
+    def test_no_palette_returns_input(self):
+        assert m.apply_palette_to_page_styles(self.CSS, {}) == self.CSS
+
+    def test_non_string_css_raises(self):
+        with pytest.raises(m.ThemeError):
+            m.apply_palette_to_page_styles(None, {"primary": "#fff"})
+
+
+# ── Idempotent re-install: resolve_install_target ─────────────────────────────
+
+class TestResolveInstallTarget:
+    MARK = "ZHC-acme-optin-stablemarker"
+
+    def test_create_when_no_match(self):
+        t = m.resolve_install_target([], self.MARK)
+        assert t.action == "create"
+        assert t.page_id == ""
+
+    def test_update_on_marker_field(self):
+        pages = [{"id": "PG1", "name": "zhc optin", "marker": self.MARK}]
+        t = m.resolve_install_target(pages, self.MARK)
+        assert t.action == "update"
+        assert t.page_id == "PG1"
+        assert t.matched_by == "marker"
+
+    def test_update_on_marker_in_html(self):
+        pages = [{"page_id": "PG2", "rawCustomCode": f"<div>{self.MARK}</div>"}]
+        t = m.resolve_install_target(pages, self.MARK)
+        assert t.action == "update"
+        assert t.page_id == "PG2"
+
+    def test_ambiguous_duplicate_markers_raises(self):
+        pages = [
+            {"id": "PG1", "marker": self.MARK},
+            {"id": "PG2", "marker": self.MARK},
+        ]
+        with pytest.raises(m.InstallTargetError):
+            m.resolve_install_target(pages, self.MARK)
+
+    def test_name_fallback_when_no_marker(self):
+        pages = [{"id": "PG9", "name": "zhc Legacy Page"}]
+        t = m.resolve_install_target(pages, self.MARK, page_name="zhc Legacy Page")
+        assert t.action == "update"
+        assert t.page_id == "PG9"
+        assert t.matched_by == "name"
+
+    def test_marker_beats_name(self):
+        pages = [
+            {"id": "PGN", "name": "zhc optin"},
+            {"id": "PGM", "name": "other", "marker": self.MARK},
+        ]
+        t = m.resolve_install_target(pages, self.MARK, page_name="zhc optin")
+        assert t.page_id == "PGM"
+        assert t.matched_by == "marker"
+
+    def test_empty_marker_raises(self):
+        with pytest.raises(ValueError):
+            m.resolve_install_target([], "")
+
+    def test_marker_match_without_id_raises(self):
+        pages = [{"name": "zhc optin", "marker": self.MARK}]
+        with pytest.raises(m.InstallTargetError):
+            m.resolve_install_target(pages, self.MARK)
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

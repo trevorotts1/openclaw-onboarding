@@ -612,6 +612,122 @@ def assert_images_are_ghl_media(html: str, *, media_hosts: tuple[str, ...] = ())
         )
 
 
+# Constructs the LIVE GoHighLevel /preview/ render probe (2026-06) CONFIRMED
+# survive an autosave round-trip and render/execute — the pre-save lint must
+# NEVER reject these, because banning them would break the exact workflows the
+# probe proved work (Vercel-embed iframes, msgsndr tracking scripts, animate.css
+# external stylesheets, etc.). Each entry is paired with its probe evidence so a
+# future maintainer cannot "tidy up" the allowlist into a regression.
+_LINT_CONFIRMED_SURVIVES = (
+    "<iframe> — 2 iframes rendered in /preview/, data-zhc intact, src kept",
+    "<script> inline — executed (window.__ZHC_SCRIPT_RAN_* === true)",
+    "GHL-hosted <script src=…storage.googleapis.com/msgsndr/…> — survives",
+    "<link rel=stylesheet> / inline <style> @import external CSS — rendered+applied",
+    "body >50KB — stored and hydrated (autosave 201, 0 console errors)",
+)
+
+
+def lint_ghl_fragment(fragment: str, *, enforce_unverified_strip: bool = False) -> dict:
+    """Pre-save lint for a body-level HTML fragment bound for a GoHighLevel
+    custom-code element. Returns a result dict — it does NOT raise on content
+    findings (only ``TypeError`` on a non-string input).
+
+    Result shape::
+
+        {"ok": bool, "errors": [str, ...], "warnings": [str, ...],
+         "allowed": [str, ...]}
+
+    LIVE-TRUTH-DRIVEN POLICY (the whole point of this lint):
+    --------------------------------------------------------
+    The LIVE preview-render probe (2026-06) proved that ``<iframe>``, inline AND
+    GHL-hosted (``storage.googleapis.com/msgsndr/``) ``<script>``, external CSS
+    (``<link rel=stylesheet>`` / ``@import``) and bodies over 50KB ALL survive a
+    save round-trip and render/execute in ``/preview/``. This lint therefore
+    NEVER rejects them — they are reported under ``allowed`` for transparency.
+    Banning any of them would break Trevor's demonstrated Vercel-embed escape
+    hatch and msgsndr tracking, so the ban-list for those constructs is EMPTY by
+    design and must stay that way until a live probe proves otherwise.
+
+    Hard errors (block; ``ok=False``) are limited to TWO uncontested, render-
+    verified failures that are NOT "GHL strips X" claims:
+      - an empty / blank fragment (renders nothing — mirrors invariant 6)
+      - a full-document wrapper left un-stripped (starts with ``<!doctype`` /
+        ``<html`` — mirrors invariant 7; run ``html_fragment()`` first)
+
+    enforce_unverified_strip (default ``False`` = SAFE):
+        Reserved hook for strip rules a FUTURE live save round-trip proves. The
+        current probe found NOTHING stripped, so today this flag adds ZERO
+        rejections — it exists so that, when a probe identifies a genuinely-
+        stripped construct, the rule can be enabled WITHOUT a code change to the
+        permissive default. Do NOT hardcode an iframe/script/CSS ban here until a
+        probe confirms stripping (see the deferred list). When enabled today it
+        only surfaces an advisory note that the strip-set is still unverified.
+
+    Args:
+        fragment: The body-level HTML fragment (post ``html_fragment``).
+        enforce_unverified_strip: See above. Defaults to the safe, permissive
+            behaviour.
+
+    Returns:
+        The result dict described above.
+
+    Raises:
+        TypeError: if *fragment* is not a string.
+    """
+    if not isinstance(fragment, str):
+        raise TypeError(
+            f"lint_ghl_fragment: expected str, got {type(fragment).__name__}"
+        )
+
+    errors: list = []
+    warnings: list = []
+
+    # Hard error 1 — empty / blank (uncontested; renders nothing).
+    if not fragment.strip():
+        errors.append(
+            "fragment is empty or blank — a GoHighLevel custom-code element with "
+            "no content renders nothing (mirrors assert_renderable_shape invariant 6)."
+        )
+
+    # Hard error 2 — full-document wrapper left un-stripped (uncontested).
+    lowered = fragment.lstrip().lower()
+    if lowered.startswith("<!doctype") or lowered.startswith("<html"):
+        errors.append(
+            "fragment is a full HTML document (starts with <!DOCTYPE / <html), not "
+            "a body-level fragment — run html_fragment() first (mirrors invariant 7)."
+        )
+
+    # Transparency: which probe-confirmed-survivor constructs are present. These
+    # are reported, never penalised — the lint exists partly to PROVE these are
+    # not banned.
+    allowed: list = []
+    low = fragment.lower()
+    if "<iframe" in low:
+        allowed.append("<iframe> (CONFIRMED survives /preview/ render)")
+    if "<script" in low:
+        if "storage.googleapis.com/msgsndr" in low:
+            allowed.append("GHL-hosted msgsndr <script> (CONFIRMED survives)")
+        allowed.append("<script> (CONFIRMED survives and executes)")
+    if "rel=\"stylesheet\"" in low or "rel='stylesheet'" in low or "@import" in low:
+        allowed.append("external CSS link / @import (CONFIRMED survives + applies)")
+    if len(fragment.encode("utf-8")) > 50 * 1024:
+        allowed.append(">50KB body (CONFIRMED stored + hydrated)")
+
+    if enforce_unverified_strip:
+        warnings.append(
+            "enforce_unverified_strip=True: no strip rules are active because the "
+            "LIVE probe found NOTHING stripped. The exact GoHighLevel strip-list "
+            "remains UNVERIFIED and live-test-gated — do not add iframe/script/CSS "
+            "bans here until a save round-trip confirms stripping (see deferred)."
+        )
+
+    return {
+        "ok": not errors,
+        "errors": errors,
+        "warnings": warnings,
+        "allowed": allowed,
+    }
+
 def _load_golden(surface: str) -> dict:
     """Load a deep-copy of the captured golden page-data blob for *surface*.
 
@@ -665,6 +781,10 @@ def assert_renderable_shape(blob: dict, surface: str) -> None:
       6. That element's rawCustomCode is non-empty
       7. rawCustomCode does NOT start with ``<!doctype`` or ``<html``
          (must be a fragment, not a full document)
+      8. The custom-code element is REACHABLE through the link chain
+         ``section.metaData.child -> row.child -> col.child`` (the orphan-blank
+         guard — GoHighLevel renders ONLY elements its renderer can walk to;
+         an unreachable element renders blank even though autosave returns 201).
     """
     assert isinstance(blob, dict), (
         "Invariant 1 FAIL: blob must be a dict — got "
@@ -730,6 +850,57 @@ def assert_renderable_shape(blob: dict, surface: str) -> None:
         "Use html_fragment() to strip the full-document wrappers before calling new_page_blob()."
     )
 
+    # Invariant 8 — child-link-chain reachability (the ORPHAN-BLANK guard).
+    #
+    # GoHighLevel renders custom HTML ONLY from an element its renderer can WALK
+    # to, following the link chain ``section.metaData.child -> row.child ->
+    # col.child``. The v14.3.11 blank-page bug re-minted the element ids WITHOUT
+    # rewriting the parent ``child`` arrays, orphaning the custom-code element:
+    # the autosave returned HTTP 201 and the marker was present in the stored
+    # bytes, but the renderer never reached the element, so the published page
+    # rendered BLANK. Invariants 1-7 all passed for that broken blob — only a
+    # reachability walk catches it. We build an id -> element map from the
+    # section's flat element list, seed a traversal from the section
+    # ``metaData.child`` roots, follow every element's ``child`` array, and
+    # assert the custom-code element's id lands in the reachable set. This makes
+    # the entire orphan-blank class structurally impossible.
+    section0 = sections[0]
+    metadata = section0.get("metaData")
+    cc_id = cc_elems[0].get("id") if isinstance(cc_elems[0], dict) else None
+    assert isinstance(metadata, dict) and metadata.get("child"), (
+        "Invariant 8 FAIL: sections[0]['metaData']['child'] is missing or empty, "
+        "so the custom-code element has no parent link chain and is ORPHANED — "
+        "GoHighLevel's renderer cannot walk to it and the page renders BLANK "
+        "(the v14.3.11 orphan-blank class). The section metaData must carry a "
+        "'child' array referencing the row that ultimately reaches the element."
+    )
+    by_id = {
+        e.get("id"): e
+        for e in elements
+        if isinstance(e, dict) and isinstance(e.get("id"), str)
+    }
+    reachable: set = set()
+    stack = [c for c in metadata.get("child", []) if isinstance(c, str)]
+    while stack:
+        nid = stack.pop()
+        if nid in reachable:
+            continue
+        reachable.add(nid)
+        node = by_id.get(nid)
+        if isinstance(node, dict):
+            for child_id in node.get("child", []) or []:
+                if isinstance(child_id, str) and child_id not in reachable:
+                    stack.append(child_id)
+    assert cc_id is not None and cc_id in reachable, (
+        f"Invariant 8 FAIL: the custom-code element (id={cc_id!r}) is NOT "
+        "reachable through the link chain section.metaData.child -> row.child -> "
+        f"col.child. Reachable ids from metaData.child were {sorted(reachable)!r}. "
+        "Its parent 'child' arrays do not reference it, so GoHighLevel's renderer "
+        "will never walk to it and the page renders BLANK even though autosave "
+        "returns 201 (the v14.3.11 orphan-blank bug). Re-mint ids AND rewrite "
+        "every parent 'child' array in the SAME pass."
+    )
+
 
 # ── Authoritative theme payload (B5 live golden capture, location
 # Mct54Bwi1KlNouGXQcDX — Trevor operator scratch, no client secrets) ───────────
@@ -776,7 +947,13 @@ _CC_COL_TEMPLATE = {'type': 'col', 'child': [], 'class': {}, 'styles': {'boxShad
 _CC_ELEMENT_TEMPLATE = {'extra': {'nodeId': '', 'visibility': {'value': {'hideDesktop': False, 'hideMobile': False}}, 'customCode': {'value': {'rawCustomCode': ''}}, 'customClass': {'value': []}}, 'class': {}, 'styles': {}, 'wrapper': {'marginTop': {'unit': 'px', 'value': 0}, 'marginBottom': {'unit': 'px', 'value': 0}, 'marginLeft': {'unit': 'px', 'value': 0}, 'marginRight': {'unit': 'px', 'value': 0}, 'width': {'value': 'auto', 'unit': ''}, 'height': {'value': 'auto', 'unit': ''}}, 'customCss': [], 'type': 'element', 'child': [], 'meta': 'custom-code', 'tagName': 'c-custom-code', 'title': 'Custom Code', 'tag': ''}
 
 
-def new_page_blob(raw_custom_code: str, *, surface: str = "funnel", head_code: str = "") -> dict:
+def new_page_blob(
+    raw_custom_code: str,
+    *,
+    surface: str = "funnel",
+    head_code: str = "",
+    allow_row_max_width: bool = False,
+) -> dict:
     """Build a complete native ``pageData`` blob for a freshly-created page.
 
     STORAGE vs RENDER (mandatory reading):
@@ -814,15 +991,26 @@ def new_page_blob(raw_custom_code: str, *, surface: str = "funnel", head_code: s
         raw_custom_code: The page's HTML fragment (e.g. the hero markup + real
             ``<img>`` CDN tag + the per-page marker).  Full ``<!DOCTYPE html>``
             documents are accepted and stripped automatically by ``html_fragment()``.
-        surface: ``"funnel"`` (default) or ``"website"``.  Determines which
-            golden reference is loaded and which element node shape is produced.
+        surface: ``"funnel"`` (default) or ``"website"``.  Selects funnel- vs
+            website-specific rules; both use the identical inlined nested scaffold.
         head_code: Optional ``trackingCode.head`` content.
+        allow_row_max_width: Section-level "Allow Rows to take entire width"
+            flag (``extra.allowRowMaxWidth.value``). DEFAULT ``False`` — the
+            render-verified safe state: the LIVE preview probe (2026-06) showed
+            ``False`` renders a CENTERED ~1170px content column (NOT a thin/
+            collapsed strip, and visually identical to ``True`` in the probe).
+            The 1170px cap is driven by the section ``sectionStyles`` CSS rule
+            ``#section-...>.inner{max-width:1170px}``, not by the metadata flag
+            alone. When ``True``, this lifts that inner ``max-width`` cap so the
+            row can span the full page width. NOTE: true full-bleed rendering is
+            NOT yet confirmed by a live save round-trip — keep the default.
 
     Returns:
-        A complete ``pageData`` blob loaded from the golden reference, with
-        fresh IDs minted, the custom-code element's ``rawCustomCode`` set to
-        the normalised fragment, and the shape validated by
-        ``assert_renderable_shape`` before return.
+        A complete ``pageData`` blob ASSEMBLED FROM THE INLINED ``_FLAT_*`` /
+        ``_CC_*`` constants (NOT loaded from a golden file — ``_load_golden`` is
+        retained only as a fallback capture helper), with fresh IDs minted, the
+        custom-code element's ``rawCustomCode`` set to the normalised fragment,
+        and the shape validated by ``assert_renderable_shape`` before return.
 
     Raises:
         TypeError: if ``raw_custom_code`` is not a str.
@@ -879,6 +1067,9 @@ def new_page_blob(raw_custom_code: str, *, surface: str = "funnel", head_code: s
     metadata = copy.deepcopy(_FLAT_SECTION_METADATA)
     metadata["id"] = section_id
     metadata["child"] = [row_id]
+    # P1-2: parameterised "Allow Rows to take entire width" (section-level).
+    # Default False = render-verified centered ~1170px column (LIVE probe).
+    metadata["extra"]["allowRowMaxWidth"]["value"] = bool(allow_row_max_width)
 
     section_general = copy.deepcopy(_FLAT_SECTION_GENERAL)
     # Re-point the section-scoped CSS at the fresh section id so the padding /
@@ -887,6 +1078,13 @@ def new_page_blob(raw_custom_code: str, *, surface: str = "funnel", head_code: s
         section_general["sectionStyles"] = section_general["sectionStyles"].replace(
             _FLAT_SECTION_ID_TOKEN, section_id
         )
+        # When full-width is requested, lift the 1170px inner cap that the LIVE
+        # probe identified as the actual width driver (the metadata flag alone
+        # produced NO observable width change). Default path is untouched.
+        if allow_row_max_width:
+            section_general["sectionStyles"] = section_general["sectionStyles"].replace(
+                "max-width:1170px", "max-width:100%"
+            )
 
     blob = {
         "sections": [

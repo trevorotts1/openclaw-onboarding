@@ -101,6 +101,78 @@ class TestVerifyPage:
         assert "error" in rec
 
 
+# ── P1-4 copy-fidelity gate: approved copy must render in the DOM ─────────────
+
+def _copy_fetcher(rendered_text: str):
+    """A verify_url-shaped mock fetcher that returns a rendered_text field so the
+    copy-fidelity check has visible text to assert against (HTTP 200, ok=True)."""
+    def _f(url: str, marker: str) -> dict:
+        return {
+            "ok": True, "http": 200, "marker_found": True,
+            "marker_in_rendered_dom": True, "rendered_text": rendered_text,
+            "url": url,
+        }
+    return _f
+
+
+class TestCopyFidelityHelpers:
+    def test_strip_to_visible_text_drops_scripts(self):
+        html = "<div>Welcome aboard</div><script>var x='SECRET-IN-SCRIPT';</script>"
+        text = gv._strip_to_visible_text(html)
+        assert "Welcome aboard" in text
+        assert "SECRET-IN-SCRIPT" not in text
+
+    def test_extract_copy_tokens_skips_short_and_fences(self):
+        md = "# Build Your Dream Funnel Today\nHi\n```\nignore this code line\n```\n"
+        tokens = gv.extract_copy_tokens(md)
+        assert "Build Your Dream Funnel Today" in tokens
+        assert "Hi" not in tokens                       # too short
+        assert "ignore this code line" not in tokens     # inside fence
+
+    def test_find_missing_copy_tokens(self):
+        rendered = "the only headline that rendered here"
+        missing = gv.find_missing_copy_tokens(
+            rendered, ["the only headline that rendered here", "Totally Absent Phrase"])
+        assert missing == ["Totally Absent Phrase"]
+
+
+class TestCopyFidelityGate:
+    HEADLINE = "Transform Your Business In 90 Days"
+
+    def test_no_copy_tokens_means_gate_off(self):
+        # Existing behavior preserved: a page with no copy assertion still passes.
+        rec = gv.verify_page(_page("home"), fetcher=_fetcher({FAKE_PREVIEW: _ok()}))
+        assert rec["PASS"] is True
+
+    def test_copy_present_passes(self):
+        page = dict(_page("home"), copy_tokens=[self.HEADLINE])
+        rendered = f"<h1>{self.HEADLINE}</h1> plus body copy"
+        rec = gv.verify_page(page, fetcher=_copy_fetcher(rendered))
+        assert rec["PASS"] is True
+        assert rec["render_errors"] == []
+
+    def test_copy_missing_fails(self):
+        page = dict(_page("home"), copy_tokens=[self.HEADLINE])
+        rec = gv.verify_page(page, fetcher=_copy_fetcher("a totally different page"))
+        assert rec["PASS"] is False
+        assert any("copy_not_rendered" in e for e in rec["render_errors"])
+
+    def test_copy_tokens_from_copy_md_path(self, tmp_path):
+        copy_md = tmp_path / "copy.md"
+        copy_md.write_text(f"# {self.HEADLINE}\n\nSupporting paragraph that is long enough.\n")
+        page = dict(_page("home"), copy_md_path=str(copy_md))
+        # DOM is missing the headline -> fail.
+        rec = gv.verify_page(page, fetcher=_copy_fetcher("nothing approved here at all"))
+        assert rec["PASS"] is False
+        assert any("copy_not_rendered" in e for e in rec["render_errors"])
+
+    def test_copy_fidelity_with_no_rendered_text_fails_closed(self):
+        # _ok() carries no rendered_text/dom -> tokens can't be proven -> FAIL.
+        page = dict(_page("home"), copy_tokens=[self.HEADLINE])
+        rec = gv.verify_page(page, fetcher=_fetcher({FAKE_PREVIEW: _ok()}))
+        assert rec["PASS"] is False
+
+
 # ── derive_summary: summary is a PURE reduction of the raw array ──────────────
 
 class TestDeriveSummary:

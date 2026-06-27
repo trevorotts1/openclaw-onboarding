@@ -526,3 +526,108 @@ class TestFabArtifactProducer:
         rec = json.load(open(os.path.join(tmp_path, "routing", "task-record.json")))
         assert rec["fab_artifact"]["emitted"] is True
         assert rec["fab_qc"]["ran"] is True       # the >=8.5 gate genuinely fired on the real path
+
+
+# ---------------------------------------------------------------------------
+# P2-4: RateGovernor + SessionKeepalive (rate-limit governor + session warmth)
+# ---------------------------------------------------------------------------
+class _FakeClock:
+    """Deterministic monotonic clock whose sleeper advances it (no real wait)."""
+
+    def __init__(self) -> None:
+        self.t = 0.0
+
+    def __call__(self) -> float:
+        return self.t
+
+    def advance(self, seconds: float) -> None:
+        self.t += float(seconds)
+
+
+class TestRateGovernor:
+    """The governor only ever DELAYS write actions; it never speeds a build up."""
+
+    def test_save_spacing_min_6s(self):
+        fc = _FakeClock()
+        gov = disp.RateGovernor(clock=fc, sleeper=fc.advance)
+        assert gov.before("save") == 0.0                       # first save: no wait
+        w2 = gov.before("save")                                # immediate 2nd save
+        assert w2 >= disp.MIN_SAVE_INTERVAL_S == 6.0
+        # the sleeper advanced the clock by the wait, so the 2nd save is now the
+        # last allowed; a THIRD immediate save must again wait the full interval.
+        w3 = gov.before("save")
+        assert w3 >= disp.MIN_SAVE_INTERVAL_S
+        # once enough wall-clock genuinely elapses, no wait is imposed.
+        fc.advance(disp.MIN_SAVE_INTERVAL_S)
+        assert gov.before("save") == 0.0
+
+    def test_publish_spacing_min_15s(self):
+        fc = _FakeClock()
+        gov = disp.RateGovernor(clock=fc, sleeper=fc.advance)
+        assert gov.before("publish") == 0.0
+        assert gov.before("publish") >= disp.MIN_PUBLISH_INTERVAL_S == 15.0
+
+    def test_save_and_publish_intervals_are_independent(self):
+        fc = _FakeClock()
+        gov = disp.RateGovernor(clock=fc, sleeper=fc.advance)
+        gov.before("save")
+        # a publish right after a save is NOT throttled by the save interval
+        assert gov.before("publish") == 0.0
+
+    def test_429_default_cooldown_when_no_header(self):
+        fc = _FakeClock()
+        gov = disp.RateGovernor(clock=fc, sleeper=fc.advance)
+        assert gov.note_429(None) == disp.DEFAULT_429_COOLDOWN_S == 30.0
+
+    def test_429_honors_retry_after_when_larger(self):
+        fc = _FakeClock()
+        gov = disp.RateGovernor(clock=fc, sleeper=fc.advance)
+        assert gov.note_429("45") == 45.0                      # header > floor honored
+
+    def test_429_floors_small_retry_after(self):
+        fc = _FakeClock()
+        gov = disp.RateGovernor(clock=fc, sleeper=fc.advance)
+        assert gov.note_429("5") == disp.DEFAULT_429_COOLDOWN_S  # floored at 30s
+
+    def test_429_malformed_header_falls_back_to_floor(self):
+        fc = _FakeClock()
+        gov = disp.RateGovernor(clock=fc, sleeper=fc.advance)
+        assert gov.note_429("not-a-number") == disp.DEFAULT_429_COOLDOWN_S
+
+    def test_429_cooldown_blocks_next_action(self):
+        fc = _FakeClock()
+        gov = disp.RateGovernor(clock=fc, sleeper=fc.advance)
+        gov.note_429("30")                                     # cooldown until t=30
+        w = gov.before("save")                                 # next action must wait the cooldown
+        assert w >= disp.DEFAULT_429_COOLDOWN_S
+
+    def test_defaults_mirror_gates_json(self):
+        import json as _json
+        gates = _json.load(open(os.path.join(_TOOLS_DIR, "gates.json")))
+        rg = gates["rate_limit_governor"]
+        assert rg["min_save_interval_s"] == disp.MIN_SAVE_INTERVAL_S
+        assert rg["min_publish_interval_s"] == disp.MIN_PUBLISH_INTERVAL_S
+        assert rg["default_429_cooldown_s"] == disp.DEFAULT_429_COOLDOWN_S
+        assert (rg["session_keepalive"]["interval_minutes"] * 60
+                == disp.SESSION_KEEPALIVE_INTERVAL_S)
+
+
+class TestSessionKeepalive:
+    """due() fires at most once per interval; never a navigate/reload (scheduler only)."""
+
+    def test_not_due_before_interval(self):
+        kc = _FakeClock()
+        ka = disp.SessionKeepalive(clock=kc)
+        assert ka.due() is False
+        kc.advance(disp.SESSION_KEEPALIVE_INTERVAL_S - 1)
+        assert ka.due() is False
+
+    def test_due_exactly_at_interval(self):
+        kc = _FakeClock()
+        ka = disp.SessionKeepalive(clock=kc)
+        kc.advance(disp.SESSION_KEEPALIVE_INTERVAL_S)
+        assert ka.due() is True
+        assert ka.due() is False          # resets — not due again immediately
+
+    def test_interval_is_30_minutes(self):
+        assert disp.SESSION_KEEPALIVE_INTERVAL_S == 30 * 60
