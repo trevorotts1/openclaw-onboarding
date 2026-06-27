@@ -564,16 +564,47 @@
       "author": "Russell Brunson",
       "book": "The Funnel Hackers Cookbook",
       "domain": [
+        "copywriting",
         "marketing",
         "sales",
         "strategy-innovation"
       ],
       "perspective": [],
       "custom": [
-        "funnels",
+        "clickfunnels",
+        "conversion",
+        "elements-pages-funnels",
         "funnel-recipes",
-        "conversion"
-      ]
+        "funnel-selection",
+        "funnel-stacking",
+        "funnel-types",
+        "funnels",
+        "lead-funnels",
+        "order-bump",
+        "order-form",
+        "oto-upsell",
+        "page-recipes",
+        "page-sequence",
+        "sales-page",
+        "squeeze-page",
+        "tripwire-funnel",
+        "value-ladder",
+        "vsl-funnel",
+        "webinar-funnel"
+      ],
+      "source_type": "pdf",
+      "added": "2026-06-26",
+      "interaction_modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "coaching_mode": "BUILT",
+      "task_mode": "BUILT",
+      "two_sided": true,
+      "blueprint": "personas/russell-brunson-the-funnel-hackers-cookbook/persona-blueprint.md",
+      "summary": "Russell Brunson's funnel-recipe cookbook: the Elements > Pages > Funnels hierarchy (ingredients -> recipes -> meals). Coaches founders to select the right funnel recipe for the situation, build the full page sequence in order, and assemble each page from its required ingredients; governs Web-Development/Marketing/CRM funnel agents to ship the correct funnel TYPE, full page SEQUENCE, complete page INGREDIENTS, and fully-written (anti-thin-copy) Skill 6 funnel + website copy across the 22 funnel recipes and funnel stacking.",
+      "needs_tags": false
     },
     "russell-brunson-traffic-secrets": {
       "author": "Russell Brunson",
