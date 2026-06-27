@@ -1,0 +1,34 @@
+{
+  "slug": "russell-brunson-lead-funnels",
+  "aliases": ["brunson-lead-funnels"],
+  "title": "Lead Funnels",
+  "subtitle": "114 Unique Lead Funnels You Can Model To Build A List, Generate Leads, And Create Prospects Who Are Ready & Willing To Buy From You",
+  "author": "Russell Brunson",
+  "source_type": "book",
+  "source_format": "pdf",
+  "source_file": "/Users/blackceomacmini/Downloads/Lead Funnels (Russell Brunson) (z-library.sk, 1lib.sk, z-lib.sk) 3.pdf",
+  "source_bytes": 7449502,
+  "extraction_tool": "pdftotext -layout (poppler)",
+  "extracted_chars": 257293,
+  "extracted_lines": 5979,
+  "structure": {
+    "section_one": "Strategy: Lead Funnel History (Ch.1), Lead Funnel Strategy (Ch.2), Lead Funnel Implementation in 5 steps (Ch.3)",
+    "section_two": "Swipe File: 114 unique lead-funnel examples, each broken down into HOOK / STORY / OFFER / THANK YOU PAGE"
+  },
+  "verified_facts": {
+    "five_part_funnel": ["Lead Magnet", "Landing Page", "Thank You Page", "Sales Page", "Follow-Up Funnel"],
+    "swipe_examples": 114,
+    "highest_converting_landing_page": "Marketing Secrets Blackbook @ 55.63% opt-in, 148,000 leads in ~7-8 months",
+    "marketing_math": "$1/month/name minimum; $3-$50/name when relationship is built",
+    "first_funnel_modeled": "Double Your Dating / Eben Pagan (David DeAngelo) - The Kiss Test - $20M/yr"
+  },
+  "pipeline": {
+    "phase1_extraction": "complete (manual Opus extraction, dual-lens: coaching items 1-11, governance items 12-20)",
+    "phase2_analysis": "complete (12 analytical dimensions)",
+    "phase3_synthesis": "complete (14-section dual-purpose persona-blueprint.md)",
+    "model_note": "Built by Opus 4.8 book->persona subagent; Anthropic forbidden for the on-box book-to-persona chain (Ollama-Cloud-first) - this is a parallel operator-seeded build, not the on-box orchestrator run."
+  },
+  "domain": ["marketing", "sales", "copywriting", "strategy-innovation"],
+  "perspective": ["practitioner", "direct-response", "systems"],
+  "created_utc": "2026-06-26"
+}

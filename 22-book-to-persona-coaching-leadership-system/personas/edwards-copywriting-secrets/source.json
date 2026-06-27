@@ -1,0 +1,20 @@
+{
+  "slug": "jim-edwards-copywriting-secrets",
+  "title": "Copywriting Secrets: How Everyone Can Use the Power of Words to Get More Clicks, Sales and Profits . . . No Matter What You Sell or Who You Sell It To!",
+  "author": "Jim Edwards",
+  "publisher": "Author Academy Elite",
+  "year": 2019,
+  "isbn_asin": "B082L4R78V / 1640854622",
+  "source_type": "book",
+  "source_format": "epub",
+  "source_path": "/Users/blackceomacmini/Downloads/Copywriting Secrets How Everyone Can Use the Power of Words to Get More Clicks, Sales and Profits . . . No Matter What You… (Jim Edwards) (z-library.sk, 1lib.sk, z-lib.sk) 2.epub",
+  "extraction_method": "unzip + xhtml-to-text (python re/html.unescape)",
+  "extracted_chars": 405723,
+  "extracted_words": 68585,
+  "structure": "31 numbered 'Secrets' + 'Everything Else You Need To Know' Q&A + Conclusion",
+  "domain": ["copywriting", "marketing", "sales", "communication"],
+  "primary_domain": "copywriting",
+  "created_by": "book-to-persona converter (Opus 4.8)",
+  "created_date": "2026-06-26",
+  "extraction_quality": "high - full text extracted natively from EPUB, no OCR needed, all 31 Secrets present"
+}

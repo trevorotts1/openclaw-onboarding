@@ -1,3 +1,11 @@
+## [v14.3.19]  -  2026-06-26  -  feat(personas): add research scaffolding (extraction-notes, analysis-notes, source.json) to all 10 shipped book personas
+
+Adds the Phase 1 and Phase 2 pipeline research artifacts to every one of the 10 book personas shipped in v14.3.16 and v14.3.18. Each persona directory now contains the full 4-file set: `persona-blueprint.md`, `extraction-notes.md`, `analysis-notes.md`, `source.json`. Also replaces two under-sized persona-blueprint stubs with the complete extractions from the pipeline run (leland-brand-mapping-strategy 303-line draft → 710-line full blueprint; miller-coach-builder 666-line → 711-line).
+
+BOOKS: The New Model of Selling (QC 9.0), The Brand Mapping Strategy (QC 9.2), Coach Builder (QC 9.0), Building a StoryBrand (QC 9.4), Marketing Secrets Blackbook (QC 9.0), Copywriting Secrets (QC 9.0), Lead Funnels (QC 9.2), Network Marketing Secrets (QC 9.0), The Sketchnote Workbook (QC 9.0), The Funnel Hacker's Cookbook (QC 8.7). All 10 meet the >= 8.5 QC threshold — none held back.
+
+SKILL VERSIONS: 22-book-to-persona-coaching-leadership-system/skill-version.txt v6.7.12 → v6.7.13 (G3 gate). All 10 global version markers rolled v14.3.18 → v14.3.19 by bump-version.sh.
+
 ## [v14.3.18]  -  2026-06-26  -  feat(personas): ship Funnel Hackers Cookbook persona — Russell Brunson (10th book, completes the funnel set)
 
 Ships the QC-approved book persona for The Funnel Hacker's Cookbook by Russell Brunson — the 10th book in the persona library and the tactical companion to the already-shipped Lead Funnels persona. A prior conversion run failed mid-stream (dropped API connection, not a content problem); this redo is clean and ship-able.

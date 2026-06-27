@@ -1,0 +1,15 @@
+{
+  "slug": "miller-building-storybrand",
+  "title": "Building a StoryBrand: Clarify Your Message So Customers Will Listen",
+  "author": "Donald Miller",
+  "source_type": "book",
+  "source_format": "epub",
+  "source_file": "Building a StoryBrand (Donald Miller).epub",
+  "extracted_chars": 306639,
+  "extraction_tool": "ebooklib + BeautifulSoup",
+  "domain_primary": "marketing",
+  "archetype": "Message-Clarity Guide / Brand Messaging Strategist",
+  "dual_purpose": true,
+  "interaction_modes": ["coaching", "leadership", "hybrid"],
+  "note": "Rebuild/dedupe target — miller-building-storybrand-1 and -2 already exist in the canonical library. This is the consolidated, grounded blueprint. CENTRAL persona for the website+funnel COPY robustness upgrade."
+}
