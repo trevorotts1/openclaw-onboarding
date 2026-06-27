@@ -201,6 +201,55 @@ class TestAssertSeoPopulated:
         assert any("language" in r for r in res["reasons"])
 
 
+# ── H1: SEO keyword-in-copy gate ──────────────────────────────────────────────
+
+class TestKeywordInCopyGate:
+    _COPY = (
+        "<h1>Acme Soap</h1><p>Our handmade soap is small batch soap made with "
+        "natural soap bars and shipped fresh.</p>"
+    )
+
+    def test_all_keywords_present_passes(self):
+        seo = b.build_seo_meta(**_seo())  # keywords: handmade/natural/small batch soap
+        res = b.assert_keywords_in_copy(seo, self._COPY)
+        assert res["ok"] is True
+        assert res["missing"] == []
+
+    def test_keyword_absent_from_copy_fails(self):
+        seo = b.build_seo_meta(**_seo())
+        res = b.assert_keywords_in_copy(seo, "<p>handmade soap and natural soap bars</p>")
+        assert res["ok"] is False
+        assert "small batch soap" in res["missing"]
+        assert res["reasons"]
+
+    def test_empty_copy_fails(self):
+        seo = b.build_seo_meta(**_seo())
+        res = b.assert_keywords_in_copy(seo, "")
+        assert res["ok"] is False
+
+    def test_match_is_case_insensitive_and_tag_stripped(self):
+        seo = b.build_seo_meta(**_seo())
+        copy = "<div>HANDMADE SOAP, NATURAL SOAP BARS, SMALL BATCH SOAP</div>"
+        assert b.assert_keywords_in_copy(seo, copy)["ok"] is True
+
+    def test_assert_seo_populated_optin_page_copy_passes(self):
+        seo = b.build_seo_meta(**_seo())
+        res = b.assert_seo_populated(seo, page_copy=self._COPY)
+        assert res["ok"] is True
+        assert res["reasons"] == []
+
+    def test_assert_seo_populated_optin_page_copy_fails_on_missing_keyword(self):
+        seo = b.build_seo_meta(**_seo())
+        res = b.assert_seo_populated(seo, page_copy="<p>handmade soap only</p>")
+        assert res["ok"] is False
+        assert any("absent from page copy" in r for r in res["reasons"])
+
+    def test_assert_seo_populated_without_page_copy_is_unchanged(self):
+        # page_copy default None → H1 gate skipped → existing behaviour intact.
+        seo = b.build_seo_meta(**_seo())
+        assert b.assert_seo_populated(seo)["ok"] is True
+
+
 # ── Two-saves invariant ───────────────────────────────────────────────────────
 
 class TestTwoSaves:

@@ -9,7 +9,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "14.13.0"
+  version: "14.17.0"
   priority: HIGH
 ---
 
@@ -179,17 +179,27 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
    `tools/gates.json`** — where the autonomous REST path and the transcript
    disagree on *coverage*, the transcript wins on *what must be true at the end*;
    the REST path must reach the same end-state.
-3. **ghl-browser-builder-full.md** - The v3.0 hardened reference: agent-browser
+3. **references/ghl-build-self-check.md** — **THE PER-PHASE SELF-CHECK CHECKLIST.**
+   A scannable, top-to-bottom self-check the building agent runs **at every phase**
+   (pre-build/creds → media → ZHC container → build page [full-width + two saves] →
+   SEO [incl. the H1 keyword-in-copy gate] → multi-step → images → the un-fakeable
+   `render_check` backstop). It is a VIEW of the gates in `v2-autonomous-build-sop.md`
+   (each line cites its SOP §) — **not** a fork. **Run it as you build; do not
+   advance a phase until that phase's bold `Done when:` gate passes.** It does NOT
+   replace `ghl_verify.render_check` — the sealed verifier (§7/§8) is still the only
+   verdict.
+4. **ghl-browser-builder-full.md** - The v3.0 hardened reference: agent-browser
    engine, auth seeding, the 28-gate runtime contract, the full funnel +
    website + Mode-2 iframe flows, and the ledger/resume mechanics. Read this
    when you are actually about to deploy pages.
-4. **tools/** - The code:
+5. **tools/** - The code:
    - `seed-ghl-auth.py` - mints a Firebase ID token + browser auth seed (D7).
    - `inject-ghl-auth.sh` - writes the seed into the browser's IndexedDB.
    - `ghl_builder.py` - manifest, per-page ledger/resume, ZHC prefix (UPPERCASE
      `ZHC `) + multi-step `ZHC part N` naming, sub-account gate, publish guard,
      marker-string verify, the SEO panel builder (`build_seo_meta`,
-     `validate_founder_name`, `assert_seo_populated`), and the runtime-gate loader.
+     `validate_founder_name`, `assert_seo_populated`, and the H1 keyword-in-copy
+     gate `assert_keywords_in_copy`), and the runtime-gate loader.
    - `ghl_rest_canvas.py` - the page-blob splice + REST autosave, incl. the §2
      `seoMeta` path (`build_seo_meta`, `set_page_seo`, `page_seo_autosave`).
    - `ghl_media.py` - media-storage: image upload, `create_media_folder`, and the
@@ -197,13 +207,13 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
      `funnel_media_folder_plan`) — `services.*` + Bearer LOCATION-PIT, **never
      browser-routed**.
    - `gates.json` - the 28-gate registry (2 captured, 26 runtime snapshot-gates).
-5. **ghl-install-pages-full.md** - LEGACY v2.0 raw-Playwright reference, kept for
+6. **ghl-install-pages-full.md** - LEGACY v2.0 raw-Playwright reference, kept for
    historical click-path detail only. Superseded by ghl-browser-builder-full.md.
-6. **INSTRUCTIONS.md** - Operational quick-start.
-7. **INSTALL.md** - Installation steps if any tools are missing.
-8. **EXAMPLES.md** - Example deployments and common scenarios.
-9. **CORE_UPDATES.md** - What to add to AGENTS.md, TOOLS.md, and MEMORY.md.
-10. **references/client-facing-phrasebook.md** - MANDATORY translation layer.
+7. **INSTRUCTIONS.md** - Operational quick-start.
+8. **INSTALL.md** - Installation steps if any tools are missing.
+9. **EXAMPLES.md** - Example deployments and common scenarios.
+10. **CORE_UPDATES.md** - What to add to AGENTS.md, TOOLS.md, and MEMORY.md.
+11. **references/client-facing-phrasebook.md** - MANDATORY translation layer.
    Maps every engineer term (funnel, embed, draft, preview URL, HTTP, Firebase,
    iframe, px, etc.) to the plain 7th-grade word the agent must use when
    messaging the client. Also contains the four client delivery templates:
@@ -278,7 +288,10 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
   rule: pre-build forms/calendars/tags/workflows (Skill 44) BEFORE the page.
 - **SEO / AI-search "Content" panel is a REQUIRED build phase, not optional**
   (transcript §2). After the two saves, populate it: description/metadata,
-  **researched** keywords (≥3 distinct, no placeholders), images, links/tags,
+  **researched** keywords (≥3 distinct, no placeholders) **that each actually
+  appear in the page body copy — the H1 keyword-in-copy gate
+  (`ghl_builder.assert_keywords_in_copy` / `assert_seo_populated(..., page_copy=…)`),
+  a HARD FAIL for meta-only keywords**, images, links/tags,
   canonical link (absolute `https`, the page's own preview/live domain — NEVER a
   Firebase/storage URL), language **explicitly `en`**, and **author = the
   FOUNDER's name**. The founder name is a **REQUIRED pre-flight input sourced

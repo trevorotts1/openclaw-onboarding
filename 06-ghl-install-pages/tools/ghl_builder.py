@@ -815,12 +815,48 @@ def build_seo_meta(
     }
 
 
-def assert_seo_populated(seo_meta: dict | None, *, brand: str | None = None) -> dict:
+def _visible_copy_text(page_copy: str | None) -> str:
+    """Lower-cased, HTML-tag-stripped, whitespace-collapsed copy text for the
+    keyword-in-copy gate (H1). Accepts raw HTML (the page body) or plain text."""
+    text = re.sub(r"<[^>]+>", " ", page_copy or "")
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def assert_keywords_in_copy(seo_meta: dict | None, page_copy: str | None) -> dict:
+    """SEO keyword-in-copy gate (H1, §2.07). Each RESEARCHED SEO keyword MUST
+    actually appear in the page's body copy — the classic SEO defect is keywords
+    stuffed into the meta panel that never appear in the visible copy. This is the
+    mirror of the copy-fidelity gate (P1-4, which asserts approved copy appears in
+    the rendered DOM); here we assert the SEO keywords appear in the copy.
+
+    PURE: never raises; returns ``{ok, reasons, missing}``. ``ok=False`` means at
+    least one keyword is absent from the copy (or the copy is empty). Matching is
+    case-insensitive substring against the tag-stripped copy text."""
+    keywords = [k for k in ((seo_meta or {}).get("keywords") or []) if (k or "").strip()]
+    copy_text = _visible_copy_text(page_copy)
+    if not copy_text:
+        return {"ok": False, "missing": list(keywords),
+                "reasons": ["page copy is empty — cannot verify SEO keywords appear "
+                            "in the body copy (H1, §2.07)"]}
+    missing = [k for k in keywords if k.strip().lower() not in copy_text]
+    reasons = ([f"SEO keyword(s) absent from page copy: {missing} — each researched "
+                "keyword MUST appear in the body copy, not only the SEO meta panel "
+                "(H1, §2.07)"] if missing else [])
+    return {"ok": not missing, "missing": missing, "reasons": reasons}
+
+
+def assert_seo_populated(seo_meta: dict | None, *, brand: str | None = None,
+                         page_copy: str | None = None) -> dict:
     """End-state gate for the QC scorers (qc-built-funnel.sh /
     qc-ghl-install-pages.sh): re-assert that a saved ``seoMeta`` is fully
     populated to the transcript bar. Returns ``{ok, reasons}`` (pure — never
     raises) so a QC script can score it without crashing. ``ok=False`` means the
-    SEO §2 end-state was NOT reached (FAB-QC must not score it >= 8.5)."""
+    SEO §2 end-state was NOT reached (FAB-QC must not score it >= 8.5).
+
+    ``page_copy`` is OPT-IN (default ``None`` → skipped, existing callers
+    unaffected). When supplied (the page's body copy/HTML), the H1 keyword-in-copy
+    gate also runs: every researched keyword must appear in the copy, or each
+    absent keyword folds into ``reasons`` as a fail."""
     reasons: list[str] = []
     if not isinstance(seo_meta, dict) or not seo_meta:
         return {"ok": False, "reasons": ["seoMeta is absent/empty"]}
@@ -841,6 +877,11 @@ def assert_seo_populated(seo_meta: dict | None, *, brand: str | None = None) -> 
         reasons.append(
             f"language must be explicitly {SEO_DEFAULT_LANGUAGE!r} "
             f"(got {seo_meta.get('language')!r})")
+    # H1 — keyword-in-copy gate (opt-in; only when page_copy is supplied).
+    if page_copy is not None:
+        kc = assert_keywords_in_copy(seo_meta, page_copy)
+        if not kc["ok"]:
+            reasons.extend(kc["reasons"])
     return {"ok": not reasons, "reasons": reasons}
 
 
