@@ -1,4 +1,3 @@
-#!/usr/bin/env bash
 # ============================================================
 #  OpenClaw Skills Updater -- Unified (Mac + VPS)
 #  PRD 2.1 -- unified repo (trevorotts1/openclaw-onboarding)
@@ -45,7 +44,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v14.23.1"
+ONBOARDING_VERSION="v14.23.2"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -448,7 +447,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v14.23.1 - safe_json_edit
+# v14.23.2 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -954,7 +953,7 @@ main() {
     # "# Cleanup" rm -rf below). The cron-backfill block runs AFTER that cleanup,
     # so it must NOT depend on $ONBOARDING_DIR (the wiped clone) — it reads the
     # persistent copy instead. Same reason apply-fleet-standards.sh is here.
-    for _s in onboarding-state.sh ghl-mcp-autostart.sh configure-operator-telegram.sh resume-onboarding.sh apply-fleet-standards.sh ensure-pipeline-crons.sh diagnose-telegram-config.sh index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh agent-browser-reaper.sh; do
+    for _s in onboarding-state.sh ghl-mcp-autostart.sh configure-operator-telegram.sh resume-onboarding.sh apply-fleet-standards.sh apply-routing-fix.sh ensure-pipeline-crons.sh diagnose-telegram-config.sh index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh agent-browser-reaper.sh; do
       [ -f "$ONBOARDING_DIR/scripts/$_s" ] && cp -f "$ONBOARDING_DIR/scripts/$_s" "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
       [ -f "$_OC_SCRIPTS_DEST/$_s" ] && chmod +x "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
     done
@@ -2042,6 +2041,13 @@ PYEOF
   # Fleet standards: ensure sub-agents fully permitted + Telegram media 50MB
   # (idempotent -- applied on every update, no-op if already canonical)
   # ----------------------------------------------------------
+  # Capture openclaw.json hash BEFORE any config mutations so the conditional
+  # gateway-restart gate at the end of this section can tell whether anything
+  # actually changed (avoids a disruptive restart on a no-op update).
+  _OC_CONFIG_HASH_BEFORE=""
+  if [ -f "$OC_JSON" ]; then
+    _OC_CONFIG_HASH_BEFORE=$(python3 -c "import hashlib; print(hashlib.md5(open('$OC_JSON','rb').read()).hexdigest())" 2>/dev/null || true)
+  fi
   echo ""
   echo "  Applying fleet standards (sub-agents fully permitted, Telegram media 50MB)..."
   # BUG-FIX v13.0.1: prefer the persistent copy — $ONBOARDING_DIR (the clone) was
@@ -2054,6 +2060,64 @@ PYEOF
     bash "$FLEET_STD" >/dev/null 2>&1 && echo "  ✓ Fleet standards applied" || echo "  ⚠ Fleet standards application reported errors (update continues)"
   else
     echo "  ⚠ Fleet standards script not found"
+  fi
+
+  # ----------------------------------------------------------
+  # Routing-defect permanent fix (4-layer: doctrine path, pptx deny, symlink
+  # unblock, dept workspace seeding). Mirror of install.sh — idempotent on every
+  # update, no-op when already applied. tools.sessions.visibility + agentToAgent
+  # require a gateway reload to take effect; that reload is gated below.
+  # apply-routing-fix.sh is persisted to $_PERSIST_SCRIPTS at the persistent-copy
+  # loop above so it survives the temp-clone cleanup, same as apply-fleet-standards.sh.
+  # ----------------------------------------------------------
+  echo ""
+  echo "  Applying routing-defect permanent fix (4-layer: doctrine, pptx deny, symlink unblock, dept seeding)..."
+  ROUTING_FIX="$_PERSIST_SCRIPTS/apply-routing-fix.sh"
+  [ -f "$ROUTING_FIX" ] || ROUTING_FIX="$ONBOARDING_DIR/scripts/apply-routing-fix.sh"
+  if [ -f "$ROUTING_FIX" ]; then
+    bash "$ROUTING_FIX" >/dev/null 2>&1 && echo "  ✓ Routing fix applied" || echo "  ⚠ Routing fix reported errors (update continues — re-run apply-routing-fix.sh)"
+  else
+    echo "  ⚠ apply-routing-fix.sh not found (skipping routing fix)"
+  fi
+
+  # ----------------------------------------------------------
+  # Dept-agent registration: turn built workspace folders into REAL agents in
+  # openclaw.json. Runs after apply-routing-fix.sh so the routing config
+  # (tools.sessions.visibility / agentToAgent) is set before agents are registered.
+  # Idempotent: re-running adds 0 duplicates; updates stale entries in place.
+  # Skipped silently when Skill 32 is not yet installed on this box.
+  # ----------------------------------------------------------
+  _MATERIALIZE="$SKILLS_DIR/32-command-center-setup/scripts/materialize-dept-agents.sh"
+  if [ -f "$_MATERIALIZE" ]; then
+    echo ""
+    echo "  Registering dept agents in openclaw.json (materialize-dept-agents)..."
+    bash "$_MATERIALIZE" >/dev/null 2>&1 && echo "  ✓ Dept agents registered" || echo "  ⚠ materialize-dept-agents.sh reported errors (update continues)"
+  fi
+
+  # ----------------------------------------------------------
+  # Conditional gateway restart: only restart when openclaw.json was actually
+  # mutated by fleet-standards, routing-fix, or materialize this run.
+  # This ensures tools.sessions.visibility and agentToAgent are live immediately
+  # without restarting the gateway on every no-op update.
+  # Platform dispatch: openclaw CLI first (works on Mac + VPS); falls back to
+  # launchctl kickstart (Mac) or docker restart (VPS) when CLI is not on PATH.
+  # ----------------------------------------------------------
+  _OC_CONFIG_HASH_AFTER=""
+  if [ -f "$OC_JSON" ]; then
+    _OC_CONFIG_HASH_AFTER=$(python3 -c "import hashlib; print(hashlib.md5(open('$OC_JSON','rb').read()).hexdigest())" 2>/dev/null || true)
+  fi
+  if [ -n "$_OC_CONFIG_HASH_BEFORE" ] && [ -n "$_OC_CONFIG_HASH_AFTER" ]       && [ "$_OC_CONFIG_HASH_BEFORE" != "$_OC_CONFIG_HASH_AFTER" ]; then
+    echo ""
+    echo "  openclaw.json changed — restarting gateway to activate routing config..."
+    if command -v openclaw >/dev/null 2>&1; then
+      openclaw gateway restart >/dev/null 2>&1         && echo "  ✓ Gateway restarted (routing config now live)"         || echo "  ⚠ Gateway restart failed — restart manually: openclaw gateway restart"
+    elif [ "$OC_PLATFORM" = "vps" ]; then
+      docker restart openclaw >/dev/null 2>&1         && echo "  ✓ Gateway restarted via docker (routing config now live)"         || echo "  ⚠ docker restart failed — restart manually: openclaw gateway restart"
+    else
+      launchctl kickstart -k "gui/$(id -u)/com.openclaw.gateway" >/dev/null 2>&1         && echo "  ✓ Gateway restarted via launchctl (routing config now live)"         || echo "  ⚠ launchctl restart failed — restart manually: openclaw gateway restart"
+    fi
+  else
+    echo "  ℹ Routing config unchanged — no gateway restart needed"
   fi
 
   # ----------------------------------------------------------
