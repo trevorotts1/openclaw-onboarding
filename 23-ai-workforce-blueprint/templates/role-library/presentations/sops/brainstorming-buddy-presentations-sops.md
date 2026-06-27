@@ -3,7 +3,7 @@
 **Source:** presentations/brainstorming-buddy-presentations.md
 **Extract:** Section 9 (Standard Operating Procedures) verbatim mirror.
 **Authority:** This file mirrors the role file. The role file is authoritative. If they diverge, the role file wins and this mirror must be regenerated.
-**Version:** 2.1 (regenerated after surgery v2.1 -- SOP 9.0 adds DELIVERABLE_SET / WANT_AUDIO_DEMO / TARGET_WPM(140) + the style branch)
+**Version:** 2.2 (regenerated after surgery v2.2 -- SOP 9.1 adds the PRICE-SEPARATION BRANCH: EVENT/ACCESS price vs OFFER price are two independent fields, free event != free offer, never deny an assumption)
 
 ---
 
@@ -27,10 +27,14 @@ small/low-stakes, OR when most context is already on file.
 3. **(Density-floor overhaul) Ask the STYLE BRANCH verbatim** (SOP-IMG-03 section 2), once, early, before the STYLE BLOCK is built: "For the look of your slides, do you have a particular image style in mind? You can: (1) point me at an existing deck, past designs, or reference images you want me to match; (2) tell me a saved style name from your library if you already have one (like 'Style 1'); or (3) let me creatively develop a signature style for you. Which one?" Set `STYLE_SOURCE` to `match_reference` (+ `STYLE_REFERENCES`, `ANALYZE_REQUEST=true`), `saved_style` (+ `STYLE_ID`), or `creative_develop`. A deck that reaches Phase 2 with `STYLE_SOURCE` unset is a defect (it would invent a look with no client direction, the path that produced the reference failure case cookie-cutter typography). If `creative_develop`, sequence the existing mood/imagery/avoid stems into the short creative-develop micro-interview (<=5 questions; do not re-bank them) per SOP-IMG-03 section 3.
 3a. **(Decision 1C) Ask the ASSET BRANCH verbatim, once, early — every signature run:** *"Is there anything you already have that could help me build this — photos, a logo, brand colors, a rough/old deck, slides, or concepts? Drop them here."* Record `asset_intake_question_asked: true` in brief.json the moment it is asked (the gate **AF-ASSET-QUESTION-MISSING** fails any deck whose intake does not carry this flag). If the client provides anything, set `assets_provided: true` and capture each item (kind + where it is) so the Media-Librarian step can ingest it into `assets_manifest.json`; if they upload a rough/old deck, note it as a `scratch_deck` so the scratch-deck parser seeds the PRD. If they have nothing, set `assets_provided: false` — the question was still asked, which is what the gate requires.
 3b. **(Decision 2A) Ask the PITCH BRANCH verbatim, once, early:** *"Does this presentation end with an offer or pitch — a price, package, or call to buy — or is it a teaching and content-only presentation?"* Record an explicit boolean `pitch_included` (true = ends with an offer/pitch; false = teaching/content-only). NEVER default it and NEVER force a pitch: a pitchless deck is first-class. The gate **AF-PITCH-FLAG-UNSET** fails any deck whose intake has no boolean `pitch_included`; downstream, `pitch_included:false` SUPPRESSES the Offer Price Strategist + price ladder and arms **AF-PITCH-LEAK** (no pitch/price content may appear), while `pitch_included:true` requires the offer arc (**AF-PITCH-MISSING**).
+3c. **PRICE-SEPARATION BRANCH (TWO PRICES — never conflate).** Capture the EVENT/ACCESS price (`EVENT_PRICE` / `ACCESS_FREE` — free or paid to ATTEND, question-bank O3) and the OFFER price (`FINAL_PRICE` — the product SOLD at the end, question-bank #4) as TWO INDEPENDENT fields. A FREE event is the front of a funnel that almost always sells a PAID offer at the end; "free to attend" NEVER implies "free offer." When the event is free, DEFAULT to EXPECTING a paid offer and ASK what it is — do NOT conclude "no pitch / no price needed" and do NOT default the offer to free. `FINAL_PRICE` is NEVER inferred from `EVENT_PRICE`/`ACCESS_FREE`. A free-only close (`pitch_included: false`, `FINAL_PRICE: 0`) is permitted ONLY on the owner's EXPLICIT confirmation and is flagged `free_only_close: true` for sign-off (downstream Devil's Advocate doctrine point 14, ALWAYS PITCH SOMETHING).
 4. Reflect each answer back in one line. Capture into brief.json under its field key.
 5. If a critical field is still unknown after the simple set, ask ONE clarifying
    follow-up (you may exceed 7 only to close a CRITICAL gap; flag it in the brief as
    `clarifying_followup: true`). Otherwise use the best default and mark `assumed: true`.
+   Any price you infer or default (`EVENT_PRICE`, `FINAL_PRICE`, `pitch_included`) MUST be marked
+   `assumed: true`, read back at lock, and NEVER denied — if the owner challenges an assumption
+   you made, own it and correct it; do not claim you did not make it.
 6. Hand to SOP 9.3.
 
 **Output:** `working/brainstorm/presentations/<project-slug>/brief.json` (draft, `interview_confirmed: false`).
@@ -75,7 +79,10 @@ to the remaining critical questions only and finish in 3 more, then lock. Record
    own terms. Structure: "Here is what I heard. You want a presentation that
    [core goal]. It is for [audience]. The key things that matter: [3 to 6 bullet
    highlights pulled from the captured fields]. Anything I got wrong or missed?"
-2. List every `assumed: true` field explicitly so the owner can correct defaults.
+2. List every `assumed: true` field explicitly so the owner can correct defaults. Read back every
+   inferred or defaulted PRICE in plain words ("I assumed the offer price is $X — confirm or
+   correct") and surface any `free_only_close: true` flag for explicit sign-off. The agent must
+   NEVER deny an assumption it made; if challenged, own it and correct it on the spot.
 3. Send via openclaw message send. WAIT for explicit confirmation. Do not proceed on
    silence.
 4. On confirmation: set `interview_confirmed: true`, `confirmed_by`, `confirmed_at`,

@@ -1,3 +1,19 @@
+## [v14.14.1]  -  2026-06-27  -  fix(presentations): separate EVENT/ACCESS price from OFFER price; free event != free offer; surface price assumptions (Skill 23 Role Library)
+
+Fixes a doctrine bug in the Presentations department interview. A free webinar / workshop / challenge is the FRONT of a funnel that almost always SELLS a paid offer at the end; the price to ATTEND the event and the price of the OFFER sold at the end are INDEPENDENT. The Brainstorming Buddy quick-interview was conflating the two — when the owner said the event was free, it wrongly concluded the offer was free too ("no price ladder / no pitch needed") and then, when challenged, misrepresented what it had asked instead of owning the assumption. This surgery separates the two prices, defaults a free event to EXPECTING a paid offer, and hardens the honesty/read-back rule so an inferred price is always surfaced and never denied. No client names, no operator-local paths, no secret values committed.
+
+TWO-PRICES SEPARATION (`brainstorming-buddy-presentations.md` + SOP mirror): new question-bank item O3 captures the EVENT/ACCESS price (`EVENT_PRICE` / `ACCESS_FREE` — free or paid to ATTEND); Question 4 "THE OFFER + PRICE" is now strictly the OFFER sold at the end (`FINAL_PRICE`, `PRICE_MODE`, `OFFER_STACK`, `pitch_included`). A new SOP 9.1 PRICE-SEPARATION BRANCH states the two fields are independent and `FINAL_PRICE` is NEVER inferred from `EVENT_PRICE`/`ACCESS_FREE`.
+
+FUNNEL DEFAULT: when the event is free (`ACCESS_FREE: true`) the interview DEFAULTS to expecting a paid offer and ASKS for it — it does NOT default the offer to free. A free-only close (`pitch_included: false`, `FINAL_PRICE: 0`) is permitted ONLY on the owner's EXPLICIT confirmation and is flagged `free_only_close: true` for sign-off, aligned with the downstream Devil's Advocate doctrine point 14 (ALWAYS PITCH SOMETHING).
+
+HONESTY / READ-BACK: any inferred or defaulted price is marked `assumed: true`, read back at lock (SOP 9.3 mandatory-checklist now carries EVENT_PRICE/ACCESS_FREE and FINAL_PRICE+pitch_included rows), and NEVER denied — if the owner challenges an assumption the agent made, it owns and corrects it.
+
+DOWNSTREAM GUARDS: the Director (role + SOP mirror) gains a two-prices guard that hands a free-event-with-missing-offer-price brief BACK to the Brainstorming Buddy instead of defaulting it to 0; the Offer/Price Strategist clarifies `FINAL_PRICE` is the OFFER price (a free event is not a free offer); the Devil's Advocate point 14 (role + SOP mirror) gains a BLOCKING flag for the upstream EVENT-vs-OFFER conflation.
+
+FILES: brainstorming-buddy-presentations.md, sops/brainstorming-buddy-presentations-sops.md (v2.2), director-of-presentations.md, sops/director-of-presentations-sops.md, offer-price-strategist.md, devils-advocate-presentations.md, sops/devils-advocate-presentations-sops.md.
+
+---
+
 ## [v14.14.0]  -  2026-06-27  -  fix(skill23): safe-only — 4 perspective-tag fixes + design routing improvement; adaptive specialist-weighting held
 
 SHIPPED (safe-only scope; regressions=[], clean=true):

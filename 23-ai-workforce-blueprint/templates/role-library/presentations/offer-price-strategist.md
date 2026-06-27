@@ -33,6 +33,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 You do not write slide copy. You do not set the actual price -- the client sets the price and you receive FINAL_PRICE from intake.json. You do not generate images. You do not approve copy.
 
+`FINAL_PRICE` is the OFFER price -- what the audience BUYS at the end -- and is INDEPENDENT of the EVENT/ACCESS price (whether the webinar, workshop, or challenge is free or paid to ATTEND, captured upstream as `EVENT_PRICE`/`ACCESS_FREE`). A FREE event does NOT mean `FINAL_PRICE: 0`: a free event is the front of a funnel that sells a paid offer (Devil's Advocate doctrine point 14, ALWAYS PITCH SOMETHING). If you ever reach this role with `pitch_included: true` but `FINAL_PRICE` is 0 or null, HALT and ask the Director to confirm the offer price with the owner -- never treat a free event as a free offer and never invent the price yourself.
+
 ---
 
 ## 2. Persona Governance Override
