@@ -5,7 +5,7 @@
 **Purpose:** Reusable, copy-pasteable build assets for **Skill 6** (challenge-funnel pages + brand-building copy), **Skill 35** (social promo), and copywriting roles (conversion-copywriter, email-campaign-strategist, sms-whatsapp-dm-sequence-specialist).
 **How to use:** Each asset is a PATTERN (the reusable recipe) plus a WORKED EXAMPLE (grounded in the masterclass). Fill the `[brackets]`. Never ship thin copy — every section is a full block, in the customer's own words, on-brand.
 
-> **Source-fidelity note:** the masterclass's dedicated Day-4 planning module (date/name/group-vs-tiny/offer reveal) was only partially present in the source recording; the offer, Stack & Close, objection-handling, and tiny-challenge material are fully captured (surfaced inside Day 5). Where this appendix gives naming/calendar mechanics they are reconstructed from the surrounding frameworks and flagged inline.
+> **Source-fidelity note:** the source FILE contains only Days 1, 2, 3, 5 of this 5-day masterclass; the dedicated Day-4 "Planning Your Challenge" session recording (date/name/group-vs-tiny/offer reveal) is **genuinely absent** (no Day-4 segment/opener/closer exists in the transcript). The offer, Stack & Close, objection-handling, and tiny-challenge material are nonetheless fully captured because Day 5 re-teaches and re-performs them. Where this appendix gives naming/calendar mechanics they are reconstructed from the surrounding frameworks (Day-3 preview + Day-5 redo) and flagged inline. A verbatim Day-4 module requires sourcing the original Day-4 recording separately.
 
 ---
 

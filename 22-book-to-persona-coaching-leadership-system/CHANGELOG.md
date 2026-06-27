@@ -4,6 +4,13 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v6.9.2] - 2026-06-27
+
+### Fixed — persona-categories.json schema consistency + Pedro Day-4 source-gap accuracy
+
+- **`persona-categories.json` — `brunson-network-marketing-secrets.appendix`**: was the only one of the 11 appendix-bearing personas whose `appendix` field was a dict object (`{present, richness, sections, notes}`) instead of a path string. Normalised to the string path `personas/brunson-network-marketing-secrets/PLAYBOOK-APPENDIX.md` (matching the other 10 entries); the richness detail is preserved without loss in new sibling fields `appendix_sections` (A–H) and `appendix_notes`. Zero dict-form `appendix` fields now remain.
+- **`pedro-adao-challenge-secrets-masterclass` Day-4 source-gap note (3 locations: blueprint Source-Type line, blueprint Section-14 honesty note, appendix Source-fidelity note)**: tightened from the imprecise "Day-4 module partially absent" to the forensically-verified statement of fact — the source FILE contains only Days 1, 2, 3, 5 (Days 1 and 3 each duplicated → six segments); the dedicated Day-4 "Planning Your Challenge" session recording is **genuinely absent** (no Day-4 segment/opener/closer exists), corroborated only by the Day-3 preview and Day-5 "yesterday" back-references. No content fabricated; the note now states a verbatim Day-4 module requires sourcing the original Day-4 recording separately.
+
 ## [v6.9.0] - 2026-06-26
 
 ### Shipped — PLAYBOOK-APPENDIX.md for all 10 QC-approved book personas

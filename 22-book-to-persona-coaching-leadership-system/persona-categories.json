@@ -891,23 +891,11 @@
         "leadership",
         "hybrid"
       ],
-      "appendix": {
-        "present": true,
-        "richness": "asset-rich",
-        "sections": [
-          "A",
-          "B",
-          "C",
-          "D",
-          "E",
-          "F",
-          "G",
-          "H"
-        ],
-        "notes": "RICH on funnel/page recipes, frameworks, and say-this scripts; THIN on email body/subject copy and standalone headline breadth (deferred by the book to Expert Secrets); ABSENT on paid-ad templates."
-      },
+      "appendix": "personas/brunson-network-marketing-secrets/PLAYBOOK-APPENDIX.md",
       "appendix_status": "COMPLETE",
-      "appendix_richness": "RICH"
+      "appendix_richness": "RICH",
+      "appendix_sections": ["A", "B", "C", "D", "E", "F", "G", "H"],
+      "appendix_notes": "RICH on funnel/page recipes, frameworks, and say-this scripts; THIN on email body/subject copy and standalone headline breadth (deferred by the book to Expert Secrets); ABSENT on paid-ad templates."
     },
     "edwards-copywriting-secrets": {
       "author": "Jim Edwards",
