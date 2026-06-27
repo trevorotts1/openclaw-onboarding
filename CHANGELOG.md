@@ -1,3 +1,9 @@
+## [v14.14.0]  -  2026-06-27  -  fix(skill23): 4 misattributed perspective-tag fixes in persona-categories.json; adaptive specialist-weighting held (safe-only ship)
+
+Remove 4 misattributed identity perspective tags (`womens-challenges` on 3 book personas that are NOT women-authored; `african-american-experience` on 1 persona whose author does not carry that lived experience). Tags were incorrectly assigned and would have caused the perspective-bonus to fire on identity claims the persona cannot authentically represent. The adaptive task_fit weighting (specialist-dominance) from the same branch is held: regression gate shows specialistsWin=false, generalizes=false — the scoring rule does not reliably surface the right specialist across diverse task types. Routing improvement (design domain simplified to copywriting+strategy-innovation) and sketchnote keyword revert are net no-ops vs origin/main as those fixes were already present. No client names, no operator-local paths, no secret values committed.
+
+---
+
 ## [v14.12.0]  -  2026-06-27  -  feat(skill6): transcript-driven build recipe — SEO/founder gate + media-folder discipline + full-width route + ZHC part-N naming (Skill 6 v7.3.0)
 
 Derives and enforces the canonical GHL funnel build recipe directly from Trevor's authoritative transcript. All items tagged `source=transcript` (authoritative) or `ownedByHarden` (delegated to parallel harden run wu9dnrsak). Builds ON the harden run changes (full-width default, P0 gate, child-chain, iframe/sanitizer, selectors, auth, rate-governor) — additive and complementary. No client names, no operator-local paths, no secret values committed.
