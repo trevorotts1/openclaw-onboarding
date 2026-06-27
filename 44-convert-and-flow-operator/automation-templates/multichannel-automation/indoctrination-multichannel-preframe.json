@@ -1,0 +1,185 @@
+{
+  "id": "indoctrination-multichannel-preframe",
+  "name": "Indoctrination Pre-Sell Sequence (Multichannel Story Series Before Cart Opens)",
+  "aliases": [
+    "Pre-Launch Indoctrination Sequence",
+    "Story Sequence Before the Pitch",
+    "Multichannel Pre-Sell",
+    "4-Video Indoctrination Series",
+    "Sequence That Sells",
+    "Warm-Up Automation",
+    "Pre-Frame Multichannel Series",
+    "Product Launch Pre-Frame"
+  ],
+  "category": "multichannel-automation",
+  "source": {
+    "primary": "Marketing Secrets Blackbook — Secret #65: The Sequence Is What Sells: 'A while back, I sold a List Hacking course. I could have just created an ad and sent people right into a funnel and made money. But instead, we did a series of four indoctrination videos. You can make these videos and send them out in emails, messenger bots, texts, ads...it really doesn't matter what medium you use.'",
+    "supporting": [
+      "Marketing Secrets Blackbook — Secret #65: 'The sequence is not just four pages and a few emails. It should be a choreographed buying sequence that delights your customers and excites them to buy more and more.'",
+      "Marketing Secrets Blackbook — Secret #65: 'By the time they get to the actual sales video, the series has already done the selling. They know my story, my hardships, my success, my expertise, and my values. Offering the product with a solid pitch will just be the cherry on top.'",
+      "DotCom Secrets — Secret #6: The Attractive Character (backstory, parables, character flaws, polarity)",
+      "Expert Secrets — Product Launch Funnel (pre-launch video series): 3 videos released days apart — Wow and How, Transformational Education, Ownership Experience — before cart opens",
+      "BRUNSON-FUNNEL-LIBRARY.md — Entry #17: Product Launch Funnel (sideways Perfect Webinar)"
+    ]
+  },
+  "purpose": "Before the cart opens or a sales video is released, a multichannel story sequence warms the audience so thoroughly that by the time they reach the pitch, 'the series has already done the selling' (Brunson's exact words, Marketing Secrets Blackbook Secret #65). The sequence uses 3–4 short story videos or written emails delivered across email, Messenger, SMS, and ads — each one a parable or narrative episode from the Attractive Character's life, not a product pitch. The prospect comes to know the AC's story, hardships, success, expertise, and values before seeing a single product feature.",
+  "trigger": {
+    "what_starts_it": "Cart-open announcement OR launch countdown starts. Contact is on a pre-launch list (opted in before launch, or segmented into a pre-launch audience). Also used as an ongoing email + Messenger + ad warm-up sequence for cold audiences before a webinar or sales event.",
+    "ghl_trigger_type": "Tag Added ('pre-launch-list') OR Campaign Launched (manual trigger by operator) OR Date-based trigger (X days before launch date)",
+    "fires": "Once per contact per launch / campaign",
+    "reentry_guard": "Only enter if tag 'indoc-started' NOT present for this campaign"
+  },
+  "channels": [
+    "Email (primary delivery of each story installment)",
+    "Facebook Messenger (mirror of the story installment, or a short teaser that links to the email/video)",
+    "SMS (nudge only — 'Did you see [story title]? Quick link: [URL]' — not the full story)",
+    "Retargeting/Social Ads (video versions of the same story pushed as ad creative to the email list's matched audience)"
+  ],
+  "sequence": [
+    {
+      "step": 1,
+      "beat": "Story Episode 1 — Origin / Backstory",
+      "timing": "Day 1 of pre-launch window",
+      "channels_active": ["Email", "Messenger (mirror)", "Retargeting Ad (video)"],
+      "purpose": "Brunson's first List Hacking indoctrination video was 'about how I started my business in my duplex and got in trouble so many times for doing things ALL wrong.' The origin story establishes the AC as a real person who struggled before succeeding. It creates identification — the reader sees themselves in the backstory. NO PITCH. Only story.",
+      "subject_angle": "How I [did the embarrassing/wrong/humble thing] and what it cost me",
+      "body_framework": [
+        "Open in the middle of the story (high drama first — Daegan Smith rule)",
+        "The humble origin: specific place, time, embarrassing detail that makes the AC relatable",
+        "What went wrong and what it cost (emotionally, financially, relationally)",
+        "The takeaway — one sentence of what you learned — but DON'T solve the problem yet",
+        "Bridge to next installment: 'Tomorrow I want to tell you about [tease of Episode 2]'",
+        "No product mention. No CTA to buy. Only the story."
+      ],
+      "ad_creative": "30–60 second video of the AC telling this origin story in their own words. Target: email list lookalike audience or existing list (custom audience). No offer mention in the ad."
+    },
+    {
+      "step": 2,
+      "beat": "Story Episode 2 — Obsession / Expertise Discovery",
+      "timing": "Day 2–3 of pre-launch window",
+      "channels_active": ["Email", "Messenger (mirror)", "SMS (nudge if email not opened)"],
+      "purpose": "Brunson's second List Hacking video was 'about me and my obsession with junk mail and how it taught me so much about marketing.' The obsession story reveals the AC's expertise origin — not as a credential, but as a passion. It answers: 'Why should I trust this person?' without ever asking that question directly.",
+      "subject_angle": "The weird obsession that taught me everything I know about [result]",
+      "body_framework": [
+        "Bridge from Episode 1: 'Yesterday I told you about [brief reference]...'",
+        "The obsession: what the AC became fascinated with and why (junk mail, wrestling, Jiu-Jitsu, potato guns — something specific and personal)",
+        "What the obsession taught them: the unexpected insight that became the foundation of their expertise",
+        "A parable from the obsession that illustrates the core principle of what you're about to sell",
+        "Bridge to Episode 3: 'Tomorrow I'm going to show you how this turned into [hint at the result/teaching]'"
+      ],
+      "sms_nudge_if_not_opened": "Hey [name] — sent you the [Story 2 title] yesterday. Quick read if you missed it: [link]"
+    },
+    {
+      "step": 3,
+      "beat": "Story Episode 3 — Teaching / The Method (light version)",
+      "timing": "Day 3–4 of pre-launch window",
+      "channels_active": ["Email", "Messenger (mirror)", "Retargeting Ad"],
+      "purpose": "Brunson's third List Hacking video: 'In the next video, I talk about list building and do a bit more teaching.' This is the first episode where a hint of the methodology surfaces — but still as story and teaching, not a product pitch. The prospect is being educated in a way that makes the solution feel inevitable. By the time the offer is revealed, they understand WHY they need it.",
+      "subject_angle": "The [simple principle / counterintuitive truth] that changed everything about [topic]",
+      "body_framework": [
+        "Bridge from Episode 2",
+        "The teaching: one core principle or counterintuitive truth from the AC's experience",
+        "Illustrated by a parable from the AC's real life (or a case study from a client)",
+        "A forward-looking statement: 'This is the core of what I'll be sharing with you [tomorrow / in the next few days]'",
+        "FIRST soft CTA: 'Make sure you're watching your email (or Messenger) — the next message is important.' (Not a buy CTA — a stay-tuned CTA)"
+      ]
+    },
+    {
+      "step": 4,
+      "beat": "Story Episode 4 — Values / Mission (optional; used in Brunson's List Hacking launch)",
+      "timing": "Day 4–5 of pre-launch window (optional — can go straight to cart open after Episode 3)",
+      "channels_active": ["Email", "Messenger (mirror)"],
+      "purpose": "Brunson's fourth List Hacking video: 'The fourth video is one of me in Kenya helping build orphanages and showing that a percentage of my money goes to this mission each year.' This values episode humanizes the AC at the deepest level — it shows what the business is FOR beyond profit. It is NOT a manipulation technique; it must be authentic. This is the Brunson's Attractive Character 'Polarity' element — the AC takes a stand for something that draws in raving fans.",
+      "subject_angle": "Why I really do this (it's not what you think)",
+      "body_framework": [
+        "The deeper mission: what the AC's business serves beyond revenue",
+        "A specific story that illustrates the mission in action (specific place, person, impact)",
+        "How purchasing from the AC connects to this mission",
+        "Bridge to the launch: 'Tomorrow [/on [date]] I'm releasing [product name] — and I want you to be first to hear about it because...'"
+      ],
+      "note": "This episode is optional and must be authentic. If the AC does not have a genuine values/mission story, skip this episode and go directly to the cart-open email. Fabricating values stories destroys trust permanently."
+    },
+    {
+      "step": 5,
+      "beat": "Cart Open Email + Multichannel Announcement",
+      "timing": "After all story episodes; when cart opens",
+      "channels_active": ["Email (full offer presentation)", "SMS (short announcement)", "Messenger (announcement)"],
+      "purpose": "Per Brunson: 'By the time they get to the actual sales video, the series has already done the selling.' The cart-open email is NOT a cold pitch — it's the payoff of a sequence the prospect has been primed for. By now they know the AC, trust them, understand the problem, and have been educated on the solution. The offer itself is the cherry on top.",
+      "subject_angle": "It's live — [offer name] is now available",
+      "body_framework": [
+        "Bridge from the story series: 'This week I've shared [brief summary of what they learned in episodes 1–3/4]. Today it's time to show you what I've built to help you do the same thing.'",
+        "Offer presentation: what it is, what it does, what the transformation is",
+        "Value stack and price reveal (if applicable)",
+        "CTA: 'Get access here: [offer_page_url]'",
+        "Deadline stated (if real): 'This is open until [date/time]'"
+      ],
+      "sms_announcement": "Hey [name] — [offer name] is now live! [AC name] just opened the cart. Grab it here: [link]",
+      "messenger_announcement": "Hey [name] — the [offer name] I've been building up to this week is live! Here's the link to grab it now: [link]"
+    }
+  ],
+  "indoctrination_principle": {
+    "the_key_insight": "Per Marketing Secrets Blackbook Secret #65: 'Don't leave anything to chance, and remember it's the sequence that sells.' The episodes do not need to be video — Brunson explicitly says 'You can make these videos and send them out in emails, messenger bots, texts, ads...it really doesn't matter what medium you use.' The FORMAT of the story matters less than the CONTENT and the SEQUENCE. Written stories in emails work equally well; the channel is flexible.",
+    "no_pitch_rule": "Episodes 1–4 have NO product pitch and NO 'buy' CTA. They are pure story, teaching, and relationship building. The only CTAs in episodes 1–4 are 'stay tuned' CTAs to watch for the next episode. This is what makes the sequence work — the prospect is never sold TO during episodes 1–4, so by Episode 5 (cart open), they are sold BY the relationship."
+  },
+  "copy_persona": {
+    "architecture": "Attractive Character (DotCom Secrets Secret #6) — all four story elements must be present across the series: Backstory (Episode 1 origin), Parables (Episode 2 obsession parable, Episode 3 teaching parable), Character Flaws (the things that went wrong in Episode 1), Polarity (Episode 4 values/stand). Identity: whatever identity the AC has chosen (Leader / Adventurer / Reporter / Reluctant Hero).",
+    "tone_for_email": "First person, journal-entry style. Short paragraphs. Personal. Feels like a friend's message, not a newsletter.",
+    "tone_for_sms": "Ultra-short reference. 'Did you see [story title]? [link]'",
+    "tone_for_messenger": "Casual DM. 2–3 sentences max. Link inline.",
+    "tone_for_ad": "Video creative — the AC talking directly to camera, telling the story. No production required (in fact, low production value often converts better for this type of content). The authenticity of the delivery is the ad."
+  },
+  "flexibility": {
+    "core_principle": "This template is a GUIDE and a RESOURCE, never a rule or requirement. It must not dominate the user's desire.",
+    "usage_modes": {
+      "mode_1_explicit_desire": "User has their own pre-launch story plan: do exactly that. This template is reference only.",
+      "mode_2_unsure": "User asks how to warm up their list before a launch: suggest the 3–4 story episode framework, explain the no-pitch rule for episodes 1–3, and let the user decide what stories to tell.",
+      "mode_3_just_do_it": "User says 'build the pre-launch warm-up': build the 4-episode story sequence + cart-open announcement email + SMS + Messenger, following the story framework above."
+    },
+    "always": "The number of episodes is flexible (Brunson used 4 in List Hacking; the FHC Product Launch Funnel uses 3). The timing between episodes is flexible (1–3 days apart). The Episode 4 values story is optional. This template assists; it never dominates."
+  },
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator (caf)",
+    "dependencies_first": {
+      "tags": [
+        "pre-launch-list",
+        "indoc-started",
+        "indoc-complete",
+        "cart-open-notified",
+        "purchased-[offer-id]",
+        "messenger-subscribed",
+        "sms-subscribed"
+      ],
+      "custom_values": [
+        "{{offer_name}}",
+        "{{cart_open_date}}",
+        "{{cart_close_date}}",
+        "{{offer_page_url}}",
+        "{{ac_name}}"
+      ]
+    },
+    "workflow": {
+      "trigger": "Tag Added: 'pre-launch-list'. Filter: tag 'indoc-started' NOT present.",
+      "nodes": [
+        "Add Tag 'indoc-started'",
+        "Email: 'INDOC-01 Origin/Backstory' (Day 1)",
+        "If/Else: messenger-subscribed → Messenger 'INDOC-M01 Episode 1 Mirror'",
+        "Wait: 1–2 days",
+        "Email: 'INDOC-02 Obsession/Expertise'",
+        "If/Else: email not opened in 24h AND sms-subscribed → SMS 'INDOC-S01 Episode 2 Nudge'",
+        "If/Else: messenger-subscribed → Messenger 'INDOC-M02 Episode 2 Mirror'",
+        "Wait: 1–2 days",
+        "Email: 'INDOC-03 Teaching/Method'",
+        "If/Else: messenger-subscribed → Messenger 'INDOC-M03 Episode 3 Mirror'",
+        "Wait: 1–2 days",
+        "(Optional) Email: 'INDOC-04 Values/Mission'",
+        "Wait: 1 day",
+        "Add Tag 'indoc-complete'",
+        "Email: 'INDOC-05 Cart Open' (launch day — or trigger from separate campaign on cart-open date)",
+        "If/Else: sms-subscribed → SMS 'INDOC-S02 Cart Open Announcement'",
+        "If/Else: messenger-subscribed → Messenger 'INDOC-M04 Cart Open'"
+      ],
+      "purchase_interrupt": "At any point after cart open: purchase event → Add 'purchased-[offer-id]'; stop cart-open email sequence; start buyer onboarding.",
+      "skill44_notes": "Set 'order' and 'parentKey' before first save. Email templates INDOC-01..INDOC-05 in GHL Email Builder. SMS: INDOC-S01..INDOC-S02. Messenger: INDOC-M01..INDOC-M04."
+    }
+  }
+}

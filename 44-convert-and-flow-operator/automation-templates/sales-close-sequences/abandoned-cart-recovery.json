@@ -1,0 +1,135 @@
+{
+  "id": "abandoned-cart-recovery",
+  "name": "Abandoned Cart Recovery Sequence",
+  "aliases": [
+    "checkout abandonment",
+    "cart recovery",
+    "checkout recovery",
+    "2-step order recovery",
+    "incomplete checkout sequence",
+    "order form abandonment"
+  ],
+  "category": "sales-close-sequences",
+  "source_books": [
+    "DotCom Secrets (Russell Brunson) — 2-Step Order Form (Step 1 = contact info, Step 2 = payment; Step-1 abandonment = a captured lead who must be recovered); Follow-Up Funnels ('no abandoned-cart follow-up = dead funnel')",
+    "The Funnel Hacker's Cookbook (Russell Brunson) — 2-Step Tripwire / Unboxing Funnel: Step 1 captures address/email before billing info; explicitly flags no abandoned-cart automation as a dead-funnel failure mode",
+    "Marketing Secrets Blackbook (Russell Brunson) — 'whoever can spend the most to acquire a customer wins'; recovering an abandoned cart has zero extra CAC and maximal ROI",
+    "Copywriting Secrets (Jim Edwards) — guarantee re-statement, Problem/Agitate/Solve on the friction that stopped them, single CTA, short-form urgency copy"
+  ],
+  "framework": "When a prospect starts the 2-step order form (Step 1 = contact info captured) but does not complete Step 2 (billing / payment), they are the highest-intent non-buyer on the list. They went far enough to give an email — something stopped them at the last moment. The abandoned cart sequence addresses the most common stop-points: technical glitch, second thoughts, price hesitation, distraction, or fear of regret. Brunson's 2-step order form is specifically designed so that Step 1 captures the email BEFORE billing — this is the mechanism that makes abandoned cart recovery possible. Without this, the lead is lost.",
+  "flexibility_principle": "This template is a GUIDE and a RESOURCE, never a rule or a requirement. Three modes: (1) USER HAS EXPLICIT DESIRE — build exactly what the user specifies; use this only as optional reference. (2) USER IS UNSURE — present this sequence, explain the ROI logic (highest-intent leads, zero extra CAC), let them decide. (3) USER WANTS IT HANDLED ('just do it') — execute the full template adapted to the user's offer.",
+  "trigger": {
+    "type": "checkout-started + payment not completed",
+    "events": [
+      "2-step order form: Step 1 (contact info) submitted BUT Step 2 (payment) NOT submitted within 15–30 minutes",
+      "Order form tag 'checkout-started' added WITHOUT tag 'buyer-[offer]' within the timeout window"
+    ],
+    "entry_conditions": "Contact has email (captured on Step 1); tag 'checkout-started' present; tag 'buyer-[offer]' absent. The offer/cart is still open (if cart has already closed, send a 'sorry you missed it' + downsell or next-offer path instead).",
+    "exit_conditions": "Purchase completes (tag 'buyer-[offer]') at any step → immediately exit, enroll buyer onboarding, STOP recovery emails. Cart closes with no purchase → send optional downsell, then enroll Seinfeld Daily Sequence.",
+    "timing_note": "Fire immediately (within 15–60 minutes of Step 1 submission without Step 2 completion). Every hour of delay reduces recovery rate significantly."
+  },
+  "channels": [
+    "Email (all steps — primary)",
+    "SMS (Step 1 immediate nudge — highest open rate for mobile users who abandoned on a phone)",
+    "Facebook/Instagram Message (optional mirror of the immediate nudge)"
+  ],
+  "cadence": "3 emails in 24–48h. IMMEDIATE: within 30–60 minutes. DAY 1: 24 hours after abandonment. DAY 2 (optional): 48 hours after, if cart is still open and no purchase. Then exit to the scheduled launch/close sequence or Seinfeld.",
+  "copy_persona": {
+    "primary": "Jim Edwards (Copywriting Secrets) — Problem/Agitate/Solve for the friction that stopped them; guarantee re-statement removes the risk that was the real blocker; single CTA, no confusion about next step; short tight copy because these contacts are already sold on the offer",
+    "supporting": [
+      "Russell Brunson — guarantee framing; re-stating the Stack value in 2–3 sentences (they already saw the full Stack; this is just a reminder); the prospect is 'hot traffic' (Edwards: lead with the product and urgency, not a new problem or story)"
+    ],
+    "copy_rule": "These are HOT contacts — they got to the checkout page. Lead with the product/offer + the specific problem they may have encountered (technical issue, hesitation). Do NOT run a full Soap Opera or Stack again. Short, direct, empathetic. One CTA. Guarantee front and center."
+  },
+  "sequence": [
+    {
+      "step": 1,
+      "phase": "IMMEDIATE",
+      "delay": "15–60 minutes after Step 1 / checkout-started event",
+      "type": "email + SMS",
+      "beat": "TECHNICAL CONCERN FIRST — Did something go wrong? Open with the assumption it was a glitch, not second thoughts. This framing is non-pushy, earns goodwill, and catches the real technical abandonments (which are common on mobile). Give them a direct link back to THEIR cart (with Step 1 pre-filled if the platform supports it) and state the guarantee plainly in 1–2 sentences. No lecture, no long copy.",
+      "purpose": "Recover mobile and technical abandoners immediately. Set a friendly, helpful tone that makes re-engagement easy and non-embarrassing.",
+      "subject_angle": "'Did something go wrong with your order?' / 'We noticed you didn't finish — is everything okay?' / 'Your [offer] order is waiting'",
+      "body_framework": "One line of empathy: 'I noticed you started checking out but your order didn't go through — did something go wrong?' → One line on the offer they were getting → Direct link back to the checkout page → One-sentence guarantee reminder ('You're fully protected — [guarantee terms] if it's not right for you') → P.S.: '[Offer] is still available for you at [link].' SMS: 'Your [offer] order is still open — did something go wrong? [link]'",
+      "cta": "Resume checkout: [direct link].",
+      "persona_formula": "Edwards: hot traffic → product + reassurance. Short. No fluff."
+    },
+    {
+      "step": 2,
+      "phase": "DAY 1",
+      "delay": "+24 hours after abandonment",
+      "type": "email",
+      "beat": "BENEFIT REMINDER + GUARANTEE EXPANSION. For the 'second thoughts' abandoner — someone who was almost there but hesitated on the value/risk. One hero benefit restated vividly (Feature → Benefit → 'which means' — Edwards Ultimate Bullet Formula). Then the guarantee restated at length: what exactly is covered, the time frame, how to claim it, who to contact. Then one testimonial (brief: Before → After → time). Then the checkout link.",
+      "purpose": "Address the 'is it worth it?' and 'what if it doesn't work?' hesitations that are responsible for most second-thought abandonments.",
+      "subject_angle": "'One thing I want you to know before you decide' / 'The reason most people in your position say yes' / '[Customer name] had the same hesitation — here's what happened'",
+      "body_framework": "Acknowledge they were close: 'You were a moment away from [result].' → One hero benefit with 'which means' (Edwards bullet) → Guarantee restated fully: '[X]-day guarantee — if [condition], you get [exact remedy], no questions asked, contact [method].' → Brief testimonial: 'Before: [pain]. After: [result] in [time].' → Checkout link. P.S.: 'If something went wrong technically, reply to this email and I'll fix it personally.'",
+      "cta": "Complete your order (still available): [link].",
+      "persona_formula": "Edwards Ultimate Bullet Formula + guarantee block; Brunson Third-Person Testimonial"
+    },
+    {
+      "step": 3,
+      "phase": "DAY 2 (optional, only if cart still open)",
+      "delay": "+48 hours after abandonment",
+      "type": "email",
+      "beat": "FINAL RECOVERY ATTEMPT — URGENCY + CLOSE. Only send if (a) the offer cart is still open and (b) the contact has not purchased. Frame this as a gentle deadline notice, not a pressure tactic. Restate the cart-close date/time, the one outcome they were hoping for, and the guarantee. Make it easy to say yes. Use the Price/Scarcity lever from Blackbook S51 if applicable (price rises, bonus expires, or quantity cap approaches).",
+      "purpose": "Last window before this contact exits the recovery flow. Convert the final holdouts with a light urgency close.",
+      "subject_angle": "'Your spot is still available — but [offer] closes [date]' / 'Last chance to finish your order'",
+      "body_framework": "One sentence: 'Your order is still incomplete, and [offer] closes [date/time].' → Two sentences on what they were about to get → Scarcity lever(s) if real: 'After [date], the [bonus / price / access] changes.' → Guarantee in one sentence → checkout link. P.S.: 'If you have questions, reply — I'll answer personally before [deadline].'",
+      "cta": "Complete before [deadline]: [link].",
+      "persona_formula": "Blackbook S51 (light urgency, honest); Edwards short close"
+    },
+    {
+      "step": 4,
+      "phase": "POST-SEQUENCE BRANCH",
+      "delay": "+24h after Step 3 (or immediately if cart closes before Step 3)",
+      "type": "branch (automation)",
+      "beat": "BRANCH BY OUTCOME. If purchase occurred at any step → exit all recovery sequences, enroll buyer onboarding (tag buyer-[offer]), do NOT continue. If cart closed while contact was in recovery AND no purchase → send optional 'cart is now closed' email with a single downsell or related offer at a lower price point. Then enroll Seinfeld Daily Sequence. If cart is still open AND no purchase after all 3 steps → merge back into the main launch/close sequence at whatever urgency phase the cart clock is at.",
+      "purpose": "Clean exit routing that honors the deadline and keeps non-buyers in long-term nurture.",
+      "persona_formula": "Brunson Stack Don't Switch; integrity: deadline was real"
+    }
+  ],
+  "ghl_build": {
+    "workflow_name": "Abandoned Cart Recovery — [Offer Name]",
+    "trigger": "Workflow Trigger: 'Tag Added' = 'checkout-started' AND 'Tag Added' = 'checkout-started' with a 15–30 minute delay check (Wait 30 min → If/Else: has 'buyer-[offer]'? YES → stop. NO → start recovery).",
+    "actions": [
+      "Step 0: Wait 30 minutes after trigger. If/Else: tag 'buyer-[offer]' present? YES → exit. NO → continue.",
+      "Step 1 (Immediate ~30min): Email + SMS sent simultaneously. Subject: 'Did something go wrong?' format.",
+      "Wait 24h. If/Else: tag 'buyer-[offer]' present? YES → exit buyer onboarding. NO → continue.",
+      "Step 2 (Day 1): Benefit + Guarantee email.",
+      "Wait 24h. If/Else: (a) tag 'buyer-[offer]' present → exit; (b) 'cart-close-datetime' has passed → send closed-cart email + optional downsell, then enroll Seinfeld; (c) cart still open → send Day 2 final recovery email.",
+      "Post-Day-2: If/Else: buyer → exit; non-buyer → check if cart still open → if yes merge back into launch sequence at current urgency phase; if no → enroll Seinfeld."
+    ],
+    "wait_steps": [
+      "30-minute initial hold (check if they completed purchase spontaneously).",
+      "24h between Step 1 and Step 2.",
+      "24h between Step 2 and Step 3.",
+      "Each wait includes a purchase-goal check (If/Else on 'buyer-[offer]') before sending the next recovery email."
+    ],
+    "if_else": [
+      "PURCHASE GOAL ('buyer-[offer]') at ANY step → immediately stop all recovery emails, enroll buyer onboarding.",
+      "Cart-close-datetime passed AND no purchase → exit recovery, send 'missed it' email + optional downsell, enroll Seinfeld.",
+      "Day 2 email sent AND cart still open AND no purchase → merge back into the main launch/close sequence (whichever urgency beat is next based on cart-close-datetime).",
+      "Technical bounce on checkout link → alert operator/support queue to follow up manually (high-value contact)."
+    ],
+    "tags_custom_fields": [
+      "checkout-started",
+      "buyer-[offer]",
+      "cart-recovery-sent",
+      "cart-close-datetime (must match main launch sequence)"
+    ],
+    "notes": "GoHighLevel: build as a SEPARATE workflow from the main launch sequence so it can fire immediately on 'checkout-started' tag without disrupting the scheduled launch sequence timing. The purchase Goal ('buyer-[offer]') must be wired in GHL as a workflow Goal so it exits the contact from ALL active sequences when triggered. The checkout link in recovery emails should point to the same order form page (Step 1 may pre-fill via GHL contact data + URL params). Mirror the Step-1 immediate email in GHL SMS (1-2 sentence format: 'Your order is still waiting. [link]'). On mobile, many abandonments are distraction-based; SMS within 30 min recovers a meaningful portion."
+  },
+  "integrity_guardrails": [
+    "The guarantee stated in recovery emails must match the actual offer guarantee exactly.",
+    "Scarcity used in the Day 2 email must be real — if no deadline exists, do not fabricate one (Edwards: 'never invent scarcity you won't honor').",
+    "Do not send recovery emails if the cart has already genuinely closed for non-buyers — send the 'cart is closed' acknowledgment instead.",
+    "Limit to 3 recovery emails within 48h to avoid becoming spam. Recovery is a service, not a harassment."
+  ],
+  "kpis": [
+    "Recovery rate: % of checkout-started contacts who complete purchase",
+    "Step 1 (immediate) recovery rate vs. Step 2 vs. Step 3",
+    "Revenue recovered per abandoned cart attempt",
+    "Time-to-recovery (which send window converts fastest)",
+    "SMS vs. email recovery rate comparison"
+  ]
+}

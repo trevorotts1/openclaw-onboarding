@@ -1,0 +1,80 @@
+{
+  "id": "re-engagement-winback-broadcast",
+  "name": "Re-Engagement / Win-Back Broadcast — Cold Subscriber Reactivation",
+  "aliases": [
+    "win-back",
+    "re-engagement",
+    "reactivation",
+    "sunset campaign",
+    "lapsed-subscriber broadcast",
+    "list cleaning",
+    "are we breaking up email"
+  ],
+  "category": "engagement-broadcast",
+  "source": {
+    "books": ["DotCom Secrets (Russell Brunson)", "Copywriting Secrets (Jim Edwards)"],
+    "sections": [
+      "DotCom Secrets Secret #6 — Us vs Them & Secret Telling storylines, power of polarity",
+      "DotCom Secrets Secret #8 — daily emailing keeps the relationship alive ('if I don't email my list every day, I lose money')",
+      "Copywriting Secrets — Takeaway/FOMO close, '9 of 10 buy out of dissatisfaction with current circumstances'"
+    ]
+  },
+  "trigger": {
+    "primary": "A subscriber on the broadcast segment goes COLD — no email open or click in 30 days (then escalates at 60). Protects sender reputation and revives lapsed buyers.",
+    "trigger_type_ghl": "Workflow on email-engagement: when last_email_open is older than 30 days -> Add Tag 'cold-30d' (implemented via a recurring/scheduled workflow checking the last_email_open custom field, or GHL email-event filters)."
+  },
+  "channels": ["Email (primary)", "SMS (one nudge on the final takeaway)", "Suppression (final state)"],
+  "sequence": [
+    {
+      "step": 1,
+      "beat": "Pattern interrupt — 'Are we breaking up?'",
+      "purpose": "Re-open the loop; force identity recommitment.",
+      "subjectAngle": "Curiosity + Us vs Them line-in-the-sand: 'Still a do-er... or a talker?'",
+      "bodyFramework": "Short, personal, polarizing. Secret-telling hook to spark a re-open. Single CTA = click to stay.",
+      "delay": "Day 0",
+      "branch": "Goal: any open/click -> 're-engaged' -> remove cold tag, exit to active broadcast."
+    },
+    {
+      "step": 2,
+      "beat": "Best-of value + biggest-win offer",
+      "purpose": "Remind them why they joined; deliver dissatisfaction-relief.",
+      "subjectAngle": "'The one story everyone replied to' / 'your invite is still open'.",
+      "bodyFramework": "Lead with your single most entertaining Seinfeld story + your strongest offer. Future-pace the result they wanted when they joined.",
+      "delay": "+3 days",
+      "branch": "Goal re-open -> exit to active broadcast."
+    },
+    {
+      "step": 3,
+      "beat": "Takeaway / sunset",
+      "purpose": "Force a decision; clean the list if no response.",
+      "subjectAngle": "'I'll stop emailing you (unless you click)'.",
+      "bodyFramework": "Honest takeaway selling: 'I'll take you off unless you click below.' One CTA. + SMS nudge.",
+      "delay": "+3 days; SMS day-of",
+      "branch": "No open/click after this -> tag 'sunset' + remove from broadcast Smart List."
+    }
+  ],
+  "copyPersona": {
+    "primary": "Brunson polarity / Us vs Them ('talkers vs do-ers') + Secret Telling storylines (DCS Secret #6).",
+    "secondary": "Edwards Takeaway/FOMO close + 'people buy out of dissatisfaction' — frame the win-back as relief from their unchanged situation.",
+    "scripts": ["Us vs Them", "Secret Telling", "Takeaway selling"]
+  },
+  "ghlBuild": {
+    "buildType": "A real GoHighLevel WORKFLOW (sequenced win-back drip with a goal exit and a sunset suppression).",
+    "trigger": "No email open in 30 days -> Add Tag 'cold-30d' (scheduled workflow checking last_email_open custom field, or GHL engagement filter). Workflow start = Tag Added 'cold-30d'.",
+    "actions": [
+      "Send Email 1 (Are we breaking up)",
+      "Wait 3 days",
+      "Goal: Email Opened OR Link Clicked -> branch 're-engaged' (Remove Tag cold-30d, keep seinfeld-broadcast, exit)",
+      "Send Email 2 (Best-of + offer)",
+      "Wait 3 days",
+      "Goal: Email Opened/Clicked -> 're-engaged' exit",
+      "Send Email 3 (Takeaway/sunset) + Send SMS",
+      "Wait 2 days",
+      "If still no open/click -> Add Tag 'sunset' + Remove Tag 'seinfeld-broadcast' (drops them from the daily Smart List) + Remove from broadcast"
+    ],
+    "goalEvent": "Trigger-link / Goal on 'Email Opened' or 'Link Clicked' re-routes to the re-engaged branch and removes the cold tag at any step.",
+    "notes": "Removing 'seinfeld-broadcast' from non-responders protects daily-send deliverability. Set action order + parentKey before first save (Skill 44)."
+  },
+  "kpis": ["reactivation rate (% cold contacts re-engaged)", "deliverability lift after sunset (bounce/spam rate drop)", "win-back revenue", "list-health: active vs sunset ratio"],
+  "faithfulness": "Copy ANGLES (Us vs Them 'talkers vs do-ers', Secret Telling, takeaway selling, 'buy out of dissatisfaction') are taken from DotCom Secrets Secret #6 and Copywriting Secrets. The TRIGGER (no-open-30d) and the sunset suppression are standard email-deliverability practice DERIVED from the books' 'email daily or lose money' + polarity/takeaway principles — flagged as derived, NOT a verbatim Brunson sequence."
+}

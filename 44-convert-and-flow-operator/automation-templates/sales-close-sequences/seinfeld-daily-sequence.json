@@ -1,0 +1,71 @@
+{
+  "id": "seinfeld-daily-sequence",
+  "name": "Daily Seinfeld Sequence (Entertain-Then-Sell Engagement)",
+  "aliases": ["Seinfeld emails", "daily email show", "attractive character daily", "entertain and sell", "ongoing nurture broadcast", "soap opera follow-on"],
+  "category": "sales-close-sequences",
+  "source_books": ["DotCom Secrets (Russell Brunson) — Seinfeld Sequence + Attractive Character", "Copywriting Secrets (Jim Edwards) — hooks, subject lines, Hook/Story/Offer", "Marketing Secrets Blackbook — 'publish daily', Stack Don't Switch"],
+  "role_in_3_closes": "The maintenance layer AFTER the Soap Opera Sequence. It keeps the list warm and runs Emotion / Logic / Fear closes on rotation, episode by episode, ascending the value ladder (DotCom Secrets follow-up funnel).",
+  "trigger": {
+    "type": "sequence-graduation / ongoing",
+    "events": ["Contact tagged 'sos-complete'", "Any engaged subscriber on the main list", "Buyers who have not yet ascended the value ladder"],
+    "entry_conditions": "tag 'sos-complete' present OR on main engaged list.",
+    "exit_conditions": "Hard bounce / unsubscribe / sustained disengagement (RFMS recency drop) → move to re-engagement or sunset. Never truly 'ends' while subscriber stays engaged."
+  },
+  "channels": ["Email (daily/near-daily broadcast)", "Optional: SMS for high-urgency episodes", "Optional: social post mirror (publish-daily principle, Blackbook)"],
+  "cadence": "Daily or near-daily, ongoing (DotCom Secrets: the Seinfeld sequence runs indefinitely). Sent as broadcasts or as an evergreen drip for new graduates, then live broadcasts thereafter.",
+  "email_anatomy": {
+    "structure": "Every Seinfeld email = Hook → Story → Offer (Edwards 'Hook/Story/Offer'). The email is ~90% entertaining 'episode about nothing' and ends with a smooth segue: 'and that reminds me… here's how I can help → [offer].'",
+    "parts": [
+      "HOOK = curiosity subject line + first line that earns the open (Edwards: 8 of 10 only read the subject).",
+      "STORY = a short, entertaining, personal or topical episode (the 'about nothing' part) carrying a single lesson.",
+      "SEGUE = one transition sentence that pivots the lesson to the offer.",
+      "OFFER = one clear CTA to a product/funnel on the value ladder."
+    ]
+  },
+  "copy_persona": {
+    "primary": "Russell Brunson — Attractive Character storylines",
+    "supporting": ["Jim Edwards — Hook/Story/Offer, curiosity hooks ('unlikely character + timing + result'), one clear CTA", "Brunson — Stack Don't Switch (every offer stacks onto the one new opportunity)"],
+    "attractive_character_elements": ["Backstory", "Parables", "Character Flaws", "Polarity ('love me / hate me — there's no money in the middle')"],
+    "storyline_types": [
+      "Loss and Redemption",
+      "Us vs. Them (polarity)",
+      "Before / During / After transformation",
+      "Amazing Discovery",
+      "Secret Telling",
+      "Third-Person Testimonial / case study",
+      "Cliffhanger (multi-day episode arc)"
+    ]
+  },
+  "sequence": [
+    {"step": 1, "episode_type": "Loss & Redemption", "beat": "Tell a story of a setback and the comeback. Lesson = the principle behind your offer.", "subject_angle": "'The week I lost everything (and what saved me)'", "segue_to": "the offer as the 'what saved me'", "persona_formula": "Attractive Character backstory + Hook/Story/Offer"},
+    {"step": 2, "episode_type": "Us vs. Them (Polarity)", "beat": "Draw a line: the old broken way vs. the new opportunity. Repel the wrong people, attract your tribe.", "subject_angle": "'Why I'll never do [old way] again'", "segue_to": "your offer is the 'us' way", "persona_formula": "Polarity; Edwards good-vs-bad negative (attack the METHOD, never a named person)"},
+    {"step": 3, "episode_type": "Amazing Discovery", "beat": "Share a discovery / experiment / result. Curiosity-led.", "subject_angle": "'I tested this for 30 days. The result shocked me.'", "segue_to": "the offer is how they get the same discovery faster", "persona_formula": "Edwards hook 'result + timing − pain'"},
+    {"step": 4, "episode_type": "Secret Telling", "beat": "Reveal a behind-the-scenes secret or counter-intuitive truth. LOGIC close flavor — facts/proof.", "subject_angle": "'The thing the gurus won't tell you about [topic]'", "segue_to": "offer delivers the secret in full", "persona_formula": "Logic-close undercurrent + curiosity"},
+    {"step": 5, "episode_type": "Third-Person Testimonial", "beat": "Let a customer's story do the selling. Social proof as story.", "subject_angle": "'How Sarah went from [before] to [after] in 6 weeks'", "segue_to": "'want the same? here's the door'", "persona_formula": "Brunson third-person testimonial + Edwards proof"},
+    {"step": 6, "episode_type": "Cliffhanger Arc (2–3 day)", "beat": "Start a story today, pay it off tomorrow; offer rides the resolution. FEAR/urgency close flavor when an offer window is closing.", "subject_angle": "Day 1: 'I almost didn't hit send on this…' / Day 2: 'Okay, here's what happened'", "segue_to": "time-bound offer resolves with the arc", "persona_formula": "Open-loop hook + Brunson urgency"}
+  ],
+  "ghl_build": {
+    "workflow_name": "Seinfeld — Daily Entertain-Then-Sell (Ongoing)",
+    "trigger": "Workflow Trigger: 'Contact Tag Added' = 'sos-complete'. Plus: send live broadcasts to the engaged segment from the GHL Campaigns/Email Broadcast tool.",
+    "actions": [
+      "Two-mode build: (A) EVERGREEN — a workflow that drips a rotating bank of Hook/Story/Offer emails to new graduates; (B) LIVE — daily broadcasts to the 'engaged' smart list.",
+      "Each email: single CTA to a value-ladder offer; rotate the 7 episode types.",
+      "Tag click behavior (e.g. 'interested-[offer]') to feed targeted close sequences."
+    ],
+    "wait_steps": ["Evergreen: Wait 1 day between episodes (send window 8:00am contact tz). Live: scheduled broadcast times."],
+    "if_else": [
+      "Engagement smart-list filter: include only contacts who opened ≥1 email in last 30 days (RFMS recency) so deliverability stays high.",
+      "IF a contact clicks an offer link 2+ times without buying → enroll in that offer's 'three-closes' or 'scarcity-deadline-close' workflow.",
+      "IF no open in 30–45 days → move to re-engagement workflow, then sunset to protect sender reputation.",
+      "IF purchase of offer X → suppress offer-X emails, ascend to next value-ladder offer (Stack Don't Switch)."
+    ],
+    "tags_custom_fields": ["sos-complete", "engaged-30d", "interested-[offer]", "buyer-[offer]", "seinfeld-evergreen-done"],
+    "notes": "GoHighLevel: maintain an 'Engaged 30-day' smart list for live broadcasts; use the Workflow for the evergreen rotation feeding new graduates. Keep ONE new opportunity and STACK offers onto it (Blackbook Secret 43) — don't introduce a brand-new opportunity each email. Publish daily (Blackbook). Each email obeys Hook/Story/Offer with exactly ONE CTA (Edwards)."
+  },
+  "integrity_guardrails": [
+    "Stories must be true; testimonials must be real and provable (Edwards proof rule).",
+    "Go negative on the METHOD/old-way, never on a named competitor (Edwards Secret #24).",
+    "Protect deliverability: only mail the engaged; sunset dead weight."
+  ],
+  "kpis": ["Daily open rate", "CTR to offers", "Revenue per email / per subscriber per month", "List engagement (RFMS recency)", "Value-ladder ascension rate"]
+}

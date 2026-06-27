@@ -1,0 +1,113 @@
+{
+  "id": "cart-abandon-recovery",
+  "name": "Cart Abandon / Step-1-Not-Step-2 Recovery",
+  "aliases": [
+    "abandoned cart recovery",
+    "abandoned checkout",
+    "two-step order form recovery",
+    "step-1-not-step-2 follow-up",
+    "Brunson Box recovery",
+    "incomplete order recovery"
+  ],
+  "category": "funnel-specific-followups",
+  "summary": "Recovers buyers who entered their contact info on Step 1 of a 2-step order form (the 'Brunson Box') but never completed payment on Step 2. The 2-step form exists specifically so the email is captured as a micro-commitment BEFORE billing, which makes this drop-off recoverable at all. Maps to the Cookbook 'Drop-Off Automation' Message #1/#2/#3 for the 'step-1-not-step-2' leak.",
+  "trigger": {
+    "primary_event": "Step 1 of the 2-step order form submitted (name + email + address captured) AND no completed order within the delay window",
+    "entry_conditions": [
+      "Contact submitted the address/contact step of a 2-step order form (tag e.g. `order-step1-started`)",
+      "No `order-completed` / purchase event fired for that contact within the wait window"
+    ],
+    "exit_conditions": [
+      "Purchase completes at any point (remove from sequence immediately to avoid post-purchase asks)",
+      "Contact replies / requests removal",
+      "Sequence finishes (Message #3 sent)"
+    ]
+  },
+  "channels": ["Email", "SMS"],
+  "sequence": [
+    {
+      "step": "Message #1",
+      "beat": "The helpful nudge — 'did something go wrong?' Removes friction, assumes a technical hiccup, not a no.",
+      "delay": "15-30 minutes after Step 1 with no completed order",
+      "channel": "Email (+ optional SMS mirror)",
+      "subject_angle": "Curiosity + service: \"Did your order go through?\" / \"Quick question about your order…\"",
+      "body_framework": "Jim Edwards 'If you want X, do this' (warm-traffic formula). Open friendly, name the exact product they were buying, give the ONE clear instruction to finish (single CTA link straight back to Step 2 with their info pre-filled). Make it about THEM, single action only.",
+      "copy_notes": "No discount yet. Pure friction-removal. Honest, no fake scarcity."
+    },
+    {
+      "step": "Message #2",
+      "beat": "Agitate the gap + reinforce desire — remind them WHY they wanted it; handle the silent objection.",
+      "delay": "+4 to +24 hours",
+      "channel": "Email (+ SMS)",
+      "subject_angle": "Problem/desire: \"Still thinking about [result]?\" / \"The [product] is still in your cart\"",
+      "body_framework": "Jim Edwards Problem / Agitate / Solve. Restate the problem the product solves, agitate the cost of staying stuck (loss aversion — 'people move away from pain more than toward pleasure'), then re-present the offer as the solution. One or two proof points (testimonial / guarantee). Single CTA back to Step 2.",
+      "copy_notes": "Ten Reasons People Buy: lead with escape-pain + save-time. Add the guarantee here to neutralize risk."
+    },
+    {
+      "step": "Message #3",
+      "beat": "Honest urgency / last call — real reason to act now, then a stealth soft-close.",
+      "delay": "+24 to +48 hours after Message #2",
+      "channel": "Email (+ SMS)",
+      "subject_angle": "Urgency: \"Last call on your [product]\" / \"Closing your order out today\"",
+      "body_framework": "Jim Edwards honest-urgency close + Stealth/Columbo 'By the way…' P.S. State the REAL reason the window closes (cart/price/bonus expiring, limited stock) — must be true and honored. Recap the offer in one line, single CTA, then a P.S. soft-close.",
+      "copy_notes": "Never invent scarcity you won't honor (Edwards rule + Soap Opera 'fake urgency backfires'). If genuinely evergreen, use a 24h bonus/coupon that truly expires."
+    }
+  ],
+  "copy_persona": {
+    "primary": "jim-edwards-copywriting-secrets (Copywriting Secrets) — The Direct-Response Copy Closer",
+    "scripts_used": [
+      "3 Sales Formulas: 'If you want X, do this' (warm) for Msg #1; Problem/Agitate/Solve for Msg #2",
+      "Honest scarcity/urgency rule for Msg #3 (honor every deadline)",
+      "Stealth / Columbo soft-close ('By the way…') in the P.S.",
+      "Ten Reasons People Buy — tie escape-pain + save-time + save-money",
+      "Hot/Warm/Cold routing: treat abandoners as WARM (they already raised their hand) — lead with the solution, not the problem"
+    ],
+    "structural_persona": "russell-brunson-the-funnel-hackers-cookbook — supplies the 2-step order form ('Brunson Box') structure and the Drop-Off Automation Message #1/#2/#3 map that makes this leak recoverable",
+    "rationale": "The Cookbook is explicit: a 2-step order form 'captures the micro-commitment and enables step-2 follow-up' — wrong order form for the price (one-page form on a low-ticket offer) makes this recovery impossible. Edwards writes the sentence-level copy."
+  },
+  "ghl_build": {
+    "engine": "Skill 44 (caf / convert-and-flow) — builds the GoHighLevel Automations-area workflow from an ordered build-plan JSON (every action carries order/parentKey before first save; builder fails loud on any non-2xx).",
+    "workflow_name": "FSF — Cart Abandon Recovery (Msg 1/2/3)",
+    "trigger_config": {
+      "ghl_trigger": "Order Form Submission on Step 1 (or 'Abandoned Checkout' if the funnel emits it) — fired when contact info is captured but order not completed",
+      "alternative": "Tag Added = `order-step1-started` (set by the Step-1 form) used as entry; filter: contact does NOT have tag `order-completed`"
+    },
+    "actions_in_order": [
+      "1. Wait — 20 minutes",
+      "2. If/Else — condition: contact has tag `order-completed`? TRUE -> end workflow (Goal: purchase). FALSE -> continue",
+      "3. Send Email — Message #1 (friction-removal)",
+      "4. Send SMS — Message #1 mirror (optional, short link to Step 2)",
+      "5. Wait — 6 hours",
+      "6. If/Else — purchased? TRUE -> end. FALSE -> continue",
+      "7. Send Email — Message #2 (Problem/Agitate/Solve)",
+      "8. Wait — 1 day",
+      "9. If/Else — purchased? TRUE -> end. FALSE -> continue",
+      "10. Send Email — Message #3 (honest urgency + Stealth close)",
+      "11. Send SMS — Message #3 last-call mirror",
+      "12. Remove tag `order-step1-started`; add tag `cart-abandon-sequence-complete`"
+    ],
+    "goal_event": "Purchase / `order-completed` tag — wired as a workflow GOAL so the contact exits the instant they buy (prevents emailing a customer asking them to buy what they already bought).",
+    "wait_steps": ["20 min", "6 hr", "1 day", "1 day"],
+    "if_else_branches": [
+      "After every wait: re-check `order-completed` -> exit on purchase",
+      "Optional: branch SMS vs email-only on contact DND / phone-present"
+    ],
+    "tags_used": ["order-step1-started", "order-completed", "cart-abandon-sequence-complete"],
+    "notes": "GHL Automations have no public API — caf builds the workflow shape (trigger + waits + if/else + email/SMS steps); the operator pastes finalized email/SMS bodies. Honor any countdown timer used on the order page so the urgency in Msg #3 stays true."
+  },
+  "source": {
+    "books": [
+      "The Funnel Hacker's Cookbook (2-step order form / Brunson Box; Drop-Off Automation Message #1/#2/#3; 'wrong order form for the price')",
+      "DotCom Secrets (2-Step Tripwire / Free-Plus-Shipping order form; Follow-Up Funnel)",
+      "Copywriting Secrets — Jim Edwards (PAS, 'If you want X', honest urgency, Stealth close, Ten Reasons People Buy)"
+    ],
+    "fidelity_note": "Built strictly from the extracted Cookbook drop-off map ('step-1-not-step-2 -> Message #1/#2/#3') and Edwards' documented email formulas. No invented mechanics."
+  },
+  "flexibility": {
+    "principle": "This template is a recommended default and a resource — it is NEVER a rule or a requirement.",
+    "mode_1_user_has_explicit_desire": "Do exactly what the user wants. This template is an optional reference only; it is never imposed or overridden onto their choice.",
+    "mode_2_user_is_unsure": "Suggest this proven template and explain why it works, but let the user decide.",
+    "mode_3_user_wants_it_handled": "Build the whole automation from this template.",
+    "note": "Always overridable, mixable, customizable, or ignorable. It assists; it does not dominate."
+  }
+}

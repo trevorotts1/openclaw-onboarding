@@ -1,0 +1,171 @@
+{
+  "id": "behavioral-retargeting-page-visit-fire",
+  "name": "Behavioral Retargeting — Page-Visit Pixel Fire + List Membership Update",
+  "aliases": [
+    "Retargeting Pixel Fire Sequence",
+    "Page-Visit Behavioral Retargeting",
+    "Funnel Step Retargeting Automation",
+    "Facebook Pixel Retargeting Sequence",
+    "Behavioral Ad Targeting by Funnel Stage",
+    "What More Can We Do — Retargeting Layer",
+    "Funnel Page Retargeting Logic"
+  ],
+  "category": "multichannel-automation",
+  "source": {
+    "primary": "Lead Funnels Swipe File — Follow-Up Funnel section: 'Retargeting Messages. It works like this: once someone lands on one of your funnel pages, you can create an action where it says, If they hit this page, go to Facebook and add them to this retargeting list, or Take them off this retargeting list and move them over to this one.'",
+    "supporting": [
+      "Marketing Secrets Blackbook — Secret #49: What More Can We Do? 'If people click on your landing page but don't give you an email address, retarget them with ads.'",
+      "Marketing Secrets Blackbook — Secret #79: Take Your Show On The Road: 'If you're heavily on Facebook and killing it, don't start a new product. Move onto Instagram or Twitter or Pinterest or YouTube, or try direct mail or podcasts.' (channel expansion principle)",
+      "Marketing Secrets Blackbook — Secret #66: Switching Sales Modalities: 'The more sales modalities you can use in your funnel, the better.' (multi-channel reach)",
+      "BRUNSON-FUNNEL-LIBRARY.md — Entry #24: Follow-Up Funnel: 'retargeting ads' listed as one of the six multichannel components"
+    ]
+  },
+  "purpose": "As prospects move (or fail to move) through funnel pages, their behavior changes their retargeting audience membership in real time. Someone who visited the landing page but didn't opt in gets one ad. Someone who opted in but didn't visit the offer page gets a different ad. Someone who visited the offer page multiple times but didn't buy gets a testimonial or urgency ad. Buyers are removed from all sales retargeting immediately. This is a passive automation layer that runs in the background of every other multichannel sequence — the pixel fires are driven by page-visit events, not contact-list actions.",
+  "trigger": {
+    "what_starts_it": "Page visit to any page in the funnel stack. There is no single trigger — each page visit is its own trigger event that updates audience membership.",
+    "channel": "This is primarily a paid-ads and tracking automation, not an email/SMS workflow. In GHL, it maps to: contact record updated based on funnel page visit → tag added or removed → custom audience synced with Facebook/Google via GHL integration.",
+    "fires": "Continuously on every page visit throughout the funnel lifetime"
+  },
+  "channels": [
+    "Facebook / Instagram Retargeting Ads (custom audiences updated by page-visit events)",
+    "Google Display Network (optional second retargeting channel via Google remarketing tag)",
+    "GHL automation tags (bridge between funnel page visits and ad audience membership)"
+  ],
+  "funnel_stage_retargeting_logic": {
+    "description": "Each funnel page visit triggers a specific audience add or remove action. The audiences are designed to show the right ad to the right person based on exactly where they dropped off in the funnel.",
+    "stages": [
+      {
+        "stage": "A — Landing Page Visited / No Opt-In",
+        "trigger": "Visit to landing page / squeeze page, but no form submission",
+        "audience_action": "Add to Audience A: 'Saw landing page — no opt-in'",
+        "ad_content": "Lead magnet ad: social proof ('3,000+ people already downloaded this') + value tease of the lead magnet + CTA to return to landing page. Goal: get them to opt in.",
+        "ad_type": "Awareness/lead ad. Highest audience volume — least qualified. Keep ad spend modest."
+      },
+      {
+        "stage": "B — Opted In / Has Not Visited Offer Page",
+        "trigger": "Form submission on opt-in page (they are now a contact) + no visit to offer/sales page",
+        "audience_action": "Remove from Audience A; Add to Audience B: 'Opted in — no offer page visit'",
+        "ad_content": "Content/bridge ad: value-add content that builds trust and bridges to the offer. 'If you liked [lead magnet], you'll love [offer] because...' or 'The next step after [lead magnet topic] is [offer topic].' CTA to offer/sales page.",
+        "ad_type": "Interest/consideration ad. Mid-funnel. These people know who you are but haven't seen the offer yet."
+      },
+      {
+        "stage": "C — Visited Offer Page / No Purchase (1 visit)",
+        "trigger": "Visit to sales page / offer page + no purchase confirmation",
+        "audience_action": "Remove from Audience B; Add to Audience C1: 'Visited offer page — 1x visit'",
+        "ad_content": "Testimonial ad: specific third-person testimonial with a real person's name, face (if available), and concrete before/after numbers. 'Here's what [name] said after [result].' CTA back to offer page.",
+        "ad_type": "Social proof / conversion ad. Warm audience. These people know the offer; they need proof."
+      },
+      {
+        "stage": "C2 — Visited Offer Page Multiple Times / No Purchase",
+        "trigger": "2+ visits to sales/offer page + no purchase confirmation",
+        "audience_action": "Escalate within Audience C: add tag 'high-intent-no-buy'",
+        "ad_content": "Objection-handle ad: directly addresses the most common objection for this offer. 'Still thinking about [offer]? Here's the #1 question people ask...' followed by the objection and the answer. Or: FAQ-style ad. CTA back to offer page.",
+        "ad_type": "High-intent conversion ad. These people are very close to buying — they need one more push."
+      },
+      {
+        "stage": "D — Reached Checkout / No Purchase Confirmation",
+        "trigger": "Visit to checkout / order form page + no purchase confirmation",
+        "audience_action": "Remove from Audience C; Add to Audience D: 'Reached checkout — no purchase'",
+        "ad_content": "'Your order is waiting' ad: direct, transactional, urgent. 'You left something in your cart' or 'You started grabbing [offer] — here's your link to finish: [link].' Can include a discount or bonus if there is a genuine offer to sweeten the deal. CTA directly to checkout page (not the sales page — send them where they were).",
+        "ad_type": "Highest-intent conversion ad. These people decided to buy and then didn't complete. Highest priority audience."
+      },
+      {
+        "stage": "E — Purchase Confirmed — Buyer",
+        "trigger": "Visit to purchase confirmation / thank-you page OR payment event in GHL",
+        "audience_action": "Remove from ALL audiences A through D; Add to Audience E: 'Buyer — [offer-id]'",
+        "ad_content": "If retargeting buyers at all (optional — usually not): upsell ads for the next product on the value ladder. Audience E is separate and used for ascension, not the original purchase pitch.",
+        "ad_type": "Ascension ad. Never show a buyer an ad for something they already own."
+      }
+    ]
+  },
+  "channel_expansion_principle": {
+    "source": "Marketing Secrets Blackbook — Secret #79: Take Your Show On The Road",
+    "description": "Brunson's principle: when one retargeting channel is performing, don't switch products — expand to new channels with the same offer. If Facebook retargeting is working, move the same audiences and ad creative to Instagram, Pinterest, YouTube, or Google Display Network. The prospect sees the same brand across multiple platforms, which compounds trust and recall without requiring new content creation.",
+    "implementation": "Duplicate the custom audiences from Facebook to: Instagram (same audience, vertical video creative), YouTube (pre-roll video — the story episodes from the indoctrination sequence work well as pre-roll), Google Display (banner versions of the testimonial and objection-handle ads), Pinterest (if relevant to the niche)."
+  },
+  "switching_modalities_principle": {
+    "source": "Marketing Secrets Blackbook — Secret #66: Switching Sales Modalities",
+    "description": "The prospect may not buy from a VSL but will buy from a PDF. The prospect who ignored email may click an ad. Lead with the strongest modality (the one you think will convert best), then use retargeting to reach the people who engage with a different format. The retargeting pixel allows switching modalities after the initial drop-off — the VSL non-buyer sees a written testimonial; the written-page non-buyer sees a video case study.",
+    "implementation": "In Audience C (visited offer page, no purchase), segment by whether they were on a VSL page or a written copy page, and flip modalities in the retargeting ad. VSL non-buyers see text testimonial ads; text-page non-buyers see short video ads."
+  },
+  "sequence": [
+    {
+      "step": "Setup",
+      "beat": "Pixel + Tag Infrastructure",
+      "purpose": "Place tracking pixels on every funnel page. Map each pixel event to a GHL tag add/remove via the GHL tracking pixel or webhook. Map GHL tags to Facebook custom audience sync. This is done once at funnel setup — not per contact.",
+      "actions": [
+        "Install GHL tracking pixel (or Facebook pixel + GHL-to-Facebook integration) on: landing page, thank-you page, offer/sales page, checkout page, purchase confirmation page",
+        "Create five Facebook custom audiences: A (landing no opt-in), B (opted in no offer visit), C (offer page visitor), D (checkout no purchase), E (buyer)",
+        "Configure GHL automation: page visit event → add/remove audience tag → Facebook audience update via integration"
+      ]
+    },
+    {
+      "step": "Ongoing",
+      "beat": "Real-Time Audience Update",
+      "purpose": "Every time a contact visits a funnel page, their audience membership updates automatically. The ads they see in their Facebook/Instagram feed change in real time to match where they are in the funnel.",
+      "timing": "Facebook audience updates can have a 1–24h lag depending on audience size and event volume. For immediate triggers, use GHL email + SMS alongside ad retargeting."
+    },
+    {
+      "step": "Buyer Interrupt",
+      "beat": "Purchase Confirmation — Immediate Audience Removal",
+      "purpose": "The instant a purchase is confirmed, the buyer must be removed from ALL sales retargeting audiences. Showing a buyer an ad for something they just bought is embarrassing, wasteful, and erodes trust.",
+      "actions": [
+        "Trigger: Purchase confirmation page visit OR payment event in GHL",
+        "Remove from audiences A, B, C1, C2, D immediately",
+        "Add to Audience E (buyer — for upsell ads if desired)",
+        "Stop all related email/SMS cart-recovery sequences (cross-system coordination)"
+      ]
+    }
+  ],
+  "ad_creative_by_audience": {
+    "audience_A": "Lead magnet social proof ad. Copy angle: curiosity + social proof ('3,000+ people already grabbed this'). Image: lead magnet cover or lifestyle image. Destination: original landing page.",
+    "audience_B": "Bridge content ad. Copy angle: 'if you liked [lead magnet], you need to see [offer topic].' Short video testimonial or written text ad. Destination: offer/sales page.",
+    "audience_C_first_visit": "Testimonial ad. Real person, real name, specific before/after numbers. Copy: '[name] said [result].' Destination: offer page.",
+    "audience_C_repeat_visit": "Objection-handle ad. FAQ format or direct objection response. 'Still thinking about it? Here's the answer to [most common question].' Destination: offer page.",
+    "audience_D_checkout": "Transaction completion ad. 'Your cart is waiting. You were moments away from [result].' If genuine incentive available: 'Here's a [bonus/discount] to finish up.' Destination: direct checkout page (skip the sales page).",
+    "audience_E_buyer": "Upsell/ascension ad only. Never the original offer. If no upsell ad is ready, exclude buyers from all ads."
+  },
+  "copy_persona": {
+    "note": "This template is primarily an ad automation layer, not an email copy framework. Ad copy for retargeting should be short, punchy, and visually distinct from organic content. The Attractive Character may or may not appear in retargeting ads — social proof ads (testimonials) can feature customers rather than the AC, which often converts better for cold-to-warm retargeting audiences.",
+    "audience_A_voice": "Curiosity-driven, low friction. No selling. Just value delivery. 'Did you know [tease of lead magnet insight]?'",
+    "audience_B_voice": "Educational bridge. No pressure. 'The next step after [lead magnet topic]...'",
+    "audience_C_voice": "Social proof and objection removal. Specific, concrete, credible.",
+    "audience_D_voice": "Direct, transactional, brief. One CTA. No fluff."
+  },
+  "flexibility": {
+    "core_principle": "This template is a GUIDE and a RESOURCE, never a rule or requirement. It must not dominate the user's desire.",
+    "usage_modes": {
+      "mode_1_explicit_desire": "User has their own retargeting ad strategy: do exactly that. This template is reference only.",
+      "mode_2_unsure": "User doesn't have retargeting set up: suggest starting with Audience D (checkout abandon) as the highest-ROI first move, then expand to Audience C, then B, then A. Explain the audience progression and let user decide.",
+      "mode_3_just_do_it": "User says 'set up retargeting': build all 5 audiences with the pixel mapping, audience logic, and ad creative briefs described above."
+    },
+    "always": "Overridable, customizable, ignorable. Not every funnel needs all five audiences. Start with D (checkout abandon) and C (offer page visitor) — these are closest to the money. The template assists; it never dominates."
+  },
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator (caf) for the GHL tag/automation side. Facebook/Instagram audience management done in Facebook Ads Manager via custom audience sync.",
+    "dependencies_first": {
+      "tags": [
+        "retarget-audience-a",
+        "retarget-audience-b",
+        "retarget-audience-c",
+        "retarget-audience-c2-high-intent",
+        "retarget-audience-d",
+        "retarget-audience-e-buyer",
+        "purchased-[offer-id]"
+      ],
+      "integrations": [
+        "GHL Facebook Integration (for custom audience sync) OR Facebook Pixel installed on all funnel pages",
+        "GHL tracking pixel installed on all funnel pages for page-visit event tracking"
+      ]
+    },
+    "workflow_structure": {
+      "landing_page_visit_no_optin": "Page Visit trigger (landing page) → Wait 5 min → If/Else: form submitted (opted in)? No → Add Tag 'retarget-audience-a' (syncs to Facebook Audience A)",
+      "optin_no_offer_visit": "Form Submitted → Add 'retarget-audience-b', Remove 'retarget-audience-a'",
+      "offer_page_visit": "Page Visit trigger (offer/sales page) → Add 'retarget-audience-c'; Remove 'retarget-audience-b'",
+      "offer_page_visit_repeat": "Second Page Visit trigger (offer/sales page) → Add 'retarget-audience-c2-high-intent'",
+      "checkout_visit": "Page Visit trigger (checkout page) → Add 'retarget-audience-d'; Remove 'retarget-audience-c', 'retarget-audience-c2-high-intent'",
+      "purchase_confirmation": "Page Visit (confirmation page) OR Payment Event → Add 'retarget-audience-e-buyer'; Remove 'retarget-audience-a/b/c/c2/d'; Add 'purchased-[offer-id]'",
+      "skill44_notes": "Page Visit triggers in GHL may require GHL tracking pixel + funnel-step tracking or webhook from ClickFunnels/external page. Confirm tracking pixel fires before building. Set 'order' + 'parentKey' before first save on every node."
+    }
+  }
+}

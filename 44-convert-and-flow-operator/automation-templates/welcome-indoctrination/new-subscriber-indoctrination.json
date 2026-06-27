@@ -1,0 +1,135 @@
+{
+  "id": "new-subscriber-indoctrination",
+  "name": "New-Subscriber Indoctrination Sequence",
+  "aliases": [
+    "Welcome Sequence",
+    "Onboarding Email Sequence",
+    "Lead-Magnet Delivery + Indoctrination",
+    "Indoctrination Funnel Emails",
+    "New Lead Nurture",
+    "Follow-Up Funnel Welcome Leg"
+  ],
+  "category": "welcome-indoctrination",
+  "source": {
+    "primary": "DotCom Secrets — Follow-Up Funnels (the automated sequence triggered after opt-in) + Secret #7 'Set the Stage' email beat",
+    "supporting": [
+      "The Funnel Hacker's Cookbook — Lead/Squeeze/Lead-Magnet funnels: 'thank-you/delivery page begins relationship-building and routes the lead into a follow-up sequence'",
+      "DotCom Secrets — Secret #6: The Attractive Character (worldview, polarity, us-vs-them)",
+      "Copywriting Secrets — Secret #18: Email Teasers (delivery + single-CTA mechanics)"
+    ]
+  },
+  "purpose": "The foundational welcome that EVERY opt-in receives: deliver the promised lead magnet, confirm and set the relationship, give the one critical onboarding instruction (whitelist / move to primary inbox), introduce the Attractive Character and the brand worldview, and route the new lead into the deeper bonding arc (the Soap Opera Sequence) or the value ladder. This is the 'container' indoctrination; the Soap Opera Sequence is the dramatized bond that can run inside or after it.",
+  "trigger": {
+    "what_starts_it": "Opt-in / lead-magnet form submit (any lead-capture entry point).",
+    "ghl_trigger_type": "Form Submitted / Funnel Step Submitted (opt-in)",
+    "fires": "Once per contact",
+    "reentry_guard": "Only enter if tag 'indoctrinated' does NOT already exist"
+  },
+  "channels": ["email (primary)", "optional SMS for delivery confirmation + whitelist nudge"],
+  "cadence": "Email 0 immediate (delivery), then 1 email/day for the first 48-72 hours (3 follow-up emails). Can hand off to the 5-email Soap Opera Sequence for the deep bond.",
+  "distinct_from_soap_opera": "Indoctrination's job = DELIVER the asset + set expectations + whitelist + install the worldview. Soap Opera's job = narrative BONDING + selling the core offer. Use indoctrination as the universal welcome; chain the Soap Opera Sequence after it (or use the SOS as the indoctrination body for product-led lists).",
+  "sequence": [
+    {
+      "step": 0,
+      "beat": "Instant Delivery",
+      "delay": "immediate",
+      "purpose": "Deliver the lead magnet the second they opt in; confirm; give ONE onboarding instruction (whitelist / drag to Primary tab); tease what's coming so they keep opening.",
+      "subject_angle": "Here's your [lead magnet] (+ what to do first)",
+      "body_framework": [
+        "Salutation with merged first name (Copywriting Secrets: acknowledge them, never make them feel like one of a million)",
+        "Deliver: prominent download/access link = the ONE call to action",
+        "One onboarding instruction: 'whitelist this address / drag me to your Primary inbox so you don't miss what's next'",
+        "Tease the next email (open loop): 'tomorrow I'm going to send you something most people charge for'",
+        "Friendly personal close"
+      ]
+    },
+    {
+      "step": 1,
+      "beat": "Set the Stage / Welcome to my world",
+      "delay": "+1 day",
+      "purpose": "Official welcome (Soap Opera Email #1 'Set the Stage'): who the Attractive Character is, a relatable backstory tease, how often you'll email, what to expect, and the first curiosity loop.",
+      "subject_angle": "Welcome to [brand] — here's how this works",
+      "body_framework": [
+        "Official welcome + AC backstory tease (where I started = where you may be now)",
+        "Mission/promise: 'give away better stuff free than others charge for'",
+        "Set the email expectation (how often, why it's worth opening)",
+        "Open a loop to Email 2",
+        "P.S. naming the next subject line"
+      ]
+    },
+    {
+      "step": 2,
+      "beat": "Worldview / Manifesto (Polarity)",
+      "delay": "+1 day",
+      "purpose": "Install the brand's core belief and draw the line in the sand. Use the Attractive Character's Polarity + Us-vs-Them storyline to position the NEW opportunity against the OLD way. This is what converts fair-weather subscribers into a tribe.",
+      "subject_angle": "Why [common approach] is keeping you stuck",
+      "body_framework": [
+        "State the brand's core belief / new opportunity",
+        "Us vs Them: name the old way / the 'talkers vs the doers' line in the sand",
+        "Make the reader choose a side (micro-commitment to your worldview)",
+        "Bridge to the value ladder / next step",
+        "Single CTA"
+      ]
+    },
+    {
+      "step": 3,
+      "beat": "Bridge to Offer / Hand-off to Soap Opera",
+      "delay": "+1 day",
+      "purpose": "Invite into the next step — either the core offer / webinar registration, OR explicitly hand control to the Soap Opera Sequence for the dramatized bond. This is the routing junction of the welcome.",
+      "subject_angle": "Ready for the next step?",
+      "body_framework": [
+        "Quick recap of value delivered so far (reciprocity)",
+        "Introduce the next logical rung on the value ladder",
+        "Single CTA to that rung (offer page / webinar reg / first SOS email)",
+        "If handing to SOS: tease 'over the next 5 days I'm going to tell you the story of...'"
+      ]
+    }
+  ],
+  "copy_persona": {
+    "worldview_and_polarity": "The Attractive Character (DCS #6) — backstory, polarity, us-vs-them storyline build the worldview emails",
+    "set_the_stage": "Soap Opera 'Set the Stage' beat (DCS #7) for the Day-1 welcome and the open-loop mechanic",
+    "email_mechanics": "Copywriting Secrets Email Teaser (Jim Edwards, Secret #18): subject = headline; merged-name salutation; ONE specific CTA per email; short, friend-to-friend tone; the email's job is the click (download / next step)",
+    "founder_story_option": "Epiphany Bridge (Expert Secrets) if you swap the worldview email for a founder origin story",
+    "brand_clarity_handoff": "If the brand manifesto needs sharpening, hand the copy to the StoryBrand (Miller) / Brand Mapping persona — this template supplies the welcome flow, not the brand architecture"
+  },
+  "flexibility": {
+    "core_principle": "This template is a GUIDE and a RESOURCE, never a rule or requirement. It must not dominate the user's desire.",
+    "usage_modes": {
+      "mode_1_explicit_desire": "User has an explicit desire: do exactly what the user wants. This template is an optional reference only — never impose it or override the user's choice.",
+      "mode_2_unsure": "User is unsure: suggest this indoctrination container (deliver the asset, set expectations, install the worldview, route to SOS or value ladder) and explain the rationale, then let the user decide.",
+      "mode_3_just_do_it": "User wants it handled ('just build it'): build the full sequence from this template — IND-00 through IND-03, tags, custom fields, if/else branches, and the GHL workflow — as written."
+    },
+    "always": "Overridable, mixable, customizable, ignorable. Number of emails, worldview-vs-founder-story choice, hand-off to SOS vs direct offer, cadence — all are defaults the user can change or skip. The template assists; it never dominates."
+  },
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator (caf), Tier 0. Internal-API build when GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN healthy; Tier 4 agent-browser backstop + owner nudge otherwise.",
+    "dependencies_first": {
+      "tags": ["lead-new", "indoctrinated", "delivered-asset", "warm"],
+      "custom_fields": ["optin_source (text)", "asset_delivered (date)"],
+      "custom_values": ["{{lead_magnet_url}}", "{{ac_name}}", "{{next_step_url}}", "{{brand_name}}"]
+    },
+    "workflow": {
+      "trigger": "Form Submitted / Funnel Step Submitted (opt-in). Filter: tag 'indoctrinated' NOT present.",
+      "nodes": [
+        "Action: Add Tag 'lead-new'; (if gated asset) grant access / membership",
+        "Email: 'IND-00 Instant Delivery' (immediate) + optional SMS delivery confirm",
+        "Action: Add Tag 'delivered-asset'; Set asset_delivered = {{now}}",
+        "Wait: 1 day",
+        "Email: 'IND-01 Set the Stage'",
+        "Wait: 1 day",
+        "Email: 'IND-02 Worldview / Manifesto'",
+        "Wait: 1 day",
+        "Email: 'IND-03 Bridge to Offer / Hand-off'",
+        "Action: Add Tag 'indoctrinated'",
+        "Action: Add to Workflow 'Soap Opera Sequence' (or to value-ladder sales workflow)"
+      ],
+      "if_else_branches": [
+        "Delivery-confirmation fork: IF 'IND-00' opened but download link NOT clicked within 1 day THEN send a 'did you grab it?' resend (email + SMS); ELSE continue.",
+        "Warm fork: IF core-offer / next-step CTA clicked THEN add tag 'warm' and (optionally) fork to the sales workflow early.",
+        "Suppression: IF tag 'unsubscribed' or 'customer' THEN exit."
+      ],
+      "wait_steps": "3 wait steps of 1 day each (Email 0 immediate, then daily).",
+      "skill44_reliability": "Dependency-first (tags/fields/values exist before build); set node 'order' + 'parentKey' before first save; email nodes reference Email-Builder templates IND-00..IND-03."
+    }
+  }
+}

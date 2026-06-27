@@ -1,0 +1,86 @@
+{
+  "id": "attractive-character-story-rotation",
+  "name": "Attractive Character Storyline Rotation — Broadcast Editorial Calendar",
+  "aliases": [
+    "6 storylines rotation",
+    "broadcast content calendar",
+    "engagement editorial rotation",
+    "storyline programming",
+    "what-to-write rotation",
+    "value-ladder story calendar"
+  ],
+  "category": "engagement-broadcast",
+  "source": {
+    "books": ["DotCom Secrets (Russell Brunson)"],
+    "sections": [
+      "DotCom Secrets Secret #6 — Attractive Character Storylines (the 6 basic storylines + their plot templates)",
+      "DotCom Secrets Secret #8 — Daily Seinfeld Sequence (each story ties to an offer; doubles as blog content)"
+    ]
+  },
+  "trigger": {
+    "primary": "Recurring editorial planning layer over the daily broadcast engine. Solves 'what do I write each day' by rotating the 6 Attractive Character storylines across the broadcast schedule, each slot tied to a value-ladder offer.",
+    "trigger_type_ghl": "Scheduled broadcast slot (one per day) drawing from the rotation; no new contact trigger — runs on the existing seinfeld-broadcast segment."
+  },
+  "channels": ["Email broadcast (primary)", "Blog (repurpose)", "Social pre-frame (repurpose the hook)"],
+  "sequence": [
+    {
+      "step": 1,
+      "beat": "Loss & Redemption",
+      "purpose": "Show the upside of hardship; deep bonding.",
+      "subjectAngle": "Open loop on a fall + comeback.",
+      "bodyFramework": "'I had everything... Then ___ happened. I had to figure my way out of ___. But it turned out to be a blessing in disguise because I went through ___, and I learned ___. Now I ___.'  TIE TO: core transformation offer."
+    },
+    {
+      "step": 2,
+      "beat": "Us vs Them",
+      "purpose": "Polarize; convert fair-weather fans into diehards.",
+      "subjectAngle": "Line-in-the-sand / rallying cry.",
+      "bodyFramework": "Call out 'talkers vs do-ers'; force the reader to choose a side and identify with your camp.  TIE TO: community / membership / ascension offer."
+    },
+    {
+      "step": 3,
+      "beat": "Before & After",
+      "purpose": "Transformation proof; works in any market.",
+      "subjectAngle": "'First I was ___. Now I'm ___.'",
+      "bodyFramework": "Simple transformation arc (often tellable with pictures).  TIE TO: the result-product that produced the after."
+    },
+    {
+      "step": 4,
+      "beat": "Amazing Discovery",
+      "purpose": "Make the answer feel finally available.",
+      "subjectAngle": "'Wait til you hear about this amazing new thing I just discovered!'",
+      "bodyFramework": "Wide-eyed enthusiasm about a breakthrough you tried.  TIE TO: webinar / teleseminar / new offer (book: huge for selling webinars)."
+    },
+    {
+      "step": 5,
+      "beat": "Secret Telling",
+      "purpose": "Curiosity draws readers up the Value Ladder.",
+      "subjectAngle": "'I've got a secret... if you want to find out, you need to ___.'",
+      "bodyFramework": "Dangle the secret; the action to learn it is the CTA.  TIE TO: lead magnet / next funnel up the ladder."
+    },
+    {
+      "step": 6,
+      "beat": "Third-Person Testimonial",
+      "purpose": "Social proof via others' wins.",
+      "subjectAngle": "'Look what ___ just pulled off.'",
+      "bodyFramework": "Tell a customer's success as the story; let proof do the selling.  TIE TO: the proof-driven / high-ticket / application offer."
+    }
+  ],
+  "copyPersona": {
+    "primary": "Brunson Attractive Character storylines (DCS Secret #6), each wrapped in the Seinfeld Hook-Story-Offer shell (seinfeld-broadcast-email).",
+    "secondary": "Edwards offer-tie-in discipline ('which means...' + a Reason People Buy on every slot).",
+    "scripts": ["6 storyline plot templates", "Hook -> Story -> Offer wrapper"]
+  },
+  "ghlBuild": {
+    "buildType": "Planning/scheduling layer over the daily broadcast engine (daily-seinfeld-sequence). Not a contact-triggered workflow.",
+    "implementation": [
+      "Maintain a rotation in a planning sheet OR as 6 pre-built draft Email Campaigns in GHL, one per storyline slot.",
+      "Each storyline's CTA points to the matching value-ladder funnel URL (offer routing): Loss&Redemption->core; UsVsThem->membership; Before&After->result product; AmazingDiscovery->webinar; SecretTelling->lead magnet; Testimonial->application/high-ticket.",
+      "Optional: segment the seinfeld-broadcast Smart List by interest tag so the storyline's offer matches subscriber interest.",
+      "Schedule one slot per day; refresh stories monthly so the rotation stays fresh."
+    ],
+    "notes": "No new workflow trigger beyond Template 1's segment; this template governs WHAT is sent each day and WHERE the CTA points. Pairs with the broadcast Smart List from daily-seinfeld-sequence."
+  },
+  "kpis": ["open & click rate by storyline type (find your highest-converting story types)", "offer-tie revenue by slot", "blog/social repurpose traffic"],
+  "faithfulness": "All six storylines, their plot templates, the 'talkers vs do-ers' line, and the offer-tie requirement are taken directly from DotCom Secrets Secret #6 and Secret #8. The weekly-slot scheduling and value-ladder CTA routing are the Skill-44 operationalization of those storylines."
+}

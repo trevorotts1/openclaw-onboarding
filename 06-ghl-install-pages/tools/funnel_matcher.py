@@ -17,6 +17,33 @@ templates the group agents produced), and:
 Every decision is LOGGED (matched template + score + ranked runners-up + rationale)
 so Trevor can see WHY a template was used or a new funnel was created.
 
+FLEXIBILITY MODEL (retrofitted — v14.6.0)
+------------------------------------------
+This matcher is a GUIDE and a RESOURCE, never a rule or a gate.
+
+  Mode 1 — Explicit desire:   User has stated which funnel they want.
+                               match_funnel() returns HONORED_EXPLICIT and does
+                               NOT run scoring. The caller MUST build what was named.
+                               No suggestion overrides explicit user desire.
+
+  Mode 2 — User is unsure:    Normal scoring path. The best match is SUGGESTED —
+                               the caller presents it to the user for confirmation.
+                               The user can accept, choose a different template, or
+                               request a custom funnel.
+
+  Mode 3 — Just do it:        User says 'handle it'. The highest-scoring match
+                               is used directly; the caller skips the confirmation
+                               step. Activated by passing ``just_do_it=True`` in
+                               the request dict.
+
+EXPLICIT DESIRE DETECTION: ``match_funnel`` checks ``request["explicit_funnel"]``
+first. If absent, it runs ``_detect_funnel_explicit`` — a lightweight name/alias
+scan that returns a template id when the request text unambiguously names a template.
+When either path fires, the decision is ``HONORED_EXPLICIT`` and no scoring runs.
+
+NEVER BLOCKS: a below-threshold score never prevents a build. CREATE_NEW is advisory
+— the caller can still proceed with the template (user override) or go fully custom.
+
 DESIGN
 ------
 * stdlib-only, deterministic, no network. Lexical scorer by default; an optional
@@ -421,6 +448,48 @@ class EmbeddingReranker:
 
 
 # --------------------------------------------------------------------------- #
+# Explicit desire detection (Flexibility Model — Mode 1)
+# --------------------------------------------------------------------------- #
+def _detect_funnel_explicit(text: str, catalog: Catalog) -> str | None:
+    """Return a funnel template id if the user has unambiguously named one.
+
+    Checks (in order):
+    1. Template id with hyphens replaced by spaces (e.g. 'squeeze page', 'webinar funnel')
+    2. Template id as-is (handles direct id copy-paste)
+    3. Core template name tokens (first 3-4 significant words, parenthetical stripped)
+    4. Alias match — phrase aliases >= 6 characters checked
+
+    Returns None if no unambiguous match is found — scoring proceeds normally.
+    This is an OPTIONAL helper; explicit desire can also be set via
+    ``request["explicit_funnel"]``.
+    """
+    norm_text = _norm(text)
+    # 1. ID as space-separated words
+    for t in catalog.templates:
+        id_as_words = t["id"].replace("-", " ")
+        if id_as_words and id_as_words in norm_text:
+            return t["id"]
+    # 2. ID with hyphens (less likely in natural language)
+    for t in catalog.templates:
+        if t["id"] and t["id"] in norm_text:
+            return t["id"]
+    # 3. Core name — strip parenthetical, take first 4 non-stopword tokens
+    for t in catalog.templates:
+        raw_name = re.sub(r"\(.*?\)", "", t["name"])
+        core_tokens = [tok for tok in _tokens(raw_name) if len(tok) > 2][:4]
+        if len(core_tokens) >= 2:
+            core_phrase = " ".join(core_tokens)
+            if core_phrase in norm_text:
+                return t["id"]
+    # 4. Alias match — phrase aliases only (>= 6 chars to avoid false positives)
+    for t in catalog.templates:
+        for alias in t["aliases"]:
+            if len(alias) >= 6 and _norm(alias) in norm_text:
+                return t["id"]
+    return None
+
+
+# --------------------------------------------------------------------------- #
 # Match
 # --------------------------------------------------------------------------- #
 def match_funnel(request: dict | str, catalog: Catalog, *,
@@ -429,7 +498,59 @@ def match_funnel(request: dict | str, catalog: Catalog, *,
                  reranker: "EmbeddingReranker | None" = None) -> dict:
     """Classify -> score every template -> decide USE_TEMPLATE or CREATE_NEW.
 
-    Returns a decision record (also what gets logged)."""
+    FLEXIBILITY MODEL:
+    ------------------
+    Mode 1 — Explicit desire: if ``request["explicit_funnel"]`` is set OR the
+    request text unambiguously names a template, returns ``HONORED_EXPLICIT``
+    immediately (no scoring). The caller MUST build what was named.
+
+    Mode 2 — Unsure (default): normal scoring path. Result is a SUGGESTION.
+    The caller presents it to the user for confirmation.
+
+    Mode 3 — Just do it: ``request["just_do_it"]=True`` — the caller builds the
+    top match without asking.
+
+    Returns a decision record (also what gets logged).
+    """
+    if isinstance(request, str):
+        request = {"text": request}
+
+    _EXPLICIT_CONFIDENCE = 1.0
+
+    # Mode 1 — explicit desire check (fast path, no scoring needed)
+    explicit_id = request.get("explicit_funnel") or ""
+    if not explicit_id:
+        explicit_id = _detect_funnel_explicit(request.get("text", ""), catalog) or ""
+
+    if explicit_id and explicit_id in catalog.by_id:
+        tmpl = catalog.by_id[explicit_id]
+        persona = catalog.resolve_persona(tmpl["persona"])
+        pages = instantiate_pages(tmpl)
+        return {
+            "decision": "HONORED_EXPLICIT",
+            "flexibility_mode": 1,
+            "matched_template": explicit_id,
+            "matched_name": tmpl["name"],
+            "confidence": _EXPLICIT_CONFIDENCE,
+            "threshold": threshold,
+            "score_parts": {},
+            "copy_persona": persona,
+            "pages": pages,
+            "ranked": [{"id": explicit_id, "name": tmpl["name"],
+                        "group": tmpl["group"], "confidence": _EXPLICIT_CONFIDENCE,
+                        "raw": 999, "parts": {}}],
+            "classified": {},
+            "rationale": (
+                "FLEXIBILITY MODE 1 — HONORED EXPLICIT: "
+                f"User explicitly named '{tmpl['name']}' — building exactly that. "
+                "This matcher honors explicit user desire above all scoring. "
+                "No template suggestion overrides this choice."
+            ),
+            "request": request,
+            "ts": _ts(),
+        }
+
+    # Mode 2/3 — scoring path
     feats = classify(request)
     scored = [score_template(t, feats) for t in catalog.templates]
     for s in scored:
@@ -445,6 +566,8 @@ def match_funnel(request: dict | str, catalog: Catalog, *,
     matched_id = None
     persona = None
     pages = None
+    just_do_it = bool(request.get("just_do_it"))
+    flex_mode = 3 if just_do_it else 2
 
     if best and best["confidence"] >= threshold and best["raw"] > 0:
         decision = "USE_TEMPLATE"
@@ -453,9 +576,10 @@ def match_funnel(request: dict | str, catalog: Catalog, *,
         persona = catalog.resolve_persona(tmpl["persona"])
         pages = instantiate_pages(tmpl)
 
-    rationale = _rationale(best, threshold, decision)
+    rationale = _rationale(best, threshold, decision, flex_mode)
     return {
         "decision": decision,
+        "flexibility_mode": flex_mode,
         "matched_template": matched_id,
         "matched_name": catalog.by_id[matched_id]["name"] if matched_id else None,
         "confidence": best["confidence"] if best else 0.0,
@@ -474,18 +598,28 @@ def match_funnel(request: dict | str, catalog: Catalog, *,
     }
 
 
-def _rationale(best: dict | None, threshold: float, decision: str) -> str:
+def _rationale(best: dict | None, threshold: float, decision: str,
+               flex_mode: int = 2) -> str:
+    flex_preamble = (
+        "This matcher is a GUIDE and a RESOURCE, never a rule. "
+        "Every suggestion is overridable — the user's explicit desire always wins. "
+        f"(Flexibility Mode {flex_mode}{'  — user said just do it' if flex_mode == 3 else ''}.)"
+    )
     if not best or best["raw"] <= 0:
-        return ("No template scored above zero against the request — "
-                "CREATE_NEW (a net-new funnel will be generated and saved back).")
+        return (f"{flex_preamble} No template scored above zero against the request — "
+                "CREATE_NEW (a net-new funnel will be generated and saved back). "
+                "The user can still request any template by name.")
     drivers = ", ".join(f"{k}(+{v})" if v >= 0 else f"{k}({v})"
                         for k, v in sorted(best["parts"].items(),
                                            key=lambda kv: -abs(kv[1])))
     if decision == "USE_TEMPLATE":
-        return (f"Best match '{best['name']}' confidence={best['confidence']} "
-                f">= threshold {threshold}. Drivers: {drivers}.")
-    return (f"Best candidate '{best['name']}' confidence={best['confidence']} "
-            f"< threshold {threshold} -> CREATE_NEW. Drivers: {drivers}.")
+        return (f"{flex_preamble} Best match '{best['name']}' confidence={best['confidence']} "
+                f">= threshold {threshold}. Drivers: {drivers}. "
+                "If the user prefers a different template or wants a custom funnel, "
+                "honor that choice — this is a suggestion, not a requirement.")
+    return (f"{flex_preamble} Best candidate '{best['name']}' confidence={best['confidence']} "
+            f"< threshold {threshold} -> CREATE_NEW. Drivers: {drivers}. "
+            "A custom funnel can still be built, or the user can name any template to use it.")
 
 
 # --------------------------------------------------------------------------- #
@@ -617,6 +751,9 @@ def step0_match(task: dict, evidence_root: str, *,
             "funnel_type": task.get("funnel_type", task.get("type", "")),
             "goal": task.get("goal", ""),
             "length": task.get("length", ""),
+            # Flexibility model inputs (v14.6.0 retrofit)
+            "explicit_funnel": task.get("explicit_funnel", ""),
+            "just_do_it": bool(task.get("just_do_it")),
         }
         decision = match_funnel(request, catalog, threshold=threshold, reranker=reranker)
 
@@ -627,18 +764,21 @@ def step0_match(task: dict, evidence_root: str, *,
                                  encoding="utf-8"), indent=2)
         log_decision(decision, os.path.join(routing, "funnel-decisions.jsonl"))
 
-        # mutate task
+        # mutate task (advisory — callers should present the suggestion to the user
+        # unless decision=HONORED_EXPLICIT or just_do_it=True)
         task["template_match"] = {
             "decision": decision["decision"],
+            "flexibility_mode": decision.get("flexibility_mode"),
             "matched_template": decision["matched_template"],
             "confidence": decision["confidence"],
+            "rationale": decision.get("rationale", ""),
         }
-        if decision["decision"] == "USE_TEMPLATE":
+        if decision["decision"] in ("USE_TEMPLATE", "HONORED_EXPLICIT"):
             task.setdefault("pages", decision["pages"])
             task["copy_persona"] = decision["copy_persona"]
             task["instantiated_from_template"] = decision["matched_template"]
         return decision
-    except Exception as exc:  # noqa: BLE001 — matching must never break a build
+    except Exception as exc:  # noqa: BLE001 — matching must never block a build
         return {"decision": "SKIPPED", "reason": f"matcher error: {type(exc).__name__}: {exc}"}
 
 

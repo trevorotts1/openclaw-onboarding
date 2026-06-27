@@ -41,7 +41,7 @@ import sys
 from typing import Iterator, Optional
 
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_PY_VERSION = "v14.5.1"
+BROWSER_MANAGER_PY_VERSION = "v14.6.0"
 
 # Tunables mirror browser_manager.sh / the ADVISORY openclaw.json
 # browser.agentBrowser block (agent-browser ignores that config natively — the

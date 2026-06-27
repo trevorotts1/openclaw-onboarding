@@ -1,0 +1,115 @@
+{
+  "id": "three-ms-content-broadcast",
+  "name": "Three M's Value-Broadcast — Myths, Misconceptions, Mistakes + Future Pacing Story Engine",
+  "aliases": [
+    "Three M's",
+    "Myths Misconceptions Mistakes",
+    "content broadcast framework",
+    "make them thirsty",
+    "value content emails",
+    "content-without-giving-it-away",
+    "story-to-sale content system",
+    "broadcast topic generator",
+    "what to write today"
+  ],
+  "category": "engagement-broadcast",
+  "source": {
+    "books": ["Copywriting Secrets (Jim Edwards)"],
+    "sections": [
+      "Copywriting Secrets Secret #20 — Make 'Em More Thirsty ('stories make people thirsty; sales copy tells them where to buy a drink')",
+      "Copywriting Secrets Secret #20 — The Three M's of Content (Myths, Misconceptions, Mistakes)",
+      "Copywriting Secrets Secret #20 — Future Pacing as the 5th story type",
+      "Copywriting Secrets Secret #20 — 4 story types (actual story, case study/3-act, example, Three M's)"
+    ]
+  },
+  "trigger": {
+    "primary": "Content-brainstorming and topic-generation layer over the daily Seinfeld broadcast. Answers 'what do I write today?' when the 6 Attractive Character storylines (from the DCS rotation) don't apply — specifically for value-content emails whose goal is to create DESIRE without giving away the product/solution.",
+    "trigger_type_ghl": "No new GHL workflow trigger — this is a topic-selection and copy-angle framework applied when composing any broadcast Email Campaign. Pairs with the 'seinfeld-broadcast' Smart List and the 'seinfeld-broadcast-email' shell.",
+    "important_distinction": "BOOK: 'You can create stories around myths, misconceptions, and mistakes WITHOUT providing any solution that is part of your product. However, when you create stories with the Three M's of Content, people will feel like you have been spilling the beans all day long.' This solves the content creator's dilemma — give too much → don't need to buy; give too little → boring. Three M's gives perceived value while increasing purchase desire."
+  },
+  "channels": ["Email broadcast", "Blog (repurpose the same content verbatim)", "Social media (repurpose the hook/intro)", "Video script (same framework works for short-form video)"],
+  "coreThesis": {
+    "book_quote": "'Stories make people thirsty, but sales copy tells them where to buy a drink.'",
+    "implication": "Content (value emails, social posts, blog articles) is the thirst-creation mechanism. Every broadcast email built on this framework increases purchase urgency WITHOUT requiring a hard pitch. The CTA at the end points to the offer where they can 'buy the drink.'"
+  },
+  "sequence": [
+    {
+      "step": 1,
+      "beat": "SELECT A STORY TYPE",
+      "purpose": "Choose the right content angle for today's broadcast from the 4+1 story types.",
+      "subjectAngle": "n/a",
+      "bodyFramework": "The 4+1 story types (book):\n1. Actual story — a real event from your life, business, or about someone else that illustrates a lesson.\n2. Case study — a customer's result story: 'I was here, this was my problem, this is what I did, here are my results.' Beginning → middle → end. Three-act hero's journey.\n3. Example — show HOW something works, HOW it was applied, WHAT results followed.\n4. Three M's (see steps 2-4 below) — myth / misconception / mistake angle.\n5. (Bonus) Future Pacing — describe what life looks like WHEN they implement; paint the picture of their future self."
+    },
+    {
+      "step": 2,
+      "beat": "MYTH — Bust a false belief they hold",
+      "purpose": "Destroy a false belief that is keeping the reader stuck. 'People believe many myths. You can create massive amounts of content, such as blog posts, articles, videos, and entire webinars around myths.'",
+      "subjectAngle": "Subject angle: 'The myth about [X] that's costing you [Y]' / 'Everyone says X — here's why that's wrong' / 'The biggest lie about [topic]'.",
+      "bodyFramework": "Name the myth readers believe → show why it is false (with a story, data point, or example) → plant a new belief that only your product/approach satisfies → CTA to the offer. Do NOT give the full solution — give the insight that makes them want the solution."
+    },
+    {
+      "step": 3,
+      "beat": "MISCONCEPTION — Correct an incorrect idea",
+      "purpose": "Book: 'Myths are basically untruths people believe, whereas misconceptions involve incorrect ideas about something. You can clear up misconceptions — including false beliefs — and replace them with correct views and clear understanding.'",
+      "subjectAngle": "Subject angle: 'Why most people get [X] wrong' / 'The mistake everyone makes about [Y]' / 'What [X] actually means (and what everyone thinks it means)'.",
+      "bodyFramework": "Identify the widespread misconception → explain what is actually true → show the consequence of continuing to misunderstand → connect the correct understanding to your offer/framework → single CTA."
+    },
+    {
+      "step": 4,
+      "beat": "MISTAKE — Point out what people are doing wrong",
+      "purpose": "Book: 'Mistakes are where you point out where other people are going wrong. Mistakes are the most powerful of the three because nobody wants to make a mistake. No adult wants to look stupid, so they will do anything to avoid mistakes.'",
+      "subjectAngle": "Subject angle: 'The #1 mistake [audience] makes with [topic]' / 'Warning: Are you doing this wrong?' / 'Stop doing this if you want [desired result]'.",
+      "bodyFramework": "Name the specific mistake → show the pain/consequence of making it (agitate) → hint at the correct approach (just enough to create desire) → CTA to where they can get the full solution. Use 'Warning:' or 'Mistakes' in subject lines — book: 'Warning' and 'Mistakes' are proven headline families."
+    },
+    {
+      "step": 5,
+      "beat": "(BONUS) FUTURE PACING — Paint their future self",
+      "purpose": "Book: 'These types of stories explain what life will be like when they take specific actions. You explain how your product, service, software—whatever—will help them achieve those results. You paint the picture by telling the story of their life when they do this.'",
+      "subjectAngle": "Subject angle: 'Imagine if...' / 'What your life looks like 90 days from now' / 'Picture this...'",
+      "bodyFramework": "Open with 'I want you to imagine...' — describe in vivid, sensory detail what the reader's life looks like AFTER implementing. Include specific wins, emotions, and status indicators. Then anchor: 'The only difference between that future and your right now is [X]' → CTA to the offer."
+    },
+    {
+      "step": 6,
+      "beat": "TIE TO OFFER (non-negotiable CTA)",
+      "purpose": "Every value email must tie back to something that can be purchased — without exception. Book principle cross-reference: DCS Secret #8 ('EVERY EMAIL and each story must be tied back into some type of offer').",
+      "subjectAngle": "n/a",
+      "bodyFramework": "After the Three M's content lands, pivot with the Stealth/Columbo bridge ('So, why do I tell you this?...') from the Seinfeld email template, then a single CTA. The CTA can be soft (content link to learn more) or direct (buy/register/apply). Match intensity to audience temperature."
+    }
+  ],
+  "subjectLineFamilies": {
+    "source": "Copywriting Secrets — proven headline families applied to email subjects",
+    "myths": ["The myth about ___", "Why everyone is wrong about ___", "The biggest lie in ___"],
+    "misconceptions": ["What ___ actually means", "Why most people get ___ wrong", "The truth about ___"],
+    "mistakes": ["The #1 mistake ___ makes with ___", "Warning: are you doing this?", "Stop doing ___ if you want ___"],
+    "future_pacing": ["Imagine if ___", "What your life looks like when ___", "Picture having ___ in 90 days"]
+  },
+  "rotationStrategy": {
+    "pairing": "This framework pairs with the 'attractive-character-story-rotation' (6 storylines) as a complementary brainstorming layer. On days when no strong personal story is available, the Three M's provide ready-made angles. Rotate: Storyline → Three M's → Storyline → Three M's or any mix.",
+    "topicMining": "Where to find Myths/Misconceptions/Mistakes in your market: customer support emails and tickets (Edwards: 'those are a goldmine') · frequently asked questions · Amazon reviews of competitor products · social media complaints · your own past customer objections.",
+    "volume": "One M per email. Do not combine all three in one broadcast. Each M is a standalone email with its own story and CTA."
+  },
+  "copyPersona": {
+    "primary": "Jim Edwards (Copywriting Secrets) — Secret #20, the 'make them thirsty' framework. Content that creates desire without giving away the solution.",
+    "secondary": "Brunson Seinfeld voice (DCS Secret #8) — for the wrapping: Hook-Story-Offer shell around any of the Three M's or Future Pacing angles. And the Stealth/Columbo pivot from 'seinfeld-broadcast-email' for the tie-to-offer step.",
+    "scripts": ["Myth bust", "Misconception correction", "Mistake warning", "Future pacing story", "Stealth/Columbo tie-to-offer pivot"]
+  },
+  "ghlBuild": {
+    "buildType": "Planning/brainstorming layer — no new GHL workflow. Applied when composing any daily broadcast email in Marketing > Emails > Email Campaign. Can be built as a 'draft template set' — 3 fill-in-the-blank drafts in GHL, one per M type.",
+    "templates": [
+      "GHL Email Template: 'Myth-Bust Broadcast' — fill in [myth] / [why wrong] / [new belief] / [CTA]",
+      "GHL Email Template: 'Misconception-Fix Broadcast' — fill in [misconception] / [true view] / [consequence] / [CTA]",
+      "GHL Email Template: 'Mistake-Warning Broadcast' — fill in [mistake] / [consequence] / [hint at correct] / [CTA]",
+      "GHL Email Template: 'Future-Pace Broadcast' — fill in [vivid future] / [what makes the difference] / [CTA]"
+    ],
+    "integration": "These drafts consume the 'seinfeld-broadcast-email' shell (Hook-Story-Offer) — use the broadcast shell as the outer wrapper and the Three M's angle as the inner content.",
+    "notes": "Topic mining from GHL inbox (customer support tickets / form responses) is a recommended pre-write step. Set action order + parentKey before first save if adding to any workflow (Skill 44)."
+  },
+  "flexibility": {
+    "mode1_explicit_desire": "User has a specific angle, topic, or story already — this framework is reference only. Never impose the Three M's structure on copy the user has already chosen.",
+    "mode2_unsure": "Suggest the Three M's when the user asks 'what should I write today?' or 'I'm running out of ideas.' Present the Mistake angle as the most powerful starting point (book: 'most powerful of the three').",
+    "mode3_just_do_it": "Pick the angle (Myth/Misconception/Mistake/Future Pace), mine a topic from customer questions or complaints, write the broadcast using the template with the Stealth/Columbo tie-to-offer, send to seinfeld-broadcast Smart List.",
+    "always_overridable": "Topic, angle, story details, CTA destination — all user-controlled. Framework is the guide, never the rule."
+  },
+  "kpis": ["reply rate (readers responding to value content signal bond)", "click-through rate to CTA", "revenue per send for Three M's emails vs. pure story emails (find what your list responds to)", "blog/social repurpose traffic from the same content"],
+  "faithfulness": "The book quote ('stories make people thirsty; sales copy tells them where to buy a drink'), the 4 story types, the Three M's (Myths, Misconceptions, Mistakes) and their individual descriptions, the 'most powerful of the three' designation for Mistakes, and Future Pacing as the 5th story type are all taken directly from Copywriting Secrets Secret #20. The pairing with the DCS Seinfeld shell and the Stealth/Columbo pivot is the Skill-44 cross-book operationalization, flagged as derived."
+}

@@ -1,0 +1,248 @@
+{
+  "id": "post-optin-multichannel-stack",
+  "name": "Post-Opt-In Multichannel Stack (Email + Messenger + Desktop Push + SMS + Retargeting + Direct Mail)",
+  "aliases": [
+    "Follow-Up Funnel",
+    "Multichannel Follow-Up",
+    "Actionetics Follow-Up Funnel",
+    "Automation and Follow-Up Funnel",
+    "Email + SMS + Messenger Sequence",
+    "Communication Funnel",
+    "Post-Optin Orchestration",
+    "Lead Layering Sequence"
+  ],
+  "category": "multichannel-automation",
+  "source": {
+    "primary": "Lead Funnels Swipe File — Chapter 3, Step #5: Create a Follow-Up Funnel to Build Relationship (Russell Brunson)",
+    "supporting": [
+      "The Funnel Hacker's Cookbook — Automation & Follow Up Funnels (Actionetics section)",
+      "Marketing Secrets Blackbook — Secret #42: The Problem With Improvement Offers (Actionetics follow-up funnel description)",
+      "Marketing Secrets Blackbook — Secret #49: What More Can We Do? (multi-channel touchpoint expansion)",
+      "DotCom Secrets — Secret #7: The Soap Opera Sequence / Secret #8: Daily Seinfeld Sequence",
+      "BRUNSON-FUNNEL-LIBRARY.md — Entry #24: Follow-Up Funnel"
+    ]
+  },
+  "purpose": "The moment someone opts in for a lead magnet, the full multichannel stack is activated. The goal is to reach the prospect on every platform they already use — email, Facebook Messenger, desktop browser push, SMS/text, retargeting ads, and (for high-value leads) direct mail. Each channel stacks on top of the others; each additional channel makes every lead worth more. Brunson's stated metric: Messenger has 3–5x higher open rates than email; 34% of email opt-ins also subscribe to Messenger; 20% of thank-you page visitors allow desktop push. More channels = higher relationship value = more ascension up the value ladder.",
+  "trigger": {
+    "what_starts_it": "Opt-in form submit / lead magnet claim on squeeze page, lead magnet page, or any landing page. The contact gives their email address. All channel layers are initiated from this single event.",
+    "ghl_trigger_type": "Form Submitted (opt-in form) OR Funnel Step Submitted on opt-in page OR Contact Created from opt-in source",
+    "fires": "Once per contact per opt-in campaign (re-entry guard by tag)",
+    "reentry_guard": "Only enter if tag 'mc-stack-started' does NOT already exist"
+  },
+  "channels": [
+    "Email (core — auto-responder sequence)",
+    "Facebook Messenger (opt-in checkbox on landing page — 34% adoption rate per Brunson)",
+    "Desktop Browser Push Notification (permission request on thank-you page — 20% allow rate per Brunson)",
+    "SMS / Text Message (collected at opt-in or via thank-you page micro-form)",
+    "Retargeting Ads (Facebook/Instagram pixel fires on every funnel page; list membership updated by step reached)",
+    "Direct Mail (postcards, gifts — for high-value / high-ticket follow-up)"
+  ],
+  "channel_layering_principle": "Every channel added multiplies the relationship value. Email is the core. Messenger is the booster (3–5x open rate; highest immediacy). Desktop push reaches them on their computer. SMS reaches them on their phone. Retargeting ads chase them across the web when they leave the funnel. Direct mail is the highest-attention, lowest-volume channel for premium offers. The prospect never needs to be on all channels — but every additional channel that fires increases the probability they see the message.",
+  "sequence": [
+    {
+      "step": 1,
+      "beat": "Immediate — Deliver the Lead Magnet + Layer Channel 1 (Email)",
+      "delay": "0 min (immediate on opt-in)",
+      "channels_active": ["Email"],
+      "purpose": "Deliver what was promised instantly. The first email is the trust deposit. Include the download link. Set expectations for what comes next. This also initiates the Soap Opera Sequence (if deployed — see soap-opera-sequence template).",
+      "subject_angle": "Here's your [lead magnet name] — plus what's coming next",
+      "body_framework": [
+        "Delivery: 'Here's your [lead magnet] — click here to access it now: [link]'",
+        "Bridge to next step: one sentence on what this leads to",
+        "Soft invite to a next step (webinar registration, product page, etc.)",
+        "Relationship seed: 'I'll be in touch over the next few days with [relevant content]'",
+        "P.S.: If Messenger or SMS channels are active, note: 'I'll also send a quick text/message so you have this on every device'"
+      ]
+    },
+    {
+      "step": 2,
+      "beat": "Thank-You Page — Layer Channel 2 (Messenger) + Channel 3 (Desktop Push)",
+      "delay": "Simultaneous with Step 1 — fires on the thank-you page itself, not after a wait",
+      "channels_active": ["Facebook Messenger opt-in checkbox", "Desktop Push permission request"],
+      "purpose": "Stack two more channels the moment the opt-in confirmation page loads. The Messenger checkbox (shown below the email field or on the thank-you page) gets clicked by ~34% of opt-ins per Brunson. The browser push notification permission dialog gets allowed by ~20% of thank-you page visitors per Brunson.",
+      "implementation_notes": [
+        "Messenger checkbox: add the 'Send to Messenger' widget below the email opt-in form or on the thank-you page CTA. When clicked, contact subscribes to both email and Messenger simultaneously.",
+        "Desktop push: trigger the browser permission dialog on page load of the thank-you page. If allowed, add contact to push-notification list.",
+        "Neither channel requires additional data entry from the prospect. Both are passive layers added with one click or one browser confirmation."
+      ]
+    },
+    {
+      "step": 3,
+      "beat": "+5 min — Messenger Delivery (if subscribed)",
+      "delay": "+5 min after opt-in",
+      "channels_active": ["Facebook Messenger"],
+      "purpose": "Deliver the lead magnet link via Messenger as a direct message. Even if the email goes to spam, this buzzes on their phone. Messenger open rates are 3–5x email. This is the first message in the Messenger channel — it must deliver real value instantly or the subscriber will block.",
+      "body_framework": [
+        "Short personal tone: 'Hey [first name] — [AC name] here. Here's the [lead magnet] you just grabbed:'",
+        "[Direct link to lead magnet]",
+        "'I'll drop you a quick message here whenever I've got something worth sharing. Talk soon.'"
+      ],
+      "note": "Only fires if contact has the 'messenger-subscribed' tag (added when they click the Messenger checkbox on the opt-in/thank-you page)."
+    },
+    {
+      "step": 4,
+      "beat": "+2 days — Behavioral Branch: Email Open/Click",
+      "delay": "+2 days",
+      "channels_active": ["Email (primary)", "SMS (if email not opened)", "Messenger (if email not opened and Messenger subscribed)"],
+      "purpose": "Follow-up content email / soft offer. Apply the first behavioral branch: IF email was opened and clicked → continue email sequence normally. IF email was NOT opened within 48h → switch channel to SMS or Messenger nudge. This is the 'If they give you their email address but don't buy, contact them with an email or text or messenger sequence' principle from Marketing Secrets Blackbook Secret #49.",
+      "subject_angle": "[Content topic] — what most people miss about [lead magnet topic]",
+      "body_framework": [
+        "Teaching point or Seinfeld-style story that ties back to the lead magnet topic",
+        "Bridge to the next offer on the value ladder",
+        "CTA to the next step (offer page, webinar, blog post)"
+      ],
+      "behavioral_branches": {
+        "email_opened_and_clicked": "Continue email sequence on schedule; no SMS/Messenger ping needed",
+        "email_opened_not_clicked": "Schedule a Messenger or SMS nudge the following day: 'Did you get a chance to check this out?' + direct link",
+        "email_not_opened_48h": "Trigger SMS and/or Messenger: 'Hey [name] — sent you something about [topic] via email but wanted to make sure you saw it. Quick [read/watch]: [link]'"
+      }
+    },
+    {
+      "step": 5,
+      "beat": "+4 days — Desktop Push (if allowed) + Email",
+      "delay": "+4 days",
+      "channels_active": ["Desktop Push Notification (if subscribed)", "Email"],
+      "purpose": "Push a notification to their desktop browser AND send an email. Desktop push appears even when their browser is closed (on most systems), creating an interrupt when they open their browser. Brunson's use case: push fires on the thank-you page follow-up sequence to re-engage contacts who haven't clicked.",
+      "push_notification_framework": [
+        "Title: '[AC name]:' — establishes identity",
+        "Message: short hook — '[Content teaser]' or 'New [training/post/deal] for you'",
+        "URL: destination page (offer, blog, webinar)"
+      ],
+      "behavioral_branches": {
+        "push_clicked": "Tag 'push-engaged'; continue sequence",
+        "push_not_clicked_48h": "No additional push — switch to next email in sequence; don't spam push channel"
+      }
+    },
+    {
+      "step": 6,
+      "beat": "+7 days — Retargeting Ad Fire + Email Offer",
+      "delay": "+7 days (or on specific page-visit trigger)",
+      "channels_active": ["Email (offer)", "Retargeting Ads (Facebook/Instagram — running in background)"],
+      "purpose": "By Day 7, email has done several touches. Now layer in retargeting ads to chase the prospect across the web. The retargeting pixel was fired when they visited the funnel page at opt-in. If they have not yet purchased, they remain in the retargeting audience and see ads. The email is a direct offer. The ads reinforce the same message in social feeds.",
+      "retargeting_logic": [
+        "Pixel fires on: landing page visit (add to retargeting audience A), thank-you page visit (move to audience B), offer/sales page visit (move to audience C), checkout step (move to audience D), purchase confirmation page (REMOVE from all retargeting audiences and stop ads — never retarget a buyer with the same product)",
+        "Audience A (saw landing page, did not opt in): show lead magnet ad with social proof",
+        "Audience B (opted in, has not visited the offer page): show content/bridge ad leading to offer",
+        "Audience C (visited offer page, did not purchase): show testimonial / social proof / urgency ad directly for the offer",
+        "Audience D (reached checkout, did not complete): show 'you left something behind' or 'your order is waiting' ad"
+      ],
+      "email_body_framework": [
+        "Story or testimonial that speaks to the prospect's pain point",
+        "Clear offer with the value proposition stated plainly",
+        "CTA to the offer / sales page"
+      ]
+    },
+    {
+      "step": 7,
+      "beat": "+14–30 days — Purchase Behavioral Fork",
+      "delay": "+14–30 days (varies by funnel)",
+      "channels_active": ["Email", "SMS (for high-value prospects)", "Direct Mail (optional for premium leads)"],
+      "purpose": "By Day 14–30, apply the main purchase behavioral fork: IF purchased → route to buyer onboarding; IF not purchased → continue value-ladder ascension sequence with the 30–60 day follow-up pattern Brunson describes in the BRUNSON-FUNNEL-LIBRARY Follow-Up Funnel entry.",
+      "the_3_closes_framework": {
+        "description": "Over the 30–60 day follow-up window, the email sequence moves through three closing 'temperatures' derived from Brunson's copy principles (people buy with emotion, justify with logic, and need urgency/fear to act now):",
+        "close_1_emotion": "Days 1–14: Emotional connection closes. Stories, parables, bonding emails (Soap Opera → Seinfeld). The AC shares experiences that create identification. The prospect feels 'this person understands me; this is right for me.'",
+        "close_2_logic": "Days 15–30: Logic justification closes. Case studies, ROI breakdowns, testimonials with specific numbers, FAQs, proof. The prospect has the emotional desire; now give them the facts to justify the decision to a spouse, a skeptic, or themselves.",
+        "close_3_fear": "Days 30–60: Urgency and loss closes. Real scarcity (cart closing, cohort starting, price going up), FOMO, 'what you'll miss if you don't act.' Brunson rule: urgency must be REAL — fake deadlines destroy credibility."
+      },
+      "direct_mail_trigger": "For high-ticket funnels or when email/SMS/Messenger engagement is low, trigger a physical postcard or package to high-value contacts (those with RFMS scores above threshold, or contacts who visited the sales page 3+ times without purchasing). Marketing Secrets Blackbook explicitly lists 'direct-mail gifts and postcards' as part of the Actionetics follow-up arsenal."
+    },
+    {
+      "step": 8,
+      "beat": "Purchase Event — Channel Cleanup + Buyer Onboarding",
+      "delay": "Fires immediately on purchase event",
+      "channels_active": ["Email (buyer onboarding)", "SMS (purchase confirmation)", "Retargeting (remove from all non-buyer audiences)"],
+      "purpose": "The moment a purchase fires, the automation must stop all non-buyer follow-up across every active channel. Remove from retargeting audiences. Stop SMS and Messenger sales sequences. Switch to buyer onboarding. This protects the buyer relationship and avoids the embarrassing experience of being sold something you just bought.",
+      "actions": [
+        "Add tag 'purchased-[offer-id]'",
+        "Remove from retargeting audiences A, B, C, D",
+        "Stop all active email sequences for this offer",
+        "Stop SMS and Messenger sequences for this offer",
+        "Start buyer onboarding workflow",
+        "Send purchase confirmation + delivery email immediately",
+        "Optional: Send SMS purchase confirmation ('You're in! Check your email for access details')"
+      ]
+    }
+  ],
+  "rfms_scoring": {
+    "description": "Brunson's Actionetics assigns each contact an RFMS Score (Recency + Frequency + Monetary Value + Social). Higher RFMS = higher priority for multichannel attention. In GHL, approximate RFMS with contact scoring.",
+    "recency": "How recently they interacted (opened email, clicked, visited page, bought)",
+    "frequency": "How often they buy or engage",
+    "monetary_value": "Total spend",
+    "social": "Whether their email matches a social-media login (social email = 80x more valuable per Brunson); social follower count"
+  },
+  "copy_persona": {
+    "architecture": "Daily Seinfeld Sequence pattern (DotCom Secrets Secret #8) for ongoing emails after the Soap Opera Sequence ends: 90% entertainment / 10% content; every story ties back to an offer. Email is not the destination — email's only job is the click; the page/VSL does the selling.",
+    "tone_for_sms": "Ultra-short, casual, first-person. 1–2 sentences max. Never formal. 'Hey [name] — did you get a chance to check this out? [short link]'",
+    "tone_for_messenger": "Conversational, like a DM from a friend. 2–3 sentences. Include the link directly in the message body.",
+    "tone_for_push": "Headline-style, ultra-brief. Title = brand/AC name. Message = 1 sentence hook. Must be worth the interrupt."
+  },
+  "flexibility": {
+    "core_principle": "This template is a GUIDE and a RESOURCE, never a rule or requirement. It must not dominate the user's desire.",
+    "usage_modes": {
+      "mode_1_explicit_desire": "User has a specific channel combination or sequence in mind: do exactly that. This template is an optional reference only — never impose it or override the user's choice.",
+      "mode_2_unsure": "User isn't sure which channels to activate: suggest starting with email (always) + Messenger checkbox (low friction, 34% adoption) + desktop push on thank-you page (20% adoption), then add SMS if they have phone number capture. Explain the layering logic and let the user decide.",
+      "mode_3_just_do_it": "User says 'build the multichannel stack': build the full orchestration from this template — email auto-responder, Messenger checkbox activation, desktop push on thank-you page, retargeting pixel logic, behavioral branching at Days 2 and 7, purchase cleanup at the end."
+    },
+    "always": "Overridable, mixable, customizable, ignorable at every level. Not every contact will be on every channel — the system must gracefully skip channels the contact has not subscribed to. The template assists; it never dominates."
+  },
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator (caf)",
+    "dependencies_first": {
+      "note": "caf refuses to build if these don't exist. Create BEFORE the workflow.",
+      "tags": [
+        "mc-stack-started",
+        "messenger-subscribed",
+        "push-subscribed",
+        "sms-subscribed",
+        "push-engaged",
+        "retarget-audience-a",
+        "retarget-audience-b",
+        "retarget-audience-c",
+        "retarget-audience-d",
+        "purchased-[offer-id]"
+      ],
+      "custom_fields": [
+        "mc_optin_date (date)",
+        "rfms_score (number)",
+        "last_email_open (date)",
+        "last_click_date (date)"
+      ],
+      "custom_values": [
+        "{{lead_magnet_url}}",
+        "{{offer_page_url}}",
+        "{{core_offer_price}}",
+        "{{ac_name}}",
+        "{{brand_name}}"
+      ]
+    },
+    "workflow": {
+      "trigger": "Form Submitted on opt-in form OR Funnel Step Submitted (opt-in page). Filter: tag 'mc-stack-started' NOT present.",
+      "nodes": [
+        "Action: Add Tag 'mc-stack-started'; Set mc_optin_date = {{now}}; Add to retargeting audience B (has email, hasn't seen offer yet)",
+        "Email: 'MC-01 Lead Magnet Delivery' (immediate)",
+        "If/Else: tag 'messenger-subscribed' is present → Send Messenger 'MC-M01 Delivery' (5 min delay); Else continue",
+        "Wait: 2 days",
+        "If/Else: Email opened in last 48h? Yes → Email 'MC-02 Content/Story'; No → SMS 'MC-S01 Nudge' AND/OR Messenger 'MC-M02 Nudge' (if subscribed)",
+        "Wait: 2 days",
+        "If/Else: tag 'push-subscribed' present → Send Push Notification 'MC-P01'; Else skip",
+        "Email: 'MC-03 Push + Story'",
+        "Wait: 3 days (now Day 7)",
+        "If/Else: tag 'purchased-[offer-id]' present? Yes → Exit to buyer onboarding; No → Email 'MC-04 Offer Direct' + confirm retargeting audience C active",
+        "Wait: 7 days (now Day 14)",
+        "If/Else: purchased? Yes → Exit; No → Start Logic-Close email sub-sequence (MC-05 through MC-08: case studies, testimonials, FAQ)",
+        "Wait: 14 days (now Day 28)",
+        "If/Else: purchased? Yes → Exit; No → Start Fear-Close sub-sequence (MC-09 through MC-11: urgency, scarcity, final call) + optional Direct Mail trigger for high-value contacts",
+        "Action (on purchase at any point): Add Tag 'purchased-[offer-id]'; Remove from all retargeting audiences; Stop all active sequences; Start buyer onboarding"
+      ],
+      "if_else_branches": [
+        "Email open check at every major email step: not opened 48h → SMS nudge + Messenger nudge (if subscribed)",
+        "Purchase check before every new email: IF purchased → exit and route to buyer onboarding",
+        "Channel guard before every Messenger step: IF tag 'messenger-subscribed' present → send; ELSE skip",
+        "Channel guard before every Push step: IF tag 'push-subscribed' present → send; ELSE skip",
+        "Channel guard before every SMS step: IF phone number present AND tag 'sms-subscribed' present → send; ELSE skip"
+      ],
+      "skill44_notes": "Set each node's 'order' and 'parentKey' BEFORE first save (caf reliability rule per Skill 44 caf workflow-build reliability memory). Email nodes reference GHL Email Builder templates MC-01 through MC-11. SMS nodes reference GHL SMS templates MC-S01, MC-S02. Messenger nodes reference MC-M01, MC-M02. Push nodes reference MC-P01."
+    },
+    "graduation": "On 'purchased-[offer-id]', contact exits this workflow and enters the buyer post-purchase onboarding workflow for the next rung of the value ladder."
+  }
+}

@@ -1,0 +1,274 @@
+{
+  "id": "autowebinar-behavioral-branching",
+  "name": "AutoWebinar Behavioral Branching Sequence (4-Path Watch-Duration Segmentation)",
+  "aliases": [
+    "AutoWebinar Follow-Up",
+    "Evergreen Webinar Follow-Up",
+    "Watch-Duration Segmented Sequence",
+    "Webinar No-Show Sequence",
+    "Webinar Replay Follow-Up",
+    "Registered Did Not Attend Sequence",
+    "Watched Did Not Buy Sequence",
+    "Autowebinar 4-Path Branching"
+  ],
+  "category": "multichannel-automation",
+  "source": {
+    "primary": "The Funnel Hacker's Cookbook — AutoWebinar Funnel (Event Funnel Recipe #3): 'They are then emailed links to indoctrination pages where you can get them excited about the training they either are about to get on, or just completed. After their presentation time has passed, they are then emailed links to a replay room where they have one last chance to watch the webinar.'",
+    "supporting": [
+      "BRUNSON-FUNNEL-LIBRARY.md — Entry #16: AutoWebinar Funnel (Evergreen Webinar): 'Watch-time tracking triggers segmented follow-up sequences (registered, watched to end, left early, no-show). Brunson notes two of his automated webinars each produced over $1 million.'",
+      "Marketing Secrets Blackbook — Secret #65: The Sequence Is What Sells: 'You can make these videos and send them out in emails, messenger bots, texts, ads...it really doesn't matter what medium you use.'",
+      "Marketing Secrets Blackbook — Secret #66: Switching Sales Modalities (multichannel delivery to reach different audience segments)",
+      "Lead Funnels Swipe File — Follow-Up Funnel: email + Messenger + SMS channels for follow-up"
+    ]
+  },
+  "purpose": "The AutoWebinar Funnel runs the proven live webinar recording 24/7. Registrants choose a broadcast time. Four distinct behavioral segments emerge from watch behavior: (1) Registered / No-Show (never attended), (2) Left Early (attended but dropped off before the offer), (3) Watched to End / Did Not Buy, (4) Purchased. Each segment gets a different follow-up path across email + SMS + Messenger. The goal is to capture revenue from the 60–90% of registrants who typically do not buy live — the replay room and the follow-up sequences are where the majority of autowebinar revenue is made.",
+  "trigger": {
+    "what_starts_it": "Webinar registration submit. All four paths are determined by watch-time data collected during the broadcast window.",
+    "ghl_trigger_type": "Form Submitted on webinar registration page. Separate triggers fire for each behavioral event: broadcast room visit, replay room visit, purchase confirmation.",
+    "fires": "Once per contact per webinar run (re-entry guard by tag)",
+    "reentry_guard": "Only enter registration path if tag 'webinar-registered' NOT present for this webinar"
+  },
+  "channels": [
+    "Email (primary across all 4 paths)",
+    "SMS (no-show nudge, replay urgency)",
+    "Facebook Messenger (if subscribed — replay link, offer nudge)",
+    "Retargeting Ads (passive — visitors to webinar pages added to retargeting audiences)"
+  ],
+  "the_4_paths": [
+    {
+      "path": "A",
+      "segment": "Registered / No-Show (registered but never entered the broadcast room)",
+      "detection": "Tag 'webinar-registered' present AND tag 'webinar-attended' NOT present after broadcast window passes",
+      "sequence": [
+        {
+          "step": "A1",
+          "beat": "Replay Invitation Email (sent when broadcast window passes)",
+          "delay": "Triggered when broadcast time passes + no-show confirmed",
+          "subject_angle": "You missed it — here's the replay",
+          "body_framework": [
+            "Acknowledge they missed it: 'Hey [name] — the [webinar name] just wrapped up and we missed you.'",
+            "Build curiosity about what was covered: tease the key insight or result shared in the webinar",
+            "CTA to replay room: '[Watch the replay here] — it's up for [X hours / through [date]]'",
+            "Messenger/SMS mirror: note they'll get a text/message too if subscribed"
+          ]
+        },
+        {
+          "step": "A2",
+          "beat": "SMS / Messenger Replay Nudge (+1h if replay not visited)",
+          "delay": "+1 hour after A1 email, if replay page not yet visited",
+          "channels_active": ["SMS", "Messenger (if subscribed)"],
+          "sms_body": "Hey [name] — [AC name] here. Missed seeing you on the webinar! I put the replay up here: [short link]. Only up for [X hours]."
+        },
+        {
+          "step": "A3",
+          "beat": "Replay Urgency Email (+24h)",
+          "delay": "+24 hours after A1",
+          "subject_angle": "Replay comes down [tomorrow / at midnight] — here's the link",
+          "body_framework": [
+            "Real scarcity: replay window is closing",
+            "Reveal the key result or insight from the webinar",
+            "Direct link to replay with deadline stated plainly",
+            "If purchased after watching replay: see Path D (buyer)"
+          ]
+        },
+        {
+          "step": "A4",
+          "beat": "Replay Down + Direct Offer Email (+48h)",
+          "delay": "+48 hours after A1 (after replay expires)",
+          "subject_angle": "Replay is down — but here's how to still get [result]",
+          "body_framework": [
+            "Replay is gone, but the offer is still available",
+            "Summary of what they missed (key points, results shared)",
+            "Direct offer CTA: 'Here's how to get access even without watching the replay: [offer page link]'"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "B",
+      "segment": "Left Early (entered broadcast room, left before the offer presentation)",
+      "detection": "Tag 'webinar-attended' present + watch duration below offer-reveal threshold (typically the offer is presented at 60–75% through the presentation)",
+      "sequence": [
+        {
+          "step": "B1",
+          "beat": "Personal Check-In Email (sent shortly after broadcast ends)",
+          "delay": "Within 30–60 min of broadcast end",
+          "subject_angle": "Everything okay? You disappeared before the good part",
+          "body_framework": [
+            "Warm, personal tone: 'Hey [name] — I noticed you jumped off before we got to the best part.'",
+            "Name what they missed: 'We were just getting to [key insight / the offer] when you left'",
+            "No guilt — genuine curiosity: 'Did something come up? No worries either way.'",
+            "Invite them to the replay to catch what they missed: '[Here's a link to jump back in from where you left off]'"
+          ]
+        },
+        {
+          "step": "B2",
+          "beat": "SMS / Messenger: 'You Left Before the Best Part'",
+          "delay": "+2 hours if B1 email not opened",
+          "channels_active": ["SMS", "Messenger (if subscribed)"],
+          "sms_body": "Hey [name] — you dropped off the webinar right before [key moment / offer reveal]. Quick replay link to catch what you missed: [link]"
+        },
+        {
+          "step": "B3",
+          "beat": "Benefit Revelation Email (+24h)",
+          "delay": "+24 hours",
+          "subject_angle": "Here's what happened after you left [webinar name]",
+          "body_framework": [
+            "Reveal what was covered after they left: specific result, case study, or insight that came AFTER their drop-off point",
+            "Make them feel the cost of having missed it (FOMO without guilt)",
+            "Direct invite to replay and direct offer CTA"
+          ]
+        },
+        {
+          "step": "B4",
+          "beat": "Direct Offer Email (+48h — if still no purchase)",
+          "delay": "+48 hours",
+          "subject_angle": "Skip the replay — here's [offer] directly",
+          "body_framework": [
+            "Acknowledge they may not have time for a full replay",
+            "Summarize what the offer does in 3 bullet points",
+            "Direct CTA to offer page"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "C",
+      "segment": "Watched to End / Did Not Buy (stayed through the offer, clicked off without purchasing)",
+      "detection": "Tag 'webinar-attended' present + high watch duration (above offer-reveal threshold) + tag 'purchased-[offer-id]' NOT present at end of broadcast window",
+      "sequence": [
+        {
+          "step": "C1",
+          "beat": "Same-Day Objection Email (sent within 1–2h of broadcast end)",
+          "delay": "Within 1–2 hours of broadcast end",
+          "subject_angle": "Still thinking about it? Here's what I should have mentioned",
+          "body_framework": [
+            "Acknowledge they stayed through the whole thing: 'Hey [name] — thank you for staying through all of [webinar name].'",
+            "Address the most common objection HEAD-ON: 'I've found that when someone watches the whole thing and doesn't grab [offer], it usually comes down to one of these...' [list 2–3 objections]",
+            "Handle each objection briefly with social proof, guarantee, or reframe",
+            "CTA with deadline to offer"
+          ]
+        },
+        {
+          "step": "C2",
+          "beat": "SMS / Messenger Objection Handle",
+          "delay": "+30–60 min after C1 if not clicked",
+          "channels_active": ["SMS", "Messenger"],
+          "sms_body": "Hey [name] — just sent you a quick note about [offer]. Did you have a question? Reply here and I'll answer directly. Or grab it here: [link]"
+        },
+        {
+          "step": "C3",
+          "beat": "Testimonial / Case Study Email (+24h)",
+          "delay": "+24 hours",
+          "subject_angle": "What [customer name] said after [achieving result]",
+          "body_framework": [
+            "Third-person testimonial from the Attractive Character's best case study",
+            "Specific before/after transformation with numbers",
+            "CTA to offer"
+          ]
+        },
+        {
+          "step": "C4",
+          "beat": "Urgency / Closing Email (+48h)",
+          "delay": "+48 hours",
+          "subject_angle": "The [offer name] offer closes [tonight/tomorrow] at [time]",
+          "body_framework": [
+            "State the REAL deadline plainly",
+            "Consequence of not acting (what they'll miss out on)",
+            "Final CTA with direct link",
+            "P.S.: 'If you have a question first, just reply to this email and I'll personally respond.'"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "D",
+      "segment": "Purchased (bought during the webinar or after in follow-up)",
+      "detection": "Tag 'purchased-[offer-id]' present",
+      "sequence": [
+        {
+          "step": "D1",
+          "beat": "Purchase Confirmation + Immediate Channel Cleanup",
+          "delay": "Fires immediately on purchase event",
+          "actions": [
+            "Add tag 'purchased-[offer-id]'",
+            "Remove from all retargeting audiences for this offer",
+            "Stop all active Path A / B / C email and SMS sequences",
+            "Send purchase confirmation email with access/delivery details",
+            "Optional: SMS confirmation 'You're in! Check your email for access details.'",
+            "Start buyer onboarding workflow"
+          ]
+        }
+      ]
+    }
+  ],
+  "indoctrination_sequence": {
+    "description": "Between registration and the broadcast time, send indoctrination emails to prime the registrant to show up and be in the right mindset. Per FHC: 'They are then emailed links to indoctrination pages where you can get them excited about the training they either are about to get on.' This is separate from the post-webinar follow-up paths above.",
+    "pre_webinar_emails": [
+      "Registration confirmation: access link, date/time reminder, what to expect",
+      "+1 day before: why this training matters — teaser of the key insight or result",
+      "+1 hour before: 'We're going live in 1 hour — here's your link: [broadcast_room_url]'",
+      "+5 min before: 'Starting in 5 min — click here to join: [broadcast_room_url]'"
+    ],
+    "channel": "Email primarily; SMS for the 1-hour and 5-min reminders if phone number available"
+  },
+  "copy_persona": {
+    "path_a_no_show": "Friendly, no guilt. 'You missed it — here's a chance to catch it.' Curiosity-driven teaser of what was inside.",
+    "path_b_left_early": "Warm personal check-in. 'You disappeared before the best part.' FOMO without blame.",
+    "path_c_watched_no_buy": "Objection-handling, then proof, then urgency. Logic close before fear close. Acknowledge their time investment — they watched the whole thing. Address the real hesitation.",
+    "path_d_buyer": "Celebration and delivery. Move fast. Confirm purchase, deliver access, onboard."
+  },
+  "flexibility": {
+    "core_principle": "This template is a GUIDE and a RESOURCE, never a rule or requirement. It must not dominate the user's desire.",
+    "usage_modes": {
+      "mode_1_explicit_desire": "User wants a custom webinar follow-up flow: do exactly that. This template is reference only — never impose or override.",
+      "mode_2_unsure": "User doesn't know how to follow up after an autowebinar: suggest the 4-path structure (no-show, left-early, watched-no-buy, bought) as the proven segmentation, explain why each segment needs different messaging, and let user decide.",
+      "mode_3_just_do_it": "User says 'build the autowebinar follow-up': build all 4 paths with detection logic and timing as described."
+    },
+    "always": "Overridable, customizable, ignorable. The watch-duration threshold for 'left early' vs. 'watched to end' can be adjusted per webinar. The replay window duration is configurable. The number of follow-up emails per path can be reduced. The template assists; it never dominates."
+  },
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator (caf)",
+    "dependencies_first": {
+      "tags": [
+        "webinar-registered",
+        "webinar-attended",
+        "webinar-left-early",
+        "webinar-watched-full",
+        "webinar-replay-visited",
+        "purchased-[offer-id]",
+        "messenger-subscribed",
+        "sms-subscribed"
+      ],
+      "custom_fields": [
+        "webinar_register_date (date)",
+        "webinar_watch_duration_pct (number)",
+        "webinar_broadcast_time (datetime)"
+      ],
+      "custom_values": [
+        "{{broadcast_room_url}}",
+        "{{replay_room_url}}",
+        "{{offer_page_url}}",
+        "{{replay_expiry_date}}",
+        "{{webinar_offer_name}}"
+      ]
+    },
+    "workflow_structure": {
+      "registration_flow": [
+        "Trigger: Form Submitted (registration page)",
+        "Add Tag 'webinar-registered'; Set webinar_register_date = {{now}}",
+        "Email: 'WB-01 Registration Confirmation'",
+        "Wait until: 24h before broadcast_time → Email 'WB-02 Tomorrow Reminder'",
+        "Wait until: 1h before broadcast_time → SMS 'WB-S01 Join in 1 Hour'",
+        "Wait until: broadcast_time → If/Else: tag 'webinar-attended' present? Yes → Path active tracking; No → after broadcast window, enter Path A"
+      ],
+      "path_detection": {
+        "no_show_A": "After broadcast window: tag 'webinar-attended' NOT present → start Path A workflow",
+        "left_early_B": "Tag 'webinar-left-early' present (set by watch-time integration/webhook) → start Path B workflow",
+        "watched_full_no_buy_C": "Tag 'webinar-watched-full' present AND tag 'purchased-[offer-id]' NOT present after 1h → start Path C workflow",
+        "buyer_D": "Tag 'purchased-[offer-id]' added at any point → stop all paths, start Path D (buyer onboarding)"
+      },
+      "skill44_notes": "Set 'order' and 'parentKey' before first save on every node. Watch-duration tags (webinar-attended, webinar-left-early, webinar-watched-full) should be set via GHL webhook from webinar platform (or manually via custom integration). Templates: WB-01..WB-12 per path in GHL Email Builder. SMS: WB-S01, WB-S02. Messenger: WB-M01, WB-M02."
+    }
+  }
+}

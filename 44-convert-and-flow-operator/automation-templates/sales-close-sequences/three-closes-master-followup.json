@@ -1,0 +1,62 @@
+{
+  "id": "three-closes-master-followup",
+  "name": "The 3 Closes Follow-Up Funnel (Emotion → Logic → Fear)",
+  "aliases": ["3 closes", "three closes framework", "emotion logic fear", "follow-up funnel", "communication funnel", "automation funnel", "30-day nurture-to-close", "value-ladder follow-up"],
+  "category": "sales-close-sequences",
+  "source_books": ["DotCom Secrets (Russell Brunson) — Follow-Up Funnels + 3 Closes", "Expert Secrets — Epiphany Bridge + Stack", "Marketing Secrets Blackbook — customized follow-up funnels, urgency/scarcity, Stack Don't Switch", "Lead Funnels Swipe File — Follow-Up Funnels (multi-channel)", "Copywriting Secrets (Edwards) — PAS, Before/After/Bridge, proof, CTA"],
+  "framework": "The master close architecture. Brunson: a single offer is sold THREE different ways in sequence because different buyers respond to different closes. Emotion converts the emotionally-driven now; Logic converts the analytical justifier; Fear/Urgency converts the procrastinator at the deadline.",
+  "trigger": {
+    "type": "opt-in OR purchase OR offer-interest",
+    "events": ["New lead opts in (front-end)", "Buyer of a front-end product (ascension)", "Tag 'interested-[offer]' from Seinfeld click", "Webinar attended / VSL watched"],
+    "entry_conditions": "Has email; has an active offer to close; not already a buyer of THIS offer.",
+    "exit_conditions": "Purchase of the offer → buyer onboarding + next rung of value ladder. End of Fear close with no buy → drop to long-term Seinfeld nurture."
+  },
+  "channels": ["Email (core)", "SMS (Logic recap + Fear deadline)", "Facebook Messenger (mirror key beats)", "Desktop push (DotCom/Lead Funnels)", "Retargeting ads (open-loop reinforcement)", "Direct mail (high-ticket only)"],
+  "cadence": "30–60 days across the value ladder. Phase 1 Emotion (days 0–5), Phase 2 Logic (days 6–12), Phase 3 Fear/Urgency (final 24–72h window).",
+  "copy_persona": {
+    "primary": "Russell Brunson — 3 Closes + Attractive Character + Stack",
+    "supporting": ["Jim Edwards — Problem/Agitate/Solve, Before/After/Bridge, the 13-part offer block, proof, single CTA"],
+    "close_modules": {
+      "emotion": "Story-driven. Run the 5-email Soap Opera Sequence (see soap-opera-sequence template) OR a single Epiphany Bridge story email. Goal: make them WANT it.",
+      "logic": "Justify the purchase rationally so the buyer (and their spouse/boss) can say yes: the math/ROI, the Stack of deliverables and their value ('dollars for dimes'), feature-benefit-meaning bullets, comparison vs. alternatives, the guarantee removing risk. Goal: make saying yes the SMART choice.",
+      "fear": "Urgency + scarcity. What they LOSE by not acting: cost of inaction, expiring bonus, closing cart, limited spots, price increase. Goal: make NOW the only logical time."
+    }
+  },
+  "sequence": [
+    {"step": 1, "phase": "EMOTION", "day": "0–4", "type": "email-series", "beat": "Run the Soap Opera Sequence (Set Stage → Drama/Wall → Epiphany → Hidden Benefits → Urgency/CTA).", "purpose": "Bond + create want.", "persona_formula": "Epiphany Bridge / Attractive Character", "cta": "Soft → first CTA on Day 4"},
+    {"step": 2, "phase": "EMOTION→LOGIC bridge", "day": 5, "type": "email", "beat": "Recap the transformation and pivot: 'Let me show you exactly what you get and why it pays for itself.'", "purpose": "Hand off from heart to head.", "subject_angle": "'Okay, let's talk specifics'", "persona_formula": "Edwards transition", "cta": "Link to sales page"},
+    {"step": 3, "phase": "LOGIC", "day": 6, "type": "email", "beat": "THE STACK as logic: list every deliverable with its standalone value, accumulate the total, then reveal the (much lower) price. 'Dollars for dimes.'", "purpose": "Anchor value far above price.", "subject_angle": "'Here's everything you get (real value: $X)'", "body_framework": "Stack each component + value → cumulative total → price reveal → 'which means…' meaning on each item", "persona_formula": "Brunson Stack + Edwards Ultimate Bullet Formula", "cta": "Buy now button"},
+    {"step": 4, "phase": "LOGIC", "day": 8, "type": "email", "beat": "ROI / cost-of-inaction math + comparison vs. the alternatives (DIY, do-nothing, competitor method — never named).", "purpose": "Make yes the rational choice; pre-empt 'too expensive'.", "subject_angle": "'The math nobody does (it's cheaper to buy than to wait)'", "persona_formula": "Edwards Problem/Agitate/Solve on cost-of-inaction; good-vs-bad negative", "cta": "Buy now"},
+    {"step": 5, "phase": "LOGIC", "day": 10, "type": "email", "beat": "Proof + guarantee: testimonials, case studies, data, and the risk-reversal guarantee. Address top 2–3 objections head-on (FAQ).", "purpose": "Remove risk + remaining doubt.", "subject_angle": "'Still on the fence? Read this (then decide)'", "persona_formula": "Edwards proof + guarantee block; Brunson objection/false-belief handling", "cta": "Buy now (risk-free)"},
+    {"step": 6, "phase": "LOGIC→FEAR bridge", "day": 12, "type": "email + SMS", "beat": "Announce the deadline/closing window. 'This is the part where it gets time-sensitive.'", "purpose": "Set the clock.", "subject_angle": "'Heads up: this closes [date]'", "persona_formula": "Brunson urgency intro", "cta": "Secure your spot before [deadline]"},
+    {"step": 7, "phase": "FEAR / URGENCY", "day": "13 (T-48h)", "type": "email + SMS", "beat": "48-hour warning. Restate the offer + the three scarcity levers (limited time / price / quantity).", "purpose": "First hard urgency push.", "subject_angle": "'48 hours left'", "persona_formula": "Blackbook Secret 51 urgency/scarcity", "cta": "Act now"},
+    {"step": 8, "phase": "FEAR / URGENCY", "day": "14 (T-24h)", "type": "email + SMS", "beat": "24-hour / fast-action bonus expiring. Cost-of-inaction reminder (what they lose).", "purpose": "Second push; engage the procrastinator.", "subject_angle": "'Tomorrow this is gone'", "persona_formula": "Edwards FOMO + future-pacing the regret", "cta": "Claim before bonus expires"},
+    {"step": 9, "phase": "FEAR / URGENCY", "day": "14 (T-3h & T-1h)", "type": "email + SMS", "beat": "Final hours: 'doors closing,' last-call. Two short emails (3h, 1h) + SMS at 1h.", "purpose": "Final conversion spike (largest single revenue beat in most campaigns).", "subject_angle": "'3 hours' / 'Final call — closing now'", "persona_formula": "Brunson takeaway/FOMO close (honored)", "cta": "Last chance: [link]"},
+    {"step": 10, "phase": "POST-CLOSE", "day": 15, "type": "branch", "beat": "Cart closed. Buyers → onboarding + ascend value ladder. Non-buyers → drop to Seinfeld nurture; optional one-time downsell.", "purpose": "Route everyone cleanly; honor the deadline (cart truly closes).", "persona_formula": "Stack Don't Switch ascension", "cta": "Buyers: onboarding; non-buyers: stay tuned"}
+  ],
+  "ghl_build": {
+    "workflow_name": "3 Closes Master — Emotion → Logic → Fear",
+    "trigger": "Workflow Trigger: 'Tag Added' = 'start-3closes-[offer]' (set by opt-in, webinar-attended, or Seinfeld interest click). Filter: not tagged 'buyer-[offer]'.",
+    "actions": [
+      "PHASE 1 EMOTION: call/embed the Soap Opera Sequence steps (Day 0–4).",
+      "Wait → PHASE 2 LOGIC: Stack email (Day 6), ROI/comparison email (Day 8), Proof+Guarantee email (Day 10), each with Buy CTA.",
+      "Wait → PHASE 3 FEAR: deadline announce (Day 12), T-48h, T-24h, T-3h, T-1h — emails + SMS, using a real countdown.",
+      "Multi-channel mirrors: GHL Facebook/IG message action on Stack + Final-Call beats; desktop push on Day 6 and T-24h; sync a retargeting audience for ad reinforcement."
+    ],
+    "wait_steps": ["Use 'Wait until' fixed campaign dates for the Fear phase so the deadline is REAL and shared across all channels (countdown timer on the sales page must match)."],
+    "if_else": [
+      "PURCHASE GOAL ('buyer-[offer]') at ANY step → exit, enroll buyer onboarding + next value-ladder offer (Stack Don't Switch), STOP all close emails.",
+      "Branch on Logic-phase engagement: IF opened Stack email but no click → resend with new subject + a single hero benefit. IF clicked sales page 2+ times no buy → tag 'hot-no-buy' and prioritize SMS in Fear phase.",
+      "Branch on Fear phase: IF clicked checkout but did not complete → fire 'abandoned-cart-recovery' workflow immediately (overrides scheduling).",
+      "Post-close branch: buyers vs non-buyers (tag-based). Non-buyers → optional 'downsell' workflow once, then 'Seinfeld Daily Sequence'."
+    ],
+    "tags_custom_fields": ["start-3closes-[offer]", "phase-emotion", "phase-logic", "phase-fear", "hot-no-buy", "buyer-[offer]", "cart-deadline-datetime"],
+    "notes": "GoHighLevel: build as ONE Workflow with three labeled sections (Emotion / Logic / Fear). Drive the Fear phase off a fixed campaign deadline custom field so the on-page countdown timer (sales/checkout page) and the emails/SMS all reference the SAME moment. The Purchase Goal must be wired to short-circuit from any step. Use the GHL multi-channel actions (Email, SMS, FB/IG DM, Web Push) to replicate Brunson's multi-channel follow-up funnel. HONOR the deadline — when the cart closes in GHL, the offer/price genuinely changes."
+  },
+  "integrity_guardrails": [
+    "Each close sells the SAME true offer three ways — never inflate claims to fit a close.",
+    "The Stack values must be defensible (real standalone value), not fabricated (Edwards proof rule + dollars-for-dimes done honestly).",
+    "The Fear-phase deadline MUST be honored — cart closes for real, bonus truly expires (Edwards Secret #18; Blackbook urgency must be real or it destroys trust)."
+  ],
+  "kpis": ["Conversion by phase (which close converts each buyer)", "Overall offer conversion rate", "Fear-phase revenue concentration (typically the largest beat)", "Cart-close spike", "Revenue per lead across 30–60 days", "Value-ladder ascension rate"]
+}

@@ -1,0 +1,88 @@
+{
+  "id": "seinfeld-broadcast-email",
+  "name": "Seinfeld Broadcast Email — Single Email-About-Nothing Copy Framework",
+  "aliases": [
+    "email about nothing",
+    "story-to-offer email",
+    "value broadcast email",
+    "Hook-Story-Offer email",
+    "daily entertainment email template",
+    "broadcast email shell"
+  ],
+  "category": "engagement-broadcast",
+  "source": {
+    "books": ["DotCom Secrets (Russell Brunson)", "Copywriting Secrets (Jim Edwards)"],
+    "sections": [
+      "DotCom Secrets Secret #8 — Daily Seinfeld Sequence (worked examples: '$20 million down the toilet', 'Jiu Jitsu')",
+      "Copywriting Secrets — 3 Sales Formulas (PAS / If-you-want-X / Before-After-Bridge), headline families, Ultimate Bullet Formula, Stealth/Columbo close, Ten Reasons People Buy"
+    ]
+  },
+  "trigger": {
+    "primary": "Authoring unit — invoked whenever any broadcast (the daily Seinfeld engine, the storyline rotation, a 3-closes campaign, or a win-back send) needs ONE email body.",
+    "trigger_type_ghl": "Compose Email Campaign for segment 'seinfeld-broadcast'  (or a Send-Email step inside a workflow)"
+  },
+  "channels": ["Email", "Blog (verbatim repurpose)"],
+  "sequence": [
+    {
+      "step": 1,
+      "beat": "SUBJECT / HOOK",
+      "purpose": "Get the open; carry curiosity and an open loop.",
+      "subjectAngle": "Headline families (Edwards): '[True Story]…', '[X] is like [unexpected Y]', Warning, How-To-with-a-twist, the 'even if' objection-killer. Keep it about THEM, not you.",
+      "bodyFramework": "n/a"
+    },
+    {
+      "step": 2,
+      "beat": "LEAD / PATTERN INTERRUPT",
+      "purpose": "Suck the reader into the story fast.",
+      "subjectAngle": "n/a",
+      "bodyFramework": "Open in the middle of an entertaining moment at the point of high drama or absurdity (book: 'always start any good story at the point of high drama')."
+    },
+    {
+      "step": 3,
+      "beat": "STORY (about nothing)",
+      "purpose": "90% entertainment; bond via flaws + polarity.",
+      "subjectAngle": "n/a",
+      "bodyFramework": "The episode itself — embarrassing / holiday / vacation / regret purchase / beloved purchase / rage->laughter / kid-dog antics / funny past lesson. One-two sentences per line, white space, personality, don't fear small grammar slips."
+    },
+    {
+      "step": 4,
+      "beat": "PIVOT (Stealth / Columbo close)",
+      "purpose": "Bridge entertainment to the sale without a hard sell.",
+      "subjectAngle": "n/a",
+      "bodyFramework": "'So, why do I tell you this?...' — connect the story's lesson to the offer using 'which means...' + at least one of the Ten Reasons People Buy."
+    },
+    {
+      "step": 5,
+      "beat": "OFFER + SINGLE CTA",
+      "purpose": "Drive the one action.",
+      "subjectAngle": "n/a",
+      "bodyFramework": "Tie to core offer / other product / affiliate; ONE link (UTM-tagged). Honest reason to act if any urgency is claimed."
+    },
+    {
+      "step": 6,
+      "beat": "P.S.",
+      "purpose": "Reinforce personality; second-chance read for skimmers.",
+      "subjectAngle": "n/a",
+      "bodyFramework": "Add a takeaway, a flaw, or an honest reason to act (book P.S. example: 'no emailing me telling me it's not healthy')."
+    }
+  ],
+  "bodyFrameworkVariants": {
+    "PAS": "Problem / Agitate / Solve — for problem-aware tie-ins (cold-ish).",
+    "IfYouWantX": "'If you want X, do this' — for warm tie-ins.",
+    "BeforeAfterBridge": "Before / After / Bridge with future pacing — for transformation tie-ins."
+  },
+  "copyPersona": {
+    "primary": "Brunson Seinfeld Attractive-Character voice (Hook-Story-Offer).",
+    "secondary": "Jim Edwards / Copywriting Secrets — subject-line families, Ultimate Bullet Formula ('it ___ so you can ___ which means ___'), Stealth/Columbo close, pronoun audit, every claim provable.",
+    "scripts": ["Hook -> Story -> Offer", "PAS", "If-you-want-X-do-this", "Before/After/Bridge"]
+  },
+  "ghlBuild": {
+    "buildType": "Reusable Email Template, not a workflow.",
+    "location": "Marketing > Emails > Templates — saved as 'Seinfeld Broadcast Shell'.",
+    "structure": "Merge field {{contact.first_name}}; plain-text-feel design (scannable, white space, no heavy template chrome); single CTA button -> offer URL with UTM; P.S. block.",
+    "consumedBy": ["daily-seinfeld-sequence (daily broadcast)", "attractive-character-story-rotation (slotted)", "value-broadcast-3-closes-campaign (workflow Send-Email steps)", "re-engagement-winback-broadcast (workflow Send-Email steps)"],
+    "notes": "Keep design minimal so it renders like a personal email (book aesthetic). One CTA only — never compete CTAs."
+  },
+  "kpis": ["open rate by subject family", "click-through on the single CTA", "reply rate (bonding signal)", "revenue per email"],
+  "faithfulness": "Hook-Story-Offer, high-drama open, 90/10 ratio, formatting rules, and the example subject lines/P.S. are from DotCom Secrets Secret #8. The 3 email formulas, headline families, Ultimate Bullet Formula, Stealth/Columbo close, and Ten Reasons People Buy are from Copywriting Secrets. GHL template mechanics are the Skill-44 mapping."
+}

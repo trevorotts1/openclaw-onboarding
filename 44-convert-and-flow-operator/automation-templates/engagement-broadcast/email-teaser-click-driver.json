@@ -1,0 +1,118 @@
+{
+  "id": "email-teaser-click-driver",
+  "name": "Email Teaser Click-Driver — Short Click-to-Page Broadcast Email",
+  "aliases": [
+    "email teaser",
+    "click-driver email",
+    "short broadcast email",
+    "affiliate email",
+    "JV email",
+    "send traffic email",
+    "curiosity click email",
+    "list-broadcast teaser"
+  ],
+  "category": "engagement-broadcast",
+  "source": {
+    "books": ["Copywriting Secrets (Jim Edwards)"],
+    "sections": [
+      "Copywriting Secrets Secret #18 — How To Write Killer Email Teasers—FAST",
+      "Copywriting Secrets Secret #6 — The #1 Single Most Important Piece of Sales Copy (subject line = headline)",
+      "Copywriting Secrets Secret #9 — The Ultimate Bullet Formula (arouse curiosity with bullets)",
+      "Copywriting Secrets Secret #13 — It's All About Them—Never About You (write to one person)"
+    ]
+  },
+  "trigger": {
+    "primary": "Any broadcast send to the engaged list where the goal is to drive a CLICK to a page — sales letter, video, blog post, review, webinar registration, or content — and let the PAGE sell, not the email.",
+    "secondary": "Affiliate or JV send — same template works when enticing a partner to email their list on your behalf.",
+    "trigger_type_ghl": "Email Campaign (Broadcast) to seinfeld-broadcast Smart List, OR a workflow Send-Email step pointing to an offer/content page.",
+    "important_distinction": "BOOK: 'Ninety-nine times out of a hundred, the sole purpose of that email teaser is to get the reader to click a link in the email itself and go to a web page.' This is NOT a story email; it is a SHORT CLICK-DRIVER. The page (sales letter, VSL, blog) does the selling — the email's only job is the click."
+  },
+  "channels": ["Email (primary)", "SMS teaser (same short formula applies)"],
+  "sequence": [
+    {
+      "step": 1,
+      "beat": "SUBJECT LINE",
+      "purpose": "Earn the open — same function as a headline; if it fails, nothing else matters.",
+      "subjectAngle": "Short, concise, often a question. Book examples: 'Worried about failing your next PT test?' / 'Failed your last PT test?' / 'PT test coming up?' / 'This blew me away' / 'Want to be a published author?' — subject lines about THEM, not you. Questions that prequalify the right opener and uninterest the wrong one.",
+      "bodyFramework": "n/a"
+    },
+    {
+      "step": 2,
+      "beat": "SALUTATION",
+      "purpose": "Personal acknowledgment; make them feel seen, not like list member #482,000.",
+      "subjectAngle": "n/a",
+      "bodyFramework": "Use first name merge if possible: 'Hey {{contact.first_name}},' — book: 'Make people feel like they're part of the group and being acknowledged.' If no merge tag: 'Hey everyone,' or 'Hi fellow [tribe identity]' (e.g., 'Hi Fellow Funnel Hacker,'). Never skip it."
+    },
+    {
+      "step": 3,
+      "beat": "SHOCKING STATEMENT / PATTERN INTERRUPT",
+      "purpose": "Pop the reader out of hypnosis; get them leaning in.",
+      "subjectAngle": "n/a",
+      "bodyFramework": "One punchy statement OR an open question. Book options: 'Got a great new video for you' / 'Got something that's going to blow your mind' / 'Did you know that 99 out of 100 people who try to write a book fail?' / 'This was totally unexpected.' Short. One sentence."
+    },
+    {
+      "step": 4,
+      "beat": "2-4 CURIOSITY BULLETS",
+      "purpose": "Build enough curiosity that clicking feels like the obvious next move.",
+      "subjectAngle": "n/a",
+      "bodyFramework": "Two, three, or four short bullets (NOT long benefit bullets). Each bullet arouses curiosity about what is on the other side of the link. Book: 'Once you have their attention, hit them with three or four bullets to arouse curiosity.' Ultimate Bullet Formula applied: 'It ___ so you can ___ which means ___.' BUT kept SHORT — this is a teaser, not a sales page. 'Pumping up the benefits of what they will see, not of what you're selling.'"
+    },
+    {
+      "step": 5,
+      "beat": "CALL TO ACTION + LINK",
+      "purpose": "Give a specific action to take right now.",
+      "subjectAngle": "n/a",
+      "bodyFramework": "One simple directional instruction + the link. Book: 'Specific call to action for what you want them to do.' Example: 'Click here right now to see it.' / 'Go check it out.' / 'You've got to check this out.' Do NOT pre-sell the offer. The LINK destination sells."
+    },
+    {
+      "step": 6,
+      "beat": "PERSONAL CLOSE",
+      "purpose": "Reinforce the friend-to-friend tone; keep it human.",
+      "subjectAngle": "n/a",
+      "bodyFramework": "Book: 'Close with a personal note like Hey, I'll see you over there. Thanks, Jim.' — 'I'll see you over there' signals they're going to a place they'd WANT to be. Keep it one line. Add your name — no formal email footer needed for warm lists."
+    }
+  ],
+  "formatRules": {
+    "length": "SHORT. Book: 'If you must err on the side of one or the other, go with a shorter email as opposed to a longer one.' 40-60% of readers see this on mobile — long text kills response.",
+    "tone": "Book: 'Email is a personal way to communicate because it arrives in their inbox. Therefore, they feel like they know you. So the more you talk to them in the quick, familiar language of a friend, the better your results.' + 'Remember: Friends don't send friends ten-page sales letters in email!'",
+    "purpose_boundary": "Book (non-negotiable): 'Most people make the mistake of selling the offer in the email teaser. Don't! Your sales letter or video sales letter will sell them.' The teaser prepares; the page converts.",
+    "oneVsMany": "Book: 'Though you may send that email to a million people, remember this: they will read it one person at a time.' Write to ONE person — your George (your ideal reader buddy)."
+  },
+  "workedExamples": {
+    "short_teaser": {
+      "subject": "This blew me away",
+      "body": "Hey [first name],\n\nThis was totally unexpected.\n\nSomebody just did a review and it's amazing!\n\nYou've got to check this out.\n\n[LINK]\n\nSee you over there,\n[Name]",
+      "source": "Direct from Copywriting Secrets Secret #18 — 'One of the most successful email teasers I ever sent to my own list of prospects was only a few lines.'"
+    },
+    "bullet_teaser": {
+      "subject": "Want to be a published author?",
+      "body": "Hey [first name],\n\nDid you know that 99 out of 100 people who try to write a book fail?\n\nYep. It sucks. The main reasons why they fail are:\n- They don't know how to create content that sells.\n- They don't know how to get it formatted.\n- They don't know how to publish it.\n\nThe cool news is I have a great new video that shows you exactly how to solve all those problems—fast and easy!\n\nClick here right now to see it.\n\n[LINK]\n\nI'll see you over there.\n\nThanks,\n[Name]",
+      "source": "Direct from Copywriting Secrets Secret #18 example."
+    }
+  },
+  "differentFromSeinfeldEmail": {
+    "seinfeld_email": "90% entertainment story → Stealth/Columbo pivot → tie to offer in the email. 200-500+ words. Sells the relationship daily.",
+    "email_teaser": "Short (40-100 words). No story arc. Sole job = get the CLICK to a page. The page sells. Used when you have a specific content piece, video, sales letter, review, or webinar to drive traffic to.",
+    "when_to_use_which": "Seinfeld email: daily engagement/bonding sends. Email teaser: promotion sends, content drives, affiliate JV sends, or any time you need pure click-through traffic to a specific page."
+  },
+  "copyPersona": {
+    "primary": "Jim Edwards (Copywriting Secrets) — short, punchy, friend-to-friend, curiosity-first, ONE click action. Secret #18 is the definitive source.",
+    "secondary": "Edwards secondary supports: subject line = headline (Secret #6), Ultimate Bullet Formula curiosity-first version (Secret #9), write to one person not a crowd (Secret #13).",
+    "scripts": ["Subject line question or teaser", "Pattern interrupt statement", "2-4 curiosity bullets", "Single CTA + link", "'I'll see you over there' close"]
+  },
+  "ghlBuild": {
+    "buildType": "Email Campaign (Broadcast) OR a Send-Email action step inside a workflow — NOT a standalone autoresponder.",
+    "template": "Create as 'Email Teaser Shell' in Marketing > Emails > Templates. Minimal design: plain text feel, first-name merge, no heavy image headers, one hyperlinked CTA text or button, no P.S. (length discipline).",
+    "audience": "Same seinfeld-broadcast Smart List (or any warm-list segment) as the daily broadcast; can also be sent as a standalone one-off Campaign.",
+    "affiliateSend": "When used for JV/affiliate purposes: provide the completed teaser copy as a ready-to-send .txt or HTML snippet so the partner can paste and deploy with zero editing. Keep it short enough that the partner actually sends it.",
+    "notes": "Do not confuse this with the Seinfeld Broadcast Shell — they are two different GHL email templates for two different jobs. Set action order + parentKey before first save in any workflow context (Skill 44 reliability). Track click-through rate as the primary metric (not open rate)."
+  },
+  "flexibility": {
+    "mode1_explicit_desire": "User has specific copy they want in the email — use this template only as optional reference for format/structure. Never override their words.",
+    "mode2_unsure": "Suggest the email teaser as the go-to for traffic-driving sends; explain the SHORT is the feature, not the bug. Let user decide.",
+    "mode3_just_do_it": "Build from the template: fill subject, salutation, 1-2 sentence interrupt, 2-3 bullets, CTA link, personal close. Done in 5 minutes.",
+    "always_overridable": "Subject line angle, bullet count, length, and closing phrase are all preferences — the user can adjust any element without breaking the concept."
+  },
+  "kpis": ["click-through rate (primary success metric)", "page conversion rate post-click", "unsubscribe rate (signals mismatch between teaser promise and page reality)", "for JV sends: click-per-list-member comparison"],
+  "faithfulness": "The 6-part anatomy (subject / salutation / shocking statement / 2-4 bullets / CTA / personal close), both worked examples, the 'friends don't send friends ten-page sales letters' rule, the 99-out-of-100-purpose, and the shorter-is-better discipline are taken directly from Copywriting Secrets Secret #18. The distinction from the Seinfeld story email is derived from combining DotCom Secrets Secret #8 and Copywriting Secrets Secret #18 — flagged as derived, not a single verbatim passage."
+}

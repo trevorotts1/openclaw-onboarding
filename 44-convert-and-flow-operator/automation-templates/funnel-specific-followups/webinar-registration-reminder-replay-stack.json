@@ -1,0 +1,146 @@
+{
+  "id": "webinar-registration-reminder-replay-stack",
+  "name": "Webinar Registration → Indoctrination → Reminders → Live → Replay → Stack Close",
+  "aliases": [
+    "perfect webinar follow-up",
+    "live webinar reminder sequence",
+    "webinar registration sequence",
+    "webinar reminder replay sequence",
+    "webinar indoctrination sequence",
+    "show-up + close sequence"
+  ],
+  "category": "funnel-specific-followups",
+  "summary": "The full follow-up wrapped around a LIVE Perfect Webinar funnel: registration confirmation -> multi-day indoctrination (Soap Opera Sequence to bond registrants to the Attractive Character and raise show-up rate) -> show-up reminders (24h / 1h / 'we're live') -> attendance-segmented replay + cart-close emails using the Perfect Webinar Stack and the DotCom Secrets 3 Closes (Emotion -> Logic -> Fear).",
+  "trigger": {
+    "primary_event": "Webinar registration submitted (registration page opt-in)",
+    "entry_conditions": [
+      "Contact registered for a specific live webinar session (tag `webinar-registered` + session/date field)"
+    ],
+    "exit_conditions": [
+      "Contact buys the webinar offer (tag `webinar-purchased`) -> exit selling steps, route to onboarding",
+      "Cart-close datetime passes (urgency window ends)",
+      "Contact opts out"
+    ],
+    "segmentation_inputs": [
+      "Showed up live vs no-show (tag from webinar platform / 'click to join' link)",
+      "Stayed to the close / pitch vs left early (optional, if platform reports it)",
+      "Clicked the offer/buy link but did not purchase"
+    ]
+  },
+  "channels": ["Email", "SMS"],
+  "sequence": [
+    {
+      "phase": "A. Confirmation",
+      "step": "Email 0 — Set the Stage",
+      "beat": "Immediate confirmation + set expectations (Soap Opera Email #1: 'Set the Stage'). Tell them what's coming and to watch for the daily emails; add to calendar.",
+      "delay": "Immediately on registration",
+      "channel": "Email + SMS",
+      "subject_angle": "\"You're registered — here's what happens next\"",
+      "body_framework": "Soap Opera Email #1. Welcome from the Attractive Character, set the date/time, the ONE promise of the webinar (the big domino / one thing), open a curiosity loop ('tomorrow I'll show you why X is the only thing that matters'), tell them to whitelist + add to calendar. SMS = short confirm + calendar link."
+    },
+    {
+      "phase": "B. Indoctrination (pre-webinar bonding)",
+      "step": "Emails 1-3 — Soap Opera Sequence (High Drama -> Epiphany -> Hidden Benefits)",
+      "beat": "Bond registrant to the Attractive Character and pre-frame the webinar's core promise so they SHOW UP warm and believing. Each email opens a loop that pulls to the next, leading to webinar day.",
+      "delay": "One per day between registration and the live date (compress to 1-2 if reg window is short)",
+      "channel": "Email",
+      "subject_angle": "Chaptered like the Soap Opera ('Ch. 2 of 5: the day everything changed')",
+      "body_framework": "Soap Opera Sequence Emails #2-#4: (2) start at HIGH DRAMA then backstory to the wall the reader is also at; (3) the EPIPHANY that ties to the webinar's big idea; (4) HIDDEN BENEFITS of attending. Every email reminds them of the date/time and reinforces why this webinar is the answer to their #1 problem.",
+      "copy_notes": "Epiphany Bridge story is the engine here — give them the same epiphany you had so they arrive pre-sold on the idea, not the product."
+    },
+    {
+      "phase": "C. Show-up reminders",
+      "step": "Reminders — 24h, 1h, 'We're LIVE'",
+      "beat": "Maximize show-up rate. Reminders are logistics + curiosity, not pitch.",
+      "delay": "24 hours before · 1 hour before · at start time",
+      "channel": "Email + SMS (SMS critical for the 1h and live-now)",
+      "subject_angle": "\"Tomorrow: [big promise]\" / \"Starting in 1 hour\" / \"We're LIVE — join now\"",
+      "body_framework": "Soap Opera Email #5 energy (Urgency + CTA) applied to attendance: restate the single most valuable thing they'll learn, the time in their zone, and the one-click JOIN link. The 'We're LIVE' message is SMS-first with the direct join URL."
+    },
+    {
+      "phase": "D. Replay (attendance-segmented)",
+      "step": "Replay emails — branch by no-show vs attended-but-didn't-buy",
+      "beat": "Recover no-shows and give attendees a chance to re-watch; reopen the cart for a limited replay window with countdown scarcity.",
+      "delay": "Replay sent within hours of the live event; replay window typically 24-72h with countdown",
+      "channel": "Email + SMS",
+      "branches": {
+        "no_show": "\"Sorry we missed you — here's the replay (expires soon)\" — re-sell the promise, embed replay with cart-close countdown.",
+        "attended_no_buy": "\"Did you catch the [offer] at the end?\" — go straight to the Stack recap + the 3 Closes."
+      },
+      "body_framework": "Replay page mirrors the Webinar Funnel recipe: replay embed + cart-close countdown timer creates real scarcity."
+    },
+    {
+      "phase": "E. Cart-close close (The Stack + 3 Closes)",
+      "step": "Closing emails — Emotion -> Logic -> Fear",
+      "beat": "Drive the sale before the cart closes using the DotCom Secrets 3 Closes over the replay window.",
+      "delay": "Spread across the replay/cart-open window (e.g. day of replay, mid-window, final day)",
+      "channel": "Email + SMS",
+      "body_framework": "3 Closes framework: (1) EMOTION close — retell the Epiphany Bridge / transformation story, future-pace the result, rebuild desire; (2) LOGIC close — present THE STACK (Perfect Webinar): list every component of the offer with its standalone value, total it, then reveal the price so the deal is logically undeniable ('dollars for dimes'); restate the guarantee; (3) FEAR close — honest urgency: the cart/bonuses/price genuinely expire at the cart-close datetime; what they lose by not acting. Final SMS at the deadline.",
+      "copy_notes": "The Stack slide is built cumulatively (offer + bonus + bonus + ...), value totaled, THEN price revealed — straight from Expert Secrets' Perfect Webinar close."
+    }
+  ],
+  "copy_persona": {
+    "primary": "DotCom Secrets + Expert Secrets (Russell Brunson) — Soap Opera Sequence for indoctrination, the Epiphany Bridge story engine, the Perfect Webinar 'Stack', and the 3 Closes for the close.",
+    "scripts_used": [
+      "Soap Opera Sequence (DotCom Secrets Secret #7): Email #1 Set the Stage, #2 High Drama + Backstory, #3 Epiphany, #4 Hidden Benefits, #5 Urgency & CTA — open/close loops to pull registrant to webinar day",
+      "Epiphany Bridge (Expert Secrets) — the origin story that gives the prospect the same epiphany, told in indoctrination + Emotion close",
+      "The Perfect Webinar Stack (Expert Secrets) — cumulative offer build + value total + price reveal, used in the Logic close",
+      "3 Closes (DotCom Secrets Follow-Up Funnel): Emotion -> Logic -> Fear, sequenced across the cart-open replay window",
+      "Honest urgency only — Soap Opera rule 'fake urgency backfires; it must be real'"
+    ],
+    "support_persona": "jim-edwards-copywriting-secrets — sentence-level subject lines (curiosity, fear/desire headlines) and the honest-scarcity discipline on the Fear close.",
+    "structural_persona": "russell-brunson-the-funnel-hackers-cookbook — Webinar Funnel recipe: registration -> confirmation/indoctrination -> live event -> replay/urgency page with cart-close countdown; Drop-Off Automation for no-shows."
+  },
+  "ghl_build": {
+    "engine": "Skill 44 (caf) builds the GoHighLevel workflow(s) from an ordered build-plan; for a date-based live webinar use an Event/Appointment-style trigger or a fixed-send schedule keyed to the session datetime custom field.",
+    "workflow_name": "FSF — Live Webinar: Reg -> Indoctrinate -> Remind -> Replay -> Close",
+    "trigger_config": {
+      "ghl_trigger": "Form Submitted = webinar registration page (or Tag Added `webinar-registered`)",
+      "session_field": "Store webinar datetime in a custom field so reminder waits compute 24h/1h-before relative to it"
+    },
+    "actions_in_order": [
+      "1. Send Email + SMS — Confirmation (Set the Stage); add tag `webinar-registered`",
+      "2. Send Email — Indoctrination #1 (next day)  [Wait 1 day between each]",
+      "3. Send Email — Indoctrination #2",
+      "4. Send Email — Indoctrination #3",
+      "5. Wait until 24h before session -> Send Email + SMS reminder",
+      "6. Wait until 1h before session -> Send SMS reminder",
+      "7. Wait until session start -> Send SMS 'We're LIVE' with join link",
+      "8. Wait until ~2h after session end",
+      "9. If/Else attendance tag (`webinar-attended` vs `webinar-noshow`): branch replay copy",
+      "10. Send Email + SMS — Replay (branched) with cart-close countdown",
+      "11. Send Email — Close #1 EMOTION (story/future-pace)",
+      "12. Wait 1 day",
+      "13. Send Email — Close #2 LOGIC (The Stack + value total + price)",
+      "14. Wait until final cart-close day",
+      "15. Send Email + SMS — Close #3 FEAR (honest deadline)",
+      "16. At cart-close datetime: end; tag `webinar-sequence-complete`"
+    ],
+    "goal_event": "`webinar-purchased` -> exit all selling steps; route contact to the post-purchase onboarding workflow.",
+    "wait_steps": ["per-day indoctrination", "until 24h-before", "until 1h-before", "until start", "post-event delay", "1 day", "until cart-close"],
+    "if_else_branches": [
+      "no-show vs attended (replay copy + subject)",
+      "clicked-buy-link-no-purchase -> a tighter 'you were so close' nudge",
+      "purchased at any point -> Goal exit",
+      "SMS vs email on DND"
+    ],
+    "tags_used": ["webinar-registered", "webinar-attended", "webinar-noshow", "webinar-buy-link-clicked", "webinar-purchased", "webinar-sequence-complete"],
+    "notes": "Attendance tags come from the webinar platform webhook or a 'click to join' trigger-link click. The cart-close countdown on the replay page must reflect the SAME deadline the Fear close cites — keep them in sync so urgency is real."
+  },
+  "source": {
+    "books": [
+      "DotCom Secrets (Soap Opera Sequence Secret #7; Follow-Up Funnel 3 Closes Emotion/Logic/Fear)",
+      "Expert Secrets (Perfect Webinar, The Stack, Epiphany Bridge)",
+      "The Funnel Hacker's Cookbook (Webinar Funnel recipe: registration -> confirmation/indoctrination -> live -> replay/urgency with countdown; Drop-Off Automation for no-shows)",
+      "Copywriting Secrets — Jim Edwards (subject-line/headline craft, honest scarcity)"
+    ],
+    "fidelity_note": "Sequence beats are the verbatim Soap Opera email purposes (#1-#5), the documented 3 Closes order, the Webinar Funnel page recipe, and the Perfect Webinar Stack. No invented steps."
+  },
+  "flexibility": {
+    "principle": "This template is a recommended default and a resource — it is NEVER a rule or a requirement.",
+    "mode_1_user_has_explicit_desire": "Do exactly what the user wants. This template is an optional reference only; it is never imposed or overridden onto their choice.",
+    "mode_2_user_is_unsure": "Suggest this proven template and explain why it works, but let the user decide.",
+    "mode_3_user_wants_it_handled": "Build the whole automation from this template.",
+    "note": "Always overridable, mixable, customizable, or ignorable. It assists; it does not dominate."
+  }
+}

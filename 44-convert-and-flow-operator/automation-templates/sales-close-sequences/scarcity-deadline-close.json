@@ -1,0 +1,184 @@
+{
+  "id": "scarcity-deadline-close",
+  "name": "Scarcity / Deadline Close (Standalone Fear Phase)",
+  "aliases": [
+    "fear close",
+    "urgency close",
+    "deadline sequence",
+    "closing sequence",
+    "fear urgency",
+    "scarcity sequence",
+    "FOMO close",
+    "fast-action sequence",
+    "last-chance close",
+    "countdown sequence"
+  ],
+  "category": "sales-close-sequences",
+  "source_books": [
+    "Marketing Secrets Blackbook (Russell Brunson) — Secret 51: Urgency and Scarcity: three types (limited time / limited pricing / limited quantity); 'The best offers use all three at once.' The Bill Phillips manufactured-scarcity anecdote. The Inner Circle 100-spot limited quantity example.",
+    "DotCom Secrets (Russell Brunson) — Phase 3 of the 3 Closes (Fear/Urgency); the Follow-Up Funnel Fear phase drives the highest revenue concentration of any phase.",
+    "Expert Secrets (Russell Brunson) — Perfect Webinar close: fast-action bonus, cart-close, takeaway close ('doors closing'), trial close as precursor.",
+    "Copywriting Secrets (Jim Edwards) — Future-pacing the cost of inaction ('picture yourself 6–12 months from now still stuck'); FOMO as a legitimate emotional driver when grounded in a real deadline; single CTA rule; the honest reason to act now (Secret #13 + #18)."
+  ],
+  "framework": "The Scarcity/Deadline Close is the standalone FEAR phase from the 3 Closes framework — the module that converts procrastinators and fence-sitters by making NOW the only logical time to act. It is based on Brunson's Marketing Secrets Blackbook Secret 51: three types of scarcity (limited time / limited pricing / limited quantity), with the strongest offers using all three simultaneously. This template is MODULAR — it can attach to any existing sequence (Soap Opera Sequence end, 3 Closes Fear phase, Product Launch close, Webinar follow-up close) or stand alone when a warm list needs a deadline-driven push. The sequence runs from the deadline announce through cart-close, typically in 72 hours or less.",
+  "flexibility_principle": "This template is a GUIDE and a RESOURCE, never a rule or a requirement. Three modes: (1) USER HAS EXPLICIT DESIRE — build exactly what the user specifies; use this template only as optional reference. (2) USER IS UNSURE — present this as the proven Fear phase architecture and explain why the three levers compound, then let the user decide. (3) USER WANTS IT HANDLED ('just do it') — execute the full close sequence adapted to the user's offer and deadline. Always overridable, mixable, and skippable.",
+  "trigger": {
+    "type": "deadline-proximity / tag",
+    "events": [
+      "3 Closes Logic phase completes → automatically chain the Fear phase",
+      "Soap Opera Sequence Email 5 clicked but not purchased → trigger the standalone fear close",
+      "Seinfeld click on an offer 2+ times with no purchase → tag 'hot-no-buy-[offer]' → trigger",
+      "Product launch cart-open window enters the final 72h",
+      "Operator manually adds the 'start-fear-close-[offer]' tag for any warm audience"
+    ],
+    "entry_conditions": "Contact is on the warm list for this offer; has seen the Emotion and/or Logic close (has been exposed to the offer at least once); not already tagged 'buyer-[offer]'. A real deadline must exist before the sequence starts.",
+    "exit_conditions": "Purchase (tag 'buyer-[offer]') at any step → immediately exit, enroll buyer onboarding, STOP all fear-close emails. Deadline passes with no purchase → one-time optional downsell, then Seinfeld Daily Sequence.",
+    "pre_condition": "A REAL DEADLINE must be set and locked BEFORE the first email sends. 'Cart-close-datetime' custom field = the single source of truth for all wait timing and the on-page countdown timer. The deadline must be genuinely enforced."
+  },
+  "channels": [
+    "Email (all steps — primary)",
+    "SMS (T-48h, T-24h, T-1h — critical for mobile-first audiences)",
+    "Facebook/Instagram Message (T-24h and T-1h mirror)",
+    "Desktop push notification (T-24h)",
+    "On-page countdown timer (sales/checkout page — synced to same cart-close-datetime)"
+  ],
+  "cadence": "5–6 touches in 48–72 hours. Deadline announce → T-48h → T-24h → T-3h → T-1h → post-close branch. No gaps longer than 24h. The final 24h drives the highest revenue concentration of any period.",
+  "the_three_levers": {
+    "source": "Marketing Secrets Blackbook, Secret 51",
+    "limited_time": "The offer expires at a fixed date/time. Events have built-in time limits. Fast-action bonuses that run out when the webinar ends. 'They must act NOW or the offer goes away.' Timer on the page matches the email countdown.",
+    "limited_pricing": "Rather than discounting the core offer, stack bonuses that EXPIRE, so the effective value of the offer declines after the deadline. The base price rises (or the bonus is removed), making the current price the best price ever available. Brunson: 'The better thing to do is to tack on bonuses that drive up the value of the offer without having to put your offer on sale.'",
+    "limited_quantity": "A genuine cap on seats, units, or access. Brunson's Inner Circle: 100 spots, period. Opens only when someone drops out. 'You can't just wait in line or wait for a certain date to get in.' The quantity trigger is real and tracked.",
+    "stacking_rule": "The best offers use all three at once. If only one lever applies, use it honestly. Never fabricate a lever that is not real."
+  },
+  "copy_persona": {
+    "primary": "Russell Brunson — 3 Closes Fear/Urgency phase; Blackbook Secret 51; Perfect Webinar takeaway close ('doors closing'); future-pacing the regret of inaction.",
+    "supporting": [
+      "Jim Edwards (Copywriting Secrets) — FOMO future-pacing ('picture yourself 6 months from now still [pain] because you did nothing today'); the cost of inaction as the primary agitator in the Fear close; single CTA per email; P.S. deadline restatement; short-form close copy at T-3h and T-1h (length inversely proportional to proximity to deadline).",
+      "Brunson Stack Don't Switch — reference the SAME offer throughout; do not introduce a new opportunity during the close."
+    ],
+    "copy_rules": [
+      "Each email gets shorter as the deadline approaches (announce email is longest; T-1h is 2 sentences + link).",
+      "The cost of inaction (Edwards) is the primary EMOTION driver in the Fear phase — not 'what you'll gain' (that was the Emotion close) but 'what you'll lose if you don't act now'.",
+      "One CTA per email. No secondary links. No competing options.",
+      "Every deadline stated in copy must be true and enforced."
+    ]
+  },
+  "sequence": [
+    {
+      "step": 1,
+      "phase": "DEADLINE ANNOUNCE",
+      "day": "T-72h to T-48h (start of Fear phase)",
+      "type": "email + SMS",
+      "beat": "Introduce the deadline. This is the pivot from Logic → Fear. State the closing date/time clearly, restate the offer in 2–3 sentences (the brief value summary, NOT the full stack), and explain WHY the deadline is real (event date, bonus quantity, price-change policy — whichever levers apply). Tone is informational, not pressured. 'I want to make sure you don't miss this.'",
+      "purpose": "Set the clock. Activate the scarcity psychology. Give procrastinators a reason to decide now instead of later.",
+      "subject_angle": "'Heads up: this closes [date]' / 'Before I forget — [offer] closes [day]' / 'Something you need to know before [date]'",
+      "body_framework": "Bridge from Logic to Fear: 'I want to make sure you don't miss this.' → State the deadline clearly: 'On [date] at [time], [offer] closes.' → Explain WHY: the event / the bonus expiry / the price change / the quantity cap. → 2-sentence offer summary: '[Name of offer] gives you [ONE key result] — for [price], with [guarantee].' → CTA: 'Grab it before [date]: [link].' → P.S.: '[One scarcity fact] — just making sure you know.'",
+      "cta": "Get it before [deadline]: [link].",
+      "persona_formula": "Brunson urgency intro + Blackbook S51 three levers stated plainly"
+    },
+    {
+      "step": 2,
+      "phase": "T-48h",
+      "day": "cart-close minus 48 hours",
+      "type": "email + SMS",
+      "beat": "All three scarcity levers named and quantified if possible. 48 hours is still enough time, so keep the tone informational but clear. Restate the offer value (not the full stack — a 3-bullet summary). Give the explicit deadline. SMS is short and direct.",
+      "purpose": "First urgency push. 48h is when the non-readers of the announce email get their first scarcity signal. This email moves the 'almost-decided' crowd.",
+      "subject_angle": "'48 hours left — [what changes after]' / '2 days: [offer] closes [day]'",
+      "body_framework": "Straight: 'In 48 hours, [offer] closes. Here's what that means:' → Limited time: closes [date at time]. → Limited pricing: after [date], [price rises / bonus removed]. → Limited quantity (if applicable): only [N] spots remain. → 3-bullet offer summary ([result 1], [result 2], [result 3] — each ending in 'which means…'). → Price reminder. → CTA. P.S.: '48 hours. [link].' SMS: '48h left — [offer] closes [date]: [link]'",
+      "cta": "Act now: [link].",
+      "persona_formula": "Blackbook S51 (all three levers, quantified); Edwards bullets with 'which means'"
+    },
+    {
+      "step": 3,
+      "phase": "T-24h",
+      "day": "cart-close minus 24 hours",
+      "type": "email + SMS",
+      "beat": "COST OF INACTION — future-pacing the regret of doing nothing (Edwards). This is the emotional spike in the Fear phase. 'Picture yourself 6 months from now still [pain], because today you said not yet.' Then the bonus expiry. Then the CTA. This email is longer than the T-48h but still under 300 words. SMS is the priority for mobile — send it at a time when recipients are likely to see it (morning or evening peak).",
+      "purpose": "The second biggest conversion spike of the entire Fear close. Combines FOMO (what they lose) with future-pace regret (the cost of doing nothing).",
+      "subject_angle": "'24 hours — [bonus/price] disappears tonight' / 'Picture yourself in 6 months…' / 'Tomorrow this is gone (and so is [your chance at result])'",
+      "body_framework": "Deadline: 'In 24 hours, [offer] closes / [bonus] expires.' → Future-pace (Edwards): 'Picture yourself 6 months from now, still [the pain they have]. Nothing changed — because today you said wait. Now picture the other path: [the transformation, specific and vivid].' → Back to the offer: 'That second path is exactly what [offer name] gives you. [Price]. [Guarantee].' → Scarcity fact: the bonus/price that expires tonight. → CTA. P.S.: 'Bonus expires at [specific time] tonight.' SMS: '[Offer] bonus expires tonight. Last chance at [price]: [link]'",
+      "cta": "Yes — I'm in before [time]: [link].",
+      "persona_formula": "Edwards FOMO future-pacing ('picture yourself') + cost of inaction + Blackbook S51 bonus-expiry"
+    },
+    {
+      "step": 4,
+      "phase": "T-3h",
+      "day": "cart-close minus 3 hours",
+      "type": "email (short)",
+      "beat": "SHORT. 3 sentences maximum. The subject does the work. By T-3h the reader knows what this email is — they do not need a story or context. Pure proximity to loss. The only information: how much time is left, and the link.",
+      "purpose": "The 'I almost forgot' catch email. Short length signals genuine urgency — long emails at T-3h feel desperate and performative.",
+      "subject_angle": "'3 hours' / 'Closing tonight — last email' / '[Offer] closes in 3 hours'",
+      "body_framework": "'In 3 hours, [offer] closes for good. This is the last email I'm sending before I shut it down.' → '[link]' → 'That's it.' → P.S.: '[Time] tonight. After that, [what changes].'",
+      "cta": "Final link. Nothing else.",
+      "persona_formula": "Brunson takeaway close — brevity signals the loss is real; Edwards: one CTA, zero fluff"
+    },
+    {
+      "step": 5,
+      "phase": "T-1h",
+      "day": "cart-close minus 1 hour",
+      "type": "email + SMS",
+      "beat": "FINAL CALL. Two lines in the email body. SMS is the primary driver here — the T-1h SMS to a mobile-first audience is often the single highest-converting touchpoint in the entire sequence. The email body exists only for those not on SMS.",
+      "purpose": "The largest single conversion spike in most campaigns. The Fear phase crescendo. SMS timing is the key — send at a moment the recipient is likely to have their phone (lunch, evening, based on timezone).",
+      "subject_angle": "'Final call — 60 minutes' / 'Closing now: [offer]' / 'One hour'",
+      "body_framework": "'Closing in 1 hour. Final call for [offer name].' → '[link]' → That is all. SMS: 'FINAL CALL — [offer] closes in 60 minutes. Last chance: [link]'",
+      "cta": "The link. That is all.",
+      "persona_formula": "Brunson FOMO close (honored — cart genuinely closes in 1 hour)"
+    },
+    {
+      "step": 6,
+      "phase": "POST-CLOSE",
+      "day": "cart-close +1h",
+      "type": "branch (automation)",
+      "beat": "BRANCH BY OUTCOME. Buyers: enroll onboarding + ascend value ladder (Stack Don't Switch). Non-buyers: OPTIONAL — send a single 'cart is now closed' email (validates the deadline was real; goodwill); offer one immediate downsell at a lower price if one exists; then enroll Seinfeld Daily Sequence. Do NOT re-open the cart. Do NOT offer the same offer at the same price.",
+      "purpose": "Honor the deadline with proof. Clean routing. Maintain trust for the next campaign.",
+      "persona_formula": "Brunson Stack Don't Switch + integrity: the close was real and honored"
+    }
+  ],
+  "ghl_build": {
+    "workflow_name": "Scarcity / Deadline Close — [Offer Name]",
+    "trigger": "Workflow Trigger: 'Tag Added' = 'start-fear-close-[offer]' OR chained automatically at the end of the 3-Closes Logic phase / SOS Day 5 click / Seinfeld 'hot-no-buy' trigger. Filter: tag 'buyer-[offer]' must be absent.",
+    "actions": [
+      "Step 0: Add tag 'in-fear-close-[offer]'. Set 'cart-close-datetime' custom field if not already set.",
+      "Step 1 (Deadline Announce): Email + SMS immediately on trigger.",
+      "Wait Until [cart-close-datetime minus 48h]: T-48h email + SMS.",
+      "Wait Until [cart-close-datetime minus 24h]: T-24h email + SMS.",
+      "Wait Until [cart-close-datetime minus 3h]: T-3h email (short).",
+      "Wait Until [cart-close-datetime minus 1h]: T-1h email + SMS.",
+      "Wait Until [cart-close-datetime plus 1h]: If/Else branch — buyer vs. non-buyer."
+    ],
+    "wait_steps": [
+      "All waits use 'Wait Until' the 'cart-close-datetime' custom field with offsets (minus 48h, minus 24h, minus 3h, minus 1h, plus 1h). This ensures the on-page countdown timer, the email/SMS sends, and the actual offer change all reference the SAME moment.",
+      "SMS sends should have 'send window' constraints (e.g. 8am–9pm contact timezone) to avoid late-night deliveries."
+    ],
+    "if_else": [
+      "PURCHASE GOAL ('buyer-[offer]') at ANY step → immediately exit, enroll buyer onboarding, STOP all fear-close emails.",
+      "Branch post-T-48h: IF 'hot-no-buy' tag present AND checkout-started tag absent → escalate SMS priority at T-24h and T-1h.",
+      "Branch post-T-24h: IF 'checkout-started' tag present AND 'buyer-[offer]' absent → fire 'abandoned-cart-recovery' immediately (runs alongside the remaining urgency beats).",
+      "Post-close branch: buyer → onboarding + ascend; non-buyer → optional downsell (one email, one time) → 'seinfeld-daily-sequence'."
+    ],
+    "tags_custom_fields": [
+      "start-fear-close-[offer]",
+      "in-fear-close-[offer]",
+      "buyer-[offer]",
+      "hot-no-buy",
+      "checkout-started",
+      "cart-close-datetime (custom field — drives ALL 'Wait Until' steps + on-page countdown timer)"
+    ],
+    "notes": "The 'cart-close-datetime' custom field is the single source of truth for the entire sequence. Every email/SMS wait, every countdown timer on the sales and order pages, and the actual GHL offer price change — all must reference this same field. Set it BEFORE the workflow is enrolled. When the timer hits zero, the offer/price genuinely changes in GHL (update the product price, remove the bonus, or close the order form). Use GHL's Facebook/Instagram Message action for the T-24h and T-1h beats only (Messenger fatigue is real). The T-1h SMS drives the biggest single conversion spike in most campaigns — ensure the send window allows it."
+  },
+  "integrity_guardrails": [
+    "The deadline must be real and enforced. When the cart closes, the offer/price genuinely changes. Never re-open a closed cart without announcing a new explicit deadline in advance (Blackbook S51; Edwards Secret #18: 'always tell the truth and back it up').",
+    "All three scarcity levers used must be true as stated. If only one lever is real, use only one (Edwards: 'never invent scarcity you won't honor').",
+    "Do not run this sequence on the same offer more than once per contact in a 30-day window without a new genuine reason (new launch, new deadline). Repeated fake closes destroy trust permanently.",
+    "The cost-of-inaction future-pacing (Edwards) must be grounded in a real pain the prospect has acknowledged — do not fabricate the before-state."
+  ],
+  "kpis": [
+    "Deadline-announce email open rate",
+    "T-48h → T-24h conversion rate",
+    "T-24h → T-1h conversion rate",
+    "T-1h (final call) conversion spike: % of total campaign revenue in this window",
+    "Overall Fear-phase conversion rate (% of enrolled contacts who purchase)",
+    "SMS vs. email recovery rate comparison per beat",
+    "Post-close downsell take rate"
+  ]
+}

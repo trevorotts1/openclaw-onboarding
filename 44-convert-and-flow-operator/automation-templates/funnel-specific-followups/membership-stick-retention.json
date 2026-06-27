@@ -1,0 +1,249 @@
+{
+  "id": "membership-stick-retention",
+  "name": "Membership / Continuity Stick + Retention Sequence",
+  "aliases": [
+    "membership onboarding",
+    "continuity stick sequence",
+    "member retention automation",
+    "subscription churn reduction",
+    "membership save sequence",
+    "cancellation save flow",
+    "monthly re-engagement sequence",
+    "annual upgrade sequence",
+    "membership engagement automation"
+  ],
+  "category": "funnel-specific-followups",
+  "summary": "Four-phase automation that maximizes member stick rate and lifetime value: (1) rapid onboarding to get the new member to a quick win and consuming the product within hours/days, (2) monthly engagement touches that deliver the 'something new and scarce each month' Brunson cites as the core stick mechanism, (3) annual-upgrade offer timed to the renewal window, and (4) a Cancellation Funnel intercept (Survey -> Article) that saves members trying to leave. DotCom Secrets is explicit: bond with the Attractive Character FIRST, then sell continuity — waiting dramatically increases stick rate. Marketing Secrets Blackbook adds: onboarding-driven consumption is the #1 churn lever, and annual/lifetime upsells are the highest-converting offer inside a continuity program.",
+  "trigger": {
+    "primary_event": "Membership purchase / trial activation completed",
+    "entry_conditions": [
+      "Contact completed membership sign-up or trial activation (tag `member-active`)",
+      "Billing type known: `trial` (free or $1), `monthly`, or `annual`",
+      "Member-area access delivered (account created, login link sent)"
+    ],
+    "exit_conditions": [
+      "Member cancels / tag `member-cancelled` (-> Cancellation Save branch)",
+      "Member upgrades to annual / lifetime (-> tag `member-annual`, exit upgrade track)",
+      "Trial converts to paid (tag `trial-converted`, stay on monthly track)",
+      "Opt-out"
+    ],
+    "segmentation_inputs": [
+      "Trial vs paid activation",
+      "Engaged (logged in, consumed lesson) vs not-engaged in first 7 days",
+      "Monthly vs annual billing track",
+      "Cancellation request (exit -> Cancellation Funnel intercept)"
+    ]
+  },
+  "channels": ["Email", "SMS"],
+  "sequence": [
+    {
+      "phase": "A. Rapid onboarding — days 1-7",
+      "beat": "Get the member to a quick win and consuming the product before the trial or first billing period ends. Consumption = retention. Brunson: 'simple tweaks to the onboarding process that result in a fraction of a percentage reduction in churn rate equal millions of dollars' (MSB Secret 53).",
+      "steps": [
+        {
+          "step": "A1 — Welcome + access delivery",
+          "delay": "Immediately on purchase",
+          "channel": "Email + SMS",
+          "subject_angle": "\"You're in — here's how to get started in the next 10 minutes\"",
+          "body_framework": "Deliver login + one-click start instruction. Attractive Character welcome (from the Soap Opera 'Set the Stage' energy: who you are, what they now have access to, what to do first). Brunson: 'give them something new and scarce each month — it's like, Hey, I wonder what they're going to send me next?' Frame the membership's ongoing value hook immediately.",
+          "copy_notes": "One clear action. Link straight to the first lesson / the 'start here' module, not the member dashboard. Reduce time-to-first-value."
+        },
+        {
+          "step": "A2 — Consumption nudge #1 (non-engaged only)",
+          "delay": "+2 days (if no login/lesson-start event)",
+          "channel": "Email",
+          "subject_angle": "\"Did you get a chance to start? Here's the one thing to do first\"",
+          "body_framework": "Jim Edwards 'If you want X, do this' — one instruction, state the specific first result they will get from completing the first module. Curiosity loop: tease what comes in week 2. Single CTA.",
+          "copy_notes": "Branch: engaged members skip to A3. Non-engaged get this nudge."
+        },
+        {
+          "step": "A3 — Quick-win story + 'first win' CTA",
+          "delay": "+4 days",
+          "channel": "Email",
+          "subject_angle": "\"[Name], here's what members get in their first week\"",
+          "body_framework": "Share a short testimonial or Epiphany Bridge story (from a member's transformation after their first module). Future-pace their own result. Deliver the 'one gold nugget' framing (MSB Secret 54): the one thing in this program that will give them the clearest breakthrough. Single CTA to lesson 1 or the quick-start track.",
+          "copy_notes": "Goal: one completed lesson before day 7. Consumption is the retention lever, not messaging frequency."
+        },
+        {
+          "step": "A4 — Trial-end warning (trial members only)",
+          "delay": "48h before trial end",
+          "channel": "Email + SMS",
+          "subject_angle": "\"Your membership trial ends in 48 hours\"",
+          "body_framework": "Remind of what they'll lose (access, progress, community), restate the monthly value, one-click to continue. Offer the annual upgrade as a savings alternative ('skip the monthly and save — annual members pay X less over 12 months'). Brunson: 'yearly or lifetime accounts are incredibly effective upsells with continuity programs' (DCS).",
+          "copy_notes": "Honest timing — the card charges when it charges; don't state an earlier cutoff. If genuinely no trial (monthly paid), skip this step."
+        }
+      ]
+    },
+    {
+      "phase": "B. Monthly engagement + re-engagement",
+      "beat": "Deliver the 'something new and scarce each month' that Brunson identifies as the mechanism keeping members curious and paying. MSB Secret 45: 'I wonder what they're going to send me next?' is the stick emotion.",
+      "steps": [
+        {
+          "step": "B1 — Monthly content drop announcement",
+          "delay": "1st of each month (or on content release date)",
+          "channel": "Email",
+          "subject_angle": "Curiosity: \"This month's [program name]: [specific topic/angle]\"",
+          "body_framework": "Tease the new content with a curiosity hook and a specific outcome ('this month you'll be able to do X'). Reinforce community and peer wins. Link to the new module/newsletter/share-funnel. From MSB Secret 87: the 'hook of discovery' ('you'll never believe what I just learned') as an email subject angle, not just a live event.",
+          "copy_notes": "The content release itself is the retention mechanism. The email's job is to drive the click that starts consumption."
+        },
+        {
+          "step": "B2 — Mid-month re-engagement (non-openers / non-clickers)",
+          "delay": "+14 days from B1 (only to members who haven't opened or clicked B1)",
+          "channel": "Email",
+          "subject_angle": "\"Did you miss [month]'s [program name]?\" or resend B1 with changed subject",
+          "body_framework": "Brief. One sentence on what they missed + direct link. No lecture. Seinfeld Sequence tone (conversational, human, one point). Exit if member opens/clicks.",
+          "copy_notes": "Don't send to members who already engaged with B1. Branching is the key here."
+        },
+        {
+          "step": "B3 — Monthly streak / progress note (engaged members)",
+          "delay": "+7 days from B1 (only to members who logged in/consumed content)",
+          "channel": "Email",
+          "subject_angle": "\"You're on a [X]-month streak — here's what's next\"",
+          "body_framework": "Acknowledge their engagement, celebrate a milestone (first month, third month, 6-month mark), tease next month's content. Future-pace ongoing value. Builds identity: 'people who do this get Y — and you're doing this.' This is the Daily Seinfeld Sequence applied to member engagement.",
+          "copy_notes": "Brunson (DCS): relationship with the Attractive Character is what makes members WANT to stay. This email deepens that bond."
+        }
+      ]
+    },
+    {
+      "phase": "C. Annual upgrade offer",
+      "beat": "Brunson is explicit: 'yearly or lifetime accounts are incredibly effective upsells with continuity programs' (DCS). Timed to the natural renewal window when the member is most receptive.",
+      "steps": [
+        {
+          "step": "C1 — Annual offer at 30-day mark (monthly members)",
+          "delay": "30 days after activation (or at first renewal point)",
+          "channel": "Email",
+          "subject_angle": "\"Save [X amount] on your membership — the annual option\"",
+          "body_framework": "MSB Secret 45 framing: 'if you want to skip the monthly and pay once for the year, we give you an extra savings bonus.' Star/Story/Solution format: state the savings + the 'extra bonus' for annual commitment (a real exclusive benefit). Single CTA. No pressure framing — present as a savings option, not an obligation. Honest math: 'you'd pay X monthly over 12 months; the annual is Y — you save Z.'",
+          "copy_notes": "The 'extra savings bonus' Brunson describes in MSB Secret 45 should be real (exclusive content, priority access, etc.) — not fake value. Honor any stated discount."
+        },
+        {
+          "step": "C2 — Annual follow-up (non-upgraders, 7 days later)",
+          "delay": "+7 days from C1 (non-upgraders only)",
+          "channel": "Email",
+          "subject_angle": "\"The annual option closes [date] — last chance to lock in the savings\"",
+          "body_framework": "Stealth / Columbo soft-close: 'By the way, one more thing — the annual rate with the extra bonus is still available through [date].' One paragraph. Single CTA. Honest deadline.",
+          "copy_notes": "Close this offer by the stated date. Never re-open it without a real reason. Fake urgency destroys trust (Edwards/Soap Opera rule)."
+        }
+      ]
+    },
+    {
+      "phase": "D. Cancellation save (Cancellation Funnel intercept)",
+      "beat": "Triggered when a member clicks a cancel link, emails to cancel, or is routed to a cancellation page. The Funnel Hacker's Cookbook Cancellation Funnel (Other Recipe #3): 2-page funnel — Survey Page -> Article Page. 'Doing a quiz first lets you figure out what their specific concern is, and then you can try to save the sale on the next page. This can drastically reduce refunds, cancellations and churn.'",
+      "steps": [
+        {
+          "step": "D1 — Cancel-intent intercept (immediate)",
+          "delay": "Immediately on cancellation trigger",
+          "channel": "Email + optional SMS",
+          "subject_angle": "\"Before you go — can we help?\" / \"Wait — your membership benefits stop here\"",
+          "body_framework": "Route to the 2-page Cancellation Funnel: Page 1 = Survey (why are you leaving? — branching options: too expensive / no time / not what I expected / got what I needed / technical issue / other). Page 2 = Article/Response tailored to their specific answer. DO NOT send a generic 'please don't go' email without the quiz — the quiz is how the Cookbook saves the sale by identifying the specific concern.",
+          "copy_notes": "Cancellation automation is triggered by the GHL cancel-intent tag or a cancel-link click via trigger link."
+        },
+        {
+          "step": "D2 — Quiz-branched response (per-reason save page)",
+          "delay": "Immediate redirect from D1 survey",
+          "channel": "Email (follow-up to the survey page visit)",
+          "subject_angle": "Personalized per reason (see branches below)",
+          "body_framework": "Branched by survey answer: (1) TOO EXPENSIVE -> Pause option or downgrade to a lower tier; remind of value received so far; month discount offer. (2) NO TIME -> 'Your access stays frozen — come back when ready'; pause/skip feature if available; low-commitment content ('5-minute module' hook). (3) NOT WHAT I EXPECTED -> Clarify what they have access to; offer a 1:1 orientation or bonus walkthrough. (4) GOT WHAT I NEEDED -> Acknowledge + celebrate ('you crushed it'); offer a pause or a lighter continuity tier instead of full cancel; tease what's next. (5) TECHNICAL ISSUE -> Route to support immediately; human intervention. Per FHC: 'show how close they are to gold and remind them of all the work they've already done, which they'll lose if they leave.'",
+          "copy_notes": "Each branch is a saved article page + one save email. The offer in the save email must be real (not fake — Copywriting Secrets honest-urgency rule)."
+        },
+        {
+          "step": "D3 — Final save (48h after D2, if still uncancelled and no re-engagement)",
+          "delay": "+48h from D2 (if still active/pending cancel and no re-engagement signal)",
+          "channel": "Email",
+          "subject_angle": "\"Your membership is still active — one last thing\"",
+          "body_framework": "Jim Edwards PAS: state the problem they were trying to solve by leaving, agitate what the exit costs (losing access, losing progress, losing [specific monthly benefit]), re-present the best save offer from D2. Single CTA. Honest: 'if you still want to cancel after this, click here and we'll process it immediately — no questions.' Respect their decision.",
+          "copy_notes": "After D3, if no action, process the cancel and route to a post-cancel winback sequence (Daily Seinfeld cadence with occasional winback offers). Do not repeatedly email after a clear cancel intent."
+        }
+      ]
+    }
+  ],
+  "copy_persona": {
+    "primary": "DotCom Secrets (Brunson) — Continuity Funnel, Soap Opera Sequence, Attractive Character bonding, Daily Seinfeld Sequence",
+    "scripts_used": [
+      "DotCom Secrets Continuity Funnel #3: bond with AC first -> send short email sequence promoting the continuity program -> sell trial with 'Who, What, Why, How' script; sell paid with 'Star, Story, Solution'",
+      "DotCom Secrets: 'stick rate' = how long the customer remains an active, paying member; bond with AC first to increase it dramatically",
+      "Marketing Secrets Blackbook Secret 45 (Power of Continuity): low barrier to entry ($1 trial / FPS), great onboarding, something new + scarce each month, annual upgrade with savings bonus",
+      "Marketing Secrets Blackbook Secret 53 (Consumption): onboarding-driven quick win is the #1 churn lever; reduce time-to-first-value",
+      "Marketing Secrets Blackbook Secret 87 (Subscription Selling Secret): 'hook of discovery' live event / email tease as monthly content-drop hook",
+      "Funnel Hacker's Cookbook Cancellation Funnel (Other Recipe #3): Survey -> Article intercept; quiz identifies specific concern -> personalized save page; 'drastically reduces refunds, cancellations and churn'",
+      "Copywriting Secrets — Jim Edwards: 'If you want X, do this' (onboarding nudges), PAS (save-the-member emails), Stealth/Columbo soft-close (annual upgrade), honest scarcity discipline throughout"
+    ],
+    "structural_persona": "russell-brunson-the-funnel-hackers-cookbook (Membership Funnel recipe: VSL + Order -> Offer Wall -> Membership Access Page -> Member Area; Cancellation Funnel: Survey -> Article) + DotCom Secrets (Continuity Funnel #3 + Follow-Up Funnel) + Marketing Secrets Blackbook (Secret 45 + 53 + 87)",
+    "rationale": "Stick rate is determined before the first renewal: onboarding consumption + AC bond + monthly value delivery. The cancellation save is a 2-page funnel intercept (Cookbook recipe), not a generic 'please stay' email."
+  },
+  "ghl_build": {
+    "engine": "Skill 44 (caf) builds all four workflows; GHL native calendar and tag triggers wire the phases together.",
+    "workflows": [
+      {
+        "name": "FSF — Membership: Onboarding (Phase A)",
+        "trigger": "Order Submitted = membership product (or Tag Added `member-active`)",
+        "key_actions": [
+          "1. Email + SMS — Welcome + access delivery (A1); tag `member-active`",
+          "2. Wait 2 days -> If/Else `member-lesson-started`? FALSE -> Email A2 (consumption nudge). TRUE -> skip",
+          "3. Wait 2 days -> Email A3 (quick-win story + gold-nugget CTA)",
+          "4. If trial: Wait until 48h before trial end -> Email + SMS A4 (trial warning + annual offer)",
+          "5. Trial convert tag `trial-converted`; stay on monthly track"
+        ]
+      },
+      {
+        "name": "FSF — Membership: Monthly Engagement (Phase B)",
+        "trigger": "Cron / scheduled (1st of month or content release date); fires for all contacts with `member-active` tag",
+        "key_actions": [
+          "1. Email B1 — Monthly content drop",
+          "2. Wait 14 days -> If/Else opened/clicked B1? FALSE -> Email B2 (re-engagement). TRUE -> skip",
+          "3. If/Else engaged (logged in)? TRUE -> Email B3 (streak/progress note). FALSE -> skip"
+        ]
+      },
+      {
+        "name": "FSF — Membership: Annual Upgrade (Phase C)",
+        "trigger": "Tag Added `member-active` + Wait 30 days (monthly-billed members only)",
+        "key_actions": [
+          "1. Email C1 — Annual savings offer; tag `annual-offer-sent`",
+          "2. Wait 7 days -> If/Else `member-annual`? FALSE -> Email C2 (Stealth close, last chance). TRUE -> end",
+          "3. At offer-close date: remove annual offer; tag `annual-offer-closed`"
+        ]
+      },
+      {
+        "name": "FSF — Membership: Cancellation Save (Phase D)",
+        "trigger": "Tag Added `cancel-intent` (set by cancel-link trigger-link click or cancel-page visit)",
+        "key_actions": [
+          "1. Email + SMS D1 — Route to Cancellation Funnel survey page; pause monthly-email workflows",
+          "2. On survey completion: branch by reason tag (`cancel-reason-price` / `cancel-reason-time` / `cancel-reason-expectation` / `cancel-reason-done` / `cancel-reason-tech`)",
+          "3. Email D2 — Personalized save email per branch",
+          "4. Wait 48h -> If/Else re-engaged or cancel-rescinded? FALSE -> Email D3 (final save + consent to cancel)",
+          "5. If still no action: process cancel tag `member-cancelled`; route to post-cancel winback nurture (Daily Seinfeld cadence)"
+        ]
+      }
+    ],
+    "goal_events": [
+      "`member-annual` — upgrades to annual -> exit upgrade workflow",
+      "`trial-converted` — trial converts to paid -> continue on monthly track",
+      "`member-cancelled` — cancel processed -> exit all active member workflows, enter winback nurture",
+      "`cancel-rescinded` — save successful -> remove cancel-intent, resume normal engagement"
+    ],
+    "tags_used": [
+      "member-active", "member-annual", "member-cancelled", "trial-converted",
+      "member-lesson-started", "annual-offer-sent", "annual-offer-closed",
+      "cancel-intent", "cancel-reason-price", "cancel-reason-time",
+      "cancel-reason-expectation", "cancel-reason-done", "cancel-reason-tech",
+      "cancel-rescinded"
+    ],
+    "notes": "Lesson-started / login signals come from the membership platform webhook (or a GHL trigger link inside the member area). The Cancellation Funnel survey (Phase D) is a 2-page ClickFunnels/GHL funnel — Survey Page -> Article Page — not just an email; the email in D1 routes the member to that page. The GHL 'pause' feature on workflows prevents the monthly engagement sequence from firing while a cancel-save is in progress. Annual upgrade offer must have a real close date honored; do not reopen without a legitimate reason (new content release, price change, etc.)."
+  },
+  "source": {
+    "books": [
+      "The Funnel Hacker's Cookbook (Membership Funnel: VSL + Order -> Offer Wall -> Membership Access -> Member Area; Cancellation Funnel Other Recipe #3: Survey -> Article; 'quiz identifies specific concern -> try to save the sale on the next page; drastically reduce refunds, cancellations, and churn')",
+      "DotCom Secrets — Funnel #3: Continuity ('if you don't have continuity, you don't have a business'; bond with AC first -> stick rate; Who/What/Why/How for trial; Star/Story/Solution for paid; yearly/lifetime upsells highly effective; Soap Opera Sequence + Daily Seinfeld as ongoing engagement)",
+      "Marketing Secrets Blackbook Secret 45 (Power of Continuity: low barrier to entry, something new + scarce each month, annual upgrade with savings bonus) + Secret 53 (Consumption: onboarding-driven quick win reduces churn; simple onboarding tweaks = 'millions of dollars') + Secret 87 (Subscription Selling Secret: hook-of-discovery live event to sell memberships at scale with honest scarcity)",
+      "Copywriting Secrets — Jim Edwards (PAS for save emails, 'If you want X' for onboarding nudges, Stealth/Columbo for annual upgrade, honest scarcity throughout)"
+    ],
+    "fidelity_note": "All four phases trace directly to documented Brunson/Edwards mechanics. The Cancellation Funnel structure (Survey -> Article, quiz-identifies-concern) is the verbatim FHC recipe. The stick-rate principle (bond with AC first, then continuity), onboarding-as-retention-lever, and annual-upgrade effectiveness are direct DotCom Secrets and MSB quotations. The 'something new and scarce each month' is the verbatim MSB Secret 45 stick mechanism. No invented mechanics."
+  },
+  "flexibility": {
+    "principle": "This template is a recommended default and a resource — it is NEVER a rule or a requirement.",
+    "mode_1_user_has_explicit_desire": "Do exactly what the user wants. This template is an optional reference only; it is never imposed or overridden onto their choice.",
+    "mode_2_user_is_unsure": "Suggest this proven template and explain why it works, but let the user decide.",
+    "mode_3_user_wants_it_handled": "Build the whole automation from this template.",
+    "note": "Always overridable, mixable, customizable, or ignorable. It assists; it does not dominate."
+  }
+}

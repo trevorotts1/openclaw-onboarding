@@ -1,5 +1,18 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.1.0] - 2026-06-27 — feat: automation template library + funnel link map + flexible matcher
+
+### Added
+- `automation-templates/` — 28 real email/automation templates (not stubs) in 5 categories: welcome-indoctrination (3), sales-close-sequences (7), engagement-broadcast (7), funnel-specific-followups (6), multichannel-automation (5). Each template has a JSON schema + Markdown companion.
+- `automation-templates/_links/funnel-to-automation-link-map.json` — maps all 38 Skill-6 funnel templates to their primary and supporting Skill-44 automation templates with rationale and entry event.
+- `automation-templates/_matcher/automation_matcher.py` — flexible automation matcher (stdlib-only, deterministic): three-mode GUIDE-NOT-RULE flexibility model, HONORED_EXPLICIT fast path for explicit user desire, funnel-link hint boost, step0_match() wiring, save_new_automation() grow-the-library, CLI with --list / --match / --selftest. 12/12 selftest cases pass.
+
+### Flexibility Model (prime directive)
+Mode 1 (Explicit): HONORED_EXPLICIT, no scoring, build exactly what was named.
+Mode 2 (Unsure): suggestion with rationale, user decides.
+Mode 3 (Just do it): top match built directly.
+Neither matcher ever blocks a build. Every element is overridable.
+
 ## [1.0.17] - 2026-06-21 — feat: weighted workflow-quality rubric (SUPERSET overlay on WF-1..21) + SMS fromNumber WF-12 hardening
 
 ### Added (Workflow-Quality Rubric — non-breaking SUPERSET overlay)
