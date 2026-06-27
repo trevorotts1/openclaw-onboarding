@@ -120,7 +120,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **13. TRIPLE ALLITERATION.** Lists of three should alliterate when natural ("confident, consistent, and clear"), and the trio can become formulaic: Confidence + Consistency + Clarity = Effective Guide. When a value trio is part of the pitch, each value word can earn its OWN slide, because each one is being sold.
 
-**14. ALWAYS PITCH SOMETHING.** Even a "free strategy session" webinar pitches a paid something, even if it is $47 or $97. If they are showing up, the event produces revenue and commitment. Free-only closes are not allowed without explicit owner sign-off.
+**14. ALWAYS PITCH SOMETHING.** Even a "free strategy session" webinar pitches a paid something, even if it is $47 or $97. If they are showing up, the event produces revenue and commitment. Free-only closes are not allowed without explicit owner sign-off. Watch for the upstream EVENT-vs-OFFER price conflation: a FREE EVENT (free to ATTEND -- `ACCESS_FREE: true`) does NOT mean a FREE OFFER. If the brief carries `ACCESS_FREE: true` with `FINAL_PRICE: 0` / `pitch_included: false` and NO `free_only_close: true` owner sign-off recorded, FLAG it (BLOCKING) -- the free event almost certainly sells a paid offer that was wrongly defaulted away.
 
 **15. THE SLIDE IS NOT THE SCRIPT.** Never put the words the presenter is going to SAY on the slide. The slide carries the one big idea; the presenter carries the narration; that separation is WHY the audience listens instead of reading ahead. The spoken words live in the PRESENTER NOTE.
 

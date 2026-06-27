@@ -328,11 +328,24 @@ small/low-stakes, OR when most context is already on file.
 2. Pull the SIMPLE question set for this department (the question bank below, simple set).
    Ask each one at a time. Skip any whose answer is already on file or already answered
    in the opening.
+2a. **PRICE-SEPARATION BRANCH (TWO PRICES -- never conflate).** Capture the EVENT/ACCESS price
+   (O3: `EVENT_PRICE` / `ACCESS_FREE` -- free or paid to ATTEND) and the OFFER price (#4:
+   `FINAL_PRICE` -- the product SOLD at the end) as TWO independent fields. A FREE event is the
+   front of a funnel that almost always sells a PAID offer at the end; "free to attend" NEVER
+   implies "free offer." When the event is free, DEFAULT to EXPECTING a paid offer and ASK what
+   it is -- do NOT conclude "no pitch / no price needed" and do NOT default the offer to free.
+   Set `pitch_included: true` whenever an offer exists; a free-only close (`pitch_included: false`,
+   `FINAL_PRICE: 0`) is permitted ONLY on the owner's EXPLICIT confirmation and is flagged
+   `free_only_close: true` for sign-off (downstream Devil's Advocate doctrine point 14, ALWAYS
+   PITCH SOMETHING). NEVER infer one price from the other.
 3. **(density-floor overhaul) Ask the STYLE BRANCH verbatim** (SOP-IMG-03 section 2), once, early, before the STYLE BLOCK is built: "For the look of your slides, do you have a particular image style in mind? You can: (1) point me at an existing deck, past designs, or reference images you want me to match; (2) tell me a saved style name from your library if you already have one (like 'Style 1'); or (3) let me creatively develop a signature style for you. Which one?" Set `STYLE_SOURCE` to `match_reference` (+ `STYLE_REFERENCES`, `ANALYZE_REQUEST=true`), `saved_style` (+ `STYLE_ID`), or `creative_develop`. A deck that reaches Phase 2 with `STYLE_SOURCE` unset is a defect (it would invent a look with no client direction, the path that produced the reference failure case cookie-cutter typography). If `creative_develop`, sequence the existing mood/imagery/avoid stems into the short creative-develop micro-interview (<=5 questions; do not re-bank them) per SOP-IMG-03 section 3.
 4. Reflect each answer back in one line. Capture into brief.json under its field key.
 5. If a critical field is still unknown after the simple set, ask ONE clarifying
    follow-up (you may exceed 7 only to close a CRITICAL gap; flag it in the brief as
    `clarifying_followup: true`). Otherwise use the best default and mark `assumed: true`.
+   Any price you infer or default (`EVENT_PRICE`, `FINAL_PRICE`, or `pitch_included`) MUST be
+   marked `assumed: true`, read back at lock (SOP 9.3), and NEVER denied -- if the owner
+   challenges an assumption you made, own it and correct it; do not claim you did not make it.
 6. Hand to SOP 9.3.
 
 **Output:** `working/brainstorm/presentations/<project-slug>/brief.json` (draft, `interview_confirmed: false`).
@@ -384,6 +397,8 @@ to the remaining critical questions only and finish in 3 more, then lock. Record
    | VISUAL_MIX | Captured OR defaulted to `mix` with `visual_mix_defaulted: true` | Default: mix |
    | DARK_OK | Captured OR defaulted to `false` | Default: false |
    | HOOK_SEED | Captured OR `hook_seed_missing: true` set | Hook Strategist derives at build |
+   | EVENT_PRICE / ACCESS_FREE (free or paid to ATTEND) | Captured (INDEPENDENT of the offer price) | Ask once; NEVER inferred from FINAL_PRICE |
+   | FINAL_PRICE + pitch_included (the OFFER sold at the end) | Captured, OR `pitch_included: false` + `free_only_close: true` on EXPLICIT owner confirmation | NEVER defaulted to 0/free because the event is free -- expect a paid offer |
 
    If GROUNDED_CONTENT is still blank after the interview AND the owner has not been
    asked yet, ask ONE more time now. If still unanswered: set `grounded_content_provisional`
@@ -397,7 +412,10 @@ to the remaining critical questions only and finish in 3 more, then lock. Record
    Include in the read-back: REPRESENTATION_MIX breakdown (or flag if uncaptured),
    VISUAL_MIX, DARK_OK, HOOK_SEED (or flag if missing).
 3. List every `assumed: true` field explicitly so the owner can correct defaults.
-   Explicitly call out any representation or grounded-content flags.
+   Explicitly call out any representation or grounded-content flags. Read back every inferred
+   or defaulted PRICE in plain words ("I assumed the offer price is $X -- confirm or correct")
+   and surface any `free_only_close: true` flag for explicit sign-off. The agent must NEVER deny
+   an assumption it made; if the owner challenges one, own it and correct it on the spot.
 4. Send via openclaw message send. WAIT for explicit confirmation. Do not proceed on
    silence.
 5. On confirmation: set `interview_confirmed: true`, `confirmed_by`, `confirmed_at`,
@@ -677,13 +695,14 @@ Skip only if the answer is already confirmed on file.
 
 - O1. "In one line, what is this presentation FOR -- what do you want people to do at the end?" -> `GOAL`, `CTA_ACTION`
 - O2. "Is this a live webinar pitch, a teaching deck, a sales deck, or something else?" -> `DECK_TYPE`
+- O3. EVENT / ACCESS PRICE -- free or paid to ATTEND (this is NOT the offer price). "Is the event itself -- the webinar, workshop, or challenge -- free or paid to ATTEND? If paid, what does a seat cost?" -> `EVENT_PRICE` (number or 0), `ACCESS_FREE` (true/false). **TWO-PRICES RULE -- never conflate:** the price to ATTEND the event and the price of the OFFER sold at the end (#4 `FINAL_PRICE`) are two INDEPENDENT fields. A FREE event is the FRONT of a funnel that almost always SELLS a paid offer at the end -- "free to attend" NEVER implies "free offer." NEVER infer one price from the other; ask BOTH. If the owner answers only one, ask the other -- do not default the missing one from the answer you have.
 
 ### SIMPLE (7 or fewer -- these are IN ADDITION TO the 6 pre-presentation mandatory fields above)
 
 1. THE GOAL -- what action at the end (buy / book / join / enroll). `GOAL`, `CTA_ACTION`
 2. THE FEELING -- how should they feel walking away. `TARGET_FEELING`
 3. THE TONE -- pick one of the seven named styles (Inspirational / Tough Love / Challenger / Teacher / Storyteller / High-Energy Hype / Calm Premium) or blend two. `TONE`
-4. THE OFFER + PRICE -- what are you selling and at what final price; gradual price drop or straight price. `OFFER_STACK`, `FINAL_PRICE`, `PRICE_MODE`
+4. THE OFFER + PRICE (the product SOLD at the end -- SEPARATE from the EVENT/ACCESS price in O3). "What are you SELLING at the end, and at what final price -- gradual price drop or straight price?" `OFFER_STACK`, `FINAL_PRICE`, `PRICE_MODE`, `pitch_included`. **`FINAL_PRICE` is the OFFER price ONLY; it is NEVER copied or inferred from `EVENT_PRICE`/`ACCESS_FREE`.** DEFAULT when the event is free (`ACCESS_FREE: true`): EXPECT a paid offer (the funnel model) and ASK what it is -- do NOT default the offer to free and do NOT conclude "no pitch / no price needed." Set `pitch_included: true` whenever an offer exists. Set `FINAL_PRICE: 0` / `pitch_included: false` (a free-only close) ONLY if the owner EXPLICITLY confirms there is NO paid offer; even then set `free_only_close: true` for owner sign-off and note that the downstream Devil's Advocate doctrine point 14 (ALWAYS PITCH SOMETHING) will surface it. If you infer or default ANY price, mark it `assumed: true` and read it back at lock (SOP 9.3) -- and NEVER deny an assumption you made.
 5. DURATION -- how many minutes (10/15/30/45/60/90). `DURATION_MIN`
 6. AUDIENCE -- any additional specifics about who they are beyond REPRESENTATION_MIX (e.g. industry, income level, pain point). `AUDIENCE` (REPRESENTATION_MIX was captured in pre-presentation -- do not re-ask the percentage question).
 7. BRAND LOOK -- brand colors / logo on slides yes-no (skip if on file). `BRAND_PRIMARY`, `LOGO_ON_SLIDES`
