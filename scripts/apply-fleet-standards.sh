@@ -368,6 +368,15 @@ elif "agents" in cfg and "list" in cfg["agents"]:
             tools["sessions"] = _sessions
         if _sessions.get("visibility") != "all":
             _sessions["visibility"] = "all"
+        # agentToAgent: routing agent must be able to message peer agents
+        # directly. Idempotent — preserves any existing allow list if already
+        # customized (setdefault only seeds missing keys).
+        _a2a = tools.setdefault("agentToAgent", {})
+        if not isinstance(_a2a, dict):
+            _a2a = {}
+            tools["agentToAgent"] = _a2a
+        _a2a.setdefault("enabled", True)
+        _a2a.setdefault("allow", ["*"])
         print(f"[apply-fleet-standards] re-asserted CEO tool-gate on default agent (id={agent.get('id','<unknown>')}; production tools denied)")
 
 after_json = json.dumps(cfg, sort_keys=True, indent=2)
