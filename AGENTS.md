@@ -457,24 +457,24 @@ They are not interchangeable, and the audit should NEVER ding the install docs f
 ### Standard Indexing Commands
 
 ```bash
-python3 ~/clawd/scripts/gemini-indexer.py          # Update file index
+python3 ~/.openclaw/scripts/gemini-indexer.py          # Update file index
 # Handled by gemini-indexer.py           # Generate embeddings
-python3 ~/clawd/scripts/gemini-indexer.py --status   # Verify completion
+python3 ~/.openclaw/scripts/gemini-indexer.py --status   # Verify completion
 ```
 
 ### Verification Steps
 
 1. **Announce:** "Running Gemini Engine indexing for [milestone] milestone..."
-2. **Update:** `python3 ~/clawd/scripts/gemini-indexer.py` - scans all collections
+2. **Update:** `python3 ~/.openclaw/scripts/gemini-indexer.py` - scans all collections
 3. **Embed:** `# Handled by gemini-indexer.py` - generates vectors
-4. **Status:** `python3 ~/clawd/scripts/gemini-indexer.py --status` - confirm completion
+4. **Status:** `python3 ~/.openclaw/scripts/gemini-indexer.py --status` - confirm completion
 5. **Report:** "Gemini Engine indexing complete: X files, Y collections"
 
 ### Critical Rules
 
 - **Do NOT** skip indexing at milestones (breaks search)
-- **Do NOT** assume "it's probably fine" - verify with `python3 ~/clawd/scripts/gemini-indexer.py --status`
-- **Do NOT** run `# Handled by gemini-indexer.py` without `python3 ~/clawd/scripts/gemini-indexer.py` first
+- **Do NOT** assume "it's probably fine" - verify with `python3 ~/.openclaw/scripts/gemini-indexer.py --status`
+- **Do NOT** run `# Handled by gemini-indexer.py` without `python3 ~/.openclaw/scripts/gemini-indexer.py` first
 - **Do NOT** index after every single skill (wastes time)
 
 ### Collections
@@ -496,14 +496,14 @@ When user finishes answering Skill 23 (AI Workforce Blueprint) questions:
 
 1. Build workforce structure
 2. Wire personas to departments and roles
-3. **RUN:** `python3 ~/clawd/scripts/gemini-indexer.py`
+3. **RUN:** `python3 ~/.openclaw/scripts/gemini-indexer.py`
 4. Confirm indexing complete
 
 ---
 
 ## When to Run Gemini Engine Indexing
 
-After these events, **ALWAYS** run: `python3 ~/clawd/scripts/gemini-indexer.py`
+After these events, **ALWAYS** run: `python3 ~/.openclaw/scripts/gemini-indexer.py`
 
 - AI Workforce Blueprint setup complete (after questions answered)
 - New book/persona added to coaching-personas collection
@@ -976,7 +976,7 @@ and `scripts/test-watchdog-loop.sh` (T8 full-passes, T8b shell-blocks the overal
 
 ### Gemini Engine Indexing
 - Index at milestones, not after every skill
-- Always verify with `python3 ~/clawd/scripts/gemini-indexer.py --status`
+- Always verify with `python3 ~/.openclaw/scripts/gemini-indexer.py --status`
 - Personas and AI Workforce need immediate indexing (searchable content)
 
 ### External Actions

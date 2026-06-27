@@ -28,7 +28,7 @@ Verify all required files and folders exist at the correct paths.
 - [ ] `agent-prompts/playbook-appendix-prompt.md` exists (Phase 3b — emits PLAYBOOK-APPENDIX.md)
 
 ### Pre-Built Personas Folder
-- [ ] `~/Downloads/openclaw-master-files/coaching-personas/personas/` exists (or equivalent master-files path)
+- [ ] `~/.openclaw/workspace/data/coaching-personas/personas/` exists (or equivalent master-files path)
 - [ ] At least one persona folder present with all 4 files:
   - [ ] `extraction-notes.md`
   - [ ] `analysis-notes.md`

@@ -33,9 +33,9 @@ This skill gives your AI agent complete working knowledge of the Fish Audio API.
 
 **Gemini Engine search pattern:**
 ```bash
-python3 ~/clawd/scripts/gemini-search.py "fish audio tts endpoint parameters"
-python3 ~/clawd/scripts/gemini-search.py "fish audio websocket streaming"
-python3 ~/clawd/scripts/gemini-search.py "fish audio voice cloning"
+python3 ~/.openclaw/scripts/gemini-search.py "fish audio tts endpoint parameters"
+python3 ~/.openclaw/scripts/gemini-search.py "fish audio websocket streaming"
+python3 ~/.openclaw/scripts/gemini-search.py "fish audio voice cloning"
 ```
 
 **Direct reference path:**
@@ -151,7 +151,7 @@ If `FISH_AUDIO_API_KEY` or `FISH_AUDIO_VOICE_ID` are missing, the installer writ
    - Add `FISH_AUDIO_API_KEY` to `~/.clawdbot/clawdbot.json` env vars
    - Add `FISH_AUDIO_VOICE_ID` to `~/.clawdbot/clawdbot.json` env vars
    - Add both to `~/clawd/secrets/.env`
-   - Run `python3 ~/clawd/scripts/gemini-indexer.py` to re-index
+   - Run `python3 ~/.openclaw/scripts/gemini-indexer.py` to re-index
    - Mark entry as Status: COMPLETE in `.pending-setup.md`
 
 ---

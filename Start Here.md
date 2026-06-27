@@ -787,9 +787,9 @@ After every skill install, verify:
 
 ```bash
 # Standard indexing command sequence:
-python3 ~/clawd/scripts/gemini-indexer.py          # Update file index
+python3 ~/.openclaw/scripts/gemini-indexer.py          # Update file index
 # Handled by gemini-indexer.py           # Generate embeddings
-python3 ~/clawd/scripts/gemini-indexer.py --status   # Verify completion
+python3 ~/.openclaw/scripts/gemini-indexer.py --status   # Verify completion
 ```
 
 ### Collections to Index
@@ -798,13 +798,13 @@ python3 ~/clawd/scripts/gemini-indexer.py --status   # Verify completion
 |------------|----------|--------------|
 | `clawd` | Workspace AGENTS.md, MEMORY.md, TOOLS.md, etc. | Every milestone |
 | `master-files` | `~/Downloads/openclaw-master-files/` | Every milestone |
-| `coaching-personas` | `~/Downloads/openclaw-master-files/coaching-personas/personas/` | After Skill 22 |
+| `coaching-personas` | `~/.openclaw/workspace/data/coaching-personas/personas/` | After Skill 22 |
 | `departments` | `~/clawd/departments/` (workspace core files, governing-personas.md) | After Skill 23 |
 
 ### Process for Each Indexing
 
 1. **Announce:** "Running Gemini Engine indexing for [milestone] milestone..."
-2. **Update:** `python3 ~/clawd/scripts/gemini-indexer.py` - scans all collections
+2. **Update:** `python3 ~/.openclaw/scripts/gemini-indexer.py` - scans all collections
 3. **Embed:** `# Handled by gemini-indexer.py` - generates vectors
 4. **Verify:** Check status shows all files indexed
 5. **Report:** "Gemini Engine indexing complete: X files, Y collections"
@@ -812,7 +812,7 @@ python3 ~/clawd/scripts/gemini-indexer.py --status   # Verify completion
 ### Forbidden Actions
 - Do NOT index after every single skill (wasteful)
 - Do NOT skip indexing at milestones (breaks search)
-- Do NOT assume "it's probably fine" - verify with `python3 ~/clawd/scripts/gemini-indexer.py --status`
+- Do NOT assume "it's probably fine" - verify with `python3 ~/.openclaw/scripts/gemini-indexer.py --status`
 - Do NOT index before TYP and Back Yourself Up are complete
 
 ### Why This Schedule
@@ -1840,7 +1840,7 @@ This section tells YOU (the AI agent) exactly how to run the 5-wave installation
 **Check for already installed skills:**
 ```bash
 ls -la ~/.openclaw/skills/ 2>/dev/null | grep -E "^d" | wc -l
-python3 ~/clawd/scripts/gemini-indexer.py --status 2>/dev/null
+python3 ~/.openclaw/scripts/gemini-indexer.py --status 2>/dev/null
 ```
 
 **Check onboarding status file:**
@@ -1881,9 +1881,9 @@ Install these 4 items yourself, one at a time:
    - Report: "Skill 02 complete"
 
 3. **Gemini Engine Setup**
-   - Verify Gemini Engine is installed: `python3 ~/clawd/scripts/gemini-indexer.py --status`
+   - Verify Gemini Engine is installed: `python3 ~/.openclaw/scripts/gemini-indexer.py --status`
    - If not installed, install it
-   - Run initial indexing: `python3 ~/clawd/scripts/gemini-indexer.py`
+   - Run initial indexing: `python3 ~/.openclaw/scripts/gemini-indexer.py`
    - Report: "Gemini Engine setup complete"
 
 4. **Skill 03: Agent Browser**
@@ -2040,9 +2040,9 @@ label: "wave4-agent-f"
 
 2. **Final Gemini Engine Indexing**
    ```bash
-   python3 ~/clawd/scripts/gemini-indexer.py
+   python3 ~/.openclaw/scripts/gemini-indexer.py
    # Handled by gemini-indexer.py
-   python3 ~/clawd/scripts/gemini-indexer.py --status
+   python3 ~/.openclaw/scripts/gemini-indexer.py --status
    ```
 
 3. **Remove ONBOARDING PENDING flag from AGENTS.md**
@@ -2510,13 +2510,13 @@ After all 41 active skills are installed, run the final Gemini Engine indexing:
 
 ```bash
 # Final index update
-python3 ~/clawd/scripts/gemini-indexer.py
+python3 ~/.openclaw/scripts/gemini-indexer.py
 
 # Final embeddings generation
 # Handled by gemini-indexer.py
 
 # Verify all collections are indexed
-python3 ~/clawd/scripts/gemini-indexer.py --status
+python3 ~/.openclaw/scripts/gemini-indexer.py --status
 ```
 
 **Why this is needed:**

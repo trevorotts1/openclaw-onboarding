@@ -107,7 +107,7 @@ New users shouldn't have to manually fill `[placeholders]`. The onboarding syste
 4. Updates USER.md and SOUL.md as it learns
 5. Marks complete when enough context gathered
 
-**Deep dive:** See [references/onboarding-flow.md](references/onboarding-flow.md) for the full logic.
+**Deep dive:** See [references/onboarding-flow.md](upstream-original/references/onboarding-flow.md) for the full logic.
 
 ## Core Philosophy
 
@@ -207,7 +207,7 @@ During heartbeats, scan for suspicious patterns:
 
 Run `./scripts/security-audit.sh` periodically.
 
-**Deep dive:** See [references/security-patterns.md](references/security-patterns.md) for injection patterns, defense layers, and incident response.
+**Deep dive:** See [references/security-patterns.md](upstream-original/references/security-patterns.md) for injection patterns, defense layers, and incident response.
 
 ### 3. Self-Healing
 

@@ -1,3 +1,38 @@
+## [v14.21.0]  -  2026-06-27  -  chore(repo): hygiene — retire stale script/blueprint paths, drop tracked .pyc, fix proactive-agent refs, add markitdown frontmatter
+
+Repository hygiene consolidation: eliminates all legacy path references that caused
+silent runtime failures or agent confusion, removes the only tracked compiled bytecode
+artifact, fixes broken internal document links, and adds YAML frontmatter to the
+platform-staged VPS skill.
+
+- **Dead script-path cleanup (8 files):** `~/clawd/scripts/gemini-indexer.py` and
+  `~/clawd/scripts/gemini-search.py` in AGENTS.md, MIGRATION.md, Start Here.md,
+  UPDATE-PLAYBOOK.md, SYSTEM-DIAGNOSTIC-CHECKLIST.md, 30-fish-audio-api-reference
+  (INSTALL.md + SKILL.md), and the archived select-persona-for-task.py now all
+  reference the canonical deployed wrappers at `~/.openclaw/scripts/gemini-*.py`
+  (per CHANGELOG a71f6bbd — the resolver's preferred candidate order). Zero
+  `~/clawd/scripts/gemini` refs remain outside CHANGELOG/historical comments.
+- **Stale blueprint-path cleanup (11 doc/script files):** 21 files referenced
+  `~/Downloads/openclaw-master-files/coaching-personas/personas` as the persona
+  library root; the 11 doc/script files now point to the canonical runtime path
+  `~/.openclaw/workspace/data/coaching-personas/personas` (resolved by
+  `embedding_engine.py` via `detect_platform.get_openclaw_paths()["workspace"]`).
+  The 10 persona-blueprint.md provenance lines are intentional historical records
+  and left unchanged. The orchestrator.py user_prompt now uses the `{PERSONAS_DIR}`
+  variable (already resolved at the top of the file) instead of the hardcoded
+  Downloads literal.
+- **Tracked .pyc removed:** `26-caption-creator/Scripts/__pycache__/
+  animated_captions.cpython-314.pyc` was tracked in git despite `.gitignore`
+  already covering `__pycache__/` (L8) and `*.pyc` (L9); `git rm --cached`
+  removes it from the index. On-disk file is preserved.
+- **Proactive-agent internal links fixed:** `18-proactive-agent/proactive-agent-full.md`
+  L110 + L210 linked to `references/onboarding-flow.md` and
+  `references/security-patterns.md` at the skill root — neither exists there.
+  Both now point to `upstream-original/references/` where the files DO live.
+- **Markitdown frontmatter added:** `platform/vps/skills/markitdown-skill/SKILL.md`
+  gains minimal `name` + `description` YAML frontmatter for forward-consistency
+  with the skill-discovery pattern (broken frontmatter = not discovered).
+- **Versions:** 10 markers → v14.21.0.
 ## [v14.19.2]  -  2026-06-27  -  fix: cross-agent routing default visibility=all + routable department agents
 
 Two defects caused every new client box to silently break cross-agent routing
