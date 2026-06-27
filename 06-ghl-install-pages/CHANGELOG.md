@@ -4,6 +4,44 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.20.0] - 2026-06-27 — feat(skill6): idempotent page create — page_list + find_page_by_name
+
+### Added — idempotent re-install: page-marker update-in-place (`ghl_rest_canvas.py`)
+
+Previously the build loop had only **step-level** idempotency (the `/tmp`
+ledger gate at `ghl_builder.resume_point` line 333: "NEVER re-create a step
+that already exists, state >= created").  If the ledger was absent on a re-run
+(different machine, cleared temp, fresh agent), the loop would call
+`step_create` again and produce a **duplicate ZHC-prefixed page** in GoHighLevel.
+
+This change adds two primitives to `ghl_rest_canvas.py` that close the gap:
+
+- **`page_list(funnel_id, location_id, *, session, token_global)`** -- step
+  emitter for `GET /funnels/page/list?funnelId=...&locationId=...`.
+  The build loop calls this **before** `step_create` when the ledger has no
+  record.  The response body is fed to `find_page_by_name`.
+
+- **`find_page_by_name(page_list_body, name)`** -- pure case-insensitive name
+  lookup over the page-list response.  Returns
+  `{"page_id", "page_version", "name"}` when a ZHC-prefixed page already
+  exists, or `None` when it does not.
+
+  **Update-in-place protocol (replaces step_create on re-run)**:
+  1. Emit `page_list` step -- GET the funnel's page list.
+  2. Call `find_page_by_name(body, zhc_name)` -- case-insensitive ZHC name match.
+  3. Non-None -- skip `step_create`; pass `page_id` + `page_version` directly
+     to `page_autosave` (update the existing page in-place, no duplicate).
+  4. None -- proceed with `step_create` as on a first run.
+
+  Response-shape resilience: handles "funnelPages", "pages", "data",
+  "steps" and the funnel-wrapper nested shape.  Page id extracted via the
+  same `_id` / `id` / `pageId` fallback chain as `created_page_id`.
+
+- Both functions exported via `__all__`.
+- 35 mock-only tests in `tests/test_ghl_idempotent_page.py` (all pass).
+
+---
+
 ## [v14.19.0] - 2026-06-27 — fix(skill6): agent-browser version-pin guard — Python-side REFUSE on 0.27.0 drift
 
 ### Added — `browser_manager.assert_agent_browser_version()` (P2-4)
