@@ -1,3 +1,39 @@
+## [v14.23.2]  -  2026-06-27  -  fix: update-skills.sh now delivers complete routing fix (routing-fix + dept registration + conditional restart)
+
+Closes the gap where `update-skills.sh` applied `apply-fleet-standards.sh` but
+silently skipped `apply-routing-fix.sh`, leaving all existing (pre-v14.22.x)
+boxes without the 4-layer routing fix after a plain `update`. Also adds
+`materialize-dept-agents.sh` to the update path so built-but-unregistered dept
+agents are registered in openclaw.json on every update.
+
+**Changes in `update-skills.sh`:**
+
+1. **Persistent-copy loop (line ~957):** Added `apply-routing-fix.sh` to the
+   `for _s in ...` loop that stashes scripts to `~/.openclaw/scripts` (or
+   `/data/.openclaw/scripts`) before the temp clone is wiped. Without this,
+   `apply-routing-fix.sh` was missing from the persistent dir and the
+   `$ONBOARDING_DIR` fallback also resolved to the already-deleted clone.
+
+2. **Routing-fix execution block (after fleet-standards):** Added an idempotent
+   call to `apply-routing-fix.sh` using the same `_PERSIST_SCRIPTS`-first
+   then `$ONBOARDING_DIR/scripts` fallback pattern as the fleet-standards block.
+   Runs on every update; all 5 layers are no-ops when already applied.
+
+3. **Dept-agent registration (after routing-fix):** Calls
+   `materialize-dept-agents.sh` from the updated `$SKILLS_DIR/32-*/scripts/`
+   so built-but-unregistered dept agents are added to `agents.list[]` in
+   openclaw.json. Idempotent; skipped silently when Skill 32 is not installed.
+
+4. **Conditional gateway restart:** Snapshots a MD5 hash of openclaw.json
+   before fleet-standards runs and re-hashes after materialize completes. If the
+   hash changed (meaning this run actually mutated the config), restarts the
+   gateway to make `tools.sessions.visibility=all` and `agentToAgent` live.
+   Platform dispatch: `openclaw gateway restart` (CLI) → `launchctl kickstart`
+   (Mac fallback) → `docker restart openclaw` (VPS fallback). No restart when
+   nothing changed, avoiding unnecessary downtime on routine updates.
+
+**Version bump:** v14.23.1 → v14.23.2 (ONBOARDING_VERSION in update-skills.sh).
+
 ## [v14.23.0]  -  2026-06-27  -  feat: CC harmony — key-gated persona-index build, embedding canary probe, Gemini path/DB-path doc fixes
 
 Consolidates the net-new content from three open PRs (#400, #401, #402) onto a
