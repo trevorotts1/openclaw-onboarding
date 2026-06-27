@@ -1,3 +1,9 @@
+## [v14.12.1]  -  2026-06-27  -  fix(presentations): separate event/access price from offer price in quick-mode interview — free event != free offer + assumption read-back (Skill 23 v2.2)
+
+Enforces a hard distinction between the event/access ticket price (`EVENT_ACCESS_PRICE`) and the offer price (`FINAL_PRICE`) throughout the Presentations department role file and its SOP mirror. A free-to-attend webinar or workshop NEVER implies a free offer; the default funnel is a free event that sells a paid offer at the end. Key changes: (1) New mandatory question O3 asks both prices separately in every interview mode; (2) `pitch_included` boolean defaults `true` for a free event with no named offer, with `final_price_assumed:true` surfaced at the SOP 9.3 read-back; (3) HARD VIOLATION rule prohibits silently assuming a field and then denying the assumption when the owner challenges it — every default is marked `assumed:true` and disclosed at lock; (4) Closing-fields gate table adds `EVENT_ACCESS`, `pitch_included`, and `FINAL_PRICE` rows with explicit fill-or-default requirements; (5) SOP mirror bumped to v2.2. No client names, no operator-local paths, no secret values committed.
+
+---
+
 ## [v14.12.0]  -  2026-06-27  -  feat(skill6): transcript-driven build recipe — SEO/founder gate + media-folder discipline + full-width route + ZHC part-N naming (Skill 6 v7.3.0)
 
 Derives and enforces the canonical GHL funnel build recipe directly from Trevor's authoritative transcript. All items tagged `source=transcript` (authoritative) or `ownedByHarden` (delegated to parallel harden run wu9dnrsak). Builds ON the harden run changes (full-width default, P0 gate, child-chain, iframe/sanitizer, selectors, auth, rate-governor) — additive and complementary. No client names, no operator-local paths, no secret values committed.
