@@ -1,3 +1,37 @@
+## [v14.16.0]  -  2026-06-27  -  fix(persona-system): selector semantic stage was dark (argparse arg-order) + repoint stale persona corpus path to the canonical workspace location
+
+Two independently-verified persona-system defects, both fixed.
+
+DEFECT 1 — SELECTOR SEMANTIC STAGE DARK (`23-ai-workforce-blueprint/scripts/persona-selector-v2.py`).
+`_semantic_candidate_retrieval` invoked the gemini-search engine as
+`[python3, gemini-search.py, "--", task_text, "--limit", N]`. Because the `--`
+sentinel precedes everything, argparse treats the trailing `--limit N` as STRAY
+POSITIONALS (only one positional, `query`, is defined) → `error: unrecognized
+arguments: --limit N` → exit 2 → `returncode != 0` → the function returns None
+EVERY call. Stage C (semantic candidate retrieval) was therefore dark on every
+selection, so the selector fell back to the category stage alone and mis-picked
+(e.g. a funnel task could surface a negotiation persona instead of a Brunson
+funnel persona). FIX: reorder so the flag precedes the sentinel —
+`[python3, gemini-search.py, "--limit", N, "--", task_text]`. The `--` still
+guards task descriptions that begin with `-`. Proven: a funnel task now surfaces
+`russell-brunson-lead-funnels` #1 and a sketchnote task surfaces
+`rohde-the-sketchnote-workbook` #1.
+
+DEFECT 2 — STALE PERSONA CORPUS PATH (`22-book-to-persona-coaching-leadership-system/CORE_UPDATES.md`).
+The Persona Reflex "Key paths" + re-indexing trigger pointed the persona corpus
+at a stale legacy location (42 dirs, legacy slugs) instead of the canonical
+workspace corpus (`~/.openclaw/workspace/data/coaching-personas/personas/`, 54
+canonical dirs). Repointed all three occurrences so the fleet inherits the
+correct path on the next core-update propagation.
+
+FILES: 23-ai-workforce-blueprint/scripts/persona-selector-v2.py,
+22-book-to-persona-coaching-leadership-system/CORE_UPDATES.md. No client names,
+no operator-local paths, no secret values committed. (The `--mode` engine flag
+referenced by the Persona Reflex already shipped in shared-utils/embedding_engine.py
+at v14.11.1+; this release does not change the engine.)
+
+---
+
 ## [v14.15.0]  -  2026-06-27  -  fix(skill23): craft/specialist persona routing — task-type-aware weighting actually fires + domain-primary-match bonus (the v14.14.0 HELD scoring lift, redesigned)
 
 Ships the persona-scoring lift that v14.14.0 explicitly HELD ("adaptive specialist-weighting held … specialistsWin=false, generalizes=false"). The v14.14.0 routing fix got the right specialist INTO the candidate pool; this release makes the scoring actually SELECT them on CRAFT/SPECIALIST tasks, without a hard-pin and without over-weighting semantics on strategic tasks. Gates: specialistsWin=true, generalizes=true, regressions=[].

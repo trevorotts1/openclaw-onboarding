@@ -55,7 +55,7 @@ Skip ONLY if the user explicitly says so, or for purely mechanical tasks (no jud
 
 Key paths:
 - Skill: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/
-- Personas: ~/Downloads/openclaw-master-files/coaching-personas/personas/
+- Personas: ~/.openclaw/workspace/data/coaching-personas/personas/
 - Router: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/PERSONA-ROUTER.md
 - Orchestrator: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py
 - Gemini Vector Database: coaching-personas [run: python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status to get current counts]
@@ -63,7 +63,7 @@ Key paths:
 To add a new book: follow SOP in MEMORY.md under "Add New Book to Coaching Personas Matrix"
 
 Re-indexing trigger (MANDATORY after adding any new persona):
-When a new book persona is added to ~/Downloads/openclaw-master-files/coaching-personas/personas/:
+When a new book persona is added to ~/.openclaw/workspace/data/coaching-personas/personas/:
 Run: python3 ~/.openclaw/workspace/scripts/gemini-indexer.py
 This updates the Gemini embedding index with the new persona.
 Do NOT skip this step -- the search will not find the new persona until re-indexed.
@@ -109,7 +109,7 @@ Full Gemini Engine guide: ~/.openclaw/skills/22-book-to-persona-coaching-leaders
 ```
 ## Book-to-Persona Persona Library (Installed [DATE])
 - Skill: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/
-- Pre-built personas (see python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status for count): ~/Downloads/openclaw-master-files/coaching-personas/personas/
+- Pre-built personas (see python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status for count): ~/.openclaw/workspace/data/coaching-personas/personas/
 - Gemini Vector Database: coaching-personas [run: python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status to get current counts]
 - Source: Available at your onboarding package repo.
 - Persona Reflex: query Gemini Engine before every professional task (see AGENTS.md)
