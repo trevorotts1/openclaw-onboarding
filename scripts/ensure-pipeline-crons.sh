@@ -81,7 +81,12 @@
 #   agentTurn reaper back to command-kind (zero LLM tokens), and throttles the
 #   reaper */10 -> hourly. Idempotent + logs every flip. This makes
 #   silent-by-default CONVERGE on already-deployed boxes, not just fresh installs.
-ENSURE_PIPELINE_CRONS_VERSION="v14.1.5"
+# v14.1.6 — add weekly-onboarding-update to MANAGED_RECONCILE_CRONS as a
+#   belt-and-suspenders backstop for fix/existing-box-cron-rewrite (v14.19.1).
+#   install.sh + update-skills.sh now do a delete+recreate on detect; this entry
+#   catches any box where that delete failed (CLI error / no python3) by silencing
+#   the delivery in-place via --no-deliver.
+ENSURE_PIPELINE_CRONS_VERSION="v14.1.6"
 
 set -u
 
@@ -626,6 +631,12 @@ MANAGED_RECONCILE_CRONS=(
   "pre-july14-embed-migrate"
   "agent-browser-reaper"
   "ghl-token-liveness"
+  # v14.1.6 — belt-and-suspenders for the existing-box cron-rewrite migration
+  # (fix/existing-box-cron-rewrite).  install.sh + update-skills.sh now detect
+  # old announce/to wiring and delete+recreate.  If that delete fails (CLI error
+  # or python3 absent), the reconcile pass here catches any remaining announce-
+  # mode or non-empty `to` delivery and silences it via --no-deliver.
+  "weekly-onboarding-update"
 )
 
 # Emit one TSV row per managed cron that currently exists, with the fields the

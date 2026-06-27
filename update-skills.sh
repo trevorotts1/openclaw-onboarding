@@ -45,7 +45,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v14.19.0"
+ONBOARDING_VERSION="v14.19.1"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -448,7 +448,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v14.19.0 - safe_json_edit
+# v14.19.1 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1907,9 +1907,49 @@ with open('${_MANIFEST_TMP}', 'w') as f:
   # backfills it.
   # ----------------------------------------------------------
   if command -v openclaw >/dev/null 2>&1; then
+    # CRON REWRITE MIGRATION (fix/existing-box-cron-rewrite v14.19.1):
+    # Boxes provisioned BEFORE the silent-cron fix (v14.10.2) carry the OLD
+    # weekly-onboarding-update cron wired with --announce --channel telegram
+    # --to <client-chat-id>.  The scheduler auto-delivers the raw maintenance
+    # prompt into the CLIENT's Telegram chat every Sunday — internal operator
+    # traffic the client was never meant to see.  A plain "already installed"
+    # skip leaves the leaking cron in place.  Fix: detect old delivery wiring
+    # via openclaw cron list --json and delete the stale entry so the creation
+    # block below always lands the SILENT main-session form.
     if openclaw cron list 2>/dev/null | grep -qi "weekly-onboarding-update"; then
-      echo "  ✓ Sunday weekly update-check cron already installed"
-    else
+      _CRON_HAS_OLD_WIRING=false
+      if command -v python3 >/dev/null 2>&1; then
+        _OC_RAW_JSON=$(openclaw cron list --json 2>/dev/null) || _OC_RAW_JSON=""
+        if [ -n "$_OC_RAW_JSON" ] && \
+           OC_CRON_JSON="$_OC_RAW_JSON" python3 - <<'PYEOF' 2>/dev/null
+import json, os, sys
+raw = os.environ.get('OC_CRON_JSON', '')
+try:
+    data = json.loads(raw)
+except Exception:
+    sys.exit(1)
+jobs = data if isinstance(data, list) else data.get('jobs', [])
+for j in jobs:
+    if j.get('name') == 'weekly-onboarding-update':
+        dl = j.get('delivery') or {}
+        if dl.get('mode') == 'announce' or dl.get('to'):
+            sys.exit(0)  # old auto-announce wiring detected
+sys.exit(1)
+PYEOF
+        then
+          _CRON_HAS_OLD_WIRING=true
+        fi
+      fi
+      if [ "$_CRON_HAS_OLD_WIRING" = "true" ]; then
+        echo "  ↻ Existing weekly-onboarding-update cron has old auto-announce delivery — deleting for silent-form recreate"
+        openclaw cron delete --name "weekly-onboarding-update" >/dev/null 2>&1 || true
+        # Fall through to creation block below (cron is now absent)
+      else
+        echo "  ✓ Sunday weekly update-check cron already installed (SILENT — no client auto-announce)"
+      fi
+    fi
+    # Create cron only when it is absent (never existed, or just deleted above)
+    if ! openclaw cron list 2>/dev/null | grep -qi "weekly-onboarding-update"; then
       # ── SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons) ───────────
       # weekly-onboarding-update is a MAINTENANCE/update-check cron, NOT an
       # owner-facing announcement. The old form registered it
