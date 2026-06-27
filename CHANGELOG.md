@@ -1,3 +1,27 @@
+## [v14.12.0]  -  2026-06-27  -  feat(skill6): transcript-driven build recipe — SEO/founder gate + media-folder discipline + full-width route + ZHC part-N naming (Skill 6 v7.3.0)
+
+Derives and enforces the canonical GHL funnel build recipe directly from Trevor's authoritative transcript. All items tagged `source=transcript` (authoritative) or `ownedByHarden` (delegated to parallel harden run wu9dnrsak). Builds ON the harden run changes (full-width default, P0 gate, child-chain, iframe/sanitizer, selectors, auth, rate-governor) — additive and complementary. No client names, no operator-local paths, no secret values committed.
+
+FOUNDER GATE (`ghl_builder.py`): `validate_founder_name()` halts on missing, empty, placeholder (TODO / founder name / brand / title etc.), or founder-equals-brand values. `build_seo_meta()` sets `author` to the founder (not brand). SEO constraints enforced: title ≤ 60 chars, description ≤ 160 chars, ≥ 3 distinct non-placeholder keywords, canonical URL must be https:// and NOT a Firebase/GCS storage host, og:image must resolve to a GHL Media Library URL.
+
+TWO-SAVES DISCIPLINE (`ghl_builder.py`): `emit_two_save_plan()` enforces code-block save BEFORE page save. `assert_two_saves()` detects order violations and missing saves; integrated into `build_rest_plan()` when SEO is present.
+
+ZHC NAMING (`ghl_builder.py`): `zhc_step_name()` prefixes all funnel/step names with `ZHC-UPPERCASE`; unnamed steps receive `ZHC-Part-N` auto-numbering. `build_manifest()` applies naming to all steps.
+
+MEDIA-FOLDER DISCIPLINE (`ghl_media.py`): `plan_funnel_media_folders()` defines the per-funnel / per-page folder tree; `ensure_funnel_media_folders()` creates each folder via the GHL API before any upload. Falls back gracefully on runtime errors; subfolder failures are non-fatal.
+
+FULL-WIDTH ROUTE + SEO IMAGES (`ghl_rest_canvas.py`): `require_ghl_media()` gate rejects non-GHL-hosted images (must be `storage.googleapis.com/msgsndr/*` or `images.leadconnectorhq.com`). `build_seo_meta()` / `validate_seo_meta()` / `set_page_seo()` / `assert_seo_populated()` enforce the same SEO contract as the builder layer. `emit_page_seo_autosave()` adds the SEO-apply step after the code autosave. Show-Settings alternate route documented in SKILL.md.
+
+GATES + QC (`gates.json`, `qc-built-funnel.sh`, `qc-ghl-install-pages.sh`): P0 gate wired; QC scripts updated to fire it.
+
+SOP + SKILL.md (`v2-autonomous-build-sop.md`, `SKILL.md`): transcript recipe, pre-build deps, founder/SEO/two-save/media/naming rules all documented with `source=transcript` provenance tags.
+
+TESTS: 111 new tests across 3 new files — `test_ghl_builder_transcript_recipe.py` (48 tests), `test_ghl_media_funnel_folders.py` (8 tests), `test_ghl_rest_canvas_seo_images.py` (55 tests) — all PASSED.
+
+REBASE: cleanly rebased onto v14.11.1 (fix/leadership-task-mode-wiring). No conflicts; harden run changes not present on main at rebase time (they are additive to different functions/regions).
+
+---
+
 ## [v14.11.1]  -  2026-06-27  -  fix(leadership-wiring): the LEADERSHIP / Task-Mode half of a persona blueprint now actually fires at task time — it guides AI specialists when they build, not just sits in the index (Skill 22 v6.12.1 / Skill 23 v14.11.1)
 
 A persona blueprint is dual-purpose: the Coaching half shapes how an agent talks; the LEADERSHIP / Task-Mode half (Section 4 "Agent Governance Framework" — Execution Standard + Decision Logic Table, Quality Control Protocol + Definition of Done, Failure Pattern Recognition, Task Mode Activation, plus Section 7B Task-Mode Triggers) governs HOW work is built. The verify found that side was authored and indexed but NOT wired to fire: the Persona Reflex body was being PRUNED on merge while its "core-update applied" marker was still stamped (a marker with no body); the Reflex said "load Task Mode" without saying how; the funnel rubric graded persona NAMING but not governance APPLICATION; role files said "act AS the persona" with no path to load the governance; and the retriever could not surface the Section-4 governance distinctly. This pass closes all of it. NO client names, NO operator-local paths, NO secret values committed.
