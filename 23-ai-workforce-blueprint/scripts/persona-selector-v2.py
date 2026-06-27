@@ -510,11 +510,126 @@ def craft_domain_bonus(persona_domains, primary_domains, task_fit) -> float:
     return round(min(cap * frac * tf, cap), 4)
 
 
-# Gemini-search script candidate locations (checked in order)
+# ── Specialty (custom-tag) specialist routing — DEPARTMENT-AGNOSTIC (v14.22.0) ──
+# Root-cause of the department-brittle specialist defects:
+#   • 'network marketing recruiting downline duplication' NEVER selected the real
+#     specialist brunson-network-marketing-secrets (returned hormozi/allan-dib),
+#   • 'sketchnote' only reached rohde-the-sketchnote-workbook under dept=design.
+# WHY: the funnel gates the pool on the COARSE `domain` tags + DEPT_DOMAIN_TAGS, and
+# scoring rewards company/mission fit. brunson-network-marketing-secrets carries the
+# SAME generic domain[]=[marketing,sales,copywriting] as hormozi/allan-dib, so domain
+# routing cannot distinguish it, and under a department whose DEPT_DOMAIN_TAGS does not
+# include those domains (e.g. general-task) Stage B drops it entirely. The DISTINCTIVE
+# signal — persona-categories.json `custom[]` (brunson: mlm/network-marketing/recruiting/
+# duplication; rohde: sketchnoting/visual-thinking/idea-mapping) — was never read.
+#
+# Fix (additive-only, never-to-zero, department-agnostic, mirrors craft/perspective):
+#   1. SPECIALIST RECALL (build_candidate_pool): any persona in the FULL library whose
+#      distinctive custom[] specialty tags the task EXPLICITLY names is UNIONed into the
+#      final candidate pool — so a clearly-named specialist is a scoring candidate no
+#      matter which department, governing pool, or semantic top-k is in play.
+#   2. SPECIALTY BONUS (select_persona): that persona earns a bounded, graded,
+#      task_fit-coupled bonus so it actually WINS over a generic on-brand persona.
+# A generic task names NO custom tag -> empty hit set -> 0.0 effect everywhere, so this
+# is provably inert on ordinary tasks (no behaviour change; mission still dominates).
+
+# Over-generic single-word custom tags that must NOT, alone, mark a specialist (they are
+# just coarse domain words and would over-fire). A multi-word tag containing one of these
+# (e.g. "direct-sales") is still distinctive and is kept.
+_SPECIALTY_GENERIC_STOP = {
+    "marketing", "sales", "copy", "copywriting", "content", "design", "video", "audio",
+    "strategy", "leadership", "coaching", "mindset", "finance", "operations",
+    "communication", "productivity", "systems", "general", "business", "growth",
+}
+
+
+def _stem_match(a: str, b: str) -> bool:
+    """True if two single tokens denote the same concept: equal, or one is a prefix of
+    the other for a substantial shared stem (handles sketchnote~sketchnoting,
+    recruit~recruiting). Conservative: requires the shorter token to be >= 5 chars."""
+    if a == b:
+        return True
+    short, long = (a, b) if len(a) <= len(b) else (b, a)
+    return len(short) >= 5 and long.startswith(short)
+
+
+def specialty_tag_hits(task_text: str, custom_tags) -> set:
+    """Return the set of a persona's DISTINCTIVE `custom` specialty tags that the task
+    text explicitly invokes. A hyphenated tag ('network-marketing') matches only when
+    EVERY one of its words is present (stem-aware) in the task; a single-word tag matches
+    as a stem-aware word. Over-generic single-word tags (_SPECIALTY_GENERIC_STOP) are
+    ignored. Empty set for a generic task -> never affects it."""
+    if not custom_tags:
+        return set()
+    text = (task_text or "").lower()
+    words = set(re.findall(r"[a-z0-9]+", text))
+    hits: set = set()
+    for raw in custom_tags:
+        t = _norm_tag(raw)
+        parts = [p for p in t.split("-") if p]
+        if not parts:
+            continue
+        # A single-word tag that is just a coarse domain word is not distinctive.
+        if len(parts) == 1 and parts[0] in _SPECIALTY_GENERIC_STOP:
+            continue
+        if len(parts) == 1 and len(parts[0]) < 4:
+            continue
+        # Every word of the tag must be present (stem-aware) in the task text.
+        if all(any(_stem_match(p, w) for w in words) for p in parts):
+            hits.add(t)
+    return hits
+
+
+def _specialty_bonus_max() -> float:
+    """Hard cap / scale of the specialty (custom-tag) specialist bonus (env-tunable)."""
+    try:
+        v = float(os.environ.get("SPECIALTY_TAG_BONUS", "0.40"))
+    except (TypeError, ValueError):
+        v = 0.40
+    return max(0.0, min(v, 0.6))
+
+
+def specialty_domain_bonus(num_hits: int, task_fit) -> float:
+    """Additive-only, never-to-zero specialist bonus for naming a persona's distinctive
+    specialty. Returns 0.0 when the task named none of the persona's custom tags. On a
+    match returns CAP * ramp(hits) * (0.5 + 0.5*task_fit), so naming the niche is a strong
+    but bounded, relevance-coupled signal. Guaranteed >= 0.0 and <= CAP."""
+    if num_hits <= 0:
+        return 0.0
+    cap = _specialty_bonus_max()
+    ramp = {1: 0.7, 2: 0.9}.get(num_hits, 1.0)
+    tf = max(0.0, min(float(task_fit), 1.0))
+    return round(min(cap * ramp * (0.5 + 0.5 * tf), cap), 4)
+
+
+def find_specialists_by_custom_tags(task_text: str, all_personas, categories_data) -> set:
+    """Department-agnostic SPECIALIST RECALL: personas in the full library whose
+    distinctive custom[] specialty tags the task explicitly invokes. Returns a set of
+    persona ids (subset of all_personas). Empty for a generic task -> inert."""
+    if not categories_data:
+        return set()
+    personas_data = categories_data.get("personas", {}) or categories_data
+    found: set = set()
+    avail = set(all_personas)
+    for pid, info in personas_data.items():
+        if pid not in avail or not isinstance(info, dict):
+            continue
+        if specialty_tag_hits(task_text, info.get("custom") or []):
+            found.add(pid)
+    return found
+
+
+# Gemini-search script candidate locations (checked in order). The canonical INSTALLED
+# wrappers (~/.openclaw/scripts and /data/.openclaw/scripts on VPS) are FIRST, matching
+# the resolver order documented in orchestrator.py / the repo-hygiene path sweep; the
+# legacy ~/.openclaw/workspace/scripts and /data/.openclaw/workspace/scripts locations are
+# kept only as deprioritized fallbacks for old boxes.
 _GEMINI_SEARCH_CANDIDATES = [
     Path(__file__).parent / "gemini-search.py",
-    Path("/data/.openclaw/workspace/scripts/gemini-search.py"),
+    Path.home() / ".openclaw" / "scripts" / "gemini-search.py",
+    Path("/data/.openclaw/scripts/gemini-search.py"),
     Path.home() / ".openclaw" / "workspace" / "scripts" / "gemini-search.py",
+    Path("/data/.openclaw/workspace/scripts/gemini-search.py"),
     Path.home() / "Downloads" / "openclaw-master-files" / "23-ai-workforce-blueprint" / "scripts" / "gemini-search.py",
 ]
 
@@ -766,21 +881,44 @@ def build_candidate_pool(task_text: str, department: str, all_personas: list,
         pool_c = pool_b
         semantic_note = "unavailable (fallback to Stage B)"
 
+    # SPECIALIST RECALL (v14.22.0) — department-agnostic. UNION in any persona from the
+    # FULL library whose distinctive custom[] specialty tags the task explicitly names,
+    # so a clearly-named specialist (e.g. brunson-network-marketing-secrets on a network-
+    # marketing task, rohde-the-sketchnote-workbook on a sketchnote task) is ALWAYS a
+    # scoring candidate even when DEPT_DOMAIN_TAGS / governing pool / semantic top-k
+    # would have gated it out. Never-to-zero: only ever ADDS candidates.
+    #
+    # IMPORTANT — the canonical funnel counts (pool >= category >= semantic) describe the
+    # NARROWING funnel and MUST stay monotonic (PRD 1.2 invariant; A6 guard). Recall is an
+    # EXPANSION, so it is reported on a SEPARATE "recalled" key and the semantic count is
+    # captured PRE-recall. The returned scoring candidate list still includes the recalled
+    # specialists (they participate in Stage-D scoring); only the reported funnel counts
+    # are kept monotonic.
+    semantic_count = len(pool_c)  # pre-recall — preserves pool >= category >= semantic
+    specialists = find_specialists_by_custom_tags(task_text, all_personas, categories_data)
+    recalled = sorted(s for s in specialists if s not in set(pool_c))
+    candidates = list(pool_c) + recalled
+
     # G13: survivors ranked by semantic relevance (best first). Used by
     # select_persona to keep the top-N finalists when capping LLM fan-out.
     # Empty when there was no semantic signal (caller degrades gracefully).
-    pool_c_set = set(pool_c)
-    semantic_order = [p for p in (semantic_ids or []) if p in pool_c_set]
+    # Recalled specialists are surfaced at the FRONT of the semantic order so the
+    # LLM-finalist cap (when bounded) cannot drop the very specialist we recalled.
+    cand_set = set(candidates)
+    recalled_set = set(recalled)
+    semantic_order = (list(recalled)
+                      + [p for p in (semantic_ids or []) if p in cand_set and p not in recalled_set])
 
-    # Emit canonical 3 keys (PRD 1.2 §3 output contract) + 2 additive diagnostics
+    # Emit canonical 3 keys (PRD 1.2 §3 output contract) + additive diagnostics
     funnel = {
         "pool": len(pool_a),
         "category": len(pool_b),
-        "semantic": len(pool_c),
+        "semantic": semantic_count,
+        "recalled": len(recalled),
         "pool_source": pool_note,
         "semantic_engine": semantic_note,
     }
-    return pool_c, funnel, semantic_order
+    return candidates, funnel, semantic_order
 
 
 def read_recent_use_counts(department_id: str, task_category: str,
@@ -1613,6 +1751,33 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
                     s["craft_domain_bonus"] = round(cbonus, 4)
                     s["base_score"] = round(s["base_score"] + cbonus, 4)
                     s["score"] = round(s["score"] + cbonus, 4)
+
+    # ── Specialty (custom-tag) specialist bonus — DEPARTMENT-AGNOSTIC, additive-only ──
+    # Reward the persona whose DISTINCTIVE custom[] specialty tags the task explicitly
+    # names (brunson-network-marketing-secrets: mlm/network-marketing/recruiting/
+    # duplication; rohde-the-sketchnote-workbook: sketchnoting/visual-thinking) so the
+    # true specialist beats a generic on-brand persona REGARDLESS of department. A task
+    # that names no custom tag yields an empty hit set -> +0.0 for everyone (inert on
+    # ordinary tasks). Never reduces, eliminates, or zero-scores any persona.
+    pc_file_sp = paths.get("persona_categories")
+    personas_meta_sp: dict = {}
+    if pc_file_sp and Path(pc_file_sp).exists():
+        try:
+            _cd_sp = json.loads(Path(pc_file_sp).read_text(encoding="utf-8"))
+            personas_meta_sp = _cd_sp.get("personas", {}) or {}
+        except Exception:
+            personas_meta_sp = {}
+    if personas_meta_sp:
+        for s in scored:
+            pinfo = personas_meta_sp.get(s["persona_id"], {})
+            hits = specialty_tag_hits(task, pinfo.get("custom") or [])
+            if hits:
+                sbonus = specialty_domain_bonus(len(hits), s["layers"]["task_fit"])
+                if sbonus > 0.0:
+                    s["specialty_tag_bonus"] = round(sbonus, 4)
+                    s["specialty_tags_matched"] = sorted(hits)
+                    s["base_score"] = round(s["base_score"] + sbonus, 4)
+                    s["score"] = round(s["score"] + sbonus, 4)
 
     if variety:
         recent_uses = read_recent_use_counts(department, task_category,
