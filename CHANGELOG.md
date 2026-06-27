@@ -1,3 +1,17 @@
+## [v14.8.0]  -  2026-06-27  -  feat(skill22): deepen acuff-miner + miller-storybrand blueprints to full 14-section depth (Skill 22 v6.10.0)
+
+Deepens two existing book-persona blueprints — *The New Model of Selling (NEPQ)* by Acuff & Miner and *Building a StoryBrand* by Donald Miller — from concise first-pass versions to the full 14-section standard. Independent no-padding verification passed before ship.
+
+ACUFF-MINER (v1.1 → v1.2, 197 → 317 lines, +61%): Full dual-author bios with named credentials (Salesman of the Year ×2, District Manager of the Year ×3, #45 earner out of 100 million worldwide, 12-year NEPQ development arc); Definition Reset keystone move; Three-Destinations qualifier (D1/D2/D3); post-trust era framing (3% trust, 95% talk-too-much, 86% wrong-questions); 15-row Decision Logic table; pre-delivery QC checklist; Amateur vs Expert comparison table; Task Mode Activation Language section; Coaching Principles + Eight Laws of Sales Intent + Five Rules of Buying; 12-trigger Confidence Scoring tables for both coaching and task mode; full question libraries; objection/failure-mode table; session structure with timing; routing rules.
+
+MILLER-STORYBRAND (v2.0 → v2.1, 179 → 628 lines, +251%): Science backbone (Mike McHargue, Kahneman, Amy Cuddy, Viktor Frankl); full 3-phase coaching arc (Assessment → Challenge → Support/Verify/Improve) with per-phase questions, milestones, session arc, setback/celebration protocols; 8 non-negotiable rules; 11-row Decision Logic table; 11-item pre-delivery QC checklist; 8-row failure taxonomy; Amateur→Expert gap table; Task Mode Activation Language; 10 direct quotes + 8 one-liners + 5 key metaphors; 4×7 coaching questions + 3×4 governance questions; 5 coaching tools + 5 agent execution frameworks; coaching objections table; 6-session long-term arc + task structure; department routing table with Skill cross-references; 5 handoff sequences; Companion Appendix Index (sections A–H with contents).
+
+SKILL VERSION: `22-book-to-persona-coaching-leadership-system/skill-version.txt` v6.9.2 → v6.10.0. All 10 global version markers rolled v14.7.0 → v14.8.0 by bump-version.sh and agree.
+
+PADDING SCAN: acuff-miner uses distinct question sets per section (diagnostic ≠ challenge ≠ reflection ≠ action); miller sections 4/5/9/10/11 cover governance, principles, verbatim quotes, question libraries, and tool/execution frameworks respectively — no repetition across sections. No filler.
+
+LEAK SCAN: no client names, no operator paths, no personal identifiers in any modified file. All content is book-methodology terminology (NEPQ, SB7, BrandScript — public published frameworks).
+
 ## [v14.7.0]  -  2026-06-27  -  fix(skill6): selftest update for flex-mode decisions + flex.py shared core + Step 0.4 + link map v2 (Skill 44 v1.2.0 / Skill 6 v14.7.0)
 
 Consolidates the Skill-44 + Skill-6 flexibility improvements from PR #369 (flex.py shared core, standardised four-way decision schema, Step 0.4 automation-match wiring, link map v2 canonical file name) and fixes a selftest regression in Skill-6: `funnel_matcher_cli.py` was still checking for the deprecated `HONORED_EXPLICIT` decision name instead of the new `HONOR_USER` and `SUGGEST_TEMPLATE` names introduced by the flex.py shared core. All 13/13 selftest cases now pass.
