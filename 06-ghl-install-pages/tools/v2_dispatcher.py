@@ -50,6 +50,69 @@ import ghl_verify  # noqa: E402
 import ghl_gate  # noqa: E402
 import scrub_turn_telemetry as scrub  # noqa: E402
 
+# FAB-QC library-aware build-quality gate (shared scorer). Optional/best-effort: when the
+# build evidence carries a match-decision receipt + fab-artifact, the dispatcher refuses to
+# mark `verified` below 8.5. When that evidence is ABSENT (advisory not wired for this build),
+# it is a NO-OP — so builds/tests that don't emit it are completely unaffected.
+try:
+    _SHARED_UTILS = os.path.normpath(os.path.join(_TOOLS_DIR, "..", "..", "shared-utils"))
+    if _SHARED_UTILS not in sys.path:
+        sys.path.insert(0, _SHARED_UTILS)
+    import fab_qc as _fabqc  # type: ignore[import]
+except Exception:  # noqa: BLE001
+    _fabqc = None  # type: ignore[assignment]
+
+# FAB-artifact PRODUCER (closes the D4 gap). On a template-aware build (a
+# routing/match-decision.json receipt exists), this normalises the REAL build result
+# (matched funnel_template_id, built pages, the actual copy the builder wrote, the flex
+# decision, and the attached linked_automations) into build/fab-artifact.json — the file
+# the FAB-QC overlay scores. Without this, the overlay had nothing to score on a real build
+# and the >=8.5 gate was a silent no-op. Optional import: a no-op if unavailable.
+try:
+    import fab_artifact as _fabart  # type: ignore[import]
+except Exception:  # noqa: BLE001
+    _fabart = None  # type: ignore[assignment]
+
+
+def _emit_fab_artifact(evidence_root: str, task: dict, build: dict) -> dict:
+    """Producer: emit build/fab-artifact.json from the REAL build so the FAB-QC gate FIRES.
+
+    Only runs on a TEMPLATE-AWARE build — i.e. when STEP 0 wrote routing/match-decision.json.
+    Does NOT clobber an artifact a builder/upstream step already emitted. Best-effort: a
+    failure here never blocks the build (the overlay simply stays a no-op as before)."""
+    if _fabart is None:
+        return {"emitted": False, "reason": "fab_artifact unavailable"}
+    md = os.path.join(evidence_root, "routing", "match-decision.json")
+    if not os.path.isfile(md):
+        return {"emitted": False, "reason": "no match-decision receipt (build is not template-aware)"}
+    try:
+        artifact = _fabart.build_funnel_artifact(task, build)
+        return _fabart.emit(evidence_root, artifact)
+    except Exception as exc:  # noqa: BLE001
+        return {"emitted": False, "reason": f"{type(exc).__name__}: {exc}"}
+
+
+def _fab_overlay(evidence_root: str) -> dict:
+    """Run FAB-QC if (and only if) the build emitted enough evidence to judge.
+
+    Returns {ran, passed, score, reason}. ``ran`` is False (a no-op) unless BOTH
+    routing/match-decision.json AND a normalised fab-artifact exist — so a build that
+    has not wired the FAB artifact yet is never falsely failed."""
+    if _fabqc is None:
+        return {"ran": False, "reason": "fab_qc unavailable"}
+    md = os.path.join(evidence_root, "routing", "match-decision.json")
+    art = (os.path.join(evidence_root, "build", "fab-artifact.json"),
+           os.path.join(evidence_root, "funnel", "fab-artifact.json"))
+    if not os.path.isfile(md) or not any(os.path.isfile(a) for a in art):
+        return {"ran": False, "reason": "no FAB evidence (match-decision.json + fab-artifact.json)"}
+    try:
+        inp = _fabqc.load_inputs_from_evidence(evidence_root, "funnel")
+        res = _fabqc.grade(inp)
+        return {"ran": True, "passed": bool(res["passed"]), "score": res["score"],
+                "lowest_dimension": res["lowest_dimension"], "hard_misses": res["hard_misses"]}
+    except Exception as exc:  # noqa: BLE001 — overlay must not crash the dispatcher
+        return {"ran": False, "reason": f"fab_qc error: {type(exc).__name__}: {exc}"}
+
 # ── STEP 0 — template-first funnel matcher (env-gated; never blocks a build) ─
 # Import is lazy / optional so unit tests that do not set GHL_FUNNEL_CATALOG (or
 # GHL_FUNNEL_INDEX) are completely unaffected — the matcher is a no-op when
@@ -76,12 +139,36 @@ def _resolve_step0(
     if _FM_AVAILABLE:
         index_path = os.environ.get("GHL_FUNNEL_INDEX", "")
         catalog_root = os.environ.get("GHL_FUNNEL_CATALOG", "")
+        # Gate UNCHANGED: the matcher stays a no-op unless the catalog/index env is set
+        # (or a matcher is injected) — so unit tests that set neither are unaffected.
+        # Box installs turn it on by exporting GHL_FUNNEL_INDEX/GHL_FUNNEL_CATALOG
+        # (see 44-.../tools/engine/wire-ghl-env.sh).
         if index_path or catalog_root:
+            # When the catalog IS configured, default GHL_FUNNEL_INDEX to the committed
+            # sibling index so the index path always resolves.
+            if not index_path:
+                _default_index = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                              "catalog-index.json")
+                if os.path.isfile(_default_index):
+                    index_path = _default_index
+            # Resolve the funnel->automation link map so the COMPLETE-funnel handoff
+            # (task['linked_automations']) is on by DEFAULT whenever the catalog is
+            # configured — not only when the separate links env var happens to be set.
+            link_map_path = os.environ.get("GHL_FUNNEL_AUTOMATION_LINKS", "")
+            if not link_map_path:
+                _default_links = os.path.normpath(os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)), "..", "..",
+                    "44-convert-and-flow-operator", "automation-templates", "_links",
+                    "funnel-to-automation.json"))
+                if os.path.isfile(_default_links):
+                    link_map_path = _default_links
+
             def _auto_step0(task: dict, evidence_root: str) -> dict:
                 return _fm.step0_match(
                     task, evidence_root,
                     catalog_root=catalog_root or None,
                     index_path=index_path or None,
+                    link_map_path=link_map_path or None,
                 )
             return _auto_step0
     return None
@@ -350,10 +437,35 @@ def dispatch_one(
         return DispatchResult(task_id, STATE_FAILED, rec["reason"],
                               evidence_root=evidence_root, record_path=rp)
 
+    # ── FAB-ARTIFACT PRODUCER (D4) ────────────────────────────────────────────
+    # Emit build/fab-artifact.json FROM THE REAL BUILD RESULT so the gate below has
+    # something to score. Runs only on a template-aware build (match-decision receipt
+    # present); no-op otherwise and never clobbers an already-emitted artifact. THIS is
+    # what makes the FAB-QC gate fire on a real funnel build instead of a hand fixture.
+    _fab_emit = _emit_fab_artifact(evidence_root, task, build)
+
+    # ── FAB-QC BUILD-QUALITY GATE (>= 8.5, library-aware) ─────────────────────
+    # SUPERSET overlay on top of the canonical ghl_verify floor. Binding ONLY when the
+    # build emitted FAB evidence (match-decision receipt + fab-artifact); otherwise a
+    # no-op. A definitive sub-8.5 verdict downgrades the task to FAILED — `verified`
+    # requires BOTH ghl_verify overall_pass AND FAB-QC >= 8.5.
+    _fab = _fab_overlay(evidence_root)
+    if _fab.get("ran") and not _fab.get("passed"):
+        rec.update({"state": STATE_FAILED, "build_duration_s": duration,
+                    "fab_qc": _fab, "fab_artifact": _fab_emit,
+                    "reason": f"FAB-QC GATE: build scored {_fab.get('score')} < 8.5 "
+                              f"(lowest: {_fab.get('lowest_dimension')}; "
+                              f"hard_misses: {_fab.get('hard_misses')}). Not done."})
+        rp = _write_record(evidence_root, rec)
+        return DispatchResult(task_id, STATE_FAILED, rec["reason"],
+                              evidence_root=evidence_root, record_path=rp)
+
     # Tag the ledger as authoritative:false + verdict_source pointer so callers
     # know the single authoritative verdict lives in the scorecard, not here.
     rec.update({
         "state": STATE_VERIFIED,
+        "fab_qc": _fab,
+        "fab_artifact": _fab_emit,
         "build_duration_s": duration,
         "verify_overall_pass": bool(summary.get("overall_pass")) if isinstance(summary, dict) else False,
         "verify_passed": summary.get("passed") if isinstance(summary, dict) else None,
@@ -364,6 +476,33 @@ def dispatch_one(
                   "FAIL is reported, never massaged)",
     })
     rp = _write_record(evidence_root, rec)
+
+    # ── COMPLETE-FUNNEL HANDOFF (P4->P5) ──────────────────────────────────────
+    # The funnel pages verified. If STEP 0 attached linked follow-up automations
+    # (task['linked_automations'], from the funnel->automation link map), persist a
+    # handoff artifact so the orchestrator / Skill-44 (caf) agent can build each
+    # build_now automation. RECOMMENDED, never mandatory; this is the documented
+    # P4->P5 seam (SKILL.md "Full-Funnel Pipeline Integration"). Advisory: a failure
+    # here never downgrades the verified verdict.
+    try:
+        la = task.get("linked_automations")
+        if isinstance(la, dict) and la.get("automations"):
+            handoff = {
+                "from": "06-ghl-install-pages (P4 funnel build)",
+                "to": "44-convert-and-flow-operator (P5 automation build)",
+                "funnel_template_id": task.get("funnel_template_id"),
+                "recommended": True, "mandatory": False,
+                "to_build": [a for a in la["automations"] if a.get("build_now")],
+                "reference_only": [a for a in la["automations"] if not a.get("build_now")],
+                "note": "Each to_build automation should be dispatched to Skill 44 as its "
+                        "own build (PLAN MODE + QC). Overridable/ignorable per flexibility.",
+                "ts": _ts(),
+            }
+            json.dump(handoff, open(os.path.join(evidence_root, "routing",
+                      "skill44-handoff.json"), "w", encoding="utf-8"), indent=2)
+    except Exception:  # noqa: BLE001 — handoff persistence is advisory glue
+        pass
+
     return DispatchResult(task_id, STATE_VERIFIED, rec["reason"], verify=summary,
                           evidence_root=evidence_root, record_path=rp)
 

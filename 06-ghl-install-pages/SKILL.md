@@ -39,6 +39,24 @@ This is NOT about writing or designing the HTML. The HTML is already done
 (usually from a SuperDesign export). This skill is purely about getting that
 code into GHL so the page goes live.
 
+## Funnel Template Library (STEP 0 — template-first / reuse-before-reinvent)
+
+This skill ships a **38-template funnel library** at `06-ghl-install-pages/funnel-templates/`
+(categories: buyer, event, lead, retention-followup, traffic-advanced). Each template encodes a
+proven Brunson-derived `pageStructure`, `copyFramework`, `skill44Widgets`, persona/`books`, and
+`whenToUse`/`doNotUseWhen`. **STEP 0 of every build** runs `tools/funnel_matcher.py` (wired into
+`tools/v2_dispatcher.py` via `_resolve_step0`; env-gated on `GHL_FUNNEL_CATALOG`/`GHL_FUNNEL_INDEX`,
+**never blocks** a build) to match the best-fit template and attach its `pageStructure` + persona
+to the task. Flexibility is **guide-not-rule**: an explicit owner choice is HONORED (template is an
+optional reference); CREATE_NEW only when nothing fits. The matcher also stamps
+`task['funnel_template_id']` and attaches the recommended `linked_automations` from
+`44-.../automation-templates/_links/funnel-to-automation.json` for the complete-funnel handoff to
+Skill 44. CLI: `python3 tools/funnel_matcher_cli.py --match "<offer summary>" --json`
+(`--build-index` rebuilds the committed `tools/catalog-index.json`). See
+`funnel-templates/README.md` and `v2-autonomous-build-sop.md` "P0.5 / STEP 0". Every built funnel
+is held to the FAB-QC ≥ 8.5 build-quality gate (`qc-built-funnel.sh`; rubric in
+`universal-sops/funnel-automation-build-quality-rubric.md`).
+
 ## Full-Funnel Pipeline Integration (Skill 44 seam)
 
 When this skill runs as part of a full-funnel build (SOP-07 P4 stage), after page
@@ -51,7 +69,10 @@ CALENDAR/FORM/DATA_PUSH pages directly to Skill-44 widget creation before the
 page splice). The P4→P5 handoff is documented in v2-autonomous-build-sop.md §4;
 do NOT skip this handoff or mark a full-funnel P4 task done without emitting
 the board handoff event `{from_dept: "web-development", to_dept: "crm",
-artifact: "page_ids+form_ids", job_id: "<P5 task id>"}`.
+artifact: "page_ids+form_ids+funnel_template_id+linked_automations", job_id: "<P5 task id>"}`.
+Carrying `funnel_template_id` + `linked_automations` (from STEP 0) across the handoff is what makes
+the complete-funnel automation expansion fire in Skill 44; v2_dispatcher persists them to
+`routing/skill44-handoff.json` on a verified build.
 
 **Skill-44 widget create+embed flow (in brief):** classify the page (§2.05
 method-decision) → if `SKILL44_WIDGET`, call Skill 44 to CREATE the real

@@ -45,13 +45,21 @@ specific low dimension. HALLUCINATION FAIL: hard stop + redo on reasoning-model 
 2. **INSTALL.md** — autonomous setup, venv, wrapper, `caf doctor`
 3. **INSTRUCTIONS.md** — day-to-day usage, Step 0.5 PLAN MODE, natural language intents,
    TRINITY routing, Step 9 QC GATE (including hallucination escalation), rollback
+3b. **automation-templates/** — the **28-template automation library** (template-first / reuse-
+   before-reinvent) + `automation-templates/README.md`. Matched at INSTRUCTIONS Step 0.4 via
+   `_matcher/cli.py --match` (shared core `_matcher/flex.py`, committed lexical index
+   `_matcher/catalog-index.json`). `_links/funnel-to-automation.json` is the canonical funnel→
+   automation map. Flexibility = guide-not-rule (honor explicit spec; CREATE_NEW only when nothing fits).
 4. **references/workflow-build-checklist-template.md** — canonical WF-1..WF-21 checklist
    (instantiate at PLAN MODE Step D; hand to client after QC passes)
 4b. **references/workflow-quality-rubric.md** — 8-dimension weighted quality rubric (SUPERSET
    overlay on WF-1..21; each dimension cites its WF evidence source; ≥ 8.5 to ship; computed at
    Step 9 AFTER WF-1..21)
+4c. **universal-sops/funnel-automation-build-quality-rubric.md** — the library-aware FAB-QC ≥ 8.5
+   overlay (shared scorer `shared-utils/fab_qc.py`); run at Step 9.3c via `qc-built-workflow.sh --fab`
 5. **qc-built-workflow.sh** — per-build QC script (mechanically asserts WF-3,4,5,6,7,12,15,18,21;
-   then emits the weighted rubric floor score); invoked by the MiniMax QC sub-agent at Step 9
+   then emits the weighted rubric floor score + the FAB-QC overlay with `--fab`); invoked by the
+   MiniMax QC sub-agent at Step 9
 6. **CORE_UPDATES.md** — exact text to merge into AGENTS.md / TOOLS.md / MEMORY.md
 7. **QC.md** — human-readable checklist (authoritative install-QC script is `qc-convert-and-flow.sh`)
 8. **CHANGELOG.md** — skill version history

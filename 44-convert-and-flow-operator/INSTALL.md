@@ -219,6 +219,17 @@ caf doctor
 Expected output: all checks green. If the Firebase token is absent, `caf doctor` should report
 WARN (not FAIL) — the skill works for standard ops without it.
 
+**Installed artifacts to verify present:** the engine + wrapper (`caf`), AND the **automation
+template library** at `automation-templates/` (28 templates by category) with its matcher
+(`_matcher/automation_matcher.py`, shared core `_matcher/flex.py`, committed lexical index
+`_matcher/catalog-index.json`), the funnel→automation link map (`_links/funnel-to-automation.json`),
+and `automation-templates/README.md`. Confirm the matcher loads and the env vars are wired:
+
+```bash
+python3 automation-templates/_matcher/cli.py --selftest        # matcher + 38/38 funnel expansion
+bash tools/engine/wire-ghl-env.sh                              # wires CAF_AUTOMATION_* + GHL_FUNNEL_* env vars
+```
+
 ---
 
 ## Action 6b: FAIL-LOUD live verify gate (MANDATORY — never report success on a dead caf)

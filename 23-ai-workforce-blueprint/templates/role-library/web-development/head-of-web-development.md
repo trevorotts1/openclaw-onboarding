@@ -250,6 +250,8 @@ This role contributes to the company revenue cascade by: **building and maintain
 
 ## 10. Quality Gates
 
+**Departmental standard — template-first / reuse-before-reinvent (governance you enforce):** funnel page builds in this department reuse the proven funnel library FIRST — the 38-template catalog (`06-ghl-install-pages/funnel-templates/`) and its `funnel_matcher` (STEP 0 in `tools/v2_dispatcher.py`). The Funnel Builder / Landing Page Specialist verifies `funnel_template_id` is present on funnel-spec.json and uses the matched template's `pageStructure` as the build scaffold; net-new only when nothing fits. Flexibility is a guide-not-rule: honor the owner's explicit choice; never block a build. Every funnel build is held to the FAB-QC ≥ 8.5 standard (`universal-sops/funnel-automation-build-quality-rubric.md` + `06-ghl-install-pages/qc-built-funnel.sh`).
+
 Before any web code ships to production, it must pass these gates:
 
 ### Gate 1 — Self-check (Developer)

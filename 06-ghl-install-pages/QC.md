@@ -95,3 +95,20 @@ Recite in your work log:
 7. Owner confirmation message sent: ✓ / ✗
 
 If any answer is ✗, this skill is NOT done. Loop back.
+
+---
+
+## Per-build quality gate (FAB-QC ≥ 8.5) — distinct from install QC above
+
+The checklist above is **install-level QC** (is the skill set up correctly?). Every
+**built funnel** is ALSO held to the standing, library-aware **FAB-QC** build-quality
+gate — the Skill-6 parallel of Skill-44's `qc-built-workflow.sh`:
+
+- **Script:** `06-ghl-install-pages/qc-built-funnel.sh <evidence_root|slug>`
+- **Shared scorer:** `shared-utils/fab_qc.py` · **Rubric:** `universal-sops/funnel-automation-build-quality-rubric.md`
+- **SUPERSET overlay** on top of the canonical `ghl_verify` render gate (HTTP 200 + marker stays the hard D3 floor).
+- **Six dimensions** (weights 22/20/18/15/13/12): template fidelity, copy substance (no surviving
+  placeholders), render/soundness, persona grounding (fail-closed), flexibility honored, funnel↔automation link integrity.
+- **Binding:** `v2_dispatcher.py` refuses to mark a task `verified` when the build emits FAB
+  evidence and scores < 8.5 (`v2-autonomous-build-sop.md §9` BUILD-QC GATE).
+- [ ] Built funnel passes `qc-built-funnel.sh` with FAB-QC score ≥ 8.5 and no hard miss.

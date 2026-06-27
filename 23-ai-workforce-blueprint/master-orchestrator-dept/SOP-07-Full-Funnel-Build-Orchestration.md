@@ -168,9 +168,18 @@ Child idempotency key: <p0_key>
 ```
 Run SOP 9.5 (funnel-strategist.md) to produce funnel-spec.json.
 Input: working/funnels/<slug>/offer-spec.json from P0.
-Persona: select hormozi-100m-offers per persona-matching-protocol.md.
+STEP 0 (template-first, guide-not-rule): run funnel_matcher against the funnel library
+  06-ghl-install-pages/funnel-templates/ (python3 06-ghl-install-pages/tools/funnel_matcher_cli.py --match "<offer summary>").
+  Record funnel_template_id + linked_automations (from _links/funnel-to-automation.json)
+  in funnel-spec.json. Reuse the matched template's pageStructure/copyFramework; CREATE_NEW
+  only when nothing fits. Honor an explicit owner funnel choice over any suggestion.
+Persona: run the persona selector per persona-matching-protocol.md and select the
+  TOP-RANKED persona for this funnel type/ICP — do NOT default to a single persona by
+  habit (funnel-strategist.md SOP 9.5 step 5). hormozi-100m-offers is the typical match
+  for value-ladder/offer-stack tasks, but a Brunson funnel persona fits funnel-type/
+  page-flow tasks and pedro-adao for challenge/launch funnels.
 Write persona-selection-log.md entry (mandatory).
-Output: working/funnels/<slug>/funnel-spec.json
+Output: working/funnels/<slug>/funnel-spec.json (incl. funnel_template_id + linked_automations)
 Parent funnel epic: <parent_task_id>
 Child idempotency key: <p1_key>
 ```
@@ -219,7 +228,9 @@ Inputs: approved copy.md (P2) + assets-manifest.json (P3) + funnel-spec.json (P1
 Gate-3 verbatim copy match required.
 Output: page_ids, opt-in form IDs, preview URLs, Gate-3 match confirmed.
 After page verify, emit board handoff event to CRM dept (P5 seam).
-Hand live page_ids + opt-in form IDs to Automation Workflow Specialist for P5.
+Hand live page_ids + opt-in form IDs AND funnel_template_id + linked_automations
+  (carried from funnel-spec.json) to Automation Workflow Specialist for P5 — so the
+  complete-funnel automation expansion fires. (v2_dispatcher writes routing/skill44-handoff.json.)
 Parent funnel epic: <parent_task_id>
 Child idempotency key: <p4_key>
 ```
@@ -228,10 +239,15 @@ Child idempotency key: <p4_key>
 
 ```
 Wire workflows per Skill 44 (44-convert-and-flow-operator).
-Inputs: approved email copy (P2e) + page_ids/form IDs from P4.
+Inputs: approved email copy (P2e) + page_ids/form IDs from P4 + funnel_template_id + linked_automations.
+STEP 0.4 (template-first, guide-not-rule): run automation_matcher against the automation
+  library 44-convert-and-flow-operator/automation-templates/ (python3 .../_matcher/cli.py --match),
+  AND read _links/funnel-to-automation.json keyed by funnel_template_id for the recommended
+  primary/supporting automations BEFORE wiring. Reuse the matched template sequence;
+  CREATE_NEW + save_new_template only when nothing fits. Honor explicit specs over templates.
 Receives APPROVED copy + funnel page IDs from Skill 6 (P4).
 Does NOT author copy or business rules — wires only what P2e and P4 produced.
-Gate: WF-1..21 PASS + rubric ≥ 8.5 (workflow-quality-rubric.md).
+Gate: WF-1..21 PASS + rubric ≥ 8.5 (workflow-quality-rubric.md) + FAB-QC ≥ 8.5 (funnel-automation-build-quality-rubric.md).
 Output: ecosystem receipts (calendar, product-price, optin-form, contact-test, workflow).
 Parent funnel epic: <parent_task_id>
 Child idempotency key: <p5_key>
@@ -308,6 +324,10 @@ The `POST /api/tasks/ingest` endpoint returns `{ok:true, task_id:"...", deduped:
 | email-campaign-strategist.md | P2e owner — produces email sequence copy with persona grounding. |
 | 44-convert-and-flow-operator | P5 owner — wires workflows (Skill 44, rubric ≥ 8.5). |
 | full-funnel-pipeline/ | Executable enforcement of this SOP: `funnel_rollback.py` (§7), `funnel_fixture_harness.py` (offline P0→P5 evidence run), `funnel_rubrics.py` (the 11 per-rubric scorecards R-COPY…R-CC-SYNC ≥ 8.5), and `tests/` (T-1..T-9 + T-N1..T-N6). Gated by `.github/workflows/full-funnel-pipeline.yml`. |
+| funnel-templates/ (Skill 6) | **Template-first source for P1.** 38 proven funnel templates (`06-ghl-install-pages/funnel-templates/`) + `funnel_matcher`. P1 reuses pageStructure/copyFramework/persona before reinventing (guide-not-rule). |
+| automation-templates/ (Skill 44) | **Template-first source for P5.** 28 proven sequences (`44-convert-and-flow-operator/automation-templates/`) + `automation_matcher`. P5 reuses the matched sequence before reinventing (guide-not-rule). |
+| _links/funnel-to-automation.json | Canonical funnel→automation link map. Carries the recommended follow-up automations from P1's funnel_template_id through the P4→P5 seam (complete-funnel handoff). |
+| funnel-automation-build-quality-rubric.md (universal-sops) | The standing FAB-QC ≥ 8.5 build-quality gate every funnel (P4) and automation (P5) build is held to (template fidelity, copy substance, render/soundness, persona, flexibility, link integrity). |
 
 ---
 

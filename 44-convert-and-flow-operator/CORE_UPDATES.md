@@ -138,6 +138,18 @@ Agency ops detail — TWO different auth paths, do not cross them:
 - companyId is the agency FIRESTORE document id, NEVER the relationNumber.
 
 Credentials: GOHIGHLEVEL_API_KEY (agency PIT — used for add-user via the public API), GOHIGHLEVEL_LOCATION_ID, GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN (workflow writes AND agency create-location; create-location's internal path cannot use the PIT). add-user does NOT need the Firebase token.
+
+## Automation template library + matcher (template-first / reuse-before-reinvent)
+
+- 28 proven sequences at `44-convert-and-flow-operator/automation-templates/` (welcome-indoctrination,
+  sales-close-sequences, engagement-broadcast, funnel-specific-followups, multichannel-automation).
+- Match (INSTRUCTIONS Step 0.4): `python3 .../automation-templates/_matcher/cli.py --match "<outcome>"`.
+  Shared core `_matcher/flex.py`; committed lexical index `_matcher/catalog-index.json`.
+- Funnel→automation link map: `_links/funnel-to-automation.json` (keyed by funnel_template_id).
+- Env wiring (activates the matcher): `tools/engine/wire-ghl-env.sh` exports CAF_AUTOMATION_CATALOG /
+  CAF_AUTOMATION_INDEX / CAF_FUNNEL_AUTOMATION_LINKS (+ the Skill-6 GHL_FUNNEL_* vars).
+- Build gate: WF-1..21 PASS + FAB-QC ≥ 8.5 (`qc-built-workflow.sh --fab`; shared `shared-utils/fab_qc.py`).
+- Flexibility = guide-not-rule: honor explicit spec; CREATE_NEW only when nothing fits; never block.
 ```
 
 ---

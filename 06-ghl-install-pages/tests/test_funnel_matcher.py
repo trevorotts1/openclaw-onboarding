@@ -1,0 +1,163 @@
+"""test_funnel_matcher.py — pytest coverage for the Skill-6 funnel matcher.
+
+Closes the audit gap: matcher flexibility was previously tested ONLY by the ad-hoc
+`funnel_matcher_cli.py --selftest`, which never ran under CI and asserted only that a
+plan EXISTS (not that the correct per-variant plan was built). These tests run under the
+standing QC gate and lock down:
+
+  * the four flexibility decisions per intent mode
+    (HONOR_USER / SUGGEST_TEMPLATE / USE_TEMPLATE / CREATE_NEW),
+  * the flexibility invariants (imposes_on_user is always False, override always allowed,
+    never blocks a build),
+  * the collision-safe Catalog.get() (qualified group/id, refuses to guess ambiguous ids),
+  * the committed catalog-index.json round-trips PORTABLY (no operator-local paths),
+  * step0_match stamps task['funnel_template_id'] so it survives the P4->P5 handoff.
+
+No network, no browser.
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+
+import pytest
+
+_TOOLS_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "tools"))
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
+
+import funnel_matcher as fm  # noqa: E402
+
+_CATALOG_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "funnel-templates"))
+_INDEX_PATH = os.path.join(_TOOLS_DIR, "catalog-index.json")
+
+
+@pytest.fixture(scope="module")
+def catalog() -> fm.Catalog:
+    return fm.Catalog.load(_CATALOG_ROOT)
+
+
+def flex_dec(mode: str, confident: bool) -> str:
+    return fm.flex_decide(mode, has_confident_match=confident, has_any_match=True)["decision"]
+
+
+# ── catalog integrity ────────────────────────────────────────────────────────
+def test_catalog_loads_all_38(catalog):
+    assert len(catalog.templates) == 38
+    assert set(catalog.by_key.keys()) == {f"{t['group']}/{t['id']}" for t in catalog.templates}
+
+
+def test_catalog_get_is_collision_safe(catalog):
+    # Every id is currently unique, so bare-id get() resolves.
+    sample = catalog.templates[0]
+    assert catalog.get(sample["id"]) is sample
+    assert catalog.get(sample["id"], group=sample["group"]) is sample
+    # Unknown id -> None, never an exception.
+    assert catalog.get("definitely-not-a-funnel") is None
+
+
+def test_catalog_get_refuses_to_guess_ambiguous():
+    # Synthesise a duplicate bare id across two groups and prove get() refuses to guess.
+    t1 = {"id": "dup", "group": "buyer", "name": "A"}
+    t2 = {"id": "dup", "group": "lead", "name": "B"}
+    cat = fm.Catalog("/x", [t1, t2], {})
+    assert "dup" in cat.ambiguous_ids
+    assert cat.get("dup") is None                      # ambiguous, no group -> refuse
+    assert cat.get("dup", group="lead") is t2          # qualified -> correct variant
+    assert cat.get("dup", group="buyer") is t1
+
+
+# ── the four flexibility decisions ───────────────────────────────────────────
+def test_explicit_named_funnel_is_honored(catalog):
+    # Naming a funnel forces EXPLICIT -> HONOR_USER (template never imposed).
+    d = fm.match_funnel({"text": "build a survey quiz funnel that segments my list"}, catalog)
+    assert d["intent_mode"] == fm.MODE_EXPLICIT
+    assert d["decision"] == fm.DEC_HONOR_USER
+    assert d["imposes_on_user"] is False
+    assert d["override_allowed"] is True
+
+
+def test_decision_matrix_is_the_flexibility_contract():
+    # (mode, has_confident_match) -> decision. This is the deterministic core contract;
+    # match_funnel routes to exactly these decisions.
+    assert flex_dec(fm.MODE_HANDSOFF, True) == fm.DEC_USE
+    assert flex_dec(fm.MODE_HANDSOFF, False) == fm.DEC_CREATE_NEW
+    assert flex_dec(fm.MODE_UNSURE, True) == fm.DEC_SUGGEST
+    assert flex_dec(fm.MODE_UNSURE, False) == fm.DEC_CREATE_NEW
+    # EXPLICIT always honors the user regardless of match availability.
+    assert flex_dec(fm.MODE_EXPLICIT, True) == fm.DEC_HONOR_USER
+    assert flex_dec(fm.MODE_EXPLICIT, False) == fm.DEC_HONOR_USER
+    # invariants on every cell
+    for mode in (fm.MODE_HANDSOFF, fm.MODE_UNSURE, fm.MODE_EXPLICIT):
+        for hc in (True, False):
+            dec = fm.flex_decide(mode, has_confident_match=hc, has_any_match=True)
+            assert dec["imposes_on_user"] is False
+            assert dec["override_allowed"] is True
+
+
+def test_hands_off_unnamed_builds_or_creates(catalog):
+    # Hands-off WITHOUT naming a funnel -> HANDS_OFF mode; builds from template or creates.
+    d = fm.match_funnel({"text": "just do it all, set it up turnkey for me to grow my list"},
+                        catalog)
+    assert d["intent_mode"] == fm.MODE_HANDSOFF
+    assert d["decision"] in (fm.DEC_USE, fm.DEC_CREATE_NEW)
+    if d["decision"] == fm.DEC_USE:
+        assert d["pages"] is not None and d["matched_template"] is not None
+
+
+def test_unsure_suggests_or_creates(catalog):
+    d = fm.match_funnel({"text": "not sure what funnel I need, what do you recommend?"},
+                        catalog)
+    assert d["intent_mode"] == fm.MODE_UNSURE
+    assert d["decision"] in (fm.DEC_SUGGEST, fm.DEC_CREATE_NEW)
+    assert d["await_confirm"] is True
+
+
+def test_nothing_fits_creates_new(catalog):
+    d = fm.match_funnel({"text": "a sourdough bread recipe blog about hydration ratios"},
+                        catalog)
+    assert d["decision"] == fm.DEC_CREATE_NEW
+    # A weak best-ref may still be carried, but it is below threshold and not built from.
+    assert d["confidence"] < d["threshold"]
+    assert d["build_from_template"] is False
+
+
+def test_flex_invariants_hold_across_every_decision(catalog):
+    for text in ("just do it all", "what should i pick?", "a quiz that segments my audience",
+                 "totally unrelated nonsense topic xyz"):
+        d = fm.match_funnel({"text": text}, catalog)
+        assert d["imposes_on_user"] is False
+        assert d["override_allowed"] is True
+
+
+# ── committed index portability (no operator-local paths) ────────────────────
+def test_committed_index_is_portable():
+    assert os.path.isfile(_INDEX_PATH), "catalog-index.json must be committed"
+    raw = open(_INDEX_PATH, encoding="utf-8").read()
+    for leak in ("/Users/", "/private/tmp", "scratchpad", "blackceomacmini"):
+        assert leak not in raw, f"operator-local path leaked into committed index: {leak}"
+    idx = json.loads(raw)
+    assert not os.path.isabs(idx["root"]), "index root must be relative (portable)"
+    for t in idx["templates"]:
+        assert not os.path.isabs(t["sourcePath"]), "sourcePath must be relative in committed index"
+
+
+def test_index_round_trips_and_reabsolutises():
+    cat = fm.Catalog.from_index(_INDEX_PATH)
+    assert len(cat.templates) == 38
+    # After load, sourcePath must point at a real file on THIS box.
+    sp = cat.templates[0]["sourcePath"]
+    assert os.path.isabs(sp) and os.path.isfile(sp)
+
+
+# ── step0 stamps funnel identity for the cross-department handoff ────────────
+def test_step0_stamps_funnel_template_id(tmp_path):
+    task = {"text": "just build the whole survey quiz funnel, handle it all"}
+    fm.step0_match(task, str(tmp_path), index_path=_INDEX_PATH,
+                   link_map_path=None)
+    # An identified funnel must be stamped onto the task so it survives the handoff.
+    if task.get("template_match", {}).get("matched_template"):
+        assert task.get("funnel_template_id"), "funnel_template_id must be stamped on the task"
+    receipt = tmp_path / "routing" / "match-decision.json"
+    assert receipt.is_file(), "match-decision.json receipt must be written for the QC gate"

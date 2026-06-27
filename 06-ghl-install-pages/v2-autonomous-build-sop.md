@@ -194,7 +194,26 @@ or the build with an incomplete offer spec. Write `routing/p0-gate.json`
 
 ---
 
-## P1. Funnel Spec — consume funnel-spec.json, persona-grounded on hormozi-100m-offers
+## P0.5 / STEP 0 — Template-first funnel match (reuse-before-reinvent; guide-not-rule)
+
+Before the build phases, a **template-first funnel match** runs as STEP 0 in
+`tools/v2_dispatcher.py` (`_resolve_step0` → `funnel_matcher.step0_match`). It is
+ADVISORY and NEVER blocks a build (env-gated on `GHL_FUNNEL_INDEX`/`GHL_FUNNEL_CATALOG`,
+which the box install exports). It consults the 38-template funnel library
+(`06-ghl-install-pages/funnel-templates/`, by category), picks the best-fit proven
+template, and — honoring the flexibility contract (HONOR_USER an explicit owner choice;
+SUGGEST when unsure; USE_TEMPLATE hands-off; CREATE_NEW only when nothing fits) — writes
+`routing/funnel-match.json` + a compact `routing/match-decision.json` receipt, attaches the
+matched template's `pageStructure`/`copy_persona`, stamps `task['funnel_template_id']`, and
+reads `_links/funnel-to-automation.json` to attach the recommended `linked_automations` for
+the COMPLETE-funnel handoff to Skill 44 (`routing/skill44-handoff.json`, written on verify).
+The dept agent uses the matched template's `pageStructure` as the page scaffold rather than
+reinventing structure. (See `funnel-templates/README.md` and SKILL.md "Funnel template
+library (STEP 0)".)
+
+---
+
+## P1. Funnel Spec — consume funnel-spec.json, persona-grounded (template-first)
 
 When invoked as part of the full-funnel pipeline, P1 (the Funnel Strategist) has
 already produced `working/funnels/<slug>/funnel-spec.json` before this SOP runs.
@@ -206,14 +225,23 @@ The dept agent MUST:
    every page has at least a `hero` and `cta` section slot. If any check fails,
    HALT with a structured handback — do NOT build against a malformed spec.
 
+1.5. **Verify `funnel_template_id` (template-first).** Confirm funnel-spec.json carries
+   `funnel_template_id` (set by the Funnel Strategist at SOP 9.5 step 1.5). If present,
+   use the matched template's `pageStructure` from
+   `06-ghl-install-pages/funnel-templates/<group>/<funnel_template_id>.json` as the build
+   scaffold and carry `linked_automations` to P5. If absent (legacy spec), proceed from
+   the section blueprint and note it in the handback — it should have been set at P1.
+
 2. **Verify persona-selection-log.md entry.** Read
-   `working/funnels/<slug>/persona-selection-log.md`. Confirm an entry exists with
-   `selected_persona: hormozi-100m-offers` for the funnel architecture task. If the
-   log entry is missing, HALT — the P1 stage is not done. Return to orchestrator.
+   `working/funnels/<slug>/persona-selection-log.md`. Confirm an entry exists naming
+   the persona the Funnel Strategist selected for the funnel architecture task (the
+   selector's TOP-RANKED slug — NOT a hardcoded default; `hormozi-100m-offers` is the
+   typical match for value-ladder tasks but a Brunson funnel persona or `pedro-adao-*`
+   may be correct). If the log entry is missing, HALT — P1 is not done. Return to orchestrator.
 
 3. **Write P1 gate receipt.** `routing/p1-gate.json`:
-   `{funnel_spec_valid: true, funnel_type: "<type>", persona_log_verified: true,
-   persona_selected: "hormozi-100m-offers"}`.
+   `{funnel_spec_valid: true, funnel_type: "<type>", funnel_template_id: "<id|null>",
+   persona_log_verified: true, persona_selected: "<slug from the log>"}`.
 
 The dept agent does NOT re-run P1 persona selection. P1 persona grounding is owned
 by the Funnel Strategist. This step is GATE-ONLY: verify and proceed.
@@ -731,7 +759,29 @@ A V2 build is DONE when, on the operator fixture only (a later live phase):
 4. telemetry is scrubbed and the `--check` gate is clean (§6);
 5. evidence is under `skill6-fix/v2-<RUN_ID>/`, no conflation (§8);
 6. the verdict (`overall_pass`) is whatever the raw log proves — a sub-8.5 result
-   is reported as FAIL, never massaged.
+   is reported as FAIL, never massaged;
+7. **BUILD-QC GATE (FAB-QC ≥ 8.5).** The library-aware build-quality gate
+   `qc-built-funnel.sh <slug>` (shared scorer `shared-utils/fab_qc.py`, rubric
+   `universal-sops/funnel-automation-build-quality-rubric.md`) scores the build on the
+   six dimensions — template fidelity, copy substance (no surviving placeholders),
+   render/soundness (the §7 `ghl_verify` scorecard is the hard floor), persona grounding,
+   flexibility honored (the persisted `routing/match-decision.json`), funnel↔automation
+   link integrity — and returns ≥ 8.5. This is a SUPERSET overlay on top of the canonical
+   `ghl_verify` floor; a build below 8.5 is NOT done. Both numbers are surfaced.
+
+   **The FAB-artifact PRODUCER makes this gate fire on a REAL build.** FAB-QC scores
+   `build/fab-artifact.json`. The dispatcher PRODUCES that file from the real build result:
+   right after the verifier passes (and before the FAB gate), `dispatch_one` calls
+   `_emit_fab_artifact()` → `shared-utils/fab_artifact.build_funnel_artifact(task, build)`,
+   normalising the matched `funnel_template_id`, the built pages, the **actual copy the
+   builder wrote**, the flex decision, and the attached `linked_automations` into the
+   artifact shape the scorer reads. It runs only on a template-aware build (a
+   `routing/match-decision.json` receipt from STEP 0 exists) and never clobbers an
+   artifact already on disk. **Builder contract:** the injected builder MUST echo the copy
+   it pushed per page (`build['pages'][i]['copy']`, or loose `headline`/`body`/`cta`/text
+   `blocks`) so the producer can hand real copy to D2 — a build that echoes no copy is
+   correctly failed as thin by D2 (fail-closed, by design). Without this producer the FAB
+   gate had nothing to score and was a silent no-op on every real funnel build.
 
 Going live (a real public domain) remains a CLIENT Connect-Domain step and is
 NOT automated; preview URLs + draft saves are the bar.

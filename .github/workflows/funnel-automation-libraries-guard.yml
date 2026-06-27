@@ -1,0 +1,99 @@
+name: funnel-automation-libraries-guard
+
+# Protects the funnel + automation template libraries, their matchers, the funnel->automation
+# link map, the persona crosswalk, and the standing FAB-QC build-quality gate (>= 8.5). Fails on:
+#   - library drift (templates on disk out of sync with the committed indexes / link map),
+#   - an unresolved template persona ref (the persona crosswalk drifted),
+#   - a leaked operator-local path in a committed index,
+#   - the FAB-QC gate or its fab-artifact producer being weakened or removed,
+#   - a matcher / flex / fab_qc / fab_artifact / crosswalk regression (the pytest suites).
+
+on:
+  push:
+    paths:
+      - "06-ghl-install-pages/funnel-templates/**"
+      - "06-ghl-install-pages/tools/funnel_matcher*.py"
+      - "06-ghl-install-pages/tools/v2_dispatcher.py"
+      - "06-ghl-install-pages/tools/catalog-index.json"
+      - "06-ghl-install-pages/qc-built-funnel.sh"
+      - "06-ghl-install-pages/tests/test_funnel_matcher.py"
+      - "06-ghl-install-pages/tests/test_v2_dispatcher.py"
+      - "44-convert-and-flow-operator/automation-templates/**"
+      - "44-convert-and-flow-operator/qc-built-workflow.sh"
+      - "44-convert-and-flow-operator/tests/test_automation_matcher.py"
+      - "shared-utils/fab_qc.py"
+      - "shared-utils/fab_artifact.py"
+      - "shared-utils/persona_crosswalk.py"
+      - "shared-utils/persona-crosswalk.json"
+      - "22-book-to-persona-coaching-leadership-system/persona-categories.json"
+      - "universal-sops/funnel-automation-build-quality-rubric.md"
+      - "tests/unit/fab-qc.test.py"
+      - "tests/unit/fab-artifact.test.py"
+      - "tests/unit/persona-crosswalk.test.py"
+      - "scripts/check-funnel-automation-library-drift.py"
+      - "scripts/guard-fab-qc-gate.sh"
+      - ".github/workflows/funnel-automation-libraries-guard.yml"
+  pull_request:
+    paths:
+      - "06-ghl-install-pages/funnel-templates/**"
+      - "06-ghl-install-pages/tools/funnel_matcher*.py"
+      - "06-ghl-install-pages/tools/v2_dispatcher.py"
+      - "06-ghl-install-pages/tools/catalog-index.json"
+      - "06-ghl-install-pages/qc-built-funnel.sh"
+      - "06-ghl-install-pages/tests/test_funnel_matcher.py"
+      - "06-ghl-install-pages/tests/test_v2_dispatcher.py"
+      - "44-convert-and-flow-operator/automation-templates/**"
+      - "44-convert-and-flow-operator/qc-built-workflow.sh"
+      - "44-convert-and-flow-operator/tests/test_automation_matcher.py"
+      - "shared-utils/fab_qc.py"
+      - "shared-utils/fab_artifact.py"
+      - "shared-utils/persona_crosswalk.py"
+      - "shared-utils/persona-crosswalk.json"
+      - "22-book-to-persona-coaching-leadership-system/persona-categories.json"
+      - "universal-sops/funnel-automation-build-quality-rubric.md"
+      - "tests/unit/fab-qc.test.py"
+      - "tests/unit/fab-artifact.test.py"
+      - "tests/unit/persona-crosswalk.test.py"
+      - "scripts/check-funnel-automation-library-drift.py"
+      - "scripts/guard-fab-qc-gate.sh"
+      - ".github/workflows/funnel-automation-libraries-guard.yml"
+
+jobs:
+  guard:
+    name: Funnel/automation libraries + FAB-QC gate guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Library drift gate (disk <-> index <-> link map; persona crosswalk; portable indexes)
+        run: python3 scripts/check-funnel-automation-library-drift.py
+
+      - name: Persona crosswalk gate (0 unresolved persona refs; canonical targets)
+        run: python3 shared-utils/persona_crosswalk.py --validate
+
+      - name: FAB-QC gate guard (rubric + scorer + producer + crosswalk + call-sites)
+        run: bash scripts/guard-fab-qc-gate.sh
+
+      - name: Matcher selftests
+        run: |
+          python3 44-convert-and-flow-operator/automation-templates/_matcher/flex.py
+          python3 44-convert-and-flow-operator/automation-templates/_matcher/cli.py --selftest
+          python3 06-ghl-install-pages/tools/funnel_matcher_cli.py --selftest
+
+      - name: Matcher + FAB-QC + producer + crosswalk pytest suites
+        run: |
+          python3 -m pytest 06-ghl-install-pages/tests/test_funnel_matcher.py \
+                            06-ghl-install-pages/tests/test_v2_dispatcher.py \
+                            44-convert-and-flow-operator/tests/test_automation_matcher.py -q
+          python3 tests/unit/fab-qc.test.py
+          python3 tests/unit/fab-artifact.test.py
+          python3 tests/unit/persona-crosswalk.test.py

@@ -159,6 +159,7 @@ This role contributes to the company revenue cascade by: **converting engaged au
 
 | Tool | Purpose | Access via | Specifics |
 |------|---------|------------|-----------|
+| **Automation sequence library (REUSE-FIRST)** | Proven conversational/multichannel messaging stacks (post-opt-in SMS/WhatsApp/DM) to reuse before building net-new | `44-convert-and-flow-operator/automation-templates/multichannel-automation/`; `_matcher/cli.py --match`; link map `_links/funnel-to-automation.json` | Template-first / reuse-before-reinvent; guide-not-rule |
 | {{CRM_PLATFORM_NAME}} Messaging Module | Core platform for SMS/WhatsApp/DM sequence creation, contact management, and automation triggers | CRM login credentials in TOOLS.md | Ensure messaging module is properly provisioned with channel integrations |
 | Twilio / SMS Provider Console | SMS sending infrastructure, 10DLC registration, carrier filtering monitoring, deliverability analytics | API key and console login in TOOLS.md | Monitor Campaign Registry (TCR) status for 10DLC; verify numbers are registered |
 | WhatsApp Business Manager / Meta Business Suite | WhatsApp template submission and approval, quality rating monitoring, WABA management, DM channel management | OAuth / business manager login in TOOLS.md | Templates must follow WhatsApp Business Policy; monitor message quality score |

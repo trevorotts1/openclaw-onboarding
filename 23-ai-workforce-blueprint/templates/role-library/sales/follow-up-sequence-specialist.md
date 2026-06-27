@@ -163,6 +163,7 @@ This role contributes to the company revenue cascade by: **increasing pipeline v
 
 | Tool | Purpose | Access via | Specifics |
 |------|---------|------------|-----------|
+| **Automation sequence library (REUSE-FIRST)** | Proven multi-channel follow-up + close cadences to reuse before designing net-new | `44-convert-and-flow-operator/automation-templates/sales-close-sequences/` + `multichannel-automation/`; `_matcher/cli.py --match` | Template-first / reuse-before-reinvent; guide-not-rule (honor explicit client cadence; CREATE_NEW only when nothing fits) |
 | Sales Engagement Platform (Outreach, SalesLoft, or {{CRM_PLATFORM_NAME}} Sequences) | Sequence building, deployment, performance analytics, A/B testing | API key in TOOLS.md / admin web login | All sequences live here. Platform must be bi-directionally synced with CRM. |
 | {{CRM_PLATFORM_NAME}} | Source of truth for prospect data, deal stages, and activity history | Web login | Read access to deals, contacts, and activities. Write access to log sequence activities as touchpoints. |
 | Email Deliverability Testing Tool (GlockApps, Mail-Tester) | Pre-send deliverability testing for sequence emails | Web login | Test sequence templates monthly for spam scoring. New sequence templates tested before launch. |

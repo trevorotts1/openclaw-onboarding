@@ -177,13 +177,67 @@ def normalise_template(doc: dict, *, group: str, path: str) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# Index path portability (keep committed indexes free of operator-local paths)
+# --------------------------------------------------------------------------- #
+def _relativise_index(idx: dict, base_dir: str) -> None:
+    """Rewrite absolute paths in an index dict to be RELATIVE to ``base_dir`` so the
+    committed file has no machine-specific path. Inverse: ``_absolutise_index``."""
+    if idx.get("root") and os.path.isabs(idx["root"]):
+        idx["root"] = os.path.relpath(idx["root"], base_dir)
+    for t in idx.get("templates", []):
+        sp = t.get("sourcePath")
+        if sp and os.path.isabs(sp):
+            t["sourcePath"] = os.path.relpath(sp, base_dir)
+
+
+def _absolutise_index(idx: dict, base_dir: str) -> None:
+    """Re-resolve relative paths in a loaded index against ``base_dir`` so sourcePath/root
+    point at the real files on whatever box loads the index. Inverse of relativise."""
+    if idx.get("root") and not os.path.isabs(idx["root"]):
+        idx["root"] = os.path.normpath(os.path.join(base_dir, idx["root"]))
+    for t in idx.get("templates", []):
+        sp = t.get("sourcePath")
+        if sp and not os.path.isabs(sp):
+            t["sourcePath"] = os.path.normpath(os.path.join(base_dir, sp))
+
+
+# --------------------------------------------------------------------------- #
 # Catalog
 # --------------------------------------------------------------------------- #
 class Catalog:
     def __init__(self, root: str, templates: list[dict]):
         self.root = root
         self.templates = templates
+        # NOTE: bare-id index is COLLISION-PRONE — two different templates can share the
+        # same bare id (e.g. 'soap-opera-sequence' lives in BOTH welcome-indoctrination/
+        # and sales-close-sequences/). Keep it only for the unambiguous-id convenience
+        # case; the qualified 'group/id' index below is the collision-safe source of truth.
         self.by_id = {t["id"]: t for t in templates}
+        self.by_key = {self._qkey(t["group"], t["id"]): t for t in templates}
+        # ids that appear in more than one group — must be resolved by qualified key.
+        self.ambiguous_ids = sorted({
+            t["id"] for t in templates
+            if sum(1 for x in templates if x["id"] == t["id"]) > 1
+        })
+
+    @staticmethod
+    def _qkey(group: str, tid: str) -> str:
+        return f"{group}/{tid}"
+
+    def get(self, tid: str | None, *, group: str | None = None) -> dict | None:
+        """Resolve a template COLLISION-SAFELY.
+
+        Prefer the qualified 'group/id'. Fall back to the bare id ONLY when it is
+        unambiguous (exactly one template carries it). Never returns the wrong variant."""
+        if not tid:
+            return None
+        if group:
+            t = self.by_key.get(self._qkey(group, tid))
+            if t:
+                return t
+        if tid in self.ambiguous_ids:
+            return None  # bare id is ambiguous and no/wrong group given — refuse to guess
+        return self.by_id.get(tid)
 
     @classmethod
     def load(cls, root: str) -> "Catalog":
@@ -215,12 +269,18 @@ class Catalog:
 
     def save_index(self, out_path: str) -> str:
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
-        json.dump(self.to_index(), open(out_path, "w", encoding="utf-8"), indent=2)
+        idx = self.to_index()
+        # PORTABILITY: store root + every sourcePath RELATIVE to the index file's dir so
+        # the committed index carries NO machine-specific absolute path (no operator-local
+        # path leak; works on any box). from_index() re-absolutises on load.
+        _relativise_index(idx, os.path.dirname(os.path.abspath(out_path)))
+        json.dump(idx, open(out_path, "w", encoding="utf-8"), indent=2)
         return out_path
 
     @classmethod
     def from_index(cls, index_path: str) -> "Catalog":
         idx = json.load(open(index_path, encoding="utf-8"))
+        _absolutise_index(idx, os.path.dirname(os.path.abspath(index_path)))
         return cls(idx.get("root", ""), idx["templates"])
 
 
@@ -331,7 +391,9 @@ def match_automation(request: dict | str, catalog: Catalog, *,
     decision = flex_dec["decision"]
 
     matched_id = best["id"] if (has_any and decision != flex.DEC_CREATE_NEW) else None
-    template = catalog.by_id.get(matched_id) if matched_id else None
+    matched_group = best["group"] if matched_id else None
+    template = catalog.get(matched_id, group=matched_group) if matched_id else None
+    matched_key = catalog._qkey(matched_group, matched_id) if template else None
     pages = instantiate_workflow(template) if (template and flex_dec["build_from_template"]) else None
 
     return {
@@ -345,6 +407,7 @@ def match_automation(request: dict | str, catalog: Catalog, *,
         "build_from_template": flex_dec["build_from_template"],
         "template_role": flex_dec["template_role"],
         "matched_template": matched_id,
+        "matched_template_key": matched_key,   # qualified 'group/id' (collision-safe)
         "matched_name": (template["name"] if template else None),
         "matched_category": (template["group"] if template else None),
         "confidence": best["confidence"] if best else 0.0,
@@ -498,8 +561,12 @@ def expand_funnel_to_automations(funnel_id: str, *, link_map_path: str,
         dropped = _dropped(ref)
         item = {**ref, "recommended": True, "mandatory": False,
                 "overridden_by_user": dropped, "build_now": build_now and not dropped}
-        if catalog and ref["automation_id"] in catalog.by_id and not dropped:
-            item["workflow_plan"] = instantiate_workflow(catalog.by_id[ref["automation_id"]])
+        # Resolve by the QUALIFIED 'category/automation_id' the link map already supplies.
+        # Bare-id lookup would cross-wire variants that share an id (soap-opera-sequence).
+        tmpl = (catalog.get(ref["automation_id"], group=ref.get("category"))
+                if catalog else None)
+        if tmpl and not dropped:
+            item["workflow_plan"] = instantiate_workflow(tmpl)
         automations.append(item)
 
     return {
@@ -571,10 +638,29 @@ def step0_match(task: dict, evidence_root: str, *,
         task["template_match"] = {
             "intent_mode": decision["intent_mode"], "decision": decision["decision"],
             "matched_template": decision["matched_template"],
+            "matched_template_key": decision.get("matched_template_key"),
             "confidence": decision["confidence"],
             "await_confirm": decision["await_confirm"],
             "imposes_on_user": decision["imposes_on_user"],
         }
+        # Compact, normalised match-decision receipt for the QC gate (FAB-QC reads this).
+        try:
+            _mt = catalog.get(decision.get("matched_template"),
+                              group=decision.get("matched_category"))
+            json.dump({
+                "skill": "44-convert-and-flow-operator",
+                "matched_template_id": decision.get("matched_template"),
+                "matched_template_key": decision.get("matched_template_key"),
+                "template_path": (_mt.get("sourcePath") if _mt else None),
+                "intent_mode": decision.get("intent_mode"),
+                "flex_decision": decision.get("decision"),
+                "confident_match": bool(decision.get("confidence", 0) >= threshold),
+                "funnel_template_id": task.get("funnel_template_id"),
+                "ts": _ts(),
+            }, open(os.path.join(routing, "match-decision.json"), "w",
+                    encoding="utf-8"), indent=2)
+        except Exception:  # noqa: BLE001 — receipt is advisory, never blocks
+            pass
         d = decision["decision"]
         if d == flex.DEC_USE:
             task.setdefault("workflow_plan", decision["workflow_plan"])

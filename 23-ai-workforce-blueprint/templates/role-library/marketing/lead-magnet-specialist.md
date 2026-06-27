@@ -155,6 +155,7 @@ This role contributes to the company revenue cascade by: **creating the conversi
 
 | Tool | Purpose | Access via | Specifics |
 |------|---------|------------|-----------|
+| **Funnel + automation libraries (REUSE-FIRST)** | 9 lead/squeeze funnel templates and the linked welcome-indoctrination (Soap Opera) follow-up | `06-ghl-install-pages/funnel-templates/lead/` + `44-.../automation-templates/welcome-indoctrination/`; lead entry of `_links/funnel-to-automation.json` | Template-first / reuse-before-reinvent; guide-not-rule |
 | Landing Page Builder (Unbounce, Instapage, Leadpages, or native CMS) | Landing page creation and hosting for lead magnet delivery; A/B testing integration; mobile-responsive templates | Account subscription | Template library for common lead magnet types (guide download, webinar registration, quiz/assessment) |
 | Form Builder (Typeform, Gravity Forms, or native CRM forms) | Lead capture forms; multi-step forms for assessments; conditional logic for personalization | Account subscription or CRM-native | Forms integrated with CRM for automatic lead creation |
 | CRM Platform ({{CRM_PLATFORM_NAME}}) | Lead record creation and management; lead source tracking; lead magnet attribution; lead quality tracking through downstream stages | Admin access | Ensure each lead magnet has a unique source identifier in CRM for attribution |
