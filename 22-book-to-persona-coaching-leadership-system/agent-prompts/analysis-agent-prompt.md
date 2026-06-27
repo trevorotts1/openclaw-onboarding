@@ -58,15 +58,23 @@ Build the trigger detection system:
 ### 12. Single Most Important Non-Obvious Insight
 What is the one thing about this methodology that is not obvious from reading a summary, but becomes clear from deep analysis? The insight that would make a practitioner say "I never thought about it that way." (3-5 sentences)
 
+### 13. Playbook Asset Inventory & Patternization (FEEDS THE PLAYBOOK APPENDIX — do not skip)
+Phase 3 produces TWO files: the distilled `persona-blueprint.md` AND a high-fidelity `PLAYBOOK-APPENDIX.md` that preserves the book's reusable copy/funnel assets. This dimension organizes the raw assets from extraction items 21-30 into clean, reusable, swipe-ready form. Do NOT re-summarize — sharpen and de-duplicate. Produce these sub-parts:
+
+- **13A — Asset Coverage Map.** A table with one row per asset category: `Category | Count Captured | Source Richness (RICH / THIN / ABSENT) | Notes`. Categories: Headline/Hook/Subject formulas; Funnel/Page recipes; Sequences; Sales/Objection/Follow-up/Discovery scripts; Email scripts & sequences; Frameworks/Models/Templates; Brand-voice & language patterns; Offer/Guarantee/CTA/Bonus language; Swipe file. This map tells Phase 3 exactly what is real in the source so it never fabricates to hit a floor.
+- **13B — Patternized Asset Catalog.** For each asset worth preserving, render it as a clean reusable block: `NAME` · `WHEN TO USE` · `PATTERN (with [BRACKETED SLOTS])` · `WORKED EXAMPLE (verbatim/near-verbatim)` · `SOURCE`. Merge duplicates, fix obvious slot inconsistencies, and keep the author's exact phrasing inside the example. This is the raw material Phase 3 drops into the appendix — be exhaustive, not selective.
+- **13C — Full Recipe Set check.** Explicitly list EVERY funnel/page type the book teaches and confirm each has a page-by-page recipe in 13B (or mark it ABSENT). The appendix must carry the complete recipe set with no page type silently dropped.
+- **13D — Brand-Building Language Bank.** Consolidate the author's reusable voice machinery into ready lists: power words/phrases to use, words/phrases to avoid, signature sentence structures, naming patterns, proof/credibility patterns, story/analogy templates — each with at least one example line. This is what lets a copy specialist write ON-brand and richly, not concisely.
+
 ## Output Format
 
-Write your output as a markdown file called `analysis-notes.md`. Use the exact 12 numbered dimension headers above. Under each, provide your full analysis. Be thorough - this feeds directly into the final persona blueprint.
+Write your output as a markdown file called `analysis-notes.md`. Use the exact 13 numbered dimension headers above. Under each, provide your full analysis. Be thorough - this feeds directly into BOTH the persona blueprint (dimensions 1-12) AND the playbook appendix (dimension 13).
 
 ## Rules
 - Every claim must trace back to something in the extraction-notes
-- Do not invent frameworks the author did not create - extend and operationalize what they built
-- Minimum total output: 3,000 characters
-- The Amateur-to-Expert Gap (Dimension 3) is the most critical section - give it the most depth
+- Do not invent frameworks the author did not create - extend and operationalize what they built. For Dimension 13 this is absolute: never invent a formula, script, or recipe to fill a category — mark it ABSENT in the Coverage Map instead.
+- Minimum total output: 5,000 characters (raised to cover Dimension 13). Asset-rich copy/marketing books should run far longer in 13B.
+- The Amateur-to-Expert Gap (Dimension 3) is the most critical analytical section; Dimension 13 (Playbook Asset Inventory) is the most critical preservation section — give both real depth.
 - Be specific and actionable, not abstract and theoretical
 
 ## Extraction Notes Follow Below

@@ -18,7 +18,11 @@ PDF → Text Extraction (pdfplumber, free) → .txt file
                                     ↓ analysis-notes.md
                               Phase 3: OAuth GPT preferred (Synthesis)
                                 Latest Kimi as fallback. Never Anthropic.
-                                    ↓ persona-blueprint.md
+                                    ↓ persona-blueprint.md  (distilled two-sided persona)
+                              Phase 3b: Same chain as Phase 3 (Playbook Appendix)
+                                Preserves the book's reusable copy/funnel assets at full fidelity.
+                                Quality floor enforced; fail-loud; no fabrication.
+                                    ↓ PLAYBOOK-APPENDIX.md  (full-fidelity reusable asset library)
                               Gemini Engine Indexing
                                     ↓ searchable via Gemini semantic search
 ```
@@ -74,13 +78,18 @@ python3 "$MASTER_FILES_DIR/../shared-utils/select_model.py" \
 **Temperature:** 1.0 (MUST be exactly 1.0)
 **Prompt:** agent-prompts/extraction-agent-prompt.md
 
-**What it extracts (20 items):**
+**What it extracts (30 items):**
 - Coaching lens (items 1-11): Author background, central problem, root cause, full methodology,
   principles, transformation arc, coaching questions, tools/exercises, objection handling,
   author voice, direct quotes
 - Governance lens (items 12-20): Execution system, quality bar, non-negotiable rules,
   failure patterns, decision logic, self-review protocol, definition of done,
   amateur-to-expert gap, professional application
+- Playbook Asset Lens (items 21-30): headline/hook/subject formulas, page-by-page funnel/page
+  recipes, sequences, sales/objection/follow-up/discovery scripts, email scripts & sequences,
+  frameworks/models/templates with steps, brand-voice & brand-building language patterns,
+  offer/guarantee/CTA/bonus language, verbatim swipe file, and an asset coverage self-report —
+  each captured as PATTERN + worked EXAMPLE + SOURCE (depth preserved, never summarized away)
 
 **Input to sub-agent:**
 - Full content of extraction-agent-prompt.md (system instructions)
@@ -182,6 +191,34 @@ NEVER Anthropic.
 - SKILL.md blueprint specification (up to 30K chars)
 
 **Output:** persona-blueprint.md saved to persona folder with header block
+
+---
+
+## Phase 3b - Playbook Appendix (Smart Model Selection — same chain as Phase 3)
+
+**Why it exists:** the 14-section blueprint DISTILLS a whole book into a governance + coaching persona. That distillation is exactly why funnel/website copy driven by the blueprint came out too concise — the book's actual reusable assets (the formulas, scripts, page recipes, swipe copy, brand-voice machinery) were compressed away. Phase 3b fixes that by emitting a mandatory companion, `PLAYBOOK-APPENDIX.md`, that PRESERVES those assets at full fidelity so copy specialists write rich, brand-building copy.
+
+**Model selection:** same `resolve_phase_model("phase3", …)` chain as synthesis (OAuth GPT preferred → Ollama Cloud → OpenRouter; never Anthropic).
+**Prompt:** `agent-prompts/playbook-appendix-prompt.md`
+**Input to sub-agent:** the appendix prompt + extraction-notes.md (up to 90K chars; focus items 21-30) + analysis-notes.md (up to 60K chars; focus Dimension 13).
+**Output:** `PLAYBOOK-APPENDIX.md` saved to the persona folder (alongside persona-blueprint.md).
+
+**What it produces (8 sections A-H, each asset as Pattern + Worked example + Source):**
+- A. Headline, Hook & Subject-Line Formula Bank (≥ 12 for asset-rich books)
+- B. Funnel & Page Recipes — page-by-page (the FULL recipe set; every page/funnel type)
+- C. Script Bank — sales / objection / follow-up / discovery / close (≥ 10)
+- D. Email & Sequence Bank (≥ 1 complete sequence, every email spelled out)
+- E. Frameworks, Models & Templates — with all steps (the FULL framework set)
+- F. Brand Voice & Brand-Building Language Patterns (≥ 15)
+- G. Swipe File — strongest verbatim examples (≥ 20)
+- H. Asset Coverage Map & Gaps (the honesty ledger; absent categories marked ABSENT)
+
+**Quality floor (enforced in the orchestrator — `_validate_appendix` + `APPENDIX_*` constants):**
+- HARD gate (fail-loud → `phase3b: FAILED`): file present + non-empty, all 8 sections A-H, Coverage Map present, ≥ 6,000 chars.
+- SOFT targets (logged as warnings; one stricter retry): ≥ 12,000 chars and ≥ 12 Pattern/Worked-example blocks for asset-rich books.
+- NO fabrication: a memoir / non-commercial book legitimately marks categories ABSENT in the Coverage Map and passes as `COMPLETE_WITH_WARNINGS` rather than inventing assets to hit a count.
+
+**Status:** `phase3b` in pipeline-status.json — `COMPLETE`, `COMPLETE_WITH_WARNINGS`, or `FAILED`. The appendix is non-fatal to Phase 3 (the blueprint still ships) but is mandatory for a fully DONE persona.
 
 ### Post-Synthesis: Automatic Re-Index (Phase 3 Completion)
 

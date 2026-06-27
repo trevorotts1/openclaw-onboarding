@@ -86,13 +86,16 @@ Drop any supported format into the `books/` folder and the pipeline handles the 
 
 Takes any book (PDF, EPUB, MOBI, or Kindle) and produces a **dual-purpose persona blueprint** through a 3-phase sub-agent pipeline:
 
-- **Phase 1 - Extraction** (Ollama DeepSeek V4-pro preferred, latest version auto-detected): Reads the full book text, extracts 20 structured items across two lenses — coaching methodology and agent governance frameworks. Selector falls back to Ollama Kimi 2.6 → OpenRouter DeepSeek V4-pro → OpenRouter Kimi 2.6 → OAuth GPT when higher tiers are unavailable.
-- **Phase 2 - Analysis** (DeepSeek V3.2): Deep analytical work across 12 dimensions including Amateur-to-Expert Gap, failure taxonomy, execution standards, decision logic
-- **Phase 3 - Synthesis** (GPT-5.4 Codex via OAuth): Writes the complete 14-section persona blueprint - fully deployable for both human coaching and AI agent governance
+- **Phase 1 - Extraction** (Ollama DeepSeek V4-pro preferred, latest version auto-detected): Reads the full book text, extracts 30 structured items across THREE lenses — coaching methodology (1-11), agent governance frameworks (12-20), and the **Playbook Asset Lens (21-30)** that captures the book's actual reusable, swipe-able assets (headline/hook/subject formulas, funnel page recipes, scripts, frameworks, brand-voice patterns, swipe file) at full fidelity. Selector falls back to Ollama Kimi 2.6 → OpenRouter DeepSeek V4-pro → OpenRouter Kimi 2.6 → OAuth GPT when higher tiers are unavailable.
+- **Phase 2 - Analysis** (DeepSeek V3.2): Deep analytical work across 13 dimensions including Amateur-to-Expert Gap, failure taxonomy, execution standards, decision logic, and Dimension 13 (Playbook Asset Inventory & Patternization) that organizes the reusable assets into clean PATTERN + worked-example form for the appendix.
+- **Phase 3 - Synthesis** (GPT-5.4 Codex via OAuth): Writes the complete 14-section persona blueprint - fully deployable for both human coaching and AI agent governance.
+- **Phase 3b - Playbook Appendix** (same chain as Phase 3): Writes a mandatory companion `PLAYBOOK-APPENDIX.md` alongside the blueprint. The blueprint DISTILLS the book; the appendix PRESERVES its reusable copy/funnel assets at full fidelity (8 sections A-H) so copy specialists write rich, brand-building copy — never the over-concise output the distilled blueprint alone produced. A quality floor is enforced in the orchestrator (fail-loud on the structure/honesty gate; one stricter retry on richness shortfall; no fabrication for thin books).
 
 Every persona supports:
 1. **Coaching Mode** - activates when a human needs guidance through a challenge
 2. **Task Mode** - activates when an AI agent needs a methodology standard for professional work
+
+Every persona ships as a PAIR of files: `persona-blueprint.md` (the distilled two-sided persona) and `PLAYBOOK-APPENDIX.md` (the full-fidelity reusable asset library).
 
 ---
 
@@ -213,9 +216,10 @@ The script will:
 ├── text/                           <- Extracted plain text (auto-generated)
 └── personas/
     └── [author-lastname]-[book-slug]/
-        ├── extraction-notes.md     <- Phase 1 output
-        ├── analysis-notes.md       <- Phase 2 output
-        ├── persona-blueprint.md    <- Phase 3 output (the deployable persona)
+        ├── extraction-notes.md     <- Phase 1 output (30 items incl. Playbook Asset Lens 21-30)
+        ├── analysis-notes.md       <- Phase 2 output (13 dimensions incl. Asset Inventory)
+        ├── persona-blueprint.md    <- Phase 3 output (the deployable two-sided persona)
+        ├── PLAYBOOK-APPENDIX.md    <- Phase 3b output (MANDATORY companion: full-fidelity reusable asset library)
         └── google-embedding-index/              <- Gemini Engine index for this persona
 ```
 

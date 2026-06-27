@@ -44,15 +44,34 @@ Read the entire book text provided below. Extract the following items with preci
 19. **Amateur-to-Expert Gap** - What separates a beginner from a master in this domain? What are the 5+ dimensions where amateurs differ from experts?
 20. **Professional Application** - Which business departments or professional roles benefit most from this methodology? List at least 3 with specific use cases.
 
+### Playbook Asset Lens (Items 21-30) — REUSABLE COPY/FUNNEL ASSETS, CAPTURED CONCRETELY
+
+CRITICAL: Items 1-20 distill the book into governance + coaching. Items 21-30 do the OPPOSITE — they PRESERVE the book's actual reusable, swipe-able assets at full fidelity so copy specialists can write rich, brand-building copy WITHOUT re-reading the book. Do NOT summarize these away. For every asset, capture two things side by side:
+  - **PATTERN** — the reusable formula / template skeleton / step-recipe in the author's own structure, with `[BRACKETED SLOTS]` marking the variables.
+  - **EXAMPLE** — a fully worked, swipe-able instance, pulled verbatim or near-verbatim from the book.
+Always tag the chapter/section the asset came from. If the book genuinely contains NONE of a given asset type, write `NONE IN SOURCE` for that item (never invent assets the author did not provide).
+
+21. **Headline / Hook / Subject-Line Formulas** - Every headline template, hook formula, ad-opener, email subject-line formula, fascination/curiosity-bullet pattern, or first-3-seconds video hook the author teaches. Capture each as PATTERN (the fill-in-the-blank template) + EXAMPLE (a worked headline). Capture ALL the author gives — minimum 12 if the book is a copy/marketing/sales book; capture everything available otherwise.
+22. **Funnel / Page Recipes (page-by-page)** - For EVERY funnel type, landing page, sales page, opt-in/squeeze, webinar, VSL, checkout, upsell, or thank-you page the author teaches: capture the block-by-block section order (each section's name + what it says + its job), the recommended length/wireframe, and any conversion notes. This is "the full recipe set" — do not skip any page type the author covers. One recipe block per page type.
+23. **Sequences (multi-step arrangements)** - The order pages/steps/touchpoints are arranged into a funnel or campaign (e.g. lead funnel → tripwire → core → upsell; or a 5-day launch). Capture the step order, the job of each step, and the trigger/timing between steps.
+24. **Sales / Objection / Follow-up / Discovery Scripts** - Every word-for-word say-this script: sales-call scripts, discovery/qualification questions, objection-handling rebuttals, closing language, follow-up scripts, voicemail/DM scripts. Capture PATTERN (the script skeleton with slots) + EXAMPLE (the verbatim line). Group by situation. Capture ALL the author gives.
+25. **Email Scripts & Sequences** - Every email template and full email sequence (welcome/soulmate, launch, cart-abandon, nurture, re-engagement, etc.). For each email capture: its role in the sequence, the subject-line pattern + example, the body skeleton + worked example, and the send timing/cadence.
+26. **Frameworks / Models / Templates (WITH the steps)** - Every named framework, model, acronym, worksheet, canvas, matrix, or fill-in template — capture ALL of its steps/components spelled out so it is executable without the book, plus one worked example of the framework applied. Do not just name the framework — reproduce its full internal structure.
+27. **Brand-Voice & Brand-Building Language Patterns** - The author's reusable language machinery: power words / phrases to use, words/phrases to avoid, signature sentence structures, value-language and meaning patterns, proof/credibility language, naming patterns (how to name offers, bonuses, programs, mechanisms), story/analogy templates. Capture each as a reusable pattern + an example line.
+28. **Offer / Guarantee / CTA / Bonus Language** - Every offer-stack pattern, guarantee/risk-reversal template, call-to-action formula, urgency/scarcity line, price-justification pattern, and bonus-framing pattern the author provides. PATTERN + EXAMPLE each.
+29. **Swipe File (strongest verbatim examples)** - The single strongest, most swipe-able VERBATIM passages in the book — model headlines, bullets, opens, closes, P.S. lines, guarantees, full mini-letters, taglines. Capture verbatim inside quotes, labeled by type. Minimum 20 if the book supports it.
+30. **Asset Coverage Self-Report** - A short table: for each asset category above (21-29), state how many you captured and whether the book is RICH / THIN / ABSENT in that category. This lets Phase 3 build an honest appendix and never pad with invented content.
+
 ## Output Format
 
-Write your output as a markdown file called `extraction-notes.md`. Use the exact numbered headers above (1-20). Under each header, provide the extracted content. Do not add commentary or analysis - that is Phase 2's job. Your job is faithful extraction of what the author wrote.
+Write your output as a markdown file called `extraction-notes.md`. Use the exact numbered headers above (1-30). Under each header, provide the extracted content. For items 21-30, use the PATTERN / EXAMPLE / SOURCE structure described in the Playbook Asset Lens header. Do not add commentary or analysis - that is Phase 2's job. Your job is faithful, high-fidelity extraction of what the author wrote.
 
 ## Rules
 - Use the author's actual words and phrases wherever possible
-- If the book does not cover an item, write "Not explicitly addressed in this book" under that header
-- Do not invent content the author did not write
+- If the book does not cover an item, write "Not explicitly addressed in this book" (items 1-20) or `NONE IN SOURCE` (items 21-29) under that header
+- Do not invent content the author did not write — this is absolute for the Playbook Asset Lens (21-30): a copy specialist will swipe these directly, so a fabricated formula is worse than an honest `NONE IN SOURCE`
 - Longer is better - capture everything relevant, do not artificially shorten
-- Minimum total output: 5,000 characters
+- The Playbook Asset Lens (21-30) is the DEPTH-PRESERVATION half of this skill — give it as much room as it needs; never compress a reusable formula, script, or recipe into a one-line summary
+- Minimum total output: 8,000 characters (raised from 5,000 to accommodate the Playbook Asset Lens). For copy/marketing/sales/funnel/brand books, expect 15,000+.
 
 ## Book Text Follows Below

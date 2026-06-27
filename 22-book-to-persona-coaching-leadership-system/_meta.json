@@ -1,8 +1,8 @@
 {
   "name": "book-to-persona",
   "displayName": "Book Intelligence Pipeline",
-  "description": "Converts any bestselling book PDF into a dual-purpose persona blueprint — coaches humans AND governs AI agents. 3-phase pipeline. Model selection is DYNAMIC per phase via shared-utils/select_model.py — picks the latest available DeepSeek V4 Pro (Ollama Cloud preferred), falls back to OpenRouter DeepSeek V4 Pro, then Kimi, then cheapest. Never Anthropic. Stops and asks the owner if nothing matches.",
-  "version": "2.0.0",
+  "description": "Converts any bestselling book PDF into a dual-purpose persona blueprint (coaches humans AND governs AI agents) PLUS a mandatory companion PLAYBOOK-APPENDIX.md that preserves the book's reusable copy/funnel assets (formulas, page recipes, scripts, frameworks, brand-voice patterns, swipe file) at full fidelity for rich, brand-building copy. 3-phase + Phase 3b pipeline. Model selection is DYNAMIC per phase via shared-utils/select_model.py — picks the latest available DeepSeek V4 Pro (Ollama Cloud preferred), falls back to OpenRouter DeepSeek V4 Pro, then Kimi, then cheapest. Never Anthropic. Stops and asks the owner if nothing matches.",
+  "version": "2.1.0",
   "author": "BlackCEO / Trevor Otts",
   "requires": {
     "bins": ["qmd", "python3"],
@@ -14,6 +14,7 @@
     "phase1": "deepseek-v4-pro-latest-preferred",
     "phase2": "deepseek-v4-pro-latest-preferred",
     "phase3": "oauth-gpt-preferred-with-kimi-fallback",
+    "phase3b": "oauth-gpt-preferred-with-kimi-fallback (playbook appendix — same chain as phase3)",
     "selector": "shared-utils/select_model.py",
     "forbidden_prefixes": ["anthropic/", "claude-"]
   },

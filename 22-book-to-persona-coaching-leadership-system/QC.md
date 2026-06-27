@@ -22,16 +22,18 @@ Verify all required files and folders exist at the correct paths.
 - [ ] `CHANGELOG.md` present in skill root
 
 ### Agent Prompts
-- [ ] `agent-prompts/extraction-agent-prompt.md` exists
-- [ ] `agent-prompts/analysis-agent-prompt.md` exists
+- [ ] `agent-prompts/extraction-agent-prompt.md` exists (30 items incl. Playbook Asset Lens 21-30)
+- [ ] `agent-prompts/analysis-agent-prompt.md` exists (13 dimensions incl. Dimension 13)
 - [ ] `agent-prompts/synthesis-agent-prompt.md` exists
+- [ ] `agent-prompts/playbook-appendix-prompt.md` exists (Phase 3b — emits PLAYBOOK-APPENDIX.md)
 
 ### Pre-Built Personas Folder
 - [ ] `~/Downloads/openclaw-master-files/coaching-personas/personas/` exists (or equivalent master-files path)
-- [ ] At least one persona folder present with all 3 files:
+- [ ] At least one persona folder present with all 4 files:
   - [ ] `extraction-notes.md`
   - [ ] `analysis-notes.md`
   - [ ] `persona-blueprint.md`
+  - [ ] `PLAYBOOK-APPENDIX.md` (companion asset library; expected on personas built/rebuilt at v6.8.0+)
 
 ### Spot-Check: 5 Required Persona Folders
 Confirm these specific folders exist inside the personas directory:

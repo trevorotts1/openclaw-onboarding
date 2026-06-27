@@ -18,6 +18,8 @@ Read both documents provided below. Build a persona blueprint that serves two pu
 
 The blueprint must be complete, specific, and immediately usable. An agent reading this blueprint should be able to adopt the persona and operate through it without any additional reference material.
 
+**Companion file (do not produce here — just reference it):** A second pass (Phase 3b) generates a mandatory companion file, `PLAYBOOK-APPENDIX.md`, in this same persona folder. The appendix preserves the book's ACTUAL reusable, swipe-able assets at full fidelity — headline/hook/subject formulas, page-by-page funnel recipes and sequences, sales/objection/follow-up/email scripts, frameworks/models/templates with all their steps, brand-voice language patterns, and a verbatim swipe file. Your blueprint is the GOVERNANCE + COACHING distillation; the appendix is the DEPTH library a copy specialist swipes from. Wherever your blueprint names a framework, template, script, recipe, or formula, add a pointer such as `(full template + worked example in PLAYBOOK-APPENDIX.md → Section X)` rather than compressing the asset into one line. Do not duplicate the whole appendix inside the blueprint — point to it.
+
 ## Required Sections (All 14 Are Mandatory)
 
 ### Section 1 - Identity & Voice
@@ -115,5 +117,6 @@ Then write all 14 sections with `## Section N - Title` headers. Every section is
 - All 14 sections must be present and substantive (not placeholder text)
 - Coaching Mode and Task Mode must be clearly distinct in tone and application
 - Sample responses must demonstrate the persona's unique voice, not generic responses
+- Cross-reference the companion `PLAYBOOK-APPENDIX.md` wherever a framework, template, script, recipe, or formula is named — point to the appendix's full version instead of summarizing it away
 
 ## Input Documents Follow Below

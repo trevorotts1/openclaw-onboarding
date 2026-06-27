@@ -4,6 +4,66 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v6.9.0] - 2026-06-26
+
+### Shipped — PLAYBOOK-APPENDIX.md for all 10 QC-approved book personas
+Delivers the Phase 3b companion appendix for every book persona shipped in v14.3.16–v14.3.19.
+Each persona directory now contains:
+1. `persona-blueprint.md` — upgraded to companion-aware version (frontmatter `companion: PLAYBOOK-APPENDIX.md`; cross-references appendix throughout instead of embedding scripts/recipes/frameworks inline).
+2. `PLAYBOOK-APPENDIX.md` — 8-section (A-H) rich asset file: hook/headline formulas, funnel/page recipes, sales + objection + discovery + follow-up scripts, email sequences, frameworks/models with steps + worked examples, brand-voice patterns, verbatim swipe file, asset coverage map.
+
+Books shipped: The New Model of Selling (NEPQ), The Brand Mapping Strategy, Coach Builder, Building a StoryBrand, Marketing Secrets Blackbook, Copywriting Secrets, Lead Funnels, Network Marketing Secrets, The Sketchnote Workbook, The Funnel Hacker's Cookbook.
+
+persona-categories.json bumped to schema v1.1; all 10 entries gain `appendix`, `appendix_status`, `appendix_richness`, merged custom tags, and `_perspective_note` where applicable. PERSONA-ROUTER.md gains `[+APPENDIX]` markers.
+
+---
+
+## [v6.8.0] - 2026-06-26
+
+### Added — Phase 3b Playbook Appendix (depth preservation; fixes over-concise funnel/website copy)
+The 14-section `persona-blueprint.md` DISTILLS a whole book into a governance +
+coaching persona. That distillation was making the funnel/website copy it drives
+too concise — the book's actual reusable assets were compressed away. This release
+adds a mandatory companion, `PLAYBOOK-APPENDIX.md`, generated automatically for
+EVERY future book, that PRESERVES those assets at full fidelity so copy
+specialists write rich, brand-building copy.
+
+**Pipeline code changes (every future book gets the appendix automatically):**
+- `agent-prompts/extraction-agent-prompt.md` — added the **Playbook Asset Lens
+  (items 21-30)**: headline/hook/subject formulas, page-by-page funnel/page recipes,
+  sequences, sales/objection/follow-up/discovery scripts, email scripts & sequences,
+  frameworks/models/templates with steps, brand-voice & brand-building language
+  patterns, offer/guarantee/CTA/bonus language, a verbatim swipe file, and an asset
+  coverage self-report — each captured as PATTERN + worked EXAMPLE + SOURCE. Min
+  output raised 5,000 → 8,000 chars. Explicit no-fabrication rule (`NONE IN SOURCE`).
+- `agent-prompts/analysis-agent-prompt.md` — added **Dimension 13 (Playbook Asset
+  Inventory & Patternization)**: 13A Asset Coverage Map, 13B Patternized Asset
+  Catalog, 13C Full Recipe Set check, 13D Brand-Building Language Bank. Min output
+  raised 3,000 → 5,000 chars.
+- `agent-prompts/playbook-appendix-prompt.md` — **NEW** Phase 3b prompt; emits the
+  8-section (A-H) appendix with the Pattern/Worked-example/Source capture convention
+  and explicit per-section floors.
+- `agent-prompts/synthesis-agent-prompt.md` — blueprint now cross-references the
+  companion appendix instead of summarizing frameworks/scripts/recipes away.
+- `pipeline/orchestrator.py` — new `run_playbook_appendix()` (Phase 3b) wired into
+  `run_synthesis()` after the blueprint write and before Gemini indexing; new
+  `_validate_appendix()` quality-floor gate (`APPENDIX_*` constants), `_appendix_system()`
+  prompt loader, and `_appendix_model_call()` router (same chain as Phase 3). Fail-loud
+  on the structure/honesty gate (`phase3b: FAILED`), one stricter retry on richness
+  shortfall, NO fabrication for thin books (`COMPLETE_WITH_WARNINGS`).
+- Docs/QC: `SKILL.md`, `PIPELINE.md`, `CHECKLIST.md`, `QC.md`, and
+  `qc-book-to-persona-coaching-leadership-system.sh` updated to document and assert
+  the appendix + new floors.
+
+### Quality floor (enforced)
+- HARD (fail-loud): file present + non-empty, all 8 sections A-H, Asset Coverage Map
+  present, >= 6,000 chars.
+- SOFT (warn + one retry): >= 12,000 chars and >= 12 Pattern/Worked-example blocks for
+  asset-rich books. Section minimums: A >= 12 formulas, C >= 10 scripts, F >= 15
+  brand-voice patterns, G >= 20 swipe items; B = full recipe set; E = full framework set.
+
+---
+
 ## [v6.7.13] - 2026-06-26
 
 ### Added (book-persona research scaffolding — all 10 QC-approved personas)

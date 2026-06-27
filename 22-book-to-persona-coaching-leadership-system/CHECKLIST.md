@@ -40,9 +40,11 @@ python3 -c "import google.genai, numpy, pdfplumber, pypdf, ebooklib, aiohttp, bs
 - [ ] Selector did NOT return an Anthropic model (it's filtered at every tier)
 - [ ] Sub-agent received: extraction prompt + full book text
 - [ ] Output file exists: extraction-notes.md in persona folder
-- [ ] Output is over 5,000 characters (not truncated)
-- [ ] All 20 extraction sections present (check section headers)
-- [ ] Both lenses covered: coaching (1-11) and governance (12-20)
+- [ ] Output is over 8,000 characters (not truncated; 15,000+ for copy/marketing books)
+- [ ] All 30 extraction sections present (check section headers)
+- [ ] All THREE lenses covered: coaching (1-11), governance (12-20), and Playbook Asset Lens (21-30)
+- [ ] Playbook Asset Lens items 21-30 use the PATTERN + EXAMPLE + SOURCE structure (not summaries)
+- [ ] Asset categories with no source material are marked `NONE IN SOURCE` (not fabricated)
 - [ ] Direct quotes marked with quotation marks
 - [ ] No placeholder text ("to be completed", "[insert]", etc.)
 
@@ -53,12 +55,13 @@ python3 -c "import google.genai, numpy, pdfplumber, pypdf, ebooklib, aiohttp, bs
 - [ ] extraction-notes.md exists and is complete before Phase 2 starts
 - [ ] Sub-agent spawned with the model returned by `select_model.py` for Phase 2 (same Kimi-first chain as Phase 1)
 - [ ] Output file exists: analysis-notes.md in persona folder
-- [ ] Output is over 3,000 characters
-- [ ] All 12 analytical dimensions present
-- [ ] Amateur-to-Expert Gap has minimum 5 dimensions (this is the most critical)
+- [ ] Output is over 5,000 characters
+- [ ] All 13 analytical dimensions present
+- [ ] Amateur-to-Expert Gap has minimum 5 dimensions (this is the most critical analytical section)
 - [ ] Decision logic has minimum 8 rules
 - [ ] Failure patterns are categorized (not just listed)
-- [ ] The single most important insight is present at the end
+- [ ] The single most important insight is present
+- [ ] Dimension 13 (Playbook Asset Inventory) present with the Asset Coverage Map (13A) and Patternized Catalog (13B)
 
 ---
 
@@ -81,6 +84,24 @@ python3 -c "import google.genai, numpy, pdfplumber, pypdf, ebooklib, aiohttp, bs
 - [ ] Author name NOT used outside attribution-flagged quotes
 - [ ] Zero placeholder text anywhere
 - [ ] Section 14 (Routing) has scope limits and red flags
+- [ ] Blueprint cross-references PLAYBOOK-APPENDIX.md where frameworks/templates/scripts are named (not summarized away)
+
+---
+
+## Phase 3b - Playbook Appendix Checklist (MANDATORY companion — depth preservation)
+
+- [ ] persona-blueprint.md exists before Phase 3b runs
+- [ ] Output file exists: PLAYBOOK-APPENDIX.md in persona folder (alongside the blueprint)
+- [ ] Header block present + `companion_to: persona-blueprint.md`
+- [ ] All 8 sections A-H present (HARD gate — orchestrator fails loud if missing)
+- [ ] Section H Asset Coverage Map present (the honesty ledger — HARD gate)
+- [ ] Output is over 6,000 characters HARD floor; 12,000+ soft target for copy/marketing/funnel books
+- [ ] Every asset uses the Pattern + Worked example + Source capture convention (no bare summaries)
+- [ ] Section A (formulas) ≥ 12, Section C (scripts) ≥ 10, Section F (brand-voice patterns) ≥ 15, Section G (swipe) ≥ 20 — for asset-rich books
+- [ ] Section B carries the FULL recipe set (every page/funnel type the book teaches); Section E the FULL framework set
+- [ ] Thin/non-commercial books mark absent categories ABSENT in the Coverage Map (NO fabrication)
+- [ ] pipeline-status.json shows phase3b: COMPLETE (or COMPLETE_WITH_WARNINGS for a legitimately thin book)
+- [ ] Zero placeholder text ("TODO", "[insert]", "to be completed")
 
 ---
 
@@ -100,5 +121,6 @@ A book is DONE when ALL of these are true:
 1. extraction-notes.md exists and passes Phase 1 checklist
 2. analysis-notes.md exists and passes Phase 2 checklist
 3. persona-blueprint.md exists and passes Phase 3 checklist
-4. Gemini Engine indexed and test queries return accurate results
-5. pipeline-status.json shows phase3: COMPLETE for this book
+4. PLAYBOOK-APPENDIX.md exists and passes Phase 3b checklist
+5. Gemini Engine indexed and test queries return accurate results
+6. pipeline-status.json shows phase3: COMPLETE AND phase3b: COMPLETE (or COMPLETE_WITH_WARNINGS) for this book
