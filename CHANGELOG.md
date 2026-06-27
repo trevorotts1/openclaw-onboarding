@@ -1,3 +1,50 @@
+## [v14.24.0]  -  2026-06-27  -  fix(delivery): close all 8 install+update delivery gaps
+
+Closes 8 delivery gaps so `install` and `update` both deliver everything.
+Builds on v14.23.2 (routing-fix + materialize + conditional restart already
+on update path).
+
+**shared-utils refresh on update path (Fix 1):** `update-skills.sh` re-copies
+`shared-utils/` from the extracted bundle after the skill copy loop so
+PR-delivered helpers (adaptive_weights.py, prebuilt-index manifest) reach
+update-only boxes. Mirrors `install.sh:2876-2882`.
+
+**universal-sops on both paths (Fix 2):** both `install.sh` and
+`update-skills.sh` now copy `universal-sops/` into `$SKILLS_DIR/`. Skills
+47/48 wiring was FAILing with a FATAL; the SOP cluster is now delivered.
+
+**operator-telegram on update path (Fix 3):** `update-skills.sh` apply phase
+now calls `configure-operator-telegram.sh` after fleet-standards. Mirrors
+`install.sh:7113-7124`. The script was already stashed; only execution was
+missing.
+
+**install-hardening on update path (Fix 4):** `install-hardening.sh` added to
+the persistent-copy stash loop and called in the apply phase. Backfills
+hooks.token auto-generate, brew check, and yt-dlp/whisper-cpp/ffmpeg.
+
+**Heartbeat defaults extracted + made CONDITIONAL (Fix 5):** new
+`scripts/ensure-heartbeat-defaults.sh` carries Fix D/D2 logic but only writes
+`agents.defaults.heartbeat.every=6h` when unset or below 360 minutes, so an
+intentionally-tuned box is NOT reset on every update. `install.sh` calls the
+script; `update-skills.sh` apply phase does too.
+
+**Skill 32 wire.sh (Fix 6):** new `32-command-center-setup/wire.sh` runs
+`materialize-dept-agents.sh` through the per-skill wiring loop. Idempotent;
+the explicit apply-phase call from v14.23.2 remains as a safety net.
+
+**Final gateway restart on install.sh (Fix 7):** `install.sh` now restarts
+the gateway AFTER `fire_install_kickoff_triplet` so operator-telegram +
+heartbeat + routing-fix config keys are live before the first session.
+
+**Persist hooks/ on update path (Fix 8):** before temp-clone cleanup,
+`update-skills.sh` copies `hooks/*.sh` to `~/.openclaw/hooks/` (VPS:
+`/data/.openclaw/hooks/`). `grant-ceo-consent.sh` needs these after the clone
+is deleted.
+
+**Version bump:** v14.23.3 → v14.24.0. Skill 32 version: v12.9.14 → v12.9.15.
+
+---
+
 ## [v14.23.3]  -  2026-06-27  -  fix(persona-selector): enforce the anti-staleness flag (sticky cache no longer "goes deaf") + protect the craft specialist from variety
 
 Live regression on the operator box: the persona-selector picked `sinek-start-with-why` (0.5915)

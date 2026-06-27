@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v14.23.3"
+ONBOARDING_VERSION="v14.24.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -2879,6 +2879,15 @@ if [ -d "$ONBOARDING_DIR/shared-utils" ]; then
     chmod +x "$SKILLS_DIR/shared-utils/"*.sh 2>/dev/null || true
     chmod +x "$SKILLS_DIR/shared-utils/"*.py 2>/dev/null || true
     success "shared-utils installed to $SKILLS_DIR/shared-utils"
+fi
+
+# v14.24.0: Install universal-sops/ SOP cluster (Skills 47/48 source tree).
+# Neither install nor update previously delivered this directory; Skills 47/48
+# wiring FAILed with a FATAL looking for funnel/presentation/video/ad SOPs.
+if [ -d "$ONBOARDING_DIR/universal-sops" ]; then
+    mkdir -p "$SKILLS_DIR/universal-sops"
+    cp -r "$ONBOARDING_DIR/universal-sops/." "$SKILLS_DIR/universal-sops/"
+    success "universal-sops installed to $SKILLS_DIR/universal-sops"
 fi
 send_telegram_progress "✓ Skills + helpers installed. Setting up your AI engines next…"
 
@@ -7125,72 +7134,31 @@ else
 fi
 echo ""
 
-# Fix D (furnace-fix v2): Sane heartbeat defaults after install completes.
-# v11.25.0: raised from 1h to 6h, main-only scope, fresh-context, capped tokens.
-# The agent is instructed (Start Here.md) to set heartbeat to 5m during onboarding
-# and reset it after all 40 skills are done. But if onboarding stalls waiting for
-# the owner interview, the agent may never reset it, leaving the box burning
-# model calls indefinitely from heartbeat alone.
-# We apply sane defaults here at the end of install.sh so even a stalled box gets
-# a safe baseline. The agent's own reset (Start Here.md Step 3) remains the belt;
-# this is the suspenders. Uses fresh-context heartbeat (not target:last history replay).
-#
-# Fix D2 (furnace-fix v3, v12.14.2): Per-agent heartbeat override for the main/ceo agent.
-# agents.defaults.heartbeat applies to ALL agents — but default:true does NOT cause that
-# agent to inherit agents.defaults.heartbeat. Any agent with default:true needs its OWN
-# explicit heartbeat.every override (e.g. agents.list[main].heartbeat.every) or it may
-# fire at the OpenClaw system default (5m or 30m), not the 6h target.
-# Fleet diagnostic: at least one ceo agent burned at the system default (30m) because of this gap.
-note "Setting sane heartbeat defaults (6h interval, main-only, fresh-context, capped tokens) + per-agent main override..."
-if command -v openclaw >/dev/null 2>&1; then
-    _hb_ok=1
-    openclaw config set agents.defaults.heartbeat.every 6h 2>>"$LOG_FILE" || _hb_ok=0
-    openclaw config set agents.defaults.heartbeat.agentsOnly '["main"]' 2>>"$LOG_FILE" || true
-    openclaw config set agents.defaults.heartbeat.maxTokens 2000 2>>"$LOG_FILE" || true
-    if [ "$_hb_ok" = "1" ]; then
-        success "Heartbeat defaults set to 6h main-only fresh-context (prevents [heartbeat poll] loop on new installs)"
-    else
-        warn "Could not set heartbeat.every via openclaw config set. Manual fix: openclaw config set agents.defaults.heartbeat.every 6h"
-    fi
-    # Fix D2: explicit per-agent override for the main (ceo/default) agent.
-    # This ensures the main agent does not fall back to the system default heartbeat
-    # cadence regardless of whether it has default:true set.
-    _hb_main_ok=1
-    openclaw config set 'agents.list[main].heartbeat.every' 6h 2>>"$LOG_FILE" || _hb_main_ok=0
-    if [ "$_hb_main_ok" = "1" ]; then
-        success "Per-agent heartbeat override set: agents.list[main].heartbeat.every=6h (Fix D2 — default:true does not inherit agents.defaults.heartbeat)"
-    else
-        # Fallback: try Python direct JSON edit if openclaw config set does not support bracket notation
-        if [ -f "$OC_JSON" ]; then
-            python3 - <<'PYEOF' 2>>"$LOG_FILE" && success "Per-agent main heartbeat override written via Python JSON edit (Fix D2 fallback)" || warn "Fix D2 fallback: could not write agents.list[main].heartbeat.every — set manually: openclaw config set 'agents.list[main].heartbeat.every' 6h"
-import json, os, sys
-oc_json = os.environ.get('OC_JSON', '')
-if not oc_json or not os.path.exists(oc_json):
-    sys.exit(1)
-with open(oc_json) as f:
-    cfg = json.load(f)
-agents_list = cfg.get('agents', {}).get('list', [])
-patched = False
-for ag in agents_list:
-    if isinstance(ag, dict) and ag.get('id') == 'main':
-        ag.setdefault('heartbeat', {})['every'] = '6h'
-        patched = True
-        break
-if not patched:
-    print("  Fix D2: no agents.list entry with id=main found — skip per-agent override", flush=True)
-    sys.exit(0)
-import tempfile, shutil
-tmp = oc_json + '.tmp'
-with open(tmp, 'w') as f:
-    json.dump(cfg, f, indent=2)
-    f.write('\n')
-shutil.move(tmp, oc_json)
-print("  Fix D2: agents.list[main].heartbeat.every=6h written to openclaw.json", flush=True)
-PYEOF
-        else
-            warn "Fix D2: OC_JSON not set — could not write per-agent main heartbeat override. Set manually: openclaw config set 'agents.list[main].heartbeat.every' 6h"
-        fi
-    fi
+# v14.24.0: Fix D (furnace-fix v2/v3): Sane heartbeat defaults — extracted into
+# scripts/ensure-heartbeat-defaults.sh so the same idempotent + conditional logic
+# is shared with the update-skills.sh apply phase.
+# CONDITIONAL: only writes when unset or below 6h (< 360 min); never resets an
+# operator who intentionally tuned heartbeat to a longer interval.
+note "Setting sane heartbeat defaults via ensure-heartbeat-defaults.sh (CONDITIONAL: 6h min)..."
+_ENSURE_HB="$ONBOARDING_DIR/scripts/ensure-heartbeat-defaults.sh"
+if [ -f "$_ENSURE_HB" ]; then
+    bash "$_ENSURE_HB" 2>&1 | tee -a "$LOG_FILE" | tail -5
+else
+    note "ensure-heartbeat-defaults.sh not in bundle — skipping (set manually: openclaw config set agents.defaults.heartbeat.every 6h)"
 fi
 
 fire_install_kickoff_triplet
+
+# ----------------------------------------------------------
+# v14.24.0: Final gateway restart — apply scripts (operator-telegram,
+# heartbeat, routing-fix) all mutate openclaw.json.  The earlier restart at
+# ~line 6805 fires BEFORE these; this one fires AFTER so the running gateway
+# picks up all config changes before the operator's first session.
+# Guard: requires openclaw on PATH (skips silently on partial installs).
+# ----------------------------------------------------------
+if command -v openclaw >/dev/null 2>&1; then
+    note "Final gateway restart (picks up operator-telegram + heartbeat + routing keys)..."
+    openclaw gateway restart >> "$LOG_FILE" 2>&1 \
+        && success "Gateway restarted — all end-of-install config changes are now live" \
+        || warn "Final gateway restart returned non-zero — restart manually: openclaw gateway restart"
+fi
