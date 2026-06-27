@@ -1,6 +1,14 @@
-## [v14.14.0]  -  2026-06-27  -  fix(skill23): 4 misattributed perspective-tag fixes in persona-categories.json; adaptive specialist-weighting held (safe-only ship)
+## [v14.14.0]  -  2026-06-27  -  fix(skill23): safe-only — 4 perspective-tag fixes + design routing improvement; adaptive specialist-weighting held
 
-Remove 4 misattributed identity perspective tags (`womens-challenges` on 3 book personas that are NOT women-authored; `african-american-experience` on 1 persona whose author does not carry that lived experience). Tags were incorrectly assigned and would have caused the perspective-bonus to fire on identity claims the persona cannot authentically represent. The adaptive task_fit weighting (specialist-dominance) from the same branch is held: regression gate shows specialistsWin=false, generalizes=false — the scoring rule does not reliably surface the right specialist across diverse task types. Routing improvement (design domain simplified to copywriting+strategy-innovation) and sketchnote keyword revert are net no-ops vs origin/main as those fixes were already present. No client names, no operator-local paths, no secret values committed.
+SHIPPED (safe-only scope; regressions=[], clean=true):
+
+PERSPECTIVE-TAG FIXES (persona-categories.json, Skill 22): Remove 4 misattributed identity perspective tags — `womens-challenges` on 3 book personas that are not women-authored (attwood-passion-test, robbins-five-second-rule, one sales/marketing persona); `african-american-experience` on grover-relentless whose author does not carry that lived experience. Tags were incorrectly assigned and would have caused the perspective-bonus to fire on identity claims the persona cannot authentically represent.
+
+ROUTING IMPROVEMENT (persona-selector-v2.py, infer-task-category.py, Skill 23): `_CATEGORY_DOMAINS["design"]` now includes `visual-storytelling` and `communication` alongside `copywriting` and `strategy-innovation`. Both domains exist in persona-categories.json and are the craft domains actually carried by visual/sketchnote personas. `infer-task-category.py` design keyword list gains sketchnote, sketchnoting, sketch, visually, visual map, visual mapping — so "Visually sketchnote our onboarding process" routes to the design category and enters the correct candidate pool.
+
+HELD: The adaptive task_fit specialist-weighting scoring rule (compute_specialist_signal / adaptive_task_fit_weights). Regression gate: specialistsWin=false, generalizes=false — the rule does not reliably surface the right specialist across diverse task types. The routing fix above ensures specialists enter the right candidate pool; the scoring lift is the remaining open defect.
+
+No client names, no operator-local paths, no secret values committed.
 
 ---
 
