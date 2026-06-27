@@ -2130,6 +2130,107 @@ def workflow_rewire_trigger(location_id: str, workflow_id: str, trigger_id: str,
     return step
 
 
+# -- Idempotent page create: list + find before create ----------------------
+
+def page_list(funnel_id: str, location_id: str, *, session: str | None = None,
+              token_global: str = TOKEN_JS_GLOBAL) -> dict:
+    """Idempotency pre-check step: emit in-browser GET /funnels/page/list?...
+
+    Call this **before** step_create when the step-ledger has no record.
+    Feed the response body to find_page_by_name(<body>, <zhc_name>).
+    If a match is found: skip step_create and call page_autosave with the
+    existing page_id + page_version (update-in-place).
+    If no match: proceed with step_create as on a first run.
+    """
+    from typing import Any
+    path = page_list_path(funnel_id, location_id)
+    js = build_fetch_js("GET", path, token_global=token_global)
+    step: dict[str, Any] = {
+        "method": "GET",
+        "path": path,
+        "url": GHL_BACKEND_ORIGIN.rstrip("/") + path,
+        "eval": js,
+        "expect": {
+            "status": 200,
+            "response_key": "funnelPages",
+            "note": (
+                "feed the body to find_page_by_name(<body>, <zhc_name>) to "
+                "detect an existing ZHC-prefixed page for update-in-place; "
+                "empty list or no match -> proceed with step_create as normal"
+            ),
+        },
+    }
+    if session:
+        step["argv"] = agent_browser_eval_cmd(session, js)
+    return step
+
+
+def find_page_by_name(page_list_body: dict, name: str) -> "dict | None":
+    """Search GET /funnels/page/list response for a page matching *name*.
+
+    Returns ``{"page_id": str, "page_version": int, "name": str}`` when a
+    page whose name matches *name* (case-insensitive, stripped) is found in
+    the response body.  Returns ``None`` when no match exists.
+
+    Handles all observed GoHighLevel response shapes:
+      - top-level keys ``"funnelPages"``, ``"pages"``, ``"data"``, ``"steps"``
+      - nested under a ``"funnel"`` object with the same sub-keys
+
+    Page ID extracted via the same ``_id`` / ``id`` / ``pageId`` fallback
+    chain as :func:`created_page_id`.
+    """
+    if not isinstance(page_list_body, dict):
+        raise TypeError(
+            f"page_list_body must be a dict (the parsed list response body), "
+            f"got {type(page_list_body).__name__}"
+        )
+    if not isinstance(name, str):
+        raise TypeError(f"name must be a str, got {type(name).__name__}")
+    name = name.strip()
+    if not name:
+        raise ValueError("name must not be blank")
+
+    target = name.lower()
+
+    # Resolve page list from various response shapes
+    pages: list = []
+    for key in ("funnelPages", "pages", "data", "steps"):
+        candidate = page_list_body.get(key)
+        if isinstance(candidate, list):
+            pages = candidate
+            break
+    if not pages and isinstance(page_list_body.get("funnel"), dict):
+        funnel_obj = page_list_body["funnel"]
+        for key in ("funnelPages", "pages", "steps"):
+            candidate = funnel_obj.get(key)
+            if isinstance(candidate, list):
+                pages = candidate
+                break
+
+    for page in pages:
+        if not isinstance(page, dict):
+            continue
+        page_name = (page.get("name") or "").strip()
+        if page_name.lower() != target:
+            continue
+        # Extract page ID via _id / id / pageId fallback
+        page_id: str | None = None
+        for id_key in ("_id", "id", "pageId"):
+            val = page.get(id_key)
+            if val:
+                page_id = str(val)
+                break
+        if not page_id:
+            continue
+        try:
+            page_version = int(page.get("pageVersion", 0))
+        except (TypeError, ValueError):
+            page_version = 0
+        return {"page_id": page_id, "page_version": page_version, "name": page_name}
+
+    return None
+
+
 __all__ = [
     "GHL_BACKEND_ORIGIN",
     "GHL_SPA_ORIGIN_DEFAULT",
@@ -2189,4 +2290,6 @@ __all__ = [
     "funnel_delete",
     "workflow_read_triggers",
     "workflow_rewire_trigger",
+    "page_list",
+    "find_page_by_name",
 ]
