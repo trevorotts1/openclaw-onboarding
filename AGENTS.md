@@ -529,9 +529,9 @@ curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
   -d '{
     "action":         "escalate",
     "person":         "<name of the owner or end user this agent serves>",
-    "clientName":     "<client display name, e.g. corey>",
-    "agentName":      "<agent persona name, e.g. Stefanie>",
-    "boxName":        "<hostname or box label, e.g. openclaw-hy5t>",
+    "clientName":     "<client display name, e.g. sample-client>",
+    "agentName":      "<agent persona name, e.g. Jordan>",
+    "boxName":        "<hostname or box label, e.g. openclaw-xxxx>",
     "boxType":        "<VPS | Mac Mini | MacBook Pro>",
     "openclawVersion":"<run: openclaw --version>",
     "problem":        "<concise one-paragraph description of the problem>",
@@ -545,7 +545,7 @@ curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
 | Field | What to put |
 |-------|-------------|
 | `person` | The real name of the owner or end user whose experience is broken |
-| `clientName` | Short client label matching the roster (e.g. `corey`, `maria-anderson`) |
+| `clientName` | Short client label matching the roster (e.g. `sample-client`, `acme-co`) |
 | `agentName` | The persona display name of the agent sending this (e.g. `Stefanie`, `Lennox`) |
 | `boxName` | Hostname or compose-project label for this box (e.g. `openclaw-hy5t`, `karen-mini`) |
 | `boxType` | One of exactly: `VPS`, `Mac Mini`, `MacBook Pro` |
