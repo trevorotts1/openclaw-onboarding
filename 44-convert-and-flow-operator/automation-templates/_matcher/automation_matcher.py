@@ -1,73 +1,85 @@
 #!/usr/bin/env python3
-"""automation_matcher.py — Flexible automation template matcher for Skill 44
-(44-convert-and-flow-operator).
+"""automation_matcher.py — FLEXIBLE template matcher for Skill 44 (convert-and-flow).
 
-FLEXIBILITY FIRST — THIS IS THE PRIME DIRECTIVE
-------------------------------------------------
-This matcher is a GUIDE and a RESOURCE, never a rule or a gate.
+PURPOSE
+-------
+STEP 0 of any Skill-44 automation build. Before caf wires a GoHighLevel workflow it:
 
-  Mode 1 — Explicit desire:   User has stated what they want -> do exactly that.
-                               This matcher is an optional reference only.
-                               NEVER impose a suggestion or override user choice.
+  1. CLASSIFIES the automation request (free text + structured intent),
+  2. DETECTS the INTENT MODE via flex.detect_mode():
+        EXPLICIT_USER_SPEC / UNSURE_WANTS_SUGGESTION / HANDS_OFF_DO_IT_ALL,
+  3. SCORES the request against the 28 shipped automation templates,
+  4. MAPS (mode, match) -> a flexibility decision via flex.decide():
+        EXPLICIT  -> HONOR_USER       (build the user's spec; template = optional ref),
+        UNSURE    -> SUGGEST_TEMPLATE  (recommend + why, await confirm)  | CREATE_NEW,
+        HANDS_OFF -> USE_TEMPLATE       (build it all from the template) | CREATE_NEW,
+        nothing fits -> CREATE_NEW (+ save_new_template so the library grows).
+  5. LOGS the mode + decision + matched template + score.
 
-  Mode 2 — User is unsure:    Surface the best-matching templates + explain why
-                               (trigger fit, category alignment, source rationale).
-                               Let the user decide; present options, not mandates.
+The matcher NEVER blocks a build and NEVER imposes a template onto a user's explicit
+desire — the template is a GUIDE and a RESOURCE, never a rule. (See flex.py.)
 
-  Mode 3 — Just do it:        User says 'handle it' / 'build it' -> build the
-                               highest-scoring template from this matcher's result.
-
-EXPLICIT DESIRE RULE: if the request dict carries ``explicit_template`` (or the text
-contains an unambiguous template name / alias), the matcher returns HONORED_EXPLICIT
-immediately — it does NOT run scoring.  The caller MUST build what was named.
-
-The matcher NEVER raises into the build loop (matching is advisory glue — a matcher
-failure must not block an automation build). All errors return ``decision=SKIPPED``.
-
-DESIGN
-------
-* stdlib-only, deterministic, no network.
-* Catalog loader: reads the JSON templates from ``automation-templates/``.
-  Handles both the direct category path and the root path.
-* Lexical scorer with configurable threshold (default 0.55).
-* Funnel-link hint: if the request provides ``funnel_id``, the matcher loads
-  ``_links/funnel-to-automation-link-map.json`` and boosts templates that are
-  listed as primary/supporting for that funnel.
-* Output shape mirrors the Skill-6 funnel_matcher for easy agent integration.
+stdlib-only, deterministic, no network. The lexical scorer is the wired+proven path;
+an optional ``embed_fn`` semantic re-rank hook is scaffolded.
 """
 from __future__ import annotations
+import json, os, re, time
+from typing import Any, Callable
 
-import json
-import os
-import re
-import time
-from typing import Any
+_HERE = os.path.dirname(os.path.abspath(__file__))
+import sys
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+import flex  # shared intent-mode + decision core
 
 # --------------------------------------------------------------------------- #
-# Config
+# Config (mirrors funnel_matcher weights so behaviour is consistent fleet-wide)
 # --------------------------------------------------------------------------- #
-DEFAULT_THRESHOLD = 0.50          # confidence (0..1) to SUGGEST_TEMPLATE vs SUGGEST_CREATE
-_CONF_DENOM = 7.0                 # raw-score -> confidence normaliser
-_EXPLICIT_CONFIDENCE = 1.0        # confidence when an explicit template is named
+DEFAULT_THRESHOLD = 0.55
+_CONF_DENOM = 6.0
 
-# raw-score weights
-_W_NAME = 7.0                     # exact template name in the request
-_W_ALIAS = 5.0                    # alias match
-_W_ID = 4.0                       # template id match
-_W_CATEGORY = 3.0                 # category token overlap
-_W_KW = 2.5                       # keyword phrase match
-_W_TRIGGER = 1.5                  # trigger-event overlap
-_W_SOURCE = 0.8                   # source/book token overlap
-_W_FUNNEL_PRIMARY = 5.0           # funnel-link: listed as primary for the given funnel
-_W_FUNNEL_SUPPORTING = 2.0        # funnel-link: listed as supporting
-_W_ANTI = -4.0                    # anti-signal penalty
+_W_NAME = 6.0
+_W_ALIAS = 4.0
+_W_HEADNOUN = 2.5
+_W_KW_FULL = 3.0
+_W_KW_PART = 1.0
+_W_GOAL = 0.30
+_W_SIGNAL = 0.30
+_W_CATEGORY = 3.0
+_CAP_GOAL = 2.0
+_CAP_SIGNAL = 2.0
 
 _STOPWORDS = {
     "a", "an", "the", "to", "for", "of", "and", "or", "my", "me", "i", "we", "our",
-    "your", "you", "with", "in", "on", "at", "is", "are", "be", "want", "need",
-    "build", "make", "create", "get", "into", "that", "this", "it", "so", "can",
-    "will", "do", "have", "has", "email", "sequence", "automation", "workflow",
-    "new", "send", "set", "up", "use", "run", "start", "add",
+    "your", "you", "with", "in", "on", "at", "is", "are", "be", "want", "need", "build",
+    "make", "create", "get", "got", "into", "that", "this", "it", "so", "can", "will",
+    "do", "have", "has", "page", "funnel", "automation", "workflow", "sequence", "new",
+    "email", "emails", "send", "set", "up", "just",
+}
+
+# intent words -> the automation CATEGORY a structured intent maps to.
+_CATEGORY_TO_GROUP = {
+    "welcome": "welcome-indoctrination", "indoctrination": "welcome-indoctrination",
+    "onboarding": "welcome-indoctrination", "onboard": "welcome-indoctrination",
+    "bonding": "welcome-indoctrination", "new subscriber": "welcome-indoctrination",
+    "soap opera": "welcome-indoctrination",
+    "broadcast": "engagement-broadcast", "newsletter": "engagement-broadcast",
+    "engagement": "engagement-broadcast", "seinfeld": "engagement-broadcast",
+    "re-engagement": "engagement-broadcast", "reengagement": "engagement-broadcast",
+    "winback": "engagement-broadcast", "win-back": "engagement-broadcast",
+    "daily email": "engagement-broadcast",
+    "close": "sales-close-sequences", "sales": "sales-close-sequences",
+    "cart close": "sales-close-sequences", "scarcity": "sales-close-sequences",
+    "deadline": "sales-close-sequences", "launch": "sales-close-sequences",
+    "followup": "funnel-specific-followups", "follow-up": "funnel-specific-followups",
+    "follow up": "funnel-specific-followups", "replay": "funnel-specific-followups",
+    "reminder": "funnel-specific-followups", "post-purchase": "funnel-specific-followups",
+    "oto": "funnel-specific-followups", "membership": "funnel-specific-followups",
+    "application": "funnel-specific-followups",
+    "multichannel": "multichannel-automation", "multi-channel": "multichannel-automation",
+    "sms": "multichannel-automation", "retargeting": "multichannel-automation",
+    "retarget": "multichannel-automation", "behavioral": "multichannel-automation",
+    "branching": "multichannel-automation", "omnichannel": "multichannel-automation",
 }
 
 
@@ -78,780 +90,512 @@ def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").lower()).strip()
 
 
+def _singular(tok: str) -> str:
+    """Light singularisation so plurals match (subscribers->subscriber, carts->cart).
+    Deliberately conservative: only fold a trailing 's' on words >=4 chars that don't
+    end in 'ss' (so 'process' stays). Helps real-world plural requests; no stemming lib."""
+    if len(tok) >= 4 and tok.endswith("s") and not tok.endswith("ss"):
+        return tok[:-1]
+    return tok
+
+
 def _tokens(text: str) -> list[str]:
     raw = re.findall(r"[a-z0-9]+", (text or "").lower())
-    return [t for t in raw if t not in _STOPWORDS and len(t) > 1]
+    return [_singular(t) for t in raw if t not in _STOPWORDS and len(t) > 1]
 
 
 def _content_tokens(text: str) -> set[str]:
     return set(_tokens(text))
 
 
-def _ts() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+def _head_nouns(tid: str, name: str) -> set[str]:
+    words = set(re.findall(r"[a-z0-9]+", (tid or "").lower()))
+    words |= set(re.findall(r"[a-z0-9]+", (name or "").lower()))
+    drop = {"sequence", "automation", "workflow", "the", "and", "for", "with", "email",
+            "emails", "campaign", "followup", "follow", "stack", "close", "multichannel"}
+    return {w for w in words if w not in drop and len(w) > 2}
 
 
 # --------------------------------------------------------------------------- #
-# Catalog loader
+# Schema normalisation (automation template dialect)
 # --------------------------------------------------------------------------- #
-_CATEGORY_DIRS = [
-    "welcome-indoctrination",
-    "sales-close-sequences",
-    "engagement-broadcast",
-    "funnel-specific-followups",
-    "multichannel-automation",
-]
+def _pick(d: dict, *keys: str, default=None):
+    for k in keys:
+        if isinstance(d, dict) and k in d and d[k] is not None:
+            return d[k]
+    return default
 
 
-def _flatten(val: Any) -> str:
-    """Recursively stringify any JSON value to plain text."""
-    if val is None:
-        return ""
-    if isinstance(val, str):
-        return val
-    if isinstance(val, (int, float, bool)):
-        return str(val)
-    if isinstance(val, list):
-        return " ".join(_flatten(v) for v in val)
-    if isinstance(val, dict):
-        return " ".join(_flatten(v) for v in val.values())
-    return str(val)
+def _slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")
 
 
-def _norm_template(raw: dict) -> dict:
-    """Normalize a raw JSON template to a common internal shape.
+def _trigger_text(trig: Any) -> str:
+    if isinstance(trig, dict):
+        vals = []
+        for k in ("primary_event", "what_starts_it", "ghl_trigger_type",
+                  "primary_trigger", "fires", "entry_conditions"):
+            v = trig.get(k)
+            if isinstance(v, (list, tuple)):
+                vals.append(" ".join(map(str, v)))
+            elif v:
+                vals.append(str(v))
+        return " ".join(vals)
+    return str(trig or "")
 
-    Handles both schema dialects (camelCase and snake_case) and extracts
-    as much descriptive text as possible for keyword scoring.
-    """
-    aliases = raw.get("aliases") or raw.get("alias") or []
-    if isinstance(aliases, str):
-        aliases = [aliases]
 
-    # source text: string, or nested object with primary + supporting
-    src = raw.get("source", raw.get("source_books", ""))
-    if isinstance(src, dict):
-        parts = [src.get("primary", "")]
-        supporting = src.get("supporting", [])
-        if isinstance(supporting, list):
-            parts += supporting
-        src = " ".join(str(p) for p in parts)
-    elif isinstance(src, list):
-        src = " ".join(str(p) for p in src)
-
-    # trigger text from dict values
-    trigger = raw.get("trigger", {})
-    if isinstance(trigger, dict):
-        trigger_text = " ".join(str(v) for v in trigger.values() if isinstance(v, (str, int)))
-    else:
-        trigger_text = str(trigger)
-
-    # purpose / summary: try multiple field names (both schema dialects)
-    # Use _flatten so dict values (like coreThesis being a dict) are safe
-    purpose = _flatten(
-        raw.get("purpose")
-        or raw.get("summary")
-        or raw.get("coreThesis")
-        or raw.get("core_thesis")
-        or ""
-    )
-
-    # Additional keyword text from cadence, rationale, kpis, framework
-    extra_parts = []
-    for key in ("cadence", "framework", "role_in_3_closes", "kpis",
-                "integrity_guardrails", "faithfulness", "flexibility_principle",
-                "differentFromSeinfeldEmail", "rotationStrategy",
-                "subjectLineFamilies", "bodyFrameworkVariants"):
-        val = raw.get(key)
-        if val is not None:
-            extra_parts.append(_flatten(val))
-
-    # Also pull from copyPersona / copy_persona (name and description)
-    cp = raw.get("copyPersona", raw.get("copy_persona", {}))
-    if isinstance(cp, dict):
-        extra_parts.append(_flatten(cp.get("primary", cp.get("persona", ""))))
-    elif isinstance(cp, str):
-        extra_parts.append(cp)
-
-    # Alias text is also good keyword signal
-    alias_text = " ".join(str(a) for a in aliases)
-
-    desc_text = " ".join(s for s in [purpose, alias_text, _flatten(src), trigger_text]
-                         + extra_parts if s)
-
-    # Flexibility / faithfulness note
-    flexibility = raw.get("flexibility", raw.get("faithfulness", {}))
-    if isinstance(flexibility, dict):
-        flex_note = flexibility.get("core_principle",
-                    flexibility.get("guide_not_rule", str(flexibility)[:200]))
-    else:
-        flex_note = str(flexibility)[:300]
-
-    return {
-        "id": raw.get("id", ""),
-        "name": raw.get("name", ""),
-        "aliases": [str(a).lower().strip() for a in aliases],
-        "category": raw.get("category", ""),
-        "source_text": src,
-        "trigger_text": trigger_text,
-        "purpose": purpose,
-        "desc_text": desc_text,
-        "flexibility_note": flex_note,
-        "_raw": raw,
+def normalise_template(doc: dict, *, group: str, path: str) -> dict:
+    summary = _pick(doc, "summary", "purpose", default="")
+    aliases = list(_pick(doc, "aliases", default=[]) or [])
+    channels = _pick(doc, "channels", default=[]) or []
+    trig = _trigger_text(_pick(doc, "trigger", default={}))
+    # synthesise keywords/signals from aliases + channels + trigger (templates have no
+    # explicit whenToUse block, so the search bag is built from what they DO carry).
+    rec = {
+        "id": _pick(doc, "id", default=_slug(_pick(doc, "name", default=os.path.basename(path)))),
+        "name": _pick(doc, "name", default=""),
+        "group": group,
+        "category": _pick(doc, "category", default=group),
+        "aliases": aliases,
+        "summary": summary,
+        "channels": [str(c) for c in channels] if isinstance(channels, (list, tuple)) else [str(channels)],
+        "trigger": trig,
+        "keywords": aliases,            # aliases are the strongest 'when to use' phrases here
+        "goals": [summary] if summary else [],
+        "signals": ([trig] if trig else []) + ([str(c) for c in channels] if isinstance(channels, (list, tuple)) else []),
+        "antiSignals": list(_pick(doc, "antiSignals", "anti_signals", default=[]) or []),
+        "ghlBuild": _pick(doc, "ghl_build", "ghlBuild", default={}),
+        "sourcePath": path,
+        "flexibility": _pick(doc, "flexibility", default={}),
     }
+    rec["headNouns"] = sorted(_head_nouns(rec["id"], rec["name"]))
+    bag = " ".join([rec["name"], " ".join(aliases), summary, group,
+                    " ".join(rec["channels"]), trig])
+    rec["searchText"] = _norm(bag)
+    rec["searchTokens"] = sorted(_content_tokens(bag))
+    return rec
 
 
-class AutomationCatalog:
-    """Loads all automation templates from the library root."""
-
-    def __init__(self) -> None:
-        self.templates: list[dict] = []
-        self.by_id: dict[str, dict] = {}
+# --------------------------------------------------------------------------- #
+# Catalog
+# --------------------------------------------------------------------------- #
+class Catalog:
+    def __init__(self, root: str, templates: list[dict]):
+        self.root = root
+        self.templates = templates
+        self.by_id = {t["id"]: t for t in templates}
 
     @classmethod
-    def load(cls, library_root: str) -> "AutomationCatalog":
-        cat = cls()
-        for cat_dir in _CATEGORY_DIRS:
-            dirpath = os.path.join(library_root, cat_dir)
-            if not os.path.isdir(dirpath):
+    def load(cls, root: str) -> "Catalog":
+        root = os.path.abspath(root)
+        templates: list[dict] = []
+        for group in sorted(os.listdir(root)):
+            gdir = os.path.join(root, group)
+            if not os.path.isdir(gdir) or group.startswith("_"):
                 continue
-            for fname in sorted(os.listdir(dirpath)):
-                if not fname.endswith(".json"):
+            for fn in sorted(os.listdir(gdir)):
+                if not fn.endswith(".json") or fn.startswith("_"):
                     continue
-                fpath = os.path.join(dirpath, fname)
+                path = os.path.join(gdir, fn)
                 try:
-                    with open(fpath, encoding="utf-8") as f:
-                        raw = json.load(f)
-                    tmpl = _norm_template(raw)
-                    if tmpl["id"]:
-                        cat.templates.append(tmpl)
-                        cat.by_id[tmpl["id"]] = tmpl
-                except Exception:
-                    pass
-        return cat
+                    doc = json.load(open(path, encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    continue
+                if not isinstance(doc, dict) or ("id" not in doc and "name" not in doc):
+                    continue
+                templates.append(normalise_template(doc, group=group, path=path))
+        templates.sort(key=lambda t: (t["group"], t["id"]))
+        return cls(root, templates)
 
-    def load_links(self, links_path: str) -> dict:
-        """Load the funnel-to-automation link map; return {} on any error."""
-        try:
-            with open(links_path, encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
+    def to_index(self) -> dict:
+        return {"generated_at": _ts(), "root": self.root,
+                "templateCount": len(self.templates),
+                "groups": sorted({t["group"] for t in self.templates}),
+                "templates": self.templates}
 
+    def save_index(self, out_path: str) -> str:
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        json.dump(self.to_index(), open(out_path, "w", encoding="utf-8"), indent=2)
+        return out_path
 
-# --------------------------------------------------------------------------- #
-# Explicit-desire detection
-# --------------------------------------------------------------------------- #
-def _detect_explicit(text: str, catalog: AutomationCatalog) -> str | None:
-    """Return a template id if the user has named a specific template explicitly.
-
-    Checks (in order):
-    1. Template id with hyphens replaced by spaces ("soap-opera-sequence" -> "soap opera sequence")
-    2. Template id as-is (handles copy-paste of the literal id)
-    3. Core template name tokens (first 3-4 significant words, ignoring parenthetical)
-    4. Alias match — all aliases checked; short all-caps aliases (like 'SOS') allowed
-    """
-    norm_text = _norm(text)
-    # 1. ID as space-separated words
-    for tmpl in catalog.templates:
-        id_as_words = tmpl["id"].replace("-", " ")
-        if id_as_words in norm_text:
-            return tmpl["id"]
-    # 2. ID with hyphens as-is (less common in natural language but handle it)
-    for tmpl in catalog.templates:
-        if tmpl["id"] in norm_text:
-            return tmpl["id"]
-    # 3. Core name match: strip parenthetical, take first N tokens
-    for tmpl in catalog.templates:
-        raw_name = re.sub(r"\(.*?\)", "", tmpl["name"])
-        core_tokens = [t for t in _tokens(raw_name) if len(t) > 2][:5]
-        if len(core_tokens) >= 2:
-            core_phrase = " ".join(core_tokens)
-            if core_phrase in norm_text:
-                return tmpl["id"]
-    # 4. Alias match — allow all-caps short aliases (SOS, VSL, etc.)
-    for tmpl in catalog.templates:
-        for alias in tmpl["aliases"]:
-            # Accept short aliases only if they were ALL-CAPS in the original JSON
-            # (the loader already lowercases them, so we check the original raw alias)
-            original_aliases = tmpl["_raw"].get("aliases", [])
-            is_short_caps = any(
-                a.strip() == a.strip().upper() and len(a.strip()) >= 2
-                for a in original_aliases
-                if _norm(a) == alias
-            )
-            if (len(alias) > 5 or is_short_caps) and alias in norm_text:
-                return tmpl["id"]
-    return None
+    @classmethod
+    def from_index(cls, index_path: str) -> "Catalog":
+        idx = json.load(open(index_path, encoding="utf-8"))
+        return cls(idx.get("root", ""), idx["templates"])
 
 
 # --------------------------------------------------------------------------- #
-# Scorer
+# Classify + Score (lexical, mirrors funnel_matcher)
 # --------------------------------------------------------------------------- #
-def _score_one(tmpl: dict, req: dict, funnel_primaries: set[str],
-               funnel_supporting: set[str]) -> dict:
-    text_tokens = req["tokens"]
-    parts: dict[str, float] = {}
-
-    # Name match
-    name_tokens = _content_tokens(tmpl["name"])
-    overlap = len(text_tokens & name_tokens)
-    if overlap:
-        w = _W_NAME * (overlap / max(len(name_tokens), 1))
-        parts["name"] = round(w, 3)
-
-    # Alias match
-    for alias in tmpl["aliases"]:
-        if alias in req["norm_text"]:
-            parts["alias"] = parts.get("alias", 0) + _W_ALIAS
-            break
-
-    # ID match
-    if tmpl["id"].replace("-", " ") in req["norm_text"] or tmpl["id"] in req["norm_text"]:
-        parts["id_match"] = _W_ID
-
-    # Category match
-    cat_tokens = _content_tokens(tmpl["category"])
-    cat_overlap = len(text_tokens & cat_tokens)
-    if cat_overlap:
-        parts["category"] = round(_W_CATEGORY * (cat_overlap / max(len(cat_tokens), 1)), 3)
-
-    # Keyword / desc match — use the richer desc_text (purpose + aliases + cadence + etc.)
-    desc_tokens = _content_tokens(tmpl.get("desc_text", "") or tmpl["purpose"])
-    kw_overlap = len(text_tokens & desc_tokens)
-    if kw_overlap:
-        score = min(_W_KW * kw_overlap / max(len(desc_tokens), 1), _W_KW * 1.5)
-        parts["keyword"] = round(score, 3)
-
-    # Alias token overlap (aliases are often the most discriminating signal)
-    alias_blob = " ".join(tmpl["aliases"])
-    alias_tokens = _content_tokens(alias_blob)
-    alias_overlap = len(text_tokens & alias_tokens)
-    if alias_overlap:
-        score = min(_W_ALIAS * alias_overlap / max(len(alias_tokens), 1), _W_ALIAS)
-        parts["alias_overlap"] = round(score, 3)
-
-    # Trigger text match
-    trigger_tokens = _content_tokens(tmpl["trigger_text"])
-    tr_overlap = len(text_tokens & trigger_tokens)
-    if tr_overlap:
-        score = min(_W_TRIGGER * tr_overlap / max(len(trigger_tokens), 1), _W_TRIGGER)
-        parts["trigger"] = round(score, 3)
-
-    # Source book match
-    source_tokens = _content_tokens(tmpl["source_text"])
-    src_overlap = len(text_tokens & source_tokens)
-    if src_overlap:
-        score = min(_W_SOURCE * src_overlap / max(len(source_tokens), 1), _W_SOURCE)
-        parts["source"] = round(score, 3)
-
-    # Funnel-link boost
-    tid = tmpl["id"]
-    cat_key = f"{tmpl['category']}/{tid}"
-    if cat_key in funnel_primaries or tid in funnel_primaries:
-        parts["funnel_link_primary"] = _W_FUNNEL_PRIMARY
-    elif cat_key in funnel_supporting or tid in funnel_supporting:
-        parts["funnel_link_supporting"] = _W_FUNNEL_SUPPORTING
-
-    raw = sum(parts.values())
-    confidence = min(raw / _CONF_DENOM, 1.0)
-    return {"id": tid, "name": tmpl["name"], "category": tmpl["category"],
-            "raw": raw, "confidence": round(confidence, 4), "parts": parts}
-
-
-# --------------------------------------------------------------------------- #
-# Main match function
-# --------------------------------------------------------------------------- #
-def match_automation(
-    request: dict | str,
-    catalog: AutomationCatalog,
-    *,
-    links: dict | None = None,
-    threshold: float = DEFAULT_THRESHOLD,
-) -> dict:
-    """Match a request against the automation catalog.
-
-    FLEXIBILITY: If the request carries ``explicit_template`` or the free-text
-    unambiguously names a template, returns ``decision=HONORED_EXPLICIT`` without
-    scoring — the caller MUST build what was named.
-
-    Args:
-        request: dict with keys ``text``, ``category``, ``funnel_id``,
-                 ``explicit_template`` (all optional); OR a plain string.
-        catalog:  loaded AutomationCatalog.
-        links:    loaded funnel-to-automation link map (from _links/ dir).
-        threshold: confidence floor for SUGGEST_TEMPLATE vs SUGGEST_CREATE.
-
-    Returns a dict with:
-        decision:              HONORED_EXPLICIT | SUGGEST_TEMPLATE | SUGGEST_CREATE | SKIPPED
-        flexibility_mode:      1 | 2 | 3 (which flexibility mode drove the result)
-        matched_template:      id or None
-        matched_name:          str or None
-        confidence:            float
-        threshold:             float
-        score_parts:           dict
-        ranked:                list of top candidates
-        rationale:             human-readable explanation
-        funnel_link:           the funnel's primary/supporting automations from the link map
-        ts:                    ISO timestamp
-    """
-    if not catalog.templates:
-        return {"decision": "SKIPPED", "reason": "catalog is empty", "ts": _ts()}
-
+def classify(request: dict | str) -> dict:
     if isinstance(request, str):
         request = {"text": request}
+    text_parts = [str(request.get(k, "")) for k in
+                  ("text", "brief", "goal", "intent", "description", "ask", "message")]
+    text = _norm(" ".join(p for p in text_parts if p))
+    explicit_type = _norm(str(request.get("automation_type", request.get("type", ""))))
+    cat_raw = _norm(str(request.get("category", "")))
+    group_hint = ""
+    for key, grp in _CATEGORY_TO_GROUP.items():
+        if cat_raw == key or key in text or (explicit_type and key in explicit_type):
+            group_hint = grp
+            break
+    return {"text": text, "tokens": _content_tokens(text + " " + explicit_type),
+            "explicit_type": explicit_type, "category": cat_raw,
+            "group_hint": group_hint, "raw": request}
 
-    # EXPLICIT DESIRE CHECK (Mode 1 / flexibility gate)
-    explicit_id = request.get("explicit_template") or ""
-    if not explicit_id:
-        explicit_id = _detect_explicit(request.get("text", ""), catalog) or ""
 
-    if explicit_id:
-        tmpl = catalog.by_id.get(explicit_id)
-        if tmpl:
-            return {
-                "decision": "HONORED_EXPLICIT",
-                "flexibility_mode": 1,
-                "matched_template": explicit_id,
-                "matched_name": tmpl["name"],
-                "confidence": _EXPLICIT_CONFIDENCE,
-                "threshold": threshold,
-                "score_parts": {},
-                "ranked": [{"id": explicit_id, "name": tmpl["name"],
-                             "confidence": _EXPLICIT_CONFIDENCE, "raw": 999, "parts": {}}],
-                "rationale": (
-                    f"User explicitly named '{tmpl['name']}' — building exactly that. "
-                    "This matcher honors explicit user desire above all scoring. "
-                    "No template suggestion overrides this choice."
-                ),
-                "funnel_link": None,
-                "request": request if isinstance(request, dict) else {"text": request},
-                "ts": _ts(),
-            }
+def _phrase_hit(phrase: str, req_text: str, req_tokens: set[str]) -> float:
+    phrase_n = _norm(phrase)
+    if not phrase_n:
+        return 0.0
+    if phrase_n in req_text:
+        return 1.0
+    ptoks = _content_tokens(phrase)
+    if not ptoks:
+        return 0.0
+    return 0.5 if len(ptoks & req_tokens) / len(ptoks) >= 0.6 else 0.0
 
-    # Build feature dict
-    text = request.get("text", "")
-    norm_text = _norm(text)
-    tokens = _content_tokens(text)
-    funnel_id = request.get("funnel_id", "")
 
-    req_feats = {
-        "norm_text": norm_text,
-        "tokens": tokens,
-        "category_hint": _norm(request.get("category", "")),
-        "funnel_id": funnel_id,
-    }
+def score_template(t: dict, feats: dict) -> dict:
+    req_text, req_tokens = feats["text"], feats["tokens"]
+    parts: dict[str, float] = {}
 
-    # Funnel-link hints
-    funnel_link_data = None
-    funnel_primaries: set[str] = set()
-    funnel_supporting: set[str] = set()
+    if t["name"] and _norm(t["name"]) in req_text:
+        parts["name"] = _W_NAME
+    alias_hit = max((_W_ALIAS for a in t["aliases"] if _norm(a) and _norm(a) in req_text),
+                    default=0.0)
+    if alias_hit:
+        parts["alias"] = alias_hit
 
-    if funnel_id and links:
-        for group_data in links.values():
-            if isinstance(group_data, dict) and not group_data.get("_meta"):
-                entry = group_data.get(funnel_id)
-                if entry:
-                    funnel_link_data = entry
-                    funnel_primaries = set(entry.get("primary_automations", []))
-                    funnel_supporting = set(entry.get("supporting_automations", []))
-                    break
+    head_hits = [w for w in t["headNouns"] if w in req_tokens]
+    if head_hits:
+        parts["headNoun"] = _W_HEADNOUN
 
-    # Score all templates
-    scored = [_score_one(t, req_feats, funnel_primaries, funnel_supporting)
-              for t in catalog.templates]
-    scored.sort(key=lambda x: (-x["confidence"], -x["raw"], x["id"]))
+    if feats["explicit_type"] and (feats["explicit_type"] in _norm(t["name"])
+                                   or feats["explicit_type"] in t["id"]):
+        parts["explicitType"] = _W_HEADNOUN
 
-    best = scored[0] if scored else None
-    decision = "SUGGEST_CREATE"
-    matched_id = None
-    just_do_it = bool(request.get("just_do_it"))
-    flex_mode = 2  # unsure by default
+    kw = 0.0
+    for phrase in t["keywords"]:
+        h = _phrase_hit(phrase, req_text, req_tokens)
+        kw += _W_KW_FULL if h == 1.0 else (_W_KW_PART if h else 0.0)
+    if kw:
+        parts["keywords"] = round(kw, 3)
 
-    if best and best["confidence"] >= threshold:
-        decision = "SUGGEST_TEMPLATE"
-        matched_id = best["id"]
-        flex_mode = 3 if just_do_it else 2
+    goal_tokens = _content_tokens(" ".join(t["goals"]))
+    g = min(_CAP_GOAL, _W_GOAL * len(goal_tokens & req_tokens))
+    if g:
+        parts["goals"] = round(g, 3)
+    sig_tokens = _content_tokens(" ".join(t["signals"]))
+    s = min(_CAP_SIGNAL, _W_SIGNAL * len(sig_tokens & req_tokens))
+    if s:
+        parts["signals"] = round(s, 3)
 
-    # Mode-3 shortcut: if just_do_it + funnel link primary exists, use the first primary
-    # even if the general scorer chose something else (funnel architect knows the canonical chain)
-    if just_do_it and funnel_link_data and decision == "SUGGEST_TEMPLATE":
-        primaries = funnel_link_data.get("primary_automations", [])
-        if primaries:
-            # Resolve the first primary template id (strip category/ prefix)
-            first_primary = primaries[0].split("/")[-1]
-            if first_primary in catalog.by_id:
-                matched_id = first_primary
-                # Find and promote that score entry
-                for s in scored:
-                    if s["id"] == first_primary:
-                        best = s
-                        break
+    if feats["group_hint"] and feats["group_hint"] == t["group"]:
+        parts["category"] = _W_CATEGORY
 
-    rationale = _build_rationale(best, threshold, decision, flex_mode)
+    raw = sum(parts.values())
+    return {"id": t["id"], "name": t["name"], "group": t["group"],
+            "raw": round(raw, 3), "parts": parts}
+
+
+def _confidence(raw: float) -> float:
+    return max(0.0, min(1.0, raw / _CONF_DENOM))
+
+
+# --------------------------------------------------------------------------- #
+# Match (FLEXIBLE — the heart of Skill 44 STEP 0)
+# --------------------------------------------------------------------------- #
+def match_automation(request: dict | str, catalog: Catalog, *,
+                     threshold: float = DEFAULT_THRESHOLD,
+                     top_k: int = 5,
+                     intent_mode: str | None = None) -> dict:
+    """Classify -> detect intent mode -> score -> flexibility decision.
+
+    Returns the decision record (also what gets logged). NEVER blocks; NEVER imposes."""
+    feats = classify(request)
+    mode_info = flex.detect_mode(request, override=intent_mode)
+    mode = mode_info["mode"]
+
+    scored = [score_template(t, feats) for t in catalog.templates]
+    for s in scored:
+        s["confidence"] = round(_confidence(s["raw"]), 4)
+    scored.sort(key=lambda s: (-s["confidence"], -s["raw"], s["id"]))
+    ranked = scored[:top_k]
+    best = ranked[0] if ranked else None
+
+    has_any = bool(best and best["raw"] > 0)
+    has_confident = bool(best and best["confidence"] >= threshold and best["raw"] > 0)
+    flex_dec = flex.decide(mode, has_confident_match=has_confident, has_any_match=has_any)
+    decision = flex_dec["decision"]
+
+    matched_id = best["id"] if (has_any and decision != flex.DEC_CREATE_NEW) else None
+    template = catalog.by_id.get(matched_id) if matched_id else None
+    pages = instantiate_workflow(template) if (template and flex_dec["build_from_template"]) else None
 
     return {
+        "intent_mode": mode,
+        "mode_reason": mode_info["reason"],
+        "mode_cue": mode_info.get("cue"),
         "decision": decision,
-        "flexibility_mode": flex_mode,
+        "imposes_on_user": flex_dec["imposes_on_user"],   # always False
+        "override_allowed": flex_dec["override_allowed"], # always True
+        "await_confirm": flex_dec["await_confirm"],
+        "build_from_template": flex_dec["build_from_template"],
+        "template_role": flex_dec["template_role"],
         "matched_template": matched_id,
-        "matched_name": catalog.by_id[matched_id]["name"] if matched_id else None,
+        "matched_name": (template["name"] if template else None),
+        "matched_category": (template["group"] if template else None),
         "confidence": best["confidence"] if best else 0.0,
         "threshold": threshold,
         "score_parts": best["parts"] if best else {},
-        "ranked": [{"id": r["id"], "name": r["name"], "category": r["category"],
-                    "confidence": r["confidence"], "raw": r["raw"],
-                    "parts": r["parts"]} for r in scored[:5]],
-        "rationale": rationale,
-        "funnel_link": funnel_link_data,
+        "workflow_plan": pages,
+        "ranked": [{"id": r["id"], "name": r["name"], "group": r["group"],
+                    "confidence": r["confidence"], "raw": r["raw"], "parts": r["parts"]}
+                   for r in ranked],
+        "rationale": _rationale(mode, decision, best, threshold, flex_dec),
+        "flex_note": flex_dec["note"],
+        "flex_principle": flex.flex_principle(),
+        "classified": {k: (sorted(v) if isinstance(v, set) else v)
+                       for k, v in feats.items() if k != "raw"},
         "request": request if isinstance(request, dict) else {"text": request},
         "ts": _ts(),
     }
 
 
-def _build_rationale(best: dict | None, threshold: float, decision: str,
-                     flex_mode: int) -> str:
-    flex_preamble = (
-        "This matcher is a GUIDE and a RESOURCE, never a rule. "
-        "Every suggestion is overridable — the user's explicit desire always wins."
-    )
-    if not best or best["raw"] <= 0:
-        return (
-            f"{flex_preamble} No template scored above zero — SUGGEST_CREATE: "
-            "a new automation can be built from scratch and optionally saved to the library."
-        )
-    drivers = ", ".join(
-        f"{k}(+{v:.2f})" if v >= 0 else f"{k}({v:.2f})"
-        for k, v in sorted(best["parts"].items(), key=lambda kv: -abs(kv[1]))
-    )
-    if decision == "SUGGEST_TEMPLATE":
-        return (
-            f"{flex_preamble} Best match: '{best['name']}' "
-            f"(confidence={best['confidence']:.2f} >= threshold {threshold}). "
-            f"Score drivers: {drivers}. "
-            "If the user prefers a different template or wants a custom automation, "
-            "do exactly what they say — this is a suggestion, not a requirement."
-        )
-    return (
-        f"{flex_preamble} Best candidate: '{best['name']}' "
-        f"(confidence={best['confidence']:.2f} < threshold {threshold}) -> SUGGEST_CREATE. "
-        f"Score drivers: {drivers}. "
-        "A custom automation can be built and optionally saved back to the library."
-    )
+def _rationale(mode: str, decision: str, best: dict | None, threshold: float,
+               flex_dec: dict) -> str:
+    bm = (f"best='{best['name']}' confidence={best['confidence']} (threshold {threshold})"
+          if best else "no candidate scored")
+    return f"mode={mode} -> decision={decision}. {bm}. {flex_dec['note']}"
 
 
 # --------------------------------------------------------------------------- #
-# Step 0 wiring (called before Skill-44 builds an automation)
+# Instantiate (template -> caf workflow build-plan)
 # --------------------------------------------------------------------------- #
-def step0_match(
-    task: dict,
-    evidence_root: str,
-    *,
-    library_root: str | None = None,
-    links_path: str | None = None,
-    threshold: float = DEFAULT_THRESHOLD,
-) -> dict:
-    """STEP 0 of the automation build flow.
+def instantiate_workflow(tmpl: dict) -> dict:
+    """Turn a matched automation template into an ordered caf workflow build-plan.
 
-    Build a request from the board task, match it against the catalog, LOG the
-    decision, write ``routing/automation-match.json``, and MUTATE the task so the
-    builder is template-first:
-
-      HONORED_EXPLICIT   -> task['automation_template'] = the named template id;
-                            task['automation_match'] records the decision.
-      SUGGEST_TEMPLATE   -> task['automation_template'] = matched id (caller
-                            presents to user for confirmation unless just_do_it).
-      SUGGEST_CREATE     -> task['automation_match'] records SUGGEST_CREATE;
-                            builder generates custom; caller can save_new_automation.
-
-    Returns the decision record. Never raises into the build loop.
-
-    FLEXIBILITY NOTE: this function is ADVISORY GLUE. A failure here MUST NOT
-    block an automation build. The task is mutated only with a ``suggestion`` —
-    the agent MUST present this to the user (Mode 2) or execute it as-is only
-    when the user has said 'just do it' (Mode 3) or named the template (Mode 1).
-    """
-    try:
-        # Resolve library root
-        root = library_root or os.environ.get("CAF_AUTOMATION_LIBRARY", "")
-        if not root:
-            # Heuristic: look relative to this file
-            here = os.path.dirname(os.path.abspath(__file__))
-            candidate = os.path.normpath(os.path.join(here, ".."))
-            if os.path.isdir(os.path.join(candidate, "welcome-indoctrination")):
-                root = candidate
-            else:
-                return {"decision": "SKIPPED",
-                        "reason": "no library root (set CAF_AUTOMATION_LIBRARY)",
-                        "ts": _ts()}
-
-        catalog = AutomationCatalog.load(root)
-        if not catalog.templates:
-            return {"decision": "SKIPPED", "reason": "catalog loaded but empty", "ts": _ts()}
-
-        # Load links
-        lp = links_path or os.path.join(root, "_links", "funnel-to-automation-link-map.json")
-        links = catalog.load_links(lp)
-
-        request = {
-            "text": task.get("brief", "") or task.get("text", "") or task.get("description", ""),
-            "category": task.get("automation_category", task.get("category", "")),
-            "funnel_id": task.get("funnel_id", task.get("funnel_template_id", "")),
-            "explicit_template": task.get("automation_template", ""),
-            "just_do_it": bool(task.get("just_do_it")),
-        }
-
-        decision = match_automation(request, catalog, links=links, threshold=threshold)
-
-        # Persist
-        routing = os.path.join(evidence_root, "routing")
-        os.makedirs(routing, exist_ok=True)
-        with open(os.path.join(routing, "automation-match.json"), "w", encoding="utf-8") as f:
-            json.dump(decision, f, indent=2, ensure_ascii=False)
-        _log_decision(decision, os.path.join(routing, "automation-decisions.jsonl"))
-
-        # Mutate task (advisory only)
-        task["automation_match"] = {
-            "decision": decision["decision"],
-            "flexibility_mode": decision["flexibility_mode"],
-            "matched_template": decision["matched_template"],
-            "confidence": decision["confidence"],
-            "rationale": decision["rationale"],
-        }
-        if decision["decision"] in ("HONORED_EXPLICIT", "SUGGEST_TEMPLATE"):
-            task.setdefault("automation_template_suggestion", decision["matched_template"])
-
-        return decision
-    except Exception as exc:  # noqa: BLE001 — matching must never block a build
-        return {"decision": "SKIPPED",
-                "reason": f"matcher error: {type(exc).__name__}: {exc}",
-                "ts": _ts()}
-
-
-def _log_decision(decision: dict, log_path: str) -> None:
-    try:
-        os.makedirs(os.path.dirname(log_path), exist_ok=True)
-        line = json.dumps({
-            "ts": decision.get("ts", _ts()),
-            "decision": decision["decision"],
-            "flexibility_mode": decision.get("flexibility_mode"),
-            "matched_template": decision.get("matched_template"),
-            "confidence": decision.get("confidence"),
-            "threshold": decision.get("threshold"),
-            "rationale": decision.get("rationale"),
-            "request": decision.get("request"),
-            "ranked": [(r["id"], r["confidence"])
-                       for r in decision.get("ranked", [])[:3]],
-        }, ensure_ascii=False)
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
-    except Exception:
-        pass
+    Pulls the documented ghl_build (trigger + actions_in_order/nodes) so Skill 44 can
+    wire it. Order + parentKey discipline is the caller's (Skill-44 reliability rule)."""
+    gb = tmpl.get("ghlBuild", {}) or {}
+    actions = (gb.get("actions_in_order")
+               or (gb.get("workflow", {}) or {}).get("nodes")
+               or [])
+    return {
+        "automation_id": tmpl["id"],
+        "automation_name": tmpl["name"],
+        "category": tmpl["group"],
+        "workflow_name": gb.get("workflow_name") or (gb.get("workflow", {}) or {}).get("name")
+                         or tmpl["name"],
+        "trigger": gb.get("trigger_config") or (gb.get("workflow", {}) or {}).get("trigger")
+                   or tmpl.get("trigger", ""),
+        "channels": tmpl.get("channels", []),
+        "actions_in_order": list(actions),
+        "if_else_branches": gb.get("if_else_branches")
+                            or (gb.get("workflow", {}) or {}).get("if_else_branches", []),
+        "wait_steps": gb.get("wait_steps") or (gb.get("workflow", {}) or {}).get("wait_steps", []),
+        "tags_used": gb.get("tags_used", []),
+        "source_ref": tmpl["sourcePath"],
+    }
 
 
 # --------------------------------------------------------------------------- #
-# Save-back (grow the library after SUGGEST_CREATE)
+# Save-back (grow the library after CREATE_NEW)
 # --------------------------------------------------------------------------- #
-def save_new_automation(spec: dict, library_root: str, *,
-                        category: str | None = None) -> dict:
-    """Persist a custom automation as a new template in the library.
-
-    ``spec`` must contain at minimum ``name`` and ``id``. Everything else is
-    optional but should follow the template schema for compatibility with the
-    matcher and the Skill-44 builder.
-
-    Returns ``{path, id, category}``.
-    """
+def save_new_template(spec: dict, catalog_root: str, *, group: str | None = None,
+                      reindex_path: str | None = None) -> dict:
     name = spec.get("name") or "New Automation"
-    aid = spec.get("id") or re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    cat = category or spec.get("category") or "_generated"
-    cat_dir = os.path.join(library_root, cat)
-    os.makedirs(cat_dir, exist_ok=True)
-
+    tid = spec.get("id") or _slug(name)
+    group = group or spec.get("group") or spec.get("category") or "_generated"
+    gdir = os.path.join(os.path.abspath(catalog_root), group)
+    os.makedirs(gdir, exist_ok=True)
     out = {
-        "id": aid,
-        "name": name,
-        "aliases": spec.get("aliases", []),
-        "category": cat,
+        "id": tid, "name": name, "aliases": spec.get("aliases", []),
+        "category": spec.get("category", group),
         "summary": spec.get("summary", spec.get("purpose", "")),
+        "origin": "CREATE_NEW (saved back by automation_matcher)",
+        "generated_at": _ts(),
         "trigger": spec.get("trigger", {}),
         "channels": spec.get("channels", []),
         "sequence": spec.get("sequence", []),
-        "source": spec.get("source", "custom — saved back by automation_matcher"),
-        "flexibility": {
-            "core_principle": (
-                "This template is a GUIDE and a RESOURCE, never a rule or requirement. "
-                "It must not dominate the user's desire."
-            ),
-            "usage_modes": {
-                "mode_1_explicit_desire": "User has an explicit desire: do exactly what the user wants.",
-                "mode_2_unsure": "User is unsure: suggest this template and explain why; let the user decide.",
-                "mode_3_just_do_it": "User wants it handled: build from this template.",
-            },
-            "always": (
-                "Overridable, mixable, customizable, ignorable at every level. "
-                "The template assists; it never dominates."
-            ),
-        },
-        "ghl_build": spec.get("ghl_build", {}),
-        "origin": "SUGGEST_CREATE (saved back by automation_matcher)",
-        "generated_at": _ts(),
+        "copy_persona": spec.get("copy_persona", {}),
+        "ghl_build": spec.get("ghl_build", spec.get("ghlBuild", {})),
+        "flexibility": spec.get("flexibility", flex.flex_principle()),
+    }
+    path = os.path.join(gdir, f"{tid}.json")
+    json.dump(out, open(path, "w", encoding="utf-8"), indent=2)
+    if reindex_path:
+        Catalog.load(catalog_root).save_index(reindex_path)
+    return {"path": path, "id": tid, "group": group}
+
+
+# --------------------------------------------------------------------------- #
+# Decision log (mode + decision + template + score)
+# --------------------------------------------------------------------------- #
+def log_decision(decision: dict, log_path: str) -> str:
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    line = json.dumps({
+        "ts": decision.get("ts", _ts()),
+        "intent_mode": decision.get("intent_mode"),
+        "mode_cue": decision.get("mode_cue"),
+        "decision": decision["decision"],
+        "matched_template": decision.get("matched_template"),
+        "confidence": decision.get("confidence"),
+        "threshold": decision.get("threshold"),
+        "await_confirm": decision.get("await_confirm"),
+        "request": decision.get("request"),
+        "ranked": [(r["id"], r["confidence"]) for r in decision.get("ranked", [])[:3]],
+        "rationale": decision.get("rationale"),
+    }, ensure_ascii=False)
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+    return log_path
+
+
+# --------------------------------------------------------------------------- #
+# Funnel -> linked-automations expansion (the "complete funnel" trigger)
+# --------------------------------------------------------------------------- #
+def expand_funnel_to_automations(funnel_id: str, *, link_map_path: str,
+                                 catalog: Catalog | None = None,
+                                 include_secondary: bool = True,
+                                 overrides: list[str] | None = None,
+                                 intent_mode: str | None = None) -> dict:
+    """Given a Skill-6 funnel template id, return the linked automation build-plans
+    (primary + optional secondary + graduation) from funnel-to-automation.json — MINUS
+    any automation the user overrode/ignored. This is what fires when instantiating a
+    Skill-6 funnel template so Skill 44 builds the COMPLETE funnel's follow-ups.
+
+    overrides: automation ids (or 'category/id') the user already specified themselves or
+    explicitly declined — they are DROPPED from the auto-build (never imposed).
+    The whole expansion is RECOMMENDED, not mandatory; in EXPLICIT mode it is a reference
+    list only (build_now=False)."""
+    overrides = set(overrides or [])
+    data = json.load(open(link_map_path, encoding="utf-8"))
+    entry = next((l for l in data.get("links", []) if l["funnel_template_id"] == funnel_id), None)
+    if not entry:
+        return {"funnel_template_id": funnel_id, "found": False,
+                "reason": "no link entry for this funnel id", "automations": []}
+
+    mode = (flex.detect_mode({"text": ""}, override=intent_mode)["mode"]
+            if intent_mode else flex.MODE_HANDSOFF)
+    # In EXPLICIT mode the linked list is a reference only; otherwise it's a build set.
+    build_now = mode in (flex.MODE_HANDSOFF,)
+
+    def _dropped(ref: dict) -> bool:
+        key = f"{ref['category']}/{ref['automation_id']}"
+        return ref["automation_id"] in overrides or key in overrides
+
+    picks = [entry["primary_followup"]]
+    if include_secondary:
+        picks += entry.get("secondary_followups", [])
+    if "graduation_followup" in entry:
+        picks.append(entry["graduation_followup"])
+
+    automations = []
+    for ref in picks:
+        dropped = _dropped(ref)
+        item = {**ref, "recommended": True, "mandatory": False,
+                "overridden_by_user": dropped, "build_now": build_now and not dropped}
+        if catalog and ref["automation_id"] in catalog.by_id and not dropped:
+            item["workflow_plan"] = instantiate_workflow(catalog.by_id[ref["automation_id"]])
+        automations.append(item)
+
+    return {
+        "funnel_template_id": funnel_id,
+        "funnel_group": entry["funnel_group"],
+        "found": True,
+        "intent_mode": mode,
+        "recommended": True,
+        "mandatory": False,
+        "note": "Linked automations are RECOMMENDED defaults for a complete funnel. Any the "
+                "user overrode are dropped (overridden_by_user=true, build_now=false). In "
+                "EXPLICIT mode the whole list is a reference only.",
+        "automations": automations,
     }
 
-    path = os.path.join(cat_dir, f"{aid}.json")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(out, f, indent=2, ensure_ascii=False)
-    return {"path": path, "id": aid, "category": cat}
-
 
 # --------------------------------------------------------------------------- #
-# CLI
+# STEP 0 wiring entrypoint (called by Skill 44 before PLAN MODE / caf build)
 # --------------------------------------------------------------------------- #
-def _cli() -> None:
-    import argparse
+def step0_match(task: dict, evidence_root: str, *,
+                catalog_root: str | None = None,
+                index_path: str | None = None,
+                link_map_path: str | None = None,
+                threshold: float = DEFAULT_THRESHOLD) -> dict:
+    """STEP 0 of the Skill-44 automation build.
 
-    ap = argparse.ArgumentParser(
-        description="automation_matcher — Skill-44 flexible automation template matcher"
-    )
-    ap.add_argument("--library", default=os.environ.get("CAF_AUTOMATION_LIBRARY", ""),
-                    help="Path to automation-templates/ directory")
-    ap.add_argument("--links", default="",
-                    help="Path to funnel-to-automation-link-map.json")
-    ap.add_argument("--match", metavar="TEXT",
-                    help="Match a request text against the catalog")
-    ap.add_argument("--funnel-id", default="",
-                    help="Funnel template id to include link-map hints")
-    ap.add_argument("--explicit", default="",
-                    help="Explicitly name a template (tests Mode 1 honored-explicit path)")
-    ap.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD,
-                    help=f"Confidence threshold (default {DEFAULT_THRESHOLD})")
-    ap.add_argument("--list", action="store_true",
-                    help="List all templates in the catalog")
-    ap.add_argument("--selftest", action="store_true",
-                    help="Run built-in self-test cases")
-    args = ap.parse_args()
+    Builds a request from the build ``task``, matches it flexibly, LOGS the decision,
+    writes ``routing/automation-match.json``, and MUTATES the task so PLAN MODE is
+    flexibility-aware:
 
-    root = args.library
-    if not root:
-        here = os.path.dirname(os.path.abspath(__file__))
-        root = os.path.normpath(os.path.join(here, ".."))
+      * HONOR_USER      -> task['template_reference'] (optional), build the user's spec.
+      * SUGGEST_TEMPLATE-> task['suggested_template'] + await_confirm=True (don't build yet).
+      * USE_TEMPLATE    -> task['workflow_plan'] = instantiated plan (build it all).
+      * CREATE_NEW      -> builder generates net-new; caller calls save_new_template after.
 
-    catalog = AutomationCatalog.load(root)
+    If task['funnel_template_id'] is present, ALSO expands the linked automations for a
+    complete funnel (minus task['automation_overrides']).
 
-    lp = args.links or os.path.join(root, "_links", "funnel-to-automation-link-map.json")
-    links = catalog.load_links(lp)
-
-    if args.list:
-        for t in catalog.templates:
-            print(f"  {t['category']}/{t['id']}")
-            print(f"    {t['name']}")
-        print(f"\nTotal: {len(catalog.templates)} templates")
-        return
-
-    if args.selftest:
-        _selftest(catalog, links, args.threshold)
-        return
-
-    if args.match:
-        req = {"text": args.match, "funnel_id": args.funnel_id,
-               "explicit_template": args.explicit}
-        result = match_automation(req, catalog, links=links, threshold=args.threshold)
-        print(json.dumps({
-            "decision": result["decision"],
-            "flexibility_mode": result.get("flexibility_mode"),
-            "matched_template": result["matched_template"],
-            "matched_name": result["matched_name"],
-            "confidence": result["confidence"],
-            "rationale": result["rationale"],
-            "top3": [(r["id"], r["confidence"]) for r in result["ranked"][:3]],
-        }, indent=2, ensure_ascii=False))
-        return
-
-    ap.print_help()
-
-
-# --------------------------------------------------------------------------- #
-# Self-test
-# --------------------------------------------------------------------------- #
-_SELFTEST_CASES = [
-    # (description, request, expected_decision, expected_template_contains)
-    ("Explicit soap opera sequence by name",
-     {"text": "build me a soap opera sequence", "funnel_id": ""},
-     "HONORED_EXPLICIT", "soap-opera-sequence"),
-
-    ("Explicit by alias SOS",
-     {"text": "I want the SOS bonding emails", "funnel_id": ""},
-     "HONORED_EXPLICIT", "soap-opera"),
-
-    ("Webinar follow-up from funnel link (webinar-funnel)",
-     {"text": "follow up emails after the webinar", "funnel_id": "webinar-funnel"},
-     "SUGGEST_TEMPLATE", "webinar"),
-
-    ("Cart abandon recovery for buyer funnel",
-     {"text": "recover abandoned carts with multichannel messages", "funnel_id": ""},
-     "SUGGEST_TEMPLATE", "abandoned-cart"),
-
-    ("Application booking nurture",
-     {"text": "nurture leads after they apply for my coaching program and get them to book a call", "funnel_id": "application"},
-     "SUGGEST_TEMPLATE", "application"),
-
-    ("Seinfeld daily broadcast",
-     {"text": "daily entertainment emails about nothing that sell at the end", "funnel_id": ""},
-     "SUGGEST_TEMPLATE", "seinfeld"),
-
-    ("Membership stick and retention",
-     {"text": "keep my membership members from cancelling", "funnel_id": "membership-continuity"},
-     "SUGGEST_TEMPLATE", "membership"),
-
-    ("Cold traffic — behavioral retargeting",
-     {"text": "retarget page visitors who did not opt in with SMS and desktop push", "funnel_id": "cold-traffic-article-preframe"},
-     "SUGGEST_TEMPLATE", "retargeting"),
-
-    ("Explicit override — user names non-default template",
-     {"text": "I want the scarcity deadline close emails for my webinar", "funnel_id": "webinar-funnel"},
-     "HONORED_EXPLICIT", "scarcity-deadline-close"),
-
-    ("Vague request — no strong match",
-     {"text": "emails", "funnel_id": ""},
-     None, None),  # any decision acceptable — just must not crash
-
-    ("Mode 3 just_do_it flag",
-     {"text": "welcome new subscribers", "funnel_id": "squeeze-page", "just_do_it": True},
-     "SUGGEST_TEMPLATE", "soap-opera"),
-
-    ("Funnel link primary boost — application funnel",
-     {"text": "follow up automation for application funnel", "funnel_id": "application"},
-     "SUGGEST_TEMPLATE", "application"),
-]
-
-
-def _selftest(catalog: AutomationCatalog, links: dict, threshold: float) -> None:
-    print(f"Running {len(_SELFTEST_CASES)} self-test cases...")
-    passed = 0
-    failed = 0
-    for desc, req, expected_decision, expected_id_fragment in _SELFTEST_CASES:
-        result = match_automation(req, catalog, links=links, threshold=threshold)
-        decision = result["decision"]
-        matched = result.get("matched_template") or ""
-
-        ok_decision = (expected_decision is None or decision == expected_decision)
-        ok_match = (expected_id_fragment is None or
-                    (matched and expected_id_fragment in matched))
-        ok = ok_decision and ok_match and decision != "SKIPPED"
-
-        status = "PASS" if ok else "FAIL"
-        if ok:
-            passed += 1
+    Never raises into the build loop (matching is advisory glue)."""
+    try:
+        index_path = index_path or os.environ.get("CAF_AUTOMATION_INDEX")
+        catalog_root = catalog_root or os.environ.get("CAF_AUTOMATION_CATALOG")
+        link_map_path = link_map_path or os.environ.get("CAF_FUNNEL_AUTOMATION_LINKS")
+        if index_path and os.path.isfile(index_path):
+            catalog = Catalog.from_index(index_path)
+        elif catalog_root and os.path.isdir(catalog_root):
+            catalog = Catalog.load(catalog_root)
         else:
-            failed += 1
-        print(f"  [{status}] {desc}")
-        if not ok:
-            print(f"         expected decision={expected_decision!r} id_contains={expected_id_fragment!r}")
-            print(f"         got     decision={decision!r} matched={matched!r}")
+            return {"decision": "SKIPPED",
+                    "reason": "no catalog (set CAF_AUTOMATION_CATALOG / CAF_AUTOMATION_INDEX)"}
 
-    print(f"\n{passed}/{len(_SELFTEST_CASES)} PASS, {failed} FAIL")
-    if failed:
-        raise SystemExit(1)
+        request = {
+            "text": task.get("brief", "") or task.get("text", ""),
+            "category": task.get("category", ""),
+            "automation_type": task.get("automation_type", task.get("type", "")),
+            "goal": task.get("goal", ""),
+            "steps": task.get("user_steps") or task.get("steps"),
+            "spec": task.get("user_spec"),
+        }
+        decision = match_automation(request, catalog, threshold=threshold,
+                                    intent_mode=task.get("intent_mode"))
+
+        routing = os.path.join(evidence_root, "routing")
+        os.makedirs(routing, exist_ok=True)
+        json.dump(decision, open(os.path.join(routing, "automation-match.json"), "w",
+                                 encoding="utf-8"), indent=2)
+        log_decision(decision, os.path.join(routing, "automation-decisions.jsonl"))
+
+        task["template_match"] = {
+            "intent_mode": decision["intent_mode"], "decision": decision["decision"],
+            "matched_template": decision["matched_template"],
+            "confidence": decision["confidence"],
+            "await_confirm": decision["await_confirm"],
+            "imposes_on_user": decision["imposes_on_user"],
+        }
+        d = decision["decision"]
+        if d == flex.DEC_USE:
+            task.setdefault("workflow_plan", decision["workflow_plan"])
+            task["built_from_template"] = decision["matched_template"]
+        elif d == flex.DEC_SUGGEST:
+            task["suggested_template"] = decision["matched_template"]
+            task["await_confirm"] = True       # do NOT build until user confirms
+        elif d == flex.DEC_HONOR_USER:
+            task["template_reference"] = decision["matched_template"]  # optional ref only
+
+        # complete-funnel expansion (only if a funnel id rode in on the task)
+        if task.get("funnel_template_id") and link_map_path and os.path.isfile(link_map_path):
+            decision["linked_automations"] = expand_funnel_to_automations(
+                task["funnel_template_id"], link_map_path=link_map_path, catalog=catalog,
+                overrides=task.get("automation_overrides"),
+                intent_mode=task.get("intent_mode"))
+            task["linked_automations"] = decision["linked_automations"]
+        return decision
+    except Exception as exc:  # noqa: BLE001 — matching must never break a build
+        return {"decision": "SKIPPED", "reason": f"matcher error: {type(exc).__name__}: {exc}"}
 
 
-if __name__ == "__main__":
-    _cli()
+def _ts() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
