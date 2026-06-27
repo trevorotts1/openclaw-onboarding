@@ -625,6 +625,15 @@ if not isinstance(sessions_cfg, dict):
     tools["sessions"] = sessions_cfg
 if sessions_cfg.get("visibility") != "all":
     sessions_cfg["visibility"] = "all"
+# agentToAgent: routing agent must be able to message peer agents directly
+# (not just spawn children). Idempotent — setdefault preserves any
+# already-customized allow list.
+a2a_cfg = tools.setdefault("agentToAgent", {})
+if not isinstance(a2a_cfg, dict):
+    a2a_cfg = {}
+    tools["agentToAgent"] = a2a_cfg
+a2a_cfg.setdefault("enabled", True)
+a2a_cfg.setdefault("allow", ["*"])
 
 cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
 print("APPLIED:" + str(main_agent.get("id", "<unknown>")))

@@ -1,3 +1,24 @@
+## [v14.22.2]  -  2026-06-27  -  fix: add tools.agentToAgent to complete routing set at all four write-sites
+
+PR #398 (v14.19.2) added `tools.sessions.visibility=all` to all four config
+write-sites but omitted `tools.agentToAgent`. Without it the routing agent can
+see all sessions but cannot send peer-agent messages directly, so cross-agent
+handoffs silently fail on newly provisioned boxes.
+
+**Gap fixed — tools.agentToAgent added at all four write-sites:**
+`tools.agentToAgent = {"enabled": true, "allow": ["*"]}` is now emitted by
+build-workforce.py (build-time), apply-routing-fix.sh Layer 5 (self-heal),
+apply-fleet-standards.sh CEO re-assert (fleet roll), and
+hooks/lib-ceo-tool-gate.sh (revoke/restore path). All four write-sites now
+emit the complete routing tool set so no path can set a stale posture.
+
+**Idempotent:** apply-fleet-standards.sh and apply-routing-fix.sh use
+`setdefault` so any already-customized `allow` list is preserved; the
+build-workforce.py hard-sets the default (it builds from scratch each run);
+lib-ceo-tool-gate.sh includes the key in the emitted JSON object.
+
+Bump: v14.22.1 -> v14.22.2
+
 ## [v14.22.1]  -  2026-06-27  -  chore(release): roll version markers so the post-merge tip carries the v14.22.0 content + version bump in one commit (G3 push-mode)
 
 No functional change. The v14.22.0 work merged to main via rebase, which preserves

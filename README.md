@@ -1,7 +1,9 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v14.22.1.
+> **Version:** see `/version` - this repo at v14.22.2.
+>
+> **NOTE (v14.22.2) — fix: tools.agentToAgent added to complete routing set at all four write-sites.** PR #398 (v14.19.2) added `tools.sessions.visibility=all` at all four config write-sites but omitted `tools.agentToAgent`. Without it the routing agent can see all sessions but cannot send peer-agent messages directly, so cross-agent handoffs silently fail on newly provisioned boxes. Fixed: `tools.agentToAgent = {"enabled": true, "allow": ["*"]}` now emitted by build-workforce.py (build-time), apply-routing-fix.sh Layer 5 (self-heal), apply-fleet-standards.sh CEO re-assert (fleet roll), and hooks/lib-ceo-tool-gate.sh (revoke/restore path). All four write-sites emit the complete routing tool set. Idempotent: patch scripts use `setdefault` so any already-customized `allow` list is preserved. See [CHANGELOG.md](CHANGELOG.md).
 >
 > **NOTE (v14.22.1) - fix(persona-system): complete gemini dead-path sweep + reproducible section tagging + canonical persona categories + department-agnostic specialist routing.** Closes the persona-system repo-comprehensive review. (1) The v14.21.0 hygiene pass fixed only the `~/clawd/scripts/gemini-*` refs in 8 docs and missed 715 live `~/.openclaw/workspace/scripts/gemini-*` run-commands across 643 files (skill-22 retrieval/router/QC/install/pipeline docs + every role-library specialist template); ALL now point at the canonical `~/.openclaw/scripts/gemini-*.py` and zero live-command dead paths remain repo-wide (CHANGELOG/legacy-comment provenance preserved). (2) Added the live fleet tagger `section-tag-migration.py` and made `embedding_engine.py` the single source of truth for the section→mode map (`LEADERSHIP_SECTION_NUMBER=4`, new `COACHING_SECTION_NUMBER=3`); `gemini-section-indexer.py` imported the constants, fixing its hardcoded `COACHING_SECTIONS={6}` (Section 6 was wrongly tagged coaching; canonical is Section 3=coaching, 4=leadership — matching live). (3) Reconciled the skill-22 `persona-categories.json` bundle copy (diverged md5 79df2afd) to the canonical 54-persona runtime set (md5 c544561). (4) `persona-selector-v2.py` now reads the distinctive `custom[]` specialty tags so a clearly-named canonical specialist (network-marketing→`brunson-network-marketing-secrets`, sketchnote→`rohde-the-sketchnote-workbook`) is reachable AND wins regardless of department — additive-only, never-to-zero, provably inert on generic tasks. New agreement + specialist-routing tests wired into CI; existing selector A6/A7 and the 45-test funnel pytest stay green. No client names or secret values. See [CHANGELOG.md](CHANGELOG.md).
 >
@@ -35,7 +37,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v14.22.1** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v14.22.2** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.

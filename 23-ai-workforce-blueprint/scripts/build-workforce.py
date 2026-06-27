@@ -5907,6 +5907,10 @@ def add_agent_to_config(config, dept_id, dept_info):
             "allow": list(CEO_TOOL_ALLOW),
             "byProvider": dict(CEO_MCP_DENY),
             "sessions": {"visibility": "all"},
+            # agentToAgent: routing agent must be able to message peer agents
+            # directly (not just spawn children). Wildcard allow — every
+            # registered agent is a valid peer target for the router.
+            "agentToAgent": {"enabled": True, "allow": ["*"]},
         }
     if is_generation_dept:
         # Explicit tools.allow so generation tools survive any parent-deny
