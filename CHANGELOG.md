@@ -1,3 +1,35 @@
+## [v14.19.2]  -  2026-06-27  -  fix: cross-agent routing default visibility=all + routable department agents
+
+Two defects caused every new client box to silently break cross-agent routing
+on first provision. Fixed at all four write-sites that must stay in sync.
+
+**Defect 1 — gateway "tree" visibility default blocks department handoffs:**
+`tools.sessions.visibility` defaults to `"tree"` (spawned-children only).
+Cross-agent department routing requires `"all"`. Added `sessions.visibility=all`
+to build-workforce.py (build-time), apply-routing-fix.sh Layer 5 (self-heal),
+apply-fleet-standards.sh CEO re-assert (fleet roll), and
+hooks/lib-ceo-tool-gate.sh (revoke/restore path). All four write-sites now
+emit the correct structure so no path can set a stale posture.
+
+**Defect 2 — missing agentDir prevents department agent resolution:**
+`materialize-dept-agents.sh` registered department agents without `agentDir`.
+The gateway cannot resolve the department agent's state directory at startup
+without it, causing routing handoffs to silently fail. Fixed: `agentDir` is
+now derived from `$OC_ROOT/agents/<agent-id>` and written on new entries plus
+idempotently back-filled on existing entries so existing boxes self-heal on
+the next materialize run.
+
+**Files changed (5 write-sites):**
+- `23-ai-workforce-blueprint/scripts/build-workforce.py`
+- `32-command-center-setup/scripts/materialize-dept-agents.sh`
+- `hooks/lib-ceo-tool-gate.sh`
+- `scripts/apply-fleet-standards.sh`
+- `scripts/apply-routing-fix.sh`
+
+Diff is clean of client names and secrets.
+
+---
+
 ## [v14.19.1]  -  2026-06-27  -  fix: existing-box cron-rewrite migration — idempotency guard detects and replaces old auto-announce weekly-onboarding-update cron
 
 The silent-cron fix (v14.10.2, PR #379) gated new cron creation behind

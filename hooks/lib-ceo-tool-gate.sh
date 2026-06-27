@@ -129,7 +129,9 @@ deny = os.environ["CEO_GATE_DENY"].split()
 allow = os.environ["CEO_GATE_ALLOW"].split()
 providers = os.environ["CEO_GATE_MCP"].split()
 by_provider = {p: {"deny": ["*"]} for p in providers}
-print(json.dumps({"deny": deny, "allow": allow, "byProvider": by_provider}))
+# sessions.visibility=all: routing agent must see all sessions to hand off to
+# any department agent (gateway default "tree" blocks cross-agent routing).
+print(json.dumps({"deny": deny, "allow": allow, "byProvider": by_provider, "sessions": {"visibility": "all"}}))
 PYEOF
 }
 
