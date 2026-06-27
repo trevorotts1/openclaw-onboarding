@@ -25,7 +25,8 @@ fail() { echo "  FAIL: $1"; FAIL=$((FAIL+1)); }
 TMP_HOME="$(mktemp -d)"
 trap 'rm -rf "$TMP_HOME"' EXIT
 mkdir -p "$TMP_HOME/.openclaw/workspace/data/coaching-personas"
-cp "$CANON_CATS" "$TMP_HOME/.openclaw/workspace/data/coaching-personas/persona-categories.json"
+SEEDED_CATS="$TMP_HOME/.openclaw/workspace/data/coaching-personas/persona-categories.json"
+cp "$CANON_CATS" "$SEEDED_CATS"
 
 # Force the heuristic path: heuristic scoring + remove any sibling gemini-search.py so
 # the semantic subprocess cannot resolve, and an empty HOME has no index for the
@@ -34,7 +35,10 @@ run_select() {
   local task="$1" dept="$2"
   # Empty temp HOME has no gemini index, so the in-process embedder and the
   # gemini-search subprocess both yield no semantic signal -> heuristic path (CI reality).
+  # PERSONA_CATEGORIES_PATH is pinned to OUR seeded 54-persona file so an inherited
+  # override from a previous CI step (e.g. the 5-persona ci-fixture) cannot leak in.
   HOME="$TMP_HOME" OPENCLAW_PLATFORM=mac SCORING_MODE=heuristic \
+  PERSONA_CATEGORIES_PATH="$SEEDED_CATS" \
     python3 "$SCRIPTS/persona-selector-v2.py" \
       --task "$task" --department "$dept" \
       --no-variety --skip-stickiness --format json 2>/dev/null \
