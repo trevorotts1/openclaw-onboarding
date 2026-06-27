@@ -186,6 +186,119 @@ DEFAULT_MAX_INFLIGHT = 1
 DEFAULT_WALLCLOCK_CAP_S = 1800
 DEFAULT_POLL_BACKOFF_S = 30
 
+# ── P2-4: rate-limit governor + session keepalive ────────────────────────────
+# GHL throttles rapid autosaves/publishes; bursting trips 429s and (worse) silent
+# dropped writes. These two utilities are REUSABLE by the INJECTED builder (the
+# dispatcher itself opens no browser/network — same GLUE boundary as the rest of
+# this module). Defaults MIRROR gates.json::rate_limit_governor (single source of
+# truth — keep them in sync). The clock + sleeper are injectable so the bounds are
+# unit-testable instantly and deterministically (no real wall-clock sleeping).
+MIN_SAVE_INTERVAL_S = 6.0          # gates.json rate_limit_governor.min_save_interval_s
+MIN_PUBLISH_INTERVAL_S = 15.0      # gates.json rate_limit_governor.min_publish_interval_s
+DEFAULT_429_COOLDOWN_S = 30.0      # gates.json rate_limit_governor.default_429_cooldown_s
+SESSION_KEEPALIVE_INTERVAL_S = 30 * 60  # gates.json ...session_keepalive.interval_minutes
+
+
+class RateGovernor:
+    """Space write actions and back off on HTTP 429 (P2-4).
+
+    Enforces a MINIMUM interval between repeat ``save`` actions and between repeat
+    ``publish`` actions, plus a global cooldown after a 429 (honoring a
+    ``Retry-After`` header when present, else ``DEFAULT_429_COOLDOWN_S``). It only
+    ever DELAYS — it never speeds a build up. ``clock`` + ``sleeper`` are injected
+    (default ``time.monotonic`` / ``time.sleep``) so tests run with a fake clock.
+
+    Usage by the injected builder::
+
+        gov = RateGovernor()
+        gov.before("save");    do_autosave()
+        gov.before("publish"); do_publish()
+        # on a 429 response:
+        gov.note_429(resp.headers.get("Retry-After")); retry()
+    """
+
+    def __init__(
+        self,
+        *,
+        min_save_interval_s: float = MIN_SAVE_INTERVAL_S,
+        min_publish_interval_s: float = MIN_PUBLISH_INTERVAL_S,
+        default_429_cooldown_s: float = DEFAULT_429_COOLDOWN_S,
+        clock: "Callable[[], float] | None" = None,
+        sleeper: "Callable[[float], None] | None" = None,
+    ) -> None:
+        self.min_interval = {"save": float(min_save_interval_s),
+                             "publish": float(min_publish_interval_s)}
+        self.default_429_cooldown_s = float(default_429_cooldown_s)
+        self._clock = clock or time.monotonic
+        self._sleep = sleeper or time.sleep
+        self._last: dict[str, float] = {}   # action -> last allowed time
+        self._cooldown_until = 0.0          # global 429 cooldown deadline
+
+    def _wait_for(self, action: str) -> float:
+        """Seconds the caller must wait before ``action`` is allowed (no sleep)."""
+        now = self._clock()
+        waits = []
+        if now < self._cooldown_until:                     # global 429 cooldown
+            waits.append(self._cooldown_until - now)
+        last = self._last.get(action)                      # per-action min interval
+        gap = self.min_interval.get(action, 0.0)
+        if last is not None and gap > 0:
+            elapsed = now - last
+            if elapsed < gap:
+                waits.append(gap - elapsed)
+        return max(waits) if waits else 0.0
+
+    def before(self, action: str) -> float:
+        """Block (sleep) until ``action`` is allowed; return the seconds slept.
+
+        The action time is recorded AFTER the wait so back-to-back calls space out
+        by the full minimum interval."""
+        wait = self._wait_for(action)
+        if wait > 0:
+            self._sleep(wait)
+        self._last[action] = self._clock()
+        return wait
+
+    def note_429(self, retry_after: "float | str | None" = None) -> float:
+        """Register a 429: cool down for ``max(Retry-After, default)`` seconds.
+
+        ``retry_after`` accepts the raw header value (str/number/None). A
+        malformed/absent value falls back to ``default_429_cooldown_s``. Returns
+        the cooldown applied."""
+        cooldown = self.default_429_cooldown_s
+        if retry_after is not None:
+            try:
+                cooldown = max(cooldown, float(retry_after))
+            except (TypeError, ValueError):
+                pass  # malformed header -> keep the default floor
+        self._cooldown_until = self._clock() + cooldown
+        return cooldown
+
+
+class SessionKeepalive:
+    """No-op session-keepalive scheduler (P2-4).
+
+    ``due()`` returns True at most once every ``interval_s`` so a long build can
+    fire a HARMLESS keepalive (e.g. ``AB --session <s> eval 'true'``) to keep the
+    seeded agent-browser session warm — NEVER a navigate/open/reload (that re-runs
+    the boot IIFE and logs the seeded session out; see inject-ghl-auth.sh DO NOT
+    RELOAD). This only SCHEDULES; the keepalive action belongs to the caller (the
+    dispatcher opens no browser)."""
+
+    def __init__(self, interval_s: float = SESSION_KEEPALIVE_INTERVAL_S,
+                 clock: "Callable[[], float] | None" = None) -> None:
+        self.interval_s = float(interval_s)
+        self._clock = clock or time.monotonic
+        self._last = self._clock()
+
+    def due(self, now: "float | None" = None) -> bool:
+        """True iff at least ``interval_s`` elapsed since the last due()==True."""
+        now = self._clock() if now is None else now
+        if now - self._last >= self.interval_s:
+            self._last = now
+            return True
+        return False
+
 
 class DispatchResult:
     """The outcome of dispatching one task. Truthy iff the task reached
@@ -558,8 +671,53 @@ def _selftest() -> int:
         ok &= passed
         print("  [%s] happy path -> %s (truthy=%s)" % ("ok" if passed else "FAIL", r.state, bool(r)))
 
-    print("v2_dispatcher selftest bounds: max_inflight=%d wallclock_cap_s=%d poll_backoff_s=%d"
-          % (DEFAULT_MAX_INFLIGHT, DEFAULT_WALLCLOCK_CAP_S, DEFAULT_POLL_BACKOFF_S))
+    # 4) RATE GOVERNOR (P2-4) — saves spaced >=6s, publishes >=15s, 429 cooldown.
+    class _FakeClock:
+        def __init__(self): self.t = 0.0
+        def __call__(self): return self.t
+        def advance(self, s): self.t += float(s)
+    fc = _FakeClock()
+    gov = RateGovernor(clock=fc, sleeper=fc.advance)
+    w_save1 = gov.before("save")            # first save: no wait
+    w_save2 = gov.before("save")            # immediate 2nd save: must wait >=6s
+    g_save = (w_save1 == 0.0 and w_save2 >= MIN_SAVE_INTERVAL_S)
+    ok &= g_save
+    print("  [%s] rate governor save spacing -> wait1=%.0fs wait2=%.0fs (>=%.0f)"
+          % ("ok" if g_save else "FAIL", w_save1, w_save2, MIN_SAVE_INTERVAL_S))
+    w_pub1 = gov.before("publish")          # first publish: no wait
+    w_pub2 = gov.before("publish")          # immediate 2nd: must wait >=15s
+    g_pub = (w_pub1 == 0.0 and w_pub2 >= MIN_PUBLISH_INTERVAL_S)
+    ok &= g_pub
+    print("  [%s] rate governor publish spacing -> wait1=%.0fs wait2=%.0fs (>=%.0f)"
+          % ("ok" if g_pub else "FAIL", w_pub1, w_pub2, MIN_PUBLISH_INTERVAL_S))
+    cd_default = gov.note_429(None)         # malformed/absent header -> 30s floor
+    cd_header = gov.note_429("45")          # Retry-After 45s honored (> floor)
+    cd_floor = gov.note_429("5")            # Retry-After 5s -> floored at 30s
+    g_429 = (cd_default == DEFAULT_429_COOLDOWN_S and cd_header == 45.0
+             and cd_floor == DEFAULT_429_COOLDOWN_S)
+    ok &= g_429
+    print("  [%s] rate governor 429 cooldown -> default=%.0fs header=%.0fs floor=%.0fs"
+          % ("ok" if g_429 else "FAIL", cd_default, cd_header, cd_floor))
+
+    # 5) SESSION KEEPALIVE (P2-4) — due() at most once per 30min interval.
+    kc = _FakeClock()
+    ka = SessionKeepalive(clock=kc)
+    due0 = ka.due()                         # nothing elapsed -> not due
+    kc.advance(SESSION_KEEPALIVE_INTERVAL_S - 1)
+    due_early = ka.due()                    # 29m59s -> still not due
+    kc.advance(1)
+    due_at = ka.due()                       # exactly 30m -> due
+    due_again = ka.due()                    # immediately after -> not due
+    g_ka = (not due0 and not due_early and due_at and not due_again)
+    ok &= g_ka
+    print("  [%s] session keepalive interval -> early=%s at30m=%s again=%s"
+          % ("ok" if g_ka else "FAIL", due_early, due_at, due_again))
+
+    print("v2_dispatcher selftest bounds: max_inflight=%d wallclock_cap_s=%d poll_backoff_s=%d "
+          "min_save_s=%.0f min_publish_s=%.0f cooldown_429_s=%.0f keepalive_s=%d"
+          % (DEFAULT_MAX_INFLIGHT, DEFAULT_WALLCLOCK_CAP_S, DEFAULT_POLL_BACKOFF_S,
+             MIN_SAVE_INTERVAL_S, MIN_PUBLISH_INTERVAL_S, DEFAULT_429_COOLDOWN_S,
+             SESSION_KEEPALIVE_INTERVAL_S))
     print("SELFTEST PASS" if ok else "SELFTEST FAIL")
     return 0 if ok else 1
 
@@ -580,7 +738,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.print_config:
         print(json.dumps({"max_inflight": DEFAULT_MAX_INFLIGHT,
                           "wallclock_cap_s": DEFAULT_WALLCLOCK_CAP_S,
-                          "poll_backoff_s": DEFAULT_POLL_BACKOFF_S}, indent=2))
+                          "poll_backoff_s": DEFAULT_POLL_BACKOFF_S,
+                          "min_save_interval_s": MIN_SAVE_INTERVAL_S,
+                          "min_publish_interval_s": MIN_PUBLISH_INTERVAL_S,
+                          "default_429_cooldown_s": DEFAULT_429_COOLDOWN_S,
+                          "session_keepalive_interval_s": SESSION_KEEPALIVE_INTERVAL_S},
+                         indent=2))
         return 0
     if args.selftest:
         return _selftest()

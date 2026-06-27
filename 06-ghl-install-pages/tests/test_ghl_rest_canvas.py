@@ -891,3 +891,165 @@ def _assert_renderable_shape(blob: dict) -> None:
             "sections[0].elements must contain at least one custom-code element "
             "(funnel: type=element meta=custom-code; website: type=code elType=code)"
         )
+
+
+# ── P0-3: child-link-chain reachability invariant (orphan-blank guard) ────────
+#
+# These exercise the PRODUCTION rc.assert_renderable_shape (Invariant 8). The
+# v14.3.11 bug re-minted element ids without rewriting the parent ``child``
+# arrays, orphaning the custom-code element: autosave returned 201, the marker
+# was in the stored bytes, invariants 1-7 passed, yet the page rendered BLANK.
+# Invariant 8 walks section.metaData.child -> row.child -> col.child and asserts
+# the custom-code element id is reachable, making that class impossible.
+
+
+def _find_cc_element_id(blob: dict):
+    """Return the id of the element carrying extra.customCode.value.rawCustomCode."""
+    for e in blob["sections"][0]["elements"]:
+        try:
+            if isinstance(e["extra"]["customCode"]["value"]["rawCustomCode"], str):
+                return e.get("id")
+        except (KeyError, TypeError):
+            continue
+    return None
+
+
+class TestChildLinkChainInvariant:
+    def test_healthy_blob_passes_invariant_8(self):
+        """A freshly minted blob has a fully wired chain and passes."""
+        blob = rc.new_page_blob("<p>marker-xyz</p>", surface="funnel")
+        rc.assert_renderable_shape(blob, "funnel")  # no raise == pass
+
+    def test_section_metadata_child_emptied_is_caught(self):
+        """Orphaning at the TOP of the chain (metaData.child=[]) must fail."""
+        blob = rc.new_page_blob("<p>marker</p>", surface="funnel")
+        blob["sections"][0]["metaData"]["child"] = []
+        with pytest.raises(AssertionError) as exc:
+            rc.assert_renderable_shape(blob, "funnel")
+        assert "Invariant 8" in str(exc.value)
+
+    def test_row_child_dropped_orphans_element(self):
+        """The v14.3.11 shape: row exists but its child array no longer points at
+        the col (id re-minted without rewiring) — element unreachable."""
+        blob = rc.new_page_blob("<p>marker</p>", surface="funnel")
+        elements = blob["sections"][0]["elements"]
+        # The row is the element referenced by metaData.child.
+        row_id = blob["sections"][0]["metaData"]["child"][0]
+        for e in elements:
+            if e.get("id") == row_id:
+                e["child"] = ["row-STALE-id-not-in-blob"]
+        with pytest.raises(AssertionError) as exc:
+            rc.assert_renderable_shape(blob, "funnel")
+        assert "Invariant 8" in str(exc.value)
+        # The custom-code element id should be reported as the orphan.
+        assert str(_find_cc_element_id(blob)) in str(exc.value)
+
+    def test_col_child_re_minted_without_rewrite(self):
+        """Re-mint the custom-code element id but leave col.child pointing at the
+        OLD id — the exact orphan-blank mechanic. Must be caught."""
+        blob = rc.new_page_blob("<p>marker</p>", surface="funnel")
+        cc_id = _find_cc_element_id(blob)
+        for e in blob["sections"][0]["elements"]:
+            if e.get("id") == cc_id:
+                e["id"] = "custom-code-REMINTED"  # col.child still has old id
+        with pytest.raises(AssertionError) as exc:
+            rc.assert_renderable_shape(blob, "funnel")
+        assert "Invariant 8" in str(exc.value)
+
+    def test_website_surface_chain_also_enforced(self):
+        blob = rc.new_page_blob("<p>w</p>", surface="website")
+        rc.assert_renderable_shape(blob, "website")
+        blob["sections"][0]["metaData"]["child"] = []
+        with pytest.raises(AssertionError):
+            rc.assert_renderable_shape(blob, "website")
+
+
+# ── P1-2: allow_row_max_width parameterisation ───────────────────────────────
+
+
+class TestAllowRowMaxWidth:
+    def test_default_is_false_centered_1170(self):
+        """Default (LIVE-probe safe state) keeps allowRowMaxWidth False and the
+        1170px inner cap that drives the centered column."""
+        blob = rc.new_page_blob("<p>x</p>", surface="funnel")
+        meta = blob["sections"][0]["metaData"]
+        assert meta["extra"]["allowRowMaxWidth"]["value"] is False
+        assert "max-width:1170px" in blob["sections"][0]["general"]["sectionStyles"]
+
+    def test_true_sets_flag_and_lifts_inner_cap(self):
+        """Opt-in full width flips the metadata flag AND lifts the 1170px cap that
+        the LIVE probe identified as the real width driver."""
+        blob = rc.new_page_blob("<p>x</p>", surface="funnel", allow_row_max_width=True)
+        meta = blob["sections"][0]["metaData"]
+        assert meta["extra"]["allowRowMaxWidth"]["value"] is True
+        styles = blob["sections"][0]["general"]["sectionStyles"]
+        assert "max-width:1170px" not in styles
+        assert "max-width:100%" in styles
+
+    def test_blob_still_renderable_either_way(self):
+        for flag in (True, False):
+            blob = rc.new_page_blob("<p>x</p>", surface="funnel", allow_row_max_width=flag)
+            rc.assert_renderable_shape(blob, "funnel")
+
+
+# ── P1-1: lint_ghl_fragment — rejects ONLY what LIVE TRUTH proves stripped ────
+#
+# LIVE TRUTH: iframe / inline+msgsndr script / external CSS / >50KB body ALL
+# survive and render. The lint must NEVER reject those. Hard errors are limited
+# to empty fragments and un-stripped full documents (uncontested).
+
+
+class TestLintGhlFragment:
+    def test_iframe_is_allowed_not_rejected(self):
+        res = rc.lint_ghl_fragment('<iframe src="https://example.com"></iframe>')
+        assert res["ok"] is True
+        assert res["errors"] == []
+        assert any("iframe" in a.lower() for a in res["allowed"])
+
+    def test_inline_script_is_allowed(self):
+        res = rc.lint_ghl_fragment('<div></div><script>window.x=1;</script>')
+        assert res["ok"] is True
+        assert any("script" in a.lower() for a in res["allowed"])
+
+    def test_msgsndr_hosted_script_is_allowed(self):
+        res = rc.lint_ghl_fragment(
+            '<script src="https://storage.googleapis.com/msgsndr/widget.js"></script>'
+        )
+        assert res["ok"] is True
+        assert any("msgsndr" in a.lower() for a in res["allowed"])
+
+    def test_external_css_is_allowed(self):
+        res = rc.lint_ghl_fragment(
+            '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css">'
+        )
+        assert res["ok"] is True
+        assert any("css" in a.lower() for a in res["allowed"])
+
+    def test_large_body_over_50kb_is_allowed(self):
+        big = "<p>" + ("x" * (60 * 1024)) + "</p>"
+        res = rc.lint_ghl_fragment(big)
+        assert res["ok"] is True
+        assert any("50kb" in a.lower() for a in res["allowed"])
+
+    def test_empty_fragment_is_an_error(self):
+        res = rc.lint_ghl_fragment("   ")
+        assert res["ok"] is False
+        assert any("empty" in e.lower() for e in res["errors"])
+
+    def test_full_document_is_an_error(self):
+        res = rc.lint_ghl_fragment("<!DOCTYPE html><html><body><p>x</p></body></html>")
+        assert res["ok"] is False
+        assert any("full" in e.lower() or "document" in e.lower() for e in res["errors"])
+
+    def test_enforce_unverified_flag_adds_no_rejections(self):
+        """The unverified-strip flag defaults safe and, today, blocks nothing —
+        it only surfaces an advisory that the strip-set is unverified."""
+        frag = '<iframe src="https://example.com"></iframe>'
+        res = rc.lint_ghl_fragment(frag, enforce_unverified_strip=True)
+        assert res["ok"] is True
+        assert res["errors"] == []
+        assert any("unverified" in w.lower() for w in res["warnings"])
+
+    def test_non_string_raises_typeerror(self):
+        with pytest.raises(TypeError):
+            rc.lint_ghl_fragment(None)

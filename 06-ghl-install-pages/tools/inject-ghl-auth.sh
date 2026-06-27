@@ -101,6 +101,37 @@ fi
 [ -f "$SEED_FILE" ] || { echo "seed file not found: $SEED_FILE" >&2; exit 66; }
 [ -x "$AB_BIN" ] || { echo "agent-browser not found (Skill 03 must be installed)" >&2; exit 69; }
 
+# ── P2-4: AGENT-BROWSER VERSION-PIN GUARD (fail loud on drift) ─────────────────
+# Every gate selector (tools/gates.json), the `eval` JSON-encoding the injector
+# relies on, the auto-inlined-iframe snapshot shape, and the `--headed false`
+# override semantics were captured/proven against ONE pinned agent-browser
+# version. A silent upgrade can change CLI flags / eval encoding / snapshot shape
+# and break this seed+activate flow in ways that LOOK like an auth failure
+# (login bounce) but are really an engine drift. We FAIL LOUD on drift here —
+# before opening the browser — rather than mis-diagnose it downstream. Override
+# (operator-acknowledged) with GHL_AB_ALLOW_VERSION_DRIFT=1; re-pin with
+# GHL_AB_PINNED_VERSION after a deliberate re-capture. Mirrors
+# gates.json::agent_browser_version_pin.
+GHL_AB_PINNED_VERSION="${GHL_AB_PINNED_VERSION:-0.27.0}"
+AB_VERSION_RAW="$("$AB_BIN" --version 2>/dev/null | head -n1 | tr -d '[:space:]' || true)"
+# Extract a semver token (e.g. 0.27.0) from whatever the CLI prints.
+AB_VERSION="$(printf '%s' "$AB_VERSION_RAW" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)"
+if [ -z "$AB_VERSION" ]; then
+  if [ "${GHL_AB_ALLOW_VERSION_DRIFT:-0}" = "1" ]; then
+    echo "WARN: could not read agent-browser version (raw: '${AB_VERSION_RAW}'); GHL_AB_ALLOW_VERSION_DRIFT=1 — proceeding unpinned (risk acknowledged)." >&2
+  else
+    echo "REFUSE: could not determine agent-browser version (raw: '${AB_VERSION_RAW}'). This seed/activate flow is PINNED to ${GHL_AB_PINNED_VERSION}; an unverifiable engine cannot be trusted. Set GHL_AB_ALLOW_VERSION_DRIFT=1 to override (operator-acknowledged). STOP." >&2
+    exit 70
+  fi
+elif [ "$AB_VERSION" != "$GHL_AB_PINNED_VERSION" ]; then
+  if [ "${GHL_AB_ALLOW_VERSION_DRIFT:-0}" = "1" ]; then
+    echo "WARN: agent-browser ${AB_VERSION} != pinned ${GHL_AB_PINNED_VERSION}; GHL_AB_ALLOW_VERSION_DRIFT=1 — proceeding despite drift (risk acknowledged)." >&2
+  else
+    echo "REFUSE: agent-browser version drift — found ${AB_VERSION}, pinned ${GHL_AB_PINNED_VERSION}. The gates.json selectors + eval/snapshot semantics were captured against ${GHL_AB_PINNED_VERSION}; an unverified upgrade can silently break seed/activate (login bounce). Re-pin via GHL_AB_PINNED_VERSION after re-capturing, or set GHL_AB_ALLOW_VERSION_DRIFT=1 to override. STOP." >&2
+    exit 70
+  fi
+fi
+
 # SINGLETON SESSION: the canonical name is the gateway's single source of truth.
 # Validate the caller's $1 matches it (else exit 64 via bm_assert_session) so no
 # per-iteration session name (the verified 22-distinct-name leak) can slip in.
@@ -363,6 +394,11 @@ echo "$RESULT"
 # IIFE never re-runs. The injector already verified cookie `a` decodes; here we
 # confirm the store accepts it (auth/get returns a user) and land on the app.
 ACTIVATE_TARGET="${GHL_ACTIVATE_PATH:-/}"
+# Pre-encode the target path as a JS/JSON string literal, then plain-interpolate
+# it below (same SAFE pattern as window.__GHL_SEED__ = ${GHL_SEED_JSON}). NOTE:
+# macOS ships /bin/bash 3.2.57 which has NO ${VAR@Q} operator (bad substitution),
+# so @Q must not be used here. python3 is already a hard dependency of this flow.
+ACTIVATE_TARGET_JSON="$(printf '%s' "$ACTIVATE_TARGET" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
 read -r -d '' ACTIVATE_JS <<'AJS' || true
 (async () => {
   // ── LAYER-2 HARDENING: bounded retry around store/router activation ─────────
@@ -427,7 +463,7 @@ read -r -d '' ACTIVATE_JS <<'AJS' || true
 AJS
 
 AB --session "$SESSION" eval --stdin <<EOF >/dev/null
-window.__GHL_ACTIVATE_TARGET__ = ${ACTIVATE_TARGET@Q};
+window.__GHL_ACTIVATE_TARGET__ = ${ACTIVATE_TARGET_JSON};
 EOF
 
 if ! ARESULT="$(AB --session "$SESSION" eval --stdin <<EOF

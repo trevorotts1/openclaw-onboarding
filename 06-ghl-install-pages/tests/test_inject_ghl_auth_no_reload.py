@@ -196,3 +196,55 @@ class TestCorrectActivationPattern:
                 f"NEXT hint mentions 'reload' but not in a prohibition context. "
                 f"Got: {last_echo!r}"
             )
+
+
+# ---------------------------------------------------------------------------
+# TEST GROUP 3: P2-4 agent-browser version-pin guard (fail loud on drift)
+# ---------------------------------------------------------------------------
+class TestVersionPinGuard:
+    """inject-ghl-auth.sh must fail loud when the agent-browser version drifts
+    from the pin, BEFORE the seed, and must offer the documented override."""
+
+    def test_pin_default_present(self):
+        assert "GHL_AB_PINNED_VERSION" in _FULL_TEXT, (
+            "version-pin guard missing GHL_AB_PINNED_VERSION."
+        )
+        assert "0.27.0" in _FULL_TEXT, "pinned agent-browser version 0.27.0 absent."
+
+    def test_refuses_on_drift_with_exit_70(self):
+        # The guard must REFUSE (non-zero) on drift, distinct from existing codes.
+        assert re.search(r"REFUSE:.*version drift", _FULL_TEXT), (
+            "guard must print a REFUSE message on version drift."
+        )
+        assert re.search(r"exit\s+70", _CODE), (
+            "version-pin guard must exit 70 on drift (a code not reused elsewhere)."
+        )
+
+    def test_override_env_documented(self):
+        assert "GHL_AB_ALLOW_VERSION_DRIFT" in _FULL_TEXT, (
+            "operator override GHL_AB_ALLOW_VERSION_DRIFT must exist."
+        )
+
+    def test_guard_runs_before_seed(self):
+        # The guard must appear before the __GHL_SEED__ staging (so a drifted
+        # engine never even opens/seeds). Compare source positions.
+        pin_pos = _FULL_TEXT.find("GHL_AB_PINNED_VERSION")
+        seed_pos = _FULL_TEXT.find("window.__GHL_SEED__")
+        assert pin_pos != -1 and seed_pos != -1
+        assert pin_pos < seed_pos, (
+            "version-pin guard must run BEFORE the seed injection."
+        )
+
+    def test_guard_does_not_open_browser(self):
+        # The guard reads `--version` only; it must not `AB ... open` the browser.
+        # Isolate the guard region and assert no open/navigate within it.
+        start = _CODE.find("GHL_AB_PINNED_VERSION")
+        # The guard block ends where the singleton-session wiring begins
+        # (bm_assert_session). The legitimate --pre-open `AB ... open` happens
+        # AFTER that, so it must fall OUTSIDE the guard region.
+        end = _CODE.find("bm_assert_session", start)
+        region = _CODE[start:end if end != -1 else len(_CODE)]
+        assert "--version" in region, "guard must query agent-browser --version."
+        assert not re.search(r"\bAB\b.*\bopen\b", region), (
+            "version-pin guard must not open the browser."
+        )

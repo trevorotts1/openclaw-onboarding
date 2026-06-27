@@ -140,6 +140,168 @@ def _sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+# ── Copy-fidelity gate (P1-4): approved copy.md tokens MUST render in the DOM ──
+#
+# A page can return HTTP 200 with the marker present yet still ship the WRONG
+# copy (a stale draft, a truncated splice, a placeholder). The marker proves the
+# build ran; it does NOT prove the APPROVED copy actually rendered. This gate
+# asserts that the approved copy tokens are present in the RENDERED preview DOM
+# (visible text, scripts/styles stripped). It is OPT-IN: it fires ONLY when the
+# page carries ``copy_tokens`` (explicit list) or ``copy_md_path`` (approved
+# copy.md to extract tokens from). Pages without copy assertions are unaffected.
+# The live probe (2026-06-27) confirmed the preview render contains the full
+# visible copy for every section, so this is a safe hard gate when tokens exist.
+
+# Minimum visible length of a copy.md line for it to be used as a fidelity token.
+# Short lines (nav words, single labels) are too generic to assert reliably.
+COPY_TOKEN_MIN_CHARS = 12
+
+
+def _strip_to_visible_text(html: str) -> str:
+    """Strip ``<script>/<style>/<template>/<noscript>`` blocks and ALL tags from
+    ``html``, returning collapsed visible text. Used so the copy-fidelity check
+    runs over what a human reads, never over script/style source."""
+    import re
+    if not html:
+        return ""
+    # Drop entire non-visible element blocks (content included), case-insensitive.
+    cleaned = re.sub(
+        r"(?is)<(script|style|template|noscript)\b[^>]*>.*?</\1\s*>",
+        " ",
+        html,
+    )
+    # Strip any remaining tags.
+    cleaned = re.sub(r"(?s)<[^>]+>", " ", cleaned)
+    return cleaned
+
+
+def _normalize_for_match(s: str) -> str:
+    """Lower-case and collapse all whitespace to single spaces for tolerant
+    substring matching (the DOM re-flows whitespace vs the source copy.md)."""
+    import re
+    return re.sub(r"\s+", " ", str(s)).strip().lower()
+
+
+def _strip_markdown_inline(line: str) -> str:
+    """Strip common inline markdown so a copy.md token matches rendered text:
+    heading/list/quote markers, emphasis runs, inline code, and ``[t](url)`` →
+    ``t``. Returns the plain text a reader would see."""
+    import re
+    text = line.strip()
+    # [text](url) -> text  ;  ![alt](url) -> alt
+    text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    # Leading block markers: #, >, -, *, +, 1.  (list/heading/quote)
+    text = re.sub(r"^\s{0,3}(#{1,6}\s+|>\s+|[-*+]\s+|\d+[.)]\s+)", "", text)
+    # Emphasis / code fences: ** __ * _ ` ~~
+    text = re.sub(r"(\*\*|__|\*|_|`+|~~)", "", text)
+    return text.strip()
+
+
+def extract_copy_tokens(copy_md: str, *, min_chars: int = COPY_TOKEN_MIN_CHARS) -> list[str]:
+    """Extract assertable copy tokens from an approved ``copy.md`` body.
+
+    Each non-empty line is markdown-stripped; lines with at least ``min_chars``
+    visible characters become tokens (deduped, order preserved). Code fences and
+    pure-markup/divider lines are skipped. The result is the set of phrases that
+    MUST appear in the rendered preview for the copy to be considered faithful.
+    """
+    if not copy_md:
+        return []
+    tokens: list[str] = []
+    seen: set[str] = set()
+    in_fence = False
+    for raw_line in copy_md.splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        # Skip front-matter / divider / pure-symbol lines.
+        if stripped in ("---", "***", "___") or not stripped:
+            continue
+        text = _strip_markdown_inline(stripped)
+        if len(text) < min_chars:
+            continue
+        key = _normalize_for_match(text)
+        if key and key not in seen:
+            seen.add(key)
+            tokens.append(text)
+    return tokens
+
+
+def find_missing_copy_tokens(rendered_text: str, tokens: list[str]) -> list[str]:
+    """Return the subset of ``tokens`` NOT present in ``rendered_text`` (both
+    normalized: lower-cased, whitespace-collapsed substring match)."""
+    haystack = _normalize_for_match(rendered_text)
+    missing: list[str] = []
+    for t in tokens or []:
+        needle = _normalize_for_match(t)
+        if needle and needle not in haystack:
+            missing.append(t)
+    return missing
+
+
+def _required_copy_tokens(page: dict) -> list[str]:
+    """Resolve the approved copy tokens a page asserts: explicit ``copy_tokens``
+    list takes precedence; otherwise extract from ``copy_md_path`` if present and
+    readable. Returns ``[]`` when the page makes no copy assertion (gate off)."""
+    explicit = page.get("copy_tokens")
+    if isinstance(explicit, list) and explicit:
+        return [str(t) for t in explicit if str(t).strip()]
+    path = page.get("copy_md_path") or page.get("copy_md")
+    if path and isinstance(path, str) and os.path.isfile(path):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                return extract_copy_tokens(f.read())
+        except OSError:
+            return []
+    return []
+
+
+def _resolve_rendered_text(res: dict) -> str:
+    """Get the rendered visible text for a render/fetch result. Prefers an
+    explicit ``rendered_text``/``visible_text`` field; else strips the inline
+    ``dom``/``dom_content``; else reads + strips the captured ``dom_path``
+    file. Returns ``""`` when no rendered evidence is available (fail-closed:
+    no proof the copy rendered)."""
+    for key in ("rendered_text", "visible_text", "rendered_dom_text"):
+        v = res.get(key)
+        if isinstance(v, str) and v:
+            return v
+    for key in ("dom", "dom_content"):
+        v = res.get(key)
+        if isinstance(v, str) and v:
+            return _strip_to_visible_text(v)
+    dom_path = res.get("dom_path")
+    if dom_path and isinstance(dom_path, str) and os.path.isfile(dom_path):
+        try:
+            with open(dom_path, encoding="utf-8", errors="replace") as f:
+                return _strip_to_visible_text(f.read())
+        except OSError:
+            return ""
+    return ""
+
+
+def _copy_fidelity_errors(page: dict, res: dict) -> list[str]:
+    """Return render-error strings for any approved copy tokens MISSING from the
+    rendered DOM. Empty list when the page asserts no copy (gate off) or all
+    tokens render. The returned errors fold into ``render_errors`` so a copy
+    miss forces ``PASS=False`` with no override (same as any render error)."""
+    tokens = _required_copy_tokens(page)
+    if not tokens:
+        return []
+    rendered_text = _resolve_rendered_text(res)
+    missing = find_missing_copy_tokens(rendered_text, tokens)
+    if not missing:
+        return []
+    sample = "; ".join(m[:80] for m in missing[:5])
+    return [
+        f"copy_not_rendered: {len(missing)}/{len(tokens)} approved copy token(s) "
+        f"missing from rendered DOM: {sample}"
+    ]
+
+
 # ── The single real check (one page → one raw record) ────────────────────────
 
 _SENTINEL = object()  # sentinel for unset `live` parameter
@@ -169,6 +331,12 @@ def verify_page(
     The raw record ALWAYS carries ``render_errors``.  A record with
     ``render_errors != []`` or ``http != 200`` is FORCED ``PASS: False``
     regardless of any other field — there is NO override path.
+
+    COPY-FIDELITY (P1-4): if ``page`` carries ``copy_tokens`` (a list of
+    approved copy phrases) or ``copy_md_path`` (an approved copy.md), every such
+    token MUST appear in the RENDERED preview DOM (visible text, scripts/styles
+    stripped).  Any missing token is folded into ``render_errors`` → ``PASS:
+    False``.  Pages with no copy assertion are unaffected (gate is opt-in).
 
     BACKWARD COMPAT: the record also carries ``http_code`` (alias of ``http``)
     and ``marker_in_preview`` (alias of ``marker_in_rendered_dom``) so existing
@@ -236,6 +404,8 @@ def verify_page(
             res = _f(preview_url, marker)
 
         render_errors = list(res.get("render_errors") or [])
+        # P1-4 copy-fidelity: approved copy tokens MUST render (opt-in per page).
+        render_errors += _copy_fidelity_errors(page, res)
         http = res.get("http")
         mird = bool(res.get("marker_in_rendered_dom") or res.get("marker_found"))
         forced_fail = bool(render_errors) or http != 200
@@ -267,6 +437,9 @@ def verify_page(
         preview_url, marker, run_dir=_run_dir, step=step, timeout=45,
     )
     render_errors = list(res.get("render_errors") or [])
+    # P1-4 copy-fidelity: approved copy tokens MUST render in the preview DOM
+    # (opt-in — fires only when the page carries copy_tokens / copy_md_path).
+    render_errors += _copy_fidelity_errors(page, res)
     http = res.get("http")
     mird = bool(res.get("marker_in_rendered_dom"))
     # HARD RULE: render_errors != [] OR http != 200 => PASS:False, no override.
