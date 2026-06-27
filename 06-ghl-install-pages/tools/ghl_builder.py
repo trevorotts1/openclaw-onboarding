@@ -64,7 +64,15 @@ LEDGER_STATES = ["created", "code-saved", "page-saved", "previewed", "published"
 # terminal state (never rewound, never ordered against the page states).
 WORKFLOW_LEDGER_STATE = "wf-rewired"
 
+# MATCH is case-INSENSITIVE (so an already-prefixed 'ZHC'/'zhc'/'Zhc' name is
+# never double-prefixed), but every name this module EMITS uses the canonical
+# UPPERCASE 'ZHC ' prefix exactly as Trevor states it in the transcript
+# ("must carry a ZHC prefix … e.g. ZHC test", ~03:28–03:47). The old code emitted
+# a lowercase 'zhc ' which drifted from the transcript — fixed here.
 ZHC_PREFIX_RE = re.compile(r"^\s*zhc\b", re.IGNORECASE)
+
+# Canonical, transcript-exact provenance prefix (UPPERCASE, trailing space).
+ZHC_PREFIX = "ZHC "
 
 # ── D6: HARD HEADLESS GUARD ──────────────────────────────────────────────────
 # HEADLESS-ONLY — never open a visible window; taking over a screen is forbidden
@@ -148,17 +156,44 @@ def _bracket_plan_with_teardown(plan: dict, session: str | None) -> dict:
 
 # ── ZHC naming (guardrail 2 — carries standing build approval per Skill 44) ──
 
-def ensure_zhc_prefix(name: str) -> str:
-    """Return `name` guaranteed to start with the `zhc` provenance prefix.
-    The prefix is MANDATORY on every funnel / website / step the builder
-    creates — it carries the standing build approval recorded in Skill 44's
-    safety_gate. Refuses to silently drop it."""
+def ensure_zhc_prefix(name: str, order: int | None = None) -> str:
+    """Return `name` guaranteed to start with the canonical UPPERCASE ``ZHC ``
+    provenance prefix. The prefix is MANDATORY on every funnel / website / step
+    the builder creates — it carries the standing build approval recorded in
+    Skill 44's safety_gate. Refuses to silently drop it.
+
+    CASING: the prefix is EMITTED uppercase (``ZHC ``) exactly as Trevor states
+    it ("must carry a ZHC prefix … e.g. ZHC test", transcript ~03:28). Matching
+    stays case-INSENSITIVE so an already-prefixed name ('ZHC'/'zhc'/'Zhc …') is
+    never double-prefixed.
+
+    MULTI-STEP NUMBERING (transcript step 20, ~10:16–10:45): for a multi-step
+    funnel Trevor adds each subsequent step and numbers it ``ZHC part 2`` …
+    ``ZHC part N``. When ``name`` is omitted/blank and an ``order`` (1-based step
+    index) is supplied, this auto-names the step ``ZHC part <order>`` rather than
+    the generic ``ZHC untitled`` — so created multi-step steps carry the exact
+    transcript naming without the caller hand-typing it.
+    """
     name = (name or "").strip()
     if not name:
-        return "zhc untitled"
+        if order is not None and int(order) >= 1:
+            return f"{ZHC_PREFIX}part {int(order)}"
+        return f"{ZHC_PREFIX}untitled"
     if ZHC_PREFIX_RE.match(name):
         return name
-    return f"zhc {name}"
+    return f"{ZHC_PREFIX}{name}"
+
+
+def zhc_step_name(name: str | None, order: int) -> str:
+    """Canonical name for a created funnel/website STEP (transcript step 20).
+
+    A thin, explicit wrapper over ``ensure_zhc_prefix(name, order)`` for the
+    build loop: when the caller supplies a descriptive step name it is
+    ZHC-prefixed; when the name is omitted the step is auto-numbered
+    ``ZHC part <order>`` (the multi-step naming Trevor demonstrates). ``order`` is
+    the 1-based step index within the funnel/website.
+    """
+    return ensure_zhc_prefix(name or "", order)
 
 
 # ── Manifest (A0.4) ──────────────────────────────────────────────────────────
@@ -220,7 +255,9 @@ def build_manifest(funnel_name: str, surface: str, pages: list[dict]) -> dict:
 
         page_entry: dict = {
             "order": i,
-            "name": p.get("name") or f"Step {i}",
+            # Transcript step 20: created steps carry the ZHC prefix; an unnamed
+            # multi-step step is auto-numbered 'ZHC part <i>' (not 'Step i').
+            "name": zhc_step_name(p.get("name"), i),
             "path": path,
             "payload_path": payload_path,
             "mode": mode,
@@ -492,6 +529,319 @@ def may_publish(approval: str | None) -> bool:
         return False
     a = approval.strip().lower()
     return a in ("live", "publish", "yes", "approved", "go", "go ahead", "true")
+
+
+# ── Two-saves invariant (transcript steps 17→18, ~08:31–09:05) ────────────────
+# Trevor is explicit: there are TWO saves and BOTH are required, in order —
+# (1) SAVE the CODE inside the 'Custom Javascript/HTML' modal (gate 17), THEN
+# (2) SAVE the PAGE via the top-right disk icon next to Publish (gate 19).
+# Autosave is OFF in the editor, so a missing 2nd save silently loses the page.
+# In the REST-autosave path the same two end-states are reached and ledgered:
+# the custom-code splice == CODE save (ledger 'code-saved') and the page autosave
+# == PAGE save (ledger 'page-saved'), in that order.
+CODE_SAVE_GATE = 17          # 'Save' inside the 'Custom Javascript/HTML' modal
+PAGE_SAVE_GATE = 19          # top-right disk Save (next to Publish); autosave OFF
+TWO_SAVE_SEQUENCE = ("code-saved", "page-saved")  # required ledger order
+
+
+def emit_two_save_plan(session: str | None = None) -> dict:
+    """Emit the ORDERED two-saves browser sub-plan (transcript steps 17→18).
+
+    Glue-not-clicker: this returns a side-effect-free ordered plan the agent
+    executes against the live editor (it drives no browser itself). The two
+    steps are STRICTLY ORDERED — code save (gate 17) MUST land before page save
+    (gate 19) — and each carries the gates.json find-seed so the agent resolves
+    the live @ref at runtime (NO invented CSS shipped as fact)."""
+    plan = {
+        "plan": "two_saves",
+        "ok": True,
+        "sequence": list(TWO_SAVE_SEQUENCE),
+        "steps": [
+            {
+                "step": "save_code",
+                "order": 1,
+                "gate": CODE_SAVE_GATE,
+                "ledger_target": "code-saved",
+                "find": "find role button name Save (within the 'Custom "
+                        "Javascript/HTML' modal)",
+                "note": "1st SAVE — commit the pasted code inside the code modal "
+                        "(gate 17). Wait for the modal's save confirmation.",
+            },
+            {
+                "step": "save_page",
+                "order": 2,
+                "gate": PAGE_SAVE_GATE,
+                "ledger_target": "page-saved",
+                "find": "find role button name Save | top-right disk icon",
+                "note": "2nd SAVE — the top-right disk Save next to Publish (gate "
+                        "19). Autosave is OFF, so this is REQUIRED. Wait for the "
+                        "save-confirmation toast (never a fixed sleep).",
+            },
+        ],
+    }
+    return _bracket_plan_with_teardown(plan, session)
+
+
+def assert_two_saves(plan: dict) -> dict:
+    """Verify a rest_save plan satisfies the two-saves invariant: the CODE save
+    (ledger 'code-saved', the custom-code splice 'edit' step) lands BEFORE the
+    PAGE save (ledger 'page-saved', the 'page_autosave' step), and BOTH are
+    present. Returns ``{ok, reasons, code_save_step, page_save_step}``; pure
+    (raises nothing) so callers can gate on ``ok``."""
+    targets = plan.get("ledger_targets") or {}
+    step_names = [s.get("step") for s in plan.get("steps", [])]
+    reasons: list[str] = []
+
+    code_step = next((s for s, t in targets.items() if t == "code-saved"), None)
+    # page-saved OR published (a published page also passed through page-save).
+    page_step = next(
+        (s for s, t in targets.items() if t in ("page-saved", "published")), None)
+
+    if code_step is None:
+        reasons.append("missing CODE save (no step maps to ledger 'code-saved')")
+    if page_step is None:
+        reasons.append("missing PAGE save (no step maps to 'page-saved'/'published')")
+    if code_step is not None and page_step is not None:
+        if code_step not in step_names:
+            reasons.append(f"code-save step {code_step!r} not in plan steps")
+        if page_step not in step_names:
+            reasons.append(f"page-save step {page_step!r} not in plan steps")
+        if code_step in step_names and page_step in step_names \
+                and step_names.index(code_step) >= step_names.index(page_step):
+            reasons.append(
+                f"ORDER violation: CODE save ({code_step!r}) must precede PAGE "
+                f"save ({page_step!r})")
+    return {
+        "ok": not reasons,
+        "reasons": reasons,
+        "code_save_step": code_step,
+        "page_save_step": page_step,
+    }
+
+
+# ── SEO / AI-search "Content" panel (transcript §2, ~09:05–10:16) ─────────────
+# Trevor: "content keywords authors and meta links tags and canonical links are
+# added — this is really key." The REST autosave path historically populated
+# NONE of this; this run closes that gap. Every rule below is transcript-derived
+# and hardened with the audit's overlookedImprovements (length caps, canonical
+# format, researched-keywords floor, founder-as-author, explicit language).
+SEO_TITLE_MAX = 60            # title <= 60 chars (search-result truncation)
+SEO_DESC_MAX = 160           # meta description <= 160 chars
+SEO_MIN_DISTINCT_KEYWORDS = 3  # researched-keywords floor (>N distinct, real)
+SEO_DEFAULT_LANGUAGE = "en"  # set explicitly — never inherit the GHL default
+
+# Placeholder/junk tokens that are NEVER a real keyword, author, or value. A
+# build that leaves any of these in the SEO panel is unfinished — HARD FAIL.
+_SEO_PLACEHOLDER_TOKENS: frozenset[str] = frozenset({
+    "", "todo", "tbd", "to do", "placeholder", "lorem", "ipsum", "keyword",
+    "keywords", "example", "sample", "xxx", "xxxx", "n/a", "na", "none", "null",
+    "test", "foo", "bar", "your keyword", "your keywords", "add keywords",
+    "founder", "founder name", "your name", "brand", "brand name", "author",
+    "description", "title", "company", "your company",
+})
+
+# Hosts that must NEVER appear in a canonical URL: a canonical pointing at a
+# storage/CDN bucket (Firebase, Google Cloud Storage, msgsndr) is a build bug —
+# the canonical is the page's own preview/live domain, not where an asset lives.
+_FORBIDDEN_CANONICAL_HOST_FRAGMENTS: tuple[str, ...] = (
+    "storage.googleapis.com", "firebasestorage", "firebaseapp.com",
+    "appspot.com", "msgsndr", "googleusercontent.com",
+)
+
+
+class SeoValidationError(ValueError):
+    """Raised when the SEO panel inputs do not meet the transcript end-state.
+    A ValueError subclass so existing ``except ValueError`` callers still catch
+    it; the build loop treats it as a HALT (the page is not done)."""
+
+
+def _is_placeholder_token(value: str) -> bool:
+    return (value or "").strip().lower() in _SEO_PLACEHOLDER_TOKENS
+
+
+def validate_founder_name(founder_name: str | None, *, brand: str | None = None) -> str:
+    """P0 pre-flight gate: the SEO ``author`` MUST be the FOUNDER's name
+    (transcript §2 — "author MUST be the name of the FOUNDER"). The founder name
+    is a REQUIRED build-time input that must be SOURCED from the client / GHL
+    location record — never free-typed or fabricated (never-fabricate rule).
+
+    HALT (raise ``SeoValidationError``) when the founder name is missing, a
+    placeholder, or equal to the brand (so author can never silently default to
+    the brand or blank). Returns the cleaned founder name on success."""
+    name = (founder_name or "").strip()
+    if not name:
+        raise SeoValidationError(
+            "HALT (P0): founder_name is REQUIRED — it is the SEO author and a "
+            "pre-flight build input sourced from the client / GHL location "
+            "record (NEVER free-typed). Re-run with founder_name set.")
+    if _is_placeholder_token(name):
+        raise SeoValidationError(
+            f"HALT (P0): founder_name {name!r} is a placeholder, not a real "
+            "founder name. Source it from the client / GHL location record.")
+    if brand and name.strip().lower() == brand.strip().lower():
+        raise SeoValidationError(
+            f"HALT (P0): SEO author {name!r} equals the brand — the author MUST "
+            "be the FOUNDER's personal name, not the brand/company name.")
+    return name
+
+
+def _clean_keywords(keywords) -> list[str]:
+    """Researched-keywords gate: return a DISTINCT, non-placeholder keyword list
+    (case-insensitive de-dup, original order). Accepts a list or a
+    comma/newline-separated string. HALT when fewer than
+    ``SEO_MIN_DISTINCT_KEYWORDS`` real keywords survive (placeholders/blanks do
+    not count) — the transcript demands RESEARCHED keywords, not filler."""
+    if isinstance(keywords, str):
+        items = re.split(r"[,\n]", keywords)
+    else:
+        items = list(keywords or [])
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for k in items:
+        k = (k or "").strip()
+        if not k or _is_placeholder_token(k):
+            continue
+        key = k.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(k)
+    if len(cleaned) < SEO_MIN_DISTINCT_KEYWORDS:
+        raise SeoValidationError(
+            f"HALT: researched-keywords gate — need >= {SEO_MIN_DISTINCT_KEYWORDS} "
+            f"distinct, non-placeholder keywords; got {len(cleaned)} ({cleaned}). "
+            "Use real keyword research, not placeholders.")
+    return cleaned
+
+
+def _validate_canonical(canonical_url: str, expected_host: str | None = None) -> str:
+    """Canonical-URL format gate: must be an ABSOLUTE ``https://`` URL with a real
+    host that is NOT a storage/CDN bucket. When ``expected_host`` is given, the
+    canonical host must match the intended preview/live domain (www-insensitive).
+    Returns the canonical on success; HALT otherwise."""
+    from urllib.parse import urlparse
+    url = (canonical_url or "").strip()
+    if not url:
+        raise SeoValidationError("HALT: canonicalUrl is empty (transcript: 'really key').")
+    p = urlparse(url)
+    if p.scheme != "https":
+        raise SeoValidationError(
+            f"HALT: canonicalUrl must be absolute https:// (got {url!r}).")
+    if not p.netloc:
+        raise SeoValidationError(f"HALT: canonicalUrl has no host (got {url!r}).")
+    host = p.netloc.lower()
+    for frag in _FORBIDDEN_CANONICAL_HOST_FRAGMENTS:
+        if frag in host:
+            raise SeoValidationError(
+                f"HALT: canonicalUrl host {host!r} is a storage/CDN URL, not the "
+                "page's own preview/live domain.")
+    if expected_host:
+        eh = expected_host.lower().removeprefix("www.")
+        if host.removeprefix("www.") != eh:
+            raise SeoValidationError(
+                f"HALT: canonicalUrl host {host!r} != intended domain "
+                f"{expected_host!r}.")
+    return url
+
+
+def build_seo_meta(
+    *,
+    title: str,
+    description: str,
+    keywords,
+    founder_name: str,
+    canonical_url: str,
+    og_image: str,
+    language: str = SEO_DEFAULT_LANGUAGE,
+    expected_host: str | None = None,
+    brand: str | None = None,
+    links: list | None = None,
+    tags: list | None = None,
+) -> dict:
+    """Build the validated page ``seoMeta`` object for the SEO/AI-search panel
+    (transcript §2). PURE: validates every field and HALTs (``SeoValidationError``)
+    on any violation; makes NO network call (the ogImage HTTP-200 re-verify is
+    emitted as a plan step expectation, not performed here — same glue-not-clicker
+    boundary as the rest of this module).
+
+    Fields + gates (all transcript-derived, hardened by the audit):
+      * ``title``        — non-empty, <= 60 chars.
+      * ``description``  — non-empty, <= 160 chars.
+      * ``keywords``     — >= 3 distinct, non-placeholder (researched).
+      * ``author``       — := founder_name (P0 founder gate; never brand/blank).
+      * ``canonicalUrl`` — absolute https, real host (not storage/CDN; optional
+                           host-match to the preview/live domain).
+      * ``ogImage``      — absolute https URL (HTTP-200 re-verify is a plan step).
+      * ``language``     — explicit (default 'en'), never the GHL default.
+      * ``links`` / ``tags`` — passthrough lists (transcript: "links tags").
+    """
+    title = (title or "").strip()
+    description = (description or "").strip()
+    author = validate_founder_name(founder_name, brand=brand)  # P0 HALT
+
+    if not title:
+        raise SeoValidationError("HALT: seo title is empty.")
+    if len(title) > SEO_TITLE_MAX:
+        raise SeoValidationError(
+            f"HALT: seo title is {len(title)} chars (> {SEO_TITLE_MAX}).")
+    if not description:
+        raise SeoValidationError("HALT: seo description is empty.")
+    if len(description) > SEO_DESC_MAX:
+        raise SeoValidationError(
+            f"HALT: seo description is {len(description)} chars (> {SEO_DESC_MAX}).")
+
+    kw = _clean_keywords(keywords)
+    canon = _validate_canonical(canonical_url, expected_host)
+
+    og = (og_image or "").strip()
+    if not og:
+        raise SeoValidationError("HALT: ogImage is empty (transcript: add images).")
+    if not og.lower().startswith("https://"):
+        raise SeoValidationError(
+            f"HALT: ogImage must be an absolute https URL (got {og!r}).")
+
+    lang = (language or "").strip() or SEO_DEFAULT_LANGUAGE
+
+    return {
+        "title": title,
+        "description": description,
+        "keywords": kw,
+        "author": author,
+        "canonicalUrl": canon,
+        "ogImage": og,
+        "language": lang,
+        "links": list(links or []),
+        "tags": list(tags or []),
+    }
+
+
+def assert_seo_populated(seo_meta: dict | None, *, brand: str | None = None) -> dict:
+    """End-state gate for the QC scorers (qc-built-funnel.sh /
+    qc-ghl-install-pages.sh): re-assert that a saved ``seoMeta`` is fully
+    populated to the transcript bar. Returns ``{ok, reasons}`` (pure — never
+    raises) so a QC script can score it without crashing. ``ok=False`` means the
+    SEO §2 end-state was NOT reached (FAB-QC must not score it >= 8.5)."""
+    reasons: list[str] = []
+    if not isinstance(seo_meta, dict) or not seo_meta:
+        return {"ok": False, "reasons": ["seoMeta is absent/empty"]}
+    try:
+        build_seo_meta(
+            title=seo_meta.get("title", ""),
+            description=seo_meta.get("description", ""),
+            keywords=seo_meta.get("keywords", []),
+            founder_name=seo_meta.get("author", ""),
+            canonical_url=seo_meta.get("canonicalUrl", ""),
+            og_image=seo_meta.get("ogImage", ""),
+            language=seo_meta.get("language", SEO_DEFAULT_LANGUAGE),
+            brand=brand,
+        )
+    except SeoValidationError as exc:
+        reasons.append(str(exc))
+    if (seo_meta.get("language") or "").strip().lower() != SEO_DEFAULT_LANGUAGE:
+        reasons.append(
+            f"language must be explicitly {SEO_DEFAULT_LANGUAGE!r} "
+            f"(got {seo_meta.get('language')!r})")
+    return {"ok": not reasons, "reasons": reasons}
 
 
 # ── Marker-string verification (A12.2 / A13.3 / C3) ───────────────────────────
@@ -812,6 +1162,7 @@ def emit_rest_save_plan(
     approval: str | None = None,
     token_js_path: str = "/tmp/ghl-token.js",
     session: str | None = None,
+    seo: dict | None = None,
 ) -> dict:
     """Emit the ordered REST-autosave plan (read→splice→autosave→verify→revert
     baseline), per solution §5.2. The steps the agent runs IN-BROWSER, in order:
@@ -877,6 +1228,15 @@ def emit_rest_save_plan(
     # inside edit_element_customcode), so it stays the pristine revert baseline.
     edited = rc.edit_element_customcode(page_data, locator, new_value)
 
+    # SEO §2 (transcript ~09:05–10:16): when a `seo` spec is supplied, build the
+    # validated seoMeta now (HALTs on any unmet gate) and splice it into the
+    # EDITED blob so the autosave carries the SEO end-state. The pristine
+    # `page_data` baseline is untouched (revert remains byte-identical to the
+    # original, which by design did NOT carry our seoMeta).
+    seo_meta = build_seo_meta(**seo) if seo is not None else None
+    if seo_meta is not None:
+        edited["seoMeta"] = seo_meta
+
     # 1. Stage the JWT via a python-WRITTEN JS file (NEVER bash ${VAR@Q}).
     stage_step = {
         "step": "stage_token",
@@ -917,7 +1277,7 @@ def emit_rest_save_plan(
         current_page_version=page_version, session=session, _skip_gate=True,
     )
 
-    steps = [stage_step, read_step, {
+    edit_step = {
         "step": "edit",
         "action": "edit_element_customcode",
         "locator": locator,
@@ -925,9 +1285,45 @@ def emit_rest_save_plan(
         "marker_in_value": marker in new_value,
         "note": "pure JSON splice of sections[s].elements[e].extra.customCode."
                 "value.rawCustomCode; pristine baseline preserved for revert",
-    }, save_step, verify_step, revert_plan["steps"][0]]
+    }
 
-    return _bracket_plan_with_teardown({
+    steps = [stage_step, read_step, edit_step, save_step]
+
+    # SEO step (ordered AFTER the page autosave — transcript fills the SEO/Content
+    # panel after the two saves). Carries the validated seoMeta the autosave
+    # already persisted, plus the ogImage HTTP-200 re-verify as a step EXPECTATION
+    # (reuse §3 asset-cdn re-verify — performed by the agent, not in this pure
+    # builder). Only emitted when a `seo` spec is supplied, so the default plan
+    # shape (no SEO) is unchanged.
+    if seo_meta is not None:
+        steps.append({
+            "step": "seo_apply",
+            "action": "seo_meta_populated",
+            "seo_meta": seo_meta,
+            "expect": {
+                "seo_populated": True,
+                "author_is_founder": True,
+                "language": seo_meta["language"],
+                "title_max": SEO_TITLE_MAX,
+                "description_max": SEO_DESC_MAX,
+                "og_image_http_200": seo_meta["ogImage"],
+                "canonical_https": seo_meta["canonicalUrl"],
+            },
+            "note": "SEO/AI-search Content panel end-state (transcript §2): "
+                    "title/description/keywords/author(=founder)/canonical/"
+                    "ogImage/language populated. ogImage must re-verify HTTP 200 "
+                    "(reuse the §3 asset-cdn re-verify) before it is accepted.",
+        })
+
+    steps += [verify_step, revert_plan["steps"][0]]
+
+    ledger_targets = {
+        "page_autosave": "published" if publish else "page-saved",
+        "edit": "code-saved",
+        "verify_preview": "previewed",
+    }
+
+    plan = {
         "plan": "rest_save",
         "ok": True,
         "publish": publish,
@@ -938,12 +1334,15 @@ def emit_rest_save_plan(
         "steps": steps,
         # Map each LANDED step to the ledger state it proves (the build loop
         # writes these as it confirms each step). 'published' only when publish.
-        "ledger_targets": {
-            "page_autosave": "published" if publish else "page-saved",
-            "edit": "code-saved",
-            "verify_preview": "previewed",
-        },
-    }, session)
+        "ledger_targets": ledger_targets,
+    }
+    if seo_meta is not None:
+        plan["seo"] = seo_meta
+    # Self-verify the two-saves invariant (CODE save before PAGE save) — the REST
+    # path's edit(code-saved) → page_autosave(page-saved) maps the transcript's
+    # two ordered saves. Attached for the build loop / QC to assert on.
+    plan["two_saves"] = assert_two_saves(plan)
+    return _bracket_plan_with_teardown(plan, session)
 
 
 def emit_workflow_rewire_plan(
@@ -1157,6 +1556,13 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("zhc"); p.add_argument("name")
+    p.add_argument("--order", type=int, default=None,
+                   help="1-based step index; an omitted/blank name auto-names the step 'ZHC part <order>'")
+    # SEO §2: validate a seoMeta spec (JSON of build_seo_meta kwargs incl. founder_name).
+    p = sub.add_parser("seo-check", help="validate a SEO spec (transcript §2); exit 0 = populated, 1 = HALT")
+    p.add_argument("spec_path"); p.add_argument("--brand", default=None)
+    # Two-saves browser sub-plan (transcript steps 17->18: save CODE then PAGE).
+    sub.add_parser("two-saves", help="emit the ordered two-saves browser sub-plan (gate 17 code save -> gate 19 page save)")
     p = sub.add_parser("verify"); p.add_argument("url"); p.add_argument("marker")
     p = sub.add_parser("ledger-write")
     for a in ("run_id", "funnel", "step", "state"):
@@ -1200,7 +1606,19 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.cmd == "zhc":
-        print(ensure_zhc_prefix(args.name)); return 0
+        print(ensure_zhc_prefix(args.name, args.order)); return 0
+    if args.cmd == "seo-check":
+        spec = json.load(open(args.spec_path))
+        try:
+            seo_meta = build_seo_meta(brand=args.brand, **spec)
+        except SeoValidationError as e:
+            print(json.dumps({"ok": False, "reason": str(e)}, indent=2)); return 1
+        res = assert_seo_populated(seo_meta, brand=args.brand)
+        print(json.dumps({"ok": res["ok"], "seo_meta": seo_meta,
+                          "reasons": res["reasons"]}, indent=2))
+        return 0 if res["ok"] else 1
+    if args.cmd == "two-saves":
+        print(json.dumps(emit_two_save_plan(), indent=2)); return 0
     if args.cmd == "verify":
         res = verify_url(args.url, args.marker)
         print(json.dumps(res)); return 0 if res["ok"] else 1

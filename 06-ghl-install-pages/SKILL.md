@@ -9,7 +9,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "7.2.9"
+  version: "7.3.0"
   priority: HIGH
 ---
 
@@ -167,23 +167,43 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
 ## Files in This Folder (Reading Order)
 
 1. **SKILL.md** - You are here. Start with this file.
-2. **ghl-browser-builder-full.md** - The v3.0 hardened reference: agent-browser
+2. **references/ghl-build-spec-from-transcript.md** — **THE CANONICAL BUILD
+   RECIPE (authoritative).** Trevor's official walkthrough transcript, distilled
+   into the exact ordered steps every funnel/website build must follow: Sites →
+   Funnels → ZHC-named new funnel → step → Create-from-blank → close Ask AI →
+   Code Block → **Allow Rows to take entire width (full width)** → paste (naked
+   HTML or Vercel embed) → **two saves (CODE then PAGE)** → **SEO/AI-search
+   Content panel** → next step. Also pins the **media-storage folder discipline**
+   (§3), the **founder-as-SEO-author** rule (§2), and the naked-HTML-vs-Vercel
+   decision (§6). **Read this BEFORE `v2-autonomous-build-sop.md` and
+   `tools/gates.json`** — where the autonomous REST path and the transcript
+   disagree on *coverage*, the transcript wins on *what must be true at the end*;
+   the REST path must reach the same end-state.
+3. **ghl-browser-builder-full.md** - The v3.0 hardened reference: agent-browser
    engine, auth seeding, the 28-gate runtime contract, the full funnel +
    website + Mode-2 iframe flows, and the ledger/resume mechanics. Read this
    when you are actually about to deploy pages.
-3. **tools/** - The code:
+4. **tools/** - The code:
    - `seed-ghl-auth.py` - mints a Firebase ID token + browser auth seed (D7).
    - `inject-ghl-auth.sh` - writes the seed into the browser's IndexedDB.
-   - `ghl_builder.py` - manifest, per-page ledger/resume, ZHC prefix, sub-account
-     gate, publish guard, marker-string verify, runtime-gate loader.
+   - `ghl_builder.py` - manifest, per-page ledger/resume, ZHC prefix (UPPERCASE
+     `ZHC `) + multi-step `ZHC part N` naming, sub-account gate, publish guard,
+     marker-string verify, the SEO panel builder (`build_seo_meta`,
+     `validate_founder_name`, `assert_seo_populated`), and the runtime-gate loader.
+   - `ghl_rest_canvas.py` - the page-blob splice + REST autosave, incl. the §2
+     `seoMeta` path (`build_seo_meta`, `set_page_seo`, `page_seo_autosave`).
+   - `ghl_media.py` - media-storage: image upload, `create_media_folder`, and the
+     **folder-per-funnel** wiring (`ensure_funnel_media_folders` /
+     `funnel_media_folder_plan`) — `services.*` + Bearer LOCATION-PIT, **never
+     browser-routed**.
    - `gates.json` - the 28-gate registry (2 captured, 26 runtime snapshot-gates).
-4. **ghl-install-pages-full.md** - LEGACY v2.0 raw-Playwright reference, kept for
+5. **ghl-install-pages-full.md** - LEGACY v2.0 raw-Playwright reference, kept for
    historical click-path detail only. Superseded by ghl-browser-builder-full.md.
-5. **INSTRUCTIONS.md** - Operational quick-start.
-6. **INSTALL.md** - Installation steps if any tools are missing.
-7. **EXAMPLES.md** - Example deployments and common scenarios.
-8. **CORE_UPDATES.md** - What to add to AGENTS.md, TOOLS.md, and MEMORY.md.
-9. **references/client-facing-phrasebook.md** - MANDATORY translation layer.
+6. **INSTRUCTIONS.md** - Operational quick-start.
+7. **INSTALL.md** - Installation steps if any tools are missing.
+8. **EXAMPLES.md** - Example deployments and common scenarios.
+9. **CORE_UPDATES.md** - What to add to AGENTS.md, TOOLS.md, and MEMORY.md.
+10. **references/client-facing-phrasebook.md** - MANDATORY translation layer.
    Maps every engineer term (funnel, embed, draft, preview URL, HTTP, Firebase,
    iframe, px, etc.) to the plain 7th-grade word the agent must use when
    messaging the client. Also contains the four client delivery templates:
@@ -238,8 +258,42 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
   (ghl_builder.py subaccount). Wrong sub-account = the client never sees pages.
   REFUSE on mismatch.
 - Default to Funnels, not Websites, unless the user specifically says Website.
-- Every funnel/website/step name MUST carry the `zhc` prefix (standing build
-  approval) — use ghl_builder.py ensure_zhc_prefix.
+- Every funnel/website/step name MUST carry the **UPPERCASE `ZHC ` prefix**
+  (transcript casing — "must carry a ZHC prefix … e.g. ZHC test"; standing build
+  approval) — use `ghl_builder.ensure_zhc_prefix`. The match is case-insensitive
+  (an existing `zhc`/`Zhc` is honored, never double-prefixed) but new names are
+  EMITTED uppercase. Multi-step funnels auto-number each created step
+  **`ZHC part 2` … `ZHC part N`** via `ghl_builder.zhc_step_name(name, order)`
+  when no step name is supplied.
+- **MEDIA STORAGE = MEDIA LIBRARY (same thing).** Trevor uses both names for the
+  one area; treat them as identical. Discipline (transcript §3): **one clearly-
+  named folder per funnel/website, with per-page subfolders as needed.** Create
+  them with `ghl_media.ensure_funnel_media_folders(...)` (which calls
+  `create_media_folder` on the `services.*` + Bearer **LOCATION**-PIT path), then
+  **upload → GHL returns a CDN link → reference THAT media-storage link in the
+  HTML.** **NO browser control for media storage** — folders/uploads go via the
+  GHL API / official MCP / community MCP / Skill 44, NEVER by driving the page
+  builder UI. Fail-soft: if the plan has no folder endpoint, the wrapper groups
+  by `media_folder_name_prefix` instead (still findable). "Grocery-shopping"
+  rule: pre-build forms/calendars/tags/workflows (Skill 44) BEFORE the page.
+- **SEO / AI-search "Content" panel is a REQUIRED build phase, not optional**
+  (transcript §2). After the two saves, populate it: description/metadata,
+  **researched** keywords (≥3 distinct, no placeholders), images, links/tags,
+  canonical link (absolute `https`, the page's own preview/live domain — NEVER a
+  Firebase/storage URL), language **explicitly `en`**, and **author = the
+  FOUNDER's name**. The founder name is a **REQUIRED pre-flight input sourced
+  from the client / GHL location record (never free-typed)** — the build HALTs if
+  it is absent (`ghl_builder.validate_founder_name`). `seoMeta` rides inside the
+  `pageData` autosave (`ghl_builder.build_seo_meta` →
+  `ghl_rest_canvas.set_page_seo` / `page_seo_autosave`); it is emitted as an
+  ordered save step AFTER the page save and gated populated.
+- **Naked HTML vs Vercel embed (transcript §6).** DEFAULT = **naked HTML** (a
+  straight HTML fragment written for the GHL code-block area). Escalate to a
+  **Vercel embed** only when the page has rich features the code block can't
+  render — build/host on Vercel, then paste the embed link into the code editor
+  (this is the §2.05 classifier's `ADVANCED → VERCEL_EMBED` path; `SIMPLE` stays
+  DIRECT). Do NOT pre-ban `<iframe>` on a guess — the Vercel-embed workflow
+  presupposes it renders; the live iframe/strip probe (harden run) settles it.
 - NEVER hardcode invented CSS for an in-app control. Snapshot the live DOM and
   pick the ref at runtime (the 26 runtime gates in tools/gates.json).
 - Set large HTML payloads via the code-editor value API (eval), never key-by-key.

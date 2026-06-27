@@ -305,6 +305,19 @@
     }
   ],
 
+  "full_width_alt_route_show_settings": {
+    "_doc": "ALTERNATE PRIOR (transcript-derived) to gate 14 (full_width_toggle). This is NOT a member of the 28-entry `gates` array and does NOT affect the captured=2/runtime=26 counts the install QC asserts — it is a distinct, snapshot-first PRIOR documenting the EASIER second route to the same 'Allow Rows to take entire width' toggle. The harden run owns gate 14's selector priors; this entry is added alongside, not in place of them.",
+    "alt_to_gate": 14,
+    "spec": "A9.1b / transcript step 13b",
+    "status": "runtime",
+    "label": "Show settings / Hide settings icon — directly UNDER the Publish button (top-right). Opens the Sections area -> select 'Allow Rows to take entire width'.",
+    "label_source": "still-runtime-snapshot",
+    "find": "find text 'Show settings' (top-right, under the Publish button) | find text 'Hide settings' | find role button name 'Show settings' -> in the Sections panel that opens, find text 'Allow Rows to take entire width'",
+    "transcript_ref": "Trevor: 'an update, an easier way' (~12:06-12:26; repeated for websites ~18:10-18:25). Source: references/ghl-build-spec-from-transcript.md step 13b (source=transcript, ownedByHarden=true for the toggle DEFAULT itself).",
+    "verify_by": "TOGGLE STATE (on), not label text alone — same end-state as gate 14. Resolve the live @ref at runtime; snapshot-first (no screenshot captured for this route yet, so this is a hint/prior, not confirmed CSS).",
+    "note": "PREFER this route when present: the Show settings / Hide settings icon under Publish is the newer, easier path to the full-width toggle. If absent, fall back to gate 14 (click the GREEN section box -> right-hand Sections panel). Both reach 'Allow Rows to take entire width' which MUST be ON (full width) — OFF/default condenses the content to the middle of the page."
+  },
+
   "_enforcement_gates": {
     "_doc": "Build-enforcement gates — these are NOT DOM-selector gates (they do not appear in the 'gates' array and do not affect the captured=2/runtime=26 counts). They are POLICY gates that a build must satisfy before it can be marked done. Each entry has 'required':true (hard gate — build is blocked on failure) or 'required':false (warn-only). These gates are checked by guard scripts in 06-ghl-install-pages/scripts/ and by ghl_gate.py (the authoritative pass reader). They were added 2026-06-26 in response to the pre-flight fabrication incident: a run hand-wrote ledger.json to claim PASS when the machine had recorded FAIL on every page. The guards make that bypass structurally impossible.",
     "_added": "2026-06-26",

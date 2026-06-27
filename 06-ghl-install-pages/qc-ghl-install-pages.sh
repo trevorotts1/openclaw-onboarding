@@ -105,6 +105,28 @@ else
     "[ -f \"$GUARD_VU\" ]"
 fi
 
+# ── Transcript build-recipe coverage (SEO panel + founder author + media folder
+# discipline + ZHC casing). These are the §2/§3 end-state contracts the build must
+# reach — assert the code that enforces them is present so a regression can't ship.
+assert "Canonical transcript build-recipe present" \
+  "[ -f \"$SK/references/ghl-build-spec-from-transcript.md\" ]"
+assert "SKILL.md surfaces the canonical transcript recipe in reading order" \
+  "grep -q 'ghl-build-spec-from-transcript.md' \"$SK/SKILL.md\""
+assert "SEO panel builder present (build_seo_meta + founder author + populated gate)" \
+  "python3 -c \"import sys;sys.path.insert(0,'$SK/tools');import ghl_builder as b;assert all(hasattr(b,n) for n in ('build_seo_meta','validate_founder_name','assert_seo_populated'))\""
+assert "emit_rest_save_plan accepts a 'seo' spec (SEO is an ordered save step)" \
+  "python3 -c \"import sys,inspect;sys.path.insert(0,'$SK/tools');import ghl_builder as b;assert 'seo' in inspect.signature(b.emit_rest_save_plan).parameters\""
+assert "page seoMeta splice present in ghl_rest_canvas (set_page_seo/page_seo_autosave)" \
+  "python3 -c \"import sys;sys.path.insert(0,'$SK/tools');import ghl_rest_canvas as c;assert all(hasattr(c,n) for n in ('build_seo_meta','set_page_seo','page_seo_autosave','assert_seo_populated'))\""
+assert "ZHC prefix EMITS uppercase 'ZHC ' (transcript casing)" \
+  "python3 -c \"import sys;sys.path.insert(0,'$SK/tools');import ghl_builder as b;assert b.ensure_zhc_prefix('test').startswith('ZHC ')\""
+assert "Multi-step auto-naming 'ZHC part N' present" \
+  "python3 -c \"import sys;sys.path.insert(0,'$SK/tools');import ghl_builder as b;assert b.zhc_step_name(None,2)=='ZHC part 2'\""
+assert "Founder name is fail-closed (real name passes; placeholder/blank HALTs)" \
+  "python3 -c \"import sys;sys.path.insert(0,'$SK/tools');import ghl_builder as b;assert b.validate_founder_name('Jane Maker')=='Jane Maker' and b._is_placeholder_token('placeholder') and b._is_placeholder_token('')\""
+assert "Media folder-per-funnel wiring present (ensure_funnel_media_folders, never browser-routed)" \
+  "python3 -c \"import sys;sys.path.insert(0,'$SK/tools');import ghl_media as m;assert hasattr(m,'ensure_funnel_media_folders') and hasattr(m,'funnel_media_folder_plan')\""
+
 echo ""
 echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings ═══"
 [ $FAIL -gt 0 ] && { red "Skill 06 QC FAILED"; exit 1; } || { green "Skill 06 QC PASS"; exit 0; }

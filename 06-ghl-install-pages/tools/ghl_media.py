@@ -847,6 +847,118 @@ def create_media_folder(
     return {"folderId": folder_id, "name": name, "http": int(code)}
 
 
+# ── 3c) folder-per-funnel media discipline (transcript §3, ~01:14–02:42) ──────
+#
+# Trevor's media-storage rule: ONE clearly-named folder PER funnel/website, with
+# SUBFOLDERS as needed — "clear organization is the main point." NO browser
+# control for media storage; folders are made via this services.* + Bearer-PIT
+# path (API / MCP / Skill 44), never by driving the page builder UI. The funnel's
+# images then live grouped under that one folder, and each page's assets can land
+# in a per-page subfolder, so a built funnel's media is findable and shareable.
+
+def funnel_media_folder_plan(funnel_name: str, page_names: list[str] | None = None) -> dict:
+    """PURE planner for the folder-per-funnel structure (no I/O, no network).
+
+    Returns the intended media-storage layout for a funnel/website:
+    one top-level folder named after the (ZHC-prefixed) funnel, plus an optional
+    per-page subfolder for each page. Names are passed through verbatim (the
+    builder already ZHC-prefixes them); ``ensure_funnel_media_folders`` is the
+    side-effecting counterpart that actually creates them.
+
+    Args:
+        funnel_name: The funnel/website name (already ZHC-prefixed by the builder).
+        page_names: Optional per-page names → one subfolder each (blank/dupes dropped).
+
+    Returns:
+        ``{"folder": <funnel folder name>, "subfolders": [<page subfolder names>]}``.
+    """
+    _require(funnel_name, "funnel_name")
+    folder = funnel_name.strip()
+    subs: list[str] = []
+    seen: set[str] = set()
+    for p in (page_names or []):
+        name = str(p).strip()
+        if not name or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        subs.append(name)
+    return {"folder": folder, "subfolders": subs}
+
+
+def ensure_funnel_media_folders(
+    funnel_name: str,
+    location_id: str,
+    pit: str,
+    *,
+    page_names: list[str] | None = None,
+    timeout: int = 60,
+    opener: Callable[[urllib.request.Request, int], Any] | None = None,
+) -> dict:
+    """Create ONE media folder for a funnel/website (+ optional per-page subfolders).
+
+    The transcript §3 discipline made operable: a single named funnel folder via
+    ``create_media_folder`` on the ``services.*`` + Bearer-LOCATION-PIT path (NOT
+    browser-routed), then each page's subfolder nested under it (``parentId`` =
+    the funnel folder id). FAIL-SOFT: if the GHL plan does not expose the folder
+    endpoint (``create_media_folder`` raises ``RuntimeError``), the funnel still
+    stays organized via the ``media_folder_name_prefix`` fallback — each image's
+    ``name`` is prefixed with the funnel slug (and per-page slug) instead. Media
+    upload then passes ``parent_id`` (real folder) OR the name prefix (fallback).
+
+    Args:
+        funnel_name: The funnel/website name (already ZHC-prefixed by the builder).
+        location_id: The GHL sub-account location id.
+        pit: The LOCATION Private Integration Token (Bearer, ``medias.write``).
+        page_names: Optional per-page names → one subfolder each.
+        timeout / opener: forwarded to ``create_media_folder`` (opener for tests).
+
+    Returns:
+        ``{"mode": "folders"|"name-prefix", "funnel": {...}, "pages": {<page>: {...}},
+        "browser_routed": False}``. In ``folders`` mode each entry carries a real
+        ``folderId`` (pass as ``upload_media(parent_id=...)``). In ``name-prefix``
+        mode each entry carries a ``name_prefix`` (prepend to each file ``name``).
+    """
+    _require(funnel_name, "funnel_name")
+    _require(location_id, "location_id")
+    _require(pit, "pit")
+    plan = funnel_media_folder_plan(funnel_name, page_names)
+
+    try:
+        funnel_folder = create_media_folder(
+            plan["folder"], location_id, pit, timeout=timeout, opener=opener
+        )
+    except RuntimeError:
+        # Endpoint unavailable on this plan → name-prefix fallback (still grouped).
+        pages_pfx = {
+            sub: {"name_prefix": media_folder_name_prefix(f"{plan['folder']} {sub}")}
+            for sub in plan["subfolders"]
+        }
+        return {
+            "mode": "name-prefix",
+            "funnel": {"name_prefix": media_folder_name_prefix(plan["folder"])},
+            "pages": pages_pfx,
+            "browser_routed": False,
+        }
+
+    pages: dict[str, dict] = {}
+    for sub in plan["subfolders"]:
+        try:
+            pages[sub] = create_media_folder(
+                sub, location_id, pit,
+                parent_id=funnel_folder["folderId"], timeout=timeout, opener=opener,
+            )
+        except RuntimeError:
+            # A subfolder failure is non-fatal: keep the funnel folder, prefix the page.
+            pages[sub] = {"name_prefix": media_folder_name_prefix(f"{plan['folder']} {sub}")}
+
+    return {
+        "mode": "folders",
+        "funnel": funnel_folder,
+        "pages": pages,
+        "browser_routed": False,
+    }
+
+
 # ── 4) in-page <img> snippet + the images/manifest.json output contract ───────
 
 def image_tag(cdn_url: str, alt: str = "") -> str:
@@ -949,6 +1061,8 @@ __all__ = [
     "upload_media",
     "create_media_folder",
     "media_folder_name_prefix",
+    "funnel_media_folder_plan",
+    "ensure_funnel_media_folders",
     "image_tag",
     "build_image_manifest",
 ]
