@@ -36,6 +36,7 @@
 - **Network marketing, MLM funnels, duplication** → `brunson-network-marketing-secrets` (Russell Brunson) [+APPENDIX] → `marketing-dept/`
 - **Lead funnels, opt-in sequences, list building** → `russell-brunson-lead-funnels` (Russell Brunson) [+APPENDIX] → `marketing-dept/`
 - **Funnel-type selection, page sequencing, funnel recipes (22 types), order-bump/OTO/thank-you builds, funnel stacking** → `russell-brunson-the-funnel-hackers-cookbook` (Russell Brunson) [+APPENDIX] → `web-development-dept/`
+- **Challenge funnels, 5-day challenges, launches, challenge registration/VIP/Stack-&-Close, tiny challenges, Big-Idea/Micro-Niche/Movement** → `pedro-adao-challenge-secrets-masterclass` (Pedro Adao) [+APPENDIX] → `marketing-dept/` + `launch-operations-dept/` + `web-development-dept/` (Skill 6 challenge funnels) + `social-media-dept/` (Skill 35 promo)
 - **Direct-response copy, headlines, sales letters** → `edwards-copywriting-secrets` (Jim Edwards) [+APPENDIX] → `marketing-dept/`
 - **Brand messaging, clarity, storytelling** → `miller-building-storybrand` (Donald Miller) [+APPENDIX] → `marketing-dept/`
 - **Permission marketing, being seen** → `godin-this-is-marketing` (Seth Godin) → `marketing-dept/`

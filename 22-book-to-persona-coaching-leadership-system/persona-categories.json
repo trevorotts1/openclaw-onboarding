@@ -1113,7 +1113,73 @@
           "offer/guarantee/pricing language",
           "classic direct-response headline formulas"
         ]
-      }
+      },
+      "needs_tags": false
+    },
+    "pedro-adao-challenge-secrets-masterclass": {
+      "author": "Pedro Adao (with Russell Brunson & Richmond Dean)",
+      "book": "Challenge Secrets Masterclass",
+      "persona_name": "The Challenge Architect",
+      "domain": [
+        "marketing",
+        "sales",
+        "strategy-innovation",
+        "copywriting"
+      ],
+      "perspective": [
+        "faith-spirituality"
+      ],
+      "custom": [
+        "challenge-funnels",
+        "challenge-secrets",
+        "five-day-challenge",
+        "tiny-challenge",
+        "launches",
+        "big-idea",
+        "micro-niche",
+        "movement-marketing",
+        "foolproof-offer",
+        "stack-and-close",
+        "perfect-webinar",
+        "vip-upsell",
+        "value-ladder-replacement",
+        "list-building",
+        "high-ticket-application",
+        "organic-traffic",
+        "barbell-model"
+      ],
+      "source_type": "video-transcript",
+      "added": "2026-06-26",
+      "interaction_modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "two_sided": true,
+      "coaching_mode": "BUILT",
+      "task_mode": "BUILT",
+      "blueprint": "personas/pedro-adao-challenge-secrets-masterclass/persona-blueprint.md",
+      "summary": "Pedro Adao's Challenge Secrets: the 5-day challenge funnel as 'the only funnel you need' — one funnel that replaces the whole 4-funnel value ladder (registration > VIP upsell > 5 live days > offer + Stack & Close > core sales > high-ticket application). Coaches founders to launch a challenge on a single micro niche with a scroll-stopping Big Idea and a movement, produce a real result in 5 days, and close with a Foolproof Offer; governs Marketing/Web-Development/Launch-Operations/Social-Media/CRM agents to build challenge funnels (Skill 6 pages + brand copy) and promo (Skill 35) to a Big-Idea/Micro-Niche/Movement, result-arc, buyer-making-VIP, Stack-before-price, truth-based-belief, anti-thin-copy standard. Includes the Tiny Challenge organic playbook.",
+      "appendix": "personas/pedro-adao-challenge-secrets-masterclass/PLAYBOOK-APPENDIX.md",
+      "appendix_status": "COMPLETE_WITH_WARNINGS",
+      "appendix_richness": {
+        "rich": [
+          "challenge funnel page map + build order (0)",
+          "registration / VIP / thank-you page recipes + worked examples (3-5)",
+          "daily-training + offer-transition scripts (6)",
+          "Foolproof Offer + Stack & Close + price-anchoring script (7)",
+          "core-offer + high-ticket application page recipes (8)",
+          "email + SMS + Messenger sequences (9)",
+          "Tiny-Challenge organic playbook + scripts + math (10)",
+          "social promo calendar (11)",
+          "business models + challenge KPIs (12-13)",
+          "verbatim Big-Idea / micro-niche / movement swipe (2, 15)"
+        ],
+        "absent": [
+          "verbatim Day-4 planning-module transcript (date/name/group-vs-tiny reveal) — reconstructed from surrounding frameworks and flagged inline"
+        ]
+      },
+      "needs_tags": false
     }
   },
   "lastUpdated": "2026-06-26"
