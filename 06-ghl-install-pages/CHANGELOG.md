@@ -4,6 +4,16 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.7.1] - 2026-06-27 — fix(skill6): funnel_matcher_cli selftest accepts SUGGEST_TEMPLATE + HONOR_USER
+
+Patch bump for the selftest fix shipped in global v14.7.0. The `positive_decision` check in
+`funnel_matcher_cli.py` was using the deprecated `HONORED_EXPLICIT` name and missing
+`SUGGEST_TEMPLATE`. The updated check accepts `("USE_TEMPLATE", "SUGGEST_TEMPLATE", "HONOR_USER",
+"HONORED_EXPLICIT")`. All 13/13 selftest cases pass. Satisfies G3 gate (skill content change
+in funnel_matcher_cli.py now paired with skill-version.txt bump v14.7.0 -> v14.7.1).
+
+---
+
 ## [v14.7.0] - 2026-06-27 — feat(skill6): standardised flex retrofit — detect_mode + flex_decide + linked_automations + step0_match link-map handoff
 
 Completes the Skill-6 flexibility retrofit by adding the standardised flex functions
