@@ -82,6 +82,14 @@ jobs:
           sed -E 's/\x1b\[[0-9;]*m//g' /tmp/tps.log > /tmp/tps.clean
           grep -Eq "A7 Web-dev funnel-surface tags: +PASS" /tmp/tps.clean
           echo "✓ persona selector functional; A7 web-dev funnel persona PASS"
+      - name: specialist routing is department-agnostic (network-marketing->brunson, sketchnote->rohde)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Hermetic: seeds the canonical 54-persona persona-categories.json into its own
+          # temp HOME and runs the heuristic path. Proves a clearly-named specialist is
+          # reachable regardless of department (the v14.22.0 routing fix).
+          bash 23-ai-workforce-blueprint/scripts/test-persona-selector-specialist-routing.sh
 
   funnel-pipeline-pytest:
     name: "funnel pipeline pytest (T-1..T-9 + T-N1..T-N6 + T-PRE-1/4 + T-N5 + graduation)"
