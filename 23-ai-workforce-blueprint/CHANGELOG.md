@@ -1,3 +1,33 @@
+## [v14.23.1] - 2026-06-27 - fix(build-materialize-handoff): dept agents now registered in openclaw.json after every successful build
+
+Root cause (two live boxes confirmed): `materialize-dept-agents.sh` (Skill 32) scanned only
+`$OC_ROOT/workspace/departments/` and `$OC_ROOT/workspaces/command-center/` for department
+folders. `build-workforce.py` (Skill 23, v9.6.0+/PRD 1.9) writes ALL new department folders
+to a completely separate tree — `~/Downloads/openclaw-master-files/zero-human-company/<slug>/departments/`
+on Mac and `/data/openclaw-master-files/zero-human-company/<slug>/departments/` on VPS. This
+path mismatch caused materialize-dept-agents.sh to find ZERO department folders and register
+ZERO agents even after a fully successful workforce build. Clients ended up with roles on disk
+but only the default `main` agent visible to the runtime (gateway, Telegram bots, dashboard).
+
+**Fix 1 — `32-command-center-setup/scripts/materialize-dept-agents.sh`** (PATH-MISMATCH FIX):
+Glob-expands the canonical ZHC master-files tree
+(`~/Downloads/openclaw-master-files/zero-human-company/*/departments/` on Mac and
+`/data/openclaw-master-files/zero-human-company/*/departments/` on VPS) and appends every
+found `departments/` directory to `DEPT_SCAN_ROOTS` before the Python scanner runs. Existing
+scan roots (`$OC_ROOT/workspace/departments` and `$OC_ROOT/workspaces/command-center`) are
+preserved at lower priority so legacy installs still work. Idempotent: re-running adds zero
+duplicates regardless of how many companies exist.
+
+**Fix 2 — `23-ai-workforce-blueprint/scripts/build-workforce.py`** (POST-BUILD ASSERTION):
+After the primary `add_agent_to_config` registration loop, a new FAIL-WIRING-NOT-MATERIALIZED
+gate verifies ALL expected `dept-<id>` entries are present in `agents.list` on disk. If any are
+missing it auto-invokes `materialize-dept-agents.sh` (resolved relative to the script's own
+path) and re-checks. If the repair succeeds, `registration_failures` is cleared so
+`_build_progress` reaches 100% and the build is declared complete. If the repair still fails it
+emits a loud `[WIRING-ASSERT] FAIL-WIRING-NOT-MATERIALIZED` line and appends
+`wiring:not-materialized` to `registration_failures` so progress stays capped at 90%. Both
+fixes are idempotent and safe to re-run. No client names or secrets added.
+
 ## [v14.11.1] - 2026-06-27 - fix(leadership-wiring): persona Task-Mode governance now fires at task time
 
 `persona-matching-protocol.md` gains "Step 5: Load and Apply the Task Mode" (the concrete at-task-time load of
