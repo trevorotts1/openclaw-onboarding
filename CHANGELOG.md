@@ -1,3 +1,45 @@
+## [v14.23.0]  -  2026-06-27  -  feat: CC harmony — key-gated persona-index build, embedding canary probe, Gemini path/DB-path doc fixes
+
+Consolidates the net-new content from three open PRs (#400, #401, #402) onto a
+single clean branch. Each PR's superseded/already-merged material was dropped;
+only genuinely net-new content was landed.
+
+**From #400 — persona-index hard build gate + SQLite gitignore hygiene:**
+- `install.sh` Step 6c: a HARD, KEY-GATED persona-index build. If no
+  Google/Gemini API key is present the install FAILS LOUDLY (exit 1) instead of
+  silently degrading to keyword-only search. After building it asserts the index
+  is in semantic mode (`Embedder ready:  gemini`) AND that >= 54 canonical
+  personas were embedded. The indexer is idempotent.
+- `.gitignore`: ignore `*.sqlite`, `*-journal`, `*-wal`, `*-shm` so the live
+  per-box persona index and its hot SQLite sidecars can never be committed
+  (committing a journal would corrupt the DB on checkout).
+- Removed the previously-tracked `data/coaching-personas/gemini-index.sqlite`
+  and `gemini-index.sqlite-journal` artifacts.
+- NOTE: #400's older cross-agent routing commit (v14.19.0) was NOT landed — it
+  is superseded by the complete routing set already on main from v14.22.2 (#403).
+
+**From #401 — Gemini retrieval doc fixes:**
+- `22-book-to-persona-coaching-leadership-system/GEMINI-RETRIEVAL-GUIDE.md`:
+  corrected all script paths from the stale `~/.openclaw/workspace/scripts/` to
+  the canonical `~/.openclaw/scripts/`, and added a "Wrapper → Embedding Engine"
+  section documenting how the thin wrappers resolve `embedding_engine.py`.
+- `32-command-center-setup/INSTALL.md`: added the canonical Mission Control
+  `DATABASE_PATH` note (Mac: `~/command-center/data/mission-control.db`, VPS:
+  `/data/projects/command-center/data/mission-control.db`) and updated the
+  clone/path commands to the canonical `~/command-center` location.
+
+**From #402 — fleet embedding canary probe:**
+- `32-command-center-setup/scripts/heartbeat-canary-probe.py`: a semantic-probe
+  canary that detects when an embedding index has gone "dark" (degraded to
+  keyword-only) so a silent semantic-search failure is caught by the heartbeat.
+- `HEARTBEAT.md`: new semantic-probe / embedding-canary section documenting the
+  probe, its thresholds, dry-run mode, telemetry table, alerting, and cron wiring.
+- NOTE: #402 contains ONLY the canary probe + HEARTBEAT.md section (no
+  embedding_engine.py / gemini-search.py telemetry-marker changes).
+
+Skill bumps (G3 lockstep): 22 → v6.12.6, 32 → v12.9.13. Version markers rolled
+to v14.23.0 across all 10 tracked locations.
+
 ## [v14.22.2]  -  2026-06-27  -  fix: add tools.agentToAgent to complete routing set at all four write-sites
 
 PR #398 (v14.19.2) added `tools.sessions.visibility=all` to all four config

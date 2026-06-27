@@ -331,11 +331,14 @@ For each topic, the agent adds a binding to `openclaw.json`:
 The agent deploys the visual Kanban dashboard.
 
 ### 6.1 Clone the Dashboard Repository
+
+> **Canonical DATABASE_PATH (Mac):** `~/command-center/data/mission-control.db`
+> VPS: `/data/projects/command-center/data/mission-control.db`
+> This is the authoritative location for the Mission Control SQLite database. The legacy path `~/projects/command-center/mission-control.db` is stale — if it exists on a box, replace it with a symlink: `ln -sf ~/command-center/data/mission-control.db ~/projects/command-center/mission-control.db`
+
 ```bash
-cd ~/projects
-mkdir -p command-center
-cd command-center
-git clone https://github.com/trevorotts1/blackceo-command-center.git .
+git clone https://github.com/trevorotts1/blackceo-command-center.git ~/command-center
+cd ~/command-center
 ```
 
 ### 6.2 Install Dependencies
@@ -381,7 +384,7 @@ If it says "Could not find mission-control.db" -- verify the dashboard started c
 The dashboard's `config/departments.json` ships EMPTY on purpose so a stale template can never win. `run-full-install.sh` PHASE 6c (and the closeout) regenerate it from the client's REAL Zero Human Company `departments.json` + `.workforce-build-state.json` and re-seed the workspaces table:
 
 ```bash
-python3 ~/projects/command-center/scripts/sync-departments-from-build-state.py --company-slug <client-slug>
+python3 ~/command-center/scripts/sync-departments-from-build-state.py --company-slug <client-slug>
 ```
 
 This is idempotent and is what guarantees the dashboard shows the client's actual departments, not a 17-row default. Run it any time a client's build changes (e.g. after adding the canonical floor to an existing client).
@@ -753,10 +756,9 @@ If missing: STOP and complete Skill 23 first.
 
 #### Step 2: CLONE Command Center repository
 ```bash
-cd ~/projects
-rm -rf command-center  # Remove if exists
-git clone https://github.com/trevorotts1/blackceo-command-center.git command-center
-cd command-center
+rm -rf ~/command-center  # Remove if exists
+git clone https://github.com/trevorotts1/blackceo-command-center.git ~/command-center
+cd ~/command-center
 ```
 
 #### Step 3: INSTALL dependencies
