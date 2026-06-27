@@ -286,14 +286,19 @@ def _signal_teardown(signum, _frame):  # pragma: no cover - exercised via raise
 
 @contextlib.contextmanager
 def browser_session(slug: Optional[str] = None) -> Iterator[str]:
-    """Bracket every emitted browser plan. On enter: D6 guard + P2-4 version-pin
-    guard, register atexit + SIGTERM/SIGINT/SIGHUP handlers, set
-    ``_SESSION_ACTIVE``, yield the canonical session name. On exit (try/finally):
-    emit (NOT execute) the teardown step — so the plan/run always carries its
-    mandatory close even on an exception or signal."""
+    """Bracket every emitted browser plan. On enter: D6 guard, register
+    atexit + SIGTERM/SIGINT/SIGHUP handlers, set ``_SESSION_ACTIVE``, yield the
+    canonical session name. On exit (try/finally): emit (NOT execute) the
+    teardown step — so the plan/run always carries its mandatory close even on
+    an exception or signal.
+
+    Note: the P2-4 agent-browser version-pin check (``assert_agent_browser_version``)
+    is NOT called here because ``browser_session`` is an EMITTER-ONLY bracket —
+    no live agent-browser binary is spawned inside it. The version check is called
+    by ``ghl_builder.render_check`` immediately before the 0.27.0-specific
+    subprocesses (``get html html``, ``screenshot``, ``console``) are launched."""
     global _SESSION_ACTIVE, _ACTIVE_SESSION_NAME, _TEARDOWN_EMITTED
     headless_guard()
-    assert_agent_browser_version()  # P2-4: REFUSE on version drift before any command is emitted
     name = session_name(slug)
     _SESSION_ACTIVE = True
     _ACTIVE_SESSION_NAME = name

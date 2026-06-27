@@ -1243,6 +1243,16 @@ def render_check(
     richness: dict = {"img_count": 0, "block_count": 0, "has_headline": False}
     png_blank: dict = {"blank": False, "determinable": False, "reason": "not_inspected"}
 
+    # ── P2-4: agent-browser version-pin guard ─────────────────────────────────
+    # The command spellings below are 0.27.0-specific: `get html html` (not
+    # `html --output`), `screenshot` (stdout path, not --output), and `console`
+    # (plain text, not `console-log --json`). An unverified upgrade can silently
+    # mis-capture HTML, screenshots, or console logs without any subprocess error,
+    # which would make the render gate pass on stale/wrong data.
+    # Assert the live binary matches the pin BEFORE any subprocess is spawned.
+    import browser_manager as _bm_ver  # lazy: avoids import cycle at module level
+    _bm_ver.assert_agent_browser_version()
+
     # ── Drive the headless browser (browser_manager singleton gateway) ─────────
     # We use the browser_cmd machinery which enforces --headed false (D6).
     # The agent-browser command sequence is:
