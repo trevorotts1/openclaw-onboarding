@@ -12,13 +12,39 @@ full persona into context.
 
 ---
 
+## Script Architecture: Wrapper → Embedding Engine
+
+`gemini-search.py` and `gemini-indexer.py` at `~/.openclaw/scripts/` are **thin 7-line wrappers** (PRD 1.8, commit a71f6bbd). They contain no search or indexing logic — all implementation lives in `shared-utils/embedding_engine.py`.
+
+**How the wrapper resolves the engine at runtime:**
+
+1. The wrapper builds a candidate path list, searching for `embedding_engine.py` in this order:
+   - `<script-dir>/shared-utils/`
+   - `<script-dir>/../skills/shared-utils/`
+   - `<script-dir>/../../shared-utils/`
+   - `<script-dir>/../../../shared-utils/`
+   - `<script-dir>/../shared-utils/`
+   - `~/.openclaw/skills/shared-utils/`
+   - `/data/.openclaw/skills/shared-utils/` (VPS path)
+   - `~/.openclaw/onboarding/shared-utils/`
+2. It picks the **first candidate where `embedding_engine.py` exists**, inserts that directory into `sys.path`, then delegates:
+   - `gemini-search.py` → `embedding_engine._search_main()`
+   - `gemini-indexer.py` → `embedding_engine._indexer_main()`
+3. If no candidate resolves, the script exits with code 2 and prints: `[gemini-search] FATAL: embedding_engine.py not found in [<all paths tried>]`
+
+**What this means in practice:**
+- Upgrading `shared-utils/embedding_engine.py` changes search/indexing behavior without touching the stubs in `~/.openclaw/scripts/`.
+- If you see the `FATAL` error, verify `~/.openclaw/skills/shared-utils/embedding_engine.py` exists and is readable by the current user.
+
+---
+
 ## Setup - Adding Personas to Gemini Engine
 
 ### Add the full persona library as a collection
 
 ```bash
 python3 ~/.openclaw/scripts/gemini-indexer.py --add \
-  --path ~/.openclaw/workspace/data/coaching-personas/personas \
+  --path ~/Downloads/openclaw-master-files/coaching-personas/personas \
   --name coaching-personas \
   --mask "**/*.md"
 ```
@@ -121,7 +147,7 @@ python3 ~/.openclaw/scripts/gemini-search.py "habits systems consistency"
 
 ### Get a specific file section
 ```bash
-head -100 ~/.openclaw/workspace/data/coaching-personas/personas/clear-atomic-habits/persona-blueprint.md
+head -100 ~/Downloads/openclaw-master-files/coaching-personas/personas/clear-atomic-habits/persona-blueprint.md
 ```
 
 Returns lines 1-100 of the Atomic Habits blueprint.
@@ -247,4 +273,4 @@ They work together:
 
 ---
 
-<!-- BREADCRUMB: memory-surgery/skill-22-mac | 2026-04-12 | v6.5.7 | Added wiki integration section -->
+<!-- BREADCRUMB: memory-surgery/skill-22-mac | 2026-06-27 | v6.5.8 | Fix script paths: ~/.openclaw/scripts/ (not workspace/scripts/); add wrapper->embedding_engine indirection section -->

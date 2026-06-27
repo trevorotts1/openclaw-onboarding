@@ -40,3 +40,12 @@ tmp/
 # written PORTABLY (relative root/sourcePath, no system-specific absolute path), so the
 # old ignore of 06-ghl-install-pages/tools/catalog-index.json was removed. Rebuild with:
 #   python3 06-ghl-install-pages/tools/funnel_matcher_cli.py --build-index
+
+# SQLite runtime artifacts — the persona index (gemini-index.sqlite) is built live
+# per box by gemini-indexer.py (or downloaded from GitHub Releases). Never commit
+# the DB file or any hot journal / WAL / SHM sidecar that SQLite writes during a
+# live write transaction (committing a journal would corrupt the DB on checkout).
+*.sqlite
+*-journal
+*-wal
+*-shm
