@@ -5898,10 +5898,15 @@ def add_agent_to_config(config, dept_id, dept_info):
         # GOAL-5 Item 1: hard tool-gate so skills:[] is not the ONLY brake.
         # Deny every production tool by real built-in name + deny all GHL MCP
         # tools by provider; allow only routing/conversation tools.
+        # tools.sessions.visibility=all: the routing agent MUST see ALL agent
+        # sessions so it can locate and hand off to any department agent.
+        # Without this the gateway defaults to "tree" (spawned-children only)
+        # and cross-agent department handoffs are silently blocked.
         agent_entry["tools"] = {
             "deny": list(CEO_TOOL_DENY),
             "allow": list(CEO_TOOL_ALLOW),
             "byProvider": dict(CEO_MCP_DENY),
+            "sessions": {"visibility": "all"},
         }
     if is_generation_dept:
         # Explicit tools.allow so generation tools survive any parent-deny

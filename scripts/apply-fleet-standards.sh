@@ -358,6 +358,16 @@ elif "agents" in cfg and "list" in cfg["agents"]:
             by_provider = {}; tools["byProvider"] = by_provider
         for prov, rule in _CEO_MCP_DENY.items():
             by_provider[prov] = rule
+        # Cross-agent routing: routing agent MUST see all sessions so it can
+        # locate and hand off to any department agent. Default gateway
+        # behaviour is "tree" (spawned-children only), which silently blocks
+        # department handoffs.
+        _sessions = tools.setdefault("sessions", {})
+        if not isinstance(_sessions, dict):
+            _sessions = {}
+            tools["sessions"] = _sessions
+        if _sessions.get("visibility") != "all":
+            _sessions["visibility"] = "all"
         print(f"[apply-fleet-standards] re-asserted CEO tool-gate on default agent (id={agent.get('id','<unknown>')}; production tools denied)")
 
 after_json = json.dumps(cfg, sort_keys=True, indent=2)
