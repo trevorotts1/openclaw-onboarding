@@ -1,0 +1,98 @@
+{
+  "id": "hotel-meeting-funnel",
+  "name": "Hotel Meeting Funnel (Network Marketing Variant)",
+  "aliases": ["Online Hotel Meeting", "Opportunity Webinar Funnel", "NM Opportunity Funnel", "Business Opportunity Presentation Funnel"],
+  "category": "Event Funnels",
+  "libraryRef": "#37",
+  "sourceBooks": ["Network Marketing Secrets"],
+  "lengthClass": "medium-form",
+  "origin": "Online equivalent of the offline hotel opportunity presentation. Three-page structure: Registration → Countdown/Confirmation → Live or Auto-Webinar. Designed to recruit new business builders and leaders, NOT product buyers. Follows the full Viral Loop (Epiphany Bridge story, demo, call to action).",
+  "whenToUse": {
+    "summary": "Use to recruit network-marketing business builders online via an opportunity presentation (live or prerecorded), replacing the offline hotel meeting. Focus is recruiting/duplication, not product sales.",
+    "goals": [
+      "Recruit new business builders / distributors (not product buyers)",
+      "Replace offline hotel opportunity meetings with an online funnel",
+      "Drive a recruiting application / 'join my team' call to action via the Viral Loop"
+    ],
+    "keywords": ["hotel meeting", "opportunity meeting", "business opportunity", "join my team", "opportunity presentation", "network marketing", "recruit", "duplication"],
+    "signals": [
+      "Network-marketing / direct-sales business",
+      "Goal is recruiting builders, not selling product",
+      "Wants a duplicable system distributors can plug into",
+      "Live or prerecorded opportunity webinar available"
+    ],
+    "antiSignals": [
+      "Selling a product/course to consumers (use Webinar/Home Party)",
+      "High-ticket consulting close (use Application Funnel)",
+      "No recruiting/team-building component"
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Registration Page",
+      "purpose": "Get the prospect to register for the opportunity presentation under a branded, curiosity frame.",
+      "keyElements": [
+        "Branded opportunity headline (curiosity, not company-name-led)",
+        "What they'll discover (the new opportunity / vehicle)",
+        "Opt-in form (name/email, optional phone)",
+        "Distributor attribution (whose link / which builder)"
+      ],
+      "skill44Widgets": ["Registration opt-in form", "Distributor attribution field/tag", "Countdown to presentation"]
+    },
+    {
+      "order": 2,
+      "page": "Countdown / Confirmation Page",
+      "purpose": "Confirm and build anticipation + social proof before the presentation.",
+      "keyElements": [
+        "Countdown to the presentation start",
+        "Social proof (team results, testimonials, leader photos)",
+        "Add-to-calendar + SMS reminders",
+        "Short indoctrination / 'why attend' video"
+      ],
+      "skill44Widgets": ["Countdown timer", "Add-to-calendar", "SMS/email reminder opt-in", "Social-proof block"]
+    },
+    {
+      "order": 3,
+      "page": "Live or Auto-Webinar Opportunity Presentation Page",
+      "purpose": "Deliver the opportunity presentation and drive the recruiting call to action.",
+      "keyElements": [
+        "Live or prerecorded opportunity webinar embed",
+        "Viral Loop: Epiphany Bridge story → demo of the opportunity → call to action",
+        "Recruiting application / 'join my team' CTA (not a product checkout)",
+        "Calendar booking for a follow-up call with the sponsor"
+      ],
+      "skill44Widgets": ["Webinar/video embed", "Recruiting application form", "Calendar booking widget", "Live chat (if live)"]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "epiphany-bridge",
+    "supportingPersonas": ["perfect-webinar", "copywriting-secrets", "storybrand-sb7"],
+    "scripts": [
+      "Presentation = Network Marketing Viral Loop (Epiphany Bridge story → demo → call to action)",
+      "Belief-breaking teaching beats = Perfect Webinar (adapted to the opportunity / new vehicle)",
+      "Registration headline + bullets + social proof copy = Copywriting Secrets",
+      "Positioning (prospect = hero, sponsor = guide) = StoryBrand SB7"
+    ],
+    "notes": "Recruiting, not product selling, is the goal. The CTA is an application / join-my-team / book-a-call, never a product order form. The funnel must be duplicable so every distributor can run their own copy with their attribution."
+  },
+  "ghlBuild": {
+    "funnelType": "3-page NM opportunity funnel + recruiting application + booking",
+    "pages": ["Registration", "Countdown/Confirmation", "Opportunity Presentation (live/auto)"],
+    "skill44Widgets": [
+      "Registration opt-in form with distributor attribution",
+      "Countdown timer + add-to-calendar + reminders",
+      "Social-proof block",
+      "Recruiting application form (multi-field)",
+      "Calendar booking widget for the sponsor follow-up call"
+    ],
+    "automations": [
+      "Register → reminder sequence + presentation access",
+      "Attribution tag routes leads to the correct distributor/sponsor",
+      "Application submit → notify sponsor + booking confirmation",
+      "No-show → replay + re-invite sequence"
+    ],
+    "products": ["No product checkout — recruiting application / team enrollment is the conversion"],
+    "notes": "Skill 6 builds the 3 pages with the opportunity webinar embed; Skill 44 generates the registration form (with distributor attribution), the recruiting application form, the calendar booking widget, and the countdown/reminder widgets. Build it as a duplicable template every distributor can clone with their own attribution."
+  }
+}

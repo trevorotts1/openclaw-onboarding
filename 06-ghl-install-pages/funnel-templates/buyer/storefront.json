@@ -1,0 +1,134 @@
+{
+  "id": "storefront",
+  "name": "Storefront Funnel",
+  "aliases": [
+    "Storefront Funnel",
+    "Product Gallery Funnel",
+    "Window-Shopping Funnel",
+    "Funnel Storefront",
+    "Catalog Funnel"
+  ],
+  "category": "Buyer Funnel",
+  "group": "buyer",
+  "lengthClass": "short-form",
+  "libraryRef": "#21",
+  "sourceBooks": [
+    "The Funnel Hacker's Cookbook"
+  ],
+  "whenToUse": {
+    "summary": "All products sit together like window shopping, with each product linking into its OWN dedicated sales funnel rather than a generic product page or shared cart. Mimics a traditional ecommerce site but routes every visitor into a proper funnel. Use when a client has multiple products/offers and wants one branded hub where each item still gets the full funnel treatment.",
+    "goals": [
+      "Present multiple products/offers in one branded gallery",
+      "Route every product click into its own dedicated funnel (no shared cart)",
+      "Give an ecommerce 'shop' feel while preserving funnel conversion",
+      "Organize offers along the value ladder for browsing buyers"
+    ],
+    "keywords": [
+      "storefront",
+      "store",
+      "shop page",
+      "product gallery",
+      "catalog",
+      "all products",
+      "window shopping",
+      "multiple products",
+      "product cards"
+    ],
+    "signals": [
+      "Client has multiple distinct products/offers to show together",
+      "Wants a 'shop'/'store' feel but with funnels, not a cart",
+      "Needs a hub to link out to several individual funnels",
+      "Browsing buyers who want to choose among offers"
+    ],
+    "antiSignals": [
+      "Single product/offer -> use that product's VSL or Sales Letter Funnel directly",
+      "Brand-hub website with blog/PR/social -> Funnel Hub (other group)",
+      "Free/just-shipping single front end -> 2-Step Tripwire / Book Funnel",
+      "Recurring subscription is the only offer -> Membership/Continuity"
+    ]
+  },
+  "pageStructure": [
+    {
+      "step": 1,
+      "page": "Storefront Gallery Page",
+      "purpose": "Display all products together as browsable cards (window shopping). Each product card links OUT to its own dedicated funnel (VSL or Sales Letter), never to a shared cart.",
+      "keyElements": [
+        "Brand header + light navigation (on-brand, store-like)",
+        "Grid of PRODUCT CARDS: image, name, one-line benefit, price/anchor",
+        "Each card CTA links to that product's dedicated funnel",
+        "Optional value-ladder ordering (entry -> premium) / categories",
+        "Brand signature story / trust band (testimonials, guarantees)",
+        "No shared cart / no generic add-to-cart"
+      ],
+      "widgets": [
+        "Product cards with outbound links to each product's funnel (custom HTML grid, or Vercel-built gallery embedded)",
+        "Skill 44: optional opt-in/newsletter form in a footer band",
+        "Skill 44: tags on click-through if tracking which product is browsed"
+      ]
+    },
+    {
+      "step": 2,
+      "page": "[Per-product] Dedicated Product Funnel (separate template)",
+      "purpose": "Each product card lands the visitor in its OWN funnel built from a buyer-group template (VSL Funnel or Sales Letter Funnel), with that funnel's order form, bump, and OTOs.",
+      "keyElements": [
+        "Built from video-sales-letter-vsl or sales-letter template",
+        "Own order form + bump + OTO/downsell + confirmation",
+        "Inherits the storefront's brand voice"
+      ],
+      "widgets": [
+        "Reuses the linked template's Skill 44 widgets (order form, bump, upsell)"
+      ]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": {
+      "slug": "leland-brand-mapping-strategy",
+      "book": "The Brand Mapping Strategy",
+      "script": "Brand architecture across the storefront — consistent brand voice, Signature Story, Be/Do/Have depth",
+      "role": "Governs the storefront's brand consistency so all product cards feel like one coherent brand"
+    },
+    "salesScript": {
+      "script": "StoryBrand SB7 per product card (compressed) — customer as Hero, product as the Plan",
+      "source": "Building a StoryBrand",
+      "why": "Each card is a micro-narrative: it must make the customer the hero and the product the clear next step, in one line, so the browser clicks into the right funnel."
+    },
+    "supportingPersonas": [
+      {
+        "slug": "miller-building-storybrand",
+        "book": "Building a StoryBrand",
+        "script": "SB7 one-liner / BrandScript per product card",
+        "role": "Writes each product card as a clear customer-as-hero micro-narrative"
+      },
+      {
+        "slug": "edwards-copywriting-secrets",
+        "book": "Copywriting Secrets",
+        "script": "Product-card microcopy — benefit-first names, one-line hooks, button copy",
+        "role": "Writes the tight card headlines and CTAs"
+      },
+      {
+        "slug": "brunson-marketing-secrets-blackbook",
+        "book": "Marketing Secrets Blackbook",
+        "script": "Value Ladder ordering of products (ascending value)",
+        "role": "Arranges the storefront so browsing buyers see the ladder, low to high"
+      }
+    ],
+    "notes": "Brand Mapping governs the storefront's coherent brand voice; StoryBrand writes each product card as a customer-as-hero micro-narrative; Copywriting Secrets tightens the card microcopy; Blackbook orders the products along the value ladder. The deep selling copy lives in each linked funnel (VSL or Sales Letter template), not on the storefront itself."
+  },
+  "ghlBuild": {
+    "funnelType": "GHL Funnel or Website (1 gallery page) + N separate product funnels",
+    "skill6Steps": [
+      "Create Funnel/Website -> name with client prefix -> Create",
+      "Build Step/Page 1 = 'Storefront Gallery Page' (product-card grid with outbound links)",
+      "For each product, build a SEPARATE funnel from the VSL or Sales Letter buyer template and link its card to it"
+    ],
+    "skill44Widgets": [
+      "Optional opt-in/newsletter form on the gallery footer",
+      "Optional tags on product-card click-through",
+      "Each linked product funnel uses its own template's Skill 44 widgets (order form, bump, one-click upsell)"
+    ],
+    "products": [
+      "No shared cart on the storefront; each product is sold in its own funnel via that funnel's GHL Payments product"
+    ],
+    "notes": "The storefront is a hub: build the gallery as a GHL page (custom HTML grid in the code block, or a Vercel-built gallery pulled in via embed link) whose product-card buttons link OUT to each product's own funnel. Do NOT wire a shared cart. Build each product funnel separately from the buyer-group VSL or Sales Letter template. Pre-create any opt-in form/tags via Skill 44 (or GHL MCP/API). Store product images in GHL media storage via Skill 44/GHL MCP/API."
+  }
+}

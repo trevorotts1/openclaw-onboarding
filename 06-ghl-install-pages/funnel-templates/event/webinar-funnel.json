@@ -1,0 +1,112 @@
+{
+  "id": "webinar-funnel",
+  "name": "Webinar Funnel (Live / Perfect Webinar)",
+  "aliases": ["Perfect Webinar Funnel", "Live Webinar Funnel", "Sales Webinar Funnel"],
+  "category": "Event Funnels",
+  "libraryRef": "#15",
+  "sourceBooks": ["The Funnel Hacker's Cookbook", "Marketing Secrets Blackbook", "Network Marketing Secrets", "DotCom Secrets", "Expert Secrets", "Traffic Secrets"],
+  "lengthClass": "long-form",
+  "origin": "The flagship Brunson selling event. Drives traffic to a registration page; registrants get an indoctrination sequence then attend a live 60-90 minute event. The Perfect Webinar script is the core presentation framework.",
+  "whenToUse": {
+    "summary": "Use to sell a mid-to-high-ticket offer ($297-$3,000+) to a warm/semi-warm audience via a live teaching presentation that closes with The Stack and a cart-close deadline.",
+    "goals": [
+      "Sell a course/program/service through a live teaching-then-pitch presentation",
+      "Break the prospect's 3 core false beliefs before the offer",
+      "Use live scarcity (cart closes when the replay window ends) to drive purchases"
+    ],
+    "keywords": ["webinar", "perfect webinar", "live training", "masterclass", "register for the webinar", "3 secrets", "the stack", "cart closes"],
+    "signals": [
+      "Offer needs explaining/teaching before the prospect will buy",
+      "Client has expertise and is willing to present live",
+      "Price point too high for a simple order page",
+      "Audience needs belief-shifting (new opportunity, new mechanism)"
+    ],
+    "antiSignals": [
+      "Client cannot/will not present (use AutoWebinar once a winning live one exists)",
+      "Sub-$100 impulse product (use 5-Minute Perfect Webinar or VSL)",
+      "Multi-speaker event (use Summit)"
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Registration Page",
+      "purpose": "Convert traffic into registrants with curiosity, not the full pitch.",
+      "keyElements": [
+        "Curiosity 'Big Promise' headline naming the new opportunity",
+        "Date/time selector (or single live time)",
+        "3 fascination bullets that tease the 3 secrets",
+        "Host credibility blurb + photo",
+        "Opt-in form (name + email, optional phone for SMS reminders)"
+      ],
+      "skill44Widgets": ["Registration/opt-in form", "Live-time selector", "Countdown to event start"]
+    },
+    {
+      "order": 2,
+      "page": "Confirmation / Indoctrination Page",
+      "purpose": "Lock in attendance and pre-frame belief so they show up primed to buy.",
+      "keyElements": [
+        "Add-to-calendar + reminder opt-in",
+        "Indoctrination video (Epiphany Bridge origin story)",
+        "What to bring / why attend live (live-only bonus tease)",
+        "SMS reminder opt-in"
+      ],
+      "skill44Widgets": ["Add-to-calendar widget", "SMS/email reminder opt-in", "Video embed"]
+    },
+    {
+      "order": 3,
+      "page": "Live Event Page",
+      "purpose": "Host the live Perfect Webinar and present the offer.",
+      "keyElements": [
+        "Live webinar embed (Zoom/GoToWebinar/WebinarJam)",
+        "Perfect Webinar flow: Intro hook → 3 Secrets → The Stack → Close",
+        "Live chat / Q&A",
+        "Buy button revealed during The Stack with cart-open countdown"
+      ],
+      "skill44Widgets": ["Live webinar embed", "Live chat embed", "Reveal-on-cue order button", "Live countdown"]
+    },
+    {
+      "order": 4,
+      "page": "Replay / Urgency Page",
+      "purpose": "Recover no-shows and undecideds with a time-boxed replay and a hard cart-close.",
+      "keyElements": [
+        "Replay video embed",
+        "Cart-close countdown timer (expires = offer gone)",
+        "Stack recap + bonuses + guarantee",
+        "Order button + FAQ"
+      ],
+      "skill44Widgets": ["Replay video embed", "Evergreen/fixed countdown timer", "Order form with bump", "FAQ accordion"]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "perfect-webinar",
+    "supportingPersonas": ["epiphany-bridge", "copywriting-secrets", "star-story-solution"],
+    "scripts": [
+      "Presentation = Perfect Webinar (Intro/Hook 'The One Thing' → Secret 1 (vehicle) → Secret 2 (internal) → Secret 3 (external) → The Stack → Close with trial + scarcity)",
+      "Indoctrination + webinar open = Epiphany Bridge",
+      "Registration headline + bullets + replay urgency = Copywriting Secrets",
+      "Replay/order page stack recap = Star/Story/Solution reinforcement"
+    ],
+    "notes": "The 3 Secrets each break one false-belief pattern (vehicle, internal, external). The Stack is the close. Live scarcity + replay deadline is what converts the fence-sitters."
+  },
+  "ghlBuild": {
+    "funnelType": "Funnel (4 pages) + reminder/follow-up automations",
+    "pages": ["Registration", "Confirmation/Indoctrination", "Live Event", "Replay/Urgency (cart-close)"],
+    "skill44Widgets": [
+      "Registration/opt-in form (name/email/phone)",
+      "Live-time selector + countdown-to-start widget",
+      "Add-to-calendar + SMS/email reminder opt-in",
+      "Order form widget with order bump",
+      "Cart-close countdown timer (fixed deadline)",
+      "FAQ accordion widget"
+    ],
+    "automations": [
+      "Register → indoctrination + reminder sequence (24h, 1h, live-now)",
+      "Attended vs no-show tag → segmented replay sequence",
+      "Cart-close countdown drives 3 Closes follow-up (emotion → logic → fear)",
+      "Purchase → fulfillment + remove from sales sequence"
+    ],
+    "products": ["Core webinar offer ($297-$3,000+)", "Optional order bump", "Optional post-purchase OTO"],
+    "notes": "Skill 6 builds the 4 pages and embeds the webinar player; Skill 44 generates the opt-in form, the reminder widgets, the order form + bump, and the cart-close countdown timer that powers the urgency close."
+  }
+}

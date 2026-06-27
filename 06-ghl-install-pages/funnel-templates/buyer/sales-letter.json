@@ -1,0 +1,156 @@
+{
+  "id": "sales-letter",
+  "name": "Sales Letter Funnel",
+  "aliases": [
+    "Sales Letter Funnel",
+    "Long-Form Sales Page",
+    "Text Sales Letter",
+    "Written Sales Page Funnel",
+    "Long Copy Funnel"
+  ],
+  "category": "Buyer Funnel",
+  "group": "buyer",
+  "lengthClass": "long-form",
+  "libraryRef": "#11",
+  "sourceBooks": [
+    "The Funnel Hacker's Cookbook",
+    "Marketing Secrets Blackbook"
+  ],
+  "whenToUse": {
+    "summary": "Long-form WRITTEN sales copy on a single page using the Star/Story/Solution script, followed by an order form with a bump and an OTO/downsell sequence. The written equivalent of the VSL Funnel — used when switching sales modalities or when an audience prefers to read rather than watch video.",
+    "goals": [
+      "Sell a product with long-form written copy",
+      "Serve a read-not-watch audience",
+      "Run an A/B alternative to a VSL on the same offer",
+      "Convert high-intent traffic that wants detail, proof, and to skim at its own pace"
+    ],
+    "keywords": [
+      "sales letter",
+      "long form sales page",
+      "written sales copy",
+      "text sales page",
+      "long copy",
+      "Star Story Solution",
+      "read the letter",
+      "salespage"
+    ],
+    "signals": [
+      "Audience prefers reading / won't sit through a video",
+      "Offer needs heavy proof, detail, and FAQ depth",
+      "Client wants a text alternative to test against a VSL",
+      "B2B / professional / older audience that skims long copy"
+    ],
+    "antiSignals": [
+      "Audience converts better on video -> route to VSL Funnel",
+      "Front-end is free/just-shipping -> 2-Step Tripwire",
+      "Recurring subscription is the core -> Membership/Continuity",
+      "Physical book at just-shipping -> Book Funnel"
+    ]
+  },
+  "pageStructure": [
+    {
+      "step": 1,
+      "page": "Long-Form Sales Letter Page",
+      "purpose": "Carry the entire sale in written copy using Star/Story/Solution, with anchor navigation, proof, guarantee, and an order form with bump at the close.",
+      "keyElements": [
+        "Magnetic headline + deck (pre-head/post-head)",
+        "STAR: introduce the Attractive Character",
+        "STORY: the Epiphany Bridge / problem-to-discovery narrative",
+        "SOLUTION: the offer, unique mechanism, and value stack",
+        "Anchor navigation / jump links for skimmers",
+        "Proof + testimonial sections, case studies",
+        "Risk-reversal GUARANTEE block",
+        "FAQ / objection-handling section",
+        "Order form with ORDER BUMP at the bottom CTA",
+        "P.S. close (Copywriting Secrets formula)"
+      ],
+      "widgets": [
+        "Skill 44: Order Form with Order Bump element",
+        "GHL Payments: core product + bump product",
+        "Custom HTML in code block or Vercel-built page (many sections) pulled in via embed"
+      ]
+    },
+    {
+      "step": 2,
+      "page": "OTO / Upsell Page",
+      "purpose": "Raise AOV with a one-click upsell right after the sale.",
+      "keyElements": [
+        "Interrupt headline",
+        "Short upsell copy with stacked value",
+        "One-click accept button + decline link",
+        "Optional downsell on decline"
+      ],
+      "widgets": [
+        "Skill 44: One-Click Upsell element",
+        "GHL Payments: OTO product (+ optional downsell)"
+      ]
+    },
+    {
+      "step": 3,
+      "page": "Confirmation / Thank-You Page",
+      "purpose": "Confirm purchase, deliver access, bond, and bridge to the next rung.",
+      "keyElements": [
+        "Order summary + access/delivery",
+        "Attractive-Character welcome message",
+        "Next-step CTA into the value ladder"
+      ],
+      "widgets": [
+        "Skill 44: Tag-on-purchase + follow-up workflow trigger"
+      ]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": {
+      "slug": "edwards-copywriting-secrets",
+      "book": "Copywriting Secrets",
+      "script": "Sales-letter formulas — headline formulas, benefit stacking, specificity rules, objection preemption, P.S. close",
+      "role": "Lead copywriter for the long-form written page (the written-copy specialist)"
+    },
+    "salesScript": {
+      "script": "Star / Story / Solution",
+      "source": "DotCom Secrets / The Funnel Hacker's Cookbook (named explicitly for this funnel)",
+      "why": "Star/Story/Solution is the canonical script the Sales Letter Funnel is built on: introduce the Star (Attractive Character), tell the Story (Epiphany Bridge), present the Solution (offer + value stack)."
+    },
+    "supportingPersonas": [
+      {
+        "slug": "brunson-marketing-secrets-blackbook",
+        "book": "Marketing Secrets Blackbook",
+        "script": "Attractive Character + Epiphany Bridge inside Star/Story/Solution",
+        "role": "Provides the Star and the Story arc and the bonding voice"
+      },
+      {
+        "slug": "miller-building-storybrand",
+        "book": "Building a StoryBrand",
+        "script": "SB7 clarity filter (customer = Hero, brand = Guide)",
+        "role": "Keeps the letter customer-centric so it doesn't drift into product-bragging"
+      },
+      {
+        "slug": "russell-brunson-the-funnel-hackers-cookbook",
+        "book": "The Funnel Hacker's Cookbook",
+        "script": "Sales Letter recipe — anchor nav, proof, guarantee, order-form + bump + OTO placement",
+        "role": "Governs the page structure and required-element checklist"
+      }
+    ],
+    "notes": "Star/Story/Solution is the spine; Copywriting Secrets writes the words; Blackbook supplies the Attractive Character and Epiphany Bridge; StoryBrand keeps the customer as the hero; the Cookbook governs structure. This is the written twin of the VSL Funnel."
+  },
+  "ghlBuild": {
+    "funnelType": "GHL Funnel (3 steps)",
+    "skill6Steps": [
+      "Create Funnel -> name with client prefix -> Create",
+      "Add New Step 1 = 'Long-Form Sales Letter Page' (heavy page -> build in Vercel, pull in via embed link; or naked HTML in code block)",
+      "Add New Step 2 = 'OTO / Upsell Page'",
+      "Add New Step 3 = 'Confirmation / Thank-You'"
+    ],
+    "skill44Widgets": [
+      "Order Form + Order Bump on Step 1",
+      "One-Click Upsell on Step 2",
+      "Tags + follow-up workflow trigger"
+    ],
+    "products": [
+      "Core product in GHL Payments",
+      "Order-bump product",
+      "OTO product (+ optional downsell)"
+    ],
+    "notes": "A long sales letter has many sections; build it in Vercel and pull into the GHL step via embed link, or paste GHL-compatible HTML into the code-block element and enable 'allow row to take up entire width' so the copy isn't condensed to the middle. Pre-build the order form, tags, and products via Skill 44 (or GHL MCP/API)."
+  }
+}

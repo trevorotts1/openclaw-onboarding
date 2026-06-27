@@ -1,0 +1,109 @@
+{
+  "id": "perfect-webinar-shortcut-funnel",
+  "name": "Perfect Webinar Shortcut (Facebook/Instagram Live Funnel)",
+  "aliases": ["Perfect Webinar Shortcut", "FB Live Funnel", "IG Live Funnel", "No-Slides Whiteboard Webinar"],
+  "category": "Event Funnels",
+  "libraryRef": "#33",
+  "sourceBooks": ["Expert Secrets"],
+  "lengthClass": "short-form",
+  "origin": "Rapid-fire version of the Perfect Webinar delivered live on Facebook/Instagram with no slides — just a whiteboard, origin story, ONE secret, and the close. Can be created in ~15 minutes and promoted as a paid ad. Kaelin Poulin generated $650,000 from a single session.",
+  "whenToUse": {
+    "summary": "Use to run a fast, slide-less Perfect Webinar live on Facebook/Instagram (whiteboard + origin story + one secret + close), then retarget viewers and route warm traffic straight to an order page.",
+    "goals": [
+      "Sell fast without building a full slide deck or webinar tech",
+      "Use a live FB/IG session as both content and paid-ad creative",
+      "Retarget viewers and convert warm traffic on an order page"
+    ],
+    "keywords": ["perfect webinar shortcut", "fb live", "ig live", "facebook live", "whiteboard", "one secret", "quick webinar", "go live and sell"],
+    "signals": [
+      "Client wants speed (build in ~15 min) over polish",
+      "Comfortable going live on FB/IG with a whiteboard",
+      "Has a paid-ads budget to boost/retarget the session",
+      "Single clear offer with one core belief to break"
+    ],
+    "antiSignals": [
+      "Offer needs 3 full belief breaks + slides (use Webinar)",
+      "Audience won't watch social live (use AutoWebinar/VSL)",
+      "No retargeting/ads capability"
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Live Event Setup / Landing Page",
+      "purpose": "Announce the FB/IG Live and collect RSVPs / drive viewers to the live.",
+      "keyElements": [
+        "Big-promise headline + go-live time + platform",
+        "RSVP / reminder opt-in (optional)",
+        "'What you'll learn in this quick session' (the one secret tease)",
+        "Link/button to the live location"
+      ],
+      "skill44Widgets": ["RSVP/reminder opt-in form", "Countdown to go-live"]
+    },
+    {
+      "order": 2,
+      "page": "Live Broadcast (on FB/IG)",
+      "purpose": "Deliver the rapid Perfect Webinar Shortcut natively on the platform.",
+      "keyElements": [
+        "Whiteboard origin story (Epiphany Bridge)",
+        "ONE secret (the single most important belief break)",
+        "The close + a clear 'go here to get it' CTA to the order page",
+        "Live comments engagement (drives the algorithm + retargeting audience)"
+      ],
+      "skill44Widgets": ["(Native platform — no GHL page) link-out CTA tracked via UTM/redirect"]
+    },
+    {
+      "order": 3,
+      "page": "Retargeting Capture / Bridge Page",
+      "purpose": "Capture viewers from the live and route them onward; feed retargeting ads.",
+      "keyElements": [
+        "'Watched the live? Get the offer / replay here'",
+        "Short bridge recap (one secret + offer tease)",
+        "Pixel/retargeting tag fires",
+        "Button to the order page"
+      ],
+      "skill44Widgets": ["Bridge opt-in (optional)", "Pixel/tracking embed", "CTA button to order"]
+    },
+    {
+      "order": 4,
+      "page": "Order Page",
+      "purpose": "Convert warm viewers into buyers.",
+      "keyElements": [
+        "Stack recap + offer + price",
+        "Order form with bump",
+        "Urgency (session-only bonus / countdown)",
+        "Guarantee + FAQ"
+      ],
+      "skill44Widgets": ["Order form with bump", "Countdown timer", "FAQ accordion"]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "perfect-webinar",
+    "supportingPersonas": ["epiphany-bridge", "copywriting-secrets", "star-story-solution"],
+    "scripts": [
+      "Live session = Perfect Webinar Shortcut (origin story + ONE secret + close) — no slides, whiteboard only",
+      "Origin story = Epiphany Bridge",
+      "Setup-page headline, ad copy, bridge recap, order urgency = Copywriting Secrets",
+      "Order page = Star/Story/Solution + Stack (compressed)"
+    ],
+    "notes": "Only ONE secret (not three) — pick the single biggest false belief. Speed and authenticity beat polish; the raw live IS the ad creative."
+  },
+  "ghlBuild": {
+    "funnelType": "Light funnel (1-2 GHL pages) + FB/IG live + retargeting ads",
+    "pages": ["Live Setup/Landing (optional RSVP)", "Retargeting Bridge", "Order Page"],
+    "skill44Widgets": [
+      "RSVP/reminder opt-in form",
+      "Countdown to go-live",
+      "Pixel/retargeting tracking embed",
+      "Order form with bump",
+      "Order-page countdown + FAQ accordion"
+    ],
+    "automations": [
+      "RSVP → reminder + 'we're live' notification",
+      "Viewer pixel → retargeting ad audience → bridge/order page",
+      "Purchase → fulfillment; non-buyer → retargeting re-offer"
+    ],
+    "products": ["Single offer (often mid-ticket)", "Order bump"],
+    "notes": "The live itself runs on Facebook/Instagram (not a GHL page). Skill 6 builds the lightweight setup/bridge/order pages and the tracking pixel; Skill 44 generates the RSVP form, the order form + bump, and the countdown. Most of the engine is the retargeting ad flow."
+  }
+}

@@ -1,0 +1,122 @@
+{
+  "id": "autowebinar-funnel",
+  "name": "AutoWebinar Funnel (Evergreen Webinar)",
+  "aliases": ["Automated Webinar Funnel", "Evergreen Webinar Funnel", "Just-In-Time Webinar Funnel"],
+  "category": "Event Funnels",
+  "libraryRef": "#16",
+  "sourceBooks": ["The Funnel Hacker's Cookbook", "Marketing Secrets Blackbook", "DotCom Secrets", "Expert Secrets"],
+  "lengthClass": "long-form",
+  "origin": "Takes a PROVEN live webinar recording and runs it 24/7. Registrants pick a future start time or watch 'yesterday's replay' immediately. Watch-time tracking triggers segmented follow-up. Brunson notes two of his auto-webinars each produced over $1M.",
+  "whenToUse": {
+    "summary": "Use to scale a webinar that has ALREADY converted live — run the recording evergreen 24/7 with just-in-time sessions, watch-time segmentation, and an automated cart-close per registrant.",
+    "goals": [
+      "Sell the same offer continuously without presenting live each time",
+      "Scale paid cold/warm traffic to a hands-off selling event",
+      "Segment and follow up by watch behavior (watched-to-end, left-early, no-show)"
+    ],
+    "keywords": ["auto webinar", "evergreen webinar", "on-demand training", "watch now", "just in time", "automated webinar", "replay available"],
+    "signals": [
+      "A live Perfect Webinar has already proven conversion",
+      "Client wants hands-off, always-on sales",
+      "High, steady traffic volume to feed sessions",
+      "Wants per-lead deadline funnels rather than one global cart close"
+    ],
+    "antiSignals": [
+      "No proven live webinar yet (run live first)",
+      "Offer/price changes frequently (evergreen recording goes stale)",
+      "One-time event with fixed date (use Live Webinar)"
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Registration Page (just-in-time)",
+      "purpose": "Register the visitor and offer immediate or near-future session times.",
+      "keyElements": [
+        "Curiosity Big-Promise headline (same as proven live)",
+        "Session-time picker: next just-in-time sessions + 'watch the one starting in 15 min'",
+        "3 fascination bullets teasing the 3 secrets",
+        "Opt-in form (name/email/phone)"
+      ],
+      "skill44Widgets": ["Registration/opt-in form", "Just-in-time session selector", "Countdown-to-session widget"]
+    },
+    {
+      "order": 2,
+      "page": "Confirmation Page",
+      "purpose": "Confirm the chosen session and maximize show-up rate.",
+      "keyElements": [
+        "Countdown to the chosen session",
+        "Add-to-calendar + SMS/email reminders",
+        "Short pre-frame / indoctrination video",
+        "'Show up 5 min early' instruction"
+      ],
+      "skill44Widgets": ["Countdown-to-session", "Add-to-calendar", "SMS/email reminder opt-in"]
+    },
+    {
+      "order": 3,
+      "page": "Broadcast / Replay Page",
+      "purpose": "Play the evergreen recording as a simulated-live event and track watch time.",
+      "keyElements": [
+        "Embedded recording (YouTube/Vimeo/auto-webinar platform) running as simulated live",
+        "Watch-time tracking to fire tags",
+        "Buy button revealed at the same timestamp the Stack begins",
+        "Per-registrant cart-open countdown"
+      ],
+      "skill44Widgets": ["Video embed with watch-time tracking", "Timestamp-triggered order button", "Per-lead countdown"]
+    },
+    {
+      "order": 4,
+      "page": "Post-Webinar Offer Page",
+      "purpose": "Present the order with the Stack and a per-lead deadline.",
+      "keyElements": [
+        "Stack recap + bonuses + guarantee",
+        "Order form with bump",
+        "Evergreen deadline countdown (per-lead, e.g. 48h from registration)",
+        "FAQ + testimonials"
+      ],
+      "skill44Widgets": ["Order form with bump", "Evergreen per-lead countdown timer", "FAQ accordion"]
+    },
+    {
+      "order": 5,
+      "page": "Segmented Follow-Up (sequences)",
+      "purpose": "Run different follow-up per watch behavior to recover non-buyers.",
+      "keyElements": [
+        "Segment: registered-no-show / left-early / watched-to-end / watched-no-buy",
+        "3 Closes follow-up (emotion → logic → fear) tied to the per-lead deadline",
+        "Replay re-offer with expiring access"
+      ],
+      "skill44Widgets": ["Watch-time tag automation", "Email/SMS sequence (not a page)"]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "perfect-webinar",
+    "supportingPersonas": ["copywriting-secrets", "star-story-solution", "epiphany-bridge"],
+    "scripts": [
+      "Presentation = the proven Perfect Webinar recording (Intro → 3 Secrets → Stack → Close) — do NOT rewrite a converting recording",
+      "Registration + per-lead urgency = Copywriting Secrets",
+      "Segmented follow-up = 3 Closes (emotion/logic/fear) tied to the evergreen deadline",
+      "Order page recap = Star/Story/Solution"
+    ],
+    "notes": "Copy is reused from the winning live webinar. The new copywriting work is the per-lead deadline urgency and the watch-segment follow-up sequences."
+  },
+  "ghlBuild": {
+    "funnelType": "Funnel (4 pages) + watch-time segmentation automations + email/SMS sequences",
+    "pages": ["Registration (just-in-time)", "Confirmation", "Broadcast/Replay", "Post-Webinar Offer"],
+    "skill44Widgets": [
+      "Registration/opt-in form",
+      "Just-in-time session selector + countdown-to-session",
+      "Add-to-calendar + reminder opt-in",
+      "Order form with bump",
+      "Evergreen per-lead countdown timer",
+      "FAQ accordion"
+    ],
+    "automations": [
+      "Register → assign just-in-time session + reminder sequence",
+      "Watch-time tracking → tags (no-show / left-early / watched-end / watched-no-buy)",
+      "Per-lead 48h evergreen deadline → 3 Closes follow-up",
+      "Purchase → fulfillment + exit all sales sequences"
+    ],
+    "products": ["Core offer (same as live)", "Order bump", "Optional OTO"],
+    "notes": "Skill 6 builds 4 pages with the simulated-live recording and per-lead deadline logic; Skill 44 generates the session selector, reminder widgets, order form + bump, and the evergreen countdown. The 5th 'page' is the segmented follow-up automation, not a funnel page."
+  }
+}

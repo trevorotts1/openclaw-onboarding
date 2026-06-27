@@ -1,0 +1,142 @@
+{
+  "id": "lead-magnet",
+  "name": "Lead Magnet Funnel",
+  "aliases": [
+    "Epiphany Lead Funnel",
+    "Lead Funnel"
+  ],
+  "category": "Lead Funnels",
+  "skill": "Skill 6",
+  "lengthClass": "short-form",
+  "libraryEntry": 3,
+  "books": [
+    "The Funnel Hacker's Cookbook",
+    "Lead Funnels (Swipe File)",
+    "DotCom Secrets",
+    "Expert Secrets",
+    "Traffic Secrets"
+  ],
+  "whenToUse": {
+    "summary": "Exchange a tangible deliverable (ebook, report, checklist, cheat sheet, swipe file, video, or coupon) directly for an email on a dedicated offer page. The lead magnet is the hook; the thank-you page begins relationship-building and routes the lead into a follow-up sequence.",
+    "goals": [
+      "List-building with a specific named asset",
+      "Front-end lead generation",
+      "Route leads into a follow-up sequence",
+      "Value-stack a free deliverable"
+    ],
+    "keywords": [
+      "free ebook",
+      "checklist",
+      "cheat sheet",
+      "download",
+      "free report",
+      "template",
+      "swipe file",
+      "lead magnet",
+      "guide"
+    ],
+    "signals": [
+      "You have a specific concrete deliverable",
+      "You want to value-stack the freebie",
+      "You want delivery + automated follow-up"
+    ],
+    "doNotUseWhen": [
+      "You have no concrete deliverable yet (use Squeeze with a promise)",
+      "Cold traffic needs warming first (use Bridge)"
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Lead Magnet Offer Page",
+      "purpose": "Sell the free thing as if it were a paid product so perceived value dwarfs 'an email.'",
+      "blocks": [
+        "Benefit headline naming the deliverable",
+        "Hero image / 3D mockup of the asset",
+        "Value-stack bullets (what's inside + perceived $ value)",
+        "Opt-in form (Name optional + Email)",
+        "Single CTA",
+        "Social proof"
+      ]
+    },
+    {
+      "order": 2,
+      "page": "Thank-You / Delivery Page",
+      "purpose": "Deliver the asset and begin the relationship.",
+      "blocks": [
+        "Download / access button",
+        "'Check your email' instruction",
+        "Indoctrination / bridge video",
+        "Next-step CTA into the value ladder",
+        "Soap Opera Sequence trigger"
+      ]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "copy-closer",
+    "supportingPersonas": [
+      "funnel-architect"
+    ],
+    "script": "Hook-Story-Offer (DotCom Secrets) wrapped around Jim Edwards' fascination-bullet formula for the 'what's inside' section.",
+    "structure": [
+      "Hook = result headline",
+      "Micro-story = why this matters now",
+      "Offer = the value-stacked free deliverable",
+      "3-5 fascination bullets",
+      "Mockup",
+      "CTA",
+      "Reassurance"
+    ],
+    "notes": "Treat the free lead magnet like a paid product - a full value stack so perceived value vastly exceeds the cost of an email address.",
+    "primaryPersonaResolved": {
+      "id": "copy-closer",
+      "label": "The Copy Closer",
+      "author": "Jim Edwards",
+      "book": "Copywriting Secrets",
+      "owns_scripts": [
+        "Headline formulas (4 U's: Useful, Urgent, Unique, Ultra-specific; How-To; Who-Else-Wants; curiosity gap)",
+        "Fascination / bullet formulas",
+        "One-Sentence Persuasion (F-O-R-C-E)",
+        "The 13-link sales chain",
+        "The Godfather offer / value stack"
+      ],
+      "voice": "Curiosity-driven headlines and irresistible bullets; sell the click and the open."
+    },
+    "supportingPersonasResolved": [
+      {
+        "id": "funnel-architect",
+        "label": "The Funnel Architect",
+        "author": "Russell Brunson",
+        "book": "DotCom Secrets",
+        "owns_scripts": [
+          "Star/Story/Solution (sales-letter script)",
+          "Hook-Story-Offer",
+          "The Attractive Character (backstory, parables, character flaws, polarity)",
+          "The Value Ladder",
+          "Who/What/Why/How opt-in framing",
+          "Survey funnel mechanics"
+        ],
+        "voice": "Direct-response funnel mechanics; sequence the visitor from curiosity to conversion."
+      }
+    ]
+  },
+  "ghlBuild": {
+    "platform": "GoHighLevel",
+    "pages": [
+      "Step 1: Lead magnet offer page",
+      "Step 2: Thank-You / Delivery page"
+    ],
+    "skill44Widgets": [
+      "Opt-in Form widget (Name optional + Email)",
+      "File-delivery link/button",
+      "Tag-on-submit"
+    ],
+    "automations": [
+      "Email the file / access link",
+      "Apply tag 'lm-<asset-slug>'",
+      "Soap Opera Sequence"
+    ],
+    "notes": "Host the asset and redirect to the delivery page. Optional double opt-in. One asset per funnel for clean tracking."
+  },
+  "group": "lead"
+}

@@ -1,0 +1,114 @@
+{
+  "id": "ask-campaign",
+  "name": "Ask Campaign Funnel",
+  "aliases": [
+    "Deep-Dive Survey",
+    "Voice-of-Customer Funnel"
+  ],
+  "category": "Lead Funnels",
+  "skill": "Skill 6",
+  "lengthClass": "short-form",
+  "libraryEntry": 6,
+  "books": [
+    "The Funnel Hacker's Cookbook"
+  ],
+  "whenToUse": {
+    "summary": "A single open-ended question - typically 'What is your #1 challenge/question with [topic]?' - deployed to discover what customers actually want. Responses guide product creation and reveal the false beliefs to overcome in sales copy. Exploratory and research-driven, NOT segmentation-driven.",
+    "goals": [
+      "Market research",
+      "Discover customer language & false beliefs",
+      "Validate before building a product",
+      "Gather voice-of-customer for future copy"
+    ],
+    "keywords": [
+      "survey my audience",
+      "what do they want",
+      "research",
+      "biggest challenge",
+      "ask my list",
+      "voice of customer",
+      "validate idea",
+      "what to build"
+    ],
+    "signals": [
+      "You are pre-product or pre-copy",
+      "You need real customer language",
+      "You want to surface the objections to overcome later"
+    ],
+    "doNotUseWhen": [
+      "You are ready to sell now (use a sales/lead funnel)",
+      "You need segmentation/routing (use Survey/Quiz)"
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Ask Question Page",
+      "purpose": "Capture one unbiased open-ended answer.",
+      "blocks": [
+        "Short framing headline",
+        "Single open text-area ('What is your #1 question/challenge with ___?')",
+        "Name + Email fields",
+        "Submit button",
+        "Deliberately minimal copy"
+      ]
+    },
+    {
+      "order": 2,
+      "page": "Thank-You Page",
+      "purpose": "Close the loop and softly pre-frame a future offer.",
+      "blocks": [
+        "Thank-you message",
+        "'Watch this while you wait' video or relevant resource",
+        "Optional soft offer/opt-in",
+        "Responses piped to a reporting view/spreadsheet"
+      ]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "funnel-architect",
+    "supportingPersonas": [],
+    "script": "Single open-ended question with deliberately minimal copy so answers stay unbiased. No selling on Page 1 (exploratory voice rooted in the Ask method).",
+    "structure": [
+      "One-line warm frame",
+      "The question",
+      "Submit",
+      "(Thank-You may pre-frame a future offer)"
+    ],
+    "notes": "Exploratory, not segmentation. The gold is the raw answers - mine them for headlines, hooks, and the false beliefs to break in later funnels.",
+    "primaryPersonaResolved": {
+      "id": "funnel-architect",
+      "label": "The Funnel Architect",
+      "author": "Russell Brunson",
+      "book": "DotCom Secrets",
+      "owns_scripts": [
+        "Star/Story/Solution (sales-letter script)",
+        "Hook-Story-Offer",
+        "The Attractive Character (backstory, parables, character flaws, polarity)",
+        "The Value Ladder",
+        "Who/What/Why/How opt-in framing",
+        "Survey funnel mechanics"
+      ],
+      "voice": "Direct-response funnel mechanics; sequence the visitor from curiosity to conversion."
+    },
+    "supportingPersonasResolved": []
+  },
+  "ghlBuild": {
+    "platform": "GoHighLevel",
+    "pages": [
+      "Step 1: Ask question page",
+      "Step 2: Thank-You page"
+    ],
+    "skill44Widgets": [
+      "Form widget with a long-answer text area + Name/Email",
+      "Submission pipe to a reporting view / spreadsheet (webhook or integration)"
+    ],
+    "automations": [
+      "Tag 'ask-respondent'",
+      "Notify owner of new responses",
+      "Aggregate responses for analysis"
+    ],
+    "notes": "Export responses to a sheet and categorize answers into belief buckets. Keep the page sparse to avoid biasing the answers."
+  },
+  "group": "lead"
+}

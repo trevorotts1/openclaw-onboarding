@@ -35,3 +35,8 @@ tmp/
 
 # backup files from automated fixes
 *.bak*
+
+# Skill 6 funnel-matcher — generated catalog index contains system-specific absolute
+# paths; rebuilt on any system with:
+#   python3 06-ghl-install-pages/tools/funnel_matcher_cli.py --build-index
+06-ghl-install-pages/tools/catalog-index.json

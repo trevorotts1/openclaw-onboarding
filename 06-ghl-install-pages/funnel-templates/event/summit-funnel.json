@@ -1,0 +1,109 @@
+{
+  "id": "summit-funnel",
+  "name": "Summit Funnel",
+  "aliases": ["Virtual Summit Funnel", "Online Summit Funnel", "Speaker Summit Funnel"],
+  "category": "Event Funnels",
+  "libraryRef": "#22",
+  "sourceBooks": ["The Funnel Hacker's Cookbook", "Expert Secrets", "Traffic Secrets"],
+  "lengthClass": "long-form",
+  "origin": "Host a free online summit featuring multiple expert speakers/interviews. Builds authority and a large subscriber list simultaneously; the upsell is typically the paid all-access recordings bundle.",
+  "whenToUse": {
+    "summary": "Use to build a large list and authority fast by hosting a free multi-speaker online event, monetized by a paid all-access recordings bundle (and speaker cross-promotion traffic).",
+    "goals": [
+      "Build a large subscriber list quickly via speaker cross-promotion",
+      "Establish the host's authority by association with multiple experts",
+      "Monetize free registrants with a paid all-access / recordings upsell"
+    ],
+    "keywords": ["summit", "virtual summit", "online summit", "speaker lineup", "free registration", "all-access pass", "sessions", "interviews"],
+    "signals": [
+      "Client wants rapid list growth and authority",
+      "Has or can recruit multiple expert speakers who will promote",
+      "Topic supports 10-30+ sessions over multiple days",
+      "Wants a low-friction free front end + paid upsell"
+    ],
+    "antiSignals": [
+      "Single-presenter offer (use Webinar Funnel)",
+      "No speaker network to cross-promote",
+      "Needs immediate high-ticket sale, not list-building"
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Summit Registration / Sales Page",
+      "purpose": "Sell the free registration with a big promise and the speaker lineup.",
+      "keyElements": [
+        "Big-promise event headline + dates",
+        "Speaker lineup showcase (photos, names, session topics)",
+        "Free opt-in form",
+        "Topic/agenda overview + 'who this is for'"
+      ],
+      "skill44Widgets": ["Free registration opt-in form", "Speaker grid block", "Countdown to summit start"]
+    },
+    {
+      "order": 2,
+      "page": "Confirmation + All-Access Upsell (OTO)",
+      "purpose": "Confirm registration and immediately pitch the paid all-access recordings bundle.",
+      "keyElements": [
+        "Registration confirmed + add-to-calendar",
+        "All-Access Pass pitch (lifetime recordings, bonuses, transcripts)",
+        "Order form with bump",
+        "Upgrade urgency (price rises after the summit / fast-action bonus)"
+      ],
+      "skill44Widgets": ["Add-to-calendar", "All-access order form with bump", "Countdown / price-rise timer"]
+    },
+    {
+      "order": 3,
+      "page": "Daily Session / Live Stream Pages",
+      "purpose": "Deliver each day's speaker sessions (free for a limited window).",
+      "keyElements": [
+        "Session video embeds per speaker / per day",
+        "Schedule + 'available until midnight' expiry note",
+        "All-access upsell reminder beside the player",
+        "Speaker bios + their lead-magnet links"
+      ],
+      "skill44Widgets": ["Session video embeds", "Schedule block", "All-access CTA block"]
+    },
+    {
+      "order": 4,
+      "page": "All-Access Recordings Member Area",
+      "purpose": "Deliver the paid bundle to upgraders.",
+      "keyElements": [
+        "Gated recordings library + transcripts + bonuses",
+        "Speaker resources / offers",
+        "Backend value-ladder CTA"
+      ],
+      "skill44Widgets": ["Membership/gated content", "Order form (if late upgrades allowed)"]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "storybrand-sb7",
+    "supportingPersonas": ["copywriting-secrets", "star-story-solution", "epiphany-bridge"],
+    "scripts": [
+      "Registration page positioning = StoryBrand SB7 (attendee = hero, host = guide, the summit = the plan to win)",
+      "Headline + speaker fascinations + opt-in bullets = Copywriting Secrets",
+      "All-access upsell = Star/Story/Solution + Stack",
+      "Host welcome / session intros = Epiphany Bridge"
+    ],
+    "notes": "Clarity wins on a free multi-speaker event — SB7 keeps the promise simple. Speakers each promote, so the registration page must convert their cold-ish traffic fast."
+  },
+  "ghlBuild": {
+    "funnelType": "Funnel (multi-page) + membership + speaker affiliate tracking",
+    "pages": ["Registration/Sales", "Confirmation + All-Access Upsell", "Daily Session pages", "All-Access Member Area"],
+    "skill44Widgets": [
+      "Free registration opt-in form",
+      "Speaker grid + schedule blocks",
+      "All-access order form with bump",
+      "Countdown to start + price-rise timer",
+      "Membership/gated content for recordings"
+    ],
+    "automations": [
+      "Register → daily 'session is live' email/SMS sequence",
+      "Affiliate/speaker attribution tags for cross-promo crediting",
+      "All-access purchase → grant membership + exit upsell sequence",
+      "Post-summit → expiring all-access offer to free registrants"
+    ],
+    "products": ["Free registration", "All-Access Pass (recordings bundle)", "Order bump", "Speaker/host backend offers"],
+    "notes": "Skill 6 builds the registration, confirmation/upsell, and daily session pages plus the member area; Skill 44 generates the opt-in form, the all-access order form + bump, speaker/schedule blocks, and the countdown/price-rise timers."
+  }
+}

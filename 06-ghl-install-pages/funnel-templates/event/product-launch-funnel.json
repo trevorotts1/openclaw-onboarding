@@ -1,0 +1,111 @@
+{
+  "id": "product-launch-funnel",
+  "name": "Product Launch Funnel",
+  "aliases": ["Jeff Walker Launch Funnel", "PLF", "Sideways Perfect Webinar", "Pre-Launch Sequence Funnel"],
+  "category": "Event Funnels",
+  "libraryRef": "#17",
+  "sourceBooks": ["The Funnel Hacker's Cookbook", "DotCom Secrets", "Expert Secrets"],
+  "lengthClass": "long-form",
+  "origin": "Pioneered by Jeff Walker. Three pre-launch videos released days apart build anticipation; the 4th opens the cart. Brunson calls it a 'sideways Perfect Webinar' — the same content delivered across several days instead of one sitting.",
+  "whenToUse": {
+    "summary": "Use for a launch event to a warm list/audience where anticipation is built over several days with sequential content videos before a hard cart-open/cart-close window.",
+    "goals": [
+      "Build anticipation and reciprocity with free pre-launch content",
+      "Deliver the Perfect Webinar 'sideways' across 3 videos before selling",
+      "Create a launch spike with a hard cart-open and cart-close window"
+    ],
+    "keywords": ["product launch", "launch funnel", "pre-launch", "PLF", "cart opens", "free video series", "video 1 2 3", "doors open"],
+    "signals": [
+      "Client has a warm list/audience to launch to",
+      "Wants an event-style spike, not always-on selling",
+      "Offer benefits from anticipation and social proof in comments",
+      "Has time to release content over several days"
+    ],
+    "antiSignals": [
+      "Cold traffic with no relationship (warm them first)",
+      "Always-on evergreen need (use AutoWebinar)",
+      "No bandwidth to produce 3-4 quality videos"
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Pre-Launch Content #1 — 'Wow and How' (Opportunity)",
+      "purpose": "Open the loop with the big idea / new opportunity and capture the opt-in.",
+      "keyElements": [
+        "Opt-in gate or list-only access",
+        "Video 1: the big idea, the result that's possible, why now (Wow and How)",
+        "Comment section for engagement + social proof",
+        "'Video 2 drops in X days' CTA"
+      ],
+      "skill44Widgets": ["Opt-in form (if gated)", "Video embed", "Comment/engagement block"]
+    },
+    {
+      "order": 2,
+      "page": "Pre-Launch Content #2 — 'Transformational Education' (Process)",
+      "purpose": "Teach the process / case study so the dream feels achievable.",
+      "keyElements": [
+        "Video 2: the transformation and the step-by-step process / case study",
+        "Recap of Video 1 + answer top comments",
+        "Comment section",
+        "'Video 3 + the offer is coming' CTA"
+      ],
+      "skill44Widgets": ["Video embed", "Comment/engagement block"]
+    },
+    {
+      "order": 3,
+      "page": "Pre-Launch Content #3 — 'Ownership Experience' (Result + Cart Tease)",
+      "purpose": "Future-pace the result of owning the solution and tease the cart open.",
+      "keyElements": [
+        "Video 3: future-pace ownership, what life looks like with the solution",
+        "Answer objections / FAQ raised in comments",
+        "Cart-open date + 'reserve your spot / join the waitlist' tease",
+        "Comment section"
+      ],
+      "skill44Widgets": ["Video embed", "Waitlist/notify form", "Comment block", "Countdown-to-cart-open"]
+    },
+    {
+      "order": 4,
+      "page": "Cart-Open Offer Page (Video 4 + Order)",
+      "purpose": "Open the cart, present the offer and price, and close with urgency.",
+      "keyElements": [
+        "Video 4 / sales video: the offer, the Stack, the price",
+        "Order form with bump",
+        "Cart-close countdown timer (hard deadline)",
+        "Guarantee + bonuses (some expiring) + FAQ"
+      ],
+      "skill44Widgets": ["Sales video embed", "Order form with bump", "Cart-close countdown timer", "FAQ accordion"]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "epiphany-bridge",
+    "supportingPersonas": ["perfect-webinar", "copywriting-secrets", "star-story-solution"],
+    "scripts": [
+      "Videos 1-3 = Epiphany Bridge story arc spread 'sideways' (opportunity → process → ownership)",
+      "Video 4 / offer page = Perfect Webinar Stack & Close compressed into the sales video",
+      "Video hooks, comment prompts, subject lines = Copywriting Secrets",
+      "Order page reinforcement = Star/Story/Solution"
+    ],
+    "notes": "It is literally a 'sideways Perfect Webinar': Wow-and-How = the hook + vehicle belief; Transformational Education = the internal/external belief breaks; Ownership Experience = future-pace; Video 4 = the Stack and close."
+  },
+  "ghlBuild": {
+    "funnelType": "Funnel (4 pages) + launch email/SMS sequence",
+    "pages": ["PLC #1 (Wow and How)", "PLC #2 (Transformational Education)", "PLC #3 (Ownership Experience)", "Cart-Open Offer"],
+    "skill44Widgets": [
+      "Opt-in / waitlist form",
+      "Video embeds on each content page",
+      "Comment / engagement block",
+      "Countdown-to-cart-open + cart-close countdown timer",
+      "Order form with bump",
+      "FAQ accordion"
+    ],
+    "automations": [
+      "Opt-in → 'open' launch sequence (video drop notifications)",
+      "Tag by which videos watched → tailored reminders",
+      "Cart-open email blast → cart-close 3 Closes (emotion/logic/fear) + last-call",
+      "Purchase → fulfillment + remove from launch sequence"
+    ],
+    "products": ["Launch offer", "Order bump", "Optional fast-action bonus / OTO"],
+    "notes": "Skill 6 builds the 4 pages and schedules the content release; Skill 44 generates the opt-in/waitlist form, the order form + bump, and both the cart-open and cart-close countdown timers that gate the launch window."
+  }
+}

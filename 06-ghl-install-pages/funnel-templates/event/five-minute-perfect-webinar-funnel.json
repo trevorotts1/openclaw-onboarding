@@ -1,0 +1,95 @@
+{
+  "id": "five-minute-perfect-webinar-funnel",
+  "name": "5-Minute Perfect Webinar",
+  "aliases": ["Five-Minute Perfect Webinar", "5-Min PW VSL", "Short Perfect Webinar VSL"],
+  "category": "Event Funnels",
+  "libraryRef": "#34",
+  "sourceBooks": ["Expert Secrets"],
+  "lengthClass": "short-form",
+  "origin": "An abbreviated Perfect Webinar — origin story plus ONE secret and the close — running under 5 minutes. Used as Facebook/Instagram ad creative and as the sales video on unboxing/tripwire funnel pages, especially for products priced under $100.",
+  "whenToUse": {
+    "summary": "Use as a sub-5-minute sales video (origin story + one secret + close) for low-ticket (<$100) offers — as ad creative or as the VSL on a tripwire/unboxing/order page with a timed CTA reveal.",
+    "goals": [
+      "Sell a low-ticket (<$100) impulse offer with a short video",
+      "Serve as Facebook/Instagram ad creative",
+      "Act as the sales video on a tripwire/unboxing/order page"
+    ],
+    "keywords": ["5 minute webinar", "short vsl", "quick pitch video", "low ticket", "under $100", "tripwire video", "ad creative", "one secret"],
+    "signals": [
+      "Offer priced under $100 (impulse range)",
+      "Needs short, scroll-stopping video for ads",
+      "Wants a VSL that drops onto a tripwire/unboxing order page",
+      "Single belief to break, fast"
+    ],
+    "antiSignals": [
+      "Mid/high-ticket offer needing full belief work (use Webinar / 90-min)",
+      "Audience needs deep teaching before buying",
+      "Multi-speaker or live-event goal (use Summit/Webinar)"
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Short VSL Sales Page",
+      "purpose": "Play the sub-5-minute Perfect Webinar and reveal the CTA after the close.",
+      "keyElements": [
+        "Big-promise headline above the video",
+        "Embedded sub-5-minute video: origin story → ONE secret → close",
+        "Timed/delayed CTA button reveal (after the close)",
+        "Brief proof + guarantee"
+      ],
+      "skill44Widgets": ["Video embed with timed CTA reveal", "Trust/guarantee block"]
+    },
+    {
+      "order": 2,
+      "page": "Order Page (with order bump)",
+      "purpose": "Capture the low-ticket sale and lift AOV with a bump.",
+      "keyElements": [
+        "Concise stack + price",
+        "Order form with order bump",
+        "Guarantee + short FAQ",
+        "Scarcity/urgency line"
+      ],
+      "skill44Widgets": ["Order form with bump", "Guarantee block", "FAQ accordion"]
+    },
+    {
+      "order": 3,
+      "page": "OTO / Upsell Page (optional)",
+      "purpose": "Add profit with a one-time upsell after purchase.",
+      "keyElements": [
+        "One-click upsell offer + short pitch",
+        "Yes/No buttons",
+        "Optional downsell"
+      ],
+      "skill44Widgets": ["One-click upsell button", "Downsell block"]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "perfect-webinar",
+    "supportingPersonas": ["epiphany-bridge", "copywriting-secrets", "star-story-solution"],
+    "scripts": [
+      "Video = 5-Minute Perfect Webinar (origin story + ONE secret + close), compressed",
+      "Origin story = Epiphany Bridge (tight)",
+      "Headline, timed-CTA copy, ad hook, order urgency = Copywriting Secrets",
+      "Order page = Star/Story/Solution micro-stack"
+    ],
+    "notes": "Compression is the skill: one belief, one story, one close, under 5 minutes. The same video doubles as the ad creative and the on-page VSL."
+  },
+  "ghlBuild": {
+    "funnelType": "Short funnel (2-3 pages) — VSL → order → OTO",
+    "pages": ["Short VSL Sales Page", "Order Page (bump)", "OTO/Upsell (optional)"],
+    "skill44Widgets": [
+      "Video embed with timed/delayed CTA reveal",
+      "Order form with order bump",
+      "One-click upsell button",
+      "Guarantee + FAQ blocks"
+    ],
+    "automations": [
+      "Visit-no-buy → retargeting + short follow-up sequence",
+      "Purchase → fulfillment + OTO offer",
+      "Tie video as ad creative to the same VSL page via UTM"
+    ],
+    "products": ["Low-ticket front-end (<$100)", "Order bump", "OTO/downsell"],
+    "notes": "Skill 6 builds the short VSL page with timed CTA reveal, the order page, and the optional OTO; Skill 44 generates the order form + bump, the timed-CTA video block, and the one-click upsell. Same video is exported as FB/IG ad creative."
+  }
+}

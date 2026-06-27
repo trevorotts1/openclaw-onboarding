@@ -1,0 +1,111 @@
+{
+  "id": "live-demo-home-party-funnel",
+  "name": "Live Demo / Home Party Funnel",
+  "aliases": ["QVC Funnel", "Home Party Funnel", "FunnelFridays-style Funnel", "Live Build Demo Funnel"],
+  "category": "Event Funnels",
+  "libraryRef": "#23",
+  "sourceBooks": ["The Funnel Hacker's Cookbook", "Marketing Secrets Blackbook", "Network Marketing Secrets"],
+  "lengthClass": "short-to-medium-form",
+  "origin": "Live broadcast on Facebook/Instagram/YouTube/Zoom demonstrating a product or building something in real time (QVC-style). Recording stays live with buy buttons below the player. The Network Marketing Home Party variant adds a Party Invite registration, a social-share confirmation, and invite-a-friend mechanics for duplication.",
+  "whenToUse": {
+    "summary": "Use to sell a product by demonstrating it live (or building something in real time) with buy buttons under the player, then keep the replay selling. Add the Home Party variant for network-marketing duplication and invite-a-friend virality.",
+    "goals": [
+      "Sell via live product demonstration (QVC-style) with instant buy buttons",
+      "Keep the replay selling indefinitely with persistent buy links",
+      "(NM variant) Drive invite-a-friend duplication for a virtual home party"
+    ],
+    "keywords": ["live demo", "home party", "QVC", "live build", "watch me build", "buy now below", "going live", "invite friends", "party"],
+    "signals": [
+      "Physical or visual product that benefits from live demonstration",
+      "Client comfortable going live on FB/IG/YT/Zoom",
+      "Network-marketing duplication goal (home party invite mechanics)",
+      "Wants impulse buys during/after a live event"
+    ],
+    "antiSignals": [
+      "Complex high-ticket offer needing full Perfect Webinar (use Webinar)",
+      "No live-demoable product (use VSL/Sales Letter)",
+      "Pure list-building goal (use Squeeze/Lead Magnet)"
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Party Invite / Registration Page",
+      "purpose": "(NM Home Party variant) Register attendees and frame the live party; for a plain live demo this can route directly to the broadcast page.",
+      "keyElements": [
+        "Fun, social headline + host + 'what we'll show/build live'",
+        "Opt-in form (name/email, optional phone)",
+        "Date/time + 'bring a friend' framing",
+        "(Plain demo) optional skip straight to broadcast"
+      ],
+      "skill44Widgets": ["Registration opt-in form", "Countdown to go-live"]
+    },
+    {
+      "order": 2,
+      "page": "Social-Share Confirmation Page",
+      "purpose": "Confirm the seat and trigger invite-a-friend sharing (duplication mechanics).",
+      "keyElements": [
+        "'You're in' + add-to-calendar",
+        "Invite-a-friend share buttons with pre-filled message + personal link",
+        "Incentive to invite (unlock bonus / party gift)",
+        "Reminder opt-in"
+      ],
+      "skill44Widgets": ["Add-to-calendar", "Social-share / referral block", "SMS/email reminder opt-in"]
+    },
+    {
+      "order": 3,
+      "page": "Live Stream / Broadcast Page",
+      "purpose": "Host the live demo/build with buy buttons directly below the player.",
+      "keyElements": [
+        "Live embed (FB/IG/YouTube/Zoom)",
+        "Product CTA / buy button(s) directly below the player",
+        "Live chat + invite-a-friend prompts",
+        "Limited-time live-only bonus"
+      ],
+      "skill44Widgets": ["Live video embed", "Order button / order form block", "Live chat embed", "Share prompt block"]
+    },
+    {
+      "order": 4,
+      "page": "Replay Archive Page (buy links active)",
+      "purpose": "Keep the recording selling with persistent buy links.",
+      "keyElements": [
+        "Replay video embed",
+        "Persistent buy button(s) below the player",
+        "Highlights / timestamps of key demo moments",
+        "Testimonials + guarantee"
+      ],
+      "skill44Widgets": ["Replay video embed", "Persistent order button / order form", "Testimonial block"]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "epiphany-bridge",
+    "supportingPersonas": ["copywriting-secrets", "star-story-solution", "perfect-webinar"],
+    "scripts": [
+      "Live demo narrative = Epiphany Bridge + Viral Loop (story → demo → call to action), especially the NM Home Party variant",
+      "Buy-button copy, share prompts, live-only bonus urgency = Copywriting Secrets",
+      "Product framing on the broadcast/replay = Star/Story/Solution (compressed)",
+      "Optional teach-then-show beats = Perfect Webinar (one secret) if the demo includes a mini-pitch"
+    ],
+    "notes": "Energy and live social proof drive this funnel. The Network Marketing Home Party variant leans hardest on the Viral Loop and invite-a-friend duplication; a plain QVC-style demo can skip the registration/share pages and start at the broadcast page."
+  },
+  "ghlBuild": {
+    "funnelType": "Funnel (2-4 pages) + live/replay embeds + referral mechanics",
+    "pages": ["Party Invite/Registration (optional)", "Social-Share Confirmation (NM variant)", "Live Broadcast", "Replay Archive"],
+    "skill44Widgets": [
+      "Registration opt-in form",
+      "Social-share / referral block with personal links",
+      "Add-to-calendar + reminder opt-in",
+      "Live + replay video embeds",
+      "Order button / order form blocks below the player",
+      "Testimonial block"
+    ],
+    "automations": [
+      "Register → reminders + 'we're live' notification",
+      "Invite-a-friend referral tracking → unlock bonus on N referrals",
+      "Purchase → fulfillment; non-buyer → replay re-offer",
+      "(NM) duplication: new builders get their own party-invite funnel clone"
+    ],
+    "products": ["Demonstrated product (impulse price)", "Optional order bump", "Party/referral bonus"],
+    "notes": "Skill 6 builds the broadcast and replay pages with buy buttons under the player; for the NM Home Party variant it also builds the party-invite registration + social-share confirmation pages. Skill 44 generates the opt-in form, the referral/share block, the order button/form, and the reminder widgets."
+  }
+}

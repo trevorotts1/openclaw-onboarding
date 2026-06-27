@@ -1,0 +1,151 @@
+{
+  "id": "application",
+  "name": "Application Funnel",
+  "aliases": [
+    "High-Ticket Funnel",
+    "Phone Funnel",
+    "Backend Funnel",
+    "Three-Step Application Funnel"
+  ],
+  "category": "Lead Funnels",
+  "skill": "Skill 6",
+  "lengthClass": "long-form",
+  "libraryEntry": 7,
+  "books": [
+    "The Funnel Hacker's Cookbook",
+    "DotCom Secrets",
+    "Expert Secrets",
+    "Lead Funnels (named only)"
+  ],
+  "whenToUse": {
+    "summary": "A 'take-away' sale where the prospect must APPLY to work with you. Used for high-ticket coaching, consulting, and any offer requiring a qualification phone call. Credibility video > qualification application > homework/booking, with the sale closed by phone using a setter-then-closer script.",
+    "goals": [
+      "Sell a high-ticket offer",
+      "Book qualified sales calls",
+      "Pre-qualify / filter leads",
+      "Set up a setter-to-closer phone close"
+    ],
+    "keywords": [
+      "high-ticket",
+      "coaching",
+      "consulting",
+      "book a call",
+      "application",
+      "apply to work with me",
+      "strategy session",
+      "qualify",
+      "done-for-you"
+    ],
+    "signals": [
+      "Offer is priced high enough to require a call",
+      "You want only qualified prospects",
+      "You want prospects to sell themselves through the form"
+    ],
+    "doNotUseWhen": [
+      "Offer is low-ticket / self-serve (use Lead Magnet/SLO/Tripwire)",
+      "You have no capacity to take sales calls"
+    ]
+  },
+  "pageStructure": [
+    {
+      "order": 1,
+      "page": "Credibility / Case-Study VSL Page",
+      "purpose": "Establish authority and desire, then 'take away' by requiring an application (no price shown).",
+      "blocks": [
+        "Case-study / credibility Video Sales Letter",
+        "Big result proof",
+        "Who this is (and isn't) for",
+        "'Apply Now' button"
+      ]
+    },
+    {
+      "order": 2,
+      "page": "Application Form Page",
+      "purpose": "Qualify the prospect and get them to sell themselves.",
+      "blocks": [
+        "Multi-field qualification form (situation, goals, ability/budget, 'why you')",
+        "Commitment questions",
+        "Submit routes to booking"
+      ]
+    },
+    {
+      "order": 3,
+      "page": "Thank-You / Homework Page",
+      "purpose": "Bond with the prospect and book the call.",
+      "blocks": [
+        "Calendar booking widget",
+        "'Homework' bonding videos",
+        "What-to-expect on the call",
+        "Prep instructions",
+        "Scarcity on available call slots"
+      ]
+    }
+  ],
+  "copyFramework": {
+    "primaryPersona": "expert-guide",
+    "supportingPersonas": [
+      "funnel-architect"
+    ],
+    "script": "Page-1 VSL = a condensed Perfect Webinar (Big Domino + proof + take-away CTA). Credibility story uses Star/Story/Solution. The call uses a setter-then-closer phone script.",
+    "structure": [
+      "Authority story",
+      "Big result / proof",
+      "'This isn't for everyone'",
+      "Apply",
+      "Qualify (prospect articulates their own desire)",
+      "Book the call"
+    ],
+    "notes": "The take-away (you must qualify) raises perceived value and inverts the chase. Form questions make prospects articulate their own desire before the closer ever calls.",
+    "primaryPersonaResolved": {
+      "id": "expert-guide",
+      "label": "The Expert Guide",
+      "author": "Russell Brunson",
+      "book": "Expert Secrets",
+      "owns_scripts": [
+        "Epiphany Bridge Script (Backstory > Journey > New Opportunity > Framework > Achievement > Transformation)",
+        "Perfect Webinar (Big Domino + 3 Secrets + The Stack + Close)",
+        "The New Opportunity / New Vehicle",
+        "Breaking & rebuilding false-belief patterns"
+      ],
+      "voice": "Belief-shifting storytelling; transfer your conviction in the vehicle to the prospect."
+    },
+    "supportingPersonasResolved": [
+      {
+        "id": "funnel-architect",
+        "label": "The Funnel Architect",
+        "author": "Russell Brunson",
+        "book": "DotCom Secrets",
+        "owns_scripts": [
+          "Star/Story/Solution (sales-letter script)",
+          "Hook-Story-Offer",
+          "The Attractive Character (backstory, parables, character flaws, polarity)",
+          "The Value Ladder",
+          "Who/What/Why/How opt-in framing",
+          "Survey funnel mechanics"
+        ],
+        "voice": "Direct-response funnel mechanics; sequence the visitor from curiosity to conversion."
+      }
+    ]
+  },
+  "ghlBuild": {
+    "platform": "GoHighLevel",
+    "pages": [
+      "Step 1: VSL / Apply page",
+      "Step 2: Application form page",
+      "Step 3: Thank-You / Homework page"
+    ],
+    "skill44Widgets": [
+      "Multi-field Application Form widget (qualification questions) on page 2",
+      "Calendar / booking widget on page 3",
+      "Pipeline-stage automation"
+    ],
+    "automations": [
+      "Tag 'application'",
+      "Create an Opportunity in the sales pipeline",
+      "Notify the closer",
+      "Booking reminders + no-show follow-up"
+    ],
+    "notes": "Gate the calendar behind a passing application (conditional). Push qualified applications into the sales pipeline at the correct stage."
+  },
+  "group": "lead"
+}
