@@ -49,7 +49,7 @@ Workspace location: [fill in after build]
 ### Governing Personas — Update Protocol
 
 When a new book is added to the persona library:
-1. Run `python3 ~/.openclaw/workspace/scripts/gemini-indexer.py` to re-index the coaching-personas collection
+1. Run `python3 ~/.openclaw/scripts/gemini-indexer.py` to re-index the coaching-personas collection
 2. Review `governing-personas.md` in each department folder for relevant departments (the new persona may be a better fit for some tasks)
 3. Update persona assignments in `governing-personas.md` if the new persona is a better fit for Primary or Secondary slots
 4. Update `~/.openclaw/workspace/ORG-CHART.md` if specialist roles or department structure changes as a result
