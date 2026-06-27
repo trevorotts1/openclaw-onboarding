@@ -45,7 +45,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v14.11.0"
+ONBOARDING_VERSION="v14.11.1"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -448,7 +448,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v14.11.0 - safe_json_edit
+# v14.11.1 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1331,10 +1331,35 @@ if unrecognized:
 # (of any kind) and append it wrapped in BEGIN/END markers.
 # ---------------------------------------------------------------------------
 
-# Build a flat list of all heading positions (for section boundary detection)
+# Fenced-code spans: headings INSIDE a ``` ... ``` fence are payload text, not
+# section boundaries. CORE_UPDATES.md puts the real "exact text to add" inside a
+# fenced block whose FIRST line is often itself an h2 (e.g. the skill-22 AGENTS.md
+# payload starts with "## Book-to-Persona Skill (Installed)"). Without this guard
+# the boundary scan cut the section at that in-fence heading, so the actual
+# payload (the Persona Reflex / Task-Mode body) never merged while the sentinel
+# was still stamped — a marker with no body. Excluding in-fence heading positions
+# lets the WHOLE fenced payload transfer.
+def _fenced_spans(s):
+    spans = []
+    start = None
+    for fm in re.finditer(r'^[ \t]*```', s, re.MULTILINE):
+        if start is None:
+            start = fm.start()
+        else:
+            spans.append((start, fm.end()))
+            start = None
+    return spans
+
+_FENCES = _fenced_spans(text)
+
+def _in_fence(pos):
+    return any(a <= pos < b for (a, b) in _FENCES)
+
+# Build a flat list of all heading positions (for section boundary detection),
+# skipping any heading that lives inside a fenced code block (payload, not boundary).
 all_heading_positions = sorted(
-    [m.start() for m in ANY_H2_RE.finditer(text)] +
-    [m.start() for m in re.finditer(r'^\*\*\[', text, re.MULTILINE)]
+    [m.start() for m in ANY_H2_RE.finditer(text) if not _in_fence(m.start())] +
+    [m.start() for m in re.finditer(r'^\*\*\[', text, re.MULTILINE) if not _in_fence(m.start())]
 )
 
 def next_section_start(pos):

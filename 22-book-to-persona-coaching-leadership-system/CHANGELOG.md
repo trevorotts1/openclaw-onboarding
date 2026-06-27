@@ -4,6 +4,17 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v6.11.1 - 2026-06-27 - fix(task-mode-wiring): Persona Reflex now mandatory + explicit, and its body actually merges
+
+The Persona Reflex in CORE_UPDATES.md is rewritten from "load returned persona's Task Mode" to a MANDATORY
+4-step load-and-apply for every professional task: search (with `--mode leadership`), open the matched
+`persona-blueprint.md`, LOAD Section 4 (Execution Standard + Decision Logic + Definition of Done + Failure
+Patterns) and Section 7B, BUILD to that standard, then VERIFY against the Definition of Done. Paired with a
+fence-aware fix to the CORE_UPDATES merger (`update-skills.sh`) so the Reflex BODY actually transfers into
+AGENTS.md instead of only stamping the "applied" marker. Guarded by `tests/unit/persona-task-mode-wiring.test.sh`.
+
+---
+
 ## [v6.10.0] - 2026-06-27
 
 ### Deepened — acuff-miner-new-model-of-selling + miller-building-storybrand blueprints

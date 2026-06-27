@@ -1,3 +1,13 @@
+## [v14.11.1] - 2026-06-27 - fix(leadership-wiring): persona Task-Mode governance now fires at task time
+
+`persona-matching-protocol.md` gains "Step 5: Load and Apply the Task Mode" (the concrete at-task-time load of
+Section 4 + Definition of Done). Every role-library `## 2. Persona Governance Override` now carries the concrete
+load step (run the persona search → open the matched blueprint → apply Section 4 → self-verify), so a role is no
+longer silently dependent on a missing AGENTS.md Reflex; content-hash manifest restamped. `full-funnel-pipeline`
+R-PERSONA-GROUNDING gains a graduated `task_mode_applied` sub-check so persona grounding means governance-applied,
+not just name-surfaced (committed live-run stays the single documented residual at 8.43). Guarded by
+`tests/unit/persona-task-mode-wiring.test.sh` + `persona-task-mode-wiring-guard.yml`.
+
 ## [v14.8.0] - 2026-06-27 - feat(org-wiring): template-first / reuse-before-reinvent wired into the roles, SOPs, and dept guides
 
 Pointer references + a template-first MANDATE (flexibility = guide-not-rule) added so the agent identities that DO funnel/automation work actually consult the shipped libraries instead of hand-reinventing:

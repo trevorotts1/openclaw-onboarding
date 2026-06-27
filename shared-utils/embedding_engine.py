@@ -558,13 +558,69 @@ def get_persona_name(file_path: str) -> str:
     return os.path.basename(os.path.dirname(file_path))
 
 
-def keyword_fallback_search(query: str, limit: int, db_path: str = None) -> int:
+# ---------------------------------------------------------------------------
+# Mode-aware retrieval (coaching vs. leadership / Task-Mode).
+#
+# A persona blueprint is dual-purpose: the COACHING half (conversation) and the
+# LEADERSHIP / Task-Mode half (Section 4 "Agent Governance Framework" — Execution
+# Standard, Definition of Done, Failure Patterns). The section-level indexer
+# (gemini-section-indexer.py) tags each row with `mode` ('coaching'|'leadership'|
+# 'both') and `section_number`. A leadership query must be able to surface the
+# GOVERNANCE chunk distinctly rather than coaching chunks. These helpers add an
+# OPTIONAL mode filter that is applied ONLY when the index actually carries those
+# columns — so the chunk-only index (no mode/section_number) is unaffected and the
+# call stays fully backward-compatible.
+# ---------------------------------------------------------------------------
+
+# Section 4 is the Agent Governance Framework (the leadership / Task-Mode half).
+LEADERSHIP_SECTION_NUMBER = 4
+
+
+def _table_columns(cur, table: str = "embeddings") -> set:
+    try:
+        cur.execute(f"PRAGMA table_info({table})")
+        return {row[1] for row in cur.fetchall()}
+    except Exception:
+        return set()
+
+
+def _mode_filter_sql(cur, mode):
+    """Return (sql_fragment, params) restricting rows to the requested mode.
+
+    ``mode`` is 'leadership' | 'coaching' | None. Returns ('', []) when no mode
+    is requested OR when the index lacks the mode/section_number columns (so a
+    legacy chunk-only index is never broken by this filter).
+    """
+    if not mode:
+        return "", []
+    cols = _table_columns(cur)
+    if "mode" not in cols and "section_number" not in cols:
+        return "", []  # legacy index: no leadership/coaching distinction to filter on
+    mode = mode.lower()
+    clauses, params = [], []
+    if "mode" in cols:
+        clauses.append("LOWER(mode) = ?")
+        params.append(mode)
+        clauses.append("LOWER(mode) = 'both'")  # 'both' sections serve either mode
+    if mode == "leadership" and "section_number" in cols:
+        clauses.append("section_number = ?")
+        params.append(LEADERSHIP_SECTION_NUMBER)
+    if not clauses:
+        return "", []
+    return " AND (" + " OR ".join(clauses) + ") ", params
+
+
+def keyword_fallback_search(query: str, limit: int, db_path: str = None,
+                            mode: str = None) -> int:
     """
     SQLite LIKE keyword-search fallback.
 
     Called when no embedding provider is available OR when the index was built
     with a different provider than what is currently available (PRD 1.8:
     never cross-provider cosine).
+
+    ``mode`` ('leadership'|'coaching'|None) optionally restricts results to the
+    Task-Mode (Section 4) / coaching half when the index carries section metadata.
 
     Returns 0 on success, 1 on error.
     """
@@ -575,15 +631,16 @@ def keyword_fallback_search(query: str, limit: int, db_path: str = None) -> int:
         return 1
     conn = sqlite3.connect(db_path, timeout=30.0)
     cur = conn.cursor()
+    mode_sql, mode_params = _mode_filter_sql(cur, mode)
     words = [w.strip() for w in query.lower().split() if len(w.strip()) >= 3]
     if not words:
         words = [query.lower()]
     placeholders = " OR ".join("LOWER(content) LIKE ?" for _ in words)
-    params = [f"%{w}%" for w in words]
+    params = [f"%{w}%" for w in words] + mode_params
     cur.execute(
         f"SELECT file_path, content FROM embeddings "
         f"WHERE file_path LIKE '%coaching-personas/personas/%' "
-        f"AND ({placeholders})",
+        f"AND ({placeholders}) {mode_sql}",
         params,
     )
     rows = cur.fetchall()
@@ -626,7 +683,7 @@ def keyword_fallback_search(query: str, limit: int, db_path: str = None) -> int:
 # PRD 1.8 contract: reads index provider, enforces same-provider query embedding.
 # ---------------------------------------------------------------------------
 
-def search(query: str, limit: int = 3, db_path: str = None) -> int:
+def search(query: str, limit: int = 3, db_path: str = None, mode: str = None) -> int:
     """
     Semantic search over the coaching-personas embedding index.
 
@@ -661,7 +718,7 @@ def search(query: str, limit: int = 3, db_path: str = None) -> int:
             "to re-index with a single provider.",
             file=sys.stderr,
         )
-        return keyword_fallback_search(query, limit, db_path)
+        return keyword_fallback_search(query, limit, db_path, mode)
 
     index_provider, index_model = index_info
 
@@ -691,13 +748,13 @@ def search(query: str, limit: int = 3, db_path: str = None) -> int:
             f"WARNING [embedding-engine]: {stale_reason}",
             file=sys.stderr,
         )
-        return keyword_fallback_search(query, limit, db_path)
+        return keyword_fallback_search(query, limit, db_path, mode)
 
     # Step 3: load THE SAME provider for query embedding
     embedder = get_embedder(provider_hint=index_provider)
     if embedder is None:
         # get_embedder already printed the loud WARNING about missing key
-        return keyword_fallback_search(query, limit, db_path)
+        return keyword_fallback_search(query, limit, db_path, mode)
 
     if not NUMPY_AVAILABLE:
         print(
@@ -705,7 +762,7 @@ def search(query: str, limit: int = 3, db_path: str = None) -> int:
             "KEYWORD search.",
             file=sys.stderr,
         )
-        return keyword_fallback_search(query, limit, db_path)
+        return keyword_fallback_search(query, limit, db_path, mode)
 
     print(
         f"[embedding-engine] using embedder: {embedder[0]} ({embedder[2]}) "
@@ -723,18 +780,21 @@ def search(query: str, limit: int = 3, db_path: str = None) -> int:
                 f"Falling back to KEYWORD search.",
                 file=sys.stderr,
             )
-            return keyword_fallback_search(query, limit, db_path)
+            return keyword_fallback_search(query, limit, db_path, mode)
         raise
 
     # Step 4: cosine similarity — only against rows with matching provider
     conn = sqlite3.connect(db_path, timeout=30.0)
     cursor = conn.cursor()
+    # Optional leadership/coaching mode filter (applied only when the index
+    # carries section metadata — see _mode_filter_sql).
+    mode_sql, mode_params = _mode_filter_sql(cursor, mode)
     # Filter to matching provider rows to be safe (extra guard against mixed index)
     cursor.execute(
         "SELECT id, file_path, content, vector FROM embeddings "
         "WHERE file_path LIKE '%coaching-personas/personas/%' "
-        "AND (provider = ? OR provider IS NULL OR provider = '')",
-        (index_provider,),
+        "AND (provider = ? OR provider IS NULL OR provider = '') " + mode_sql,
+        (index_provider, *mode_params),
     )
     rows = cursor.fetchall()
     conn.close()
@@ -985,8 +1045,14 @@ def _search_main():
     )
     parser.add_argument("query", type=str, help="Search query text")
     parser.add_argument("--limit", type=int, default=3)
+    parser.add_argument(
+        "--mode", choices=["leadership", "coaching"], default=None,
+        help="Restrict results to the persona's Task-Mode/leadership half "
+             "(Section 4 Agent Governance Framework) or the coaching half. "
+             "Applied only when the index carries section metadata; a legacy "
+             "chunk-only index ignores it and searches everything.")
     args = parser.parse_args()
-    sys.exit(search(args.query, limit=args.limit))
+    sys.exit(search(args.query, limit=args.limit, mode=args.mode))
 
 
 if __name__ == "__main__":

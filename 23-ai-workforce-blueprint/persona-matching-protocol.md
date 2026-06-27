@@ -138,6 +138,33 @@ Example:
 
 Every task dispatch MUST produce a log entry. No exceptions. This creates an audit trail for persona effectiveness and enables future optimization of the matching algorithm.
 
+### Step 5: Load and Apply the Task Mode (Leadership / Governance side) — MANDATORY
+
+Selecting and naming a persona is NOT the same as being guided by it. A persona blueprint is **dual-purpose**: the Coaching half (Sections 1-3, 6, 7A) shapes how you *talk*; the **Leadership / Task-Mode half** governs how you *build*. For any professional, non-mechanical task the executing agent MUST load and apply the Task-Mode half BEFORE producing the artifact — not just surface the persona's name or voice.
+
+Concrete load step (do this every task, after selection, before execution):
+
+```
+1. Resolve the selected persona_id to its blueprint:
+   .../coaching-personas/personas/<persona_id>/persona-blueprint.md
+   (or retrieve the governance directly: gemini search "<task>" -c coaching-personas --mode leadership)
+2. Read the persona's TASK MODE — Section 4 "Agent Governance Framework":
+   - 4A Execution Standard + Decision Logic Table   → the rules you make calls by
+   - 4B Quality Control Protocol + Definition of Done → the bar the artifact must clear
+   - 4C Failure Pattern Recognition                  → the anti-patterns you must avoid
+   - 4D Task Mode Activation Language
+   ...plus Section 7B Task-Mode Triggers.
+3. BUILD TO THAT STANDARD — execute the task through the persona's decision logic, hold their
+   quality bar, and produce an artifact that satisfies their Definition of Done.
+4. Record what you loaded in the selection log so grounding is provable, e.g.:
+   - task_mode_loaded: <persona_id> persona-blueprint.md Section 4
+   - execution_standard_applied: <one-line summary of the decision logic used>
+   - definition_of_done: <the persona's DoD the artifact was held to>
+   - failure_patterns_checked: <the 4C anti-patterns ruled out>
+```
+
+The role-library §2 "Persona Governance Override" tells an agent to *act AS* the persona and *hold their standards*; THIS step is HOW it obtains those standards. A role file's §2 is inert without this load step — they are designed to work together.
+
 ### Anti-Staleness Guards
 
 MEMORY.md learned preferences are data, NOT shortcuts. Never skip the 5-layer alignment because MEMORY.md says 'usually pick X'.

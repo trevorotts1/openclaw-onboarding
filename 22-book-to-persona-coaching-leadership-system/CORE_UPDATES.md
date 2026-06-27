@@ -35,10 +35,23 @@ Pipeline (model selection is DYNAMIC via shared-utils/select_model.py — Anthro
 - Phase 3: OAuth GPT preferred → latest Kimi fallback. → persona-blueprint.md (all 14 sections)
 - Runtime fallback: selector re-runs with failed model excluded, walks down tier list. Never selects Anthropic.
 
-Persona Reflex (DEFAULT BEHAVIOR):
-Before any professional task, run: python3 ~/.openclaw/workspace/scripts/gemini-search.py "<task keywords>"
-Load returned persona's Task Mode. Execute the task through that methodology.
-Skip only if the user explicitly says so.
+Persona Reflex (MANDATORY for every professional / non-mechanical task — not optional):
+A persona blueprint is DUAL-PURPOSE. The Coaching half guides conversation; the LEADERSHIP / Task-Mode
+half (Section 4 "Agent Governance Framework" + Section 7B Task-Mode Triggers) GOVERNS HOW WORK IS BUILT.
+At task time you MUST load and APPLY the leadership/Task-Mode half — naming the persona is NOT enough.
+
+1. SEARCH — run: python3 ~/.openclaw/workspace/scripts/gemini-search.py "<task keywords>"
+   For the governance/standard (not the coaching voice), add: --mode leadership
+2. LOAD THE TASK MODE — open the matched persona's persona-blueprint.md and read its Section 4
+   (4A Execution Standard + Decision Logic Table, 4B Quality Control Protocol + Definition of Done,
+   4C Failure Pattern Recognition, 4D Task Mode Activation Language) AND Section 7B Task-Mode Triggers.
+   The persona NAME alone does not load the Task Mode — the Section-4 governance is what you build to.
+3. EXECUTE TO STANDARD — perform the task THROUGH that methodology: apply the decision-logic rules,
+   meet the Definition of Done, and steer clear of the documented failure patterns. Build to standard,
+   do not merely echo the persona's voice.
+4. VERIFY — before reporting done, self-check the output against the persona's Definition of Done and
+   failure-pattern table (per persona-matching-protocol.md "Post-Task Persona Verification").
+Skip ONLY if the user explicitly says so, or for purely mechanical tasks (no judgment/build involved).
 
 Key paths:
 - Skill: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/
@@ -139,9 +152,10 @@ No update required unless you are setting up a persona as your primary operating
 
 **Exact text to add:**
 ```
-## Persona Reflex - ACTIVE
+## Persona Reflex - ACTIVE (MANDATORY before professional tasks)
 Gemini Vector Database coaching-personas loaded [run: python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status to get current counts].
-Before professional tasks: python3 ~/.openclaw/workspace/scripts/gemini-search.py "<task>" → load persona Task Mode.
+Before professional tasks: python3 ~/.openclaw/workspace/scripts/gemini-search.py "<task>" [--mode leadership]
+→ open matched persona-blueprint.md → load Section 4 Task Mode (Execution Standard + Definition of Done + failure patterns) → build to that standard → verify against the Definition of Done.
 ```
 
 ---
