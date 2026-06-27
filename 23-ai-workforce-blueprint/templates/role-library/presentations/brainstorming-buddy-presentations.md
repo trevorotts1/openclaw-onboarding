@@ -4,7 +4,7 @@
 **Reports to:** Director of Presentations
 **Role type:** specialist
 **Persona:** {{ASSIGNED_PERSONA}} v{{ASSIGNED_PERSONA_VERSION}}
-**Version:** 2.1
+**Version:** 2.2
 **Last updated:** {{GENERATION_DATE}}
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
@@ -329,6 +329,7 @@ small/low-stakes, OR when most context is already on file.
    Ask each one at a time. Skip any whose answer is already on file or already answered
    in the opening.
 3. **(density-floor overhaul) Ask the STYLE BRANCH verbatim** (SOP-IMG-03 section 2), once, early, before the STYLE BLOCK is built: "For the look of your slides, do you have a particular image style in mind? You can: (1) point me at an existing deck, past designs, or reference images you want me to match; (2) tell me a saved style name from your library if you already have one (like 'Style 1'); or (3) let me creatively develop a signature style for you. Which one?" Set `STYLE_SOURCE` to `match_reference` (+ `STYLE_REFERENCES`, `ANALYZE_REQUEST=true`), `saved_style` (+ `STYLE_ID`), or `creative_develop`. A deck that reaches Phase 2 with `STYLE_SOURCE` unset is a defect (it would invent a look with no client direction, the path that produced the reference failure case cookie-cutter typography). If `creative_develop`, sequence the existing mood/imagery/avoid stems into the short creative-develop micro-interview (<=5 questions; do not re-bank them) per SOP-IMG-03 section 3.
+3a. **EVENT/OFFER PRICE SEPARATION (ask as two separate questions; never collapse them):** Capture the EVENT/ACCESS price -- free or paid to ATTEND (a free webinar, workshop, or 5-day challenge is normal) -- as `EVENT_PRICE` / `EVENT_ACCESS_MODE`, AND the OFFER price -- what is sold at the end -- as `OFFER_STACK` / `FINAL_PRICE` / `PRICE_MODE`, in two distinct questions (simple-set Q4a/Q4b). NEVER infer, zero out, or skip the OFFER price from `EVENT_PRICE`: a free event does NOT mean a free offer; it is normally the FRONT of a paid funnel. If the event is free and the owner has not explicitly asked for a teaching/content-only deck, DEFAULT `pitch_included: true` and `expect_paid_offer: true`, both marked `assumed: true` (the Devil's-Advocate ALWAYS-PITCH-SOMETHING doctrine). A free-only close (free event AND no paid offer) is permitted ONLY with the owner's explicit sign-off -- set `pitch_included: false` only when the owner states it outright. Every price/pitch assumption is surfaced to the owner at the SOP 9.3 read-back (`assumed: true`); it is never silently defaulted or denied.
 4. Reflect each answer back in one line. Capture into brief.json under its field key.
 5. If a critical field is still unknown after the simple set, ask ONE clarifying
    follow-up (you may exceed 7 only to close a CRITICAL gap; flag it in the brief as
@@ -384,6 +385,7 @@ to the remaining critical questions only and finish in 3 more, then lock. Record
    | VISUAL_MIX | Captured OR defaulted to `mix` with `visual_mix_defaulted: true` | Default: mix |
    | DARK_OK | Captured OR defaulted to `false` | Default: false |
    | HOOK_SEED | Captured OR `hook_seed_missing: true` set | Hook Strategist derives at build |
+   | EVENT_PRICE (free/paid to attend) vs FINAL_PRICE (the offer) | BOTH captured as SEPARATE axes | A free EVENT_PRICE NEVER zeroes/skips FINAL_PRICE; free event defaults `pitch_included: true` + `expect_paid_offer: true` (`assumed: true`); free-only close needs explicit owner sign-off |
 
    If GROUNDED_CONTENT is still blank after the interview AND the owner has not been
    asked yet, ask ONE more time now. If still unanswered: set `grounded_content_provisional`
@@ -396,8 +398,16 @@ to the remaining critical questions only and finish in 3 more, then lock. Record
    the captured fields]. Anything I got wrong or missed?"
    Include in the read-back: REPRESENTATION_MIX breakdown (or flag if uncaptured),
    VISUAL_MIX, DARK_OK, HOOK_SEED (or flag if missing).
+   Read the EVENT/ACCESS price (`EVENT_PRICE`, free or paid to attend) and the OFFER
+   price (`FINAL_PRICE`) back as TWO SEPARATE lines -- never as one. If the event is free,
+   state the assumed paid offer explicitly: "The event is free to attend, and I'm assuming
+   you're selling a paid offer at the end (`expect_paid_offer: true`) -- correct me if it's
+   teaching/content-only with nothing for sale."
 3. List every `assumed: true` field explicitly so the owner can correct defaults.
-   Explicitly call out any representation or grounded-content flags.
+   Explicitly call out any representation or grounded-content flags AND any price/pitch
+   assumption (e.g. a free event defaulting to `expect_paid_offer: true` / `pitch_included: true`,
+   or a defaulted `FINAL_PRICE`). A free-only close (free event, no paid offer) is locked
+   ONLY on the owner's explicit sign-off -- never inferred from the event being free.
 4. Send via openclaw message send. WAIT for explicit confirmation. Do not proceed on
    silence.
 5. On confirmation: set `interview_confirmed: true`, `confirmed_by`, `confirmed_at`,
@@ -683,7 +693,10 @@ Skip only if the answer is already confirmed on file.
 1. THE GOAL -- what action at the end (buy / book / join / enroll). `GOAL`, `CTA_ACTION`
 2. THE FEELING -- how should they feel walking away. `TARGET_FEELING`
 3. THE TONE -- pick one of the seven named styles (Inspirational / Tough Love / Challenger / Teacher / Storyteller / High-Energy Hype / Calm Premium) or blend two. `TONE`
-4. THE OFFER + PRICE -- what are you selling and at what final price; gradual price drop or straight price. `OFFER_STACK`, `FINAL_PRICE`, `PRICE_MODE`
+4. EVENT ACCESS vs OFFER PRICE -- ask these as TWO SEPARATE things; never collapse them into one answer:
+   - **(4a) EVENT ACCESS PRICE** -- "Is the event/talk itself free or paid to ATTEND? A free webinar, workshop, or 5-day challenge is completely normal -- that's the front of the funnel, not the thing you sell." `EVENT_PRICE` (free / paid + amount), `EVENT_ACCESS_MODE`.
+   - **(4b) THE OFFER + PRICE** -- "SEPARATELY from getting in the room: what are you selling at the end, and at what final price; gradual price drop or straight price?" `OFFER_STACK`, `FINAL_PRICE`, `PRICE_MODE`, `pitch_included`.
+   A free EVENT_PRICE NEVER implies a free or absent OFFER. Do NOT infer, zero out, or skip the offer price from the event price -- a free event is normally the FRONT of a paid funnel. If the event is free and the owner has NOT explicitly said the deck is teaching/content-only, DEFAULT `pitch_included: true` with `expect_paid_offer: true`, both marked `assumed: true` (the Devil's-Advocate ALWAYS-PITCH-SOMETHING doctrine). A free-only close (free event AND no paid offer) is allowed ONLY on the owner's explicit sign-off -- set `pitch_included: false` only when the owner states it outright. Every price/pitch assumption is surfaced at the SOP 9.3 read-back (`assumed: true`), never silently defaulted or denied.
 5. DURATION -- how many minutes (10/15/30/45/60/90). `DURATION_MIN`
 6. AUDIENCE -- any additional specifics about who they are beyond REPRESENTATION_MIX (e.g. industry, income level, pain point). `AUDIENCE` (REPRESENTATION_MIX was captured in pre-presentation -- do not re-ask the percentage question).
 7. BRAND LOOK -- brand colors / logo on slides yes-no (skip if on file). `BRAND_PRIMARY`, `LOGO_ON_SLIDES`
@@ -691,7 +704,7 @@ Skip only if the answer is already confirmed on file.
 ### EXTENSIVE (10 to 20 -- simple set PLUS; pre-presentation fields are separate and already captured)
 
 8. THE HOOK SEED -- if not captured in SOP 9.0, ask here: one line you already say all the time you want them humming. `HOOK_SEED` (skip if already set in pre-presentation capture)
-9. PRICE STRUCTURE DETAIL -- full offer stack, each component's standalone value, the anchor (>= 3x final). `PRICE_ANCHOR`, `PAYMENT_PLAN`
+9. PRICE STRUCTURE DETAIL -- full offer stack, each component's standalone value, the anchor (>= 3x final). NOTE: the OFFER price (`FINAL_PRICE`) is a SEPARATE axis from the EVENT/ACCESS price (`EVENT_PRICE`, free or paid to attend) captured at Q4 -- never infer one from the other; a free event still has a paid offer at the end unless the owner explicitly says it is teaching/content-only. `PRICE_ANCHOR`, `PAYMENT_PLAN`, `EVENT_PRICE`
 10. VIP / PREMIUM TIER -- want one; what it includes; real spot count. `VIP_TIER`, `VIP_PRICE`, `VIP_SPOTS`
 11. PRIMARY OBJECTION -- the #1 reason people say no. `OBJECTION`
 12. PROOF ASSETS -- testimonials, screenshots, press logos, before/after numbers (collect now). `PROOF_ASSETS`
