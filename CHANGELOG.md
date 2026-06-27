@@ -1,3 +1,32 @@
+## [v14.17.0]  -  2026-06-27  -  feat(skill6): consolidated self-check checklist + SEO keyword-in-copy gate
+
+Skill 6 (ghl-install-pages) gets a per-phase SELF-CHECK CHECKLIST plus the one
+genuinely-new SEO gate from the v3-checklist delta analysis.
+
+NEW — `06-ghl-install-pages/references/ghl-build-self-check.md`. A scannable,
+top-to-bottom self-check the building agent runs at every phase of a funnel/website
+build (pre-build + credential preflight → media folders/URLs → ZHC container → build
+page [full-width ON + the two saves] → SEO → multi-step `ZHC part N` → ecosystem
+form→CRM proof → images in the rendered DOM → the un-fakeable `ghl_verify.render_check`
+backstop). It is a VIEW of the already-shipped gates in `v2-autonomous-build-sop.md`,
+not a fork: every line CITES the SOP section it reflects (anti-drift), and each phase
+ends in a bold `Done when:` gate — a phase may not advance until that gate passes.
+`render_check` (§7/§8) remains the only verdict. A "Deliberately NOT asserted" footer
+permanently excludes the analysis-rejected inferences (bare `/tags/` endpoint — real
+path is nested `/locations/{id}/tags`; the unverified "external images break for LIVE
+visitors" mechanism; the toggle colour; the literal "403"; and any "GHL strips
+iframe/script/external-CSS" gate — the 2026-06-27 live probe confirmed all three
+survive).
+
+NEW — SEO keyword-in-copy gate (H1), enforced. `ghl_builder.assert_keywords_in_copy`
+asserts every researched SEO keyword actually appears in the page body copy (the
+mirror of the copy-fidelity gate P1-4); `assert_seo_populated` gains an OPT-IN
+`page_copy` arg that folds it into the end-state check (default None keeps every
+existing caller unchanged). Wired into SOP §2.07 (a new fail-closed row) and the §9
+Definition of Done item 2a, with unit tests. SKILL.md reading order surfaces the
+checklist (item 3); the SOP carries a one-line "run the self-check at each phase"
+pointer. No client names, no operator-local paths, no secret values.
+
 ## [v14.16.0]  -  2026-06-27  -  fix(persona-system): selector semantic stage was dark (argparse arg-order) + repoint stale persona corpus path to the canonical workspace location
 
 Two independently-verified persona-system defects, both fixed.

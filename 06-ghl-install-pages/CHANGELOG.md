@@ -4,6 +4,44 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.17.0] - 2026-06-27 — feat(skill6): consolidated self-check checklist + SEO keyword-in-copy gate
+
+### Added — per-phase self-check checklist (`references/ghl-build-self-check.md`)
+- A scannable, top-to-bottom **SELF-CHECK CHECKLIST** the building agent runs **at
+  every phase** of a funnel/website build: Pre-build/creds preflight (P0/P1/P2 +
+  §2.0.1) → Media (folders + 200-verified CDN URLs) → ZHC container → Build page
+  (full-width ON + the two saves) → SEO (incl. the new H1 keyword-in-copy gate) →
+  Multi-step (`ZHC part N`) → Ecosystem (form→CRM proof) → Images in the rendered
+  DOM → the un-fakeable `ghl_verify.render_check` final backstop.
+- It is a **VIEW of the already-shipped gates**, not a fork: every line **cites the
+  SOP section** it reflects (anti-drift). Each phase ends in a bold `Done when:`
+  gate — the agent cannot advance a phase until that gate passes; `render_check`
+  (§7/§8) stays the only verdict.
+- A "Deliberately NOT asserted" footer keeps the analysis-rejected inferences out
+  permanently: the bare `/tags/` endpoint (real path is nested
+  `/locations/{id}/tags`), the unverified "external images break for LIVE visitors"
+  mechanism (preview-only probe — the media-storage rule is grounded in Trevor's
+  instruction instead), the toggle colour ("blue=on/gray=off"), the literal "403"
+  on sub-account mismatch, and any "GHL strips iframe/script/external-CSS" gate
+  (live probe 2026-06-27 confirmed all three SURVIVE).
+
+### Added — SEO keyword-in-copy gate (H1), enforced not just listed
+- `ghl_builder.assert_keywords_in_copy(seo_meta, page_copy)` — pure, never raises,
+  returns `{ok, reasons, missing}`. Each researched SEO keyword MUST appear in the
+  page's body copy (case-insensitive, tag-stripped); a keyword present only in the
+  meta panel is a HARD FAIL. This is the mirror of the copy-fidelity gate (P1-4) in
+  the keyword→copy direction.
+- `ghl_builder.assert_seo_populated(seo_meta, *, brand=None, page_copy=None)` — new
+  **opt-in** `page_copy` arg folds the H1 gate into the end-state check. Default
+  `None` keeps every existing caller (qc-built-funnel.sh, the CLI) unchanged.
+- Wired into the SOP: a new fail-closed row in **§2.07** and the keyword-in-copy
+  clause in the **§9 Definition of Done** item 2a, so the gate is enforced, not
+  merely documented. Unit tests added in `test_ghl_builder_transcript_recipe.py`.
+
+### Changed
+- `SKILL.md` reading order now surfaces `references/ghl-build-self-check.md` (item
+  3) and the SOP carries a one-line "run the self-check at each phase" pointer.
+
 ## [v14.13.0] - 2026-06-27 — feat(skill6): harden render gate (un-fakeable) — P0-1a/b/c/d + P0-2 + P1-3 + sanitizer/full-width fidelity + auth/dispatch/docs
 
 ### Fixed (render-gate anti-fabrication, P0-1)

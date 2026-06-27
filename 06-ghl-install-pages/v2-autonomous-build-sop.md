@@ -15,6 +15,12 @@ GHL** is run in this phase, and **NO git**. The SOP is written so that when it I
 run live (a later phase, on the operator fixture only), a partial build still
 leaves verifiable on-disk evidence and the canonical verifier cannot be gamed.
 
+> **SELF-CHECK (run at each phase).** Run `references/ghl-build-self-check.md`
+> top-to-bottom — it is a scannable VIEW of the gates below; **do not advance a
+> phase until its bold `Done when:` gate passes.** `ghl_verify.render_check` (§7)
+> stays the un-fakeable final backstop — a checkbox is a self-check, the sealed
+> verifier is the verdict.
+
 ---
 
 ## INTAKE — Board card producer (run FIRST, before any gate)
@@ -540,12 +546,19 @@ endpoint) and is emitted as an **ordered save step AFTER the page save**.
 | `ogImage` | a GHL media-storage CDN URL that **re-verifies HTTP 200** (reuse the §3 asset-cdn re-verify — the `seo_apply` step's `og_image_http_200` expectation) |
 | `language` | set **explicitly `en`** (`SEO_DEFAULT_LANGUAGE`) — never inherit the GHL default |
 | `links` / `tags` | absolute http(s) links; non-placeholder tags |
+| **`keywords` ∈ copy (H1)** | **each researched keyword MUST actually appear in the page's body copy** (case-insensitive), not only in the meta panel — `ghl_builder.assert_keywords_in_copy(seo_meta, page_copy)` returns the absent keywords; this is the mirror of the copy-fidelity gate (P1-4) in the keyword→copy direction, and a keyword present only in meta is a HARD FAIL |
 
 **Gate the end-state.** `ghl_builder.assert_seo_populated(seo_meta)` (and
 `ghl_rest_canvas.assert_seo_populated(page_data, founder_name=...)`) re-assert a
 saved `seoMeta` is fully populated with `author == founder_name` — the QC scripts
 call this so a build that skipped or stubbed the panel scores a §2 miss. A blank
-or placeholder SEO panel is a HARD FAIL, not a warning.
+or placeholder SEO panel is a HARD FAIL, not a warning. **Pass the page's body
+copy** as `assert_seo_populated(seo_meta, page_copy=<body text>)` (or call
+`ghl_builder.assert_keywords_in_copy(seo_meta, page_copy)` directly) so the **H1
+keyword-in-copy gate** fires: every researched keyword must appear in the visible
+copy, or each absent keyword folds into the fail `reasons`. The check is OPT-IN
+(omit `page_copy` to skip it) so existing callers are unaffected; the build path
+supplies the copy so keyword-stuffed meta cannot silently pass.
 
 ---
 
@@ -884,10 +897,12 @@ A V2 build is DONE when, on the operator fixture only (a later live phase):
 2. real GHL pages carry the marker + a real `<img>` and verify HTTP 200 at their
    `/preview/` URLs (§2, §3) — confirmed by the canonical verifier (§7);
 2a. each page's `seoMeta` is **populated + validated** (§2.07): title ≤ 60,
-   description ≤ 160, ≥ 3 researched keywords, **author == the intake
-   `founder_name`**, `https` canonical on the page's own domain, `ogImage` 200,
-   `language == "en"` — `ghl_builder.assert_seo_populated` passes (a blank/stub SEO
-   panel is a FAIL, not a warning);
+   description ≤ 160, ≥ 3 researched keywords **each appearing in the page body
+   copy (H1 keyword-in-copy gate)**, **author == the intake `founder_name`**,
+   `https` canonical on the page's own domain, `ogImage` 200, `language == "en"` —
+   `ghl_builder.assert_seo_populated(seo_meta, page_copy=<body text>)` passes (the
+   `page_copy` arg fires the keyword-in-copy gate; keywords stuffed only in meta
+   are a FAIL — a blank/stub SEO panel is a FAIL, not a warning);
 2b. the build's media lives under **one named funnel folder (+ per-page subfolders
    where used)** created via `ghl_media.ensure_funnel_media_folders` on the
    non-browser `services.*` path (§3), or the `name-prefix` fallback when the plan
