@@ -38,6 +38,7 @@
 - **Lead funnels, opt-in sequences, list building** → `russell-brunson-lead-funnels` (Russell Brunson) [+APPENDIX] → `marketing-dept/`
 - **Funnel-type selection, page sequencing, funnel recipes (22 types), order-bump/OTO/thank-you builds, funnel stacking** → `russell-brunson-the-funnel-hackers-cookbook` (Russell Brunson) [+APPENDIX] → `web-development-dept/`
 - **Challenge funnels, 5-day challenges, launches, challenge registration/VIP/Stack-&-Close, tiny challenges, Big-Idea/Micro-Niche/Movement** → `pedro-adao-challenge-secrets-masterclass` (Pedro Adao) [+APPENDIX] → `marketing-dept/` + `launch-operations-dept/` + `web-development-dept/` (Skill 6 challenge funnels) + `social-media-dept/` (Skill 35 promo)
+- **Lead generation, advertising, the Core Four (warm/cold outreach, paid ads, content)** → `hormozi-100m-leads` (Alex Hormozi) → `marketing-dept/`
 - **Direct-response copy, headlines, sales letters** → `edwards-copywriting-secrets` (Jim Edwards) [+APPENDIX] → `marketing-dept/`
 - **Brand messaging, clarity, storytelling** → `miller-building-storybrand` (Donald Miller) [+APPENDIX] → `marketing-dept/`
 - **Permission marketing, being seen** → `godin-this-is-marketing` (Seth Godin) → `marketing-dept/`
@@ -86,6 +87,9 @@
 
 ### Visual Thinking & Presentation
 - **Sketchnoting, visual hierarchy, idea mapping** → `rohde-the-sketchnote-workbook` (Mike Rohde) [+APPENDIX] → `presentations-dept/`
+
+### Video & Film Production
+- **Montage, shot sequencing, relational editing, visual storytelling for video** → `vsevolod-pudovkin-film-technique` (Vsevolod Pudovkin) → `video-production-dept/`
 
 ---
 

@@ -53,7 +53,12 @@
         "mindset"
       ],
       "perspective": [],
-      "custom": []
+      "custom": [
+        "passion-test",
+        "life-purpose",
+        "priority-clarity",
+        "destiny-discovery"
+      ]
     },
     "bly-copywriters-handbook": {
       "author": "Robert Bly",
@@ -64,7 +69,13 @@
         "sales"
       ],
       "perspective": [],
-      "custom": []
+      "custom": [
+        "direct-response-copy",
+        "b2b-copy",
+        "headlines",
+        "copywriting-formulas",
+        "long-form-sales-copy"
+      ]
     },
     "brown-atlas-of-heart": {
       "author": "Brene Brown",
