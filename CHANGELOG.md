@@ -1,3 +1,30 @@
+## [v14.20.0]  -  2026-06-27  -  fix: persona-index hard build gate + sqlite gitignore hygiene
+
+Stops two silent failure modes that allowed install to "succeed" while leaving the
+persona-coaching system in degraded keyword-only mode:
+
+1. **git hygiene** — `data/coaching-personas/gemini-index.sqlite-journal` (and the
+   committed `gemini-index.sqlite`) removed from git tracking. `*.sqlite`, `*-journal`,
+   `*-wal`, `*-shm` added to `.gitignore`. SQLite hot-journal files committed to a repo
+   corrupt the database on checkout; the index is built live per box or downloaded from
+   GitHub Releases, so neither the DB nor any sidecar belongs in version control.
+
+2. **install.sh Step 6c — hard key-gated persona-index build** — replaces the old
+   additive/warn-on-failure prebuilt-download-only flow with a blocking gate:
+   • Checks `has_usable_gemini_key` across ALL env stores; exits 1 loudly if absent.
+   • Runs `gemini-indexer.py` live (embeds all canonical personas per box).
+   • Runs `gemini-indexer.py --status` and asserts semantic mode (`Embedder ready: gemini`)
+     AND `Files indexed >= 54` (the canonical_persona_count from INDEX-MANIFEST.json).
+   • Both assertions are hard failures (exit 1) — keyword-only degradation is never silently
+     accepted; persona routing requires cosine-similarity search to surface correct matches.
+
+The prebuilt-index v2.0.0 asset (48 personas) predates the 10 PR-363 canonical blueprints
+and 3 orphan-blueprint personas (canonical total = 54). Until prebuilt-index-v2.1.0 is
+published, the per-box indexer is the ONLY path to a full canonical set; this gate
+enforces that it actually runs and succeeds.
+
+No client names, no operator-local paths, no secret values.
+
 ## [v14.19.0]  -  2026-06-27  -  fix: cross-agent routing default visibility=all + routable department agents
 
 Cross-agent department handoffs were silently failing for two independent reasons,

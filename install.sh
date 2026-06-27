@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v14.19.0"
+ONBOARDING_VERSION="v14.20.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -3115,6 +3115,99 @@ if ! python3 -c "import google.genai" 2>/dev/null; then
 else
     success "google-genai already installed"
 fi
+
+# ----------------------------------------------------------
+# Step 6c: Persona-index hard build gate (v14.20.0)
+# ----------------------------------------------------------
+# WHY: Step 6b downloads a PREBUILT asset (gemini-index.sqlite from GitHub
+# Releases) that currently holds 48 personas and PREDATES the 10 canonical
+# PR-363 blueprints + 3 orphan-blueprint personas (total canonical=54, see
+# INDEX-MANIFEST.json pr363_personas / orphan_blueprints_shipped). Until a
+# prebuilt-index-v2.1.0 asset covering all 54 personas is published, the per-
+# box gemini-indexer.py MUST run so every box embeds the full canonical set.
+#
+# This step is HARD and KEY-GATED:
+#   1. If no Google/Gemini API key is present → FAIL LOUDLY and exit 1.
+#      Keyword-only degradation is NOT acceptable; persona selection requires
+#      semantic (cosine-similarity) search to route correctly.
+#   2. Run gemini-indexer.py (builds/updates the embedding index in place).
+#   3. Run gemini-indexer.py --status and assert:
+#        • "Embedder ready:  gemini" appears  → semantic mode confirmed
+#        • "Files indexed:" value >= 54        → full canonical persona set
+#   4. If either assertion fails → FAIL LOUDLY and exit 1.
+#
+# The indexer is idempotent: if the index is already current (all files hashed
+# to the same embedding-model/content), it exits quickly without re-embedding.
+# ----------------------------------------------------------
+
+step "Step 6c: Persona-index hard build gate (requires Google/Gemini API key)"
+
+# --- 6c.1: Key gate ---
+_PERSONA_GOOGLE_KEY=""
+if ! _PERSONA_GOOGLE_KEY=$(has_usable_gemini_key 2>/dev/null) || [ -z "$_PERSONA_GOOGLE_KEY" ]; then
+    error "FATAL: No Google/Gemini API key found in any env store."
+    error "       The persona-index build requires a valid GOOGLE_API_KEY or GEMINI_API_KEY"
+    error "       (or any alias: GOOGLE_AI_STUDIO_API_KEY, GOOGLE_GEMINI_API_KEY, etc.)."
+    error "       Set the key, then re-run install.sh."
+    exit 1
+fi
+success "Google/Gemini API key detected — proceeding with live persona-index build"
+
+# --- 6c.2: Run the indexer ---
+_PERSONA_INDEXER_PY="$SCRIPTS_DIR/gemini-indexer.py"
+if [ ! -f "$_PERSONA_INDEXER_PY" ]; then
+    # Scripts were not yet installed (e.g. onboarding dir differs) — fall back
+    # to the repo path so the gate still runs.
+    _PERSONA_INDEXER_PY="$ONBOARDING_DIR/scripts/gemini-indexer.py"
+fi
+if [ ! -f "$_PERSONA_INDEXER_PY" ]; then
+    error "FATAL: gemini-indexer.py not found at $SCRIPTS_DIR or $ONBOARDING_DIR/scripts"
+    exit 1
+fi
+
+note "Running gemini-indexer.py (embedding all canonical personas; may take a few minutes on first run)..."
+# Export the key so gemini-indexer.py → embedding_engine.py can read it even
+# when it isn't in the shell's exported environment.
+export GOOGLE_API_KEY="$_PERSONA_GOOGLE_KEY"
+if ! python3 "$_PERSONA_INDEXER_PY" 2>&1 | tee -a "$LOG_FILE"; then
+    error "FATAL: gemini-indexer.py exited non-zero — persona index build failed."
+    error "       Check $LOG_FILE for details."
+    exit 1
+fi
+success "gemini-indexer.py completed"
+
+# --- 6c.3: Verify semantic mode + persona count ---
+note "Verifying persona index with --status..."
+_PERSONA_STATUS_OUT="$(python3 "$_PERSONA_INDEXER_PY" --status 2>&1)"
+echo "$_PERSONA_STATUS_OUT" >> "$LOG_FILE"
+
+# Semantic mode: "Embedder ready:  gemini" must appear.
+if ! echo "$_PERSONA_STATUS_OUT" | grep -qE "Embedder ready:[[:space:]]+gemini"; then
+    error "FATAL: Persona index is NOT in semantic mode."
+    error "       Expected: 'Embedder ready:  gemini'"
+    error "       Got status output:"
+    echo "$_PERSONA_STATUS_OUT" | sed 's/^/         /' >&2
+    error "       Ensure GOOGLE_API_KEY is set AND google-genai is installed."
+    exit 1
+fi
+success "Persona index: semantic mode confirmed (gemini embedder)"
+
+# Persona count: "Files indexed:" must be >= 54.
+_PERSONA_FILES_INDEXED="$(echo "$_PERSONA_STATUS_OUT" \
+    | grep -E "Files indexed:" \
+    | grep -oE "[0-9]+" | head -1 || echo 0)"
+if [ "${_PERSONA_FILES_INDEXED:-0}" -lt 54 ]; then
+    error "FATAL: Persona index contains only ${_PERSONA_FILES_INDEXED:-0} indexed files — expected >= 54."
+    error "       The full canonical persona set (54 personas) was not embedded."
+    error "       Check that data/coaching-personas/personas/ is populated and re-run install.sh."
+    error "       Status output:"
+    echo "$_PERSONA_STATUS_OUT" | sed 's/^/         /' >&2
+    exit 1
+fi
+success "Persona index: ${_PERSONA_FILES_INDEXED} files indexed (>= 54 threshold met)"
+
+unset _PERSONA_GOOGLE_KEY _PERSONA_INDEXER_PY _PERSONA_STATUS_OUT _PERSONA_FILES_INDEXED
+send_telegram_progress "Persona index built and verified: semantic mode, >=54 personas indexed."
 
 # ----------------------------------------------------------
 # v6.6.0 / Step 6.4: Skill 22 Python pipeline dependencies (Mac)
