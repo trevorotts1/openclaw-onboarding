@@ -1,3 +1,9 @@
+## [v14.10.2]  -  2026-06-27  -  fix: silence per-update client Telegram notification by default
+
+Gate the per-update client Telegram DM behind `OPENCLAW_UPDATE_NOTIFY=1`. The block in `scripts/update-skills.sh` (lines 448-496) previously fired unconditionally on every box that had a config with a bot token — spamming the client on every Sunday cron run. It now skips entirely unless the operator explicitly sets `OPENCLAW_UPDATE_NOTIFY=1` in the cron environment. Default is OFF (`OPENCLAW_UPDATE_NOTIFY` unset or `0`). The silent `UPDATE PENDING` flag in `AGENTS.md` already delivers awareness to the agent without any client-facing push, so removing the auto-DM causes no information loss.
+
+Also repoints both URL constants in `scripts/setup-weekly-update.sh` (`REPO_RAW` line 15, `UPDATE_SCRIPT_URL` line 38) from `.../scripts/update-skills.sh` to `.../update-skills.sh` (the operator-only canonical updater at the repo root) so newly-onboarded boxes pull the safe, non-spamming path on every Sunday run. No behavior changes to the update-staging or gateway-restart logic. No client names, no operator-local paths, no secret values committed.
+
 ## [v14.10.1]  -  2026-06-27  -  chore(prebuilt-index): reconcile INDEX-MANIFEST canonical_persona_count 53 -> 54 to match live persona-categories.json on main
 
 Metadata-accuracy correction to `shared-utils/prebuilt-index/INDEX-MANIFEST.json`. The manifest's `canonical_persona_count` was hand-updated to 53 on 2026-06-26; PR #375 then landed one additional canonical persona, so the live `persona-categories.json` on main now declares 54 canonical personas while the manifest still read 53. This bumps the count to 54 and refreshes `manifest_last_updated` to 2026-06-27.

@@ -12,7 +12,7 @@
 # - NO changes are applied automatically by the cron job
 # - The agent follows UPDATE-PLAYBOOK.md to apply changes intelligently
 
-REPO_RAW="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/update-skills.sh"
+REPO_RAW="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh"
 LOG_FILE="$HOME/.openclaw/skills/.update-log"
 
 # Check if cron already installed
@@ -35,7 +35,7 @@ cat > "$RESTART_SCRIPT" << 'RESTART_EOF'
 #!/bin/bash
 # Run the update script — fetch to temp file first so partial downloads do not
 # execute half a script (the classic curl|bash truncation hazard).
-UPDATE_SCRIPT_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/update-skills.sh"
+UPDATE_SCRIPT_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh"
 _UPDATE_TMP="$(mktemp /tmp/openclaw-update-XXXXXX.sh)"
 trap 'rm -f "$_UPDATE_TMP"' EXIT
 if ! curl -fsSL --max-time 60 "$UPDATE_SCRIPT_URL" -o "$_UPDATE_TMP" 2>>"$HOME/.openclaw/skills/.update-log"; then
