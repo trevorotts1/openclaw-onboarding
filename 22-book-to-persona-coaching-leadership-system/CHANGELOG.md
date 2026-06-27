@@ -4,6 +4,20 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v6.10.0] - 2026-06-27
+
+### Deepened — acuff-miner-new-model-of-selling + miller-building-storybrand blueprints
+
+Two existing persona blueprints upgraded from concise first-pass versions to full 14-section depth, passing independent no-padding verification.
+
+- **`acuff-miner-new-model-of-selling/persona-blueprint.md`** (v1.1 → v1.2): 197 → 317 lines (+120). Expanded Section 1 with full bios for both authors (Acuff: 20-year pharma career, Salesman/District Manager awards, Delta Point founding; Miner: #45 earner out of 100M worldwide, 12-year NEPQ development arc), added "why this pairing is uniquely qualified" block. Section 2 adds Definition Reset keystone, Three-Destinations qualifier (D1/D2/D3), post-trust era framing with named statistics (3% trust, 95% talk-too-much, 86% wrong-questions). Section 3 gains milestone per phase, completion criteria, session length guidance. Section 4A gains decision-logic table (15 rows). Section 4B gains pre-delivery Yes/No checklist. Section 4C gains Amateur vs Expert comparison table. Section 4D (Task Mode Activation Language) is entirely new. Section 5 restructured into Coaching Principles + Eight Laws of Sales Intent + Five Rules of Buying. Section 7 gains confidence scoring table and 12-trigger lists for both coaching and task mode. Sections 8–14 all materially expanded with question libraries, tool list, objection table, session structure, and routing rules.
+
+- **`miller-building-storybrand/persona-blueprint.md`** (v2.0 → v2.1): 179 → 628 lines (+449). Section 1 rewritten to include Science Mike McHargue + Kahneman + Amy Cuddy + Viktor Frankl science backbone and expanded author credibility proof. Section 2 restructured (Root Cause / Execution Gap / Theory of Change / Repeatable System). Section 3 is a full new 3-phase coaching arc (Assessment → Challenge → Support/Verify/Improve) with per-phase diagnostic/challenge/support questions, milestones, session arc, and setback/celebration protocols. Section 4 expanded: ≥7-step execution checklist, 8 non-negotiable rules, 11-row decision table, 11-item QC checklist, 8-row failure taxonomy, Amateur→Expert gap table, activation language. Sections 5–14 entirely new (Foundational Principles, Problem-Solution Map, Trigger Detection with confidence scoring, Voice & Language, Quote Library with 10 direct quotes + 8 one-liners + 5 metaphors, Question Library with 4×7 coaching + 3×4 governance questions, 5 coaching tools + 5 agent execution frameworks, objections table + counterintuitive truths, 6-session arc + task structure, department routing table + 5 handoff sequences + 4 hard stops, Companion Appendix Index). No filler — every added section introduces framework-specific content distinct from adjacent sections.
+
+Verified no padding: acuff-miner uses distinct question sets per section; miller sections 4/5/9/10 cover governance, principles, verbatim quotes, and question libraries respectively — no repetition across sections.
+
+---
+
 ## [v6.9.2] - 2026-06-27
 
 ### Fixed — persona-categories.json schema consistency + Pedro Day-4 source-gap accuracy
