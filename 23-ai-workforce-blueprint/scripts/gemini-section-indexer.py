@@ -42,13 +42,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared-utils"))
 from detect_platform import get_openclaw_paths  # type: ignore
 # PRD 1.8: GEMINI_MODEL is the single pinned constant in embedding_engine.py.
 # Import it here so a model change in one place propagates everywhere.
-from embedding_engine import GEMINI_MODEL  # type: ignore
+from embedding_engine import (  # type: ignore
+    GEMINI_MODEL,
+    LEADERSHIP_SECTION_NUMBER,
+    COACHING_SECTION_NUMBER,
+)
 MIN_SECTION_WORDS = int(os.environ.get("OPENCLAW_MIN_SECTION_WORDS", "30"))
 
 
 # ---- Mode mapping (mirrors what's in INSTRUCTIONS.md / PRD v1.1 Ch 2) ----
-LEADERSHIP_SECTIONS = {4}        # Section 4: Agent Governance Framework
-COACHING_SECTIONS = {6}          # Section 6: Coaching Framework
+# Single source of truth: embedding_engine.{LEADERSHIP,COACHING}_SECTION_NUMBER.
+# Section 4: Agent Governance Framework (leadership). Section 3: Coaching Framework.
+# Mirrors section-tag-migration.py (the live tagger) — cannot drift.
+LEADERSHIP_SECTIONS = {LEADERSHIP_SECTION_NUMBER}
+COACHING_SECTIONS = {COACHING_SECTION_NUMBER}
 
 
 def get_section_mode(section_number: int, section_name: str) -> str:

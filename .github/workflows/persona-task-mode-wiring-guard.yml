@@ -23,6 +23,9 @@ on:
       - "23-ai-workforce-blueprint/full-funnel-pipeline/funnel_rubrics.py"
       - "23-ai-workforce-blueprint/templates/role-library/**"
       - tests/unit/persona-task-mode-wiring.test.sh
+      - tests/unit/section-tagger-indexer-agreement.test.sh
+      - "23-ai-workforce-blueprint/scripts/gemini-section-indexer.py"
+      - "23-ai-workforce-blueprint/scripts/section-tag-migration.py"
       - .github/workflows/persona-task-mode-wiring-guard.yml
   pull_request:
     paths:
@@ -33,6 +36,9 @@ on:
       - "23-ai-workforce-blueprint/full-funnel-pipeline/funnel_rubrics.py"
       - "23-ai-workforce-blueprint/templates/role-library/**"
       - tests/unit/persona-task-mode-wiring.test.sh
+      - tests/unit/section-tagger-indexer-agreement.test.sh
+      - "23-ai-workforce-blueprint/scripts/gemini-section-indexer.py"
+      - "23-ai-workforce-blueprint/scripts/section-tag-migration.py"
       - .github/workflows/persona-task-mode-wiring-guard.yml
 
 jobs:
@@ -54,3 +60,8 @@ jobs:
         run: |
           chmod +x tests/unit/persona-task-mode-wiring.test.sh
           bash tests/unit/persona-task-mode-wiring.test.sh
+
+      - name: Section tagger / indexer agreement (coaching=Section3, leadership=Section4)
+        run: |
+          chmod +x tests/unit/section-tagger-indexer-agreement.test.sh
+          bash tests/unit/section-tagger-indexer-agreement.test.sh

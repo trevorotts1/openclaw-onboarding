@@ -190,8 +190,8 @@ rows = [
   "Section 4 Agent Governance Framework execution standard definition of done failure patterns",
   b"",0,"gemini","gemini-embedding-2",3072,4,"leadership"),
  ("2","x/coaching-personas/personas/hormozi/persona-blueprint.md",1,
-  "Section 6 coaching framework powerful questions support assessment",
-  b"",0,"gemini","gemini-embedding-2",3072,6,"coaching"),
+  "Section 3 coaching framework powerful questions support assessment",
+  b"",0,"gemini","gemini-embedding-2",3072,3,"coaching"),
 ]
 cur.executemany("INSERT INTO embeddings VALUES(?,?,?,?,?,?,?,?,?,?,?)", rows)
 c.commit(); c.close()
@@ -205,8 +205,8 @@ def run(mode):
 
 lead = run("leadership")
 coach = run("coaching")
-assert "Section 4" in lead and "Section 6" not in lead, f"leadership mode leaked coaching:\n{lead}"
-assert "Section 6" in coach and "Section 4" not in coach, f"coaching mode leaked leadership:\n{coach}"
+assert "Section 4" in lead and "Section 3" not in lead, f"leadership mode leaked coaching:\n{lead}"
+assert "Section 3" in coach and "Section 4" not in coach, f"coaching mode leaked leadership:\n{coach}"
 
 # Legacy chunk-only index (no mode/section columns) must NOT be filtered.
 db2 = os.path.join(tmp, "legacy.sqlite")
@@ -215,7 +215,7 @@ cur2.execute("CREATE TABLE embeddings(id TEXT, file_path TEXT, content TEXT)")
 frag, params = ee._mode_filter_sql(cur2, "leadership")
 assert frag == "" and params == [], f"legacy index wrongly filtered: {frag!r} {params!r}"
 c2.close()
-print("OK leadership->Section4, coaching->Section6, legacy index unfiltered")
+print("OK leadership->Section4, coaching->Section3, legacy index unfiltered")
 PYD
 then
     pass "(D) search(--mode leadership) surfaces Section-4 governance; legacy index unaffected"

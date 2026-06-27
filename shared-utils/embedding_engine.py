@@ -572,8 +572,14 @@ def get_persona_name(file_path: str) -> str:
 # call stays fully backward-compatible.
 # ---------------------------------------------------------------------------
 
+# Canonical persona-blueprint section -> mode mapping (single source of truth).
 # Section 4 is the Agent Governance Framework (the leadership / Task-Mode half).
+# Section 3 is the Coaching Framework (the coaching half). Corpus-verified and
+# mirrored by both 23-ai-workforce-blueprint/scripts/section-tag-migration.py
+# (the live tagger) and gemini-section-indexer.py — neither hardcodes its own
+# section numbers; both import these constants so fleet tagging can never drift.
 LEADERSHIP_SECTION_NUMBER = 4
+COACHING_SECTION_NUMBER = 3
 
 
 def _table_columns(cur, table: str = "embeddings") -> set:
