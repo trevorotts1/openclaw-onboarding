@@ -992,6 +992,208 @@ class TestAllowRowMaxWidth:
             rc.assert_renderable_shape(blob, "funnel")
 
 
+# ── Brand palette injection ───────────────────────────────────────────────────
+#
+# Per-client brand/theme fidelity: new_page_blob must accept optional
+# primary_color and secondary_color kwargs and inject them into
+# general.general.colors (the 18-entry {label, value} palette) and the
+# pageStyles CSS :root block.  The 18-entry shape must be preserved so
+# assert_renderable_shape Invariant 2 (non-empty colors list) and the
+# GoHighLevel renderer's hydration read both continue to resolve.
+#
+# When neither color is supplied the operator-scratch defaults (#37ca37 /
+# #188bf6) must be unchanged so existing callers are not broken.
+
+
+class TestBrandPaletteInjection:
+    """new_page_blob brand palette injection — §4.4 per-client fidelity gate."""
+
+    # ── default (no brand args) must keep operator-scratch palette ────────────
+
+    def test_default_primary_color_unchanged(self):
+        """Without brand args the Primary entry must stay #37ca37."""
+        blob = rc.new_page_blob("<p>x</p>", surface="funnel")
+        colors = blob["general"]["general"]["colors"]
+        primary = next((c for c in colors if c.get("label") == "Primary"), None)
+        assert primary is not None, "Primary entry missing from colors list"
+        assert primary["value"] == "#37ca37", (
+            f"Default primary must be #37ca37, got {primary['value']!r}"
+        )
+
+    def test_default_secondary_color_unchanged(self):
+        """Without brand args the Secondary entry must stay #188bf6."""
+        blob = rc.new_page_blob("<p>x</p>", surface="funnel")
+        colors = blob["general"]["general"]["colors"]
+        secondary = next((c for c in colors if c.get("label") == "Secondary"), None)
+        assert secondary is not None, "Secondary entry missing from colors list"
+        assert secondary["value"] == "#188bf6", (
+            f"Default secondary must be #188bf6, got {secondary['value']!r}"
+        )
+
+    def test_default_page_styles_primary_unchanged(self):
+        """Without brand args pageStyles CSS must contain --primary: #37ca37."""
+        blob = rc.new_page_blob("<p>x</p>", surface="funnel")
+        assert "--primary: #37ca37" in blob["pageStyles"], (
+            "Default --primary not found in pageStyles"
+        )
+
+    def test_default_page_styles_secondary_unchanged(self):
+        """Without brand args pageStyles CSS must contain --secondary: #188bf6."""
+        blob = rc.new_page_blob("<p>x</p>", surface="funnel")
+        assert "--secondary: #188bf6" in blob["pageStyles"], (
+            "Default --secondary not found in pageStyles"
+        )
+
+    # ── brand args replace Primary and Secondary ──────────────────────────────
+
+    def test_primary_color_replaces_primary_entry(self):
+        """primary_color replaces the 'Primary' entry value in general.general.colors."""
+        blob = rc.new_page_blob("<p>x</p>", surface="funnel", primary_color="#c0392b")
+        colors = blob["general"]["general"]["colors"]
+        primary = next((c for c in colors if c.get("label") == "Primary"), None)
+        assert primary is not None
+        assert primary["value"] == "#c0392b", (
+            f"Expected #c0392b in Primary entry, got {primary['value']!r}"
+        )
+
+    def test_secondary_color_replaces_secondary_entry(self):
+        """secondary_color replaces the 'Secondary' entry value in general.general.colors."""
+        blob = rc.new_page_blob("<p>x</p>", surface="funnel", secondary_color="#2980b9")
+        colors = blob["general"]["general"]["colors"]
+        secondary = next((c for c in colors if c.get("label") == "Secondary"), None)
+        assert secondary is not None
+        assert secondary["value"] == "#2980b9", (
+            f"Expected #2980b9 in Secondary entry, got {secondary['value']!r}"
+        )
+
+    def test_primary_color_replaces_css_var(self):
+        """primary_color must also update --primary in pageStyles."""
+        blob = rc.new_page_blob("<p>x</p>", surface="funnel", primary_color="#c0392b")
+        assert "--primary: #c0392b" in blob["pageStyles"], (
+            "--primary not updated in pageStyles"
+        )
+        # Operator-scratch value must be gone
+        assert "--primary: #37ca37" not in blob["pageStyles"], (
+            "Operator-scratch --primary still present after brand injection"
+        )
+
+    def test_secondary_color_replaces_css_var(self):
+        """secondary_color must also update --secondary in pageStyles."""
+        blob = rc.new_page_blob("<p>x</p>", surface="funnel", secondary_color="#2980b9")
+        assert "--secondary: #2980b9" in blob["pageStyles"], (
+            "--secondary not updated in pageStyles"
+        )
+        assert "--secondary: #188bf6" not in blob["pageStyles"], (
+            "Operator-scratch --secondary still present after brand injection"
+        )
+
+    # ── 18-entry shape preserved ──────────────────────────────────────────────
+
+    def test_palette_shape_preserved_both_colors(self):
+        """Brand injection must keep all 18 entries — no entries added or dropped."""
+        blob = rc.new_page_blob(
+            "<p>x</p>", surface="funnel",
+            primary_color="#c0392b", secondary_color="#2980b9",
+        )
+        colors = blob["general"]["general"]["colors"]
+        assert len(colors) == 18, (
+            f"general.general.colors must have 18 entries after brand injection, got {len(colors)}"
+        )
+
+    def test_non_brand_entries_untouched(self):
+        """Brand injection must not modify any entry other than Primary/Secondary."""
+        blob = rc.new_page_blob(
+            "<p>x</p>", surface="funnel",
+            primary_color="#c0392b", secondary_color="#2980b9",
+        )
+        colors = blob["general"]["general"]["colors"]
+        for entry in colors:
+            if entry.get("label") in ("Primary", "Secondary"):
+                continue
+            # All other entries must match the original constants
+            original = next(
+                (c for c in rc._FLAT_THEME_COLORS if c.get("label") == entry.get("label")),
+                None,
+            )
+            assert original is not None, f"Unexpected entry label {entry.get('label')!r}"
+            assert entry["value"] == original["value"], (
+                f"Entry {entry['label']!r} was mutated: "
+                f"expected {original['value']!r}, got {entry['value']!r}"
+            )
+
+    def test_blob_renderable_with_brand_colors(self):
+        """A blob built with brand colors must pass assert_renderable_shape."""
+        blob = rc.new_page_blob(
+            "<p>brand-test</p>", surface="funnel",
+            primary_color="#c0392b", secondary_color="#2980b9",
+        )
+        rc.assert_renderable_shape(blob, "funnel")  # raises on any invariant failure
+
+    def test_blob_renderable_website_with_brand_colors(self):
+        """Brand injection must work for the website surface too."""
+        blob = rc.new_page_blob(
+            "<p>brand-web</p>", surface="website",
+            primary_color="#8e44ad", secondary_color="#27ae60",
+        )
+        rc.assert_renderable_shape(blob, "website")
+
+    # ── only one color at a time ──────────────────────────────────────────────
+
+    def test_only_primary_color_leaves_secondary_unchanged(self):
+        """Supplying only primary_color must not touch Secondary."""
+        blob = rc.new_page_blob("<p>x</p>", surface="funnel", primary_color="#e74c3c")
+        colors = blob["general"]["general"]["colors"]
+        secondary = next(c for c in colors if c.get("label") == "Secondary")
+        assert secondary["value"] == "#188bf6", (
+            "Secondary must be unchanged when only primary_color is supplied"
+        )
+
+    def test_only_secondary_color_leaves_primary_unchanged(self):
+        """Supplying only secondary_color must not touch Primary."""
+        blob = rc.new_page_blob("<p>x</p>", surface="funnel", secondary_color="#3498db")
+        colors = blob["general"]["general"]["colors"]
+        primary = next(c for c in colors if c.get("label") == "Primary")
+        assert primary["value"] == "#37ca37", (
+            "Primary must be unchanged when only secondary_color is supplied"
+        )
+
+    # ── invalid hex colors raise ValueError ──────────────────────────────────
+
+    def test_invalid_primary_color_raises(self):
+        """A non-hex primary_color must raise ValueError before blob assembly."""
+        with pytest.raises(ValueError, match="primary_color"):
+            rc.new_page_blob("<p>x</p>", surface="funnel", primary_color="red")
+
+    def test_invalid_secondary_color_raises(self):
+        """A non-hex secondary_color must raise ValueError before blob assembly."""
+        with pytest.raises(ValueError, match="secondary_color"):
+            rc.new_page_blob("<p>x</p>", surface="funnel", secondary_color="blue")
+
+    def test_invalid_hex_no_hash_raises(self):
+        """A hex string without the # prefix must raise ValueError."""
+        with pytest.raises(ValueError):
+            rc.new_page_blob("<p>x</p>", surface="funnel", primary_color="c0392b")
+
+    def test_three_digit_hex_accepted(self):
+        """Short 3-digit hex colors (#abc) must be accepted."""
+        blob = rc.new_page_blob("<p>x</p>", surface="funnel", primary_color="#abc")
+        colors = blob["general"]["general"]["colors"]
+        primary = next(c for c in colors if c.get("label") == "Primary")
+        assert primary["value"] == "#abc"
+
+    # ── _apply_brand_palette is idempotent on None ────────────────────────────
+
+    def test_apply_brand_palette_none_noop(self):
+        """_apply_brand_palette with both None must return the same objects."""
+        import ghl_rest_canvas as rc2
+        import copy
+        colors = copy.deepcopy(rc2._FLAT_THEME_COLORS)
+        styles = rc2._FLAT_PAGE_STYLES
+        out_colors, out_styles = rc2._apply_brand_palette(colors, styles, None, None)
+        assert out_colors is colors  # identity — no copy
+        assert out_styles is styles  # identity — no copy
+
+
 # ── P1-1: lint_ghl_fragment — rejects ONLY what LIVE TRUTH proves stripped ────
 #
 # LIVE TRUTH: iframe / inline+msgsndr script / external CSS / >50KB body ALL

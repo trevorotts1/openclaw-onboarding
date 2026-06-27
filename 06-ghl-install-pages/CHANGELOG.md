@@ -4,6 +4,38 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.18.0] - 2026-06-27 — feat(skill6): per-client brand palette injection into general.general.colors + pageStyles
+
+### Added — brand palette injection (`ghl_rest_canvas.py`)
+- `new_page_blob()` now accepts two optional keyword-only parameters:
+  `primary_color: str | None` and `secondary_color: str | None`.
+- When supplied, these hex color strings are injected into the **Primary**
+  and **Secondary** entries of `general.general.colors` and the
+  `--primary` / `--secondary` CSS custom properties in the top-level
+  `pageStyles` block.
+- The **18-entry palette shape** is preserved exactly — no entries are
+  added or dropped — so `assert_renderable_shape` Invariant 2 (non-empty
+  colors list) and the GoHighLevel renderer's hydration read continue to
+  resolve without change.
+- All 16 non-brand entries are passed through verbatim.
+- A new private helper `_apply_brand_palette(colors, page_styles,
+  primary_color, secondary_color)` performs the substitution and validates
+  that supplied values are valid CSS hex colors (`#rgb`, `#rrggbb`, or
+  `#rrggbbaa`); a non-hex value raises `ValueError` before any blob is
+  assembled.
+- When both args are `None` (the default), the helper is a fast identity
+  pass — zero copying, zero regex — so every existing caller is unaffected.
+- 19 new unit tests in `tests/test_ghl_rest_canvas.py`
+  (`TestBrandPaletteInjection`): default palette unchanged, both colors
+  replaced, 18-entry shape preserved, non-brand entries untouched,
+  `assert_renderable_shape` passes for funnel and website surfaces,
+  partial-replacement cases, invalid hex raises, 3-digit hex accepted,
+  None-noop identity check. All 99 suite tests pass.
+
+FILES: `06-ghl-install-pages/tools/ghl_rest_canvas.py`,
+`06-ghl-install-pages/tests/test_ghl_rest_canvas.py`. No client names, no
+operator-local paths, no secret values committed.
+
 ## [v14.17.0] - 2026-06-27 — feat(skill6): consolidated self-check checklist + SEO keyword-in-copy gate
 
 ### Added — per-phase self-check checklist (`references/ghl-build-self-check.md`)
