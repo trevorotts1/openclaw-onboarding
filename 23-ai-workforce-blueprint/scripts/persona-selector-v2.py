@@ -330,7 +330,12 @@ _CATEGORY_DOMAINS: dict = {
     "video-edit":       {"editing", "montage", "visual-storytelling", "video"},
     "research":         {"strategy-innovation", "productivity-systems"},
     "strategy":         {"strategy-innovation", "leadership", "operations"},
-    "design":           {"copywriting", "strategy-innovation"},  # no "design" domain exists
+    # No literal "design" domain exists in persona-categories.json. A visual/design/
+    # sketchnote task is fundamentally about TRANSLATING ideas into a clear visual
+    # narrative, so it routes to the domains that carry that craft:
+    # visual-storytelling (sketchnote/visual-thinking family), communication
+    # (message clarity), copywriting, strategy-innovation (idea framing).
+    "design":           {"visual-storytelling", "communication", "copywriting", "strategy-innovation"},
     "ops":              {"operations", "productivity-systems"},
     "finance":          {"finance", "operations"},
     "legal":            {"leadership", "strategy-innovation"},
