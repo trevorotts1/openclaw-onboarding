@@ -395,8 +395,14 @@ jobs:
             fi
 
             # Check if skill-version.txt was also changed for this skill.
+            # Use a here-string (NOT `echo "$CHANGED_FILES" | grep -q`): with
+            # `set -o pipefail`, a large CHANGED_FILES piped into `grep -q` makes
+            # grep exit on the first match and SIGPIPE the still-writing `echo`,
+            # so the pipeline returns 141 and `if !` reads a real MATCH as a miss —
+            # a false G3 failure that only triggers on big diffs (hundreds of
+            # files). The here-string has no pipe, so no SIGPIPE, no false fail.
             VER_FILE="${SKILL_DIR}/skill-version.txt"
-            if ! echo "$CHANGED_FILES" | grep -qF "$VER_FILE"; then
+            if ! grep -qF "$VER_FILE" <<< "$CHANGED_FILES"; then
               FAIL="$FAIL ${SKILL_DIR}"
             fi
           done <<< "$CHANGED_FILES"

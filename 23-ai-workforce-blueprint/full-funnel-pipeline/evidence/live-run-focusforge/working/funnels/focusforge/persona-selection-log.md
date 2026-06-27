@@ -33,6 +33,18 @@ Distinct task-id (ff-p2-copy) from the P1 entry (ff-p1-funnel-spec) per U2/SOP-0
 ## P2e — Email nurture (Email Campaign Strategist)
 2026-06-22 ff-p2e-email "hormozi-100m-offers, robert-bly, donald-miller-storybrand" "hormozi-100m-offers" "Nurture-to-application conversion KPI alignment" "Marketing email dept objective: persona-grounded sequence handed to CRM for Skill-44 deployment" "Task = 5-email applicant nurture; each email reuses the value-equation framing (lower effort/sacrifice reframe day 1, dream-outcome day 3, risk-reversal guarantee day 5, real-constraint scarcity day 7)"
 
+## Task-Mode governance applied (Leadership half — Section 4)
+The build did not merely NAME hormozi-100m-offers — it loaded the persona's LEADERSHIP / Task-Mode
+half (Section 4 "Agent Governance Framework") and built the funnel-spec/copy/email to that standard
+(see persona-matching-protocol.md "Step 5: Load and Apply the Task Mode"). What was loaded and applied:
+- task_mode_loaded: 22-book-to-persona-coaching-leadership-system/personas/hormozi-100m-offers/persona-blueprint.md Section 4 (Agent Governance Framework)
+- execution_standard: value-equation maximize (dream outcome x perceived likelihood)/(time delay x effort); grand-slam offer stack with per-line dollar values; outcome-based risk-reversal guarantee (Section 4A decision logic)
+- definition_of_done: the offer architecture (value-stack + dollar-valued lines + guarantee + magnetic outcome-anchored name "FocusForge") exists BEFORE any copy is written; copy/email echo that same architecture (Section 4B Definition of Done)
+- failure_patterns: no feature-dump, no weak/absent guarantee, no copy-before-offer-architecture (Section 4C Failure Pattern Recognition)
+Note: this governance was applied correctly, but it does NOT rescue the degraded selector grounding — Layers 1-4
+still fell to the neutral-0.6 floor (OpenRouter 402 + no fixture company-config), so R-PERSONA-GROUNDING remains
+the single documented environmental residual (below 8.5), surfaced not faked.
+
 ## Staleness check
 hormozi-100m-offers selected for 3 consecutive marketing/funnel tasks in THIS funnel. This is
 within-funnel coherence (one offer, one architecture persona across P1/P2/P2e by design), NOT

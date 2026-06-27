@@ -486,9 +486,40 @@ def score_all(run_dir: str, *, cc_invariant_ok: bool = True,
         selector_strength = 0.0
         selector_obs = "no selector_ran marker"
     selector_pts = 5.0 * selector_strength if (has_selector or has_persona) else 0.0
+    # ── task_mode_applied — GOVERNANCE-APPLIED, not just name-surfaced ──────────
+    # Naming a persona (and even running the selector) proves a persona was CHOSEN.
+    # It does NOT prove the executing agent loaded and built to the persona's
+    # LEADERSHIP / Task-Mode half — Section 4 "Agent Governance Framework"
+    # (Execution Standard / Decision Logic / Definition of Done / Failure Patterns).
+    # This sub-check reads the selection-log for the structured markers the build
+    # agent records when it actually LOADS and APPLIES that governance (see
+    # persona-matching-protocol.md "Step 5: Load and Apply the Task Mode"):
+    #     task_mode_loaded / execution_standard / definition_of_done /
+    #     failure_patterns / section 4
+    # Graduated: full credit at >=3 distinct markers, partial below — so a run that
+    # only names the persona scores 0 here and a run that documents the governance
+    # it built to scores full. Weight 1.5 is intentionally NON-load-bearing (< the
+    # 3.0 hard-miss floor): persona NAMING (5.0) and selector STRENGTH (5.0) remain
+    # the dominant signals, so a degraded-selector run stays a documented residual
+    # even when its Task-Mode was applied — the governance dimension can lift, but
+    # cannot rescue, a grounding whose selector layers fell to the neutral floor.
+    _tm_markers = [
+        "task_mode_loaded", "task mode loaded", "task-mode loaded",
+        "execution_standard", "execution standard",
+        "definition_of_done", "definition of done",
+        "failure_patterns", "failure pattern",
+        "section 4", "section-4", "agent governance framework",
+    ]
+    _pl_full = plog.lower()
+    tm_hits = sum(1 for m in _tm_markers if m in _pl_full)
+    task_mode_pts = 1.5 * min(tm_hits, 3) / 3.0
+    task_mode_obs = (f"{tm_hits} Task-Mode/Section-4 governance marker(s)"
+                     if tm_hits else "NO Task-Mode markers (persona named but "
+                                     "Section-4 governance not recorded as applied)")
     results.append(grade("R-PERSONA-GROUNDING", os.path.join(fr, "persona-selection-log.md"), [
         ("persona_named_surfaces", 5.0, round(persona_pts, 2), f"{surfaces}/3 surfaces"),
-        ("selector_grounding_strength", 5.0, round(selector_pts, 2), selector_obs)]))
+        ("selector_grounding_strength", 5.0, round(selector_pts, 2), selector_obs),
+        ("task_mode_applied", 1.5, round(task_mode_pts, 2), task_mode_obs)]))
 
     # ── R-KANBAN-CORRECTNESS — rollup(4) + summary-consistent(3) + ordering(3)
     # Live: summary has total/passed over N pages. Fixture: raw has stages_complete/7.

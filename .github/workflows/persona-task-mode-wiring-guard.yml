@@ -1,0 +1,56 @@
+name: persona-task-mode-wiring-guard
+
+# Fails the build if the LEADERSHIP / Task-Mode half of a persona blueprint stops
+# being WIRED to fire at task time:
+#   (A) skill-22's CORE_UPDATES.md no longer lands the Persona Reflex BODY through
+#       the real merger (a marker without an execution-path body),
+#   (B) persona-matching-protocol.md drops the mandatory "Load and Apply the Task
+#       Mode" step,
+#   (C) funnel_rubrics R-PERSONA-GROUNDING stops grading governance-application,
+#   (D) the embedding engine loses mode-aware (leadership) retrieval,
+#   (E) a role-library §2 ships without the concrete Task-Mode load step.
+#
+# This is the QC gate for the leadership-wiring fix — "a rule not auto-failed at
+# the gate doesn't exist".
+
+on:
+  push:
+    paths:
+      - update-skills.sh
+      - shared-utils/embedding_engine.py
+      - "22-book-to-persona-coaching-leadership-system/CORE_UPDATES.md"
+      - "23-ai-workforce-blueprint/persona-matching-protocol.md"
+      - "23-ai-workforce-blueprint/full-funnel-pipeline/funnel_rubrics.py"
+      - "23-ai-workforce-blueprint/templates/role-library/**"
+      - tests/unit/persona-task-mode-wiring.test.sh
+      - .github/workflows/persona-task-mode-wiring-guard.yml
+  pull_request:
+    paths:
+      - update-skills.sh
+      - shared-utils/embedding_engine.py
+      - "22-book-to-persona-coaching-leadership-system/CORE_UPDATES.md"
+      - "23-ai-workforce-blueprint/persona-matching-protocol.md"
+      - "23-ai-workforce-blueprint/full-funnel-pipeline/funnel_rubrics.py"
+      - "23-ai-workforce-blueprint/templates/role-library/**"
+      - tests/unit/persona-task-mode-wiring.test.sh
+      - .github/workflows/persona-task-mode-wiring-guard.yml
+
+jobs:
+  persona-task-mode-wiring-guard:
+    name: Leadership / Task-Mode fires at task time
+    runs-on: ubuntu-latest
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run persona-task-mode-wiring tests
+        run: |
+          chmod +x tests/unit/persona-task-mode-wiring.test.sh
+          bash tests/unit/persona-task-mode-wiring.test.sh

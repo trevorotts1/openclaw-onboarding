@@ -299,7 +299,20 @@ def build_funnel(run_dir: str, *, inject_failure: str | None = None,
             "## P2e — Email nurture (Email Campaign Strategist)\n"
             "- task-id: p2e-email\n"
             "- selected_persona: hormozi-100m-offers\n"
-            "- rationale: 5-email nurture reuses the value-equation framing\n"
+            "- rationale: 5-email nurture reuses the value-equation framing\n\n"
+            # GOVERNANCE-APPLIED: the build agent loaded the persona's LEADERSHIP /
+            # Task-Mode half (Section 4 Agent Governance Framework) and built to it,
+            # not just the persona's name. These structured markers are what the
+            # R-PERSONA-GROUNDING `task_mode_applied` sub-check reads to prove the
+            # execution path applied the governance (see persona-matching-protocol.md
+            # "Step 5: Load and Apply the Task Mode").\n"
+            "## Task-Mode governance applied (Leadership half — Section 4)\n"
+            f"- task_mode_loaded: {bp_rel} Section 4 (Agent Governance Framework)\n"
+            "- execution_standard: value-equation maximize (dream outcome x likelihood)/(time x effort);"
+            " grand-slam offer stack with per-line dollar values; risk-reversal guarantee (Section 4A decision logic)\n"
+            "- definition_of_done: offer stack carries per-line dollar values + an outcome-based guarantee"
+            " + a magnetic outcome-anchored name before any copy is written (Section 4B Definition of Done)\n"
+            "- failure_patterns: no feature-dump, no weak/no guarantee, no copy-before-offer-architecture (Section 4C)\n"
         )
         log_path = _write(os.path.join(fr, "persona-selection-log.md"), log)
         spec = {
