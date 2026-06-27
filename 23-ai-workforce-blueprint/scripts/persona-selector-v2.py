@@ -271,101 +271,6 @@ VARIETY_SAMPLE_SEED_ENV = "PERSONA_VARIETY_SEED"  # set for deterministic tests
 # there and selection quality on bounded boxes is preserved.
 STAGE_D_LLM_FINALIST_CAP = max(1, int(os.environ.get("STAGE_D_LLM_FINALIST_CAP", "12")))
 
-# ─── ADAPTIVE TASK-FIT WEIGHTING — specialist dominance (smooth) ─────────────
-# Problem (owner-reported, 2026-06): the 5-layer composite weights task_fit (Layer 5,
-# the SEMANTIC fit of persona↔task) at only ~0.15-0.40. A *generically* strong
-# persona — one whose name keywords happen to overlap the mission / owner-values /
-# company-KPI / dept-KPI text — can therefore out-score the persona that is the
-# SEMANTICALLY PERFECT specialist for the task. Proven case: "Visually sketchnote
-# our onboarding process" — rohde-the-sketchnote-workbook is the #1 semantic match
-# (task_fit 0.8785) yet the fixed-weight composite ranked it LAST (0.5457) and
-# picked hormozi (0.5983). Every specialist (sketchnote, film-editing, …) got
-# buried the same way.
-#
-# WHY ADAPTIVE WEIGHTING (option (a)) AND NOT THE ALTERNATIVES:
-#   (b) specialist-dominance *override* (force the top-semantic persona to win
-#       above a threshold) — a brittle cliff: a persona at 0.7001 wins outright
-#       while 0.6999 is ignored; it also discards Layers 1-4 entirely, so a
-#       high-semantic-but-off-mission persona can hijack a sensitive task.
-#   (c) base-weight rebalance (just raise task_fit globally to, say, 0.35) —
-#       over-weights semantics on EVERY task, including strategy/legal/finance
-#       where mission and owner-values SHOULD dominate; it trades one bias for
-#       another and is not task-aware.
-#   (d) semantic-rank bonus (add a flat bonus to the top-K semantic personas) —
-#       another cliff at rank K, and the additive bonus is unprincipled (it is
-#       not on the same scale as the layer composite).
-#   (a) ADAPTIVE task_fit weighting — the principled choice: it keeps ALL five
-#       layers and the existing weights as the default, and only RE-WEIGHTS
-#       (never overrides) task_fit, and only by as much as the evidence of a
-#       genuine specialist warrants. It is a smooth, continuous function of the
-#       observed semantic-fit DISTRIBUTION, so there is no threshold cliff and
-#       no special-casing of any category — it generalises to any specialist.
-#
-# WHAT COUNTS AS A "GENUINE SPECIALIST" (both required, each a smooth ramp):
-#   height    — the best task_fit is high in ABSOLUTE terms (a real semantic
-#               match, not merely the tallest of a uniformly mediocre field).
-#   dominance — the best task_fit is clearly ABOVE the runner-up (a true gap,
-#               i.e. ONE persona owns this specialty, not a crowded close field).
-# signal = height * dominance (product → 0 unless BOTH are high). The boost to
-# the task_fit weight is proportional to `signal` and capped, then the other four
-# weights are scaled down proportionally so the composite still sums to 1.0 and
-# their RELATIVE proportions are preserved. signal == 0 ⇒ weights byte-for-byte
-# unchanged ⇒ provably identical to the pre-fix selector on normal/close fields.
-# Because the rule reads the task_fit DISTRIBUTION across candidates, it lives at
-# the select_persona() level (cross-persona), and it RE-BLENDS already-computed
-# layer scores (no extra LLM / embedding calls).
-TF_DOMINANCE_FLOOR  = float(os.environ.get("TF_DOMINANCE_FLOOR", "0.65"))  # task_fit at/below → 0 height
-TF_DOMINANCE_CEIL   = float(os.environ.get("TF_DOMINANCE_CEIL", "0.85"))   # task_fit at/above → full height
-TF_GAP_SCALE        = float(os.environ.get("TF_GAP_SCALE", "0.18"))        # top−runnerup gap → full dominance
-TF_WEIGHT_BOOST_MAX = float(os.environ.get("TF_WEIGHT_BOOST_MAX", "0.35")) # max additive task_fit weight
-TF_WEIGHT_CAP       = float(os.environ.get("TF_WEIGHT_CAP", "0.70"))       # absolute ceiling on task_fit weight
-
-
-def _clamp01(x: float) -> float:
-    return 0.0 if x < 0.0 else (1.0 if x > 1.0 else x)
-
-
-def compute_specialist_signal(task_fits: list) -> tuple:
-    """Return (signal, tf_top, tf_runner_up) for a candidate set's task_fit scores.
-
-    signal ∈ [0,1] = height * dominance, where
-        height    = clamp01((tf_top − FLOOR) / (CEIL − FLOOR))   # absolute strength
-        dominance = clamp01((tf_top − tf_runner_up) / GAP_SCALE) # lead over #2
-    so it is non-zero ONLY when the best semantic fit is BOTH high in absolute
-    terms AND clearly ahead of the runner-up. Fewer than 2 candidates (no runner-
-    up to dominate) or any degenerate input ⇒ 0.0. Never raises.
-    """
-    vals = sorted((float(t) for t in task_fits if t is not None), reverse=True)
-    if len(vals) < 2:
-        only = vals[0] if vals else 0.0
-        return 0.0, only, only
-    tf_top, tf_2 = vals[0], vals[1]
-    span = max(TF_DOMINANCE_CEIL - TF_DOMINANCE_FLOOR, 1e-6)
-    height    = _clamp01((tf_top - TF_DOMINANCE_FLOOR) / span)
-    dominance = _clamp01((tf_top - tf_2) / max(TF_GAP_SCALE, 1e-6))
-    return height * dominance, tf_top, tf_2
-
-
-def adaptive_task_fit_weights(base_weights: dict, signal: float) -> dict:
-    """Blend `base_weights` toward task_fit by `signal` (0 ⇒ unchanged).
-
-    Raises task_fit's weight by up to TF_WEIGHT_BOOST_MAX*signal (hard-capped at
-    TF_WEIGHT_CAP) and shrinks the other four weights by a single proportional
-    factor so the set still sums to 1.0 and keeps its relative shape. Returns a
-    copy of base_weights untouched when signal ≤ 0 or no headroom remains.
-    """
-    w_tf = base_weights.get("task_fit", 0.0)
-    if signal <= 0.0:
-        return dict(base_weights)
-    new_tf = min(w_tf + TF_WEIGHT_BOOST_MAX * signal, TF_WEIGHT_CAP)
-    if new_tf <= w_tf:
-        return dict(base_weights)
-    others_total = 1.0 - w_tf
-    scale = (1.0 - new_tf) / others_total if others_total > 1e-9 else 0.0
-    return {k: (new_tf if k == "task_fit" else v * scale)
-            for k, v in base_weights.items()}
-
-
 # ─── PRE-SCORING FUNNEL (PRD item 1.2 — rebuilt funnel) ─────────────────────
 # Stage A: governing-personas.md → candidate pool (or all personas fallback)
 # Stage B: category-tag filter using persona-categories.json `domain` key +
@@ -425,12 +330,7 @@ _CATEGORY_DOMAINS: dict = {
     "video-edit":       {"editing", "montage", "visual-storytelling", "video"},
     "research":         {"strategy-innovation", "productivity-systems"},
     "strategy":         {"strategy-innovation", "leadership", "operations"},
-    # No literal "design" domain exists in persona-categories.json. A visual/design/
-    # sketchnote task is fundamentally about TRANSLATING ideas into a clear visual
-    # narrative, so it routes to the domains that actually carry that craft:
-    # visual-storytelling (the sketchnote/visual-thinking family, e.g. rohde),
-    # communication + copywriting (message clarity), strategy-innovation (idea framing).
-    "design":           {"visual-storytelling", "communication", "copywriting", "strategy-innovation"},
+    "design":           {"copywriting", "strategy-innovation"},  # no "design" domain exists
     "ops":              {"operations", "productivity-systems"},
     "finance":          {"finance", "operations"},
     "legal":            {"leadership", "strategy-innovation"},
@@ -1578,38 +1478,6 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
                             db_path, scoring_mode=effective_scoring_mode)
               for p in personas]
 
-    # ── ADAPTIVE TASK-FIT WEIGHTING (specialist dominance, smooth) ────────────
-    # When exactly one candidate is a genuine semantic specialist for THIS task
-    # (its task_fit is both high in absolute terms AND clearly ahead of the
-    # runner-up), raise the task_fit weight smoothly and RE-BLEND every
-    # candidate's composite from its ALREADY-COMPUTED layer scores. No layers are
-    # recomputed (zero extra LLM / embedding calls): only the weighting of the 5
-    # numbers changes. A close field or a low-fit field yields signal == 0, so the
-    # weights — and therefore every score — are left exactly as the pre-fix
-    # selector produced them (normal cases provably undisturbed). See
-    # compute_specialist_signal / adaptive_task_fit_weights for the formula.
-    effective_weights = dict(weights)
-    specialist_signal, tf_top, tf_runner_up = 0.0, None, None
-    if len(scored) >= 2:
-        task_fits = [s["layers"].get("task_fit", 0.0) for s in scored]
-        specialist_signal, tf_top, tf_runner_up = compute_specialist_signal(task_fits)
-        if specialist_signal > 0.0:
-            effective_weights = adaptive_task_fit_weights(weights, specialist_signal)
-            for s in scored:
-                L = s["layers"]
-                new_base = (
-                    L["mission"]      * effective_weights["mission"] +
-                    L["owner_values"] * effective_weights["owner_values"] +
-                    L["company_kpis"] * effective_weights["company_kpis"] +
-                    L["dept_kpis"]    * effective_weights["dept_kpis"] +
-                    L["task_fit"]     * effective_weights["task_fit"]
-                )
-                s["base_score_pre_adaptive"] = s["base_score"]
-                s["base_score"] = round(new_base, 4)
-                # Re-apply the same per-persona override factor score_persona used,
-                # so DB weight overrides still compose with the adaptive reweight.
-                s["score"] = round(new_base * s.get("override_factor", 1.0), 4)
-
     task_category = infer_task_category(task)
 
     # ── Perspective bonus (additive-only, never-to-zero) ──────────────────────
@@ -1667,19 +1535,7 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
         "override_factor": top["override_factor"],
         "interaction_mode": mode,
         "task_category": task_category,
-        "weights_used": effective_weights,
-        "adaptive_task_fit": {
-            "signal": round(specialist_signal, 4),
-            "base_task_fit_weight": round(weights.get("task_fit", 0.0), 4),
-            "effective_task_fit_weight": round(effective_weights.get("task_fit", 0.0), 4),
-            "tf_top": round(tf_top, 4) if tf_top is not None else None,
-            "tf_runner_up": round(tf_runner_up, 4) if tf_runner_up is not None else None,
-            "dominance_floor": TF_DOMINANCE_FLOOR,
-            "dominance_ceil": TF_DOMINANCE_CEIL,
-            "gap_scale": TF_GAP_SCALE,
-            "boost_max": TF_WEIGHT_BOOST_MAX,
-            "weight_cap": TF_WEIGHT_CAP,
-        },
+        "weights_used": weights,
         "layers": top["layers"],
         "funnel": funnel,
         "variety_applied": variety_applied,
