@@ -1,10 +1,30 @@
-## [v14.13.0]  -  2026-06-27  -  fix(presentations): separate free EVENT price from paid OFFER price in the interview — stop assuming a free workshop means a free offer (Skill 23 v2.2.0)
+## [v14.15.0]  -  2026-06-27  -  fix(presentations): separate free EVENT price from paid OFFER price in the interview — stop assuming a free workshop means a free offer (Skill 23 v2.2.0)
 
 Separated EVENT/ACCESS price from OFFER price across the Brainstorming-Buddy-Presentations interview. The old Q4 "THE OFFER + PRICE" conflated two separate axes — the price to ATTEND the event (free webinar, workshop, 5-day challenge) with the price of the OFFER sold at the end — causing the offer/price arc to be zeroed out or skipped when the event was free.
 
 CHANGES: (a) Added a new `EVENT_PRICE` / `EVENT_ACCESS_MODE` concept (free vs paid to ATTEND) as a distinct axis from the offer/product price (`OFFER_STACK` / `FINAL_PRICE` / `PRICE_MODE`). (b) Split the old conflated Q4 "THE OFFER + PRICE" into Q4a (EVENT ACCESS PRICE) and Q4b (THE OFFER + PRICE), asked as two separate questions in the simple set, extensive set (Q9 note), and the pre-presentation SOP. (c) Devil's-Advocate ALWAYS-PITCH-SOMETHING doctrine wired: a free event defaults `pitch_included: true` + `expect_paid_offer: true` (both `assumed: true`), surfaced at the SOP 9.3 read-back; a free-only close requires explicit owner sign-off (`pitch_included: false` set only when stated outright). (d) SOP 9.1 step 3a, SOP 9.2 step 2c, SOP 9.3 read-back updated to treat the two price axes as separate lines — never collapsed. (e) Brainstorming-Buddy role version bumped 2.1 -> 2.2.
 
 FILES: `23-ai-workforce-blueprint/templates/role-library/presentations/brainstorming-buddy-presentations.md`, `23-ai-workforce-blueprint/templates/role-library/presentations/sops/brainstorming-buddy-presentations-sops.md`, `23-ai-workforce-blueprint/templates/role-library/_brainstorming-buddy-question-banks.json`. No client names, no secrets committed.
+
+## [v14.14.0]  -  2026-06-27  -  fix(skill23): safe-only — 4 perspective-tag fixes + design routing improvement; adaptive specialist-weighting held
+
+SHIPPED (safe-only scope; regressions=[], clean=true):
+
+PERSPECTIVE-TAG FIXES (persona-categories.json, Skill 22): Remove 4 misattributed identity perspective tags — `womens-challenges` on 3 book personas that are not women-authored (attwood-passion-test, robbins-five-second-rule, one sales/marketing persona); `african-american-experience` on grover-relentless whose author does not carry that lived experience. Tags were incorrectly assigned and would have caused the perspective-bonus to fire on identity claims the persona cannot authentically represent.
+
+ROUTING IMPROVEMENT (persona-selector-v2.py, infer-task-category.py, Skill 23): `_CATEGORY_DOMAINS["design"]` now includes `visual-storytelling` and `communication` alongside `copywriting` and `strategy-innovation`. Both domains exist in persona-categories.json and are the craft domains actually carried by visual/sketchnote personas. `infer-task-category.py` design keyword list gains sketchnote, sketchnoting, sketch, visually, visual map, visual mapping — so "Visually sketchnote our onboarding process" routes to the design category and enters the correct candidate pool.
+
+HELD: The adaptive task_fit specialist-weighting scoring rule (compute_specialist_signal / adaptive_task_fit_weights). Regression gate: specialistsWin=false, generalizes=false — the rule does not reliably surface the right specialist across diverse task types. The routing fix above ensures specialists enter the right candidate pool; the scoring lift is the remaining open defect.
+
+No client names, no operator-local paths, no secret values committed.
+
+---
+
+## [v14.13.0]  -  2026-06-27  -  feat(skill6): harden render gate (un-fakeable) + sanitizer/full-width fidelity + auth/dispatch/docs (Skill 6 v7.4.0)
+
+Harden the Skill 6 render-gate pipeline: un-fakeable proof requirements, sanitizer and full-width fidelity guards, auth/dispatch reliability improvements, and documentation updates. Tagged externally by Trevor; CHANGELOG entry added retroactively by G2 guard compliance in v14.14.0.
+
+---
 
 ## [v14.12.0]  -  2026-06-27  -  feat(skill6): transcript-driven build recipe — SEO/founder gate + media-folder discipline + full-width route + ZHC part-N naming (Skill 6 v7.3.0)
 

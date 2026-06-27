@@ -1,4 +1,4 @@
-## [v14.13.0] - 2026-06-27 - fix(presentations): separate free EVENT price from paid OFFER price in the Brainstorming-Buddy-Presentations interview (Skill 23 v2.2.0)
+## [v14.15.0] - 2026-06-27 - fix(presentations): separate free EVENT price from paid OFFER price in the Brainstorming-Buddy-Presentations interview (Skill 23 v2.2.0)
 
 Separated EVENT/ACCESS price from OFFER price across the Brainstorming-Buddy-Presentations interview. Added `EVENT_PRICE` / `EVENT_ACCESS_MODE` as a distinct axis from `OFFER_STACK` / `FINAL_PRICE` / `PRICE_MODE`. Split the old conflated Q4 into Q4a (EVENT ACCESS PRICE — free or paid to attend) and Q4b (THE OFFER + PRICE — what is sold at the end), asked as two separate questions. Devil's-Advocate ALWAYS-PITCH-SOMETHING doctrine: a free event defaults `pitch_included: true` + `expect_paid_offer: true` (both `assumed: true`), surfaced at the SOP 9.3 read-back; free-only close requires explicit owner sign-off. Brainstorming-Buddy role version bumped 2.1 -> 2.2.
 
