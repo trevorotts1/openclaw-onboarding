@@ -2419,7 +2419,7 @@ def build_from_config(config):
         except Exception as _ws_e:
             print(f"[NON-INTERACTIVE WARN] could not write wiringStatus to build-state: {_ws_e}", file=sys.stderr)
 
-    # ── POST-BUILD WIRING ASSERTION (v14.22.3 FAIL-WIRING-NOT-MATERIALIZED) ───
+    # ── POST-BUILD WIRING ASSERTION (v14.23.1 FAIL-WIRING-NOT-MATERIALIZED) ───
     # Verify ALL expected dept-<id> entries are present in agents.list on disk.
     # The primary registration loop (add_agent_to_config above) writes to the
     # in-memory config_data then saves — but only when zero failures occurred.

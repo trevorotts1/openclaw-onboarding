@@ -1,4 +1,4 @@
-## [v14.22.3] - 2026-06-27 - fix(build-materialize-handoff): dept agents now registered in openclaw.json after every successful build
+## [v14.23.1] - 2026-06-27 - fix(build-materialize-handoff): dept agents now registered in openclaw.json after every successful build
 
 Root cause (two live boxes confirmed): `materialize-dept-agents.sh` (Skill 32) scanned only
 `$OC_ROOT/workspace/departments/` and `$OC_ROOT/workspaces/command-center/` for department
