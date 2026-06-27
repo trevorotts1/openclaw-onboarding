@@ -1,3 +1,16 @@
+## [v14.12.1]  -  2026-06-27  -  fix(cross-agent-routing): materialize-dept-agents.sh now writes agentDir for every department agent so the main agent can route to department agents (e.g. Presentations) without a handoff block
+
+ROOT CAUSE: `agents.list[]` entries written by `materialize-dept-agents.sh` were missing the `agentDir` field. The OpenClaw gateway uses `agentDir` as the filesystem anchor for an agent's internal state; without it the runtime cannot resolve the agent and cross-agent routing silently fails — the main agent sees no Presentations (or other dept) agent to hand off to. Manually verified fix on a live Mac box confirmed inserting `agentDir` and restarting the gateway as the owning user resolves the block.
+
+WHAT CHANGED (32-command-center-setup/scripts/materialize-dept-agents.sh only — three lines of new logic, no behaviour change to unaffected fields):
+1. `agentDir` added to `desired_entry` on every new agent — value is `$OC_ROOT/agents/<agent-id>` (Mac: `~/.openclaw/agents/dept-<slug>`, VPS: `/data/.openclaw/agents/dept-<slug>`).
+2. Idempotent migration: existing agents that predate this version get `agentDir` back-filled on the next `materialize-dept-agents.sh` run (no manual step on upgraded boxes).
+3. `os.makedirs(agent_dir, exist_ok=True)` inside the discovery loop ensures the directory exists on disk before the gateway tries to resolve it.
+
+NO client names, NO operator-local paths, NO secrets committed. Fleet self-heals on the next Skill 32 materialize pass.
+
+---
+
 ## [v14.12.0]  -  2026-06-27  -  feat(skill6): transcript-driven build recipe — SEO/founder gate + media-folder discipline + full-width route + ZHC part-N naming (Skill 6 v7.3.0)
 
 Derives and enforces the canonical GHL funnel build recipe directly from Trevor's authoritative transcript. All items tagged `source=transcript` (authoritative) or `ownedByHarden` (delegated to parallel harden run wu9dnrsak). Builds ON the harden run changes (full-width default, P0 gate, child-chain, iframe/sanitizer, selectors, auth, rate-governor) — additive and complementary. No client names, no operator-local paths, no secret values committed.

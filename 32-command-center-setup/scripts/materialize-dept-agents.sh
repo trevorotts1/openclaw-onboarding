@@ -189,6 +189,11 @@ updated = 0
 for slug, workspace_path in discovered.items():
     agent_id = f"dept-{slug}"
     name = pretty_name(slug)
+    # FIX (v14.11.2): derive agentDir from OC_ROOT/agents/<agent-id> so the
+    # main agent can resolve and route to this dept agent at runtime.  Without
+    # agentDir the gateway has no filesystem anchor for the agent's internal
+    # state and silently blocks cross-agent handoff (Presentations dept etc.).
+    agent_dir = os.path.join(OC_ROOT, "agents", agent_id)
 
     # BUG FIX (v12.9.4): multimodal.enabled MUST be false when the configured
     # embedding provider is text-only (openai-compatible / text-embedding-3-small).
@@ -200,6 +205,7 @@ for slug, workspace_path in discovered.items():
         "id": agent_id,
         "name": name,
         "workspace": workspace_path,
+        "agentDir": agent_dir,
         "memorySearch": {
             "extraPaths": [],
             "multimodal": {"enabled": False, "modalities": []},
@@ -259,11 +265,21 @@ for slug, workspace_path in discovered.items():
         if "wiki" in existing:
             del existing["wiki"]
             changed = True
+        # IDEMPOTENT MIGRATION (v14.11.2): back-fill agentDir on entries written
+        # before this version so existing boxes self-heal on the next materialize
+        # run without any manual intervention.
+        if not existing.get("agentDir"):
+            existing["agentDir"] = agent_dir
+            changed = True
         if changed:
             updated += 1
             print(f"  ~ updated {agent_id:40s} → {workspace_path}")
         else:
             print(f"  = no-op   {agent_id:40s} (already in sync)")
+
+    # Ensure agentDir exists on disk so the gateway can resolve it at startup.
+    # os.makedirs is a no-op when the directory already exists.
+    os.makedirs(agent_dir, exist_ok=True)
 
 total = len(agent_list)
 
