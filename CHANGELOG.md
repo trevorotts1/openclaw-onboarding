@@ -1,3 +1,21 @@
+## [v14.3.16]  -  2026-06-26  -  feat(personas): ship 9 book personas — Acuff/Miner, Leland, Miller Coach Builder, StoryBrand canonical, Brunson Blackbook, Network Marketing, Lead Funnels, Edwards Copywriting, Rohde Sketchnote
+
+Ships 9 QC-approved book personas (all QC >= 8.5) into the live persona library, deduplicates 5 stale stubs, and wires every new persona into the skill 22 router + skill 23 role-library governing-persona templates.
+
+BOOKS SHIPPED (QC scores per pre-merge report): The New Model of Selling — Jerry Acuff & Jeremy Miner (QC 9.2) | The Brand Mapping Strategy — Karen Tiber Leland (QC 9.0) | Coach Builder — Donald Miller (QC 9.0) | Building a StoryBrand canonical — Donald Miller (QC 9.0) | Marketing Secrets Blackbook — Russell Brunson (QC 9.0) | Copywriting Secrets — Jim Edwards (QC 9.0) | Lead Funnels — Russell Brunson (QC 9.3) | Network Marketing Secrets — Russell Brunson (QC 9.0) | The Sketchnote Workbook — Mike Rohde (QC 9.0).
+
+PERSONA BLUEPRINTS (skill 22): Created personas/<slug>/persona-blueprint.md for each of the 8 new slugs (brunson-network-marketing-secrets persona-blueprint.md was already deployed and identical to staging — skipped). persona-categories.json grows from 47 to 53 entries after dedup. domainTags vocab extended with visual-communication.
+
+DEDUP — 5 stale stubs removed from persona-categories.json: russell-brunson-marketing-secrets-blackbook (replaced by brunson-marketing-secrets-blackbook), russell-brunson-network-marketing-secrets (replaced by brunson-network-marketing-secrets), jim-edwards-copywriting-secrets (replaced by edwards-copywriting-secrets), miller-building-storybrand-1 and miller-building-storybrand-2 (both superseded by canonical miller-building-storybrand). The old miller-building-storybrand-1/ and -2/ persona directories are removed; the new miller-building-storybrand/ directory is the single canonical source. The old persona-library .md files in skill 23 (jim-edwards-copywriting-secrets.md, russell-brunson-{network-marketing-secrets,marketing-secrets-blackbook}.md) are kept for backwards compatibility and supplemented by new files at the canonical slugs.
+
+PERSONA ROUTER (skill 22): miller-building-storybrand-2 reference updated to miller-building-storybrand. New entries added under Sales (acuff-miner-new-model-of-selling), Marketing (leland-brand-mapping-strategy, brunson-marketing-secrets-blackbook, brunson-network-marketing-secrets, russell-brunson-lead-funnels, edwards-copywriting-secrets), Coaching (miller-coach-builder), and Visual Thinking (rohde-the-sketchnote-workbook).
+
+GOVERNING PERSONAS (skill 23): 8 new governing-persona template .md files created in templates/persona-library/ at the canonical slugs. _index.json updated with SHA-256 hashes + version stamps for all new and updated entries (14 entries → 21 entries). Role library markdown files updated: funnel-strategist.md, conversion-copywriter.md, email-campaign-strategist.md, funnel-builder-specialist.md — old slug references replaced with canonical slugs throughout.
+
+SKILL VERSIONS: 22-book-to-persona-coaching-leadership-system/skill-version.txt v6.7.10 → v6.7.11 (G3 gate satisfied). 23-ai-workforce-blueprint/skill-version.txt rolled to 14.3.16 by bump-version.sh (G3 gate satisfied). All 10 global version markers agree at v14.3.16.
+
+VERIFICATION: persona-categories.json passes json.load with 53 entries; 9 new slugs present, 5 stale stubs absent. All 8 new blueprint directories contain persona-blueprint.md > 300 lines. All 8 new governing persona template files present in templates/persona-library/. _index.json valid JSON with 21 persona entries. PERSONA-ROUTER.md contains no miller-building-storybrand-1/-2 references. bump-version.sh --check reports all 10 markers at v14.3.16.
+
 ## [v14.3.15]  -  2026-06-26  -  fix(updater): WIRE_WORKSPACE_DIR 2026.x dual-write + A3 content-hash working/ exclusion
 
 Two targeted updater fixes that broke the v14.3.12 roll on a client VPS (core-sentinel-missing) and a client Mac box (A3 hash gate blocks version stamp).

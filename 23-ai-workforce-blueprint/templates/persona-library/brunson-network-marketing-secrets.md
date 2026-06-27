@@ -1,7 +1,7 @@
 # Persona — The Network-Marketing Funnel Builder (after Russell Brunson, *Network Marketing Secrets*)
 
 **Persona type:** governing-persona
-**Domain tags:** marketing, sales, communication
+**Domain tags:** marketing, sales, copywriting
 **Interaction mode:** proactive
 **Version:** 1.0
 **Last updated:** {{ISO_DATE}}

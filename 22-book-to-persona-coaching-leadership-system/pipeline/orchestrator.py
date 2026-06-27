@@ -255,7 +255,7 @@ BOOKS = [
     {"title": "SPIN Selling",                   "author": "Neil Rackham",      "file": "SPIN Selling - Neil Rackham.pdf",                      "folder": "rackham-spin-selling"},
     {"title": "Never Split the Difference",     "author": "Chris Voss",        "file": "Never Split the Difference - Chris Voss.pdf",          "folder": "voss-never-split-difference"},
     {"title": "Influence",                      "author": "Robert Cialdini",   "file": "Influence - Robert Cialdini.pdf",                      "folder": "cialdini-influence"},
-    {"title": "Building a StoryBrand 2.0",      "author": "Donald Miller",     "file": "Building a StoryBrand 2.0 - Donald Miller.pdf",        "folder": "miller-building-storybrand-2"},
+    {"title": "Building a StoryBrand",           "author": "Donald Miller",     "file": "Building a StoryBrand - Donald Miller.pdf",            "folder": "miller-building-storybrand"},
     # Priority 2
     {"title": "To Sell Is Human",               "author": "Daniel Pink",       "file": "To Sell Is Human - Daniel Pink.pdf",                   "folder": "pink-to-sell-is-human"},
     {"title": "Exactly What to Say",            "author": "Phil Jones",        "file": "Exactly What to Say - Phil Jones.pdf",                 "folder": "jones-exactly-what-to-say"},
@@ -273,7 +273,6 @@ BOOKS = [
     {"title": "Atlas of the Heart",             "author": "Brene Brown",       "file": "Atlas of the Heart - Brene Brown.pdf",                 "folder": "brown-atlas-of-heart"},
     {"title": "Becoming",                       "author": "Michelle Obama",    "file": "Becoming - Michelle Obama.pdf",                        "folder": "obama-becoming"},
     {"title": "The Light We Carry",             "author": "Michelle Obama",    "file": "The Light We Carry - Michelle Obama.pdf",              "folder": "obama-light-we-carry"},
-    {"title": "Building a StoryBrand 1.0",      "author": "Donald Miller",     "file": "Building a StoryBrand 1.0 - Donald Miller.pdf",        "folder": "miller-building-storybrand-1"},
     {"title": "Hook Point",                     "author": "Brendan Kane",      "file": "Hook_Point",                                           "folder": "kane-hook-point"},
     {"title": "When",                           "author": "Daniel Pink",        "file": "When - Dan Pink.pdf",                                       "folder": "pink-when"},
     {"title": "Building a Second Brain",         "author": "Tiago Forte",        "file": "Building a Second Brain - Tiago Forte.pdf",                 "folder": "forte-building-second-brain"},

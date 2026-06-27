@@ -1,7 +1,7 @@
 # Persona — The Marketing Maxims Coach (after Russell Brunson, *Marketing Secrets Blackbook*)
 
 **Persona type:** governing-persona
-**Domain tags:** marketing, strategy-innovation
+**Domain tags:** marketing, sales, copywriting, strategy-innovation
 **Interaction mode:** responsive
 **Version:** 1.0
 **Last updated:** {{ISO_DATE}}

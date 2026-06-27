@@ -15,6 +15,7 @@
 ## Task Type → Persona Mapping
 
 ### Sales & Revenue
+- **Post-trust selling, NEPQ, question-led persuasion** → `acuff-miner-new-model-of-selling` (Jerry Acuff & Jeremy Miner) → `sales-dept/`
 - **Making offers, pricing, funnels** → `hormozi-100m-offers` (Alex Hormozi) → `sales-dept/`
 - **Negotiation, objections, difficult conversations** → `voss-never-split-difference` (Chris Voss) → `sales-dept/`
 - **Discovery, needs analysis, consultative selling** → `rackham-spin-selling` (Neil Rackham) → `sales-dept/`
@@ -24,7 +25,12 @@
 - **Demand generation, being oversubscribed** → `priestley-oversubscribed` (Daniel Priestley) → `sales-dept/`
 
 ### Marketing & Content
-- **Brand messaging, clarity, storytelling** → `miller-building-storybrand-2` (Donald Miller) → `marketing-dept/`
+- **Personal branding, brand architecture, thought leadership** → `leland-brand-mapping-strategy` (Karen Tiber Leland) → `marketing-dept/`
+- **Funnel marketing, offer narrative, direct response** → `brunson-marketing-secrets-blackbook` (Russell Brunson) → `marketing-dept/`
+- **Network marketing, MLM funnels, duplication** → `brunson-network-marketing-secrets` (Russell Brunson) → `marketing-dept/`
+- **Lead funnels, opt-in sequences, list building** → `russell-brunson-lead-funnels` (Russell Brunson) → `marketing-dept/`
+- **Direct-response copy, headlines, sales letters** → `edwards-copywriting-secrets` (Jim Edwards) → `marketing-dept/`
+- **Brand messaging, clarity, storytelling** → `miller-building-storybrand` (Donald Miller) → `marketing-dept/`
 - **Permission marketing, being seen** → `godin-this-is-marketing` (Seth Godin) → `marketing-dept/`
 - **Copywriting, conversion copy** → `bly-copywriters-handbook` (Robert Bly) → `marketing-dept/`
 - **Value proposition, website copy** → `wiebe-copy-hackers` (Joanna Wiebe) → `marketing-dept/`
@@ -51,6 +57,7 @@
 - **Cash flow, profit first** → `michalowicz-profit-first` (Mike Michalowicz) → `finance-dept/`
 
 ### Coaching & Human Development
+- **Building a coaching business, productized services, offer menu** → `miller-coach-builder` (Donald Miller) → `coaching-dept/`
 - **Confidence, 5-second action** → `robbins-five-second-rule` (Mel Robbins) → `coaching-dept/`
 - **Let them, control release** → `robbins-let-them-theory` (Mel Robbins) → `coaching-dept/`
 - **Morning routine, discipline** → `sharma-5am-club` (Robin Sharma) → `coaching-dept/`
@@ -65,6 +72,9 @@
 - **Emotional vocabulary, connection** → `brown-atlas-of-heart` (Brene Brown) → `coaching-dept/`
 - **Becoming, identity, resilience** → `obama-becoming` (Michelle Obama) → `coaching-dept/`
 - **Navigating uncertainty** → `obama-light-we-carry` (Michelle Obama) → `coaching-dept/`
+
+### Visual Thinking & Presentation
+- **Sketchnoting, visual hierarchy, idea mapping** → `rohde-the-sketchnote-workbook` (Mike Rohde) → `presentations-dept/`
 
 ---
 
