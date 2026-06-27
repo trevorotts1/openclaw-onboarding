@@ -1,3 +1,8 @@
+---
+name: markitdown-skill
+description: Convert files (PDF/Word/Excel/PPTX/HTML/images/audio) to Markdown via Microsoft markitdown.
+---
+
 # markitdown-skill
 
 Convert files (PDF, Word, Excel, PowerPoint, HTML, images, audio) to Markdown using Microsoft's markitdown tool.

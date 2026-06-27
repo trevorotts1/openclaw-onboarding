@@ -11,9 +11,9 @@
 | Before (old) | After (new) |
 |--------------|-------------|
 | Google Embedding 2 local SQLite search (`Google Embedding 2 retrieval query`, `check Google Embedding 2 retrieval status`) | Google Gemini Embedding 2 API |
-| `refresh the Google Embedding 2 retrieval layer` to index | `python3 ~/clawd/scripts/gemini-indexer.py` |
-| `Google Embedding 2 retrieval query coaching-personas "query"` | `python3 ~/clawd/scripts/gemini-search.py "query"` |
-| `check Google Embedding 2 retrieval status` to check index | `python3 ~/clawd/scripts/gemini-indexer.py --status` |
+| `refresh the Google Embedding 2 retrieval layer` to index | `python3 ~/.openclaw/scripts/gemini-indexer.py` |
+| `Google Embedding 2 retrieval query coaching-personas "query"` | `python3 ~/.openclaw/scripts/gemini-search.py "query"` |
+| `check Google Embedding 2 retrieval status` to check index | `python3 ~/.openclaw/scripts/gemini-indexer.py --status` |
 | Local SQLite database at `~/.cache/google embedding 2/index.sqlite` | Gemini API (no local database needed) |
 
 ---
@@ -71,7 +71,7 @@ git pull origin main
 ### Step 5: Re-index Your Personas
 
 ```bash
-python3 ~/clawd/scripts/gemini-indexer.py
+python3 ~/.openclaw/scripts/gemini-indexer.py
 ```
 
 This reads all persona blueprint files and indexes them with Gemini Embedding 2.
@@ -80,10 +80,10 @@ This reads all persona blueprint files and indexes them with Gemini Embedding 2.
 
 ```bash
 # Check index status
-python3 ~/clawd/scripts/gemini-indexer.py --status
+python3 ~/.openclaw/scripts/gemini-indexer.py --status
 
 # Test a search
-python3 ~/clawd/scripts/gemini-search.py "leadership habits"
+python3 ~/.openclaw/scripts/gemini-search.py "leadership habits"
 ```
 
 If you get results back, the migration is complete.
@@ -175,9 +175,9 @@ A: `GOOGLE_API_KEY`. If you also have `GEMINI_API_KEY` set, the SDK will use `GO
 - [ ] `GOOGLE_API_KEY` set in shell profile
 - [ ] `pip3 install google-genai numpy` completed
 - [ ] Onboarding package updated to latest
-- [ ] `python3 ~/clawd/scripts/gemini-indexer.py` ran successfully
-- [ ] `python3 ~/clawd/scripts/gemini-search.py "test query"` returns results
+- [ ] `python3 ~/.openclaw/scripts/gemini-indexer.py` ran successfully
+- [ ] `python3 ~/.openclaw/scripts/gemini-search.py "test query"` returns results
 - [ ] OpenClaw config updated (`memory.backend: "gemini"`)
 - [ ] Old Google Embedding 2 cache cleaned up (optional)
 
-**Migration is complete when:** `python3 ~/clawd/scripts/gemini-search.py "leadership"` returns persona results and `build-workforce.py` runs without errors.
+**Migration is complete when:** `python3 ~/.openclaw/scripts/gemini-search.py "leadership"` returns persona results and `build-workforce.py` runs without errors.

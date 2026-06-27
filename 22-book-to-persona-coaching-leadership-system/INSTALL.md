@@ -311,7 +311,7 @@ find ~/Downloads -maxdepth 2 -type d -iname "*openclaw*master*" -o \
 ```bash
 mkdir -p ~/Downloads/openclaw-master-files/coaching-personas/books
 mkdir -p ~/Downloads/openclaw-master-files/coaching-personas/text
-mkdir -p ~/Downloads/openclaw-master-files/coaching-personas/personas
+mkdir -p ~/.openclaw/workspace/data/coaching-personas/personas
 ```
 
 **Record the detected path** - you will use it for all file operations in this session.
@@ -737,7 +737,7 @@ This triggers the full sequence:
 
 **Output files land in:**
 ```
-~/Downloads/openclaw-master-files/coaching-personas/personas/[author]-[book-slug]/
+~/.openclaw/workspace/data/coaching-personas/personas/[author]-[book-slug]/
   ├── extraction-notes.md     (Phase 1 output)
   ├── analysis-notes.md       (Phase 2 output)
   └── persona-blueprint.md    (Phase 3 output - the deployable persona)
@@ -758,7 +758,7 @@ Replace `[book-slug]` with the filename slug of the book (e.g., `clear-atomic-ha
 
 3. Verify all three output files were created:
 ```bash
-PERSONA_DIR=~/Downloads/openclaw-master-files/coaching-personas/personas/[book-slug]
+PERSONA_DIR=~/.openclaw/workspace/data/coaching-personas/personas/[book-slug]
 echo "Checking pipeline output..."
 for file in extraction-notes.md analysis-notes.md persona-blueprint.md; do
   if [ -f "$PERSONA_DIR/$file" ]; then

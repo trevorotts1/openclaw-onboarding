@@ -99,7 +99,7 @@ if [[ "$SKILL22_OK" == "false" ]]; then
   # ~/clawd/coaching-personas/personas — neither is ever written, so a fully
   # installed Skill 22 still tripped the HARD STOP.
   for PDIR in \
-      ~/Downloads/openclaw-master-files/coaching-personas/personas \
+      ~/.openclaw/workspace/data/coaching-personas/personas \
       ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/personas \
       ~/.clawdbot/workspace/data/coaching-personas/personas
   do
@@ -524,7 +524,7 @@ For this entire task, think, communicate, and decide AS THE SELECTED PERSONA:
 - Make decisions following their execution standard (Section 4A: Agent Governance Framework)
 - Follow their definition of done (Section 4D: Task Activation Language)
 
-The selected persona's blueprint is at: `~/Downloads/openclaw-master-files/coaching-personas/personas/[persona-id]/persona-blueprint.md`
+The selected persona's blueprint is at: `~/.openclaw/workspace/data/coaching-personas/personas/[persona-id]/persona-blueprint.md` (resolved at runtime via `detect_platform.get_openclaw_paths()["workspace"]`)
 
 ### Step 3: Follow the Dept's DMAIC SOP for this Task Type
 

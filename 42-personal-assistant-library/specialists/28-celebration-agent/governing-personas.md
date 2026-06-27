@@ -39,4 +39,4 @@ A grounded, observant presence who sees what others miss. Warm but not effusive.
 
 ## Cross-Reference
 
-Full persona blueprints live in the persona library. When a governing persona is selected, load its full blueprint for detailed voice, stance, phrasing preferences, and interaction patterns. Path: `~/Downloads/openclaw-master-files/coaching-personas/personas/[persona-id]/persona-blueprint.md`
+Full persona blueprints live in the persona library. When a governing persona is selected, load its full blueprint for detailed voice, stance, phrasing preferences, and interaction patterns. Path: `~/.openclaw/workspace/data/coaching-personas/personas/[persona-id]/persona-blueprint.md`

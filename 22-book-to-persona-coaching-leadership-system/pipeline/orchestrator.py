@@ -1660,7 +1660,7 @@ You have the extraction notes (Phase 1) and deep analysis (Phase 2) below.
 Build the complete 14-section dual-purpose persona blueprint as specified.
 
 The output file must be saved to:
-~/Downloads/openclaw-master-files/coaching-personas/personas/{folder}/persona-blueprint.md
+{PERSONAS_DIR}/{folder}/persona-blueprint.md
 
 ---
 

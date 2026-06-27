@@ -138,7 +138,7 @@ if not os.path.exists(PERSONAS_DIR):
                                     "coaching-personas", "personas")
     except NameError:
         PERSONAS_DIR = os.path.expanduser(
-            "~/Downloads/openclaw-master-files/coaching-personas/personas")
+            "~/.openclaw/workspace/data/coaching-personas/personas")
 
 
 # ---------------------------------------------------------------------------

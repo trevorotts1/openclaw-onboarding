@@ -108,7 +108,7 @@ The whole thing is one pipeline. A break anywhere downstream of Skill 22 cascade
 
 | # | Check | How to verify | Pass = |
 |---|---|---|---|
-| 3.1 | persona-blueprint.md present per book | `ls ~/Downloads/openclaw-master-files/coaching-personas/personas/*/persona-blueprint.md` | One per processed book |
+| 3.1 | persona-blueprint.md present per book | `ls ~/.openclaw/workspace/data/coaching-personas/personas/*/persona-blueprint.md` | One per processed book |
 | 3.2 | Each blueprint has all 14 sections | `grep -c "^## " <blueprint>` | ≥ 14 |
 | 3.3 | Coaching half present (sections 1-3, 8-11) | Same blueprint | Author Intelligence, Core Methodology, Coaching Framework, Voice, Quote Library, Question Library, Tools/Exercises present |
 | 3.4 | Governance half present (sections 4-7, 12-14) | Same | Agent Governance Framework, Foundational Principles, Problem-Solution Map, Trigger Detection, Objections, Session/Task Structure, Routing Rules present |
@@ -121,13 +121,13 @@ The whole thing is one pipeline. A break anywhere downstream of Skill 22 cascade
 
 | # | Check | How to verify | Pass = |
 |---|---|---|---|
-| 4.1 | gemini-indexer.py executable | `ls -la ~/clawd/scripts/gemini-indexer.py` | File exists, executable bit set |
-| 4.2 | gemini-search.py executable | `ls -la ~/clawd/scripts/gemini-search.py` | Same |
-| 4.3 | coaching-personas collection indexed | `python3 ~/clawd/scripts/gemini-indexer.py --status` | Collection `coaching-personas` shows ≥ 1 file indexed |
+| 4.1 | gemini-indexer.py executable | `ls -la ~/.openclaw/scripts/gemini-indexer.py` | File exists, executable bit set |
+| 4.2 | gemini-search.py executable | `ls -la ~/.openclaw/scripts/gemini-search.py` | Same |
+| 4.3 | coaching-personas collection indexed | `python3 ~/.openclaw/scripts/gemini-indexer.py --status` | Collection `coaching-personas` shows ≥ 1 file indexed |
 | 4.4 | clawd workspace collection indexed | Same `--status` command | Collection `clawd` shows ≥ 10 files (SOUL, MEMORY, AGENTS, etc.) |
 | 4.5 | master-files collection indexed | Same | Collection `master-files` shows skill folders indexed |
 | 4.6 | **New v9.6.2: ZHC company folder indexed** | Same | Collection `zhc-<company-slug>` shows departments + SOPs indexed |
-| 4.7 | Test semantic query returns relevant results | `python3 ~/clawd/scripts/gemini-search.py --collection coaching-personas --query "leadership and influence"` | At least one persona returned with score > 0.5 |
+| 4.7 | Test semantic query returns relevant results | `python3 ~/.openclaw/scripts/gemini-search.py --collection coaching-personas --query "leadership and influence"` | At least one persona returned with score > 0.5 |
 | 4.8 | Re-index runs at correct milestones | Check AGENTS.md "Indexing Milestones" section | Initial, Personas (after Skill 22), AI Workforce (after Skill 23), Ongoing (any new skill) |
 
 ## CHECK 5 — Semantic Search

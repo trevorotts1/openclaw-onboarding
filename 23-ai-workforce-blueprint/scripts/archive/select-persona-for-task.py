@@ -61,9 +61,8 @@ ZHC_ROOTS = [
 ]
 
 GEMINI_SEARCH_CANDIDATES = [
+    HOME / ".openclaw" / "scripts" / "gemini-search.py",
     HOME / ".openclaw" / "workspace" / "scripts" / "gemini-search.py",
-    HOME / "clawd" / "scripts" / "gemini-search.py",
-    Path("~/clawd/scripts/gemini-search.py"),
     HOME / "Downloads" / "openclaw-master-files" / "23-ai-workforce-blueprint" / "scripts" / "gemini-search.py",
 ]
 
@@ -389,8 +388,9 @@ def _consume_persona_stale_marker():
     indexer_candidates = [
         Path(__file__).parent / "gemini-indexer.py",
         Path("/data/.openclaw/workspace/scripts/gemini-indexer.py"),
+        Path.home() / ".openclaw/scripts/gemini-indexer.py",
+        Path("/data/.openclaw/scripts/gemini-indexer.py"),
         Path.home() / ".openclaw/workspace/scripts/gemini-indexer.py",
-        Path.home() / "clawd/scripts/gemini-indexer.py",
     ]
     indexer = next((p for p in indexer_candidates if p.is_file()), None)
     if not indexer:

@@ -18,7 +18,7 @@ full persona into context.
 
 ```bash
 python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --add \
-  --path ~/Downloads/openclaw-master-files/coaching-personas/personas \
+  --path ~/.openclaw/workspace/data/coaching-personas/personas \
   --name coaching-personas \
   --mask "**/*.md"
 ```
@@ -121,7 +121,7 @@ python3 ~/.openclaw/workspace/scripts/gemini-search.py "habits systems consisten
 
 ### Get a specific file section
 ```bash
-head -100 ~/Downloads/openclaw-master-files/coaching-personas/personas/clear-atomic-habits/persona-blueprint.md
+head -100 ~/.openclaw/workspace/data/coaching-personas/personas/clear-atomic-habits/persona-blueprint.md
 ```
 
 Returns lines 1-100 of the Atomic Habits blueprint.

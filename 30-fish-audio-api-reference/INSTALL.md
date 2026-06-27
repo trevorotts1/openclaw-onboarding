@@ -49,7 +49,7 @@ cp "$(dirname "$0")/references/fish-audio-api-reference.md" \
 ## Step 3 - Index with Gemini Engine
 
 ```bash
-python3 ~/clawd/scripts/gemini-indexer.py
+python3 ~/.openclaw/scripts/gemini-indexer.py
 # Handled by gemini-indexer.py
 ```
 

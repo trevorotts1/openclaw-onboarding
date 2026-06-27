@@ -134,10 +134,10 @@ fi
 # Locate coaching-personas/personas dir
 if [[ -z "${COACHING_PERSONAS_DIR:-}" ]]; then
   for cand in \
+      "$HOME_DIR/.openclaw/workspace/data/coaching-personas/personas" \
+      "/data/.openclaw/workspace/data/coaching-personas/personas" \
       "$HOME_DIR/.openclaw/workspace/coaching-personas/personas" \
-      "/data/.openclaw/workspace/coaching-personas/personas" \
-      "$HOME_DIR/clawd/coaching-personas/personas" \
-      "$HOME_DIR/Downloads/openclaw-master-files/coaching-personas/personas"
+      "/data/.openclaw/workspace/coaching-personas/personas"
   do
     if [[ -d "$cand" ]]; then
       COACHING_PERSONAS_DIR="$cand"
