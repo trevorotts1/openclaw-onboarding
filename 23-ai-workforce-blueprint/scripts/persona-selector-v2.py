@@ -437,6 +437,79 @@ def perspective_bonus(persona_perspectives, task_perspectives) -> float:
     return min(len(overlap) * PERSPECTIVE_BONUS_PER_TAG, PERSPECTIVE_BONUS_MAX)
 
 
+# ── Craft domain-primary-match bonus: specialist routing (v14.15.0) ─────────────
+# Root-cause of the "rohde loses on a sketchnote task" defect: the 5-layer score
+# answers "is this persona aligned with the COMPANY?" well but UNDER-rewards being
+# the right SPECIALIST. On a CRAFT task the true expert (rohde-the-sketchnote-
+# workbook, domain=visual-storytelling) has the highest task_fit yet is dragged
+# below a generic on-brand persona (hormozi) whose company_kpis score is higher,
+# because the task_fit lead (~0.05) is smaller than the company-fit edge. Worse,
+# two domain peers can TIE on semantic task_fit (rohde and forte-building-second-
+# brain both score high on "map a process") so task_fit alone cannot pick the
+# specialist. This bonus closes both gaps by rewarding the persona whose declared
+# `domain` IS the task category's PRIMARY (craft-defining) domain. It is:
+#   • CRAFT-GATED — only categories in CRAFT_PRIMARY_DOMAINS earn it. Strategic /
+#     marketing categories (strategy, finance, legal, hr, coaching-prompt, ...)
+#     are absent, so the bonus is identically 0.0 for every persona there →
+#     PROVABLY no behaviour change on strategic tasks (mission still dominates).
+#   • ADDITIVE & NEVER-TO-ZERO — a non-matching persona gets +0.0; no persona is
+#     ever penalised, eliminated, or zero-scored. Mirrors perspective_bonus().
+#   • SPECIALIST-GRADED — scaled by (overlap / |primary|), so a FULL specialist
+#     (matches every craft-defining domain) earns the full bonus while a
+#     peripheral match (e.g. rohde on a video-EDIT task: visual-storytelling only,
+#     1 of 4) earns proportionally less, letting the film-editing specialist
+#     (pudovkin: video+editing+montage+visual-storytelling, 4 of 4) win cleanly.
+#   • RELEVANCE-COUPLED — scaled by the persona's own task_fit, so a domain label
+#     without semantic relevance earns little (rewards right-domain AND relevant).
+#   • BOUNDED & ENV-TUNABLE — capped at CRAFT_DOMAIN_MATCH_BONUS (env; default 0.18).
+#
+# PRIMARY domains are the TIGHT craft-defining set (NOT the broad Stage-B
+# _CATEGORY_DOMAINS union, which intentionally includes supporting domains like
+# communication/strategy-innovation for funnel recall). Only the defining domain
+# marks the specialist, so only it earns the bonus.
+CRAFT_PRIMARY_DOMAINS: dict = {
+    "design":         {"visual-storytelling"},
+    "video-edit":     {"video", "editing", "montage", "visual-storytelling"},
+    "video-script":   {"copywriting"},
+    "content-write":  {"copywriting"},
+    "social-post":    {"copywriting"},
+    "email-outreach": {"copywriting"},
+}
+
+
+def _craft_domain_match_bonus_max() -> float:
+    """Hard cap / scale of the craft domain-primary-match bonus (env-tunable)."""
+    try:
+        v = float(os.environ.get("CRAFT_DOMAIN_MATCH_BONUS", "0.18"))
+    except (TypeError, ValueError):
+        v = 0.18
+    return max(0.0, min(v, 0.5))
+
+
+def craft_domain_bonus(persona_domains, primary_domains, task_fit) -> float:
+    """Additive-only, never-to-zero specialist bonus.
+
+    Returns 0.0 unless the persona's declared `domain` overlaps the task
+    category's PRIMARY (craft-defining) domain set. On overlap returns
+        CAP * (|overlap| / |primary|) * task_fit
+    so a full specialist with strong semantic fit earns the full CAP, while a
+    partial domain match or a weak-task_fit match earns proportionally less.
+    Guaranteed >= 0.0 and <= CAP — it can never reduce, eliminate, or zero-score
+    any persona, and is identically 0.0 on non-craft categories (empty primary).
+    """
+    if not persona_domains or not primary_domains:
+        return 0.0
+    pd = {_norm_tag(t) for t in persona_domains}
+    prim = {_norm_tag(t) for t in primary_domains}
+    overlap = pd & prim
+    if not overlap:
+        return 0.0
+    cap = _craft_domain_match_bonus_max()
+    frac = len(overlap) / len(prim)
+    tf = max(0.0, min(float(task_fit), 1.0))
+    return round(min(cap * frac * tf, cap), 4)
+
+
 # Gemini-search script candidate locations (checked in order)
 _GEMINI_SEARCH_CANDIDATES = [
     Path(__file__).parent / "gemini-search.py",
@@ -1508,6 +1581,35 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
                     s["perspective_bonus"] = round(bonus, 4)
                     s["base_score"] = round(s["base_score"] + bonus, 4)
                     s["score"] = round(s["score"] + bonus, 4)
+
+    # ── Craft domain-primary-match bonus (additive-only, never-to-zero) ───────
+    # For CRAFT/SPECIALIST task categories ONLY, reward the persona whose declared
+    # `domain` IS the task's craft-defining (primary) domain, so the true
+    # specialist is distinguished from generalists and domain peers that merely
+    # tie on semantic task_fit. CRAFT_PRIMARY_DOMAINS gates this: a strategic /
+    # marketing category has no entry → craft_primary is empty → the entire block
+    # is skipped → provably zero behaviour change on non-craft tasks (mission
+    # still dominates there). See craft_domain_bonus() for the bounded, graded,
+    # relevance-coupled formula.
+    craft_primary = CRAFT_PRIMARY_DOMAINS.get(task_category, set())
+    if craft_primary:
+        pc_file_cd = paths.get("persona_categories")
+        personas_meta_cd: dict = {}
+        if pc_file_cd and Path(pc_file_cd).exists():
+            try:
+                _cd_cd = json.loads(Path(pc_file_cd).read_text(encoding="utf-8"))
+                personas_meta_cd = _cd_cd.get("personas", {}) or {}
+            except Exception:
+                personas_meta_cd = {}
+        if personas_meta_cd:
+            for s in scored:
+                pinfo = personas_meta_cd.get(s["persona_id"], {})
+                cbonus = craft_domain_bonus(pinfo.get("domain") or [],
+                                            craft_primary, s["layers"]["task_fit"])
+                if cbonus > 0.0:
+                    s["craft_domain_bonus"] = round(cbonus, 4)
+                    s["base_score"] = round(s["base_score"] + cbonus, 4)
+                    s["score"] = round(s["score"] + cbonus, 4)
 
     if variety:
         recent_uses = read_recent_use_counts(department, task_category,

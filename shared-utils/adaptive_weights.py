@@ -16,6 +16,8 @@ Usage:
     # -> {'mission': 0.10, 'owner_values': 0.20, 'company_kpis': 0.10, 'dept_kpis': 0.20, 'task_fit': 0.40}
 """
 
+import os
+
 # Default weights — PRD §10 canonical (20/25/20/20/15). Sums to 1.0.
 # This is the single source of truth across v1, v2, and the PRD. Earlier
 # versions of v1 (select-persona-for-task.py) used 25/25/20/15/15 and v2 used
@@ -100,6 +102,98 @@ WEIGHT_PROFILES = {
 }
 
 
+# ─── CRAFT/SPECIALIST task-type-aware weighting (v14.15.0) ──────────────────
+# The WEIGHT_PROFILES above are already task-type-aware in INTENT (design/content
+# lean task_fit; strategy/legal lean mission). Two defects stopped that intent
+# from reaching CRAFT tasks in production:
+#   1. get_weights_for_task() could not import the REAL category inferer (the
+#      file is HYPHENATED — infer-task-category.py — so `import infer_task_category`
+#      raised ModuleNotFoundError) and silently fell back to the coarse inline
+#      heuristic, which misclassifies craft tasks. e.g. "Visually sketchnote and
+#      map our customer-onboarding process" matched the inline "process" keyword
+#      and resolved to OPS (task_fit 0.20) instead of DESIGN (task_fit 0.40), so
+#      the carefully-tuned design profile was DEAD CODE. _resolve_infer_task_category()
+#      loads the hyphenated file by path (identical to persona-selector-v2.py's own
+#      loader) so weighting uses the SAME authoritative category as the selector —
+#      one source of category truth.
+#   2. Even the design profile (task_fit 0.40) lets a generic on-brand persona's
+#      company_kpis edge out-score the true specialist's ~0.05 task_fit lead. The
+#      CRAFT_TASK_FIT_FLOOR guarantees craft categories weight the domain-expertise
+#      layer at >= floor, redistributing the shortfall OUT of the four company-fit
+#      layers. Principle: for CRAFT work the question is "who is the best
+#      specialist", not "who best fits company revenue KPIs". (The persona-selector
+#      domain-primary-match bonus is the decisive companion mechanism.)
+# Both are provably neutral on non-craft categories (CRAFT_CATEGORIES gate) and
+# env-tunable for safe field tuning. CRAFT_TASK_FIT_FLOOR=0 disables defect-2 fix.
+CRAFT_CATEGORIES = {
+    "design", "video-edit", "video-script", "content-write", "social-post",
+    "email-outreach",
+}
+
+
+def _resolve_infer_task_category():
+    """Load the REAL infer-task-category.py (hyphenated) by path, or None.
+
+    Mirrors the loader in persona-selector-v2.py so the weighting layer and the
+    selection layer always agree on a task's category. Falls back to None (caller
+    uses the inline heuristic) only if the file is genuinely absent / unloadable.
+    """
+    import importlib.util as _ilu
+    from pathlib import Path as _P
+    here = _P(__file__).resolve().parent
+    candidates = [
+        here.parent / "23-ai-workforce-blueprint" / "scripts" / "infer-task-category.py",
+        here / "infer-task-category.py",
+    ]
+    for c in candidates:
+        if c.is_file():
+            try:
+                spec = _ilu.spec_from_file_location("itc_for_weights", str(c))
+                mod = _ilu.module_from_spec(spec)
+                spec.loader.exec_module(mod)  # type: ignore
+                fn = getattr(mod, "infer_task_category", None)
+                if callable(fn):
+                    return fn
+            except Exception:
+                continue
+    return None
+
+
+_REAL_INFER = _resolve_infer_task_category()
+
+
+def _craft_task_fit_floor() -> float:
+    """Minimum task_fit weight for CRAFT categories (env CRAFT_TASK_FIT_FLOOR)."""
+    try:
+        v = float(os.environ.get("CRAFT_TASK_FIT_FLOOR", "0.40"))
+    except (TypeError, ValueError):
+        v = 0.40
+    return max(0.0, min(v, 0.85))
+
+
+def _apply_craft_emphasis(weights: dict, category: str) -> dict:
+    """Raise task_fit to at least CRAFT_TASK_FIT_FLOOR for CRAFT categories,
+    redistributing the shortfall proportionally OUT of the four company-fit
+    layers (preserving their relative shape). No-op when category is non-craft,
+    the floor is already met, or the floor is 0. Always re-normalised to 1.0."""
+    if category not in CRAFT_CATEGORIES:
+        return weights
+    floor = _craft_task_fit_floor()
+    cur = weights.get("task_fit", 0.0)
+    if floor <= 0.0 or cur >= floor:
+        return weights
+    others = {k: v for k, v in weights.items() if k != "task_fit"}
+    others_sum = sum(others.values())
+    remainder = 1.0 - floor
+    if others_sum <= 0:
+        n = max(len(others), 1)
+        scaled = {k: remainder / n for k in others}
+    else:
+        scaled = {k: v / others_sum * remainder for k, v in others.items()}
+    scaled["task_fit"] = floor
+    return _normalize(scaled)
+
+
 def _normalize(weights: dict) -> dict:
     """Ensure weights sum to 1.0 (auto-correct rounding drift)."""
     total = sum(weights.values())
@@ -122,18 +216,19 @@ def get_weights_for_task(task_text: str, mode: str = "leadership") -> dict:
         dict with keys: mission, owner_values, company_kpis, dept_kpis, task_fit
         All values sum to 1.0.
     """
-    # Try to import infer_task_category from the workforce scripts folder
+    # Resolve the task category using the REAL (hyphenated) inferer loaded by
+    # path — the SAME authoritative inference persona-selector-v2.py uses for
+    # Stage-B funnelling and the task_category output. The inline heuristic is
+    # used only when that file is genuinely unavailable (keeps this module
+    # usable standalone). See _resolve_infer_task_category() for why the old
+    # `import infer_task_category` always failed.
     category = "general"
     try:
-        import sys
-        from pathlib import Path
-        scripts_dir = Path(__file__).parent.parent / "23-ai-workforce-blueprint" / "scripts"
-        if scripts_dir.exists() and str(scripts_dir) not in sys.path:
-            sys.path.insert(0, str(scripts_dir))
-        from infer_task_category import infer_task_category  # type: ignore
-        category = infer_task_category(task_text)
+        if _REAL_INFER is not None:
+            category = _REAL_INFER(task_text)
+        else:
+            category = _inline_infer_category(task_text)
     except Exception:
-        # Inline minimal fallback so this module stays usable standalone
         category = _inline_infer_category(task_text)
 
     # For hybrid mode, average between leadership and coaching weights
@@ -142,14 +237,14 @@ def get_weights_for_task(task_text: str, mode: str = "leadership") -> dict:
         coach = WEIGHT_PROFILES.get((category, "coaching"))
         if leader and coach:
             combined = {k: (leader[k] + coach[k]) / 2 for k in DEFAULT_WEIGHTS}
-            return _normalize(combined)
+            return _apply_craft_emphasis(_normalize(combined), category)
         # Fall through to single-mode lookup
         mode = "leadership"
 
     profile = WEIGHT_PROFILES.get((category, mode))
-    if not profile:
-        return DEFAULT_WEIGHTS.copy()
-    return _normalize(profile)
+    base = _normalize(profile) if profile else DEFAULT_WEIGHTS.copy()
+    # CRAFT task-type-aware emphasis (no-op on non-craft categories).
+    return _apply_craft_emphasis(base, category)
 
 
 def _inline_infer_category(task_text: str) -> str:
