@@ -447,7 +447,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v14.23.1 - safe_json_edit
+# v14.23.2 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
