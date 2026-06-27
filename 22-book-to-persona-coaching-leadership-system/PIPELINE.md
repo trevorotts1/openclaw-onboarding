@@ -226,7 +226,7 @@ After the persona-blueprint.md is written and saved, Phase 3 is NOT complete unt
 
 ```bash
 # Re-index the Gemini collection with the new persona blueprint
-python3 ~/.openclaw/workspace/scripts/gemini-indexer.py
+python3 ~/.openclaw/scripts/gemini-indexer.py
 ```
 
 **Why:** The blueprint must be indexed immediately so that persona matching (Skill 23 persona-matching-protocol.md) can discover this new persona via semantic search. Without re-indexing, the new persona exists on disk but is invisible to the matching system until a manual index run.
@@ -289,7 +289,7 @@ After Phase 3 completes for a book:
   --mask "**/*.md"
 
 # Update index with new blueprint
-python3 ~/.openclaw/workspace/scripts/gemini-indexer.py
+python3 ~/.openclaw/scripts/gemini-indexer.py
 
 # Generate vector embeddings
 # Handled by gemini-indexer.py

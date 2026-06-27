@@ -85,7 +85,7 @@ governing-personas.md files are stubs.
 SKILL22_OK=false
 
 # Check 1: Gemini index status
-if python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
+if python3 ~/.openclaw/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
   SKILL22_OK=true
 fi
 
@@ -120,7 +120,7 @@ else
   echo "  1. Stop this install."
   echo "  2. Install Skill 22 (Book-to-Persona & Coaching & Leadership System)."
   echo "     Use at least one book to populate the coaching-personas collection."
-  echo "  3. Verify: python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status"
+  echo "  3. Verify: python3 ~/.openclaw/scripts/gemini-indexer.py --status"
   echo "  4. Return to this INSTALL.md Phase 0a and re-run."
   echo ""
   echo "Why this is required: the 5-layer persona-selector's Layers 1+2 (Mission +"
@@ -768,7 +768,7 @@ After everything is built: "You are complete! Setting up your AI workforce now."
 
 ```bash
 # Re-run detection after questions complete
-if python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
+if python3 ~/.openclaw/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
   echo "✅ Skill 22 detected post-build - running persona wiring..."
   RUN_PERSONA_WIRING=true
 else
@@ -789,7 +789,7 @@ Check if Skill 22 (Book To Persona & Coaching & Leadership System) is installed.
 
 1. Run this command to check for the Gemini Engine coaching-personas collection:
 ```bash
-python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"
+python3 ~/.openclaw/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"
 ```
 2. If that returns exit code 0 (match found), personas are installed.
 3. As a fallback, also check for the persona skill folder:
@@ -921,13 +921,13 @@ Regardless of whether coaching personas were detected, ALWAYS run Gemini Engine 
 
 ```bash
 # Add/update all collections
-python3 ~/.openclaw/workspace/scripts/gemini-indexer.py
+python3 ~/.openclaw/scripts/gemini-indexer.py
 
 # Generate embeddings (covers master-files + coaching-personas + workforce files)
 # Handled by gemini-indexer.py
 
 # Verify completion
-python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status
+python3 ~/.openclaw/scripts/gemini-indexer.py --status
 ```
 
 **Why this happens here:**

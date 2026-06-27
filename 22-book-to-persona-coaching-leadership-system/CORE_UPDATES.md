@@ -27,7 +27,7 @@ python3 -c "import google.genai, numpy, pdfplumber, pypdf, ebooklib, aiohttp, bs
 ```
 ## Book-to-Persona Skill (Installed)
 Converts any book (PDF/EPUB/MOBI/AZW3) into a dual-purpose persona blueprint.
-Pre-built personas already included. Run: python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status to see total count. Pipeline runs on new books only.
+Pre-built personas already included. Run: python3 ~/.openclaw/scripts/gemini-indexer.py --status to see total count. Pipeline runs on new books only.
 
 Pipeline (model selection is DYNAMIC via shared-utils/select_model.py — Anthropic FORBIDDEN):
 - Phase 1: Latest Kimi (Ollama Cloud preferred) → OpenRouter Kimi → OAuth GPT → DeepSeek V4+ → ask owner. Temperature 1.0. → extraction-notes.md
@@ -40,7 +40,7 @@ A persona blueprint is DUAL-PURPOSE. The Coaching half guides conversation; the 
 half (Section 4 "Agent Governance Framework" + Section 7B Task-Mode Triggers) GOVERNS HOW WORK IS BUILT.
 At task time you MUST load and APPLY the leadership/Task-Mode half — naming the persona is NOT enough.
 
-1. SEARCH — run: python3 ~/.openclaw/workspace/scripts/gemini-search.py "<task keywords>"
+1. SEARCH — run: python3 ~/.openclaw/scripts/gemini-search.py "<task keywords>"
    For the governance/standard (not the coaching voice), add: --mode leadership
 2. LOAD THE TASK MODE — open the matched persona's persona-blueprint.md and read its Section 4
    (4A Execution Standard + Decision Logic Table, 4B Quality Control Protocol + Definition of Done,
@@ -58,13 +58,13 @@ Key paths:
 - Personas: ~/.openclaw/workspace/data/coaching-personas/personas/
 - Router: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/PERSONA-ROUTER.md
 - Orchestrator: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py
-- Gemini Vector Database: coaching-personas [run: python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status to get current counts]
+- Gemini Vector Database: coaching-personas [run: python3 ~/.openclaw/scripts/gemini-indexer.py --status to get current counts]
 
 To add a new book: follow SOP in MEMORY.md under "Add New Book to Coaching Personas Matrix"
 
 Re-indexing trigger (MANDATORY after adding any new persona):
 When a new book persona is added to ~/.openclaw/workspace/data/coaching-personas/personas/:
-Run: python3 ~/.openclaw/workspace/scripts/gemini-indexer.py
+Run: python3 ~/.openclaw/scripts/gemini-indexer.py
 This updates the Gemini embedding index with the new persona.
 Do NOT skip this step -- the search will not find the new persona until re-indexed.
 ```
@@ -88,12 +88,12 @@ Pipeline model routing (DYNAMIC selection via shared-utils/select_model.py — n
 
 Gemini Vector Database: coaching-personas
 Setup commands (run once on fresh install):
-  python3 ~/.openclaw/workspace/scripts/gemini-indexer.py
+  python3 ~/.openclaw/scripts/gemini-indexer.py
   # Handled by gemini-indexer.py  (takes 3-8 min first time, downloads local model, runs offline after)
 
-Runtime query: python3 ~/.openclaw/workspace/scripts/gemini-search.py "<task keywords>"
-After adding new book: python3 ~/.openclaw/workspace/scripts/gemini-indexer.py (no need to re-embed everything)
-If stale/broken: python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --rebuild && python3 ~/.openclaw/workspace/scripts/gemini-indexer.py
+Runtime query: python3 ~/.openclaw/scripts/gemini-search.py "<task keywords>"
+After adding new book: python3 ~/.openclaw/scripts/gemini-indexer.py (no need to re-embed everything)
+If stale/broken: python3 ~/.openclaw/scripts/gemini-indexer.py --rebuild && python3 ~/.openclaw/scripts/gemini-indexer.py
 
 Full pipeline reference: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/PIPELINE.md
 Full Gemini Engine guide: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/GEMINI-RETRIEVAL-GUIDE.md
@@ -109,8 +109,8 @@ Full Gemini Engine guide: ~/.openclaw/skills/22-book-to-persona-coaching-leaders
 ```
 ## Book-to-Persona Persona Library (Installed [DATE])
 - Skill: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/
-- Pre-built personas (see python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status for count): ~/.openclaw/workspace/data/coaching-personas/personas/
-- Gemini Vector Database: coaching-personas [run: python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status to get current counts]
+- Pre-built personas (see python3 ~/.openclaw/scripts/gemini-indexer.py --status for count): ~/.openclaw/workspace/data/coaching-personas/personas/
+- Gemini Vector Database: coaching-personas [run: python3 ~/.openclaw/scripts/gemini-indexer.py --status to get current counts]
 - Source: Available at your onboarding package repo.
 - Persona Reflex: query Gemini Engine before every professional task (see AGENTS.md)
 - Add new book SOP: see "Add New Book to Coaching Personas Matrix" section in this file
@@ -153,8 +153,8 @@ No update required unless you are setting up a persona as your primary operating
 **Exact text to add:**
 ```
 ## Persona Reflex - ACTIVE (MANDATORY before professional tasks)
-Gemini Vector Database coaching-personas loaded [run: python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status to get current counts].
-Before professional tasks: python3 ~/.openclaw/workspace/scripts/gemini-search.py "<task>" [--mode leadership]
+Gemini Vector Database coaching-personas loaded [run: python3 ~/.openclaw/scripts/gemini-indexer.py --status to get current counts].
+Before professional tasks: python3 ~/.openclaw/scripts/gemini-search.py "<task>" [--mode leadership]
 → open matched persona-blueprint.md → load Section 4 Task Mode (Execution Standard + Definition of Done + failure patterns) → build to that standard → verify against the Definition of Done.
 ```
 
