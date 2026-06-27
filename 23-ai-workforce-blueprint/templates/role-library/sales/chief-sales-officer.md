@@ -166,6 +166,7 @@ This role contributes to the company revenue cascade by: **directly generating 1
 
 | Tool | Purpose | Access via | Specifics |
 |------|---------|------------|-----------|
+| **Funnel/automation libraries (governance: REUSE-FIRST)** | Funnel + automation work reuses the proven catalog first via the matchers; net-new only when nothing fits, then save_new_template. NOTE: your `offer-spec.json` (SOP 9.9, P0) is the input the Funnel Strategist's `funnel_matcher` consumes at P1 | `06-ghl-install-pages/funnel-templates/` + `44-convert-and-flow-operator/automation-templates/` + `_links/funnel-to-automation.json` | Guide-not-rule (honor explicit choice; never block); FAB-QC ≥ 8.5 |
 | CRM Platform (e.g., Salesforce, HubSpot, GoHighLevel) | Single source of truth for all deals, contacts, activities, and forecasts | API key in TOOLS.md / web login | Enforce: required fields on every opportunity (amount, close date, next step, contact role, stage). No deal enters pipeline without them. |
 | Sales Engagement Platform (e.g., Outreach, SalesLoft) | SDR sequencing, email automation, call task management | API key in TOOLS.md | Sequences must be A/B tested quarterly. Below-benchmark open rates (<20%) or reply rates (<5%) trigger sequence rewrite. |
 | Conversation Intelligence (e.g., Gong, Chorus) | Call recording, transcription, AI-powered deal risk detection | API key in TOOLS.md | All customer-facing calls recorded. Review low-performer calls daily. |

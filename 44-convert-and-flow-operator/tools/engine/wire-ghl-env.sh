@@ -161,6 +161,38 @@ wire_var GOHIGHLEVEL_ALLOWED_LOCATION_IDS   "$ALLOWED"
 wire_var GOHIGHLEVEL_DRAFT_ONLY             "$DRAFT_ONLY"
 wire_var GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN "$FIREBASE"   # no-op when absent
 
+# ─── 1b. Wire the FUNNEL + AUTOMATION matcher catalog/index/link env vars ────
+# Without these, the Skill-6 STEP-0 funnel matcher (v2_dispatcher) and the Skill-44
+# Step-0.4 automation matcher stay DARK on a real box (env-gated, never activated).
+# Resolve relative to the installed skills (06 and 44 are siblings under the skills
+# dir). Wire each var ONLY when its target exists — a stale path would just be a safe
+# no-op for the matchers, but we keep openclaw.json clean.
+ENGINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILL44_DIR="$(cd "$ENGINE_DIR/../.." && pwd)"            # 44-convert-and-flow-operator
+SKILLS_ROOT="$(cd "$SKILL44_DIR/.." && pwd)"              # skills dir (06 & 44 are siblings)
+SKILL06_DIR="$SKILLS_ROOT/06-ghl-install-pages"
+FUNNEL_CATALOG="$SKILL06_DIR/funnel-templates"
+FUNNEL_INDEX="$SKILL06_DIR/tools/catalog-index.json"
+AUTO_CATALOG="$SKILL44_DIR/automation-templates"
+AUTO_INDEX="$SKILL44_DIR/automation-templates/_matcher/catalog-index.json"
+LINK_MAP="$SKILL44_DIR/automation-templates/_links/funnel-to-automation.json"
+
+wire_var_if_exists() {  # $1=VAR  $2=path  ($3=dir|file, default file)
+  local var="$1" path="$2" kind="${3:-file}"
+  if { [ "$kind" = "dir" ] && [ -d "$path" ]; } || { [ "$kind" = "file" ] && [ -f "$path" ]; }; then
+    wire_var "$var" "$path"
+  else
+    log "skip $var — target not present ($path)"
+  fi
+}
+
+wire_var_if_exists GHL_FUNNEL_CATALOG            "$FUNNEL_CATALOG" dir
+wire_var_if_exists GHL_FUNNEL_INDEX              "$FUNNEL_INDEX"   file
+wire_var_if_exists GHL_FUNNEL_AUTOMATION_LINKS   "$LINK_MAP"       file
+wire_var_if_exists CAF_AUTOMATION_CATALOG        "$AUTO_CATALOG"   dir
+wire_var_if_exists CAF_AUTOMATION_INDEX          "$AUTO_INDEX"     file
+wire_var_if_exists CAF_FUNNEL_AUTOMATION_LINKS   "$LINK_MAP"       file
+
 # chown back to the runtime user on the VPS container layout.
 if [ "$PLATFORM" = "vps" ] && [ "$OC_JSON" = "/data/.openclaw/openclaw.json" ]; then
   chown node:node "$OC_JSON" 2>/dev/null || true

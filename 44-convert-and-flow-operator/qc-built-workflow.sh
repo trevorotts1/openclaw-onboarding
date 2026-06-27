@@ -39,12 +39,16 @@ WORKFLOW_ID=""
 PUBLISH_INTENT="DRAFT"
 RE_ENTRY_DECISION="ONCE"
 JSON_MODE=0
+FAB_MODE=0
+FAB_EVIDENCE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --publish-intent) PUBLISH_INTENT="${2:-DRAFT}"; shift 2 ;;
     --re-entry)       RE_ENTRY_DECISION="${2:-ONCE}"; shift 2 ;;
     --json)           JSON_MODE=1; shift ;;
+    --fab)            FAB_MODE=1; shift ;;        # run the FAB-QC library-aware overlay
+    --evidence)       FAB_EVIDENCE="${2:-}"; FAB_MODE=1; shift 2 ;;
     -*)               echo "Unknown option: $1" >&2; exit 2 ;;
     *)                WORKFLOW_ID="$1"; shift ;;
   esac
@@ -520,13 +524,53 @@ else
   echo ""
 fi
 
+# ── FAB-QC overlay (library-aware: template fidelity / copy substance / persona / ──
+#    flexibility / funnel<->automation link). SUPERSET on top of WF-1..21 (which is the
+#    D3 mechanical floor). Runs only when --fab/--evidence is passed and an evidence root
+#    with a routing/match-decision.json exists. The shared scorer is the same one Skill 6
+#    uses (shared-utils/fab_qc.py). The combined "done" bar is: WF mechanical PASS AND FAB >= 8.5.
+FAB_RC=0
+FAB_SCORE="n/a"
+if [ "$FAB_MODE" -eq 1 ]; then
+  REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+  FAB_SCORER="$REPO_ROOT/shared-utils/fab_qc.py"
+  FAB_PRODUCER="$REPO_ROOT/shared-utils/fab_artifact.py"
+  if [ -z "$FAB_EVIDENCE" ]; then FAB_EVIDENCE="$CAF_DATA/evidence/$WORKFLOW_ID"; fi
+  if [ -f "$FAB_SCORER" ] && [ -d "$FAB_EVIDENCE" ]; then
+    echo ""
+    echo "═══ FAB-QC overlay (library-aware, >= 8.5) ═══"
+    # PRODUCER (D4): convert the REAL exported workflow ($TMP) into build/fab-artifact.json so the
+    # scorer below judges the actual built steps + copy, not a hand-authored fixture. Only writes
+    # when a routing/match-decision.json receipt exists (a template-aware build) and never clobbers
+    # an existing artifact. Best-effort: it never blocks QC.
+    if [ -f "$FAB_PRODUCER" ] && [ -f "$FAB_EVIDENCE/routing/match-decision.json" ] \
+       && [ ! -f "$FAB_EVIDENCE/build/fab-artifact.json" ]; then
+      python3 "$FAB_PRODUCER" --evidence "$FAB_EVIDENCE" --kind automation \
+        --workflow "$TMP" --quiet 2>/dev/null || true
+    fi
+    FAB_JSON="$(python3 "$FAB_SCORER" --evidence "$FAB_EVIDENCE" --kind automation --json 2>/dev/null || true)"
+    if [ -n "$FAB_JSON" ]; then
+      FAB_SCORE="$(printf '%s' "$FAB_JSON" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d["score"]);' 2>/dev/null || echo n/a)"
+      FAB_PASS="$(printf '%s' "$FAB_JSON" | python3 -c 'import json,sys;d=json.load(sys.stdin);print("1" if d["passed"] else "0");' 2>/dev/null || echo 0)"
+      python3 "$FAB_SCORER" --evidence "$FAB_EVIDENCE" --kind automation 2>/dev/null || true
+      if [ "$FAB_PASS" != "1" ]; then FAB_RC=1; fi
+    else
+      echo "  (FAB-QC could not score this evidence tree — ensure routing/match-decision.json exists)"
+    fi
+  else
+    echo "  (FAB-QC skipped: scorer or evidence root not found — $FAB_EVIDENCE)"
+  fi
+fi
+
 # ── Append to build-events ledger ─────────────────────────────────────────────
 mkdir -p "$(dirname "$BUILD_EVENTS_LEDGER")" 2>/dev/null || true
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")
-VERDICT="$([ "$FAIL_COUNT" -eq 0 ] && echo PASS || echo FAIL)"
+VERDICT="$([ "$FAIL_COUNT" -eq 0 ] && [ "$FAB_RC" -eq 0 ] && echo PASS || echo FAIL)"
 cat >> "$BUILD_EVENTS_LEDGER" 2>/dev/null << LEDGER_EOF
 {"event":"qc_run","timestamp":"${TIMESTAMP}","workflow_id":"${WORKFLOW_ID}","publish_intent":"${PUBLISH_INTENT}","re_entry":"${RE_ENTRY_DECISION}","mechanical_pass":${PASS_COUNT},"mechanical_fail":${FAIL_COUNT},"verdict":"${VERDICT}","rubric_weighted_floor":${RUBRIC_FLOOR},"rubric_ship_threshold":8.5,"rubric_needs_human_grading":${RUBRIC_NEEDS_HUMAN},"rubric_lowest_dimension":"${LOWEST_DIM}"}
 LEDGER_EOF
 
 [ "$FAIL_COUNT" -gt 0 ] && exit 1
+# When the FAB-QC overlay ran, the build is "done" only if it also scored >= 8.5.
+[ "$FAB_RC" -ne 0 ] && { echo "PER-BUILD QC FAILED — FAB-QC below 8.5 (score $FAB_SCORE). Fix the lowest dimension and re-run."; exit 1; }
 exit 0

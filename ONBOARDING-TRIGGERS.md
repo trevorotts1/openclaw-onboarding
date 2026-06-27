@@ -66,6 +66,7 @@ A fresh install lays down **44 numbered skill folders** (41 active, 3 archived) 
 - **Skill 32 — Trade Show Mode** — event-on, event-off automation
 - **Skill 35 — Social Media Planner** — posts to GHL Social Planner / Blog / Media Library, MCP-first
 - **Skill 36 — GHL MCP Setup** — wires the **5-tier GHL access chain** (Official MCP → Community MCP on port 8765 → Direct REST → Playwright → Codex), runs a local Node server under launchd (Mac) or systemd (VPS), and installs the disclosure-header protocol so every GHL response shows which tier it used. Bundles a standalone `qc-ghl-mcp-setup.sh` validator that probes live rate-limit quota.
+- **Funnel + Automation template libraries** (Skills 06 + 44) — when you ask your agent to "build me a funnel" or "set up the email follow-ups", it reaches for a **template-first / reuse-before-reinvent** catalog: 38 proven funnel templates (`06-ghl-install-pages/funnel-templates/` + `funnel_matcher`) and 28 automation/email sequences (`44-convert-and-flow-operator/automation-templates/` + `automation_matcher`), paired by the funnel→automation link map. Every template is a guide, not a rule (your explicit choice always wins), and every build is held to the FAB-QC ≥ 8.5 quality gate.
 
 The rest are domain skills (CRM ops, calendars, content, payments, observability, etc.). Your agent reads every skill's `SKILL.md`, `INSTALL.md`, `INSTRUCTIONS.md`, and `QC.md` and walks through activation in dependency-aware waves.
 

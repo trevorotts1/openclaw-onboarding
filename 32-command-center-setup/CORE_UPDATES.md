@@ -78,6 +78,35 @@ pm2 stop command-center
 - Replace `[Your Company Name]` with your actual company name
 - Update the department list to match your actual departments
 
+### Reusable template libraries (funnel + automation)
+
+```markdown
+## Funnel + Automation Template Libraries (template-first / reuse-before-reinvent)
+
+- **Funnel library (38):** `06-ghl-install-pages/funnel-templates/` — match with
+  `funnel_matcher_cli.py --match`; runs as STEP 0 in `tools/v2_dispatcher.py` (env-gated).
+- **Automation library (28):** `44-convert-and-flow-operator/automation-templates/` — match with
+  `_matcher/cli.py --match` (Skill-44 Step 0.4). Shared matcher core: `_matcher/flex.py`.
+- **Funnel→automation link map:** `_links/funnel-to-automation.json` (keyed by funnel_template_id).
+- **Discoverable in the Command Center:** ingested into `mission-control.db` `templates` table by
+  `32-command-center-setup/scripts/ingest-template-libraries.py` (LEXICAL keyword search — no
+  embedding re-index; do NOT re-embed the persona corpus).
+- **Build-quality gate:** FAB-QC ≥ 8.5 (`shared-utils/fab_qc.py`, rubric in universal-sops).
+- Flexibility = guide-not-rule: honor explicit choice; CREATE_NEW only when nothing fits; never block.
+```
+
+**Box-side activation (run once per build / on a library update — see Event 7 of
+`universal-sops/adding-capability-after-build.md`):**
+```bash
+# 1. (re)build + commit the lexical indexes
+python3 06-ghl-install-pages/tools/funnel_matcher_cli.py --build-index
+python3 44-convert-and-flow-operator/automation-templates/_matcher/cli.py --build-index
+# 2. wire the matcher env vars onto the dept agent (else STEP 0 / Step 0.4 stay dark)
+bash 44-convert-and-flow-operator/tools/engine/wire-ghl-env.sh
+# 3. ingest the templates into the Command Center for lexical search
+python3 32-command-center-setup/scripts/ingest-template-libraries.py
+```
+
 ---
 
 ## HEARTBEAT.md Addition

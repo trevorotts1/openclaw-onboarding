@@ -308,3 +308,221 @@ class TestMockTrustCannotShipAsVerified:
         )
         assert res.state != disp.STATE_VERIFIED, \
             "a build with MOCK_DO_NOT_SHIP trust must not reach STATE_VERIFIED"
+
+
+# ── STEP 0 template matcher injection + complete-funnel handoff ──────────────
+
+class TestStep0AndFunnelHandoff:
+    """STEP 0 matcher is an injected/advisory callable; it must run, never block, and
+    its linked-automations must be persisted as the P4->P5 handoff on a verified build."""
+
+    def test_injected_step0_runs_and_records_template_match(self, tmp_path):
+        seen = {}
+
+        def _step0(task, evidence_root):
+            seen["called"] = True
+            return {"decision": "USE_TEMPLATE",
+                    "template_match": {"decision": "USE_TEMPLATE",
+                                       "matched_template": "webinar-funnel"}}
+
+        res = disp.dispatch_one(
+            dict(FAKE_TASK), str(tmp_path), builder=_builder_ok(),
+            verifier=_fake_verifier(True), step0_matcher=_step0)
+        assert seen.get("called") is True
+        assert res.state == disp.STATE_VERIFIED
+
+    def test_step0_failure_never_blocks_the_build(self, tmp_path):
+        def _boom_step0(task, evidence_root):
+            raise RuntimeError("matcher exploded")
+
+        res = disp.dispatch_one(
+            dict(FAKE_TASK), str(tmp_path), builder=_builder_ok(),
+            verifier=_fake_verifier(True), step0_matcher=_boom_step0)
+        # advisory glue — a matcher crash is recorded but the build still verifies
+        assert res.state == disp.STATE_VERIFIED
+
+    def test_linked_automations_become_skill44_handoff_artifact(self, tmp_path):
+        # A task carrying linked_automations (as STEP 0 would attach) must, on a verified
+        # build, write routing/skill44-handoff.json with the build_now automations.
+        task = dict(FAKE_TASK)
+        task["funnel_template_id"] = "follow-up-funnel"
+        task["linked_automations"] = {
+            "found": True,
+            "automations": [
+                {"automation_id": "soap-opera-sequence", "category": "sales-close-sequences",
+                 "build_now": True},
+                {"automation_id": "seinfeld-daily-sequence", "category": "sales-close-sequences",
+                 "build_now": False},
+            ],
+        }
+        res = disp.dispatch_one(
+            task, str(tmp_path), builder=_builder_ok(), verifier=_fake_verifier(True))
+        assert res.state == disp.STATE_VERIFIED
+        handoff_path = os.path.join(tmp_path, "routing", "skill44-handoff.json")
+        assert os.path.isfile(handoff_path)
+        handoff = json.load(open(handoff_path))
+        assert handoff["funnel_template_id"] == "follow-up-funnel"
+        ids = [a["automation_id"] for a in handoff["to_build"]]
+        assert ids == ["soap-opera-sequence"]            # only build_now=True
+        assert handoff["mandatory"] is False
+
+
+# ── FAB-QC build-quality gate (>= 8.5) wired into the verified verdict ───────
+
+class TestFabQcGate:
+    """The FAB-QC overlay is BINDING when the build emits evidence, a NO-OP otherwise."""
+
+    def _write_fab_evidence(self, root, *, placeholder: bool):
+        os.makedirs(os.path.join(root, "routing"), exist_ok=True)
+        os.makedirs(os.path.join(root, "build"), exist_ok=True)
+        os.makedirs(os.path.join(root, "scorecard"), exist_ok=True)
+        # template stored alongside, referenced relatively from routing/
+        tmpl = {"pageStructure": [{"page": "optin", "blocks": ["hero"]}],
+                "copyFramework": {"primaryPersona": "Russell Brunson"}, "books": ["DotCom Secrets"]}
+        with open(os.path.join(root, "tmpl.json"), "w") as f:
+            json.dump(tmpl, f)
+        with open(os.path.join(root, "routing", "match-decision.json"), "w") as f:
+            json.dump({"matched_template_id": "squeeze-page", "template_path": "../tmpl.json",
+                       "intent_mode": "HANDS_OFF_DO_IT_ALL", "flex_decision": "USE_TEMPLATE",
+                       "funnel_template_id": "squeeze-page"}, f)
+        hero = "[HEADLINE]" if placeholder else "Get the free funnel swipe file and grow your list today"
+        with open(os.path.join(root, "build", "fab-artifact.json"), "w") as f:
+            json.dump({"pages": [{"copy": {"hero": hero}}]}, f)
+        with open(os.path.join(root, "persona-selection-log.md"), "w") as f:
+            f.write("selected_persona: russell-brunson\n")
+
+    def test_subthreshold_fab_downgrades_to_failed(self, tmp_path):
+        self._write_fab_evidence(str(tmp_path), placeholder=True)  # surviving [HEADLINE] -> D2 hard miss
+        res = disp.dispatch_one(
+            dict(FAKE_TASK), str(tmp_path), builder=_builder_ok(), verifier=_fake_verifier(True))
+        assert res.state == disp.STATE_FAILED
+        assert "FAB-QC GATE" in res.reason
+        rec = json.load(open(os.path.join(tmp_path, "routing", "task-record.json")))
+        assert rec["fab_qc"]["ran"] is True and rec["fab_qc"]["passed"] is False
+
+    def test_passing_fab_stays_verified(self, tmp_path):
+        self._write_fab_evidence(str(tmp_path), placeholder=False)
+        res = disp.dispatch_one(
+            dict(FAKE_TASK), str(tmp_path), builder=_builder_ok(), verifier=_fake_verifier(True))
+        assert res.state == disp.STATE_VERIFIED
+        rec = json.load(open(os.path.join(tmp_path, "routing", "task-record.json")))
+        assert rec["fab_qc"]["ran"] is True and rec["fab_qc"]["passed"] is True
+
+    def test_no_fab_evidence_is_a_noop(self, tmp_path):
+        # No match-decision/fab-artifact -> overlay is a no-op, build still verifies.
+        res = disp.dispatch_one(
+            dict(FAKE_TASK), str(tmp_path), builder=_builder_ok(), verifier=_fake_verifier(True))
+        assert res.state == disp.STATE_VERIFIED
+        rec = json.load(open(os.path.join(tmp_path, "routing", "task-record.json")))
+        assert rec["fab_qc"]["ran"] is False
+
+
+# ── FAB-ARTIFACT PRODUCER (D4): the gate fires on a REAL build, not a hand fixture ──
+#
+# These prove the D4 closure: NOTHING hand-writes build/fab-artifact.json here. STEP 0
+# writes routing/match-decision.json (a real receipt), the injected builder returns the
+# pages it built WITH the copy it wrote, and the dispatcher's PRODUCER normalises that
+# real build result into build/fab-artifact.json so the FAB-QC gate genuinely scores it.
+
+class TestFabArtifactProducer:
+    """The dispatcher emits build/fab-artifact.json from the real build result so FAB-QC fires."""
+
+    @staticmethod
+    def _step0_writes_receipt(pages, *, persona="Russell Brunson", flex="USE_TEMPLATE"):
+        """An injected STEP 0 that writes a real routing/match-decision.json + matched template
+        (exactly as funnel_matcher.step0_match does) and mutates the task to a template plan.
+        It does NOT write build/fab-artifact.json — that is the dispatcher's job to prove."""
+        def _s0(task, evidence_root):
+            routing = os.path.join(evidence_root, "routing")
+            os.makedirs(routing, exist_ok=True)
+            tmpl = {"pageStructure": [{"page": n, "blocks": ["hero"]} for n in pages],
+                    "copyFramework": {"primaryPersona": persona}, "books": ["DotCom Secrets"]}
+            with open(os.path.join(routing, "matched-template.json"), "w") as f:
+                json.dump(tmpl, f)
+            with open(os.path.join(routing, "match-decision.json"), "w") as f:
+                json.dump({"matched_template_id": "squeeze-page",
+                           "template_path": "matched-template.json",
+                           "intent_mode": "HANDS_OFF_DO_IT_ALL", "flex_decision": flex}, f)
+            task["pages"] = [{"name": n} for n in pages]
+            return {"decision": flex,
+                    "template_match": {"decision": flex, "matched_template": "squeeze-page"}}
+        return _s0
+
+    @staticmethod
+    def _builder_with_copy(copy):
+        """A builder that returns the pages it built WITH the copy it wrote (the contract that
+        lets the producer emit a scoreable artifact)."""
+        def _b(task, evidence_root):
+            os.makedirs(os.path.join(evidence_root, "funnel"), exist_ok=True)
+            # the copy step logs which persona it used (build evidence FAB-QC D4 reads)
+            with open(os.path.join(evidence_root, "persona-selection-log.md"), "w") as f:
+                f.write("selected_persona: russell-brunson\nrationale: matched template voice\n")
+            plan = task.get("pages") or [{"name": "Opt-In"}]
+            built = [{"name": p.get("name", f"p{i}"), "preview_url": f"u{i}",
+                      "marker": "m", "copy": dict(copy)} for i, p in enumerate(plan)]
+            return {"pages": built, "location_gate_ok": True, "duration_s": 5.0}
+        return _b
+
+    def test_producer_emits_artifact_and_gate_fires_on_real_path(self, tmp_path):
+        # NOTE: no build/fab-artifact.json is hand-written anywhere in this test.
+        real_copy = {"hero": "Get the free funnel swipe file today and grow your email list fast",
+                     "cta": "Enter your best email now to receive instant access to the download"}
+        res = disp.dispatch_one(
+            dict(FAKE_TASK), str(tmp_path),
+            builder=self._builder_with_copy(real_copy),
+            verifier=_fake_verifier(True, passed=2, total=2),
+            step0_matcher=self._step0_writes_receipt(["Opt-In", "Thank You"]))
+        # the dispatcher's PRODUCER created the artifact from the real build (it did not pre-exist)
+        art_path = os.path.join(tmp_path, "build", "fab-artifact.json")
+        assert os.path.isfile(art_path), "dispatcher must emit build/fab-artifact.json from the build"
+        art = json.load(open(art_path))
+        assert art["generated_by"] == "fab_artifact.build_funnel_artifact"
+        assert art["pages"][0]["copy"]["hero"].startswith("Get the free funnel swipe")
+        # the gate RAN against that produced artifact (not a fixture) and passed
+        rec = json.load(open(os.path.join(tmp_path, "routing", "task-record.json")))
+        assert rec["fab_artifact"]["emitted"] is True
+        assert rec["fab_qc"]["ran"] is True and rec["fab_qc"]["passed"] is True
+        assert res.state == disp.STATE_VERIFIED
+
+    def test_producer_thin_copy_makes_the_gate_fail(self, tmp_path):
+        # The builder echoes placeholder copy -> the produced artifact trips FAB-QC D2 -> FAILED.
+        res = disp.dispatch_one(
+            dict(FAKE_TASK), str(tmp_path),
+            builder=self._builder_with_copy({"hero": "[HEADLINE]", "cta": "TODO"}),
+            verifier=_fake_verifier(True, passed=2, total=2),
+            step0_matcher=self._step0_writes_receipt(["Opt-In", "Thank You"]))
+        assert res.state == disp.STATE_FAILED
+        assert "FAB-QC GATE" in res.reason
+        rec = json.load(open(os.path.join(tmp_path, "routing", "task-record.json")))
+        assert rec["fab_artifact"]["emitted"] is True       # producer still emitted it
+        assert rec["fab_qc"]["ran"] is True and rec["fab_qc"]["passed"] is False
+
+    def test_real_funnel_matcher_receipt_then_producer_fires(self, tmp_path):
+        """End-to-end with the REAL funnel_matcher against the REAL catalog: the matcher writes
+        routing/match-decision.json, the builder echoes copy, and the dispatcher's producer emits
+        the artifact so the gate RUNS — proving the wiring on the genuine matcher path."""
+        import funnel_matcher as fm
+        catalog_root = os.path.normpath(os.path.join(
+            os.path.dirname(__file__), "..", "funnel-templates"))
+        if not os.path.isdir(catalog_root):
+            import pytest
+            pytest.skip("funnel-templates catalog not present")
+
+        def _s0(task, evidence_root):
+            return fm.step0_match(task, evidence_root, catalog_root=catalog_root)
+
+        real_copy = {"hero": "Discover the proven framework that turns cold visitors into buyers",
+                     "cta": "Claim your free copy now before this limited-time bonus disappears"}
+        task = dict(FAKE_TASK, just_do_it=True,
+                    brief="just build the full lead squeeze page opt-in funnel for my list")
+        res = disp.dispatch_one(
+            task, str(tmp_path),
+            builder=self._builder_with_copy(real_copy),
+            verifier=_fake_verifier(True, passed=2, total=2),
+            step0_matcher=_s0)
+        # the real matcher wrote the receipt; the dispatcher's producer wrote the artifact
+        assert os.path.isfile(os.path.join(tmp_path, "routing", "match-decision.json"))
+        assert os.path.isfile(os.path.join(tmp_path, "build", "fab-artifact.json"))
+        rec = json.load(open(os.path.join(tmp_path, "routing", "task-record.json")))
+        assert rec["fab_artifact"]["emitted"] is True
+        assert rec["fab_qc"]["ran"] is True       # the >=8.5 gate genuinely fired on the real path

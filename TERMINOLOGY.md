@@ -69,3 +69,30 @@ grep -rn 'raw_id\[5:\]\|\.removeprefix("dept-")\|re\.sub.*\^dept-' --include="*.
 ```
 
 **Schema note:** `departments.json` emits `"id": "dept-{slug}"` (with the prefix) for legacy CC compatibility, **and** `"slug": "{slug}"` (bare canonical form). The Command Center's `migrations.ts` and TypeScript components key on `slug`; Python scripts key on the bare `slug` field or strip via `canonical_dept_slug()`. Never store a `dept-` prefixed string in any DB `id` column.
+
+---
+
+## Funnel template library / Automation template library (template-first)
+
+**Funnel template library** — the 38 proven funnel templates shipped by Skill 6 at
+`06-ghl-install-pages/funnel-templates/` (categories: buyer, event, lead, retention-followup,
+traffic-advanced). Each encodes a `pageStructure`, `copyFramework`, `skill44Widgets`, persona/`books`,
+and `whenToUse`/`doNotUseWhen`. Selected by the **funnel matcher** (`tools/funnel_matcher.py`, STEP 0
+of every build via `v2_dispatcher.py`).
+
+**Automation template library** — the 28 proven email/SMS/multichannel sequences shipped by Skill 44
+at `44-convert-and-flow-operator/automation-templates/`. Selected by the **automation matcher**
+(`_matcher/automation_matcher.py`, INSTRUCTIONS Step 0.4). Shared matcher core: `_matcher/flex.py`.
+
+**Funnel→automation link map** — `44-.../automation-templates/_links/funnel-to-automation.json`:
+maps each funnel template to its recommended downstream follow-up automations, keyed by
+`funnel_template_id` (the canonical v2; the category-keyed `…-link-map.json` is the deprecated v1).
+
+**template-first / reuse-before-reinvent** — the standard that funnel/automation work REUSES a proven
+template from these libraries before building net-new. **Flexibility = guide-not-rule:** every
+template is a GUIDE and a RESOURCE, never a rule — an explicit owner choice is always honored, net-new
+is built only when nothing fits, and the matcher never blocks a build.
+
+**FAB-QC** — the Funnel-&-Automation Build-Quality gate (≥ 8.5): a library-aware, six-dimension
+scorer (`shared-utils/fab_qc.py`, rubric `universal-sops/funnel-automation-build-quality-rubric.md`)
+that overlays the mechanical floors (ghl_verify for funnels, WF-1..21 for automations).

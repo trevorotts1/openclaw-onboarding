@@ -485,10 +485,39 @@ back a hard WF FAIL.
    `(D1*20 + D2*15 + D3*15 + D4*12 + D5*12 + D6*10 + D7*8 + D8*8) / 100`.
 3. **Ship threshold: weighted score ≥ 8.5** (aligns with the binding OpenClaw QC Protocol).
 
+### Step 9.3c — FAB-QC library-aware overlay (template fidelity / persona / flexibility / link integrity)
+
+**Order is mandatory:** runs AFTER WF-1..21 (Step 9.3) AND the 8-dimension rubric (Step 9.3b).
+The WF rubric grades the EXPORTED workflow JSON only — it is blind to the **matched automation
+template**, the `copy_persona`, the recorded **flex decision**, and the funnel↔automation link.
+FAB-QC (`shared-utils/fab_qc.py`, the SAME scorer Skill 6 uses) adds the six library-aware
+dimensions defined in `universal-sops/funnel-automation-build-quality-rubric.md`:
+
+1. Run: `./qc-built-workflow.sh <workflow-id> --fab --evidence <evidence_root>` (the overlay runs
+   automatically after WF-1..21 inside that script). Before scoring, the script runs the **FAB-artifact
+   PRODUCER** (`shared-utils/fab_artifact.py`): it exports the workflow with `caf workflows export` and
+   converts that REAL export into `build/fab-artifact.json` — each built step's channel + the **actual
+   email/SMS subject+body copy that was pushed** — so the scorer judges the real build, not a hand-authored
+   fixture. (Producer runs only when a `routing/match-decision.json` receipt exists and never clobbers an
+   existing artifact.) The scorer then reads `routing/match-decision.json` (written by Step 0.4's
+   `automation_matcher.step0_match`), the matched template, that produced `fab-artifact`, the
+   `persona-selection-log.md`, and the `_links` map. Without the producer the overlay had nothing to score
+   and the ≥ 8.5 gate was a silent no-op on a real automation build.
+2. Six dimensions, weighted to 100, scored 0–10: **D1** template fidelity (the export reproduces the
+   matched template's `sequence` — steps + channels + order), **D2** copy substance (every step
+   carries substantive copy; ZERO surviving placeholders), **D3** render/soundness (WF-1..21 PASS —
+   the hard floor), **D4** persona grounding (the template's `copy_persona` is named in the log;
+   fail-closed if the selector did not run), **D5** flexibility honored (an EXPLICIT user spec was
+   NOT overridden by the template), **D6** funnel↔automation link integrity (a primary linked
+   follow-up was not silently dropped).
+3. **"Done" requires BOTH:** WF-1..21 all-PASS **AND** the combined weighted FAB-QC score ≥ 8.5 with
+   no hard miss. Below 8.5 → LOOP (name the lowest dimension, fix, re-run; max 5 loops then escalate).
+
 ### Step 9.4 — QC verdict routing
 
 - Any WF-1..21 FAIL → Step 9.5 (fix + re-run). The rubric is not consulted until WF-1..21 is clean.
-- WF-1..21 all-PASS AND final weighted rubric ≥ 8.5 → proceed to Step 9.6.
+- WF-1..21 all-PASS AND final weighted rubric ≥ 8.5 AND FAB-QC overlay (Step 9.3c) ≥ 8.5 → proceed to Step 9.6.
+- FAB-QC overlay < 8.5 (or any FAB hard miss) → **LOOP** like a rubric FAIL: name the lowest FAB dimension, fix, re-run. Treated as not-done.
 - WF-1..21 all-PASS BUT final weighted rubric < 8.5 → **LOOP**: do NOT declare done. Report the
   weighted score and **name the lowest-scoring dimension** (the script surfaces it as
   `rubric.lowest_dimension`) plus the anchor it fell to, fix that dimension, and re-run QC from

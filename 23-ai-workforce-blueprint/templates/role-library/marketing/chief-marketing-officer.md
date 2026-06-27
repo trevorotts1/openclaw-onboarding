@@ -279,6 +279,8 @@ This role contributes to the company revenue cascade by: **architecting and oper
 
 ## 10. Quality Gates
 
+**Departmental standard — template-first / reuse-before-reinvent (governance you enforce):** all funnel and automation work in this department reuses the proven catalogs FIRST via the matchers — the 38-template funnel library (`06-ghl-install-pages/funnel-templates/` + `funnel_matcher`) and the 28-template automation library (`44-convert-and-flow-operator/automation-templates/` + `automation_matcher`), keyed together by `_links/funnel-to-automation.json`. Net-new structure is built only when nothing fits, then saved back (`save_new_template`). Flexibility is a guide-not-rule: honor an owner's explicit choice above any template; never block a build. Every funnel/automation build is held to the FAB-QC ≥ 8.5 standard (`universal-sops/funnel-automation-build-quality-rubric.md`).
+
 Before any marketing output ships publicly, it must pass these gates:
 
 ### Gate 1 — Self-check (Campaign Owner / Specialist)

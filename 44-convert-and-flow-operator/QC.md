@@ -141,3 +141,19 @@ asserted by qc-convert-and-flow.sh Section S and verified by qc-built-workflow.s
 - [ ] QC-GATE rule present in AGENTS.md block (independent MiniMax QC + checklist hand-over
   before done)
 - [ ] Hallucination → reasoning-model-thinking-HIGH requirement present in AGENTS.md block
+
+---
+
+## Per-build quality gate (FAB-QC ≥ 8.5 overlay) — distinct from install QC above
+
+The sections above are **install-level QC**. Every **built workflow** is held to the per-build
+gate (`qc-built-workflow.sh`), and on top of WF-1..21 + the 8-dimension rubric it now runs the
+**FAB-QC library-aware overlay** (the SAME shared scorer Skill 6 uses):
+
+- **Run:** `./qc-built-workflow.sh <wf-id> --fab --evidence <evidence_root>` (INSTRUCTIONS.md Step 9.3c)
+- **Shared scorer:** `shared-utils/fab_qc.py` · **Rubric:** `universal-sops/funnel-automation-build-quality-rubric.md`
+- **Six dimensions:** template fidelity (export reproduces the matched template `sequence`), copy
+  substance, render/soundness (WF-1..21 = the hard floor), persona grounding (`copy_persona`,
+  fail-closed), flexibility honored (EXPLICIT spec not overridden), funnel↔automation link integrity.
+- **"Done" requires BOTH** WF-1..21 all-PASS **AND** FAB-QC ≥ 8.5 with no hard miss.
+- [ ] Built workflow passes the FAB-QC overlay with score ≥ 8.5 and no hard miss.

@@ -1,3 +1,16 @@
+## [v14.8.0] - 2026-06-27 - feat(org-wiring): template-first / reuse-before-reinvent wired into the roles, SOPs, and dept guides
+
+Pointer references + a template-first MANDATE (flexibility = guide-not-rule) added so the agent identities that DO funnel/automation work actually consult the shipped libraries instead of hand-reinventing:
+- `funnel-strategist.md` SOP 9.5 — new Step 1.5 (run `funnel_matcher` against `06-ghl-install-pages/funnel-templates/`) + `funnel_template_id` / `linked_automations` on the funnel-spec.json schema + Tools rows.
+- `automation-workflow-specialist.md` SOP 9.6 — new Step 0.4 (run `automation_matcher` against `44-.../automation-templates/` + the `_links` map keyed by `funnel_template_id`) + Tools rows.
+- `conversion-copywriter.md` SOP 9.2 Step 0f — reuse the matched funnel template `copyFramework` as the copy scaffold.
+- Pointer references added to email-campaign / follow-up-sequence / sms-whatsapp-dm / webinar-event / lead-magnet / customer-journey / funnel-builder / landing-page specialists.
+- `how-to-use-this-department.md` (marketing/crm/web-development/sales) gain a "Reusable libraries" section.
+- Governance standard added to CMO / CSO / Director-of-CRM / Head-of-Web-Dev.
+- `master-orchestrator-dept/SOP-07` P1/P5 dispatch carry the matchers + the FAB-QC ≥ 8.5 gate, P4→P5 handoff carries `funnel_template_id` + `linked_automations`, and the hardcoded `hormozi-100m-offers` P1 persona is replaced with the top-ranked-selector rule.
+
+The shipped funnel/automation templates and personas are unchanged — this is wiring + pointer references only.
+
 ## [v14.1.5] - 2026-06-25 - fix(resume-cron): durable PARK gate + consecutive-stuck hard cap (kills the never-stop furnace)
 
 `scripts/resume-workforce-build.sh` no longer re-fires a stuck build forever. The old "Rule 8 / NEVER-STOP run accounting" (slow-to-2h-and-retry-forever) is replaced by: (1) a durable PARK gate — if the box-level park marker is set (an operator park, or an agent-browser breaker trip), the cron STOPS and self-removes; (2) a consecutive-no-progress hard cap (`MAX_STUCK_FIRES`, default 24, override `WORKFORCE_RESUME_MAX_STUCK_FIRES`) that PARKS + escalates once + DISABLES the cron. A progressing build never trips it (the counter resets the moment build state advances); pre-interview / pre-seed phases are never parked. `resume-prompt.txt` gains a PARK-STOP so the current agent fire stops too. Un-park is operator-only (`scripts/unpark-build.sh`). See root CHANGELOG v14.1.5.

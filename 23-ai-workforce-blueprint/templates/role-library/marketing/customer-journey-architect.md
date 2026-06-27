@@ -158,6 +158,7 @@ This role contributes to the company revenue cascade by: **designing the custome
 
 | Tool | Purpose | Access via | Specifics |
 |------|---------|------------|-----------|
+| **Funnel→automation link map + catalogs (REUSE-FIRST)** | The canonical journey→automation map and both proven template libraries — design journeys that reuse proven funnel→automation chains | `44-convert-and-flow-operator/automation-templates/_links/funnel-to-automation.json` + `06-ghl-install-pages/funnel-templates/` + `44-.../automation-templates/` | Template-first / reuse-before-reinvent; guide-not-rule |
 | Customer Journey Mapping Platform (TheyDo, Smaply, UXPressia, or Miro/Mural) | Journey map creation and maintenance, persona documentation, touchpoint inventory, journey visualization | Account subscription | Maintain living journey maps, not static one-off deliverables |
 | CRM Platform ({{CRM_PLATFORM_NAME}}) | Customer lifecycle tracking, stage progression data, handoff monitoring, customer interaction history across departments | Admin access | Journey stage fields and automation configured for stage tracking |
 | Product Analytics (Mixpanel, Amplitude, Pendo, Heap) | In-product behavior tracking, feature adoption data, time-to-value measurement, user behavior segmentation | Admin access | Events instrumented for key journey milestones within the product |

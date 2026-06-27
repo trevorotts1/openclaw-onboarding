@@ -167,6 +167,8 @@ This role contributes to the company revenue cascade by: **optimizing the conver
 | Heatmap / Session Recording (Hotjar, Microsoft Clarity, FullStory) | User behavior visualization on landing pages, click and scroll tracking, form interaction analysis, conversion friction identification | JavaScript snippet on site | Heatmaps reviewed for all major landing pages monthly |
 | Form and Survey Tool (Typeform, Google Forms, or native CRM forms) | Multi-step form creation, conditional logic forms, lead qualification surveys, post-conversion feedback | Account subscription | Multi-step forms for high-value conversion points (demo requests, applications) |
 | CRM / Automation Integration Platform (Zapier, Make, or native integrations) | Connecting funnel tools: form submission → CRM lead creation → marketing automation enrollment → sales notification | Account subscription | Ensure all integration steps have error logging and alerting; a broken integration = silent lead loss |
+| **Funnel template library + matcher (REUSE-FIRST)** | The 38 proven funnel templates you select from in SOP 9.5 step 1.5 — `pageStructure`, `copyFramework`, `skill44Widgets`, persona, `whenToUse`/`doNotUseWhen` per template | `06-ghl-install-pages/funnel-templates/` + `tools/funnel_matcher_cli.py --match` | Template-first / reuse-before-reinvent; flexibility = guide-not-rule (honor explicit owner choice; CREATE_NEW only when nothing fits) |
+| **Funnel→automation link map** | Maps each funnel template to its recommended downstream follow-up automations (Skill 44) — record as `linked_automations` on funnel-spec.json | `44-convert-and-flow-operator/automation-templates/_links/funnel-to-automation.json` | Recommended defaults, never mandatory; owner overrides are dropped |
 
 ---
 
@@ -229,6 +231,13 @@ This role contributes to the company revenue cascade by: **optimizing the conver
 **Steps:**
 1. **Read offer-spec.json.** Confirm all required fields are present: product_name, deliverables (array), price_points (at least one), guarantee, bonuses, positioning_statement. If any field is missing, return to orchestrator with a structured handback naming the exact missing field — do NOT proceed without a complete offer spec.
 
+1.5. **Template-first funnel match — reuse before reinvent (MANDATORY; flexibility = guide-not-rule).** Before designing structure from scratch, consult the shipped **funnel template library** — 38 proven Brunson-derived funnel templates in `06-ghl-install-pages/funnel-templates/` (categories: buyer, event, lead, retention-followup, traffic-advanced), each encoding `pageStructure`, `copyFramework`, `skill44Widgets`, `books`/persona, `whenToUse`, and `doNotUseWhen`.
+   - Run the matcher: `python3 06-ghl-install-pages/tools/funnel_matcher_cli.py --match "<offer summary + ICP + price point>" --json` (it reads the committed `tools/catalog-index.json`). Or read a template JSON directly at `06-ghl-install-pages/funnel-templates/<group>/<id>.json`.
+   - **Honor the flexibility contract** (the matcher enforces it; you must too): a template is a GUIDE and a RESOURCE, never a rule. If the owner/offer named an explicit funnel, build THAT (the template is an optional reference). If unsure, take the suggested template. If a strong `doNotUseWhen` signal fires, respect it. Only when nothing fits do you design net-new (CREATE_NEW).
+   - When a template is matched, **derive step-3 page blueprint and step-4 offer map FROM the matched template's `pageStructure` + `skill44Widgets`** rather than hand-building — adapt to the offer, do not reinvent the proven structure.
+   - Read the **recommended linked follow-up automations** for the matched funnel from `44-convert-and-flow-operator/automation-templates/_links/funnel-to-automation.json` (the canonical link map) so they ride downstream to P5. Recommended, never mandatory.
+   - Record the matched `funnel_template_id` and `linked_automations` in funnel-spec.json (schema below) so P2 copy, P4 page build, and P5 automation all key off the same proven template.
+
 2. **Select the funnel type.** Based on the offer's price point, complexity, and ICP, select EXACTLY ONE of the following funnel types (use the exact vocabulary — these are the terms the Conversion Copywriter expects, per conversion-copywriter.md lines 22 and 188):
    - `short-form squeeze` — low-barrier lead magnet; single page; minimal copy; fast opt-in.
    - `long-form sales` — high-ticket offer; detailed copy; social proof heavy; single scrolling page.
@@ -263,6 +272,8 @@ This role contributes to the company revenue cascade by: **optimizing the conver
    {
      "slug": "<funnel slug>",
      "funnel_type": "<exact type string from step 2>",
+     "funnel_template_id": "<matched template id from step 1.5, e.g. squeeze-page, webinar-funnel — or null + 'create_new' reason if nothing fit>",
+     "linked_automations": "<the recommended automations from _links/funnel-to-automation.json for this funnel_template_id; [] if none / overridden by owner>",
      "offer_ref": "working/funnels/<slug>/offer-spec.json",
      "persona_grounding": {
        "selected_persona": "<slug returned by the persona selector in step 5 — e.g. hormozi-100m-offers, russell-brunson-the-funnel-hackers-cookbook, or allan-dib-the-1-page-marketing-plan>",

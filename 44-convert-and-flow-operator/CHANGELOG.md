@@ -1,5 +1,30 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.3.0] - 2026-06-27 — fix: soap-opera id-collision (correctness) + portable index + FAB-QC overlay + automation library wired into roles/SOPs
+
+### Fixed (correctness — proven bug)
+- `Catalog.by_id` was keyed by BARE id, so `soap-opera-sequence` (present in BOTH
+  `welcome-indoctrination/` and `sales-close-sequences/`) collapsed 28 templates to 27 and the
+  welcome variant shadowed the sales-close one — expanding `follow-up-funnel` built the WRONG
+  workflow_plan. Catalog now keys a qualified `by_key` (`group/id`) + `get(tid, group=…)` that
+  refuses to guess an ambiguous bare id; `match_automation` and `expand_funnel_to_automations`
+  resolve by the qualified `category/automation_id` the link map already supplies. Regression-locked
+  by `tests/test_automation_matcher.py` (per-variant + all-38-funnels assertions).
+
+### Added
+- `automation-templates/_matcher/catalog-index.json` rebuilt PORTABLE — relative `root`/`sourcePath`,
+  re-absolutised on load; the leaked operator-local scratchpad path is GONE.
+- `automation_matcher.step0_match` emits `matched_template_key` + a `routing/match-decision.json`
+  receipt for the QC gate.
+- FAB-QC overlay in `qc-built-workflow.sh --fab` (shared scorer `shared-utils/fab_qc.py`, rubric
+  `universal-sops/funnel-automation-build-quality-rubric.md`); "done" now requires WF-1..21 PASS AND
+  FAB-QC ≥ 8.5 (INSTRUCTIONS Step 9.3c / 9.4).
+- `tools/engine/wire-ghl-env.sh` exports the six matcher env vars so STEP 0 / Step 0.4 activate on a box.
+- `automation-templates/README.md` (library orientation); SKILL.md read-order entry for the library.
+- Deprecated v1 link map (`funnel-to-automation-link-map.json`) marked `deprecated` + parity-tested.
+- Tests: `tests/test_automation_matcher.py` (flex, decisions, collision-safe variant, expansion,
+  portable index, v1/v2 parity, step0 receipt).
+
 ## [1.2.0] - 2026-06-27 — feat: flex.py shared core + standardised decisions + Step 0.4 + link map v2 + Skill-6 matcher retrofit
 
 ### Added

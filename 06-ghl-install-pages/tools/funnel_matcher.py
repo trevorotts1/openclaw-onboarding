@@ -380,6 +380,31 @@ def normalise_template(doc: dict, *, group: str, path: str) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# Index path portability (keep committed indexes free of operator-local paths)
+# --------------------------------------------------------------------------- #
+def _relativise_index(idx: dict, base_dir: str) -> None:
+    """Rewrite absolute paths in an index dict to be RELATIVE to ``base_dir`` so the
+    committed file has no machine-specific path. Inverse: ``_absolutise_index``."""
+    if idx.get("root") and os.path.isabs(idx["root"]):
+        idx["root"] = os.path.relpath(idx["root"], base_dir)
+    for t in idx.get("templates", []):
+        sp = t.get("sourcePath")
+        if sp and os.path.isabs(sp):
+            t["sourcePath"] = os.path.relpath(sp, base_dir)
+
+
+def _absolutise_index(idx: dict, base_dir: str) -> None:
+    """Re-resolve relative paths in a loaded index against ``base_dir`` so sourcePath/root
+    point at the real files on whatever box loads the index. Inverse of relativise."""
+    if idx.get("root") and not os.path.isabs(idx["root"]):
+        idx["root"] = os.path.normpath(os.path.join(base_dir, idx["root"]))
+    for t in idx.get("templates", []):
+        sp = t.get("sourcePath")
+        if sp and not os.path.isabs(sp):
+            t["sourcePath"] = os.path.normpath(os.path.join(base_dir, sp))
+
+
+# --------------------------------------------------------------------------- #
 # Catalog index
 # --------------------------------------------------------------------------- #
 class Catalog:
@@ -389,7 +414,32 @@ class Catalog:
         self.root = root
         self.templates = templates
         self.personas = personas          # persona-id -> persona record (cross-group)
+        # The 38 funnel ids are currently UNIQUE, but key a collision-safe 'group/id'
+        # index too (mirrors the Skill-44 fix) so a future duplicate bare id can never
+        # silently cross-wire the wrong template.
         self.by_id = {t["id"]: t for t in templates}
+        self.by_key = {self._qkey(t["group"], t["id"]): t for t in templates}
+        self.ambiguous_ids = sorted({
+            t["id"] for t in templates
+            if sum(1 for x in templates if x["id"] == t["id"]) > 1
+        })
+
+    @staticmethod
+    def _qkey(group: str, tid: str) -> str:
+        return f"{group}/{tid}"
+
+    def get(self, tid: str | None, *, group: str | None = None) -> dict | None:
+        """Resolve a template collision-safely (qualified 'group/id' first, bare id only
+        when unambiguous). Never returns the wrong variant."""
+        if not tid:
+            return None
+        if group:
+            t = self.by_key.get(self._qkey(group, tid))
+            if t:
+                return t
+        if tid in self.ambiguous_ids:
+            return None
+        return self.by_id.get(tid)
 
     # ---- construction -----------------------------------------------------
     @classmethod
@@ -439,12 +489,18 @@ class Catalog:
 
     def save_index(self, out_path: str) -> str:
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
-        json.dump(self.to_index(), open(out_path, "w", encoding="utf-8"), indent=2)
+        idx = self.to_index()
+        # PORTABILITY: store root + every sourcePath RELATIVE to the index file's dir so
+        # the committed index carries NO machine-specific absolute path. Re-absolutised
+        # on load by from_index().
+        _relativise_index(idx, os.path.dirname(os.path.abspath(out_path)))
+        json.dump(idx, open(out_path, "w", encoding="utf-8"), indent=2)
         return out_path
 
     @classmethod
     def from_index(cls, index_path: str) -> "Catalog":
         idx = json.load(open(index_path, encoding="utf-8"))
+        _absolutise_index(idx, os.path.dirname(os.path.abspath(index_path)))
         return cls(idx.get("root", ""), idx["templates"], idx.get("personas", {}))
 
     def resolve_persona(self, persona: dict) -> dict:
@@ -711,10 +767,11 @@ def match_funnel(request: dict | str, catalog: Catalog, *,
     flex = flex_decide(mode, has_confident_match=has_confident, has_any_match=has_any)
     decision = flex["decision"]
 
+    matched_group = best["group"] if (best and matched_id == best["id"]) else None
     persona = None
     pages = None
-    if matched_id and matched_id in catalog.by_id:
-        tmpl = catalog.by_id[matched_id]
+    tmpl = catalog.get(matched_id, group=matched_group)
+    if tmpl:
         persona = catalog.resolve_persona(tmpl["persona"])
         if flex["build_from_template"] or mode == MODE_EXPLICIT:
             pages = instantiate_pages(tmpl)
@@ -733,7 +790,9 @@ def match_funnel(request: dict | str, catalog: Catalog, *,
         "flex_note": flex["note"],
         "flex_principle": flex_principle(),
         "matched_template": matched_id,
-        "matched_name": catalog.by_id[matched_id]["name"] if matched_id else None,
+        "matched_template_key": (catalog._qkey(matched_group, matched_id)
+                                 if (tmpl and matched_group) else None),
+        "matched_name": tmpl["name"] if tmpl else None,
         "confidence": (1.0 if mode == MODE_EXPLICIT and explicit_id else
                        (best["confidence"] if best else 0.0)),
         "threshold": threshold,
@@ -1005,11 +1064,39 @@ def step0_match(task: dict, evidence_root: str, *,
         # complete-funnel handoff: attach the linked follow-up automations for Skill 44
         funnel_id = task.get("funnel_template_id") or (
             decision["matched_template"] if d in (DEC_USE, DEC_SUGGEST, DEC_HONOR_USER) else None)
+        if funnel_id:
+            # Stamp the funnel identity onto the task so it SURVIVES the P4->P5
+            # department handoff (SKILL.md "Full-Funnel Pipeline Integration").
+            task["funnel_template_id"] = funnel_id
+            decision["funnel_template_id"] = funnel_id
         lm = link_map_path or os.environ.get("GHL_FUNNEL_AUTOMATION_LINKS")
         if funnel_id and lm and os.path.isfile(lm):
             la = linked_automations(funnel_id, lm, overrides=task.get("automation_overrides"))
             decision["linked_automations"] = la
             task["linked_automations"] = la       # consumed by Skill 44 step 0
+        # Compact, normalised match-decision receipt for the QC gate (FAB-QC reads this).
+        try:
+            routing_dir = os.path.join(evidence_root, "routing")
+            os.makedirs(routing_dir, exist_ok=True)
+            _mkey = decision.get("matched_template_key") or ""
+            _mgroup = _mkey.split("/", 1)[0] if "/" in _mkey else None
+            _mt = catalog.get(decision.get("matched_template"), group=_mgroup)
+            receipt = {
+                "skill": "06-ghl-install-pages",
+                "matched_template_id": decision.get("matched_template"),
+                "matched_template_key": decision.get("matched_template_key"),
+                "template_path": (_mt.get("sourcePath") if _mt else None),
+                "intent_mode": decision.get("intent_mode"),
+                "flex_decision": decision.get("decision"),
+                "confident_match": bool(decision.get("confidence", 0) >= threshold),
+                "funnel_template_id": funnel_id,
+                "linked_automations": task.get("linked_automations"),
+                "ts": _ts(),
+            }
+            json.dump(receipt, open(os.path.join(routing_dir, "match-decision.json"),
+                                    "w", encoding="utf-8"), indent=2)
+        except Exception:  # noqa: BLE001 — receipt is advisory, never blocks
+            pass
         return decision
     except Exception as exc:  # noqa: BLE001 — matching must never block a build
         return {"decision": "SKIPPED", "reason": f"matcher error: {type(exc).__name__}: {exc}"}

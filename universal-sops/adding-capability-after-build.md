@@ -310,6 +310,55 @@ grep -l '<new-tag>' $OC_ROOT/workspace/agents/main/departments/*/governing-perso
 
 ---
 
+## Event 7 — New / Updated Template Library (funnel or automation)
+
+**Trigger:** The Skill-6 funnel template library (`06-ghl-install-pages/funnel-templates/`) or the
+Skill-44 automation template library (`44-convert-and-flow-operator/automation-templates/`) gains,
+removes, or edits a template — e.g. a Sunday-cron skill update refreshes the 38/28 templates or the
+funnel→automation link map. These libraries are LOAD-BEARING (the matchers reference them by
+path/id; the link map pairs them), so a refresh requires a box-side re-index + env check that the
+other six events do not cover.
+
+### Steps
+
+1. **Rebuild + commit the catalog indexes** (lexical — NO embeddings needed):
+   ```bash
+   python3 $OC_ROOT/skills/06-ghl-install-pages/tools/funnel_matcher_cli.py --build-index
+   python3 $OC_ROOT/skills/44-convert-and-flow-operator/automation-templates/_matcher/cli.py --build-index
+   ```
+   (The indexes are written PORTABLY — relative paths, no operator-local path. The operator commits
+   them; boxes pull the committed index.)
+2. **Verify the matcher env vars are wired** onto the persistent dept agent (so STEP 0 / Step 0.4
+   actually activate — they are env-gated and DARK by default):
+   ```bash
+   bash $OC_ROOT/skills/44-convert-and-flow-operator/tools/engine/wire-ghl-env.sh
+   # wires GHL_FUNNEL_CATALOG / GHL_FUNNEL_INDEX / GHL_FUNNEL_AUTOMATION_LINKS and
+   #       CAF_AUTOMATION_CATALOG / CAF_AUTOMATION_INDEX / CAF_FUNNEL_AUTOMATION_LINKS
+   ```
+3. **(Optional) ingest the templates into the Command Center** for lexical SOP/keyword search:
+   ```bash
+   python3 $OC_ROOT/skills/32-command-center-setup/scripts/ingest-template-libraries.py
+   ```
+   Lexical only — do NOT re-embed the persona corpus (shared-corpus re-embedding bloat lesson).
+4. **Sample-match to prove it took:**
+   ```bash
+   python3 $OC_ROOT/skills/06-ghl-install-pages/tools/funnel_matcher_cli.py --match "grow my email list"
+   python3 $OC_ROOT/skills/44-convert-and-flow-operator/automation-templates/_matcher/cli.py --match "new subscriber welcome" 
+   ```
+
+### Verification Gate
+
+```bash
+# Indexes in sync with disk + link map (0 drift, 0 broken refs, portable):
+python3 $OC_ROOT/skills/scripts/check-funnel-automation-library-drift.py
+
+# The matcher env vars are present on the gateway-inherited env:
+openclaw config get env.vars.GHL_FUNNEL_INDEX
+openclaw config get env.vars.CAF_AUTOMATION_INDEX
+```
+
+---
+
 ## Failure Modes
 
 | Failure | Recovery |

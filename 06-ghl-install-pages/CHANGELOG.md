@@ -4,6 +4,35 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.8.0] - 2026-06-27 — feat(skill6): funnel library wired into roles/SOPs + FAB-QC ≥ 8.5 build gate + portable committed index
+
+### Fixed
+- `funnel_matcher.Catalog` keys a collision-safe `by_key` (`group/id`) + `get(tid, group=…)`
+  that refuses to guess an ambiguous bare id (mirrors the Skill-44 soap-opera fix defensively).
+- `match_funnel` resolves the matched template by `group`-qualified key; emits `matched_template_key`.
+
+### Added
+- `tools/catalog-index.json` — the previously-MISSING funnel catalog index, now COMMITTED and
+  PORTABLE (relative `root`/`sourcePath`, re-absolutised on load; zero operator-local paths).
+- `funnel_matcher.step0_match` stamps `task['funnel_template_id']` (survives the P4→P5 handoff) and
+  writes a `routing/match-decision.json` receipt for the QC gate.
+- `v2_dispatcher._resolve_step0` defaults `GHL_FUNNEL_INDEX` to the committed index and resolves the
+  funnel→automation link map so the complete-funnel handoff is ON whenever the catalog is configured;
+  on a verified build it persists `routing/skill44-handoff.json`.
+- `qc-built-funnel.sh` — per-build FAB-QC ≥ 8.5 gate (shared scorer `shared-utils/fab_qc.py`,
+  rubric `universal-sops/funnel-automation-build-quality-rubric.md`). Wired binding into
+  `v2_dispatcher` (refuses `verified` below 8.5 when FAB evidence exists; no-op otherwise) and
+  documented at `v2-autonomous-build-sop.md §9` BUILD-QC GATE + P0.5/STEP 0.
+- SKILL.md "Funnel Template Library (STEP 0)" section; `tools/catalog-index.json` portability.
+- Tests: `tests/test_funnel_matcher.py` (decisions, collision-safe get, portable index, step0 stamp);
+  `tests/test_v2_dispatcher.py` step0-injection + linked-automations handoff + FAB-gate cases.
+
+### Changed
+- `v2-autonomous-build-sop.md` P1 de-hardcodes the persona default (top-ranked selector, not always
+  hormozi) and verifies `funnel_template_id`.
+
+---
+
 ## [v14.7.1] - 2026-06-27 — fix(skill6): funnel_matcher_cli selftest accepts SUGGEST_TEMPLATE + HONOR_USER
 
 Patch bump for the selftest fix shipped in global v14.7.0. The `positive_decision` check in

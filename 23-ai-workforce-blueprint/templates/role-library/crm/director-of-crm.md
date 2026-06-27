@@ -161,6 +161,7 @@ This role contributes to the company revenue cascade by: **owning retention-attr
 
 | Tool | Purpose | Access via | Specifics |
 |------|---------|------------|-----------|
+| **Automation library (governance: REUSE-FIRST)** | Automation/workflow work reuses the 28-template library first via `automation_matcher` (Skill-44 STEP 0.4); net-new only when nothing fits, then save_new_template | `44-convert-and-flow-operator/automation-templates/` + `_matcher/` + `_links/funnel-to-automation.json` | Guide-not-rule (honor explicit spec; never block); WF-1..21 PASS + FAB-QC ≥ 8.5 |
 | {{CRM_PLATFORM_NAME}} | Core CRM platform: contact management, pipeline tracking, automation engine, segmentation, campaign execution, reporting | API key in TOOLS.md / admin web login | Master system of record for all customer data. You hold full admin access. Never share admin credentials. Always test configuration changes in sandbox before production. |
 | Google Postmaster Tools | Monitor domain/IP sending reputation specifically for Gmail recipients (~40%+ of all email inboxes) | Web login via Google Workspace admin | Check weekly. Verify {{SENDING_DOMAIN}} is registered and authenticated. Monitor: domain reputation, spam rate, authentication status, delivery errors. |
 | Microsoft SNDS | Monitor sending reputation for Outlook/Hotmail recipients (~15% of consumer inboxes) | Web login (requires Microsoft account registration) | Check weekly. Monitor complaint rates and trap hits. |

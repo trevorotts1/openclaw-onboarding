@@ -52,4 +52,28 @@ Skills are shared. Your setup is yours. Keeping them apart means you can update 
 
 ---
 
+## Funnel + Automation Template Libraries (Skill 06 / Skill 44) — template-first / reuse-before-reinvent
+
+- **Funnel template library (38 templates)** — `06-ghl-install-pages/funnel-templates/` by category
+  (buyer, event, lead, retention-followup, traffic-advanced). Each carries `pageStructure`,
+  `copyFramework`, `skill44Widgets`, persona/`books`, `whenToUse`/`doNotUseWhen`. Match with
+  `python3 06-ghl-install-pages/tools/funnel_matcher_cli.py --match "<offer summary>" --json`
+  (reads the committed `tools/catalog-index.json`; rebuild via `--build-index`). Runs as STEP 0 in
+  `tools/v2_dispatcher.py` (env-gated on `GHL_FUNNEL_CATALOG`/`GHL_FUNNEL_INDEX`, never blocks).
+- **Automation template library (28 templates)** — `44-convert-and-flow-operator/automation-templates/`
+  (welcome-indoctrination, sales-close-sequences, engagement-broadcast, funnel-specific-followups,
+  multichannel-automation). Match with
+  `python3 44-convert-and-flow-operator/automation-templates/_matcher/cli.py --match "<outcome>" --json`
+  (Skill-44 INSTRUCTIONS Step 0.4). Shared matcher core: `_matcher/flex.py`.
+- **Funnel→automation link map** — `44-.../automation-templates/_links/funnel-to-automation.json`
+  (canonical v2; `…-link-map.json` is the DEPRECATED v1). Maps each funnel to its recommended
+  follow-up automations; keyed by `funnel_template_id`.
+- **Flexibility = guide-not-rule:** every template is a GUIDE/RESOURCE, never a rule. Honor an
+  explicit user choice; CREATE_NEW + `save_new_template` only when nothing fits; never block a build.
+- **Build-quality gate (FAB-QC ≥ 8.5):** `shared-utils/fab_qc.py` + rubric
+  `universal-sops/funnel-automation-build-quality-rubric.md`. Run per build via
+  `06-ghl-install-pages/qc-built-funnel.sh <slug>` or `44-.../qc-built-workflow.sh <wf-id> --fab`.
+
+---
+
 Add whatever helps you do your job. This is your cheat sheet.

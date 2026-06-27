@@ -186,3 +186,16 @@ document:
 *This guide is generated for {{COMPANY_NAME}} by the AI Workforce Blueprint
 (Skill 23). It is regenerated whenever the department's roster changes so it
 always matches the specialists you actually have.*
+
+---
+
+## Reusable libraries (template-first / reuse-before-reinvent)
+
+This department does NOT design funnels or follow-up sequences from scratch every time. It REUSES proven catalogs first, then adapts:
+
+- Funnel template library - 38 proven funnel templates by category (buyer, event, lead, retention-followup, traffic-advanced) at `06-ghl-install-pages/funnel-templates/`, selected via `tools/funnel_matcher_cli.py --match` (runs as STEP 0 in the autonomous build).
+- Automation template library - 28 proven email / SMS / multichannel sequences at `44-convert-and-flow-operator/automation-templates/`, selected via `_matcher/cli.py --match` (Soap Opera, Seinfeld, indoctrination, and funnel-specific follow-up skeletons).
+- Funnel-to-automation link map - `44-convert-and-flow-operator/automation-templates/_links/funnel-to-automation.json` pairs each funnel with its recommended follow-up automations (keyed by funnel_template_id).
+- Personas - `22-book-to-persona-coaching-leadership-system/` grounds the copy voice; each template persona resolves to a real persona via the shared persona crosswalk.
+
+Flexibility = guide-not-rule: every template is a GUIDE and a RESOURCE, never a rule. Honor an explicit owner choice above any template; build net-new only when nothing fits (then save it back to grow the library); never block a build. Every built funnel / automation must clear the FAB-QC >= 8.5 build-quality gate before it counts as done.
