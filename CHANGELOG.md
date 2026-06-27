@@ -1,3 +1,7 @@
+## [v14.4.0]  -  2026-06-26  -  feat(skill6): funnel-template library + template-first matcher STEP 0
+
+Adds 38 structured Brunson funnel templates (5 groups: buyer/event/lead/retention-followup/traffic-advanced) to `06-ghl-install-pages/funnel-templates/` and a deterministic template-first matcher (`tools/funnel_matcher.py`) that makes dispatch_one() select a proven template before building any net-new funnel. Templates are fully structured with whenToUse/pageStructure/copyFramework (not stubs); book personas (The Funnel Architect, The Expert Guide, The Traffic Strategist, The Story Brander, The Copy Closer) referenced per template. Adds `tools/funnel_matcher_cli.py` with --build-index / --match / --selftest CLI. 13/13 selftest cases pass.
+
 ## [v14.5.0]  -  2026-06-26  -  feat(personas): ship PLAYBOOK-APPENDIX companions + pipeline Phase 3b upgrade for all 10 book personas (Skill 22 v6.9.0)
 
 Ships the PLAYBOOK-APPENDIX.md companion file for all 10 QC-approved book personas and upgrades the Book Intelligence Pipeline with the mandatory Phase 3b appendix generation step (Skill 22 v6.9.0).
