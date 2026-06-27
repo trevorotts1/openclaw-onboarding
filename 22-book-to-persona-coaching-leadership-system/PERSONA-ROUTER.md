@@ -29,6 +29,7 @@
 - **Funnel marketing, offer narrative, direct response** → `brunson-marketing-secrets-blackbook` (Russell Brunson) → `marketing-dept/`
 - **Network marketing, MLM funnels, duplication** → `brunson-network-marketing-secrets` (Russell Brunson) → `marketing-dept/`
 - **Lead funnels, opt-in sequences, list building** → `russell-brunson-lead-funnels` (Russell Brunson) → `marketing-dept/`
+- **Funnel-type selection, page sequencing, funnel recipes (22 types), order-bump/OTO/thank-you builds, funnel stacking** → `russell-brunson-the-funnel-hackers-cookbook` (Russell Brunson) → `web-development-dept/`
 - **Direct-response copy, headlines, sales letters** → `edwards-copywriting-secrets` (Jim Edwards) → `marketing-dept/`
 - **Brand messaging, clarity, storytelling** → `miller-building-storybrand` (Donald Miller) → `marketing-dept/`
 - **Permission marketing, being seen** → `godin-this-is-marketing` (Seth Godin) → `marketing-dept/`
