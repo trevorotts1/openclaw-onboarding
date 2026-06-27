@@ -1,0 +1,220 @@
+{
+  "id": "cart-open-cart-close-launch-sequence",
+  "name": "Cart-Open / Cart-Close Launch Sequence",
+  "aliases": [
+    "launch sequence",
+    "cart launch",
+    "promotional window",
+    "product launch emails",
+    "open cart close cart",
+    "limited-window campaign",
+    "Jeff Walker launch email sequence",
+    "sideways perfect webinar emails"
+  ],
+  "category": "sales-close-sequences",
+  "source_books": [
+    "Expert Secrets (Russell Brunson) — Product Launch Funnel (Sideways Perfect Webinar), The Stack, The One Thing",
+    "DotCom Secrets (Russell Brunson) — Follow-Up Funnels, The 3 Closes",
+    "Marketing Secrets Blackbook (Russell Brunson) — Secret 51: Urgency & Scarcity (limited time/price/quantity); The Sequence Sells",
+    "The Funnel Hacker's Cookbook (Russell Brunson) — Product Launch Funnel: 3 pre-launch content videos + cart-open order page + countdown timer",
+    "Copywriting Secrets (Jim Edwards) — the 13-part offer block, guarantee, FOMO future-pacing, single CTA"
+  ],
+  "framework": "The cart-open/cart-close sequence runs the full promotional arc of a time-limited offer window. It has three phases: (1) PRE-CART anticipation (build desire before the cart opens), (2) CART-OPEN announcement and during-cart benefit reinforcement, and (3) CART-CLOSING urgency cadence. Brunson calls the product launch version the 'Sideways Perfect Webinar' because the content (3 pre-launch videos) plays the same role as the 3 secrets in the Perfect Webinar — breaking false beliefs and building desire — before the cart-open acts as the close. The Fear phase (T-48h through T-1h) is driven by Marketing Secrets Blackbook Secret 51: all three scarcity levers (limited time / limited pricing / limited quantity) stacked together produce the strongest urgency.",
+  "flexibility_principle": "This template is a GUIDE and a RESOURCE, never a rule. Three modes: (1) USER HAS EXPLICIT DESIRE — use only as a reference; build exactly what the user specifies. (2) USER IS UNSURE — present this sequence as a proven default and explain why each phase works, then let them decide. (3) USER WANTS IT HANDLED ('just do it') — execute the full template as specified, adapting copy to the user's offer. Always overridable, skippable, and customizable at any level.",
+  "trigger": {
+    "type": "campaign-window / tag",
+    "events": [
+      "Campaign launch date reached (calendar-based)",
+      "Webinar/event concludes and cart opens immediately after",
+      "Product launch video 3 published and cart opens",
+      "Manual 'open-cart' tag added by operator"
+    ],
+    "entry_conditions": "Contact is on the warm list (has gone through Soap Opera Sequence or other indoctrination); not already tagged as buyer of this offer. The offer/product is finalized and the cart-close datetime is locked before the sequence begins.",
+    "exit_conditions": "Purchase (tag buyer-[offer]) → buyer onboarding + value ladder ascension, STOP all launch emails. Cart-close datetime passes for non-buyers → drop to Seinfeld Daily Sequence or downsell."
+  },
+  "channels": [
+    "Email (primary — all phases)",
+    "SMS (cart-open announcement + cart-close urgency beats T-24h, T-1h)",
+    "Facebook/Instagram Message (mirror the cart-open and cart-close beats)",
+    "Desktop push notification (cart-open + T-24h)",
+    "Retargeting ads (sync warm audience during cart window)",
+    "Replay/sales page with live countdown timer (synchronized to cart-close datetime)"
+  ],
+  "cadence": "Flexible window — typically 4–7 days cart-open. PRE-CART 3–7 days before open. DURING-CART every 2–3 days. CART-CLOSE urgency at T-48h, T-24h, T-3h, T-1h. Best practice: shorter windows (5 days or less) produce higher urgency and conversion.",
+  "copy_persona": {
+    "primary": "Russell Brunson — Product Launch / Sideways Perfect Webinar / The Stack / Secret 51 Urgency & Scarcity",
+    "supporting": [
+      "Jim Edwards (Copywriting Secrets) — the 13-part offer block, the guarantee, FOMO future-pacing ('picture yourself 6 months from now if you do nothing'), single CTA, P.S. deadline restatement",
+      "Brunson Stack Don't Switch — all emails reinforce the SAME new opportunity; never introduce a competing offer inside the launch window"
+    ],
+    "scarcity_levers": {
+      "limited_time": "The cart closes at a fixed date/time — genuinely. Events have built-in time limits. Fast-action bonuses that expire when the webinar/launch ends. (Blackbook S51)",
+      "limited_pricing": "Rather than discounting the core offer, LAYER BONUSES that add value — then make THOSE bonuses expire. Price of the base offer rises after the window. (Blackbook S51)",
+      "limited_quantity": "Genuine caps on spots, units, or access. The offer or bonus becomes unavailable when the cap is reached — not just when the timer expires. (Blackbook S51: Inner Circle 100-spot example)"
+    }
+  },
+  "sequence": [
+    {
+      "step": 1,
+      "phase": "PRE-CART",
+      "day": "-5 to -3",
+      "type": "email (1–3 emails)",
+      "beat": "ANTICIPATION build. Tease the upcoming opportunity without opening the cart. Tell subscribers something important is coming and WHY they should care. Use a Seinfeld-style story email that leads to 'watch for my email on [date] — what I'm opening then is unlike anything I've offered before.'",
+      "purpose": "Warm the list, create anticipation, get them looking for your email on cart-open day.",
+      "subject_angle": "'I'm opening something special on [date]…' / 'Something I almost didn't do (coming [day])' / 'You'll want to see this [day]'",
+      "body_framework": "Hook/Story/Offer format (Edwards): brief story that makes the promise feel real → the single sentence that describes what's coming → the date to watch for → P.S. with the date again. NO LINK yet — pure anticipation.",
+      "cta": "None (or 'hit reply and tell me: what's your biggest struggle with [topic]?' to create engagement data)",
+      "persona_formula": "Brunson Attractive Character + Edwards curiosity hook"
+    },
+    {
+      "step": 2,
+      "phase": "PRE-CART",
+      "day": "-1",
+      "type": "email + SMS",
+      "beat": "LAST REMINDER before cart opens. 'Tomorrow the doors open — here is exactly what you're getting access to.' Give them the what/why (Emotion close setup: Epiphany Bridge story summary — why you built this, the transformation it delivers), and an exact time the cart opens.",
+      "purpose": "Pre-frame the offer so the cart-open email lands on prepared soil. Build desire peak.",
+      "subject_angle": "'Tomorrow — [offer name] opens at [time]' / 'It opens in less than 24 hours'",
+      "body_framework": "Transition from anticipation to desire: Epiphany Bridge summary (one paragraph of your story → the problem → the solution you created) → WHAT you built (no full stack yet) → WHO it is for (the one reader who belongs in it) → when the cart opens → why it closes → P.S. with the opening time. SMS: 'Heads up — [offer] opens tomorrow at [time]. Watch for the email.'",
+      "cta": "Soft: 'Tomorrow I'll send you the link and full details. Watch your inbox.'",
+      "persona_formula": "Brunson Epiphany Bridge (shortened) + Edwards Before/After/Bridge future-pace"
+    },
+    {
+      "step": 3,
+      "phase": "CART-OPEN",
+      "day": 0,
+      "type": "email + SMS + FB message + desktop push",
+      "beat": "CART OPENS — the announcement. Multi-channel simultaneous push. The offer, the stack, the price, the deadline — all at once. This is the single highest-leverage email in the entire sequence. Use THE STACK: each element + value, cumulative restate, price reveal (dollars for dimes), guarantee, fast-action bonus (expires when?), CTA.",
+      "purpose": "Drive day-one buyers (fastest buyers buy on open; day-one urgency is real because the fast-action bonus genuinely expires).",
+      "subject_angle": "'Doors are open — [offer name]' / 'It's live. [result promise]. Closes [date].' / '[Offer] is officially open'",
+      "body_framework": "Cart-open announcement sentence → The Stack (every element + value + cumulative restate; end with the price reveal far below total) → guarantee → fast-action bonus (name it + deadline) → scarcity: the three levers briefly stated (closes [date], price rises after, only X spots) → single CTA. P.S.: 'The fast-action bonus disappears at [time].'",
+      "cta": "Primary: 'Yes — I want in, claim my spot here: [link]'. P.S. repeats deadline.",
+      "persona_formula": "Brunson The Stack + Trial Closes + Edwards 13-part block (offer/guarantee/CTA/P.S.) + Blackbook S51 three scarcity levers"
+    },
+    {
+      "step": 4,
+      "phase": "DURING-CART",
+      "day": 2,
+      "type": "email",
+      "beat": "LOGIC close — ROI / proof / testimonial. For the analytical buyer who didn't move on day one. Write the math: what it costs to NOT have this (time, money, opportunity), vs. the investment. Add a strong testimonial (Third-Person format: Before → After → how long). Address the top objection as a re-framed bonus.",
+      "purpose": "Convert the hesitant analytical buyer. Reinforce that saying yes is the smart/rational choice.",
+      "subject_angle": "'The math nobody does' / 'Here's what [customer name] says after 3 weeks' / 'Still thinking about it? Read this first'",
+      "body_framework": "Problem/Agitate/Solve (Edwards, cold version): restate the pain → agitate the cost of the status quo (dollars, time, opportunity) → solve with the offer + the math (cost per day, ROI projection) → testimonial story (Before/After, with time frame) → restate the offer + price anchor → CTA + deadline reminder. P.S.: 'This closes [date].'",
+      "cta": "Buy now, risk-free: [link]. Deadline reminder.",
+      "persona_formula": "Edwards PAS + cost-of-inaction math; Brunson Power of the Bonus (objection-as-bonus); third-person testimonial"
+    },
+    {
+      "step": 5,
+      "phase": "DURING-CART",
+      "day": 4,
+      "type": "email",
+      "beat": "PROOF + GUARANTEE — remove the remaining risk. Compile 3–5 testimonials or a case study. State the guarantee in full (what they get back, how, time frame). Answer the top 3 FAQ objections directly. This email is for the 'paralyzed by doubt' buyer.",
+      "purpose": "Remove risk and remaining objections. The guarantee email often converts the non-buyer who is interested but afraid.",
+      "subject_angle": "'Still on the fence? Let me remove ALL the risk' / 'Questions answered + [guarantee name]'",
+      "body_framework": "Acknowledge the hesitation empathetically → restate the guarantee (put it in a box: 'If you don't [result] in [timeframe], [specific remedy], no questions asked') → 3 FAQ questions answered honestly → 3–5 testimonials or one detailed case study → restate the offer value vs. price → CTA. P.S.: '[X days] left, then [what changes].'",
+      "cta": "Risk-free: [link]. 'If it doesn't work, you pay nothing.'",
+      "persona_formula": "Edwards proof block + guarantee framing; Brunson false-belief / objection handling"
+    },
+    {
+      "step": 6,
+      "phase": "CART-CLOSING (T-48h)",
+      "day": "cart-close minus 48h",
+      "type": "email + SMS",
+      "beat": "FIRST URGENCY PUSH — 48-hour warning. All three scarcity levers named explicitly (Blackbook Secret 51): the date/time it closes (limited time), the price that rises after (limited pricing), the quantity cap if applicable (limited quantity). Restate the full offer value vs. price in 2–3 sentences. Remind them what is in the fast-action bonus and when it expires (if different from cart-close).",
+      "purpose": "Wake up the procrastinators. The biggest conversion spike is the final 24h, but the 48h email is the 'last warning' that moves the serious undecideds.",
+      "subject_angle": "'48 hours left — then [price rises / doors close / bonus disappears]' / '2 days: [offer] closes [date]'",
+      "body_framework": "Straight to the point: 'In 48 hours, [offer] closes.' → restate all three scarcity facts (closes [datetime], price rises from $X to $Y, only [N] spots remain) → two-sentence offer reminder (what they get, at what price) → CTA + countdown to the close. SMS: '48h left — [offer] closes [datetime]: [link]'",
+      "cta": "Claim before [deadline]: [link].",
+      "persona_formula": "Blackbook S51 three-lever urgency; Edwards straightforward FOMO"
+    },
+    {
+      "step": 7,
+      "phase": "CART-CLOSING (T-24h)",
+      "day": "cart-close minus 24h",
+      "type": "email + SMS",
+      "beat": "24-HOUR WARNING — last chance to get the fast-action bonus. Future-pace the cost of inaction (Edwards: picture yourself 6, 12 months from now still stuck in this problem because you did nothing today). Restate one hero benefit in a single visceral sentence. Then the deadline, the CTA, done.",
+      "purpose": "Second urgency push. Fast-action bonus expiry + cost-of-inaction pairing is the most effective 24h email combination.",
+      "subject_angle": "'24 hours — the [fast-action bonus] disappears tonight' / 'Tomorrow this is gone (and so is [result you'll miss])'",
+      "body_framework": "One sentence on the deadline → fast-action bonus reminder + expiry time → future-pace: 'Picture yourself in 6 months still [pain], because today you did nothing — vs. [after-state] because you said yes today.' → one-line offer + price → CTA. P.S.: 'The bonus expires at [time] tonight.' SMS: 'LAST CHANCE — [bonus] expires tonight: [link]'",
+      "cta": "Yes — I'm in before [time]: [link].",
+      "persona_formula": "Edwards FOMO future-pacing ('picture yourself'); Blackbook S51 bonus-expiry urgency"
+    },
+    {
+      "step": 8,
+      "phase": "CART-CLOSING (T-3h)",
+      "day": "cart-close minus 3h",
+      "type": "email (short)",
+      "beat": "SHORT URGENCY EMAIL — almost there. 3 sentences max. Subject does most of the work. 'Three hours from now, [offer] is closed. This is the last email before I shut it down. [link]' No story, no teaching. Pure proximity to loss.",
+      "purpose": "The email that catches anyone who missed earlier messages. Short emails at T-3h outperform long ones because the reader knows what they need to do.",
+      "subject_angle": "'3 hours' / 'Closing tonight — last email'",
+      "body_framework": "Exactly this pattern: One line about the 3-hour window → one line on what they're getting → CTA link → 'That's it. Nothing else to say.' P.S.: '[Time] tonight it's gone.'",
+      "cta": "Final [link].",
+      "persona_formula": "Brunson takeaway close — remove it to make it real; Edwards: one CTA, no fluff"
+    },
+    {
+      "step": 9,
+      "phase": "CART-CLOSING (T-1h)",
+      "day": "cart-close minus 1h",
+      "type": "email + SMS",
+      "beat": "FINAL CALL — one hour left. Two lines. 'Closing in 1 hour. This is the final call for [offer]. [link]' SMS is the priority here — many final-hour buyers are mobile. High SMS open rate at T-1h drives the closing spike.",
+      "purpose": "The largest single conversion spike in most campaigns is the final 60 minutes. The email + SMS combination maximizes reach.",
+      "subject_angle": "'Final call — 60 minutes' / 'Closing now: [offer]'",
+      "body_framework": "One hour countdown → single CTA link → no more words. SMS: 'FINAL CALL — [offer] closes in 60 min. Last chance: [link]'",
+      "cta": "Last link. That is all.",
+      "persona_formula": "Brunson FOMO close (honored — the cart genuinely closes)"
+    },
+    {
+      "step": 10,
+      "phase": "POST-CLOSE",
+      "day": "cart-close +1h",
+      "type": "branch (automation)",
+      "beat": "BRANCH BY OUTCOME. Buyers: confirm cart is closed, send the welcome/onboarding email, tag them as buyers, enroll in next value-ladder offer (Stack Don't Switch). Non-buyers: send a brief 'cart is now closed' acknowledgment (optional — validates that the deadline was real), then enroll in the Seinfeld Daily Sequence. Optional: one immediate downsell offer at a lower price point (if a downsell exists) before the Seinfeld re-enrollment.",
+      "purpose": "Honor the deadline with proof (cart is actually closed). Route buyers to the next step. Keep non-buyers warm in the long-term engagement sequence.",
+      "persona_formula": "Brunson Stack Don't Switch; integrity guardrail — the close was real"
+    }
+  ],
+  "ghl_build": {
+    "workflow_name": "Cart-Open / Cart-Close Launch Sequence — [Offer Name]",
+    "trigger": "Workflow Trigger: 'Contact Tag Added' = 'launch-list-[offer]' (added when contact joins the warm list for this launch). Filter: tag 'buyer-[offer]' must be absent.",
+    "actions": [
+      "PRE-CART: anticipation email(s) at D-5 and D-1 using 'Wait Until' the specific calendar date/time. SMS at D-1 evening.",
+      "CART-OPEN (D0): simultaneous Email + SMS + GHL Facebook/Instagram Message action + desktop push — all triggered at the launch datetime using 'Wait Until'. Add Tag 'saw-cart-open'.",
+      "DURING-CART: Day 2 logic/proof email, Day 4 guarantee/FAQ email — 'Wait Until' calendar dates.",
+      "CART-CLOSE URGENCY: T-48h email + SMS → T-24h email + SMS → T-3h email → T-1h email + SMS, all driven by 'Wait Until' the SAME cart-close datetime custom field (cart-close-datetime). The countdown timer on the sales/checkout page MUST read from the same field.",
+      "POST-CLOSE: 'If/Else' branch on tag 'buyer-[offer]': YES → enroll buyer onboarding workflow; NO → optional downsell, then enroll 'seinfeld-daily-sequence'."
+    ],
+    "wait_steps": [
+      "All PRE-CART and DURING-CART waits use 'Wait Until [specific date/time]' (not relative waits) so they align with the campaign calendar.",
+      "All CART-CLOSE waits calculate backwards from the 'cart-close-datetime' custom field: T-48h, T-24h, T-3h, T-1h. This ensures email + SMS + on-page countdown timer all reference the same moment."
+    ],
+    "if_else": [
+      "PURCHASE GOAL ('buyer-[offer]') at ANY step → immediately exit sequence, add buyer tag, enroll buyer onboarding, STOP all launch emails.",
+      "Branch on Cart-Open engagement: IF opened cart-open email + clicked link but no purchase → tag 'hot-no-buy', escalate SMS priority in the close cadence.",
+      "Branch on checkout started: IF 'checkout-started' tag exists without 'buyer-[offer]' → fire 'abandoned-cart-recovery' workflow immediately, do not wait for the scheduled urgency sequence (or run them in parallel if cart is still open).",
+      "Post-close non-buyer: IF a downsell offer exists → send downsell email once within 2 hours of cart-close; then enroll Seinfeld. If no downsell → enroll Seinfeld directly."
+    ],
+    "tags_custom_fields": [
+      "launch-list-[offer]",
+      "saw-cart-open",
+      "hot-no-buy",
+      "checkout-started",
+      "buyer-[offer]",
+      "cart-close-datetime (custom field — drives all T-minus waits + countdown timer)"
+    ],
+    "notes": "CRITICAL: Lock the cart-close-datetime BEFORE the sequence starts. Every 'Wait Until' step, every SMS, every on-page countdown timer must reference this single field. When it passes, the offer/price genuinely changes. The fast-action bonus (if used) should have its own earlier expiry field that differs from cart-close-datetime. Build the sales page countdown in GHL Funnels using the same cart-close-datetime field. Use GHL's Facebook/Instagram messaging action for the cart-open and T-1h beats only (avoid Messenger fatigue). Sync a retargeting audience in the ad platform to mirror the cart-open period — warm-list members who visited the sales page but did not buy are your highest-value retargeting audience during the window."
+  },
+  "integrity_guardrails": [
+    "The cart-close datetime MUST be real — the offer/price genuinely changes after it. No 'midnight sale extended to noon tomorrow' (Blackbook S51, Edwards Secret #18). One extension maximum, announced in advance, with a genuine new deadline.",
+    "All three scarcity levers must be true as stated: if you say 'only 50 spots,' track and enforce it; if you say 'price rises,' raise it; if you say 'bonus disappears,' remove it.",
+    "The Stack values must be defensible — not fabricated to inflate perceived value (Edwards 'sell dollars for dimes' done honestly).",
+    "During-cart proof/testimonials must be real and representative of typical results."
+  ],
+  "kpis": [
+    "Day-0 cart-open conversion rate (fast-action buyers)",
+    "During-cart conversion rate (logic/proof phase)",
+    "T-48h to T-1h urgency-phase conversion (typically the largest revenue beat)",
+    "Overall window conversion rate",
+    "Revenue per email sent during launch",
+    "Order bump + OTO take rate on the order page",
+    "Abandoned cart recovery rate (sub-sequence)"
+  ]
+}

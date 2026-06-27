@@ -78,7 +78,11 @@ def selftest(threshold: float) -> int:
     print(f"catalog: {len(cat.templates)} templates  threshold={threshold}\n")
     for text, expected in _CASES:
         dec = fm.match_funnel(text, cat, threshold=threshold)
-        got = dec["matched_template"] if dec["decision"] == "USE_TEMPLATE" else None
+        # Accept USE_TEMPLATE and HONORED_EXPLICIT as positive decisions
+        # (HONORED_EXPLICIT fires when the request text unambiguously names a template —
+        #  this is correct behavior from the flexibility retrofit, not a regression)
+        positive_decision = dec["decision"] in ("USE_TEMPLATE", "HONORED_EXPLICIT")
+        got = dec["matched_template"] if positive_decision else None
         if isinstance(expected, set):
             passed = got in expected
         else:

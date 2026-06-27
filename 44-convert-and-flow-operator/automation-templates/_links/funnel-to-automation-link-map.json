@@ -1,0 +1,553 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "description": "Maps every Skill-6 funnel template (38 total) to the Skill-44 automation templates that belong downstream of it. Each mapping is ADVISORY — a GUIDE, not a rule. Honor explicit user choices; never block a build.",
+    "funnel_count": 38,
+    "automation_library": "44-convert-and-flow-operator/automation-templates/",
+    "funnel_catalog": "06-ghl-install-pages/funnel-templates/",
+    "flexibility_note": "All links are recommended defaults. The Skill-44 matcher and the Skill-6 matcher both honor explicit user desire above any suggestion here. If the user says 'I want X', build X — do not substitute or block.",
+    "generated_at": "2026-06-27",
+    "link_count": 38
+  },
+  "lead": {
+    "squeeze-page": {
+      "funnel_id": "squeeze-page",
+      "funnel_group": "lead",
+      "primary_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "welcome-indoctrination/new-subscriber-indoctrination"
+      ],
+      "supporting_automations": [
+        "multichannel-automation/post-optin-multichannel-stack",
+        "engagement-broadcast/daily-seinfeld-sequence"
+      ],
+      "rationale": "Squeeze page opt-in is the canonical SOS trigger event. New subscribers get the 5-email Soap Opera bonding sequence immediately, then graduate to the daily Seinfeld broadcast. Post-opt-in multichannel stack extends reach across channels.",
+      "entry_event": "Form/funnel-step opt-in submit"
+    },
+    "reverse-squeeze-page": {
+      "funnel_id": "reverse-squeeze-page",
+      "funnel_group": "lead",
+      "primary_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "welcome-indoctrination/new-subscriber-indoctrination"
+      ],
+      "supporting_automations": [
+        "multichannel-automation/post-optin-multichannel-stack",
+        "multichannel-automation/indoctrination-multichannel-preframe"
+      ],
+      "rationale": "Reverse squeeze gives value first, then captures the opt-in. Same SOS bonding sequence fires on opt-in. The indoctrination multichannel preframe reinforces the value bridge delivered before the opt-in.",
+      "entry_event": "Form/funnel-step opt-in submit"
+    },
+    "lead-magnet": {
+      "funnel_id": "lead-magnet",
+      "funnel_group": "lead",
+      "primary_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "welcome-indoctrination/new-subscriber-indoctrination"
+      ],
+      "supporting_automations": [
+        "multichannel-automation/behavioral-retargeting-page-visit-fire",
+        "engagement-broadcast/daily-seinfeld-sequence"
+      ],
+      "rationale": "Lead magnet opt-in fires SOS. Behavioral retargeting fires for visitors who saw the magnet page but did not opt in, pulling them back.",
+      "entry_event": "Lead magnet form submit"
+    },
+    "hero": {
+      "funnel_id": "hero",
+      "funnel_group": "lead",
+      "primary_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "multichannel-automation/indoctrination-multichannel-preframe"
+      ],
+      "supporting_automations": [
+        "welcome-indoctrination/new-subscriber-indoctrination",
+        "engagement-broadcast/daily-seinfeld-sequence"
+      ],
+      "rationale": "Hero funnels (homepage-style opt-in pages) need strong AC story indoctrination. Multichannel preframe extends the hero's story across email + Messenger + push.",
+      "entry_event": "Hero opt-in form submit"
+    },
+    "bridge": {
+      "funnel_id": "bridge",
+      "funnel_group": "lead",
+      "primary_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "multichannel-automation/indoctrination-multichannel-preframe"
+      ],
+      "supporting_automations": [
+        "welcome-indoctrination/new-subscriber-indoctrination",
+        "multichannel-automation/post-optin-multichannel-stack"
+      ],
+      "rationale": "Bridge pages pre-frame a third-party offer. Indoctrination preframe reinforces the bridge story before the subscriber hits the offer. SOS bonds the AC to the new lead.",
+      "entry_event": "Bridge opt-in submit"
+    },
+    "application": {
+      "funnel_id": "application",
+      "funnel_group": "lead",
+      "primary_automations": [
+        "funnel-specific-followups/application-homework-booking-nurture"
+      ],
+      "supporting_automations": [
+        "welcome-indoctrination/attractive-character-intro-sequence",
+        "multichannel-automation/indoctrination-multichannel-preframe"
+      ],
+      "rationale": "Application funnels need qualification-aware nurture: homework → bond → booking → show-up. The application-homework-booking-nurture template is the primary driver. Attractive character intro runs in parallel to build trust before the call.",
+      "entry_event": "Application form submitted"
+    },
+    "survey-quiz": {
+      "funnel_id": "survey-quiz",
+      "funnel_group": "lead",
+      "primary_automations": [
+        "welcome-indoctrination/new-subscriber-indoctrination",
+        "multichannel-automation/indoctrination-multichannel-preframe"
+      ],
+      "supporting_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "engagement-broadcast/daily-seinfeld-sequence"
+      ],
+      "rationale": "Survey/quiz completions segment by answer — the indoctrination preframe can branch by segment. SOS and the general indoctrination sequence run for all completers.",
+      "entry_event": "Quiz/survey completion"
+    },
+    "ask-campaign": {
+      "funnel_id": "ask-campaign",
+      "funnel_group": "lead",
+      "primary_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "multichannel-automation/indoctrination-multichannel-preframe"
+      ],
+      "supporting_automations": [
+        "welcome-indoctrination/new-subscriber-indoctrination",
+        "engagement-broadcast/daily-seinfeld-sequence"
+      ],
+      "rationale": "Ask campaigns collect market research before making an offer. SOS bonds the subscriber; indoctrination preframe tells the AC story while research is being analyzed.",
+      "entry_event": "Ask-campaign form submit"
+    },
+    "homepage": {
+      "funnel_id": "homepage",
+      "funnel_group": "lead",
+      "primary_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "welcome-indoctrination/new-subscriber-indoctrination"
+      ],
+      "supporting_automations": [
+        "multichannel-automation/behavioral-retargeting-page-visit-fire",
+        "engagement-broadcast/daily-seinfeld-sequence"
+      ],
+      "rationale": "Homepage funnel is a full website with opt-in capture. Behavioral retargeting fires for visitors who browsed but did not opt in. Opt-in triggers SOS.",
+      "entry_event": "Homepage opt-in form submit or page visit (retargeting)"
+    }
+  },
+  "buyer": {
+    "2-step-tripwire-free-plus-shipping": {
+      "funnel_id": "2-step-tripwire-free-plus-shipping",
+      "funnel_group": "buyer",
+      "primary_automations": [
+        "funnel-specific-followups/free-plus-shipping-book-oto-followup",
+        "multichannel-automation/abandoned-cart-multichannel-recovery"
+      ],
+      "supporting_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "engagement-broadcast/daily-seinfeld-sequence"
+      ],
+      "rationale": "2-step / free-plus-shipping funnels have a step-1-not-step-2 abandon problem. The free-plus-shipping-book-oto-followup handles post-purchase OTO follow-up. Abandoned cart multichannel recovery pulls back step-1 abandons. SOS bonds new buyers.",
+      "entry_event": "Step-1 submit (abandon) / step-2 purchase"
+    },
+    "book-funnel": {
+      "funnel_id": "book-funnel",
+      "funnel_group": "buyer",
+      "primary_automations": [
+        "funnel-specific-followups/free-plus-shipping-book-oto-followup",
+        "welcome-indoctrination/soap-opera-sequence"
+      ],
+      "supporting_automations": [
+        "engagement-broadcast/daily-seinfeld-sequence",
+        "multichannel-automation/abandoned-cart-multichannel-recovery"
+      ],
+      "rationale": "Book funnels are free-plus-shipping variants. The OTO followup sequence nurtures buyers toward the upsell. SOS runs for new subscribers from the book offer. Seinfeld daily broadcast is the ongoing relationship engine.",
+      "entry_event": "Book order step-1 submit / purchase"
+    },
+    "sales-letter": {
+      "funnel_id": "sales-letter",
+      "funnel_group": "buyer",
+      "primary_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "sales-close-sequences/three-closes-master-followup"
+      ],
+      "supporting_automations": [
+        "sales-close-sequences/scarcity-deadline-close",
+        "engagement-broadcast/daily-seinfeld-sequence"
+      ],
+      "rationale": "Sales letter funnels pair with a 3 Closes follow-up (Emotion → Logic → Fear). Scarcity deadline close fires near the cart-close event. New leads from the page get SOS.",
+      "entry_event": "Sales page opt-in or cart entry"
+    },
+    "video-sales-letter-vsl": {
+      "funnel_id": "video-sales-letter-vsl",
+      "funnel_group": "buyer",
+      "primary_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "sales-close-sequences/perfect-webinar-stack-close"
+      ],
+      "supporting_automations": [
+        "sales-close-sequences/three-closes-master-followup",
+        "sales-close-sequences/scarcity-deadline-close"
+      ],
+      "rationale": "VSL funnels follow the Perfect Webinar story arc. The Perfect Webinar Stack Close post-video follow-up is the primary closer. SOS bonds new leads. 3 Closes provides the full Emotion/Logic/Fear cadence for non-buyers.",
+      "entry_event": "VSL opt-in or cart entry"
+    },
+    "self-liquidating-offer-slo": {
+      "funnel_id": "self-liquidating-offer-slo",
+      "funnel_group": "buyer",
+      "primary_automations": [
+        "funnel-specific-followups/cart-abandon-recovery",
+        "sales-close-sequences/abandoned-cart-recovery"
+      ],
+      "supporting_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "engagement-broadcast/daily-seinfeld-sequence"
+      ],
+      "rationale": "SLO funnels monetize ad spend at break-even. Cart abandon recovery is critical — both the funnel-specific step-1-not-step-2 recovery and the multichannel abandoned-cart-recovery fire for non-buyers. SOS bonds new leads.",
+      "entry_event": "SLO order step-1 submit (abandon) / purchase"
+    },
+    "membership-continuity": {
+      "funnel_id": "membership-continuity",
+      "funnel_group": "buyer",
+      "primary_automations": [
+        "funnel-specific-followups/membership-stick-retention",
+        "engagement-broadcast/daily-seinfeld-sequence"
+      ],
+      "supporting_automations": [
+        "engagement-broadcast/value-broadcast-3-closes-campaign",
+        "welcome-indoctrination/soap-opera-sequence"
+      ],
+      "rationale": "Membership funnels live and die on stick rate. The membership stick + retention sequence is the primary automation — quick-win delivery in week 1, identity reinforcement, cancel-save checkpoint. Daily Seinfeld keeps members engaged.",
+      "entry_event": "Membership purchase / trial start"
+    },
+    "daily-deal": {
+      "funnel_id": "daily-deal",
+      "funnel_group": "buyer",
+      "primary_automations": [
+        "sales-close-sequences/scarcity-deadline-close",
+        "sales-close-sequences/cart-open-cart-close-launch-sequence"
+      ],
+      "supporting_automations": [
+        "sales-close-sequences/abandoned-cart-recovery",
+        "engagement-broadcast/daily-seinfeld-sequence"
+      ],
+      "rationale": "Daily deal funnels run time-sensitive scarcity. Scarcity deadline close is the primary automation — fires at deal launch and accelerates at countdown. Cart open/close launch sequence governs the full deal window. Abandoned cart recovery captures non-buyers before close.",
+      "entry_event": "Deal page visit / cart entry / deal expiry"
+    },
+    "storefront": {
+      "funnel_id": "storefront",
+      "funnel_group": "buyer",
+      "primary_automations": [
+        "sales-close-sequences/abandoned-cart-recovery",
+        "multichannel-automation/behavioral-retargeting-page-visit-fire"
+      ],
+      "supporting_automations": [
+        "engagement-broadcast/daily-seinfeld-sequence",
+        "welcome-indoctrination/soap-opera-sequence"
+      ],
+      "rationale": "Storefronts have high browse-abandon and cart-abandon rates. Abandoned cart recovery and behavioral retargeting are the primary revenue recovery tools. Seinfeld daily broadcast keeps buyers returning.",
+      "entry_event": "Product page visit / cart add / cart abandon"
+    }
+  },
+  "event": {
+    "webinar-funnel": {
+      "funnel_id": "webinar-funnel",
+      "funnel_group": "event",
+      "primary_automations": [
+        "funnel-specific-followups/webinar-registration-reminder-replay-stack",
+        "sales-close-sequences/perfect-webinar-stack-close"
+      ],
+      "supporting_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "sales-close-sequences/scarcity-deadline-close"
+      ],
+      "rationale": "Live webinar funnels need: registration confirmation, indoctrination, reminders (24h, 1h, 15min), and the post-webinar replay + close sequence. The webinar-registration-reminder-replay-stack covers all pre and post events. Perfect Webinar Stack Close handles the offer window.",
+      "entry_event": "Webinar registration submit"
+    },
+    "autowebinar-funnel": {
+      "funnel_id": "autowebinar-funnel",
+      "funnel_group": "event",
+      "primary_automations": [
+        "funnel-specific-followups/autowebinar-watch-segmented-followup",
+        "multichannel-automation/autowebinar-behavioral-branching"
+      ],
+      "supporting_automations": [
+        "sales-close-sequences/perfect-webinar-stack-close",
+        "sales-close-sequences/scarcity-deadline-close"
+      ],
+      "rationale": "AutoWebinar (evergreen) funnels need watch-duration segmentation — registrants who watched 80%+ get a direct buy nudge; 40-80% get a replay offer; <40% get a re-pitch. The behavioral branching and watch-segmented followup templates handle all four paths.",
+      "entry_event": "AutoWebinar registration / watch % event"
+    },
+    "perfect-webinar-shortcut-funnel": {
+      "funnel_id": "perfect-webinar-shortcut-funnel",
+      "funnel_group": "event",
+      "primary_automations": [
+        "funnel-specific-followups/webinar-registration-reminder-replay-stack",
+        "sales-close-sequences/perfect-webinar-stack-close"
+      ],
+      "supporting_automations": [
+        "sales-close-sequences/scarcity-deadline-close",
+        "welcome-indoctrination/soap-opera-sequence"
+      ],
+      "rationale": "Perfect Webinar Shortcut is the condensed 60-min single-belief presentation. Same reminder + close automation as a full live webinar. Stack close fires immediately post-webinar with a tightened offer window.",
+      "entry_event": "Registration submit"
+    },
+    "five-minute-perfect-webinar-funnel": {
+      "funnel_id": "five-minute-perfect-webinar-funnel",
+      "funnel_group": "event",
+      "primary_automations": [
+        "funnel-specific-followups/webinar-registration-reminder-replay-stack",
+        "sales-close-sequences/perfect-webinar-stack-close"
+      ],
+      "supporting_automations": [
+        "sales-close-sequences/scarcity-deadline-close",
+        "multichannel-automation/post-optin-multichannel-stack"
+      ],
+      "rationale": "5-Minute Perfect Webinar is a short-form VSL/training replay that closes fast. Reminders and the stack-close automation apply. Post-opt-in multichannel stack extends the pre-webinar indoctrination across channels.",
+      "entry_event": "Registration submit"
+    },
+    "product-launch-funnel": {
+      "funnel_id": "product-launch-funnel",
+      "funnel_group": "event",
+      "primary_automations": [
+        "sales-close-sequences/cart-open-cart-close-launch-sequence",
+        "sales-close-sequences/three-closes-master-followup"
+      ],
+      "supporting_automations": [
+        "engagement-broadcast/value-broadcast-3-closes-campaign",
+        "sales-close-sequences/scarcity-deadline-close"
+      ],
+      "rationale": "Product launch funnels (Jeff Walker-style) have a pre-launch content sequence and a cart open → cart close window. Cart open/close launch sequence governs the offer window. 3 Closes master followup fires through the close. Value broadcast campaign drives the pre-launch content.",
+      "entry_event": "PLF opt-in / cart open / cart close"
+    },
+    "invisible-funnel": {
+      "funnel_id": "invisible-funnel",
+      "funnel_group": "event",
+      "primary_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "sales-close-sequences/three-closes-master-followup"
+      ],
+      "supporting_automations": [
+        "multichannel-automation/post-optin-multichannel-stack",
+        "sales-close-sequences/scarcity-deadline-close"
+      ],
+      "rationale": "Invisible funnel charges after the content is delivered — the prospect only pays if they love it. SOS runs during the free content window to bond the subscriber. 3 Closes fires after the content is delivered as the 'now you decide' sequence.",
+      "entry_event": "Invisible funnel opt-in submit"
+    },
+    "summit-funnel": {
+      "funnel_id": "summit-funnel",
+      "funnel_group": "event",
+      "primary_automations": [
+        "funnel-specific-followups/webinar-registration-reminder-replay-stack",
+        "multichannel-automation/indoctrination-multichannel-preframe"
+      ],
+      "supporting_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "engagement-broadcast/daily-seinfeld-sequence"
+      ],
+      "rationale": "Summit funnels register large audiences for multi-speaker events. The webinar reminder stack fires per speaker slot. Indoctrination multichannel preframe builds AC authority before the summit. SOS fires on opt-in for summit newbies.",
+      "entry_event": "Summit registration submit"
+    },
+    "teleseminar-funnel": {
+      "funnel_id": "teleseminar-funnel",
+      "funnel_group": "event",
+      "primary_automations": [
+        "funnel-specific-followups/webinar-registration-reminder-replay-stack",
+        "sales-close-sequences/perfect-webinar-stack-close"
+      ],
+      "supporting_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "sales-close-sequences/scarcity-deadline-close"
+      ],
+      "rationale": "Teleseminar funnels are phone/video call-based trainings with an offer. Same reminder and post-call close automations as a webinar funnel. Stack close fires after the call.",
+      "entry_event": "Teleseminar registration submit"
+    },
+    "telesummit-funnel": {
+      "funnel_id": "telesummit-funnel",
+      "funnel_group": "event",
+      "primary_automations": [
+        "funnel-specific-followups/webinar-registration-reminder-replay-stack",
+        "multichannel-automation/indoctrination-multichannel-preframe"
+      ],
+      "supporting_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "engagement-broadcast/daily-seinfeld-sequence"
+      ],
+      "rationale": "Telesummit is a multi-day, multi-expert phone/virtual event. Same automation pattern as summit funnel — reminder stacks per session, indoctrination preframe, SOS for new subscribers.",
+      "entry_event": "Telesummit registration submit"
+    },
+    "hotel-meeting-funnel": {
+      "funnel_id": "hotel-meeting-funnel",
+      "funnel_group": "event",
+      "primary_automations": [
+        "funnel-specific-followups/application-homework-booking-nurture",
+        "funnel-specific-followups/webinar-registration-reminder-replay-stack"
+      ],
+      "supporting_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "multichannel-automation/indoctrination-multichannel-preframe"
+      ],
+      "rationale": "Hotel meeting / live event funnels need strong show-up automation. Application-homework-booking-nurture handles qualification + show-up sequence. Reminder stack fires for confirmed attendees. SOS bonds new subscribers to the host AC.",
+      "entry_event": "Hotel meeting registration / application submit"
+    },
+    "live-demo-home-party-funnel": {
+      "funnel_id": "live-demo-home-party-funnel",
+      "funnel_group": "event",
+      "primary_automations": [
+        "funnel-specific-followups/webinar-registration-reminder-replay-stack",
+        "welcome-indoctrination/soap-opera-sequence"
+      ],
+      "supporting_automations": [
+        "multichannel-automation/post-optin-multichannel-stack",
+        "sales-close-sequences/scarcity-deadline-close"
+      ],
+      "rationale": "Live demo / home party funnels drive physical or virtual in-home events. Reminder stack ensures show-ups. SOS bonds the new attendee to the AC. Post-opt-in multichannel stack extends the invite across channels.",
+      "entry_event": "Demo/party registration submit"
+    }
+  },
+  "retention-followup": {
+    "follow-up-funnel": {
+      "funnel_id": "follow-up-funnel",
+      "funnel_group": "retention-followup",
+      "primary_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "engagement-broadcast/daily-seinfeld-sequence"
+      ],
+      "supporting_automations": [
+        "engagement-broadcast/re-engagement-winback-broadcast",
+        "sales-close-sequences/three-closes-master-followup"
+      ],
+      "rationale": "The follow-up funnel is the ongoing relationship engine. SOS bonds any new subscriber; the daily Seinfeld broadcast is the permanent ongoing relationship. Re-engagement winback fires for cold/disengaged subscribers. 3 Closes fires when a re-offer is made.",
+      "entry_event": "New subscriber opt-in / existing contact re-entry"
+    },
+    "cancellation-funnel": {
+      "funnel_id": "cancellation-funnel",
+      "funnel_group": "retention-followup",
+      "primary_automations": [
+        "funnel-specific-followups/membership-stick-retention",
+        "engagement-broadcast/re-engagement-winback-broadcast"
+      ],
+      "supporting_automations": [
+        "sales-close-sequences/three-closes-master-followup",
+        "sales-close-sequences/scarcity-deadline-close"
+      ],
+      "rationale": "Cancellation funnel fires when a member attempts to cancel. Membership stick + retention is the primary save sequence. Re-engagement winback runs for members who went cold before cancelling. 3 Closes fires if a re-offer is made to save the cancellation.",
+      "entry_event": "Cancellation request / cancel-intent page visit"
+    }
+  },
+  "traffic-advanced": {
+    "break-even-front-end": {
+      "funnel_id": "break-even-front-end",
+      "funnel_group": "traffic-advanced",
+      "primary_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "sales-close-sequences/abandoned-cart-recovery"
+      ],
+      "supporting_automations": [
+        "multichannel-automation/post-optin-multichannel-stack",
+        "engagement-broadcast/daily-seinfeld-sequence"
+      ],
+      "rationale": "Break-even front-end funnels are designed to cover ad costs at the front door. Every non-buyer needs a rescue — abandoned cart recovery fires immediately. SOS bonds new leads so the back end can profit.",
+      "entry_event": "Front-end opt-in or cart entry"
+    },
+    "client-acquisition": {
+      "funnel_id": "client-acquisition",
+      "funnel_group": "traffic-advanced",
+      "primary_automations": [
+        "funnel-specific-followups/application-homework-booking-nurture",
+        "multichannel-automation/indoctrination-multichannel-preframe"
+      ],
+      "supporting_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "welcome-indoctrination/attractive-character-intro-sequence"
+      ],
+      "rationale": "Client acquisition funnels drive high-ticket sales calls. Application-homework-booking-nurture is the primary automation — qualifies, bonds, books, shows up. Indoctrination multichannel preframe runs pre-call to build authority and reduce no-shows.",
+      "entry_event": "Application or VSL opt-in submit"
+    },
+    "cold-traffic-article-preframe": {
+      "funnel_id": "cold-traffic-article-preframe",
+      "funnel_group": "traffic-advanced",
+      "primary_automations": [
+        "multichannel-automation/indoctrination-multichannel-preframe",
+        "multichannel-automation/behavioral-retargeting-page-visit-fire"
+      ],
+      "supporting_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "engagement-broadcast/daily-seinfeld-sequence"
+      ],
+      "rationale": "Cold traffic article preframes warm cold audiences before the main funnel. Behavioral retargeting fires on article page visits for non-opt-ins. Indoctrination preframe sequence runs post-opt-in. SOS bonds the converted reader.",
+      "entry_event": "Article page visit / opt-in from article CTA"
+    },
+    "funnel-hub": {
+      "funnel_id": "funnel-hub",
+      "funnel_group": "traffic-advanced",
+      "primary_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "multichannel-automation/behavioral-retargeting-page-visit-fire"
+      ],
+      "supporting_automations": [
+        "engagement-broadcast/daily-seinfeld-sequence",
+        "engagement-broadcast/attractive-character-story-rotation"
+      ],
+      "rationale": "Funnel hubs aggregate multiple funnels under one navigation. Behavioral retargeting fires for hub visitors who browse but don't opt in. SOS fires on any opt-in. AC story rotation broadcast keeps the hub audience engaged across all entry points.",
+      "entry_event": "Hub page visit / any hub opt-in"
+    },
+    "pop-up-ad": {
+      "funnel_id": "pop-up-ad",
+      "funnel_group": "traffic-advanced",
+      "primary_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "multichannel-automation/indoctrination-multichannel-preframe"
+      ],
+      "supporting_automations": [
+        "engagement-broadcast/re-engagement-winback-broadcast",
+        "multichannel-automation/behavioral-retargeting-page-visit-fire"
+      ],
+      "rationale": "Pop-up ad funnels capture attention from a brief, interruptive format. SOS bonds the new subscriber fast. Indoctrination preframe fills the gap between the ad hook and the main offer. Retargeting re-fires for visitors who closed the pop-up.",
+      "entry_event": "Pop-up opt-in submit / pop-up close (retargeting)"
+    },
+    "pre-funnel-social-preframe": {
+      "funnel_id": "pre-funnel-social-preframe",
+      "funnel_group": "traffic-advanced",
+      "primary_automations": [
+        "multichannel-automation/indoctrination-multichannel-preframe",
+        "multichannel-automation/behavioral-retargeting-page-visit-fire"
+      ],
+      "supporting_automations": [
+        "multichannel-automation/post-optin-multichannel-stack",
+        "welcome-indoctrination/soap-opera-sequence"
+      ],
+      "rationale": "Social preframe pages warm cold social traffic before entering the main funnel. Behavioral retargeting catches social visitors who bounce. Indoctrination preframe and post-opt-in multichannel stack extend the warm-up across channels.",
+      "entry_event": "Social preframe page visit / opt-in"
+    },
+    "shadow-funnel": {
+      "funnel_id": "shadow-funnel",
+      "funnel_group": "traffic-advanced",
+      "primary_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "multichannel-automation/indoctrination-multichannel-preframe"
+      ],
+      "supporting_automations": [
+        "multichannel-automation/post-optin-multichannel-stack",
+        "engagement-broadcast/daily-seinfeld-sequence"
+      ],
+      "rationale": "Shadow funnels run in parallel to a main offer, capturing leads who didn't buy. SOS runs immediately on shadow-funnel opt-in. Indoctrination preframe and post-opt-in multichannel stack provide the 'soft' warming sequence before a buy is requested again.",
+      "entry_event": "Shadow funnel opt-in (non-buyer re-capture)"
+    },
+    "viral-front-end": {
+      "funnel_id": "viral-front-end",
+      "funnel_group": "traffic-advanced",
+      "primary_automations": [
+        "welcome-indoctrination/soap-opera-sequence",
+        "welcome-indoctrination/new-subscriber-indoctrination"
+      ],
+      "supporting_automations": [
+        "multichannel-automation/post-optin-multichannel-stack",
+        "engagement-broadcast/daily-seinfeld-sequence"
+      ],
+      "rationale": "Viral front-end funnels spread via referral mechanics. Every new subscriber (from any viral branch) fires SOS and the indoctrination sequence immediately. Post-opt-in multichannel stack extends the viral hook across Messenger and push.",
+      "entry_event": "Viral share / referred opt-in submit"
+    }
+  }
+}

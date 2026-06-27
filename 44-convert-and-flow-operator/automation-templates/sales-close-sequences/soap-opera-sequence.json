@@ -1,0 +1,114 @@
+{
+  "id": "soap-opera-sequence",
+  "name": "Soap Opera Sequence (5-Email Bonding / Emotion Close)",
+  "aliases": ["SOS", "5-day welcome sequence", "indoctrination sequence", "Attractive Character bonding sequence", "Emotion close sequence", "new-lead nurture"],
+  "category": "sales-close-sequences",
+  "source_books": ["DotCom Secrets (Russell Brunson)", "Expert Secrets (Epiphany Bridge)", "Network Marketing Secrets (Epiphany Bridge Script)", "Copywriting Secrets (Jim Edwards) — subject lines + hooks"],
+  "role_in_3_closes": "This is the EMOTION close. People buy on emotion and justify with logic (Brunson, NMS Secret #4). The Soap Opera Sequence bonds the new subscriber to the Attractive Character so they are emotionally invested BEFORE any logic or fear close runs.",
+  "trigger": {
+    "type": "opt-in",
+    "events": ["New lead opts in to a lead magnet / squeeze page", "New subscriber added to a list", "First purchase (welcome variant)"],
+    "entry_conditions": "Contact has email; tag 'sos-started' not already present.",
+    "exit_conditions": "Contact purchases the promoted offer (move to buyer sequence) OR completes Email 5 (graduate to Seinfeld Daily Sequence)."
+  },
+  "channels": ["Email (primary)", "SMS (optional Email-2/Email-5 nudge)", "Facebook Messenger (optional mirror — DotCom/Lead Funnels multi-channel)"],
+  "cadence": "One email per day for 5 days (Day 0–4). Open-loop cliffhanger at the end of each email pulls the reader into the next day.",
+  "copy_persona": {
+    "primary": "Russell Brunson — Attractive Character + Epiphany Bridge",
+    "supporting": ["Jim Edwards (Copywriting Secrets) — curiosity subject lines, the 'open loop' hook, Before/After/Bridge"],
+    "scripts": [
+      "Epiphany Bridge Script (NMS Secret #4): Backstory → Desire → External struggle → Internal struggle → Wall → Epiphany → Plan → Conflict → Achievement → Transformation",
+      "Attractive Character elements: Backstory, Parables, Character Flaws, Polarity",
+      "Edwards 3 Sales Formulas — Before/After/Bridge (future pacing) for Email 4; Problem/Agitate/Solve undercurrent in Email 2"
+    ]
+  },
+  "sequence": [
+    {
+      "step": 1,
+      "email": "Email 1 — Set the Stage",
+      "day": 0,
+      "delay_from_prev": "immediate on opt-in",
+      "beat": "Introduce yourself, deliver/confirm the lead magnet, and SET UP the drama that is coming. Tell them WHO you are and that over the next few days you're going to share the story of how everything changed — but don't tell the story yet.",
+      "purpose": "Bond + open the first loop. Pure curiosity, almost zero pitch.",
+      "subject_angle": "Curiosity + a promise of a story: 'The (embarrassing) reason I do this…' / 'I have to tell you something (it starts tomorrow)'",
+      "body_framework": "Warm hello → confirm the freebie/download link → 'Before you dig in, I want to tell you something personal…' → tease the transformation story to come → cliffhanger: 'Tomorrow I'll show you the night it all fell apart.' (open loop)",
+      "cta": "Soft: 'Go grab your [lead magnet] here' + 'watch your inbox tomorrow.'",
+      "persona_formula": "Attractive Character backstory tease; Edwards open-loop hook"
+    },
+    {
+      "step": 2,
+      "email": "Email 2 — High Drama, Backstory & the Wall",
+      "day": 1,
+      "delay_from_prev": "+1 day",
+      "beat": "Open in the MIDDLE of high drama (the worst moment), then rewind to the backstory and the WALL you hit (the problem in your old vehicle). This is the bottom of the Epiphany Bridge.",
+      "purpose": "Emotional investment — the reader sees themselves in your struggle (external + internal struggle, the wall).",
+      "subject_angle": "Drama in media res: 'I was sitting in my car in the parking lot, broke…' / 'The day I almost quit'",
+      "body_framework": "Cold open at peak drama → 'But let me back up…' → Backstory + Desire (what you wanted) → External struggle + Internal struggle → the WALL (the moment the old way clearly failed) → cliffhanger: 'Then something happened that changed everything — I'll tell you tomorrow.'",
+      "cta": "None hard. Pure story. Loop stays open.",
+      "persona_formula": "Epiphany Bridge: Backstory/Desire/External/Internal/Wall; Edwards Problem/Agitate undercurrent ('make it hurt')"
+    },
+    {
+      "step": 3,
+      "email": "Email 3 — The Epiphany",
+      "day": 2,
+      "delay_from_prev": "+1 day",
+      "beat": "The aha moment. The new opportunity you discovered, the plan you built, and the conflict along the way. Frame the discovery as a NEW VEHICLE (new opportunity), not an improvement of the old one.",
+      "purpose": "Give the reader YOUR epiphany so they can have the same one. Bridge from emotion toward the solution (the offer's underlying mechanism).",
+      "subject_angle": "Discovery: 'Then I discovered the one thing that changed it all' / 'The accidental discovery that fixed everything'",
+      "body_framework": "Resolve yesterday's loop → the Epiphany (what you realized) → the Plan you created → the Conflict you fought through → first hint of the Achievement → connect the epiphany to what they're about to be offered (without full pitch). Cliffhanger: 'Tomorrow I'll show you the part nobody expects.'",
+      "cta": "Soft mention of the offer / 'this is what I built because of it' link, no pressure.",
+      "persona_formula": "Epiphany Bridge: Epiphany/Plan/Conflict; Brunson 'new opportunity, stack don't switch'"
+    },
+    {
+      "step": 4,
+      "email": "Email 4 — Hidden Benefits",
+      "day": 3,
+      "delay_from_prev": "+1 day",
+      "beat": "Reveal the benefits they did NOT see coming — the second- and third-order wins. Future-pace the transformation. This is where logic starts to enter under the emotion.",
+      "purpose": "Stack perceived value and future-pace the result, so the upcoming CTA feels obvious.",
+      "subject_angle": "Unexpected upside: 'The benefit nobody talks about…' / 'It wasn't even the main reason it worked'",
+      "body_framework": "Before/After/Bridge (Edwards): paint BEFORE (their current pain) → AFTER (life with the transformation, vividly future-paced) → BRIDGE (the offer is how you cross). List 3–5 hidden benefits with Feature + Benefit + 'which means…' (Edwards Ultimate Bullet Formula). Cliffhanger: 'Tomorrow this goes away — read it the second it lands.'",
+      "cta": "Clear link to the offer with benefit framing.",
+      "persona_formula": "Edwards Before/After/Bridge + 'which means…'; Brunson Hidden Benefits"
+    },
+    {
+      "step": 5,
+      "email": "Email 5 — Urgency & Call to Action",
+      "day": 4,
+      "delay_from_prev": "+1 day",
+      "beat": "The close. Recap the transformation and drive ONE clear action with an honest reason to act NOW (deadline, expiring bonus, closing cart, or limited spots).",
+      "purpose": "Convert the emotional bond into a purchase/booking. First real Fear/urgency touch.",
+      "subject_angle": "Deadline/FOMO: 'This closes tonight' / 'Last chance — [bonus] disappears at midnight'",
+      "body_framework": "One-line recap of the journey → restate the offer simply (what/how/when/how much — Edwards) → the honest urgency (limited time / price / quantity — Blackbook Secret 51) → risk reversal (guarantee) → single CTA repeated → P.S. restating the deadline.",
+      "cta": "ONE button: 'Yes — I want [result], let me in before [deadline].'",
+      "persona_formula": "Edwards 13-part close (offer/guarantee/CTA/P.S.) + Brunson urgency & scarcity (HONORED)"
+    }
+  ],
+  "ghl_build": {
+    "workflow_name": "SOS — Soap Opera Sequence (5-Day Emotion Close)",
+    "trigger": "Workflow Trigger: 'Contact Tag Added' = 'lead-[magnet]' OR 'Form Submitted' = [opt-in form]. Filter: tag 'sos-started' is missing.",
+    "actions": [
+      "Action: Add Tag 'sos-started'",
+      "Email 1 send immediately (Day 0)",
+      "Wait 1 day → Email 2",
+      "Wait 1 day → Email 3",
+      "Wait 1 day → Email 4 (+ optional SMS nudge: 'Check your email — hidden benefits inside')",
+      "Wait 1 day → Email 5 (+ SMS: 'This closes tonight: [link]')",
+      "Add Tag 'sos-complete' → triggers enrollment into Seinfeld Daily Sequence workflow"
+    ],
+    "wait_steps": ["5 × Wait 1 Day steps (use 'Wait until' a send-window time, e.g. 8:00am contact timezone, to keep daily rhythm)"],
+    "if_else": [
+      "Goal/Branch: IF 'Purchase Made' (tag 'buyer-[offer]') at ANY point → remove from SOS, enroll in buyer onboarding, STOP further close emails.",
+      "Branch on Email 1 open: IF not opened after 24h → resend Email 1 with new subject line before continuing.",
+      "Branch on Email 5 click + no purchase → enroll in 'scarcity-deadline-close' workflow for a final 24h push."
+    ],
+    "tags_custom_fields": ["sos-started", "sos-complete", "buyer-[offer]", "sos-email5-clicked"],
+    "notes": "GoHighLevel: build as a single Workflow. Use 'Wait' steps (not drip-style 'Campaign') so the purchase Goal can short-circuit the sequence. Personalize {{contact.first_name}}. Mirror Email 2 & Email 5 to Messenger via the GHL Facebook/Instagram messaging action if a Messenger opt-in exists (DotCom/Lead Funnels multi-channel principle). Honor every deadline literally — do NOT re-open a closed cart (Edwards integrity guardrail)."
+  },
+  "integrity_guardrails": [
+    "Honor any deadline/scarcity stated in Email 5 — never restock 'limited' or re-open a 'closed' cart (Edwards Secret #18/#23).",
+    "The Epiphany Bridge story must be TRUE — never fabricate the backstory.",
+    "Every claim/benefit needs provable proof (Edwards)."
+  ],
+  "kpis": ["Email open rate (Email 1 sets the relationship)", "Email 3→4 click-through (epiphany landed)", "Email 5 conversion rate", "% graduating to Seinfeld", "Revenue per new lead over 5 days"]
+}

@@ -1,0 +1,130 @@
+{
+  "id": "application-homework-booking-nurture",
+  "name": "Application → Homework / Bonding → Booking → Show-Up Nurture",
+  "aliases": [
+    "high-ticket application follow-up",
+    "application funnel nurture",
+    "homework sequence",
+    "booking show-up sequence",
+    "strategy call nurture",
+    "phone funnel follow-up"
+  ],
+  "category": "funnel-specific-followups",
+  "summary": "The follow-up for a high-ticket Application Funnel (the 'take-away sale'). After a prospect submits the application, this sequence delivers HOMEWORK / bonding videos (so they sell themselves before the call), drives them to BOOK the qualification call, then maximizes SHOW-UP and re-books no-shows. The application itself is a take-away — copy stays in 'we're selective, prove you're a fit' frame, never 'please buy'.",
+  "trigger": {
+    "primary_event": "Application form submitted (Page 2 of the Application Funnel)",
+    "entry_conditions": [
+      "Contact submitted the qualification application (tag `application-submitted`)"
+    ],
+    "exit_conditions": [
+      "Disqualified applicants routed out / to a lower-ticket offer",
+      "Call completed -> route to post-call close or onboarding",
+      "Opt-out"
+    ],
+    "segmentation_inputs": [
+      "Qualified vs not (from application answers — budget/fit fields)",
+      "Booked a call vs applied-but-didn't-book",
+      "Showed up vs no-show / cancelled"
+    ]
+  },
+  "channels": ["Email", "SMS"],
+  "sequence": [
+    {
+      "phase": "A. Homework / bonding (thank-you page + emails)",
+      "step": "Homework email(s) — bonding videos + take-away frame",
+      "beat": "Get the prospect to sell THEMSELVES before the call. Deliver the homework/bonding videos from the Application Funnel thank-you page; pre-frame the call as a selective fit-check, not a sales call.",
+      "delay": "Immediately on application, then a bonding touch before the call",
+      "channel": "Email + SMS",
+      "subject_angle": "\"Your application is in — watch this before we talk\"",
+      "body_framework": "Epiphany Bridge bonding video(s): the founder's origin story + client transformation case studies (the same proof from Page 1 credibility video), plus a take-away line ('we only work with a few people, so the call is to make sure it's a fit both ways'). Single CTA = book the call.",
+      "copy_notes": "Take-away sale frame throughout — the prospect must want IN, not be chased."
+    },
+    {
+      "phase": "B. Booking push",
+      "step": "Book-the-call reminders for applicants who didn't book",
+      "beat": "Convert applied-but-not-booked into a scheduled call.",
+      "delay": "+few hours, +1 day, +2 days if still unbooked",
+      "channel": "Email + SMS",
+      "subject_angle": "\"Last step: grab your call time\" / \"Did you forget to book?\"",
+      "body_framework": "Jim Edwards 'If you want X, do this' — one instruction (pick a time on the calendar), restate what they'll get on the call (a plan / clarity), single CTA to the booking widget. Honest scarcity on call availability ('only a few slots this week') if true.",
+      "branch": "If booked -> stop booking-push, enter pre-call show-up track."
+    },
+    {
+      "phase": "C. Pre-call show-up nurture",
+      "step": "Show-up reminders + pre-call homework",
+      "beat": "Maximize show-up and arrive pre-sold. Reminders + one more bonding asset so they come prepared and warm.",
+      "delay": "On booking (confirm), 1 day before, 1 hour before",
+      "channel": "Email + SMS (SMS for 1h reminder)",
+      "subject_angle": "\"Your call is confirmed for [time]\" / \"See you in 1 hour\"",
+      "body_framework": "Confirmation + Soap Opera 'Hidden Benefits' energy (what their life looks like after) + logistics (time, link, what to prepare). Reinforce the take-away frame: 'come ready to show us you're a fit'."
+    },
+    {
+      "phase": "D. No-show / cancel recovery",
+      "step": "Re-book sequence",
+      "beat": "Recover no-shows and cancellations back onto the calendar.",
+      "delay": "Within 1-2h of missed call, then +1 day",
+      "channel": "Email + SMS",
+      "subject_angle": "\"We missed you — let's reschedule\"",
+      "body_framework": "Warm, non-needy re-invite (take-away preserved: 'we held your spot, but we can only hold it so long'). Single CTA back to the calendar. Honest scarcity on remaining slots.",
+      "branch": "Re-booked -> back into pre-call show-up track. Persistent no-show after N attempts -> downsell to a self-serve / lower-ticket offer or long-term nurture."
+    }
+  ],
+  "copy_persona": {
+    "primary": "Expert Secrets / DotCom Secrets (Application Funnel = take-away sale) — Epiphany Bridge bonding videos + take-away framing.",
+    "scripts_used": [
+      "Epiphany Bridge (Expert Secrets) — origin story + client case-study transformation in the homework/bonding videos",
+      "Take-away sale frame (Application Funnel) — 'apply / prove you're a fit', never 'please buy'",
+      "Soap Opera 'Hidden Benefits' energy in the pre-call confirmation (future-pace the outcome)"
+    ],
+    "support_persona": "jim-edwards-copywriting-secrets — 'If you want X, do this' booking nudges, honest scarcity on call slots, single-CTA discipline, subject lines.",
+    "structural_persona": "russell-brunson-the-funnel-hackers-cookbook — Application Funnel recipe: credibility/case-study video page -> application form (prospect sells themselves) -> thank-you/homework page with bonding videos + calendar booking; closed by phone (setter -> closer)."
+  },
+  "ghl_build": {
+    "engine": "Skill 44 (caf) builds the workflow(s); GHL native calendar + Appointment Status triggers drive the booking/show-up/no-show branches.",
+    "workflow_name": "FSF — Application: Homework -> Book -> Show-Up -> Rebook",
+    "trigger_config": {
+      "ghl_trigger": "Form Submitted = application form (or Tag Added `application-submitted`)",
+      "qualification": "If/Else on application custom fields (budget/fit) -> tag `app-qualified` vs `app-disqualified` and route disqualified to a separate path",
+      "calendar_triggers": "GHL Appointment Status = Booked / No-Show / Cancelled drive phases C and D"
+    },
+    "actions_in_order": [
+      "1. Email + SMS — Homework / bonding video; tag `application-submitted`",
+      "2. If/Else qualification -> disqualified branch (route to lower-ticket) ; qualified continue",
+      "3. Wait 4 hours -> If/Else `appointment-booked`? FALSE -> Send Email/SMS booking nudge #1",
+      "4. Wait 1 day -> still unbooked? -> booking nudge #2",
+      "5. Wait 1 day -> still unbooked? -> booking nudge #3 (honest scarcity)",
+      "--- Separate workflow triggered by Appointment Booked: ---",
+      "B1. Send confirmation Email + SMS; tag `call-booked`; stop booking-push",
+      "B2. Wait until 1 day before -> reminder + pre-call homework",
+      "B3. Wait until 1 hour before -> SMS reminder",
+      "--- Separate workflow triggered by Appointment No-Show/Cancelled: ---",
+      "C1. Wait 1-2h -> Send 'we missed you' Email + SMS rebook CTA",
+      "C2. Wait 1 day -> second rebook nudge; after N misses -> tag `app-persistent-noshow` -> downsell/nurture"
+    ],
+    "goal_event": "Call completed / sale -> exit nurture; route to onboarding or post-call close.",
+    "wait_steps": ["4 hr", "1 day", "1 day", "until 1-day-before", "until 1-hour-before", "1-2 hr post-miss", "1 day"],
+    "if_else_branches": [
+      "qualified vs disqualified (application fields)",
+      "booked vs unbooked (Appointment Status)",
+      "showed vs no-show/cancelled",
+      "persistent no-show -> downsell"
+    ],
+    "tags_used": ["application-submitted", "app-qualified", "app-disqualified", "call-booked", "call-showed", "call-noshow", "app-persistent-noshow"],
+    "notes": "Cleanest as 3 linked GHL workflows: (1) application -> homework + booking push, (2) Appointment Booked -> show-up nurture, (3) Appointment No-Show/Cancelled -> rebook. caf builds each; the GHL native calendar provides Booked/No-Show/Cancelled triggers (no custom webhook needed)."
+  },
+  "source": {
+    "books": [
+      "The Funnel Hacker's Cookbook (Application Funnel: credibility video -> application -> homework/thank-you with bonding videos + booking; setter->closer phone close)",
+      "DotCom Secrets / Expert Secrets (Application / High-Ticket / Phone Funnel = take-away sale; Epiphany Bridge)",
+      "Copywriting Secrets — Jim Edwards ('If you want X', honest scarcity, single CTA)"
+    ],
+    "fidelity_note": "Homework/bonding videos, the take-away frame, and the booking->phone-close structure are taken from the Application Funnel recipe. No invented mechanics."
+  },
+  "flexibility": {
+    "principle": "This template is a recommended default and a resource — it is NEVER a rule or a requirement.",
+    "mode_1_user_has_explicit_desire": "Do exactly what the user wants. This template is an optional reference only; it is never imposed or overridden onto their choice.",
+    "mode_2_user_is_unsure": "Suggest this proven template and explain why it works, but let the user decide.",
+    "mode_3_user_wants_it_handled": "Build the whole automation from this template.",
+    "note": "Always overridable, mixable, customizable, or ignorable. It assists; it does not dominate."
+  }
+}

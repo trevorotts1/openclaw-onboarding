@@ -1,0 +1,126 @@
+{
+  "id": "autowebinar-watch-segmented-followup",
+  "name": "AutoWebinar (Evergreen) Watch-% Segmented Follow-Up",
+  "aliases": [
+    "evergreen webinar follow-up",
+    "automated webinar sequence",
+    "watch-time segmented follow-up",
+    "autowebinar replay sequence",
+    "evergreen perfect webinar nurture"
+  ],
+  "category": "funnel-specific-followups",
+  "summary": "The follow-up for an EVERGREEN automated webinar that runs 24/7. Identical persuasion content to the live webinar close, but the branching is driven by WATCH PERCENTAGE / watch-time tracking instead of a fixed live date. Watch-time triggers segment registrants into: registered-no-show, watched-but-left-before-pitch, watched-through-the-pitch-no-buy, and buyer — each gets a tailored sequence. Cart-close runs on a per-registrant evergreen countdown, not a global date.",
+  "trigger": {
+    "primary_event": "AutoWebinar registration (registrant picks a start time or 'watch now')",
+    "entry_conditions": [
+      "Contact registered for the evergreen webinar (tag `autowebinar-registered`); per-registrant deadline starts from their registration/scheduled time"
+    ],
+    "exit_conditions": [
+      "Purchase (tag `autowebinar-purchased`) -> exit selling steps",
+      "Per-registrant cart-close timer expires",
+      "Opt-out"
+    ],
+    "segmentation_inputs": [
+      "No-show (never started the broadcast)",
+      "Left early (watch % below the pitch point, e.g. <60%)",
+      "Watched through the pitch (>= pitch %) but didn't buy",
+      "Clicked offer link, no purchase"
+    ]
+  },
+  "channels": ["Email", "SMS"],
+  "sequence": [
+    {
+      "phase": "A. Confirmation + show-up",
+      "step": "Confirm + reminders relative to chosen start time",
+      "beat": "Confirm the booking and drive attendance to the registrant's selected session time (or immediate 'watch now').",
+      "delay": "Immediately; then reminders at 1 day / 1 hour / start time before their chosen slot",
+      "channel": "Email + SMS",
+      "subject_angle": "\"Your training is confirmed for [time]\" / \"Starting soon\"",
+      "body_framework": "Soap Opera Email #1 'Set the Stage' (compressed, since evergreen) + reminder cadence. If they chose 'watch now', skip straight to the broadcast room."
+    },
+    {
+      "phase": "B. Watch-tracking branch",
+      "step": "Segment on watch % after the session window",
+      "beat": "After their session window closes, the watch-time signal routes them into one of four follow-up tracks.",
+      "delay": "Evaluated ~1-2h after their scheduled end time",
+      "channel": "internal (tagging) -> Email/SMS in branches",
+      "branches": {
+        "no_show": "Re-invite to the next available slot + 'replay available' — re-sell the promise (Soap Opera High-Drama re-hook).",
+        "left_early": "'You missed the best part' — tease what came AFTER they dropped (the secret + the offer), drive back to the replay.",
+        "watched_no_buy": "Go straight to The Stack recap + the 3 Closes — they heard the pitch.",
+        "buyer": "Exit to onboarding (Goal)."
+      },
+      "body_framework": "Watch % is the segmentation engine (AutoWebinar Funnel watch-time tracking)."
+    },
+    {
+      "phase": "C. Replay + close (3 Closes on an evergreen timer)",
+      "step": "Emotion -> Logic -> Fear across the registrant's personal cart window",
+      "beat": "Drive the sale before THIS registrant's cart closes; the deadline is per-person, computed from their registration, not a global date.",
+      "delay": "Replay immediately; closes spread across the personal cart window (e.g. Day 0 / Day 1 / Day 2 final)",
+      "channel": "Email + SMS",
+      "body_framework": "Same 3 Closes as the live template: (1) EMOTION close — Epiphany Bridge story + future-pace; (2) LOGIC close — The Perfect Webinar Stack (components + value total + price reveal + guarantee); (3) FEAR close — honest per-registrant deadline (evergreen countdown that actually expires for them). SMS at their personal deadline.",
+      "copy_notes": "Evergreen scarcity MUST be honored per-registrant (their bonus/price really does expire when their timer ends) — otherwise it is the fake urgency the books warn against."
+    }
+  ],
+  "copy_persona": {
+    "primary": "Expert Secrets + DotCom Secrets — Perfect Webinar Stack + Epiphany Bridge + 3 Closes (same persuasion content as the live webinar template).",
+    "scripts_used": [
+      "Soap Opera Email #1 'Set the Stage' (compressed confirmation)",
+      "Epiphany Bridge (Emotion close)",
+      "The Perfect Webinar Stack (Logic close)",
+      "3 Closes Emotion -> Logic -> Fear, on a per-registrant evergreen timer",
+      "Honest per-registrant scarcity"
+    ],
+    "support_persona": "jim-edwards-copywriting-secrets — 'you missed the best part' curiosity hooks for the left-early branch; honest-scarcity discipline.",
+    "structural_persona": "russell-brunson-the-funnel-hackers-cookbook — AutoWebinar Funnel: registration -> confirmation -> broadcast/replay room -> post-webinar offer -> segmented follow-up sequences BY WATCH DURATION (registered / watched-to-end / left-early / no-show)."
+  },
+  "ghl_build": {
+    "engine": "Skill 44 (caf) builds the workflow; watch-% segmentation arrives as inbound webhook/tag from the evergreen webinar platform, then drives GHL if/else branches.",
+    "workflow_name": "FSF — AutoWebinar Watch-% Segmented Follow-Up",
+    "trigger_config": {
+      "ghl_trigger": "Form Submitted = autowebinar registration (or Tag Added `autowebinar-registered`)",
+      "watch_signals": "Webinar platform posts watch-% milestones via Inbound Webhook / Custom Webhook -> sets tags: `aw-noshow`, `aw-left-early`, `aw-watched-pitch`, `aw-offer-clicked`",
+      "timer": "Store a per-registrant cart-close datetime custom field at registration; FEAR close waits until it"
+    },
+    "actions_in_order": [
+      "1. Email + SMS — Confirmation; tag `autowebinar-registered`",
+      "2. Wait until 1h-before chosen slot -> SMS reminder (skip if 'watch now')",
+      "3. Wait until session start -> SMS 'starting now' + room link",
+      "4. Wait ~2h after scheduled end",
+      "5. If/Else on watch tags: route to no-show / left-early / watched-no-buy / buyer branches",
+      "6. (branch) Send Email + SMS — Replay re-hook appropriate to segment",
+      "7. Send Email — Close #1 EMOTION",
+      "8. Wait 1 day",
+      "9. Send Email — Close #2 LOGIC (The Stack)",
+      "10. Wait until per-registrant cart-close datetime",
+      "11. Send Email + SMS — Close #3 FEAR",
+      "12. End; tag `autowebinar-sequence-complete`"
+    ],
+    "goal_event": "`autowebinar-purchased` -> exit selling steps, route to onboarding.",
+    "wait_steps": ["until 1h-before slot", "until start", "post-event ~2h", "1 day", "until per-registrant cart-close"],
+    "if_else_branches": [
+      "watch-% segment (no-show / left-early / watched-no-buy / buyer)",
+      "offer-link-clicked-no-purchase -> tighter nudge",
+      "purchased -> Goal exit",
+      "SMS vs email on DND"
+    ],
+    "tags_used": ["autowebinar-registered", "aw-noshow", "aw-left-early", "aw-watched-pitch", "aw-offer-clicked", "autowebinar-purchased", "autowebinar-sequence-complete"],
+    "notes": "The ONLY structural difference from the live template is the trigger/timing source: watch-% webhook tags + a per-registrant evergreen countdown replace the global live date. Persuasion content is identical. Per-registrant deadline must truly expire to keep urgency honest."
+  },
+  "source": {
+    "books": [
+      "The Funnel Hacker's Cookbook (AutoWebinar Funnel: segmented follow-up by watch duration — registered / watched-to-end / left-early / no-show)",
+      "DotCom Secrets (AutoWebinar Funnel; Soap Opera; 3 Closes)",
+      "Expert Secrets (Perfect Webinar, The Stack, Epiphany Bridge)",
+      "Copywriting Secrets — Jim Edwards (curiosity hooks, honest scarcity)"
+    ],
+    "fidelity_note": "Watch-duration segmentation (registered / watched-to-end / left-early / no-show) is taken directly from the AutoWebinar Funnel description. Close content reuses the documented Perfect Webinar Stack + 3 Closes. No invented mechanics."
+  },
+  "flexibility": {
+    "principle": "This template is a recommended default and a resource — it is NEVER a rule or a requirement.",
+    "mode_1_user_has_explicit_desire": "Do exactly what the user wants. This template is an optional reference only; it is never imposed or overridden onto their choice.",
+    "mode_2_user_is_unsure": "Suggest this proven template and explain why it works, but let the user decide.",
+    "mode_3_user_wants_it_handled": "Build the whole automation from this template.",
+    "note": "Always overridable, mixable, customizable, or ignorable. It assists; it does not dominate."
+  }
+}

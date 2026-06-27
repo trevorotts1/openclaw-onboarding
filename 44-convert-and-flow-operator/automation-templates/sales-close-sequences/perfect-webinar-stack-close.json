@@ -1,0 +1,67 @@
+{
+  "id": "perfect-webinar-stack-close",
+  "name": "Perfect Webinar Stack Close (+ Post-Webinar Follow-Up)",
+  "aliases": ["the stack", "stack slide", "stack close", "perfect webinar close", "stack and close", "trial closes", "webinar offer close", "VSL stack close"],
+  "category": "sales-close-sequences",
+  "source_books": ["Expert Secrets (Russell Brunson) — The Perfect Webinar, The Stack, Trial Closes, The One Thing", "Marketing Secrets Blackbook — Stack Don't Switch, The Power of the Bonus, Urgency & Scarcity", "Copywriting Secrets (Edwards) — offer block, guarantee, dollars-for-dimes, CTA"],
+  "framework": "The Stack is Brunson's offer-reveal mechanism that anchors perceived value far above price, then closes. It is the climax of the Perfect Webinar (intro/big domino → 3 secrets that break false beliefs → THE STACK → close). This template covers (a) the Stack close itself as deliverable script, and (b) the post-webinar email/SMS follow-up that re-runs the Stack and urgency for non-buyers.",
+  "trigger": {
+    "type": "registration → attendance → watch%",
+    "events": ["Registered for live/auto webinar", "Attended (live or replay)", "Watched to the offer/Stack timestamp", "VSL watched to price reveal"],
+    "entry_conditions": "Registered; the webinar/VSL presents the Stack close.",
+    "exit_conditions": "Purchase → buyer onboarding. Replay/cart window expires → Stack-recap follow-up ends; drop to nurture."
+  },
+  "channels": ["Live/auto webinar or VSL (the Stack is delivered here)", "Email (registration → show-up → replay → close follow-up)", "SMS (show-up reminders + cart-close)", "Replay page with countdown timer"],
+  "the_stack_mechanics": {
+    "principle": "Reveal the offer ONE element at a time. After each element, RESTATE the entire cumulative stack with its growing total value. The eye/ear keeps seeing the value pile grow, so when the price drops it feels tiny ('dollars for dimes').",
+    "stack_slide_pattern": [
+      "Element 1: Core offer — '[Core] (value $X)'",
+      "Element 2: '+ [Asset 2] (value $Y)' → restate: 'So far you're getting Core + Asset 2 = $X+$Y'",
+      "Element 3: '+ [Asset 3] (value $Z)' → restate full stack total again",
+      "Continue stacking bonuses/tools/community/support, restating the cumulative total each time",
+      "Final stack total revealed (e.g. 'Total real value: $N')",
+      "PRICE REVEAL far below total (anchor) → 'but you won't pay $N… not even half… your investment today is just $P'",
+      "GUARANTEE (risk reversal) → URGENCY/fast-action BONUS that expires → CTA"
+    ],
+    "trial_closes": "Sprinkle low-commitment 'yes' questions THROUGHOUT (not just at the end): 'Does that make sense?', 'Could you see yourself using this?', 'If all this did was [one result], would it be worth $P?'. Trial closes pre-commit the audience so the final ask is a formality.",
+    "the_one_thing": "Tie the whole offer back to the ONE big domino belief: if they believe this one thing, they MUST buy. The Stack delivers the vehicle to that one thing."
+  },
+  "copy_persona": {
+    "primary": "Russell Brunson — Perfect Webinar / The Stack / Trial Closes",
+    "supporting": ["Jim Edwards — the offer block (what/how/when/how much), guarantee, dollars-for-dimes, single CTA, P.S.", "Brunson — The Power of the Bonus (turn objections into bonuses), Stack Don't Switch"]
+  },
+  "sequence": [
+    {"step": 1, "stage": "PRE — registration", "channel": "email", "day": "-3 to 0", "beat": "Indoctrination / show-up sequence: confirm registration, build anticipation, tease the ONE big secret. 2–4 emails + SMS reminders (24h, 1h, live-now).", "purpose": "Maximize show-up rate.", "persona_formula": "Curiosity hooks (Edwards) + Epiphany tease"},
+    {"step": 2, "stage": "LIVE — the close", "channel": "webinar/VSL", "day": 0, "beat": "Deliver content (3 secrets breaking vehicle/internal/external false beliefs) → transition to THE STACK → stack each element with value, restating cumulative total → price reveal → guarantee → fast-action bonus + urgency → CTA. Trial-close throughout.", "purpose": "Primary conversion event.", "persona_formula": "The Stack + Trial Closes + The One Thing"},
+    {"step": 3, "stage": "POST — same day", "channel": "email + SMS", "day": 0, "beat": "'Replay + the offer is live' — link to replay page (countdown) and the order page. Restate the Stack in writing (Edwards offer block).", "purpose": "Catch no-shows & late-joiners.", "persona_formula": "Edwards offer block + dollars-for-dimes"},
+    {"step": 4, "stage": "POST — Logic recap", "channel": "email", "day": 1, "beat": "Written Stack recap: every element + value + 'which means…', the price anchor, the guarantee, FAQ/objections-as-bonuses.", "purpose": "Logic close for the analytical non-buyer.", "persona_formula": "Brunson Power of the Bonus + Edwards proof/guarantee"},
+    {"step": 5, "stage": "POST — Fear/urgency", "channel": "email + SMS", "day": "2 (T-24h)", "beat": "Fast-action bonus expiring / cart closing in 24h. Restate scarcity levers.", "purpose": "Urgency push.", "persona_formula": "Blackbook Urgency & Scarcity"},
+    {"step": 6, "stage": "POST — close", "channel": "email + SMS", "day": "2 (T-3h, T-1h)", "beat": "Final hours: replay comes down / bonus gone / price rises. Last-call emails + SMS.", "purpose": "Conversion spike.", "persona_formula": "Brunson takeaway/FOMO close (honored)"},
+    {"step": 7, "stage": "POST — branch", "channel": "automation", "day": 3, "beat": "Cart closed. Buyers → onboarding + ascend (Stack Don't Switch). Non-buyers → Seinfeld nurture; optional auto-webinar re-invite later.", "purpose": "Clean routing; honor the close.", "persona_formula": "Stack Don't Switch"}
+  ],
+  "ghl_build": {
+    "workflow_name": "Perfect Webinar — Show-Up + Stack Close Follow-Up",
+    "trigger": "Workflow Trigger: 'Form Submitted' = webinar registration form → Tag 'webinar-reg-[event]'.",
+    "actions": [
+      "PRE: registration confirmation email → reminder emails (24h, 1h) + SMS (1h, 'we're live') → optional 'add to calendar'.",
+      "ATTENDANCE: tag by behavior — 'attended-live', 'watched-to-stack' (watch% via webinar platform webhook), 'no-show'.",
+      "POST: same-day replay+offer email/SMS → Day1 Stack-recap (logic) → Day2 T-24h urgency → Day2 T-3h/T-1h close, all gated by a fixed cart-close datetime.",
+      "Replay page = GHL funnel page with countdown timer wired to the SAME cart-close datetime; order page with order bump + OTOs."
+    ],
+    "wait_steps": ["Use 'Wait until' the fixed webinar time for PRE reminders; 'Wait until' the fixed cart-close datetime for the Fear-phase beats so on-page countdown == email/SMS == reality."],
+    "if_else": [
+      "Branch on attendance: 'attended-live' → shorter, hotter follow-up; 'no-show' → 'you missed it, here's the replay (24h only)' path.",
+      "Branch on watch%: 'watched-to-stack' → tag 'saw-offer', go straight to urgency cadence; 'left-before-stack' → re-pitch the offer in the recap email.",
+      "PURCHASE GOAL ('buyer-[offer]') anywhere → exit, buyer onboarding + ascend, STOP close emails.",
+      "Checkout started not completed → fire 'abandoned-cart-recovery'."
+    ],
+    "tags_custom_fields": ["webinar-reg-[event]", "attended-live", "no-show", "watched-to-stack", "saw-offer", "buyer-[offer]", "cart-close-datetime"],
+    "notes": "GoHighLevel: the on-page COUNTDOWN TIMER (replay + order page) must read from the same cart-close datetime as the Fear-phase waits — that is what makes urgency real. Build the order page with the written Stack mirroring the webinar Stack slide, an order bump, and 1–2 OTOs. Pull watch% via the webinar tool's webhook into GHL tags to drive attendance/watch branching. HONOR the close: when the timer hits zero, replay comes down and bonus/price genuinely change."
+  },
+  "integrity_guardrails": [
+    "Every Stack element's stated value must be real/defensible (dollars-for-dimes done honestly).",
+    "Fast-action bonus and cart-close must be HONORED — bonus genuinely expires, replay genuinely comes down (Edwards Secret #18; Blackbook).",
+    "Trial closes are honest yes-ladders, not manipulation; never claim a result you can't prove."
+  ],
+  "kpis": ["Registration → show-up rate", "Show-up → offer-view (watch-to-stack) rate", "Offer-view → purchase rate", "Replay/cart-close revenue spike", "Order bump + OTO take rate", "Revenue per registrant"]
+}

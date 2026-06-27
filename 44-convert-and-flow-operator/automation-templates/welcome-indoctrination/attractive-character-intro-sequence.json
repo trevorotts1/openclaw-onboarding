@@ -1,0 +1,160 @@
+{
+  "id": "attractive-character-intro-sequence",
+  "name": "Attractive Character Intro Sequence (Epiphany Bridge Bonding)",
+  "aliases": [
+    "AC Intro Sequence",
+    "Hero Story Sequence",
+    "Founder Story Sequence",
+    "Epiphany Bridge Email Sequence",
+    "Brand Bonding Sequence",
+    "Origin Story Welcome"
+  ],
+  "category": "welcome-indoctrination",
+  "source": {
+    "primary": "DotCom Secrets — Secret #6: The Attractive Character (4 Elements, 4 Identities, 6 Storylines)",
+    "supporting": [
+      "Expert Secrets — The Epiphany Bridge Script (5 phases / 14 questions; adaptation of the Hero's Two Journeys)",
+      "DotCom Secrets — Secret #7: Soap Opera Sequence (open-loop, daily-cadence delivery mechanic)",
+      "Copywriting Secrets — Secret #18: Email Teasers (per-email mechanics)"
+    ]
+  },
+  "purpose": "Deliberately introduce the Attractive Character to a brand-new subscriber by rolling out the AC's Elements (Backstory, Parables, Character Flaws, Polarity), Identity (Leader / Adventurer / Reporter-Evangelist / Reluctant Hero), and Storylines across a multi-email arc structured by the Epiphany Bridge Script. For personal brands / experts where bonding with a PERSON is the whole game. It is the deeper / alternative arc to a product-led Soap Opera Sequence, emphasizing the AC persona rollout over a single product close.",
+  "trigger": {
+    "what_starts_it": "Opt-in on a personal-brand / expert funnel (hero funnel, story opt-in, expert lead magnet).",
+    "ghl_trigger_type": "Form Submitted / Funnel Step Submitted (opt-in)",
+    "fires": "Once per contact",
+    "reentry_guard": "Only enter if tag 'ac-intro-started' does NOT already exist"
+  },
+  "channels": ["email (primary)", "optional short video per email (Epiphany Bridge video: podcast clip / FB Live / VSL)"],
+  "cadence": "1 email/day for 5-6 days (auto-responder), mirroring the Soap Opera daily-cadence open-loop delivery.",
+  "sequence": [
+    {
+      "step": 1,
+      "beat": "Backstory & Desire (Epiphany Bridge Phase 1)",
+      "delay": "immediate / Day 1",
+      "purpose": "Come down from the expert pedestal and return to where the reader is now. Share the AC backstory + external AND internal desires + the old vehicles you tried that didn't work. When they see you were once where they are, they trust you can take them where they want to go.",
+      "subject_angle": "Before any of this worked, I was [relatable low point]",
+      "body_framework": [
+        "Backstory that starts roughly where the listener is right now",
+        "External desire (the result you wanted) + internal desire (who you wanted to become)",
+        "Old vehicles you tried that failed (the wall begins to form)",
+        "Open loop to Email 2 (what happened next)"
+      ]
+    },
+    {
+      "step": 2,
+      "beat": "The Wall / Conflict (Phase 2) — Character Flaw",
+      "delay": "+1 day",
+      "purpose": "Introduce the villain and the conflict; hit the wall where the old way collapsed. Get vulnerable — share the internal struggle / character flaw. Vulnerability builds rapport faster than anything else because the audience shares the same struggle.",
+      "subject_angle": "The day it all fell apart",
+      "body_framework": [
+        "Name the villain / the moment of frustration",
+        "The wall: the old opportunity stopped working",
+        "Character Flaw element: get vulnerable about the internal struggle (fear, doubt, shame)",
+        "Open loop: 'then something changed — I'll tell you tomorrow'"
+      ]
+    },
+    {
+      "step": 3,
+      "beat": "The Guide & The Epiphany / New Opportunity (Phase 3)",
+      "delay": "+1 day",
+      "purpose": "Who handed you the aha (the guide), the epiphany you experienced, and the new opportunity you created from it. Use the Amazing Discovery / Secret Telling storyline. This is the belief-shift moment.",
+      "subject_angle": "The 'aha' that changed everything",
+      "body_framework": [
+        "The guide who gave you the epiphany",
+        "The epiphany itself (the realization)",
+        "The new opportunity you created from it (vs the old way)",
+        "Soft CTA / open loop to the framework email"
+      ]
+    },
+    {
+      "step": 4,
+      "beat": "The Framework (Phase 4) — Parable",
+      "delay": "+1 day",
+      "purpose": "The strategy/framework you built to get the result. NAME it (proprietary framework name). Teach the WHAT (strategy), not the HOW (tactics). Use a Parable to make the lesson stick.",
+      "subject_angle": "The [framework name] that did it",
+      "body_framework": [
+        "Name the framework (proprietary)",
+        "Teach the strategy at a high level (the what, not the tactics)",
+        "Parable that illustrates the core principle",
+        "CTA toward the offer that delivers the framework"
+      ]
+    },
+    {
+      "step": 5,
+      "beat": "Achievement & Transformation (Phase 5) + Polarity + Social Proof",
+      "delay": "+1 day",
+      "purpose": "External result achieved + internal transformation. Before/After storyline. Third-Person Testimonials for social proof. Draw the Polarity line in the sand and invite the reader to join the movement / value ladder.",
+      "subject_angle": "From [before] to [after] (and how you can too)",
+      "body_framework": [
+        "Achievement: the external end result you accomplished",
+        "Transformation: how you changed internally (fear to courage)",
+        "Before/After + Third-Person Testimonials (social proof)",
+        "Polarity: us-vs-them line in the sand",
+        "Clear CTA to join / buy / ascend the value ladder"
+      ]
+    },
+    {
+      "step": 6,
+      "beat": "Identity & Invitation (optional)",
+      "delay": "+1 day",
+      "purpose": "Declare the AC's Identity (Leader / Adventurer / Reporter-Evangelist / Reluctant Hero) explicitly and invite the reader into the tribe / next step. Optional capstone.",
+      "subject_angle": "Why I do this (and the invitation)",
+      "body_framework": [
+        "Declare the AC identity and the moral duty / mission",
+        "Restate the worldview line in the sand",
+        "Final invitation to the value ladder / community"
+      ]
+    }
+  ],
+  "copy_persona": {
+    "the_who": "The Attractive Character (DCS #6): 4 Elements (Backstory, Parables, Character Flaws, Polarity); choose ONE Identity (Leader / Adventurer / Reporter-Evangelist / Reluctant Hero); deploy the 6 Storylines (Loss & Redemption, Us vs Them, Before & After, Amazing Discovery, Secret Telling, Third-Person Testimonial)",
+    "the_structure": "The Epiphany Bridge Script (Expert Secrets, 5 phases / 14 questions): Phase 1 Backstory (desire external+internal, old vehicles) → Phase 2 Journey/Conflict (villain, the wall) → Phase 3 New Opportunity (guide, epiphany, new opportunity) → Phase 4 The Framework/Plan (strategy) → Phase 5 Achievement & Transformation",
+    "the_delivery_mechanic": "Soap Opera Sequence (DCS #7): daily cadence + open loops between emails",
+    "email_mechanics": "Copywriting Secrets Email Teaser (Jim Edwards #18): subject = headline (question form), merged-name salutation, shocking statement, curiosity bullets, ONE CTA, friendly close. If each email links a video, the email's only job is the click to the video."
+  },
+  "flexibility": {
+    "core_principle": "This template is a GUIDE and a RESOURCE, never a rule or requirement. It must not dominate the user's desire.",
+    "usage_modes": {
+      "mode_1_explicit_desire": "User has an explicit desire: do exactly what the user wants. This template is an optional reference only — never impose it or override the user's choice.",
+      "mode_2_unsure": "User is unsure: suggest the 5-phase Epiphany Bridge structure (Backstory → Wall → Epiphany → Framework → Transformation) and explain why it works for personal-brand bonding, then let the user decide.",
+      "mode_3_just_do_it": "User wants it handled ('just build it'): build the full 5–6 email sequence from this template — AC-01 through AC-06, tags, custom fields, if/else branches, video-engagement fork, and the GHL workflow — as written."
+    },
+    "always": "Overridable, mixable, customizable, ignorable. Identity choice (Leader vs Adventurer vs Reporter-Evangelist vs Reluctant Hero), number of emails (5 vs 6), inclusion of video per email, open-loop intensity, and each storyline — all defaults the user can change or skip. The template assists; it never dominates."
+  },
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator (caf), Tier 0. Internal-API build when GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN healthy; Tier 4 agent-browser backstop + owner nudge otherwise.",
+    "dependencies_first": {
+      "tags": ["ac-intro-started", "ac-intro-complete", "ac-bonded", "engaged-video"],
+      "custom_fields": ["ac_identity (text)"],
+      "custom_values": ["{{ac_name}}", "{{framework_name}}", "{{video_url_e1}}..{{video_url_e6}}", "{{core_offer_url}}"]
+    },
+    "workflow": {
+      "trigger": "Form Submitted / Funnel Step Submitted (personal-brand opt-in). Filter: tag 'ac-intro-started' NOT present.",
+      "nodes": [
+        "Action: Add Tag 'ac-intro-started'",
+        "Email: 'AC-01 Backstory & Desire' (immediate)",
+        "Wait: 1 day",
+        "Email: 'AC-02 The Wall / Conflict'",
+        "Wait: 1 day",
+        "Email: 'AC-03 Guide & Epiphany / New Opportunity'",
+        "Wait: 1 day",
+        "Email: 'AC-04 The Framework'",
+        "Wait: 1 day",
+        "Email: 'AC-05 Achievement & Transformation'",
+        "Wait: 1 day",
+        "Email: 'AC-06 Identity & Invitation' (optional)",
+        "Action: Add Tag 'ac-intro-complete', Remove 'ac-intro-started'",
+        "Action: Add to Workflow 'Daily Seinfeld enrollment' / value ladder"
+      ],
+      "if_else_branches": [
+        "Video-engagement fork: IF email's video link clicked THEN add tag 'engaged-video'; ELSE on next-day resend with 'in case you missed it' subject.",
+        "Buyer fork: IF core-offer purchased THEN exit remaining sales emails and route to buyer onboarding; ELSE continue.",
+        "Bond fork: on completion, IF 'engaged-video' present THEN add 'ac-bonded' (hot lead) for priority sales follow-up."
+      ],
+      "wait_steps": "5 wait steps of 1 day each (6 emails; E6 optional).",
+      "trinity_note": "If any leg of this sequence uses an SMS or conversational-AI node, the TRINITY rule applies (3 legs) and caf QC runs qc-trinity-registry.sh as a hard gate.",
+      "skill44_reliability": "Dependency-first; set node 'order' + 'parentKey' before first save; email nodes reference Email-Builder templates AC-01..AC-06."
+    }
+  }
+}

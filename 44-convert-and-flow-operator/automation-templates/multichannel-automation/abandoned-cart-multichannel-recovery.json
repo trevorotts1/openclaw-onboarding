@@ -1,0 +1,168 @@
+{
+  "id": "abandoned-cart-multichannel-recovery",
+  "name": "Abandoned Cart Multichannel Recovery (2-Step Order Form Drop-Off)",
+  "aliases": [
+    "Abandoned Cart Recovery",
+    "2-Step Form Drop-Off Sequence",
+    "Step 1 Not Step 2 Recovery",
+    "Cart Abandonment Follow-Up",
+    "Incomplete Checkout Recovery",
+    "Lost Sale Recovery Sequence"
+  ],
+  "category": "multichannel-automation",
+  "source": {
+    "primary": "The Funnel Hacker's Cookbook — 2-Step Order Form element description: 'If the customer fills out Step 1 but not Step 2, you can trigger a follow up sequence to get them to go back and finish Step 2.'",
+    "supporting": [
+      "Marketing Secrets Blackbook — Secret #49: What More Can We Do? 'If they give you their email address but don't buy, contact them with an email or text or messenger sequence.'",
+      "The Funnel Hacker's Cookbook — 2-Step Order Form: 'Abandoned carts is one of the places where people lose the most money in a sales funnel.'",
+      "Marketing Secrets Blackbook — Secret #59: Shrink the Funnel, Extend the Value ('extend the back-end follow-up funnels through training and education to build the relationship')",
+      "BRUNSON-FUNNEL-LIBRARY.md — Entry #8: 2-Step Tripwire / Free-Plus-Shipping Funnel"
+    ]
+  },
+  "purpose": "A 2-step order form collects contact info (name + email) in Step 1 before asking for payment in Step 2. If the contact completes Step 1 but not Step 2, their email is captured and a multi-channel recovery sequence can fire immediately. Brunson explicitly identifies abandoned carts as one of the largest sources of lost revenue in any sales funnel. This sequence uses email, SMS, and Messenger to bring the contact back to complete the purchase within 72 hours.",
+  "trigger": {
+    "what_starts_it": "Contact submits 2-step order form Step 1 (name + email) but does NOT submit Step 2 (payment) within a defined window (typically 15–60 minutes).",
+    "ghl_trigger_type": "Form Submitted on Step 1 order form page, combined with IF/ELSE check: tag 'purchased-[offer-id]' NOT present after wait of 30–60 minutes.",
+    "fires": "Once per contact per offer (re-entry guard by tag and purchase status)",
+    "reentry_guard": "Only enter if tag 'cart-abandon-started' is NOT present AND tag 'purchased-[offer-id]' is NOT present"
+  },
+  "channels": [
+    "Email (primary — fires immediately on cart abandon)",
+    "SMS / Text (secondary — fires if email not opened within 2h)",
+    "Facebook Messenger (tertiary — if subscribed; fires alongside or after SMS)"
+  ],
+  "sequence": [
+    {
+      "step": 1,
+      "beat": "Immediate — 'You left something behind' Email",
+      "delay": "30–60 min after Step 1 submit with no Step 2 completion",
+      "channels_active": ["Email"],
+      "purpose": "First recovery touch. Soft, helpful tone — not a hard sell. Remind them what they were about to get. Reduce friction by making it easy to return to the checkout page. Include a direct link back to Step 2 of the order form (or the full order page). This is the 'warm' recovery email.",
+      "subject_angle": "Did something come up? Your [offer name] is waiting for you",
+      "body_framework": [
+        "Opening acknowledgment: 'Hey [name] — looks like you got started with [offer name] but something came up before you finished.'",
+        "Low-pressure reframe: 'No worries — I saved your spot / your order is still here.'",
+        "One-line value reminder: what they were about to get + the key benefit",
+        "Direct link back to checkout: '[Complete your order here: link]'",
+        "Reduce friction: mention the guarantee, how fast delivery is, or how easy setup is",
+        "Signature: casual, personal, from the AC"
+      ]
+    },
+    {
+      "step": 2,
+      "beat": "+2 hours — Email Open Branch → SMS Nudge (if not opened)",
+      "delay": "+2 hours after Step 1",
+      "channels_active": ["SMS (if email not opened)", "Messenger (if email not opened and subscribed)"],
+      "purpose": "If the recovery email was not opened within 2 hours, switch channels. SMS has near-instant open rates. Messenger pings the phone. Short, direct, low-pressure. No walls of text.",
+      "behavioral_branch": {
+        "email_opened": "No SMS/Messenger nudge — let the email work; skip this step",
+        "email_not_opened_2h": "Send SMS: 'Hey [name] — [AC name] here. You started grabbing [offer] a bit ago. Here's the quick link to finish: [short link]. No pressure at all — just wanted to make sure it didn't slip through.'"
+      },
+      "messenger_message": "Hey [name] — you were grabbing [offer] earlier! Here's the link to finish up if you want: [link]. Happy to help if you have any questions.",
+      "note": "SMS and Messenger messages must be short. No pitch. Just a helpful reminder with a direct link."
+    },
+    {
+      "step": 3,
+      "beat": "+24 hours — Story Email with Objection Handle",
+      "delay": "+24 hours after cart abandon",
+      "channels_active": ["Email"],
+      "purpose": "Day 2 recovery email. The first email was soft. This one digs into WHY they might have hesitated. Use a short story or case study that addresses the most common objection or fear for this offer. End with the direct checkout link again.",
+      "subject_angle": "The #1 thing people worry about with [offer] (and what actually happens)",
+      "body_framework": [
+        "Open with empathy for the hesitation: 'I know making this kind of decision can feel like a lot. Here's what I've seen with people who felt the same way...'",
+        "Short story / parable from the Attractive Character's experience or a customer testimonial that directly addresses the likely objection",
+        "Reveal the positive outcome the AC or customer experienced DESPITE the hesitation",
+        "Re-state the guarantee or risk-reversal (if any)",
+        "Link back to checkout"
+      ]
+    },
+    {
+      "step": 4,
+      "beat": "+48 hours — SMS/Messenger Urgency Touch (if still not purchased)",
+      "delay": "+48 hours after cart abandon",
+      "channels_active": ["SMS", "Messenger (if subscribed)"],
+      "purpose": "At the 48-hour mark, add a light urgency trigger via SMS and Messenger. If there is real scarcity (limited stock, closing cohort, discount expiry), state it plainly. If no real scarcity, use genuine reason for follow-up instead. Fake urgency destroys trust (Brunson rule).",
+      "purchase_check": "Check tag 'purchased-[offer-id]' before sending. If purchased, skip this step entirely.",
+      "sms_body": "Hey [name] — just a quick heads-up: [genuine reason — 'the [discount / access / spot] I held for you expires tomorrow / we only have X of these left / the [cohort/event] kicks off [date]']. Here's your link: [short link]. No worries if the timing isn't right.",
+      "note_on_urgency": "The urgency statement must be true. Per Brunson: 'Whatever the reason, it needs to be real. Fake urgency will backfire on you, and you'll lose all credibility.'"
+    },
+    {
+      "step": 5,
+      "beat": "+72 hours — Final Email: Last Call",
+      "delay": "+72 hours after cart abandon",
+      "channels_active": ["Email"],
+      "purpose": "Final recovery touch. State that this is the last message about this specific offer. Real deadline if it exists. Short and direct. Leave the door open without pressure.",
+      "subject_angle": "Last note about [offer name]",
+      "body_framework": [
+        "Acknowledge this is the last message: 'I don't want to fill your inbox — this is my last note about [offer].'",
+        "One-line value summary",
+        "If there is a real deadline or scarcity: state it clearly and specifically",
+        "If no deadline: 'Whenever the timing is right, you can always come back to this: [link]'",
+        "Graceful close: 'Either way, I'll still be sending you [content/stories/value]. Talk soon.'"
+      ]
+    },
+    {
+      "step": 6,
+      "beat": "Purchase Event — Stop All and Route to Onboarding",
+      "delay": "Fires immediately on purchase at any point in the sequence",
+      "channels_active": ["Email (buyer confirmation)", "SMS (confirmation if active)"],
+      "actions": [
+        "Add tag 'purchased-[offer-id]'",
+        "Remove tag 'cart-abandon-started'",
+        "Stop all cart-abandon emails/SMS/Messenger sequences immediately",
+        "Send purchase confirmation email",
+        "Remove from retargeting audience D (incomplete checkout)",
+        "Start buyer onboarding workflow"
+      ]
+    }
+  ],
+  "copy_persona": {
+    "tone": "Helpful, personal, low-pressure throughout. This is not a confrontational sequence. The AC is a trusted guide who noticed the prospect left and wants to make sure they didn't miss out — not a pushy salesperson. Per Brunson, the relationship is built on trust first; the sale follows.",
+    "voice": "First person from the Attractive Character. Personal sign-off. No corporate tone.",
+    "email_mechanics": "Short emails — 150 to 300 words max. White space. One CTA per email. The only job of the email is the click back to the cart page."
+  },
+  "flexibility": {
+    "core_principle": "This template is a GUIDE and a RESOURCE, never a rule or requirement. It must not dominate the user's desire.",
+    "usage_modes": {
+      "mode_1_explicit_desire": "User wants a custom cart recovery sequence: do exactly that. This template is an optional reference only.",
+      "mode_2_unsure": "User doesn't know how to handle cart abandons: suggest the 3-email / 2-SMS framework (Steps 1, 3, 5 for email; Steps 2, 4 for SMS/Messenger) with purchase-check gates before each step, then let user decide.",
+      "mode_3_just_do_it": "User says 'build the abandoned cart recovery': build all 5 steps with the purchase check gates and channel guards as described."
+    },
+    "always": "Overridable, mixable, customizable, ignorable. The timing gaps (30 min, 2h, 24h, 48h, 72h) are recommended defaults and can be adjusted for the offer type and price point. High-ticket offers may compress the window; subscription offers may extend it."
+  },
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator (caf)",
+    "dependencies_first": {
+      "tags": [
+        "cart-abandon-started",
+        "purchased-[offer-id]",
+        "messenger-subscribed",
+        "sms-subscribed"
+      ],
+      "custom_values": [
+        "{{cart_page_url}}",
+        "{{offer_name}}",
+        "{{guarantee_statement}}",
+        "{{urgency_reason}}"
+      ]
+    },
+    "workflow": {
+      "trigger": "Form Submitted (Step 1 order form). Then Wait 30 min. Then If/Else: tag 'purchased-[offer-id]' NOT present → enter abandon sequence; else exit.",
+      "nodes": [
+        "Add Tag 'cart-abandon-started'",
+        "Email: 'CA-01 You Left Something Behind' (immediate after 30-min check)",
+        "Wait: 2 hours",
+        "If/Else: purchased? Yes → exit to buyer onboarding; No → If email opened in 2h? Yes → skip SMS; No → SMS 'CA-S01 Quick Nudge' + (if messenger-subscribed) Messenger 'CA-M01'",
+        "Wait: 22 hours (total 24h from abandon)",
+        "If/Else: purchased? Yes → exit; No → Email 'CA-02 Story/Objection Handle'",
+        "Wait: 24 hours (total 48h from abandon)",
+        "If/Else: purchased? Yes → exit; No → SMS 'CA-S02 Urgency' + (if messenger-subscribed) Messenger 'CA-M02'",
+        "Wait: 24 hours (total 72h from abandon)",
+        "If/Else: purchased? Yes → exit; No → Email 'CA-03 Last Call'",
+        "Action: Remove Tag 'cart-abandon-started' (sequence complete regardless of purchase)"
+      ],
+      "purchase_interrupt": "Purchase event fires at any point: Add 'purchased-[offer-id]', Remove 'cart-abandon-started', stop all active abandon nodes, start buyer onboarding.",
+      "skill44_notes": "Set node 'order' and 'parentKey' before first save. All email templates CA-01..CA-03 in GHL Email Builder. SMS CA-S01, CA-S02. Messenger CA-M01, CA-M02."
+    }
+  }
+}

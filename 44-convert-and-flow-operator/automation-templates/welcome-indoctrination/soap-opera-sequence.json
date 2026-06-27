@@ -1,0 +1,162 @@
+{
+  "id": "soap-opera-sequence",
+  "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
+  "aliases": [
+    "SOS",
+    "5-Day Soap Opera Sequence",
+    "Bonding Sequence",
+    "Soap Opera Emails",
+    "Attractive Character Intro Emails",
+    "Andre Chaperon Soap Opera Sequence",
+    "New-Subscriber Welcome Story Sequence"
+  ],
+  "category": "welcome-indoctrination",
+  "source": {
+    "primary": "DotCom Secrets — Secret #7: The Soap Opera Sequence (Russell Brunson; concept credited to Andre Chaperon)",
+    "supporting": [
+      "DotCom Secrets — Secret #6: The Attractive Character",
+      "Expert Secrets — The Epiphany Bridge Script (5 phases / 14 questions)",
+      "Copywriting Secrets — Secret #18: How To Write Killer Email Teasers (Jim Edwards)"
+    ]
+  },
+  "purpose": "The instant a new subscriber joins the list, build a fast emotional bond between the reader and the Attractive Character using a five-day, open-loop narrative that ends on the core offer. Each email opens a loop that drags the reader into the next email, exactly like a soap-opera cliffhanger.",
+  "trigger": {
+    "what_starts_it": "New subscriber opt-in (squeeze-page / lead-magnet form submit). Fires the minute the contact joins the list.",
+    "ghl_trigger_type": "Form Submitted / Funnel Step Submitted (opt-in form) OR Contact Created filtered to the opt-in source",
+    "fires": "Once per contact, on FIRST opt-in only",
+    "reentry_guard": "Only enter if tag 'sos-started' does NOT already exist"
+  },
+  "channels": ["email (auto-responder, 1/day for 5 days)", "optional SMS mirror nudge on no-open"],
+  "cadence": "Auto-responder, one email per day for 5 consecutive days (Brunson recommends once/day for this sequence for best results)",
+  "sequence": [
+    {
+      "step": 1,
+      "beat": "Set the Stage",
+      "delay": "immediate (0 min after opt-in)",
+      "purpose": "Thank-you note delivered the minute they sign up. Welcome them to your world, set expectations (you'll email once a day), and OPEN THE FIRST LOOP — promise that tomorrow you'll give them your best product for free, but ONLY if they open the email.",
+      "subject_angle": "[BRAND] Ch. 1 of 5  (chapter framing signals an ongoing story; numbers create completion drive)",
+      "body_framework": [
+        "Official welcome: 'this is [AC name] and I want to officially welcome you to my world'",
+        "One-line origin tease (where the AC started — relatable backstory hook)",
+        "Mission line: 'my goal is always to give away better stuff for FREE than what other people charge for'",
+        "OPEN LOOP: 'tomorrow I'm going to let you go through one of my BEST products for free... BUT only if you open the email when it comes'",
+        "Relationship framing: 'I want our relationship to start out great'",
+        "CTA: 'look for that email tomorrow'",
+        "P.S. that names tomorrow's subject line verbatim ('Ch. 2 of 5: [dramatic hook]') so they watch for it"
+      ]
+    },
+    {
+      "step": 2,
+      "beat": "Open with High Drama → Backstory → Wall (open loop)",
+      "delay": "+1 day",
+      "purpose": "Begin the story-selling. Start at the point of HIGH DRAMA (Daegan Smith rule: never start a story at the beginning, start where it gets good), then flash back and fill in the backstory that lands the reader at the same wall they're stuck at now. Hit the wall, then OPEN THE LOOP — promise the epiphany tomorrow.",
+      "subject_angle": "[BRAND] Ch. 2 of 5: [the dramatic hook]  (e.g., 'The day my education failed me')",
+      "body_framework": [
+        "Cold open IN the dramatic moment ('How did I get here?')",
+        "Backstory: take them back to where you were — the same spot the reader is in now (overweight / broke / stuck)",
+        "Build to the WALL: how you got stuck and hit the wall (this is where the reader is right now)",
+        "Open the loop: tease that you found the answer but DON'T give it — 'look for tomorrow's email, I'm going to show you the epiphany'",
+        "Name tomorrow's subject line",
+        "P.S. delivers the free product promised in Email 1 (the open loop from yesterday now pays off): link + 'for my faithful subscribers only'"
+      ]
+    },
+    {
+      "step": 3,
+      "beat": "Epiphany",
+      "delay": "+1 day",
+      "purpose": "Pay off the loop: deliver the epiphany / aha that turned everything around. The epiphany ties directly into the core offer (whatever you're selling that solves the problem). Reader is hooked and now wants the solution. Soft CTA to the offer / VSL.",
+      "subject_angle": "[BRAND] Ch. 3 of 5: [offer name]",
+      "body_framework": [
+        "Set the scene of the epiphany moment ('I was sitting in my college classroom doing the math...')",
+        "Walk the reader through the realization step by step (let them feel the aha with you)",
+        "State the epiphany plainly: 'That's when I realized ___' — and tie it to the solution",
+        "Proof of the result the epiphany produced (numbers / transformation)",
+        "CTA to the core offer / VSL: 'I just posted a video that shows how I did it — check it out here: [core_offer_url]'",
+        "P.S. tease tomorrow's hidden benefits"
+      ]
+    },
+    {
+      "step": 4,
+      "beat": "Hidden Benefits",
+      "delay": "+1 day",
+      "purpose": "Point out the NON-OBVIOUS benefits of the product/path — the ones that really move people. Another reason to email, another bond-building touch. Often the hidden benefit (freedom, fulfillment, time with family) is what triggers the click. Stronger CTA with the offer stack + risk reversal.",
+      "subject_angle": "[BRAND] Ch. 4 of 5: The Hidden Benefits",
+      "body_framework": [
+        "Open on a worry/objection you had ('I was concerned because I didn't have any credentials...')",
+        "Reveal the hidden benefit through a parable/story ('what caught me off-guard was how helping people actually changed the quality of MY life')",
+        "Stack: 'sure you'll [obvious benefit] — BUT you'll also [hidden benefit]'",
+        "Offer with risk reversal: discount + 'only pay if you love it' guarantee",
+        "CTA to the offer with a soft deadline hint"
+      ]
+    },
+    {
+      "step": 5,
+      "beat": "Urgency & Call To Action",
+      "delay": "+1 day",
+      "purpose": "Last push of the INTRODUCTION (not the last email you ever send — Seinfeld emails continue after). Add REAL urgency (a genuine deadline/scarcity reason) and a hard CTA. Fake urgency backfires and destroys credibility — the reason must be true (sale ends today, seats running out, video coming offline, coupon expires in 24h).",
+      "subject_angle": "[BRAND] Ch. 5 of 5: Last Call",
+      "body_framework": [
+        "Recap what you've offered all week",
+        "State the REAL deadline: 'that special offer is going away TODAY'",
+        "Consequence of waiting (price goes back up / offer disappears)",
+        "Hard CTA: 'go get it ASAP here: [core_offer_url]'",
+        "Light warning close: 'you've been warned — I don't want any emails tomorrow saying I didn't warn you'"
+      ]
+    }
+  ],
+  "open_loop_mechanic": "Email 1 pulls to Email 2; Email 2 pulls to Email 3; and so on. Every email closes the previous loop and opens a new one. This is the single most important mechanic — without open loops the sequence is just five disconnected emails.",
+  "writing_style_rules": [
+    "One or two sentences per line; lots of white space; never long paragraphs (fast to scan)",
+    "Loads of personality — this is the reader's first meeting with the Attractive Character",
+    "Don't over-edit. Minor grammatical imperfections make the AC relatable (Character Flaws element). Don't add errors on purpose, but don't let fear of mistakes stop you from sending.",
+    "Write like you're emailing a friend (Copywriting Secrets) — 'Friends don't send friends ten-page sales letters'"
+  ],
+  "copy_persona": {
+    "architecture": "DotCom Secrets — Soap Opera Sequence (Brunson / Andre Chaperon): the 5-beat skeleton (Set the Stage → High Drama → Epiphany → Hidden Benefits → Urgency/CTA)",
+    "the_who": "The Attractive Character (DotCom Secrets Secret #6): 4 Elements (Backstory, Parables, Character Flaws, Polarity); pick an Identity (Leader / Adventurer / Reporter-Evangelist / Reluctant Hero); use the 6 Storylines (Loss & Redemption, Us vs Them, Before & After, Amazing Discovery, Secret Telling, Third-Person Testimonial)",
+    "story_structure_for_emails_2_3": "The Epiphany Bridge Script (Expert Secrets — 5 phases / 14 questions): Backstory/Desire/Old vehicle → Journey/Wall/Conflict → Guide/Epiphany/New Opportunity → Framework → Achievement/Transformation. Email 2 = Backstory→Wall; Email 3 = Epiphany→New Opportunity.",
+    "email_mechanics_every_email": "Copywriting Secrets — Email Teaser formula (Jim Edwards, Secret #18): subject line = the headline (short, concise, often a question); salutation with merged first name; shocking statement to break hypnosis; 2-4 curiosity bullets/sentences; ONE specific call to action; personal friendly close ('I'll see you over there, [name]'). The email's only job is the click; the page/VSL does the selling."
+  },
+  "flexibility": {
+    "core_principle": "This template is a GUIDE and a RESOURCE, never a rule or requirement. It must not dominate the user's desire.",
+    "usage_modes": {
+      "mode_1_explicit_desire": "User has an explicit desire: do exactly what the user wants. This template is an optional reference only — never impose it or override the user's choice.",
+      "mode_2_unsure": "User is unsure: suggest the proven 5-beat skeleton and explain why (open-loop bonding, daily cadence, character introduction), then let the user decide.",
+      "mode_3_just_do_it": "User wants it handled ('just build it'): build the entire sequence from this template using the beats, delays, copy frameworks, and GHL workflow as written."
+    },
+    "always": "Overridable, mixable, customizable, ignorable at every level — number of emails, beat order, cadence, urgency framing, subject lines, open-loop style. The template assists; it never dominates. When in doubt, treat every element here as a recommended default the user can change or skip."
+  },
+  "ghl_build": {
+    "builder": "Skill 44 — Convert & Flow Operator (caf), Tier 0 PRIMARY in the 6-tier GHL access chain. Builds directly via internal API when GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN is present + healthy; if token missing/expired, BUILD falls to Tier 4 (agent-browser) backstop and the owner is nudged — nothing silent.",
+    "dependencies_first": {
+      "note": "caf REFUSES to build a workflow whose tags / custom fields / custom values don't exist yet (dependency-first contract). Create these BEFORE the workflow.",
+      "tags": ["sos-started", "sos-complete", "sos-purchased"],
+      "custom_fields": ["sos_start_date (date)"],
+      "custom_values": ["{{ac_name}}", "{{brand_tag}}", "{{core_offer_url}}", "{{free_gift_url}}"]
+    },
+    "workflow": {
+      "trigger": "Form Submitted (opt-in squeeze form) OR Funnel Step Submitted OR Contact Created filtered to opt-in source. Trigger filter: tag 'sos-started' is NOT present (re-entry guard).",
+      "nodes": [
+        "Action: Add Tag 'sos-started'  +  Set Custom Field sos_start_date = {{now}}",
+        "Email: Send 'SOS-01 Set the Stage' (immediate)",
+        "Wait: 1 day (or Wait-Until 8:00 AM contact timezone)",
+        "Email: Send 'SOS-02 High Drama'",
+        "Wait: 1 day",
+        "Email: Send 'SOS-03 Epiphany'",
+        "Wait: 1 day",
+        "Email: Send 'SOS-04 Hidden Benefits'",
+        "Wait: 1 day",
+        "Email: Send 'SOS-05 Urgency + CTA'",
+        "Action: Add Tag 'sos-complete', Remove Tag 'sos-started'",
+        "Action: Add to Workflow 'Daily Seinfeld enrollment' (graduation handoff)"
+      ],
+      "if_else_branches": [
+        "Optional buyer fork after each offer email (Email 3, 4, 5): IF contact has tag 'sos-purchased' (or order/payment event for core offer) THEN remove from remaining sales emails and route to buyer onboarding; ELSE continue the sequence.",
+        "Optional engagement fork: IF email not opened within 12h THEN send SMS mirror nudge ('check your inbox — Ch. X is waiting'); ELSE continue."
+      ],
+      "wait_steps": "4 wait steps of 1 day each between the 5 emails (use Wait-Until-time for consistent send hour).",
+      "skill44_reliability": "Set each node's 'order' and 'parentKey' BEFORE the first save (Skill 44 caf workflow-build reliability rule). Email nodes reference GHL email templates SOS-01..SOS-05 built in the Email Builder."
+    },
+    "graduation": "On 'sos-complete', the contact is added to the Seinfeld broadcast audience (see daily-seinfeld-sequence template). The Soap Opera Sequence is the auto-responder INTRODUCTION; Seinfeld emails are the ongoing daily broadcasts that follow."
+  }
+}

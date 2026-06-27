@@ -1,0 +1,85 @@
+{
+  "id": "value-broadcast-3-closes-campaign",
+  "name": "3 Closes Broadcast Mini-Campaign — Emotion / Logic / Fear Ascension Push",
+  "aliases": [
+    "3 closes",
+    "emotion-logic-fear",
+    "ascension broadcast",
+    "offer-push mini-campaign",
+    "value-ladder broadcast promo",
+    "engaged-list promo sequence"
+  ],
+  "category": "engagement-broadcast",
+  "source": {
+    "books": ["The Funnel Hacker's Cookbook", "DotCom Secrets (Russell Brunson)", "Copywriting Secrets (Jim Edwards)"],
+    "sections": [
+      "Funnel Hacker's Cookbook #24 — Follow-Up Funnel ('moves leads through the 3 Closes framework: Emotion close -> Logic close -> Fear close')",
+      "DotCom Secrets — Star/Story/Solution closes: Emotional/If-All close (#27), Guarantee/Logic (#29), Scarcity/Fear close (#30), Takeaway selling (#34)",
+      "Copywriting Secrets — Ten Reasons People Buy, honest-scarcity integrity rule, takeaway/FOMO close"
+    ]
+  },
+  "trigger": {
+    "primary": "A scheduled PROMO WINDOW to the engaged broadcast segment — new offer, open cart, event-registration push, or value-ladder ascension. Layered ON TOP of the daily Seinfeld cadence for ~5-7 days.",
+    "trigger_type_ghl": "Tag Added 'promo-{offer}' to the seinfeld-broadcast segment, OR a scheduled campaign start date."
+  },
+  "channels": ["Email (primary)", "SMS (reminder on the Fear/urgency close)", "Retargeting ads (optional)"],
+  "sequence": [
+    {
+      "step": 1,
+      "beat": "EMOTION close",
+      "purpose": "Create desire; people buy on emotion.",
+      "subjectAngle": "Story-led, future-paced curiosity.",
+      "bodyFramework": "Seinfeld story -> emotional offer. Future pacing + the If-All anchor: 'If all this did was ___, would it be worth it?' Use BOTH toward-pleasure and away-from-pain statements.",
+      "delay": "Day 0"
+    },
+    {
+      "step": 2,
+      "beat": "LOGIC close",
+      "purpose": "Justify the buy intellectually.",
+      "subjectAngle": "Proof / value-stack angle.",
+      "bodyFramework": "Value stack; float a fake price then reveal the real price ('dollars for dimes'); crazy-named guarantee that reverses risk; social proof / case studies; ease + speed + 'so' benefits.",
+      "delay": "+2 days"
+    },
+    {
+      "step": 3,
+      "beat": "FEAR close",
+      "purpose": "Trigger action now via legitimate urgency.",
+      "subjectAngle": "Deadline / last-call.",
+      "bodyFramework": "Real scarcity (cart closes / seats left / price goes up / offer pulled) + Takeaway selling ('it doesn't matter to us if you join or not...'). Honor the deadline — fake urgency backfires.",
+      "delay": "+2 days; SMS reminder day-of",
+      "branch": "If/Else: purchased? -> exit (add buyer tag) | not purchased -> send."
+    },
+    {
+      "step": 4,
+      "beat": "(optional) Post-deadline",
+      "purpose": "Recover near-misses.",
+      "subjectAngle": "'You missed it / next chance' or down-sell.",
+      "bodyFramework": "Brief cart-closed note + a down-sell or wait-list CTA.",
+      "delay": "+1 day"
+    }
+  ],
+  "copyPersona": {
+    "primary": "Brunson Star/Story/Solution closes mapped to the 3 Closes: Emotional/If-All (#27), Guarantee/Logic (#29), Scarcity+Takeaway (#30/#34).",
+    "secondary": "Edwards — Ten Reasons People Buy, dollars-for-dimes value framing, and the non-negotiable honest-scarcity rule.",
+    "scripts": ["3 Closes: Emotion -> Logic -> Fear", "If-All emotional anchor", "Fake-price/real-price", "Takeaway selling"]
+  },
+  "ghlBuild": {
+    "buildType": "A REAL GoHighLevel WORKFLOW (autoresponder-style mini-drip) — distinct from the daily broadcast; this one IS sequenced.",
+    "trigger": "Tag Added 'promo-{offer}' on the seinfeld-broadcast Smart List (or scheduled campaign).",
+    "actions": [
+      "Send Email (Emotion close)",
+      "Wait 2 days",
+      "If/Else: purchased? (check order tag / opportunity stage)  -> YES: Remove from campaign + Add Tag buyer  / NO: continue",
+      "Send Email (Logic close)",
+      "Wait 2 days",
+      "If/Else: purchased?  -> YES: exit  / NO: continue",
+      "Send Email (Fear close)  +  Send SMS reminder",
+      "Wait until deadline date",
+      "Remove Tag promo-{offer}"
+    ],
+    "goalEvent": "Configure a Goal / If-Else on 'Purchase made' (opportunity stage or product/order tag) so buyers exit immediately and stop receiving promo emails.",
+    "notes": "Set action order + parentKey before the first save (Skill 44 reliability). Use Wait-until-date for the real deadline. Suppress these contacts from competing promos while in-campaign."
+  },
+  "kpis": ["campaign conversion rate", "revenue per recipient", "open/click by close type (which close converts your list)", "unsubscribe spike check (over-promotion guard)"],
+  "faithfulness": "The 3 Closes framework (Emotion -> Logic -> Fear) is stated in Funnel Hacker's Cookbook #24 (Follow-Up Funnel). The specific close mechanics (If-All emotional anchor, fake/real price, crazy-named guarantee, scarcity, takeaway selling) are the Star/Story/Solution closes from DotCom Secrets. Honest-scarcity is an Edwards non-negotiable. The 3-email cadence and GHL workflow are the Skill-44 operationalization; exact day-gaps are a sensible default, not a fixed book number."
+}

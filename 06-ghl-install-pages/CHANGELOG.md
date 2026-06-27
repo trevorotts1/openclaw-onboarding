@@ -4,6 +4,17 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.6.0] - 2026-06-27 — feat(skill6): flexibility retrofit — three-mode GUIDE-NOT-RULE matcher
+
+Retrofits `funnel_matcher.py` with the full three-mode flexibility model (Mode 1 Explicit, Mode 2 Unsure, Mode 3 Just-do-it) and the `HONORED_EXPLICIT` decision path. Adds `_detect_funnel_explicit()` for name/alias/id detection. Updates `step0_match()` to read `task["explicit_funnel"]` and `task["just_do_it"]`. Updates `_rationale()` to include the flexibility preamble on every decision. Updates `funnel_matcher_cli.py` selftest to accept `HONORED_EXPLICIT` (13/13 pass). All previous 13/13 selftest cases continue to pass.
+
+### Changed
+- `tools/funnel_matcher.py` — flexibility model retrofitted: `_detect_funnel_explicit()`, `HONORED_EXPLICIT` decision, `flexibility_mode` field, `step0_match()` flexibility input fields, updated `_rationale()`.
+- `tools/funnel_matcher_cli.py` — selftest updated to accept `HONORED_EXPLICIT` as a positive decision (not a regression).
+
+### Compatibility
+No breaking change. `USE_TEMPLATE` and `CREATE_NEW` decisions continue to fire identically. `HONORED_EXPLICIT` is a new positive path (previously would have been `USE_TEMPLATE` with high confidence). The output dict adds `flexibility_mode` field (backward compatible).
+
 ## [v14.4.0] - 2026-06-26 — feat(skill6): funnel-template library + template-first matcher (STEP 0)
 
 Adds a 38-template funnel catalog and a template-first matcher that makes

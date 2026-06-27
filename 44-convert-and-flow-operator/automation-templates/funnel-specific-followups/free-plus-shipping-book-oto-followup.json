@@ -1,0 +1,133 @@
+{
+  "id": "free-plus-shipping-book-oto-followup",
+  "name": "Free-Plus-Shipping / Book Post-Purchase + OTO Recovery Follow-Up",
+  "aliases": [
+    "book funnel follow-up",
+    "free plus shipping post-purchase",
+    "FPS OTO recovery",
+    "tripwire post-purchase sequence",
+    "no-upsell recovery",
+    "buyer ascension sequence"
+  ],
+  "category": "funnel-specific-followups",
+  "summary": "Post-purchase follow-up for a Free-Plus-Shipping / Book funnel (or 2-step tripwire). Confirms the order and delivers the bonus/digital copy, BONDS the new buyer to the Attractive Character (Soap Opera), recovers the 'no-upsell' drop-off (buyers who skipped the OTO) with a second-chance OTO, and bridges the new buyer UP the value ladder to the next funnel (webinar / high-ticket). Front end breaks even; this sequence is where ascension profit lives.",
+  "trigger": {
+    "primary_event": "Front-end purchase completed (book/FPS/tripwire order)",
+    "entry_conditions": [
+      "Contact completed the front-end order (tag `fe-purchased`)",
+      "OTO disposition known: `oto-accepted` or `oto-declined` (the 'no-upsell' segment)"
+    ],
+    "exit_conditions": [
+      "Buyer ascends (buys the next-step offer) -> route to that funnel's follow-up",
+      "Refund/cancel -> route to retention/cancellation save",
+      "Opt-out"
+    ],
+    "segmentation_inputs": [
+      "Took the OTO vs declined (no-upsell drop-off)",
+      "Digital vs physical fulfillment (shipping touch only if physical)",
+      "Engaged with bonus content vs not (trigger-link clicks)"
+    ]
+  },
+  "channels": ["Email", "SMS"],
+  "sequence": [
+    {
+      "phase": "A. Confirmation + delivery",
+      "step": "Order confirmation + bonus/digital delivery",
+      "beat": "Reassure the buyer, fulfill FIRST (deliver the digital copy + promised bonus training), set the relationship tone.",
+      "delay": "Immediately on purchase",
+      "channel": "Email + SMS",
+      "subject_angle": "\"Your order is confirmed — here's your bonus access\"",
+      "body_framework": "Lead-Funnels rule: fulfill the promise BEFORE any ask. Deliver download/access links + the high-value bonus training that bridges to the backend. Warm welcome from the Attractive Character. If physical: shipping timeline + tracking-to-come."
+    },
+    {
+      "phase": "B. Second-chance OTO (no-upsell recovery)",
+      "step": "Recover buyers who declined the OTO",
+      "beat": "Re-present the one-time offer to the 'no-upsell' segment — the Cookbook drop-off leak (#: 'no-upsell -> Message #1/#2/#3').",
+      "delay": "+1 to +24 hours (while purchase intent is hot), only to `oto-declined`",
+      "channel": "Email + SMS",
+      "subject_angle": "\"Wait — you skipped this (one-time)\" / \"Your buyer-only upgrade is still open\"",
+      "body_framework": "Stealth / Columbo soft-close ('By the way, since you grabbed [book], you can still add [OTO]…') + Jim Edwards Problem/Agitate/Solve on the specific gap the OTO fills. Honest one-time framing — if the OTO truly closes, honor it. Single CTA to a one-click add.",
+      "branch": "Accepts -> tag `oto-recovered`, stop this phase. Declines again -> proceed to ascension, do not keep pushing the OTO."
+    },
+    {
+      "phase": "C. Buyer bonding (Soap Opera)",
+      "step": "Bond the new buyer to the Attractive Character",
+      "beat": "Turn a $7.95 buyer into a fan who opens every email. Build the relationship that makes ascension possible.",
+      "delay": "Daily across the first 3-5 days post-purchase",
+      "channel": "Email",
+      "subject_angle": "Chaptered Soap Opera style",
+      "body_framework": "Soap Opera Sequence applied to buyers: (1) Set the Stage (what to expect now they're 'in'); (2) High Drama + Backstory; (3) Epiphany tied to the backend offer; (4) Hidden Benefits of going further. Each opens a loop to the next and seeds the next-step offer.",
+      "copy_notes": "This is the bond-building Brunson says raises stick rate before the SECOND funnel is offered."
+    },
+    {
+      "phase": "D. Ascension bridge",
+      "step": "Bridge to the next funnel in the value ladder",
+      "beat": "Move the bonded buyer UP — register them for the webinar or invite them to apply (the next funnel in the stack).",
+      "delay": "After the bonding sequence (day 5-7+), then ongoing",
+      "channel": "Email + SMS",
+      "subject_angle": "\"Ready for the next step? [next offer]\"",
+      "body_framework": "Soap Opera Email #5 (Urgency + CTA) handing off to the NEXT funnel: invite to the webinar (-> webinar template) or the application (-> application template). 3 Closes can run here if selling directly. After this, buyer drops into the ongoing Daily Seinfeld Sequence.",
+      "copy_notes": "Stack the next funnel: book funnel -> webinar funnel -> high-ticket. Profit lives in the stack, not the front end."
+    }
+  ],
+  "copy_persona": {
+    "primary": "DotCom Secrets (Soap Opera Sequence buyer-bonding) + Copywriting Secrets (Stealth/Columbo OTO close).",
+    "scripts_used": [
+      "Lead-Funnels 'fulfill before any ask' rule (deliver the book/bonus first)",
+      "Stealth / Columbo close (Copywriting Secrets) for the second-chance OTO ('By the way…')",
+      "Problem/Agitate/Solve (Copywriting Secrets) on the specific gap the OTO fills",
+      "Soap Opera Sequence (DotCom Secrets) for buyer bonding #1-#5",
+      "Daily Seinfeld Sequence (DotCom Secrets) as the ongoing buyer-list cadence after ascension hand-off",
+      "Honest one-time OTO framing"
+    ],
+    "structural_persona": "russell-brunson-the-funnel-hackers-cookbook + Marketing Secrets Blackbook — Book Funnel / Free-Plus-Shipping recipe (2-step order + bump -> OTO 1 -> OTO 2/downsell -> confirmation/bonus page with high-ticket CTA); Cart-Maximization (bump -> OTO -> downsell); Drop-Off Automation for the no-upsell leak; Funnel Stacking up the value ladder."
+  },
+  "ghl_build": {
+    "engine": "Skill 44 (caf) builds the workflow; purchase + OTO disposition arrive as Order Submitted triggers / tags from the funnel.",
+    "workflow_name": "FSF — Book/FPS Post-Purchase: Deliver -> OTO Recover -> Bond -> Ascend",
+    "trigger_config": {
+      "ghl_trigger": "Order Submitted = front-end product (or Tag Added `fe-purchased`)",
+      "oto_disposition": "Funnel sets `oto-accepted` / `oto-declined` tags; if absent, infer from order line items",
+      "fulfillment_branch": "If/Else physical vs digital -> include shipping touch only for physical"
+    },
+    "actions_in_order": [
+      "1. Send Email + SMS — Order confirmation + bonus/access delivery; tag `fe-purchased`",
+      "2. If/Else physical? -> add shipping/tracking touch",
+      "3. If/Else `oto-declined`? TRUE -> Wait 2 hr -> Send Email + SMS second-chance OTO (Stealth close) -> If accepts tag `oto-recovered` & skip repeat",
+      "4. Wait 1 day -> Send Email — Buyer Bonding #1 (Set the Stage)",
+      "5. Wait 1 day -> Bonding #2 (High Drama)",
+      "6. Wait 1 day -> Bonding #3 (Epiphany -> backend)",
+      "7. Wait 1 day -> Bonding #4 (Hidden Benefits)",
+      "8. Wait 1 day -> Ascension Email + SMS (invite to next funnel: webinar reg / application)",
+      "9. Add tag `ready-to-ascend`; hand off to next funnel's workflow + ongoing Daily Seinfeld list",
+      "10. Refund/cancel at any point -> route to retention/cancellation-save workflow"
+    ],
+    "goal_event": "Ascension purchase / next-funnel entry -> exit this sequence into the next funnel's follow-up.",
+    "wait_steps": ["2 hr (OTO recover)", "1 day x4 (bonding)", "1 day (ascend)"],
+    "if_else_branches": [
+      "oto-accepted vs oto-declined (no-upsell recovery)",
+      "physical vs digital fulfillment",
+      "refund/cancel -> retention save",
+      "ascended -> exit to next funnel",
+      "SMS vs email on DND"
+    ],
+    "tags_used": ["fe-purchased", "oto-accepted", "oto-declined", "oto-recovered", "ready-to-ascend", "refund-requested"],
+    "notes": "Honor the 'one-time' OTO claim — if the second-chance link stays open forever the urgency is fake (Edwards/Soap Opera rule). The ascension step is a HAND-OFF: it should enroll the buyer into the Webinar or Application follow-up template, not duplicate that logic here."
+  },
+  "source": {
+    "books": [
+      "The Funnel Hacker's Cookbook (Free+Shipping / Book Funnel; Cart-Maximization bump->OTO->downsell; Drop-Off Automation no-upsell -> Message #1/#2/#3; Funnel Stacking)",
+      "Marketing Secrets Blackbook (Book Funnel free-plus-shipping; bonus-bridge to backend)",
+      "DotCom Secrets (Soap Opera + Daily Seinfeld; value ladder ascension)",
+      "Copywriting Secrets — Jim Edwards (Stealth/Columbo close, PAS, honest scarcity)"
+    ],
+    "fidelity_note": "Order = fulfill-first, no-upsell recovery, buyer bonding, stack-the-next-funnel — all taken directly from the Book/FPS recipe + Drop-Off Automation + Funnel Stacking. No invented mechanics."
+  },
+  "flexibility": {
+    "principle": "This template is a recommended default and a resource — it is NEVER a rule or a requirement.",
+    "mode_1_user_has_explicit_desire": "Do exactly what the user wants. This template is an optional reference only; it is never imposed or overridden onto their choice.",
+    "mode_2_user_is_unsure": "Suggest this proven template and explain why it works, but let the user decide.",
+    "mode_3_user_wants_it_handled": "Build the whole automation from this template.",
+    "note": "Always overridable, mixable, customizable, or ignorable. It assists; it does not dominate."
+  }
+}
