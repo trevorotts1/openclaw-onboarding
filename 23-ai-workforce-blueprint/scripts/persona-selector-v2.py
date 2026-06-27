@@ -651,7 +651,10 @@ def _semantic_candidate_retrieval(task_text: str, paths: dict, top_k: int = 10) 
     semantic_task_fit module is not importable, or numpy/genai is missing but the
     standalone script still works). CLI contract matched to gemini-search.py as
     it exists (PRD item 1.2 Defect 4 fix):
-      argv: [python3, gemini-search.py, "--", task_text, "--limit", N]
+      argv: [python3, gemini-search.py, "--limit", N, "--", task_text]
+      ("--limit" MUST precede "--": argparse treats everything after "--" as
+       positionals, so a trailing "--limit N" there is parsed as stray
+       positional args → exit 2 and the semantic stage goes dark.)
       stdout: human text; both semantic and keyword-fallback paths print
               "PERSONA: <id>" on each result line — one regex catches both:
                 [N] SCORE: 0.83 | PERSONA: hormozi-100m-offers
@@ -681,7 +684,7 @@ def _semantic_candidate_retrieval(task_text: str, paths: dict, top_k: int = 10) 
         return None
     try:
         r = _subprocess.run(
-            [sys.executable, str(sp), "--", task_text, "--limit", str(top_k)],
+            [sys.executable, str(sp), "--limit", str(top_k), "--", task_text],
             capture_output=True, text=True, timeout=20,
         )
         if r.returncode != 0:
