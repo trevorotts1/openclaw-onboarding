@@ -1,5 +1,48 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.2.0] - 2026-06-27 — feat: flex.py shared core + standardised decisions + Step 0.4 + link map v2 + Skill-6 matcher retrofit
+
+### Added
+- `automation-templates/_matcher/flex.py` — shared intent-mode detection + flexibility
+  decision core (stdlib-only). Three modes: EXPLICIT_USER_SPEC / UNSURE_WANTS_SUGGESTION /
+  HANDS_OFF_DO_IT_ALL. Four decisions: HONOR_USER / SUGGEST_TEMPLATE / USE_TEMPLATE /
+  CREATE_NEW. The module is shared by automation_matcher.py and mirrors the Skill-6
+  funnel_matcher retrofit inline copy.
+- `automation-templates/_matcher/cli.py` — command-line interface for the matcher
+  (--list / --match / --selftest).
+- `automation-templates/_matcher/catalog-index.json` — pre-built catalog index
+  (avoids filesystem scan on every invocation).
+- `automation-templates/_matcher/README.md` — usage guide for the automation library.
+- `automation-templates/_matcher/WIRING.md` — how automation_matcher wires into
+  the Skill-44 build loop (Step 0.4) and the Skill-6 handoff.
+- `automation-templates/_links/_build_link_map.py` — script to regenerate
+  `funnel-to-automation.json` from the funnel catalog.
+- `automation-templates/_links/funnel-to-automation.json` — canonical link map v2
+  (replaces `funnel-to-automation-link-map.json`; both ship for backward compat).
+  Maps all 38 Skill-6 funnel templates to Skill-44 follow-up automations with
+  primary, secondary, and graduation links. Each link carries a `flexibility` block
+  enforcing RECOMMENDED-not-mandatory at the data level.
+- `automation-templates/_patches/` — three patch artifacts:
+  `_skill44_step0_section.md` (the INSTRUCTIONS.md Step 0.4 prose),
+  `skill44-instructions-step0-flexible-match.patch` (diff form of Step 0.4),
+  `skill6-funnel-matcher-flexibility.patch` (the Skill-6 retrofit patch).
+
+### Changed
+- `automation-templates/_matcher/automation_matcher.py` — upgraded to use `flex.py`
+  shared core; standardised decision names (HONOR_USER / SUGGEST_TEMPLATE /
+  USE_TEMPLATE / CREATE_NEW); adds `expand_funnel_to_automations()` and the full
+  `step0_match()` wiring with funnel link map expansion.
+- `INSTRUCTIONS.md` — adds **Step 0.4** (Flexible Template Match) between the
+  existing Step 0 (Model Check) and Step 0.5 (PLAN MODE). Step 0.4 defines the
+  complete-funnel handoff from Skill 6 to Skill 44 via `funnel-to-automation.json`.
+
+### Flexibility model (standardised)
+HONOR_USER (EXPLICIT) — build exactly what the user wants; template = optional ref only.
+SUGGEST_TEMPLATE (UNSURE + confident) — recommend + why, await confirm; never build yet.
+USE_TEMPLATE (HANDS_OFF + confident) — build the whole automation from the template.
+CREATE_NEW (nothing fits or unsure + no match) — generate net-new + save back.
+imposes_on_user is ALWAYS false. override_allowed is ALWAYS true. Never blocks.
+
 ## [1.1.0] - 2026-06-27 — feat: automation template library + funnel link map + flexible matcher
 
 ### Added

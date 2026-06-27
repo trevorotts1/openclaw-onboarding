@@ -4,6 +4,51 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.7.0] - 2026-06-27 — feat(skill6): standardised flex retrofit — detect_mode + flex_decide + linked_automations + step0_match link-map handoff
+
+Completes the Skill-6 flexibility retrofit by adding the standardised flex functions
+(inline, self-contained) that mirror the Skill-44 flex.py shared core. All three intent
+modes (EXPLICIT_USER_SPEC / UNSURE_WANTS_SUGGESTION / HANDS_OFF_DO_IT_ALL) and four
+decisions (HONOR_USER / SUGGEST_TEMPLATE / USE_TEMPLATE / CREATE_NEW) are now operative.
+The `linked_automations()` function + `step0_match()` link_map_path param connect Skill 6
+to Skill 44 for complete-funnel builds.
+
+### Added (funnel_matcher.py)
+- `MODE_EXPLICIT`, `MODE_UNSURE`, `MODE_HANDSOFF`, `MODES` constants.
+- `DEC_HONOR_USER`, `DEC_SUGGEST`, `DEC_USE`, `DEC_CREATE_NEW` constants.
+- `HONORED_EXPLICIT = DEC_HONOR_USER` backward-compat alias (v14.6.0 callers unbroken).
+- `detect_mode(request, override)` — intent-mode detection with legacy
+  `explicit_funnel` / `just_do_it` field compat.
+- `flex_decide(mode, *, has_confident_match, has_any_match)` — maps (mode, match)
+  to a flexibility decision; `imposes_on_user` ALWAYS False; `override_allowed` ALWAYS True.
+- `flex_principle()` — machine-readable flexibility manifesto (logged with every decision).
+- `linked_automations(funnel_id, link_map_path, *, overrides, include_secondary)` —
+  reads `funnel-to-automation.json` and returns the RECOMMENDED follow-up automations for a
+  funnel (primary + secondary + graduation, minus user overrides). Hands off to Skill 44.
+- `_rationale_flex(mode, decision, best, threshold, flex)` — structured rationale for all
+  four decisions.
+
+### Changed (funnel_matcher.py)
+- `match_funnel()` — adds `intent_mode` param; uses `detect_mode()` + `flex_decide()`
+  to produce one of four decisions. HONOR_USER path calls `_detect_funnel_explicit()` as
+  before (fully backward-compat). Output dict adds `intent_mode`, `mode_reason`,
+  `mode_cue`, `imposes_on_user`, `override_allowed`, `await_confirm`,
+  `build_from_template`, `template_role`, `flex_note`, `flex_principle`.
+- `log_decision()` — adds `intent_mode`, `mode_cue`, `await_confirm` to every log line.
+- `step0_match()` — adds `intent_mode` and `link_map_path` params; mutates task with
+  four-way decision (HONOR_USER / SUGGEST_TEMPLATE / USE_TEMPLATE / CREATE_NEW); attaches
+  `linked_automations` to task and decision when a link map is available.
+
+### Compatibility
+- `HONORED_EXPLICIT` decision string is an alias for `HONOR_USER` — callers checking
+  `decision["decision"] == "HONORED_EXPLICIT"` still work.
+- `explicit_funnel` and `just_do_it` fields on the request still route correctly via
+  `detect_mode()` backward-compat path.
+- `USE_TEMPLATE` and `CREATE_NEW` decisions continue to fire identically.
+- All previously passing selftests continue to pass (13/13).
+
+---
+
 ## [v14.6.0] - 2026-06-27 — feat(skill6): flexibility retrofit — three-mode GUIDE-NOT-RULE matcher
 
 Retrofits `funnel_matcher.py` with the full three-mode flexibility model (Mode 1 Explicit, Mode 2 Unsure, Mode 3 Just-do-it) and the `HONORED_EXPLICIT` decision path. Adds `_detect_funnel_explicit()` for name/alias/id detection. Updates `step0_match()` to read `task["explicit_funnel"]` and `task["just_do_it"]`. Updates `_rationale()` to include the flexibility preamble on every decision. Updates `funnel_matcher_cli.py` selftest to accept `HONORED_EXPLICIT` (13/13 pass). All previous 13/13 selftest cases continue to pass.

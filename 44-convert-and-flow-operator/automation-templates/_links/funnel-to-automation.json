@@ -1,0 +1,1596 @@
+{
+  "_meta": {
+    "generated_at": "2026-06-27T07:54:41Z",
+    "description": "Funnel <-> Automation recommended-followup link map. Maps each Skill-6 funnel template to its recommended Skill-44 follow-up automation(s).",
+    "core_principle": "Every link is a RECOMMENDED DEFAULT and a RESOURCE \u2014 never a rule or a requirement. The template/sequence assists; it never dominates the user's stated desire. Always overridable, mixable, customizable, ignorable.",
+    "intent_modes": {
+      "EXPLICIT_USER_SPEC": "User named their own follow-up -> honor it; this map is only an optional reference.",
+      "UNSURE_WANTS_SUGGESTION": "User is unsure -> suggest the primary follow-up + why, await confirm.",
+      "HANDS_OFF_DO_IT_ALL": "User said 'just do it' -> auto-build the linked automations (minus any the user overrode)."
+    },
+    "funnel_template_count": 38,
+    "automation_template_count": 28,
+    "consumed_by": [
+      "44-convert-and-flow-operator automation_matcher.step0 (intent-mode routing)",
+      "06-ghl-install-pages funnel_matcher.step0_match -> emits linked_automations for Skill 44 to build the complete funnel (minus user overrides)"
+    ]
+  },
+  "links": [
+    {
+      "funnel_template_id": "2-step-tripwire-free-plus-shipping",
+      "funnel_group": "buyer",
+      "funnel_ref": "funnel-templates/buyer/2-step-tripwire-free-plus-shipping.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "free-plus-shipping-book-oto-followup",
+        "category": "funnel-specific-followups",
+        "role": "primary",
+        "name": "Free-Plus-Shipping / Book Post-Purchase + OTO Recovery Follow-Up",
+        "ref": "automation-templates/funnel-specific-followups/free-plus-shipping-book-oto-followup.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "abandoned-cart-recovery",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Abandoned Cart Recovery Sequence",
+          "ref": "automation-templates/sales-close-sequences/abandoned-cart-recovery.json"
+        },
+        {
+          "automation_id": "abandoned-cart-multichannel-recovery",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Abandoned Cart Multichannel Recovery (2-Step Order Form Drop-Off)",
+          "ref": "automation-templates/multichannel-automation/abandoned-cart-multichannel-recovery.json"
+        },
+        {
+          "automation_id": "soap-opera-sequence",
+          "category": "welcome-indoctrination",
+          "role": "secondary",
+          "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
+          "ref": "automation-templates/welcome-indoctrination/soap-opera-sequence.json"
+        }
+      ],
+      "why": "Free+shipping tripwire -> immediate OTO/ascension follow-up; recover order-form abandons; bond new buyers with a Soap Opera Sequence.",
+      "group_doctrine": "A buyer funnel takes money. The proven default follow-up is post-purchase OTO/ascension + cart-abandon recovery for the order form.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "book-funnel",
+      "funnel_group": "buyer",
+      "funnel_ref": "funnel-templates/buyer/book-funnel.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "free-plus-shipping-book-oto-followup",
+        "category": "funnel-specific-followups",
+        "role": "primary",
+        "name": "Free-Plus-Shipping / Book Post-Purchase + OTO Recovery Follow-Up",
+        "ref": "automation-templates/funnel-specific-followups/free-plus-shipping-book-oto-followup.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "cart-abandon-recovery",
+          "category": "funnel-specific-followups",
+          "role": "secondary",
+          "name": "Cart Abandon / Step-1-Not-Step-2 Recovery",
+          "ref": "automation-templates/funnel-specific-followups/cart-abandon-recovery.json"
+        },
+        {
+          "automation_id": "soap-opera-sequence",
+          "category": "welcome-indoctrination",
+          "role": "secondary",
+          "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
+          "ref": "automation-templates/welcome-indoctrination/soap-opera-sequence.json"
+        }
+      ],
+      "why": "Free+shipping book -> post-purchase OTO ladder; recover abandons; indoctrinate the new reader.",
+      "group_doctrine": "A buyer funnel takes money. The proven default follow-up is post-purchase OTO/ascension + cart-abandon recovery for the order form.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "daily-deal",
+      "funnel_group": "buyer",
+      "funnel_ref": "funnel-templates/buyer/daily-deal.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "scarcity-deadline-close",
+        "category": "sales-close-sequences",
+        "role": "primary",
+        "name": "Scarcity / Deadline Close (Standalone Fear Phase)",
+        "ref": "automation-templates/sales-close-sequences/scarcity-deadline-close.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "daily-seinfeld-sequence",
+          "category": "engagement-broadcast",
+          "role": "secondary",
+          "name": "Daily Seinfeld Sequence \u2014 Ongoing Entertainment Broadcast Engine",
+          "ref": "automation-templates/engagement-broadcast/daily-seinfeld-sequence.json"
+        },
+        {
+          "automation_id": "email-teaser-click-driver",
+          "category": "engagement-broadcast",
+          "role": "secondary",
+          "name": "Email Teaser Click-Driver \u2014 Short Click-to-Page Broadcast Email",
+          "ref": "automation-templates/engagement-broadcast/email-teaser-click-driver.json"
+        },
+        {
+          "automation_id": "cart-abandon-recovery",
+          "category": "funnel-specific-followups",
+          "role": "secondary",
+          "name": "Cart Abandon / Step-1-Not-Step-2 Recovery",
+          "ref": "automation-templates/funnel-specific-followups/cart-abandon-recovery.json"
+        }
+      ],
+      "why": "Recurring daily deal lives on real deadline scarcity + a daily broadcast that drives the click; recover abandons.",
+      "group_doctrine": "A buyer funnel takes money. The proven default follow-up is post-purchase OTO/ascension + cart-abandon recovery for the order form.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "membership-continuity",
+      "funnel_group": "buyer",
+      "funnel_ref": "funnel-templates/buyer/membership-continuity.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "membership-stick-retention",
+        "category": "funnel-specific-followups",
+        "role": "primary",
+        "name": "Membership / Continuity Stick + Retention Sequence",
+        "ref": "automation-templates/funnel-specific-followups/membership-stick-retention.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "new-subscriber-indoctrination",
+          "category": "welcome-indoctrination",
+          "role": "secondary",
+          "name": "New-Subscriber Indoctrination Sequence",
+          "ref": "automation-templates/welcome-indoctrination/new-subscriber-indoctrination.json"
+        },
+        {
+          "automation_id": "daily-seinfeld-sequence",
+          "category": "engagement-broadcast",
+          "role": "secondary",
+          "name": "Daily Seinfeld Sequence \u2014 Ongoing Entertainment Broadcast Engine",
+          "ref": "automation-templates/engagement-broadcast/daily-seinfeld-sequence.json"
+        }
+      ],
+      "why": "Continuity stands or falls on stick/retention; onboard new members, keep them engaged with ongoing broadcasts.",
+      "group_doctrine": "A buyer funnel takes money. The proven default follow-up is post-purchase OTO/ascension + cart-abandon recovery for the order form.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "sales-letter",
+      "funnel_group": "buyer",
+      "funnel_ref": "funnel-templates/buyer/sales-letter.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "three-closes-master-followup",
+        "category": "sales-close-sequences",
+        "role": "primary",
+        "name": "The 3 Closes Follow-Up Funnel (Emotion \u2192 Logic \u2192 Fear)",
+        "ref": "automation-templates/sales-close-sequences/three-closes-master-followup.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "cart-abandon-recovery",
+          "category": "funnel-specific-followups",
+          "role": "secondary",
+          "name": "Cart Abandon / Step-1-Not-Step-2 Recovery",
+          "ref": "automation-templates/funnel-specific-followups/cart-abandon-recovery.json"
+        },
+        {
+          "automation_id": "scarcity-deadline-close",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Scarcity / Deadline Close (Standalone Fear Phase)",
+          "ref": "automation-templates/sales-close-sequences/scarcity-deadline-close.json"
+        }
+      ],
+      "why": "Long-form sales letter -> the 3 Closes (Emotion/Logic/Fear) follow-up; recover abandons; add an honest deadline close.",
+      "group_doctrine": "A buyer funnel takes money. The proven default follow-up is post-purchase OTO/ascension + cart-abandon recovery for the order form.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "self-liquidating-offer-slo",
+      "funnel_group": "buyer",
+      "funnel_ref": "funnel-templates/buyer/self-liquidating-offer-slo.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "free-plus-shipping-book-oto-followup",
+        "category": "funnel-specific-followups",
+        "role": "primary",
+        "name": "Free-Plus-Shipping / Book Post-Purchase + OTO Recovery Follow-Up",
+        "ref": "automation-templates/funnel-specific-followups/free-plus-shipping-book-oto-followup.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "cart-abandon-recovery",
+          "category": "funnel-specific-followups",
+          "role": "secondary",
+          "name": "Cart Abandon / Step-1-Not-Step-2 Recovery",
+          "ref": "automation-templates/funnel-specific-followups/cart-abandon-recovery.json"
+        },
+        {
+          "automation_id": "soap-opera-sequence",
+          "category": "welcome-indoctrination",
+          "role": "secondary",
+          "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
+          "ref": "automation-templates/welcome-indoctrination/soap-opera-sequence.json"
+        }
+      ],
+      "why": "SLO is a front-end + OTO ascension play; recover abandons; bond the buyer.",
+      "group_doctrine": "A buyer funnel takes money. The proven default follow-up is post-purchase OTO/ascension + cart-abandon recovery for the order form.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "storefront",
+      "funnel_group": "buyer",
+      "funnel_ref": "funnel-templates/buyer/storefront.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "abandoned-cart-multichannel-recovery",
+        "category": "multichannel-automation",
+        "role": "primary",
+        "name": "Abandoned Cart Multichannel Recovery (2-Step Order Form Drop-Off)",
+        "ref": "automation-templates/multichannel-automation/abandoned-cart-multichannel-recovery.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "abandoned-cart-recovery",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Abandoned Cart Recovery Sequence",
+          "ref": "automation-templates/sales-close-sequences/abandoned-cart-recovery.json"
+        },
+        {
+          "automation_id": "behavioral-retargeting-page-visit-fire",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Behavioral Retargeting \u2014 Page-Visit Pixel Fire + List Membership Update",
+          "ref": "automation-templates/multichannel-automation/behavioral-retargeting-page-visit-fire.json"
+        },
+        {
+          "automation_id": "daily-seinfeld-sequence",
+          "category": "engagement-broadcast",
+          "role": "secondary",
+          "name": "Daily Seinfeld Sequence \u2014 Ongoing Entertainment Broadcast Engine",
+          "ref": "automation-templates/engagement-broadcast/daily-seinfeld-sequence.json"
+        }
+      ],
+      "why": "Ecommerce storefront -> multichannel cart recovery + browse retargeting + an ongoing broadcast to drive repeat visits.",
+      "group_doctrine": "A buyer funnel takes money. The proven default follow-up is post-purchase OTO/ascension + cart-abandon recovery for the order form.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "video-sales-letter-vsl",
+      "funnel_group": "buyer",
+      "funnel_ref": "funnel-templates/buyer/video-sales-letter-vsl.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "three-closes-master-followup",
+        "category": "sales-close-sequences",
+        "role": "primary",
+        "name": "The 3 Closes Follow-Up Funnel (Emotion \u2192 Logic \u2192 Fear)",
+        "ref": "automation-templates/sales-close-sequences/three-closes-master-followup.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "cart-abandon-recovery",
+          "category": "funnel-specific-followups",
+          "role": "secondary",
+          "name": "Cart Abandon / Step-1-Not-Step-2 Recovery",
+          "ref": "automation-templates/funnel-specific-followups/cart-abandon-recovery.json"
+        },
+        {
+          "automation_id": "scarcity-deadline-close",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Scarcity / Deadline Close (Standalone Fear Phase)",
+          "ref": "automation-templates/sales-close-sequences/scarcity-deadline-close.json"
+        }
+      ],
+      "why": "VSL -> 3 Closes follow-up for non-buyers; recover abandons; deadline close.",
+      "group_doctrine": "A buyer funnel takes money. The proven default follow-up is post-purchase OTO/ascension + cart-abandon recovery for the order form.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "autowebinar-funnel",
+      "funnel_group": "event",
+      "funnel_ref": "funnel-templates/event/autowebinar-funnel.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "autowebinar-watch-segmented-followup",
+        "category": "funnel-specific-followups",
+        "role": "primary",
+        "name": "AutoWebinar (Evergreen) Watch-% Segmented Follow-Up",
+        "ref": "automation-templates/funnel-specific-followups/autowebinar-watch-segmented-followup.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "autowebinar-behavioral-branching",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "AutoWebinar Behavioral Branching Sequence (4-Path Watch-Duration Segmentation)",
+          "ref": "automation-templates/multichannel-automation/autowebinar-behavioral-branching.json"
+        },
+        {
+          "automation_id": "perfect-webinar-stack-close",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Perfect Webinar Stack Close (+ Post-Webinar Follow-Up)",
+          "ref": "automation-templates/sales-close-sequences/perfect-webinar-stack-close.json"
+        }
+      ],
+      "why": "Evergreen auto-webinar -> watch-segmented follow-up + behavioral branching + the Stack close.",
+      "group_doctrine": "An event funnel registers an attendee. The proven default follow-up is indoctrination + show-up reminders + replay + the Perfect Webinar Stack close.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "five-minute-perfect-webinar-funnel",
+      "funnel_group": "event",
+      "funnel_ref": "funnel-templates/event/five-minute-perfect-webinar-funnel.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "webinar-registration-reminder-replay-stack",
+        "category": "funnel-specific-followups",
+        "role": "primary",
+        "name": "Webinar Registration \u2192 Indoctrination \u2192 Reminders \u2192 Live \u2192 Replay \u2192 Stack Close",
+        "ref": "automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "perfect-webinar-stack-close",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Perfect Webinar Stack Close (+ Post-Webinar Follow-Up)",
+          "ref": "automation-templates/sales-close-sequences/perfect-webinar-stack-close.json"
+        },
+        {
+          "automation_id": "autowebinar-watch-segmented-followup",
+          "category": "funnel-specific-followups",
+          "role": "secondary",
+          "name": "AutoWebinar (Evergreen) Watch-% Segmented Follow-Up",
+          "ref": "automation-templates/funnel-specific-followups/autowebinar-watch-segmented-followup.json"
+        }
+      ],
+      "why": "5-minute perfect webinar -> registration/reminder/replay wrap + the Stack close.",
+      "group_doctrine": "An event funnel registers an attendee. The proven default follow-up is indoctrination + show-up reminders + replay + the Perfect Webinar Stack close.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "hotel-meeting-funnel",
+      "funnel_group": "event",
+      "funnel_ref": "funnel-templates/event/hotel-meeting-funnel.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "webinar-registration-reminder-replay-stack",
+        "category": "funnel-specific-followups",
+        "role": "primary",
+        "name": "Webinar Registration \u2192 Indoctrination \u2192 Reminders \u2192 Live \u2192 Replay \u2192 Stack Close",
+        "ref": "automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "indoctrination-multichannel-preframe",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Indoctrination Pre-Sell Sequence (Multichannel Story Series Before Cart Opens)",
+          "ref": "automation-templates/multichannel-automation/indoctrination-multichannel-preframe.json"
+        },
+        {
+          "automation_id": "perfect-webinar-stack-close",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Perfect Webinar Stack Close (+ Post-Webinar Follow-Up)",
+          "ref": "automation-templates/sales-close-sequences/perfect-webinar-stack-close.json"
+        }
+      ],
+      "why": "Live hotel meeting -> registration + show-up reminders + replay; pre-frame attendees; close with the Stack.",
+      "group_doctrine": "An event funnel registers an attendee. The proven default follow-up is indoctrination + show-up reminders + replay + the Perfect Webinar Stack close.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "invisible-funnel",
+      "funnel_group": "event",
+      "funnel_ref": "funnel-templates/event/invisible-funnel.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "webinar-registration-reminder-replay-stack",
+        "category": "funnel-specific-followups",
+        "role": "primary",
+        "name": "Webinar Registration \u2192 Indoctrination \u2192 Reminders \u2192 Live \u2192 Replay \u2192 Stack Close",
+        "ref": "automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "autowebinar-watch-segmented-followup",
+          "category": "funnel-specific-followups",
+          "role": "secondary",
+          "name": "AutoWebinar (Evergreen) Watch-% Segmented Follow-Up",
+          "ref": "automation-templates/funnel-specific-followups/autowebinar-watch-segmented-followup.json"
+        },
+        {
+          "automation_id": "perfect-webinar-stack-close",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Perfect Webinar Stack Close (+ Post-Webinar Follow-Up)",
+          "ref": "automation-templates/sales-close-sequences/perfect-webinar-stack-close.json"
+        }
+      ],
+      "why": "Invisible (pay-what-it's-worth webinar) -> reminder/replay wrap + watch-segmented follow-up + Stack close.",
+      "group_doctrine": "An event funnel registers an attendee. The proven default follow-up is indoctrination + show-up reminders + replay + the Perfect Webinar Stack close.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "live-demo-home-party-funnel",
+      "funnel_group": "event",
+      "funnel_ref": "funnel-templates/event/live-demo-home-party-funnel.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "webinar-registration-reminder-replay-stack",
+        "category": "funnel-specific-followups",
+        "role": "primary",
+        "name": "Webinar Registration \u2192 Indoctrination \u2192 Reminders \u2192 Live \u2192 Replay \u2192 Stack Close",
+        "ref": "automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "indoctrination-multichannel-preframe",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Indoctrination Pre-Sell Sequence (Multichannel Story Series Before Cart Opens)",
+          "ref": "automation-templates/multichannel-automation/indoctrination-multichannel-preframe.json"
+        },
+        {
+          "automation_id": "scarcity-deadline-close",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Scarcity / Deadline Close (Standalone Fear Phase)",
+          "ref": "automation-templates/sales-close-sequences/scarcity-deadline-close.json"
+        }
+      ],
+      "why": "Live demo / home party -> registration + reminders + replay; pre-frame; deadline close on the offer.",
+      "group_doctrine": "An event funnel registers an attendee. The proven default follow-up is indoctrination + show-up reminders + replay + the Perfect Webinar Stack close.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "perfect-webinar-shortcut-funnel",
+      "funnel_group": "event",
+      "funnel_ref": "funnel-templates/event/perfect-webinar-shortcut-funnel.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "webinar-registration-reminder-replay-stack",
+        "category": "funnel-specific-followups",
+        "role": "primary",
+        "name": "Webinar Registration \u2192 Indoctrination \u2192 Reminders \u2192 Live \u2192 Replay \u2192 Stack Close",
+        "ref": "automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "perfect-webinar-stack-close",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Perfect Webinar Stack Close (+ Post-Webinar Follow-Up)",
+          "ref": "automation-templates/sales-close-sequences/perfect-webinar-stack-close.json"
+        },
+        {
+          "automation_id": "autowebinar-watch-segmented-followup",
+          "category": "funnel-specific-followups",
+          "role": "secondary",
+          "name": "AutoWebinar (Evergreen) Watch-% Segmented Follow-Up",
+          "ref": "automation-templates/funnel-specific-followups/autowebinar-watch-segmented-followup.json"
+        }
+      ],
+      "why": "Perfect Webinar shortcut -> registration/reminder/replay wrap + the Stack close.",
+      "group_doctrine": "An event funnel registers an attendee. The proven default follow-up is indoctrination + show-up reminders + replay + the Perfect Webinar Stack close.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "product-launch-funnel",
+      "funnel_group": "event",
+      "funnel_ref": "funnel-templates/event/product-launch-funnel.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "cart-open-cart-close-launch-sequence",
+        "category": "sales-close-sequences",
+        "role": "primary",
+        "name": "Cart-Open / Cart-Close Launch Sequence",
+        "ref": "automation-templates/sales-close-sequences/cart-open-cart-close-launch-sequence.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "indoctrination-multichannel-preframe",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Indoctrination Pre-Sell Sequence (Multichannel Story Series Before Cart Opens)",
+          "ref": "automation-templates/multichannel-automation/indoctrination-multichannel-preframe.json"
+        },
+        {
+          "automation_id": "scarcity-deadline-close",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Scarcity / Deadline Close (Standalone Fear Phase)",
+          "ref": "automation-templates/sales-close-sequences/scarcity-deadline-close.json"
+        },
+        {
+          "automation_id": "three-closes-master-followup",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "The 3 Closes Follow-Up Funnel (Emotion \u2192 Logic \u2192 Fear)",
+          "ref": "automation-templates/sales-close-sequences/three-closes-master-followup.json"
+        }
+      ],
+      "why": "Jeff-Walker-style PLF -> the cart-open/cart-close launch sequence; pre-frame the list first; deadline + 3 Closes at close.",
+      "group_doctrine": "An event funnel registers an attendee. The proven default follow-up is indoctrination + show-up reminders + replay + the Perfect Webinar Stack close.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "summit-funnel",
+      "funnel_group": "event",
+      "funnel_ref": "funnel-templates/event/summit-funnel.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "webinar-registration-reminder-replay-stack",
+        "category": "funnel-specific-followups",
+        "role": "primary",
+        "name": "Webinar Registration \u2192 Indoctrination \u2192 Reminders \u2192 Live \u2192 Replay \u2192 Stack Close",
+        "ref": "automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "indoctrination-multichannel-preframe",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Indoctrination Pre-Sell Sequence (Multichannel Story Series Before Cart Opens)",
+          "ref": "automation-templates/multichannel-automation/indoctrination-multichannel-preframe.json"
+        },
+        {
+          "automation_id": "value-broadcast-3-closes-campaign",
+          "category": "engagement-broadcast",
+          "role": "secondary",
+          "name": "3 Closes Broadcast Mini-Campaign \u2014 Emotion / Logic / Fear Ascension Push",
+          "ref": "automation-templates/engagement-broadcast/value-broadcast-3-closes-campaign.json"
+        }
+      ],
+      "why": "Summit -> registration + session reminders + replay; pre-frame; all-access-pass close via a value+3-closes campaign.",
+      "group_doctrine": "An event funnel registers an attendee. The proven default follow-up is indoctrination + show-up reminders + replay + the Perfect Webinar Stack close.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "teleseminar-funnel",
+      "funnel_group": "event",
+      "funnel_ref": "funnel-templates/event/teleseminar-funnel.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "webinar-registration-reminder-replay-stack",
+        "category": "funnel-specific-followups",
+        "role": "primary",
+        "name": "Webinar Registration \u2192 Indoctrination \u2192 Reminders \u2192 Live \u2192 Replay \u2192 Stack Close",
+        "ref": "automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "perfect-webinar-stack-close",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Perfect Webinar Stack Close (+ Post-Webinar Follow-Up)",
+          "ref": "automation-templates/sales-close-sequences/perfect-webinar-stack-close.json"
+        },
+        {
+          "automation_id": "indoctrination-multichannel-preframe",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Indoctrination Pre-Sell Sequence (Multichannel Story Series Before Cart Opens)",
+          "ref": "automation-templates/multichannel-automation/indoctrination-multichannel-preframe.json"
+        }
+      ],
+      "why": "Teleseminar -> registration + reminders + replay; close with the Stack; pre-frame.",
+      "group_doctrine": "An event funnel registers an attendee. The proven default follow-up is indoctrination + show-up reminders + replay + the Perfect Webinar Stack close.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "telesummit-funnel",
+      "funnel_group": "event",
+      "funnel_ref": "funnel-templates/event/telesummit-funnel.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "webinar-registration-reminder-replay-stack",
+        "category": "funnel-specific-followups",
+        "role": "primary",
+        "name": "Webinar Registration \u2192 Indoctrination \u2192 Reminders \u2192 Live \u2192 Replay \u2192 Stack Close",
+        "ref": "automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "indoctrination-multichannel-preframe",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Indoctrination Pre-Sell Sequence (Multichannel Story Series Before Cart Opens)",
+          "ref": "automation-templates/multichannel-automation/indoctrination-multichannel-preframe.json"
+        },
+        {
+          "automation_id": "value-broadcast-3-closes-campaign",
+          "category": "engagement-broadcast",
+          "role": "secondary",
+          "name": "3 Closes Broadcast Mini-Campaign \u2014 Emotion / Logic / Fear Ascension Push",
+          "ref": "automation-templates/engagement-broadcast/value-broadcast-3-closes-campaign.json"
+        }
+      ],
+      "why": "Telesummit (multi-session) -> registration + reminders + replay; pre-frame; all-access close.",
+      "group_doctrine": "An event funnel registers an attendee. The proven default follow-up is indoctrination + show-up reminders + replay + the Perfect Webinar Stack close.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "webinar-funnel",
+      "funnel_group": "event",
+      "funnel_ref": "funnel-templates/event/webinar-funnel.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "webinar-registration-reminder-replay-stack",
+        "category": "funnel-specific-followups",
+        "role": "primary",
+        "name": "Webinar Registration \u2192 Indoctrination \u2192 Reminders \u2192 Live \u2192 Replay \u2192 Stack Close",
+        "ref": "automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "indoctrination-multichannel-preframe",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Indoctrination Pre-Sell Sequence (Multichannel Story Series Before Cart Opens)",
+          "ref": "automation-templates/multichannel-automation/indoctrination-multichannel-preframe.json"
+        },
+        {
+          "automation_id": "perfect-webinar-stack-close",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Perfect Webinar Stack Close (+ Post-Webinar Follow-Up)",
+          "ref": "automation-templates/sales-close-sequences/perfect-webinar-stack-close.json"
+        },
+        {
+          "automation_id": "soap-opera-sequence",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Soap Opera Sequence (5-Email Bonding / Emotion Close)",
+          "ref": "automation-templates/sales-close-sequences/soap-opera-sequence.json"
+        }
+      ],
+      "why": "Live Perfect Webinar -> the canonical reg/indoctrinate/remind/replay/Stack wrap; pre-frame; Soap Opera indoctrination before the event.",
+      "group_doctrine": "An event funnel registers an attendee. The proven default follow-up is indoctrination + show-up reminders + replay + the Perfect Webinar Stack close.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "application",
+      "funnel_group": "lead",
+      "funnel_ref": "funnel-templates/lead/application.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "application-homework-booking-nurture",
+        "category": "funnel-specific-followups",
+        "role": "primary",
+        "name": "Application \u2192 Homework / Bonding \u2192 Booking \u2192 Show-Up Nurture",
+        "ref": "automation-templates/funnel-specific-followups/application-homework-booking-nurture.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "scarcity-deadline-close",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Scarcity / Deadline Close (Standalone Fear Phase)",
+          "ref": "automation-templates/sales-close-sequences/scarcity-deadline-close.json"
+        },
+        {
+          "automation_id": "soap-opera-sequence",
+          "category": "welcome-indoctrination",
+          "role": "secondary",
+          "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
+          "ref": "automation-templates/welcome-indoctrination/soap-opera-sequence.json"
+        }
+      ],
+      "why": "High-ticket application -> homework + booking nurture to drive show-up to the call; deadline urgency; pre-call bonding.",
+      "group_doctrine": "A lead funnel captures an email. The proven default follow-up is the Soap Opera Sequence (bond to the Attractive Character) that graduates into the daily Seinfeld broadcast (ongoing engagement).",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "ask-campaign",
+      "funnel_group": "lead",
+      "funnel_ref": "funnel-templates/lead/ask-campaign.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "soap-opera-sequence",
+        "category": "welcome-indoctrination",
+        "role": "primary",
+        "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
+        "ref": "automation-templates/welcome-indoctrination/soap-opera-sequence.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "new-subscriber-indoctrination",
+          "category": "welcome-indoctrination",
+          "role": "secondary",
+          "name": "New-Subscriber Indoctrination Sequence",
+          "ref": "automation-templates/welcome-indoctrination/new-subscriber-indoctrination.json"
+        },
+        {
+          "automation_id": "three-ms-content-broadcast",
+          "category": "engagement-broadcast",
+          "role": "secondary",
+          "name": "Three M's Value-Broadcast \u2014 Myths, Misconceptions, Mistakes + Future Pacing Story Engine",
+          "ref": "automation-templates/engagement-broadcast/three-ms-content-broadcast.json"
+        }
+      ],
+      "why": "Ask-Method survey -> bond responders with a Soap Opera Sequence, indoctrinate, then deliver Market/Message/Media-matched content.",
+      "group_doctrine": "A lead funnel captures an email. The proven default follow-up is the Soap Opera Sequence (bond to the Attractive Character) that graduates into the daily Seinfeld broadcast (ongoing engagement).",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "bridge",
+      "funnel_group": "lead",
+      "funnel_ref": "funnel-templates/lead/bridge.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "soap-opera-sequence",
+        "category": "welcome-indoctrination",
+        "role": "primary",
+        "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
+        "ref": "automation-templates/welcome-indoctrination/soap-opera-sequence.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "indoctrination-multichannel-preframe",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Indoctrination Pre-Sell Sequence (Multichannel Story Series Before Cart Opens)",
+          "ref": "automation-templates/multichannel-automation/indoctrination-multichannel-preframe.json"
+        },
+        {
+          "automation_id": "new-subscriber-indoctrination",
+          "category": "welcome-indoctrination",
+          "role": "secondary",
+          "name": "New-Subscriber Indoctrination Sequence",
+          "ref": "automation-templates/welcome-indoctrination/new-subscriber-indoctrination.json"
+        }
+      ],
+      "why": "Bridge page warms cold/borrowed traffic -> pre-frame then bond with the Soap Opera Sequence.",
+      "group_doctrine": "A lead funnel captures an email. The proven default follow-up is the Soap Opera Sequence (bond to the Attractive Character) that graduates into the daily Seinfeld broadcast (ongoing engagement).",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "hero",
+      "funnel_group": "lead",
+      "funnel_ref": "funnel-templates/lead/hero.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "attractive-character-intro-sequence",
+        "category": "welcome-indoctrination",
+        "role": "primary",
+        "name": "Attractive Character Intro Sequence (Epiphany Bridge Bonding)",
+        "ref": "automation-templates/welcome-indoctrination/attractive-character-intro-sequence.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "soap-opera-sequence",
+          "category": "welcome-indoctrination",
+          "role": "secondary",
+          "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
+          "ref": "automation-templates/welcome-indoctrination/soap-opera-sequence.json"
+        },
+        {
+          "automation_id": "daily-seinfeld-sequence",
+          "category": "engagement-broadcast",
+          "role": "secondary",
+          "name": "Daily Seinfeld Sequence \u2014 Ongoing Entertainment Broadcast Engine",
+          "ref": "automation-templates/engagement-broadcast/daily-seinfeld-sequence.json"
+        }
+      ],
+      "why": "Hero / personal-brand opt-in -> introduce the Attractive Character, bond via Soap Opera, graduate to daily Seinfeld.",
+      "group_doctrine": "A lead funnel captures an email. The proven default follow-up is the Soap Opera Sequence (bond to the Attractive Character) that graduates into the daily Seinfeld broadcast (ongoing engagement).",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "homepage",
+      "funnel_group": "lead",
+      "funnel_ref": "funnel-templates/lead/homepage.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "new-subscriber-indoctrination",
+        "category": "welcome-indoctrination",
+        "role": "primary",
+        "name": "New-Subscriber Indoctrination Sequence",
+        "ref": "automation-templates/welcome-indoctrination/new-subscriber-indoctrination.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "daily-seinfeld-sequence",
+          "category": "engagement-broadcast",
+          "role": "secondary",
+          "name": "Daily Seinfeld Sequence \u2014 Ongoing Entertainment Broadcast Engine",
+          "ref": "automation-templates/engagement-broadcast/daily-seinfeld-sequence.json"
+        },
+        {
+          "automation_id": "three-ms-content-broadcast",
+          "category": "engagement-broadcast",
+          "role": "secondary",
+          "name": "Three M's Value-Broadcast \u2014 Myths, Misconceptions, Mistakes + Future Pacing Story Engine",
+          "ref": "automation-templates/engagement-broadcast/three-ms-content-broadcast.json"
+        }
+      ],
+      "why": "Homepage-as-funnel captures + indoctrinates; ongoing broadcast keeps the brand top-of-mind.",
+      "group_doctrine": "A lead funnel captures an email. The proven default follow-up is the Soap Opera Sequence (bond to the Attractive Character) that graduates into the daily Seinfeld broadcast (ongoing engagement).",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "lead-magnet",
+      "funnel_group": "lead",
+      "funnel_ref": "funnel-templates/lead/lead-magnet.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "soap-opera-sequence",
+        "category": "welcome-indoctrination",
+        "role": "primary",
+        "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
+        "ref": "automation-templates/welcome-indoctrination/soap-opera-sequence.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "new-subscriber-indoctrination",
+          "category": "welcome-indoctrination",
+          "role": "secondary",
+          "name": "New-Subscriber Indoctrination Sequence",
+          "ref": "automation-templates/welcome-indoctrination/new-subscriber-indoctrination.json"
+        },
+        {
+          "automation_id": "post-optin-multichannel-stack",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Post-Opt-In Multichannel Stack (Email + Messenger + Desktop Push + SMS + Retargeting + Direct Mail)",
+          "ref": "automation-templates/multichannel-automation/post-optin-multichannel-stack.json"
+        }
+      ],
+      "why": "Lead magnet opt-in -> Soap Opera Sequence (deliver + bond), multichannel post-optin stack, then graduate to the daily Seinfeld broadcast.",
+      "group_doctrine": "A lead funnel captures an email. The proven default follow-up is the Soap Opera Sequence (bond to the Attractive Character) that graduates into the daily Seinfeld broadcast (ongoing engagement).",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      },
+      "graduation_followup": {
+        "automation_id": "daily-seinfeld-sequence",
+        "category": "engagement-broadcast",
+        "role": "graduation",
+        "name": "Daily Seinfeld Sequence \u2014 Ongoing Entertainment Broadcast Engine",
+        "ref": "automation-templates/engagement-broadcast/daily-seinfeld-sequence.json",
+        "why": "Auto-responder bonding graduates into this ongoing broadcast."
+      }
+    },
+    {
+      "funnel_template_id": "reverse-squeeze-page",
+      "funnel_group": "lead",
+      "funnel_ref": "funnel-templates/lead/reverse-squeeze-page.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "soap-opera-sequence",
+        "category": "welcome-indoctrination",
+        "role": "primary",
+        "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
+        "ref": "automation-templates/welcome-indoctrination/soap-opera-sequence.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "new-subscriber-indoctrination",
+          "category": "welcome-indoctrination",
+          "role": "secondary",
+          "name": "New-Subscriber Indoctrination Sequence",
+          "ref": "automation-templates/welcome-indoctrination/new-subscriber-indoctrination.json"
+        },
+        {
+          "automation_id": "post-optin-multichannel-stack",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Post-Opt-In Multichannel Stack (Email + Messenger + Desktop Push + SMS + Retargeting + Direct Mail)",
+          "ref": "automation-templates/multichannel-automation/post-optin-multichannel-stack.json"
+        }
+      ],
+      "why": "Value-first reverse squeeze -> bond with the Soap Opera Sequence; multichannel post-optin; graduate to Seinfeld.",
+      "group_doctrine": "A lead funnel captures an email. The proven default follow-up is the Soap Opera Sequence (bond to the Attractive Character) that graduates into the daily Seinfeld broadcast (ongoing engagement).",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      },
+      "graduation_followup": {
+        "automation_id": "daily-seinfeld-sequence",
+        "category": "engagement-broadcast",
+        "role": "graduation",
+        "name": "Daily Seinfeld Sequence \u2014 Ongoing Entertainment Broadcast Engine",
+        "ref": "automation-templates/engagement-broadcast/daily-seinfeld-sequence.json",
+        "why": "Auto-responder bonding graduates into this ongoing broadcast."
+      }
+    },
+    {
+      "funnel_template_id": "squeeze-page",
+      "funnel_group": "lead",
+      "funnel_ref": "funnel-templates/lead/squeeze-page.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "soap-opera-sequence",
+        "category": "welcome-indoctrination",
+        "role": "primary",
+        "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
+        "ref": "automation-templates/welcome-indoctrination/soap-opera-sequence.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "new-subscriber-indoctrination",
+          "category": "welcome-indoctrination",
+          "role": "secondary",
+          "name": "New-Subscriber Indoctrination Sequence",
+          "ref": "automation-templates/welcome-indoctrination/new-subscriber-indoctrination.json"
+        },
+        {
+          "automation_id": "post-optin-multichannel-stack",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Post-Opt-In Multichannel Stack (Email + Messenger + Desktop Push + SMS + Retargeting + Direct Mail)",
+          "ref": "automation-templates/multichannel-automation/post-optin-multichannel-stack.json"
+        }
+      ],
+      "why": "The classic squeeze -> Soap Opera Sequence (THE textbook pairing); then graduate to the daily Seinfeld broadcast.",
+      "group_doctrine": "A lead funnel captures an email. The proven default follow-up is the Soap Opera Sequence (bond to the Attractive Character) that graduates into the daily Seinfeld broadcast (ongoing engagement).",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      },
+      "graduation_followup": {
+        "automation_id": "daily-seinfeld-sequence",
+        "category": "engagement-broadcast",
+        "role": "graduation",
+        "name": "Daily Seinfeld Sequence \u2014 Ongoing Entertainment Broadcast Engine",
+        "ref": "automation-templates/engagement-broadcast/daily-seinfeld-sequence.json",
+        "why": "Auto-responder bonding graduates into this ongoing broadcast."
+      }
+    },
+    {
+      "funnel_template_id": "survey-quiz",
+      "funnel_group": "lead",
+      "funnel_ref": "funnel-templates/lead/survey-quiz.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "new-subscriber-indoctrination",
+        "category": "welcome-indoctrination",
+        "role": "primary",
+        "name": "New-Subscriber Indoctrination Sequence",
+        "ref": "automation-templates/welcome-indoctrination/new-subscriber-indoctrination.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "post-optin-multichannel-stack",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Post-Opt-In Multichannel Stack (Email + Messenger + Desktop Push + SMS + Retargeting + Direct Mail)",
+          "ref": "automation-templates/multichannel-automation/post-optin-multichannel-stack.json"
+        },
+        {
+          "automation_id": "soap-opera-sequence",
+          "category": "welcome-indoctrination",
+          "role": "secondary",
+          "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
+          "ref": "automation-templates/welcome-indoctrination/soap-opera-sequence.json"
+        },
+        {
+          "automation_id": "behavioral-retargeting-page-visit-fire",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Behavioral Retargeting \u2014 Page-Visit Pixel Fire + List Membership Update",
+          "ref": "automation-templates/multichannel-automation/behavioral-retargeting-page-visit-fire.json"
+        }
+      ],
+      "why": "Quiz segments the lead -> result-segmented indoctrination + multichannel stack; bond via Soap Opera; retarget by result.",
+      "group_doctrine": "A lead funnel captures an email. The proven default follow-up is the Soap Opera Sequence (bond to the Attractive Character) that graduates into the daily Seinfeld broadcast (ongoing engagement).",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "cancellation-funnel",
+      "funnel_group": "retention-followup",
+      "funnel_ref": "funnel-templates/retention-followup/cancellation-funnel.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "membership-stick-retention",
+        "category": "funnel-specific-followups",
+        "role": "primary",
+        "name": "Membership / Continuity Stick + Retention Sequence",
+        "ref": "automation-templates/funnel-specific-followups/membership-stick-retention.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "re-engagement-winback-broadcast",
+          "category": "engagement-broadcast",
+          "role": "secondary",
+          "name": "Re-Engagement / Win-Back Broadcast \u2014 Cold Subscriber Reactivation",
+          "ref": "automation-templates/engagement-broadcast/re-engagement-winback-broadcast.json"
+        },
+        {
+          "automation_id": "scarcity-deadline-close",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Scarcity / Deadline Close (Standalone Fear Phase)",
+          "ref": "automation-templates/sales-close-sequences/scarcity-deadline-close.json"
+        }
+      ],
+      "why": "Cancellation save -> stick/retention to save the sale; win-back the churned; deadline-close a win-back offer.",
+      "group_doctrine": "A retention funnel saves or re-sells. The proven default follow-up is stick/retention or the 3-Closes Follow-Up Funnel.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "follow-up-funnel",
+      "funnel_group": "retention-followup",
+      "funnel_ref": "funnel-templates/retention-followup/follow-up-funnel.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "three-closes-master-followup",
+        "category": "sales-close-sequences",
+        "role": "primary",
+        "name": "The 3 Closes Follow-Up Funnel (Emotion \u2192 Logic \u2192 Fear)",
+        "ref": "automation-templates/sales-close-sequences/three-closes-master-followup.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "soap-opera-sequence",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Soap Opera Sequence (5-Email Bonding / Emotion Close)",
+          "ref": "automation-templates/sales-close-sequences/soap-opera-sequence.json"
+        },
+        {
+          "automation_id": "seinfeld-daily-sequence",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Daily Seinfeld Sequence (Entertain-Then-Sell Engagement)",
+          "ref": "automation-templates/sales-close-sequences/seinfeld-daily-sequence.json"
+        },
+        {
+          "automation_id": "re-engagement-winback-broadcast",
+          "category": "engagement-broadcast",
+          "role": "secondary",
+          "name": "Re-Engagement / Win-Back Broadcast \u2014 Cold Subscriber Reactivation",
+          "ref": "automation-templates/engagement-broadcast/re-engagement-winback-broadcast.json"
+        }
+      ],
+      "why": "The DotCom Secrets Follow-Up Funnel IS Soap Opera + Seinfeld + the 3 Closes; win-back the cold.",
+      "group_doctrine": "A retention funnel saves or re-sells. The proven default follow-up is stick/retention or the 3-Closes Follow-Up Funnel.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "break-even-front-end",
+      "funnel_group": "traffic-advanced",
+      "funnel_ref": "funnel-templates/traffic-advanced/break-even-front-end.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "free-plus-shipping-book-oto-followup",
+        "category": "funnel-specific-followups",
+        "role": "primary",
+        "name": "Free-Plus-Shipping / Book Post-Purchase + OTO Recovery Follow-Up",
+        "ref": "automation-templates/funnel-specific-followups/free-plus-shipping-book-oto-followup.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "cart-abandon-recovery",
+          "category": "funnel-specific-followups",
+          "role": "secondary",
+          "name": "Cart Abandon / Step-1-Not-Step-2 Recovery",
+          "ref": "automation-templates/funnel-specific-followups/cart-abandon-recovery.json"
+        },
+        {
+          "automation_id": "soap-opera-sequence",
+          "category": "welcome-indoctrination",
+          "role": "secondary",
+          "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
+          "ref": "automation-templates/welcome-indoctrination/soap-opera-sequence.json"
+        }
+      ],
+      "why": "Break-even front end profits on the OTO/backend -> OTO ascension follow-up; recover abandons; bond the buyer.",
+      "group_doctrine": "An advanced/traffic funnel pre-frames or recovers traffic. The proven default follow-up is indoctrination/pre-frame, retargeting, or front-end OTO depending on the play.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "client-acquisition",
+      "funnel_group": "traffic-advanced",
+      "funnel_ref": "funnel-templates/traffic-advanced/client-acquisition.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "application-homework-booking-nurture",
+        "category": "funnel-specific-followups",
+        "role": "primary",
+        "name": "Application \u2192 Homework / Bonding \u2192 Booking \u2192 Show-Up Nurture",
+        "ref": "automation-templates/funnel-specific-followups/application-homework-booking-nurture.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "soap-opera-sequence",
+          "category": "welcome-indoctrination",
+          "role": "secondary",
+          "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
+          "ref": "automation-templates/welcome-indoctrination/soap-opera-sequence.json"
+        },
+        {
+          "automation_id": "scarcity-deadline-close",
+          "category": "sales-close-sequences",
+          "role": "secondary",
+          "name": "Scarcity / Deadline Close (Standalone Fear Phase)",
+          "ref": "automation-templates/sales-close-sequences/scarcity-deadline-close.json"
+        }
+      ],
+      "why": "Agency/client-acquisition funnel books calls -> homework + booking nurture; bond; deadline urgency on the proposal.",
+      "group_doctrine": "An advanced/traffic funnel pre-frames or recovers traffic. The proven default follow-up is indoctrination/pre-frame, retargeting, or front-end OTO depending on the play.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "cold-traffic-article-preframe",
+      "funnel_group": "traffic-advanced",
+      "funnel_ref": "funnel-templates/traffic-advanced/cold-traffic-article-preframe.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "indoctrination-multichannel-preframe",
+        "category": "multichannel-automation",
+        "role": "primary",
+        "name": "Indoctrination Pre-Sell Sequence (Multichannel Story Series Before Cart Opens)",
+        "ref": "automation-templates/multichannel-automation/indoctrination-multichannel-preframe.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "soap-opera-sequence",
+          "category": "welcome-indoctrination",
+          "role": "secondary",
+          "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
+          "ref": "automation-templates/welcome-indoctrination/soap-opera-sequence.json"
+        },
+        {
+          "automation_id": "behavioral-retargeting-page-visit-fire",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Behavioral Retargeting \u2014 Page-Visit Pixel Fire + List Membership Update",
+          "ref": "automation-templates/multichannel-automation/behavioral-retargeting-page-visit-fire.json"
+        }
+      ],
+      "why": "Article pre-frame warms cold traffic -> multichannel indoctrination/pre-frame; bond; retarget readers who didn't opt in.",
+      "group_doctrine": "An advanced/traffic funnel pre-frames or recovers traffic. The proven default follow-up is indoctrination/pre-frame, retargeting, or front-end OTO depending on the play.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "funnel-hub",
+      "funnel_group": "traffic-advanced",
+      "funnel_ref": "funnel-templates/traffic-advanced/funnel-hub.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "daily-seinfeld-sequence",
+        "category": "engagement-broadcast",
+        "role": "primary",
+        "name": "Daily Seinfeld Sequence \u2014 Ongoing Entertainment Broadcast Engine",
+        "ref": "automation-templates/engagement-broadcast/daily-seinfeld-sequence.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "three-ms-content-broadcast",
+          "category": "engagement-broadcast",
+          "role": "secondary",
+          "name": "Three M's Value-Broadcast \u2014 Myths, Misconceptions, Mistakes + Future Pacing Story Engine",
+          "ref": "automation-templates/engagement-broadcast/three-ms-content-broadcast.json"
+        },
+        {
+          "automation_id": "attractive-character-story-rotation",
+          "category": "engagement-broadcast",
+          "role": "secondary",
+          "name": "Attractive Character Storyline Rotation \u2014 Broadcast Editorial Calendar",
+          "ref": "automation-templates/engagement-broadcast/attractive-character-story-rotation.json"
+        },
+        {
+          "automation_id": "behavioral-retargeting-page-visit-fire",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Behavioral Retargeting \u2014 Page-Visit Pixel Fire + List Membership Update",
+          "ref": "automation-templates/multichannel-automation/behavioral-retargeting-page-visit-fire.json"
+        }
+      ],
+      "why": "A funnel hub is the brand home -> ongoing Seinfeld broadcast + 3 Ms content + Attractive-Character story rotation; retarget visitors.",
+      "group_doctrine": "An advanced/traffic funnel pre-frames or recovers traffic. The proven default follow-up is indoctrination/pre-frame, retargeting, or front-end OTO depending on the play.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "pop-up-ad",
+      "funnel_group": "traffic-advanced",
+      "funnel_ref": "funnel-templates/traffic-advanced/pop-up-ad.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "soap-opera-sequence",
+        "category": "welcome-indoctrination",
+        "role": "primary",
+        "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
+        "ref": "automation-templates/welcome-indoctrination/soap-opera-sequence.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "behavioral-retargeting-page-visit-fire",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Behavioral Retargeting \u2014 Page-Visit Pixel Fire + List Membership Update",
+          "ref": "automation-templates/multichannel-automation/behavioral-retargeting-page-visit-fire.json"
+        },
+        {
+          "automation_id": "email-teaser-click-driver",
+          "category": "engagement-broadcast",
+          "role": "secondary",
+          "name": "Email Teaser Click-Driver \u2014 Short Click-to-Page Broadcast Email",
+          "ref": "automation-templates/engagement-broadcast/email-teaser-click-driver.json"
+        }
+      ],
+      "why": "Pop-up/exit capture -> bond with the Soap Opera Sequence; retarget; teaser emails to drive the click back.",
+      "group_doctrine": "An advanced/traffic funnel pre-frames or recovers traffic. The proven default follow-up is indoctrination/pre-frame, retargeting, or front-end OTO depending on the play.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "pre-funnel-social-preframe",
+      "funnel_group": "traffic-advanced",
+      "funnel_ref": "funnel-templates/traffic-advanced/pre-funnel-social-preframe.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "indoctrination-multichannel-preframe",
+        "category": "multichannel-automation",
+        "role": "primary",
+        "name": "Indoctrination Pre-Sell Sequence (Multichannel Story Series Before Cart Opens)",
+        "ref": "automation-templates/multichannel-automation/indoctrination-multichannel-preframe.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "behavioral-retargeting-page-visit-fire",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Behavioral Retargeting \u2014 Page-Visit Pixel Fire + List Membership Update",
+          "ref": "automation-templates/multichannel-automation/behavioral-retargeting-page-visit-fire.json"
+        },
+        {
+          "automation_id": "soap-opera-sequence",
+          "category": "welcome-indoctrination",
+          "role": "secondary",
+          "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
+          "ref": "automation-templates/welcome-indoctrination/soap-opera-sequence.json"
+        }
+      ],
+      "why": "Social pre-frame -> multichannel indoctrination/pre-frame; retarget; bond once they opt in.",
+      "group_doctrine": "An advanced/traffic funnel pre-frames or recovers traffic. The proven default follow-up is indoctrination/pre-frame, retargeting, or front-end OTO depending on the play.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "shadow-funnel",
+      "funnel_group": "traffic-advanced",
+      "funnel_ref": "funnel-templates/traffic-advanced/shadow-funnel.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "behavioral-retargeting-page-visit-fire",
+        "category": "multichannel-automation",
+        "role": "primary",
+        "name": "Behavioral Retargeting \u2014 Page-Visit Pixel Fire + List Membership Update",
+        "ref": "automation-templates/multichannel-automation/behavioral-retargeting-page-visit-fire.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "abandoned-cart-multichannel-recovery",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Abandoned Cart Multichannel Recovery (2-Step Order Form Drop-Off)",
+          "ref": "automation-templates/multichannel-automation/abandoned-cart-multichannel-recovery.json"
+        },
+        {
+          "automation_id": "re-engagement-winback-broadcast",
+          "category": "engagement-broadcast",
+          "role": "secondary",
+          "name": "Re-Engagement / Win-Back Broadcast \u2014 Cold Subscriber Reactivation",
+          "ref": "automation-templates/engagement-broadcast/re-engagement-winback-broadcast.json"
+        },
+        {
+          "automation_id": "cart-abandon-recovery",
+          "category": "funnel-specific-followups",
+          "role": "secondary",
+          "name": "Cart Abandon / Step-1-Not-Step-2 Recovery",
+          "ref": "automation-templates/funnel-specific-followups/cart-abandon-recovery.json"
+        }
+      ],
+      "why": "The DotCom Secrets Shadow Funnel is retargeting + abandonment follow-up everywhere -> page-visit retargeting + multichannel cart recovery + win-back.",
+      "group_doctrine": "An advanced/traffic funnel pre-frames or recovers traffic. The proven default follow-up is indoctrination/pre-frame, retargeting, or front-end OTO depending on the play.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    },
+    {
+      "funnel_template_id": "viral-front-end",
+      "funnel_group": "traffic-advanced",
+      "funnel_ref": "funnel-templates/traffic-advanced/viral-front-end.json",
+      "recommended": true,
+      "mandatory": false,
+      "primary_followup": {
+        "automation_id": "soap-opera-sequence",
+        "category": "welcome-indoctrination",
+        "role": "primary",
+        "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
+        "ref": "automation-templates/welcome-indoctrination/soap-opera-sequence.json"
+      },
+      "secondary_followups": [
+        {
+          "automation_id": "email-teaser-click-driver",
+          "category": "engagement-broadcast",
+          "role": "secondary",
+          "name": "Email Teaser Click-Driver \u2014 Short Click-to-Page Broadcast Email",
+          "ref": "automation-templates/engagement-broadcast/email-teaser-click-driver.json"
+        },
+        {
+          "automation_id": "daily-seinfeld-sequence",
+          "category": "engagement-broadcast",
+          "role": "secondary",
+          "name": "Daily Seinfeld Sequence \u2014 Ongoing Entertainment Broadcast Engine",
+          "ref": "automation-templates/engagement-broadcast/daily-seinfeld-sequence.json"
+        },
+        {
+          "automation_id": "post-optin-multichannel-stack",
+          "category": "multichannel-automation",
+          "role": "secondary",
+          "name": "Post-Opt-In Multichannel Stack (Email + Messenger + Desktop Push + SMS + Retargeting + Direct Mail)",
+          "ref": "automation-templates/multichannel-automation/post-optin-multichannel-stack.json"
+        }
+      ],
+      "why": "Viral front end captures at scale -> bond with the Soap Opera Sequence; teaser click-drivers; graduate to Seinfeld; multichannel post-optin.",
+      "group_doctrine": "An advanced/traffic funnel pre-frames or recovers traffic. The proven default follow-up is indoctrination/pre-frame, retargeting, or front-end OTO depending on the play.",
+      "flexibility": {
+        "principle": "RECOMMENDED DEFAULT, never mandatory. The linked automations are a guide and a resource; they must not dominate the user's desire.",
+        "explicit_user_spec": "If the user named their own follow-up, build THAT; this map is an optional reference only \u2014 do not impose it.",
+        "unsure": "If the user is unsure, suggest the primary follow-up and explain why, then let them decide.",
+        "hands_off": "If the user said 'just do it', build the primary (and, if desired, the secondary) automations from these defaults.",
+        "always": "Overridable, mixable, customizable, ignorable. Any automation the user overrides is dropped from the auto-build."
+      }
+    }
+  ]
+}

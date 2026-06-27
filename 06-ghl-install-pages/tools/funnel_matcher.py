@@ -85,6 +85,169 @@ _W_ANTI = -4.0                    # an anti-signal phrase matched (penalty)
 _CAP_GOAL = 2.0
 _CAP_SIGNAL = 2.0
 
+# --------------------------------------------------------------------------- #
+# FLEXIBILITY — intent-mode detection + decision mapping (retrofitted v14.7.0)
+# --------------------------------------------------------------------------- #
+# CORE PRINCIPLE: every template/persona is a GUIDE and a RESOURCE, never a rule or a
+# requirement. It must NOT dominate the user's desire. This mirrors the Skill-44
+# automation matcher's flex.py (kept inline here so this file stays self-contained).
+# Three modes:
+#   EXPLICIT_USER_SPEC      -> HONOR_USER       (build the user's spec; template = optional ref)
+#   UNSURE_WANTS_SUGGESTION -> SUGGEST_TEMPLATE  (recommend + why, await confirm) | CREATE_NEW
+#   HANDS_OFF_DO_IT_ALL     -> USE_TEMPLATE       (build it all from the template)| CREATE_NEW
+# The matcher NEVER blocks a build and NEVER imposes a template onto an explicit desire.
+# Backward compat: HONORED_EXPLICIT = HONOR_USER (kept so v14.6.0 callers still work).
+MODE_EXPLICIT = "EXPLICIT_USER_SPEC"
+MODE_UNSURE = "UNSURE_WANTS_SUGGESTION"
+MODE_HANDSOFF = "HANDS_OFF_DO_IT_ALL"
+MODES = (MODE_EXPLICIT, MODE_UNSURE, MODE_HANDSOFF)
+
+DEC_HONOR_USER = "HONOR_USER"        # EXPLICIT: build the user's spec; template = optional ref
+DEC_SUGGEST = "SUGGEST_TEMPLATE"     # UNSURE + confident: recommend + why, await confirm
+DEC_USE = "USE_TEMPLATE"             # HANDS_OFF + confident: build it all from the template
+DEC_CREATE_NEW = "CREATE_NEW"        # nothing fits: build net-new, save back
+HONORED_EXPLICIT = DEC_HONOR_USER    # backward-compat alias
+
+_HANDSOFF_CUES = [
+    "just do it", "just build", "just make it", "just set it up", "the full", "handle it",
+    "you handle", "take care of it", "do it all", "do the rest", "do everything",
+    "build the whole", "the whole", "whole thing", "whole funnel", "complete funnel",
+    "full funnel", "full sequence", "set it all up", "set up everything", "set and forget",
+    "turnkey", "done for me", "done-for-you", "dfy", "your call", "you decide",
+    "you choose", "whatever you think", "whatever's best", "whatever is best",
+    "best practice", "do what's best", "do what is best", "make it happen", "i trust you",
+    "up to you", "surprise me", "go ahead and build", "build it out", "wire it all", "all of it",
+]
+_UNSURE_CUES = [
+    "not sure", "unsure", "no idea", "don't know", "dont know", "what do you recommend",
+    "what would you recommend", "what would you suggest", "what do you suggest",
+    "any suggestions", "any recommendation", "recommend", "suggest", "which one",
+    "which should", "what should i", "what should we", "help me decide", "help me pick",
+    "what are my options", "what are the options", "options", "thinking about", "maybe",
+    "considering", "torn between", "should i use", "is there a", "what's best", "what is best",
+    "advice", "guidance", "not certain", "kind of want",
+]
+_EXPLICIT_SPEC_KEYS = ("spec", "sequence", "steps", "user_steps", "user_sequence",
+                       "user_spec", "my_sequence", "exact_steps", "pages")
+_EXPLICIT_CUES = [
+    "exactly", "specifically", "to the letter", "as written", "do not change",
+    "don't change", "dont change", "no changes", "must be", "must have", "has to",
+    "i want it to", "i need it to", "use my", "use these", "here's my", "heres my",
+    "here is my", "my own", "my exact", "follow this", "follow my", "build this:",
+    "build exactly", "this exact", "these exact", "only these", "only the", "just the",
+    "strictly", "verbatim", "i already have", "i have a spec", "per my spec",
+    "do it this way", "the way i want", "i'll specify", "i will specify",
+]
+
+
+def _flex_request_text(request: Any) -> str:
+    if isinstance(request, str):
+        return request.lower()
+    if isinstance(request, dict):
+        parts = [str(request.get(k, "")) for k in
+                 ("text", "brief", "goal", "intent", "description", "ask", "message")]
+        return " ".join(p for p in parts if p).lower()
+    return str(request or "").lower()
+
+
+def _flex_has_user_spec(request: Any) -> bool:
+    if not isinstance(request, dict):
+        return False
+    for k in _EXPLICIT_SPEC_KEYS:
+        v = request.get(k)
+        if isinstance(v, (list, tuple)) and len(v) >= 1:
+            return True
+        if isinstance(v, str) and v.strip():
+            return True
+    return False
+
+
+def _flex_numbered_steps(text: str) -> int:
+    return len(re.findall(r"(?:^|\s)(?:[1-9]\d?[\.\)]|step\s*[1-9])", text))
+
+
+def _flex_any(text: str, cues: list[str]) -> str | None:
+    for c in cues:
+        if c in text:
+            return c
+    return None
+
+
+def detect_mode(request: Any, override: str | None = None) -> dict:
+    """Detect the intent mode for a request. Precedence: explicit override > user spec /
+    EXPLICIT cues > HANDS_OFF cues > UNSURE cues > default UNSURE (least-dominating:
+    suggest, never impose/auto-build when unsure). Also honors legacy ``just_do_it``
+    and ``explicit_funnel`` fields from v14.6.0 callers."""
+    if override in MODES:
+        return {"mode": override, "reason": "explicit caller/user override", "cue": override}
+    # legacy v14.6.0 compat
+    if isinstance(request, dict):
+        if request.get("explicit_funnel"):
+            return {"mode": MODE_EXPLICIT, "reason": "explicit_funnel field set (v14.6.0 compat)",
+                    "cue": "explicit_funnel"}
+        if request.get("just_do_it"):
+            return {"mode": MODE_HANDSOFF, "reason": "just_do_it field set (v14.6.0 compat)",
+                    "cue": "just_do_it"}
+    text = _flex_request_text(request)
+    if _flex_has_user_spec(request):
+        return {"mode": MODE_EXPLICIT, "reason": "user supplied an explicit spec/sequence",
+                "cue": "user_spec"}
+    if _flex_numbered_steps(text) >= 2:
+        return {"mode": MODE_EXPLICIT, "reason": "user wrote their own ordered steps",
+                "cue": "numbered_steps"}
+    cue = _flex_any(text, _EXPLICIT_CUES)
+    if cue:
+        return {"mode": MODE_EXPLICIT, "reason": f"explicit-spec cue: '{cue}'", "cue": cue}
+    cue = _flex_any(text, _HANDSOFF_CUES)
+    if cue:
+        return {"mode": MODE_HANDSOFF, "reason": f"hands-off cue: '{cue}'", "cue": cue}
+    cue = _flex_any(text, _UNSURE_CUES)
+    if cue:
+        return {"mode": MODE_UNSURE, "reason": f"unsure cue: '{cue}'", "cue": cue}
+    return {"mode": MODE_UNSURE, "reason": "no strong cue -> default to suggest (never impose)",
+            "cue": None}
+
+
+def flex_decide(mode: str, *, has_confident_match: bool, has_any_match: bool = False) -> dict:
+    """Map (mode, match availability) -> a flexibility decision. Invariants:
+    imposes_on_user is ALWAYS False; override_allowed is ALWAYS True; never blocks."""
+    base = {"imposes_on_user": False, "override_allowed": True}
+    if mode == MODE_EXPLICIT:
+        return {**base, "decision": DEC_HONOR_USER, "await_confirm": False,
+                "build_from_template": False,
+                "template_role": ("optional_reference" if has_any_match else "none"),
+                "note": "User has an explicit desire — build exactly that. Closest template is "
+                        "an optional reference only; never imposed or overridden onto the choice."}
+    if mode == MODE_HANDSOFF:
+        if has_confident_match:
+            return {**base, "decision": DEC_USE, "await_confirm": False,
+                    "build_from_template": True, "template_role": "build_source",
+                    "note": "User wants it handled ('just do it') and a proven template fits — "
+                            "build the whole thing from it (still fully overridable after)."}
+        return {**base, "decision": DEC_CREATE_NEW, "await_confirm": False,
+                "build_from_template": False, "template_role": "none",
+                "note": "User wants it handled but nothing fits — create net-new + save back."}
+    if has_confident_match:
+        return {**base, "decision": DEC_SUGGEST, "await_confirm": True,
+                "build_from_template": False, "template_role": "suggested",
+                "note": "User is unsure — suggest the proven template + why, then let the user "
+                        "decide. Do NOT build until they confirm."}
+    return {**base, "decision": DEC_CREATE_NEW, "await_confirm": True,
+            "build_from_template": False, "template_role": "none",
+            "note": "User is unsure and nothing fits — propose net-new; await confirm, save back."}
+
+
+def flex_principle() -> dict:
+    return {
+        "core": "Every template is a GUIDE and a RESOURCE, never a rule. It assists; it never "
+                "dominates the user's desire.",
+        "modes": {MODE_EXPLICIT: "Do exactly what the user wants; template = optional reference.",
+                  MODE_UNSURE: "Suggest the proven template + why; let the user decide.",
+                  MODE_HANDSOFF: "Build the whole thing from the template."},
+        "always": "Overridable, mixable, customizable, ignorable. Never blocks a build.",
+    }
+
+
 _STOPWORDS = {
     "a", "an", "the", "to", "for", "of", "and", "or", "my", "me", "i", "we", "our",
     "your", "you", "with", "in", "on", "at", "is", "are", "be", "want", "need",
@@ -495,62 +658,33 @@ def _detect_funnel_explicit(text: str, catalog: Catalog) -> str | None:
 def match_funnel(request: dict | str, catalog: Catalog, *,
                  threshold: float = DEFAULT_THRESHOLD,
                  top_k: int = 5,
-                 reranker: "EmbeddingReranker | None" = None) -> dict:
-    """Classify -> score every template -> decide USE_TEMPLATE or CREATE_NEW.
+                 reranker: "EmbeddingReranker | None" = None,
+                 intent_mode: str | None = None) -> dict:
+    """Classify -> detect intent mode -> score every template -> FLEXIBLE decision.
 
-    FLEXIBILITY MODEL:
-    ------------------
-    Mode 1 — Explicit desire: if ``request["explicit_funnel"]`` is set OR the
-    request text unambiguously names a template, returns ``HONORED_EXPLICIT``
-    immediately (no scoring). The caller MUST build what was named.
+    decision is one of HONOR_USER / SUGGEST_TEMPLATE / USE_TEMPLATE / CREATE_NEW.
+    The template is NEVER imposed onto a user's explicit desire; the matcher never blocks.
 
-    Mode 2 — Unsure (default): normal scoring path. Result is a SUGGESTION.
-    The caller presents it to the user for confirmation.
+    Backward compat: passing ``request["explicit_funnel"]`` or ``request["just_do_it"]``
+    still works exactly as in v14.6.0 — those fields are honoured by detect_mode().
 
-    Mode 3 — Just do it: ``request["just_do_it"]=True`` — the caller builds the
-    top match without asking.
-
-    Returns a decision record (also what gets logged).
-    """
+    Returns a decision record (also what gets logged)."""
     if isinstance(request, str):
         request = {"text": request}
 
-    _EXPLICIT_CONFIDENCE = 1.0
-
-    # Mode 1 — explicit desire check (fast path, no scoring needed)
+    # Check for EXPLICIT by name (fast path via the existing _detect_funnel_explicit
+    # helper — name/alias scan). This fires before mode detection so an unambiguous
+    # name always routes to HONOR_USER regardless of the rest of the text.
     explicit_id = request.get("explicit_funnel") or ""
     if not explicit_id:
         explicit_id = _detect_funnel_explicit(request.get("text", ""), catalog) or ""
 
-    if explicit_id and explicit_id in catalog.by_id:
-        tmpl = catalog.by_id[explicit_id]
-        persona = catalog.resolve_persona(tmpl["persona"])
-        pages = instantiate_pages(tmpl)
-        return {
-            "decision": "HONORED_EXPLICIT",
-            "flexibility_mode": 1,
-            "matched_template": explicit_id,
-            "matched_name": tmpl["name"],
-            "confidence": _EXPLICIT_CONFIDENCE,
-            "threshold": threshold,
-            "score_parts": {},
-            "copy_persona": persona,
-            "pages": pages,
-            "ranked": [{"id": explicit_id, "name": tmpl["name"],
-                        "group": tmpl["group"], "confidence": _EXPLICIT_CONFIDENCE,
-                        "raw": 999, "parts": {}}],
-            "classified": {},
-            "rationale": (
-                "FLEXIBILITY MODE 1 — HONORED EXPLICIT: "
-                f"User explicitly named '{tmpl['name']}' — building exactly that. "
-                "This matcher honors explicit user desire above all scoring. "
-                "No template suggestion overrides this choice."
-            ),
-            "request": request,
-            "ts": _ts(),
-        }
+    # FLEXIBILITY: detect intent mode (honors legacy just_do_it / explicit_funnel fields)
+    mode_info = detect_mode(request, override=(
+        MODE_EXPLICIT if explicit_id else intent_mode))
+    mode = mode_info["mode"]
 
-    # Mode 2/3 — scoring path
+    # Scoring path (always runs so we have a ranked list for reference / SUGGEST)
     feats = classify(request)
     scored = [score_template(t, feats) for t in catalog.templates]
     for s in scored:
@@ -562,27 +696,46 @@ def match_funnel(request: dict | str, catalog: Catalog, *,
 
     ranked = scored[:top_k]
     best = ranked[0] if ranked else None
-    decision = "CREATE_NEW"
-    matched_id = None
+
+    has_any = bool(best and best["raw"] > 0)
+    has_confident = bool(best and best["confidence"] >= threshold and best["raw"] > 0)
+
+    # When EXPLICIT and a name was detected, force matched_id to the named template
+    if mode == MODE_EXPLICIT and explicit_id and explicit_id in catalog.by_id:
+        matched_id = explicit_id
+        has_any = True
+        has_confident = True
+    else:
+        matched_id = best["id"] if has_any else None
+
+    flex = flex_decide(mode, has_confident_match=has_confident, has_any_match=has_any)
+    decision = flex["decision"]
+
     persona = None
     pages = None
-    just_do_it = bool(request.get("just_do_it"))
-    flex_mode = 3 if just_do_it else 2
-
-    if best and best["confidence"] >= threshold and best["raw"] > 0:
-        decision = "USE_TEMPLATE"
-        matched_id = best["id"]
+    if matched_id and matched_id in catalog.by_id:
         tmpl = catalog.by_id[matched_id]
         persona = catalog.resolve_persona(tmpl["persona"])
-        pages = instantiate_pages(tmpl)
+        if flex["build_from_template"] or mode == MODE_EXPLICIT:
+            pages = instantiate_pages(tmpl)
 
-    rationale = _rationale(best, threshold, decision, flex_mode)
+    rationale = _rationale_flex(mode, decision, best, threshold, flex)
     return {
         "decision": decision,
-        "flexibility_mode": flex_mode,
+        "intent_mode": mode,
+        "mode_reason": mode_info["reason"],
+        "mode_cue": mode_info.get("cue"),
+        "imposes_on_user": flex["imposes_on_user"],     # always False
+        "override_allowed": flex["override_allowed"],   # always True
+        "await_confirm": flex["await_confirm"],
+        "build_from_template": flex["build_from_template"],
+        "template_role": flex["template_role"],
+        "flex_note": flex["note"],
+        "flex_principle": flex_principle(),
         "matched_template": matched_id,
         "matched_name": catalog.by_id[matched_id]["name"] if matched_id else None,
-        "confidence": best["confidence"] if best else 0.0,
+        "confidence": (1.0 if mode == MODE_EXPLICIT and explicit_id else
+                       (best["confidence"] if best else 0.0)),
         "threshold": threshold,
         "score_parts": best["parts"] if best else {},
         "copy_persona": persona,
@@ -596,6 +749,13 @@ def match_funnel(request: dict | str, catalog: Catalog, *,
         "request": request if isinstance(request, dict) else {"text": request},
         "ts": _ts(),
     }
+
+
+def _rationale_flex(mode: str, decision: str, best: dict | None, threshold: float,
+                    flex: dict) -> str:
+    bm = (f"best='{best['name']}' confidence={best['confidence']} (threshold {threshold})"
+          if best else "no candidate scored")
+    return f"mode={mode} -> decision={decision}. {bm}. {flex['note']}"
 
 
 def _rationale(best: dict | None, threshold: float, decision: str,
@@ -701,7 +861,10 @@ def log_decision(decision: dict, log_path: str) -> str:
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     line = json.dumps({
         "ts": decision.get("ts", _ts()),
+        "intent_mode": decision.get("intent_mode"),
+        "mode_cue": decision.get("mode_cue"),
         "decision": decision["decision"],
+        "await_confirm": decision.get("await_confirm"),
         "matched_template": decision.get("matched_template"),
         "confidence": decision.get("confidence"),
         "threshold": decision.get("threshold"),
@@ -715,26 +878,75 @@ def log_decision(decision: dict, log_path: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# Funnel -> linked-automations (the "complete funnel" handoff to Skill 44)
+# --------------------------------------------------------------------------- #
+def linked_automations(funnel_id: str, link_map_path: str, *,
+                       overrides: list[str] | None = None,
+                       include_secondary: bool = True) -> dict:
+    """Read funnel-to-automation.json and return the RECOMMENDED follow-up automations
+    for ``funnel_id`` (primary + optional secondary + graduation), MINUS any the user
+    overrode. This is what Skill 6 emits so Skill 44 can build the COMPLETE funnel's
+    follow-ups. RECOMMENDED, never mandatory; anything the user overrode is dropped."""
+    overrides = set(overrides or [])
+    try:
+        data = json.load(open(link_map_path, encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"funnel_template_id": funnel_id, "found": False,
+                "reason": f"link map unreadable: {exc}", "automations": []}
+    entry = next((l for l in data.get("links", []) if l["funnel_template_id"] == funnel_id), None)
+    if not entry:
+        return {"funnel_template_id": funnel_id, "found": False,
+                "reason": "no link entry", "automations": []}
+    picks = [entry["primary_followup"]]
+    if include_secondary:
+        picks += entry.get("secondary_followups", [])
+    if "graduation_followup" in entry:
+        picks.append(entry["graduation_followup"])
+    out = []
+    for ref in picks:
+        key = f"{ref['category']}/{ref['automation_id']}"
+        dropped = ref["automation_id"] in overrides or key in overrides
+        out.append({**ref, "recommended": True, "mandatory": False,
+                    "overridden_by_user": dropped, "build_now": not dropped})
+    return {"funnel_template_id": funnel_id, "funnel_group": entry["funnel_group"],
+            "found": True, "recommended": True, "mandatory": False,
+            "note": "RECOMMENDED follow-ups for a complete funnel; user overrides are dropped. "
+                    "Hand to Skill 44 (caf) to build the linked automations.",
+            "automations": out}
+
+
+# --------------------------------------------------------------------------- #
 # STEP 0 wiring (called by v2_dispatcher before the builder runs)
 # --------------------------------------------------------------------------- #
 def step0_match(task: dict, evidence_root: str, *,
                 catalog_root: str | None = None,
                 index_path: str | None = None,
                 threshold: float = DEFAULT_THRESHOLD,
-                reranker: "EmbeddingReranker | None" = None) -> dict:
-    """STEP 0 of the funnel build flow.
+                reranker: "EmbeddingReranker | None" = None,
+                intent_mode: str | None = None,
+                link_map_path: str | None = None) -> dict:
+    """STEP 0 of the funnel build flow — FLEXIBLE + template-aware.
 
-    Build a request from the board ``task`` (free text + structured intent), match
-    it against the catalog, LOG the decision, write ``routing/funnel-match.json``,
-    and MUTATE the task so the builder is template-first:
+    Build a request from the board ``task`` (free text + structured intent), detect
+    the intent mode, match against the catalog, LOG the decision, write
+    ``routing/funnel-match.json``, and MUTATE the task per the flexibility contract:
 
-      * USE_TEMPLATE -> task['pages'] = instantiated plan, task['copy_persona'] set,
-                        task['template_match'] records the decision.
-      * CREATE_NEW   -> task['template_match'] records the decision; the builder
-                        generates net-new, then the caller calls save_new_template.
+      * USE_TEMPLATE     (HANDS_OFF + confident) -> task['pages'] = instantiated plan,
+                          task['copy_persona'], task['instantiated_from_template'].
+      * SUGGEST_TEMPLATE (UNSURE + confident)    -> task['suggested_template'] +
+                          task['await_confirm']=True; pages NOT set (await user confirm).
+      * HONOR_USER       (EXPLICIT)              -> task['template_reference'] = optional
+                          ref only; the user's own spec/pages are left untouched.
+      * CREATE_NEW       (nothing fits)          -> builder generates net-new; caller
+                          then calls save_new_template.
 
-    Returns the decision record. Never raises into the build loop (matching is
-    advisory glue — a matcher failure must not block a build)."""
+    If a link map is available (``link_map_path`` / GHL_FUNNEL_AUTOMATION_LINKS) and the
+    funnel is identified, the RECOMMENDED follow-up automations are attached (minus
+    task['automation_overrides']) so Skill 44 can build the COMPLETE funnel. Recommended,
+    never mandatory.
+
+    Returns the decision record. Never raises into the build loop (matching is advisory
+    glue — a matcher failure must not block a build)."""
     try:
         if index_path and os.path.isfile(index_path):
             catalog = Catalog.from_index(index_path)
@@ -751,11 +963,14 @@ def step0_match(task: dict, evidence_root: str, *,
             "funnel_type": task.get("funnel_type", task.get("type", "")),
             "goal": task.get("goal", ""),
             "length": task.get("length", ""),
-            # Flexibility model inputs (v14.6.0 retrofit)
+            "steps": task.get("user_steps") or task.get("steps"),
+            "spec": task.get("user_spec"),
+            # v14.6.0 compat fields (honoured by detect_mode)
             "explicit_funnel": task.get("explicit_funnel", ""),
             "just_do_it": bool(task.get("just_do_it")),
         }
-        decision = match_funnel(request, catalog, threshold=threshold, reranker=reranker)
+        decision = match_funnel(request, catalog, threshold=threshold, reranker=reranker,
+                                intent_mode=intent_mode or task.get("intent_mode"))
 
         # persist
         routing = os.path.join(evidence_root, "routing")
@@ -764,19 +979,37 @@ def step0_match(task: dict, evidence_root: str, *,
                                  encoding="utf-8"), indent=2)
         log_decision(decision, os.path.join(routing, "funnel-decisions.jsonl"))
 
-        # mutate task (advisory — callers should present the suggestion to the user
-        # unless decision=HONORED_EXPLICIT or just_do_it=True)
+        # mutate task — flexibility-aware (never imposes onto an explicit desire)
         task["template_match"] = {
+            "intent_mode": decision["intent_mode"],
             "decision": decision["decision"],
-            "flexibility_mode": decision.get("flexibility_mode"),
             "matched_template": decision["matched_template"],
             "confidence": decision["confidence"],
-            "rationale": decision.get("rationale", ""),
+            "await_confirm": decision["await_confirm"],
+            "imposes_on_user": decision["imposes_on_user"],
         }
-        if decision["decision"] in ("USE_TEMPLATE", "HONORED_EXPLICIT"):
+        d = decision["decision"]
+        if d == DEC_USE:
             task.setdefault("pages", decision["pages"])
             task["copy_persona"] = decision["copy_persona"]
             task["instantiated_from_template"] = decision["matched_template"]
+        elif d == DEC_HONOR_USER:
+            # honor existing pages/spec; template is reference only
+            if decision["pages"] and not task.get("pages"):
+                task["template_reference"] = decision["matched_template"]
+            task["template_reference"] = decision["matched_template"]
+        elif d == DEC_SUGGEST:
+            task["suggested_template"] = decision["matched_template"]
+            task["await_confirm"] = True          # do NOT build until the user confirms
+
+        # complete-funnel handoff: attach the linked follow-up automations for Skill 44
+        funnel_id = task.get("funnel_template_id") or (
+            decision["matched_template"] if d in (DEC_USE, DEC_SUGGEST, DEC_HONOR_USER) else None)
+        lm = link_map_path or os.environ.get("GHL_FUNNEL_AUTOMATION_LINKS")
+        if funnel_id and lm and os.path.isfile(lm):
+            la = linked_automations(funnel_id, lm, overrides=task.get("automation_overrides"))
+            decision["linked_automations"] = la
+            task["linked_automations"] = la       # consumed by Skill 44 step 0
         return decision
     except Exception as exc:  # noqa: BLE001 — matching must never block a build
         return {"decision": "SKIPPED", "reason": f"matcher error: {type(exc).__name__}: {exc}"}
