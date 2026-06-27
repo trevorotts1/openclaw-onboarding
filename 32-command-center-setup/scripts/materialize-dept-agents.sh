@@ -76,16 +76,48 @@ if [[ $DRY_RUN -eq 0 ]]; then
 fi
 
 # ─── Discover dept folders ───────────────────────────────────────────────────
-# Skill 23 canonical (per SKILL.md + build-state-schema):
-#   $OC_ROOT/workspace/departments/<slug>/
-# Skill 32 alt (per INSTALL.md Phase 3):
-#   $OC_ROOT/workspaces/command-center/<slug>/
-# Scan BOTH; the alt path wins if both contain the same slug (Skill 32 is
-# the authoritative dept-head workspace).
+# Priority order (highest last, so later discoveries win in discovered{}):
+#
+#   1. $OC_ROOT/workspace/departments/<dept-slug>/
+#      Legacy Skill 23 path (pre-v9.6.0). Still used by some installs.
+#
+#   2. $OC_ROOT/workspaces/command-center/<dept-slug>/
+#      Skill 32 alt path (per INSTALL.md Phase 3). Takes priority over (1)
+#      when both contain the same slug.
+#
+#   3. <openclaw-master-files>/zero-human-company/<company>/departments/<dept-slug>/
+#      Canonical Skill 23 output path (v9.6.0+, PRD 1.9). build-workforce.py
+#      (resolve_company_paths) writes ALL new departments here, NOT into
+#      $OC_ROOT. Glob-expanded for every company slug found on disk.
+#      Mac: ~/Downloads/openclaw-master-files/zero-human-company/
+#      VPS: /data/openclaw-master-files/zero-human-company/
+#
+# PATH-MISMATCH FIX (v14.22.3): the previous version only scanned roots (1)
+# and (2), which live under $OC_ROOT. build-workforce.py writes to root (3),
+# a completely separate tree. This caused materialize-dept-agents.sh to find
+# ZERO department folders and register ZERO agents even after a successful
+# build — every client onboarded under v9.6.0–v14.22.2 was silently broken.
 DEPT_SCAN_ROOTS=(
-  "$OC_ROOT/workspaces/command-center"
   "$OC_ROOT/workspace/departments"
+  "$OC_ROOT/workspaces/command-center"
 )
+
+# Expand the canonical master-files ZHC tree (root 3). We iterate every
+# company directory and push its departments/ subdir into DEPT_SCAN_ROOTS
+# so the Python scanner sees it as a direct list of dept-slug children.
+for _mf_root in \
+    "$HOME/Downloads/openclaw-master-files/zero-human-company" \
+    "/data/openclaw-master-files/zero-human-company"; do
+  [[ -d "$_mf_root" ]] || continue
+  for _company_dir in "$_mf_root"/*/; do
+    [[ -d "$_company_dir" ]] || continue
+    _dept_d="${_company_dir%/}/departments"
+    if [[ -d "$_dept_d" ]]; then
+      DEPT_SCAN_ROOTS+=("$_dept_d")
+      echo "[materialize-dept-agents] including ZHC dept path: $_dept_d"
+    fi
+  done
+done
 
 # ─── Run the mutation in Python (no bash JSON acrobatics) ────────────────────
 export OC_CONFIG_FILE="$CONFIG_FILE"

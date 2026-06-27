@@ -2419,6 +2419,108 @@ def build_from_config(config):
         except Exception as _ws_e:
             print(f"[NON-INTERACTIVE WARN] could not write wiringStatus to build-state: {_ws_e}", file=sys.stderr)
 
+    # ── POST-BUILD WIRING ASSERTION (v14.22.3 FAIL-WIRING-NOT-MATERIALIZED) ───
+    # Verify ALL expected dept-<id> entries are present in agents.list on disk.
+    # The primary registration loop (add_agent_to_config above) writes to the
+    # in-memory config_data then saves — but only when zero failures occurred.
+    # When registration_failures is non-empty the save is skipped, leaving agents
+    # on disk but NOT in openclaw.json. This assertion catches that gap and
+    # also the PATH-MISMATCH case where openclaw.json was absent at build time.
+    #
+    # Auto-repair: if any expected agents are missing, invoke
+    # 32-command-center-setup/scripts/materialize-dept-agents.sh which resolves
+    # the correct build-output path (~/Downloads/openclaw-master-files/... on Mac;
+    # /data/openclaw-master-files/... on VPS) and registers all departments.
+    # Fail loud if still incomplete after the repair attempt.
+    _expected_dept_agent_ids = {f"dept-{d}" for d in selected_departments}
+    if _expected_dept_agent_ids and os.path.isfile(OPENCLAW_CONFIG):
+        try:
+            _cfg_chk = load_openclaw_config()
+            _actual_ids_chk = {
+                a.get("id") for a in _cfg_chk.get("agents", {}).get("list", [])
+                if isinstance(a, dict)
+            }
+            _wiring_missing = _expected_dept_agent_ids - _actual_ids_chk
+            if not _wiring_missing:
+                print(
+                    f"[WIRING-ASSERT] PASS — all {len(_expected_dept_agent_ids)} "
+                    f"dept agents confirmed in agents.list",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"[WIRING-ASSERT] {len(_wiring_missing)} dept agent(s) missing "
+                    f"from agents.list: {sorted(_wiring_missing)} — "
+                    f"invoking materialize-dept-agents.sh to repair",
+                    file=sys.stderr,
+                )
+                _mat_script = os.path.normpath(os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)),
+                    "..", "..", "32-command-center-setup", "scripts",
+                    "materialize-dept-agents.sh",
+                ))
+                if os.path.isfile(_mat_script):
+                    try:
+                        import subprocess as _wa_sp
+                        _mat_rc = _wa_sp.run(
+                            ["bash", _mat_script], timeout=120
+                        ).returncode
+                        if _mat_rc == 0:
+                            _cfg_chk2 = load_openclaw_config()
+                            _actual_ids2 = {
+                                a.get("id")
+                                for a in _cfg_chk2.get("agents", {}).get("list", [])
+                                if isinstance(a, dict)
+                            }
+                            _still_missing = _expected_dept_agent_ids - _actual_ids2
+                            if not _still_missing:
+                                print(
+                                    f"[WIRING-ASSERT] PASS (after materialize repair) "
+                                    f"— all {len(_expected_dept_agent_ids)} dept agents "
+                                    f"now confirmed in agents.list",
+                                    file=sys.stderr,
+                                )
+                                # Clear registration_failures so progress reaches 100%
+                                registration_failures.clear()
+                            else:
+                                print(
+                                    f"[WIRING-ASSERT] FAIL-WIRING-NOT-MATERIALIZED — "
+                                    f"{len(_still_missing)} dept agent(s) still absent "
+                                    f"after materialize: {sorted(_still_missing)}",
+                                    file=sys.stderr,
+                                )
+                                if "wiring:not-materialized" not in registration_failures:
+                                    registration_failures.append("wiring:not-materialized")
+                        else:
+                            print(
+                                f"[WIRING-ASSERT] materialize-dept-agents.sh exited "
+                                f"{_mat_rc} — wiring still incomplete",
+                                file=sys.stderr,
+                            )
+                            if "wiring:materialize-failed" not in registration_failures:
+                                registration_failures.append("wiring:materialize-failed")
+                    except Exception as _mat_e:
+                        print(
+                            f"[WIRING-ASSERT] materialize-dept-agents.sh error: "
+                            f"{_mat_e}",
+                            file=sys.stderr,
+                        )
+                else:
+                    print(
+                        f"[WIRING-ASSERT] FAIL-WIRING-NOT-MATERIALIZED — "
+                        f"materialize-dept-agents.sh not found at {_mat_script}. "
+                        f"Run manually: bash 32-command-center-setup/scripts/"
+                        f"materialize-dept-agents.sh",
+                        file=sys.stderr,
+                    )
+                    if "wiring:not-materialized" not in registration_failures:
+                        registration_failures.append("wiring:not-materialized")
+        except Exception as _wa_e:
+            print(
+                f"[WIRING-ASSERT] WARN: post-build wiring check failed: {_wa_e}",
+                file=sys.stderr,
+            )
+
     # B2: Gate progress_pct and "Build complete!" on registration success
     _build_progress = 100
     _build_complete_msg = "Build complete!"
