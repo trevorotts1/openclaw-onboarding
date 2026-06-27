@@ -1,7 +1,7 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v14.12.0.
+> **Version:** see `/version` - this repo at v14.14.0.
 >
 > **NOTE (v14.12.0) - fix(skill6): GoHighLevel credential resolution searches every alias + every env store (kills the six-month image-step false-fail) + folds the B7 SOP docs (closes PR #356).** The Skill-6 image/media step once false-failed `"GHL LOCATION PIT not found"` on a LOCATION Private Integration Token the operator had used for SIX MONTHS — the token was in `~/.openclaw/secrets/.env` under `GOHIGHLEVEL_API_KEY` the whole time, but the resolver checked only two env-var names in the live process environment and never opened the canonical store, so a clean agent shell (where the gateway had not exported `secrets/.env`) read empty and fail-loud. `ghl_media.resolve_location_pit()` / `resolve_location_id()` now resolve from EVERY known LOCATION-class alias AND, when the live env is empty, parse the canonical env stores directly (`~/.openclaw/secrets/.env` → `~/clawd/secrets/.env` → `~/.openclaw/workspace/.env`) — the same multi-alias/multi-store pattern as the Google 3-alias key and the `KIE_API_KEY` store-fallback. It NEVER falls back to an agency-class PIT (agency tokens 401 for media), and a genuine miss now names exactly which vars and stores it checked and tells the agent to `source ~/.openclaw/secrets/.env` and retry. SOP `v2-autonomous-build-sop.md` gains §2.0.1 (credential preflight + the HARD RULE: real research across all env stores before any `honest_fail`) and a §7.1 forbidden-shortcut row; SKILL.md documents where the LOCATION PIT / location id / KIE key live and the no-false-fail rule. PR #356's B7 SOP sections (§2.05 method-decision, §2.06 theme/colors, §4.1 embed-widget, §7 sealed-mode, §7.1 forbidden shortcuts) are folded in and the PR closed. No secret values committed (env var NAMES only). See [CHANGELOG.md](CHANGELOG.md).
 >
@@ -33,7 +33,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v14.12.0** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v14.14.0** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.

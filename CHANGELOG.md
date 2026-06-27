@@ -1,3 +1,23 @@
+## [v14.14.0]  -  2026-06-27  -  fix(skill23): safe-only — 4 perspective-tag fixes + design routing improvement; adaptive specialist-weighting held
+
+SHIPPED (safe-only scope; regressions=[], clean=true):
+
+PERSPECTIVE-TAG FIXES (persona-categories.json, Skill 22): Remove 4 misattributed identity perspective tags — `womens-challenges` on 3 book personas that are not women-authored (attwood-passion-test, robbins-five-second-rule, one sales/marketing persona); `african-american-experience` on grover-relentless whose author does not carry that lived experience. Tags were incorrectly assigned and would have caused the perspective-bonus to fire on identity claims the persona cannot authentically represent.
+
+ROUTING IMPROVEMENT (persona-selector-v2.py, infer-task-category.py, Skill 23): `_CATEGORY_DOMAINS["design"]` now includes `visual-storytelling` and `communication` alongside `copywriting` and `strategy-innovation`. Both domains exist in persona-categories.json and are the craft domains actually carried by visual/sketchnote personas. `infer-task-category.py` design keyword list gains sketchnote, sketchnoting, sketch, visually, visual map, visual mapping — so "Visually sketchnote our onboarding process" routes to the design category and enters the correct candidate pool.
+
+HELD: The adaptive task_fit specialist-weighting scoring rule (compute_specialist_signal / adaptive_task_fit_weights). Regression gate: specialistsWin=false, generalizes=false — the rule does not reliably surface the right specialist across diverse task types. The routing fix above ensures specialists enter the right candidate pool; the scoring lift is the remaining open defect.
+
+No client names, no operator-local paths, no secret values committed.
+
+---
+
+## [v14.13.0]  -  2026-06-27  -  feat(skill6): harden render gate (un-fakeable) + sanitizer/full-width fidelity + auth/dispatch/docs (Skill 6 v7.4.0)
+
+Harden the Skill 6 render-gate pipeline: un-fakeable proof requirements, sanitizer and full-width fidelity guards, auth/dispatch reliability improvements, and documentation updates. Tagged externally by Trevor; CHANGELOG entry added retroactively by G2 guard compliance in v14.14.0.
+
+---
+
 ## [v14.12.0]  -  2026-06-27  -  feat(skill6): transcript-driven build recipe — SEO/founder gate + media-folder discipline + full-width route + ZHC part-N naming (Skill 6 v7.3.0)
 
 Derives and enforces the canonical GHL funnel build recipe directly from Trevor's authoritative transcript. All items tagged `source=transcript` (authoritative) or `ownedByHarden` (delegated to parallel harden run wu9dnrsak). Builds ON the harden run changes (full-width default, P0 gate, child-chain, iframe/sanitizer, selectors, auth, rate-governor) — additive and complementary. No client names, no operator-local paths, no secret values committed.
