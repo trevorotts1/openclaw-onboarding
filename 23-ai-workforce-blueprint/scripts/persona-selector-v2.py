@@ -356,6 +356,82 @@ def _norm_tag(s: str) -> str:
     s = _re.sub(r"[/ _]+", "-", s)
     return s.strip("-")
 
+
+# ── Perspective bonus: additive-only, never-to-zero ────────────────────────────
+# perspective[] tags in persona-categories.json (the 6-tag perspectiveTags vocab)
+# describe the lived-experience LENS a persona's SOURCE genuinely carries
+# (e.g. african-american-experience, faith-spirituality). They are DESCRIPTIVE
+# metadata, never a filter: an empty or absent perspective[] must NEVER eliminate
+# or zero-score a persona. _category_filter() (Stage B) keys ONLY off domain[] and
+# is deliberately left untouched here. Perspective participates in selection ONLY
+# as a small ADDITIVE bonus, and ONLY when the task text explicitly invokes that
+# same lens — so perspective routing degrades gracefully (a generic task ignores it
+# entirely; the ~41 personas with perspective=[] are never affected) instead of
+# being dead weight or a trap. The bonus is bounded so it acts as a gentle
+# tiebreaker, never a dominant scoring term.
+PERSPECTIVE_BONUS_MAX = 0.05      # hard cap on the total perspective bonus
+PERSPECTIVE_BONUS_PER_TAG = 0.025 # per overlapping lens, summed then capped
+
+# Maps each perspectiveTags vocab entry → task-text trigger phrases. Only the lens
+# a task EXPLICITLY invokes earns a bonus; no match → 0.0 for everyone.
+PERSPECTIVE_KEYWORDS: dict = {
+    "african-american-experience": [
+        "african american", "african-american", "black community", "black men",
+        "black women", "black founder", "black entrepreneur", "racism", "racial",
+        "civil rights", "the culture",
+    ],
+    "womens-challenges": [
+        "women", "woman", "female founder", "female entrepreneur", "motherhood",
+        "as a mother", "for moms", "girl boss",
+    ],
+    "mens-challenges": [
+        "men's", "for men", "fatherhood", "as a father", "masculinity", "brotherhood",
+    ],
+    "family-relationships": [
+        "family", "parenting", "co-parent", "marriage", "spouse", "raising kids",
+        "raising children", "sibling", "in-law",
+    ],
+    "faith-spirituality": [
+        "faith", "spiritual", "god ", "prayer", "church", "ministry", "scripture",
+        "biblical", "gospel", "christian",
+    ],
+    "love-romantic-relationships": [
+        "romantic", "dating", "love life", "my partner", "relationship advice",
+        "marriage",
+    ],
+}
+
+
+def infer_task_perspectives(task_text: str) -> set:
+    """Return the set of perspective tags the TASK text explicitly invokes.
+
+    Empty set for the common (generic-task) case — which yields a 0.0 bonus for
+    every persona, so perspective is purely opt-in and never harmful.
+    """
+    text = (task_text or "").lower()
+    hits: set = set()
+    for tag, kws in PERSPECTIVE_KEYWORDS.items():
+        if any(kw in text for kw in kws):
+            hits.add(tag)
+    return hits
+
+
+def perspective_bonus(persona_perspectives, task_perspectives) -> float:
+    """Additive-only, never-to-zero perspective score adjustment.
+
+    Returns 0.0 when the persona has no perspective[] tags, OR the task invokes
+    none, OR the two sets do not overlap. Returns a small POSITIVE bonus (capped at
+    PERSPECTIVE_BONUS_MAX) ONLY on genuine overlap. The return value is guaranteed
+    >= 0.0, so applying it can never reduce, eliminate, or zero-score a persona.
+    """
+    if not persona_perspectives or not task_perspectives:
+        return 0.0
+    overlap = set(persona_perspectives) & set(task_perspectives)
+    if not overlap:
+        return 0.0
+    return min(len(overlap) * PERSPECTIVE_BONUS_PER_TAG, PERSPECTIVE_BONUS_MAX)
+
+
 # Gemini-search script candidate locations (checked in order)
 _GEMINI_SEARCH_CANDIDATES = [
     Path(__file__).parent / "gemini-search.py",
@@ -1403,6 +1479,30 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
               for p in personas]
 
     task_category = infer_task_category(task)
+
+    # ── Perspective bonus (additive-only, never-to-zero) ──────────────────────
+    # Nudge a persona UP when the task EXPLICITLY invokes the lived-experience lens
+    # its source genuinely carries. Empty/absent perspective[] -> 0.0 bonus, so this
+    # can never eliminate, penalize, or zero-score any persona. Generic tasks invoke
+    # no lens -> task_perspectives is empty -> the whole block is skipped (no-op).
+    task_perspectives = infer_task_perspectives(task)
+    if task_perspectives:
+        pc_file = paths.get("persona_categories")
+        personas_meta: dict = {}
+        if pc_file and Path(pc_file).exists():
+            try:
+                _cd = json.loads(Path(pc_file).read_text(encoding="utf-8"))
+                personas_meta = _cd.get("personas", {}) or {}
+            except Exception:
+                personas_meta = {}
+        if personas_meta:
+            for s in scored:
+                pinfo = personas_meta.get(s["persona_id"], {})
+                bonus = perspective_bonus(pinfo.get("perspective") or [], task_perspectives)
+                if bonus > 0.0:
+                    s["perspective_bonus"] = round(bonus, 4)
+                    s["base_score"] = round(s["base_score"] + bonus, 4)
+                    s["score"] = round(s["score"] + bonus, 4)
 
     if variety:
         recent_uses = read_recent_use_counts(department, task_category,

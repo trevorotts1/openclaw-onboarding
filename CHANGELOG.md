@@ -1,3 +1,15 @@
+## [v14.11.0]  -  2026-06-27  -  feat(skill22): ship 3 orphan persona blueprints (Dib, Miner NEPQ, Brunson Traffic) + perspective-bonus routing
+
+Shipped canonical `persona-blueprint.md` + `PLAYBOOK-APPENDIX.md` for three personas registered in `persona-categories.json` with full domain[] tags and present in the prebuilt-index-v2.0.0 asset, but previously missing physical blueprint files:
+
+- `allan-dib-the-1-page-marketing-plan` — 1-Page Marketing Plan framework, 9-square prospect/lead/customer model, direct-response small-business marketing
+- `jeremy-miner-the-nepq-black-book-of-questions` — full NEPQ question bank (connecting / situation / problem-awareness / consequence / commitment question families)
+- `russell-brunson-traffic-secrets` — Dream 100, traffic acquisition matrix, paid + organic traffic playbooks
+
+Also ships the perspective-bonus routing enhancement in `23-ai-workforce-blueprint/scripts/persona-selector-v2.py`: an additive-only, never-to-zero +0.025/tag (capped +0.05) bonus that nudges a persona up ONLY when the task text EXPLICITLY invokes the same lived-experience lens the persona's source carries (e.g. faith language + Jakes; Black-community language + Obama). Personas with `perspective=[]` receive exactly 0.0 — no filtering, no down-scoring.
+
+`PERSONA-ROUTER.md` routing entries added for all 3 blueprints. `shared-utils/prebuilt-index/INDEX-MANIFEST.json` updated with `orphan_blueprints_shipped` note and Rohde sketchnote open-defect note retained (sketchnote category-map fix deferred — QC gate blocked on empty per-box index; fix ships separately after box validation). Skill 22 bumped v6.11.0 → v6.12.0. No client names, no operator-local paths, no secret values committed.
+
 ## [v14.10.2]  -  2026-06-27  -  fix: silence per-update client Telegram notification by default
 
 Gate the per-update client Telegram DM behind `OPENCLAW_UPDATE_NOTIFY=1`. The block in `scripts/update-skills.sh` (lines 448-496) previously fired unconditionally on every box that had a config with a bot token — spamming the client on every Sunday cron run. It now skips entirely unless the operator explicitly sets `OPENCLAW_UPDATE_NOTIFY=1` in the cron environment. Default is OFF (`OPENCLAW_UPDATE_NOTIFY` unset or `0`). The silent `UPDATE PENDING` flag in `AGENTS.md` already delivers awareness to the agent without any client-facing push, so removing the auto-DM causes no information loss.

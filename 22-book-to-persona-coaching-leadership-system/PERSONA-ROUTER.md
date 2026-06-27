@@ -29,6 +29,7 @@
 - **Magic words, closing language** → `jones-exactly-what-to-say` (Phil Jones) → `sales-dept/`
 - **Getting and keeping attention** → `kane-hook-point` (Brendan Kane) → `sales-dept/`
 - **Demand generation, being oversubscribed** → `priestley-oversubscribed` (Daniel Priestley) → `sales-dept/`
+- **NEPQ question bank, neuro-emotional persuasion questioning, connecting/situation/problem-awareness/consequence/commitment questions, objection-stage questions** → `jeremy-miner-the-nepq-black-book-of-questions` (Jeremy Miner) → `sales-dept/`
 
 ### Marketing & Content
 - **Personal branding, brand architecture, thought leadership** → `leland-brand-mapping-strategy` (Karen Tiber Leland) [+APPENDIX] → `marketing-dept/`
@@ -44,6 +45,8 @@
 - **Value proposition, website copy** → `wiebe-copy-hackers` (Joanna Wiebe) → `marketing-dept/`
 - **Influence, persuasion psychology** → `cialdini-influence` (Robert Cialdini) → `marketing-dept/`
 - **Language patterns, NLP** → `charvet-words-change-minds` (Shelle Rose Charvet) → `marketing-dept/`
+- **One-page marketing plan, direct-response small-business marketing, 9-square / prospect-lead-customer framework** → `allan-dib-the-1-page-marketing-plan` (Allan Dib) → `marketing-dept/`
+- **Traffic generation, Dream 100, audience acquisition, finding your dream customer, paid + organic traffic** → `russell-brunson-traffic-secrets` (Russell Brunson) → `marketing-dept/`
 
 ### Leadership & Strategy
 - **Why-driven leadership, purpose** → `sinek-start-with-why` (Simon Sinek) → `leadership-dept/`
