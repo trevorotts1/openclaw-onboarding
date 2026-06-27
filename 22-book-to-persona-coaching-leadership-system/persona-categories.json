@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "1.1",
   "created": "2026-03-22",
   "domainTags": [
     "marketing",
@@ -550,7 +550,9 @@
         "lead-magnet",
         "list-building",
         "opt-in",
+        "self-liquidating-offer",
         "squeeze-page",
+        "swipe-file",
         "thank-you-page",
         "value-ladder"
       ],
@@ -558,7 +560,11 @@
       "added": "2026-06-26",
       "coaching_mode": "BUILT",
       "task_mode": "BUILT",
-      "blueprint": "personas/russell-brunson-lead-funnels/persona-blueprint.md"
+      "blueprint": "personas/russell-brunson-lead-funnels/persona-blueprint.md",
+      "appendix": "personas/russell-brunson-lead-funnels/PLAYBOOK-APPENDIX.md",
+      "appendix_status": "COMPLETE",
+      "appendix_richness": "RICH",
+      "two_sided": true
     },
     "russell-brunson-the-funnel-hackers-cookbook": {
       "author": "Russell Brunson",
@@ -571,26 +577,44 @@
       ],
       "perspective": [],
       "custom": [
+        "application-funnel",
+        "autowebinar-funnel",
+        "break-even-funnel",
+        "bridge-funnel",
+        "brunson-box",
         "clickfunnels",
         "conversion",
+        "curiosity-bullets",
+        "curiosity-headline",
+        "downsell",
         "elements-pages-funnels",
+        "funnel-copy",
         "funnel-recipes",
+        "funnel-scripts",
         "funnel-selection",
         "funnel-stacking",
         "funnel-types",
         "funnels",
         "lead-funnels",
+        "lead-magnet",
+        "membership-funnel",
+        "offer-wall",
         "order-bump",
         "order-form",
         "oto-upsell",
         "page-recipes",
         "page-sequence",
+        "product-launch-funnel",
+        "sales-letter-funnel",
         "sales-page",
+        "six-industry-matrix",
         "squeeze-page",
+        "thank-you-page",
         "tripwire-funnel",
         "value-ladder",
         "vsl-funnel",
-        "webinar-funnel"
+        "webinar-funnel",
+        "website-copy"
       ],
       "source_type": "pdf",
       "added": "2026-06-26",
@@ -604,7 +628,17 @@
       "two_sided": true,
       "blueprint": "personas/russell-brunson-the-funnel-hackers-cookbook/persona-blueprint.md",
       "summary": "Russell Brunson's funnel-recipe cookbook: the Elements > Pages > Funnels hierarchy (ingredients -> recipes -> meals). Coaches founders to select the right funnel recipe for the situation, build the full page sequence in order, and assemble each page from its required ingredients; governs Web-Development/Marketing/CRM funnel agents to ship the correct funnel TYPE, full page SEQUENCE, complete page INGREDIENTS, and fully-written (anti-thin-copy) Skill 6 funnel + website copy across the 22 funnel recipes and funnel stacking.",
-      "needs_tags": false
+      "appendix": "personas/russell-brunson-the-funnel-hackers-cookbook/PLAYBOOK-APPENDIX.md",
+      "appendix_status": "COMPLETE",
+      "appendix_richness": {
+        "headline_hook_subject": "RICH-structure / THIN-formula-internals",
+        "funnel_page_recipes": "RICH",
+        "scripts": "THIN",
+        "email_sequences": "THIN",
+        "frameworks": "RICH",
+        "brand_voice": "RICH",
+        "swipe_file": "RICH"
+      }
     },
     "russell-brunson-traffic-secrets": {
       "author": "Russell Brunson",
@@ -754,14 +788,20 @@
       ],
       "perspective": [],
       "custom": [
+        "closing",
+        "cold-outreach",
+        "consultative-selling",
+        "discovery-call",
+        "funnel-copy",
         "nepq",
         "neuro-emotional-selling",
-        "consultative-selling",
-        "question-led-selling",
-        "post-trust-selling",
+        "neutral-languaging",
         "objection-prevention",
-        "discovery-call",
-        "sales-script"
+        "post-trust-selling",
+        "question-led-selling",
+        "sales-page-copy",
+        "sales-script",
+        "vsl-script"
       ],
       "modes": [
         "coaching",
@@ -772,7 +812,10 @@
       "source_type": "epub",
       "added": "2026-06-26",
       "blueprint": "personas/acuff-miner-new-model-of-selling/persona-blueprint.md",
-      "needs_tags": false
+      "appendix": "personas/acuff-miner-new-model-of-selling/PLAYBOOK-APPENDIX.md",
+      "appendix_status": "COMPLETE",
+      "appendix_richness": "RICH",
+      "_perspective_note": "perspective intentionally empty: no controlled-vocab demographic-experience tag applies to a general B2B/B2C sales methodology. Generational/post-trust angle is captured in custom[] (post-trust-selling), not fabricated into a perspective tag."
     },
     "brunson-marketing-secrets-blackbook": {
       "author": "Russell Brunson",
@@ -786,25 +829,35 @@
       ],
       "perspective": [],
       "custom": [
-        "sales-funnels",
-        "value-ladder",
-        "offer-creation",
-        "one-big-domino",
-        "hook-story-offer",
         "attractive-character",
-        "dream-100",
+        "decoy-pricing",
         "direct-response-copywriting",
-        "urgency-scarcity",
-        "offer-stacking",
+        "dream-100",
+        "epiphany-bridge",
+        "free-plus-shipping",
         "funnel-kpis",
+        "hook-story-offer",
+        "imperfect-action",
+        "microcontinuity",
+        "offer-creation",
+        "offer-stacking",
+        "one-big-domino",
         "polarity-positioning",
-        "imperfect-action"
+        "sales-funnels",
+        "social-traffic",
+        "tripwire-order-bump",
+        "urgency-scarcity",
+        "value-ladder",
+        "webinar-selling"
       ],
       "source_type": "pdf",
       "added": "2026-06-26",
       "blueprint": "personas/brunson-marketing-secrets-blackbook/persona-blueprint.md",
       "coaching_mode": "BUILT",
-      "task_mode": "BUILT"
+      "task_mode": "BUILT",
+      "appendix": "personas/brunson-marketing-secrets-blackbook/PLAYBOOK-APPENDIX.md",
+      "appendix_status": "COMPLETE",
+      "appendix_richness": "RICH"
     },
     "brunson-network-marketing-secrets": {
       "author": "Russell Brunson",
@@ -816,15 +869,19 @@
       ],
       "perspective": [],
       "custom": [
-        "network-marketing",
-        "mlm",
-        "sales-funnels",
-        "recruiting",
+        "bridge-funnel",
+        "clickfunnels",
         "direct-sales",
         "duplication",
         "epiphany-bridge",
-        "viral-loop",
-        "lead-generation"
+        "home-party-funnel",
+        "hotel-meeting-funnel",
+        "lead-generation",
+        "mlm",
+        "network-marketing",
+        "recruiting",
+        "sales-funnels",
+        "viral-loop"
       ],
       "source_type": "pdf",
       "added": "2026-06-26",
@@ -833,7 +890,24 @@
         "coaching",
         "leadership",
         "hybrid"
-      ]
+      ],
+      "appendix": {
+        "present": true,
+        "richness": "asset-rich",
+        "sections": [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E",
+          "F",
+          "G",
+          "H"
+        ],
+        "notes": "RICH on funnel/page recipes, frameworks, and say-this scripts; THIN on email body/subject copy and standalone headline breadth (deferred by the book to Expert Secrets); ABSENT on paid-ad templates."
+      },
+      "appendix_status": "COMPLETE",
+      "appendix_richness": "RICH"
     },
     "edwards-copywriting-secrets": {
       "author": "Jim Edwards",
@@ -845,16 +919,18 @@
       ],
       "perspective": [],
       "custom": [
-        "direct-response",
-        "sales-letters",
-        "headlines",
-        "funnel-copy",
-        "website-copy",
-        "email-copy",
-        "vsl-scripts",
         "ad-copy",
+        "brand-voice",
+        "direct-response",
+        "email-copy",
+        "funnel-copy",
+        "headlines",
+        "hooks",
+        "offers-and-bullets",
+        "sales-letters",
         "social-copy",
-        "offers-and-bullets"
+        "vsl-scripts",
+        "website-copy"
       ],
       "source_type": "epub",
       "added": "2026-06-26",
@@ -865,7 +941,10 @@
       ],
       "coaching_mode": "BUILT",
       "task_mode": "BUILT",
-      "needs_tags": false
+      "appendix": "personas/edwards-copywriting-secrets/PLAYBOOK-APPENDIX.md",
+      "appendix_status": "COMPLETE",
+      "appendix_richness": "RICH",
+      "_perspective_note": "perspective[] is intentionally empty: Copywriting Secrets is a universal business/marketing book with no demographic/identity lens in the persona-categories perspectiveTags vocabulary (african-american-experience, womens-challenges, mens-challenges, family-relationships, faith-spirituality, love-romantic-relationships). Forcing one would be fabrication; this matches the curated entries for other copy/marketing personas (bly, cialdini, charvet)."
     },
     "leland-brand-mapping-strategy": {
       "author": "Karen Tiber Leland",
@@ -877,16 +956,40 @@
       ],
       "perspective": [],
       "custom": [
-        "personal-branding",
-        "brand-strategy",
+        "anchor-statement",
+        "be-do-have",
         "brand-architecture",
-        "thought-leadership",
-        "positioning",
+        "brand-audit",
+        "brand-consistency",
+        "brand-mapping-process",
+        "brand-strategy",
+        "brand-voice",
         "ceo-brand",
-        "brand-consistency"
+        "content-pillars",
+        "funnel-copy",
+        "opt-in-copy",
+        "parallel-brand",
+        "personal-branding",
+        "positioning",
+        "rebrand",
+        "signature-story",
+        "social-bio",
+        "thought-leadership",
+        "unique-branding-proposition",
+        "website-copy"
       ],
       "source_type": "pdf",
-      "added": "2026-06-26"
+      "added": "2026-06-26",
+      "appendix": "personas/leland-brand-mapping-strategy/PLAYBOOK-APPENDIX.md",
+      "appendix_status": "BUILT",
+      "appendix_richness": "RICH frameworks/voice/swipe; THIN funnels/scripts; ABSENT email-sequences (honest per Coverage Map H)",
+      "modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "two_sided": true,
+      "blueprint": "personas/leland-brand-mapping-strategy/persona-blueprint.md"
     },
     "miller-building-storybrand": {
       "author": "Donald Miller",
@@ -898,14 +1001,14 @@
       ],
       "perspective": [],
       "custom": [
-        "storytelling",
         "brand-messaging",
-        "sb7-framework",
         "brandscript",
         "funnel-copy",
-        "website-wireframe",
+        "grunt-test",
         "one-liner",
-        "grunt-test"
+        "sb7-framework",
+        "storytelling",
+        "website-wireframe"
       ],
       "modes": [
         "coaching",
@@ -916,7 +1019,9 @@
       "source_type": "epub",
       "added": "2026-06-26",
       "blueprint": "personas/miller-building-storybrand/persona-blueprint.md",
-      "needs_tags": false
+      "appendix": "personas/miller-building-storybrand/PLAYBOOK-APPENDIX.md",
+      "appendix_status": "COMPLETE",
+      "appendix_richness": "RICH"
     },
     "miller-coach-builder": {
       "author": "Donald Miller",
@@ -931,12 +1036,16 @@
       "perspective": [],
       "custom": [
         "coaching-business",
-        "productized-services",
-        "offer-menu",
-        "lead-generation",
-        "sales-funnel",
         "customer-is-the-hero",
+        "discovery-call-scripts",
+        "email-sequences",
+        "lead-generation",
+        "offer-menu",
+        "premium-pricing",
         "product-ladder",
+        "productized-services",
+        "sales-funnel",
+        "value-over-time-nurture",
         "website-wireframe"
       ],
       "modes": [
@@ -948,7 +1057,9 @@
       "source_type": "epub",
       "added": "2026-06-26",
       "blueprint": "personas/miller-coach-builder/persona-blueprint.md",
-      "needs_tags": false
+      "appendix": "personas/miller-coach-builder/PLAYBOOK-APPENDIX.md",
+      "appendix_status": "COMPLETE",
+      "appendix_richness": "RICH"
     },
     "rohde-the-sketchnote-workbook": {
       "author": "Mike Rohde",
@@ -960,13 +1071,18 @@
       ],
       "perspective": [],
       "custom": [
-        "sketchnoting",
-        "visual-thinking",
+        "dual-coding",
+        "five-elements",
+        "icon-systems",
         "idea-mapping",
         "infographics",
         "notes-plus",
+        "process-documentation",
+        "sketchnoting",
+        "structure-patterns",
+        "visual-explainer-copy",
         "visual-hierarchy",
-        "icon-systems"
+        "visual-thinking"
       ],
       "source_type": "pdf",
       "added": "2026-06-26",
@@ -980,7 +1096,25 @@
       "two_sided": true,
       "blueprint": "personas/rohde-the-sketchnote-workbook/persona-blueprint.md",
       "summary": "Mike Rohde's Notes-Plus visual-thinking method: 'ideas, not art.' Coaches founders to distill and map big ideas visually; governs Graphics/Presentations/Video/Research and the visual-explainer layers of Skill 6 (pages) and Skill 35 (social) to a structure-first, one-big-idea, hierarchy-driven standard.",
-      "needs_tags": false
+      "appendix": "personas/rohde-the-sketchnote-workbook/PLAYBOOK-APPENDIX.md",
+      "appendix_status": "COMPLETE_WITH_WARNINGS",
+      "appendix_richness": {
+        "rich": [
+          "visual page recipes (B)",
+          "frameworks (E)",
+          "brand voice (F)",
+          "icon swipe lists",
+          "verbatim swipe (G)"
+        ],
+        "absent": [
+          "marketing funnel pages",
+          "sales/objection/close scripts",
+          "multi-email funnels",
+          "offer/guarantee/pricing language",
+          "classic direct-response headline formulas"
+        ]
+      }
     }
-  }
+  },
+  "lastUpdated": "2026-06-26"
 }

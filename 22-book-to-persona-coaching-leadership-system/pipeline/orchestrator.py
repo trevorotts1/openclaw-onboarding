@@ -13,6 +13,17 @@ Pipeline (v10.10.0 — PRD §5.4 'book-to-persona' chain):
   Phase 3 - Synthesis (same chain — was GPT-5.3 Codex pre-v10.10.0;
               now uses the §5.4 chain so the cheapest fallback is
               Gemini Flash Lite, not GPT, matching N1 + cost policy)
+  Phase 3b - Playbook Appendix (same chain as Phase 3): emits
+              PLAYBOOK-APPENDIX.md next to persona-blueprint.md. The
+              blueprint DISTILLS the book into governance + coaching; the
+              appendix PRESERVES the book's reusable copy/funnel assets at
+              full fidelity (headline/hook/subject formulas, page-by-page
+              funnel recipes + sequences, sales/objection/follow-up/email
+              scripts, frameworks/templates with steps, brand-voice language
+              patterns, verbatim swipe file) so copy specialists write rich,
+              brand-building copy. Quality floor enforced (see
+              _validate_appendix + APPENDIX_* constants); fail-loud on the
+              structure/honesty gate, one stricter retry on richness shortfall.
 
 Anthropic models are FORBIDDEN by policy (N1). Filter applied at every tier.
 
@@ -211,6 +222,21 @@ CHUNK_THRESHOLD  = 80000    # Characters - books above this get chunked for Phas
 MAX_CHUNK_SIZE   = 70000    # Characters per chunk for Phase 2
 MAX_RETRIES      = 3        # Retry failed API calls this many times
 RETRY_DELAY      = 10       # Seconds between retries
+
+# ─── PLAYBOOK APPENDIX FLOORS (Phase 3b) ──────────────────────────────────────
+# The appendix (PLAYBOOK-APPENDIX.md) preserves the book's reusable copy/funnel
+# assets at full fidelity. The HARD gate enforces STRUCTURE + HONESTY (file
+# present, substantive, all 8 sections, Coverage Map) and FAILS LOUD if missed —
+# but it deliberately does NOT hard-fail on asset COUNT, because a memoir or
+# non-commercial book legitimately has few formulas/scripts and must mark them
+# ABSENT rather than fabricate. Count/length shortfalls are WARN-level so the
+# operator + QC see a thin appendix without the pipeline forcing invented assets.
+APPENDIX_HARD_MIN_CHARS    = 6000   # any book — below this is a hard fail
+APPENDIX_SOFT_MIN_CHARS    = 12000  # asset-rich books should clear this (warn below)
+APPENDIX_MIN_PATTERN_BLOCKS = 12    # target count of "Pattern:" capture fields (warn below)
+APPENDIX_MIN_EXAMPLE_BLOCKS = 12    # target count of "Worked example:" capture fields (warn below)
+APPENDIX_REQUIRED_SECTIONS = ["## A", "## B", "## C", "## D", "## E", "## F", "## G", "## H"]
+APPENDIX_MAX_RETRIES        = 1     # one stricter retry if the floor/targets are missed
 
 # ─── API KEYS ─────────────────────────────────────────────────────────────────
 def get_keys():
@@ -1164,6 +1190,7 @@ def _get_prompt(filename: str) -> str:
 def _extraction_system() -> str:  return _get_prompt("extraction-agent-prompt.md")
 def _analysis_system()   -> str:  return _get_prompt("analysis-agent-prompt.md")
 def _synthesis_system()  -> str:  return _get_prompt("synthesis-agent-prompt.md")
+def _appendix_system()   -> str:  return _get_prompt("playbook-appendix-prompt.md")  # Phase 3b
 
 # ─── PHASE 1 - EXTRACTION ─────────────────────────────────────────────────────
 async def run_extraction(session: aiohttp.ClientSession, book: dict, status: dict) -> bool:
@@ -1440,6 +1467,165 @@ Analyze across all 12 analytical dimensions as specified.
         mark_phase(status, folder, 2, "FAILED", str(e))
         return False
 
+# ─── PHASE 3b - PLAYBOOK APPENDIX ─────────────────────────────────────────────
+def _validate_appendix(text: str):
+    """Validate a PLAYBOOK-APPENDIX.md draft against the quality floor.
+
+    Returns (ok, hard_reasons, soft_warnings).
+      - ok=False (hard_reasons non-empty): STRUCTURE/HONESTY gate failed →
+        Phase 3b is marked FAILED (fail-loud; no false success).
+      - soft_warnings: richness/length below target. Logged, not fatal — a
+        genuinely thin (non-commercial) book legitimately has fewer assets and
+        marks them ABSENT in the Coverage Map rather than fabricating.
+    """
+    if not text or not text.strip():
+        return False, ["empty output"], []
+    n = len(text)
+    reasons, warnings = [], []
+
+    missing = [s for s in APPENDIX_REQUIRED_SECTIONS if s not in text]
+    if missing:
+        reasons.append(f"missing section headers {missing}")
+    if "Coverage Map" not in text and "Source Richness" not in text:
+        reasons.append("missing Asset Coverage Map (Section H) — required honesty ledger")
+    if n < APPENDIX_HARD_MIN_CHARS:
+        reasons.append(f"too short: {n:,} < {APPENDIX_HARD_MIN_CHARS:,} hard min chars")
+
+    low = text.lower()
+    pat = low.count("pattern:")
+    ex = low.count("worked example:")
+    if pat < APPENDIX_MIN_PATTERN_BLOCKS:
+        warnings.append(f"only {pat} Pattern: blocks (target >= {APPENDIX_MIN_PATTERN_BLOCKS})")
+    if ex < APPENDIX_MIN_EXAMPLE_BLOCKS:
+        warnings.append(f"only {ex} 'Worked example:' blocks (target >= {APPENDIX_MIN_EXAMPLE_BLOCKS})")
+    if n < APPENDIX_SOFT_MIN_CHARS:
+        warnings.append(f"length {n:,} < {APPENDIX_SOFT_MIN_CHARS:,} soft target "
+                        f"(acceptable ONLY if the Coverage Map marks the source THIN/ABSENT)")
+
+    return (len(reasons) == 0), reasons, warnings
+
+
+async def _appendix_model_call(session: aiohttp.ClientSession, system_prompt: str, user_prompt: str) -> str:
+    """Route a Phase 3b appendix call through the same selector chain as Phase 3
+    synthesis (Ollama-Cloud-first, OpenRouter same-model fallback, OAuth GPT)."""
+    input_size = len(system_prompt) + len(user_prompt)
+    model, route = resolve_phase_model("phase3", input_chars=input_size)
+    log(f"  Phase 3b appendix model: {model} via {route} (input ~{input_size:,} chars)")
+    if route == "openai-responses":
+        full_input = f"{system_prompt}\n\n---\n\n{user_prompt}"
+        return await call_codex(session, full_input, max_tokens=120000)
+    elif route == "ollama":
+        ollama_model = model.replace("ollama/", "", 1)
+        try:
+            return await call_ollama_cloud(session, ollama_model, system_prompt, user_prompt, max_tokens=120000)
+        except Exception as e:
+            log(f"  Ollama Cloud appendix call failed ({e}); falling back to OpenRouter same model")
+            fallback_model = model.replace("ollama/", "openrouter/").replace(":cloud", "")
+            return await call_openrouter(session, fallback_model, system_prompt, user_prompt, max_tokens=120000)
+    else:
+        or_model = model.replace("openrouter/", "", 1)
+        return await call_openrouter(session, or_model, system_prompt, user_prompt, max_tokens=120000)
+
+
+async def run_playbook_appendix(session: aiohttp.ClientSession, book: dict, status: dict,
+                                extraction_text: str, analysis_text: str) -> bool:
+    """Phase 3b: emit PLAYBOOK-APPENDIX.md alongside persona-blueprint.md.
+
+    Preserves the book's reusable copy/funnel assets at full fidelity (headline/
+    hook/subject formulas, page-by-page funnel recipes + sequences, sales/
+    objection/follow-up/email scripts, frameworks/templates with steps, brand-
+    voice language patterns, verbatim swipe file). Enforces the quality floor;
+    one stricter retry if the floor/targets are missed; fail-loud on the hard gate.
+    """
+    folder = book["folder"]
+    appendix_path = PERSONAS_DIR / folder / "PLAYBOOK-APPENDIX.md"
+    (PERSONAS_DIR / folder).mkdir(parents=True, exist_ok=True)
+
+    log(f"[PHASE 3b] Building playbook appendix: {book['title']}")
+    mark_phase(status, folder, "3b", "IN_PROGRESS")
+
+    try:
+        appendix_sys = _appendix_system()
+        base_user = f"""BOOK: {book['title']}
+AUTHOR: {book['author']}
+PERSONA FOLDER: {folder}
+
+Build the complete PLAYBOOK-APPENDIX.md (sections A-H) from the inputs below.
+Preserve every reusable asset at FULL fidelity using the Pattern / Worked example /
+Source capture convention. Never fabricate — mark a category ABSENT IN SOURCE (and
+record it in the Coverage Map) where the book is genuinely thin.
+
+---
+
+## PHASE 1 EXTRACTION NOTES (focus: items 21-30, the Playbook Asset Lens)
+{extraction_text[:90000]}
+
+---
+
+## PHASE 2 ANALYSIS NOTES (focus: Dimension 13, Patternized Asset Catalog)
+{analysis_text[:60000]}
+"""
+
+        best = ""
+        last_reasons, last_warnings = [], []
+        for attempt in range(APPENDIX_MAX_RETRIES + 1):
+            user_prompt = base_user
+            if attempt > 0:
+                shortfalls = "; ".join((last_reasons or []) + (last_warnings or [])) or "below richness target"
+                user_prompt = base_user + f"""
+
+---
+
+RETRY: your previous draft fell short of the quality floor ({shortfalls}).
+WITHOUT fabricating anything, expand it: pull MORE of the book's real formulas,
+scripts, page recipes, and swipe examples out of the extraction notes; ensure ALL
+sections A-H are present with the Coverage Map; and give every asset BOTH a
+'Pattern:' and a 'Worked example:' field. If a category truly has no source
+material, keep it ABSENT IN SOURCE rather than inventing.
+"""
+            result = await _appendix_model_call(session, appendix_sys, user_prompt)
+            if result and len(result) > len(best):
+                best = result
+            ok, last_reasons, last_warnings = _validate_appendix(best)
+            if ok and not last_warnings:
+                break  # clean pass — no retry needed
+            if attempt >= APPENDIX_MAX_RETRIES:
+                break  # out of retries — keep best draft, report below
+
+        header = f"""# PLAYBOOK APPENDIX - {book['title']}
+**Source Book:** {book['title']} by {book['author']}
+**Companion To:** persona-blueprint.md
+**Version:** 1.0.0
+**Built:** {datetime.datetime.now().strftime('%B %-d at %-I:%M %p')}
+**Purpose:** Full-fidelity reusable copy/funnel asset library (depth preservation — swipe-ready)
+**QC Status:** QC_PENDING
+
+---
+
+"""
+        appendix_path.write_text(header + best)
+
+        ok, reasons, warnings = _validate_appendix(best)
+        for w in warnings:
+            log(f"  [PHASE 3b WARN] {book['title']}: {w}")
+        if ok:
+            state = "COMPLETE" if not warnings else "COMPLETE_WITH_WARNINGS"
+            mark_phase(status, folder, "3b", state)
+            log(f"  [PHASE 3b {state}] {book['title']} - {len(best):,} chars; appendix saved")
+            return True
+        else:
+            # FAIL LOUD — do not pretend the appendix is good. The blueprint is
+            # still valid; the appendix is marked FAILED for converge/QC to retry.
+            log(f"  [PHASE 3b FAILED] {book['title']}: hard floor not met: {reasons}")
+            mark_phase(status, folder, "3b", "FAILED", "; ".join(reasons))
+            return False
+
+    except Exception as e:
+        log(f"  [PHASE 3b FAILED] {book['title']}: {e}")
+        mark_phase(status, folder, "3b", "FAILED", str(e))
+        return False
+
+
 # ─── PHASE 3 - SYNTHESIS ──────────────────────────────────────────────────────
 async def run_synthesis(session: aiohttp.ClientSession, book: dict, status: dict) -> bool:
     folder = book["folder"]
@@ -1541,6 +1727,21 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
         mark_phase(status, folder, 3, "COMPLETE")
         status[folder]["completed"] = datetime.datetime.now().strftime('%B %-d at %-I:%M %p')
         save_status(status)
+
+        # Phase 3b: emit PLAYBOOK-APPENDIX.md alongside the blueprint. This is the
+        # depth-preservation half of the pipeline — it keeps the book's actual
+        # reusable copy/funnel assets (formulas, scripts, page recipes, swipe file,
+        # brand-voice patterns) at full fidelity so copy specialists write rich,
+        # brand-building copy instead of the over-concise output the distilled
+        # blueprint alone produced. Reuses the extraction + analysis text already
+        # loaded above. Runs BEFORE Phase 5 so the appendix is present when the
+        # Gemini indexer scans the persona folder. Non-fatal to Phase 3: a missed
+        # appendix floor is marked FAILED (fail-loud) but the blueprint still ships.
+        try:
+            await run_playbook_appendix(session, book, status, extraction_text, analysis_text)
+        except Exception as e:
+            log(f"  Warning: Phase 3b (playbook appendix) failed for {folder}: {e}")
+            mark_phase(status, folder, "3b", "FAILED", str(e))
 
         # Phase 5: Auto re-index persona in Gemini Engine.
         # Pre-v10.14.27 hardcoded the legacy ~/clawd/scripts/gemini-indexer.py

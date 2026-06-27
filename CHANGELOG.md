@@ -1,3 +1,43 @@
+## [v14.4.0]  -  2026-06-26  -  feat(skill6): funnel-template library + template-first matcher STEP 0
+
+Adds 38 structured Brunson funnel templates (5 groups: buyer/event/lead/retention-followup/traffic-advanced) to `06-ghl-install-pages/funnel-templates/` and a deterministic template-first matcher (`tools/funnel_matcher.py`) that makes dispatch_one() select a proven template before building any net-new funnel. Templates are fully structured with whenToUse/pageStructure/copyFramework (not stubs); book personas (The Funnel Architect, The Expert Guide, The Traffic Strategist, The Story Brander, The Copy Closer) referenced per template. Adds `tools/funnel_matcher_cli.py` with --build-index / --match / --selftest CLI. 13/13 selftest cases pass.
+
+## [v14.5.0]  -  2026-06-26  -  feat(personas): ship PLAYBOOK-APPENDIX companions + pipeline Phase 3b upgrade for all 10 book personas (Skill 22 v6.9.0)
+
+Ships the PLAYBOOK-APPENDIX.md companion file for all 10 QC-approved book personas and upgrades the Book Intelligence Pipeline with the mandatory Phase 3b appendix generation step (Skill 22 v6.9.0).
+
+BOOKS SHIPPED (all 10 passed QC depth >= 8.5, reuse >= 8.5):
+- The New Model of Selling (Acuff & Miner / NEPQ) — depth 9.0, reuse 9.0
+- The Brand Mapping Strategy (Leland) — depth 9.0, reuse 9.0
+- Coach Builder (Donald Miller) — depth 9.0, reuse 9.0
+- Building a StoryBrand (Donald Miller) — depth 9.0, reuse 9.0
+- Marketing Secrets Blackbook (Brunson) — depth 9.3, reuse 8.8
+- Copywriting Secrets (Jim Edwards) — depth 9.0, reuse 9.0
+- Lead Funnels (Russell Brunson) — depth 9.0, reuse 9.0
+- Network Marketing Secrets (Russell Brunson) — depth 9.0, reuse 9.0
+- The Sketchnote Workbook (Mike Rohde) — depth 9.0, reuse 9.0
+- The Funnel Hacker's Cookbook (Russell Brunson) — depth 9.0, reuse 9.0
+
+PERSONA BLUEPRINTS: All 10 persona-blueprint.md files replaced with the upgraded companion-aware version (frontmatter `companion: PLAYBOOK-APPENDIX.md`; 14 sections that cross-reference the appendix instead of embedding scripts/recipes/frameworks inline).
+
+PLAYBOOK APPENDICES: 10 new PLAYBOOK-APPENDIX.md files added (one per persona directory). Each appendix has 8 sections (A-H): hook/headline formulas, funnel/page recipes, scripts (discovery/sales/objection/follow-up), email sequences, frameworks/models with steps + worked examples, brand-voice patterns, verbatim swipe file, and asset coverage map. Total new content: ~5,000 lines across all 10 appendices.
+
+PIPELINE UPGRADE (Phase 3b — makes PLAYBOOK-APPENDIX.md automatic for all future books):
+- agent-prompts/extraction-agent-prompt.md — Playbook Asset Lens (items 21-30) added; min output 5,000 → 8,000 chars.
+- agent-prompts/analysis-agent-prompt.md — Dimension 13 (Playbook Asset Inventory) added; min output 3,000 → 5,000 chars.
+- agent-prompts/playbook-appendix-prompt.md — NEW Phase 3b prompt (8-section A-H appendix with Pattern/Worked-example/Source capture convention).
+- agent-prompts/synthesis-agent-prompt.md — blueprint now cross-references companion appendix instead of summarizing frameworks away.
+- pipeline/orchestrator.py — run_playbook_appendix() (Phase 3b) wired into run_synthesis(); _validate_appendix() quality-floor gate; fail-loud on structure/honesty gate.
+- qc-book-to-persona-coaching-leadership-system.sh, SKILL.md, PIPELINE.md, CHECKLIST.md, QC.md updated to document and assert the appendix + new floors.
+
+PERSONA CATEGORIES: persona-categories.json schema bumped to 1.1; all 10 entries gain: `appendix` path, `appendix_status: "COMPLETE"`, `appendix_richness: "RICH"`, merged custom[] tags (e.g., neutral-languaging, funnel-copy, vsl-script, sales-page-copy for NEPQ), `modes[]`, `two_sided`, `source_type`, `blueprint` path, `_perspective_note`.
+
+PERSONA ROUTER: PERSONA-ROUTER.md gains `[+APPENDIX]` markers on all 10 upgraded personas and a header note explaining the appendix pattern.
+
+SKILL VERSIONS: skill-version.txt v6.8.0 → v6.9.0. All global version markers rolled v14.4.0 → v14.5.0.
+
+VERIFICATION: All 10 PLAYBOOK-APPENDIX.md files present with >= 350 lines each. All 10 persona-blueprint.md files contain `companion: PLAYBOOK-APPENDIX.md` in frontmatter. persona-categories.json valid JSON, schemaVersion 1.1, all 10 entries have appendix_status COMPLETE. No client/personal identifiers in any added file (all public-author content).
+
 ## [v14.3.19]  -  2026-06-26  -  feat(personas): add research scaffolding (extraction-notes, analysis-notes, source.json) to all 10 shipped book personas
 
 Adds the Phase 1 and Phase 2 pipeline research artifacts to every one of the 10 book personas shipped in v14.3.16 and v14.3.18. Each persona directory now contains the full 4-file set: `persona-blueprint.md`, `extraction-notes.md`, `analysis-notes.md`, `source.json`. Also replaces two under-sized persona-blueprint stubs with the complete extractions from the pipeline run (leland-brand-mapping-strategy 303-line draft → 710-line full blueprint; miller-coach-builder 666-line → 711-line).
