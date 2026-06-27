@@ -1,3 +1,25 @@
+## [v14.7.0]  -  2026-06-27  -  fix(skill6): selftest update for flex-mode decisions + flex.py shared core + Step 0.4 + link map v2 (Skill 44 v1.2.0 / Skill 6 v14.7.0)
+
+Consolidates the Skill-44 + Skill-6 flexibility improvements from PR #369 (flex.py shared core, standardised four-way decision schema, Step 0.4 automation-match wiring, link map v2 canonical file name) and fixes a selftest regression in Skill-6: `funnel_matcher_cli.py` was still checking for the deprecated `HONORED_EXPLICIT` decision name instead of the new `HONOR_USER` and `SUGGEST_TEMPLATE` names introduced by the flex.py shared core. All 13/13 selftest cases now pass.
+
+FLEX.PY SHARED CORE (`44-convert-and-flow-operator/automation-templates/_matcher/flex.py`): intent-mode detection + flexibility decision mapping extracted into a standalone stdlib-only module. Exposes `detect_mode()`, `decide()`, `flex_principle()`. Same three-mode GUIDE-NOT-RULE model: EXPLICIT_USER_SPEC -> HONOR_USER (optional reference only), UNSURE_WANTS_SUGGESTION -> SUGGEST_TEMPLATE (recommend + await confirm), HANDS_OFF_DO_IT_ALL -> USE_TEMPLATE (build it all). Default mode is UNSURE (least-dominating: suggest, never auto-impose). 8/8 selftest cases pass. Both the Skill-44 `automation_matcher.py` and the Skill-6 `funnel_matcher.py` now import or mirror this logic.
+
+STANDARDISED FOUR-WAY DECISION SCHEMA: `HONOR_USER` (was HONORED_EXPLICIT), `SUGGEST_TEMPLATE` (new — UNSURE + confident match), `USE_TEMPLATE` (HANDS_OFF + confident match), `CREATE_NEW` (no confident match). Backward-compat alias `HONORED_EXPLICIT = HONOR_USER` kept in `funnel_matcher.py` so v14.6.0 callers are not broken.
+
+SKILL-44 MATCHER UPDATES (v1.1.0 -> v1.2.0): `automation_matcher.py` migrated to use `flex.py` for mode detection and decision mapping. Adds `step0_match()` wiring for the complete-funnel handoff. Adds `cli.py`, `catalog-index.json`, `README.md`, `WIRING.md`. `INSTRUCTIONS.md` adds Step 0.4 (Flexible Template Match) + complete-funnel handoff prose. 9/9 selftest cases pass; 38/38 funnel expansions resolve.
+
+LINK MAP v2 (`44-convert-and-flow-operator/automation-templates/_links/funnel-to-automation.json`): canonical file (the v14.6.0 ship used `funnel-to-automation-link-map.json`; v14.7.0 adds the canonical `funnel-to-automation.json` consumed by both `automation_matcher.step0_match()` via `CAF_FUNNEL_AUTOMATION_LINKS` and `funnel_matcher.step0_match()` via `GHL_FUNNEL_AUTOMATION_LINKS`).
+
+SKILL-6 FLEX RETROFIT (v14.6.0 -> v14.7.0, `06-ghl-install-pages/tools/funnel_matcher.py`): `detect_mode()`, `flex_decide()`, `flex_principle()`, `linked_automations()` added inline (self-contained vendoring so the file works without the _matcher module). `match_funnel()` uses four-way flexibility decision. `step0_match()` accepts `intent_mode` + `link_map_path`; attaches `linked_automations` for Skill 44 when a funnel id is identified. `log_decision()` adds `intent_mode` + `await_confirm` fields.
+
+SELFTEST FIX (`06-ghl-install-pages/tools/funnel_matcher_cli.py`): `positive_decision` check updated from `("USE_TEMPLATE", "HONORED_EXPLICIT")` to `("USE_TEMPLATE", "SUGGEST_TEMPLATE", "HONOR_USER", "HONORED_EXPLICIT")`. The default request mode (no explicit "just do it" cue) is UNSURE -> SUGGEST_TEMPLATE; this is correct behavior, not a regression. Without the fix the selftest reported 2/13 passed even though the matcher was correctly identifying templates. Now 13/13 passed.
+
+QC (independent Sonnet 4.6 review): selftest green 10.0, flexibility implemented in both matchers 9.5, no matcher ever blocks a build 10.0, link map complete (38/38) 10.0, templates real-not-stub 9.5, wiring correct (step0_match routes correctly) 9.5. All items above 8.5 ship gate.
+
+SKILL VERSIONS: `44-convert-and-flow-operator/skill-version.txt` v1.1.0 -> v1.2.0. `06-ghl-install-pages/skill-version.txt` v14.6.0 -> v14.7.0. All 10 global version markers rolled v14.6.0 -> v14.7.0 by bump-version.sh and agree.
+
+LEAK SCAN: no client names, no operator paths, no personal identifiers in any modified file. All content is generic methodology terminology.
+
 ## [v14.6.0]  -  2026-06-27  -  feat(skill44): automation template library + funnel link map + flexible matchers (Skill 44 v1.1.0 + Skill 6 flexibility retrofit)
 
 Ships the complete Skill-44 email and automation template library (28 real templates, not stubs), the funnel-to-automation link map covering all 38 Skill-6 funnel templates, a new flexible Skill-44 automation matcher, and a flexibility retrofit patch for the Skill-6 funnel matcher. Both matchers now implement the three-mode GUIDE-NOT-RULE flexibility model: Mode 1 (Explicit desire: HONORED_EXPLICIT, no scoring), Mode 2 (Unsure: suggestion with confirmation), Mode 3 (Just do it: top match built directly). Neither matcher blocks a build.
