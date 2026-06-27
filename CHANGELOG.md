@@ -1,3 +1,52 @@
+## [v14.22.0]  -  2026-06-27  -  fix: complete gemini dead-path sweep + reproducible section tagging + canonical persona categories + department-agnostic specialist routing
+
+Closes the persona-system repo-comprehensive review. Four reconciliations:
+
+- **Complete dead-path sweep (643 files).** The v14.21.0 hygiene pass fixed only the
+  `~/clawd/scripts/gemini-*` references in 8 docs and missed the 715 live
+  `~/.openclaw/workspace/scripts/gemini-*` run-command references across 643 files
+  (skill-22 GEMINI-RETRIEVAL-GUIDE/PERSONA-ROUTER/QC/INSTALL/PIPELINE, skill-23 INSTALL
+  and every role-library specialist template). All live run-commands now point at the
+  canonical deployed wrapper `~/.openclaw/scripts/gemini-*.py`. Zero live-command dead
+  paths remain repo-wide; CHANGELOG provenance and the orchestrator.py legacy comment are
+  preserved as historical record. The selector's stale `_GEMINI_SEARCH_CANDIDATES`
+  (Path()-segment form the grep could not see) now lists `~/.openclaw/scripts` and
+  `/data/.openclaw/scripts` first.
+- **Reproducible section tagging.** Added the live fleet tagger
+  `23-ai-workforce-blueprint/scripts/section-tag-migration.py` so a fresh box can backfill
+  `mode`/`section_number` on the chunk-level coaching-personas index non-destructively.
+  `shared-utils/embedding_engine.py` is now the single source of truth for the section→mode
+  map (`LEADERSHIP_SECTION_NUMBER=4`, new `COACHING_SECTION_NUMBER=3`); the tagger and
+  `gemini-section-indexer.py` both import it, fixing the indexer's hardcoded
+  `COACHING_SECTIONS={6}` (Section 6 was wrongly tagged coaching; canonical is Section
+  3=coaching, Section 4=leadership — matching what is live). New
+  `tests/unit/section-tagger-indexer-agreement.test.sh` proves they agree.
+- **Canonical persona categories.** Reconciled the skill-22 bundle
+  `persona-categories.json` (had diverged to md5 79df2afd via populated
+  `domainTags.custom` arrays) to the canonical 54-persona runtime set
+  (md5 c544561074e6e1d65aed1840b6f03b8c) the runtime/onboarding copy reads, so the bundle
+  stops diverging. The intentional 5-persona CI fixture is left untouched.
+- **Department-agnostic specialist routing.** `persona-selector-v2.py` could not reach a
+  clearly-named canonical specialist when its coarse `domain[]` tags matched no better than
+  a generalist's: `network marketing recruiting downline duplication` never selected
+  `brunson-network-marketing-secrets` (returned hormozi/allan-dib or the wrong Brunson
+  book), and `sketchnote` only reached `rohde-the-sketchnote-workbook` under dept=design.
+  The distinctive signal — persona-categories.json `custom[]` (brunson:
+  mlm/network-marketing/recruiting/duplication; rohde: sketchnoting/visual-thinking) — was
+  never read. Added (1) SPECIALIST RECALL in `build_candidate_pool` (a persona whose
+  distinctive custom tags the task explicitly names is unioned into the scoring set
+  regardless of department/governing pool/semantic top-k; funnel pool≥category≥semantic
+  stays monotonic via a separate `recalled` key) and (2) a bounded, graded, task_fit-coupled
+  SPECIALTY BONUS (cap 0.40, env `SPECIALTY_TAG_BONUS`, over-generic-tag stoplist) so the
+  true specialist wins — additive-only, never-to-zero, provably inert on generic tasks.
+  New hermetic `test-persona-selector-specialist-routing.sh` (14 cross-department cases +
+  a generic-task control) is wired into full-funnel-pipeline CI; existing A6/A7 and the
+  45-test funnel pytest stay green.
+
+Diff is clean of client names and secrets (env var NAMES / public-author persona ids only).
+
+---
+
 ## [v14.21.0]  -  2026-06-27  -  chore(repo): hygiene — retire stale script/blueprint paths, drop tracked .pyc, fix proactive-agent refs, add markitdown frontmatter
 
 Repository hygiene consolidation: eliminates all legacy path references that caused
