@@ -1,0 +1,21 @@
+{
+  "slug": "brunson-marketing-secrets-blackbook",
+  "title": "The Marketing Secrets Blackbook",
+  "author": "Russell Brunson",
+  "compiled_by": "Julie Stoian",
+  "publisher": "SuccessEtc.com, LLC",
+  "year": 2018,
+  "source_type": "book",
+  "source_format": "pdf",
+  "source_file": "Marketing Secrets Blackbook (Russell Brunson).pdf",
+  "extraction_tool": "pdftotext -layout",
+  "extracted_chars": 259703,
+  "structure": "99 secrets across 6 parts: Foundations, Becoming an Expert, Offers, Funnels, Sales, Mindset",
+  "domain": ["marketing", "sales", "copywriting", "strategy-innovation"],
+  "perspective": ["practitioner", "contrarian", "direct-response", "action-biased"],
+  "phase1_complete": true,
+  "phase2_complete": true,
+  "phase3_complete": true,
+  "indexed": false,
+  "note": "Persona built by Book->Persona converter subagent. Honesty/compliance gate REQUIRED on scarcity tactics (see S98)."
+}

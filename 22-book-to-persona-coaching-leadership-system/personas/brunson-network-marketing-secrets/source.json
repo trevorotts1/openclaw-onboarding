@@ -1,0 +1,13 @@
+{
+  "slug": "russell-brunson-network-marketing-secrets",
+  "title": "Network Marketing Secrets — The Hidden Funnel Strategy",
+  "author": "Russell Brunson",
+  "sourceType": "book-pdf",
+  "sourcePath": "<operator-local>/Downloads/Network Marketing SecretsThe Hidden Funnel Strategy (Russell Brunson) (z-library.sk, 1lib.sk, z-lib.sk) 3.pdf",
+  "extractionTool": "pdftotext -layout",
+  "wordCount": 12582,
+  "extractedOk": true,
+  "phase": { "phase1": "COMPLETE", "phase2": "COMPLETE", "phase3": "COMPLETE" },
+  "builtBy": "Opus 4.8 (1M) book->persona subagent",
+  "builtDate": "2026-06-26"
+}

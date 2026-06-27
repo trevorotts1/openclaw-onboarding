@@ -1,0 +1,35 @@
+{
+  "slug": "miller-coach-builder",
+  "title": "Coach Builder: How to Turn Your Expertise Into a Profitable Coaching Career",
+  "author": "Donald Miller",
+  "publisher": "HarperCollins Leadership",
+  "isbn": "9781400228089",
+  "sourceType": "book",
+  "sourceFormat": "epub",
+  "sourceFile": "Coach Builder How to Turn Your Expertise Into a Profitable Coaching Career (Donald Miller) (z-library.sk, 1lib.sk, z-lib.sk) 2.epub",
+  "extraction": {
+    "method": "ebooklib/unzip + xhtml parse",
+    "charsExtracted": 297046,
+    "wordsApprox": 51040,
+    "chaptersExtracted": [
+      "Author's Note",
+      "The Eight Steps That Will Grow Your Coaching Business",
+      "Step One: Create a Menu of Products You Can Sell to Clients",
+      "Step Two: Create and Manage a Potential Client List",
+      "Step Three: Get Your Website (Sales Pitch) Right",
+      "Step Four: Learn to Write Great Emails That Close the Deal",
+      "Step Five: Map Out Your Client Journey by Creating a Marketing and Product Ladder",
+      "Step Six: Establish Realistic Goals and Accomplish Those Goals",
+      "Step Seven: Build or Join a Coaching Community",
+      "Step Eight: Master the Soft Skills of Coaching",
+      "A Week in the Life of a Successful Business Coach",
+      "How to Scale Your Coaching Business to Seven Figures and Beyond",
+      "Conclusion: The Point Is Transformation"
+    ]
+  },
+  "personaType": "dual-purpose",
+  "interactionModes": ["leadership", "coaching", "hybrid"],
+  "builtBy": "book-to-persona subagent (Opus 4.8)",
+  "builtDate": "2026-06-26",
+  "grounding": "All frameworks, named concepts, prices, and examples below are taken verbatim or near-verbatim from the source text. No fabrication."
+}

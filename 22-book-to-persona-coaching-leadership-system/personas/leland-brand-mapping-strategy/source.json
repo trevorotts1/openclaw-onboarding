@@ -1,0 +1,32 @@
+{
+  "slug": "leland-brand-mapping-strategy",
+  "title": "The Brand Mapping Strategy: Design, Build, and Accelerate Your Brand",
+  "author": "Karen Tiber Leland",
+  "source_type": "book",
+  "source_format": "pdf",
+  "source_file": "The Brand Mapping Strategy Design, Build, and Accelerate Your Brand (Karen Leland) (z-library.sk, 1lib.sk, z-lib.sk) 2.pdf",
+  "publisher": "Entrepreneur Press",
+  "isbn13": "978-1-59918-589-7",
+  "extracted_chars": 351885,
+  "extraction_tool": "pdftotext -layout",
+  "ingested_by": "book-to-persona converter (Opus 4.8)",
+  "ingested_date": "2026-06-26",
+  "structure": {
+    "parts": 3,
+    "chapters": 10,
+    "primary_frameworks": [
+      "The Brand Mapping Process (7 Core Elements)",
+      "The Marketing Mastery Pyramid (3 phases)",
+      "Three Shifts in branding/marketing mindset",
+      "Be/Do/Have model",
+      "12 Brand Energy archetypes",
+      "5 Signature Story types",
+      "Brand Enhancers and Reducers (brand SWOT)",
+      "The Brand Mapping Strategy (4-step plan)",
+      "Three Expressions of Personal Brand (Visual/Intellectual/Emotional capital)",
+      "7 Myths of Personal Branding",
+      "Parallel Brand + C-Suite/CEO Brand Matrix",
+      "Five Expressions of a Brand-Centric Company"
+    ]
+  }
+}

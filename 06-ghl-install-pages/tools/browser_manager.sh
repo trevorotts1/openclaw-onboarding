@@ -45,7 +45,7 @@
 #   bash browser_manager.sh session-name
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_VERSION="v14.3.18"
+BROWSER_MANAGER_VERSION="v14.3.19"
 
 # B1 VERSION-GATE FLOOR (v14.1.4) — the version where the BOX-LEVEL headless LOCK
 # landed (install.sh pins AGENT_BROWSER_HEADED=false in the gateway-inherited env,

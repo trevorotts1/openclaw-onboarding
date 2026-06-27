@@ -1,0 +1,24 @@
+{
+  "slug": "rohde-sketchnote-workbook",
+  "title": "The Sketchnote Workbook",
+  "subtitle": "Advanced techniques for taking visual notes you can use anywhere",
+  "author": "Mike Rohde",
+  "publisher": "Peachpit Press",
+  "year": 2015,
+  "sourceType": "book",
+  "sourceFormat": "pdf",
+  "sourcePath": "<operator-local>/Downloads/The Sketchnote Workbook Advanced techniques for taking visual notes you can use anywhere (Mike Rohde) (z-library.sk, 1lib.sk, z-lib.sk) 2.pdf",
+  "extraction": {
+    "method": "ocr",
+    "tool": "tesseract --psm 3 @200dpi (rendered via PyMuPDF)",
+    "reason": "PDF is fully scanned/image-based (226 pages, 1 image per page, 0 embedded text); pdftotext/pdfplumber returned empty",
+    "pages": 226,
+    "textChars": "~250000",
+    "quality": "good for printed body text and chapter copy; hand-lettered sketchnote interiors partially legible"
+  },
+  "builtBy": "book-to-persona converter (Opus 4.8)",
+  "builtAt": "2026-06-26",
+  "coachingMode": "BUILT",
+  "taskMode": "BUILT",
+  "qcStatus": "QC_PENDING"
+}

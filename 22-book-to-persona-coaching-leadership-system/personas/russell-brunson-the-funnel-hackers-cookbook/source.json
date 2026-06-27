@@ -1,0 +1,19 @@
+{
+  "slug": "russell-brunson-the-funnel-hackers-cookbook",
+  "title": "The Funnel Hacker's Cookbook",
+  "author": "Russell Brunson",
+  "year": 2017,
+  "sourceType": "book",
+  "sourceFormat": "pdf",
+  "sourcePath": "<operator-local>/Downloads/The Funnel Hackers Cookbook (Russell Brunson) (z-library.sk, 1lib.sk, z-lib.sk) 3.pdf",
+  "pages": 307,
+  "extractionTool": "pymupdf (fitz) page.get_text()",
+  "extractionCharCount": 182516,
+  "extractionQuality": "good-for-text-layer; visual cookbook with heavy diagrams/wireframes that are not captured, but every recipe's Directions strategy block extracted cleanly",
+  "subject": "Funnel architecture and page recipes for ClickFunnels: the Elements > Pages > Funnels building-block system, 22 proven funnel recipes across 4 categories, 37 page types, 50+ elements, and the break-even / funnel-stacking ascension model",
+  "companionBooks": ["DotCom Secrets", "Expert Secrets", "Traffic Secrets", "Funnel Stacking: The 3 Core Funnels"],
+  "personaArchetype": "The Funnel Architect (Funnel Recipe Chef)",
+  "dualPurpose": true,
+  "ingestedBy": "book-to-persona converter (Opus 4.8) — manual pipeline mirror",
+  "ingestedDate": "2026-06-26"
+}

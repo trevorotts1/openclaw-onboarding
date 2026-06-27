@@ -1,0 +1,21 @@
+{
+  "slug": "acuff-miner-new-model-selling",
+  "title": "The New Model of Selling: Selling to an Unsellable Generation",
+  "authors": ["Jerry Acuff", "Jeremy Miner"],
+  "sourceType": "book",
+  "sourceFormat": "epub",
+  "sourcePath": "<operator-local>/Downloads/The New Model of Selling Selling to an Unsellable Generation (Jerry Acuff, Jeremy Miner) (z-library.sk, 1lib.sk, z-lib.sk) 2.epub",
+  "publisher": "Morgan James Publishing",
+  "year": 2023,
+  "isbn": "9781636980119",
+  "extractedChars": 406273,
+  "extractedWords": 70324,
+  "extractionTool": "ebooklib + BeautifulSoup",
+  "methodologyName": "NEPQ - Neuro-Emotional Persuasion Questioning (The New Model of Selling)",
+  "dualPurpose": true,
+  "coachingMode": "BUILT",
+  "taskMode": "BUILT",
+  "qcStatus": "QC_PENDING",
+  "builtBy": "book-to-persona converter (Opus 4.8)",
+  "builtDate": "2026-06-26"
+}
