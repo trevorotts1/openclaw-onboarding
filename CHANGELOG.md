@@ -4,6 +4,12 @@ Remove 4 misattributed identity perspective tags (`womens-challenges` on 3 book 
 
 ---
 
+## [v14.13.0]  -  2026-06-27  -  feat(skill6): harden render gate (un-fakeable) + sanitizer/full-width fidelity + auth/dispatch/docs (Skill 6 v7.4.0)
+
+Harden the Skill 6 render-gate pipeline: un-fakeable proof requirements, sanitizer and full-width fidelity guards, auth/dispatch reliability improvements, and documentation updates. Tagged externally by Trevor; CHANGELOG entry added retroactively by G2 guard compliance in v14.14.0.
+
+---
+
 ## [v14.12.0]  -  2026-06-27  -  feat(skill6): transcript-driven build recipe — SEO/founder gate + media-folder discipline + full-width route + ZHC part-N naming (Skill 6 v7.3.0)
 
 Derives and enforces the canonical GHL funnel build recipe directly from Trevor's authoritative transcript. All items tagged `source=transcript` (authoritative) or `ownedByHarden` (delegated to parallel harden run wu9dnrsak). Builds ON the harden run changes (full-width default, P0 gate, child-chain, iframe/sanitizer, selectors, auth, rate-governor) — additive and complementary. No client names, no operator-local paths, no secret values committed.
