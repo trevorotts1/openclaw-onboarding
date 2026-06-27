@@ -1,3 +1,55 @@
+## [v14.24.0]  -  2026-06-27  -  fix: close all delivery gaps — shared-utils, universal-sops, operator-telegram, install-hardening, heartbeat, hooks/ on update path; wire.sh for skill 32; final gateway restart on install
+
+Closes 8 delivery gaps so `install` and `update` both deliver everything. Builds
+on v14.23.2 (routing-fix + materialize + conditional restart already on update path).
+
+**shared-utils refresh on update path (Fix 1):** `update-skills.sh` now re-copies
+`shared-utils/` from the extracted bundle immediately after the skill copy loop,
+before the wiring phase. PR-delivered helpers (adaptive_weights.py, prebuilt-index
+manifest) now reach update-only boxes.
+
+**universal-sops on both paths (Fix 2):** `install.sh` and `update-skills.sh` both
+now copy `universal-sops/` into `$SKILLS_DIR/`. Previously neither delivered it;
+Skills 47/48 wiring FAILed with a FATAL when their SOP sources were absent.
+
+**operator-telegram on update path (Fix 3):** `update-skills.sh` apply phase now
+calls `configure-operator-telegram.sh` immediately after fleet-standards, emitting
+the STATUS line for honest reporting. The script was already stashed in v14.23.2;
+only execution was missing.
+
+**install-hardening on update path (Fix 4):** `install-hardening.sh` added to the
+persistent-copy stash loop and called in the apply phase. Backfills hooks.token
+auto-generate, brew check, and yt-dlp/whisper-cpp/ffmpeg for Skill 22.
+
+**Heartbeat defaults extracted + made conditional (Fix 5):** New
+`scripts/ensure-heartbeat-defaults.sh` carries the Fix D / Fix D2 logic. It is
+CONDITIONAL: only writes `agents.defaults.heartbeat.every=6h` when unset or when
+the current value is below 360 min (6h), so intentionally-dialled-up boxes are
+not reset on every Sunday update. `install.sh` now calls the script instead of
+inlining the logic. `update-skills.sh` apply phase also calls it (via stash).
+
+**Skill 32 wire.sh (Fix 6):** New `32-command-center-setup/wire.sh` runs
+`materialize-dept-agents.sh` through the per-skill wiring loop (highest priority:
+wire.sh > install.sh > setup-*.sh) on both install and update paths. Idempotent;
+the explicit apply-phase call from v14.23.2 remains as a second safety net.
+
+**Final gateway restart on install.sh (Fix 7):** `install.sh` now restarts the
+gateway AFTER `fire_install_kickoff_triplet`, ensuring operator-telegram + heartbeat
++ routing-fix config keys are hot before the operator's first session. The existing
+restart at ~line 6805 fires before these apply scripts; this is the belt-and-
+suspenders final reload.
+
+**Persist hooks/ on update path (Fix 8):** Before the temp-clone cleanup,
+`update-skills.sh` now copies `hooks/lib-ceo-consent.sh`,
+`hooks/lib-ceo-tool-gate.sh`, and `hooks/ceo-intent-gate.sh` to
+`~/.openclaw/hooks/` (or `/data/.openclaw/hooks/` on VPS). Without this,
+`grant-ceo-consent.sh` on update-only boxes kept the pre-#398/#403 gate library
+since the temp clone is deleted before the consent gate runs.
+
+**Version bump:** v14.23.2 → v14.24.0.
+
+---
+
 ## [v14.23.2]  -  2026-06-27  -  fix: update-skills.sh now delivers complete routing fix (routing-fix + dept registration + conditional restart)
 
 Closes the gap where `update-skills.sh` applied `apply-fleet-standards.sh` but

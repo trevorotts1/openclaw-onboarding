@@ -44,7 +44,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v14.23.2"
+ONBOARDING_VERSION="v14.24.0"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -447,7 +447,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v14.23.2 - safe_json_edit
+# v14.24.0 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -953,7 +953,7 @@ main() {
     # "# Cleanup" rm -rf below). The cron-backfill block runs AFTER that cleanup,
     # so it must NOT depend on $ONBOARDING_DIR (the wiped clone) — it reads the
     # persistent copy instead. Same reason apply-fleet-standards.sh is here.
-    for _s in onboarding-state.sh ghl-mcp-autostart.sh configure-operator-telegram.sh resume-onboarding.sh apply-fleet-standards.sh apply-routing-fix.sh ensure-pipeline-crons.sh diagnose-telegram-config.sh index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh agent-browser-reaper.sh; do
+    for _s in onboarding-state.sh ghl-mcp-autostart.sh configure-operator-telegram.sh resume-onboarding.sh apply-fleet-standards.sh apply-routing-fix.sh install-hardening.sh ensure-heartbeat-defaults.sh ensure-pipeline-crons.sh diagnose-telegram-config.sh index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh agent-browser-reaper.sh; do
       [ -f "$ONBOARDING_DIR/scripts/$_s" ] && cp -f "$ONBOARDING_DIR/scripts/$_s" "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
       [ -f "$_OC_SCRIPTS_DEST/$_s" ] && chmod +x "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
     done
@@ -1063,6 +1063,27 @@ main() {
     # FIX 1: state transition -- files are on disk = DOWNLOADED (NOT installed).
     command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "downloaded"
   done
+
+  # ----------------------------------------------------------
+  # v14.24.0: Refresh shared-utils/ on every update so PR-delivered helpers
+  # (adaptive_weights.py, prebuilt-index manifest) reach update-only boxes.
+  # Mirrors install.sh:2876-2882.
+  # ----------------------------------------------------------
+  if [ -d "$EXTRACTED_DIR/shared-utils" ]; then
+    mkdir -p "$SKILLS_DIR/shared-utils"
+    cp -r "$EXTRACTED_DIR/shared-utils/." "$SKILLS_DIR/shared-utils/"
+    chmod +x "$SKILLS_DIR/shared-utils/"*.sh "$SKILLS_DIR/shared-utils/"*.py 2>/dev/null || true
+    echo "  ✓ shared-utils refreshed in $SKILLS_DIR/shared-utils"
+  fi
+
+  # v14.24.0: Deliver universal-sops/ SOP cluster (Skills 47/48 source tree).
+  # Neither install nor update copied this before; Skills 47/48 wiring FAILed
+  # with a FATAL looking for funnel/presentation/video/ad SOPs.
+  if [ -d "$EXTRACTED_DIR/universal-sops" ]; then
+    rm -rf "$SKILLS_DIR/universal-sops"
+    cp -r "$EXTRACTED_DIR/universal-sops" "$SKILLS_DIR/"
+    echo "  ✓ universal-sops refreshed in $SKILLS_DIR/universal-sops"
+  fi
 
   # ----------------------------------------------------------
   # v10.15.47: WIRING PHASE -- per-skill executed steps (not prose).
@@ -1841,6 +1862,20 @@ with open('${_MANIFEST_TMP}', 'w') as f:
     exit 1
   fi
 
+  # v14.24.0: Persist hooks/ library before temp-clone is removed.
+  # grant-ceo-consent.sh + lib-ceo-tool-gate.sh look for lib-ceo-consent.sh at
+  # ~/.openclaw/hooks/ (or /data/.openclaw/hooks/ on VPS) as a fallback after
+  # the temp clone is gone.  Without this, update-only boxes keep the pre-#398/#403
+  # gate library until the next full install.
+  _OC_HOOKS_DEST="$HOME/.openclaw/hooks"
+  [ -d "/data/.openclaw" ] && _OC_HOOKS_DEST="/data/.openclaw/hooks"
+  mkdir -p "$_OC_HOOKS_DEST" 2>/dev/null || true
+  if [ -d "$EXTRACTED_DIR/hooks" ]; then
+    cp -f "$EXTRACTED_DIR/hooks/"*.sh "$_OC_HOOKS_DEST/" 2>/dev/null || true
+    chmod +x "$_OC_HOOKS_DEST/"*.sh 2>/dev/null || true
+    echo "  ✓ hooks/ library persisted to $_OC_HOOKS_DEST"
+  fi
+
   # Cleanup
   rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
 
@@ -2060,6 +2095,57 @@ PYEOF
     bash "$FLEET_STD" >/dev/null 2>&1 && echo "  ✓ Fleet standards applied" || echo "  ⚠ Fleet standards application reported errors (update continues)"
   else
     echo "  ⚠ Fleet standards script not found"
+  fi
+
+  # ----------------------------------------------------------
+  # v14.24.0: Operator Telegram channel separation (mirrors install.sh:7113-7124).
+  # configure-operator-telegram.sh is idempotent; it emits a machine-readable
+  # STATUS: operator-telegram=<state> line for honest reporting.
+  # ----------------------------------------------------------
+  echo ""
+  echo "  Configuring operator Telegram channel separation..."
+  _OPTG="$_PERSIST_SCRIPTS/configure-operator-telegram.sh"
+  [ -f "$_OPTG" ] || _OPTG="$ONBOARDING_DIR/scripts/configure-operator-telegram.sh"
+  if [ -f "$_OPTG" ]; then
+    _OPTG_OUT="$(bash "$_OPTG" 2>&1)" || true
+    _OPTG_STATUS="$(printf '%s\n' "$_OPTG_OUT" | grep -E '^STATUS:' | tail -1 || true)"
+    case "$_OPTG_STATUS" in
+      *=CONFIGURED*)                  echo "  ✓ Operator Telegram separation live (${_OPTG_STATUS})" ;;
+      *STRUCTURE_ONLY_NEEDS_TOKEN*)   echo "  ⚠ Operator Telegram structure written; bot token still needed (${_OPTG_STATUS})" ;;
+      *VALIDATE_FAILED*)              echo "  ⚠ Operator Telegram merge failed validation + rolled back (${_OPTG_STATUS})" ;;
+      *)                              echo "  ℹ Operator Telegram config ran (${_OPTG_STATUS:-(no STATUS line)})" ;;
+    esac
+  else
+    echo "  ⚠ configure-operator-telegram.sh not found — skipping"
+  fi
+
+  # ----------------------------------------------------------
+  # v14.24.0: Install hardening (mirrors install.sh:6770-6776).
+  # Idempotent + non-blocking: hooks.token auto-gen, brew check, yt-dlp/whisper/ffmpeg.
+  # ----------------------------------------------------------
+  echo ""
+  echo "  Running install hardening (hooks.token, brew check, media tools)..."
+  _HARDENING="$_PERSIST_SCRIPTS/install-hardening.sh"
+  [ -f "$_HARDENING" ] || _HARDENING="$ONBOARDING_DIR/scripts/install-hardening.sh"
+  if [ -f "$_HARDENING" ]; then
+    bash "$_HARDENING" 2>&1 | tail -5 || true
+    echo "  ✓ Install hardening complete"
+  else
+    echo "  ℹ install-hardening.sh not in bundle — skipping (older bundle, harmless)"
+  fi
+
+  # ----------------------------------------------------------
+  # v14.24.0: Sane heartbeat defaults (mirrors install.sh Fix D / Fix D2).
+  # CONDITIONAL: only sets when unset or below 6h threshold.
+  # ----------------------------------------------------------
+  echo ""
+  echo "  Ensuring heartbeat defaults (6h min, main-only, capped tokens)..."
+  _ENSURE_HB="$_PERSIST_SCRIPTS/ensure-heartbeat-defaults.sh"
+  [ -f "$_ENSURE_HB" ] || _ENSURE_HB="$ONBOARDING_DIR/scripts/ensure-heartbeat-defaults.sh"
+  if [ -f "$_ENSURE_HB" ]; then
+    bash "$_ENSURE_HB" 2>&1 || true
+  else
+    echo "  ℹ ensure-heartbeat-defaults.sh not in bundle — skipping"
   fi
 
   # ----------------------------------------------------------
