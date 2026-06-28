@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- com.clawd.tunnel-run.plist.template
+     Layer B-nosudo -- user-level `cloudflared tunnel run` LaunchAgent with
+     KeepAlive, so the tunnel PROCESS auto-restarts if it ever exits. This is
+     the no-sudo equivalent of the root-daemon KeepAlive that harden-mac-tunnel.sh
+     sets on /Library/LaunchDaemons/com.cloudflare.cloudflared.plist -- use it on
+     Macs where cloudflared runs as a named-tunnel user agent (config + UUID)
+     instead of the root connector daemon.
+
+     install-tunnel-run-agent.sh expands the placeholders via sed.
+     Placeholders:
+       __LABEL__        -> com.cloudflared.<tunnel-name>
+       __CLOUDFLARED__  -> /opt/homebrew/bin/cloudflared
+       __CONFIG_PATH__  -> /Users/<user>/.cloudflared/config-<tunnel>.yml
+       __LOG_PATH__     -> /Users/<user>/.openclaw/logs/cloudflared-<tunnel>.log
+     The tunnel id/name is read from the config file's `tunnel:` key, so no
+     tunnel argument is appended after `run` (avoids invalid-flag flaps).
+     `--protocol http2` forces TCP so consumer-router UDP/QUIC NAT aging cannot
+     drop the connection (see README root-cause).
+  -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>__LABEL__</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__CLOUDFLARED__</string>
+    <string>tunnel</string>
+    <string>--config</string>
+    <string>__CONFIG_PATH__</string>
+    <string>--protocol</string>
+    <string>http2</string>
+    <string>run</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>__LOG_PATH__</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_PATH__</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>

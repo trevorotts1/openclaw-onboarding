@@ -80,9 +80,12 @@ case "$OS" in
     # KEEPALIVE_SCRIPT is invoked as the current user (not root).
     KEEPALIVE_SCRIPT="$(cd "$(dirname "$0")/../.." && pwd)/platform/mac/tunnel-hardening/install-keepalive-agent.sh"
     WATCHDOG_SCRIPT="$(cd "$(dirname "$0")/../.." && pwd)/platform/mac/tunnel-hardening/install-watchdog-agent.sh"
+    # Service self-heal: re-bootstraps any booted-out gateway/cloudflared agent
+    # and kickstarts any dead KeepAlive job (no sudo). See platform/mac/service-selfheal/.
+    REMEDIATE_SCRIPT="$(cd "$(dirname "$0")/../.." && pwd)/platform/mac/service-selfheal/install-service-remediate.sh"
     # If running as root (typical in provisioning), use sudo -u to drop to the login user.
     LOGIN_USER="${SUDO_USER:-$(logname 2>/dev/null || id -un)}"
-    for AGENT_SCRIPT in "$KEEPALIVE_SCRIPT" "$WATCHDOG_SCRIPT"; do
+    for AGENT_SCRIPT in "$KEEPALIVE_SCRIPT" "$WATCHDOG_SCRIPT" "$REMEDIATE_SCRIPT"; do
       if [[ -f "$AGENT_SCRIPT" ]]; then
         echo "Installing user tunnel agent: $(basename $AGENT_SCRIPT)" >&2
         if [[ $EUID -eq 0 ]] && [[ -n "$LOGIN_USER" ]] && [[ "$LOGIN_USER" != "root" ]]; then

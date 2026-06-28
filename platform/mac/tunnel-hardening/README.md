@@ -16,12 +16,18 @@ has no origin. Fix: force TCP (`--protocol http2`) so NAT-aging no longer applie
 |---|---|---|---|
 | A | `--protocol http2` in root LaunchDaemon (TCP, no UDP NAT expiry) | sudo | `harden-mac-tunnel.sh` |
 | B | `KeepAlive=true` + `RunAtLoad=true` on the root daemon (unconditional respawn) | sudo | `harden-mac-tunnel.sh` |
+| B-nosudo | `KeepAlive=true` user-level `cloudflared tunnel run` agent (auto-restart, no sudo) — for Macs running a named-tunnel user agent instead of the root daemon | no sudo | `install-tunnel-run-agent.sh` |
 | C | 20s edge ping (keeps NAT warm even on QUIC; safety net before/after sudo harden) | no sudo | `install-keepalive-agent.sh` |
 | D-nosudo | */5 watchdog (detects dead connector, logs ESCALATE for root daemon) | no sudo | `install-watchdog-agent.sh` |
 | D-sudo | `pmset -c sleep 0` (AC no-sleep; box stays up on mains power) | sudo | `harden-mac-tunnel.sh` |
 
 Layers C and D-nosudo alone stop most drops with no password. Layer A is the root fix.
 Both together = fully bulletproof.
+
+> **Service self-heal:** keeping the connector *connected* is this kit's job; keeping
+> its LaunchAgent (and the OpenClaw gateway) *bootstrapped and running* after a
+> boot-out is `platform/mac/service-selfheal/` (`remediate.sh`). Install both for a
+> fully self-healing Mac.
 
 ---
 
