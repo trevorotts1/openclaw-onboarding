@@ -235,6 +235,8 @@ def _write_intake(root: Path):
     # AF-PITCH-FLAG-UNSET), and that the client provided no extra assets
     # (assets_provided:false => AF-MANIFEST-UNREFERENCED / AF-SCRATCH-PARSE-SKIPPED
     # defer). pitch_included:true keeps the existing offer-ladder arc fixture valid.
+    # named_methodology satisfies chk_branded_method (client_supplied=True → no AF-NO-BRANDED-METHOD).
+    # time_to_result satisfies chk_time_to_result anti-fabrication check (intake must declare it).
     (root / "working" / "copy" / "intake.json").write_text(json.dumps({
         "interview_confirmed": True,
         "presentation_mode": "general",
@@ -243,6 +245,8 @@ def _write_intake(root: Path):
         "asset_intake_question_asked": True,
         "assets_provided": False,
         "pitch_included": True,
+        "named_methodology": "Three-Move Pipeline System",
+        "time_to_result": "8 weeks",
     }))
 
 
@@ -350,10 +354,38 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
         # Phase 4 — slide copy authored per doctrine (no banned cliche phrases). The
         # research anchors (stat-01..stat-10) are woven into the body so the
         # AF-RESEARCH-WEAVE gate sees the writer actually used the mapped items.
+        # G1 (intelligence_engines_copy) and G2 (pitch_engines) are now wired into
+        # PREFLIGHT_REQUIRED, so the copy must satisfy their respective checks:
+        #   G1 (intelligence_engines_check.check_copy, plain-text _parse_slide_blocks):
+        #     - VILLAIN token before HERO token (slide 1 → slide 3)
+        #     - FELT_STAKES: a number + felt-frame token before any ladder beat (slide 2)
+        #   G2 (pitch_engines_check.check_copy, ARC-tag _arc_tags_in_order):
+        #     - [ARC:VILLAIN] before any [ARC:HERO] (slide 1 only)
+        #     - [ARC:FELT_STAKES] with number + personal-loss frame in window (slide 2)
+        #     - [ARC:EXPECTATION] with a duration token + intake.time_to_result declared (slide 3)
+        #     - named_methodology declared in intake → chk_branded_method client_supplied=True
         _anchors_woven = " ".join(f"stat-{i:02d}" for i in range(1, 11))
+        # NOTE: RESEARCH_USED anchors line is placed in the pre-SLIDE header section
+        # (before any "SLIDE N" delimiter) so the research-weave check finds the anchors
+        # in copy_lc (full text) but _has_price_beat never sees "anchor" inside a parsed
+        # SLIDE block (which would falsely trigger last_price_idx → AF-NO-RECAP).
         (root / "working" / "copy" / "slides_copy.md").write_text(
-            "# Slide copy\n" + ("Authored converting copy per doctrine. " * 40)
-            + "\nRESEARCH_USED anchors: " + _anchors_woven + "\n")
+            "# Slide copy\n"
+            "RESEARCH_USED anchors: " + _anchors_woven + "\n"
+            "\n"
+            "SLIDE 1\n"
+            "[ARC:VILLAIN] The villain in your business: broken outreach, the old way of "
+            "guessing, the antagonist standing between your team and results.\n"
+            "\n"
+            "SLIDE 2\n"
+            "[ARC:FELT_STAKES] You have 3,285 mornings left. Every day you wait costs "
+            "you deals that will never come back.\n"
+            "\n"
+            "SLIDE 3\n"
+            "[ARC:EXPECTATION PROMISE] Here is the solution: our Three-Move Pipeline "
+            "System transforms your pipeline results in 8 weeks.\n"
+            "\n"
+            + ("Authored converting copy per doctrine. " * 30) + "\n")
         # Phase 3.5 — research-to-slide map (AF-RESEARCH-WEAVE): 10 content slides each
         # carry a DISTINCT research item whose verbatim anchor appears in the copy; the
         # hook slide is exempt. Clears the 60% breadth floor + the 8-distinct-item floor.
