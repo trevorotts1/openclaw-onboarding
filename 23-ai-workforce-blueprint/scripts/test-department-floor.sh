@@ -18,7 +18,7 @@
 #       - bare string "no" WITH ownerDeclineConfirmed => PASS (backward-compat)
 #       - no decline record + missing dept => FAIL
 #   T4. KEYWORD-MATCHED EXTRAS ARE FLAVOR NOT FLOOR: with a real-estate industry
-#       signal, the base floor (29) still passes even if real-estate extras are
+#       signal, the base floor (28) still passes even if real-estate extras are
 #       absent — they are not gating. Missing a universal-primary vertical (which
 #       IS gating) causes FAIL (rc=3).
 #
@@ -51,13 +51,14 @@ for pack_id, pack in packs.items():
     depts = pack.get("auto_add_departments", []) or []
     if not depts:
         continue
+    # EXPLICIT-opt-in only (mirrors department-floor.universal_primary_vertical_departments
+    # v2.6.1): NO depts[0] fallback, so a pack with no flagged dept (e.g. real-estate,
+    # whose listings flag was removed) contributes no universal-floor department.
     primary = None
     for dept in depts:
         if isinstance(dept, dict) and dept.get("universal_primary"):
             primary = dept
             break
-    if primary is None:
-        primary = depts[0] if isinstance(depts[0], dict) else None
     if primary:
         did = primary.get("id")
         if did and did not in seen:
@@ -102,16 +103,16 @@ PYEOF
 
 echo "=== T1: full floor enforced (all mandatory + universal-primary present) ==="
 DD=$(mk_workspace t1 $FULL_FLOOR)
-if eval_floor "$DD" "" '{"industry":"general business"}'; then ok "T1a: all 29 depts on disk -> rc=0 (floor met)"; else bad "T1a: full floor on disk should PASS but rc!=0"; fi
+if eval_floor "$DD" "" '{"industry":"general business"}'; then ok "T1a: all 28 depts on disk -> rc=0 (floor met)"; else bad "T1a: full floor on disk should PASS but rc!=0"; fi
 # Missing one mandatory (bugs) — no variant conflict with universals — must FAIL.
 # 'bugs' has no CANONICAL_VARIANT_SLUGS entry so it cannot be satisfied by another folder.
 KEEP_NO_BUGS=$(for d in $FULL_FLOOR; do [ "$d" != "bugs" ] && printf '%s ' "$d"; done)
 DD=$(mk_workspace t1b $KEEP_NO_BUGS)
-if eval_floor "$DD" "" '{"industry":"general business"}'; then bad "T1b: 28 depts (missing bugs) should FAIL but rc=0 (floor enforcement broken)"; else ok "T1b: missing mandatory 'bugs' -> rc=3 (floor enforced)"; fi
+if eval_floor "$DD" "" '{"industry":"general business"}'; then bad "T1b: 27 depts (missing bugs) should FAIL but rc=0 (floor enforcement broken)"; else ok "T1b: missing mandatory 'bugs' -> rc=3 (floor enforced)"; fi
 # Missing one universal-primary (presentations) — must FAIL.
 KEEP_NO_PRES=$(for d in $FULL_FLOOR; do [ "$d" != "presentations" ] && printf '%s ' "$d"; done)
 DD=$(mk_workspace t1c $KEEP_NO_PRES)
-if eval_floor "$DD" "" '{"industry":"general business"}'; then bad "T1c: 28 depts (missing presentations) should FAIL but rc=0 (floor enforcement broken)"; else ok "T1c: missing universal-primary 'presentations' -> rc=3 (floor enforced)"; fi
+if eval_floor "$DD" "" '{"industry":"general business"}'; then bad "T1c: 27 depts (missing presentations) should FAIL but rc=0 (floor enforcement broken)"; else ok "T1c: missing universal-primary 'presentations' -> rc=3 (floor enforced)"; fi
 
 echo "=== T2: seeded 3-dept state FAILS (seeded-fiction bypass) ==="
 DD=$(mk_workspace t2 marketing sales research)
@@ -150,9 +151,9 @@ if eval_floor "$DD" "" '{"industry":"general business"}'; then bad "T3f: mandato
 
 echo "=== T4: keyword-matched extras are flavor not floor; universal-primary IS gating ==="
 RE_SIGNAL='{"industry":"real estate brokerage","company_description":"residential real estate agent MLS listings and showings"}'
-# Full base floor (29 depts) + real-estate signal -> PASS (keyword extras are flavor, not gating).
+# Full base floor (28 depts) + real-estate signal -> PASS (keyword extras are flavor, not gating).
 DD=$(mk_workspace t4a $FULL_FLOOR)
-if eval_floor "$DD" "" "$RE_SIGNAL"; then ok "T4a: 29-dept base floor + real-estate signal -> rc=0 (keyword extras are flavor, not gating)"; else bad "T4a: full base floor with real-estate signal should PASS (extras are not gating) but rc!=0"; fi
+if eval_floor "$DD" "" "$RE_SIGNAL"; then ok "T4a: 28-dept base floor + real-estate signal -> rc=0 (keyword extras are flavor, not gating)"; else bad "T4a: full base floor with real-estate signal should PASS (extras are not gating) but rc!=0"; fi
 # Missing one universal-primary ('presentations') with real-estate signal -> FAIL.
 DD=$(mk_workspace t4b $KEEP_NO_PRES)
 if eval_floor "$DD" "" "$RE_SIGNAL"; then bad "T4b: missing universal-primary 'presentations' + real-estate should FAIL but rc=0"; else ok "T4b: missing universal-primary 'presentations' -> rc=3 (universal-primary IS gating)"; fi

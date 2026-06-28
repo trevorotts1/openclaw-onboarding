@@ -4,6 +4,16 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.28.1] - 2026-06-28 — chore(skill6): version bump in lockstep with listings fix (no skill6 changes)
+
+No functional changes to this skill. Version bumped in lockstep with the repo
+release (v14.28.1 listings-real-estate-only fix in Skill 23) to keep the
+triple-equality gate (skill-version.txt == SKILL.md frontmatter == CHANGELOG top)
+green. The browser-manager markers are rolled by bump-version.sh as a side
+effect of every repo release.
+
+---
+
 ## [v14.28.0] - 2026-06-28 — feat(skill6): CodeMirror v5/v6 dual-path, stable-id selectors, pre-save lint, published-CSP gate, version-drift CI
 
 ### Added — version-drift triple-equality CI gate (`scripts/check-version-drift.py`, `qc-ghl-install-pages.sh`)

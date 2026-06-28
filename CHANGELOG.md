@@ -1,3 +1,17 @@
+## [v14.28.1]  -  2026-06-28  -  fix: listings is real-estate-only (was universal floor); engineering stays universal core; depts[0] fallback fixed; W1 ZHE_SEQUENCE_V1 constant; eng one-liner
+
+### Skill 23 — listings now real-estate-only (department-floor + build-workforce + naming-map)
+- `department-naming-map.json` v2.6.0 → v2.6.1: removed `universal_primary: true` from the `listings` dept in the real-estate vertical pack. `listings` is now industry-gated (keyword match only) and never lands on a coaching / consulting / generic floor. `engineering` (saas pack) retains `universal_primary: true` and remains a universal floor dept for every client.
+- `23-ai-workforce-blueprint/scripts/department-floor.py`: `universal_primary_vertical_departments()` is now EXPLICIT-OPT-IN only — removed the `depts[0]` fallback that silently promoted the first dept in any pack lacking the flag. A pack with no flagged dept now contributes nothing to the universal floor (the fix that closes the listings-on-coaching bug). Floor count: 22 mandatory + 6 universal-primary = 28.
+- `23-ai-workforce-blueprint/scripts/build-workforce.py`: same `depts[0]` fallback removed from `apply_vertical_packs()` Phase 1; comments + floor-count string updated to 22+6=28.
+- `23-ai-workforce-blueprint/scripts/list-canonical-departments.py`: updated floor-count references and EXPLICIT-OPT-IN annotation.
+- `23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py`: floor-count comment updated to 28.
+- `23-ai-workforce-blueprint/scripts/test-department-floor.sh`: smoke-test inline Python mirrors the EXPLICIT-OPT-IN logic (no `depts[0]` fallback) so the test cannot diverge from the production code; all 12 T1–T4 assertions still pass.
+- `23-ai-workforce-blueprint/scripts/test-reconciliation-engine.sh`: updated floor-count assertion to 28.
+
+### W1 — ZHE_SEQUENCE_V1 constant in prove-zhe.py
+- `23-ai-workforce-blueprint/scripts/prove-zhe.py`: added `ZHE_SEQUENCE_V1` tuple constant (steps 4–7 of the Zero Human Experience spec). Stamped into every receipt as `zhe_sequence_steps` so each receipt records which sequence version it asserted. Not just a comment — an actual referenced constant.
+
 ## [v14.28.0]  -  2026-06-28  -  feat: W7 platform-facts stamp + W1 prove-zhe gate + W2 fail-closed SOP boundary + W6 combined persona selector + Skill6 CodeMirror/CSP upgrades + engineering core
 
 ### Engineering core + canonical_slug rename (shared-utils)

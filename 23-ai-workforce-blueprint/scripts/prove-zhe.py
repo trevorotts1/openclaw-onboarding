@@ -75,6 +75,19 @@ RECEIPTS_DIR = os.path.join(HERE, "receipts")
 
 PROVER_VERSION = "1.0"
 
+# ZHE_SEQUENCE_V1 — the canonical, versioned constant naming the Zero Human
+# Experience sequence this prover holds an interview-completed box to (spec §1
+# steps 4–7; doctrine doc: 23-ai-workforce-blueprint/ZERO-HUMAN-EXPERIENCE.md).
+# Defined as an actual referenced constant (NOT just a comment): it is the
+# `ordered`-step contract the prover proves, and it is stamped into every receipt
+# (see prove()) so each receipt records WHICH sequence version it asserted.
+ZHE_SEQUENCE_V1 = (
+    "floor_depts_registered_as_agents",  # step 4: built-as-files AND registered as agents
+    "personas_canonical",                # step 5: 54 personas + section-tagged index
+    "command_center_board",              # step 6: Command Center board + Kanban ready
+    "agents_md_doctrine",                # step 7: AGENTS.md routing/persona/handoff/reporting/platform-facts
+)
+
 # --- ZHE canonical expectations (spec §1 + persona system facts) --------------
 # VALIDATED 2026-06-28 against the live operator box
 # (~/.clawdbot/workspace/data/coaching-personas/gemini-index.sqlite):
@@ -644,6 +657,8 @@ def prove(box_id, client, fs, local_root=None, with_subprovers=False):
         "client": client,
         "ts": utc_now_iso(),
         "prover_version": PROVER_VERSION,
+        "zhe_sequence": "ZHE_SEQUENCE_V1",
+        "zhe_sequence_steps": list(ZHE_SEQUENCE_V1),
         "reachable": False,
         "interview_complete": None,
         "exempt": False,

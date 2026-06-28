@@ -64,7 +64,7 @@
 #   bash 3.2.57 and bash 5.x. Do NOT reintroduce `declare -A` / `mapfile` here.
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-AGENT_BROWSER_REAPER_VERSION="v14.28.0"
+AGENT_BROWSER_REAPER_VERSION="v14.28.1"
 
 set -u
 
