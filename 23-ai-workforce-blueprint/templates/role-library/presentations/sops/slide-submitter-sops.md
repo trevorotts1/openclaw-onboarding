@@ -153,7 +153,7 @@ The following table is copied verbatim from Appendix A of the master SOP (univer
 | Create task | `POST https://api.kie.ai/api/v1/jobs/createTask` |
 | Check task | `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>` |
 | Auth | `Authorization: Bearer <CLIENT_KIE_API_KEY>` + `Content-Type: application/json` |
-| Prompt ceiling | 20,000 characters in `input.prompt` (SOP authoring max: 15,000) |
+| Prompt ceiling | 20,000 characters in `input.prompt` (SOP authoring max: 18,000) |
 | Reference images | `input.input_urls`, public https URLs, max 16 |
 | Aspect ratios | auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, **16:9**, 9:16, 2:1, 1:2, 3:1, 1:3, 21:9, 9:21 (this SOP pins 16:9) |
 | Resolutions | 1K, 2K, 4K (this SOP pins 2K unless intake says otherwise) |
@@ -184,7 +184,7 @@ Rate cap, wave scheduling, polling cadence, and the 100-poll guard live in Secti
    - At 1.5x budget_ceiling: WARN. Send message to Director: "Generation cost at 1.5x budget ceiling ([N] slides generated, estimated $X spent). Continuing but flagging for review."
    - At 2.0x budget_ceiling: STOP. Send message to Director: "Generation cost has reached 2x budget ceiling ($X spent for [SLIDE_COUNT] slides). Halting submission. Awaiting operator authorization to continue."
 4. Record all budget events in phase4_checkpoint.json: `{ "budget_checks": [{"at_slide": N, "estimated_cost": X, "ceiling": Y, "action": "continue|warn|stop"}] }`.
-5. Truncation check: if the prompt file for a slide exceeds 15,000 characters (this should have been caught by Phase 3 QC, but check again before submission), truncate the prompt at the 15,000-character boundary by removing content from the end of the AVOID block. Log the truncation: `{ "slide_number": N, "original_chars": N, "truncated_to": 15000, "truncation_applied": true }`. Notify the Slide Image Creator.
+5. Truncation check: if the prompt file for a slide exceeds 18,000 characters (this should have been caught by Phase 3 QC, but check again before submission), truncate the prompt at the 18,000-character boundary by removing content from the end of the AVOID block. Log the truncation: `{ "slide_number": N, "original_chars": N, "truncated_to": 18000, "truncation_applied": true }`. Notify the Slide Image Creator.
 
 **Outputs:**
 - phase4_checkpoint.json (budget events and truncation log)

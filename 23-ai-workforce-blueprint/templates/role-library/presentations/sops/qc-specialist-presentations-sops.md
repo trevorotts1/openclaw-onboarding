@@ -111,7 +111,7 @@ Check these before scoring. Each independently forces FAIL on the affected promp
 
 | Code | Auto-Fail Condition |
 |------|---------------------|
-| AF-P1 | Character count under the soft minimum of 5000 (Check 0: count mechanically and RECORD the exact number in the report). A prompt under 5000 chars is starved of the per-line spelling-lock, the full paired negative block, the image-to-image logo language, and the complete anatomy direction; it fails unless it carries a documented reason for a near-empty transition slide. |
+| AF-P1 | Character count under the hard floor of 9000 (Check 0: count mechanically and RECORD the exact number in the report). A prompt under 9000 chars is starved of the per-line spelling-lock, the full paired negative block, the image-to-image logo language, and the complete anatomy direction; it fails unless it carries a documented reason for a near-empty transition slide. |
 | AF-P2 | Character count over 18000. The LONG-tier budget is 18000 (a 2000-char safety margin below the GPT-Image 2 ceiling of 20000 on both endpoints, MODEL-SPECS). Over 18000 = auto-fail. (Raised from 15000 in v12.7.1: the old short cap starved prompts of the specificity that prevents the forensic defects.) |
 | AF-P3 | Headline not verbatim to slides_copy.md HEADLINE field (any paraphrase, any changed word = auto-fail). |
 | AF-P4 | Missing 16:9 or 2K (either absent = auto-fail). |
@@ -392,7 +392,7 @@ This family does not score a slide. It guards the SOP TEXT ITSELF against the de
 **The 22 Prompt QC Criteria (p1-p22):**
 1. All 15 elements present in order (format / background / headline verbatim / typography / font placement / thirds / object placement / overlays / brand palette / logo / people / bullets / mood / professionalism / closing constraints -- where element 15 is the SOP 9.8 paired negative block).
 2. (double-weight) Headline text is verbatim match to slides_copy.md HEADLINE field (not paraphrased).
-3. (double-weight) Character count is within the working range (soft minimum 5,000, hard maximum 18,000). Target 9,000-14,000. Beyond the AF-P1/AF-P2 floor, this criterion rewards genuine budget use: a prompt at or above 9,000 characters that spends the budget on defect-preventing specificity (per-line spelling-lock, the full eight-class paired negative block, exhaustive image-to-image logo language, complete people-anatomy direction, deep scene and grade detail) scores high; a prompt that scrapes the old 5,000-7,500 band, OR that pads to the count with boilerplate or repeated adjectives, scores low. The long budget is for specificity, never filler.
+3. (double-weight) Character count is within the working range (hard floor 9,000, hard maximum 18,000). Band 9,000-18,000. Beyond the AF-P1/AF-P2 floor, this criterion rewards genuine budget use: a prompt at or above 9,000 characters that spends the budget on defect-preventing specificity (per-line spelling-lock, the full eight-class paired negative block, exhaustive image-to-image logo language, complete people-anatomy direction, deep scene and grade detail) scores high; a prompt that scrapes the 9,000 floor with boilerplate, OR that pads to the count with repeated adjectives or repeated adjectives, scores low. The long budget is for specificity, never filler.
 4. (double-weight) White base rule: element 2 specifies white background (unless DARK_OK=true).
 5. People element (11) specifies at least one of the 3 engines with representation group and gender.
 6. Thirds-grid assignment in element 6 is specific (named regions -- not "somewhere on the right").

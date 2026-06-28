@@ -2,7 +2,7 @@
 
 **Cluster:** Design System
 **Owner roles:** Typography Architect (assigns PURE_TYPE_HOOK in the treatment table, SOP 9.3) + Slide Image Creator (renders it). Enforced by: QC Specialist (Phase 3 prompt QC, Phase 5 image QC).
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 7.2 A4, 7.5 exemplar)
+**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md; the full-density A4 type-dominant exemplar in slide-image-creator.md Appendix A (Exemplar 1)
 **Version:** 1.0
 
 > The hook is a refrain sung at 3 to 4 natural anchors, each on its OWN dedicated pure-typography slide. The forensic reference deck did the opposite: the hook was footer-wallpaper on about 40 of 45 slides, printed twice on several, mutated on one, misspelled on another, with no clean dedicated hook slide at all. This SOP defines what a dedicated hook slide looks like so the hook lives on type, not on a footer.
@@ -97,4 +97,4 @@ The Slide Image Creator marks each PURE_TYPE_HOOK prompt with the treatment tag 
 
 - The transcript "song" doctrine: the hook is sung at natural anchors, on its own slide, never stamped on every slide.
 - The gold-standard proof: pivotal/hook slides are pure typography with a low-opacity image; the text does the heavy lifting; the hook recurs as its own beat.
-- Master SOP Section 7.2 A4 (type-dominant punch: type IS the slide) and 7.5 (the exemplar's per-line type discipline).
+- slide-image-creator.md Appendix A Exemplar 1 (A4 type-dominant punch: type IS the slide; the exemplar's per-line type discipline).

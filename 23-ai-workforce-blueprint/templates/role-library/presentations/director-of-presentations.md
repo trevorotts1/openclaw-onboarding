@@ -474,6 +474,25 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ---
 
+### SOP 9.7 -- Own Deck HARMONY + QC-Loop Cap-Exhaustion Escalation (v15.0.0)
+
+**You own deck-wide HARMONY.** Per-slide compliance is not enough — the engines must be *orchestrated in harmony to produce something AMAZING, not merely compliant.* You own the four cohesion decisions the `AF-HARMONY` gate verifies (SOP-HARMONY-01):
+1. **Recurring-character continuity** — reserve `STORY_CHARACTER:<id>` so the same recognizable person is carried across the deck, aged only per the arc beat (never a different stock face per slide).
+2. **Palette / brand coherence** — one brand family across the deck; break slides are deliberate, not drift (cross-checked with `check_brand_consistency`).
+3. **World / scene continuity** — each character's environment, props, era, and station hold across their slides.
+4. **Archetype rhythm** — sequence A1–A5 with a deliberate cadence (distinct from `AF-CREATIVITY`'s anti-sameness ceiling).
+
+Harmony is enforced at THREE shift-left placements — narrative harmony at COPY-QC, per-slide harmony at PROMPT-QC, deck-level visual harmony at PRE-ASSEMBLY (`build_deck.check_harmony`, fired before `assemble_pptx`). When the deck-level gate fails, you re-render **ONLY the inconsistent slides**, naming the failing dimension; an individually-fine but incoherent deck is caught BEFORE assembly, never after delivery.
+
+**You are the escalation owner when a QC loop exhausts its cap.** The SEND-BACK-THROUGH loops (copy-QC and prompt-QC, SOP-SLIDE-00 §5.5) are bounded by `PROMPT_QC_MAX_ATTEMPTS` (default 4). When a slide still fails after the cap:
+1. The loop routes to YOU before it routes to the human owner. You read the final `*_routeback-<attempt>.json`, confirm the deficiency is real, and decide: one more targeted re-author, a re-cast/re-render of the offending slides, or human escalation.
+2. **You never override a first-pass fail and you never lower the bar.** An owner override exists only AFTER the cap, is logged and audited (`_owner_skip_approved`, double-logged in `process_manifest.json`), and is the human owner's call surfaced through you — never a Director shortcut to ship below standard.
+3. A deck does not ship while any slide is below the LENGTH floor (9,000–18,000), missing an engine, off-harmony, or below the EXCELLENCE bar. Below-standard never renders, and never ships.
+
+**Hand to:** the failing slide's owner (Slide Copywriter / Prompt Author) for one more targeted pass, or the human owner with the audited override record on cap exhaustion.
+
+---
+
 ## 10. Quality Gates
 
 ### Gate 1 -- Pre-Run Readiness

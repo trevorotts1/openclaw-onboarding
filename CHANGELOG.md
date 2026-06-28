@@ -1,3 +1,5 @@
+## [v15.0.0]  -  2026-06-28  -  feat(presentations): all 10 engines wired into both copy and image phases, narrative+per-slide+deck harmony gates, excellence dimension, send-back-through LOOP at copy-QC and prompt-QC (shift-left: thin script bounces before prompts, thin prompt bounces before render), ceiling 18000, all docs reconciled to 9000/18000
+
 ## [v14.28.3]  -  2026-06-28  -  fix(presentations): quality layer — real prompt-QC teeth (was a word-count rubber stamp), facial-intelligence wired, prompt floor 5000->9000 + density + verbatim-words-baked, role-doc 9000-14000 reconciliation + gold exemplars, corrupt client-side QC generators removed; kie params unchanged
 
 ## [v14.28.2]  -  2026-06-28  -  fix(presentations): kie.ai-gpt-image-2-only governed pipeline made impossible to bypass except by logged owner approval — canonical render guard, real pixel image-QC, no PowerPoint text overlay, ≥5000-char prompts, GHL upload + teleprompter hard gates, single sanctioned entry command
