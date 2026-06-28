@@ -1,3 +1,26 @@
+## [v15.0.1]  -  2026-06-28  -  fix(presentations): accept 'DO-NOT BLOCK' as the negative-block structural header to match the canonical exemplars/SOP — stops false AF-P-STRUCT routebacks on correctly-authored prompts; gate not weakened
+
+### The false-bounce
+
+`build_deck.py`'s `REQUIRED_STRUCTURAL_BLOCKS` required the literal substring `"NEGATIVE BLOCK"`, but the canonical Appendix A gold exemplars in `slide-image-creator.md` (Exemplar 1 ~12,282 chars, Exemplar 2 ~13,180 chars) AND the SOP 9.8 prompt template label that same final-paragraph section `"DO-NOT BLOCK"`. A prompt authored faithfully to our own standard therefore took a needless `AF-P-STRUCT` routeback at PROMPT-QC. The renderer constant and the authored standard disagreed.
+
+### The fix (additive alias — the gate is NOT weakened)
+
+- `REQUIRED_STRUCTURAL_BLOCKS` negative-block entry changed to the canonical `"DO-NOT BLOCK"` (the label the gold exemplars + SOP 9.8 template actually emit). The legacy `"NEGATIVE BLOCK"` wording is kept as an ACCEPTED ALIAS in the new `STRUCTURAL_BLOCK_ALIASES` map, so a prompt authored to EITHER header satisfies the structural slot.
+- New helpers `_structural_block_present()` / `_missing_structural_blocks()` fold the canonical label + every accepted alias into one OR-check. All THREE call sites — `load_rich_prompt` (render-time raise), `_collect_prompt_problems` (preflight), and `check_prompt_qc_deterministic` C4 (the `AF-P-STRUCT` site) — route through the shared helper, so no site can drift.
+- Gate integrity proven by running the REAL functions: BOTH Appendix A exemplars now pass `check_prompt_qc_deterministic` with NO `AF-P-STRUCT` (Exemplar 1 fully clean; Exemplar 2's pre-existing, unrelated `AF-HAIR-INAUTHENTIC`/`AF-R3` perceptual findings are unchanged by this fix); a prompt with NEITHER header STILL fails `AF-P-STRUCT`; and `AF-P13` (8-class negative-block CONTENT) + `AF-P14` (spelling-lock) STILL fire independently of the header wording. The legacy `NEGATIVE BLOCK` header still satisfies the slot (alias not broken; `test_preflight.py` `RICH_PROMPT` fixture uses it and stays green).
+
+### Doc reconciliation
+
+- `SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md` (AF-PROMPT-FLOOR row + detail) now names the canonical `"DO-NOT BLOCK"` header with `"NEGATIVE BLOCK"` flagged as the accepted alias, so the normative detection text matches the renderer constant and the gold exemplars.
+
+### Verification (all green)
+
+- `sync_check.py` — IN SYNC (manifest_version 17, 101 autofails, 34 roles); no AF code / checker / constant added or removed, so lockstep is unaffected.
+- `test_preflight.py` — ALL PREFLIGHT TESTS PASSED.
+- `gate_integrity_check.py` (Guard A) — OK (49 enforced / 50 triggered). `doctrine_residual_check.py` (Guard B) — CLEAN.
+- Patch release: 10 version markers + cc-compat.json bumped to v15.0.1 via `bump-version.sh`. No client names.
+
 ## [v15.0.0]  -  2026-06-28  -  feat(presentations): all 10 engines wired into both copy and image phases, narrative+per-slide+deck harmony gates, excellence dimension, send-back-through LOOP at copy-QC and prompt-QC (shift-left: thin script bounces before prompts, thin prompt bounces before render), ceiling 18000, all docs reconciled to 9000/18000
 
 ## [v14.28.3]  -  2026-06-28  -  fix(presentations): quality layer — real prompt-QC teeth (was a word-count rubber stamp), facial-intelligence wired, prompt floor 5000->9000 + density + verbatim-words-baked, role-doc 9000-14000 reconciliation + gold exemplars, corrupt client-side QC generators removed; kie params unchanged

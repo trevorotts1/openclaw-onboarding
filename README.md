@@ -1,7 +1,9 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v15.0.0.
+> **Version:** see `/version` - this repo at v15.0.1.
+>
+> **NOTE (v15.0.1) - fix(presentations): accept 'DO-NOT BLOCK' as the negative-block structural header to match the canonical exemplars/SOP — stops false AF-P-STRUCT routebacks on correctly-authored prompts; gate not weakened.** `build_deck.py`'s `REQUIRED_STRUCTURAL_BLOCKS` required the literal substring `NEGATIVE BLOCK`, but both Appendix A gold exemplars in `slide-image-creator.md` (Exemplar 1 ~12,282 chars, Exemplar 2 ~13,180 chars) AND the SOP 9.8 prompt template label that final-paragraph section `DO-NOT BLOCK` — so a faithfully-authored prompt took a needless `AF-P-STRUCT` routeback. Fix is additive: the canonical label is now `DO-NOT BLOCK` and the legacy `NEGATIVE BLOCK` is an accepted alias (new `STRUCTURAL_BLOCK_ALIASES` constant + `_structural_block_present()`/`_missing_structural_blocks()` helpers, used by all three call sites: `load_rich_prompt`, `_collect_prompt_problems`, `check_prompt_qc_deterministic` C4). Gate NOT weakened — proven by running the REAL functions: both exemplars now pass with NO `AF-P-STRUCT`; a prompt with NEITHER header STILL fails `AF-P-STRUCT`; `AF-P13` (8-class negative-block CONTENT) + `AF-P14` (spelling-lock) STILL fire independently of header wording. `SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md` AF-PROMPT-FLOOR detection reconciled to name `DO-NOT BLOCK` (alias `NEGATIVE BLOCK`). No AF code / checker / constant added or removed: `sync_check.py` IN SYNC (manifest_version 17, 101 autofails), `test_preflight.py` ALL PASSED, Guard A OK (49/50), Guard B CLEAN. No client names. See [CHANGELOG.md](CHANGELOG.md).
 >
 > **NOTE (v15.0.0) - feat(presentations): all 10 engines wired into both copy and image phases, narrative+per-slide+deck harmony gates, excellence dimension, send-back-through LOOP at copy-QC and prompt-QC (shift-left: thin script bounces before prompts, thin prompt bounces before render), ceiling 18000, all docs reconciled to 9000/18000.** PROMPT_CHAR_CEILING added at 18000. AF-INTELLIGENCE-COPY (writing engines wired at COPY-QC), AF-PITCH-ENGINE (offer engines wired at COPY-QC), AF-EXCELLENCE (richness quality floor 0.70), AF-HARMONY (deck cohesion pre-assembly), AF-HOOK (footer-band placement banned), AF-INTELLIGENCE (perceptual engine catch-all), AF-P-STRUCT (structural block gate), AF-COPY (engine problem catch-all) — all 8 new codes registered in PIPELINE-MANIFEST.json (manifest_version 17, 101 autofails), MASTER-QC-AUTOFAIL-RULESET.md Section 5, and af-coverage.json. Guard A (gate_integrity_check.py) green at 49 enforced / 50 triggered. send-back loops: run_copy_qc_loop (G8) + run_prompt_qc_loop (G7) in run_signature_deck.py. See [CHANGELOG.md](CHANGELOG.md).
 >
@@ -41,7 +43,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v15.0.0** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v15.0.1** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.

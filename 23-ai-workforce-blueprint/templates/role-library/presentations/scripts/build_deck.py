@@ -329,18 +329,56 @@ PROMPT_MIN_DISTINCT_WORDS = 220  # AF-P-DENSITY: a >=9,000-char prompt that repe
 
 # REQUIRED STRUCTURAL BLOCKS (AF-P1). A real rich prompt is not just long enough — it
 # carries the load-bearing structural scaffolding: an [ARCHETYPE ...] layout declaration,
-# an explicit NEGATIVE BLOCK, and at least one "Do not " imperative inside it. A
+# the final-paragraph negative block (the header our gold exemplars + the SOP 9.8 template
+# emit is literally "DO-NOT BLOCK"), and at least one "Do not " imperative inside it. A
 # 9,000-char file with none of these is a verbose stub, not a slide spec. This is the
 # structural-block check FOLDED IN from the retired presentation-render/render_deck.py
 # (_validate_prompt) so build_deck.py is the ONE canonical renderer — it now enforces
 # every invariant render_deck.py used to, with no separate render module to drift.
 # Matched case-insensitively, on the same STRIPPED text the char-count gate measures.
-REQUIRED_STRUCTURAL_BLOCKS = ["[ARCHETYPE", "NEGATIVE BLOCK", "Do not "]
+#
+# Each entry is the CANONICAL (primary) label the renderer reports as "missing" when the
+# block is absent. The negative-block entry is the canonical "DO-NOT BLOCK" header that
+# both Appendix A gold exemplars and the SOP 9.8 prompt template actually emit; the older
+# "NEGATIVE BLOCK" wording remains an ACCEPTED ALIAS (see STRUCTURAL_BLOCK_ALIASES) so a
+# prompt authored faithfully to either label satisfies the gate. The gate is NOT weakened:
+# a prompt that carries NEITHER header still fails AF-P-STRUCT, and the 8-class CONTENT
+# teeth (AF-P13) + spelling-lock (AF-P14) fire independently regardless of header wording.
+REQUIRED_STRUCTURAL_BLOCKS = ["[ARCHETYPE", "DO-NOT BLOCK", "Do not "]
+
+# ACCEPTED ALIASES for a required structural block. A block in REQUIRED_STRUCTURAL_BLOCKS is
+# "present" iff the canonical label OR any of its aliases appears (case-insensitive). The
+# negative-block header is the only block with historical label drift: the canonical header
+# our exemplars/SOP emit is "DO-NOT BLOCK", but earlier authoring (and the test fixtures /
+# preflight examples) used "NEGATIVE BLOCK" — both must satisfy the structural requirement,
+# so neither a DO-NOT-BLOCK-headed nor a NEGATIVE-BLOCK-headed prompt false-bounces AF-P-STRUCT.
+STRUCTURAL_BLOCK_ALIASES = {
+    "DO-NOT BLOCK": ["NEGATIVE BLOCK"],
+}
+
+
+def _structural_block_present(block: str, text_lc: str) -> bool:
+    """True iff the required structural BLOCK (or any of its accepted aliases) appears in
+    text_lc (which MUST already be lower-cased). Folds the canonical label + every alias
+    into a single OR so a prompt authored to either the canonical 'DO-NOT BLOCK' header or
+    the legacy 'NEGATIVE BLOCK' header satisfies the same structural slot — without
+    weakening the gate (a prompt carrying none of them is still missing the block)."""
+    candidates = [block] + STRUCTURAL_BLOCK_ALIASES.get(block, [])
+    return any(c.lower() in text_lc for c in candidates)
+
+
+def _missing_structural_blocks(text_lc: str) -> list:
+    """Return the canonical labels of every REQUIRED_STRUCTURAL_BLOCKS entry whose canonical
+    label AND all of its accepted aliases are absent from text_lc (lower-cased). Empty list
+    = all required structural blocks are present. The returned label is always the canonical
+    primary so the re-author message tells the author the header to add."""
+    return [b for b in REQUIRED_STRUCTURAL_BLOCKS if not _structural_block_present(b, text_lc)]
 
 # ---------------------------------------------------------------------------
 # AF-P13 — the EIGHT mandatory negative-block defect CLASSES (slide-image-creator.md
-# SOP 9.8). REQUIRED_STRUCTURAL_BLOCKS above only proves a "NEGATIVE BLOCK" header and
-# ONE "Do not " sentence exist — a one-line stub satisfies it. AF-P13 gives the
+# SOP 9.8). REQUIRED_STRUCTURAL_BLOCKS above only proves a negative-block header
+# ("DO-NOT BLOCK", or the legacy "NEGATIVE BLOCK" alias) and ONE "Do not " sentence
+# exist — a one-line stub satisfies it. AF-P13 gives the
 # negative block real teeth: the block must actually name ALL EIGHT defect classes the
 # forensic reference deck shipped (garbled text, logo mutation, placeholder tokens,
 # image narration, anatomical artifacts, competing background, skin-tone fidelity,
@@ -1068,18 +1106,20 @@ def load_rich_prompt(slide: dict, run_dir: Path) -> str:
         )
     # STRUCTURAL-BLOCK GATE (fail-loud, AF-P1). Folded in from the retired
     # render_deck.py: a long file is not enough — the rich prompt MUST carry the
-    # load-bearing scaffolding (an [ARCHETYPE ...] layout declaration, a NEGATIVE
-    # BLOCK, and at least one "Do not " imperative). A prompt that clears the floor
-    # but is missing any of these is a verbose stub, not a slide spec — never run it.
+    # load-bearing scaffolding (an [ARCHETYPE ...] layout declaration, the final-paragraph
+    # negative block — header "DO-NOT BLOCK", or the legacy "NEGATIVE BLOCK" alias — and at
+    # least one "Do not " imperative). A prompt that clears the floor but is missing any of
+    # these is a verbose stub, not a slide spec — never run it.
     prompt_lc = prompt.lower()
-    missing_blocks = [b for b in REQUIRED_STRUCTURAL_BLOCKS if b.lower() not in prompt_lc]
+    missing_blocks = _missing_structural_blocks(prompt_lc)
     if missing_blocks:
         raise ValueError(
             f"slide {ordinal}: rich prompt {prompt_path} clears the char floor but is "
             f"MISSING required structural block(s): {', '.join(missing_blocks)}. A real "
-            f"rich prompt declares its [ARCHETYPE ...] layout, carries an explicit NEGATIVE "
-            f"BLOCK, and states 'Do not ...' imperatives. Re-author the rich prompt with "
-            f"the full 15-element structure. Refusing (structural-block gate, AF-P1)."
+            f"rich prompt declares its [ARCHETYPE ...] layout, carries the final-paragraph "
+            f"negative block (header 'DO-NOT BLOCK', or the legacy 'NEGATIVE BLOCK' alias), "
+            f"and states 'Do not ...' imperatives. Re-author the rich prompt with the full "
+            f"15-element structure. Refusing (structural-block gate, AF-P1)."
         )
     # QUALITY-LAYER teeth (AF-P13 / AF-P14 / AF-P-DENSITY / AF-P-VERBATIM). A prompt that
     # clears the length floor + structural blocks is still rejected when its negative block
@@ -2625,12 +2665,11 @@ def _collect_prompt_problems(run_dir: Path, slides_path: Optional[Path] = None) 
             problems.append((ordinal, f"rich prompt {p.name} is {length} chars, OVER the "
                             f"{PROMPT_CHAR_CEILING}-char HARD ceiling (AF-P2)"))
             continue
-        missing_blocks = [b for b in REQUIRED_STRUCTURAL_BLOCKS
-                          if b.lower() not in stripped.lower()]
+        missing_blocks = _missing_structural_blocks(stripped.lower())
         if missing_blocks:
             problems.append((ordinal, f"rich prompt {p.name} clears the floor but is missing "
                             f"required structural block(s): {', '.join(missing_blocks)} "
-                            f"([ARCHETYPE ...] / NEGATIVE BLOCK / 'Do not ')"))
+                            f"([ARCHETYPE ...] / DO-NOT BLOCK [alias NEGATIVE BLOCK] / 'Do not ')"))
             continue
         # QUALITY-LAYER teeth — the floor is NOT a length-only rubber stamp.
         for q in rich_prompt_quality_problems(stripped, copy_map.get(ordinal)):
@@ -5163,11 +5202,17 @@ def check_prompt_qc_deterministic(run_dir: Path, slides_path: Optional[Path] = N
                 f"Trim to <= {PROMPT_CHAR_CEILING} chars without dropping any engine token."))
 
         # --- QUALITY gate (C4 structural blocks) ---
-        for b in REQUIRED_STRUCTURAL_BLOCKS:
-            if b.lower() not in lc:
-                deficiencies.append(_pdef(
-                    "AF-P-STRUCT", "reauthor", "block missing", b, "Structure",
-                    f"Add the required structural block: {b}"))
+        # A block counts as present if its canonical label OR any accepted alias appears
+        # (the negative-block header may read "DO-NOT BLOCK" — the canonical exemplar/SOP
+        # label — or the legacy "NEGATIVE BLOCK"; either satisfies the slot). The gate is
+        # not weakened: a prompt carrying NEITHER negative-block header still fails here,
+        # and the 8-class CONTENT teeth (AF-P13, below) fire independently of the header.
+        for b in _missing_structural_blocks(lc):
+            aliases = STRUCTURAL_BLOCK_ALIASES.get(b, [])
+            want = b + (f" (or alias {', '.join(aliases)})" if aliases else "")
+            deficiencies.append(_pdef(
+                "AF-P-STRUCT", "reauthor", "block missing", want, "Structure",
+                f"Add the required structural block: {want}"))
 
         # --- C5 perceptual INTELLIGENCE engines (Facial/Lighting/World/Hair + harmony+Hook) ---
         for pp in perceptual_by_slide.get(ordinal, []):
