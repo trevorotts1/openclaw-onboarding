@@ -36,6 +36,33 @@ heavy 90MB artifact-verify job gated to release/workflow_dispatch).
 
 ---
 
+## [v14.24.1]  -  2026-06-27  -  fix(restart): auto-detect launchd label; correct ai.openclaw.gateway fallback
+
+Gateway-restart fallback in `update-skills.sh` hardcoded the launchd label
+`com.openclaw.gateway`. The real fleet-wide label on every Mac box is
+`ai.openclaw.gateway` (gui-domain form: `gui/<uid>/ai.openclaw.gateway`). When
+the primary restart path (the `openclaw` CLI) is not on PATH, the `launchctl
+kickstart` fallback targeted a label that does not exist, producing a silent
+no-op — the gateway never restarted and config/routing changes never took
+effect.
+
+**Fix:** replaced the hardcoded label with an auto-detect + correct-default
+pattern:
+
+```bash
+GW_LABEL="$(launchctl list 2>/dev/null | awk '/openclaw.*gateway/{print $3; exit}')"
+[ -z "$GW_LABEL" ] && GW_LABEL="ai.openclaw.gateway"
+launchctl kickstart -k "gui/$(id -u)/$GW_LABEL"
+```
+
+This reads the live launchd service list to discover the actual label. If no
+match is found it falls back to `ai.openclaw.gateway` (the correct default).
+The `com.openclaw.gateway` string no longer appears anywhere in the repo.
+
+**Version bump:** v14.24.0 → v14.24.1.
+
+---
+
 ## [v14.24.0]  -  2026-06-27  -  fix(delivery): close all 8 install+update delivery gaps
 
 Closes 8 delivery gaps so `install` and `update` both deliver everything.

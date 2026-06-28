@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v14.25.0"
+ONBOARDING_VERSION="v14.24.1"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -2915,38 +2915,75 @@ done
 # ----------------------------------------------------------
 # WHY: Step 6 above only copies the indexer/search SCRIPTS. Without the actual
 # vector DB present, gemini-search.py silently degrades to keyword matching and
-# the canonical personas (54 as of v2.1.0) are unselectable. We download the
-# canonical prebuilt 54-persona section-tagged index from the GitHub Release
-# named in the SHARED MANIFEST (single source of truth:
+# the 8 book-author personas (Brunson/Miner/Edwards/Dib) are unselectable. We
+# download the canonical prebuilt 48-persona index from the GitHub Release named
+# in the SHARED MANIFEST (single source of truth:
 # shared-utils/prebuilt-index/INDEX-MANIFEST.json), verify its sha256 BEFORE
 # decompressing, and install it into place — ONLY when absent or stale.
 #
-# Idempotency / furnace-kill: the shared helper (provision-persona-index.sh)
-# skips download if BOTH (a) section_number + mode columns are present AND
-# (b) .prebuilt-index-version sentinel == manifest release_tag. This means the
-# live operator coaching index (already section-tagged at v2.1.0) is NEVER
-# clobbered or rebuilt by install/update.
-#
-# sha256 is a HARD gate: a corrupt asset is never installed (box keyword-degrades
-# and warns instead, which the agent surfaces).
+# This is additive and idempotent: if a correct DB is already present (existing
+# chunk_count >= the manifest's chunk_count), we SKIP the download entirely. That
+# is the furnace kill — a box never re-embeds ~7615 chunks (~63 min + 7615 Gemini
+# calls) and never re-downloads on every install/update run. sha256 mismatch is a
+# HARD gate: a corrupt asset is never installed (the box keyword-degrades and
+# warns instead, which the agent surfaces, rather than silently shipping a bad DB).
 PERSONA_INDEX_MANIFEST="$ONBOARDING_DIR/shared-utils/prebuilt-index/INDEX-MANIFEST.json"
 COACHING_DB_DIR="$OC_WORKSPACE/data/coaching-personas"
+COACHING_DB="$COACHING_DB_DIR/gemini-index.sqlite"
+if [ -f "$PERSONA_INDEX_MANIFEST" ]; then
+    step "Step 6b: Provisioning prebuilt persona index (48 personas)"
+    mkdir -p "$COACHING_DB_DIR"
 
-step "Step 6b: Provisioning prebuilt persona index (canonical 54, section-tagged)"
-_PROVISION_HELPER="$ONBOARDING_DIR/shared-utils/provision-persona-index.sh"
-[ -f "$_PROVISION_HELPER" ] || _PROVISION_HELPER="$SKILLS_DIR/shared-utils/provision-persona-index.sh"
-if [ -f "$_PROVISION_HELPER" ]; then
-    # shellcheck source=/dev/null
-    source "$_PROVISION_HELPER"
-    provision_persona_index "$PERSONA_INDEX_MANIFEST" "$COACHING_DB_DIR"
+    _PIDX_ASSET_URL="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["asset_url"])' "$PERSONA_INDEX_MANIFEST" 2>/dev/null || true)"
+    _PIDX_SHA="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' "$PERSONA_INDEX_MANIFEST" 2>/dev/null || true)"
+    _PIDX_CHUNKS="$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("chunk_count",0) or 0))' "$PERSONA_INDEX_MANIFEST" 2>/dev/null || echo 0)"
+
+    # Already provisioned? Skip download if the existing DB holds at least the
+    # manifest's chunk_count (i.e. the full 48-persona set, not the old 40-set).
+    _PIDX_HAVE=0
+    if [ -f "$COACHING_DB" ]; then
+        _PIDX_EXIST_CHUNKS="$(python3 -c 'import sqlite3,sys
+try:
+    c=sqlite3.connect(sys.argv[1]); print(c.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]); c.close()
+except Exception:
+    print(0)' "$COACHING_DB" 2>/dev/null || echo 0)"
+        if [ "${_PIDX_CHUNKS:-0}" -gt 0 ] 2>/dev/null && [ "${_PIDX_EXIST_CHUNKS:-0}" -ge "${_PIDX_CHUNKS:-0}" ] 2>/dev/null; then
+            _PIDX_HAVE=1
+            success "Persona index already present ($_PIDX_EXIST_CHUNKS chunks >= manifest $_PIDX_CHUNKS) — skipping download (no re-embed)"
+        else
+            warn "Existing persona index has ${_PIDX_EXIST_CHUNKS:-0} chunks (< manifest ${_PIDX_CHUNKS:-?}, likely the old 40-persona set) — refreshing"
+        fi
+    fi
+
+    if [ "$_PIDX_HAVE" -eq 0 ] && [ -n "$_PIDX_ASSET_URL" ] && [ -n "$_PIDX_SHA" ]; then
+        _PIDX_GZ="/tmp/gemini-index.sqlite.$$.gz"
+        note "Downloading prebuilt persona index from $_PIDX_ASSET_URL"
+        if curl -L --retry 3 --retry-delay 5 --fail -H "Accept: application/octet-stream" "$_PIDX_ASSET_URL" -o "$_PIDX_GZ" 2>/dev/null; then
+            if command -v sha256sum >/dev/null 2>&1; then
+                _PIDX_ACTUAL="$(sha256sum "$_PIDX_GZ" | awk '{print $1}')"
+            else
+                _PIDX_ACTUAL="$(shasum -a 256 "$_PIDX_GZ" | awk '{print $1}')"
+            fi
+            if [ "$_PIDX_ACTUAL" = "$_PIDX_SHA" ]; then
+                if gunzip -c "$_PIDX_GZ" > "$COACHING_DB.tmp" 2>/dev/null; then
+                    mv -f "$COACHING_DB.tmp" "$COACHING_DB"
+                    success "Persona index installed at $COACHING_DB (sha256 verified, 48 personas)"
+                else
+                    rm -f "$COACHING_DB.tmp"
+                    warn "Persona index decompress failed — gemini-search keyword-degrades until re-run (INSTALL.md Step 5)"
+                fi
+            else
+                warn "Persona index sha256 MISMATCH (expected $_PIDX_SHA, got $_PIDX_ACTUAL) — NOT installing corrupt index"
+            fi
+            rm -f "$_PIDX_GZ"
+        else
+            warn "Persona index download failed — gemini-search keyword-degrades until the index is provisioned (re-run install or INSTALL.md Step 5)"
+        fi
+    elif [ "$_PIDX_HAVE" -eq 0 ]; then
+        warn "Persona index manifest missing asset_url/sha256 — skipping prebuilt provisioning (additive)"
+    fi
 else
-    warn "provision-persona-index.sh not found — skipping prebuilt index provisioning (additive)"
-fi
-
-# Step 6b-catalog: Wire GHL funnel catalog path vars (GHL_FUNNEL_CATALOG + GHL_FUNNEL_INDEX)
-# so Skill 06 and agents can resolve funnel templates without hardcoding paths.
-if [ -f "$_PROVISION_HELPER" ]; then
-    wire_ghl_funnel_catalog "$SKILLS_DIR" "$OC_SECRETS_ENV" "$OC_JSON"
+    note "Persona-index manifest not found ($PERSONA_INDEX_MANIFEST) — skipping prebuilt index provisioning (additive step)"
 fi
 
 # EMBEDDING-PREVENTION BUNDLE (items 4-7): persist the memory-health cron scripts

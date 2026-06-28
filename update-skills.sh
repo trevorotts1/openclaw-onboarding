@@ -45,7 +45,6 @@ fi
 set -euo pipefail
 
 ONBOARDING_VERSION="v14.25.0"
-
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
 # ----------------------------------------------------------
@@ -2234,7 +2233,11 @@ PYEOF
     elif [ "$OC_PLATFORM" = "vps" ]; then
       docker restart openclaw >/dev/null 2>&1         && echo "  ✓ Gateway restarted via docker (routing config now live)"         || echo "  ⚠ docker restart failed — restart manually: openclaw gateway restart"
     else
-      launchctl kickstart -k "gui/$(id -u)/com.openclaw.gateway" >/dev/null 2>&1         && echo "  ✓ Gateway restarted via launchctl (routing config now live)"         || echo "  ⚠ launchctl restart failed — restart manually: openclaw gateway restart"
+      GW_LABEL="$(launchctl list 2>/dev/null | awk '/openclaw.*gateway/{print $3; exit}')"
+      [ -z "$GW_LABEL" ] && GW_LABEL="ai.openclaw.gateway"
+      launchctl kickstart -k "gui/$(id -u)/$GW_LABEL" >/dev/null 2>&1 \
+        && echo "  ✓ Gateway restarted via launchctl (routing config now live)" \
+        || echo "  ⚠ launchctl restart failed — restart manually: openclaw gateway restart"
     fi
   else
     echo "  ℹ Routing config unchanged — no gateway restart needed"
