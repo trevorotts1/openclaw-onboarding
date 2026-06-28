@@ -1,5 +1,5 @@
 {
-  "manifest_version": 17,
+  "manifest_version": 18,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -203,9 +203,17 @@
       ],
       "produces_artifact": "working/copy/intake.json",
       "gate_codes": [
-        "AF-CONVERTER-PARITY"
+        "AF-CONVERTER-PARITY",
+        "AF-CONVERTER-NO-INVENT"
       ],
       "preflight": null,
+      "additional_preflights": [
+        {
+          "required": true,
+          "checker": "_chk_converter_no_invent",
+          "label": "converter extracts, never invents (every numeric/statistical figure in the source brief traces to the raw source; AF-CONVERTER-NO-INVENT). DEFERS unless both a source brief and the raw source text are present."
+        }
+      ],
       "routing_note": "Content-first path only. Writes intake.json with source_brief_origin: 'content-to-presentation-architect'. Mandates Phase -0.5 Deep Research (SOP 9.8 step 3) before standard pipeline continues.",
       "converter_path": true
     },
@@ -257,6 +265,102 @@
           "label": "pitch_included captured (intake.json carries an explicit boolean pitch_included; AF-PITCH-FLAG-UNSET)"
         }
       ]
+    },
+    {
+      "id": "P0B-PRIORITY",
+      "order": 0.2,
+      "name": "Priority-Shift Spec (the attention-content-strategist's spine, BEFORE copy)",
+      "owning_role": "attention-content-strategist",
+      "sop_refs": [
+        "SOP-NORTHSTAR-00-ATTENTION-IS-THE-PRODUCT.md",
+        "SOP-PRIORITY-01-SEVEN-P-MODEL-AND-DIAGNOSTIC.md",
+        "SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE.md"
+      ],
+      "produces_artifact": "working/copy/priority_shift_spec.json",
+      "gate_codes": [
+        "AF-MODE-UNSET",
+        "AF-NO-SHIFT",
+        "AF-NO-PRIORITY-STACK",
+        "AF-NO-RERANK",
+        "AF-NO-TRIGGER",
+        "AF-PROCLAMATION-HEDGE"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_priority_shift",
+        "label": "priority-shift spine (priority_shift_spec.json true_goal + priority_stack[]; eight build-move beat tags monotonic in slides_copy.md; AF-NO-SHIFT). All P0B gates DEFER until this spec exists (no-regression switch)."
+      },
+      "additional_preflights": [
+        {
+          "required": true,
+          "checker": "_chk_mode",
+          "label": "creation mode set (intake.creation_mode from_scratch|content_personal|content_general; content modes carry extracted_substance; AF-MODE-UNSET)"
+        },
+        {
+          "required": true,
+          "checker": "_chk_priority_stack",
+          "label": "priority stack named before the first value/price ladder beat (Move 1; AF-NO-PRIORITY-STACK)"
+        },
+        {
+          "required": true,
+          "checker": "_chk_rerank",
+          "label": "re-rank demanded after PRICE (Move 7, pitch decks only; AF-NO-RERANK)"
+        },
+        {
+          "required": true,
+          "checker": "_chk_trigger",
+          "label": "time-bound trigger on the CTA (Move 8, pitch decks only; AF-NO-TRIGGER)"
+        },
+        {
+          "required": true,
+          "checker": "_chk_proclamation_hedge",
+          "label": "proclamations are plain/bold/hedge-free (AF-PROCLAMATION-HEDGE)"
+        },
+        {
+          "required": true,
+          "checker": "_chk_persuasion_beats",
+          "label": "named persuasion beats present (problem/choice/fork/comparison/measurable-results/expert-proof/before-after; HOLE-C taxonomy now wired; AF-NO-PROBLEM/AF-NO-CHOICE/AF-NO-FORK/AF-NO-COMPARISON/AF-NO-MEASURABLE-RESULTS/AF-NO-EXPERT-PROOF/AF-NO-BEFORE-AFTER)"
+        }
+      ]
+    },
+    {
+      "id": "P-STYLE-PREVIEW",
+      "order": 4.85,
+      "name": "Approved 3-Style Preview (9 samples → owner gateway sign-off, before full render)",
+      "owning_role": "slide-image-creator",
+      "sop_refs": [
+        "slide-image-creator-sops.md"
+      ],
+      "produces_artifact": "working/style-preview/style_samples_manifest.json",
+      "gate_codes": [
+        "AF-STYLE-UNPICKED",
+        "AF-STYLE-DOUBLECHARGE"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_style_preview",
+        "label": "approved style preview (after the 9 samples render via build_deck.py --sample, the owner picks 1 of 3 attention-grade variants via their OWN gateway; the winner's 3 representative renders are LOCKED + reused so kie never double-charges; AF-STYLE-UNPICKED / AF-STYLE-DOUBLECHARGE). DEFERS until the samples manifest exists."
+      }
+    },
+    {
+      "id": "P-SHIFT-QC",
+      "order": 7.5,
+      "name": "Priority-Shift Ship Gate (the framework's 14-item pre-output checklist)",
+      "owning_role": "qc-specialist-presentations",
+      "sop_refs": [
+        "qc-specialist-presentations-sops.md",
+        "SOP-INTEGRATION-00-LOADABLE-BLOCK-AND-VERIFICATION-GATE.md"
+      ],
+      "produces_artifact": "working/qc/priority_shift_report.json",
+      "gate_codes": [
+        "AF-PRIORITY-SHIFT",
+        "AF-NO-SALIENCE-APEX"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_priority_shift_ledger",
+        "label": "priority-shift ship gate (the ONLY phase where copy+design+rendered images coexist; runs the 14-item pre-output checklist; item 0 = the North Star, attention is the #1 job; writes priority_shift_report.json; AF-PRIORITY-SHIFT). DEFERS pre-render."
+      }
     },
     {
       "id": "P1Q-COPY-QC",
@@ -312,7 +416,8 @@
       "gate_codes": [
         "AF-COVERAGE-1",
         "AF-PITCH-MISSING",
-        "AF-PITCH-LEAK"
+        "AF-PITCH-LEAK",
+        "AF-PEAK-END"
       ],
       "preflight": {
         "required": true,
@@ -320,6 +425,11 @@
         "label": "converting arc \u2014 per-slide arc-section allocation"
       },
       "additional_preflights": [
+        {
+          "required": true,
+          "checker": "_chk_peak_end",
+          "label": "peak-end rule \u2014 the arc declares a deliberate PEAK/APEX beat AND a deliberate ending beat (a flat ending is remembered as flat; AF-PEAK-END). DEFERS without doctrine/arc."
+        },
         {
           "required": true,
           "checker": "_chk_pitch",
@@ -479,13 +589,21 @@
       ],
       "produces_artifact": "working/qc/image_qc_report.json",
       "gate_codes": [
-        "AF-IMAGE-QC"
+        "AF-IMAGE-QC",
+        "AF-NO-SALIENCE-APEX"
       ],
       "preflight": {
         "required": true,
         "checker": "_chk_image_qc",
         "label": "image QC report (gate Phase Image-QC, average >= 8.5, independent-reviewer provenance)"
-      }
+      },
+      "additional_preflights": [
+        {
+          "required": true,
+          "checker": "_chk_salience_apex",
+          "label": "most vivid by the end — the OFFER/PROMISE-APEX slide is the single most vivid rendered slide (von Restorff deterministic backstop reusing AF-VISUAL-VARIETY pixel data; AF-NO-SALIENCE-APEX). DEFERS pre-render / without doctrine."
+        }
+      ]
     },
     {
       "id": "P8-ASSEMBLE",
@@ -1605,12 +1723,321 @@
       "trigger": "the persuasion (offer) sub-engine checker (pitch_engines_check.py) could not be imported, exposes no check_copy entry point, raised an exception, or the offer sub-engines auto-failed at COPY-QC (PROMISE must precede PRICE; value cadence, cost-of-inaction, branded method, guarantee specificity, and time-to-result must all pass before any prompt is authored \u2014 shift-left)",
       "enforced_by": "build_deck",
       "py_symbol": "check_pitch_engines"
+    },
+    {
+      "code": "AF-MODE-UNSET",
+      "stage": "0.1/0.2",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "intake.json.creation_mode is unset or not one of from_scratch|content_personal|content_general (a content mode also needs extracted_substance). Step Zero of every deck is to identify the creation mode (P118). DEFERS for a legacy/pre-doctrine deck (no mode AND no priority_shift_spec.json) so an in-flight build is never broken.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_mode",
+      "secondary_py_symbols": [
+        "_read_intake_obj",
+        "CREATION_MODES"
+      ]
+    },
+    {
+      "code": "AF-NO-SHIFT",
+      "stage": "0.2/4",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the deck engineers no deliberate priority shift: priority_shift_spec.json lacks a true_goal or a named priority_stack[], OR fewer than 5 of the 8 build-move beat tags are present in slides_copy.md, OR they are out of canonical (monotonic) order. The North Star is to re-rank the owner's offer/idea to the top of the audience's priority stack. DEFERS until the P0B priority_shift_spec.json exists (HOLE-C orphan now wired).",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_priority_shift",
+      "secondary_py_symbols": [
+        "_read_priority_spec",
+        "EIGHT_MOVE_TAGS"
+      ]
+    },
+    {
+      "code": "AF-NO-PRIORITY-STACK",
+      "stage": "0.2/4",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Move 1 is missing — the audience's current priority stack is not NAMED before the first value/price ladder beat in slides_copy.md (P142). DEFERS without doctrine/copy/ladder.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_priority_stack",
+      "secondary_py_symbols": [
+        "PRIORITY_STACK_MARKERS",
+        "_first_marker_offset"
+      ]
+    },
+    {
+      "code": "AF-NO-RERANK",
+      "stage": "4",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Move 7 is missing — after the PRICE beat the deck does not demand the re-rank / decision out loud (P148). DEFERS for pitchless/unset decks (the re-rank is a sale mechanic).",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_rerank",
+      "secondary_py_symbols": [
+        "RERANK_MARKERS",
+        "_intake_pitch_included"
+      ]
+    },
+    {
+      "code": "AF-NO-TRIGGER",
+      "stage": "4",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Move 8 is missing — the CTA carries no time-bound trigger (deadline / scarcity window / act-now) (P149). DEFERS for pitchless/unset decks.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_trigger",
+      "secondary_py_symbols": [
+        "TRIGGER_MARKERS",
+        "_intake_pitch_included"
+      ]
+    },
+    {
+      "code": "AF-PROCLAMATION-HEDGE",
+      "stage": "4",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "a PROCLAMATION hedges its claim with a strong multi-word hedge phrase (kind of / sort of / you might want to consider / i guess / more or less ...). A proclamation is a plain, bold claim of truth that dares to challenge the norm (P109, SOP-PROCLAMATION-01). DEFERS without doctrine/copy.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_proclamation_hedge",
+      "secondary_py_symbols": [
+        "PROCLAMATION_HEDGE_TOKENS"
+      ]
+    },
+    {
+      "code": "AF-PEAK-END",
+      "stage": "3",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the arc fails the peak-end rule — arc_allocation.json declares no PEAK/APEX/WOW beat, or no deliberate ending/recap/CTA beat. A flat ending is remembered as flat (P49). DEFERS without doctrine/arc.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_peak_end",
+      "secondary_py_symbols": [
+        "PEAK_TAGS",
+        "ENDING_TAGS"
+      ]
+    },
+    {
+      "code": "AF-NO-SALIENCE-APEX",
+      "stage": "4.95",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the OFFER/PROMISE-APEX slide (the arc's PEAK/APEX beat) is not the single most VIVID rendered slide in the deck (von Restorff — the most vivid thing is what the mind prioritizes). Deterministic backstop to the human style sign-off: vividness proxy = 1 - dominant-colour fraction, reusing the AF-VISUAL-VARIETY pixel data; fires only on a clear inversion (apex < 0.85 x deck peak). DEFERS pre-render / without doctrine / when the apex slide cannot be identified (P48/P155).",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_salience_apex",
+      "secondary_py_symbols": [
+        "_apex_slide_ordinal",
+        "_png_flatfill_fraction",
+        "_gather_rendered_pngs"
+      ]
+    },
+    {
+      "code": "AF-CONVERTER-NO-INVENT",
+      "stage": "-1",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "a content-converter deck INVENTS rather than EXTRACTS — a numeric/statistical figure in the converter's source brief does not trace back to the raw source text (P167d). DEFERS unless BOTH the source brief AND the raw source text are present on disk.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_converter_no_invent",
+      "secondary_py_symbols": [
+        "_norm_ws"
+      ]
+    },
+    {
+      "code": "AF-NO-PROBLEM",
+      "stage": "4",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "HOLE-C taxonomy (now wired). A converting deck names no PROBLEM/villain beat in slides_copy.md (SOP-ENGINE-00 / SOP-PITCH-06 persuasion-beat taxonomy). Generous synonym matching; DEFERS without doctrine/pitch/copy.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_persuasion_beats",
+      "secondary_py_symbols": [
+        "PERSUASION_BEAT_MARKERS"
+      ]
+    },
+    {
+      "code": "AF-NO-CHOICE",
+      "stage": "4",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "HOLE-C taxonomy (now wired). A converting deck presents no explicit CHOICE/decision beat. DEFERS without doctrine/pitch/copy.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_persuasion_beats",
+      "secondary_py_symbols": [
+        "PERSUASION_BEAT_MARKERS"
+      ]
+    },
+    {
+      "code": "AF-NO-FORK",
+      "stage": "4",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "HOLE-C taxonomy (now wired). A converting deck draws no FORK (two-paths) beat. DEFERS without doctrine/pitch/copy.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_persuasion_beats",
+      "secondary_py_symbols": [
+        "PERSUASION_BEAT_MARKERS"
+      ]
+    },
+    {
+      "code": "AF-NO-COMPARISON",
+      "stage": "4",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "HOLE-C taxonomy (now wired). A converting deck draws no COMPARISON (old-way vs new-way) beat. DEFERS without doctrine/pitch/copy.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_persuasion_beats",
+      "secondary_py_symbols": [
+        "PERSUASION_BEAT_MARKERS"
+      ]
+    },
+    {
+      "code": "AF-NO-MEASURABLE-RESULTS",
+      "stage": "4",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "HOLE-C taxonomy (now wired). A converting deck cites no MEASURABLE RESULT (a number / %% / ROI). DEFERS without doctrine/pitch/copy.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_persuasion_beats",
+      "secondary_py_symbols": [
+        "PERSUASION_BEAT_MARKERS"
+      ]
+    },
+    {
+      "code": "AF-NO-EXPERT-PROOF",
+      "stage": "4",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "HOLE-C taxonomy (now wired). A converting deck carries no EXPERT/third-party PROOF beat (study / case study / testimonial). DEFERS without doctrine/pitch/copy.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_persuasion_beats",
+      "secondary_py_symbols": [
+        "PERSUASION_BEAT_MARKERS"
+      ]
+    },
+    {
+      "code": "AF-NO-BEFORE-AFTER",
+      "stage": "4",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "HOLE-C taxonomy (now wired). A converting deck shows no BEFORE/AFTER transformation beat. DEFERS without doctrine/pitch/copy.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_persuasion_beats",
+      "secondary_py_symbols": [
+        "PERSUASION_BEAT_MARKERS"
+      ]
+    },
+    {
+      "code": "AF-STYLE-UNPICKED",
+      "stage": "4.85",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the 9 style samples (3 variants x 3 representative slides) were rendered but the OWNER has not picked a winning variant (working/copy/style_preview_choice.json must carry owner_approved:true + chosen_variant). The full deck must NOT render until the owner picks A/B/C via their OWN gateway — never the operator chat. Waivable only by a logged owner_skip_approval. DEFERS until the style samples manifest exists.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_style_preview",
+      "secondary_py_symbols": [
+        "STYLE_SAMPLES_MANIFEST_REL",
+        "STYLE_CHOICE_REL",
+        "_owner_skip_approved"
+      ]
+    },
+    {
+      "code": "AF-STYLE-DOUBLECHARGE",
+      "stage": "4.85/4.9",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the winning style variant's 3 representative slide renders are not LOCKED + reused (style_preview_choice.locked_renders missing or its files absent) — kie would be charged twice for the already-approved samples. The approved samples must be carried forward, never re-dispatched. Waivable only by a logged owner_skip_approval.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_style_preview",
+      "secondary_py_symbols": [
+        "STYLE_CHOICE_REL"
+      ]
+    },
+    {
+      "code": "AF-PRIORITY-SHIFT",
+      "stage": "7.5",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the framework's 14-item pre-output ship gate failed at P-SHIFT-QC (order 7.5 — the ONLY phase where copy + design + rendered images coexist). Item 0 is the North Star: the #1 job is to hold attention. The composite reuses the shift-left gates (mode / priority-stack / shift / rerank / trigger / hedge / peak-end / salience-apex) plus the spec's one-promise/one-wow/one-demonstration anchors, writes working/qc/priority_shift_report.json (one row per item + evidence), and refuses ship until all 14 PASS. Waivable only by a logged owner_skip_approval. DEFERS pre-render / without doctrine (P161/P155).",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_priority_shift_ledger",
+      "secondary_py_symbols": [
+        "PRIORITY_SHIFT_REPORT_REL",
+        "_owner_skip_approved"
+      ]
+    },
+    {
+      "code": "AF-NARRATIVE-HARMONY",
+      "stage": "1Q",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "HOLE-A (register the live-but-unregistered code). The writing arc is out of canonical order — an out-of-order present pair across HOOK -> VILLAIN -> FELT_STAKES -> PROMISE -> PRICE -> RECAP. Emitted by intelligence_engines_check.check_narrative_harmony (called inside check_copy) and consumed by run_signature_deck.py, but absent from the registry until now. Registered via all four SOP-SLIDE-06 lockstep steps.",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/intelligence_engines_check.py::check_copy",
+      "sop_ref": "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md#intelligence-engines"
+    },
+    {
+      "code": "AF-NO-HOOK-REFRAIN",
+      "stage": "1Q",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "HOLE-B (emitted-but-unregistered, now registered). The deck plants no recurring Hook refrain across the copy (the Hook intelligence engine, copy half). Emitted by intelligence_engines_check.check_copy.",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/intelligence_engines_check.py::check_copy",
+      "sop_ref": "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md#intelligence-engines"
+    },
+    {
+      "code": "AF-NO-RECAP",
+      "stage": "1Q",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "HOLE-B (emitted-but-unregistered, now registered). The deck carries no RECAP beat near the close (the Recap intelligence engine). Emitted by intelligence_engines_check.check_copy.",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/intelligence_engines_check.py::check_copy",
+      "sop_ref": "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md#intelligence-engines"
+    },
+    {
+      "code": "AF-HOOK-IMG-MISSING",
+      "stage": "Prompt-QC",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "HOLE-B (emitted-but-unregistered, now registered). No dedicated hook-bearing image prompt carries the Hook refrain (the Hook intelligence engine, prompt half). Emitted by intelligence_engines_check.check_prompts.",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/intelligence_engines_check.py::check_prompts",
+      "sop_ref": "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md#intelligence-engines"
+    },
+    {
+      "code": "AF-HOOK-OVERSTAMP",
+      "stage": "1Q",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "HOLE-B (emitted-but-unregistered, now registered). The Hook refrain is over-stamped on a slide (wallpapered beyond the sanctioned cadence). Emitted by intelligence_engines_check.check_copy.",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/intelligence_engines_check.py::check_copy",
+      "sop_ref": "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md#intelligence-engines"
+    },
+    {
+      "code": "AF-PRICE-BEFORE-PROMISE",
+      "stage": "1Q/COPY-QC",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "HOLE-B (emitted-but-unregistered, now registered). A PRICE/ladder beat appears before any PROMISE beat — the promise must precede the price (price only matters in the absence of value). Emitted by pitch_engines_check.chk_promise_before_price via check_copy.",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "check_script": "scripts/pitch_engines_check.py::check_copy",
+      "sop_ref": "SOP-PITCH-06-PITCH-ENGINES.md#1.1"
     }
   ],
   "roles": [
     {
       "id": "brainstorming-buddy-presentations",
       "owns_phase": null
+    },
+    {
+      "id": "attention-content-strategist",
+      "owns_phase": "P0B-PRIORITY"
     },
     {
       "id": "brand-steward",

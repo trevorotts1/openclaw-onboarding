@@ -1,0 +1,14 @@
+{
+  "slug": "miller-marketing-made-simple",
+  "author": "Donald Miller",
+  "coauthor": "Dr. J.J. Peterson",
+  "book": "Marketing Made Simple — A Step-by-Step StoryBrand Guide for Any Business",
+  "source_type": "pdf",
+  "source_path": "~/Downloads/Marketing Made Simple  A Step-by-Step StoryBrand Guide for Any Business (Donald Miller) (z-library.sk, 1lib.sk, z-lib.sk).pdf",
+  "extracted_words": 42605,
+  "pipeline": "extraction->analysis->synthesis (grounded directly in extracted PDF text via pdftotext -layout)",
+  "two_sided": true,
+  "modes": ["coaching", "leadership", "hybrid"],
+  "generated": "2026-06-28",
+  "notes": "Execution companion to Building a StoryBrand. Owns the FUNNEL/EXECUTION layer (five-piece sales funnel + six-meeting build process); defers the MESSAGE layer to miller-building-storybrand. Recipes inlined; no separate appendix produced."
+}

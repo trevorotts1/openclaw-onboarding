@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # tests/unit/provision-idempotency.test.sh
 # ─────────────────────────────────────────────────────────────────────────────
-# Acceptance test for the v14.27.2 canonical persona-index idempotency gate.
+# Acceptance test for the v15.1.0 canonical persona-index idempotency gate.
 #
 # Proves that provision_persona_index() RE-PROVISIONS a non-canonical partial
 # index (the 6260 / 7615 / 9456-row locally-re-embedded indexes the OLD
 # "has section_number column ⇒ done" gate wrongly SKIPPED) while genuinely
-# SKIPPING the canonical 4413-row v2.1.0 asset — and that the live-operator
+# SKIPPING the canonical 4574-row v2.2.0 asset — and that the live-operator
 # index (content-canonical but unstamped sentinel) self-heals instead of
 # triggering a 90MB re-download (furnace guard).
 #
 # Also proves reconcile_persona_assets() converges a drifted 40-persona box to
-# the canonical 54 personas + canonical persona-categories.json md5.
+# the canonical 65 personas + canonical persona-categories.json md5.
 #
 # Fully offline: PROVISION_DRY_RUN=1 stops the gate before any network I/O.
 # Requires python3 with the stdlib sqlite3 module (present on ubuntu-latest).
@@ -25,7 +25,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HELPER="$REPO_ROOT/shared-utils/provision-persona-index.sh"
 MANIFEST="$REPO_ROOT/shared-utils/prebuilt-index/INDEX-MANIFEST.json"
 SK22="$REPO_ROOT/22-book-to-persona-coaching-leadership-system"
-CANON_CAT_MD5="c544561074e6e1d65aed1840b6f03b8c"
+CANON_CAT_MD5="e7b29db3e82b056a484cba2114fcf77f"
 
 PASS=0
 FAIL=0
@@ -51,54 +51,54 @@ p, n = sys.argv[1], int(sys.argv[2])
 c = sqlite3.connect(p)
 c.execute("CREATE TABLE embeddings(id INTEGER, file_path TEXT, section_number INTEGER, mode TEXT)")
 c.executemany("INSERT INTO embeddings VALUES(?,?,?,?)",
-              [(i, f"/x/personas/p{i % 54}/f.md", 3, "both") for i in range(n)])
+              [(i, f"/x/personas/p{i % 65}/f.md", 3, "both") for i in range(n)])
 c.commit(); c.close()
 PY
 }
-_mk_54_dirs() {
+_mk_65_dirs() {
     mkdir -p "$1/personas"
-    for i in $(seq 1 54); do mkdir -p "$1/personas/persona-$i"; done
+    for i in $(seq 1 65); do mkdir -p "$1/personas/persona-$i"; done
 }
 
 export PROVISION_DRY_RUN=1
 
-# ─── (1) Non-canonical 6260-row index (sentinel v2.1.0, 54 dirs) → RE-PROVISION
+# ─── (1) Non-canonical 6260-row index (sentinel v2.2.0, 65 dirs) → RE-PROVISION
 echo "--- (1) non-canonical 6260-row index re-provisions ---"
 D1="$WORK/box-6260"; mkdir -p "$D1"
 _mk_index "$D1/gemini-index.sqlite" 6260
-printf 'prebuilt-index-v2.1.0\n' > "$D1/.prebuilt-index-version"
-_mk_54_dirs "$D1"
+printf 'prebuilt-index-v2.2.0\n' > "$D1/.prebuilt-index-version"
+_mk_65_dirs "$D1"
 OUT1="$(provision_persona_index "$MANIFEST" "$D1" 2>&1)"
 echo "$OUT1" | grep -q "NEEDS (re)provision" \
     && pass "1a: 6260-row index triggers NEEDS (re)provision" \
     || fail "1a: 6260-row index did NOT trigger re-provision (out: $OUT1)"
-echo "$OUT1" | grep -q "chunk-count:6260!=4413" \
-    && pass "1b: reason is chunk-count:6260!=4413" \
+echo "$OUT1" | grep -q "chunk-count:6260!=4574" \
+    && pass "1b: reason is chunk-count:6260!=4574" \
     || fail "1b: chunk-count mismatch reason missing (out: $OUT1)"
 echo "$OUT1" | grep -q "skipping download" \
     && fail "1c: 6260-row index wrongly skipped" \
     || pass "1c: 6260-row index did NOT skip"
 
-# ─── (2) Canonical 4413-row index + sentinel + 54 dirs → SKIP
-echo "--- (2) canonical 4413-row index skips ---"
+# ─── (2) Canonical 4574-row index + sentinel + 65 dirs → SKIP
+echo "--- (2) canonical 4574-row index skips ---"
 D2="$WORK/box-canon"; mkdir -p "$D2"
-_mk_index "$D2/gemini-index.sqlite" 4413
-printf 'prebuilt-index-v2.1.0\n' > "$D2/.prebuilt-index-version"
-_mk_54_dirs "$D2"
+_mk_index "$D2/gemini-index.sqlite" 4574
+printf 'prebuilt-index-v2.2.0\n' > "$D2/.prebuilt-index-version"
+_mk_65_dirs "$D2"
 OUT2="$(provision_persona_index "$MANIFEST" "$D2" 2>&1)"
 echo "$OUT2" | grep -q "already canonical" \
-    && pass "2a: canonical 4413-row index reports already canonical" \
+    && pass "2a: canonical 4574-row index reports already canonical" \
     || fail "2a: canonical index not recognized (out: $OUT2)"
 echo "$OUT2" | grep -q "NEEDS (re)provision" \
     && fail "2b: canonical index wrongly flagged for re-provision" \
     || pass "2b: canonical index NOT re-provisioned"
 
-# ─── (3) Live-operator-like: canonical 4413 + EMPTY sentinel + 54 dirs → self-heal+SKIP
+# ─── (3) Live-operator-like: canonical 4574 + EMPTY sentinel + 65 dirs → self-heal+SKIP
 echo "--- (3) operator-like index self-heals sentinel, skips download ---"
 D3="$WORK/box-operator"; mkdir -p "$D3"
-_mk_index "$D3/gemini-index.sqlite" 4413
+_mk_index "$D3/gemini-index.sqlite" 4574
 : > "$D3/.prebuilt-index-version"   # empty sentinel (built locally, never stamped)
-_mk_54_dirs "$D3"
+_mk_65_dirs "$D3"
 OUT3="$(provision_persona_index "$MANIFEST" "$D3" 2>&1)"
 echo "$OUT3" | grep -q "self-heal" \
     && pass "3a: empty-sentinel canonical index self-heals" \
@@ -107,8 +107,8 @@ echo "$OUT3" | grep -q "would download" \
     && fail "3b: operator index wrongly scheduled a download (furnace)" \
     || pass "3b: operator index did NOT schedule a download"
 STAMP="$(tr -d '[:space:]' < "$D3/.prebuilt-index-version")"
-[ "$STAMP" = "prebuilt-index-v2.1.0" ] \
-    && pass "3c: sentinel stamped to prebuilt-index-v2.1.0" \
+[ "$STAMP" = "prebuilt-index-v2.2.0" ] \
+    && pass "3c: sentinel stamped to prebuilt-index-v2.2.0" \
     || fail "3c: sentinel not stamped (got '$STAMP')"
 
 # ─── (4) Missing 'mode' column → RE-PROVISION
@@ -118,18 +118,18 @@ python3 - "$D4/gemini-index.sqlite" <<'PY'
 import sqlite3, sys
 c = sqlite3.connect(sys.argv[1])
 c.execute("CREATE TABLE embeddings(id INTEGER, section_number INTEGER)")
-c.executemany("INSERT INTO embeddings VALUES(?,?)", [(i, 3) for i in range(4413)])
+c.executemany("INSERT INTO embeddings VALUES(?,?)", [(i, 3) for i in range(4574)])
 c.commit(); c.close()
 PY
-_mk_54_dirs "$D4"
-printf 'prebuilt-index-v2.1.0\n' > "$D4/.prebuilt-index-version"
+_mk_65_dirs "$D4"
+printf 'prebuilt-index-v2.2.0\n' > "$D4/.prebuilt-index-version"
 OUT4="$(provision_persona_index "$MANIFEST" "$D4" 2>&1)"
 echo "$OUT4" | grep -q "missing-column:mode" \
     && pass "4a: missing 'mode' column triggers re-provision" \
     || fail "4a: missing mode column not caught (out: $OUT4)"
 
-# ─── (5) reconcile_persona_assets converges 40 → 54 + canonical categories md5
-echo "--- (5) reconcile converges drifted 40-persona box to canonical 54 ---"
+# ─── (5) reconcile_persona_assets converges 40 → 65 + canonical categories md5
+echo "--- (5) reconcile converges drifted 40-persona box to canonical 65 ---"
 if [ ! -d "$SK22/personas" ] || [ ! -f "$SK22/persona-categories.json" ]; then
     fail "5: Skill-22 source missing — cannot test reconcile"
 else
@@ -151,8 +151,8 @@ else
     DATA_MD5="$(_pidx_md5 "$CDB/persona-categories.json")"
     LEG_MD5="$(_pidx_md5 "$WS/coaching-personas/persona-categories.json")"
 
-    [ "$DIRS" = "54" ] && pass "5a: persona dirs converged 40 → 54" || fail "5a: dirs=$DIRS (expected 54)"
-    [ "$NONEMPTY" = "54" ] && pass "5b: 54 non-empty blueprints on disk" || fail "5b: non-empty=$NONEMPTY"
+    [ "$DIRS" = "65" ] && pass "5a: persona dirs converged 40 → 65" || fail "5a: dirs=$DIRS (expected 65)"
+    [ "$NONEMPTY" = "65" ] && pass "5b: 65 non-empty blueprints on disk" || fail "5b: non-empty=$NONEMPTY"
     [ "$STALE" = "0" ] && pass "5c: stale placeholder blueprints overwritten" || fail "5c: $STALE stale remain"
     [ "$DATA_MD5" = "$CANON_CAT_MD5" ] && pass "5d: data/ categories md5 == canonical" || fail "5d: data md5=$DATA_MD5"
     [ "$LEG_MD5" = "$CANON_CAT_MD5" ] && pass "5e: legacy categories md5 == canonical" || fail "5e: legacy md5=$LEG_MD5"

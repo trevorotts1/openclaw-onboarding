@@ -887,7 +887,16 @@
       "appendix": "personas/brunson-network-marketing-secrets/PLAYBOOK-APPENDIX.md",
       "appendix_status": "COMPLETE",
       "appendix_richness": "RICH",
-      "appendix_sections": ["A", "B", "C", "D", "E", "F", "G", "H"],
+      "appendix_sections": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H"
+      ],
       "appendix_notes": "RICH on funnel/page recipes, frameworks, and say-this scripts; THIN on email body/subject copy and standalone headline breadth (deferred by the book to Expert Secrets); ABSENT on paid-ad templates."
     },
     "edwards-copywriting-secrets": {
@@ -1168,7 +1177,443 @@
         ]
       },
       "needs_tags": false
+    },
+    "cancel-conversational-marketing": {
+      "author": "David Cancel (with Dave Gerhardt)",
+      "book": "Conversational Marketing",
+      "domain": [
+        "marketing",
+        "sales",
+        "communication"
+      ],
+      "perspective": [],
+      "custom": [
+        "conversational-marketing",
+        "live-chat-messaging",
+        "chatbots",
+        "lead-qualification",
+        "capture-qualify-connect",
+        "conversation-qualified-leads",
+        "real-time-buying-experience",
+        "b2b-saas-demand-gen",
+        "sales-development"
+      ],
+      "source_type": "epub",
+      "added": "2026-06-28",
+      "blueprint": "personas/cancel-conversational-marketing/persona-blueprint.md",
+      "two_sided": true,
+      "modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "appendix": null,
+      "appendix_status": "INLINED",
+      "needs_tags": false
+    },
+    "wickman-rocket-fuel": {
+      "author": "Gino Wickman & Mark C. Winters",
+      "book": "Rocket Fuel",
+      "domain": [
+        "leadership",
+        "operations",
+        "strategy-innovation",
+        "coaching",
+        "productivity-systems"
+      ],
+      "perspective": [],
+      "custom": [
+        "visionary-integrator",
+        "accountability-chart",
+        "eos",
+        "level-10-meeting",
+        "scorecard",
+        "ninety-day-rocks",
+        "core-focus",
+        "delegate-and-elevate",
+        "second-in-command",
+        "organizational-structure"
+      ],
+      "added": "2026-06-28",
+      "blueprint": "personas/wickman-rocket-fuel/persona-blueprint.md",
+      "two_sided": true,
+      "modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "appendix": null,
+      "appendix_status": "INLINED",
+      "needs_tags": false
+    },
+    "ries-lean-startup": {
+      "author": "Eric Ries",
+      "book": "The Lean Startup",
+      "domain": [
+        "strategy-innovation",
+        "operations",
+        "leadership"
+      ],
+      "perspective": [],
+      "custom": [
+        "validated-learning",
+        "minimum-viable-product",
+        "build-measure-learn",
+        "product-experimentation"
+      ],
+      "added": "2026-06-28",
+      "blueprint": "personas/ries-lean-startup/persona-blueprint.md",
+      "two_sided": true,
+      "modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "appendix": null,
+      "appendix_status": "INLINED",
+      "needs_tags": false
+    },
+    "kaufman-personal-mba": {
+      "author": "Josh Kaufman",
+      "book": "The Personal MBA",
+      "domain": [
+        "strategy-innovation",
+        "marketing",
+        "sales",
+        "finance",
+        "operations",
+        "leadership"
+      ],
+      "perspective": [],
+      "custom": [
+        "mental-models",
+        "business-fundamentals",
+        "value-creation",
+        "market-validation",
+        "systems-thinking",
+        "generalist-business"
+      ],
+      "added": "2026-06-28",
+      "blueprint": "personas/kaufman-personal-mba/persona-blueprint.md",
+      "two_sided": true,
+      "modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "appendix": null,
+      "appendix_status": "INLINED",
+      "needs_tags": false
+    },
+    "budelmann-brand-identity-essentials": {
+      "author": "Kevin Budelmann, Yang Kim, Curt Wozniak",
+      "book": "Brand Identity Essentials: 100 Principles for Designing Logos and Building Brands",
+      "domain": [
+        "marketing",
+        "communication",
+        "strategy-innovation",
+        "visual-communication",
+        "visual-storytelling"
+      ],
+      "perspective": [],
+      "custom": [
+        "brand-identity",
+        "logo-design",
+        "visual-identity",
+        "identity-system",
+        "brand-strategy",
+        "positioning",
+        "brand-promise",
+        "brand-consistency",
+        "touchpoint-mapping",
+        "customer-experience",
+        "brand-bible",
+        "brand-guidelines",
+        "application-rules",
+        "design-process",
+        "brand-voice",
+        "editorial-style",
+        "naming-taglines",
+        "brand-psychology",
+        "denotation-connotation",
+        "authenticity",
+        "rebrand",
+        "design-system",
+        "prototyping",
+        "simplicity"
+      ],
+      "source_type": "pdf",
+      "added": "2026-06-28",
+      "blueprint": "personas/budelmann-brand-identity-essentials/persona-blueprint.md",
+      "two_sided": true,
+      "modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "appendix": null,
+      "appendix_status": "NONE",
+      "needs_tags": false
+    },
+    "opara-color-works": {
+      "author": "Eddie Opara & John Cantwell",
+      "book": "Color Works — Best Practices for Graphic Designers",
+      "domain": [
+        "visual-communication",
+        "visual-storytelling",
+        "communication",
+        "marketing",
+        "strategy-innovation"
+      ],
+      "perspective": [],
+      "custom": [
+        "six-lens-color-system",
+        "chromatophobia",
+        "color-as-language",
+        "dominant-before-accent",
+        "color-reasoning",
+        "brand-color",
+        "color-palette",
+        "itten-color-wheel",
+        "munsell-system",
+        "additive-subtractive",
+        "rgb-cmyk-pantone",
+        "color-relationships",
+        "analogous-triadic-complementary",
+        "cultural-color-meaning",
+        "color-contrast",
+        "color-accessibility",
+        "data-visualization-color",
+        "wayfinding-color",
+        "packaging-color",
+        "print-color-spec",
+        "screen-vs-print",
+        "color-calibration",
+        "color-subjectivity",
+        "color-theory",
+        "graphic-design",
+        "branding",
+        "visual-design",
+        "print-production"
+      ],
+      "source_type": "pdf",
+      "added": "2026-06-28",
+      "blueprint": "personas/opara-color-works/persona-blueprint.md",
+      "two_sided": true,
+      "interaction_modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "coaching_mode": "BUILT",
+      "task_mode": "BUILT",
+      "appendix": null,
+      "appendix_status": "INLINED",
+      "needs_tags": false,
+      "summary": "Eddie Opara (Pentagram) & John Cantwell's Color Works Six-Lens System: Context to Foundation, 'color is a language to master, never the goal.' Coaches founders out of chromatophobia (fear of color) to reason in and defend color choices; governs Graphics/Brand/Presentations/Web-UI/Video/Research/Print-Production to a context-first, reason-per-color, dominant-before-accent, right-medium-spec standard grounded in Itten/Munsell color science.",
+      "_domain_note": "Source-declared domains (color-theory, graphic-design, branding, visual-design, print-production) are not in the controlled domainTags vocabulary; mapped to visual-communication/visual-storytelling/communication/marketing/strategy-innovation for matcher Stage-B routing (design task-category + graphics/video depts), originals retained as custom[] specialist tags."
+    },
+    "walker-launch": {
+      "author": "Jeff Walker",
+      "book": "Launch (Updated & Expanded Edition)",
+      "persona_name": "The Product Launch Formula Architect",
+      "domain": [
+        "marketing",
+        "sales",
+        "strategy-innovation",
+        "copywriting"
+      ],
+      "perspective": [],
+      "custom": [
+        "product-launch-formula",
+        "plf",
+        "sequenced-launch",
+        "sideways-sales-letter",
+        "prelaunch-content",
+        "pre-prelaunch",
+        "open-cart",
+        "mental-triggers",
+        "seed-launch",
+        "jv-launch",
+        "internal-launch",
+        "live-launch",
+        "scarcity",
+        "anticipation",
+        "email-list-building",
+        "course-launch",
+        "circle-of-life",
+        "hope-marketing"
+      ],
+      "source_type": "book-pdf",
+      "added": "2026-06-28",
+      "blueprint": "personas/walker-launch/persona-blueprint.md",
+      "two_sided": true,
+      "interaction_modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "coaching_mode": "BUILT",
+      "task_mode": "BUILT",
+      "appendix": null,
+      "appendix_status": "INLINED",
+      "needs_tags": false,
+      "summary": "Jeff Walker's Product Launch Formula: a launch is a sequence, not a send. Coaches creators/experts to replace 'Hope Marketing' with a designed runway — Pre-Prelaunch (shot across the bow + survey), Prelaunch (the Sideways Sales Letter delivered as 3 pieces of value-first content on the Opportunity > Transformation > Ownership arc), Open Cart as a real event with real scarcity, and Post-Launch feeding the next launch (Circle of Life), with the nine Mental Triggers embedded inside stories. Governs Marketing/Launch-Operations/Email-Copy/Content-Video/Web-Dev/Social/Partnership agents. Distinct from funnel-build (Brunson) and offer-design (Hormozi) by owning the sequenced go-to-market event layer."
+    },
+    "miller-marketing-made-simple": {
+      "author": "Donald Miller",
+      "coauthor": "Dr. J.J. Peterson",
+      "book": "Marketing Made Simple",
+      "domain": [
+        "marketing",
+        "sales",
+        "copywriting"
+      ],
+      "perspective": [],
+      "custom": [
+        "sales-funnel",
+        "one-liner",
+        "website-wireframe",
+        "grunt-test",
+        "lead-generator",
+        "nurture-email",
+        "sales-email",
+        "email-marketing",
+        "marketing-execution",
+        "three-stages-relationship"
+      ],
+      "source_type": "pdf",
+      "added": "2026-06-28",
+      "blueprint": "personas/miller-marketing-made-simple/persona-blueprint.md",
+      "two_sided": true,
+      "modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "appendix": null,
+      "appendix_status": "INLINED",
+      "appendix_richness": "RICH",
+      "needs_tags": false
+    },
+    "suby-sell-like-crazy": {
+      "author": "Sabri Suby",
+      "book": "Sell Like Crazy",
+      "persona_name": "The Sell Like Crazy Demand-Generation Strategist",
+      "domain": [
+        "marketing",
+        "sales",
+        "copywriting",
+        "strategy-innovation"
+      ],
+      "perspective": [],
+      "custom": [
+        "dream-buyer",
+        "halo-strategy",
+        "larger-market-formula",
+        "godfather-offer",
+        "irresistible-offer",
+        "hvco",
+        "high-value-content-offer",
+        "value-based-marketing",
+        "magic-lantern-technique",
+        "sell-like-a-doctor",
+        "lead-generation",
+        "sales-funnels",
+        "email-marketing",
+        "unit-economics",
+        "direct-response"
+      ],
+      "source_type": "pdf",
+      "added": "2026-06-28",
+      "blueprint": "personas/suby-sell-like-crazy/persona-blueprint.md",
+      "two_sided": true,
+      "modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "coaching_mode": "BUILT",
+      "task_mode": "BUILT",
+      "appendix": null,
+      "appendix_status": "INLINED",
+      "needs_tags": false
+    },
+    "erikson-surrounded-by-idiots": {
+      "author": "Thomas Erikson",
+      "book": "Surrounded by Idiots",
+      "domain": [
+        "communication",
+        "leadership",
+        "sales",
+        "personal-development",
+        "coaching"
+      ],
+      "perspective": [],
+      "custom": [
+        "disc",
+        "disa",
+        "four-color-model",
+        "behavioral-profiling",
+        "personality-types",
+        "red-yellow-green-blue",
+        "audience-adaptation"
+      ],
+      "added": "2026-06-28",
+      "blueprint": "personas/erikson-surrounded-by-idiots/persona-blueprint.md",
+      "two_sided": true,
+      "modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "appendix": null,
+      "appendix_status": "INLINED",
+      "needs_tags": false
+    },
+    "gitomer-sales-bible": {
+      "author": "Jeffrey Gitomer",
+      "book": "The Sales Bible: The Ultimate Sales Resource (Revised Edition)",
+      "domain": [
+        "sales",
+        "communication",
+        "marketing",
+        "copywriting",
+        "mindset"
+      ],
+      "perspective": [],
+      "custom": [
+        "relationship-selling",
+        "value-first-selling",
+        "follow-up-persistence",
+        "cold-outreach",
+        "sales-letter-copy",
+        "sales-script",
+        "networking",
+        "customer-retention",
+        "referral-selling",
+        "sales-mindset",
+        "attitude-discipline",
+        "hot-button-discovery",
+        "top-down-selling",
+        "closing"
+      ],
+      "source_type": "pdf",
+      "added": "2026-06-28",
+      "blueprint": "personas/gitomer-sales-bible/persona-blueprint.md",
+      "two_sided": true,
+      "modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "appendix": null,
+      "appendix_status": "NONE",
+      "appendix_richness": "SELF_CONTAINED",
+      "needs_tags": false,
+      "_perspective_note": "perspective intentionally empty: no controlled-vocab demographic-experience tag applies to a general B2B/B2C relationship-selling methodology. The motivational/attitude and field-selling angle is captured in custom[] (sales-mindset, attitude-discipline), not fabricated into a perspective tag.",
+      "_source_note": "Source PDF was a scanned image-only file (Adobe Acrobat Image Conversion, no text layer); ingested via pdftoppm 200dpi render + tesseract OCR across 226 page images before synthesis."
     }
   },
-  "lastUpdated": "2026-06-27"
+  "lastUpdated": "2026-06-28"
 }

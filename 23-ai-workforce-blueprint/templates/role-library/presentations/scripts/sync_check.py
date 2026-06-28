@@ -119,6 +119,13 @@ MASTER_RULESET = _first_existing([
 
 AF_RE = re.compile(r'AF-[A-Z0-9]+(?:-[A-Z0-9]+)*')
 
+# HOLE B — every AF code a registered QC-checker script EMITS must be a registered
+# manifest code. We scan emission CONTEXT only (`"code": "AF-..."` dicts), never bare
+# docstring/comment mentions, so a checker's prose taxonomy never false-positives. This
+# is what would have caught AF-NARRATIVE-HARMONY (live in intelligence_engines_check.py,
+# absent from the manifest — HOLE A) at lockstep time.
+CODE_EMIT_RE = re.compile(r"""["']code["']\s*:\s*["'](AF-[A-Z0-9]+(?:-[A-Z0-9]+)*)["']""")
+
 # The canonical deliverable key set (order-independent). Any drift between the
 # manifest deliverables_required list and build_deck.py DELIVERABLES_REQUIRED
 # is an auto-fail (check D1/D2 below).
@@ -280,6 +287,35 @@ def parse_master_ruleset_section5():
 # ---------------------------------------------------------------------------
 # 4. Scan role-library + sops dirs
 # ---------------------------------------------------------------------------
+def parse_check_scripts(manifest):
+    """HOLE B — collect every script named in an autofails[].check_script, scan each
+    for the AF codes it EMITS (`"code": "AF-..."` dicts), and return
+    {emitted_code: [script_rel, ...]}. The check_script form is 'scripts/FILE.py::func';
+    the file is resolved relative to PRES_DIR (the same layout as a deployed client box).
+    A named script that is absent on disk is skipped (it is the manifest's own A-direction
+    job to keep check_script pointed at a real file)."""
+    emitted = {}
+    seen_files = set()
+    for a in manifest.get("autofails", []):
+        cs = a.get("check_script")
+        if not cs or not isinstance(cs, str):
+            continue
+        rel = cs.split("::", 1)[0].strip()
+        if not rel or rel in seen_files:
+            continue
+        seen_files.add(rel)
+        path = (PRES_DIR / rel)
+        if not path.exists():
+            continue
+        try:
+            src = path.read_text()
+        except Exception:  # noqa: BLE001
+            continue
+        for code in CODE_EMIT_RE.findall(src):
+            emitted.setdefault(code, set()).add(rel)
+    return {k: sorted(v) for k, v in emitted.items()}
+
+
 def scan_roles_and_sops():
     if not PRES_DIR.is_dir():
         _fatal(f"presentations role-library dir not found: {PRES_DIR}")
@@ -316,6 +352,7 @@ EXTENSION_STEP = {
     "A8": "step (i)+(ii) — point emits.checks at a real constant/function in build_deck.py (or remove the entry)",
     "B1": "step (i)+(ii) — declare the phase that uses this checker, or remove the checker",
     "B2": "step (i)+(iii) — register the AF code in PIPELINE-MANIFEST.autofails (and the ruleset)",
+    "C1": "step (i)+(iii) — a QC-checker script EMITS this AF code but the manifest does not declare it; register it in PIPELINE-MANIFEST.autofails (+ the ruleset), or stop emitting it",
     "D1": "step (ii) — add the missing deliverable key to DELIVERABLES_REQUIRED in build_deck.py",
     "D2": "step (i) — add the missing deliverable key to deliverables_required in PIPELINE-MANIFEST.json",
 }
@@ -563,6 +600,20 @@ def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
                 f"PIPELINE-MANIFEST.autofails. A renderer must not cite an unregistered "
                 f"AF code. {EXTENSION_STEP['B2']}.")
 
+    # -------- (C) CHECKER-SCRIPT-AHEAD-OF-STACK (HOLE B) --------
+    # C1 every AF code EMITTED by a registered check_script must be a registered manifest
+    # code. sync_check used to scan ONLY build_deck.py, so a code emitted by
+    # pitch_engines_check.py / intelligence_engines_check.py could fail a deck while being
+    # absent from the registry (exactly how AF-NARRATIVE-HARMONY went undetected — HOLE A).
+    emitted = parse_check_scripts(manifest)
+    for code in sorted(emitted):
+        if code not in manifest_af_codes:
+            srcs = ", ".join(emitted[code])
+            add("C1", code,
+                f"checker script(s) [{srcs}] EMIT {code} (a `\"code\": \"{code}\"` problem "
+                f"dict) but it is absent from PIPELINE-MANIFEST.autofails — a deck can be "
+                f"failed by a code the registry does not declare. {EXTENSION_STEP['C1']}.")
+
     # -------- (D) DELIVERABLE-SET DRIFT --------
     # D1/D2: the key set in manifest.deliverables_required must exactly match
     # the key set in build_deck.py's DELIVERABLES_REQUIRED list.
@@ -606,6 +657,7 @@ def report_human(drift, manifest, explain):
         return
     a = [d for d in drift if d["check"].startswith("A")]
     b = [d for d in drift if d["check"].startswith("B")]
+    c = [d for d in drift if d["check"].startswith("C")]
     v = [d for d in drift if d["check"].startswith("V")]
     print("=== sync_check: DRIFT DETECTED — LOCKSTEP BROKEN (AF-SYNC) ===", file=sys.stderr)
     if a:
@@ -617,6 +669,11 @@ def report_human(drift, manifest, explain):
         print("\n(B) CODE-AHEAD-OF-STACK — build_deck.py moved; the manifest/ruleset "
               "did not:", file=sys.stderr)
         for d in b:
+            print(f"  DRIFT {d['check']}: [{d['item']}] {d['detail']}", file=sys.stderr)
+    if c:
+        print("\n(C) CHECKER-SCRIPT-AHEAD-OF-STACK — a registered QC-checker script EMITS "
+              "an AF code the manifest does not declare (HOLE B):", file=sys.stderr)
+        for d in c:
             print(f"  DRIFT {d['check']}: [{d['item']}] {d['detail']}", file=sys.stderr)
     if v:
         print("\n(V) VALUE DRIFT — the names match but the NUMBERS do not (the cited "
