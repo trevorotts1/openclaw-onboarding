@@ -7,16 +7,18 @@
 # every delivery dimension that all prior PRs (#398-#411) were supposed to
 # close. A dimension missing from either path is a regression.
 #
-# Dimensions checked (9 total):
+# Dimensions checked (10 total):
 #   D1  Section-tagged 54-persona index  provision_persona_index
 #   D2  GHL funnel catalog wiring        wire_ghl_funnel_catalog
 #   D3  Dept agent registration          materialize-dept-agents
-#   D4  Routing: agentToAgent            agentToAgent
-#   D5  Routing: allowAgents             allowAgents
-#   D6  Routing: visibility              tools.sessions.visibility
+#   D4  Routing keys applied             apply-routing-fix (runtime script;
+#       agentToAgent/allowAgents/visibility are NOT written verbatim in
+#       install.sh or update-skills.sh — apply-routing-fix.sh applies them
+#       at runtime. D4 verifies that script is invoked on BOTH paths.)
 #   D7  Heartbeat furnace protection     ensure-heartbeat-defaults
 #   D8  Operator account separation      configure-operator-telegram
 #   D9  No hardcoded wrong launchd label (no com.openclaw.gateway)
+#   D10 WIRING-ASSERT present on update path
 #
 # Note: shared-utils and universal-sops are delivered via file-copy blocks
 # that are harder to grep for uniquely; they are covered by the prebuilt-index
@@ -92,53 +94,26 @@ jobs:
           fi
           echo "PASS D3-update: materialize-dept-agents present in update-skills.sh"
 
-      - name: D4 — agentToAgent routing on install path
+      - name: D4 — routing-fix script invoked on install path
         run: |
-          if ! grep -q 'agentToAgent' install.sh; then
-            echo "FAIL D4-install: agentToAgent not found in install.sh"
+          # agentToAgent/allowAgents/visibility are NOT embedded verbatim in install.sh.
+          # They are applied at runtime by apply-routing-fix.sh, which IS called from
+          # install.sh. This check verifies the invocation is present.
+          if ! grep -q 'apply-routing-fix' install.sh; then
+            echo "FAIL D4-install: apply-routing-fix not invoked in install.sh"
             exit 1
           fi
-          echo "PASS D4-install: agentToAgent present in install.sh"
+          echo "PASS D4-install: apply-routing-fix invocation present in install.sh"
 
-      - name: D4 — agentToAgent routing on update path
+      - name: D4 — routing-fix script invoked on update path
         run: |
-          if ! grep -q 'agentToAgent' update-skills.sh; then
-            echo "FAIL D4-update: agentToAgent not found in update-skills.sh"
+          # apply-routing-fix.sh carries agentToAgent/allowAgents/visibility for the
+          # update path as well. Verify it is invoked.
+          if ! grep -q 'apply-routing-fix' update-skills.sh; then
+            echo "FAIL D4-update: apply-routing-fix not invoked in update-skills.sh"
             exit 1
           fi
-          echo "PASS D4-update: agentToAgent present in update-skills.sh"
-
-      - name: D5 — allowAgents on install path
-        run: |
-          if ! grep -q 'allowAgents' install.sh; then
-            echo "FAIL D5-install: allowAgents not found in install.sh"
-            exit 1
-          fi
-          echo "PASS D5-install: allowAgents present in install.sh"
-
-      - name: D5 — allowAgents on update path
-        run: |
-          if ! grep -q 'allowAgents' update-skills.sh; then
-            echo "FAIL D5-update: allowAgents not found in update-skills.sh"
-            exit 1
-          fi
-          echo "PASS D5-update: allowAgents present in update-skills.sh"
-
-      - name: D6 — sessions.visibility routing on install path
-        run: |
-          if ! grep -q 'sessions.visibility\|sessions\.visibility' install.sh; then
-            echo "FAIL D6-install: sessions.visibility not found in install.sh"
-            exit 1
-          fi
-          echo "PASS D6-install: sessions.visibility present in install.sh"
-
-      - name: D6 — sessions.visibility routing on update path
-        run: |
-          if ! grep -q 'sessions.visibility\|sessions\.visibility' update-skills.sh; then
-            echo "FAIL D6-update: sessions.visibility not found in update-skills.sh"
-            exit 1
-          fi
-          echo "PASS D6-update: sessions.visibility present in update-skills.sh"
+          echo "PASS D4-update: apply-routing-fix invocation present in update-skills.sh"
 
       - name: D7 — heartbeat furnace protection on update path
         run: |
@@ -179,5 +154,6 @@ jobs:
         if: always()
         run: |
           echo "Both-paths delivery guard complete."
-          echo "D1-D10 checked across install.sh and update-skills.sh."
+          echo "D1-D4 (both paths) + D7-D10 (update path) checked across install.sh and update-skills.sh."
+          echo "D4 checks apply-routing-fix invocation (routing keys applied at runtime, not verbatim)."
           echo "All PASS = both paths deliver every dimension; any FAIL = regression detected."

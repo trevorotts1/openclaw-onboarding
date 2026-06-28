@@ -50,6 +50,7 @@ it reverted `install.sh` Step 6b back to the old 48-persona inline block and del
 
 ---
 
+## [v14.25.0]  -  2026-06-27  -  feat(persona-index): prebuilt-index v2.1.0 — canonical 54, section-tagged, dual-path provisioning + GHL funnel catalog
 
 Ships the canonical 54-persona section-tagged gemini-embedding-2 @3072 prebuilt index
 (`prebuilt-index-v2.1.0`, 4413 chunks, sha256 `7282796558edfcf...`) and wires provisioning
