@@ -1130,7 +1130,7 @@ Then run \`docker compose up -d --force-recreate\` to apply."
 
 Add new keys here, then restart the gateway:
 \`\`\`
-launchctl kickstart -k gui/\$(id -u)/com.openclaw.gateway
+launchctl kickstart -k gui/\$(id -u)/ai.openclaw.gateway
 # or: openclaw restart
 \`\`\`"
   fi
