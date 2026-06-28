@@ -14,7 +14,7 @@ Three CLI cases, all driven through the real CLI (subprocess), no network needed
 Plus unit assertions on the build_deck.py check functions directly (no subprocess):
   - COVERAGE (anti-compression, AF-COVERAGE-1).
   - RICH-PROMPT-REQUIRED (AF-P1): a slide with NO rich prompt FAILS, and a slide
-    whose rich prompt is < PROMPT_CHAR_FLOOR (5,000) chars FAILS; a >= 5,000-char
+    whose rich prompt is < PROMPT_CHAR_FLOOR chars FAILS; a >= PROMPT_CHAR_FLOOR-char
     prompt PASSES. Also asserts load_rich_prompt raises on missing/short and
     returns the prompt verbatim when valid.
   - SPEECH-LENGTH (AF-SPEECH-SHORT): a speech below target_talk_minutes x 120 wpm
@@ -44,24 +44,189 @@ SLIDES = [
 ]
 
 # A realistic RICH per-slide prompt is long (the SOP targets 9,000-14,000 chars).
-# >= PROMPT_CHAR_FLOOR (5,000) is the reconciled HARD floor; build it well over it.
-RICH_PROMPT = (
-    "[ARCHETYPE A1] [SECTION: HOOK] [LADDER: open]\n"
-    "ONE BIG IDEA: Three moves that doubled the pipeline.\n"
-    "FORMAT: Create a 16:9 presentation slide image at 2K resolution (2560x1440 pixels). "
-    "BACKGROUND: White base background; brand accent used only as accent elements. "
-    "HEADLINE VERBATIM: The slide headline reads exactly: 'Three moves that doubled our pipeline'. "
-    "Render this exact string letter-for-letter, correctly spelled, with no added, dropped, "
-    "doubled, or substituted characters. TYPOGRAPHY: one typeface family, hierarchy by weight; "
-    "hero headline 72pt Black, subhead 28pt SemiBold; designed into the image, never a basic font. "
-    "THIRDS GRID: headline upper-left, hero subject lower-right. PEOPLE: a confident founder, warm "
-    "hopeful expression, editorial office at golden hour; representation comes from the casting "
-    "ledger. MOOD: aspirational, readable in two seconds. PROFESSIONALISM: gallery-grade standalone "
-    "art, premium lifestyle-documentary photography, sharp focus, no watermark, no blur. "
-    "CLOSING CONSTRAINTS (negative block): Do not garble text. Do not mutate the logo. Do not "
-    "render any bracketed placeholder token. Do not narrate the image. Do not produce anatomical "
-    "artifacts. Do not let the background compete with the text. Do not alter skin-tone fidelity. "
-) * 6  # ~6x => comfortably over the 5,000 floor, under the 18,000 ceiling
+# >= PROMPT_CHAR_FLOOR (9,000) is the reconciled HARD floor.
+# This fixture is a single comprehensive block that clears every quality gate:
+#   - >= PROMPT_CHAR_FLOOR chars (measured on stripped length)
+#   - all three required structural blocks ([ARCHETYPE, NEGATIVE BLOCK, Do not)
+#   - spelling-lock token (reads exactly / letter-for-letter)
+#   - hex color (#1B2A4A), type size (72pt), composition zone (left third / rule of thirds)
+#   - >= 220 distinct words (verified against PROMPT_MIN_DISTINCT_WORDS)
+#   - all 8 negative-block defect classes present
+#   - "Northwind Co" verbatim (for CLI test copy-verbatim check on make_workdir slides)
+#   - passes intelligence engines: expression token (leaning in), key+rim lighting, natural hair,
+#     world believability token (believable for)
+RICH_PROMPT = """\
+[ARCHETYPE A2-split] [SECTION: HOOK] [LADDER: open] [CAST: real-authority-professional]
+
+DECK BRAND CONTEXT: Northwind Co — a B2B sales acceleration consultancy founded by operators \
+who built and scaled revenue teams at six high-growth companies. Brand palette: primary #1B2A4A \
+(deep navy), accent #C8963E (warm gold), neutral base #F5F1EB (off-white cream). All palette \
+values are exact HEX codes the renderer must honor without substitution or approximation. \
+Secondary supporting shade: #3A5068 (slate navy). The brand is premium, editorial, and \
+people-first; every visual choice must reinforce earned authority without manufactured \
+artificiality.
+
+ONE BIG IDEA: Three moves that doubled our pipeline of every revenue team that ran them. \
+The single claim must land in under two seconds of glance time.
+
+SLIDE ROLE: Hero opener — the HOOK. This slide is the viewer's first impression; it must \
+earn the next 45 minutes by communicating momentum, professional authority, and a clear \
+implied promise that the following content is worth their full attention and presence.
+
+HEADLINE VERBATIM: The slide headline reads exactly: 'Northwind Co — Three moves that \
+doubled our pipeline.' Render this exact string letter-for-letter with zero modification. \
+No dropped characters. No doubled glyphs. No font substitution. Every character spelled \
+correctly. The spelling-lock applies to every text element on this slide and all slides \
+in this deck. Reads exactly as written, without variation.
+
+SUBHEAD VERBATIM: A secondary supporting line reads exactly: 'Pipeline intelligence for \
+growth-stage B2B revenue teams.' Same letter-for-letter rendering rule applies to this \
+subhead; render every quoted text string exactly as given, spelled correctly, no omissions.
+
+TYPOGRAPHY SPECIFICATION:
+  HERO HEADLINE: 72pt weight Black (900). Typeface: Canela Display or equivalent editorial \
+serif with pronounced stroke contrast. Set in deep navy #1B2A4A. Letter-spacing +0.01em. \
+Leading 1.1x cap-height. The headline occupies the upper-left zone anchored at a 20px safe \
+margin from the left and top edges.
+  SUBHEAD: 28pt SemiBold. Same typeface family. Set in warm gold #C8963E. Letter-spacing \
++0.02em. Placed directly beneath the headline with 16px gap. Both headline and subhead must \
+feel designed and premium — NOT a browser default, NOT a system typeface.
+  BODY ANNOTATION (optional): 16pt Regular. Warm mid-tone #6B5A3E on the off-white background \
+zone. Used only for a short attribution line or citation fragment; never for a paragraph of text.
+  FORBIDDEN TYPEFACES: Do not use Calibri, Arial, Helvetica, Times New Roman, system-default \
+typeface, any platform-bundled font, or any typeface that reads as a presentation-template \
+default. The font choice must feel intentional and distinctive.
+
+COMPOSITION AND LAYOUT — RULE OF THIRDS GRID:
+  GRID: strict 3x3 rule of thirds. The headline block occupies the upper-left cell and extends \
+into the left-center cell. The hero subject (person) anchors the right two-thirds of the frame, \
+slightly right of the vertical midline. A vertical negative-space band (approximately 80px wide) \
+separates the text column from the subject zone. The brand accent strip (#C8963E) runs along the \
+lower third as a 2px horizontal rule, flush to the bottom safe margin.
+  TEXT ZONE: All headline and subhead copy sits firmly in the upper-left third, flush-left at a \
+20px safe margin from the left edge. No text floats unanchored in the center of the image. No \
+text is placed in the lower-right quadrant. Every character is sharp, legible, and readable at \
+projection distance on a 1920x1080 or wider viewport.
+  FOCAL POINT: The subject's face and upper torso occupy the right-center and right-lower thirds. \
+The composition naturally draws the eye from the headline (upper-left) across the negative-space \
+band to the subject (right), then down to the accent rule (bottom). This optical Z-path is the \
+intended reading order.
+
+HERO SUBJECT (PEOPLE / CAST):
+  SUBJECT DESCRIPTION: A confident Black male founder in his early-to-mid forties. He is dressed \
+in a tailored charcoal suit with a warm-white spread-collar shirt and no tie. His posture is open \
+and forward-leaning, leaning in toward the viewer with an expression of serious warmth — the \
+emotion of a peer sharing a hard-won insight, not a salesperson pitching a product. His eyes are \
+direct and welcoming. His chin is raised slightly. He is settled and certain in this moment.
+  EXPRESSION: The facial expression must read as leaning in with warm authority and direct \
+engagement. The specific emotion is serious warmth paired with forward momentum. Eyes are \
+focused and present, not performing joy. Brow is relaxed but alert. The overall emotional \
+signal is: 'I have done this and I can show you exactly how.'
+  WORLD / SETTING: The subject stands in a naturally lit modern glass-walled executive \
+boardroom. The room has polished concrete columns, floor-to-ceiling windows overlooking a \
+mid-rise city skyline at late afternoon, and warm directional natural light. The world is \
+believable for someone at this professional and economic station — a real conference room \
+in a real growth-stage company, not a fantasy penthouse or stock-photo studio. Scale is \
+appropriate: two conference tables, ergonomic chairs, a whiteboard with partial handwriting \
+visible in the background.
+  HAIR AND REPRESENTATION: Hairstyle from the authentic-representation catalog: natural hair, \
+closely cropped, well-groomed executive cut — a low fade with close-cropped texture on top. \
+Skin-tone reproduction must be faithful to deep warm brown; no lightening, no ashen cast, \
+no desaturation, no mono-cast treatment, no demographic shift. Representation is a \
+specification, not a preference; any skin-tone drift or demographic inconsistency is a \
+fatal defect in this render.
+
+LIGHTING SPECIFICATION — THREE-LIGHT-SOURCE EDITORIAL STANDARD:
+  KEY LIGHT: soft box from upper-left at roughly 45 degrees above the horizon and 60 degrees \
+left of the camera axis. This is the primary illumination source; it should model the face \
+with clear shadow detail on the right side. Mimics a large north-facing window.
+  FILL LIGHT: warm bounced fill from the right, approximately 0.5 to 0.7 stops softer than \
+the key. No harsh shadows on the right side of the face; the fill should open the shadow \
+detail without flattening the modeling.
+  RIM LIGHT (HAIR AND SHOULDER SEPARATION): a thin rim light from the upper-left behind the \
+subject, hair light that separates the subject's silhouette from the background and provides \
+a subtle glow on top of the hair and shoulder edge. The rim light must be present and visible \
+but restrained — its purpose is separation, not drama.
+  LIGHTING CONTINUITY: The ambient light temperature is warm, matching the brand palette \
+gradient (navy-to-gold ambient wrap). The direction of the key light is consistent with \
+the window visible in the background. No flat-fill studio void. No infinite white background.
+
+COLOR RENDERING TARGETS:
+  Primary background field: #F5F1EB (warm off-white cream). Not pure white (#FFFFFF). \
+Not cool grey. The specific off-white value must be honored.
+  Headline and deep shadow zones: #1B2A4A (deep navy).
+  Accent elements (rule strip, icon highlights, subtle decorative marks): #C8963E (warm gold).
+  Sky visible through glass behind subject: desaturated warm grey, approximately #A8A49E.
+  Mid-tone interior architectural surfaces: warm off-white to light slate.
+
+NEGATIVE BLOCK — ALL EIGHT DEFECT CLASSES MANDATORY:
+  CLASS 1 — GARBLED OR MISSPELLED TEXT: Do not garble any text element. Do not let any \
+headline character be doubled, dropped, transposed, or substituted. Render every letter \
+exactly as written — letter-for-letter accuracy is a hard contract. Any deviation from the \
+verbatim headline or subhead text is a fatal render defect.
+  CLASS 2 — LOGO MUTATION: Do not redraw, redesign, recolor, restyle, or reinterpret the \
+brand logo or monogram if one appears. If a logo or tagline lockup element is present, render \
+it exactly as supplied without alteration of shape, proportions, color, or typography. \
+Do not introduce a reference mark or decorative addition to the logo zone.
+  CLASS 3 — PLACEHOLDER OR BRACKET TOKENS: Do not render any bracketed token, square bracket, \
+placeholder, build note, TBD, to supply, pending, or owner-to-confirm marker visible to the \
+audience. Every element in the final image is final and complete. No insert-here glyphs.
+  CLASS 4 — IMAGE NARRATION, PRESENTER LINES, OR META CONTENT: Do not place any spoken-script \
+line, presenter line, stage direction, telegraphing, webinar title card, or self-talk text on \
+the slide surface. The slide text is the client's hook copy. Do not narrate the image, \
+describe the picture, or include a build note on the visible canvas.
+  CLASS 5 — ANATOMICAL DEFECTS AND ARTIFACTS: Do not produce fused fingers or malformed hands. \
+Do not produce extra limbs or missing fingers. Do not show mismatched eyes, asymmetric eye \
+proportions, distorted teeth, over-smoothed skin, distorted facial geometry, body proportion \
+anomalies, or any other anatomical artifact. The person must read as a real high-resolution \
+human, not a generated approximation.
+  CLASS 6 — BACKGROUND COMPETING WITH TEXT: Do not produce a busy, cluttered, or \
+high-detail background behind the text zone. Do not allow the background to compete with \
+the headline or subhead legibility. The negative space between the subject and the text \
+column must remain clean and low-contrast. No background texture or color intrudes into \
+the text zone or behind any text element.
+  CLASS 7 — DEMOGRAPHIC SHIFT OR SKIN-TONE MANIPULATION: Do not lighten, desaturate, \
+ashen, or otherwise alter the skin tone or demographic presentation of the subject. \
+Do not produce a mono-cast treatment. Do not shift the skin-tone fidelity from the cast \
+specification. Deep warm brown must be rendered faithfully. Any representation_mix \
+deviation from the casting specification is a fatal defect.
+  CLASS 8 — CARRIED-FORWARD UNIVERSAL BASELINE: Do not render any watermark, copyright \
+glyph, or attribution overlay. Do not insert any emoji character or emoticon glyph. \
+Do not use the Calibri typeface, Arial, Helvetica, Times New Roman, or any system default \
+font. Do not include any UI artifact, user-interface element, or em dash treated as a \
+decorative ornament. Do not use any deeply shadowed monochrome fill for the slide \
+background. Any unsanctioned ultra-low-luminance background is a fatal defect.
+
+INTELLIGENCE ENGINES — ALL FOUR ACTIVE (MANDATORY PROMPT TOKENS):
+  FACIAL ENGINE: Expression = leaning in + serious warmth + direct to camera engagement. \
+The emotional read within the first 200ms must be 'trustworthy peer expert', not a staged \
+commercial actor. Brow is alert and composed. Jaw is set but relaxed. Eyes direct.
+  LIGHTING ENGINE: Three-light editorial standard as specified above. Key light from upper \
+left. Fill light from right at 0.5 stops softer than key. Rim light (hair light / separation \
+light on hair and shoulder edge) from behind-left at 1 stop softer. The three-light sourcing \
+must be internally consistent with the boardroom window.
+  WORLD ENGINE: The boardroom is a plausible real place. A viewer must believe this image \
+was photographed in an actual office, not generated. Scale, perspective, and depth are \
+internally consistent. The world is believable for this person's professional station.
+  REPRESENTATION ENGINE: Hairstyle = natural hair, closely cropped executive fade. Skin-tone \
+reproduction is faithful. No algorithmic lightening or demographic drift.
+
+SPELLING LOCK APPLIED TO ALL TEXT ELEMENTS:
+  The renderer must render every quoted text string exactly as it appears in this prompt. \
+No character may be added, dropped, transposed, or substituted. Spelled exactly as written. \
+This is a hard contract. The spelling-lock covers the headline, subhead, any caption, \
+any annotation, and any other text element visible in the composed image.
+
+CANONICAL CONSTRAINTS — DO NOT OVERRIDE, DO NOT WAIVE:
+  Do not produce any overlay rendered by Pillow, ImageDraw, or any post-processing \
+compositor. Typography is baked INTO the image by the model. There is no Pillow overlay \
+path. There is no scrim layer. There is no PPTX native text run. The image is the final \
+deliverable pixel surface. Do not produce a low-luminance monotone background or a \
+deeply shadowed layout without explicit client opt-in. Do not render a placeholder, \
+bracket token, [TBD], or build note visible to the audience. Every element is final. \
+Do not narrate the image on the slide surface. Demographic diversity in casting is a \
+binding specification; no demographic drift is permitted.
+"""
 
 
 def _write_intake(root: Path):
@@ -86,7 +251,7 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
     """Build a temp run dir. with_artifacts=True writes the full upstream set.
     rich_prompts=False omits the working/prompts/ files (to prove the
     rich-prompt-required gate fails); short_prompt=True writes a sub-floor prompt
-    (to prove the 5,000-char floor fails)."""
+    (to prove the PROMPT_CHAR_FLOOR gate fails)."""
     root = Path(tempfile.mkdtemp(prefix="deck_preflight_test_"))
     # The full-artifacts deck is sized to clear the AF-SLIDE-COUNT-FLOOR gate for the
     # 30-minute intake target (floor = ceil(30 x 1.3) = 39 slides). The bare/no-artifact
@@ -257,9 +422,21 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
             json.dumps(_img_qc_base))
         # speech_qc_report.json intentionally ABSENT here -> AF-SPEECH-QC defers (pre-delivery).
         # Phase 2 — rich per-slide prompt(s) (rendered VERBATIM), one per slide.
+        # Each slide's copy is ["Northwind Co", "Converting beat {i}"] (from deck_slides
+        # above). RICH_PROMPT contains "Northwind Co" verbatim; we append the slide-specific
+        # "Converting beat {i}" copy block so the verbatim-words-baked check (AF-P-VERBATIM)
+        # passes for every slide when the CLI threads slides.json into _collect_prompt_problems.
         if rich_prompts:
             for i in range(1, _floor_slides + 1):
-                text = "short prompt" if short_prompt else RICH_PROMPT
+                if short_prompt:
+                    text = "short prompt"
+                else:
+                    copy_block = (
+                        f"\nHEADLINE VERBATIM SLIDE {i}: The slide subhead reads exactly: "
+                        f"'Converting beat {i}'. Render this exact string letter-for-letter "
+                        f"with zero modification, spelled correctly.\n"
+                    )
+                    text = RICH_PROMPT + copy_block
                 (root / "working" / "prompts" / f"slide-{i:02d}.txt").write_text(text)
         # Mode A: no mission_prd.json => source_slide_count 0 => coverage always passes.
         # No speech.md => speech-length gate defers (passes) at this pre-delivery stage.
@@ -355,17 +532,16 @@ def _rich_prompt_run_dir(prompt_text) -> Path:
 def test_chk_rich_prompts():
     """RICH-PROMPT-REQUIRED (AF-P1) unit test (the two NEW required assertions):
       - a slide with NO rich prompt FAILS (missing-rich-prompt fails),
-      - a slide whose rich prompt is < 5,000 chars FAILS (sub-floor fails),
-      - a slide with a >= 5,000-char rich prompt PASSES,
+      - a slide whose rich prompt is < PROMPT_CHAR_FLOOR chars FAILS (sub-floor fails),
+      - a slide with a >= PROMPT_CHAR_FLOOR-char rich prompt PASSES,
     plus load_rich_prompt raises on missing/short and returns the prompt verbatim
     when valid. Returns a list of failure strings ([] = all passed)."""
     fails = []
-    assert build_deck.PROMPT_CHAR_FLOOR == 5000, \
-        f"PROMPT_CHAR_FLOOR must be 5000 (reconciled standard), got {build_deck.PROMPT_CHAR_FLOOR}"
 
     valid = RICH_PROMPT
-    assert len(valid) >= 5000, "test fixture RICH_PROMPT must be >= 5000 chars"
-    short = "way too thin to be a real slide prompt"  # well under 5,000
+    assert len(valid) >= build_deck.PROMPT_CHAR_FLOOR, \
+        f"test fixture RICH_PROMPT must be >= {build_deck.PROMPT_CHAR_FLOOR} chars (PROMPT_CHAR_FLOOR)"
+    short = "way too thin to be a real slide prompt"  # well under PROMPT_CHAR_FLOOR
 
     # ---- NEW ASSERTION 1: a MISSING rich prompt FAILS ----
     rd = _rich_prompt_run_dir(None)
@@ -382,11 +558,11 @@ def test_chk_rich_prompts():
         if "AF-P1" not in str(exc):
             fails.append(f"RICHPROMPT: load_rich_prompt missing-raise wrong msg: {exc}")
 
-    # ---- NEW ASSERTION 2: a < 5,000-char rich prompt FAILS ----
+    # ---- NEW ASSERTION 2: a < PROMPT_CHAR_FLOOR-char rich prompt FAILS ----
     rd = _rich_prompt_run_dir(short)
     reason = build_deck._chk_rich_prompts(rd)
     if not reason:
-        fails.append("RICHPROMPT: a < 5,000-char rich prompt should FAIL but passed")
+        fails.append("RICHPROMPT: a sub-floor rich prompt should FAIL but passed")
     elif "AF-P1" not in reason or "floor" not in reason.lower():
         fails.append(f"RICHPROMPT: short-prompt fail message malformed: {reason!r}")
     try:
@@ -396,7 +572,7 @@ def test_chk_rich_prompts():
         if "AF-P1" not in str(exc):
             fails.append(f"RICHPROMPT: load_rich_prompt short-raise wrong msg: {exc}")
 
-    # ---- a valid >= 5,000-char rich prompt PASSES + is returned VERBATIM ----
+    # ---- a valid >= PROMPT_CHAR_FLOOR-char rich prompt PASSES + is returned VERBATIM ----
     rd = _rich_prompt_run_dir(valid)
     reason = build_deck._chk_rich_prompts(rd)
     if reason:
@@ -2219,7 +2395,7 @@ def emit_af_coverage():
     record("AF-P1", build_deck._chk_rich_prompts(rd))
 
     # AF-PROMPT-FLOOR / AF-P1 — a sub-floor prompt FAILS _chk_rich_prompts; the
-    # 5,000-char floor is PROMPT_CHAR_FLOOR. (load_rich_prompt raises AF-P1 too.)
+    # PROMPT_CHAR_FLOOR gate surfaces as AF-P1; AF-PROMPT-FLOOR is its manifest twin.
     rd = _rich_prompt_run_dir("way too thin")
     sub_reason = build_deck._chk_rich_prompts(rd)
     record("AF-P1", sub_reason)
@@ -2227,7 +2403,7 @@ def emit_af_coverage():
         build_deck.load_rich_prompt({"slide": 1, "scene": "x", "copy": ["y"]}, rd)
     except ValueError as exc:
         # The floor symbol (PROMPT_CHAR_FLOOR) gate surfaces as AF-P1; AF-PROMPT-FLOOR
-        # is its manifest twin (same 5,000 floor). Record both from the same proof.
+        # is its manifest twin (same floor, reconciled). Record both from the same proof.
         record("AF-P1", str(exc))
         if str(build_deck.PROMPT_CHAR_FLOOR) in str(exc) or "AF-P1" in str(exc):
             triggered.add("AF-PROMPT-FLOOR")
@@ -2493,6 +2669,104 @@ def emit_af_coverage():
     record("AF-IMAGE-QC-VISION",
            build_deck.check_image_qc_vision(iqv_root))
 
+    # ---- Quality-layer gate probes (AF-P13, AF-P14, AF-P-DENSITY, AF-P-VERBATIM,
+    #      AF-COPY-QC, AF-INTELLIGENCE-ENGINES) ----
+
+    # AF-P13 — a structured >=9000-char prompt MISSING the "carried-forward universal
+    # baseline" class (watermark/emoji/calibri) triggers rich_prompt_quality_problems
+    # to return AF-P13. The prompt has 7 of 8 classes; class 8 is intentionally absent.
+    _p13_base = (
+        "[ARCHETYPE A1] NEGATIVE BLOCK: "
+        "Do not garble text, render every quoted string letter-for-letter. "  # class 1 + lock
+        "Do not mutate logo or monogram. "                                    # class 2
+        "Do not render bracketed placeholder tokens. "                        # class 3
+        "Do not narrate or telegraphing the image. "                          # class 4
+        "Do not produce anatomical finger artifacts or distorted facial. "    # class 5
+        "Do not let background compete with text zone or negative space. "    # class 6
+        "Do not alter skin tone or demographic representation mix. "          # class 7
+        # CLASS 8 (watermark / emoji / calibri) intentionally ABSENT
+        "#1B2A4A primary hex. 72pt headline. Left third composition zone. "
+        "Reads exactly. "
+    )
+    _p13_pad = ("This is additional editorial slide content with professional imagery. " * 160)
+    _p13_txt = _p13_base + _p13_pad
+    record("AF-P13", "\n".join(build_deck.rich_prompt_quality_problems(_p13_txt)))
+
+    # AF-P14 — a structured >=9000-char prompt with all 8 classes but NO spelling-lock
+    # directive token triggers rich_prompt_quality_problems to return AF-P14. The "garble"
+    # token satisfies class 1 WITHOUT being a spelling-lock token.
+    _p14_base = (
+        "[ARCHETYPE A1] NEGATIVE BLOCK: "
+        "Do not garble any text element on this slide. "      # class 1 — NOT a spelling-lock
+        "Do not mutate logo or monogram. "                    # class 2
+        "Do not render bracketed placeholder tokens. "        # class 3
+        "Do not narrate or telegraphing the image. "          # class 4
+        "Do not produce anatomical finger artifacts. "        # class 5
+        "Do not let background compete with text zone. "      # class 6
+        "Do not alter skin tone or demographic. "             # class 7
+        "Do not show watermark emoji calibri artifact. "      # class 8
+        # NO spelling-lock token (none of: reads exactly, letter-for-letter, etc.)
+        "#1B2A4A primary hex. 72pt headline. Left third composition zone. "
+    )
+    _p14_txt = _p14_base + _p13_pad  # reuse pad from AF-P13 probe (sufficient length)
+    record("AF-P14", "\n".join(build_deck.rich_prompt_quality_problems(_p14_txt)))
+
+    # AF-P-DENSITY — a structured >=9000-char prompt with all 8 classes + spelling-lock
+    # but NO hex color triggers the density gate. Removing the hex makes it fail AF-P-DENSITY.
+    _pdensity_base = (
+        "[ARCHETYPE A1] NEGATIVE BLOCK: "
+        "Do not garble text, render every quoted string letter-for-letter. "  # class 1 + lock
+        "Do not mutate logo. "
+        "Do not render placeholder. "
+        "Do not narrate. "
+        "Do not produce anatomical finger artifact. "
+        "Do not let background compete with text zone. "
+        "Do not alter skin tone demographic. "
+        "Do not show watermark emoji calibri. "
+        # NO HEX COLOR in the base
+        "72pt headline. Left third composition zone. Reads exactly. "
+    )
+    _pdensity_txt = _pdensity_base + _p13_pad
+    record("AF-P-DENSITY", "\n".join(build_deck.rich_prompt_quality_problems(_pdensity_txt)))
+
+    # AF-P-VERBATIM — the slide's exact copy ("Scale your authority now") is NOT baked
+    # into RICH_PROMPT, so rich_prompt_quality_problems returns AF-P-VERBATIM when that
+    # non-trivial copy string is passed as copy_val.
+    _pverbatim_copy = ["Scale your authority now — a unique copy string not in RICH_PROMPT"]
+    record("AF-P-VERBATIM", "\n".join(
+        build_deck.rich_prompt_quality_problems(RICH_PROMPT, _pverbatim_copy)))
+
+    # AF-COPY-QC — a copy-QC report that passes gate/average/pass/independence checks
+    # BUT carries the "score_prompt_length" foreign signature triggers _chk_copy_qc to
+    # return AF-COPY-QC (corrupt/foreign QC generator detected).
+    _copy_qc_report = {
+        "gate": "Phase 1Q", "average": 9.1, "triggered_autofails": [], "pass": True,
+        "qc_independence": {
+            "graded_by": "qc-specialist-presentations", "independent": True,
+            "builder": "slide-copywriter", "self_graded": False,
+        },
+        "score_prompt_length": 9.0,  # foreign signature — eliminated word-count rubric
+    }
+    record("AF-COPY-QC", build_deck._chk_copy_qc(_qc_report_path(_copy_qc_report)))
+
+    # AF-INTELLIGENCE-ENGINES — a people-bearing prompt that is missing expression tokens
+    # AND rim/hair lighting tokens triggers check_intelligence_engines_prompt to return
+    # AF-INTELLIGENCE-ENGINES. The prompt has "person" (is_people_prompt=True) and
+    # "office" (scene=True, so WORLD check also runs) but no EXPRESSION_TOKENS and
+    # no RIM_HAIR_TOKENS.
+    _ie_root = Path(tempfile.mkdtemp(prefix="deck_ie_engines_probe_"))
+    (_ie_root / "working" / "prompts").mkdir(parents=True, exist_ok=True)
+    _ie_prompt = (
+        "[ARCHETYPE A1] NEGATIVE BLOCK: Do not garble text. "
+        "A person standing in a modern office building. Key light from window. "
+        "Do not show watermark emoji. Calibri forbidden. "
+        # No EXPRESSION_TOKEN (no: leaning in, direct to camera, serious warmth, etc.)
+        # No RIM_HAIR_TOKENS (no: rim light, hair light, separation light, etc.)
+    ) * 5  # length doesn't matter for the intelligence engines gate
+    (_ie_root / "working" / "prompts" / "slide-01.txt").write_text(_ie_prompt)
+    record("AF-INTELLIGENCE-ENGINES",
+           build_deck.check_intelligence_engines_prompt(_ie_root))
+
     triggered_sorted = sorted(triggered)
     AF_COVERAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
     AF_COVERAGE_PATH.write_text(json.dumps(
@@ -2643,13 +2917,14 @@ def test_dark_slide_with_client_flag_passes() -> list:
 
 
 def test_structural_block_gate() -> list:
-    """FG-1 item 3 (folded from render_deck.py): a prompt that clears the 5,000-char
-    floor but is MISSING a required structural block ([ARCHETYPE / NEGATIVE BLOCK /
+    """FG-1 item 3 (folded from render_deck.py): a prompt that clears PROMPT_CHAR_FLOOR
+    but is MISSING a required structural block ([ARCHETYPE / NEGATIVE BLOCK /
     'Do not ']) FAILS _chk_rich_prompts AND raises in load_rich_prompt; a real
     structured RICH_PROMPT passes."""
     failures = []
     # Blockless filler well over the floor (no [ARCHETYPE, no NEGATIVE BLOCK, no "Do not ").
-    blockless = ("This is a long descriptive paragraph about a slide scene. " * 120)
+    # 58 chars * 160 = 9280 chars, comfortably over the 9,000-char PROMPT_CHAR_FLOOR.
+    blockless = ("This is a long descriptive paragraph about a slide scene. " * 160)
     assert len(blockless) >= build_deck.PROMPT_CHAR_FLOOR
     rd = _rich_prompt_run_dir(blockless)
     reason = build_deck._chk_rich_prompts(rd)
@@ -3125,17 +3400,18 @@ def main():
     print(f"CASE4 (no prompt)-> exit {r.returncode} (expected 3)  "
           f"{'PASS' if r.returncode == 3 and 'AF-P1' in out else 'FAIL'}")
 
-    # CASE 5 — full upstream artifacts BUT the rich prompt is < 5,000 chars =>
-    # refused, exit 3, AF-P1 floor (proves a SUB-FLOOR rich prompt fails through CLI).
+    # CASE 5 — full upstream artifacts BUT the rich prompt is sub-floor =>
+    # refused, exit 3, AF-P1 floor (proves a sub-PROMPT_CHAR_FLOOR prompt fails through CLI).
     root = make_workdir(with_artifacts=True, rich_prompts=True, short_prompt=True)
     r = run(root)
     out = r.stdout + r.stderr
+    _floor_str = str(build_deck.PROMPT_CHAR_FLOOR)
     if r.returncode != 3:
         failures.append(f"CASE5 (short rich prompt) expected exit 3, got {r.returncode}")
-    if "AF-P1" not in out or "5000" not in out:
-        failures.append("CASE5 stderr missing the AF-P1 5000-char floor reason")
+    if "AF-P1" not in out or _floor_str not in out:
+        failures.append(f"CASE5 stderr missing the AF-P1 {_floor_str}-char floor reason")
     print(f"CASE5 (short)    -> exit {r.returncode} (expected 3)  "
-          f"{'PASS' if r.returncode == 3 and 'AF-P1' in out and '5000' in out else 'FAIL'}")
+          f"{'PASS' if r.returncode == 3 and 'AF-P1' in out and _floor_str in out else 'FAIL'}")
 
     # CASE 2 — artifacts present => preflight passes (must NOT exit 3).
     # We only need to prove the GATE passed; we stop the process the moment it

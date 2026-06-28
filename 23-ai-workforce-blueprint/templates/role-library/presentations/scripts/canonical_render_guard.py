@@ -322,6 +322,26 @@ def _format_findings(findings: list, owner_skips: dict) -> tuple:
     return blocking, waived
 
 
+def _qc_generator_block(run_dir: Path) -> str:
+    """Guard C (fix-8) wiring. Run the ungoverned-QC-report-generator neutralizer at
+    this checkpoint and return its fatal block message ("" when clean). The hand-
+    rolled QC generators (word-count prompt rubric, overlay-readiness/blank-canvas
+    reward, out-of-scope escape, sub-8.5 threshold) are a DIFFERENT class than the
+    hand-rolled renderers this guard detects, so they are enforced by the sibling
+    qc_generator_guard. If that module is unavailable the surface degrades to
+    renderer-only detection (never crashes)."""
+    try:
+        import qc_generator_guard as qcg  # noqa: WPS433
+    except Exception:  # noqa: BLE001
+        return ""
+    try:
+        return qcg.guard_qc_generators(run_dir)
+    except Exception as exc:  # noqa: BLE001
+        # Fail-closed on an unexpected error inside the QC-generator scan.
+        return (f"AF-QC-GENERATOR-UNGOVERNED: qc_generator_guard raised {exc!r} — "
+                "could not prove the run dir is free of ungoverned QC generators.")
+
+
 def guard_pre_render(run_dir: Path) -> str:
     """PRE-RENDER guard. Return "" when the run dir is free of hand-rolled
     renderers/assemblers (or every finding is covered by a logged
@@ -331,12 +351,13 @@ def guard_pre_render(run_dir: Path) -> str:
     findings = scan_run_dir(run_dir)
     owner_skips = load_owner_skip_approvals(run_dir)
     blocking, waived = _format_findings(findings, owner_skips)
+    qc_gen_reason = _qc_generator_block(run_dir)  # Guard C (fix-8): ungoverned QC generators.
     if not blocking:
         if waived:
             print("=== CANONICAL-RENDER-GUARD (pre-render): "
                   f"{len(waived)} finding(s) WAIVED by logged owner_skip_approval ===",
                   flush=True)
-        return ""
+        return qc_gen_reason
     lines = [
         "CANONICAL RENDER GUARD — PRE-RENDER BLOCK.",
         "Hand-rolled renderer(s)/assembler(s) detected in the run dir. The ONLY "
@@ -354,6 +375,9 @@ def guard_pre_render(run_dir: Path) -> str:
                  "explicit owner_skip_approval token (owner_approved:true + approved_by "
                  "+ reason + gate=<AF code>) in working/checkpoints/process_manifest.json. "
                  "An agent may NOT waive this on its own.")
+    if qc_gen_reason:
+        lines.append("")
+        lines.append(qc_gen_reason)
     return "\n".join(lines)
 
 
@@ -385,6 +409,15 @@ def guard_pre_delivery(run_dir: Path, phases: list, slides_path=None,
     # (3) Fix-2 pixel/vision checks.
     for af_code, msg in run_fix2_checks(run_dir, slides_path):
         problems.append(f"  [{af_code}] {msg}")
+
+    # (4) Guard C (fix-8): no ungoverned QC-report generator / untrusted QC report
+    # may be present at delivery — the governed path must never ship a deck blessed
+    # by an inverted, false-pass QC layer.
+    qc_gen_reason = _qc_generator_block(run_dir)
+    if qc_gen_reason:
+        problems.append("  [AF-QC-GENERATOR-UNGOVERNED] ungoverned QC generator / "
+                        "untrusted QC report present — see detail below:\n"
+                        + "\n".join("    " + ln for ln in qc_gen_reason.splitlines()))
 
     if not problems:
         return ""

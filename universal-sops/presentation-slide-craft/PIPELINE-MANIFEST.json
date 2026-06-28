@@ -1,5 +1,5 @@
 {
-  "manifest_version": 15,
+  "manifest_version": 16,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -395,7 +395,7 @@
     {
       "id": "P4-PROMPT",
       "order": 4.7,
-      "name": "Prompt Authoring \u2014 each slide prompt to the 5,000-char standard",
+      "name": "Prompt Authoring \u2014 each slide prompt to the 9,000-char standard",
       "owning_role": "prompt-author-presentations",
       "sop_refs": [
         "prompt-author-presentations-sops.md"
@@ -407,7 +407,7 @@
       "preflight": {
         "required": true,
         "checker": "_chk_rich_prompts",
-        "label": "rich per-slide prompt \u2014 every slide has a >=5,000-char prompt in working/prompts/ (rendered VERBATIM)"
+        "label": "rich per-slide prompt \u2014 every slide has a >=9,000-char prompt in working/prompts/ (rendered VERBATIM)"
       }
     },
     {
@@ -558,7 +558,7 @@
       "stage": "Render",
       "level": "slide",
       "in_ruleset": false,
-      "trigger": "rich prompt missing, under the reconciled 5,000-char floor (PROMPT_CHAR_FLOOR), or missing a required structural block ([ARCHETYPE ...] / NEGATIVE BLOCK / 'Do not ')",
+      "trigger": "rich prompt missing, under the reconciled 9,000-char floor (PROMPT_CHAR_FLOOR), or missing a required structural block ([ARCHETYPE ...] / NEGATIVE BLOCK / 'Do not ')",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_rich_prompts"
     },
@@ -972,7 +972,7 @@
       "stage": "3",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "image prompt under the reconciled 5,000-char standard (PROMPT_CHAR_FLOOR) or over the 18,000-char ceiling (PROMPT_CHAR_CEILING) or missing required structural blocks",
+      "trigger": "image prompt under the reconciled 9,000-char standard (PROMPT_CHAR_FLOOR) or over the 18,000-char ceiling (PROMPT_CHAR_CEILING) or missing required structural blocks",
       "enforced_by": "build_deck",
       "py_symbol": "PROMPT_CHAR_FLOOR"
     },
@@ -1437,6 +1437,73 @@
       "py_symbol": null,
       "check_script": "scripts/intelligence_engines_check.py::check_copy",
       "sop_ref": "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md#intelligence-engines"
+    },
+    {
+      "code": "AF-P13",
+      "stage": "Prompt",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "a slide prompt is missing one or more of the 8 required negative-block defect class tokens (watermark, emoji, Calibri, illustration/clip-art/cartoon, generic stock, blurry/soft-focus, text floating/unanchored, people clipping/overlap). All 8 classes must appear in every prompt's negative block.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_negative_block_class_problems"
+    },
+    {
+      "code": "AF-P14",
+      "stage": "Prompt",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "a slide prompt carries no spelling-lock directive token (e.g. 'spell every word correctly', 'zero spelling errors', 'no misspelled words', 'all text legible and spelled correctly'). The spelling-lock is mandatory in every prompt.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_spelling_lock_present"
+    },
+    {
+      "code": "AF-P-DENSITY",
+      "stage": "Prompt",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "a slide prompt fails the density gate: missing a hex color code, missing a type-size spec (e.g. '36pt', '48px'), missing a composition/zone token (e.g. 'left third', 'upper right', 'center zone'), or carrying fewer than PROMPT_MIN_DISTINCT_WORDS (220) distinct words — the word-count rubber-stamp is replaced by a true distinct-word density check.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_prompt_density_problems",
+      "secondary_py_symbols": [
+        "PROMPT_MIN_DISTINCT_WORDS",
+        "_HEX_COLOR_RE",
+        "_TYPE_SIZE_RE"
+      ]
+    },
+    {
+      "code": "AF-P-VERBATIM",
+      "stage": "Prompt",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "a slide's rich prompt does not contain verbatim copies of the non-trivial copy strings (headline, subhead, CTA) from slides.json — the prompt is the canonical render surface and must bake copy into the model instruction, not rely on post-render overlay.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_verbatim_copy_problems",
+      "secondary_py_symbols": [
+        "_load_slide_copy_map",
+        "_norm_ws"
+      ]
+    },
+    {
+      "code": "AF-COPY-QC",
+      "stage": "1Q",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "a copy-QC report contains a foreign/corrupt rubric signature: scoring prompt length as a quality proxy (score_prompt_length), rewarding overlay-readiness, using out-of-scope escape clauses, or applying a pass threshold below 8.5. Ungoverned hand-rolled QC generators that emit reports with these corrupt patterns are neutralized.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_qc_report_substance_problems",
+      "secondary_py_symbols": [
+        "QC_FOREIGN_SIGNATURES",
+        "check_prompt_qc_teeth"
+      ]
+    },
+    {
+      "code": "AF-INTELLIGENCE-ENGINES",
+      "stage": "Prompt/Prompt-QC",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "a people-bearing prompt is missing facial expression/emotion tokens AND/OR lighting direction tokens (key/fill/rim) — the build_deck.py intelligence-engine mechanical check wired to check_intelligence_engines_prompt(). Complements the qc_check-owned AF-FACE-PROMPT-MISSING / AF-LIGHT-PROMPT-MISSING with a hard build-gate enforcement.",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_intelligence_engines_prompt"
     }
   ],
   "roles": [
@@ -1555,7 +1622,7 @@
     {
       "id": "prompt-author-presentations",
       "owns_phase": "P4-PROMPT",
-      "description": "Writes each slide's rich image prompt to the 5,000-char prompt standard (the 15-element structural spec + negative block + spelling-locks). The Prompt QC Specialist grades the output."
+      "description": "Writes each slide's rich image prompt to the 9,000-char prompt standard (the 15-element structural spec + negative block + spelling-locks). The Prompt QC Specialist grades the output."
     },
     {
       "id": "qc-specialist-typography-presentations",
@@ -1565,7 +1632,7 @@
     {
       "id": "qc-specialist-prompt-presentations",
       "owns_phase": "P-PROMPT-QC",
-      "description": "INDEPENDENT reviewer of the per-slide prompts (AF-PROMPT-QC). Grades against the written 5,000-char prompt-standard rubric; never the Prompt Author who wrote them."
+      "description": "INDEPENDENT reviewer of the per-slide prompts (AF-PROMPT-QC). Grades against the written 9,000-char prompt-standard rubric; never the Prompt Author who wrote them."
     },
     {
       "id": "qc-specialist-image-presentations",
