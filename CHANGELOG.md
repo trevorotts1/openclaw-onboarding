@@ -36,7 +36,7 @@ heavy 90MB artifact-verify job gated to release/workflow_dispatch).
 
 ---
 
-## [v14.24.1]  -  2026-06-27  -  fix(restart): auto-detect launchd label; correct ai.openclaw.gateway fallback
+## [v14.25.1]  -  2026-06-27  -  fix(restart): auto-detect launchd label; correct ai.openclaw.gateway fallback
 
 Gateway-restart fallback in `update-skills.sh` hardcoded the launchd label
 `com.openclaw.gateway`. The real fleet-wide label on every Mac box is
@@ -59,7 +59,7 @@ This reads the live launchd service list to discover the actual label. If no
 match is found it falls back to `ai.openclaw.gateway` (the correct default).
 The `com.openclaw.gateway` string no longer appears anywhere in the repo.
 
-**Version bump:** v14.24.0 → v14.24.1.
+**Version bump:** v14.25.0 → v14.25.1.
 
 ---
 
