@@ -1,4 +1,4 @@
-# Stage 2 QC Summary - Role Library v14.27.1
+# Stage 2 QC Summary - Role Library v14.27.2
 
 **Generated:** 2026-06-09 UTC
 **Total roles:** 244 / 244

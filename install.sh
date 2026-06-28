@@ -23,7 +23,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v14.27.1"
+ONBOARDING_VERSION="v14.27.2"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -2936,6 +2936,11 @@ _PROVISION_HELPER="$ONBOARDING_DIR/shared-utils/provision-persona-index.sh"
 if [ -f "$_PROVISION_HELPER" ]; then
     # shellcheck source=/dev/null
     source "$_PROVISION_HELPER"
+    # v14.27.2: reconcile the canonical persona-categories.json + 54
+    # persona-blueprint.md into the workspace BEFORE the index gate runs, so the
+    # persona-dir count is 54 by gate time (furnace-safe) and drifted boxes
+    # (40/54) converge to the canonical 54.
+    reconcile_persona_assets "$SKILLS_DIR/22-book-to-persona-coaching-leadership-system" "$COACHING_DB_DIR" "$OC_WORKSPACE"
     provision_persona_index "$PERSONA_INDEX_MANIFEST" "$COACHING_DB_DIR"
 else
     warn "provision-persona-index.sh not found — skipping prebuilt index provisioning (additive)"

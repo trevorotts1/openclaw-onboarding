@@ -42,7 +42,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v14.27.1"
+ONBOARDING_VERSION="v14.27.2"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -445,7 +445,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v14.26.0 - safe_json_edit
+# v14.27.2 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1108,9 +1108,17 @@ main() {
   _U6B_HELPER="$SKILLS_DIR/shared-utils/provision-persona-index.sh"
   [ -f "$_U6B_HELPER" ] || _U6B_HELPER="$EXTRACTED_DIR/shared-utils/provision-persona-index.sh"
 
+  # Workspace + Skill-22 source for the persona reconcile (v14.27.2).
+  _U6B_WS="$HOME/.openclaw/workspace"
+  [ -d "/data/.openclaw" ] && _U6B_WS="/data/.openclaw/workspace"
+  _U6B_SK22="$SKILLS_DIR/22-book-to-persona-coaching-leadership-system"
+
   if [ -f "$_U6B_MANIFEST" ] && [ -f "$_U6B_HELPER" ]; then
     # shellcheck source=/dev/null
     source "$_U6B_HELPER"
+    # Reconcile categories + 54 blueprints to the workspace FIRST so the index
+    # gate sees 54 persona dirs (furnace-safe), then provision the index.
+    reconcile_persona_assets "$_U6B_SK22" "$_U6B_COACHING_DB_DIR" "$_U6B_WS"
     provision_persona_index "$_U6B_MANIFEST" "$_U6B_COACHING_DB_DIR"
     wire_ghl_funnel_catalog "$SKILLS_DIR" "$_U6B_OC_SECRETS_ENV" "$_U6B_OC_JSON"
   else
