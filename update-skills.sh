@@ -1,4 +1,3 @@
-#  OpenClaw Skills Updater -- Unified (Mac + VPS)
 #  PRD 2.1 -- unified repo (trevorotts1/openclaw-onboarding)
 #
 #  Platform auto-detected via OPENCLAW_PLATFORM env var or presence of /data/.openclaw.
@@ -43,7 +42,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v14.26.0"
+ONBOARDING_VERSION="v14.27.0"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -2230,6 +2229,45 @@ PYEOF
       echo "  ⚠ WIRING-ASSERT FAIL: materialize-dept-agents.sh exited non-zero — dept agents NOT registered"
       echo "  ⚠ Check that Skill 32 is installed and build-workforce.py has produced department folders"
     fi
+
+  # ----------------------------------------------------------
+  # D5 — Command Center web-app refresh (v14.27.0):
+  # git pull --ff-only + npm install + db:push + sync-departments + pm2 restart.
+  # Closes the CC #108/#109/#112 delivery gap on EXISTING boxes.
+  #
+  # install.sh delivers CC v4.54.0 via the Skill-37 closeout agent (run-full-install.sh
+  # Phase 6). update-skills.sh previously copied Skill-32 scripts but never INVOKED
+  # run-full-install.sh, so existing boxes kept the stale dashboard + the #109
+  # demo-department regression until an owner manually approved the weekly cron.
+  #
+  # Guarded: verify-remote guard — only fires when ~/projects/command-center is a git
+  # checkout of blackceo-command-center. Does NOT re-embed the persona index (honors
+  # "never rebuild a live correct index" and "client uses own keys").
+  # ----------------------------------------------------------
+  _CC_DIR="$HOME/projects/command-center"
+  _CC_RUN_INSTALL="$SKILLS_DIR/32-command-center-setup/scripts/run-full-install.sh"
+  if [ -d "$_CC_DIR/.git" ] && [ -f "$_CC_RUN_INSTALL" ]; then
+    _CC_REMOTE=$(git -C "$_CC_DIR" remote get-url origin 2>/dev/null || echo "")
+    if echo "$_CC_REMOTE" | grep -q 'blackceo-command-center'; then
+      echo ""
+      echo "  Refreshing Command Center web app (CC #108/#109/#112 — git pull + db:push + sync-departments)..."
+      _STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+      _CC_SLUG=""
+      _CC_COMPANY=""
+      _CC_EMAIL=""
+      if [ -f "$_STATE_FILE" ]; then
+        _CC_SLUG=$(python3 -c "import json; d=json.load(open('$_STATE_FILE')); print(d.get('clientSlug',''))" 2>/dev/null || echo "")
+        _CC_COMPANY=$(python3 -c "import json; d=json.load(open('$_STATE_FILE')); print(d.get('companyName',''))" 2>/dev/null || echo "")
+        _CC_EMAIL=$(python3 -c "import json; d=json.load(open('$_STATE_FILE')); print(d.get('contactEmail',''))" 2>/dev/null || echo "")
+      fi
+      if bash "$_CC_RUN_INSTALL" --update-only "${_CC_SLUG:-}" "${_CC_COMPANY:-}" "${_CC_EMAIL:-}" >>"$LOG_FILE" 2>&1; then
+        echo "  ✓ Command Center app refreshed (git pull + npm install + db:push + sync-departments + pm2 restart)"
+      else
+        echo "  ⚠ Command Center refresh reported errors — check $OC_ROOT/workspace/.command-center-install.log"
+      fi
+    fi
+  fi
+
   fi
 
   # ----------------------------------------------------------

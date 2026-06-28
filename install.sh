@@ -1,4 +1,3 @@
-# ============================================================
 #  OpenClaw Onboarding Installer — Unified (Mac + VPS)
 #  PRD 2.1 — unified repo (trevorotts1/openclaw-onboarding)
 #  Branch: prd-2.1-unified-repo
@@ -24,7 +23,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v14.26.0"
+ONBOARDING_VERSION="v14.27.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -6433,6 +6432,36 @@ install_materialize_dept_agents() {
 }
 
 install_materialize_dept_agents
+
+# ----------------------------------------------------------
+# Step 15b: Copy run-full-install.sh (D5 both-paths delivery; v14.27.0)
+# ----------------------------------------------------------
+# update-skills.sh invokes run-full-install.sh --update-only after every skill
+# sync to refresh the CC web-app on existing boxes. This step ensures the script
+# is present at $SKILLS_DIR/32-command-center-setup/scripts/ on fresh installs
+# too (same location that update-skills.sh looks for it). The Skill-37 closeout
+# agent invokes run-full-install.sh directly for the full Phase 6 install.
+install_run_full_install_sh() {
+    local SRC="$ONBOARDING_DIR/32-command-center-setup/scripts/run-full-install.sh"
+    local DEST_DIR="$SKILLS_DIR/32-command-center-setup/scripts"
+    local DEST="$DEST_DIR/run-full-install.sh"
+
+    if [ ! -f "$SRC" ]; then
+        warn "run-full-install.sh not found in onboarding bundle at $SRC — skipping (older bundle?)"
+        return 0
+    fi
+
+    mkdir -p "$DEST_DIR"
+    cp "$SRC" "$DEST" 2>>"$LOG_FILE" || {
+        warn "Failed to copy run-full-install.sh → $DEST"
+        return 1
+    }
+    chmod +x "$DEST" 2>/dev/null || true
+    success "Skill 32 run-full-install.sh installed → $DEST (D5 both-paths CC refresh)"
+    return 0
+}
+
+install_run_full_install_sh
 
 # ----------------------------------------------------------
 # Telegram diagnostic note (v10.0.1)

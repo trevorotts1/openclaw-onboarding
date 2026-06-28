@@ -1,4 +1,33 @@
-## [v14.26.0]  -  2026-06-27  -  fix(both-paths): launchd GW_LABEL auto-detect + update-path WIRING-ASSERT + unified both-paths CI gate
+## [v14.27.0]  -  2026-06-28  -  fix(both-paths): CC web-app idempotent refresh on existing boxes (CC #108/#109/#112 delivery gap closed) + D5 master CI acceptance gate
+
+**Single remaining both-paths gap — CLOSED.**
+
+`update-skills.sh` never refreshed the Command Center web-app (`~/projects/command-center`) on existing boxes. `install.sh` delivers CC v4.54.0 via the Skill-37 closeout agent that invokes `run-full-install.sh` Phase 6 (git-clone → npm install → db:push → db:seed → sync-departments → pm2). `update-skills.sh` only copied the Skill-32 scripts but never called them — the only existing-box CC update mechanism was the SILENT, owner-permission-gated weekly Sunday cron (non-deterministic). A box onboarded before v4.54.0 kept the stale dashboard AND the #109 demo-department regression until the owner manually approved an update.
+
+**`run-full-install.sh --update-only` (new flag):**
+Phase 6 update-only path: `git pull --ff-only` + `npm install` + `npm run db:push` (idempotent drizzle migrations, no wipe) + `pm2 restart` (NOT `pm2 delete+start`). **Skips `db:seed`** — protects client-customized rows.
+Phase 6c always runs: `sync-departments-from-build-state.py` regenerates `departments.json` from the client's REAL build-state — this is the **#109 fix** on existing boxes (demo departments can never resurrect; real build-state always wins).
+Phase 6d always runs: `sync-md-content-to-db.py` idempotent column backfill.
+Does NOT run `db:embed` — honors "never rebuild a live correct index" and "client uses own keys".
+Phases 1/3/4/5/6b already done on a prior full install — all skipped.
+
+**`update-skills.sh` D5 block (after materialize + WIRING-ASSERT):**
+1. Check `~/projects/command-center/.git` exists.
+2. Verify `git remote get-url origin` contains `blackceo-command-center` (verify-remote guard per memory — never operates on a non-CC checkout).
+3. Read `clientSlug`/`companyName`/`contactEmail` from `.workforce-build-state.json`.
+4. Invoke freshly-synced `$SKILLS_DIR/32-command-center-setup/scripts/run-full-install.sh --update-only`.
+
+**`install.sh` Step 15b (parity):**
+Copies `run-full-install.sh` to `$SKILLS_DIR/32-command-center-setup/scripts/` alongside `materialize-dept-agents.sh`. The Skill-37 closeout agent invokes `run-full-install.sh` directly for fresh installs (unchanged). Step 15b ensures it is always present for subsequent `--update-only` invocations from `update-skills.sh`.
+
+**D5 CI gate (added to `both-paths-delivery-guard.yml`):**
+Two new steps assert `run-full-install` is referenced in both `install.sh` (Step 15b copy) and `update-skills.sh` (D5 refresh block). Any PR that removes either reference fails CI. Extends the existing D1–D4/D7–D10 gate.
+
+**Version bump:** v14.26.0 → v14.27.0. Skill-32 skill-version.txt: v12.9.15 → v12.9.16.
+
+---
+
+## [v14.26.0]  -  2026-06-28  -  fix(both-paths): launchd GW_LABEL auto-detect + update-path WIRING-ASSERT + unified CI gate
 
 Reconciles all pending dual-path gaps and closes the PR #410 regression before it could land.
 
