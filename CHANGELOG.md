@@ -1,3 +1,41 @@
+## [v14.25.0]  -  2026-06-27  -  feat(persona-index): prebuilt-index v2.1.0 — canonical 54, section-tagged, dual-path provisioning + GHL funnel catalog
+
+Ships the canonical 54-persona section-tagged gemini-embedding-2 @3072 prebuilt index
+(`prebuilt-index-v2.1.0`, 4413 chunks, sha256 `7282796558edfcf...`) and wires provisioning
+into BOTH `install.sh` (Step 6b) and `update-skills.sh` (new Step U6b) via a shared DRY
+helper (`shared-utils/provision-persona-index.sh`), so update-only boxes receive the
+section-tagged DB + GHL funnel catalog identically to a fresh install.
+
+**Prebuilt index v2.1.0 published:** All 54 canonical personas present and section-tagged
+(`section_number=3` coaching rows, `section_number=4` leadership/governance rows, `mode`
+column in `{both,coaching,leadership}`). Replaces the stale `prebuilt-index-v2.0.0`
+(48 personas, no section tags, `asset_rebuild_required: true`).
+
+**Shared provisioning helper (`shared-utils/provision-persona-index.sh`):** Exposes two
+sourced functions — `provision_persona_index` and `wire_ghl_funnel_catalog` — that run the
+IDENTICAL logic on both install and update paths (DRY, single source of truth).
+
+**Idempotency / furnace kill:** `provision_persona_index` short-circuits (no download, no
+re-embed) if ALL of: (a) `section_number` and `mode` columns already present in the
+installed DB, AND (b) `.prebuilt-index-version` sentinel matches the manifest `release_tag`.
+The live operator coaching index (already at v2.1.0 with section tags) is NEVER clobbered.
+
+**sha256 hard gate:** Corrupt assets are never installed; the box keyword-degrades and warns
+instead of silently shipping a bad DB.
+
+**GHL funnel catalog wiring (NEW):** `wire_ghl_funnel_catalog` writes `GHL_FUNNEL_CATALOG`
+and `GHL_FUNNEL_INDEX` to both `secrets/.env` and `openclaw.json env.vars` on both install
+and update paths. Previously, neither path set these vars anywhere in the repo.
+
+**Acceptance test + CI gate:** `tests/unit/prebuilt-index-section-tagged.test.sh` (25
+assertions across layers A/B/C — static source, manifest, fixture SQLite) + CI workflow
+`.github/workflows/prebuilt-index-section-tagged-guard.yml` (offline job on every PR,
+heavy 90MB artifact-verify job gated to release/workflow_dispatch).
+
+**Version bump:** v14.24.0 → v14.25.0.
+
+---
+
 ## [v14.24.0]  -  2026-06-27  -  fix(delivery): close all 8 install+update delivery gaps
 
 Closes 8 delivery gaps so `install` and `update` both deliver everything.
