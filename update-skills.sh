@@ -44,7 +44,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v14.24.0"
+ONBOARDING_VERSION="v14.25.0"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1083,6 +1083,40 @@ main() {
     rm -rf "$SKILLS_DIR/universal-sops"
     cp -r "$EXTRACTED_DIR/universal-sops" "$SKILLS_DIR/"
     echo "  ✓ universal-sops refreshed in $SKILLS_DIR/universal-sops"
+  fi
+
+  # ----------------------------------------------------------
+  # Step U6b: Provision prebuilt persona index + wire GHL funnel catalog
+  # (v14.25.0) — mirrors install.sh Step 6b so update-only boxes receive
+  # the section-tagged 54-persona DB and catalog path vars identically to a
+  # fresh install.  Uses shared-utils/provision-persona-index.sh (copied
+  # above by the shared-utils refresh block).
+  #
+  # COACHING_DB_DIR: OC_WORKSPACE is defined later (line 1677+) so we
+  # resolve the coaching DB dir inline using the same platform detection
+  # already set at the top of this script (OC_CONFIG).
+  # ----------------------------------------------------------
+  _U6B_MANIFEST="$SKILLS_DIR/shared-utils/prebuilt-index/INDEX-MANIFEST.json"
+  [ -f "$_U6B_MANIFEST" ] || _U6B_MANIFEST="$EXTRACTED_DIR/shared-utils/prebuilt-index/INDEX-MANIFEST.json"
+
+  _U6B_COACHING_DB_DIR="$HOME/.openclaw/workspace/data/coaching-personas"
+  [ -d "/data/.openclaw" ] && _U6B_COACHING_DB_DIR="/data/.openclaw/workspace/data/coaching-personas"
+
+  _U6B_OC_JSON="$HOME/.openclaw/openclaw.json"
+  [ -f "/data/.openclaw/openclaw.json" ] && _U6B_OC_JSON="/data/.openclaw/openclaw.json"
+  _U6B_OC_SECRETS_ENV="$HOME/.openclaw/secrets/.env"
+  [ -d "/data/.openclaw" ] && _U6B_OC_SECRETS_ENV="/data/.openclaw/secrets/.env"
+
+  _U6B_HELPER="$SKILLS_DIR/shared-utils/provision-persona-index.sh"
+  [ -f "$_U6B_HELPER" ] || _U6B_HELPER="$EXTRACTED_DIR/shared-utils/provision-persona-index.sh"
+
+  if [ -f "$_U6B_MANIFEST" ] && [ -f "$_U6B_HELPER" ]; then
+    # shellcheck source=/dev/null
+    source "$_U6B_HELPER"
+    provision_persona_index "$_U6B_MANIFEST" "$_U6B_COACHING_DB_DIR"
+    wire_ghl_funnel_catalog "$SKILLS_DIR" "$_U6B_OC_SECRETS_ENV" "$_U6B_OC_JSON"
+  else
+    echo "  note: Persona-index manifest or provision helper not found — skipping Step U6b (additive)"
   fi
 
   # ----------------------------------------------------------
