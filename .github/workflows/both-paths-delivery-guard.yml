@@ -168,11 +168,51 @@ jobs:
           fi
           echo "PASS D10-update: WIRING-ASSERT present in update-skills.sh"
 
+      - name: D11 — persona reconcile wired on both paths (categories + 54 blueprints)
+        run: |
+          # v14.27.2: reconcile_persona_assets must run on BOTH paths so drifted
+          # boxes (40/54 personas, non-canonical persona-categories.json) converge.
+          if ! grep -q 'reconcile_persona_assets' install.sh; then
+            echo "FAIL D11-install: reconcile_persona_assets not invoked in install.sh"
+            exit 1
+          fi
+          if ! grep -q 'reconcile_persona_assets' update-skills.sh; then
+            echo "FAIL D11-update: reconcile_persona_assets not invoked in update-skills.sh"
+            exit 1
+          fi
+          echo "PASS D11: reconcile_persona_assets invoked on both paths"
+
+      - name: D12 — provision idempotency gate is chunk_count + persona-dir aware (static)
+        run: |
+          # v14.27.2: the gate must NOT skip merely on "has section_number column".
+          # It must compare chunk_count against the manifest and the persona-dir
+          # count, so a non-canonical 6260/7615/9456-row partial index re-provisions.
+          H="shared-utils/provision-persona-index.sh"
+          MISS=""
+          grep -q 'chunk_count != manifest chunk_count' "$H" || MISS="$MISS chunk_count-gate-doc"
+          grep -q 'CONTENT_CANON\|CONTENT-CANONICAL' "$H" || MISS="$MISS content-canonical"
+          grep -q 'PROVISION_DRY_RUN' "$H" || MISS="$MISS dry-run-hook"
+          grep -q '_PERSONA_DIR_COUNT' "$H" || MISS="$MISS persona-dir-gate"
+          if [ -n "$MISS" ]; then
+            echo "FAIL D12: provision-persona-index.sh missing:$MISS"
+            exit 1
+          fi
+          echo "PASS D12: provision gate is chunk_count + persona-dir aware with dry-run hook"
+
+      - name: D13 — provision idempotency dynamic proof (offline, dry-run)
+        run: |
+          # Runs the dedicated acceptance test: a 6260-row index re-provisions while
+          # the canonical 4413 is skipped; operator empty-sentinel self-heals; the
+          # 40→54 reconcile converges. Fully offline (PROVISION_DRY_RUN=1).
+          chmod +x tests/unit/provision-idempotency.test.sh
+          bash tests/unit/provision-idempotency.test.sh
+
       - name: Summary
         if: always()
         run: |
           echo "Both-paths delivery guard complete."
-          echo "D1-D5 (both paths) + D7-D10 (update path) checked across install.sh and update-skills.sh."
+          echo "D1-D5 (both paths) + D7-D13 checked across install.sh and update-skills.sh."
           echo "D4 checks apply-routing-fix invocation (routing keys applied at runtime, not verbatim)."
           echo "D5 checks run-full-install deployment (CC web-app refresh — CC #108/#109/#112)."
+          echo "D11-D13 check the v14.27.2 persona reconcile + canonical idempotency gate."
           echo "All PASS = both paths deliver every dimension; any FAIL = regression detected."

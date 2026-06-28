@@ -1,3 +1,68 @@
+## [v14.27.2]  -  2026-06-27  -  fix(persona-index): canonical idempotency gate (chunk_count + persona-dir aware) + workspace persona reconcile
+
+Fleet audit found persona-layer divergence the prior idempotency gate could not heal:
+~12 boxes at v14.23.1 carried non-canonical 6260/7615/9456-row partial persona
+indexes plus 40-of-54 personas, and 2 boxes (jdbv/lydh) carried a 4413 index but
+40 personas + a non-canonical persona-categories.json. Two distinct root causes,
+both fixed here and guarded against regression.
+
+**Bug 1 — provision-persona-index.sh skipped non-canonical partial indexes (idempotency)**
+
+The gate treated "embeddings has the section_number column" (plus a matching version
+sentinel) as already-provisioned and SKIPPED the download. A box whose index was a
+locally-re-embedded 6260/7615/9456-row partial (section-tagged, so columns present)
+therefore never converged to the canonical 4413-row v2.1.0 asset.
+
+Fix: `provision_persona_index` now RE-PROVISIONS when ANY of: index absent; a required
+column (section_number/mode) missing; `chunk_count` != manifest `chunk_count` (4413);
+persona-dir count under `<coaching_db_dir>/personas` != manifest `persona_count` (54);
+or the `.prebuilt-index-version` sentinel != manifest `release_tag`. It SKIPS only when
+the index is genuinely the canonical asset — CONTENT-CANONICAL = present AND columns ok
+AND chunk_count match AND persona-dir count match. A 6260-row partial now re-provisions
+to 4413 on the next `openclaw update`.
+
+Live-operator-index / furnace guard: a content-canonical index whose sentinel is
+absent/empty/stale (e.g. the live operator index, which was BUILT locally and never
+stamped) is SELF-HEALED — the sentinel is stamped to the manifest tag and the 90MB
+download is skipped. Re-download fires only when the CONTENT is non-canonical, so the
+operator's canonical 4413-row index is never clobbered or re-fetched every update.
+
+`PROVISION_DRY_RUN=1` prints the gate decision and returns before any network I/O
+(used by the new acceptance test to prove the gate offline).
+
+**Bug 2 — workspace persona assets never reconciled (categories + 54 blueprints)**
+
+The agent reads persona-categories.json and persona-blueprint.md from the WORKSPACE
+(`<ws>/data/coaching-personas/…` and the legacy `<ws>/coaching-personas/…`), not the
+shipped Skill-22 seed. `resolve_persona_categories_path.py::seed_canonical_from_skill22`
+only SEEDED an ABSENT canonical path — it never RECONCILED a stale one — so boxes that
+already had a 40-persona / non-canonical-md5 workspace copy never converged even though
+the canonical 54 shipped in `skills/22-…`.
+
+Fix: new `reconcile_persona_assets <skill22_dir> <coaching_db_dir> <workspace_dir>` copies
+the canonical persona-categories.json (md5 c544561074e6e1d65aed1840b6f03b8c) to the data/
+canonical path (and overwrites a stale legacy file) and lands all 54 canonical
+persona-blueprint.md into `<coaching_db_dir>/personas/<slug>/`. Idempotent + additive
+(writes only when missing/empty/md5-differs; never deletes box-local dirs; never mutates
+the Skill-22 seed). Wired into BOTH install.sh Step 6b and update-skills.sh Step U6b,
+running BEFORE the index gate so the persona-dir count is 54 by gate time (furnace-safe).
+
+An opted-out small-department subset box keeps its custom persona subset: this reconcile
+converges categories/version but respects a box-local subset — the index gate's
+persona-dir trigger only re-fetches the shared canonical asset, it does not force-expand
+a box's blueprint set.
+
+**Guards (Bug 3 — regression prevention)**
+
+both-paths-delivery-guard.yml gains D11 (reconcile_persona_assets invoked on both paths),
+D12 (static: gate is chunk_count + persona-dir aware with a dry-run hook), and D13 (runs
+the new offline acceptance test). New test `tests/unit/provision-idempotency.test.sh`
+(14 assertions) proves a 6260-row index re-provisions, the canonical 4413 is skipped, the
+empty-sentinel operator index self-heals without a download, a missing `mode` column
+re-provisions, and the 40→54 reconcile converges categories + blueprints.
+
+All changes are idempotent and additive.
+
 ## [v14.27.1]  -  2026-06-27  -  fix(update-skills): operator-telegram bindings token-gate + OC_ROOT unbound abort
 
 Two bugs from the v14.27.0 fleet roll (14 boxes; each box's agent worked around
