@@ -1,4 +1,3 @@
-#!/usr/bin/env bash
 # ============================================================
 #  OpenClaw Onboarding Installer — Unified (Mac + VPS)
 #  PRD 2.1 — unified repo (trevorotts1/openclaw-onboarding)
@@ -25,7 +24,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v14.25.0"
+ONBOARDING_VERSION="v14.26.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)

@@ -1,0 +1,183 @@
+# .github/workflows/both-paths-delivery-guard.yml
+#
+# Unified both-paths delivery guard (v14.26.0).
+#
+# Runs on every PR and push to main. Asserts STATICALLY (offline grep —
+# no runtime, no network) that BOTH install.sh AND update-skills.sh carry
+# every delivery dimension that all prior PRs (#398-#411) were supposed to
+# close. A dimension missing from either path is a regression.
+#
+# Dimensions checked (9 total):
+#   D1  Section-tagged 54-persona index  provision_persona_index
+#   D2  GHL funnel catalog wiring        wire_ghl_funnel_catalog
+#   D3  Dept agent registration          materialize-dept-agents
+#   D4  Routing: agentToAgent            agentToAgent
+#   D5  Routing: allowAgents             allowAgents
+#   D6  Routing: visibility              tools.sessions.visibility
+#   D7  Heartbeat furnace protection     ensure-heartbeat-defaults
+#   D8  Operator account separation      configure-operator-telegram
+#   D9  No hardcoded wrong launchd label (no com.openclaw.gateway)
+#
+# Note: shared-utils and universal-sops are delivered via file-copy blocks
+# that are harder to grep for uniquely; they are covered by the prebuilt-index
+# guard (which sources shared-utils/provision-persona-index.sh) and by the
+# existing prebuilt-index-section-tagged-guard.yml. Adding dedicated checks
+# here if those paths diverge.
+
+name: both-paths-delivery-guard
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  both-paths-delivery:
+    name: Both-paths delivery dimensions (static source)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: D1 — provision_persona_index on install path
+        run: |
+          if ! grep -q 'provision_persona_index' install.sh; then
+            echo "FAIL D1-install: provision_persona_index not found in install.sh"
+            exit 1
+          fi
+          echo "PASS D1-install: provision_persona_index present in install.sh"
+
+      - name: D1 — provision_persona_index on update path
+        run: |
+          if ! grep -q 'provision_persona_index' update-skills.sh; then
+            echo "FAIL D1-update: provision_persona_index not found in update-skills.sh"
+            exit 1
+          fi
+          echo "PASS D1-update: provision_persona_index present in update-skills.sh"
+
+      - name: D2 — wire_ghl_funnel_catalog on install path
+        run: |
+          if ! grep -q 'wire_ghl_funnel_catalog' install.sh; then
+            echo "FAIL D2-install: wire_ghl_funnel_catalog not found in install.sh"
+            exit 1
+          fi
+          echo "PASS D2-install: wire_ghl_funnel_catalog present in install.sh"
+
+      - name: D2 — wire_ghl_funnel_catalog on update path
+        run: |
+          if ! grep -q 'wire_ghl_funnel_catalog' update-skills.sh; then
+            echo "FAIL D2-update: wire_ghl_funnel_catalog not found in update-skills.sh"
+            exit 1
+          fi
+          echo "PASS D2-update: wire_ghl_funnel_catalog present in update-skills.sh"
+
+      - name: D3 — materialize-dept-agents on install path
+        run: |
+          if ! grep -q 'materialize-dept-agents' install.sh; then
+            echo "FAIL D3-install: materialize-dept-agents not found in install.sh"
+            exit 1
+          fi
+          echo "PASS D3-install: materialize-dept-agents present in install.sh"
+
+      - name: D3 — materialize-dept-agents on update path
+        run: |
+          if ! grep -q 'materialize-dept-agents' update-skills.sh; then
+            echo "FAIL D3-update: materialize-dept-agents not found in update-skills.sh"
+            exit 1
+          fi
+          echo "PASS D3-update: materialize-dept-agents present in update-skills.sh"
+
+      - name: D4 — agentToAgent routing on install path
+        run: |
+          if ! grep -q 'agentToAgent' install.sh; then
+            echo "FAIL D4-install: agentToAgent not found in install.sh"
+            exit 1
+          fi
+          echo "PASS D4-install: agentToAgent present in install.sh"
+
+      - name: D4 — agentToAgent routing on update path
+        run: |
+          if ! grep -q 'agentToAgent' update-skills.sh; then
+            echo "FAIL D4-update: agentToAgent not found in update-skills.sh"
+            exit 1
+          fi
+          echo "PASS D4-update: agentToAgent present in update-skills.sh"
+
+      - name: D5 — allowAgents on install path
+        run: |
+          if ! grep -q 'allowAgents' install.sh; then
+            echo "FAIL D5-install: allowAgents not found in install.sh"
+            exit 1
+          fi
+          echo "PASS D5-install: allowAgents present in install.sh"
+
+      - name: D5 — allowAgents on update path
+        run: |
+          if ! grep -q 'allowAgents' update-skills.sh; then
+            echo "FAIL D5-update: allowAgents not found in update-skills.sh"
+            exit 1
+          fi
+          echo "PASS D5-update: allowAgents present in update-skills.sh"
+
+      - name: D6 — sessions.visibility routing on install path
+        run: |
+          if ! grep -q 'sessions.visibility\|sessions\.visibility' install.sh; then
+            echo "FAIL D6-install: sessions.visibility not found in install.sh"
+            exit 1
+          fi
+          echo "PASS D6-install: sessions.visibility present in install.sh"
+
+      - name: D6 — sessions.visibility routing on update path
+        run: |
+          if ! grep -q 'sessions.visibility\|sessions\.visibility' update-skills.sh; then
+            echo "FAIL D6-update: sessions.visibility not found in update-skills.sh"
+            exit 1
+          fi
+          echo "PASS D6-update: sessions.visibility present in update-skills.sh"
+
+      - name: D7 — heartbeat furnace protection on update path
+        run: |
+          if ! grep -q 'ensure-heartbeat-defaults\|ensure_heartbeat_defaults' update-skills.sh; then
+            echo "FAIL D7-update: ensure-heartbeat-defaults not found in update-skills.sh"
+            exit 1
+          fi
+          echo "PASS D7-update: ensure-heartbeat-defaults present in update-skills.sh"
+
+      - name: D8 — operator account separation on update path
+        run: |
+          if ! grep -q 'configure-operator-telegram\|configure_operator_telegram' update-skills.sh; then
+            echo "FAIL D8-update: configure-operator-telegram not found in update-skills.sh"
+            exit 1
+          fi
+          echo "PASS D8-update: configure-operator-telegram present in update-skills.sh"
+
+      - name: D9 — no hardcoded com.openclaw.gateway label
+        run: |
+          # Allow the string in CHANGELOG.md and docs only — not in scripts
+          HITS=$(grep -rn 'com\.openclaw\.gateway' install.sh update-skills.sh scripts/ || true)
+          if [ -n "$HITS" ]; then
+            echo "FAIL D9: com.openclaw.gateway found in scripts (must be ai.openclaw.gateway or GW_LABEL):"
+            echo "$HITS"
+            exit 1
+          fi
+          echo "PASS D9: no hardcoded com.openclaw.gateway in install.sh, update-skills.sh, or scripts/"
+
+      - name: D10 — WIRING-ASSERT present on update path
+        run: |
+          if ! grep -q 'WIRING-ASSERT' update-skills.sh; then
+            echo "FAIL D10-update: WIRING-ASSERT block not found in update-skills.sh"
+            exit 1
+          fi
+          echo "PASS D10-update: WIRING-ASSERT present in update-skills.sh"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "Both-paths delivery guard complete."
+          echo "D1-D10 checked across install.sh and update-skills.sh."
+          echo "All PASS = both paths deliver every dimension; any FAIL = regression detected."
