@@ -60,25 +60,27 @@ WHAT IT DOES (zero AI judgement at runtime):
     1. Reads a slides.json (see slides.schema.json) and an output .pptx path.
     2. For EACH slide, LOADS the per-slide RICH prompt VERBATIM from
          working/prompts/slide-NN.txt  (or the SOP-named  slide-NN-prompt.txt).
-       This is the Slide Image Creator's hand-authored output — a 5,000–18,000-char
-       prompt that already carries the typography (per-line weight + pt size),
+       This is the Slide Image Creator's hand-authored output — a 9,000–14,000-char
+       (HARD floor 9,000; HARD ceiling 18,000) prompt that already carries the
+       typography (per-line weight + pt size),
        placement, usage, the logo(s), the scene, the verbatim copy, the negative
        block, and everything else that appears on the slide. build_deck.py renders
        THAT prompt verbatim — it does NOT compose its own thin prompt from
        scene+copy. A whole slide is rendered in ONE gpt-image-2 generation.
        If a slide has NO rich prompt file, or the prompt is < PROMPT_CHAR_FLOOR
-       (5,000) chars, build_deck.py FAILS LOUD — it NEVER silently falls back to a
-       thin composed prompt. TWO prompt-side QC gates run on every rich prompt,
-       both FAIL-LOUD (no silent render):
+       (9,000) chars, or it fails the QUALITY floor (AF-P13 eight-class negative
+       block / AF-P14 spelling-lock / AF-P-DENSITY / AF-P-VERBATIM), build_deck.py
+       FAILS LOUD — it NEVER silently falls back to a thin composed prompt. The
+       prompt-side QC gates run on every rich prompt, all FAIL-LOUD (no silent render):
          (a) FACIAL-INTELLIGENCE / REPRESENTATION gate — refuses any prompt that
              carries a forbidden hardcoded demographic default (the "60/30/10"
              landmine). Representation comes from the slide spec / casting ledger
              (the client's captured audience), never a baked-in default split
              (SOP-CAST-01, AF-R3).
          (b) CHAR-COUNT gate — the rich prompt length must be within
-             [PROMPT_CHAR_FLOOR, PROMPT_CHAR_CEILING] = [5000, 18000]; the floor is
-             HARD (any prompt under the 5,000-char standard is not run, not rendered,
-             not updated — AF-P1/AF-PROMPT-FLOOR) and the 18,000 ceiling is the universal GPT-Image 2
+             [PROMPT_CHAR_FLOOR, PROMPT_CHAR_CEILING] = [9000, 18000]; the floor is
+             HARD (any prompt under the 9,000-char target-band low end is not run, not
+             rendered, not updated — AF-P1/AF-PROMPT-FLOOR) and the 18,000 ceiling is the universal GPT-Image 2
              safety boundary (AF-P2).
     3. Calls KIE.ai (gpt-image-2-text-to-image, or gpt-image-2-image-to-image when a
        logo is supplied via input_urls so the WHOLE slide + logo render in ONE
@@ -148,8 +150,9 @@ PROCESS PREFLIGHT (un-bypassable by default):
 
     The preflight enforces EVERY SOP artifact: intake, research brief, converting
     arc, slides_copy, design/typography brief, copy QC (pass), anti-compression
-    coverage, AND a >=5,000-char RICH prompt for EVERY slide in working/prompts/
-    (the Slide Image Creator's output). Any missing/short/deviation → refuse to
+    coverage, AND a >=9,000-char RICH prompt (clearing the AF-P13/AF-P14/density/
+    verbatim quality floor) for EVERY slide in working/prompts/
+    (the Slide Image Creator's output). Any missing/short/thin/deviation → refuse to
     render, exit 3, loud. There is no path past the gate with a thin or absent
     per-slide prompt.
 
@@ -297,31 +300,108 @@ ENGLISH_PIN = (
 #     that ceiling so a prompt is never rejected or truncated by the platform.
 #     This ceiling is UNIVERSAL: it applies to every prompt path. A prompt over
 #     it is an AF-P2 auto-fail.
-#   * The FLOOR is 5,000 chars and it is HARD (AF-P1). build_deck.py does NOT
+#   * The FLOOR is 9,000 chars and it is HARD (AF-P1). build_deck.py does NOT
 #     compose its own thin prompt any more — it renders the Slide Image Creator's
 #     hand-authored RICH per-slide prompt VERBATIM (working/prompts/slide-NN.txt).
 #     That prompt carries the full 15-element spec (typography size + per-line
 #     weight, placement, usage, the logo(s), the scene, verbatim copy, the negative
 #     block, everything on the slide); the SOP targets 9,000–14,000 chars. A prompt
-#     under 5,000 chars is, by definition, not a real slide prompt — it is a thin
+#     under 9,000 chars is, by definition, not a real slide prompt — it is a thin
 #     stub or a truncated file — so it is NOT run, NOT rendered, and NOT updated:
-#     the slide FAILS LOUD (AF-P1). 5,000 is the reconciled HARD floor: the SOP's
-#     own authored standard ("write each slide prompt to the 5,000-char standard")
-#     is now the un-bypassable minimum below which a prompt cannot possibly carry
-#     the mandatory specificity. The Prompt-Authoring phase (P4-PROMPT) writes to
-#     this standard and the Prompt-QC phase (P4-PROMPT-QC) verifies it independently.
-PROMPT_CHAR_FLOOR = 5000      # HARD floor (AF-P1/AF-PROMPT-FLOOR): any rich prompt under the 5,000-char standard is NOT run/rendered/updated — FAIL LOUD
+#     the slide FAILS LOUD (AF-P1). 9,000 is the reconciled HARD floor: it is the LOW
+#     end of the SOP's own authoring target band (9,000–14,000 per slide-image-creator.md),
+#     raised from the retired 5,000 floor because the deep diagnosis proved a 5,000-char
+#     prompt — mostly boilerplate negative block + archetype line — is fully "compliant"
+#     yet too thin to carry the 15-element spec, and a competing role taught "5,000 = done."
+#     The HARD floor now IS the target-band low end, so a floor-grazing prompt physically
+#     cannot omit the typography/face/composition/lighting/palette detail. On top of the
+#     raw length floor, the rich-prompt gate ALSO enforces a density/specificity check
+#     (hex palette + a pt/px type size + a composition/zone token + a distinct-word floor)
+#     and a VERBATIM-WORDS-BAKED check (the slide's exact copy must appear in the prompt
+#     body), so length alone can never satisfy the gate. The Prompt-Authoring phase
+#     (P4-PROMPT) writes to this band and the Prompt-QC phase (P4-PROMPT-QC) verifies it
+#     independently — and the governed Prompt-QC gate now RE-MEASURES every on-disk prompt
+#     (it is no longer a JSON rubber stamp).
+PROMPT_CHAR_FLOOR = 9000      # HARD floor (AF-P1/AF-PROMPT-FLOOR): the 9,000-char target-band LOW end; any rich prompt under it is NOT run/rendered/updated — FAIL LOUD
+PROMPT_CHAR_TARGET_HIGH = 14000  # the SOP authoring-target HIGH end (informational band ceiling; the HARD ceiling stays PROMPT_CHAR_CEILING)
 PROMPT_CHAR_CEILING = 18000   # UNIVERSAL hard maximum (AF-P2; 2,000 under the 20,000 API ceiling)
+PROMPT_MIN_DISTINCT_WORDS = 220  # AF-P-DENSITY: a >=9,000-char prompt that repeats one paragraph to pad length has few distinct words; a genuinely rich prompt has 400+. Floor catches paste-repetition padding.
 
 # REQUIRED STRUCTURAL BLOCKS (AF-P1). A real rich prompt is not just long enough — it
 # carries the load-bearing structural scaffolding: an [ARCHETYPE ...] layout declaration,
 # an explicit NEGATIVE BLOCK, and at least one "Do not " imperative inside it. A
-# 5,000-char file with none of these is a verbose stub, not a slide spec. This is the
+# 9,000-char file with none of these is a verbose stub, not a slide spec. This is the
 # structural-block check FOLDED IN from the retired presentation-render/render_deck.py
 # (_validate_prompt) so build_deck.py is the ONE canonical renderer — it now enforces
 # every invariant render_deck.py used to, with no separate render module to drift.
 # Matched case-insensitively, on the same STRIPPED text the char-count gate measures.
 REQUIRED_STRUCTURAL_BLOCKS = ["[ARCHETYPE", "NEGATIVE BLOCK", "Do not "]
+
+# ---------------------------------------------------------------------------
+# AF-P13 — the EIGHT mandatory negative-block defect CLASSES (slide-image-creator.md
+# SOP 9.8). REQUIRED_STRUCTURAL_BLOCKS above only proves a "NEGATIVE BLOCK" header and
+# ONE "Do not " sentence exist — a one-line stub satisfies it. AF-P13 gives the
+# negative block real teeth: the block must actually name ALL EIGHT defect classes the
+# forensic reference deck shipped (garbled text, logo mutation, placeholder tokens,
+# image narration, anatomical artifacts, competing background, skin-tone fidelity,
+# universal baseline). Each class below must have >=1 of its tokens present
+# (case-insensitive) somewhere in the prompt. Token sets are deliberately TOLERANT
+# (any one hit = the class is named) so legitimate phrasing variants pass while a thin
+# stub that says only "no text" fails. This is the mechanical half of AF-P13 (the
+# paired-positive-twin + no-contradiction audit stays with the QC vision pass).
+NEGATIVE_BLOCK_CLASS_TOKENS = {
+    "garbled/misspelled text": [
+        "misspell", "garble", "letter-for-letter", "letter for letter",
+        "render every quoted", "exactly as written", "render every letter"],
+    "logo mutation": [
+        "logo", "monogram", "tagline lockup", "reference mark", "redraw",
+        "redesign", "recolor", "restyle", "reinterpret"],
+    "placeholder/bracket tokens": [
+        "bracketed token", "square bracket", "owner to confirm", "placeholder",
+        "tbd", "build note", "to supply", "pending", "insert"],
+    "image narration/presenter/meta": [
+        "narrat", "presenter line", "spoken-script", "spoken script",
+        "stage direction", "telegraphing", "webinar", "self-talk",
+        "describe the picture", "description of the picture", "build note"],
+    "anatomical artifacts": [
+        "finger", "fused hand", "malformed", "anatom", "distorted facial",
+        "mismatched eye", "asymmetric eye", "distorted teeth",
+        "over-smoothed skin", "body proportion", "extra limb"],
+    "background competing with text": [
+        "busy", "cluttered", "high-detail background", "compete", "behind any text",
+        "text zone", "scrim", "legib", "negative space"],
+    "demographic/skin-tone fidelity": [
+        "demographic", "skin tone", "skin-tone", "representation_mix", "lighten",
+        "ashen", "desaturate", "mono-cast", "mono cast", "deep skin"],
+    "carried-forward universal baseline": [
+        "watermark", "emoji", "clipart", "default font", "calibri", "arial",
+        "times new roman", "system default", "ui artifact", "user-interface",
+        "em dash", "pure-black", "pure black"],
+}
+
+# AF-P14 — per-string SPELLING-LOCK. A real rich prompt pins the EXACT spelling of every
+# on-slide word with a per-line spelling-lock directive (SOP 9.9 "HEADLINE VERBATIM +
+# SPELLING-LOCK"). The mechanical half: at least one spelling-lock marker token must be
+# present. Paired with the VERBATIM-WORDS-BAKED check (the exact slide copy must appear
+# in the prompt body), a stub can neither fake the lock nor the words.
+SPELLING_LOCK_TOKENS = [
+    "spelling-lock", "spelling lock", "letter-for-letter", "letter for letter",
+    "render this exact string", "reads exactly", "render every quoted text string exactly",
+    "spelled exactly", "exact spelling", "render every letter",
+]
+
+# AF-P-DENSITY — concrete specificity signals. A genuinely rich prompt that carries the
+# 15-element spec necessarily declares: a brand palette HEX, an explicit type SIZE
+# (pt/px), and a COMPOSITION/zone instruction. A 9,000-char file padded with boilerplate
+# can clear the length floor while carrying none of these. Each signal below is required.
+PROMPT_COMPOSITION_TOKENS = [
+    "thirds", "rule of thirds", "grid", "left third", "right third", "upper third",
+    "lower third", "left-third", "right-third", "upper-third", "lower-third", "zone",
+    "safe margin", "safe-margin", "quadrant", "negative space", "focal point", "composition",
+]
+_HEX_COLOR_RE = re.compile(r"#[0-9a-fA-F]{6}\b")
+_TYPE_SIZE_RE = re.compile(r"\b\d{2,4}\s?(?:pt|px|pixels)\b", re.IGNORECASE)
+_WORD_RE = re.compile(r"[a-z0-9][a-z0-9'\-]+")
 
 # ---------------------------------------------------------------------------
 # RESEARCH-CITATION GATE (AF-RESEARCH-UNCITED) — the minimum cited-URL floor
@@ -774,6 +854,110 @@ def resolve_prompt_path(run_dir: Path, ordinal: int) -> Optional[Path]:
     return None
 
 
+def _norm_ws(s: str) -> str:
+    """Lowercase + collapse all runs of whitespace to a single space + strip. Used by
+    the verbatim-words-baked check so a copy line and its prompt quotation match even
+    across line wraps / double spaces."""
+    return re.sub(r"\s+", " ", str(s)).strip().lower()
+
+
+def _negative_block_class_problems(prompt_lc: str) -> list:
+    """AF-P13 mechanical half: return the names of any of the EIGHT mandatory
+    negative-block defect classes that are NOT named in the prompt. Empty list = all
+    eight present."""
+    missing = []
+    for cls, tokens in NEGATIVE_BLOCK_CLASS_TOKENS.items():
+        if not any(t in prompt_lc for t in tokens):
+            missing.append(cls)
+    return missing
+
+
+def _spelling_lock_present(prompt_lc: str) -> bool:
+    """AF-P14 mechanical half: True iff the prompt carries a per-string spelling-lock
+    directive marker."""
+    return any(t in prompt_lc for t in SPELLING_LOCK_TOKENS)
+
+
+def _prompt_density_problems(prompt_text: str, prompt_lc: str) -> list:
+    """AF-P-DENSITY: return human-readable reasons the prompt is thin/padded despite
+    clearing the char floor. Requires a brand HEX, an explicit type SIZE, a
+    COMPOSITION/zone token, and a distinct-word floor (catches paste-repetition padding)."""
+    problems = []
+    if not _HEX_COLOR_RE.search(prompt_text):
+        problems.append("no brand palette HEX (#RRGGBB) — element (f) palette is mandatory")
+    if not _TYPE_SIZE_RE.search(prompt_text):
+        problems.append("no explicit type SIZE token (e.g. '72pt', '28pt', '120px') — "
+                        "typography size is a mandatory 15-element field")
+    if not any(t in prompt_lc for t in PROMPT_COMPOSITION_TOKENS):
+        problems.append("no composition/zone token (thirds grid, zone, safe margin, "
+                        "quadrant) — 'centered' alone is an auto-fail in doctrine")
+    distinct = len(set(_WORD_RE.findall(prompt_lc)))
+    if distinct < PROMPT_MIN_DISTINCT_WORDS:
+        problems.append(f"only {distinct} distinct words (floor {PROMPT_MIN_DISTINCT_WORDS}) "
+                        "— a long file with few distinct words is paste-repetition padding, "
+                        "not a rich 15-element spec")
+    return problems
+
+
+def _verbatim_copy_problems(prompt_text: str, copy_val) -> list:
+    """VERBATIM-WORDS-BAKED check (FIX-4): the slide's EXACT copy strings must appear in
+    the prompt body so the words are baked into the kie.ai image (never paraphrased and
+    never left to be overlaid later). Returns the copy strings that are NOT present
+    verbatim (whitespace-normalised, case-insensitive). Empty list = every copy line is
+    quoted in the prompt."""
+    if isinstance(copy_val, list):
+        strings = [str(c) for c in copy_val]
+    elif copy_val in (None, ""):
+        strings = []
+    else:
+        strings = [str(copy_val)]
+    prompt_norm = _norm_ws(prompt_text)
+    missing = []
+    for c in strings:
+        cn = _norm_ws(c)
+        # Skip empty / trivial fragments (a 1-2 char label proves nothing).
+        if len(cn) < 3:
+            continue
+        if cn not in prompt_norm:
+            short = c if len(str(c)) <= 60 else str(c)[:57] + "..."
+            missing.append(short)
+    return missing
+
+
+def rich_prompt_quality_problems(prompt_text: str, copy_val=None) -> list:
+    """The QUALITY-LAYER teeth on a single rich prompt (on top of the char floor +
+    REQUIRED_STRUCTURAL_BLOCKS already enforced by the caller): AF-P13 (eight-class
+    negative block), AF-P14 (spelling-lock), AF-P-DENSITY (hex/size/composition/distinct
+    words), and VERBATIM-WORDS-BAKED (the slide's exact copy is in the prompt). Returns a
+    list of fatal problem strings (empty = the prompt clears every quality gate). Shared
+    by load_rich_prompt (render-time, raises) and _chk_rich_prompts / the Prompt-QC teeth
+    (preflight, accumulates) so the floor can never be a length-only rubber stamp."""
+    prompt_lc = prompt_text.lower()
+    problems = []
+    missing_classes = _negative_block_class_problems(prompt_lc)
+    if missing_classes:
+        problems.append(
+            "AF-P13: negative block does not name defect class(es): "
+            + ", ".join(missing_classes)
+            + " — the 8-class paired negative block (SOP 9.8) is mandatory; a "
+            "one-line 'no text' AVOID stub does not satisfy it")
+    if not _spelling_lock_present(prompt_lc):
+        problems.append(
+            "AF-P14: no per-string spelling-lock directive (e.g. 'render this exact "
+            "string, letter-for-letter') — every verbatim on-slide string must be "
+            "spelling-locked")
+    for d in _prompt_density_problems(prompt_text, prompt_lc):
+        problems.append("AF-P-DENSITY: " + d)
+    if copy_val is not None:
+        missing_copy = _verbatim_copy_problems(prompt_text, copy_val)
+        if missing_copy:
+            problems.append(
+                "AF-P-VERBATIM: the slide's exact copy is NOT baked into the prompt "
+                "body (must appear verbatim so kie.ai bakes the words, never overlaid): "
+                + " | ".join(missing_copy))
+    return problems
+
+
 def assert_no_forbidden_demographic_default(slide: dict, prompt_text: str = "") -> None:
     """
     FACIAL-INTELLIGENCE / REPRESENTATION GATE (fail-loud).
@@ -822,7 +1006,7 @@ def load_rich_prompt(slide: dict, run_dir: Path) -> str:
 
     FAIL LOUD (ValueError; the caller fails the slide and the run is blocked) when:
       * no rich prompt file exists for this slide                       → AF-P1
-      * the rich prompt is < PROMPT_CHAR_FLOOR (5,000) chars            → AF-P1
+      * the rich prompt is < PROMPT_CHAR_FLOOR (9,000) chars            → AF-P1
         (not run, not rendered, not updated)
       * the rich prompt is > PROMPT_CHAR_CEILING (18,000) chars         → AF-P2
       * a forbidden demographic-default landmine is present             → AF-R3
@@ -852,7 +1036,7 @@ def load_rich_prompt(slide: dict, run_dir: Path) -> str:
             f"fragment '{DEAD_ENDPOINT_FRAGMENT}'. Refusing."
         )
 
-    # PROMPT CHAR-COUNT GATE (fail-loud). The floor is HARD (5,000): a prompt under
+    # PROMPT CHAR-COUNT GATE (fail-loud). The floor is HARD (9,000): a prompt under
     # it is a thin stub / truncated file, NOT a real slide prompt — never run it.
     # H1: measure the STRIPPED length so a file padded with whitespace (or one that is
     # whitespace-only) can never satisfy the floor. len(prompt) over raw bytes would
@@ -896,6 +1080,19 @@ def load_rich_prompt(slide: dict, run_dir: Path) -> str:
             f"rich prompt declares its [ARCHETYPE ...] layout, carries an explicit NEGATIVE "
             f"BLOCK, and states 'Do not ...' imperatives. Re-author the rich prompt with "
             f"the full 15-element structure. Refusing (structural-block gate, AF-P1)."
+        )
+    # QUALITY-LAYER teeth (AF-P13 / AF-P14 / AF-P-DENSITY / AF-P-VERBATIM). A prompt that
+    # clears the length floor + structural blocks is still rejected when its negative block
+    # omits any of the eight defect classes, it carries no per-string spelling-lock, it is
+    # thin/padded (no hex palette / type size / composition token / too few distinct words),
+    # or it fails to bake the slide's exact copy verbatim. Length alone is never enough.
+    quality = rich_prompt_quality_problems(prompt, slide.get("copy"))
+    if quality:
+        raise ValueError(
+            f"slide {ordinal}: rich prompt {prompt_path} clears the char floor + structural "
+            f"blocks but FAILS the quality floor — it is not a real 15-element spec. "
+            f"It is NOT run, NOT rendered, NOT updated. Re-author. Problems: "
+            + " || ".join(quality)
         )
     return prompt
 
@@ -1559,6 +1756,82 @@ def _qc_independence_reason(obj: dict) -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------
+# FOREIGN / CORRUPT QC-REPORT SIGNATURES — the governed path IGNORES any QC report it
+# did not itself produce. A report bearing one of these signatures came from the
+# eliminated client-side generators (the word-count prompt rubric `_build_qc_report.py`
+# that REWARDS sub-floor prompts, and the post-production-overlay image rubric with its
+# `typography_overlay_readiness` criterion that rewards a blank canvas) — it is a
+# hand-authored / corrupt artifact, not a governed grade, and is REJECTED on sight.
+# Matched case-insensitively against the whole report JSON blob. The bare phrase
+# "out of scope" is NOT here (it false-positives on legit prose); slide-exclusion is
+# caught structurally by _image_qc_report_defects' excluded-keys check instead.
+QC_FOREIGN_SIGNATURES = [
+    "score_prompt_length", "_build_qc_report", "word_count_band", "words_in_band",
+    "80-180 words", "80–180 words", "word-count rubric", "word count rubric",
+    "length_words_score", "typography_overlay_readiness", "overlay_readiness",
+    "overlay the headline", "overlay the canonical", "post-production overlay",
+    "post production overlay", "applied in post",
+]
+
+
+def _qc_report_substance_problems(obj: dict) -> list:
+    """ANTI-RUBBER-STAMP teeth shared by EVERY report-shape QC gate (copy / prompt /
+    image / typography / speech). Returns a list of fatal reasons the report cannot be a
+    governed grade. Two classes:
+      (1) FOREIGN/CORRUPT generator signature — the eliminated word-count prompt rubric or
+          the post-production-overlay image rubric; the governed path ignores reports it
+          did not produce.
+      (2) SCORE-INCONSISTENCY — a declared headline `average` that grossly exceeds the mean
+          of the report's OWN per-criterion scores, or a per-criterion mean below the 8.5
+          bar; a typed pass over low criteria is a rubber stamp.
+    Empty list = the report carries no rubber-stamp signature."""
+    problems = []
+    try:
+        blob = json.dumps(obj, default=str).lower()
+    except Exception:  # noqa: BLE001
+        blob = ""
+    for sig in QC_FOREIGN_SIGNATURES:
+        if sig in blob:
+            problems.append(
+                f"report bears a corrupt/foreign QC-generator signature ({sig!r}) — the "
+                "word-count prompt rubric and the post-production-overlay image rubric are "
+                "ELIMINATED; a report carrying them was not produced by the governed QC pass "
+                "and is REJECTED (the governed path ignores any QC report it did not generate)")
+            break
+    # Score-consistency — only fires when the report cites its own per-criterion scores.
+    scores = []
+    for key in ("criteria", "scores", "dimensions", "rubric", "per_criterion", "scorecard"):
+        v = obj.get(key)
+        if isinstance(v, list):
+            for r in v:
+                if isinstance(r, dict):
+                    s = r.get("score", r.get("value"))
+                    try:
+                        scores.append(float(s))
+                    except (TypeError, ValueError):
+                        pass
+            if scores:
+                break
+    if len(scores) >= 2:
+        mean = sum(scores) / len(scores)
+        avg = obj.get("average", obj.get("average_score"))
+        try:
+            avgf = float(avg)
+        except (TypeError, ValueError):
+            avgf = None
+        if avgf is not None and avgf - mean > 1.0:
+            problems.append(
+                f"declared average {avgf} exceeds the mean of the report's OWN per-criterion "
+                f"scores ({mean:.2f}) by more than 1.0 — the headline score is inflated over "
+                "the rubric it cites")
+        if mean < 8.5:
+            problems.append(
+                f"the mean of the report's OWN per-criterion scores is {mean:.2f}, below the "
+                "8.5 bar — the declared pass contradicts its own rubric")
+    return problems
+
+
 def _chk_copy_qc(path: Optional[Path]) -> str:
     if path is None:
         return "file absent"
@@ -1595,6 +1868,11 @@ def _chk_copy_qc(path: Optional[Path]) -> str:
     indep = _qc_independence_reason(obj)
     if indep:
         return indep
+    # ANTI-RUBBER-STAMP teeth (same class applied to every report-shape gate): reject a
+    # corrupt/foreign generator signature (the eliminated word-count / overlay rubrics)
+    # and a headline average inflated over the report's own per-criterion scores.
+    for sub in _qc_report_substance_problems(obj):
+        return f"AF-COPY-QC: {sub}. See SOP-SLIDE-00 / qc-specialist-presentations-sops.md."
     return ""
 
 
@@ -1648,16 +1926,73 @@ def _qc_report_gate(path: Optional[Path], af_code: str, gate_label: str,
         # _qc_independence_reason cites AF-QC-INDEPENDENCE; re-stamp this stage's code
         # so Guard A's "the path names the code" proof holds for THIS gate too.
         return f"{af_code}: {indep}"
+    # ANTI-RUBBER-STAMP teeth — reject a corrupt/foreign QC-generator signature and a
+    # headline average inflated over the report's own per-criterion scores. This gives
+    # the typography / speech / prompt / image report-shape gates the same teeth the
+    # image-QC pixel cross-check already has (the governed path ignores foreign reports).
+    for sub in _qc_report_substance_problems(obj):
+        return f"{af_code}: {sub}. See {sop_ref}."
     return ""
+
+
+def check_prompt_qc_teeth(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-PROMPT-QC — the DETERMINISTIC RE-MEASURE behind the Prompt-QC gate.
+
+    The legacy _chk_prompt_qc was a JSON RUBBER STAMP — it validated only the report's
+    SHAPE (gate string, average >= 8.5, no triggered autofails, pass:true, independence)
+    and NEVER OPENED A SINGLE PROMPT FILE, so an agent could type pass:true over a deck of
+    800-char prompts and it sailed through (the #1 uncovered gap: image-QC got pixel teeth,
+    prompt-QC did not). This is the equivalent upgrade: it RE-OPENS every on-disk per-slide
+    prompt, RE-MEASURES the actual char count, and re-runs the floor / structural-block /
+    quality / verbatim gate (via _collect_prompt_problems — the same source of truth the
+    rich-prompt preflight uses). A prompt-QC report that marks pass:true while the on-disk
+    prompts do NOT clear the gate is REJECTED — its claims do not match the files.
+
+    It DEFERS (returns "") only when the slide count cannot be determined yet (the
+    rich-prompt gate owns that case). Returns "" on pass, or a fatal AF-PROMPT-QC message."""
+    prob = _collect_prompt_problems(run_dir, slides_path)
+    if prob and prob[0][0] == 0:
+        return ""  # slide count unknown — _chk_rich_prompts owns the "no slides.json" case.
+    if not prob:
+        return ""
+    offenders = "; ".join(f"slide {o:02d}: {r}" for o, r in prob[:10])
+    more = "" if len(prob) <= 10 else f" (+{len(prob) - 10} more)"
+    return ("AF-PROMPT-QC: the prompt-QC report passed its shape check but the on-disk "
+            "per-slide prompts do NOT clear the rich-prompt floor/quality gate — a real "
+            "Prompt-QC pass RE-MEASURES the actual prompt files, it is not a self-typed "
+            "score over thin prompts. Re-author the prompts to the 9,000–14,000 standard "
+            "(>= 9,000 chars, 8-class negative block, per-string spelling-lock, the slide's "
+            "verbatim copy baked, real density) and re-run the Prompt QC Specialist. "
+            "Offenders: " + offenders + more + ".")
 
 
 def _chk_prompt_qc(path: Optional[Path]) -> str:
     """PROMPT-QC gate (AF-PROMPT-QC). After Prompt-Authoring (P4-PROMPT), an
     INDEPENDENT QC specialist grades every per-slide prompt against the written
-    5,000-char prompt standard rubric (length, the 15-element structural blocks,
-    negative block, spelling-locks). Self/builder grade refused."""
-    return _qc_report_gate(path, "AF-PROMPT-QC", "Phase Prompt-QC",
+    9,000–14,000-char prompt standard rubric (length, the 15-element structural blocks,
+    8-class negative block, per-string spelling-locks, verbatim copy). Self/builder grade
+    refused — AND the report's pass is cross-checked against the on-disk prompts.
+
+    The legacy gate validated only the report's SHAPE and never opened a prompt (a JSON
+    rubber stamp). It now mirrors the FIX-2 image-QC upgrade: after the report-shape gate,
+    it derives the run dir from the report path and delegates to check_prompt_qc_teeth(),
+    which RE-OPENS and RE-MEASURES every prompt and rejects a pass that contradicts them."""
+    base = _qc_report_gate(path, "AF-PROMPT-QC", "Phase Prompt-QC",
                           "qc-specialist-prompt-presentations-sops.md")
+    if base:
+        return base
+    # Report shape is valid — now apply the deterministic re-measure teeth. The report
+    # lives at <run_dir>/working/qc/prompt_qc_report.json, so the run dir is parents[2].
+    if path is not None:
+        try:
+            run_dir = path.resolve().parents[2]
+        except (IndexError, OSError):
+            run_dir = None
+        if run_dir is not None and run_dir.is_dir():
+            teeth = check_prompt_qc_teeth(run_dir)
+            if teeth:
+                return teeth
+    return ""
 
 
 def _chk_image_qc(path: Optional[Path]) -> str:
@@ -2227,59 +2562,109 @@ def _chk_coverage(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     return ""
 
 
-def _chk_rich_prompts(run_dir: Path, slides_path: Optional[Path] = None) -> str:
-    """RICH-PROMPT-REQUIRED gate (AF-P1). EVERY slide the system is about to render
-    MUST have a hand-authored RICH per-slide prompt in working/prompts/ that is
-    >= PROMPT_CHAR_FLOOR (5,000) chars. A missing prompt file, or one under the
-    floor, is an AF-P1 auto-fail: build_deck.py renders the rich prompt VERBATIM and
-    NEVER composes a thin fallback, so a thin/absent prompt means the slide cannot be
-    rendered at all. Returns "" on pass, or a fatal AF-P1 message (run_preflight maps
-    a returned reason to exit 3). The 18,000 ceiling (AF-P2) AND the required structural
-    blocks ([ARCHETYPE ...] / NEGATIVE BLOCK / "Do not ", folded in from render_deck.py)
-    are ALSO enforced here at preflight — not only per-slide at render time in
-    load_rich_prompt — so a too-long or structurally-empty prompt is caught at exit 3
-    BEFORE any KIE dispatch, never mid-render."""
-    # H3: count the ACTUAL rendered slides.json (positional) when threaded in, so the
-    # rich-prompt gate verifies a prompt for every slide that will actually render.
+def _load_slide_copy_map(run_dir: Path, slides_path: Optional[Path] = None) -> dict:
+    """Return {ordinal: copy_val} for the deck the renderer will actually render, so the
+    VERBATIM-WORDS-BAKED check can compare each prompt against its slide's exact copy.
+    Reads the positional slides.json (H3) when threaded in, else the canonical
+    working/copy/slides.json. Returns {} when no slides.json can be read (the verbatim
+    check then defers — the rich-prompt floor/blocks/quality still apply)."""
+    candidates = []
+    if slides_path is not None:
+        candidates.append(slides_path)
+    candidates += [run_dir / "working" / "copy" / "slides.json",
+                   run_dir / "slides.json",
+                   run_dir / "working" / "slides.json"]
+    for p in candidates:
+        if not p.exists():
+            continue
+        obj = _read_json(p)
+        slides = obj if isinstance(obj, list) else (
+            obj.get("slides") if isinstance(obj, dict) and "__parse_error__" not in obj else None)
+        if isinstance(slides, list) and slides:
+            out = {}
+            for s in slides:
+                if isinstance(s, dict) and isinstance(s.get("slide"), int):
+                    out[s["slide"]] = s.get("copy")
+            if out:
+                return out
+    return {}
+
+
+def _collect_prompt_problems(run_dir: Path, slides_path: Optional[Path] = None) -> list:
+    """Re-open every on-disk per-slide prompt and return the full list of fatal problems:
+    missing file, sub-floor / over-ceiling length, missing structural blocks, AND the
+    QUALITY-LAYER teeth (AF-P13 eight-class negative block, AF-P14 spelling-lock,
+    AF-P-DENSITY, AF-P-VERBATIM). This is the single source of truth shared by the
+    preflight rich-prompt gate (_chk_rich_prompts) AND the governed Prompt-QC teeth
+    (check_prompt_qc_teeth) so a Prompt-QC report can never claim pass over prompts that
+    do not actually clear the gate. Returns [] when every prompt clears every check, or
+    [(ordinal, reason), ...]. Returns the sentinel [(0, reason)] when the slide count
+    cannot be determined."""
     n = _count_output_slides(run_dir, slides_path)
     if n is None:
-        return ("AF-P1: cannot determine the slide count (no slides.json / "
-                "arc_allocation.json), so the per-slide rich prompts cannot be "
-                "verified. Produce slides.json before render.")
+        return [(0, "cannot determine the slide count (no slides.json / "
+                    "arc_allocation.json), so the per-slide rich prompts cannot be "
+                    "verified. Produce slides.json before render.")]
+    copy_map = _load_slide_copy_map(run_dir, slides_path)
     problems = []
     for ordinal in range(1, n + 1):
         p = resolve_prompt_path(run_dir, ordinal)
         if p is None:
-            problems.append(f"slide {ordinal:02d}: NO rich prompt file in working/prompts/")
+            problems.append((ordinal, "NO rich prompt file in working/prompts/"))
             continue
         # H1: measure the STRIPPED length so a whitespace-padded / whitespace-only
         # prompt file can never satisfy the floor.
-        stripped = p.read_text(errors="replace").strip()
+        raw = p.read_text(errors="replace")
+        stripped = raw.strip()
         length = len(stripped)
         if length < PROMPT_CHAR_FLOOR:
-            problems.append(
-                f"slide {ordinal:02d}: rich prompt {p.name} is {length} non-whitespace "
-                f"chars, under the {PROMPT_CHAR_FLOOR}-char HARD floor")
+            problems.append((ordinal, f"rich prompt {p.name} is {length} non-whitespace "
+                            f"chars, under the {PROMPT_CHAR_FLOOR}-char HARD floor"))
             continue
         if length > PROMPT_CHAR_CEILING:
-            problems.append(
-                f"slide {ordinal:02d}: rich prompt {p.name} is {length} chars, OVER the "
-                f"{PROMPT_CHAR_CEILING}-char HARD ceiling (AF-P2)")
+            problems.append((ordinal, f"rich prompt {p.name} is {length} chars, OVER the "
+                            f"{PROMPT_CHAR_CEILING}-char HARD ceiling (AF-P2)"))
             continue
         missing_blocks = [b for b in REQUIRED_STRUCTURAL_BLOCKS
                           if b.lower() not in stripped.lower()]
         if missing_blocks:
-            problems.append(
-                f"slide {ordinal:02d}: rich prompt {p.name} clears the floor but is missing "
-                f"required structural block(s): {', '.join(missing_blocks)} "
-                f"([ARCHETYPE ...] / NEGATIVE BLOCK / 'Do not ')")
+            problems.append((ordinal, f"rich prompt {p.name} clears the floor but is missing "
+                            f"required structural block(s): {', '.join(missing_blocks)} "
+                            f"([ARCHETYPE ...] / NEGATIVE BLOCK / 'Do not ')"))
+            continue
+        # QUALITY-LAYER teeth — the floor is NOT a length-only rubber stamp.
+        for q in rich_prompt_quality_problems(stripped, copy_map.get(ordinal)):
+            problems.append((ordinal, f"rich prompt {p.name}: {q}"))
+    return problems
+
+
+def _chk_rich_prompts(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """RICH-PROMPT-REQUIRED gate (AF-P1). EVERY slide the system is about to render
+    MUST have a hand-authored RICH per-slide prompt in working/prompts/ that is
+    >= PROMPT_CHAR_FLOOR (9,000) chars AND clears the quality floor. A missing prompt
+    file, one under the floor, or one that is thin/padded/missing the 8-class negative
+    block / spelling-lock / verbatim copy is an AF-P1 auto-fail: build_deck.py renders
+    the rich prompt VERBATIM and NEVER composes a thin fallback, so a thin/absent prompt
+    means the slide cannot be rendered at all. Returns "" on pass, or a fatal AF-P1
+    message (run_preflight maps a returned reason to exit 3). The 18,000 ceiling (AF-P2),
+    the required structural blocks, AND the quality teeth (AF-P13 / AF-P14 / AF-P-DENSITY
+    / AF-P-VERBATIM) are ALL enforced here at preflight — not only per-slide at render
+    time in load_rich_prompt — so a too-short, structurally-empty, thin, or
+    non-verbatim prompt is caught at exit 3 BEFORE any KIE dispatch, never mid-render."""
+    # H3: count the ACTUAL rendered slides.json (positional) when threaded in, so the
+    # rich-prompt gate verifies a prompt for every slide that will actually render.
+    problems = _collect_prompt_problems(run_dir, slides_path)
+    if problems and problems[0][0] == 0:
+        return "AF-P1: " + problems[0][1]
     if problems:
+        n = _count_output_slides(run_dir, slides_path)
+        offenders = "; ".join(f"slide {o:02d}: {r}" for o, r in problems)
         head = (f"AF-P1: rich-prompt-required gate FAILED for {len(problems)} of {n} "
-                f"slides. build_deck.py renders the Slide Image Creator's rich prompt "
+                f"slide-checks. build_deck.py renders the Slide Image Creator's rich prompt "
                 f"VERBATIM (working/prompts/slide-NN.txt or slide-NN-prompt.txt) and "
                 f"never composes a thin fallback; each must be >= {PROMPT_CHAR_FLOOR} "
-                f"chars. Offenders:")
-        return head + " | " + "; ".join(problems)
+                f"chars AND clear the quality floor. Offenders:")
+        return head + " | " + offenders
     return ""
 
 
@@ -4136,6 +4521,74 @@ def _chk_research_map(run_dir: Path) -> str:
     return ""
 
 
+def _import_intelligence_engines_check():
+    """Import the intelligence_engines_check module that ships beside build_deck.py.
+    Tries a normal import first (scripts/ is on sys.path when build_deck runs / is
+    imported), then a path-based load from this file's own directory. Returns the module
+    or None."""
+    try:
+        import importlib
+        return importlib.import_module("intelligence_engines_check")
+    except Exception:  # noqa: BLE001
+        try:
+            import importlib.util as _ilu
+            spec = _ilu.spec_from_file_location(
+                "intelligence_engines_check",
+                str(Path(__file__).resolve().parent / "intelligence_engines_check.py"))
+            if spec and spec.loader:
+                mod = _ilu.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def check_intelligence_engines_prompt(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-FACE-PROMPT-MISSING / AF-LIGHT-PROMPT-MISSING / AF-WORLD-SCALE /
+    AF-HAIR-INAUTHENTIC — the facial / lighting / world / representation INTELLIGENCE-engine
+    mechanical checker, WIRED INTO THE RENDER PREFLIGHT.
+
+    intelligence_engines_check.py was, by its own header, agent-discipline-only: it "does
+    NOT touch build_deck.py's render path" and was invoked only by the QC specialists, so a
+    grep for it in the renderer returned 0 — facial intelligence was enforced by NOTHING
+    mechanical. This wires its --phase prompt engines into PREFLIGHT so they fire
+    DETERMINISTICALLY at render time: every people/scene slide prompt must carry an explicit
+    expression token (skin-tone/age/expression discipline), a key/fill/rim + rim/hair
+    lighting token (lighting), a world believability justification (composition/world), and
+    an age-appropriate hairstyle token (diversity/representation). Defers (returns "") when
+    no prompts exist yet (pre-prompt phase). Returns a fatal message naming the codes+slides.
+    Run-dir-scoped (None sentinel); prompts live at <run_dir>/working/prompts/."""
+    prompts_dir = run_dir / "working" / "prompts"
+    if not prompts_dir.is_dir():
+        return ""  # pre-prompt phase — the prompt engines defer (mirrors check_prompts).
+    iec = _import_intelligence_engines_check()
+    if iec is None:
+        return ("AF-FACE-PROMPT-MISSING: intelligence_engines_check.py could not be imported "
+                "from the scripts directory; the facial/lighting/world/hair prompt engines "
+                "could not run. Ensure intelligence_engines_check.py is present beside "
+                "build_deck.py.")
+    problems: list = []
+    try:
+        # intelligence_engines_check reads <dir>/prompts, <dir>/copy, <dir>/brand — so the
+        # working/ dir is the run dir from its point of view.
+        iec.check_prompts(run_dir / "working", problems)
+    except Exception as exc:  # noqa: BLE001
+        return (f"AF-FACE-PROMPT-MISSING: intelligence_engines_check.check_prompts raised "
+                f"{exc!r}; the prompt-side INTELLIGENCE engines could not be verified.")
+    if problems:
+        lines = "; ".join(
+            f"{p.get('code')} [{p.get('slide')}]: {p.get('detail')}" for p in problems[:10])
+        more = "" if len(problems) <= 10 else f" (+{len(problems) - 10} more)"
+        return ("AF-INTELLIGENCE-ENGINES: the facial / lighting / world / representation "
+                "prompt engines auto-failed — each people/scene prompt must carry an explicit "
+                "expression token, a key/fill/rim + rim/hair lighting token, a world "
+                "believability justification, and an age-appropriate hairstyle token "
+                "(skin-tone / age / expression / diversity / lighting / composition present "
+                "per slide). Offenders: " + lines + more + ".")
+    return ""
+
+
 PREFLIGHT_REQUIRED = [
     ("working/copy/intake.json",
      "intake.json (interview_confirmed:true, presentation_mode one-person|general)",
@@ -4210,7 +4663,8 @@ PREFLIGHT_REQUIRED = [
      "Phase F — Typography Architect SOP 9.1 (emits type_layout_system.md tokens) (AF-FONT-FLOOR)",
      check_font_floor),
     # PROMPT-QC gate (AF-PROMPT-QC). After Prompt-Authoring, an INDEPENDENT QC
-    # specialist grades every per-slide prompt against the 5,000-char prompt standard.
+    # specialist grades every per-slide prompt against the 9,000–14,000-char prompt standard
+    # AND the gate RE-MEASURES every on-disk prompt (check_prompt_qc_teeth) — no rubber stamp.
     ("working/qc/prompt_qc_report.json",
      "prompt QC report (gate Phase Prompt-QC, average >= 8.5, independent reviewer)",
      "Phase Prompt-QC — Prompt QC Specialist (AF-PROMPT-QC)",
@@ -4256,13 +4710,27 @@ PREFLIGHT_REQUIRED = [
      "Mission PRD — source_slide_count (Mode A=0 always passes)",
      _chk_coverage),
     # 8th check — RICH-PROMPT-REQUIRED gate (AF-P1). EVERY slide must have a
-    # hand-authored rich prompt >= 5,000 chars in working/prompts/. Like coverage,
+    # hand-authored rich prompt >= 9,000 chars (clearing the quality floor) in working/prompts/. Like coverage,
     # this needs the whole run dir (it counts slides AND reads every prompt file),
     # so it uses the rel sentinel None.
     (None,
-     "rich per-slide prompt — every slide has a >=5,000-char prompt in working/prompts/ (rendered VERBATIM)",
+     "rich per-slide prompt — every slide has a >=9,000-char prompt in working/prompts/ "
+     "that clears the quality floor (8-class negative block / spelling-lock / density / "
+     "verbatim copy baked), rendered VERBATIM",
      "Phase 2 — Slide Image Creator SOP 9.1 (15-element rich prompt; rendered verbatim, no thin fallback)",
      _chk_rich_prompts),
+    # INTELLIGENCE-ENGINES prompt gate (AF-FACE-PROMPT-MISSING / AF-LIGHT-PROMPT-MISSING /
+    # AF-WORLD-SCALE / AF-HAIR-INAUTHENTIC). Wires intelligence_engines_check.py --phase
+    # prompt into preflight so the facial / lighting / world / representation engines fire
+    # DETERMINISTICALLY at render time (was agent-discipline-only, 0 grep hits in the
+    # renderer). Run-dir-scoped (None sentinel); defers pre-prompt.
+    (None,
+     "intelligence engines (prompt) — every people/scene prompt carries an explicit "
+     "expression token, a key/fill/rim + rim/hair lighting token, a world believability "
+     "justification, and an age-appropriate hairstyle token (AF-FACE-PROMPT-MISSING / "
+     "AF-LIGHT-PROMPT-MISSING / AF-WORLD-SCALE / AF-HAIR-INAUTHENTIC)",
+     "Phase 2/Prompt-QC — Slide Image Creator SOP 9.2/9.3 + intelligence_engines_check.py --phase prompt",
+     check_intelligence_engines_prompt),
     # KIE-BAKED gate (AF-I14). Once a render record exists, EVERY rendered slide must
     # map to a real KIE taskId + a verified, above-floor PNG (no native render, no
     # flat-placeholder fill). Run-dir-scoped (reads process_manifest.json + needs the

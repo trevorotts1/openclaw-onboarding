@@ -81,7 +81,7 @@ FALLBACK_MODEL = "nano-banana-2"
 # safety margin below the GPT-Image 2 API ceiling of 20,000, MODEL-SPECS). Raised
 # from the old 1500/15000 so this canonical render module no longer hard-blocks a
 # valid 16,000-char specificity-rich prompt that the QC gate passes.
-PROMPT_CHAR_FLOOR = 5000
+PROMPT_CHAR_FLOOR = 9000
 PROMPT_CHAR_CEILING = 18000
 
 # Required structural blocks -- checked case-insensitively
