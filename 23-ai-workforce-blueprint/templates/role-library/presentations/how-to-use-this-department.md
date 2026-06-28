@@ -16,7 +16,7 @@
 
 ## 1. What This Department Does (in plain language)
 
-End-to-end branded webinar and slide deck production: copy writing, price ladder choreography, image prompt authoring, brand consistency, QC at every phase, image generation submission, media library management, PPTX assembly, adversarial review, hook development, live-presentation coaching, verified delivery, and department self-healing. Coordinates with Marketing (deck brief), CRM (GHL media library), Research (proof gaps), and the client's OpenClaw agent (discovery interview, approval gates, final delivery). **Canonical Render Module (mandatory for all producing roles):** All image generation in this department MUST use the shared module at `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py`. Per-deck renderers are FORBIDDEN (AF-RENDERER auto-fail). The canonical module validates model sovereignty, prompt character floor, and structural block requirements before any API call, and writes the render record to `working/checkpoints/process_manifest.json` (via `write_process_manifest`) for QC verification. **The ONE sanctioned command — the only way to build a deck (entrypoint gate):** a deck is built by running, and only by running, `23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh --run-dir <RUN_DIR> --slides slides.json --out <OUT>.pptx`. That entry script runs three fail-closed gates — a runtime **deps check**, a **bypass-scan** (it refuses to start if any hand-rolled renderer/assembler exists in the run directory — any non-canonical `*.py` defining a 2048×1152 `Image.new` slide canvas → `AF-LOCAL-CANVAS`, a native `add_textbox`/`add_text_box` overlay, or a direct kie `createTask` outside `build_deck.py` → `AF-CANONICAL-RENDER-BYPASS`), and a **version/hash pin** (the deployed renderer must be in lockstep with the SOP/manifest stack and match the pinned governed head) — and only then dispatches the canonical orchestrator `run_signature_deck.py` → `build_deck.py`. **`python3 working/*.py` (writing and running your own per-deck driver/submit/assemble scripts) is the ungoverned path and is FORBIDDEN.** A gate may be skipped ONLY by an explicit, logged owner/founder approval token recorded in `working/checkpoints/process_manifest.json` (`owner_skip_approval`: `approved:true` + `approved_by` + `reason`, naming the exact gate code) — never silently, never by an agent's own choice. The older `templates/presentation-render/render_deck.py` + `render_manifest.json` path is RETIRED - its checks were folded into `build_deck.py` and nothing imports it; see `docs/LEGACY-RETIREMENT.md`. **The Intelligence Engines (the department's named capability set):** Every deck is run against NINE named INTELLIGENCE ENGINES  -  Facial, Lighting, Typography, Story, World, Pricing, Hook, Recap, and Product (roadmap)  -  each defined with a verification check and auto-failed failure modes in `sops/SOP-ENGINE-00-INTELLIGENCE-ENGINES-FRAMEWORK.md`. The framework promotes the three engines the image pipeline already ran by name (Facial, Audience, World) and the two pitch mechanics (Hook, Recap) into the full set, and wires each engine to its enforcement (SOP-SLIDE-00 Section 8).
+End-to-end branded webinar and slide deck production: copy writing, price ladder choreography, image prompt authoring, brand consistency, QC at every phase, image generation submission, media library management, PPTX assembly, adversarial review, hook development, live-presentation coaching, verified delivery, and department self-healing. Coordinates with Marketing (deck brief), CRM (GHL media library), Research (proof gaps), and the client's OpenClaw agent (discovery interview, approval gates, final delivery). **Canonical Render Module (mandatory for all producing roles):** All image generation in this department MUST use the shared module at `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py`. Per-deck renderers are FORBIDDEN (AF-RENDERER auto-fail). The canonical module validates model sovereignty, prompt character floor, and structural block requirements before any API call, and writes the render record to `working/checkpoints/process_manifest.json` (via `write_process_manifest`) for QC verification. The older `templates/presentation-render/render_deck.py` + `render_manifest.json` path is RETIRED - its checks were folded into `build_deck.py` and nothing imports it; see `docs/LEGACY-RETIREMENT.md`. **The Intelligence Engines (the department's named capability set):** Every deck is run against NINE named INTELLIGENCE ENGINES  -  Facial, Lighting, Typography, Story, World, Pricing, Hook, Recap, and Product (roadmap)  -  each defined with a verification check and auto-failed failure modes in `sops/SOP-ENGINE-00-INTELLIGENCE-ENGINES-FRAMEWORK.md`. The framework promotes the three engines the image pipeline already ran by name (Facial, Audience, World) and the two pitch mechanics (Hook, Recap) into the full set, and wires each engine to its enforcement (SOP-SLIDE-00 Section 8).
 
 In one sentence: **End-to-end branded webinar/slide decks: copy, price ladder, images, QC, delivery**
 
@@ -240,6 +240,44 @@ document:
 *This guide is generated for {{COMPANY_NAME}} by the AI Workforce Blueprint
 (Skill 23). It is regenerated whenever the department's roster changes so it
 always matches the specialists you actually have.*
+
+---
+
+## Canonical Entry Command (the only way to build a deck)
+
+A deck is built by running, and ONLY by running, the single sanctioned entry script:
+
+```
+23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh   --run-dir <RUN_DIR> --slides slides.json --out <OUT>.pptx
+```
+
+That entry script runs three fail-closed gates before dispatching the canonical orchestrator (`run_signature_deck.py` -> `build_deck.py`):
+
+1. **Deps check** - all required runtime dependencies are present.
+2. **Bypass-scan** - refuses to start if any hand-rolled renderer or assembler exists in the run directory. Specifically: any non-canonical `*.py` defining a 2048x1152 `Image.new` slide canvas (AF-LOCAL-CANVAS), a native `add_textbox`/`add_text_box` overlay (AF-CANONICAL-RENDER-BYPASS), or a direct kie `createTask` call outside `build_deck.py` (AF-CANONICAL-RENDER-BYPASS).
+3. **Version/hash pin** - the deployed renderer must be in lockstep with the SOP/manifest stack and match the pinned governed head.
+
+**`python3 working/*.py` (writing and running your own per-deck driver/submit/assemble scripts) is the ungoverned path and is FORBIDDEN (AF-CANONICAL-RENDER-BYPASS).**
+
+A gate may be skipped ONLY by an explicit, logged owner/founder approval token recorded in `working/checkpoints/process_manifest.json` (`owner_skip_approval`: `approved:true` + `approved_by` + `reason`, naming the exact gate code). Agents may NEVER skip a gate silently or by their own choice.
+
+---
+
+## AF-CANONICAL-RENDER-BYPASS - No Hand-Rolled Renderer (AUTO-FAIL)
+
+All image generation MUST route through the canonical module `build_deck.py`. A hand-rolled per-deck assembler or renderer is FORBIDDEN. Specifically, the presence of `add_textbox` / `add_text_box` calls or a direct kie `createTask` call outside `build_deck.py` in any run-directory `*.py` file triggers AF-CANONICAL-RENDER-BYPASS. This auto-fail also fires when the entry check detects an attempt to bypass the sanctioned entry script.
+
+---
+
+## AF-LOCAL-CANVAS - No Local Canvas Fabrication (AUTO-FAIL)
+
+A slide image MUST be generated via kie.ai GPT Image 2. A slide image fabricated locally (e.g. `canvas = Image.new('RGB', (2048, 1152), ...)`) is FORBIDDEN. The presence of a 2048x1152 `Image.new` call in any run-directory `*.py` file triggers AF-LOCAL-CANVAS.
+
+---
+
+## AF-IMAGE-QC-VISION - Real Pixel Image QC Required (AUTO-FAIL)
+
+The image-QC pass is NOT satisfied by a JSON score alone. The QC report at `working/qc/image_qc_report.json` MUST declare a `vision_model` (the AI model that performed the pixel/vision read) and a `slides` list with at least one per-slide entry containing `baked: true`. A QC report that lacks the `vision_model` field or an empty `slides` list triggers AF-IMAGE-QC-VISION.
 
 ---
 
