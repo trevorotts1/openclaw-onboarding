@@ -5293,6 +5293,13 @@ PRIORITY_SPEC_REL = "working/copy/priority_shift_spec.json"
 STYLE_SAMPLES_MANIFEST_REL = "working/style-preview/style_samples_manifest.json"
 STYLE_CHOICE_REL = "working/copy/style_preview_choice.json"
 PRIORITY_SHIFT_REPORT_REL = "working/qc/priority_shift_report.json"
+# Phase ids (PIPELINE-MANIFEST.json doctrine spine). P0B-PRIORITY (manifest order 0.2)
+# is the attention-content-strategist phase that PRODUCES priority_shift_spec.json; it is
+# a mandatory order-based precondition of P4-RENDER (manifest order 4.9, the money phase).
+# v16.0.1 binds the render preflight to P0B at EVERY entry point so a DIRECT build_deck.py
+# render cannot render doctrine-blind by simply omitting the spec (see run_preflight).
+PRIORITY_PHASE_ID = "P0B-PRIORITY"
+RENDER_PHASE_ID = "P4-RENDER"
 # Creation modes (P19/P118 — Step Zero identifies the mode before anything else).
 CREATION_MODES = ("from_scratch", "content_personal", "content_general")
 # The eight-move build sequence (P141-P150), in canonical order. The copy must plant
@@ -6341,6 +6348,35 @@ def run_preflight(run_dir: Path, slides_path: Optional[Path] = None) -> None:
     import inspect as _inspect
     print(f"=== PROCESS PREFLIGHT — run dir: {run_dir} ===", flush=True)
     problems = []
+
+    # === v16.0.1 — BIND RENDER TO PHASE P0B-PRIORITY AT EVERY ENTRY POINT ===
+    # The deterministic runner (run_signature_deck.py) makes P0B-PRIORITY a mandatory
+    # order-based precondition of P4-RENDER, so a runner-driven render can never reach
+    # kie.ai doctrine-blind. But a DIRECT `build_deck.py` call bypasses the runner: with
+    # every upstream artifact present EXCEPT working/copy/priority_shift_spec.json, the
+    # _doctrine_active() no-regression switch DEFERS every doctrine gate, so the deck
+    # renders (kie.ai spend) with the priority-shift spine never governing it (delivery is
+    # still later blocked by the canonical-render-guard, but the money is already spent).
+    # ROOT CAUSE: P0B-mandatoriness lived ONLY in the runner. Here we reuse the SHARED
+    # check_phase_preconditions machinery (single source of truth — not a parallel gate)
+    # to refuse a NON-adhoc render unless P0B-PRIORITY is attested in process_manifest.json
+    # (the ONLY waiver is a logged owner-authorized skip, exactly as the runner allows).
+    # NOTE: run_preflight is only called for NON --adhoc-no-process runs (main() skips it
+    # entirely in adhoc mode), so standalone/legacy adhoc testing stays exempt by
+    # construction and the no-regression switch is NOT weakened. P0B is unconditional in
+    # all three creation modes (from_scratch | content_personal | content_general) — no
+    # mode legitimately skips it — so this binding is safe across every mode.
+    p0b_reason = check_phase_preconditions(run_dir, RENDER_PHASE_ID, [PRIORITY_PHASE_ID])
+    if p0b_reason:
+        problems.append((
+            PRIORITY_SPEC_REL,
+            "Phase P0B-PRIORITY attested in process_manifest.json (the priority-shift "
+            "spine that produces priority_shift_spec.json) — a direct build_deck render "
+            "is bound to P0B exactly as the runner is, so it can never render doctrine-blind",
+            "Phase 0.2 — Attention-Content Strategist "
+            "(run_signature_deck.py P0B-PRIORITY, AF-PHASE-SKIPPED)",
+            p0b_reason))
+
     for rel, label, phase, check in PREFLIGHT_REQUIRED:
         if rel is None:
             # run-dir-scoped check (e.g. _chk_coverage needs the whole run dir). Pass

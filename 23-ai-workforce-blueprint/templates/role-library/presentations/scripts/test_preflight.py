@@ -278,6 +278,20 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
         (root / "working" / "qc").mkdir(parents=True, exist_ok=True)
         (root / "working" / "prompts").mkdir(parents=True, exist_ok=True)
         _write_intake(root)
+        # v16.0.1 — a NON-adhoc render is now bound to Phase P0B-PRIORITY at EVERY entry
+        # point (build_deck.run_preflight reuses check_phase_preconditions to refuse unless
+        # P0B-PRIORITY is attested in process_manifest.json). A full modern pipeline run
+        # attests P0B once its produces_artifact lands, so the with-artifacts fixture
+        # records that attestation here. The priority_shift_spec.json file itself is
+        # intentionally OMITTED so the _doctrine_active() no-regression switch keeps the
+        # doctrine gates DEFERRING against this artifact-gating fixture (whose copy/arc are
+        # not doctrine-authored). The doctrine gates' fire/pass teeth are proven separately
+        # by test_doctrine_gates_fire_and_pass() with dedicated doctrine-active fixtures.
+        (root / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "checkpoints" / "process_manifest.json").write_text(json.dumps({
+            "phases": [{"phase_id": "P0B-PRIORITY",
+                        "role": "attention-content-strategist",
+                        "status": "artifact_present"}]}))
         # Research brief with >= MIN_CITED_SOURCES (8) real cited URLs so the
         # AF-RESEARCH-UNCITED gate passes.  Each URL is on its own line and is a
         # distinct authoritative source (the gate counts distinct URLs, not lines).
@@ -2404,6 +2418,240 @@ def test_chk_no_overlay():
     return fails
 
 
+def test_doctrine_gates_fire_and_pass():
+    """v16.0.1 (FIX-2) — POSITIVE-FIRE + CLEAN-PASS coverage for the v18 priority-shift
+    doctrine gates. For each gate it builds a doctrine-active fixture that SHOULD trip the
+    gate and ASSERTS the gate FIRES (returns its AF code), then builds a doctrine-CLEAN
+    deck and ASSERTS the gates PASS (return ""). This is the real pass/fail assertion leg
+    the QC's N1 + the lockstep's 'add a test' asked for — emit_af_coverage()'s Guard-A
+    probes only RECORD which codes surfaced (for gate_integrity_check.py), they never
+    fail the suite when a gate goes silent. This does. Proves teeth, not code-reading."""
+    fails = []
+    import unittest.mock as _mock
+
+    def _active(prefix, spec=None):
+        """A doctrine-ACTIVE run dir: working/copy/priority_shift_spec.json present and
+        parseable, so the no-regression _doctrine_active() switch engages the gates."""
+        root = Path(tempfile.mkdtemp(prefix=prefix))
+        (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "copy" / "priority_shift_spec.json").write_text(
+            json.dumps(spec if spec is not None
+                       else {"true_goal": "make the offer the new #1 priority"}))
+        return root
+
+    def fire(code, reason, where):
+        if not reason or code not in reason:
+            fails.append(f"DOCTRINE-FIRE {where}: expected {code} to FIRE, got {reason!r}")
+
+    def passes(reason, where):
+        if reason:
+            fails.append(f"DOCTRINE-PASS {where}: expected clean PASS (''), got {reason!r}")
+
+    def _png(path: Path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"\x89PNG\r\n\x1a\n"
+                         + b"\xcc" * (build_deck.PLACEHOLDER_MIN_BYTES + 500))
+
+    # ======================= POSITIVE-FIRE — each gate FIRES =======================
+    # AF-MODE-UNSET — doctrine active + intake with an unrecognised creation_mode.
+    _r = _active("dgf_mode_unset_")
+    (_r / "working" / "copy" / "intake.json").write_text(json.dumps(
+        {"creation_mode": "nonsense", "interview_confirmed": True,
+         "presentation_mode": "general", "target_talk_minutes": 30}))
+    fire("AF-MODE-UNSET", build_deck._chk_mode(_r), "mode")
+
+    # AF-NO-SHIFT — empty spec (no true_goal / no priority_stack) + tagless copy.
+    _r = _active("dgf_no_shift_", spec={})
+    (_r / "working" / "copy" / "slides_copy.md").write_text(
+        "SLIDE 1\nHEADLINE: Our flagship product transforms your business.\n")
+    fire("AF-NO-SHIFT", build_deck._chk_priority_shift(_r), "no_shift")
+
+    # AF-NO-PRIORITY-STACK — a ladder/price beat with no stack surfaced before it.
+    _r = _active("dgf_no_stack_")
+    (_r / "working" / "copy" / "slides_copy.md").write_text(
+        "SLIDE 1\nHEADLINE: Today's price is $997.\nSLIDE 2\nLADDER: value anchor drop.\n")
+    fire("AF-NO-PRIORITY-STACK", build_deck._chk_priority_stack(_r), "no_stack")
+
+    # AF-NO-RERANK — pitch deck with a price beat but no re-rank demand after it.
+    _r = _active("dgf_no_rerank_")
+    (_r / "working" / "copy" / "intake.json").write_text(json.dumps({"pitch_included": True}))
+    (_r / "working" / "copy" / "slides_copy.md").write_text(
+        "SLIDE 1\nHEADLINE: The price is $997 per month.\nSLIDE 2\nBUY: Click to join now.\n")
+    fire("AF-NO-RERANK", build_deck._chk_rerank(_r), "no_rerank")
+
+    # AF-NO-TRIGGER — pitch deck with no time-bound trigger anywhere in the copy.
+    _r = _active("dgf_no_trigger_")
+    (_r / "working" / "copy" / "intake.json").write_text(json.dumps({"pitch_included": True}))
+    (_r / "working" / "copy" / "slides_copy.md").write_text(
+        "SLIDE 1\nHEADLINE: The amazing offer.\nSLIDE 2\nCTA: Click the link below to join.\n")
+    fire("AF-NO-TRIGGER", build_deck._chk_trigger(_r), "no_trigger")
+
+    # AF-PROCLAMATION-HEDGE — a proclamation hedged with a disallowed multi-word token.
+    _r = _active("dgf_hedge_")
+    (_r / "working" / "copy" / "slides_copy.md").write_text(
+        "SLIDE 1\nHEADLINE: This system is, kind of, the best for your situation.\n")
+    fire("AF-PROCLAMATION-HEDGE", build_deck._chk_proclamation_hedge(_r), "hedge")
+
+    # AF-PEAK-END — arc with no PEAK and no ENDING beat tag.
+    _r = _active("dgf_peak_end_")
+    (_r / "working" / "copy" / "arc_allocation.json").write_text(json.dumps([
+        {"slide": 1, "arc_section": "hook"},
+        {"slide": 2, "arc_section": "body"},
+        {"slide": 3, "arc_section": "teaching"}]))
+    fire("AF-PEAK-END", build_deck._chk_peak_end(_r), "peak_end")
+
+    # AF-NO-SALIENCE-APEX — the apex slide is the LEAST vivid (von Restorff inversion).
+    _r = _active("dgf_salience_")
+    for _i in range(1, 4):
+        _png(_r / "renders" / f"slide-{_i:02d}.png")
+    (_r / "working" / "copy" / "arc_allocation.json").write_text(json.dumps([
+        {"slide": 1, "arc_section": "hook"},
+        {"slide": 2, "arc_section": "apex", "beat": "promise-apex"},
+        {"slide": 3, "arc_section": "recap"}]))
+
+    def _flatfill_apex_flat(path: Path):
+        n = path.name
+        if "slide-01" in n:
+            return (0.05, (100, 50, 200))   # most vivid
+        if "slide-02" in n:
+            return (0.95, (240, 240, 240))  # apex — flat/inverted -> fires
+        if "slide-03" in n:
+            return (0.50, (150, 100, 100))
+        return (None, None)
+    with _mock.patch.object(build_deck, "_png_flatfill_fraction",
+                            side_effect=_flatfill_apex_flat):
+        fire("AF-NO-SALIENCE-APEX", build_deck._chk_salience_apex(_r), "salience")
+
+    # AF-CONVERTER-NO-INVENT — a source brief carrying a figure absent from the raw source.
+    _r = _active("dgf_converter_")
+    (_r / "working" / "copy" / "source_brief.md").write_text(
+        "The product achieved 75% growth and $1,234,567 in tracked revenue.")
+    (_r / "working" / "source").mkdir(parents=True, exist_ok=True)
+    (_r / "working" / "source" / "transcript.txt").write_text(
+        "The product is great. Many clients have succeeded over time.")
+    fire("AF-CONVERTER-NO-INVENT", build_deck._chk_converter_no_invent(_r), "converter")
+
+    # AF-STYLE-UNPICKED — samples rendered but no owner-approved variant pick.
+    _r = _active("dgf_style_unpicked_")
+    (_r / "working" / "style-preview").mkdir(parents=True, exist_ok=True)
+    (_r / "working" / "style-preview" / "style_samples_manifest.json").write_text(
+        json.dumps({"schema": "style_samples/v1",
+                    "samples": [{"variant": "A", "slides": [1, 2, 3]}]}))
+    fire("AF-STYLE-UNPICKED", build_deck._chk_style_preview(_r), "style_unpicked")
+
+    # AF-STYLE-DOUBLECHARGE — a valid owner pick but no locked_renders carried forward.
+    _r = _active("dgf_style_double_")
+    (_r / "working" / "style-preview").mkdir(parents=True, exist_ok=True)
+    (_r / "working" / "style-preview" / "style_samples_manifest.json").write_text(
+        json.dumps({"schema": "style_samples/v1",
+                    "samples": [{"variant": "A", "slides": [1, 2, 3]}]}))
+    (_r / "working" / "copy" / "style_preview_choice.json").write_text(json.dumps(
+        {"owner_approved": True, "chosen_variant": "A"}))
+    fire("AF-STYLE-DOUBLECHARGE", build_deck._chk_style_preview(_r), "style_double")
+
+    # AF-PRIORITY-SHIFT — composite 14-item ship gate; spec missing fields + 1 render.
+    _r = _active("dgf_ledger_")
+    _png(_r / "renders" / "slide-01.png")
+    fire("AF-PRIORITY-SHIFT", build_deck._chk_priority_shift_ledger(_r), "ledger")
+
+    # ============== CLEAN-PASS — a doctrine-correct deck passes every gate ==============
+    clean_spec = {
+        "true_goal": "make the owner's offer the audience's new #1 priority",
+        "priority_stack": ["incumbent vendor", "status quo", "doing nothing"],
+        "higher_priority_hook": "the cost of waiting outranks every line item on your list",
+        "the_one_promise": "double your qualified pipeline in eight weeks",
+        "the_one_wow": "a stalled funnel rebuilt live, before and after, on stage",
+        "the_one_demonstration": "the three-move rebuild performed in real time",
+    }
+    cr = _active("dgf_clean_", spec=clean_spec)
+    (cr / "working" / "copy" / "intake.json").write_text(json.dumps(
+        {"creation_mode": "from_scratch", "pitch_included": True,
+         "interview_confirmed": True, "presentation_mode": "general",
+         "target_talk_minutes": 30}))
+    # Doctrine-clean pitch copy: the eight build-moves planted monotonically, the priority
+    # stack named before the first ladder beat, a price followed by a re-rank demand, a
+    # time-bound trigger, all seven persuasion beats, no hedges.
+    (cr / "working" / "copy" / "slides_copy.md").write_text(
+        "# Doctrine-clean pitch deck\n"
+        "SLIDE 1\n"
+        "PRIORITY_STACK. Today we name what matters most to you — your current priority "
+        "stack, the real problem in your way and the villain behind your stalled results.\n"
+        "SLIDE 2\n"
+        "PRESENT_COST. The present cost of inaction is the cost of doing nothing: every "
+        "week you wait it compounds. You face a clear choice — two paths, a fork: keep the "
+        "old way, or take the new way.\n"
+        "SLIDE 3\n"
+        "HIGHER_PRIORITY. One higher priority outranks the rest. Compared to the old way "
+        "the new way is proven — a peer-reviewed study and an expert case study show it.\n"
+        "SLIDE 4\n"
+        "VALUE_ANCHOR. The value anchor: the full stack is worth far more than the price. "
+        "The price is a fraction of the value. Measurable results: 73% growth and 3x ROI "
+        "before and after the transformation — clients went from struggling to thriving.\n"
+        "SLIDE 5\n"
+        "URGENCY_SCARCITY. Urgency and scarcity are real — this is limited, with a hard "
+        "deadline.\n"
+        "SLIDE 6\n"
+        "ABILITY_UNBLOCK. We remove every blocker — a payment plan, financing and a full "
+        "guarantee make it easy to start.\n"
+        "SLIDE 7\n"
+        "RERANK_DEMAND. Now re-rank: make this your #1. Decide now — move this to the top "
+        "of your list.\n"
+        "SLIDE 8\n"
+        "TRIGGER. Act now — the deadline is by midnight tonight; enroll now before doors "
+        "close.\n")
+    (cr / "working" / "copy" / "arc_allocation.json").write_text(json.dumps([
+        {"slide": 1, "arc_section": "hook"},
+        {"slide": 2, "arc_section": "apex", "beat": "promise-apex"},
+        {"slide": 3, "arc_section": "recap"}]))
+    for _i in range(1, 4):
+        _png(cr / "renders" / f"slide-{_i:02d}.png")
+    # Style preview: owner picked variant A and its representative renders are LOCKED.
+    (cr / "working" / "style-preview").mkdir(parents=True, exist_ok=True)
+    (cr / "working" / "style-preview" / "style_samples_manifest.json").write_text(
+        json.dumps({"schema": "style_samples/v1",
+                    "samples": [{"variant": "A", "slides": [1, 2, 3]}]}))
+    _png(cr / "renders" / "locked-A-1.png")
+    (cr / "working" / "copy" / "style_preview_choice.json").write_text(json.dumps(
+        {"owner_approved": True, "chosen_variant": "A",
+         "locked_renders": ["renders/locked-A-1.png"]}))
+
+    passes(build_deck._chk_mode(cr), "clean/mode")
+    passes(build_deck._chk_priority_shift(cr), "clean/no_shift")
+    passes(build_deck._chk_priority_stack(cr), "clean/no_stack")
+    passes(build_deck._chk_rerank(cr), "clean/no_rerank")
+    passes(build_deck._chk_trigger(cr), "clean/no_trigger")
+    passes(build_deck._chk_proclamation_hedge(cr), "clean/hedge")
+    passes(build_deck._chk_peak_end(cr), "clean/peak_end")
+    passes(build_deck._chk_persuasion_beats(cr), "clean/persuasion_beats")
+    passes(build_deck._chk_style_preview(cr), "clean/style")
+
+    def _flatfill_apex_vivid(path: Path):
+        n = path.name
+        if "slide-02" in n:
+            return (0.05, (100, 50, 200))   # apex — most vivid (correct)
+        if "slide-01" in n:
+            return (0.50, (150, 100, 100))
+        if "slide-03" in n:
+            return (0.50, (150, 100, 100))
+        return (None, None)
+    with _mock.patch.object(build_deck, "_png_flatfill_fraction",
+                            side_effect=_flatfill_apex_vivid):
+        passes(build_deck._chk_salience_apex(cr), "clean/salience")
+        passes(build_deck._chk_priority_shift_ledger(cr), "clean/ledger")
+
+    # AF-CONVERTER-NO-INVENT clean pass — every brief figure traces to the raw source.
+    cc = _active("dgf_clean_converter_")
+    (cc / "working" / "copy" / "source_brief.md").write_text(
+        "The deck reports 73% growth.")
+    (cc / "working" / "source").mkdir(parents=True, exist_ok=True)
+    (cc / "working" / "source" / "transcript.txt").write_text(
+        "Last year we measured 73% growth across the cohort.")
+    passes(build_deck._chk_converter_no_invent(cc), "clean/converter")
+
+    print(f"DOCTRINE-GATES (fire+pass)  -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
 def emit_af_coverage():
     """Drive every build_deck-enforced gate to FAILURE and record which AF codes
     a deliberately-failing fixture actually triggers. Writes working/af-coverage.json
@@ -3608,6 +3856,10 @@ def main():
 
     # GOAL-4 / 5C — native PPTX text-overlay path eliminated.
     failures += test_chk_no_overlay()
+
+    # v16.0.1 (FIX-2) — positive-fire + clean-pass assertions for the v18 priority-shift
+    # doctrine gates (each gate FIRES on a tripping fixture, PASSES on a clean deck).
+    failures += test_doctrine_gates_fire_and_pass()
 
     # GUARD A — emit working/af-coverage.json listing every build_deck-enforced AF
     # code a deliberately-failing fixture actually triggered. gate_integrity_check.py
