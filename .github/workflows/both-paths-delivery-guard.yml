@@ -1,13 +1,13 @@
 # .github/workflows/both-paths-delivery-guard.yml
 #
-# Unified both-paths delivery guard (v14.26.0).
+# Unified both-paths delivery guard (v14.27.0).
 #
 # Runs on every PR and push to main. Asserts STATICALLY (offline grep —
 # no runtime, no network) that BOTH install.sh AND update-skills.sh carry
-# every delivery dimension that all prior PRs (#398-#411) were supposed to
+# every delivery dimension that all prior PRs (#398-#412) were supposed to
 # close. A dimension missing from either path is a regression.
 #
-# Dimensions checked (10 total):
+# Dimensions checked (11 total):
 #   D1  Section-tagged 54-persona index  provision_persona_index
 #   D2  GHL funnel catalog wiring        wire_ghl_funnel_catalog
 #   D3  Dept agent registration          materialize-dept-agents
@@ -15,16 +15,13 @@
 #       agentToAgent/allowAgents/visibility are NOT written verbatim in
 #       install.sh or update-skills.sh — apply-routing-fix.sh applies them
 #       at runtime. D4 verifies that script is invoked on BOTH paths.)
+#   D5  CC web-app refresh               run-full-install (install.sh: Step 15b
+#       copy so Skill-37 agent has it + update-skills.sh: --update-only invocation
+#       that closes CC #108/#109/#112 on existing boxes without re-embedding index)
 #   D7  Heartbeat furnace protection     ensure-heartbeat-defaults
 #   D8  Operator account separation      configure-operator-telegram
 #   D9  No hardcoded wrong launchd label (no com.openclaw.gateway)
 #   D10 WIRING-ASSERT present on update path
-#
-# Note: shared-utils and universal-sops are delivered via file-copy blocks
-# that are harder to grep for uniquely; they are covered by the prebuilt-index
-# guard (which sources shared-utils/provision-persona-index.sh) and by the
-# existing prebuilt-index-section-tagged-guard.yml. Adding dedicated checks
-# here if those paths diverge.
 
 name: both-paths-delivery-guard
 
@@ -115,6 +112,27 @@ jobs:
           fi
           echo "PASS D4-update: apply-routing-fix invocation present in update-skills.sh"
 
+      - name: D5 — run-full-install.sh deployed on install path (CC web-app)
+        run: |
+          # install.sh Step 15b copies run-full-install.sh to the skills dir.
+          # The Skill-37 closeout agent also invokes it directly for fresh installs.
+          # This check verifies the script is referenced (deployed) in install.sh.
+          if ! grep -q 'run-full-install' install.sh; then
+            echo "FAIL D5-install: run-full-install.sh not referenced in install.sh (CC #108/#109/#112 delivery missing on fresh-install path)"
+            exit 1
+          fi
+          echo "PASS D5-install: run-full-install.sh referenced in install.sh"
+
+      - name: D5 — run-full-install.sh invoked on update path (CC web-app refresh)
+        run: |
+          # update-skills.sh must invoke run-full-install.sh --update-only after the
+          # materialize block so existing boxes get the CC #108/#109/#112 fixes.
+          if ! grep -q 'run-full-install' update-skills.sh; then
+            echo "FAIL D5-update: run-full-install.sh not invoked in update-skills.sh (CC #108/#109/#112 delivery gap — existing boxes keep stale dashboard)"
+            exit 1
+          fi
+          echo "PASS D5-update: run-full-install.sh invoked in update-skills.sh"
+
       - name: D7 — heartbeat furnace protection on update path
         run: |
           if ! grep -q 'ensure-heartbeat-defaults\|ensure_heartbeat_defaults' update-skills.sh; then
@@ -154,6 +172,7 @@ jobs:
         if: always()
         run: |
           echo "Both-paths delivery guard complete."
-          echo "D1-D4 (both paths) + D7-D10 (update path) checked across install.sh and update-skills.sh."
+          echo "D1-D5 (both paths) + D7-D10 (update path) checked across install.sh and update-skills.sh."
           echo "D4 checks apply-routing-fix invocation (routing keys applied at runtime, not verbatim)."
+          echo "D5 checks run-full-install deployment (CC web-app refresh — CC #108/#109/#112)."
           echo "All PASS = both paths deliver every dimension; any FAIL = regression detected."
