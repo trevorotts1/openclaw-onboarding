@@ -1,6 +1,6 @@
-# How to Use the Engineering Department ⚙️
+# How to Use the Software Development / Engineering Department ⚙️
 
-**Department:** Engineering
+**Department:** Software Development / Engineering
 **Department head:** Director of Engineering
 **Folder:** `departments/engineering/`
 **Generated for:** {{COMPANY_NAME}}

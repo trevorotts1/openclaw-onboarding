@@ -307,6 +307,49 @@ def _copy_fidelity_errors(page: dict, res: dict) -> list[str]:
 _SENTINEL = object()  # sentinel for unset `live` parameter
 
 
+def _published_csp_errors(page: dict, render_one: Callable) -> list:
+    """P2b — LIVE-vs-PREVIEW CSP / console gate.
+
+    The preview/draft render runs under a RELAXED policy, so a page whose JS
+    loads an external ``script-src`` can pass ``render_check`` on ``/preview/``
+    yet be DEAD once published (the published page's CSP blocks the external
+    script). This re-runs the sealed render on the LIVE PUBLISHED url and folds
+    any console.error / pageerror / CSP-violation — and a non-200 published
+    status — into the verdict.
+
+    OPT-IN and ADDITIVE: returns ``[]`` unless ``page`` carries BOTH a published
+    url (``published_url`` / ``live_url``) AND a JS signal (``has_js`` /
+    ``page_has_js``). Preview-only pages are therefore completely unaffected, and
+    this layer can only ADD failures — it never clears an existing render_error,
+    so the un-fakeable preview chain stays intact. ``render_one(url, marker)``
+    runs the SAME sealed real check (live) or the injected stub (mock).
+
+    Every returned string is prefixed ``published_csp:`` so a maintainer can see
+    the failure came from the published-CSP layer, not the preview render.
+    """
+    published_url = page.get("published_url") or page.get("live_url") or ""
+    has_js = bool(page.get("has_js") or page.get("page_has_js"))
+    if not published_url or not has_js:
+        return []  # gate is opt-in — preview-only pages skip it entirely
+
+    marker = page.get("marker") or ""
+    try:
+        res2 = render_one(published_url, marker)
+    except Exception as exc:  # never let the extra check mask a real verdict
+        return [f"published_csp: live published render failed to run: {exc!r}"]
+
+    out: list = []
+    pub_http = res2.get("http")
+    if pub_http != 200:
+        out.append(
+            f"published_csp: published page {published_url} returned HTTP "
+            f"{pub_http!r} (expected 200) — JS/CSP cannot be confirmed live."
+        )
+    for e in (res2.get("render_errors") or []):
+        out.append(f"published_csp: {e}")
+    return out
+
+
 def verify_page(
     page: dict,
     *,
@@ -393,19 +436,25 @@ def verify_page(
             "dom_bytes": 0, "visible_text_len": 0,
         })
         # Support both 2-arg (url, marker) and 4-arg (url, marker, step, run_dir) signatures.
-        try:
-            import inspect
-            n_params = len(inspect.signature(_f).parameters)
-            if n_params >= 4:
-                res = _f(preview_url, marker, step, _run_dir)
-            else:
-                res = _f(preview_url, marker)
-        except Exception:
-            res = _f(preview_url, marker)
+        def _call_fetcher(_url, _marker):
+            try:
+                import inspect
+                n_params = len(inspect.signature(_f).parameters)
+                if n_params >= 4:
+                    return _f(_url, _marker, step, _run_dir)
+                return _f(_url, _marker)
+            except Exception:
+                return _f(_url, _marker)
+
+        res = _call_fetcher(preview_url, marker)
 
         render_errors = list(res.get("render_errors") or [])
         # P1-4 copy-fidelity: approved copy tokens MUST render (opt-in per page).
         render_errors += _copy_fidelity_errors(page, res)
+        # P2b published-CSP: opt-in live-vs-preview CSP/console gate (no-op unless
+        # the page carries a published url + a JS signal). Routes the published
+        # render through the SAME stub in mock mode.
+        render_errors += _published_csp_errors(page, _call_fetcher)
         http = res.get("http")
         mird = bool(res.get("marker_in_rendered_dom") or res.get("marker_found"))
         forced_fail = bool(render_errors) or http != 200
@@ -440,6 +489,16 @@ def verify_page(
     # P1-4 copy-fidelity: approved copy tokens MUST render in the preview DOM
     # (opt-in — fires only when the page carries copy_tokens / copy_md_path).
     render_errors += _copy_fidelity_errors(page, res)
+    # P2b published-CSP: opt-in live-vs-preview CSP/console gate (no-op unless the
+    # page carries a published url + a JS signal). Re-runs the SEALED render on
+    # the LIVE published url; any console/CSP/pageerror or non-200 there forces
+    # PASS:False. Additive — never clears a preview render_error.
+    render_errors += _published_csp_errors(
+        page,
+        lambda u, m: ghl_builder.render_check(
+            u, m, run_dir=_run_dir, step=f"{step}-published", timeout=45,
+        ),
+    )
     http = res.get("http")
     mird = bool(res.get("marker_in_rendered_dom"))
     # HARD RULE: render_errors != [] OR http != 200 => PASS:False, no override.

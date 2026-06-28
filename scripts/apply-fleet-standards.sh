@@ -1027,6 +1027,149 @@ if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$WS_SOUL_FILE" 2>/dev/null || true
 fi
 
+# ─── 7. Inject PLATFORM_FACTS_V1 into workspace/AGENTS.md ───────────────────
+# W7.2: Per-box AGENTS.md platform stamp.  Records the box's platform,
+# config root, env/secrets file paths, and where new keys/tokens go —
+# so every agent on this box always knows where things live.
+# Idempotent: guarded by <!-- PLATFORM_FACTS_V1 --> marker.
+# Paths computed from the existing OC_ROOT detector — never hardcoded.
+PLATFORM_FACTS_MARKER="<!-- PLATFORM_FACTS_V1 -->"
+
+if grep -qF "$PLATFORM_FACTS_MARKER" "$AGENTS_FILE"; then
+  echo "[apply-fleet-standards] PLATFORM_FACTS_V1 already present in $AGENTS_FILE — no-op"
+else
+  echo "[apply-fleet-standards] computing platform facts..."
+
+  # ── Detect VPS host variant (Hostinger / Contabo / unknown) ──────────────
+  # OPENCLAW_VPS_HOST can be written at install time (W7.1) to pin the value.
+  # Fall back to cheap env probing when the var is absent.
+  _PF_VPS_HOST="${OPENCLAW_VPS_HOST:-}"
+  if [ -z "$_PF_VPS_HOST" ] && [ "$OC_ROOT" = "/data/.openclaw" ]; then
+    # Hostinger VPS: Docker Manager sets HPANEL_VPS or container hostname uses
+    # "openclaw-<id>" pattern; Contabo uses different host patterns.
+    if [ -n "${HPANEL_VPS:-}" ] || hostname 2>/dev/null | grep -qE '^openclaw-[a-z0-9]+$'; then
+      _PF_VPS_HOST="hostinger"
+    elif [ -f "/etc/contabo-release" ] || [ -n "${CONTABO_INSTANCE_ID:-}" ]; then
+      _PF_VPS_HOST="contabo"
+    else
+      _PF_VPS_HOST="unknown"
+    fi
+  fi
+
+  # ── Detect compose project name (best-effort; used in Docker env path hint) ─
+  _PF_COMPOSE_PROJECT="${COMPOSE_PROJECT_NAME:-}"
+  if [ -z "$_PF_COMPOSE_PROJECT" ] && [ "$OC_ROOT" = "/data/.openclaw" ]; then
+    # The host /docker/<project>/.env pattern is canonical on Hostinger.
+    # Try to read from /docker/ if the mount is visible from inside the container.
+    _found_compose=""
+    for _dc in /docker/*/.env; do
+      if [ -f "$_dc" ]; then
+        _found_compose="$(dirname "$_dc")"
+        break
+      fi
+    done
+    if [ -n "$_found_compose" ]; then
+      _PF_COMPOSE_PROJECT="$(basename "$_found_compose")"
+    else
+      _PF_COMPOSE_PROJECT="openclaw-<project-id>"
+    fi
+  fi
+
+  # ── Build platform-specific facts ────────────────────────────────────────
+  if [ "$OC_ROOT" = "/data/.openclaw" ]; then
+    # VPS Docker (Hostinger or Contabo)
+    _PF_PLATFORM="vps-${_PF_VPS_HOST}"
+    _PF_CONFIG_ROOT="/data/.openclaw"
+    _PF_WORKSPACE="/data/.openclaw/workspace"
+    _PF_SKILLS="/data/.openclaw/skills"
+    _PF_SECRETS_STORE="/data/.openclaw/secrets/.env"
+    _PF_DOCKER_COMPOSE_ENV="/docker/${_PF_COMPOSE_PROJECT}/.env"
+    _PF_ENV_SECTION="### Env / secrets stores on this box
+
+**1. Live container env (check THIS first — most current):**
+\`\`\`
+docker exec <container-name> printenv
+\`\`\`
+A key set only in the compose env_file is visible here at runtime.
+
+**2. Host compose env file (write target — sets container env on recreate):**
+\`${_PF_DOCKER_COMPOSE_ENV}\`
+This file is on the HOST, outside the container. To add/change a key:
+1. Edit \`${_PF_DOCKER_COMPOSE_ENV}\` on the host.
+2. Run \`docker compose up -d --force-recreate\` to apply.
+(Never use \`docker compose restart\` — it skips env_file re-read.)
+
+**3. Persistent secrets store inside the container:**
+\`${_PF_SECRETS_STORE}\`
+
+### Where new passwords / tokens / keys go
+
+Add the new key to **both**:
+- \`${_PF_DOCKER_COMPOSE_ENV}\` (host compose env file — source of truth)
+- \`${_PF_SECRETS_STORE}\` (persistent inside container)
+Then run \`docker compose up -d --force-recreate\` to apply."
+  else
+    # Mac (new install: ~/.openclaw; legacy: ~/clawd)
+    if [ -d "$HOME/.openclaw" ]; then
+      _PF_PLATFORM="mac"
+      _PF_CONFIG_ROOT="$HOME/.openclaw"
+      _PF_WORKSPACE="$HOME/.openclaw/workspace"
+      _PF_SKILLS="$HOME/.openclaw/skills"
+      _PF_SECRETS_STORE="$HOME/.openclaw/secrets/.env"
+    else
+      _PF_PLATFORM="mac-legacy"
+      _PF_CONFIG_ROOT="$HOME/clawd"
+      _PF_WORKSPACE="$HOME/clawd"
+      _PF_SKILLS="$HOME/clawd/skills"
+      _PF_SECRETS_STORE="$HOME/clawd/secrets/.env"
+    fi
+    _PF_ENV_SECTION="### Env / secrets store on this box
+
+**Primary secrets store:**
+\`${_PF_SECRETS_STORE}\`
+
+Add new keys here, then restart the gateway:
+\`\`\`
+launchctl kickstart -k gui/\$(id -u)/com.openclaw.gateway
+# or: openclaw restart
+\`\`\`"
+  fi
+
+  # ── Write the block ───────────────────────────────────────────────────────
+  cat >> "$AGENTS_FILE" <<PFEOF
+
+${PLATFORM_FACTS_MARKER}
+## Platform Facts (stamped by apply-fleet-standards.sh — do NOT edit manually)
+
+> This block is written on every install/update and refreshed idempotently.
+> Marker: \`PLATFORM_FACTS_V1\`. Manual edits are overwritten on next run.
+
+| Fact | Value |
+|------|-------|
+| Platform | ${_PF_PLATFORM} |
+| Config root | ${_PF_CONFIG_ROOT} |
+| Workspace | ${_PF_WORKSPACE} |
+| Skills | ${_PF_SKILLS} |
+| Secrets store | ${_PF_SECRETS_STORE} |
+
+${_PF_ENV_SECTION}
+
+### Platform-conditional path reference
+
+All scripts in this box must resolve paths from the detector — never hardcode \`/data/.openclaw\` or \`~/.openclaw\`:
+- Config root: \`${_PF_CONFIG_ROOT}\`
+- Workspace: \`${_PF_WORKSPACE}\`
+- Skills: \`${_PF_SKILLS}\`
+- Secrets: \`${_PF_SECRETS_STORE}\`
+
+PFEOF
+  echo "[apply-fleet-standards] PLATFORM_FACTS_V1 injected into $AGENTS_FILE"
+fi
+
+if [ "$OC_ROOT" = "/data/.openclaw" ]; then
+  chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
+fi
+
 echo ""
 echo "[apply-fleet-standards] DONE"
 echo "[apply-fleet-standards] Backup: $OC_BACKUP"

@@ -28,6 +28,17 @@ assert "gate registry present"      "[ -f \"$SK/tools/gates.json\" ]"
 # D8 contract: exactly 2 captured gates (login form + auth storage), 26 runtime snapshot-gates.
 assert "gate registry has 2 captured gates"  "[ \"\$(python3 -c 'import json;print(sum(1 for g in json.load(open(\"$SK/tools/gates.json\"))[\"gates\"] if g.get(\"status\")==\"captured\"))' 2>/dev/null)\" = '2' ]"
 assert "gate registry has 26 runtime gates"  "[ \"\$(python3 -c 'import json;print(sum(1 for g in json.load(open(\"$SK/tools/gates.json\"))[\"gates\"] if g.get(\"status\")==\"runtime\"))' 2>/dev/null)\" = '26' ]"
+# Version-drift triple-equality gate (repo version-bump hygiene): the single
+# version of record must agree across skill-version.txt, SKILL.md frontmatter,
+# and the top CHANGELOG entry. Drift = a missed bump shipped. The checker prints
+# the three values to stderr on drift.
+VER_CHECK="$SKILL_DIR/scripts/check-version-drift.py"
+if [ -f "$VER_CHECK" ]; then
+  assert "Version is consistent (skill-version.txt == SKILL.md == CHANGELOG top)" \
+    "python3 \"$VER_CHECK\" \"$SK\""
+else
+  warn_only "version-drift checker available (scripts/check-version-drift.py)" "[ -f \"$VER_CHECK\" ]"
+fi
 assert "builder helper parses clean" "python3 -c \"import ast;ast.parse(open('$SK/tools/ghl_builder.py').read())\""
 assert "auth-seed module parses clean" "python3 -c \"import ast;ast.parse(open('$SK/tools/seed-ghl-auth.py').read())\""
 # TOKEN-ONLY doctrine (D7): the Firebase refresh token is the ONLY auth path.

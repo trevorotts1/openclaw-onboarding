@@ -29,7 +29,9 @@ BOUNDARY RULE (hard — token-economics gate):
 USAGE (import)
 --------------
   from sop_boundary_gate import (
+      GATE_ENABLED,
       CANONICAL_LIBRARY_DEPT_IDS,
+      assert_gate_enabled,       # call at script startup — aborts if gate broken
       is_canonical_dept,
       refuse_if_canonical,
       assert_no_canonical_in_authoring_path,
@@ -69,23 +71,40 @@ ROLE_LIBRARY_DIR = SKILL_DIR / "templates" / "role-library"
 # Skip-list: dirs inside role-library that are not operational dept templates.
 _LIBRARY_SKIP_DIRS = frozenset({"_stage1_drafts", "master-orchestrator"})
 
-# ── CANONICAL_LIBRARY_DEPT_IDS ────────────────────────────────────────────────
-# Computed at import time from the role-library directory tree.  Any directory
-# that:
+# ── GATE_ENABLED + CANONICAL_LIBRARY_DEPT_IDS ────────────────────────────────
+# GATE_ENABLED is True only when the role-library directory exists and contains
+# at least one canonical department template.  When False the gate is broken and
+# callers MUST abort — not silently continue.
+#
+# CANONICAL_LIBRARY_DEPT_IDS is computed at import time from the role-library
+# directory tree.  Any directory that:
 #   - is a direct child of ROLE_LIBRARY_DIR
 #   - is a real directory
 #   - does NOT start with "_"
 #   - is NOT in _LIBRARY_SKIP_DIRS
 # is a canonical library department.
 def _load_canonical_library_dept_ids() -> frozenset:
-    """Return frozenset of canonical dept IDs from the role-library tree."""
+    """Return frozenset of canonical dept IDs from the role-library tree.
+
+    FAIL-CLOSED: if the role-library directory is missing or empty, this
+    function prints a FATAL error and sets the module-level GATE_ENABLED flag
+    to False.  Callers must check GATE_ENABLED (or call assert_gate_enabled())
+    before doing any authoring work.  Returning frozenset() here is intentional
+    — it is NOT a signal that everything is custom; it is a signal that the gate
+    is broken and the caller must abort.
+    """
+    global GATE_ENABLED  # set below before return
     if not ROLE_LIBRARY_DIR.is_dir():
         print(
-            f"[SOP-BOUNDARY-GATE] WARNING: role-library directory not found at "
-            f"{ROLE_LIBRARY_DIR} — cannot determine canonical depts; boundary gate "
-            f"is DISABLED (unsafe: authoring may proceed unchecked).",
+            f"\n[SOP-BOUNDARY-GATE] FATAL: role-library directory not found at\n"
+            f"  {ROLE_LIBRARY_DIR}\n"
+            f"The boundary gate CANNOT function without the role-library.\n"
+            f"The #1 invariant — a box must NEVER rewrite canonical floor roles/SOPs —\n"
+            f"cannot be enforced.  BUILD ABORTED.\n"
+            f"Fix: ensure the templates/role-library/ tree is present and re-run.\n",
             file=sys.stderr,
         )
+        GATE_ENABLED = False
         return frozenset()
     ids = set()
     for child in ROLE_LIBRARY_DIR.iterdir():
@@ -96,10 +115,29 @@ def _load_canonical_library_dept_ids() -> frozenset:
         if child.name in _LIBRARY_SKIP_DIRS:
             continue
         ids.add(child.name)
+    if not ids:
+        print(
+            f"\n[SOP-BOUNDARY-GATE] FATAL: role-library directory exists at\n"
+            f"  {ROLE_LIBRARY_DIR}\n"
+            f"but contains NO canonical department templates (all children were\n"
+            f"filtered out as skip-dirs or non-directories).\n"
+            f"The boundary gate CANNOT function with an empty library.\n"
+            f"The #1 invariant — a box must NEVER rewrite canonical floor roles/SOPs —\n"
+            f"cannot be enforced.  BUILD ABORTED.\n"
+            f"Fix: ensure the role-library contains department template directories.\n",
+            file=sys.stderr,
+        )
+        GATE_ENABLED = False
+        return frozenset()
+    GATE_ENABLED = True
     return frozenset(ids)
 
 
+# Module-level sentinel — will be overwritten by _load_canonical_library_dept_ids().
+GATE_ENABLED: bool = True  # overwritten immediately below
 CANONICAL_LIBRARY_DEPT_IDS: frozenset = _load_canonical_library_dept_ids()
+# After _load_canonical_library_dept_ids() runs, GATE_ENABLED reflects whether
+# the library was found and non-empty.
 
 # Alias map: some clients store a canonical dept under a variant slug.
 # Mirrors build-workforce.CANONICAL_VARIANT_SLUGS + CANONICAL_ID_ALIASES.
@@ -142,6 +180,27 @@ class CanonicalDeptAuthError(RuntimeError):
     pass
 
 
+def assert_gate_enabled() -> None:
+    """
+    Assert that the boundary gate is fully operational.
+
+    Raises RuntimeError if GATE_ENABLED is False (role-library missing or empty).
+    Call this at the top of any build script BEFORE doing any SOP authoring work.
+
+    This is the explicit precondition that makes the gate FAIL-CLOSED:
+    a missing role-library ABORTS the build rather than silently disabling the
+    only protection against canonical role rewrites.
+    """
+    if not GATE_ENABLED:
+        raise RuntimeError(
+            "\n[SOP-BOUNDARY-GATE] FATAL: Boundary gate is NOT enabled.\n"
+            f"role-library directory missing or empty at: {ROLE_LIBRARY_DIR}\n"
+            "The #1 invariant — a box must NEVER rewrite canonical floor roles/SOPs —\n"
+            "cannot be enforced without a populated role-library.\n"
+            "BUILD ABORTED.  Fix: restore the templates/role-library/ directory tree.\n"
+        )
+
+
 def is_canonical_dept(dept_id: str) -> bool:
     """
     Return True if dept_id maps to a canonical library department.
@@ -149,11 +208,22 @@ def is_canonical_dept(dept_id: str) -> bool:
     A dept is canonical when its (alias-normalised) id is present in
     CANONICAL_LIBRARY_DEPT_IDS.  This is the single-source-of-truth check —
     no hard-coded list, just the role-library directory tree.
+
+    FAIL-CLOSED: if the gate is disabled (role-library missing/empty at import
+    time), this function raises RuntimeError rather than returning False.
+    Returning False when the gate is broken would silently treat every canonical
+    floor department as custom and open the LLM authoring path for all of them —
+    exactly the #1 invariant violation this gate exists to prevent.
     """
-    if not CANONICAL_LIBRARY_DEPT_IDS:
-        # Library not found at import time — gate is disabled (loud warning
-        # already printed; let the call succeed rather than silently break builds).
-        return False
+    if not GATE_ENABLED:
+        raise RuntimeError(
+            "\n[SOP-BOUNDARY-GATE] FATAL: is_canonical_dept() called but gate is DISABLED.\n"
+            f"role-library directory missing or empty at: {ROLE_LIBRARY_DIR}\n"
+            "Cannot determine canonical status without a populated role-library.\n"
+            "The #1 invariant — a box must NEVER rewrite canonical floor roles/SOPs —\n"
+            "cannot be enforced.  BUILD ABORTED.\n"
+            "Call assert_gate_enabled() at script startup before any authoring work.\n"
+        )
     return _normalise_dept_id(dept_id) in CANONICAL_LIBRARY_DEPT_IDS
 
 

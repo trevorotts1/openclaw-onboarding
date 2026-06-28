@@ -625,8 +625,13 @@ def assert_two_saves(plan: dict) -> dict:
 # NONE of this; this run closes that gap. Every rule below is transcript-derived
 # and hardened with the audit's overlookedImprovements (length caps, canonical
 # format, researched-keywords floor, founder-as-author, explicit language).
-SEO_TITLE_MAX = 60            # title <= 60 chars (search-result truncation)
-SEO_DESC_MAX = 160           # meta description <= 160 chars
+SEO_TITLE_MAX = 60            # title <= 60 chars (stricter than GHL's 70 on
+                             # purpose — protects search-result truncation; do
+                             # NOT loosen to 70)
+SEO_DESC_MAX = 155           # meta description <= 155 chars — matches GHL's own
+                             # live validator string "Description is under 155
+                             # characters." (was 160: a 156-160 char desc passed
+                             # build_seo_meta but tripped GHL's in-app validator)
 SEO_MIN_DISTINCT_KEYWORDS = 3  # researched-keywords floor (>N distinct, real)
 SEO_DEFAULT_LANGUAGE = "en"  # set explicitly — never inherit the GHL default
 
@@ -766,7 +771,7 @@ def build_seo_meta(
 
     Fields + gates (all transcript-derived, hardened by the audit):
       * ``title``        — non-empty, <= 60 chars.
-      * ``description``  — non-empty, <= 160 chars.
+      * ``description``  — non-empty, <= 155 chars (GHL validator: "under 155").
       * ``keywords``     — >= 3 distinct, non-placeholder (researched).
       * ``author``       — := founder_name (P0 founder gate; never brand/blank).
       * ``canonicalUrl`` — absolute https, real host (not storage/CDN; optional

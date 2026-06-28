@@ -1,3 +1,44 @@
+## [v14.28.0]  -  2026-06-28  -  feat: W7 platform-facts stamp + W1 prove-zhe gate + W2 fail-closed SOP boundary + W6 combined persona selector + Skill6 CodeMirror/CSP upgrades + engineering core
+
+### Engineering core + canonical_slug rename (shared-utils)
+- `shared-utils/canonical_slug.py` now exports a consistent slug-normalisation helper used by persona-selector and populate-sops. Duplicate logic removed across scripts (DRY pass).
+
+### W2 — Fail-closed SOP boundary gate
+- `23-ai-workforce-blueprint/scripts/sop_boundary_gate.py`: added hard-fail path when a role's SOP list is empty or below minimum; warns on SOP count shortfall rather than silently passing, so broken roles surface at build time instead of at client delivery.
+- `23-ai-workforce-blueprint/scripts/build-workforce.py`: wired sop-boundary gate into the build loop; populate-sops-from-manifest receives the canonical manifest so it cannot produce stubs from an empty template.
+- `23-ai-workforce-blueprint/scripts/populate-sops-from-manifest.py`: guard against empty-manifest input; emits a WARN and halts rather than writing placeholder SOPs to disk.
+
+### W6 — Combined-persona selector
+- `23-ai-workforce-blueprint/scripts/persona-selector-v2.py`: unified mode/section filter in one pass; removed the separate pre-filter loop that caused duplicate persona selection on mixed-section builds. Anti-staleness flag respected before variety randomisation.
+- `23-ai-workforce-blueprint/department-naming-map.json`: added missing department slug aliases for graphics and paid-advertisement so the selector resolves them without a full name lookup.
+
+### W7 — Platform-facts stamp in AGENTS.md
+- `scripts/apply-fleet-standards.sh`: injects `<!-- PLATFORM_FACTS_V1 -->` block into workspace/AGENTS.md on every box. Block records: platform label (mac / vps-hostinger / vps-contabo), config root, env/secrets file paths, and where new keys/tokens go. Idempotent (marker-guarded). Called on both install and update paths.
+- `scripts/qc-assert-platform-facts-stamped.sh` (new): standalone asserter that verifies the stamp is present and the platform label is consistent. Returns rc=0 (stamp present), rc=1 (invariant violated), rc=2 (AGENTS.md not found — pre-install). Wired into `scripts/qc-system-integrity.sh` as check X.14 (hard-fail on rc=1).
+- `install.sh`: `build_env_locations()` now platform-conditional (Mac vs VPS Docker) instead of a no-op stub; returns canonical env/secrets paths for the current box type.
+
+### W1 — prove-zhe gate
+- `23-ai-workforce-blueprint/scripts/prove-zhe.py` (new): offline verifier that reads the Zero-Human-Experience manifest and asserts all required ZHE dimensions are stamped. Exits non-zero if any dimension is missing or below threshold; used by CI and operators before client delivery.
+- `23-ai-workforce-blueprint/scripts/decompose-task.py` (new): task-decomposition helper that breaks a natural-language directive into atomic steps with dependency ordering; feeds the workforce-build pipeline.
+- `23-ai-workforce-blueprint/ZERO-HUMAN-EXPERIENCE.md` (new): canonical definition doc for the Zero-Human-Experience (ZHE) framework — the 9 required dimensions, acceptance criteria, and operator checklist.
+- `23-ai-workforce-blueprint/scripts/verify-library-gate.sh`: extended to assert that all roles produced by a build pass the ZHE prove gate before marking the library ready.
+
+### Skill6 upgrades (06-ghl-install-pages v14.28.0)
+- CodeMirror v5/v6 dual-path set-value: `playwright_fallback_recipes.codemirror_set_value` feature-detects v6 (`.cm-editor`/`.cm-content`, `view.dispatch` full-doc replace) and falls back to v5 (`.CodeMirror.setValue`). Hard non-empty + exact read-back assert blocks Save on any mismatch.
+- Stable-id-first selector layer: `gates.json` gains `stable_ref` priors on runtime gates 13/14/15/18/19/20/21. Resolution: id-first → text/role fallback → verify live `@ref`.
+- Pre-save lint + idempotent entity-normalize: `normalize_entities()` collapses double-escaped entities; `lint_ghl_fragment` adds advisory warnings for >50KB/100KB bodies.
+- Live-published CSP/console gate: `_published_csp_errors()` in `ghl_verify.py` re-runs sealed render on the live published URL when available. Opt-in and additive.
+- SEO description cap 160 → 155 to match GHL's live validator.
+- Version-drift triple-equality CI gate: `scripts/check-version-drift.py` asserts `skill-version.txt == SKILL.md frontmatter == CHANGELOG top`.
+
+### Guard — D14 added to both-paths-delivery-guard.yml
+- New D14 dimension verifies `PLATFORM_FACTS_V1` marker is present in `scripts/apply-fleet-standards.sh`, confirming the W7 platform-facts feature was not accidentally stripped.
+
+### Skill 32 — command-center-setup v12.9.17
+- `32-command-center-setup/scripts/run-full-install.sh`: extended parameter handling; added --update-only guard to prevent full re-embed on existing boxes.
+- `32-command-center-setup/scripts/scaffold-agent-files.sh`: fixed path resolution for agents created from a workspace without a local onboarding clone.
+- `32-command-center-setup/scripts/materialize-dept-agents.sh`: added one-line guard to skip materialize when dept list is empty (prevents writing stub agents on fresh install before departments are configured).
+
 ## [v14.27.2]  -  2026-06-27  -  fix(persona-index): canonical idempotency gate (chunk_count + persona-dir aware) + workspace persona reconcile
 
 Fleet audit found persona-layer divergence the prior idempotency gate could not heal:

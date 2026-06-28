@@ -207,12 +207,26 @@ jobs:
           chmod +x tests/unit/provision-idempotency.test.sh
           bash tests/unit/provision-idempotency.test.sh
 
+      - name: D14 — W7 platform-facts block present in apply-fleet-standards.sh
+        run: |
+          # v14.28.0: apply-fleet-standards.sh must contain the PLATFORM_FACTS_V1 block
+          # so the W7 per-box AGENTS.md stamp is delivered on every install + update.
+          # apply-fleet-standards.sh is called from both paths; this dimension confirms
+          # the feature was not accidentally removed from the script.
+          H="scripts/apply-fleet-standards.sh"
+          if ! grep -qF 'PLATFORM_FACTS_V1' "$H"; then
+            echo "FAIL D14: PLATFORM_FACTS_V1 marker not found in $H (W7 platform-facts stripped)"
+            exit 1
+          fi
+          echo "PASS D14: PLATFORM_FACTS_V1 present in scripts/apply-fleet-standards.sh"
+
       - name: Summary
         if: always()
         run: |
           echo "Both-paths delivery guard complete."
-          echo "D1-D5 (both paths) + D7-D13 checked across install.sh and update-skills.sh."
+          echo "D1-D5 (both paths) + D7-D14 checked across install.sh and update-skills.sh."
           echo "D4 checks apply-routing-fix invocation (routing keys applied at runtime, not verbatim)."
           echo "D5 checks run-full-install deployment (CC web-app refresh — CC #108/#109/#112)."
           echo "D11-D13 check the v14.27.2 persona reconcile + canonical idempotency gate."
+          echo "D14 checks W7 platform-facts block present in apply-fleet-standards.sh (v14.28.0)."
           echo "All PASS = both paths deliver every dimension; any FAIL = regression detected."

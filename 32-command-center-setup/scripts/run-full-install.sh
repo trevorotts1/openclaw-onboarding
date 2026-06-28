@@ -452,6 +452,53 @@ if [[ -f "$STATE_FILE" ]]; then
 fi
 
 # ----------------------------------------------------------------------
+# PHASE 7z — ZERO HUMAN EXPERIENCE acceptance gate (ZHE_SEQUENCE_V1 / plan W1.2)
+# ----------------------------------------------------------------------
+# The single post-interview acceptance gate. After the full provisioning above
+# (dept agents registered, personas section-tagged, CC board + Kanban, AGENTS.md
+# stamped), prove-zhe.py asserts the WHOLE Zero Human Experience landed for THIS
+# box, with a receipt. Doctrine: 23-ai-workforce-blueprint/ZERO-HUMAN-EXPERIENCE.md.
+#
+# An interview that did NOT complete is EXEMPT (prover passes, exit 0). A missing
+# prover is a WARN (recorded, never silently green).
+#
+# RED-FIRST CONTRACT (plan §6 / spec §1): the prover only goes fully green once
+# W5/W6/W7 stamp the persona-reflex / full-context-handoff / reporting /
+# platform-facts markers into AGENTS.md. Until then it reports FAIL loud and
+# records the verdict, but only HARD-FAILS the install when ZHE_ENFORCE=1 — so the
+# gate is wired now and becomes blocking by flipping one env var at the "flip green"
+# milestone, without breaking in-flight builds. A hard fail marks the install
+# failed so the resume cron re-proves on the next update (auto-repair).
+log "INFO" "phase=7z zhe-gate: starting"
+ZHE_PROVER=""
+for _cand in \
+  "$(dirname "$SKILL_DIR")/23-ai-workforce-blueprint/scripts/prove-zhe.py" \
+  "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/prove-zhe.py" \
+  "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/prove-zhe.py"; do
+  if [[ -f "$_cand" ]]; then ZHE_PROVER="$_cand"; break; fi
+done
+if [[ -z "$ZHE_PROVER" ]]; then
+  log "WARN" "phase=7z zhe-gate: prove-zhe.py not found in any skill-23 location — skipping ZHE acceptance gate"
+  [[ -f "$STATE_FILE" ]] && state_set ".zheGateStatus = \"prover-missing\" | .zheGateCheckedAt = \"$(now_iso)\""
+else
+  ZHE_OUT="$(python3 "$ZHE_PROVER" --local "$OC_ROOT" 2>&1)"; ZHE_RC=$?
+  printf '%s\n' "$ZHE_OUT" >> "$LOG_FILE"
+  if [[ "$ZHE_RC" -eq 0 ]]; then
+    log "INFO" "phase=7z zhe-gate: PASS — full ZERO HUMAN EXPERIENCE landed (or box exempt)"
+    [[ -f "$STATE_FILE" ]] && state_set ".zheGateStatus = \"pass\" | .zheGateCheckedAt = \"$(now_iso)\""
+  else
+    log "ERROR" "phase=7z zhe-gate: FAIL — a ZHE step did not land (prove-zhe rc=$ZHE_RC)"
+    printf '%s\n' "$ZHE_OUT" | grep -E '\[FAIL\]|OVERALL' | sed 's/^/  [zhe] /'
+    [[ -f "$STATE_FILE" ]] && state_set ".zheGateStatus = \"failed\" | .zheGateRc = $ZHE_RC | .zheGateCheckedAt = \"$(now_iso)\""
+    if [[ "${ZHE_ENFORCE:-0}" == "1" ]]; then
+      fail_install "phase=7z: ZERO HUMAN EXPERIENCE acceptance gate failed (ZHE_ENFORCE=1, prove-zhe rc=$ZHE_RC)"
+    else
+      log "WARN" "phase=7z zhe-gate: NOT blocking install (ZHE_ENFORCE!=1, RED-first); resume cron re-proves on next update"
+    fi
+  fi
+fi
+
+# ----------------------------------------------------------------------
 # FINAL — Mark commandCenterStatus = done (always set on reaching here)
 # ----------------------------------------------------------------------
 # Even if remote verification failed, we mark done because the dashboard is

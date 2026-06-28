@@ -924,6 +924,57 @@ else
   WARNINGS+=("X.13|qc-assert-ghl-mcp-supervised.sh missing|Update openclaw-onboarding to v12.22.0+")
 fi
 
+# ─── CHECK X.14: Platform-facts stamp in AGENTS.md (W7.4) ───────────────────
+# Hard-fail: the active AGENTS.md must carry the <!-- PLATFORM_FACTS_V1 -->
+# marker written by apply-fleet-standards.sh so every agent always knows:
+#   • which platform this box is (mac / vps-hostinger / vps-contabo)
+#   • where its env/secrets file lives
+#   • where new passwords/tokens/keys go
+# Delegates to qc-assert-platform-facts-stamped.sh (single source of truth).
+#   rc=0 -> stamp present + platform consistent -> PASS
+#   rc=1 -> INVARIANT VIOLATED (stamp absent or mismatch) -> HARD FAIL
+#   rc=2 -> AGENTS.md not found (warn-only — pre-install)
+echo
+blue "── CHECK X.14: Platform-facts stamp in AGENTS.md (W7.4) ──"
+PLATFORM_FACTS_SCRIPT=""
+for _pf_cand in \
+  "$(dirname "${BASH_SOURCE[0]}")/qc-assert-platform-facts-stamped.sh" \
+  "$HOME/.openclaw/skills/scripts/qc-assert-platform-facts-stamped.sh" \
+  "/data/.openclaw/skills/scripts/qc-assert-platform-facts-stamped.sh"; do
+  [[ -f "$_pf_cand" ]] && PLATFORM_FACTS_SCRIPT="$_pf_cand" && break
+done
+if [[ -n "$PLATFORM_FACTS_SCRIPT" ]]; then
+  _pf_tmp=$(mktemp)
+  bash "$PLATFORM_FACTS_SCRIPT" > "$_pf_tmp" 2>&1
+  PLATFORM_FACTS_RC=$?
+  PLATFORM_FACTS_OUT=$(cat "$_pf_tmp"); rm -f "$_pf_tmp"
+  case "$PLATFORM_FACTS_RC" in
+    0)
+      green "  ✓ X.14 PLATFORM_FACTS_V1 stamp present in AGENTS.md (platform label consistent)"; PASS=$((PASS+1)) ;;
+    1)
+      red "  ✗ X.14 PLATFORM_FACTS_V1 stamp absent or platform mismatch — agent does not know where env/secrets live"
+      FAIL=$((FAIL+1))
+      FAILURES+=("X.14|PLATFORM_FACTS_V1 missing or mismatched in AGENTS.md|Run: bash scripts/apply-fleet-standards.sh (W7.2 — stamps the block idempotently)")
+      while IFS= read -r _pfline; do
+        case "$_pfline" in
+          *"INVARIANT VIOLATED"*) red "    $_pfline" ;;
+        esac
+      done <<< "$PLATFORM_FACTS_OUT" ;;
+    2)
+      yellow "  ⚠ X.14 AGENTS.md not found — platform-facts check skipped (pre-install or AGENTS.md path unresolvable)"
+      WARN=$((WARN+1))
+      WARNINGS+=("X.14|AGENTS.md not found — platform-facts stamp cannot be verified pre-install|Run install.sh or resolve AGENTS.md path; then re-run apply-fleet-standards.sh") ;;
+    *)
+      yellow "  ⚠ X.14 Platform-facts check could not run (rc=$PLATFORM_FACTS_RC)"
+      WARN=$((WARN+1))
+      WARNINGS+=("X.14|qc-assert-platform-facts-stamped.sh failed unexpectedly (rc=$PLATFORM_FACTS_RC)|Run: bash scripts/qc-assert-platform-facts-stamped.sh for details") ;;
+  esac
+else
+  yellow "  ⚠ X.14 qc-assert-platform-facts-stamped.sh not found — skipping platform-facts check"
+  WARN=$((WARN+1))
+  WARNINGS+=("X.14|qc-assert-platform-facts-stamped.sh missing|Update openclaw-onboarding to the version that ships W7.4")
+fi
+
 # ─── SUMMARY ─────────────────────────────────────────────────────────────────
 echo
 blue "═══════════════════════════════════════════════════"

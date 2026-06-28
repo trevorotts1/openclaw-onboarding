@@ -4,6 +4,28 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v14.28.0] - 2026-06-28 — feat(skill6): CodeMirror v5/v6 dual-path, stable-id selectors, pre-save lint, published-CSP gate, version-drift CI
+
+### Added — version-drift triple-equality CI gate (`scripts/check-version-drift.py`, `qc-ghl-install-pages.sh`)
+- New `check-version-drift.py` asserts `skill-version.txt` == `SKILL.md` frontmatter == top `CHANGELOG.md` entry (leading-`v` insensitive). Wired into install QC as a hard assert. Reconciles the prior drift (was v14.27.2 / 14.19.0 / v14.20.0) to a single version of record.
+
+### Added — stable-id-first selector layer (`tools/gates.json`)
+- New `stable_id_selector_layer` doc block + per-gate `stable_ref` priors on runtime gates 13/14/15/18/19/20/21 (`#Code`, `#pg-funnel-builder__btn--save`/`--publish`, `#hl-builder-preview-button`, `#hl-builder-add-elements-button`, `#hl-builder-toggle-setting-button`, `#ai-copilot-close`, `#empty-placeholder-*`, plus `#hl-menu-item-*` / `#hl-builder-seo-meta-data-button`). Resolution is id-first -> existing `find` text/role fallback -> verify live `@ref`. ADDITIVE: the text/role probe is preserved; gate count stays 2 captured / 26 runtime. Ids are `prior-unverified-until-live-capture` until one live capture pass.
+
+### Changed — CodeMirror set-value is now version-safe (`tools/gates.json`)
+- `playwright_fallback_recipes.codemirror_set_value` feature-detects CodeMirror v6 (`.cm-editor`/`.cm-content`, `view.dispatch` full-doc replace) and falls back to v5 (`.CodeMirror.setValue`). Removed the INVALID "underlying `<textarea>` + input event" fallback (v6 is contenteditable, no textarea). A HARD non-empty + exact read-back assert now blocks Save on any mismatch, so a v5/v6 mismatch can no longer silently commit an empty `rawCustomCode`.
+
+### Changed — SEO description cap 160 -> 155 (`tools/ghl_builder.py`)
+- `SEO_DESC_MAX = 155` to match GHL's live validator string "Description is under 155 characters." `SEO_TITLE_MAX` stays 60 (deliberately stricter than GHL's 70).
+
+### Added — pre-save lint + idempotent entity-normalize (`tools/ghl_rest_canvas.py`)
+- `normalize_entities()` collapses accidental double-escaped entities (`&amp;amp;` -> `&amp;`) idempotently; wired into `new_page_blob` and `edit_element_customcode` so re-saves cannot compound escapes. `lint_ghl_fragment` adds advisory warnings for >50KB / >100KB bodies (editor-lag budget; never a hard error — probe-confirmed to save) and flags double-escaped entities.
+
+### Added — live-published CSP/console gate (`tools/ghl_verify.py`)
+- `_published_csp_errors()` re-runs the sealed render on the LIVE published URL when a page carries a `published_url`/`live_url` + JS signal, folding console/CSP/pageerror (and non-200) into the verdict. OPT-IN and ADDITIVE — preview-only pages unaffected; can only add failures, never clears a preview render_error. The un-fakeable preview chain is untouched.
+
+---
+
 ## [v14.20.0] - 2026-06-27 — feat(skill6): idempotent page create — page_list + find_page_by_name
 
 ### Added — idempotent re-install: page-marker update-in-place (`ghl_rest_canvas.py`)

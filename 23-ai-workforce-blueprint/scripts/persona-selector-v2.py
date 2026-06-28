@@ -323,6 +323,15 @@ DEPT_DOMAIN_TAGS = {
     "it": ["operations", "productivity-systems"],
     "web-development": ["marketing", "sales", "copywriting", "strategy-innovation", "operations"],
     "app-development": ["operations", "productivity-systems"],
+    # W6/W2.2: 'engineering' is the renamed software/app/web/backend/cloud dept.
+    # Tags MUST mirror build-workforce.py generate_persona_matrix dept_to_domains
+    # ("engineering": ["productivity-systems","strategy-innovation","operations"])
+    # so the matrix (pool authoring) and the selector (Stage B filter) pre-qualify
+    # the SAME persona pool for the slug. Software/app/web/backend/cloud craft has
+    # no literal domain in persona-categories.json; it lives in the build/ops/idea-
+    # framing domains (productivity-systems = build discipline, operations =
+    # ship/run, strategy-innovation = architecture/idea framing).
+    "engineering": ["productivity-systems", "strategy-innovation", "operations"],
     "graphics": ["copywriting", "communication", "marketing"],
     "video": ["video", "editing", "montage", "visual-storytelling", "copywriting", "communication", "marketing"],
     "audio": ["copywriting", "communication", "marketing"],
@@ -1887,6 +1896,36 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
     return result
 
 
+_DECOMPOSE_MOD_CACHE = None
+
+
+def _load_decompose_module():
+    """Lazily load decompose-task.py (hyphenated → importlib by path).
+
+    Returns the module or None if it isn't found. Loaded ONLY when --combined is
+    requested. The module imports THIS selector read-only, so eager import would
+    be a self-import; lazy-loading avoids that. Honors DECOMPOSE_TASK_PATH for
+    tests / relocation. Cached so a repeat call is free."""
+    global _DECOMPOSE_MOD_CACHE
+    if _DECOMPOSE_MOD_CACHE is not None:
+        return _DECOMPOSE_MOD_CACHE
+    import importlib.util as _ilu
+    override = os.environ.get("DECOMPOSE_TASK_PATH")
+    here = Path(__file__).resolve().parent
+    candidates = []
+    if override:
+        candidates.append(Path(override))
+    candidates += [here / "decompose-task.py", here / "scripts" / "decompose-task.py"]
+    for c in candidates:
+        if c.is_file():
+            spec = _ilu.spec_from_file_location("decompose_task_mod", str(c))
+            mod = _ilu.module_from_spec(spec)
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+            _DECOMPOSE_MOD_CACHE = mod
+            return mod
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="v2.1-aware persona selector (stickiness + adaptive weights + behavioral profile)")
     parser.add_argument("--mode", default="select",
@@ -1902,6 +1941,28 @@ def main():
                         help="Disable v10.14.28 anti-repetition variety logic "
                              "(recency penalty + top-N weighted sampling). "
                              "Use for deterministic debugging / regression tests.")
+    # ── W6 combined / per-subtask personas (spec §6, item 8) ─────────────────
+    # When --combined is set, the task is DECOMPOSED into ordered sub-tasks and
+    # EACH sub-task gets its OWN best-fit persona, with the specialist-surfacing
+    # re-weighting tweak applied per sub-task so the best-fit SPECIALIST surfaces
+    # (not just the obvious on-brand persona). The single-persona default path
+    # below is UNCHANGED — full backward compatibility.
+    parser.add_argument("--combined", "--decompose", dest="combined",
+                        action="store_true",
+                        help="Combined personas: decompose the task into ordered "
+                             "sub-tasks and pick a best-fit persona PER sub-task "
+                             "(spec §6 'the key build'). Applies the specialist-"
+                             "surfacing re-weighting. Records which persona did "
+                             "which sub-task (task_subtask_persona).")
+    parser.add_argument("--max-subtasks", type=int, default=None,
+                        help="(--combined) hard cap on sub-tasks (token-furnace "
+                             "budget). Defaults to DECOMP_MAX_SUBTASKS.")
+    parser.add_argument("--no-llm", action="store_true",
+                        help="(--combined) force deterministic heuristic "
+                             "decomposition (no LLM call).")
+    parser.add_argument("--no-record", action="store_true",
+                        help="(--combined) do not write per-sub-task selections "
+                             "or the task_subtask_persona rows.")
     # record-completion mode args
     parser.add_argument("--task-id", help="(record-completion) task identifier")
     parser.add_argument("--persona-id", help="(record-completion) persona that governed the task")
@@ -1959,6 +2020,32 @@ def main():
     # ─── select mode (default) ────────────────────────────────────────────
     if not (args.task and args.department):
         parser.error("--task and --department are required for select mode")
+
+    # ─── W6 combined / per-subtask personas (spec §6, item 8) ─────────────
+    # Decompose → per-sub-task best-fit persona (specialist-surfacing re-weight
+    # applied per part) → record which persona did which sub-task. Loaded by
+    # PATH only when requested (the module imports THIS selector read-only, so
+    # importing it eagerly would be a self-import; lazy load avoids that and
+    # keeps the default single-persona path zero-cost).
+    if getattr(args, "combined", False):
+        _dt = _load_decompose_module()
+        if _dt is None:
+            print(json.dumps({"error": "decompose-task.py not found next to "
+                                       "persona-selector-v2.py (set "
+                                       "DECOMPOSE_TASK_PATH to override)."}, indent=2))
+            return 2
+        kwargs = dict(
+            use_llm=not args.no_llm,
+            record=not args.no_record,
+            variety=not args.no_variety,
+        )
+        if args.max_subtasks is not None:
+            kwargs["max_subtasks"] = args.max_subtasks
+        result = _dt.combined_select(args.task, args.department, **kwargs)
+        result.setdefault("db", db_field)
+        print(json.dumps(result, indent=2) if args.format == "json"
+              else _dt._format_human(result))
+        return 0
 
     # Mode detection
     mode = detect_interaction_mode(args.task)

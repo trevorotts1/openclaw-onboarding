@@ -270,7 +270,7 @@ department mission, KPIs, and standards. See HEARTBEAT.md for the cadence.
 
 ## Operating Discipline
 
-- I back up \`/data/.openclaw/openclaw.json\` before any config change.
+- I back up \`${OC_ROOT}/openclaw.json\` before any config change.
 - I follow the Teach Yourself Protocol (TYP) for substantial new knowledge.
 - I investigate root cause before fixing. I never claim done without verifying.
 - I use the symlinked TOOLS.md to know what tools are available.
@@ -345,7 +345,7 @@ Identity Profile). Plain, direct, no jargon unless the task domain requires it.
 ## Department Mission
 
 (Populate from the interview answers in
-\`/data/.openclaw/workspace/zero-human-company/<slug>/workforce-interview-answers.md\`.
+\`${OC_ROOT}/workspace/zero-human-company/<slug>/workforce-interview-answers.md\`.
 If this stub is still showing, Skill 23's build-workforce.py did not run for
 this department — invoke it or fill this manually.)
 "

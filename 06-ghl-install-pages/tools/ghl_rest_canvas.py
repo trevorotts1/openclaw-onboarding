@@ -627,6 +627,49 @@ _LINT_CONFIRMED_SURVIVES = (
 )
 
 
+# P2 — pre-save constraint budgets (constraints doc, MINIMAX-SUSPECT but cheap
+# and safe as a WARNING, never a hard error: the LIVE probe already CONFIRMED
+# >50KB bodies save + hydrate, so size is advisory-only and must NOT block).
+_LINT_SIZE_BUDGET_BYTES = 50 * 1024    # >50KB: editor-lag budget advisory
+_LINT_SIZE_LAG_BYTES = 100 * 1024      # >100KB: stronger editor-lag advisory
+
+# Collapse an ACCIDENTAL double-escape of a genuine HTML entity (e.g. a re-save
+# turning ``&amp;`` into ``&amp;amp;``, or ``&lt;`` into ``&amp;lt;``). Restricted
+# to the known named entities + numeric refs so arbitrary literal text like
+# ``&amp;company`` (no trailing entity) is left untouched. Idempotent: one pass
+# reaches a fixpoint, so normalize(normalize(x)) == normalize(x) — that fixpoint
+# is what makes the rawCustomCode set path safe to re-run without compounding.
+_DOUBLE_ESCAPE_RE = re.compile(
+    r"&amp;(amp;|lt;|gt;|quot;|apos;|nbsp;|#\d+;|#x[0-9a-fA-F]+;)"
+)
+
+
+def normalize_entities(fragment: str) -> str:
+    """Idempotently collapse a double-escaped HTML entity back to a single
+    escape, so re-saving a custom-code fragment cannot compound ``&amp;`` into
+    ``&amp;amp;`` (the idempotency bug on the update-existing-page path).
+
+    Only touches ``&amp;`` immediately followed by a recognised entity tail
+    (named: amp/lt/gt/quot/apos/nbsp; numeric: ``#NN;`` / ``#xHH;``). Literal
+    text such as ``&amp;co`` is preserved. The transform is a fixpoint after one
+    pass, so applying it twice equals applying it once.
+
+    Raises ``TypeError`` on non-string input.
+    """
+    if not isinstance(fragment, str):
+        raise TypeError(
+            f"normalize_entities: expected str, got {type(fragment).__name__}"
+        )
+    prev = None
+    cur = fragment
+    # Loop to collapse a triple-or-more escape down to a single one; converges
+    # quickly (each pass removes one layer) and stops at the fixpoint.
+    while cur != prev:
+        prev = cur
+        cur = _DOUBLE_ESCAPE_RE.sub(lambda m: "&" + m.group(1), cur)
+    return cur
+
+
 def lint_ghl_fragment(fragment: str, *, enforce_unverified_strip: bool = False) -> dict:
     """Pre-save lint for a body-level HTML fragment bound for a GoHighLevel
     custom-code element. Returns a result dict — it does NOT raise on content
@@ -710,8 +753,33 @@ def lint_ghl_fragment(fragment: str, *, enforce_unverified_strip: bool = False) 
         allowed.append("<script> (CONFIRMED survives and executes)")
     if "rel=\"stylesheet\"" in low or "rel='stylesheet'" in low or "@import" in low:
         allowed.append("external CSS link / @import (CONFIRMED survives + applies)")
-    if len(fragment.encode("utf-8")) > 50 * 1024:
+    nbytes = len(fragment.encode("utf-8"))
+    if nbytes > _LINT_SIZE_BUDGET_BYTES:
         allowed.append(">50KB body (CONFIRMED stored + hydrated)")
+
+    # P2 — size budget ADVISORY (warning, never an error: >50KB is probe-confirmed
+    # to save + hydrate; this only flags the editor-lag budget so a maintainer can
+    # see it, it does NOT block the save).
+    if nbytes > _LINT_SIZE_LAG_BYTES:
+        warnings.append(
+            f"fragment is {nbytes} bytes (>100KB) — over the editor-lag budget; "
+            "the REST autosave still stores it, but the in-builder code editor may "
+            "lag. Advisory only (probe-confirmed to save + hydrate)."
+        )
+    elif nbytes > _LINT_SIZE_BUDGET_BYTES:
+        warnings.append(
+            f"fragment is {nbytes} bytes (>50KB) — over the soft editor budget; "
+            "save is fine (probe-confirmed), watch in-builder editor responsiveness."
+        )
+
+    # P2 — idempotency: flag an ACCIDENTAL double-escape so a re-save that would
+    # compound ``&amp;`` -> ``&amp;amp;`` is visible. The set paths call
+    # normalize_entities() to fix it; this surfaces it if a caller skipped that.
+    if normalize_entities(fragment) != fragment:
+        warnings.append(
+            "fragment contains a double-escaped HTML entity (e.g. &amp;amp;) — "
+            "run normalize_entities() before save to keep the update path idempotent."
+        )
 
     if enforce_unverified_strip:
         warnings.append(
@@ -1124,8 +1192,11 @@ def new_page_blob(
         )
 
     # Normalise to a body-level fragment — strips <!DOCTYPE>/<html>/<body>
-    # wrappers, hoists <style> blocks from <head>, raises on empty result.
-    fragment = html_fragment(raw_custom_code)
+    # wrappers, hoists <style> blocks from <head>, raises on empty result. Then
+    # collapse any double-escaped entity so the stored rawCustomCode is the
+    # canonical single-escape form (P2 idempotency: re-runs cannot compound
+    # &amp; -> &amp;amp;).
+    fragment = normalize_entities(html_fragment(raw_custom_code))
 
     # ── NESTED section -> row -> col -> custom-code blob (the renderable shape) ─
     #
@@ -1295,7 +1366,10 @@ def edit_element_customcode(page_data: dict, locator: dict, new_value: str) -> d
             f"element [{s_idx}][{e_idx}] extra.customCode.value is not an object"
         )
 
-    value["rawCustomCode"] = new_value
+    # P2 idempotency — collapse any double-escaped entity so re-editing the same
+    # node (e.g. successive image swaps) cannot compound &amp; -> &amp;amp;. This
+    # is a fixpoint, so an already-canonical value passes through unchanged.
+    value["rawCustomCode"] = normalize_entities(new_value)
     return out
 
 

@@ -22,9 +22,11 @@ from sop_boundary_gate import _cli  # type: ignore  # noqa: E402
 # Re-export everything for `from sop-boundary-gate import ...` attempts
 # (not standard Python, but some scripts do this via importlib).
 from sop_boundary_gate import (  # noqa: F401, E402
+    GATE_ENABLED,
     CANONICAL_LIBRARY_DEPT_IDS,
     ROLE_LIBRARY_DIR,
     CanonicalDeptAuthError,
+    assert_gate_enabled,
     is_canonical_dept,
     refuse_if_canonical,
     classify_manifest_depts,
