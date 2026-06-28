@@ -42,7 +42,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v15.0.1"
+ONBOARDING_VERSION="v15.1.0"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -445,7 +445,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v14.28.2 - safe_json_edit
+# v15.1.0 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1120,6 +1120,18 @@ main() {
     # gate sees 54 persona dirs (furnace-safe), then provision the index.
     reconcile_persona_assets "$_U6B_SK22" "$_U6B_COACHING_DB_DIR" "$_U6B_WS"
     provision_persona_index "$_U6B_MANIFEST" "$_U6B_COACHING_DB_DIR"
+    # FIX 1 (BREAK 1): pipeline OWNS the qmd persona store — repoint/re-index it
+    # at the canonical personas dir (BM25 only, furnace-safe) so the agent can
+    # never read a frozen "March" cache. Runs AFTER reconcile + provision so the
+    # canonical dir holds the current blueprints.
+    reconcile_qmd_persona_index "$_U6B_COACHING_DB_DIR"
+    # FIX 4 (cascade): if reconcile_persona_assets detected the SET grew
+    # (_SET_CHANGED=1), re-wire matching + Command Center + the dept persona
+    # reflex (governing-personas.md refresh + stickiness bust). Static/idempotent.
+    if [ "${_SET_CHANGED:-0}" = "1" ]; then
+      echo "  → persona SET changed — re-wiring governing-personas.md + busting stickiness"
+      rewire_on_persona_set_change "$SKILLS_DIR" "$_U6B_WS"
+    fi
     wire_ghl_funnel_catalog "$SKILLS_DIR" "$_U6B_OC_SECRETS_ENV" "$_U6B_OC_JSON"
   else
     echo "  note: Persona-index manifest or provision helper not found — skipping Step U6b (additive)"

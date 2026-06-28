@@ -1929,10 +1929,13 @@ def _load_decompose_module():
 def main():
     parser = argparse.ArgumentParser(description="v2.1-aware persona selector (stickiness + adaptive weights + behavioral profile)")
     parser.add_argument("--mode", default="select",
-                        choices=["select", "record-completion"],
+                        choices=["select", "record-completion", "bust-stickiness"],
                         help="select = pick a persona for a task (default). "
                              "record-completion = invoke verify-persona-adherence "
-                             "for an already-completed task (v10.8.0 P0-2 wiring).")
+                             "for an already-completed task (v10.8.0 P0-2 wiring). "
+                             "bust-stickiness = flag every persona_assignment row "
+                             "needs_review=1 so no stale sticky pick is served "
+                             "(called on a persona-SET change; FIX 4 re-wire).")
     parser.add_argument("--task", required=False)
     parser.add_argument("--department", required=False)
     parser.add_argument("--format", default="json", choices=["json", "human"])
@@ -2016,6 +2019,33 @@ def main():
         print(json.dumps(result, indent=2) if args.format == "json"
               else f"adherence: {result.get('adherence_score', 'n/a')}")
         return 0 if result.get("ok") else 1
+
+    # ─── bust-stickiness mode (FIX 4 — persona-SET-change re-wire) ─────────
+    # When the persona SET grows, every sticky persona_assignment row may be
+    # serving a persona that was picked from the OLD candidate universe. Flag them
+    # all needs_review=1 so check_sticky_assignment cannot serve a stale pick (it
+    # only TRUSTS rows with needs_review != 1). Non-destructive: rows are kept,
+    # just un-trusted, so the next dispatch makes a fresh selection over the new
+    # SET and re-pins. Idempotent; zero embeddings.
+    if args.mode == "bust-stickiness":
+        flagged = 0
+        if is_db_found(db_path):
+            try:
+                conn = sqlite3.connect(str(db_path))
+                _ensure_persona_assignment_columns(conn)
+                cur = conn.execute("UPDATE persona_assignment SET needs_review = 1")
+                flagged = cur.rowcount if cur.rowcount is not None else 0
+                conn.commit()
+                conn.close()
+            except sqlite3.Error as e:
+                print(json.dumps({"ok": False, "mode": "bust-stickiness",
+                                  "error": f"bust-stickiness failed: {e}",
+                                  "db": db_field}, indent=2))
+                return 1
+        print(json.dumps({"ok": True, "mode": "bust-stickiness",
+                          "rows_flagged_needs_review": flagged,
+                          "db": db_field}, indent=2))
+        return 0
 
     # ─── select mode (default) ────────────────────────────────────────────
     if not (args.task and args.department):

@@ -1,0 +1,100 @@
+name: persona-set-asset-consistency-guard
+
+# FIX 3 (BREAK 3) — make "added a persona but forgot to rebuild the asset"
+# UN-MERGEABLE. Closes the staleness window structurally.
+#
+# FAIL CI when the persona-SET COUNT triad disagrees:
+#   blueprint dirs (22-…/personas/*)
+#     == persona-categories.json persona keys
+#     == INDEX-MANIFEST.json persona_count
+#     == INDEX-MANIFEST.json canonical_persona_count
+#
+# This is the SAME invariant as the N38 7th assertion in
+# qc-assert-repo-consistency.py, enforced here at the PR boundary on the exact
+# files that move when a persona is added. Static file compare only — no asset
+# download, no embeddings, finishes in seconds.
+
+on:
+  push:
+    paths:
+      - 22-book-to-persona-coaching-leadership-system/personas/**
+      - 22-book-to-persona-coaching-leadership-system/persona-categories.json
+      - shared-utils/prebuilt-index/INDEX-MANIFEST.json
+      - .github/workflows/persona-set-asset-consistency-guard.yml
+  pull_request:
+    paths:
+      - 22-book-to-persona-coaching-leadership-system/personas/**
+      - 22-book-to-persona-coaching-leadership-system/persona-categories.json
+      - shared-utils/prebuilt-index/INDEX-MANIFEST.json
+      - .github/workflows/persona-set-asset-consistency-guard.yml
+  workflow_dispatch:
+
+jobs:
+  persona-set-triad:
+    name: "Persona-SET count triad (offline)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Assert persona-SET count triad agrees
+        run: |
+          python3 - <<'PYEOF'
+          import json, sys
+          from pathlib import Path
+
+          root = Path(".")
+          sk22 = root / "22-book-to-persona-coaching-leadership-system"
+          personas_dir = sk22 / "personas"
+          cats_path = sk22 / "persona-categories.json"
+          manifest_path = root / "shared-utils" / "prebuilt-index" / "INDEX-MANIFEST.json"
+
+          fails = []
+          dir_count = sum(1 for p in personas_dir.iterdir() if p.is_dir()) if personas_dir.is_dir() else None
+          if dir_count is None:
+              fails.append(f"blueprint dir missing: {personas_dir}")
+
+          cats_count = None
+          if cats_path.is_file():
+              cats_count = len(json.loads(cats_path.read_text()).get("personas", {}))
+          else:
+              fails.append(f"persona-categories.json missing: {cats_path}")
+
+          man_count = man_canon = None
+          if manifest_path.is_file():
+              m = json.loads(manifest_path.read_text())
+              man_count = int(m.get("persona_count", -1))
+              man_canon = int(m.get("canonical_persona_count", -1))
+          else:
+              fails.append(f"INDEX-MANIFEST.json missing: {manifest_path}")
+
+          vals = {
+              "blueprint_dirs": dir_count,
+              "categories.json_keys": cats_count,
+              "manifest.persona_count": man_count,
+              "manifest.canonical_persona_count": man_canon,
+          }
+          print("Persona-SET count triad:")
+          for k, v in vals.items():
+              print(f"  {k} = {v}")
+
+          present = {k: v for k, v in vals.items() if v is not None}
+          if len(set(present.values())) > 1:
+              fails.append("triad DISAGREES — a persona shipped to the SET without "
+                           "an embedded asset, or the manifest was bumped without a "
+                           "blueprint. Run shared-utils/prebuilt-index/build-and-publish.sh "
+                           "and commit the bumped INDEX-MANIFEST.json. See "
+                           "23-ai-workforce-blueprint/ADDING-PERSONAS.md.")
+
+          if fails:
+              print("\nFAIL:")
+              for f in fails:
+                  print(f"  - {f}")
+              sys.exit(1)
+          print("\nPASS: persona-SET count triad agrees (" + str(next(iter(present.values()))) + " personas)")
+          PYEOF

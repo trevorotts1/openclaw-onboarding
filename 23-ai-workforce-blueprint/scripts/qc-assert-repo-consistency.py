@@ -322,6 +322,82 @@ class Repo:
 # THE GATE
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _persona_set_triad_failures(skill_dir):
+    """N38 7th assertion (FIX 5). Return a list of (scope, category, detail)
+    failure tuples when the persona-SET COUNT triad disagrees:
+
+        blueprint dirs (22-…/personas/*)
+        == categories.json persona keys (22-…/persona-categories.json)
+        == manifest persona_count        (shared-utils/prebuilt-index/INDEX-MANIFEST.json)
+        == manifest canonical_persona_count
+
+    Empty list ⇒ triad agrees. Any mismatch ⇒ one failure tuple (rc=5 in
+    evaluate()). Pure static file compare — never embeds, never downloads.
+    Missing files are reported as a failure (a persona system that cannot prove
+    its own count is drifted by definition), but a TOTAL absence of the persona
+    subsystem (no Skill-22 dir at all) is tolerated as additive.
+    """
+    repo_root = Path(skill_dir).resolve().parent
+    sk22 = repo_root / "22-book-to-persona-coaching-leadership-system"
+    personas_dir = sk22 / "personas"
+    cats_path = sk22 / "persona-categories.json"
+    manifest_path = repo_root / "shared-utils" / "prebuilt-index" / "INDEX-MANIFEST.json"
+
+    # Additive tolerance: if the whole Skill-22 persona subsystem is absent, do
+    # not fail (some trimmed repos may not ship it).
+    if not sk22.is_dir():
+        return []
+
+    fails = []
+
+    dir_count = None
+    if personas_dir.is_dir():
+        dir_count = sum(1 for p in personas_dir.iterdir() if p.is_dir())
+    else:
+        fails.append(("(persona-set)", "PERSONA-SET-COUNT",
+                      f"blueprint dir missing: {personas_dir}"))
+
+    cats_count = None
+    if cats_path.is_file():
+        try:
+            cats = json.loads(cats_path.read_text(encoding="utf-8"))
+            cats_count = len(cats.get("personas", {}))
+        except Exception as e:
+            fails.append(("(persona-set)", "PERSONA-SET-COUNT",
+                          f"persona-categories.json unreadable: {e}"))
+    else:
+        fails.append(("(persona-set)", "PERSONA-SET-COUNT",
+                      f"persona-categories.json missing: {cats_path}"))
+
+    man_count = man_canon = None
+    if manifest_path.is_file():
+        try:
+            man = json.loads(manifest_path.read_text(encoding="utf-8"))
+            man_count = int(man.get("persona_count", -1))
+            man_canon = int(man.get("canonical_persona_count", -1))
+        except Exception as e:
+            fails.append(("(persona-set)", "PERSONA-SET-COUNT",
+                          f"INDEX-MANIFEST.json unreadable: {e}"))
+    else:
+        fails.append(("(persona-set)", "PERSONA-SET-COUNT",
+                      f"INDEX-MANIFEST.json missing: {manifest_path}"))
+
+    vals = {
+        "blueprint_dirs": dir_count,
+        "categories.json_keys": cats_count,
+        "manifest.persona_count": man_count,
+        "manifest.canonical_persona_count": man_canon,
+    }
+    present = {k: v for k, v in vals.items() if v is not None}
+    if len(set(present.values())) > 1:
+        fails.append(("(persona-set)", "PERSONA-SET-COUNT",
+                      "persona-SET count triad DISAGREES (a persona shipped to "
+                      "the SET without an embedded asset, or the manifest was "
+                      "bumped without a blueprint): " +
+                      ", ".join(f"{k}={v}" for k, v in vals.items())))
+    return fails
+
+
 def evaluate(skill_dir):
     try:
         repo = Repo(skill_dir)
@@ -501,6 +577,17 @@ def evaluate(skill_dir):
         "orphan_rosters": orphan_rosters,
         "unreachable_floor": unreachable_floor,
     }
+
+    # N38 7th assertion (FIX 5 — persona-SET propagation invariant). The five
+    # dimensions above guard persona→DOMAIN mappings, NOT the persona-SET COUNT
+    # triad. A persona could be added to the blueprint dir + categories.json while
+    # the prebuilt-index manifest still claimed the OLD count (matchable-but-
+    # vector-less), or the manifest could be bumped without a blueprint — both ship
+    # broken propagation silently. Assert the triad agrees: blueprint dirs ==
+    # categories.json keys == manifest persona_count == manifest
+    # canonical_persona_count. Static file compare only — NO embeddings. rc=5.
+    for _f in _persona_set_triad_failures(skill_dir):
+        failures.append(_f)
 
     drift_depts = sorted({f[0] for f in failures})
     rc = 0 if not failures else 5
