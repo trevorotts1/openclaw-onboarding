@@ -44,7 +44,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v14.24.0"
+ONBOARDING_VERSION="v14.24.1"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -447,7 +447,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v14.23.3 - safe_json_edit
+# v14.24.1 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -2200,7 +2200,11 @@ PYEOF
     elif [ "$OC_PLATFORM" = "vps" ]; then
       docker restart openclaw >/dev/null 2>&1         && echo "  ✓ Gateway restarted via docker (routing config now live)"         || echo "  ⚠ docker restart failed — restart manually: openclaw gateway restart"
     else
-      launchctl kickstart -k "gui/$(id -u)/com.openclaw.gateway" >/dev/null 2>&1         && echo "  ✓ Gateway restarted via launchctl (routing config now live)"         || echo "  ⚠ launchctl restart failed — restart manually: openclaw gateway restart"
+      GW_LABEL="$(launchctl list 2>/dev/null | awk '/openclaw.*gateway/{print $3; exit}')"
+      [ -z "$GW_LABEL" ] && GW_LABEL="ai.openclaw.gateway"
+      launchctl kickstart -k "gui/$(id -u)/$GW_LABEL" >/dev/null 2>&1 \
+        && echo "  ✓ Gateway restarted via launchctl (routing config now live)" \
+        || echo "  ⚠ launchctl restart failed — restart manually: openclaw gateway restart"
     fi
   else
     echo "  ℹ Routing config unchanged — no gateway restart needed"
