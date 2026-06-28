@@ -116,15 +116,41 @@ Review the local workdir structure. Are all completed run directories properly a
 
 - GHL API (via client's GHL credentials from the client's env stores)
 - Client's Google Drive (if applicable -- Drive folder mirrored per mission_prd.json)
-- working/checkpoints/media_library.json (write -- all paths and IDs)
+- working/checkpoints/media_library.json (write -- all paths and IDs; the canonical ledger every gate reads)
 - working/media-library/ (the local passed-image deliverable folder)
 - working/qc/image_qc_report.json (read -- intake trigger for passed images)
+- scripts/ghl_media_push.py (upload images + final PPTX; `--gate` runs the AF-DELIVERY-COMPLETE closeout gate)
+- scripts/ghl_media.py (the SHARED, verified-working REST module: folder-create + upload)
 
 ---
 
 ## 9. Standard Operating Procedures (Numbered)
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
+
+> **REQUIRED, GATED — THE GHL MEDIA UPLOAD IS NOT OPTIONAL.**
+> For every GHL-enabled deck (`intake.json` does NOT set `has_ghl: false`) all THREE
+> GHL actions are MANDATORY and recorded in the canonical ledger
+> `working/checkpoints/media_library.json` — the SAME file Step-0 (SOP 9.1) seeds and
+> that the closeout gate, the Delivery Concierge, and `scripts/delivery_gate.py` read:
+> 1. **Per-deck folder resolved** (SOP 9.3) — `ghl_folder_id` set to a real folder id
+>    created by `ghl_media.create_media_folder`, or `"root"` (a PASSING fallback). A
+>    null/empty `ghl_folder_id` is the unset Step-0 seed and does NOT satisfy the gate.
+> 2. **Per-slide PNG upload** (SOP 9.3) — every passed slide carries a real
+>    `ghl_media_id` with `ghl_upload_status: "complete"`.
+> 3. **Final PPTX upload** (SOP 9.6) — `pptx_ghl_media_id` recorded.
+>
+> **The closeout gate is MECHANICAL, not doctrine-only.** Run
+> `python3 scripts/ghl_media_push.py --gate --run-dir <run_dir>` (exit 0 = pass, 1 =
+> fail), or call `gate_ghl_media_complete(run_dir)`. It folds under **AF-DELIVERY-COMPLETE**
+> and HARD-FAILS the run unless all three uploads are recorded. There is no defer-to-pass.
+>
+> **The ONLY way to skip it** is a LOGGED owner/founder approval token in
+> `working/checkpoints/process_manifest.json` under `owner_skip_approval`
+> (`owner_approved: true` + a non-empty `approved_by` + a non-empty `reason` + a `gate`
+> naming this gate, e.g. `"AF-DELIVERY-COMPLETE"`). An agent setting `has_ghl: false` on
+> its own does **NOT** skip the gate — the skip must be an explicit owner decision
+> (Edge Case 17.1). A deck that simply omits the upload records is INCOMPLETE.
 
 ### SOP 9.1 -- Step-0 Landing Zone Creation
 
@@ -438,6 +464,42 @@ Note: if a ROLE-13 Delivery Concierge role is added to this department in a futu
 
 ---
 
+### SOP 9.8 -- GHL Upload Closeout Gate (AF-DELIVERY-COMPLETE)
+
+**When to run:** At closeout, before the run is marked "Done" — invoked by the governed
+orchestrator/postflight (it is not optional, and it is not skippable by re-ordering).
+
+**What it enforces:** `working/checkpoints/media_library.json` records ALL THREE GHL
+uploads — `ghl_folder_id` (real id or `"root"`), a complete per-slide `ghl_media_id`
+for every passed slide, and a `pptx_ghl_media_id` for the final deck. The gate reads the
+canonical ledger ONLY (the same file SOP 9.1 seeds and `scripts/delivery_gate.py` reads);
+it does not open the GHL UI and does not accept a self-report.
+
+**Steps:**
+1. Run `python3 scripts/ghl_media_push.py --gate --run-dir <run_dir>` (exit 0 = pass,
+   1 = fail), or call `gate_ghl_media_complete(run_dir)` -> `(ok, reasons)`. Optionally
+   pass `--expected-slides N` (or record `expected_slide_count` in the ledger) for a
+   per-slide coverage cross-check.
+2. On FAIL: read the printed reasons (missing folder / missing per-slide upload /
+   incomplete slide / missing `pptx_ghl_media_id` / coverage shortfall), complete the
+   missing upload via SOP 9.3 / 9.6, then re-run. Never mark the run delivered on a FAIL.
+3. **Owner-skip carve-out (the ONLY skip):** a logged token in
+   `working/checkpoints/process_manifest.json` under `owner_skip_approval`
+   (`owner_approved: true` + `approved_by` + `reason` + `gate: "AF-DELIVERY-COMPLETE"`).
+   With the token, the gate passes and `ghl_delivery_skipped: true` may be recorded
+   (Edge Case 17.1). Without it, `has_ghl: false` set by the agent alone still fails.
+
+**Outputs:** a PASS verdict (exit 0) that authorizes closeout, or a FAIL with the exact
+missing records.
+
+**Hand to:** Delivery Concierge / Director (closeout proceeds only on PASS).
+
+**Failure mode:** A FAIL hard-blocks "Done." Do not fabricate `ghl_media_id` /
+`pptx_ghl_media_id` values to satisfy the gate — every id must come from a real
+`upload_media` response. Fabricated ids are a delivery lie and an auto-fail.
+
+---
+
 ## 10. Quality Gates
 
 ### Gate 1 -- Step 0 Must Complete Before Any Run Phase
@@ -451,6 +513,16 @@ Delivery is verified via actual GHL API file count -- not by "I uploaded the fil
 
 ### Gate 4 -- All Images Accounted For
 local_count == ghl_count == slide_count_final before delivery_verified is set to true.
+
+### Gate 5 -- GHL Upload Closeout Gate (AF-DELIVERY-COMPLETE, MECHANICAL)
+No deck is "Done" until `working/checkpoints/media_library.json` records all three GHL
+uploads: a resolved `ghl_folder_id` (real id or `"root"`), a complete per-slide
+`ghl_media_id` for every passed slide, and a `pptx_ghl_media_id` for the final deck.
+Enforced by `gate_ghl_media_complete(run_dir)` /
+`python3 scripts/ghl_media_push.py --gate --run-dir <run_dir>`. The gate is skippable
+ONLY by a logged `owner_skip_approval` token in `process_manifest.json`
+(`owner_approved: true` + `approved_by` + `reason` + matching `gate`). The agent cannot
+opt out of the upload on its own — `has_ghl: false` without the owner token still fails.
 
 ---
 
@@ -547,7 +619,14 @@ media_library.json: delivery_verified = true, local_count = 75, ghl_count = 75, 
 ## 17. Edge Cases for This Role
 
 ### Edge Case 17.1 -- Client Has No GHL Account
-If the client does not have a GHL account (intake.json shows `has_ghl: false`): skip all GHL steps. Delivery is local-only. Write `ghl_delivery_skipped: true` in media_library.json. Notify the Director. Deliver images via the local media-library/ folder and optionally via Google Drive if the client uses Drive.
+If the client does not have a GHL account (intake.json shows `has_ghl: false`): the GHL
+upload may be skipped, but ONLY as an explicit, LOGGED owner/founder decision. Record a
+`owner_skip_approval` token in `working/checkpoints/process_manifest.json`
+(`owner_approved: true`, `approved_by: "<owner>"`, `reason: "client has no GHL account"`,
+`gate: "AF-DELIVERY-COMPLETE"`); without that token the closeout Gate 5 still hard-fails —
+an agent cannot opt out of the upload on its own. With the token recorded, also write
+`ghl_delivery_skipped: true` in media_library.json, notify the Director, and deliver
+images via the local media-library/ folder and optionally Google Drive if the client uses Drive.
 
 ### Edge Case 17.2 -- Re-Running a Deck (Version Bump)
 If the client wants a version 2 of an existing deck (e.g., adding new slides or replacing images): create a new dated workdir. Set N=2 (or current version + 1). Create a new GHL folder named `<Client> <Deck> v2`. Do NOT overwrite v1 files. The two versions coexist in GHL.

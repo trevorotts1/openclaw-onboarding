@@ -19,6 +19,14 @@ Define the visual design of the 3 to 4 dedicated hook slides: the hook line set 
 
 A dedicated hook slide is PURE TYPOGRAPHY. The hook line is the entire slide. It is set large (BLACK weight, hero scale) over a single low-opacity image (8 to 15% opacity, or a soft single-color wash) that does not compete with the words. There is no second photographic subject, no chart, no body paragraph, no kicker stack, no footer band, and no second idea. The hook line is the canonical refrain, verbatim, never reworded, never extended, never duplicated on the slide.
 
+### 2.0 "Pure typography" means kie.ai RENDERS THE TYPE AS THE IMAGE — it does NOT mean "render this slide locally"
+
+This is the single most important sentence in this SOP, stated first so it cannot be misread: a PURE_TYPE_HOOK slide is a **kie.ai gpt-image-2 render** exactly like every other slide in the deck. kie.ai bakes the cream surface (or the low-opacity wash/image) AND the verbatim hook display type into ONE composed image. "Pure typography" describes the *visual content* (type carries the slide, no competing photographic subject), NOT the *render path*. The render path is identical to every other slide: text-to-image (Mode A) when no logo is composited, image-to-image (Mode B) when the locked logo is composited — both kie.ai, per SOP-IMG-01.
+
+**FORBIDDEN — the exact defect this kills:** generating a hook slide locally with Pillow/PIL (`Image.new('RGB',(W,H),'#FFFBF1')` to fabricate a flat cream card), with ImageDraw text, with a PowerPoint-rendered card, with any built-in `image_generate` tool, or with any model other than kie.ai gpt-image-2. A hook slide that never reaches kie.ai — i.e. one that carries **no real kie.ai `taskId`** — is an AUTO-FAIL (`AF-LOCAL-CANVAS` / `AF-CANONICAL-RENDER-BYPASS`), not an acceptable shortcut. The phrase "skip kie.ai for this slide" is doctrine-illegal and appears nowhere in this department. Pillow/PIL is permitted on a slide for the LOCKED LOGO image composite ONLY (SOP-IMG-05) — never to draw the slide, the cream surface, or any hook text.
+
+**Every PURE_TYPE_HOOK slide therefore carries, like every other slide:** a real kie.ai `taskId` in `working/checkpoints/kie_task_ids.json`, a downloaded PNG above the kie-bake byte floor (>= 51,200 bytes; a ~26–30 KB flat cream card is below the floor by construction and hard-fails), and the verbatim hook words baked into that PNG by the model. Hook slides are NEVER excluded from image-QC scope.
+
 ### 2.1 What goes on a dedicated hook slide
 
 - The hook line (verbatim from hook_package.json), set large, BLACK weight, centered or in a single chosen position.
@@ -46,6 +54,9 @@ The signature quote (e.g. "Instead of solving problems, we walk them through how
 
 | Trigger | Verdict |
 |---------|---------|
+| A PURE_TYPE_HOOK slide was rendered locally (Pillow/PIL `Image.new`/ImageDraw, PowerPoint card, native image tool, or any non-kie.ai model) instead of by kie.ai gpt-image-2 | AUTO-FAIL that slide (`AF-LOCAL-CANVAS` / `AF-CANONICAL-RENDER-BYPASS`) |
+| A PURE_TYPE_HOOK slide has NO real kie.ai `taskId` in `kie_task_ids.json`, or its PNG is below the 51,200-byte kie-bake floor (the flat-cream-card signature) | AUTO-FAIL that slide (`AF-LOCAL-CANVAS`) |
+| A PURE_TYPE_HOOK slide is excluded from image-QC scope ("slides 1/24/49 out of scope") | AUTO-FAIL the gate (no slide is exempt from pixel QC) |
 | The hook line (or its refrain) is rendered in a footer band on ANY slide | AUTO-FAIL that slide (footer-stamped hook) |
 | A slide marked PURE_TYPE_HOOK carries a competing photographic subject at normal opacity | AUTO-FAIL that slide |
 | The background image on a hook slide is above ~15% opacity (it competes with the type) | FAIL that prompt/image |

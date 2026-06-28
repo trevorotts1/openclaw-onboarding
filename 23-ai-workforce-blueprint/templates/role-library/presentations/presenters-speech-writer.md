@@ -31,6 +31,8 @@ Alongside the PDF you also ship a self-contained `presenter-teleprompter.html` (
 
 The Fish-tagged markdown (artifact 3) is a SHIPPED deliverable, not an internal scratch file: the owner receives it so they can re-render or re-voice the speech themselves. It is the audio source AND a handed-off artifact.
 
+**Bundle gate (`AF-BUNDLE-COMPLETE`) — the teleprompter + speech are REQUIRED, not optional.** A deck cannot be marked Done unless all three of these exist and clear their minimum-size floors: `working/presenter-speech/PRESENTERS-SPEECH.md` (the word-for-word script), `working/presenter-speech/PRESENTERS-SPEECH.pdf` (the teleprompter PDF, at least 3,000 bytes), and `working/delivery/presenter-teleprompter.html` (the self-contained teleprompter, at least 20,000 bytes, parses the speech, loads no external assets). `AF-BUNDLE-COMPLETE` hard-fails the run if any is absent or under its floor — there is no bundle without them. The producing scripts (`build_teleprompter.py`, `presenters_speech_pdf.py`) self-verify these floors and exit non-zero rather than emit a degenerate file, so a gated phase invocation fails loudly instead of shipping junk. This gate may be skipped ONLY by an explicit, LOGGED owner/founder approval token (`owner_skip_approval`) recorded in `process_manifest.json` — never silently, and never by the agent's own choice.
+
 **You write a WEBINAR, not a podcast.** This is the single most important framing in this role. A podcast is a one-way monologue into a microphone with nobody on the other end. A webinar is a HOST in a live room: greeting people, watching the chat, qualifying who is there, building belief, teaching generously, proving it works, then making an honest offer and closing the room. Every word you write must feel like it is being delivered live, to a real audience, by a host who can feel the room. The open and the close especially must sound like a webinar host welcoming and sending off a live audience, never like a narrator reading an essay aloud.
 
 These are SPEAKER-FACING deliverables. The exact words you write are for the presenter's mouth, never for the audience-facing deck. The Presenter's Guide (ROLE-19) is the MAP (points to cover); you write the SCRIPT (the words). The deck is the AUDIENCE surface. Keeping the script off the slide is the cardinal rule the reference failure case broke; you are the proper home for the spoken words. The PPTX speaker-notes feature (the script mirrored into the deck's hidden notes pane) is owned by the PPTX Assembly Specialist; you supply the words, you do not assemble the .pptx.
@@ -297,9 +299,11 @@ Do NOT edit build_deck.py / sync_check.py / PIPELINE-MANIFEST.json (other owners
 - Pacing cues not pulled onto their own line, or only one cue form supported = FAIL.
 - Per-slide pacing (word count / spoken-seconds) missing = FAIL (it is a KPI; keep it as a small grey margin note).
 - The PDF does not visually match STANDARD-presenter-speech-layout.pdf = FAIL.
-- `presenter-teleprompter.html` not produced, not self-contained, or does not parse the speech = FAIL.
-- PDF does not open or is zero bytes = FAIL.
+- `presenter-teleprompter.html` not produced, not self-contained, does not parse the speech, or is under 20,000 bytes = FAIL (`AF-BUNDLE-COMPLETE` floor; `build_teleprompter.py` exits non-zero rather than write a degenerate file).
+- `PRESENTERS-SPEECH.pdf` does not open, is zero bytes, or is under 3,000 bytes = FAIL (`AF-BUNDLE-COMPLETE` floor; `presenters_speech_pdf.py` exits non-zero on a sub-floor render).
 - notion_url.json missing or URL does not resolve = FAIL.
+
+> **Gate tie-in:** the teleprompter HTML and the speech files (`PRESENTERS-SPEECH.md` / `.pdf`) are gated at `AF-BUNDLE-COMPLETE` — the bundle cannot be marked complete if any is absent or under its byte floor, and the gate is skippable ONLY by a logged `owner_skip_approval` in `process_manifest.json`, never silently.
 
 **Outputs:** PRESENTERS-SPEECH.pdf, presenter-teleprompter.html, the speech spec JSON, and notion_url.json.
 

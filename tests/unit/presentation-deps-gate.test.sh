@@ -176,6 +176,114 @@ assert_qc_has "gate: python import reportlab,pptx check" 'import reportlab, pptx
 assert_qc_has "gate: exit 6 on missing dep"      'exit 6'
 
 echo
+echo "(C) presentation-canonical-entry.sh — the ONE sanctioned build command (entrypoint gate)"
+
+ENTRY="$REPO_ROOT/23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh"
+PRES_DIR="$REPO_ROOT/23-ai-workforce-blueprint/templates/role-library/presentations"
+BUILDER_PROMPT="$PRES_DIR/BUILDER-PROMPT.md"
+HOWTO="$PRES_DIR/how-to-use-this-department.md"
+START_HERE="$PRES_DIR/00-START-HERE.md"
+
+assert_entry_has() {
+    local label="$1" re="$2"
+    if grep -Eq -e "$re" "$ENTRY"; then pass "$label"; else fail "$label (regex: $re)"; fi
+}
+assert_file_has() {
+    local label="$1" file="$2" re="$3"
+    if grep -Eq -e "$re" "$file"; then pass "$label"; else fail "$label (regex: $re)"; fi
+}
+
+# Exists + parses.
+[ -f "$ENTRY" ] && pass "entry script present" || fail "entry script missing ($ENTRY)"
+bash -n "$ENTRY" 2>/dev/null && pass "entry script parses (bash -n)" || fail "entry script bash -n FAILED"
+[ -x "$ENTRY" ] && pass "entry script is executable" || fail "entry script not executable"
+
+# The three fail-closed gates are present in the source.
+assert_entry_has "entry: GATE 1 deps check"        'GATE 1.*DEPS CHECK'
+assert_entry_has "entry: GATE 2 bypass-scan"       'GATE 2.*BYPASS-SCAN'
+assert_entry_has "entry: GATE 3 version/hash pin"  'GATE 3.*VERSION/HASH PIN'
+# The deps it gates on.
+assert_entry_has "entry: deps soffice"   'command -v soffice'
+assert_entry_has "entry: deps pdftoppm"  'command -v pdftoppm'
+assert_entry_has "entry: deps reportlab+pptx" 'import reportlab, pptx'
+# The bypass-scan patterns + the SHARED auto-fail codes.
+assert_entry_has "entry: scans Image.new 2048x1152 canvas" '2048'
+assert_entry_has "entry: scans add_textbox overlay"        'add_text'
+assert_entry_has "entry: scans direct kie createTask"      'createTask'
+assert_entry_has "entry: AF-LOCAL-CANVAS code"             'AF-LOCAL-CANVAS'
+assert_entry_has "entry: AF-CANONICAL-RENDER-BYPASS code"  'AF-CANONICAL-RENDER-BYPASS'
+# Owner-skip token is the ONLY way to waive a gate.
+assert_entry_has "entry: owner_skip_approval token"        'owner_skip_approval'
+# It dispatches the canonical orchestrator (never build_deck.py directly for the doctrine path).
+assert_entry_has "entry: dispatches run_signature_deck.py" 'run_signature_deck\.py'
+assert_entry_has "entry: version pin via sync_check.py"    'sync_check\.py'
+
+# Agent-facing doctrine: exactly one sanctioned command; python3 working/*.py forbidden.
+assert_file_has "BUILDER-PROMPT names the canonical command" "$BUILDER_PROMPT" 'presentation-canonical-entry\.sh'
+assert_file_has "BUILDER-PROMPT forbids python3 working/*.py" "$BUILDER_PROMPT" 'python3 working/\*\.py'
+assert_file_has "how-to-use names the canonical command"      "$HOWTO" 'presentation-canonical-entry\.sh'
+assert_file_has "how-to-use forbids python3 working/*.py"     "$HOWTO" 'python3 working/\*\.py'
+assert_file_has "00-START-HERE names the canonical command"   "$START_HERE" 'presentation-canonical-entry\.sh'
+assert_file_has "00-START-HERE forbids python3 working/*.py"  "$START_HERE" 'python3 working/\*\.py'
+
+# Functional: bypass-scan TRIPS (exit 5) on a hand-rolled renderer in the run dir.
+SCAN_RUN="$TMPDIR_TEST/scan-run"
+mkdir -p "$SCAN_RUN/working/checkpoints"
+echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$SCAN_RUN/slides.json"
+cat > "$SCAN_RUN/working/phase6_assemble.py" <<'PYBAD'
+from PIL import Image
+def hook():
+    img = Image.new('RGB', (2048, 1152), '#FFFBF1')
+    slide.shapes.add_text_box(1, 1, 1, 1)
+PYBAD
+ENTRY_RC=0
+QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$SCAN_RUN" \
+    --slides "$SCAN_RUN/slides.json" --out "$SCAN_RUN/out.pptx" \
+    > "$TMPDIR_TEST/scan-trip.log" 2>&1 || ENTRY_RC=$?
+if [ "$ENTRY_RC" -eq 5 ]; then
+    pass "entry: bypass-scan exits 5 on a hand-rolled renderer"
+else
+    fail "entry: bypass-scan did NOT exit 5 on a hand-rolled renderer (got $ENTRY_RC)"
+    sed -n '1,25p' "$TMPDIR_TEST/scan-trip.log" | sed 's/^/    > /'
+fi
+grep -q "AF-LOCAL-CANVAS" "$TMPDIR_TEST/scan-trip.log" \
+    && pass "entry: scan reports AF-LOCAL-CANVAS" \
+    || fail "entry: scan did not report AF-LOCAL-CANVAS"
+
+# Functional: a logged owner_skip_approval waives the scan (does NOT exit 5).
+cat > "$SCAN_RUN/working/checkpoints/process_manifest.json" <<'PMOK'
+{ "owner_skip_approvals": [
+  {"gate":"AF-CANONICAL-RENDER-BYPASS","approved":true,"approved_by":"founder","reason":"ci"},
+  {"gate":"AF-LOCAL-CANVAS","approved":true,"approved_by":"founder","reason":"ci"}
+]}
+PMOK
+ENTRY_RC=0
+QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$SCAN_RUN" \
+    --slides "$SCAN_RUN/slides.json" --out "$SCAN_RUN/out.pptx" \
+    > "$TMPDIR_TEST/scan-waived.log" 2>&1 || ENTRY_RC=$?
+if [ "$ENTRY_RC" -ne 5 ] && grep -q "OWNER-APPROVED" "$TMPDIR_TEST/scan-waived.log"; then
+    pass "entry: logged owner_skip_approval waives the bypass-scan"
+else
+    fail "entry: owner_skip_approval did not waive the scan (rc=$ENTRY_RC)"
+    sed -n '1,25p' "$TMPDIR_TEST/scan-waived.log" | sed 's/^/    > /'
+fi
+
+# Functional: a CLEAN run dir does NOT trip the scan (exit code is not 5).
+CLEAN_RUN="$TMPDIR_TEST/clean-run"
+mkdir -p "$CLEAN_RUN/working/checkpoints"
+echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$CLEAN_RUN/slides.json"
+ENTRY_RC=0
+QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$CLEAN_RUN" \
+    --slides "$CLEAN_RUN/slides.json" --out "$CLEAN_RUN/out.pptx" \
+    > "$TMPDIR_TEST/clean-scan.log" 2>&1 || ENTRY_RC=$?
+if [ "$ENTRY_RC" -ne 5 ] && grep -q "no hand-rolled renderer" "$TMPDIR_TEST/clean-scan.log"; then
+    pass "entry: clean run dir passes the bypass-scan"
+else
+    fail "entry: clean run dir unexpectedly tripped the scan (rc=$ENTRY_RC)"
+    sed -n '1,25p' "$TMPDIR_TEST/clean-scan.log" | sed 's/^/    > /'
+fi
+
+echo
 echo "============================================"
 echo "presentation-deps-gate: PASS=$PASS FAIL=$FAIL"
 echo "============================================"

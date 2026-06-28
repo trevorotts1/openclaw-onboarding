@@ -82,6 +82,7 @@ ENFORCEMENT (mirrors SOP 9.2 auto-fails)
 
 import argparse
 import json
+import os
 import re
 import sys
 
@@ -103,6 +104,12 @@ from reportlab.platypus import (
 )
 
 MIN_FONT_PT = 14.0  # HARD FLOOR (teleprompter). SOP 9.2: no text below 14pt.
+
+# AF-BUNDLE-COMPLETE floor. PRESENTERS-SPEECH.pdf is a REQUIRED deliverable; a
+# truncated/empty reportlab PDF is ~1.5 KB, while even a one-slide real speech
+# clears this comfortably. The producer hard-fails (exit 3) rather than emit a
+# sub-floor file, so a gated phase invocation halts instead of shipping junk.
+PDF_MIN_BYTES = 3000
 
 # A slim per-stage TINT carried on the slide bar only (NOT a full color band).
 # The bar-per-slide layout is the navigation surface; the tint is a faint hint of
@@ -771,6 +778,12 @@ def main():
 
     pdf = SpeechPDF(spec)
     words, secs = pdf.build(args.out)
+    # AF-BUNDLE-COMPLETE: refuse to report success on an absent/truncated PDF.
+    size = os.path.getsize(args.out) if os.path.exists(args.out) else 0
+    if size < PDF_MIN_BYTES:
+        print(f"FATAL: {args.out} is {size} bytes, below the {PDF_MIN_BYTES}-byte "
+              f"teleprompter-PDF minimum (AF-BUNDLE-COMPLETE).", file=sys.stderr)
+        sys.exit(3)
     rate = pdf.rate
     budget = spec.get("duration_min", 0) * rate
     print(f"Rendered {args.out}  (teleprompter floor {MIN_FONT_PT:.0f}pt)")

@@ -435,6 +435,58 @@ def read_brand_name(intake_path):
 
 HOUSE_ACCENT = "#f2b134"
 
+# ---------------------------------------------------------------------------
+# AF-BUNDLE-COMPLETE floors (enforced at the point of production).
+# The teleprompter is a REQUIRED deliverable. The static HTML template (inline
+# CSS + the full vanilla-JS engine) is ~40 KB before any speech content, so a
+# real render is always well above this floor; a file below it is truncated or
+# degenerate and must hard-fail rather than ship. The bundle gate reads this
+# same floor; the producer refuses to write anything under it.
+# ---------------------------------------------------------------------------
+TELEPROMPTER_MIN_BYTES = 20000
+
+# External-asset detector: a self-contained teleprompter loads NOTHING over the
+# network. Matches only resource-loading tags whose src/href/data points off-box
+# (http(s):// or protocol-relative //). Inline JSON speech data — including any
+# URL spoken in the script — is plain text inside <script type="application/json">
+# and is NOT matched here, so legitimate spoken content never false-fails.
+EXTERNAL_ASSET_RE = re.compile(
+    r'<(?:script|link|img|iframe|source|audio|video|object|embed)\b'
+    r'[^>]*?\b(?:src|href|data)\s*=\s*["\']?\s*(?:https?:)?//',
+    re.IGNORECASE,
+)
+EXTERNAL_IMPORT_RE = re.compile(
+    r'@import\s+(?:url\()?\s*["\']?\s*(?:https?:)?//', re.IGNORECASE
+)
+
+
+def verify_teleprompter_html(html):
+    """Return a list of fatal issues with a rendered teleprompter (empty == valid).
+
+    Enforces the AF-BUNDLE-COMPLETE floors at the point of production so a
+    degenerate file is never written:
+      1. every template placeholder was substituted,
+      2. the file is self-contained (no external asset loads / @import),
+      3. the file is at/above TELEPROMPTER_MIN_BYTES.
+    """
+    issues = []
+    for ph in ("__SPEECH_JSON__", "__TOKENS_JSON__", "__BRAND_NAME__",
+               "__WPM__", "__ACCENT_HEX__"):
+        if ph in html:
+            issues.append(f"unsubstituted template placeholder {ph}")
+    m = EXTERNAL_ASSET_RE.search(html)
+    if m:
+        issues.append(f"not self-contained: external asset load near {m.group(0)!r}")
+    if EXTERNAL_IMPORT_RE.search(html):
+        issues.append("not self-contained: external @import in CSS")
+    n = len(html.encode("utf-8"))
+    if n < TELEPROMPTER_MIN_BYTES:
+        issues.append(
+            f"teleprompter is {n} bytes, below the {TELEPROMPTER_MIN_BYTES}-byte "
+            f"minimum (truncated/degenerate)"
+        )
+    return issues
+
 
 def read_design_system_accent(design_system_path):
     """Best-effort locked brand accent hex from design_system.json.
@@ -1374,7 +1426,7 @@ def main():
     args = ap.parse_args()
 
     if args.emit_sample_speech:
-        Path(args.emit_sample_speech).write_text(SAMPLE_SPEECH_MD)
+        Path(args.emit_sample_speech).write_text(SAMPLE_SPEECH_MD, encoding="utf-8")
         print(f"Wrote sample speech to {args.emit_sample_speech}")
         return
 
@@ -1403,7 +1455,23 @@ def main():
     brand = read_brand_name(args.intake)
     accent = read_design_system_accent(args.design_system)
     html = build_html(data, brand, data["wpm"], accent)
-    Path(args.out).write_text(html)
+    # AF-BUNDLE-COMPLETE: refuse to emit a degenerate/non-self-contained file.
+    # Failing loud here means a gated phase invocation halts instead of shipping
+    # a junk teleprompter that would later be caught (or missed) at closeout.
+    issues = verify_teleprompter_html(html)
+    if issues:
+        print("FATAL: refusing to write an invalid teleprompter "
+              "(AF-BUNDLE-COMPLETE floor):", file=sys.stderr)
+        for it in issues:
+            print(f"  - {it}", file=sys.stderr)
+        sys.exit(3)
+    Path(args.out).write_text(html, encoding="utf-8")
+    written = Path(args.out).stat().st_size
+    if written < TELEPROMPTER_MIN_BYTES:
+        print(f"FATAL: written teleprompter {args.out} is {written} bytes, below "
+              f"the {TELEPROMPTER_MIN_BYTES}-byte minimum (AF-BUNDLE-COMPLETE).",
+              file=sys.stderr)
+        sys.exit(3)
     print(f"Rendered {args.out}")
     print(f"Slides: {len(data['slides'])}  |  WPM: {data['wpm']}  |  "
           f"brand: {brand or '(none from intake)'}  |  accent: {accent}")

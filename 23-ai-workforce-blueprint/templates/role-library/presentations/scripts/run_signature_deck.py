@@ -29,11 +29,22 @@ WHAT IT GUARANTEES
     (working/checkpoints/adhoc_authorization.json). Without the logged record,
     --adhoc is REFUSED.
 
+  * CANONICAL-RENDER GUARD (Fix 1, the enforcement surface): the ONLY sanctioned
+    render path is build_deck.py. Before the render is dispatched the guard scans the
+    run dir for hand-rolled renderers/assemblers (local 2048x1152 canvas, native
+    on-slide text, direct kie createTask, per-deck render functions) and HARD-ABORTS
+    on a finding (AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS, exit 5). The delivery
+    phase is REFUSED unless the full process_manifest attestation chain is present AND
+    the run dir is clean AND the Fix-2 pixel/vision image-QC passes (AF-IMAGE-QC-VISION).
+    The ONLY bypass is a logged owner_skip_approval token in process_manifest.json.
+
 EXIT CODES
     0 — all phases attested (or owner-authorized skips), pre-flight clean.
     2 — phase-precondition violation (AF-PHASE-SKIPPED) or usage error.
     4 — Phase-0 balance abort (AF-KIE-BALANCE).
     3 — a build_deck.py subprocess (render phase) failed preflight/render.
+    5 — canonical-render guard hard-block (AF-CANONICAL-RENDER-BYPASS /
+        AF-LOCAL-CANVAS / AF-IMAGE-QC-VISION / incomplete attestation chain).
 
 USAGE
     python3 run_signature_deck.py --run-dir DIR --slides slides.json --out out.pptx
@@ -57,6 +68,22 @@ HERE = Path(__file__).resolve().parent
 # Reuse build_deck.py's primitives — do NOT reimplement (detect_platform,
 # find_run_dir, the shared Kie balance pre-flight, the run-dir JSON reader).
 import build_deck as bd
+
+# Fix 1 — the enforcement surface that makes the governed path the ONLY path. The
+# guard scans the run dir for hand-rolled renderers/assemblers (AF-LOCAL-CANVAS /
+# AF-CANONICAL-RENDER-BYPASS) at PRE-RENDER, and refuses delivery unless the full
+# attestation chain is present + the Fix-2 pixel/vision image-QC passes
+# (AF-IMAGE-QC-VISION) at PRE-DELIVERY. The ONLY bypass is a logged
+# owner_skip_approval token in process_manifest.json.
+import canonical_render_guard as guard
+
+# Exit code for a guard hard-block (distinct from AF-PHASE-SKIPPED=2,
+# render-subprocess=3, AF-KIE-BALANCE=4).
+EXIT_GUARD_BLOCK = 5
+
+# The delivery phase id (manifest order 9). Dispatching/attesting it triggers the
+# PRE-DELIVERY guard: full attestation chain + clean run dir + pixel/vision QC.
+DELIVERY_PHASE_ID = "P9-DELIVER"
 
 
 # ---------------------------------------------------------------------------
@@ -385,6 +412,27 @@ def main():
             rc = _dispatch_render(run_dir, slides_path, Path(args.out).resolve(),
                                   platform=args.platform, adhoc=args.adhoc)
             sys.exit(rc)
+        # PRE-DELIVERY GUARD: the delivery phase may not be attested until the WHOLE
+        # governed process is proven. The canonical render guard refuses delivery
+        # unless (a) the full process_manifest attestation chain is present (every
+        # governed phase attested or owner-skip-approved), (b) the run dir is free of
+        # hand-rolled renderers, and (c) the Fix-2 pixel/vision image-QC passes
+        # (AF-IMAGE-QC-VISION). The ONLY bypass per failing gate is a logged
+        # owner_skip_approval token. --adhoc does NOT waive this — it is the gate that
+        # makes a faked "Done" impossible.
+        if args.phase == DELIVERY_PHASE_ID:
+            phase_skips = set(load_skip_approvals(run_dir).keys())
+            reason = guard.guard_pre_delivery(run_dir, phases, slides_path,
+                                              phase_skip_approvals=phase_skips)
+            if reason:
+                print("\n" + "!" * 78, file=sys.stderr)
+                print("FATAL PRE-DELIVERY: " + reason, file=sys.stderr)
+                print("!" * 78 + "\n", file=sys.stderr)
+                sys.exit(EXIT_GUARD_BLOCK)
+            print("=== CANONICAL-RENDER-GUARD (pre-delivery): PASS — full attestation "
+                  "chain present, no hand-rolled renderers, pixel/vision QC clean ===",
+                  flush=True)
+
         # Non-render phase: verify the artifact landed, then attest.
         if _artifact_present(run_dir, target.get("produces_artifact", "")):
             attest_phase(run_dir, args.phase, target.get("owning_role", ""),
@@ -408,8 +456,24 @@ def main():
 def _dispatch_render(run_dir: Path, slides_path: Path, out_path: Path,
                      platform=None, adhoc=False) -> int:
     """Dispatch the render phase by invoking build_deck.py as a SUBPROCESS with the
-    same args (its render path is untouched). Returns the subprocess return code."""
+    same args (its render path is untouched). Returns the subprocess return code.
+
+    PRE-RENDER GUARD: before a single image is rendered, the canonical render guard
+    scans the run dir for hand-rolled renderers/assemblers (local 2048x1152 canvas,
+    native on-slide text, direct kie createTask, per-deck render functions). A finding
+    HARD-ABORTS the render (exit EXIT_GUARD_BLOCK) unless it is covered by a logged
+    owner_skip_approval token. This is what blocks `python3 working/phase4_*.py`
+    bypasses from ever reaching kie.ai. --adhoc does NOT waive it; only an owner token
+    in process_manifest.json does."""
     import subprocess
+    reason = guard.guard_pre_render(run_dir)
+    if reason:
+        print("\n" + "!" * 78, file=sys.stderr)
+        print("FATAL PRE-RENDER: " + reason, file=sys.stderr)
+        print("!" * 78 + "\n", file=sys.stderr)
+        return EXIT_GUARD_BLOCK
+    print("=== CANONICAL-RENDER-GUARD (pre-render): PASS — no hand-rolled renderers ===",
+          flush=True)
     cmd = [sys.executable, str(HERE / "build_deck.py"), str(slides_path), str(out_path),
            "--run-dir", str(run_dir)]
     if platform:

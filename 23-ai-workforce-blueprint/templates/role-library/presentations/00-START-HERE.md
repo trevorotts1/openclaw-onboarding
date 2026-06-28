@@ -12,6 +12,38 @@
 
 ---
 
+## ⛔ The ONE Sanctioned Build Command (entrypoint gate — read before you build)
+
+> **There is exactly one way to build a deck**, and it is the canonical entry command:
+>
+> ```
+> bash 23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh \
+>     --run-dir <RUN_DIR> --slides slides.json --out <OUT>.pptx
+> ```
+>
+> The entry script runs three **fail-closed** gates and only then dispatches the canonical
+> orchestrator `run_signature_deck.py` → `build_deck.py` (kie.ai gpt-image-2 only, words baked
+> into each image, zero native on-slide text, full phase-attestation chain):
+> 1. **deps check** — the four runtime deps (`soffice`, `pdftoppm`, `reportlab`, `python-pptx`)
+>    or the build refuses to start.
+> 2. **bypass-scan** — refuses to start if any hand-rolled renderer/assembler is present in the
+>    run directory: a non-canonical `*.py` defining a 2048×1152 `Image.new` slide canvas
+>    (`AF-LOCAL-CANVAS`), a native `add_textbox`/`add_text_box` overlay, or a direct kie
+>    `createTask` outside `build_deck.py` (`AF-CANONICAL-RENDER-BYPASS`).
+> 3. **version/hash pin** — the deployed renderer must be in lockstep with the SOP/manifest
+>    stack (`sync_check.py`) and match the pinned governed head.
+>
+> **`python3 working/*.py` — writing and running your own per-deck driver/submit/assemble
+> scripts — is the ungoverned path and is FORBIDDEN.** It re-creates the retired "skip kie.ai
+> for hook slides + paste words on top in PowerPoint" failure; every guardrail lives inside the
+> canonical path, so the only way they fire is to go through this command. **Skipping any gate
+> requires an explicit, logged owner/founder approval token** in
+> `working/checkpoints/process_manifest.json` (`owner_skip_approval`: `approved:true` +
+> `approved_by` + `reason`, naming the exact gate code) — never silently, never by an agent's
+> own choice. Agent doctrine: see `BUILDER-PROMPT.md` STEP 2.
+
+---
+
 ## What This Department Does
 
 End-to-end branded webinar and slide deck production: copy writing, price ladder choreography, image prompt authoring, brand consistency, QC at every phase, image generation submission, media library management, PPTX assembly, adversarial review, hook development, live-presentation coaching, and verified final delivery.

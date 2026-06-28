@@ -11,7 +11,7 @@
 
 ---
 
-## 1. THE TWO PIPELINE DETERMINISM RULES
+## 1. THE PIPELINE DETERMINISM RULES (Rule A live; Rule B eliminated; Rule C scope ban)
 
 ### Rule A -- PIL Logo Composite (every slide, mandatory)
 
@@ -46,6 +46,21 @@ When a critical verbatim string garbles or mis-styles at render (including the g
 **Why no native overlay:** a native PPTX text run is not part of the composed image; it is the exact defect Decision 5C eliminates. The mere presence of a `pptx_text_overlays.json` at assembly, or any native (non-notes) on-slide text run in the delivered PPTX, is AF-OVERLAY-DELIVERED, enforced by `scripts/build_deck.py` `_chk_no_overlay`. The gradient ban (Section 2) is enforced inside the prompt + AF-GRAD, not by extracting text to an overlay.
 
 This SOP's ONLY post-render composite is Rule A — the locked logo IMAGE onto the PNG.
+
+---
+
+### Rule C — PIL/Pillow NEVER fabricates a slide canvas (the hard scope ban)
+
+Pillow/PIL is authorized in the entire Presentations pipeline for **exactly one thing: compositing the locked LOGO image onto a slide PNG that kie.ai already rendered (Rule A).** It is authorized for NOTHING else.
+
+**BANNED, each an auto-fail (`AF-LOCAL-CANVAS` / `AF-CANONICAL-RENDER-BYPASS`):**
+
+- `Image.new('RGB', (2048,1152), ...)` / `Image.new('RGB', (2560,1440), ...)` / any `Image.new` that fabricates a full-slide canvas (a flat cream card, a color wash, a "typography" card, a background plate).
+- `ImageDraw`-drawn headlines, hook lines, body text, or any slide text — drawing words with PIL is the local-render defect, never a remedy.
+- Using PIL to produce a "pure-typography hook slide" because it "has no photo." Pure-typography hook slides are kie.ai gpt-image-2 renders (SOP-DESIGN-02 §2.0; SOP-IMG-01 §1A) and carry a real kie `taskId`. PIL does not render them; PIL only composites their logo afterward.
+- Any PIL/Pillow call that runs **before** kie.ai has returned a PNG for that slide. Rule A is strictly *post*-render (it overwrites `working/renders/slide-NN.png`); there is no PIL path that *creates* a `slide-NN.png` from nothing.
+
+The QC cross-check reads, for every slide, a real kie `taskId` and a PNG above the 51,200-byte kie-bake floor; a slide whose PNG was born from `Image.new` (the ~26–30 KB flat-card signature, no kie `taskId`) is the exact defect this rule kills. The only legitimate PIL writes to `slide-NN.png` are the logo-composite overwrite (Rule A) logged in `logo_composite_log.json`; PIL aside from that is forbidden.
 
 ---
 

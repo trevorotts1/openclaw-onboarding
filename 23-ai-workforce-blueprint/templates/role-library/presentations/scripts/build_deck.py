@@ -435,6 +435,45 @@ OVERLAY_FORBIDDEN_FILES = (
     "pptx_text_overlays.json",
 )
 
+# ---------------------------------------------------------------------------
+# FIX-2 SHARED CONTRACT — canonical render path + pixel-level image-QC teeth
+# ---------------------------------------------------------------------------
+# The canonical render path is build_deck.py / run_signature_deck.py ONLY. Every
+# slide's WORDS and VISUAL are generated TOGETHER in ONE image by kie.ai
+# gpt-image-2 (text-to-image, or image-to-image for the logo composite). There is
+# NO Pillow slide canvas, NO other model, NO silent fallback, and NO native
+# PowerPoint text overlaid on top. The three auto-fail codes below are SHARED
+# across the enforcement surface: this module DEFINES + EXPORTS them and the
+# check symbols that raise them; the orchestrator (run_signature_deck.py) and the
+# preflight lockstep CONSUME them. A gate they raise may be waived ONLY by an
+# explicit, LOGGED owner/founder token in working/checkpoints/process_manifest.json
+# ("owner_skip_approval") — never silently, never by an agent's own choice.
+#
+# FIX-2 EXPORTS (stable public symbols other fixes import as build_deck.<name>):
+#   constants:  AF_CANONICAL_RENDER_BYPASS, AF_LOCAL_CANVAS, AF_IMAGE_QC_VISION,
+#               CANONICAL_RENDER_SCRIPTS
+#   checks:     check_canonical_render_path(run_dir, slides_path=None) -> str
+#               check_image_qc_vision(run_dir, slides_path=None) -> str
+#   helper:     _owner_skip_approved(run_dir, af_code) -> Optional[dict]
+AF_CANONICAL_RENDER_BYPASS = "AF-CANONICAL-RENDER-BYPASS"  # a non-canonical hand-rolled renderer/assembler produced (part of) the deck
+AF_LOCAL_CANVAS            = "AF-LOCAL-CANVAS"             # a slide PNG was drawn on a LOCAL Pillow canvas (Image.new 2048x1152) instead of kie.ai
+AF_IMAGE_QC_VISION         = "AF-IMAGE-QC-VISION"          # image-QC "passed" without a real pixel/vision read (rubber-stamp number / flat card / overlay-blessing rubric)
+
+# The canonical render/assemble tools. A *.py file inside a run/working dir whose
+# name is NOT in this set, and that defines a slide canvas / native text box /
+# direct kie task submission, is a forbidden hand-rolled renderer.
+CANONICAL_RENDER_SCRIPTS = frozenset({
+    "build_deck.py", "run_signature_deck.py", "build_teleprompter.py", "sync_check.py",
+})
+
+# Pixel-level flat-card detector thresholds (AF-IMAGE-QC-VISION). A genuine kie.ai
+# gpt-image-2 render carries a photographic/illustrative subject (and model noise),
+# so no single quantised colour dominates the frame. A flat cream/typography card
+# (Pillow Image.new fill + drawn type) is overwhelmingly ONE near-uniform light
+# fill — exactly the slide-1/24/49 hook-card defect this gate must reject.
+IMAGE_QC_FLATFILL_DOMINANCE = 0.90   # >= 90% of the frame is one quantised colour = flat card (no visual subject)
+IMAGE_QC_FLATFILL_LUMA      = 0.62   # ...and that dominant fill is light/cream (0-1 luma) = typography card, not a photo
+
 # Reserved / non-routable TLD suffixes that are never a real public source.
 _NON_PUBLIC_TLD_SUFFIXES = (
     ".local", ".localhost", ".internal", ".example", ".invalid", ".test",
@@ -1622,12 +1661,36 @@ def _chk_prompt_qc(path: Optional[Path]) -> str:
 
 
 def _chk_image_qc(path: Optional[Path]) -> str:
-    """IMAGE-QC gate (AF-IMAGE-QC). After Render (P4-RENDER), an INDEPENDENT QC
-    specialist grades the rendered slides against the written image-QC rubric
-    (multimodal pass: copy-vs-pixel parity, baked-not-overlaid, contrast,
-    no-placeholder). Self/builder grade refused."""
-    return _qc_report_gate(path, "AF-IMAGE-QC", "Phase Image-QC",
+    """IMAGE-QC gate (AF-IMAGE-QC + AF-IMAGE-QC-VISION). After Render (P4-RENDER), an
+    INDEPENDENT QC specialist grades the rendered slides against the written image-QC
+    rubric (multimodal pass: copy-vs-pixel parity, baked-not-overlaid, contrast,
+    no-placeholder). Self/builder grade refused.
+
+    FIX-2: the legacy implementation was a JSON RUBBER STAMP — it validated only the
+    report's SHAPE (gate string, average >= 8.5, no triggered autofails, pass:true,
+    independence) and never opened a single PNG, so an agent could type 8.66/pass:true
+    over a deck of flat cream cards and it would sail through. That rubber stamp is now
+    REPLACED: after the report-shape gate, this derives the run dir from the report
+    path and delegates to check_image_qc_vision(), a DETERMINISTIC PIXEL cross-check
+    that actually inspects every rendered PNG (byte floor + flat-card detection) and
+    rejects a pixel-blind / overlay-blessing / hook-slide-excluding report. It no longer
+    defers-to-pass when renders are present."""
+    base = _qc_report_gate(path, "AF-IMAGE-QC", "Phase Image-QC",
                           "qc-specialist-image-presentations-sops.md")
+    if base:
+        return base
+    # Report shape is valid — now apply the deterministic pixel teeth. The report
+    # lives at <run_dir>/working/qc/image_qc_report.json, so the run dir is parents[2].
+    if path is not None:
+        try:
+            run_dir = path.resolve().parents[2]
+        except (IndexError, OSError):
+            run_dir = None
+        if run_dir is not None and run_dir.is_dir():
+            teeth = check_image_qc_vision(run_dir)
+            if teeth:
+                return teeth
+    return ""
 
 
 def _chk_typography_qc(path: Optional[Path]) -> str:
@@ -3515,6 +3578,367 @@ def _chk_no_overlay(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------
+# FIX-2 — owner/founder skip token (the ONLY way to waive a FIX-2 gate)
+# ---------------------------------------------------------------------------
+def _owner_skip_approved(run_dir: Path, af_code: str):
+    """Return the logged owner/founder skip-approval record waiving `af_code`, or None.
+
+    A FIX-2 gate (AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS / AF-IMAGE-QC-VISION)
+    may be skipped ONLY by an explicit, LOGGED owner token recorded in
+    working/checkpoints/process_manifest.json under "owner_skip_approval" (a single
+    object or a list of them). A valid token carries owner_approved:true, the af_code
+    (or gate) it waives, a non-empty approved_by, a non-empty reason, and a timestamp.
+    No agent may self-skip and the absence of a token means the gate is ENFORCED.
+    Returns the matching record (so callers can log who approved what) or None."""
+    pm = run_dir / "working" / "checkpoints" / "process_manifest.json"
+    if not pm.exists():
+        return None
+    obj = _read_json(pm)
+    if not isinstance(obj, dict) or "__parse_error__" in obj:
+        return None
+    raw = obj.get("owner_skip_approval")
+    records = raw if isinstance(raw, list) else ([raw] if isinstance(raw, dict) else [])
+    want = af_code.strip().upper()
+    for r in records:
+        if not isinstance(r, dict):
+            continue
+        if r.get("owner_approved") is not True:
+            continue
+        waives = str(r.get("af_code") or r.get("gate") or "").strip().upper()
+        if waives != want:
+            continue
+        if not str(r.get("approved_by") or "").strip():
+            continue
+        if not str(r.get("reason") or "").strip():
+            continue
+        if not str(r.get("timestamp") or "").strip():
+            continue
+        return r
+    return None
+
+
+def _gather_rendered_pngs(run_dir: Path) -> list:
+    """Return the sorted list of rendered slide PNGs for a run. Primary source is
+    renders/slide-*.png (what render_slide writes); the per-slide image paths in the
+    process_manifest render record are folded in as a fallback so a deck whose PNGs
+    live outside renders/ is still inspected. Deduplicated by resolved path."""
+    found = {}
+    renders_dir = run_dir / "renders"
+    if renders_dir.is_dir():
+        for p in renders_dir.glob("slide-*.png"):
+            try:
+                found[p.resolve()] = p
+            except OSError:
+                found[p] = p
+    # Fallback: image paths recorded in the last render record of the manifest.
+    ckpt = run_dir / "working" / "checkpoints" / "process_manifest.json"
+    if ckpt.exists():
+        obj = _read_json(ckpt)
+        if isinstance(obj, dict) and "__parse_error__" not in obj:
+            phases = obj.get("phases")
+            recs = [p for p in phases if isinstance(p, dict) and p.get("phase") == "render"] \
+                if isinstance(phases, list) else []
+            if recs:
+                for entry in recs[-1].get("slides", []) or []:
+                    if isinstance(entry, dict) and entry.get("image"):
+                        ip = Path(entry["image"])
+                        if ip.exists() and ip.suffix.lower() == ".png":
+                            try:
+                                found.setdefault(ip.resolve(), ip)
+                            except OSError:
+                                found.setdefault(ip, ip)
+    return sorted(found.values(), key=lambda p: p.name)
+
+
+def _png_flatfill_fraction(path: Path):
+    """Return (dominant_fraction, (R, G, B)) for the single most-common quantised
+    colour in a slide PNG, or (None, None) when PIL is absent / the file is unreadable.
+    A flat Pillow Image.new fill returns ~1.0; a real photographic kie.ai render — with
+    a subject and model noise — stays well below IMAGE_QC_FLATFILL_DOMINANCE."""
+    try:
+        from PIL import Image  # noqa: PLC0415 — optional dep, checked here
+    except ImportError:
+        return (None, None)
+    try:
+        with Image.open(str(path)) as im:
+            q = im.convert("RGB").quantize(colors=64)
+            palette = q.getpalette() or []
+            hist = q.histogram()
+            n_colors = len(palette) // 3
+            total = 0
+            best_count = -1
+            best_rgb = None
+            for i in range(n_colors):
+                c = hist[i] if i < len(hist) else 0
+                total += c
+                if c > best_count:
+                    best_count = c
+                    best_rgb = (palette[i * 3], palette[i * 3 + 1], palette[i * 3 + 2])
+            if total <= 0 or best_rgb is None:
+                return (None, None)
+            return (best_count / total, best_rgb)
+    except Exception:  # noqa: BLE001
+        return (None, None)
+
+
+def _image_qc_report_defects(report_obj, n_slides) -> list:
+    """Return a list of fatal defects in an image-QC report that prove it cannot have
+    come from a real multimodal PIXEL read. Empty list = the report carries the
+    provenance a genuine vision pass would. Checks (AF-IMAGE-QC-VISION):
+      * per-slide coverage MUST be a LIST (not a dict keyed by slide, so no slide can
+        be silently dropped) covering every rendered slide — and may NOT exclude any
+        slide (e.g. the hook slides 1/24/49) from scope;
+      * a multimodal VISION read must be recorded with provenance: a declared vision
+        engine AND a per-slide observed/OCR field — a self-typed number is refused;
+      * the eliminated overlay rubric (typography_overlay_readiness / "overlay the
+        headline" / "post-production overlay" / "applied in post") may NOT appear."""
+    defects = []
+    if not isinstance(report_obj, dict):
+        return ["image-QC report is not a JSON object — it cannot record a pixel read"]
+
+    # (1) No slide may be excluded from scope.
+    for k in ("out_of_scope", "excluded_slides", "scope_excludes", "slides_excluded",
+              "excluded", "out_of_scope_slides"):
+        v = report_obj.get(k)
+        if v:
+            defects.append(
+                f"image-QC excludes slides from scope via {k!r}={v!r}; the gate may NOT "
+                f"exclude any slide (the hook/typography slides are graded too)")
+            break
+
+    # (2) Per-slide coverage must be a non-empty LIST, not a dict.
+    per_slide = None
+    for k in ("slides", "per_slide", "slide_results"):
+        if k in report_obj:
+            per_slide = report_obj.get(k)
+            break
+    if isinstance(per_slide, dict):
+        defects.append(
+            "per-slide coverage is recorded as a DICT; it must be a per-slide LIST so "
+            "every rendered slide carries its own graded row and none can be silently "
+            "dropped")
+        per_slide = None
+    if not isinstance(per_slide, list) or not per_slide:
+        defects.append(
+            "image-QC report has no per-slide coverage LIST (slides/per_slide/"
+            "slide_results); a report with no per-slide rows is a rubber-stamped number")
+        per_slide = []
+    elif n_slides and len(per_slide) < n_slides:
+        defects.append(
+            f"image-QC report covers {len(per_slide)} of {n_slides} rendered slide(s); "
+            f"every rendered slide must carry a per-slide graded row")
+
+    # (3) A multimodal vision read must be recorded with provenance.
+    vision_engine = ""
+    for k in ("vision_model", "multimodal_model", "vision_provider", "ocr_engine",
+              "vision_engine", "reviewer_vision_model"):
+        val = report_obj.get(k)
+        if isinstance(val, str) and val.strip():
+            vision_engine = val.strip()
+            break
+    if not vision_engine:
+        defects.append(
+            "image-QC report declares no vision engine (vision_model/multimodal_model/"
+            "ocr_engine); a real image-QC pass is a multimodal PIXEL read, not a typed "
+            "score")
+    if isinstance(per_slide, list) and per_slide:
+        VIS_FIELDS = ("vision", "observed_text", "ocr", "ocr_text", "baked_text",
+                      "read_text", "description", "pixels_read", "visual_subject")
+        rows_with_vision = sum(
+            1 for r in per_slide
+            if isinstance(r, dict) and any(
+                str(r.get(f) or "").strip() for f in VIS_FIELDS))
+        if rows_with_vision < len(per_slide):
+            defects.append(
+                f"only {rows_with_vision}/{len(per_slide)} per-slide rows carry a vision/"
+                f"OCR observation (observed_text/ocr/visual_subject); rows without one are "
+                f"pixel-blind and cannot prove the slide was actually read")
+
+    # (4) The eliminated overlay rubric may not appear.
+    try:
+        blob = json.dumps(report_obj, default=str).lower()
+    except Exception:  # noqa: BLE001
+        blob = ""
+    for needle in ("typography_overlay_readiness", "overlay the headline",
+                   "overlay the canonical", "post-production overlay",
+                   "post production overlay", "applied in post", "overlay_readiness"):
+        if needle in blob:
+            defects.append(
+                f"image-QC rubric still references the ELIMINATED overlay model "
+                f"({needle!r}); the typography-overlay-readiness criterion and any "
+                f"'overlay the headline' recommendation are removed (Decision 5C) — words "
+                f"are baked into the kie.ai image, never overlaid")
+            break
+    return defects
+
+
+def check_image_qc_vision(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-IMAGE-QC-VISION — the DETERMINISTIC PIXEL image-QC cross-check (FIX-2).
+
+    This is the teeth behind the image-QC gate. It does what the old _chk_image_qc
+    JSON rubber stamp never did: it OPENS the rendered PNGs and inspects pixels, and it
+    refuses an image-QC report that could not have come from a real multimodal read.
+
+    Two independent classes of failure, both fatal:
+      A. PIXEL cross-check (runs whenever rendered PNGs exist):
+         * any PNG below the PLACEHOLDER_MIN_BYTES (51,200) kie-bake floor — a flat
+           Pillow card / native render, NOT a real model bake (also an AF-LOCAL-CANVAS
+           signature);
+         * any PNG whose single dominant quantised colour covers >= 90% of the frame
+           AND is light/cream — a flat typography card with NO visual subject (the
+           slide-1/24/49 hook-card defect). A genuine kie.ai render never does this.
+      B. REPORT cross-check (runs whenever the image-QC report exists):
+         * coverage must be a per-slide LIST (not a dict), cover every rendered slide,
+           and exclude none (hook slides included);
+         * a multimodal vision read must be recorded with provenance (declared engine +
+           per-slide observation) — a self-typed number is refused;
+         * the eliminated typography-overlay-readiness rubric may not appear.
+
+    It DEFERS (returns "") ONLY when there is nothing to inspect yet — no rendered PNGs
+    AND no report (the genuine pre-render state). Once renders OR a report exist it does
+    NOT defer-to-pass: the legacy 'no renders/manifest -> pass' escape is closed. A
+    failure may be waived ONLY by a logged owner_skip_approval token for
+    AF-IMAGE-QC-VISION in process_manifest.json.
+
+    Returns "" on pass / defer, or a fatal AF-IMAGE-QC-VISION message."""
+    skip = _owner_skip_approved(run_dir, AF_IMAGE_QC_VISION)
+    if skip is not None:
+        print(f"  NOTE  AF-IMAGE-QC-VISION waived by logged owner_skip_approval "
+              f"(approved_by={skip.get('approved_by')!r}, reason={skip.get('reason')!r}).",
+              file=sys.stderr)
+        return ""
+
+    pngs = _gather_rendered_pngs(run_dir)
+    report_path = run_dir / "working" / "qc" / "image_qc_report.json"
+    report_obj = _read_json(report_path) if report_path.exists() else None
+
+    # Genuine pre-render state — nothing to inspect yet. This is the ONLY defer.
+    if not pngs and report_obj is None:
+        return ""
+
+    problems = []
+
+    # --- A. PIXEL cross-check over every rendered PNG ---
+    for png in pngs:
+        try:
+            size = png.stat().st_size
+        except OSError:
+            problems.append(f"{png.name}: cannot stat the rendered PNG on disk")
+            continue
+        if size < PLACEHOLDER_MIN_BYTES:
+            problems.append(
+                f"{png.name}: {size:,} bytes, below the {PLACEHOLDER_MIN_BYTES:,}-byte "
+                f"kie-bake floor — a flat/native-rendered card, not a real gpt-image-2 "
+                f"bake (AF-LOCAL-CANVAS signature)")
+            continue
+        frac, rgb = _png_flatfill_fraction(png)
+        if frac is None:
+            continue  # PIL unavailable / unreadable — byte floor already covered it.
+        if frac >= IMAGE_QC_FLATFILL_DOMINANCE:
+            luma = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255.0 if rgb else 0.0
+            if luma >= IMAGE_QC_FLATFILL_LUMA:
+                problems.append(
+                    f"{png.name}: {frac:.0%} of the frame is a single light fill "
+                    f"rgb{rgb} (luma {luma:.2f}) — a flat cream/typography card with NO "
+                    f"visual subject. Pure-typography hook slides must be RENDERED by "
+                    f"kie.ai (cream + baked display type as the image), never drawn on a "
+                    f"local canvas")
+
+    # --- B. REPORT cross-check (when a report exists) ---
+    if report_obj is not None:
+        if "__parse_error__" in report_obj:
+            problems.append(
+                f"image_qc_report.json is not valid JSON ({report_obj['__parse_error__']}) "
+                f"— a report that cannot be parsed cannot prove a pixel read")
+        else:
+            problems.extend(_image_qc_report_defects(report_obj, len(pngs)))
+
+    if problems:
+        return ("AF-IMAGE-QC-VISION: the image-QC gate did not actually inspect the "
+                "rendered slides (rubber-stamp / flat card / pixel-blind report). A real "
+                "image-QC pass is a multimodal PIXEL read of every PNG; flat cream cards, "
+                "below-floor PNGs, and self-typed scores are rejected. Re-render any flat "
+                "card through kie.ai gpt-image-2 and re-run the Image QC Specialist with a "
+                "per-slide vision read. Offenders: " + "; ".join(problems[:10])
+                + ("" if len(problems) <= 10 else f" (+{len(problems) - 10} more)")
+                + ". This gate may be waived ONLY by a logged owner_skip_approval for "
+                "AF-IMAGE-QC-VISION in working/checkpoints/process_manifest.json.")
+    return ""
+
+
+def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS — the canonical render path is
+    build_deck.py / run_signature_deck.py ONLY (FIX-2).
+
+    This is the symbol the orchestrator (run_signature_deck.py) and the preflight
+    lockstep consume to make a hand-rolled renderer/assembler IMPOSSIBLE to route a
+    deck around. It scans every non-canonical *.py file inside the run/working dir and
+    HARD-FAILS when one defines:
+      * a LOCAL slide canvas — Image.new with the 2048x1152 slide geometry (the
+        Pillow cream-card path) -> AF-LOCAL-CANVAS;
+      * a native PowerPoint text box — add_textbox / add_text_box (a hand-rolled
+        overlay assembler stamping words on top of the image) -> AF-CANONICAL-RENDER-BYPASS;
+      * a direct kie.ai task submission — createTask / recordInfo / api.kie.ai outside
+        build_deck.py (a per-deck renderer) -> AF-CANONICAL-RENDER-BYPASS.
+
+    The canonical tools themselves (CANONICAL_RENDER_SCRIPTS) and anything under a
+    scripts/ or virtual-env directory are exempt. Returns "" when the run dir carries
+    no hand-rolled renderer. A failure may be waived ONLY by a logged
+    owner_skip_approval token (AF-CANONICAL-RENDER-BYPASS or AF-LOCAL-CANVAS)."""
+    skip = (_owner_skip_approved(run_dir, AF_CANONICAL_RENDER_BYPASS)
+            or _owner_skip_approved(run_dir, AF_LOCAL_CANVAS))
+    if skip is not None:
+        print(f"  NOTE  canonical-render-path guard waived by logged owner_skip_approval "
+              f"(approved_by={skip.get('approved_by')!r}, reason={skip.get('reason')!r}).",
+              file=sys.stderr)
+        return ""
+
+    _SKIP_DIR_SEGS = {".venv", "venv", "site-packages", "__pycache__", ".git",
+                      "node_modules", ".mypy_cache", ".pytest_cache", "scripts"}
+    offenders = []
+    try:
+        candidates = sorted(run_dir.rglob("*.py"))
+    except OSError:
+        return ""
+    for py in candidates:
+        if py.name in CANONICAL_RENDER_SCRIPTS:
+            continue
+        if _SKIP_DIR_SEGS & set(py.parts):
+            continue
+        try:
+            text = py.read_text(errors="replace")
+        except OSError:
+            continue
+        try:
+            rel = str(py.relative_to(run_dir))
+        except ValueError:
+            rel = py.name
+        if "Image.new" in text and "2048" in text and "1152" in text:
+            offenders.append((rel, AF_LOCAL_CANVAS,
+                              "defines a LOCAL 2048x1152 slide canvas (Image.new) instead "
+                              "of a kie.ai gpt-image-2 render"))
+        elif ("add_textbox" in text) or ("add_text_box" in text):
+            offenders.append((rel, AF_CANONICAL_RENDER_BYPASS,
+                              "adds NATIVE PowerPoint text boxes (add_textbox) on top of "
+                              "the image — a hand-rolled overlay assembler"))
+        elif ("createTask" in text) or ("recordInfo" in text) or ("api.kie.ai" in text):
+            offenders.append((rel, AF_CANONICAL_RENDER_BYPASS,
+                              "submits kie.ai tasks directly (createTask/recordInfo) "
+                              "outside the canonical build_deck.py renderer"))
+    if offenders:
+        rel, code, why = offenders[0]
+        more = f" (+{len(offenders) - 1} more hand-rolled script(s))" if len(offenders) > 1 else ""
+        return (f"{code}: non-canonical renderer/assembler {rel!r} {why}. The canonical "
+                f"render path is build_deck.py / run_signature_deck.py ONLY: every slide's "
+                f"WORDS and VISUAL are generated together in ONE kie.ai gpt-image-2 image, "
+                f"with ZERO native PowerPoint text and NO local Pillow canvas. Delete the "
+                f"hand-rolled script and route the deck through run_signature_deck.py -> "
+                f"build_deck.py. This gate may be waived ONLY by a logged owner_skip_approval "
+                f"({code}) in working/checkpoints/process_manifest.json.{more}")
+    return ""
+
+
 def _read_dark_optin(run_dir: Path) -> bool:
     """True iff intake.json records a dark-theme opt-in via the canonical
     client_dark_theme key OR the role-doc DARK_OK alias (same intent). Shared by the
@@ -3948,6 +4372,31 @@ PREFLIGHT_REQUIRED = [
      "native on-slide text instead of a composed gpt-image-2 image",
      "Phase 5/6/Postflight — render + PPTX assembly (AF-OVERLAY-DELIVERED)",
      _chk_no_overlay),
+    # FIX-2 — CANONICAL-RENDER-PATH guard (AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS).
+    # The canonical render path is build_deck.py / run_signature_deck.py ONLY. This
+    # scans the run dir for a hand-rolled renderer/assembler (a local Image.new
+    # 2048x1152 slide canvas, a native add_textbox overlay, or a direct kie createTask
+    # outside build_deck.py) and HARD-FAILS pre-render so a per-deck renderer can never
+    # produce the deck. Run-dir-scoped (None sentinel). Waivable ONLY by a logged
+    # owner_skip_approval token.
+    (None,
+     "canonical render path — no hand-rolled *.py in the run dir defines a local slide "
+     "canvas (Image.new 2048x1152), a native add_textbox, or a direct kie createTask "
+     "(AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS)",
+     "Phase 4/5/6 — render + assembly must route through build_deck.py only "
+     "(AF-CANONICAL-RENDER-BYPASS)",
+     check_canonical_render_path),
+    # FIX-2 — IMAGE-QC-VISION pixel cross-check (AF-IMAGE-QC-VISION). The deterministic
+    # PIXEL teeth behind the image-QC gate: it OPENS every rendered PNG (byte floor +
+    # flat cream/typography-card detection) and refuses a pixel-blind / overlay-blessing /
+    # hook-slide-excluding image-QC report. Defers ONLY pre-render (no PNGs + no report);
+    # once renders or a report exist it does NOT defer-to-pass. Run-dir-scoped (None).
+    (None,
+     "image-QC vision — every rendered PNG is a real kie.ai bake (>= 51,200 bytes, no "
+     "flat cream/typography card) and the image-QC report is a per-slide multimodal "
+     "pixel read, not a self-typed number (AF-IMAGE-QC-VISION)",
+     "Phase Image-QC / Postflight — Image QC Specialist pixel read (AF-IMAGE-QC-VISION)",
+     check_image_qc_vision),
 ]
 
 
@@ -4862,6 +5311,40 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
         update_deliverable_status(ledger_path, "deck_pptx", "failed",
                                   error=overlay_reason)
 
+    # --- FIX-2: CANONICAL-RENDER-PATH sub-check (AF-CANONICAL-RENDER-BYPASS /
+    # AF-LOCAL-CANVAS) — at closeout, re-prove no hand-rolled renderer/assembler in
+    # the run dir produced (part of) the deck. The canonical render path is
+    # build_deck.py / run_signature_deck.py ONLY; a per-deck Pillow canvas / native
+    # overlay / direct kie createTask script is a hard delivery failure.
+    canonical_reason = ""
+    if run_dir is not None:
+        canonical_reason = check_canonical_render_path(run_dir, slides_path)
+        if canonical_reason:
+            missing_or_short.append((
+                "deck_pptx",
+                _expand_filename("deck.pptx", deck_slug),
+                "canonical render path (no hand-rolled renderer/assembler in the run dir)",
+                0, 0, "CANONICAL_BYPASS"))
+            update_deliverable_status(ledger_path, "deck_pptx", "failed",
+                                      error=canonical_reason)
+
+    # --- FIX-2: IMAGE-QC-VISION sub-check (AF-IMAGE-QC-VISION) — the deterministic
+    # PIXEL cross-check at closeout. Opens every rendered PNG (byte floor + flat
+    # cream/typography-card detection) and refuses a pixel-blind / overlay-blessing /
+    # hook-slide-excluding image-QC report. Does NOT defer-to-pass when renders exist.
+    image_qc_vision_reason = ""
+    if run_dir is not None:
+        image_qc_vision_reason = check_image_qc_vision(run_dir, slides_path)
+        if image_qc_vision_reason:
+            missing_or_short.append((
+                "deck_pptx",
+                _expand_filename("deck.pptx", deck_slug),
+                "image-QC pixel read (real multimodal read of every PNG; no flat card; "
+                "no rubber-stamp report)",
+                0, 0, "IMAGE_QC_VISION"))
+            update_deliverable_status(ledger_path, "deck_pptx", "failed",
+                                      error=image_qc_vision_reason)
+
     # --- TELEPROMPTER-PUBLISH sub-check (folded under AF-BUNDLE-COMPLETE) ---
     # A self-contained HTML on disk is NOT a delivered teleprompter. The bundle is not
     # complete until the teleprompter is hosted at the central Cloudflare URL and that
@@ -4952,6 +5435,28 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
                       f"re-prompt/re-seed", file=sys.stderr)
                 print(f"           the garbled slide, escalate to a human if it persists, "
                       f"and re-render.", file=sys.stderr)
+            elif reason == "CANONICAL_BYPASS":
+                print(f"  BYPASS    [{key}] {fname}  ({label})", file=sys.stderr)
+                print(f"           a hand-rolled renderer/assembler in the run dir "
+                      f"produced (part of)", file=sys.stderr)
+                print(f"           the deck — AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS.",
+                      file=sys.stderr)
+                print(f"           {canonical_reason}", file=sys.stderr)
+                print(f"           The canonical render path is build_deck.py / "
+                      f"run_signature_deck.py", file=sys.stderr)
+                print(f"           ONLY: delete the hand-rolled script and re-route the "
+                      f"deck through it.", file=sys.stderr)
+            elif reason == "IMAGE_QC_VISION":
+                print(f"  IMAGE-QC  [{key}] {fname}  ({label})", file=sys.stderr)
+                print(f"           image-QC did not actually inspect the rendered slides "
+                      f"(flat card,", file=sys.stderr)
+                print(f"           below-floor PNG, or rubber-stamp report) — "
+                      f"AF-IMAGE-QC-VISION.", file=sys.stderr)
+                print(f"           {image_qc_vision_reason}", file=sys.stderr)
+                print(f"           Re-render any flat card through kie.ai gpt-image-2 and "
+                      f"re-run the Image", file=sys.stderr)
+                print(f"           QC Specialist with a per-slide multimodal pixel read.",
+                      file=sys.stderr)
             elif reason == "UNPUBLISHED":
                 print(f"  UNPUBLISHED [{key}] {fname}  ({label})", file=sys.stderr)
                 print(f"           the teleprompter HTML exists locally but was not "

@@ -243,6 +243,44 @@ always matches the specialists you actually have.*
 
 ---
 
+## Canonical Entry Command (the only way to build a deck)
+
+A deck is built by running, and ONLY by running, the single sanctioned entry script:
+
+```
+23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh   --run-dir <RUN_DIR> --slides slides.json --out <OUT>.pptx
+```
+
+That entry script runs three fail-closed gates before dispatching the canonical orchestrator (`run_signature_deck.py` -> `build_deck.py`):
+
+1. **Deps check** - all required runtime dependencies are present.
+2. **Bypass-scan** - refuses to start if any hand-rolled renderer or assembler exists in the run directory. Specifically: any non-canonical `*.py` defining a 2048x1152 `Image.new` slide canvas (AF-LOCAL-CANVAS), a native `add_textbox`/`add_text_box` overlay (AF-CANONICAL-RENDER-BYPASS), or a direct kie `createTask` call outside `build_deck.py` (AF-CANONICAL-RENDER-BYPASS).
+3. **Version/hash pin** - the deployed renderer must be in lockstep with the SOP/manifest stack and match the pinned governed head.
+
+**`python3 working/*.py` (writing and running your own per-deck driver/submit/assemble scripts) is the ungoverned path and is FORBIDDEN (AF-CANONICAL-RENDER-BYPASS).**
+
+A gate may be skipped ONLY by an explicit, logged owner/founder approval token recorded in `working/checkpoints/process_manifest.json` (`owner_skip_approval`: `approved:true` + `approved_by` + `reason`, naming the exact gate code). Agents may NEVER skip a gate silently or by their own choice.
+
+---
+
+## AF-CANONICAL-RENDER-BYPASS - No Hand-Rolled Renderer (AUTO-FAIL)
+
+All image generation MUST route through the canonical module `build_deck.py`. A hand-rolled per-deck assembler or renderer is FORBIDDEN. Specifically, the presence of `add_textbox` / `add_text_box` calls or a direct kie `createTask` call outside `build_deck.py` in any run-directory `*.py` file triggers AF-CANONICAL-RENDER-BYPASS. This auto-fail also fires when the entry check detects an attempt to bypass the sanctioned entry script.
+
+---
+
+## AF-LOCAL-CANVAS - No Local Canvas Fabrication (AUTO-FAIL)
+
+A slide image MUST be generated via kie.ai GPT Image 2. A slide image fabricated locally (e.g. `canvas = Image.new('RGB', (2048, 1152), ...)`) is FORBIDDEN. The presence of a 2048x1152 `Image.new` call in any run-directory `*.py` file triggers AF-LOCAL-CANVAS.
+
+---
+
+## AF-IMAGE-QC-VISION - Real Pixel Image QC Required (AUTO-FAIL)
+
+The image-QC pass is NOT satisfied by a JSON score alone. The QC report at `working/qc/image_qc_report.json` MUST declare a `vision_model` (the AI model that performed the pixel/vision read) and a `slides` list with at least one per-slide entry containing `baked: true`. A QC report that lacks the `vision_model` field or an empty `slides` list triggers AF-IMAGE-QC-VISION.
+
+---
+
 ## AF-DARK-SLIDE - No Dark Slides (AUTO-FAIL)
 
 Slides MUST use LIGHT / bright backgrounds by DEFAULT. DARK or black-background slides are NOT ALLOWED unless the CLIENT EXPLICITLY requests a dark theme via the intake flag `client_dark_theme: true`. Light is the default; dark is opt-in by client request only.

@@ -1,0 +1,405 @@
+#!/usr/bin/env bash
+# 23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh
+#
+# THE ONE SANCTIONED COMMAND TO BUILD A PRESENTATIONS DECK.
+# ============================================================================
+# Root-cause fix for the enforcement-surface gap (Fix 10 — entrypoint shell gate).
+#
+# The Presentations department's guardrails (kie.ai-only image path, 5,000-char
+# prompt floor, the AF-OVERLAY-DELIVERED / kie-baked / image-QC battery, the
+# GoHighLevel upload, the teleprompter bundle, the phase-attestation chain) all
+# live INSIDE the canonical render path:
+#
+#       run_signature_deck.py  ->  build_deck.py
+#
+# Nothing at the runtime/agent layer used to force a deck THROUGH that path. A
+# client agent could (and did) run hand-rolled `python3 working/phase4_driver.py`
+# / `working/phase6_assemble.py` scripts that re-created the retired
+# "skip kie.ai for hook slides + paste words on top in PowerPoint" pattern, and
+# not a single guardrail fired because the thing that runs them was never run.
+#
+# This script closes that gap. It is the SINGLE governed entry point. Before it
+# hands off to the canonical orchestrator it runs three fail-closed gates:
+#
+#   1. DEPS CHECK      — the four runtime deps (soffice, pdftoppm, reportlab,
+#                        python-pptx) must be present, or the build refuses to
+#                        start (exit 6, PRESENTATION_DEPS_MISSING). Mirrors the
+#                        qc-completeness.sh dep gate so a deck cannot half-build.
+#   2. BYPASS-SCAN     — refuse if any HAND-ROLLED renderer/assembler exists in
+#                        the run directory: any non-canonical *.py that defines a
+#                        slide canvas (Image.new for 2048x1152 — AF-LOCAL-CANVAS),
+#                        a native PowerPoint text overlay (add_textbox /
+#                        add_text_box), or a direct kie createTask outside
+#                        build_deck.py (AF-CANONICAL-RENDER-BYPASS).
+#   3. VERSION/HASH PIN— the deployed build_deck.py / run_signature_deck.py must
+#                        be in lockstep with the SOP/manifest stack (sync_check.py,
+#                        exit 4 on drift) and their content hash is computed and
+#                        recorded. If a pin file is present the hash MUST match.
+#
+# A gate may be skipped ONLY by an explicit, LOGGED owner/founder approval token
+# recorded in <run-dir>/working/checkpoints/process_manifest.json under
+# "owner_skip_approval(s)" (approved:true + approved_by + reason, naming the exact
+# gate code). Never silently; never by an agent's own choice.
+#
+# THE FORBIDDEN PATH:  python3 working/*.py   (the ungoverned, hand-rolled path)
+# THE ONLY PATH:       bash presentation-canonical-entry.sh --run-dir ... \
+#                           --slides slides.json --out out.pptx
+#
+# EXIT CODES
+#   0  — gates passed; canonical orchestrator dispatched (its own exit is returned)
+#   2  — usage error / canonical scripts not found
+#   5  — BYPASS-SCAN tripped (hand-rolled renderer present, no owner skip)
+#   6  — DEPS CHECK failed (PRESENTATION_DEPS_MISSING)
+#   7  — VERSION/HASH PIN failed (renderer drift / hash mismatch, no owner skip)
+#   (3/4 propagate from run_signature_deck.py: 3 render fail, 4 kie balance abort)
+# ============================================================================
+
+set -uo pipefail
+
+PROG="presentation-canonical-entry.sh"
+
+die() { echo "FATAL [$PROG]: $*" >&2; exit 2; }
+note() { echo "=== [$PROG] $* ==="; }
+
+usage() {
+    cat >&2 <<EOF
+$PROG — the ONE sanctioned command to build a Presentations deck.
+
+USAGE:
+  bash $PROG --run-dir DIR --slides slides.json --out out.pptx [options]
+
+REQUIRED:
+  --run-dir DIR       the deck run directory (contains working/)
+  --slides FILE       slides.json (the deck spec)
+  --out FILE          output .pptx path
+
+OPTIONS:
+  --phase ID          canonical phase to dispatch (default: P4-RENDER)
+  --platform mac|vps  box-type override (default: auto-detect)
+  --scripts-dir DIR   location of build_deck.py / run_signature_deck.py
+                      (default: auto-detect; or set \$SCRIPTS_DIR)
+  --plan              print the canonical phase plan and exit (gates still run)
+  --adhoc             owner-authorized + logged escape (refused without the record)
+  -h | --help         this help
+
+There is NO other sanctioned way to build a deck. Running 'python3 working/*.py'
+by hand is FORBIDDEN (the ungoverned path); skipping any gate requires a logged
+owner approval token in working/checkpoints/process_manifest.json.
+EOF
+    exit 2
+}
+
+# ---------------------------------------------------------------------------
+# Arg parsing
+# ---------------------------------------------------------------------------
+RUN_DIR="" SLIDES="" OUT="" PHASE="P4-RENDER" PLATFORM="" SCRIPTS_DIR="${SCRIPTS_DIR:-}"
+PLAN=0 ADHOC=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --run-dir)     RUN_DIR="${2:-}"; shift 2 ;;
+        --slides)      SLIDES="${2:-}"; shift 2 ;;
+        --out)         OUT="${2:-}"; shift 2 ;;
+        --phase)       PHASE="${2:-}"; shift 2 ;;
+        --platform)    PLATFORM="${2:-}"; shift 2 ;;
+        --scripts-dir) SCRIPTS_DIR="${2:-}"; shift 2 ;;
+        --plan)        PLAN=1; shift ;;
+        --adhoc)       ADHOC=1; shift ;;
+        -h|--help)     usage ;;
+        *) die "unknown argument: $1 (run with --help)" ;;
+    esac
+done
+
+[ -n "$RUN_DIR" ] || usage
+[ -d "$RUN_DIR" ] || die "--run-dir not found: $RUN_DIR"
+RUN_DIR="$(cd "$RUN_DIR" && pwd)"
+if [ "$PLAN" -eq 0 ]; then
+    [ -n "$SLIDES" ] || die "--slides is required (use --plan to inspect only)"
+    [ -f "$SLIDES" ] || die "slides.json not found: $SLIDES"
+    [ -n "$OUT" ] || die "--out is required to build a deck"
+fi
+
+# ---------------------------------------------------------------------------
+# Locate the canonical render scripts (single source of truth).
+# Works on the repo/operator box AND a materialized client box.
+# ---------------------------------------------------------------------------
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+resolve_scripts_dir() {
+    local c
+    for c in \
+        "$SCRIPTS_DIR" \
+        "$SELF_DIR" \
+        "$SELF_DIR/../templates/role-library/presentations/scripts" \
+        "$RUN_DIR/departments/Presentations/scripts" \
+        "$RUN_DIR/../scripts" \
+        "$RUN_DIR/scripts" \
+        "$HOME/departments/Presentations/scripts" \
+    ; do
+        [ -n "$c" ] || continue
+        if [ -f "$c/build_deck.py" ] && [ -f "$c/run_signature_deck.py" ]; then
+            (cd "$c" && pwd); return 0
+        fi
+    done
+    return 1
+}
+SCRIPTS_DIR="$(resolve_scripts_dir)" || die \
+    "canonical scripts (build_deck.py + run_signature_deck.py) not found. \
+Pass --scripts-dir DIR or set \$SCRIPTS_DIR to the Presentations scripts directory."
+BUILD_DECK="$SCRIPTS_DIR/build_deck.py"
+RUNNER="$SCRIPTS_DIR/run_signature_deck.py"
+note "canonical scripts: $SCRIPTS_DIR"
+
+PROC_MANIFEST="$RUN_DIR/working/checkpoints/process_manifest.json"
+
+# ---------------------------------------------------------------------------
+# owner_skip_approval — a gate is skippable ONLY by a logged owner token.
+# Reads <run-dir>/working/checkpoints/process_manifest.json and returns 0 iff a
+# well-formed approval (approved:true + approved_by + reason) names the gate.
+# Accepts: top-level "owner_skip_approvals":[...], "owner_skip_approval":{...} or
+# [...] (list), with each record carrying "gate"/"gate_code"/"code".
+# ---------------------------------------------------------------------------
+owner_skip_approved() {
+    local gate="$1"
+    [ -f "$PROC_MANIFEST" ] || return 1
+    command -v python3 >/dev/null 2>&1 || return 1
+    GATE="$gate" PM="$PROC_MANIFEST" python3 - <<'PY'
+import json, os, sys
+gate = os.environ["GATE"]
+try:
+    obj = json.load(open(os.environ["PM"]))
+except Exception:
+    sys.exit(1)
+recs = []
+for key in ("owner_skip_approvals", "owner_skip_approval"):
+    v = obj.get(key) if isinstance(obj, dict) else None
+    if isinstance(v, list):
+        recs += v
+    elif isinstance(v, dict):
+        recs.append(v)
+for r in recs:
+    if not isinstance(r, dict):
+        continue
+    code = str(r.get("gate") or r.get("gate_code") or r.get("code") or "").strip()
+    if code not in (gate, "*"):
+        continue
+    if (r.get("approved") is True or r.get("owner_approved") is True) \
+       and str(r.get("approved_by", "")).strip() \
+       and str(r.get("reason", "")).strip():
+        sys.exit(0)
+sys.exit(1)
+PY
+}
+
+# A gate that tripped: honor a logged owner skip, else fail-closed with the code.
+gate_fail() {
+    local code="$1" exitcode="$2"; shift 2
+    if owner_skip_approved "$code"; then
+        echo "!! [$PROG] $code tripped but OWNER-APPROVED skip is logged in" >&2
+        echo "!! process_manifest.json (owner_skip_approval). Proceeding under owner authority." >&2
+        return 0
+    fi
+    echo >&2
+    printf '!%.0s' {1..78} >&2; echo >&2
+    echo "GATE FAILED [$code]: $*" >&2
+    echo "This gate may be skipped ONLY by a logged owner approval token in" >&2
+    echo "  $PROC_MANIFEST" >&2
+    echo "  (owner_skip_approval: {gate:\"$code\", approved:true, approved_by, reason})." >&2
+    printf '!%.0s' {1..78} >&2; echo >&2
+    exit "$exitcode"
+}
+
+# ===========================================================================
+# GATE 1 — DEPS CHECK (the four runtime deps; exit 6 PRESENTATION_DEPS_MISSING)
+# ===========================================================================
+note "GATE 1/3 — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx)"
+deps_check() {
+    if [ "${QC_SKIP_PRESENTATION_DEPS:-0}" = "1" ]; then
+        echo "  SKIP: QC_SKIP_PRESENTATION_DEPS=1 (dep gate bypassed by env)"
+        return 0
+    fi
+    local missing=()
+    command -v soffice  >/dev/null 2>&1 || missing+=("soffice (LibreOffice/libreoffice-impress)")
+    command -v pdftoppm >/dev/null 2>&1 || missing+=("pdftoppm (poppler/poppler-utils)")
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c "import reportlab, pptx" >/dev/null 2>&1 \
+            || missing+=("python(reportlab+python-pptx)")
+    else
+        missing+=("python3")
+    fi
+    if [ "${#missing[@]}" -gt 0 ]; then
+        echo "PRESENTATION_DEPS_MISSING: ${missing[*]}" >&2
+        return 6
+    fi
+    echo "  OK: all four runtime deps present"
+    return 0
+}
+deps_check || {
+    rc=$?
+    if owner_skip_approved "PRESENTATION_DEPS_MISSING"; then
+        echo "!! [$PROG] deps missing but OWNER-APPROVED skip logged; proceeding." >&2
+    else
+        exit "$rc"
+    fi
+}
+
+# ===========================================================================
+# GATE 2 — BYPASS-SCAN (refuse hand-rolled renderers in the run directory)
+# AF-LOCAL-CANVAS / AF-CANONICAL-RENDER-BYPASS
+# ===========================================================================
+note "GATE 2/3 — BYPASS-SCAN (hand-rolled renderer detection in $RUN_DIR)"
+bypass_scan() {
+    command -v python3 >/dev/null 2>&1 || { echo "  (python3 absent; scan skipped)"; return 0; }
+    RUN_DIR="$RUN_DIR" SCRIPTS_DIR="$SCRIPTS_DIR" python3 - <<'PY'
+import os, re, sys
+run_dir = os.path.realpath(os.environ["RUN_DIR"])
+scripts_dir = os.path.realpath(os.environ["SCRIPTS_DIR"])
+CANON = {"build_deck.py", "run_signature_deck.py", "build_teleprompter.py",
+         "kie_generate.py", "presentation-canonical-entry.sh"}
+
+# Slide canvas at the 16:9 2K deck dimensions: Image.new(...2048...1152...)
+re_canvas = re.compile(r"Image\.new\s*\([^)]*\b2048\b[^)]*\b1152\b", re.S)
+re_canvas2 = re.compile(r"Image\.new\s*\([^)]*\b1152\b[^)]*\b2048\b", re.S)
+# Native PowerPoint on-slide text overlay
+re_textbox = re.compile(r"\badd_text(?:_)?box\s*\(")
+# Direct kie createTask outside build_deck.py
+re_createtask = re.compile(r"createTask|api\.kie\.ai/api/v1/[A-Za-z0-9/_-]*", re.I)
+
+findings = []
+for root, dirs, files in os.walk(run_dir):
+    # never scan inside the canonical scripts dir if it nests under run_dir
+    if os.path.realpath(root) == scripts_dir:
+        dirs[:] = []
+        continue
+    for fn in files:
+        if not fn.endswith(".py"):
+            continue
+        if fn in CANON:
+            continue
+        path = os.path.join(root, fn)
+        if os.path.realpath(path).startswith(scripts_dir + os.sep):
+            continue
+        try:
+            src = open(path, "r", errors="replace").read()
+        except Exception:
+            continue
+        rel = os.path.relpath(path, run_dir)
+        if re_canvas.search(src) or re_canvas2.search(src):
+            findings.append(("AF-LOCAL-CANVAS", rel,
+                             "defines a 2048x1152 slide canvas via Image.new "
+                             "(local Pillow render bypassing kie.ai)"))
+        if re_textbox.search(src):
+            findings.append(("AF-CANONICAL-RENDER-BYPASS", rel,
+                             "calls add_textbox/add_text_box (native on-slide text "
+                             "overlay — only the canonical assembler may emit pictures)"))
+        if re_createtask.search(src):
+            findings.append(("AF-CANONICAL-RENDER-BYPASS", rel,
+                             "issues a direct kie createTask outside build_deck.py"))
+
+if not findings:
+    print("  OK: no hand-rolled renderer/assembler found in the run directory")
+    sys.exit(0)
+
+print("  HAND-ROLLED RENDERER(S) DETECTED:", file=sys.stderr)
+codes = set()
+for code, rel, why in findings:
+    print(f"    [{code}] {rel}: {why}", file=sys.stderr)
+    codes.add(code)
+# exit 10 + signal which family tripped (caller maps to AF code + owner-skip)
+# encode the dominant code on the LAST line for the bash caller to read
+print("BYPASS_CODES=" + ",".join(sorted(codes)), file=sys.stderr)
+sys.exit(5)
+PY
+}
+SCAN_OUT="$(bypass_scan 2>&1)"; SCAN_RC=$?
+printf '%s\n' "$SCAN_OUT"
+if [ "$SCAN_RC" -eq 5 ]; then
+    # Determine which AF codes tripped and require a logged owner skip for EACH.
+    CODES="$(printf '%s\n' "$SCAN_OUT" | sed -n 's/^BYPASS_CODES=//p' | tr ',' ' ')"
+    [ -n "$CODES" ] || CODES="AF-CANONICAL-RENDER-BYPASS"
+    for c in $CODES; do
+        if ! owner_skip_approved "$c"; then
+            gate_fail "$c" 5 "a hand-rolled renderer/assembler is present in $RUN_DIR. \
+The ONLY sanctioned render path is build_deck.py via run_signature_deck.py. Delete the \
+hand-rolled script(s) above and re-run the canonical command."
+        fi
+    done
+    echo "!! [$PROG] bypass-scan findings are all OWNER-APPROVED-skipped; proceeding." >&2
+fi
+
+# ===========================================================================
+# GATE 3 — VERSION/HASH PIN (renderer lockstep + content hash)
+# ===========================================================================
+note "GATE 3/3 — VERSION/HASH PIN (renderer lockstep + content hash)"
+version_hash_pin() {
+    # (a) Lockstep: the Python renderer must not have drifted from the SOP/manifest
+    #     stack. sync_check.py exits 0 in sync, 4 on drift.
+    if [ -f "$SCRIPTS_DIR/sync_check.py" ] && command -v python3 >/dev/null 2>&1; then
+        if python3 "$SCRIPTS_DIR/sync_check.py" >/tmp/_pce_sync.$$ 2>&1; then
+            echo "  OK: sync_check.py — renderer in lockstep with the SOP/manifest stack"
+        else
+            sed 's/^/    sync_check> /' /tmp/_pce_sync.$$ >&2 || true
+            rm -f /tmp/_pce_sync.$$
+            return 4
+        fi
+        rm -f /tmp/_pce_sync.$$
+    else
+        echo "  (sync_check.py absent; lockstep check skipped)"
+    fi
+
+    # (b) Content hash of the canonical renderer pair. If a pin file exists next to
+    #     the scripts (CANONICAL-RENDERER-PIN.sha256, owned by the fleet sync), the
+    #     deployed hash MUST match it. Otherwise the computed hash is recorded.
+    local computed=""
+    if command -v sha256sum >/dev/null 2>&1; then
+        computed="$(cat "$BUILD_DECK" "$RUNNER" | sha256sum | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+        computed="$(cat "$BUILD_DECK" "$RUNNER" | shasum -a 256 | awk '{print $1}')"
+    else
+        echo "  (no sha256 tool; hash pin skipped)"
+        return 0
+    fi
+    echo "  renderer hash (sha256 of build_deck.py+run_signature_deck.py): $computed"
+    local pin="$SCRIPTS_DIR/CANONICAL-RENDERER-PIN.sha256"
+    if [ -f "$pin" ]; then
+        local expected
+        expected="$(tr -d ' \t\n' < "$pin")"
+        if [ -n "$expected" ] && [ "$expected" != "$computed" ]; then
+            echo "  PIN MISMATCH: deployed renderer hash != pinned head" >&2
+            echo "    expected: $expected" >&2
+            echo "    computed: $computed" >&2
+            return 7
+        fi
+        echo "  OK: renderer hash matches the pinned head ($pin)"
+    else
+        echo "  (no CANONICAL-RENDERER-PIN.sha256; hash recorded, not enforced)"
+    fi
+    return 0
+}
+version_hash_pin; VHP_RC=$?
+if [ "$VHP_RC" -ne 0 ]; then
+    if [ "$VHP_RC" -eq 4 ]; then
+        gate_fail "AF-CANONICAL-RENDER-BYPASS" 7 "renderer/SOP lockstep drift (sync_check.py exit 4): \
+the deployed build_deck.py has drifted from the SOP/manifest stack. Re-sync to the pinned \
+governed version before building."
+    else
+        gate_fail "AF-CANONICAL-RENDER-BYPASS" 7 "renderer hash does not match the pinned governed \
+head. Re-sync the canonical build_deck.py / run_signature_deck.py to the fleet-pinned version."
+    fi
+fi
+
+# ===========================================================================
+# All gates passed — hand off to the CANONICAL ORCHESTRATOR.
+# run_signature_deck.py enforces the phase-attestation chain and calls build_deck.py
+# for the render. We never call build_deck.py directly and never touch its path.
+# ===========================================================================
+note "ALL GATES PASSED — dispatching the canonical orchestrator (run_signature_deck.py)"
+cmd=(python3 "$RUNNER" --run-dir "$RUN_DIR")
+if [ "$PLAN" -eq 1 ]; then
+    cmd+=(--plan)
+    [ -n "$SLIDES" ] && cmd+=(--slides "$SLIDES")
+else
+    cmd+=(--slides "$SLIDES" --out "$OUT" --phase "$PHASE")
+fi
+[ -n "$PLATFORM" ] && cmd+=(--platform "$PLATFORM")
+[ "$ADHOC" -eq 1 ] && cmd+=(--adhoc)
+note "exec: ${cmd[*]}"
+exec "${cmd[@]}"

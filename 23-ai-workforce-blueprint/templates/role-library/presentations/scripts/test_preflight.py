@@ -235,8 +235,26 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
             _qc("Phase Typography-QC", "typography-architect", "qc-specialist-typography-presentations"))
         (root / "working" / "qc" / "prompt_qc_report.json").write_text(
             _qc("Phase Prompt-QC", "prompt-author-presentations", "qc-specialist-prompt-presentations"))
+        # Image-QC report: must satisfy the FIX-2 AF-IMAGE-QC-VISION check introduced in
+        # check_image_qc_vision(). The report needs:
+        #   (a) vision_model declared (the gate refuses a self-typed score with no engine);
+        #   (b) per-slide LIST with a vision observation per row (slides/per_slide/slide_results);
+        # Since there are no rendered PNGs yet at preflight time (n_slides=0 in the check),
+        # the row count doesn't need to match actual renders — but the list must be non-empty
+        # to avoid the rubber-stamp flag. One entry per floor slide is correct and realistic.
+        _img_qc_base = json.loads(_qc("Phase Image-QC", "slide-image-creator",
+                                      "qc-specialist-image-presentations"))
+        _img_qc_base.update({
+            "vision_model": "claude-opus-4",
+            "slides": [
+                {"slide": i, "visual_subject": "kie.ai gpt-image-2 baked render",
+                 "description": "pixel vision read — photographic composition confirmed",
+                 "baked": True, "pass": True}
+                for i in range(1, _floor_slides + 1)
+            ],
+        })
         (root / "working" / "qc" / "image_qc_report.json").write_text(
-            _qc("Phase Image-QC", "slide-image-creator", "qc-specialist-image-presentations"))
+            json.dumps(_img_qc_base))
         # speech_qc_report.json intentionally ABSENT here -> AF-SPEECH-QC defers (pre-delivery).
         # Phase 2 — rich per-slide prompt(s) (rendered VERBATIM), one per slide.
         if rich_prompts:
@@ -2439,6 +2457,41 @@ def emit_af_coverage():
                    {"slide": 8, "section": "Teaching", "assigned": []}],
         "distinct_items_used": 0}))
     record("AF-RESEARCH-WEAVE", build_deck._chk_research_map(rw_root))
+
+    # ---- FIX-2 / FIX-9 shared-contract gate probes (AF-CANONICAL-RENDER-BYPASS,
+    #      AF-LOCAL-CANVAS, AF-IMAGE-QC-VISION) ----
+
+    # AF-CANONICAL-RENDER-BYPASS — a non-canonical script in the run dir that calls
+    # add_textbox (native PowerPoint on-slide text overlay) trips
+    # check_canonical_render_path.
+    crb_root = Path(tempfile.mkdtemp(prefix="deck_crb_probe_"))
+    (crb_root / "working").mkdir(parents=True, exist_ok=True)
+    # Deliberate offender: a hand-rolled assembler that calls add_textbox.
+    (crb_root / "phase6_assemble.py").write_text(
+        "# hand-rolled assembler\nslide.shapes.add_textbox(left, top, width, height)\n")
+    record("AF-CANONICAL-RENDER-BYPASS",
+           build_deck.check_canonical_render_path(crb_root))
+
+    # AF-LOCAL-CANVAS — a non-canonical script that constructs a 2048x1152 PIL slide
+    # canvas (Image.new) trips check_canonical_render_path (AF-LOCAL-CANVAS branch).
+    lc_root = Path(tempfile.mkdtemp(prefix="deck_lc_probe_"))
+    (lc_root / "working").mkdir(parents=True, exist_ok=True)
+    # Deliberate offender: a hand-rolled renderer that constructs a local slide canvas.
+    (lc_root / "phase4_driver.py").write_text(
+        "# hand-rolled renderer\ncanvas = Image.new('RGB', (2048, 1152), '#FFF5E6')\n")
+    record("AF-LOCAL-CANVAS",
+           build_deck.check_canonical_render_path(lc_root))
+
+    # AF-IMAGE-QC-VISION — an image_qc_report.json that lacks a declared vision engine
+    # and per-slide coverage trips check_image_qc_vision (rubber-stamp detection).
+    iqv_root = Path(tempfile.mkdtemp(prefix="deck_iqv_probe_"))
+    (iqv_root / "working" / "qc").mkdir(parents=True, exist_ok=True)
+    # A rubber-stamped report: no vision_model, no per-slide list — just a typed score.
+    (iqv_root / "working" / "qc" / "image_qc_report.json").write_text(json.dumps(
+        {"gate": "Phase Image-QC", "average": 8.7, "pass": True,
+         "note": "all slides look good", "triggered_autofails": []}))
+    record("AF-IMAGE-QC-VISION",
+           build_deck.check_image_qc_vision(iqv_root))
 
     triggered_sorted = sorted(triggered)
     AF_COVERAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
