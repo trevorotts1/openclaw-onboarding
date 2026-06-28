@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- com.openclaw.service-remediate.plist.template
+     User-level periodic SERVICE self-heal LaunchAgent (no sudo).
+     install-service-remediate.sh expands the placeholders via sed.
+     Placeholders:
+       __SCRIPT_PATH__  -> /Users/<user>/.openclaw/service-env/remediate.sh
+       __LOG_PATH__     -> /Users/<user>/Library/Logs/openclaw/service-remediate-agent.log
+       __INTERVAL__     -> 300  (seconds = every 5 minutes)
+     Runs remediate.sh on an interval to re-bootstrap any gateway/cloudflared
+     LaunchAgent that got booted-out, and kickstart any KeepAlive job that died.
+  -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.openclaw.service-remediate</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>__SCRIPT_PATH__</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>__INTERVAL__</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>__LOG_PATH__</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_PATH__</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>
