@@ -1,4 +1,3 @@
-# ============================================================
 #  OpenClaw Skills Updater -- Unified (Mac + VPS)
 #  PRD 2.1 -- unified repo (trevorotts1/openclaw-onboarding)
 #
@@ -44,7 +43,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v14.25.0"
+ONBOARDING_VERSION="v14.26.0"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -447,7 +446,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v14.25.0 - safe_json_edit
+# v14.26.0 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -2211,7 +2210,26 @@ PYEOF
   if [ -f "$_MATERIALIZE" ]; then
     echo ""
     echo "  Registering dept agents in openclaw.json (materialize-dept-agents)..."
-    bash "$_MATERIALIZE" >/dev/null 2>&1 && echo "  ✓ Dept agents registered" || echo "  ⚠ materialize-dept-agents.sh reported errors (update continues)"
+    if bash "$_MATERIALIZE" >/dev/null 2>&1; then
+      # WIRING-ASSERT (v14.26.0): mirrors run-full-install.sh Phase 4 hard gate.
+      # Verifies agents.list[] >=2 after materialize so a zero-dept scan, a path
+      # miss, or a silent empty run is surfaced loudly — NOT swallowed with a
+      # soft "update continues" message.  Skips gracefully when openclaw.json is
+      # absent (Skill 32 not yet built on this box).
+      _AGENT_COUNT=0
+      if [ -f "$OC_JSON" ]; then
+        _AGENT_COUNT=$(python3 -c "import json,sys; d=json.load(open('$OC_JSON')); sys.stdout.write(str(len(d.get('agents',{}).get('list',[]))))" 2>/dev/null || echo "0")
+      fi
+      if [ -z "$_AGENT_COUNT" ] || [ "$_AGENT_COUNT" -lt 2 ]; then
+        echo "  ⚠ WIRING-ASSERT FAIL: agents.list[] has only ${_AGENT_COUNT:-0} entries after materialize"
+        echo "  ⚠ Dept agents NOT live — re-run update after build-workforce.py completes or check Skill 32 path"
+      else
+        echo "  ✓ Dept agents registered (${_AGENT_COUNT} agents in agents.list[])"
+      fi
+    else
+      echo "  ⚠ WIRING-ASSERT FAIL: materialize-dept-agents.sh exited non-zero — dept agents NOT registered"
+      echo "  ⚠ Check that Skill 32 is installed and build-workforce.py has produced department folders"
+    fi
   fi
 
   # ----------------------------------------------------------
@@ -2234,7 +2252,11 @@ PYEOF
     elif [ "$OC_PLATFORM" = "vps" ]; then
       docker restart openclaw >/dev/null 2>&1         && echo "  ✓ Gateway restarted via docker (routing config now live)"         || echo "  ⚠ docker restart failed — restart manually: openclaw gateway restart"
     else
-      launchctl kickstart -k "gui/$(id -u)/com.openclaw.gateway" >/dev/null 2>&1         && echo "  ✓ Gateway restarted via launchctl (routing config now live)"         || echo "  ⚠ launchctl restart failed — restart manually: openclaw gateway restart"
+      GW_LABEL="$(launchctl list 2>/dev/null | awk '/openclaw.*gateway/{print $3; exit}')"
+      [ -z "$GW_LABEL" ] && GW_LABEL="ai.openclaw.gateway"
+      launchctl kickstart -k "gui/$(id -u)/$GW_LABEL" >/dev/null 2>&1 \
+        && echo "  ✓ Gateway restarted via launchctl (routing config now live)" \
+        || echo "  ⚠ launchctl restart failed — restart manually: openclaw gateway restart"
     fi
   else
     echo "  ℹ Routing config unchanged — no gateway restart needed"

@@ -1,3 +1,55 @@
+## [v14.26.0]  -  2026-06-27  -  fix(both-paths): launchd GW_LABEL auto-detect + update-path WIRING-ASSERT + unified both-paths CI gate
+
+Reconciles all pending dual-path gaps and closes the PR #410 regression before it could land.
+
+**launchd label auto-detect (fixes silent no-op on every Mac; closes PR #410 legitimate part):**
+The gateway-restart else-branch in `update-skills.sh` hardcoded `com.openclaw.gateway`. The
+fleet-wide Mac label is `ai.openclaw.gateway`. When the `openclaw` CLI is not on PATH the
+`launchctl kickstart` call targeted a non-existent label — silent no-op, gateway never
+restarted, routing/config changes from `update-skills.sh` never went live. Fixed with:
+
+```bash
+GW_LABEL="$(launchctl list 2>/dev/null | awk '/openclaw.*gateway/{print $3; exit}')"
+[ -z "$GW_LABEL" ] && GW_LABEL="ai.openclaw.gateway"
+launchctl kickstart -k "gui/$(id -u)/$GW_LABEL"
+```
+
+Auto-detects the live label; falls back to `ai.openclaw.gateway` (correct default). The string
+`com.openclaw.gateway` no longer appears anywhere in the repo. Gated behind the config-changed
+conditional — idempotent no-op when `openclaw.json` was not mutated.
+
+**Update-path WIRING-ASSERT (closes the build-materialize audit gap):**
+`update-skills.sh` called `materialize-dept-agents.sh` as a silently non-fatal step
+(`|| echo "update continues"`). A zero-dept scan, a path miss, or any materialize error was
+swallowed — update still reported complete, dept agents silently absent. Fixed: on materialize
+success, reads `agents.list[]` from `openclaw.json` and asserts count ≥ 2, matching the
+hard-gate in `run-full-install.sh` Phase 4. On failure or count < 2, emits
+`⚠ WIRING-ASSERT FAIL` with a clear re-run instruction. Non-destructive: gracefully skips
+when `openclaw.json` is absent (Skill 32 not yet built).
+
+**Both-paths delivery CI gate (new):**
+`.github/workflows/both-paths-delivery-guard.yml` — offline static-source check on every PR
+and push. Asserts that BOTH `install.sh` AND `update-skills.sh` carry every delivery
+dimension:
+- Section-tagged 54-persona index (`provision_persona_index`)
+- GHL funnel catalog wiring (`wire_ghl_funnel_catalog`)
+- Department-agent registration (`materialize-dept-agents`)
+- Routing keys (`agentToAgent`, `allowAgents`, `visibility`)
+- Heartbeat furnace protection (`ensure-heartbeat-defaults`)
+- Operator account separation (`configure-operator-telegram`)
+- Shared-utils delivery (`shared-utils`)
+- Universal SOPs delivery (`universal-sops`)
+- No hardcoded `com.openclaw.gateway` in either file
+
+**PR #410 disposition:** The launchd fix from PR #410 is landed here. PR #410 is NOT merged
+because a stale-tree commit (`5137a964`) in that branch clobbered the `#411` persona work —
+it reverted `install.sh` Step 6b back to the old 48-persona inline block and deleted
+`update-skills.sh` Step U6b entirely. Closing PR #410 with an explanation.
+
+**Version bump:** v14.25.0 → v14.26.0.
+
+---
+
 ## [v14.25.0]  -  2026-06-27  -  feat(persona-index): prebuilt-index v2.1.0 — canonical 54, section-tagged, dual-path provisioning + GHL funnel catalog
 
 Ships the canonical 54-persona section-tagged gemini-embedding-2 @3072 prebuilt index
