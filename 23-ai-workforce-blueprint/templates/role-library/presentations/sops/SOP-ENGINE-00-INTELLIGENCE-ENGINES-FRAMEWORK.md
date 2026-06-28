@@ -20,6 +20,33 @@ This department does not "make slides." It runs NINE INTELLIGENCE ENGINES agains
 
 ---
 
+## 1.5 ENFORCEMENT PHASE PER ENGINE (v15.0.0 — both halves honored)
+
+Every engine is honored in the PHASE where its work actually lives — the **writing** (copy/script/offer), the **image** (the prompt + the rendered pixels), or **both** — and fires at the EARLIEST detectable phase (shift-left). The perceptual engines' mechanical halves are render-wired (shipped v14.28.x); the narrative + pitch engines are wired into the render preflight in v15.0.0 so a deck cannot reach kie.ai with a missing engine even if an agent skipped copy-QC.
+
+| # | Engine | Phase enforced | Where the gate fires (v15.0.0) | Auto-fail code(s) |
+|---|---|---|---|---|
+| 1 | Facial | **image** (prompt token) + vision verdict | PROMPT-QC (`check_intelligence_engines_prompt`) + IMAGE-QC | AF-FACE-PROMPT-MISSING / AF-FACE-MOOD |
+| 2 | Lighting | **image** (prompt token) + vision | PROMPT-QC + IMAGE-QC | AF-LIGHT-PROMPT-MISSING / AF-LIGHT-SKINTONE |
+| 3 | Typography | **both** (copy law + image perceptual) | COPY-QC (one-big-idea, font floor) + IMAGE-QC (8th-row, salesy-font) | AF-TYPE-8THROW / AF-TYPE-SALESY-FONT / AF-FONT-FLOOR |
+| 4 | Story (character + villain→hero) | **writing** (copy) | COPY-QC (`check_intelligence_engines_copy` / `pitch_engines_check`) + render-preflight backstop | AF-NO-VILLAIN / AF-STORY-CHARACTER-DRIFT |
+| 5 | World | **image** (prompt token) | PROMPT-QC | AF-WORLD-SCALE |
+| 6 | Pricing (promise-before-price + cadence) | **writing** (offer) + **image** (price-reveal slide) | COPY-QC (`check_pitch_engines --phase 1Q`) + render-preflight backstop | AF-CADENCE / AF-NO-COST-OF-INACTION / AF-GUARANTEE-GENERIC / AF-NO-BRANDED-METHOD / AF-NO-TIME-TO-RESULT |
+| 7 | Hook (suppressor) | **both** (copy refrain + image no-footer/verbatim baked) | COPY-QC (3–4 band) + PROMPT-QC (`check_hook_image`) | AF-HOOK-1..7 (copy) + AF-HOOK-IMG (image) |
+| 8 | Recap / Re-Pitch | **writing** | COPY-QC | AF-DEN-7 / c23 / c24 |
+| 9 | Product [ROADMAP] | **image** | PROMPT/IMAGE-QC (gated on PRODUCT_ASSET_URL) | AF-PRODUCT-INVENTED / AF-PRODUCT-MISSING |
+| 10 | Emotional (felt-stakes) | **writing** (copy) | COPY-QC (`check_intelligence_engines_copy` / `chk_felt_stakes`) + render-preflight backstop | AF-NO-FELT-STAKES |
+| + | Representation / Hair | **image** (prompt token) | PROMPT-QC | AF-HAIR-INAUTHENTIC / AF-R* / AF-CAST |
+| — | **Harmony** (orchestration layer) | **all three** | COPY-QC (narrative) + PROMPT-QC (per-slide) + PRE-ASSEMBLY (deck-level) | AF-HARMONY (SOP-HARMONY-01) |
+
+The mechanical-half doctrine (§2 below) is now render-wired for the perceptual engines (Facial / Lighting / World / Hair) and wired into the render preflight for the narrative + pitch engines (Story / Emotional / Pricing) in v15.0.0 via `build_deck.check_intelligence_engines_copy` and `build_deck.check_pitch_engines`.
+
+## 1.6 THE EXCELLENCE PRINCIPLE (amazing, not merely compliant)
+
+Clearing the LENGTH floor (9,000 chars; max 18,000) is **necessary but never sufficient.** The named engines being present is the QUALITY floor — and the two are **separate gates**: length never buys a pass, engines never buy a pass, BOTH are required (the TWO FLOORS, §1.1a of the build spec). EXCELLENCE is the dimension that proves the character budget was spent on **defect-preventing specificity** — per-line spelling-lock coverage, the full eight-class negative block, complete people-anatomy + world-grounding, grade detail — **not on boilerplate padding.** A floor-grazing, boilerplate-padded prompt scores LOW on EXCELLENCE and is **routed back even though it clears 9,000 chars** (`AF-EXCELLENCE`). The standard is *amazing, orchestrated in harmony* — the budget is for richness, never bulk.
+
+---
+
 ## 2. THE NINE ENGINES
 
 ### Engine 1 - FACIAL INTELLIGENCE

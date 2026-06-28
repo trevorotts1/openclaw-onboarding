@@ -362,6 +362,28 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ---
 
+### SOP 9.8 -- Author the Narrative Engines + Respond to the Copy-QC Routeback (SEND-BACK-THROUGH)
+
+**When to run:** on every script (the narrative engines are mandatory), and whenever Copy-QC routes the script back via `working/qc/copy_qc_routeback-<attempt>.json`. This is the EARLIEST gate — it fires BEFORE any image prompt is authored, so a broken narrative is fixed in the script, never after 50 prompts and renders are built against it.
+
+**The narrative engines you author (the writing half of the engine roster):**
+- **Story — villain before hero (`AF-NO-VILLAIN`).** Plant an explicit `VILLAIN`/antagonist beat (the broken system, the old way, the lie they've been told) BEFORE the first `HERO`/solution/promise beat. No one cares about the hero until they meet the villain. Confirm the `VILLAIN` slide ordinal is lower than the `HERO` ordinal (SOP-STORY-01).
+- **Emotional — felt-stakes (`AF-NO-FELT-STAKES`).** Land at least one `FELT_STAKES` beat BEFORE the first ladder/price beat, pairing a CONCRETE number (from the Deep Research brief, never invented) with a personal-loss frame ("3,285 mornings left", "days you'll never get back").
+- **Pricing cadence (`AF-CADENCE` + the offer battery).** Carry the per-rung loop `VALUE_ADD → PROMISE → REPITCH_MINI → COST_OF_INACTION` in order between each price drop; PROMISE PRECEDES PRICE on every beat (the offer is co-owned with the Offer Price Strategist).
+- **Narrative harmony.** The arc reads as ONE continuous story — villain → stakes → promise → proof → offer → recap — with no beat contradicting the one before it (`AF-HARMONY`, narrative placement, SOP-HARMONY-01).
+
+These now fire at Copy-QC AND un-bypassably at the render preflight (`build_deck.check_intelligence_engines_copy` + `check_pitch_engines`): a deck with a missing villain, felt-stakes, or cadence cannot reach kie.ai even if Copy-QC was skipped.
+
+**Routeback entry point (the SEND-BACK-THROUGH loop, SOP-SLIDE-00 §5.5).** When `working/qc/copy_qc_routeback-<attempt>.json` is handed to you:
+1. Open the work order — per slide/beat it names the code, the missing engine, the measured-vs-required gap, and a `reauthor_directive`.
+2. Re-author **ONLY the failing beats** — add the missing villain beat, re-order villain-before-hero, add the felt-stakes quantifier, fix the cadence sequence. Do NOT rewrite the whole script.
+3. Re-run the self-check (`python3 scripts/intelligence_engines_check.py working --phase copy` exits 0; `pitch_engines_check.py --phase 1Q` clean) and re-submit to Copy-QC.
+4. The loop is bounded by `PROMPT_QC_MAX_ATTEMPTS` (default 4); the exit is the deterministic measurer (`build_deck.check_copy_qc_deterministic`), not your self-score. On cap exhaustion the Director escalates; you never self-override.
+
+**Hand to:** QC Specialist (Copy-QC) — only the re-authored beats for re-QC. **No image prompts are authored until the copy passes.**
+
+---
+
 ## 10. Quality Gates
 
 ### Gate 1 -- Pre-Write Readiness

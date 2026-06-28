@@ -340,6 +340,35 @@ def chk_villain(run):
     return []
 
 
+def chk_promise_before_price(run):
+    """AF-PRICE-BEFORE-PROMISE — the PRICING engine's load-bearing law: PROMISE
+    PRECEDES PRICE. The first PROMISE/HERO/transformation beat must land BEFORE the
+    first price/ladder beat. A price beat with no promise ahead of it, or a promise
+    that arrives after the offer, fails."""
+    copy_text = run["slides_copy"]
+    if copy_text is None:
+        return [{"defer": "slides_copy.md absent"}]
+    pos = _flat_tag_positions(_arc_tags_in_order(copy_text))
+    promise_offs = []
+    for k in ("PROMISE", "HERO", "SOLUTION", "TRANSFORMATION"):
+        promise_offs.extend(pos.get(k, []))
+    price_offs = []
+    for k in ("LADDER", "DROP", "DROP1", "DROP2", "DROP3", "ANCHOR", "FINAL", "PRICE"):
+        price_offs.extend(pos.get(k, []))
+    if not price_offs:
+        return []  # no price beat tagged — pitchless deck, other checks own presence
+    if not promise_offs:
+        return [{"code": "AF-PRICE-BEFORE-PROMISE", "detail":
+                 "a price/ladder beat is tagged but NO PROMISE/HERO beat precedes it — "
+                 "the audience is asked to pay before the transformation is promised. "
+                 "Promise precedes price (Pricing engine)."}]
+    if min(promise_offs) > min(price_offs):
+        return [{"code": "AF-PRICE-BEFORE-PROMISE", "detail":
+                 "the first PROMISE beat appears AFTER the first price/ladder beat; "
+                 "promise must precede price. Move the promise before the offer."}]
+    return []
+
+
 def chk_speech_hook_count(run):
     """AF-SPEECH-HOOK-COUNT — the hook is SUNG 5-20x in the spoken speech.
     Count char-exact hook occurrences in PRESENTERS-SPEECH.md against intake.hook."""
@@ -364,15 +393,17 @@ def chk_speech_hook_count(run):
 
 CHECKS = {
     "1Q": [chk_cadence, chk_cost_of_inaction, chk_guarantee_generic,
-           chk_branded_method, chk_time_to_result, chk_felt_stakes, chk_villain],
+           chk_branded_method, chk_time_to_result, chk_felt_stakes, chk_villain,
+           chk_promise_before_price],
     "6": [chk_cadence, chk_cost_of_inaction, chk_guarantee_generic,
-          chk_branded_method, chk_time_to_result, chk_felt_stakes, chk_villain],
+          chk_branded_method, chk_time_to_result, chk_felt_stakes, chk_villain,
+          chk_promise_before_price],
     "SPEECH-QC": [chk_speech_hook_count],
 }
 # default = run everything
 ALL_CHECKS = [chk_cadence, chk_cost_of_inaction, chk_guarantee_generic,
               chk_branded_method, chk_time_to_result, chk_felt_stakes,
-              chk_villain, chk_speech_hook_count]
+              chk_villain, chk_promise_before_price, chk_speech_hook_count]
 
 
 def load_run(run_dir: Path):
@@ -385,6 +416,57 @@ def load_run(run_dir: Path):
         "method_approval": _load_json(cp / "method_name_approval.json"),
         "speech": _load_text(run_dir / "working" / "delivery" / "PRESENTERS-SPEECH.md"),
     }
+
+
+def _resolve_run_dir(run_dir):
+    """Accept EITHER a deck run dir (has working/copy/) or a bare working dir (has
+    copy/) and return the deck dir that load_run() expects. This makes the
+    importable entry points compose with build_deck regardless of which level the
+    caller passes (the intelligence_engines_check twin receives the working dir)."""
+    run_dir = Path(run_dir)
+    if (run_dir / "working" / "copy").is_dir():
+        return run_dir
+    if (run_dir / "copy").is_dir():
+        return run_dir.parent  # run_dir is the working dir; load_run wants its parent
+    return run_dir
+
+
+def _normalize(r):
+    """Normalize a check's failure dict to the shared problems shape
+    {code, slide, phase, detail (+rung)} that build_deck's preflight reads."""
+    out = {
+        "code": r.get("code"),
+        "slide": r.get("slide", "DECK"),
+        "phase": r.get("phase", "Phase 1Q"),
+        "detail": r.get("detail", ""),
+    }
+    if r.get("rung") is not None:
+        out["rung"] = r["rung"]
+    return out
+
+
+def run(run_dir, phase="1Q"):
+    """Importable convenience: run the pitch engines for `phase` and return a list
+    of normalized problem dicts (defers silently when an artifact is absent)."""
+    deck_dir = _resolve_run_dir(run_dir)
+    loaded = load_run(deck_dir)
+    checks = ALL_CHECKS if phase == "all" else CHECKS.get(phase, CHECKS["1Q"])
+    problems = []
+    for fn in checks:
+        for item in fn(loaded):
+            if "defer" in item:
+                continue  # required artifact absent at this phase — skip
+            problems.append(_normalize(item))
+    return problems
+
+
+def check_copy(run_dir, problems):
+    """Interface-contract entry point: the PRICING / promise-before-price copy-half
+    sub-engines (phase 1Q). Appends normalized AF dicts into `problems` (in place)
+    and also returns it, mirroring intelligence_engines_check.check_copy so the two
+    checker modules compose under one build_deck preflight call."""
+    problems.extend(run(run_dir, phase="1Q"))
+    return problems
 
 
 def main():

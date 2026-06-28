@@ -33,6 +33,22 @@ CODES ENFORCED HERE (all registered in SOP-SLIDE-00 Section 8b + PIPELINE-MANIFE
                           ladder beat in slides_copy.md.
   AF-NO-VILLAIN           (Phase 1Q, DECK)    Story — no VILLAIN/antagonist beat, or a
                           VILLAIN beat that does not PRECEDE the HERO/promise beat.
+  AF-NO-HOOK-REFRAIN      (Phase 1Q, DECK)    Hook — the canonical refrain recurs on
+                          <3 dedicated copy beats (sacred refrain not established).
+  AF-HOOK-1               (DECK)              Hook — the refrain recurs on >4 slides
+                          (copy or baked image text): over-stamp / wallpaper deck veto.
+  AF-HOOK-OVERSTAMP       (Phase 1Q, slide)   Hook — the refrain is stamped >=2x within
+                          one slide's copy.
+  AF-HOOK-4               (Prompt-QC, slide)  Hook — the refrain is baked >=2x into one
+                          slide's prompt text (per-slide over-stamp, image side).
+  AF-HOOK                 (Prompt-QC, slide)  Hook — the refrain is baked into a FOOTER /
+                          bottom band on a slide prompt (never a footer stamp).
+  AF-HOOK-IMG-MISSING     (Prompt-QC, DECK)   Hook — the refrain is baked on <3 slides'
+                          prompt text (image-side refrain not established).
+  AF-NO-RECAP             (Phase 1Q, DECK)    Recap/Re-Pitch — no post-price beat restates
+                          the value stack + price after the final price reveal.
+  AF-NARRATIVE-HARMONY    (Phase 1Q, DECK)    Harmony — the writing arc is out of order
+                          (must hold HOOK->VILLAIN->FELT_STAKES->PROMISE->PRICE->RECAP).
 
 The verdict-half codes (AF-FACE-MOOD, AF-WORLD-IMAGE-MISMATCH/world-grounding,
 AF-LIGHT-SKINTONE, AF-HAIR-INAUTHENTIC vision verdict) are owned by Image-QC and
@@ -102,6 +118,54 @@ HAIR_DESCRIPTOR_FALLBACK = ["coils", "coily", "locs", "afro", "twist-out", "twis
                             "buzz cut", "waves", "ponytail", "bun", "updo", "bob"]
 
 LADDER_BEAT_TAGS = ["ANCHOR", "BUILDUP", "DROP1", "DROP2", "DROP3", "FINAL"]
+
+# --------------------------------------------------------------------------- #
+# Narrative-engine token sets (SHARED by check_copy + check_narrative_harmony so
+# the writing-half engines and the harmony arc-order gate stay in lockstep).
+# --------------------------------------------------------------------------- #
+FELT_FRAME_TOKENS = ["mornings left", "days left", "years left", "left with",
+                     "never get", "running out", "you will lose", "cost you",
+                     "every day you wait", "before it's too late", "while you wait",
+                     "felt_stakes"]
+VILLAIN_TOKENS = ["villain", "antagonist", "the enemy", "the real enemy",
+                  "the thing stopping", "what's holding you back", "the obstacle",
+                  "the lie", "the trap", "the broken system",
+                  "the old way is the villain"]
+HERO_TOKENS = ["hero", "the solution", "the breakthrough", "the way out",
+               "the answer", "the promise", "the new way", "you become",
+               "the transformation", "the path forward"]
+# price/offer presence tokens for arc-order (promise -> price -> recap) reasoning
+PRICE_TOKENS = ["ladder", "drop1", "drop2", "drop3", "anchor", "final price",
+                "investment", "your price", "the price", "repitch", "re-pitch"]
+# recap / re-pitch tokens (post-price restatement of value + price)
+RECAP_TOKENS = ["recap", "to recap", "re-pitch", "repitch", "here's everything",
+                "everything you get", "everything you're getting", "in summary",
+                "let's recap", "quick recap", "value stack", "stack recap"]
+
+
+def _load_intake_hook(run_dir):
+    """Read the canonical hook string from <run_dir>/copy/intake.json (or None).
+
+    The hook is the single SACRED REFRAIN; both the copy-side recurrence check and
+    the image-side baked-text check measure against this one canonical string."""
+    intake_path = run_dir / "copy" / "intake.json"
+    if not intake_path.exists():
+        return None
+    try:
+        data = json.loads(intake_path.read_text())
+    except Exception:
+        return None
+    hook = (str(data.get("hook") or "")).strip()
+    return hook or None
+
+
+def _has_price_beat(body):
+    """True if a slide body carries a price/ladder/offer beat (arc-order helper)."""
+    if any(re.search(rf"\b{t}\b", body, re.IGNORECASE) for t in LADDER_BEAT_TAGS):
+        return True
+    if re.search(r"\$\s?\d", body):
+        return True
+    return _has_any(body.lower(), PRICE_TOKENS)
 
 
 def _fatal(msg):
@@ -211,6 +275,69 @@ def check_prompts(run_dir, problems):
                               "age-banded hairstyle catalog and cite an age-appropriate "
                               "style (brand-steward-sops.md hair doctrine)."})
 
+    # --- HOOK engine, IMAGE side — the sacred refrain over the BAKED prompt text.
+    #     No slide is excluded from scope: pure-typography hook slides are real
+    #     kie bakes and are checked like any other. ---
+    _check_hook_image(run_dir, problems)
+    return
+
+
+def _check_hook_image(run_dir, problems):
+    """HOOK engine, image side — deterministic scan of the baked text inside every
+    slide prompt for the single canonical refrain.
+
+    Codes:
+      AF-HOOK-1            (DECK)  hook baked on >4 slides (deck veto, over-stamp)
+      AF-HOOK-IMG-MISSING  (DECK)  hook baked on <3 slides (refrain not established)
+      AF-HOOK-4            (slide) hook baked >=2x on a single slide (per-slide stamp)
+      AF-HOOK              (slide) hook baked into a FOOTER / bottom band (never a stamp)
+    Defers (clean) when no prompts exist yet or no canonical hook is declared."""
+    prompts_dir = run_dir / "prompts"
+    if not prompts_dir.is_dir():
+        return  # pre-prompt phase — defer
+    hook = _load_intake_hook(run_dir)
+    if not hook:
+        return  # no canonical hook declared — copy phase owns hook presence
+    h = hook.lower()
+    slides_with = []
+    for pf in sorted(prompts_dir.glob("slide-*.txt")):
+        text_lc = _lc(pf.read_text())
+        slide = pf.stem
+        count = text_lc.count(h)
+        if count >= 1:
+            slides_with.append(slide)
+        if count >= 2:
+            problems.append({
+                "code": "AF-HOOK-4", "slide": slide, "phase": "Phase Prompt-QC",
+                "detail": f"the canonical hook is baked {count}x into the prompt for "
+                          f"{slide}. A single slide carries the refrain at most once "
+                          "(per-slide over-stamp; the Hook is a suppressor)."})
+        # footer-band / bottom-stamp scan: hook adjacent to a footer cue
+        for m in re.finditer(re.escape(h), text_lc):
+            ctx = text_lc[max(0, m.start() - 140): m.start() + len(h) + 140]
+            if "footer" in ctx or "bottom band" in ctx or "lower band" in ctx \
+                    or "bottom strip" in ctx:
+                problems.append({
+                    "code": "AF-HOOK", "slide": slide, "phase": "Phase Prompt-QC",
+                    "detail": f"{slide} bakes the canonical hook into a FOOTER / bottom "
+                              "band. The sacred refrain is a dedicated typographic beat, "
+                              "never a footer stamp (HOOK suppressor)."})
+                break
+    nslides = len(slides_with)
+    if nslides > 4:
+        problems.append({
+            "code": "AF-HOOK-1", "slide": "DECK", "phase": "Phase Prompt-QC",
+            "detail": f"the canonical hook is baked on {nslides} slides "
+                      f"({', '.join(slides_with)}); the deck ceiling is 4 dedicated hook "
+                      "beats (AF-HOOK-1 deck veto). Over-baking turns the refrain into "
+                      "wallpaper."})
+    elif nslides < 3:
+        problems.append({
+            "code": "AF-HOOK-IMG-MISSING", "slide": "DECK", "phase": "Phase Prompt-QC",
+            "detail": f"the canonical hook is baked on only {nslides} slide(s) "
+                      f"({', '.join(slides_with) or '[]'}); the sacred refrain must appear "
+                      "verbatim on 3-4 dedicated image beats so the rendered deck carries "
+                      "the same recurring line as the copy."})
     return
 
 
@@ -259,15 +386,12 @@ def check_copy(run_dir, problems):
     # A FELT_STAKES beat: a concrete number paired with a personal-loss frame,
     # present BEFORE the first ladder beat. We accept an explicit FELT_STAKES tag OR
     # the structural signature (a digit + a felt-stakes frame token).
-    felt_frame = ["mornings left", "days left", "years left", "left with", "never get",
-                  "running out", "you will lose", "cost you", "every day you wait",
-                  "before it's too late", "while you wait", "felt_stakes"]
     def is_felt(body):
         b = body.lower()
         if "felt_stakes" in b:
             return True
         has_num = re.search(r"\d[\d,]*", body) is not None
-        return has_num and _has_any(b, felt_frame)
+        return has_num and _has_any(b, FELT_FRAME_TOKENS)
     felt_idx = _first_index_with(blocks, is_felt)
     # first ladder beat index
     def is_ladder(body):
@@ -288,16 +412,10 @@ def check_copy(run_dir, problems):
                       f"BEFORE the offer so the audience feels the cost first."})
 
     # --- STORY — AF-NO-VILLAIN (DECK, ordering) ---
-    villain = ["villain", "antagonist", "the enemy", "the real enemy", "the thing "
-               "stopping", "what's holding you back", "the obstacle", "the lie",
-               "the trap", "the broken system", "the old way is the villain"]
-    hero = ["hero", "the solution", "the breakthrough", "the way out", "the answer",
-            "the promise", "the new way", "you become", "the transformation",
-            "the path forward"]
     def has_villain(body):
-        return _has_any(body.lower(), villain)
+        return _has_any(body.lower(), VILLAIN_TOKENS)
     def has_hero(body):
-        return _has_any(body.lower(), hero)
+        return _has_any(body.lower(), HERO_TOKENS)
     v_idx = _first_index_with(blocks, has_villain)
     h_idx = _first_index_with(blocks, has_hero)
     if v_idx is None:
@@ -313,6 +431,152 @@ def check_copy(run_dir, problems):
             "detail": f"VILLAIN beat (block #{v_idx+1}) appears AFTER the HERO/solution "
                       f"beat (block #{h_idx+1}). Order must be villain -> hero. Move the "
                       f"antagonist beat before the solution."})
+
+    # --- HOOK — sacred-refrain recurrence (copy side) ---
+    _check_hook_refrain_copy(blocks, _load_intake_hook(run_dir), problems)
+
+    # --- RECAP / Re-Pitch — post-price restatement of value + price ---
+    _check_recap_copy(blocks, problems)
+
+    # --- NARRATIVE HARMONY — the arc holds end-to-end (hook->villain->stakes->
+    #     promise->price->recap). This is the orchestration layer above the
+    #     individual writing engines; it fires at COPY-QC, before any prompt. ---
+    check_narrative_harmony(run_dir, problems)
+    return
+
+
+def _check_hook_refrain_copy(blocks, hook, problems):
+    """HOOK engine, copy side — the canonical hook is a SACRED REFRAIN: it must
+    recur verbatim on 3-4 dedicated beats, never on >4 slides (wallpaper/footer),
+    and never be stamped twice on one slide.
+
+    Codes:
+      AF-NO-HOOK-REFRAIN  (DECK)  hook recurs on <3 slides (refrain not established)
+      AF-HOOK-1           (DECK)  hook recurs on >4 slides (over-stamp deck veto)
+      AF-HOOK-OVERSTAMP   (slide) hook stamped >=2x on a single slide
+    Defers (returns clean) when no canonical hook is declared in intake.json."""
+    if not hook:
+        return  # no canonical hook declared at this phase — presence owned elsewhere
+    h = hook.lower()
+    slides_with = []
+    for (n, body) in blocks:
+        c = body.lower().count(h)
+        if c >= 1:
+            slides_with.append(n)
+        if c >= 2:
+            problems.append({
+                "code": "AF-HOOK-OVERSTAMP", "slide": f"SLIDE {n}", "phase": "Phase 1Q",
+                "detail": f"the canonical hook is stamped {c}x in the copy for slide {n}. "
+                          "The sacred refrain lands ONCE per dedicated beat — repeating it "
+                          "within a single slide turns it into wallpaper (HOOK suppressor)."})
+    nslides = len(slides_with)
+    if nslides < 3:
+        problems.append({
+            "code": "AF-NO-HOOK-REFRAIN", "slide": "DECK", "phase": "Phase 1Q",
+            "detail": f"the canonical hook recurs on only {nslides} slide(s) "
+                      f"(slides {slides_with or '[]'}); the sacred refrain must land "
+                      "verbatim on 3-4 dedicated beats so the audience internalizes one "
+                      "line (SOP-ENGINE-00 Hook; the Hook is a suppressor, not an "
+                      "enricher)."})
+    elif nslides > 4:
+        problems.append({
+            "code": "AF-HOOK-1", "slide": "DECK", "phase": "Phase 1Q",
+            "detail": f"the canonical hook recurs on {nslides} slides "
+                      f"(slides {slides_with}); the deck ceiling is 4 dedicated hook "
+                      "beats. Over-recurrence is over-stamping — the refrain becomes a "
+                      "footer band / wallpaper (AF-HOOK-1 deck veto)."})
+
+
+def _check_recap_copy(blocks, problems):
+    """RECAP / Re-Pitch engine — after the FINAL price reveal, a recap beat must
+    restate the value stack AND the price. Emits AF-NO-RECAP (DECK).
+    Defers (returns clean) for a pitchless deck (no price beat at all)."""
+    last_price_idx = None
+    for idx, (n, body) in enumerate(blocks):
+        if _has_price_beat(body):
+            last_price_idx = idx
+    if last_price_idx is None:
+        return  # pitchless deck — recap presence owned by the offer phase, defer here
+    for idx in range(last_price_idx, len(blocks)):
+        body = blocks[idx][1]
+        if _has_any(body.lower(), RECAP_TOKENS):
+            return  # a post-price recap/re-pitch beat exists — clean
+    problems.append({
+        "code": "AF-NO-RECAP", "slide": "DECK", "phase": "Phase 1Q",
+        "detail": "no post-price RECAP / re-pitch beat: after the final price reveal the "
+                  "deck never restates the value stack + price. Add a closing recap that "
+                  "re-pitches everything they get for the price (SOP-ENGINE-00 "
+                  "Recap/Re-Pitch)."})
+
+
+def check_narrative_harmony(run_dir, problems):
+    """NARRATIVE HARMONY — the writing arc holds end-to-end, in order:
+        HOOK -> VILLAIN -> FELT_STAKES -> PROMISE -> PRICE -> RECAP.
+
+    The individual writing engines prove each beat is PRESENT and locally ordered
+    (villain-before-hero, felt-before-ladder). Harmony proves the WHOLE arc is
+    monotonic — the orchestration layer above the per-engine checks. Only the
+    beats that are PRESENT are ordered (absence is already caught by the engines);
+    an out-of-order present pair emits AF-NARRATIVE-HARMONY (DECK).
+
+    Fires at COPY-QC, before any prompt is authored. Defers pre-copy."""
+    copy_md = run_dir / "copy" / "slides_copy.md"
+    if not copy_md.exists():
+        return  # pre-copy phase — defer
+    blocks = _parse_slide_blocks(copy_md.read_text())
+    if not blocks:
+        return
+
+    hook = _load_intake_hook(run_dir)
+
+    def first_idx(pred):
+        for idx, (n, body) in enumerate(blocks):
+            if pred(body):
+                return idx
+        return None
+
+    def is_felt(body):
+        b = body.lower()
+        if "felt_stakes" in b:
+            return True
+        return re.search(r"\d[\d,]*", body) is not None and _has_any(b, FELT_FRAME_TOKENS)
+
+    # last price beat anchors the recap-after-price ordering
+    last_price_idx = None
+    for idx, (n, body) in enumerate(blocks):
+        if _has_price_beat(body):
+            last_price_idx = idx
+
+    def recap_after_price():
+        if last_price_idx is None:
+            return None
+        for idx in range(last_price_idx, len(blocks)):
+            if _has_any(blocks[idx][1].lower(), RECAP_TOKENS):
+                return idx
+        return None
+
+    beats = [
+        ("HOOK", (first_idx(lambda b: hook and hook.lower() in b.lower())
+                  if hook else None)),
+        ("VILLAIN", first_idx(lambda b: _has_any(b.lower(), VILLAIN_TOKENS))),
+        ("FELT_STAKES", first_idx(is_felt)),
+        ("PROMISE", first_idx(lambda b: _has_any(b.lower(), HERO_TOKENS))),
+        ("PRICE", first_idx(_has_price_beat)),
+        ("RECAP", recap_after_price()),
+    ]
+    present = [(name, idx) for name, idx in beats if idx is not None]
+
+    # walk adjacent present beats; flag any pair whose order is inverted
+    for i in range(len(present) - 1):
+        a_name, a_idx = present[i]
+        b_name, b_idx = present[i + 1]
+        if a_idx > b_idx:
+            problems.append({
+                "code": "AF-NARRATIVE-HARMONY", "slide": "DECK", "phase": "Phase 1Q",
+                "detail": f"narrative arc out of order: {a_name} (block #{a_idx+1}) "
+                          f"appears AFTER {b_name} (block #{b_idx+1}). The arc must hold "
+                          "end-to-end HOOK -> VILLAIN -> FELT_STAKES -> PROMISE -> PRICE "
+                          "-> RECAP for the engines to be in harmony, not just present."})
     return
 
 

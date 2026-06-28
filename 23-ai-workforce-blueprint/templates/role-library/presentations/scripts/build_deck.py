@@ -323,7 +323,7 @@ ENGLISH_PIN = (
 #     independently — and the governed Prompt-QC gate now RE-MEASURES every on-disk prompt
 #     (it is no longer a JSON rubber stamp).
 PROMPT_CHAR_FLOOR = 9000      # HARD floor (AF-P1/AF-PROMPT-FLOOR): the 9,000-char target-band LOW end; any rich prompt under it is NOT run/rendered/updated — FAIL LOUD
-PROMPT_CHAR_TARGET_HIGH = 14000  # the SOP authoring-target HIGH end (informational band ceiling; the HARD ceiling stays PROMPT_CHAR_CEILING)
+PROMPT_CHAR_TARGET_HIGH = 18000  # v15.0.0: SOP authoring-target HIGH end raised 14000->18000 so the authoring band is 9,000-18,000 (matches PROMPT_CHAR_CEILING; the HARD ceiling stays PROMPT_CHAR_CEILING). Final char standard: MIN 9,000 / MAX 18,000.
 PROMPT_CHAR_CEILING = 18000   # UNIVERSAL hard maximum (AF-P2; 2,000 under the 20,000 API ceiling)
 PROMPT_MIN_DISTINCT_WORDS = 220  # AF-P-DENSITY: a >=9,000-char prompt that repeats one paragraph to pad length has few distinct words; a genuinely rich prompt has 400+. Floor catches paste-repetition padding.
 
@@ -4589,6 +4589,647 @@ def check_intelligence_engines_prompt(run_dir: Path, slides_path: Optional[Path]
     return ""
 
 
+# ===========================================================================
+# v15.0.0 — WRITING-half engines (G1/G2), HARMONY (G5), EXCELLENCE (G6),
+# and the deterministic Prompt-QC / Copy-QC measurers that feed the send-back
+# loop (G7/G8). build_deck.py owns ALL of these; run_signature_deck.py imports
+# check_prompt_qc_deterministic / check_copy_qc_deterministic / check_deck_harmony
+# per the §3.6 interface contract and never edits this file.
+#
+# SHIFT-LEFT: the writing-engine wrappers fire at COPY-QC (before any prompt is
+# authored); EXCELLENCE + the per-slide perceptual measurer fire at PROMPT-QC
+# (before any kie.ai render is paid for); deck-level HARMONY fires pre-assembly.
+# ===========================================================================
+
+# EXCELLENCE quality floor (§3.4 / G6). A prompt must clear BOTH the 9,000-char
+# LENGTH floor (necessary) AND this richness floor (sufficient): a floor-grazing,
+# boilerplate-padded prompt scores below this and routes back even though it clears
+# 9,000 chars — the two floors are independent (§1.1a). Env-overridable for tuning.
+try:
+    PROMPT_EXCELLENCE_FLOOR = float(os.environ.get("PROMPT_EXCELLENCE_FLOOR", "0.70"))
+except (TypeError, ValueError):
+    PROMPT_EXCELLENCE_FLOOR = 0.70
+# A genuinely rich 15-element prompt carries 400+ distinct words; 220 is the bare
+# AF-P-DENSITY floor. Excellence credits richness up to this target.
+PROMPT_EXCELLENCE_DISTINCT_TARGET = 400
+# Local world-grounding markers (kept in build_deck so the EXCELLENCE/HARMONY gates
+# do not reach into intelligence_engines_check's private token sets).
+_WORLD_GROUND_TOKENS = (
+    "because", "would this", "believab", "plausib", "to scale", "real-world",
+    "real world", "grounded", "normal house", "not a luxury", "actual ", "in-world",
+    "true to life", "true-to-life", "lived-in", "lived in",
+)
+# Recurring-character continuity anchors (Story engine, deck-level harmony).
+_CHARACTER_CONTINUITY_TOKENS = (
+    "same character", "same person", "same woman", "same man", "recurring",
+    "continuity", "consistent cast", "consistent character", "reappears", "returns",
+    "established earlier", "as before", "carry forward", "carried forward",
+    "matching the", "same subject", "the protagonist", "our protagonist",
+)
+
+
+def _import_pitch_engines_check():
+    """Import pitch_engines_check beside build_deck.py (mirror of
+    _import_intelligence_engines_check). Returns the module or None."""
+    try:
+        import importlib
+        return importlib.import_module("pitch_engines_check")
+    except Exception:  # noqa: BLE001
+        try:
+            import importlib.util as _ilu
+            spec = _ilu.spec_from_file_location(
+                "pitch_engines_check",
+                str(Path(__file__).resolve().parent / "pitch_engines_check.py"))
+            if spec and spec.loader:
+                mod = _ilu.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def _engine_name_for_code(code: str) -> str:
+    """Map an AF code to the human INTELLIGENCE-engine name it belongs to, for the
+    routeback payload's `intelligence` field (so the author knows which engine is absent)."""
+    c = (code or "").upper()
+    table = {
+        "AF-FACE-PROMPT-MISSING": "Facial",
+        "AF-LIGHT-PROMPT-MISSING": "Lighting",
+        "AF-WORLD-SCALE": "World",
+        "AF-HAIR-INAUTHENTIC": "Representation/Hair",
+        "AF-NO-VILLAIN": "Story",
+        "AF-NO-FELT-STAKES": "Emotional",
+        "AF-CADENCE": "Pricing",
+        "AF-NO-COST-OF-INACTION": "Pricing",
+        "AF-GUARANTEE-GENERIC": "Pricing",
+        "AF-NO-BRANDED-METHOD": "Pricing",
+        "AF-METHOD-FABRICATED": "Pricing",
+        "AF-NO-TIME-TO-RESULT": "Pricing",
+        "AF-P13": "Negative-Block",
+        "AF-P14": "Typography/Spelling-Lock",
+        "AF-P-VERBATIM": "Typography/Verbatim",
+        "AF-P-DENSITY": "Density",
+        "AF-R3": "Representation",
+        "AF-EXCELLENCE": "Excellence",
+        "AF-HARMONY": "Harmony",
+    }
+    if c.startswith("AF-HOOK") or c.startswith("AF-OBI") or c == "AF-C2":
+        return "Hook"
+    return table.get(c, "Intelligence")
+
+
+def _slide_no_from(val) -> Optional[int]:
+    """Extract a slide ordinal from a checker's `slide` field ('slide-07' -> 7,
+    7 -> 7). Returns None when no ordinal is present (DECK-level deficiency)."""
+    if isinstance(val, int):
+        return val
+    m = re.search(r"(\d+)", str(val or ""))
+    return int(m.group(1)) if m else None
+
+
+def _fmt_engine_problem(p) -> str:
+    """One-line render of a checker problem entry (dict or str), defensive about shape."""
+    if isinstance(p, dict):
+        where = p.get("slide", p.get("rung", "DECK"))
+        return f"{p.get('code', '?')} [{where}]: {p.get('detail', '')}"
+    return str(p)
+
+
+def _is_defer_only(p) -> bool:
+    """True for a pure-defer sentinel ({'defer': ...} with no 'code') a sub-engine
+    emits when its inputs are not present yet."""
+    return isinstance(p, dict) and "code" not in p and "defer" in p
+
+
+def _engine_problem_to_def(p, phase: str) -> dict:
+    """Convert a checker problem (dict/str) into the standard routeback deficiency
+    schema {code, severity, slide, measured, required, intelligence, fix, phase}."""
+    if isinstance(p, dict):
+        code = p.get("code", "AF-COPY")
+        slide = p.get("slide", p.get("rung", "DECK"))
+        detail = p.get("detail", "")
+    else:
+        code, slide, detail = "AF-COPY", "DECK", str(p)
+    return {"code": code, "severity": "reauthor", "slide": slide,
+            "measured": "engine deficiency", "required": "engine present",
+            "intelligence": _engine_name_for_code(code), "fix": detail, "phase": phase}
+
+
+def _pdef(code, severity, measured, required, intelligence, fix) -> dict:
+    """Build one per-slide prompt deficiency in the routeback schema (§3.5)."""
+    return {"code": code, "severity": severity, "measured": measured,
+            "required": required, "intelligence": intelligence, "fix": fix}
+
+
+def check_intelligence_engines_copy(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """G1 — AF-NO-VILLAIN / AF-NO-FELT-STAKES (+ narrative-harmony codes): the WRITING-half
+    INTELLIGENCE engines (Story villain-before-hero, Emotional felt-stakes-before-offer, Hook
+    copy refrain, Recap) + narrative harmony, WIRED INTO THE COPY-QC PREFLIGHT — the EARLIEST
+    phase a narrative defect is detectable (BEFORE any image prompt is authored; shift-left).
+
+    Mirrors check_intelligence_engines_prompt's import/defer pattern: imports
+    intelligence_engines_check and calls iec.check_copy(<working>, problems), which per the
+    v15 interface contract runs the WRITING engines AND check_narrative_harmony, appending AF
+    codes to `problems`. Defers (returns "") pre-copy (no slides_copy.md yet). Returns a fatal
+    message naming the offending codes/slides on any auto-fail (run_preflight -> exit 3)."""
+    copy_md = run_dir / "working" / "copy" / "slides_copy.md"
+    if not copy_md.exists():
+        return ""  # pre-copy phase — the copy engines defer (mirrors check_copy's own defer).
+    iec = _import_intelligence_engines_check()
+    if iec is None:
+        return ("AF-NO-VILLAIN: intelligence_engines_check.py could not be imported from the "
+                "scripts directory; the Story / Emotional copy engines + narrative harmony "
+                "could not run. Ensure intelligence_engines_check.py is present beside "
+                "build_deck.py.")
+    problems: list = []
+    try:
+        # iec reads <dir>/copy, <dir>/prompts, <dir>/brand — so working/ is its run dir.
+        iec.check_copy(run_dir / "working", problems)
+    except Exception as exc:  # noqa: BLE001
+        return (f"AF-NO-VILLAIN: intelligence_engines_check.check_copy raised {exc!r}; the "
+                f"copy-side INTELLIGENCE engines (Story / Emotional / narrative harmony) "
+                f"could not be verified.")
+    problems = [p for p in problems if not _is_defer_only(p)]
+    if problems:
+        lines = "; ".join(_fmt_engine_problem(p) for p in problems[:10])
+        more = "" if len(problems) <= 10 else f" (+{len(problems) - 10} more)"
+        return ("AF-INTELLIGENCE-COPY: the WRITING-half engines auto-failed at COPY-QC — the "
+                "deck must plant the VILLAIN before the first HERO/solution beat (Story), land "
+                "a felt-stakes quantifier BEFORE the offer (Emotional), carry the sacred Hook "
+                "refrain, and cohere as a narrative arc. Fix the SCRIPT before any prompt is "
+                "authored (shift-left). Offenders: " + lines + more + ".")
+    return ""
+
+
+def check_pitch_engines(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """G2 — AF-CADENCE / AF-NO-COST-OF-INACTION / AF-GUARANTEE-GENERIC /
+    AF-NO-BRANDED-METHOD / AF-METHOD-FABRICATED / AF-NO-TIME-TO-RESULT: the persuasion (offer)
+    sub-engines WIRED INTO THE COPY-QC PREFLIGHT. PROMISE PRECEDES PRICE; the offer's value
+    cadence, cost-of-inaction, branded method, guarantee specificity and time-to-result are
+    graded on the SCRIPT before any prompt is authored (shift-left).
+
+    CONDITIONAL on intake.json.pitch_included (mirrors _chk_pitch): defers for a pitchless
+    deck (false) or an unset flag (AF-PITCH-LEAK / AF-PITCH-FLAG-UNSET own those). Defers
+    pre-copy. Calls pitch_engines_check.check_copy(run_dir, problems) — the v15 importable
+    entry point Agent 3 exposes; run_dir is the ACTUAL run dir, matching the module's own
+    load_run(run_dir) -> working/copy convention. Returns a fatal message on any auto-fail."""
+    if _intake_pitch_included(run_dir) is not True:
+        return ""  # pitchless / unset — AF-PITCH-LEAK / AF-PITCH-FLAG-UNSET own those cases.
+    copy_md = run_dir / "working" / "copy" / "slides_copy.md"
+    if not copy_md.exists():
+        return ""  # pre-copy phase — the offer engines defer.
+    pec = _import_pitch_engines_check()
+    if pec is None:
+        return ("AF-PITCH-ENGINE: pitch_engines_check.py could not be imported from the "
+                "scripts directory; the offer sub-engines (cadence / cost-of-inaction / "
+                "branded-method / guarantee / time-to-result) could not run. Ensure "
+                "pitch_engines_check.py is present beside build_deck.py.")
+    if not hasattr(pec, "check_copy"):
+        return ("AF-PITCH-ENGINE: pitch_engines_check.py exposes no check_copy(run_dir, "
+                "problems) entry point (the v15 interface contract requires it). The offer "
+                "sub-engines could not be wired into COPY-QC.")
+    problems: list = []
+    try:
+        pec.check_copy(run_dir, problems)
+    except Exception as exc:  # noqa: BLE001
+        return (f"AF-PITCH-ENGINE: pitch_engines_check.check_copy raised {exc!r}; the offer "
+                f"persuasion sub-engines could not be verified.")
+    problems = [p for p in problems if not _is_defer_only(p)]
+    if problems:
+        lines = "; ".join(_fmt_engine_problem(p) for p in problems[:10])
+        more = "" if len(problems) <= 10 else f" (+{len(problems) - 10} more)"
+        return ("AF-PITCH-ENGINE: the offer sub-engines auto-failed at COPY-QC — PROMISE must "
+                "precede PRICE and the offer must carry a value cadence, a quantified "
+                "cost-of-inaction, a non-generic guarantee, a real (un-fabricated) branded "
+                "method, and a concrete time-to-result. Fix the OFFER SCRIPT before any prompt "
+                "is authored (shift-left). Offenders: " + lines + more + ".")
+    return ""
+
+
+def _excellence_score(prompt_text: str):
+    """G6 — the EXCELLENCE dimension. Returns (score 0.0-1.0, reasons) measuring whether the
+    prompt's character budget was spent on DEFECT-PREVENTING SPECIFICITY (richness) rather
+    than boilerplate padding. A prompt can clear the 9,000-char LENGTH floor and still score
+    low here — that is the design: length is necessary, excellence is the independent QUALITY
+    gate (two floors, §1.1a), so a compliant-but-soulless prompt does NOT pass.
+
+    Weighted dimensions (sum to 1.0):
+      * 0.25 negative-block coverage   — fraction of the 8 paired defect classes named
+      * 0.15 spelling-lock richness    — >=2 distinct per-string lock markers
+      * 0.15 people-anatomy + world-grounding specificity
+      * 0.20 concrete craft signals    — brand HEX + explicit type SIZE + composition token
+      * 0.25 lexical richness          — distinct words vs a rich 15-element target (400)
+    """
+    lc = prompt_text.lower()
+    reasons = []
+
+    # 1. negative-block coverage (0.25)
+    n_classes = len(NEGATIVE_BLOCK_CLASS_TOKENS)
+    missing_classes = _negative_block_class_problems(lc)
+    nb_cov = (n_classes - len(missing_classes)) / max(1, n_classes)
+    if missing_classes:
+        reasons.append(f"negative block names only {n_classes - len(missing_classes)}/"
+                       f"{n_classes} defect classes (missing: {', '.join(missing_classes)})")
+
+    # 2. spelling-lock richness (0.15)
+    n_lock = sum(1 for t in SPELLING_LOCK_TOKENS if t in lc)
+    sl = 1.0 if n_lock >= 2 else (0.5 if n_lock == 1 else 0.0)
+    if n_lock < 2:
+        reasons.append(f"only {n_lock} spelling-lock marker(s) (>=2 distinct expected for "
+                       f"per-string lock coverage)")
+
+    # 3. people-anatomy + world-grounding specificity (0.15)
+    has_anatomy = any(t in lc for t in NEGATIVE_BLOCK_CLASS_TOKENS["anatomical artifacts"])
+    has_world = any(t in lc for t in _WORLD_GROUND_TOKENS)
+    pw = (0.5 if has_anatomy else 0.0) + (0.5 if has_world else 0.0)
+    if not has_anatomy:
+        reasons.append("no people-anatomy specificity (finger/hand/eye/skin defect guards)")
+    if not has_world:
+        reasons.append("no world-grounding/believability justification token")
+
+    # 4. concrete craft signals (0.20)
+    craft_hits = 0
+    if _HEX_COLOR_RE.search(prompt_text):
+        craft_hits += 1
+    else:
+        reasons.append("no brand palette HEX (#RRGGBB)")
+    if _TYPE_SIZE_RE.search(prompt_text):
+        craft_hits += 1
+    else:
+        reasons.append("no explicit type SIZE (pt/px)")
+    if any(t in lc for t in PROMPT_COMPOSITION_TOKENS):
+        craft_hits += 1
+    else:
+        reasons.append("no composition/zone token (thirds/grid/zone/safe-margin)")
+    craft = craft_hits / 3.0
+
+    # 5. lexical richness (0.25)
+    distinct = len(set(_WORD_RE.findall(lc)))
+    lex = min(1.0, distinct / float(PROMPT_EXCELLENCE_DISTINCT_TARGET))
+    if distinct < PROMPT_EXCELLENCE_DISTINCT_TARGET:
+        reasons.append(f"only {distinct} distinct words (rich target "
+                       f"{PROMPT_EXCELLENCE_DISTINCT_TARGET}) — likely boilerplate padding")
+
+    score = (0.25 * nb_cov + 0.15 * sl + 0.15 * pw + 0.20 * craft + 0.25 * lex)
+    return round(score, 3), reasons
+
+
+def check_prompt_excellence(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """G6 preflight gate (AF-EXCELLENCE) — fires at PROMPT-QC, BEFORE any render. Every
+    per-slide rich prompt must score >= PROMPT_EXCELLENCE_FLOOR on the EXCELLENCE dimension:
+    the budget must be spent on defect-preventing specificity, not padding. This is the
+    QUALITY floor that sits ALONGSIDE the 9,000-char LENGTH floor (§1.1a) — a floor-grazing,
+    boilerplate-padded prompt clears 9,000 chars yet routes back here. Defers pre-prompt
+    (no prompts dir); the slide-count / missing-file failures are owned by _chk_rich_prompts.
+    Returns "" on pass, or a fatal AF-EXCELLENCE message naming the under-floor slides."""
+    prompts_dir = run_dir / "working" / "prompts"
+    if not prompts_dir.is_dir():
+        return ""  # pre-prompt phase — defer (mirrors the perceptual prompt engines).
+    n = _count_output_slides(run_dir, slides_path)
+    if n is None:
+        return ""  # _chk_rich_prompts owns the 'no slide count' failure.
+    offenders = []
+    for ordinal in range(1, n + 1):
+        p = resolve_prompt_path(run_dir, ordinal)
+        if p is None:
+            continue  # _chk_rich_prompts owns the missing-file failure.
+        stripped = p.read_text(errors="replace").strip()
+        score, reasons = _excellence_score(stripped)
+        if score < PROMPT_EXCELLENCE_FLOOR:
+            offenders.append(f"slide {ordinal:02d}: excellence {score:.2f} < "
+                             f"{PROMPT_EXCELLENCE_FLOOR:.2f} ({'; '.join(reasons[:4])})")
+    if offenders:
+        return ("AF-EXCELLENCE: one or more prompts clear the 9,000-char LENGTH floor but "
+                "fail the EXCELLENCE QUALITY floor — the budget was spent on padding, not "
+                "defect-preventing specificity (full 8-class negative block, per-string "
+                "spelling-lock, people-anatomy + world-grounding, brand HEX + type SIZE + "
+                "composition, lexical richness). Amazing, not merely compliant (§1.1a). "
+                "Re-author (do NOT pad): " + " | ".join(offenders))
+    return ""
+
+
+def check_deck_harmony(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """G5 — AF-HARMONY: the deck-wide COHESION gate, fired PRE-ASSEMBLY (after render, before
+    assembly/delivery). Proves the engines are ORCHESTRATED IN HARMONY across slides — not
+    just that each slide passes in isolation: recurring-character continuity (Story across
+    slides), palette/brand coherence (cross-check check_brand_consistency), world continuity,
+    and archetype RHYTHM (a deliberate recurring motif — distinct from _chk_creativity, which
+    only rejects sameness). Defers (returns "") pre-render (no PNGs yet). Returns "" on pass,
+    or a fatal AF-HARMONY message (run_preflight -> exit 3)."""
+    pngs = _gather_rendered_pngs(run_dir)
+    if not pngs:
+        return ""  # pre-render — harmony is a pre-assembly gate; nothing rendered to cohere.
+
+    problems = []
+    prompts_dir = run_dir / "working" / "prompts"
+    prompt_texts = {}
+    if prompts_dir.is_dir():
+        for pf in sorted(prompts_dir.glob("slide-*.txt")):
+            sn = _slide_no_from(pf.stem)
+            if sn is not None:
+                prompt_texts[sn] = pf.read_text(errors="replace").lower()
+
+    # --- recurring-character continuity (Story engine across slides) ---
+    people_markers = ("person", "people", "woman", "man", "subject", "portrait", "face",
+                      "presenter", "founder", "customer", "client", "she ", "he ", "they ")
+    people_slides = [sn for sn, t in prompt_texts.items()
+                     if any(m in t for m in people_markers)]
+    casting_ledger = any((run_dir / rel).exists() for rel in (
+        "working/brand/casting_ledger.json", "working/brand/casting.json",
+        "working/copy/casting_ledger.json", "working/brand/cast.json"))
+    if len(people_slides) >= 2 and not casting_ledger:
+        anchored = sum(1 for sn in people_slides
+                       if any(tok in prompt_texts[sn] for tok in _CHARACTER_CONTINUITY_TOKENS))
+        if anchored < 2:
+            problems.append(
+                f"recurring-character continuity: {len(people_slides)} people-slides but only "
+                f"{anchored} carry a continuity anchor (same character/recurring/consistent "
+                f"cast) and no casting ledger exists — the Story engine's character does not "
+                f"provably persist across the deck")
+
+    # --- archetype RHYTHM (a deliberate recurring motif, not 40 one-offs) ---
+    archetypes = []
+    for rel in ("working/typography/design_system.json",
+                "working/copy/design_system.json", "design_system.json"):
+        ds = run_dir / rel
+        if not ds.exists():
+            continue
+        obj = _read_json(ds)
+        if not isinstance(obj, dict) or "__parse_error__" in obj:
+            break
+        per = obj.get("per_slide") or obj.get("slides") or obj.get("slide_plan")
+        if isinstance(per, list):
+            for s in per:
+                if isinstance(s, dict):
+                    a = s.get("archetype") or s.get("type") or s.get("treatment")
+                    if isinstance(a, str) and a.strip():
+                        archetypes.append(a.strip().lower())
+        elif isinstance(per, dict):
+            for v in per.values():
+                if isinstance(v, str) and v.strip():
+                    archetypes.append(v.strip().lower())
+                elif isinstance(v, dict):
+                    a = v.get("archetype") or v.get("type")
+                    if isinstance(a, str) and a.strip():
+                        archetypes.append(a.strip().lower())
+        break
+    if len(archetypes) >= 4:
+        counts = {}
+        for a in archetypes:
+            counts[a] = counts.get(a, 0) + 1
+        max_recur = max(counts.values())
+        if max_recur < 2:
+            problems.append(
+                "archetype rhythm: every slide uses a unique layout archetype (no motif "
+                "recurs) — the deck has no deliberate visual cadence/through-line; a coherent "
+                "deck repeats a motif at intervals (distinct from anti-template sameness)")
+
+    # --- palette / brand coherence cross-check (folded into harmony) ---
+    try:
+        brand_reason = check_brand_consistency(run_dir, slides_path)
+    except Exception:  # noqa: BLE001
+        brand_reason = ""
+    if brand_reason:
+        problems.append("palette coherence (brand cross-check): " + brand_reason.split(".")[0])
+
+    # --- world continuity (conservative; only the wholly-fragmented extreme) ---
+    world_tokens = ("office", "home", "studio", "stage", "kitchen", "boardroom", "outdoor",
+                    "street", "warehouse", "classroom", "clinic", "factory", "field", "store")
+    scene_world = {}
+    for sn, t in prompt_texts.items():
+        present = [w for w in world_tokens if w in t]
+        if present:
+            scene_world[sn] = set(present)
+    if len(scene_world) >= 3:
+        shared = set.intersection(*scene_world.values()) if scene_world else set()
+        any_pair = False
+        slides_w = list(scene_world.items())
+        for i in range(len(slides_w)):
+            for j in range(i + 1, len(slides_w)):
+                if slides_w[i][1] & slides_w[j][1]:
+                    any_pair = True
+                    break
+            if any_pair:
+                break
+        if not shared and not any_pair:
+            problems.append(
+                "world continuity: the scene-bearing slides share no common world/setting "
+                "token across the deck — the world reads as disjoint per-slide scenes rather "
+                "than one believable continuous world")
+
+    if problems:
+        return ("AF-HARMONY: the deck fails the cohesion gate — the engines pass per-slide but "
+                "are NOT orchestrated in harmony across the deck (recurring character, palette "
+                "coherence, world continuity, archetype rhythm). Re-render ONLY the "
+                "inconsistent slides to restore continuity (Director of Presentations owns "
+                "harmony; SOP-HARMONY-01). Offenders: " + "; ".join(problems) + ".")
+    return ""
+
+
+def check_copy_qc_deterministic(run_dir: Path, slides_path: Optional[Path] = None) -> dict:
+    """G8 — the deterministic COPY-QC measurer that feeds run_copy_qc_loop (run_signature_deck
+    imports it). The SOURCE OF TRUTH for whether the SCRIPT clears the WRITING engines BEFORE
+    any prompt is authored — NOT the copy-QC agent's self-score. Runs the WRITING engines
+    (iec.check_copy: Story / Emotional / narrative harmony) and, when pitch_included, the
+    offer sub-engines (pitch_engines_check.check_copy). Returns
+    {pass, phase:'copy', deficiencies:[{code, severity, slide, measured, required,
+    intelligence, fix, phase}]} — `deficiencies` is what write_routeback_payload turns into a
+    per-item work order. pass is True only when every WRITING/offer engine is clean."""
+    deficiencies = []
+    iec = _import_intelligence_engines_check()
+    if iec is None:
+        _miss = _pdef("AF-NO-VILLAIN", "reauthor", "module missing",
+                      "intelligence_engines_check.py", "Story",
+                      "Ensure intelligence_engines_check.py is beside build_deck.py.")
+        _miss["slide"] = "DECK"
+        _miss["phase"] = "copy"
+        deficiencies.append(_miss)
+    else:
+        cprob = []
+        try:
+            iec.check_copy(run_dir / "working", cprob)
+        except Exception as exc:  # noqa: BLE001
+            cprob = [{"code": "AF-NO-VILLAIN",
+                      "detail": f"intelligence_engines_check.check_copy raised {exc!r}"}]
+        for p in cprob:
+            if _is_defer_only(p):
+                continue
+            deficiencies.append(_engine_problem_to_def(p, "copy"))
+
+    if _intake_pitch_included(run_dir) is True:
+        pec = _import_pitch_engines_check()
+        if pec is not None and hasattr(pec, "check_copy"):
+            pprob = []
+            try:
+                pec.check_copy(run_dir, pprob)
+            except Exception as exc:  # noqa: BLE001
+                pprob = [{"code": "AF-PITCH-ENGINE",
+                          "detail": f"pitch_engines_check.check_copy raised {exc!r}"}]
+            for p in pprob:
+                if _is_defer_only(p):
+                    continue
+                deficiencies.append(_engine_problem_to_def(p, "offer"))
+
+    return {"pass": not deficiencies, "phase": "copy", "deficiencies": deficiencies}
+
+
+def check_prompt_qc_deterministic(run_dir: Path, slides_path: Optional[Path] = None) -> dict:
+    """G7 — the deterministic PROMPT-QC measurer, the SOURCE OF TRUTH that feeds
+    run_prompt_qc_loop (run_signature_deck imports it). This is the gate that PHYSICALLY
+    prevents a thin/soulless prompt from reaching kie.ai: the loop exits on THIS verdict, not
+    the prompt-QC agent's self-typed pass.
+
+    A slide passes ONLY when BOTH floors are clean (§1.1a):
+      LENGTH gate  — C1 >= 9,000 chars (AF-P1, fatal); C2 <= 18,000 (AF-P2).
+      QUALITY gate — C4 structural blocks; C5 perceptual INTELLIGENCE engines (Facial/
+        Lighting/World/Hair + per-slide harmony + image-side Hook via iec.check_prompts);
+        C6 8-class negative block (AF-P13); C7 per-string spelling-lock (AF-P14); C8 verbatim
+        copy baked (AF-P-VERBATIM); C9 density + demographic-landmine (AF-P-DENSITY/AF-R3);
+        C10 EXCELLENCE (AF-EXCELLENCE). Length alone never passes; engines alone never pass.
+
+    Deck-level WRITING-engine deficiencies (iec.check_copy / pitch_engines_check) are recorded
+    too as a backstop. Returns the §3.5 schema:
+      {pass, n_slides, slides:{N:{char_count, excellence, deficiencies:[{code, severity,
+       measured, required, intelligence, fix}]}}, deck_deficiencies:[...], deficiencies:[...]}
+    where severity 'fatal' already hard-fails the renderer and 'reauthor' is what the loop
+    sends back. `deficiencies` is a flat list (each tagged with its slide) for the routeback
+    writer's convenience."""
+    n = _count_output_slides(run_dir, slides_path)
+    if n is None:
+        d = _pdef("AF-P1", "fatal", "no slide count", "slides.json / arc_allocation.json",
+                  "Structure", "Produce slides.json before Prompt-QC so prompts can be "
+                  "verified per slide.")
+        d_deck = dict(d, slide="DECK")
+        return {"pass": False, "n_slides": 0, "slides": {},
+                "deck_deficiencies": [d_deck], "deficiencies": [d_deck]}
+
+    copy_map = _load_slide_copy_map(run_dir, slides_path)
+
+    # Run the perceptual prompt engines ONCE (deck-level) and bucket by slide ordinal so each
+    # slide's routeback names exactly which image engine (Facial/Lighting/World/Hair/Hook) is
+    # absent. iec.check_prompts also carries the NEW per-slide harmony + image-side Hook.
+    perceptual_by_slide = {}
+    iec = _import_intelligence_engines_check()
+    if iec is not None:
+        iprob = []
+        try:
+            iec.check_prompts(run_dir / "working", iprob)
+        except Exception:  # noqa: BLE001
+            iprob = []
+        for p in iprob:
+            if _is_defer_only(p):
+                continue
+            sn = _slide_no_from(p.get("slide")) if isinstance(p, dict) else None
+            perceptual_by_slide.setdefault(sn, []).append(p)
+
+    # Deck-level WRITING-engine backstop (copy + offer must already be clean from COPY-QC).
+    deck_def = []
+    copy_verdict = check_copy_qc_deterministic(run_dir, slides_path)
+    for d in copy_verdict.get("deficiencies", []):
+        deck_def.append(dict(d, severity="deck"))
+
+    slides = {}
+    flat = []
+    any_blocking = bool(deck_def)
+    for ordinal in range(1, n + 1):
+        deficiencies = []
+        p = resolve_prompt_path(run_dir, ordinal)
+        if p is None:
+            deficiencies.append(_pdef(
+                "AF-P1", "fatal", "no prompt file",
+                "working/prompts/slide-NN.txt (9,000-18,000 chars)", "Rich-Prompt",
+                "Author the rich per-slide prompt; build_deck renders it VERBATIM and never "
+                "composes a thin fallback."))
+            slides[ordinal] = {"char_count": 0, "excellence": 0.0, "deficiencies": deficiencies}
+            any_blocking = True
+            for d in deficiencies:
+                flat.append(dict(d, slide=ordinal))
+            continue
+
+        stripped = p.read_text(errors="replace").strip()
+        length = len(stripped)
+        lc = stripped.lower()
+
+        # --- LENGTH gate (C1/C2) ---
+        if length < PROMPT_CHAR_FLOOR:
+            deficiencies.append(_pdef(
+                "AF-P1", "fatal", f"{length} chars", f">= {PROMPT_CHAR_FLOOR}", "Length",
+                f"Re-author to {PROMPT_CHAR_FLOOR}-{PROMPT_CHAR_CEILING} chars of real "
+                f"specificity; do NOT pad."))
+        elif length > PROMPT_CHAR_CEILING:
+            deficiencies.append(_pdef(
+                "AF-P2", "reauthor", f"{length} chars", f"<= {PROMPT_CHAR_CEILING}", "Length",
+                f"Trim to <= {PROMPT_CHAR_CEILING} chars without dropping any engine token."))
+
+        # --- QUALITY gate (C4 structural blocks) ---
+        for b in REQUIRED_STRUCTURAL_BLOCKS:
+            if b.lower() not in lc:
+                deficiencies.append(_pdef(
+                    "AF-P-STRUCT", "reauthor", "block missing", b, "Structure",
+                    f"Add the required structural block: {b}"))
+
+        # --- C5 perceptual INTELLIGENCE engines (Facial/Lighting/World/Hair + harmony+Hook) ---
+        for pp in perceptual_by_slide.get(ordinal, []):
+            code = pp.get("code", "AF-INTELLIGENCE") if isinstance(pp, dict) else "AF-INTELLIGENCE"
+            detail = pp.get("detail", "") if isinstance(pp, dict) else str(pp)
+            deficiencies.append(_pdef(
+                code, "reauthor", "engine token absent", "engine token present",
+                _engine_name_for_code(code), detail))
+
+        # --- C6 eight-class negative block (AF-P13) ---
+        for cls in _negative_block_class_problems(lc):
+            deficiencies.append(_pdef(
+                "AF-P13", "reauthor", "class not named", cls, "Negative-Block",
+                f"Name the '{cls}' defect class in the 8-class paired negative block (SOP 9.8)."))
+
+        # --- C7 per-string spelling-lock (AF-P14) ---
+        if not _spelling_lock_present(lc):
+            deficiencies.append(_pdef(
+                "AF-P14", "reauthor", "no lock marker", "per-string spelling-lock",
+                "Typography/Spelling-Lock",
+                "Add a letter-for-letter spelling-lock directive for every on-slide string."))
+
+        # --- C8 verbatim copy baked (AF-P-VERBATIM) ---
+        for mc in _verbatim_copy_problems(stripped, copy_map.get(ordinal)):
+            deficiencies.append(_pdef(
+                "AF-P-VERBATIM", "reauthor", "copy not baked", mc, "Typography/Verbatim",
+                f"Bake the slide's exact copy string verbatim so kie.ai renders it: {mc}"))
+
+        # --- C9 density + demographic landmine (AF-P-DENSITY / AF-R3) ---
+        for dd in _prompt_density_problems(stripped, lc):
+            deficiencies.append(_pdef(
+                "AF-P-DENSITY", "reauthor", "thin/padded",
+                "hex + type-size + composition + distinct-word floor", "Density", dd))
+        for landmine in FORBIDDEN_DEMOGRAPHIC_DEFAULTS:
+            if landmine.lower() in lc:
+                deficiencies.append(_pdef(
+                    "AF-R3", "fatal", f"landmine '{landmine}'", "no demographic default",
+                    "Representation",
+                    "Remove the hardcoded demographic-default landmine; cast from the "
+                    "client's captured audience / casting ledger (SOP-CAST-01)."))
+
+        # --- C10 EXCELLENCE (AF-EXCELLENCE) ---
+        score, ereasons = _excellence_score(stripped)
+        if score < PROMPT_EXCELLENCE_FLOOR:
+            deficiencies.append(_pdef(
+                "AF-EXCELLENCE", "reauthor", f"{score:.2f}", f">= {PROMPT_EXCELLENCE_FLOOR:.2f}",
+                "Excellence",
+                "Spend the budget on defect-preventing specificity, not padding: "
+                + "; ".join(ereasons[:5])))
+
+        slides[ordinal] = {"char_count": length, "excellence": score,
+                           "deficiencies": deficiencies}
+        if any(d["severity"] in ("fatal", "reauthor") for d in deficiencies):
+            any_blocking = True
+        for d in deficiencies:
+            flat.append(dict(d, slide=ordinal))
+
+    flat_deck = [dict(d, slide=d.get("slide", "DECK")) for d in deck_def]
+    return {"pass": not any_blocking, "n_slides": n, "slides": slides,
+            "deck_deficiencies": deck_def, "deficiencies": flat + flat_deck}
+
+
 PREFLIGHT_REQUIRED = [
     ("working/copy/intake.json",
      "intake.json (interview_confirmed:true, presentation_mode one-person|general)",
@@ -4642,6 +5283,30 @@ PREFLIGHT_REQUIRED = [
      "slide copy authored per doctrine (hook recurs across the deck, 3-4 band, 10 components)",
      "Phase 4 — Slide Copywriter SOP",
      _chk_slides_copy),
+    # G1 — WRITING-half INTELLIGENCE engines (Story villain-before-hero, Emotional
+    # felt-stakes-before-offer, Hook copy refrain, Recap) + narrative harmony, fired at
+    # COPY-QC (the EARLIEST phase, BEFORE any image prompt is authored — shift-left).
+    # Wires intelligence_engines_check.check_copy into preflight so the narrative engines
+    # fire DETERMINISTICALLY, not by an agent choosing to run a script. Run-dir-scoped
+    # (None sentinel); defers pre-copy.
+    (None,
+     "intelligence engines (copy) — the deck plants the VILLAIN before the first HERO "
+     "beat (Story), lands a felt-stakes quantifier BEFORE the offer (Emotional), carries "
+     "the Hook refrain, and coheres as a narrative arc (AF-NO-VILLAIN / AF-NO-FELT-STAKES)",
+     "Phase 1Q/COPY-QC — Slide Copywriter SOP + intelligence_engines_check.py --phase copy (G1)",
+     check_intelligence_engines_copy),
+    # G2 — persuasion (offer) sub-engines: cadence / cost-of-inaction / branded-method /
+    # guarantee specificity / time-to-result, fired at COPY-QC (PROMISE PRECEDES PRICE).
+    # Wires pitch_engines_check.check_copy into preflight. CONDITIONAL on pitch_included
+    # (defers for a pitchless / unset deck, mirroring _chk_pitch). Run-dir-scoped; defers
+    # pre-copy.
+    (None,
+     "pitch engines (offer) — PROMISE precedes PRICE; the offer carries a value cadence, "
+     "a quantified cost-of-inaction, a non-generic guarantee, a real branded method, and "
+     "a concrete time-to-result (AF-CADENCE / AF-NO-COST-OF-INACTION / AF-GUARANTEE-GENERIC "
+     "/ AF-NO-BRANDED-METHOD / AF-NO-TIME-TO-RESULT)",
+     "Phase 1Q/COPY-QC — Offer Price Strategist + pitch_engines_check.py --phase 1Q (G2)",
+     check_pitch_engines),
     ("working/research/design-brief-*.md",
      "typography/design brief — per-slide creative art direction",
      "Phase F — Typography Architect / SOP-DESIGN-01/02",
@@ -4731,6 +5396,19 @@ PREFLIGHT_REQUIRED = [
      "AF-LIGHT-PROMPT-MISSING / AF-WORLD-SCALE / AF-HAIR-INAUTHENTIC)",
      "Phase 2/Prompt-QC — Slide Image Creator SOP 9.2/9.3 + intelligence_engines_check.py --phase prompt",
      check_intelligence_engines_prompt),
+    # G6 — EXCELLENCE quality floor (AF-EXCELLENCE), fired at PROMPT-QC, BEFORE any render
+    # (the money step). Every prompt must score >= PROMPT_EXCELLENCE_FLOOR on the EXCELLENCE
+    # dimension: the char budget must buy defect-preventing specificity, not padding. This
+    # is the QUALITY floor that sits ALONGSIDE the 9,000-char LENGTH floor (two independent
+    # gates, §1.1a) — a floor-grazing boilerplate-padded prompt clears 9,000 chars yet
+    # routes back here. Run-dir-scoped (None sentinel); defers pre-prompt.
+    (None,
+     "prompt excellence — every rich prompt scores above the EXCELLENCE floor (full 8-class "
+     "negative block, per-string spelling-lock, people-anatomy + world-grounding, brand HEX "
+     "+ type SIZE + composition, lexical richness); padding to clear 9,000 chars routes back "
+     "(AF-EXCELLENCE)",
+     "Phase Prompt-QC — Slide Image Creator / Prompt QC (amazing-not-compliant, AF-EXCELLENCE)",
+     check_prompt_excellence),
     # KIE-BAKED gate (AF-I14). Once a render record exists, EVERY rendered slide must
     # map to a real KIE taskId + a verified, above-floor PNG (no native render, no
     # flat-placeholder fill). Run-dir-scoped (reads process_manifest.json + needs the
@@ -4774,6 +5452,18 @@ PREFLIGHT_REQUIRED = [
      "Phase Image-QC / Postflight — Slide Image Creator + Typography Architect "
      "(AF-BRAND-CONSISTENCY)",
      check_brand_consistency),
+    # G5 — DECK HARMONY (AF-HARMONY), fired PRE-ASSEMBLY (after render, before assembly/
+    # delivery). Proves the engines are ORCHESTRATED IN HARMONY across the deck — recurring-
+    # character continuity, palette/brand coherence, world continuity, archetype RHYTHM —
+    # not just that each slide passes in isolation. An individually-fine but incoherent deck
+    # is caught BEFORE it is assembled and shipped. Run-dir-scoped (None sentinel); defers
+    # pre-render (no PNGs yet).
+    (None,
+     "deck harmony — the engines cohere across the deck: recurring character continuity, "
+     "palette/brand coherence, world continuity, and a deliberate archetype rhythm (not 40 "
+     "one-offs); re-render only the inconsistent slides (AF-HARMONY)",
+     "Pre-Assembly — Director of Presentations (harmony owner; SOP-HARMONY-01, AF-HARMONY)",
+     check_deck_harmony),
     # AF-PACKAGE-CLEAN gate (2026-06-19). The final bundle directory must contain
     # only the canonical deliverable files (no .py/.sh/~$*/tasks/ artifacts).
     # Defers when bundle_dir does not exist. Fires at postflight closeout.

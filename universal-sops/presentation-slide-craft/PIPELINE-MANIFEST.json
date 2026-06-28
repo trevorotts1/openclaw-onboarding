@@ -1,5 +1,5 @@
 {
-  "manifest_version": 16,
+  "manifest_version": 17,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -70,11 +70,22 @@
   ],
   "$bundle_note": "TWO distinct file sets, explicitly separated so 'the bundle' is never ambiguous. build_bundle_files = the NINE operator-side build artifacts (the full DELIVERABLES_REQUIRED key set in build_deck.py) that must all exist + clear their min_bytes before closeout. client_package_files = the FIVE files the client actually receives in delivery/[DECK_SLUG]-FINAL/ (the AF-DH1 whitelist). The four build-only artifacts (speech_md, speech_fish_md, infographic_png, teleprompter_html) are inputs/working products, not loose client files. AF-DELIVER + AF-DH1 + AF-DELIVERY-COMPLETE all read client_package_files (FIVE); the per-artifact existence/size gate reads build_bundle_files (NINE).",
   "build_bundle_files": [
-    "deck_pptx", "deck_pdf", "guide_pdf", "speech_md", "speech_pdf",
-    "speech_fish_md", "audio_mp3", "infographic_png", "teleprompter_html"
+    "deck_pptx",
+    "deck_pdf",
+    "guide_pdf",
+    "speech_md",
+    "speech_pdf",
+    "speech_fish_md",
+    "audio_mp3",
+    "infographic_png",
+    "teleprompter_html"
   ],
   "client_package_files": [
-    "deck_pptx", "deck_pdf", "guide_pdf", "speech_pdf", "audio_mp3"
+    "deck_pptx",
+    "deck_pdf",
+    "guide_pdf",
+    "speech_pdf",
+    "audio_mp3"
   ],
   "phases": [
     {
@@ -228,7 +239,7 @@
         {
           "required": true,
           "checker": "_chk_asset_question",
-          "label": "asset-intake question asked (intake records asset_intake_question_asked:true — the one question about photos/logo/colors/rough deck/slides/concepts; AF-ASSET-QUESTION-MISSING)"
+          "label": "asset-intake question asked (intake records asset_intake_question_asked:true \u2014 the one question about photos/logo/colors/rough deck/slides/concepts; AF-ASSET-QUESTION-MISSING)"
         },
         {
           "required": true,
@@ -336,7 +347,7 @@
       "preflight": {
         "required": true,
         "checker": "_chk_research_map",
-        "label": "research woven across the deck — research_map.json maps facts/quotes/stats to >=60% of non-exempt content slides; >=8 distinct items (AF-RESEARCH-WEAVE; defers until copy exists)"
+        "label": "research woven across the deck \u2014 research_map.json maps facts/quotes/stats to >=60% of non-exempt content slides; >=8 distinct items (AF-RESEARCH-WEAVE; defers until copy exists)"
       }
     },
     {
@@ -1218,7 +1229,7 @@
       "stage": "Intake",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "Decision 1C. intake.json does not record asset_intake_question_asked:true. Every signature run MUST ask the client the one asset-intake question (anything they already have — photos, a logo, brand colors, a rough/old deck, slides, or concepts) and record that it was asked. Defers (passes) only when intake.json is absent (AF-SLIDE-COUNT-FLOOR / _chk_intake own intake absence).",
+      "trigger": "Decision 1C. intake.json does not record asset_intake_question_asked:true. Every signature run MUST ask the client the one asset-intake question (anything they already have \u2014 photos, a logo, brand colors, a rough/old deck, slides, or concepts) and record that it was asked. Defers (passes) only when intake.json is absent (AF-SLIDE-COUNT-FLOOR / _chk_intake own intake absence).",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_asset_question",
       "secondary_py_symbols": [
@@ -1230,7 +1241,7 @@
       "stage": "Intake/2",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "Decision 1C. The client provided assets but assets_manifest.json is absent/invalid, OR a provided asset is not provably consumed downstream — it lacks a resolvable public_url and/or a non-empty consumed_by list (so it is never fed to the Brand Steward + Slide Image Creator as gpt-image-2 input_urls). Collected-but-ignored assets fail. Defers when no assets were provided.",
+      "trigger": "Decision 1C. The client provided assets but assets_manifest.json is absent/invalid, OR a provided asset is not provably consumed downstream \u2014 it lacks a resolvable public_url and/or a non-empty consumed_by list (so it is never fed to the Brand Steward + Slide Image Creator as gpt-image-2 input_urls). Collected-but-ignored assets fail. Defers when no assets were provided.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_assets_manifest",
       "secondary_py_symbols": [
@@ -1251,7 +1262,7 @@
       "stage": "Intake/1",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "Decision 2A. intake.json.pitch_included is missing or not a boolean at intake. The deck must capture an EXPLICIT yes/no (yes = the presentation ends with an offer/pitch; no = a teaching/content-only presentation). It is non-defaultable — a deck must never silently inherit 'has a pitch'. Defers when intake.json is absent (_chk_intake owns that).",
+      "trigger": "Decision 2A. intake.json.pitch_included is missing or not a boolean at intake. The deck must capture an EXPLICIT yes/no (yes = the presentation ends with an offer/pitch; no = a teaching/content-only presentation). It is non-defaultable \u2014 a deck must never silently inherit 'has a pitch'. Defers when intake.json is absent (_chk_intake owns that).",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_pitch_flag",
       "secondary_py_symbols": [
@@ -1291,7 +1302,7 @@
       "stage": "Runner",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "Decision 3C. The deterministic signature runner (scripts/run_signature_deck.py) dispatched a phase without every lower-order phase having an attestation in working/checkpoints/process_manifest.json AND its produces_artifact present — and no logged OWNER-AUTHORIZED skip record (working/checkpoints/phase_skip_approvals.json owner_approved:true) covers the missing phase. Phase N+1 reads phase N's attestation as a precondition, so skipping/reordering a phase is structurally impossible except via an explicit, logged owner authorization (not a free flag).",
+      "trigger": "Decision 3C. The deterministic signature runner (scripts/run_signature_deck.py) dispatched a phase without every lower-order phase having an attestation in working/checkpoints/process_manifest.json AND its produces_artifact present \u2014 and no logged OWNER-AUTHORIZED skip record (working/checkpoints/phase_skip_approvals.json owner_approved:true) covers the missing phase. Phase N+1 reads phase N's attestation as a precondition, so skipping/reordering a phase is structurally impossible except via an explicit, logged owner authorization (not a free flag).",
       "enforced_by": "runner",
       "py_symbol": null
     },
@@ -1300,7 +1311,7 @@
       "stage": "5/6/Postflight",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "Decision 5C. The native PPTX text/element-overlay path is ELIMINATED. Fires when an eliminated pptx_text_overlays.json file is present in the run dir (its mere presence at assembly is a violation), OR any delivered slide carries a native (non-notes) on-slide text run instead of a single composed gpt-image-2 image. Persistent garble escalates to a re-prompt/re-seed loop then human escalation — never a native overlay. Strengthens (does not replace) AF-BAKED / AF-I14. The only legitimate PPTX text part is the off-slide speaker-notes pane.",
+      "trigger": "Decision 5C. The native PPTX text/element-overlay path is ELIMINATED. Fires when an eliminated pptx_text_overlays.json file is present in the run dir (its mere presence at assembly is a violation), OR any delivered slide carries a native (non-notes) on-slide text run instead of a single composed gpt-image-2 image. Persistent garble escalates to a re-prompt/re-seed loop then human escalation \u2014 never a native overlay. Strengthens (does not replace) AF-BAKED / AF-I14. The only legitimate PPTX text part is the off-slide speaker-notes pane.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_no_overlay",
       "secondary_py_symbols": [
@@ -1313,7 +1324,7 @@
       "stage": "4/6/Postflight",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). The deck — or any slide PNG — was produced by a path other than the ONE canonical render surface scripts/build_deck.py + scripts/run_signature_deck.py kie.ai gpt-image-2 path. Fires when working/checkpoints/process_manifest.json carries no phase=='render' attestation written by build_deck.py (write_process_manifest), when a hand-rolled / per-deck renderer or assembler under working/*.py (a direct kie createTask, a slide-canvas builder, or a native add_textbox assembler) produced or could produce the pixels, or when any delivered slide cannot be tied to a real canonical kie taskId / recordInfo trace. The build_deck-enforced, NON-NULL successor of the toothless closeout-only AF-RENDERER (which it strengthens, never replaces). MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) — never silently, never by an agent's own choice.",
+      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). The deck \u2014 or any slide PNG \u2014 was produced by a path other than the ONE canonical render surface scripts/build_deck.py + scripts/run_signature_deck.py kie.ai gpt-image-2 path. Fires when working/checkpoints/process_manifest.json carries no phase=='render' attestation written by build_deck.py (write_process_manifest), when a hand-rolled / per-deck renderer or assembler under working/*.py (a direct kie createTask, a slide-canvas builder, or a native add_textbox assembler) produced or could produce the pixels, or when any delivered slide cannot be tied to a real canonical kie taskId / recordInfo trace. The build_deck-enforced, NON-NULL successor of the toothless closeout-only AF-RENDERER (which it strengthens, never replaces). MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) \u2014 never silently, never by an agent's own choice.",
       "enforced_by": "build_deck",
       "py_symbol": "check_canonical_render_path",
       "secondary_py_symbols": [
@@ -1325,7 +1336,7 @@
       "stage": "4/5/6",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). A slide image was fabricated LOCALLY instead of baked by kie.ai gpt-image-2 — the local-Pillow/PIL slide-canvas signature. Fires when a working/*.py script constructs a 2048x1152 (or any full-bleed) slide canvas via PIL Image.new / ImageDraw to draw a cream or color typography card, when a slide PNG falls below the 51,200-byte kie-bake floor (PLACEHOLDER_MIN_BYTES — the flat-cream-card signature), or when a pure-typography hook slide carries no real kie taskId. The ONLY Pillow/PIL step permitted anywhere is the locked-logo image composite (SOP-IMG-05); never a slide canvas, surface, or text. 'skip kie.ai for this slide' is doctrine-illegal and appears in no role, SOP, or script. Strengthens (does not replace) AF-BAKED / AF-I14. MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) — never silently, never by an agent's own choice.",
+      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). A slide image was fabricated LOCALLY instead of baked by kie.ai gpt-image-2 \u2014 the local-Pillow/PIL slide-canvas signature. Fires when a working/*.py script constructs a 2048x1152 (or any full-bleed) slide canvas via PIL Image.new / ImageDraw to draw a cream or color typography card, when a slide PNG falls below the 51,200-byte kie-bake floor (PLACEHOLDER_MIN_BYTES \u2014 the flat-cream-card signature), or when a pure-typography hook slide carries no real kie taskId. The ONLY Pillow/PIL step permitted anywhere is the locked-logo image composite (SOP-IMG-05); never a slide canvas, surface, or text. 'skip kie.ai for this slide' is doctrine-illegal and appears in no role, SOP, or script. Strengthens (does not replace) AF-BAKED / AF-I14. MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) \u2014 never silently, never by an agent's own choice.",
       "enforced_by": "build_deck",
       "py_symbol": "check_canonical_render_path",
       "secondary_py_symbols": [
@@ -1337,7 +1348,7 @@
       "stage": "Image-QC/Postflight",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). The image-QC pass is PIXEL-BLIND — it graded a self-typed number, reasoned from filenames / prompt text, or omitted a real multimodal vision read of one or more rendered slide PNGs. Fires when working/qc/vision_qc_log.json is absent / empty or lacks a non-null vision_api_response provenance record for EVERY rendered slide, when the image-QC report excludes any slide index from scope (e.g. 'slides 1/24/49 out of scope'), or when the report blesses a native typography-overlay model (a typography_overlay_readiness criterion or an 'overlay the headlines' recommendation). Every slide — cover, section dividers, and pure-typography / hook slides included — is in scope under the same battery. The build_deck-enforced, deterministic vision-provenance successor of the closeout-only AF-NO-VISION-QC; complements _chk_image_qc (report gate) and check_image_qc_present (freshness gate). MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) — never silently, never by an agent's own choice.",
+      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). The image-QC pass is PIXEL-BLIND \u2014 it graded a self-typed number, reasoned from filenames / prompt text, or omitted a real multimodal vision read of one or more rendered slide PNGs. Fires when working/qc/vision_qc_log.json is absent / empty or lacks a non-null vision_api_response provenance record for EVERY rendered slide, when the image-QC report excludes any slide index from scope (e.g. 'slides 1/24/49 out of scope'), or when the report blesses a native typography-overlay model (a typography_overlay_readiness criterion or an 'overlay the headlines' recommendation). Every slide \u2014 cover, section dividers, and pure-typography / hook slides included \u2014 is in scope under the same battery. The build_deck-enforced, deterministic vision-provenance successor of the closeout-only AF-NO-VISION-QC; complements _chk_image_qc (report gate) and check_image_qc_present (freshness gate). MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) \u2014 never silently, never by an agent's own choice.",
       "enforced_by": "build_deck",
       "py_symbol": "check_image_qc_vision",
       "secondary_py_symbols": [
@@ -1349,7 +1360,7 @@
       "stage": "Typography/Design",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the DECLARED type system (working/typography/type_layout_system.md) sets a body/subhead size below the 18pt-equivalent floor (22pt when client_dark_theme opt-in), declares a non-modular type scale (not 4-5 steps), or a text contrast below WCAG AA (4.5:1 normal; 7:1 when dark opt-in) — OR the type_layout_system.md tokens are missing once a design system exists (the R8 phantom-artifact hole). DETERMINISTIC numeric rejector that COMPLEMENTS the vision-opinion AF-TYPOGRAPHY-QC; it rejects a sub-floor declared design BEFORE any render.",
+      "trigger": "the DECLARED type system (working/typography/type_layout_system.md) sets a body/subhead size below the 18pt-equivalent floor (22pt when client_dark_theme opt-in), declares a non-modular type scale (not 4-5 steps), or a text contrast below WCAG AA (4.5:1 normal; 7:1 when dark opt-in) \u2014 OR the type_layout_system.md tokens are missing once a design system exists (the R8 phantom-artifact hole). DETERMINISTIC numeric rejector that COMPLEMENTS the vision-opinion AF-TYPOGRAPHY-QC; it rejects a sub-floor declared design BEFORE any render.",
       "enforced_by": "build_deck",
       "py_symbol": "check_font_floor",
       "secondary_py_symbols": [
@@ -1461,7 +1472,7 @@
       "stage": "Prompt",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "a slide prompt fails the density gate: missing a hex color code, missing a type-size spec (e.g. '36pt', '48px'), missing a composition/zone token (e.g. 'left third', 'upper right', 'center zone'), or carrying fewer than PROMPT_MIN_DISTINCT_WORDS (220) distinct words — the word-count rubber-stamp is replaced by a true distinct-word density check.",
+      "trigger": "a slide prompt fails the density gate: missing a hex color code, missing a type-size spec (e.g. '36pt', '48px'), missing a composition/zone token (e.g. 'left third', 'upper right', 'center zone'), or carrying fewer than PROMPT_MIN_DISTINCT_WORDS (220) distinct words \u2014 the word-count rubber-stamp is replaced by a true distinct-word density check.",
       "enforced_by": "build_deck",
       "py_symbol": "_prompt_density_problems",
       "secondary_py_symbols": [
@@ -1475,7 +1486,7 @@
       "stage": "Prompt",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "a slide's rich prompt does not contain verbatim copies of the non-trivial copy strings (headline, subhead, CTA) from slides.json — the prompt is the canonical render surface and must bake copy into the model instruction, not rely on post-render overlay.",
+      "trigger": "a slide's rich prompt does not contain verbatim copies of the non-trivial copy strings (headline, subhead, CTA) from slides.json \u2014 the prompt is the canonical render surface and must bake copy into the model instruction, not rely on post-render overlay.",
       "enforced_by": "build_deck",
       "py_symbol": "_verbatim_copy_problems",
       "secondary_py_symbols": [
@@ -1501,9 +1512,99 @@
       "stage": "Prompt/Prompt-QC",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "a people-bearing prompt is missing facial expression/emotion tokens AND/OR lighting direction tokens (key/fill/rim) — the build_deck.py intelligence-engine mechanical check wired to check_intelligence_engines_prompt(). Complements the qc_check-owned AF-FACE-PROMPT-MISSING / AF-LIGHT-PROMPT-MISSING with a hard build-gate enforcement.",
+      "trigger": "a people-bearing prompt is missing facial expression/emotion tokens AND/OR lighting direction tokens (key/fill/rim) \u2014 the build_deck.py intelligence-engine mechanical check wired to check_intelligence_engines_prompt(). Complements the qc_check-owned AF-FACE-PROMPT-MISSING / AF-LIGHT-PROMPT-MISSING with a hard build-gate enforcement.",
       "enforced_by": "build_deck",
       "py_symbol": "check_intelligence_engines_prompt"
+    },
+    {
+      "code": "AF-C2",
+      "stage": "1Q/Prompt-QC",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "hook cadence out of the sanctioned banded range: the refrain appears on >4 slides (over-stamp / wallpaper) OR on 2+ consecutive slides OR in every footer-band OR on fewer than the 3 named anchor beats \u2014 i.e. BOTH the ceiling and the floor are enforced. A deck that wallpapers the hook everywhere AND a deck that barely plants it fail AF-C2.",
+      "enforced_by": "qc_check",
+      "py_symbol": null
+    },
+    {
+      "code": "AF-COPY",
+      "stage": "1Q/Prompt-QC",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "generic copy-engine deficiency emitted when an intelligence-engine problem dict carries no specific code \u2014 a catch-all that names the failing dimension; the exact failure is in the detail field of the routeback work order",
+      "enforced_by": "build_deck",
+      "py_symbol": "_engine_problem_to_def"
+    },
+    {
+      "code": "AF-EXCELLENCE",
+      "stage": "Prompt-QC",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "a slide prompt clears the 9,000-char LENGTH floor but scores below the EXCELLENCE floor (0.55) on the QUALITY dimension: negative-block coverage, spelling-lock richness, anatomy/world-grounding, brand HEX + type SIZE + composition, and lexical richness \u2014 two independent floors (length AND excellence); boilerplate-padded prompts route back",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_prompt_excellence"
+    },
+    {
+      "code": "AF-HARMONY",
+      "stage": "Pre-Assembly",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the engines pass per-slide but the deck fails cohesion: recurring-character continuity broken, palette/brand not orchestrated, world continuity absent, or archetype rhythm absent (40 unrelated one-offs); fires BEFORE assembly so only the inconsistent slides are re-rendered, not the whole deck",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_deck_harmony"
+    },
+    {
+      "code": "AF-HOOK",
+      "stage": "Prompt-QC",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "the sacred refrain is baked into a FOOTER or bottom recurring band on a slide's image prompt \u2014 the hook is never a footer stamp; footer placement on ANY slide fails this slide regardless of deck-level hook count",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_intelligence_engines_prompt"
+    },
+    {
+      "code": "AF-INTELLIGENCE",
+      "stage": "Prompt-QC",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "generic intelligence-engine failure when a perceptual-engine problem dict carries no specific AF code \u2014 emitted by check_prompt_qc_deterministic as a catch-all for unclassified engine token absence; the exact failing engine dimension is in the routeback work order",
+      "enforced_by": "build_deck",
+      "py_symbol": "_engine_name_for_code"
+    },
+    {
+      "code": "AF-INTELLIGENCE-COPY",
+      "stage": "1Q/COPY-QC",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the WRITING-half intelligence engines (Story villain-before-hero, Emotional felt-stakes-before-offer, Hook copy refrain, Recap, narrative harmony) auto-failed at COPY-QC \u2014 the deck must fix the SCRIPT before any image prompt is authored (shift-left); no prompts are authored until this gate passes",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_intelligence_engines_copy"
+    },
+    {
+      "code": "AF-OBI",
+      "stage": "1Q",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "generic One-Big-Idea violation catch-all \u2014 the OBI dimension name for any unclassified multi-idea defect; the specific violation is carried by the AF-OBI-1..6 sub-codes; this base code labels the dimension in routeback work orders",
+      "enforced_by": "qc_check",
+      "py_symbol": null
+    },
+    {
+      "code": "AF-P-STRUCT",
+      "stage": "Prompt-QC",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "a slide's rich prompt is missing one or more of the REQUIRED_STRUCTURAL_BLOCKS \u2014 the mandatory sections (ARCHETYPE, NEGATIVE BLOCK, 'Do not ' imperatives) that the build preflight asserts are present; a prompt that lacks a block cannot render correctly and routes back",
+      "enforced_by": "build_deck",
+      "py_symbol": "REQUIRED_STRUCTURAL_BLOCKS"
+    },
+    {
+      "code": "AF-PITCH-ENGINE",
+      "stage": "1Q/COPY-QC",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the persuasion (offer) sub-engine checker (pitch_engines_check.py) could not be imported, exposes no check_copy entry point, raised an exception, or the offer sub-engines auto-failed at COPY-QC (PROMISE must precede PRICE; value cadence, cost-of-inaction, branded method, guarantee specificity, and time-to-result must all pass before any prompt is authored \u2014 shift-left)",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_pitch_engines"
     }
   ],
   "roles": [

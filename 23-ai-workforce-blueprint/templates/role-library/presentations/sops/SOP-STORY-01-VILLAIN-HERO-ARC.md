@@ -5,7 +5,8 @@
 **Enforced at the gate by:** QC Specialist - Presentations (deck-level auto-fail AF-NO-VILLAIN at Phase 1Q, re-verified Phase 6)
 **Detection script:** `scripts/intelligence_engines_check.py --phase copy` (zero deps; exit 4 on drift)
 **Registered:** SOP-SLIDE-00 §8b + §9 code index; SOP-ENGINE-00 Engine 4
-**Status:** Doctrine procedure, ENFORCED (mechanical). This SOP does NOT touch `build_deck.py`'s render path.
+**Enforcement phase:** **WRITING (copy).** The villain→hero ordering is a SCRIPT property and is proven at COPY-QC (Phase 1Q), the EARLIEST phase it is detectable — before any image prompt is authored, so a broken arc is fixed in the script, not after 50 prompts are written against it.
+**Status:** Doctrine procedure, ENFORCED (mechanical). As of **v15.0.0** the `AF-NO-VILLAIN` checker (`intelligence_engines_check.py check_copy`) ALSO fires un-bypassably inside the render preflight via `build_deck.check_intelligence_engines_copy` (registered in `PREFLIGHT_REQUIRED`): a deck with a missing or mis-ordered villain cannot reach kie.ai even if Phase-1Q copy-QC was skipped. A copy-QC failure routes back through the SEND-BACK loop (`run_copy_qc_loop`, SOP-SLIDE-00 §5.5) to the Slide Copywriter, re-authoring only the failing beat, bounded by `PROMPT_QC_MAX_ATTEMPTS`.
 
 ---
 

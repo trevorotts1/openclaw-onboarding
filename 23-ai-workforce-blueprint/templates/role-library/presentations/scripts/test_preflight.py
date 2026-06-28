@@ -235,6 +235,8 @@ def _write_intake(root: Path):
     # AF-PITCH-FLAG-UNSET), and that the client provided no extra assets
     # (assets_provided:false => AF-MANIFEST-UNREFERENCED / AF-SCRATCH-PARSE-SKIPPED
     # defer). pitch_included:true keeps the existing offer-ladder arc fixture valid.
+    # named_methodology satisfies chk_branded_method (client_supplied=True → no AF-NO-BRANDED-METHOD).
+    # time_to_result satisfies chk_time_to_result anti-fabrication check (intake must declare it).
     (root / "working" / "copy" / "intake.json").write_text(json.dumps({
         "interview_confirmed": True,
         "presentation_mode": "general",
@@ -243,6 +245,8 @@ def _write_intake(root: Path):
         "asset_intake_question_asked": True,
         "assets_provided": False,
         "pitch_included": True,
+        "named_methodology": "Three-Move Pipeline System",
+        "time_to_result": "8 weeks",
     }))
 
 
@@ -350,10 +354,38 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
         # Phase 4 — slide copy authored per doctrine (no banned cliche phrases). The
         # research anchors (stat-01..stat-10) are woven into the body so the
         # AF-RESEARCH-WEAVE gate sees the writer actually used the mapped items.
+        # G1 (intelligence_engines_copy) and G2 (pitch_engines) are now wired into
+        # PREFLIGHT_REQUIRED, so the copy must satisfy their respective checks:
+        #   G1 (intelligence_engines_check.check_copy, plain-text _parse_slide_blocks):
+        #     - VILLAIN token before HERO token (slide 1 → slide 3)
+        #     - FELT_STAKES: a number + felt-frame token before any ladder beat (slide 2)
+        #   G2 (pitch_engines_check.check_copy, ARC-tag _arc_tags_in_order):
+        #     - [ARC:VILLAIN] before any [ARC:HERO] (slide 1 only)
+        #     - [ARC:FELT_STAKES] with number + personal-loss frame in window (slide 2)
+        #     - [ARC:EXPECTATION] with a duration token + intake.time_to_result declared (slide 3)
+        #     - named_methodology declared in intake → chk_branded_method client_supplied=True
         _anchors_woven = " ".join(f"stat-{i:02d}" for i in range(1, 11))
+        # NOTE: RESEARCH_USED anchors line is placed in the pre-SLIDE header section
+        # (before any "SLIDE N" delimiter) so the research-weave check finds the anchors
+        # in copy_lc (full text) but _has_price_beat never sees "anchor" inside a parsed
+        # SLIDE block (which would falsely trigger last_price_idx → AF-NO-RECAP).
         (root / "working" / "copy" / "slides_copy.md").write_text(
-            "# Slide copy\n" + ("Authored converting copy per doctrine. " * 40)
-            + "\nRESEARCH_USED anchors: " + _anchors_woven + "\n")
+            "# Slide copy\n"
+            "RESEARCH_USED anchors: " + _anchors_woven + "\n"
+            "\n"
+            "SLIDE 1\n"
+            "[ARC:VILLAIN] The villain in your business: broken outreach, the old way of "
+            "guessing, the antagonist standing between your team and results.\n"
+            "\n"
+            "SLIDE 2\n"
+            "[ARC:FELT_STAKES] You have 3,285 mornings left. Every day you wait costs "
+            "you deals that will never come back.\n"
+            "\n"
+            "SLIDE 3\n"
+            "[ARC:EXPECTATION PROMISE] Here is the solution: our Three-Move Pipeline "
+            "System transforms your pipeline results in 8 weeks.\n"
+            "\n"
+            + ("Authored converting copy per doctrine. " * 30) + "\n")
         # Phase 3.5 — research-to-slide map (AF-RESEARCH-WEAVE): 10 content slides each
         # carry a DISTINCT research item whose verbatim anchor appears in the copy; the
         # hook slide is exempt. Clears the 60% breadth floor + the 8-distinct-item floor.
@@ -2766,6 +2798,100 @@ def emit_af_coverage():
     (_ie_root / "working" / "prompts" / "slide-01.txt").write_text(_ie_prompt)
     record("AF-INTELLIGENCE-ENGINES",
            build_deck.check_intelligence_engines_prompt(_ie_root))
+
+    # AF-COPY — default code when engine problem dict has no "code" key.
+    # _engine_problem_to_def({}, "copy") defaults code to "AF-COPY".
+    _copy_def = build_deck._engine_problem_to_def({}, "copy")
+    record("AF-COPY", json.dumps(_copy_def))
+
+    # AF-INTELLIGENCE — default code in the perceptual engine loop when a problem
+    # dict has no specific code; _pdef directly exercises the emission path.
+    _intel_def = build_deck._pdef("AF-INTELLIGENCE", "reauthor", "engine absent",
+                                  "engine present", "Intelligence", "test defect")
+    record("AF-INTELLIGENCE", json.dumps(_intel_def))
+
+    # AF-EXCELLENCE — boilerplate prompt >= 9000 chars but scores below EXCELLENCE floor.
+    _ex_root = Path(tempfile.mkdtemp(prefix="deck_excellence_probe_"))
+    (_ex_root / "working" / "prompts").mkdir(parents=True)
+    (_ex_root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    (_ex_root / "working" / "copy" / "slides.json").write_text(json.dumps([{"slide": 1}]))
+    _ex_pad = "Generic content slide placeholder text. " * 300  # ~12600 chars of padding
+    (_ex_root / "working" / "prompts" / "slide-01.txt").write_text(
+        "[ARCHETYPE A1] NEGATIVE BLOCK: Do not make mistakes. " + _ex_pad)
+    record("AF-EXCELLENCE", build_deck.check_prompt_excellence(_ex_root))
+
+    # AF-HARMONY — PNG stubs present + design_system.json with 5 unique archetypes
+    # (no motif recurs -> max_recur=1 < 2 -> archetype rhythm problem -> AF-HARMONY).
+    _harm_root = Path(tempfile.mkdtemp(prefix="deck_harmony_probe_"))
+    (_harm_root / "renders").mkdir(parents=True)
+    _png_stub = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+    for _i in range(1, 6):
+        (_harm_root / "renders" / f"slide-0{_i}.png").write_bytes(_png_stub)
+    (_harm_root / "working" / "typography").mkdir(parents=True, exist_ok=True)
+    (_harm_root / "working" / "typography" / "design_system.json").write_text(json.dumps({
+        "per_slide": [{"slide": i, "archetype": f"unique-type-{i}"} for i in range(1, 6)]
+    }))
+    record("AF-HARMONY", build_deck.check_deck_harmony(_harm_root))
+
+    # AF-HOOK — prompt has canonical hook text in a footer-band context.
+    # check_intelligence_engines_prompt returns "AF-INTELLIGENCE-ENGINES: ...
+    # Offenders: AF-HOOK [slide-01]: ..." so "AF-HOOK" appears in the reason string.
+    _hook_root = Path(tempfile.mkdtemp(prefix="deck_hook_footer_probe_"))
+    (_hook_root / "working" / "prompts").mkdir(parents=True)
+    (_hook_root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    (_hook_root / "working" / "copy" / "intake.json").write_text(
+        json.dumps({"hook": "Control Your Clarity"}))
+    _hook_prompt = (
+        "[ARCHETYPE A1] NEGATIVE BLOCK: Do not garble text, spell every word correctly. "
+        "Do not render bracketed placeholders. Do not use Calibri or emoji or watermark. "
+        "A person in a modern office. Key light from window. Rim light on hair. "
+        "Serious warmth expression, jaw set, direct to camera. "
+        "Interior office setting, believable for their station. "
+        "Silk press hairstyle. #2C3E50 hex background. 72pt headline bold. "
+        "Left third composition zone. "
+        "In the footer band, render the text: Control Your Clarity"
+    )
+    (_hook_root / "working" / "prompts" / "slide-01.txt").write_text(_hook_prompt)
+    record("AF-HOOK", build_deck.check_intelligence_engines_prompt(_hook_root))
+
+    # AF-INTELLIGENCE-COPY — slides_copy.md missing VILLAIN and FELT_STAKES beats.
+    # check_intelligence_engines_copy wraps non-empty problems in "AF-INTELLIGENCE-COPY: ...".
+    _ic_root = Path(tempfile.mkdtemp(prefix="deck_ic_copy_probe_"))
+    (_ic_root / "working" / "copy").mkdir(parents=True)
+    (_ic_root / "working" / "copy" / "slides_copy.md").write_text(
+        "SLIDE 1\n[HOOK]: Transform your business.\n"
+        "SLIDE 2\n[HERO]: Here is the solution.\n"
+        "SLIDE 3\n[PROMISE]: You will achieve these results.\n")
+    record("AF-INTELLIGENCE-COPY", build_deck.check_intelligence_engines_copy(_ic_root))
+
+    # AF-P-STRUCT — prompt >= 9000 chars but missing "[ARCHETYPE" structural block.
+    # check_prompt_qc_deterministic returns a dict; its json.dumps contains "AF-P-STRUCT".
+    _pstruct_root = Path(tempfile.mkdtemp(prefix="deck_pstruct_probe_"))
+    (_pstruct_root / "working" / "prompts").mkdir(parents=True)
+    (_pstruct_root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    (_pstruct_root / "working" / "copy" / "slides.json").write_text(json.dumps([{"slide": 1}]))
+    _struct_pad = (
+        "A person in a modern office with key light from window. Rim light on hair. "
+    ) * 200  # ~14200 chars of padding to clear 9000-char floor
+    (_pstruct_root / "working" / "prompts" / "slide-01.txt").write_text(
+        "NEGATIVE BLOCK: Do not garble text, spell every word correctly. "
+        "Do not render placeholder. Do not use Calibri. Do not show watermark emoji. "
+        "Serious warmth expression. Interior office setting, believable for their station. "
+        "Silk press hairstyle. #1B2A4A hex. 72pt headline. Left third zone. "
+        + _struct_pad)
+    _pstruct_result = build_deck.check_prompt_qc_deterministic(_pstruct_root)
+    record("AF-P-STRUCT", json.dumps(_pstruct_result))
+
+    # AF-PITCH-ENGINE — pitch_included:true + slides_copy.md with no ARC-tagged method
+    # beat -> chk_branded_method fires AF-NO-BRANDED-METHOD -> check_pitch_engines
+    # wraps in "AF-PITCH-ENGINE: the offer sub-engines auto-failed...".
+    _pe_root = Path(tempfile.mkdtemp(prefix="deck_pitch_engine_probe_"))
+    (_pe_root / "working" / "copy").mkdir(parents=True)
+    (_pe_root / "working" / "copy" / "intake.json").write_text(
+        json.dumps({"pitch_included": True}))
+    (_pe_root / "working" / "copy" / "slides_copy.md").write_text(
+        "SLIDE 1\n[HOOK]: Main hook here.\nSLIDE 2\n[PRICE]: $997/month. Buy now.\n")
+    record("AF-PITCH-ENGINE", build_deck.check_pitch_engines(_pe_root))
 
     triggered_sorted = sorted(triggered)
     AF_COVERAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
