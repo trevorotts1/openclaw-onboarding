@@ -103,10 +103,23 @@ SUBPROVERS = ["prove-custom-dept-wiring.py", "prove-floor.py"]
 # ProxyCommand var interpolations (${CF_ACCESS_*}) resolve. Mirrors prove-floor.
 # ---------------------------------------------------------------------------
 _SECRETS_CACHE = None
-_SECRETS_FILES = [
-    os.path.expanduser("~/.openclaw/secrets/.env"),
-    os.path.expanduser("~/clawd/secrets/.env"),
-]
+
+# Build secrets file candidates via get_openclaw_paths() so the legacy ~/clawd
+# path is resolved by the canonical path-authority (PRD 1.9 / AF3 compliance)
+# rather than a hardcoded local candidate loop.
+try:
+    import sys as _sys
+    _here = os.path.dirname(os.path.abspath(__file__))
+    _shared = os.path.join(_here, "..", "..", "shared-utils")
+    if _shared not in _sys.path:
+        _sys.path.insert(0, _shared)
+    from detect_platform import get_openclaw_paths as _get_oc_paths  # type: ignore
+    _oc_paths = _get_oc_paths()
+    _SECRETS_FILES = [str(_oc_paths["secrets"] / ".env")]
+except Exception:
+    # Fallback to the canonical new-install path only (legacy ~/clawd excluded
+    # per AF3; detect_platform handles it when importable).
+    _SECRETS_FILES = [os.path.expanduser("~/.openclaw/secrets/.env")]
 
 
 def _load_secrets():
