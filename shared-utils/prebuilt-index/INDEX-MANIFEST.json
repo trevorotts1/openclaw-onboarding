@@ -2,22 +2,27 @@
   "model": "gemini-embedding-2",
   "dims": 3072,
   "provider": "gemini",
-  "persona_count": 48,
-  "chunk_count": 7615,
-  "file_count": 144,
-  "sha256": "5554ec1efd99819c46a149b4d3d1dd5abd70649317ae6c54a0b0e9ebab0c09ff",
-  "build_date": "2026-06-22",
-  "release_tag": "prebuilt-index-v2.0.0",
-  "asset_url": "https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v2.0.0/gemini-index.sqlite.gz",
-  "gz_size_bytes": 91370257,
-  "gz_size_mb": 87.14,
-  "source_db_bytes": 103657472,
+  "persona_count": 54,
+  "chunk_count": 4413,
+  "file_count": 68,
+  "sha256": "7282796558edfcf109664c4ee958d15fa184db6cd7274712667de83201e73fe3",
+  "build_date": "2026-06-27",
+  "release_tag": "prebuilt-index-v2.1.0",
+  "asset_url": "https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v2.1.0/gemini-index.sqlite.gz",
+  "gz_size_bytes": 95124620,
+  "gz_size_mb": 90.72,
+  "source_db_bytes": 108150784,
   "hormozi_leads_rows": 99,
   "canonical_persona_count": 54,
   "manifest_last_updated": "2026-06-27",
-  "asset_rebuild_required": true,
+  "asset_rebuild_required": false,
+  "section_tagged": true,
+  "section_tag_note": "embeddings table carries section_number + mode columns. coaching rows at section_number=3, leadership/governance rows at section_number=4. mode values: {both, coaching, leadership}. Section-tagged rows allow mode-aware retrieval without a full re-index.",
+  "schema": {
+    "columns_required": ["section_number", "mode"]
+  },
   "pr363_personas": {
-    "note": "PR #363 (v14.3.19) shipped/finalized the full two-sided persona-blueprint.md (Coaching Mode + Agent-Governance/Task Mode) for these 10 book personas under their CANONICAL slugs, plus non-empty domain[] tags in persona-categories.json (all routable). The published prebuilt asset above (build_date 2026-06-22, release prebuilt-index-v2.0.0) PREDATES these full canonical blueprints and does NOT contain them under their canonical slugs (it embedded the older/partial versions, some under author-prefixed slugs). Until a clean canonical asset (prebuilt-index-v2.1.0) is rebuilt and published, these personas are activated PER-BOX by the Gemini indexer (22-book-to-persona-coaching-leadership-system/pipeline/gemini-indexer.py), which embeds the canonical blueprints into workspace/data/coaching-personas/gemini-index.sqlite. Verified 2026-06-26: a real Gemini indexer run embedded all 10 (647 chunks, gemini-embedding-2 @3072, 0 errors) and persona-selector-v2.py surfaced the correct persona for representative funnel / copywriting / brand-story / coaching / NEPQ-sales tasks. rohde-the-sketchnote-workbook embeds and out-scores competitors on semantic task-fit, but a separate selector category-map gap (visual-storytelling not routed by infer-task-category/_CATEGORY_DOMAINS) filters it at Stage B end-to-end — a selector enhancement, not an indexing/persona defect.",
+    "note": "All 10 PR-363 canonical personas are present in this v2.1.0 asset under their canonical slugs, section-tagged. The stale prebuilt-index-v2.0.0 predated these blueprints; v2.1.0 resolves the gap.",
     "slugs": [
       "acuff-miner-new-model-of-selling",
       "leland-brand-mapping-strategy",
@@ -32,12 +37,12 @@
     ]
   },
   "orphan_blueprints_shipped": {
-    "note": "PR (v14.11.0) shipped canonical full two-sided persona-blueprint.md + PLAYBOOK-APPENDIX.md for these 3 personas that were already registered in persona-categories.json with domain[] tags and already embedded in the prebuilt-index-v2.0.0 asset (built 2026-06-22) under their legacy slugs, but lacked physical blueprint files in 22-book-to-persona-coaching-leadership-system/personas/. With these blueprints landing, they are fully operational for both Coaching Mode and Task/Agent-Governance mode. PERSONA-ROUTER.md routing entries also added. Per-box indexer will re-embed under canonical slugs on next run.",
+    "note": "All 3 orphan-blueprint personas are present in this v2.1.0 asset under their canonical slugs, section-tagged. They are fully operational for both Coaching Mode and Task/Agent-Governance mode.",
     "slugs": [
       "allan-dib-the-1-page-marketing-plan",
       "jeremy-miner-the-nepq-black-book-of-questions",
       "russell-brunson-traffic-secrets"
     ]
   },
-  "notes": "Clean full-48 rebuild with GA gemini-embedding-2 @3072. 48 personas / 7615 chunks / 144 source files. The published SQLite asset (sha256/asset_url/chunk_count above) holds 48 personas' embeddings: the prior 40-persona set PLUS 8 book-author personas (Brunson Lead-Funnels / Network-Marketing-Secrets / Funnel-Hackers-Cookbook / Traffic-Secrets / Marketing-Secrets-Blackbook, Miner NEPQ, Edwards Copywriting-Secrets, Dib 1-Page-Marketing-Plan). Includes Hormozi $100M Leads (99 chunks) + $100M Offers. Clients download this asset instead of re-embedding per box (saves Gemini API credits). Every vector is float32 @ dim 3072. SHA256 verified at build time and must be verified before install. PENDING (see pr363_personas + asset_rebuild_required): this asset predates the v14.3.19 canonical full blueprints; a clean prebuilt-index-v2.1.0 rebuild (all canonical slugs, consistent all-md embedding, de-duplicated, 87MB gz re-upload) is the remaining publish step. The per-box indexer activates the canonical personas in the meantime (verified 2026-06-26). RECONCILE 2026-06-27: canonical_persona_count corrected 53 -> 54 to match the live persona-categories.json on main (PR #375 landed one additional canonical persona after the manifest was hand-updated on 2026-06-26). persona_count (48) is unchanged because it reflects the ACTUAL contents of the still-published prebuilt-index-v2.0.0 asset, which has NOT been rebuilt; asset_rebuild_required remains true until prebuilt-index-v2.1.0 is built and uploaded. ROHDE NOTE (open): rohde-the-sketchnote-workbook has a selector category-map gap (_CATEGORY_DOMAINS['design'] does not include visual-storytelling); fix deferred pending per-box index validation."
+  "notes": "Canonical 54-persona section-tagged rebuild with GA gemini-embedding-2 @3072. 54 personas / 4413 chunks / 68 source files. All canonical slugs ship section-tagged: coaching rows at section_number=3, leadership/governance rows at section_number=4. Replaces prebuilt-index-v2.0.0 (48 personas, 7615 chunks, no section tags). Clients download this asset instead of re-embedding per box (saves Gemini API credits). Every vector is float32 @ dim 3072. SHA256 verified at build time and must be verified before install. ROHDE NOTE (open): rohde-the-sketchnote-workbook has a selector category-map gap (_CATEGORY_DOMAINS['design'] does not include visual-storytelling); fix deferred pending per-box index validation."
 }

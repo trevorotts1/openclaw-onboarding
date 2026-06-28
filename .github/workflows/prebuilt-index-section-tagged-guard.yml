@@ -1,0 +1,167 @@
+name: prebuilt-index-section-tagged-guard
+
+# Fails the build if the prebuilt persona index provisioning regresses:
+#   - INDEX-MANIFEST.json no longer points at a section-tagged 54-persona asset
+#   - shared-utils/provision-persona-index.sh loses the column gate / sha256
+#     hard gate / version sentinel
+#   - install.sh or update-skills.sh no longer calls the shared helper or wires
+#     the GHL funnel catalog
+#   - The committed fixture SQLite loses section_number/mode columns or rows
+#
+# Job 1 (static-manifest-fixture): runs on every push/PR touching the relevant
+# paths — offline, no 90MB download, finishes in seconds.
+#
+# Job 2 (artifact-verify): gated to workflow_dispatch + release published events
+# + when the manifest sha256/asset_url changed (heavy download only at
+# publish/manifest-change time, not every PR).
+
+on:
+  push:
+    paths:
+      - install.sh
+      - update-skills.sh
+      - shared-utils/prebuilt-index/INDEX-MANIFEST.json
+      - shared-utils/provision-persona-index.sh
+      - tests/unit/prebuilt-index-section-tagged.test.sh
+      - tests/fixtures/prebuilt-index-section-tagged.fixture.sqlite
+      - .github/workflows/prebuilt-index-section-tagged-guard.yml
+  pull_request:
+    paths:
+      - install.sh
+      - update-skills.sh
+      - shared-utils/prebuilt-index/INDEX-MANIFEST.json
+      - shared-utils/provision-persona-index.sh
+      - tests/unit/prebuilt-index-section-tagged.test.sh
+      - tests/fixtures/prebuilt-index-section-tagged.fixture.sqlite
+      - .github/workflows/prebuilt-index-section-tagged-guard.yml
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      run_artifact_verify:
+        description: "Run full artifact verify (downloads 90MB asset)"
+        required: false
+        default: "false"
+
+jobs:
+  static-manifest-fixture:
+    name: "Static + manifest + fixture (offline)"
+    runs-on: ubuntu-latest
+    env:
+      OPENCLAW_PLATFORM: mac
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run prebuilt-index-section-tagged tests (layers A/B/C)
+        run: |
+          chmod +x tests/unit/prebuilt-index-section-tagged.test.sh
+          bash tests/unit/prebuilt-index-section-tagged.test.sh
+
+  artifact-verify:
+    name: "Full artifact verify (download + sha256 + 54-persona count)"
+    runs-on: ubuntu-latest
+    # Only runs on workflow_dispatch (with opt-in flag) or release published
+    if: |
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run_artifact_verify == 'true')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download + verify prebuilt asset (layer D)
+        run: |
+          MANIFEST="shared-utils/prebuilt-index/INDEX-MANIFEST.json"
+          ASSET_URL=$(python3 -c "import json; print(json.load(open('$MANIFEST'))['asset_url'])")
+          EXPECTED_SHA=$(python3 -c "import json; print(json.load(open('$MANIFEST'))['sha256'])")
+          EXPECTED_CHUNKS=$(python3 -c "import json; print(json.load(open('$MANIFEST'))['chunk_count'])")
+          EXPECTED_PERSONAS=$(python3 -c "import json; print(json.load(open('$MANIFEST'))['persona_count'])")
+
+          echo "Downloading $ASSET_URL ..."
+          curl -L --retry 3 --fail -H "Accept: application/octet-stream" "$ASSET_URL" -o /tmp/gemini-index.sqlite.gz
+
+          echo "Verifying sha256 ..."
+          ACTUAL_SHA=$(sha256sum /tmp/gemini-index.sqlite.gz | awk '{print $1}')
+          if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+            echo "FAIL: sha256 mismatch (expected $EXPECTED_SHA, got $ACTUAL_SHA)"
+            exit 1
+          fi
+          echo "PASS: sha256 matches ($ACTUAL_SHA)"
+
+          echo "Decompressing ..."
+          gunzip -c /tmp/gemini-index.sqlite.gz > /tmp/gemini-index.sqlite
+
+          echo "Verifying schema, chunk count, and persona count ..."
+          python3 - /tmp/gemini-index.sqlite "$EXPECTED_CHUNKS" "$EXPECTED_PERSONAS" <<'PYEOF'
+          import sqlite3, sys, re
+
+          db_path = sys.argv[1]
+          expected_chunks = int(sys.argv[2])
+          expected_personas = int(sys.argv[3])
+
+          conn = sqlite3.connect(db_path)
+          c = conn.cursor()
+          fails = 0
+
+          cols = [r[1] for r in c.execute('PRAGMA table_info(embeddings)').fetchall()]
+          if 'section_number' in cols:
+              print("PASS: D1 embeddings has section_number column")
+          else:
+              print(f"FAIL: D1 embeddings missing section_number column (cols={cols})")
+              fails += 1
+
+          if 'mode' in cols:
+              print("PASS: D2 embeddings has mode column")
+          else:
+              print(f"FAIL: D2 embeddings missing mode column (cols={cols})")
+              fails += 1
+
+          count = c.execute('SELECT COUNT(*) FROM embeddings').fetchone()[0]
+          if count == expected_chunks:
+              print(f"PASS: D3 chunk_count == {expected_chunks}")
+          else:
+              print(f"FAIL: D3 chunk_count expected {expected_chunks}, got {count}")
+              fails += 1
+
+          paths = [r[0] for r in c.execute('SELECT DISTINCT file_path FROM embeddings').fetchall()]
+          slugs = set()
+          for p in paths:
+              m = re.search(r'/personas/([^/]+)/', p)
+              if m:
+                  slugs.add(m.group(1))
+          if len(slugs) == expected_personas:
+              print(f"PASS: D4 distinct persona count == {expected_personas}")
+          else:
+              print(f"FAIL: D4 distinct persona count expected {expected_personas}, got {len(slugs)}")
+              print(f"  Slugs found: {sorted(slugs)}")
+              fails += 1
+
+          coaching_rows = c.execute("SELECT COUNT(*) FROM embeddings WHERE mode='coaching' AND section_number=3").fetchone()[0]
+          if coaching_rows > 0:
+              print(f"PASS: D5 coaching rows (mode=coaching, section_number=3) = {coaching_rows}")
+          else:
+              print("FAIL: D5 no coaching rows with mode=coaching and section_number=3")
+              fails += 1
+
+          leadership_rows = c.execute("SELECT COUNT(*) FROM embeddings WHERE mode='leadership' AND section_number=4").fetchone()[0]
+          if leadership_rows > 0:
+              print(f"PASS: D6 leadership rows (mode=leadership, section_number=4) = {leadership_rows}")
+          else:
+              print("FAIL: D6 no leadership rows with mode=leadership and section_number=4")
+              fails += 1
+
+          conn.close()
+          sys.exit(fails)
+          PYEOF

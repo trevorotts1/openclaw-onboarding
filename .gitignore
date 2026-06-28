@@ -46,6 +46,8 @@ tmp/
 # the DB file or any hot journal / WAL / SHM sidecar that SQLite writes during a
 # live write transaction (committing a journal would corrupt the DB on checkout).
 *.sqlite
+# Exception: committed CI fixtures are tiny schema-only DBs (not runtime artifacts).
+!tests/fixtures/*.fixture.sqlite
 *-journal
 *-wal
 *-shm
