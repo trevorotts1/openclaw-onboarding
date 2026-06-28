@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # tests/unit/prebuilt-index-section-tagged.test.sh
 # ─────────────────────────────────────────────────────────────────────────────
-# Acceptance test for prebuilt-index v2.1.0 dual-path provisioning.
+# Acceptance test for prebuilt-index v2.2.0 dual-path provisioning.
 #
 # Asserts that BOTH install.sh and update-skills.sh provision the same
-# section-tagged 54-persona DB + GHL funnel catalog, via the shared helper.
+# section-tagged 65-persona DB + GHL funnel catalog, via the shared helper.
 #
 # Three layers (all offline, no live Gemini API):
 #
@@ -17,14 +17,14 @@
 #         * .prebuilt-index-version sentinel compare
 #
 #   (B) MANIFEST asserts (python3 json) — prove:
-#       - persona_count == 54
-#       - chunk_count == 4413
+#       - persona_count == 65
+#       - chunk_count == 4574
 #       - asset_rebuild_required is false
 #       - section_tagged is true
-#       - release_tag == 'prebuilt-index-v2.1.0'
+#       - release_tag == 'prebuilt-index-v2.2.0'
 #       - schema.columns_required contains section_number + mode
-#       - asset_url ends with /prebuilt-index-v2.1.0/gemini-index.sqlite.gz
-#       - sha256 == '7282796558edfcf109664c4ee958d15fa184db6cd7274712667de83201e73fe3'
+#       - asset_url ends with /prebuilt-index-v2.2.0/gemini-index.sqlite.gz
+#       - sha256 == 'e1097792b0efa16a50e19dd2cd6bf61689225fcd2e019c144378939413f14177'
 #
 #   (C) FIXTURE structural assert — open the committed fixture SQLite
 #       (tests/fixtures/prebuilt-index-section-tagged.fixture.sqlite) and assert:
@@ -32,7 +32,7 @@
 #       - at least one row with mode='coaching' and section_number=3
 #       - at least one row with mode='leadership' and section_number=4
 #
-# Layer (D) — FULL ARTIFACT (90MB download, sha256 verify, 54-persona count) —
+# Layer (D) — FULL ARTIFACT (90MB download, sha256 verify, 65-persona count) —
 # is intentionally NOT in this script so it never runs on every PR. It runs only
 # in the `artifact-verify` CI job, which is gated to workflow_dispatch + release.
 #
@@ -138,8 +138,8 @@ else
     python3 - "$MANIFEST" <<'PYEOF'
 import json, sys
 
-EXPECTED_SHA = "7282796558edfcf109664c4ee958d15fa184db6cd7274712667de83201e73fe3"
-EXPECTED_TAG = "prebuilt-index-v2.1.0"
+EXPECTED_SHA = "e1097792b0efa16a50e19dd2cd6bf61689225fcd2e019c144378939413f14177"
+EXPECTED_TAG = "prebuilt-index-v2.2.0"
 
 m = json.load(open(sys.argv[1]))
 results = []
@@ -152,15 +152,15 @@ def check(label, ok, detail=""):
         print(f"  FAIL: {label}" + (f" ({detail})" if detail else ""))
         results.append(("FAIL", label))
 
-check("B1: persona_count == 54", m.get("persona_count") == 54,
+check("B1: persona_count == 65", m.get("persona_count") == 65,
       f"got {m.get('persona_count')}")
-check("B2: chunk_count == 4413", m.get("chunk_count") == 4413,
+check("B2: chunk_count == 4574", m.get("chunk_count") == 4574,
       f"got {m.get('chunk_count')}")
 check("B3: asset_rebuild_required is false", m.get("asset_rebuild_required") is False,
       f"got {m.get('asset_rebuild_required')}")
 check("B4: section_tagged is true", m.get("section_tagged") is True,
       f"got {m.get('section_tagged')}")
-check("B5: release_tag == prebuilt-index-v2.1.0",
+check("B5: release_tag == prebuilt-index-v2.2.0",
       m.get("release_tag") == EXPECTED_TAG,
       f"got {m.get('release_tag')}")
 check("B6: schema.columns_required contains section_number",
@@ -169,14 +169,14 @@ check("B6: schema.columns_required contains section_number",
 check("B7: schema.columns_required contains mode",
       "mode" in m.get("schema", {}).get("columns_required", []),
       f"got {m.get('schema', {}).get('columns_required')}")
-check("B8: asset_url ends with /prebuilt-index-v2.1.0/gemini-index.sqlite.gz",
-      m.get("asset_url", "").endswith("/prebuilt-index-v2.1.0/gemini-index.sqlite.gz"),
+check("B8: asset_url ends with /prebuilt-index-v2.2.0/gemini-index.sqlite.gz",
+      m.get("asset_url", "").endswith("/prebuilt-index-v2.2.0/gemini-index.sqlite.gz"),
       f"got {m.get('asset_url')}")
 check("B9: sha256 matches expected",
       m.get("sha256") == EXPECTED_SHA,
       f"got {m.get('sha256')}")
-check("B10: canonical_persona_count == 54",
-      m.get("canonical_persona_count") == 54,
+check("B10: canonical_persona_count == 65",
+      m.get("canonical_persona_count") == 65,
       f"got {m.get('canonical_persona_count')}")
 
 fails = [r for r in results if r[0] == "FAIL"]
