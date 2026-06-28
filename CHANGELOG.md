@@ -1,3 +1,37 @@
+## [v16.0.0]  -  2026-06-28  -  presentations: attention-is-#1 north star + priority-shift destination + seven-P + provocative-copy ceiling encoded; new Priority-Shift/Content role + Attention-Designer re-charter; P0B-PRIORITY + P-SHIFT-QC phases; the approved 3-style preview gate at 4.85; new enforcement codes; 3 bug-holes fixed; existing creative machinery elevated not rebuilt
+
+### What changed
+
+The presentation department's purpose was re-chartered from "produce a branded deck" to "engineer a priority shift." Every existing engine (hooks, pricing, arc, research, imagery) is kept and re-ordered under this single true goal. No machinery was rebuilt; it was elevated.
+
+**Attention is the #1 job.** `SOP-NORTHSTAR-00-ATTENTION-IS-THE-PRODUCT.md` is the department's new crown SOP: the entire slide-craft ruleset is subordinate to holding the audience's attention for the full duration. Attention is not an end in itself — it is in service of the priority shift (re-ranking the owner's offer to the top of the audience's existing stack).
+
+**Seven-P diagnostic + eight-move build sequence.** `SOP-PRIORITY-01-SEVEN-P-MODEL-AND-DIAGNOSTIC.md` gives every build agent a seven-P (Product / Position / Person / Price / Proof / Process / Proclamation) lens to find the broken lever in a failing deck. `SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE.md` orders eight named build-moves (PRIORITY_STACK → PRESENT_COST → HIGHER_PRIORITY → VALUE_ANCHOR → URGENCY_SCARCITY → ABILITY_UNBLOCK → RERANK_DEMAND → TRIGGER) that a deck must plant monotonically in `slides_copy.md` to actually engineer the shift.
+
+**New role: Attention Content Strategist** owns Phase P0B-PRIORITY. It authors `working/copy/priority_shift_spec.json` (true_goal, priority_stack[], eight-move spec) before the copywriter touches a slide. The Director of Presentations owns Phase P0A-INTAKE; the Attention Content Strategist is the second gate every deck passes before any creative work starts.
+
+**Attention Designer re-charter.** The Slide Image Creator is re-chartered as the Attention Designer / Creative Director of Imagery (Design-Pillar Lead). The 3-style-preview checkpoint (order 4.85, Phase P-STYLE-PREVIEW) is the owner's single pick point: after 9 sample renders (3 variants × 3 representative slides), the owner picks A/B/C via their own gateway, and the winning variant's 3 slides are LOCKED as `locked_renders` so kie never double-charges. `AF-STYLE-UNPICKED` and `AF-STYLE-DOUBLECHARGE` enforce this.
+
+**P0B-PRIORITY and P-SHIFT-QC phases added to the pipeline.** P0B-PRIORITY (order 0.2) is the Attention Content Strategist's shift-spec authoring phase. P-SHIFT-QC (order 7.5) is the 14-item composite ship gate that runs after copy, design, and rendered images all coexist; it writes `working/qc/priority_shift_report.json` and blocks delivery until all 14 items pass. `AF-PRIORITY-SHIFT` is the composite code.
+
+**New enforcement codes (all in manifest + MASTER ruleset + build_deck + Guard-A tested):** AF-MODE-UNSET, AF-NO-SHIFT, AF-NO-PRIORITY-STACK, AF-NO-RERANK, AF-NO-TRIGGER, AF-PROCLAMATION-HEDGE, AF-PEAK-END, AF-NO-SALIENCE-APEX, AF-CONVERTER-NO-INVENT, AF-NO-PROBLEM, AF-NO-CHOICE, AF-NO-FORK, AF-NO-COMPARISON, AF-NO-MEASURABLE-RESULTS, AF-NO-EXPERT-PROOF, AF-NO-BEFORE-AFTER, AF-STYLE-UNPICKED, AF-STYLE-DOUBLECHARGE, AF-PRIORITY-SHIFT.
+
+**SOP-PROCLAMATION-01** encodes the provocative-copy ceiling: proclamations must be plain, bold, hedge-free statements that dare to challenge the norm. AF-PROCLAMATION-HEDGE blocks hedged ("kind of", "sort of", "you might want to consider") declarations. The seven-P "Proclamation" lever is the content side of what the Attention Designer does visually.
+
+**3 bug-holes fixed (QC closing):** Guard A (`gate_integrity_check.py`) now requires a deliberate-failing negative test for EVERY build_deck-enforced autofail. The 19 new enforcement codes each have their negative-test probe added to `emit_af_coverage()` in `test_preflight.py`, closing the gap where declared+enforced gates had no test coverage (the AF-QC-INDEPENDENCE class of silent no-ops). Guard A now passes at 68 enforced / 69 triggered (one extra covers the AF-PROMPT-FLOOR alias).
+
+### Verification (all green)
+
+- `sync_check.py` — IN SYNC (manifest_version 18, 126 autofails, 35 roles).
+- `test_preflight.py` — ALL PREFLIGHT TESTS PASSED (69 AF codes triggered, up from 50).
+- `gate_integrity_check.py` (Guard A) — OK (68 enforced / 69 triggered). `doctrine_residual_check.py` (Guard B) — CLEAN.
+- 10 version markers bumped to v16.0.0 via `bump-version.sh`. No client names.
+
+### Files changed
+
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/test_preflight.py` — 19 new negative-test probes in `emit_af_coverage()` for all new enforcement codes (Guard A closes the gap)
+- Version markers: `version`, `install.sh`, `update-skills.sh`, `23-ai-workforce-blueprint/skill-version.txt`, `_index.json`, `_qc-summary.md`, `README.md` (×2), `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `cc-compat.json`
+
 ## [v15.1.0]  -  2026-06-28  -  fix: new personas now propagate to all client boxes on update + re-wire matching/Command Center; persona-set versioning + provision re-provisions on growth; ADDING-NEW-PERSONAS doctrine
 
 ### Root cause (three independent breaks, one symptom)

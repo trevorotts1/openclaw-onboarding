@@ -2893,6 +2893,158 @@ def emit_af_coverage():
         "SLIDE 1\n[HOOK]: Main hook here.\nSLIDE 2\n[PRICE]: $997/month. Buy now.\n")
     record("AF-PITCH-ENGINE", build_deck.check_pitch_engines(_pe_root))
 
+    # ---- v16.0.0 priority-shift doctrine probes (19 new Guard-A coverage additions) ----
+    # Shared setup: a doctrine-active run dir (working/copy/priority_shift_spec.json
+    # present and parseable) so the doctrine-gated checks fire instead of deferring.
+    def _doctrine_active_run_dir(prefix: str) -> Path:
+        root = Path(tempfile.mkdtemp(prefix=prefix))
+        (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "copy" / "priority_shift_spec.json").write_text(
+            json.dumps({"true_goal": "convert audience priority to owner offer"}))
+        return root
+
+    # AF-MODE-UNSET — doctrine active + intake.json with an unrecognised creation_mode.
+    _mu_root = _doctrine_active_run_dir("deck_mode_unset_probe_")
+    (_mu_root / "working" / "copy" / "intake.json").write_text(
+        json.dumps({"creation_mode": "invalid_mode", "interview_confirmed": True,
+                    "presentation_mode": "general", "target_talk_minutes": 30}))
+    record("AF-MODE-UNSET", build_deck._chk_mode(_mu_root))
+
+    # AF-NO-SHIFT — spec with no priority_stack + copy with no build-move beat tags.
+    _ns_root = _doctrine_active_run_dir("deck_no_shift_probe_")
+    # Overwrite spec to {} (empty — no true_goal, no priority_stack).
+    (_ns_root / "working" / "copy" / "priority_shift_spec.json").write_text("{}")
+    (_ns_root / "working" / "copy" / "slides_copy.md").write_text(
+        "SLIDE 1\nHEADLINE: Our flagship product transforms your business.\n")
+    record("AF-NO-SHIFT", build_deck._chk_priority_shift(_ns_root))
+
+    # AF-NO-PRIORITY-STACK — copy has a ladder/price beat but no stack surfacing before it.
+    _nps_root = _doctrine_active_run_dir("deck_no_priority_stack_probe_")
+    (_nps_root / "working" / "copy" / "slides_copy.md").write_text(
+        "SLIDE 1\nHEADLINE: Today's price is $997.\nSLIDE 2\nLADDER: value anchor drop.\n")
+    record("AF-NO-PRIORITY-STACK", build_deck._chk_priority_stack(_nps_root))
+
+    # AF-NO-RERANK — pitch deck copy includes a price beat but no re-rank demand after.
+    _nr_root = _doctrine_active_run_dir("deck_no_rerank_probe_")
+    (_nr_root / "working" / "copy" / "intake.json").write_text(
+        json.dumps({"pitch_included": True, "interview_confirmed": True,
+                    "presentation_mode": "general", "target_talk_minutes": 30}))
+    (_nr_root / "working" / "copy" / "slides_copy.md").write_text(
+        "SLIDE 1\nHEADLINE: The price is $997 per month.\nSLIDE 2\nBUY: Click to join now.\n")
+    record("AF-NO-RERANK", build_deck._chk_rerank(_nr_root))
+
+    # AF-NO-TRIGGER — pitch deck with no time-bound trigger anywhere in the copy.
+    _nt_root = _doctrine_active_run_dir("deck_no_trigger_probe_")
+    (_nt_root / "working" / "copy" / "intake.json").write_text(
+        json.dumps({"pitch_included": True, "interview_confirmed": True,
+                    "presentation_mode": "general", "target_talk_minutes": 30}))
+    (_nt_root / "working" / "copy" / "slides_copy.md").write_text(
+        "SLIDE 1\nHEADLINE: The amazing offer.\nSLIDE 2\nCTA: Click the link below to join.\n")
+    record("AF-NO-TRIGGER", build_deck._chk_trigger(_nt_root))
+
+    # AF-PROCLAMATION-HEDGE — proclamation copy hedged with a disallowed token ("kind of").
+    _phg_root = _doctrine_active_run_dir("deck_proclamation_hedge_probe_")
+    (_phg_root / "working" / "copy" / "slides_copy.md").write_text(
+        "SLIDE 1\nHEADLINE: This system is, kind of, the best solution for your situation.\n")
+    record("AF-PROCLAMATION-HEDGE", build_deck._chk_proclamation_hedge(_phg_root))
+
+    # AF-PEAK-END — arc allocation with arc_section labels that carry no PEAK or ENDING tags.
+    _pke_root = _doctrine_active_run_dir("deck_peak_end_probe_")
+    (_pke_root / "working" / "copy" / "arc_allocation.json").write_text(json.dumps([
+        {"slide": 1, "arc_section": "hook"},
+        {"slide": 2, "arc_section": "body"},
+        {"slide": 3, "arc_section": "teaching"},
+    ]))
+    record("AF-PEAK-END", build_deck._chk_peak_end(_pke_root))
+
+    # AF-NO-SALIENCE-APEX — apex slide is the LEAST vivid in the deck (von Restorff inversion).
+    # Uses unittest.mock to patch _png_flatfill_fraction so the probe is PIL-independent.
+    try:
+        import unittest.mock as _mock
+        _apex_root = _doctrine_active_run_dir("deck_salience_apex_probe_")
+        (_apex_root / "renders").mkdir(parents=True, exist_ok=True)
+        _apex_png_hdr = (b"\x89PNG\r\n\x1a\n"
+                         + b"\xcc" * (build_deck.PLACEHOLDER_MIN_BYTES + 500))
+        for _apex_i in range(1, 4):
+            (_apex_root / "renders" / f"slide-{_apex_i:02d}.png").write_bytes(_apex_png_hdr)
+        (_apex_root / "working" / "copy" / "arc_allocation.json").write_text(json.dumps([
+            {"slide": 1, "arc_section": "hook"},
+            {"slide": 2, "arc_section": "apex", "beat": "promise-apex"},
+            {"slide": 3, "arc_section": "recap"},
+        ]))
+
+        def _fake_flatfill(path: Path):
+            n = path.name
+            if "slide-01" in n:
+                return (0.05, (100, 50, 200))   # 95% vividness — most vivid
+            if "slide-02" in n:
+                return (0.95, (240, 240, 240))  # 5% vividness  — apex (inverted/flat)
+            if "slide-03" in n:
+                return (0.50, (150, 100, 100))  # 50% vividness — mid
+            return (None, None)
+
+        with _mock.patch.object(build_deck, "_png_flatfill_fraction",
+                                side_effect=_fake_flatfill):
+            record("AF-NO-SALIENCE-APEX",
+                   build_deck._chk_salience_apex(_apex_root))
+    except Exception:  # noqa: BLE001 — environment issue; probe attempted
+        pass
+
+    # AF-CONVERTER-NO-INVENT — brief carries a figure (75%) absent from the raw source.
+    _cni_root = _doctrine_active_run_dir("deck_converter_no_invent_probe_")
+    (_cni_root / "working" / "copy" / "source_brief.md").write_text(
+        "The product achieved 75% growth and $1,234,567 in tracked revenue.")
+    (_cni_root / "working" / "source").mkdir(parents=True, exist_ok=True)
+    (_cni_root / "working" / "source" / "transcript.txt").write_text(
+        "The product is great. Many clients have succeeded over time.")
+    record("AF-CONVERTER-NO-INVENT", build_deck._chk_converter_no_invent(_cni_root))
+
+    # AF-NO-PROBLEM, AF-NO-CHOICE, AF-NO-FORK, AF-NO-COMPARISON,
+    # AF-NO-MEASURABLE-RESULTS, AF-NO-EXPERT-PROOF, AF-NO-BEFORE-AFTER —
+    # all from _chk_persuasion_beats. One pitch-deck probe whose copy carries NONE
+    # of the seven persuasion beats; the returned reason string contains all seven AF codes.
+    _pb_root = _doctrine_active_run_dir("deck_persuasion_beats_probe_")
+    (_pb_root / "working" / "copy" / "intake.json").write_text(
+        json.dumps({"pitch_included": True, "interview_confirmed": True,
+                    "presentation_mode": "general", "target_talk_minutes": 30}))
+    (_pb_root / "working" / "copy" / "slides_copy.md").write_text(
+        "SLIDE 1\nHEADLINE: Our amazing product is launching.\nSLIDE 2\nCTA: Click here to join.\n")
+    _pb_reason = build_deck._chk_persuasion_beats(_pb_root)
+    for _pb_code in ("AF-NO-PROBLEM", "AF-NO-CHOICE", "AF-NO-FORK", "AF-NO-COMPARISON",
+                     "AF-NO-MEASURABLE-RESULTS", "AF-NO-EXPERT-PROOF", "AF-NO-BEFORE-AFTER"):
+        record(_pb_code, _pb_reason)
+
+    # AF-STYLE-UNPICKED — style samples manifest present but no owner pick file written.
+    _su_root = _doctrine_active_run_dir("deck_style_unpicked_probe_")
+    (_su_root / "working" / "style-preview").mkdir(parents=True, exist_ok=True)
+    (_su_root / "working" / "style-preview" / "style_samples_manifest.json").write_text(
+        json.dumps({"schema": "style_samples/v1",
+                    "samples": [{"variant": "A", "slides": [1, 2, 3]}]}))
+    # No style_preview_choice.json → owner has not picked a variant yet.
+    record("AF-STYLE-UNPICKED", build_deck._chk_style_preview(_su_root))
+
+    # AF-STYLE-DOUBLECHARGE — valid owner pick present but locked_renders list is absent.
+    _sd_root = _doctrine_active_run_dir("deck_style_doublecharge_probe_")
+    (_sd_root / "working" / "style-preview").mkdir(parents=True, exist_ok=True)
+    (_sd_root / "working" / "style-preview" / "style_samples_manifest.json").write_text(
+        json.dumps({"schema": "style_samples/v1",
+                    "samples": [{"variant": "A", "slides": [1, 2, 3]}]}))
+    (_sd_root / "working" / "copy" / "style_preview_choice.json").write_text(json.dumps({
+        "owner_approved": True,
+        "chosen_variant": "A",
+        # locked_renders intentionally absent → AF-STYLE-DOUBLECHARGE fires
+    }))
+    record("AF-STYLE-DOUBLECHARGE", build_deck._chk_style_preview(_sd_root))
+
+    # AF-PRIORITY-SHIFT — composite 14-item ship gate; spec present (doctrine active) +
+    # one rendered PNG, but spec missing priority_stack + eight-move tags absent in copy
+    # → multiple items fail → gate returns AF-PRIORITY-SHIFT.
+    _psl_root = _doctrine_active_run_dir("deck_priority_shift_ledger_probe_")
+    (_psl_root / "renders").mkdir(parents=True, exist_ok=True)
+    (_psl_root / "renders" / "slide-01.png").write_bytes(
+        b"\x89PNG\r\n\x1a\n" + b"\xcc" * (build_deck.PLACEHOLDER_MIN_BYTES + 500))
+    record("AF-PRIORITY-SHIFT", build_deck._chk_priority_shift_ledger(_psl_root))
+
     triggered_sorted = sorted(triggered)
     AF_COVERAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
     AF_COVERAGE_PATH.write_text(json.dumps(

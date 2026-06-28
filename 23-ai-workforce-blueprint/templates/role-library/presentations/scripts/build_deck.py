@@ -5275,6 +5275,587 @@ def check_prompt_qc_deterministic(run_dir: Path, slides_path: Optional[Path] = N
             "deck_deficiencies": deck_def, "deficiencies": flat + flat_deck}
 
 
+# ===========================================================================
+# POWERFUL-PRESENTATION DOCTRINE GATES (manifest v18) — the priority-shift spine.
+# ---------------------------------------------------------------------------
+# The framework's North Star: the #1 job is to HOLD ATTENTION the whole duration
+# so the audience re-ranks the owner's offer/idea to the TOP of its priority
+# stack (the priority shift). These deterministic gates make the framework LAW.
+#
+# MASTER SWITCH (no-regression guarantee): every doctrine gate DEFERS (returns "")
+# unless Phase P0B-PRIORITY (the attention-content-strategist) has produced
+# working/copy/priority_shift_spec.json. Before that artifact exists (legacy /
+# pre-doctrine / ad-hoc decks, and every test fixture that predates the spine),
+# the gates are wired but never fire — so they cannot break an in-flight build the
+# new phase never touched. Once the spec exists, the gates have full teeth.
+# ===========================================================================
+PRIORITY_SPEC_REL = "working/copy/priority_shift_spec.json"
+STYLE_SAMPLES_MANIFEST_REL = "working/style-preview/style_samples_manifest.json"
+STYLE_CHOICE_REL = "working/copy/style_preview_choice.json"
+PRIORITY_SHIFT_REPORT_REL = "working/qc/priority_shift_report.json"
+# Creation modes (P19/P118 — Step Zero identifies the mode before anything else).
+CREATION_MODES = ("from_scratch", "content_personal", "content_general")
+# The eight-move build sequence (P141-P150), in canonical order. The copy must plant
+# these beat tags monotonically so the arc actually engineers the shift.
+EIGHT_MOVE_TAGS = (
+    "PRIORITY_STACK", "PRESENT_COST", "HIGHER_PRIORITY",
+    "VALUE_ANCHOR", "URGENCY_SCARCITY", "ABILITY_UNBLOCK",
+    "RERANK_DEMAND", "TRIGGER",
+)
+# Hedge phrases a PROCLAMATION must never carry (P109). Deliberately the strong,
+# unambiguous multi-word hedges only — bare "maybe"/"perhaps" are too common in
+# legitimate copy to gate on, so they are excluded to avoid false positives.
+PROCLAMATION_HEDGE_TOKENS = (
+    "kind of", "sort of", "you might want to consider", "you may want to consider",
+    "i think maybe", "we could probably", "it might be that", "i guess",
+    "more or less", "if that makes sense", "sort-of", "kind-of",
+)
+PRIORITY_STACK_MARKERS = (
+    "priority_stack", "priority stack", "priority-stack", "top of your list",
+    "what matters most", "what you prioritize", "what you prioritise",
+    "your current priorities", "ranks above",
+)
+RERANK_MARKERS = (
+    "re-rank", "rerank", "re_rank", "rerank_demand", "move this to the top",
+    "make this your #1", "make this your number one", "your new #1",
+    "decide now", "decision-demand", "decision demand", "choose this first",
+    "put this first", "this becomes your priority",
+)
+TRIGGER_MARKERS = (
+    "today only", "by midnight", "this week only", "next 24 hours",
+    "deadline", "doors close", "doors closing", "closes ", "ends tonight",
+    "ends ", "expires", "only until", "limited to the first", "enroll now",
+    "enrol now", "act now", "before the timer", "registration closes",
+)
+PEAK_TAGS = ("peak", "apex", "wow", "salience_apex", "salience-apex",
+             "promise-apex", "promise_apex")
+ENDING_TAGS = ("recap", "close", "closing", "cta", "call to action", "call-to-action",
+               "final", "ending", "send-off", "sendoff")
+LADDER_BEAT_MARKERS = ("ladder", "anchor", "price", "offer", "value-stack",
+                       "value_stack", "valuestack", "drop", "value_add", "value add")
+COST_OF_INACTION_MARKERS = ("cost of inaction", "cost_of_inaction", "cost-of-inaction",
+                            "present cost", "present-cost", "present_cost",
+                            "what it costs to stay", "the cost of doing nothing")
+URGENCY_SCARCITY_MARKERS = ("urgency", "scarcity", "limited", "only ", "deadline",
+                            "running out", "few spots", "seats left", "while it lasts")
+ABILITY_UNBLOCK_MARKERS = ("payment plan", "payment-plan", "financing", "ability_unblock",
+                           "ability-unblock", "remove the blocker", "easy to start",
+                           "no experience needed", "done for you", "done-for-you",
+                           "we handle", "guarantee")
+# HOLE C — the orphaned "no-beat" persuasion taxonomy (documented in SOP-PITCH-06 /
+# SOP-ENGINE-00 but never enforced). WIRED here as a single conservative deck-level
+# gate. Each entry: code -> (label, generous synonym markers). A doctrine deck that
+# omits one of these named persuasion beats fails the specific code.
+PERSUASION_BEAT_MARKERS = {
+    "AF-NO-PROBLEM": ("problem", "villain", "enemy", "what's broken", "whats broken",
+                      "the real reason", "stuck", "struggle", "pain"),
+    "AF-NO-CHOICE": ("choice", "two paths", "two roads", "you can either",
+                     "either keep", "fork", "decision"),
+    "AF-NO-FORK": ("fork", "two paths", "two roads", "path a", "path b",
+                   "stay the same or", "keep doing", "or you can"),
+    "AF-NO-COMPARISON": ("compared to", "vs ", "versus", "old way", "new way",
+                         "instead of", "unlike", "the difference between"),
+    "AF-NO-MEASURABLE-RESULTS": ("%", "result", "results", "increase", "roi",
+                                 "grew ", "doubled", "tripled", "x in ", "in 30 days",
+                                 "measurable"),
+    "AF-NO-EXPERT-PROOF": ("expert", "study", "research", "according to", "data shows",
+                           "proven", "case study", "wall of wins", "testimonial",
+                           "as featured"),
+    "AF-NO-BEFORE-AFTER": ("before", "after", "transformation", "went from",
+                           "used to", "now i", "now they", "from struggling"),
+}
+
+
+def _doctrine_active(run_dir: Path) -> bool:
+    """The priority-shift doctrine engages ONLY once Phase P0B-PRIORITY has produced
+    a valid working/copy/priority_shift_spec.json. This is the no-regression switch."""
+    return _read_priority_spec(run_dir) is not None
+
+
+def _read_priority_spec(run_dir: Path):
+    """Parse working/copy/priority_shift_spec.json. Returns the dict, or None when
+    absent/unparseable (gates then DEFER)."""
+    for rel in (PRIORITY_SPEC_REL, "priority_shift_spec.json",
+                "working/priority_shift_spec.json"):
+        p = run_dir / rel
+        if p.exists():
+            obj = _read_json(p)
+            if isinstance(obj, dict) and "__parse_error__" not in obj:
+                return obj
+            return None
+    return None
+
+
+def _slides_copy_text_lc(run_dir: Path):
+    """Lowercased slides_copy.md text, or None when no copy exists yet (defer)."""
+    for rel in ("working/copy/slides_copy.md", "slides_copy.md",
+                "working/slides_copy.md"):
+        p = run_dir / rel
+        if p.exists():
+            return p.read_text(errors="replace").lower()
+    return None
+
+
+def _first_marker_offset(text_lc: str, markers) -> Optional[int]:
+    """Lowest character offset at which any of `markers` appears, or None."""
+    best = None
+    for m in markers:
+        idx = text_lc.find(m.lower())
+        if idx >= 0 and (best is None or idx < best):
+            best = idx
+    return best
+
+
+def _png_ordinal(path: Path) -> Optional[int]:
+    m = re.search(r"(\d+)", path.stem)
+    return int(m.group(1)) if m else None
+
+
+def _apex_slide_ordinal(run_dir: Path) -> Optional[int]:
+    """The OFFER/PROMISE-APEX slide ordinal, read from the arc allocation's PEAK/APEX/
+    OFFER beat tag. Returns None when it cannot be determined (gate then defers)."""
+    for rel in ("working/copy/arc_allocation.json", "arc_allocation.json",
+                "working/arc_allocation.json"):
+        p = run_dir / rel
+        if not p.exists():
+            continue
+        obj = _read_json(p)
+        if not isinstance(obj, (list, dict)) or (isinstance(obj, dict) and "__parse_error__" in obj):
+            return None
+        slots = obj if isinstance(obj, list) else (
+            obj.get("slots") or obj.get("allocation") or obj.get("slides") or [])
+        for s in slots if isinstance(slots, list) else []:
+            if not isinstance(s, dict):
+                continue
+            tokens = []
+            for k in ("arc_section", "section", "beat", "tag", "type", "role"):
+                v = s.get(k)
+                if isinstance(v, str):
+                    tokens.append(v.lower())
+            tags = s.get("tags")
+            if isinstance(tags, list):
+                tokens += [str(t).lower() for t in tags]
+            blob = " ".join(tokens)
+            if any(t in blob for t in ("apex", "salience_apex", "promise-apex",
+                                       "promise_apex", "wow-peak", "peak")):
+                ordn = s.get("slide") or s.get("ordinal") or s.get("n")
+                try:
+                    return int(ordn)
+                except (TypeError, ValueError):
+                    return None
+        return None
+    return None
+
+
+def _chk_mode(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-MODE-UNSET (P118). intake.json.creation_mode must be one of
+    from_scratch | content_personal | content_general; the two content modes need an
+    extracted_substance record. Defers when intake is absent (_chk_intake owns that)
+    or — for a legacy deck with no mode AND no doctrine spec — defers so a pre-doctrine
+    build is never broken. A doctrine-active deck MUST declare the mode."""
+    intake = _read_intake_obj(run_dir)
+    if not isinstance(intake, dict):
+        return ""  # no intake — _chk_intake / AF-SLIDE-COUNT-FLOOR own absence.
+    mode = str(intake.get("creation_mode") or "").strip().lower()
+    if not mode and not _doctrine_active(run_dir):
+        return ""  # legacy / pre-doctrine deck — defer (no-regression).
+    if mode not in CREATION_MODES:
+        return (f"AF-MODE-UNSET: intake.json.creation_mode is {mode or 'unset'!r}; it must be "
+                f"one of {', '.join(CREATION_MODES)}. Step Zero of every deck is to identify "
+                f"the creation mode before any content is built (SOP-MODE-00, P118).")
+    if mode in ("content_personal", "content_general"):
+        substance = intake.get("extracted_substance") or intake.get("source_brief_origin")
+        if not substance:
+            return (f"AF-MODE-UNSET: creation_mode {mode!r} is a content mode but no "
+                    f"extracted_substance / source provenance is recorded — a content-mode "
+                    f"deck must diagnose and extract the source first (SOP-MODE-00, P22-P29).")
+    return ""
+
+
+def _chk_priority_shift(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-NO-SHIFT (P33/P105) — the priority-shift SPINE gate. The deck must carry a
+    real priority_shift_spec.json (true_goal + a named priority_stack[]) AND plant the
+    eight build-move beat tags monotonically in slides_copy.md so the arc actually
+    engineers the re-rank. Defers when the doctrine is not active."""
+    if not _doctrine_active(run_dir):
+        return ""
+    spec = _read_priority_spec(run_dir) or {}
+    problems = []
+    if not str(spec.get("true_goal") or "").strip():
+        problems.append("priority_shift_spec.json has no true_goal (the destination shift)")
+    stack = spec.get("priority_stack")
+    if not (isinstance(stack, list) and len(stack) >= 1):
+        problems.append("priority_shift_spec.json has an empty priority_stack[] "
+                        "(the audience's current ranking must be surfaced)")
+    text = _slides_copy_text_lc(run_dir)
+    if text:
+        present = [(tag, text.find(tag.lower())) for tag in EIGHT_MOVE_TAGS
+                   if text.find(tag.lower()) >= 0]
+        if len(present) < 5:
+            problems.append(f"only {len(present)}/8 build-move beat tags are present in "
+                            f"slides_copy.md (need >=5 of {', '.join(EIGHT_MOVE_TAGS)})")
+        else:
+            offs = [o for _, o in present]
+            if offs != sorted(offs):
+                problems.append("the build-move beat tags are out of canonical order — "
+                                "the eight moves must run monotonically (P141-P150)")
+    if problems:
+        return ("AF-NO-SHIFT: the deck does not engineer a deliberate priority shift — "
+                + "; ".join(problems) + ". Re-rank the owner's offer/idea to the top of the "
+                "audience's priority stack (SOP-NORTHSTAR-00 / SOP-PRIORITY-02).")
+    return ""
+
+
+def _chk_priority_stack(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-NO-PRIORITY-STACK (P142, Move 1). The audience's current priority stack must
+    be NAMED before the first value/price ladder beat. Defers without doctrine/copy."""
+    if not _doctrine_active(run_dir):
+        return ""
+    text = _slides_copy_text_lc(run_dir)
+    if not text:
+        return ""
+    ladder = _first_marker_offset(text, LADDER_BEAT_MARKERS)
+    if ladder is None:
+        return ""  # no ladder beat yet — nothing to order against.
+    stack = _first_marker_offset(text, PRIORITY_STACK_MARKERS)
+    if stack is None or stack > ladder:
+        return ("AF-NO-PRIORITY-STACK: Move 1 is missing — the deck must surface the "
+                "audience's current priority stack BEFORE the first value/price ladder "
+                "beat (P142, SOP-PRIORITY-02).")
+    return ""
+
+
+def _chk_rerank(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-NO-RERANK (P148, Move 7). After the PRICE the deck must demand the re-rank /
+    decision out loud. Defers for pitchless/unset decks (the re-rank is a sale mechanic)."""
+    if not _doctrine_active(run_dir):
+        return ""
+    if _intake_pitch_included(run_dir) is not True:
+        return ""
+    text = _slides_copy_text_lc(run_dir)
+    if not text:
+        return ""
+    price = text.find("price")
+    if price < 0:
+        return ""  # no price beat yet.
+    rerank = _first_marker_offset(text, RERANK_MARKERS)
+    if rerank is None or rerank <= price:
+        return ("AF-NO-RERANK: Move 7 is missing — after the PRICE the deck must demand the "
+                "re-rank out loud (make the owner's thing the audience's new #1) (P148).")
+    return ""
+
+
+def _chk_trigger(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-NO-TRIGGER (P149, Move 8). The CTA must fire a time-bound trigger. Defers for
+    pitchless/unset decks."""
+    if not _doctrine_active(run_dir):
+        return ""
+    if _intake_pitch_included(run_dir) is not True:
+        return ""
+    text = _slides_copy_text_lc(run_dir)
+    if not text:
+        return ""
+    if _first_marker_offset(text, TRIGGER_MARKERS) is not None:
+        return ""
+    return ("AF-NO-TRIGGER: Move 8 is missing — the CTA carries no time-bound trigger "
+            "(deadline / scarcity window / act-now). A priority that is not acted on now is "
+            "not yet a priority (P149).")
+
+
+def _chk_proclamation_hedge(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-PROCLAMATION-HEDGE (P109). Proclamations must be plain, bold, hedge-free.
+    Flags the strong multi-word hedges only (no false positives on bare 'maybe')."""
+    if not _doctrine_active(run_dir):
+        return ""
+    text = _slides_copy_text_lc(run_dir)
+    if not text:
+        return ""
+    hits = [t for t in PROCLAMATION_HEDGE_TOKENS if t in text]
+    if hits:
+        return ("AF-PROCLAMATION-HEDGE: the copy hedges its declarations with "
+                + ", ".join(repr(h) for h in hits[:5]) + ". A proclamation is a plain, bold "
+                "claim of truth that dares to challenge the norm — strip the hedge "
+                "(SOP-PROCLAMATION-01, P109).")
+    return ""
+
+
+def _chk_peak_end(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-PEAK-END (P49). The arc must declare a deliberate PEAK beat AND a deliberate
+    ending beat (the peak-end rule — a flat ending is remembered as flat). Defers when
+    no arc / no doctrine."""
+    if not _doctrine_active(run_dir):
+        return ""
+    blob = None
+    for rel in ("working/copy/arc_allocation.json", "arc_allocation.json",
+                "working/arc_allocation.json"):
+        p = run_dir / rel
+        if p.exists():
+            obj = _read_json(p)
+            if isinstance(obj, dict) and "__parse_error__" in obj:
+                return ("AF-PEAK-END: arc_allocation.json is not valid JSON, so the "
+                        "engineered PEAK + ending cannot be proven (P49).")
+            slots = obj if isinstance(obj, list) else (
+                obj.get("slots") or obj.get("allocation") or obj.get("slides") or [])
+            tokens = []
+            for s in slots if isinstance(slots, list) else []:
+                if isinstance(s, dict):
+                    for k in ("arc_section", "section", "beat", "tag", "type", "role"):
+                        v = s.get(k)
+                        if isinstance(v, str):
+                            tokens.append(v.lower())
+                    tags = s.get("tags")
+                    if isinstance(tags, list):
+                        tokens += [str(t).lower() for t in tags]
+                elif isinstance(s, str):
+                    tokens.append(s.lower())
+            blob = " ".join(tokens)
+            break
+    if blob is None:
+        return ""  # no arc yet — _chk_arc owns absence.
+    missing = []
+    if not any(t in blob for t in PEAK_TAGS):
+        missing.append("no PEAK/APEX/WOW beat")
+    if not any(t in blob for t in ENDING_TAGS):
+        missing.append("no deliberate ending/recap/CTA beat")
+    if missing:
+        return ("AF-PEAK-END: the arc fails the peak-end rule — " + "; ".join(missing)
+                + ". Engineer a deliberate peak and a deliberate ending; a flat ending is "
+                "remembered as flat (P49, SOP-NORTHSTAR-00).")
+    return ""
+
+
+def _chk_salience_apex(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-NO-SALIENCE-APEX (P48/P155). The OFFER/PROMISE-APEX slide must be the single
+    most VIVID slide in the deck (von Restorff — the most vivid thing is what the mind
+    prioritizes). Deterministic backstop to the human style sign-off: vividness proxy =
+    (1 - dominant-colour fraction), reusing the AF-VISUAL-VARIETY pixel data. Defers
+    pre-render, without doctrine, or when the apex slide cannot be identified."""
+    if not _doctrine_active(run_dir):
+        return ""
+    pngs = _gather_rendered_pngs(run_dir)
+    if not pngs:
+        return ""  # pre-render — defer.
+    apex = _apex_slide_ordinal(run_dir)
+    if apex is None:
+        return ""  # apex undeterminable — AF-PEAK-END owns the arc-tag absence.
+    scores = {}
+    for p in pngs:
+        ordn = _png_ordinal(p)
+        if ordn is None:
+            continue
+        frac, _rgb = _png_flatfill_fraction(p)
+        if frac is None:
+            continue
+        scores[ordn] = 1.0 - float(frac)  # higher = more visual variety / vividness
+    if apex not in scores or len(scores) < 3:
+        return ""  # apex not rendered yet, or too few measurable slides — defer.
+    deck_max = max(scores.values())
+    if deck_max <= 0:
+        return ""
+    # Fail only when the apex is CLEARLY below the deck's most-vivid slide (a real
+    # von-Restorff inversion), not on a marginal tie — backstop, not a hair-trigger.
+    if scores[apex] < 0.85 * deck_max:
+        return (f"AF-NO-SALIENCE-APEX: the OFFER/PROMISE-APEX slide (slide {apex}) is not "
+                f"the most vivid element in the deck (vividness {scores[apex]:.2f} vs deck "
+                f"peak {deck_max:.2f}). The owner's thing must be the single most vivid "
+                f"thing in the room by the end (von Restorff, P48/P155).")
+    return ""
+
+
+def _chk_converter_no_invent(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-CONVERTER-NO-INVENT (P167d). A content-converter deck must EXTRACT, never
+    INVENT: every numeric/statistical claim in the converter's source brief must trace
+    back to the raw source. Defers unless BOTH a source brief AND the raw source text
+    are present (the converter owns supplying them)."""
+    brief_text = None
+    for rel in ("working/copy/source_brief.md", "working/copy/source_brief.json",
+                "working/converter/source_brief.md", "working/copy/source_brief.txt"):
+        p = run_dir / rel
+        if p.exists():
+            brief_text = p.read_text(errors="replace")
+            break
+    if brief_text is None:
+        return ""  # no converter brief — defer (not a converter deck, or not built yet).
+    source_text = None
+    src_candidates = [run_dir / "working" / "source" / "transcript.txt",
+                      run_dir / "working" / "converter" / "source.txt",
+                      run_dir / "working" / "copy" / "source_raw.txt"]
+    src_candidates += sorted((run_dir / "working" / "source").glob("*.txt")) \
+        if (run_dir / "working" / "source").is_dir() else []
+    src_candidates += sorted((run_dir / "working" / "source").glob("*.md")) \
+        if (run_dir / "working" / "source").is_dir() else []
+    for p in src_candidates:
+        if p.exists():
+            source_text = (source_text or "") + "\n" + p.read_text(errors="replace")
+    if not source_text:
+        return ""  # raw source not on disk to compare against — defer.
+    source_norm = _norm_ws(source_text.lower())
+    # Statistical/numeric claim tokens: percentages, money, and multi-digit figures.
+    claim_re = re.compile(r"\b\d[\d,\.]*\s?%|\$\s?\d[\d,\.]*|\b\d{2,}[\d,\.]*\b")
+    invented = []
+    for m in claim_re.findall(brief_text):
+        tok = _norm_ws(str(m).lower()).replace(" ", "")
+        digits = re.sub(r"[^\d]", "", tok)
+        if not digits:
+            continue
+        # The exact figure must appear somewhere in the source (digit-only match so
+        # "$1,200" in the brief matches "1200" / "1,200" in the source).
+        if digits not in re.sub(r"[^\d]", "", source_norm):
+            invented.append(str(m).strip())
+    invented = sorted(set(invented))[:6]
+    if invented:
+        return ("AF-CONVERTER-NO-INVENT: the source brief carries figure(s) absent from the "
+                "raw source: " + ", ".join(invented) + ". Extract, never invent — a converter "
+                "deck may only use claims the source actually makes (P167d).")
+    return ""
+
+
+def _chk_persuasion_beats(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """HOLE C — wire the orphaned "no-beat" persuasion taxonomy. A doctrine-active
+    converting deck must carry each named persuasion beat (problem, choice/fork,
+    comparison, measurable results, expert proof, before/after). Generous synonym
+    matching keeps real converting decks passing; only a clear, total absence of a
+    named beat fails the specific code. Defers without doctrine / copy / a pitch."""
+    if not _doctrine_active(run_dir):
+        return ""
+    if _intake_pitch_included(run_dir) is not True:
+        return ""
+    text = _slides_copy_text_lc(run_dir)
+    if not text:
+        return ""
+    missing = []
+    for code, markers in PERSUASION_BEAT_MARKERS.items():
+        if _first_marker_offset(text, markers) is None:
+            missing.append(code)
+    if missing:
+        return (": ".join((missing[0], "")) + "the deck is missing the named persuasion "
+                "beat(s) " + ", ".join(missing) + " — every converting deck must name the "
+                "problem, present a choice/fork, draw a comparison, cite a measurable result, "
+                "carry expert proof, and show a before/after (SOP-PITCH-06 / SOP-ENGINE-00 "
+                "persuasion-beat taxonomy).")
+    return ""
+
+
+def _chk_style_preview(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-STYLE-UNPICKED + AF-STYLE-DOUBLECHARGE — the approved 3-style-preview gate
+    (P-STYLE-PREVIEW, order 4.85). After the 9 sample renders (3 variants x 3
+    representative slides) are produced, the owner picks ONE variant via their own
+    gateway (NEVER the operator chat). The full deck must not render until the pick is
+    logged; and the winning variant's 3 representative slides must be LOCKED and reused
+    so kie never double-charges. Defers until the samples manifest exists."""
+    sm = run_dir / STYLE_SAMPLES_MANIFEST_REL
+    if not sm.exists():
+        return ""  # style-preview phase not run (or pre-phase) — defer.
+    choice_p = run_dir / STYLE_CHOICE_REL
+    choice = _read_json(choice_p) if choice_p.exists() else None
+    valid_pick = (isinstance(choice, dict) and "__parse_error__" not in choice
+                  and choice.get("owner_approved") is True
+                  and str(choice.get("chosen_variant") or "").strip())
+    # W1a — AF-STYLE-UNPICKED: samples rendered but no owner-approved variant pick.
+    if not valid_pick:
+        if _owner_skip_approved(run_dir, "AF-STYLE-UNPICKED"):
+            return ""
+        return ("AF-STYLE-UNPICKED: 9 style samples were rendered but the owner has not "
+                "picked a winning variant (working/copy/style_preview_choice.json must carry "
+                "owner_approved:true + chosen_variant). The full deck must NOT render until "
+                "the owner chooses A/B/C via their OWN gateway — never the operator chat.")
+    # W1b — AF-STYLE-DOUBLECHARGE: the winner's 3 representative slide renders must be
+    # carried forward (locked_renders), not re-dispatched to kie.
+    if _owner_skip_approved(run_dir, "AF-STYLE-DOUBLECHARGE"):
+        return ""
+    locked = choice.get("locked_renders")
+    if not (isinstance(locked, list) and len(locked) >= 1):
+        return ("AF-STYLE-DOUBLECHARGE: the winning variant " + repr(choice.get("chosen_variant"))
+                + " records no locked_renders — its 3 representative slides must be carried "
+                "forward and REUSED, never re-rendered. kie must never double-charge for the "
+                "already-approved samples (P-STYLE-PREVIEW, order 4.85).")
+    for ref in locked:
+        rp = run_dir / str(ref) if not str(ref).startswith("/") else Path(str(ref))
+        if not rp.exists():
+            return ("AF-STYLE-DOUBLECHARGE: locked sample render " + repr(str(ref))
+                    + " (the approved variant's representative slide) is missing — it must be "
+                    "reused, not re-charged. kie must never double-charge the approved samples.")
+    return ""
+
+
+def _chk_priority_shift_ledger(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-PRIORITY-SHIFT (composite, P-SHIFT-QC order 7.5) — the framework's 14-item
+    pre-output ship gate, the ONLY point where copy + design + rendered images coexist.
+    Runs all 14 sub-assertions (reusing the shift-left gates), writes a per-item
+    pass/fail ledger to working/qc/priority_shift_report.json, and refuses ship until
+    all 14 PASS. Item 0 is the North Star itself: the #1 job is to hold attention.
+    Defers pre-render and without doctrine; waivable only by a logged owner skip."""
+    if not _doctrine_active(run_dir):
+        return ""
+    pngs = _gather_rendered_pngs(run_dir)
+    if not pngs:
+        return ""  # the 14-item gate needs the rendered images — defer pre-render.
+    spec = _read_priority_spec(run_dir) or {}
+    text = _slides_copy_text_lc(run_dir) or ""
+    rows = []
+
+    def add(item, ok, evidence):
+        rows.append({"item": item, "pass": bool(ok), "evidence": str(evidence)[:240]})
+
+    pitch = _intake_pitch_included(run_dir) is True
+    add("0_attention_is_the_no1_job",
+        bool(str(spec.get("true_goal") or "").strip()),
+        "priority_shift_spec.true_goal declares the destination shift")
+    add("1_creation_mode_identified", _chk_mode(run_dir) == "", "AF-MODE-UNSET")
+    add("2_priority_stack_named", _chk_priority_stack(run_dir) == "", "AF-NO-PRIORITY-STACK")
+    add("3_priority_shift_engineered", _chk_priority_shift(run_dir) == "", "AF-NO-SHIFT")
+    add("4_present_cost_exposed",
+        _first_marker_offset(text, COST_OF_INACTION_MARKERS) is not None,
+        "cost-of-inaction beat present (Move 2)")
+    add("5_higher_priority_lever",
+        bool(str(spec.get("higher_priority_hook") or "").strip()),
+        "priority_shift_spec.higher_priority_hook (Move 3)")
+    add("6_value_anchored_high",
+        _first_marker_offset(text, ("anchor", "value-stack", "value_stack", "value add")) is not None,
+        "value anchor beat present (Move 4)")
+    add("7_urgency_scarcity",
+        (not pitch) or _first_marker_offset(text, URGENCY_SCARCITY_MARKERS) is not None,
+        "urgency/scarcity present (Move 5; n/a for pitchless)")
+    add("8_ability_unblocked",
+        (not pitch) or _first_marker_offset(text, ABILITY_UNBLOCK_MARKERS) is not None,
+        "ability-blocker removed (Move 6; n/a for pitchless)")
+    add("9_rerank_demanded", _chk_rerank(run_dir) == "", "AF-NO-RERANK (Move 7)")
+    add("10_trigger_fired", _chk_trigger(run_dir) == "", "AF-NO-TRIGGER (Move 8)")
+    add("11_proclamation_hedge_free", _chk_proclamation_hedge(run_dir) == "",
+        "AF-PROCLAMATION-HEDGE")
+    add("12_peak_and_ending", _chk_peak_end(run_dir) == "", "AF-PEAK-END")
+    add("13_most_vivid_by_the_end", _chk_salience_apex(run_dir) == "", "AF-NO-SALIENCE-APEX")
+    add("14_one_promise_one_wow_one_demonstration",
+        all(str(spec.get(k) or "").strip()
+            for k in ("the_one_promise", "the_one_wow", "the_one_demonstration")),
+        "spec carries the single promise + wow + demonstration anchors")
+
+    passed = all(r["pass"] for r in rows)
+    report = {
+        "schema": "priority_shift_report/v1",
+        "gate": "AF-PRIORITY-SHIFT",
+        "phase": "P-SHIFT-QC (order 7.5)",
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "pass": passed,
+        "items": rows,
+    }
+    try:
+        out = run_dir / PRIORITY_SHIFT_REPORT_REL
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(report, indent=2))
+    except Exception:  # noqa: BLE001 — never let report-write mask the verdict
+        pass
+    if not passed:
+        if _owner_skip_approved(run_dir, "AF-PRIORITY-SHIFT"):
+            return ""
+        failed = [r["item"] for r in rows if not r["pass"]]
+        return ("AF-PRIORITY-SHIFT: the 14-item priority-shift ship gate failed on "
+                + ", ".join(failed) + " (see working/qc/priority_shift_report.json). "
+                "P-SHIFT-QC (order 7.5) blocks ship until all 14 items PASS — item 0 is the "
+                "North Star: the #1 job is to hold attention (P161/P155, SOP-INTEGRATION-00).")
+    return ""
+
+
 PREFLIGHT_REQUIRED = [
     ("working/copy/intake.json",
      "intake.json (interview_confirmed:true, presentation_mode one-person|general)",
@@ -5600,6 +6181,83 @@ PREFLIGHT_REQUIRED = [
      "pixel read, not a self-typed number (AF-IMAGE-QC-VISION)",
      "Phase Image-QC / Postflight — Image QC Specialist pixel read (AF-IMAGE-QC-VISION)",
      check_image_qc_vision),
+    # === POWERFUL-PRESENTATION DOCTRINE GATES (manifest v18) ===
+    # All DEFER unless Phase P0B-PRIORITY produced working/copy/priority_shift_spec.json
+    # (the no-regression master switch), so a legacy / ad-hoc build is never broken.
+    # AF-MODE-UNSET (P118) — the creation mode is identified at Step Zero.
+    (None,
+     "creation mode set — intake.creation_mode is from_scratch|content_personal|content_general "
+     "(content modes carry extracted_substance) (AF-MODE-UNSET)",
+     "Phase 0.1/0.2 — Director intake + Attention-Content Strategist (SOP-MODE-00, AF-MODE-UNSET)",
+     _chk_mode),
+    # AF-NO-SHIFT (P33/P105) — the priority-shift spine: spec + 8 monotonic build-moves.
+    (None,
+     "priority shift engineered — priority_shift_spec.json (true_goal + priority_stack[]) and "
+     "the eight build-move beat tags monotonic in slides_copy.md (AF-NO-SHIFT)",
+     "Phase 0.2 — Attention-Content Strategist (SOP-NORTHSTAR-00 / SOP-PRIORITY-02, AF-NO-SHIFT)",
+     _chk_priority_shift),
+    # AF-NO-PRIORITY-STACK (P142, Move 1) — stack named before the first ladder beat.
+    (None,
+     "priority stack named first — the audience's current priorities appear before the first "
+     "value/price ladder beat (AF-NO-PRIORITY-STACK)",
+     "Phase 0.2/4 — Attention-Content Strategist + Slide Copywriter (P142, AF-NO-PRIORITY-STACK)",
+     _chk_priority_stack),
+    # AF-NO-RERANK (P148, Move 7) — re-rank demanded after PRICE (pitch decks only).
+    (None,
+     "re-rank demanded after price — an explicit decision/re-rank beat follows the PRICE "
+     "(AF-NO-RERANK)",
+     "Phase 4 — Slide Copywriter + Presenters Speech Writer (P148, AF-NO-RERANK)",
+     _chk_rerank),
+    # AF-NO-TRIGGER (P149, Move 8) — time-bound trigger on the CTA (pitch decks only).
+    (None,
+     "trigger fired — the CTA carries a time-bound trigger (deadline / scarcity window) "
+     "(AF-NO-TRIGGER)",
+     "Phase 4 — Slide Copywriter + Offer Price Strategist (P149, AF-NO-TRIGGER)",
+     _chk_trigger),
+    # AF-PROCLAMATION-HEDGE (P109) — proclamations are plain, bold, hedge-free.
+    (None,
+     "proclamation hedge-free — no strong hedge phrases in slide copy (AF-PROCLAMATION-HEDGE)",
+     "Phase 4 — Attention-Content Strategist + Slide Copywriter (SOP-PROCLAMATION-01, P109)",
+     _chk_proclamation_hedge),
+    # AF-PEAK-END (P49) — the arc declares a deliberate PEAK and a deliberate ending.
+    (None,
+     "peak + ending engineered — the arc carries a PEAK/APEX beat and a deliberate ending "
+     "(AF-PEAK-END)",
+     "Phase 3 — Offer Price Strategist + Director SOP 9.4 arc (P49, AF-PEAK-END)",
+     _chk_peak_end),
+    # AF-NO-SALIENCE-APEX (P48/P155) — the offer/promise-apex slide is the most vivid.
+    (None,
+     "most vivid by the end — the OFFER/PROMISE-APEX slide is the single most vivid rendered "
+     "slide (von Restorff backstop) (AF-NO-SALIENCE-APEX)",
+     "Phase 4.95 — Attention Designer / Image QC (P48/P155, AF-NO-SALIENCE-APEX)",
+     _chk_salience_apex),
+    # AF-CONVERTER-NO-INVENT (P167d) — converter extracts, never invents figures.
+    (None,
+     "converter extracts not invents — every figure in the source brief traces to the raw "
+     "source (AF-CONVERTER-NO-INVENT)",
+     "Phase -1 — Content-to-Presentation Architect (P167d, AF-CONVERTER-NO-INVENT)",
+     _chk_converter_no_invent),
+    # HOLE C — orphaned "no-beat" persuasion taxonomy, now WIRED (pitch decks only).
+    (None,
+     "persuasion beats present — problem / choice / fork / comparison / measurable-results / "
+     "expert-proof / before-after beats are all present (AF-NO-PROBLEM / AF-NO-CHOICE / "
+     "AF-NO-FORK / AF-NO-COMPARISON / AF-NO-MEASURABLE-RESULTS / AF-NO-EXPERT-PROOF / "
+     "AF-NO-BEFORE-AFTER)",
+     "Phase 4 — Slide Copywriter (SOP-PITCH-06 / SOP-ENGINE-00 persuasion-beat taxonomy)",
+     _chk_persuasion_beats),
+    # AF-STYLE-UNPICKED / AF-STYLE-DOUBLECHARGE (P-STYLE-PREVIEW, 4.85).
+    (None,
+     "style preview picked + locked — the owner picked one of 3 attention-grade variants and "
+     "the winner's 3 representative renders are locked + reused, never re-charged "
+     "(AF-STYLE-UNPICKED / AF-STYLE-DOUBLECHARGE)",
+     "Phase 4.85 — Attention Designer 3-style-preview (owner gateway sign-off)",
+     _chk_style_preview),
+    # AF-PRIORITY-SHIFT (composite, P-SHIFT-QC 7.5) — the 14-item pre-output ship gate.
+    (None,
+     "priority-shift ship gate — the 14-item pre-output checklist (copy + design + images "
+     "coexist) all PASS; item 0 is the North Star (AF-PRIORITY-SHIFT)",
+     "Phase 7.5 — QC Specialist (SOP-INTEGRATION-00, P161/P155, AF-PRIORITY-SHIFT)",
+     _chk_priority_shift_ledger),
 ]
 
 
@@ -6703,6 +7361,109 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
 # main
 # ---------------------------------------------------------------------------
 
+def run_style_preview_samples(slides_path: Path, run_dir: Path,
+                              style_spec_path: Optional[Path], api_key: str,
+                              logo_url: Optional[str] = None) -> int:
+    """P-STYLE-PREVIEW (order 4.85) --sample mode. Render 3 attention-grade style
+    variants (A/B/C) across 3 representative slides (cover / data / people) = 9 sample
+    renders, so the owner can pick ONE winning direction via their OWN gateway before
+    the full deck is committed. The winner's 3 representative renders are then LOCKED
+    and reused downstream so kie never double-charges (enforced by AF-STYLE-DOUBLECHARGE).
+
+    Reads working/copy/style_preview_spec.json (or --style-spec) =
+      {"variants":[{"id":"A","style_directive":"..."}, ...3],
+       "representative_slides":[<cover ord>, <data ord>, <people ord>]}.
+    Writes working/style-preview/<variant>-slide-<ord>.png + style_samples_manifest.json.
+    Returns a process exit code (0 = the 9 samples rendered + manifest written)."""
+    spec_path = style_spec_path
+    if spec_path is None:
+        for rel in ("working/copy/style_preview_spec.json",
+                    "working/style-preview/style_preview_spec.json"):
+            p = run_dir / rel
+            if p.exists():
+                spec_path = p
+                break
+    if spec_path is None or not Path(spec_path).exists():
+        print("FATAL --sample: no style_preview_spec.json found (pass --style-spec PATH or "
+              "place it at working/copy/style_preview_spec.json).", file=sys.stderr)
+        return 2
+    spec = _read_json(Path(spec_path))
+    if not isinstance(spec, dict) or "__parse_error__" in spec:
+        print(f"FATAL --sample: style_preview_spec.json is not valid JSON.", file=sys.stderr)
+        return 2
+    variants = spec.get("variants") or []
+    rep_slides = spec.get("representative_slides") or []
+    if not (isinstance(variants, list) and len(variants) == 3):
+        print("FATAL --sample: style_preview_spec.variants must list exactly 3 variants "
+              "(A/B/C).", file=sys.stderr)
+        return 2
+    if not (isinstance(rep_slides, list) and len(rep_slides) == 3):
+        print("FATAL --sample: style_preview_spec.representative_slides must list exactly 3 "
+              "slide ordinals (cover / data / people).", file=sys.stderr)
+        return 2
+
+    slides = json.loads(Path(slides_path).read_text())
+    by_ord = {s["slide"]: s for s in slides if isinstance(s, dict) and "slide" in s}
+    out_dir = run_dir / "working" / "style-preview"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    samples = []
+    for v in variants:
+        vid = str(v.get("id") or "").strip() or "?"
+        directive = str(v.get("style_directive") or "").strip()
+        for ordn in rep_slides:
+            try:
+                ordn = int(ordn)
+            except (TypeError, ValueError):
+                print(f"FATAL --sample: representative slide ordinal {ordn!r} is not an int.",
+                      file=sys.stderr)
+                return 2
+            slide = by_ord.get(ordn)
+            if slide is None:
+                print(f"FATAL --sample: representative slide {ordn} is not in slides.json.",
+                      file=sys.stderr)
+                return 2
+            base_prompt = load_rich_prompt(slide, run_dir)
+            # Prepend the variant's attention-grade style directive to the verbatim rich
+            # prompt; the rest of the prompt (copy, negative block, spelling-lock) is
+            # rendered unchanged so the SAMPLE is a faithful preview of the real slide.
+            prompt = (f"[STYLE VARIANT {vid} — {directive}]\n\n{base_prompt}"
+                      if directive else base_prompt)
+            png = out_dir / f"variant-{vid}-slide-{ordn:02d}.png"
+            print(f"  [sample] variant {vid} / slide {ordn} -> {png.name}", flush=True)
+            task_id = submit_task(prompt, api_key, logo_url=logo_url)
+            result_url = poll_task(task_id, api_key)
+            download_unauthenticated(result_url, png)
+            verify_png(png)
+            samples.append({
+                "variant": vid,
+                "slide": ordn,
+                "render": str(png.relative_to(run_dir)),
+                "taskId": task_id,
+            })
+
+    manifest = {
+        "schema": "style_samples_manifest/v1",
+        "phase": "P-STYLE-PREVIEW (order 4.85)",
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "variants": [str(v.get("id")) for v in variants],
+        "representative_slides": [int(o) for o in rep_slides],
+        "samples": samples,
+        "owner_pick_required": True,
+        "owner_pick_artifact": STYLE_CHOICE_REL,
+        "owner_pick_note": ("Route these 9 samples to the OWNER's OWN gateway (never the "
+                            "operator chat). Record the pick in working/copy/"
+                            "style_preview_choice.json {owner_approved:true, chosen_variant, "
+                            "locked_renders:[...]} so the winner's 3 renders are reused and "
+                            "kie never double-charges."),
+    }
+    (out_dir / "style_samples_manifest.json").write_text(json.dumps(manifest, indent=2))
+    print(json.dumps({"slidesRendered": len(samples),
+                      "styleSamplesManifest": str(out_dir / "style_samples_manifest.json"),
+                      "ownerPickArtifact": STYLE_CHOICE_REL}, indent=2))
+    return 0
+
+
 def main():
     argv = sys.argv[1:]
 
@@ -6715,12 +7476,24 @@ def main():
     platform_arg = None  # --platform {vps|mac} override (default None -> auto-detect)
     skip_teleprompter_gate = False  # M7: explicit per-run bypass of the teleprompter
                                     # publish sub-check (never via a persisted status).
+    sample_mode = False  # P-STYLE-PREVIEW (4.85): render 9 style samples, then stop.
+    style_spec_arg = None
     positional = []
     i = 0
     while i < len(argv):
         tok = argv[i]
         if tok == "--adhoc-no-process":
             adhoc = True
+        elif tok == "--sample":
+            sample_mode = True
+        elif tok == "--style-spec":
+            i += 1
+            if i >= len(argv):
+                print("FATAL: --style-spec requires a path argument.", file=sys.stderr)
+                sys.exit(2)
+            style_spec_arg = argv[i]
+        elif tok.startswith("--style-spec="):
+            style_spec_arg = tok[len("--style-spec="):]
         elif tok == "--skip-teleprompter-gate":
             skip_teleprompter_gate = True
         elif tok == "--run-dir":
@@ -6769,6 +7542,24 @@ def main():
         else:
             positional.append(tok)
         i += 1
+
+    # P-STYLE-PREVIEW (order 4.85) --sample mode: render 9 style samples (3 variants x
+    # 3 representative slides) for the owner's gateway sign-off, then stop. Needs only
+    # slides.json (no out.pptx / full preflight / postflight).
+    if sample_mode:
+        if not positional:
+            print("Usage: python3 build_deck.py <slides.json> --sample "
+                  "[--style-spec PATH] [--run-dir DIR] [--logo URL]", file=sys.stderr)
+            sys.exit(2)
+        _sp = Path(positional[0])
+        if not _sp.exists():
+            print(f"FATAL: slides.json not found: {_sp}", file=sys.stderr)
+            sys.exit(2)
+        _run_dir = find_run_dir(run_dir_arg, _sp, _sp.parent)
+        _logo_url = logo_arg if (logo_arg and str(logo_arg).startswith("http")) else None
+        _api_key = "" if adhoc else load_api_key()
+        _spec = Path(style_spec_arg) if style_spec_arg else None
+        sys.exit(run_style_preview_samples(_sp, _run_dir, _spec, _api_key, logo_url=_logo_url))
 
     if len(positional) not in (2, 3):
         print("Usage: python3 build_deck.py <slides.json> <out.pptx> [renders_dir] "

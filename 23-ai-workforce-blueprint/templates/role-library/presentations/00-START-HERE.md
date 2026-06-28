@@ -46,6 +46,16 @@
 
 ## What This Department Does
 
+> **The true goal first (the crown over every activity below).** The #1 job of every deck this
+> department produces is to **HOLD THE AUDIENCE'S ATTENTION for the whole duration** — so that the
+> owner's offer or idea **re-ranks to the top of the audience's priority stack** (the PRIORITY
+> SHIFT). The creativity of the imagery is the engine that holds attention; the DESIGNER and the
+> CONTENT author are the two most important roles, and every other role exists to protect the
+> attention they earn. A deck ships only if it engineers a deliberate **peak + ending** and the
+> owner's thing is the **single most vivid element by the end.** Doctrine root:
+> `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` §0 (THE TRUE GOAL). Everything in the activity list
+> below is *how* the department serves that goal — never a substitute for it.
+
 End-to-end branded webinar and slide deck production: copy writing, price ladder choreography, image prompt authoring, brand consistency, QC at every phase, image generation submission, media library management, PPTX assembly, adversarial review, hook development, live-presentation coaching, and verified final delivery.
 
 ### The Ten Required Presentation Components (master SOP Section 4.4)

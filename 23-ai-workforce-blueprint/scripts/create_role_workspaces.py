@@ -1593,7 +1593,21 @@ def write_governing_personas_md(dept_path, dept_id, dept_name=None):
             # OR list [{id, ...}]
             entries = []
             if isinstance(data, dict):
-                for pid, meta in data.items():
+                # Schema 1.x stores the catalog under data["personas"]; the older
+                # flat schema stored persona_id keys at the top level alongside
+                # meta keys. Iterating data.items() directly on the 1.x schema
+                # yielded the literal "personas"/"domainTags"/… meta keys as fake
+                # personas (and a single garbage `| personas |` row) — descend
+                # into data["personas"] when present.
+                if isinstance(data.get("personas"), dict):
+                    src = data["personas"]
+                else:
+                    _META = {"schemaVersion", "schema_version", "created",
+                             "updated", "lastUpdated", "domainTags", "domain_tags",
+                             "perspectiveTags", "perspective_tags", "personas",
+                             "metadata", "version"}
+                    src = {k: v for k, v in data.items() if k not in _META}
+                for pid, meta in src.items():
                     if not isinstance(meta, dict):
                         continue
                     entries.append({"id": pid, **meta})
@@ -1656,8 +1670,14 @@ def write_governing_personas_md(dept_path, dept_id, dept_name=None):
             hints = DEPT_DOMAIN_HINTS.get(dept_lower, [])
             ranked = []
             for e in entries:
-                domain = (e.get("domain") or "").lower()
-                if any(h in domain for h in hints):
+                # domain is a LIST in the 1.x schema (was assumed a str before,
+                # which threw on .lower() and silently fell back to first-5).
+                _dom = e.get("domain") or []
+                if isinstance(_dom, str):
+                    dom_list = [_dom.lower()]
+                else:
+                    dom_list = [str(x).lower() for x in _dom]
+                if any(h in dom_list for h in hints):
                     ranked.append(e)
             # If nothing matched, just show the first 5 in the catalog
             if not ranked:
@@ -1671,8 +1691,10 @@ def write_governing_personas_md(dept_path, dept_id, dept_name=None):
                     pid = e.get("id", "?")
                     author = e.get("author", "")
                     book = e.get("book", "")
-                    domain = e.get("domain", "")
-                    rows.append(f"| `{pid}` | {author} | {book} | {domain} |")
+                    _dom = e.get("domain", "")
+                    if isinstance(_dom, list):
+                        _dom = ", ".join(str(x) for x in _dom)
+                    rows.append(f"| `{pid}` | {author} | {book} | {_dom} |")
                 persona_list_text = (
                     "| Persona ID | Author | Source | Domain |\n"
                     "|------------|--------|--------|--------|\n"

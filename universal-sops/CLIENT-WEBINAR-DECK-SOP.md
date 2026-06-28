@@ -57,6 +57,47 @@
 
 ---
 
+## 0. THE TRUE GOAL — ATTENTION IS THE PRODUCT (read before §1)
+
+> **This section governs everything below it. §1 ("produce a branded deck") is the SURFACE
+> goal — the activity. This section is the TRUE goal — the purpose. When the two ever appear
+> to conflict, the true goal wins.** A correct, complete, on-brand deck that does not do the
+> following has still FAILED. Never confuse the activity (producing a deck) with the purpose.
+
+**The #1 job of every presentation is to HOLD THE AUDIENCE'S ATTENTION for the entire
+duration** — 15 minutes, 90 minutes, or 4 hours; the length is irrelevant. Attention is
+rented every second and re-won every slide. You cannot teach, sell, or move a mind you have
+lost. Holding attention is therefore the necessary condition for everything else this SOP
+builds.
+
+**Attention is in service of ONE true goal: the PRIORITY SHIFT.** Every deck exists to
+re-rank the owner's offer or idea to the **top of the audience's existing priority stack**, so
+that buying or acting becomes the natural consequence. People always find resources — money,
+time, attention — for what they have decided matters most; what is usually missing is not the
+resource but the ranking. The deck's job is to reach into the audience's existing list and pull
+the owner's thing to number one. (This plugs into the existing belief-shift / villain→hero /
+felt-stakes / cost-of-inaction machinery already wired below — it is the destination those
+mechanics drive toward.)
+
+**The creativity of the imagery is the ENGINE that holds attention.** The single most vivid
+thing in the room is the thing the mind prioritizes (von Restorff / salience). That is *why*
+this department spends its largest budget on image creation and refuses corporate,
+seen-it-before, safe decks — and why "just a background with text" is an auto-fail. **The two
+roles that win attention are the DESIGNER (creative, gallery-grade imagery) and the CONTENT
+author (attention-snatching copy that dares to challenge the norm).** Every other role — price
+ladder, hook, QC gates, delivery — exists to PROTECT the attention those two earn.
+
+**Acceptance test (the deck ships only if both are true):**
+1. It engineers a deliberate **peak** and a deliberate **ending** (peak-end rule). A flat
+   ending is remembered as flat.
+2. **The owner's thing is the single most vivid element in the room by the end.**
+
+**Canonical doctrine home:** the North Star — `presentations/sops/SOP-NORTHSTAR-00` (when
+present) and the *Powerful Presentation Framework*. The mechanics that execute it are the live
+SOP/engine stack in §§3–7 below.
+
+---
+
 ## 1. PURPOSE
 
 Produce a complete, branded, webinar-ready slide deck with ZERO ad-hoc image generation.

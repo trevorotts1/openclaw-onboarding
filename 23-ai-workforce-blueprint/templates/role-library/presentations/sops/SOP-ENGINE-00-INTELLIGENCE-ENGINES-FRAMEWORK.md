@@ -12,9 +12,39 @@
 
 This department does not "make slides." It runs NINE INTELLIGENCE ENGINES against every deck. An engine is a named capability with (1) a definition, (2) a "how you know it landed" verification check, and (3) named failure modes that are auto-failed at QC. The phrase "intelligence engine" used to live nowhere in the library even though the pipeline already spoke three of them by name; this SOP is the single artifact that proves the department actually runs this taxonomy, end to end, and wires each engine to its gate.
 
-**The binding principle across ALL engines (the spine):**
+**The binding principle across ALL engines (the spine) — ATTENTION, then coherence:**
 
-> THE IMAGE MUST REFLECT WHAT THE WORDS SAY, AND THE WORDS MUST MATCH WHAT THE IMAGE REFLECTS. Any slide where the picture and the copy tell different stories is a defect (AF-WORD-IMAGE-MISMATCH).
+> **THE SPINE IS ATTENTION.** Every engine exists to do ONE job: **hold the audience's
+> attention for the whole duration so the owner's offer or idea re-ranks to the top of the
+> audience's priority stack** (the priority shift). The engines are not a coherence checklist —
+> they are the machinery that wins and keeps attention, and the creativity of the imagery is the
+> engine that holds it (salience / von Restorff). A deck on which the engines technically "pass"
+> but the attention is lost and nothing re-ranks has failed the spine. Parent doctrine: **the
+> North Star — `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` §0 / `SOP-NORTHSTAR-00` (when
+> present).**
+>
+> **The coherence law (in service of the spine, not above it):** THE IMAGE MUST REFLECT WHAT
+> THE WORDS SAY, AND THE WORDS MUST MATCH WHAT THE IMAGE REFLECTS. Any slide where the picture
+> and the copy tell different stories is a defect (AF-WORD-IMAGE-MISMATCH). Coherence is
+> necessary because incoherence breaks attention — it is the floor, never the goal.
+
+**Each engine is a psychology lever that holds or shifts attention.** Naming the lever is *why*
+the engine is enforced — it lets the role adapt rather than copy. (Lever numbers are the Part-3
+psychology levers of the *Powerful Presentation Framework*.)
+
+| # | Engine | Attention/priority lever | Framework lever |
+|---|---|---|---|
+| 1 | Facial | identity & purpose — a guide's face transfers the felt identity the audience prioritizes | **P50** identity/purpose |
+| 2 | Lighting | salience — correct, dimensional light makes the hero subject the most vivid thing in frame | **P48** salience / von Restorff |
+| 3 | Typography | salience — the 8th-row-readable, intent-signaling headline is the distinct thing the eye fixes on | **P48** salience / von Restorff |
+| 4 | Story (villain→hero) | identity & purpose — character continuity + the villain→hero arc tie the offer to who they are | **P50** identity/purpose |
+| 5 | World | salience — a believably grounded world is vivid and credible; a generic backdrop is forgettable | **P48** salience / von Restorff |
+| 6 | Pricing (promise-before-price) | anchoring & contrast — the high true-value anchor set before the number ranks the thing high | **P47** anchoring/contrast |
+| 7 | Hook | salience — the verbatim refrain is the single most repeatable, distinct phrase in the room | **P48** salience / von Restorff |
+| 8 | Recap / Re-Pitch | peak-end rule — the post-price recap engineers a deliberate ending the audience judges by | **P49** peak-end |
+| 9 | Product [roadmap] | salience — the real product placed in-world is a vivid, memorable brand cue | **P48** salience / von Restorff |
+| 10 | Emotional (felt-stakes) | loss aversion — the felt-stakes quantifier lands the present-tense cost of inaction | **P44** loss aversion |
+| + | Representation / Hair | identity & purpose — authentic representation lets the audience see themselves in the vision | **P50** identity/purpose |
 
 **The engines:** 1 Facial - 2 Lighting - 3 Typography - 4 Story (incl. villain->hero ordering) - 5 World - 6 Pricing - 7 Hook - 8 Recap - 9 Product (roadmap) - 10 Emotional (felt-stakes, NEW 2026-06-20). The Representation HAIR engine is enforced via the Brand Steward (SOP 9.2b) and registered as AF-HAIR-INAUTHENTIC.
 
