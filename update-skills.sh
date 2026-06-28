@@ -42,7 +42,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v14.27.0"
+ONBOARDING_VERSION="v14.27.1"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -2251,7 +2251,7 @@ PYEOF
     if echo "$_CC_REMOTE" | grep -q 'blackceo-command-center'; then
       echo ""
       echo "  Refreshing Command Center web app (CC #108/#109/#112 — git pull + db:push + sync-departments)..."
-      _STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+      _STATE_FILE="$OC_WORKSPACE_DEFAULT/.workforce-build-state.json"
       _CC_SLUG=""
       _CC_COMPANY=""
       _CC_EMAIL=""
@@ -2263,7 +2263,7 @@ PYEOF
       if bash "$_CC_RUN_INSTALL" --update-only "${_CC_SLUG:-}" "${_CC_COMPANY:-}" "${_CC_EMAIL:-}" >>"$LOG_FILE" 2>&1; then
         echo "  ✓ Command Center app refreshed (git pull + npm install + db:push + sync-departments + pm2 restart)"
       else
-        echo "  ⚠ Command Center refresh reported errors — check $OC_ROOT/workspace/.command-center-install.log"
+        echo "  ⚠ Command Center refresh reported errors — check $OC_WORKSPACE_DEFAULT/.command-center-install.log"
       fi
     fi
   fi

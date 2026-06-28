@@ -1,3 +1,40 @@
+## [v14.27.1]  -  2026-06-27  -  fix(update-skills): operator-telegram bindings token-gate + OC_ROOT unbound abort
+
+Two bugs from the v14.27.0 fleet roll (14 boxes; each box's agent worked around
+manually) fixed and guarded against regression.
+
+**Bug 1 — operator-telegram bindings poisoned config on no-token boxes (configure-operator-telegram.sh)**
+
+The `# 4) bindings route` block in the embedded Python heredoc ran unconditionally, writing
+`channels.bindings` → `[{channel:"telegram", accountId:"operator", agentId:"main"}]` even when
+the operator account had no bot token (the `STRUCTURE_ONLY_NEEDS_TOKEN` path). The gateway loads
+`channels.*` and rejects any binding whose `accountId` references a channel account without a
+token — error: `'unknown channel id: bindings'`. Because `update-skills.sh` gates its gateway
+restart on the `openclaw.json` config-hash changing, the now-invalid config prevented the hash
+from changing cleanly, so the conditional restart also failed. Boxes recovered by manually
+deleting `channels.bindings` + `launchctl kickstart`.
+
+Fix: wrap the entire bindings-route block with `if op_acct.get("botToken"):` so the binding is
+written ONLY when the operator account has a token. The operator ACCOUNT structure
+(`channels.telegram.accounts.operator`) is still written either way — the box remains correctly
+flagged for token provisioning (`STATUS: operator-telegram=STRUCTURE_ONLY_NEEDS_TOKEN`) without
+poisoning the gateway config.
+
+**Bug 2 — OC_ROOT unbound variable abort in D5 CC-refresh block (update-skills.sh)**
+
+`OC_ROOT` is defined as `local OC_ROOT="$HOME/.openclaw"` (line 619, function-local). The D5
+"Command Center web-app refresh" block added by PR #413 references `$OC_ROOT/workspace/...` at
+the main script scope (lines 2254, 2266). Under `set -euo pipefail` (active since line 43),
+the bare `$OC_ROOT` expansion at line 2254 triggers "OC_ROOT: unbound variable" and aborts the
+script — bypassing the downstream conditional gateway restart. Boxes with
+`~/projects/command-center` checked out as `blackceo-command-center` were affected.
+
+Fix: replace both `$OC_ROOT/workspace` references with `$OC_WORKSPACE_DEFAULT`, which is
+defined globally at lines 36/39 with the identical path (`/data/.openclaw/workspace` on VPS,
+`$HOME/.openclaw/workspace` on Mac). No new variables introduced; the existing global is used.
+
+Both fixes are idempotent.
+
 ## [v14.27.0]  -  2026-06-28  -  fix(both-paths): CC web-app idempotent refresh on existing boxes (CC #108/#109/#112 delivery gap closed) + D5 master CI acceptance gate
 
 **Single remaining both-paths gap — CLOSED.**

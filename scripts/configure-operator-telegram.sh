@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# configure-operator-telegram.sh — v10.15.48
+# configure-operator-telegram.sh — v10.15.49
 #
 # FIX 2 (systemic): OPERATOR / RESCUE traffic bleeds into the CLIENT's personal
 # Telegram chat. Root cause: one bot + one shared agent:main:main session, so
@@ -162,18 +162,25 @@ if op_help_chat:
 tg["defaultAccount"] = "default"
 
 # 4) bindings route: operator account -> agent main (isolated session key).
-bindings = cfg.setdefault("channels", {}).setdefault("bindings", [])
-if not isinstance(bindings, list):
-    bindings = []
-    cfg["channels"]["bindings"] = bindings
-have_op_binding = any(
-    isinstance(b, dict)
-    and b.get("channel") == "telegram"
-    and b.get("accountId") == "operator"
-    for b in bindings
-)
-if not have_op_binding:
-    bindings.append({"channel": "telegram", "accountId": "operator", "agentId": "main"})
+# ONLY write the binding when the operator account actually has a token.
+# A token-less account referencing channels.bindings causes the gateway to
+# reject the config with 'unknown channel id: bindings', poisoning the
+# config-hash gate and blocking the downstream gateway restart.
+# The ACCOUNT structure (channels.telegram.accounts.operator) is still
+# written unconditionally so the box is flagged for token provisioning.
+if op_acct.get("botToken"):
+    bindings = cfg.setdefault("channels", {}).setdefault("bindings", [])
+    if not isinstance(bindings, list):
+        bindings = []
+        cfg["channels"]["bindings"] = bindings
+    have_op_binding = any(
+        isinstance(b, dict)
+        and b.get("channel") == "telegram"
+        and b.get("accountId") == "operator"
+        for b in bindings
+    )
+    if not have_op_binding:
+        bindings.append({"channel": "telegram", "accountId": "operator", "agentId": "main"})
 
 after = json.dumps(cfg, sort_keys=True)
 

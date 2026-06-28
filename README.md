@@ -1,7 +1,7 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v14.27.0.
+> **Version:** see `/version` - this repo at v14.27.1.
 >
 > **NOTE (v14.26.0) — fix: tools.agentToAgent added to complete routing set at all four write-sites.** PR #398 (v14.26.0) added `tools.sessions.visibility=all` at all four config write-sites but omitted `tools.agentToAgent`. Without it the routing agent can see all sessions but cannot send peer-agent messages directly, so cross-agent handoffs silently fail on newly provisioned boxes. Fixed: `tools.agentToAgent = {"enabled": true, "allow": ["*"]}` now emitted by build-workforce.py (build-time), apply-routing-fix.sh Layer 5 (self-heal), apply-fleet-standards.sh CEO re-assert (fleet roll), and hooks/lib-ceo-tool-gate.sh (revoke/restore path). All four write-sites emit the complete routing tool set. Idempotent: patch scripts use `setdefault` so any already-customized `allow` list is preserved. See [CHANGELOG.md](CHANGELOG.md).
 >
@@ -37,7 +37,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v14.27.0** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v14.27.1** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
