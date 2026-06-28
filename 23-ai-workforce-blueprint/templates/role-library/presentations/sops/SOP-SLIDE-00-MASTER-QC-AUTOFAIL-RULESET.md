@@ -195,6 +195,9 @@ These are deck-level and are evaluated against arc_allocation.json and slide ord
 | AF-IMAGE-QC-RAN | Image-QC/Postflight | DECK | Image-QC report absent, stale (older than rendered PNGs), or rubber-stamped (no per-slide PASS/FAIL rows for all N slides) | check_image_qc_present(run_dir): checks report exists + mtime > all PNG mtimes + slides[] array has one entry per rendered slide. Absent report defers (AF-IMAGE-QC owns absence). Stale or row-missing -> FAIL. |
 | AF-BRAND-CONSISTENCY | Image-QC/Postflight | DECK | Off-brand palette: any rendered slide whose ALL dominant sampled colors fall outside the declared brand token set (intake.json brand.palette) by > BRAND_CONSISTENCY_TOLERANCE (80 RGB units) | check_brand_consistency(run_dir): loads brand.palette from intake.json; samples dominant colors per slide PNG; fails 'off_brand_palette' for offending slides. Defers when no brand palette declared or no renders exist. |
 | AF-OVERLAY-DELIVERED | 5/6/Postflight | slide | A delivered slide ships native on-slide text (or a pptx_text_overlays.json is present) instead of a single composed gpt-image-2 image | _chk_no_overlay(run_dir): fails if any eliminated pptx_text_overlays.json file is present OR the delivered PPTX carries any native (non-notes) on-slide text run; the native-overlay path is eliminated by construction; persistent garble re-prompts/re-seeds then escalates to a human, never a native overlay; strengthens AF-BAKED/AF-I14 (Decision 5C) |
+| AF-CANONICAL-RENDER-BYPASS | 4/6/Postflight | DECK | Deck or any slide PNG produced by a path other than the ONE canonical scripts/build_deck.py + scripts/run_signature_deck.py kie.ai render path | check_canonical_render(run_dir): FAIL if working/checkpoints/process_manifest.json has no phase=="render" attestation written by build_deck.py (write_process_manifest), OR a hand-rolled per-deck renderer/assembler under working/*.py (direct kie createTask / slide-canvas builder / native add_textbox) could produce the pixels, OR any delivered slide cannot be tied to a real canonical kie taskId/recordInfo trace. The build_deck-enforced, non-null successor of the closeout-only AF-RENDERER (strengthens, never replaces). Skippable ONLY by a logged owner_skip_approval token in process_manifest.json — never silently |
+| AF-LOCAL-CANVAS | 4/5/6 | slide | A slide image fabricated locally (Pillow/PIL slide canvas) instead of baked by kie.ai gpt-image-2 | check_local_canvas(run_dir): FAIL if a working/*.py script builds a 2048x1152/full-bleed slide canvas via PIL Image.new/ImageDraw (cream or color typography card), OR a slide PNG is below the 51,200-byte kie-bake floor (PLACEHOLDER_MIN_BYTES — flat-cream-card signature), OR a pure-typography hook slide carries no real kie taskId. Only Pillow step permitted anywhere is the locked-logo composite (SOP-IMG-05); never a slide canvas/surface/text. Strengthens AF-BAKED/AF-I14. Skippable ONLY by a logged owner_skip_approval token in process_manifest.json |
+| AF-IMAGE-QC-VISION | Image-QC/Postflight | DECK | Image-QC pass is pixel-blind (self-typed number / filename-or-prompt reasoning / no real multimodal vision read) | check_image_qc_vision(run_dir): FAIL if working/qc/vision_qc_log.json is absent/empty or lacks a non-null vision_api_response provenance record for EVERY rendered slide, OR the image-QC report excludes any slide index from scope ("slides 1/24/49 out of scope"), OR the report blesses a native typography-overlay model (a typography_overlay_readiness criterion / "overlay the headlines" recommendation). Every slide — cover, dividers, pure-typography/hook — is in scope under the same battery. Deterministic vision-provenance successor of AF-NO-VISION-QC; complements _chk_image_qc + check_image_qc_present. Skippable ONLY by a logged owner_skip_approval token in process_manifest.json |
 
 Every row is a binary trigger with an exact detection method and a verbatim failure message (Section 1 and 2). Wire them as auto-fails, checked before scoring. A deck that trips any DECK-level row, or any slide that trips a slide-level row, cannot be marked final.
 
@@ -594,4 +597,56 @@ These codes close the engine gaps the June-19 breakdown exposed: the ordered PIT
 3. **The four presentation types** (`AF-TYPE-BEAT-MISSING`): enumerate/define the three types beyond "general" so the per-type beat map can be authored.
 4. **Hook split** (`AF-SPEECH-HOOK-COUNT` vs `AF-HOOK-1`): confirm the visual ceiling (3-4 slides) vs spoken floor (5-20x) split is the intended reconciliation.
 5. **`AF-NO-PROBLEM`**: confirm whether `AF-C11`'s `stakes` assertion already gates promise+problem co-presence; if so, `AF-NO-PROBLEM` is REDUNDANT and is NOT added.
+
+---
+
+## 10. NEW AUTO-FAIL CODES — 2026-06-28 CANONICAL-RENDER ENFORCEMENT (close-the-bypass pass)
+
+These three codes close the PRIMARY root cause of the grants-deck failure: every protection lived *inside* the canonical tools, and nothing at the build/closeout layer forced a deck *through* those tools. A client agent ran hand-rolled `working/phase4_*.py` + `working/phase6_assemble.py` scripts that (a) bypassed the canonical renderer, (b) fabricated 3 hook slides locally with Pillow, and (c) blessed the result with a pixel-blind self-typed `8.66` image-QC score — and not one guardrail fired because the tool that runs them was never run.
+
+**SHARED CONTRACT (this overhaul, all fixes code to it).** The canonical render path is `scripts/build_deck.py` / `scripts/run_signature_deck.py` ONLY. The three exact-string codes below are shared by Fix 2 (which implements/exports the check symbols in `build_deck.py`) and Fix 9 (which registers them here + in `PIPELINE-MANIFEST.json`); Fix 1 wires them into the gate flow. Each is `enforced_by: build_deck` with a real, non-null `py_symbol` — there is NO null/unenforced gate among them. **A gate may be skipped ONLY by an explicit, LOGGED owner/founder approval token recorded in `working/checkpoints/process_manifest.json` (`owner_skip_approval`) — never silently, never by an agent's own choice.**
+
+Trevor's HARD RULE these enforce: every slide's WORDS + VISUAL are generated TOGETHER in ONE image by kie.ai gpt-image-2 ONLY (no Pillow slide canvas, no other model, NO PowerPoint text overlaid on top), and the process is IMPOSSIBLE to skip unless the OWNER explicitly approves.
+
+### Code Index
+
+| Code | Successor of | Gate phase | Scope | py_symbol (build_deck.py) | What it blocks |
+|------|--------------|-----------|-------|---------------------------|----------------|
+| `AF-CANONICAL-RENDER-BYPASS` | AF-RENDERER (closeout-only, py_symbol null) | Phase 4/6/Postflight | DECK | `check_canonical_render` | a deck/slide produced by any path other than `build_deck.py` + `run_signature_deck.py` (hand-rolled `working/*.py` renderer/assembler, direct kie `createTask`, or a slide untraceable to a canonical kie `taskId`) |
+| `AF-LOCAL-CANVAS` | AF-BAKED / AF-I14 | Phase 4/5/6 | slide | `check_local_canvas` | a slide image fabricated locally — a PIL `Image.new`/`ImageDraw` slide canvas, a sub-51,200-byte flat-cream card, or a pure-typography hook with no real kie `taskId` |
+| `AF-IMAGE-QC-VISION` | AF-NO-VISION-QC (closeout-only, py_symbol null) | Image-QC/Postflight | DECK | `check_image_qc_vision` | a pixel-blind image-QC pass — a self-typed score, filename/prompt reasoning, a missing per-slide `vision_api_response`, an out-of-scope slide exclusion, or an overlay-blessing rubric |
+
+### AF-CANONICAL-RENDER-BYPASS — Canonical-Render Guard (deck-level, Phase 4/6/Postflight)
+
+**Doctrine:** there is exactly ONE render surface — `scripts/build_deck.py`, driven by the deterministic `scripts/run_signature_deck.py` state machine. A deck whose pixels did not come through that surface is not a governed deck. This is the build_deck-enforced, NON-NULL successor of the toothless closeout-only `AF-RENDERER` (which had `py_symbol: null` and "never ran" in the forensic deck); it strengthens, never replaces, `AF-RENDERER`.
+
+**Detection (`check_canonical_render(run_dir)`):** FAIL if `working/checkpoints/process_manifest.json` carries no `phase=="render"` attestation written by `build_deck.py` (via `write_process_manifest`); OR a hand-rolled / per-deck renderer or assembler under `working/*.py` (a direct kie `createTask`, a slide-canvas builder, or a native `add_textbox` assembler) produced or could produce the pixels; OR any delivered slide cannot be tied to a real canonical kie `taskId` / `recordInfo` trace.
+
+**Owner skip:** MAY be skipped ONLY by an explicit, logged `owner_skip_approval` token in `process_manifest.json` (founder/owner approval). Never silently, never by an agent's own choice.
+
+**Failure message:** `AF-CANONICAL-RENDER-BYPASS: DECK FAIL — the deck was not produced by the canonical build_deck.py / run_signature_deck.py kie.ai path (no build_deck render attestation, a hand-rolled working/*.py renderer/assembler was used, or a slide has no canonical kie taskId). Re-run through run_signature_deck.py, or record a logged owner_skip_approval in process_manifest.json.`
+
+### AF-LOCAL-CANVAS — No Local Slide Canvas (slide-level, Phase 4/5/6)
+
+**Doctrine:** a slide image is ALWAYS baked by kie.ai gpt-image-2 — the cream/wash surface AND the verbatim words in ONE composed image. Fabricating a slide locally (a flat cream typography card via Pillow) is the exact defect that produced the 3 bypassed hook slides. "Pure typography" describes the VISUAL (type carries the slide), never the render path; a pure-typography hook slide is still a kie.ai bake. The ONLY Pillow/PIL step permitted anywhere in the pipeline is the locked-logo image composite (SOP-IMG-05) — never a slide canvas, surface, or text. The phrase "skip kie.ai for this slide" is doctrine-illegal and appears in no role, SOP, or script.
+
+**Detection (`check_local_canvas(run_dir)`):** FAIL if a `working/*.py` script constructs a 2048×1152 (or any full-bleed) slide canvas via PIL `Image.new` / `ImageDraw` to draw a cream or color typography card; OR a slide PNG falls below the 51,200-byte kie-bake floor (`PLACEHOLDER_MIN_BYTES` — the flat-cream-card signature); OR a pure-typography hook slide carries no real kie `taskId`. Strengthens (does not replace) `AF-BAKED` / `AF-I14`.
+
+**Owner skip:** MAY be skipped ONLY by an explicit, logged `owner_skip_approval` token in `process_manifest.json`.
+
+**Failure message:** `AF-LOCAL-CANVAS: slide {N} was fabricated locally (PIL Image.new/ImageDraw slide canvas, a sub-51,200-byte flat-cream card, or a pure-type hook with no kie taskId). Every slide is a kie.ai gpt-image-2 bake; Pillow is permitted ONLY for the locked-logo composite (SOP-IMG-05). Re-render via kie.ai, or record a logged owner_skip_approval.`
+
+### AF-IMAGE-QC-VISION — Mandatory Multimodal Image-QC (deck-level, Image-QC/Postflight)
+
+**Doctrine:** the image-QC gate must inspect PIXELS, not a self-typed number. A real multimodal vision read of EVERY rendered slide PNG is required, recorded with verifiable provenance. This is the deterministic vision-provenance successor of the closeout-only `AF-NO-VISION-QC` (which had `py_symbol: null`); it complements `_chk_image_qc` (the report-gate) and `check_image_qc_present` (the freshness/coverage gate). It is the specific failure that let the bad deck pass at `8.66` — a number was typed into JSON and no pixels were opened.
+
+**Detection (`check_image_qc_vision(run_dir)`):** FAIL if `working/qc/vision_qc_log.json` is absent / empty or lacks a non-null `vision_api_response` provenance record for EVERY rendered slide; OR the image-QC report excludes any slide index from scope (e.g. "slides 1/24/49 out of scope"); OR the report blesses a native typography-overlay model (a `typography_overlay_readiness` criterion or an "overlay the headlines" recommendation). Every slide — cover, section dividers, and pure-typography / hook slides included — is graded under the same battery; excluding any slide index is itself a fail.
+
+**Owner skip:** MAY be skipped ONLY by an explicit, logged `owner_skip_approval` token in `process_manifest.json`.
+
+**Failure message:** `AF-IMAGE-QC-VISION: DECK FAIL — image-QC is pixel-blind (no per-slide vision_api_response in vision_qc_log.json, a slide excluded from scope, or an overlay-blessing rubric). A self-typed score is not QC. Run a real multimodal vision read of EVERY slide PNG, or record a logged owner_skip_approval.`
+
+### Registration / lockstep status
+
+All three are registered in `PIPELINE-MANIFEST.json` (`manifest_version` 15) under `autofails` with `enforced_by: build_deck` + the `py_symbol` named above (+ a confirmed-existing `secondary_py_symbol`: `write_process_manifest` / `PLACEHOLDER_MIN_BYTES` / `_chk_image_qc` respectively), and they appear in the Section-5 machine-checkable table above. `sync_check.py` (AF-SYNC) goes green once Fix 2 lands the three `check_*` functions in `build_deck.py`; until then AST drift on those `py_symbol`s is expected and is the lockstep doing its job. The cluster `universal-sops/presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md` Section-5 table (the copy AF-SYNC actually parses) should receive the same three rows for doctrine parity.
 

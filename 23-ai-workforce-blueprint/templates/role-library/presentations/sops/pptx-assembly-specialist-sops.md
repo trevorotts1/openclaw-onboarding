@@ -32,12 +32,13 @@ This role NEVER composites native PPTX text. The legacy `pptx_text_overlays.json
 1. Verify slide count: `ls working/media-library/*.png | wc -l` must equal slide_count_final from mission_prd.json. If it does not, halt and notify the Director.
 2. Verify presenter_notes.json has exactly slide_count_final entries. If fewer entries than slides: flag missing notes to the Director. Do not assemble with missing notes.
 3. **AF-OVERLAY-DELIVERED guard.** Confirm there is NO `pptx_text_overlays.json` anywhere in the run dir (working/copy/, working/checkpoints/, or the run root). If one exists, HALT: delete it and route the affected slide(s) back to the Slide Image Creator's re-prompt/re-seed loop (then human escalation if garble persists). Native text overlays are eliminated; assembly composites ONLY the single gpt-image-2 image per slide (plus the off-slide speaker-notes pane and, where required, the PIL-composited logo image baked into the PNG per SOP-IMG-05).
-3a. **Workspace discipline (AF-DH1 prevention):** Confirm the assembly script path is `working/scripts/assemble_pptx.py`. All intermediate files (prompts, renders, QC logs, manifests, scripts) MUST remain under `working/`. Output PPTX goes to `output/[DECK_SLUG].pptx` and PDF to `output/[DECK_SLUG].pdf`. The assembly script must NEVER hard-code `BUNDLE_DIR = ~/Downloads/<DECK>` or any client delivery path as its working directory -- that path is owned exclusively by Delivery Concierge SOP 9.0. Verify now; refuse to proceed if any of these conditions are violated.
+3a. **Canonical assembler only (AF-CANONICAL-RENDER-BYPASS).** The deck is assembled by the canonical renderer `scripts/build_deck.py` `assemble_pptx()`, invoked ONLY through `scripts/run_signature_deck.py`. That function adds ONLY `add_picture` (full-bleed kie.ai image) + `add_picture` (PIL-baked logo when used) + the off-slide notes pane, and emits ZERO `add_textbox`. You do NOT hand-write or run a parallel per-deck assembler (no `working/phase*_assemble.py`, no improvised renderer). A hand-rolled per-deck assembler/renderer is AF-CANONICAL-RENDER-BYPASS (and AF-RENDERER); a locally fabricated slide canvas (`Image.new(...)` for a 2048×1152 card, or a PowerPoint-drawn typography card) is AF-LOCAL-CANVAS. The python in step 4 is the REFERENCE SPEC of the canonical assembler's image-only behavior, not a license to author a separate assembler. A gate is skippable ONLY via an explicit, LOGGED owner/founder `owner_skip_approval` token in `process_manifest.json`.
+3b. **Workspace discipline (AF-DH1 prevention):** All intermediate files (prompts, renders, QC logs, manifests, scripts) MUST remain under `working/`. Output PPTX goes to `output/[DECK_SLUG].pptx` and PDF to `output/[DECK_SLUG].pdf`. The assembler must NEVER hard-code `BUNDLE_DIR = ~/Downloads/<DECK>` or any client delivery path as its working directory -- that path is owned exclusively by Delivery Concierge SOP 9.0. Verify now; refuse to proceed if any of these conditions are violated.
 4. Write the assembly script at working/scripts/assemble_pptx.py:
    ```python
    from pptx import Presentation
-   from pptx.util import Inches, Pt
-   from pptx.dml.color import RGBColor
+   from pptx.util import Inches  # Inches ONLY -- no Pt/RGBColor: this assembler
+   # draws ZERO native text, so text-formatting primitives are deliberately absent.
    import json, os, glob, re
 
    # Configuration
@@ -76,6 +77,9 @@ This role NEVER composites native PPTX text. The legacy `pptx_text_overlays.json
 
        # Full-bleed composed image (the ONLY visual on the slide; all text baked in
        # by gpt-image-2, plus the PIL-composited logo image per SOP-IMG-05 when used).
+       # ONLY add_picture is permitted -- there is NO add_textbox / add_shape /
+       # placeholder-text call anywhere in this assembler. Text-on-slide is absent
+       # by construction, not by discipline.
        pic = slide.shapes.add_picture(img_path, Inches(0), Inches(0),
                                       Inches(SLIDE_WIDTH_INCHES), Inches(SLIDE_HEIGHT_INCHES))
 
@@ -84,6 +88,19 @@ This role NEVER composites native PPTX text. The legacy `pptx_text_overlays.json
            notes_slide = slide.notes_slide
            notes_slide.notes_text_frame.text = notes[slide_number]
 
+   def assert_image_only(prs):
+       # AF-OVERLAY-DELIVERED structural guard. Every on-slide shape must be a
+       # picture; no shape may expose a non-empty on-slide text frame. The off-slide
+       # speaker-notes pane (slide.notes_slide) is NOT a slide shape and is exempt.
+       for i, slide in enumerate(prs.slides, start=1):
+           for shape in slide.shapes:
+               if shape.has_text_frame and shape.text_frame.text.strip():
+                   raise SystemExit(
+                       f"AF-OVERLAY-DELIVERED: slide {i} has a native on-slide text "
+                       f"run. The deck is image-only (text baked into the single "
+                       f"gpt-image-2 image). Re-prompt/re-seed the slide; never overlay.")
+
+   assert_image_only(prs)  # structural ban on text-on-slide, enforced in code
    os.makedirs("output", exist_ok=True)
    prs.save(OUTPUT_FILE)
    print(f"Saved: {OUTPUT_FILE}")

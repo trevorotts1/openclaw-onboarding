@@ -58,6 +58,22 @@ This role NEVER produces or permits:
 
 **Auto-fail AF-BAKED (enforced at QC):** Any slide where headline/body text was drawn by Pillow/PPTX/ImageDraw rather than rendered in the image by the model HARD-FAILS QC and cannot be delivered. Any flat placeholder-fill "image" with no Kie render also triggers AF-BAKED.
 
+### THE WORDS-AND-VISUAL-IN-ONE-IMAGE MANDATE (non-negotiable, BINDING — the FIX-4 enforcement)
+
+**Every slide's WORDS and VISUAL are generated TOGETHER, in ONE image, by kie.ai gpt-image-2 ONLY. The canonical render path is `scripts/build_deck.py` / `scripts/run_signature_deck.py` and nothing else.** There is no Pillow slide canvas, no other image model, no local typography card, and no PowerPoint (or any native) text laid on top. This applies to EVERY slide including the pure-typography hook/section slides: kie.ai renders the cream surface and the display type AS the image, and that slide carries a real kie.ai `taskId`. "Skip kie.ai for this slide" exists nowhere — not in this role, not in any SOP, not in any prompt you author.
+
+**THE VERBATIM WORDS LIVE INSIDE THE PROMPT.** The exact, letter-for-letter copy that must appear on the slide (headline, sub-headline, supporting lines, kicker, price, struck price) is written into the prompt body (element 3, with its spelling-lock) so the model bakes it into the pixels in the SAME generation as the visual. You NEVER defer a single word to a later step. A prompt that names the visual but omits the words — planning to add them "later," "in post," "as an overlay," or "by the typography system" — is INVALID and is rejected before any render.
+
+**THE 5,000-CHARACTER FLOOR ONLY COUNTS WHEN THE WORDS ARE BAKED IN.** A prompt must be >= 5,000 characters (`PROMPT_CHAR_FLOOR = 5000`, hard, fail-loud) AND those characters must include the slide's verbatim words with their spelling-locks. A prompt that reaches 5,000 characters by padding scene description while deferring the words to an overlay does NOT satisfy the floor — it is a words-deferred stub and is rejected (AF-P1 / AF-PROMPT-FLOOR; the canonical-render-bypass and local-canvas auto-fails `AF-CANONICAL-RENDER-BYPASS`, `AF-LOCAL-CANVAS`, and the vision image-QC `AF-IMAGE-QC-VISION` fire downstream in `build_deck.py` if anything routes around this).
+
+**BANNED LANGUAGE — never write any of these in a prompt, a treatment note, a checkpoint, or any artifact you produce (each is an AUTO-FAIL):**
+- "kie.ai SKIPPED", "kie.ai call SKIPPED", "skip kie.ai", "skip kie.ai for this slide", "skip kie.ai for hook slides", or any instruction to bypass kie.ai for any slide.
+- "post-production overlay", "post-production typography overlay", "post-production headline overlay", "applied in post", "overlay in post", "add the headline later".
+- "typography overlay readiness", "typography system renders the slide", "overlay the headline", "overlay the canonical slide headlines", "native typography card", "PowerPoint text on top", "paste the words on top".
+- "render locally", "local Pillow", "Pillow slide canvas", "Image.new(...) as the slide", "flat cream typography card" as a render path (the cream + type IS a kie.ai render, never a local one).
+
+The only legitimate image-composite exception is the real LOGO image via the PIL path (SOP-IMG-05), and that is an IMAGE of the locked mark, never native text and never a word the model was supposed to bake. Everything a viewer reads on the slide came out of the single kie.ai generation.
+
 ---
 
 ## 2. Persona Governance Override
@@ -140,6 +156,10 @@ Review the master SOP for any updates to the 15-element spec or the image model.
 | Prompts where every text line declares an exact weight AND a large pt size | 100% |
 | Prompts directing a standalone gallery-grade art piece (not "just a background with text") | 100% (AUTO-FAIL otherwise, Gate 9) |
 | Slides with text drawn by Pillow/PPTX/ImageDraw rather than baked by the model (AF-BAKED) | 0 |
+| Prompts that defer any verbatim slide word to a later/overlay step instead of baking it into the prompt body | 0 (AUTO-FAIL) |
+| Prompts (or any artifact) carrying banned skip/overlay language ("kie.ai SKIPPED", "post-production overlay", "render locally", etc.) | 0 (AUTO-FAIL) |
+| Prompts that reach 5,000 chars by padding scene while omitting the verbatim words | 0 (AUTO-FAIL, AF-P1) |
+| Pure-typography hook/section slides authored to a real kie.ai render (never a local card / skip) | 100% |
 
 ---
 
@@ -215,11 +235,12 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    k. SPELLING-LOCK PRESENT (FIX-2): every verbatim text string (headline, sub, supporting line, kicker, price, struck price) carries its letter-for-letter spelling-lock instruction immediately after the string. Missing on any string = AUTO-FAIL (AF-P14).
    l. LOGO IMAGE-TO-IMAGE DECLARED (SOP-IMG-01 / SOP-DESIGN-04): on every LOGO_ON_SLIDES = true slide, the prompt declares Mode B (`gpt-image-2-image-to-image`) with LOGO_URL as the first reference and carries the verbatim "place, do not redraw" sentence plus the "do not invent any mark" negative twin. A logo-in-words-only or a text-to-image logo prompt = AUTO-FAIL (AF-P15).
    m. NO PLACEHOLDER / BRACKET TOKEN IN THE PROMPT (FIX-12): scan the whole prompt body for any bracket token "[...]" or the substrings "owner to confirm", "insert", "tbd", "placeholder", "client win", "endorsement", "real result", "to supply", "pending" intended as RENDERED copy. Any such token = AUTO-FAIL (AF-P16), so it can never reach the render. (A spelling-lock or negative sentence that merely names a banned token as forbidden, e.g. the negative block's own "Do not render any bracketed token ...", is permitted; the ban is on a token presented as text to render.)
+   n. WORDS BAKED IN + NO SKIP/OVERLAY LANGUAGE (FIX-4): every verbatim word that must appear on the slide is written INTO this prompt's copy elements (so kie.ai bakes it in the same generation), not deferred to any later step. The prompt body contains NONE of the banned skip/overlay phrases ("kie.ai SKIPPED", "skip kie.ai", "post-production overlay", "applied in post", "typography overlay readiness", "overlay the headline", "typography system renders the slide", "render locally", "Pillow slide canvas", "native typography card", "PowerPoint text on top"). Pure-typography hook/section slides are authored as full kie.ai renders (cream + display type baked in), never as a skipped or locally-rendered card. A prompt that defers any word, or carries any banned phrase, or pads to 5,000 chars while omitting the verbatim words, is an AUTO-FAIL (AF-P1 with the canonical-render-bypass / local-canvas auto-fails AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS firing downstream).
 
 **Outputs:**
 - working/prompts/slide-NN-prompt.txt (one file per slide, zero-padded)
 
-**RENDERED VERBATIM (build_deck.py contract -- ADDITIVE, does not change the authoring rules above):** the deterministic renderer (`scripts/build_deck.py`) loads THIS rich prompt file and sends it to KIE (gpt-image-2) **VERBATIM** -- the WHOLE slide (typography sizes and per-line weights, placement, usage, the logo(s) via image-to-image `input_urls`, the scene, the verbatim copy, and the negative block) is rendered in ONE generation. The renderer NEVER composes its own thin scene+copy prompt and NEVER silently falls back to one. The renderer enforces a HARD floor of **5,000 characters** (AF-P1 / AF-PROMPT-FLOOR; `build_deck.py` constant `PROMPT_CHAR_FLOOR = 5000`): a slide whose prompt file is absent or under 5,000 chars is NOT run, NOT rendered, and NOT updated -- it fails loud. (This HARD renderer-side floor equals the upstream Phase-3 QC soft minimum of 5,000 -- they are the same reconciled standard; the authoring target of 9,000-14,000 above is unchanged.) The renderer also reads `working/prompts/slide-NN.txt`; either name (`slide-NN.txt` or `slide-NN-prompt.txt`) is accepted.
+**RENDERED VERBATIM (build_deck.py contract -- ADDITIVE, does not change the authoring rules above):** the deterministic renderer (`scripts/build_deck.py`) loads THIS rich prompt file and sends it to KIE (gpt-image-2) **VERBATIM** -- the WHOLE slide (typography sizes and per-line weights, placement, usage, the logo(s) via image-to-image `input_urls`, the scene, the verbatim copy, and the negative block) is rendered in ONE generation. `scripts/build_deck.py` / `scripts/run_signature_deck.py` is the ONLY sanctioned render path; a deck produced by any hand-rolled `working/*.py` renderer, a local Pillow canvas, or a native-text assembler is a canonical-render bypass (AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS) and cannot ship. The renderer NEVER composes its own thin scene+copy prompt and NEVER silently falls back to one. The renderer enforces a HARD floor of **5,000 characters** (AF-P1 / AF-PROMPT-FLOOR; `build_deck.py` constant `PROMPT_CHAR_FLOOR = 5000`): a slide whose prompt file is absent or under 5,000 chars, OR whose 5,000 chars omit the verbatim baked words, is NOT run, NOT rendered, and NOT updated -- it fails loud. (This HARD renderer-side floor equals the upstream Phase-3 QC soft minimum of 5,000 -- they are the same reconciled standard; the authoring target of 9,000-14,000 above is unchanged.) The renderer also reads `working/prompts/slide-NN.txt`; either name (`slide-NN.txt` or `slide-NN-prompt.txt`) is accepted.
 
 **Hand to:** QC Specialist -- Presentations (Phase 3 prompt QC gate)
 

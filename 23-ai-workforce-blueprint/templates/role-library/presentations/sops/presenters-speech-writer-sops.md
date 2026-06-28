@@ -90,9 +90,11 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; voice authority: 30
 - Pacing cues not on their own line, or only one cue form supported = FAIL.
 - Per-slide pacing (word count / spoken-seconds) missing = FAIL (keep it as a small grey margin note).
 - PDF does not visually match STANDARD-presenter-speech-layout.pdf = FAIL.
-- presenter-teleprompter.html not produced, not self-contained, or does not parse the speech = FAIL.
-- PDF does not open or is zero bytes = FAIL.
+- presenter-teleprompter.html not produced, not self-contained, does not parse the speech, or is under 20,000 bytes = FAIL (`AF-BUNDLE-COMPLETE` floor; `build_teleprompter.py` exits non-zero rather than write a degenerate file).
+- PRESENTERS-SPEECH.pdf does not open, is zero bytes, or is under 3,000 bytes = FAIL (`AF-BUNDLE-COMPLETE` floor; `presenters_speech_pdf.py` exits non-zero on a sub-floor render).
 - notion_url.json missing or URL does not resolve = FAIL.
+
+> **Gate tie-in:** the teleprompter HTML and the speech files (`PRESENTERS-SPEECH.md` / `.pdf`) are REQUIRED deliverables gated at `AF-BUNDLE-COMPLETE` — the bundle cannot complete if any is absent or under its byte floor (HTML >= 20,000 bytes, PDF >= 3,000 bytes). The gate is skippable ONLY by a logged `owner/founder` approval token (`owner_skip_approval`) recorded in `process_manifest.json` — never silently, never by the agent's own choice.
 
 **Outputs:** PRESENTERS-SPEECH.pdf, presenter-teleprompter.html, the speech spec JSON, and notion_url.json.
 
