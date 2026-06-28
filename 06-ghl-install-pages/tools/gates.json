@@ -181,6 +181,7 @@
       "label": "Canvas 'Blank Section' (center: 'Blank Section' | 'Insert Element' | 'Generate with AI') -> green Section with a '+ Add' button inside",
       "label_source": "screenshot-confirmed-label",
       "find": "find text 'Blank Section' | after insert find role button name 'Add' (the '+ Add' inside the section)",
+      "stable_ref": {"id": ["#hl-builder-add-elements-button", "#empty-placeholder-*"], "resolution": "id-first->find-fallback->verify-@ref", "status": "prior-unverified-until-live-capture", "_see": "stable_id_selector_layer"},
       "note": "Screenshot-confirmed: click 'Blank Section' to drop an empty green Section; it shows a '+ Add' button inside (opens Quick Add, gate 15) plus a '+' below it to add another section."
     },
     {
@@ -188,6 +189,7 @@
       "label": "Section panel toggle 'Allow Rows to take entire width'",
       "label_source": "screenshot-confirmed-label",
       "find": "find text 'Allow Rows to take entire width' (Section right-panel, General/Styles tabs)",
+      "stable_ref": {"id": "#hl-builder-toggle-setting-button", "resolution": "id-first->find-fallback->verify-@ref", "status": "prior-unverified-until-live-capture", "_see": "stable_id_selector_layer", "_note": "Show/Hide settings toggle (alt route to this toggle); verify TOGGLE STATE not id alone."},
       "note": "CONFIRMED by UI map — the label is 'Allow Rows to take entire width' (NOT 'take up full length'). Resolves the prior ambiguity. Still verify by TOGGLE STATE (on), not label text alone. Section panel also has Sticky + Background (Color/Image/Video). LIVE-MEASURED (2026-06-27 probe): allowRowMaxWidth=False renders a CENTERED ~1170px column visually IDENTICAL to True — the visible 1170 cap comes from the sectionStyles CSS rule, NOT the flag (see _live_render_findings.allowRowMaxWidth_false). ALTERNATE ROUTE: the 'Show settings' icon under Publish reaches this same toggle (see playwright_fallback_recipes.show_settings_full_width_route)."
     },
     {
@@ -195,6 +197,7 @@
       "label": "Quick Add panel -> 'Custom' group -> 'Code' (</> icon) -> drops a 'Custom Code' element ('<> Custom HTML/Javascript') inside a '1 Column Row'",
       "label_source": "screenshot-confirmed-label",
       "find": "open Quick Add (gate 13 '+ Add') | scroll to 'Custom' group | find text 'Code' (</> icon)",
+      "stable_ref": {"id": "#Code", "resolution": "id-first->find-fallback->verify-@ref", "status": "prior-unverified-until-live-capture", "_see": "stable_id_selector_layer", "_note": "Quick-Add 'Code' tile lives in the CROSS-ORIGIN builder iframe; resolve #Code inside that frame, still drive via real-pointer drag/double-click (gate 25 engine limit)."},
       "note": "Screenshot-confirmed path: '+ Add' -> Quick Add panel (left groups: Quick Add, Sections, Rows, Elements, Prebuilt Sections, Saved Assets, Widget Marketplace, Buttons, Forms And Surveys, Social Media Icons, Countdown Timers, Images, Progress Bar) -> scroll to 'Custom' group -> 'Code'. Element label on canvas = 'Custom Code'."
     },
     {
@@ -202,7 +205,7 @@
       "label": "Custom Code element -> right-panel 'Open Code Editor' -> modal 'Custom Javascript/HTML' (dark textarea, placeholder 'Add your code here')",
       "label_source": "screenshot-confirmed-label",
       "find": "click 'Custom Code' element (right panel header 'Custom Code') | find role button name 'Open Code Editor' | then locate the 'Custom Javascript/HTML' modal textarea",
-      "note": "Screenshot-confirmed: clicking the element shows right-panel header 'Custom Code' with an 'Open Code Editor' button; that opens the 'Custom Javascript/HTML' modal. Set large payloads via the editor's value API (eval), NOT key-by-key typing. The modal renders on the MAIN page, not inside the builder iframe."
+      "note": "Screenshot-confirmed: clicking the element shows right-panel header 'Custom Code' with an 'Open Code Editor' button; that opens the 'Custom Javascript/HTML' modal. Set large payloads via the editor's value API (eval), NOT key-by-key typing — and FEATURE-DETECT CodeMirror v5 vs v6 first (see playwright_fallback_recipes.codemirror_set_value: try v6 '.cm-editor' dispatch, fall back v5 '.CodeMirror'.setValue, then HARD-assert a non-empty read-back == payload BEFORE Save so a v5/v6 mismatch can never silently commit an empty code body). The modal renders on the MAIN page, not inside the builder iframe."
     },
     {
       "id": 17, "spec": "A10.3", "name": "code_element_save", "status": "runtime",
@@ -216,6 +219,7 @@
       "label": "'Ask AI' left panel (Assist/Build tabs, greeting 'Hi <user>, let us set the foundations') -> close via its X",
       "label_source": "screenshot-confirmed-label",
       "find": "find text 'Ask AI' then its X | find text 'let us set the foundations' | find role button name Close (Ask AI panel)",
+      "stable_ref": {"id": "#ai-copilot-close", "resolution": "id-first->find-fallback->verify-@ref", "status": "prior-unverified-until-live-capture", "_see": "stable_id_selector_layer", "_note": "Absent is fine (panel may not open) — id-miss falls through to find, never crash."},
       "note": "Screenshot-confirmed: the editor opens with the 'Ask AI' panel on the left (Assist/Build tabs; greeting personalizes to the logged-in user, so match on 'Ask AI' / 'let us set the foundations', not the name). Close it via its X on first editor open or it eats the next click. Absent is fine — do not crash."
     },
     {
@@ -223,6 +227,7 @@
       "label": "Top-right disk/save icon (note: 'Autosave off' -> manual save required)",
       "label_source": "screenshot-confirmed-label",
       "find": "find role button name Save | top-right disk icon",
+      "stable_ref": {"id": "#pg-funnel-builder__btn--save", "resolution": "id-first->find-fallback->verify-@ref", "status": "prior-unverified-until-live-capture", "_see": "stable_id_selector_layer"},
       "note": "Screenshot-confirmed: save is the top-right DISK icon; autosave is OFF so a manual save is required. Wait for the save-confirmation toast, not a fixed sleep."
     },
     {
@@ -230,6 +235,7 @@
       "label": "Top-right EYE icon (Preview)",
       "label_source": "screenshot-confirmed-label",
       "find": "find role button name Preview | top-right eye icon",
+      "stable_ref": {"id": "#hl-builder-preview-button", "resolution": "id-first->find-fallback->verify-@ref", "status": "prior-unverified-until-live-capture", "_see": "stable_id_selector_layer"},
       "note": "Screenshot-confirmed: preview is the top-right EYE icon. Preview URL pattern uses the configured preview domain (see _env preview_domain)."
     },
     {
@@ -237,6 +243,7 @@
       "label": "Top-right blue 'Publish' button (APPROVAL ONLY; default leave draft)",
       "label_source": "screenshot-confirmed-label",
       "find": "find role button name Publish (top-right, blue)",
+      "stable_ref": {"id": "#pg-funnel-builder__btn--publish", "resolution": "id-first->find-fallback->verify-@ref", "status": "prior-unverified-until-live-capture", "_see": "stable_id_selector_layer", "_note": "APPROVAL-ONLY (may_publish); the stable id changes how you FIND it, NOT the never-publish-without-approval gate."},
       "note": "Screenshot-confirmed: blue 'Publish' button top-right. NEVER act on this gate without an explicit LIVE approval answer (A13.1)."
     },
     {
@@ -304,6 +311,32 @@
       "note": "Only knowable from a published page. Whitelist it in the Vercel app's frame-ancestors / X-Frame-Options for Mode 2 embeds."
     }
   ],
+
+  "stable_id_selector_layer": {
+    "_doc": "STABLE-ID-FIRST resolution layer (research ghl-selectors-v2 CDP capture). ADDITIVE — this is NOT a member of the 28-entry `gates` array and does NOT change the captured=2/runtime=26 counts the install QC asserts. It documents the resolution DISCIPLINE referenced by each gate's `stable_ref` field. The stable ids below are PRIORS captured from the GHL builder DOM, not asserted CSS: the resolver tries the stable id FIRST, then falls back to the gate's existing `find` text/role probe, and STILL resolves + verifies the live @ref at runtime before acting. Tried-then-verified priors — no invented CSS ships as fact. Every id stays `prior-unverified-until-live-capture` until ONE live capture pass promotes it; on `agent-browser` pin bump or GHL UI drift, re-capture before trusting.",
+    "resolution_order": ["1. try stable id (this layer) inside the correct context (see context_split)", "2. on id-miss, fall back to the gate `find` text/role/visible-text seed", "3. ALWAYS resolve the live @ref + verify it is visible/correct role before acting", "4. id-miss is NEVER a crash — it degrades to the find fallback"],
+    "capture_date": "PENDING-LIVE-CAPTURE (ghl-selectors-v2 CDP prior; not yet promoted by a live capture pass on this box). Stamp the GHL-UI capture date here when promoted; keep beside the agent_browser_version_pin (0.27.0).",
+    "ids": {
+      "#Code": {"gate": 15, "what": "Quick-Add 'Code' tile (Custom group). In the CROSS-ORIGIN builder iframe."},
+      "#hl-builder-add-elements-button": {"gate": 13, "what": "'+ Add' / Add-Elements button (opens Quick Add). NOTE: research saw it top-right OR top-left across two captures — do NOT hardcode position, snapshot it."},
+      "#empty-placeholder-*": {"gate": 13, "what": "Blank Section empty placeholder(s); use querySelectorAll (suffix varies per section)."},
+      "#hl-builder-toggle-setting-button": {"gate": 14, "what": "Show/Hide settings toggle (alt route to 'Allow Rows to take entire width'). Verify TOGGLE STATE, not id alone."},
+      "#ai-copilot-close": {"gate": 18, "what": "'Ask AI' / copilot panel close X. Absent is fine."},
+      "#pg-funnel-builder__btn--save": {"gate": 19, "what": "Top toolbar Save button."},
+      "#hl-builder-preview-button": {"gate": 20, "what": "Top toolbar Preview (eye) button."},
+      "#pg-funnel-builder__btn--publish": {"gate": 21, "what": "Top toolbar Publish button. APPROVAL-ONLY (may_publish) is unchanged by this id."},
+      "#hl-builder-seo-meta-data-button": {"gate": null, "what": "SEO / meta-data panel open button (browser SEO path; no numbered gate — REST path sets SEO programmatically). Read GHL's own validator strings off the panel (Phase 4 self-check)."},
+      "#hl-menu-item-*": {"gate": null, "what": "Builder menu / context-menu items (suffix varies). Match by [id^='hl-menu-item-'] then verify text/role; never assume a fixed suffix."}
+    },
+    "context_split": {
+      "_doc": "DUPLICATE-ID + CROSS-ORIGIN gotchas the resolver MUST honor.",
+      "iframe_scoped": ["#Code", "#hl-builder-add-elements-button", "#empty-placeholder-*"],
+      "main_page_scoped": ["#ai-copilot-close", "#pg-funnel-builder__btn--save", "#hl-builder-preview-button", "#pg-funnel-builder__btn--publish", "#hl-builder-toggle-setting-button", "#hl-builder-seo-meta-data-button", "#hl-menu-item-*"],
+      "duplicate_id_gotcha": "Undo/Redo (#...--undo / --redo) exist in BOTH toolbars — use querySelectorAll and disambiguate by visibility/position; never assume a single match.",
+      "naive_ui_no_id_probes": {"allow_rows_toggle": ".n-switch (verify state)", "modal_save_publish_confirm": ".n-modal button text-match ('Save'/'Publish')", "seo_sub_tabs": ".n-tabs-tab", "context_menu_item": "[role=menuitem]"}
+    },
+    "regenerator": "tools/selectors-extract-cdp.py (PLANNED, P1b) — CDP /json/list iframe discovery + Runtime.evaluate scrape, routed through tools/browser_manager.sh (the singleton pooled gateway), NEVER a raw port attach. Re-capture on pin bump / UI drift and re-stamp capture_date."
+  },
 
   "full_width_alt_route_show_settings": {
     "_doc": "ALTERNATE PRIOR (transcript-derived) to gate 14 (full_width_toggle). This is NOT a member of the 28-entry `gates` array and does NOT affect the captured=2/runtime=26 counts the install QC asserts — it is a distinct, snapshot-first PRIOR documenting the EASIER second route to the same 'Allow Rows to take entire width' toggle. The harden run owns gate 14's selector priors; this entry is added alongside, not in place of them.",
@@ -416,11 +449,19 @@
       "prior_only": true
     },
     "codemirror_set_value": {
-      "_doc": "Set the Custom Javascript/HTML code payload via the CodeMirror API, NEVER key-by-key typing (large payloads + special chars corrupt under typing). The editor modal renders on the MAIN page (not inside the builder iframe).",
-      "find_seed": "modal 'Custom Javascript/HTML' (gate 16) -> CodeMirror root '.CodeMirror'",
-      "recipe": "Inside the editor document, stash the live editor instance on window.__cmEditorRef (window.__cmEditorRef = document.querySelector('.CodeMirror').CodeMirror), then window.__cmEditorRef.setValue(<payload>) and trigger its change so the SPA marks the field dirty. Read window.__cmEditorRef.getValue() back and assert it === <payload> BEFORE clicking Save (gate 17). If '.CodeMirror' is absent (newer editor build), fall back to setting the underlying textarea value + dispatching an 'input' event.",
+      "_doc": "Set the Custom Javascript/HTML code payload via the CodeMirror API, NEVER key-by-key typing (large payloads + special chars corrupt under typing). The editor modal renders on the MAIN page (not inside the builder iframe). VERSION-SAFE: GHL ships CodeMirror v5 OR v6 depending on the live builder build (research selectors-v2 observed v6; older captures observed v5) — the two have INCOMPATIBLE value APIs, so this recipe FEATURE-DETECTS the live editor and takes the matching path. The v5-only `.setValue()` recipe silently no-ops on a v6 editor (and the old 'underlying textarea + input event' fallback is INVALID on v6 — v6 is a contenteditable `.cm-content`, it has NO backing <textarea>), which would let autosave commit an EMPTY rawCustomCode while returning 201 -> blank render. The mandatory non-empty read-back assert below is what makes that failure mode impossible.",
+      "find_seed": "modal 'Custom Javascript/HTML' (gate 16) -> v6 root '.cm-editor' (content '.cm-content') OR v5 root '.CodeMirror'",
+      "recipe": "FEATURE-DETECT then set, NEVER assume a build. (A) DETECT inside the editor document: treat as v6 if document.querySelector('.cm-editor') (content node '.cm-content') is present; treat as v5 if document.querySelector('.CodeMirror') exposes a live `.CodeMirror` instance. TRY v6 FIRST, fall back to v5. (B-v6) CodeMirror 6: obtain the live EditorView — reuse a prior stash on window.__cmEditorRef if it is a v6 view (has `.state`/`.dispatch`), else recover it from the app (the view exposed off the '.cm-editor' node / EditorView.findFromDOM if available) and stash it on window.__cmEditorRef. Replace the WHOLE document in ONE transaction: window.__cmEditorRef.dispatch({changes:{from:0,to:window.__cmEditorRef.state.doc.length,insert:<payload>}}). Read it back with window.__cmEditorRef.state.doc.toString(). (B-v5) CodeMirror 5: window.__cmEditorRef = document.querySelector('.CodeMirror').CodeMirror; window.__cmEditorRef.setValue(<payload>); trigger its change so the SPA marks the field dirty. Read it back with window.__cmEditorRef.getValue(). (C) HARD GATE before clicking Save (gate 17): the read-back value MUST be (i) NON-EMPTY and (ii) === <payload>. On ANY empty or mismatched read-back, FAIL LOUD and DO NOT click Save — never commit an unverified code body. This single assert is the un-fakeable guard against the v5/v6 silent-empty-save class regardless of which build is live.",
       "window_ref": "window.__cmEditorRef",
-      "verify_before_save": "window.__cmEditorRef.getValue() === payload",
+      "dual_path": {
+        "detect": "v6 if '.cm-editor'/'.cm-content' present; v5 if '.CodeMirror' instance present",
+        "v6_set": "window.__cmEditorRef.dispatch({changes:{from:0,to:window.__cmEditorRef.state.doc.length,insert:payload}})",
+        "v6_read": "window.__cmEditorRef.state.doc.toString()",
+        "v5_set": "window.__cmEditorRef.setValue(payload)  (window.__cmEditorRef = document.querySelector('.CodeMirror').CodeMirror)",
+        "v5_read": "window.__cmEditorRef.getValue()",
+        "removed_invalid_fallback": "the old 'set underlying <textarea>.value + dispatch input event' path — INVALID on v6 (contenteditable, no textarea); removed so it can no longer silently produce an empty body"
+      },
+      "verify_before_save": "read-back MUST be non-empty AND === payload, else DO NOT Save. v6: window.__cmEditorRef.state.doc.toString() === payload • v5: window.__cmEditorRef.getValue() === payload",
       "prior_only": true
     },
     "show_settings_full_width_route": {

@@ -62,24 +62,49 @@ from pathlib import Path
 _BG_DIR = os.path.dirname(os.path.abspath(__file__))
 if _BG_DIR not in sys.path:
     sys.path.insert(0, _BG_DIR)
+# W2.1 FAIL-CLOSED: if sop_boundary_gate cannot be imported, or if the gate is
+# disabled (role-library missing/empty), this script MUST abort with a non-zero
+# exit.  The #1 invariant — a box must NEVER rewrite canonical floor roles/SOPs —
+# cannot be enforced without a functioning gate.  Silently continuing means every
+# canonical floor dept would be authored by the LLM — exactly the hole W2.1 closes.
 try:
     from sop_boundary_gate import (  # type: ignore
         is_canonical_dept as _is_canonical_dept,
         assert_no_canonical_in_authoring_path as _assert_no_canonical,
         CANONICAL_LIBRARY_DEPT_IDS as _CANONICAL_DEPT_IDS,
+        GATE_ENABLED as _GATE_ENABLED,
+        ROLE_LIBRARY_DIR as _ROLE_LIBRARY_DIR,
+        assert_gate_enabled as _assert_gate_enabled,
     )
     _BOUNDARY_GATE_AVAILABLE = True
 except ImportError as _bg_err:
-    _BOUNDARY_GATE_AVAILABLE = False
     print(
-        f"[SOP-BOUNDARY-GATE] WARNING: could not import sop-boundary-gate ({_bg_err}). "
-        f"Boundary gate is DISABLED — canonical depts may enter the authoring path. "
-        f"This is a token-economics risk. Ensure sop-boundary-gate.py is present in {_BG_DIR}.",
+        f"\n[SOP-BOUNDARY-GATE] FATAL: sop_boundary_gate module could not be imported.\n"
+        f"  Error: {_bg_err}\n"
+        f"  Looked in: {_BG_DIR}\n"
+        f"The role/SOP boundary gate is MANDATORY — this script cannot proceed without it.\n"
+        f"The #1 invariant (never rewrite canonical floor roles/SOPs) cannot be enforced.\n"
+        f"Fix: ensure sop_boundary_gate.py is present in {_BG_DIR} and is free of syntax errors.\n"
+        f"BUILD ABORTED.\n",
         file=sys.stderr,
     )
-    def _is_canonical_dept(dept_id): return False  # type: ignore  # noqa: E302
-    def _assert_no_canonical(manifest_path): return 0  # type: ignore  # noqa: E302
-    _CANONICAL_DEPT_IDS = frozenset()  # type: ignore
+    sys.exit(1)
+
+# Gate imported — assert it is operational before doing any work.
+if not _GATE_ENABLED:
+    print(
+        f"\n[SOP-BOUNDARY-GATE] FATAL: Boundary gate is DISABLED.\n"
+        f"  role-library directory missing or empty at: {_ROLE_LIBRARY_DIR}\n"
+        f"The #1 invariant (never rewrite canonical floor roles/SOPs) cannot be enforced\n"
+        f"without a populated role-library.  Every canonical floor department would be\n"
+        f"misidentified as custom and its roles authored by the LLM.\n"
+        f"Fix: restore the templates/role-library/ directory tree and re-run.\n"
+        f"BUILD ABORTED.\n",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+_BOUNDARY_GATE_AVAILABLE = True  # gate is live
 
 
 # ─── PATHS (PRD 1.9: canonical root from get_openclaw_paths()) ────────────────
@@ -399,11 +424,17 @@ def main():
                 file=sys.stderr,
             )
     else:
+        # This branch is now unreachable (the module-level gate check above
+        # aborts before main() runs if the gate is disabled).  Keep it as a
+        # safety net — abort rather than silently proceeding without the gate.
         print(
-            f"[SOP-BOUNDARY-GATE] Boundary gate DISABLED — proceeding without canonical check "
-            f"(token-economics risk; install sop-boundary-gate.py to enable).",
+            f"\n[SOP-BOUNDARY-GATE] FATAL: Boundary gate is DISABLED inside main().\n"
+            f"This should have been caught at module load time.  Aborting now.\n"
+            f"The #1 invariant (never rewrite canonical floor roles/SOPs) cannot be\n"
+            f"enforced without the gate.  BUILD ABORTED.\n",
             file=sys.stderr,
         )
+        return 7
 
     # 3. Resolve model once (all depts use heavy tier)
     model_id = resolve_model("workforce-sop-writer", "heavy")

@@ -165,18 +165,51 @@ _LIBRARY_INSTANTIATED_ROLE_DIRS = set()
 _ARTIFACT_PROVENANCE = {}              # "<dept>/<slug>" -> {source_content_sha, ...}
 _ARTIFACT_PROVENANCE_MANIFEST_VERSION = {"version": None}
 
-# PRD 2.12: boundary gate - canonical-library dept registry.
-# Import sop-boundary-gate.py from the same scripts/ directory.
+# PRD 2.12 / W2.1: boundary gate - canonical-library dept registry.
+# FAIL-CLOSED: if sop_boundary_gate cannot be imported, or if the role-library
+# directory is missing/empty (GATE_ENABLED=False), the build MUST abort with a
+# non-zero exit.  The #1 invariant — a box must NEVER rewrite canonical floor
+# roles/SOPs — cannot be enforced without a functioning gate.  Silently defining
+# stub functions that always return False is the exact failure mode W2.1 fixes:
+# it makes every canonical dept look custom and opens the LLM authoring path for
+# canonical work.
 try:
     from sop_boundary_gate import (  # type: ignore
         is_canonical_dept as _bw_is_canonical_dept,
         CANONICAL_LIBRARY_DEPT_IDS as _BW_CANONICAL_DEPT_IDS,
+        GATE_ENABLED as _BW_GATE_ENABLED,
+        ROLE_LIBRARY_DIR as _BW_ROLE_LIBRARY_DIR,
+        assert_gate_enabled as _bw_assert_gate_enabled,
     )
     _BW_BOUNDARY_GATE_AVAILABLE = True
-except ImportError:
-    _BW_BOUNDARY_GATE_AVAILABLE = False
-    def _bw_is_canonical_dept(dept_id): return False  # type: ignore  # noqa: E302
-    _BW_CANONICAL_DEPT_IDS = frozenset()  # type: ignore
+except ImportError as _bw_bg_import_err:
+    print(
+        f"\n[SOP-BOUNDARY-GATE] FATAL: sop_boundary_gate module could not be imported.\n"
+        f"  Error: {_bw_bg_import_err}\n"
+        f"The role/SOP boundary gate is MANDATORY — this build cannot proceed without it.\n"
+        f"The #1 invariant (never rewrite canonical floor roles/SOPs) cannot be enforced.\n"
+        f"Fix: ensure sop_boundary_gate.py is present in the same scripts/ directory as\n"
+        f"build-workforce.py and is free of syntax errors.\n"
+        f"BUILD ABORTED.\n",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+# Gate imported — now assert it is operational (role-library must exist + non-empty).
+if not _BW_GATE_ENABLED:
+    print(
+        f"\n[SOP-BOUNDARY-GATE] FATAL: Boundary gate is DISABLED.\n"
+        f"  role-library directory missing or empty at: {_BW_ROLE_LIBRARY_DIR}\n"
+        f"The #1 invariant (never rewrite canonical floor roles/SOPs) cannot be enforced\n"
+        f"without a populated role-library.  Every canonical floor department would be\n"
+        f"misidentified as custom and its roles rewritten by the LLM authoring path.\n"
+        f"Fix: restore the templates/role-library/ directory tree and re-run.\n"
+        f"BUILD ABORTED.\n",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+_BW_BOUNDARY_GATE_AVAILABLE = True  # gate is live
 
 
 # ============================================================

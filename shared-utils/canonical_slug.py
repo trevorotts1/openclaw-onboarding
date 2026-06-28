@@ -47,6 +47,65 @@ Import pattern (from any script in the repo):
 
 import re
 
+# ---------------------------------------------------------------------------
+# ALIAS MAP — maps non-canonical slugs to their canonical slug AFTER the
+# standard normalization steps (strip dept-, lowercase, hyphens).
+# Mirrors ALIAS_MAP in command-center canonical-slug.ts (both must stay in
+# sync — TypeScript side is the authoritative spec).
+# ---------------------------------------------------------------------------
+ALIAS_MAP: dict = {
+    # CEO / master-orchestrator variants
+    "ceo":                  "master-orchestrator",
+    "ceo-com":              "master-orchestrator",
+    "com":                  "master-orchestrator",
+    "central-operations":   "master-orchestrator",
+
+    # billing variants
+    "billing":              "billing-finance",
+
+    # web-dev variants
+    "webdev":               "web-development",
+    "web-dev":              "web-development",
+    "web":                  "web-development",
+
+    # engineering / software-dev variants (UNIT ENG — 2026-06-28)
+    "software-development": "engineering",
+    "software-dev":         "engineering",
+    "app-development":      "engineering",
+    "apps":                 "engineering",
+
+    # video variants
+    "video-production":     "video",
+
+    # audio variants
+    "audio-production":     "audio",
+
+    # legal variants
+    "legal-compliance":     "legal",
+    "compliance":           "legal",
+
+    # customer-support variants
+    "support":              "customer-support",
+    "customer-service":     "customer-support",
+
+    # social-media variants
+    "social":               "social-media",
+
+    # paid-advertisement variants
+    "paid-ads":             "paid-advertisement",
+    "paid-advertising":     "paid-advertisement",
+
+    # openclaw-maintenance variants
+    "openclaw":             "openclaw-maintenance",
+
+    # general-task aliases
+    "general":              "general-task",
+    "misc":                 "general-task",
+    "catch-all":            "general-task",
+    "catchall":             "general-task",
+    "unclassified":         "general-task",
+}
+
 
 def canonical_dept_slug(raw: str) -> str:
     """
@@ -85,6 +144,10 @@ def canonical_dept_slug(raw: str) -> str:
     # Strip leading/trailing hyphens
     s = s.strip("-")
 
+    # Alias map lookup (mirrors canonical-slug.ts ALIAS_MAP)
+    if s in ALIAS_MAP:
+        s = ALIAS_MAP[s]
+
     return s
 
 
@@ -107,20 +170,26 @@ def is_canonical_dept_slug(value: str) -> bool:
 if __name__ == "__main__":
     # Quick self-test — run as: python3 canonical_slug.py
     cases = [
-        ("Dept-Marketing",   "marketing"),
-        ("Marketing",        "marketing"),
-        ("Sales",            "sales"),
-        ("Billing Finance",  "billing-finance"),
-        ("billing_finance",  "billing-finance"),
-        ("dept-sales",       "sales"),
-        ("dept-Marketing",   "marketing"),
-        ("marketing-dept",   "marketing"),
-        ("General Task",     "general-task"),
-        ("general-task",     "general-task"),
-        ("",                 ""),
-        ("  Sales  ",        "sales"),
-        ("dept-",            ""),
-        ("-dept",            ""),
+        ("Dept-Marketing",      "marketing"),
+        ("Marketing",           "marketing"),
+        ("Sales",               "sales"),
+        ("Billing Finance",     "billing-finance"),
+        ("billing_finance",     "billing-finance"),
+        ("dept-sales",          "sales"),
+        ("dept-Marketing",      "marketing"),
+        ("marketing-dept",      "marketing"),
+        ("General Task",        "general-task"),
+        ("general-task",        "general-task"),
+        ("",                    ""),
+        ("  Sales  ",           "sales"),
+        ("dept-",               ""),
+        ("-dept",               ""),
+        # engineering aliases (UNIT ENG)
+        ("software-development","engineering"),
+        ("software-dev",        "engineering"),
+        ("app-development",     "engineering"),
+        ("apps",                "engineering"),
+        ("engineering",         "engineering"),
     ]
     all_pass = True
     for raw, expected in cases:

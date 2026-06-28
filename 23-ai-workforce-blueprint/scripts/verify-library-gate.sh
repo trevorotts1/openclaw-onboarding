@@ -67,6 +67,9 @@
 #        5  = no workforce / qc could not run
 #        6  = TRIO GATE FAIL — at least one dept is missing QC, research, or DA
 #        7  = BOUNDARY GATE FAIL — canonical dept(s) found in SOP authoring manifest
+#        9  = ZHE GATE FAIL — the full ZERO HUMAN EXPERIENCE did not land for an
+#             interview-completed box (only blocks under ZHE_ENFORCE=1; RED-first.
+#             zheStatus + plan W1.2; doctrine: ZERO-HUMAN-EXPERIENCE.md)
 #
 # The master orchestrator MUST run this BEFORE writing buildCompletedAt /
 # closeoutStatus=pending. The resume cron (resume-workforce-build.sh) also calls
@@ -394,6 +397,42 @@ if [ "$BOUNDARY_STATUS" != "done" ]; then
   FAIL_REASON="${FAIL_REASON}boundary: ${BOUNDARY_GAPS:-canonical dept(s) in authoring manifest}"
 fi
 
+# ---- ZHE GATE (plan W1.2): ZERO HUMAN EXPERIENCE acceptance prover -----------
+# The highest-priority verdict. prove-zhe.py asserts the WHOLE post-interview ZHE
+# landed for an interview-completed box: floor depts present AND registered as
+# agents, personas canonical + section-tagged, Command Center board live, and
+# AGENTS.md carrying the routing + persona-reflex + full-context-handoff +
+# reporting + platform-facts doctrine. A not-completed interview is EXEMPT (the
+# prover passes). Doctrine: 23-ai-workforce-blueprint/ZERO-HUMAN-EXPERIENCE.md.
+#
+# RED-FIRST CONTRACT (plan §6): the prover only goes green once W5/W6/W7 stamp the
+# persona/handoff/reporting/platform-facts markers. This gate ALWAYS records
+# zheStatus and prints the verdict loud, but only forces a hard exit (rc 9, above
+# all other verdicts) under ZHE_ENFORCE=1 — so the gate is wired now and becomes a
+# blocking acceptance gate by flipping one env var, without breaking in-flight builds.
+ZHE_STATUS="skipped"
+ZHE_PROVER="$SCRIPT_DIR/prove-zhe.py"
+if [ -d /data/.openclaw ]; then ZHE_OC_ROOT="/data/.openclaw"; else ZHE_OC_ROOT="$HOME/.openclaw"; fi
+if [ ! -f "$ZHE_PROVER" ]; then
+  echo "[verify-library-gate] ZHE GATE: prove-zhe.py not found at $ZHE_PROVER — skipping" >&2
+  ZHE_STATUS="prover-missing"
+elif [ ! -f "$ZHE_OC_ROOT/openclaw.json" ]; then
+  echo "[verify-library-gate] ZHE GATE: no openclaw.json at $ZHE_OC_ROOT — skipping" >&2
+  ZHE_STATUS="no-oc-root"
+else
+  ZHE_OUT="$(python3 "$ZHE_PROVER" --local "$ZHE_OC_ROOT" 2>&1)"; ZHE_RC=$?
+  if [ "$ZHE_RC" -eq 0 ]; then
+    ZHE_STATUS="done"
+    echo "[verify-library-gate] ZHE GATE PASS: $(printf '%s' "$ZHE_OUT" | grep -E 'OVERALL' | head -1)"
+  else
+    ZHE_STATUS="failed"
+    echo "[verify-library-gate] ZHE GATE FAIL (rc=$ZHE_RC): the full Zero Human Experience did not land." >&2
+    printf '%s\n' "$ZHE_OUT" | grep -E '\[FAIL\]|OVERALL' | sed 's/^/  [zhe] /' >&2
+    [ -n "$FAIL_REASON" ] && FAIL_REASON="$FAIL_REASON | "
+    FAIL_REASON="${FAIL_REASON}zhe: acceptance prover rc=$ZHE_RC"
+  fi
+fi
+
 # ---- write the gate fields into the state file (atomic), if it exists ----
 if [ -f "$STATE_FILE" ]; then
   TMP="$(mktemp)"
@@ -403,6 +442,7 @@ if [ -f "$STATE_FILE" ]; then
     --arg sop "$SOP_STATUS" \
     --arg trio "$TRIO_STATUS" \
     --arg boundary "$BOUNDARY_STATUS" \
+    --arg zhe "$ZHE_STATUS" \
     --argjson fail "$FAIL_JSON" \
     --argjson perdept "$(printf '%s' "$GATE_JSON" | jq '.per_dept')" \
     '
@@ -410,6 +450,7 @@ if [ -f "$STATE_FILE" ]; then
       | .sopLibraryStatus = $sop
       | .trioStatus = $trio
       | .sopAuthoringBoundaryStatus = $boundary
+      | .zheStatus = $zhe
       | .libraryFailureReason = $fail
       | .departments = ((.departments // []) | map(
           . as $d
@@ -426,7 +467,7 @@ else
   echo "[verify-library-gate] no state file at $STATE_FILE — reporting verdict only (not gating closeout)" >&2
 fi
 
-echo "[verify-library-gate] roleLibraryStatus=$ROLE_STATUS sopLibraryStatus=$SOP_STATUS trioStatus=$TRIO_STATUS sopAuthoringBoundaryStatus=$BOUNDARY_STATUS"
+echo "[verify-library-gate] roleLibraryStatus=$ROLE_STATUS sopLibraryStatus=$SOP_STATUS trioStatus=$TRIO_STATUS sopAuthoringBoundaryStatus=$BOUNDARY_STATUS zheStatus=$ZHE_STATUS"
 [ -n "$FAIL_REASON" ] && echo "[verify-library-gate] gaps: $FAIL_REASON" >&2
 
 # ==============================================================================
@@ -451,8 +492,13 @@ if [ "$BOUNDARY_STATUS" = "done" ] && [ "$TRIO_STATUS" = "done" ] && \
   fi
 fi
 
-# ---- exit code = the gate verdict (boundary failure = rc 7, takes priority over all) ----
-if [ "$BOUNDARY_STATUS" != "done" ]; then
+# ---- exit code = the gate verdict ----
+# ZHE acceptance failure (rc 9) takes priority over ALL other verdicts, but only
+# blocks under ZHE_ENFORCE=1 (RED-first wiring; see the ZHE GATE block above).
+# Otherwise boundary failure (rc 7) takes priority.
+if [ "$ZHE_STATUS" = "failed" ] && [ "${ZHE_ENFORCE:-0}" = "1" ]; then
+  exit 9
+elif [ "$BOUNDARY_STATUS" != "done" ]; then
   exit 7
 elif [ "$TRIO_STATUS" != "done" ]; then
   exit 6

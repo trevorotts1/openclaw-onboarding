@@ -23,7 +23,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v14.27.2"
+ONBOARDING_VERSION="v14.28.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -1693,7 +1693,31 @@ PYEOF
 
 # Back-compat shim for older callers
 search_env_var() { search_env_var_mac "$@"; }
-build_env_locations() { :; }   # no-op kept for old call sites
+
+# build_env_locations — platform-conditional env/secrets location reporter (W7.2).
+# Echoes the canonical env/secrets paths for this box to stdout (one per line).
+# Read-only: never writes. Safe to call from any context.
+# Mac:  ~/.openclaw/secrets/.env (primary secrets store)
+# VPS:  live process env is primary (docker exec <ctr> printenv);
+#       host compose env file is the write target (/docker/<project>/.env);
+#       persistent container secrets store is /data/.openclaw/secrets/.env.
+build_env_locations() {
+    if [ -d "/data/.openclaw" ]; then
+        # VPS Docker (Hostinger / Contabo)
+        echo "live-process-env: docker exec <container> printenv  # check this first"
+        echo "host-compose-env: /docker/<project>/.env  # write target; feed via compose env_file"
+        echo "container-secrets: /data/.openclaw/secrets/.env  # persistent inside container"
+    elif [ -d "$HOME/.openclaw" ]; then
+        # Mac (new install)
+        echo "$HOME/.openclaw/secrets/.env"
+    elif [ -d "$HOME/clawd" ]; then
+        # Mac legacy
+        echo "$HOME/clawd/secrets/.env"
+    else
+        echo "UNKNOWN: no OpenClaw root found at /data/.openclaw or $HOME/.openclaw" >&2
+        return 1
+    fi
+}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # has_usable_gemini_key — SMART Google/Gemini key detection (v13.2.1)

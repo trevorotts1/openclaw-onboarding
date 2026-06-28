@@ -157,6 +157,7 @@ PRETTY_NAMES = {
     "social-media":         "Head of Social Media",
     "paid-advertisement":   "Head of Paid Advertising",
     "master-orchestrator":  "Master Orchestrator (CEO Agent)",
+    "engineering":          "Head of Software Development / Engineering",
 }
 
 # Slugs we deliberately skip — these aren't agent-worthy folders.

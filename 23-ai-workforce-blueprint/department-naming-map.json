@@ -393,9 +393,9 @@
       "auto_add_departments": [
         {
           "id": "engineering",
-          "name": "Engineering",
+          "name": "Software Development / Engineering",
           "emoji": "\u2699\ufe0f",
-          "one_liner": "Core product development",
+          "one_liner": "Builds your software, apps & web products",
           "base_suggested_roles": "app-development-suggested-roles.md",
           "universal_primary": true
         },
