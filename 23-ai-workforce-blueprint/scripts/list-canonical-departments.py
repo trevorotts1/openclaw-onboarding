@@ -4,14 +4,15 @@ list-canonical-departments.py - single-source-of-truth department floor printer.
 
 Reads department-naming-map.json and prints:
   1. The 22 mandatory departments (every client gets these unless explicitly declined).
-  2. The 7 universal-primary vertical-pack departments (one per pack, marked
-     universal_primary=true - added for every client regardless of industry).
-  3. The computed floor = mandatory count + universal-primary count = 29.
+  2. The 6 universal-primary vertical-pack departments (one per pack that
+     EXPLICITLY marks universal_primary=true - added for every client regardless
+     of industry; v2.6.1 dropped real-estate `listings`, which is now industry-gated).
+  3. The computed floor = mandatory count + universal-primary count = 28.
 
 This script IS the canonical count. The floor is computed at runtime from the
-live naming map (22 + 7 = 29 for naming map v2.6.0); the numbers in this
+live naming map (22 + 6 = 28 for naming map v2.6.1); the numbers in this
 docstring are descriptive of the live data, never a hardcoded gate. All docs
-and CI reference this script instead of hardcoding 16, 17, 19, 23, 24, 26, 28, or
+and CI reference this script instead of hardcoding 16, 17, 19, 23, 24, 26, 29, or
 any other stale number.
 
 USAGE
@@ -57,9 +58,11 @@ def get_mandatory(nm):
 
 def get_universal_primaries(nm):
     """
-    Return list of universal-primary vertical-pack depts - one per pack.
-    The universal primary is the dept marked universal_primary=true in each
-    pack's auto_add_departments (first dept is the fallback if none are marked).
+    Return list of universal-primary vertical-pack depts - one per pack that
+    EXPLICITLY marks universal_primary=true. NO depts[0] fallback (v2.6.1):
+    a pack with no flagged dept (e.g. real-estate, whose `listings` flag was
+    removed) contributes NOTHING - mirrors department-floor.py and build-workforce.py
+    so all three single-sources-of-truth agree (listings is industry-gated, not universal).
     """
     result = []
     seen = set()
@@ -74,8 +77,6 @@ def get_universal_primaries(nm):
             if isinstance(dept, dict) and dept.get("universal_primary"):
                 primary = dept
                 break
-        if primary is None and depts:
-            primary = depts[0] if isinstance(depts[0], dict) else None
         if primary:
             did = primary.get("id")
             if did and did not in seen:

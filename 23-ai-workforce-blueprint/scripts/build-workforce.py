@@ -342,7 +342,7 @@ def load_non_interactive_config(config_file):
 
 
 # ============================================================
-# CANONICAL DEPARTMENT FLOOR (standard: 22 mandatory + 7 universal-primary-vertical = 29)
+# CANONICAL DEPARTMENT FLOOR (standard: 22 mandatory + 6 universal-primary-vertical = 28)
 # ============================================================
 # Every Zero Human Company is built with the mandatory canonical departments
 # (21 in department-naming-map.json v2.5.0) PLUS the 7 universal primary
@@ -1619,19 +1619,21 @@ def apply_vertical_packs(selected_departments, core_answers):
     """
     WS-4 (CANONICAL FLOOR STANDARD): auto-add vertical-pack departments.
 
-    Standard set (the mandatory canonical floor, 21 in v2.5.0) is already applied
-    by reconcile_canonical_floor(). This sibling step adds the 7 universal primary
-    vertical departments (one per pack) PLUS keyword-matched extras:
+    Standard set (the mandatory canonical floor, 22) is already applied
+    by reconcile_canonical_floor(). This sibling step adds the universal primary
+    vertical departments (one per pack that flags one) PLUS keyword-matched extras:
 
       PHASE 1 - UNIVERSAL PRIMARIES (floor layer, fires for ALL clients):
-        Every vertical pack exposes exactly one universal_primary department
-        (marked universal_primary=true in department-naming-map.json; defaults to
-        the first dept in the pack if the flag is absent). These 7 departments are
-        added to EVERY client regardless of industry - giving 22+7=29 as the
-        minimum floor (v2.5.0). Industry matching does NOT gate these. A universal
-        primary the owner explicitly declined in Phase 5.5 (canonicalReconciliation
-        .decisions[id] == "no" or declinedDepartments[]) is SKIPPED here so the
-        opt-out is honored symmetrically with the mandatory floor.
+        A vertical pack exposes a universal primary department ONLY when one of its
+        depts is EXPLICITLY marked universal_primary=true in
+        department-naming-map.json. There is NO depts[0] fallback (v2.6.1) - a pack
+        with no flagged dept (e.g. real-estate, whose listings flag was removed)
+        contributes NOTHING here. The 6 flagged primaries are added to EVERY client
+        regardless of industry - giving 22+6=28 as the minimum floor (v2.6.1).
+        Industry matching does NOT gate these. A universal primary the owner
+        explicitly declined in Phase 5.5 (canonicalReconciliation.decisions[id]
+        == "no" or declinedDepartments[]) is SKIPPED here so the opt-out is honored
+        symmetrically with the mandatory floor.
 
       PHASE 2 - KEYWORD-MATCHED EXTRAS (flavor on top of the 28 floor):
         Detect which packs match the client's industry/business context via
@@ -1722,7 +1724,13 @@ def apply_vertical_packs(selected_departments, core_answers):
               file=sys.stderr)
         return True
 
-    # PHASE 1 - universal primaries: one from every pack, always fires.
+    # PHASE 1 - universal primaries: one from every pack that EXPLICITLY flags a
+    # dept universal_primary=true. NO depts[0] fallback (v2.6.1): a pack with no
+    # flagged dept (now including real-estate, whose `listings` flag was removed)
+    # contributes NOTHING to the universal floor here - its depts can only be added
+    # via the Phase 2 industry keyword match. This keeps industry-specific depts
+    # like `listings` off generic/coaching/consulting floors while explicitly-
+    # flagged primaries (e.g. saas/`engineering`) still fire for every client.
     universal_count = 0
     for pack_id, pack in vertical_packs.items():
         if not isinstance(pack, dict):
@@ -1735,8 +1743,6 @@ def apply_vertical_packs(selected_departments, core_answers):
             if isinstance(d, dict) and d.get("universal_primary"):
                 primary = d
                 break
-        if primary is None:
-            primary = depts[0] if isinstance(depts[0], dict) else None
         if primary and _add_dept(primary, pack_id, " [universal-primary]"):
             universal_count += 1
 

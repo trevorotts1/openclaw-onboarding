@@ -62,14 +62,16 @@ def _read_state():
     except Exception:
         return {}
 
-print("== R2.1 floor is 29 (22 + 7), computed live; no stale strings ==")
+print("== R2.1 floor is 28 (22 + 6), computed live; no stale strings ==")
 import subprocess
 out = subprocess.run(["python3", os.path.join(SCRIPTS, "list-canonical-departments.py"), "--json"],
                      capture_output=True, text=True)
 d = json.loads(out.stdout)
-check(d["floor"] == 29, f"list-canonical floor == 29 (got {d['floor']})")
+# v2.6.1: real-estate `listings` lost its universal_primary flag (industry-gated now)
+# so universal primaries dropped 7 -> 6 and the live floor dropped 29 -> 28.
+check(d["floor"] == 28, f"list-canonical floor == 28 (got {d['floor']})")
 check(d["mandatory_count"] == 22, f"mandatory == 22 (got {d['mandatory_count']})")
-check(d["universal_primary_count"] == 7, f"universal-primary == 7 (got {d['universal_primary_count']})")
+check(d["universal_primary_count"] == 6, f"universal-primary == 6 (got {d['universal_primary_count']})")
 
 # Stale-number scan across the three reconciliation scripts (defended strings only:
 # we forbid the specific stale floor phrasings the PRD called out).

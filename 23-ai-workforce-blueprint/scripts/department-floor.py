@@ -2,9 +2,11 @@
 """
 department-floor.py - the ONE source of truth for the HARD department floor.
 
-FLOOR (computed live from department-naming-map.json v2.6.0): 29 departments =
-22 mandatory canonical + 7 universal-primary vertical-pack (one per pack). The
-count is ALWAYS derived at runtime from len(HARDCODED_MANDATORY) + the count of
+FLOOR (computed live from department-naming-map.json v2.6.1): 28 departments =
+22 mandatory canonical + 6 universal-primary vertical-pack (one per pack that
+EXPLICITLY flags universal_primary=true; the real-estate pack flags none as of
+v2.6.1 so its listings dept is industry-gated, not universal). The count is
+ALWAYS derived at runtime from len(HARDCODED_MANDATORY) + the count of
 universal-primary pack depts, so no integer is hardcoded as a gate. Below the
 floor is only ever reached by an EXPLICIT recorded decline (a mandatory dept, a
 universal-primary vertical, or a custom dept the owner declined in Phase 5.5).
@@ -83,7 +85,11 @@ NAMING_MAP = SKILL_DIR / "department-naming-map.json"
 # so the floor is still enforced on a broken install that lost the naming map.
 # v11.1.0: added general-task + project-architecture-office, floor 24→26.
 # Bugs + Healer (self-repair immune system) added as mandatory, floor 26→28.
-# Quality Control (owns and runs the system analyzer) added as mandatory, floor 28→29.
+# Quality Control (owns and runs the system analyzer) added as mandatory, total 28→29
+# (when 7 universal primaries existed). v2.6.1: real-estate `listings` lost its
+# universal_primary flag (now industry-gated), dropping universal primaries 7→6 so
+# the live total floor is 22 mandatory + 6 universal = 28 again. Mandatory count (22)
+# is unchanged; only the universal-primary layer shrank.
 HARDCODED_MANDATORY = [
     "marketing", "sales", "billing-finance", "customer-support",
     "web-development", "app-development", "graphics", "video", "audio",
@@ -133,14 +139,20 @@ def mandatory_ids(nm):
 def universal_primary_vertical_departments(nm):
     """
     Return the list of universal primary vertical-pack department ids - one per
-    pack, the department marked universal_primary=true (always the first dept in
-    auto_add_departments). These are added to EVERY client regardless of industry,
-    giving the len(HARDCODED_MANDATORY) + len(result) mandatory floor (computed at
-    runtime - no integer is hardcoded here).
+    pack that EXPLICITLY marks a dept universal_primary=true. These are added to
+    EVERY client regardless of industry, giving the len(HARDCODED_MANDATORY) +
+    len(result) mandatory floor (computed at runtime - no integer is hardcoded here).
 
-    If a pack has no dept marked universal_primary=true, the first dept in
-    auto_add_departments is treated as the universal primary (backward-compatible
-    with naming maps that predate the universal_primary field).
+    EXPLICIT-OPT-IN ONLY (v2.6.1): a pack contributes a universal primary ONLY when
+    one of its depts carries universal_primary=true. There is NO depts[0] fallback.
+    The old fallback auto-promoted the FIRST dept of any pack that lacked the flag,
+    which silently forced an industry-specific dept (e.g. real-estate's `listings`,
+    the first dept in its pack) onto EVERY client's floor - including coaching /
+    consulting clients that have nothing to do with that industry. Removing the
+    flag from `listings` plus dropping this fallback makes such a dept industry-
+    gated (it now only appears via keyword match in matched_vertical_pack_departments)
+    while explicitly-flagged primaries (e.g. saas/`engineering`) stay universal.
+    A pack with no flagged dept contributes NOTHING to the universal floor.
     """
     packs = nm.get("vertical_packs") or {}
     primary_ids = []
@@ -151,14 +163,13 @@ def universal_primary_vertical_departments(nm):
         depts = pack.get("auto_add_departments", []) or []
         if not depts:
             continue
-        # Find the universal_primary dept; fall back to first if not flagged.
+        # EXPLICIT ONLY: find the universal_primary dept. No depts[0] fallback -
+        # a pack with no flagged dept contributes no universal-floor department.
         primary = None
         for dept in depts:
             if isinstance(dept, dict) and dept.get("universal_primary"):
                 primary = dept
                 break
-        if primary is None:
-            primary = depts[0] if isinstance(depts[0], dict) else None
         if primary:
             did = primary.get("id")
             if did and did not in seen:
@@ -187,7 +198,10 @@ def matched_vertical_pack_departments(nm, core_answers):
         str(core_answers.get("tools", "") or ""),
     ]).lower()
 
-    # Phase 1: always add the universal primary from every pack.
+    # Phase 1: add the EXPLICIT universal primary from every pack that has one.
+    # No depts[0] fallback (v2.6.1): a pack with no universal_primary=true dept
+    # contributes nothing here - its depts only appear via the Phase 2 keyword
+    # match below, keeping industry-specific depts (e.g. listings) off generic floors.
     all_dept_ids = []
     seen = set()
     for pack_id, pack in packs.items():
@@ -201,8 +215,6 @@ def matched_vertical_pack_departments(nm, core_answers):
             if isinstance(dept, dict) and dept.get("universal_primary"):
                 primary = dept
                 break
-        if primary is None:
-            primary = depts[0] if isinstance(depts[0], dict) else None
         if primary:
             did = primary.get("id") if isinstance(primary, dict) else None
             if did and did not in seen:
