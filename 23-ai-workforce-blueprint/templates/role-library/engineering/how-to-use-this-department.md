@@ -1,14 +1,14 @@
 # How to Use the Software Development / Engineering Department ⚙️
 
 **Department:** Software Development / Engineering
-**Department head:** Director of Engineering
+**Department head:** Director of Software Development / Engineering
 **Folder:** `departments/engineering/`
 **Generated for:** {{COMPANY_NAME}}
 **Last updated:** {{GENERATION_DATE}}
 
-> This is the plain-language guide to the Engineering department. Most
+> This is the plain-language guide to the Software Development / Engineering department. Most
 > people never realize this department exists or know how to put it to work.
-> This document fixes that. When you ask "how do I use the Engineering
+> This document fixes that. When you ask "how do I use the Software Development / Engineering
 > department?" or "how do I use the QA Engineer?", this is the
 > document your agent reads to answer you.
 
@@ -18,10 +18,10 @@
 
 Own the company's apps - desktop, mobile (iOS + Android), PWA, backend APIs, cloud infrastructure, app store optimization. Coordinate with Web Dev (web-to-app handoff), Graphics (UI assets), OpenClaw Maintenance (deployment infra).
 
-In one sentence: **Core product development**
+In one sentence: **Builds your software, apps & web products**
 
 You do not need to know which specialist does what. You just tell the department
-what you want in plain English, and the department head (Director of Engineering)
+what you want in plain English, and the department head (Director of Software Development / Engineering)
 figures out who handles it and routes it for you.
 
 ---
@@ -44,13 +44,13 @@ get the routing right yourself.
 You have three ways to put this department to work. All of them are fine.
 
 1. **Just say it in plain English.** Message your agent like you would a
-   teammate: "I need help with something from the engineering team." That is enough to start.
+   teammate: "I need help with something from the software development / engineering team." That is enough to start.
 2. **Name the department if you want to be specific.** "Have the
-   Engineering department handle something from the engineering team." This routes
-   it straight to Director of Engineering.
+   Software Development / Engineering department handle something from the software development / engineering team." This routes
+   it straight to Director of Software Development / Engineering.
 3. **Name a specialist if you know exactly who you want.** See the specialist
    list in Section 4 and ask for them by role: "Get the QA Engineer
-   to take on a engineering task for you."
+   to take on a software development / engineering task for you."
 
 A good request includes, where it applies: **what** you want, **who or what it
 is for**, **when you need it**, and any **must-haves or limits**. You do not have
@@ -88,14 +88,14 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 When you ask this department for something, here is the normal flow:
 
-1. **Acknowledgment.** Director of Engineering confirms the request landed and, if
+1. **Acknowledgment.** Director of Software Development / Engineering confirms the request landed and, if
    anything important is unclear, asks you one or two quick questions.
 2. **Routing.** The work is matched to the right specialist and the relevant
    procedure (its SOP). Nobody guesses; if there is no procedure for your
    request, one is written before the work starts.
 3. **The work itself.** The specialist does the job and it is checked by the
    department's quality-control review before it reaches you.
-4. **Delivery.** You get the finished result: the finished engineering work you asked for.
+4. **Delivery.** You get the finished result: the finished software development / engineering work you asked for.
    Anything that needs your sign-off before it goes live is flagged for your
    approval first.
 
@@ -123,11 +123,11 @@ same working session; larger projects come back with a clear estimate up front.
 You can ask your agent any of these at any time and it will answer from this
 document:
 
-- "How do I use the Engineering department?"
-- "What can the Engineering department do for me?"
+- "How do I use the Software Development / Engineering department?"
+- "What can the Software Development / Engineering department do for me?"
 - "How do I use the QA Engineer?"
-- "Who handles something from the engineering team?"
-- "What do I get back if I ask Engineering for something from the engineering team?"
+- "Who handles something from the software development / engineering team?"
+- "What do I get back if I ask Software Development / Engineering for something from the software development / engineering team?"
 
 ---
 
