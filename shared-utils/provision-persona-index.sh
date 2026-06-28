@@ -291,6 +291,157 @@ reconcile_persona_assets() {
     local _final
     _final="$(find "$_TGT_PERSONAS" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
     echo "  ✓ persona-blueprints reconciled: $_copied copied, $_ok already-canonical, $_final persona dirs on disk (target 54)"
+
+    # 3) Persona-SET version stamp (FIX 2 / BREAK 2 — silent fleet freeze).
+    #    Mirrors the .prebuilt-index-version sentinel, but for the SET (not the
+    #    index). Records the installed persona-categories.json md5 + persona_count
+    #    + lastUpdated so update-skills.sh can DETERMINISTICALLY detect "the set
+    #    grew" and trigger a re-wire. Before this stamp, a box that copied a stale
+    #    categories.json drifted with ZERO alarms (the index sentinel guarded the
+    #    INDEX, never the SET). Sets _SET_CHANGED=1 (exported) when the SET differs
+    #    from the previously-stamped one so the caller re-wires matching + Command
+    #    Center + the dept persona reflex. Static file compare only — NO embeddings.
+    local _SET_SENTINEL="$_COACHING_DB_DIR/.persona-set-version"
+    local _SRC_COUNT _SRC_UPDATED _PREV_SET_MD5=""
+    _SRC_COUNT="$(python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1])).get("personas",{})))' "$_SRC_CATS" 2>/dev/null || echo 0)"
+    _SRC_UPDATED="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("lastUpdated",""))' "$_SRC_CATS" 2>/dev/null || echo "")"
+    [ -f "$_SET_SENTINEL" ] && _PREV_SET_MD5="$(python3 -c 'import json,sys;
+try:
+    print(json.load(open(sys.argv[1])).get("md5",""))
+except Exception:
+    print("")' "$_SET_SENTINEL" 2>/dev/null || echo "")"
+    if [ "$_PREV_SET_MD5" != "$_SRC_MD5" ]; then
+        printf '{"md5":"%s","persona_count":%s,"lastUpdated":"%s","stampedAt":"%s"}\n' \
+            "$_SRC_MD5" "$_SRC_COUNT" "$_SRC_UPDATED" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            > "$_SET_SENTINEL" 2>/dev/null || true
+        export _SET_CHANGED=1
+        echo "  ✓ persona-SET version CHANGED (was md5=${_PREV_SET_MD5:-<none>} → now $_SRC_MD5; $_SRC_COUNT personas) — stamped $_SET_SENTINEL; _SET_CHANGED=1 (re-wire will run)"
+    else
+        export _SET_CHANGED=0
+        echo "  ✓ persona-SET unchanged (md5=$_SRC_MD5, $_SRC_COUNT personas) — no re-wire needed"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# reconcile_qmd_persona_index <coaching_db_dir>
+#
+# FIX 1 / BREAK 1 — the literal "no new personas since March" symptom.
+#
+# The agent answers persona-inventory questions conversationally by running the
+# `qmd` tool (a declared bin of Skill 22) against its `coaching-personas`
+# collection. On drifted boxes that collection was created once against the
+# SKILL-BUNDLED personas folder (~/.openclaw/skills/22-…/personas), frozen at the
+# March snapshot, and NO pipeline step ever re-pointed or re-indexed it — so the
+# agent read a frozen store even though the SET + gemini index were current.
+#
+# This helper makes the PIPELINE own that store: it (re)points the qmd
+# `coaching-personas` collection at the CANONICAL personas dir (the same dir
+# reconcile_persona_assets just populated with the current 54 blueprints) and
+# re-indexes it. If it cannot be re-pointed, it TEARS DOWN the orphan collection
+# so the agent can never read a stale store (inventory then answers from
+# persona-categories.json per the N16 hard rule).
+#
+# FURNACE-SAFE: this is a BM25 / full-text re-index only (`qmd collection add` /
+# `qmd update`). It does NOT run `qmd embed`, so ZERO vector embeddings are
+# computed. Must run AFTER reconcile_persona_assets (so the canonical dir holds
+# all current blueprints) and after provision_persona_index.
+# ---------------------------------------------------------------------------
+reconcile_qmd_persona_index() {
+    local _COACHING_DB_DIR="$1"
+    local _PERSONAS_DIR="$_COACHING_DB_DIR/personas"
+    local _COLL="coaching-personas"
+
+    if ! command -v qmd >/dev/null 2>&1; then
+        echo "  note: qmd not installed — skipping qmd persona-store reconcile (additive; inventory answers from persona-categories.json per N16)"
+        return 0
+    fi
+    if [ ! -d "$_PERSONAS_DIR" ]; then
+        echo "  note: canonical personas dir absent ($_PERSONAS_DIR) — skipping qmd reconcile (additive)"
+        return 0
+    fi
+
+    local _N_DIRS
+    _N_DIRS="$(find "$_PERSONAS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+
+    local _LIST _HAS_COLL=0 _POINTS_CANON=0
+    _LIST="$(qmd collection list 2>/dev/null || true)"
+    if printf '%s' "$_LIST" | grep -q "$_COLL"; then
+        _HAS_COLL=1
+        # The canonical path appearing anywhere in the collection's listing means
+        # it is already pointed at the right place.
+        printf '%s' "$_LIST" | grep -F "$_PERSONAS_DIR" >/dev/null 2>&1 && _POINTS_CANON=1
+    fi
+
+    if [ "$_HAS_COLL" -eq 1 ] && [ "$_POINTS_CANON" -eq 0 ]; then
+        echo "  → qmd '$_COLL' collection is stale/mispointed (not at canonical $_PERSONAS_DIR) — removing so it can be re-indexed at the canonical path"
+        qmd collection remove "$_COLL" >/dev/null 2>&1 || true
+        _HAS_COLL=0
+    fi
+
+    if [ "$_HAS_COLL" -eq 0 ]; then
+        if qmd collection add "$_PERSONAS_DIR" --name "$_COLL" --mask '*.md' >/dev/null 2>&1; then
+            echo "  ✓ qmd '$_COLL' collection (re)indexed at canonical $_PERSONAS_DIR ($_N_DIRS persona dirs, BM25/full-text only — furnace-safe)"
+        else
+            qmd collection remove "$_COLL" >/dev/null 2>&1 || true
+            echo "  note: could not (re)create qmd '$_COLL' at canonical path — removed any stale collection so the agent cannot read a frozen store (inventory answers from persona-categories.json per N16)"
+        fi
+    else
+        # Already canonical → refresh its index so newly-added persona dirs surface.
+        qmd update >/dev/null 2>&1 || true
+        echo "  ✓ qmd '$_COLL' collection already canonical at $_PERSONAS_DIR ($_N_DIRS persona dirs) — re-indexed (qmd update; BM25, furnace-safe)"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# rewire_on_persona_set_change <skills_dir> <workspace_dir>
+#
+# FIX 4 / cascade — re-wire everything the SET touches when it grew.
+#
+# Called by install.sh / update-skills.sh ONLY when reconcile_persona_assets
+# exported _SET_CHANGED=1. The matcher (persona-selector-v2.py) and the dashboard
+# already read the SET live, so they self-heal once the SET is current and the
+# index carries the new vectors — but two derived artifacts do NOT refresh on
+# their own:
+#
+#   (1) per-dept governing-personas.md — authored FROM the SET at build time;
+#       stale until re-written. Re-run create_role_workspaces.py
+#       --refresh-personas-only (cheap, idempotent, NO LLM calls).
+#   (2) persona_assignment stickiness — a sticky row keeps serving a persona that
+#       was picked from the OLD candidate universe for up to ANTI_STALENESS_THRESHOLD
+#       dispatches. Flag every row needs_review=1 (persona-selector-v2.py
+#       --mode bust-stickiness) so check_sticky_assignment cannot serve a stale pick.
+#
+# Both steps are static/idempotent — NO embeddings. Safe to run on every SET
+# change and a no-op when the workspace/scripts are absent.
+# ---------------------------------------------------------------------------
+rewire_on_persona_set_change() {
+    local _SKILLS_DIR="$1"
+    local _WS="$2"
+    local _SCRIPTS="$_SKILLS_DIR/23-ai-workforce-blueprint/scripts"
+    local _PY; _PY="$(command -v python3 || true)"
+
+    if [ -z "$_PY" ]; then
+        echo "  note: python3 not found — skipping persona-SET re-wire (additive)"
+        return 0
+    fi
+
+    # (1) Regenerate every dept's governing-personas.md from the new SET.
+    if [ -f "$_SCRIPTS/create_role_workspaces.py" ]; then
+        if "$_PY" "$_SCRIPTS/create_role_workspaces.py" --refresh-personas-only --workspace-root "$_WS" >/dev/null 2>&1; then
+            echo "  ✓ re-wire: governing-personas.md refreshed for every dept from the new SET"
+        else
+            echo "  note: re-wire: governing-personas.md refresh returned non-zero (additive; dashboard reads SET live)"
+        fi
+    fi
+
+    # (2) Bust persona stickiness so a stale pick can't keep winning.
+    if [ -f "$_SCRIPTS/persona-selector-v2.py" ]; then
+        if "$_PY" "$_SCRIPTS/persona-selector-v2.py" --mode bust-stickiness >/dev/null 2>&1; then
+            echo "  ✓ re-wire: persona stickiness busted (all persona_assignment rows flagged needs_review=1)"
+        else
+            echo "  note: re-wire: bust-stickiness returned non-zero (additive; ANTI_STALENESS_THRESHOLD still bounds drift)"
+        fi
+    fi
 }
 
 # ---------------------------------------------------------------------------

@@ -1,3 +1,37 @@
+## [v15.1.0]  -  2026-06-28  -  fix: new personas now propagate to all client boxes on update + re-wire matching/Command Center; persona-set versioning + provision re-provisions on growth; ADDING-NEW-PERSONAS doctrine
+
+### Root cause (three independent breaks, one symptom)
+
+In June 2026, sixteen personas (38 → 54) were added to the SET while a client's agent still answered *"no new personas since March."* Three independent breaks produced that one symptom:
+
+**BREAK 1 — frozen qmd cache.** The agent answered persona-inventory questions from the `qmd` `coaching-personas` collection, which was pointed at the immutable skill-bundled `personas/` folder (frozen at the initial build snapshot). No pipeline step ever re-pointed or re-indexed it. Closed by `reconcile_qmd_persona_index` (new function in `shared-utils/provision-persona-index.sh`): after every reconcile+provision step, the pipeline repoints the collection at the CANONICAL personas dir and re-indexes (BM25 full-text only — furnace-safe). N16 hard rule added: persona-inventory questions must be answered from `persona-categories.json`, NEVER from qmd.
+
+**BREAK 2 — silent SET drift.** The persona SET had no per-box version stamp, so drift between the in-repo SET and what a box actually had was undetected and unrewired. Closed by the `.persona-set-version` sentinel: `reconcile_persona_assets` now records the installed `persona-categories.json` md5 + count and exports `_SET_CHANGED=1` when it differs. Both `install.sh` and `update-skills.sh` act on that flag: they call `rewire_on_persona_set_change` (new function), which (a) regenerates every dept's `governing-personas.md` from the new SET (`create_role_workspaces.py --refresh-personas-only`, no LLM calls) so the Command Center dashboard surfaces the new persona, and (b) busts persona stickiness (`persona-selector-v2.py --mode bust-stickiness`, new mode) so a stale sticky pick cannot keep winning for up to `ANTI_STALENESS_THRESHOLD` dispatches.
+
+**BREAK 3 — hand-rebuilt, un-gated asset.** The prebuilt gemini index asset was rebuilt + manifest-bumped manually, lagging the source by days, with no CI gate. Closed by `shared-utils/prebuilt-index/build-and-publish.sh` (new script): downloads the CURRENT published asset, runs `gemini-section-indexer.py` whose md5 HASH-SKIP guard embeds ONLY new/changed personas (persona #55 = tens of vectors, NEVER the full corpus), recomputes counts/sha256/sizes, bumps `INDEX-MANIFEST.json`, and publishes via `gh release`. Plus new `INDEX-MANIFEST.json` fields: `persona_set_md5`, `persona_set_version`. Plus N38 7th assertion in `qc-assert-repo-consistency.py` (`_persona_set_triad_failures`): the blueprint dirs == categories.json keys == manifest persona_count == canonical_persona_count count triad is now a hard-fail (rc=5) at build-preflight and CI. Plus new CI guard `.github/workflows/persona-set-asset-consistency-guard.yml`: enforces the same triad at the PR boundary on the exact files that move when a persona is added.
+
+### Both-paths (install + update) — confirmed green
+
+Both `install.sh` (Step 6b) and `update-skills.sh` (Step U6b) now run the full four-step sequence: `reconcile_persona_assets` → `provision_persona_index` → `reconcile_qmd_persona_index` → (if `_SET_CHANGED=1`) `rewire_on_persona_set_change`.
+
+### Doctrine (ADDING-NEW-PERSONAS)
+
+`23-ai-workforce-blueprint/ADDING-PERSONAS.md` — new doc: the binding propagation checklist (blueprint + SET + incremental index + manifest + qmd + re-wire). Referenced by N38 in AGENTS.md. N16 INSTRUCTIONS.md section added: PERSONA-INVENTORY HARD RULE.
+
+### Files changed
+
+- `shared-utils/provision-persona-index.sh` — `reconcile_persona_assets` gains the SET-version sentinel + `_SET_CHANGED` export; new `reconcile_qmd_persona_index`; new `rewire_on_persona_set_change`
+- `install.sh` — Step 6b: adds `reconcile_qmd_persona_index` + conditional `rewire_on_persona_set_change` after existing provision calls
+- `update-skills.sh` — Step U6b: same additions; parity with install path
+- `23-ai-workforce-blueprint/scripts/persona-selector-v2.py` — new `--mode bust-stickiness` (idempotent; flags all `persona_assignment` rows `needs_review=1`)
+- `23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py` — `_persona_set_triad_failures` (N38 7th assertion)
+- `shared-utils/prebuilt-index/INDEX-MANIFEST.json` — adds `persona_set_md5`, `persona_set_version`, `persona_set_note`
+- `shared-utils/prebuilt-index/build-and-publish.sh` — new incremental publish script (HASH-SKIP, triad-guarded)
+- `22-book-to-persona-coaching-leadership-system/INSTRUCTIONS.md` — PERSONA-INVENTORY HARD RULE section
+- `AGENTS.md` — N16 updated (inventory hard rule); N38 updated (7th persona-SET count triad assertion)
+- `23-ai-workforce-blueprint/ADDING-PERSONAS.md` — new doctrine doc
+- `.github/workflows/persona-set-asset-consistency-guard.yml` — new CI guard
+
 ## [v15.0.1]  -  2026-06-28  -  fix(presentations): accept 'DO-NOT BLOCK' as the negative-block structural header to match the canonical exemplars/SOP — stops false AF-P-STRUCT routebacks on correctly-authored prompts; gate not weakened
 
 ### The false-bounce
