@@ -7486,17 +7486,10 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
             "presenter teleprompter web app (published URL)",
             0, 0, "UNPUBLISHED"))
 
-    # --- AF-CC-UNREGISTERED sub-check — verify the CC task was registered before
-    # the deck is reported complete. Fail-closed on never-attempted; fail-soft on
-    # transport (cc_register_attempted:true satisfies the gate).
-    cc_reason = _chk_cc_registered(run_dir, deck_slug)
-    if cc_reason:
-        missing_or_short.append((
-            "deck_pptx",
-            "working/checkpoints/process_manifest.json",
-            "CC task registration (cc_task_id in process_manifest.json)",
-            0, 0, "CC_UNREGISTERED"))
-        update_deliverable_status(ledger_path, "deck_pptx", "failed", error=cc_reason)
+    # NOTE: the AF-CC-UNREGISTERED gate is enforced once, AFTER the bundle-completeness
+    # check passes (see the dedicated _chk_cc_registered call below). It is intentionally
+    # NOT folded into AF-BUNDLE-COMPLETE here, so a never-registered CC surfaces its own
+    # clean AF-CC-UNREGISTERED message rather than being mislabelled as a bundle defect.
 
     # --- Phase 2: read ledger back as the authoritative final state ---
     try:

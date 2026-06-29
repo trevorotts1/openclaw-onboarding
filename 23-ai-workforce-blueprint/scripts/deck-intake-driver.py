@@ -27,6 +27,7 @@ import pathlib
 import sys
 import tempfile
 import time
+from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Path constants
@@ -111,7 +112,7 @@ def ordered_questions(qdata: dict) -> list:
     return sorted(qdata["questions"], key=lambda q: q.get("order", 999))
 
 
-def find_active_question(qdata: dict, ledger: dict) -> dict | None:
+def find_active_question(qdata: dict, ledger: dict) -> Optional[dict]:
     """Return the lowest-order question that has been asked but not yet validated."""
     entries = ledger.get("entries", {})
     for q in ordered_questions(qdata):
@@ -121,7 +122,7 @@ def find_active_question(qdata: dict, ledger: dict) -> dict | None:
     return None
 
 
-def find_next_question(qdata: dict, ledger: dict) -> dict | None:
+def find_next_question(qdata: dict, ledger: dict) -> Optional[dict]:
     """Return the lowest-order question with no validated answer and not yet asked."""
     entries = ledger.get("entries", {})
     for q in ordered_questions(qdata):
@@ -131,7 +132,7 @@ def find_next_question(qdata: dict, ledger: dict) -> dict | None:
     return None
 
 
-def find_next_any(qdata: dict, ledger: dict) -> dict | None:
+def find_next_any(qdata: dict, ledger: dict) -> Optional[dict]:
     """Return the lowest-order question with no validated answer (asked or not)."""
     entries = ledger.get("entries", {})
     for q in ordered_questions(qdata):

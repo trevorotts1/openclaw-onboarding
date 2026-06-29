@@ -9,8 +9,10 @@ Also callable standalone for operator inspection.
 WHAT IT CHECKS (for every declared step in declared order):
     (a) An attestation record exists in process_manifest.json["phase_attestations"]
     (b) The attestation record has substance_verified == True
-    (c) client_reports.json has a "start" AND a "done" record for the phase with a
-        non-empty gateway_msg_id (i.e. the client was actually notified via openclaw)
+    (c) client_reports.json has a "start" AND a "done" record for the phase (the
+        record EXISTING proves the report step ran; gateway_msg_id/`sent` are
+        best-effort delivery confirmation — a MISSING record fails, an unconfirmed
+        send does not, per OQ-2)
     (d) Attestation timestamps are monotonically ascending in declared step order
         (out-of-order execution = FAIL)
     (e) No declared step is missing (gap in attestation chain = FAIL)
@@ -167,10 +169,15 @@ def _build_attestation_index(manifest: dict) -> Dict[str, dict]:
 # ---------------------------------------------------------------------------
 
 def _build_report_index(client_reports: list) -> Dict[str, Dict[str, dict]]:
-    """Return {phase_id: {"start": rec, "done": rec}} for confirmed reports.
+    """Return {phase_id: {"start": rec, "done": rec}} for every report record that
+    EXISTS.
 
-    Confirmed = gateway_msg_id is non-empty.  Unconfirmed records are indexed
-    under "start_unconfirmed" / "done_unconfirmed" for diagnostic messages."""
+    A report record satisfies the gate by EXISTING — it proves the client-report
+    step ran for that phase. gateway_msg_id and the `sent` flag are recorded for
+    audit/confirmation, but an empty id does NOT fail the gate: per OQ-2 the
+    process-integrity gate bites on a MISSING record (a skipped report step), not on
+    an unconfirmed send (e.g. a box with no configured owner target). This avoids a
+    fleet-wide delivery deadlock while still forbidding a silently skipped report."""
     index: Dict[str, Dict[str, dict]] = {}
     for rec in client_reports:
         if not isinstance(rec, dict):
@@ -179,13 +186,8 @@ def _build_report_index(client_reports: list) -> Dict[str, Dict[str, dict]]:
         kind = rec.get("kind")
         if not phase_id or kind not in ("start", "done"):
             continue
-        if phase_id not in index:
-            index[phase_id] = {}
-        msg_id = rec.get("gateway_msg_id") or ""
-        if msg_id:
-            index[phase_id][kind] = rec
-        else:
-            index[phase_id].setdefault(f"{kind}_unconfirmed", rec)
+        index.setdefault(phase_id, {})
+        index[phase_id][kind] = rec  # last record of each kind wins
     return index
 
 
@@ -314,28 +316,20 @@ def check_all_steps(
                     )
                 last_ts = ts
 
-        # (c) client_reports.json must have confirmed start AND done for this phase.
+        # (c) client_reports.json must have a start AND a done record for this phase
+        #     (the record EXISTING proves the report step ran; gateway_msg_id is
+        #     best-effort confirmation only — OQ-2).
         phase_reports = report_index.get(phase_id, {})
         if "start" not in phase_reports:
-            if "start_unconfirmed" in phase_reports:
-                failures.append(
-                    f"(c) AF-PHASE-REPORT-START: {phase_id!r} has a start record but "
-                    f"gateway_msg_id is empty — the openclaw send failed or was not confirmed."
-                )
-            else:
-                failures.append(
-                    f"(c) AF-PHASE-REPORT-START: No start client-report record for {phase_id!r}."
-                )
+            failures.append(
+                f"(c) AF-PHASE-REPORT-START: No start client-report record for {phase_id!r} "
+                "— its client start-report step was skipped."
+            )
         if "done" not in phase_reports:
-            if "done_unconfirmed" in phase_reports:
-                failures.append(
-                    f"(c) AF-PHASE-REPORT-DONE: {phase_id!r} has a done record but "
-                    f"gateway_msg_id is empty — the openclaw send failed or was not confirmed."
-                )
-            else:
-                failures.append(
-                    f"(c) AF-PHASE-REPORT-DONE: No done client-report record for {phase_id!r}."
-                )
+            failures.append(
+                f"(c) AF-PHASE-REPORT-DONE: No done client-report record for {phase_id!r} "
+                "— its client done-report step was skipped."
+            )
 
         if failures:
             sr.ok = False
