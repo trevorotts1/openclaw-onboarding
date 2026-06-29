@@ -358,26 +358,75 @@ elif "agents" in cfg and "list" in cfg["agents"]:
             by_provider = {}; tools["byProvider"] = by_provider
         for prov, rule in _CEO_MCP_DENY.items():
             by_provider[prov] = rule
-        # Cross-agent routing: routing agent MUST see all sessions so it can
-        # locate and hand off to any department agent. Default gateway
-        # behaviour is "tree" (spawned-children only), which silently blocks
-        # department handoffs.
-        _sessions = tools.setdefault("sessions", {})
+        # v16.1.3 FIX — cross-agent routing tools live on ROOT `tools`
+        # (config["tools"]), NEVER on a per-agent tools block. The per-agent
+        # AgentEntry.tools schema is additionalProperties:false and REJECTS
+        # `sessions`/`agentToAgent` (allowed keys: allow/alsoAllow/byProvider/
+        # codeMode/deny/elevated/exec/fs/loopDetection/message/profile/sandbox/
+        # toolsBySender). Writing them per-agent fails `openclaw config validate`,
+        # so the reload is skipped and the cron engine goes down on a
+        # router-default box. Root `tools` DOES accept them:
+        # tools.sessions.visibility (self|tree|agent|all) and
+        # tools.agentToAgent.{enabled,allow[]}. Verified on gateway 2026.5.22,
+        # 2026.5.28 and 2026.6.8.
+        _root_tools = cfg.setdefault("tools", {})
+        if not isinstance(_root_tools, dict):
+            _root_tools = {}
+            cfg["tools"] = _root_tools
+        # sessions.visibility=all: routing agent MUST see all sessions so it can
+        # locate and hand off to any department agent (gateway default "tree" —
+        # spawned-children only — silently blocks department handoffs).
+        _sessions = _root_tools.setdefault("sessions", {})
         if not isinstance(_sessions, dict):
             _sessions = {}
-            tools["sessions"] = _sessions
+            _root_tools["sessions"] = _sessions
         if _sessions.get("visibility") != "all":
             _sessions["visibility"] = "all"
         # agentToAgent: routing agent must be able to message peer agents
         # directly. Idempotent — preserves any existing allow list if already
         # customized (setdefault only seeds missing keys).
-        _a2a = tools.setdefault("agentToAgent", {})
+        _a2a = _root_tools.setdefault("agentToAgent", {})
         if not isinstance(_a2a, dict):
             _a2a = {}
-            tools["agentToAgent"] = _a2a
+            _root_tools["agentToAgent"] = _a2a
         _a2a.setdefault("enabled", True)
         _a2a.setdefault("allow", ["*"])
-        print(f"[apply-fleet-standards] re-asserted CEO tool-gate on default agent (id={agent.get('id','<unknown>')}; production tools denied)")
+        print(f"[apply-fleet-standards] re-asserted CEO tool-gate on default agent (id={agent.get('id','<unknown>')}; production tools denied) + routing tools (sessions/agentToAgent) on ROOT tools")
+
+# v16.1.3 SELF-HEAL — sessions/agentToAgent belong on ROOT `tools`, NEVER on a
+# per-agent tools block (AgentEntry.tools is additionalProperties:false and
+# REJECTS them: a corrupted box fails `openclaw config validate`, the reload is
+# skipped, and the cron engine goes down — the original router-default defect).
+# REMOVE the schema-invalid keys from EVERY per-agent tools block, MIGRATING the
+# configured value up to ROOT `tools` when root does not already carry it, so a
+# previously-corrupted box is REPAIRED on the next run (the gateway hot-reloads
+# the now-valid config — no restart). Runs UNCONDITIONALLY (independent of the
+# consent carve-out / router-gate above) so even a consented or non-router box is
+# repaired. Idempotent: no per-agent occurrence → no-op; running twice never
+# re-corrupts.
+def _heal_peragent_routing_keys(_cfg):
+    _rt = _cfg.setdefault("tools", {})
+    if not isinstance(_rt, dict):
+        _rt = {}
+        _cfg["tools"] = _rt
+    _healed = []
+    for _ag in (_cfg.get("agents", {}) or {}).get("list", []) or []:
+        if not isinstance(_ag, dict):
+            continue
+        _at = _ag.get("tools")
+        if not isinstance(_at, dict):
+            continue
+        for _k in ("sessions", "agentToAgent"):
+            if _k in _at:
+                if _k not in _rt and isinstance(_at[_k], (dict, list)):
+                    _rt[_k] = _at[_k]  # migrate the configured value up to root
+                del _at[_k]
+                _healed.append(f"{_ag.get('id', '<unknown>')}.{_k}")
+    return _healed
+
+_healed_keys = _heal_peragent_routing_keys(cfg)
+if _healed_keys:
+    print("[apply-fleet-standards] v16.1.3 self-heal: removed schema-invalid per-agent routing keys + ensured on ROOT tools: " + ", ".join(_healed_keys))
 
 after_json = json.dumps(cfg, sort_keys=True, indent=2)
 

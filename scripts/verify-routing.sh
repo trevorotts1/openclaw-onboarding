@@ -470,6 +470,17 @@ try:
     if not isinstance(tools, dict):
         print(f"NO_TOOLS:{cid}"); sys.exit(0)
 
+    # v16.1.3: sessions/agentToAgent are ROOT `tools` keys; on a PER-AGENT tools
+    # block they are schema-invalid (AgentEntry.tools is additionalProperties:
+    # false) and fail `openclaw config validate` → reload skipped → cron engine
+    # down on a router-default box. Flag a box still carrying them so the roll's
+    # self-heal (apply-routing-fix.sh / apply-fleet-standards.sh) is known to be
+    # required. Hard-fail even under an owner-consent carve-out (the corruption
+    # is independent of the deny gate).
+    _bad_peragent = [k for k in ("sessions", "agentToAgent") if k in tools]
+    if _bad_peragent:
+        print(f"PERAGENT_INVALID_KEYS:{cid}:{','.join(_bad_peragent)}"); sys.exit(0)
+
     deny = set(tools.get("deny") or [])
     missing = REQUIRED_DENY - deny
     if missing:
@@ -502,6 +513,11 @@ if [ -n "$_CEO_CONSENT_FILE" ] && [ -f "$_CEO_CONSENT_FILE" ]; then
   case "$G7_RESULT" in
     PASS:*)          _pass "G7: CEO tool-gate present (id=${G7_RESULT#PASS:}) [consent sidecar also present]" ;;
     PA_DEFAULT_OK:*) _pass "G7: default agent (id=${G7_RESULT#PA_DEFAULT_OK:}) is a PERSONAL-ASSISTANT/non-router — CEO tool-gate N/A; PA-default topology is valid (v13.2.2)" ;;
+    PERAGENT_INVALID_KEYS:*)
+      _G7_PK="${G7_RESULT#PERAGENT_INVALID_KEYS:}"
+      _fail "G7: CEO agent (id=${_G7_PK%%:*}) carries SCHEMA-INVALID per-agent tools keys [${_G7_PK#*:}] — these belong on ROOT tools (config.tools), not agents.list[].tools; config validate FAILS → reload skipped → cron engine down. Run apply-routing-fix.sh / apply-fleet-standards.sh (v16.1.3 self-heal repairs it). Fails even under consent (corruption is independent of the deny gate)."
+      FAILURES=$((FAILURES + 1))
+      ;;
     *)               _info "G7: owner-consent carve-out ACTIVE ($_CEO_CONSENT_FILE) — CEO tool-gate is intentionally lifted; QC state-gate covers this box. Not failing." ;;
   esac
 else
@@ -537,6 +553,11 @@ else
       ;;
     NO_TOOLS:*)
       _fail "G7: CEO agent (id=${G7_RESULT#NO_TOOLS:}) has NO tools policy — production tools wide open; run apply-routing-fix.sh (Layer 5)"
+      FAILURES=$((FAILURES + 1))
+      ;;
+    PERAGENT_INVALID_KEYS:*)
+      _G7_PK="${G7_RESULT#PERAGENT_INVALID_KEYS:}"
+      _fail "G7: CEO agent (id=${_G7_PK%%:*}) carries SCHEMA-INVALID per-agent tools keys [${_G7_PK#*:}] — these belong on ROOT tools (config.tools), not agents.list[].tools; config validate FAILS → reload skipped → cron engine down. Run apply-routing-fix.sh / apply-fleet-standards.sh (v16.1.3 self-heal repairs it)."
       FAILURES=$((FAILURES + 1))
       ;;
     NO_CEO_AGENT)

@@ -6039,20 +6039,40 @@ def add_agent_to_config(config, dept_id, dept_info):
         # GOAL-5 Item 1: hard tool-gate so skills:[] is not the ONLY brake.
         # Deny every production tool by real built-in name + deny all GHL MCP
         # tools by provider; allow only routing/conversation tools.
-        # tools.sessions.visibility=all: the routing agent MUST see ALL agent
-        # sessions so it can locate and hand off to any department agent.
-        # Without this the gateway defaults to "tree" (spawned-children only)
-        # and cross-agent department handoffs are silently blocked.
         agent_entry["tools"] = {
             "deny": list(CEO_TOOL_DENY),
             "allow": list(CEO_TOOL_ALLOW),
             "byProvider": dict(CEO_MCP_DENY),
-            "sessions": {"visibility": "all"},
-            # agentToAgent: routing agent must be able to message peer agents
-            # directly (not just spawn children). Wildcard allow — every
-            # registered agent is a valid peer target for the router.
-            "agentToAgent": {"enabled": True, "allow": ["*"]},
         }
+        # v16.1.3 FIX — cross-agent routing tools (sessions.visibility +
+        # agentToAgent) live on ROOT `tools`, NEVER on the per-agent tools block.
+        # The per-agent AgentEntry.tools schema is additionalProperties:false and
+        # REJECTS sessions/agentToAgent (allowed keys: allow/alsoAllow/byProvider/
+        # codeMode/deny/elevated/exec/fs/loopDetection/message/profile/sandbox/
+        # toolsBySender) — writing them per-agent fails `openclaw config validate`,
+        # so the reload is skipped and the cron engine goes down on a
+        # router-default box. Root `tools` DOES accept them:
+        # tools.sessions.visibility=all so the routing agent sees ALL agent
+        # sessions (gateway default "tree" — spawned-children only — silently
+        # blocks cross-agent department handoffs); tools.agentToAgent so the
+        # router can message peer agents directly. Idempotent: setdefault only
+        # seeds missing keys, never clobbers a client customization.
+        _root_tools = config.setdefault("tools", {})
+        if not isinstance(_root_tools, dict):
+            _root_tools = {}
+            config["tools"] = _root_tools
+        _root_sessions = _root_tools.setdefault("sessions", {})
+        if not isinstance(_root_sessions, dict):
+            _root_sessions = {}
+            _root_tools["sessions"] = _root_sessions
+        if _root_sessions.get("visibility") != "all":
+            _root_sessions["visibility"] = "all"
+        _root_a2a = _root_tools.setdefault("agentToAgent", {})
+        if not isinstance(_root_a2a, dict):
+            _root_a2a = {}
+            _root_tools["agentToAgent"] = _root_a2a
+        _root_a2a.setdefault("enabled", True)
+        _root_a2a.setdefault("allow", ["*"])
     if is_generation_dept:
         # Explicit tools.allow so generation tools survive any parent-deny
         # inheritance. The dept agent runs under its own tool policy but a

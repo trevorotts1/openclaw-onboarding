@@ -515,6 +515,117 @@ ceo_agent_is_router '{"id":"x","is_master":true}'   && _ok "L-fn: is_master → 
 ceo_agent_is_router '{"id":"x","role":"router"}'    && _ok "L-fn: role=router → router"      || _bad "L-fn: role=router misclassified"
 if ceo_agent_is_router '{"id":"personal-assistant"}'; then _bad "L-fn: personal-assistant wrongly classified as router"; else _ok "L-fn: personal-assistant → NOT router"; fi
 
+# ── M. v16.1.3 — sessions/agentToAgent on ROOT tools, NEVER per-agent + self-heal ─
+# THE regression guard for the router-default-box cron-engine-down defect. The
+# per-agent AgentEntry.tools schema is additionalProperties:false and REJECTS
+# sessions/agentToAgent (allowed: allow/alsoAllow/byProvider/codeMode/deny/
+# elevated/exec/fs/loopDetection/message/profile/sandbox/toolsBySender). Writing
+# them per-agent fails `openclaw config validate` → reload skipped → cron engine
+# down. They MUST live on ROOT config.tools (sessions.visibility + agentToAgent).
+# This section CI-fails if any write-site puts them on a per-agent block, and
+# proves the updater self-heals an already-corrupted box.
+rm -f "$CEO_CONSENT_FILE"
+
+# Shared structural assertion: per-agent block clean + root tools carries the keys.
+_assert_routing_layout() {
+  python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+m = [a for a in cfg.get("agents", {}).get("list", []) if a.get("id") == "main"][0]
+t = m.get("tools", {}) or {}
+peragent_clean = "sessions" not in t and "agentToAgent" not in t
+root = cfg.get("tools", {}) or {}
+root_ok = (root.get("sessions", {}).get("visibility") == "all"
+           and root.get("agentToAgent", {}).get("enabled") is True)
+sys.exit(0 if (peragent_clean and root_ok) else 1)
+PYEOF
+}
+
+# M0. The canonical per-agent gated block (lib) must NOT carry sessions/agentToAgent.
+if ceo_gate_tools | python3 -c "import json,sys; t=json.load(sys.stdin); sys.exit(0 if ('sessions' not in t and 'agentToAgent' not in t) else 1)"; then
+  _ok "M0: lib ceo_gate_tools per-agent block is schema-clean (no sessions/agentToAgent)"
+else
+  _bad "M0: lib ceo_gate_tools STILL emits sessions/agentToAgent on the per-agent block"
+fi
+
+# M1. apply-routing-fix.sh L5 puts routing keys on ROOT tools, NOT per-agent.
+_write_ungated
+bash "$APPLY_FIX" >/dev/null 2>&1 || true
+if _assert_routing_layout; then
+  _ok "M1: apply-routing-fix.sh — routing keys on ROOT tools, per-agent block schema-clean"
+else
+  _bad "M1: apply-routing-fix.sh wrote sessions/agentToAgent to the per-agent block (router-default cron-down defect)"
+fi
+
+# M2. apply-fleet-standards.sh re-assert — same: root tools carries the keys.
+rm -f "$CEO_CONSENT_FILE"
+_write_ungated
+bash "$APPLY_STD" >/dev/null 2>&1 || true
+if _assert_routing_layout; then
+  _ok "M2: apply-fleet-standards.sh — routing keys on ROOT tools, per-agent block schema-clean"
+else
+  _bad "M2: apply-fleet-standards.sh wrote sessions/agentToAgent to the per-agent block"
+fi
+
+# M3. SELF-HEAL: a box CORRUPTED with per-agent sessions/agentToAgent is REPAIRED
+# (keys stripped from per-agent + ensured on root) by apply-fleet-standards.sh.
+rm -f "$CEO_CONSENT_FILE"
+cat > "$HOME/.openclaw/openclaw.json" <<'JSON'
+{ "agents": { "list": [ { "id": "main", "default": true, "skills": [],
+  "tools": { "deny": ["write"], "sessions": {"visibility":"all"},
+             "agentToAgent": {"enabled": true, "allow": ["*"]} } } ] } }
+JSON
+bash "$APPLY_STD" >/dev/null 2>&1 || true
+if _assert_routing_layout; then
+  _ok "M3: apply-fleet-standards.sh SELF-HEALED a corrupted box (per-agent keys stripped, on root)"
+else
+  _bad "M3: apply-fleet-standards.sh did NOT self-heal the corrupted per-agent keys"
+fi
+
+# M3b. apply-routing-fix.sh ALSO self-heals an ALREADY-GATED corrupted box (the
+# heal runs before the ALREADY_GATED early-exit, so the early-exit still repairs).
+rm -f "$CEO_CONSENT_FILE"
+cat > "$HOME/.openclaw/openclaw.json" <<'JSON'
+{ "agents": { "list": [ { "id": "main", "default": true, "skills": [],
+  "tools": { "deny": ["write","edit","apply_patch","browser","canvas","image","process","ghl-community-mcp__*","ghl-mcp__*"],
+             "allow": ["read","exec"],
+             "byProvider": {"ghl-community-mcp":{"deny":["*"]},"ghl-mcp":{"deny":["*"]}},
+             "sessions": {"visibility":"all"},
+             "agentToAgent": {"enabled": true, "allow": ["*"]} } } ] } }
+JSON
+bash "$APPLY_FIX" >/dev/null 2>&1 || true
+if _assert_routing_layout && python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
+import json,sys
+m=[a for a in json.load(open(sys.argv[1]))["agents"]["list"] if a["id"]=="main"][0]
+sys.exit(0 if "write" in (m.get("tools",{}).get("deny") or []) else 1)
+PYEOF
+then _ok "M3b: apply-routing-fix.sh SELF-HEALED an already-gated corrupted box (deny preserved, per-agent keys stripped)"
+else _bad "M3b: apply-routing-fix.sh did NOT self-heal an already-gated corrupted box"; fi
+
+# M4. IDEMPOTENT: a second apply-fleet-standards.sh run never re-introduces the keys.
+bash "$APPLY_STD" >/dev/null 2>&1 || true
+if _assert_routing_layout; then
+  _ok "M4: re-running apply-fleet-standards.sh never re-corrupts the per-agent block (idempotent)"
+else
+  _bad "M4: re-run re-introduced per-agent sessions/agentToAgent"
+fi
+
+# M5. SOURCE GUARD (build origin): the CEO agent_entry["tools"] per-agent literal
+# in build-workforce.py must NOT contain sessions/agentToAgent. (Behavior tests
+# cover the shell scripts; this catches a future regression in the build origin.)
+if python3 - "$BUILD_WF" <<'PYEOF'
+import re, sys
+src = open(sys.argv[1]).read()
+m = re.search(r'agent_entry\["tools"\]\s*=\s*\{([^}]*)\}', src)  # first = CEO branch
+if not m:
+    sys.exit(1)
+block = m.group(1)
+sys.exit(1 if ('"sessions"' in block or '"agentToAgent"' in block) else 0)
+PYEOF
+then _ok "M5: build-workforce.py CEO agent_entry['tools'] (per-agent) literal has no sessions/agentToAgent"
+else _bad "M5: build-workforce.py still puts sessions/agentToAgent in the per-agent agent_entry['tools'] literal"; fi
+rm -f "$CEO_CONSENT_FILE"
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 if [ "$FAILS" -eq 0 ]; then

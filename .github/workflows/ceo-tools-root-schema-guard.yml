@@ -1,0 +1,64 @@
+name: CEO tools root-schema guard
+
+# v16.1.3 — fails the build if any write-site puts sessions/agentToAgent into a
+# PER-AGENT tools block (agents.list[].tools). That schema (AgentEntry.tools) is
+# additionalProperties:false and REJECTS those keys; writing them per-agent fails
+# `openclaw config validate` → reload skipped → cron engine down on a
+# router-default box. The two keys belong on ROOT `tools`
+# (config.tools): sessions.visibility + agentToAgent.{enabled,allow[]}.
+#
+# scripts/test-ceo-tool-gate.sh section M (M0–M5) enforces the layout across the
+# four write-sites (apply-fleet-standards.sh, apply-routing-fix.sh,
+# build-workforce.py, hooks/lib-ceo-tool-gate.sh) and proves the updater
+# self-heals an already-corrupted box. The full suite also covers the existing
+# CEO tool-gate / router-detection / PA-freeze invariants, so this workflow wires
+# the whole self-test into CI.
+#
+# Security note: consumes only repo file content (no untrusted GitHub event
+# fields), so there is no injection surface in the run steps.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/apply-fleet-standards.sh"
+      - "scripts/apply-routing-fix.sh"
+      - "scripts/grant-ceo-consent.sh"
+      - "scripts/verify-routing.sh"
+      - "scripts/test-ceo-tool-gate.sh"
+      - "hooks/lib-ceo-tool-gate.sh"
+      - "hooks/ceo-intent-gate.sh"
+      - "23-ai-workforce-blueprint/scripts/build-workforce.py"
+      - ".github/workflows/ceo-tools-root-schema-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/apply-fleet-standards.sh"
+      - "scripts/apply-routing-fix.sh"
+      - "scripts/grant-ceo-consent.sh"
+      - "scripts/verify-routing.sh"
+      - "scripts/test-ceo-tool-gate.sh"
+      - "hooks/lib-ceo-tool-gate.sh"
+      - "hooks/ceo-intent-gate.sh"
+      - "23-ai-workforce-blueprint/scripts/build-workforce.py"
+      - ".github/workflows/ceo-tools-root-schema-guard.yml"
+
+jobs:
+  ceo-tools-schema-guard:
+    name: sessions/agentToAgent must be on ROOT tools, never per-agent
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run CEO tool-gate self-test (incl. section M root-schema + self-heal)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/test-ceo-tool-gate.sh
+          echo "ceo-tools-root-schema-guard: PASS — sessions/agentToAgent stay on ROOT tools; self-heal verified."
