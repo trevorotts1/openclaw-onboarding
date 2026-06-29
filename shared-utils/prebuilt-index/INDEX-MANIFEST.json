@@ -3,25 +3,22 @@
   "dims": 3072,
   "provider": "gemini",
   "persona_count": 65,
-  "chunk_count": 4574,
+  "chunk_count": 935,
   "file_count": 68,
-  "sha256": "REBUILD-PENDING:backstamp-delta-providers",
-  "build_date": "2026-06-28",
+  "sha256": "27a8cc0f9991666a43b7dd0806f286248ff03861a5ef899fa14de602a8622280",
+  "build_date": "2026-06-29",
   "release_tag": "prebuilt-index-v2.2.1",
   "asset_url": "https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v2.2.1/gemini-index.sqlite.gz",
-  "base_tag": "prebuilt-index-v2.2.0",
-  "base_sha256": "e1097792b0efa16a50e19dd2cd6bf61689225fcd2e019c144378939413f14177",
-  "base_asset_url": "https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v2.2.0/gemini-index.sqlite.gz",
-  "gz_size_bytes": 94340896,
-  "gz_size_mb": 89.97,
+  "gz_size_bytes": 94182646,
+  "gz_size_mb": 89.82,
   "source_db_bytes": 108150784,
   "hormozi_leads_rows": 99,
   "canonical_persona_count": 65,
   "persona_set_md5": "e7b29db3e82b056a484cba2114fcf77f",
   "persona_set_version": "2026-06-28",
-  "persona_set_note": "md5 + lastUpdated of the canonical 22-…/persona-categories.json this asset was built against. The N38 count-triad assertion (qc-assert-repo-consistency.py:_persona_set_triad_failures) and persona-set-asset-consistency-guard.yml fail CI if blueprint dirs != categories keys != persona_count != canonical_persona_count. Rebuild incrementally via shared-utils/prebuilt-index/build-and-publish.sh (HASH-SKIP embeds only the delta) — NEVER a full re-embed.",
-  "manifest_last_updated": "2026-06-28",
-  "asset_rebuild_required": true,
+  "persona_set_note": "md5 + lastUpdated of the canonical 22-\u2026/persona-categories.json this asset was built against. The N38 count-triad assertion (qc-assert-repo-consistency.py:_persona_set_triad_failures) and persona-set-asset-consistency-guard.yml fail CI if blueprint dirs != categories keys != persona_count != canonical_persona_count. Rebuild incrementally via shared-utils/prebuilt-index/build-and-publish.sh (HASH-SKIP embeds only the delta) \u2014 NEVER a full re-embed.",
+  "manifest_last_updated": "2026-06-29",
+  "asset_rebuild_required": false,
   "section_tagged": true,
   "section_tag_note": "embeddings table carries section_number + mode columns. coaching rows at section_number=3, leadership/governance rows at section_number=4. mode values: {both, coaching, leadership}. Section-tagged rows allow mode-aware retrieval without a full re-index.",
   "schema": {
@@ -31,8 +28,8 @@
     ]
   },
   "delta_provider_backstamp": {
-    "status": "PENDING — Ship must run build-and-publish.sh to produce the v2.2.1 asset",
-    "defect": "gemini-section-indexer.py INSERT omitted provider/model/dim columns. The 11 delta personas added to v2.2.0 arrived with provider=NULL, model=NULL, dim=NULL. init_db() backfill only fires when columns are absent — it never re-runs on existing NULL rows — so the prebuilt v2.2.0 asset shipped with 161 blank-provider rows across the 11 newest personas.",
+    "status": "PENDING \u2014 Ship must run build-and-publish.sh to produce the v2.2.1 asset",
+    "defect": "gemini-section-indexer.py INSERT omitted provider/model/dim columns. The 11 delta personas added to v2.2.0 arrived with provider=NULL, model=NULL, dim=NULL. init_db() backfill only fires when columns are absent \u2014 it never re-runs on existing NULL rows \u2014 so the prebuilt v2.2.0 asset shipped with 161 blank-provider rows across the 11 newest personas.",
     "fix": "gemini-section-indexer.py INSERT now explicitly writes provider='gemini', model=GEMINI_MODEL, dim=GEMINI_OUTPUT_DIM on every row. build-and-publish.sh step 1.5 backstamps any remaining NULL rows after downloading the base asset (no re-embed: inferred from blob length 12288 bytes = 3072 dims * 4 bytes/float32). ensure_v2_1_schema() now adds provider/model/dim columns.",
     "affected_personas": [
       "budelmann-brand-identity-essentials",
@@ -74,5 +71,5 @@
       "russell-brunson-traffic-secrets"
     ]
   },
-  "notes": "Canonical 54-persona section-tagged rebuild with GA gemini-embedding-2 @3072. 54 personas / 4413 chunks / 68 source files. All canonical slugs ship section-tagged: coaching rows at section_number=3, leadership/governance rows at section_number=4. Replaces prebuilt-index-v2.0.0 (48 personas, 7615 chunks, no section tags). Clients download this asset instead of re-embedding per box (saves Gemini API credits). Every vector is float32 @ dim 3072. SHA256 verified at build time and must be verified before install. ROHDE NOTE (open): rohde-the-sketchnote-workbook has a selector category-map gap (_CATEGORY_DOMAINS['design'] does not include visual-storytelling); fix deferred pending per-box index validation. v2.2.1 note: backstamp-only rebuild — no new vectors; all 161 blank-provider rows across 11 delta personas are stamped provider=gemini/model=gemini-embedding-2/dim=3072 from blob length. gemini-section-indexer.py INSERT fixed to write provider/model/dim on all future rows."
+  "notes": "Canonical 54-persona section-tagged rebuild with GA gemini-embedding-2 @3072. 54 personas / 4413 chunks / 68 source files. All canonical slugs ship section-tagged: coaching rows at section_number=3, leadership/governance rows at section_number=4. Replaces prebuilt-index-v2.0.0 (48 personas, 7615 chunks, no section tags). Clients download this asset instead of re-embedding per box (saves Gemini API credits). Every vector is float32 @ dim 3072. SHA256 verified at build time and must be verified before install. ROHDE NOTE (open): rohde-the-sketchnote-workbook has a selector category-map gap (_CATEGORY_DOMAINS['design'] does not include visual-storytelling); fix deferred pending per-box index validation. v2.2.1 note: backstamp-only rebuild \u2014 no new vectors; all 161 blank-provider rows across 11 delta personas are stamped provider=gemini/model=gemini-embedding-2/dim=3072 from blob length. gemini-section-indexer.py INSERT fixed to write provider/model/dim on all future rows."
 }
