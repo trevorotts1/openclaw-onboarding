@@ -14,8 +14,9 @@
 #   T6: Playwright rc=3 is a HARD hold (not "proceed on agent rating")
 #   T7: Notion first-run sets notionCloseoutPageId
 #   T8: fleet-stuck-clients.sh --local exits 2 + reports stuck box
+#   T9: Watchdog self-removes when closeoutStatus==done (SELF-REMOVAL v12.3.13)
 #
-# v12.3.12 / PRD-2.15
+# v12.3.13 / PRD-2.15
 # =============================================================================
 
 set -uo pipefail
@@ -63,6 +64,13 @@ cat > "$FAKE_BIN/openclaw" <<'SH'
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) openclaw $*" >> "${OPENCLAW_LOG}"
 if [[ "$1" == "gateway" && "$2" == "status" ]]; then
   echo '{"status":"ok"}'
+  exit 0
+fi
+if [[ "$1" == "cron" && "$2" == "list" ]]; then
+  # Return a minimal JSON cron list (both --json and text-mode callers get valid JSON).
+  # The id here is the fallback UUID for name-scan tests; state-key UUID resolution
+  # takes priority and does not call cron list at all.
+  echo '[{"name":"closeout-readiness-watchdog","id":"fake-watchdog-uuid"},{"name":"interview-nudge","id":"fake-nudge-uuid"}]'
   exit 0
 fi
 if [[ "$1" == "cron" ]]; then
@@ -449,6 +457,65 @@ if [[ -f "$FLEET_STUCK" ]]; then
   fi
 else
   skip_test "T8: fleet-stuck-clients.sh not found at $FLEET_STUCK"
+fi
+
+echo ""
+
+# ════════════════════════════════════════════════════════════
+# T9: Watchdog self-removes when closeoutStatus==done  (SELF-REMOVAL v12.3.13)
+# ════════════════════════════════════════════════════════════
+echo "T9: closeout-readiness-watchdog self-removes when closeoutStatus==done"
+
+if [[ ! -f "$WATCHDOG" ]]; then
+  skip_test "T9: closeout-readiness-watchdog.sh not found at $WATCHDOG"
+else
+  # Reset the openclaw call log so we can inspect only this run's calls.
+  truncate -s0 "$OPENCLAW_LOG" 2>/dev/null || true
+
+  # State: closeout complete, UUID persisted in state (fast-path; no cron list needed).
+  write_state "{
+    \"version\": 1,
+    \"interviewComplete\": true,
+    \"buildCompletedAt\": \"$(hours_ago_iso 2)\",
+    \"closeoutStatus\": \"done\",
+    \"closeoutWatchdogCronUuid\": \"test-watchdog-uuid-t9\",
+    \"ownerChat\": 12345,
+    \"companyName\": \"ClosedCo\",
+    \"agentName\": \"TestAgent\",
+    \"departments\": []
+  }"
+
+  t9_rc=0
+  t9_out=$(run_script bash "$WATCHDOG" 2>&1) || t9_rc=$?
+
+  # T9a: should exit 0 (not an error — lifecycle complete is a clean exit)
+  if [[ "$t9_rc" -eq 0 ]]; then
+    pass "T9a: watchdog exits 0 when closeoutStatus==done"
+  else
+    fail "T9a: watchdog exited $t9_rc (expected 0) — output: $(printf '%s' "$t9_out" | head -5)"
+  fi
+
+  # T9b: should call `openclaw cron rm test-watchdog-uuid-t9`
+  if grep -q "cron rm test-watchdog-uuid-t9" "$OPENCLAW_LOG" 2>/dev/null; then
+    pass "T9b: openclaw cron rm <uuid> called with the state UUID"
+  else
+    fail "T9b: expected 'cron rm test-watchdog-uuid-t9' in openclaw call log — got: $(cat "$OPENCLAW_LOG" 2>/dev/null | head -10)"
+  fi
+
+  # T9c: log output should mention self-removing
+  if printf '%s' "$t9_out" | grep -qi "self-remov\|closeout complete\|closeoutStatus=done"; then
+    pass "T9c: watchdog log mentions self-removal reason"
+  else
+    fail "T9c: expected self-removal log message — got: $(printf '%s' "$t9_out" | head -5)"
+  fi
+
+  # T9d: state file should have closeoutWatchdogCronUuid cleared (null)
+  t9_uuid_after=$(read_state_field '.closeoutWatchdogCronUuid')
+  if [[ -z "$t9_uuid_after" || "$t9_uuid_after" == "null" ]]; then
+    pass "T9d: closeoutWatchdogCronUuid cleared in state after self-removal"
+  else
+    fail "T9d: closeoutWatchdogCronUuid not cleared — still '${t9_uuid_after}'"
+  fi
 fi
 
 echo ""
