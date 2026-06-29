@@ -633,6 +633,142 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
+# (8) SILENT-UPDATE-PATH GUARD (chore/silent-updater — WE MOVE IN SILENCE)
+# The progress/notification emitters in EVERY update-path script must be
+# operator-routed / log-only — they must NEVER resolve the client default chat
+# and NEVER hit api.telegram.org directly. This is the permanent guard that
+# closes the recurrence: the prior fix silenced ONLY update-skills.sh, but
+# install.sh (the canonical installer the fleet roll re-runs on a client box)
+# and force-update.sh / the legacy scripts/update-skills.sh still auto-DM'd the
+# client. Each is now asserted operator-routed.
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
+echo "--- (8) SILENT-UPDATE-PATH: install/force/legacy update emitters are operator-routed, never the client ---"
+
+# 8a: install.sh send_telegram_progress must be operator-routed/log-only — the
+# SAME contract as update-skills.sh (6b/6c). It must NOT resolve a client target
+# (resolve_telegram_target_universal / TELEGRAM_TARGET_CACHED / allowFrom) and
+# must NOT fall back to the direct Bot-API (tg_send_direct); it MUST carry the
+# operator-routing markers.
+if grep -n 'send_telegram_progress()' "$REPO_ROOT/install.sh" >/dev/null 2>&1; then
+    install_stp=$(awk '/^send_telegram_progress\(\) \{/,/^}/' "$REPO_ROOT/install.sh" 2>/dev/null | grep -vE '^\s*#' || true)
+    if echo "$install_stp" | grep -qE 'resolve_telegram_target_universal|tg_send_direct|TELEGRAM_TARGET_CACHED|allowFrom'; then
+        fail "8a: install.sh send_telegram_progress still resolves the CLIENT chat / direct Bot-API (client-chat auto-notify leak — the exact recurrence)"
+    else
+        pass "8a: install.sh send_telegram_progress does NOT resolve a client target or hit the direct Bot-API"
+    fi
+    if echo "$install_stp" | grep -qE 'OPERATOR_ESCALATION_CHAT_ID|OPERATOR_HELP_CHAT_ID|--account operator|agent:main:operator|logged-no-operator-chat'; then
+        pass "8a-2: install.sh send_telegram_progress routes to operator chat / log-only"
+    else
+        fail "8a-2: install.sh send_telegram_progress is not operator-routed"
+    fi
+else
+    fail "8a: install.sh send_telegram_progress() not found — cannot verify it is silenced"
+fi
+
+# 8b: force-update.sh must never send to the client. Every non-comment
+# `openclaw message send` must carry `--account operator`, and the file must
+# contain no direct api.telegram.org call.
+if [ -f "$REPO_ROOT/force-update.sh" ]; then
+    fu_sends=$(grep -nE 'openclaw message send' "$REPO_ROOT/force-update.sh" | grep -vE '^[0-9]+:[[:space:]]*#' || true)
+    fu_bad=0
+    while IFS= read -r ln; do
+        [ -n "$ln" ] || continue
+        if ! echo "$ln" | grep -q -- '--account operator'; then
+            fu_bad=$((fu_bad + 1))
+        fi
+    done <<< "$fu_sends"
+    if [ "$fu_bad" -eq 0 ]; then
+        pass "8b: force-update.sh every 'openclaw message send' is operator-routed (--account operator)"
+    else
+        fail "8b: force-update.sh has $fu_bad 'openclaw message send' call(s) without --account operator (client-chat leak)"
+    fi
+    if grep -vE '^\s*#' "$REPO_ROOT/force-update.sh" | grep -q 'api\.telegram\.org'; then
+        fail "8b-2: force-update.sh calls api.telegram.org directly (gateway-bypass client send)"
+    else
+        pass "8b-2: force-update.sh has no direct api.telegram.org call"
+    fi
+else
+    fail "8b: force-update.sh not found"
+fi
+
+# 8c: legacy scripts/update-skills.sh must be operator-routed / log-only too:
+# no direct api.telegram.org send, no allowFrom-derived client target.
+if [ -f "$REPO_ROOT/scripts/update-skills.sh" ]; then
+    if grep -vE '^\s*#' "$REPO_ROOT/scripts/update-skills.sh" | grep -q 'api\.telegram\.org'; then
+        fail "8c: scripts/update-skills.sh calls api.telegram.org directly (gateway-bypass client send)"
+    else
+        pass "8c: scripts/update-skills.sh has no direct api.telegram.org call"
+    fi
+    legacy_notify=$(awk '/Update notification|Telegram notification/,/^fi$/' "$REPO_ROOT/scripts/update-skills.sh" 2>/dev/null | grep -vE '^\s*#' || true)
+    if echo "$legacy_notify" | grep -qE 'OPERATOR_ESCALATION_CHAT_ID|--account operator'; then
+        pass "8c-2: scripts/update-skills.sh update notification is operator-routed"
+    else
+        fail "8c-2: scripts/update-skills.sh update notification is not operator-routed"
+    fi
+    if echo "$legacy_notify" | grep -qE "allowFrom',\s*\[\]\)|allowFrom\b.*\[0\]"; then
+        fail "8c-3: scripts/update-skills.sh notification still reads allowFrom[0] (client target)"
+    else
+        pass "8c-3: scripts/update-skills.sh notification does not target client allowFrom"
+    fi
+else
+    pass "8c: scripts/update-skills.sh not present (nothing to check)"
+fi
+
+# 8d: BEHAVIORAL — the operator-only resolver used by every silenced emitter
+# returns the OPERATOR escalation chat when set, and EMPTY (→ log-only) when
+# only a client allowFrom exists. It must NEVER surface the client chat.
+op_resolve() {
+    OC_JSON="$1" python3 - <<'PYEOF' 2>/dev/null
+import json, os
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+except Exception:
+    cfg = {}
+env = (cfg.get("env", {}) or {}).get("vars", {}) or {}
+for k in ("OPERATOR_ESCALATION_CHAT_ID", "OPERATOR_HELP_CHAT_ID"):
+    v = str(env.get(k, "") or "").strip()
+    if v:
+        print(v); raise SystemExit(0)
+print("")
+PYEOF
+}
+
+# 8d-1: only a client allowFrom, NO operator escalation chat → resolves EMPTY.
+SILENT_CFG="$TMPDIR_TEST/silent-client-only.json"
+cat > "$SILENT_CFG" <<'EOF'
+{ "channels": { "telegram": { "allowFrom": ["8399116757"] } } }
+EOF
+res=$(op_resolve "$SILENT_CFG")
+if [ -z "$res" ]; then
+    pass "8d-1: client-only config resolves EMPTY (emitter goes log-only — client NEVER messaged)"
+else
+    fail "8d-1: client-only config resolved '$res' (must be empty — a client chat would be messaged)"
+fi
+
+# 8d-2: operator escalation chat present → resolves to the operator chat only.
+OP_CFG="$TMPDIR_TEST/operator-set.json"
+cat > "$OP_CFG" <<'EOF'
+{ "channels": { "telegram": { "allowFrom": ["8399116757"] } },
+  "env": { "vars": { "OPERATOR_ESCALATION_CHAT_ID": "6663821679" } } }
+EOF
+res=$(op_resolve "$OP_CFG")
+if [ "$res" = "6663821679" ]; then
+    pass "8d-2: operator escalation chat resolves to operator id (not the client allowFrom)"
+else
+    fail "8d-2: expected operator id 6663821679, got '$res'"
+fi
+
+# 8e: the WE MOVE IN SILENCE doctrine ships in the client-facing AGENTS.md
+# template so every deployed agent carries it.
+if grep -q 'WE_MOVE_IN_SILENCE_V1' "$REPO_ROOT/AGENTS.md" 2>/dev/null \
+   && grep -qi 'WE MOVE IN SILENCE' "$REPO_ROOT/AGENTS.md" 2>/dev/null; then
+    pass "8e: AGENTS.md template ships the WE MOVE IN SILENCE maintenance-silence doctrine"
+else
+    fail "8e: AGENTS.md template is missing the WE MOVE IN SILENCE doctrine block (sentinel WE_MOVE_IN_SILENCE_V1)"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Summary
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""

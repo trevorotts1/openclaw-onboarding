@@ -470,55 +470,56 @@ PYEOF
   fi
 fi
 
-# ── Telegram notification ──
-# Gated: only fires when OPENCLAW_UPDATE_NOTIFY=1 is explicitly set.
-# Fresh installs default to OFF so boxes never auto-DM the client on update.
+# ── Update notification — OPERATOR-ROUTED, NEVER the client chat ──
+# WE MOVE IN SILENCE (chore/silent-updater). A skill UPDATE is INTERNAL
+# maintenance traffic. It is NEVER auto-DM'd to the owner/client. Gated behind
+# OPENCLAW_UPDATE_NOTIFY=1 (default OFF) AND, even when on, routed ONLY to the
+# OPERATOR escalation chat via the gateway — never the client allowFrom, never
+# a direct api.telegram.org Bot-API call. If no operator escalation chat is
+# configured (or no CLI), LOG-ONLY. The silent AGENTS.md UPDATE-PENDING flag
+# already delivers awareness to the agent without any client-facing push.
 TELEGRAM_SENT=false
 if [ "${OPENCLAW_UPDATE_NOTIFY:-0}" = "1" ] && [ -f "$OPENCLAW_CONFIG" ] && command -v python3 &>/dev/null; then
-  BOT_TOKEN=$(python3 -c "
+  OPERATOR_CHAT=$(python3 -c "
 import json
-with open('$OPENCLAW_CONFIG') as f: d = json.load(f)
-print(d.get('channels',{}).get('telegram',{}).get('botToken',''))
+try:
+    with open('$OPENCLAW_CONFIG') as f: d = json.load(f)
+except Exception:
+    d = {}
+env = (d.get('env',{}) or {}).get('vars',{}) or {}
+for k in ('OPERATOR_ESCALATION_CHAT_ID','OPERATOR_HELP_CHAT_ID'):
+    v = str(env.get(k,'') or '').strip()
+    if v:
+        print(v); break
 " 2>/dev/null)
-  CHAT_ID=$(python3 -c "
-import json
-with open('$OPENCLAW_CONFIG') as f: d = json.load(f)
-af = d.get('channels',{}).get('telegram',{}).get('allowFrom',[])
-if af: print(af[0])
-" 2>/dev/null)
 
-  if [ -n "$BOT_TOKEN" ] && [ -n "$CHAT_ID" ]; then
-    NEW_LIST=""
-    UPDATE_LIST=""
-    idx=0
-    for SNAME in "${SKILL_NAMES[@]}"; do
-      ACTION="${SKILL_ACTIONS[$idx]}"
-      if [ "$ACTION" = "NEW" ]; then
-        NEW_LIST="$NEW_LIST $SNAME"
-      elif [ "$ACTION" = "UPDATE" ]; then
-        UPDATE_LIST="$UPDATE_LIST $SNAME"
-      fi
-      idx=$((idx + 1))
-    done
-
-    TG_MSG="🔄 BlackCEO System Update: $LOCAL_VER → $REMOTE_VER
-
-📊 Summary:
-• $NEW_COUNT new skills
-• $UPDATE_COUNT skills updated
-
-🆕 New Skills:$NEW_LIST
-
-📝 Updated Skills:$UPDATE_LIST
-
-Your agent will check the system and ask you before making any changes."
-
-    TG_RESULT=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-      -d chat_id="$CHAT_ID" -d text="$TG_MSG" 2>&1)
-    if echo "$TG_RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); exit(0 if d.get('ok') else 1)" 2>/dev/null; then
-      TELEGRAM_SENT=true
-      show_success "Notification sent"
+  NEW_LIST=""
+  UPDATE_LIST=""
+  idx=0
+  for SNAME in "${SKILL_NAMES[@]}"; do
+    ACTION="${SKILL_ACTIONS[$idx]}"
+    if [ "$ACTION" = "NEW" ]; then
+      NEW_LIST="$NEW_LIST $SNAME"
+    elif [ "$ACTION" = "UPDATE" ]; then
+      UPDATE_LIST="$UPDATE_LIST $SNAME"
     fi
+    idx=$((idx + 1))
+  done
+
+  TG_MSG="System update applied: $LOCAL_VER → $REMOTE_VER
+• $NEW_COUNT new:$NEW_LIST
+• $UPDATE_COUNT updated:$UPDATE_LIST"
+
+  if [ -n "$OPERATOR_CHAT" ] && command -v openclaw &>/dev/null; then
+    if openclaw message send --channel telegram --account operator \
+         --session-key agent:main:operator --target "$OPERATOR_CHAT" \
+         --message "$TG_MSG" >/dev/null 2>&1; then
+      TELEGRAM_SENT=true
+      show_success "Update summary sent to operator escalation chat"
+    fi
+  else
+    # No operator escalation chat (or no CLI) → LOG-ONLY. Never the client.
+    echo "[update-skills] update summary (operator escalation chat not configured — LOG-ONLY, not sent to any client chat): $LOCAL_VER -> $REMOTE_VER" >&2
   fi
 fi
 

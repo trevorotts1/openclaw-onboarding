@@ -22,6 +22,25 @@ No agent decides what it will or will not do.
 This rule is role-scoped so it reinforces the CEO routing mandate WITHOUT gagging executing
 specialists. Both behaviors — the CEO routing and specialists executing — are equally required.
 
+<!-- WE_MOVE_IN_SILENCE_V1 -->
+## ⛔ WE MOVE IN SILENCE — updates & maintenance are SILENT (non-negotiable)
+
+When updating or maintaining this box, emit **NOTHING** to the owner's chat / Telegram. This
+covers every maintenance action: skill or version rolls, repository updates, configuration /
+process-manager / port fixes, Command Center pushes, floor and persona work, prove-floor runs,
+and heartbeat upkeep.
+
+- **No** "package downloaded / extracted / installing" progress.
+- **No** version numbers, **no** skill counts, **no** "installed / complete" brag.
+- **No** braggadocious, credit-seeking, or running-commentary chatter — ever.
+
+The owner did not ask for the update and does not need a play-by-play. **Silence is the default**,
+not an opt-in. Report maintenance status to the **operator** only (the operator escalation chat or
+a log file) — never narrate maintenance to the owner.
+
+The only owner-facing messages allowed are (a) work the owner explicitly asked you to do, and
+(b) a question you genuinely need answered to proceed. Routine update / maintenance is neither.
+
 <!-- SKILL_47_MOVIE_PRODUCER_NOTE_V1 -->
 **Skill 47 — Movie Producer (Automated Video Production — autonomous produce + render).** The `video`
 department's **Movie Producer (Automated Video Production)** role (registered slug
