@@ -407,7 +407,12 @@ try:
     active_mem = cfg.get('plugins', {}).get('entries', {}).get('active-memory', {})
     memory_slot = cfg.get('plugins', {}).get('slots', {}).get('memory', '')
     search_provider = cfg.get('agents', {}).get('defaults', {}).get('memorySearch', {}).get('provider', '')
-    if active_mem.get('enabled') == True and memory_slot == 'memory-core' and search_provider == 'gemini':
+    # v16.1.4: a flat active-memory block (option keys as siblings of 'enabled')
+    # is schema-invalid -- plugins.entries.<id> is additionalProperties:false. Any
+    # stray top-level key means the block needs healing, so treat it as MISSING and
+    # let the writer below re-nest the options under 'config'.
+    flat_keys = [k for k in active_mem if k not in ('enabled', 'hooks', 'subagent', 'llm', 'config')]
+    if active_mem.get('enabled') == True and not flat_keys and memory_slot == 'memory-core' and search_provider == 'gemini':
         print('CONFIGURED')
     else:
         print('MISSING')
@@ -426,10 +431,30 @@ try:
         config = json.load(f)
     plugins = config.setdefault('plugins', {})
     entries = plugins.setdefault('entries', {})
-    entries['active-memory'] = {
-        "enabled": True, "agents": ["main"], "allowedChatTypes": ["direct"],
-        "queryMode": "recent", "promptStyle": "balanced", "timeoutMs": 15000, "maxSummaryChars": 220
+    # v16.1.4: active-memory IS a real plugin (dist/extensions/active-memory/
+    # openclaw.plugin.json). Its options are plugin CONFIG and MUST be nested
+    # under .config -- plugins.entries.<id> is additionalProperties:false (only
+    # enabled/hooks/subagent/llm/config), so the six option keys as TOP-LEVEL
+    # siblings of 'enabled' fail validation ("plugins.entries.active-memory:
+    # Invalid input"). Create with nested config, and SELF-HEAL any pre-existing
+    # flat option keys by moving them under config (never delete -> keeps Layer 8).
+    ENTRY_TOP = ("enabled", "hooks", "subagent", "llm", "config")
+    AM_DEFAULTS = {
+        "agents": ["main"], "allowedChatTypes": ["direct"], "queryMode": "recent",
+        "promptStyle": "balanced", "timeoutMs": 15000, "maxSummaryChars": 220,
     }
+    am = entries.get('active-memory')
+    am_fresh = not isinstance(am, dict)
+    if am_fresh:
+        am = {}
+    am_cfg = am.get('config') if isinstance(am.get('config'), dict) else {}
+    for _k in [x for x in list(am) if x not in ENTRY_TOP]:
+        am_cfg.setdefault(_k, am.pop(_k))
+    if am_fresh and not am_cfg:
+        am_cfg = dict(AM_DEFAULTS)
+    am['enabled'] = True
+    am['config'] = am_cfg
+    entries['active-memory'] = am
     slots = plugins.setdefault('slots', {})
     slots['memory'] = "memory-core"
     agents = config.setdefault('agents', {})

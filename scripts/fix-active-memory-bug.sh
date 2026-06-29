@@ -1,9 +1,11 @@
 #!/bin/bash
 # fix-active-memory-bug.sh — v9.6.6
 #
-# Recovery script for clients whose openclaw.json was written by a pre-v9.6.6
-# install. Removes the bogus `plugins.entries.active-memory` block that the
-# OpenClaw config validator rejects.
+# Recovery script for clients whose openclaw.json was written by a buggy install.
+# REPAIRS the `plugins.entries.active-memory` block — nesting its option keys under
+# `config` (it is a real Layer-8 plugin) — so the OpenClaw config validator accepts
+# it. (Pre-v16.1.4 this script DELETED the block, dropping Layer-8 Active Memory;
+# it now keeps Active Memory ENABLED and valid.)
 #
 # Symptom in client's terminal:
 #   Config invalid
@@ -51,14 +53,26 @@ with open(path) as f:
     cfg = json.load(f)
 
 changed = False
-plugins = cfg.get("plugins", {})
-entries = plugins.get("entries", {})
+plugins = cfg.setdefault("plugins", {})
+entries = plugins.setdefault("entries", {})
 
-# 1. Remove the bogus active-memory block
-if "active-memory" in entries:
-    del entries["active-memory"]
-    print("  ✓ Removed plugins.entries.active-memory (invalid block)")
-    changed = True
+# 1. Repair active-memory: nest any schema-invalid top-level option keys under
+#    config (plugins.entries.<id> is additionalProperties:false -- only
+#    enabled/hooks/subagent/llm/config). active-memory is a real Layer-8 plugin,
+#    so KEEP it enabled -- never delete.
+AM_ENTRY_TOP = ("enabled", "hooks", "subagent", "llm", "config")
+am = entries.get("active-memory")
+if isinstance(am, dict):
+    am_cfg = am.get("config") if isinstance(am.get("config"), dict) else {}
+    moved = [x for x in list(am) if x not in AM_ENTRY_TOP]
+    for _k in moved:
+        am_cfg.setdefault(_k, am.pop(_k))
+    if moved:
+        am["enabled"] = am.get("enabled", True)
+        am["config"] = am_cfg
+        entries["active-memory"] = am
+        print("  ✓ Repaired plugins.entries.active-memory (nested %d option key(s) under config; Layer 8 preserved)" % len(moved))
+        changed = True
 
 # 2. Ensure memory-core is present + enabled (the REAL memory plugin)
 mc = entries.setdefault("memory-core", {})
