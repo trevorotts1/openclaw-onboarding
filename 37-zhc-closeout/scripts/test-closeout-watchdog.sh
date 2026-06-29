@@ -15,6 +15,8 @@
 #   T7: Notion first-run sets notionCloseoutPageId
 #   T8: fleet-stuck-clients.sh --local exits 2 + reports stuck box
 #   T9: Watchdog self-removes when closeoutStatus==done (SELF-REMOVAL v12.3.13)
+#   T10: resume-closeout-cron PAUSES (no heavy dispatch) on unchanged human-block (v11.11.0)
+#   T11: resume-closeout-cron auto-resumes (clears pause) when the blocker clears (v11.11.0)
 #
 # v12.3.13 / PRD-2.15
 # =============================================================================
@@ -36,6 +38,7 @@ skip_test() { echo "  SKIP: $1"; SKIP=$((SKIP + 1)); }
 WATCHDOG="${REPO_ROOT}/23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh"
 RUN_CLOSEOUT="${SKILL_DIR}/scripts/run-closeout.sh"
 FLEET_STUCK="${SKILL_DIR}/scripts/fleet-stuck-clients.sh"
+RESUME_CRON="${SKILL_DIR}/scripts/resume-closeout-cron.sh"
 
 # ── Stub infrastructure ───────────────────────────────────────────────────────
 TMP_DIR=$(mktemp -d)
@@ -515,6 +518,108 @@ else
     pass "T9d: closeoutWatchdogCronUuid cleared in state after self-removal"
   else
     fail "T9d: closeoutWatchdogCronUuid not cleared — still '${t9_uuid_after}'"
+  fi
+fi
+
+echo ""
+
+# ════════════════════════════════════════════════════════════
+# T10: resume-closeout-cron PAUSES (no heavy dispatch) on an unchanged
+#      human-action blocker  (NO-PROGRESS GIVE-UP PAUSE v11.11.0)
+# ════════════════════════════════════════════════════════════
+echo "T10: resume-closeout-cron pauses (no model burn) on an unchanged human-action blocker"
+
+if [[ ! -f "$RESUME_CRON" ]]; then
+  skip_test "T10: resume-closeout-cron.sh not found at $RESUME_CRON"
+else
+  # Wedged on a human action: role/SOP library floor unmet (verify-zhc rc=4 →
+  # blocked-libraries-incomplete). buildCompletedAt set so the cron is "active".
+  write_state "{
+    \"version\": 1,
+    \"interviewComplete\": true,
+    \"buildCompletedAt\": \"$(hours_ago_iso 3)\",
+    \"closeoutStatus\": \"blocked-libraries-incomplete\",
+    \"closeoutBlockReason\": \"verify-zhc-standard rc=4 (role/SOP library not substantive)\",
+    \"ownerChat\": 12345,
+    \"agentName\": \"StuckCo\",
+    \"departments\": []
+  }"
+
+  # Fire #1 (cap=1): records the fingerprint, stall=0 — must NOT pause yet.
+  ZHC_CLOSEOUT_MAX_STALL_PASSES=1 run_script bash "$RESUME_CRON" >/dev/null 2>&1 || true
+  paused_after1=$(read_state_field '.closeoutResumePaused')
+
+  # Fire #2 (cap=1): identical fingerprint → stall hits cap → PAUSE, no heavy dispatch.
+  t10_out=$(ZHC_CLOSEOUT_MAX_STALL_PASSES=1 run_script bash "$RESUME_CRON" 2>&1) || true
+  paused_after2=$(read_state_field '.closeoutResumePaused')
+
+  if [[ "$paused_after1" != "true" ]]; then
+    pass "T10a: first fire did NOT pause (fingerprint just recorded, stall=0)"
+  else
+    fail "T10a: first fire paused prematurely (closeoutResumePaused=$paused_after1)"
+  fi
+
+  if [[ "$paused_after2" == "true" ]]; then
+    pass "T10b: second fire PAUSED on the unchanged blocker (closeoutResumePaused=true)"
+  else
+    fail "T10b: second fire did NOT pause (closeoutResumePaused=$paused_after2)"
+  fi
+
+  if printf '%s' "$t10_out" | grep -qi "NO-PROGRESS PAUSE\|no heavy dispatch\|awaiting human"; then
+    pass "T10c: pause logged the no-progress / no-heavy-dispatch reason"
+  else
+    fail "T10c: pause reason not logged — got: $(printf '%s' "$t10_out" | tail -3)"
+  fi
+
+  t10_notified=$(read_state_field '.closeoutResumePausedNotifiedAt')
+  if [[ -n "$t10_notified" && "$t10_notified" != "null" ]]; then
+    pass "T10d: closeoutResumePausedNotifiedAt set (escalate-once marker written)"
+  else
+    fail "T10d: closeoutResumePausedNotifiedAt not set"
+  fi
+fi
+
+echo ""
+
+# ════════════════════════════════════════════════════════════
+# T11: resume-closeout-cron auto-RESUMES (clears pause) once the blocker clears
+# ════════════════════════════════════════════════════════════
+echo "T11: resume-closeout-cron auto-resumes (clears pause) when the blocker state changes"
+
+if [[ ! -f "$RESUME_CRON" ]]; then
+  skip_test "T11: resume-closeout-cron.sh not found at $RESUME_CRON"
+else
+  # Self-contained: a box currently PAUSED on an OLD blocker fingerprint, but the
+  # human has acted and the status advanced to 'generating' (library now built).
+  # The fingerprint now differs → the pause must clear and the stall counter reset.
+  write_state "{
+    \"version\": 1,
+    \"interviewComplete\": true,
+    \"buildCompletedAt\": \"$(hours_ago_iso 3)\",
+    \"closeoutStatus\": \"generating\",
+    \"ownerChat\": 12345,
+    \"agentName\": \"ResumedCo\",
+    \"departments\": [],
+    \"closeoutResumePaused\": true,
+    \"closeoutResumePausedNotifiedAt\": \"$(hours_ago_iso 1)\",
+    \"closeoutResumeStallPasses\": 9,
+    \"closeoutResumeStallFingerprint\": \"blocked-libraries-incomplete|verify-zhc rc=4|||0\"
+  }"
+
+  ZHC_CLOSEOUT_MAX_STALL_PASSES=1 run_script bash "$RESUME_CRON" >/dev/null 2>&1 || true
+  t11_paused=$(read_state_field '.closeoutResumePaused')
+  t11_passes=$(read_state_field '.closeoutResumeStallPasses')
+
+  if [[ "$t11_paused" == "false" || -z "$t11_paused" ]]; then
+    pass "T11a: pause cleared after the blocker state changed (closeoutResumePaused=false)"
+  else
+    fail "T11a: pause NOT cleared after progress (closeoutResumePaused=$t11_paused)"
+  fi
+
+  if [[ "$t11_passes" == "0" ]]; then
+    pass "T11b: stall counter reset to 0 on progress (heavy dispatch resumes)"
+  else
+    fail "T11b: stall counter not reset (closeoutResumeStallPasses=$t11_passes)"
   fi
 fi
 

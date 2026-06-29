@@ -867,6 +867,57 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
+# (10) WEEKLY-UPDATE PROMPT RECIPIENT HYGIENE (fix/cron-nudge-sweep-selfheal)
+# The weekly-onboarding-update cron's AGENT PAYLOAD is cron-prompt.txt. Its old
+# RULE 8 told the agent to send the client-facing weekly summary to
+# `telegram allowFrom[0]` — but on a client box the OPERATOR id is FIRST in
+# allowFrom, so allowFrom[0] resolved to the operator and leaked client messages
+# to Trevor. The prompt must instead resolve the CLIENT owner chat via the
+# operator-rejecting resolver (shared-utils/resolve-owner-chat.sh →
+# resolve_owner_chat_id) and NEVER send to a bare allowFrom[0]. Sections (1)-(2)
+# never inspected the prompt files, which is how this slipped through.
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
+echo "--- (10) WEEKLY-UPDATE PROMPT: cron-prompt.txt resolves client owner chat, never allowFrom[0] ---"
+
+CRON_PROMPT="$REPO_ROOT/cron-prompt.txt"
+if [ ! -f "$CRON_PROMPT" ]; then
+    fail "10: cron-prompt.txt not found at $CRON_PROMPT"
+else
+    # 10a: it uses the operator-rejecting resolver (positive requirement).
+    if grep -q 'resolve-owner-chat.sh' "$CRON_PROMPT" && grep -q 'resolve_owner_chat_id' "$CRON_PROMPT"; then
+        pass "10a: cron-prompt.txt resolves the recipient via shared-utils/resolve-owner-chat.sh (resolve_owner_chat_id)"
+    else
+        fail "10a: cron-prompt.txt does NOT use the operator-rejecting resolver (resolve-owner-chat.sh / resolve_owner_chat_id)"
+    fi
+
+    # 10b: no actual SEND line targets a bare allowFrom index. We inspect ONLY the
+    # message-send / --target / --to lines, so the prohibition prose that NAMES
+    # allowFrom[0] in order to forbid it never trips this check.
+    send_lines=$(grep -nE 'message send|--target|--to ' "$CRON_PROMPT" || true)
+    bad_send=0
+    while IFS= read -r ln; do
+        [ -n "$ln" ] || continue
+        if echo "$ln" | grep -qE 'allowFrom|\[0\]'; then
+            bad_send=$((bad_send + 1))
+            echo "    offending send line: $ln"
+        fi
+    done <<< "$send_lines"
+    if [ "$bad_send" -eq 0 ]; then
+        pass "10b: no message-send/--target line in cron-prompt.txt uses a bare allowFrom[0] recipient"
+    else
+        fail "10b: $bad_send send line(s) in cron-prompt.txt target a bare allowFrom[0] (operator-misroute on a client box)"
+    fi
+
+    # 10c: client-facing sends target the resolved \$CLIENT_CHAT variable.
+    if grep -qE 'message send .*--target +"\$CLIENT_CHAT"' "$CRON_PROMPT"; then
+        pass "10c: client-facing sends target the resolved \$CLIENT_CHAT (operator-rejected owner chat)"
+    else
+        fail "10c: cron-prompt.txt client sends do not target the resolved \$CLIENT_CHAT"
+    fi
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Summary
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""

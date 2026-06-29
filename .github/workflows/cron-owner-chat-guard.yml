@@ -13,6 +13,7 @@ on:
       - update-skills.sh
       - force-update.sh
       - check-updates.sh
+      - cron-prompt.txt
       - AGENTS.md
       - shared-utils/**
       - scripts/**
@@ -28,6 +29,7 @@ on:
       - update-skills.sh
       - force-update.sh
       - check-updates.sh
+      - cron-prompt.txt
       - AGENTS.md
       - shared-utils/**
       - scripts/**
