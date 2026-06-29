@@ -23,7 +23,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v16.1.3"
+ONBOARDING_VERSION="v16.1.4"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -3649,25 +3649,50 @@ try:
     with open(path) as f:
         config = json.load(f)
 
-    # v9.7.8 BUGFIX:
-    # "plugins.entries.active-memory" is NOT a real plugin in current OpenClaw
-    # schemas. Earlier install scripts wrote 6 keys there (agents, allowedChatTypes,
-    # queryMode, promptStyle, timeoutMs, maxSummaryChars) that the validator
-    # rejects with "Unrecognized keys", killing the gateway.
+    # v16.1.4 BUGFIX (supersedes the v9.7.8 "delete" workaround):
+    # active-memory IS a real plugin — dist/extensions/active-memory/
+    # openclaw.plugin.json (activation.onStartup) — and AGENTS.md expects Layer-8
+    # Active Memory ENABLED. Its options are plugin CONFIG and MUST be nested under
+    # plugins.entries.active-memory.config. The entries.<id> schema is
+    # additionalProperties:false (only enabled/hooks/subagent/llm/config), so the
+    # six option keys (agents, allowedChatTypes, queryMode, promptStyle, timeoutMs,
+    # maxSummaryChars) as TOP-LEVEL siblings of 'enabled' fail validation
+    # ("plugins.entries.active-memory: Invalid input"), killing the gateway. The
+    # earlier fix DELETED the block (dropping Layer 8); we instead WRITE it valid
+    # (enabled + nested config) and SELF-HEAL any pre-existing flat keys.
     #
-    # Active Memory (Layer 8) is actually configured via:
+    # Active Memory's provider/search layers are ALSO configured below via:
     #   - agents.defaults.memorySearch.{enabled, sources, provider, fallback, ...}
     #   - plugins.entries.memory-core.config.* (provider plugin)
     #   - plugins.entries.memory-wiki.config.* (wiki layer)
-    # There is no top-level "active-memory" plugin.
 
     plugins = config.setdefault('plugins', {})
     entries = plugins.setdefault('entries', {})
 
-    # If a prior broken install wrote the bogus active-memory block, REMOVE it
-    if 'active-memory' in entries:
-        del entries['active-memory']
-        print("  ✓ Removed invalid plugins.entries.active-memory block (pre-v9.7.8 bug)")
+    # Enable active-memory with options nested under config; migrate (never delete)
+    # any flat option keys a prior broken install wrote.
+    AM_ENTRY_TOP = ("enabled", "hooks", "subagent", "llm", "config")
+    AM_DEFAULTS = {
+        "agents": ["main"], "allowedChatTypes": ["direct"], "queryMode": "recent",
+        "promptStyle": "balanced", "timeoutMs": 15000, "maxSummaryChars": 220,
+    }
+    am = entries.get('active-memory')
+    am_fresh = not isinstance(am, dict)
+    if am_fresh:
+        am = {}
+    am_cfg = am.get('config') if isinstance(am.get('config'), dict) else {}
+    _am_moved = [x for x in list(am) if x not in AM_ENTRY_TOP]
+    for _k in _am_moved:
+        am_cfg.setdefault(_k, am.pop(_k))
+    if am_fresh and not am_cfg:
+        am_cfg = dict(AM_DEFAULTS)
+    am['enabled'] = True
+    am['config'] = am_cfg
+    entries['active-memory'] = am
+    if _am_moved:
+        print("  ✓ Repaired plugins.entries.active-memory — nested %d flat option key(s) under config (Layer 8 preserved)" % len(_am_moved))
+    else:
+        print("  ✓ Active Memory (Layer 8) enabled with options nested under config")
 
     # Ensure memory-core plugin is enabled (the real memory plugin)
     mc = entries.setdefault('memory-core', {})

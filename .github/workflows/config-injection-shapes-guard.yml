@@ -1,0 +1,66 @@
+name: Config-injection shapes guard
+
+# v16.1.4 — fails the build if any onboarding write-site can produce (or the
+# self-heal fails to repair) one of the three schema-invalid openclaw.json shapes
+# that took client boxes down on a roll:
+#   B1  flat plugins.entries.active-memory option keys (must nest under config)
+#         validator: "plugins.entries.active-memory: Invalid input"
+#   B2  helpChatId on a telegram account (additionalProperties:false; co-mingling)
+#         validator: '... accounts.operator: ... additional properties: "helpChatId"'
+#   B3  channels.bindings / legacy flat binding shape (bindings is TOP-LEVEL,
+#       entries are {agentId, match:{...}})
+#         validator: "channels.bindings: unknown channel id: bindings"
+#
+# scripts/test-config-injection-shapes.sh exercises the canonical healer
+# (scripts/heal-config-shapes.py) and scripts/configure-operator-telegram.sh
+# against seeded bad configs and asserts the output shapes, idempotency, the
+# --check contract, the token-less inert-binding drop, and static source
+# invariants on all four write-sites. It is self-contained (stdlib python + bash)
+# so it runs with NO gateway installed.
+#
+# Security note: consumes only repo file content (no untrusted GitHub event
+# fields like PR title/body/commit message), so there is no injection surface.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/heal-config-shapes.py"
+      - "scripts/configure-operator-telegram.sh"
+      - "scripts/update-skills.sh"
+      - "scripts/fix-active-memory-bug.sh"
+      - "scripts/test-config-injection-shapes.sh"
+      - "install.sh"
+      - "update-skills.sh"
+      - ".github/workflows/config-injection-shapes-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/heal-config-shapes.py"
+      - "scripts/configure-operator-telegram.sh"
+      - "scripts/update-skills.sh"
+      - "scripts/fix-active-memory-bug.sh"
+      - "scripts/test-config-injection-shapes.sh"
+      - "install.sh"
+      - "update-skills.sh"
+      - ".github/workflows/config-injection-shapes-guard.yml"
+
+jobs:
+  config-injection-shapes-guard:
+    name: flat active-memory / helpChatId / channels.bindings cannot ship
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run config-injection shapes self-test (heal + write-sites + static)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/test-config-injection-shapes.sh
+          echo "config-injection-shapes-guard: PASS"

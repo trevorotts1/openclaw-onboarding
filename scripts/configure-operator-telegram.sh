@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# configure-operator-telegram.sh — v10.15.49
+# configure-operator-telegram.sh — v16.1.4
 #
 # FIX 2 (systemic): OPERATOR / RESCUE traffic bleeds into the CLIENT's personal
 # Telegram chat. Root cause: one bot + one shared agent:main:main session, so
@@ -14,8 +14,8 @@
 #   • operator = a SEPARATE operator bot (dmPolicy=allowlist, allowFrom = the
 #                operator IDs ONLY: 5252140759 / 6663821679 / 6771245262, NEVER
 #                the client's id)
-# plus channels.telegram.defaultAccount="default" and a bindings route
-#   { channel:"telegram", accountId:"operator" } -> agentId "main"
+# plus channels.telegram.defaultAccount="default" and a TOP-LEVEL bindings route
+#   { agentId:"main", match:{ channel:"telegram", accountId:"operator" } }
 # so operator-account traffic is routed to the same agent on an ISOLATED session
 # key (agent:main:operator) and replies go back out the operator bot — never the
 # client bot. Schema verified at docs.openclaw.ai/tools/skills + the telegram
@@ -155,32 +155,46 @@ for oid in OPERATOR_IDS:
     if oid not in existing_allow:
         existing_allow.append(oid)
 op_acct["allowFrom"] = existing_allow
-if op_help_chat:
-    op_acct.setdefault("helpChatId", op_help_chat)
+
+# v16.1.4 — helpChatId is NOT a valid telegram-account schema key
+# (channels.telegram.accounts.<id> is additionalProperties:false → the gateway
+# rejects it: 'must not have additional properties: "helpChatId"') and stuffing a
+# chat id there co-mingles operators with clients. Operator escalation is driven
+# by env OPERATOR_ESCALATION_CHAT_ID (persisted above), NEVER this key. Do not
+# write it, and STRIP any helpChatId a prior buggy run left on any account.
+tg.pop("helpChatId", None)
+for _acct in accounts.values():
+    if isinstance(_acct, dict):
+        _acct.pop("helpChatId", None)
 
 # 3) defaultAccount -> the CLIENT account, so owner-facing routing is unchanged.
 tg["defaultAccount"] = "default"
 
 # 4) bindings route: operator account -> agent main (isolated session key).
-# ONLY write the binding when the operator account actually has a token.
-# A token-less account referencing channels.bindings causes the gateway to
-# reject the config with 'unknown channel id: bindings', poisoning the
-# config-hash gate and blocking the downstream gateway restart.
-# The ACCOUNT structure (channels.telegram.accounts.operator) is still
-# written unconditionally so the box is flagged for token provisioning.
+# v16.1.4 SCHEMA FIX (proven against the live gateway schema 2026.5.28 + 2026.6.8):
+#   • `bindings` is a TOP-LEVEL config key (sibling of `agents`), NOT a child of
+#     `channels`. channels.bindings makes the gateway read `bindings` as an
+#     unknown channel id and reject the whole config ("unknown channel id:
+#     bindings"), poisoning the config-hash gate and the downstream restart.
+#   • Each entry is {agentId, match:{channel, accountId}} — the legacy flat
+#     {channel, accountId, agentId} fails as "bindings.0: Invalid input".
+#   • A binding for a token-less operator account is inert, so ONLY write one
+#     when the operator account has a real bot token. The ACCOUNT structure is
+#     still written unconditionally above so the box is flagged for provisioning.
 if op_acct.get("botToken"):
-    bindings = cfg.setdefault("channels", {}).setdefault("bindings", [])
-    if not isinstance(bindings, list):
-        bindings = []
-        cfg["channels"]["bindings"] = bindings
-    have_op_binding = any(
-        isinstance(b, dict)
-        and b.get("channel") == "telegram"
-        and b.get("accountId") == "operator"
-        for b in bindings
-    )
-    if not have_op_binding:
-        bindings.append({"channel": "telegram", "accountId": "operator", "agentId": "main"})
+    top = cfg.setdefault("bindings", [])
+    if not isinstance(top, list):
+        top = []
+        cfg["bindings"] = top
+
+    def _is_op_route(b):
+        if not isinstance(b, dict):
+            return False
+        m = b.get("match") if isinstance(b.get("match"), dict) else b
+        return m.get("channel") == "telegram" and m.get("accountId") == "operator"
+
+    if not any(_is_op_route(b) for b in top):
+        top.append({"agentId": "main", "match": {"channel": "telegram", "accountId": "operator"}})
 
 after = json.dumps(cfg, sort_keys=True)
 
@@ -205,6 +219,25 @@ case "$RESULT" in
     printf 'STATUS: operator-telegram=PARSE_ERROR\n'
     exit 0 ;;
 esac
+
+# ── v16.1.4 SELF-HEAL: repair any PRE-EXISTING schema-invalid shapes an earlier
+# buggy version left on this box — flat active-memory option keys, helpChatId on
+# any telegram account, a misplaced channels.bindings — so the validate gate
+# below PASSES on an already-corrupted box instead of rolling our valid change
+# back. Idempotent + no-op on a clean config. The healer is persisted next to
+# this script (~/.openclaw/scripts); resolve it with sensible fallbacks.
+_HEAL=""
+for _cand in \
+  "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)/heal-config-shapes.py" \
+  "$OC_ROOT/scripts/heal-config-shapes.py" \
+  "$HOME/.openclaw/scripts/heal-config-shapes.py"; do
+  [ -f "$_cand" ] && { _HEAL="$_cand"; break; }
+done
+if [ -n "$_HEAL" ] && command -v python3 >/dev/null 2>&1; then
+  python3 "$_HEAL" "$OC_CONFIG" 2>&1 | sed 's/^/  [operator-telegram] /' || true
+else
+  log "heal-config-shapes.py not found next to this script — skipping pre-existing-shape self-heal (operator-account write still applied)"
+fi
 
 # ── Chown back (VPS container) ───────────────────────────────────────────────
 [ "$OC_ROOT" = "/data/.openclaw" ] && chown "$OC_USER:$OC_USER" "$OC_CONFIG" 2>/dev/null || true
