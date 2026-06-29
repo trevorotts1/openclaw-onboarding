@@ -1,0 +1,150 @@
+{
+  "$schema": "https://openclaw.ai/schemas/interview-section/v1",
+  "section": "deck-intake",
+  "version": "1.0.0",
+  "description": "Single source of truth for the Presentations deck-intake interview. Encodes SOP 9.0 mandatory fields in canonical order. The deck-intake-driver.py reads this file at runtime and enforces one-question-per-turn ordering. Do not hardcode these question prompts elsewhere — edit here.",
+  "storeTarget": {
+    "REPRESENTATION_MIX": "pre_presentation_capture.REPRESENTATION_MIX",
+    "AUDIENCE_COMPOSITION_NOTE": "pre_presentation_capture.AUDIENCE_COMPOSITION_NOTE",
+    "GROUNDED_CONTENT": "pre_presentation_capture.GROUNDED_CONTENT",
+    "VISUAL_MIX": "pre_presentation_capture.VISUAL_MIX",
+    "DARK_OK": "pre_presentation_capture.DARK_OK",
+    "HOOK_SEED": "pre_presentation_capture.HOOK_SEED",
+    "DELIVERABLE_SET": "pre_presentation_capture.DELIVERABLE_SET",
+    "WANT_AUDIO_DEMO": "pre_presentation_capture.WANT_AUDIO_DEMO",
+    "TARGET_WPM": "pre_presentation_capture.TARGET_WPM",
+    "STYLE_SOURCE": "pre_presentation_capture.STYLE_SOURCE"
+  },
+  "session_budget": {
+    "max_turns": 14,
+    "max_minutes": 20
+  },
+  "questions": [
+    {
+      "id": "representation_mix",
+      "section": "deck-intake",
+      "order": 1,
+      "prompt": "Who will be in the seats watching this -- and how should the people in the images break down? Give me percentages. For example: 70% African-American women, 20% mixed race, 10% men. Or: 100% women, diverse. Or: no people at all.",
+      "help": "This sets the audience-representation mandate for every image in the deck. If you have no preference or are unsure, say 'no people at all' and we will flag it — a racial or gender default is never assumed.",
+      "kind": "text",
+      "storeOn": "REPRESENTATION_MIX",
+      "required": true,
+      "block_gate": false,
+      "resolverHint": "If owner cannot or will not answer: set representation_uncaptured:true, flag the operator, and proceed. A racial or gender default is NEVER invented. The deck generates with NO PEOPLE."
+    },
+    {
+      "id": "audience_composition_note",
+      "section": "deck-intake",
+      "order": 2,
+      "prompt": "In plain words, who is this audience? For example: all women, multicultural Black + white + Hispanic professionals, mixed gender diverse.",
+      "help": "A single plain-language sentence that names the audience composition. This seeds the audience-engine. May be derived from the representation_mix answer without re-asking if the answer is already clear.",
+      "kind": "text",
+      "storeOn": "AUDIENCE_COMPOSITION_NOTE",
+      "required": true,
+      "block_gate": false,
+      "resolverHint": "Derive from representation_mix if the owner just answered it and the answer is unambiguous. Ask fresh if representation_mix was flagged uncaptured."
+    },
+    {
+      "id": "grounded_content",
+      "section": "deck-intake",
+      "order": 3,
+      "prompt": "What is the specific book, program, method, or message this deck is built around? I need the name and a one-line description so every image is grounded in YOUR content, not generic inspiration.",
+      "help": "Examples: 'The 10X Rule by Grant Cardone — extreme goal-setting and action framework' or 'The Aligned Leader program — three pillars of authentic authority for women executives'. If you do not have a final name yet, describe it and we will mark it provisional.",
+      "kind": "text",
+      "storeOn": "GROUNDED_CONTENT",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "If the owner does not have a name yet: capture whatever they describe and mark grounded_content_provisional:true. The build CANNOT start with a blank GROUNDED_CONTENT; block handoff and ask once more if still empty at lock."
+    },
+    {
+      "id": "visual_mix",
+      "section": "deck-intake",
+      "order": 4,
+      "prompt": "Should the slides be people-heavy, some people, typography-led, or a mix?",
+      "help": "People-heavy = most slides show real people in scenes. Some people = a balance of people and concept shots. Typography-led = mostly text-based dramatic slides. Mix = variety across all three. Default if no preference: mix.",
+      "kind": "text",
+      "storeOn": "VISUAL_MIX",
+      "required": true,
+      "block_gate": false,
+      "default": "mix",
+      "resolverHint": "Default if owner says 'no preference' or does not answer: 'mix'. Mark visual_mix_defaulted:true."
+    },
+    {
+      "id": "dark_ok",
+      "section": "deck-intake",
+      "order": 5,
+      "prompt": "Default is a clean white base -- the standard that makes premium decks pop. Do you specifically want any dark-styled slides?",
+      "help": "The proven gold standard eliminated all black backgrounds. White base is the safe, premium default. Only say yes if you have a specific creative vision for dark slides.",
+      "kind": "boolean",
+      "storeOn": "DARK_OK",
+      "required": true,
+      "block_gate": false,
+      "default": false,
+      "resolverHint": "Default if owner does not answer: false. Only set to true on EXPLICIT owner request."
+    },
+    {
+      "id": "hook_seed",
+      "section": "deck-intake",
+      "order": 6,
+      "prompt": "Is there one line you already say all the time -- the phrase you want them humming when they leave? The hook the whole deck will be built around.",
+      "help": "This is the core promise line — the thing your audience will repeat to themselves and others after your presentation. If you do not have one yet, say 'not sure' and the Hook Strategist will derive one during the build.",
+      "kind": "text",
+      "storeOn": "HOOK_SEED",
+      "required": true,
+      "block_gate": false,
+      "resolverHint": "If none: mark hook_seed_missing:true. The Hook Strategist derives one from the offer at build time; note this in brief.json so the Director triggers the Hook Lab."
+    },
+    {
+      "id": "deliverable_set",
+      "section": "deck-intake",
+      "order": 7,
+      "prompt": "Beyond the slide deck itself, what else do you want? I can also produce a presenter's GUIDE (a branded at-a-glance run-of-show), a full word-for-word SPEECH script, and even an AUDIO demo of the talk. Pick one: deck only / +guide / +guide+speech / +audio.",
+      "help": "Deck only = just the PowerPoint. +guide = deck + a printed/PDF presenter guide. +guide+speech = both plus a full speech script. +audio = all of that plus an audio demo in a chosen voice. Default if no preference: deck-only.",
+      "kind": "text",
+      "storeOn": "DELIVERABLE_SET",
+      "required": true,
+      "block_gate": false,
+      "default": "deck-only",
+      "resolverHint": "Default if owner says 'just the deck' or 'no preference': deck-only. The Director dispatches ROLE-19 (guide), ROLE-20 (speech), ROLE-21 (audio) based on this value."
+    },
+    {
+      "id": "want_audio_demo",
+      "section": "deck-intake",
+      "order": 8,
+      "prompt": "For the audio demo, what voice or persona should it use -- your own cloned voice, a warm female narrator, a high-energy male host, or something else?",
+      "help": "Ask only if DELIVERABLE_SET is '+audio'; otherwise default false. A voice is never defaulted silently if '+audio' is chosen but no voice is specified.",
+      "kind": "text",
+      "storeOn": "WANT_AUDIO_DEMO",
+      "required": false,
+      "block_gate": false,
+      "default": false,
+      "resolverHint": "Ask only if DELIVERABLE_SET includes '+audio'. If '+audio' but no voice named: set WANT_AUDIO_DEMO:true and audio_voice_unset:true. Default when not '+audio': WANT_AUDIO_DEMO:false."
+    },
+    {
+      "id": "target_wpm",
+      "section": "deck-intake",
+      "order": 9,
+      "prompt": "How fast should the spoken pace feel -- standard (about 140 words a minute, the most credible pace), a slower teach pace (about 130), or a high-energy pace (about 150 to 160)?",
+      "help": "Ask only if DELIVERABLE_SET includes a speech ('+guide+speech' or '+audio'). The presentation-speech constant is 140 WPM; never silently default to 150.",
+      "kind": "integer",
+      "storeOn": "TARGET_WPM",
+      "required": false,
+      "block_gate": false,
+      "default": 140,
+      "resolverHint": "Ask only if DELIVERABLE_SET includes a speech. Default if owner says 'you decide' or not asked: 140. Mark target_wpm_defaulted:true when defaulted."
+    },
+    {
+      "id": "style_source",
+      "section": "deck-intake",
+      "order": 10,
+      "prompt": "Do you have an existing deck or visual style you want matched, a reference deck I should analyze, or should we CREATE a fresh signature style for you?",
+      "help": "Match-existing = we replicate your current look. Analyze-reference = you share a deck or brand for us to study. Create-new = Brand Steward builds a fresh STYLE BLOCK. Default if no preference: create-new.",
+      "kind": "text",
+      "storeOn": "STYLE_SOURCE",
+      "required": false,
+      "block_gate": false,
+      "default": "create-new",
+      "resolverHint": "On match-existing or analyze-reference: the Brand Steward submits the reference to the Graphics Design Intelligence Unit Style Analyst for a PPT-tier style card. On create-new: Brand Steward builds STYLE BLOCK fresh. Default when unanswered: create-new with style_source_defaulted:true."
+    }
+  ]
+}

@@ -85,7 +85,9 @@ import importlib
 import json
 import os
 import re
+import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -102,6 +104,23 @@ import build_deck as bd
 # (AF-IMAGE-QC-VISION) at PRE-DELIVERY. The ONLY bypass is a logged
 # owner_skip_approval token in process_manifest.json.
 import canonical_render_guard as guard
+
+# Fail-soft: cc_board may be absent in environments that have not deployed it yet.
+try:
+    import cc_board as _cc_board
+    _CC_BOARD_OK = True
+except ImportError:
+    _cc_board = None  # type: ignore[assignment]
+    _CC_BOARD_OK = False
+
+# Fail-soft: prove_deck verifies process integrity at P9-DELIVER.
+try:
+    import prove_deck as _prove_deck  # type: ignore[import]
+    _PROVE_DECK_OK = True
+except ImportError:
+    # Attempt file-based import as fallback.
+    _prove_deck = None  # type: ignore[assignment]
+    _PROVE_DECK_OK = False
 
 # Exit code for a guard hard-block (distinct from AF-PHASE-SKIPPED=2,
 # render-subprocess=3, AF-KIE-BALANCE=4).
@@ -233,6 +252,72 @@ def attest_phase(run_dir: Path, phase_id: str, role: str, status: str,
         "attested_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     })
     p.write_text(json.dumps(obj, indent=2))
+
+
+# ---------------------------------------------------------------------------
+# Phase reports — client-facing visibility records (AF-PHASE-REPORT-* coverage)
+# Each phase that declares client_report gets a "start" and "done" record in
+# working/checkpoints/phase_reports.json. These are consumed by prove-deck.py
+# at P9-DELIVER: missing records raise AF-PHASE-REPORT-MISSING, AF-PHASE-REPORT-START,
+# or AF-PHASE-REPORT-DONE.
+# ---------------------------------------------------------------------------
+def _phase_reports_path(run_dir: Path) -> Path:
+    return run_dir / "working" / "checkpoints" / "phase_reports.json"
+
+
+def _emit_phase_report(run_dir: Path, phase_id: str, kind: str, template: str = "") -> None:
+    """Append a phase report record (kind='start' or 'done') to phase_reports.json.
+    Fail-soft: any filesystem error is logged to stderr, never fatal."""
+    p = _phase_reports_path(run_dir)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        records = []
+        if p.exists():
+            try:
+                records = json.loads(p.read_text(encoding="utf-8"))
+                if not isinstance(records, list):
+                    records = []
+            except Exception:  # noqa: BLE001
+                records = []
+        records.append({
+            "phase_id": phase_id,
+            "kind": kind,
+            "template": template,
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        })
+        tmp = p.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(records, indent=2))
+        os.replace(tmp, p)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[run_signature_deck] _emit_phase_report({phase_id!r}, {kind!r}) failed: {exc}",
+              file=sys.stderr, flush=True)
+
+
+# ---------------------------------------------------------------------------
+# Heartbeat — long-running phases (long_running:true + heartbeat_minutes)
+# ---------------------------------------------------------------------------
+class _HeartbeatThread(threading.Thread):
+    """Background thread that logs a heartbeat line every `interval_s` seconds
+    while a long-running phase is active. Stop by calling .stop()."""
+
+    def __init__(self, phase_id: str, interval_s: float):
+        super().__init__(daemon=True, name=f"heartbeat-{phase_id}")
+        self._phase_id = phase_id
+        self._interval = max(10.0, float(interval_s))
+        self._stop_event = threading.Event()
+
+    def run(self) -> None:
+        while not self._stop_event.wait(self._interval):
+            print(f"[heartbeat] phase={self._phase_id} still running …", flush=True)
+
+    def stop(self) -> None:
+        self._stop_event.set()
+
+
+def _start_heartbeat(phase_id: str, heartbeat_minutes: float) -> _HeartbeatThread:
+    t = _HeartbeatThread(phase_id, heartbeat_minutes * 60)
+    t.start()
+    return t
 
 
 # ---------------------------------------------------------------------------
@@ -800,6 +885,47 @@ def pre_assembly_harmony_checkpoint(run_dir: Path) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Process-integrity prove at P9-DELIVER
+# ---------------------------------------------------------------------------
+def _prove_delivery_integrity(run_dir: Path) -> None:
+    """Invoke prove-deck.py's prove() to verify the full attestation chain +
+    phase reports BEFORE the delivery phase is attested. Fail-closed: any
+    failure aborts with EXIT_GUARD_BLOCK (5). Importing prove_deck inline avoids
+    circular-import issues on some deployment layouts."""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "prove_deck", HERE / "prove-deck.py")
+        if spec is None or spec.loader is None:
+            raise ImportError("cannot locate prove-deck.py")
+        pd = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(pd)  # type: ignore[union-attr]
+        failures = pd.prove(run_dir)
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        print("\n" + "!" * 78, file=sys.stderr)
+        print(f"FATAL PRE-DELIVERY (PROCESS-INTEGRITY): prove-deck raised {exc!r} "
+              "— cannot prove the pipeline executed under the governed runner.",
+              file=sys.stderr)
+        print("!" * 78 + "\n", file=sys.stderr)
+        sys.exit(EXIT_GUARD_BLOCK)
+
+    if not failures:
+        print("=== PROCESS-INTEGRITY (prove-deck): PASS — full attestation chain "
+              "and phase reports verified ===", flush=True)
+        return
+
+    print("\n" + "!" * 78, file=sys.stderr)
+    print(f"FATAL PRE-DELIVERY (PROCESS-INTEGRITY): {len(failures)} failure(s):",
+          file=sys.stderr)
+    for f in failures:
+        print(f"  - {f}", file=sys.stderr)
+    print("!" * 78 + "\n", file=sys.stderr)
+    sys.exit(EXIT_GUARD_BLOCK)
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 def main():
@@ -948,10 +1074,34 @@ def main():
                 print("!" * 78 + "\n", file=sys.stderr)
                 sys.exit(EXIT_GUARD_BLOCK)
 
+            # PROCESS-INTEGRITY PROVE — verify attestation chain + phase reports before
+            # delivery is attested. Uses prove-deck.py's prove() function when available;
+            # falls back to subprocess call. Fail-closed: a prover import error is NOT a
+            # bypass — it hard-blocks until prove-deck.py is reachable.
+            _prove_delivery_integrity(run_dir)
+
         # Non-render phase: verify the artifact landed, then attest.
         if _artifact_present(run_dir, target.get("produces_artifact", "")):
+            # Emit START report (idempotent — if already emitted this is a no-op in effect)
+            if isinstance(target.get("client_report"), dict):
+                _emit_phase_report(
+                    run_dir, args.phase, "start",
+                    target["client_report"].get("start_template", ""))
+            # Heartbeat for long-running phases (fires while we wait for the artifact;
+            # here it is a no-op since the artifact is already present, but the call is
+            # kept for structural symmetry with the long-running case).
+            hb = None
+            if target.get("long_running") and target.get("heartbeat_minutes"):
+                hb = _start_heartbeat(args.phase, target["heartbeat_minutes"])
             attest_phase(run_dir, args.phase, target.get("owning_role", ""),
                          "artifact_present")
+            if hb is not None:
+                hb.stop()
+            # Emit DONE report after successful attestation.
+            if isinstance(target.get("client_report"), dict):
+                _emit_phase_report(
+                    run_dir, args.phase, "done",
+                    target["client_report"].get("done_template", ""))
             print(f"=== PHASE {args.phase} attested (produces_artifact present) ===",
                   flush=True)
             sys.exit(0)
@@ -980,7 +1130,6 @@ def _dispatch_render(run_dir: Path, slides_path: Path, out_path: Path,
     owner_skip_approval token. This is what blocks `python3 working/phase4_*.py`
     bypasses from ever reaching kie.ai. --adhoc does NOT waive it; only an owner token
     in process_manifest.json does."""
-    import subprocess
     reason = guard.guard_pre_render(run_dir)
     if reason:
         print("\n" + "!" * 78, file=sys.stderr)

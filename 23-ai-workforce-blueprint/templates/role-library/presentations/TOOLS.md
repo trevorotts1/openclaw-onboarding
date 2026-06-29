@@ -1,21 +1,29 @@
 # TOOLS.md — Presentations Builder Tools (DETERMINISTIC PIPELINE)
 
-## YOU HAVE EXACTLY ONE TOOL FOR DECKS: `build_deck.py`
+## YOU HAVE EXACTLY ONE TOOL FOR DECKS: `presentation-canonical-entry.sh`
 
 You do NOT generate images. You do NOT call KIE.ai. You do NOT assemble `.pptx` files.
-There is exactly ONE tool that builds a deck, and it does all three of those for you:
+There is exactly ONE tool that builds a deck, and it does all of those for you:
 
 ```
-python3 <SCRIPTS_DIR>/build_deck.py <slides.json> <out.pptx> [renders_dir]
+bash <SCRIPTS_DIR>/presentation-canonical-entry.sh \
+    --run-dir <DIR> --slides slides.json --out out.pptx
 ```
 
-`build_deck.py`, `kie_generate.py`, and `slides.schema.json` ship in this repo's
-render-template directory `23-ai-workforce-blueprint/templates/presentation-render/` and
-are installed into the client's Presentations scripts directory on a materialized box. Use
-the `SCRIPTS_DIR` your task message gives you.
+`build_deck.py` is NEVER invoked directly. `presentation-canonical-entry.sh` is the
+ONE sanctioned command; it runs the deps/bypass/version/interview gates and then
+dispatches the canonical orchestrator (`run_signature_deck.py` → `build_deck.py`).
+A direct `build_deck.py` or `working/*.py` call is blocked by the front-door guard
+(AF-CANONICAL-RENDER-BYPASS).
 
-Your only job is to produce a correct `slides.json` (see `slides.schema.json`) and run that
-command. The procedure is in `BUILDER-PROMPT.md`; read it first on every deck task.
+`presentation-canonical-entry.sh`, `build_deck.py`, `run_signature_deck.py`,
+`kie_generate.py`, and `slides.schema.json` ship in this repo's scripts and
+render-template directories and are installed into the client's Presentations scripts
+directory on a materialized box. Use the `SCRIPTS_DIR` your task message gives you.
+
+Your only job is to produce a correct `slides.json` (see `slides.schema.json`) and run
+the canonical entry command above. The procedure is in `BUILDER-PROMPT.md`; read it
+first on every deck task.
 
 **FORBIDDEN (any one = immediate FAIL at QC, AF-I14):**
 - The native `image_generate` tool, or any other image-generating tool, for a deck slide.
@@ -29,9 +37,11 @@ command. The procedure is in `BUILDER-PROMPT.md`; read it first on every deck ta
 
 ---
 
-## `build_deck.py` — what it does (so you don't have to)
+## What the canonical pipeline does (so you don't have to)
 
-You hand it `slides.json` and an output path. It does EVERYTHING else, deterministically,
+You hand `slides.json` and an output path to `presentation-canonical-entry.sh`. It runs
+three fail-closed gates (deps / bypass-scan / version-hash-pin) and then dispatches
+`run_signature_deck.py` → `build_deck.py`, which does EVERYTHING else, deterministically,
 with zero AI judgement at runtime:
 
 1. Validates `slides.json` (fails loud on bad JSON / missing fields / non-unique ordinals).
@@ -98,17 +108,12 @@ placement for the full webinar pipeline per SOP-IMG-01, but it is OUT OF SCOPE f
 
 ---
 
-## Mission Control API (for registering the deliverable)
+## Mission Control (Command Center) — handled automatically
 
-The task message includes the exact URLs. Standard pattern:
-- Base URL: from the task message (`missionControlUrl`).
-- Register the deliverable: `POST /api/tasks/{id}/deliverables` — register the EXACT
-  `outputPath` from the `build_deck.py` summary (the `.pptx`), nothing else.
-- Log activity: `POST /api/tasks/{id}/activities`.
-- Update status: `PATCH /api/tasks/{id}` → `{"status": "review"}`.
-
-Use curl or python requests for these API calls — both are available. (These are Mission
-Control calls only; they are NOT image calls.)
+The build script (`build_deck.py` postflight via `cc_board.py`) registers the deliverable
+and advances the Command Center card automatically. You do NOT make manual POST/PATCH calls.
+When `presentation-canonical-entry.sh` exits 0, report TASK_COMPLETE — the registration
+is already done.
 
 ## Artifact Directory
 

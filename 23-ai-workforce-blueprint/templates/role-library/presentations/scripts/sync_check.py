@@ -355,6 +355,8 @@ EXTENSION_STEP = {
     "C1": "step (i)+(iii) — a QC-checker script EMITS this AF code but the manifest does not declare it; register it in PIPELINE-MANIFEST.autofails (+ the ruleset), or stop emitting it",
     "D1": "step (ii) — add the missing deliverable key to DELIVERABLES_REQUIRED in build_deck.py",
     "D2": "step (i) — add the missing deliverable key to deliverables_required in PIPELINE-MANIFEST.json",
+    "E1": "step (i) — add a client_report block to the phase in PIPELINE-MANIFEST.json (manifest v21+ requirement)",
+    "E2": "step (i) — add heartbeat_minutes to the long_running phase in PIPELINE-MANIFEST.json",
 }
 
 
@@ -614,6 +616,28 @@ def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
                 f"dict) but it is absent from PIPELINE-MANIFEST.autofails — a deck can be "
                 f"failed by a code the registry does not declare. {EXTENSION_STEP['C1']}.")
 
+    # -------- (E) PHASE CLIENT-REPORT DRIFT --------
+    # E1: every phase must carry a client_report block (added in manifest v21 as part of
+    #     the per-step progress-report gate; Fix 4c).  A phase without client_report
+    #     means the runner cannot emit step start/done messages for it.
+    for ph in phases:
+        if not ph.get("client_report"):
+            add("E1", ph["id"],
+                f"phase {ph['id']} is missing a 'client_report' block "
+                f"(manifest v21+ requires every phase to carry "
+                f"{{\"start_template\":\"...\",\"done_template\":\"...\"}} so the "
+                f"runner can emit client progress messages). Add a client_report "
+                f"object to this phase in PIPELINE-MANIFEST.json and bump manifest_version.")
+
+    # E2: every phase with long_running:true must also declare heartbeat_minutes.
+    for ph in phases:
+        if ph.get("long_running") and not ph.get("heartbeat_minutes"):
+            add("E2", ph["id"],
+                f"phase {ph['id']} is marked long_running:true but declares no "
+                f"heartbeat_minutes. The watchdog needs to know the polling interval "
+                f"for long phases (e.g. heartbeat_minutes:10). Add heartbeat_minutes "
+                f"to this phase in PIPELINE-MANIFEST.json.")
+
     # -------- (D) DELIVERABLE-SET DRIFT --------
     # D1/D2: the key set in manifest.deliverables_required must exactly match
     # the key set in build_deck.py's DELIVERABLES_REQUIRED list.
@@ -658,6 +682,7 @@ def report_human(drift, manifest, explain):
     a = [d for d in drift if d["check"].startswith("A")]
     b = [d for d in drift if d["check"].startswith("B")]
     c = [d for d in drift if d["check"].startswith("C")]
+    e = [d for d in drift if d["check"].startswith("E")]
     v = [d for d in drift if d["check"].startswith("V")]
     print("=== sync_check: DRIFT DETECTED — LOCKSTEP BROKEN (AF-SYNC) ===", file=sys.stderr)
     if a:
@@ -674,6 +699,12 @@ def report_human(drift, manifest, explain):
         print("\n(C) CHECKER-SCRIPT-AHEAD-OF-STACK — a registered QC-checker script EMITS "
               "an AF code the manifest does not declare (HOLE B):", file=sys.stderr)
         for d in c:
+            print(f"  DRIFT {d['check']}: [{d['item']}] {d['detail']}", file=sys.stderr)
+    if e:
+        print("\n(E) PHASE-STRUCTURE DRIFT — a manifest phase is missing a required "
+              "structural block (client_report, heartbeat_minutes on long_running):",
+              file=sys.stderr)
+        for d in e:
             print(f"  DRIFT {d['check']}: [{d['item']}] {d['detail']}", file=sys.stderr)
     if v:
         print("\n(V) VALUE DRIFT — the names match but the NUMBERS do not (the cited "

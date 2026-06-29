@@ -5,8 +5,8 @@
 # ============================================================================
 # Root-cause fix for the enforcement-surface gap (Fix 10 — entrypoint shell gate).
 #
-# The Presentations department's guardrails (kie.ai-only image path, 5,000-char
-# prompt floor, the AF-OVERLAY-DELIVERED / kie-baked / image-QC battery, the
+# The Presentations department's guardrails (kie.ai-only image path, 9,000-char
+# prompt floor (PROMPT_CHAR_FLOOR=9000), the AF-OVERLAY-DELIVERED / kie-baked / image-QC battery, the
 # GoHighLevel upload, the teleprompter bundle, the phase-attestation chain) all
 # live INSIDE the canonical render path:
 #
@@ -208,6 +208,31 @@ gate_fail() {
 }
 
 # ===========================================================================
+# GATE 0 — FRONT-DOOR SELF-SCREEN via deck-build-guard.sh
+# Checks: (a) hand-rolled artifacts in the run directory, (b) interview-ledger
+# completeness. Even the one sanctioned door self-polices.
+# deck-build-guard.sh lives beside this script in the same scripts directory.
+# ===========================================================================
+GUARD="$SELF_DIR/deck-build-guard.sh"
+if [ -f "$GUARD" ]; then
+    note "GATE 0 — FRONT-DOOR SELF-SCREEN (deck-build-guard.sh)"
+    # Pass the canonical-entry command so the guard can extract --run-dir and
+    # check the intake ledger, while recognizing this is the sanctioned route.
+    GUARD_RC=0
+    OPENCLAW_EXEC_CMD="bash $SELF_DIR/presentation-canonical-entry.sh --run-dir $RUN_DIR" \
+        bash "$GUARD" 2>&1 || GUARD_RC=$?
+    if [ "$GUARD_RC" -ne 0 ]; then
+        echo "FATAL [$PROG]: GATE 0 — deck-build-guard.sh denied this run (exit $GUARD_RC)." >&2
+        echo "  Fix the reported condition (see output above) and re-run." >&2
+        echo "  The ONLY sanctioned deck build is: bash presentation-canonical-entry.sh --run-dir … --slides … --out …" >&2
+        exit "$GUARD_RC"
+    fi
+    note "  GATE 0 PASSED"
+else
+    note "  GATE 0 — deck-build-guard.sh not found at $GUARD; self-screen skipped"
+fi
+
+# ===========================================================================
 # GATE 1 — DEPS CHECK (the four runtime deps; exit 6 PRESENTATION_DEPS_MISSING)
 # ===========================================================================
 note "GATE 1/3 — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx)"
@@ -402,4 +427,9 @@ fi
 [ -n "$PLATFORM" ] && cmd+=(--platform "$PLATFORM")
 [ "$ADHOC" -eq 1 ] && cmd+=(--adhoc)
 note "exec: ${cmd[*]}"
+# FRONT-DOOR MARKER — required by run_signature_deck.py and build_deck.py.
+# They both exit 2 if this env var is absent (direct python3 invocations are
+# denied). The marker MUST be set immediately before exec so it is present in
+# the runner's process environment from the very first instruction.
+export OC_DECK_CANONICAL_ENTRY=1
 exec "${cmd[@]}"

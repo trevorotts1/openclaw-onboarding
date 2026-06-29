@@ -16,6 +16,18 @@
       "check": { "binary": "sqlite3" },
       "severity": "optional",
       "satisfy": "Optional. Install sqlite3 for manual DB inspection. Mac: brew install sqlite. VPS: apt-get install sqlite3."
+    },
+    {
+      "id": "interview-complete",
+      "type": "state",
+      "label": "AI Workforce interview complete",
+      "check": {
+        "stateFile": "$OC_ROOT/workspace/.workforce-build-state.json",
+        "field": "interviewComplete",
+        "equals": true
+      },
+      "severity": "required",
+      "satisfy": "Complete the AI Workforce interview (Skill 23) first. The Command Center is the output of interview -> workforce build; building it before the interview yields a default-floor board under company 'default'. If not complete, the installer REPORTS 'interview not completed yet' and exits without scaffolding."
     }
   ]
 }

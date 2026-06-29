@@ -22,6 +22,23 @@ Per N3 ("read before act"), do not skip any of the above. Per N4, follow steps i
 
 Each client gets their **OWN** Command Center: own deployment, own dashboard URL, own CF Access app, own Telegram bot/supergroup/topics, own data store. NEVER point a client's Command Center at another client's deployment, bot, or workspace, and NEVER reuse another client's URL/topic/bot as a placeholder. If a client's own resource does not exist yet, **STOP and WAIT** — do not substitute. See [`../NO-COMINGLING-RULE.md`](../NO-COMINGLING-RULE.md) and AGENTS.md N0. Co-mingling is a hard violation.
 
+## 🔴 INTERVIEW-COMPLETE PRECONDITION (binding)
+
+A client gets a Command Center + zero-human company (real departments, roles, and
+step-by-step instructions) **ONLY after their AI Workforce interview is COMPLETE.**
+The Command Center IS the output of interview → workforce build. Building it before
+the interview produces the DEFAULT department floor under company `default` (not the
+client's real answers) — the same broken state as a rogue/stale board, and handing
+it off is a FALSE deliverable.
+
+**Enforcement:** `run-full-install.sh` and `materialize-dept-agents.sh` check
+`interviewComplete == true` in `$OC_ROOT/workspace/.workforce-build-state.json`
+before any seeding/scaffolding. If it is not true they **REPORT "interview not
+completed yet" and exit clean** — they do NOT scaffold the default departments and
+do NOT hammer the box. Verify completion with MULTIPLE signals (the flag is
+necessary but not sufficient; corroborate with real Q/A content + a CC board whose
+`company_id != 'default'`). See memory `feedback-cc-build-gated-on-ai-workforce-interview`.
+
 ## What This Skill Is About
 
 The Command Center Setup activates your AI workforce as a live, operational system. It takes the department structure you created in Skill 23 (AI Workforce Blueprint) and makes it real with persistent department agents, a Telegram control room with organized topics, and a visual Kanban dashboard for task management.

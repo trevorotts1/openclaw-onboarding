@@ -635,6 +635,96 @@ PYEOF
   fi
 
   # --------------------------------------------------------------------------
+  # (e) PRESENTATIONS-SPECIFIC WIRING ASSERTIONS
+  # For the presentations dept, assert the front-door guard is in place:
+  #   1. deck-build-guard.sh is present AND executable in the dept scripts dir.
+  #   2. run_signature_deck.py + build_deck.py each contain the front-door
+  #      marker guard (grep for OC_DECK_CANONICAL_ENTRY).
+  # Fail the dept check if any assertion is missing (fail-closed, not advisory).
+  # --------------------------------------------------------------------------
+  if [[ "$DEPT_SLUG" == "presentations" ]]; then
+    PRES_SCRIPTS_TEMPLATE="$SKILL_DIR/templates/role-library/presentations/scripts"
+    PRES_SCRIPTS_DEPLOYED="$HOME/departments/Presentations/scripts"
+    # Prefer the deployed location; fall back to the template source (repo context).
+    if [[ -d "$PRES_SCRIPTS_DEPLOYED" ]]; then
+      _PRES_SCRIPTS="$PRES_SCRIPTS_DEPLOYED"
+    elif [[ -d "$PRES_SCRIPTS_TEMPLATE" ]]; then
+      _PRES_SCRIPTS="$PRES_SCRIPTS_TEMPLATE"
+    else
+      _PRES_SCRIPTS=""
+    fi
+    _CANONICAL_ENTRY="$SCRIPT_DIR/deck-build-guard.sh"
+    PRES_FAIL=0
+
+    echo "  [PRESENTATIONS]  front-door wiring assertions:"
+
+    # (e1) deck-build-guard.sh present and executable
+    if [[ -f "$_CANONICAL_ENTRY" && -x "$_CANONICAL_ENTRY" ]]; then
+      echo "  [PRESENTATIONS]  OK:   deck-build-guard.sh present and executable at $_CANONICAL_ENTRY"
+    elif [[ -f "$_CANONICAL_ENTRY" ]]; then
+      echo "  [PRESENTATIONS]  FAIL: deck-build-guard.sh found at $_CANONICAL_ENTRY but is NOT executable (chmod +x required)" >&2
+      PRES_FAIL=1
+      FAIL_CONNECTION+=("$DEPT_SLUG:deck-build-guard-not-executable")
+      DEPT_WIRING_FAIL_REASONS+=("presentations:deck-build-guard-not-executable")
+    else
+      # Also check in the presentations scripts dir (deployed or template)
+      _GUARD_ALT=""
+      [[ -n "$_PRES_SCRIPTS" ]] && _GUARD_ALT="$_PRES_SCRIPTS/deck-build-guard.sh"
+      if [[ -n "$_GUARD_ALT" && -f "$_GUARD_ALT" && -x "$_GUARD_ALT" ]]; then
+        echo "  [PRESENTATIONS]  OK:   deck-build-guard.sh present and executable at $_GUARD_ALT"
+      else
+        echo "  [PRESENTATIONS]  FAIL: deck-build-guard.sh not found (checked $_CANONICAL_ENTRY and ${_GUARD_ALT:-<pres scripts not found>}). The front-door exec guard is missing — direct build_deck.py invocations are not blocked." >&2
+        PRES_FAIL=1
+        FAIL_CONNECTION+=("$DEPT_SLUG:deck-build-guard-missing")
+        DEPT_WIRING_FAIL_REASONS+=("presentations:deck-build-guard-missing")
+      fi
+    fi
+
+    # (e2) run_signature_deck.py and build_deck.py contain OC_DECK_CANONICAL_ENTRY
+    if [[ -n "$_PRES_SCRIPTS" ]]; then
+      for _runner_file in "run_signature_deck.py" "build_deck.py"; do
+        _runner_path="$_PRES_SCRIPTS/$_runner_file"
+        if [[ ! -f "$_runner_path" ]]; then
+          echo "  [PRESENTATIONS]  WARN: $_runner_file not found at $_runner_path (skipping marker check)" >&2
+        elif grep -q "OC_DECK_CANONICAL_ENTRY" "$_runner_path" 2>/dev/null; then
+          echo "  [PRESENTATIONS]  OK:   $_runner_file contains OC_DECK_CANONICAL_ENTRY front-door marker guard"
+        else
+          echo "  [PRESENTATIONS]  FAIL: $_runner_file does NOT contain OC_DECK_CANONICAL_ENTRY — direct python3 invocations will not be blocked by the front-door marker guard." >&2
+          PRES_FAIL=1
+          FAIL_CONNECTION+=("$DEPT_SLUG:${_runner_file}-missing-marker-guard")
+          DEPT_WIRING_FAIL_REASONS+=("presentations:${_runner_file}-missing-OC_DECK_CANONICAL_ENTRY")
+        fi
+      done
+    else
+      echo "  [PRESENTATIONS]  WARN: presentations scripts dir not found (checked $PRES_SCRIPTS_DEPLOYED and $PRES_SCRIPTS_TEMPLATE) — skipping OC_DECK_CANONICAL_ENTRY marker checks" >&2
+    fi
+
+    # (e3) PROCESS-INTEGRITY lockstep suite scripts present
+    # The 2026-06-29 PROCESS-INTEGRITY core ships these runner-side scripts that
+    # must be present alongside build_deck.py to enable prove-deck + cc_board wiring.
+    if [[ -n "$_PRES_SCRIPTS" ]]; then
+      for _pi_file in "prove-deck.py" "cc_board.py" "phase_verifiers.py" \
+                      "runner_gate_integrity_check.py"; do
+        _pi_path="$_PRES_SCRIPTS/$_pi_file"
+        if [[ -f "$_pi_path" ]]; then
+          echo "  [PRESENTATIONS]  OK:   process-integrity script present: $_pi_file"
+        else
+          echo "  [PRESENTATIONS]  FAIL: process-integrity script MISSING: $_pi_file (expected at $_pi_path). PROCESS-INTEGRITY enforcement is incomplete." >&2
+          PRES_FAIL=1
+          FAIL_CONNECTION+=("$DEPT_SLUG:process-integrity-${_pi_file}-missing")
+          DEPT_WIRING_FAIL_REASONS+=("presentations:process-integrity-${_pi_file}-missing")
+        fi
+      done
+    else
+      echo "  [PRESENTATIONS]  WARN: presentations scripts dir not found — skipping process-integrity script checks" >&2
+    fi
+
+    if [[ $PRES_FAIL -eq 1 ]]; then
+      DEPT_FAIL=1
+    fi
+  fi
+
+  # --------------------------------------------------------------------------
   # Update per-dept wiringStatus in state file
   # --------------------------------------------------------------------------
   DEPT_WIRING_STATUS="done"

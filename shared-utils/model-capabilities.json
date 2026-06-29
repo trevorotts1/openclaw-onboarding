@@ -41,8 +41,8 @@
     {
       "family": "minimax",
       "match": "minimax-m[0-9.]+",
-      "capabilities": ["text", "tool_use", "structured_output", "streaming"],
-      "default_tier": "mid"
+      "capabilities": ["text","vision","reasoning","tool_use","structured_output","long_context","streaming"],
+      "default_tier": "heavy"
     },
     {
       "family": "mimo-pro",

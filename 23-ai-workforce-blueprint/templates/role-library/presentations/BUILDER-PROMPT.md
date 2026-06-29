@@ -146,28 +146,14 @@ choice.**
 
 ---
 
-## STEP 3 — Register the `.pptx` THE SCRIPT PRODUCED
+## STEP 3 — Report completion
 
-The `outputPath` from the script's summary (the `.pptx`) is your deliverable. Register the
-EXACT `outputPath` — never a path the script did not produce — so the Kanban card gets the
-real artifact and QC runs on it. Then log activity and advance status:
-
-```
-POST {missionControlUrl}/api/tasks/{task.id}/deliverables
-{"deliverable_type": "artifact", "title": "presentation.pptx", "path": "<outputPath from the canonical summary>"}
-
-POST {missionControlUrl}/api/tasks/{task.id}/activities
-{"activity_type": "completed", "message": "Built <N>-slide deck via presentation-canonical-entry.sh — <outputPath>. KIE task IDs: <kieTaskIds>"}
-
-PATCH {missionControlUrl}/api/tasks/{task.id}
-{"status": "review"}
-```
-
-Then reply:
+The build script registers the deliverable and advances the Command Center card automatically
+(build_deck.py postflight via cc_board.py). Just report TASK_COMPLETE when
+`presentation-canonical-entry.sh` exits 0 and produced the `.pptx`:
 
 ```
 TASK_COMPLETE: <one-line description> — <outputPath>
 ```
 
-Only report `TASK_COMPLETE` when `presentation-canonical-entry.sh` exited 0 and produced the
-`.pptx`, and the path you registered equals the canonical summary's `outputPath`.
+Only report `TASK_COMPLETE` when `presentation-canonical-entry.sh` exited 0.
