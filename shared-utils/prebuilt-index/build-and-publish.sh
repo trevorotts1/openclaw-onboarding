@@ -69,9 +69,13 @@ COACHING_DB_DIR="$(dirname "$GEMINI_INDEX")/coaching-personas"
 echo "→ gemini index: $GEMINI_INDEX"
 echo "→ coaching dir: $COACHING_DB_DIR"
 
-CUR_TAG="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["release_tag"])' "$MANIFEST")"
-CUR_URL="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["asset_url"])' "$MANIFEST")"
-CUR_SHA="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["sha256"])' "$MANIFEST")"
+# base_tag / base_sha decouple "what to download" from "what to publish" so the
+# manifest can be pre-staged with the next release_tag (e.g. v2.2.1) while still
+# downloading the last good published asset (e.g. v2.2.0). When base_tag is
+# absent the manifest's own release_tag is used (backward-compatible).
+CUR_TAG="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("base_tag") or d["release_tag"])' "$MANIFEST")"
+CUR_URL="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("base_asset_url") or d["asset_url"])' "$MANIFEST")"
+CUR_SHA="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("base_sha256") or d["sha256"])' "$MANIFEST")"
 
 # ── 1) Download the CURRENT published asset (NEVER start empty) ───────────────
 echo "→ [1/6] downloading current published asset ($CUR_TAG) so the indexer embeds only the DELTA"
@@ -87,6 +91,63 @@ else
     echo "WARN: could not download current asset — refusing to build (a build from empty would be a full furnace re-embed)" >&2
     exit 1
 fi
+
+# ── 1.5) Back-stamp blank provider/model/dim on the downloaded base asset ─────
+# gemini-section-indexer.py did not write provider/model/dim before this fix
+# (those columns were missing from its INSERT). The 11 delta personas added to
+# v2.2.0 via the incremental indexer arrived with provider=NULL. The search()
+# path in embedding_engine.py includes "OR provider IS NULL" as a safety net,
+# but the per-row metadata contract requires every row to carry the correct
+# provider/model/dim so analytics, status, and future tooling work correctly.
+# init_db() only calls _backfill_provider_columns() when the columns themselves
+# are absent — it does NOT re-run when they already exist but some rows are NULL.
+# This step explicitly backfills any NULL rows from the blob length before the
+# incremental index runs, guaranteeing the published asset has no blank-provider
+# rows regardless of how many delta personas were previously indexed.
+echo "→ [1.5/6] back-stamping blank provider/model/dim rows on downloaded asset (no re-embed)"
+python3 - "$GEMINI_INDEX" <<'PY'
+import sqlite3, sys
+DB = sys.argv[1]
+# dim->provider/model map mirrors embedding_engine._DIM_TO_PROVIDER
+_DIM_MAP = {
+    3072: ("gemini", "gemini-embedding-2"),
+    1536: ("openai", "text-embedding-3-small"),
+}
+conn = sqlite3.connect(DB, timeout=30.0)
+cur = conn.cursor()
+# Ensure provider/model/dim columns exist (may be absent on very old base assets)
+existing = {r[1] for r in cur.execute("PRAGMA table_info(embeddings)")}
+for col, coltype in [("provider", "TEXT"), ("model", "TEXT"), ("dim", "INTEGER")]:
+    if col not in existing:
+        cur.execute(f"ALTER TABLE embeddings ADD COLUMN {col} {coltype}")
+conn.commit()
+cur.execute("SELECT id, vector FROM embeddings WHERE provider IS NULL OR provider = ''")
+rows = cur.fetchall()
+updated = 0
+flagged = 0
+for row_id, blob in rows:
+    if blob is None:
+        continue
+    dim = len(blob) // 4  # float32 = 4 bytes per element
+    if dim in _DIM_MAP:
+        prov, mdl = _DIM_MAP[dim]
+        cur.execute(
+            "UPDATE embeddings SET provider=?, model=?, dim=? WHERE id=?",
+            (prov, mdl, dim, row_id),
+        )
+        updated += 1
+    else:
+        cur.execute(
+            "UPDATE embeddings SET provider='unknown', model='unknown', dim=? WHERE id=?",
+            (dim, row_id),
+        )
+        flagged += 1
+conn.commit()
+conn.close()
+if flagged:
+    print(f"  WARN: {flagged} row(s) stamped provider='unknown' (unrecognised dim)")
+print(f"  ✓ backstamped {updated} blank-provider row(s) from blob length — no re-embed")
+PY
 
 # ── 2) Reconcile canonical blueprints into the coaching dir ───────────────────
 echo "→ [2/6] reconciling canonical blueprints into $COACHING_DB_DIR"
@@ -140,7 +201,15 @@ fi
 
 # ── 5) Bump the manifest ──────────────────────────────────────────────────────
 if [ -z "$NEW_TAG" ]; then
-    NEW_TAG="$(python3 - "$CUR_TAG" <<'PY'
+    # If the manifest was pre-staged with a target release_tag that is already
+    # AHEAD of the base we downloaded (e.g. manifest.release_tag=v2.2.1 while
+    # we downloaded base_tag=v2.2.0), honour the pre-staged tag directly.
+    MANIFEST_TAG="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["release_tag"])' "$MANIFEST")"
+    if [ "$MANIFEST_TAG" != "$CUR_TAG" ]; then
+        NEW_TAG="$MANIFEST_TAG"
+        echo "  using pre-staged release_tag=$NEW_TAG (base was $CUR_TAG)"
+    else
+        NEW_TAG="$(python3 - "$CUR_TAG" <<'PY'
 import re, sys
 t = sys.argv[1]
 m = re.search(r'(\d+)\.(\d+)\.(\d+)$', t)
@@ -150,6 +219,7 @@ maj, minr, pat = (int(x) for x in m.groups())
 print(t[:m.start()] + f"{maj}.{minr}.{pat+1}")
 PY
 )"
+    fi
 fi
 NEW_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/$NEW_TAG/gemini-index.sqlite.gz"
 echo "→ [5/6] bumping manifest → release_tag=$NEW_TAG persona_count=$DIR_PERSONAS chunk_count=$CHUNKS"
@@ -170,6 +240,11 @@ m["source_db_bytes"] = int(db)
 m["build_date"] = today
 m["manifest_last_updated"] = today
 m["persona_set_md5"] = set_md5
+m["asset_rebuild_required"] = False
+# Clear the base_tag / base_sha256 / base_asset_url staging fields once the
+# build has succeeded — the new release_tag IS the canonical asset now.
+for _k in ("base_tag", "base_sha256", "base_asset_url"):
+    m.pop(_k, None)
 json.dump(m, open(mp, "w"), indent=2)
 open(mp, "a").write("\n")
 print("  ✓ manifest written")

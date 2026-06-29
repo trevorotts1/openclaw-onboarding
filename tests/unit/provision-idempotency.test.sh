@@ -27,6 +27,11 @@ MANIFEST="$REPO_ROOT/shared-utils/prebuilt-index/INDEX-MANIFEST.json"
 SK22="$REPO_ROOT/22-book-to-persona-coaching-leadership-system"
 CANON_CAT_MD5="e7b29db3e82b056a484cba2114fcf77f"
 
+# Read the canonical release_tag from the manifest so the test always tracks the
+# current release. Using release_tag (not base_tag) because provision_persona_index
+# stamps the sentinel from release_tag.
+MANIFEST_TAG="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["release_tag"])' "$MANIFEST" 2>/dev/null || echo "prebuilt-index-v2.2.0")"
+
 PASS=0
 FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS+1)); }
@@ -62,11 +67,11 @@ _mk_65_dirs() {
 
 export PROVISION_DRY_RUN=1
 
-# ─── (1) Non-canonical 6260-row index (sentinel v2.2.0, 65 dirs) → RE-PROVISION
+# ─── (1) Non-canonical 6260-row index (sentinel == manifest tag, 65 dirs) → RE-PROVISION
 echo "--- (1) non-canonical 6260-row index re-provisions ---"
 D1="$WORK/box-6260"; mkdir -p "$D1"
 _mk_index "$D1/gemini-index.sqlite" 6260
-printf 'prebuilt-index-v2.2.0\n' > "$D1/.prebuilt-index-version"
+printf '%s\n' "$MANIFEST_TAG" > "$D1/.prebuilt-index-version"
 _mk_65_dirs "$D1"
 OUT1="$(provision_persona_index "$MANIFEST" "$D1" 2>&1)"
 echo "$OUT1" | grep -q "NEEDS (re)provision" \
@@ -79,15 +84,17 @@ echo "$OUT1" | grep -q "skipping download" \
     && fail "1c: 6260-row index wrongly skipped" \
     || pass "1c: 6260-row index did NOT skip"
 
-# ─── (2) Canonical 4574-row index + sentinel + 65 dirs → SKIP
+# ─── (2) Canonical 4574-row index + sentinel (== manifest tag) + 65 dirs → SKIP
 echo "--- (2) canonical 4574-row index skips ---"
 D2="$WORK/box-canon"; mkdir -p "$D2"
 _mk_index "$D2/gemini-index.sqlite" 4574
-printf 'prebuilt-index-v2.2.0\n' > "$D2/.prebuilt-index-version"
+printf '%s\n' "$MANIFEST_TAG" > "$D2/.prebuilt-index-version"
 _mk_65_dirs "$D2"
 OUT2="$(provision_persona_index "$MANIFEST" "$D2" 2>&1)"
-echo "$OUT2" | grep -q "already canonical" \
-    && pass "2a: canonical 4574-row index reports already canonical" \
+# Accept either "already canonical" (sentinel matches) or "content-canonical...self-heal"
+# (sentinel tag differs from release_tag — both result in a SKIP, not a re-provision).
+( echo "$OUT2" | grep -qE "already canonical|content-canonical" ) \
+    && pass "2a: canonical 4574-row index recognized as canonical (skipping)" \
     || fail "2a: canonical index not recognized (out: $OUT2)"
 echo "$OUT2" | grep -q "NEEDS (re)provision" \
     && fail "2b: canonical index wrongly flagged for re-provision" \
@@ -107,9 +114,9 @@ echo "$OUT3" | grep -q "would download" \
     && fail "3b: operator index wrongly scheduled a download (furnace)" \
     || pass "3b: operator index did NOT schedule a download"
 STAMP="$(tr -d '[:space:]' < "$D3/.prebuilt-index-version")"
-[ "$STAMP" = "prebuilt-index-v2.2.0" ] \
-    && pass "3c: sentinel stamped to prebuilt-index-v2.2.0" \
-    || fail "3c: sentinel not stamped (got '$STAMP')"
+[ "$STAMP" = "$MANIFEST_TAG" ] \
+    && pass "3c: sentinel stamped to $MANIFEST_TAG" \
+    || fail "3c: sentinel not stamped to manifest release_tag '$MANIFEST_TAG' (got '$STAMP')"
 
 # ─── (4) Missing 'mode' column → RE-PROVISION
 echo "--- (4) missing mode column re-provisions ---"
@@ -122,7 +129,7 @@ c.executemany("INSERT INTO embeddings VALUES(?,?)", [(i, 3) for i in range(4574)
 c.commit(); c.close()
 PY
 _mk_65_dirs "$D4"
-printf 'prebuilt-index-v2.2.0\n' > "$D4/.prebuilt-index-version"
+printf '%s\n' "$MANIFEST_TAG" > "$D4/.prebuilt-index-version"
 OUT4="$(provision_persona_index "$MANIFEST" "$D4" 2>&1)"
 echo "$OUT4" | grep -q "missing-column:mode" \
     && pass "4a: missing 'mode' column triggers re-provision" \

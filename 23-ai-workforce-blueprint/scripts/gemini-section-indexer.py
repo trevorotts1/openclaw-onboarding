@@ -44,6 +44,7 @@ from detect_platform import get_openclaw_paths  # type: ignore
 # Import it here so a model change in one place propagates everywhere.
 from embedding_engine import (  # type: ignore
     GEMINI_MODEL,
+    GEMINI_OUTPUT_DIM,
     LEADERSHIP_SECTION_NUMBER,
     COACHING_SECTION_NUMBER,
 )
@@ -190,6 +191,17 @@ def ensure_v2_1_schema(conn):
         # stored (furnace guard — see the HASH-SKIP block). NULL on rows written
         # before this column existed; they re-index once, then populate it.
         ("content_hash", "TEXT"),
+        # PRD 1.8 provider/model/dim metadata — must match embedding_engine.py's
+        # schema so get_db_index_provider() can identify the index provider and
+        # semantic search can enforce same-provider query embedding. Rows written
+        # by older versions of this indexer (before this fix) may have NULL here;
+        # _backfill_provider_columns() in embedding_engine.py auto-stamps them on
+        # first init_db() call when the columns were previously absent, but does
+        # NOT re-run when the columns already exist. This indexer now stamps
+        # every new row explicitly so no delta persona arrives blank-provider.
+        ("provider", "TEXT"),
+        ("model", "TEXT"),
+        ("dim", "INTEGER"),
     ]
     for col, col_type in new_cols:
         try:
@@ -262,13 +274,15 @@ def index_blueprint(conn, blueprint_path: Path, dry_run: bool = False, force: bo
               (id, file_path, chunk_index, content, vector, last_updated,
                persona_id, author, book_title, section_number, section_name,
                mode, source_type, source_depth, confidence, schema_version,
-               unit_type, unit_metadata, content_hash)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, 'section', ?, ?)
+               unit_type, unit_metadata, content_hash,
+               provider, model, dim)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, 'section', ?, ?, ?, ?, ?)
         """, (
             chunk_id, str(blueprint_path), section_num, full_text, vector_bytes, time.time(),
             meta["persona_id"], meta["author"], meta["book_title"], section_num, section_name,
             mode, meta["source_type"], meta["source_depth"], meta["confidence"],
             json.dumps({"word_count": word_count}), content_hash,
+            "gemini", GEMINI_MODEL, GEMINI_OUTPUT_DIM,
         ))
         count += 1
         print(f"  indexed section {section_num:02d}: {section_name[:60]} ({word_count}w, {mode})")

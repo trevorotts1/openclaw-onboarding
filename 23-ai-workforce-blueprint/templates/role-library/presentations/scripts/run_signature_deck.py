@@ -899,6 +899,55 @@ def main():
                   "chain present, no hand-rolled renderers, pixel/vision QC clean ===",
                   flush=True)
 
+            # OUT-OF-BAND DELIVERY BOUNDARY GATE — inspect the SHIPPED ARTIFACT itself,
+            # fail-closed, regardless of how it was produced. This bites even on a deck
+            # hand-built outside this runner: selectable on-slide text (AF-OVERLAY-
+            # DELIVERED), no kie taskId per slide (AF-NOT-KIE-RENDERED), no governed run
+            # dir (AF-NO-RUN-DIR), or an incomplete deliverable bundle (AF-BUNDLE-
+            # COMPLETE) all REJECT. The ONLY bypass is a logged owner_skip_approval.
+            try:
+                import delivery_gate as dg
+                deck_art = None
+                for cand in sorted(run_dir.glob("delivery/*-FINAL/*-FINAL.pptx")):
+                    if not cand.name.startswith("~$"):
+                        deck_art = cand
+                        break
+                if deck_art is None:
+                    pptxs = [p for p in sorted(run_dir.glob("**/*.pptx"))
+                             if not p.name.startswith("~$")]
+                    deck_art = pptxs[-1] if pptxs else None
+                if deck_art is None:
+                    print("\n" + "!" * 78, file=sys.stderr)
+                    print("FATAL PRE-DELIVERY: AF-BUNDLE-COMPLETE — no delivered *-FINAL.pptx "
+                          "artifact found in the run dir; nothing to deliver.", file=sys.stderr)
+                    print("!" * 78 + "\n", file=sys.stderr)
+                    sys.exit(EXIT_GUARD_BLOCK)
+                ok_art, reasons_art = dg.gate_delivered_artifact(deck_art, run_dir)
+                if not ok_art:
+                    hard = [r for r in reasons_art if not r.startswith("NOTE")]
+                    print("\n" + "!" * 78, file=sys.stderr)
+                    print("FATAL PRE-DELIVERY (BOUNDARY GATE): the SHIPPED artifact "
+                          f"{deck_art.name} cannot be delivered:", file=sys.stderr)
+                    for r in hard:
+                        print("  - " + r, file=sys.stderr)
+                    print("The ONLY bypass is a logged owner_skip_approval token "
+                          "(gate=<AF code>). An agent may NOT self-approve.", file=sys.stderr)
+                    print("!" * 78 + "\n", file=sys.stderr)
+                    sys.exit(EXIT_GUARD_BLOCK)
+                print("=== DELIVERY-BOUNDARY-GATE: PASS — shipped artifact is a kie-baked, "
+                      "image-only deck with a complete deliverable bundle ===", flush=True)
+            except SystemExit:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                # Fail-closed: an unexpected error inside the boundary gate must NOT
+                # silently pass a deck to delivery.
+                print("\n" + "!" * 78, file=sys.stderr)
+                print(f"FATAL PRE-DELIVERY (BOUNDARY GATE): delivery_gate boundary check "
+                      f"raised {exc!r} — cannot prove the shipped artifact is deliverable "
+                      "(fail-closed).", file=sys.stderr)
+                print("!" * 78 + "\n", file=sys.stderr)
+                sys.exit(EXIT_GUARD_BLOCK)
+
         # Non-render phase: verify the artifact landed, then attest.
         if _artifact_present(run_dir, target.get("produces_artifact", "")):
             attest_phase(run_dir, args.phase, target.get("owning_role", ""),

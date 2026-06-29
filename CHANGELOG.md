@@ -1,3 +1,50 @@
+## [v16.1.0]  -  2026-06-28  -  feat: out-of-band delivery gate — a deck not produced by the governed kie.ai pipeline (overlay text / no taskIds / hand-built / incomplete bundle) is REJECTED at delivery regardless of how it was made — closes the bypass that let a hand-built Google-Slides deck ship; + back-stamp 11 delta personas for semantic search
+
+### What changed
+
+**FEATURE 1 — OUT-OF-BAND DELIVERY BOUNDARY GATE (the #1 fix — fail-closed artifact inspection).** Until v16.1.0, every enforcement gate lived INSIDE the pipeline, so an agent whose routing failed could HAND-BUILD a deck (python-pptx / Pillow / Google Slides, native overlaid text, no kie.ai images) and SHIP it, bypassing everything. The specific incident: a hand-built Google-Slides deck with selectable text overlaid onto placeholder slides shipped to a client — it contained no kie.ai renders, no governed run dir, and an incomplete deliverable bundle, yet none of the existing in-pipeline gates blocked it because they all assumed they were running inside `run_signature_deck.py`.
+
+**`delivery_gate.gate_delivered_artifact(artifact_path, run_dir)` — the FAIL-CLOSED delivery boundary gate.** Wired at P9-DELIVER in `run_signature_deck.py` (the OUT-OF-BAND DELIVERY BOUNDARY GATE block). Inspects the SHIPPED ARTIFACT itself — regardless of how it was produced:
+
+- **(1) ARTIFACT PROVENANCE** — opens the delivered `.pptx` as the OOXML zip it MUST be and scans every real `ppt/slides/slideN.xml` part for SELECTABLE native on-slide text (`<a:t>` runs). A canonical deck is full-bleed kie.ai `gpt-image-2` images with the words BAKED IN — so a real slide part has NO non-empty `<a:t>` run. Any selectable on-slide text means the deck was hand-built / overlaid (python-pptx `add_textbox`, Google Slides export, Keynote export) → REJECT (`AF-OVERLAY-DELIVERED`). A `.pdf` is rejected when it carries BOTH embedded font resources AND `BT...Tj/TJ` text-showing operators. An unreadable artifact cannot be proven kie-baked → REJECT (`AF-NOT-KIE-RENDERED`). ZERO third-party deps (stdlib `json / re / os / sys / zipfile / zlib / pathlib` only) — runs identically in the repo and on any deployed client box without python-pptx.
+
+- **(2) KIE PROVENANCE** — requires a real kie.ai `taskId` per slide in the process manifest's render record. A `taskId` in `{None, '', 'native', 'placeholder', 'none', 'null', 'n/a'}` is not a real kie bake. No taskIds → the images were not kie-rendered → REJECT (`AF-NOT-KIE-RENDERED`). Mirrors `build_deck.py`'s I14 gate but at the delivery boundary where the ARTIFACT is the ground truth.
+
+- **(3) NO-RUN-DIR FAIL-CLOSED** — a deck artifact with no governed run dir (`working/checkpoints/process_manifest.json` not resolvable up to 8 parent levels) was hand-built OUTSIDE `run_signature_deck.py` → REJECT (`AF-NO-RUN-DIR`). This FLIPS the legacy `delivery_gate(run_dir)` DEFER (which passed pre-delivery renders through) to a fail-closed REJECT at the delivery boundary.
+
+- **(4) BUNDLE-COMPLETENESS** — requires the full deliverable set (deck pptx + deck pdf + presenter guide + presenter speech + audio via AF-DH1, the GHL upload record + destination ground-truth, and the teleprompter deliverable) before delivery. A bare deck artifact presented at the boundary with no package/plan/teleprompter is REJECTED (`AF-BUNDLE-COMPLETE`). This is why a "1 of 12" partial delivery is impossible.
+
+**New manifest autofail codes (registered in PIPELINE-MANIFEST.json + MASTER-QC-AUTOFAIL-RULESET.md, `check_script: delivery_gate.py`):**
+- `AF-NO-RUN-DIR` — no governed run dir = deck was hand-built outside the governed pipeline.
+- `AF-NOT-KIE-RENDERED` — no real kie.ai taskId per slide / artifact is unreadable or not an OOXML/PDF deck.
+
+`AF-OVERLAY-DELIVERED` and `AF-BUNDLE-COMPLETE` were already registered; they are now ALSO enforced at the delivery boundary (in addition to their in-pipeline enforcement).
+
+**The ONLY bypass** is an explicit, LOGGED `owner_skip_approval` token (`owner_approved: true` + `approved_by` + `reason` + `gate=<AF code>`) recorded in `process_manifest.json` or, for an out-of-pipeline artifact, an `owner_skip_approval.json` adjacent to the artifact. No agent may self-approve. The canonical_render_guard loader is reused so the same audited token format covers all gates.
+
+**Self-test (built-in, no external deps, no network):** 14-case `delivery_gate.py --selftest` fixture:
+- A/B/C/D/E/F/G: in-pipeline cases (defer / clean-pass / extra-md-in-package / singular-speech-name / no-upload-record / missing-mac-anchor / incomplete-package).
+- H / H2 / I / J / K / L / M: boundary-gate cases (clean image-only deck PASS / selectable-overlay REJECT / no-run-dir REJECT / native-taskId REJECT / missing-teleprompter REJECT / owner-skip PASS / non-zip-decoy REJECT).
+
+**FEATURE 2 — BACK-STAMP 11 DELTA PERSONAS FOR SEMANTIC SEARCH.** The 11 new book personas shipped in v16.0.0 (`budelmann-brand-identity-essentials`, `cancel-conversational-marketing`, `erikson-surrounded-by-idiots`, `gitomer-sales-bible`, `kaufman-personal-mba`, `miller-marketing-made-simple`, `opara-color-works`, `ries-lean-startup`, `suby-sell-like-crazy`, `walker-launch`, `wickman-rocket-fuel`) arrived in `prebuilt-index-v2.2.0` with `provider=NULL` / `model=NULL` / `dim=NULL` across 161 embedding rows. Root cause: `gemini-section-indexer.py`'s INSERT statement omitted the `provider`, `model`, and `dim` columns; `init_db()`'s `_backfill_provider_columns()` only fires when the columns are ABSENT from the schema, never re-runs when they exist but are NULL — so the prebuilt asset shipped blank-provider for these 11 personas.
+
+**FIX 1 — `gemini-section-indexer.py` INSERT now explicitly writes `provider='gemini'`, `model=GEMINI_MODEL`, `dim=GEMINI_OUTPUT_DIM` on every new row** (was parameterizing only `persona_id`, `file_path`, `chunk_index`, `content`, `vector`, `last_updated`). The new code: `cur.execute("INSERT OR REPLACE INTO embeddings (persona_id, file_path, chunk_index, content, vector, last_updated, provider, model, dim) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (..., GEMINI_PROVIDER, GEMINI_MODEL, GEMINI_OUTPUT_DIM))`. No delta persona can arrive blank-provider going forward.
+
+**FIX 2 — `build-and-publish.sh` step 1.5 backstamps any remaining NULL rows from blob length (no re-embed).** After downloading the base asset, a Python inline script reads every row where `provider IS NULL OR provider = ''`, infers `dim` from `len(blob) // 4` (float32 = 4 bytes, 3072 dims = 12288 bytes), and UPDATE-sets `provider='gemini'`, `model='gemini-embedding-2'`, `dim=3072` — zero Gemini API credits spent. `INDEX-MANIFEST.json` is pre-staged to `release_tag: "prebuilt-index-v2.2.1"` with `asset_rebuild_required: true` and `sha256: "REBUILD-PENDING:backstamp-delta-providers"` so CI can detect the un-published asset. Operator runs `shared-utils/prebuilt-index/build-and-publish.sh` post-merge to publish the corrected `prebuilt-index-v2.2.1` asset.
+
+**Verification (all green).** `sync_check.py` IN SYNC (manifest_version 19, 128 autofails, 35 roles — 2 new boundary-gate codes registered). `delivery_gate.py --selftest` PASS (14 cases). `gate_integrity_check.py` OK (68 enforced / 69 triggered). `test_preflight.py` ALL PREFLIGHT TESTS PASSED. `python3 -c "import py_compile; py_compile.compile('23-ai-workforce-blueprint/templates/role-library/presentations/scripts/delivery_gate.py', doraise=True)"` PYTHON SYNTAX OK. No client names in changed files.
+
+### Files changed
+
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/delivery_gate.py` — `gate_delivered_artifact()` OUT-OF-BAND DELIVERY BOUNDARY GATE: full 14-case self-test; `AF-NO-RUN-DIR` / `AF-NOT-KIE-RENDERED` / `AF-OVERLAY-DELIVERED` / `AF-BUNDLE-COMPLETE` enforced; owner_skip_approval bypass; stdlib only (no python-pptx).
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/run_signature_deck.py` — P9-DELIVER phase: wires `gate_delivered_artifact()` at the delivery boundary; `AF-BUNDLE-COMPLETE` (no *-FINAL.pptx artifact) caught before the boundary gate; hard-fail on import error.
+- `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` — `AF-NO-RUN-DIR` + `AF-NOT-KIE-RENDERED` registered (`check_script: delivery_gate.py`); manifest_version 19; 128 autofails.
+- `23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md` — Section 5 rows for `AF-NO-RUN-DIR` / `AF-NOT-KIE-RENDERED`.
+- `23-ai-workforce-blueprint/scripts/gemini-section-indexer.py` — INSERT now writes `provider` / `model` / `dim` on every row.
+- `shared-utils/prebuilt-index/build-and-publish.sh` — step 1.5: backstamp NULL provider/model/dim rows from blob length post-download (no re-embed).
+- `shared-utils/prebuilt-index/INDEX-MANIFEST.json` — pre-staged to `prebuilt-index-v2.2.1`; `asset_rebuild_required: true`; `delta_provider_backstamp` block documents the 11 affected personas + 161 rows.
+- Version markers: `version`, `install.sh`, `update-skills.sh`, `23-ai-workforce-blueprint/skill-version.txt`, `_index.json`, `_qc-summary.md`, `README.md` (×2 + skill table), `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `cc-compat.json`, `06-ghl-install-pages/skill-version.txt`, `browser_manager.py`, `browser_manager.sh`, `guard-agent-browser-managed.sh`, `agent-browser-reaper.sh`.
+
 ## [v16.0.3]  -  2026-06-28  -  fix: stale build_deck.py now replaced on update (REFRESH_CANONICAL_SCRIPTS) + AGENTS.md ZHE doctrine markers fully stamped (PERSONA_REFLEX_V1 / FULL_CONTEXT_HANDOFF_V1 / OWNER_REPORTING_V1) — closes D16/D17 guard failures; prove-zhe AGENTS_DOCTRINE goes green
 
 ### What changed
