@@ -2497,7 +2497,8 @@ def test_runner_attestation_seen_by_preconditions():
     #     precondition must SEE it (the false-negative the fix closes).
     rd = Path(tempfile.mkdtemp(prefix="deck_attest_seen_"))
     (rd / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
-    rsd.attest_phase(rd, "P0B-PRIORITY", "attention-content-strategist", "artifact_present")
+    rsd.attest_phase(rd, "P0B-PRIORITY", "attention-content-strategist", "artifact_present",
+                     "no-artifact-spec")  # FIX 4/E: attest_phase now requires a non-empty artifact_sha
     pm = json.loads((rd / "working" / "checkpoints" / "process_manifest.json").read_text())
     if "P0B-PRIORITY" not in [a.get("phase_id") for a in pm.get("phase_attestations", [])]:
         fails.append("ATTEST-SEEN: runner attest_phase did not write phase_attestations[].phase_id")
