@@ -75,14 +75,13 @@ GHL_UPLOAD_GATE = "AF-DELIVERY-COMPLETE"
 # enforced). A rejection ABORTS the upload (fail-closed): nothing is hosted. The ONLY
 # bypass is a logged owner_skip_approval token, honored inside gate_delivered_artifact.
 # ---------------------------------------------------------------------------
-class DeliveryGateRejected(RuntimeError):
-    """Raised when the out-of-band delivery boundary gate rejects a deck artifact at the
-    transport. Fail-closed: the upload does NOT happen. Carries the gate reasons."""
-
-    def __init__(self, reasons):
-        self.reasons = list(reasons)
-        super().__init__("DELIVERY BOUNDARY GATE REJECTED the deck — refusing to upload "
-                         "to GHL:\n  - " + "\n  - ".join(self.reasons))
+# DeliveryGateRejected is the CANONICAL exception, now defined ONCE in delivery_gate.py
+# and SHARED so `except DeliveryGateRejected` catches a rejection raised at EITHER the
+# transport (here, push_deck_media) OR the lowest GHL upload chokepoint (the gated
+# ghl_media.upload_media wrapper added in v16.1.2). Re-exported under this module's name
+# for backward compatibility (any caller/test importing ghl_media_push.DeliveryGateRejected
+# keeps working, and it is the same class identity the chokepoint raises).
+DeliveryGateRejected = delivery_gate.DeliveryGateRejected
 
 
 def _deck_artifacts(files):
@@ -203,8 +202,13 @@ def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None
             continue                               # idempotent: already hosted this file
         kind = _classify(f)
         name = f"{name_prefix}{Path(f).name}"
+        # The deck-artifact tripwire lives in ghl_media.upload_media (the lowest GHL
+        # upload chokepoint). It re-runs the delivery boundary gate fail-closed for a
+        # .pptx/-FINAL.pdf deck; this push already passed gate_deck_artifacts above, so
+        # the governed deck passes again and does NOT self-block, while a non-deck PNG
+        # flows straight through. run_dir is the resolution hint (never POSTed).
         res = ghl_media.upload_media(f, location_id, name, pit,
-                                     parent_id=parent_id, opener=opener)
+                                     parent_id=parent_id, opener=opener, run_dir=run_dir)
         rec = {"local_path": f, "kind": kind, "name": name,
                "ghl_remote_name": name, "public_url": res["url"],
                "ghl_url": res["url"], "file_id": res["fileId"],
@@ -601,15 +605,119 @@ def _selftest() -> int:
         if not raised:
             fails.append("O push-abort: push_deck_media did NOT abort on an un-governed deck")
 
+    # === LOWEST GHL UPLOAD CHOKEPOINT (v16.1.2) — the direct upload_media(deck) bypass ===
+    # ghl_media.upload_media is now a gated wrapper. These cases prove (P/Q) a deck handed
+    # STRAIGHT to upload_media (bypassing push_deck_media) is REJECTED and never POSTed,
+    # (R) the governed push_deck_media path still HOSTS a clean deck end-to-end (does NOT
+    # self-block), and (S) an ordinary image is UNAFFECTED. Decks/run dirs are built via
+    # the delivery_gate stdlib OOXML helpers (no python-pptx, no network).
+    import os as _os
+
+    def _mock_ghl_opener(req, timeout):
+        # One mock for BOTH the folder-create POST and the upload POST: carries the fields
+        # each canonical parser reads (id/folderId for the folder; fileId/url for the
+        # upload), so create_media_folder() and upload_media() both succeed offline.
+        class _R:
+            def getcode(self):
+                return 200
+
+            def read(self):
+                return (b'{"id":"fld_x","folderId":"fld_x","fileId":"file_x",'
+                        b'"url":"https://storage.googleapis.com/msgsndr/file_x"}')
+        return _R()
+
+    # P — DIRECT upload_media on a HAND-BUILT (overlay) deck is REJECTED; opener never reached.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        deck = delivery_gate._mk_full_run(base, with_text=True, task_ids=("kie-aaa",))
+        posted = []
+
+        def _trip(req, timeout):
+            posted.append(1)
+            raise AssertionError("opener reached — overlay deck POSTed UNGATED")
+
+        raised = False
+        try:
+            ghl_media.upload_media(str(deck), "loc", deck.name, "pit", opener=_trip)
+        except DeliveryGateRejected:
+            raised = True
+        except Exception as exc:  # noqa: BLE001 — must be the gate, not a network error
+            fails.append(f"P chokepoint-overlay: expected DeliveryGateRejected, got {exc!r}")
+        if not raised:
+            fails.append("P chokepoint-overlay: direct upload_media(overlay deck) was NOT blocked")
+        if posted:
+            fails.append("P chokepoint-overlay: opener invoked — overlay deck was uploaded")
+
+    # Q — DIRECT upload_media on a deck with NO governed run dir is REJECTED (AF-NO-RUN-DIR).
+    with tempfile.TemporaryDirectory() as t:
+        loose = delivery_gate._mk_pptx(Path(t) / "loose-deck.pptx", with_text=False)
+        posted = []
+
+        def _trip2(req, timeout):
+            posted.append(1)
+            raise AssertionError("opener reached — no-run-dir deck POSTed UNGATED")
+
+        raised = False
+        try:
+            ghl_media.upload_media(str(loose), "loc", "loose-deck.pptx", "pit", opener=_trip2)
+        except DeliveryGateRejected:
+            raised = True
+        except Exception as exc:  # noqa: BLE001
+            fails.append(f"Q chokepoint-no-run-dir: expected DeliveryGateRejected, got {exc!r}")
+        if not raised:
+            fails.append("Q chokepoint-no-run-dir: direct upload_media(loose deck) was NOT blocked")
+        if posted:
+            fails.append("Q chokepoint-no-run-dir: opener invoked — loose deck was uploaded")
+
+    # R — the GOVERNED path still SUCCEEDS end-to-end: push_deck_media over a clean governed
+    # deck passes the gate at the chokepoint and HOSTS the deck (mock HTTP), recording
+    # pptx_ghl_media_id. The fix does NOT self-block the legitimate upload.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        deck = delivery_gate._mk_full_run(base, with_text=False, task_ids=("kie-aaa",))
+        delivery_gate._write_render_manifest(base, ["kie-aaa"])
+        saved = {k: _os.environ.get(k) for k in ("GHL_API_KEY", "GHL_LOCATION_ID")}
+        _os.environ["GHL_API_KEY"] = "pit-fixture"
+        _os.environ["GHL_LOCATION_ID"] = "loc-fixture"
+        out = None
+        try:
+            out = push_deck_media(base, [], extra_files=[str(deck)], opener=_mock_ghl_opener)
+        except Exception as exc:  # noqa: BLE001
+            fails.append(f"R governed-allow: push_deck_media(governed deck) raised {exc!r} "
+                         "(the legitimate upload must NOT self-block)")
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    _os.environ.pop(k, None)
+                else:
+                    _os.environ[k] = v
+        if out is not None and not str(out.get("pptx_ghl_media_id") or "").strip():
+            fails.append(f"R governed-allow: expected a hosted pptx_ghl_media_id, got {out!r}")
+
+    # S — an ORDINARY IMAGE through the SAME chokepoint is UNAFFECTED (no gate runs; the
+    # canonical PNG path). Even with no run dir a real PNG uploads cleanly.
+    with tempfile.TemporaryDirectory() as t:
+        png = Path(t) / "slide-01.png"
+        png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64)  # real PNG magic bytes
+        res = None
+        try:
+            res = ghl_media.upload_media(str(png), "loc", "Slide 01 v1", "pit",
+                                         opener=_mock_ghl_opener)
+        except Exception as exc:  # noqa: BLE001
+            fails.append(f"S image-unaffected: ordinary image upload raised {exc!r}")
+        if res is not None and res.get("fileId") != "file_x":
+            fails.append(f"S image-unaffected: expected a clean upload, got {res!r}")
+
     if fails:
         print("ghl_media_push gate selftest -> FAIL")
         for f in fails:
             print("  -", f)
         return 1
-    print("ghl_media_push gate selftest -> PASS (15 cases: complete/empty/no-pptx/"
+    print("ghl_media_push gate selftest -> PASS (19 cases: complete/empty/no-pptx/"
           "no-slides/null-folder/agent-skip/owner-skip/false-token/incomplete/coverage + "
           "transport-boundary: clean-allow/overlay-abort/no-run-dir-abort/non-deck-allow/"
-          "push-aborts-pre-network)")
+          "push-aborts-pre-network + chokepoint: direct-overlay-BLOCKED/direct-no-run-dir-"
+          "BLOCKED/governed-push-ALLOWED/image-unaffected)")
     return 0
 
 
