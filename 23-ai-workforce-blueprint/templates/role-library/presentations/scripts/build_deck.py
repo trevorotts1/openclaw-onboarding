@@ -7204,6 +7204,59 @@ def _magic_ok(path: Path, signatures) -> bool:
     return False
 
 
+def _chk_cc_registered(run_dir: Optional[Path], deck_slug: str) -> str:
+    """AF-CC-UNREGISTERED: postflight gate enforcing Command Center registration.
+
+    Fail-CLOSED on never-attempted (neither cc_task_id nor cc_register_attempted
+    in process_manifest.json). Fail-SOFT on transport failure (a logged failed
+    attempt — cc_register_attempted=True with no cc_task_id — satisfies the gate,
+    mirroring Skill-48's s7-deliver-receipt.json degrade pattern at cc_board.py
+    lines 370-401).
+
+    Returns "" on pass; an AF-CC-UNREGISTERED message string on fail.
+    Enforced_by: build_deck. py_symbol: _chk_cc_registered.
+    """
+    if run_dir is None:
+        # adhoc/no-run-dir paths (--adhoc-no-process) skip the gate.
+        return ""
+    pm = Path(run_dir) / "working" / "checkpoints" / "process_manifest.json"
+    if not pm.exists():
+        return (
+            "AF-CC-UNREGISTERED: no process_manifest.json found at closeout — "
+            "cc_board.ingest_deck_task was never called for this deck run. "
+            "Call cc_board.ingest_deck_task at run-begin (the canonical entry "
+            "path handles this automatically). "
+            f"Deck: {deck_slug}"
+        )
+    try:
+        manifest = json.loads(pm.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        return (
+            f"AF-CC-UNREGISTERED: could not read process_manifest.json ({exc}) — "
+            "cannot verify CC registration. "
+            f"Deck: {deck_slug}"
+        )
+    if not isinstance(manifest, dict):
+        return (
+            "AF-CC-UNREGISTERED: process_manifest.json is not a JSON object — "
+            f"cannot verify CC registration. Deck: {deck_slug}"
+        )
+    # Successful registration: task_id written by cc_board.stamp_task_id.
+    if manifest.get("cc_task_id"):
+        return ""
+    # Fail-SOFT: transport failed but the attempt was logged (cc_register_attempted
+    # stamped BEFORE the HTTP call by cc_board.ingest_deck_task). Satisfies gate.
+    if manifest.get("cc_register_attempted"):
+        return ""
+    # Neither field: this module was never invoked for this run — fail-CLOSED.
+    return (
+        "AF-CC-UNREGISTERED: process_manifest.json exists but has neither "
+        "cc_task_id nor cc_register_attempted. Command Center was never contacted "
+        "for this deck run. Call cc_board.ingest_deck_task at run-begin. "
+        f"Deck: {deck_slug}"
+    )
+
+
 def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
                         skip_teleprompter_gate: bool = False,
                         run_dir: Optional[Path] = None,
@@ -7433,6 +7486,18 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
             "presenter teleprompter web app (published URL)",
             0, 0, "UNPUBLISHED"))
 
+    # --- AF-CC-UNREGISTERED sub-check — verify the CC task was registered before
+    # the deck is reported complete. Fail-closed on never-attempted; fail-soft on
+    # transport (cc_register_attempted:true satisfies the gate).
+    cc_reason = _chk_cc_registered(run_dir, deck_slug)
+    if cc_reason:
+        missing_or_short.append((
+            "deck_pptx",
+            "working/checkpoints/process_manifest.json",
+            "CC task registration (cc_task_id in process_manifest.json)",
+            0, 0, "CC_UNREGISTERED"))
+        update_deliverable_status(ledger_path, "deck_pptx", "failed", error=cc_reason)
+
     # --- Phase 2: read ledger back as the authoritative final state ---
     try:
         ledger_entries = json.loads(ledger_path.read_text())
@@ -7553,6 +7618,15 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
             print(f"  NOT VERIFIED [{e['key']}] {e.get('filename')} — status: {e.get('status')}",
                   file=sys.stderr)
         print(f"\n{bar}", file=sys.stderr)
+        sys.exit(5)
+
+    # --- AF-CC-UNREGISTERED check (enforced_by:build_deck, symbol:_chk_cc_registered) ---
+    # Fail-CLOSED on never-attempted; fail-SOFT on transport (a logged cc_register_attempted
+    # satisfies the gate). This runs only when the bundle check above has PASSED (all
+    # deliverables verified), so a CC failure is the only remaining blocker.
+    _cc_reason = _chk_cc_registered(run_dir, deck_slug)
+    if _cc_reason:
+        print(f"\nFATAL: {_cc_reason}", file=sys.stderr)
         sys.exit(5)
 
     # --- Phase 4: success — print COMPLETE only when ALL verified ---
@@ -7753,6 +7827,25 @@ def main():
             positional.append(tok)
         i += 1
 
+    # FRONT-DOOR MARKER GUARD — Contract #8: at the render/CLI main() entry,
+    # require OC_DECK_CANONICAL_ENTRY=1 (exported by presentation-canonical-entry.sh
+    # right before `exec "${cmd[@]}"`) OR the CI/test escape valve
+    # OC_DECK_ALLOW_DIRECT=1. Module imports and unit-test paths that call
+    # build_deck functions directly are unaffected — this guard fires only when
+    # main() is reached via the CLI (i.e. `python3 build_deck.py ...`).
+    # References: AF-CANONICAL-RENDER-BYPASS, shared CONTRACT.md §FRONT-DOOR MARKER.
+    if (os.environ.get("OC_DECK_CANONICAL_ENTRY") != "1"
+            and os.environ.get("OC_DECK_ALLOW_DIRECT") != "1"):
+        print(
+            "FATAL [AF-CANONICAL-RENDER-BYPASS]: build_deck.py must be invoked via "
+            "presentation-canonical-entry.sh (which exports OC_DECK_CANONICAL_ENTRY=1 "
+            "before exec'ing the runner). Direct invocation is blocked by the "
+            "front-door render guard. "
+            "For CI/test use only: set OC_DECK_ALLOW_DIRECT=1.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
     # P-STYLE-PREVIEW (order 4.85) --sample mode: render 9 style samples (3 variants x
     # 3 representative slides) for the owner's gateway sign-off, then stop. Needs only
     # slides.json (no out.pptx / full preflight / postflight).
@@ -7840,6 +7933,28 @@ def main():
         # gates count the exact file that will be rendered (no gate-bypass via a
         # different canonical-path slides.json).
         run_preflight(run_dir, slides_path)
+
+    # CC REGISTRATION (run-begin, idempotent) — Fix 5b / AF-CC-UNREGISTERED.
+    # Fail-soft: a board outage never blocks the deck. ingest_deck_task always
+    # stamps cc_register_attempted=True BEFORE the HTTP call, so the postflight
+    # gate (_chk_cc_registered) is satisfied even on transport failure.
+    # Skipped in --adhoc mode (ad-hoc runs are not CC-tracked deliverables).
+    if not adhoc:
+        try:
+            import cc_board as _cc_board
+            _cc_title = deck_slug
+            _cc_desc = f"Deck build: {deck_slug}"
+            _cc_task_id = _cc_board.ingest_deck_task(
+                run_dir, deck_slug, title=_cc_title, description=_cc_desc
+            )
+            if _cc_task_id:
+                _cc_board.stamp_task_id(run_dir, _cc_task_id)
+        except Exception as _cc_exc:  # noqa: BLE001
+            print(
+                f"[cc_board] run-begin ingest raised ({_cc_exc}) — "
+                "run continues; _chk_cc_registered will see the attempted flag.",
+                file=sys.stderr,
+            )
 
     # OFFICIAL-LOGO resolution: --logo wins; else intake.json brand.logo_image_path.
     # IMAGE-TO-IMAGE logo: if --logo is a URL, KIE composites the REAL logo via

@@ -268,6 +268,7 @@ These are deck-level and are evaluated against arc_allocation.json and slide ord
 | AF-HOOK-IMG-MISSING | Prompt-QC | DECK | HOLE-B. No dedicated hook-bearing image prompt carries the Hook refrain (the Hook engine, prompt half) | qc_check: intelligence_engines_check.check_prompts emits "code":"AF-HOOK-IMG-MISSING" |
 | AF-HOOK-OVERSTAMP | 1Q | slide | HOLE-B. The Hook refrain is over-stamped on a slide (wallpapered beyond the sanctioned cadence) | qc_check: intelligence_engines_check.check_copy emits "code":"AF-HOOK-OVERSTAMP" |
 | AF-PRICE-BEFORE-PROMISE | 1Q/COPY-QC | DECK | HOLE-B. A PRICE/ladder beat appears before any PROMISE beat — the promise must precede the price (price only matters in the absence of value) | qc_check: pitch_engines_check.chk_promise_before_price (via check_copy) emits "code":"AF-PRICE-BEFORE-PROMISE" |
+| AF-CC-UNREGISTERED | Process/Closeout | DECK | Closeout with no cc_task_id and no logged deliverable-register attempt (fail-closed on never-attempted; fail-soft on transport — cc_register_attempted=True satisfies it) | build_deck._chk_cc_registered: reads working/checkpoints/process_manifest.json; fails if cc_task_id absent AND cc_register_attempted absent; passes if either present. Symbol: _chk_cc_registered. Enforced_by: build_deck. |
 
 Every row is a binary trigger with an exact detection method and a verbatim failure message (Section 1 and 2). Wire them as auto-fails, checked before scoring. A deck that trips any DECK-level row, or any slide that trips a slide-level row, cannot be marked final.
 

@@ -179,93 +179,23 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
 **Steps:**
 1. Check SOUL.md / USER.md / any prior brief for the required fields. Credit any
    already on file and confirm them rather than re-asking.
-2. For each field NOT already on file, ask the question below (one at a time,
-   in the order listed). The six audience/content/hook fields are MANDATORY -- there is no
-   skip and no assumed default except where explicitly stated; the scope fields
-   (DELIVERABLE_SET, WANT_AUDIO_DEMO, TARGET_WPM) and the STYLE BRANCH have sensible defaults
-   (deck-only / false / 140 / create-new) and never block the gate:
+2. For each field NOT already on file, run `deck-intake-driver.py --next --run-dir <RUN_DIR>`
+   to get the next required question in canonical order. The driver owns question ordering
+   and enforces one-question-per-turn -- do not emit questions yourself. Continue the
+   --next / --answer cycle until the driver returns `{"status":"all_asked"}` or
+   `{"status":"complete"}`.
 
-   **Field 1 -- REPRESENTATION_MIX (with percentages; the audience-composition core)**
-   Ask: "Who will be in the seats watching this -- and how should the people in the images
-   break down? Give me percentages. For example: 70% African-American women, 20% mixed
-   race, 10% men. Or: 100% women, diverse. Or: no people at all."
-   Capture as: `REPRESENTATION_MIX` (list of {group, percent}).
-   If the owner cannot or will not answer: set `representation_uncaptured: true`, flag the
-   operator ("REPRESENTATION_MIX not captured -- deck will generate with NO PEOPLE; confirm
-   before build starts"), and proceed. A racial or gender default is NEVER invented.
-
-   **Field 2 -- AUDIENCE-COMPOSITION NOTE (plain language; the audience-engine front door)**
-   Ask: "In plain words, who is this audience -- for example: all women, or multicultural
-   Black + white + Hispanic professionals, or mixed gender diverse?"
-   Capture as: `AUDIENCE_COMPOSITION_NOTE` (a single plain-language sentence).
-   Derive from REPRESENTATION_MIX if the owner just answered it; no need to re-ask if the
-   answer is already clear from Field 1.
-
-   **Field 3 -- GROUNDED-CONTENT (the concrete client content the imagery must depict)**
-   Ask: "What is the specific book, program, method, or message this deck is built around?
-   I need the name and a one-line description so every image is grounded in YOUR content,
-   not generic inspiration."
-   Capture as: `GROUNDED_CONTENT` (free text: name + one-line description).
-   If the owner does not have a name yet: capture whatever they describe and mark
-   `grounded_content_provisional: true`. The build cannot start with a blank GROUNDED_CONTENT;
-   if still empty at lock, block handoff and ask once more.
-
-   **Field 4 -- VISUAL_MIX (people balance)**
-   Ask: "Should the slides be people-heavy, some people, typography-led, or a mix?"
-   Capture as: `VISUAL_MIX` (people-heavy / some-people / typography-led / mix).
-   Default if owner says "no preference": `mix`. Mark `visual_mix_defaulted: true`.
-
-   **Field 5 -- DARK_OK (dark background permission; default: false)**
-   Ask: "Default is a clean white base -- the standard that makes premium decks pop. Do
-   you specifically want any dark-styled slides?"
-   Capture as: `DARK_OK` (true / false). Default if owner does not answer: `false`.
-   Note: the proven gold standard eliminated all black backgrounds -- recommend false.
-
-   **Field 6 -- HOOK SEED (the strongest-promise line)**
-   Ask: "Is there one line you already say all the time -- the phrase you want them
-   humming when they leave? The hook the whole deck will be built around?"
-   Capture as: `HOOK_SEED` (free text).
-   If none: mark `hook_seed_missing: true`. The Hook Strategist will derive one from the
-   offer; note this in brief.json so the Director knows to trigger the Hook Lab.
-
-   **Field 7 -- DELIVERABLE_SET (what ships beyond the deck)**
-   Ask: "Beyond the slide deck itself, what else do you want? I can also produce a
-   presenter's GUIDE (a beautiful branded at-a-glance run-of-show), a full word-for-word
-   SPEECH script, and even an AUDIO demo of the talk in a chosen voice. Pick one:
-   deck only / +guide / +guide+speech / +audio."
-   Capture as: `DELIVERABLE_SET` (one of: deck-only / +guide / +guide+speech / +audio).
-   Default if owner says "just the deck" or "no preference": `deck-only`. The Director uses
-   this to decide whether to dispatch the Presenters Guide Specialist (ROLE-19), the
-   Presenters Speech Writer (ROLE-20), and the Audio Demonstration Specialist (ROLE-21)
-   after the Presenter Coach.
-
-   **Field 8 -- WANT_AUDIO_DEMO (audio demo + voice/persona)**
-   Ask only if DELIVERABLE_SET is "+audio" (otherwise default false): "For the audio demo,
-   what voice or persona should it use -- your own cloned voice, a warm female narrator, a
-   high-energy male host, or something else?"
-   Capture as: `WANT_AUDIO_DEMO` (true / false) and `AUDIO_VOICE_PERSONA` (free text).
-   If "+audio" with no voice named: set `WANT_AUDIO_DEMO: true`, `audio_voice_unset: true`
-   (the Audio Demonstration Specialist asks the owner via the Director before synthesizing;
-   a voice is never defaulted silently). Default when not "+audio": `WANT_AUDIO_DEMO: false`.
-
-   **Field 9 -- TARGET_WPM (speech pace; default 140)**
-   Ask only if DELIVERABLE_SET includes a speech ("+guide+speech" or "+audio"): "How fast
-   should the spoken pace feel -- standard (about 140 words a minute, the most credible
-   pace), a slower teach pace (about 130), or a high-energy pace (about 150 to 160)?"
-   Capture as: `TARGET_WPM` (integer). Default if owner says "you decide" or not asked:
-   `140` (the presentation-speech constant; never silently 150). Mark `target_wpm_defaulted:
-   true` when defaulted.
-
-   **STYLE BRANCH -- "do you have a style or want me to create one?"**
-   Ask: "Do you have an existing deck or visual style you want matched, a reference deck I
-   should analyze, or should we CREATE a fresh signature style for you?"
-   Capture as: `STYLE_SOURCE` (one of: match-existing / analyze-reference / create-new) plus
-   `STYLE_REFERENCE` (a deck/file/URL when match-existing or analyze-reference).
-   - On match-existing or analyze-reference: note that the Brand Steward (the only permitted
-     crossing) submits the reference to the Graphics DIU Style Analyst for a PPT-tier style
-     card whose ID flows to the Slide Image Creator.
-   - On create-new (or no preference): note that the Brand Steward builds the STYLE BLOCK
-     fresh. Default when unanswered: `create-new` with `style_source_defaulted: true`.
+   The driver reads `deck-intake-questions.json` (the single source of truth for all
+   field prompts, defaults, and block-gate rules). Canonical field handling by the driver:
+   - REPRESENTATION_MIX: if owner cannot answer, the driver logs representation_uncaptured;
+     flag the operator; deck generates with NO PEOPLE. A racial or gender default is NEVER
+     invented.
+   - AUDIENCE_COMPOSITION_NOTE: driver derives from REPRESENTATION_MIX if already captured.
+   - GROUNDED_CONTENT: block_gate:true -- build cannot start until this is captured or
+     grounded_content_provisional is set. Driver blocks --complete until resolved.
+   - VISUAL_MIX, DARK_OK, HOOK_SEED: sensible defaults in the driver; never block the gate.
+   - DELIVERABLE_SET, WANT_AUDIO_DEMO, TARGET_WPM, STYLE_SOURCE: scope fields with
+     sensible defaults (deck-only / false / 140 / create-new); never block the gate.
 
 3. After the fields are resolved (captured OR flagged), write the pre-presentation
    block to brief.json:
@@ -325,9 +255,12 @@ small/low-stakes, OR when most context is already on file.
    language: "I can do this two ways. The QUICK way: I ask you about 5 to 7 key
    questions and we lock it in fast. Or the DEEP way: we go back and forth on 10 to 20
    questions and really flesh it out. Which do you want?" Record `interview_mode: "simple"`.
-2. Pull the SIMPLE question set for this department (the question bank below, simple set).
-   Ask each one at a time. Skip any whose answer is already on file or already answered
-   in the opening.
+2. For deck-intake questions (Fields P1-P6 + scope fields D1-D4), use
+   `deck-intake-driver.py --next --run-dir <RUN_DIR>` to get each question in order.
+   The driver owns question ordering and enforces one-question-per-turn -- do not emit
+   deck-intake questions yourself. For the broader simple interview set (GOAL, FEELING,
+   TONE, OFFER, etc.), use the question bank below and ask one at a time.
+   Skip any whose answer is already on file or already answered in the opening.
 2a. **PRICE-SEPARATION BRANCH (TWO PRICES -- never conflate).** Capture the EVENT/ACCESS price
    (O3: `EVENT_PRICE` / `ACCESS_FREE` -- free or paid to ATTEND) and the OFFER price (#4:
    `FINAL_PRICE` -- the product SOLD at the end) as TWO independent fields. A FREE event is the
@@ -624,9 +557,14 @@ to the Director of Presentations for promotion to a standing role.
 
 ### PRE-PRESENTATION MANDATORY CAPTURE (SOP 9.0 -- runs BEFORE OPENING; non-skippable)
 
+**DRIVER IS AUTHORITATIVE:** At runtime, use `deck-intake-driver.py --next --run-dir <RUN_DIR>`
+for all pre-presentation questions. The driver reads `deck-intake-questions.json` (the single
+source of truth for prompts, defaults, and block-gate rules) and enforces one-question-per-turn.
+Do NOT emit these questions yourself from this question bank -- the bank is REFERENCE ONLY.
+
 These six questions are asked before the mode offer. They are not part of the 7-question
 simple limit or the 20-question extensive limit. They are a separate mandatory pre-stage.
-Skip only if the answer is already confirmed on file.
+Skip only if the answer is already confirmed on file (the driver auto-skips if validated).
 
 - **P1. REPRESENTATION_MIX (HARD-REQUIRED -- no default)**
   "Who will be in the seats watching this -- and how should the people in the images break

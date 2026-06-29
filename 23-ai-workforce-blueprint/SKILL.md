@@ -237,6 +237,24 @@ full interview as normal - purely additive.
 - Progress indicators at milestones
 - For every department, ask the one Healer-dependency question so the embedded Healer knows what to watch: "Are there any unusual outside tools, APIs, or services this department depends on that I should keep an eye on for breakages or version changes?" (example answer: "We rely on a niche scheduling API and a custom Zapier webhook.") This seeds the department Healer's model and external-dependency census.
 
+**DECK-INTAKE OVERRIDE (binding):** For the Presentations DECK-INTAKE interview specifically,
+`deck-intake-driver.py` is the authoritative pacing mechanism and supersedes model-discretion.
+Do NOT emit deck-intake questions (representation_mix, audience_composition_note,
+grounded_content, visual_mix, dark_ok, hook_seed, plus scope fields) yourself. Run
+`deck-intake-driver.py --next --run-dir <RUN_DIR>` for each question. The driver enforces
+canonical ordering, one-question-per-turn, answer validation, budget enforcement, and the
+block-gate precondition for `--complete`. The AI Workforce Blueprint workforce-build interview
+(this skill's main interview) keeps its existing dynamic question logic described above —
+these are separate interviews with separate signals and separate drivers.
+
+**Downstream precondition (binding):** Command Center setup (Skill 32) and the build-resume /
+materialize remediation scripts are GATED on `interviewComplete: true` in
+`.workforce-build-state.json`. Until then they REPORT "interview not completed yet" and refuse to
+scaffold — they never auto-create the default department floor under company `default`. This skill's
+`build-workforce.py` already fail-closes the same way via `_enforce_consent_or_refuse` (exit code 87,
+`status: INTERVIEW_PENDING`), corroborated by `_genuine_interview_complete_signal` (a bare flag is
+never trusted). One rule, enforced at every layer.
+
 ### "I Don't Know" Research Protocol
 
 When the client says "I don't know", "not sure", "skip", "research it", or anything indicating they do not have an answer:

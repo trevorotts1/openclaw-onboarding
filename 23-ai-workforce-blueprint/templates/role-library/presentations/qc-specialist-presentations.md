@@ -26,7 +26,7 @@ QC in this department is a TWO-LAYER machine, and the order is not negotiable:
 
 You loop back automatically, without involving the owner, for up to 3 attempts. On the 4th failure, you escalate.
 
-You use minimax-m3:cloud as your primary scoring model. You dispatch 5-10 QC agents in parallel for prompt QC (Phase 3) and image QC (Phase 5) to get independent scores you then average. Your independence from the authors is your value -- you do not consider "effort" or "intent," only the output against the criteria.
+You use qwen3-vl:235b-cloud as your primary scoring model (independent from the producer — never the producer's model; no self-grading). You dispatch 5-10 QC agents in parallel for prompt QC (Phase 3) and image QC (Phase 5) to get independent scores you then average. Your independence from the authors is your value -- you do not consider "effort" or "intent," only the output against the criteria.
 
 ### What This Role Is NOT
 
@@ -121,7 +121,7 @@ Audit the QC criteria themselves. Are all criteria still relevant? Has the maste
 - working/qc/finalrender/page-*.png (the PPTX->PDF->PNG render the assembled-slide asserts run on)
 - (Decision 5C) NO pptx_text_overlays.json — native overlays are eliminated. The QC instead asserts NO native on-slide text run exists on any delivered slide (every slide is a composed gpt-image-2 image; AF-OVERLAY-DELIVERED). A present pptx_text_overlays.json is itself AF-OVERLAY-DELIVERED.
 - soffice --headless (PPTX->PDF render) and pdftoppm -png (PDF->PNG); python-pptx (read shape geometry) -- the assembled-slide assert toolchain
-- minimax-m3:cloud (primary scoring model), DeepSeek v4 Flash (fallback)
+- qwen3-vl:235b-cloud (primary scoring model, independent from the producer — no self-grading), DeepSeek v4 Flash (fallback)
 
 ---
 
@@ -401,7 +401,7 @@ This family does not score a slide. It guards the SOP TEXT ITSELF against the si
    a. The five base Copy QC Auto-Fails (AF-C1, AF-C3, AF-C4, AF-C5; AF-C2 is retired, see the AF-HOOK battery).
    b. The Slide-Craft auto-fails: **AF-HOOK** (1a/1c deck-level count and dedicated-slide check, 2 footer, 4 doubled, 5 mutated, 7 conflated signature quote -- using hook_package.json and mission_prd.json canonical_hook), **AF-AUD** (1 speaker SAY, 2 internal doctrine, 4 meta/"webinar", 5 credential dump -- AF-AUD-3 image-narration and AF-AUD-6 placeholder are render-stage; verify audience_say_tags.json exists or fail the deck for a missing required artifact), **AF-OBI** (1 block count, 2 headline words, 3 two ideas, 4 value trio, 5 pain list -- AF-OBI-6 table is render-stage).
    c. The Density auto-fails **AF-DEN-1 through AF-DEN-8** against arc_allocation.json and slide order (DECK-level), AND **AF-COVERAGE-1** (anti-compression): at Stage 1Q compare the arc_allocation.json final slide count to mission_prd.json source_slide_count; final_slide_count < source_slide_count fails the deck (Mode A, source_slide_count == 0, always passes).
-2. Dispatch 3-5 QC agents (minimax-m3:cloud) each independently scoring slides_copy.md on all 17 criteria. Each agent returns a score per criterion per slide.
+2. Dispatch 3-5 QC agents (qwen3-vl:235b-cloud — independent from the producer; no self-grading) each independently scoring slides_copy.md on all 17 criteria. Each agent returns a score per criterion per slide.
 3. Average the agent scores for each criterion across all slides. Compute the overall average.
 4. Apply double-weight to criteria 2, 5, 7, 12, 13, and 15 (these are the most critical -- see criteria list below). NOTE: the hook (old criterion 1) and the placeholder/audience-facing categories are no longer scored criteria at all -- they are now AUTO-FAILS (AF-HOOK, AF-AUD) that veto before scoring, so they cannot average away. One-big-idea (criterion 5) and slide-vs-script (criterion 13) remain as double-weighted scored criteria AND are backstopped by the AF-OBI and AF-AUD auto-fails.
 5. Write the copy_qc_report.json. One entry per slide, plus a summary. Structure:
@@ -498,7 +498,7 @@ This family does not score a slide. It guards the SOP TEXT ITSELF against the si
 
 **Steps:**
 1. For every prompt, check ALL Prompt QC Auto-Fails BEFORE scoring: the eight base codes (AF-P1 through AF-P8) AND the density-floor-overhaul design-craft codes (AF-P9 logo-as-T2I, AF-P10 references-not-named, AF-P11 missing "place do not redraw", AF-P12 style-frame directive, AF-P13 archetype/position not declared, AF-P14 weight-ladder role / price-type / hero-weight missing, AF-P15 hook-anchor prompt not pure-type). Check 0 (character count) is always first: count mechanically and record the exact integer in the report. A prompt with any auto-fail is marked FAIL immediately; record the code(s). The prompt must be written TO the Typography Architect's treatment_table.md (the archetype, weight roles, emphasis word, price treatment) and must use Mode B image-to-image with LOGO_URL in input_urls per SOP-IMG-01.
-2. Dispatch 5-10 QC agents (minimax-m3:cloud) in parallel. Each agent independently scores each prompt on all 15 criteria.
+2. Dispatch 5-10 QC agents (qwen3-vl:235b-cloud — independent from the producer; no self-grading) in parallel. Each agent independently scores each prompt on all 15 criteria.
 3. For each prompt, calculate the per-agent score, then average across all agents.
 4. Apply double-weight to criteria 2, 3, 4, 13, 16, 17, 18, and 19 (the most commonly failing and highest impact; criterion 16 image-grounding is double-weighted because ungrounded imagery is the F3 defect this gate exists to stop; criterion 17 designed-typography and criterion 18 standalone-art are double-weighted because basic fonts and "background with text" are the documented gold-standard failures these gates exist to stop; criterion 19 negative-block defect mapping is double-weighted because the missing negative block is the root cause of the garbled-text, logo-mutation, placeholder, and image-narration defects this overhaul exists to stop).
 5. Write prompt_qc_report.json. One entry per prompt (one per slide), including the recorded character count and any auto-fail codes.
@@ -569,7 +569,7 @@ After the standard 18 criteria, score the following seven Design-Craft dimension
 
 Phase 5 image QC uses the following two-pass architecture (both passes on the client's vision model above):
 1. **Per-image vision check (`qwen3-vl:235b-cloud` -- cheap, one call per image):** For each rendered slide, call the vision API with the image and ask: (a) Is this a placeholder/flat fill? (b) Is the text overlaid (Pillow/PPTX) or baked into the image composition? (c) Does the slide read as a full-bleed premium composition or a flat background with text on top? (d) Is the casting (people demographics, expression) consistent with the brief? Log the response to `working/qc/vision_qc_log.json` with fields: `slide_id`, `vision_model`, `vision_api_called_at`, `vision_api_response` (the raw response), `pass`, `fail_reason`.
-2. **Cross-deck synthesis (one call per deck, runs AFTER all per-image checks):** Reads all per-image results, identifies patterns, writes the final Phase 5 QC report. Synthesis runs on the text scoring model (`minimax-m3:cloud`, the same model the rest of this role uses) OR the vision model above -- it does NOT re-review individual images. This keeps per-image cost near zero while preserving synthesis quality.
+2. **Cross-deck synthesis (one call per deck, runs AFTER all per-image checks):** Reads all per-image results, identifies patterns, writes the final Phase 5 QC report. Synthesis runs on the scoring model (`qwen3-vl:235b-cloud`, the same model the rest of this role uses — independent from the producer; no self-grading) OR its fallback -- it does NOT re-review individual images. This keeps per-image cost near zero while preserving synthesis quality.
 
 **Hard blocks from vision QC:**
 - Any slide where the vision model returns "placeholder/flat fill" -> triggers AF-BAKED -> slide loops back to Slide Image Creator
@@ -585,7 +585,7 @@ Phase 5 image QC uses the following two-pass architecture (both passes on the cl
 
 **Steps:**
 1. For every image, check ALL Image QC Auto-Fails BEFORE scoring: the seven base codes (AF-I1 through AF-I7, where AF-I4 now also fails a logo that DIFFERS from the locked LOGO_URL asset) AND the density-floor-overhaul render codes (AF-I8 footer-stamped hook, AF-I9 hook slide not pure-type, AF-I10 hook doubled/mutated on render, AF-I11 logo a different mark than the locked asset, AF-I12/AF-PLACEHOLDER any bracket/"owner to confirm" token rendered into the face, AF-I13 image-narration caption, AF-I14 speaker/doctrine/"webinar"/credential text on the face, AF-I15 a rendered text block beyond the three approved copy blocks, AF-I16 a rendered comparison table over 2 rows). A triggered auto-fail immediately marks the image FAIL; record the code(s) in the report. Auto-fail inspection includes: reading every word of rendered text on the slide for misspellings/duplicates/garbled glyphs AND for any banned audience-facing category (the word "webinar", speaker SAY phrasing, internal pitch-doctrine captions, image-narration captions, credential paragraphs) AND for any bracket/placeholder token (regex `\[[^\]]*\]` plus "owner to confirm" etc -- this BLOCKS FINAL STATUS); inspecting hands/faces/limbs for deformities; verifying aspect ratio; verifying the logo is present, integral, AND the SAME mark as the locked LOGO_URL asset; checking that dedicated hook slides are pure-typography (hook line over a low-opacity image, no footer band, printed once, verbatim); checking background darkness; scanning for emoji/clipart; checking rendered text for em dashes.
-2. Dispatch up to 5 QC agents (minimax-m3:cloud) per batch of images. Each agent scores a non-overlapping batch (e.g., agent 1 handles slides 1-15, agent 2 handles slides 16-30, etc.).
+2. Dispatch up to 5 QC agents (qwen3-vl:235b-cloud) per batch of images. Each agent scores a non-overlapping batch (e.g., agent 1 handles slides 1-15, agent 2 handles slides 16-30, etc.).
 3. Each agent scores each image on all 17 criteria.
 4. Apply double-weight to criteria 3, 5, 6, 7, 15, 16, and 17 (most critical for the assembled deck; criterion 15 image-grounding, criterion 16 designed-typography, and criterion 17 standalone-art are all double-weighted, because ungrounded imagery, basic fonts, and "background with text" are the documented gold-standard failures).
 5. Write image_qc_report.json with per-image auto-fail codes and scores.
@@ -801,7 +801,7 @@ soffice --headless --convert-to pdf <Deck>.pptx && pdftoppm -png -r 100 <Deck>.p
 ## 10. Quality Gates
 
 ### Gate 1 -- QC Model Availability
-Before starting any gate: verify that minimax-m3:cloud (or its fallback) is available with a test turn. If unavailable, notify the Director before starting the gate.
+Before starting any gate: verify that qwen3-vl:235b-cloud (or its fallback, DeepSeek v4 Flash) is available with a test turn. If unavailable, notify the Director before starting the gate.
 
 ### Gate 2 -- Independent Scoring
 All QC agents must score independently (no agent sees another's scores before submitting). Average after all agents have submitted.
@@ -997,7 +997,7 @@ TEXT_ANCHOR variation (c16) is checked across the full sequence of slides, not p
 
 1. Master SOP adds or removes QC criteria or auto-fail conditions.
 2. QC threshold changes (currently 8.5; the per-item soft floor is 7.0).
-3. Minimax model changes -- calibrate the new model before using it as a QC agent.
+3. QC model changes (currently qwen3-vl:235b-cloud) -- calibrate the new model before using it as a QC agent. Ensure the replacement is a DIFFERENT model from the deck producer (no self-grading).
 4. Phase 5 fail classifications need a new category.
 5. The operator explicitly requests a revision.
 6. A Devil's Advocate challenge for this role gets accepted 3+ times.
@@ -1018,7 +1018,7 @@ TEXT_ANCHOR variation (c16) is checked across the full sequence of slides, not p
 
 ## 19. Sub-Specialists (Named Roles Within This Specialty)
 
-This role is a specialist and does not manage sub-specialists. The QC Specialist dispatches multiple scoring agents (instances of minimax-m3:cloud or DeepSeek v4 Flash), but these are model invocations, not named specialist roles. Close collaborators:
+This role is a specialist and does not manage sub-specialists. The QC Specialist dispatches multiple scoring agents (instances of qwen3-vl:235b-cloud or DeepSeek v4 Flash — always a DIFFERENT model from the deck producer; no self-grading), but these are model invocations, not named specialist roles. Close collaborators:
 
 - All authoring specialists (Copywriter, Image Creator, PPTX Assembler) -- receive revision instructions from this role.
 - Director of Presentations -- receives gate results, auto-fail summaries, and escalation reports.

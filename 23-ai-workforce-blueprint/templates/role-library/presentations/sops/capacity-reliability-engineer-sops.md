@@ -188,7 +188,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    c. If unsuccessful: attempt one live test turn to the same model via OpenRouter with the client's OPENROUTER_API_KEY.
    d. If OpenRouter successful: `primary_text_model: "openrouter/moonshot/kimi-k2"` (or equivalent slug).
    e. If both fail: `primary_text_model: "UNAVAILABLE"`. NOGO decision. Notify Director.
-5. Verify QC model (minimax-m3:cloud via Ollama Cloud or OpenRouter). Same process as step 4.
+5. Verify QC model (qwen3-vl:235b-cloud via Ollama Cloud or OpenRouter — independent from the producer; no self-grading). Same process as step 4.
 6. Write model routing table to capacity_plan.json:
    ```json
    {

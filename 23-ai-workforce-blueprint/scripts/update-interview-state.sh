@@ -103,6 +103,11 @@ echo "updated $STATE: phase=$PHASE qnum=$QNUM asked_by=$ASKED_BY complete=$COMPL
 # QC" failure mode. Best-effort (non-fatal - the watchdog + resume cron will
 # re-drive if QC is pending).
 if [ "$COMPLETE" = true ]; then
+  # Clear the interview-not-complete report throttle marker: the interview is now
+  # complete, so the resume cron's next fire can re-report fresh if needed (it
+  # won't, since the build will proceed). Matches the marker written by
+  # report_interview_not_complete() in resume-workforce-build.sh.
+  rm -f "$STATE_DIR/.workforce-interview-not-complete.reported" 2>/dev/null || true
   QC_SCRIPT="$(dirname "$0")/qc-interview-completion.py"
   if [ -f "$QC_SCRIPT" ]; then
     echo "auto-running QC gate (qc-interview-completion.py --write-state --state) post-complete..."

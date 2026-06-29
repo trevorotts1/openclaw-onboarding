@@ -499,8 +499,12 @@ def run(root: Path, extra=None):
         cmd += extra
     # Strip KIE key so a passed preflight cleanly halts at the config stage
     # instead of hitting the network.
+    # OC_DECK_ALLOW_DIRECT=1: CI/test escape valve for the front-door marker guard
+    # (build_deck.main() requires OC_DECK_CANONICAL_ENTRY=1 or OC_DECK_ALLOW_DIRECT=1
+    # to prevent direct invocations from bypassing the canonical entry gate).
     env = dict(os.environ)
     env.pop("KIE_API_KEY", None)
+    env["OC_DECK_ALLOW_DIRECT"] = "1"
     return subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=60)
 
 
@@ -2493,7 +2497,8 @@ def test_runner_attestation_seen_by_preconditions():
     #     precondition must SEE it (the false-negative the fix closes).
     rd = Path(tempfile.mkdtemp(prefix="deck_attest_seen_"))
     (rd / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
-    rsd.attest_phase(rd, "P0B-PRIORITY", "attention-content-strategist", "artifact_present")
+    rsd.attest_phase(rd, "P0B-PRIORITY", "attention-content-strategist", "artifact_present",
+                     "no-artifact-spec")  # FIX 4/E: attest_phase now requires a non-empty artifact_sha
     pm = json.loads((rd / "working" / "checkpoints" / "process_manifest.json").read_text())
     if "P0B-PRIORITY" not in [a.get("phase_id") for a in pm.get("phase_attestations", [])]:
         fails.append("ATTEST-SEEN: runner attest_phase did not write phase_attestations[].phase_id")
@@ -3416,6 +3421,16 @@ def emit_af_coverage():
         b"\x89PNG\r\n\x1a\n" + b"\xcc" * (build_deck.PLACEHOLDER_MIN_BYTES + 500))
     record("AF-PRIORITY-SHIFT", build_deck._chk_priority_shift_ledger(_psl_root))
 
+    # AF-CC-UNREGISTERED — probe: run dir where process_manifest.json has no cc_task_id
+    # AND no cc_register_attempted (neither field = never-called = fail-closed).
+    import tempfile as _tf_cc
+    _cc_root = Path(_tf_cc.mkdtemp(prefix="deck_coverage_cc_probe_"))
+    (_cc_root / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (_cc_root / "working" / "checkpoints" / "process_manifest.json").write_text(
+        json.dumps({"phase_attestations": []}))
+    _cc_reason = build_deck._chk_cc_registered(_cc_root, "probe-deck")
+    record("AF-CC-UNREGISTERED", _cc_reason)
+
     triggered_sorted = sorted(triggered)
     AF_COVERAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
     AF_COVERAGE_PATH.write_text(json.dumps(
@@ -4039,6 +4054,10 @@ def main():
     # function callable and returns str.
     failures += test_check_brand_consistency()
 
+    # AF-CC-UNREGISTERED: closeout with no cc_task_id AND no cc_register_attempted
+    # fails closed; transport failure (cc_register_attempted=True) passes soft.
+    failures += test_chk_cc_registered()
+
     # CASE 1 — missing artifacts => refused, exit 3, lists what's missing.
     root = make_workdir(with_artifacts=False)
     r = run(root)
@@ -4090,6 +4109,7 @@ def main():
     cmd = [sys.executable, str(BUILD), str(root / "slides.json"), str(root / "out.pptx")]
     env = dict(os.environ)
     env.pop("KIE_API_KEY", None)
+    env["OC_DECK_ALLOW_DIRECT"] = "1"  # CI/test escape valve for front-door marker guard
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, env=env)
     try:
@@ -4125,6 +4145,7 @@ def main():
            str(root / "out.pptx"), "--adhoc-no-process"]
     env = dict(os.environ)
     env.pop("KIE_API_KEY", None)
+    env["OC_DECK_ALLOW_DIRECT"] = "1"  # CI/test escape valve for front-door marker guard
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, env=env)
     try:
@@ -4502,6 +4523,92 @@ def test_check_brand_consistency():
     print(f"BRAND-D (empty renders)     -> {'PASS' if 'BRAND-D' not in str(fails) else 'FAIL'}")
 
     print(f"BRAND-CONSISTENCY (gate tests)-> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_chk_cc_registered() -> list:
+    """AF-CC-UNREGISTERED negative test (Fix 5a):
+    Verifies that build_deck._chk_cc_registered enforces the CC registration gate.
+
+    Cases:
+      (A) process_manifest.json with NEITHER cc_task_id NOR cc_register_attempted
+          -> FAIL (fail-closed: never-attempted is a hard fail).
+      (B) process_manifest.json with cc_register_attempted=True but no cc_task_id
+          -> PASS (fail-soft: transport failure satisfies the gate).
+      (C) process_manifest.json with cc_task_id set (successful registration)
+          -> PASS.
+      (D) run_dir=None -> PASS (adhoc/no-run-dir paths skip the gate).
+      (E) process_manifest.json absent entirely
+          -> FAIL (fail-closed: manifest missing at closeout).
+
+    Returns a list of failure strings ([] = all passed).
+    """
+    fails = []
+
+    # (A) Neither cc_task_id nor cc_register_attempted -> FAIL (fail-closed).
+    rd_a = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_a_"))
+    (rd_a / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (rd_a / "working" / "checkpoints" / "process_manifest.json").write_text(
+        json.dumps({"phase_attestations": []}))
+    r_a = build_deck._chk_cc_registered(rd_a, "test-deck")
+    if not r_a or "AF-CC-UNREGISTERED" not in r_a:
+        fails.append(
+            f"CC-REG-A: no cc_task_id and no cc_register_attempted must FAIL "
+            f"AF-CC-UNREGISTERED, got: {r_a!r}"
+        )
+    print(f"CC-REG-A (never-attempted fail-closed) -> "
+          f"{'PASS' if 'CC-REG-A' not in str(fails) else 'FAIL'}")
+
+    # (B) cc_register_attempted=True but no cc_task_id -> PASS (fail-soft).
+    rd_b = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_b_"))
+    (rd_b / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (rd_b / "working" / "checkpoints" / "process_manifest.json").write_text(
+        json.dumps({"phase_attestations": [], "cc_register_attempted": True}))
+    r_b = build_deck._chk_cc_registered(rd_b, "test-deck")
+    if r_b:
+        fails.append(
+            f"CC-REG-B: cc_register_attempted=True must PASS (fail-soft), got: {r_b!r}"
+        )
+    print(f"CC-REG-B (transport-fail soft-pass)    -> "
+          f"{'PASS' if 'CC-REG-B' not in str(fails) else 'FAIL'}")
+
+    # (C) cc_task_id set (successful registration) -> PASS.
+    rd_c = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_c_"))
+    (rd_c / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (rd_c / "working" / "checkpoints" / "process_manifest.json").write_text(
+        json.dumps({"phase_attestations": [], "cc_task_id": "task-abc-123",
+                    "cc_register_attempted": True}))
+    r_c = build_deck._chk_cc_registered(rd_c, "test-deck")
+    if r_c:
+        fails.append(
+            f"CC-REG-C: cc_task_id set must PASS (successful registration), got: {r_c!r}"
+        )
+    print(f"CC-REG-C (successful-reg pass)         -> "
+          f"{'PASS' if 'CC-REG-C' not in str(fails) else 'FAIL'}")
+
+    # (D) run_dir=None -> PASS (adhoc/no-run-dir paths skip the gate).
+    r_d = build_deck._chk_cc_registered(None, "test-deck")
+    if r_d:
+        fails.append(
+            f"CC-REG-D: run_dir=None must PASS (adhoc skip), got: {r_d!r}"
+        )
+    print(f"CC-REG-D (adhoc None skip)             -> "
+          f"{'PASS' if 'CC-REG-D' not in str(fails) else 'FAIL'}")
+
+    # (E) process_manifest.json absent -> FAIL (fail-closed: manifest missing at closeout).
+    rd_e = Path(tempfile.mkdtemp(prefix="deck_cc_unreg_test_e_"))
+    (rd_e / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    # No process_manifest.json written.
+    r_e = build_deck._chk_cc_registered(rd_e, "test-deck")
+    if not r_e or "AF-CC-UNREGISTERED" not in r_e:
+        fails.append(
+            f"CC-REG-E: absent process_manifest.json must FAIL AF-CC-UNREGISTERED, "
+            f"got: {r_e!r}"
+        )
+    print(f"CC-REG-E (manifest-absent fail-closed) -> "
+          f"{'PASS' if 'CC-REG-E' not in str(fails) else 'FAIL'}")
+
+    print(f"CC-REGISTERED (gate tests)   -> {'PASS' if not fails else 'FAIL'}")
     return fails
 
 

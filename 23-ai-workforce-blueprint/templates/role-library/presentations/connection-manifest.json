@@ -41,6 +41,20 @@
       "description": "Google Drive folder ID where the Delivery Concierge deposits the final PPTX/PDF deliverable.",
       "cfg_key": "env.vars.GOOGLE_DRIVE_DELIVERY_FOLDER_ID",
       "required": false
+    },
+    {
+      "name": "command-center-api",
+      "description": "CC base URL for producer-side board writes (job-start ingest via POST /api/tasks/ingest + per-phase PATCH). Used by cc_board.ingest_deck_task and cc_board.patch_phase; absent => clean no-op (logged, run continues ungrouped). verify-wiring.sh reads COMMAND_CENTER_URL first, then the alias MISSION_CONTROL_URL.",
+      "cfg_key": "env.vars.COMMAND_CENTER_URL",
+      "cfg_key_aliases": ["env.vars.MISSION_CONTROL_URL"],
+      "required": true
+    },
+    {
+      "name": "command-center-webhook-secret",
+      "description": "HMAC-SHA256 secret for the x-webhook-signature header on CC board writes (POST /api/tasks/ingest + PATCH). Absent => signature omitted and the endpoint no-ops the check (dev/no-secret mode). cc_board reads WEBHOOK_SECRET first, then the alias CC_WEBHOOK_SECRET.",
+      "cfg_key": "env.vars.WEBHOOK_SECRET",
+      "cfg_key_aliases": ["env.vars.CC_WEBHOOK_SECRET"],
+      "required": false
     }
   ]
 }

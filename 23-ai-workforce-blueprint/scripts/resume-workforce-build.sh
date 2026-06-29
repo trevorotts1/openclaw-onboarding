@@ -158,6 +158,39 @@ self_remove_cron() {
   fi
 }
 
+# ─── report_interview_not_complete: throttled operator-facing "not done yet" report ──
+# Surfaces the gate REASON to the operator so they know why no CC/build is happening,
+# WITHOUT hammering: at most one message per REPORT_THROTTLE_HOURS (default 24h),
+# tracked by a durable marker. NEVER auto-creates departments; this is report-only.
+# Distinct from the internal self-pings (lines below) which say "Do NOT message the
+# owner" — those are build nudges. This is the ONE operator-facing "not done yet"
+# surface, throttled so the cron never spams.
+REPORT_THROTTLE_HOURS="${WORKFORCE_INTERVIEW_REPORT_THROTTLE_HOURS:-24}"
+INTERVIEW_REPORT_MARKER="$OC_ROOT/workspace/.workforce-interview-not-complete.reported"
+report_interview_not_complete() {
+  local detail="${1:-not complete}"
+  # Throttle: skip if we reported within the window.
+  if [[ -f "$INTERVIEW_REPORT_MARKER" ]]; then
+    local age_h
+    age_h=$(( ( $(date -u +%s) - $(stat -f %m "$INTERVIEW_REPORT_MARKER" 2>/dev/null || stat -c %Y "$INTERVIEW_REPORT_MARKER" 2>/dev/null || echo 0) ) / 3600 ))
+    [[ "$age_h" -lt "$REPORT_THROTTLE_HOURS" ]] && { log "interview-report: throttled (${age_h}h < ${REPORT_THROTTLE_HOURS}h)"; return 0; }
+  fi
+  local msg="[INTERVIEW-GATE] AI Workforce interview not completed yet (${detail}). The Command Center / zero-human company is gated until the interview is complete — no departments are being built. Finish the interview to proceed."
+  # Route to the operator via the existing resolver (env.vars.OPERATOR_ESCALATION_CHAT_ID
+  # -> env.vars.OPERATOR_TELEGRAM_CHAT_ID -> ""). Mirrors the dispatch idiom used
+  # elsewhere in this file (openclaw message send --channel telegram -t <chat> -m <msg>).
+  local _esc_chat
+  _esc_chat="$(resolve_operator_chat_id)"
+  if [[ -n "$_esc_chat" ]] && command -v openclaw >/dev/null 2>&1; then
+    openclaw message send --channel telegram -t "$_esc_chat" -m "$msg" >>"$LOG_FILE" 2>&1 \
+      || log "interview-report: operator message send failed (non-fatal)"
+  else
+    log "interview-report: no operator escalation chat configured — logged only (non-fatal)"
+  fi
+  touch "$INTERVIEW_REPORT_MARKER"
+  log "interview-report: reported '${detail}' to operator (throttled ${REPORT_THROTTLE_HOURS}h)"
+}
+
 # ---- v10.14.36: BELT - explicit self-stop on terminal state ----
 # v10.15.26 / v10.16.25 HARD FLOOR: a terminal state in the build-state JSON
 # (status=done / closeoutStatus=done|sent) is NO LONGER trusted as proof on its
@@ -406,6 +439,7 @@ if [[ "$interview_complete" != "true" ]]; then
   last_q_at_unflagged=$(jq -r '.interviewProgress.lastQuestionAt // empty' "$STATE_FILE" 2>/dev/null || true)
   if [[ -z "$last_q_at_unflagged" || "$last_q_at_unflagged" == "null" ]]; then
     log "interview not yet complete and no lastQuestionAt - interview not started; nothing to recover"
+    report_interview_not_complete "not started"   # throttled operator-facing report
     exit 0
   fi
   log "RECOVERY: interviewComplete!=true but interview content exists (lastQuestionAt=$last_q_at_unflagged) - running QC to decide if the owner actually finished (HOP-1 recovery)."
@@ -442,6 +476,7 @@ if [[ "$interview_complete" != "true" ]]; then
     # fall through - do NOT exit; the rest of this script now drives the build.
   else
     log "RECOVERY: QC=$_recover_qc_status (not pass) - NOT promoting. The owner-facing nudge / QC-resume / watchdog lanes own an unfinished or unverifiable interview. Exiting (nothing to resume yet)."
+    report_interview_not_complete "in progress (qc=$_recover_qc_status)"   # throttled operator-facing report
     exit 0
   fi
 fi

@@ -117,6 +117,67 @@ jobs:
           python3 "$GUARD_A"
           echo "gate_integrity_check: Guard A PASSED — every build_deck-enforced gate is enforced AND tested."
 
+      - name: runner_gate_integrity_check.py — Guard A (runner scope — declared runner codes referenced in runtime, exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          GUARD_RUNNER="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/runner_gate_integrity_check.py"
+          if [ ! -f "$GUARD_RUNNER" ]; then
+            echo "FATAL: runner_gate_integrity_check.py not found at $GUARD_RUNNER" >&2
+            exit 2
+          fi
+          # Guard A (runner scope): every PIPELINE-MANIFEST autofail with
+          # enforced_by==runner must appear as a string literal in
+          # run_signature_deck.py or prove-deck.py. A declared-but-never-cited
+          # runner code is a dead declaration that cannot be raised at runtime.
+          python3 "$GUARD_RUNNER"
+          echo "runner_gate_integrity_check: Guard A (runner scope) PASSED — every runner-enforced code is cited in the runner source."
+
+      - name: CANONICAL-RENDERER-PIN.sha256 integrity (recompute and fail on mismatch)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SCRIPTS="23-ai-workforce-blueprint/templates/role-library/presentations/scripts"
+          BUILD_DECK="$SCRIPTS/build_deck.py"
+          RUN_SIG="$SCRIPTS/run_signature_deck.py"
+          PIN_FILE="$SCRIPTS/CANONICAL-RENDERER-PIN.sha256"
+          if [ ! -f "$BUILD_DECK" ]; then
+            echo "FATAL: build_deck.py not found at $BUILD_DECK" >&2; exit 2
+          fi
+          if [ ! -f "$RUN_SIG" ]; then
+            echo "FATAL: run_signature_deck.py not found at $RUN_SIG" >&2; exit 2
+          fi
+          # Recompute sha256 of build_deck.py + run_signature_deck.py (same formula
+          # as presentation-canonical-entry.sh GATE 3).
+          if command -v sha256sum >/dev/null 2>&1; then
+            COMPUTED="$(cat "$BUILD_DECK" "$RUN_SIG" | sha256sum | awk '{print $1}')"
+          elif command -v shasum >/dev/null 2>&1; then
+            COMPUTED="$(cat "$BUILD_DECK" "$RUN_SIG" | shasum -a 256 | awk '{print $1}')"
+          else
+            echo "WARNING: no sha256 tool available; skipping pin check" >&2
+            exit 0
+          fi
+          echo "Computed renderer hash: $COMPUTED"
+          if [ ! -f "$PIN_FILE" ]; then
+            echo "WARNING: CANONICAL-RENDERER-PIN.sha256 not present — pin not yet generated." >&2
+            echo "Run: cat build_deck.py run_signature_deck.py | sha256sum | awk '{print \$1}' > CANONICAL-RENDERER-PIN.sha256" >&2
+            echo "and commit the pin file alongside any build_deck.py / run_signature_deck.py change." >&2
+            echo "FAIL: pin file absent — cannot verify renderer integrity." >&2
+            exit 1
+          fi
+          EXPECTED="$(tr -d ' \t\n\r' < "$PIN_FILE")"
+          if [ -z "$EXPECTED" ]; then
+            echo "FAIL: CANONICAL-RENDERER-PIN.sha256 is empty." >&2; exit 1
+          fi
+          if [ "$COMPUTED" != "$EXPECTED" ]; then
+            echo "FAIL: renderer hash mismatch — the committed pin does not match the current build_deck.py + run_signature_deck.py." >&2
+            echo "  committed pin: $EXPECTED" >&2
+            echo "  computed now:  $COMPUTED" >&2
+            echo "Regenerate the pin: cat build_deck.py run_signature_deck.py | sha256sum | awk '{print \$1}' > CANONICAL-RENDERER-PIN.sha256" >&2
+            exit 1
+          fi
+          echo "CANONICAL-RENDERER-PIN.sha256 PASSED — renderer hash matches the committed pin."
+
       - name: doctrine_residual_check.py — Guard B (retired-doctrine residual lint, exit 0 required)
         shell: bash
         run: |

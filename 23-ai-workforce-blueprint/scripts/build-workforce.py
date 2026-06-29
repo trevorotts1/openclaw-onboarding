@@ -949,6 +949,11 @@ def _refuse_interview_pending(reason, option):
         "self-setup/fast mode. Fabricating client answers is forbidden."
     )
     print(msg, file=sys.stderr)
+    print(
+        "INTERVIEW_NOT_COMPLETE: build refused — AI Workforce interview not completed yet "
+        "(no genuine transcript / consent).",
+        file=sys.stderr,
+    )
 
     # interview-handoff.md (best-effort; the non-zero exit is the hard guarantee).
     try:
@@ -5881,6 +5886,17 @@ def add_agent_to_config(config, dept_id, dept_info):
         None,
     )
     _primary, _dept_default = resolve_dept_agent_model(dept_id, existing_entry=_seed_entry)
+    # FIX B (model-tiering / no self-grading FM-1/FM-2): quality-control must run
+    # on a DIFFERENT model than the presentations producer. If the selector resolves
+    # both to the same primary, override quality-control to the designated
+    # independent heavy-vision model.
+    if dept_id == "quality-control":
+        try:
+            _producer_primary = resolve_dept_agent_model("presentations")[0]
+            if _primary == _producer_primary:
+                _primary = "ollama/qwen3-vl:235b-cloud"
+        except Exception:  # noqa: BLE001
+            pass  # never break the build if the selector is unreachable
     # Record the dept default so the CC seeding step can write the
     # agent_settings (role_id IS NULL, setting_type='model') row (PLAN.md §3.2).
     _record_dept_default(dept_id, _dept_default, _primary)
@@ -6079,6 +6095,13 @@ def add_agent_to_config(config, dept_id, dept_info):
         # parent deny on main (e.g. image_generate denied) would otherwise
         # shadow these tools when the dept agent is invoked as a sub-agent.
         agent_entry["tools"] = {"allow": GENERATION_TOOLS_ALLOW}
+
+    # FIX A.3 (model-tiering): force a HIGH reasoning budget for the deck producer
+    # AND its independent QC grader. thinkingDefault is the schema-valid per-agent
+    # key (values off|minimal|low|medium|high|xhigh|adaptive|max). Heavy tier means
+    # nothing if thinking is off.
+    if dept_id in ("presentations", "quality-control"):
+        agent_entry["thinkingDefault"] = "high"
 
     agents_list.append(agent_entry)
     config["agents"]["list"] = agents_list

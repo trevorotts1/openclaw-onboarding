@@ -67,6 +67,21 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
+# ─── INTERVIEW-COMPLETE PRECONDITION (binding) ────────────────────────────────
+# Do NOT materialize department agents into agents.list[] before the owner's AI
+# Workforce interview is COMPLETE. Materializing a default/empty department floor
+# pre-interview is exactly the "rogue/default board" failure. REPORT and exit 0
+# (not an error) so callers/crons see "interview not completed yet", not a crash.
+# --dry-run is exempt (it mutates nothing and is used for inspection).
+_MATERIALIZE_STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+if [[ $DRY_RUN -eq 0 ]]; then
+  if [[ ! -f "$_MATERIALIZE_STATE_FILE" ]] || \
+     [[ "$(python3 -c "import json,sys; sys.stdout.write('true' if json.load(open('$_MATERIALIZE_STATE_FILE')).get('interviewComplete') is True else 'false')" 2>/dev/null || echo false)" != "true" ]]; then
+    echo "[materialize-dept-agents] INTERVIEW_NOT_COMPLETE: AI Workforce interview not completed yet (interviewComplete != true in $_MATERIALIZE_STATE_FILE) — refusing to materialize department agents. No config mutation performed." >&2
+    exit 0
+  fi
+fi
+
 # ─── Backup the config first (mirror Skill 32 INSTALL.md Phase 4.1) ──────────
 if [[ $DRY_RUN -eq 0 ]]; then
   mkdir -p "$BACKUP_DIR"

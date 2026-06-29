@@ -184,6 +184,31 @@ for cmd in jq curl git npm python3; do
   fi
 done
 
+# ─── INTERVIEW-COMPLETE PRECONDITION (binding) ────────────────────────────────
+# RULE: a client gets a Command Center + zero-human company ONLY after their AI
+# Workforce interview is COMPLETE. If it is not, REPORT "interview not completed
+# yet" and EXIT CLEAN — do NOT seed workspaces, materialize agents, or scaffold
+# the default department floor onto a 'default' company. (See SKILL.md
+# "Interview-Complete Precondition" + PREREQS.json interview-complete entry.)
+#
+# --update-only is EXEMPT: it only refreshes an ALREADY-built CC (git pull / npm /
+# db:push) and must keep working for provisioned boxes whose flag predates this gate.
+if [[ "$UPDATE_ONLY" != "true" ]]; then
+  if [[ ! -f "$STATE_FILE" ]]; then
+    log "INFO" "interview-gate: no .workforce-build-state.json — interview not started; REPORTING not-completed and exiting clean (no scaffolding)."
+    echo "INTERVIEW_NOT_COMPLETE: no workforce-build state on this box — AI Workforce interview not completed yet. Command Center NOT built." >&2
+    exit 0
+  fi
+  INTERVIEW_COMPLETE=$(state_get '.interviewComplete')
+  if [[ "$INTERVIEW_COMPLETE" != "true" ]]; then
+    log "INFO" "interview-gate: interviewComplete=${INTERVIEW_COMPLETE:-<unset>} — REPORTING 'interview not completed yet' and exiting clean. NOT seeding/scaffolding."
+    state_set '.commandCenterStatus = "interview-pending" | .commandCenterGateReason = "AI Workforce interview not completed (interviewComplete != true) — Command Center build is gated until the owner finishes their interview."'
+    echo "INTERVIEW_NOT_COMPLETE: interviewComplete != true — AI Workforce interview not completed yet. Command Center NOT built (this is expected, not an error)." >&2
+    exit 0
+  fi
+  log "INFO" "interview-gate: interviewComplete=true — proceeding with Command Center install."
+fi
+
 # ---- --update-only: read client metadata from state file when not passed on CLI ----
 if [[ "$UPDATE_ONLY" == "true" ]] && [[ -z "$CLIENT_SLUG" ]] && [[ -f "$STATE_FILE" ]]; then
   CLIENT_SLUG=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('clientSlug',''))" 2>/dev/null || echo "")

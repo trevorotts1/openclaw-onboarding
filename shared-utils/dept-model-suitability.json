@@ -24,6 +24,7 @@
     "legal": { "tier": "heavy", "modality": ["text", "long_context"], "rationale": "document reasoning" },
     "compliance": { "tier": "heavy", "modality": ["text", "long_context"], "rationale": "document reasoning" },
     "presentations": { "tier": "heavy", "modality": ["vision"], "rationale": "per-slide visual QC" },
+    "quality-control": { "tier": "heavy", "modality": ["vision", "reasoning"], "rationale": "independent QC grader for visual decks — must resolve to a DIFFERENT model than the presentations producer (no self-grading) and run forced-high thinking" },
     "openclaw-maintenance": { "tier": "mid", "modality": ["text", "tool_use"], "rationale": "ops automation" },
     "podcast": { "tier": "mid", "modality": ["text", "audio_generation"], "rationale": "episode production + show notes" },
     "logistics-fulfillment": { "tier": "mid", "modality": ["text", "tool_use"], "rationale": "order + shipment ops" },
