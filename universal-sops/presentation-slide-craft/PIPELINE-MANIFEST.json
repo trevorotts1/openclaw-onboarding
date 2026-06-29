@@ -1,5 +1,5 @@
 {
-  "manifest_version": 18,
+  "manifest_version": 19,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -1472,6 +1472,28 @@
       "secondary_py_symbols": [
         "_chk_image_qc"
       ]
+    },
+    {
+      "code": "AF-NO-RUN-DIR",
+      "stage": "Delivery-Boundary",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "OUT-OF-BAND DELIVERY BOUNDARY GATE (gate_delivered_artifact). A deck artifact (.pptx/.pdf) was presented for delivery with NO governed run dir (no working/checkpoints/process_manifest.json resolvable from the artifact or an explicit run dir) — i.e. it was hand-built OUTSIDE run_signature_deck.py and never passed through the governed pipeline. This FLIPS the legacy delivery_gate no-run-dir DEFER to a fail-closed REJECT at the delivery boundary, so a deck produced by python-pptx/Pillow/Google-Slides with no governed run dir cannot ship. Skippable ONLY by an explicit, logged owner_skip_approval token (gate=AF-NO-RUN-DIR) in process_manifest.json or an owner_skip_approval.json adjacent to the artifact — never silently, never by an agent's own choice.",
+      "enforced_by": "delivery_gate",
+      "py_symbol": null,
+      "check_script": "scripts/delivery_gate.py::gate_delivered_artifact",
+      "sop_ref": "delivery-concierge-sops.md"
+    },
+    {
+      "code": "AF-NOT-KIE-RENDERED",
+      "stage": "Delivery-Boundary",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "OUT-OF-BAND DELIVERY BOUNDARY GATE (gate_delivered_artifact). The SHIPPED artifact cannot be proven to be a kie.ai-baked image-only deck: the process manifest's render record maps no slide (or one or more slides) to a REAL kie.ai taskId (taskId in {None, '', native, placeholder, none, null, n/a}), OR the delivered .pptx/.pdf is unreadable / not a real OOXML/PDF deck (a renamed-image or hand-built decoy). A canonical deck records a kie taskId per slide; absent that, the images were not kie-rendered. Inspects the artifact itself with stdlib only (no python-pptx dependency) so it bites on any box. Skippable ONLY by an explicit, logged owner_skip_approval token (gate=AF-NOT-KIE-RENDERED) — never silently.",
+      "enforced_by": "delivery_gate",
+      "py_symbol": null,
+      "check_script": "scripts/delivery_gate.py::gate_delivered_artifact",
+      "sop_ref": "delivery-concierge-sops.md"
     },
     {
       "code": "AF-FONT-FLOOR",

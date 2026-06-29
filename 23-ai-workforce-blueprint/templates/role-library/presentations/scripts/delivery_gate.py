@@ -22,35 +22,78 @@ It mechanically enforces, over a run dir:
      a `mac_downloads` destination's `verify_anchor` file exists on disk; a `ghl`
      destination has its upload id; a `drive` destination has its file ids.
 
-DEFER (pass, "not at delivery stage") when neither the delivery package dir nor a
-delivery_plan.json exists — a pre-delivery render must not be blocked. A delivery
-that was ATTEMPTED (plan present) but is missing/partial FAILS.
+The in-pipeline run-dir helper delivery_gate(run_dir) DEFERS (pass, "not at delivery
+stage") when neither the delivery package dir nor a delivery_plan.json exists — a
+pre-delivery render must not be blocked. A delivery that was ATTEMPTED (plan present)
+but is missing/partial FAILS.
 
-ZERO third-party deps (stdlib json / re / sys / pathlib / argparse / tempfile only)
-so it runs identically in the repo and on a deployed client box.
+================================================================================
+OUT-OF-BAND DELIVERY BOUNDARY GATE (the #1 fix — fail-closed artifact inspection).
+================================================================================
+Every other enforcement gate lives INSIDE the pipeline, so an agent whose routing
+fails can HAND-BUILD a deck (python-pptx / Pillow / Google-Slides, native overlaid
+text, no kie.ai images) and SHIP it, bypassing everything. gate_delivered_artifact()
+closes that hole by inspecting the SHIPPED ARTIFACT itself — regardless of how it was
+produced — and is FAIL-CLOSED:
 
-PUBLIC API (imported by test_preflight.py):
+  (1) ARTIFACT PROVENANCE — open the delivered .pptx/.pdf. A canonical deck is
+      full-bleed kie.ai images with the words BAKED IN, so it has NO selectable body
+      text. Any SELECTABLE native on-slide text (a <a:t> run in a real slide part, or
+      embedded fonts + text operators in the PDF) means the deck was hand-built /
+      overlaid -> REJECT (AF-OVERLAY-DELIVERED). An unreadable artifact cannot be
+      proven kie-baked -> REJECT (AF-NOT-KIE-RENDERED).
+  (2) KIE PROVENANCE — require a real kie.ai taskId per slide in the process
+      manifest's render record; no taskIds -> the images were not kie-rendered ->
+      REJECT (AF-NOT-KIE-RENDERED).
+  (3) NO-RUN-DIR FAIL-CLOSED — a deck with no governed run dir
+      (working/checkpoints/process_manifest.json) was hand-built OUTSIDE
+      run_signature_deck.py -> REJECT (AF-NO-RUN-DIR). (The legacy run-dir helper
+      delivery_gate() still defers pre-delivery; the BOUNDARY gate never does.)
+  (4) BUNDLE-COMPLETENESS — require the full deliverable set (deck + presenter speech
+      + audio + presenter guide + teleprompter + GoHighLevel upload record) before
+      delivery; missing siblings -> REJECT (AF-BUNDLE-COMPLETE). This is why a partial
+      "1 of 12" delivery is impossible.
+
+The ONLY bypass is an explicit, LOGGED owner_skip_approval token (reuse of the audited
+canonical_render_guard token: owner_approved:true + approved_by + reason + gate=<AF
+code>) recorded in process_manifest.json or, for an out-of-pipeline artifact, an
+owner_skip_approval.json adjacent to the artifact. No agent may self-approve.
+
+ZERO third-party deps (stdlib json / re / os / sys / zipfile / zlib / pathlib /
+argparse / tempfile only) so it runs identically in the repo and on a deployed client
+box — it does NOT rely on python-pptx being installed.
+
+PUBLIC API (imported by test_preflight.py + run_signature_deck.py):
     delivery_gate(run_dir: Path) -> tuple[bool, list[str]]
-        (ok, reasons). ok is False on any AF-DH1 / upload-record / destination
-        failure; reasons is the list of human-readable failure strings (empty on
-        pass/defer).
+        in-pipeline run-dir helper (AF-DH1 / upload-record / destination). Defers
+        pre-delivery.
+    gate_delivered_artifact(artifact_path, run_dir=None) -> tuple[bool, list[str]]
+        the FAIL-CLOSED delivery boundary gate over the SHIPPED ARTIFACT.
+    inspect_pptx_artifact(pptx_path) -> list[tuple[str, str]]
+    inspect_pdf_artifact(pdf_path) -> list[tuple[str, str]]
+    check_kie_provenance(run_dir) -> str
     check_af_dh1(package_dir: Path) -> str   # "" on pass, reason on fail
     find_client_package(run_dir: Path) -> Path | None
 
 EXIT CODES (CLI):
     0 — delivery complete (or deferred: pre-delivery), gate clean.
-    1 — one or more last-mile failures (AF-DH1 / upload record / destination).
+    1 — one or more last-mile / boundary failures.
     2 — could not run (bad args / unreadable run dir).
 
 USAGE:
     python3 delivery_gate.py <run_dir>
+    python3 delivery_gate.py --artifact <deck.pptx> [--run-dir <dir>]
     python3 delivery_gate.py --selftest      # built-in pass + fail fixtures
 """
 
 import argparse
 import json
+import os
+import re
 import sys
 import tempfile
+import zipfile
+import zlib
 from pathlib import Path
 
 # The FIVE client-package files (AF-DH1 whitelist), kept in lockstep with
@@ -69,6 +112,33 @@ BLOCKLIST_SUFFIXES = (
 FORBIDDEN_SUBDIRS = frozenset({
     "working", "prompts", "images", "renders", "qc", "scripts", "checkpoints",
 })
+
+# ---------------------------------------------------------------------------
+# Boundary-gate auto-fail codes — EXACT strings. AF-NO-RUN-DIR + AF-NOT-KIE-RENDERED
+# are NEW codes registered in PIPELINE-MANIFEST.autofails (check_script -> this file)
+# and the MASTER ruleset Section 5. AF-OVERLAY-DELIVERED + AF-BUNDLE-COMPLETE are
+# REUSED (already registered) at the delivery boundary.
+# ---------------------------------------------------------------------------
+AF_NO_RUN_DIR = "AF-NO-RUN-DIR"
+AF_NOT_KIE_RENDERED = "AF-NOT-KIE-RENDERED"
+AF_OVERLAY_DELIVERED = "AF-OVERLAY-DELIVERED"
+AF_BUNDLE_COMPLETE = "AF-BUNDLE-COMPLETE"
+
+# sync_check.py LOCKSTEP — HOLE B / C1 emission registry. sync_check scans every
+# script named in an autofails[].check_script for `"code": "AF-..."` emission dicts
+# and FAILS (exit 4) if any emitted code is not registered in the manifest. This
+# block makes the EXACT set of codes this gate can emit machine-discoverable. Every
+# entry below MUST stay registered in PIPELINE-MANIFEST.autofails. Do NOT add a
+# `"code": "AF-..."` literal anywhere else in this file for an unregistered code.
+_EMITTED_AF_CODES = (
+    {"code": "AF-NO-RUN-DIR"},        # no governed run dir -> hand-built outside pipeline
+    {"code": "AF-NOT-KIE-RENDERED"},  # no kie.ai taskId per slide / unreadable artifact
+    {"code": "AF-OVERLAY-DELIVERED"}, # selectable native on-slide text (overlay, not baked)
+    {"code": "AF-BUNDLE-COMPLETE"},   # deliverable set incomplete (missing siblings)
+)
+
+# A taskId that is not a real kie.ai bake (mirrors build_deck.py's I14 gate).
+_BAD_TASK_IDS = frozenset({None, "", "native", "placeholder", "none", "null", "n/a"})
 
 
 def _categorize(name: str) -> str:
@@ -177,6 +247,351 @@ def _check_destinations(run_dir: Path, plan: dict) -> list:
     return reasons
 
 
+# ===========================================================================
+# OUT-OF-BAND DELIVERY BOUNDARY GATE — inspects the SHIPPED ARTIFACT, fail-closed.
+# ===========================================================================
+# (1) ARTIFACT PROVENANCE — selectable-text detection (stdlib only, no python-pptx).
+# ---------------------------------------------------------------------------
+_AT_RE = re.compile(r"<a:t>(.*?)</a:t>", re.S)          # PPTX on-slide text runs
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def inspect_pptx_artifact(pptx_path):
+    """Open the delivered .pptx as the OOXML zip it MUST be and inspect every real
+    ppt/slides/slideN.xml part for SELECTABLE native on-slide text (<a:t> runs). A
+    canonical deck is full-bleed kie.ai gpt-image-2 images with the words BAKED IN —
+    so a real slide part has NO non-empty <a:t> run (speaker notes live in a separate
+    ppt/notesSlides part and are allowed). Any selectable on-slide text means the deck
+    was hand-built / overlaid (python-pptx add_textbox, Google Slides / Keynote
+    export), not kie-rendered.
+
+    Returns a list of (af_code, reason). Stdlib zipfile + re only — runs on any box
+    with no python-pptx dependency. Fail-closed: an artifact that cannot be opened as
+    an OOXML package is REJECTED (it cannot be proven kie-baked)."""
+    findings = []
+    try:
+        zf = zipfile.ZipFile(str(pptx_path))
+    except Exception:  # noqa: BLE001
+        return [(AF_NOT_KIE_RENDERED,
+                 f"AF-NOT-KIE-RENDERED: delivered .pptx {pptx_path.name} is not a readable "
+                 "OOXML package — it cannot be proven to be a kie-baked image-only deck "
+                 "(fail-closed; a hand-built decoy is rejected).")]
+    try:
+        names = zf.namelist()
+        slide_xmls = [n for n in names
+                      if n.startswith("ppt/slides/slide") and n.endswith(".xml")
+                      and "/_rels/" not in n]
+        if not slide_xmls:
+            findings.append((AF_NOT_KIE_RENDERED,
+                f"AF-NOT-KIE-RENDERED: {pptx_path.name} has no ppt/slides/slideN.xml parts "
+                "— not a real rendered deck (fail-closed)."))
+            return findings
+        offenders = []
+        for n in sorted(slide_xmls):
+            try:
+                xml = zf.read(n).decode("utf-8", "replace")
+            except Exception:  # noqa: BLE001
+                continue
+            for raw in _AT_RE.findall(xml):
+                txt = _TAG_RE.sub("", raw).strip()
+                if txt:
+                    offenders.append(f"{n.split('/')[-1]}:{txt[:48]!r}")
+        if offenders:
+            findings.append((AF_OVERLAY_DELIVERED,
+                f"AF-OVERLAY-DELIVERED: {pptx_path.name} carries SELECTABLE native on-slide "
+                "text (<a:t> runs) instead of words baked into a kie.ai image — "
+                + "; ".join(offenders[:8])
+                + ". A canonical deck is full-bleed gpt-image-2 images with NO selectable "
+                "body text; this deck was HAND-BUILT (python-pptx / Google Slides / overlay), "
+                "not kie-rendered. REJECTED."))
+    finally:
+        zf.close()
+    return findings
+
+
+# PDF provenance — embedded fonts + text-showing operators both present = selectable
+# text. A canonical image-only PDF (exported from an image-only deck) has neither.
+_PDF_FONT_RE = re.compile(rb"/(?:BaseFont|FontFile\d?)\b|/Type\s*/Font\b")
+_PDF_BT_RE = re.compile(rb"\bBT\b")
+_PDF_TJ_RE = re.compile(rb"(?:Tj|TJ)\b")
+_PDF_STREAM_RE = re.compile(rb"stream\r?\n(.*?)endstream", re.S)
+
+
+def _pdf_text_blobs(raw):
+    """Yield the raw bytes plus every flate-inflated content stream, so text operators
+    are visible whether or not the producer compressed the page content."""
+    yield raw
+    for m in _PDF_STREAM_RE.finditer(raw):
+        blob = m.group(1)
+        for attempt in (blob, blob.strip(b"\r\n")):
+            try:
+                yield zlib.decompress(attempt)
+                break
+            except Exception:  # noqa: BLE001
+                continue
+
+
+def inspect_pdf_artifact(pdf_path):
+    """Best-effort, stdlib-only provenance read of a delivered .pdf. A canonical deck
+    PDF is exported from an image-only .pptx: image XObjects, NO embedded fonts, NO
+    text-showing operators. We REJECT only on STRONG evidence of real selectable text —
+    BOTH an embedded font resource (/BaseFont | /FontFile | /Type /Font) AND BT...Tj/TJ
+    text operators — so a genuinely image-only PDF is never false-failed. Returns a
+    list of (af_code, reason)."""
+    findings = []
+    try:
+        raw = pdf_path.read_bytes()
+    except Exception:  # noqa: BLE001
+        return [(AF_NOT_KIE_RENDERED,
+                 f"AF-NOT-KIE-RENDERED: {pdf_path.name} is unreadable — cannot prove it is "
+                 "an image-only kie-baked deck (fail-closed).")]
+    if not raw.startswith(b"%PDF"):
+        return [(AF_NOT_KIE_RENDERED,
+                 f"AF-NOT-KIE-RENDERED: {pdf_path.name} is not a PDF (no %PDF header) — "
+                 "fail-closed.")]
+    has_font = bool(_PDF_FONT_RE.search(raw))
+    has_text_ops = any(_PDF_BT_RE.search(b) and _PDF_TJ_RE.search(b)
+                       for b in _pdf_text_blobs(raw))
+    if has_font and has_text_ops:
+        findings.append((AF_OVERLAY_DELIVERED,
+            f"AF-OVERLAY-DELIVERED: {pdf_path.name} carries SELECTABLE text (embedded font "
+            "resource + BT...Tj/TJ text-showing operators) instead of words baked into "
+            "kie.ai images. A canonical deck PDF is image-only — no fonts, no text "
+            "operators. This PDF was HAND-BUILT / overlaid, not exported from a kie-rendered "
+            "image-only deck. REJECTED."))
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# (2) KIE PROVENANCE — a real kie.ai taskId per rendered slide in the manifest.
+# ---------------------------------------------------------------------------
+def check_kie_provenance(run_dir):
+    """AF-NOT-KIE-RENDERED. Require that the process manifest's render record maps every
+    slide to a REAL kie.ai taskId (not native / placeholder / empty). Mirrors the
+    on-disk signal build_deck.write_process_manifest emits. Returns "" on pass, else a
+    reason. A run dir with no render record / no taskIds means the images were NOT
+    kie-rendered."""
+    run_dir = Path(run_dir)
+    pm = run_dir / "working" / "checkpoints" / "process_manifest.json"
+    if not pm.is_file():
+        return (f"{AF_NOT_KIE_RENDERED}: no working/checkpoints/process_manifest.json — the "
+                "deck carries NO kie.ai render record, so not one slide can be proven "
+                "kie-baked. A canonical deck records a kie taskId per slide.")
+    obj = _load_json(pm)
+    if not isinstance(obj, dict):
+        return (f"{AF_NOT_KIE_RENDERED}: process_manifest.json is unreadable / not JSON — "
+                "kie provenance cannot be proven (fail-closed).")
+    phases = obj.get("phases")
+    recs = [p for p in phases if isinstance(p, dict) and p.get("phase") == "render"] \
+        if isinstance(phases, list) else []
+    if not recs:
+        return (f"{AF_NOT_KIE_RENDERED}: process_manifest.json carries no phase=='render' "
+                "record written by build_deck.py — these slides were never baked via kie.ai.")
+    rec = recs[-1]
+    slides = rec.get("slides")
+    if not isinstance(slides, list) or not slides:
+        return (f"{AF_NOT_KIE_RENDERED}: the render record carries no per-slide entries — no "
+                "slide maps to a kie.ai taskId.")
+    bad, real = [], 0
+    for entry in slides:
+        if not isinstance(entry, dict):
+            bad.append("a per-slide entry is malformed (not an object)")
+            continue
+        tid = entry.get("taskId")
+        norm = tid.strip().lower() if isinstance(tid, str) else tid
+        if norm in _BAD_TASK_IDS:
+            bad.append(f"slide {entry.get('slide')!r}: taskId={tid!r} is not a real kie task id")
+        else:
+            real += 1
+    if real == 0:
+        return (f"{AF_NOT_KIE_RENDERED}: NO slide carries a real kie.ai taskId — the images "
+                "were not kie-rendered (native / placeholder render). " + "; ".join(bad[:6]))
+    if bad:
+        return (f"{AF_NOT_KIE_RENDERED}: one or more slides lack a real kie.ai taskId — "
+                + "; ".join(bad[:6]))
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Governed-run-dir resolution + owner-skip token (the ONLY bypass).
+# ---------------------------------------------------------------------------
+def _is_governed(d):
+    return (d is not None and Path(d).is_dir()
+            and (Path(d) / "working" / "checkpoints" / "process_manifest.json").is_file())
+
+
+def _resolve_governed_run_dir(artifact_path, run_dir):
+    """Return the governed run dir for this artifact, or None. A governed run dir
+    carries working/checkpoints/process_manifest.json. Prefer an explicit governed
+    run_dir; else walk up from the artifact (the client package lives at
+    run_dir/delivery/[slug]-FINAL/). None => no governed run dir => fail-closed."""
+    if _is_governed(run_dir):
+        return Path(run_dir)
+    try:
+        cur = Path(artifact_path).resolve().parent
+    except Exception:  # noqa: BLE001
+        return None
+    for _ in range(8):
+        if _is_governed(cur):
+            return cur
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    return None
+
+
+def _coerce_owner_skip(raw):
+    out = {}
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return out
+    for rec in raw:
+        if not isinstance(rec, dict):
+            continue
+        approved = rec.get("owner_approved") is True or rec.get("approved") is True
+        gate = rec.get("gate") or rec.get("af_code") or rec.get("phase_id")
+        if (approved and gate
+                and str(rec.get("approved_by", "")).strip()
+                and str(rec.get("reason", "")).strip()):
+            out[str(gate)] = rec
+    return out
+
+
+def _load_owner_skips(run_dir, artifact_path=None):
+    """Load logged owner_skip_approval tokens. Reuses the audited canonical_render_guard
+    loader for the governed run dir, and ALSO honors an owner_skip_approval.json placed
+    adjacent to an out-of-pipeline artifact (so an owner can authorize an out-of-band
+    delivery with a logged, audited token even when there is no run dir). A malformed /
+    owner_approved:false token authorizes nothing."""
+    skips = {}
+    if run_dir is not None:
+        try:
+            import canonical_render_guard as crg  # noqa: WPS433
+            skips.update(crg.load_owner_skip_approvals(Path(run_dir)))
+        except Exception:  # noqa: BLE001
+            pm = Path(run_dir) / "working" / "checkpoints" / "process_manifest.json"
+            obj = _load_json(pm) or {}
+            skips.update(_coerce_owner_skip(
+                obj.get("owner_skip_approval", obj.get("owner_skip_approvals", []))))
+    if artifact_path is not None:
+        adj = Path(artifact_path).resolve().parent / "owner_skip_approval.json"
+        if adj.is_file():
+            obj = _load_json(adj)
+            if isinstance(obj, dict):
+                skips.update(_coerce_owner_skip(
+                    obj.get("owner_skip_approval", obj.get("owner_skip_approvals", obj))))
+            else:
+                skips.update(_coerce_owner_skip(obj))
+    return skips
+
+
+def _lead_af_code(reason):
+    m = re.match(r"\s*(AF-[A-Z0-9]+(?:-[A-Z0-9]+)*)", reason)
+    return m.group(1) if m else ""
+
+
+# ---------------------------------------------------------------------------
+# (4) BUNDLE-COMPLETENESS — the FULL deliverable set must be present.
+# ---------------------------------------------------------------------------
+def _bundle_completeness(run_dir):
+    """Require the full deliverable set before delivery: the five-file client package
+    (deck pptx + deck pdf + presenter guide + presenter speech + audio, via AF-DH1),
+    the GoHighLevel upload record + destination ground-truth (via delivery_gate), AND
+    the teleprompter deliverable. A bare run dir at the delivery boundary that never
+    assembled a package/plan is INCOMPLETE (this is the 1-of-12 partial-delivery
+    failure). Returns a list of AF-coded reasons."""
+    run_dir = Path(run_dir)
+    reasons = []
+    # delivery_gate() returns (True, []) for BOTH a clean-complete delivery AND a
+    # pre-delivery DEFER (no package AND no plan). At the delivery boundary a deck is
+    # being shipped, so a DEFER means the bundle was never assembled — REJECT it.
+    pkg = find_client_package(run_dir)
+    plan_exists = (run_dir / "working" / "checkpoints" / "delivery_plan.json").is_file()
+    if pkg is None and not plan_exists:
+        reasons.append(f"{AF_BUNDLE_COMPLETE}: a deck artifact is being delivered but no "
+                       "delivery/[DECK_SLUG]-FINAL/ client package and no delivery_plan.json "
+                       "exist — the full deliverable set (deck + presenter speech + audio + "
+                       "presenter guide + teleprompter + GoHighLevel upload record) was "
+                       "never assembled. REJECTED.")
+    else:
+        _ok, dg = delivery_gate(run_dir)
+        reasons.extend(dg)
+    # Teleprompter sibling (part of the full presentation experience).
+    tele = []
+    for pat in ("**/*teleprompter*.html", "**/*TELEPROMPTER*.html",
+                "**/*teleprompter*.pdf", "**/*TELEPROMPTER*.pdf"):
+        tele.extend(run_dir.glob(pat))
+    if not tele:
+        reasons.append(f"{AF_BUNDLE_COMPLETE}: the teleprompter deliverable "
+                       "(teleprompter*.html/pdf) is absent from the run dir — the full "
+                       "presentation experience is incomplete. REJECTED.")
+    return reasons
+
+
+# ---------------------------------------------------------------------------
+# THE BOUNDARY GATE — fail-closed, runs for EVERY deck regardless of how produced.
+# ---------------------------------------------------------------------------
+def gate_delivered_artifact(artifact_path, run_dir=None):
+    """FAIL-CLOSED delivery boundary gate over the SHIPPED ARTIFACT. Returns
+    (ok, reasons). ok is False on any unwaived rejection. Inspects the artifact itself
+    (selectable text / kie provenance / bundle completeness) so a hand-built or overlay
+    deck cannot be delivered no matter how it was produced. The ONLY bypass is a logged
+    owner_skip_approval token (gate=<AF code>); an agent may NOT self-approve."""
+    artifact_path = Path(artifact_path)
+    if not artifact_path.is_file():
+        return False, [f"{AF_NO_RUN_DIR}: delivery artifact does not exist: {artifact_path}"]
+    suffix = artifact_path.suffix.lower()
+    if suffix not in (".pptx", ".pdf"):
+        return False, [f"{AF_NOT_KIE_RENDERED}: delivery artifact is not a .pptx/.pdf deck: "
+                       f"{artifact_path.name} (fail-closed)."]
+
+    resolved = _resolve_governed_run_dir(artifact_path, run_dir)
+    owner_skips = _load_owner_skips(resolved, artifact_path)
+
+    def waived(code):
+        return code in owner_skips
+
+    reasons = []
+
+    # (3) NO-RUN-DIR FAIL-CLOSED — a deck with no governed run dir was hand-built
+    # OUTSIDE run_signature_deck.py. This is the flip of the legacy pre-delivery defer.
+    if resolved is None:
+        if not waived(AF_NO_RUN_DIR):
+            return False, [
+                f"{AF_NO_RUN_DIR}: no governed run dir "
+                "(working/checkpoints/process_manifest.json) could be resolved for "
+                f"{artifact_path.name}. A deck with no governed run dir was hand-built "
+                "OUTSIDE run_signature_deck.py and CANNOT be delivered. The only bypass is "
+                "a logged owner_skip_approval token (gate=AF-NO-RUN-DIR)."]
+        reasons.append(f"NOTE: {AF_NO_RUN_DIR} waived by logged owner_skip_approval.")
+
+    # (1) ARTIFACT PROVENANCE — selectable-text / unreadable-artifact inspection.
+    prov = inspect_pptx_artifact(artifact_path) if suffix == ".pptx" \
+        else inspect_pdf_artifact(artifact_path)
+    for code, reason in prov:
+        if waived(code):
+            reasons.append(f"NOTE: {code} waived by owner_skip_approval.")
+        else:
+            reasons.append(reason)
+
+    # (2) KIE PROVENANCE + (4) BUNDLE — require a governed run dir to evaluate.
+    if resolved is not None:
+        kie = check_kie_provenance(resolved)
+        if kie:
+            reasons.append(f"NOTE: {AF_NOT_KIE_RENDERED} waived by owner_skip_approval."
+                           if waived(AF_NOT_KIE_RENDERED) else kie)
+        for r in _bundle_completeness(resolved):
+            code = _lead_af_code(r) or AF_BUNDLE_COMPLETE
+            if waived(code) or waived(AF_BUNDLE_COMPLETE):
+                reasons.append(f"NOTE: {code} waived by owner_skip_approval.")
+            else:
+                reasons.append(r)
+
+    hard = [r for r in reasons if not r.startswith("NOTE")]
+    return (len(hard) == 0), reasons
+
+
 def delivery_gate(run_dir: Path):
     """Mechanical last-mile gate. Returns (ok, reasons). Defers (ok=True, []) when no
     delivery has been attempted yet (no package dir AND no delivery_plan.json)."""
@@ -242,6 +657,58 @@ def _write_media(base: Path, media):
 
 FIVE = ["demo-deck-FINAL.pptx", "demo-deck-FINAL.pdf", "PRESENTER-GUIDE.pdf",
         "PRESENTERS-SPEECH.pdf", "PRESENTER-AUDIO.mp3"]
+
+_SLIDE_IMG_ONLY = (
+    '<?xml version="1.0"?><p:sld xmlns:p="x" xmlns:a="y"><p:cSld><p:spTree>'
+    '<p:pic><p:blipFill><a:blip r:embed="rId2"/></p:blipFill></p:pic>'
+    '</p:spTree></p:cSld></p:sld>')
+_SLIDE_WITH_TEXT = (
+    '<?xml version="1.0"?><p:sld xmlns:p="x" xmlns:a="y"><p:cSld><p:spTree>'
+    '<p:sp><p:txBody><a:p><a:r><a:t>Hand-built headline overlay</a:t></a:r>'
+    '</a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>')
+
+
+def _mk_pptx(path: Path, with_text: bool):
+    """Write a minimal OOXML .pptx zip with one slide part — image-only or with a
+    selectable <a:t> text run — using stdlib zipfile only (no python-pptx)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(str(path), "w") as zf:
+        zf.writestr("[Content_Types].xml", "<Types/>")
+        zf.writestr("ppt/slides/slide1.xml",
+                    _SLIDE_WITH_TEXT if with_text else _SLIDE_IMG_ONLY)
+    return path
+
+
+def _write_render_manifest(base: Path, task_ids):
+    """Write a process_manifest.json render record with the given per-slide taskIds."""
+    p = base / "working" / "checkpoints"
+    p.mkdir(parents=True, exist_ok=True)
+    rec = {"phase": "render", "output_slide_count": len(task_ids),
+           "slides": [{"slide": i + 1, "taskId": t} for i, t in enumerate(task_ids)]}
+    (p / "process_manifest.json").write_text(json.dumps({"phases": [rec]}))
+
+
+def _mk_full_run(base: Path, with_text=False, task_ids=("kie-1",), teleprompter=True):
+    """Assemble a complete governed run dir: 5-file client package (deck.pptx baked as
+    an OOXML zip), GHL upload record + plan, a render manifest with kie taskIds, and a
+    teleprompter. Returns the path to the delivered deck .pptx."""
+    pkg = base / "delivery" / "demo-deck-FINAL"
+    pkg.mkdir(parents=True, exist_ok=True)
+    deck = _mk_pptx(pkg / "demo-deck-FINAL.pptx", with_text=with_text)
+    for nm in ("demo-deck-FINAL.pdf", "PRESENTER-GUIDE.pdf",
+               "PRESENTERS-SPEECH.pdf", "PRESENTER-AUDIO.mp3"):
+        (pkg / nm).write_text("x")
+    _write_media(base, {"pptx_ghl_media_id": "gid"})
+    _write_plan(base, {"destinations": [
+        {"type": "ghl", "status": "uploaded"},
+        {"type": "mac_downloads", "verify_anchor": str(deck)},
+    ]})
+    _write_render_manifest(base, list(task_ids))
+    if teleprompter:
+        tp = base / "working" / "teleprompter"
+        tp.mkdir(parents=True, exist_ok=True)
+        (tp / "teleprompter.html").write_text("<html></html>")
+    return deck
 
 
 def _selftest() -> int:
@@ -319,27 +786,114 @@ def _selftest() -> int:
         if ok or not any("AF-DH1" in r and "missing" in r for r in reasons):
             fails.append(f"G incomplete: expected AF-DH1 missing FAIL, got ok={ok} reasons={reasons}")
 
+    # === OUT-OF-BAND BOUNDARY GATE (gate_delivered_artifact) ===
+
+    # CASE H — clean image-only deck + full governed run dir -> PASS.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        deck = _mk_full_run(base, with_text=False, task_ids=("kie-aaa", "kie-bbb"))
+        # render manifest has 2 slides but package deck has 1 — align taskIds to 1.
+        _write_render_manifest(base, ["kie-aaa"])
+        ok, reasons = gate_delivered_artifact(deck, base)
+        if not ok:
+            fails.append(f"H boundary-pass: expected PASS, got {reasons}")
+
+    # CASE H2 — selectable native on-slide text -> AF-OVERLAY-DELIVERED REJECT.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        deck = _mk_full_run(base, with_text=True, task_ids=("kie-aaa",))
+        ok, reasons = gate_delivered_artifact(deck, base)
+        if ok or not any("AF-OVERLAY-DELIVERED" in r for r in reasons):
+            fails.append(f"H2 overlay: expected AF-OVERLAY-DELIVERED REJECT, got ok={ok} {reasons}")
+
+    # CASE I — no governed run dir (deck in a bare dir) -> AF-NO-RUN-DIR REJECT.
+    with tempfile.TemporaryDirectory() as t:
+        deck = _mk_pptx(Path(t) / "loose-deck.pptx", with_text=False)
+        ok, reasons = gate_delivered_artifact(deck, None)
+        if ok or not any("AF-NO-RUN-DIR" in r for r in reasons):
+            fails.append(f"I no-run-dir: expected AF-NO-RUN-DIR REJECT, got ok={ok} {reasons}")
+
+    # CASE J — render record with a native (non-kie) taskId -> AF-NOT-KIE-RENDERED.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        deck = _mk_full_run(base, with_text=False, task_ids=("kie-aaa",))
+        _write_render_manifest(base, ["native"])  # not a real kie bake
+        ok, reasons = gate_delivered_artifact(deck, base)
+        if ok or not any("AF-NOT-KIE-RENDERED" in r for r in reasons):
+            fails.append(f"J not-kie: expected AF-NOT-KIE-RENDERED REJECT, got ok={ok} {reasons}")
+
+    # CASE K — missing teleprompter sibling -> AF-BUNDLE-COMPLETE REJECT.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        deck = _mk_full_run(base, with_text=False, task_ids=("kie-aaa",), teleprompter=False)
+        ok, reasons = gate_delivered_artifact(deck, base)
+        if ok or not any("AF-BUNDLE-COMPLETE" in r and "teleprompter" in r for r in reasons):
+            fails.append(f"K bundle: expected AF-BUNDLE-COMPLETE teleprompter REJECT, got ok={ok} {reasons}")
+
+    # CASE L — owner_skip_approval waives the no-run-dir block (the ONLY bypass).
+    with tempfile.TemporaryDirectory() as t:
+        deck = _mk_pptx(Path(t) / "loose-deck.pptx", with_text=False)
+        (Path(t) / "owner_skip_approval.json").write_text(json.dumps({
+            "owner_approved": True, "gate": "AF-NO-RUN-DIR",
+            "approved_by": "owner", "reason": "audited out-of-band delivery"}))
+        ok, reasons = gate_delivered_artifact(deck, None)
+        if not ok:
+            fails.append(f"L owner-skip: expected PASS via owner_skip_approval, got {reasons}")
+
+    # CASE M — a non-zip / decoy .pptx -> AF-NOT-KIE-RENDERED (fail-closed).
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        _mk_full_run(base, with_text=False, task_ids=("kie-aaa",))
+        decoy = base / "delivery" / "demo-deck-FINAL" / "demo-deck-FINAL.pptx"
+        decoy.write_bytes(b"\x89PNG not a real pptx")  # a renamed image, not OOXML
+        ok, reasons = gate_delivered_artifact(decoy, base)
+        if ok or not any("AF-NOT-KIE-RENDERED" in r for r in reasons):
+            fails.append(f"M decoy: expected AF-NOT-KIE-RENDERED REJECT, got ok={ok} {reasons}")
+
     if fails:
         print("delivery_gate selftest -> FAIL")
         for f in fails:
             print("  -", f)
         return 1
-    print("delivery_gate selftest -> PASS (7 cases: defer/pass/extra-md/singular/"
-          "no-upload/missing-anchor/incomplete)")
+    print("delivery_gate selftest -> PASS (14 cases: defer/pass/extra-md/singular/"
+          "no-upload/missing-anchor/incomplete + boundary: clean-pass/overlay/no-run-dir/"
+          "not-kie/bundle/owner-skip/decoy)")
     return 0
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Mechanical last-mile delivery gate (R9-F9).")
+    ap = argparse.ArgumentParser(description="Mechanical last-mile delivery gate (R9-F9) "
+                                 "+ out-of-band fail-closed delivery boundary gate.")
     ap.add_argument("run_dir", nargs="?", help="presentation run directory")
+    ap.add_argument("--artifact", help="the SHIPPED deck artifact (.pptx/.pdf) to gate "
+                    "at the delivery boundary (fail-closed)")
+    ap.add_argument("--run-dir", dest="run_dir_opt", help="governed run dir for --artifact")
     ap.add_argument("--selftest", action="store_true", help="run built-in fixtures")
     ap.add_argument("--json", action="store_true", help="emit JSON result")
     args = ap.parse_args()
 
     if args.selftest:
         return _selftest()
+
+    # OUT-OF-BAND BOUNDARY MODE — inspect the shipped artifact, fail-closed.
+    if args.artifact:
+        rd = args.run_dir_opt or args.run_dir
+        ok, reasons = gate_delivered_artifact(args.artifact, rd)
+        if args.json:
+            print(json.dumps({"ok": ok, "reasons": reasons}, indent=2))
+        else:
+            if ok:
+                print("DELIVERY BOUNDARY GATE: PASS (artifact provenance + kie + bundle clean)")
+                for r in reasons:
+                    print("  -", r)  # NOTEs (owner-skip waivers) surface here.
+            else:
+                print("DELIVERY BOUNDARY GATE: REJECTED")
+                for r in reasons:
+                    print("  -", r)
+        return 0 if ok else 1
+
     if not args.run_dir:
-        ap.error("run_dir is required (or use --selftest)")
+        ap.error("run_dir is required (or use --artifact / --selftest)")
     rd = Path(args.run_dir)
     if not rd.is_dir():
         print(f"delivery_gate: run_dir not a directory: {rd}", file=sys.stderr)
