@@ -760,6 +760,75 @@ def test_chk_slide_count_floor():
     return fails
 
 
+def _slide_count_exact_run_dir(requested, output_slides, target_minutes=30,
+                               source=None) -> Path:
+    """Build a run dir whose intake.json carries an EXPLICIT client_requested_slide_count
+    and a slides.json of output_slides slides — drives the AF-SLIDE-COUNT-EXACT gate.
+    Optionally writes a mission_prd.json source_slide_count so the coverage-defer path
+    can be exercised. requested=None omits the field (the gate then defers)."""
+    root = Path(tempfile.mkdtemp(prefix="deck_slideexact_test_"))
+    (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    intake = {"interview_confirmed": True, "presentation_mode": "general",
+              "audience_mode": "STANDARD", "target_talk_minutes": target_minutes}
+    if requested is not None:
+        intake["client_requested_slide_count"] = requested
+    (root / "working" / "copy" / "intake.json").write_text(json.dumps(intake))
+    (root / "working" / "copy" / "slides.json").write_text(json.dumps(
+        [{"slide": i} for i in range(1, output_slides + 1)]))
+    if source is not None:
+        (root / "working" / "copy" / "mission_prd.json").write_text(
+            json.dumps({"source_slide_count": source}))
+    return root
+
+
+def test_chk_slide_count_exact():
+    """AF-SLIDE-COUNT-EXACT: the client's EXPLICIT requested slide count is honored
+    EXACTLY — 25->25, 50->50, 500->500; the floored/capped/changed cases all FAIL,
+    and the duration pacing floor + Mode-B coverage floor DEFER to it when set.
+
+    This is the regression for the slide-count-floor bug: a client who asked for 25
+    slides must get exactly 25 — never 20 (floored to a heuristic), never an "is 20 ok
+    instead?" negotiation."""
+    fails = []
+    bd = build_deck
+    # (1) the exact bug: requested 25, built 20 -> FAIL (no silent floor to 20).
+    r = bd._chk_slide_count_exact(_slide_count_exact_run_dir(25, 20))
+    if not r or "AF-SLIDE-COUNT-EXACT" not in r:
+        fails.append(f"EXACT: req 25 / built 20 must FAIL (AF-SLIDE-COUNT-EXACT), got {r!r}")
+    # (2) requested 25, built 25 -> PASS.
+    if bd._chk_slide_count_exact(_slide_count_exact_run_dir(25, 25)):
+        fails.append("EXACT: req 25 / built 25 must PASS but failed")
+    # (3) requested 25, built 30 -> FAIL (over-build is also a change, not allowed).
+    if "AF-SLIDE-COUNT-EXACT" not in bd._chk_slide_count_exact(_slide_count_exact_run_dir(25, 30)):
+        fails.append("EXACT: req 25 / built 30 must FAIL (over-build is a change)")
+    # (4) larger exact counts honored verbatim: 50->50 and 500->500.
+    if bd._chk_slide_count_exact(_slide_count_exact_run_dir(50, 50)):
+        fails.append("EXACT: req 50 / built 50 must PASS but failed")
+    if bd._chk_slide_count_exact(_slide_count_exact_run_dir(500, 500)):
+        fails.append("EXACT: req 500 / built 500 must PASS but failed")
+    # (5) no explicit count -> DEFER (pass); the duration/coverage floors govern.
+    if bd._chk_slide_count_exact(_slide_count_exact_run_dir(None, 10)):
+        fails.append("EXACT: no requested count must DEFER (pass) but failed")
+    # (6) the duration pacing floor DEFERS when a requested count is present: a
+    #     30-min talk (floor 39) with an explicit request for 25 and a 25-slide deck
+    #     must PASS the floor (the client's 25 is never forced up to 39).
+    if bd._chk_slide_count_floor(_slide_count_exact_run_dir(25, 25, target_minutes=30)):
+        fails.append("EXACT: pacing floor must DEFER to an explicit requested count (25 not forced to 39)")
+    #     ...and AF-SLIDE-COUNT-EXACT passes that same deck (25 == 25).
+    if bd._chk_slide_count_exact(_slide_count_exact_run_dir(25, 25, target_minutes=30)):
+        fails.append("EXACT: req 25 / built 25 at 30-min must PASS the exact gate")
+    # (7) the Mode-B coverage floor DEFERS when a requested count is present: a 40-slide
+    #     source with an explicit request for 25 and a 25-slide deck must PASS coverage
+    #     (the client explicitly chose to compress their own source to an exact length).
+    if bd._chk_coverage(_slide_count_exact_run_dir(25, 25, source=40)):
+        fails.append("EXACT: coverage floor must DEFER to an explicit requested count (source 40, req 25)")
+    #     ...and the exact gate STILL holds 25 == 25 on that deck.
+    if bd._chk_slide_count_exact(_slide_count_exact_run_dir(25, 25, source=40)):
+        fails.append("EXACT: req 25 / built 25 with source 40 must PASS the exact gate")
+    print(f"SLIDE-COUNT-EXACT (honor req)-> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
 def test_chk_pitch():
     """AF-PITCH-MISSING: arc with no ladder/no re-pitch FAILS; full ladder+re-pitch PASSES;
     absent arc defers (passes)."""
@@ -2815,6 +2884,10 @@ def emit_af_coverage():
     # AF-SLIDE-COUNT-FLOOR — a 30-min/10-slide deck (floor 39) FAILS _chk_slide_count_floor.
     record("AF-SLIDE-COUNT-FLOOR", build_deck._chk_slide_count_floor(
         _slide_count_run_dir(30, 10)))
+    # AF-SLIDE-COUNT-EXACT — a client who explicitly requested 25 slides but whose deck
+    # was built to 20 (the original floored-to-a-heuristic bug) FAILS _chk_slide_count_exact.
+    record("AF-SLIDE-COUNT-EXACT", build_deck._chk_slide_count_exact(
+        _slide_count_exact_run_dir(25, 20)))
     # AF-PITCH-MISSING — an arc with no ladder/no re-pitch FAILS _chk_pitch.
     record("AF-PITCH-MISSING", build_deck._chk_pitch(
         _pitch_run_dir([{"slide": 1, "arc_section": "hook"},
@@ -3869,6 +3942,11 @@ def main():
     # O4 (NEW) — AF-SLIDE-COUNT-FLOOR: a 30-min/10-slide deck (floor 39) auto-fails;
     # a 30-min/39-slide deck passes; no duration target defers.
     failures += test_chk_slide_count_floor()
+
+    # AF-SLIDE-COUNT-EXACT — the client's EXPLICIT requested slide count is honored
+    # EXACTLY (25->25, 50->50, 500->500); floored/capped/changed cases fail; the pacing
+    # floor + Mode-B coverage floor DEFER to it. Regression for the floored-to-20 bug.
+    failures += test_chk_slide_count_exact()
 
     # O5 (NEW) — AF-PITCH-MISSING: an arc with no offer-ladder / no re-pitch fails;
     # a full ladder + re-pitch passes; an absent arc defers.

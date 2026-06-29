@@ -245,7 +245,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 | Intake completeness | All mandatory Q-bank variables (TONE, PRICE_MODE, VIP_TIER, REPRESENTATION_MIX with percentages, VISUAL_MIX, DARK_OK, HOOK SEED, PROOF_ASSETS) captured and confirmed before PRD is written |
 | Model manifest declared at echo | 100% of runs have model_manifest.json written and operator-confirmed before Phase 1 |
 | Mode B word-preservation rate | 100% -- zero unrequested rewrites of client copy; every proposed change listed and owner-approved per substitution |
-| Slide math accuracy | SLIDE_COUNT_FINAL = max(duration_target, source_slide_count) on 100% of runs; Mode A within the duration target/cap, Mode B never below source_slide_count |
+| Slide math accuracy | SLIDE_COUNT_FINAL = client_requested_slide_count when the client stated an explicit count (honored EXACTLY, never floored/capped/changed), else max(duration_target, source_slide_count) on 100% of runs; Mode A within the duration target/cap, Mode B never below source_slide_count |
 
 ---
 
@@ -383,11 +383,12 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    | 120+ min | 80 to 90 | **90 (Mode A target/cap only)** |
 
    Rules from the master SOP:
-   - The rate is roughly 1.3 to 1.5 slides per minute, tapering as duration grows. A three-hour presentation does NOT mean 300 slides. The 90 figure is a Mode A target/cap only; in Mode B it yields to source_slide_count (add-only), per the ANTI-COMPRESSION SPEC below.
+   - **CLIENT'S EXPLICIT COUNT WINS — FIRST AND ABSOLUTE.** If the client stated an exact number of slides (`client_requested_slide_count`), that number IS the deck length and is honored EXACTLY (25 -> 25, 50 -> 50, 500 -> 500). The duration table below is only the FALLBACK for when the client gave no number. Never floor it up to a pacing minimum, never cap it down to 90, never default it, and never ask the client to accept a different number ("this is 20, you said 25 — does 20 work?" is forbidden). `AF-SLIDE-COUNT-EXACT` AUTO-FAILS any deck whose length differs from the requested count.
+   - The rate is roughly 1.3 to 1.5 slides per minute, tapering as duration grows. A three-hour presentation does NOT mean 300 slides. With no explicit client count, the 90 figure is a Mode A target/cap only; in Mode B it yields to source_slide_count (add-only), per the ANTI-COMPRESSION SPEC below.
    - Below 30 minutes, the Hormozi arc compresses: merge the origin story into 2 slides, run ONE secret instead of three, and keep the offer section proportionally intact (the pitch never gets cut).
-   - Propose the slide count from this table; the client confirms it during the intake echo. Record `SLIDE_COUNT`.
+   - Propose the slide count from this table ONLY when the client gave no explicit number; the client confirms it during the intake echo. Record `SLIDE_COUNT`. (When the client DID give a number, that number is `SLIDE_COUNT` — nothing to propose or negotiate.)
 
-2. **ANTI-COMPRESSION SPEC -- floor overrides ceiling.** Compute `SLIDE_COUNT_FINAL = max(duration_target, source_slide_count)`. The output deck MUST contain AT LEAST source_slide_count slides. This floor OVERRIDES the Mode A cap and the 90 figure. Never delete a client slide to hit a duration cap. Mode B is ADD-ONLY: improve/expand, never reduce below source_slide_count. (In Mode A, source_slide_count == 0, so the duration target governs.) Record `slide_count_final` in mission_prd.json.
+2. **ANTI-COMPRESSION SPEC -- floor overrides ceiling, UNLESS the client fixed the count.** When the client stated an explicit `client_requested_slide_count`, that exact number is `SLIDE_COUNT_FINAL`, full stop — it overrides BOTH the duration target/cap AND the source_slide_count floor (the client's explicit instruction to set an exact length is their own choice). Otherwise compute `SLIDE_COUNT_FINAL = max(duration_target, source_slide_count)`: the output deck MUST contain AT LEAST source_slide_count slides; this floor OVERRIDES the Mode A cap and the 90 figure; never delete a client slide to hit a duration cap; Mode B is ADD-ONLY: improve/expand, never reduce below source_slide_count. (In Mode A with no explicit count, source_slide_count == 0, so the duration target governs.) Record `slide_count_final` in mission_prd.json.
 
 3. Allocate the arc using the master SOP Section 4.1 worked allocation table. Percentages from the arc produce fractions; use this pre-reconciled allocation for the common counts. For other counts, allocate proportionally, round, then add or remove slides from the Secrets sections (NEVER from the offer section) until the total matches `SLIDE_COUNT`:
 
@@ -603,8 +604,9 @@ A healthy run_ledger.json shows: `status: "delivered"`, slide_count = 75, phase_
 - Failing to collect PROOF_ASSETS upfront -- late-arriving assets mean [CLIENT TO SUPPLY] placeholders that restructure slide builds mid-run and delay delivery.
 - Writing the PRD without declaring the MODEL MANIFEST -- the manifest is the operator's authorization; writing prompts without it means generation may happen on an unauthorized model.
 - In Mode B: rewriting a client's slide copy without per-substitution owner approval -- the rule is ADD and PROPOSE, not rewrite. Any unrequested change to client words is a violation regardless of quality.
-- Using the old (wrong) slide-math table -- the master SOP Section 4 table governs; the 90 figure is the Mode A target/cap, and in Mode B it yields to source_slide_count (add-only, never trimmed).
-- Deleting a client slide to hit a duration cap in Mode B -- the source_slide_count floor OVERRIDES the cap. SLIDE_COUNT_FINAL = max(duration_target, source_slide_count); the output deck must never contain fewer slides than the source deck.
+- Overriding the client's EXPLICIT slide count -- the gravest count error. If the client asked for an exact number (`client_requested_slide_count`), build EXACTLY that many (25 -> 25, 50 -> 50, 500 -> 500). NEVER floor it up to a pacing minimum, cap it down to 90, default it, or ask "this is 20, you said 25 — does 20 work?". The client's stated count is honored verbatim and overrides every heuristic (duration floor, Mode-A cap, AND the source_slide_count anti-compression floor). `AF-SLIDE-COUNT-EXACT` AUTO-FAILS any mismatch.
+- Using the old (wrong) slide-math table -- the master SOP Section 4 table governs ONLY when the client gave no explicit count; the 90 figure is the Mode A target/cap, and in Mode B it yields to source_slide_count (add-only, never trimmed).
+- Deleting a client slide to hit a duration cap in Mode B -- the source_slide_count floor OVERRIDES the cap. With no explicit client count, SLIDE_COUNT_FINAL = max(duration_target, source_slide_count) and the output deck must never contain fewer slides than the source deck.
 
 ---
 
