@@ -55,7 +55,7 @@ Departments communicate via dedicated topics in the Telegram group. Each departm
 ### Accessing the Dashboard
 - Local: http://localhost:4000
 - Requires the PM2 process to be running: `pm2 list` to check
-- View logs: `pm2 logs command-center`
+- View logs: `pm2 logs blackceo-command-center`
 
 ### Managing the Dashboard
 ```bash
@@ -63,13 +63,13 @@ Departments communicate via dedicated topics in the Telegram group. Each departm
 pm2 list
 
 # View logs
-pm2 logs command-center
+pm2 logs blackceo-command-center
 
 # Restart if needed
-pm2 restart command-center
+pm2 restart blackceo-command-center
 
 # Stop
-pm2 stop command-center
+pm2 stop blackceo-command-center
 ```
 ```
 
@@ -126,7 +126,7 @@ Check twice daily if Skill 23 is complete but Command Center not yet set up.
 - Prompt user to activate Skill 32: "Your AI Workforce Blueprint is complete. Activate Skill 32 to set up your Command Center with live department agents and dashboard."
 
 **If Command Center exists:**
-- Verify dashboard is running: `pm2 list | grep command-center`
+- Verify dashboard is running: `pm2 list | grep blackceo-command-center`
 - If not running, start it: `cd ~/projects/command-center && pm2 start ecosystem.config.cjs`
 ```
 
