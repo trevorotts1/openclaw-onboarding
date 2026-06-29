@@ -158,6 +158,26 @@ cfg_path = Path(sys.argv[1])
 cfg = json.loads(cfg_path.read_text())
 agents = cfg.get("agents", {}).get("list", []) or []
 
+# v16.1.3 SELF-HEAL — sessions/agentToAgent are ROOT `tools` keys, NEVER per-agent
+# (AgentEntry.tools is additionalProperties:false and REJECTS them → config
+# validate fails). On both the consent swap and the revoke restore, strip any
+# such keys from the CEO's per-agent tools block and migrate the value up to ROOT
+# `tools` so a grant/revoke cycle on a previously-corrupted box never re-writes
+# the schema-invalid keys. Idempotent.
+def _heal_routing_keys(_cfg, _ceo):
+    _rt = _cfg.setdefault("tools", {})
+    if not isinstance(_rt, dict):
+        _rt = {}
+        _cfg["tools"] = _rt
+    _t = _ceo.get("tools")
+    if not isinstance(_t, dict):
+        return
+    for _k in ("sessions", "agentToAgent"):
+        if _k in _t:
+            if _k not in _rt and isinstance(_t[_k], (dict, list)):
+                _rt[_k] = _t[_k]
+            del _t[_k]
+
 CEO_IDS = ("main", "dept-ceo", "ceo", "master-orchestrator", "dept-master-orchestrator")
 ceo = None
 for ag in agents:
@@ -224,6 +244,9 @@ else:  # gated
     else:
         print(f"GATE_RESTORE_FAILED:{ceo_id}")
         sys.exit(0)
+
+# v16.1.3: keep the per-agent block schema-clean and routing tools on root.
+_heal_routing_keys(cfg, ceo)
 
 cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
 PYEOF

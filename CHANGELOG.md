@@ -1,3 +1,18 @@
+## [v16.1.3]  -  2026-06-29  -  fix: sessions/agentToAgent were written to the schema-invalid per-agent tools block (router-default boxes -> cron engine down); now on root tools + updater self-heals corrupted configs on next run
+
+### What changed
+
+**THE BUG (schema-invalid per-agent routing keys → cron engine down).** The updater injected `sessions` and `agentToAgent` into the PER-AGENT `tools` object (`agents.list[].tools`). That schema (`AgentEntry.tools`) is `additionalProperties:false` and accepts ONLY allow/alsoAllow/byProvider/codeMode/deny/elevated/exec/fs/loopDetection/message/profile/sandbox/toolsBySender — it does NOT allow `sessions`/`agentToAgent`. On a router-default box the resulting config failed `openclaw config validate` ("Additional properties are not allowed ('agentToAgent', 'sessions' were unexpected)"), so the reload was skipped and the cron engine went down. Those two keys belong on ROOT `tools` (`config["tools"]`), which accepts `sessions.visibility` (self|tree|agent|all) and `agentToAgent.{enabled,allow[]}`. Schema-verified against the live gateway schema on 2026.5.22, 2026.5.28 and 2026.6.8.
+
+- **All four write-sites now write the two keys to ROOT `tools`, dropped from per-agent** (the per-agent block keeps deny/allow/byProvider + the `sessions_send`/`sessions_list`/`sessions_history` tool-name allow entries):
+  `scripts/apply-fleet-standards.sh`, `scripts/apply-routing-fix.sh` (its ALREADY_GATED early-exit preserved), `23-ai-workforce-blueprint/scripts/build-workforce.py` (the previously-unguarded install.sh path), and `hooks/lib-ceo-tool-gate.sh` (the canonical gated `tools` emitter consumed by `grant-ceo-consent.sh` + `verify-routing.sh` G7).
+- **SELF-HEAL (idempotent).** `apply-fleet-standards.sh` and `apply-routing-fix.sh` now REMOVE `sessions`/`agentToAgent` from any per-agent `tools` block they find and MIGRATE the value up to ROOT `tools`, so rolling the fixed version onto an already-corrupted router-default box REPAIRS it on the next run — the gateway hot-reloads the now-valid config, no restart. `apply-routing-fix.sh` heals BEFORE its ALREADY_GATED early-exit so an already-gated corrupted box is repaired too. `grant-ceo-consent.sh` strips/migrates on the consent swap and the revoke restore. Running twice never re-corrupts.
+- **GUARD.** `verify-routing.sh` G7 now FAILS (even under an owner-consent carve-out) when the gated router carries per-agent `sessions`/`agentToAgent`. `scripts/test-ceo-tool-gate.sh` gains section M (M0–M5): proves the lib emitter + every write-site keep routing keys on ROOT tools, proves the self-heal repairs a corrupted box (both scripts, including the ALREADY_GATED path), proves idempotency, and source-guards the build origin. A new CI workflow `ceo-tools-root-schema-guard.yml` runs `test-ceo-tool-gate.sh` so any per-agent `sessions`/`agentToAgent` regression fails the build.
+
+**Tests.** `test-ceo-tool-gate.sh` ALL PASS (47 assertions incl. M0–M5). `sync_check` IN SYNC; `test_preflight` ALL PASSED; `qc-assert-repo-consistency` consistency + artifact PASS; `hash-content-manifest --check` PASS; `build-workforce.py` py_compile OK. Schema-truth proven against the live `openclaw config schema` (2026.6.8): corrupt per-agent FAILS, healed per-agent PASSES, root tools PASSES. No client names in changed files.
+
+---
+
 ## [v16.1.2]  -  2026-06-29  -  delivery gate now enforced at the lowest GHL upload chokepoint: a deck artifact cannot be uploaded to GHL without a passed-gate attestation, closing the direct upload_media() bypass; non-deck media unaffected
 
 ### What changed

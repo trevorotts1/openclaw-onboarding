@@ -119,9 +119,18 @@ sys.exit(1)
 PYEOF
 }
 
-# Emit the canonical GATED `tools` object as JSON on stdout. The grant script
-# uses this to RESTORE the gate on --revoke, and build-time/L5 use the identical
-# shape. byProvider denies all tools from each GHL MCP server.
+# Emit the canonical GATED PER-AGENT `tools` object as JSON on stdout. The grant
+# script uses this to RESTORE the gate on --revoke, and build-time/L5 use the
+# identical shape. byProvider denies all tools from each GHL MCP server.
+#
+# v16.1.3 FIX — this is the PER-AGENT tools block, which is additionalProperties:
+# false (allowed keys: allow/alsoAllow/byProvider/codeMode/deny/elevated/exec/fs/
+# loopDetection/message/profile/sandbox/toolsBySender). It therefore carries ONLY
+# deny/allow/byProvider. The cross-agent routing tools — sessions.visibility and
+# agentToAgent — are ROOT `tools` keys (config["tools"]); emitting them here put
+# them on the per-agent block and failed `openclaw config validate` (reload
+# skipped → cron engine down on router-default boxes). They are now set on ROOT
+# `tools` by apply-routing-fix.sh / apply-fleet-standards.sh / build-workforce.py.
 ceo_gate_tools_json() {
   python3 - "$@" <<'PYEOF'
 import json, os
@@ -129,10 +138,7 @@ deny = os.environ["CEO_GATE_DENY"].split()
 allow = os.environ["CEO_GATE_ALLOW"].split()
 providers = os.environ["CEO_GATE_MCP"].split()
 by_provider = {p: {"deny": ["*"]} for p in providers}
-# sessions.visibility=all: routing agent must see all sessions to hand off to
-# any department agent (gateway default "tree" blocks cross-agent routing).
-# agentToAgent: routing agent must be able to message peer agents directly.
-print(json.dumps({"deny": deny, "allow": allow, "byProvider": by_provider, "sessions": {"visibility": "all"}, "agentToAgent": {"enabled": True, "allow": ["*"]}}))
+print(json.dumps({"deny": deny, "allow": allow, "byProvider": by_provider}))
 PYEOF
 }
 

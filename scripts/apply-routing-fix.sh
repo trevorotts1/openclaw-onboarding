@@ -520,6 +520,44 @@ CEO_MCP_DENY = {
 cfg_path = Path(sys.argv[1])
 cfg = json.loads(cfg_path.read_text())
 
+# v16.1.3 SELF-HEAL — sessions/agentToAgent belong on ROOT `tools`, NEVER on a
+# per-agent tools block (AgentEntry.tools is additionalProperties:false and
+# REJECTS them → `openclaw config validate` fails → reload skipped → cron engine
+# down). REMOVE the schema-invalid keys from EVERY per-agent tools block,
+# MIGRATING the configured value up to ROOT `tools` when root does not already
+# carry it, then WRITE the repaired config immediately. Done FIRST so a
+# previously-corrupted box is repaired even on the ALREADY_GATED / consent /
+# PA-default early-exit paths below (which return before the L5 write at the
+# tail). Prints to STDERR so the captured L5_RESULT (stdout) is unaffected.
+# Idempotent: no per-agent occurrence → no-op; running twice never re-corrupts.
+def _heal_peragent_routing_keys(_cfg):
+    _rt = _cfg.setdefault("tools", {})
+    if not isinstance(_rt, dict):
+        _rt = {}
+        _cfg["tools"] = _rt
+    _healed = []
+    for _ag in (_cfg.get("agents", {}) or {}).get("list", []) or []:
+        if not isinstance(_ag, dict):
+            continue
+        _at = _ag.get("tools")
+        if not isinstance(_at, dict):
+            continue
+        for _k in ("sessions", "agentToAgent"):
+            if _k in _at:
+                if _k not in _rt and isinstance(_at[_k], (dict, list)):
+                    _rt[_k] = _at[_k]  # migrate the configured value up to root
+                del _at[_k]
+                _healed.append(f"{_ag.get('id', '<unknown>')}.{_k}")
+    return _healed
+
+_healed_keys = _heal_peragent_routing_keys(cfg)
+if _healed_keys:
+    cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
+    sys.stderr.write(
+        "[apply-routing-fix] v16.1.3 self-heal: removed schema-invalid per-agent "
+        "routing keys + ensured on ROOT tools: " + ", ".join(_healed_keys) + "\n"
+    )
+
 # Owner-consent carve-out guard: if a grant is ACTIVE the gate is intentionally
 # lifted; re-gating here would silently revoke the owner's grant. Same single
 # shared sidecar read by src/lib/consent.ts and hooks/lib-ceo-consent.sh.
@@ -616,22 +654,32 @@ if not isinstance(by_provider, dict):
     tools["byProvider"] = by_provider
 for prov, rule in CEO_MCP_DENY.items():
     by_provider[prov] = rule
-# Cross-agent routing: routing agent MUST see all sessions so it can locate
-# and hand off to any department agent. Default gateway behaviour is "tree"
-# (spawned-children only) which silently blocks department handoffs.
-sessions_cfg = tools.setdefault("sessions", {})
+# v16.1.3 FIX — cross-agent routing tools live on ROOT `tools` (config["tools"]),
+# NEVER on a per-agent tools block. The per-agent AgentEntry.tools schema is
+# additionalProperties:false and REJECTS sessions/agentToAgent (writing them
+# per-agent fails `openclaw config validate` → reload skipped → cron engine down
+# on a router-default box). Root `tools` accepts tools.sessions.visibility
+# (self|tree|agent|all) and tools.agentToAgent.{enabled,allow[]}.
+root_tools = cfg.setdefault("tools", {})
+if not isinstance(root_tools, dict):
+    root_tools = {}
+    cfg["tools"] = root_tools
+# sessions.visibility=all: routing agent MUST see all sessions so it can locate
+# and hand off to any department agent (gateway default "tree" — spawned-children
+# only — silently blocks department handoffs).
+sessions_cfg = root_tools.setdefault("sessions", {})
 if not isinstance(sessions_cfg, dict):
     sessions_cfg = {}
-    tools["sessions"] = sessions_cfg
+    root_tools["sessions"] = sessions_cfg
 if sessions_cfg.get("visibility") != "all":
     sessions_cfg["visibility"] = "all"
 # agentToAgent: routing agent must be able to message peer agents directly
 # (not just spawn children). Idempotent — setdefault preserves any
 # already-customized allow list.
-a2a_cfg = tools.setdefault("agentToAgent", {})
+a2a_cfg = root_tools.setdefault("agentToAgent", {})
 if not isinstance(a2a_cfg, dict):
     a2a_cfg = {}
-    tools["agentToAgent"] = a2a_cfg
+    root_tools["agentToAgent"] = a2a_cfg
 a2a_cfg.setdefault("enabled", True)
 a2a_cfg.setdefault("allow", ["*"])
 
