@@ -49,7 +49,7 @@
       "section": "deck-intake",
       "order": 3,
       "prompt": "What is the specific book, program, method, or message this deck is built around? I need the name and a one-line description so every image is grounded in YOUR content, not generic inspiration.",
-      "help": "Examples: 'The 10X Rule by Grant Cardone — extreme goal-setting and action framework' or 'The Aligned Leader program — three pillars of authentic authority for women executives'. If you do not have a final name yet, describe it and we will mark it provisional.",
+      "help": "Examples: 'my book, The Momentum Method — a 5-step system for compounding small wins' or 'the Aligned Leader program — three pillars of authentic authority'. If you do not have a final name yet, describe it and we will mark it provisional.",
       "kind": "text",
       "storeOn": "GROUNDED_CONTENT",
       "required": true,

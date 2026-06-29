@@ -321,12 +321,70 @@ def _load_client_reports(run_dir: Path) -> list:
         return []
 
 
+def _resolve_owner_route() -> tuple:
+    """Resolve (channel, target) for the client progress report from the box's
+    environment. The producer cannot know the owner chat intrinsically, so it reads
+    the same owner-routing env the gateway exposes, in priority order. Returns
+    (None, None) when no target is configured — in that case the report is recorded
+    as a non-confirmed attempt (sent=False) and delivery is NOT deadlocked (the
+    process-integrity gate bites on a MISSING record, not on an unconfirmed send;
+    see OQ-2)."""
+    target = (
+        os.environ.get("PRESENTATION_OWNER_CHAT_ID")
+        or os.environ.get("OPENCLAW_OWNER_CHAT_ID")
+        or os.environ.get("OWNER_CHAT_ID")
+        or os.environ.get("OWNER_TELEGRAM_CHAT_ID")
+        or os.environ.get("TELEGRAM_CHAT_ID")
+        or ""
+    ).strip()
+    channel = (os.environ.get("PRESENTATION_OWNER_CHANNEL")
+               or os.environ.get("OPENCLAW_OWNER_CHANNEL")
+               or "telegram").strip()
+    return (channel, target) if target else (None, None)
+
+
+def _send_owner_message(text: str) -> tuple:
+    """Best-effort send via `openclaw message send` (NEVER the Telegram API directly).
+    Uses the correct CLI flags (-m / --channel / -t) and an env-resolved target.
+    Returns (msg_id, sent_bool). Never raises."""
+    channel, target = _resolve_owner_route()
+    if not target:
+        print("[client_report] no owner target configured "
+              "(PRESENTATION_OWNER_CHAT_ID / TELEGRAM_CHAT_ID …) — recording a "
+              "non-confirmed report attempt; delivery is not blocked.",
+              file=sys.stderr)
+        return "", False
+    try:
+        proc = subprocess.run(
+            ["openclaw", "message", "send", "--channel", channel,
+             "--target", target, "--message", text, "--json"],
+            capture_output=True, text=True, timeout=30,
+        )
+        raw = (proc.stdout or "").strip()
+        if proc.returncode != 0:
+            print(f"[client_report] openclaw message send rc={proc.returncode}: "
+                  f"{(proc.stderr or raw)[:200]}", file=sys.stderr)
+            return raw, False
+        try:
+            msg_id = json.loads(raw).get("message_id") or raw
+        except Exception:  # noqa: BLE001
+            msg_id = raw
+        return msg_id, True
+    except Exception as exc:  # noqa: BLE001
+        print(f"[client_report] send failed: {exc}", file=sys.stderr)
+        return "", False
+
+
 def _append_report_record(run_dir: Path, phase_id: str, kind: str,
-                          gateway_msg_id: str, text: str) -> None:
+                          gateway_msg_id: str, text: str, sent: bool = False) -> None:
     """Append a client report record to client_reports.json.
     kind should be 'start' (AF-PHASE-REPORT-START) or 'done' (AF-PHASE-REPORT-DONE).
     Never raises — if the file is unwritable the record is silently dropped and
-    the AF-PHASE-REPORT-MISSING gate will detect the absence on the next phase."""
+    the AF-PHASE-REPORT-MISSING gate will detect the absence on the next phase.
+
+    The gate bites on a MISSING record (a phase whose report step was skipped), NOT
+    on an unconfirmed gateway_msg_id — so a box without a configured owner target
+    still ships (the report was emitted; confirmation is best-effort, OQ-2)."""
     p = _client_reports_path(run_dir)
     p.parent.mkdir(parents=True, exist_ok=True)
     records = _load_client_reports(run_dir)
@@ -334,6 +392,7 @@ def _append_report_record(run_dir: Path, phase_id: str, kind: str,
         "phase_id": phase_id,
         "kind": kind,
         "gateway_msg_id": gateway_msg_id or "",
+        "sent": bool(sent),
         "text": text,
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     })
@@ -364,22 +423,8 @@ def emit_client_report(run_dir: Path, phase_id: str, kind: str,
     if kind == "start" and eta:
         tmpl += f" (ETA ~{eta} min)"
 
-    msg_id = ""
-    try:
-        proc = subprocess.run(
-            ["openclaw", "message", "send", "--text", tmpl, "--json"],
-            capture_output=True, text=True, timeout=30,
-        )
-        raw = (proc.stdout or "").strip()
-        try:
-            msg_id = json.loads(raw).get("message_id") or raw
-        except Exception:  # noqa: BLE001
-            msg_id = raw
-    except Exception as exc:  # noqa: BLE001
-        print(f"[client_report] send failed for {phase_id}/{kind}: {exc}",
-              file=sys.stderr)
-
-    _append_report_record(run_dir, phase_id, kind, msg_id, tmpl)
+    msg_id, sent = _send_owner_message(tmpl)
+    _append_report_record(run_dir, phase_id, kind, msg_id, tmpl, sent=sent)
     return msg_id or None
 
 
@@ -439,22 +484,7 @@ def declare_plan(run_dir: Path, phases: list) -> None:
         f"after each: {step_lines}"
     )
 
-    msg_id = ""
-    try:
-        proc = subprocess.run(
-            ["openclaw", "message", "send", "--text", text, "--json"],
-            capture_output=True, text=True, timeout=30,
-        )
-        raw = (proc.stdout or "").strip()
-        try:
-            msg_id = json.loads(raw).get("message_id") or raw
-        except Exception:  # noqa: BLE001
-            msg_id = raw
-    except Exception as exc:  # noqa: BLE001
-        print(
-            f"[declare_plan] send failed — plan written but no gateway_msg_id: {exc}",
-            file=sys.stderr,
-        )
+    msg_id, _sent = _send_owner_message(text)
 
     plan_path.parent.mkdir(parents=True, exist_ok=True)
     plan_path.write_text(json.dumps({
@@ -495,9 +525,15 @@ def _phase_index(phase_id: str, phases: list) -> tuple:
 # ---------------------------------------------------------------------------
 def _check_prior_phase_reports(run_dir: Path, phases: list, target_phase_id: str) -> str:
     """For every phase PRIOR to target that is attested, verify that BOTH an
-    AF-PHASE-REPORT-START and an AF-PHASE-REPORT-DONE record exist in
-    client_reports.json with a non-empty gateway_msg_id. Returns '' if satisfied;
-    otherwise returns an AF-PHASE-REPORT-MISSING fatal string.
+    AF-PHASE-REPORT-START and an AF-PHASE-REPORT-DONE record EXIST in
+    client_reports.json. Returns '' if satisfied; otherwise an
+    AF-PHASE-REPORT-MISSING fatal string.
+
+    The gate bites on a MISSING report record (a phase whose report step was
+    skipped entirely), NOT on an unconfirmed gateway_msg_id — so a box where
+    `openclaw message send` cannot resolve a target still ships (the report was
+    emitted; confirmation is best-effort, OQ-2). Each record carries a `sent`
+    boolean for audit.
 
     Internal system phases (P-0-PREFLIGHT) with no produces_artifact are exempt —
     they are runner housekeeping, not client-reportable pipeline steps."""
@@ -514,14 +550,8 @@ def _check_prior_phase_reports(run_dir: Path, phases: list, target_phase_id: str
         return ""
 
     reports = _load_client_reports(run_dir)
-    start_ids = {
-        r["phase_id"] for r in reports
-        if r.get("kind") == "start" and r.get("gateway_msg_id")
-    }
-    done_ids = {
-        r["phase_id"] for r in reports
-        if r.get("kind") == "done" and r.get("gateway_msg_id")
-    }
+    start_ids = {r["phase_id"] for r in reports if r.get("kind") == "start"}
+    done_ids = {r["phase_id"] for r in reports if r.get("kind") == "done"}
 
     for pid in sorted(prior_attested):
         ph = by_id.get(pid, {})
@@ -531,14 +561,14 @@ def _check_prior_phase_reports(run_dir: Path, phases: list, target_phase_id: str
         if pid not in start_ids:
             return (
                 f"AF-PHASE-REPORT-MISSING: prior attested phase {pid!r} has no "
-                "AF-PHASE-REPORT-START record with a confirmed gateway_msg_id in "
-                "client_reports.json — the phase cannot be considered client-reported."
+                "AF-PHASE-REPORT-START record in client_reports.json — its client "
+                "start-report step was skipped."
             )
         if pid not in done_ids:
             return (
                 f"AF-PHASE-REPORT-MISSING: prior attested phase {pid!r} has no "
-                "AF-PHASE-REPORT-DONE record with a confirmed gateway_msg_id in "
-                "client_reports.json — the phase cannot be considered client-reported."
+                "AF-PHASE-REPORT-DONE record in client_reports.json — its client "
+                "done-report step was skipped."
             )
     return ""
 
