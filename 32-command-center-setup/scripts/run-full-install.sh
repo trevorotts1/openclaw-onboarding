@@ -192,6 +192,30 @@ if [[ "$UPDATE_ONLY" == "true" ]] && [[ -z "$CLIENT_SLUG" ]] && [[ -f "$STATE_FI
   [[ -n "$CLIENT_SLUG" ]] && log "INFO" "update-only: read client slug from state file: $CLIENT_SLUG"
 fi
 
+# ----------------------------------------------------------------------
+# EARLY INTERVIEW-COMPLETE PRECONDITION (FIX H — report-don't-build)
+# Before ANY seeding/scaffolding: a Command Center / zero-human company must NOT be
+# built until the AI Workforce interview is complete. This is a PRE-build precondition
+# ("don't even start") — COMPLEMENTARY to, and NOT a duplicate of, the existing ZHE
+# acceptance gate later in this script (Phase 7z / prove-zhe.py), which is a POST-build
+# check that the build produced a real zero-human experience. --update-only is exempt
+# (a prior full install already cleared this). On not-complete we REPORT and exit 0
+# CLEAN with commandCenterStatus=interview-pending — never a crash. The deeper
+# genuine-signal fail-close (build-workforce.py exit 87) is a separate downstream layer.
+# ----------------------------------------------------------------------
+if [[ "$UPDATE_ONLY" != "true" ]]; then
+  _interview_complete="$(state_get '.interviewComplete')"
+  if [[ "$_interview_complete" != "true" ]]; then
+    log "INFO" "interview-precondition: interview NOT completed yet (interviewComplete=${_interview_complete:-unset}) — REPORTING interview-pending and exiting 0 clean. A zero-human company is never built before the interview is complete."
+    if [[ -f "$STATE_FILE" ]]; then
+      state_set '.commandCenterStatus = "interview-pending" | .commandCenterInterviewPendingAt = "'"$(now_iso)"'"' || true
+    fi
+    echo "[run-full-install] Interview not completed yet — Command Center build deferred (commandCenterStatus=interview-pending). Complete the AI Workforce interview, then re-run. Exiting 0 (clean, not a failure)."
+    exit 0
+  fi
+  log "INFO" "interview-precondition: interviewComplete=true — proceeding to build."
+fi
+
 log "INFO" "run-full-install starting: update_only=$UPDATE_ONLY slug=${CLIENT_SLUG:-?} company=${COMPANY_NAME:-?} email=${CONTACT_EMAIL:-?}"
 if [[ -f "$STATE_FILE" ]]; then
   state_set '.commandCenterStatus = "building"'

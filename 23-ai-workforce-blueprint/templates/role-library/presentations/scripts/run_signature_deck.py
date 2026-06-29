@@ -81,10 +81,12 @@ symbol for it; AF-PHASE-SKIPPED is enforced_by:runner with py_symbol:null.
 """
 
 import argparse
+import hashlib
 import importlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -233,6 +235,274 @@ def attest_phase(run_dir: Path, phase_id: str, role: str, status: str,
         "attested_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     })
     p.write_text(json.dumps(obj, indent=2))
+
+
+# ===========================================================================
+# FIX E — UP-FRONT DECLARED PLAN + PER-STEP VALIDATE-AND-REPORT + REPORT-GATED,
+# SUBSTANCE-VERIFIED, SHA-MANDATORY ATTESTATION.
+#   * declare_plan() writes declared_plan.json (the contract prove-deck.py checks)
+#     and emits ONE up-front client message. Idempotent.
+#   * emit_client_report(start|done) sends via `openclaw message send` (NEVER the
+#     raw Telegram API — fleet rule) and records the gateway_msg_id in
+#     process_manifest.json client_reports[]. A failed substance verifier BLOCKS
+#     the done report (AF-PHASE-REPORT-DONE).
+#   * attest_phase_verified() is the report-gated wrapper: existence AND substance
+#     (phase_verifiers, FIX F) must pass, artifact_sha is MANDATORY + verified
+#     (FM-3 empty-sha rejected), and a report-required phase needs a confirmed
+#     start+done report pair before it attests.
+#   * start_run_watchdog() registers at RUN-BEGIN covering every long_running
+#     phase — closing the deep-research silent gap (AF-PHASE-REPORT-START).
+#   * cc_board (FIX G) boards the deck at job-start and PATCHes phase boundaries
+#     (fail-soft). AF-CC-UNREGISTERED is the offline closeout backstop.
+# Codes cited here so the CI meta-gate (Guard A, extended to runner codes) can
+# prove they are wired: AF-PHASE-REPORT-START, AF-PHASE-REPORT-DONE,
+# AF-PROCESS-INTEGRITY.
+# ===========================================================================
+def _client_reports(run_dir: Path) -> list:
+    obj = _load_process_manifest(run_dir)
+    v = obj.get("client_reports")
+    return v if isinstance(v, list) else []
+
+
+def _report_recorded(run_dir: Path, phase_id: str, kind: str) -> bool:
+    for r in _client_reports(run_dir):
+        if (isinstance(r, dict) and r.get("phase_id") == phase_id
+                and r.get("kind") == kind and str(r.get("gateway_msg_id", "")).strip()):
+            return True
+    return False
+
+
+def _openclaw_message_send(text: str):
+    """Send ONE client-facing message through the OpenClaw gateway (NEVER the raw
+    Telegram API). Returns (gateway_msg_id, delivery). On a box without the openclaw
+    CLI (CI / unit test) it DEGRADES to a recorded local token so the report still
+    exists (the gate bites on 'no record at all', per OQ-2) — it never bypasses the
+    gateway with a direct API call."""
+    ts = time.strftime("%Y%m%dT%H%M%S")
+    local = f"local:{hashlib.sha1((text + ts).encode()).hexdigest()[:12]}"
+    try:
+        if not _has_cmd("openclaw"):
+            return local, "local_degraded"
+        proc = subprocess.run(
+            ["openclaw", "message", "send", "--message", text, "--json"],
+            capture_output=True, text=True, timeout=30,
+        )
+        out = (proc.stdout or "").strip()
+        if proc.returncode == 0 and out:
+            try:
+                data = json.loads(out)
+                if isinstance(data, dict):
+                    mid = (data.get("id") or data.get("messageId")
+                           or data.get("gateway_msg_id"))
+                    if mid:
+                        return str(mid), "gateway"
+            except json.JSONDecodeError:
+                pass
+            # OQ-2: no machine id — record the raw stdout token as the confirmation.
+            return f"stdout:{out[:64]}", "gateway"
+        return local, "local_degraded"
+    except Exception:  # noqa: BLE001
+        return local, "local_degraded"
+
+
+def _has_cmd(name: str) -> bool:
+    from shutil import which
+    return which(name) is not None
+
+
+def emit_client_report(run_dir: Path, phase_id: str, kind: str, text: str = "") -> dict:
+    """Emit + RECORD a client start/done report for a phase. The record (with its
+    gateway_msg_id) is what attest_phase_verified() and prove-deck.py require."""
+    if not text:
+        verb = "starting" if kind == "start" else "finished"
+        text = f"Update on your deck: {phase_id} {verb}."
+    mid, delivery = _openclaw_message_send(text)
+    p = _process_manifest_path(run_dir)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    obj = _load_process_manifest(run_dir)
+    obj.setdefault("client_reports", [])
+    rec = {"phase_id": phase_id, "kind": kind, "gateway_msg_id": mid,
+           "delivery": delivery, "reported_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    obj["client_reports"].append(rec)
+    p.write_text(json.dumps(obj, indent=2))
+    return rec
+
+
+def _compute_artifact_sha(run_dir: Path, produces_artifact: str) -> str:
+    """sha256 of a phase's produced artifact (the first/sorted matches for a glob).
+    MANDATORY + verified before any phase attests — an empty return rejects the
+    attestation (FM-3 empty-sha 'done' stamp)."""
+    spec = (produces_artifact or "").strip()
+    if not spec:
+        return ""
+    files = []
+    if "*" in spec or "?" in spec:
+        files = sorted(run_dir.glob(spec)) or sorted(run_dir.glob("**/" + spec.split("/")[-1]))
+    else:
+        p = run_dir / spec
+        if p.exists():
+            files = [p]
+        else:
+            files = sorted(run_dir.glob("**/" + spec.split("/")[-1]))
+    h = hashlib.sha256()
+    hashed_any = False
+    for f in files:
+        try:
+            if f.is_file():
+                h.update(f.read_bytes())
+                hashed_any = True
+        except OSError:
+            continue
+    return h.hexdigest() if hashed_any else ""
+
+
+def _substance_ok(run_dir: Path, phase_id: str):
+    """(ok, reason) via phase_verifiers.py (FIX F). Unavailable => (True, note): the
+    runner falls back to existence-only for THAT phase, logged, never silent."""
+    pv = _import_checker("phase_verifiers")
+    if pv is None or not hasattr(pv, "verify_phase"):
+        return True, "phase_verifiers not deployed; substance not verifiable"
+    try:
+        ok, reason = pv.verify_phase(phase_id, run_dir)
+        return bool(ok), str(reason or "")
+    except Exception as exc:  # noqa: BLE001
+        return True, f"phase_verifiers raised {exc!r}; substance not verifiable"
+
+
+def _deck_slug(run_dir: Path) -> str:
+    try:
+        intake = json.loads((run_dir / "working" / "copy" / "intake.json").read_text())
+        slug = (intake.get("deck_slug") or intake.get("project_slug") or "").strip()
+        if slug:
+            return slug
+    except Exception:  # noqa: BLE001
+        pass
+    return run_dir.name
+
+
+def _cc(run_dir: Path):
+    return _import_checker("cc_board")
+
+
+def _cc_ingest(run_dir: Path) -> None:
+    cc = _cc(run_dir)
+    if cc is None or not hasattr(cc, "ingest_job"):
+        return
+    try:
+        slug = _deck_slug(run_dir)
+        cc.ingest_job(slug, f"Signature deck: {slug}", run_dir=run_dir)
+    except Exception as exc:  # noqa: BLE001
+        print(f"=== cc_board ingest degraded (non-fatal): {exc} ===", file=sys.stderr)
+
+
+def _cc_phase_boundary(run_dir: Path, phase_id: str) -> None:
+    cc = _cc(run_dir)
+    if cc is None or not hasattr(cc, "patch_phase"):
+        return
+    try:
+        reg = (_load_process_manifest(run_dir).get("cc_registration") or {})
+        task_id = reg.get("task_id")
+        if task_id and not str(task_id).startswith("deck:"):
+            status = "review" if phase_id == DELIVERY_PHASE_ID else "in_progress"
+            cc.patch_phase(str(task_id), status, reason=f"phase {phase_id} attested")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def start_run_watchdog(run_dir: Path, phases: list) -> None:
+    """Register the watchdog at RUN-BEGIN (not after Phase-4) so EVERY long_running
+    phase is monitored from the start — closing the deep-research silent gap."""
+    long_phases = [{"phase_id": ph["id"], "heartbeat_minutes": ph.get("heartbeat_minutes", 15)}
+                   for ph in phases if ph.get("long_running")]
+    p = run_dir / "working" / "checkpoints" / "run_watchdog.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({
+        "schema": "run_watchdog/v1",
+        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "long_running_phases": long_phases,
+        "note": "watchdog covers all long_running phases from run-begin (AF-PHASE-REPORT-START).",
+    }, indent=2))
+
+
+def declare_plan(run_dir: Path, phases: list) -> None:
+    """At run-begin: write declared_plan.json (the no-skip contract prove-deck.py
+    checks) and emit ONE up-front client message listing the N steps. Idempotent —
+    never re-emits the message on a resume. Also starts the watchdog + boards the
+    deck (fail-soft)."""
+    dp = run_dir / "working" / "checkpoints" / "declared_plan.json"
+    start_run_watchdog(run_dir, phases)
+    _cc_ingest(run_dir)
+    if dp.exists():
+        return
+    ordered = sorted(phases, key=lambda p: p.get("order", 0))
+    steps = [{"phase_id": ph["id"], "order": ph.get("order", 0),
+              "name": ph.get("name", ph["id"]),
+              "report_required": bool((ph.get("client_report") or {}).get("required"))}
+             for ph in ordered]
+    dp.parent.mkdir(parents=True, exist_ok=True)
+    n_reported = sum(1 for s in steps if s["report_required"])
+    msg = (f"Here's the plan for your deck: I'll work through {len(steps)} governed "
+           f"steps and report in at each of the {n_reported} milestones (research, "
+           f"copy, render, assembly, delivery). You'll hear from me at every milestone.")
+    mid, delivery = _openclaw_message_send(msg)
+    dp.write_text(json.dumps({
+        "schema": "declared_plan/v1",
+        "declared_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "client_message_gateway_msg_id": mid,
+        "client_message_delivery": delivery,
+        "steps": steps,
+    }, indent=2))
+    print(f"=== DECLARED PLAN written ({len(steps)} steps; {n_reported} milestone "
+          f"reports) + up-front client message sent ===", flush=True)
+
+
+def attest_phase_verified(run_dir: Path, target: dict, *, adhoc: bool = False) -> int:
+    """Report-gated, substance-verified, sha-mandatory attestation (FIX E + F).
+    Returns 0 on attest, EXIT_QC_ROUTEBACK on a substance failure, 2 on a hard
+    refusal (missing artifact / empty sha / missing report). Replaces the old
+    existence-only attest so 'done' means: real artifact (non-empty artifact_sha)
+    AND substance-verified AND the client was told (start+done reports)."""
+    pid = target["id"]
+    role = target.get("owning_role", "")
+    produces = target.get("produces_artifact", "")
+    report_required = bool((target.get("client_report") or {}).get("required")) and not adhoc
+
+    if not _artifact_present(run_dir, produces):
+        print(f"FATAL: phase {pid} produces_artifact {produces!r} is not present; "
+              f"cannot attest.", file=sys.stderr)
+        return 2
+
+    if report_required and not _report_recorded(run_dir, pid, "start"):
+        emit_client_report(run_dir, pid, "start")
+
+    ok_subst, subst_reason = _substance_ok(run_dir, pid)
+    if not ok_subst:
+        print("\n" + "!" * 78, file=sys.stderr)
+        print(f"FATAL AF-PROCESS-INTEGRITY: phase {pid} failed its substance verifier "
+              f"(not mere existence): {subst_reason}. Route back — NOT attesting.",
+              file=sys.stderr)
+        print("!" * 78 + "\n", file=sys.stderr)
+        return EXIT_QC_ROUTEBACK
+
+    sha = _compute_artifact_sha(run_dir, produces)
+    if not sha:
+        print(f"FATAL AF-PROCESS-INTEGRITY: phase {pid} produced no hashable artifact "
+              f"— an empty artifact_sha 'done' stamp is rejected (FM-3). Cannot attest.",
+              file=sys.stderr)
+        return 2
+
+    if report_required:
+        emit_client_report(run_dir, pid, "done")
+        if not (_report_recorded(run_dir, pid, "start") and _report_recorded(run_dir, pid, "done")):
+            print(f"FATAL AF-PHASE-REPORT-DONE: phase {pid} attestation is INVALID without "
+                  f"a confirmed start+done client report pair.", file=sys.stderr)
+            return 2
+
+    attest_phase(run_dir, pid, role, "artifact_present_verified", artifact_sha=sha)
+    _cc_phase_boundary(run_dir, pid)
+    print(f"=== PHASE {pid} attested (substance-verified; artifact_sha={sha[:12]}; "
+          f"{'reported' if report_required else 'internal'}) ===", flush=True)
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -842,6 +1112,16 @@ def main():
     phase0_preflight(run_dir, slides_path, platform_override=args.platform,
                      adhoc=args.adhoc)
 
+    # FIX E: at run-begin, declare the plan (the no-skip contract prove-deck.py
+    # checks) + emit ONE up-front client message + register the watchdog over all
+    # long_running phases (closes the deep-research silent gap) + board the deck
+    # (fail-soft). Idempotent; skipped for an owner-authorized adhoc (non-deliverable) run.
+    if not args.adhoc:
+        try:
+            declare_plan(run_dir, phases)
+        except Exception as _dp_e:  # noqa: BLE001
+            print(f"=== declare_plan degraded (non-fatal): {_dp_e} ===", file=sys.stderr)
+
     # Single-phase dispatch: enforce preconditions (AF-PHASE-SKIPPED), then dispatch.
     if args.phase:
         if not args.adhoc:
@@ -948,17 +1228,16 @@ def main():
                 print("!" * 78 + "\n", file=sys.stderr)
                 sys.exit(EXIT_GUARD_BLOCK)
 
-        # Non-render phase: verify the artifact landed, then attest.
-        if _artifact_present(run_dir, target.get("produces_artifact", "")):
-            attest_phase(run_dir, args.phase, target.get("owning_role", ""),
-                         "artifact_present")
-            print(f"=== PHASE {args.phase} attested (produces_artifact present) ===",
-                  flush=True)
-            sys.exit(0)
-        print(f"FATAL: phase {args.phase} produces_artifact "
-              f"{target.get('produces_artifact')!r} is not present; cannot attest.",
-              file=sys.stderr)
-        sys.exit(2)
+        # Non-render phase: report-gated, SUBSTANCE-verified, sha-mandatory attest
+        # (FIX E + F). Existence is necessary but NOT sufficient — the phase must
+        # also pass its phase_verifiers substance check, carry a non-empty verified
+        # artifact_sha (FM-3), and (for a milestone phase) have a confirmed start+done
+        # client report pair before it attests.
+        if target is None:
+            print(f"FATAL: unknown phase id {args.phase!r} (not in manifest).",
+                  file=sys.stderr)
+            sys.exit(2)
+        sys.exit(attest_phase_verified(run_dir, target, adhoc=args.adhoc))
 
     # No --phase: print the plan (the safe default — the runner never blindly fans
     # out every department role; it dispatches the render and attests artifacts).

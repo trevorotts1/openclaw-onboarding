@@ -165,6 +165,16 @@ it governs only when no persona is assigned. In all cases honor the company miss
 
 ## 9. Standard Operating Procedures (Numbered)
 
+> **AUTHORITATIVE RUNTIME DRIVER (FIX D).** The pacing in SOP 9.0/9.1/9.2 below is no longer
+> left to model discretion. The runtime intake state machine
+> `scripts/deck-intake-driver.py` (over the ordered `deck-intake-questions.json`) OWNS the
+> loop: the quick-vs-in-depth CHOICE is the first turn; `--next` returns exactly ONE question
+> (the driver, NOT you, decides which); `--answer` records it and advances; `--budget`
+> enforces the turn/time budget; `--confirm` + `--complete` lock the intake and gate the
+> build. You relay the driver's question verbatim in ONE seamless voice — never narrate the
+> department machinery ("relayed to the department" / "the Director noted" / "you'll see their
+> next question shortly" are forbidden). The SOPs below are the doctrine the driver enforces.
+
 ### SOP 9.0 -- PRE-PRESENTATION HARD-REQUIRED CAPTURE (runs FIRST, before mode offer)
 
 **When to run:** The instant a new deck request arrives, before the mode offer and before

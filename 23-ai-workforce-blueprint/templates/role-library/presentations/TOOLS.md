@@ -1,21 +1,37 @@
 # TOOLS.md — Presentations Builder Tools (DETERMINISTIC PIPELINE)
 
-## YOU HAVE EXACTLY ONE TOOL FOR DECKS: `build_deck.py`
+## YOU HAVE EXACTLY ONE TOOL FOR DECKS: `presentation-canonical-entry.sh`
 
-You do NOT generate images. You do NOT call KIE.ai. You do NOT assemble `.pptx` files.
-There is exactly ONE tool that builds a deck, and it does all three of those for you:
+There is exactly ONE sanctioned command that builds a deck — the canonical front door:
 
 ```
-python3 <SCRIPTS_DIR>/build_deck.py <slides.json> <out.pptx> [renders_dir]
+bash <SCRIPTS_DIR>/presentation-canonical-entry.sh --run-dir <DIR> --slides <slides.json> --out <out.pptx>
 ```
 
-`build_deck.py`, `kie_generate.py`, and `slides.schema.json` ship in this repo's
-render-template directory `23-ai-workforce-blueprint/templates/presentation-render/` and
-are installed into the client's Presentations scripts directory on a materialized box. Use
-the `SCRIPTS_DIR` your task message gives you.
+You do NOT call `build_deck.py` directly. You do NOT call `run_signature_deck.py` directly.
+You do NOT generate images, call KIE.ai, or assemble `.pptx` files yourself. The canonical
+entry runs every guardrail FOR you, in order, and THEN dispatches the deterministic
+orchestrator (`run_signature_deck.py`) which calls `build_deck.py` for the render:
 
-Your only job is to produce a correct `slides.json` (see `slides.schema.json`) and run that
-command. The procedure is in `BUILDER-PROMPT.md`; read it first on every deck task.
+- GATE 0 — the intake is complete (the one-question-at-a-time `deck-intake-driver.py`
+  ledger), so the build can never start mid-interview.
+- GATE 1 — the four runtime deps are present.
+- GATE 2 — no hand-rolled renderer/assembler exists in the run dir (bypass-scan).
+- GATE 3 — the renderer is in lockstep with the SOP/manifest stack and matches the
+  pinned `CANONICAL-RENDERER-PIN.sha256`.
+
+**Calling `build_deck.py` or `run_signature_deck.py` directly — or hand-rolling
+`python3 working/*.py` — is FORBIDDEN and is REFUSED at the door** (the
+`deck-build-guard.sh` PreToolUse interceptor where wired, and the canonical entry's own
+gates always). `build_deck.py`, `run_signature_deck.py`, `kie_generate.py`, and
+`slides.schema.json` are installed into the client's Presentations scripts directory; you
+invoke them ONLY through `presentation-canonical-entry.sh`. Use the `SCRIPTS_DIR` your task
+message gives you.
+
+Your job is to produce a correct `slides.json` (see `slides.schema.json`) and run the
+canonical command above. The procedure is in `BUILDER-PROMPT.md`; read it first on every
+deck task. (The raw `build_deck.py` invocation below is documented ONLY so you understand
+what the canonical entry runs on your behalf — never run it yourself.)
 
 **FORBIDDEN (any one = immediate FAIL at QC, AF-I14):**
 - The native `image_generate` tool, or any other image-generating tool, for a deck slide.

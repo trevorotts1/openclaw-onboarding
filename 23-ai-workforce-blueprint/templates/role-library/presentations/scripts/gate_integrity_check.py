@@ -54,7 +54,27 @@ PRES_DIR = HERE.parent
 BUILD_DECK = HERE / "build_deck.py"
 AF_COVERAGE = HERE / "working" / "af-coverage.json"
 
+# FIX I — extend the meta-gate beyond build_deck: a RUNNER-enforced gate must be
+# cited in a runner-side enforcer (the report gates live here), and any gate that
+# declares a check_script must point at a real file + symbol. This is what stops a
+# future "declared but never wired" regression like the new report gates.
+RUNNER_SOURCES = [HERE / "run_signature_deck.py", HERE / "prove-deck.py"]
+
 AF_RE = re.compile(r"AF-[A-Z0-9]+(?:-[A-Z0-9]+)*")
+
+
+def parse_runner_af():
+    """AF-* codes cited in the runner-side enforcers (run_signature_deck.py +
+    prove-deck.py). A runner-enforced manifest code must be cited in one of these,
+    else it is a declared-but-unwired gate."""
+    codes = set()
+    for p in RUNNER_SOURCES:
+        if p.exists():
+            try:
+                codes |= set(AF_RE.findall(p.read_text()))
+            except Exception:  # noqa: BLE001
+                pass
+    return codes
 
 
 def _fatal(msg):
@@ -154,16 +174,50 @@ def load_af_coverage():
     return set(cov.get("triggered", []))
 
 
-def run_check(manifest, defined_names, ref_counts, af_strings, covered):
+def run_check(manifest, defined_names, ref_counts, af_strings, covered, runner_af):
     problems = []  # {code, kind, detail}
 
     def add(code, kind, detail):
         problems.append({"code": code, "kind": kind, "detail": detail})
 
     for a in manifest.get("autofails", []):
-        if a.get("enforced_by") != "build_deck":
-            continue  # out of scope — governed by sync_check / QC rubric, not here
         code = a.get("code", "<no-code>")
+        enforced_by = a.get("enforced_by")
+
+        # ---- (FIX I) RUNNER-enforced gate must be WIRED in a runner-side enforcer ----
+        # The report/process-integrity gates (AF-PHASE-REPORT-START/-DONE,
+        # AF-PROCESS-INTEGRITY) are enforced_by:runner with py_symbol:null. A runner
+        # gate the runner never names is a declared-but-unwired no-op — exactly the
+        # regression class this extension catches.
+        if enforced_by == "runner":
+            if code not in runner_af:
+                add(code, "no-op",
+                    f"declared enforced_by:runner but NOT cited in any runner-side "
+                    f"enforcer (run_signature_deck.py / prove-deck.py). A runner gate the "
+                    f"runner never names is a declared-but-unwired no-op. Wire it into the "
+                    f"runner, or remove the declaration.")
+
+        # ---- (FIX I) any gate with a check_script must point at a real file+symbol ----
+        cs = a.get("check_script")
+        if isinstance(cs, str) and cs.strip():
+            rel = cs.split("::", 1)[0].strip()
+            sym = cs.split("::", 1)[1].strip() if "::" in cs else ""
+            path = PRES_DIR / rel
+            if not path.exists():
+                add(code, "no-op",
+                    f"check_script {rel!r} does not exist on disk — the declared gate "
+                    f"points at a missing enforcer (unwired). Restore the file or fix the path.")
+            elif sym:
+                try:
+                    if f"def {sym}" not in path.read_text():
+                        add(code, "no-op",
+                            f"check_script {cs!r}: function {sym!r} is not defined in {rel} "
+                            f"(unwired symbol). Define it or fix the reference.")
+                except Exception:  # noqa: BLE001
+                    pass
+
+        if enforced_by != "build_deck":
+            continue  # the deep enforced-AND-tested checks below are build_deck-only
         sym = a.get("py_symbol")
         secondaries = a.get("secondary_py_symbols", []) or []
 
@@ -218,10 +272,11 @@ def main():
     manifest = load_manifest()
     defined_names, ref_counts, af_strings = parse_build_deck()
     covered = load_af_coverage()
+    runner_af = parse_runner_af()
 
     in_scope = [a["code"] for a in manifest.get("autofails", [])
-                if a.get("enforced_by") == "build_deck"]
-    problems = run_check(manifest, defined_names, ref_counts, af_strings, covered)
+                if a.get("enforced_by") in ("build_deck", "runner") or a.get("check_script")]
+    problems = run_check(manifest, defined_names, ref_counts, af_strings, covered, runner_af)
 
     if as_json:
         print(json.dumps({
@@ -233,11 +288,12 @@ def main():
     else:
         if not problems:
             print("=== gate_integrity_check: DECLARED == ENFORCED == TESTED (Guard A) ===")
-            print(f"build_deck-enforced autofails: {len(in_scope)}")
+            print(f"in-scope autofails (build_deck + runner + check_script): {len(in_scope)}")
             print(f"af-coverage triggered codes:   {len(covered)}")
             print("OK — every build_deck-enforced autofail has a referenced enforcing "
-                  "symbol that cites its own AF code AND a negative test that actually "
-                  "triggers it. No declared-but-no-op / declared-but-untested gates.")
+                  "symbol that cites its own AF code AND a negative test that triggers it; "
+                  "every runner-enforced gate is cited in a runner-side enforcer; every "
+                  "check_script points at a real file+symbol. No declared-but-no-op gates.")
         else:
             print("=== gate_integrity_check: GATE INTEGRITY VIOLATION (Guard A) ===",
                   file=sys.stderr)

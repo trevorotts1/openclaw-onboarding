@@ -67,6 +67,25 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
+# ─── PRE-INTERVIEW REFUSAL (FIX H — defense in depth; report-don't-build) ─────
+# Independently refuse to scaffold department agents before the AI Workforce
+# interview is complete, so a NULL-model / default-floor company can never
+# materialize pre-interview. Defense-in-depth alongside the Skill-32
+# run-full-install precondition and the build-workforce.py exit-87 genuine-signal
+# fail-close. --dry-run is exempt (it is read-only and makes no mutation). We only
+# refuse when a state file is present AND shows interviewComplete != true (no state
+# file => proceed; the other layers cover that path). Exit 0 CLEAN, never a crash.
+if [[ $DRY_RUN -eq 0 ]]; then
+  _STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+  if [[ -f "$_STATE_FILE" ]]; then
+    _ic="$(python3 -c "import json; print('true' if json.load(open('$_STATE_FILE')).get('interviewComplete') is True else 'false')" 2>/dev/null || echo "unknown")"
+    if [[ "$_ic" != "true" ]]; then
+      echo "[materialize-dept-agents] Interview not completed yet (interviewComplete=$_ic) — REFUSING to materialize dept agents. No mutation made. Complete the AI Workforce interview first, then re-run. Exiting 0 (clean, not a failure)."
+      exit 0
+    fi
+  fi
+fi
+
 # ─── Backup the config first (mirror Skill 32 INSTALL.md Phase 4.1) ──────────
 if [[ $DRY_RUN -eq 0 ]]; then
   mkdir -p "$BACKUP_DIR"

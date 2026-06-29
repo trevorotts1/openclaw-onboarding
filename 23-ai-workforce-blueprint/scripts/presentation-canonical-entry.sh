@@ -5,7 +5,7 @@
 # ============================================================================
 # Root-cause fix for the enforcement-surface gap (Fix 10 — entrypoint shell gate).
 #
-# The Presentations department's guardrails (kie.ai-only image path, 5,000-char
+# The Presentations department's guardrails (kie.ai-only image path, 9,000-char
 # prompt floor, the AF-OVERLAY-DELIVERED / kie-baked / image-QC battery, the
 # GoHighLevel upload, the teleprompter bundle, the phase-attestation chain) all
 # live INSIDE the canonical render path:
@@ -51,6 +51,8 @@
 #   5  — BYPASS-SCAN tripped (hand-rolled renderer present, no owner skip)
 #   6  — DEPS CHECK failed (PRESENTATION_DEPS_MISSING)
 #   7  — VERSION/HASH PIN failed (renderer drift / hash mismatch, no owner skip)
+#   8  — INTAKE-COMPLETE precondition failed (intake_ledger.json present but
+#        complete:false — finish the one-question-at-a-time intake first, no owner skip)
 #   (3/4 propagate from run_signature_deck.py: 3 render fail, 4 kie balance abort)
 # ============================================================================
 
@@ -206,6 +208,45 @@ gate_fail() {
     printf '!%.0s' {1..78} >&2; echo >&2
     exit "$exitcode"
 }
+
+# ===========================================================================
+# GATE 0 — INTAKE-COMPLETE PRECONDITION (FIX B + D: no build before intake done)
+# Ties the front door to the FIX D one-question-at-a-time intake state machine: if
+# an intake_ledger.json under the run dir exists but is NOT complete, the build is
+# a premature mid-interview build and is refused. (A box with no ledger yet uses
+# the legacy director-intake path; the deck-build-guard PreToolUse hook enforces a
+# complete ledger where that path is wired. Skippable only by a logged owner token.)
+# ===========================================================================
+note "GATE 0 — INTAKE-COMPLETE PRECONDITION (deck-intake-driver ledger)"
+intake_complete_check() {
+    if [ "$PLAN" -eq 1 ]; then echo "  SKIP: --plan (inspect only)"; return 0; fi
+    command -v python3 >/dev/null 2>&1 || { echo "  (python3 absent; intake check skipped)"; return 0; }
+    local found="" not_complete=""
+    while IFS= read -r led; do
+        [ -n "$led" ] || continue
+        found=1
+        if ! python3 -c "import json,sys; sys.exit(0 if json.load(open('$led')).get('complete') is True else 1)" 2>/dev/null; then
+            not_complete="$led"
+        fi
+    done < <(find "$RUN_DIR" -name intake_ledger.json -type f 2>/dev/null)
+    if [ -n "$not_complete" ]; then
+        echo "  INTAKE LEDGER PRESENT BUT NOT COMPLETE: $not_complete" >&2
+        return 8
+    fi
+    if [ -z "$found" ]; then
+        echo "  NOTE: no intake_ledger.json under the run dir — capture the intake via"
+        echo "        deck-intake-driver.py (--next/--answer/--confirm/--complete) so the"
+        echo "        client is asked ONE question at a time. Proceeding (legacy intake path)."
+        return 0
+    fi
+    echo "  OK: intake ledger is complete"
+    return 0
+}
+intake_complete_check; ICC_RC=$?
+if [ "$ICC_RC" -eq 8 ]; then
+    gate_fail "INTAKE_NOT_COMPLETE" 8 "the deck intake is not complete (intake_ledger.json complete:false). \
+Finish the one-question-at-a-time intake via deck-intake-driver.py, then build."
+fi
 
 # ===========================================================================
 # GATE 1 — DEPS CHECK (the four runtime deps; exit 6 PRESENTATION_DEPS_MISSING)

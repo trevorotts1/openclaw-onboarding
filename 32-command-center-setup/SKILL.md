@@ -5,6 +5,16 @@ description: Deploy the ZeroHumanWorkforce Command Center dashboard for a client
 
 # Skill 32: Command Center Setup
 
+> **RULE — REPORT-DON'T-BUILD before the interview is complete (FIX H).** A Command
+> Center / zero-human company is NEVER built before the AI Workforce interview is complete.
+> `run-full-install.sh` checks `interviewComplete` EARLY (before any seeding) and, when not
+> complete, REPORTS `commandCenterStatus=interview-pending` and exits 0 CLEAN (not a crash;
+> `--update-only` is exempt). `materialize-dept-agents.sh` independently refuses to scaffold
+> pre-interview (exit 0, no mutation; `--dry-run` exempt). These PRE-build preconditions are
+> COMPLEMENTARY to the existing POST-build ZHE acceptance gate (Phase 7z / `prove-zhe.py`) —
+> do not collapse or duplicate them. `provision-dept-runtime-dirs.sh` then ensures a runtime
+> dir + a non-NULL sovereign model per dept agent so dispatch is never model-blocked.
+
 ## MANDATORY - Teach Yourself Protocol (TYP)
 
 **Before using this skill, complete the Teach Yourself Protocol (Skill 01) on this folder.**

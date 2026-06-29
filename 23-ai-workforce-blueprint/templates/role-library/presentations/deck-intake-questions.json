@@ -1,0 +1,165 @@
+{
+  "$schema": "https://openclaw.ai/schemas/interview-section/v1",
+  "section": "deck-intake",
+  "version": "1.0.0",
+  "description": "ORDERED, canonical deck-intake question file for the Presentations department. Mirrors the proven branding-questions.json schema. This is the SINGLE SOURCE OF TRUTH the runtime intake driver (scripts/deck-intake-driver.py) steps through ONE QUESTION AT A TIME. The agent does NOT decide the next question — the driver returns it from this file (lowest unanswered required id), so the 30-minute wandering interview that skips questions and re-asks answered ones is structurally impossible. SOP 9.0/9.1/9.2 (brainstorming-buddy-presentations-sops.md) is the doctrinal source; this file encodes the mode CHOICE first, then the six mandatory fields IN ORDER, then scope, then a session budget. The client experiences ONE seamless voice: the prompts here carry no routing/relay chatter ('relayed to the department', 'the Director noted', 'you'll see their next question shortly' are forbidden).",
+  "modeChoiceFirst": {
+    "id": "interview_mode",
+    "order": 0,
+    "prompt": "Before we dive in, how thorough do you want this? I can do it two ways. The QUICK way: I ask about 5 to 7 key questions and we lock it in fast. Or the IN-DEPTH way: we go back and forth on 10 to 20 questions and really flesh it out. Which do you want?",
+    "help": "Quick is great when the idea is clear or the stakes are low. In-depth is best for a flagship talk or an idea that is still taking shape.",
+    "kind": "choice",
+    "choices": ["quick", "in-depth"],
+    "storeOn": "intake.interview_mode",
+    "required": true,
+    "note": "ALWAYS the first turn (it is not counted as one of the mandatory questions). Maps quick -> interview_mode:simple (SOP 9.1, <=7 questions), in-depth -> interview_mode:extensive (SOP 9.2, 10-20). The chosen value sizes the session budget below."
+  },
+  "storeTarget": {
+    "interview_mode": "intake.interview_mode",
+    "presentation_mode": "intake.presentation_mode",
+    "target_talk_minutes": "intake.target_talk_minutes",
+    "requested_slide_count": "intake.client_requested_slide_count",
+    "pitch_included": "intake.pitch_included",
+    "asset_intake_question_asked": "intake.asset_intake_question_asked",
+    "style_source": "intake.style_source",
+    "topic": "intake.topic",
+    "audience": "intake.audience",
+    "key_outcome": "intake.key_outcome"
+  },
+  "questions": [
+    {
+      "id": "presentation_topic",
+      "section": "deck-intake",
+      "order": 1,
+      "prompt": "In one or two sentences, what is this presentation about, and what is the single most important thing the audience should do or believe by the end?",
+      "help": "The one outcome anchors every later choice — the arc, the hook, the pitch. Keep it to the ONE thing that matters most.",
+      "kind": "text",
+      "storeOn": "intake.topic",
+      "required": true,
+      "mandatoryField": false,
+      "interviewGuidance": "Scope-setter. Drill once if the answer is two competing goals — a deck can only land one #1 outcome."
+    },
+    {
+      "id": "presentation_mode",
+      "section": "deck-intake",
+      "order": 2,
+      "prompt": "Will this be delivered by one person presenting live (a speaker on stage or on a call), or is it a general/standalone deck someone reads on their own?",
+      "help": "One-person decks are paced to a speaker and a talk track; general decks must stand alone without narration.",
+      "kind": "choice",
+      "choices": ["one-person", "general"],
+      "storeOn": "intake.presentation_mode",
+      "required": true,
+      "mandatoryField": true,
+      "interviewGuidance": "Mandatory field 1/6. Gate AF-RENDERER/_chk_intake requires presentation_mode in {one-person, general}."
+    },
+    {
+      "id": "target_talk_minutes",
+      "section": "deck-intake",
+      "order": 3,
+      "prompt": "About how long is the talk — roughly 20, 30, or 60 minutes (or tell me the exact number)?",
+      "help": "This sets the pacing floor (about 1.3 slides per minute) so the deck is paced, not a reading session.",
+      "kind": "number",
+      "storeOn": "intake.target_talk_minutes",
+      "required": true,
+      "mandatoryField": true,
+      "interviewGuidance": "Mandatory field 2/6. Feeds _chk_intake (target_talk_minutes) + the AF-SLIDE-COUNT-FLOOR pacing floor."
+    },
+    {
+      "id": "requested_slide_count",
+      "section": "deck-intake",
+      "order": 4,
+      "prompt": "Do you have an exact number of slides you want? If you say 25, the deck will have exactly 25 — I never round it up or cut it down. If you'd rather I pick the right count for the length, just say 'you decide'.",
+      "help": "Your number is honored verbatim (25 -> 25, 50 -> 50, 500 -> 500). 'You decide' lets the pacing floor choose.",
+      "kind": "number_or_defer",
+      "storeOn": "intake.client_requested_slide_count",
+      "required": true,
+      "mandatoryField": true,
+      "interviewGuidance": "Mandatory field 3/6. When the client states a number, record client_requested_slide_count EXACTLY (AF-SLIDE-COUNT-EXACT honors it verbatim; never floor up, cap down, default, or substitute, and never ask them to accept a different number). 'You decide' leaves it null so the pacing floor governs."
+    },
+    {
+      "id": "pitch_included",
+      "section": "deck-intake",
+      "order": 5,
+      "prompt": "Does this presentation end with an offer or pitch — a price, package, or call to buy — or is it a teaching and content-only presentation?",
+      "help": "Either is first-class. A teaching-only deck is never forced to have a pitch; a pitch deck gets the full offer arc.",
+      "kind": "boolean",
+      "storeOn": "intake.pitch_included",
+      "required": true,
+      "mandatoryField": true,
+      "interviewGuidance": "Mandatory field 4/6. Record an EXPLICIT boolean pitch_included (never default, never force a pitch). Gate AF-PITCH-FLAG-UNSET. Ask verbatim, once, early."
+    },
+    {
+      "id": "asset_intake_question",
+      "section": "deck-intake",
+      "order": 6,
+      "prompt": "Is there anything you already have that could help me build this — photos, a logo, brand colors, a rough or old deck, slides, or concepts? Drop them here.",
+      "help": "Anything you share gets fed into the build. If you have nothing, that's fine — just say so.",
+      "kind": "assets",
+      "storeOn": "intake.asset_intake_question_asked",
+      "required": true,
+      "mandatoryField": true,
+      "interviewGuidance": "Mandatory field 5/6. Set asset_intake_question_asked:true the moment it is asked (gate AF-ASSET-QUESTION-MISSING). If items are provided set assets_provided:true and capture each (an uploaded old deck is a scratch_deck); else assets_provided:false. Ask verbatim, once, early."
+    },
+    {
+      "id": "style_source",
+      "section": "deck-intake",
+      "order": 7,
+      "prompt": "For the look of your slides, do you have a particular image style in mind? You can: (1) point me at an existing deck, past designs, or reference images you want me to match; (2) tell me a saved style name from your library if you already have one; or (3) let me creatively develop a signature style for you. Which one?",
+      "help": "This keeps the deck from inventing a random look — it either matches your references, reuses a saved style, or develops one with you.",
+      "kind": "choice",
+      "choices": ["match_reference", "saved_style", "creative_develop"],
+      "storeOn": "intake.style_source",
+      "required": true,
+      "mandatoryField": true,
+      "interviewGuidance": "Mandatory field 6/6. Set STYLE_SOURCE; a deck reaching Phase 2 with style_source unset would invent a look with no client direction (the cookie-cutter-typography defect). Ask verbatim, once, early (SOP-IMG-03 section 2)."
+    },
+    {
+      "id": "audience",
+      "section": "deck-intake",
+      "order": 8,
+      "prompt": "Who is in the room — who is this audience, and what do they care about most right now?",
+      "help": "The audience's current priority stack is what the deck re-ranks. Be specific about who they are and what is top of mind.",
+      "kind": "text",
+      "storeOn": "intake.audience",
+      "required": false,
+      "mandatoryField": false,
+      "interviewGuidance": "Scope field. Extensive (in-depth) mode asks this; quick mode may skip if the topic answer already named the audience."
+    },
+    {
+      "id": "key_outcome",
+      "section": "deck-intake",
+      "order": 9,
+      "prompt": "When this presentation lands perfectly, what exactly happens next — the one action you want them to take?",
+      "help": "This is the CTA the whole arc builds toward. One concrete next step, not a list.",
+      "kind": "text",
+      "storeOn": "intake.key_outcome",
+      "required": false,
+      "mandatoryField": false,
+      "interviewGuidance": "Scope field. Sharpens the CTA + peak-end beat. Extensive mode asks it; quick mode may defer to the topic answer."
+    }
+  ],
+  "mandatoryFieldOrder": [
+    "presentation_mode",
+    "target_talk_minutes",
+    "requested_slide_count",
+    "pitch_included",
+    "asset_intake_question",
+    "style_source"
+  ],
+  "sessionBudget": {
+    "quick": { "max_turns": 7, "max_minutes": 12, "note": "SOP 9.1 simple set — 7 questions or fewer; one clarifying follow-up allowed only to close a CRITICAL gap (flag clarifying_followup:true)." },
+    "in-depth": { "max_turns": 20, "max_minutes": 20, "note": "SOP 9.2 extensive set — 10 to 20 questions, follow-ups count toward the ceiling; a roughly-every-5-questions running summary keeps the owner oriented." },
+    "on_overrun": "When the budget is exceeded the driver forces a 'summarize and confirm' turn (read back what is captured, ask the owner to confirm or correct, then lock) instead of asking another open question."
+  },
+  "completionContract": {
+    "description": "The intake is COMPLETE only when every mandatoryFieldOrder field is answered (asset_intake_question and pitch_included recorded verbatim) AND the owner has confirmed the read-back (interview_confirmed:true). deck-intake-driver.py --complete is the HARD precondition; it writes intake_ledger.json {complete:true, interview_confirmed:true} and, when present, feeds the existing scripts/qc-interview-completion.py. The deck build is DENIED (presentation-canonical-entry.sh GATE 0 + deck-build-guard.sh) until the ledger is complete.",
+    "ledger_file": "working/brainstorm/presentations/<project-slug>/intake_ledger.json",
+    "feeds": "23-ai-workforce-blueprint/scripts/qc-interview-completion.py"
+  },
+  "oneVoiceRule": "The client hears ONE seamless voice. The driver emits ONLY the next question (prompt + help). It NEVER emits routing/relay chatter: no 'relayed to the department', no 'the Director noted', no 'you'll see their next question shortly'. The department machinery is invisible to the client.",
+  "syncNote": {
+    "canonicalFile": "23-ai-workforce-blueprint/templates/role-library/presentations/deck-intake-questions.json",
+    "driver": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/deck-intake-driver.py",
+    "doctrine": "brainstorming-buddy-presentations-sops.md SOP 9.0/9.1/9.2/9.3"
+  }
+}

@@ -5,7 +5,10 @@
       "id": "python39",
       "type": "binary",
       "label": "Python 3.9+",
-      "check": { "binary": "python3", "minVersion": "3.9" },
+      "check": {
+        "binary": "python3",
+        "minVersion": "3.9"
+      },
       "severity": "required",
       "satisfy": "Install Python 3.9 or newer. Mac: brew install python@3.12. VPS: ships in the container image."
     },
@@ -13,9 +16,12 @@
       "id": "sqlite3",
       "type": "binary",
       "label": "sqlite3 CLI",
-      "check": { "binary": "sqlite3" },
+      "check": {
+        "binary": "sqlite3"
+      },
       "severity": "optional",
       "satisfy": "Optional. Install sqlite3 for manual DB inspection. Mac: brew install sqlite. VPS: apt-get install sqlite3."
     }
-  ]
+  ],
+  "_interviewPrecondition": "FIX H \u2014 REPORT-DON'T-BUILD: the AI Workforce interview (interviewComplete) must be complete before run-full-install.sh seeds anything. When it is not, the installer REPORTS commandCenterStatus=interview-pending and exits 0 clean (--update-only exempt); materialize-dept-agents.sh independently refuses (no mutation, --dry-run exempt). This PRE-build precondition complements the POST-build ZHE acceptance gate (Phase 7z / prove-zhe.py) and the build-workforce.py exit-87 genuine-signal fail-close."
 }

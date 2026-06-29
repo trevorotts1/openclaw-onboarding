@@ -384,6 +384,35 @@ fi
 echo $$ > "$LOCK_FILE"
 trap 'rm -f "$LOCK_FILE"' EXIT
 
+# ---- FIX H: throttled interview-pending report (24h marker; was SILENT) ----
+# The not-complete branches below used to exit 0 SILENTLY, so an owner who never
+# finished the interview got nothing. Now we emit ONE report per 24h (never
+# hammering) via the SAME operator-escalation path already used elsewhere in this
+# file (guard-clean). The marker is cleared the moment the interview is complete.
+INTERVIEW_PENDING_MARKER="$OC_ROOT/workspace/.interview-pending-report.marker"
+INTERVIEW_PENDING_THROTTLE_SECS="${INTERVIEW_PENDING_THROTTLE_SECS:-86400}"
+report_interview_pending_throttled() {
+  local reason="$1" now epoch_marker age
+  now=$(date +%s)
+  if [[ -f "$INTERVIEW_PENDING_MARKER" ]]; then
+    epoch_marker=$(date -r "$INTERVIEW_PENDING_MARKER" +%s 2>/dev/null || stat -c %Y "$INTERVIEW_PENDING_MARKER" 2>/dev/null || echo 0)
+    age=$(( now - epoch_marker ))
+    if (( age < INTERVIEW_PENDING_THROTTLE_SECS )); then
+      log "interview-pending report throttled (last sent ${age}s ago < ${INTERVIEW_PENDING_THROTTLE_SECS}s) - staying silent"
+      return 0
+    fi
+  fi
+  log "interview-pending: emitting ONE throttled report ($reason)"
+  if command -v openclaw >/dev/null 2>&1 && declare -F resolve_operator_chat_id >/dev/null 2>&1; then
+    local _op_chat; _op_chat="$(resolve_operator_chat_id 2>/dev/null || true)"
+    if [[ -n "$_op_chat" ]]; then
+      openclaw message send --channel telegram -t "$_op_chat" \
+        -m "Heads up: the AI Workforce interview on $(hostname) is not complete yet ($reason). The workforce build is intentionally NOT started until the interview is finished — complete it and it resumes automatically. (At most one of these per 24h.)" >>"$LOG_FILE" 2>&1 || true
+    fi
+  fi
+  : > "$INTERVIEW_PENDING_MARKER" 2>/dev/null || true
+}
+
 # ---- read state ----
 interview_complete=$(jq -r '.interviewComplete // false' "$STATE_FILE")
 if [[ "$interview_complete" != "true" ]]; then
@@ -406,6 +435,7 @@ if [[ "$interview_complete" != "true" ]]; then
   last_q_at_unflagged=$(jq -r '.interviewProgress.lastQuestionAt // empty' "$STATE_FILE" 2>/dev/null || true)
   if [[ -z "$last_q_at_unflagged" || "$last_q_at_unflagged" == "null" ]]; then
     log "interview not yet complete and no lastQuestionAt - interview not started; nothing to recover"
+    report_interview_pending_throttled "interview not started"
     exit 0
   fi
   log "RECOVERY: interviewComplete!=true but interview content exists (lastQuestionAt=$last_q_at_unflagged) - running QC to decide if the owner actually finished (HOP-1 recovery)."
@@ -442,9 +472,15 @@ if [[ "$interview_complete" != "true" ]]; then
     # fall through - do NOT exit; the rest of this script now drives the build.
   else
     log "RECOVERY: QC=$_recover_qc_status (not pass) - NOT promoting. The owner-facing nudge / QC-resume / watchdog lanes own an unfinished or unverifiable interview. Exiting (nothing to resume yet)."
+    report_interview_pending_throttled "interview started but QC=$_recover_qc_status (not pass)"
     exit 0
   fi
 fi
+
+# FIX H: the interview is complete (we fell through the not-complete block) — clear
+# the throttled interview-pending report marker so a future incomplete state reports
+# fresh rather than staying silenced.
+rm -f "$INTERVIEW_PENDING_MARKER" 2>/dev/null || true
 
 # ---- PRD-2.15 (v12.3.12): QC-aware resume gate ----
 # interviewComplete=true is necessary but not sufficient. The interviewQc gate

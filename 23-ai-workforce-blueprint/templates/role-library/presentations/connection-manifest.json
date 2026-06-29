@@ -1,7 +1,7 @@
 {
   "_comment": "Connection-manifest for the Presentations department. Every 'required: true' entry must resolve to a non-empty value in openclaw.json before this dept may be marked done. verify-wiring.sh reads this file and checks each cfg_key (and each listed cfg_key_alias). A hook may also carry assert_contains_dept:true to require that this dept's slug is present in the resolved JSON file.",
   "dept": "presentations",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "connection_points": [
     {
       "name": "kie-api-key",
@@ -19,14 +19,18 @@
       "name": "ghl-api-key",
       "description": "GoHighLevel LOCATION Private Integration Token (PIT) used by the Media Librarian + Delivery Concierge to upload slide PNGs and the final deliverables to the GHL media library via POST services.leadconnectorhq.com/medias/upload-file. MUST be the LOCATION token, NOT an agency token (the agency PIT returns 401 for media ops). The upload tool (ghl_media.py) reads GOHIGHLEVEL_API_KEY first, then the legacy alias GHL_API_KEY; verify-wiring accepts either.",
       "cfg_key": "env.vars.GOHIGHLEVEL_API_KEY",
-      "cfg_key_aliases": ["env.vars.GHL_API_KEY"],
+      "cfg_key_aliases": [
+        "env.vars.GHL_API_KEY"
+      ],
       "required": true
     },
     {
       "name": "ghl-location-id",
       "description": "GHL location (sub-account) ID so the media upload targets the correct media library (multipart field locationId). The upload tool reads GOHIGHLEVEL_LOCATION_ID first, then the legacy alias GHL_LOCATION_ID; verify-wiring accepts either.",
       "cfg_key": "env.vars.GOHIGHLEVEL_LOCATION_ID",
-      "cfg_key_aliases": ["env.vars.GHL_LOCATION_ID"],
+      "cfg_key_aliases": [
+        "env.vars.GHL_LOCATION_ID"
+      ],
       "required": true
     },
     {
@@ -35,6 +39,27 @@
       "cfg_key": "commandCenter.departmentsJsonPath",
       "assert_contains_dept": true,
       "required": true
+    },
+    {
+      "name": "command-center-board-api",
+      "description": "Command Center API base URL the fail-soft producer cc_board.py uses to board the deck (POST /api/tasks/ingest at job-start, PATCH /api/tasks/[id] at phase boundaries). Without it the deck still builds (cc_board is fail-soft) but the run is invisible on the board, and AF-CC-UNREGISTERED fails closeout when registration was never even attempted.",
+      "cfg_key": "env.vars.MISSION_CONTROL_URL",
+      "required": true
+    },
+    {
+      "name": "command-center-board-token",
+      "description": "Long-lived bearer for the Command Center middleware layer (Authorization: Bearer). Optional \u2014 same-origin / dev boxes leave it unset.",
+      "cfg_key": "env.vars.MC_API_TOKEN",
+      "required": false
+    },
+    {
+      "name": "command-center-board-secret",
+      "description": "HMAC-SHA256 webhook secret (x-webhook-signature) for the per-route layer, byte-for-byte parity with /api/tasks/ingest. Optional (CC_WEBHOOK_SECRET alias accepted).",
+      "cfg_key": "env.vars.WEBHOOK_SECRET",
+      "cfg_key_aliases": [
+        "env.vars.CC_WEBHOOK_SECRET"
+      ],
+      "required": false
     },
     {
       "name": "delivery-destination-drive",

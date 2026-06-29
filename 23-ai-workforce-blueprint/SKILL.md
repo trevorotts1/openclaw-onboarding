@@ -46,6 +46,14 @@ This skill builds **this client's** company and nothing else. Every department, 
 
 # AI Workforce Blueprint
 
+> **RULE — the interview is the precondition for the whole company (FIX H).**
+> `build-workforce.py` fail-closes (exit 87, `INTERVIEW_PENDING`) on a missing/fabricated
+> interview — the bare `interviewComplete` flag is NOT trusted (a genuine answers file
+> with real Q/A is required). `resume-workforce-build.sh` no longer exits silently when the
+> interview is incomplete: it emits ONE throttled (24h) report so the owner is told, and
+> clears that marker on completion. The Command Center half (Skill 32) reports
+> `interview-pending` and refuses to scaffold pre-interview. Report-don't-build, at every layer.
+
 ## The Philosophy
 
 "The whole point of this system is to BUILD them into running a real company. Not quiz them on shit they don't know. The AI should be the expert that guides them, not a survey that interrogates them."

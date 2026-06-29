@@ -24,6 +24,7 @@
     "legal": { "tier": "heavy", "modality": ["text", "long_context"], "rationale": "document reasoning" },
     "compliance": { "tier": "heavy", "modality": ["text", "long_context"], "rationale": "document reasoning" },
     "presentations": { "tier": "heavy", "modality": ["vision"], "rationale": "per-slide visual QC" },
+    "quality-control": { "tier": "heavy", "modality": ["text", "reasoning"], "rationale": "an independent QC checker must reason THROUGH the gate — never grade a heavy producer with a weaker model. Mapped heavy so QC never falls to the mid/text default a tier BELOW the thing it checks; the producer-vs-QC distinctness rule (build-workforce.py) then resolves QC to a DIFFERENT heavy model from the box's own inventory." },
     "openclaw-maintenance": { "tier": "mid", "modality": ["text", "tool_use"], "rationale": "ops automation" },
     "podcast": { "tier": "mid", "modality": ["text", "audio_generation"], "rationale": "episode production + show notes" },
     "logistics-fulfillment": { "tier": "mid", "modality": ["text", "tool_use"], "rationale": "order + shipment ops" },

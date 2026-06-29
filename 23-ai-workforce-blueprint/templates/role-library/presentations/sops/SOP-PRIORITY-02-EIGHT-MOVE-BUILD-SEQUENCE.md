@@ -3,10 +3,10 @@
 **Cluster:** North Star / Build sequence. Child of SOP-NORTHSTAR-00 (the destination) and SOP-PRIORITY-01 (the diagnostic that prescribes this sequence as Position/Priority remediation). The conductor that orders the department's existing persuasion instruments into the shift.
 **Owning role at write time:** Attention Content Strategist (authors the eight-move map at P0B-PRIORITY, order 0.2) + Director of Presentations (reserves the move SLOTS in `arc_allocation.json`, SOP 9.4) + offer-price-strategist (owns moves 4-6 cargo/value-drop slots) + presenters-speech-writer (delivers moves 7-8 aloud).
 **Enforced at the gate by:** QC Specialist - Presentations. The sequence becomes law as the monotonic-ordering check behind **AF-NO-SHIFT** (COPY-QC 4.2) plus three new per-move beat gates -- **AF-NO-PRIORITY-STACK** (move 1), **AF-NO-RERANK** (move 7), **AF-NO-TRIGGER** (move 8) -- and the arc gate **AF-PEAK-END** (order 3). Moves 2-6 are already enforced by live machinery (see §2); do NOT rebuild them.
-**Detection script:** `scripts/intelligence_engines_check.py check_copy` (PRIORITY_STACK_NAMED before first ladder beat; explicit re-rank beat after PRICE; time-bound CTA token in CTA slide) + `scripts/build_deck.py` (PEAK tag in `arc_allocation.json`; peak+closing in top creativity-budget quartile; non-flat ending). REGISTRATION PENDING -- Agent W3 (H->I->J lockstep).
-**Registered:** PENDING Agent W3 lockstep. Until then this is the stated build doctrine the strategist and director run by hand; the eight-move map is recorded in `priority_shift_spec.json.eight_move_map[]`.
+**Detection script:** `scripts/intelligence_engines_check.py check_copy` (PRIORITY_STACK_NAMED before first ladder beat; explicit re-rank beat after PRICE; time-bound CTA token in CTA slide) + `scripts/build_deck.py` (PEAK tag in `arc_allocation.json`; peak+closing in top creativity-budget quartile; non-flat ending). REGISTERED + LIVE in lockstep (the four gates carry their `build_deck.py` `_chk_` symbols; `sync_check.py` + Guard A enforce them).
+**Registered:** YES. The four gates (AF-NO-PRIORITY-STACK / AF-NO-RERANK / AF-NO-TRIGGER / AF-PEAK-END) are live in `PIPELINE-MANIFEST.autofails`, enforced by `build_deck.py`, and listed in the MASTER ruleset Section-5 table; the eight-move map is recorded in `priority_shift_spec.json.eight_move_map[]`.
 **Enforcement phase:** Authored at P0B-PRIORITY (0.2); slotted into the arc at P3-ARC (3, `AF-PEAK-END`); verified in copy at COPY-QC (4.2, the three beat gates + AF-NO-SHIFT ordering); verified whole at P-SHIFT-QC (7.5, composite AF-PRIORITY-SHIFT).
-**Status:** **DOCTRINE.** The eight-move spine has no foothold today. This SOP installs it and WIRES it into the existing arc allocation and pitch machinery rather than duplicating it. New gates registered in lockstep by Agent W3.
+**Status:** **LIVE.** The eight-move spine is wired into the existing arc allocation and pitch machinery (not duplicated). All four new gates are registered in the manifest + MASTER ruleset and enforced at their phases.
 
 ---
 
@@ -56,9 +56,9 @@ The Fogg behavior model (B = M·A·T, P51) maps to the spine's back half: moves 
 
 The Attention Content Strategist records the eight-move map into `working/copy/priority_shift_spec.json.eight_move_map[]` -- one entry per move with: the beat tag, the slide(s) it lands on, the existing-machinery hook it reuses (per §2), and the evidence the move is present. The Director consumes this to reserve the slots in `arc_allocation.json`; the Slide Copywriter writes the beats to those slots; QC verifies ordering at COPY-QC and completeness at P-SHIFT-QC.
 
-## 6. FOR AGENT W3 -- ENFORCEMENT CODES THIS SOP DECLARES
+## 6. ENFORCEMENT CODES THIS SOP DECLARES (REGISTERED + LIVE)
 
-Register all four in lockstep (manifest v17->18 + ruleset Section 5 + SOP-SLIDE-00 mirror + qc-specialist wiring + test_preflight fixtures), per the §7.4 frozen spec:
+All four are registered in lockstep (PIPELINE-MANIFEST.autofails + MASTER ruleset Section 5 + SOP-SLIDE-00 mirror + qc-specialist wiring + test_preflight fixtures) and enforced today:
 
 - **AF-NO-PRIORITY-STACK** (qc_check, COPY-QC 4.2) -- `intelligence_engines_check.check_copy`: PRIORITY_STACK_NAMED beat before first ladder beat. (Move 1.)
 - **AF-NO-RERANK** (qc_check, COPY-QC 4.2) -- `intelligence_engines_check.check_copy`: explicit re-rank/decision-demand beat after PRICE. (Move 7.)

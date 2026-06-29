@@ -152,6 +152,37 @@ The script prints a JSON summary the builder acts on:
 
 ---
 
+## 2a. CLIENT INTAKE CONVERSATION (one question at a time — the universal experience)
+
+Before any deck is built, the intake is captured as a CONVERSATION, not a form, and it is
+driven by ONE authoritative tool so it cannot wander, skip questions, or re-ask answered
+ones: **`scripts/deck-intake-driver.py`** (the runtime state machine over the ordered
+`deck-intake-questions.json`). The rules are universal across every client and surface:
+
+1. **The quick-vs-in-depth CHOICE is the FIRST thing.** Offer it plainly: the QUICK way
+   (5-7 key questions, locked in fast) or the IN-DEPTH way (10-20 questions, fully fleshed
+   out). The chosen mode sizes a turn/time budget.
+2. **One question per turn — the DRIVER decides the next question, not the agent.** Call
+   `deck-intake-driver.py --next` to get exactly ONE question; relay it verbatim; capture
+   the answer with `--answer <id> <value>`; then call `--next` again for the following one.
+   You CANNOT emit the next question yourself — the driver returns it (lowest-order
+   unanswered required id). This is what kills the 30-minute wandering interview.
+3. **The six mandatory fields are asked IN ORDER** (presentation mode, talk length, exact
+   slide count, pitch-or-teaching, assets-on-hand, style source), then scope, then lock.
+   The client's explicit slide count is honored EXACTLY (25 -> 25), never floored/capped.
+4. **ONE seamless voice.** The client hears only the next question. NEVER narrate the
+   department machinery: no "relayed to the department", no "the Director noted", no
+   "you'll see their next question shortly". The routing is invisible.
+5. **Lock + build gate.** `--confirm` records the owner's read-back sign-off; `--complete`
+   is the HARD precondition (writes `intake_ledger.json` complete:true). The deck build is
+   DENIED (`presentation-canonical-entry.sh` GATE 0 + the `deck-build-guard.sh` interceptor)
+   until the ledger is complete.
+
+Doctrine source: `brainstorming-buddy-presentations-sops.md` SOP 9.0/9.1/9.2/9.3. The driver
+makes that prose pacing STRUCTURAL.
+
+---
+
 ## 3. STEP 1 — WRITE `slides.json` (DMAIC)
 
 **Define.** From the task title + description + any SOP steps, decide: deck title, slide

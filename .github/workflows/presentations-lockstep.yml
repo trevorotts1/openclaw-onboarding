@@ -43,6 +43,15 @@ on:
       # Guard B — retired-doctrine residual lint + its pattern registry
       - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/doctrine_residual_check.py"
       - "23-ai-workforce-blueprint/templates/role-library/presentations/retired-doctrine-patterns.json"
+      # Process-integrity layer (v16.1.11) — the runner + no-skip proof + substance
+      # verifiers + producer/QC distinctness + CC board producer + the renderer pin.
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/run_signature_deck.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/prove-deck.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/phase_verifiers.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/cc_board.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/deck-intake-driver.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/test_process_integrity.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/CANONICAL-RENDERER-PIN.sha256"
 
 jobs:
   presentations-lockstep:
@@ -131,6 +140,47 @@ jobs:
           # Any match lacking a retirement context marker exits non-zero and blocks the merge.
           python3 "$GUARD_B"
           echo "doctrine_residual_check: Guard B PASSED — no retired doctrine present as a live instruction."
+
+      - name: test_process_integrity.py — FIX A-G gate tests (exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          T="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/test_process_integrity.py"
+          if [ ! -f "$T" ]; then echo "FATAL: $T not found" >&2; exit 2; fi
+          # Negative+positive tests for the process-integrity gates: no-skip proof
+          # (prove-deck), one-question-per-turn intake, mandatory artifact_sha,
+          # producer!=QC distinctness, fail-soft CC board, substance verifiers, and
+          # single-source/no-duplicate department slugs. Any regression exits non-zero.
+          python3 "$T"
+          echo "test_process_integrity: all FIX A-G gate tests PASSED."
+
+      - name: CANONICAL-RENDERER-PIN.sha256 — recompute + verify (FIX I, GATE 3 fleet-wide)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SCR="23-ai-workforce-blueprint/templates/role-library/presentations/scripts"
+          PIN="$SCR/CANONICAL-RENDERER-PIN.sha256"
+          if [ ! -f "$PIN" ]; then
+            echo "FATAL: $PIN missing — GATE 3 (renderer hash pin) cannot enforce fleet-wide." >&2
+            exit 1
+          fi
+          # Recompute the renderer-pair hash the SAME way presentation-canonical-entry.sh
+          # GATE 3 does (sha256 of build_deck.py + run_signature_deck.py, in that order).
+          # A legit engine change MUST regenerate the pin in the same commit, or this fails.
+          if command -v sha256sum >/dev/null 2>&1; then
+            COMPUTED=$(cat "$SCR/build_deck.py" "$SCR/run_signature_deck.py" | sha256sum | awk '{print $1}')
+          else
+            COMPUTED=$(cat "$SCR/build_deck.py" "$SCR/run_signature_deck.py" | shasum -a 256 | awk '{print $1}')
+          fi
+          EXPECTED=$(tr -d ' \t\n' < "$PIN")
+          if [ "$EXPECTED" != "$COMPUTED" ]; then
+            echo "FAIL: CANONICAL-RENDERER-PIN.sha256 is STALE." >&2
+            echo "  pinned:   $EXPECTED" >&2
+            echo "  computed: $COMPUTED" >&2
+            echo "  Fix: cat build_deck.py run_signature_deck.py | sha256sum | awk '{print \$1}' > $PIN" >&2
+            exit 1
+          fi
+          echo "renderer pin verified ($COMPUTED) — GATE 3 will enforce this head fleet-wide."
 
       - name: STANDARD-presenter-speech-layout.pdf present (H7 gate)
         shell: bash

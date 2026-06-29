@@ -2425,6 +2425,15 @@ def build_from_config(config):
                 except Exception as _reg_e:
                     print(f"[NON-INTERACTIVE ERROR] Registration failed for {dept_id}: {_reg_e}", file=sys.stderr)
                     registration_failures.append(f"{dept_id}:{_reg_e}")
+            # FIX A (FM-1): once every dept agent is registered, guarantee the
+            # independent QC agent never grades with the Presentations producer's
+            # own model (producer != QC, both heavy/thinking-high). Idempotent +
+            # fail-soft; never alters the producer, never pins Anthropic.
+            try:
+                enforce_producer_qc_distinctness(config_data)
+            except Exception as _qcd_e:
+                print(f"[NON-INTERACTIVE WARN] producer-vs-QC distinctness pass "
+                      f"failed (non-fatal): {_qcd_e}", file=sys.stderr)
             if registration_failures:
                 print(f"[NON-INTERACTIVE ERROR] {len(registration_failures)} dept(s) failed registration: {registration_failures}", file=sys.stderr)
             else:
@@ -6522,6 +6531,140 @@ def _record_dept_default(dept_id, selector_data, resolved_primary):
         "role_id": None,
         "source": "build-workforce-layer1",
     }
+
+
+# ── Producer != QC model-distinctness + forced-high-thinking (FIX A / FM-1) ───
+# The independent Quality-Control checker must NEVER be the SAME weak model as the
+# Presentations producer it grades (the "QC grading itself with a model too weak to
+# reason through the gate" failure). Both departments resolve heavy
+# (dept-model-suitability.json: presentations=heavy, quality-control=heavy), and a
+# heavy-tier model is intrinsically thinking=high in this codebase (Kimi /
+# DeepSeek-V*-pro / MiMo-pro / GLM — see shared-utils/select_model.py model labels).
+# That is how "forced high thinking" is expressed WITHOUT writing a per-agent
+# `thinking` key into openclaw.json — which is a documented `openclaw config
+# validate` landmine (BUG-4: the strict AgentEntry schema rejected `thinking`).
+#
+# This post-pass runs AFTER every dept agent is registered and guarantees:
+#   1. dept-quality-control's model.primary is DIFFERENT from dept-presentations'
+#      model.primary — resolved from the box's OWN heavy inventory (the heavy
+#      fallback pool add_agent_to_config already wrote), never a hardcoded pin,
+#      never Anthropic.
+#   2. When only ONE heavy model is available, QC keeps it but is annotated
+#      single_heavy_model_reasoning_independence (independence of reasoning
+#      configuration, not of model id — the documented SAFE FLOOR).
+# It NEVER changes the producer's model and NEVER pins a specific model on a client.
+_HEAVY_THINKING_DEPTS = {"presentations", "quality-control"}
+
+
+def _agent_primary(entry):
+    """The primary model id string of an agent entry (model may be a dict or str)."""
+    m = entry.get("model") if isinstance(entry, dict) else None
+    if isinstance(m, dict):
+        return (m.get("primary") or "").strip()
+    if isinstance(m, str):
+        return m.strip()
+    return ""
+
+
+def _model_ok(mid):
+    """A model id is a usable distinct candidate iff it is non-empty, not Anthropic,
+    and not the free sentinel (the same sovereignty filter used everywhere else)."""
+    low = (mid or "").strip().lower()
+    return bool(low) and "anthropic/" not in low and "claude-" not in low \
+        and low not in ("openrouter/free", "free")
+
+
+def _coarse_family(mid):
+    """A coarse model-family token so a 'different model' prefers a different family
+    (kimi vs deepseek) over merely a different provider of the same model. Best-effort;
+    returns '' when undeterminable."""
+    s = (mid or "").strip().lower()
+    if not s:
+        return ""
+    seg = s.split("/")[-1].split(":")[0]          # 'deepseek-v4-pro', 'kimi-k2.6'
+    return seg.split("-")[0] if seg else ""        # 'deepseek', 'kimi'
+
+
+def _record_thinking_high(dept_id, model_id, single_heavy=False):
+    """Record the forced-high-thinking intent in the SAFE dept-default metadata
+    channel (consumed by the Command Center seeding step), NEVER as an openclaw.json
+    agent key. Heavy models are intrinsically thinking=high; this annotation makes
+    the intent explicit + auditable without risking `openclaw config validate`."""
+    rec = _DEPT_DEFAULTS_ACCUM.setdefault(dept_id, {
+        "department": dept_id, "model_id": model_id, "setting_type": "model",
+        "role_id": None, "source": "build-workforce-layer1",
+    })
+    if model_id:
+        rec["model_id"] = model_id
+    rec["thinking_level"] = "high"
+    rec["heavy_thinking_enforced"] = True
+    if single_heavy:
+        rec["single_heavy_model_reasoning_independence"] = True
+
+
+def enforce_producer_qc_distinctness(config):
+    """Post-registration pass guaranteeing the independent QC agent never grades with
+    the Presentations producer's own model. Idempotent; never raises; never pins
+    Anthropic or a specific model; never alters the producer. Returns a dict
+    describing the action taken (for logging + tests)."""
+    result = {"changed": False, "reason": "no_op", "producer": "", "qc": ""}
+    try:
+        agents = (config.get("agents") or {}).get("list")
+        if not isinstance(agents, list):
+            return result
+        by_id = {a.get("id"): a for a in agents if isinstance(a, dict)}
+        prod, qc = by_id.get("dept-presentations"), by_id.get("dept-quality-control")
+        if not prod or not qc:
+            return result
+        prod_primary, qc_primary = _agent_primary(prod), _agent_primary(qc)
+        result["producer"], result["qc"] = prod_primary, qc_primary
+        if not prod_primary or not qc_primary:
+            return result
+
+        if qc_primary != prod_primary and _model_ok(qc_primary):
+            _record_thinking_high("quality-control", qc_primary)
+            _record_thinking_high("presentations", prod_primary)
+            result["reason"] = "already_distinct"
+            return result
+
+        # Same model (or QC carries a forbidden/free sentinel): re-resolve QC to a
+        # DIFFERENT heavy model from its OWN heavy fallback pool (box-agnostic heavy
+        # thinking=high models). Prefer a different model FAMILY, else any allowed
+        # id distinct from the producer.
+        qc_model = qc.get("model") if isinstance(qc.get("model"), dict) else {}
+        candidates = [c for c in (qc_model.get("fallbacks") or [])
+                      if _model_ok(c) and c != prod_primary]
+        prod_fam = _coarse_family(prod_primary)
+        diff_family = [c for c in candidates if _coarse_family(c) != prod_fam]
+        chosen = (diff_family or candidates)
+        if chosen:
+            new_primary = chosen[0]
+            new_fallbacks = [prod_primary] + [c for c in (qc_model.get("fallbacks") or [])
+                                              if c != new_primary]
+            qc["model"] = {"primary": new_primary, "fallbacks": new_fallbacks}
+            _record_thinking_high("quality-control", new_primary)
+            _record_thinking_high("presentations", prod_primary)
+            result.update({"changed": True, "reason": "reassigned_distinct_heavy",
+                           "qc": new_primary})
+            print(f"[QC-DISTINCT] dept-quality-control re-resolved to a heavy model "
+                  f"({new_primary}) distinct from the Presentations producer "
+                  f"({prod_primary}); the checker no longer grades with the "
+                  f"producer's own model.", file=sys.stderr)
+            return result
+
+        # Only one heavy model available on this box: keep it, record reasoning
+        # independence (forced high thinking) — the documented single-model floor.
+        _record_thinking_high("quality-control", qc_primary, single_heavy=True)
+        _record_thinking_high("presentations", prod_primary)
+        result["reason"] = "single_heavy_model_reasoning_independence"
+        print(f"[QC-DISTINCT] only one heavy model available ({qc_primary}); "
+              f"dept-quality-control keeps it but is flagged for reasoning-"
+              f"configuration independence (forced high thinking).", file=sys.stderr)
+        return result
+    except Exception as exc:  # noqa: BLE001
+        print(f"[QC-DISTINCT WARN] producer-vs-QC distinctness pass failed: {exc}",
+              file=sys.stderr)
+        return result
 
 
 def flush_dept_defaults_artifact():
