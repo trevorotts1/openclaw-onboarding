@@ -3,11 +3,32 @@
 **Source:** presentations/brainstorming-buddy-presentations.md
 **Extract:** Section 9 (Standard Operating Procedures) verbatim mirror.
 **Authority:** This file mirrors the role file. The role file is authoritative. If they diverge, the role file wins and this mirror must be regenerated.
-**Version:** 2.2 (regenerated after surgery v2.2 -- SOP 9.1 adds the PRICE-SEPARATION BRANCH: EVENT/ACCESS price vs OFFER price are two independent fields, free event != free offer, never deny an assumption)
+**Version:** 2.2 (regenerated after surgery v2.2 -- the quick-vs-in-depth CHOICE is offered FIRST; SOP 9.0's six mandatory fields are captured ONE AT A TIME inside the chosen path, never batched; one question per message is enforced (AF-INTAKE-BATCH); SOP 9.0 added to this mirror (was missing). Aligns to CLIENT-WEBINAR-DECK-SOP.md section 0.5. Also: SOP 9.1 PRICE-SEPARATION BRANCH -- EVENT/ACCESS price vs OFFER price are two independent fields, free event != free offer, never deny an assumption.)
 
 ---
 
 ## 9. Standard Operating Procedures (Numbered)
+
+### SOP 9.0 -- PRE-PRESENTATION HARD-REQUIRED CAPTURE (the CHOICE is offered FIRST; these mandatory fields are then captured ONE AT A TIME inside the chosen path, never batched)
+
+**When to run:** Immediately AFTER the quick-vs-in-depth choice is offered (SOP 9.1 step 1),
+woven into the chosen path one question at a time. The six fields (REPRESENTATION_MIX,
+AUDIENCE-COMPOSITION NOTE, GROUNDED-CONTENT, VISUAL_MIX, DARK_OK, HOOK SEED) are MANDATORY and
+no-guess; only their placement moved -- under the section 0.5 contract the CHOICE comes first,
+then these are folded into the one-at-a-time flow, never a front-loaded batch (that is
+AF-INTAKE-BATCH).
+
+**Steps:**
+1. Check SOUL.md / USER.md / any prior brief; credit and confirm anything already on file.
+2. For each missing field, ask ONE PER MESSAGE, in order, AFTER the choice has been offered.
+   Wait for each answer and reflect it back before the next. REPRESENTATION_MIX and
+   GROUNDED_CONTENT are never defaulted (no racial/gender ratio is ever invented; not captured =
+   flag + NO PEOPLE). VISUAL_MIX, DARK_OK, HOOK SEED have the documented fallbacks; the scope
+   fields (DELIVERABLE_SET / WANT_AUDIO_DEMO / TARGET_WPM) and STYLE_SOURCE have sensible
+   defaults and never block the gate.
+3. Continue the chosen interview (SOP 9.1 simple / SOP 9.2 extensive), then SOP 9.3.
+
+**Output:** `brief.json` with `pre_presentation_capture` block and `pre_presentation_gate_passed: true`.
 
 ### SOP 9.1 -- Simple Interview (7 questions or fewer)
 
@@ -15,15 +36,20 @@
 small/low-stakes, OR when most context is already on file.
 
 **Steps:**
-1. OPENING + MODE OFFER (always first, counts as conversation not as one of the 7):
-   Ask 1 to 2 critical framing questions to understand the idea at a high level
-   (see the dept question bank, the "OPENING" items). Then offer the choice in plain
-   language: "I can do this two ways. The QUICK way: I ask you about 5 to 7 key
-   questions and we lock it in fast. Or the DEEP way: we go back and forth on 10 to 20
-   questions and really flesh it out. Which do you want?" Record `interview_mode: "simple"`.
-2. Pull the SIMPLE question set for this department (the question bank below, simple set).
-   Ask each one at a time. Skip any whose answer is already on file or already answered
-   in the opening.
+1. MODE OFFER FIRST (the CHOICE precedes every other question -- the binding
+   CLIENT-WEBINAR-DECK-SOP.md section 0.5 contract). Open with a one-line warm acknowledgment
+   plus the choice, VERBATIM: "Love this. Let's shape it together, and you set the pace. I can do
+   this two ways: the QUICK way, where I ask you about 5 key questions, one at a time, and we lock
+   a solid plan fast; or the IN-DEPTH way, where we go a little deeper, still one question at a
+   time, so the deck is tailored exactly to your audience and offer. Which would you like, quick
+   or in-depth? You can switch or stop whenever you want." Set `intake_state.json`
+   `mode_offered: true`; record `interview_mode`. ONLY AFTER the choice, ask the 1 to 2 framing
+   questions, still one per message. Send ONE question per message; do NOT ask the next until this
+   one is answered (write `awaiting_answer`). Two or more intake questions in one message is a
+   HARD VIOLATION (AF-INTAKE-BATCH).
+2. Pull the SIMPLE / QUICK question set (the ~5 essentials). Ask each ONE PER MESSAGE, waiting for
+   each answer. Skip any already on file or answered in the opening. Weave the SOP 9.0 no-guess
+   fields (REPRESENTATION_MIX, GROUNDED_CONTENT) into this one-at-a-time flow -- never batched.
 3. **(Density-floor overhaul) Ask the STYLE BRANCH verbatim** (SOP-IMG-03 section 2), once, early, before the STYLE BLOCK is built: "For the look of your slides, do you have a particular image style in mind? You can: (1) point me at an existing deck, past designs, or reference images you want me to match; (2) tell me a saved style name from your library if you already have one (like 'Style 1'); or (3) let me creatively develop a signature style for you. Which one?" Set `STYLE_SOURCE` to `match_reference` (+ `STYLE_REFERENCES`, `ANALYZE_REQUEST=true`), `saved_style` (+ `STYLE_ID`), or `creative_develop`. A deck that reaches Phase 2 with `STYLE_SOURCE` unset is a defect (it would invent a look with no client direction, the path that produced the reference failure case cookie-cutter typography). If `creative_develop`, sequence the existing mood/imagery/avoid stems into the short creative-develop micro-interview (<=5 questions; do not re-bank them) per SOP-IMG-03 section 3.
 3a. **(Decision 1C) Ask the ASSET BRANCH verbatim, once, early — every signature run:** *"Is there anything you already have that could help me build this — photos, a logo, brand colors, a rough/old deck, slides, or concepts? Drop them here."* Record `asset_intake_question_asked: true` in brief.json the moment it is asked (the gate **AF-ASSET-QUESTION-MISSING** fails any deck whose intake does not carry this flag). If the client provides anything, set `assets_provided: true` and capture each item (kind + where it is) so the Media-Librarian step can ingest it into `assets_manifest.json`; if they upload a rough/old deck, note it as a `scratch_deck` so the scratch-deck parser seeds the PRD. If they have nothing, set `assets_provided: false` — the question was still asked, which is what the gate requires.
 3b. **(Decision 2A) Ask the PITCH BRANCH verbatim, once, early:** *"Does this presentation end with an offer or pitch — a price, package, or call to buy — or is it a teaching and content-only presentation?"* Record an explicit boolean `pitch_included` (true = ends with an offer/pitch; false = teaching/content-only). NEVER default it and NEVER force a pitch: a pitchless deck is first-class. The gate **AF-PITCH-FLAG-UNSET** fails any deck whose intake has no boolean `pitch_included`; downstream, `pitch_included:false` SUPPRESSES the Offer Price Strategist + price ladder and arms **AF-PITCH-LEAK** (no pitch/price content may appear), while `pitch_included:true` requires the offer arc (**AF-PITCH-MISSING**).

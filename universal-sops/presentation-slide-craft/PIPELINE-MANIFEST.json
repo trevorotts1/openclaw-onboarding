@@ -1,5 +1,5 @@
 {
-  "manifest_version": 19,
+  "manifest_version": 20,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -2050,6 +2050,16 @@
       "py_symbol": null,
       "check_script": "scripts/pitch_engines_check.py::check_copy",
       "sop_ref": "SOP-PITCH-06-PITCH-ENGINES.md#1.1"
+    },
+    {
+      "code": "AF-INTAKE-BATCH",
+      "stage": "INTAKE",
+      "level": "INTAKE",
+      "in_ruleset": true,
+      "trigger": "INTAKE-SCOPED, never gates the deterministic build. The client intake conversation dumped a batch: a single assistant turn emitted two or more intake questions before the owner answered the current one (numbered, bulleted, or joined by 'and'), OR it opened with no quick-vs-in-depth CHOICE first. Doctrine: CLIENT-WEBINAR-DECK-SOP.md section 0.5 Client Intake Conversation Contract. Enforced by the QC/Healer intake-trace scan ONLY; it never inspects, runs inside, or gates build_deck.py / run_signature_deck.py, so it touches no build phase.",
+      "enforced_by": "qc_check",
+      "py_symbol": null,
+      "sop_ref": "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md#af-intake-batch"
     }
   ],
   "roles": [

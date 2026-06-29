@@ -170,6 +170,13 @@ assert_contains "T5 message body: Presenter's Guide" "$OUTPUT" "Presenter's Guid
 assert_contains "T5 message body: speech" "$OUTPUT" "word-for-word speech"
 assert_contains "T5 message body: audio demo" "$OUTPUT" "audio demonstration"
 assert_contains "T5 message body: PowerPoint" "$OUTPUT" "PowerPoint and PDF"
+# Choice-first + one-at-a-time intake contract (CLIENT-WEBINAR-DECK-SOP section 0.5)
+assert_contains "T5 intake choice: quick" "$OUTPUT" "quick interview"
+assert_contains "T5 intake choice: in-depth" "$OUTPUT" "in-depth"
+assert_contains "T5 intake one-at-a-time" "$OUTPUT" "one question at a time"
+# The welcome must NOT regress to the old batch-style framing or dump questions.
+assert_not_contains "T5 no old batch clause" "$OUTPUT" "ask a few quick questions"
+assert_not_contains "T5 no screenshot batch phrase" "$OUTPUT" "give me whatever you have got"
 assert_contains "T5 dry-run label" "$OUTPUT" "DRY-RUN complete"
 echo ""
 

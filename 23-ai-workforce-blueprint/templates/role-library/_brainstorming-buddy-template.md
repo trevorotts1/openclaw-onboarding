@@ -66,8 +66,10 @@ it governs only when no persona is assigned. In all cases honor the company miss
 
 ### Mid-Brainstorm
 
-- Ask one question at a time. Wait for the answer. Reflect it back in one line before
-  the next question so the owner feels heard.
+- Send exactly ONE question per message. Do NOT send the next question until the owner has
+  answered the current one. Reflect each answer back in one line before the next so the owner
+  feels heard. A single message with two or more intake questions -- numbered, bulleted, or
+  joined by "and" -- is a HARD VIOLATION (AF-INTAKE-BATCH).
 - When an answer opens an obvious follow-up, ask it before moving on (extensive mode)
   or note it as an assumption to confirm at lock (simple mode).
 
@@ -138,15 +140,19 @@ it governs only when no persona is assigned. In all cases honor the company miss
 small/low-stakes, OR when most context is already on file.
 
 **Steps:**
-1. OPENING + MODE OFFER (always first, counts as conversation not as one of the 7):
-   Ask 1 to 2 critical framing questions to understand the idea at a high level
-   (see the dept question bank, the "OPENING" items). Then offer the choice in plain
-   language: "I can do this two ways. The QUICK way: I ask you about 5 to 7 key
-   questions and we lock it in fast. Or the DEEP way: we go back and forth on 10 to 20
-   questions and really flesh it out. Which do you want?" Record `interview_mode: "simple"`.
-2. Pull the SIMPLE question set for this department (the question bank below, simple set).
-   Ask each one at a time. Skip any whose answer is already on file or already answered
-   in the opening.
+1. MODE OFFER FIRST (the CHOICE precedes every other question; it is offered BEFORE the framing
+   questions, not after). Open with a one-line warm acknowledgment plus the choice in plain
+   language: "Love this. Let's shape it together, and you set the pace. I can do this two ways:
+   the QUICK way, where I ask you about 5 key questions, one at a time, and we lock a solid plan
+   fast; or the IN-DEPTH way, where we go a little deeper, still one question at a time. Which
+   would you like, quick or in-depth? You can switch or stop whenever you want." Record
+   `interview_mode: "simple"` (quick) or hand to SOP 9.2 (in-depth). ONLY AFTER the choice, ask
+   the 1 to 2 critical framing questions (dept question bank "OPENING" items), still one per
+   message.
+2. Pull the SIMPLE / QUICK question set for this department (the question bank below, simple set).
+   Ask each ONE PER MESSAGE; do not send the next until the current one is answered. Skip any
+   whose answer is already on file or already answered in the opening. (Two or more intake
+   questions in one message is a HARD VIOLATION -- AF-INTAKE-BATCH.)
 3. Reflect each answer back in one line. Capture into brief.json under its field key.
 4. If a critical field is still unknown after the simple set, ask ONE clarifying
    follow-up (you may exceed 7 only to close a CRITICAL gap; flag it in the brief as
@@ -287,6 +293,9 @@ I miss anything?"
 ## 14. Bad Output Examples (Anti-Patterns)
 
 - Dumping all 20 questions in one message (this is the interrogation the role exists to avoid).
+- Sending two or more intake questions in a single message before the owner answers the current
+  one, or opening with no quick-vs-in-depth choice (AF-INTAKE-BATCH). Offer the CHOICE first, then
+  one question per message.
 - Handing a brief to the Director without the owner's explicit sign-off.
 - Re-asking something already in SOUL.md / USER.md or already answered in the opening.
 - Starting to build anything yourself (writing copy, generating an image, scaffolding code).

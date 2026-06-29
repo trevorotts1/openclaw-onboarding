@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-06-28T00:00:00Z",
-  "version": "16.1.9",
+  "version": "16.1.10",
   "total_roles": 420,
   "total_departments": 34,
   "departments": {
@@ -486,8 +486,8 @@
         "slide-submitter",
         "typography-architect"
       ],
-      "content_sha": "sha256:e35b9d9de1de441d9af6979fce533d1c40ce718e598e7b6f167f75ee207b150a",
-      "content_hashed_at": "2026-06-29T04:24:57.193102+00:00"
+      "content_sha": "sha256:8ebb537fc6011fceb6dc27bd463800fd4db3ac16dd013a4bf7cdc4b1fc4e4161",
+      "content_hashed_at": "2026-06-29T17:38:19.950820+00:00"
     },
     "product-production": {
       "count": 4,
@@ -5123,10 +5123,10 @@
       "path": "templates/role-library/presentations/brainstorming-buddy-presentations.md",
       "capability_class": "CONVERSATIONAL",
       "vision_flag": false,
-      "content_sha": "sha256:a0061b2e44e0e7f925a471a0672a9c03c7da5a4a5ee1c0baf5fb8d84196a7f70",
+      "content_sha": "sha256:9b04858d81ffa47b6e7f89c8f8ae90474164e8defa51cc87025b125f1f87b2db",
       "render_sha": "sha256:80fa2d7513607ec6a1d7e35b1d3fc746106d5dc543ce463694da33eab631cc6c",
-      "content_version": "1.0.3",
-      "content_hashed_at": "2026-06-29T04:24:57.193102+00:00"
+      "content_version": "1.0.4",
+      "content_hashed_at": "2026-06-29T17:38:19.950820+00:00"
     },
     {
       "slug": "brand-steward",
@@ -5235,10 +5235,10 @@
       "path": "templates/role-library/presentations/director-of-presentations.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:380a07141727a7c2ea97d02fe0584c36708e31839aef05c4867c65218fe40fe2",
+      "content_sha": "sha256:a49ae3184df8875e45a1bde9589c047c630548049c7cee0099f733c97294c978",
       "render_sha": "sha256:07290c51a3ed050a02523e49c333214272689130c018fe81693c0057b6d23079",
-      "content_version": "1.0.8",
-      "content_hashed_at": "2026-06-29T04:24:57.193102+00:00"
+      "content_version": "1.0.9",
+      "content_hashed_at": "2026-06-29T17:38:19.950820+00:00"
     },
     {
       "slug": "first-time-onboarding-presentations",
@@ -5251,10 +5251,10 @@
       "path": "templates/role-library/presentations/first-time-onboarding-presentations.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:8f8bf7404ce9cfeddc22962eadedba82bb9d8189447cd09a56e0088112d710a0",
+      "content_sha": "sha256:a1c922f969802368643d6c7ac10e3384e42b724807ddf83e2b30d4b76e7d88f1",
       "render_sha": "sha256:d1865af89d867e6d23a0dd41780d6a121bae2cea69b26ba8e4c2437f7a003f07",
-      "content_version": "1.0.2",
-      "content_hashed_at": "2026-06-29T04:24:57.193102+00:00"
+      "content_version": "1.0.3",
+      "content_hashed_at": "2026-06-29T17:38:19.950820+00:00"
     },
     {
       "slug": "fish-audio-expression-specialist",
@@ -7990,9 +7990,9 @@
       "slug": "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md",
-      "content_sha": "sha256:a1dd3be0d435c284023d65b3986ec24e27e1abf4555d6d59f31aaf5f5da7ee3b",
-      "content_version": "1.0.11",
-      "content_hashed_at": "2026-06-29T04:24:57.193102+00:00"
+      "content_sha": "sha256:61952c82d109ea3f16183763b617e71f935c3079274eaea8731781feca3f7432",
+      "content_version": "1.0.12",
+      "content_hashed_at": "2026-06-29T17:38:51.089345+00:00"
     },
     {
       "slug": "SOP-SLIDE-01-ONE-BIG-IDEA-PER-SLIDE",
@@ -8054,9 +8054,9 @@
       "slug": "brainstorming-buddy-presentations-sops",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/brainstorming-buddy-presentations-sops.md",
-      "content_sha": "sha256:d4bf3b852e0e8e683eb2e3872f3695313c48002e82ad4f411cf0abb50cfeb108",
-      "content_version": "1.0.2",
-      "content_hashed_at": "2026-06-29T04:24:57.193102+00:00"
+      "content_sha": "sha256:c93da8297e5dee9a2017d941dea10e43101a7d47356644342a32b1344e3901d0",
+      "content_version": "1.0.3",
+      "content_hashed_at": "2026-06-29T17:38:19.950820+00:00"
     },
     {
       "slug": "brand-steward-sops",
@@ -8110,9 +8110,9 @@
       "slug": "director-of-presentations-sops",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/director-of-presentations-sops.md",
-      "content_sha": "sha256:82246b67809727b5bbdddc99e6d047397a27b5cbf53e54590ecfe64a6b91f105",
-      "content_version": "1.0.6",
-      "content_hashed_at": "2026-06-29T04:24:57.193102+00:00"
+      "content_sha": "sha256:79c620a6e0a19d3b946465461719663771ad0e8770ad16e48016ec7e5fafa42f",
+      "content_version": "1.0.7",
+      "content_hashed_at": "2026-06-29T17:38:19.950820+00:00"
     },
     {
       "slug": "first-time-onboarding-presentations-sops",

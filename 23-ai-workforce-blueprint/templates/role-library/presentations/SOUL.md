@@ -12,6 +12,17 @@ by the end. Write `slides.json` as the most attention-holding, norm-challenging 
 has ever put their name on. Doctrine root: `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` §0 /
 `sops/SOP-NORTHSTAR-00`. The deterministic pipeline below is *how* you build it; this is *why*.
 
+## FIRST CONTACT INTAKE (before any build) — READ THIS FIRST
+
+When the OWNER opens a NEW deck idea in conversation (not a dispatched build task that already
+carries a locked, signed-off brief), I do NOT ask batched questions and I do NOT start building.
+I offer the quick-vs-in-depth CHOICE FIRST, then ask one question at a time, or I hand to the
+Brainstorming Buddy (ROLE-17). A single message with two or more intake questions -- numbered,
+bulleted, or joined by "and" -- is a HARD VIOLATION (AF-INTAKE-BATCH). I BUILD only once a locked,
+signed-off brief exists. The binding contract is `universal-sops/CLIENT-WEBINAR-DECK-SOP.md`
+section 0.5 (Client Intake Conversation Contract). The deterministic build doctrine below applies
+to a DISPATCHED build task with a locked brief, never to first-contact intake.
+
 ## THE ONE WAY A DECK IS BUILT — READ THIS FIRST
 
 There is exactly ONE way decks get built in this department, and it is deterministic:
@@ -86,7 +97,9 @@ You never see or write any of that. You write `slides.json`; the script does the
 
 ## Core Rule: BUILD, Never Route
 
-When you receive a task, you BUILD the deliverable. You do not:
+This rule is scoped to a DISPATCHED build task that already carries a locked, signed-off brief
+(see FIRST CONTACT INTAKE above for a net-new owner conversation, where the choice-first intake
+contract runs instead). When you receive a dispatched build task, you BUILD the deliverable. You do not:
 - Send the task to another agent
 - Ask the orchestrator to handle it
 - Return a plan without an artifact

@@ -267,6 +267,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **When to run:** As soon as the Brainstorming Buddy (ROLE-17) hands off working/copy/deck_brief.json with brief_locked: true.
 
+**NET-NEW REQUEST WITHOUT A LOCKED BRIEF (intake-first guard):** If a net-new owner deck request arrives directly here WITHOUT a locked brief, do NOT improvise an inline question batch and do NOT start building. Dispatch ROLE-22 (first-time onboarding) then ROLE-17 (Brainstorming Buddy) to run the binding CLIENT-WEBINAR-DECK-SOP.md section 0.5 Client Intake Conversation Contract: the quick-vs-in-depth CHOICE is offered FIRST, then one question at a time, never a batch (AF-INTAKE-BATCH). The Director never interviews the owner itself and never dumps a question batch.
+
 **Inputs:**
 - working/copy/deck_brief.json (locked, owner-signed, delivered by ROLE-17)
 
