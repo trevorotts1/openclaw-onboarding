@@ -2068,6 +2068,50 @@ def _chk_image_qc(path: Optional[Path]) -> str:
     return ""
 
 
+def check_image_qc_report_gate(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """IMAGE-QC PREFLIGHT SCHEDULER (AF-IMAGE-QC + AF-IMAGE-QC-VISION) — resolves the
+    image-QC chicken-and-egg WITHOUT weakening the gate.
+
+    The image-QC report (working/qc/image_qc_report.json, manifest phase P-IMAGE-QC,
+    order 4.95) is a POST-render artifact: the INDEPENDENT Image QC Specialist grades the
+    rendered PNGs AFTER P4-RENDER (order 4.9). The legacy wiring required that report to
+    already EXIST at the PRE-render preflight — a chicken-and-egg that made render
+    un-startable (render needs the report; the report needs the render). This scheduler
+    makes the pre-render requirement satisfiable while keeping every tooth:
+
+      * GENUINE PRE-RENDER STATE — no rendered PNGs AND no report yet -> DEFER (return "")
+        so render can proceed. This mirrors the sibling post-render gates already wired
+        run-dir-scoped in PREFLIGHT_REQUIRED (check_image_qc_present / check_image_qc_vision
+        / check_visual_variety / check_brand_consistency), all of which defer pre-render.
+
+      * ONCE RENDERS (or a report) EXIST — the report becomes MANDATORY and is enforced by
+        _chk_image_qc: the report-shape gate (gate string / average >= 8.5 / no triggered
+        autofails / pass:true / INDEPENDENT-reviewer provenance) PLUS the deterministic
+        pixel/vision teeth (check_image_qc_vision: byte-floor + flat-card detection + the
+        report cross-check). A rendered deck with NO report FAILS AF-IMAGE-QC (file absent);
+        a pixel-blind / flat-card / rubber-stamp report FAILS AF-IMAGE-QC-VISION.
+
+    The post-render pixel teeth are NOT dropped — they additionally bite, independent of
+    this scheduler, at the render closeout (run_postflight_gate -> check_image_qc_vision),
+    via the standalone check_image_qc_vision PREFLIGHT_REQUIRED entry, and at pre-delivery
+    (canonical_render_guard.guard_pre_delivery + the P-IMAGE-QC phase attestation, which
+    requires the report to be present). This change only fixes the render-vs-QC ORDERING.
+
+    NOTE on lockstep: _chk_image_qc remains the manifest-declared P-IMAGE-QC checker and
+    the AF-IMAGE-QC enforcement symbol (unchanged signature, still path-based). This is the
+    run-dir-scoped scheduler around it; sync_check's orphan check (B1) only scans `_chk_*`
+    symbols, so this `check_*` wrapper needs no manifest entry (same as its siblings)."""
+    report_path = run_dir / "working" / "qc" / "image_qc_report.json"
+    report_present = report_path.exists()
+    pngs = _gather_rendered_pngs(run_dir)
+    if not pngs and not report_present:
+        return ""  # genuine pre-render state: the post-render artifact is not due yet.
+    # Renders or a report exist -> enforce the full image-QC gate. An absent report now
+    # FAILS via _qc_report_gate(None) inside _chk_image_qc (a rendered deck must be graded);
+    # a present report is shape-validated AND pixel/vision cross-checked (AF-IMAGE-QC-VISION).
+    return _chk_image_qc(report_path if report_present else None)
+
+
 def _chk_typography_qc(path: Optional[Path]) -> str:
     """TYPOGRAPHY-QC gate (AF-TYPOGRAPHY-QC). After the Design brief (PF-DESIGN), an
     INDEPENDENT QC specialist grades the design system against the written
@@ -3902,8 +3946,30 @@ def check_phase_preconditions(run_dir: Path, phase_id, prior_phase_ids) -> str:
     if pm.exists():
         obj = _read_json(pm)
         if isinstance(obj, dict) and "__parse_error__" not in obj:
+            # (1) Runner attestations live under "phase_attestations" (keyed phase_id) —
+            #     written by run_signature_deck.attest_phase. This is the CANONICAL
+            #     attestation store the deterministic runner produces. Reading it here is
+            #     the v16.1.5 fix for the FALSE AF-PHASE-SKIPPED: the writer appends to
+            #     phase_attestations[] but this reader formerly inspected only phases[], so
+            #     every phase the runner attested was invisible to the next phase's
+            #     precondition check and the chain hard-aborted after the first phase. This
+            #     now mirrors run_signature_deck._attested_phase_ids and
+            #     canonical_render_guard.attested_phase_ids (one contract, three readers).
+            for att in obj.get("phase_attestations", []) or []:
+                if isinstance(att, dict):
+                    for k in ("phase_id", "id", "name"):
+                        v = att.get(k)
+                        if isinstance(v, str) and v.strip():
+                            attested.add(v.strip())
+            # (2) build_deck.py appends its OWN render record under "phases" as
+            #     {"phase": "render", ...}; that record counts as the P4-RENDER phase being
+            #     attested (a canonical render is seen without the runner re-stamping it).
+            #     Legacy phases[] records keyed by id/phase_id/name are still honoured so a
+            #     pre-runner / hand-written manifest does not regress.
             for ph in obj.get("phases", []) or []:
                 if isinstance(ph, dict):
+                    if ph.get("phase") == "render":
+                        attested.add("P4-RENDER")
                     for k in ("id", "phase_id", "phase", "name"):
                         v = ph.get(k)
                         if isinstance(v, str) and v.strip():
@@ -5968,11 +6034,20 @@ PREFLIGHT_REQUIRED = [
      "Phase Prompt-QC — Prompt QC Specialist (AF-PROMPT-QC)",
      _chk_prompt_qc),
     # IMAGE-QC gate (AF-IMAGE-QC). After Render, an INDEPENDENT QC specialist grades
-    # the rendered slides against the written image-QC rubric (multimodal pass).
-    ("working/qc/image_qc_report.json",
-     "image QC report (gate Phase Image-QC, average >= 8.5, independent reviewer)",
+    # the rendered slides against the written image-QC rubric (multimodal pass). The
+    # image-QC report is a POST-render artifact (manifest order 4.95, AFTER P4-RENDER
+    # 4.9), so this is wired RUN-DIR-SCOPED (None sentinel) via check_image_qc_report_gate:
+    # it DEFERS pre-render (no PNGs + no report) so render can proceed, then enforces the
+    # full report-shape gate + AF-IMAGE-QC-VISION pixel teeth (_chk_image_qc) once renders
+    # exist. Fixes the chicken-and-egg where requiring the report at pre-render made render
+    # un-startable; the post-render pixel teeth still bite (here, at the render closeout,
+    # and at pre-delivery). _chk_image_qc stays the manifest-declared P-IMAGE-QC checker.
+    (None,
+     "image QC report (gate Phase Image-QC, average >= 8.5, independent reviewer) — "
+     "enforced once renders exist; the report is a post-render artifact so this defers "
+     "pre-render and the AF-IMAGE-QC-VISION pixel teeth bite post-render",
      "Phase Image-QC — Image QC Specialist (AF-IMAGE-QC)",
-     _chk_image_qc),
+     check_image_qc_report_gate),
     # SPEECH-QC gate (AF-SPEECH-QC). CONDITIONAL: enforced only once the speech QC
     # report exists (speech is written downstream at delivery), so it never blocks
     # the pre-speech render but is wired so it can't be silently skipped.
