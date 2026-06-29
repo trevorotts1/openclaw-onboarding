@@ -10,7 +10,7 @@
 - **`deck-intake-questions.json` — removed a real public figure's name** used as an example in a help string (the repo is fleet-wide; replaced with a generic illustrative example).
 - **`PIPELINE-MANIFEST.json`** — restored the trailing newline; **`CANONICAL-RENDERER-PIN.sha256`** regenerated for the corrected renderer pair.
 
-
+## [v16.2.0]  -  2026-06-29  -  feat(presentations): process-integrity hardening (fleet-wide) — front-door entry enforcement, interview turn-gate, up-front declared plan + per-step client reports, no-skip proof certificate, real substance verifiers, Command Center deliverable registration, model-tiering (independent QC, MiniMax V3 producer), interview-complete precondition gates, and a CI meta-gate. Manifest_version 20 → 21.
 
 ### Risk: medium — mostly additive + fail-closed. Every new gate is fail-closed locally with the only bypass a logged, verifiable `owner_skip_approval`; the producer-side Command Center writes are fail-soft (never block a deck on CC transport). No existing anti-fake gate weakened; the per-slide 9,000-char prompt floor is untouched. Front-door enforcement degrades gracefully (the one documented door self-screens) where the gateway plugin hook is not yet installed — no regression vs the existing inside-canonical-entry GATE 2.
 
