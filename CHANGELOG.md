@@ -1,3 +1,34 @@
+## [v16.1.9]  -  2026-06-29  -  fix: the fleet update/install/verify path can no longer trigger a client's Google Workspace credential wipe. Skill-14's QC shipped the repo's ONLY runtime `gws` call — a bare `gws auth status` whose sole guard was `command -v gws` — and the onboarding verification gate runs that QC HEADLESS (`bash qc-*.sh >/dev/null 2>&1`, no TTY), driven by the watchdog/resume crons and the update path. Headless, gws cannot decrypt its file keyring, so gws's OWN failure mode rewrote `~/.config/gws/credentials.enc` to `credential_source:"none"`, erasing every account's OAuth. The repo never deleted/moved/re-keyed the file — this single bare call was the only trigger surface. The probe is now credential-safe and a new CI guard fails the build if any update-path code could touch the credential store.
+
+### Risk: low — one QC call site is gated; no install/update behaviour, no other gate, and no credential write-site changes. The probe still runs (unchanged) for an interactive operator with decryptable creds.
+
+### The wipe (what happened)
+
+A fleet roll silently cleared a client's Google Workspace OAuth: every account in `~/.config/gws/credentials.enc` flipped to `credential_source:"none"`. The wipe was NOT a delete by this repo — it was gws clearing its OWN store when `gws auth status` was invoked in a context where it could not decrypt its file-keyring key.
+
+### Root cause (the repo is the TRIGGER, not the eraser)
+
+- **The only runtime gws call** is `14-google-workspace-integration/qc-google-workspace-integration.sh:23`: `gws auth status 2>&1 | grep -qiE 'authenticated|active|logged'`. Its ONLY preceding guard was `command -v gws` — it did not check that the keyring was decryptable or that the credential store existed. (A token-level scan confirms this is the sole `gws` invocation in the entire tree; everything else is `command -v gws`, an `ls`, or a comment.)
+- **The headless driver** is `lib-onboarding-state.sh` `oc_gate_skill()`, which globs the skill's `qc-*.sh` and runs `bash "$qc" >/dev/null 2>&1` — no TTY, output discarded.
+- **The update path provisions what fires it**: the watchdog-onboarding-loop / resume-onboarding crons (installed by `install.sh`) and the weekly stage cron drive the agent to run `oc_gate_skill 14-google-workspace-integration` over each not-yet-passed skill. All trigger paths (watchdog Wave 2, resume self-ping, agent running the QC directly per the update playbook) funnel through the same line. Run headless, gws cannot decrypt → gws rewrites `credentials.enc` → `credential_source:"none"`.
+
+Confirmed NEGATIVES (the repo itself is not the eraser): no `KEYRING_BACKEND` anywhere; no `gws … remove/logout/revoke/delete`; no `rm`/`mv`/`chmod`/`chown`/`truncate`/`tee`/`sed -i`/overwrite against `~/.config/gws*` (only a read-only `ls`); `install.sh`'s only dotfile contact is a read-only key harvest in an isolated subshell.
+
+### The fix (load-bearing, minimal)
+
+`14-google-workspace-integration/qc-google-workspace-integration.sh`:
+- The bare `gws auth status` is now gated to run ONLY when gws can safely decrypt — `{ [ -t 0 ] || OC_GWS_AUTH_PROBE=1 } && credentials present` (interactive TTY or an explicit operator opt-in, AND `$GOOGLE_APPLICATION_CREDENTIALS` set or a `~/.config/gws/credentials*` file exists). Otherwise it SKIPs (warns) and the credential store is left **byte-untouched**. This closes all three trigger paths because they all funnel through this one line.
+- The file keyring backend is pinned (`: "${GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND:=file}"; export …`) — set-only-if-unset, so it never overrides or drops a value the client already exported — so any probe we DO run uses the on-disk key deterministically instead of an OS keychain it cannot unlock headlessly.
+- skill-14 `skill-version.txt` bumped v6.5.6 → v6.5.7 (G3).
+
+### TESTS / CI GUARD
+
+New `scripts/test-gws-credential-preservation.sh` + `.github/workflows/gws-credential-preservation-guard.yml` fail the build if the update path could erase creds. It seeds a sandbox HOME with fake `credentials.enc` (two oauth2 accounts) + a file-keyring key + `~/.config/gws-acct*` stores + `secrets/.env`, puts a fake `gws` that faithfully models the headless self-clearing on PATH, then: (T1) proves a bare/unguarded call DOES wipe headless (the detector has teeth); (T2) runs the REAL QC headless and asserts gws is NEVER invoked and every store survives **byte-identical** with `credential_source` still valid; (T3) drives the REAL `oc_gate_skill` gate (the live trigger path) headless with the same assertion; (T4) confirms the opt-in + interactive path STILL runs the probe (QC not lobotomised) and the read leaves creds byte-identical; (T5) static invariants — exactly one guarded `gws auth status`, keyring-backend pinned/not-dropped, no `gws remove/logout/revoke/delete`, no destructive filesystem op against `~/.config/gws*`, and no install/update script overwrites a user shell dotfile. 18/18 PASS; proven to FAIL (9/9 of the credential checks) against the pre-fix vulnerable QC. Self-contained (bash + stdlib python3); runs with no gateway and no real gws. Box user, not root. No client names in changed files.
+
+### What is intentionally NOT changed
+
+The `obs_*`/`oc_*` name mismatch in `update-skills.sh`'s inline verification gate (dead code: `command -v obs_verify_skill` is always false, so the mechanical updater never runs the gws call) is left as-is. Reconciling it WITHOUT this guard would ACTIVATE that dead gate and make the weekly mechanical updater fire the bare headless `gws auth status` over skill 14 — strictly worse. The qc:23 guard is the load-bearing fix; the rename is a separate follow-on that must not precede it.
+
 ## [v16.1.8]  -  2026-06-29  -  fix: GATE the interactive onboarding kickoff handshake to FRESH INSTALLS ONLY — completes the v16.1.6 silent-updater work. install.sh's "paste this to start" Telegram handshake (send_kickoff_telegram) fired on EVERY run, including an update / re-roll of an already-onboarded box → unsolicited chatter to an existing client. It now fires only when the box is a true fresh, never-onboarded install; updates stay 100% silent while fresh self-serve onboarding still works.
 
 ### Risk: low
