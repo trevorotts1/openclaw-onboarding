@@ -118,6 +118,77 @@ fail_install() {
   exit 1
 }
 
+# ----------------------------------------------------------------------
+# Command Center pm2 app-name contract (v16.1.6 — two-CC-on-:4000 root fix)
+# ----------------------------------------------------------------------
+# The Command Center MUST run under exactly ONE pm2 app name across the whole
+# fleet. The fleet-canonical name is "mission-control" — it is what the CC
+# repo's ecosystem.config.cjs declares (so `pm2 resurrect` restores it at box
+# boot), what scripts/watchdog-cc.sh self-heals to (it deletes every alias then
+# runs `pm2 start ecosystem.config.cjs`), what the mac-mini / vps-docker
+# bootstrap scripts write, and what the CC package.json is named.
+#
+# This installer historically started the board under the DIVERGENT name
+# "blackceo-command-center". On a box whose CC was already named
+# "mission-control" (from bootstrap/resurrect), `pm2 restart
+# blackceo-command-center` failed, fell through to a fresh `pm2 start
+# blackceo-command-center`, and the box ended up with TWO pm2 apps both binding
+# :4000 — an endless mutual-kill restart loop (the proven root cause of a
+# multi-hour gateway outage on a client box; 47k+ restarts).
+#
+# The fix: (1) reconcile away every non-canonical alias BEFORE (re)starting, and
+# (2) start the board from ecosystem.config.cjs so the install/update path uses
+# the SAME single app definition (canonical name + circuit-breaker + the
+# hardened cc-start.sh launcher) as every other tool. Result: exactly ONE CC,
+# under one name, regardless of which name the box ran before.
+CC_PM2_NAME="mission-control"
+# Every NON-canonical alias the CC has shipped under historically. These are
+# deleted before each (re)start so a box can never keep a second competing CC.
+CC_PM2_LEGACY_ALIASES="blackceo-command-center command-center"
+
+# cc_reconcile_pm2_names — delete every non-canonical CC alias so at most ONE CC
+# app (the canonical "$CC_PM2_NAME") can survive the (re)start below. Idempotent:
+# a missing app makes `pm2 delete` a harmless no-op.
+cc_reconcile_pm2_names() {
+  local alias_name
+  for alias_name in $CC_PM2_LEGACY_ALIASES; do
+    if pm2 delete "$alias_name" >/dev/null 2>&1; then
+      log "INFO" "phase=6: reconciled — deleted non-canonical CC pm2 app '$alias_name'"
+    fi
+  done
+}
+
+# cc_pm2_start_canonical — start the board under the canonical name. Prefer the
+# CC repo's ecosystem.config.cjs (it carries the circuit-breaker + DB pin + the
+# hardened cc-start.sh launcher, and is the SAME definition bootstrap/watchdog
+# use, so a divergent definition is impossible). Falls back to a plain
+# `npm start` under the canonical name only if the ecosystem file is somehow
+# absent from the checkout. Returns the launcher's exit status.
+cc_pm2_start_canonical() {
+  if [[ -f "$DASHBOARD_DIR/ecosystem.config.cjs" ]]; then
+    ( cd "$DASHBOARD_DIR" && CC_INSTALL_DIR="$DASHBOARD_DIR" CC_PORT="$DASHBOARD_PORT" \
+        pm2 start ecosystem.config.cjs >>"$LOG_FILE" 2>&1 )
+  else
+    log "WARN" "phase=6: ecosystem.config.cjs missing in $DASHBOARD_DIR — falling back to 'npm start' under '$CC_PM2_NAME'"
+    ( cd "$DASHBOARD_DIR" && CC_PORT="$DASHBOARD_PORT" \
+        pm2 start npm --name "$CC_PM2_NAME" -- start >>"$LOG_FILE" 2>&1 )
+  fi
+}
+
+# cc_apply_canonical_pm2 — the single idempotent + reconciling entrypoint used
+# by BOTH the full-install and the --update-only Phase-6 paths. Deletes every
+# alias (incl. a stale canonical) so the (re)start always yields exactly ONE
+# canonical CC carrying the ecosystem definition. Returns the start launcher's
+# exit status so callers can branch on success/failure.
+cc_apply_canonical_pm2() {
+  cc_reconcile_pm2_names
+  # Delete any pre-existing canonical app too, so the start below re-creates it
+  # fresh from ecosystem.config.cjs (guaranteeing it carries the circuit-breaker,
+  # even on a box whose canonical app was first started the old npm-start way).
+  pm2 delete "$CC_PM2_NAME" >/dev/null 2>&1 || true
+  cc_pm2_start_canonical
+}
+
 # ---- preflight ----
 if [[ ! -f "$STATE_FILE" ]]; then
   if [[ "$UPDATE_ONLY" == "true" ]]; then
@@ -255,15 +326,15 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
     ( cd "$DASHBOARD_DIR" && npm run db:push >>"$LOG_FILE" 2>&1 ) \
       && log "INFO" "phase=6: db:push done (idempotent drizzle migrations; no data wipe)" \
       || log "WARN" "phase=6: db:push reported errors (continuing)"
-    # pm2 restart is safer than delete+start for an existing running deployment
-    if pm2 restart blackceo-command-center >>"$LOG_FILE" 2>&1; then
-      log "INFO" "phase=6: pm2 restart done"
+    # IDEMPOTENT + RECONCILING (v16.1.6): delete every non-canonical CC alias,
+    # then (re)create exactly ONE canonical "mission-control" app from
+    # ecosystem.config.cjs. This converges a box running under ANY name (incl.
+    # the legacy "blackceo-command-center", or a duplicate pair) down to a single
+    # CC on :4000, so the two-process mutual-kill loop can never recur.
+    if cc_apply_canonical_pm2; then
+      log "INFO" "phase=6: pm2 (re)start of '$CC_PM2_NAME' done (reconciled to one canonical CC)"
     else
-      log "WARN" "phase=6: pm2 restart failed — attempting pm2 start"
-      pm2 delete blackceo-command-center >/dev/null 2>&1 || true
-      ( cd "$DASHBOARD_DIR" && PORT=$DASHBOARD_PORT pm2 start npm --name blackceo-command-center -- start >>"$LOG_FILE" 2>&1 ) \
-        && log "INFO" "phase=6: pm2 start done (restart failed, used fresh start)" \
-        || log "WARN" "phase=6: pm2 restart+start both failed — check: pm2 logs blackceo-command-center"
+      log "WARN" "phase=6: pm2 start of '$CC_PM2_NAME' failed — check: pm2 logs $CC_PM2_NAME"
     fi
     pm2 save >>"$LOG_FILE" 2>&1 || true
   fi
@@ -296,13 +367,17 @@ else
     log "WARN" "phase=6: npm run db:seed failed — dashboard will still start but workspace selector may be empty"
   fi
 
-  # Explicit PORT=4000 is the fix for the EADDRINUSE / random-port bug that
-  # hit a client box. Some upstream env was leaking a different PORT which
-  # caused Next.js to bind somewhere unpredictable. Pinning it here makes
-  # the bind deterministic and matches Phase 6.6 of INSTALL.md.
-  log "INFO" "phase=6: starting dashboard via pm2 on PORT=$DASHBOARD_PORT"
-  pm2 delete blackceo-command-center >/dev/null 2>&1 || true
-  if ! ( cd "$DASHBOARD_DIR" && PORT=$DASHBOARD_PORT pm2 start npm --name blackceo-command-center -- start >>"$LOG_FILE" 2>&1 ); then
+  # CC_PORT/CC_INSTALL_DIR are consumed by ecosystem.config.cjs (cc-start.sh
+  # strips any ambient PORT and pins this one) so the bind stays deterministic
+  # on :4000 even if an OpenClaw gateway PORT leaks into the env — this replaces
+  # the old explicit PORT=4000 + `npm start` form. See Phase 6.6 of INSTALL.md.
+  #
+  # IDEMPOTENT + RECONCILING (v16.1.6): delete every non-canonical CC alias AND
+  # any stale canonical app, then start exactly ONE canonical "mission-control"
+  # CC from ecosystem.config.cjs (single fleet-wide app definition incl. the
+  # circuit-breaker). A box can never end up with two CCs fighting over :4000.
+  log "INFO" "phase=6: starting dashboard via pm2 as '$CC_PM2_NAME' on CC_PORT=$DASHBOARD_PORT"
+  if ! cc_apply_canonical_pm2; then
     fail_install "phase=6: pm2 start failed"
   fi
   pm2 save >>"$LOG_FILE" 2>&1 || true
@@ -455,7 +530,7 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
     LOCAL_OK=1
     log "INFO" "phase=7 (update-only): dashboard responding $LOCAL_CODE on :$DASHBOARD_PORT"
   else
-    log "WARN" "phase=7 (update-only): dashboard returned $LOCAL_CODE — check: pm2 logs blackceo-command-center"
+    log "WARN" "phase=7 (update-only): dashboard returned $LOCAL_CODE — check: pm2 logs $CC_PM2_NAME"
   fi
 else
   # Local check (Next.js dev/start server on :4000)
@@ -464,7 +539,7 @@ else
     LOCAL_OK=1
     log "INFO" "phase=7: local dashboard responding $LOCAL_CODE on :$DASHBOARD_PORT"
   else
-    log "WARN" "phase=7: local dashboard returned $LOCAL_CODE on :$DASHBOARD_PORT — check pm2 logs blackceo-command-center"
+    log "WARN" "phase=7: local dashboard returned $LOCAL_CODE on :$DASHBOARD_PORT — check pm2 logs $CC_PM2_NAME"
   fi
 
   # Remote check (cloudflared tunnel subdomain)
