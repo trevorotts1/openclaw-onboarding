@@ -408,6 +408,7 @@ def upload_media(
     parent_id: str | None = None,
     timeout: int = 300,
     opener: Callable[[urllib.request.Request, int], Any] | None = None,
+    require_png: bool = True,
 ) -> dict:
     """Upload one media file to the GHL media library and return ``{fileId, url}``.
 
@@ -435,22 +436,41 @@ def upload_media(
         timeout: HTTP timeout seconds (uploads can be large).
         opener: Optional callable ``(Request, timeout) -> response-like`` for tests
             (mock the HTTP). Default = ``urllib.request.urlopen`` (real call).
+        require_png: When True (DEFAULT — the Skill-06 / Skill-48 image pipelines),
+            the file MUST pass the PNG magic-byte check (only real generated rasters
+            are hosted, never a stub). When False, the PNG-only restriction is lifted
+            so a NON-IMAGE media artifact (e.g. a final ``.pptx``/``.pdf`` deck) can be
+            hosted through this SAME proven REST call instead of forking it — the file
+            must still exist. The default keeps every existing caller's behavior
+            byte-for-byte; ONLY a caller that has already proven the artifact is a
+            legitimate non-image deliverable passes ``require_png=False`` (in the
+            Presentations dept that is the gated ``ghl_media.upload_media`` wrapper,
+            which runs the fail-closed delivery boundary gate BEFORE it does so).
 
     Returns:
         ``{fileId, url, name, local_path, http}`` — ``url`` is the public GCS URL.
 
     Raises:
-        ValueError: missing args or a non-PNG file.
+        ValueError: missing args, a non-PNG file when ``require_png`` (default), or a
+            non-existent file when ``require_png=False``.
         RuntimeError: non-2xx HTTP, or a 2xx response missing ``fileId``/``url``.
     """
     _require(png_path, "png_path")
     _require(location_id, "location_id")
     _require(name, "name")
     _require(pit, "pit")
-    if not verify_png(png_path):
+    if require_png:
+        if not verify_png(png_path):
+            raise ValueError(
+                f"refusing to upload {png_path!r}: not a valid PNG (magic-byte check "
+                "failed) — only real generated rasters are uploaded, never a stub"
+            )
+    elif not os.path.isfile(png_path):
+        # require_png=False lifts the image-only restriction (a deck deliverable), but
+        # a missing file is still a hard FAIL — we never POST a phantom artifact.
         raise ValueError(
-            f"refusing to upload {png_path!r}: not a valid PNG (magic-byte check "
-            "failed) — only real generated rasters are uploaded, never a stub"
+            f"refusing to upload {png_path!r}: file does not exist (require_png=False "
+            "lifts the PNG-only check for non-image deliverables, not the existence check)"
         )
 
     fields: dict[str, str] = {

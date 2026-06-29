@@ -96,6 +96,25 @@ import zipfile
 import zlib
 from pathlib import Path
 
+
+# ---------------------------------------------------------------------------
+# CANONICAL delivery-gate rejection exception. Defined HERE (the gate module,
+# stdlib-only, no dependency on ghl_media* — so no import cycle) and imported by
+# BOTH the lowest GHL upload chokepoint (the Presentations `ghl_media.upload_media`
+# gated wrapper) and the transport (`ghl_media_push.py`). A single class identity
+# means `except DeliveryGateRejected` catches a rejection raised at EITHER layer.
+# Fail-closed: when this is raised, NOTHING is uploaded.
+# ---------------------------------------------------------------------------
+class DeliveryGateRejected(RuntimeError):
+    """Raised when the out-of-band delivery boundary gate rejects a DECK artifact at a
+    transport / the lowest GHL upload chokepoint. Fail-closed: the upload does NOT
+    happen. Carries the gate reasons."""
+
+    def __init__(self, reasons):
+        self.reasons = list(reasons)
+        super().__init__("DELIVERY BOUNDARY GATE REJECTED the deck — refusing to upload "
+                         "to GHL:\n  - " + "\n  - ".join(str(r) for r in self.reasons))
+
 # The FIVE client-package files (AF-DH1 whitelist), kept in lockstep with
 # sops/delivery-concierge-sops.md SOP 9.0 step 3a and PIPELINE-MANIFEST.json
 # client_package_files. PRESENTERS-SPEECH is PLURAL (the canonical producer name).
@@ -911,14 +930,69 @@ def _selftest() -> int:
             fails.append(f"O pre-transport-overlay: expected AF-OVERLAY-DELIVERED REJECT, "
                          f"got ok={ok} {reasons}")
 
+    # === LOWEST GHL UPLOAD CHOKEPOINT — the direct-upload_media bypass is BLOCKED (v16.1.2) ===
+    # CASE P — a deck handed straight to ghl_media.upload_media (the function
+    # push_deck_media wraps) WITHOUT going through the gate must be REJECTED, and the HTTP
+    # opener that would perform the POST must NEVER be reached (nothing uploaded). This is
+    # the exact residual bypass the verifier found. Guarded so a box without the sibling
+    # Skill-48 canonical module degrades to a NOTE rather than a false failure.
+    try:
+        import ghl_media as _ghl  # noqa: WPS433 — the gated upload chokepoint wrapper
+    except Exception as exc:  # noqa: BLE001
+        print(f"  NOTE: P direct-upload bypass case skipped — ghl_media unimportable ({exc!r})")
+    else:
+        with tempfile.TemporaryDirectory() as t:
+            loose = _mk_pptx(Path(t) / "loose-deck.pptx", with_text=False)  # no governed run dir
+            posted = []
+
+            def _sentinel(req, timeout):  # must never be reached for an ungated deck
+                posted.append(1)
+                raise AssertionError("HTTP opener reached — a deck was POSTed UNGATED")
+
+            raised = None
+            try:
+                _ghl.upload_media(str(loose), "loc", "loose-deck.pptx", "pit", opener=_sentinel)
+            except Exception as exc:  # noqa: BLE001
+                raised = exc
+            if raised is None:
+                fails.append("P direct-upload bypass: ghl_media.upload_media(deck) did NOT "
+                             "raise — the ungated-deck bypass is OPEN")
+            elif type(raised).__name__ != "DeliveryGateRejected":
+                fails.append(f"P direct-upload bypass: expected DeliveryGateRejected, got {raised!r}")
+            if posted:
+                fails.append("P direct-upload bypass: the HTTP opener was invoked — a deck "
+                             "was uploaded despite the gate")
+        # CASE P2 — an ordinary image handed to the SAME chokepoint is UNAFFECTED: it is not
+        # a deck, so no gate runs and it uploads via the canonical path even with no run dir.
+        with tempfile.TemporaryDirectory() as t:
+            png = Path(t) / "slide-01.png"
+            png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64)  # real PNG magic bytes
+
+            class _Resp:
+                def getcode(self):
+                    return 200
+
+                def read(self):
+                    return b'{"fileId":"img_1","url":"https://storage.googleapis.com/msgsndr/x"}'
+
+            try:
+                res = _ghl.upload_media(str(png), "loc", "Slide 01 v1", "pit",
+                                        opener=lambda r, t: _Resp())
+            except Exception as exc:  # noqa: BLE001
+                fails.append(f"P2 image-unaffected: ordinary image upload raised {exc!r}")
+            else:
+                if not isinstance(res, dict) or res.get("fileId") != "img_1":
+                    fails.append(f"P2 image-unaffected: expected a clean upload, got {res!r}")
+
     if fails:
         print("delivery_gate selftest -> FAIL")
         for f in fails:
             print("  -", f)
         return 1
-    print("delivery_gate selftest -> PASS (16 cases: defer/pass/extra-md/singular/"
+    print("delivery_gate selftest -> PASS (18 cases: defer/pass/extra-md/singular/"
           "no-upload/missing-anchor/incomplete + boundary: clean-pass/overlay/no-run-dir/"
-          "not-kie/bundle/owner-skip/decoy + pre-transport: upload-pending-pass/overlay-reject)")
+          "not-kie/bundle/owner-skip/decoy + pre-transport: upload-pending-pass/overlay-reject "
+          "+ chokepoint: direct-upload_media(deck)-BLOCKED/image-unaffected)")
     return 0
 
 
