@@ -1,5 +1,10 @@
 # Changelog - Skill 37: ZHC Closeout
 
+## [1.3.2] - 2026-06-29 - v12.14.9: resume-closeout cron bounded — no-progress give-up pause on human-action blockers
+
+- `scripts/resume-closeout-cron.sh` (v11.11.0): added a NO-PROGRESS GIVE-UP PAUSE so a box wedged on a HUMAN action that re-running cannot clear (client never shared the Notion page → `closeoutLegStatus.notion=failed:no-shared-page`, interviewQc awaiting a human → `blocked-interview-incomplete`, unmet floor/library → `blocked-*-incomplete`, a leg failing identically, telegram critical failure) STOPS burning the model+API-heavy `run-closeout.sh` every 15 min. Token-free fingerprint of the blocking state (`closeoutStatus | closeoutBlockReason | closeoutLegStatus.notion | interviewQc.status | legs-done`); if unchanged across `ZHC_CLOSEOUT_MAX_STALL_PASSES` (default 4 = 1h) consecutive fires AND in a recognised blocked/stuck state, it skips the heavy dispatch (zero model burn), escalates ONCE to the operator log, and PAUSEs. The cron stays alive doing only the cheap check and auto-resumes the instant the fingerprint changes (the human acts). The stalled-CHECK stays token-free; only the gated heavy dispatch is bounded. No work abandoned — parked pending the human.
+- `scripts/test-closeout-watchdog.sh`: added T10 (pause on unchanged blocker — verified ZERO heavy dispatch + escalate-once marker) and T11 (auto-resume + stall reset on progress). Full harness 25/25.
+
 ## [1.3.1] - 2026-06-23 - v12.14.5: org-chart template comment genericized (fleet-wide no-client-names invariant)
 
 - `templates/workforce-org-chart/index.html.template`: removed a real client name from the v10.X.9 rebuild changelog code-comment (line 13) and replaced it with a generic, attribution-free phrasing. The fleet-wide leak gate (`scripts/qc-assert-no-client-names.sh`) previously did NOT scan `*.template` files, so this slipped past CI; the gate's file glob now includes `*.template` (and other doc/config extensions), closing the blind spot. No functional template change.
