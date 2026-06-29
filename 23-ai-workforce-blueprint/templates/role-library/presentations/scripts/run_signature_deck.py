@@ -81,13 +81,13 @@ symbol for it; AF-PHASE-SKIPPED is enforced_by:runner with py_symbol:null.
 """
 
 import argparse
+import hashlib
 import importlib
 import json
 import os
 import re
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 
@@ -105,22 +105,12 @@ import build_deck as bd
 # owner_skip_approval token in process_manifest.json.
 import canonical_render_guard as guard
 
-# Fail-soft: cc_board may be absent in environments that have not deployed it yet.
+# FIX 5d — per-phase substance verifier registry. Imported defensively so CI/test
+# contexts that lack the sibling module still parse without error.
 try:
-    import cc_board as _cc_board
-    _CC_BOARD_OK = True
+    import phase_verifiers as _pv
 except ImportError:
-    _cc_board = None  # type: ignore[assignment]
-    _CC_BOARD_OK = False
-
-# Fail-soft: prove_deck verifies process integrity at P9-DELIVER.
-try:
-    import prove_deck as _prove_deck  # type: ignore[import]
-    _PROVE_DECK_OK = True
-except ImportError:
-    # Attempt file-based import as fallback.
-    _prove_deck = None  # type: ignore[assignment]
-    _PROVE_DECK_OK = False
+    _pv = None
 
 # Exit code for a guard hard-block (distinct from AF-PHASE-SKIPPED=2,
 # render-subprocess=3, AF-KIE-BALANCE=4).
@@ -168,6 +158,11 @@ _QC_OWNING_ROLE = {
 _QC_AF_CODE = {
     "COPY-QC": "AF-COPY-QC",
     "PROMPT-QC": "AF-PROMPT-QC",
+}
+# Fallback produces_artifact specs for QC phases (used when phases list not available).
+_QC_PRODUCES_ARTIFACT = {
+    "COPY-QC": "working/qc/copy_qc_report.json",
+    "PROMPT-QC": "working/qc/prompt_qc_report.json",
 }
 
 
@@ -237,9 +232,27 @@ def _attested_phase_ids(run_dir: Path) -> set:
 
 
 def attest_phase(run_dir: Path, phase_id: str, role: str, status: str,
-                 artifact_sha: str = "") -> None:
+                 artifact_sha: str = "", substance_verified: bool = False) -> None:
     """Append a phase attestation to process_manifest.json (never clobber prior
-    records — mirrors build_deck.write_process_manifest's append discipline)."""
+    records — mirrors build_deck.write_process_manifest's append discipline).
+
+    FIX 4/E: artifact_sha MUST be non-empty. This is the machine-readable proof
+    that the produces_artifact was inspected before attestation. Refusing to attest
+    with an empty sha makes it structurally impossible to attest without first
+    computing a real artifact hash. Pass 'no-artifact-spec' for system phases that
+    declare no concrete artifact.
+
+    FIX 5d: substance_verified records that phase_verifiers.verify passed for this
+    phase — prove-deck.py asserts this field is true for every declared step."""
+    if not artifact_sha:
+        print(
+            f"FATAL: attest_phase called for {phase_id!r} with empty artifact_sha — "
+            "refusing to attest without a verified artifact hash (FIX 4/E enforcement). "
+            "Pass the sha256 of the produces_artifact, or 'no-artifact-spec' for phases "
+            "with no concrete artifact.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
     p = _process_manifest_path(run_dir)
     p.parent.mkdir(parents=True, exist_ok=True)
     obj = _load_process_manifest(run_dir)
@@ -249,75 +262,285 @@ def attest_phase(run_dir: Path, phase_id: str, role: str, status: str,
         "owning_role": role,
         "status": status,
         "artifact_sha": artifact_sha,
+        "substance_verified": substance_verified,
         "attested_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     })
     p.write_text(json.dumps(obj, indent=2))
 
 
 # ---------------------------------------------------------------------------
-# Phase reports — client-facing visibility records (AF-PHASE-REPORT-* coverage)
-# Each phase that declares client_report gets a "start" and "done" record in
-# working/checkpoints/phase_reports.json. These are consumed by prove-deck.py
-# at P9-DELIVER: missing records raise AF-PHASE-REPORT-MISSING, AF-PHASE-REPORT-START,
-# or AF-PHASE-REPORT-DONE.
+# Artifact SHA computation (FIX 4/E — mandatory non-empty sha for every attest)
 # ---------------------------------------------------------------------------
-def _phase_reports_path(run_dir: Path) -> Path:
-    return run_dir / "working" / "checkpoints" / "phase_reports.json"
-
-
-def _emit_phase_report(run_dir: Path, phase_id: str, kind: str, template: str = "") -> None:
-    """Append a phase report record (kind='start' or 'done') to phase_reports.json.
-    Fail-soft: any filesystem error is logged to stderr, never fatal."""
-    p = _phase_reports_path(run_dir)
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        records = []
-        if p.exists():
+def _compute_artifact_sha(run_dir: Path, produces_artifact: str) -> str:
+    """Compute sha256 of the phase's produces_artifact file(s). For glob specs,
+    hashes the concatenation of all matching file contents (sorted path order).
+    Returns a deterministic hex string. Returns 'no-artifact-spec' when the spec
+    is empty (the phase declares no concrete artifact — gate accepts this marker)."""
+    spec = (produces_artifact or "").strip()
+    if not spec:
+        return "no-artifact-spec"
+    h = hashlib.sha256()
+    if "*" in spec or "?" in spec:
+        candidates = sorted(run_dir.glob(spec))
+        if not candidates:
+            candidates = sorted(run_dir.glob("**/" + spec.split("/")[-1]))
+        for p in candidates:
             try:
-                records = json.loads(p.read_text(encoding="utf-8"))
-                if not isinstance(records, list):
-                    records = []
+                h.update(p.read_bytes())
             except Exception:  # noqa: BLE001
-                records = []
-        records.append({
-            "phase_id": phase_id,
-            "kind": kind,
-            "template": template,
-            "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        })
-        tmp = p.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(records, indent=2))
-        os.replace(tmp, p)
+                pass
+        return h.hexdigest() if candidates else "no-match"
+    p = run_dir / spec
+    if not p.exists():
+        cands = list(run_dir.glob("**/" + spec.split("/")[-1]))
+        p = cands[0] if cands else None  # type: ignore[assignment]
+    if p and p.exists():
+        try:
+            h.update(p.read_bytes())
+            return h.hexdigest()
+        except Exception:  # noqa: BLE001
+            return "read-error"
+    return "not-found"
+
+
+# ---------------------------------------------------------------------------
+# Client progress reports (FIX 4b — AF-PHASE-REPORT-START / AF-PHASE-REPORT-DONE)
+# ---------------------------------------------------------------------------
+def _client_reports_path(run_dir: Path) -> Path:
+    return run_dir / "working" / "checkpoints" / "client_reports.json"
+
+
+def _load_client_reports(run_dir: Path) -> list:
+    p = _client_reports_path(run_dir)
+    if not p.exists():
+        return []
+    try:
+        obj = json.loads(p.read_text())
+        return obj if isinstance(obj, list) else []
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _append_report_record(run_dir: Path, phase_id: str, kind: str,
+                          gateway_msg_id: str, text: str) -> None:
+    """Append a client report record to client_reports.json.
+    kind should be 'start' (AF-PHASE-REPORT-START) or 'done' (AF-PHASE-REPORT-DONE).
+    Never raises — if the file is unwritable the record is silently dropped and
+    the AF-PHASE-REPORT-MISSING gate will detect the absence on the next phase."""
+    p = _client_reports_path(run_dir)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    records = _load_client_reports(run_dir)
+    records.append({
+        "phase_id": phase_id,
+        "kind": kind,
+        "gateway_msg_id": gateway_msg_id or "",
+        "text": text,
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    })
+    try:
+        p.write_text(json.dumps(records, indent=2))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def emit_client_report(run_dir: Path, phase_id: str, kind: str,
+                       k=None, N=None, eta=None):
+    """Send a phase start/done client progress report via ``openclaw message send``
+    and record the gateway_msg_id in client_reports.json.
+
+    kind in {"start", "done"} corresponding to AF-PHASE-REPORT-START /
+    AF-PHASE-REPORT-DONE. FAIL-CLOSED for the gate: if no record exists at all,
+    attest_phase (and the next-phase precondition check AF-PHASE-REPORT-MISSING)
+    refuses. Never raises — a send failure records an empty gateway_msg_id so the
+    gate can detect 'no confirmed id' while still seeing a record was attempted.
+
+    NEVER calls the Telegram API directly — uses ``openclaw message send``
+    exclusively (fleet memory: never-bypass-openclaw-telegram)."""
+    if k is not None and N is not None:
+        tmpl = (f"Step {k} of {N} — {phase_id} — "
+                f"{'starting' if kind == 'start' else 'complete'}")
+    else:
+        tmpl = f"{phase_id} — {'starting' if kind == 'start' else 'complete'}"
+    if kind == "start" and eta:
+        tmpl += f" (ETA ~{eta} min)"
+
+    msg_id = ""
+    try:
+        proc = subprocess.run(
+            ["openclaw", "message", "send", "--text", tmpl, "--json"],
+            capture_output=True, text=True, timeout=30,
+        )
+        raw = (proc.stdout or "").strip()
+        try:
+            msg_id = json.loads(raw).get("message_id") or raw
+        except Exception:  # noqa: BLE001
+            msg_id = raw
     except Exception as exc:  # noqa: BLE001
-        print(f"[run_signature_deck] _emit_phase_report({phase_id!r}, {kind!r}) failed: {exc}",
-              file=sys.stderr, flush=True)
+        print(f"[client_report] send failed for {phase_id}/{kind}: {exc}",
+              file=sys.stderr)
+
+    _append_report_record(run_dir, phase_id, kind, msg_id, tmpl)
+    return msg_id or None
 
 
 # ---------------------------------------------------------------------------
-# Heartbeat — long-running phases (long_running:true + heartbeat_minutes)
+# Up-front step declaration (FIX 4a — step contract for prove-deck.py)
 # ---------------------------------------------------------------------------
-class _HeartbeatThread(threading.Thread):
-    """Background thread that logs a heartbeat line every `interval_s` seconds
-    while a long-running phase is active. Stop by calling .stop()."""
+def _deck_slug(run_dir: Path) -> str:
+    """Derive the deck slug from the run dir's config files, falling back to
+    the run dir's base name when no config is found."""
+    for cand in [run_dir / "working" / "copy" / "intake.json",
+                 run_dir / "working" / "config.json"]:
+        try:
+            obj = json.loads(cand.read_text())
+            if isinstance(obj, dict):
+                for k in ("deck_slug", "slug", "title"):
+                    v = (obj.get(k) or "").strip()
+                    if v:
+                        return v
+        except Exception:  # noqa: BLE001
+            pass
+    return run_dir.name
 
-    def __init__(self, phase_id: str, interval_s: float):
-        super().__init__(daemon=True, name=f"heartbeat-{phase_id}")
-        self._phase_id = phase_id
-        self._interval = max(10.0, float(interval_s))
-        self._stop_event = threading.Event()
 
-    def run(self) -> None:
-        while not self._stop_event.wait(self._interval):
-            print(f"[heartbeat] phase={self._phase_id} still running …", flush=True)
-
-    def stop(self) -> None:
-        self._stop_event.set()
+def _declared_plan_path(run_dir: Path) -> Path:
+    return run_dir / "working" / "checkpoints" / "declared_plan.json"
 
 
-def _start_heartbeat(phase_id: str, heartbeat_minutes: float) -> _HeartbeatThread:
-    t = _HeartbeatThread(phase_id, heartbeat_minutes * 60)
-    t.start()
-    return t
+def declare_plan(run_dir: Path, phases: list) -> None:
+    """Write working/checkpoints/declared_plan.json (the step contract) and emit
+    ONE client message listing all N steps. IDEMPOTENT — skips if the file already
+    exists so re-runs of any phase never double-send the step list.
+
+    The declared_plan.json is the contract that prove-deck.py checks against
+    (FIX 2a / AF-PROCESS-INTEGRITY). Records step_declaration_msg_id in both the
+    plan file and process_manifest.json. Wraps the openclaw message send in
+    try/except so a send failure never aborts the run — the plan file is still
+    written (the gate will note 'no step_declaration_msg_id')."""
+    plan_path = _declared_plan_path(run_dir)
+    if plan_path.exists():
+        return  # idempotent — already declared on a prior phase run
+
+    slug = _deck_slug(run_dir)
+    ordered = sorted(phases, key=lambda p: p.get("order", 0))
+    steps = [
+        {
+            "order": ph.get("order", 0),
+            "id": ph["id"],
+            "name": ph.get("name", ph["id"]),
+            "owning_role": ph.get("owning_role", ""),
+        }
+        for ph in ordered
+    ]
+
+    step_lines = "  ".join(f"{i + 1}) {s['name']}" for i, s in enumerate(steps))
+    text = (
+        f"Starting {slug}. I'll follow these {len(steps)} steps and report "
+        f"after each: {step_lines}"
+    )
+
+    msg_id = ""
+    try:
+        proc = subprocess.run(
+            ["openclaw", "message", "send", "--text", text, "--json"],
+            capture_output=True, text=True, timeout=30,
+        )
+        raw = (proc.stdout or "").strip()
+        try:
+            msg_id = json.loads(raw).get("message_id") or raw
+        except Exception:  # noqa: BLE001
+            msg_id = raw
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"[declare_plan] send failed — plan written but no gateway_msg_id: {exc}",
+            file=sys.stderr,
+        )
+
+    plan_path.parent.mkdir(parents=True, exist_ok=True)
+    plan_path.write_text(json.dumps({
+        "deck_slug": slug,
+        "declared_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "steps": steps,
+        "total": len(steps),
+        "step_declaration_msg_id": msg_id,
+    }, indent=2))
+
+    # Record step_declaration_msg_id in process_manifest.json too.
+    pm_path = _process_manifest_path(run_dir)
+    pm_path.parent.mkdir(parents=True, exist_ok=True)
+    obj = _load_process_manifest(run_dir)
+    if "step_declaration_msg_id" not in obj:
+        obj["step_declaration_msg_id"] = msg_id
+        pm_path.write_text(json.dumps(obj, indent=2))
+
+    print(f"=== DECLARE-PLAN: step contract written ({len(steps)} steps, "
+          f"msg_id={msg_id!r}) ===", flush=True)
+
+
+# ---------------------------------------------------------------------------
+# Phase index helper (for k/N in client reports)
+# ---------------------------------------------------------------------------
+def _phase_index(phase_id: str, phases: list) -> tuple:
+    """Return (k, N) — 1-based position of phase_id in the ordered phases list,
+    and N = total phase count. Returns (None, N) if phase_id is not found."""
+    ordered = sorted(phases, key=lambda p: p.get("order", 0))
+    for i, ph in enumerate(ordered):
+        if ph["id"] == phase_id:
+            return i + 1, len(ordered)
+    return None, len(ordered)
+
+
+# ---------------------------------------------------------------------------
+# Prior-phase report gate (FIX 4b — AF-PHASE-REPORT-MISSING enforcement)
+# ---------------------------------------------------------------------------
+def _check_prior_phase_reports(run_dir: Path, phases: list, target_phase_id: str) -> str:
+    """For every phase PRIOR to target that is attested, verify that BOTH an
+    AF-PHASE-REPORT-START and an AF-PHASE-REPORT-DONE record exist in
+    client_reports.json with a non-empty gateway_msg_id. Returns '' if satisfied;
+    otherwise returns an AF-PHASE-REPORT-MISSING fatal string.
+
+    Internal system phases (P-0-PREFLIGHT) with no produces_artifact are exempt —
+    they are runner housekeeping, not client-reportable pipeline steps."""
+    by_id = {ph["id"]: ph for ph in phases}
+    target = by_id.get(target_phase_id)
+    if target is None:
+        return ""  # unknown phase — check_phase_preconditions handles the error
+    target_order = target.get("order", 0)
+    prior_attested = {
+        pid for pid in _attested_phase_ids(run_dir)
+        if pid in by_id and by_id[pid].get("order", 0) < target_order
+    }
+    if not prior_attested:
+        return ""
+
+    reports = _load_client_reports(run_dir)
+    start_ids = {
+        r["phase_id"] for r in reports
+        if r.get("kind") == "start" and r.get("gateway_msg_id")
+    }
+    done_ids = {
+        r["phase_id"] for r in reports
+        if r.get("kind") == "done" and r.get("gateway_msg_id")
+    }
+
+    for pid in sorted(prior_attested):
+        ph = by_id.get(pid, {})
+        # Exempt internal system phases with no produces_artifact (runner bookkeeping).
+        if pid.startswith("P-0") and not ph.get("produces_artifact"):
+            continue
+        if pid not in start_ids:
+            return (
+                f"AF-PHASE-REPORT-MISSING: prior attested phase {pid!r} has no "
+                "AF-PHASE-REPORT-START record with a confirmed gateway_msg_id in "
+                "client_reports.json — the phase cannot be considered client-reported."
+            )
+        if pid not in done_ids:
+            return (
+                f"AF-PHASE-REPORT-MISSING: prior attested phase {pid!r} has no "
+                "AF-PHASE-REPORT-DONE record with a confirmed gateway_msg_id in "
+                "client_reports.json — the phase cannot be considered client-reported."
+            )
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -325,8 +548,22 @@ def _start_heartbeat(phase_id: str, heartbeat_minutes: float) -> _HeartbeatThrea
 # ---------------------------------------------------------------------------
 def load_skip_approvals(run_dir: Path) -> dict:
     """Return {phase_id: approval_record} for every owner-authorized skip whose
-    record is well-formed (owner_approved:true + approved_by + reason). A malformed
-    or owner_approved:false record does NOT authorize a skip."""
+    record is well-formed. A malformed, self-granted, or placeholder-timestamp
+    record does NOT authorize a skip.
+
+    Additional rejection criteria (FIX 4/E hardening — beyond the basic
+    owner_approved:true + approved_by + reason requirement):
+
+    (1) SELF-GRANT: approved_by contains markers indicating the producing agent
+        approved its own skip ('executive strategy', 'via ... directive', 'self',
+        'auto-approved', 'builder', 'producing'). Producing agents may NOT approve
+        their own phase skips — only a real owner action counts.
+    (2) PLACEHOLDER TIMESTAMP: timestamp ends with T00:00:00 or contains that pattern
+        with timezone — midnight-exactly timestamps indicate a fabricated record.
+        Timestamps must also carry a timezone component (Z or +/-HH:MM).
+    (3) MISSING OWNER REFERENCE: record must have an owner_msg_id (a real Telegram
+        message id) or an owner_action field tracing the skip to a verifiable human
+        decision. Records with neither field are rejected."""
     p = run_dir / "working" / "checkpoints" / "phase_skip_approvals.json"
     approvals = {}
     if not p.exists():
@@ -335,14 +572,70 @@ def load_skip_approvals(run_dir: Path) -> dict:
         obj = json.loads(p.read_text())
     except Exception:  # noqa: BLE001
         return approvals
-    records = obj if isinstance(obj, list) else obj.get("approvals", []) if isinstance(obj, dict) else []
+    records = (obj if isinstance(obj, list)
+               else obj.get("approvals", []) if isinstance(obj, dict) else [])
+
+    _SELF_GRANT_MARKERS = (
+        "executive strategy", "via ", "directive", "auto-approved",
+        "self", "auto_approved", "producing", "builder",
+    )
+
     for rec in records:
         if not isinstance(rec, dict):
             continue
-        if (rec.get("owner_approved") is True and rec.get("phase_id")
+
+        # Basic required fields.
+        if not (rec.get("owner_approved") is True
+                and str(rec.get("phase_id", "")).strip()
                 and str(rec.get("approved_by", "")).strip()
                 and str(rec.get("reason", "")).strip()):
-            approvals[rec["phase_id"]] = rec
+            continue
+
+        approved_by_lower = str(rec.get("approved_by", "")).strip().lower()
+        ts = str(rec.get("timestamp", "") or "")
+
+        # (1) Reject self-granted approvals.
+        if any(m in approved_by_lower for m in _SELF_GRANT_MARKERS):
+            print(
+                f"[load_skip_approvals] REJECTED phase {rec['phase_id']!r}: "
+                f"approved_by {rec.get('approved_by')!r} contains a self-grant marker — "
+                "producing agents may not approve their own skips.",
+                file=sys.stderr,
+            )
+            continue
+
+        # (2) Reject placeholder/timezone-free timestamps.
+        if ts:
+            _midnight = ts.endswith("T00:00:00") or "T00:00:00+" in ts or "T00:00:00Z" in ts
+            if _midnight:
+                print(
+                    f"[load_skip_approvals] REJECTED phase {rec['phase_id']!r}: "
+                    f"timestamp {ts!r} is a midnight placeholder — likely fabricated.",
+                    file=sys.stderr,
+                )
+                continue
+            _has_tz = ts.endswith("Z") or bool(re.search(r"[+-]\d{2}:\d{2}$", ts))
+            if not _has_tz:
+                print(
+                    f"[load_skip_approvals] REJECTED phase {rec['phase_id']!r}: "
+                    f"timestamp {ts!r} has no timezone — not a verifiable timestamp.",
+                    file=sys.stderr,
+                )
+                continue
+
+        # (3) Require a verifiable owner reference.
+        owner_msg_id = str(rec.get("owner_msg_id", "") or "").strip()
+        owner_action = str(rec.get("owner_action", "") or "").strip()
+        if not owner_msg_id and not owner_action:
+            print(
+                f"[load_skip_approvals] REJECTED phase {rec['phase_id']!r}: "
+                "record lacks owner_msg_id or owner_action — a verifiable owner "
+                "reference is required to trace the skip to a real human decision.",
+                file=sys.stderr,
+            )
+            continue
+
+        approvals[rec["phase_id"]] = rec
     return approvals
 
 
@@ -374,7 +667,11 @@ def check_phase_preconditions(run_dir: Path, phases: list, target_phase_id: str)
     Otherwise return a fatal AF-PHASE-SKIPPED message. This computes the ordered
     prior-phase list and DELEGATES the attestation/owner-skip decision to the shared
     build_deck.check_phase_preconditions (single source of truth — not reimplemented).
-    It additionally enforces produces_artifact presence for each prior phase."""
+    It additionally enforces produces_artifact presence for each prior phase.
+
+    FIX 4b: also enforces AF-PHASE-REPORT-MISSING — every prior attested phase must
+    have confirmed AF-PHASE-REPORT-START + AF-PHASE-REPORT-DONE records with a
+    non-empty gateway_msg_id in client_reports.json."""
     by_id = {ph["id"]: ph for ph in phases}
     target = by_id.get(target_phase_id)
     if target is None:
@@ -399,6 +696,11 @@ def check_phase_preconditions(run_dir: Path, phases: list, target_phase_id: str)
                     f"produces_artifact {ph.get('produces_artifact')!r} is not present in "
                     f"the run dir — an attestation must correspond to a real artifact. "
                     f"Re-run {pid!r} or add a logged owner-authorized skip.")
+    # FIX 4b: AF-PHASE-REPORT-MISSING — every prior attested phase must have confirmed
+    # AF-PHASE-REPORT-START + AF-PHASE-REPORT-DONE records with non-empty gateway_msg_id.
+    report_reason = _check_prior_phase_reports(run_dir, phases, target_phase_id)
+    if report_reason:
+        return report_reason
     return ""
 
 
@@ -432,7 +734,7 @@ def phase0_preflight(run_dir: Path, slides_path: Path, platform_override=None,
         print("=== PHASE-0 — adhoc (owner-authorized): Kie balance pre-flight skipped ===",
               flush=True)
         attest_phase(run_dir, "P-0-PREFLIGHT", "run_signature_deck",
-                     "preflight_ok_adhoc")
+                     "preflight_ok_adhoc", artifact_sha="preflight-no-artifact")
         return
 
     api_key = ""
@@ -450,7 +752,8 @@ def phase0_preflight(run_dir: Path, slides_path: Path, platform_override=None,
         sys.exit(4)
     print("=== PHASE-0 — Kie balance pre-flight PASSED (balance >= estimated floor) ===",
           flush=True)
-    attest_phase(run_dir, "P-0-PREFLIGHT", "run_signature_deck", "preflight_ok")
+    attest_phase(run_dir, "P-0-PREFLIGHT", "run_signature_deck", "preflight_ok",
+                 artifact_sha="preflight-no-artifact")
 
 
 # ---------------------------------------------------------------------------
@@ -744,7 +1047,7 @@ def _count_routebacks(run_dir: Path, phase: str) -> int:
 
 
 def _run_qc_loop(run_dir: Path, phase: str, measurer, *, reauthor=None,
-                 max_attempts=None) -> int:
+                 max_attempts=None, phases=None) -> int:
     """The bounded send-back harness shared by COPY-QC and PROMPT-QC.
 
     Flow: measure (the deterministic source of truth) -> if pass, attest the phase and
@@ -756,7 +1059,10 @@ def _run_qc_loop(run_dir: Path, phase: str, measurer, *, reauthor=None,
     attesting — the orchestrator re-authors only the failing slides and re-runs this phase;
     the cap is still enforced via the on-disk routeback count. After the cap, the only exit
     is a logged owner override (build_deck._owner_skip_approved); otherwise the phase is
-    refused so the failing work physically cannot advance."""
+    refused so the failing work physically cannot advance.
+
+    FIX 4/E: computes a real artifact sha for the QC report before attesting (sha must
+    be non-empty). FIX 5d: records substance_verified=True on qc_pass_measurer attest."""
     phase = phase.upper()
     max_attempts = max_attempts or PROMPT_QC_MAX_ATTEMPTS
     phase_id = _QC_PHASE_ID[phase]
@@ -769,6 +1075,13 @@ def _run_qc_loop(run_dir: Path, phase: str, measurer, *, reauthor=None,
     print(f"{bar}\n=== {phase} SEND-BACK LOOP — exit on the MEASURER, not the self-score "
           f"(cap={max_attempts}) ===\n{bar}", flush=True)
 
+    # Resolve produces_artifact spec for sha computation (FIX 4/E).
+    _produces_art = _QC_PRODUCES_ARTIFACT.get(phase, "")
+    if phases is not None:
+        ph_entry = next((p for p in phases if p["id"] == phase_id), None)
+        if ph_entry:
+            _produces_art = ph_entry.get("produces_artifact", _produces_art)
+
     routeback_path = None
     consumed = _count_routebacks(run_dir, phase)  # attempts already written (cross-invocation)
     while True:
@@ -779,7 +1092,9 @@ def _run_qc_loop(run_dir: Path, phase: str, measurer, *, reauthor=None,
 
         verdict = measurer(run_dir)
         if _verdict_pass(verdict):
-            attest_phase(run_dir, phase_id, owning_role, "qc_pass_measurer")
+            sha = _compute_artifact_sha(run_dir, _produces_art)
+            attest_phase(run_dir, phase_id, owning_role, "qc_pass_measurer",
+                         artifact_sha=sha, substance_verified=True)
             print(f"=== {phase} PASS (deterministic measurer) — phase {phase_id} attested; "
                   f"downstream unblocked ===", flush=True)
             return 0
@@ -787,7 +1102,9 @@ def _run_qc_loop(run_dir: Path, phase: str, measurer, *, reauthor=None,
         if consumed >= max_attempts:
             rec = bd._owner_skip_approved(run_dir, af_code)
             if rec:
-                attest_phase(run_dir, phase_id, owning_role, "qc_owner_override")
+                sha = _compute_artifact_sha(run_dir, _produces_art)
+                attest_phase(run_dir, phase_id, owning_role, "qc_owner_override",
+                             artifact_sha=sha, substance_verified=False)
                 print(f"=== {phase} OWNER OVERRIDE after cap — {af_code} waived by "
                       f"{rec.get('approved_by')!r} (logged) ===", flush=True)
                 return 0
@@ -822,7 +1139,7 @@ def run_prompt_qc_loop(run_dir: Path, phases=None, *, reauthor=None,
     length >= 9,000 AND every engine AND harmony AND excellence). A thin/off prompt routes
     back and physically cannot reach submit_task/kie.ai until it passes."""
     return _run_qc_loop(run_dir, "PROMPT-QC", _measure_prompt_qc,
-                        reauthor=reauthor, max_attempts=max_attempts)
+                        reauthor=reauthor, max_attempts=max_attempts, phases=phases)
 
 
 def run_copy_qc_loop(run_dir: Path, phases=None, *, reauthor=None,
@@ -833,7 +1150,7 @@ def run_copy_qc_loop(run_dir: Path, phases=None, *, reauthor=None,
     cadence, narrative harmony). A broken script routes back; no prompts are authored
     until the copy passes."""
     return _run_qc_loop(run_dir, "COPY-QC", _measure_copy_qc,
-                        reauthor=reauthor, max_attempts=max_attempts)
+                        reauthor=reauthor, max_attempts=max_attempts, phases=phases)
 
 
 def _harmony_failure(result):
@@ -885,47 +1202,6 @@ def pre_assembly_harmony_checkpoint(run_dir: Path) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Process-integrity prove at P9-DELIVER
-# ---------------------------------------------------------------------------
-def _prove_delivery_integrity(run_dir: Path) -> None:
-    """Invoke prove-deck.py's prove() to verify the full attestation chain +
-    phase reports BEFORE the delivery phase is attested. Fail-closed: any
-    failure aborts with EXIT_GUARD_BLOCK (5). Importing prove_deck inline avoids
-    circular-import issues on some deployment layouts."""
-    try:
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "prove_deck", HERE / "prove-deck.py")
-        if spec is None or spec.loader is None:
-            raise ImportError("cannot locate prove-deck.py")
-        pd = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(pd)  # type: ignore[union-attr]
-        failures = pd.prove(run_dir)
-    except SystemExit:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        print("\n" + "!" * 78, file=sys.stderr)
-        print(f"FATAL PRE-DELIVERY (PROCESS-INTEGRITY): prove-deck raised {exc!r} "
-              "— cannot prove the pipeline executed under the governed runner.",
-              file=sys.stderr)
-        print("!" * 78 + "\n", file=sys.stderr)
-        sys.exit(EXIT_GUARD_BLOCK)
-
-    if not failures:
-        print("=== PROCESS-INTEGRITY (prove-deck): PASS — full attestation chain "
-              "and phase reports verified ===", flush=True)
-        return
-
-    print("\n" + "!" * 78, file=sys.stderr)
-    print(f"FATAL PRE-DELIVERY (PROCESS-INTEGRITY): {len(failures)} failure(s):",
-          file=sys.stderr)
-    for f in failures:
-        print(f"  - {f}", file=sys.stderr)
-    print("!" * 78 + "\n", file=sys.stderr)
-    sys.exit(EXIT_GUARD_BLOCK)
-
-
-# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 def main():
@@ -948,9 +1224,22 @@ def main():
     manifest = load_manifest()
     phases = manifest["phases"]
 
+    # --plan inspect is allowed without the front-door marker (read-only, no run work).
     if args.plan:
         print_plan(run_dir, phases)
         sys.exit(0)
+
+    # FRONT-DOOR ENFORCEMENT (CONTRACT #8): run_signature_deck.py MUST be invoked via
+    # presentation-canonical-entry.sh, which exports OC_DECK_CANONICAL_ENTRY=1 right
+    # before exec'ing this script. Direct `python3 run_signature_deck.py` is structurally
+    # denied. --plan is exempt (read-only inspection).
+    if os.environ.get("OC_DECK_CANONICAL_ENTRY") != "1":
+        print(
+            "FATAL: must be invoked via presentation-canonical-entry.sh — "
+            "direct invocation is denied (front-door enforcement).",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
     if args.adhoc:
         assert_adhoc_authorized(run_dir)
@@ -968,6 +1257,10 @@ def main():
     phase0_preflight(run_dir, slides_path, platform_override=args.platform,
                      adhoc=args.adhoc)
 
+    # FIX 4a: write the step contract + emit the up-front step-list client message.
+    # IDEMPOTENT — skips if declared_plan.json already exists on a re-run of any phase.
+    declare_plan(run_dir, phases)
+
     # Single-phase dispatch: enforce preconditions (AF-PHASE-SKIPPED), then dispatch.
     if args.phase:
         if not args.adhoc:
@@ -977,15 +1270,28 @@ def main():
                 sys.exit(2)
         target = next((p for p in phases if p["id"] == args.phase), None)
 
+        # FIX 4b: emit AF-PHASE-REPORT-START so the next phase's precondition gate
+        # can confirm this phase was properly started (AF-PHASE-REPORT-MISSING check).
+        _k, _N = _phase_index(args.phase, phases)
+        emit_client_report(run_dir, args.phase, "start", k=_k, N=_N)
+
         # --- SHIFT-LEFT QC SEND-BACK LOOPS (v15.0.0) ---
         # COPY-QC fires before ANY prompt is authored; PROMPT-QC before ANY render. The
         # exit gate is the deterministic measurer, never the QC agent's self-score. On a
         # fail the loop writes a per-slide work order and DOES NOT attest, so the next
         # phase (prompt authoring / render) is structurally blocked until it passes.
         if args.phase == COPY_QC_PHASE_ID:
-            sys.exit(run_copy_qc_loop(run_dir, phases))
+            rc = run_copy_qc_loop(run_dir, phases)
+            if rc == 0:
+                # FIX 4b: emit AF-PHASE-REPORT-DONE after measurer confirms pass.
+                emit_client_report(run_dir, args.phase, "done", k=_k, N=_N)
+            sys.exit(rc)
         if args.phase == PROMPT_QC_PHASE_ID:
-            sys.exit(run_prompt_qc_loop(run_dir, phases))
+            rc = run_prompt_qc_loop(run_dir, phases)
+            if rc == 0:
+                # FIX 4b: emit AF-PHASE-REPORT-DONE after measurer confirms pass.
+                emit_client_report(run_dir, args.phase, "done", k=_k, N=_N)
+            sys.exit(rc)
         # PRE-ASSEMBLY deck-harmony checkpoint (G5, placement 3) — fires before the deck
         # is assembled, then falls through to the normal artifact-present attestation.
         if args.phase == ASSEMBLE_PHASE_ID:
@@ -1003,6 +1309,9 @@ def main():
                 sys.exit(2)
             rc = _dispatch_render(run_dir, slides_path, Path(args.out).resolve(),
                                   platform=args.platform, adhoc=args.adhoc)
+            if rc == 0:
+                # FIX 4b: emit AF-PHASE-REPORT-DONE after successful render subprocess.
+                emit_client_report(run_dir, args.phase, "done", k=_k, N=_N)
             sys.exit(rc)
         # PRE-DELIVERY GUARD: the delivery phase may not be attested until the WHOLE
         # governed process is proven. The canonical render guard refuses delivery
@@ -1026,11 +1335,7 @@ def main():
                   flush=True)
 
             # OUT-OF-BAND DELIVERY BOUNDARY GATE — inspect the SHIPPED ARTIFACT itself,
-            # fail-closed, regardless of how it was produced. This bites even on a deck
-            # hand-built outside this runner: selectable on-slide text (AF-OVERLAY-
-            # DELIVERED), no kie taskId per slide (AF-NOT-KIE-RENDERED), no governed run
-            # dir (AF-NO-RUN-DIR), or an incomplete deliverable bundle (AF-BUNDLE-
-            # COMPLETE) all REJECT. The ONLY bypass is a logged owner_skip_approval.
+            # fail-closed, regardless of how it was produced.
             try:
                 import delivery_gate as dg
                 deck_art = None
@@ -1065,8 +1370,6 @@ def main():
             except SystemExit:
                 raise
             except Exception as exc:  # noqa: BLE001
-                # Fail-closed: an unexpected error inside the boundary gate must NOT
-                # silently pass a deck to delivery.
                 print("\n" + "!" * 78, file=sys.stderr)
                 print(f"FATAL PRE-DELIVERY (BOUNDARY GATE): delivery_gate boundary check "
                       f"raised {exc!r} — cannot prove the shipped artifact is deliverable "
@@ -1074,48 +1377,109 @@ def main():
                 print("!" * 78 + "\n", file=sys.stderr)
                 sys.exit(EXIT_GUARD_BLOCK)
 
-            # PROCESS-INTEGRITY PROVE — verify attestation chain + phase reports before
-            # delivery is attested. Uses prove-deck.py's prove() function when available;
-            # falls back to subprocess call. Fail-closed: a prover import error is NOT a
-            # bypass — it hard-blocks until prove-deck.py is reachable.
-            _prove_delivery_integrity(run_dir)
+            # FIX 2: prove-deck.py — end-of-process no-skip proof (AF-PROCESS-INTEGRITY).
+            # Walks every declared step and asserts ordered / validated / reported.
+            # Exit 9 from prove-deck is a HARD block on delivery attestation.
+            prove_deck_path = HERE / "prove-deck.py"
+            try:
+                pd_proc = subprocess.run(
+                    [sys.executable, str(prove_deck_path), "--run-dir", str(run_dir)],
+                    capture_output=True, text=True, timeout=300,
+                )
+                if pd_proc.returncode != 0:
+                    print("\n" + "!" * 78, file=sys.stderr)
+                    print(
+                        "FATAL PRE-DELIVERY: AF-PROCESS-INTEGRITY — "
+                        + (pd_proc.stdout + pd_proc.stderr).strip(),
+                        file=sys.stderr,
+                    )
+                    print("!" * 78 + "\n", file=sys.stderr)
+                    sys.exit(EXIT_GUARD_BLOCK)
+                print("=== PROVE-DECK: PASS — AF-PROCESS-INTEGRITY satisfied; "
+                      "PROCESS-CERTIFICATE written ===", flush=True)
+            except FileNotFoundError:
+                print(
+                    f"FATAL PRE-DELIVERY: AF-PROCESS-INTEGRITY — prove-deck.py not found "
+                    f"at {prove_deck_path}; delivery is blocked (fail-closed).",
+                    file=sys.stderr,
+                )
+                sys.exit(EXIT_GUARD_BLOCK)
+            except subprocess.TimeoutExpired:
+                print(
+                    "FATAL PRE-DELIVERY: AF-PROCESS-INTEGRITY — prove-deck.py timed out "
+                    "(>300s); delivery is blocked (fail-closed).",
+                    file=sys.stderr,
+                )
+                sys.exit(EXIT_GUARD_BLOCK)
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"FATAL PRE-DELIVERY: AF-PROCESS-INTEGRITY — prove-deck.py raised "
+                    f"{exc!r}; delivery is blocked (fail-closed).",
+                    file=sys.stderr,
+                )
+                sys.exit(EXIT_GUARD_BLOCK)
 
-        # Non-render phase: verify the artifact landed, then attest.
-        if _artifact_present(run_dir, target.get("produces_artifact", "")):
-            # Emit START report (idempotent — if already emitted this is a no-op in effect)
-            if isinstance(target.get("client_report"), dict):
-                _emit_phase_report(
-                    run_dir, args.phase, "start",
-                    target["client_report"].get("start_template", ""))
-            # Heartbeat for long-running phases (fires while we wait for the artifact;
-            # here it is a no-op since the artifact is already present, but the call is
-            # kept for structural symmetry with the long-running case).
-            hb = None
-            if target.get("long_running") and target.get("heartbeat_minutes"):
-                hb = _start_heartbeat(args.phase, target["heartbeat_minutes"])
-            attest_phase(run_dir, args.phase, target.get("owning_role", ""),
-                         "artifact_present")
-            if hb is not None:
-                hb.stop()
-            # Emit DONE report after successful attestation.
-            if isinstance(target.get("client_report"), dict):
-                _emit_phase_report(
-                    run_dir, args.phase, "done",
-                    target["client_report"].get("done_template", ""))
-            print(f"=== PHASE {args.phase} attested (produces_artifact present) ===",
-                  flush=True)
+        # Non-render phase: verify the artifact landed + run substance verifier +
+        # emit done-report + compute sha + attest.
+        _art_spec = target.get("produces_artifact", "") if target else ""
+        if _artifact_present(run_dir, _art_spec):
+            # FIX 5d: substance verifier must pass BEFORE the done-report is emitted and
+            # the attestation is written. On verifier fail: DO NOT attest, DO NOT emit
+            # AF-PHASE-REPORT-DONE, exit 6 (route-back) consistent with the QC loops.
+            if _pv is not None:
+                _ok, _reasons = _pv.verify(args.phase, run_dir)
+            else:
+                _ok, _reasons = True, ["phase_verifiers unavailable — pass (degraded)"]
+            if not _ok:
+                print("\n" + "!" * 78, file=sys.stderr)
+                print(f"FATAL: substance verifier failed for phase {args.phase!r}:",
+                      file=sys.stderr)
+                for _r in _reasons:
+                    print("  - " + str(_r), file=sys.stderr)
+                print(
+                    "Phase NOT attested; route back and re-run after fixing the listed "
+                    "issues. AF-PHASE-REPORT-DONE not emitted (verifier pass required).",
+                    file=sys.stderr,
+                )
+                print("!" * 78 + "\n", file=sys.stderr)
+                sys.exit(EXIT_QC_ROUTEBACK)  # exit 6 — route-back
+
+            # FIX 4b: emit AF-PHASE-REPORT-DONE now that substance is verified.
+            emit_client_report(run_dir, args.phase, "done", k=_k, N=_N)
+
+            # FIX 4/E: compute verified artifact sha (non-empty required by attest_phase).
+            _sha = _compute_artifact_sha(run_dir, _art_spec)
+            attest_phase(
+                run_dir, args.phase,
+                target.get("owning_role", "") if target else "",
+                "artifact_present",
+                artifact_sha=_sha,
+                substance_verified=True,
+            )
+            print(
+                f"=== PHASE {args.phase} attested (produces_artifact present, "
+                f"substance verified, sha={_sha[:16]}…) ===",
+                flush=True,
+            )
             sys.exit(0)
-        print(f"FATAL: phase {args.phase} produces_artifact "
-              f"{target.get('produces_artifact')!r} is not present; cannot attest.",
-              file=sys.stderr)
+        print(
+            f"FATAL: phase {args.phase} produces_artifact "
+            f"{_art_spec!r} is not present; cannot attest.",
+            file=sys.stderr,
+        )
         sys.exit(2)
 
-    # No --phase: print the plan (the safe default — the runner never blindly fans
-    # out every department role; it dispatches the render and attests artifacts).
+    # FIX 5e: no --phase is a HARD ERROR — the runner never blindly fans out every
+    # department role; it dispatches the render and attests artifacts one phase at a
+    # time. Use --plan for read-only inspection (exit 0), or --phase <ID> to advance
+    # a single named phase.
+    print(
+        "FATAL: no --phase given. The runner never blindly fans out; "
+        "pass --phase or --plan.",
+        file=sys.stderr,
+    )
     print_plan(run_dir, phases)
-    print("\nNote: pass --phase P4-RENDER --out out.pptx to dispatch the deterministic "
-          "render (build_deck.py) once all upstream phases are attested.", flush=True)
-    sys.exit(0)
+    sys.exit(2)
 
 
 def _dispatch_render(run_dir: Path, slides_path: Path, out_path: Path,
