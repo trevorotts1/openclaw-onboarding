@@ -118,6 +118,53 @@ fail_install() {
   exit 1
 }
 
+# ----------------------------------------------------------------------
+# Command Center pm2 app-name contract (v16.1.7 — two-CC-on-:4000 root fix)
+# ----------------------------------------------------------------------
+# The Command Center MUST run under exactly ONE pm2 app name across the whole
+# fleet. The fleet-canonical name is "blackceo-command-center" — what this
+# installer starts, what every per-box dedup standardizes on, and what the CC
+# repo now declares everywhere (ecosystem.config.cjs / scripts/deploy.sh /
+# scripts/watchdog-cc.sh / the bootstrap templates, blackceo-command-center
+# v4.55.4+). "mission-control" is a LEGACY alias earlier CC revisions used.
+#
+# Historically, if a box still ran the board under "mission-control" (or the
+# older "command-center"), this installer's `pm2 restart blackceo-command-center`
+# missed it and the fallback `pm2 start blackceo-command-center` left TWO pm2
+# apps both binding :4000, whose `next start` children mutually killed each other
+# through cc-start.sh's orphan-port killer — an endless restart loop (47k+
+# restarts) that wedged the gateway on a client box.
+#
+# The fix: reconcile every legacy alias away BEFORE (re)starting, so exactly ONE
+# canonical "blackceo-command-center" results regardless of which name the box
+# currently runs.
+CC_PM2_NAME="blackceo-command-center"
+# Every NON-canonical alias the CC has shipped under historically. Deleted before
+# each (re)start so a box can never keep a second competing CC on :4000.
+CC_PM2_LEGACY_ALIASES="mission-control command-center"
+
+# cc_reconcile_pm2_names — delete every non-canonical CC alias so at most ONE CC
+# app (the canonical "$CC_PM2_NAME") can survive the (re)start below. Idempotent:
+# a missing app makes `pm2 delete` a harmless no-op.
+cc_reconcile_pm2_names() {
+  local alias_name
+  for alias_name in $CC_PM2_LEGACY_ALIASES; do
+    if pm2 delete "$alias_name" >/dev/null 2>&1; then
+      log "INFO" "phase=6: reconciled — deleted non-canonical CC pm2 app '$alias_name'"
+    fi
+  done
+}
+
+# cc_pm2_start_canonical — start the board under the canonical name. An explicit
+# --name guarantees the canonical regardless of the cloned CC checkout's
+# ecosystem.config.cjs (an older pinned CC tag may still name the app
+# differently until the CC version is rolled fleet-wide). CC_PORT is pinned so
+# cc-start.sh (npm start -> bash scripts/cc-start.sh) strips any ambient PORT and
+# binds :4000. Returns the launcher's exit status.
+cc_pm2_start_canonical() {
+  ( cd "$DASHBOARD_DIR" && CC_PORT="$DASHBOARD_PORT" pm2 start npm --name "$CC_PM2_NAME" -- start >>"$LOG_FILE" 2>&1 )
+}
+
 # ---- preflight ----
 if [[ ! -f "$STATE_FILE" ]]; then
   if [[ "$UPDATE_ONLY" == "true" ]]; then
@@ -255,15 +302,20 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
     ( cd "$DASHBOARD_DIR" && npm run db:push >>"$LOG_FILE" 2>&1 ) \
       && log "INFO" "phase=6: db:push done (idempotent drizzle migrations; no data wipe)" \
       || log "WARN" "phase=6: db:push reported errors (continuing)"
-    # pm2 restart is safer than delete+start for an existing running deployment
-    if pm2 restart blackceo-command-center >>"$LOG_FILE" 2>&1; then
-      log "INFO" "phase=6: pm2 restart done"
+    # IDEMPOTENT + RECONCILING (v16.1.7): delete every non-canonical CC alias
+    # (mission-control, command-center), then restart the canonical
+    # "blackceo-command-center" (start fresh if it isn't registered yet). This
+    # converges a box running under ANY name down to a single CC on :4000, so the
+    # two-process mutual-kill loop can never recur.
+    cc_reconcile_pm2_names
+    if pm2 restart "$CC_PM2_NAME" >>"$LOG_FILE" 2>&1; then
+      log "INFO" "phase=6: pm2 restart $CC_PM2_NAME done (reconciled to one canonical CC)"
     else
-      log "WARN" "phase=6: pm2 restart failed — attempting pm2 start"
-      pm2 delete blackceo-command-center >/dev/null 2>&1 || true
-      ( cd "$DASHBOARD_DIR" && PORT=$DASHBOARD_PORT pm2 start npm --name blackceo-command-center -- start >>"$LOG_FILE" 2>&1 ) \
-        && log "INFO" "phase=6: pm2 start done (restart failed, used fresh start)" \
-        || log "WARN" "phase=6: pm2 restart+start both failed — check: pm2 logs blackceo-command-center"
+      log "WARN" "phase=6: pm2 restart $CC_PM2_NAME failed — starting fresh"
+      pm2 delete "$CC_PM2_NAME" >/dev/null 2>&1 || true
+      cc_pm2_start_canonical \
+        && log "INFO" "phase=6: pm2 start $CC_PM2_NAME done (fresh)" \
+        || log "WARN" "phase=6: pm2 start $CC_PM2_NAME failed — check: pm2 logs $CC_PM2_NAME"
     fi
     pm2 save >>"$LOG_FILE" 2>&1 || true
   fi
@@ -296,13 +348,18 @@ else
     log "WARN" "phase=6: npm run db:seed failed — dashboard will still start but workspace selector may be empty"
   fi
 
-  # Explicit PORT=4000 is the fix for the EADDRINUSE / random-port bug that
-  # hit a client box. Some upstream env was leaking a different PORT which
-  # caused Next.js to bind somewhere unpredictable. Pinning it here makes
-  # the bind deterministic and matches Phase 6.6 of INSTALL.md.
-  log "INFO" "phase=6: starting dashboard via pm2 on PORT=$DASHBOARD_PORT"
-  pm2 delete blackceo-command-center >/dev/null 2>&1 || true
-  if ! ( cd "$DASHBOARD_DIR" && PORT=$DASHBOARD_PORT pm2 start npm --name blackceo-command-center -- start >>"$LOG_FILE" 2>&1 ); then
+  # Pin CC_PORT so the bind is deterministic on :4000 — cc-start.sh (npm start ->
+  # bash scripts/cc-start.sh) strips any ambient/leaked PORT and binds CC_PORT.
+  # Matches Phase 6.6 of INSTALL.md.
+  #
+  # IDEMPOTENT + RECONCILING (v16.1.7): delete every non-canonical CC alias
+  # (mission-control, command-center) AND any stale canonical app, then start
+  # exactly ONE canonical "blackceo-command-center". A box can never end up with
+  # two CCs fighting over :4000.
+  log "INFO" "phase=6: starting dashboard via pm2 as '$CC_PM2_NAME' on CC_PORT=$DASHBOARD_PORT"
+  cc_reconcile_pm2_names
+  pm2 delete "$CC_PM2_NAME" >/dev/null 2>&1 || true
+  if ! cc_pm2_start_canonical; then
     fail_install "phase=6: pm2 start failed"
   fi
   pm2 save >>"$LOG_FILE" 2>&1 || true

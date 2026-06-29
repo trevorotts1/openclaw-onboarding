@@ -1,3 +1,19 @@
+## [v16.1.7]  -  2026-06-29  -  fix(skill-32): reconcile the Command Center pm2 app name so an install/update can never create two competing CC processes on :4000 (the fleet-wide port-4000 crash-loop + multi-hour gateway-outage root cause)
+
+### What changed
+
+The Skill-32 dashboard installer (`32-command-center-setup/scripts/run-full-install.sh`, Phase 6) restarts the board under the fleet-canonical pm2 app name `blackceo-command-center`, but the Command Center repo had historically diverged to `mission-control` (in `ecosystem.config.cjs` / `pm2 resurrect`, the bootstrap templates, and the watchdog self-heal). On a box still running the board under a legacy name (`mission-control`, or the older `command-center`), the installer's `pm2 restart blackceo-command-center` missed it and the fallback fresh `pm2 start` left TWO pm2 apps both binding :4000, whose `next start` children mutually killed each other through cc-start.sh's orphan-port killer — an endless restart loop (47k+ restarts) that wedged the gateway on a client box.
+
+- **Canonical name = `blackceo-command-center`** (what this installer and every per-box fleet dedup standardize on). The Command Center repo half is reconciled to the same name in blackceo-command-center **v4.55.4** (ecosystem.config.cjs / deploy.sh / both bootstrap templates / watchdog-cc.sh), so `pm2 resurrect` and the watchdog self-heal can no longer resurrect a rival `mission-control`.
+
+- **The fix — idempotent + reconciling Phase 6.** New helpers `cc_reconcile_pm2_names` + `cc_pm2_start_canonical`. On BOTH the full-install and `--update-only` paths the installer now (1) `pm2 delete`s every non-canonical alias (`mission-control`, `command-center`) — and, on the full path, any stale canonical app — BEFORE (re)starting, then (2) starts/restarts exactly ONE canonical `blackceo-command-center` (explicit `--name`, with `CC_PORT` pinned so cc-start.sh binds :4000 regardless of the cloned CC checkout's ecosystem). `pm2 save` after, so the resurrect dump is clean. Result: exactly one CC under one name, regardless of which name the box ran before.
+
+- **CORE_UPDATES.md** operator commands reconciled from the bare legacy `command-center` to `blackceo-command-center` (the install-dir path and the `pm2 start ecosystem.config.cjs` guidance are unchanged — post-v4.55.4 the ecosystem names the canonical, so it cannot spawn a rival).
+
+- **PROOF (before/after).** A deterministic simulation drives the REAL extracted Phase-6 helpers against a faithful mock `pm2`: the OLD logic reproduces the 2-app port-4000 fight on a `mission-control` box; the NEW logic converges EVERY box-state — `{mission-control}`, `{mission-control, blackceo-command-center}` (the dup), `{blackceo-command-center}`, `{command-center}`, and a clean box — to exactly one `blackceo-command-center`, idempotent across repeated runs.
+
+Existing Phase-6/7 contract preserved (`db:seed`, `phase=6c` board sync, `prove-zhe` gate unchanged). `bash -n` clean; both-paths-zhe-delivery + version-consistency guards pass. Box user, not root. No client names in changed files.
+
 ## [v16.1.6]  -  2026-06-29  -  fix: SILENCE all client-facing update/install/maintenance chatter — the fleet roll re-ran install.sh on client boxes and its OWN send_telegram_progress auto-DM'd the owner ("Downloaded onboarding package …", "📦 Extracted onboarding package. N skills detected. Installing them now …"). The prior fix silenced ONLY update-skills.sh; install.sh + force-update.sh + the legacy scripts/update-skills.sh were never silenced and the CI guard never covered them. All update-path emitters are now operator-routed / log-only, a CI guard fails the build on any client-facing update send, and every shipped agent's AGENTS.md now carries the "WE MOVE IN SILENCE" maintenance-silence doctrine. WE MOVE IN SILENCE.
 
 ### Risk: low
