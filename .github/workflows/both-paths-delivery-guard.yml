@@ -220,6 +220,46 @@ jobs:
           fi
           echo "PASS D14: PLATFORM_FACTS_V1 present in scripts/apply-fleet-standards.sh"
 
+      - name: D15 — floor-fill materialization shipped + wired on BOTH paths (static)
+        run: |
+          # v16.0.2: update-skills.sh was DETECTING new floor roles/SOPs (via
+          # detect-stale-artifacts.py) but never FILLING them, so every v16-updated
+          # box kept an incomplete floor. The fix wires floor-fill into the update
+          # path (migrate-existing-workforce.sh Step 2b) and adds the same backstop
+          # to the install path. This dimension asserts the materialization is
+          # SHIPPED (repo scripts) and REACHABLE on BOTH paths so it can't regress.
+          MISS=""
+          FFD="23-ai-workforce-blueprint/scripts/floor-fill-driver.py"
+          MGS="23-ai-workforce-blueprint/scripts/make-gap-from-staleness.py"
+          MIG="23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh"
+          # (a) both repo scripts shipped
+          [ -f "$FFD" ] || MISS="$MISS floor-fill-driver.py(not-shipped)"
+          [ -f "$MGS" ] || MISS="$MISS make-gap-from-staleness.py(not-shipped)"
+          # (b) migrate Step 2b references both (the actual materialization site)
+          grep -q 'floor-fill-driver.py'      "$MIG" 2>/dev/null || MISS="$MISS migrate:no-floor-fill-driver"
+          grep -q 'make-gap-from-staleness.py' "$MIG" 2>/dev/null || MISS="$MISS migrate:no-make-gap"
+          grep -q 'STEP 2b'                    "$MIG" 2>/dev/null || MISS="$MISS migrate:no-step-2b"
+          # (c) install path reaches the floor-fill backstop
+          grep -q 'floor-fill-driver.py' install.sh 2>/dev/null || MISS="$MISS install:no-floor-fill-ref"
+          # (d) update path reaches it: invokes migrate AND documents floor-fill
+          grep -q 'migrate-existing-workforce' update-skills.sh 2>/dev/null || MISS="$MISS update:no-migrate-invocation"
+          grep -q 'floor-fill'                 update-skills.sh 2>/dev/null || MISS="$MISS update:no-floor-fill-ref"
+          if [ -n "$MISS" ]; then
+            echo "FAIL D15: floor-fill materialization missing/unwired:$MISS"
+            echo "  -> a missing floor-role/SOP could ship again (incomplete-floor-after-update regression)."
+            exit 1
+          fi
+          echo "PASS D15: floor-fill materialization shipped + wired on both paths"
+
+      - name: D15b — floor-fill dynamic proof (offline; compile + gap shape)
+        run: |
+          # Runs the dedicated acceptance test: both floor-fill scripts compile,
+          # migrate passes bash -n, and make-gap-from-staleness.py turns a MISSING
+          # detect-stale verdict into the correct MISSING-only gap-map (role ->
+          # missing_roles; sop -> named-set + .md; persona/dept/CURRENT dropped).
+          chmod +x tests/unit/floor-fill-gap.test.sh
+          bash tests/unit/floor-fill-gap.test.sh
+
       - name: Summary
         if: always()
         run: |
@@ -229,4 +269,5 @@ jobs:
           echo "D5 checks run-full-install deployment (CC web-app refresh — CC #108/#109/#112)."
           echo "D11-D13 check the v14.27.2 persona reconcile + canonical idempotency gate."
           echo "D14 checks W7 platform-facts block present in apply-fleet-standards.sh (v14.28.0)."
+          echo "D15 checks floor-fill materialization shipped + wired on both paths (v16.0.2 incomplete-floor fix)."
           echo "All PASS = both paths deliver every dimension; any FAIL = regression detected."

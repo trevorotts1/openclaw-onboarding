@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# migrate-existing-workforce.sh - v10.15.44 (Mac) / v10.16.43 (VPS)
+# migrate-existing-workforce.sh - v16.0.2
 #
 # One-shot SOP + role-library remediation for the 5 audited clients (or any
 # client whose workforce predates the post-build pipeline). Safe to re-run.
+#
+# v16.0.2: Step 2b now MATERIALIZES missing canonical floor roles/SOPs via
+# floor-fill (was detecting-but-not-filling) — closes incomplete-floor-after-update.
 # Read-only by default. --apply required for mutations. Logs to a file plus
 # Telegrams the operator on completion.
 #
@@ -103,6 +106,71 @@ if [ -f "$POST_BUILD" ]; then
   fi
 else
   log "post-build-role-workspaces.py not found at $POST_BUILD"
+fi
+
+# ----- Step 2b: materialize MISSING floor roles/SOPs (floor-fill) -----
+# v16.0.2 FIX (closes incomplete-floor-after-update):
+# post-build-role-workspaces.py (Step 2) AUGMENTS the role folders that already
+# exist, but it NEVER creates role-workspace folders for roles that are NEW in the
+# library (e.g. v16's per-dept devils-advocate / healer, and the video/graphics/
+# presentations expansions). detect-stale-artifacts.py correctly DETECTS those
+# missing canonical floor slots, but until v16.0.2 nothing ever APPLIED the fill —
+# so every v16-updated box kept an incomplete floor.
+#
+# This step closes the loop: it runs the detector (read-only), converts the
+# MISSING verdict into a gap-map (make-gap-from-staleness.py, which compares
+# against the box's OWN role-library _index.json — NOT operator-only tooling), and
+# materializes ONLY the missing slots via the box's OWN canonical builder
+# (floor-fill-driver.py -> create_role_workspaces.py). It is idempotent,
+# skip-existing and no-clobber: a present role/SOP is never overwritten, and a
+# box whose floor is already complete is a no-op. Runs as the BOX USER (never
+# root). Content is REAL role-library content, never stubbed.
+#
+# EDGE CASE: a box without the shipped role-library (older bundle / non-standard
+# layout) is skipped gracefully — the floor cannot be materialized without the
+# canonical source, and that is logged rather than failing the migration.
+log "STEP 2b/5: materialize missing floor roles/SOPs (floor-fill)"
+FF_DETECT="$SKILL_DIR/scripts/detect-stale-artifacts.py"
+FF_INDEX="$SKILL_DIR/templates/role-library/_index.json"
+FF_MAKEGAP="$SKILL_DIR/scripts/make-gap-from-staleness.py"
+FF_DRIVER="$SKILL_DIR/scripts/floor-fill-driver.py"
+FF_WS_ROOT="$HOME/.openclaw/workspace"
+[ -d "/data/.openclaw" ] && FF_WS_ROOT="/data/.openclaw/workspace"
+FF_DEPTS_DIR="$FF_WS_ROOT/departments"
+if [ -f "$FF_DETECT" ] && [ -f "$FF_INDEX" ] && [ -f "$FF_MAKEGAP" ] && [ -f "$FF_DRIVER" ] && \
+   { [ -d "$FF_DEPTS_DIR" ] || [ -f "$FF_WS_ROOT/.workforce-build-state.json" ]; } && \
+   command -v python3 >/dev/null 2>&1; then
+  FF_DIR="$LOG_DIR/floor-fill-${CLIENT}-${TS}"
+  mkdir -p "$FF_DIR"
+  FF_DETECT_JSON="$FF_DIR/detect.json"
+  FF_GAP_JSON="$FF_DIR/gap.json"
+  # 1) detect MISSING/STALE/etc (READ-ONLY). detect-stale exits 10 on drift — that
+  #    is expected and not an error; the JSON is still emitted to stdout.
+  python3 "$FF_DETECT" --workspace "$FF_WS_ROOT" --manifest "$FF_INDEX" --json > "$FF_DETECT_JSON" 2>>"$LOG" || true
+  # 2) build the gap-map (MISSING-only)
+  if python3 "$FF_MAKEGAP" "$FF_DETECT_JSON" --out "$FF_GAP_JSON" 2>>"$LOG"; then
+    FF_GAP_DEPTS="$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$FF_GAP_JSON" 2>/dev/null || echo 0)"
+    if [ "${FF_GAP_DEPTS:-0}" -gt 0 ]; then
+      # 3) back up the mutable build-state before applying (additive-only, but safe)
+      if [ -f "$FF_WS_ROOT/.workforce-build-state.json" ]; then
+        cp -p "$FF_WS_ROOT/.workforce-build-state.json" "$FF_DIR/.workforce-build-state.json.bak" 2>/dev/null || true
+      fi
+      if [ "$MODE" = "--apply" ]; then
+        log "  floor-fill: ${FF_GAP_DEPTS} dept(s) with missing floor slots -> materializing (idempotent, skip-existing)"
+        python3 "$FF_DRIVER" --gap-file "$FF_GAP_JSON" --workspace "$FF_DEPTS_DIR" --apply 2>&1 | tee -a "$LOG" || \
+          log "  floor-fill: completed with warnings (see log)"
+      else
+        log "  [DRY-RUN] ${FF_GAP_DEPTS} dept(s) have missing floor slots; would run floor-fill-driver.py --apply"
+        python3 "$FF_DRIVER" --gap-file "$FF_GAP_JSON" --workspace "$FF_DEPTS_DIR" 2>&1 | tee -a "$LOG" || true
+      fi
+    else
+      log "  floor-fill: floor already complete (no MISSING roles/SOPs) — nothing to materialize"
+    fi
+  else
+    log "  floor-fill: could not build gap-map from detect-stale verdict — skipping (see log)"
+  fi
+else
+  log "  floor-fill: role-library / detector / workspace not present on this box — skipping (edge case: box without the shipped role-library)"
 fi
 
 # ----- Step 3: populate SOPs from manifest if one exists -----
