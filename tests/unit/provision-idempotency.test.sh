@@ -6,7 +6,7 @@
 # Proves that provision_persona_index() RE-PROVISIONS a non-canonical partial
 # index (the 6260 / 7615 / 9456-row locally-re-embedded indexes the OLD
 # "has section_number column ⇒ done" gate wrongly SKIPPED) while genuinely
-# SKIPPING the canonical 4574-row v2.2.0 asset — and that the live-operator
+# SKIPPING the canonical asset (manifest chunk_count, v2.2.1 = 935 rows) — and the live-operator
 # index (content-canonical but unstamped sentinel) self-heals instead of
 # triggering a 90MB re-download (furnace guard).
 #
@@ -31,6 +31,10 @@ CANON_CAT_MD5="e7b29db3e82b056a484cba2114fcf77f"
 # current release. Using release_tag (not base_tag) because provision_persona_index
 # stamps the sentinel from release_tag.
 MANIFEST_TAG="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["release_tag"])' "$MANIFEST" 2>/dev/null || echo "prebuilt-index-v2.2.0")"
+# Read the canonical chunk_count from the manifest too, so the "canonical index"
+# fixtures track the current asset (v2.2.1 = 935) and can never hard-lock to a stale
+# row count again. A non-canonical fixture is then any count != this.
+MANIFEST_CHUNKS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["chunk_count"])' "$MANIFEST" 2>/dev/null || echo "935")"
 
 PASS=0
 FAIL=0
@@ -77,33 +81,33 @@ OUT1="$(provision_persona_index "$MANIFEST" "$D1" 2>&1)"
 echo "$OUT1" | grep -q "NEEDS (re)provision" \
     && pass "1a: 6260-row index triggers NEEDS (re)provision" \
     || fail "1a: 6260-row index did NOT trigger re-provision (out: $OUT1)"
-echo "$OUT1" | grep -q "chunk-count:6260!=4574" \
-    && pass "1b: reason is chunk-count:6260!=4574" \
+echo "$OUT1" | grep -q "chunk-count:6260!=${MANIFEST_CHUNKS}" \
+    && pass "1b: reason is chunk-count:6260!=${MANIFEST_CHUNKS}" \
     || fail "1b: chunk-count mismatch reason missing (out: $OUT1)"
 echo "$OUT1" | grep -q "skipping download" \
     && fail "1c: 6260-row index wrongly skipped" \
     || pass "1c: 6260-row index did NOT skip"
 
-# ─── (2) Canonical 4574-row index + sentinel (== manifest tag) + 65 dirs → SKIP
-echo "--- (2) canonical 4574-row index skips ---"
+# ─── (2) Canonical (manifest chunk_count) index + sentinel (== manifest tag) + 65 dirs → SKIP
+echo "--- (2) canonical ${MANIFEST_CHUNKS}-row index skips ---"
 D2="$WORK/box-canon"; mkdir -p "$D2"
-_mk_index "$D2/gemini-index.sqlite" 4574
+_mk_index "$D2/gemini-index.sqlite" "$MANIFEST_CHUNKS"
 printf '%s\n' "$MANIFEST_TAG" > "$D2/.prebuilt-index-version"
 _mk_65_dirs "$D2"
 OUT2="$(provision_persona_index "$MANIFEST" "$D2" 2>&1)"
 # Accept either "already canonical" (sentinel matches) or "content-canonical...self-heal"
 # (sentinel tag differs from release_tag — both result in a SKIP, not a re-provision).
 ( echo "$OUT2" | grep -qE "already canonical|content-canonical" ) \
-    && pass "2a: canonical 4574-row index recognized as canonical (skipping)" \
+    && pass "2a: canonical ${MANIFEST_CHUNKS}-row index recognized as canonical (skipping)" \
     || fail "2a: canonical index not recognized (out: $OUT2)"
 echo "$OUT2" | grep -q "NEEDS (re)provision" \
     && fail "2b: canonical index wrongly flagged for re-provision" \
     || pass "2b: canonical index NOT re-provisioned"
 
-# ─── (3) Live-operator-like: canonical 4574 + EMPTY sentinel + 65 dirs → self-heal+SKIP
+# ─── (3) Live-operator-like: canonical (manifest count) + EMPTY sentinel + 65 dirs → self-heal+SKIP
 echo "--- (3) operator-like index self-heals sentinel, skips download ---"
 D3="$WORK/box-operator"; mkdir -p "$D3"
-_mk_index "$D3/gemini-index.sqlite" 4574
+_mk_index "$D3/gemini-index.sqlite" "$MANIFEST_CHUNKS"
 : > "$D3/.prebuilt-index-version"   # empty sentinel (built locally, never stamped)
 _mk_65_dirs "$D3"
 OUT3="$(provision_persona_index "$MANIFEST" "$D3" 2>&1)"
@@ -125,7 +129,7 @@ python3 - "$D4/gemini-index.sqlite" <<'PY'
 import sqlite3, sys
 c = sqlite3.connect(sys.argv[1])
 c.execute("CREATE TABLE embeddings(id INTEGER, section_number INTEGER)")
-c.executemany("INSERT INTO embeddings VALUES(?,?)", [(i, 3) for i in range(4574)])
+c.executemany("INSERT INTO embeddings VALUES(?,?)", [(i, 3) for i in range(50)])  # arbitrary count; re-provision is driven by the MISSING mode column, not the row count
 c.commit(); c.close()
 PY
 _mk_65_dirs "$D4"

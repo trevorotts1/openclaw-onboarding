@@ -46,6 +46,16 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 4. **If AF-DH1 triggers:** halt all delivery. Record the failure in `working/checkpoints/delivery_plan.json` as `"af_dh1_triggered": true, "af_dh1_details": "<specific file or dir that failed>"`. Notify the Director: "AF-DH1: DELIVERY BLOCKED. Package hygiene fail: {details}. The client package must contain exactly the five allowed files. Remove all dev artifacts before re-running SOP 9.0." Do NOT proceed to SOP 9.1 until SOP 9.0 passes cleanly.
 5. **If AF-DH1 passes:** record `"af_dh1_pass": true` in the delivery plan. Proceed to SOP 9.1.
 6. **Mechanical confirmation (R9-F9):** the AF-DH1 whitelist + the GHL-upload record + the SOP 9.4 destination ground-truth are ALSO enforced mechanically by `python3 scripts/delivery_gate.py <run_dir>` (exit 0 = pass, 1 = fail). Run it before the SOP 9.3 notification; a non-zero exit BLOCKS `delivery_complete: true`. This coded enforcer backstops these otherwise doctrine-only autofails (AF-DH1 / AF-DELIVER / AF-DELIVERY-COMPLETE) — never rely on the SOP prose alone.
+7. **DELIVERY BOUNDARY GATE — run BEFORE any file leaves the box (MANDATORY, fail-closed).** Before SOP 9.2 copies/uploads/sends ANY deck — and regardless of how the deck was produced — run the out-of-band boundary gate over the SHIPPED ARTIFACT itself:
+   ```
+   python3 scripts/delivery_gate.py --artifact delivery/[DECK_SLUG]-FINAL/[DECK_SLUG]-FINAL.pptx --run-dir <run_dir> --pre-transport
+   ```
+   (exit 0 = clear to deliver, 1 = REJECTED). A non-zero exit HARD-BLOCKS delivery: do NOT copy to `~/Downloads/`, do NOT upload to GHL, do NOT send via Telegram/Drive, do NOT set `delivery_complete: true`. The gate inspects the artifact and REJECTS a deck that was hand-built OUTSIDE the governed kie.ai pipeline:
+   - **`AF-OVERLAY-DELIVERED`** — the deck carries SELECTABLE native on-slide text (a `<a:t>` run in a `.pptx`, or embedded fonts + text operators in a `.pdf`) instead of words baked into kie.ai images — i.e. it was assembled with python-pptx / Pillow / Google Slides / Keynote, not rendered.
+   - **`AF-NOT-KIE-RENDERED`** — no real kie.ai `taskId` per slide in the process manifest, or the artifact is not a readable OOXML/PDF deck (a renamed-image decoy).
+   - **`AF-NO-RUN-DIR`** — no governed run dir (`working/checkpoints/process_manifest.json`) — the deck never passed through `run_signature_deck.py`.
+   - **`AF-BUNDLE-COMPLETE`** — the five-file client package or the teleprompter deliverable is missing.
+   `--pre-transport` enforces every artifact-provenance gate above PLUS the AF-DH1 package + teleprompter, while deferring ONLY the SOP-9.4 destination ground-truth (the upload SOP 9.2 is about to perform — re-checked in full at `run_signature_deck.py` P9-DELIVER). This is the coded enforcer for the boundary autofails (`AF-OVERLAY-DELIVERED` / `AF-NOT-KIE-RENDERED` / `AF-NO-RUN-DIR` / `AF-BUNDLE-COMPLETE`) registered in `PIPELINE-MANIFEST.json` with `sop_ref: delivery-concierge-sops.md`. The GHL transport (`ghl_media_push.py`) ALSO runs this same gate automatically and ABORTS the upload on rejection — so even an agent that skips this step cannot push a hand-built deck to the client's GHL media library. The ONLY bypass is a logged `owner_skip_approval` token (`gate=<AF code>`); an agent may NEVER self-approve.
 
 **Outputs:**
 - `delivery/[DECK_SLUG]-FINAL/` (clean five-file package, AF-DH1 verified)
@@ -115,6 +125,12 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - GHL **LOCATION** PIT from client's env stores; Google Drive credentials (if applicable)
 
 > Every destination receives the ENTIRE five-file client package, not just the pptx: `<deck-slug>-FINAL.pptx`, `<deck-slug>-FINAL.pdf`, `PRESENTER-GUIDE.pdf`, `PRESENTERS-SPEECH.pdf`, `PRESENTER-AUDIO.mp3`.
+
+**Step 0 -- DELIVERY BOUNDARY GATE (run FIRST, before ANY copy/upload/send -- fail-closed).** Before the FIRST byte of any destination below is copied to `~/Downloads/`, uploaded to GHL/Drive, or sent via Telegram, run the SOP 9.0 step 7 boundary gate over the deck artifact:
+```bash
+python3 scripts/delivery_gate.py --artifact delivery/[DECK_SLUG]-FINAL/[DECK_SLUG]-FINAL.pptx --run-dir <run_dir> --pre-transport
+```
+A non-zero exit HARD-BLOCKS every destination in this SOP -- do NOT `cp` to Downloads, do NOT upload, do NOT send. Report the AF code (`AF-OVERLAY-DELIVERED` / `AF-NOT-KIE-RENDERED` / `AF-NO-RUN-DIR` / `AF-BUNDLE-COMPLETE`) to the Director and route the deck back to the pipeline. A deck not produced by the governed kie.ai pipeline (hand-built / overlay / no governed run dir / incomplete bundle) CANNOT be delivered through any channel. The GHL upload step below ALSO self-enforces this gate inside `ghl_media_push.py` and aborts on rejection, so a skipped Step 0 still cannot push a hand-built deck to GHL. The only bypass is a logged `owner_skip_approval` token; never an agent's own choice.
 
 **Steps (Mac Downloads destination):**
 1. If `type: "mac_downloads"` is in delivery_plan.json:
