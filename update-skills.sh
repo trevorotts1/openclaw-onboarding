@@ -42,7 +42,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v16.0.1"
+ONBOARDING_VERSION="v16.0.2"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -445,7 +445,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v16.0.1 - safe_json_edit
+# v16.0.2 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1693,6 +1693,15 @@ except:
   # actually install into the client's live department tree.
   # This script is idempotent and additive -- it never deletes or
   # overwrites existing departments, only fills gaps.
+  #
+  # v16.0.2: migrate-existing-workforce.sh Step 2b now MATERIALIZES missing
+  # canonical floor roles/SOPs via floor-fill-driver.py (fed by
+  # make-gap-from-staleness.py). Before v16.0.2 the update path DETECTED the
+  # missing v16 floor roles (devils-advocate/healer per dept, video/graphics/
+  # presentations expansions) but never FILLED them, leaving every v16-updated
+  # box with an incomplete floor. Running migrate here closes that on the update
+  # path (the same floor-fill backstop runs on the install path -- see
+  # install.sh step 6b). Idempotent, skip-existing, no-clobber, box-user.
   # ----------------------------------------------------------
   MIGRATE_SCRIPT="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh"
   if [ -x "$MIGRATE_SCRIPT" ]; then

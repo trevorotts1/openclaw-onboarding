@@ -23,7 +23,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v16.0.1"
+ONBOARDING_VERSION="v16.0.2"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -696,7 +696,7 @@ Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10,
 
 PHASE 3 — Verify:
 6. Run ~/.openclaw/scripts/qc-system-integrity.sh — must exit 0.
-6b. After Phase 4 workforce build completes, run bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-completeness.sh — read-only check that role-library materialization + IDENTITY.md + SOPs landed for every dept. Status must be PASS. On PARTIAL/FAIL the script Telegrams the operator with a per-dept breakdown; do not declare install complete until at PASS or operator explicitly waives.
+6b. After Phase 4 workforce build completes, run bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh "$(hostname)" --apply — its Step 2b floor-fill (scripts/floor-fill-driver.py, fed by scripts/make-gap-from-staleness.py) idempotently MATERIALIZES any missing canonical floor roles/SOPs (e.g. the v16 per-dept devils-advocate / healer and the video/graphics/presentations expansions) from the box's own role-library. This is a skip-existing, no-clobber completeness backstop: on a fresh fully-built floor it is a no-op, but it guarantees BOTH the install path and the update path end with a complete floor. Then run bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-completeness.sh — read-only check that role-library materialization + IDENTITY.md + SOPs landed for every dept. Status must be PASS. On PARTIAL/FAIL the script Telegrams the operator with a per-dept breakdown; do not declare install complete until at PASS or operator explicitly waives.
 7. Message __OWNER_NAME__: All skills installed. Ready for the 30-question business interview? About 35 min of your focused time — your answers shape your entire AI team. Reply yes when ready.
 Wait for confirmation before proceeding.
 
