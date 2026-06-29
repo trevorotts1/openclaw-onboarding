@@ -2405,6 +2405,56 @@ def test_check_phase_preconditions():
     return fails
 
 
+def test_runner_attestation_seen_by_preconditions():
+    """v16.1.5 REGRESSION (Defect 1 — attestation key mismatch). The deterministic
+    runner attests a phase via run_signature_deck.attest_phase (which appends to
+    process_manifest.json's `phase_attestations[]`, keyed phase_id). The shared
+    precondition gate build_deck.check_phase_preconditions formerly read ONLY `phases[]`,
+    so every runner-attested phase was INVISIBLE to the next phase's precondition check
+    and the chain hard-aborted AF-PHASE-SKIPPED after the first phase. This proves the
+    fix from BOTH ends:
+      (a) a phase attested via the RUNNER's own attest path is SEEN (no false skip);
+      (b) build_deck's own `phases[].phase=='render'` record counts as P4-RENDER;
+      (c) a genuinely-unattested prior STILL trips AF-PHASE-SKIPPED (teeth preserved)."""
+    import importlib
+    rsd = importlib.import_module("run_signature_deck")
+    fails = []
+
+    # (a) Attest P0B-PRIORITY exactly as the runner does, then the NEXT phase's
+    #     precondition must SEE it (the false-negative the fix closes).
+    rd = Path(tempfile.mkdtemp(prefix="deck_attest_seen_"))
+    (rd / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    rsd.attest_phase(rd, "P0B-PRIORITY", "attention-content-strategist", "artifact_present")
+    pm = json.loads((rd / "working" / "checkpoints" / "process_manifest.json").read_text())
+    if "P0B-PRIORITY" not in [a.get("phase_id") for a in pm.get("phase_attestations", [])]:
+        fails.append("ATTEST-SEEN: runner attest_phase did not write phase_attestations[].phase_id")
+    r = build_deck.check_phase_preconditions(rd, "P3-ARC", ["P0B-PRIORITY"])
+    if r:
+        fails.append(f"ATTEST-SEEN: runner-attested P0B-PRIORITY NOT seen (false AF-PHASE-SKIPPED): {r!r}")
+
+    # (b) build_deck's own render record (phases[].phase=='render') counts as P4-RENDER.
+    rd_render = Path(tempfile.mkdtemp(prefix="deck_attest_render_"))
+    (rd_render / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (rd_render / "working" / "checkpoints" / "process_manifest.json").write_text(
+        json.dumps({"phases": [{"phase": "render", "tool": "build_deck.py"}]}))
+    if build_deck.check_phase_preconditions(rd_render, "P9-DELIVER", ["P4-RENDER"]):
+        fails.append("ATTEST-SEEN: build_deck render record should count as P4-RENDER attested")
+
+    # (c) TEETH PRESERVED — a genuinely-unattested prior STILL trips AF-PHASE-SKIPPED.
+    r2 = build_deck.check_phase_preconditions(rd, "P3-ARC", ["P0B-PRIORITY", "P-NEVER-ATTESTED"])
+    if not r2 or "AF-PHASE-SKIPPED" not in r2 or "P-NEVER-ATTESTED" not in r2:
+        fails.append(f"ATTEST-SEEN: a genuine skip MUST still trip AF-PHASE-SKIPPED, got {r2!r}")
+    # and a wholly-empty ledger must still trip for any prior.
+    rd_empty = Path(tempfile.mkdtemp(prefix="deck_attest_empty_"))
+    (rd_empty / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    r3 = build_deck.check_phase_preconditions(rd_empty, "P3-ARC", ["P0B-PRIORITY"])
+    if not r3 or "AF-PHASE-SKIPPED" not in r3:
+        fails.append(f"ATTEST-SEEN: empty ledger must trip AF-PHASE-SKIPPED, got {r3!r}")
+
+    print(f"RUNNER-ATTEST SEEN (3C/D1)   -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
 def test_chk_no_overlay():
     """5C AF-OVERLAY-DELIVERED: a present pptx_text_overlays.json FAILS; a run with no
     overlay file + no delivered PPTX PASSES."""
@@ -3854,6 +3904,10 @@ def main():
     failures += test_kie_balance_preflight()
     failures += test_check_phase_preconditions()
 
+    # v16.1.5 (Defect 1) — a phase attested via the RUNNER's own attest path is SEEN by
+    # the shared precondition gate (no false AF-PHASE-SKIPPED); a genuine skip STILL trips.
+    failures += test_runner_attestation_seen_by_preconditions()
+
     # GOAL-4 / 5C — native PPTX text-overlay path eliminated.
     failures += test_chk_no_overlay()
 
@@ -3897,6 +3951,11 @@ def main():
     # AF-IMAGE-QC-RAN: stale report -> FAIL 'stale'; no per-slide entries -> FAIL;
     # fresh+covered -> PASS; no renders -> DEFER.
     failures += test_check_image_qc_present()
+
+    # v16.1.5 (Defect 2) — image-QC chicken-and-egg: the render preflight is satisfiable
+    # with NO pre-existing post-render report (defers pre-render), and the post-render
+    # pixel/vision teeth (AF-IMAGE-QC + AF-IMAGE-QC-VISION) STILL bite once renders exist.
+    failures += test_image_qc_report_gate_ordering()
 
     # AF-BRAND-CONSISTENCY: no palette declared -> DEFER; no renders -> DEFER;
     # function callable and returns str.
@@ -4233,6 +4292,74 @@ def test_check_image_qc_present():
     print(f"IMG-QC-RAN-D (fresh+coverage) -> {'PASS' if 'IMG-QC-RAN-D' not in str(fails) else 'FAIL'}")
 
     print(f"IMG-QC-RAN (gate tests)     -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def test_image_qc_report_gate_ordering():
+    """v16.1.5 REGRESSION (Defect 2 — image-QC chicken-and-egg). The image-QC report is
+    a POST-render artifact (manifest phase P-IMAGE-QC, order 4.95, AFTER P4-RENDER 4.9).
+    The legacy preflight required it to already EXIST pre-render, so render could never
+    start (render needs the report; the report needs the render). The new run-dir-scoped
+    scheduler build_deck.check_image_qc_report_gate DEFERS pre-render so render can
+    proceed, then enforces the report-shape gate (_chk_image_qc) + the AF-IMAGE-QC-VISION
+    pixel teeth (check_image_qc_vision) once renders exist. This proves the ordering fix
+    WITHOUT weakening the gate:
+      (b1) no renders + no report  -> DEFER ('' — render preflight is now SATISFIABLE);
+      (b2) renders present + NO report -> AF-IMAGE-QC (a rendered deck MUST be graded);
+      (b3) renders present + below-floor PNG (+ valid-shape report) -> AF-IMAGE-QC-VISION
+           (the post-render PIXEL teeth STILL bite — the real teeth are not dropped);
+      (b4) a present, graded, non-flat report -> the enforce path PASSES (''')."""
+    fails = []
+    floor = build_deck.PLACEHOLDER_MIN_BYTES
+
+    def _img_report():
+        # Modeled on the proven make_workdir image-QC report (vision provenance + a
+        # per-slide observation list) so the report cross-check passes when the pixels do.
+        return json.dumps({
+            "gate": "Phase Image-QC", "average": 9.1, "triggered_autofails": [], "pass": True,
+            "qc_independence": {"graded_by": "qc-specialist-image-presentations",
+                                "independent": True, "builder": "slide-image-creator",
+                                "self_graded": False},
+            "vision_model": "claude-opus-4",
+            "slides": [{"slide": 1, "visual_subject": "kie.ai gpt-image-2 baked render",
+                        "description": "pixel vision read — photographic composition confirmed",
+                        "baked": True, "pass": True}]})
+
+    # (b1) PRE-RENDER: no rendered PNGs AND no report -> DEFER so render can START.
+    rd1 = Path(tempfile.mkdtemp(prefix="deck_imgqcgate_pre_"))
+    (rd1 / "working" / "qc").mkdir(parents=True, exist_ok=True)
+    r = build_deck.check_image_qc_report_gate(rd1)
+    if r:
+        fails.append(f"IMGQC-GATE-b1: pre-render (no renders/no report) should DEFER, got {r!r}")
+
+    # (b2) POST-RENDER with NO report -> the report becomes MANDATORY (AF-IMAGE-QC).
+    rd2 = Path(tempfile.mkdtemp(prefix="deck_imgqcgate_norep_"))
+    (rd2 / "renders").mkdir(parents=True, exist_ok=True)
+    _write_fake_png(rd2 / "renders" / "slide-01.png", fill_byte=0x33, size=floor + 4096)
+    r = build_deck.check_image_qc_report_gate(rd2)
+    if not r or "AF-IMAGE-QC" not in r:
+        fails.append(f"IMGQC-GATE-b2: rendered deck with NO report must FAIL AF-IMAGE-QC, got {r!r}")
+
+    # (b3) POST-RENDER PIXEL TEETH STILL BITE — a below-floor PNG + a valid-shape report
+    #      FAILS AF-IMAGE-QC-VISION (real-shaped report, but the pixels are not a kie bake).
+    rd3 = Path(tempfile.mkdtemp(prefix="deck_imgqcgate_pixel_"))
+    (rd3 / "renders").mkdir(parents=True, exist_ok=True)
+    (rd3 / "working" / "qc").mkdir(parents=True, exist_ok=True)
+    _write_fake_png(rd3 / "renders" / "slide-01.png", fill_byte=0x33, size=10240)  # below floor
+    (rd3 / "working" / "qc" / "image_qc_report.json").write_text(_img_report())
+    r = build_deck.check_image_qc_report_gate(rd3)
+    if not r or "AF-IMAGE-QC-VISION" not in r:
+        fails.append(f"IMGQC-GATE-b3: below-floor PNG must FAIL AF-IMAGE-QC-VISION, got {r!r}")
+
+    # (b4) A present, graded, non-flat report -> the enforce path PASSES.
+    rd4 = Path(tempfile.mkdtemp(prefix="deck_imgqcgate_pass_"))
+    (rd4 / "working" / "qc").mkdir(parents=True, exist_ok=True)
+    (rd4 / "working" / "qc" / "image_qc_report.json").write_text(_img_report())
+    r = build_deck.check_image_qc_report_gate(rd4)
+    if r:
+        fails.append(f"IMGQC-GATE-b4: present valid report should PASS, got {r!r}")
+
+    print(f"IMAGE-QC-GATE (ordering/D2)  -> {'PASS' if not fails else 'FAIL'}")
     return fails
 
 
