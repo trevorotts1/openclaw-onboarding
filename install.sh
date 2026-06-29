@@ -23,7 +23,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v16.1.7"
+ONBOARDING_VERSION="v16.1.8"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -126,6 +126,51 @@ command -v oc_state_summary       >/dev/null 2>&1 || oc_state_summary()       { 
 # that reference OC_WORKSPACE (used before OC_WORKSPACE_DEFAULT existed).
 # ----------------------------------------------------------
 OC_WORKSPACE="${OC_WORKSPACE_DEFAULT}"
+
+# ----------------------------------------------------------
+# FRESH-INSTALL DETECTION (chore/silent-kickoff — WE MOVE IN SILENCE).
+# ----------------------------------------------------------
+# The interactive onboarding kickoff handshake (the "paste this to start"
+# Telegram message sent by send_kickoff_telegram) is OWNER-FACING. It must fire
+# ONLY on a true fresh, never-onboarded box — NEVER on an update / re-roll of a
+# box that was already onboarded (firing it then is unsolicited chatter to an
+# existing client, exactly what the silent-updater work kills).
+#
+# Capture freshness HERE, before any install step writes the .onboarding-version
+# stamp (Step 10b) or copies skills, so we read the box's PRE-INSTALL state. A
+# box is "already onboarded" if it carries an .onboarding-version marker
+# (install.sh itself writes this on every prior run) OR an existing openclaw.json
+# with at least one configured agent. Default-safe: anything that trips a marker
+# is treated as NOT fresh (silent); only a clean, never-onboarded box is fresh.
+OPENCLAW_IS_FRESH_INSTALL=1
+for _vm in \
+    "$HOME/.openclaw/skills/.onboarding-version" \
+    "/data/.openclaw/skills/.onboarding-version" \
+    "$HOME/Downloads/openclaw-master-files/.onboarding-version" \
+    "$HOME/.openclaw/onboarding/.onboarding-version"; do
+    if [ -f "$_vm" ]; then OPENCLAW_IS_FRESH_INSTALL=0; break; fi
+done
+if [ "$OPENCLAW_IS_FRESH_INSTALL" = "1" ] && command -v python3 >/dev/null 2>&1; then
+    for _ocj in "$HOME/.openclaw/openclaw.json" "/data/.openclaw/openclaw.json"; do
+        if [ -f "$_ocj" ] && OC_J="$_ocj" python3 -c '
+import json, os, sys
+try:
+    d = json.load(open(os.environ["OC_J"]))
+except Exception:
+    sys.exit(1)
+agents = (d.get("agents", {}) or {}).get("list", []) or []
+sys.exit(0 if agents else 1)
+' 2>/dev/null; then
+            OPENCLAW_IS_FRESH_INSTALL=0; break
+        fi
+    done
+fi
+export OPENCLAW_IS_FRESH_INSTALL
+if [ "$OPENCLAW_IS_FRESH_INSTALL" = "1" ]; then
+    echo "[fresh-install] no prior onboarding stamp/config — FRESH install; the owner kickoff handshake will fire."
+else
+    echo "[fresh-install] prior onboarding detected — UPDATE/RE-ROLL; the owner kickoff handshake is SUPPRESSED (WE MOVE IN SILENCE)."
+fi
 
 # ----------------------------------------------------------
 # Bash 3.2 Compatible UI Helpers
@@ -754,6 +799,16 @@ KICKMSGEOF
 # Idempotent: returns immediately if already fired.
 send_kickoff_telegram() {
     [ "${KICKOFF_TG_FIRED:-false}" = "true" ] && return 0
+    # FRESH-INSTALL GATE (WE MOVE IN SILENCE): the owner kickoff handshake fires
+    # ONLY on a true fresh install. On an update / re-roll of an already-onboarded
+    # box, suppress it — the agent picks up the SILENT AGENTS.md UPDATE-PENDING
+    # flag instead; the client gets no unsolicited onboarding chatter. This is the
+    # single chokepoint both call sites (early fire + final triplet) flow through.
+    # Default-safe: if OPENCLAW_IS_FRESH_INSTALL is unset, treat as NOT fresh.
+    if [ "${OPENCLAW_IS_FRESH_INSTALL:-0}" != "1" ]; then
+        echo "[kickoff] suppressed — update/re-roll, not a fresh install: no owner-facing onboarding handshake sent (WE MOVE IN SILENCE)" >> "${LOG_FILE:-/dev/null}" 2>&1
+        return 1
+    fi
     local owner_name msg
     owner_name=$(resolve_owner_name)
     msg=$(build_kickoff_telegram_message "$owner_name")
@@ -6979,16 +7034,25 @@ fire_install_kickoff_triplet() {
     local tg_fired="false" flag_fired="false"
     local tg_reason="" flag_reason=""
 
-    if [ "${KICKOFF_TG_FIRED:-false}" = "true" ]; then
+    if [ "${OPENCLAW_IS_FRESH_INSTALL:-0}" != "1" ]; then
+        # WE MOVE IN SILENCE: update / re-roll of an already-onboarded box. NEVER
+        # send the owner kickoff handshake — not via send_kickoff_telegram and not
+        # via the send-telegram.sh fallback below. The AGENTS.md flag + the
+        # Terminal block carry the agent/operator-facing handoff silently. This
+        # branch is FIRST so the fallback can never bypass the fresh-install gate.
+        tg_fired="false"
+        tg_reason="suppressed: update/re-roll, not a fresh install (WE MOVE IN SILENCE)"
+    elif [ "${KICKOFF_TG_FIRED:-false}" = "true" ]; then
         tg_fired="true"
         tg_reason="already-fired-after-step-10:${KICKOFF_TG_PATH:-?}"
     elif send_kickoff_telegram; then
         tg_fired="true"
         tg_reason="path:${KICKOFF_TG_PATH:-?}"
     else
-        # Last-ditch fallback to send-telegram.sh helper (rarely present, but
-        # try it before giving up). Build the message text manually since
-        # send_kickoff_telegram already failed.
+        # Last-ditch fallback to send-telegram.sh helper (FRESH INSTALL ONLY —
+        # this branch is unreachable on an update/re-roll because of the guard
+        # above). Build the message text manually since send_kickoff_telegram
+        # already failed.
         local owner_name
         owner_name=$(resolve_owner_name "$openclaw_json")
         local tg_msg

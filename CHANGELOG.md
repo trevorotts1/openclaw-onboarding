@@ -1,3 +1,27 @@
+## [v16.1.8]  -  2026-06-29  -  fix: GATE the interactive onboarding kickoff handshake to FRESH INSTALLS ONLY — completes the v16.1.6 silent-updater work. install.sh's "paste this to start" Telegram handshake (send_kickoff_telegram) fired on EVERY run, including an update / re-roll of an already-onboarded box → unsolicited chatter to an existing client. It now fires only when the box is a true fresh, never-onboarded install; updates stay 100% silent while fresh self-serve onboarding still works.
+
+### Risk: low
+
+### Verify-first finding
+
+On main (v16.1.6/v16.1.7), `send_kickoff_telegram` had NO freshness gate. It is invoked at two sites — an early fire right after the AGENTS.md UPDATE-PENDING flag is verified, and the final `fire_install_kickoff_triplet` at install end (called unconditionally) — and the `.onboarding-version` stamp is only written later in the run. So a full `install.sh` re-roll of an already-onboarded client box **would** DM the owner the "Hi! Please start the OpenClaw onboarding process now…" handshake. Confirmed it can fire on the update path → a gate is required.
+
+### The gate (reliable "never-onboarded box" check)
+
+- **Capture freshness EARLY** (`install.sh`, before any step writes the version stamp or copies skills): `OPENCLAW_IS_FRESH_INSTALL` is set to `1` only when the box carries **no** `.onboarding-version` marker (`~/.openclaw/skills`, `/data/.openclaw/skills`, `~/Downloads/openclaw-master-files`, `~/.openclaw/onboarding`) **and** no existing `openclaw.json` with a configured agent. Anything that trips a marker → NOT fresh (silent). install.sh itself writes `.onboarding-version` on every prior run, so any re-roll reads `0`.
+- **Chokepoint gate** in `send_kickoff_telegram`: returns non-zero without sending when `OPENCLAW_IS_FRESH_INSTALL != 1` (default-safe: unset ⇒ not fresh). Both call sites flow through it.
+- **Fallback gate** in `fire_install_kickoff_triplet`: the fresh-install check is now the FIRST branch of the telegram block, so the `send-telegram.sh` last-ditch fallback can NEVER bypass the gate on an update. The AGENTS.md flag + Terminal block (agent/operator-facing, not client chat) still run.
+
+Fresh self-serve onboarding is unchanged — a clean box still gets the handshake.
+
+### Guard
+
+Extended `tests/unit/cron-owner-chat-guard.test.sh` with section (9) FRESH-INSTALL KICKOFF GATE: (9a) the flag is captured; (9b) the capture precedes both the `.onboarding-version` stamp write and the first `send_kickoff_telegram` call (line-order); (9c) `send_kickoff_telegram` gates on the flag and suppresses with `return 1`; (9d) the fresh guard precedes the `send-telegram.sh` fallback in `fire_install_kickoff_triplet` (fallback can't bypass); (9e) behavioral: a stamped/agents box → SUPPRESS, a bare box → SEND. Negative self-test confirms 9c fails if the gate is removed. Full guard suite: 110/110 PASS.
+
+### Deploying-update is itself silent
+
+The roll fetches `install.sh` fresh from `main`, so the v16.1.8 roll runs the gated installer on already-onboarded boxes — no kickoff handshake fires. Box user, not root. No client names in changed files.
+
 ## [v16.1.7]  -  2026-06-29  -  fix(skill-32): reconcile the Command Center pm2 app name so an install/update can never create two competing CC processes on :4000 (the fleet-wide port-4000 crash-loop + multi-hour gateway-outage root cause)
 
 ### What changed
