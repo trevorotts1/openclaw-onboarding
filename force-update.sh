@@ -39,6 +39,50 @@ ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 echo "[force-update] platform=$PLATFORM repo=$REPO_NAME at $(ts)" >&2
 
 # ----------------------------------------------------------
+# Operator-routed notification — NEVER the client chat (WE MOVE IN SILENCE).
+# ----------------------------------------------------------
+# A force-update is INTERNAL maintenance traffic. It must NEVER auto-DM the
+# owner/client. Resolve the OPERATOR escalation chat from env.vars and send via
+# the gateway on the operator account; if no operator escalation chat is
+# configured (or no CLI), LOG-ONLY to stderr. This function deliberately has NO
+# path to the client default chat / allowFrom and NO direct api.telegram.org
+# Bot-API call. Returns 0 only when actually delivered to the operator.
+notify_operator() {
+  local message="$1"
+  local ocjson="$HOME/.openclaw/openclaw.json"
+  [ -d "/data/.openclaw" ] && ocjson="/data/.openclaw/openclaw.json"
+  local op_chat=""
+  if [ -f "$ocjson" ] && command -v python3 >/dev/null 2>&1; then
+    op_chat=$(OC_JSON="$ocjson" python3 - <<'PYEOF' 2>/dev/null
+import json, os
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+except Exception:
+    cfg = {}
+env = (cfg.get("env", {}) or {}).get("vars", {}) or {}
+for k in ("OPERATOR_ESCALATION_CHAT_ID", "OPERATOR_HELP_CHAT_ID"):
+    v = str(env.get(k, "") or "").strip()
+    if v:
+        print(v); raise SystemExit(0)
+print("")
+PYEOF
+)
+  fi
+  if [ -z "$op_chat" ] || ! command -v openclaw >/dev/null 2>&1; then
+    echo "[force-update] operator notify (no operator escalation chat / no CLI — LOG-ONLY, NOT sent to any client chat):" >&2
+    printf '%s\n' "$message" >&2
+    return 1
+  fi
+  if openclaw message send --channel telegram --account operator \
+       --session-key agent:main:operator --target "$op_chat" \
+       --message "$message" >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "[force-update] operator notify send FAILED — LOG-ONLY, NOT routed to any client chat" >&2
+  return 1
+}
+
+# ----------------------------------------------------------
 # 1. Run check-updates.sh and capture its JSON
 # ----------------------------------------------------------
 CHECK_TMP=$(mktemp)
@@ -87,24 +131,23 @@ fi
 #    All three fire on update detection, not "any one of three."
 # ----------------------------------------------------------
 
-# 3a. Telegram message
+# 3a. Operator notification (NEVER the client). The owner-facing trigger is the
+#     silent AGENTS.md flag (3b) + the Terminal block (3c) — the agent decides,
+#     on its own terms, whether to surface anything to the owner. WE MOVE IN
+#     SILENCE: this update detection is never auto-DM'd to the client.
 TELEGRAM_FIRED="false"
 TG_FAIL_REASON=""
-if command -v openclaw >/dev/null 2>&1; then
-  TG_MSG="🛠️  OpenClaw force-update detected new version
+TG_MSG="🛠️  OpenClaw force-update detected new version
 Local: ${LOCAL_VERSION:-(none)} → Latest: ${LATEST_VERSION}
 Platform: ${PLATFORM}
 
-To apply the update, paste these instructions to your agent OR follow the terminal block printed by this script."
-  if openclaw message send --message "$TG_MSG" 2>/dev/null; then
-    TELEGRAM_FIRED="true"
-  else
-    TG_FAIL_REASON="openclaw message send failed (likely Telegram not paired or scopes missing)"
-  fi
+To apply, run the update flow (operator-driven) or follow the terminal block printed by this script."
+if notify_operator "$TG_MSG"; then
+  TELEGRAM_FIRED="true"
 else
-  TG_FAIL_REASON="openclaw CLI not on PATH"
+  TG_FAIL_REASON="not delivered to operator (no operator escalation chat / no CLI / send failed) — logged only; NEVER sent to the client"
 fi
-echo "[force-update] telegram fired=$TELEGRAM_FIRED reason=${TG_FAIL_REASON:-ok}" >&2
+echo "[force-update] operator-notify fired=$TELEGRAM_FIRED reason=${TG_FAIL_REASON:-ok}" >&2
 
 # 3b. Drop install-pending flag in AGENTS.md (N22 sub-rule)
 FLAG_FIRED="false"
@@ -201,15 +244,15 @@ if [ -f "$MIGRATE_SCRIPT" ]; then
   echo "  (Operator confirmation required before passing --apply)"
   echo "═══════════════════════════════════════════════════════════════════════"
   echo ""
-  # Telegram the manifest summary to the operator
-  if [ "$TELEGRAM_FIRED" = "true" ] && command -v openclaw >/dev/null 2>&1; then
+  # Send the manifest summary to the OPERATOR only — never the client chat.
+  if command -v openclaw >/dev/null 2>&1; then
     MANIFEST_SUMMARY=$(bash "$MIGRATE_SCRIPT" --dry-run 2>/dev/null | grep -E 'noop|simple move|conflict|companies found' | head -5 || true)
     if [ -n "$MANIFEST_SUMMARY" ]; then
-      openclaw message send --message "📋 ZHC Migration manifest (dry-run):
+      notify_operator "📋 ZHC Migration manifest (dry-run):
 
 $MANIFEST_SUMMARY
 
-Run --apply to migrate: bash ~/.openclaw/skills/scripts/migrate-zhc-to-master-files.sh --apply" 2>/dev/null || true
+Run --apply to migrate: bash ~/.openclaw/skills/scripts/migrate-zhc-to-master-files.sh --apply" || true
     fi
   fi
 fi

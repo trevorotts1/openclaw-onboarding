@@ -11,6 +11,9 @@ on:
     paths:
       - install.sh
       - update-skills.sh
+      - force-update.sh
+      - check-updates.sh
+      - AGENTS.md
       - shared-utils/**
       - scripts/**
       - 15-blackceo-team-management/**
@@ -23,6 +26,9 @@ on:
     paths:
       - install.sh
       - update-skills.sh
+      - force-update.sh
+      - check-updates.sh
+      - AGENTS.md
       - shared-utils/**
       - scripts/**
       - 15-blackceo-team-management/**

@@ -23,7 +23,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v16.1.5"
+ONBOARDING_VERSION="v16.1.6"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -815,58 +815,85 @@ PYEOF
     esac
 }
 
+# ----------------------------------------------------------
+# Install/update progress notification — OPERATOR-ROUTED, NEVER the client chat.
+# ----------------------------------------------------------
+# WE MOVE IN SILENCE (chore/silent-updater). Install / update / maintenance
+# progress is INTERNAL traffic. It must NEVER reach the owner's / client's chat
+# — no "Downloaded onboarding package", no "Extracted … N skills detected …
+# Installing them now", no skill counts, no version announcements, no
+# "install complete" brag. The agent surfaces its own owner-facing summary on
+# its OWN terms (the AGENTS.md UPDATE-PENDING / kickoff flag); the Terminal
+# backup block printed at install end covers the human running this by hand.
+#
+# RECURRENCE NOTE — why the client-chat leak came back after the prior fix:
+# the v12.4.0 fix routed ONLY update-skills.sh's send_telegram_progress to the
+# operator. THIS function — in install.sh, the canonical installer the fleet
+# roll actually re-runs on a client box to push a new version — kept resolving
+# the CLIENT chat (resolve_telegram_target_universal → allowFrom) and falling
+# back to tg_send_direct (a direct api.telegram.org Bot-API call that also
+# bypasses the gateway). So every progress line auto-DM'd the client. It is now
+# operator-routed / log-only, identical to update-skills.sh, and the
+# client-target + direct-Bot-API paths are removed from this function entirely.
+#
+# Resolution: env.vars.OPERATOR_ESCALATION_CHAT_ID / OPERATOR_HELP_CHAT_ID →
+# operator account/session. If unset → LOG-ONLY (no send). We deliberately do
+# NOT resolve the client target here and do NOT fall back to the client chat.
 send_telegram_progress() {
     local message="$1"
     TELEGRAM_LAST_RESULT="skipped"
 
-    if ! command -v openclaw >/dev/null 2>&1; then
-        # v10.13.4: even without CLI, try direct Bot API before giving up
-        if tg_send_direct "$message"; then
-            TELEGRAM_LAST_RESULT="sent:direct-bot-api(no-cli)"
-            return 0
-        fi
-        TELEGRAM_LAST_RESULT="no-openclaw-cli"
+    local OCJSON="$HOME/.openclaw/openclaw.json"
+    [ -d "/data/.openclaw" ] && OCJSON="/data/.openclaw/openclaw.json"
+
+    # Resolve the OPERATOR escalation chat ONLY — never the client default chat.
+    local OPERATOR_CHAT=""
+    if [ -f "$OCJSON" ] && command -v python3 >/dev/null 2>&1; then
+        OPERATOR_CHAT=$(OC_JSON="$OCJSON" python3 - <<'PYEOF' 2>/dev/null
+import json, os
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+except Exception:
+    cfg = {}
+env = (cfg.get("env", {}) or {}).get("vars", {}) or {}
+for k in ("OPERATOR_ESCALATION_CHAT_ID", "OPERATOR_HELP_CHAT_ID"):
+    v = str(env.get(k, "") or "").strip()
+    if v:
+        print(v); raise SystemExit(0)
+print("")
+PYEOF
+)
+    fi
+
+    # No operator escalation chat configured, or no openclaw CLI → LOG-ONLY.
+    # We deliberately do NOT fall back to the client default / allowFrom[0] and
+    # do NOT use the direct Bot-API path.
+    if [ -z "$OPERATOR_CHAT" ] || ! command -v openclaw >/dev/null 2>&1; then
+        {
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] install progress (operator escalation chat not configured / no CLI — LOG-ONLY, NOT sent to any client chat):"
+            printf '%s\n' "$message"
+        } >> "$LOG_FILE" 2>&1
+        TELEGRAM_LAST_RESULT="logged-no-operator-chat"
         return 0
     fi
 
-    # Resolve once, cache for subsequent calls
-    if [ "$TELEGRAM_RESOLVED" != "true" ]; then
-        resolve_telegram_target_universal
+    # Send on the OPERATOR session key, reply out the operator account — mirrors
+    # update-skills.sh / the OPERATOR-MAINTENANCE operator-drive contract.
+    if openclaw message send \
+        --channel telegram \
+        --account operator \
+        --session-key agent:main:operator \
+        --target "$OPERATOR_CHAT" \
+        --message "$message" >> "$LOG_FILE" 2>&1; then
+        TELEGRAM_LAST_RESULT="sent-operator:$OPERATOR_CHAT"
+    else
+        # Operator send failed → LOG-ONLY. Never fall back to the client chat.
+        {
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] install progress operator send FAILED — LOG-ONLY, NOT routed to any client chat:"
+            printf '%s\n' "$message"
+        } >> "$LOG_FILE" 2>&1
+        TELEGRAM_LAST_RESULT="failed-operator:see-$LOG_FILE"
     fi
-
-    if [ -z "$TELEGRAM_TARGET_CACHED" ]; then
-        TELEGRAM_LAST_RESULT="no-telegram-target"
-        return 0
-    fi
-
-    # v10.0.1 — direct send only, no scope manipulation.
-    # Every paired client has operator.write (that's what their daily Telegram
-    # usage requires). `openclaw message send` succeeds for them on the first
-    # call. No retries, no rotation, no approval — just send.
-    # Wrapped with `|| rc=$?` so `set -euo pipefail` doesn't kill the install
-    # if anything unexpected happens.
-    local out="" rc=0
-    local send_args=(message send --channel telegram --target "$TELEGRAM_TARGET_CACHED" --message "$message")
-    [ -n "$TELEGRAM_ACCOUNT_CACHED" ] && send_args+=(--account "$TELEGRAM_ACCOUNT_CACHED")
-
-    out=$(openclaw "${send_args[@]}" 2>&1) || rc=$?
-    echo "$out" >> "$LOG_FILE"
-    if [ "$rc" -eq 0 ]; then
-        TELEGRAM_LAST_RESULT="sent:$TELEGRAM_TARGET_CACHED"
-        return 0
-    fi
-
-    # Gateway send failed. v10.13.4: try direct Bot API as final fallback before
-    # giving up. The owner is already paired (bot token + chat ID in
-    # openclaw.json), so this should succeed even when the gateway hiccups.
-    if tg_send_direct "$message"; then
-        TELEGRAM_LAST_RESULT="sent:direct-bot-api(gateway-fallback)"
-        return 0
-    fi
-
-    # Both paths failed. Capture for end-of-install diagnostic. Don't retry,
-    # don't touch device scopes, don't prompt the user.
-    TELEGRAM_LAST_RESULT="failed:see-$LOG_FILE"
     return 0   # NEVER kill the install — Telegram is optional
 }
 

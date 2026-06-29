@@ -1,3 +1,36 @@
+## [v16.1.6]  -  2026-06-29  -  fix: SILENCE all client-facing update/install/maintenance chatter — the fleet roll re-ran install.sh on client boxes and its OWN send_telegram_progress auto-DM'd the owner ("Downloaded onboarding package …", "📦 Extracted onboarding package. N skills detected. Installing them now …"). The prior fix silenced ONLY update-skills.sh; install.sh + force-update.sh + the legacy scripts/update-skills.sh were never silenced and the CI guard never covered them. All update-path emitters are now operator-routed / log-only, a CI guard fails the build on any client-facing update send, and every shipped agent's AGENTS.md now carries the "WE MOVE IN SILENCE" maintenance-silence doctrine. WE MOVE IN SILENCE.
+
+### Risk: low
+
+### The leak (what the owner saw)
+
+On a client box, the fleet updater ran the full installer (`install.sh`) and the agent auto-DM'd the owner internal maintenance progress: `Downloaded onboarding package v16.1.5` and `📦 Extracted onboarding package. 45 skills detected. Installing them now (this takes about 1-2 minutes)…`. These are INTERNAL maintenance traffic; the owner did not request the update and does not need a play-by-play. They interrupt the owner's natural workflow.
+
+### Why it recurred after the prior fix
+
+The earlier fix (v12.4.0) routed **only** `update-skills.sh`'s `send_telegram_progress` to the operator escalation chat / log-only, and the CI guard (`cron-owner-chat-guard.test.sh` checks 6b/6c) **only checked `update-skills.sh`**. But:
+
+- **`install.sh` has its OWN `send_telegram_progress`** — and `install.sh` is the canonical installer the fleet roll re-runs on a client box to push a new version. It resolved the **CLIENT** chat (`resolve_telegram_target_universal` → `channels.telegram.allowFrom`) and narrated ~9 progress messages (the exact strings above, plus `✓ Skills + helpers installed …`, `✅ OpenClaw Onboarding … install complete`). It also fell back to `tg_send_direct`, a **direct `api.telegram.org` Bot-API call that bypasses the gateway**. This was never silenced.
+- **`force-update.sh`** posted a bare `openclaw message send --message …` (no `--target` → the client default chat) on update detection, and a second `openclaw message send` for the ZHC migration manifest.
+- **`scripts/update-skills.sh`** (the legacy updater, still documented in `CONTRIBUTING.md` / `UPDATE-PLAYBOOK.md` / Skill 22 `INSTALL.md`) curled `api.telegram.org/.../sendMessage` to `allowFrom[0]` (gated off-by-default, but a latent client-Bot-API path).
+
+So the fix was applied to one file while the file the roll actually runs kept its own un-silenced, client-targeting emitter — and the guard's scope never caught it.
+
+### What changed (every emission point closed)
+
+- **`install.sh` `send_telegram_progress` → operator-routed / log-only.** Replaced the body to resolve ONLY `env.vars.OPERATOR_ESCALATION_CHAT_ID` / `OPERATOR_HELP_CHAT_ID` and send on `--account operator --session-key agent:main:operator`; if no operator escalation chat is configured (or no CLI), it LOG-ONLYs to the install log. The client-target resolution (`resolve_telegram_target_universal`) and the direct-Bot-API fallback (`tg_send_direct`) are **removed from this function entirely** — there is no longer any code path from install progress to the client chat. Silent is the structural default, not an opt-in flag. (The interactive first-onboarding "paste this to start" kickoff handshake is a separate, deliberately owner-facing message and is unchanged.)
+- **`force-update.sh` → operator-routed / log-only.** Added a `notify_operator()` helper (operator escalation chat via the gateway, else LOG-ONLY to stderr; no client path, no direct Bot-API) and routed both former client sends (update-detected + ZHC manifest) through it.
+- **`scripts/update-skills.sh` → operator-routed / log-only.** Removed the `allowFrom[0]` client target and the direct `api.telegram.org` curl; the (still off-by-default) update summary now routes only to the operator escalation chat via the gateway, else LOG-ONLY.
+- **Doctrine in the repo (every deployed agent carries it).** Added a `WE MOVE IN SILENCE` block to the client-facing `AGENTS.md` template (sentinel `WE_MOVE_IN_SILENCE_V1`): updates & maintenance (skill/version rolls, repo updates, config/process-manager/port fixes, Command Center pushes, floor/persona work, prove-floor, heartbeat upkeep) emit NOTHING to the owner's chat — no progress, no version numbers, no skill counts, no completion brag — report status to the operator only.
+
+### Guard
+
+Extended `tests/unit/cron-owner-chat-guard.test.sh` with section (8) SILENT-UPDATE-PATH: (8a) `install.sh` `send_telegram_progress` must NOT reference `resolve_telegram_target_universal` / `tg_send_direct` / `TELEGRAM_TARGET_CACHED` / `allowFrom` and MUST carry operator-routing markers; (8b) every `openclaw message send` in `force-update.sh` carries `--account operator` and the file has no direct `api.telegram.org`; (8c) `scripts/update-skills.sh` has no direct `api.telegram.org` and its notification is operator-routed; (8d) a behavioral test proving the operator-only resolver returns EMPTY (→ log-only) for a client-only config and the operator id when set; (8e) the `WE MOVE IN SILENCE` doctrine ships in `AGENTS.md`. A negative self-test confirms 8a fails on a re-introduced client emitter. `.github/workflows/cron-owner-chat-guard.yml` now also triggers on `force-update.sh`, `check-updates.sh`, and `AGENTS.md`. Full guard suite: 102/102 PASS.
+
+### Deploying-update is itself silent
+
+The roll fetches `install.sh` / `update-skills.sh` fresh from `main` (`git clone --depth 1 … main`), so the v16.1.6 roll runs the **silenced** scripts — the deploy that ships this fix is itself quiet, not just future updates. Box user, not root. No client names in changed files.
+
 ## [v16.1.5]  -  2026-06-29  -  fix: two presentations-runner defects that blocked a client-box agent from driving the governed deck pipeline end-to-end (attestation key mismatch → false AF-PHASE-SKIPPED after phase 1; image-QC chicken-and-egg → render could never start). No quality/anti-fake gate weakened.
 
 ### What changed
