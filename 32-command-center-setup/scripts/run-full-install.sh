@@ -312,6 +312,39 @@ else
 fi
 
 # ----------------------------------------------------------------------
+# PHASE 6b -- Seed the workspaces table from the client's REAL ZHC departments
+# ----------------------------------------------------------------------
+# F3 fix (CC board ships dead / prove-zhe check (c) RED): run-full-install
+# previously relied ONLY on `npm run db:seed` (full path only; seeds from the
+# dashboard's config/departments.json which ships EMPTY on purpose -> 0 rows)
+# and Phase 6c's sync script (which lives INSIDE the external dashboard checkout
+# and is WARN-only when missing). In --update-only mode db:seed is skipped
+# entirely, so a missing sync script left the board with ZERO workspace rows.
+# seed-workspaces.py is the AUTHORITATIVE seeder: it reads the client's real ZHC
+# departments.json, resolves the SAME dashboard DB the dashboard/seeder use via
+# resolve_db.find_dashboard_db(), and inserts with a pre-loop existing-set +
+# INSERT OR IGNORE. It runs in BOTH the full and --update-only branches, AFTER
+# Phase 6 db:push (DB guaranteed to exist) and BEFORE Phase 6c. Box-user,
+# additive, idempotent — safe to re-run on every install/update/resume. This
+# makes the board independent of the dashboard's empty config/departments.json
+# and of whether the external sync-departments script shipped.
+log "INFO" "phase=6b-seed: seeding workspaces table from client ZHC departments.json"
+SEED_WS="$SKILL_DIR/scripts/seed-workspaces.py"
+if [[ -f "$SEED_WS" ]] && command -v python3 >/dev/null 2>&1; then
+  if COMPANY_SLUG="${CLIENT_SLUG:-}" COMPANY_NAME="${COMPANY_NAME:-}" \
+       python3 "$SEED_WS" >>"$LOG_FILE" 2>&1; then
+    log "INFO" "phase=6b-seed: workspaces seeded from ZHC departments.json (idempotent INSERT OR IGNORE)"
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterWorkspacesSeeded = true'; fi
+  else
+    log "WARN" "phase=6b-seed: seed-workspaces.py exited non-zero — board may be empty (check $LOG_FILE)"
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterWorkspacesSeeded = false'; fi
+  fi
+else
+  log "WARN" "phase=6b-seed: seed-workspaces.py not found at $SEED_WS (or python3 missing) — skipping (board may be empty)"
+  if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterWorkspacesSeeded = "script-missing"'; fi
+fi
+
+# ----------------------------------------------------------------------
 # PHASE 6c -- Sync dashboard departments from the client's build-state
 # ----------------------------------------------------------------------
 # config/departments.json ships EMPTY on purpose so the stale 17-row template

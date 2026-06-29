@@ -2262,12 +2262,15 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
                 dest.write_text(sop.read_text(encoding="utf-8"), encoding="utf-8")
             written["sops"] += 1
 
-    # scripts/ folder — copy any dept-level executable scripts (additive,
-    # missing-only; never clobbers existing files). This deploys role-owned
-    # no-AI generators (e.g. presentations/scripts/build_teleprompter.py,
-    # build_deck.py, etc.) into the client workspace so the role SOPs can run
-    # them with the relative path 'presentations/scripts/build_teleprompter.py'.
-    # Only .py and .sh files are copied; we skip __pycache__ and .pyc.
+    # scripts/ folder — REFRESH_CANONICAL_SCRIPTS: .py and .sh files from the
+    # role-library are ALWAYS overwritten so stale canonical generators (e.g. a
+    # pre-v16 build_deck.py that predates the P0B-PRIORITY preflight) are
+    # replaced on every floor-fill run. .json config files remain additive
+    # (missing-only) because they may carry client-local overrides. This
+    # deploys role-owned no-AI generators (e.g. presentations/scripts/
+    # build_teleprompter.py, build_deck.py) so the role SOPs can run them at
+    # the relative path 'presentations/scripts/build_deck.py'.
+    # Only .py, .sh, and .json files are copied; we skip __pycache__ and .pyc.
     scripts_target = dept_path / "scripts"
     if lib_dir and (lib_dir / "scripts").is_dir():
         if not dry_run:
@@ -2281,7 +2284,11 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
             if src_file.suffix not in (".py", ".sh", ".json"):
                 continue
             dest_file = scripts_target / src_file.name
-            if dest_file.exists():
+            # .json config files: additive (never clobber client-local overrides).
+            # .py / .sh canonical generators: always overwrite so a stale
+            # build_deck.py (or any other generator) is replaced with the
+            # canonical library version on every scaffold/floor-fill pass.
+            if src_file.suffix == ".json" and dest_file.exists():
                 continue
             if not dry_run:
                 import shutil as _shutil

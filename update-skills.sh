@@ -42,7 +42,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v16.0.2"
+ONBOARDING_VERSION="v16.0.3"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -445,7 +445,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v16.0.2 - safe_json_edit
+# v16.0.3 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -2275,26 +2275,50 @@ PYEOF
   # ----------------------------------------------------------
   _CC_DIR="$HOME/projects/command-center"
   _CC_RUN_INSTALL="$SKILLS_DIR/32-command-center-setup/scripts/run-full-install.sh"
+  # Resolve client identity from build-state once (used by BOTH the refresh and
+  # the F10 bootstrap branch). An interview-completed box has these populated.
+  _STATE_FILE="$OC_WORKSPACE_DEFAULT/.workforce-build-state.json"
+  _CC_SLUG=""
+  _CC_COMPANY=""
+  _CC_EMAIL=""
+  if [ -f "$_STATE_FILE" ]; then
+    _CC_SLUG=$(python3 -c "import json; d=json.load(open('$_STATE_FILE')); print(d.get('clientSlug',''))" 2>/dev/null || echo "")
+    _CC_COMPANY=$(python3 -c "import json; d=json.load(open('$_STATE_FILE')); print(d.get('companyName',''))" 2>/dev/null || echo "")
+    _CC_EMAIL=$(python3 -c "import json; d=json.load(open('$_STATE_FILE')); print(d.get('contactEmail',''))" 2>/dev/null || echo "")
+  fi
   if [ -d "$_CC_DIR/.git" ] && [ -f "$_CC_RUN_INSTALL" ]; then
     _CC_REMOTE=$(git -C "$_CC_DIR" remote get-url origin 2>/dev/null || echo "")
     if echo "$_CC_REMOTE" | grep -q 'blackceo-command-center'; then
       echo ""
-      echo "  Refreshing Command Center web app (CC #108/#109/#112 — git pull + db:push + sync-departments)..."
-      _STATE_FILE="$OC_WORKSPACE_DEFAULT/.workforce-build-state.json"
-      _CC_SLUG=""
-      _CC_COMPANY=""
-      _CC_EMAIL=""
-      if [ -f "$_STATE_FILE" ]; then
-        _CC_SLUG=$(python3 -c "import json; d=json.load(open('$_STATE_FILE')); print(d.get('clientSlug',''))" 2>/dev/null || echo "")
-        _CC_COMPANY=$(python3 -c "import json; d=json.load(open('$_STATE_FILE')); print(d.get('companyName',''))" 2>/dev/null || echo "")
-        _CC_EMAIL=$(python3 -c "import json; d=json.load(open('$_STATE_FILE')); print(d.get('contactEmail',''))" 2>/dev/null || echo "")
-      fi
+      echo "  Refreshing Command Center web app (CC #108/#109/#112 — git pull + db:push + workspace seed + sync-departments)..."
       if bash "$_CC_RUN_INSTALL" --update-only "${_CC_SLUG:-}" "${_CC_COMPANY:-}" "${_CC_EMAIL:-}" >>"$LOG_FILE" 2>&1; then
-        echo "  ✓ Command Center app refreshed (git pull + npm install + db:push + sync-departments + pm2 restart)"
+        echo "  ✓ Command Center app refreshed (git pull + npm install + db:push + workspace seed + sync-departments + pm2 restart)"
       else
         echo "  ⚠ Command Center refresh reported errors — check $OC_WORKSPACE_DEFAULT/.command-center-install.log"
       fi
     fi
+  elif [ ! -d "$_CC_DIR/.git" ] && [ -f "$_CC_RUN_INSTALL" ] \
+       && [ -n "$_CC_SLUG" ] && [ -n "$_CC_COMPANY" ] && [ -n "$_CC_EMAIL" ]; then
+    # F10 — CC bootstrap on update. Previously the refresh block above was the
+    # ONLY CC path on update and it was gated on $_CC_DIR/.git existing, so an
+    # interview-completed box that never cloned the dashboard got neither the
+    # seeder nor the board on update — it stayed without a Command Center
+    # forever. Run run-full-install.sh in FULL mode (clone + npm install +
+    # db:push + Phase 6b workspace seed + sync-departments + pm2 start) so the
+    # update path truly converges to the install path. Gated on a REAL interview
+    # (build-state slug+company+email present) so a pre-interview/in-flight box
+    # is never bootstrapped. run-full-install.sh is itself state-gated/idempotent
+    # and runs as the box user (never root).
+    echo ""
+    echo "  Command Center not yet provisioned on this box (no checkout) — bootstrapping full install (clone + db:push + workspace seed + sync)..."
+    if bash "$_CC_RUN_INSTALL" "$_CC_SLUG" "$_CC_COMPANY" "$_CC_EMAIL" >>"$LOG_FILE" 2>&1; then
+      echo "  ✓ Command Center bootstrapped (clone + npm install + db:push + workspace seed + sync-departments + pm2 start)"
+    else
+      echo "  ⚠ Command Center bootstrap reported errors — check $OC_WORKSPACE_DEFAULT/.command-center-install.log"
+    fi
+  elif [ ! -d "$_CC_DIR/.git" ] && [ -f "$_CC_RUN_INSTALL" ] && [ -n "$_CC_SLUG" ]; then
+    echo ""
+    echo "  ℹ Command Center not provisioned and build-state is missing company/email — bootstrap deferred (needs slug+company+email)."
   fi
 
   fi
