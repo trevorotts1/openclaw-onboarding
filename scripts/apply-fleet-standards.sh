@@ -940,6 +940,98 @@ if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
 fi
 
+# ─── 5b. Inject PERSONA_REFLEX_V1 into workspace/AGENTS.md ──────────────────
+# W5.5: persona-reflex standard — the agent MUST check persona assignment
+# before responding to any task. Idempotent: guarded by <!-- PERSONA_REFLEX_V1 -->.
+PERSONA_REFLEX_MARKER="<!-- PERSONA_REFLEX_V1 -->"
+
+if grep -qF "$PERSONA_REFLEX_MARKER" "$AGENTS_FILE"; then
+  echo "[apply-fleet-standards] PERSONA_REFLEX_V1 already present in $AGENTS_FILE — no-op"
+else
+  cat >> "$AGENTS_FILE" <<'PREOF'
+
+<!-- PERSONA_REFLEX_V1 -->
+## Persona Reflex (stamped by apply-fleet-standards.sh — do NOT edit manually)
+
+> Marker: `PERSONA_REFLEX_V1`. Idempotent — re-stamped on every install/update.
+
+Every department specialist MUST check persona assignment before producing any deliverable:
+
+1. **Persona check first.** Before drafting any response or output, retrieve the assigned coaching persona for this task from `persona-categories.json`. If no persona is pinned for this department, apply the default department persona or escalate to the CEO.
+2. **Persona reflex is not optional.** A department agent that answers without persona-matching has violated the persona-reflex rule. Route back to intake if assignment is unclear.
+3. **Persona-matching**: the selected persona's tone, framework, and vocabulary must be detectable in the output — not just cited. If the persona requires a contrarian take, the output must be contrarian. If it requires structured frameworks, the output must use them.
+4. **Anti-staleness.** Stale sticky picks (persona held for more than `ANTI_STALENESS_THRESHOLD` dispatches without recheck) must be busted on the next dispatch. The persona selector handles this automatically; agents must not hard-code persona slugs in SOPs.
+
+PREOF
+  echo "[apply-fleet-standards] PERSONA_REFLEX_V1 injected into $AGENTS_FILE"
+fi
+
+if [ "$OC_ROOT" = "/data/.openclaw" ]; then
+  chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
+fi
+
+# ─── 5c. Inject FULL_CONTEXT_HANDOFF_V1 into workspace/AGENTS.md ─────────────
+# W6: full-context handoff standard — when routing a task or handing off to a
+# sub-agent the FULL context (not a pointer) must land in the handoff payload.
+# Idempotent: guarded by <!-- FULL_CONTEXT_HANDOFF_V1 -->.
+FULL_CONTEXT_HANDOFF_MARKER="<!-- FULL_CONTEXT_HANDOFF_V1 -->"
+
+if grep -qF "$FULL_CONTEXT_HANDOFF_MARKER" "$AGENTS_FILE"; then
+  echo "[apply-fleet-standards] FULL_CONTEXT_HANDOFF_V1 already present in $AGENTS_FILE — no-op"
+else
+  cat >> "$AGENTS_FILE" <<'FCHEOF'
+
+<!-- FULL_CONTEXT_HANDOFF_V1 -->
+## Full Context Handoff (stamped by apply-fleet-standards.sh — do NOT edit manually)
+
+> Marker: `FULL_CONTEXT_HANDOFF_V1`. Idempotent — re-stamped on every install/update.
+
+When handing a task to any department, sub-agent, or specialist, you MUST pass the FULL context:
+
+1. **Full-context, not a pointer reference.** Do not say "see the file" or "refer to doc X." Embed the complete task description, relevant background, constraints, and expected output format directly in the handoff payload. A sub-agent that must forage for context costs 20-50x in tokens.
+2. **Where the documentation lives.** Workspace files (AGENTS.md, TOOLS.md, MEMORY.md, SOUL.md) are injected by the gateway from `$WORKSPACE_DIR`. Skills live at `$SKILLS_DIR/NN-<skill-name>/`. When you reference documentation in a handoff, include the full absolute path — never a relative path or a bare filename.
+3. **Pointer references for read-access only.** File paths in a handoff are read-access pointers. The receiving agent reads the file; it does not search for it. Always confirm the path exists before embedding it.
+4. **Session handoff.** When handing off between sessions, write the current task state, open threads, and next actions to `$WORKSPACE_DIR/MEMORY.md` before the session closes. The receiving agent reads MEMORY.md at session start.
+
+FCHEOF
+  echo "[apply-fleet-standards] FULL_CONTEXT_HANDOFF_V1 injected into $AGENTS_FILE"
+fi
+
+if [ "$OC_ROOT" = "/data/.openclaw" ]; then
+  chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
+fi
+
+# ─── 5d. Inject OWNER_REPORTING_V1 into workspace/AGENTS.md ──────────────────
+# W6: owner reporting standard — how and when to report back to the owner.
+# Idempotent: guarded by <!-- OWNER_REPORTING_V1 -->.
+OWNER_REPORTING_MARKER="<!-- OWNER_REPORTING_V1 -->"
+
+if grep -qF "$OWNER_REPORTING_MARKER" "$AGENTS_FILE"; then
+  echo "[apply-fleet-standards] OWNER_REPORTING_V1 already present in $AGENTS_FILE — no-op"
+else
+  cat >> "$AGENTS_FILE" <<'OREOF'
+
+<!-- OWNER_REPORTING_V1 -->
+## Owner Reporting Rules (stamped by apply-fleet-standards.sh — do NOT edit manually)
+
+> Marker: `OWNER_REPORTING_V1`. Idempotent — re-stamped on every install/update.
+
+All agents report back to the owner according to these rules:
+
+1. **Reporting to the owner is mandatory.** Every task that reaches a department MUST report back to the owner with: status (DONE / RUNNING / BLOCKED), a one-line summary of what was completed, and the location of any deliverable (absolute path or URL). Silent completions are a violation.
+2. **Report by Telegram first.** Owner Telegram is the primary reporting channel. If Telegram is unavailable, write the status to `$WORKSPACE_DIR/MEMORY.md` and escalate via Rescue Rangers.
+3. **Reports back to the owner use plain language.** No acronyms, no jargon, no internal codes. The owner is a business leader, not a developer.
+4. **Blocked tasks escalate immediately.** Do not hold a blocked task for more than 2 hours without escalating to the owner. Include: what is blocked, what was tried, and what the owner needs to do to unblock.
+5. **Never over-report.** Status updates fire at task completion, at BLOCKED state, and at owner-configured check-in intervals. Intermediate progress pings are only sent if the task will take longer than 30 minutes.
+
+OREOF
+  echo "[apply-fleet-standards] OWNER_REPORTING_V1 injected into $AGENTS_FILE"
+fi
+
+if [ "$OC_ROOT" = "/data/.openclaw" ]; then
+  chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
+fi
+
 # ─── 6. Inject PRIME DIRECTIVE into workspace/SOUL.md (v11.3.2 G5-FIX) ───────
 # The gateway injects bootstrap files from the main agent's workspace path
 # (agents.list[main].workspace → agents.defaults.workspace → ~/.openclaw/workspace).

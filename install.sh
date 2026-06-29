@@ -23,7 +23,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v16.0.2"
+ONBOARDING_VERSION="v16.0.3"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -7128,6 +7128,35 @@ if [ -f "$ONBOARDING_DIR/scripts/apply-fleet-standards.sh" ]; then
     success "Fleet standards applied"
 else
     warn "Fleet standards script not found at $ONBOARDING_DIR/scripts/apply-fleet-standards.sh"
+fi
+echo ""
+
+# ----------------------------------------------------------
+# F6 (v16.x): EXECUTED-SHELL floor-fill backstop on the INSTALL path.
+# Previously the ONLY floor-fill reference on the install path was PROSE inside
+# the agent paste-prompt heredoc (build_kickoff_paste_block, step 6b) — it ran
+# only if the install agent obeyed the prompt. The update path runs the real
+# shell (update-skills.sh "Running workforce migration"). This block brings the
+# install path to PARITY: it invokes migrate-existing-workforce.sh as real code,
+# so the floor-fill + dept-script-refresh chain (floor-fill-driver.py ->
+# create_role_workspaces.py scaffold_department, which refreshes a stale
+# build_deck.py) runs regardless of agent compliance. migrate-existing-workforce.sh
+# Step 2b self-guards: on a fresh box whose workforce the agent has not built yet
+# it is a clean no-op (logs "skipping"); on a resume / re-run / post-build
+# invocation it materializes the missing floor and refreshes changed dept
+# scripts. Idempotent, additive (never clobbers client edits), box-user (this
+# installer runs as the box owner, never root).
+# ----------------------------------------------------------
+note "Running workforce floor-fill backstop (migrate-existing-workforce.sh — executed shell, install==update parity)..."
+_MIGRATE_WF="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh"
+if [ -f "$_MIGRATE_WF" ]; then
+    if bash "$_MIGRATE_WF" "$(hostname)" --apply >> "$LOG_FILE" 2>&1; then
+        success "Workforce floor-fill backstop completed (floor materialized / dept scripts refreshed where needed)"
+    else
+        warn "Workforce floor-fill backstop reported warnings (install continues — re-runs on next update). See $LOG_FILE"
+    fi
+else
+    note "migrate-existing-workforce.sh not found at $_MIGRATE_WF — skipping floor-fill backstop (older bundle)"
 fi
 echo ""
 

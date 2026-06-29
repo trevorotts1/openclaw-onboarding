@@ -1,3 +1,27 @@
+## [v16.0.3]  -  2026-06-28  -  fix: stale build_deck.py now replaced on update (REFRESH_CANONICAL_SCRIPTS) + AGENTS.md ZHE doctrine markers fully stamped (PERSONA_REFLEX_V1 / FULL_CONTEXT_HANDOFF_V1 / OWNER_REPORTING_V1) — closes D16/D17 guard failures; prove-zhe AGENTS_DOCTRINE goes green
+
+### What changed
+
+**GAP 1 — D16 (stale build_deck.py survives update).** `create_role_workspaces.py`'s `scaffold_department()` copied dept-level scripts (`.py`, `.sh`) from the role-library with a `if dest_file.exists(): continue` guard — the same additive/skip-existing logic used for SOPs. Consequence: a client workspace that had a pre-v16 `build_deck.py` (missing the P0B-PRIORITY preflight added in v16.0.1) was NEVER overwritten by the canonical library version. The P0B-PRIORITY preflight that closes the direct-bypass hole lived only in the repo library; a floor-fill or migrate-existing-workforce run silently skipped it. The D16 CI dimension (`both-paths-delivery-guard.yml`) and the dynamic `both-paths-zhe-delivery.test.sh` both failed because `create_role_workspaces.py` had no `REFRESH_CANONICAL_SCRIPTS` marker.
+
+**FIX 1 — REFRESH_CANONICAL_SCRIPTS:** `scaffold_department()` now force-overwrites `.py` and `.sh` files from the role-library on every scaffold/floor-fill pass. `.json` config files remain additive (never clobber client-local overrides). The comment `# REFRESH_CANONICAL_SCRIPTS` is stamped at the copy site so the D16 static grep matches. Path: every floor-fill run (migrate-existing-workforce.sh Step 2b → floor-fill-driver.py → create_role_workspaces.py scaffold_department) now refreshes the canonical generators unconditionally — stale `build_deck.py` is replaced.
+
+**GAP 2 — D17 (AGENTS.md prove-zhe AGENTS_DOCTRINE stays RED).** `apply-fleet-standards.sh` only injected `PLATFORM_FACTS_V1` into the workspace `AGENTS.md`. Three of the five `prove-zhe.py` AGENTS_DOCTRINE doctrine elements — `persona_reflex` (`PERSONA_REFLEX_V[0-9]`), `full_context_handoff` (`FULL_CONTEXT_HANDOFF_V[0-9]`), and `reporting` (`OWNER_REPORTING_V[0-9]`) — were never stamped. Every box therefore had a RED `prove-zhe` AGENTS_DOCTRINE check on all three dimensions, regardless of update. The D17 CI dimension and the dynamic test both caught this.
+
+**FIX 2 — three new AGENTS.md injection blocks in `apply-fleet-standards.sh`:** Three idempotent, marker-guarded blocks appended after the BIG PROJECT MODE section (steps 5b/5c/5d):
+- **`PERSONA_REFLEX_V1`** — persona-reflex rule: check persona assignment before any output; anti-staleness bust; no hard-coded persona slugs.
+- **`FULL_CONTEXT_HANDOFF_V1`** — full-context handoff: embed complete task context in every handoff payload; where-the-docs-lives reference with absolute paths; session-handoff to MEMORY.md.
+- **`OWNER_REPORTING_V1`** — owner reporting rules: report back to the owner on every completed task; Telegram-first channel; escalate blocked tasks within 2 hours.
+All three markers match the `prove-zhe.py` `AGENTS_DOCTRINE` regex patterns exactly. `apply-fleet-standards.sh` is executed on BOTH paths (install + update), so every box receives the blocks on the next run.
+
+**Verification.** `bash tests/unit/both-paths-zhe-delivery.test.sh` — ALL PASS (D16/D17/D18/D19). `bash tests/unit/floor-fill-gap.test.sh` — PASS. D15/D18/D19 unchanged — PASS. `bash -n scripts/apply-fleet-standards.sh` — BASH SYNTAX OK. `python3 -c "import py_compile; py_compile.compile('23-ai-workforce-blueprint/scripts/create_role_workspaces.py', doraise=True)"` — PYTHON SYNTAX OK. No client names in changed files.
+
+### Files changed
+
+- `23-ai-workforce-blueprint/scripts/create_role_workspaces.py` — `scaffold_department()` scripts/ copy: force-overwrite `.py`/`.sh` (REFRESH_CANONICAL_SCRIPTS); additive-only for `.json`
+- `scripts/apply-fleet-standards.sh` — steps 5b/5c/5d: PERSONA_REFLEX_V1, FULL_CONTEXT_HANDOFF_V1, OWNER_REPORTING_V1 injected into workspace AGENTS.md (idempotent, marker-guarded)
+- Version markers: `version`, `install.sh`, `update-skills.sh`, `23-ai-workforce-blueprint/skill-version.txt`, `_index.json`, `_qc-summary.md`, `README.md` (×2), `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `cc-compat.json`, `06-ghl-install-pages/`
+
 ## [v16.0.2]  -  2026-06-28  -  fix: update-skills.sh now materializes new floor roles/SOPs via floor-fill (was detecting-but-not-filling) — closes incomplete-floor-after-v16-update; both-paths guaranteed
 
 ### What changed

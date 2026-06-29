@@ -22,6 +22,17 @@
 #   D8  Operator account separation      configure-operator-telegram
 #   D9  No hardcoded wrong launchd label (no com.openclaw.gateway)
 #   D10 WIRING-ASSERT present on update path
+#   D16 workspace-dept-script refresh (no stale build_deck.py)  create_role_workspaces.py
+#   D17 AGENTS.md ZHE markers (persona-reflex/handoff/reporting/platform-facts)  apply-fleet-standards.sh
+#   D18 CC board build (Kanban/workspace seed + board sync)     run-full-install.sh
+#   D19 qmd persona-store reconcile                             reconcile_qmd_persona_index
+#
+# D16-D19 are the Zero-Human-Experience (ZHE) both-paths dimensions that the
+# runtime prove-zhe.py gate (ZHE_SEQUENCE_V1 / plan W1.2) asserts per box. They
+# FAIL the build whenever install.sh OR update-skills.sh stops delivering the
+# dimension. RED-FIRST by design: the persona-reflex / full-context-handoff /
+# owner-reporting AGENTS.md markers (D17) and the canonical-generator refresh
+# (D16) stay RED until W5/W6/W7 stamp them — the guard drives that work.
 
 name: both-paths-delivery-guard
 
@@ -260,6 +271,87 @@ jobs:
           chmod +x tests/unit/floor-fill-gap.test.sh
           bash tests/unit/floor-fill-gap.test.sh
 
+      - name: D16 — workspace-dept-script refresh, no stale build_deck.py (both paths)
+        run: |
+          # ZHE: an existing client workspace must not keep a stale build_deck.py
+          # after an update. create_role_workspaces.py (reached on BOTH paths via
+          # migrate-existing-workforce.sh -> floor-fill-driver.py) must REFRESH the
+          # canonical dept generators rather than skip-existing. Marker family:
+          # REFRESH_CANONICAL_SCRIPTS (equivalents accepted).
+          CRW="23-ai-workforce-blueprint/scripts/create_role_workspaces.py"
+          MISS=""
+          grep -Eq 'REFRESH_CANONICAL_SCRIPTS|CANONICAL_GENERATORS?_REFRESH|refresh[^\n]*canonical[^\n]*generator|canonical[^\n]*generator[^\n]*refresh|(always|force)[_ -]*(re)?(write|copy|overwrite)[^\n]*build_deck|build_deck[^\n]*(always|force)[_ -]*(over)?(write|copy)' "$CRW" \
+            || MISS="$MISS crw:no-canonical-refresh(stale-build_deck-survives)"
+          grep -q 'migrate-existing-workforce' install.sh      || MISS="$MISS install:no-migrate-reach"
+          grep -q 'migrate-existing-workforce' update-skills.sh || MISS="$MISS update:no-migrate-reach"
+          grep -q 'create_role_workspaces' 23-ai-workforce-blueprint/scripts/floor-fill-driver.py \
+            || MISS="$MISS chain:floor-fill-no-crw"
+          if [ -n "$MISS" ]; then
+            echo "FAIL D16: workspace-dept-script refresh not delivered on both paths:$MISS"
+            exit 1
+          fi
+          echo "PASS D16: canonical dept-script refresh delivered + reachable on both paths"
+
+      - name: D17 — AGENTS.md ZHE markers stamped on both paths
+        run: |
+          # apply-fleet-standards.sh is the AGENTS.md stamping script, executed on
+          # BOTH paths. All four ZHE marker families must be present so the runtime
+          # prove-zhe.py AGENTS_DOCTRINE goes green. Tokens MUST match prove-zhe.py.
+          H="scripts/apply-fleet-standards.sh"
+          MISS=""
+          grep -Eq 'PERSONA_REFLEX_V[0-9]'                          "$H" || MISS="$MISS persona-reflex"
+          grep -Eq 'FULL_CONTEXT_HANDOFF_V[0-9]'                    "$H" || MISS="$MISS full-context-handoff"
+          grep -Eq 'OWNER_REPORTING_V[0-9]|REPORTING_RULES_V[0-9]'  "$H" || MISS="$MISS owner-reporting"
+          grep -Eq 'PLATFORM_FACTS_V[0-9]'                          "$H" || MISS="$MISS platform-facts"
+          grep -q 'apply-fleet-standards.sh' install.sh      || MISS="$MISS install:not-executed"
+          grep -q 'apply-fleet-standards' update-skills.sh   || MISS="$MISS update:not-executed"
+          if [ -n "$MISS" ]; then
+            echo "FAIL D17: AGENTS.md ZHE markers missing/unstamped on both paths:$MISS"
+            echo "  -> prove-zhe.py AGENTS_DOCTRINE stays RED on every box until these land."
+            exit 1
+          fi
+          echo "PASS D17: all four ZHE AGENTS.md markers stamped + apply-fleet-standards executed on both paths"
+
+      - name: D18 — CC board build delivered on both paths
+        run: |
+          # Fresh install seeds the CC Kanban/workspace board (db:seed); update
+          # refreshes it without clobbering client rows (sync-departments / 6c).
+          # run-full-install.sh is reached on BOTH paths and gated by prove-zhe.
+          H="32-command-center-setup/scripts/run-full-install.sh"
+          MISS=""
+          grep -q 'db:seed' "$H"                                        || MISS="$MISS no-board-seed(db:seed)"
+          grep -Eq 'sync-departments|sync_departments|phase=6c' "$H"    || MISS="$MISS no-board-sync(update)"
+          grep -q 'prove-zhe' "$H"                                      || MISS="$MISS no-zhe-gate"
+          grep -q 'run-full-install' install.sh                         || MISS="$MISS install:not-referenced"
+          grep -q 'run-full-install' update-skills.sh                   || MISS="$MISS update:not-invoked"
+          if [ -n "$MISS" ]; then
+            echo "FAIL D18: CC board build not delivered on both paths:$MISS"
+            exit 1
+          fi
+          echo "PASS D18: CC board built on install (db:seed) + synced on update, reachable both paths"
+
+      - name: D19 — qmd persona-store reconcile on both paths
+        run: |
+          # reconcile_qmd_persona_index repoints + re-indexes the qmd persona store.
+          # Defined once (shared-utils) and invoked on BOTH paths.
+          H="shared-utils/provision-persona-index.sh"
+          MISS=""
+          grep -q 'reconcile_qmd_persona_index()' "$H"          || MISS="$MISS def-missing"
+          grep -q 'reconcile_qmd_persona_index' install.sh      || MISS="$MISS install:not-invoked"
+          grep -q 'reconcile_qmd_persona_index' update-skills.sh || MISS="$MISS update:not-invoked"
+          if [ -n "$MISS" ]; then
+            echo "FAIL D19: qmd reconcile not delivered on both paths:$MISS"
+            exit 1
+          fi
+          echo "PASS D19: reconcile_qmd_persona_index defined + invoked on both paths"
+
+      - name: D16-D19b — ZHE both-paths dynamic proof (offline)
+        run: |
+          # Dynamic backstop that re-proves all four ZHE both-paths dimensions in
+          # one place (per-dimension pass/fail), fully offline.
+          chmod +x tests/unit/both-paths-zhe-delivery.test.sh
+          bash tests/unit/both-paths-zhe-delivery.test.sh
+
       - name: Summary
         if: always()
         run: |
@@ -270,4 +362,9 @@ jobs:
           echo "D11-D13 check the v14.27.2 persona reconcile + canonical idempotency gate."
           echo "D14 checks W7 platform-facts block present in apply-fleet-standards.sh (v14.28.0)."
           echo "D15 checks floor-fill materialization shipped + wired on both paths (v16.0.2 incomplete-floor fix)."
-          echo "All PASS = both paths deliver every dimension; any FAIL = regression detected."
+          echo "D16-D19 check the ZHE both-paths dimensions (ZHE_SEQUENCE_V1 / plan W1.2):"
+          echo "  D16 workspace-dept-script refresh (no stale build_deck.py);"
+          echo "  D17 AGENTS.md ZHE markers (persona-reflex/handoff/reporting/platform-facts);"
+          echo "  D18 CC board build (Kanban/workspace seed + board sync);"
+          echo "  D19 qmd persona-store reconcile. D16-D19b is the offline dynamic backstop."
+          echo "All PASS = both paths deliver every dimension; any FAIL = regression / undelivered dimension."

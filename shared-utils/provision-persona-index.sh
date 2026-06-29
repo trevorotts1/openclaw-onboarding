@@ -346,10 +346,62 @@ except Exception:
 # computed. Must run AFTER reconcile_persona_assets (so the canonical dir holds
 # all current blueprints) and after provision_persona_index.
 # ---------------------------------------------------------------------------
+# --- F1 helpers (qmd reconcile robustness) ------------------------------------
+# _qmd_collection_files_count <collection> — echo the integer "Files:" count qmd
+# reports for the collection, or empty. `qmd collection list` never prints the
+# on-disk source path (which is why the old grep-the-path canonicity test could
+# never match), but it DOES print a per-collection block:
+#     <name> (qmd://<name>/)
+#       Pattern: ...
+#       Files:   N
+#       Updated: ...
+# Parsing Files: lets us PROVE the store is non-empty before declaring success.
+_qmd_collection_files_count() {
+    local _c="$1"
+    qmd collection list 2>/dev/null | awk -v want="$_c" '
+        index($0, "qmd://" want "/") { inblk=1; next }
+        inblk && tolower($0) ~ /files:/ { n=$0; gsub(/[^0-9]/, "", n); print n; exit }
+        inblk && index($0, "qmd://") { inblk=0 }
+    '
+}
+
+# _qmd_rebuild_better_sqlite3 — best-effort ABI repair. A Node major bump
+# (e.g. Node 26) leaves qmd's native better-sqlite3 with a NODE_MODULE_VERSION
+# mismatch: the binary still EXISTS (command -v qmd succeeds) but every call
+# errors — previously indistinguishable from "absent". Rebuild the native addon
+# in qmd's own module dir, then (caller) re-probes. macOS BSD readlink lacks -f,
+# so we fall back to the bare bin path + the npm-global candidate.
+_qmd_rebuild_better_sqlite3() {
+    command -v npm >/dev/null 2>&1 || { echo "    (npm not on PATH — cannot rebuild better-sqlite3)"; return 1; }
+    local _bin _real r
+    _bin="$(command -v qmd 2>/dev/null || true)"
+    _real="$(readlink -f "$_bin" 2>/dev/null || true)"
+    [ -n "$_real" ] || _real="$_bin"
+    local _candidates=()
+    if [ -n "$_real" ]; then
+        _candidates+=("$(cd "$(dirname "$_real")/.." 2>/dev/null && pwd)")
+        _candidates+=("$(cd "$(dirname "$_real")/../.." 2>/dev/null && pwd)")
+    fi
+    _candidates+=("$(npm root -g 2>/dev/null)/qmd")
+    for r in "${_candidates[@]}"; do
+        [ -n "$r" ] || continue
+        if [ -d "$r/node_modules/better-sqlite3" ]; then
+            ( cd "$r" && npm rebuild better-sqlite3 ) >/dev/null 2>&1 && return 0
+        fi
+    done
+    # last resort: rebuild against the global tree
+    npm rebuild better-sqlite3 -g >/dev/null 2>&1 && return 0
+    return 1
+}
+
 reconcile_qmd_persona_index() {
     local _COACHING_DB_DIR="$1"
     local _PERSONAS_DIR="$_COACHING_DB_DIR/personas"
     local _COLL="coaching-personas"
+    # Sentinel we write ourselves to record what was indexed (canonical path +
+    # persona-md count). Replaces the unprovable "grep the path out of
+    # `qmd collection list`" canonicity test (qmd never prints the path).
+    local _SENTINEL="$_COACHING_DB_DIR/.qmd-collection-canon"
 
     if ! command -v qmd >/dev/null 2>&1; then
         echo "  note: qmd not installed — skipping qmd persona-store reconcile (additive; inventory answers from persona-categories.json per N16)"
@@ -360,35 +412,91 @@ reconcile_qmd_persona_index() {
         return 0
     fi
 
-    local _N_DIRS
-    _N_DIRS="$(find "$_PERSONAS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+    # --- ABI probe (F1): qmd present but failing every call (better-sqlite3
+    # NODE_MODULE_VERSION break after a Node upgrade) was indistinguishable from
+    # "absent" and never repaired. Probe with a real read; on failure attempt an
+    # npm rebuild, then re-probe. If still broken, emit the DISTINCT
+    # qmd-abi-broken status and tear down the collection so a query ERRORS
+    # (N16 persona-categories.json fallback) rather than silently reading a
+    # frozen/empty store.
+    if ! qmd collection list >/dev/null 2>&1; then
+        echo "  ⚠ qmd present but failing a basic probe (likely a better-sqlite3 ABI break after a Node upgrade) — attempting npm rebuild better-sqlite3"
+        _qmd_rebuild_better_sqlite3
+        if qmd collection list >/dev/null 2>&1; then
+            echo "  ✓ qmd recovered after npm rebuild better-sqlite3"
+        else
+            echo "  STATUS: qmd-abi-broken — qmd still failing after rebuild; removing any '$_COLL' collection so inventory queries ERROR → persona-categories.json fallback (N16)"
+            qmd collection remove "$_COLL" >/dev/null 2>&1 || true
+            rm -f "$_SENTINEL" 2>/dev/null || true
+            return 0
+        fi
+    fi
+
+    # persona-md count under the canonical dir — RECURSIVE: blueprints live one
+    # level down as <slug>/persona-blueprint.md, so this matches the recursive
+    # mask used for indexing below.
+    local _MD_COUNT
+    _MD_COUNT="$(find "$_PERSONAS_DIR" -mindepth 1 -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')"
+    [ -n "$_MD_COUNT" ] || _MD_COUNT=0
 
     local _LIST _HAS_COLL=0 _POINTS_CANON=0
     _LIST="$(qmd collection list 2>/dev/null || true)"
     if printf '%s' "$_LIST" | grep -q "$_COLL"; then
         _HAS_COLL=1
-        # The canonical path appearing anywhere in the collection's listing means
-        # it is already pointed at the right place.
-        printf '%s' "$_LIST" | grep -F "$_PERSONAS_DIR" >/dev/null 2>&1 && _POINTS_CANON=1
+        # Canonical iff the sentinel path == canonical dir AND the live Files:
+        # count ≥ persona-md count (so a present-but-empty/short store is NOT
+        # treated as canonical and gets rebuilt instead of trusted).
+        if [ -f "$_SENTINEL" ]; then
+            local _SENT_PATH _FILES
+            _SENT_PATH="$(sed -n '1p' "$_SENTINEL" 2>/dev/null || true)"
+            _FILES="$(_qmd_collection_files_count "$_COLL")"
+            if [ "$_SENT_PATH" = "$_PERSONAS_DIR" ] && [ -n "$_FILES" ] && [ "$_FILES" -ge "$_MD_COUNT" ] 2>/dev/null; then
+                _POINTS_CANON=1
+            fi
+        fi
     fi
 
     if [ "$_HAS_COLL" -eq 1 ] && [ "$_POINTS_CANON" -eq 0 ]; then
-        echo "  → qmd '$_COLL' collection is stale/mispointed (not at canonical $_PERSONAS_DIR) — removing so it can be re-indexed at the canonical path"
+        echo "  → qmd '$_COLL' collection is stale/mispointed or short (sentinel/Files: disagree with canonical $_PERSONAS_DIR) — removing so it can be re-indexed at the canonical path"
         qmd collection remove "$_COLL" >/dev/null 2>&1 || true
+        rm -f "$_SENTINEL" 2>/dev/null || true
         _HAS_COLL=0
     fi
 
     if [ "$_HAS_COLL" -eq 0 ]; then
-        if qmd collection add "$_PERSONAS_DIR" --name "$_COLL" --mask '*.md' >/dev/null 2>&1; then
-            echo "  ✓ qmd '$_COLL' collection (re)indexed at canonical $_PERSONAS_DIR ($_N_DIRS persona dirs, BM25/full-text only — furnace-safe)"
+        # RECURSIVE mask: every blueprint is <slug>/persona-blueprint.md one level
+        # down — '*.md' (non-recursive) matched 0 files yet `qmd collection add`
+        # still exits 0, producing a confident-but-EMPTY store.
+        if qmd collection add "$_PERSONAS_DIR" --name "$_COLL" --mask '**/*.md' >/dev/null 2>&1; then
+            local _FILES
+            _FILES="$(_qmd_collection_files_count "$_COLL")"
+            if [ "${_FILES:-0}" -gt 0 ] 2>/dev/null; then
+                printf '%s\n%s\n' "$_PERSONAS_DIR" "$_MD_COUNT" > "$_SENTINEL" 2>/dev/null || true
+                echo "  ✓ qmd '$_COLL' collection (re)indexed at canonical $_PERSONAS_DIR (${_FILES} files indexed, BM25/full-text only — furnace-safe)"
+            else
+                echo "  ⚠ qmd '$_COLL' add reported success but indexed ZERO files (an empty store is the worst state — it returns 'No results' instead of erroring) — tearing it down so inventory queries ERROR → persona-categories.json fallback (N16)"
+                qmd collection remove "$_COLL" >/dev/null 2>&1 || true
+                rm -f "$_SENTINEL" 2>/dev/null || true
+            fi
         else
             qmd collection remove "$_COLL" >/dev/null 2>&1 || true
+            rm -f "$_SENTINEL" 2>/dev/null || true
             echo "  note: could not (re)create qmd '$_COLL' at canonical path — removed any stale collection so the agent cannot read a frozen store (inventory answers from persona-categories.json per N16)"
         fi
     else
-        # Already canonical → refresh its index so newly-added persona dirs surface.
+        # Already canonical → refresh its index so newly-added persona dirs
+        # surface, then RE-VERIFY Files: > 0 (a bad update can empty the store).
         qmd update >/dev/null 2>&1 || true
-        echo "  ✓ qmd '$_COLL' collection already canonical at $_PERSONAS_DIR ($_N_DIRS persona dirs) — re-indexed (qmd update; BM25, furnace-safe)"
+        local _FILES
+        _FILES="$(_qmd_collection_files_count "$_COLL")"
+        if [ "${_FILES:-0}" -gt 0 ] 2>/dev/null; then
+            printf '%s\n%s\n' "$_PERSONAS_DIR" "$_MD_COUNT" > "$_SENTINEL" 2>/dev/null || true
+            echo "  ✓ qmd '$_COLL' collection already canonical at $_PERSONAS_DIR (${_FILES} files) — re-indexed (qmd update; BM25, furnace-safe)"
+        else
+            echo "  ⚠ qmd '$_COLL' canonical store now indexes ZERO files after update — tearing it down so inventory queries ERROR → persona-categories.json fallback (N16)"
+            qmd collection remove "$_COLL" >/dev/null 2>&1 || true
+            rm -f "$_SENTINEL" 2>/dev/null || true
+        fi
     fi
 }
 
