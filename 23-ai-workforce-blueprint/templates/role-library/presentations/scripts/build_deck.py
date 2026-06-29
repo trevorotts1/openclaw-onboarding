@@ -1627,6 +1627,20 @@ def _chk_intake(path: Optional[Path]) -> str:
                     f"target_talk_minutes x 130 wpm.")
     except (TypeError, ValueError):
         return f"target_talk_minutes is not numeric (got {raw!r})."
+    # Additive: client_requested_slide_count — OPTIONAL. When the client states an
+    # explicit number of slides, it is recorded here and honored EXACTLY (never
+    # floored/capped/defaulted/changed; the client is never asked to accept a
+    # different number) — enforced at build time by _chk_slide_count_exact
+    # (AF-SLIDE-COUNT-EXACT). When the key is PRESENT it MUST be a positive integer; a
+    # malformed value is a build-stopping intake error (so a bad value can never
+    # silently disable the exact-count gate). When ABSENT, the duration/source sizing
+    # governs (max(target-sized count, source_slide_count)) and the pacing floor applies.
+    if "client_requested_slide_count" in obj:
+        rc = obj.get("client_requested_slide_count")
+        if isinstance(rc, bool) or not isinstance(rc, int) or rc <= 0:
+            return (f"client_requested_slide_count, when present, must be a positive "
+                    f"integer — the client's EXACT requested slide count, honored "
+                    f"verbatim (got {rc!r}).")
     return ""
 
 
@@ -2146,6 +2160,36 @@ def _chk_speech_qc(path: Optional[Path]) -> str:
 SLIDES_PER_MINUTE_FLOOR = 1.3   # AF-SLIDE-COUNT-FLOOR: min slides per talking minute
 
 
+def _client_requested_slide_count(run_dir: Path) -> Optional[int]:
+    """Return the client's EXPLICIT requested slide count when they stated one, else
+    None. This is the EXACT number of slides the client asked for (e.g. "make it 25
+    slides", "I want a 50-slide deck"); when present it IS the deck length and is
+    honored verbatim — never floored up, capped down, defaulted, or substituted by the
+    duration/source heuristic (AF-SLIDE-COUNT-EXACT). Read from intake.json (canonical)
+    with mission_prd.json as a fallback. A non-positive / non-integer / absent value
+    returns None (no explicit count -> the duration/coverage floors govern instead).
+    The intake gate (_chk_intake) rejects a present-but-malformed value, so a present
+    value is always a clean positive int by the time the deck is built."""
+    for rel in ("working/copy/intake.json", "intake.json", "working/intake.json",
+                "working/copy/mission_prd.json", "mission_prd.json",
+                "working/mission_prd.json"):
+        p = run_dir / rel
+        if not p.exists():
+            continue
+        obj = _read_json(p)
+        if isinstance(obj, dict) and "__parse_error__" not in obj:
+            raw = obj.get("client_requested_slide_count")
+            if raw is None or isinstance(raw, bool):
+                continue
+            try:
+                n = int(raw)
+            except (TypeError, ValueError):
+                continue
+            if n > 0:
+                return n
+    return None
+
+
 def _chk_slide_count_floor(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """SLIDE-COUNT-FLOOR gate (AF-SLIDE-COUNT-FLOOR). The output slide count must be
     >= target_talk_minutes x SLIDES_PER_MINUTE_FLOOR (1.3). A 30-min/10-slide deck
@@ -2153,6 +2197,11 @@ def _chk_slide_count_floor(run_dir: Path, slides_path: Optional[Path] = None) ->
     _chk_intake requires). Returns "" on pass / not-applicable, or a fatal AF
     message. Defers (passes) only when no target or no slide count can be read —
     those are the intake gate's / rich-prompt gate's job, not this one."""
+    # An EXPLICIT client-requested slide count IS the deck length (AF-SLIDE-COUNT-EXACT
+    # owns it). The duration pacing floor must NEVER force MORE slides than the client
+    # asked for, so when a requested count is present this gate defers to the exact one.
+    if _client_requested_slide_count(run_dir) is not None:
+        return ""
     target = None
     for rel in ("working/copy/intake.json", "intake.json", "working/intake.json"):
         p = run_dir / rel
@@ -2179,6 +2228,41 @@ def _chk_slide_count_floor(run_dir: Path, slides_path: Optional[Path] = None) ->
                 f"target_talk_minutes x {SLIDES_PER_MINUTE_FLOOR} = {floor} slides. "
                 f"A {target:g}-min talk on {n} slides is a reading session, not a paced "
                 f"deck. Add {floor - n} slide(s) (verified band is ~1.3–1.5 slides/min).")
+    return ""
+
+
+def _chk_slide_count_exact(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """SLIDE-COUNT-EXACT gate (AF-SLIDE-COUNT-EXACT). When the client stated an
+    EXPLICIT requested slide count, the built deck MUST have exactly that many slides —
+    the client's number is honored verbatim (25 -> 25, 50 -> 50, 500 -> 500). It is
+    NEVER floored up, capped down, defaulted, or substituted by the duration/content/
+    source heuristic, and the client is NEVER asked to accept a different number.
+
+    This gate is AUTHORITATIVE over the duration pacing floor (_chk_slide_count_floor)
+    and the Mode-B anti-compression coverage floor (_chk_coverage): both DEFER when an
+    explicit requested count is present, and this gate fails LOUD if the built deck's
+    length differs from the requested count in EITHER direction (too few OR too many).
+
+    Returns "" on pass / not-applicable (no explicit count, or the count is unreadable
+    — the rich-prompt/coverage gates own a missing slides.json), or a fatal
+    AF-SLIDE-COUNT-EXACT message."""
+    requested = _client_requested_slide_count(run_dir)
+    if requested is None:
+        return ""  # no explicit client count — the duration/coverage floors govern.
+
+    n = _count_output_slides(run_dir, slides_path)
+    if n is None:
+        return ""  # slide count unreadable — the rich-prompt/coverage gates own that.
+
+    if n != requested:
+        verb = "Add" if n < requested else "Remove"
+        delta = abs(requested - n)
+        return (f"AF-SLIDE-COUNT-EXACT: the client explicitly requested {requested} "
+                f"slide(s), but the deck has {n}. The client's requested slide count is "
+                f"honored EXACTLY ({requested} -> {requested}); it is never floored up, "
+                f"capped down, defaulted, or substituted by the duration/content "
+                f"heuristic, and the client is never asked to accept a different number. "
+                f"{verb} {delta} slide(s) so the deck is exactly {requested}.")
     return ""
 
 
@@ -2611,6 +2695,12 @@ def _chk_coverage(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     absent/0, which always passes) and compares to the output slide count from
     slides.json (or arc_allocation.json). Returns "" on pass, or a fatal AF message
     string (run_preflight maps a returned reason to exit 3)."""
+    # An EXPLICIT client-requested slide count is an explicit client instruction that
+    # overrides the Mode-B anti-compression floor (the client may deliberately ask to
+    # set their deck to an exact length below the source). AF-SLIDE-COUNT-EXACT owns
+    # the count when one is set; defer so the two gates never contradict.
+    if _client_requested_slide_count(run_dir) is not None:
+        return ""
     # Resolve mission_prd.json (Mode A: absent -> source 0 -> always pass).
     source = 0
     for rel in ("working/copy/mission_prd.json", "mission_prd.json",
@@ -6062,6 +6152,15 @@ PREFLIGHT_REQUIRED = [
      "slide-count floor — output slides >= target_talk_minutes x 1.3 (pacing band)",
      "Phase 0a/4 — Director duration intake + Arc allocation (AF-SLIDE-COUNT-FLOOR)",
      _chk_slide_count_floor),
+    # SLIDE-COUNT-EXACT gate (AF-SLIDE-COUNT-EXACT). When the client stated an EXPLICIT
+    # requested slide count, the built deck MUST be exactly that many slides — the
+    # client's number is honored verbatim (25->25, 50->50, 500->500), never floored up,
+    # capped down, defaulted, or substituted. AUTHORITATIVE over the pacing floor and
+    # the coverage floor (both defer when a requested count is present). Run-dir-scoped.
+    (None,
+     "slide-count exact — when the client requested an explicit count, output slides == that count (never floored/capped/changed)",
+     "Phase 0a/4 — Director intake (client's exact requested slide count, AF-SLIDE-COUNT-EXACT)",
+     _chk_slide_count_exact),
     # PITCH gate (AF-PITCH-MISSING). The converting arc must carry an offer ladder
     # AND a re-pitch after the FINAL price. Run-dir-scoped (None sentinel).
     (None,

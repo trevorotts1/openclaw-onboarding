@@ -1,5 +1,5 @@
 {
-  "manifest_version": 19,
+  "manifest_version": 20,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -228,6 +228,7 @@
       "produces_artifact": "working/copy/intake.json",
       "gate_codes": [
         "AF-SLIDE-COUNT-FLOOR",
+        "AF-SLIDE-COUNT-EXACT",
         "AF-ASSET-QUESTION-MISSING",
         "AF-MANIFEST-UNREFERENCED",
         "AF-SCRATCH-PARSE-SKIPPED",
@@ -242,7 +243,12 @@
         {
           "required": true,
           "checker": "_chk_slide_count_floor",
-          "label": "slide-count floor (output slides >= target_talk_minutes x 1.3 slides/min; a 30-min/10-slide deck AUTO-FAILS; AF-SLIDE-COUNT-FLOOR)"
+          "label": "slide-count floor (output slides >= target_talk_minutes x 1.3 slides/min; a 30-min/10-slide deck AUTO-FAILS; AF-SLIDE-COUNT-FLOOR). DEFERS to AF-SLIDE-COUNT-EXACT when the client stated an explicit requested count."
+        },
+        {
+          "required": true,
+          "checker": "_chk_slide_count_exact",
+          "label": "slide-count exact (when intake.json records client_requested_slide_count, the built deck must have EXACTLY that many slides — the client's number is honored verbatim 25->25/50->50/500->500, never floored up, capped down, defaulted, or substituted; the client is never asked to accept a different number; AUTHORITATIVE over the pacing floor and the Mode-B coverage floor; AF-SLIDE-COUNT-EXACT)"
         },
         {
           "required": true,
@@ -1171,11 +1177,23 @@
       "stage": "0a/4",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "output slide count is below target_talk_minutes x 1.3 (the low end of the verified 1.3-1.5 slides/min pacing band); e.g. a 30-minute talk on 10 slides (floor 39) AUTO-FAILS \u2014 it is a reading session, not a paced deck",
+      "trigger": "output slide count is below target_talk_minutes x 1.3 (the low end of the verified 1.3-1.5 slides/min pacing band); e.g. a 30-minute talk on 10 slides (floor 39) AUTO-FAILS \u2014 it is a reading session, not a paced deck. DEFERS to AF-SLIDE-COUNT-EXACT when the client stated an explicit requested count (the pacing floor must never force MORE slides than the client asked for).",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_slide_count_floor",
       "secondary_py_symbols": [
         "SLIDES_PER_MINUTE_FLOOR"
+      ]
+    },
+    {
+      "code": "AF-SLIDE-COUNT-EXACT",
+      "stage": "0a/4",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the client stated an EXPLICIT requested slide count (intake.json.client_requested_slide_count) but the built deck does not have EXACTLY that many slides (too few OR too many). The client's requested slide count is honored EXACTLY (25->25, 50->50, 500->500); it is NEVER floored up, capped down, defaulted, or substituted by the duration/content/source heuristic, and the client is NEVER asked to accept a different number. AUTHORITATIVE over the duration pacing floor (AF-SLIDE-COUNT-FLOOR) and the Mode-B anti-compression coverage floor (AF-COVERAGE-1) \u2014 both DEFER when an explicit requested count is present. DEFERS (passes) only when no explicit count was stated, or the output count is unreadable (the rich-prompt/coverage gates own a missing slides.json).",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_slide_count_exact",
+      "secondary_py_symbols": [
+        "_client_requested_slide_count"
       ]
     },
     {

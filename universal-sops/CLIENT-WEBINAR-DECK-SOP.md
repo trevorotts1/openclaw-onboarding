@@ -156,12 +156,24 @@ The script prints a JSON summary the builder acts on:
 
 **Define.** From the task title + description + any SOP steps, decide: deck title, slide
 count, audience/tone/key messages, and the price-drop arc if this is an offer deck (see §6).
-Slide count is CONTENT-DRIVEN — inventory every substantive point in the source and give
-each its own slide (one big idea per slide). There is NO automatic ceiling; the deck is as
-long as the content warrants and compressing a rich source is an AUTO-FAIL (AF-COVERAGE). A
-maximum applies ONLY when an explicit `client_requested_slide_cap` is present in the task /
-intake.json / mission_prd.json. Use 10 slides only as a fallback when the source genuinely
-has no more substantive content than that — never as a cap on richer material.
+**THE CLIENT'S EXPLICIT SLIDE COUNT IS HONORED EXACTLY — FIRST AND ABSOLUTE.** If the client
+stated a number of slides ("make it 25 slides", "I want a 50-slide deck"), record it in
+intake.json as `client_requested_slide_count` and build EXACTLY that many: 25 -> 25, 50 -> 50,
+500 -> 500. It is NEVER floored up to a pacing minimum, capped down, defaulted, or substituted
+by the content/duration heuristic, and the client is NEVER asked to accept a different number
+(no "this is 20 slides, you said 25 — does 20 work?"). The explicit count IS the deck length
+and OVERRIDES every heuristic — the content-driven sizing below, the duration pacing floor
+(`AF-SLIDE-COUNT-FLOOR`), AND the Mode-B anti-compression coverage floor (`AF-COVERAGE`).
+`build_deck.py` `_chk_slide_count_exact` (`AF-SLIDE-COUNT-EXACT`) AUTO-FAILS any deck whose
+length differs from the requested count, in either direction.
+
+When the client gave NO explicit count, slide count is CONTENT-DRIVEN — inventory every
+substantive point in the source and give each its own slide (one big idea per slide). There is
+NO automatic ceiling; the deck is as long as the content warrants and compressing a rich source
+is an AUTO-FAIL (AF-COVERAGE). A maximum applies ONLY when an explicit `client_requested_slide_cap`
+(a separate "at most N" ceiling) is present in the task / intake.json / mission_prd.json. Use
+10 slides only as a fallback when the source genuinely has no more substantive content than
+that — never as a cap on richer material.
 
 **Measure / Analyze.** For each slide, decide the photographic `scene`, the EXACT `copy`
 (the words that must appear, in reading order — index 0 is the headline), an optional `logo`

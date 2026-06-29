@@ -35,7 +35,7 @@ Top-level shape:
 }
 ```
 
-`source_slide_count` is copied from `mission_prd.json` (Mode B = the count of existing source slides; Mode A = 0). `slide_count_final = max(duration_target, source_slide_count)`. These two fields are what AF-COVERAGE-1 reads.
+`source_slide_count` is copied from `mission_prd.json` (Mode B = the count of existing source slides; Mode A = 0). `slide_count_final = client_requested_slide_count` **when the client stated an explicit slide count** (honored EXACTLY — 25 -> 25, 50 -> 50, 500 -> 500 — never floored up, capped down, defaulted, or substituted; the client is never asked to accept a different number; it OVERRIDES both the duration sizing and the `source_slide_count` floor, enforced by `AF-SLIDE-COUNT-EXACT`); **otherwise** `slide_count_final = max(duration_target, source_slide_count)`. These fields are what AF-COVERAGE-1 and AF-SLIDE-COUNT-EXACT read.
 
 ---
 

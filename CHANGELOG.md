@@ -1,3 +1,30 @@
+## [v16.1.10]  -  2026-06-29  -  fix(presentations): the client's EXACT requested slide count is now honored verbatim — a hidden slide-count floor can no longer override "make it 25 slides" with a heuristic count, and the agent can no longer ask the client to accept a different number. The client gets exactly the number of slides they ask for: 25 -> 25, 50 -> 50, 500 -> 500.
+
+### Risk: low — additive. A new OPTIONAL intake field + one new build-time gate; when the client gives NO explicit count, behaviour is byte-identical to before (the duration/source sizing and the pacing floor still govern). No quality/anti-fake gate weakened; the per-slide image-prompt 9,000-char floor is untouched.
+
+### The bug (what happened)
+
+A client asked for a 25-slide presentation. The pipeline built 20 and asked the client "this is 20 slides, you said 25 — do you want me to expand to 25, or does 20 work for you?". The client's stated slide count was overridden by a heuristic and then negotiated away.
+
+### Root cause (the count formula dropped the client's number)
+
+The deck length was computed PURELY from heuristics — `slide_count_final = max(duration_target, source_slide_count)` (the duration-derived target paced at `target_talk_minutes x 1.3`, i.e. `_chk_slide_count_floor` / `AF-SLIDE-COUNT-FLOOR`, plus the Mode-B anti-compression coverage floor `_chk_coverage` / `AF-COVERAGE-1`). There was NO field anywhere — intake.json, mission_prd.json, the Director SOP/role, or the universal SOPs — that carried the client's EXPLICIT requested count. So an explicit "25" never entered the formula: the duration heuristic became the de-facto target, and the doctrine treated an explicit number only as an optional CAP (`client_requested_slide_cap`), never as an exact honored length. The agent then surfaced its computed count to the client for negotiation.
+
+### The fix (load-bearing, minimal, additive)
+
+- **`build_deck.py`:** new helper `_client_requested_slide_count()` (reads an OPTIONAL `client_requested_slide_count` from intake.json / mission_prd.json) and new gate `_chk_slide_count_exact()` → `AF-SLIDE-COUNT-EXACT`: when the client stated an explicit count, the built deck must have EXACTLY that many slides; a mismatch in EITHER direction (too few OR too many) AUTO-FAILS. The new gate is AUTHORITATIVE — `_chk_slide_count_floor` (pacing) and `_chk_coverage` (Mode-B anti-compression) both DEFER when an explicit count is present, so the client's number is never floored up, capped down, or substituted. `_chk_intake` now validates the field when present (must be a positive integer) so a malformed value halts intake rather than silently disabling the gate. Registered in `PREFLIGHT_REQUIRED`.
+- **`PIPELINE-MANIFEST.json` (manifest_version 19 → 20):** new `AF-SLIDE-COUNT-EXACT` autofail (enforced_by build_deck, py_symbol `_chk_slide_count_exact`, secondary `_client_requested_slide_count`) + a P0A-INTAKE additional_preflight + gate_code; AF-SLIDE-COUNT-FLOOR trigger notes the defer.
+- **MASTER-QC-AUTOFAIL-RULESET.md (both the `universal-sops` cluster copy AND the deployed `sops/SOP-SLIDE-00` copy):** new Section-5 row for `AF-SLIDE-COUNT-EXACT`.
+- **SOPs + ROLES reconciled to identical doctrine:** `CLIENT-WEBINAR-DECK-SOP.md` (§3), `SOP-SLIDE-05-PROCESS-MANIFEST.md` (the `slide_count_final` formula), `SOP-SLIDE-04-DECK-DENSITY-AND-PACING.md` (the density floors fit WITHIN the client's fixed count — never add slides past it), and the **Director of Presentations** role + SOP (duration-sizing doctrine, anti-compression spec, anti-patterns) all now state: "honor the client's exact requested slide count; never floor/cap/default/change it; never ask the client to accept a different number."
+
+### TESTS / CI GUARD
+
+New `_chk_slide_count_exact` negative test in `test_preflight.py` (`test_chk_slide_count_exact`): req 25 / built 20 FAILS (the exact bug), 25/25 + 50/50 + 500/500 PASS, over-build 25/30 FAILS, no-count DEFERS, the pacing floor DEFERS to an explicit count (25 not forced up to a 30-min floor of 39), and the Mode-B coverage floor DEFERS to an explicit count (source 40 + req 25 PASSES). `AF-SLIDE-COUNT-EXACT` recorded in `working/af-coverage.json` so Guard A (`gate_integrity_check.py`) enforces declared==enforced==tested. `sync_check.py` IN SYNC (manifest_version 20, 129 autofails, 35 roles); `test_preflight.py` ALL PASS; Guard A OK; Guard B CLEAN. No client names in changed files. Box user, not root.
+
+### What is intentionally NOT changed
+
+The per-slide IMAGE-PROMPT 9,000-character floor (`PROMPT_CHAR_FLOOR` / `AF-PROMPT-FLOOR` / `AF-P1`) is a SEPARATE quality gate on each slide's image prompt and is left fully intact — this fix touches ONLY the SLIDE-COUNT floor. The existing `client_requested_slide_cap` (an "at most N" ceiling) is preserved as a distinct concept from the new exact-count field.
+
 ## [v16.1.9]  -  2026-06-29  -  fix: the fleet update/install/verify path can no longer trigger a client's Google Workspace credential wipe. Skill-14's QC shipped the repo's ONLY runtime `gws` call — a bare `gws auth status` whose sole guard was `command -v gws` — and the onboarding verification gate runs that QC HEADLESS (`bash qc-*.sh >/dev/null 2>&1`, no TTY), driven by the watchdog/resume crons and the update path. Headless, gws cannot decrypt its file keyring, so gws's OWN failure mode rewrote `~/.config/gws/credentials.enc` to `credential_source:"none"`, erasing every account's OAuth. The repo never deleted/moved/re-keyed the file — this single bare call was the only trigger surface. The probe is now credential-safe and a new CI guard fails the build if any update-path code could touch the credential store.
 
 ### Risk: low — one QC call site is gated; no install/update behaviour, no other gate, and no credential write-site changes. The probe still runs (unchanged) for an interactive operator with decryptable creds.
