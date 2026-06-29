@@ -55,9 +55,65 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ghl_media  # noqa: E402  (the SHARED, verified-working module)
+import delivery_gate  # noqa: E402  (the OUT-OF-BAND delivery boundary gate)
 
 # The closeout code this GHL-upload gate folds under (diagnosis 4.6 / Fix-Goal 5).
 GHL_UPLOAD_GATE = "AF-DELIVERY-COMPLETE"
+
+
+# ---------------------------------------------------------------------------
+# OUT-OF-BAND DELIVERY BOUNDARY GATE wired INTO this transport (v16.1.1 — the #1 fix).
+# Until now the boundary gate (delivery_gate.gate_delivered_artifact) ran ONLY inside
+# run_signature_deck.py P9-DELIVER. A deck hand-built OUTSIDE the pipeline (python-pptx /
+# Pillow / Google-Slides, native overlaid text, no kie.ai renders, no governed run dir)
+# could be uploaded straight to the client's GHL media library through THIS module,
+# skipping the pipeline entirely — exactly the failure that shipped a hand-built deck.
+# push_deck_media() now runs the boundary gate over every deck artifact (.pptx/.pdf) it
+# is about to host, in PRE-TRANSPORT mode (the deck's own GHL upload is what is about to
+# happen, so the SOP-9.4 upload-record sub-check is deferred — but artifact provenance,
+# kie provenance, no-run-dir, the AF-DH1 five-file package, and the teleprompter are all
+# enforced). A rejection ABORTS the upload (fail-closed): nothing is hosted. The ONLY
+# bypass is a logged owner_skip_approval token, honored inside gate_delivered_artifact.
+# ---------------------------------------------------------------------------
+class DeliveryGateRejected(RuntimeError):
+    """Raised when the out-of-band delivery boundary gate rejects a deck artifact at the
+    transport. Fail-closed: the upload does NOT happen. Carries the gate reasons."""
+
+    def __init__(self, reasons):
+        self.reasons = list(reasons)
+        super().__init__("DELIVERY BOUNDARY GATE REJECTED the deck — refusing to upload "
+                         "to GHL:\n  - " + "\n  - ".join(self.reasons))
+
+
+def _deck_artifacts(files):
+    """The deck artifacts (.pptx/.pdf) among the files about to be pushed — these are the
+    client-facing decks the boundary gate must inspect. Slide PNGs and other media are
+    not decks and are not gated here."""
+    return [str(f) for f in files if _classify(str(f)) in ("pptx", "pdf")]
+
+
+def gate_deck_artifacts(run_dir, files):
+    """Run the OUT-OF-BAND DELIVERY BOUNDARY GATE over every deck artifact (.pptx/.pdf)
+    in `files`, in PRE-TRANSPORT mode, BEFORE any upload. Returns (ok, reasons). A
+    hand-built / overlay / no-kie / no-governed-run-dir deck is REJECTED so it cannot
+    reach the client's GHL media library regardless of how it was produced. The ONLY
+    bypass is a logged owner_skip_approval token (honored inside gate_delivered_artifact).
+    Fail-closed: if the gate itself raises, that is treated as a rejection."""
+    run_dir = Path(run_dir)
+    reasons, ok_all = [], True
+    for art in _deck_artifacts(files):
+        try:
+            ok, rs = delivery_gate.gate_delivered_artifact(
+                art, run_dir, verify_destinations=False)
+        except Exception as exc:  # noqa: BLE001 — fail-closed
+            ok, rs = False, [f"{GHL_UPLOAD_GATE}: delivery_gate boundary check raised on "
+                             f"{Path(art).name}: {exc!r} (fail-closed — refusing to upload "
+                             "an un-gated deck)."]
+        if not ok:
+            ok_all = False
+            hard = [r for r in rs if not str(r).startswith("NOTE")]
+            reasons.append(f"{Path(art).name}: " + "; ".join(hard))
+    return ok_all, reasons
 # Owner-skip token gate names this carve-out will honor (any one matches).
 _GATE_ALIASES = frozenset({
     "AF-DELIVERY-COMPLETE", "AF-BUNDLE-COMPLETE",
@@ -110,6 +166,15 @@ def push_deck_media(run_dir: Path, images: list, *, deck_slug: str | None = None
     run_dir = Path(run_dir).resolve()
     intake = _read_json(run_dir / "working" / "copy" / "intake.json")
     slug = (deck_slug or intake.get("deck_slug") or run_dir.name).strip()
+
+    # OUT-OF-BAND DELIVERY BOUNDARY GATE (fail-closed) — runs BEFORE any credential
+    # resolution or network call, so a deck not produced by the governed kie.ai pipeline
+    # (overlay text / no kie taskIds / no governed run dir / incomplete bundle) is
+    # REJECTED and NOTHING is uploaded. This closes the bypass where a hand-built deck
+    # was pushed to the client's GHL media library straight through this transport.
+    gate_ok, gate_reasons = gate_deck_artifacts(run_dir, list(images) + list(extra_files or []))
+    if not gate_ok:
+        raise DeliveryGateRejected(gate_reasons)
 
     pit = ghl_media.resolve_location_pit()        # client's LOCATION PIT (never operator's)
     location_id = ghl_media.resolve_location_id()  # client's location id
@@ -348,11 +413,24 @@ def main():
     imgs = args.images
     if not imgs:
         imgs = sorted(str(p) for p in (rd / "renders").glob("slide-*.png"))
-    if not imgs:
-        print("FATAL: no images to host (pass --images or populate renders/).",
-              file=sys.stderr)
+    # A deck-only push (just --extra, no slide PNGs) is legitimate (host the final
+    # assembled deck) and MUST still pass through the boundary gate, so only bail when
+    # there is nothing at all to host.
+    if not imgs and not (args.extra or []):
+        print("FATAL: no images or deliverables to host (pass --images/--extra or "
+              "populate renders/).", file=sys.stderr)
         return 2
-    res = push_deck_media(rd, imgs, deck_slug=args.deck_slug, extra_files=args.extra)
+    try:
+        res = push_deck_media(rd, imgs, deck_slug=args.deck_slug, extra_files=args.extra)
+    except DeliveryGateRejected as exc:
+        print("GHL MEDIA PUSH: ABORTED — delivery boundary gate REJECTED the deck "
+              "(NOTHING uploaded).", file=sys.stderr)
+        for r in exc.reasons:
+            print("  - " + r, file=sys.stderr)
+        print("A deck not produced by the governed kie.ai pipeline cannot be delivered. "
+              "The ONLY bypass is a logged owner_skip_approval token (gate=<AF code>); an "
+              "agent may NOT self-approve.", file=sys.stderr)
+        return 1
     print(json.dumps(res, indent=2))
     return 0
 
@@ -471,13 +549,67 @@ def _selftest() -> int:
         if ok or not any("of 50" in x for x in r):
             fails.append(f"J coverage: expected coverage FAIL, got ok={ok} {r}")
 
+    # === OUT-OF-BAND DELIVERY BOUNDARY GATE wired into THIS transport (v16.1.1) ===
+    # gate_deck_artifacts is the decision push_deck_media makes BEFORE any upload. These
+    # cases prove a hand-built / no-run-dir deck is rejected (transport aborts) while a
+    # clean kie-baked deck and non-deck media are allowed. Decks are built via the
+    # delivery_gate stdlib OOXML helpers (no python-pptx, no network).
+    # K — clean kie-baked deck in a full governed run -> ALLOW (ok, []).
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        deck = delivery_gate._mk_full_run(base, with_text=False, task_ids=("kie-aaa",))
+        delivery_gate._write_render_manifest(base, ["kie-aaa"])
+        ok, r = gate_deck_artifacts(base, [str(deck)])
+        if not ok:
+            fails.append(f"K transport-clean: expected ALLOW, got {r}")
+
+    # L — hand-built OVERLAY deck (selectable on-slide text) -> ABORT upload.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        deck = delivery_gate._mk_full_run(base, with_text=True, task_ids=("kie-aaa",))
+        ok, r = gate_deck_artifacts(base, [str(deck)])
+        if ok or not any("AF-OVERLAY-DELIVERED" in x for x in r):
+            fails.append(f"L transport-overlay: expected ABORT (AF-OVERLAY-DELIVERED), got ok={ok} {r}")
+
+    # M — deck with NO governed run dir (hand-built outside the pipeline) -> ABORT.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        deck = delivery_gate._mk_pptx(base / "loose-deck.pptx", with_text=False)
+        ok, r = gate_deck_artifacts(base, [str(deck)])
+        if ok or not any("AF-NO-RUN-DIR" in x for x in r):
+            fails.append(f"M transport-no-run-dir: expected ABORT (AF-NO-RUN-DIR), got ok={ok} {r}")
+
+    # N — non-deck media only (slide PNGs) -> NOT gated (mid-pipeline slide uploads must
+    # not be blocked; only the final deck artifact is inspected).
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        ok, r = gate_deck_artifacts(base, ["renders/slide-01.png", "renders/slide-02.png"])
+        if not ok or r:
+            fails.append(f"N transport-non-deck: expected ALLOW (no decks to gate), got ok={ok} {r}")
+
+    # O — push_deck_media itself ABORTS before any network/credential call on a bad deck.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        deck = delivery_gate._mk_pptx(base / "loose-deck.pptx", with_text=False)
+        raised = False
+        try:
+            push_deck_media(base, [str(deck)])
+        except DeliveryGateRejected:
+            raised = True
+        except Exception as exc:  # noqa: BLE001 — must be the gate, not a network error
+            fails.append(f"O push-abort: expected DeliveryGateRejected, got {exc!r}")
+        if not raised:
+            fails.append("O push-abort: push_deck_media did NOT abort on an un-governed deck")
+
     if fails:
         print("ghl_media_push gate selftest -> FAIL")
         for f in fails:
             print("  -", f)
         return 1
-    print("ghl_media_push gate selftest -> PASS (10 cases: complete/empty/no-pptx/"
-          "no-slides/null-folder/agent-skip/owner-skip/false-token/incomplete/coverage)")
+    print("ghl_media_push gate selftest -> PASS (15 cases: complete/empty/no-pptx/"
+          "no-slides/null-folder/agent-skip/owner-skip/false-token/incomplete/coverage + "
+          "transport-boundary: clean-allow/overlay-abort/no-run-dir-abort/non-deck-allow/"
+          "push-aborts-pre-network)")
     return 0
 
 

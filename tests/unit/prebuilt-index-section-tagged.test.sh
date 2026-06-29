@@ -18,9 +18,9 @@
 #
 #   (B) MANIFEST asserts (python3 json) — prove:
 #       - persona_count == 65
-#       - chunk_count == 4574
+#       - chunk_count == 935 (v2.2.1 14-section format, real Gemini re-embed)
 #       - asset_rebuild_required is false (published) OR base_tag/base_sha256/base_asset_url
-#         are present and valid (pre-release: v2.2.1 pre-staged, v2.2.0 base published)
+#         are present and valid (pre-release: a newer tag pre-staged over a published base)
 #       - section_tagged is true
 #       - release_tag is 'prebuilt-index-v2.2.0' OR 'prebuilt-index-v2.2.1'
 #       - schema.columns_required contains section_number + mode
@@ -142,9 +142,12 @@ else
     python3 - "$MANIFEST" <<'PYEOF'
 import json, sys
 
-# Verified SHA256 hashes for PUBLISHED assets.
+# Verified SHA256 hashes for PUBLISHED assets. v2.2.1 = the real published asset
+# (backstamp + Gemini re-embed, 14-section format, 935 rows, 11 delta personas
+# provider-stamped); sha confirmed against the published GitHub release asset.
 KNOWN_SHAS = {
     "prebuilt-index-v2.2.0": "e1097792b0efa16a50e19dd2cd6bf61689225fcd2e019c144378939413f14177",
+    "prebuilt-index-v2.2.1": "27a8cc0f9991666a43b7dd0806f286248ff03861a5ef899fa14de602a8622280",
 }
 KNOWN_TAGS = {"prebuilt-index-v2.2.0", "prebuilt-index-v2.2.1"}
 
@@ -174,7 +177,7 @@ live_url = base_url if rebuild_pending and base_url else m.get("asset_url", "")
 
 check("B1: persona_count == 65", m.get("persona_count") == 65,
       f"got {m.get('persona_count')}")
-check("B2: chunk_count == 4574", m.get("chunk_count") == 4574,
+check("B2: chunk_count == 935", m.get("chunk_count") == 935,
       f"got {m.get('chunk_count')}")
 check("B3: asset state valid (published or pre-release with base present)",
       (not rebuild_pending) or (bool(base_tag) and bool(base_sha) and bool(base_url)),

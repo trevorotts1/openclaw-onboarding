@@ -494,13 +494,21 @@ def _lead_af_code(reason):
 # ---------------------------------------------------------------------------
 # (4) BUNDLE-COMPLETENESS — the FULL deliverable set must be present.
 # ---------------------------------------------------------------------------
-def _bundle_completeness(run_dir):
+def _bundle_completeness(run_dir, *, verify_destinations: bool = True):
     """Require the full deliverable set before delivery: the five-file client package
     (deck pptx + deck pdf + presenter guide + presenter speech + audio, via AF-DH1),
     the GoHighLevel upload record + destination ground-truth (via delivery_gate), AND
     the teleprompter deliverable. A bare run dir at the delivery boundary that never
     assembled a package/plan is INCOMPLETE (this is the 1-of-12 partial-delivery
-    failure). Returns a list of AF-coded reasons."""
+    failure). Returns a list of AF-coded reasons.
+
+    verify_destinations=False is the PRE-TRANSPORT subset (used when the boundary gate
+    runs INSIDE a transport — ghl_media_push.py / the SOP copy step — BEFORE the upload):
+    the AF-DH1 five-file package + teleprompter are still required, but the SOP-9.4
+    destination ground-truth (the GHL upload record / mac anchor) is skipped, because
+    that upload is exactly what the transport is ABOUT to perform — verifying it
+    pre-upload would be circular. The artifact-intrinsic gates (overlay / kie / no-run-
+    dir) are unaffected and still fully apply in gate_delivered_artifact."""
     run_dir = Path(run_dir)
     reasons = []
     # delivery_gate() returns (True, []) for BOTH a clean-complete delivery AND a
@@ -515,7 +523,7 @@ def _bundle_completeness(run_dir):
                        "presenter guide + teleprompter + GoHighLevel upload record) was "
                        "never assembled. REJECTED.")
     else:
-        _ok, dg = delivery_gate(run_dir)
+        _ok, dg = delivery_gate(run_dir, verify_destinations=verify_destinations)
         reasons.extend(dg)
     # Teleprompter sibling (part of the full presentation experience).
     tele = []
@@ -532,12 +540,23 @@ def _bundle_completeness(run_dir):
 # ---------------------------------------------------------------------------
 # THE BOUNDARY GATE — fail-closed, runs for EVERY deck regardless of how produced.
 # ---------------------------------------------------------------------------
-def gate_delivered_artifact(artifact_path, run_dir=None):
+def gate_delivered_artifact(artifact_path, run_dir=None, *, verify_destinations: bool = True):
     """FAIL-CLOSED delivery boundary gate over the SHIPPED ARTIFACT. Returns
     (ok, reasons). ok is False on any unwaived rejection. Inspects the artifact itself
     (selectable text / kie provenance / bundle completeness) so a hand-built or overlay
     deck cannot be delivered no matter how it was produced. The ONLY bypass is a logged
-    owner_skip_approval token (gate=<AF code>); an agent may NOT self-approve."""
+    owner_skip_approval token (gate=<AF code>); an agent may NOT self-approve.
+
+    verify_destinations defaults to True (the full delivery-boundary check, e.g. at
+    run_signature_deck.py P9-DELIVER, where the uploads have already happened). Call it
+    with verify_destinations=False from a TRANSPORT (ghl_media_push.py before it uploads
+    a deck, or the SOP copy/send step) so the gate runs BEFORE the deck leaves the box:
+    every artifact-intrinsic gate (AF-OVERLAY-DELIVERED / AF-NOT-KIE-RENDERED /
+    AF-NO-RUN-DIR) plus the AF-DH1 five-file package + teleprompter are enforced, while
+    the SOP-9.4 destination ground-truth (the very upload the transport is about to do)
+    is deferred — so a hand-built / overlay / no-run-dir deck is REJECTED at the
+    transport without the chicken-and-egg of demanding the upload record before the
+    upload."""
     artifact_path = Path(artifact_path)
     if not artifact_path.is_file():
         return False, [f"{AF_NO_RUN_DIR}: delivery artifact does not exist: {artifact_path}"]
@@ -581,7 +600,7 @@ def gate_delivered_artifact(artifact_path, run_dir=None):
         if kie:
             reasons.append(f"NOTE: {AF_NOT_KIE_RENDERED} waived by owner_skip_approval."
                            if waived(AF_NOT_KIE_RENDERED) else kie)
-        for r in _bundle_completeness(resolved):
+        for r in _bundle_completeness(resolved, verify_destinations=verify_destinations):
             code = _lead_af_code(r) or AF_BUNDLE_COMPLETE
             if waived(code) or waived(AF_BUNDLE_COMPLETE):
                 reasons.append(f"NOTE: {code} waived by owner_skip_approval.")
@@ -592,9 +611,16 @@ def gate_delivered_artifact(artifact_path, run_dir=None):
     return (len(hard) == 0), reasons
 
 
-def delivery_gate(run_dir: Path):
+def delivery_gate(run_dir: Path, *, verify_destinations: bool = True):
     """Mechanical last-mile gate. Returns (ok, reasons). Defers (ok=True, []) when no
-    delivery has been attempted yet (no package dir AND no delivery_plan.json)."""
+    delivery has been attempted yet (no package dir AND no delivery_plan.json).
+
+    verify_destinations=False runs the PRE-TRANSPORT subset: AF-DH1 package hygiene + any
+    recorded af_dh1_triggered flag, but SKIPS the SOP-9.4 destination ground-truth (the
+    GHL upload record / mac anchor / drive ids) and the "no delivery_plan.json yet"
+    complaint — because when the boundary gate fires INSIDE a transport (before the
+    upload/copy), those destinations are exactly what is about to be written, so
+    verifying them first would be circular."""
     run_dir = Path(run_dir)
     plan_path = run_dir / "working" / "checkpoints" / "delivery_plan.json"
     pkg = find_client_package(run_dir)
@@ -624,8 +650,9 @@ def delivery_gate(run_dir: Path):
             if plan.get("af_dh1_triggered"):
                 reasons.append(f"AF-DH1: delivery_plan records af_dh1_triggered: "
                                f"{plan.get('af_dh1_details', 'unspecified')}")
-            reasons.extend(_check_destinations(run_dir, plan))
-    else:
+            if verify_destinations:
+                reasons.extend(_check_destinations(run_dir, plan))
+    elif verify_destinations:
         reasons.append("SOP-9.4: client package exists but no delivery_plan.json "
                        "(destination resolution never ran)")
 
@@ -850,14 +877,48 @@ def _selftest() -> int:
         if ok or not any("AF-NOT-KIE-RENDERED" in r for r in reasons):
             fails.append(f"M decoy: expected AF-NOT-KIE-RENDERED REJECT, got ok={ok} {reasons}")
 
+    # === PRE-TRANSPORT MODE (verify_destinations=False) — the gate the transport runs ===
+
+    # CASE N — PRE-TRANSPORT: a clean governed deck whose GHL upload has NOT happened
+    # yet (no pptx_ghl_media_id, plan ghl destination still pending). It MUST PASS the
+    # pre-transport gate (the upload is what the transport is about to do) while the FULL
+    # gate FAILS on the missing upload record — proving the transport gate is not
+    # chicken-and-egg yet stays fail-closed on real provenance.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        deck = _mk_full_run(base, with_text=False, task_ids=("kie-aaa",))
+        _write_render_manifest(base, ["kie-aaa"])
+        _write_media(base, {})  # GHL upload record not written yet (transport pending)
+        _write_plan(base, {"destinations": [
+            {"type": "ghl", "status": "pending"},
+            {"type": "mac_downloads", "verify_anchor": str(deck)},
+        ]})
+        ok_pre, r_pre = gate_delivered_artifact(deck, base, verify_destinations=False)
+        if not ok_pre:
+            fails.append(f"N pre-transport-pass: expected PASS pre-transport, got {r_pre}")
+        ok_full, r_full = gate_delivered_artifact(deck, base, verify_destinations=True)
+        if ok_full or not any("pptx_ghl_media_id" in r for r in r_full):
+            fails.append(f"N full-fail: expected FULL gate to FAIL on missing upload "
+                         f"record, got ok={ok_full} {r_full}")
+
+    # CASE O — PRE-TRANSPORT still REJECTS a hand-built overlay deck: artifact provenance
+    # is unaffected by verify_destinations, so a transport cannot ship an overlay deck.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        deck = _mk_full_run(base, with_text=True, task_ids=("kie-aaa",))
+        ok, reasons = gate_delivered_artifact(deck, base, verify_destinations=False)
+        if ok or not any("AF-OVERLAY-DELIVERED" in r for r in reasons):
+            fails.append(f"O pre-transport-overlay: expected AF-OVERLAY-DELIVERED REJECT, "
+                         f"got ok={ok} {reasons}")
+
     if fails:
         print("delivery_gate selftest -> FAIL")
         for f in fails:
             print("  -", f)
         return 1
-    print("delivery_gate selftest -> PASS (14 cases: defer/pass/extra-md/singular/"
+    print("delivery_gate selftest -> PASS (16 cases: defer/pass/extra-md/singular/"
           "no-upload/missing-anchor/incomplete + boundary: clean-pass/overlay/no-run-dir/"
-          "not-kie/bundle/owner-skip/decoy)")
+          "not-kie/bundle/owner-skip/decoy + pre-transport: upload-pending-pass/overlay-reject)")
     return 0
 
 
@@ -868,6 +929,14 @@ def main() -> int:
     ap.add_argument("--artifact", help="the SHIPPED deck artifact (.pptx/.pdf) to gate "
                     "at the delivery boundary (fail-closed)")
     ap.add_argument("--run-dir", dest="run_dir_opt", help="governed run dir for --artifact")
+    ap.add_argument("--pre-transport", action="store_true",
+                    help="PRE-TRANSPORT mode for --artifact: run the boundary gate BEFORE a "
+                    "deck leaves the box (the SOP copy/upload step). Enforces artifact "
+                    "provenance (AF-OVERLAY-DELIVERED / AF-NOT-KIE-RENDERED / AF-NO-RUN-DIR) "
+                    "+ the AF-DH1 five-file package + teleprompter, but DEFERS the SOP-9.4 "
+                    "destination ground-truth (the upload this transport is about to do). "
+                    "Use this in delivery-concierge-sops.md before any cp/upload/send; the "
+                    "full destination check runs later at run_signature_deck.py P9-DELIVER.")
     ap.add_argument("--selftest", action="store_true", help="run built-in fixtures")
     ap.add_argument("--json", action="store_true", help="emit JSON result")
     args = ap.parse_args()
@@ -878,7 +947,8 @@ def main() -> int:
     # OUT-OF-BAND BOUNDARY MODE — inspect the shipped artifact, fail-closed.
     if args.artifact:
         rd = args.run_dir_opt or args.run_dir
-        ok, reasons = gate_delivered_artifact(args.artifact, rd)
+        ok, reasons = gate_delivered_artifact(args.artifact, rd,
+                                              verify_destinations=not args.pre_transport)
         if args.json:
             print(json.dumps({"ok": ok, "reasons": reasons}, indent=2))
         else:
