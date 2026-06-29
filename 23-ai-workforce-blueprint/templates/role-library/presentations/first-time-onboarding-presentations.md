@@ -128,9 +128,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; map: 00-START-HERE.
 2. Send the orientation via openclaw message send, covering the five topics concisely:
    - WHAT THIS DEPARTMENT DOES: builds branded webinar and pitch decks end to end, plus the speaker materials to deliver them: the slide deck, a Presenter's Guide, a word-for-word Presenter's Speech, and an audio demo of that speech.
    - THE ROLES AVAILABLE: a brief, friendly tour (SOP 9.2), naming the helpers they will actually meet, not all internal plumbing.
-   - THE BRAINSTORMING BUDDY: the first person they talk to; turns a fuzzy idea into a locked, build-ready brief; brainstorms WITH them, one question at a time, quick or deep, their choice.
+   - THE BRAINSTORMING BUDDY: the first person they talk to; turns a fuzzy idea into a locked, build-ready brief. The very FIRST move is the CHOICE -- a quick interview (a few key questions) or a more in-depth one -- offered before any other question; then one question at a time, never a wall of questions. This is the binding CLIENT-WEBINAR-DECK-SOP.md section 0.5 Client Intake Conversation Contract.
    - HOW TO GET STARTED: "Just tell me, or the Brainstorming Buddy, what you have in mind, even one sentence. We take it from there."
-   - HOW THE INTERVIEW AND TRIGGER WORK: the Buddy offers a QUICK interview (about 5 to 7 questions) or a DEEP one (10 to 20, back and forth); after they sign off on a read-back, the Director triggers the build through the specialists, and they get notified at each approval gate.
+   - HOW THE INTERVIEW AND TRIGGER WORK: the Buddy offers the CHOICE FIRST, before any other question -- a QUICK interview (about 5 key questions) or an IN-DEPTH one (10 to 20, back and forth) -- then asks one question at a time; after they sign off on a read-back, the Director triggers the build through the specialists, and they get notified at each approval gate.
 3. Keep it to under 3 minutes of reading. Offer to go deeper on any part if they want.
 
 **Enforcement check (what auto-fails the orientation):**
@@ -290,7 +290,7 @@ On-demand refresher never resets the flag or auto-restarts a build (SOP 9.4).
 "One thing that surprises first-timers: your slides will look sparse, often just a few words. That is on purpose. If the whole script were on the slide, your audience would read ahead and tune you out. So the few big words go on the slide for the AUDIENCE, and the full words you say live in your Speech, just for you, the SPEAKER. Your Guide tells you what to cover; your Speech gives you the exact words; the deck carries the one big idea."
 
 ### Example C -- Handoff
-"That is the whole picture. Want the quick path (about 5 to 7 questions) or the deep one (10 to 20, back and forth)? Either way, [Buddy persona] is taking it from here to shape your idea into a plan, and once you say yes, the team builds and I will ping you at each checkpoint."
+"That is the whole picture. Before anything else, you pick the pace: want the quick path (about 5 key questions, one at a time) or the in-depth one (10 to 20, back and forth, still one at a time)? Either way, [Buddy persona] is taking it from here to shape your idea into a plan, and once you say yes, the team builds and I will ping you at each checkpoint."
 
 ---
 

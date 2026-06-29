@@ -1,0 +1,69 @@
+name: presentation-intake-conversation-guard
+
+# Fails the build if the Presentation-department CLIENT INTAKE conversation
+# regresses away from the "offer the quick-vs-in-depth CHOICE first, then ask
+# ONE question at a time" contract (CLIENT-WEBINAR-DECK-SOP.md section 0.5).
+#
+# Runs two guards:
+#   1. tests/unit/presentation-intake-conversation.test.sh -- asserts the
+#      choice-first + one-at-a-time wording is present across every
+#      conversation-governing artifact (the master SOP section 0.5, the
+#      Brainstorming Buddy role + its sops mirror, the entry persona
+#      IDENTITY.md/SOUL.md, the cross-department buddy template, the how-to-use
+#      template, the regenerated presentations how-to guide, and the resolved
+#      welcome message), and that no owner-facing message dumps a question batch
+#      (the exact screenshot anti-pattern is banned: AF-INTAKE-BATCH).
+#   2. 23-ai-workforce-blueprint/scripts/test-presentation-dept-welcome.sh --
+#      the welcome auto-send dry-run suite (now asserting the choice + one-at-a-
+#      time phrases in the message body).
+#
+# This is the INTAKE conversation only. It does NOT touch the image-prompt floor,
+# build_deck.py, run_signature_deck.py, or any build phase.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - universal-sops/CLIENT-WEBINAR-DECK-SOP.md
+      - 23-ai-workforce-blueprint/scripts/send-presentation-dept-welcome.sh
+      - 23-ai-workforce-blueprint/scripts/test-presentation-dept-welcome.sh
+      - 23-ai-workforce-blueprint/templates/how-to-use-this-department.template.md
+      - 23-ai-workforce-blueprint/templates/role-library/_brainstorming-buddy-template.md
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/**
+      - tests/unit/presentation-intake-conversation.test.sh
+      - .github/workflows/presentation-intake-conversation-guard.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - universal-sops/CLIENT-WEBINAR-DECK-SOP.md
+      - 23-ai-workforce-blueprint/scripts/send-presentation-dept-welcome.sh
+      - 23-ai-workforce-blueprint/scripts/test-presentation-dept-welcome.sh
+      - 23-ai-workforce-blueprint/templates/how-to-use-this-department.template.md
+      - 23-ai-workforce-blueprint/templates/role-library/_brainstorming-buddy-template.md
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/**
+      - tests/unit/presentation-intake-conversation.test.sh
+      - .github/workflows/presentation-intake-conversation-guard.yml
+
+jobs:
+  intake-conversation-guard:
+    name: Choice-first / one-at-a-time intake contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Intake conversation contract guard
+        shell: bash
+        run: |
+          chmod +x tests/unit/presentation-intake-conversation.test.sh
+          bash tests/unit/presentation-intake-conversation.test.sh
+
+      - name: Welcome auto-send dry-run suite (choice + one-at-a-time)
+        shell: bash
+        run: |
+          bash 23-ai-workforce-blueprint/scripts/test-presentation-dept-welcome.sh

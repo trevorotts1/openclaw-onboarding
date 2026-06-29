@@ -1,6 +1,6 @@
 # CLIENT WEBINAR DECK SOP — DETERMINISTIC PIPELINE
 **Standard Operating Procedure — Branded Webinar / Slide Deck, End-to-End**
-**Version 2.0 — 2026-06-16 (deterministic-pipeline rewrite)**
+**Version 2.1 -- 2026-06-29 (adds section 0.5 Client Intake Conversation Contract; deterministic pipeline sections 1-9 unchanged)**
 **Audience:** the Presentations builder ("Slate") and any sub-agent that builds a deck.
 **Owner role:** Director of Presentations (authority); QC Specialist (gate).
 
@@ -95,6 +95,74 @@ ladder, hook, QC gates, delivery — exists to PROTECT the attention those two e
 **Canonical doctrine home:** the North Star — `presentations/sops/SOP-NORTHSTAR-00` (when
 present) and the *Powerful Presentation Framework*. The mechanics that execute it are the live
 SOP/engine stack in §§3–7 below.
+
+---
+
+## 0.5 CLIENT INTAKE CONVERSATION CONTRACT (read before §1)
+
+> **This section governs the FIRST conversation with the owner, before any build.** It is
+> ADDITIVE doctrine: it changes nothing in sections 1-9 (the deterministic build, the image-prompt
+> floor, `build_deck.py`). It governs HOW a net-new deck idea is taken in, so the owner is met with
+> a warm, paced conversation, never a wall of questions. This is the single canonical wording; the
+> Brainstorming Buddy SOP 9.0/9.1, ROLE-22 first-time onboarding, the welcome script, and the
+> cross-department Brainstorming Buddy template all mirror it so the experience is identical on
+> every box. Em-dash-free by repo KPI.
+
+**(a) THE CHOICE COMES FIRST.** On ANY net-new deck request from the owner ("I want a deck /
+webinar / pitch ..."), the FIRST response is a one-line warm acknowledgment plus the
+quick-vs-in-depth CHOICE. It is NEVER a batch of questions and it is NEVER the start of a build.
+The canonical opening, verbatim:
+
+> "Love this. Let's shape it together, and you set the pace. I can do this two ways: the QUICK
+> way, where I ask you about 5 key questions, one at a time, and we lock a solid plan fast; or the
+> IN-DEPTH way, where we go a little deeper, still one question at a time, so the deck is tailored
+> exactly to your audience and offer. Which would you like, quick or in-depth? You can switch or
+> stop whenever you want."
+
+**(b) THEN STRICTLY ONE QUESTION PER MESSAGE.** After the owner picks a path, send exactly ONE
+intake question per message. Do NOT send the next question until the owner has answered the current
+one. After each answer, reflect it back in one line, then ask the next. In the in-depth path, give
+a 2-line running summary about every 5th question. This mirrors the blueprint's existing
+one-at-a-time doctrine (INSTRUCTIONS.md, ZHC-BUILDOUT-EXPERIENCE.md: "overwhelm = failure"), now
+applied to the deck intake. A single message containing two or more intake questions -- numbered,
+bulleted, or joined by "and" -- is a HARD VIOLATION (**AF-INTAKE-BATCH**).
+
+**(c) THE QUICK SET (about 5 essentials, asked one at a time).** Even the quick set keeps the two
+no-guess fields (representation mix, grounded content) because those can NEVER be defaulted (the
+constraint preserved from SOP 9.0):
+1. GOAL + CTA: "In one line, what is this presentation for, and what do you want people to DO at the end?"
+2. AUDIENCE + REPRESENTATION_MIX (HARD-REQUIRED, never guessed): "Who is in the room? Tell me who the audience is, and if people appear in the images, roughly how they break down (for example mostly women, mixed, or no people at all)."
+3. GROUNDED_CONTENT (HARD-REQUIRED, never substituted): "What is it built around -- your book, program, method, or core message? Just the name and a one-line description."
+4. PITCH + PRICE (pitch_included never defaulted; two-prices rule): "Does it end with an offer or pitch (a price or package), or is it teaching and content-only? If there is an offer, what are you selling and at what price?"
+5. DURATION + DEADLINE: "How long should it run, and when do you need it ready?"
+
+TONE is inferred and confirmed at read-back; STYLE_SOURCE defaults to create-new (flagged);
+DARK_OK stays false.
+
+**(d) THE IN-DEPTH SET (the quick 5 PLUS the tailored set, 10 to 20 total, still one at a time).**
+TARGET_FEELING; TONE (Inspirational / Tough Love / Challenger / Teacher / Storyteller /
+High-Energy Hype / Calm Premium, or a blend); HOOK_SEED; OFFER_STACK + PRICE_ANCHOR + PRICE_MODE;
+VIP_TIER; OBJECTION; PROOF_ASSETS; VISUAL_MIX; STYLE_SOURCE + STYLE_PREFS; ASSET BRANCH;
+TRANSFORMATION_PROMISE; DELIVERABLE_SET; SLIDE_COUNT; DELIVERY_DESTINATIONS; CLIENT_NOTES. Every
+field maps onto the existing question bank (`_brainstorming-buddy-question-banks.json` +
+`brainstorming-buddy-presentations.md`); no field is invented -- only reordered so the choice is
+first and the no-guess fields are woven into the one-at-a-time flow.
+
+**(e) WHO RUNS IT.** Whichever agent first receives a net-new owner deck request runs THIS
+contract, or dispatches ROLE-22 (first-time onboarding) then ROLE-17 (Brainstorming Buddy) to run
+it. It NEVER dumps a batch and NEVER starts building before a locked, signed-off brief exists. The
+entry builder persona ("Slate") offers the choice or hands to ROLE-17; it BUILDS only a dispatched
+task that already carries a locked brief.
+
+**(f) AF-INTAKE-BATCH (intake-scoped auto-fail).** Registered in
+`presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md` Section 5 and `PIPELINE-MANIFEST.json`
+(`enforced_by: qc_check`, stage INTAKE). It is scoped to the INTAKE conversation ONLY and NEVER
+gates the deterministic build (`build_deck.py` / `run_signature_deck.py`). The QC/Healer intake-trace
+scan trips AF-INTAKE-BATCH when a single assistant turn emits two or more intake questions before
+an owner answer. The exact screenshot anti-pattern is BANNED verbatim: a single message that
+enumerates Topic + Audience + Tone + Deadline + Existing assets + Content together, and the closing
+"give me whatever you have got and I will get moving." That message is the canonical AF-INTAKE-BATCH
+failure: it offers no choice and dumps the whole batch at once.
 
 ---
 

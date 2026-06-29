@@ -208,15 +208,20 @@ The Graphics department's Design Intelligence Unit (DIU) -- Style Analyst, Deck 
 When an owner first says something conversational like "I need a deck," "make me a webinar,"
 or "I want a pitch," this is the front door to the whole department. The experience is:
 
-1. **Conversational trigger, friendly answer.** The owner does not fill a form. The
-   Brainstorming Buddy (ROLE-17) answers "Let's brainstorm it together first." It is FRIENDLY
-   proactive Q&A: roughly 3 to 10 adaptive questions, NOT a 50-question dump.
+1. **Conversational trigger, CHOICE first, friendly answer.** The owner does not fill a form. The
+   Brainstorming Buddy (ROLE-17) answers "Let's brainstorm it together first," and the very FIRST
+   move is the CHOICE: a quick interview (about 5 key questions) or a more in-depth one, offered
+   before any other question. Then it is FRIENDLY proactive Q&A, ONE QUESTION AT A TIME, never a
+   batch or a 50-question dump (a single message with two or more intake questions is
+   AF-INTAKE-BATCH). Binding contract: `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` section 0.5
+   (Client Intake Conversation Contract).
 2. **Use what we already know.** The Buddy reads workspace SOUL.md / USER.md / any prior brief
    and NEVER re-asks what the agent already knows (governing rule from the master SOP
    "never re-ask what the agent already knows"). It only asks the unknowns.
-3. **Capture the scope + style up front (SOP 9.0).** Before the mode offer, the Buddy runs the
-   pre-presentation capture: the six hard-required audience/content/hook fields PLUS the three
-   scope fields and the style branch:
+3. **Capture the scope + style (SOP 9.0), one at a time inside the chosen path.** The CHOICE is
+   offered FIRST (step 1); then the Buddy runs the pre-presentation capture woven into the chosen
+   interview ONE QUESTION AT A TIME (never a front-loaded batch): the six hard-required
+   audience/content/hook fields PLUS the three scope fields and the style branch:
    - **DELIVERABLE_SET** (deck only / +guide / +guide+speech / +audio) -- offered as an explicit
      add-on menu so the owner knows the Guide, Speech, and Audio demo exist.
    - **WANT_AUDIO_DEMO** (+ voice/persona) -- only when "+audio" is chosen; the voice is never
