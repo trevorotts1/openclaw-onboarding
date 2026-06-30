@@ -23,7 +23,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v16.2.7"
+ONBOARDING_VERSION="v16.2.8"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -6941,6 +6941,34 @@ if [ -f "$_ENSURE_CRONS" ]; then
     fi
 else
     warn "ensure-pipeline-crons.sh not in bundle ($_ENSURE_CRONS) — pipeline cron backfill skipped (older onboarding bundle)."
+fi
+
+# ----------------------------------------------------------
+# v16.2.8: Mac SERVICE self-heal + gateway-health watchdog (no-sudo).
+# ----------------------------------------------------------
+# Wires the previously manual-only platform/mac/service-selfheal installer into
+# the install flow. It copies remediate.sh AND gateway-health-watchdog.sh into
+# ~/.openclaw/service-env/ and loads the com.openclaw.service-remediate
+# LaunchAgent (every 5 min). remediate.sh then DELEGATES the gateway HEALTH leg
+# to the watchdog (HTTP {"ok":true} probe + launchctl kickstart of a hung
+# gateway), closing the gateway-deferral-deadlock dark-gateway gap that launchd
+# KeepAlive alone cannot cover (KeepAlive only respawns a still-LOADED job; a
+# hung-but-loaded gateway stays dark). Mac-only (launchd). The VPS host
+# equivalent is platform/vps/service-selfheal/install-host-watchdog-cron.sh, which the operator
+# runs ON THE DOCKER HOST (install.sh re-execs INTO the container, so it cannot
+# install a host cron itself). Idempotent, fail-soft — never blocks the install.
+if [ "$OC_PLATFORM" = "mac" ]; then
+    step "Installing Mac service self-heal + gateway-health watchdog (com.openclaw.service-remediate)"
+    _SELFHEAL_INSTALLER="$ONBOARDING_DIR/platform/mac/service-selfheal/install-service-remediate.sh"
+    if [ -f "$_SELFHEAL_INSTALLER" ]; then
+        if bash "$_SELFHEAL_INSTALLER" 2>&1 | tee -a "$LOG_FILE"; then
+            success "Service self-heal + gateway watchdog installed (runs every 5 min, no sudo)"
+        else
+            warn "install-service-remediate.sh returned non-zero — self-heal not confirmed (re-run manually: bash $_SELFHEAL_INSTALLER)"
+        fi
+    else
+        note "service-selfheal installer not in bundle ($_SELFHEAL_INSTALLER) — skipping (older onboarding bundle, harmless)"
+    fi
 fi
 
 # ----------------------------------------------------------
