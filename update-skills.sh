@@ -42,7 +42,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v16.2.5"
+ONBOARDING_VERSION="v16.2.6"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -445,7 +445,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v16.2.2 - safe_json_edit
+# v16.2.6 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1687,6 +1687,30 @@ except:
   done
 
   echo "  Wiring complete: $WIRED_COUNT skill(s) wired, $SKIPPED_WIRED_COUNT already wired (idempotent skip)"
+
+  # ----------------------------------------------------------
+  # v16.2.6: DEFENSIVE tool-drift report (installed CLIs vs skill source).
+  # Some skills install a standalone CLI by copying their engine into
+  # ~/.openclaw/tools/<tool>/ and `pip install -e` on the copy (e.g. caf, skill
+  # 44). The routine sync updates skill SOURCE files but the installed binary can
+  # still drift. scripts/tool-drift-check.sh reads each tool's .installed-from
+  # stamp, compares it to skill-version.txt, and capability-probes the binary.
+  # This is REPORT-ONLY and MUST NOT change the update's exit status: it runs
+  # only when the script is present + executable, and any non-zero verdict is
+  # swallowed (`|| true`) so a stale/missing tool never fails the update here —
+  # it is surfaced loudly for an operator/agent rebuild instead.
+  TOOL_DRIFT_CHECK="$ONBOARDING_DIR/scripts/tool-drift-check.sh"
+  if [ -x "$TOOL_DRIFT_CHECK" ]; then
+    TOOL_DRIFT_JSON="${LOG_FILE%.log}-tool-drift.json"
+    echo ""
+    echo "  Checking installed CLI tools for drift vs skill source (report-only)..."
+    if bash "$TOOL_DRIFT_CHECK" --json-only > "$TOOL_DRIFT_JSON" 2>>"$LOG_FILE"; then
+      echo "  tool-drift: all installed CLIs in sync with source."
+    else
+      echo "  tool-drift: STALE/UNPROVEN TOOLING DETECTED -- see $TOOL_DRIFT_JSON"
+      echo "  (rebuild commands are printed in that JSON; rebuild is opt-in, never auto-run here)"
+    fi || true
+  fi
 
   # ----------------------------------------------------------
   # v10.15.42: Run migrate-existing-workforce.sh so copied skills

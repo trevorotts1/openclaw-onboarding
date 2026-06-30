@@ -157,7 +157,7 @@ When an owner asks what the social media planner does, how it works, or what it 
 
 ### Mandatory steps before answering:
 
-1. **Run the live GHL connected-accounts check** (INSTRUCTIONS.md `check-social-connections` — Tier 0 `caf social list-accounts` → Tier 1 MCP → Tier 2 direct API). This is NOT optional for scope questions.
+1. **Run the live GHL connected-accounts check** (INSTRUCTIONS.md `check-social-connections` — Tier 0 `caf social accounts` → Tier 1 MCP → Tier 2 direct API). This is NOT optional for scope questions.
 2. **Build the enabled-platforms list** from the live query result only.
 3. **Answer with the full picture**: what the skill produces, what platforms it covers (using the live list), and how to trigger it.
 

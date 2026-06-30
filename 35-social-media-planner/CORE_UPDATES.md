@@ -4,7 +4,7 @@ After installing this skill, add the following to the client's core .md files.
 
 > **6-tier GHL routing (Tier 0 = Skill 44, primary):** All GHL operations in this skill (social posting, blog publish, media upload, campaign scheduling) follow the 6-tier GHL access chain defined by skill 36. Try the highest applicable tier first:
 >
-> - **Tier 0 (Skill 44 — Convert and Flow CLI / `caf`):** PRIMARY for social ops the CLI covers — `caf social list-accounts`, `caf social schedule`, `caf social status`. If **skill 44 (`44-convert-and-flow-operator`)** is installed, route social posting/scheduling through `caf` FIRST (no MCP overhead, no manual UI). Falls through to the MCP tiers for ops the CLI lacks (blogs, media upload, email templates).
+> - **Tier 0 (Skill 44 — Convert and Flow CLI / `caf`):** PRIMARY for social ops the CLI covers — `caf social accounts`, `caf social create-post`, `caf social posts`. If **skill 44 (`44-convert-and-flow-operator`)** is installed, route social posting/scheduling through `caf` FIRST (no MCP overhead, no manual UI). Falls through to the MCP tiers for ops the CLI lacks (blogs, media upload, email templates).
 > - **Tier 1 (Official MCP):** `social-media-posting_create-post`, `social-media-posting_edit-post`, `social-media-posting_get-account`, `blogs_create-blog-post`, `blogs_update-blog-post`, `emails_create-template`
 > - **Tier 2 (Community MCP):** `create_social_post`, `update_social_post`, `bulk_delete_social_posts`, `upload_media_file`, `bulk_update_media_files`, `create_email_template`, `view_email_center`, `view_campaign_stats`
 > - **Tier 3 (raw API — what this skill historically describes):** Only as a fallback when Tier 0 + MCPs lack the call. **Media upload is the documented Tier 3 exception — `caf` has no media commands, so media ALWAYS routes to Tier 3 (`POST /medias/upload-file`).**
@@ -23,7 +23,7 @@ This skill produces a 7-part weekly content series across Facebook, Instagram, L
 - Every Saturday, the AI requests the weekly theme from the client via HEARTBEAT.md
 - The AI selects a content persona using 5-layer alignment (client can override with personal brand tone)
 - Content production uses up to 8 parallel sub-agents: Facebook Writer, Instagram Writer, LinkedIn Writer, YouTube/Pinterest/TikTok Writer, Image Generator, Blog and Email Writer, Podcast Script Writer, Video Producer
-- **Posting path (if skill 44 installed — PRIMARY):** route social posting/scheduling through Skill 44's `caf social schedule` / `caf social list-accounts` (Tier 0) first — direct internal API, no MCP overhead, no manual UI.
+- **Posting path (if skill 44 installed — PRIMARY):** route social posting/scheduling through Skill 44's `caf social create-post` / `caf social accounts` (Tier 0) first — direct internal API, no MCP overhead, no manual UI.
 - **Posting path (if skill 44 absent but skill 36 installed):** route through `social-media-posting_create-post` (Tier 1 Official MCP) by default. Fall to Tier 2 `create_social_post` if Tier 1 lacks a needed field. Fall to direct GoHighLevel Social Planner API (Tier 3) only as last resort.
 - **Posting path (if neither installed):** direct GoHighLevel (Convert and Flow) Social Planner API using Private Integration Token.
 - Every post gets a unique comment with the client's weekly action link posted 1-2 minutes after the main post

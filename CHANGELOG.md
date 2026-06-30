@@ -1,3 +1,22 @@
+## [v16.2.6]  -  2026-06-30  -  fix(updater): wire skill 44 so `caf` is rebuilt by updates + report tool-drift + correct skill 35 fake `caf social` commands
+
+### Risk: low-to-medium — touches the update execution path. New code is additive and fail-soft. The wiring loop and `set -euo pipefail` are unchanged; the new wire.sh never aborts (always exits 0) and the new drift report is gated on `[ -x ... ]` and swallows non-zero (`|| true`), so it cannot change the update's exit status. No gate weakened. No client names in any changed file.
+
+### Root cause fixed
+- `update-skills.sh`'s wiring loop (`update-skills.sh:1631-1646`) runs a skill's installer only when found at the skill ROOT (`wire.sh > install.sh > scripts/install.sh > setup-*.sh`). Skill 44's engine installer lives at `tools/engine/install.sh` — a path the loop never invokes — so `caf` was NEVER rebuilt by the routine update and silently drifted behind the synced source fleet-wide (source on disk != working binary). The `.wired-${ONBOARDING_VERSION}` sentinel (`update-skills.sh:1623`) means the new wire.sh only runs on a NEW onboarding version, so this ships with an onboarding-version bump (see below).
+
+### What shipped
+- **`44-convert-and-flow-operator/wire.sh`** (NEW, +x): root wiring installer the loop DOES pick up. Idempotently (re)builds `caf` (copy engine into `~/.openclaw/tools/convert-and-flow-cli/engine` → `pip install -e` in the venv → install caf/convertandflow/ghl wrappers), writes the `.installed-from` drift stamp, fast no-op when the stamp version already matches AND the venv imports the package. Fail-soft: every error logged, always exits 0. No bare `gws`, no destructive ops.
+- **`44-convert-and-flow-operator/tools/engine/install.sh`**: writes the same `.installed-from` stamp right after `pip install -e` succeeds (so a manual/guard rebuild also records the source version). Minimal additive change.
+- **`scripts/tool-drift-check.sh`** (NEW, +x): read-only reconciliation guard — reads each registered tool's `.installed-from` stamp, compares to `skill-version.txt`, capability-probes the installed binary, emits JSON + an aggregate `overall_pass`. Prints (never runs) the rebuild command unless `--rebuild` is passed.
+- **`update-skills.sh`**: ONBOARDING_VERSION `v16.2.5` → `v16.2.6`; after the wiring loop, a REPORT-ONLY tool-drift call gated on `[ -x scripts/tool-drift-check.sh ]` with `--json-only`, writing to `${LOG_FILE%.log}-tool-drift.json`; any non-zero verdict is swallowed so it never fails the update.
+- **`35-social-media-planner/{CORE_UPDATES,INSTALL,INSTRUCTIONS,SKILL}.md`**: replaced fake `caf social` commands (`caf social list-accounts`, `caf social schedule`, `caf social status`) and fake flags (`--platform`/`--content`/`--at`) with the REAL CLI surface from `gohighlevel_cli.py`: `caf social accounts`, `caf social posts`, `caf social create-post --account-id <id> --text '...' [--media-url <u>] [--schedule <iso>]` (request body field is `summary`). Doctrine/ladder text unchanged.
+- **`44-convert-and-flow-operator/skill-version.txt`**: `v1.3.0` → `v1.3.1` (engine install.sh stamp-write); see skill 44 CHANGELOG `[1.3.1]`.
+- **`version`** + **`install.sh` ONBOARDING_VERSION**: `v16.2.5` → `v16.2.6` (kept in lockstep per VERSION-ARCHITECTURE.md). REQUIRED so the update check fires for the fleet AND so the new wire.sh runs past the `.wired-${ONBOARDING_VERSION}` sentinel.
+
+### TESTS / CI GUARD
+No new CI guard required. `bash -n` clean on wire.sh, the edited engine install.sh, update-skills.sh, and install.sh. The new drift report is defensive (presence-gated + non-zero-swallowed) and read-only.
+
 ## [v16.2.5]  -  2026-06-30  -  fix(speech-harness): remove Anthropic model defaults from speech_build_harness.py — replace with minimax-m3:cloud
 
 ### Risk: low — default-value change only. No logic altered. No gate weakened.

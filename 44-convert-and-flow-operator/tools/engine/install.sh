@@ -32,6 +32,25 @@ source "$VENV_DIR/bin/activate"
 pip install --upgrade pip -q
 pip install -e "$SCRIPT_DIR" -q
 
+# --- drift stamp: record the source version this binary was built from -------
+# Lets scripts/tool-drift-check.sh PROVE the installed caf matches skill source
+# instead of trusting source-on-disk. Mirrors the stamp written by the skill's
+# root wire.sh. `set -e` is active, so reaching here means `pip install -e`
+# succeeded; the `|| echo` keeps a failed stamp write non-fatal.
+INSTALL_ROOT="$(dirname "$VENV_DIR")"                    # ~/.openclaw/tools/convert-and-flow-cli
+SKILL_SRC="$(cd "$SCRIPT_DIR/../.." 2>/dev/null && pwd)" # engine -> tools -> skill root
+SRC_VER="$( (tr -d '[:space:]' < "$SKILL_SRC/skill-version.txt") 2>/dev/null || echo unknown )"
+[ -z "$SRC_VER" ] && SRC_VER="unknown"
+{
+  echo "TOOL=caf"
+  echo "SKILL_VERSION=$SRC_VER"
+  echo "ONBOARDING_VERSION=${ONBOARDING_VERSION:-}"
+  echo "INSTALLED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "SOURCE_PATH=$SKILL_SRC"
+} > "$INSTALL_ROOT/.installed-from" 2>/dev/null \
+  && echo "-> stamped $INSTALL_ROOT/.installed-from (SKILL_VERSION=$SRC_VER)" \
+  || echo "-> WARN: could not write drift stamp $INSTALL_ROOT/.installed-from (non-fatal)"
+
 chmod +x "$SCRIPT_DIR/ghl" "$SCRIPT_DIR/caf" "$SCRIPT_DIR/convertandflow"
 
 # Symlink into ~/.local/bin if on PATH
