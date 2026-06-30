@@ -29,7 +29,7 @@ USAGE (REAL MODE — requires ANTHROPIC_API_KEY)
       --arc     working/copy/arc_allocation.json \
       --out     working/presenter-speech/speech.md \
       --workdir working/speech \
-      [--model claude-sonnet-4-5] [--fallback-model claude-haiku-4-5] \
+      [--model minimax-m3:cloud] [--fallback-model minimax-m3:cloud] \
       [--wpm 130] [--max-expand-rounds 3] [--dry-run]
 
 USAGE (DRY-RUN — no API key needed, proves all 4 mechanisms)
@@ -834,10 +834,10 @@ def main():
     ap.add_argument("--arc",      required=True, help="Path to working/copy/arc_allocation.json")
     ap.add_argument("--out",      required=True, help="Output path for speech.md")
     ap.add_argument("--workdir",  required=True, help="Working directory for per-slide checkpoints")
-    ap.add_argument("--model",    default="claude-sonnet-4-5",
-                    help="Primary Anthropic model (default claude-sonnet-4-5)")
-    ap.add_argument("--fallback-model", default="claude-haiku-4-5",
-                    help="Fallback model on 529-exhaustion (default claude-haiku-4-5)")
+    ap.add_argument("--model",    default="minimax-m3:cloud",
+                    help="Primary generation model (default minimax-m3:cloud)")
+    ap.add_argument("--fallback-model", default="minimax-m3:cloud",
+                    help="Fallback model on exhaustion (default minimax-m3:cloud)")
     ap.add_argument("--wpm",      type=int, default=DEFAULT_WPM,
                     help=f"Words per minute for budget math (default {DEFAULT_WPM})")
     ap.add_argument("--max-expand-rounds", type=int, default=DEFAULT_MAX_EXPAND_ROUNDS,
