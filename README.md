@@ -1,7 +1,7 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v16.2.4.
+> **Version:** see `/version` - this repo at v16.2.5.
 >
 > **NOTE (v16.2.2) — fix(presentations): correctness follow-ups to the v16.2.0 process-integrity layer.** The per-step client report was calling a non-existent `openclaw message send --text` flag with no target, so every report failed and — combined with a gate that required a confirmed `gateway_msg_id` — would have DEADLOCKED every deck at delivery (`AF-PROCESS-INTEGRITY`); fixed to the real CLI (`-m`/`--channel`/`--target`, env-resolved owner target) and the report gate (runner + `prove-deck.py`) now bites on a MISSING report record, not an unconfirmed send (OQ-2). Also: `deck-intake-driver.py` PEP-604 `dict | None` → `Optional[dict]` (Python-3.9 parse safety); `build_deck.py` `_chk_cc_registered` no longer double-reports (a never-registered CC surfaces its own `AF-CC-UNREGISTERED`, not a mislabelled `AF-BUNDLE-COMPLETE`); removed an illustrative proper noun from a fleet template; `CANONICAL-RENDERER-PIN.sha256` regenerated. No gate weakened; the 9,000-char prompt floor untouched. `sync_check` IN SYNC, `test_preflight` ALL PASS, Guard A/B OK, runner-gate OK. No client names. See [CHANGELOG.md](CHANGELOG.md).
 >
@@ -61,7 +61,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v16.2.4** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v16.2.5** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.

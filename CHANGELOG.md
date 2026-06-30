@@ -1,3 +1,14 @@
+## [v16.2.5]  -  2026-06-30  -  fix(speech-harness): remove Anthropic model defaults from speech_build_harness.py — replace with minimax-m3:cloud
+
+### Risk: low — default-value change only. No logic altered. No gate weakened.
+
+### What shipped
+- **`23-ai-workforce-blueprint/templates/role-library/presentations/scripts/speech_build_harness.py`**: CLI `--model` default changed from `claude-sonnet-4-5` to `minimax-m3:cloud`; `--fallback-model` default changed from `claude-haiku-4-5` to `minimax-m3:cloud`. Help strings updated to remove "Anthropic model" and "529-exhaustion" phrasing. Docstring usage example updated to match. No logic, no retry wiring, no API call paths altered — only the default values.
+- **`test_preflight.py`**: intentionally unchanged. Occurrences of `claude-opus-4` in that file appear exclusively inside deliberately-failing fixture dicts (negative tests). They are values being tested and rejected by the gate — not defaults, not provider config, not anything that flows into client execution.
+
+### TESTS / CI GUARD
+No new CI guards required — this is a default-value substitution. Existing test suite unaffected. No client names in changed files.
+
 ## [v16.2.4]  -  2026-06-29  -  fix: cc-compat pin bumped v4.50.0 → v4.56.1 (fleet was getting stale CC on every roll).
 
 ### Risk: low — single-field version bump. No logic changed. minVersion and pinnedTag in cc-compat.json updated from v4.50.0 to v4.56.1 so fleet-refresh targets the current Command Center release. Confirmed clean of client names. fleet_refresh_runner.py investigated: passes AST parse, no gh calls, no python3 -c subprocess invocations — file is clean.
