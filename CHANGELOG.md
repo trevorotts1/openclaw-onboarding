@@ -1,3 +1,17 @@
+## [v16.2.7]  -  2026-06-30  -  fix(updater): wire skill 25 (video-creator) so it self-heals on update + fix `tool-drift-check` `expand()` so the v16.2.6 drift guard stops false-alarming
+
+### Risk: low — same additive, fail-soft pattern as v16.2.6. The new skill-25 `wire.sh` always exits 0 and runs only behind the wiring loop's `[ -x ... ]` check + the `.wired-${ONBOARDING_VERSION}` sentinel. The `tool-drift-check.sh` change is a one-line quoting correction that makes the (already report-only, swallowed) guard accurate. No gate weakened. No client names in any changed file.
+
+### Root cause fixed
+- Skill 25 (`25-video-creator`) installs by copying its engine into the UN-NUMBERED `~/.openclaw/skills/video-creator/` directory, which the update loop's `[0-9]*/` glob skips — so the installed video-creator silently drifted behind synced source, exactly the same bug class as skill 44's `caf` (fixed in v16.2.6).
+- `scripts/tool-drift-check.sh`'s `expand()` used `${1#~/}`; bash tilde-expands the unquoted `~/`, yielding a bogus `$HOME/~/...` path, so every `~/`-path tool — including the `caf` entry shipped in v16.2.6 — ALWAYS reported drift. The drift guard was therefore non-functional. Confirmed on bash 3.2 and 5.x.
+
+### What shipped
+- **`25-video-creator/wire.sh`** (NEW, +x): root wiring installer the loop DOES pick up. Idempotently re-syncs the un-numbered `video-creator` copy, (re)creates its venv, pip-installs the pinned runtime deps, writes the `.installed-from` drift stamp, fast no-op when already current. Fail-soft: every error logged, always exits 0. No bare `gws`, no destructive ops.
+- **`scripts/tool-drift-check.sh`**: `expand()` `${1#~/}` → `${1#"~/"}` (correct tilde-strip — repairs the v16.2.6 `caf` drift detection); registers `video-creator` with a creds-free venv-python import probe (mirrors the caf entry). Absolute / relative / `~user` paths unchanged.
+- **`25-video-creator/skill-version.txt`**: `v6.5.6` → `v6.5.7`; see skill 25 CHANGELOG `[6.5.7]`.
+- **`version`** + **`install.sh`/`update-skills.sh` ONBOARDING_VERSION** + the other 7 markers rolled `v16.2.6` → `v16.2.7` by `scripts/bump-version.sh` (REQUIRED so the update check fires AND so the new `wire.sh` runs past the `.wired-${ONBOARDING_VERSION}` sentinel).
+
 ## [v16.2.6]  -  2026-06-30  -  fix(updater): wire skill 44 so `caf` is rebuilt by updates + report tool-drift + correct skill 35 fake `caf social` commands
 
 ### Risk: low-to-medium — touches the update execution path. New code is additive and fail-soft. The wiring loop and `set -euo pipefail` are unchanged; the new wire.sh never aborts (always exits 0) and the new drift report is gated on `[ -x ... ]` and swallows non-zero (`|| true`), so it cannot change the update's exit status. No gate weakened. No client names in any changed file.

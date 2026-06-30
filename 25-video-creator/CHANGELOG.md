@@ -1,0 +1,35 @@
+# Changelog — video-creator (Skill 25)
+
+## [6.5.7] - 2026-06-30 — fix: re-sync the installed `video-creator` copy on every update (skill-root wire.sh) + drift stamp
+
+### Fixed (root cause — same class as skill 44's `caf` drift)
+- The routine update path never reconciled the INSTALLED skill. `update-skills.sh`'s
+  wiring loop walks only NUMBERED skill dirs (`[0-9]*/`, update-skills.sh:1617) and runs a
+  skill installer only when one is found at the skill ROOT (`wire.sh > install.sh >
+  scripts/install.sh > setup-*.sh`, update-skills.sh:1631-1646). Skill 25 does NOT install in
+  place: per INSTALL.md it COPIES the whole skill into an UN-numbered
+  `~/.openclaw/skills/video-creator/` (the runtime location named by TOOLS.md /
+  CORE_UPDATES.md / qc-video-creator.sh) and builds a local `venv` with pinned deps. The loop
+  re-syncs the numbered SOURCE but never re-copies the un-numbered runtime copy and never
+  rebuilds its venv — so the installed `video-creator` silently drifted behind the synced
+  source fleet-wide (source on disk != working install).
+
+### Added
+- `wire.sh` at the skill root: idempotent, fail-soft (re)sync that the wiring loop DOES pick up.
+  Copies the skill source into `~/.openclaw/skills/video-creator/` (additive, mirrors
+  INSTALL.md's `cp -r`), creates/keeps the `venv`, pip-installs the pinned runtime
+  (`moviepy==1.0.3 opencv-python requests pillow numpy`), makes the scripts executable, and
+  writes the `.installed-from` drift stamp. Fast no-op when the stamp version already matches
+  AND the venv python can `import moviepy.editor` (which also catches the documented MoviePy
+  v1-vs-v2 hazard, since v2 removed that module). Always exits 0; no bare `gws`; no destructive
+  ops; honours `VIDEO_CREATOR_DIR` / `VENV_DIR` / `PYTHON` overrides for tests.
+- Registered `video-creator` in `scripts/tool-drift-check.sh` (repo root scripts/): reads the
+  `.installed-from` stamp, compares to this `skill-version.txt`, and capability-probes the
+  copy's own venv python with creds-free `import` checks of the pinned deps. Read-only; prints
+  (never runs) the rebuild command unless `--rebuild` is passed.
+
+### Notes
+- `skill-version.txt`: `v6.5.6` → `v6.5.7` (required by CI guard G3 — skill-dir content changed).
+- Global version markers (`/version`, `install.sh`/`update-skills.sh` ONBOARDING_VERSION, root
+  CHANGELOG header) are intentionally NOT touched here — the operator rolls them with
+  `scripts/bump-version.sh` at merge.
