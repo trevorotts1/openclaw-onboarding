@@ -63,7 +63,12 @@ done
 
 log()  { [ "$JSON_ONLY" -eq 1 ] || echo "$@" >&2; }
 expand() { # expand a leading ~ to $HOME
-  case "$1" in "~"/*) printf '%s' "$HOME/${1#~/}";; *) printf '%s' "$1";; esac
+  # NB: the strip pattern MUST be quoted (`${1#"~/"}`). Unquoted `${1#~/}` is
+  # subject to tilde expansion on the pattern itself (bash 3.2 AND 5.x), so the
+  # pattern becomes "$HOME/" and never matches the literal leading "~/" in the
+  # value — yielding a bogus "$HOME/~/.openclaw/..." that resolves to nothing and
+  # makes EVERY registered ~/-path tool false-report drift. Quoting fixes it.
+  case "$1" in "~"/*) printf '%s' "$HOME/${1#"~/"}";; *) printf '%s' "$1";; esac
 }
 
 # Results accumulate as TAB-delimited records consumed by the JSON emitter.
@@ -218,19 +223,31 @@ register_tool \
   "-m cli_anything.gohighlevel payments create-product --help ; -m cli_anything.gohighlevel payments create-price --help ; -m cli_anything.gohighlevel payments --help" \
   "bash ~/.openclaw/skills/44-convert-and-flow-operator/tools/engine/install.sh"
 
-# --- Template for the next copy-installed tool (uncomment + fill in) ----------
-# Other drift-prone tools surfaced by the audit (see RECONCILE-DESIGN.md):
-#   * skill 25 video-creator — copies whole skill into an UN-numbered
-#     ~/.openclaw/skills/video-creator (update loop only walks [0-9]*/ dirs, so
-#     the copy is never re-synced) + a local venv. Probe its entrypoint.
-# register_tool \
-#   "video-creator" \
-#   "~/.openclaw/skills/video-creator" \
-#   "<entrypoint>" \
-#   "~/.openclaw/skills/25-video-creator" \
-#   "skill-version.txt" \
-#   "--help" \
-#   "bash ~/.openclaw/skills/25-video-creator/INSTALL.md-action-rebuild"
+# video-creator (skill 25 — Video Creator). Same drift CLASS as caf, different
+# shape: skill 25 installs by COPYING the whole skill into an UN-numbered
+# ~/.openclaw/skills/video-creator/ (the runtime location named by TOOLS.md /
+# CORE_UPDATES.md / qc-video-creator.sh) plus a local `venv`. The wiring loop
+# only walks numbered dirs ([0-9]*/, update-skills.sh:1617) and re-syncs the
+# NUMBERED source, so the un-numbered copy + its venv silently drift. Skill 25's
+# root wire.sh now reconciles them and writes this .installed-from stamp.
+#
+# Probe binary = the copy's OWN venv python (venv/bin/python), CREDS-FREE: skill
+# 25's scripts need no API keys to import their runtime (keys are only read at
+# generation time, and `--provider mock`/`local` need none). Each probe is a
+# stdlib-style `-c __import__('<mod>')` of a PINNED dependency — written as a
+# single space-free token so the registry's word-split argv passes it intact (a
+# `-c "import x.y"` form would be split on its internal space). `moviepy.editor`
+# is load-bearing: it FAILS on MoviePy v2 (which removed that module), so it
+# also catches the exact v1-vs-v2 pin drift INSTALL.md Step 2 warns about. A
+# stale/empty/wrong venv FAILS these even when the source on disk looks current.
+register_tool \
+  "video-creator" \
+  "~/.openclaw/skills/video-creator" \
+  "venv/bin/python" \
+  "~/.openclaw/skills/25-video-creator" \
+  "skill-version.txt" \
+  "-c __import__('moviepy.editor') ; -c __import__('cv2') ; -c __import__('numpy') ; -c __import__('PIL') ; -c __import__('requests')" \
+  "bash ~/.openclaw/skills/25-video-creator/wire.sh"
 
 # ==============================================================================
 # JSON EMIT + aggregate verdict (python3 = hard dep on Mac per repo convention)
