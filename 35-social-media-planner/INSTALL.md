@@ -236,7 +236,7 @@ fi
 ```
 
 The production playbook follows the 6-tier chain (skill 36), highest applicable tier first:
-- **Social posting:** Tier 0 `caf social schedule` (if Skill 44 installed) → Tier 1 `social-media-posting_create-post` → Tier 2 `create_social_post` → direct API as last resort
+- **Social posting:** Tier 0 `caf social create-post` (if Skill 44 installed) → Tier 1 `social-media-posting_create-post` → Tier 2 `create_social_post` → direct API as last resort
 - **Blog publish:** Tier 1 `blogs_create-blog-post` → Tier 2 `create_blog_post` → direct API
 - **Media upload:** Tier 0/Tier 1 not available (no caf/official-MCP media command) → Tier 2 `upload_media_file` → direct API (`POST /medias/upload-file` — documented Tier 3 exception)
 - **Email templates:** Tier 1 `emails_create-template` → Tier 2 `create_email_template` → direct API

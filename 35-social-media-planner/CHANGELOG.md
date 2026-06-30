@@ -1,5 +1,16 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.9.3 - 2026-06-30 — docs fix: corrected `caf social` commands to the real CLI surface
+
+### Fixed (documentation vs CLI drift)
+- Corrected the documented `caf social` commands to the real CLI surface:
+  `caf social create-post`, `caf social accounts`, and `caf social posts`, with the actual
+  flags `--account-id` / `--text` / `--media-url` / `--schedule`.
+- Removed the non-existent `caf social schedule`, `caf social list-accounts`, and
+  `caf social status` commands from CORE_UPDATES.md, INSTALL.md, INSTRUCTIONS.md, and SKILL.md
+  (the engine exposes no such subcommands — confirmed against
+  `tools/engine/cli_anything/gohighlevel/gohighlevel_cli.py`).
+
 ## v2.9.0 - 2026-06-15 — cron auto-install: fail-loud wiring + deduplication + QC assertion
 
 ### Root cause fixed

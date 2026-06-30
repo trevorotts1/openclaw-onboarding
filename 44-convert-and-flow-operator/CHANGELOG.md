@@ -1,6 +1,23 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
-## [1.3.0] - 2026-06-27 — fix: soap-opera id-collision (correctness) + portable index + FAB-QC overlay + automation library wired into roles/SOPs
+## [1.3.1] - 2026-06-30 — fix: rebuild `caf` on every update (skill-root wire.sh) + drift stamp
+
+### Fixed (root cause — proven drift)
+- The routine update path never rebuilt `caf`: `update-skills.sh`'s wiring loop runs a skill
+  installer only when found at the skill ROOT (`wire.sh > install.sh > scripts/install.sh >
+  setup-*.sh`), and skill 44's only installer was at `tools/engine/install.sh`, which the loop
+  never invokes. So the installed CLI silently drifted behind the synced source fleet-wide.
+
+### Added
+- `wire.sh` at the skill root: idempotent, fail-soft (re)builder for `caf` that the wiring loop
+  DOES pick up. Copies the engine into `~/.openclaw/tools/convert-and-flow-cli/engine`, runs
+  `pip install -e` in the venv, installs the caf/convertandflow/ghl wrappers, and writes the
+  `.installed-from` drift stamp. Fast no-op when already current; always exits 0; no bare `gws`.
+- `tools/engine/install.sh` now writes the `.installed-from` stamp (TOOL/SKILL_VERSION/
+  ONBOARDING_VERSION/INSTALLED_AT/SOURCE_PATH) right after `pip install -e` succeeds, so an
+  agent/guard rebuild also records the source version for `scripts/tool-drift-check.sh`.
+
+
 
 ### Fixed (correctness — proven bug)
 - `Catalog.by_id` was keyed by BARE id, so `soap-opera-sequence` (present in BOTH

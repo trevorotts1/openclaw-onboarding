@@ -211,8 +211,8 @@ When reporting connection status, run this live query and use ONLY its output. T
 **If Skill 44 (Tier 0 CLI) is installed (PRIMARY):**
 ```bash
 # List connected Social Planner accounts via the Convert and Flow CLI (Tier 0)
-caf social list-accounts --json
-# Schedule a post directly: caf social schedule --platform <p> --content "..." --at <iso8601>
+caf social accounts --json
+# Schedule a post directly: caf social create-post --account-id <id> --text '...' [--media-url <u>] [--schedule <iso8601>]
 ```
 
 **If Skill 44 is absent but Skill 36 (GHL MCP) is installed (`ROUTING_MODE=mcp-first`):**
