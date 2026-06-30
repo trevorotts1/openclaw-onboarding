@@ -1,3 +1,10 @@
+## [v16.2.4]  -  2026-06-29  -  fix: cc-compat pin bumped v4.50.0 → v4.56.1 (fleet was getting stale CC on every roll).
+
+### Risk: low — single-field version bump. No logic changed. minVersion and pinnedTag in cc-compat.json updated from v4.50.0 to v4.56.1 so fleet-refresh targets the current Command Center release. Confirmed clean of client names. fleet_refresh_runner.py investigated: passes AST parse, no gh calls, no python3 -c subprocess invocations — file is clean.
+
+### What shipped
+- **`cc-compat.json`**: `commandCenter.minVersion` and `pinnedTag` bumped `v4.50.0` → `v4.56.1`; `onboardingVersion` bumped to `v16.2.4`. Unblocks fleet-refresh from targeting stale CC v4.50.0.
+
 ## [v16.2.2]  -  2026-06-29  -  fix: stale lifecycle-cron sweep + watchdog self-removal + cron owner-chat misrouting fix + bounded model burn on human-blocked boxes.
 
 ### Risk: low — additive fixes. No existing gate weakened. Stale cron sweep removes defunct crons from completed boxes. Watchdog self-removal mirrors the existing interview-nudge pattern. Cron owner-chat fix corrects a recipient-resolution path; the resolver it switches to (`resolve-owner-chat.sh`) is already in production use by `nudge-incomplete-interviews.py` and `install.sh`. Model-burn cap pauses heavy dispatch on unchanging blocked state; auto-resumes on any state change; zero work abandoned.
@@ -2573,4 +2580,3 @@ Merges the presentations-sop-overhaul (universality + anti-compression) branch w
 ## [v12.19.1] — 2026-06-16 — fix(presentations): sync Deep Research Specialist ROLE file Section 9 to its SOP mirror
 
 The ROLE file (ROLE-04 presentations) Section 9 was behind its SOP mirror after v12.19.0. Regenerated to match: SOP 9.4 (Deep Validation & Persuasion Research) with Categories G (attributable quotes), H (fact-validation ledger), I (objection research), J (social-proof patterns), K (persuasion-framework validation), L (compliance flags); SOP 9.1 brief template extended with the G-L header counts; SOP 9.3 hook/pacing (F5/F6) + Hook Strategist hand-off. Source role file and mirror now agree.
-
