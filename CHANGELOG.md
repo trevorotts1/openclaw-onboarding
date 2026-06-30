@@ -1,3 +1,18 @@
+## [v16.2.8]  -  2026-06-30  -  feat(self-heal): gateway-health watchdog (box-aware HTTP probe + self-heal) filling the dangling remediate.sh hook
+
+### Risk: low — additive, fail-soft, opt-in. The Mac installer hunk is Mac-gated and inside an `if` (set -e exempt); the VPS host-cron installer is operator-run and REFUSES to arm unless it first confirms the real gateway port is reachable, so it can never `docker restart` a healthy container. No bare `gws`, no cred/config/plist writes; heal actions are restart-only + rate-limited. No client names in any changed file.
+
+### What shipped
+- **`platform/mac/service-selfheal/gateway-health-watchdog.sh`** (NEW, +x): box-aware health probe (real HTTP `{"ok":true}` + `/healthz`) gated by a consecutive-fail counter + cooldown; honors `GATEWAY_WATCHDOG_PORT` first, `18789` only as last resort; heal = Mac `launchctl kickstart` / VPS-host `docker restart` / in-container escalate-only. `--report-only` mode. Fills the previously-dangling `remediate.sh` → `gateway-watchdog.sh` hook.
+- **`platform/mac/service-selfheal/install-service-remediate.sh`**: also installs the watchdog (copies `gateway-health-watchdog.sh` → `~/.openclaw/service-env/gateway-watchdog.sh`).
+- **`platform/vps/service-selfheal/install-host-watchdog-cron.sh`** (NEW, +x): operator-run host `*/5` cron installer that resolves the REAL inner gateway port (`openclaw gateway status` → `docker port` host-mapping), runs a one-shot reachability probe, **refuses to arm if unreachable**, and forwards the proven port into the cron — so it can never false-restart a healthy container on a non-18789 box. Crontab install/replace guarded against a `set -e` wipe.
+- **`platform/README.md`**, **`platform/mac/service-selfheal/README.md`**: docs.
+- **`install.sh`**: Mac-gated, fail-soft hunk wiring the watchdog installer.
+- Onboarding markers rolled `v16.2.7` → `v16.2.8` via `scripts/bump-version.sh`.
+
+### Note
+The gateway deferral-deadlock root cause (config change → deferred restart → SIGTERM → clean exit, no supervisor relaunch) lives in OpenClaw CORE (`server.mjs`), not this repo. This watchdog is the repo-ownable mitigation: it brings a dead/unreachable gateway back within the watchdog interval instead of leaving it dark.
+
 ## [v16.2.7]  -  2026-06-30  -  fix(updater): wire skill 25 (video-creator) so it self-heals on update + fix `tool-drift-check` `expand()` so the v16.2.6 drift guard stops false-alarming
 
 ### Risk: low — same additive, fail-soft pattern as v16.2.6. The new skill-25 `wire.sh` always exits 0 and runs only behind the wiring loop's `[ -x ... ]` check + the `.wired-${ONBOARDING_VERSION}` sentinel. The `tool-drift-check.sh` change is a one-line quoting correction that makes the (already report-only, swallowed) guard accurate. No gate weakened. No client names in any changed file.

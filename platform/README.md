@@ -39,6 +39,11 @@ OPENCLAW_PLATFORM=vps  bash install.sh   # force VPS path
 
 - `bootstrap.sh` — Homebrew prereq check + Mac path variable setup
 - `STT-TRANSCRIPTION.md` — Mac speech-to-text setup (OpenClaw desktop)
+- `service-selfheal/` — gateway + cloudflared service self-heal and the gateway
+  HTTP-health watchdog (`gateway-health-watchdog.sh`). Auto-installed by
+  `install.sh` on Mac (end-of-install); also runnable by hand via
+  `install-service-remediate.sh`.
+- `tunnel-hardening/` — cloudflared connector hardening + no-sudo KeepAlive agents
 
 ## VPS-specific files (`platform/vps/`)
 
@@ -47,5 +52,9 @@ OPENCLAW_PLATFORM=vps  bash install.sh   # force VPS path
 - `INSTALL-GOTCHAS.md` — Hostinger Docker edge cases
 - `STT-TRANSCRIPTION.md` — VPS speech transcription reference
 - `36-ghl-mcp-setup-scripts/` — GHL MCP server supervision (nohup + healthcheck)
+- `service-selfheal/install-host-watchdog-cron.sh` — operator-run HOST installer
+  for the gateway HTTP-health watchdog (`*/5` host crontab; `docker restart`s the
+  openclaw container when the gateway health fails). Runs on the Docker HOST, not
+  inside the container.
 - `vps-onboarding/` — Cloudflare tunnel connector setup
 - `skills/` — VPS-bundled skill extras
