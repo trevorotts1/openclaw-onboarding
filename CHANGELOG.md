@@ -1,3 +1,17 @@
+## [v16.2.2]  -  2026-06-29  -  fix: stale lifecycle-cron sweep + watchdog self-removal + cron owner-chat misrouting fix + bounded model burn on human-blocked boxes.
+
+### Risk: low — additive fixes. No existing gate weakened. Stale cron sweep removes defunct crons from completed boxes. Watchdog self-removal mirrors the existing interview-nudge pattern. Cron owner-chat fix corrects a recipient-resolution path; the resolver it switches to (`resolve-owner-chat.sh`) is already in production use by `nudge-incomplete-interviews.py` and `install.sh`. Model-burn cap pauses heavy dispatch on unchanging blocked state; auto-resumes on any state change; zero work abandoned.
+
+### What shipped
+- **`23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh`** (v12.3.13): `find_watchdog_cron_uuid()` + `self_remove_cron_watchdog()` — watchdog self-removes on `closeoutStatus==done|sent`, mirroring the interview-nudge pattern.
+- **`scripts/ensure-pipeline-crons.sh`** (v14.1.7): `_sweep_stale_lifecycle_crons()` actively removes stale interview-nudge / closeout-readiness-watchdog crons on completed boxes (runs before registrars); completion guards added to `_ensure_interview_nudge()` and `_ensure_closeout_watchdog()`.
+- **`cron-prompt.txt`**: RULE 1 now resolves recipient via `resolve_owner_chat_id()` (operator-rejecting); closes the `allowFrom[0]`-equals-operator misroute where weekly summaries reached the operator instead of the client on client boxes.
+- **`37-zhc-closeout/scripts/resume-closeout-cron.sh`** (v11.11.0): no-progress give-up pause — token-free state fingerprint; pauses heavy dispatch after `ZHC_CLOSEOUT_MAX_STALL_PASSES` (default 4 = 1h) consecutive unchanged fires on a recognised blocked/stuck state; auto-resumes the instant the fingerprint changes (human acts).
+- **CI guards:** `closeout-watchdog-guard.yml` + `cron-owner-chat-guard.yml` updated trigger paths; new section 10 in `tests/unit/cron-owner-chat-guard.test.sh` asserts `cron-prompt.txt` uses `resolve_owner_chat_id` and no bare `allowFrom[0]` recipient.
+
+### TESTS / CI GUARD
+`tests/unit/cron-owner-chat-guard.test.sh`: 113 passed, 0 failed. `37-zhc-closeout/scripts/test-closeout-watchdog.sh`: 25 passed, 0 failed (T1–T11). No client names in changed files.
+
 ## [v16.2.1]  -  2026-06-29  -  fix(presentations): correctness follow-ups to the v16.2.0 process-integrity layer — the per-step client report now uses the REAL `openclaw message send` CLI (and no longer deadlocks delivery), the no-skip proof bites on a MISSING report (not an unconfirmed send), a Python-3.9 parse hazard is removed, the Command Center gate no longer double-reports, and an illustrative proper noun was removed from a fleet template.
 
 ### Risk: low — corrective + additive. No gate is weakened: every fail-closed gate stays fail-closed; the only change to the report gate is that it now bites on a *missing* report record (a skipped report step) rather than on an *unconfirmed* `gateway_msg_id`, so a box without a configured owner-message target still ships instead of deadlocking at delivery (OQ-2). The per-slide 9,000-char prompt floor and all anti-fake gates are untouched.
