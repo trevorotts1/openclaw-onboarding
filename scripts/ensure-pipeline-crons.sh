@@ -86,7 +86,17 @@
 #   install.sh + update-skills.sh now do a delete+recreate on detect; this entry
 #   catches any box where that delete failed (CLI error / no python3) by silencing
 #   the delivery in-place via --no-deliver.
-ENSURE_PIPELINE_CRONS_VERSION="v14.1.6"
+# v14.1.7 — STALE-LIFECYCLE-CRON SWEEP (fix/cron-nudge-sweep-selfheal-2026-06-29):
+#   Adds _sweep_stale_lifecycle_crons() that ACTIVELY removes interview-nudge and
+#   closeout-readiness-watchdog crons from already-complete boxes on every
+#   `openclaw update` / update-skills.sh run. Before this, a box where
+#   interviewComplete==true or closeoutStatus==done still had the burner crons
+#   registered (they would self-remove on their next fire, but the update pass
+#   never proactively swept them). The sweep runs BEFORE the registrars so a
+#   swept cron is never immediately re-added. Also adds completion guards to
+#   _ensure_interview_nudge() and _ensure_closeout_watchdog() to prevent
+#   re-registration on already-complete boxes.
+ENSURE_PIPELINE_CRONS_VERSION="v14.1.7"
 
 set -u
 
@@ -474,6 +484,16 @@ _ensure_workforce_build_resume() {
 
 # 2. interview-nudge (COMMAND mode, 0 */6). Owner-facing idle-interview nudge.
 _ensure_interview_nudge() {
+  # Completion guard (v14.1.7): do not (re-)register on a box where the interview
+  # lifecycle is already finished. The sweep (_sweep_stale_lifecycle_crons) removes
+  # any existing cron first; this guard ensures we never re-add it immediately after.
+  if [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
+    local _ic; _ic=$(jq -r '.interviewComplete // empty' "$STATE_FILE" 2>/dev/null)
+    if [[ "$_ic" == "true" ]]; then
+      _log "SKIP interview-nudge — interviewComplete=true on this box; lifecycle cron not needed"
+      return 0
+    fi
+  fi
   if _cron_present "interview-nudge"; then
     _log "OK  interview-nudge cron already present"
     return 0
@@ -495,6 +515,14 @@ _ensure_interview_nudge() {
 
 # 3. closeout-readiness-watchdog (COMMAND mode, 0 */6). Operator escalation.
 _ensure_closeout_watchdog() {
+  # Completion guard (v14.1.7): do not (re-)register on a box where closeout is done.
+  if [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
+    local _cs; _cs=$(jq -r '.closeoutStatus // empty' "$STATE_FILE" 2>/dev/null)
+    if [[ "$_cs" == "done" || "$_cs" == "sent" ]]; then
+      _log "SKIP closeout-readiness-watchdog — closeoutStatus=${_cs}; lifecycle cron not needed"
+      return 0
+    fi
+  fi
   if _cron_present "closeout-readiness-watchdog"; then
     _log "OK  closeout-readiness-watchdog cron already present"
     return 0
@@ -800,6 +828,115 @@ _reconcile_managed_crons() {
 }
 
 # ---------------------------------------------------------------------------
+# _sweep_stale_lifecycle_crons  (v14.1.7 — stale-lifecycle-cron migration)
+#
+# WHY: interview-nudge and closeout-readiness-watchdog are LIFECYCLE crons —
+# they exist only while the associated work is in-progress. On boxes installed
+# before v12.3.10/v12.3.13 those crons were registered but never removed when
+# the lifecycle completed, because (a) older script versions lacked self-removal
+# and (b) the update path only registered missing crons, never swept stale ones.
+# On such boxes the crons fired silently (exit 0 fast-path after v12.3.x was
+# deployed) but remained permanently in the registry, burning cron slots.
+#
+# WHAT: reads interviewComplete and closeoutStatus from build-state (token-free
+# jq). If complete, resolves the cron UUID from state (.interviewNudgeUuid /
+# .closeoutWatchdogCronUuid) or falls back to a name-scan, then calls
+# `openclaw cron rm`. Best-effort (non-fatal on rm failure — the script's own
+# self-removal is the authoritative path; this is the fleet-wide update-time
+# convergence backstop).
+#
+# ORDER: must run BEFORE the registrars so a swept cron is not immediately
+# re-registered. The completion guards in _ensure_interview_nudge() and
+# _ensure_closeout_watchdog() provide a second layer of protection.
+# ---------------------------------------------------------------------------
+_sweep_stale_lifecycle_crons() {
+  [[ -f "$STATE_FILE" ]] || return 0
+  command -v openclaw >/dev/null 2>&1 || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+
+  local interview_complete closeout_status
+  interview_complete=$(jq -r '.interviewComplete // empty' "$STATE_FILE" 2>/dev/null)
+  closeout_status=$(jq -r '.closeoutStatus // empty' "$STATE_FILE" 2>/dev/null)
+
+  # Bail fast when neither lifecycle is complete — avoids an unnecessary cron list call
+  if [[ "$interview_complete" != "true" && "$closeout_status" != "done" && "$closeout_status" != "sent" ]]; then
+    return 0
+  fi
+
+  # Resolve cron UUID: state field first, then name-scan fallback.
+  # $1=cron name  $2=state key holding the UUID
+  _sweep_resolve_uuid() {
+    local cron_name="$1" state_key="$2"
+    local uuid=""
+    uuid=$(jq -r ".${state_key} // empty" "$STATE_FILE" 2>/dev/null || true)
+    if [[ -z "$uuid" || "$uuid" == "null" ]]; then
+      # Name-scan fallback (caches the raw list so we only call once per sweep)
+      if [[ -z "${_SWEEP_CRON_RAW:-}" ]]; then
+        _SWEEP_CRON_RAW=$(openclaw cron list --json 2>/dev/null) || _SWEEP_CRON_RAW=""
+      fi
+      [[ -z "$_SWEEP_CRON_RAW" ]] && { echo ""; return; }
+      if command -v python3 >/dev/null 2>&1; then
+        uuid=$(printf '%s' "$_SWEEP_CRON_RAW" | python3 -c "
+import json,sys
+try:
+  data=json.loads(sys.stdin.read())
+  jobs=data if isinstance(data,list) else data.get('jobs',[])
+  m=[j for j in jobs if j.get('name')=='${cron_name}']
+  print(m[0].get('id','') if m else '')
+except:
+  print('')
+" 2>/dev/null || true)
+      elif command -v jq >/dev/null 2>&1; then
+        uuid=$(printf '%s' "$_SWEEP_CRON_RAW" | jq -r \
+          --arg n "$cron_name" \
+          '(if type=="array" then . else .jobs//[] end)|map(select(.name==$n))|.[0].id//empty' \
+          2>/dev/null || true)
+      fi
+    fi
+    echo "${uuid:-}"
+  }
+
+  # Remove one stale lifecycle cron. $1=label $2=cron name $3=state key for UUID
+  _sweep_remove() {
+    local label="$1" cron_name="$2" state_key="$3"
+    if ! _cron_present "$cron_name"; then
+      _log "SWEEP $label — cron not present (already removed); skip"
+      return 0
+    fi
+    local uuid
+    uuid=$(_sweep_resolve_uuid "$cron_name" "$state_key")
+    if [[ -z "$uuid" || "$uuid" == "null" ]]; then
+      _log "SWEEP WARN $label — $cron_name present but UUID not resolved; cannot remove this run (will retry next update)"
+      return 0
+    fi
+    if openclaw cron rm "$uuid" >/dev/null 2>&1; then
+      _log "SWEEP DONE $label — removed stale $cron_name (uuid=${uuid})"
+      # Clear UUID from state (best-effort)
+      local tmp; tmp=$(mktemp 2>/dev/null) || true
+      if [[ -n "$tmp" ]] && jq ".${state_key} = null" "$STATE_FILE" > "$tmp" 2>/dev/null; then
+        mv "$tmp" "$STATE_FILE"
+      fi
+    else
+      _log "SWEEP WARN $label — openclaw cron rm ${uuid} rc!=0 (non-fatal; will retry next run)"
+    fi
+  }
+
+  local _SWEEP_CRON_RAW=""  # lazy-populated on first name-scan call
+
+  # interview-nudge: stale when interviewComplete==true
+  if [[ "$interview_complete" == "true" ]]; then
+    _log "SWEEP interviewComplete=true — interview-nudge is a stale lifecycle cron; sweeping"
+    _sweep_remove "interview-nudge" "interview-nudge" "interviewNudgeUuid"
+  fi
+
+  # closeout-readiness-watchdog: stale when closeoutStatus==done|sent
+  if [[ "$closeout_status" == "done" || "$closeout_status" == "sent" ]]; then
+    _log "SWEEP closeoutStatus=${closeout_status} — closeout-readiness-watchdog is stale; sweeping"
+    _sweep_remove "closeout-watchdog" "closeout-readiness-watchdog" "closeoutWatchdogCronUuid"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 main() {
@@ -810,6 +947,11 @@ main() {
   fi
 
   _log "asserting pipeline trigger crons (idempotent backfill) — $ENSURE_PIPELINE_CRONS_VERSION"
+
+  # ── STALE-LIFECYCLE-CRON SWEEP (v14.1.7) ────────────────────────────────────
+  # Must run BEFORE registrars: sweeps interview-nudge + closeout-readiness-watchdog
+  # crons on already-complete boxes so they are not immediately re-added below.
+  _sweep_stale_lifecycle_crons
 
   local fails=0
   # The two COMMAND-mode triggers first — these never depend on a Telegram

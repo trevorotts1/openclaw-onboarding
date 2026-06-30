@@ -1,13 +1,16 @@
 name: Closeout watchdog guard
 
-# Fails the build if the v12.3.12 closeout-readiness-watchdog regresses:
+# Fails the build if the closeout-readiness-watchdog regresses:
 #   - stuck-pre-closeout escalation
 #   - interviewQc hard gate in run-closeout.sh
 #   - Playwright rc=3 hard hold
 #   - Notion notionCloseoutPageId establishment
 #   - fleet-stuck-clients.sh CI visibility
+#   - watchdog self-removal when closeoutStatus==done (v12.3.13)
+#   - ensure-pipeline-crons stale-lifecycle sweep + completion guards (v14.1.7)
+#   - resume-closeout-cron no-progress give-up pause on human-action blockers (v11.11.0)
 #
-# v12.3.12 / fix/v12.3.12-closeout-watchdog
+# v12.3.13 / fix/cron-nudge-sweep-selfheal-2026-06-29
 
 on:
   push:
@@ -22,8 +25,10 @@ on:
       - 37-zhc-closeout/scripts/create-notion-closeout.sh
       - 37-zhc-closeout/scripts/fleet-stuck-clients.sh
       - 37-zhc-closeout/scripts/fleet-sweep-closeouts.sh
+      - 37-zhc-closeout/scripts/resume-closeout-cron.sh
       - 37-zhc-closeout/scripts/test-closeout-watchdog.sh
       - shared-utils/nudge-incomplete-interviews.py
+      - scripts/ensure-pipeline-crons.sh
       - install.sh
       - .github/workflows/closeout-watchdog-guard.yml
   pull_request:
@@ -38,8 +43,10 @@ on:
       - 37-zhc-closeout/scripts/create-notion-closeout.sh
       - 37-zhc-closeout/scripts/fleet-stuck-clients.sh
       - 37-zhc-closeout/scripts/fleet-sweep-closeouts.sh
+      - 37-zhc-closeout/scripts/resume-closeout-cron.sh
       - 37-zhc-closeout/scripts/test-closeout-watchdog.sh
       - shared-utils/nudge-incomplete-interviews.py
+      - scripts/ensure-pipeline-crons.sh
       - install.sh
       - .github/workflows/closeout-watchdog-guard.yml
 

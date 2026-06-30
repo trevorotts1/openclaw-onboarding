@@ -13,6 +13,24 @@
 #   15-min intervals). After exhaustion, escalates to operator and stops.
 #   This prevents an unbounded loop if something is fundamentally broken.
 #
+# NO-PROGRESS GIVE-UP PAUSE (v11.11.0 / fix/cron-nudge-sweep-selfheal):
+#   The MAX_RUNS cap above is blunt (12h of heavy re-runs before giving up) and
+#   never distinguishes "the build is still working" from "this is wedged on a
+#   HUMAN action that re-running can never clear" (client never shared the Notion
+#   page, interviewQc awaiting a human → blocked-interview-incomplete, an unmet
+#   floor/library → blocked-*-incomplete, a leg failing identically every fire).
+#   On those boxes every 15-min fire re-launches the MODEL+API-heavy
+#   run-closeout.sh for nothing — on a paid provider that is real money burned.
+#   So: fingerprint the blocking state from the cheap reads already in hand
+#   (closeoutStatus + blockReason + notion leg + interviewQc + legs-done count).
+#   If the fingerprint is UNCHANGED across ZHC_CLOSEOUT_MAX_STALL_PASSES (default
+#   4 = 1h) consecutive fires AND the box is in a recognised blocked/stuck state,
+#   STOP dispatching run-closeout.sh: escalate ONCE to the operator (idempotent)
+#   and PAUSE. The cron stays alive doing ONLY the token-free check; the instant
+#   the fingerprint changes (the human shares the page / QC is approved / the
+#   build advances) the stall counter resets and heavy dispatch resumes
+#   automatically. No work is abandoned — it is parked pending the human.
+#
 # TRIGGER CHECK (cheap, token-free):
 #   Reads .closeoutStatus + .closeoutDeliverables from the state file. Only
 #   invokes the agent (expensive) when it detects incomplete work. The check
@@ -23,7 +41,7 @@
 #   can find and kill it. The closeout's successful done-transition calls
 #   self_remove_cron() before writing done.
 #
-# PRD-2.8 / v11.10.0
+# PRD-2.8 / v11.11.0
 
 set -u
 
@@ -281,6 +299,71 @@ if (( total_done == 7 )); then
     log "all 7 leg FIELDS present but CRITICAL legs UNVERIFIED (pending: ${critical_pending}) -- stamping partial, NOT done (ghost-closeout guard). Re-launching run-closeout.sh."
     state_set ".closeoutStatus = \"partial\" | .closeoutPendingSlots = (\"${critical_pending}\" | split(\",\")) | .closeoutPartialReason = \"resume-cron critical-unverified: ${critical_pending}\"" || true
   fi
+fi
+
+# ----------------------------------------------------------------------
+# NO-PROGRESS GIVE-UP PAUSE (v11.11.0). Token-free. Runs BEFORE the heavy
+# run-closeout.sh dispatch below so a wedged box burns ZERO model/API tokens.
+# See the KILL CONDITION / NO-PROGRESS header block for the full rationale.
+# ----------------------------------------------------------------------
+MAX_STALL_PASSES="${ZHC_CLOSEOUT_MAX_STALL_PASSES:-4}"
+
+# Cheap recognised-blocker test (token-free). True when re-running the heavy
+# build cannot, by itself, clear the current state — only a human (or an
+# external change) can: a blocked-* floor/library/interview/wiring gate, a hard
+# failure, a stalled partial, the client never sharing the Notion page, or
+# interview QC awaiting a human verdict.
+_is_human_or_stuck_blocker() {
+  case "$closeout_status" in
+    blocked-floor-incomplete|blocked-libraries-incomplete|blocked-interview-incomplete|blocked-wiring-incomplete|failed|partial)
+      return 0 ;;
+  esac
+  local _notion_leg; _notion_leg=$(state_get '.closeoutLegStatus.notion')
+  case "$_notion_leg" in failed:no-shared-page) return 0 ;; esac
+  local _iqc; _iqc=$(state_get '.interviewQc.status')
+  case "$_iqc" in pending|needs-review) return 0 ;; esac
+  return 1
+}
+
+# Fingerprint everything that would indicate progress (all reads are token-free).
+_stall_fp="${closeout_status:-none}|$(state_get '.closeoutBlockReason')|$(state_get '.closeoutLegStatus.notion')|$(state_get '.interviewQc.status')|${total_done}"
+_prev_fp=$(state_get '.closeoutResumeStallFingerprint')
+_stall_passes=$(state_get '.closeoutResumeStallPasses')
+[[ "$_stall_passes" =~ ^[0-9]+$ ]] || _stall_passes=0
+
+if [[ "$_stall_fp" == "$_prev_fp" ]]; then
+  _stall_passes=$((_stall_passes + 1))
+  state_set ".closeoutResumeStallPasses = ${_stall_passes}" 2>/dev/null || true
+else
+  # Progress (or first observation): reset the counter, record the new
+  # fingerprint, and clear any active pause so heavy dispatch resumes (a future
+  # stall then re-escalates exactly once).
+  _stall_passes=0
+  state_set ".closeoutResumeStallFingerprint = \"${_stall_fp}\" | .closeoutResumeStallPasses = 0 | .closeoutResumePaused = false | .closeoutResumePausedNotifiedAt = null" 2>/dev/null || true
+  if [[ -n "$_prev_fp" && "$_prev_fp" != "null" ]]; then
+    log "progress detected (state fingerprint changed) -- stall counter reset; normal closeout dispatch continues"
+  fi
+fi
+
+if (( _stall_passes >= MAX_STALL_PASSES )) && _is_human_or_stuck_blocker; then
+  log "NO-PROGRESS PAUSE: blocker unchanged for ${_stall_passes} fires (cap=${MAX_STALL_PASSES}); closeoutStatus=${closeout_status:-unset}, blockReason=$(state_get '.closeoutBlockReason'), notionLeg=$(state_get '.closeoutLegStatus.notion'), interviewQc=$(state_get '.interviewQc.status'). This needs a HUMAN action -- re-running the build cannot clear it. SKIPPING heavy run-closeout.sh dispatch (zero model burn); pausing until the state changes."
+  # Escalate ONCE per pause (idempotent on the notifiedAt marker). The cron stays
+  # registered and keeps doing the cheap check, so it auto-resumes when the human acts.
+  _paused_notified=$(state_get '.closeoutResumePausedNotifiedAt')
+  if [[ -z "$_paused_notified" || "$_paused_notified" == "null" ]]; then
+    operator_chat=$(resolve_operator_chat_id)
+    _agent_nm=$(state_get '.agentName'); [[ -z "$_agent_nm" || "$_agent_nm" == "null" ]] && _agent_nm="client"
+    if [[ -n "$operator_chat" ]] && command -v openclaw >/dev/null 2>&1; then
+      openclaw message send --channel telegram --target "$operator_chat" \
+        --message "⏸️ ZHC closeout PAUSED (awaiting human action) for ${_agent_nm}. closeoutStatus=${closeout_status:-unset}. Reason: $(state_get '.closeoutBlockReason')$(state_get '.notionFailureReason'). The resume cron stopped re-running the model and will auto-continue when the blocker clears. State: $STATE_FILE" \
+        >/dev/null 2>&1 || true
+    else
+      log "operator escalation chat not configured -- pause logged only (no operator notify; state marker written)"
+    fi
+    state_set ".closeoutResumePaused = true | .closeoutResumePausedReason = \"no-progress: ${closeout_status:-unset}\" | .closeoutResumePausedNotifiedAt = \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"" 2>/dev/null || true
+  fi
+  log "resume cron fire complete (PAUSED awaiting human, run $run_count/$MAX_RUNS, stall=${_stall_passes}) -- no heavy dispatch"
+  exit 0
 fi
 
 # ---- work to do: dispatch CLOSEOUT-RESUME self-ping ----

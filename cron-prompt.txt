@@ -1,7 +1,11 @@
 It's Sunday — time for the weekly OpenClaw update check. Follow these rules exactly. Do not skip steps. Do not improvise.
 
-RULE 1 — Detect platform first:
-  if [ -d "/data/.openclaw" ]; then PLATFORM=vps; else PLATFORM=mac; fi
+RULE 1 — Detect platform first, then resolve the CLIENT OWNER chat ONCE:
+  if [ -d "/data/.openclaw" ]; then PLATFORM=vps; OC_ROOT=/data/.openclaw; else PLATFORM=mac; OC_ROOT=$HOME/.openclaw; fi
+  Resolve the recipient for EVERY client-facing message below with the operator-rejecting resolver. Do NOT use bare telegram allowFrom[0]: on a client box the OPERATOR id (Trevor, 5252140759) is FIRST in allowFrom, so allowFrom[0] would misroute every client-facing message to the operator — the exact leak this rule exists to prevent.
+    source "$OC_ROOT/skills/shared-utils/resolve-owner-chat.sh"
+    CLIENT_CHAT="$(resolve_owner_chat_id)"   # first NON-operator allowFrom entry; rejects operator IDs 5252140759/6663821679/6771245262; honors OPENCLAW_OWNER_CHAT_ID
+  If CLIENT_CHAT is EMPTY (only operator IDs are present, no client owner resolved), do NOT fall back to allowFrom[0] or the operator. Log "weekly-update: no client owner chat resolved — skipping client send (log-only)" and SKIP every client-facing send (the AGENTS.md UPDATE flag from RULE 5.5 still surfaces the pending update). An operator chat id must NEVER receive a client-facing weekly-update message.
 
 RULE 2 — Run the check-updates scripts. These are READ-ONLY and never install anything. They emit JSON.
   (a) Onboarding repo (the platform-matching one):
@@ -20,8 +24,8 @@ RULE 4 — Classify risk per repo. Use this rubric in priority order:
         🟢 LOW — bug fix, doc update, content restructure, version bump only, comment change
   (3) For onboarding skill_changes: classify each individual skill's update by reading its CHANGELOG entry if available (fetch via raw.githubusercontent.com/.../<skill_folder>/CHANGELOG.md). If no per-skill changelog exists, inherit the repo-level risk.
 
-RULE 5 — If no updates anywhere (has_update is false for ALL repos), send this short Telegram message and exit:
-  "Sunday update check complete. Everything is up to date. Onboarding: vX.Y.Z (current). Command Center: vA.B.C (current). Nothing to do this week."
+RULE 5 — If no updates anywhere (has_update is false for ALL repos), send this short Telegram message to CLIENT_CHAT (the operator-rejecting client owner chat resolved in RULE 1 — NEVER allowFrom[0]) and exit. If CLIENT_CHAT is empty, log-only and exit:
+  openclaw message send --channel telegram --target "$CLIENT_CHAT" --message "Sunday update check complete. Everything is up to date. Onboarding: vX.Y.Z (current). Command Center: vA.B.C (current). Nothing to do this week."
 
 RULE 5.5 — v10.10.0 P0 — Drop AGENTS.md DETECTION flag (triple-fire N22 sub-rule).
   When updates ARE detected (any repo's has_update is true), BEFORE composing the Telegram summary in RULE 6, append a detection marker to the platform-appropriate AGENTS.md so the next agent session sees the update-pending state:
@@ -66,9 +70,11 @@ RULE 6 — If updates ARE available, compose a SUMMARY Telegram message in this 
 
 RULE 7 — If ANY repo has HIGH risk, automatically add this line at the bottom of the summary: "⚠️ This update is HIGH risk. I recommend you reply 'ping the operator' so I can confirm with the operator (Trevor by default) before doing anything destructive."
 
-RULE 8 — Send the summary as a single Telegram message to the configured target (telegram allowFrom[0] from openclaw.json).
+RULE 8 — Send the summary as a single Telegram message to CLIENT_CHAT (the operator-rejecting client owner chat resolved in RULE 1 — the first NON-operator allowFrom entry; NEVER bare allowFrom[0]). An OPERATOR chat id (5252140759 / 6663821679 / 6771245262) must NEVER receive this client-facing summary:
+  openclaw message send --channel telegram --target "$CLIENT_CHAT" --message "<the summary composed in RULE 6>"
+  (If CLIENT_CHAT is empty per RULE 1, do NOT send — log-only; the AGENTS.md UPDATE flag still surfaces the pending update.)
 
-RULE 9 — Wait for the client's reply. Do not exit. Stay alive until they respond OR until 2 hours pass with no response. On 2-hour timeout, behavior depends on the combined risk level of all pending updates:
+RULE 9 — Wait for the client's reply. Do not exit. Stay alive until they respond OR until 2 hours pass with no response. Every client-facing send in this rule goes to CLIENT_CHAT (resolved in RULE 1 — NEVER allowFrom[0]). On 2-hour timeout, behavior depends on the combined risk level of all pending updates:
   • LOW or MEDIUM risk — auto-apply update-skills.sh (DO run the install) then send: "You didn't reply in 2 hours so I went ahead and applied the [LOW/MEDIUM]-risk update. Done. Here's what changed: [summary]. Let me know if anything looks off."
   • HIGH risk — do NOT auto-apply. Send: "I didn't hear back and this update is HIGH risk, so I made no changes. I'll ask again next Sunday. If you want it sooner, just tell me 'install all'." and exit.
   (Risk level = the highest risk level among all repos that have an available update.)
@@ -92,8 +98,8 @@ RULE 11 — High-risk safety check: even if the client says "install all", if th
   Send: "You picked 'install all' but [item name] is marked HIGH risk because [reason]. Are you sure? Reply YES to proceed or 'ping the operator' to confirm with the operator first."
   Wait for explicit YES before continuing.
 
-RULE 12 — After install completes, send a final Telegram summary to the client:
-  "Done. Updated: [list]. Skipped: [list per client choice]. Anything broken? Tell me. Pending action items (if any): [list]."
+RULE 12 — After install completes, send a final Telegram summary to CLIENT_CHAT (resolved in RULE 1 — NEVER allowFrom[0]):
+  openclaw message send --channel telegram --target "$CLIENT_CHAT" --message "Done. Updated: [list]. Skipped: [list per client choice]. Anything broken? Tell me. Pending action items (if any): [list]."
   Then exit.
 
 RULE 13 — Forbidden:

@@ -30,7 +30,10 @@
 #   • Token-free state read first; no agent dispatch unless needed.
 #   • Lockfile + stale-lock reap (mirrors interview-nudge-cron.sh).
 #
-# PRD-2.15 / v12.3.12
+# PRD-2.15 / v12.3.13
+# SELF-REMOVAL MARKER (v12.3.13): watchdog removes itself when closeoutStatus is
+# done|sent. Mirrors interview-nudge-cron.sh pattern. UUID written to
+# .closeoutWatchdogCronUuid by ensure-pipeline-crons.sh _register_command_cron.
 set -uo pipefail
 
 # ── Platform detection ───────────────────────────────────────────────────────
@@ -109,6 +112,62 @@ now_epoch() {
   date -u +%s
 }
 
+# ── Self-removal helpers ──────────────────────────────────────────────────────
+# Resolve the registered cron UUID for this watchdog. Reads .closeoutWatchdogCronUuid
+# from build-state first (fastest); falls back to a name-scan via `openclaw cron list
+# --json` if the state field is absent (e.g. box installed before v12.3.13).
+find_watchdog_cron_uuid() {
+  local uuid
+  uuid=$(state_get '.closeoutWatchdogCronUuid')
+  if [[ -n "$uuid" && "$uuid" != "null" ]]; then
+    echo "$uuid"
+    return
+  fi
+  # Fallback: name-scan via openclaw cron list --json
+  command -v openclaw >/dev/null 2>&1 || { echo ""; return; }
+  local raw
+  raw=$(openclaw cron list --json 2>/dev/null) || raw=""
+  [[ -z "$raw" ]] && { echo ""; return; }
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$raw" | python3 -c "
+import json,sys
+try:
+  data=json.loads(sys.stdin.read())
+  jobs=data if isinstance(data,list) else data.get('jobs',[])
+  m=[j for j in jobs if j.get('name')=='closeout-readiness-watchdog']
+  print(m[0].get('id','') if m else '')
+except:
+  print('')
+" 2>/dev/null || echo ""
+  elif command -v jq >/dev/null 2>&1; then
+    printf '%s' "$raw" | jq -r \
+      '(if type=="array" then . else .jobs//[] end)|map(select(.name=="closeout-readiness-watchdog"))|.[0].id//empty' \
+      2>/dev/null || echo ""
+  else
+    echo ""
+  fi
+}
+
+# Remove this watchdog cron from the gateway cron store. Clears the UUID field
+# in build-state so repeated `openclaw update` runs skip the rm. Non-fatal.
+self_remove_cron_watchdog() {
+  local reason="${1:-lifecycle-complete}"
+  local uuid
+  uuid=$(find_watchdog_cron_uuid)
+  if [[ -n "$uuid" && "$uuid" != "null" ]]; then
+    log "self-removing watchdog cron (uuid=${uuid}, reason=${reason})"
+    if command -v openclaw >/dev/null 2>&1; then
+      openclaw cron rm "$uuid" >/dev/null 2>&1 \
+        && log "watchdog cron removed (uuid=${uuid})" \
+        || log "WARN: openclaw cron rm ${uuid} rc!=0 (non-fatal; cron may already be removed or will self-expire)"
+    fi
+    # Clear UUID from build-state so ensure-pipeline-crons does not re-attempt rm
+    state_set ".closeoutWatchdogCronUuid = null" 2>/dev/null || true
+  else
+    log "self-remove: no watchdog UUID in state or cron list (already removed or never registered)"
+  fi
+}
+
 # ── Lockfile ─────────────────────────────────────────────────────────────────
 if [[ -f "${LOCK_FILE}" ]]; then
   lock_age=$(( $(now_epoch) - $(date -u -r "${LOCK_FILE}" +%s 2>/dev/null || now_epoch) ))
@@ -150,6 +209,19 @@ dept_pending=$(jq -r '[(.departments // [])[] | select(.status == "pending" or .
 
 [[ -z "$company_name" || "$company_name" == "null" ]] && company_name="(unknown)"
 [[ -z "$agent_name" || "$agent_name" == "null" ]] && agent_name="(unknown)"
+
+# ── Lifecycle complete: self-remove and exit ──────────────────────────────────
+# Token-free check (closeoutStatus already read above). When the closeout is
+# done or sent this watchdog has no remaining purpose. Remove the cron from the
+# registry immediately and exit. This is the PRIMARY self-removal path that
+# ensures the cron does NOT linger on completed boxes. (The sweep in
+# ensure-pipeline-crons.sh is the fleet-convergence backstop that fires
+# proactively on every `openclaw update` run before the cron can self-fire.)
+if [[ "${closeout_status}" == "done" || "${closeout_status}" == "sent" ]]; then
+  log "closeoutStatus=${closeout_status} — closeout complete; self-removing watchdog cron"
+  self_remove_cron_watchdog "closeout-${closeout_status}"
+  exit 0
+fi
 
 # ── Compute idle times ────────────────────────────────────────────────────────
 NOW_EPOCH=$(now_epoch)
