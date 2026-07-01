@@ -38,7 +38,12 @@ _oc_cfg_get() {
   # Read an openclaw config key, returning empty on any error/"not found".
   local key="$1" v
   command -v openclaw >/dev/null 2>&1 || { printf '%s' ""; return 0; }
-  v="$(openclaw config get "$key" 2>/dev/null | tail -1 | tr -d '[:space:]')"
+  # v16.2.13: `|| true` — `openclaw config get <absent-key>` exits non-zero on the
+  # common "no operator chat configured" path (the documented safe default), and
+  # `pipefail` adopts it; this plain reassignment (local was separate above) would
+  # otherwise abort a caller that sources this under `set -e` + `inherit_errexit`
+  # (or POSIX mode). Enforces the header's "returns empty on any error" contract.
+  v="$(openclaw config get "$key" 2>/dev/null | tail -1 | tr -d '[:space:]' || true)"
   case "$v" in
     ""|*"not found"*|*"Error"*|*"undefined"*|null) v="" ;;
   esac

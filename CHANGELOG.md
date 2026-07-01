@@ -1,3 +1,43 @@
+## [v16.2.13]  -  2026-07-01  -  fix(updater): persona-index reconcile no longer aborts the updater under `set -euo pipefail` (SIGPIPE from an early-`exit` awk counting pipeline) + exhaustive sibling-landmine sweep
+
+### Risk: low — adds SIGPIPE/expected-non-zero guards to command-substitution assignments so a counting/lookup pipeline can never abort the updater; every guard is behavior-preserving (the helper still echoes the same integer count, or empty, and the empty case was already handled at each call site). No client names, no credentials, no config/plist writes, no skill-content changes (so the A3 content-gate and CI guard G3 are unaffected).
+
+### Root cause (reproduced live)
+On boxes carrying the persona-index reconcile drift (the `persona-dir-count:0!=NN / 0 persona dirs on disk` gate state that forces the reconcile path on **every** run), `update-skills.sh` aborted with exit 1 before the wiring phase, so the Skill-41 config-shape step AND the `.onboarding-version` stamp never ran. The abort originated in `shared-utils/provision-persona-index.sh` → `reconcile_qmd_persona_index()`: the helper `_qmd_collection_files_count()` ran `qmd collection list | awk '{…; print n; exit}'`. The awk `exit` on the first match closed the read end of the pipe, so `qmd collection list` (which keeps writing) died with **SIGPIPE (rc 141)**; under the updater's active `set -o pipefail` the pipeline adopted 141; the standalone `_FILES="$(_qmd_collection_files_count …)"` assignment inherited 141; and `set -e` killed the entire updater. Same failure class as the earlier `PLATFORM: unbound variable` (v13.1.3) and `skills.path` invalid-key (v16.2.12) aborts — a single un-guarded sub-shell failure taking down the whole run before the version stamp.
+
+### Fix (root cause + exhaustive sweep — "so it never recurs")
+**Primary (root cause), `shared-utils/provision-persona-index.sh` — `_qmd_collection_files_count()`:** rewrote the awk to be SIGPIPE-safe — it now reads the **entire** stream (no early `exit`), captures the FIRST `Files:` count in the target block, and prints it at `END`, so `qmd collection list` is never killed by a closed pipe. A trailing `|| true` on the pipeline additionally absorbs any non-zero from `qmd` itself, so the helper can **never** return non-zero and can never abort a caller under `set -e`+`pipefail`. Count semantics are unchanged (echo the integer, or nothing). This one primitive fix covers **all three** call sites in `reconcile_qmd_persona_index()` (not just the reported two) and any future caller.
+
+**Sibling sweep — every same-class command-substitution landmine (a plain, un-guarded `VAR=$(…)` under `set -e`+`pipefail` whose pipeline can return non-zero via SIGPIPE from an early-closer — `awk exit`/`head`/`grep -q` — or expected-non-zero). Each read in full (no grep-only conclusions):**
+
+ACTIVE on the updater path (fixed):
+- `update-skills.sh` (~L235) `WORKSPACE_DIR="$(obs_resolve_workspace)"` — on the always-executed normal path (`write_update_pending_flag`), the **only** un-guarded copy of a call that is already guarded elsewhere (`…2>/dev/null || true`); guarded to match.
+- `update-skills.sh` (~L909) `EXTRACTED_DIR=$(find … | head -1)` — zip-fallback branch; `head -1` SIGPIPEs `find`. Guarded `… | head -1 || true`.
+- `update-skills.sh` (~L2377) `GW_LABEL="$(launchctl list | awk '/…gateway/{print $3; exit}')"` — Mac gateway-restart fallback; the identical `awk exit` → `launchctl` SIGPIPE as the root-cause bug. Guarded `… exit}' || true`.
+
+LATENT siblings of the same class in libraries the updater sources (dormant on the current updater path — reached only via `if`-conditions or not called bare — but genuine defects whose own headers promise "never throws"/"returns empty on any error"; fixed for contract-correctness + defense-in-depth so a future bare/`inherit_errexit` caller cannot trip them):
+- `lib-onboarding-state.sh` (~L185) `reg_name=$(awk … "$…/SKILL.md" 2>/dev/null)` — awk rc 2 when `SKILL.md` is absent. Guarded `… || true`.
+- `lib-onboarding-state.sh` (~L270) `qc=$(ls …/qc-*.sh 2>/dev/null | head -1)` — `ls` rc 2 on the common no-qc-script path (pipefail adopts it). Guarded `… | head -1 || true`.
+- `shared-utils/operator-chat-id.sh` (~L41) `v="$(openclaw config get "$key" … | tail -1 | tr …)"` — `openclaw config get <absent-key>` rc 1 on the documented "no operator chat configured" default; aborts only under a caller with `inherit_errexit`/POSIX mode (none exist in the current chain). Guarded `… || true`.
+
+### Verification (independent harnesses; all PASS)
+- **Root-cause reproduction:** a harness mirroring `qmd collection list | awk '{…; exit}'` (real block layout + a long trailing stream to force the SIGPIPE) under `set -euo pipefail` in default bash aborts with **exit 141**, the post-assignment line never reached — reproduces the live abort exactly.
+- **Fixed, sourced from the real repo file:** the same harness, calling the patched `_qmd_collection_files_count` sourced from `shared-utils/provision-persona-index.sh`, prints `REACHED-POST-ASSIGN: V=54` and exits **0** — no abort, correct count. Also proven: a missing collection → empty (no abort), and `qmd` itself erroring → empty (no abort).
+- **SIGPIPE sibling fixes (L909/L2377):** emulated pipelines (`… | head -1 || true`, `… | awk '…exit' || true`) survive under `set -euo pipefail` and still capture the first value.
+- **`operator-chat-id.sh` caveat proven both ways:** default bash `set -euo pipefail` + a failing `openclaw` stub → sources cleanly, `OPERATOR_CHAT_ID` empty, exit 0 (confirms it was dormant); `shopt -s inherit_errexit` + the same stub → exit 1 pre-fix (confirms the latent class). `grep` confirmed no `inherit_errexit`/POSIX mode anywhere in the updater/installer chain.
+- `bash -n` clean on all four edited scripts (`provision-persona-index.sh`, `update-skills.sh`, `lib-onboarding-state.sh`, `operator-chat-id.sh`).
+- `scripts/bump-version.sh --check` → all 10 markers agree at **v16.2.13**, exit 0.
+- `scripts/qc-assert-no-client-names.sh` → exit 0 (no client names in tracked files).
+
+### Files
+- `shared-utils/provision-persona-index.sh` — SIGPIPE-safe `_qmd_collection_files_count` (root cause; covers all 3 reconcile call sites).
+- `update-skills.sh` — three same-class guards (obs_resolve_workspace normal path; find|head zip-fallback; launchctl|awk Mac-restart fallback).
+- `lib-onboarding-state.sh` — two latent-sibling guards (awk SKILL.md; ls qc-*.sh|head).
+- `shared-utils/operator-chat-id.sh` — one latent-sibling guard (openclaw config get pipeline).
+- Onboarding markers rolled `v16.2.12` → `v16.2.13` via `scripts/bump-version.sh` (no skill content changed → no per-skill `skill-version.txt` bump required beyond the standard markers the bump script rolls in lockstep).
+
+---
+
 ## [v16.2.12]  -  2026-07-01  -  fix(41): SHAPE-BUG fix — Skill-41 executor model now written under the REAL OpenClaw key (`agents.defaults.subagents.model`), ACTIVE + valid on every deployed schema; fabricated keys healed off corrupted boxes; validate-before-commit safety invariant; shebangs on the two entry scripts
 
 ### Risk: low — writes the documented, schema-valid key that install.sh already manages fleet-wide, guarded so it can never leave an invalid config. No client names, no credentials, no plist writes. Box-user writes only.

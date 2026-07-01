@@ -182,8 +182,12 @@ oc_skill_registered() {
   local folder="$1"
   command -v openclaw >/dev/null 2>&1 || return 1
   local reg_name
+  # v16.2.13: `|| true` — awk exits non-zero (rc 2) when SKILL.md is absent
+  # (2>/dev/null hides the message, NOT the code); this plain assignment (local
+  # was a separate statement above) would otherwise throw under a caller's
+  # `set -e` if this public helper is ever invoked bare. Empty is handled below.
   reg_name=$(awk -F': ' '/^name:/{gsub(/[[:space:]]/,"",$2);print $2;exit}' \
-               "$OC_SKILLS_DIR/$folder/SKILL.md" 2>/dev/null)
+               "$OC_SKILLS_DIR/$folder/SKILL.md" 2>/dev/null || true)
   [ -z "$reg_name" ] && reg_name="$folder"
   local out
   out=$(openclaw skills info "$reg_name" 2>/dev/null) || return 1
@@ -267,7 +271,11 @@ oc_gate_skill() {
 
   # (c) qc-*.sh exit 0 (only the skill's own qc script, run read-only)
   local qc
-  qc=$(ls "$OC_SKILLS_DIR/$folder"/qc-*.sh 2>/dev/null | head -1)
+  # v16.2.13: `|| true` — on the common no-qc-script path the glob stays literal,
+  # `ls` exits rc 2 (pipefail adopts it); multi-match makes `head -1` SIGPIPE `ls`
+  # (rc 141). This plain assignment would otherwise throw under a caller's `set -e`
+  # BEFORE the `[ -n "$qc" ]` empty-handling below. Empty is handled below.
+  qc=$(ls "$OC_SKILLS_DIR/$folder"/qc-*.sh 2>/dev/null | head -1 || true)
   if [ -n "$qc" ] && [ -f "$qc" ]; then
     local qc_rc=0
     bash "$qc" >/dev/null 2>&1 || qc_rc=$?

@@ -358,11 +358,24 @@ except Exception:
 # Parsing Files: lets us PROVE the store is non-empty before declaring success.
 _qmd_collection_files_count() {
     local _c="$1"
+    # SIGPIPE-SAFE (v16.2.13). The awk reads the ENTIRE stream (no early `exit`)
+    # and prints the FIRST "Files:" count in the target block at END, so
+    # `qmd collection list` is never killed by a downstream-closed pipe. The old
+    # `exit`-on-first-match closed the read end → `qmd collection list` died with
+    # SIGPIPE (rc 141) → under the caller's `set -o pipefail` the pipeline returned
+    # 141 → the standalone `_FILES="$(_qmd_collection_files_count ...)"` assignment
+    # inherited 141 → `set -e` aborted the WHOLE updater before the Skill-41
+    # config-shape wiring + the .onboarding-version stamp ran. The trailing
+    # `|| true` additionally absorbs a non-zero from `qmd` itself, so this helper
+    # can NEVER return non-zero and can never abort a caller under
+    # `set -e`+`pipefail`, at any call site (the count semantics are unchanged:
+    # echo the integer count, or nothing).
     qmd collection list 2>/dev/null | awk -v want="$_c" '
         index($0, "qmd://" want "/") { inblk=1; next }
-        inblk && tolower($0) ~ /files:/ { n=$0; gsub(/[^0-9]/, "", n); print n; exit }
+        inblk && !got && tolower($0) ~ /files:/ { n=$0; gsub(/[^0-9]/, "", n); val=n; got=1 }
         inblk && index($0, "qmd://") { inblk=0 }
-    '
+        END { if (got) print val }
+    ' || true
 }
 
 # _qmd_rebuild_better_sqlite3 — best-effort ABI repair. A Node major bump
