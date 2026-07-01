@@ -4,6 +4,23 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v6.6.3] - 2026-07-01 — docs: unified 11-alias GHL LOCATION-PIT resolver + platform-identity rewrite
+
+### Changed
+- Credential resolver chains in `EXAMPLES.md`, `INSTALL.md`, `QC.md`, and
+  `qc-ghl-convert-and-flow.sh` expanded from the 5-alias chain shipped in v6.6.2 to the full
+  canonical 11-alias LOCATION-PIT set (`TERMINOLOGY.md`). `qc-ghl-convert-and-flow.sh`'s
+  `LEGACY_RE` guard (fails the build if a shipped example references an unresolved legacy `$VAR`)
+  extended to cover every newly-added alias name.
+- `SKILL.md`: "What Is This Skill?" rewritten to lead with the GHL = Convert & Flow = Go High
+  Level platform-identity statement and the "the API key IS the PIT" framing (replacing the older
+  "also branded as" phrasing). Quick Reference table row corrected from "API key type: OAuth2
+  Bearer" / "Deprecated: use PITs" to "the API key IS the PIT — no separate type exists." The
+  Credentials section now documents the unified 11-alias resolver and cross-references the
+  PIT-aliases banner shared by all five GHL skills.
+
+---
+
 ## [v6.6.2] - 2026-06-30 — Credential canonicalization, fail-loud preflight, hardened QC
 
 ### Why

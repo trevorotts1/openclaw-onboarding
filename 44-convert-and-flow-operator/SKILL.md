@@ -3,6 +3,8 @@ name: convert-and-flow-operator
 description: Tier 0 GHL operator — the Convert and Flow CLI (caf/convertandflow/ghl) gives the agent direct CRM access for contacts, opportunities, calendars, conversations, documents, payments, forms, social, locations, and workflow builds via internal API (no MCP overhead). Standard ops run on the PIT alone. Workflow writes additionally require the Firebase refresh token; when absent, falls through to Tier 4 agent-browser as the backstop. Write-safe by default (dry-run, draft-only, location whitelist, approval gate).
 ---
 
+> **GHL PIT aliases:** `GOHIGHLEVEL_API_KEY` is the preferred name; 10 additional aliases resolve the same LOCATION PIT. See **`TERMINOLOGY.md`** (repo root) for the canonical alias set and backend-equivalence notes (Convert & Flow / leadconnectorhq.com = one platform).
+
 # Skill 44 — Convert and Flow Operator (Tier 0)
 
 ## READ-BEFORE-ACT — Model Check + PLAN MODE + QC GATE (workflow builds)
@@ -152,6 +154,14 @@ The CLI has NO media upload commands. Media NEVER routes to Tier 0 — always Ti
 
 The wrapper at `~/.openclaw/tools/convert-and-flow-cli/caf` maps the canonical env names
 to whatever the engine expects at runtime (engine internals untouched).
+
+**Unified 11-alias scan (as of this update):** `ghl_client._get_token()` now scans all 11
+env-var names in the LOCATION-PIT alias set (`GOHIGHLEVEL_API_KEY` canonical + 10 aliases)
+before raising a credential error. This closes the prior crash-loop where a box storing the
+token under a legacy alias (e.g. `GHL_API_KEY` or `PIT_TOKEN`) would surface
+`CredentialNotFoundError` and spin the agent into a retry loop. Agency PITs and the Firebase
+refresh token (`GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`) are not part of this scan and remain
+on separate paths.
 
 ---
 

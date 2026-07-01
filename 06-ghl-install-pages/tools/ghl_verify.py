@@ -72,6 +72,18 @@ if _TOOLS_DIR not in sys.path:
 
 import ghl_builder  # noqa: E402  (render_check, verify_url, browser_cmd, may_publish)
 
+# ── model_router integration (Wiring-Map §5.A.4) ─────────────────────────────
+# html/code seam  → select_html_repair_model()  (code-block fix-loop)
+# qc seam         → select_qc_model()           (vision QC on screenshots + DOM)
+# Both functions are public so callers (repair loops, QC orchestrators) can ask
+# for the correct client-owned model without hardcoding slugs here.
+try:
+    import model_router as _model_router_gv   # noqa: E402 — alias avoids name clash
+    _MODEL_ROUTER_GV_AVAILABLE = True
+except Exception:   # noqa: BLE001 — graceful; seam functions return {} when absent
+    _model_router_gv = None   # type: ignore[assignment]
+    _MODEL_ROUTER_GV_AVAILABLE = False
+
 
 # STORAGE_MARKER_IS_NOT_VERIFICATION: marker found in Firebase / raw autosave
 # bytes / raw urllib response is NOT a pass criterion.  It proves only that bytes
@@ -493,12 +505,42 @@ def verify_page(
     # page carries a published url + a JS signal). Re-runs the SEALED render on
     # the LIVE published url; any console/CSP/pageerror or non-200 there forces
     # PASS:False. Additive — never clears a preview render_error.
-    render_errors += _published_csp_errors(
+    _published_errs = _published_csp_errors(
         page,
         lambda u, m: ghl_builder.render_check(
             u, m, run_dir=_run_dir, step=f"{step}-published", timeout=45,
         ),
     )
+    render_errors += _published_errs
+    # ── HTML repair seam (Wiring-Map §5.A.4, role='html') ────────────────────────
+    # Primary render check failed with render errors → ask model_router for the
+    # html-role model and attempt a single repair-and-retry pass so a code-block
+    # fix loop can use the identified model to rewrite the failing HTML before
+    # re-checking.  {} return (model_router unavailable) → skip retry entirely,
+    # preserving the existing single-pass behavior.  The retry is not re-published-
+    # CSP-checked (that layer is additive on the primary result only).
+    _html_repair_receipt: dict = {}
+    if render_errors:
+        _html_repair_receipt = select_html_repair_model()
+        if _html_repair_receipt and not _html_repair_receipt.get("error"):
+            try:
+                _res2 = ghl_builder.render_check(
+                    preview_url, marker, run_dir=_run_dir,
+                    step=f"{step}-repair", timeout=45,
+                )
+                _re2 = list(_res2.get("render_errors") or [])
+                _re2 += _copy_fidelity_errors(page, _res2)
+                if not _re2 and _res2.get("ok") and _res2.get("http") == 200:
+                    # Repair attempt cleared all PREVIEW errors — promote repair
+                    # result, but published-CSP failures (from the live PUBLISHED
+                    # url) MUST persist and keep failing the gate. The preview
+                    # repair may clear preview render_errors; it must NEVER clear a
+                    # published-CSP failure. Re-fold the published errors so a real
+                    # published failure can't be masked by a clean preview repair.
+                    res = _res2
+                    render_errors = _re2 + list(_published_errs)
+            except Exception:  # noqa: BLE001 — repair must never mask primary verdict
+                pass
     http = res.get("http")
     mird = bool(res.get("marker_in_rendered_dom"))
     # HARD RULE: render_errors != [] OR http != 200 => PASS:False, no override.
@@ -527,6 +569,8 @@ def verify_page(
     }
     if "error" in res:
         rec["error"] = res["error"]
+    if _html_repair_receipt:
+        rec["repair_model_receipt"] = _html_repair_receipt
     return rec
 
 
@@ -904,6 +948,13 @@ def screenshot_plan(run_dir: str, pages: list[dict]) -> list[dict]:
     under ``run_dir``. The verify guard does not depend on these — they are the
     R4 visual confirmation, captured as real artifacts, not asserted.
     """
+    # ── Vision-QC seam (Wiring-Map §5.A.4, role='qc') ───────────────────────────
+    # Obtain the qc-role model receipt once for all captured artifacts in this
+    # plan.  Each step descriptor carrying ``qc_model_receipt`` tells the agent
+    # executing these steps which model to use for vision QC over the screenshot
+    # and DOM artifacts.  {} when model_router is unavailable → no receipt key
+    # is added to step descriptors, matching the existing pre-seam behavior.
+    _qc_receipt: dict = select_qc_model()
     steps: list[dict] = []
     shots_dir = os.path.join(run_dir, "screenshots")
     for p in pages:
@@ -914,17 +965,20 @@ def screenshot_plan(run_dir: str, pages: list[dict]) -> list[dict]:
         # Real fetched-DOM capture (NOT a synthetic stub): the agent navigates to
         # the public preview and dumps the rendered HTML it actually received.
         dom_out = os.path.join(run_dir, f"{step}-preview.html")
-        steps.append({
+        _dom_step: dict = {
             "step": step,
             "kind": "dom",
             "out": dom_out,
             "argv": ghl_builder.browser_cmd("open", url).split() +
                     ["&&"] + ghl_builder.browser_cmd("html", "--output", dom_out).split(),
             "note": "fetched preview DOM (real capture, replaces synthetic stub)",
-        })
+        }
+        if _qc_receipt:
+            _dom_step["qc_model_receipt"] = _qc_receipt
+        steps.append(_dom_step)
         for vp in VIEWPORTS:
             png_out = os.path.join(shots_dir, f"{step}-{vp['name']}.png")
-            steps.append({
+            _shot_step: dict = {
                 "step": step,
                 "viewport": vp["name"],
                 "kind": "screenshot",
@@ -934,8 +988,68 @@ def screenshot_plan(run_dir: str, pages: list[dict]) -> list[dict]:
                     "open", url, "screenshot", png_out,
                 ).split(),
                 "note": f"REAL PNG at {vp['width']}x{vp['height']} (replaces SVG placeholder)",
-            })
+            }
+            if _shot_step and _qc_receipt:
+                _shot_step["qc_model_receipt"] = _qc_receipt
+            steps.append(_shot_step)
     return steps
+
+
+# ── Model-router seam functions (Wiring-Map §5.A.4) ──────────────────────────
+#
+# These are the designated call-sites for role-keyed model selection in ghl_verify.
+# A repair loop or QC orchestrator calls these instead of picking a slug directly,
+# so the choice is always consistent with model_router's role-aware ladder.
+
+
+def select_html_repair_model(executor=None, env=None) -> dict:
+    """Return the model_router receipt for the html/code fix-loop seam.
+
+    This is the designated call-site for the code-block repair-and-retry path
+    (Wiring-Map §5.A.4, role='html'): when verify_page returns PASS=False due
+    to a render error, a repair loop should call this to obtain the GLM-5.2-class
+    model (Ollama Cloud → OpenRouter GLM → DeepSeek v4 pro backup → Gemini
+    last-resort) that rewrites / fixes the failing code block.
+
+    Uses ``make_stub_executor()`` if no executor is provided (offline receipt only,
+    no network). Callers with a live executor should pass it explicitly so the
+    MiniMax probe-gate runs in real time if needed (not applicable to html role,
+    which is not probe-gated, but the pattern is uniform).
+
+    Never raises — returns {} when model_router is unavailable.
+    Role: 'html' (alias 'code').  Primary: GLM 5.2 via Ollama Cloud.
+    """
+    if not _MODEL_ROUTER_GV_AVAILABLE:
+        return {}
+    try:
+        exec_ = executor or _model_router_gv.make_stub_executor()   # type: ignore[union-attr]
+        return _model_router_gv.select(exec_, role="html", env=env, sleep=lambda *_: None)  # type: ignore[union-attr]
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
+def select_qc_model(executor=None, env=None) -> dict:
+    """Return the model_router receipt for the vision QC seam.
+
+    This is the designated call-site for the vision QC pass over screenshots and
+    rendered DOM (Wiring-Map §5.A.4, role='qc'). Only MiniMax M3 (probe-gated)
+    or Gemini 3.5 Flash (last-resort, only if live + credited) are valid for this
+    role — DeepSeek and GLM have no confirmed vision capability and must NOT be
+    used for screenshot / mobile-render QC.
+
+    Uses ``make_stub_executor()`` if no executor is provided. For production QC,
+    pass a real executor so the MiniMax probe fires correctly.
+
+    Never raises — returns {} when model_router is unavailable.
+    Role: 'qc'.  Primary: MiniMax M3 via Ollama Cloud (probe-gated).
+    """
+    if not _MODEL_ROUTER_GV_AVAILABLE:
+        return {}
+    try:
+        exec_ = executor or _model_router_gv.make_stub_executor()   # type: ignore[union-attr]
+        return _model_router_gv.select(exec_, role="qc", env=env, sleep=lambda *_: None)  # type: ignore[union-attr]
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"{type(exc).__name__}: {exc}"}
 
 
 def _ts() -> str:

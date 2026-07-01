@@ -1,5 +1,32 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.3.4] - 2026-07-01 — fix: unified 11-alias LOCATION-PIT scan closes credential crash-loop
+
+### Fixed
+- `tools/engine/cli_anything/gohighlevel/utils/ghl_client.py::_get_token()` previously read ONLY
+  `GHL_API_KEY` from the live process environment. On a box whose token was stored under
+  `GOHIGHLEVEL_API_KEY` (or any other canonical alias) with no `GHL_API_KEY` re-export, the engine
+  raised a hard credential error and the calling agent looped retrying the same failing call.
+  `_get_token()` now scans the full canonical `_LOCATION_PIT_ENV_NAMES` (11 names — see
+  `TERMINOLOGY.md`) in order and returns the first non-empty hit; the error message names every
+  var it checked. Root cause: a client-box GHL-MCP credential crash-loop, 2026-06.
+- `tools/engine/wire-ghl-env.sh` now wires all 11 aliases into `env.vars` (previously wrote only
+  `GOHIGHLEVEL_API_KEY` + `GHL_API_KEY`), closing the wiring-vs-engine mismatch that caused the
+  crash-loop above (the wrapper wrote one set of names; the engine read a different single name).
+
+### Added
+- `SKILL.md` gains the GHL PIT-aliases banner and a "Unified 11-alias scan" callout documenting
+  the `_get_token()` fix and which two credentials (the Agency PIT and the Firebase refresh token)
+  remain on separate paths and are NOT part of this scan.
+
+### Housekeeping — reconciles the v1.3.3 no-CHANGELOG gap
+- v1.3.3 (bumped in the fleet-wide `v16.2.10` release, 2026-06-30) corrected six fabricated `caf`
+  command-table rows in `INSTRUCTIONS.md` and fixed `--json` flag ordering, but shipped with no
+  CHANGELOG entry. Recorded here for the version trail: `INSTRUCTIONS.md` command-table rows now
+  match the real CLI surface.
+
+---
+
 ## [1.3.2] - 2026-06-30 — fix: add `caf doctor` (probe entrypoint) + correct products/prices endpoints + remove-tag body + token-liveness idempotency + client-model scrub
 
 ### Fixed (correctness — proven bug)
@@ -233,7 +260,7 @@ Neither matcher ever blocks a build. Every element is overridable.
   Sequence:
   1. Verbatim client announce via `openclaw message send --channel telegram` (mandatory).
   2. Spawn independent MiniMax QC sub-agent via `sessions_send` in a fresh session; prefer
-     `minimax/minimax-2.7` via OpenRouter or `minimax-m3:cloud`; verify model configured +
+     `minimax/minimax-m3` via OpenRouter or `minimax-m3:cloud`; verify model configured +
      reachable before spawn; fall back to next independent high-reasoning model and log.
   3. QC sub-agent inspects via `caf workflows export <id>` + `qc-built-workflow.sh <id>`;
      returns explicit PASS/FAIL + observed vs expected for each WF-1..WF-21 item.

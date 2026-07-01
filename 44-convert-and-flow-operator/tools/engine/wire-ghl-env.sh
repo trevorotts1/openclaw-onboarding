@@ -106,7 +106,11 @@ read_secret() {
   return 0
 }
 
+# ─── Full 11-alias PIT resolver (first match wins; covers all legacy alias names) ─
+_resolve_any_pit() { for _v in GOHIGHLEVEL_API_KEY GHL_API_KEY GHL_PIT GHL_TOKEN GHL_PRIVATE_INTEGRATION_TOKEN PRIVATE_INTEGRATION_TOKEN GHL_PRIVATE_TOKEN PIT_TOKEN GHL_PIT_TOKEN GOHIGHLEVEL_LOCATION_PIT GHL_LOCATION_PIT; do local _val="${!_v:-}"; [ -z "$_val" ] && _val="$(read_secret "$_v")"; [ -n "$_val" ] && printf '%s' "$_val" && return; done; }
+
 API_KEY="${GOHIGHLEVEL_API_KEY:-$(read_secret GOHIGHLEVEL_API_KEY)}"
+[ -z "$API_KEY" ] && API_KEY="$(_resolve_any_pit)"
 LOCATION_ID="${GOHIGHLEVEL_LOCATION_ID:-$(read_secret GOHIGHLEVEL_LOCATION_ID)}"
 FIREBASE="${GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN:-$(read_secret GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN)}"
 ALLOWED="${GOHIGHLEVEL_ALLOWED_LOCATION_IDS:-$(read_secret GOHIGHLEVEL_ALLOWED_LOCATION_IDS)}"
@@ -155,7 +159,22 @@ PYEOF
 }
 
 log "wiring env.vars into $OC_JSON ..."
-wire_var GOHIGHLEVEL_API_KEY                "$API_KEY"
+# ── Canonical LOCATION-PIT alias set (all mean the same credential; first hit wins) ──
+# Wiring all aliases ends the wiring↔engine mismatch: wire-ghl-env.sh previously wrote
+# only GOHIGHLEVEL_* names, but ghl_client.py read only GHL_API_KEY → resolved to empty
+# → 401 crash-loop (root cause: a client-box GHL-MCP crash-loop, 2026-06).
+# GHL PIT aliases: see TERMINOLOGY.md for the canonical alias set.
+wire_var GOHIGHLEVEL_API_KEY                "$API_KEY"    # preferred canonical name
+wire_var GHL_API_KEY                        "$API_KEY"    # legacy short alias
+wire_var GHL_PIT                            "$API_KEY"    # short alias
+wire_var GHL_TOKEN                          "$API_KEY"    # alternate alias
+wire_var GHL_PRIVATE_INTEGRATION_TOKEN      "$API_KEY"    # explicit full-name alias
+wire_var PRIVATE_INTEGRATION_TOKEN          "$API_KEY"    # bare PIT alias
+wire_var GHL_PRIVATE_TOKEN                  "$API_KEY"    # shortened private-token alias
+wire_var PIT_TOKEN                          "$API_KEY"    # short PIT alias
+wire_var GHL_PIT_TOKEN                      "$API_KEY"    # combined PIT alias
+wire_var GOHIGHLEVEL_LOCATION_PIT           "$API_KEY"    # explicit LOCATION-PIT name
+wire_var GHL_LOCATION_PIT                   "$API_KEY"    # explicit LOCATION-PIT short alias
 wire_var GOHIGHLEVEL_LOCATION_ID            "$LOCATION_ID"
 wire_var GOHIGHLEVEL_ALLOWED_LOCATION_IDS   "$ALLOWED"
 wire_var GOHIGHLEVEL_DRAFT_ONLY             "$DRAFT_ONLY"

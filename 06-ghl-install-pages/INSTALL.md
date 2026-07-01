@@ -123,21 +123,23 @@ This document assumes the HTML code is already written and ready to go. The agen
 
 ## What This Skill Does
 
-This skill enables the AI agent to use browser automation (Playwright) to:
-- Log into a GoHighLevel / Convert and Flow account
+This skill enables the AI agent to use browser automation to:
+- Access a GoHighLevel / Convert and Flow account via a seeded Firebase refresh-token session (TOKEN-ONLY, D7) — NOT a login form
 - Navigate to the page builder
 - Create new funnels or website pages
 - Paste HTML code into the builder's code block element
 - Save, preview, and publish pages
 - Update existing pages with new code
 
+**Browser automation tier:** agent-browser (Vercel Labs, Skill 03) is PRIMARY; Playwright is the FALLBACK. Access is always established through the Firebase refresh-token seed path — the builder never renders a login form and never encounters a 2FA prompt under normal operation.
+
 
 ## Prerequisites Verification
 
 The agent must verify ALL of these are in place before proceeding:
 
-1. [ ] Playwright browser automation tool is installed and working
-2. [ ] Access to the GHL/Convert and Flow account (login credentials or saved browser session)
+1. [ ] Browser automation is available: agent-browser (Vercel Labs, Skill 03) PRIMARY; Playwright FALLBACK — at least one must be installed and working
+2. [ ] A valid `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` exists in `~/.openclaw/secrets/.env` (TOKEN-ONLY, D7) — OR a persistent Playwright browser session exists at `~/.openclaw/playwright-data/ghl-install-pages` (Playwright fallback only)
 3. [ ] Finished HTML code is ready to paste (all CSS must be inline or in style tags, no React, no external dependencies)
 4. [ ] Page requirements are documented (page names, URL paths, which HTML code goes where)
 5. [ ] GHL credentials are stored securely (see Credential Storage below)
@@ -163,59 +165,46 @@ python3 -c "from playwright.sync_api import sync_playwright; print('Playwright i
 Expected output: "Playwright installed successfully" printed to stdout.
 
 
-## Step 2: Store GHL Credentials Securely
+## Step 2: Verify Firebase Refresh Token (TOKEN-ONLY, D7)
 
-GHL login credentials must NEVER be hardcoded in scripts or saved in code repositories.
+Access is established via a seeded Firebase refresh-token session. The builder NEVER renders a login form and NEVER sees a 2FA prompt. If the token seed fails, the builder STOPS with a non-zero exit — it does NOT fall back to a login form.
 
-**ALWAYS check for existing credentials before asking the user. Mac canonical locations checked in priority order:**
+**ALWAYS check for an existing token before prompting the user. Canonical location:**
 
 ```bash
-# Canonical secrets file
-grep -E "^(GHL_EMAIL|GHL_PASSWORD)=" ~/.openclaw/secrets/.env 2>/dev/null
-# Legacy location (older Mac onboarding stored creds here)
-grep -E "^(GHL_EMAIL|GHL_PASSWORD)=" ~/clawd/secrets/.env 2>/dev/null
-# Shell env vars (operator may have exported in shell rc)
-printenv | grep -E "^(GHL_EMAIL|GHL_PASSWORD)="
+# Canonical secrets file (sole authoritative path — ~/clawd/secrets/.env is retired)
+grep -E "^GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN=" ~/.openclaw/secrets/.env 2>/dev/null
+# Live process env (token may already be exported)
+printenv | grep "^GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN="
 ```
 
 **Decision tree:**
-- If BOTH GHL_EMAIL and GHL_PASSWORD are found: skip to Step 3. No need to prompt.
-- If one or both are missing: follow the steps below to add them.
-- If the account uses SSO or the user does not want to store credentials: use the
-  persistent browser session approach (user logs in once, session is reused). Note
-  this in MEMORY.md and skip credential storage.
-- If the user wants to skip: offer that option. Tell them: "You can skip storing
-  login credentials now. I will open a browser window and you can log in manually.
-  Your session will be saved so you only need to log in once."
+- If `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` is found and non-empty: proceed to Step 3.
+- If missing or empty: the operator must supply a fresh token (see token recovery below) and add it to `~/.openclaw/secrets/.env` before continuing.
+- For Playwright-fallback sessions only: a persistent browser session at `~/.openclaw/playwright-data/ghl-install-pages` may substitute while a token is unavailable — note this in MEMORY.md.
 
-**NEVER block the install on missing credentials. Always offer a skip option.**
+**NEVER prompt for GHL_EMAIL or GHL_PASSWORD. Email/password login is not used by this skill.**
 
-If credentials need to be added, store them in the canonical secrets file for the platform:
+If the token needs to be added, store it in the canonical secrets file:
 ```bash
 # Mac:
-nano ~/.openclaw/secrets/.env
-# Hostinger Docker VPS: Hostinger normally injects creds as container env vars, so
-# adding GHL_EMAIL/GHL_PASSWORD via the Hostinger control panel is preferred. As a
-# fallback, you can write to ~/.openclaw/secrets/.env (create dir if missing):
 mkdir -p ~/.openclaw/secrets && nano ~/.openclaw/secrets/.env
 ```
 
-Add these two lines (replace with actual email and password):
+Add the following line (replace with the actual token value):
 ```
-GHL_EMAIL=user@email.com
-GHL_PASSWORD=the-account-password
+GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN=<your-token-here>
 ```
 
-Save and close the file (Ctrl+O, Enter, Ctrl+X).
+Save and close the file (Ctrl+O, Enter, Ctrl+X). Set permissions: `chmod 600 ~/.openclaw/secrets/.env`.
 
-Load credentials in Playwright scripts:
+Load the token in automation scripts:
 ```python
 import os
-email = os.environ.get("GHL_EMAIL")
-password = os.environ.get("GHL_PASSWORD")
+firebase_token = os.environ.get("GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN")
 ```
 
-If the account uses SSO (single sign-on) instead of email/password login, document this in workspace files and use the persistent session approach where the user logs in once manually and the session is reused.
+**Token recovery:** If the token is absent, expired, or revoked, re-grab a fresh token using the Convert and Flow Token Grabber Chrome extension (Skill 44 Action 5b), then update `~/.openclaw/secrets/.env` and re-run the seed.
 
 
 ## Step 3: Configure Browser Settings
@@ -297,16 +286,16 @@ GHL has TWO places to build pages: Websites and Funnels. They use the exact same
 If the user does not specify which one, default to Funnels.
 
 
-## Step 6: Prepare for 2FA (Two-Factor Authentication)
+## Step 6: TOKEN-ONLY Access — No 2FA Path
 
-Many business GHL accounts have 2FA enabled. After entering email and password, a second verification code is required (usually from a phone app).
+This skill uses TOKEN-ONLY access (D7). The builder seeds the session from `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` and NEVER navigates to a login form or encounters a 2FA prompt under normal operation.
 
-The agent must handle 2FA as follows:
-- When 2FA is detected, PAUSE and wait for user to complete verification in the browser window
-- NEVER attempt to bypass 2FA
-- Stay headless (D6 — NEVER headless=False, no visible window). If two-factor genuinely cannot be satisfied headless, PAUSE, screenshot to disk, and surface to the operator — do not open a window.
-- Set a generous timeout (at least 5 minutes) because the user may need to find their phone and open an authenticator app
-- After the user completes 2FA, the persistent session will remember the approval so it should not ask again for a while
+**If the token seed fails:**
+- The builder STOPS immediately with a non-zero exit code and reports: `[ERROR] Firebase token seed failed — exit 1`
+- It does NOT open a login form, does NOT prompt for email/password, and does NOT wait for a 2FA code
+- The operator must re-grab a fresh token via the Convert and Flow Token Grabber Chrome extension (Skill 44 Action 5b), update `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` in `~/.openclaw/secrets/.env`, and re-run the seed
+
+There is no 2FA handling path to configure because the agent never reaches a 2FA screen.
 
 
 ## Step 7: Set Up Helper Functions

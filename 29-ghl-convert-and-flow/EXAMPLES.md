@@ -392,7 +392,7 @@ Required scope: `workflows.readonly`
 # Resolve creds (canonical names; legacy aliases mapped) and FAIL LOUD if unset —
 # never fire an empty "Authorization: Bearer ". See SKILL.md "Credentials".
 [ -f ~/.openclaw/secrets/.env ] && { set -a; . ~/.openclaw/secrets/.env; set +a; }
-: "${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-}}}}}"
+: "${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-${GHL_PIT:-${GHL_TOKEN:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-${PIT_TOKEN:-${GHL_PIT_TOKEN:-${GOHIGHLEVEL_LOCATION_PIT:-${GHL_LOCATION_PIT:-}}}}}}}}}}}}"
 : "${GOHIGHLEVEL_LOCATION_ID:=${GHL_LOCATION_ID:-}}"
 if [ -z "${GOHIGHLEVEL_API_KEY:-}" ] || [ -z "${GOHIGHLEVEL_LOCATION_ID:-}" ]; then
   echo "BLOCKED: GOHIGHLEVEL_API_KEY and GOHIGHLEVEL_LOCATION_ID must be set." >&2

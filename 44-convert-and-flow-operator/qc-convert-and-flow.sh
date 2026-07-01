@@ -284,8 +284,10 @@ echo "── Section B: Credentials (live-box) ──"
 if [ "$LIVE_MODE" -eq 1 ]; then
   source "$HOME/.openclaw/secrets/.env" 2>/dev/null || true
 fi
-live_assert "GOHIGHLEVEL_API_KEY is set"          "[ -n \"${GOHIGHLEVEL_API_KEY:-}\" ]"
-live_assert "GOHIGHLEVEL_API_KEY starts with pit-" "[[ \"${GOHIGHLEVEL_API_KEY:-}\" == pit-* ]]"
+# 11-alias fallback resolver — passes on pre-v12 boxes where the PIT is stored under a legacy name
+RESOLVED_PIT="${GOHIGHLEVEL_API_KEY:-${GHL_API_KEY:-${GHL_PIT:-${GHL_TOKEN:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-${PIT_TOKEN:-${GHL_PIT_TOKEN:-${GOHIGHLEVEL_LOCATION_PIT:-${GHL_LOCATION_PIT:-}}}}}}}}}}}"
+live_assert "GHL PIT set (any canonical alias)"   "[ -n \"${RESOLVED_PIT}\" ]"
+live_assert "GHL PIT starts with pit-"            "[[ \"${RESOLVED_PIT}\" == pit-* ]]"
 live_assert "GOHIGHLEVEL_LOCATION_ID is set"      "[ -n \"${GOHIGHLEVEL_LOCATION_ID:-}\" ]"
 live_warn   "GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN set (workflow writes)" "[ -n \"${GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN:-}\" ]"
 live_assert "GOHIGHLEVEL_DRAFT_ONLY=true set"     "[ \"${GOHIGHLEVEL_DRAFT_ONLY:-true}\" = 'true' ]"

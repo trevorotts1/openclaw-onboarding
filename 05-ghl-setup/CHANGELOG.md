@@ -4,6 +4,27 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v6.5.9] - July 1, 2026 — docs: unified 11-alias GHL LOCATION-PIT resolver
+
+### Changed
+- Credential resolver chains in `INSTRUCTIONS.md` (`ghl_preflight`) and `INSTALL.md` (Step 1
+  discovery + the location-lookup fallback) expanded from a 3-alias chain
+  (`GOHIGHLEVEL_API_KEY` → `GHL_API_KEY` → `GHL_PIT`) to the full canonical 11-alias LOCATION-PIT
+  set documented in `TERMINOLOGY.md` (adds `GHL_TOKEN`, `GHL_PRIVATE_INTEGRATION_TOKEN`,
+  `PRIVATE_INTEGRATION_TOKEN`, `GHL_PRIVATE_TOKEN`, `PIT_TOKEN`, `GHL_PIT_TOKEN`,
+  `GOHIGHLEVEL_LOCATION_PIT`, `GHL_LOCATION_PIT`).
+- `SKILL.md` gains a unified-resolver callout (all 11 names + the Agency-PIT separation warning)
+  and a cross-reference to `TERMINOLOGY.md`.
+
+### Fixed
+- Corrected the alias names quoted in `SKILL.md`'s resolver callout — a prior draft listed
+  `GOHIGHLEVEL_CONVERTANDFLOW_API_KEY` / `GHL_CONVERTANDFLOW_API_KEY` /
+  `GOHIGHLEVEL_CAF_API_KEY` / `GHL_CAF_API_KEY` / `CAF_API_KEY` / `GOHIGHLEVEL_PIT`, none of which
+  are part of the canonical set in `TERMINOLOGY.md` or implemented by any resolver. Replaced with
+  the actual 10-alias set that matches every shipped resolver.
+
+---
+
 ## [v6.5.8] - June 30, 2026
 
 ### Fixed

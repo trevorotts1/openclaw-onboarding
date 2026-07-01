@@ -9,9 +9,11 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "16.2.9"
+  version: "16.2.14"
   priority: HIGH
 ---
+
+> **GHL PIT aliases:** `GOHIGHLEVEL_API_KEY` is the preferred name; 10 additional aliases resolve the same LOCATION PIT. See **`TERMINOLOGY.md`** (repo root) for the canonical alias set and backend-equivalence notes (Convert & Flow / leadconnectorhq.com = one platform).
 
 # GoHighLevel / Convert and Flow - Install Pages (Browser Builder)
 
@@ -163,6 +165,50 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
    recovery protocol for when things go seriously wrong.
 10. **Publishing** - NEVER publish without explicit user approval. Always send
     a deployment report with screenshots first.
+11. **Role-aware model_router** - `tools/model_router.py` assigns a model to
+    every subtask before execution via an Ollama-Cloud-first ladder (five
+    roles; aliases in parentheses). `content` = `ollama/kimi-k2.6:cloud` →
+    `openrouter/moonshotai/kimi-k2.6` → deepseek-v4-pro (universal backup) →
+    Gemini 3.5 Flash (last resort); `html`
+    (`code`) = `glm-5.2:cloud` → `z-ai/glm-5.2` → deepseek-v4-pro →
+    Gemini 3.5 Flash (last resort); `reasoning` (`funnel`) = GLM 5.2 then
+    DeepSeek v4 Pro (Ollama Cloud → OpenRouter) → Gemini 3.5 Flash;
+    `execution` = `minimax-m3:cloud` (probe-gated) → `deepseek-v4-pro:cloud`
+    → `openrouter/minimax/minimax-m3` (probe-gated) →
+    `openrouter/deepseek/deepseek-v4-pro` → `google/gemini-3.5-flash` (last
+    rung); `qc` (vision) = MiniMax M3 (probe-gated) → Gemini 3.5 Flash last
+    resort. MiniMax M2 is PURGED — it never appears in any rung. The
+    router is wired into `tools/v2_dispatcher.py` (role selection at every
+    dispatch entry) and `ghl_verify` (`select_html_repair_model` /
+    `select_qc_model` seam functions); no subtask runs without a model
+    assignment.
+12. **Survey creation — `tools/ghl_survey_builder.py`** - Browser-controlled
+    survey pipeline in two parts. Part 1 creates all required custom fields in
+    the GHL location. Part 2 builds the survey form and maps fields via the
+    Add-Object-Fields interface. Supports conditional logic, required-field
+    enforcement, Quick Add, and plain Terms & Conditions blocks. `--dry-run`
+    performs a full structural validation without writing anything to GHL.
+13. **Adaptive intake — `tools/intake_interview.py`** - Runs a ≤7-question
+    intake interview before a build starts. Adapts follow-up questions to prior
+    answers. Includes a "think for me" branch: when the operator cannot decide,
+    the tool generates recommended answers and holds for confirmation before
+    proceeding. Output is written to the task manifest and consumed by
+    `v2_dispatcher.py` at build time.
+14. **Command Center step-visibility — `tools/cc_board.py`** - `move_task()`,
+    `post_activity()`, and `register_deliverable()` give per-step visibility on
+    the Kanban board (in addition to the existing `update_status` /
+    `ingest_task` producer calls): `post_activity('updated', 'Step k/N: …')`
+    surfaces every material build step on the card's activity feed as it
+    happens. **Done-skip fix** — `move_task()` HARD-BLOCKS any direct call to
+    move a card to `done`; the only path to `done` is the Command Center's own
+    QC gate promoting a card from `review` on a passing score. The new
+    `BuildPhaseDriver` class sequences the whole lifecycle (`start` →
+    `step` → `artifact` → `review`, or `fail` → `backlog`/`blocked`) for any
+    future caller; `ghl_survey_builder.py`'s own fail-soft board wrappers
+    already call `move_task`/`post_activity`/`register_deliverable` directly
+    (via a `getattr` guard) for its survey build flow. Every board call is
+    fail-soft (never raises, never blocks the build) so a build proceeds even
+    against an older `cc_board.py`.
 
 ## Files in This Folder (Reading Order)
 
@@ -207,6 +253,22 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
      `funnel_media_folder_plan`) — `services.*` + Bearer LOCATION-PIT, **never
      browser-routed**.
    - `gates.json` - the 28-gate registry (2 captured, 26 runtime snapshot-gates).
+   - `ghl_survey_builder.py` - two-part browser-controlled survey pipeline:
+     Part 1 creates GHL custom fields; Part 2 builds the survey, maps
+     Add-Object-Fields, wires conditional logic, enforces required fields, and
+     handles Quick Add + plain T&C blocks. Accepts `--dry-run` for structural
+     validation without GHL writes.
+   - `intake_interview.py` - adaptive ≤7-question intake; "think for me" branch
+     generates recommended answers on request, then confirms before proceeding;
+     output written to the task manifest before build starts.
+   - `model_router.py` - role-aware model selector (Ollama-Cloud-first); called
+     by `v2_dispatcher.py` and `ghl_verify` to assign a model to every subtask
+     before execution. Role → ladder: `content` → `ollama/kimi-k2.6:cloud` →
+     `openrouter/moonshotai/kimi-k2.6` → DeepSeek v4 Pro (universal backup);
+     `html`/`code` → GLM 5.2 → DeepSeek v4 Pro (universal backup); `reasoning` →
+     GLM 5.2 / DeepSeek v4 Pro; `execution` → MiniMax M3 probe-gated →
+     DeepSeek v4 Pro; `qc` (vision) → MiniMax M3 probe-gated. All ladders end
+     at Gemini 3.5 Flash as last resort. MiniMax M2 is PURGED from every rung.
 6. **ghl-install-pages-full.md** - LEGACY v2.0 raw-Playwright reference, kept for
    historical click-path detail only. Superseded by ghl-browser-builder-full.md.
 7. **INSTRUCTIONS.md** - Operational quick-start.
@@ -393,9 +455,15 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > history. Any new tool MUST keep durable run state out of the skill dir.
 >
 > **Cross-repo board contract.** The board PRODUCER (`tools/cc_board.py`,
-> `update_status`/`ingest_task`) and the Command Center CONSUMER (the
+> `update_status`/`ingest_task`, plus the step-visibility trio `move_task`/
+> `post_activity`/`register_deliverable` and the `BuildPhaseDriver` sequencer)
+> and the Command Center CONSUMER (the
 > `/api/tasks/*` routes + `TaskStatus` enum in
 > `trevorotts1/blackceo-command-center`, `>= v4.52.0`) are coupled by a
-> hand-maintained contract. Keep the CC repo at or above that version; if its
-> enum, route path, or auth changes, `cc_board.py` fail-softs (the card just never
-> lands / never moves) and the build continues unregistered.
+> hand-maintained contract. `cc_board.py` posts a phase-change card and a live
+> activity heartbeat after each verified build phase. **Card lifecycle terminates
+> at REVIEW** — a card never auto-advances past the QC-gated REVIEW state; only
+> a passing QC gate or explicit human action promotes it beyond REVIEW. Keep the
+> CC repo at or above that version; if its enum, route path, or auth changes,
+> `cc_board.py` fail-softs (the card just never lands / never moves) and the
+> build continues unregistered.

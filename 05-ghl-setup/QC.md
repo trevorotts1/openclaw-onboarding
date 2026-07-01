@@ -17,8 +17,8 @@ Enables the agent to connect to Convert and Flow (GoHighLevel) using the correct
 - [ ] The agent understands and uses the mandatory `Version: 2021-07-28` header on every GHL API request.
 
 ## 4. Key Detection
-- [ ] Search all standard secret locations in order: `~/.openclaw/secrets/.env`, `~/.openclaw/openclaw.json` `env.vars`, `~/.openclaw/.env`, `~/.openclaw/openclaw.json` `env.vars`, `~/.openclaw/.env`, live environment via `printenv`, and `~/.env`.
-- [ ] Recognize all practical token variable variations: `GHL_API_KEY`, `GHL_PIT`, `GOHIGHLEVEL_API_KEY`, and where relevant `GOHIGHLEVEL_AGENCY_PIT` for agency-level work.
+- [ ] Search all standard secret locations in order: `~/.openclaw/secrets/.env`, `~/.openclaw/openclaw.json` `env.vars`, `~/.openclaw/.env`, live environment via `printenv`, and `~/.env`.
+- [ ] Recognize all 11 canonical LOCATION-PIT aliases (see TERMINOLOGY.md), in priority order: `GOHIGHLEVEL_API_KEY`, `GHL_API_KEY`, `GHL_PIT`, `GHL_TOKEN`, `GHL_PRIVATE_INTEGRATION_TOKEN`, `PRIVATE_INTEGRATION_TOKEN`, `GHL_PRIVATE_TOKEN`, `PIT_TOKEN`, `GHL_PIT_TOKEN`, `GOHIGHLEVEL_LOCATION_PIT`, `GHL_LOCATION_PIT`. Agency PITs (`GOHIGHLEVEL_AGENCY_PIT`, etc.) are a separate credential set and must be checked independently — they are NOT substitutes for a Location PIT.
 - [ ] Recognize location variables: `GHL_LOCATION_ID` and any existing mirrored location value in JSON config.
 - [ ] QC fails if the installer asks for an “API key” without first checking for a Private Integration Token or if it ignores an already-present token.
 

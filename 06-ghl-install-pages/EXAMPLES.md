@@ -12,12 +12,12 @@ This document shows real examples of deploying pages into GoHighLevel (Convert a
 **Step 1 - Verify prerequisites:**
 Agent: "Before I deploy, let me verify everything is ready:
 - HTML code: Ready (I have the SuperDesign export)
-- GHL credentials: Found in ~/clawd/secrets/.env
+- Token seed: `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` present at `~/.openclaw/secrets/.env`
 - Target account: [Client Sub-Account]
 - Browser session: Launching Playwright with persistent context..."
 
-**Step 2 - Log in and navigate:**
-Agent: "Logged into Convert and Flow. Verified I am in the correct sub-account ([Client Name]). Navigating to Sites, then Funnels..."
+**Step 2 - Seed session and navigate:**
+Agent: "Seeded Firebase session from GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN — no login form opened. Verified I am in the correct sub-account ([Client Name]). Navigating to Sites, then Funnels..."
 
 **Step 3 - Create the funnel:**
 Agent: "Creating new funnel: '[Client Campaign Name] Landing Page'
@@ -152,32 +152,34 @@ NEXT STEPS:
 ```
 
 
-## Example 3: Handling 2FA (Two-Factor Authentication)
+## Example 3: Handling a Token-Seed Failure (TOKEN-ONLY, D7)
 
-**What happens when the account has 2FA enabled:**
+**What happens when the Firebase refresh token is absent, expired, or revoked:**
 
-Agent: "Logging into Convert and Flow...
-Email entered.
-Password entered.
-Clicking login...
+This skill uses TOKEN-ONLY access. The builder seeds a session from `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` in `~/.openclaw/secrets/.env`. It never navigates to a login form and never encounters a 2FA prompt.
 
-2FA DETECTED. I need you to complete the verification.
+**Token-seed failure output (what the operator sees):**
 
-I have paused the automation. Please look at the browser window that just opened. You will see a screen asking for a verification code.
+```
+[INFO]  Seeding Firebase session from GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN...
+[ERROR] Firebase token seed failed — token absent, expired, or revoked.
+[ERROR] exit 1
+```
 
-Here is what to do:
-1. Open your authenticator app on your phone (Google Authenticator, Authy, or whatever you use for this account)
-2. Find the code for Convert and Flow / GoHighLevel
-3. Type the 6-digit code into the field in the browser window
-4. Click Verify (or Submit, or whatever the button says)
+**What the builder did NOT do:**
+- Did NOT type an email address or password
+- Did NOT open a login form
+- Did NOT prompt for or wait for a 2FA code
+- Did NOT open a visible browser window
 
-I will wait up to 5 minutes for you to complete this. Take your time.
+**Operator recovery steps:**
+1. Open the Convert and Flow Token Grabber Chrome extension (Skill 44 Action 5b) in your browser while logged into Convert and Flow
+2. Copy the fresh Firebase refresh token it provides
+3. Update `~/.openclaw/secrets/.env`: set `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN=<new-token>`
+4. Ensure the file is `chmod 600`
+5. Re-run the builder seed — it will pick up the new token automatically
 
-Once you finish, I will continue the deployment automatically."
-
-[User completes 2FA]
-
-Agent: "2FA completed. I am now on the dashboard. Continuing with the deployment..."
+Once the seed succeeds, the deployment continues from Step 4 (sub-account selection) without any manual login interaction.
 
 
 ## Example 4: Updating an Existing Page
@@ -304,7 +306,7 @@ Here is the complete sequence visualized:
 SETUP:
   Configure browser (1440x900 minimum)
   Load or create persistent session
-  Handle 2FA if present (pause for manual verification)
+  Seed the Firebase session from GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN (TOKEN-ONLY, D7) — no login form, no 2FA; on seed failure the builder STOPS non-zero.
 
 NAVIGATION:
   Click Sites - Click Funnels tab

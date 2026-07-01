@@ -95,7 +95,7 @@ Run this command to confirm your credentials work. It should return JSON describ
 ```bash
 # Load creds (resolver: maps legacy aliases, blocks loudly if unset — see SKILL.md "Credentials")
 [ -f ~/.openclaw/secrets/.env ] && { set -a; . ~/.openclaw/secrets/.env; set +a; }
-: "${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-}}}}}"
+: "${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-${GHL_PIT:-${GHL_TOKEN:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-${PIT_TOKEN:-${GHL_PIT_TOKEN:-${GOHIGHLEVEL_LOCATION_PIT:-${GHL_LOCATION_PIT:-}}}}}}}}}}}}"
 : "${GOHIGHLEVEL_LOCATION_ID:=${GHL_LOCATION_ID:-}}"
 if [ -z "${GOHIGHLEVEL_API_KEY:-}" ] || [ -z "${GOHIGHLEVEL_LOCATION_ID:-}" ]; then
   echo "BLOCKED: set GOHIGHLEVEL_API_KEY + GOHIGHLEVEL_LOCATION_ID in ~/.openclaw/secrets/.env (chmod 600) first." >&2

@@ -3,6 +3,8 @@ name: ghl-mcp-setup
 description: Install and configure the 6-tier GoHighLevel access chain — Tier 0 Convert and Flow CLI (skill 44), Official MCP (36 tools), Community MCP (588 tools, on-demand curl), direct REST API, agent-browser/Playwright, and Codex Computer Use — so the agent always picks the cheapest path first and falls back gracefully. Registers ghl-mcp under nested mcp.servers via the openclaw mcp set CLI.
 ---
 
+> **GHL PIT aliases:** `GOHIGHLEVEL_API_KEY` is the preferred name; 10 additional aliases resolve the same LOCATION PIT. See **`TERMINOLOGY.md`** (repo root) for the canonical alias set and backend-equivalence notes (Convert & Flow / leadconnectorhq.com = one platform).
+
 # GHL MCP Setup — Multi-Tier Access for GoHighLevel
 
 ## What This Is
@@ -37,6 +39,8 @@ This skill installs a **canonical state block**, a **disclosure header protocol*
 
 ## Aliases (treat all as the same platform)
 
+GHL = Convert & Flow = Go High Level — one white-label platform; default app URL is `app.convertandflow.com`. All names below refer to the same product and the same API backend (`services.leadconnectorhq.com`):
+
 - GHL
 - GoHighLevel
 - Go High Level
@@ -67,7 +71,7 @@ These are the most common mistakes agents make with the MCP setup. Read them car
 
 4. **"It looked broken earlier" is not an excuse for skipping.** If a tier crashed in earlier session work, attempt it fresh. Recover with `launchctl kickstart` (Mac) or `pm2 restart ghl-community-mcp` (VPS; `systemctl restart ghl-mcp` on systemd boxes) before falling through.
 
-5. **Same Private Integration Token used for both tiers.** Tier 1 sends the PIT as `Authorization: Bearer ...` header. Tier 2 reads it from `~/mcp-servers/ghl-community-mcp/.env` as `GHL_API_KEY`. Both reference the same canonical secrets file (`~/.openclaw/secrets/.env` on Mac, `~/.openclaw/secrets/.env` on VPS).
+5. **Same Private Integration Token used for both tiers — canonicalize once.** Tier 1 sends the PIT as `Authorization: Bearer $GOHIGHLEVEL_API_KEY` header. Tier 2 reads it from `~/mcp-servers/ghl-community-mcp/.env` as `GHL_API_KEY`, which is one of the 10 aliases that the unified resolver normalizes to `$GOHIGHLEVEL_API_KEY`. The canonicalize-once pattern: resolve `$GOHIGHLEVEL_API_KEY` from `~/.openclaw/secrets/.env` at session start (using the 11-alias resolver in skill 29's Credentials section) and export it; both tiers consume that single exported value. Never re-resolve mid-session or layer a second alias pass on top.
 
 6. **The official MCP is stateless.** Initialize does NOT return an `Mcp-Session-Id` header. Do not gate follow-up calls on a session ID — each request is independent.
 

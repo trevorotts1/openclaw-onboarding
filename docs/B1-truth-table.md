@@ -33,7 +33,7 @@ explicit row; omitting it is a spec gap.
 | 20  | `http://localhost:3000` | _(unset / empty)_ | PASS | Pure localhost deploy; CC_PUBLIC_URL not required |
 | 21  | `http://localhost:3000` | `http://localhost:3000` | PASS | Localhost with matching hint — fine |
 | 22  | `http://localhost:3000` | `https://x.zerohumanworkforce.com` | PASS | Localhost primary URL overrides non-localhost hint (intentional; Row 42 variant) |
-| 30  | `https://karen.zerohumanworkforce.com` | _(unset / empty)_ | FAIL | Non-localhost URL set but CC_PUBLIC_URL absent — CF-tunnel misconfiguration |
+| 30  | `https://<client>.zerohumanworkforce.com` | _(unset / empty)_ | FAIL | Non-localhost URL set but CC_PUBLIC_URL absent — CF-tunnel misconfiguration |
 | **31** | **`https://x.zerohumanworkforce.com`** | **`https://x.zerohumanworkforce.com`** | **PASS** | **Both set and matching — correct CF-tunnel deploy** |
 | **31a** | **_(unset / empty)_** | **`https://x.zerohumanworkforce.com`** | **FAIL** | **CF-tunnel mode detected (CC_PUBLIC_URL is a non-localhost public domain) but NEXT_PUBLIC_APP_URL is missing — breaks cross-origin SSE and webhooks for remote clients through the tunnel.  The early-return guard `if (!appUrl) { return { pass: true } }` MUST NOT fire here; it must check CC_PUBLIC_URL first.** |
 | 32  | `https://x.zerohumanworkforce.com` | _(unset / empty or invalid / mismatched)_ | FAIL | Non-localhost primary URL present but CC_PUBLIC_URL unset, invalid, or mismatched |

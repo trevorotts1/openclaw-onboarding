@@ -52,7 +52,7 @@ Use first when the task is in one of these domains:
 | Social Media | `social-media-posting_create-post`, `social-media-posting_edit-post`, `social-media-posting_get-post`, `social-media-posting_get-posts`, `social-media-posting_get-account`, `social-media-posting_get-social-media-statistics` |
 | Payments (read-only) | `payments_get-order-by-id`, `payments_list-transactions` |
 
-**Total: 36 tools.**
+**At least 36 tools (range-based since v1.2.6; 36 is the verified baseline, GHL may add more).**
 
 ### Tier 2 — Community GHL MCP (`ghl-community-mcp`)
 
@@ -71,7 +71,7 @@ Use when Tier 1 lacks the needed tool. Domains:
 | Agent Studio | `ghl_create_agent`, `ghl_update_agent`, `ghl_deploy_agent`, `ghl_list_agents` |
 | Workflows (escalation/read only) | `ghl_list_workflows`, `ghl_get_workflow`, `ghl_trigger_workflow`, `ghl_publish_workflow`. **Workflow BUILD/EDIT is Tier 0 (Skill 44 Build API), NOT here** — `ghl_create_workflow` / `ghl_update_workflow_actions` exist in the fork (`src/tools/workflow-builder-tools.ts`) but wrap an undocumented internal endpoint and are unverified / likely produce non-functional shells. Do not build via MCP. |
 
-**Total: 588 tools.** For anything not in this table, run live discovery:
+**At least 500 tools (range-based since v1.2.6).** For anything not in this table, run live discovery:
 ```bash
 curl $GHL_COMMUNITY_MCP_URL/tools | python3 -m json.tool
 ```

@@ -62,7 +62,7 @@ Replace "abc123def456" with the actual contact ID you received in Step 1.
 
 **What to do if it fails:**
 - If you get a 400 error: Check that you included the Version header (2021-07-28)
-- If you get a 401 error: Your API key may be expired. Check GHL Settings.
+- If you get a 401 error: The Private Integration Token (PIT) may be expired or revoked. A PIT is static — it cannot be refreshed, so you must rotate and replace it. Go to Convert and Flow Settings > Integrations > Private Integrations, revoke the old token, create a new one, and update `GOHIGHLEVEL_API_KEY` in `~/.openclaw/secrets/.env`.
 - If the SMS does not arrive: Make sure the contact has a valid phone number and your GHL account has SMS credits
 
 

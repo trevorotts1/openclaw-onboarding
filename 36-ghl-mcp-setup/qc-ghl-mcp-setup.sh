@@ -63,6 +63,8 @@ fi
 : "${GOHIGHLEVEL_LOCATION_ID:=}"
 # Derive platform if unset — prevents 'OPENCLAW_PLATFORM: unbound variable' crash under set -u
 : "${OPENCLAW_PLATFORM:=$([ "$(uname -s)" = "Darwin" ] && echo mac || echo linux)}"
+# 11-alias fallback resolver — passes on pre-v12 boxes where the PIT is stored under a legacy name
+RESOLVED_PIT="${GOHIGHLEVEL_API_KEY:-${GHL_API_KEY:-${GHL_PIT:-${GHL_TOKEN:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-${PIT_TOKEN:-${GHL_PIT_TOKEN:-${GOHIGHLEVEL_LOCATION_PIT:-${GHL_LOCATION_PIT:-}}}}}}}}}}}"
 
 echo ""
 echo "═══════════════════════════════════════════════"
@@ -93,8 +95,8 @@ warn_only "Skill 29 (GHL Convert and Flow) reference dir present" \
 
 echo ""
 echo "── Section B: Credentials (PIT — NOT API key) ──"
-assert "GOHIGHLEVEL_API_KEY (PIT) is set"          "[ -n \"$GOHIGHLEVEL_API_KEY\" ]"
-assert "GOHIGHLEVEL_API_KEY starts with pit-"      "[[ \"$GOHIGHLEVEL_API_KEY\" == pit-* ]]"
+assert "GHL PIT set (any canonical alias)"         "[ -n \"$RESOLVED_PIT\" ]"
+assert "GHL PIT starts with pit-"                 "[[ \"$RESOLVED_PIT\" == pit-* ]]"
 assert "GOHIGHLEVEL_LOCATION_ID is set"            "[ -n \"$GOHIGHLEVEL_LOCATION_ID\" ]"
 assert "Canonical secrets file exists"             "[ -f \"$SECRETS_ENV\" ]"
 SEC_MODE=$(stat -f %A "$SECRETS_ENV" 2>/dev/null || stat -c %a "$SECRETS_ENV" 2>/dev/null)

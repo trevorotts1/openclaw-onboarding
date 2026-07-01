@@ -2180,3 +2180,125 @@ jobs:
           done < <(git ls-files -- '*.sh' 2>/dev/null || find . -not -path './.git/*' -name '*.sh')
           [ $fail -eq 0 ] && echo "✓ chmod-600 coverage: all .sh scripts that write secrets/.env also call chmod 600"
           exit $fail
+
+      - name: No banned model tokens in GHL skill markdown prose (M2 / Anthropic / non-Ollama Kimi)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce model doctrine in MARKDOWN PROSE across the five GHL skills
+          # and shared docs. PRD §12.5 + RELEASE-RUNBOOK step 6 specify the local scan
+          # already covers *.md via --include="*.md"; this CI step closes the same gap
+          # in the automated build so a regression that introduces a banned model token
+          # into markdown prose fails the build without any manual pre-merge step.
+          #
+          # Four violation classes — all fail the build:
+          #   (a) minimax-m2 / minimax_m2 / minimax/minimax-m2 as model id slugs
+          #   (b) Bare M2 used as a live model id in a rung/ladder context
+          #   (c) Anthropic model slugs (claude-*, anthropic/*, us.anthropic.*) as usable models
+          #   (d) Kimi referenced without the required ollama/ or openrouter/ prefix
+          #
+          # False-positive guards for (c)/(d) are SHAPE-based, not word-based: a match is
+          # excluded ONLY when the specific occurrence itself is a known-compliant slug
+          # form (provider-prefixed, or the documented bare `:cloud` form / the literal
+          # `claude-desktop`/`claude-code` non-model tokens) via negative lookaround
+          # anchored to that exact token. This is deliberate: an earlier design excluded
+          # any line containing a nearby prose word (removed/replaced/forbidden/purged/
+          # etc.), which could MASK a real live banned slug sharing that line with such
+          # a word (e.g. "replaced with openrouter/minimax/minimax-m2" or "removed the
+          # old ref, now bare kimi-k2.6 is used") — a false-negative hole. Shape-based
+          # per-occurrence matching closes that hole: only the compliant occurrence
+          # itself is spared, so a co-located banned slug is still caught.
+          SKILL_DIRS="05-ghl-setup 06-ghl-install-pages 29-ghl-convert-and-flow 36-ghl-mcp-setup 44-convert-and-flow-operator"
+          SHARED_DOCS="docs"
+          ALL_DIRS="$SKILL_DIRS $SHARED_DOCS"
+          fail=0
+
+          # --- FAIL-OPEN GUARD ---------------------------------------------------
+          # An empty (or all-whitespace) ALL_DIRS would make every `grep -r ... $ALL_DIRS`
+          # call below receive NO path arguments. Unquoted `$ALL_DIRS` word-splits to
+          # nothing, and grep with zero path operands silently falls back to scanning
+          # CWD (`.`) instead of erroring — so a future refactor that accidentally
+          # empties SKILL_DIRS/SHARED_DOCS would make this step scan the wrong (or a much
+          # larger/unintended) tree while still printing a green checkmark on a clean
+          # exit. That is a fail-open hole: the gate's pass/fail no longer reflects
+          # whether the intended scope was actually checked. Refuse to run instead.
+          # shellcheck disable=SC2206
+          _all_dirs_arr=($ALL_DIRS)
+          if [ "${#_all_dirs_arr[@]}" -eq 0 ]; then
+            echo "✗ ALL_DIRS expanded to an empty path list — refusing to run (grep with no path args silently falls back to scanning CWD instead of the intended skill/doc dirs)"
+            exit 1
+          fi
+          for _d in "${_all_dirs_arr[@]}"; do
+            if [ ! -e "$_d" ]; then
+              echo "✗ ALL_DIRS entry '$_d' does not exist on disk — refusing to run with a missing/typo'd scan target"
+              exit 1
+            fi
+          done
+          # -------------------------------------------------------------------------
+
+          # (a) minimax-m2 / minimax_m2 / minimax/minimax-m2 slug forms — always banned
+          #     as live model ids; ban-statements say "MiniMax M2" not the hyphenated slug,
+          #     so no false-positive exclusion needed here.
+          m2_slug_hits=$(grep -rEin "minimax-m2|minimax_m2|minimax/minimax-m2" \
+              $ALL_DIRS --include="*.md" 2>/dev/null | grep -v "^Binary" || true)
+          if [ -n "$m2_slug_hits" ]; then
+            echo "$m2_slug_hits"
+            echo "✗ Found banned minimax-m2 model id slug in GHL skill/shared markdown"; fail=1
+          fi
+
+          # (b) Bare M2 used as a live model identifier in a rung/ladder context.
+          #     Targeted patterns match: "MiniMax M3→M2", "M3→M2 /", "(MiniMax|minimax) M2".
+          #     Excluded: lines with ban/purge/supersede language (historical notes allowed),
+          #     migration-unit labels (e.g. "migration M2 does this").
+          m2_bare_hits=$(grep -rEn \
+              "MiniMax M3\s*[→>-]+\s*M2|M3\s*[→>-]+\s*M2|(MiniMax|minimax)\s+M2\b" \
+              $ALL_DIRS --include="*.md" 2>/dev/null \
+              | grep -viE "banned|PURGED|purge|do not|never use|must not|supersede|migration M|removed the stale" \
+              | grep -v "^Binary" || true)
+          if [ -n "$m2_bare_hits" ]; then
+            echo "$m2_bare_hits"
+            echo "✗ Found M2 used as a live model id (rung/ladder context) in GHL skill/shared markdown"; fail=1
+          fi
+
+          # (c) Anthropic model slugs (claude-*, anthropic/*, us.anthropic.*) as usable
+          #     models. SHAPE-based exclusion (not word-based): the ONLY spared
+          #     occurrences are the exact literal non-model tokens `claude-desktop`
+          #     (mcporter import source) and `claude-code` (Anthropic CLI product name
+          #     when hyphenated) — matched via negative lookahead directly on the
+          #     "claude-" token, so a real slug (e.g. claude-opus-4) co-located on the
+          #     same line as ban/forbidden/rejected prose is still caught. Plain-English
+          #     "Claude"/"Anthropic" mentions without a hyphen/slash never match the
+          #     positive pattern at all, so doctrine prose naming the ban is unaffected.
+          anthropic_hits=$(grep -rinP \
+              'claude-(?!desktop\b)(?!code\b)[a-z0-9-]+|anthropic/[a-z0-9-]+|us\.anthropic\.[a-z0-9.-]*' \
+              $ALL_DIRS --include="*.md" 2>/dev/null \
+              | grep -v "^Binary" || true)
+          if [ -n "$anthropic_hits" ]; then
+            echo "$anthropic_hits"
+            echo "✗ Found Anthropic model slug as a usable model in GHL skill/shared markdown"; fail=1
+          fi
+
+          # (d) Kimi referenced without the required ollama/ or openrouter/ prefix.
+          #     SHAPE-based exclusion (not word-based): only a genuine `kimi-<slug>`
+          #     token is a candidate at all (plain-English "Kimi 2.6" prose with no
+          #     hyphen never matches, so introducing the model by name before giving
+          #     its qualified slug is unaffected). A candidate token is spared ONLY when
+          #     it is immediately preceded by `ollama/`, `openrouter/`, or `moonshotai/`
+          #     (negative lookbehind) OR immediately followed by the documented bare
+          #     `:cloud` form (negative lookahead) — both anchored to that exact token,
+          #     not "anywhere on the line". A possessive quantifier prevents the regex
+          #     engine from backtracking into a false-safe partial match (e.g. matching
+          #     only "kimi-k2." to satisfy the ":cloud" lookahead early). This means a
+          #     bare, unqualified kimi-k2.6 mention is caught even when "removed",
+          #     "replaced", "stale", etc. appear elsewhere on the same line.
+          kimi_hits=$(grep -rinP \
+              '(?<!ollama/)(?<!openrouter/)(?<!moonshotai/)\bkimi-[a-zA-Z0-9][a-zA-Z0-9._-]*+(?!:cloud)\b' \
+              $ALL_DIRS --include="*.md" 2>/dev/null \
+              | grep -v "^Binary" || true)
+          if [ -n "$kimi_hits" ]; then
+            echo "$kimi_hits"
+            echo "✗ Found Kimi referenced without ollama/ or openrouter/ prefix in GHL skill/shared markdown"; fail=1
+          fi
+
+          [ $fail -eq 0 ] && echo "✓ No banned model tokens in GHL skill/shared markdown (minimax-m2 / Anthropic / bare Kimi)"
+          exit $fail

@@ -143,14 +143,14 @@ env files first. Only ask the user if the values are not already stored.
 **Step 1 - Check for existing GHL credentials:**
 ```bash
 # Check secrets/.env (canonical names first, then legacy aliases)
-grep -E "GOHIGHLEVEL_API_KEY|GOHIGHLEVEL_LOCATION_ID|GHL_API_KEY|GHL_PIT|GHL_LOCATION_ID" ~/.openclaw/secrets/.env 2>/dev/null
+grep -E "GOHIGHLEVEL_API_KEY|GHL_API_KEY|GHL_PIT|GHL_TOKEN|GHL_PRIVATE_INTEGRATION_TOKEN|PRIVATE_INTEGRATION_TOKEN|GHL_PRIVATE_TOKEN|PIT_TOKEN|GHL_PIT_TOKEN|GOHIGHLEVEL_LOCATION_PIT|GHL_LOCATION_PIT|GOHIGHLEVEL_LOCATION_ID|GHL_LOCATION_ID" ~/.openclaw/secrets/.env 2>/dev/null
 
 # Check openclaw.json
 cat ~/.openclaw/openclaw.json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('env',{}).get('vars',{}))" 2>/dev/null
 ```
 
 **Decision tree:**
-- If BOTH a token (GOHIGHLEVEL_API_KEY, or legacy GHL_API_KEY / GHL_PIT) AND a location (GOHIGHLEVEL_LOCATION_ID, or legacy GHL_LOCATION_ID) are found: skip Action 1, proceed directly to Action 2.
+- If BOTH a token (any of: `GOHIGHLEVEL_API_KEY`, `GHL_API_KEY`, `GHL_PIT`, `GHL_TOKEN`, `GHL_PRIVATE_INTEGRATION_TOKEN`, `PRIVATE_INTEGRATION_TOKEN`, `GHL_PRIVATE_TOKEN`, `PIT_TOKEN`, `GHL_PIT_TOKEN`, `GOHIGHLEVEL_LOCATION_PIT`, `GHL_LOCATION_PIT` — see TERMINOLOGY.md) AND a location (`GOHIGHLEVEL_LOCATION_ID` or `GHL_LOCATION_ID`) are found: skip Action 1, proceed directly to Action 2.
 - If one or both are missing: proceed to Action 1 to retrieve them.
 - If the user cannot or does not want to provide credentials: offer a skip option.
   Tell the user: "You can skip credential setup now and add them later. GHL features
@@ -171,7 +171,7 @@ to look up missing values:**
 If a token exists but the location is missing, resolve the token from whichever
 name is present and discover the location:
 ```bash
-TOKEN="${GOHIGHLEVEL_API_KEY:-${GHL_API_KEY:-$GHL_PIT}}"
+TOKEN="${GOHIGHLEVEL_API_KEY:-${GHL_API_KEY:-${GHL_PIT:-${GHL_TOKEN:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-${PIT_TOKEN:-${GHL_PIT_TOKEN:-${GOHIGHLEVEL_LOCATION_PIT:-${GHL_LOCATION_PIT:-}}}}}}}}}}}"
 curl -s -X GET "https://services.leadconnectorhq.com/locations/search?limit=1" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Version: 2021-07-28"

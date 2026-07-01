@@ -4,6 +4,19 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.2.7] - 2026-07-01 — docs: GHL PIT alias cross-ref + canonicalize-once guidance
+
+### Changed
+- `SKILL.md` gains the GHL PIT-aliases banner (cross-ref to `TERMINOLOGY.md`'s 11-alias canonical
+  set) and an expanded "Aliases" section lead-in stating the GHL = Convert & Flow = Go High Level
+  platform identity.
+- Item 5 under "Critical Things to Know" rewritten: Tier 1 now explicitly sends `Authorization:
+  Bearer $GOHIGHLEVEL_API_KEY`; Tier 2's `GHL_API_KEY` env var is documented as one of the 10
+  aliases the unified resolver normalizes to `$GOHIGHLEVEL_API_KEY` — with a "canonicalize once at
+  session start, never re-resolve mid-session" rule that points at skill 29's 11-alias resolver.
+
+---
+
 ## [v1.2.6] - 2026-06-30 — Tier 2 fork pinned to a verified commit SHA; QC script bug-fixes; stale full-doc/QC.md reconciled; runtime missing-cred grace; disclosure scoped operator-only; Command Center hooks
 
 ### Fixed (qc-ghl-mcp-setup.sh)

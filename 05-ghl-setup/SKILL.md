@@ -40,8 +40,22 @@ These are the most common mistakes AI agents make with GHL. Read these carefully
 3. **The base URL for all GHL API calls is:** https://services.leadconnectorhq.com
 
 4. **Your agent should check two places for credentials:**
-   - ~/.openclaw/secrets/.env (look for GOHIGHLEVEL_API_KEY; legacy aliases GHL_API_KEY / GHL_PIT)
+   - ~/.openclaw/secrets/.env (look for GOHIGHLEVEL_API_KEY; full alias set — see TERMINOLOGY.md)
    - ~/.openclaw/openclaw.json under env.vars
+
+> **GHL LOCATION-PIT unified resolver (11 aliases):** `GOHIGHLEVEL_API_KEY` is
+> the canonical name; 10 additional aliases (`GHL_API_KEY`, `GHL_PIT`,
+> `GHL_TOKEN`, `GHL_PRIVATE_INTEGRATION_TOKEN`, `PRIVATE_INTEGRATION_TOKEN`,
+> `GHL_PRIVATE_TOKEN`, `PIT_TOKEN`, `GHL_PIT_TOKEN`, `GOHIGHLEVEL_LOCATION_PIT`,
+> `GHL_LOCATION_PIT`) all resolve to the same LOCATION Private
+> Integration Token. All 11 are checked in order across every env store before
+> any "not found" is raised. **Agency PITs are kept separate** —
+> `GOHIGHLEVEL_AGENCY_PIT`, `GOHIGHLEVEL_AGENCY_API_KEY`,
+> `GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT`, and `GHL_AGENCY_PIT` are NOT in this
+> set and must not be substituted for a LOCATION PIT (they 401 on media and
+> location-scoped endpoints). See **`TERMINOLOGY.md`** (repo root) for the full
+> canonical alias set and backend-equivalence notes (Convert & Flow /
+> leadconnectorhq.com / app.gohighlevel.com = one platform).
 
 ## What This Skill Covers
 
@@ -52,6 +66,10 @@ These are the most common mistakes AI agents make with GHL. Read these carefully
 - Example curl commands you can copy and use right away
 - A 7-step self-test to verify everything is working before claiming setup is done
 - What to add to your core files (AGENTS.md, TOOLS.md, MEMORY.md) after setup
+- **Unified 11-alias LOCATION-PIT resolver** — the single `GOHIGHLEVEL_API_KEY`
+  canonical name plus 10 accepted aliases; the resolver searches all 11 across
+  every env store before raising. Agency PITs (`GOHIGHLEVEL_AGENCY_PIT` and
+  variants) are a separate credential set — never substituted for a LOCATION PIT
 
 ## Files in This Folder and Reading Order
 

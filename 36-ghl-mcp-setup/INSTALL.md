@@ -203,7 +203,7 @@ Before asking the user, search ALL standard locations:
 
 ```bash
 # 1. Canonical secrets file (the source of truth)
-grep -iE "GHL_API_KEY|GHL_PIT|GOHIGHLEVEL_API_KEY|GHL_LOCATION_ID|GOHIGHLEVEL_LOCATION_ID" "$SECRETS_ENV" 2>/dev/null
+grep -iE "GOHIGHLEVEL_API_KEY|GHL_API_KEY|GHL_PIT|GHL_TOKEN|GHL_PRIVATE_INTEGRATION_TOKEN|PRIVATE_INTEGRATION_TOKEN|GHL_PRIVATE_TOKEN|PIT_TOKEN|GHL_PIT_TOKEN|GOHIGHLEVEL_LOCATION_PIT|GHL_LOCATION_PIT|GHL_LOCATION_ID|GOHIGHLEVEL_LOCATION_ID" "$SECRETS_ENV" 2>/dev/null
 
 # 2. OpenClaw config env.vars (gateway runtime)
 python3 -c "
@@ -304,7 +304,7 @@ curl -sS -X POST "https://services.leadconnectorhq.com/mcp/" \
 # Expected output: Tier 1 tool count: 36
 ```
 
-If this returns anything other than 36, STOP — credentials may be wrong or scopes missing.
+If this returns fewer than 36, STOP — credentials may be wrong or scopes missing.
 
 ### Action 5: Deploy Tier 2 — Community GHL MCP
 
@@ -586,14 +586,14 @@ Ask the user to test in their main chat or Telegram with this prompt:
 
 Expected response opens with `[GHL tier used: 2 — ghl_list_products]` and lists real products.
 
-If the response uses Tier 3 or has no disclosure header, the agent isn't loading SOUL.md/AGENTS.md properly. Investigate channel routing.
+If the response uses Tier 3 or has no disclosure header, the agent isn't loading AGENTS.md properly. Investigate channel routing.
 
 ---
 
 ## Done When
 
-- [ ] Tier 1 (`ghl-mcp`) registered, `/tools` returns 36
-- [ ] Tier 2 service running + `/tools` curl returns 588; NOT registered in mcp.servers
+- [ ] Tier 1 (`ghl-mcp`) registered, `/tools` returns >= 36
+- [ ] Tier 2 service running + `/tools` curl returns >= 500; NOT registered in mcp.servers
 - [ ] `GHL_COMMUNITY_MCP_URL` env var set
 - [ ] launchd plist (Mac) or systemd unit (VPS) running
 - [ ] AGENTS.md / TOOLS.md / MEMORY.md updated per CORE_UPDATES.md (SOUL.md unchanged)

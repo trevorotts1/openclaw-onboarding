@@ -31,9 +31,9 @@ PIT>``) is NOT behind any Cloudflare interstitial, so it runs from bare Python v
 KEYS — THE CLIENT'S OWN, NEVER THE OPERATOR'S
 ---------------------------------------------
 The LOCATION Private Integration Token (PIT) and location id are the CLIENT's own, read
-from the canonical env names (``GOHIGHLEVEL_API_KEY``/``GHL_API_KEY`` for the PIT,
-``GOHIGHLEVEL_LOCATION_ID``/``GHL_LOCATION_ID`` for the location id). The operator's key
-NEVER appears here.
+from the canonical env names (full 11-alias LOCATION-PIT set starting with
+``GOHIGHLEVEL_API_KEY`` — see ``_PIT_ENV_NAMES``; ``GOHIGHLEVEL_LOCATION_ID``/
+``GHL_LOCATION_ID`` for the location id). The operator's key NEVER appears here.
 
 DURABILITY — BOUNDED RETRY ON TRANSIENT FAILURES
 ------------------------------------------------
@@ -80,9 +80,21 @@ PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 # non-transient 4xx (401/403/404/422…) is NEVER retried.
 _RETRY_HTTP_CODES = frozenset({429, 500, 502, 503, 504})
 
-# Canonical env names for the GHL LOCATION PIT (matches upload-ghl-media.sh).
+# Canonical env names for the GHL LOCATION PIT — full 11-alias set, priority order.
 # Media uploads REQUIRE the LOCATION PIT (the Agency PIT 401s for media ops).
-_PIT_ENV_NAMES = ("GOHIGHLEVEL_API_KEY", "GHL_API_KEY")
+_PIT_ENV_NAMES = (
+    "GOHIGHLEVEL_API_KEY",
+    "GHL_API_KEY",
+    "GHL_PIT",
+    "GHL_TOKEN",
+    "GHL_PRIVATE_INTEGRATION_TOKEN",
+    "PRIVATE_INTEGRATION_TOKEN",
+    "GHL_PRIVATE_TOKEN",
+    "PIT_TOKEN",
+    "GHL_PIT_TOKEN",
+    "GOHIGHLEVEL_LOCATION_PIT",
+    "GHL_LOCATION_PIT",
+)
 _LOCATION_ENV_NAMES = ("GOHIGHLEVEL_LOCATION_ID", "GHL_LOCATION_ID")
 
 
@@ -137,10 +149,10 @@ def _send_with_retry(
 def resolve_location_pit(env: dict | None = None) -> str:
     """Resolve the client's GHL LOCATION PIT from the canonical env names.
 
-    Reads ``GOHIGHLEVEL_API_KEY`` (preferred) then the legacy ``GHL_API_KEY`` alias,
-    mirroring ``upload-ghl-media.sh``. Strips surrounding quotes. Raises if neither is
-    set — media upload cannot proceed without the LOCATION PIT, and we never fabricate a
-    public URL, so a missing key is a hard, honest FAIL."""
+    Iterates the full 11-alias ``_PIT_ENV_NAMES`` set (priority order: ``GOHIGHLEVEL_API_KEY``
+    first, ``GHL_LOCATION_PIT`` last). Strips surrounding quotes. Raises if none is set —
+    media upload cannot proceed without the LOCATION PIT, and we never fabricate a public
+    URL, so a missing key is a hard, honest FAIL."""
     env = env if env is not None else os.environ
     for name in _PIT_ENV_NAMES:
         val = str(env.get(name, "")).strip().strip("'\"")

@@ -95,7 +95,7 @@ asserted by qc-convert-and-flow.sh Section S and verified by qc-built-workflow.s
 - [ ] Step 9 QC GATE present in INSTRUCTIONS.md after workflow build instructions
 - [ ] Verbatim client announce template present: "I've built the workflow. Before I call it
   done, I'm running an independent QC agent to verify it against the checklist item-by-item."
-- [ ] Independent MiniMax sub-agent dispatch documented (sessions_send, minimax/minimax-2.7)
+- [ ] Independent MiniMax sub-agent dispatch documented (sessions_send, minimax/minimax-m3)
 - [ ] Model-availability verification before spawn documented
 - [ ] caf workflows export + qc-built-workflow.sh invocation documented
 - [ ] Per-item PASS/FAIL verdict requirement documented

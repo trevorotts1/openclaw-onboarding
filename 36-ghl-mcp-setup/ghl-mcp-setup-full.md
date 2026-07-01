@@ -58,7 +58,7 @@ RESEARCH
 
 TIER 1 INSTALL
 [ ]  5    `openclaw mcp set ghl-mcp` succeeded
-[ ]  5    `tools/list` returns 36 tools
+[ ]  5    `tools/list` returns >= 36 tools
 [ ]  5    `locations_get-location` returns real location data
 
 TIER 2 INSTALL
@@ -389,7 +389,7 @@ curl -sS -X POST "https://services.leadconnectorhq.com/mcp/" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
   | grep "^data:" | sed 's/^data: //' | python3 -m json.tool
 
-# Expect: 36 tools listed
+# Expect: >= 36 tools listed
 ```
 
 ### Real-data smoke test
@@ -622,11 +622,11 @@ context cost v1.1.0 removed.
 ```bash
 # Health
 curl -sS $GHL_COMMUNITY_MCP_URL/health
-# Expect: {"status":"healthy","tools":588,...}
+# Expect: {"status":"healthy","tools":<N>,...} (N >= 500)
 
 # Tools count
 curl -sS $GHL_COMMUNITY_MCP_URL/tools | python3 -c "import json,sys; print('tools:', len(json.load(sys.stdin).get('tools',[])))"
-# Expect: tools: 588
+# Expect: tools: >= 500
 
 # Real-data call (bypasses MCP protocol via REST /execute)
 curl -sS -X POST $GHL_COMMUNITY_MCP_URL/execute \
