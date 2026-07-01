@@ -334,6 +334,21 @@ def update_status(
         )
         return False
 
+    # DoD5 parity guard (v16.2.15): update_status must never post 'done' directly,
+    # closing the legacy bypass hole that move_task's guard did not cover.  Any code
+    # path that calls update_status('done') is a bug — the only valid transition to
+    # 'done' is the QC gate (runQCOnReview, qc-scorer.ts:2988, PASS ≥ 8.5) promoting
+    # a card from 'review'.  This guard is intentionally identical to move_task()'s
+    # hard-block so no caller can reach 'done' via either public API.
+    if status_norm == "done":
+        _log(
+            "update_status BLOCKED — the producer must never post 'done' directly. "
+            "The only valid path to done is review → done via the QC gate "
+            "(runQCOnReview, qc-scorer.ts:2988, PASS ≥ 8.5). "
+            "Call update_status('review') and let the QC sweep promote the card."
+        )
+        return False
+
     env_map = env if env is not None else os.environ
     method = (env_map.get("CC_STATUS_METHOD") or "POST").strip().upper() or "POST"
     path_tmpl = (env_map.get("CC_STATUS_PATH_TEMPLATE") or "/api/tasks/{id}/status").strip()
@@ -897,6 +912,18 @@ def _status_selftest() -> int:
             errors.append("update_status_for_state('verified') with no board should be False")
     except Exception as exc:  # noqa: BLE001
         errors.append(f"update_status_for_state raised unexpectedly: {exc}")
+
+    # 8. DoD5 parity guard (v16.2.15): update_status('done') must be HARD-BLOCKED,
+    #    mirroring the identical guard in move_task().  No caller can bypass the QC
+    #    gate via update_status.
+    try:
+        if update_status("t1", "done", env=base_env) is not False:
+            errors.append(
+                "update_status('done') must be blocked (False) — "
+                "terminate-at-REVIEW rule (DoD5 parity with move_task)"
+            )
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"update_status('done') raised unexpectedly: {exc}")
 
     if errors:
         for e in errors:

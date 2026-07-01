@@ -631,3 +631,75 @@ class TestSessionKeepalive:
 
     def test_interval_is_30_minutes(self):
         assert disp.SESSION_KEEPALIVE_INTERVAL_S == 30 * 60
+
+
+# ── DoD4: intake think-for-me branch receives a non-None executor ─────────────
+#
+# v16.2.15 hardening: dispatch_one must supply a stub executor to _run_intake so
+# the think-for-me branch inside intake_interview can call model_router.select().
+# Without an executor the branch hits its early-return guard and UNSURE/HANDS_OFF
+# users never get a proposed structure.
+
+class TestIntakeExecutorWiring:
+    """DoD4 (v16.2.15): _run_intake must receive a non-None executor from dispatch_one."""
+
+    def test_intake_receives_non_none_executor(self, tmp_path, monkeypatch):
+        """dispatch_one passes a stub executor (not None) to _run_intake."""
+        captured: dict = {}
+
+        orig = disp._run_intake
+
+        def _spy(task, evidence_root, executor=None):
+            captured["executor"] = executor
+            return orig(task, evidence_root, executor=executor)
+
+        monkeypatch.setattr(disp, "_run_intake", _spy)
+        disp.dispatch_one(
+            FAKE_TASK, str(tmp_path),
+            builder=_builder_ok(), verifier=_fake_verifier(True),
+        )
+        assert "executor" in captured, "_run_intake was not called"
+        assert captured["executor"] is not None, (
+            "dispatch_one must pass a stub executor (not None) to _run_intake; "
+            "without it the think-for-me branch is permanently dead (no_executor skip)"
+        )
+
+    def test_think_for_me_branch_no_executor_returns_skip_reason(self):
+        """Baseline: executor=None → _skip_reason='no_executor' (the pre-fix broken path)."""
+        import intake_interview as ii
+
+        task = {"brief": "build a funnel", "id": "t1"}
+        result = ii._run_think_for_me_branch(
+            task=task,
+            build_type=ii.BUILD_TYPE_FUNNEL,
+            answers={},
+            executor=None,
+            env={},
+            ask_fn=lambda q: "",
+        )
+        assert result.get("_skip_reason") == "no_executor", (
+            "When executor is None the branch must return _skip_reason='no_executor'"
+        )
+
+    def test_think_for_me_branch_with_stub_executor_does_not_skip(self):
+        """With a stub executor the branch runs and sets think_model_receipt (not None)."""
+        import intake_interview as ii
+        import model_router as mr
+
+        task = {"brief": "build a funnel", "id": "t1"}
+        stub = mr.make_stub_executor()
+        result = ii._run_think_for_me_branch(
+            task=task,
+            build_type=ii.BUILD_TYPE_FUNNEL,
+            answers={},
+            executor=stub,
+            env={},
+            ask_fn=lambda q: "",   # silent → proposed won't be confirmed, but branch runs
+        )
+        assert result.get("_skip_reason") != "no_executor", (
+            "With a real executor the branch must NOT skip with no_executor"
+        )
+        # think_model_receipt is populated whenever model_router.select() succeeds.
+        assert result.get("think_model_receipt") is not None, (
+            "think_model_receipt must be set when the branch runs with a stub executor"
+        )

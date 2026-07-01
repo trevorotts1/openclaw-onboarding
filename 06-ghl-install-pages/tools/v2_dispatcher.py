@@ -607,7 +607,19 @@ def dispatch_one(
     # Skips cleanly when the task is already fully specified.
     # survey/page/funnel jobs all pass through this seam; ask_fn defaults to
     # silent inference when task['_ask_fn'] is absent.
-    _run_intake(task, evidence_root)
+    #
+    # DoD4 hardening (v16.2.15): supply a stub executor so that the think-for-me
+    # branch inside intake_interview can call model_router.select(executor, …).
+    # Without a non-None executor the branch hits its early-return guard
+    # (_skip_reason="no_executor") and the proposed-structure path never runs
+    # for UNSURE / HANDS_OFF users.  make_stub_executor() is offline and
+    # deterministic — model sovereignty is preserved (no Anthropic model is ever
+    # selected; assert_model_sovereignty runs on every slug inside select()).
+    _intake_executor = (
+        _model_router.make_stub_executor()  # type: ignore[union-attr]
+        if _MODEL_ROUTER_AVAILABLE else None
+    )
+    _run_intake(task, evidence_root, executor=_intake_executor)
 
     # Step 3 (Model routing): produce role-keyed model receipts for all five
     # phases (execution / reasoning / content / html / qc) and thread them onto
