@@ -3,7 +3,6 @@
 The complete, source-verified catalog of Fish Audio (fish.audio / OpenAudio) text-to-speech control markers: emotion tags, tone tags, paralinguistic / audio-effect markers, pacing and pause markers, dynamic prosody (volume / pitch / speed), voice-style markers, phoneme control, and multi-speaker tokens.
 
 - **Compiled for:** BlackCEO Presentations department
-- **Researcher:** Claude Opus 4.8 (1M context)
 - **Compiled:** 2026-06-16
 - **Primary authority:** `docs.fish.audio` (Mintlify-hosted official documentation), the Fish Audio blog, the `fishaudio/fish-speech` GitHub repository, and the `fishaudio/s2-pro` Hugging Face model card.
 

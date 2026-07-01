@@ -4,7 +4,7 @@ How a speech-writer deploys Fish Audio control tags to maximize emotional power 
 
 - **For:** BlackCEO Presentations department
 - **Pairs with:** `FISH-AUDIO-TAGS-MASTER.md` (the verified tag catalog)
-- **Author:** Claude Opus 4.8 (1M context) · 2026-06-16
+- **Date:** 2026-06-16
 - **Target engine:** Fish Audio **S2 / S2-Pro** (square-bracket, open-domain). S1 fallback notes included.
 
 ---

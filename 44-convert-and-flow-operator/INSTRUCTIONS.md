@@ -204,13 +204,13 @@ Operators never memorize CLI syntax. Say what you want in Telegram; the agent ro
 
 | Intent | Command |
 |---|---|
-| "Who are my new leads?" | `caf contacts list --tag ZHC-new-lead` |
-| "Show me open opportunities in the Sales pipeline" | `caf opportunities list --stage open` |
-| "What appointments do I have this week?" | `caf calendars appointments --this-week` |
+| "Who are my new leads?" | `caf contacts search "<name>"` (there is NO tag filter — `contacts list` takes only `--limit/--offset/--query`; `contacts search` matches by name) |
+| "Show me open opportunities in the Sales pipeline" | `caf opportunities list --status open` (`--status` = open\|won\|lost\|abandoned; add `--pipeline-id <id>` to scope to one pipeline) |
+| "What appointments do I have this week?" | `caf calendars appointments --start <ISO> --end <ISO>` (no `--this-week`; pass an explicit date range) |
 | "Build a follow-up workflow for new leads" | PLAN MODE (Step 0.5) first, then TRINITY |
-| "Update the welcome email in the onboarding workflow" | `caf workflows patch-email <workflow-id> --subject "..." --body "..."` |
-| "List my active invoices" | `caf payments invoices list --status active` |
-| "Schedule this social post for tomorrow at 9am" | `caf social post schedule --time "tomorrow 9am" --content "..."` |
+| "Update the welcome email in the onboarding workflow" | `caf --experimental workflows patch-email --workflow-id <id> --step-id <id> --subject "..." --body-file <path>` (`--workflow-id` and `--step-id` are both required; body is a file, there is no inline `--body`) |
+| "List my active invoices" | `caf payments invoices --status paid` (`payments invoices` IS the list command — no extra `list`; `--status` = draft\|sent\|paid\|void) |
+| "Schedule this social post for tomorrow at 9am" | `caf social create-post --account-id <id> --text "..." --schedule <ISO8601>` |
 | "What workflows do I have?" | `caf workflows list` |
 | "Review/audit this workflow" / "check this workflow" / "inspect this workflow" | `caf workflows export <id>` (Tier 0 first), then escalate per skill 36 for what export cannot show (e.g. trigger-bucket state) |
 | "Create a new sub-account / location for <NAME>" / "spin up a client sub-account" | `caf --experimental locations create --name "<NAME>" --company-id <AGENCY_FIRESTORE_ID>` (Firebase/internal path — see Agency operations below) |

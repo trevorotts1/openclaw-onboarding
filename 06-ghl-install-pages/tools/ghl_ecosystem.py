@@ -221,7 +221,7 @@ def calendar_body(location_id: str, name: str, *, slot_duration: int = 30,
 
 def product_body(location_id: str, name: str, *, product_type: str = "SERVICE",
                  description: str | None = None, image_url: str | None = None) -> dict:
-    """Shape the POST /payments/products body (Version 2021-07-28)."""
+    """Shape the POST /products/ body (Version 2021-07-28)."""
     body: dict[str, Any] = {
         "locationId": location_id,
         "altId": location_id,
@@ -238,7 +238,7 @@ def product_body(location_id: str, name: str, *, product_type: str = "SERVICE",
 
 def price_body(location_id: str, product_id: str, name: str, amount_cents: int, *,
                currency: str = "USD", price_type: str = "one_time") -> dict:
-    """Shape the POST /payments/products/{id}/prices body. ``amount_cents`` is the
+    """Shape the POST /products/{id}/price body. ``amount_cents`` is the
     smallest currency unit (cents): $49.00 -> 4900."""
     if not product_id:
         raise ValueError("product_id is required to attach a price")

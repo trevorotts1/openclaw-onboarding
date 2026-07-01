@@ -33,7 +33,7 @@ bash install.sh
 
 ### CLI Mode (one-shot commands)
 ```bash
-caf contacts list --json
+caf --json contacts list
 caf contacts get <contact_id>
 caf contacts create --email user@example.com --first-name John --last-name Doe
 caf opportunities list --status open
