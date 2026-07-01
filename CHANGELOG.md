@@ -1,3 +1,5 @@
+## [v16.2.9]  -  2026-07-01  -  GHL bulletproofing: client-model policy (Ollama Cloud/GLM5.2/DeepSeek/MiniMax), caf hardening, reliability across 14 skills
+
 ## [v16.2.8]  -  2026-06-30  -  feat(self-heal): gateway-health watchdog (box-aware HTTP probe + self-heal) filling the dangling remediate.sh hook
 
 ### Risk: low — additive, fail-soft, opt-in. The Mac installer hunk is Mac-gated and inside an `if` (set -e exempt); the VPS host-cron installer is operator-run and REFUSES to arm unless it first confirms the real gateway port is reachable, so it can never `docker restart` a healthy container. No bare `gws`, no cred/config/plist writes; heal actions are restart-only + rate-limited. No client names in any changed file.
