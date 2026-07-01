@@ -60,7 +60,7 @@ from datetime import datetime
 from pathlib import Path
 
 # ── WS-2: import the role-library instantiation helpers from the sibling
-# create_role_workspaces module so the PRIMARY build INSTANTIATES the 991
+# create_role_workspaces module so the PRIMARY build INSTANTIATES the 121
 # pre-written SOPs (copy + token-personalize) instead of writing empty
 # `[Step 1 - to be personalized]` stubs that then get LLM-regenerated. The
 # normalizer (normalize_role_variants/normalize_dept) takes naive slug match
@@ -1211,6 +1211,17 @@ def _write_interview_complete_to_state(answers_path=None):
         now = datetime.now().isoformat()
         state["interviewComplete"] = True
         state["interviewCompletedAt"] = state.get("interviewCompletedAt") or now
+        # P1-3: persist the company slug into build-state so EVERY downstream reader
+        # (Skill 32 run-full-install.sh, update-skills.sh, the Command Center repo
+        # scripts) can resolve it. Previously COMPANY_SLUG only landed in
+        # company-config.json, so state-file readers resolved empty and the CC install
+        # ran with an empty slug. resolve_company_paths() (called at the top of
+        # build_from_config, before this) has already populated the COMPANY_SLUG global.
+        # Write the canonical key `companySlug` AND, for one transition release, the
+        # legacy alias `clientSlug` with the SAME value so both reader generations work.
+        if COMPANY_SLUG:
+            state["companySlug"] = COMPANY_SLUG
+            state["clientSlug"] = COMPANY_SLUG  # transition alias (P1-3); drop once all readers use `.companySlug // .clientSlug`
         progress = state.get("interviewProgress") or {}
         if not isinstance(progress, dict):
             progress = {}
@@ -1946,7 +1957,7 @@ def capture_custom_sops(dept_id, dept_info, dept_config, interview_answers):
     department as a build decision, RESPECTING sop_boundary_gate.py:
 
       - CANONICAL dept (templates exist in role-library) -> the build COPIES SOPs
-        from the 233-template library (LLM authoring is REFUSED for canonical
+        from the 121-template library (LLM authoring is REFUSED for canonical
         depts). We therefore do NOT author a new SOP body; instead we write the
         owner's procedure to `<dept>/owner-procedures.md` as a SUPPLEMENTAL note
         the role docs reference (a "your procedure for this" overlay), and flag it
@@ -5606,15 +5617,24 @@ def copy_departments_to_command_center(departments_json):
     The build-workforce script writes to company-discovery/ but the CC
     reads from its own config/ directory. This function bridges the gap.
     """
-    # Common CC install locations to try (in order of preference)
+    # Common CC install locations to try (in order of preference).
+    # P2-6: the REAL install dir is ~/projects/command-center (Mac; see Skill 32
+    # run-full-install.sh DASHBOARD_DIR) and /data/projects/command-center (VPS).
+    # The legacy blackceo-command-center paths below never existed on real boxes,
+    # so this copy always no-op'd. Put the real dirs FIRST; keep the legacy paths
+    # after for any hand-placed checkout.
     cc_search_paths = [
+        os.path.join(HOME, "projects", "command-center", "config"),         # real Mac install (DASHBOARD_DIR)
+        os.path.join("/data", "projects", "command-center", "config"),      # real VPS install
+        # legacy / hand-placed checkouts (kept after the real paths)
         os.path.join(HOME, "clawd", "projects", "blackceo-command-center", "config"),
         os.path.join(HOME, "projects", "blackceo-command-center", "config"),
         os.path.join(HOME, "clawd", "blackceo-command-center", "config"),
         os.path.join(HOME, "Downloads", "blackceo-command-center", "config"),
     ]
 
-    # Also check for a symlink or env var pointing to CC
+    # Also check for a symlink or env var pointing to CC. The explicit override
+    # stays FIRST (highest precedence), ahead of the real + legacy paths above.
     cc_root = os.environ.get("BLACKCEO_COMMAND_CENTER_ROOT", "")
     if cc_root:
         cc_search_paths.insert(0, os.path.join(cc_root, "config"))
@@ -5632,9 +5652,17 @@ def copy_departments_to_command_center(departments_json):
                 print(f"[CC-SYNC WARNING] Failed to copy to {dest_path}: {e}", file=sys.stderr)
 
     if not copied_to:
-        print("[CC-SYNC WARNING] No Command Center config directory found. "
-              "Set BLACKCEO_COMMAND_CENTER_ROOT or ensure CC is installed.", file=sys.stderr)
-        print("[CC-SYNC] departments.json is still available at the company-discovery path.",
+        # P2-6: not finding an on-disk CC config/ dir is NORMAL, not a warning. The
+        # PRIMARY path that populates the Command Center board is Skill 32's DB seeding
+        # (run-full-install.sh phases 6b/6c: seed-workspaces.py +
+        # sync-departments-from-build-state.py), which reads the client's build-state
+        # directly — NOT this optional file-copy mirror. Downgraded from WARNING so a
+        # box seeding the board correctly via Skill 32 never emits a false alarm.
+        print("[CC-SYNC] No on-disk Command Center config/ directory present — this is "
+              "expected. The board is populated by Skill 32 DB seeding "
+              "(seed-workspaces.py + sync-departments-from-build-state.py), not this "
+              "file copy. departments.json remains available at the company-discovery "
+              "path; set BLACKCEO_COMMAND_CENTER_ROOT to also mirror it into a CC checkout.",
               file=sys.stderr)
 
     return copied_to

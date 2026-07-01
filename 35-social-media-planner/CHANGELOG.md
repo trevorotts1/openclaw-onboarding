@@ -1,5 +1,22 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.9.5 - 2026-07-01 — Command Center token resolution: Mac/VPS-aware candidate paths, loud single skip warning
+
+### Fixed
+- **`_cc_resolve_token` (Command Center MC_API_TOKEN lookup) in `run-publishing-cycle.sh`** only
+  checked the legacy `$HOME/command-center/app/.env.local` path, so a Command Center installed at
+  the current `run-full-install.sh` `DASHBOARD_DIR` (`~/projects/command-center` on Mac,
+  `/data/projects/command-center` on VPS) was invisible to the publishing cycle and every Kanban
+  update silently skipped. Now checks 5 candidates in priority order — an already-set env var,
+  `~/projects/command-center/.env.local`, `~/projects/command-center/.env`,
+  `/data/projects/command-center/.env.local`, `/data/projects/command-center/.env` — with the
+  legacy `command-center/app/.env.local` path checked last for backward compat.
+- **De-duplicated the skip warning.** When no token is found, `_cc_resolve_token` now emits one
+  `[CC-SKIP]` warning listing every path it checked (via a new `CC_TOKEN_SKIP_LOGGED` guard so it
+  fires once per run), and `cc_call`'s own generic "Command Center skipped" warning is removed so
+  callers no longer see two vague, redundant messages for the same condition. Board-update skip
+  remains fail-soft — publishing continues unaffected.
+
 ## v2.9.4 - 2026-06-30 — GHL posting ladder, runtime preflight, 0-posts-as-error, Command Center Kanban, QC fix
 
 ### Added

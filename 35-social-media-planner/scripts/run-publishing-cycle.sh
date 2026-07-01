@@ -137,14 +137,38 @@ CC_BASE="${MISSION_CONTROL_URL:-http://localhost:4000}"
 CC_TOKEN="${MC_API_TOKEN:-}"
 CC_TASK_ID=""
 CC_AGENT_ID="skill35-cycle"
+CC_TOKEN_SKIP_LOGGED=0
 
 _cc_resolve_token() {
-  # Prefer the env token; else read MC_API_TOKEN from the Command Center env file.
+  # Resolve MC_API_TOKEN in priority order (never silently skip on a stale path):
+  #   1) env var already set (MC_API_TOKEN)
+  #   2) ~/projects/command-center/.env.local     (run-full-install.sh DASHBOARD_DIR)
+  #   3) ~/projects/command-center/.env           (run-full-install.sh DASHBOARD_DIR)
+  #   4) /data/projects/command-center/.env.local (VPS container path)
+  #   5) /data/projects/command-center/.env       (VPS container path)
+  #   6) $HOME/command-center/app/.env.local      (legacy path — backward compat, checked last)
   [ -n "$CC_TOKEN" ] && return 0
-  local envfile="$HOME_DIR/command-center/app/.env.local"
-  [ -f "$envfile" ] || return 0
-  CC_TOKEN="$(grep -E '^MC_API_TOKEN=' "$envfile" 2>/dev/null | head -1 \
-    | sed -E 's/^MC_API_TOKEN=//; s/^"//; s/"$//; s/\r$//')"
+
+  local candidates=(
+    "$HOME_DIR/projects/command-center/.env.local"
+    "$HOME_DIR/projects/command-center/.env"
+    "/data/projects/command-center/.env.local"
+    "/data/projects/command-center/.env"
+    "$HOME_DIR/command-center/app/.env.local"
+  )
+  local envfile
+  for envfile in "${candidates[@]}"; do
+    [ -f "$envfile" ] || continue
+    CC_TOKEN="$(grep -E '^MC_API_TOKEN=' "$envfile" 2>/dev/null | head -1 \
+      | sed -E 's/^MC_API_TOKEN=//; s/^"//; s/"$//; s/\r$//')"
+    [ -n "$CC_TOKEN" ] && return 0
+  done
+
+  if [ "$CC_TOKEN_SKIP_LOGGED" -eq 0 ]; then
+    warn "[CC-SKIP] MC_API_TOKEN not found in: ${candidates[*]} — board update skipped (publishing continues)."
+    CC_TOKEN_SKIP_LOGGED=1
+  fi
+  return 0
 }
 
 # cc_call <METHOD> <path> [json-body] -> echoes 2xx response body; ALWAYS returns 0.
@@ -152,7 +176,8 @@ cc_call() {
   local method="$1" path="$2" payload="${3:-}" resp http out
   _cc_resolve_token
   if [ -z "$CC_TOKEN" ]; then
-    warn "Command Center skipped — MC_API_TOKEN not set (board update is optional; continuing)."
+    # _cc_resolve_token already emitted the loud [CC-SKIP] warning with the
+    # full list of paths checked; don't spam a second, vaguer message here.
     return 0
   fi
   command -v curl >/dev/null 2>&1 || { warn "Command Center skipped — curl not available."; return 0; }

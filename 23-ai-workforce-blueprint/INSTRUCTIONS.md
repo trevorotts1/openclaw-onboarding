@@ -462,7 +462,15 @@ Example for a coaching client missing Video:
 
 > *"Video  -  production, editing, AI video, YouTube optimization. For your coaching business, this would handle your YouTube channel, course video editing, short-form clips for Reels/TikTok, and the video sales letters for your launches. YES, NO, or LATER?"*
 
-Record each decision into `[ZHC]/[slug]/.workforce-build-state.json` under `canonicalReconciliation`:
+Record each decision by calling the recorder helper - **never hand-write a bare string** like `"video": "no"`. A bare-string decline carries no provenance, so the build enforcer (`_canonical_decline_set` in `scripts/build-workforce.py`, mirrored by `scripts/department-floor.py`) REJECTS it and force-adds the department back - the owner's opt-out is silently discarded and a smaller shop gets over-built. For EACH department, whether YES, NO, or LATER:
+
+```bash
+bash 23-ai-workforce-blueprint/scripts/record-dept-decision.sh \
+  --dept <canonical_id> --decision yes|no|later \
+  --source owner-interview --by <ownerId> --session <sessionId>
+```
+
+The helper writes the provenanced OBJECT form the enforcer accepts into `[ZHC]/[slug]/.workforce-build-state.json` under `canonicalReconciliation.decisions` (idempotent - re-running a dept overwrites its object). The full block:
 
 ```json
 "canonicalReconciliation": {
@@ -472,10 +480,10 @@ Record each decision into `[ZHC]/[slug]/.workforce-build-state.json` under `cano
   "covered": ["marketing", "sales", "..."],
   "customKeeps": ["publishing-studio", "school-of-ai", "..."],
   "decisions": {
-    "video": "yes",
-    "audio": "later",
-    "openclaw-maintenance": "no",
-    "scheduling-dispatch": "no"
+    "video":                { "decision": "yes",   "source": "owner-interview", "decidedAt": "<ISO timestamp>", "decidedBy": "<ownerId>", "sessionId": "<sessionId>" },
+    "audio":                { "decision": "later", "source": "owner-interview", "decidedAt": "<ISO timestamp>", "decidedBy": "<ownerId>", "sessionId": "<sessionId>" },
+    "openclaw-maintenance": { "decision": "no",    "source": "owner-interview", "decidedAt": "<ISO timestamp>", "decidedBy": "<ownerId>", "sessionId": "<sessionId>" },
+    "scheduling-dispatch":  { "decision": "no",    "source": "owner-interview", "decidedAt": "<ISO timestamp>", "decidedBy": "<ownerId>", "sessionId": "<sessionId>" }
   },
   "mergeDecisions": {
     "accounting": "merge",
@@ -490,7 +498,7 @@ Record each decision into `[ZHC]/[slug]/.workforce-build-state.json` under `cano
 }
 ```
 
-The `decisions` map now also carries opt-out for the 7 universal-primary vertical departments (e.g. `scheduling-dispatch: no`), not only the mandatory canonical depts. `mergeDecisions`, `customRoles`, and `customSops` are written by Steps 3.5-3.8 below.
+The `decisions` map now also carries opt-out for the 7 universal-primary vertical departments (recorded via the same helper, e.g. `record-dept-decision.sh --dept scheduling-dispatch --decision no --source owner-interview --by <ownerId> --session <sessionId>`), not only the mandatory canonical depts. `mergeDecisions`, `customRoles`, and `customSops` are written by Steps 3.5-3.8 below.
 
 #### Step 3.5  -  Semantic merge decision (Capability 2)
 
@@ -502,7 +510,7 @@ Record the answer in `canonicalReconciliation.mergeDecisions[<custom_id>]` as `"
 
 #### Step 3.6  -  Opt-out for the 7 universal-primary verticals AND customs (Capability 5)
 
-Phase 5 already mentions skipping verticals; this step makes it a recorded decision symmetric with the mandatory floor. For EACH of the 7 universal-primary vertical departments (Presentations, Listings Management, Scheduling & Dispatch, Logistics & Fulfillment, Engineering, Account Management, Podcast) that does NOT fit the owner's business, offer the same YES / NO / LATER and record `decisions[<vertical_id>] = "no"` on opt-out. A `no` is honored by `apply_vertical_packs()` (the dept is skipped) exactly as a declined mandatory dept is. Custom departments are also opt-out-able the same way (`decisions[<custom_id>] = "no"` or `declinedDepartments[]`) - opt-in is no longer the only option for a custom.
+Phase 5 already mentions skipping verticals; this step makes it a recorded decision symmetric with the mandatory floor. For EACH of the 7 universal-primary vertical departments (Presentations, Listings Management, Scheduling & Dispatch, Logistics & Fulfillment, Engineering, Account Management, Podcast) that does NOT fit the owner's business, offer the same YES / NO / LATER and record the opt-out with `bash 23-ai-workforce-blueprint/scripts/record-dept-decision.sh --dept <vertical_id> --decision no --source owner-interview --by <ownerId> --session <sessionId>`. A provenanced `no` is honored by `apply_vertical_packs()` (the dept is skipped) exactly as a declined mandatory dept is. Custom departments are opt-out-able the same way (`--dept <custom_id> --decision no ...`) - opt-in is no longer the only option for a custom. NEVER hand-write a bare `decisions[<id>] = "no"`: without provenance the enforcer rejects the decline and force-adds the department back, silently over-building the workforce.
 
 #### Step 3.7  -  Per-dept custom ROLES (Capability 3)
 
@@ -510,7 +518,7 @@ For each department in the final set, ask whether the owner wants any EXTRA spec
 
 #### Step 3.8  -  Per-dept custom SOPs (Capability 4)
 
-For each department, ask whether the owner has a SPECIFIC procedure they run that the team must follow (e.g. *"our refund flow"*, *"our cohort onboarding"*). Record them under `canonicalReconciliation.customSops[<dept_id>]` as strings or `{ "title", "procedure" }` objects. The build captures them (`capture_custom_sops()`) respecting the SOP boundary gate: a CANONICAL department writes the procedure as a supplemental `owner-procedures.md` overlay the copied 335-role library SOPs reference (LLM authoring stays refused); a CUSTOM department uses the procedure as the GROUND TRUTH its LLM-authored SOP is built from. Capture the owner's actual procedure - never generic flavor.
+For each department, ask whether the owner has a SPECIFIC procedure they run that the team must follow (e.g. *"our refund flow"*, *"our cohort onboarding"*). Record them under `canonicalReconciliation.customSops[<dept_id>]` as strings or `{ "title", "procedure" }` objects. The build captures them (`capture_custom_sops()`) respecting the SOP boundary gate: a CANONICAL department writes the procedure as a supplemental `owner-procedures.md` overlay the copied 420-role library SOPs reference (LLM authoring stays refused); a CUSTOM department uses the procedure as the GROUND TRUTH its LLM-authored SOP is built from. Capture the owner's actual procedure - never generic flavor.
 
 #### Step 4  -  Hard rules
 
@@ -525,7 +533,7 @@ The canonical list message in Step 2 will be long. Send it as ONE message anyway
 
 #### Step 6  -  Custom role/SOP capture + core-merge (pointer)
 
-Canonical and floor departments resolve their roles/SOPs by COPY + token-personalize from the 335-role library (never LLM-authored; 335 roles / 23 departments as of v12.6.0). For anything the library does NOT cover  -  a custom department, or a custom role/SOP the owner needs inside ANY department (including a core one)  -  capture it per department, author it to standard, and LAYER any semantically overlapping custom content INTO the one core department instead of shipping a duplicate. See `23-ai-workforce-blueprint/CUSTOM-AUTHORING-AND-MERGE-STANDARD.md` for the binding trigger / capture / authoring / core-merge / closeout-gate rules.
+Canonical and floor departments resolve their roles/SOPs by COPY + token-personalize from the 420-role library (never LLM-authored; 420 roles / 34 departments as of v16.2.16). For anything the library does NOT cover  -  a custom department, or a custom role/SOP the owner needs inside ANY department (including a core one)  -  capture it per department, author it to standard, and LAYER any semantically overlapping custom content INTO the one core department instead of shipping a duplicate. See `23-ai-workforce-blueprint/CUSTOM-AUTHORING-AND-MERGE-STANDARD.md` for the binding trigger / capture / authoring / core-merge / closeout-gate rules.
 
 ---
 

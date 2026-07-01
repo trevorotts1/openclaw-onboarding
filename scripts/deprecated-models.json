@@ -4,7 +4,7 @@
       "model": "openrouter/google/gemini-3.1-flash-lite-preview",
       "reason": "Replaced by gemini-3-flash",
       "removalDate": "2026-06-01",
-      "replacement": "google/gemini-3-flash-preview"
+      "replacement": "ollama/deepseek-v4-flash:cloud"
     },
     {
       "model": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",

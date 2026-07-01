@@ -18,7 +18,9 @@
 #
 # What this script does:
 #   - Auto-detects the OpenClaw root ($OC_ROOT — VPS: /data/.openclaw, Mac: $HOME/.openclaw)
-#   - Scans workspace/departments/ AND workspaces/command-center/ for dept folders
+#   - Scans the canonical master-files ZHC departments/ tree, workspaces/command-center/,
+#     and legacy workspace/departments/ for dept folders — canonical wins on slug collision
+#     (see the "ONE TRUE RULE" comment above DEPT_SCAN_ROOTS for the full priority order)
 #   - For each dept, adds (or updates) an entry in openclaw.json's agents.list[]
 #     following the schema in 32-command-center-setup/INSTALL.md Phase 4
 #   - Atomic write (tmp file + rename); timestamped backup before mutation
@@ -91,35 +93,51 @@ if [[ $DRY_RUN -eq 0 ]]; then
 fi
 
 # ─── Discover dept folders ───────────────────────────────────────────────────
-# Priority order (highest last, so later discoveries win in discovered{}):
+# ONE TRUE RULE: DEPT_SCAN_ROOTS is ordered MOST-AUTHORITATIVE FIRST. The
+# Python scanner below dedups with discovered.setdefault(slug, path) — i.e.
+# FIRST DISCOVERY WINS — so whichever root is listed first for a given slug
+# is the one that "shadows" every later root that happens to produce the
+# same slug. Keep this list ordered from most-authoritative (canonical build
+# output) down to least (legacy/deprecated paths), or a stale legacy folder
+# will silently shadow the real one.
 #
-#   1. $OC_ROOT/workspace/departments/<dept-slug>/
-#      Legacy Skill 23 path (pre-v9.6.0). Still used by some installs.
-#
-#   2. $OC_ROOT/workspaces/command-center/<dept-slug>/
-#      Skill 32 alt path (per INSTALL.md Phase 3). Takes priority over (1)
-#      when both contain the same slug.
-#
-#   3. <openclaw-master-files>/zero-human-company/<company>/departments/<dept-slug>/
-#      Canonical Skill 23 output path (v9.6.0+, PRD 1.9). build-workforce.py
-#      (resolve_company_paths) writes ALL new departments here, NOT into
-#      $OC_ROOT. Glob-expanded for every company slug found on disk.
+#   1. <openclaw-master-files>/zero-human-company/<company>/departments/<dept-slug>/
+#      Canonical Skill 23 output path (v9.6.0+, PRD 1.9) — MOST AUTHORITATIVE.
+#      build-workforce.py (resolve_company_paths) writes ALL new departments
+#      here, NOT into $OC_ROOT. Glob-expanded for every company slug found on
+#      disk. Scanned FIRST so it wins any slug collision.
 #      Mac: ~/Downloads/openclaw-master-files/zero-human-company/
 #      VPS: /data/openclaw-master-files/zero-human-company/
 #
-# PATH-MISMATCH FIX (v14.22.3): the previous version only scanned roots (1)
-# and (2), which live under $OC_ROOT. build-workforce.py writes to root (3),
-# a completely separate tree. This caused materialize-dept-agents.sh to find
+#   2. $OC_ROOT/workspaces/command-center/<dept-slug>/
+#      Skill 32 alt path (per INSTALL.md Phase 3). Wins over (3) when both
+#      contain the same slug; loses to (1).
+#
+#   3. $OC_ROOT/workspace/departments/<dept-slug>/
+#      Legacy Skill 23 path (pre-v9.6.0). Still present on some installs but
+#      DEPRECATED — scanned LAST so it never shadows (1) or (2) for the same
+#      slug.
+#
+# PATH-MISMATCH FIX (v14.22.3): an earlier version only scanned roots (2) and
+# (3), which live under $OC_ROOT. build-workforce.py writes to root (1), a
+# completely separate tree. This caused materialize-dept-agents.sh to find
 # ZERO department folders and register ZERO agents even after a successful
 # build — every client onboarded under v9.6.0–v14.22.2 was silently broken.
-DEPT_SCAN_ROOTS=(
-  "$OC_ROOT/workspace/departments"
-  "$OC_ROOT/workspaces/command-center"
-)
+#
+# DEDUP-PRIORITY FIX (P2-4): an earlier version scanned the legacy root (3)
+# FIRST and the canonical root (1) LAST while using first-wins setdefault()
+# semantics in the Python scanner. That meant a stale leftover folder under
+# the legacy path could silently shadow the current, correct build output
+# for the same slug — exactly backwards from the intent. Roots are now
+# built most-authoritative-first so first-wins setdefault() actually picks
+# the canonical copy.
+DEPT_SCAN_ROOTS=()
 
-# Expand the canonical master-files ZHC tree (root 3). We iterate every
-# company directory and push its departments/ subdir into DEPT_SCAN_ROOTS
-# so the Python scanner sees it as a direct list of dept-slug children.
+# Expand the canonical master-files ZHC tree (root 1) FIRST — it is the most
+# authoritative source and must win any slug collision under setdefault().
+# We iterate every company directory and push its departments/ subdir into
+# DEPT_SCAN_ROOTS so the Python scanner sees it as a direct list of
+# dept-slug children.
 for _mf_root in \
     "$HOME/Downloads/openclaw-master-files/zero-human-company" \
     "/data/openclaw-master-files/zero-human-company"; do
@@ -133,6 +151,13 @@ for _mf_root in \
     fi
   done
 done
+
+# Then the Skill 32 alt path (root 2), then the legacy Skill 23 path (root 3)
+# LAST — least authoritative, scanned last so it can never shadow (1) or (2).
+DEPT_SCAN_ROOTS+=(
+  "$OC_ROOT/workspaces/command-center"
+  "$OC_ROOT/workspace/departments"
+)
 
 # ─── Run the mutation in Python (no bash JSON acrobatics) ────────────────────
 export OC_CONFIG_FILE="$CONFIG_FILE"
@@ -197,7 +222,13 @@ def is_valid_dept_dir(p: Path) -> bool:
         return False
     return True
 
-# ─── Discover dept slugs (dedup, alt path wins) ─────────────────────────────
+# ─── Discover dept slugs (dedup, most-authoritative root wins) ─────────────
+# ONE TRUE RULE: DEPT_ROOTS (built in bash above) is ordered
+# most-authoritative first. setdefault() below is FIRST-WINS, so for any
+# slug that shows up under more than one root, whichever root we reach
+# first — canonical master-files ZHC build output, then the command-center
+# workspace root, then the legacy workspace/departments root last — is the
+# one that sticks. Do not reorder DEPT_ROOTS without keeping this rule true.
 discovered = {}  # slug → absolute workspace path
 for root in DEPT_ROOTS:
     rp = Path(root)
@@ -206,8 +237,6 @@ for root in DEPT_ROOTS:
     for child in sorted(rp.iterdir()):
         if not is_valid_dept_dir(child):
             continue
-        # Skill 32 path wins over Skill 23 path if both have same slug —
-        # because we iterate DEPT_ROOTS in priority order (cc first).
         discovered.setdefault(child.name, str(child.resolve()))
 
 if not discovered:
