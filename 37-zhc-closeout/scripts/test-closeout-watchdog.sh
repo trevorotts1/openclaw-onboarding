@@ -158,7 +158,7 @@ write_state "{
   \"version\": 1,
   \"interviewComplete\": false,
   \"ownerChat\": 12345,
-  \"companyName\": \"Beverly Corp\",
+  \"companyName\": \"Acme Corp\",
   \"agentName\": \"TestAgent\",
   \"departments\": [],
   \"interviewProgress\": {
@@ -432,7 +432,7 @@ write_state "{
   \"version\": 1,
   \"interviewComplete\": false,
   \"ownerChat\": 12345,
-  \"companyName\": \"Beverly Corp\",
+  \"companyName\": \"Acme Corp\",
   \"agentName\": \"TestAgent\",
   \"departments\": [],
   \"interviewStalled\": true,
@@ -453,7 +453,7 @@ if [[ -f "$FLEET_STUCK" ]]; then
     fail "T8a: fleet-stuck-clients.sh --local exited $fleet_rc (expected 2)"
   fi
 
-  if printf '%s' "$fleet_out" | grep -qi "STUCK\|mid-interview\|stalled\|Beverly"; then
+  if printf '%s' "$fleet_out" | grep -qi "STUCK\|mid-interview\|stalled\|Acme"; then
     pass "T8b: stuck box appears in fleet-stuck-clients.sh --local output"
   else
     fail "T8b: stuck box not reported in output: $(printf '%s' "$fleet_out" | head -5)"

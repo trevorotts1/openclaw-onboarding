@@ -209,7 +209,7 @@ fi
 # The schema's own TODO (build-state-schema.json:506): run-closeout.sh should
 # gate on interviewQc.status != 'pass' before proceeding. This wires that gate.
 # A premature/seeded buildCompletedAt can no longer slip a half-interview into
-# a celebration (e.g. Beverly at 21/30 with no QC run = REFUSED, not silently ignored).
+# a celebration (e.g. a client at 21/30 with no QC run = REFUSED, not silently ignored).
 # Gate is placed BEFORE the expensive generation preflight (KIE/Notion/TG checks)
 # so a stalled interview is surfaced immediately without requiring API keys.
 _qc_status=$(state_get '.interviewQc.status')
@@ -735,7 +735,7 @@ if [[ "$GATE_INF1_RESULT" == "pass" ]]; then
     elif [[ "$ct_rc" -eq 3 ]]; then
       # PRD-2.15 (v12.3.12): rc=3 means NO artifact (no HTML/PNG rendered - Playwright crash,
       # missing Chromium, or fresh-VPS). This is NOT inconclusive - it is a HARD operator-visible
-      # HOLD. The prior "proceed on agent rating" was the exact silent failure mode that let Beverly
+      # HOLD. The prior "proceed on agent rating" was the exact silent failure mode that let a client
       # get a green while Playwright had never run. Changed from WARN+proceed to ERROR+escalate.
       _inf1_fail_reason="playwright-rc3: org-chart renderer returned no HTML/PNG artifact (Playwright crash or Chromium missing on this host)"
       log "ERROR" "step=2 org-chart rc=3 - NO artifact rendered. Classifying as HARD HOLD (not inconclusive). Reason: $_inf1_fail_reason"

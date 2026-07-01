@@ -103,6 +103,8 @@ CLIENT_NAMES=(
   "\bCassandra\b"
   "\bJocelyn\b"
   "\bChristy\b"
+  "\bBeverly\b"
+  "\bAnderson\b"
 
   # Operator machine path (must not appear in committed files)
   "/Users/blackceomacmini"
