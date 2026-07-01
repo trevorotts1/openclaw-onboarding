@@ -1,3 +1,46 @@
+## [v16.2.17]  -  2026-07-01  -  fix(repo-review): repo-review fix sprint — interview decline provenance, presentation-routing REFLEX V2 (signed), telegram-offset-healthcheck rewrite, companySlug persistence, and eight smaller correctness/consistency fixes
+
+### Risk: low — every change is additive or fail-closed (a missing signal now fails the relevant gate instead of defaulting to pass); no credential values, plists, or client-specific content touched. No client names.
+
+### Interview decline provenance
+New `23-ai-workforce-blueprint/scripts/record-dept-decision.sh` helper records a client's decline of an optional department/role with structured provenance (who declined, when, and why) instead of leaving a bare, unattributed "declined" flag. `INSTRUCTIONS.md` Step 3.6 documents the decline-recording step in the intake flow. `qc-interview-completion.py` now HARD-FAILS a bare decline — a decision record with no provenance — instead of silently accepting it.
+
+### Presentation-routing REFLEX V2 (signed)
+`PRESENTATION_ROUTING_REFLEX_V1` is superseded by V2 in both fleet doctrine stampers (`scripts/apply-routing-fix.sh`, `scripts/apply-fleet-standards.sh`): the CEO's route-first POST is now authenticated via a stamped runtime-secret helper (HMAC-SHA256, `openssl dgst` primary with a `python3 hashlib.hmac` fallback over the same bytes) instead of a bare, unauthenticated curl. The signature scheme matches the HMAC construction already proven in `cc_board.py` so the presentations-department receiver verifies with the identical helper. A new stamp-time + runtime guard on the presentations-department side rejects an unsigned or stale-stamped POST. V1 markers are auto-migrated to V2 on the next stamper run; idempotent (a second run is a no-op once V2 is present).
+
+### telegram-offset-healthcheck rewrite
+`scripts/telegram-offset-healthcheck.sh` no longer issues a concurrent `getUpdates` call against a poller that may already hold the long-poll — the prior version could race the live poller and silently swallow updates. A 409 CONFLICT from Telegram now produces an explicit, loud exit instead of being folded into a generic failure. Offset state is migrated to the `tokenFingerprint`-keyed format (per-bot-token offset file, not one shared file) so two bots on one box can no longer cross-contaminate each other's offset. The previously proposed cron wrapper for this healthcheck is withdrawn — evaluated and rejected, since the concurrent-poll risk it existed to catch is now closed at the source.
+
+### companySlug persistence
+`companySlug` is now written into the per-box build-state at build time instead of being re-derived ad hoc by each reader. Downstream readers (`qc-interview-completion.py`, the Command Center install script, the ZHC closeout scripts) are standardized to read the persisted value, closing a class of drift where two readers could compute a different slug for the same box.
+
+### Smaller fixes
+- **CC config bridge**: now points at the real, live Command Center install paths instead of placeholder/assumed paths.
+- **Interview gate multi-signal**: `qc-interview-completion.py` no longer relies on a single boolean — it now evaluates multiple independent signals (transcript presence, consent record, decision provenance, build-state markers) and is fail-closed, so any missing signal fails the gate rather than defaulting to pass.
+- **Unique phase labels**: duplicate phase-label collisions in the presentations pipeline resolved so every phase reports under its own distinct label.
+- **`jq --arg` injection safety**: raw shell-interpolated values passed to `jq` filters were replaced with `--arg`-bound values across the touched scripts, closing a shell/JSON injection class.
+- **dept-scan canonical-first precedence**: department discovery now checks the canonical role-library location before any legacy/fallback location, so a stale fallback copy can no longer shadow the canonical one.
+- **Skill 35 Command Center token resolution**: `_cc_resolve_token()` now resolves `MC_API_TOKEN` from the real fleet install paths (`~/projects/command-center/.env.local`/`.env`, the VPS container path, and the legacy path as a final fallback) in priority order, with a loud `[CC-SKIP]` warning (never a silent skip) when none resolve.
+- **deprecated-models replacement**: the replacement entry in `scripts/deprecated-models.json` now points at a free Ollama model instead of a paid one.
+- **SKILL.md version marker in bump tooling**: `scripts/bump-version.sh` gained an 11th marker — the `23-ai-workforce-blueprint/SKILL.md` YAML frontmatter `version:` field, which previously drifted silently because nothing rolled it.
+- **role-library counts corrected**: `_index.json` / `_qc-summary.md` and referencing docs corrected to the accurate 420 roles / 34 departments / 121 SOPs.
+
+### Files
+- `23-ai-workforce-blueprint/scripts/record-dept-decision.sh` — new
+- `23-ai-workforce-blueprint/INSTRUCTIONS.md` — Step 3.6
+- `23-ai-workforce-blueprint/scripts/qc-interview-completion.py` — bare-decline hard-fail, multi-signal gate
+- `scripts/apply-routing-fix.sh`, `scripts/apply-fleet-standards.sh` — PRESENTATION_ROUTING_REFLEX_V2, signed route helper, V1→V2 auto-migration
+- `scripts/telegram-offset-healthcheck.sh` — rewrite: no concurrent getUpdates, explicit 409 exit, tokenFingerprint offset format
+- `23-ai-workforce-blueprint/scripts/build-workforce.py`, `23-ai-workforce-blueprint/scripts/create_role_workspaces.py`, `23-ai-workforce-blueprint/scripts/context-ingest.py` — companySlug persisted to build-state
+- `32-command-center-setup/scripts/run-full-install.sh` — CC config bridge real install paths; companySlug reader standardized
+- `35-social-media-planner/scripts/run-publishing-cycle.sh` — `_cc_resolve_token()` real install paths + loud `[CC-SKIP]`
+- `scripts/deprecated-models.json` — free Ollama replacement
+- `scripts/bump-version.sh` — 11th marker (23-ai-workforce-blueprint/SKILL.md frontmatter)
+- `23-ai-workforce-blueprint/templates/role-library/_index.json`, `23-ai-workforce-blueprint/templates/role-library/_qc-summary.md` — role/department/SOP counts corrected to 420/34/121
+- `version`, `install.sh`, `update-skills.sh`, `README.md` (×2), `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `cc-compat.json`, `23-ai-workforce-blueprint/skill-version.txt`, `23-ai-workforce-blueprint/SKILL.md`, `23-ai-workforce-blueprint/templates/role-library/_index.json`, `23-ai-workforce-blueprint/templates/role-library/_qc-summary.md` — rolled to v16.2.17 via `bump-version.sh` (11 markers)
+
+---
+
 ## [v16.2.16]  -  2026-07-01  -  feat(fleet-routing): canonicalize the proven presentation-routing REFLEX gate into the two fleet doctrine stampers — every CEO's workspace AGENTS.md gets a trigger-before-thinking route-first-and-stop gate for presentation requests
 
 ### Why

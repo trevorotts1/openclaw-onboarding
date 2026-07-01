@@ -16,7 +16,7 @@ triggers:
   - "create my AI company structure"
   - "set up my departments"
   - "hire my AI team"
-version: 16.2.9
+version: 16.2.17
 ---
 
 ## MANDATORY - Teach Yourself Protocol (TYP)
@@ -486,7 +486,7 @@ For full wiki capabilities, see Skill 31 (Upgraded Memory System).
 
 **These operations are available AFTER the workforce is built. Every add MUST end with the converge call.**
 
-> Authoring standard: any custom role or SOP the 233-template core library does NOT cover (custom department, or a custom role/SOP inside any department incl. a core one) must be authored to `CUSTOM-AUTHORING-AND-MERGE-STANDARD.md` (19-section role file, six-field SOP, QC gate), and any semantically overlapping custom content must be LAYERED INTO the one core department, never shipped as a duplicate. Canonical/floor content stays COPY + token-personalize (never LLM-authored) per `scripts/sop_boundary_gate.py`.
+> Authoring standard: any custom role or SOP the 420-template core library does NOT cover (custom department, or a custom role/SOP inside any department incl. a core one) must be authored to `CUSTOM-AUTHORING-AND-MERGE-STANDARD.md` (19-section role file, six-field SOP, QC gate), and any semantically overlapping custom content must be LAYERED INTO the one core department, never shipped as a duplicate. Canonical/floor content stays COPY + token-personalize (never LLM-authored) per `scripts/sop_boundary_gate.py`.
 
 ### Add a Role to an Existing Department
 

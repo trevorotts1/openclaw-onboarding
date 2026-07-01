@@ -715,33 +715,344 @@ if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE_EARLY" 2>/dev/null || true
 fi
 
-# ─── 4b-REFLEX. Inject PRESENTATION_ROUTING_REFLEX_V1 at the ABSOLUTE TOP ──────
-# Proven end-to-end on a live box, then canonicalized here so EVERY CEO gets the
-# presentation-routing pre-response gate — not just one box. This is a
+# ─── 4b-REFLEX. Stamp the SIGNED route helper + PRESENTATION_ROUTING_REFLEX_V2 ─
 # TRIGGER-BEFORE-THINKING reflex: on a presentation / deck / PowerPoint / slide /
-# keynote request the CEO's VERY FIRST tool call must be the POST to
-# /api/tasks/ingest (department_slug=presentations) on 127.0.0.1:4000 — no reads,
-# no sessions_list, no verifying the department, no intake questions.
+# keynote request the CEO's VERY FIRST action must route the task to the
+# `presentations` department on the Command Center — no reads, no sessions_list,
+# no verifying the department, no intake questions.
 #
-# It MUST sit ABOVE ROLE_DISCIPLINE_V1 + CEO_ROUTING_NO_LOOPHOLES_V1 (both already
-# stamped at the top by 5a + 4b above), so it is stamped LAST as an absolute-top
-# prepend and becomes the file's first block. Every later block (4c / 5 / 5b / 5c
-# / 5d) appends to the bottom, so this stays topmost.
+# P1-4 FIX (V1→V2): the V1 block told the CEO to POST a BARE curl (no auth) to
+#   http://127.0.0.1:4000/api/tasks/ingest. The Command Center ships FAIL-CLOSED —
+#   middleware 503s external ingest when WEBHOOK_SECRET is unset, 401s when
+#   MC_API_TOKEN is set and no Bearer is sent; the ingest route 401s when
+#   WEBHOOK_SECRET is set and x-webhook-signature is missing; a loopback curl gets
+#   NO same-origin exemption (no Origin header). So V2 has the CEO run a stamped,
+#   SIGNED helper ($OC_ROOT/scripts/route-presentation.sh) that resolves
+#   MC_API_TOKEN + WEBHOOK_SECRET at RUNTIME (never embedded) and signs BOTH auth
+#   layers exactly like 06-ghl-install-pages/tools/cc_board.py. On failure the CEO
+#   escalates to the operator — it never falls back to self-intake.
 #
-# CC ingest port 4000 is UNIFORM fleet-wide (CC_PORT=4000;
-# MISSION_CONTROL_URL default http://localhost:4000), so the endpoint is
-# hardcoded to 127.0.0.1:4000 exactly as proven — the block itself warns
-# "PORT 4000, NOT 3000". Idempotent: guarded by the
-# <!-- PRESENTATION_ROUTING_REFLEX_V1 --> marker.
-# KEEP IN SYNC with the twin stamper in scripts/apply-routing-fix.sh (LAYER 1).
-PRESENTATION_REFLEX_MARKER="<!-- PRESENTATION_ROUTING_REFLEX_V1 -->"
-if grep -qF "$PRESENTATION_REFLEX_MARKER" "$AGENTS_FILE_EARLY"; then
-  echo "[apply-fleet-standards] PRESENTATION_ROUTING_REFLEX_V1 already present in $AGENTS_FILE_EARLY — no-op"
+# P2-1 FIX (stamp-time guard): if the `presentations` department does NOT exist on
+#   this box (owner declined), stamping the reflex would strand every deck card on
+#   the CEO board. So we only stamp when presentations is present/unknown, and we
+#   REMOVE any previously-stamped block when presentations is affirmatively absent.
+#
+# The block MUST sit ABOVE ROLE_DISCIPLINE_V1 + CEO_ROUTING_NO_LOOPHOLES_V1 (both
+# already stamped at the top by 5a + 4b above): it is stamped LAST as an
+# absolute-top prepend and becomes the file's first block. Every later block
+# (4c / 5 / 5b / 5c / 5d) appends to the bottom, so this stays topmost.
+#
+# CC ingest port 4000 is UNIFORM fleet-wide (CC_PORT=4000), so the helper targets
+# 127.0.0.1:4000. Idempotent: V2 marker guard; V1 auto-migrated. The route helper
+# is (re)written every run so fixes propagate.
+# KEEP IN SYNC with the twin stamper in scripts/apply-routing-fix.sh (LAYER 1) —
+# the ROUTE_HELPER_SH and PRES_REFLEX_V2 heredocs are BYTE-IDENTICAL twins.
+PRES_REFLEX_V2_MARKER="<!-- PRESENTATION_ROUTING_REFLEX_V2 -->"
+PRES_REFLEX_V1_MARKER="<!-- PRESENTATION_ROUTING_REFLEX_V1 -->"
+PRES_REFLEX_HELPER_DIR="$OC_ROOT/scripts"
+PRES_REFLEX_HELPER_PATH="$PRES_REFLEX_HELPER_DIR/route-presentation.sh"
+
+# (a) Does the `presentations` department exist on THIS box? Prints PRESENT |
+#     ABSENT | UNKNOWN. Checks the ZHC departments.json canonical roots (Mac:
+#     ~/Downloads/openclaw-master-files/...; VPS: /data/openclaw-master-files/...)
+#     and the Command Center workspaces (mission-control.db). UNKNOWN = no source
+#     was readable (we then stamp anyway; the helper's runtime workspace_id guard
+#     backstops a mis-route).
+_pres_dept_status() {
+  python3 - <<'PRESDETECT_PY'
+import glob, json, os, sqlite3, sys
+HOME = os.path.expanduser("~")
+
+def slug(s):
+    return "".join(c if c.isalnum() else "-" for c in str(s).lower()).strip("-")
+
+read = 0
+found = False
+
+dept_globs = [
+    os.path.join(HOME, "Downloads/openclaw-master-files/zero-human-company/*/departments.json"),
+    "/data/openclaw-master-files/zero-human-company/*/departments.json",
+]
+for pat in dept_globs:
+    for path in glob.glob(pat):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                data = json.load(fh)
+        except Exception:
+            continue
+        read += 1
+        depts = data.get("departments") if isinstance(data, dict) else data
+        if isinstance(depts, dict):
+            depts = list(depts.values())
+        if not isinstance(depts, list):
+            continue
+        for d in depts:
+            if not isinstance(d, dict):
+                continue
+            for key in ("slug", "department_slug", "name", "id", "title"):
+                v = d.get(key)
+                if v and "presentation" in slug(v):
+                    found = True
+                    break
+            if found:
+                break
+        if found:
+            break
+    if found:
+        break
+
+if not found:
+    db_cands = [
+        os.path.join(HOME, "projects/command-center/mission-control.db"),
+        os.path.join(HOME, "projects/mission-control/mission-control.db"),
+        "/data/projects/command-center/mission-control.db",
+    ]
+    for db in db_cands:
+        if not os.path.exists(db):
+            continue
+        try:
+            con = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
+            cur = con.cursor()
+            vals = []
+            for tbl, col in (("workspaces", "slug"), ("workspaces", "id"),
+                             ("departments", "slug"), ("departments", "name")):
+                try:
+                    cur.execute("SELECT %s FROM %s" % (col, tbl))
+                    vals += [r[0] for r in cur.fetchall() if r and r[0]]
+                except Exception:
+                    continue
+            con.close()
+        except Exception:
+            continue
+        read += 1
+        if any("presentation" in slug(v) for v in vals):
+            found = True
+        if found:
+            break
+
+print("PRESENT" if found else ("ABSENT" if read > 0 else "UNKNOWN"))
+PRESDETECT_PY
+}
+
+# (b) Remove any previously-stamped reflex block (V1 or V2) from an AGENTS.md.
+_strip_pres_reflex() {
+  python3 - "$1" <<'PRESSTRIP_PY'
+import re, sys
+p = sys.argv[1]
+c = open(p, encoding="utf-8", errors="replace").read()
+for ver in ("V1", "V2"):
+    c = re.sub(
+        r"<!-- PRESENTATION_ROUTING_REFLEX_" + ver + r" -->.*?"
+        r"<!-- END PRESENTATION_ROUTING_REFLEX_" + ver + r" -->[ \t]*\r?\n?",
+        "", c, flags=re.DOTALL)
+c = c.lstrip("\n")
+open(p, "w", encoding="utf-8").write(c)
+PRESSTRIP_PY
+}
+
+PRES_DEPT_STATUS="$(_pres_dept_status 2>/dev/null || echo UNKNOWN)"
+echo "[apply-fleet-standards] presentations department check: $PRES_DEPT_STATUS"
+
+if [ "$PRES_DEPT_STATUS" = "ABSENT" ]; then
+  # P2-1: owner declined presentations — never stamp (decks would strand on the
+  # CEO board). Remove any previously-stamped block and skip.
+  if grep -qE 'PRESENTATION_ROUTING_REFLEX_V[12]' "$AGENTS_FILE_EARLY" 2>/dev/null; then
+    _strip_pres_reflex "$AGENTS_FILE_EARLY"
+    echo "[apply-fleet-standards] presentations dept ABSENT — REMOVED previously-stamped reflex block from $AGENTS_FILE_EARLY (P2-1)"
+  else
+    echo "[apply-fleet-standards] presentations dept ABSENT — NOT stamping reflex block (P2-1)"
+  fi
 else
-  echo "[apply-fleet-standards] injecting PRESENTATION_ROUTING_REFLEX_V1 at absolute top of $AGENTS_FILE_EARLY"
-  ORIGINAL_REFLEX_CONTENT=$(cat "$AGENTS_FILE_EARLY")
-  cat > "$AGENTS_FILE_EARLY" <<'REFEOF'
-<!-- PRESENTATION_ROUTING_REFLEX_V1 -->
+  # PRESENT or UNKNOWN → (re)stamp the signed helper, then stamp V2 at the top.
+  mkdir -p "$PRES_REFLEX_HELPER_DIR"
+  cat > "$PRES_REFLEX_HELPER_PATH" <<'ROUTE_HELPER_SH'
+#!/usr/bin/env bash
+# route-presentation.sh — SIGNED presentation-routing helper (fleet-wide).
+# Stamped onto this box by BOTH apply-fleet-standards.sh and apply-routing-fix.sh
+# (KEEP-IN-SYNC twins) and invoked by the PRESENTATION_ROUTING_REFLEX_V2 block in
+# the CEO's AGENTS.md:  bash <this> "<title>" "<verbatim owner message>"
+#
+# WHY: the Command Center ships FAIL-CLOSED. Middleware 503s external ingest when
+# WEBHOOK_SECRET is unset, and 401s when MC_API_TOKEN is set but no Bearer is sent;
+# the /api/tasks/ingest route 401s when WEBHOOK_SECRET is set and x-webhook-signature
+# is missing. A loopback curl gets NO same-origin exemption (it sends no Origin).
+# So — exactly like the sanctioned producer 06-ghl-install-pages/tools/cc_board.py —
+# this helper signs BOTH layers:
+#   Authorization: Bearer <MC_API_TOKEN>                          (middleware layer)
+#   x-webhook-signature: HMAC-SHA256(WEBHOOK_SECRET, rawBody) hex (route layer)
+# Secrets are resolved at RUNTIME from the box's stores; NO secret value is ever
+# written into this file or into AGENTS.md.
+#
+# EXIT 0 on a 2xx ingest; non-zero on failure — on non-zero the CEO must tell the
+# owner it is escalating to the operator (never self-intake, never ask intake
+# questions, never retry forever).
+set -uo pipefail
+
+INGEST_URL="http://127.0.0.1:4000/api/tasks/ingest"
+MAX_RETRIES=2
+
+TITLE="${1:-}"
+DESCRIPTION="${2:-}"
+
+_escalate() {
+  echo "route-presentation: FAILED — $1" >&2
+  echo "ESCALATE_TO_OPERATOR: presentation routing failed. The CEO must tell the owner it is escalating this to the operator. Do NOT self-intake, do NOT ask intake questions, do NOT retry." >&2
+  exit 1
+}
+
+[ -n "$TITLE" ] || _escalate "empty title argument"
+
+# ── Runtime secret resolution (reads only; never hardcoded) ──────────────────
+# Store order mirrors the Command Center's own env precedence so the signature
+# matches what the CC server validates against; the WEBHOOK_SECRET alias order
+# (WEBHOOK_SECRET, then CC_WEBHOOK_SECRET) mirrors cc_board.py. Live process env
+# is the last-resort fallback.
+_ENV_STORES=(
+  "$HOME/projects/command-center/.env.local"
+  "$HOME/projects/command-center/.env"
+  "/data/projects/command-center/.env.local"
+  "/data/projects/command-center/.env"
+  "$HOME/.openclaw/secrets/.env"
+  "/data/.openclaw/secrets/.env"
+)
+
+_resolve() {
+  # $@ = candidate key names (aliases). First non-empty across the dotenv stores
+  # (in order) then the live process env. Prints ONLY the value. Uses python3 for
+  # robust dotenv parsing (export / quotes / comments).
+  RP_KEYS="$*" python3 - "${_ENV_STORES[@]}" <<'PYRESOLVE'
+import os, sys
+keys = os.environ.get("RP_KEYS", "").split()
+stores = sys.argv[1:]
+
+def parse(path):
+    out = {}
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                s = line.strip()
+                if not s or s.startswith("#"):
+                    continue
+                if s.startswith("export "):
+                    s = s[len("export "):]
+                if "=" not in s:
+                    continue
+                k, v = s.split("=", 1)
+                k = k.strip(); v = v.strip()
+                if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
+                    v = v[1:-1]
+                out[k] = v
+    except Exception:
+        return {}
+    return out
+
+for path in stores:
+    kv = parse(path)
+    for k in keys:
+        if kv.get(k):
+            sys.stdout.write(kv[k]); sys.exit(0)
+for k in keys:
+    v = os.environ.get(k)
+    if v:
+        sys.stdout.write(v); sys.exit(0)
+PYRESOLVE
+}
+
+MC_API_TOKEN="$(_resolve MC_API_TOKEN)"
+WEBHOOK_SECRET="$(_resolve WEBHOOK_SECRET CC_WEBHOOK_SECRET)"
+
+# ── Build the EXACT raw body once (compact JSON, like cc_board.py) ───────────
+BODY_FILE="$(mktemp "${TMPDIR:-/tmp}/route-pres.XXXXXX")" || _escalate "mktemp failed"
+trap 'rm -f "$BODY_FILE"' EXIT
+if ! TITLE="$TITLE" DESCRIPTION="$DESCRIPTION" python3 - >"$BODY_FILE" <<'PYBODY'
+import json, os, sys
+payload = {
+    "title": os.environ.get("TITLE", "")[:120],
+    "description": os.environ.get("DESCRIPTION", ""),
+    "department_slug": "presentations",
+    "source": "telegram",
+    "priority": "medium",
+}
+sys.stdout.write(json.dumps(payload, separators=(",", ":")))
+PYBODY
+then
+  _escalate "could not build request body"
+fi
+
+# ── Sign the RAW body: HMAC-SHA256(WEBHOOK_SECRET, rawBody) hex (openssl) ─────
+SIG=""
+if [ -n "$WEBHOOK_SECRET" ]; then
+  if command -v openssl >/dev/null 2>&1; then
+    SIG="$(openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" <"$BODY_FILE" 2>/dev/null | sed -E 's/^.*= *//' | tr -d ' \r\n')"
+  fi
+  if [ -z "$SIG" ]; then
+    # openssl unavailable / parse miss — python3 hmac fallback over the SAME bytes.
+    SIG="$(WEBHOOK_SECRET="$WEBHOOK_SECRET" python3 - "$BODY_FILE" <<'PYSIG'
+import hashlib, hmac, os, sys
+sys.stdout.write(hmac.new(os.environ.get("WEBHOOK_SECRET", "").encode("utf-8"),
+                          open(sys.argv[1], "rb").read(), hashlib.sha256).hexdigest())
+PYSIG
+)"
+  fi
+fi
+
+# ── Headers: send Bearer / signature ONLY when the respective secret exists ──
+_H=(-H 'Content-Type: application/json' -H 'Accept: application/json')
+[ -n "$MC_API_TOKEN" ] && _H+=(-H "Authorization: Bearer $MC_API_TOKEN")
+[ -n "$SIG" ]          && _H+=(-H "x-webhook-signature: $SIG")
+
+# ── POST with retries (MAX_RETRIES retries after the first attempt) ──────────
+attempt=0
+http_code=""
+resp_body=""
+while :; do
+  RAW="$(curl -sS -X POST "$INGEST_URL" "${_H[@]}" --data-binary @"$BODY_FILE" -w $'\n%{http_code}' 2>/dev/null || true)"
+  http_code="${RAW##*$'\n'}"
+  resp_body="${RAW%$'\n'*}"
+  case "$http_code" in
+    2[0-9][0-9]) break ;;
+  esac
+  [ "$attempt" -ge "$MAX_RETRIES" ] && break
+  attempt=$((attempt + 1))
+  sleep 1
+done
+
+echo "route-presentation: HTTP ${http_code:-<none>} from $INGEST_URL"
+[ -n "$resp_body" ] && printf '%s\n' "$resp_body"
+
+case "$http_code" in
+  2[0-9][0-9])
+    # Runtime P2-1 guard: warn if the card did NOT land on the presentations workspace.
+    WS="$(printf '%s' "$resp_body" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    sys.stdout.write(str(d.get("workspace_id", "")) if isinstance(d, dict) else "")
+except Exception:
+    sys.stdout.write("")' 2>/dev/null || true)"
+    if [ -n "$WS" ] && [ "$WS" != "presentations" ]; then
+      echo "route-presentation: WARNING — task landed on workspace '$WS', NOT 'presentations'." >&2
+      echo "ESCALATE_TO_OPERATOR: the presentations department may be absent on this box. The CEO must tell the owner it is escalating to the operator instead of proceeding or self-intaking." >&2
+    fi
+    exit 0
+    ;;
+  *)
+    _escalate "ingest POST returned HTTP ${http_code:-<none>} after ${attempt} retr(y|ies)"
+    ;;
+esac
+ROUTE_HELPER_SH
+  chmod 700 "$PRES_REFLEX_HELPER_PATH"
+  echo "[apply-fleet-standards] stamped signed route helper → $PRES_REFLEX_HELPER_PATH (chmod 700)"
+
+  # (d) Idempotent V2 stamp with V1 auto-migration. Re-stamp when V2 is missing OR
+  #     a stray V1 co-exists; otherwise no-op (helper was still refreshed above).
+  if grep -qF "$PRES_REFLEX_V2_MARKER" "$AGENTS_FILE_EARLY" && ! grep -qF "$PRES_REFLEX_V1_MARKER" "$AGENTS_FILE_EARLY"; then
+    echo "[apply-fleet-standards] PRESENTATION_ROUTING_REFLEX_V2 already present in $AGENTS_FILE_EARLY — no-op (helper refreshed)"
+  else
+    grep -qE 'PRESENTATION_ROUTING_REFLEX_V[12]' "$AGENTS_FILE_EARLY" && _strip_pres_reflex "$AGENTS_FILE_EARLY" || true
+    PRES_REFLEX_TMPL="$(mktemp)"; _APPLY_TMPFILES+=("$PRES_REFLEX_TMPL")
+    cat > "$PRES_REFLEX_TMPL" <<'PRES_REFLEX_V2'
+<!-- PRESENTATION_ROUTING_REFLEX_V2 -->
 # ⛔ REFLEX 0 — PRESENTATION REQUESTS: ROUTE BEFORE YOU THINK (this block runs FIRST)
 
 This is a TRIGGER-BEFORE-THINKING rule. It fires BEFORE every other section of this file,
@@ -755,58 +1066,75 @@ TRIGGER (case-insensitive) — the incoming owner message contains ANY of:
 
 WHEN TRIGGERED your FIRST and ONLY action is EXACTLY these two steps, in order — nothing before them:
 
-  ‼ Your VERY FIRST tool call is the STEP 1 POST below — literally the first thing you do.
+  ‼ Your VERY FIRST tool call is the STEP 1 route helper below — literally the first thing you do.
   Do NOT read any file, do NOT run sessions_list, do NOT "check" or "verify the department
-  exists" (the `presentations` department ALWAYS exists on this box), do NOT deliberate, do NOT
-  message another session. POST first. Then ack. Then stop. Any tool call before the POST is a
-  reflex violation.
+  exists", do NOT deliberate, do NOT message another session. Route first. Then ack. Then stop.
+  Any tool call before the route helper is a reflex violation.
 
-  STEP 1 — Route the task NOW, before any other output. Use this EXACT endpoint.
-  ⚠ PORT: the Command Center on THIS box listens on PORT 4000 at IPv4 127.0.0.1 — NOT 3000,
-  NOT 8080, NOT any remembered default. Do NOT guess or substitute the port. POST to this URL
-  exactly, whether you use curl or a fetch tool:
+  STEP 1 — Route the task NOW, before any other output, by running the SIGNED route helper.
+  Do NOT hand-craft a bare curl. The Command Center ships FAIL-CLOSED: an unauthenticated curl
+  to the ingest endpoint is rejected (503/401). The helper resolves this box's ingest
+  credentials at RUNTIME and signs BOTH required auth layers (Bearer + HMAC webhook signature)
+  for you. Run it EXACTLY like this, in an exec / bash tool call:
 
-      POST  http://127.0.0.1:4000/api/tasks/ingest   (Content-Type: application/json)
+      bash @@ROUTE_HELPER_PATH@@ "<owner request, <=120 chars>" "<owner message, verbatim>"
 
-      curl -s -X POST http://127.0.0.1:4000/api/tasks/ingest \
-        -H 'Content-Type: application/json' \
-        -d '{"title":"<owner request, <=120 chars>","description":"<owner message, verbatim>","department_slug":"presentations","source":"telegram","priority":"medium"}'
+  ⚠ PORT / ENDPOINT (handled inside the helper): the Command Center on THIS box listens on
+  PORT 4000 at IPv4 127.0.0.1 — NOT 3000, NOT 8080, NOT any remembered default. The helper
+  already targets http://127.0.0.1:4000/api/tasks/ingest. Do NOT substitute a port and do NOT
+  fire your own bare curl.
 
-      SUCCESS = HTTP 201 with {"ok":true,"task_id":"…","workspace_id":"presentations"}.
-      If you get connection-refused or 404, you used the wrong host/port — retry with
-      127.0.0.1:4000 EXACTLY. Do not fall back to asking the owner questions.
+      SUCCESS = the helper prints an ingest response with {"ok":true,"task_id":"…",
+      "workspace_id":"presentations"} and exits 0.
 
   STEP 2 — Send ONE short acknowledgement to the owner, e.g.:
       "On it — routing this to your Presentations department now. The Brainstorming Buddy will pick it up and start the interview."
 
   Then STOP. Your turn is over. The Presentations department owns everything after this.
 
+ESCALATION FALLBACK — if the helper FAILS (prints an ESCALATE_TO_OPERATOR line / exits non-zero
+after its retries), you do NOT fall back to doing intake yourself, you do NOT retry forever, and
+you do NOT ask the owner intake questions. Send ONE message telling the owner you are escalating
+to the operator to fix routing, e.g.:
+      "I hit a snag routing this to your Presentations department — I'm escalating it to the operator to get it sorted. I won't start the deck myself."
+Then STOP.
+
+WORKSPACE-MISMATCH — if the helper succeeds but WARNS that the task landed on a workspace other
+than `presentations` (e.g. the CEO board), treat it like the escalation case: tell the owner you
+are escalating to the operator (the Presentations department may not be set up on this box). Do
+NOT silently proceed and do NOT self-intake.
+
 HARD BANS while this reflex is active — EACH is a routing VIOLATION, no exceptions:
   ✗ Asking the owner ANY intake question (topic, title, audience, goal, existing content, length…)
   ✗ Reading, quoting, or "checking" department SOPs / IDENTITY / SOUL / BUILDER-PROMPT
   ✗ Writing intake.json, slides_copy.md, slides.json, or ANY working file
   ✗ Calling build_deck.py or presentation-canonical-entry.sh
+  ✗ Hand-crafting your own unauthenticated curl to the ingest endpoint (it is rejected — use the helper)
   ✗ Spawning a sub-agent to do any of the above (spawning to execute = the same violation)
-  ✗ Reading ANY file, running sessions_list, or verifying the department BEFORE the POST fires
-  ✗ Escalating, deliberating, or asking the owner anything because you "weren't sure" — you POST first
+  ✗ Reading ANY file, running sessions_list, or verifying the department BEFORE the route helper fires
+  ✗ Asking the OWNER anything, deliberating, or stalling because you "weren't sure" — you route first
 
 PRE-EMIT SELF-CHECK — before you send text, ask: "Am I about to ask a question or describe the deck?"
-  → If YES, you have ALREADY broken the reflex. Discard that draft. Do STEP 1 (the POST) FIRST.
+  → If YES, you have ALREADY broken the reflex. Discard that draft. Do STEP 1 (the route helper) FIRST.
 
 WHY (do not re-litigate): the Brainstorming Buddy (ROLE-17) — NOT the CEO — runs intake, one
 question at a time, and captures the six mandatory fields REPRESENTATION_MIX, AUDIENCE_COMPOSITION,
 GROUNDED_CONTENT, VISUAL_MIX, DARK_OK, HOOK_SEED. If the CEO improvises intake, those fields are
 lost and the build fails the representation gate. The CEO's entire job for a presentation request
 is three words: route, ack, stop.
-<!-- END PRESENTATION_ROUTING_REFLEX_V1 -->
-
-REFEOF
-  printf '%s' "$ORIGINAL_REFLEX_CONTENT" >> "$AGENTS_FILE_EARLY"
-  echo "[apply-fleet-standards] PRESENTATION_ROUTING_REFLEX_V1 injected at top of $AGENTS_FILE_EARLY"
+<!-- END PRESENTATION_ROUTING_REFLEX_V2 -->
+PRES_REFLEX_V2
+    PRES_REFLEX_RENDERED="$(mktemp)"; _APPLY_TMPFILES+=("$PRES_REFLEX_RENDERED")
+    RP_HELPER="$PRES_REFLEX_HELPER_PATH" python3 -c 'import os,sys; sys.stdout.write(open(sys.argv[1]).read().replace("@@ROUTE_HELPER_PATH@@", os.environ["RP_HELPER"]))' "$PRES_REFLEX_TMPL" > "$PRES_REFLEX_RENDERED"
+    ORIGINAL_REFLEX_CONTENT="$(cat "$AGENTS_FILE_EARLY")"
+    { cat "$PRES_REFLEX_RENDERED"; printf '\n'; printf '%s' "$ORIGINAL_REFLEX_CONTENT"; } > "$AGENTS_FILE_EARLY"
+    echo "[apply-fleet-standards] PRESENTATION_ROUTING_REFLEX_V2 stamped at absolute top of $AGENTS_FILE_EARLY"
+  fi
 fi
 
 if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE_EARLY" 2>/dev/null || true
+  [ -f "$PRES_REFLEX_HELPER_PATH" ] && chown "$OC_USER:$OC_USER" "$PRES_REFLEX_HELPER_PATH" 2>/dev/null || true
 fi
 
 # ─── 4c. Inject CREDENTIAL_CHECK_V2 (N33 + N34) into AGENTS.md ──────────────

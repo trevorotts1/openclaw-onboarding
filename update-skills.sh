@@ -49,7 +49,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v16.2.16"
+ONBOARDING_VERSION="v16.2.17"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -456,7 +456,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v16.2.16 - safe_json_edit
+# v16.2.17 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -2321,7 +2321,10 @@ PYEOF
   _CC_COMPANY=""
   _CC_EMAIL=""
   if [ -f "$_STATE_FILE" ]; then
-    _CC_SLUG=$(python3 -c "import json; d=json.load(open('$_STATE_FILE')); print(d.get('clientSlug',''))" 2>/dev/null || echo "")
+    # P1-3: build-workforce.py now writes the slug as `companySlug` (canonical) and
+    # `clientSlug` (transition alias). Read companySlug first, fall back to clientSlug,
+    # so both build-state generations resolve. jq fallback chain (was: clientSlug-only).
+    _CC_SLUG=$(jq -r '.companySlug // .clientSlug // ""' "$_STATE_FILE" 2>/dev/null || echo "")
     _CC_COMPANY=$(python3 -c "import json; d=json.load(open('$_STATE_FILE')); print(d.get('companyName',''))" 2>/dev/null || echo "")
     _CC_EMAIL=$(python3 -c "import json; d=json.load(open('$_STATE_FILE')); print(d.get('contactEmail',''))" 2>/dev/null || echo "")
   fi

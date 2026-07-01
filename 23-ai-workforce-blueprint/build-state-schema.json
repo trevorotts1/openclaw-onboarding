@@ -36,6 +36,14 @@
       "type": "string",
       "description": "Client's company name \u2014 used by Skill 37 in prompts + Notion page titles"
     },
+    "companySlug": {
+      "type": "string",
+      "description": "Canonical URL/folder slug for the company (slugify of companyName, e.g. 'blackceo-llc'). Written by build-workforce.py _write_interview_complete_to_state() at interview-completion. This is the ONE key every downstream reader must consume: Skill 32 run-full-install.sh, update-skills.sh, and the Command Center repo scripts all key on companySlug (with a transition fallback to clientSlug). Previously build-workforce.py only wrote it into company-config.json, so state-file readers resolved empty. Added in the PRD review sprint (P1-3)."
+    },
+    "clientSlug": {
+      "type": "string",
+      "description": "TRANSITION ALIAS of companySlug (P1-3). build-workforce.py writes BOTH companySlug and clientSlug with the same value for one release so state files written by an older reader-set still resolve. Readers use the fallback chain `.companySlug // .clientSlug`. Prefer companySlug; clientSlug will be dropped once every reader is on the fallback chain."
+    },
     "industry": {
       "type": "string",
       "description": "Client's industry \u2014 used by Skill 37 to pick example tasks"

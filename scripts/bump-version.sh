@@ -18,6 +18,12 @@
 #                                   one patch behind /version because no script
 #                                   or CI check rolled it. Now rolled here AND
 #                                   CI-tracked in version-consistency.yml.
+#   PRD P3-1:             11 markers — added the 23-ai-workforce-blueprint/SKILL.md
+#                                   YAML frontmatter `version:` field (marker #11,
+#                                   after cc-compat.json = #10). It drifted to
+#                                   v16.2.9 while skill-version.txt was v16.2.16
+#                                   because nothing rolled the frontmatter field.
+#                                   Now rolled + drift-checked here.
 #
 # VERSION-BUMP CHECKLIST — SKILL 38 SELF-COUNT RE-VERIFICATION (added 2026-05-29):
 #   Skill 38's SKILL.md "What This Skill Ships" hard-codes file counts
@@ -50,7 +56,7 @@ if [ ! -f "$REPO_ROOT/version" ] || [ ! -f "$REPO_ROOT/install.sh" ]; then
   exit 1
 fi
 
-# ─── The 10 version-marker locations (relative to repo root) ─────────────────
+# ─── The 11 version-marker locations (relative to repo root) ─────────────────
 F_VERSION="$REPO_ROOT/version"
 F_INSTALL="$REPO_ROOT/install.sh"
 F_SKILL_VERSION="$REPO_ROOT/23-ai-workforce-blueprint/skill-version.txt"
@@ -63,6 +69,15 @@ F_DIRECT_TO_AGENT="$REPO_ROOT/DIRECT-TO-AGENT-UPDATE-MESSAGE.md"
 # gate (qc-assert-repo-consistency.py) and CI both fail if this != /version, but
 # bump-version.sh historically did not roll it, so a bump silently drifted it.
 F_CC_COMPAT="$REPO_ROOT/cc-compat.json"
+# Marker #11 (PRD P3-1) — 23-ai-workforce-blueprint/SKILL.md YAML frontmatter
+# `version:` field. It is the ONLY SKILL.md frontmatter version that tracks the
+# repo /version (its skill-version.txt is rolled at the repo version, above).
+# Nothing rolled the frontmatter field, so it silently drifted (found at v16.2.9
+# while skill-version.txt was v16.2.16). Roll it here, in lockstep, so it can never
+# drift again. NOTE: other skills' SKILL.md `version:` fields (35/42/43/45) track
+# their OWN independent skill versions — NOT the repo version — so they are
+# deliberately EXCLUDED here; rolling them to the repo version would corrupt them.
+F_23_SKILL_MD="$REPO_ROOT/23-ai-workforce-blueprint/SKILL.md"
 
 # ─── Read current values ─────────────────────────────────────────────────────
 read_current() {
@@ -107,6 +122,26 @@ read_current() {
   else
     V_CC_COMPAT="MISSING"
   fi
+  # Marker #11 (PRD P3-1) — SKILL.md YAML frontmatter `version:` (no v prefix).
+  # Parse ONLY the first `version:` line inside the leading `---`…`---` block so a
+  # later `version:` mention in the body can never be misread.
+  if [ -f "$F_23_SKILL_MD" ]; then
+    V_23_SKILL_MD=$(python3 - "$F_23_SKILL_MD" <<'PYEOF' 2>/dev/null || echo "MISSING"
+import re, sys
+try:
+    txt = open(sys.argv[1]).read()
+except OSError:
+    print("MISSING"); sys.exit(0)
+m = re.match(r'^---\s*\n(.*?)\n---\s*\n', txt, re.DOTALL)
+block = m.group(1) if m else ""
+vm = re.search(r'^version:\s*(\S+)', block, re.MULTILINE)
+print(vm.group(1) if vm else "MISSING")
+PYEOF
+)
+    if [ -z "$V_23_SKILL_MD" ]; then V_23_SKILL_MD="MISSING"; fi
+  else
+    V_23_SKILL_MD="MISSING"
+  fi
 }
 
 # Normalize a version: strip leading 'v', collapse to X.Y.Z
@@ -126,6 +161,7 @@ print_state() {
   printf "  %-50s %s\n" "update-skills.sh ONBOARDING_VERSION" "$V_UPDATE_SKILLS"
   printf "  %-50s %s\n" "DIRECT-TO-AGENT-UPDATE-MESSAGE.md (**vX.Y.Z**)" "$V_DIRECT"
   printf "  %-50s %s\n" "cc-compat.json onboardingVersion" "$V_CC_COMPAT"
+  printf "  %-50s %s\n" "23-ai-workforce-blueprint/SKILL.md [version:]" "$V_23_SKILL_MD"
 }
 
 check_drift() {
@@ -140,11 +176,12 @@ check_drift() {
   N_UPDATE=$(norm "$V_UPDATE_SKILLS")
   N_DIRECT=$(norm "$V_DIRECT")
   N_CC_COMPAT=$(norm "$V_CC_COMPAT")
+  N_23_SKILL_MD=$(norm "$V_23_SKILL_MD")
   if [ "$N_ROOT" = "$N_INSTALL" ] && [ "$N_ROOT" = "$N_SKILL" ] && \
      [ "$N_ROOT" = "$N_INDEX" ] && [ "$N_ROOT" = "$N_QC" ] && \
      [ "$N_ROOT" = "$N_README" ] && [ "$N_ROOT" = "$N_README_CURRENT" ] && \
      [ "$N_ROOT" = "$N_UPDATE" ] && [ "$N_ROOT" = "$N_DIRECT" ] && \
-     [ "$N_ROOT" = "$N_CC_COMPAT" ]; then
+     [ "$N_ROOT" = "$N_CC_COMPAT" ] && [ "$N_ROOT" = "$N_23_SKILL_MD" ]; then
     return 0
   fi
   return 1
@@ -155,7 +192,7 @@ if [ "${1:-}" = "--check" ]; then
   print_state
   if check_drift; then
     echo ""
-    echo "All 10 version markers agree."
+    echo "All 11 version markers agree."
     exit 0
   else
     echo ""
@@ -297,6 +334,29 @@ with open(p, "w") as f:
 PYEOF
 fi
 
+# 9b. /23-ai-workforce-blueprint/SKILL.md YAML frontmatter `version:` (no v prefix,
+#     matching skill-version.txt) — PRD P3-1. Only the FIRST `version:` line inside
+#     the leading `---`…`---` frontmatter block is rewritten, so a later `version:`
+#     mention in the body is never touched.
+if [ -f "$F_23_SKILL_MD" ]; then
+  python3 - <<PYEOF
+import re, sys
+p = "$F_23_SKILL_MD"
+target_nov = "$TARGET_NOV"
+content = open(p).read()
+m = re.match(r'^(---\s*\n.*?\n---\s*\n)', content, re.DOTALL)
+if m:
+    head = m.group(1)
+    rest = content[m.end():]
+    new_head, n = re.subn(r'^(version:\s*)\S+', r'\g<1>' + target_nov, head, count=1, flags=re.MULTILINE)
+    if n == 0:
+        print(f"WARN: no 'version:' field in {p} frontmatter", file=sys.stderr)
+    open(p, "w").write(new_head + rest)
+else:
+    print(f"WARN: no YAML frontmatter found in {p}", file=sys.stderr)
+PYEOF
+fi
+
 # 10. Script-embedded version markers (mirrors how ORPHAN_TEMP_SWEEP_VERSION is
 #     tracked). The browser-safety bundle adds BROWSER_MANAGER_VERSION (shell +
 #     .py), AGENT_BROWSER_REAPER_VERSION, and a guard marker; roll them so the
@@ -348,7 +408,7 @@ if ! check_drift; then
 fi
 
 echo ""
-echo "All 10 version markers agree at $TARGET"
+echo "All 11 version markers agree at $TARGET"
 
 # ─── Optional: tag + push ───────────────────────────────────────────────────
 if [ "${2:-}" = "--tag" ] || [ "${3:-}" = "--tag" ]; then

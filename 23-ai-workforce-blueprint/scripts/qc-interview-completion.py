@@ -723,6 +723,73 @@ def is_tailored_short_interview(state: dict | None) -> tuple:
     return (False, "")
 
 
+def check_decline_provenance(state: dict | None) -> list:
+    """
+    PRD P0-2 / P1-1: catch owner opt-outs (declines) that the build enforcer would
+    SILENTLY DISCARD, at interview-QC time (pre-build) instead of at build time
+    (where the drop is invisible).
+
+    A decline is only HONORED by the build enforcer (build-workforce._canonical_decline_set
+    and the mirror department-floor.declined_set) when it carries provenance. Anything
+    else that expresses a "no" is ignored and the department is force-added back -- a
+    smaller shop gets OVER-BUILT and the owner's opt-out vanishes with no error. This
+    check mirrors the enforcer's REJECT branches EXACTLY and turns each rejected
+    decline into a HARD FAIL so a stale/bare decline is fixed before the build runs.
+
+    HONORED (not a violation):
+      - decisions[cid] object form with decision=="no" AND all of
+        source / decidedAt / decidedBy present (the shape record-dept-decision.sh writes), OR
+      - decisions[cid]=="no" (bare string) or a declinedDepartments[] entry WITH
+        canonicalReconciliation.ownerDeclineConfirmed == true.
+
+    Only "no" declines are inspected -- a "yes"/"later" never shrinks the floor, so it
+    can never over-build and is not a provenance concern.
+
+    Returns a list of human-readable violation strings (empty when clean).
+    """
+    violations = []
+    st = state or {}
+    recon = st.get("canonicalReconciliation", {})
+    if not isinstance(recon, dict):
+        recon = {}
+    owner_confirmed = bool(recon.get("ownerDeclineConfirmed"))
+
+    decisions = recon.get("decisions", {})
+    if isinstance(decisions, dict):
+        for cid, decision in decisions.items():
+            _cid = str(cid).strip()
+            if isinstance(decision, dict):
+                if str(decision.get("decision", "")).strip().lower() == "no":
+                    required = ("decision", "source", "decidedAt", "decidedBy")
+                    missing = [k for k in required if not decision.get(k)]
+                    if missing:
+                        violations.append(
+                            f"decisions['{_cid}'] is an object 'no' missing provenance "
+                            f"field(s) {missing}; the enforcer drops it and force-adds the "
+                            f"department back (over-build). Re-record via "
+                            f"scripts/record-dept-decision.sh."
+                        )
+            elif str(decision).strip().lower() == "no":
+                if not owner_confirmed:
+                    violations.append(
+                        f"decisions['{_cid}'] is a BARE STRING 'no' with no "
+                        f"canonicalReconciliation.ownerDeclineConfirmed gate; the enforcer "
+                        f"drops it and force-adds the department back (over-build). Re-record "
+                        f"via scripts/record-dept-decision.sh (writes the provenanced object form)."
+                    )
+
+    flat_list = st.get("declinedDepartments", []) or []
+    if flat_list and not owner_confirmed:
+        violations.append(
+            f"declinedDepartments[] has {len(flat_list)} entr(ies) but "
+            f"canonicalReconciliation.ownerDeclineConfirmed is not true; the enforcer "
+            f"ignores ALL of them (over-build). Re-record each via "
+            f"scripts/record-dept-decision.sh."
+        )
+
+    return violations
+
+
 def build_verdict(
     count_result: dict,
     jargon_hits: list,
@@ -874,6 +941,20 @@ def build_verdict(
     elif fabrication_result and fabrication_result.get("skipped"):
         warnings.append(f"[check-5 skipped] {fabrication_result.get('note','context map absent')}")
 
+    # Check #6: Decline-provenance gate (PRD P0-2 / P1-1). A department opt-out the
+    # build enforcer would silently drop (bare string 'no' without ownerDeclineConfirmed,
+    # an object 'no' missing provenance, or a declinedDepartments[] without the gate) is
+    # a HARD FAIL here, pre-build, so an unhonored owner decline never over-builds the
+    # workforce invisibly.
+    decline_violations = check_decline_provenance(state)
+    if decline_violations:
+        hard_failures.append(
+            f"[unprovenanced-decline] {len(decline_violations)} department opt-out(s) "
+            f"lack the provenance the build enforcer requires and would be silently "
+            f"discarded (department force-added back -> over-build): "
+            + "; ".join(decline_violations)
+        )
+
     # Determine verdict
     if hard_failures:
         verdict = "FAIL"
@@ -907,6 +988,7 @@ def build_verdict(
         "nudgesWired": nudge_result["wired"],
         "nudgeIssues": nudge_result.get("issues", []),
         "fabricationViolations": fabrication_violations,
+        "declineProvenanceViolations": decline_violations,
         "hardFailures": hard_failures,
         "softFailures": soft_failures,
         "warnings": warnings,
@@ -1142,6 +1224,8 @@ def main():
         print(f"  Nudges wired   : {'yes' if details['nudgesWired'] else 'NO'}")
         fab_violations = details.get("fabricationViolations", [])
         print(f"  No-fabrication : {'PASS' if not fab_violations else f'FAIL ({len(fab_violations)} violation(s))'}")
+        decline_viol = details.get("declineProvenanceViolations", [])
+        print(f"  Decline prov.  : {'PASS' if not decline_viol else f'FAIL ({len(decline_viol)} unprovenanced decline(s))'}")
 
         if details["warnings"]:
             print("\n  WARNINGS:")

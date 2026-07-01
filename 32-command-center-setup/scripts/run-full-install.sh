@@ -98,6 +98,9 @@ state_get() {
 
 state_set() {
   # Usage: state_set '.field = value | .other = value'
+  # NOTE: never bake a free-form/user-derived REASON string into $1 — a reason
+  # containing a double-quote or newline would corrupt the state file or inject jq.
+  # Use state_set_arg for any value that is not a literal you fully control.
   local tmp
   tmp=$(mktemp)
   if jq "$1" "$STATE_FILE" > "$tmp"; then
@@ -109,12 +112,32 @@ state_set() {
   fi
 }
 
+# state_set_arg — write a jq program that references a single string VALUE passed
+# safely via `--arg val` (P3-2). This is the ONLY sanctioned way to persist a
+# free-form reason: the value is bound as data, never interpolated into the jq
+# program string. Usage: state_set_arg '.field = $val | .other = "lit"' "$reason"
+# No-op (returns 0) when the state file is absent, so callers stay simple.
+state_set_arg() {
+  local prog="$1" val="$2" tmp
+  [[ -f "$STATE_FILE" ]] || return 0
+  tmp=$(mktemp)
+  if jq --arg val "$val" "$prog" "$STATE_FILE" > "$tmp"; then
+    mv "$tmp" "$STATE_FILE"
+  else
+    rm -f "$tmp"
+    log "ERROR" "state_set_arg failed for expr: $prog"
+    return 1
+  fi
+}
+
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 fail_install() {
   local reason="$1"
   log "ERROR" "marking commandCenterStatus failed: $reason"
-  state_set ".commandCenterStatus = \"failed\" | .commandCenterFailureReason = \"$reason\""
+  # P3-2: pass the reason via jq --arg (state_set_arg) instead of interpolating it
+  # into the jq program — a reason with a quote/newline no longer corrupts state.
+  state_set_arg '.commandCenterStatus = "failed" | .commandCenterFailureReason = $val' "$reason"
   exit 1
 }
 
@@ -199,6 +222,8 @@ if [[ "$UPDATE_ONLY" != "true" ]]; then
     echo "INTERVIEW_NOT_COMPLETE: no workforce-build state on this box — AI Workforce interview not completed yet. Command Center NOT built." >&2
     exit 0
   fi
+  # FAST PRE-CHECK: the bare flag. Necessary but NOT sufficient (SKILL.md demands
+  # multi-signal corroboration — the flag alone is set even on the fabricating path).
   INTERVIEW_COMPLETE=$(state_get '.interviewComplete')
   if [[ "$INTERVIEW_COMPLETE" != "true" ]]; then
     log "INFO" "interview-gate: interviewComplete=${INTERVIEW_COMPLETE:-<unset>} — REPORTING 'interview not completed yet' and exiting clean. NOT seeding/scaffolding."
@@ -206,12 +231,60 @@ if [[ "$UPDATE_ONLY" != "true" ]]; then
     echo "INTERVIEW_NOT_COMPLETE: interviewComplete != true — AI Workforce interview not completed yet. Command Center NOT built (this is expected, not an error)." >&2
     exit 0
   fi
-  log "INFO" "interview-gate: interviewComplete=true — proceeding with Command Center install."
+  log "INFO" "interview-gate: fast pre-check passed (interviewComplete=true) — now CORROBORATING with qc-interview-completion.py (multi-signal, per SKILL.md)."
+
+  # ── MULTI-SIGNAL CORROBORATION (binding, P2-7) ──────────────────────────────
+  # SKILL.md requires the interview to be corroborated by MORE than the bare flag.
+  # qc-interview-completion.py implements the real gate (question count, forbidden
+  # jargon, mandatory fields, nudge wiring, no-fabrication). We refuse to scaffold a
+  # whole zero-human company unless it returns PASS. Its exit codes:
+  #   0 = PASS   1 = error/unreadable   2 = needs-review (soft)   3 = hard-fail.
+  # A MISSING qc script fails CLOSED with an explicit error — never a silent pass.
+  QC_INTERVIEW=""
+  for _qc_cand in \
+    "$(dirname "$SKILL_DIR")/23-ai-workforce-blueprint/scripts/qc-interview-completion.py" \
+    "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-interview-completion.py" \
+    "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-interview-completion.py"; do
+    if [[ -f "$_qc_cand" ]]; then QC_INTERVIEW="$_qc_cand"; break; fi
+  done
+  if [[ -z "$QC_INTERVIEW" ]]; then
+    # FAIL CLOSED: cannot corroborate the flag ⇒ refuse to scaffold on a bare flag.
+    log "ERROR" "interview-gate: qc-interview-completion.py NOT FOUND in any skill-23 location — failing CLOSED (refusing to scaffold on an un-corroborated interviewComplete flag)."
+    state_set_arg '.commandCenterStatus = "interview-qc-unverified" | .commandCenterGateReason = $val' \
+      "qc-interview-completion.py missing in every skill-23 location — the interviewComplete flag could not be corroborated; Command Center scaffolding refused (fail-closed). Repair the Skill 23 install."
+    echo "INTERVIEW_QC_UNVERIFIED: qc-interview-completion.py not found — cannot corroborate the interviewComplete flag. Command Center NOT built (fail-closed; fix the Skill 23 install)." >&2
+    exit 1
+  fi
+  # Prefer the answers-file transcript build-workforce.py recorded (its default path
+  # differs); fall back to the qc script's own auto-resolution when unrecorded.
+  QC_ARGS=(--state "$STATE_FILE" --format human)
+  _qc_transcript=$(state_get '.interviewProgress.answersFilePath')
+  if [[ -n "$_qc_transcript" && -f "$_qc_transcript" ]]; then
+    QC_ARGS+=(--transcript "$_qc_transcript")
+  fi
+  QC_OUT="$(python3 "$QC_INTERVIEW" "${QC_ARGS[@]}" 2>&1)"; QC_RC=$?
+  printf '%s\n' "$QC_OUT" >> "$LOG_FILE"
+  if [[ "$QC_RC" -ne 0 ]]; then
+    # Flag says complete but QC disagrees ⇒ NOT corroborated. Gate the CC (do NOT
+    # scaffold); this is the expected "interview not genuinely done yet" hold, so we
+    # exit clean and let the interview resume/nudge loop drive it to PASS. The QC
+    # summary is carried via jq --arg (P3-2) — never interpolated into the program.
+    _qc_summary="$(printf '%s\n' "$QC_OUT" | grep -E 'Summary:|\[HARD\]|\[SOFT\]|Question count' | head -4 | tr '\n' ' ')"
+    log "ERROR" "interview-gate: qc-interview-completion.py rc=$QC_RC (not PASS) — interview NOT corroborated. Gating Command Center. ${_qc_summary}"
+    state_set_arg '.commandCenterStatus = "interview-pending" | .commandCenterGateReason = $val' \
+      "interviewComplete flag is set but qc-interview-completion.py returned rc=${QC_RC} (not PASS) — interview not corroborated complete; Command Center gated until it passes QC. ${_qc_summary}"
+    echo "INTERVIEW_PENDING: interviewComplete=true but qc-interview-completion.py rc=$QC_RC (not PASS) — interview not corroborated complete. Command Center NOT built (gated; expected until QC passes)." >&2
+    exit 0
+  fi
+  log "INFO" "interview-gate: qc-interview-completion.py PASS (rc=0) — interview corroborated. Proceeding with Command Center install."
 fi
 
 # ---- --update-only: read client metadata from state file when not passed on CLI ----
 if [[ "$UPDATE_ONLY" == "true" ]] && [[ -z "$CLIENT_SLUG" ]] && [[ -f "$STATE_FILE" ]]; then
-  CLIENT_SLUG=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('clientSlug',''))" 2>/dev/null || echo "")
+  # P1-3: read companySlug (canonical, written by build-workforce.py) with a
+  # transition fallback to the legacy clientSlug alias. state_get appends `// empty`,
+  # so this resolves companySlug → clientSlug → empty across both state generations.
+  CLIENT_SLUG=$(state_get '.companySlug // .clientSlug')
   COMPANY_NAME=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('companyName',''))" 2>/dev/null || echo "")
   CONTACT_EMAIL=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('contactEmail',''))" 2>/dev/null || echo "")
   [[ -n "$CLIENT_SLUG" ]] && log "INFO" "update-only: read client slug from state file: $CLIENT_SLUG"
@@ -551,40 +624,49 @@ else
   [[ "$_ghl_pit" != "true" ]] && _ghl_missing="GOHIGHLEVEL_API_KEY (PIT)"
   [[ "$_ghl_loc" != "true" ]] && _ghl_missing="${_ghl_missing:+$_ghl_missing + }GOHIGHLEVEL_LOCATION_ID"
   log "WARN" "phase=6g ghl-preflight: MISSING $_ghl_missing in $GHL_SECRETS_ENV -- GHL funnel/automation templates are ingested but department agents CANNOT act on GHL until Skill 36 wires GOHIGHLEVEL_API_KEY (PIT) + GOHIGHLEVEL_LOCATION_ID into ~/.openclaw/secrets/.env. (Operator-only; CC + Kanban remain fully functional.)"
-  [[ -f "$STATE_FILE" ]] && state_set ".commandCenterGhlCredPreflight = \"missing\" | .commandCenterGhlCredMissing = \"$_ghl_missing\""
+  # P3-2: carry the free-form missing-cred string via jq --arg, not interpolation.
+  [[ -f "$STATE_FILE" ]] && state_set_arg '.commandCenterGhlCredPreflight = "missing" | .commandCenterGhlCredMissing = $val' "$_ghl_missing"
 fi
 
 # ----------------------------------------------------------------------
-# PHASE 6b — Tunnel (n8n webhook + cloudflared)
+# PHASE 6h — Tunnel (n8n webhook + cloudflared)
 # ----------------------------------------------------------------------
-log "INFO" "phase=6b tunnel: starting"
+# P3-2: this tunnel phase was previously mislabeled "PHASE 6b", colliding with the
+# workspace-seed phase (also "6b"). Renamed to the next free letter (6b–6g are taken
+# by seed/sync/md-sync/dashboard-content/kpi/ghl-preflight) so the log stream is
+# unambiguous. The STATE FIELD is renamed commandCenterPhase6bStatus →
+# commandCenterPhase6hStatus, but the READ falls back to the old key so the
+# duplicate-CC re-POST guard keeps working on boxes whose state predates this rename.
+log "INFO" "phase=6h tunnel: starting"
 if [[ "$UPDATE_ONLY" == "true" ]]; then
-  log "INFO" "phase=6b tunnel: --update-only mode — skipping (tunnel already established on prior run)"
+  log "INFO" "phase=6h tunnel: --update-only mode — skipping (tunnel already established on prior run)"
 else
   existing_url=$(state_get '.commandCenterUrl')
-  phase6b_status=$(state_get '.commandCenterPhase6bStatus')
+  # Backward-compat read: prefer the new key, fall back to the legacy 6b key.
+  phase6h_status=$(state_get '.commandCenterPhase6hStatus // .commandCenterPhase6bStatus')
   # Re-POST guard: once we have registered (success OR a webhook failure that may
   # have already created a tunnel/notified Trevor), NEVER POST to the n8n
   # registration webhook again on resume. The webhook is the duplicate-CC source;
   # a failed POST can still have fired the Telegram/sheet side effects, so any
-  # terminal phase-6b status blocks re-POST. Operators clear
-  # .commandCenterPhase6bStatus to force a fresh registration.
-  if [[ "$phase6b_status" == "failed-webhook" || "$phase6b_status" == "done" \
-     || "$phase6b_status" == "done-no-subdomain-recorded" \
-     || "$phase6b_status" == "skipped-script-missing" ]]; then
-    log "INFO" "phase=6b tunnel: prior registration attempt recorded (status=$phase6b_status) — NOT re-POSTing webhook (duplicate-CC guard)"
+  # terminal phase status blocks re-POST. Operators clear
+  # .commandCenterPhase6hStatus (or the legacy .commandCenterPhase6bStatus) to force
+  # a fresh registration.
+  if [[ "$phase6h_status" == "failed-webhook" || "$phase6h_status" == "done" \
+     || "$phase6h_status" == "done-no-subdomain-recorded" \
+     || "$phase6h_status" == "skipped-script-missing" ]]; then
+    log "INFO" "phase=6h tunnel: prior registration attempt recorded (status=$phase6h_status) — NOT re-POSTing webhook (duplicate-CC guard)"
   elif [[ -n "$existing_url" && "$existing_url" != "null" && "$existing_url" != "http://127.0.0.1:4000/" ]]; then
-    log "INFO" "phase=6b tunnel: commandCenterUrl already set ($existing_url) — skipping"
+    log "INFO" "phase=6h tunnel: commandCenterUrl already set ($existing_url) — skipping"
   else
     TUNNEL_SCRIPT="$SKILL_DIR/scripts/create-tunnel.sh"
     if [[ ! -x "$TUNNEL_SCRIPT" ]]; then
-      log "WARN" "phase=6b: create-tunnel.sh not executable at $TUNNEL_SCRIPT — marking tunnel as todo"
-      state_set '.commandCenterPhase6bStatus = "skipped-script-missing"'
+      log "WARN" "phase=6h: create-tunnel.sh not executable at $TUNNEL_SCRIPT — marking tunnel as todo"
+      state_set '.commandCenterPhase6hStatus = "skipped-script-missing"'
     else
-      log "INFO" "phase=6b: invoking create-tunnel.sh $CLIENT_SLUG $COMPANY_NAME $CONTACT_EMAIL"
+      log "INFO" "phase=6h: invoking create-tunnel.sh $CLIENT_SLUG $COMPANY_NAME $CONTACT_EMAIL"
       if ! bash "$TUNNEL_SCRIPT" "$CLIENT_SLUG" "$COMPANY_NAME" "$CONTACT_EMAIL" >>"$LOG_FILE" 2>&1; then
-        log "WARN" "phase=6b: create-tunnel.sh exited non-zero — leaving commandCenterUrl unset, dashboard still reachable locally"
-        state_set '.commandCenterPhase6bStatus = "failed-webhook"'
+        log "WARN" "phase=6h: create-tunnel.sh exited non-zero — leaving commandCenterUrl unset, dashboard still reachable locally"
+        state_set '.commandCenterPhase6hStatus = "failed-webhook"'
       else
         # Try to recover the subdomain from the .env file the tunnel script wrote
         SUBDOMAIN_HINT=""
@@ -592,11 +674,12 @@ else
           SUBDOMAIN_HINT="$CLIENT_SLUG.zerohumanworkforce.com"
         fi
         if [[ -n "$SUBDOMAIN_HINT" ]]; then
-          state_set ".commandCenterUrl = \"https://$SUBDOMAIN_HINT\" | .commandCenterPhase6bStatus = \"done\""
-          log "INFO" "phase=6b tunnel: done — https://$SUBDOMAIN_HINT"
+          # P3-2: the URL carries the client slug — pass it via jq --arg, not interpolation.
+          state_set_arg '.commandCenterUrl = $val | .commandCenterPhase6hStatus = "done"' "https://$SUBDOMAIN_HINT"
+          log "INFO" "phase=6h tunnel: done — https://$SUBDOMAIN_HINT"
         else
-          state_set '.commandCenterPhase6bStatus = "done-no-subdomain-recorded"'
-          log "INFO" "phase=6b tunnel: done (subdomain not recovered into state)"
+          state_set '.commandCenterPhase6hStatus = "done-no-subdomain-recorded"'
+          log "INFO" "phase=6h tunnel: done (subdomain not recovered into state)"
         fi
       fi
     fi
