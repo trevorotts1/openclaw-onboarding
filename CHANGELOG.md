@@ -1,3 +1,35 @@
+## [v16.2.12]  -  2026-07-01  -  fix(41): SHAPE-BUG fix — Skill-41 executor model now written under the REAL OpenClaw key (`agents.defaults.subagents.model`), ACTIVE + valid on every deployed schema; fabricated keys healed off corrupted boxes; validate-before-commit safety invariant; shebangs on the two entry scripts
+
+### Risk: low — writes the documented, schema-valid key that install.sh already manages fleet-wide, guarded so it can never leave an invalid config. No client names, no credentials, no plist writes. Box-user writes only.
+
+### Root cause — SHAPE BUG (not version-gated)
+The A3 content-gate now PASSES (skills sync + stamp writes), but Skill 41's post-update self-heal hook (`41-build-with-ai-playbook/wire.sh`, NEW this cycle — commit 88d6d600) re-runs `scripts/05-configure-executor-model.sh` on **every** version bump. That script (authored in **v16.2.8**, commit c88c310d, never modified since) wrote **two FABRICATED keys that NO OpenClaw schema accepts** — top-level `models.available` and `agents.defaults.subagents.executorModel`. Both parent objects are closed (`additionalProperties:false` / zod `.strict()`), so an unknown child fails at the PARENT path: `× models: Invalid input` and `× agents.defaults.subagents: Invalid input` — verified against docs.openclaw.ai and reproduced on the live 2026.5.22 / 2026.6.8 validators. The correct, documented key is **`agents.defaults.subagents.model`** (a model reference — bare string, or `{primary, fallbacks}`; the same key install.sh already seeds and that validates fleet-wide). Models are addressable by `provider/model-id` once the provider is configured — **there is no `models.available` list**. This is a wrong-shape bug; it is NOT genuinely version-gated, so no runtime upgrade is required (Path B was evaluated and is unnecessary). The old script also validated only AFTER an in-place write and, on failure, `exit 1` **without restoring the backup**, leaving the invalid config on disk → box safety rollback. Boxes that already had an invalid/tolerant config were unaffected because the added keys didn't change their verdict.
+
+### Fix (permanent — feature ACTIVE on every box, never recurs, sovereignty-safe)
+`05-configure-executor-model.sh`:
+1. **Writes the real key** `agents.defaults.subagents.model`. Client-sovereignty doctrine (mirrors install.sh preserve-if-present / seed-if-missing): only **SEED** the resolved MiniMax executor (`ollama/minimax-m3:cloud` / `openrouter/minimax/minimax-m3`) as the sub-agent primary when the box has **no** sub-agent primary yet; an existing client primary is **PRESERVED** verbatim and never demoted to a fallback.
+2. **Heals** any box a prior buggy run corrupted: deletes ONLY the two fabricated keys (`models.available` + `subagents.executorModel`) and nothing else — no other config is touched (the previous forced `agents.list[].subagents.allowAgents=['*']` collateral write, which destroyed restrictive client ACLs, is REMOVED). A rolled-back/invalid box repairs itself to VALID + feature-active on the next update.
+3. **Tiered validate-before-commit:** emits two candidates — Tier 1 `{primary, fallbacks}`, Tier 2 the documented bare-string — and commits the FIRST that the box's own `openclaw config validate` accepts. The string is the guaranteed floor on 2026.5.22 / 2026.6.8 / newer. A candidate reaches the live config ONLY if it validates; on failure the exact prior bytes are restored — a valid config can NEVER be regressed. Validation-driven (not a hardcoded version). Idempotent.
+4. **No silent false-success:** the candidate-writer's exit code is checked (aborts loudly on OOM/SIGTERM/disk-full), `cp` return codes are checked, the backup `cp` is guarded (no restore point ⇒ no write), and after any commit the live config is POSITIVELY CONFIRMED to carry the intended `subagents.model` primary before "committed" is reported; a write that did not land restores the prior valid bytes and reports FAILED, never success.
+
+Also: added `#!/usr/bin/env bash` to `update-skills.sh` and `install.sh` — both use `< <(...)`, `[[ ]]`, and arrays but had no shebang, so a direct `./update-skills.sh` ran under the caller's sh/zsh and failed on the process substitution (agents had to fall back to `bash update-skills.sh`). Audit: these are the ONLY two shebang-less `.sh` files in the repo; every `scripts/*.sh` and skill `wire.sh` already carries `#!/usr/bin/env bash`.
+
+### Verification (stub `openclaw config validate` reproducing the closed-object 2026.5.22/6.8 schema; all assertions PASS)
+- **Contrast — pre-fix script, valid strict config:** VALID → **INVALID**, injected the fabricated keys, reproduced `× models: Invalid input` / `× agents.defaults.subagents: Invalid input`, exit 1 (the fleet regression, reproduced exactly).
+- **2026.5.22, 2026.6.8 (strict) & newer/tolerant, no client primary:** VALID → VALID, `subagents.model.primary = ollama/minimax-m3:cloud`, fabricated keys ABSENT, exit 0 — **feature ACTIVE**.
+- **Stricter schema rejecting the object form:** Tier-2 bare-string commits, still ACTIVE, VALID (floor proven).
+- **SOVEREIGNTY — box with an existing client primary (`ollama/llama4:cloud`):** PRESERVED unchanged, MiniMax NOT forced, VALID, exit 0.
+- **HEAL + no-collateral — corrupted box with both fabricated keys AND a restrictive `allowAgents:['only-coach']`:** both fabricated keys removed, `allowAgents` PRESERVED (no `['*']` widening), MiniMax seeded (no primary existed), post=VALID, exit 0.
+- **FALSE-SUCCESS GUARD — simulated failed candidate write (read-only dir):** aborts LOUDLY (exit 1), never prints "committed/ACTIVE", live config UNCHANGED + still VALID.
+
+### Files
+- `41-build-with-ai-playbook/scripts/05-configure-executor-model.sh` — correct key + heal + tiered validate-before-commit
+- `41-build-with-ai-playbook/skill-version.txt` — 1.5.2 → 1.5.3
+- `update-skills.sh`, `install.sh` — add `#!/usr/bin/env bash`
+- `version` — v16.2.11 → v16.2.12; `update-skills.sh` `ONBOARDING_VERSION` → v16.2.12 (re-arms the `.wired-<version>` sentinel so the fixed hook runs fleet-wide)
+
+---
+
 ## [v16.2.11]  -  2026-07-01  -  fix(updater): A3 content-gate hardened against cross-skill injections (Skill 39→38 extension unblocks the fleet update; + Skill 32→23 marker exclusion + Skill 32→23 healer source-guard as defense-in-depth)
 
 ### Risk: low — path-specific exclusions added to the A3 content-hash on BOTH sides of the comparison (Skill 38 extension + Skill 23 `.persona-index-stale` marker), plus one defense-in-depth source guard in Skill 32's materialize-dept-agents.sh. No behaviour change on canonical boxes; tamper-detection for every real shipped file (Skill 38 protocols, Skill 23 roles/SOPs/personas including all healer-*.md template files) is unchanged. No client names, no credentials, no config/plist writes.

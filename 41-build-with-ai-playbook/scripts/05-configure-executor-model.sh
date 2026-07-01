@@ -6,10 +6,19 @@
 #   lists for the newest minimax-* tag, then configure the EXECUTOR model used
 #   by the Skill 41 browser-execution subagent.
 #
-#   This sets agents.defaults.subagents.executorModel (PRIMARY + FALLBACK) and
-#   adds the resolved MiniMax model(s) to the models availability list so the
-#   subagent can actually invoke them.  It does NOT touch the client's main
-#   agent primary model.
+#   This sets agents.defaults.subagents.model — the REAL, schema-valid OpenClaw
+#   key (a model reference; primary + optional fallbacks) that selects the model a
+#   spawned sub-agent runs on. It does NOT touch the client's main agent model.
+#
+#   SHAPE-BUG HISTORY (v16.2.12): earlier this script wrote two FABRICATED keys —
+#   top-level `models.available` and `agents.defaults.subagents.executorModel` —
+#   that NO OpenClaw schema accepts (2026.5.22 / 2026.6.8 / newer all reject them
+#   with "models: Invalid input" / "agents.defaults.subagents: Invalid input").
+#   That flipped a valid openclaw.json invalid and rolled boxes back. The correct
+#   key is `agents.defaults.subagents.model`; models are addressable by
+#   `provider/model-id` (no availability list exists). This script now writes the
+#   valid key, HEALS the fabricated ones off any corrupted box, and validates
+#   before committing so it can never regress a valid config.
 #
 # PROVIDERS HANDLED
 #   Ollama Cloud  — local Ollama daemon routes :cloud-tagged models via
@@ -241,20 +250,61 @@ else
   info "Scenario: OpenRouter-only → PRIMARY=$EXECUTOR_PRIMARY  (no ollama)"
 fi
 
-# ─── 7. Apply config (idempotent Python deep-merge) ─────────────────────────
+# ─── 7. Apply config (validate-before-commit, schema-valid subagents.model) ──
 if [[ $DRY_RUN -eq 1 ]]; then
-  info "[DRY-RUN] Would write executor model config to $OC_JSON"
-  info "[DRY-RUN] executor_primary  = $EXECUTOR_PRIMARY"
-  info "[DRY-RUN] executor_fallback = ${EXECUTOR_FALLBACK:-(none)}"
-  info "[DRY-RUN] scenario          = $EXECUTOR_SCENARIO"
+  info "[DRY-RUN] Would set agents.defaults.subagents.model in $OC_JSON"
+  info "[DRY-RUN] subagents.model.primary  = $EXECUTOR_PRIMARY"
+  info "[DRY-RUN] subagents.model.fallback = ${EXECUTOR_FALLBACK:-(none)}"
+  info "[DRY-RUN] scenario                 = $EXECUTOR_SCENARIO"
+  info "[DRY-RUN] would also HEAL any fabricated models.available / subagents.executorModel"
   ok "Dry-run complete — no files modified"
   exit 0
 fi
 
-# Backup before touching
+# ─── 6b. Gateway schema-version probe (informational) + sidecar path ─────────
+# Mirrors scripts/apply-fleet-standards.sh. Used ONLY for logging here — the
+# commit decision below is made by `openclaw config validate` (validate-before-
+# commit), never by a hardcoded version, so a future OpenClaw that ADDS these
+# keys is picked up automatically with no code change.
+OC_VERSION=""
+if command -v openclaw >/dev/null 2>&1; then
+  _oc_raw="$(openclaw --version 2>&1 | tr -d '\r' | head -n1 || true)"
+  OC_VERSION="$(printf '%s' "$_oc_raw" | grep -oE '20[0-9]{2}\.[0-9]+\.[0-9]+' | head -n1 || true)"
+fi
+OC_VERSION="${FLEET_OC_VERSION_OVERRIDE:-$OC_VERSION}"
+info "Gateway version : ${OC_VERSION:-unknown}"
+
+# Sidecar that preserves the resolved executor model when the live schema rejects
+# the inline keys (the extension-registry.json sidecar precedent, CHANGELOG
+# v-Skill32). Read by the Skill-41 subagent / a future schema-supporting gateway;
+# it NEVER participates in `openclaw config validate`.
+EXECUTOR_SIDECAR="$OC_ROOT/skill41-executor-model.json"
+
+# oc_config_valid — rc 0 = live config validates clean, 1 = it fails, 2 = the
+# openclaw CLI is unavailable (cannot determine).
+oc_config_valid() {
+  command -v openclaw >/dev/null 2>&1 || return 2
+  openclaw config validate >/dev/null 2>&1
+}
+
+# Backup before touching (the restore target if a validate-before-commit fails).
 _ts="$(date +%Y%m%d-%H%M%S)"
-cp "$OC_JSON" "${OC_JSON}.bak-pre-skill41-executor-$_ts"
-info "Backup: ${OC_JSON}.bak-pre-skill41-executor-$_ts"
+OC_BACKUP="${OC_JSON}.bak-pre-skill41-executor-$_ts"
+if ! cp "$OC_JSON" "$OC_BACKUP"; then
+  fail "could not create backup $OC_BACKUP — aborting; live config UNTOUCHED (no restore point = no write)"
+  exit 1
+fi
+info "Backup: $OC_BACKUP"
+
+# The Python step writes to a CANDIDATE, NOT the live config. Bash then validates
+# the candidate and keeps it ONLY if `openclaw config validate` passes; otherwise
+# the exact prior bytes are restored. This makes it IMPOSSIBLE for a schema-
+# rejected key (models.available / agents.defaults.subagents.executorModel on the
+# 2026.5.22 / 2026.6.8 strict schemas) to turn a VALID openclaw.json INVALID.
+OC_CANDIDATE="${OC_JSON}.skill41-candidate.$$"        # object-shape candidate
+OC_CAND_STR="${OC_JSON}.skill41-candidate-str.$$"     # bare-string-shape candidate (floor)
+OC_EFFECTIVE="${OC_JSON}.skill41-effective.$$"        # effective primary the writer intends (commit-confirm)
+trap 'rm -f "$OC_CANDIDATE" "$OC_CAND_STR" "$OC_EFFECTIVE" 2>/dev/null || true' EXIT
 
 python3 - \
   "$OC_JSON" \
@@ -267,167 +317,283 @@ python3 - \
   "$OR_FULL" \
   "$HAS_OLLAMA" \
   "$HAS_OPENROUTER" \
+  "$OC_CANDIDATE" \
+  "$OC_CAND_STR" \
+  "$OC_EFFECTIVE" \
   <<'PYEOF'
 import json, sys, re
 from pathlib import Path
 
-path          = Path(sys.argv[1])
+src           = Path(sys.argv[1])
 exec_primary  = sys.argv[2]
-exec_fallback = sys.argv[3]   # may be ""
-scenario      = sys.argv[4]
-ollama_ctx    = int(sys.argv[5])
-or_ctx        = int(sys.argv[6])
-ollama_full   = sys.argv[7]
-or_full       = sys.argv[8]
+exec_fallback = sys.argv[3]                 # may be ""
 has_ollama    = sys.argv[9] == "1"
 has_openrouter= sys.argv[10] == "1"
+cand_obj      = Path(sys.argv[11])          # object-shape candidate  (NOT the live config)
+cand_str      = Path(sys.argv[12])          # bare-string-shape candidate (fallback/floor)
+effective_out = Path(sys.argv[13])          # effective primary written for commit-confirmation
 
-cfg = json.loads(path.read_text())
-before_snapshot = json.dumps(cfg, sort_keys=True)
+cfg = json.loads(src.read_text())
 
-# ── 7a. models.available — add MiniMax entries, remove stale ones ──────────
-models_block = cfg.setdefault("models", {})
-available = models_block.setdefault("available", [])
+STALE = re.compile(r"minimax-m2|minimax-2\.|minimax/minimax-m2|minimax/minimax-2", re.IGNORECASE)
 
-STALE_PATTERNS = re.compile(
-    r"minimax-m2|minimax-2\.|minimax/minimax-m2|minimax/minimax-2",
-    re.IGNORECASE
-)
+# ── 7a. HEAL: drop the fabricated top-level models.available key ─────────────
+# No OpenClaw schema (2026.5.22 / 2026.6.8 / newer) accepts `models.available` —
+# it was an invented key (verified against docs.openclaw.ai and a live 2026.5.22 /
+# 2026.6.8 validator). Models are addressable directly as `provider/model-id` once
+# the provider is configured, so the key is unnecessary. Removing it HEALS a box a
+# prior buggy run corrupted back to a valid `models` object.
+models_block = cfg.get("models")
+if isinstance(models_block, dict) and "available" in models_block:
+    del models_block["available"]
+    print("  ✓ healed: removed fabricated models.available (models are addressed by provider/id)")
 
-def is_stale_minimax(entry):
-    """Return True if entry is an old/superseded MiniMax model."""
-    mid = ""
-    if isinstance(entry, str):
-        mid = entry
-    elif isinstance(entry, dict):
-        mid = entry.get("id", entry.get("model", ""))
-    return bool(STALE_PATTERNS.search(mid))
-
-def model_id_of(entry):
-    if isinstance(entry, str):
-        return entry
-    if isinstance(entry, dict):
-        return entry.get("id", entry.get("model", ""))
-    return ""
-
-# Remove stale entries
-stale_removed = [e for e in available if is_stale_minimax(e)]
-available = [e for e in available if not is_stale_minimax(e)]
-if stale_removed:
-    for s in stale_removed:
-        print(f"  ✓ Removed stale MiniMax entry: {model_id_of(s)}")
-
-# Build canonical entries for the models we need
-def make_model_entry(model_id, ctx_window, provider_tag):
-    return {
-        "id":             model_id,
-        "contextWindow":  ctx_window,
-        "provider":       provider_tag,
-        "skill41_executor": True,
-        "note":           "Configured by skill-41 gap#4 executor-model preflight"
-    }
-
-entries_to_add = []
-if has_ollama:
-    entries_to_add.append((ollama_full, ollama_ctx, "ollama"))
-if has_openrouter:
-    entries_to_add.append((or_full, or_ctx, "openrouter"))
-
-for (mid, ctx, ptag) in entries_to_add:
-    existing_ids = [model_id_of(e) for e in available]
-    if mid not in existing_ids:
-        available.append(make_model_entry(mid, ctx, ptag))
-        print(f"  ✓ Added model: {mid}  (context_window={ctx})")
-    else:
-        # Update context window + skill41_executor flag on existing entry
-        for e in available:
-            if isinstance(e, dict) and model_id_of(e) == mid:
-                old_ctx = e.get("contextWindow")
-                e["contextWindow"]      = ctx
-                e["skill41_executor"]   = True
-                if old_ctx != ctx:
-                    print(f"  ✓ Updated context window for {mid}: {old_ctx} → {ctx}")
-                else:
-                    print(f"  ℹ  Model already present (no ctx change): {mid}")
-                break
-
-models_block["available"] = available
-
-# ── 7b. agents.defaults.subagents.executorModel ─────────────────────────────
+# ── 7b. agents.defaults.subagents.model — the REAL, schema-valid executor key ─
+# `executorModel` is NOT an OpenClaw key (verified against docs.openclaw.ai and a
+# live 2026.5.22 / 2026.6.8 validator). The documented key that selects the model
+# a spawned sub-agent (the Skill-41 browser executor) runs on is
+# `agents.defaults.subagents.model` — a model reference. We set its PRIMARY to the
+# resolved MiniMax executor and carry the OpenRouter MiniMax + any client fallbacks.
 agents   = cfg.setdefault("agents", {})
 defaults = agents.setdefault("defaults", {})
 sub      = defaults.setdefault("subagents", {})
 
-old_exec = sub.get("executorModel", {})
+# HEAL: drop the fabricated executorModel key if a prior run wrote it.
+if "executorModel" in sub:
+    del sub["executorModel"]
+    print("  ✓ healed: removed fabricated agents.defaults.subagents.executorModel")
 
-new_exec = {"primary": exec_primary}
-if exec_fallback:
-    new_exec["fallback"] = exec_fallback
-new_exec["scenario"]    = scenario
-new_exec["skill"]       = "41-build-with-ai-playbook"
-_dt = __import__("datetime")
-new_exec["configured_at"] = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+# ── CLIENT SOVEREIGNTY (preserve express model choice) ───────────────────────
+# Mirror install.sh's preserve-if-present / seed-if-missing doctrine EXACTLY:
+# only SEED the MiniMax executor as the sub-agent primary when the box has NO
+# sub-agent primary yet. NEVER overwrite a client's existing primary and NEVER
+# demote it to a fallback.
+_existing = sub.get("model")
+existing_primary   = None
+existing_fallbacks = []
+if isinstance(_existing, str) and _existing.strip():
+    existing_primary = _existing.strip()
+elif isinstance(_existing, dict):
+    _p = _existing.get("primary")
+    if isinstance(_p, str) and _p.strip():
+        existing_primary = _p.strip()
+    existing_fallbacks = [f for f in _existing.get("fallbacks", []) if isinstance(f, str)]
 
-sub["executorModel"] = new_exec
-
-# ── 7c. Ensure allowAgents wildcard on every agents.list entry ───────────────
-agent_list = agents.get("list", [])
-updated_entries = 0
-for entry in agent_list:
-    if not isinstance(entry, dict):
-        continue
-    entry_sub = entry.setdefault("subagents", {})
-    if entry_sub.get("allowAgents") != ["*"]:
-        entry_sub["allowAgents"] = ["*"]
-        updated_entries += 1
-if updated_entries:
-    print(f"  ✓ allowAgents=['*'] applied to {updated_entries} agent entries")
-
-# ── 7d. Write ────────────────────────────────────────────────────────────────
-after_snapshot = json.dumps(cfg, sort_keys=True)
-if before_snapshot == after_snapshot:
-    print("  ℹ  Config already canonical — no-op (idempotent)")
+if existing_primary:
+    # PRESERVE — leave the client's subagents.model exactly as they set it.
+    effective_primary = existing_primary
+    model_obj_val = _existing
+    model_str_val = _existing
+    print(f"  ℹ  preserved client sub-agent primary (unchanged): {existing_primary}")
 else:
-    path.write_text(json.dumps(cfg, indent=2) + "\n")
-    print(f"  ✓ Wrote updated config → {path}")
+    # SEED — no client primary present → set the MiniMax executor as primary and
+    # carry the OpenRouter MiniMax fallback + any existing (non-primary) fallbacks.
+    effective_primary = exec_primary
+    fallbacks = []
+    def _add(m):
+        if m and m != exec_primary and m not in fallbacks and not STALE.search(m):
+            fallbacks.append(m)
+    if exec_fallback:
+        _add(exec_fallback)
+    for _f in existing_fallbacks:
+        _add(_f)
+    model_obj_val = {"primary": exec_primary}
+    if fallbacks:
+        model_obj_val["fallbacks"] = fallbacks
+    model_str_val = exec_primary
+    print(f"  ✓ seeded sub-agent executor primary (was unset) = {exec_primary}")
 
-print(f"  ✓ executorModel.primary   = {exec_primary}")
-if exec_fallback:
-    print(f"  ✓ executorModel.fallback  = {exec_fallback}")
-print(f"  ✓ scenario                = {scenario}")
+# ── 7c. Emit TWO candidates (never the live config) ──────────────────────────
+# The bash caller tries the OBJECT shape first, then the documented bare-STRING
+# shape, committing the first that `openclaw config validate` accepts. When we
+# SEEDED, both shapes set MiniMax as primary (feature ACTIVE either way); the
+# string form is the universally-documented value type and the guaranteed floor on
+# every deployed schema. When we PRESERVED, both candidates carry the client's
+# model UNCHANGED (only the fabricated keys are healed). Neither candidate is ever
+# written to the live config unless it validates.
+sub["model"] = model_obj_val
+cand_obj.write_text(json.dumps(cfg, indent=2) + "\n")
+sub["model"] = model_str_val
+cand_str.write_text(json.dumps(cfg, indent=2) + "\n")
+
+# Record the effective primary so the bash caller can POSITIVELY CONFIRM the
+# commit actually landed (guards against a silent partial/failed write).
+effective_out.write_text(effective_primary)
+
+print(f"  ✓ agents.defaults.subagents.model effective PRIMARY = {effective_primary}")
 PYEOF
 
-# ─── 8. Restore ownership on VPS ─────────────────────────────────────────────
-if [[ "$OC_PLATFORM" == "vps" ]]; then
-  chown "${OC_RUNTIME_USER}:${OC_RUNTIME_USER}" "$OC_JSON" 2>/dev/null || \
-    warn "chown to $OC_RUNTIME_USER failed — verify file ownership manually"
-  ok "VPS: ownership restored to $OC_RUNTIME_USER"
+_writer_rc=$?
+# ─── 8. Guarded commit — writer-integrity check, then tiered validate-before-commit ─
+# FIRST prove the candidate-writer succeeded. If the python was killed (OOM/SIGTERM)
+# or a write failed (disk-full), abort LOUDLY — the live config is still the prior
+# valid bytes, so this is a clean no-op, never a false "committed".
+if [[ "$_writer_rc" -ne 0 ]]; then
+  fail "executor-model candidate-writer exited $_writer_rc — live config UNTOUCHED; aborting (no false success)"
+  rm -f "$OC_BACKUP" 2>/dev/null || true
+  exit 1
+fi
+if [[ ! -s "$OC_CANDIDATE" || ! -s "$OC_CAND_STR" || ! -s "$OC_EFFECTIVE" ]]; then
+  fail "candidate/marker file missing or empty after writer — live config UNTOUCHED; aborting"
+  rm -f "$OC_BACKUP" 2>/dev/null || true
+  exit 1
+fi
+EXPECTED_PRIMARY="$(cat "$OC_EFFECTIVE" 2>/dev/null || true)"
+
+# The writer emitted TWO candidates (object then documented bare-string). We commit
+# the FIRST the box's own `openclaw config validate` accepts. A candidate reaches the
+# live config ONLY if it validates; on failure the exact prior bytes are restored, so
+# a valid config can NEVER be regressed. If the openclaw CLI is unavailable we cannot
+# prove the shape, so we skip inline and record a sidecar.
+commit_ok=0
+committed_shape=""
+skipped_reason=""
+
+# try_commit FILE LABEL → atomically swap FILE into the live config and validate.
+# Hardened: refuses a missing/empty candidate and checks cp's exit code, so a bad
+# copy can never masquerade as a clean commit. rc 0 = validated + kept;
+# rc 1 = not committed (exact prior bytes restored).
+try_commit() {
+  local file="$1" label="$2"
+  if [[ ! -s "$file" ]]; then
+    warn "candidate ($label) missing/empty — skipping this shape"
+    return 1
+  fi
+  if ! cp -f "$file" "$OC_JSON"; then
+    warn "cp of candidate ($label) failed — restoring backup"
+    cp -f "$OC_BACKUP" "$OC_JSON" 2>/dev/null || true
+    return 1
+  fi
+  if openclaw config validate >/dev/null 2>&1; then
+    ok "committed subagents.model ($label) — openclaw config validate PASSED"
+    return 0
+  fi
+  cp -f "$OC_BACKUP" "$OC_JSON"
+  warn "subagents.model ($label) rejected by this gateway — reverted, trying next shape"
+  return 1
+}
+
+# live_primary → prints the effective subagents.model primary now on disk.
+live_primary() {
+  python3 - "$OC_JSON" <<'PYP' 2>/dev/null || true
+import json, sys
+try:
+    m = json.load(open(sys.argv[1])).get("agents", {}).get("defaults", {}).get("subagents", {}).get("model")
+except Exception:
+    m = None
+print(m if isinstance(m, str) else (m.get("primary", "") if isinstance(m, dict) else ""))
+PYP
+}
+
+oc_config_valid; _baseline_rc=$?
+case "$_baseline_rc" in
+  0) info "Baseline: live config VALIDATES clean" ;;
+  1) warn "Baseline: live config already FAILS validate (pre-existing) — will not worsen it" ;;
+  2) warn "Baseline: openclaw CLI not on PATH — cannot validate" ;;
+esac
+
+if [[ "$_baseline_rc" -eq 2 ]]; then
+  skipped_reason="openclaw CLI unavailable — cannot validate; executor model recorded to sidecar"
+elif cmp -s "$OC_CANDIDATE" "$OC_JSON"; then
+  info "subagents.model already canonical (object shape) — feature ACTIVE, no change"
+  commit_ok=1; committed_shape="object (pre-existing)"
+elif try_commit "$OC_CANDIDATE" "object {primary,fallbacks}"; then
+  commit_ok=1; committed_shape="object"
+elif cmp -s "$OC_CAND_STR" "$OC_JSON"; then
+  info "subagents.model already canonical (string shape) — feature ACTIVE, no change"
+  commit_ok=1; committed_shape="string (pre-existing)"
+elif try_commit "$OC_CAND_STR" "string <primary>"; then
+  commit_ok=1; committed_shape="string"
+else
+  skipped_reason="both object and bare-string subagents.model shapes failed openclaw config validate on ${OC_VERSION:-this gateway}"
+  warn "reason: $skipped_reason (config left unchanged/valid)"
 fi
 
-# ─── 9. Validate ─────────────────────────────────────────────────────────────
-info "Running: openclaw config validate"
-if command -v openclaw >/dev/null 2>&1; then
-  if ! openclaw config validate 2>&1; then
-    fail "openclaw config validate FAILED — restore from backup: ${OC_JSON}.bak-pre-skill41-executor-${_ts}"
-    exit 1
+# ── 8a. POSITIVE COMMIT CONFIRMATION — defeat a silent false-success ──────────
+# A "committed" verdict is trusted ONLY if the live config now actually carries the
+# effective primary the writer intended. This catches a partial/failed write that
+# left the config unchanged-but-valid (which would otherwise validate clean and be
+# reported as success). On mismatch we restore the prior bytes and report FAILED.
+if [[ "$commit_ok" -eq 1 ]]; then
+  _live_primary="$(live_primary)"
+  if [[ -z "$EXPECTED_PRIMARY" || "$_live_primary" != "$EXPECTED_PRIMARY" ]]; then
+    warn "post-commit verify FAILED: live subagents.model primary='${_live_primary}' expected='${EXPECTED_PRIMARY}' — restoring prior valid bytes"
+    cp -f "$OC_BACKUP" "$OC_JSON" 2>/dev/null || true
+    commit_ok=0
+    committed_shape=""
+    skipped_reason="post-commit verification failed (write did not land) — config restored to prior valid bytes"
+  else
+    ok "post-commit verify PASSED: live subagents.model primary = ${_live_primary}"
   fi
-  ok "openclaw config validate PASSED"
-else
-  warn "openclaw CLI not on PATH — skipping validation (run 'openclaw config validate' manually)"
+fi
+
+rm -f "$OC_BACKUP" 2>/dev/null || true
+
+# ─── 8b. Sidecar — ONLY when the feature could not be committed inline ────────
+# On success the live config IS the source of truth (no sidecar); a stale sidecar
+# from a prior skip is removed once the feature is committed.
+if [[ "$commit_ok" -eq 1 ]]; then
+  rm -f "$EXECUTOR_SIDECAR" 2>/dev/null || true
+elif [[ -n "$skipped_reason" ]]; then
+  python3 - "$EXECUTOR_SIDECAR" "$EXECUTOR_PRIMARY" "${EXECUTOR_FALLBACK:-}" \
+    "$EXECUTOR_SCENARIO" "$skipped_reason" <<'PYEOF'
+import json, sys, datetime
+from pathlib import Path
+sidecar  = Path(sys.argv[1])
+primary  = sys.argv[2]
+fallback = sys.argv[3]
+scenario = sys.argv[4]
+reason   = sys.argv[5]
+doc = {
+    "key":      "agents.defaults.subagents.model",
+    "primary":  primary,
+    "scenario": scenario,
+    "skill":    "41-build-with-ai-playbook",
+    "reason":   reason,
+    "note":     ("Recorded here because the executor model could not be committed to "
+                 "openclaw.json on this box. This file never participates in "
+                 "`openclaw config validate`."),
+    "configured_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+}
+if fallback:
+    doc["fallback"] = fallback
+sidecar.write_text(json.dumps(doc, indent=2) + "\n")
+print(f"  ✓ Executor model recorded to sidecar → {sidecar}")
+PYEOF
+  ok "Executor-model preflight recorded to sidecar (config left valid)"
+fi
+
+# ─── 9. Restore ownership on VPS (only for files we actually wrote) ──────────
+if [[ "$OC_PLATFORM" == "vps" ]]; then
+  if [[ "$commit_ok" -eq 1 ]]; then
+    chown "${OC_RUNTIME_USER}:${OC_RUNTIME_USER}" "$OC_JSON" 2>/dev/null || \
+      warn "chown to $OC_RUNTIME_USER failed — verify file ownership manually"
+    ok "VPS: ownership restored to $OC_RUNTIME_USER"
+  fi
+  [[ -f "$EXECUTOR_SIDECAR" ]] && \
+    chown "${OC_RUNTIME_USER}:${OC_RUNTIME_USER}" "$EXECUTOR_SIDECAR" 2>/dev/null || true
 fi
 
 # ─── 10. Summary ─────────────────────────────────────────────────────────────
 echo ""
-echo "${P} ──── EXECUTOR MODEL CONFIGURED ────"
+echo "${P} ──── EXECUTOR MODEL PREFLIGHT ────"
 echo "${P}   Platform         : $OC_PLATFORM"
+echo "${P}   Gateway version  : ${OC_VERSION:-unknown}"
 echo "${P}   Scenario         : $EXECUTOR_SCENARIO"
+echo "${P}   Key              : agents.defaults.subagents.model"
 echo "${P}   PRIMARY          : $EXECUTOR_PRIMARY"
 [[ -n "$EXECUTOR_FALLBACK" ]] && \
 echo "${P}   FALLBACK         : $EXECUTOR_FALLBACK"
-echo "${P}   Ollama ctx       : ${OLLAMA_CTX} tokens (512K)"
-echo "${P}   OpenRouter ctx   : ${OR_CTX} tokens (1M)"
 echo "${P}   Config           : $OC_JSON"
-echo "${P}   Backup           : ${OC_JSON}.bak-pre-skill41-executor-${_ts}"
+if [[ "$commit_ok" -eq 1 ]]; then
+  echo "${P}   Result           : ACTIVE — committed inline as ${committed_shape} (validated clean)"
+elif [[ -n "$skipped_reason" ]]; then
+  echo "${P}   Result           : recorded to sidecar (config left VALID)"
+  echo "${P}   Sidecar          : $EXECUTOR_SIDECAR"
+  echo "${P}   Reason           : $skipped_reason"
+else
+  echo "${P}   Result           : no change (idempotent)"
+fi
 echo ""
 ok "05-configure-executor-model.sh complete"
 exit 0

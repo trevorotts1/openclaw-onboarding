@@ -1,4 +1,28 @@
-## [1.5.2] - 2026-06-30 — Command Center Kanban reflection, dependency-creation.sh durability hardening, jsonl-sink + update self-heal
+## [1.5.3] - 2026-07-01 — executor-model SHAPE-BUG fix: write the REAL key, heal fabricated keys, validate-before-commit
+
+### Why (fleet-critical)
+`scripts/05-configure-executor-model.sh` wrote two FABRICATED config keys — top-level `models.available`
+and `agents.defaults.subagents.executorModel` — that NO OpenClaw schema accepts. When `wire.sh` (added
+in 1.5.2) began re-running this step on every fleet update, it flipped a VALID `openclaw.json` INVALID on
+2026.5.22 / 2026.6.8 (closed `additionalProperties:false` objects → `× models: Invalid input` /
+`× agents.defaults.subagents: Invalid input`) and forced a safety rollback on every valid box.
+
+### Fixed
+- **Correct key:** now writes `agents.defaults.subagents.model` (the documented OpenClaw key that selects a
+  sub-agent's model). Verified against docs.openclaw.ai; models are addressable by `provider/model-id`
+  (no `models.available` exists).
+- **Client sovereignty (preserve-if-present / seed-if-missing, mirrors install.sh):** only SEEDS MiniMax as
+  the sub-agent primary when NONE is set; an existing client primary is PRESERVED and never demoted.
+- **Heal — exactly two keys, no collateral:** deletes ONLY the fabricated `models.available` /
+  `subagents.executorModel`. The previous forced `agents.list[].subagents.allowAgents=['*']` write (which
+  destroyed restrictive client ACLs) is REMOVED. A corrupted/rolled-back box self-repairs to VALID + active.
+- **Tiered validate-before-commit + no false-success:** tries `{primary, fallbacks}` then the documented
+  bare-string; commits the first `openclaw config validate` accepts; restores exact prior bytes on failure.
+  Candidate-writer exit code, `cp` rcs, and backup creation are all checked, and the live config is
+  positively confirmed to carry the intended primary before "committed" is reported. Proven ACTIVE + valid
+  on 2026.5.22 / 2026.6.8 / newer; sovereignty + bad-write + heal cases all proven; idempotent.
+
+
 
 ### Why
 The GHL dependency review found the skill does real multi-step work (creates
