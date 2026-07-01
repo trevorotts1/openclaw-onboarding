@@ -23,7 +23,7 @@ If the agent does not know the Teach Yourself Protocol:
 **Other requirements:**
 - FFmpeg installed (`ffmpeg -version` to verify)
 - KIE.ai API key (stored in environment or secrets file)
-- GHL/Convert and Flow Private Integration Token (PIT) for media library upload, OR an imgBB API key as fallback
+- GHL/Convert and Flow Private Integration Token (PIT) for media library upload (the canonical env vars are `GOHIGHLEVEL_API_KEY` + `GOHIGHLEVEL_LOCATION_ID`). An imgBB API key is an optional fallback for reference **images** only — imgBB cannot host the final MP4.
 - ElevenLabs access via KIE.ai (for voice generation)
 - Suno access via KIE.ai (for music generation)
 - Nano Banana Pro access via KIE.ai (for image generation)
@@ -32,7 +32,7 @@ If the agent does not know the Teach Yourself Protocol:
 **Optional but recommended (for Q12 reference video analysis):**
 - `video-frames` skill (ships with OpenClaw, requires FFmpeg) - extracts frames from videos
 - `summarize` CLI (`brew install steipete/tap/summarize`) - transcribes/summarizes YouTube videos and URLs
-- At least one LLM API key for summarize: `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
+- At least one LLM API key for summarize: `GEMINI_API_KEY` or `OPENAI_API_KEY`
 
 If these aren't installed when a user provides a reference video, the agent should install them on the spot rather than skipping the analysis.
 
@@ -40,7 +40,7 @@ If these aren't installed when a user provides a reference video, the agent shou
 
 Cinematic Forge is a complete AI video production pipeline. It:
 
-1. Walks the user through 11 structured intake questions (one at a time)
+1. Walks the user through 14 structured intake questions (one at a time)
 2. Generates reference images for all characters and settings
 3. Produces video segments using VEO 3.1 Fast (8-second segments)
 4. Creates all audio layers separately (dialogue, narration, sound effects, music)
@@ -261,7 +261,7 @@ Before attempting to analyze a reference video, check that these two skills are 
 2. **summarize** - Transcribes/summarizes YouTube videos and URLs
    - Check: `which summarize`
    - If not installed: `brew install steipete/tap/summarize`
-   - Also needs at least one API key set: `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
+   - Also needs at least one API key set: `GEMINI_API_KEY` or `OPENAI_API_KEY`
 
 If either skill is missing, install it. Do NOT skip the analysis just because a tool isn't there - get the tool and do the job.
 
@@ -281,7 +281,7 @@ If either skill is missing, install it. Do NOT skip the analysis just because a 
 **summarize** (transcript/summary extraction from YouTube and URLs):
 - GitHub: https://github.com/steipete/summarize
 - Install: `brew install steipete/tap/summarize`
-- Requires at least one LLM API key: `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
+- Requires at least one LLM API key: `GEMINI_API_KEY` or `OPENAI_API_KEY`
 - Key usage for video analysis:
   ```bash
   # Get transcript/summary from YouTube
@@ -374,9 +374,25 @@ After all 14 questions are answered, the agent proceeds through these phases:
 
 **Before any generation begins, the agent MUST:**
 
+0. **Resolve platform-correct paths.** This skill runs on both a Mac and a headless VPS — the presence of `/data/.openclaw` means VPS (a VPS Docker container has no `~/Downloads`). Set the secrets file, output root, and skills dir from the platform, source the secrets ONCE here, and resolve binaries with `command -v` rather than hardcoding paths:
+   ```bash
+   if [ -d /data/.openclaw ]; then
+     SECRETS_ENV="/data/.openclaw/secrets/.env"          # VPS
+     OUTPUT_ROOT="/data/cinematic-forge-projects"
+     SKILL_DIR="/data/.openclaw/skills/28-cinematic-forge"
+   else
+     SECRETS_ENV="$HOME/.openclaw/secrets/.env"           # Mac
+     OUTPUT_ROOT="$HOME/Downloads/cinematic-forge-projects"
+     SKILL_DIR="$HOME/.openclaw/skills/28-cinematic-forge"
+   fi
+   [ -f "$SECRETS_ENV" ] && { set -a; . "$SECRETS_ENV"; set +a; }   # loads KIE_API_KEY, GOHIGHLEVEL_API_KEY, GOHIGHLEVEL_LOCATION_ID, etc.
+   FFMPEG="$(command -v ffmpeg)"; FFPROBE="$(command -v ffprobe)"
+   ```
+   Use `$OUTPUT_ROOT` as the project root, `$SECRETS_ENV` for every credential load below, and `$SKILL_DIR` to locate this skill's helper scripts (e.g. `qc-output.sh`).
+
 1. **Create the project folder structure:**
    ```
-   ~/Downloads/cinematic-forge-projects/[project-name]/
+   $OUTPUT_ROOT/[project-name]/
      images/          (reference images, start images, derived images)
      segments/        (individual VEO video segments)
      audio/
@@ -390,9 +406,8 @@ After all 14 questions are answered, the agent proceeds through these phases:
 
    The `[project-name]` is derived from the concept (kebab-case). Example: `money-shame-syndrome`, `beach-lifestyle-reel`.
 
-2. **Check KIE.ai credit balance:**
+2. **Check KIE.ai credit balance** (credentials were loaded from `$SECRETS_ENV` in step 0):
    ```bash
-   source ~/clawd/secrets/.env
    curl -s "https://api.kie.ai/api/v1/user/credits" \
      -H "Authorization: Bearer $KIE_API_KEY"
    ```
@@ -415,7 +430,7 @@ After all 14 questions are answered, the agent proceeds through these phases:
    >
    > Want me to proceed?"
 
-   **Do NOT start generation until the user confirms.**
+   **Do NOT start generation until the user confirms.** Once the user confirms the budget, if this job is tracked on the Command Center board, move its task to `in_progress` (see **COMMAND CENTER (KANBAN) INTEGRATION** below). If KIE credits are insufficient, return the task to the orchestrator instead of starting.
 
 4. **Initialize the project state file** (`project-state.json`):
    ```json
@@ -572,6 +587,14 @@ Audio is generated SEPARATELY from video. VEO's built-in audio is DISCARDED and 
    ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 final_video.mp4
    ```
 
+6. **Run the OUTPUT-QC GATE (MANDATORY — the deliverable may not be sent until this exits 0):**
+   ```bash
+   bash "$SKILL_DIR/qc-output.sh" final_video.mp4 <target_seconds> <WIDTHxHEIGHT>
+   # example for a 90s 9:16 video:
+   bash "$SKILL_DIR/qc-output.sh" final_video.mp4 90 1080x1920
+   ```
+   `qc-output.sh` checks that the file exists and is non-empty, the resolution matches what was requested, BOTH a video and an audio stream are present, the audio is non-silent (this proves the VEO audio was actually replaced — not silently dropped), and the duration is within 0.75s of target. If it exits non-zero, FIX the problem (re-mix audio, re-trim, or re-render the offending segment) and re-run — never deliver a video that fails this gate. (`$SKILL_DIR` was resolved in Phase 0.)
+
 ### Phase 5: Text Overlays, Captions, and Logo (Post-Production)
 
 This phase only runs if the user requested text overlays, captions, or logo placement during intake (Questions 8e and 8f).
@@ -613,26 +636,52 @@ This phase only runs if the user requested text overlays, captions, or logo plac
 
 ### Phase 6: Upload and Delivery
 
-1. **Upload to GHL/Convert and Flow Media Library:**
+1. **Upload the finished MP4 to the client's GHL/Convert and Flow Media Library.** Credentials come from the platform-correct secrets file resolved in Phase 0 (`$SECRETS_ENV`): the Private Integration Token is `GOHIGHLEVEL_API_KEY` and the sub-account is `GOHIGHLEVEL_LOCATION_ID`. Pass the location (the v2 endpoint behaves differently for agency vs sub-account tokens — omitting it is fragile), check the HTTP status, parse the returned URL, and retry ONCE on failure before reporting. Never assume the upload succeeded.
    ```bash
-   curl -X POST "https://services.leadconnectorhq.com/medias/upload-file" \
-     -H "Authorization: Bearer [PIT_TOKEN]" \
-     -H "Version: 2021-07-28" \
-     -F "file=@final_video.mp4" \
-     -F "hosted=true" \
-     -F "fileProcessingOpts={\"forceReprocess\": true}"
+   : "${GOHIGHLEVEL_API_KEY:?set GOHIGHLEVEL_API_KEY in $SECRETS_ENV}"
+   : "${GOHIGHLEVEL_LOCATION_ID:?set GOHIGHLEVEL_LOCATION_ID in $SECRETS_ENV}"
+
+   upload_to_ghl() {
+     curl -sS -w $'\n%{http_code}' -X POST \
+       "https://services.leadconnectorhq.com/medias/upload-file" \
+       -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
+       -H "Version: 2021-07-28" \
+       -F "file=@final_video.mp4" \
+       -F "hosted=true" \
+       -F "locationId=$GOHIGHLEVEL_LOCATION_ID" \
+       -F "fileProcessingOpts={\"forceReprocess\": true}"
+   }
+
+   RAW="$(upload_to_ghl)"; CODE="$(printf '%s' "$RAW" | tail -n1)"; BODY="$(printf '%s' "$RAW" | sed '$d')"
+   if [ "$CODE" != "200" ] && [ "$CODE" != "201" ]; then
+     sleep 3                                    # one retry
+     RAW="$(upload_to_ghl)"; CODE="$(printf '%s' "$RAW" | tail -n1)"; BODY="$(printf '%s' "$RAW" | sed '$d')"
+   fi
+   if [ "$CODE" = "200" ] || [ "$CODE" = "201" ]; then
+     MEDIA_URL="$(printf '%s' "$BODY" | grep -oE 'https://[^"]+' | head -n1)"
+     echo "Hosted video URL: $MEDIA_URL"
+   else
+     echo "GHL upload FAILED (HTTP $CODE). Response: $BODY" >&2
+     # Do not deliver — surface the failure to the operator and stop.
+   fi
    ```
-   
-   - Returns a permanent URL from `assets.cdn.filesafe.space`
-   - If no GHL/Convert and Flow: upload to imgBB or user's preferred hosting
+
+   - On success the response carries the permanent URL (typically on `assets.cdn.filesafe.space`). Use the URL parsed from the response — do not hardcode the CDN host.
+   - **Verify the hosted file before sending it** by re-running the output-QC gate with the URL as the 4th argument:
+     ```bash
+     bash "$SKILL_DIR/qc-output.sh" final_video.mp4 <target_seconds> <WIDTHxHEIGHT> "$MEDIA_URL"
+     ```
+   - **If the client has no GHL/Convert and Flow:** host the finished MP4 on a real file/video host the client controls (their own storage/CDN, or a video-capable host). **Do NOT use imgBB for the final video — imgBB hosts still images and animated GIFs only and will not host an MP4.** (imgBB is still fine for reference *images* in Q9.)
 
 2. **Return the link to the user** in the same channel where they started the conversation (Telegram, Slack, etc.):
    
-   > "Your video is ready! Here's the link: [GHL_MEDIA_URL]
+   > "Your video is ready! Here's the link: $MEDIA_URL
    >
    > Watch it and let me know:
    > - Want any changes? I can re-generate specific segments, adjust audio, or make edits.
    > - Happy with it? We can move to the next step - upgrading the quality."
+
+   After the draft link is delivered, if this job is tracked on the Command Center board, move its task to `review` (see **COMMAND CENTER (KANBAN) INTEGRATION**). The builder must NOT self-promote the task to `done` — the independent QC scorer advances it.
 
 3. **Handle revision requests:**
    - User identifies specific segments or issues
@@ -650,6 +699,41 @@ This phase only runs if the user requested text overlays, captions, or logo plac
 1. **9:16 vertical** is ALWAYS created first (primary format for social media)
 2. Only AFTER 9:16 is approved, create the **16:9 horizontal** version if needed
 3. Each version gets its own upload and link
+
+---
+
+## COMMAND CENTER (KANBAN) INTEGRATION — OPTIONAL
+
+Some client boxes run a local Command Center (mission-control Kanban). A video build is a long-running, multi-phase task that belongs on that board. This integration is **optional and reachability-gated**: if the Command Center is not reachable, or no task token is set, **skip every step below silently** — never mention it to the client and never block the build on it.
+
+**Gate (evaluate once; cache the result):**
+```bash
+CC_OK=0
+if [ -n "${MC_API_TOKEN:-}" ] && curl -fsS -m 5 localhost:4000/api/health >/dev/null 2>&1; then CC_OK=1; fi
+```
+
+**Helpers — HTTP only. NEVER write the Command Center SQLite DB directly; that bypasses the board's gates, QC, and live updates:**
+```bash
+cc_patch() {                      # cc_patch <task_id> <status>
+  [ "$CC_OK" = "1" ] || return 0
+  curl -fsS -m 10 -X PATCH "http://localhost:4000/api/tasks/$1" \
+    -H "Authorization: Bearer $MC_API_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"status\":\"$2\",\"updated_by_agent_id\":\"${AGENT_ID:-cinematic-forge}\"}" >/dev/null 2>&1 || true
+}
+cc_return_to_orchestrator() {     # cc_return_to_orchestrator <task_id> <reason>
+  [ "$CC_OK" = "1" ] || return 0
+  curl -fsS -m 10 -X POST "http://localhost:4000/api/tasks/$1/return-to-orchestrator" \
+    -H "Authorization: Bearer $MC_API_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"reason\":\"$2\",\"updated_by_agent_id\":\"${AGENT_ID:-cinematic-forge}\"}" >/dev/null 2>&1 || true
+}
+```
+
+**When to call (only when a Command Center task id is associated with this job):**
+- **Budget approved, generation starting** → `cc_patch "$TASK_ID" in_progress` (this auto-fires dispatch; respect the board's Triad before a task leaves backlog).
+- **Draft link delivered to the client** → `cc_patch "$TASK_ID" review`. The builder must **NOT** self-promote to `done` — the independent QC scorer / master advances `review` → `done` (a worker that tries to set `done` is rejected with 403).
+- **Insufficient KIE credits, or waiting on client approval/assets** → `cc_return_to_orchestrator "$TASK_ID" "<reason>"`. Workers cannot set `blocked` directly (only the master can); return-to-orchestrator is the worker-safe signal.
 
 ---
 
@@ -744,8 +828,6 @@ If the agent starts a new session and finds an existing project-state.json in a 
 
 ## FULL PROTOCOL DOCUMENT
 
-For the complete GIGY "Money Shame Syndrome" PRD (which serves as a detailed example of this entire pipeline in action), reference:
+For a complete worked example of this entire pipeline — every storyboard decision, every segment prompt, every audio layer, and every FFmpeg command for a full 90-second production — see the detailed example PRD in your master files folder, if your operator has provided one.
 
-**`~/clawd/projects/gigy-video/GIGY-VIDEO-PRD.md`**
-
-This 78K-character document shows every decision, every segment prompt, every audio layer, and every FFmpeg command for a real 90-second video production.
+If no example PRD is present, this SKILL.md is self-contained: follow the phases above end to end.

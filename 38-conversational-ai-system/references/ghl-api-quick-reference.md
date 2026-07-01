@@ -5,6 +5,8 @@ Fast-path canonical shapes so you reply WITHOUT digging through the dense full
 reference at runtime. Verified against `29-ghl-convert-and-flow/references/` +
 Skill 38 `references/GHL-INBOUND-AND-PLAYBOOKS.md` §7-9 (full detail there).
 
+> **Runtime tier ladder:** prefer Skill 44 `caf` (Tier 0 — `caf conversations` / `calendars` / `contacts` / `payments`; run `caf --help` for exact flags). This raw REST is the documented **Tier-3 fallback** (keep it for caf-less boxes). On a **401 / non-2xx you have NOT sent** — never report "sent": escalate to the operator AND tell the client to refresh their PIT. Full rule: AGENTS.md `SKILL38_RUNTIME_GHL_TIER_LADDER`.
+
 **Base URL:** `https://services.leadconnectorhq.com`
 **The 3 headers on EVERY call:**
 `Authorization: Bearer <GHL_PRIVATE_INTEGRATION_TOKEN>` · `Version: 2021-04-15` · `Content-Type: application/json`

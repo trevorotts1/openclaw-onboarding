@@ -7,7 +7,8 @@
 - The client's OWN keys (never the operator's):
   - `KIE_API_KEY` — image generation (the reused gpt-image adapter).
   - GoHighLevel LOCATION Private Integration Token with `medias.write` — image hosting
-    (`GOHIGHLEVEL_API_KEY`/`GHL_API_KEY`) + the location id (`GHL_LOCATION_ID`).
+    (`GOHIGHLEVEL_API_KEY`/`GHL_API_KEY`) + the location id
+    (`GOHIGHLEVEL_LOCATION_ID`/`GHL_LOCATION_ID`).
 
 ## Steps
 1. `bash 48-facebook-ad-generator/install.sh` — proves payload integrity, runs the

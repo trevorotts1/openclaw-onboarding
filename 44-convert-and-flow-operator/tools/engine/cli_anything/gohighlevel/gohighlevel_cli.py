@@ -318,7 +318,10 @@ def contacts_add_tag(ctx, contact_id, tags):
 def contacts_remove_tag(ctx, contact_id, tags):
     """Remove tags from a contact."""
     try:
-        data = api.delete(f"/contacts/{contact_id}/tags", version=None)
+        # GHL's DELETE /contacts/{id}/tags takes the tags in the request BODY.
+        # Without a body the call cannot know which tags to remove (400/no-op),
+        # so pass {"tags": [...]} the same way add-tag POSTs them.
+        data = api.delete(f"/contacts/{contact_id}/tags", body={"tags": list(tags)})
         _output(ctx, data, "Tags Removed")
     except Exception as e:
         _handle_error(e)
@@ -1436,19 +1439,18 @@ def payments_create_invoice(ctx, contact_id, name, amount, due_date):
 @click.option("--image-url", default=None, help="Public image URL for the product")
 @click.pass_context
 def payments_create_product(ctx, name, product_type, description, image_url):
-    """Create a product (POST /payments/products, Version 2021-07-28).
+    """Create a product (POST /products/, Version 2021-07-28).
 
     A product is the catalog entry; attach one or more prices with
     ``payments create-price --product-id <id>``. The safety gate runs inside
-    ``api.post``. The location is sent both as ``locationId`` (whitelist key)
-    and ``altId``/``altType`` (the payments-API tenant key) so both the gate
-    and GHL resolve the same sub-account.
+    ``api.post``. ``locationId`` targets the sub-account (also the gate's
+    whitelist key). Per the GHL Products API the product lives under
+    ``/products/`` (NOT ``/payments/``, which only holds orders/transactions/
+    coupons) and takes ``locationId`` — not the payments-API altId/altType.
     """
     try:
         body = {
             "locationId": _loc(ctx),
-            "altId": _loc(ctx),
-            "altType": "location",
             "name": name,
             "productType": product_type,
         }
@@ -1456,7 +1458,7 @@ def payments_create_product(ctx, name, product_type, description, image_url):
             body["description"] = description
         if image_url:
             body["image"] = image_url
-        data = api.post("/payments/products", data=body)
+        data = api.post("/products/", data=body)
         _output(ctx, data, "Product Created")
     except Exception as e:
         _handle_error(e)
@@ -1472,23 +1474,24 @@ def payments_create_product(ctx, name, product_type, description, image_url):
               help="Price type (default one_time)")
 @click.pass_context
 def payments_create_price(ctx, product_id, name, amount, currency, price_type):
-    """Create a price on a product (POST /payments/products/{id}/prices).
+    """Create a price on a product (POST /products/{id}/price).
 
     ``amount`` is in the smallest currency unit (cents) — $49.00 = 4900. The
     safety gate runs inside ``api.post``. Returns the created price record
-    (carries its own ``_id``).
+    (carries its own ``_id``). Per the GHL Products API the price endpoint is
+    SINGULAR ``/products/{id}/price`` and takes ``locationId`` + ``product`` —
+    not the payments-API altId/altType.
     """
     try:
         body = {
             "locationId": _loc(ctx),
-            "altId": _loc(ctx),
-            "altType": "location",
+            "product": product_id,
             "name": name,
             "type": price_type,
             "currency": currency,
             "amount": amount,
         }
-        data = api.post(f"/payments/products/{product_id}/prices", data=body)
+        data = api.post(f"/products/{product_id}/price", data=body)
         _output(ctx, data, "Price Created")
     except Exception as e:
         _handle_error(e)
@@ -1866,6 +1869,83 @@ def locations_custom_values(ctx):
         _output(ctx, data, "Custom Values")
     except Exception as e:
         _handle_error(e)
+
+
+# ===========================================================================
+# DOCTOR — read-only adapter health probe (contract-probe entry point)
+# ===========================================================================
+
+@cli.command("doctor")
+@click.pass_context
+def doctor(ctx):
+    """Run the read-only contract probe and report adapter health.
+
+    Operator-only health check (no client-facing output). Issues NO writes:
+    run_contract_probe is called WITHOUT allow_write_probe, so it only performs
+    the Firebase token exchange and read-only shape assertions.
+
+    Exit codes:
+      0  PASS — adapter healthy, contract probe OK.
+      0  WARN — Firebase token absent/dead, or credentials/location not yet
+         configured. A missing/expired token is a nudge, not a hard failure
+         (INSTALL.md: "WARN not FAIL"); reads still work, only writes need it.
+      1  FAIL — backend contract drift or a hard probe failure.
+    """
+    from cli_anything.gohighlevel.internal.adapter_types import AdapterError
+    try:
+        from cli_anything.gohighlevel.internal.adapter import get_adapter
+        from cli_anything.gohighlevel.internal.probe import run_contract_probe
+        adapter = get_adapter(ctx)
+        result = run_contract_probe(adapter)  # read-only: NO allow_write_probe
+    except SystemExit:
+        # get_adapter -> _loc -> _get_location_id() exits when the location id is
+        # unset. That is a provisioning gap, not contract drift: WARN, exit 0,
+        # never a traceback.
+        click.echo(
+            "WARN doctor: GoHighLevel credentials/location not configured "
+            "(set GOHIGHLEVEL_LOCATION_ID) — probe skipped.",
+            err=True,
+        )
+        sys.exit(0)
+    except AdapterError as e:
+        # Defensive: the probe catches AdapterError internally, but never let a
+        # credential error surface as a traceback.
+        click.echo(
+            f"WARN doctor: {e.message or e.code or 'credentials not configured'} "
+            "— probe skipped.",
+            err=True,
+        )
+        sys.exit(0)
+    except Exception as e:  # noqa: BLE001 — doctor must never raise a traceback
+        click.echo(f"WARN doctor: probe could not run ({e}).", err=True)
+        sys.exit(0)
+
+    reason = (result.reason or "").strip()
+
+    if result.ok:
+        line = "PASS doctor: adapter healthy; contract probe OK."
+        if reason:
+            line += f" ({reason})"
+        click.echo(line)
+        sys.exit(0)
+
+    if result.scope == "token":
+        click.echo(
+            "WARN doctor: Firebase token absent or dead "
+            f"({reason or result.failed_assertion or 'token_health'}). "
+            "Reads are unaffected; workflow writes need a live token — re-grab "
+            "it with the Convert and Flow Token Grabber.",
+            err=True,
+        )
+        sys.exit(0)
+
+    click.echo(
+        "FAIL doctor: contract drift or hard failure "
+        f"({reason or result.failed_assertion or 'unknown'}). "
+        "Workflow writes are degraded until the adapter is refreshed.",
+        err=True,
+    )
+    sys.exit(1)
 
 
 # ===========================================================================

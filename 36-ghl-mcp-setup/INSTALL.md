@@ -63,12 +63,12 @@ WHEN LEARNING THIS DOCUMENT, FOLLOW THIS STRUCTURE:
    of lines into core files.
 
 3. USE THE LABELED SECTIONS IN CORE_UPDATES.md TO KNOW WHAT GOES WHERE
-   Look for sections marked:
-   [ADD TO SOUL.md]
-   [ADD TO AGENTS.md]
-   [ADD TO TOOLS.md]
-   [ADD TO MEMORY.md]
-   Only add what is labeled. Nothing else goes into core files.
+   CORE_UPDATES.md marks each core file "UPDATE REQUIRED" or "NO UPDATE NEEDED":
+   - SOUL.md — NO UPDATE NEEDED (the Tier Escalation Protocol lives in AGENTS.md, not SOUL.md)
+   - AGENTS.md — UPDATE REQUIRED
+   - TOOLS.md — UPDATE REQUIRED
+   - MEMORY.md — UPDATE REQUIRED
+   Only add what CORE_UPDATES.md marks UPDATE REQUIRED. Nothing else goes into core files.
 
 EXECUTION DISCIPLINE - MANDATORY BEFORE YOU START
 ╚══════════════════════════════════════════════════════════════╝
@@ -327,11 +327,25 @@ else
 fi
 
 mkdir -p "$(dirname "$MCP_DIR")"
+
+# PINNED COMMIT — reproducibility + supply-chain/drift protection.
+# 3dd9006a (2026-05-15) is the commit this skill was built and verified against:
+#   - package.json main = dist/main.js (the launchd/pm2 entrypoint)
+#   - src/main.ts:55 reads `process.env.PORT || process.env.MCP_SERVER_PORT` (the
+#     PORT-precedence behaviour the 5.5/5.6 supervision fix depends on)
+#   - HTTP server exposes GET /health ({"status":"healthy",...}), GET /tools, POST /execute
+#     (the exact surface QC Section D and INSTRUCTIONS.md probe).
+# Tracking `main` HEAD instead pulls the 2026-06-11+ "mcp-apps / easy-setup / curated
+# tool-profile" changes, which alter the default /tools surface — so we PIN.
+# To bump: change the SHA, then re-run qc-ghl-mcp-setup.sh (it range-checks /health
+# tool count + /execute) and confirm /health, /tools, /execute still behave as documented.
+GHL_MCP_PIN_SHA="3dd9006ac5242762612e6d22b9a51a0a17aeca79"
+
 if [ -d "$MCP_DIR/.git" ]; then
-  cd "$MCP_DIR" && git pull && npm install --no-audit --no-fund && npm run build
+  cd "$MCP_DIR" && git fetch -q origin && git checkout -q "$GHL_MCP_PIN_SHA" && npm install --no-audit --no-fund && npm run build
 else
   git clone https://github.com/busybee3333/Go-High-Level-MCP-2026-Complete.git "$MCP_DIR"
-  cd "$MCP_DIR" && npm install --no-audit --no-fund && npm run build
+  cd "$MCP_DIR" && git checkout -q "$GHL_MCP_PIN_SHA" && npm install --no-audit --no-fund && npm run build
 fi
 ```
 
@@ -534,12 +548,13 @@ If `/health` returns Cognee's response (`status:ready, version:0.5.3-local`), yo
 ### Action 7: Update Core .md Files
 
 Read `CORE_UPDATES.md` for exact text to add to:
-- SOUL.md (Tier Escalation Protocol)
-- AGENTS.md (canonical state block + tier order + anti-patterns + disclosure protocol)
+- AGENTS.md (canonical state block + 🔴 Tier Escalation Protocol + tier order + anti-patterns + disclosure protocol)
 - TOOLS.md (community MCP tool reference)
 - MEMORY.md (install record)
 
-DO NOT TOUCH: IDENTITY.md, HEARTBEAT.md, USER.md.
+SOUL.md — NO UPDATE NEEDED (the Tier Escalation Protocol is OPERATING LAW and lives in the shared AGENTS.md so sub-agents inherit it; leave SOUL.md byte-identical).
+
+DO NOT TOUCH: IDENTITY.md, HEARTBEAT.md, USER.md, SOUL.md.
 
 ### Action 8: Save Full Reference to Master Files
 

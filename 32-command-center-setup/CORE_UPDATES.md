@@ -217,6 +217,14 @@ Why: prevents "task completion theater" where workers self-mark Done
 without anyone validating. The DA is the quality gate.
 ```
 
+**Enforced in code (v12.9.21+):** the gate is no longer prose-only.
+`scripts/move-task.py` is the ONLY sanctioned way to change `tasks.status`:
+- `move-task.py move --task <id> --to complete` is REFUSED unless the card is in
+  Review AND a Devil's Advocate sign-off (verdict=pass) exists for that task.
+- The DA records its decision with `move-task.py signoff --task <id> --verdict pass|fail --by <da-agent-id>`.
+- Every transition (and every block) writes an audit row to `task_status_audit`.
+Agents MUST use this tool instead of hand-writing `UPDATE tasks SET status=...`.
+
 This addition is REQUIRED for v9.6.5+ Command Center installs.
 
 ---

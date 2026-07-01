@@ -18,6 +18,29 @@ from cli_anything.gohighlevel.utils.ghl_internal_client import InternalGHLClient
 from cli_anything.gohighlevel.utils.safety_gate import draft_only_active_flag
 from cli_anything.gohighlevel.utils.write_lock import WriteLock
 
+# ── Parallel-build worker cap ────────────────────────────────────────────────
+# Lowered from the original hard-coded 10 to reduce burst pressure on the shared
+# GHL rate bucket (matches the internal adapter's _DEFAULT_MAX_WORKERS=3).
+# WriteLock serialises writes ACROSS builds but NOT within a single multi-workflow
+# build, so this cap is what bounds one build's concurrent pipelines. Override
+# with CAF_INTERNAL_MAX_WORKERS (the same env var the adapter honours).
+_DEFAULT_BUILD_MAX_WORKERS = 3
+
+
+def _build_max_workers() -> int:
+    """Resolve the parallel-build worker count from CAF_INTERNAL_MAX_WORKERS.
+
+    Falls back to _DEFAULT_BUILD_MAX_WORKERS when unset/invalid, and never
+    returns < 1 (ThreadPoolExecutor requires max_workers >= 1).
+    """
+    raw = os.environ.get("CAF_INTERNAL_MAX_WORKERS", "").strip()
+    try:
+        n = int(raw)
+    except (ValueError, TypeError):
+        return _DEFAULT_BUILD_MAX_WORKERS
+    return n if n >= 1 else _DEFAULT_BUILD_MAX_WORKERS
+
+
 # ── Verified Action Types (56 confirmed via save API 2026-03-22) ──────────
 
 VERIFIED_ACTIONS = frozenset([
@@ -433,8 +456,8 @@ class CampaignBuilder:
 
             return key, wf_id, steps_ok, trigger_ok, step_err
 
-        # Run all workflows in parallel
-        with ThreadPoolExecutor(max_workers=10) as pool:
+        # Run all workflows in parallel (burst-capped; CAF_INTERNAL_MAX_WORKERS)
+        with ThreadPoolExecutor(max_workers=_build_max_workers()) as pool:
             futures = [
                 pool.submit(_create_workflow, key, wf_def)
                 for key, wf_def in campaign.items()

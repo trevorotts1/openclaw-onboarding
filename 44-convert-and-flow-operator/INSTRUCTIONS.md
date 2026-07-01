@@ -30,14 +30,14 @@ patch-email, patch-trigger, restore, or Tier 4 agent-browser build).
 
 **Check:** look at your current session's active model name and thinking level.
 
-**If the active model is a lighter/faster model** (e.g. deepseek-flash, haiku, mini, flash,
+**If the active model is a lighter/faster model** (e.g. deepseek-flash, mini, flash,
 or any model NOT identified as a high-reasoning model) **OR thinking is not set to HIGH**:
 
 Surface this recommendation to the owner BEFORE proceeding:
 
 > ⚠️ **GHL workflow builds are complex and error-prone on lighter models.**
-> It is HIGHLY RECOMMENDED to switch to a high-reasoning model (e.g. deepseek-v4-pro,
-> or an Opus-tier model) with thinking set to HIGH before proceeding — for the best
+> It is HIGHLY RECOMMENDED to switch to a high-reasoning model (e.g. DeepSeek v4 pro
+> or GLM 5.2 — Ollama Cloud preferred, OpenRouter backup) with thinking set to HIGH before proceeding — for the best
 > possible output and to avoid hard-to-catch hallucinations in workflow logic.
 > *(A lighter model previously turned a 2-minute fix into a 12-hour loop by
 > hallucinating a failure cause, a fake link, and a wrong number.)*
@@ -571,7 +571,7 @@ WF-20 ("NO HALLUCINATED ARTIFACTS") is the dedicated detector.
 
 2. **REQUIRE a high-reasoning model at thinking HIGH for the redo.** This is the v12.3.5
    Step 0 recommendation FLIPPED FROM RECOMMENDATION TO REQUIREMENT for this case. The redo
-   MUST run on a high-reasoning model (e.g. deepseek-v4-pro / Opus-tier) with thinking=HIGH;
+   MUST run on a high-reasoning model (e.g. DeepSeek v4 pro / GLM 5.2, Ollama Cloud preferred, OpenRouter backup) with thinking=HIGH;
    if the current build session is on a lighter model, the build does NOT proceed until
    switched (cross-references and strengthens INSTRUCTIONS.md Step 0).
 

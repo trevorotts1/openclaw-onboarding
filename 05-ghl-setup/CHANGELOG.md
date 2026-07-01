@@ -4,6 +4,24 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v6.5.8] - June 30, 2026
+
+### Fixed
+- P0: Canonicalized GoHighLevel credential variable names. The installer now writes (and every doc reads) canonical `GOHIGHLEVEL_API_KEY` / `GOHIGHLEVEL_LOCATION_ID` (what QC, PREREQS, and skills 36/44 already require), plus legacy `GHL_API_KEY` / `GHL_LOCATION_ID` aliases for skill-29 back-compat. Resolves the fresh-box non-convergence where the installer wrote `GHL_*` but QC read `GOHIGHLEVEL_*`.
+- P0: `qc-ghl-setup.sh` now resolves the VPS layout — uses `/data/.openclaw/secrets/.env` and `/data/.openclaw/skills` when `/data/.openclaw` exists, else the Mac `$HOME/.openclaw` paths. Stops the VPS false-FAIL.
+- P1: Removed the dead `~/clawd/secrets/.env` path (SKILL.md, ghl-setup-full.md, INSTRUCTIONS.md) → `~/.openclaw/secrets/.env`.
+- P1: Removed the self-contradiction telling users to create an "API key" — STEP 1 and the manual-input prompt now point to Settings > Integrations > Private Integrations (PIT).
+- P1: `qc-ghl-setup.sh` pit-prefix check is now a WARN, not a hard FAIL (valid non-prefixed PITs no longer false-fail).
+- P2: Removed dead OAuth-refresh advice (a PIT is static). Completion message now says creds live in `~/.openclaw/secrets/.env` (chmod 600), not openclaw.json. QC rubric VPS path corrected to `/data/.openclaw/secrets/.env`. PREREQS satisfy steps note `-u node` config writes on VPS.
+
+### Added
+- Runtime preflight + fallback chain (`ghl_preflight` / `ghl_request`) in INSTRUCTIONS.md: resolves token (GOHIGHLEVEL_API_KEY → GHL_API_KEY → GHL_PIT) + location, BLOCKS with the exact missing-var fix instead of a silent 401, auto-discovers location, and adds 429 exponential backoff + one 5xx/timeout retry.
+- Real Location-PIT media upload example (`POST /medias/upload-file`, multipart/form-data) in INSTRUCTIONS.md and EXAMPLES.md; removed the "AI handles encoding automatically" hand-wave.
+- MCP-first tiering banner echoed at the top of INSTRUCTIONS.md and EXAMPLES.md (defer day-to-day ops to skill 36 MCP / skill 44 caf; raw REST is the foundation/fallback tier).
+- Read-only media-library reachability probe and a client-verifiable receipt step (masked PIT prefix + location business name + location id + timestamp).
+
+---
+
 ## [v1.5.0] - March 7, 2026
 
 ### Changed

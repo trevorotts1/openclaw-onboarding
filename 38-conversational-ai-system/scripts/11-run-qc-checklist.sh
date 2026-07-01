@@ -138,6 +138,14 @@ if command -v openclaw >/dev/null 2>&1; then
       report_fail "cron MISSING: $name"
     fi
   done
+  # Runtime credential watcher (INFORMATIONAL, non-blocking — registered by
+  # 04-register-crons.sh; does NOT affect the FAIL count so it can never break a
+  # green build on a box that predates it).
+  if printf '%s\n' "$CRON_OUT" | grep -q "ghl-pit-liveness"; then
+    echo "  [PASS] cron present: ghl-pit-liveness (daily runtime-PIT liveness watcher)"
+  else
+    echo "  [INFO] cron ghl-pit-liveness not found — run scripts/04-register-crons.sh to register the daily runtime-PIT watcher (non-blocking)"
+  fi
 else
   report_fail "openclaw CLI not on PATH — cannot verify cron list"
 fi
@@ -724,6 +732,11 @@ echo "  FAIL: $FAIL"
 if [ "$FAIL" -eq 0 ]; then
   echo ""
   echo "  RESULT: PASS — all mechanical QC items green. Proceed to human-judgment items in protocols/pre-handoff-qc-protocol.md."
+  # Command Center Kanban: mechanical QC passed -> move the install task to
+  # `review` so the INDEPENDENT CC auto-scorer can promote it (the builder never
+  # self-grades to done). FAIL-SOFT: cc-task.sh always exits 0 and `|| true`
+  # guarantees it cannot change this script's exit code. No-ops when CC is absent.
+  bash "$SCRIPT_DIR/cc-task.sh" review || true
   exit 0
 else
   echo ""

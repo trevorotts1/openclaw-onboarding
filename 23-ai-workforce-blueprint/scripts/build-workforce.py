@@ -33,7 +33,7 @@ IMPORTANT:
 - This script is executed BY the AI agent, not run directly by the client
 - The AI reads this file to understand the interview flow and executes it conversationally
 - Questions are generated dynamically based on industry and context, not from a static list
-- The AI MUST be running on a high reasoning model (Opus, Sonnet, MiMo V2 Pro, Gemini 3.1 Pro, GPT 5.4)
+- The AI MUST be running on a high reasoning model (DeepSeek v4 pro, GLM 5.2, MiMo V2 Pro, Gemini 3.1 Pro, GPT 5.4); Ollama Cloud preferred, OpenRouter backup, thinking=HIGH
 - Research best practices uses openrouter/perplexity/sonar-pro-search
 
 FORBIDDEN CLIENT-FACING LANGUAGE:

@@ -11,12 +11,96 @@ Safe to re-run: every write is INSERT OR REPLACE / INSERT OR IGNORE,
 keyed off stable IDs derived from each SOP's slug. Used by Skill 32's
 fresh install AND by client update flows that ship a refreshed library.
 """
-import sqlite3, json, secrets, sys
+import sqlite3, json, os, secrets, sys
 from datetime import datetime, timezone
+from pathlib import Path
+
+# PRD 1.3: resolve the DB via the single shared resolver when no explicit path is
+# passed, so a direct run (no db-path arg) finds the DB on Mac AND VPS instead of
+# assuming the VPS-only /data path.
+_SHARED_UTILS = Path(__file__).resolve().parent.parent.parent / "shared-utils"
+sys.path.insert(0, str(_SHARED_UTILS))
+try:
+    from resolve_db import find_dashboard_db as _shared_find_dashboard_db, is_db_found  # type: ignore
+    _HAS_SHARED_RESOLVER = True
+except ImportError:
+    _HAS_SHARED_RESOLVER = False
+
+
+def _default_db() -> str:
+    """Resolve mission-control.db when the caller passes no explicit path.
+    Prefers the shared resolver (Mac ~/projects/command-center first, then VPS
+    /data/projects/command-center); falls back to add-department.sh's list."""
+    if _HAS_SHARED_RESOLVER:
+        p = _shared_find_dashboard_db()
+        if is_db_found(p):
+            return str(p)
+    for cand in (
+        Path.home() / "projects/command-center/mission-control.db",
+        Path.home() / "projects/mission-control/mission-control.db",
+        Path("/opt/mission-control/mission-control.db"),
+        Path("/app/mission-control.db"),
+        Path("/data/projects/command-center/mission-control.db"),
+    ):
+        if cand.is_file():
+            return str(cand)
+    return "/data/projects/command-center/mission-control.db"
+
+
+def _resolve_crm_platform(client_slug: str) -> str:
+    """Prefer the interview answer over a blind GoHighLevel default.
+
+    Mirrors 23-ai-workforce-blueprint/scripts/create_role_workspaces.py: the CRM
+    is derived from the company-config.json connectedSystems list (GoHighLevel is
+    the fleet default; HubSpot/Salesforce override when present). An explicit
+    $CRM_PLATFORM env var wins. Downstream INSERT OR IGNORE still means a value a
+    prior interview step already wrote is never clobbered.
+    """
+    env_override = os.environ.get("CRM_PLATFORM", "").strip()
+    if env_override:
+        return env_override
+    for cfg_path in (
+        Path("/data/projects/command-center/config/company-config.json"),
+        Path.home() / "projects/command-center/config/company-config.json",
+        Path("/data/.openclaw/workspace/zero-human-company") / client_slug / "company-config.json",
+    ):
+        try:
+            if not cfg_path.is_file():
+                continue
+            cfg = json.load(open(cfg_path))
+        except (OSError, json.JSONDecodeError):
+            continue
+        blob = str(cfg.get("connectedSystems") or cfg.get("connected_systems") or "").lower()
+        if "hubspot" in blob:
+            return "HubSpot"
+        if "salesforce" in blob:
+            return "Salesforce"
+        return "GoHighLevel"
+    return "GoHighLevel"
+
+
+def _ghl_pit_present() -> bool:
+    """Presence-only check (never reads/prints the value) for the GHL PIT in the
+    canonical secrets file. Used to warn the operator before stamping GoHighLevel."""
+    for env_path in (
+        Path.home() / ".openclaw/secrets/.env",
+        Path("/data/.openclaw/secrets/.env"),
+    ):
+        try:
+            if not env_path.is_file():
+                continue
+            for line in env_path.read_text().splitlines():
+                s = line.strip()
+                if s.startswith("GOHIGHLEVEL_API_KEY=") and s.split("=", 1)[1].strip():
+                    return True
+        except OSError:
+            continue
+    return False
+
 
 CLIENT = sys.argv[1]
 JSONL = sys.argv[2]
-DB = sys.argv[3] if len(sys.argv) > 3 else "/data/projects/command-center/mission-control.db"
+DB = sys.argv[3] if len(sys.argv) > 3 else _default_db()
 
 db = sqlite3.connect(DB)
 db.row_factory = sqlite3.Row
@@ -159,8 +243,22 @@ print(f"  inserted: {dep_inserted}, unresolved (aspirational refs): {dep_unresol
 
 # ---- Pass 3: seed client_template_vars defaults ----
 print(f"[{CLIENT}] pass 3: seed client_template_vars defaults")
+# P2: prefer the interview answer for the CRM platform instead of a blind
+# GoHighLevel hardcode. INSERT OR IGNORE below still never clobbers an override.
+CRM_PLATFORM = _resolve_crm_platform(CLIENT)
+print(f"[{CLIENT}] crm_platform resolved to {CRM_PLATFORM!r} (interview/config-derived; GoHighLevel = fleet default)")
+# Verify the GHL PIT BEFORE stamping GoHighLevel so the operator (never the
+# client) is told when templates are discoverable but agents can't act on GHL.
+if CRM_PLATFORM == "GoHighLevel" and not _ghl_pit_present():
+    print(
+        f"[{CLIENT}] NOTE (operator): stamping crm_platform='GoHighLevel' but "
+        f"GOHIGHLEVEL_API_KEY (PIT) is absent from secrets/.env — GHL funnel/automation "
+        f"templates are discoverable yet department agents cannot ACT on GHL until Skill 36 "
+        f"wires GOHIGHLEVEL_API_KEY (PIT) + GOHIGHLEVEL_LOCATION_ID. Non-blocking.",
+        file=sys.stderr,
+    )
 DEFAULTS = {
-    "crm_platform": "GoHighLevel",
+    "crm_platform": CRM_PLATFORM,
     "analytics_platform": "Google Analytics 4",
     "project_management": "Airtable",
     "automation_platform": "N8N",

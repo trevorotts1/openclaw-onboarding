@@ -1,4 +1,4 @@
-# Core File Updates — Skill 39 (Real Estate Playbook & Property Intelligence v1.0.0)
+# Core File Updates — Skill 39 (Real Estate Playbook & Property Intelligence v1.0.3)
 
 These lines are appended to the workspace's AGENTS.md, MEMORY.md, and TOOLS.md at install time
 by `scripts/08-update-core-files.sh` (and the Sales-Brain pointer by `scripts/05-install-sales-brain-extension.sh`).
@@ -50,6 +50,12 @@ Behind `<!-- BEGIN skill-39 tools v1.0.0 -->` / `<!-- END skill-39 tools v1.0.0 
 A concise quick-reference for `scripts/lib-property.sh` (geocode / lookup / comps / streetview) and
 `scripts/lib-re-events.sh re_event <type> <json>`, plus the provider-key env vars and their honest-gap
 behavior. No keys, no client data — UNIVERSAL.
+
+## v1.0.3 additions (GHL + Command-Center write layer)
+
+- `scripts/lib-ghl-sync.sh` — sourced/called fail-soft helper: `ghl_tag` (caf `contacts add-tag`), `ghl_opportunity` (caf `opportunities`), `ghl_book` (caf `calendars book`), and `cc_move` (PATCH the Command Center task). Each is an HONEST no-op when its credential is absent — no fabricated success. Credentials are operator-supplied via env: canonical `GOHIGHLEVEL_API_KEY` (caf also resolves `CAF_API_KEY`/`GHL_API_KEY`) for GHL writes, and `MC_API_TOKEN` + `MISSION_CONTROL_URL` (defaults to `http://localhost:4000`) for Command Center moves. A builder never self-PATCHes its own task to `done`.
+- `wire.sh` (root) — idempotent, fail-soft re-wire of install steps `00`–`08` for the canonical updater (re-applies the blocks below once per version after a wipe-and-replace).
+- The auto-appended TOOLS.md block still references `lib-property.sh` + `lib-re-events.sh` (unchanged markers); the new `lib-ghl-sync.sh` is documented here and in INSTALL/CHANGELOG. (Surfacing it inside the marker-fenced TOOLS block needs a replace-in-place writer and is tracked as a follow-up to avoid duplicate blocks on already-wired boxes.)
 
 ## What does NOT get touched
 

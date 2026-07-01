@@ -23,6 +23,7 @@ VERSION_MAP = {
     "/campaigns/": "2021-07-28",
     "/invoices/": "2021-07-28",
     "/payments/": "2021-07-28",
+    "/products/": "2021-07-28",
     "/emails/": "2021-07-28",
     "/forms/": "2021-07-28",
     "/locations/": "2021-07-28",
@@ -46,7 +47,8 @@ def _get_token() -> str:
     if not token:
         print(
             "Error: GHL_API_KEY environment variable is not set.\n"
-            "Set it with: export GHL_API_KEY='your-api-key-here'",
+            "Set it with: export GOHIGHLEVEL_API_KEY='your-api-key-here'\n"
+            "(The caf/ghl wrapper maps GOHIGHLEVEL_API_KEY -> GHL_API_KEY for the engine.)",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -117,16 +119,22 @@ def put(path: str, data: dict[str, Any] | None = None, version: str | None = Non
     return resp.json()
 
 
-def delete(path: str, version: str | None = None) -> dict:
-    """Make a DELETE request to the GHL API."""
+def delete(path: str, version: str | None = None, body: dict[str, Any] | None = None) -> dict:
+    """Make a DELETE request to the GHL API.
+
+    ``body`` — optional JSON request body. Some GHL DELETE endpoints require the
+    payload in the body (e.g. DELETE /contacts/{id}/tags expects {"tags": [...]});
+    without it the call 400s or silently no-ops. Omitted (None) sends no body,
+    preserving the original behaviour for every other DELETE caller.
+    """
     url = f"{BASE_URL}{path}"
-    loc = os.environ.get("GHL_LOCATION_ID", "").strip() or None
+    loc = (body or {}).get("locationId") or os.environ.get("GHL_LOCATION_ID", "").strip() or None
     try:
-        check_write("DELETE", url, None, location_id=loc)
+        check_write("DELETE", url, body, location_id=loc)
     except SafetyRefused as exc:
         print(f"SAFETY GATE: {exc}", file=sys.stderr)
         sys.exit(1)
-    resp = requests.delete(url, headers=_headers(version, path), timeout=30)
+    resp = requests.delete(url, headers=_headers(version, path), json=body, timeout=30)
     resp.raise_for_status()
     try:
         return resp.json()

@@ -1,5 +1,31 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.9.4 - 2026-06-30 — GHL posting ladder, runtime preflight, 0-posts-as-error, Command Center Kanban, QC fix
+
+### Added
+- **Command Center Kanban lifecycle** in `scripts/run-publishing-cycle.sh` — the cycle now creates ONE board task (with a description so the Triad gate accepts it), PATCHes it `in_progress` at cycle start and `review` at hand-off. Promotion `review->done` is left to the independent QC scorer (the builder never self-grades; the script never sets `done`). Every Command Center call is **fail-soft**: `MC_API_TOKEN` unset or board unreachable => logs `Command Center skipped`, creates no task, and the run finishes exactly as before (manifest + READY file, exit 0). Token resolved from `$MC_API_TOKEN` or `~/command-center/app/.env.local`; never printed. New "Command Center" subsection added to `INSTRUCTIONS.md`.
+- **Runtime GHL credential preflight (HARD-STOP)** in `run-publishing-cycle.sh` — missing `GOHIGHLEVEL_API_KEY` / `GOHIGHLEVEL_LOCATION_ID` now STOPS the cycle (exit 3) with a plain-English, operator-facing reason instead of staging a manifest that cannot post. Opt-in live probe (`SKILL35_LIVE_PREFLIGHT=1`) additionally hard-stops on PIT 401/403 or **zero connected social accounts**, emitting a client-facing message; transient network errors only WARN.
+- **Deterministic 0-posts-as-error gate** — new `--verify-receipts <path>` mode reads `publish-receipts.json` and HARD-FAILS (exit 6) when accounts are connected but 0 posts were created, or posts were planned but 0 created. Documents the `publish-receipts.json` contract (planned/created/connected counts + per-post platform/url/post_id/tier).
+
+### Fixed
+- **GHL posting ladder (playbook Section 17 rewrite):** Section 17 now leads with the Tier 0->3 ladder (Tier 0 `caf` -> Tier 1 official MCP -> Tier 2 community MCP -> Tier 3 raw REST as last resort) instead of "raw REST only / no external tool." Documents the **`CAF_APPROVAL_TOKEN` unblock** (caf's safety gate refuses every write unless an approval token is scoped to the social-post call — verified in `safety_gate.py`), the `caf --dry-run` preview, and caf's real body schema (`accountIds` + `media:[{url,type}]` + `scheduledAt`). Adds an explicit SCHEMA NOTE that caf's body differs from the Tier-3 `socialMediaAccountIds` + `mediaUrls` shape (verify against live GHL docs — not guessed).
+- **3 GHL-call bugs:** (1) `caf social accounts --json` -> `caf --json social accounts` (`--json` is a group-level flag and must precede the subcommand — verified in `gohighlevel_cli.py`); (2) connection-check MCP call `get_platform_accounts` + `POST $MCP_URL/execute {"name","arguments"}` -> `get_social_accounts` + JSON-RPC `tools/call` (fixed in `INSTRUCTIONS.md`, `INSTALL.md`, `QC.md`, `qc-skill35.sh`); (3) get-accounts endpoint reconciled to the verified clean list `GET /social-media-posting/{locationId}/accounts` (what `caf` uses) instead of the per-platform get-ONE that needs an accountId you don't have. The comment `/posts/{id}/reply` route is flagged UNCONFIRMED (verify before use) rather than changed blindly.
+- **Install-QC contradiction (P0):** `qc-skill35.sh` no longer asserts `--announce` is present on the `skill35-weekly-theme` cron — the gateway REJECTS `--announce --channel` on main-target crons, so that assert hard-failed install-QC every run. It now asserts the real invariant (registration on `sessionTarget=main`).
+- **Duplicate QC script:** `qc-social-media-planner.sh` is now a thin shim that `exec`s `qc-skill35.sh` (single source of truth; ends the v2.2.0-vs-v2.3.0 drift while preserving the historical entry point).
+- `scripts/register-weekly-cron.sh` — `echo "$(_existing_count) ..."` command-substitution bug -> `${_existing_count}`.
+- `scripts/run-publishing-cycle.sh` — removed the dead `[ $# -lt 0 ]` check (never true).
+- `scripts/merge_reel.sh` — duration QC float comparison now uses `awk` (already required) instead of `bc`, so the gate no longer crashes on minimal VPS images that lack `bc`.
+- `scripts/weekly-batch.sh` — logs to persistent `~/.openclaw/data/skill35/logs/` instead of `/tmp` (which is cleared on reboot).
+- `wire.sh` — now fail-soft: an `EXIT` trap logs and forces exit 0 so a wiring hiccup never aborts the fleet update run.
+- VPS secrets path clarified to `/data/.openclaw/secrets/.env` (resolve from `/data/.openclaw`, not `~`) in `INSTALL.md`.
+- ImageMagick 7 `magick`/`convert` fallback added to `INSTALL.md`, `QC.md`, and `CORE_UPDATES.md` so the carousel/cover steps work on IM7.
+
+### Models (client-provider policy — NEVER Anthropic)
+- `SKILL.md` Usage gained a per-role model-tiering table using client providers only: high-reasoning (Researcher/Strategist) -> DeepSeek v4 pro or GLM 5.2; content/HTML writing (Writer/Editor/Image-Prompt/Email) -> GLM 5.2; browser/tool-calls/QC (Publisher + 6 QC agents) -> MiniMax 3; mechanical -> client default. Ollama Cloud preferred, OpenRouter backup, reasoning effort HIGH. Explicit reminder never to recommend/hardcode an Anthropic/Claude model for a client agent. Removed the contradictory "does NOT require any external CLI tools" line.
+
+### Doc reconciliation
+- Publisher role + TOOLS.md now say "every channel connected in GHL (live-queried)" instead of a fixed "6/8 platforms" count.
+
 ## v2.9.3 - 2026-06-30 — docs fix: corrected `caf social` commands to the real CLI surface
 
 ### Fixed (documentation vs CLI drift)

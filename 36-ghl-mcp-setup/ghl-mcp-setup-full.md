@@ -68,10 +68,10 @@ TIER 2 INSTALL
 [ ]  6    `npm run build` produced dist/main.js
 [ ]  6    .env file written with correct PIT + Location ID + port + chmod 600
 [ ]  6    GHL_COMMUNITY_MCP_URL env var set in openclaw.json
-[ ]  6    launchd plist (macOS) OR systemd unit (Linux/VPS) installed + loaded
+[ ]  6    launchd plist (macOS) OR pm2 ghl-community-mcp (VPS; systemd fallback) installed + loaded
 [ ]  6    Service shows state=running after bootstrap/start
-[ ]  6    `openclaw mcp set ghl-community-mcp` registered the URL
-[ ]  6    /health returns tools:588
+[ ]  6    Tier 2 left ON-DEMAND — ghl-community-mcp NOT registered in mcp.servers (no `openclaw mcp set`)
+[ ]  6    /health returns tools >= 500
 [ ]  6    /execute call with real tool returns real GHL data
 
 FALLBACK TIERS
@@ -80,8 +80,8 @@ FALLBACK TIERS
 [ ]  7    Codex Computer Use available (Tier 5)
 
 CORE FILES WIRED
-[ ]  8    SOUL.md updated with Tier Escalation Protocol
-[ ]  8    AGENTS.md updated with canonical state block + tier order + anti-patterns
+[ ]  8    SOUL.md LEFT UNCHANGED (Tier Escalation Protocol lives in AGENTS.md, not SOUL.md)
+[ ]  8    AGENTS.md updated with canonical state block + Tier Escalation Protocol + tier order + anti-patterns
 [ ]  8    TOOLS.md updated with tool-name reference
 [ ]  8    MEMORY.md updated with install record + credential references
 [ ]  8    USER.md updated (if file exists) with brand aliases
@@ -129,27 +129,27 @@ The Tier 3 fallback (REST API + skill set), the install of this document, and se
 #### Smart locator (run this before anything else)
 
 ```bash
-# Detect platform — VPS is the one with ~/.openclaw populated
-if [ -d "~/.openclaw" ]; then
-  PLATFORM="vps"
-  CANONICAL_MASTER="~/Downloads/openclaw-master-files"
-else
+# Detect platform — macOS is Darwin; everything else (VPS/Docker/Linux) is treated as vps.
+# (Do NOT test `[ -d "~/.openclaw" ]` — the tilde does NOT expand inside quotes, so the
+#  test is for a literal "~/.openclaw" dir that never exists, and ~/.openclaw exists on
+#  BOTH platforms anyway. uname is the reliable discriminator.)
+if [ "$(uname -s)" = "Darwin" ]; then
   PLATFORM="desktop"
-  CANONICAL_MASTER="$HOME/Downloads/openclaw-master-files"
+else
+  PLATFORM="vps"
 fi
+CANONICAL_MASTER="$HOME/Downloads/openclaw-master-files"
 echo "Platform detected: $PLATFORM"
 echo "Canonical path if missing: $CANONICAL_MASTER"
 
 # Search across all reasonable roots for the folder, tolerating spelling variants
 MASTER_FILES_DIR=""
 ROOTS=(
-  "$HOME/Downloads"        # macOS / Linux desktop canonical
-  "~/Downloads"        # VPS canonical
+  "$HOME/Downloads"        # macOS / Linux / VPS canonical (always $HOME — never a quoted "~")
   "/root/Downloads"        # some root-shell VPS setups
   "/data"                  # in case it was placed at the volume root
   "$HOME"                  # in case the client dropped it in home
   "$HOME/clawd"            # in case it lives next to the workspace
-  "~/clawd"            # VPS twin of above
   "/opt"                   # some server installs
   "/srv"                   # some server installs
 )
@@ -222,16 +222,12 @@ The client likely already has a GHL Private Integration Token (PIT) and Location
 ### Files and locations to check (in order)
 
 ```bash
-# Resolve platform-correct paths first
-if [ -d "~/.openclaw" ]; then
-  SECRETS_ENV="~/.openclaw/secrets/.env"
-  CONFIG_JSON="~/.openclaw/openclaw.json"
-  WORKSPACE="~/clawd"
-else
-  SECRETS_ENV="$HOME/.openclaw/secrets/.env"
-  CONFIG_JSON="$HOME/.openclaw/openclaw.json"
-  WORKSPACE="$HOME/clawd"
-fi
+# Canonical paths are identical on Mac and VPS (both under $HOME). Use $HOME — never a
+# quoted "~" (it does not expand inside quotes and would yield a literal "~/..." path).
+SECRETS_ENV="$HOME/.openclaw/secrets/.env"
+CONFIG_JSON="$HOME/.openclaw/openclaw.json"
+WORKSPACE="$HOME/clawd"
+[ ! -d "$WORKSPACE" ] && WORKSPACE="$HOME/.openclaw/workspace"
 
 # 1. OpenClaw secrets file (canonical — same names on Mac and VPS, different paths)
 cat "$SECRETS_ENV" 2>/dev/null | grep -iE "GHL|GOHIGH|LEADCONN|LOCATION_ID|PIT|PRIVATE_INTEGRATION"
@@ -315,12 +311,8 @@ Use this exact request template (adapt the client's white-label brand name):
 **Write to BOTH locations:**
 
 ```bash
-# Pick the right secrets path for this platform
-if [ -d "~/.openclaw" ]; then
-  SECRETS_DIR="~/.openclaw/secrets"
-else
-  SECRETS_DIR="$HOME/.openclaw/secrets"
-fi
+# Canonical secrets dir is the same on Mac and VPS. Use $HOME, never a quoted "~".
+SECRETS_DIR="$HOME/.openclaw/secrets"
 
 # 1. Canonical secrets file
 mkdir -p "$SECRETS_DIR"
@@ -354,6 +346,14 @@ Confirm:
 - Official MCP endpoint URL is still `https://services.leadconnectorhq.com/mcp/`
 - Required header versions (currently `Version: 2021-07-28`; some legacy endpoints use `2021-04-15`)
 - Whether the BusyBee3333 fork's tool count has changed since 2026-05-13 (was 588)
+
+**Tier 2 fork is PINNED, not floating.** This skill clones the community MCP at a fixed
+commit (`GHL_MCP_PIN_SHA=3dd9006ac5242762612e6d22b9a51a0a17aeca79`, 2026-05-15) — see
+Section 6.2 — because the fork's `main` moved on (2026-06-11+ added `mcp-apps`, an "easy
+setup" flow, and a curated tool-profile that changes the default `/tools` surface). Research
+is for awareness; do NOT silently bump the clone to `main`. To adopt a newer commit, change
+`GHL_MCP_PIN_SHA`, rebuild, and re-run `qc-ghl-mcp-setup.sh` so the `/health` tool count and
+the `/execute` real-data probe still pass.
 
 ---
 
@@ -433,10 +433,16 @@ Recommend `8765` as default — memorable, low collision risk, used in reference
 ### 6.2 Clone, install, build
 
 ```bash
+# PINNED COMMIT (reproducibility / drift protection) — 3dd9006a (2026-05-15) is the
+# commit this skill was verified against: main=dist/main.js, src/main.ts:55 PORT
+# precedence, and GET /health + GET /tools + POST /execute. `main` HEAD (2026-06-11+)
+# adds mcp-apps / curated tool-profile changes that shift the default /tools surface.
+GHL_MCP_PIN_SHA="3dd9006ac5242762612e6d22b9a51a0a17aeca79"
 mkdir -p ~/mcp-servers
 cd ~/mcp-servers
 git clone https://github.com/busybee3333/Go-High-Level-MCP-2026-Complete.git ghl-community-mcp
 cd ghl-community-mcp
+git checkout -q "$GHL_MCP_PIN_SHA"
 npm install --no-audit --no-fund
 npm run build   # builds dist/main.js and dist/app-ui/
 ```
@@ -444,12 +450,14 @@ npm run build   # builds dist/main.js and dist/app-ui/
 **Idempotency note:** Section 6 is safe to re-run. The locator at the top of the script (`git clone`) will fail if the repo already exists, but you can detect that and `git pull` instead:
 
 ```bash
+# Idempotent + PINNED: stay on the verified commit; a re-run re-pins (does NOT drift to main HEAD).
+GHL_MCP_PIN_SHA="3dd9006ac5242762612e6d22b9a51a0a17aeca79"
 if [ -d ~/mcp-servers/ghl-community-mcp/.git ]; then
-  cd ~/mcp-servers/ghl-community-mcp && git pull && npm install && npm run build
+  cd ~/mcp-servers/ghl-community-mcp && git fetch -q origin && git checkout -q "$GHL_MCP_PIN_SHA" && npm install && npm run build
 else
   mkdir -p ~/mcp-servers && cd ~/mcp-servers
   git clone https://github.com/busybee3333/Go-High-Level-MCP-2026-Complete.git ghl-community-mcp
-  cd ghl-community-mcp && npm install --no-audit --no-fund && npm run build
+  cd ghl-community-mcp && git checkout -q "$GHL_MCP_PIN_SHA" && npm install --no-audit --no-fund && npm run build
 fi
 ```
 
@@ -459,7 +467,7 @@ The `.env` write (Section 6.3) overwrites — if you re-run, your existing value
 [ -f ~/mcp-servers/ghl-community-mcp/.env ] && echo "EXISTS — backup before overwrite" || echo "OK to write"
 ```
 
-The launchd plist (Section 6.5) install is idempotent if you `bootout` before `bootstrap`. The OpenClaw MCP registration (Section 6.7) is idempotent — `mcp set` overwrites cleanly.
+The launchd plist (Section 6.5) install is idempotent if you `bootout` before `bootstrap`. Tier 2 is ON-DEMAND (Section 6.7) — there is no `mcp set` step to repeat; re-running just rebuilds the server.
 
 ### 6.2.1 Common install failures and how to recover
 
@@ -522,6 +530,11 @@ cat > ~/Library/LaunchAgents/com.clawd.ghl-mcp.plist <<'EOF'
     <key>EnvironmentVariables</key><dict>
         <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
         <key>NODE_ENV</key><string>production</string>
+        <!-- main.js reads PORT before MCP_SERVER_PORT (src/main.ts:55). Pin BOTH to 8765
+             so a stray inherited PORT can never bind a random port. Must match the .env
+             MCP_SERVER_PORT and the GHL_COMMUNITY_MCP_URL env var. -->
+        <key>PORT</key><string>8765</string>
+        <key>MCP_SERVER_PORT</key><string>8765</string>
     </dict>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><dict>
@@ -543,7 +556,14 @@ sed -i '' "s|USERNAME|$(whoami)|g" ~/Library/LaunchAgents/com.clawd.ghl-mcp.plis
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.clawd.ghl-mcp.plist
 ```
 
-### 6.6 Linux / VPS alternative: systemd
+### 6.6 Linux / VPS supervision: pm2 (canonical) — systemd is the non-container fallback
+
+> **v12.24.0:** On a Hostinger Docker VPS there is NO systemd, so the canonical VPS
+> supervisor is **pm2** (`ecosystem.config.js` + `pm2 save` + `@reboot pm2 resurrect`),
+> with both `PORT` and `MCP_SERVER_PORT` pinned. See **INSTALL.md §5.6** for the exact pm2
+> blocks (the QC script checks `pm2 jlist | grep ghl-community-mcp` first, systemd second).
+> Use the systemd unit below ONLY on a non-container Linux box that genuinely has systemd.
+> Never fall back to a bare `nohup` — it dies on teardown and is never restarted.
 
 ```bash
 sudo tee /etc/systemd/system/ghl-mcp.service > /dev/null <<EOF
@@ -555,6 +575,10 @@ After=network.target
 Type=simple
 User=$(whoami)
 WorkingDirectory=/home/$(whoami)/mcp-servers/ghl-community-mcp
+# main.js reads PORT before MCP_SERVER_PORT (src/main.ts:55) — pin BOTH so a stray
+# inherited PORT can never bind a random port.
+Environment=PORT=8765
+Environment=MCP_SERVER_PORT=8765
 ExecStart=/usr/bin/node /home/$(whoami)/mcp-servers/ghl-community-mcp/dist/main.js
 Restart=on-failure
 RestartSec=10
@@ -570,15 +594,28 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now ghl-mcp
 ```
 
-### 6.7 Register with OpenClaw
+### 6.7 Tier 2 = ON-DEMAND via curl (NO native registration)
+
+As of skill 36 v1.1.0 the community MCP is **NOT** registered under `mcp.servers`. Its
+588 tool schemas would otherwise ride in every session's context whether or not GHL is
+touched (~18k tokens/session on representative workloads — measurement in CHANGELOG). The
+local service still runs (launchd/systemd/pm2 from 6.5/6.6, unchanged); only the
+registration mode changes. The agent invokes Tier 2 tools on demand:
 
 ```bash
-openclaw mcp set ghl-community-mcp '{
-  "url": "http://localhost:8765/mcp",
-  "transport": "streamable-http",
-  "connectionTimeoutMs": 30000
-}'
+# Discover the tool surface live (no standing context cost):
+curl -sS "$GHL_COMMUNITY_MCP_URL/tools" | python3 -m json.tool
+
+# Invoke a tool via the REST execute endpoint:
+curl -sS -X POST "$GHL_COMMUNITY_MCP_URL/execute" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"ghl_list_products","arguments":{"limit":3}}'
 ```
+
+If a prior install registered `ghl-community-mcp`, remove it:
+`openclaw mcp remove ghl-community-mcp` (wire.sh migration M2 does this on live boxes).
+**Do NOT run `openclaw mcp set ghl-community-mcp`** — that re-introduces the standing
+context cost v1.1.0 removed.
 
 ### 6.8 Verify Tier 2 works
 
@@ -671,25 +708,18 @@ Verify which the client uses by running:
 ls ~/clawd/{SOUL,AGENTS,TOOLS,MEMORY,USER,CLAUDE}.md 2>/dev/null
 ```
 
-### 8.1 What to add to SOUL.md (cardinal rule — survives across all sessions)
+### 8.1 SOUL.md — NO UPDATE NEEDED (as of skill 36 v1.1.0)
 
-**Append** at the end (do not insert — respect existing structure):
+**Do NOT add the GHL Tier Escalation Protocol to SOUL.md.** The protocol is OPERATING LAW,
+not identity/voice, so it lives in the SHARED **AGENTS.md** (§8.2 below) where sub-agents —
+including the convert-and-flow-agent — actually inherit it. In the multi-agent model every
+agent has its OWN SOUL.md but shares AGENTS.md + TOOLS.md; a protocol placed only in the
+main agent's SOUL.md never reaches sub-agents. SOUL.md is therefore left **byte-identical**
+by this skill (matches CORE_UPDATES.md and the fleet convention skills 05/06/38/39/41 state).
 
-```markdown
-## 🔴 GHL Tier Escalation Protocol
-
-When asked to do anything involving GHL / GoHighLevel / [client white-label name] / LeadConnector:
-
-1. **Tier order is binding. Do not skip tiers.** Try Tier 1 (official MCP) first. Fall to Tier 2 (community MCP) if Tier 1 lacks the tool. Fall to Tier 3 (API + skill) only if neither MCP covers it. Fall to Tier 4/5 only if Tier 3 fails fresh.
-
-2. **Always use `$GHL_COMMUNITY_MCP_URL`** in shell commands for Tier 2. Never type a literal port number. Hardcoded ports from session memory have caused documented failures.
-
-3. **Session memory is not authoritative — the canonical state block in AGENTS.md is.** Before declaring a tier dead, re-read the canonical state block and verify your actual call matches. If you get 404 / connection refused, first hypothesis is "I used the wrong URL," not "the server is broken."
-
-4. **Required disclosure on every GHL response:** prefix your final answer with a one-line header in this exact format: `[GHL tier used: N — tool_name]`. If you fell through tiers, include the chain: `[GHL tier used: 2 (Tier 1 lacked tool: products) — ghl_list_products]`. Missing disclosure = protocol violation.
-
-5. **"It looked broken earlier" is not an excuse.** If a tier crashed in earlier session work, attempt it fresh anyway. If it actually fails this time, recover it (kickstart / systemctl restart) before falling through.
-```
+If a pre-v1.1.0 install previously appended a `## 🔴 GHL Tier Escalation Protocol` block to
+SOUL.md, `wire.sh` migration **M1** removes it on live boxes. The full protocol text is
+maintained in §8.2 (AGENTS.md), not here.
 
 ### 8.2 What to add to AGENTS.md (operating block — the WHAT-TO-DO)
 
@@ -711,19 +741,25 @@ These values are authoritative. If your session history disagrees, trust this bl
 | MCP endpoint (OpenClaw transport) | `$GHL_COMMUNITY_MCP_URL/mcp` (streamable-http) |
 | REST execute (debugging) | `POST $GHL_COMMUNITY_MCP_URL/execute` with `{"name":"tool","arguments":{...}}` |
 | Live tool discovery | `curl $GHL_COMMUNITY_MCP_URL/tools` |
-| Lifecycle | launchd plist `~/Library/LaunchAgents/com.clawd.ghl-mcp.plist` (macOS) or systemd `ghl-mcp.service` (Linux). Restart: `launchctl kickstart gui/$(id -u)/com.clawd.ghl-mcp` (macOS) / `sudo systemctl restart ghl-mcp` (Linux). |
+| Lifecycle | launchd plist `~/Library/LaunchAgents/com.clawd.ghl-mcp.plist` (macOS) or pm2 `ghl-community-mcp` on VPS (systemd `ghl-mcp.service` fallback). Restart: `launchctl kickstart gui/$(id -u)/com.clawd.ghl-mcp` (macOS) / `pm2 restart ghl-community-mcp` (VPS; `sudo systemctl restart ghl-mcp` on systemd boxes). |
 
-### Tier order (try in sequence; do not skip)
+### Tier order (try in sequence; do not skip — START AT TIER 0)
+
+**Tier 0 — Convert and Flow CLI (PRIMARY)**
+- Wrapper: `caf` / `convertandflow` / `ghl` at `~/.openclaw/tools/convert-and-flow-cli/` — owned by SKILL 44
+- Covers: contacts, opportunities, calendars, conversations, documents, payments, forms, social, locations, workflow READS (PIT); workflow BUILD/EDIT (Firebase token)
+- Works in the orchestrator AND in sub-agents (it is a subprocess, not an injected MCP tool)
+- Use FIRST for everything the CLI covers; health check `caf doctor`
 
 **Tier 1 — Official GHL MCP**
 - Server name in OpenClaw: `ghl-mcp`
 - Endpoint: `https://services.leadconnectorhq.com/mcp/` (streamable-http, stateless)
 - 36 tools: contacts, calendars, conversations, opportunities, social media, blogs, emails, locations, read-only payments
-- Use first for anything in those domains
+- Use for blogs and anything the CLI does not cover in those domains
 
-**Tier 2 — Community GHL MCP**
-- Server name in OpenClaw: `ghl-community-mcp`
-- Endpoint: `$GHL_COMMUNITY_MCP_URL/mcp`
+**Tier 2 — Community GHL MCP (ON-DEMAND via curl — NOT registered in mcp.servers)**
+- As of v1.1.0 it is **not** registered under `mcp.servers` (its 588 schemas would ride in every session's context). The local service still runs; the agent calls it on demand.
+- Live discovery: `curl "$GHL_COMMUNITY_MCP_URL/tools"`; invoke: `POST "$GHL_COMMUNITY_MCP_URL/execute"` with `{"name":"tool","arguments":{...}}`
 - 588 tools: FULL API including products, invoices, billing, subscriptions, estimates, store, coupons, Voice AI, Phone System, Agent Studio
 - Use when Tier 1 lacks the needed tool
 
@@ -733,14 +769,20 @@ These values are authoritative. If your session history disagrees, trust this bl
 - Base URL: `https://services.leadconnectorhq.com`
 - Version header: `2021-07-28` (some modules use `2021-04-15`)
 
-**Tier 4 — Playwright browser**
-- URL: `https://app.gohighlevel.com` (or client white-label)
-- Use `launchPersistentContext`, never `launch()`
-- Creds in `~/.openclaw/secrets/.env`
+**Tier 4 — Browser: agent-browser (Vercel, skill 03) FIRST, Playwright fallback**
+- Primary: agent-browser, headless + isolated `--session` (prefer accessibility-snapshot text over screenshots)
+- Fallback: Playwright `launchPersistentContext`, never `launch()`
+- URL: client white-label root (login mounts at `/`) or `https://app.gohighlevel.com`
+- Auth: seeded Firebase refresh token preferred; `GHL_AGENCY_EMAIL` / `GHL_AGENCY_PASSWORD` in `~/.openclaw/secrets/.env` as fallback
 
 **Tier 5 — Codex Computer Use**
 - `codex/gpt-5.5`, 45-min default timeout
 - Last resort only
+
+> The exact AGENTS.md text that actually gets installed (canonical state block, the
+> numbered 🔴 Tier Escalation Protocol, token-aware routing, the 429 carve-out, the tier
+> table and anti-patterns) is maintained in **CORE_UPDATES.md** — paste from there, not
+> from this reference summary, so the two never drift.
 
 ### Verify-before-fallthrough protocol (REQUIRED before declaring any tier dead)
 
@@ -802,17 +844,19 @@ For anything not in this table, run live discovery:
 
 Two MCP servers configured for [client white-label brand]:
 
-1. **Official GHL MCP** — OpenClaw entry `ghl-mcp`, hosted at `https://services.leadconnectorhq.com/mcp/`. 36 tools. Stateless.
+0. **Convert and Flow CLI (Tier 0, PRIMARY)** — `caf` / `convertandflow` / `ghl`, owned by skill 44. First stop for everything the CLI covers; workflow writes need the Firebase token.
 
-2. **Community GHL MCP — DEPLOYED** — OpenClaw entry `ghl-community-mcp`, BusyBee3333 2026 fork. 588 tools. Runs locally on `$GHL_COMMUNITY_MCP_URL` (env var resolves to `http://localhost:8765` unless port collision required a different port). Repo at `~/mcp-servers/ghl-community-mcp`. Lifecycle: launchd plist `~/Library/LaunchAgents/com.clawd.ghl-mcp.plist` (macOS) or `ghl-mcp.service` (Linux). Auto-starts at login, restarts on crash. **No Docker dependency.**
+1. **Official GHL MCP (Tier 1)** — OpenClaw entry `ghl-mcp`, hosted at `https://services.leadconnectorhq.com/mcp/`. 36 tools. Stateless.
+
+2. **Community GHL MCP (Tier 2) — DEPLOYED, ON-DEMAND (NOT registered in `mcp.servers`)** — BusyBee3333 2026 fork pinned at `3dd9006a`. 588 tools. Called on demand via `curl "$GHL_COMMUNITY_MCP_URL/execute"` / `/tools` (env var resolves to `http://localhost:8765` unless a port collision forced another port). Repo at `~/mcp-servers/ghl-community-mcp`. Lifecycle: launchd plist `~/Library/LaunchAgents/com.clawd.ghl-mcp.plist` (macOS) or pm2 `ghl-community-mcp` (VPS; systemd `ghl-mcp.service` fallback). Auto-starts, restarts on crash. **No Docker dependency.**
 
 3. **Tier 3 fallback** — GHL skill at `$MASTER_FILES_DIR/29-ghl-convert-and-flow/` (Mac default: `~/Downloads/openclaw-master-files/29-ghl-convert-and-flow/`; VPS default: `~/Downloads/openclaw-master-files/29-ghl-convert-and-flow/`). Pre-installed for all clients unless Section 1.B noted otherwise.
 
-4. **Tier 4 fallback** — Playwright browser at `[client white-label URL]`.
+4. **Tier 4 fallback** — agent-browser (skill 03) FIRST, Playwright fallback, at `[client white-label URL]`.
 
 5. **Tier 5 fallback** — Codex Computer Use, `codex/gpt-5.5`.
 
-Decision table and full setup details in TOOLS.md. Cardinal behavioral rule in SOUL.md (`GHL Tier Escalation Protocol`).
+Decision table and full setup details in TOOLS.md. Cardinal operating rule (`GHL Tier Escalation Protocol`) lives in **AGENTS.md** (shared by all agents); SOUL.md is left unchanged.
 
 ### Credentials
 
@@ -846,7 +890,7 @@ Before declaring setup complete, run the agent through these tests. Each tests a
 | 5 | "Pull the webhook delivery log for my account from the last 24 hours." | Expect fall-through: `[GHL tier used: 3 (Tier 1+2 lacked tool) — raw API]` | Verifies clean tier-3 fall-through |
 
 **Passing:** every prompt response opens with the correct disclosure header.
-**Failing:** missing header → SOUL.md isn't loading into the agent's system prompt. Investigate channel-routing / bootstrap injection.
+**Failing:** missing header → AGENTS.md (where the Tier Escalation Protocol + disclosure rule live) isn't loading into the agent's system prompt. Investigate channel-routing / bootstrap injection.
 **Failing on wrong tier:** docs are loading but agent is misrouting. Tighten the canonical state block.
 
 ---
@@ -865,14 +909,14 @@ The script asserts each of these. Any failure = setup is incomplete:
 4. **Both credentials are reachable** — `$GOHIGHLEVEL_API_KEY` starts with `pit-`, `$GOHIGHLEVEL_LOCATION_ID` is 22 chars
 5. **Credentials are in BOTH locations** — secrets `.env` file AND `openclaw.json` env.vars
 6. **Tier 1 MCP is registered** in `openclaw mcp list`
-7. **Tier 1 returns 36 tools** via `tools/list`
+7. **Tier 1 returns >= 36 tools** via `tools/list`
 8. **Tier 1 returns real location data** via `locations_get-location`
-9. **Tier 2 MCP is registered** in `openclaw mcp list`
-10. **Tier 2 server is running** (launchd or systemd reports active)
-11. **Tier 2 /health returns `tools:588`**
+9. **Tier 2 is NOT registered** (on-demand) — `ghl-community-mcp` is ABSENT from `openclaw mcp list`, and `$GHL_COMMUNITY_MCP_URL/tools` responds on demand
+10. **Tier 2 server is supervised** (launchd on Mac / pm2 on VPS — systemd fallback — reports active)
+11. **Tier 2 /health returns `tools` >= 500**
 12. **Tier 2 /execute returns real GHL data** for a sample tool (e.g. `ghl_list_products`)
 13. **`GHL_COMMUNITY_MCP_URL` env var is set** and resolves to the right host:port
-14. **SOUL.md contains the Tier Escalation Protocol section**
+14. **AGENTS.md contains the Tier Escalation Protocol section** (relocated from SOUL.md; SOUL.md is left unchanged)
 15. **AGENTS.md contains the canonical state block AND the tier-skip enforcement block**
 16. **TOOLS.md contains the community MCP tool-name reference**
 17. **MEMORY.md contains the install record for this client**
@@ -887,12 +931,9 @@ The QC script is the standalone file `qc-ghl-mcp-setup.sh` shipped alongside thi
 ### 11.C How to run
 
 ```bash
-# Locate the master files folder (where install.sh placed the skill)
-if [ -d "~/.openclaw" ]; then
-  MASTER_FILES_DIR=~/Downloads/openclaw-master-files
-else
-  MASTER_FILES_DIR=$HOME/Downloads/openclaw-master-files
-fi
+# Locate the master files folder (where install.sh placed the skill).
+# Canonical on both Mac and VPS — use $HOME, never a quoted "~".
+MASTER_FILES_DIR="$HOME/Downloads/openclaw-master-files"
 
 chmod +x "$MASTER_FILES_DIR/36-ghl-mcp-setup/qc-ghl-mcp-setup.sh"
 bash    "$MASTER_FILES_DIR/36-ghl-mcp-setup/qc-ghl-mcp-setup.sh"
@@ -904,7 +945,7 @@ What the script does (summary — read the source for details):
 - Probes Tier 1 (Official MCP) — confirms 36 tools available
 - Probes Tier 2 (Community MCP) — hits `$GHL_COMMUNITY_MCP_URL/health`, confirms tool count
 - Probes Tier 3 (direct REST) — reads `X-RateLimit-Daily-Remaining` and surfaces the reset clock time in plain English if quota is low (v9.3.5 incident-response logic)
-- Asserts SOUL.md / AGENTS.md / TOOLS.md / MEMORY.md contain the canonical state block and disclosure-header protocol
+- Asserts AGENTS.md / TOOLS.md / MEMORY.md contain the canonical state block and disclosure-header protocol, and that SOUL.md does NOT carry the legacy protocol (relocated to AGENTS.md in v1.1.0)
 - Verifies secrets file is `chmod 600` and the PIT does not appear in any tracked `.md` file
 
 Exit code 0 = all clear. Non-zero = the script prints which assertions failed and why; fix and re-run.

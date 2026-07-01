@@ -1,5 +1,25 @@
 # Changelog - Skill 39: Real Estate Playbook & Property Intelligence
 
+## [1.0.3] - 2026-06-30 - Fail-soft GoHighLevel + Command-Center write layer; idempotent root re-wire
+
+Turns the previously prose-only GHL "dependency" into real, deterministic, safe writes, and adds the
+canonical-updater re-wire hook. Additive and fail-soft — no existing behavior changes; `lib-property.sh`,
+the F52 JSONL contract, and all `00`–`08` install scripts stay working. (Catches the CHANGELOG up to the
+current `skill-version.txt`.)
+
+### Added
+- `scripts/lib-ghl-sync.sh` — sourced/called helper with four fail-soft functions:
+  - `ghl_tag <contact_ref> <tag…>` → `caf contacts add-tag` (apply ZHC RE tags programmatically).
+  - `ghl_opportunity create|move …` → `caf opportunities create|update` (place/move a qualified lead in a real GHL pipeline stage — the frontmatter's "pipeline management" promise, now built).
+  - `ghl_book <calendar_id> <contact_id> <slot_id> <start> <end> [title]` → `caf calendars book` (GHL-native showing + reminders).
+  - `cc_move <task_id> <status> [agent_id]` → PATCH `{MISSION_CONTROL_URL:-http://localhost:4000}/api/tasks/{id}` with `Authorization: Bearer $MC_API_TOKEN` and `updated_by_agent_id`, advancing the Command Center Kanban card as the RE lifecycle moves.
+  - Every call is an HONEST no-op when its credential is absent: caf missing or no exported GoHighLevel credential (canonical `GOHIGHLEVEL_API_KEY`, or the `CAF_API_KEY`/`GHL_API_KEY` aliases caf resolves) → one `[skill 39][ghl] honest-gap: …` line + a PII-free `ghl_sync` event (`available:false`) via `lib-re-events.sh` + `return 0`. Never fabricates a success and never prints a secret.
+  - SELF-GRADE GUARD: a builder never self-PATCHes its own task to `done`. `cc_move` sends NO PATCH for `status=done` unless the acting agent is PROVEN to differ from the task's `created_by_agent_id` (fetched from the board); unknown builder ⇒ refuse. Mirrors the server-side review→done QC-authority gate.
+- `wire.sh` (root, executable, ALWAYS `exit 0`) — fail-soft idempotent re-wire that runs the canonical install steps `00`–`08` behind their existing guards, so the canonical fleet updater re-applies the AGENTS/MEMORY/TOOLS blocks, crons, templates, and the additive Skill-38 RE extension once per version after a wipe-and-replace (Skill-44 pattern). Excludes the runtime worker `03-property-lookup.sh` and the duplicate AGENTS writer `04-update-agents-md.sh` (not install steps).
+
+### Changed
+- `templates/real-estate-events.schema.json` — added `ghl_sync` to the `event` enum and an `action` property (`tag` | `opportunity` | `book` | `cc_move`) for the new sync events.
+
 ## [1.0.1] - 2026-05-30 - Round-3 canonical reconciliation: add the F52 event-contract reference
 
 Aligns Skill 39 with the canonical Round-3 decision (this repo's build is the canonical base; the

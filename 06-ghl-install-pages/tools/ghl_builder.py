@@ -15,8 +15,9 @@ deterministic, mechanical parts so they are never improvised:
   * the "never publish without approval" guard (A13.1)
   * marker-string verification of a fetched URL (A12.2 / A13.3 / C3)
 
-It runs on Haiku-class mechanical work (ledger writes, manifest assembly, file
-reads, URL/string verification) — NEVER the live UI loop. agent-browser/
+It runs mechanical-tier work (ledger writes, manifest assembly, file reads,
+URL/string verification) — model-agnostic, runs on the client's configured/
+default model — NEVER the live UI loop. agent-browser/
 Playwright commands are emitted as plans for the agent to execute; this module
 does not itself drive the browser (keeps it testable + side-effect-free except
 the ledger files it owns).

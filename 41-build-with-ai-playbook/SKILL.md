@@ -128,7 +128,8 @@ All GHL API calls use the operator's Private Integration Token (PIT) -- never sh
 | CORE_UPDATES.md | Lines appended to AGENTS.md / MEMORY.md / TOOLS.md |
 | EXAMPLES.md | Worked example flows (UNIVERSAL placeholders) |
 | CHANGELOG.md | Version history |
-| skill-version.txt | Currently 1.3.0 |
+| skill-version.txt | Currently 1.5.2 |
+| wire.sh | Idempotent, fail-soft post-update self-heal: re-runs install steps 03--06 after a version-bump wipe-and-recopy (always exits 0) |
 | scripts/00-verify-prerequisites.sh | Verifies jq, curl, GHL PIT, locationId; reports env state |
 | scripts/01-locate-master-files-folder.sh | Resolves + persists MASTER_FILES_DIR |
 | scripts/02-seed-playbook-doc.sh | Creates the canonical build-with-ai-playbook.md in master files |
@@ -151,6 +152,7 @@ All GHL API calls use the operator's Private Integration Token (PIT) -- never sh
 | scripts/qc-catalog-usecases.sh | Asserts triggers/actions carry use cases and If/Else + trigger-filter depth exist |
 | scripts/qc-*.test.sh | Paired negative tests: each PASSES intact, FAILS when its invariant is removed |
 | scripts/lib-master-files.sh | Shared helpers: resolve MASTER_FILES_DIR, append JSONL, backup core files |
+| scripts/lib-command-center.sh | Best-effort, health-gated Command Center Kanban reflection (cc_url / cc_available / cc_move_task); HTTP-only, fail-soft, never moves a card to done |
 | scripts/qc-no-personal-data.sh | UNIVERSAL-skill identifier gate (zero client/personal data) |
 | scripts/qc-prompt-completeness.sh | Asserts every generated prompt has all 8 required sections |
 | scripts/qc-dependency-order.sh | Asserts dependencies are created before workflow build step |

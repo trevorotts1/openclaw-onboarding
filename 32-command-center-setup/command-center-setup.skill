@@ -1,6 +1,6 @@
 {
   "name": "command-center-setup",
-  "version": "1.0.0",
+  "version": "12.9.21",
   "description": "Activates your AI workforce as a live Command Center with persistent department agents, a Telegram control room, and a visual Kanban dashboard.",
   "author": "BlackCEO",
   "triggers": [

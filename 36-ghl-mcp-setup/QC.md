@@ -6,15 +6,15 @@ Verifies that the 6-tier GHL access chain is fully installed and routing correct
 
 ## 2. Installation Checks
 
-- [ ] Skill folder exists with all 10 files: SKILL.md, INSTALL.md, INSTRUCTIONS.md, EXAMPLES.md, CORE_UPDATES.md, QC.md, CHANGELOG.md, skill-version.txt, ghl-mcp-setup-full.md, ghl-mcp-setup.skill
-- [ ] Platform detected correctly (`~/.openclaw` → VPS, else desktop)
+- [ ] Skill folder exists with all 14 package files: SKILL.md, INSTALL.md, INSTRUCTIONS.md, EXAMPLES.md, GHL-LOOKUP-SOP.md, CORE_UPDATES.md, QC.md, CHANGELOG.md, skill-version.txt, ghl-mcp-setup-full.md, ghl-mcp-setup.skill, qc-ghl-mcp-setup.sh, wire.sh, PREREQS.json (a live install also creates a runtime `.wired-*` marker file)
+- [ ] Platform detected correctly (macOS/Darwin → desktop, else VPS — via `uname -s`, NOT a quoted `[ -d "~/.openclaw" ]` test)
 - [ ] `$CANONICAL_MASTER` resolves to a real openclaw-master-files folder
-- [ ] OpenClaw MCP entries `ghl-mcp` AND `ghl-community-mcp` both present in `openclaw mcp list`
+- [ ] `ghl-mcp` (Tier 1) present in `openclaw mcp list`; `ghl-community-mcp` (Tier 2) is **NOT** present — Tier 2 is on-demand curl, de-registered in v1.1.0
 - [ ] Env var `GHL_COMMUNITY_MCP_URL` is set in `openclaw.json` `env.vars`
-- [ ] Repo `~/mcp-servers/ghl-community-mcp` (Mac) or `/data/mcp-servers/ghl-community-mcp` (VPS) is cloned, has `.git`, has `dist/main.js`
-- [ ] `.env` exists in MCP repo with `chmod 600`, contains `GHL_API_KEY` + `GHL_LOCATION_ID` + `MCP_SERVER_PORT`
-- [ ] Lifecycle service installed: launchd plist (macOS) at `~/Library/LaunchAgents/com.clawd.ghl-mcp.plist` OR systemd unit (Linux) at `/etc/systemd/system/ghl-mcp.service`
-- [ ] Service is currently running (launchd `state = running` OR systemd `active (running)`)
+- [ ] Repo `~/mcp-servers/ghl-community-mcp` (Mac) or `/data/mcp-servers/ghl-community-mcp` (VPS) is cloned, has `.git`, is checked out at the pinned SHA `3dd9006a`, has `dist/main.js`
+- [ ] `.env` exists in MCP repo with `chmod 600`, contains `GHL_API_KEY` + `GHL_LOCATION_ID` + `MCP_SERVER_PORT` (the community MCP's own required var names, fed from the canonical `GOHIGHLEVEL_*`)
+- [ ] Lifecycle service installed: launchd plist (macOS) at `~/Library/LaunchAgents/com.clawd.ghl-mcp.plist` OR pm2 app `ghl-community-mcp` (VPS; systemd unit `/etc/systemd/system/ghl-mcp.service` is the non-container fallback)
+- [ ] Service is currently running (launchd `state = running` OR pm2 `online` OR systemd `active (running)`)
 - [ ] This document copied to `$MASTER_FILES_DIR/36-ghl-mcp-setup/`
 
 ## 3. Dependency Checks
@@ -55,7 +55,7 @@ QC fails if:
 
 ### Tier 2 — Community MCP
 
-- [ ] `openclaw mcp show ghl-community-mcp` returns the `localhost:PORT/mcp` config
+- [ ] `ghl-community-mcp` is **NOT** registered (Tier 2 is on-demand); `curl $GHL_COMMUNITY_MCP_URL/tools` returns the live tool surface instead
 - [ ] `curl $GHL_COMMUNITY_MCP_URL/health` returns `{"status":"healthy","tools":NNN}` where NNN >= 500
 - [ ] `curl $GHL_COMMUNITY_MCP_URL/tools` returns a tools array with at least 500 entries
 - [ ] `POST $GHL_COMMUNITY_MCP_URL/execute` with `{"name":"ghl_list_products","arguments":{"limit":1}}` returns real product data
@@ -63,7 +63,8 @@ QC fails if:
 
 ### Core files
 
-- [ ] SOUL.md contains "🔴 GHL Tier Escalation Protocol" section
+- [ ] AGENTS.md contains the "🔴 GHL Tier Escalation Protocol" section (relocated from SOUL.md in v1.1.0)
+- [ ] SOUL.md is UNCHANGED — does NOT carry the legacy "🔴 GHL Tier Escalation Protocol" block
 - [ ] AGENTS.md contains "Canonical current state" block with `$GHL_COMMUNITY_MCP_URL` reference
 - [ ] AGENTS.md contains "Anti-patterns" block citing the port-hardcoding and tier-skip failures
 - [ ] TOOLS.md contains "GHL MCPs (skill 36)" tool-name lookup table
@@ -103,10 +104,10 @@ Exit code 0 = setup complete. Any non-zero exit = fix the failed items and re-ru
 The script:
 - Uses canonical Mac paths (`~/.openclaw/...`, `~/Downloads/...`)
 - Reads `GOHIGHLEVEL_API_KEY` + `GOHIGHLEVEL_LOCATION_ID` from `~/.openclaw/secrets/.env` (canonical) or `~/clawd/secrets/.env` (legacy)
-- Probes Tier 1 (official MCP) for 36 tools
-- Probes Tier 2 (community MCP) on `$GHL_COMMUNITY_MCP_URL` for the full tool count
+- Probes Tier 1 (official MCP) for >= 36 tools
+- Probes Tier 2 (community MCP) on `$GHL_COMMUNITY_MCP_URL` for the full tool count (range: >= 500), and confirms it is supervised (launchd Mac / pm2 VPS, systemd fallback) and NOT registered in `mcp.servers`
 - Probes Tier 3 (direct REST) and reads `X-RateLimit-Daily-Remaining` — if low, surfaces reset clock time
-- Asserts SOUL.md / AGENTS.md / TOOLS.md / MEMORY.md contain the canonical state block + disclosure-header protocol
+- Asserts AGENTS.md / TOOLS.md / MEMORY.md contain the canonical state block + disclosure-header protocol, and that SOUL.md does NOT carry the legacy protocol (relocated to AGENTS.md in v1.1.0)
 - Verifies secrets file is chmod 600 and the PIT never appears in any tracked .md file
 
 ## 7. QC Score

@@ -34,7 +34,7 @@ This skill pack provides:
 |------|-------|
 | Base URL | `https://services.leadconnectorhq.com` |
 | Auth method | Bearer token (Private Integration Token) |
-| Auth header | `Authorization: Bearer <GHL_API_KEY>` |
+| Auth header | `Authorization: Bearer $GOHIGHLEVEL_API_KEY` |
 | Version header | `Version: 2021-04-15` (required on most calls) |
 | Content-Type | `application/json` |
 | Total endpoints | 413 across 35 modules |
@@ -51,10 +51,48 @@ GHL enforces per-location rate limits. General guidance from the master referenc
 ### Required Headers (every call)
 
 ```
-Authorization: Bearer <GHL_API_KEY>
+Authorization: Bearer $GOHIGHLEVEL_API_KEY
 Version: 2021-04-15
 Content-Type: application/json
 ```
+
+---
+
+## Credentials (canonical names + resolver)
+
+This skill reads the **location** Private Integration Token. The canonical env-var names
+(matching `~/.openclaw/secrets/.env`, `PREREQS.json`, and the bundled QC script):
+
+| Variable | Purpose |
+|----------|---------|
+| `GOHIGHLEVEL_API_KEY` | Location-scoped Private Integration Token (starts with `pit-`) |
+| `GOHIGHLEVEL_LOCATION_ID` | Sub-account (location) ID |
+
+Every runnable example uses `$GOHIGHLEVEL_API_KEY` / `$GOHIGHLEVEL_LOCATION_ID`. Load them —
+and **fail loud rather than fire an empty `Authorization: Bearer `** — with this single
+resolver. It accepts legacy aliases so older setups keep working:
+
+```bash
+# Canonical GHL credential resolver — source secrets, map legacy aliases, fail loud.
+[ -f ~/.openclaw/secrets/.env ] && { set -a; . ~/.openclaw/secrets/.env; set +a; }   # VPS/container: vars already in env
+: "${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-}}}}}"
+: "${GOHIGHLEVEL_LOCATION_ID:=${GHL_LOCATION_ID:-}}"
+__miss=""
+[ -z "${GOHIGHLEVEL_API_KEY:-}" ]     && __miss="$__miss GOHIGHLEVEL_API_KEY"
+[ -z "${GOHIGHLEVEL_LOCATION_ID:-}" ] && __miss="$__miss GOHIGHLEVEL_LOCATION_ID"
+if [ -n "$__miss" ]; then
+  echo "BLOCKED — GHL credential(s) not resolved:$__miss" >&2
+  echo "  Add to ~/.openclaw/secrets/.env (chmod 600):" >&2
+  echo "    GOHIGHLEVEL_API_KEY=pit-...          # LOCATION-scoped PIT (an agency PIT 401s on media)" >&2
+  echo "    GOHIGHLEVEL_LOCATION_ID=<location id>" >&2
+  echo "  Mint a LOCATION PIT: GHL Settings > Integrations > Private Integrations." >&2
+  return 1 2>/dev/null || exit 1
+fi
+```
+
+Never print the token value — names only. Media uploads require a **location** PIT and use
+`Version: 2021-07-28` (see `references/medias.md`); all other endpoints default to
+`Version: 2021-04-15`. Confirm the Version header per-endpoint; do not blanket-change it.
 
 ---
 
@@ -130,6 +168,7 @@ Step 4 - Build and execute the API call with real values
     phone-numbers.md    - Phone number search, buy, configure
     users.md            - User CRUD and permissions
     webhooks.md         - Webhook events, payload structure, setup guide
+    medias.md           - Media Library upload (Tier-3 only; LOCATION PIT, Version 2021-07-28)
 ```
 
 ---
@@ -138,8 +177,27 @@ Step 4 - Build and execute the API call with real values
 
 1. **Phone number removal is TREVOR-ONLY.** Read phone data freely, but never release or remove numbers autonomously. Flag to Trevor.
 2. **Billing/payment actions are TREVOR-ONLY.** Do not charge cards, cancel subscriptions, or void invoices without explicit instruction.
-3. **Never expose GHL_API_KEY in logs, messages, or documents.** Treat it like a password.
+3. **Never expose `GOHIGHLEVEL_API_KEY` in logs, messages, or documents.** Treat it like a password.
 4. **Test in staging first.** GHL does not have a sandbox - destructive actions (delete contact, void invoice) are irreversible.
+
+---
+
+## Caller Contract: Command Center + Verify-in-UI
+
+Skill 29 is a **library**. It owns no Command Center (Skill 32) board and no coaching
+persona — do not bolt either into it. Caller skills (for example 35/37/47/48) are
+responsible for writing task/progress state to the Skill 32 Command Center Kanban.
+
+After any **write**, surface a one-line "verify in Convert and Flow UI" pointer so the
+client can confirm the result behind us:
+
+| Write | Verify in the Convert and Flow UI |
+|-------|-----------------------------------|
+| Contact create/update | Contacts → the record shows the tags/notes/tasks |
+| SMS / email send | that contact's Conversation thread |
+| Opportunity create/move | the pipeline board at the right stage |
+| Invoice create/send | Payments → Invoices (the client receives it) |
+| Media upload | Media Library; the returned `url` opens WITHOUT a login |
 
 ---
 

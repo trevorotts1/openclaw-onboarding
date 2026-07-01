@@ -11,11 +11,15 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VENV_PYTHON="$HOME/.openclaw/tools/convert-and-flow-cli/.venv/bin/python"
 
-# Activate venv (prefer installed venv, fall back to local)
+# Activate venv (prefer installed venv, fall back to local). Track the exact
+# interpreter so we can exec it directly rather than trusting PATH after source.
 if [ -f "$VENV_PYTHON" ]; then
     source "$HOME/.openclaw/tools/convert-and-flow-cli/.venv/bin/activate"
 elif [ -f "$SCRIPT_DIR/.venv/bin/activate" ]; then
+    VENV_PYTHON="$SCRIPT_DIR/.venv/bin/python"
     source "$SCRIPT_DIR/.venv/bin/activate"
+else
+    VENV_PYTHON="python3"
 fi
 
 # Load canonical secrets file
@@ -46,6 +50,11 @@ export CAF_ALLOWED_LOCATION_IDS="$_caf_allowed_raw"
 unset _caf_allowed_raw
 export CAF_DRAFT_ONLY="${GOHIGHLEVEL_DRAFT_ONLY:-${CAF_DRAFT_ONLY:-true}}"
 export CAF_DRY_RUN="${GOHIGHLEVEL_DRY_RUN:-${CAF_DRY_RUN:-}}"
+# Write-approval token: canonical GOHIGHLEVEL_APPROVAL_TOKEN -> CAF_APPROVAL_TOKEN.
+# The safety gate requires it for surgical update/patch writes (ZHC-/ZHC_ names are
+# standing-approved without it). Stays in secrets/.env; never wired into
+# openclaw.json env.vars. Empty when unset = surgical writes stay gated (safe).
+export CAF_APPROVAL_TOKEN="${GOHIGHLEVEL_APPROVAL_TOKEN:-${CAF_APPROVAL_TOKEN:-}}"
 
 # Validate required vars
 if [ -z "$GHL_API_KEY" ]; then
@@ -53,4 +62,4 @@ if [ -z "$GHL_API_KEY" ]; then
     exit 1
 fi
 
-exec python3 -m cli_anything.gohighlevel "$@"
+exec "$VENV_PYTHON" -m cli_anything.gohighlevel "$@"

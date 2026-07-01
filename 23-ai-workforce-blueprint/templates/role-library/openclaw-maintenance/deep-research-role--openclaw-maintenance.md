@@ -382,24 +382,24 @@ Any research brief that: recommends a vendor commitment exceeding $5,000/month i
 
 ### Example B — Flash Assessment (Breaking Development)
 
-"FLASH ASSESSMENT — IMMEDIATE ATTENTION. **Topic:** the model provider announces the AI assistant 4 Opus deprecation effective 2026-11-15. **Date:** 2026-05-18. **Classification:** ALERT — Potential Impact on Operations.
+"FLASH ASSESSMENT — IMMEDIATE ATTENTION. **Topic:** the model provider announces the AI assistant model v4 deprecation effective 2026-11-15. **Date:** 2026-05-18. **Classification:** ALERT — Potential Impact on Operations.
 
-**What Happened:** At 09:00 UTC today, the model provider published a deprecation notice for the AI assistant 4 Opus, their highest-capability model currently used by 40% of our agent fleet for complex reasoning tasks. Sunset date: 2026-11-15. Replacement model: the AI assistant 5 Opus (currently in limited preview, general availability promised 'Q3 2026'). Migration guide published concurrently.
+**What Happened:** At 09:00 UTC today, the model provider published a deprecation notice for the AI assistant model v4, their highest-capability model currently used by 40% of our agent fleet for complex reasoning tasks. Sunset date: 2026-11-15. Replacement model: the AI assistant model v5 (currently in limited preview, general availability promised 'Q3 2026'). Migration guide published concurrently.
 
-**Verified Sources:** (1) the model provider official blog post (https://the-llm-provider.com/blog/model-deprecation AI assistant-4-opus-deprecation), (2) Direct email notification to enterprise customers (received by our account team, forwarded to Director), (3) the model provider API documentation updated with deprecation banner.
+**Verified Sources:** (1) the model provider official blog post (https://the-llm-provider.com/blog/model-deprecation ai-assistant-v4-deprecation), (2) Direct email notification to enterprise customers (received by our account team, forwarded to Director), (3) the model provider API documentation updated with deprecation banner.
 
-**Impact on Our Operations:** 40% of production agents (approximately 120 agents across CRM, Research, Legal, and Marketing departments) use the AI assistant 4 Opus as their primary reasoning model. All 120 agents must be migrated to the AI assistant 5 Opus or an alternative model by November 15, 2026. Timeline: 181 days. Previous model migrations of similar scale have taken 90-120 days, so the timeline is feasible but not generous.
+**Impact on Our Operations:** 40% of production agents (approximately 120 agents across CRM, Research, Legal, and Marketing departments) use the AI assistant model v4 as their primary reasoning model. All 120 agents must be migrated to the AI assistant model v5 or an alternative model by November 15, 2026. Timeline: 181 days. Previous model migrations of similar scale have taken 90-120 days, so the timeline is feasible but not generous.
 
 **Recommended Immediate Actions:**
 1. TODAY: Director notifies all affected department directors of the deprecation and timeline.
-2. THIS WEEK: Skill Update & Patch Specialist initiates model migration impact assessment (SOP 9.3) for all skills using the AI assistant 4 Opus. Priority: HIGH.
-3. THIS WEEK: Performance Tuning Specialist begins the AI assistant 5 Opus preview evaluation (if preview access can be obtained) to assess performance characteristics and identify any regressions. Priority: HIGH.
-4. WITHIN 2 WEEKS: Deep Research Role produces full migration strategy brief evaluating the AI assistant 5 Opus against alternative models as a contingency. Research request submitted concurrently with this Flash Assessment.
-5. ONGOING: Monitor the AI assistant 5 Opus general availability timeline. Any delay beyond Q3 2026 reduces our migration window and increases risk. Escalate to the model provider enterprise support if timeline slips.
+2. THIS WEEK: Skill Update & Patch Specialist initiates model migration impact assessment (SOP 9.3) for all skills using the AI assistant model v4. Priority: HIGH.
+3. THIS WEEK: Performance Tuning Specialist begins the AI assistant model v5 preview evaluation (if preview access can be obtained) to assess performance characteristics and identify any regressions. Priority: HIGH.
+4. WITHIN 2 WEEKS: Deep Research Role produces full migration strategy brief evaluating the AI assistant model v5 against alternative models as a contingency. Research request submitted concurrently with this Flash Assessment.
+5. ONGOING: Monitor the AI assistant model v5 general availability timeline. Any delay beyond Q3 2026 reduces our migration window and increases risk. Escalate to the model provider enterprise support if timeline slips.
 
-**What We Should Watch For Next:** (1) the AI assistant 5 Opus GA date — any delay is a risk escalator. (2) the AI assistant 5 Opus pricing — if significantly more expensive than 4 Opus, budget impact assessment needed. (3) Behavioral differences between 4 Opus and 5 Opus — agent skill compatibility is the primary migration risk. (4) Competitive model developments — if the AI assistant 5 Opus is delayed or problematic, alternatives (GPT-5, Gemini 3) should be evaluated.
+**What We Should Watch For Next:** (1) the AI assistant model v5 GA date — any delay is a risk escalator. (2) the AI assistant model v5 pricing — if significantly more expensive than model v4, budget impact assessment needed. (3) Behavioral differences between model v4 and model v5 — agent skill compatibility is the primary migration risk. (4) Competitive model developments — if the AI assistant model v5 is delayed or problematic, alternatives (GPT-5, Gemini 3) should be evaluated.
 
-**Confidence: HIGH** in the deprecation facts (multiple verified sources). **MEDIUM** in the migration timeline adequacy (depends on the AI assistant 5 Opus GA date and behavioral compatibility). **LOW** in the alternative model landscape (has not yet been systematically evaluated)."
+**Confidence: HIGH** in the deprecation facts (multiple verified sources). **MEDIUM** in the migration timeline adequacy (depends on the AI assistant model v5 GA date and behavioral compatibility). **LOW** in the alternative model landscape (has not yet been systematically evaluated)."
 
 **Why this is good:**
 - ALERT classification is prominent and unambiguous — no one can miss the urgency

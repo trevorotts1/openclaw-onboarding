@@ -475,6 +475,86 @@ else
 fi
 
 # ----------------------------------------------------------------------
+# PHASE 6e -- Seed dashboard content (companies + head-agent row + starter task)
+# ----------------------------------------------------------------------
+# Wires the previously-orphaned seed-dashboard-content.py so the Kanban renders
+# real cards on first load. The bug it fixes: every client board rendered five
+# EMPTY columns because nothing wrote the companies/agents/tasks rows. Runs AFTER
+# Phase 6b-seed (workspaces exist) in BOTH full and --update-only. Idempotent:
+# only inserts agents/tasks for workspaces that have none yet, so a built box is
+# never duplicated. WARN-only + state-recorded.
+log "INFO" "phase=6e seed-dashboard-content: starting"
+SEED_DASH="$SKILL_DIR/scripts/seed-dashboard-content.py"
+if [[ -f "$SEED_DASH" ]] && command -v python3 >/dev/null 2>&1; then
+  if COMPANY_NAME="${COMPANY_NAME:-}" python3 "$SEED_DASH" >>"$LOG_FILE" 2>&1; then
+    log "INFO" "phase=6e seed-dashboard-content: done -- companies + head agents + starter tasks seeded (Kanban non-empty)"
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterDashboardContentSeeded = true'; fi
+  else
+    log "WARN" "phase=6e seed-dashboard-content: exited non-zero (see $LOG_FILE) -- board may render empty columns"
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterDashboardContentSeeded = false'; fi
+  fi
+else
+  log "WARN" "phase=6e seed-dashboard-content: $SEED_DASH not found (or python3 missing) -- skipping (board may be empty)"
+  if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterDashboardContentSeeded = "script-missing"'; fi
+fi
+
+# ----------------------------------------------------------------------
+# PHASE 6f -- CEO Performance Board KPI rollup (kpi-rollup.json)
+# ----------------------------------------------------------------------
+# Wires the previously-orphaned generate-kpi-rollup.py so the CEO Performance
+# Board artifact (kpi-rollup.json) is written from the client's ZHC company +
+# department configs. Non-fatal: exit 1 (no company config) / 2 (no dept configs)
+# are expected on minimal boxes and recorded as WARN, never a hard fail. Runs in
+# BOTH full and --update-only. WARN-only + state-recorded.
+log "INFO" "phase=6f kpi-rollup: starting"
+KPI_ROLLUP="$SKILL_DIR/scripts/generate-kpi-rollup.py"
+if [[ -f "$KPI_ROLLUP" ]] && command -v python3 >/dev/null 2>&1; then
+  _kpi_rc=0
+  if [[ -n "${CLIENT_SLUG:-}" ]]; then
+    python3 "$KPI_ROLLUP" --company-slug "$CLIENT_SLUG" >>"$LOG_FILE" 2>&1 || _kpi_rc=$?
+  else
+    python3 "$KPI_ROLLUP" >>"$LOG_FILE" 2>&1 || _kpi_rc=$?
+  fi
+  if [[ "$_kpi_rc" -eq 0 ]]; then
+    log "INFO" "phase=6f kpi-rollup: done -- kpi-rollup.json written (CEO Performance Board)"
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterKpiRollupWritten = true'; fi
+  else
+    log "WARN" "phase=6f kpi-rollup: no ZHC company/department config to roll up yet (rc=$_kpi_rc, see $LOG_FILE) -- CEO board artifact deferred"
+    if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterKpiRollupWritten = false'; fi
+  fi
+else
+  log "WARN" "phase=6f kpi-rollup: $KPI_ROLLUP not found (or python3 missing) -- skipping"
+  if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterKpiRollupWritten = "script-missing"'; fi
+fi
+
+# ----------------------------------------------------------------------
+# PHASE 6g -- GHL credential preflight (operator-facing, NON-BLOCKING)
+# ----------------------------------------------------------------------
+# Skill 32 ingests GHL funnel/automation templates + stamps crm_platform, but it
+# wires NO GHL credential (Skill 36/44 do). This preflight tells the OPERATOR
+# (never the client -- WE MOVE IN SILENCE) when the GHL PIT is missing, so a CC
+# whose GHL templates are discoverable-yet-unusable is never silent. Presence
+# only -- the secret value is never read or printed. NEVER blocks the install
+# (the board is valuable without GHL); NEVER silently no-ops.
+log "INFO" "phase=6g ghl-preflight: starting"
+GHL_SECRETS_ENV="$OC_ROOT/secrets/.env"
+_ghl_pit=false; _ghl_loc=false
+if [[ -f "$GHL_SECRETS_ENV" ]]; then
+  grep -qE '^[[:space:]]*GOHIGHLEVEL_API_KEY=[^[:space:]]' "$GHL_SECRETS_ENV" 2>/dev/null && _ghl_pit=true
+  grep -qE '^[[:space:]]*GOHIGHLEVEL_LOCATION_ID=[^[:space:]]' "$GHL_SECRETS_ENV" 2>/dev/null && _ghl_loc=true
+fi
+if [[ "$_ghl_pit" == "true" && "$_ghl_loc" == "true" ]]; then
+  log "INFO" "phase=6g ghl-preflight: GOHIGHLEVEL_API_KEY (PIT) + GOHIGHLEVEL_LOCATION_ID present in secrets/.env -- department agents can act on GHL"
+  [[ -f "$STATE_FILE" ]] && state_set '.commandCenterGhlCredPreflight = "present"'
+else
+  _ghl_missing=""
+  [[ "$_ghl_pit" != "true" ]] && _ghl_missing="GOHIGHLEVEL_API_KEY (PIT)"
+  [[ "$_ghl_loc" != "true" ]] && _ghl_missing="${_ghl_missing:+$_ghl_missing + }GOHIGHLEVEL_LOCATION_ID"
+  log "WARN" "phase=6g ghl-preflight: MISSING $_ghl_missing in $GHL_SECRETS_ENV -- GHL funnel/automation templates are ingested but department agents CANNOT act on GHL until Skill 36 wires GOHIGHLEVEL_API_KEY (PIT) + GOHIGHLEVEL_LOCATION_ID into ~/.openclaw/secrets/.env. (Operator-only; CC + Kanban remain fully functional.)"
+  [[ -f "$STATE_FILE" ]] && state_set ".commandCenterGhlCredPreflight = \"missing\" | .commandCenterGhlCredMissing = \"$_ghl_missing\""
+fi
+
+# ----------------------------------------------------------------------
 # PHASE 6b — Tunnel (n8n webhook + cloudflared)
 # ----------------------------------------------------------------------
 log "INFO" "phase=6b tunnel: starting"

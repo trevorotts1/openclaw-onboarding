@@ -28,7 +28,9 @@ This skill is governed by `../QC-PROTOCOL.md` (repo root) — the Sub-Agent Hand
 
 **Skill 38 is the conversational AI BRAIN that runs on top of skill 29 (GHL Convert and Flow).** Skill 29 installs Convert and Flow and the basic GHL integration. Skill 38 adds the brain layer: sales best practices, intelligent follow-up, dual-mode customer service + support, typed knowledge bases, intelligent routing, weekly + monthly self-tuning, model version freshness checking, and the rest of the 32 protocols from v5.14 (see the SELF-COUNTS note under "What This Skill Ships").
 
-These two skills are SIBLINGS, not duplicates. **Skill 29 is a hard prerequisite.**
+These two skills are SIBLINGS, not duplicates. **Skill 29 is a hard prerequisite** (it provides the runtime GHL connection — the location Private Integration Token the brain SENDS/READS on).
+
+**Skill 44 (`convert-and-flow-operator`) is the Tier-0 `caf` build path.** Per `references/GHL_AI_LAYERS.md`, workflow BUILDS route through Skill 44 (caf-direct, "Option 1 — PRIMARY") when caf + the Firebase refresh token are present; without them, builds fall back to the manual Build-with-AI paste ("Option 2"). Skill 44 is required for Option 1 but is NOT a hard prerequisite — `scripts/00-verify-prerequisites.sh` STEP F preflights caf + the Firebase token and REPORTS the active build path so a client is never silently on Option 2. At RUNTIME, the conversational brain also prefers caf (Tier 0) for send/read/calendars/contacts, with raw REST as the documented last-resort fallback (see the `SKILL38_RUNTIME_GHL_TIER_LADDER` block in AGENTS.md).
 
 ## Upstream trigger — Skill 23 (AI Workforce Blueprint) hands off to this skill
 
@@ -47,7 +49,8 @@ upstream is Skill 23: read its `INSTRUCTIONS.md → "Moment 3.8"`, then build th
 - Skill 05 — GHL Setup
 - Skill 10 — GitHub Setup (latest version)
 - Skill 19 — Humanizer (used ALWAYS-ON; skill 38 does NOT duplicate)
-- Skill 29 — GHL Convert and Flow (Convert and Flow CONNECTED to operator's GHL location)
+- Skill 29 — GHL Convert and Flow (Convert and Flow CONNECTED to operator's GHL location — the runtime PIT; HARD prereq, checked in `scripts/00-verify-prerequisites.sh` STEP E)
+- Skill 44 — Convert and Flow Operator (`caf`, Tier 0) — required for the caf-direct workflow BUILD path (Option 1) and preferred at runtime; NOT a hard prereq (STEP F preflights it and reports the active build path). Without it, builds use the manual Build-with-AI paste (Option 2).
 
 ## What This Skill Ships
 

@@ -52,6 +52,18 @@ After scripts run, follow INSTRUCTIONS.md for the runtime flows (brainstorm, dep
 
 The dependency-creation script (dependency-creation.sh) is called at runtime when the operator approves creating dependencies -- it is NOT part of the one-time install.
 
+## Update self-heal (wire.sh)
+
+The skill root ships `wire.sh`: an idempotent, fail-soft hook the canonical fleet updater runs
+after a version-bump wipe-and-recopy. It re-applies the idempotent install steps 03--06 (jsonl
+sinks, core-file blocks, executor-model config, agent-browser preflight). Every step is guarded
+and the script always exits 0, so a single environment gap never blocks a fleet update. Steps
+00--02 are first-install/locate concerns and are not re-run by `wire.sh`.
+
+```bash
+bash ~/.openclaw/skills/41-build-with-ai-playbook/wire.sh   # safe to run any time; idempotent
+```
+
 ## OS support
 
 darwin (Mac mini operators) and linux (VPS operators). All scripts detect OS at runtime via uname -s:

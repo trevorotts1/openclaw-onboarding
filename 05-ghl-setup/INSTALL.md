@@ -142,15 +142,15 @@ env files first. Only ask the user if the values are not already stored.
 
 **Step 1 - Check for existing GHL credentials:**
 ```bash
-# Check secrets/.env
-grep -E "GHL_API_KEY|GHL_PIT|GHL_LOCATION_ID|GOHIGHLEVEL_API_KEY" ~/.openclaw/secrets/.env 2>/dev/null
+# Check secrets/.env (canonical names first, then legacy aliases)
+grep -E "GOHIGHLEVEL_API_KEY|GOHIGHLEVEL_LOCATION_ID|GHL_API_KEY|GHL_PIT|GHL_LOCATION_ID" ~/.openclaw/secrets/.env 2>/dev/null
 
 # Check openclaw.json
 cat ~/.openclaw/openclaw.json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('env',{}).get('vars',{}))" 2>/dev/null
 ```
 
 **Decision tree:**
-- If BOTH GHL_API_KEY (or GHL_PIT) AND GHL_LOCATION_ID are found: skip Action 1, proceed directly to Action 2.
+- If BOTH a token (GOHIGHLEVEL_API_KEY, or legacy GHL_API_KEY / GHL_PIT) AND a location (GOHIGHLEVEL_LOCATION_ID, or legacy GHL_LOCATION_ID) are found: skip Action 1, proceed directly to Action 2.
 - If one or both are missing: proceed to Action 1 to retrieve them.
 - If the user cannot or does not want to provide credentials: offer a skip option.
   Tell the user: "You can skip credential setup now and add them later. GHL features
@@ -168,17 +168,22 @@ before asking the user to do anything manually.
 **Attempt 1 - Check if any credentials are partially configured and use them
 to look up missing values:**
 
-If GHL_API_KEY exists but GHL_LOCATION_ID is missing, run:
+If a token exists but the location is missing, resolve the token from whichever
+name is present and discover the location:
 ```bash
+TOKEN="${GOHIGHLEVEL_API_KEY:-${GHL_API_KEY:-$GHL_PIT}}"
 curl -s -X GET "https://services.leadconnectorhq.com/locations/search?limit=1" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Version: 2021-07-28"
 ```
 If this returns a valid location, extract the location ID automatically from
-the response. Save it to ~/.openclaw/secrets/.env as GHL_LOCATION_ID.
+the response. Save it to ~/.openclaw/secrets/.env as BOTH
+GOHIGHLEVEL_LOCATION_ID (canonical) and GHL_LOCATION_ID (legacy alias).
 
-If GHL_LOCATION_ID exists but GHL_API_KEY is missing, check if a token can
-be refreshed from any saved OAuth session in ~/.openclaw/.
+If the location exists but no token is present, you cannot recover the token
+automatically. A Private Integration Token is a STATIC token (not an
+OAuth session — there is nothing to refresh), so go to Attempt 2 and ask the
+user for the PIT.
 
 **Attempt 2 - If automatic retrieval fails or no credentials exist at all,
 ask the user for manual input:**
@@ -191,8 +196,8 @@ Tell the user exactly this:
    1. Log into your GoHighLevel or Convert and Flow account
    2. Go to Settings (gear icon in left sidebar) > Business Info
    3. Copy your Location ID
-   4. Go to Settings > API Keys (or Integrations)
-   5. Copy or create your Private Integration Token
+   4. Go to Settings > Integrations > Private Integrations
+   5. Copy or create your Private Integration Token (GHL has no "API keys")
 
    Paste both values here when ready, or type 'skip' to continue without
    GHL credentials (you can add them later)."
@@ -208,29 +213,36 @@ where the agent reads credentials at runtime. Always write here first.
 
 The agent must:
 1. Open ~/.openclaw/secrets/.env (create it if it does not exist)
-2. Add or update these lines:
+2. Add or update these lines. Write the canonical names (read by QC, PREREQS,
+   and skills 36/44) AND the legacy aliases (read by older skill 29), with the
+   SAME values:
    ```
-   GHL_API_KEY=<Private Integration Token from Action 1>
-   GHL_LOCATION_ID=<Location ID from Action 1>
+   GOHIGHLEVEL_API_KEY=<Private Integration Token from Action 1>
+   GOHIGHLEVEL_LOCATION_ID=<Location ID from Action 1>
+   GHL_API_KEY=<same Private Integration Token>
+   GHL_LOCATION_ID=<same Location ID>
    ```
-3. Save the file
-4. Verify the values are present:
+3. Save the file, then lock it down: `chmod 600 ~/.openclaw/secrets/.env`
+4. Verify the canonical values are present:
    ```bash
-   grep "GHL_API_KEY\|GHL_LOCATION_ID" ~/.openclaw/secrets/.env
+   grep -E "GOHIGHLEVEL_API_KEY|GOHIGHLEVEL_LOCATION_ID" ~/.openclaw/secrets/.env
    ```
 
 SECONDARY (optional sync): If ~/.openclaw/openclaw.json already has an
-env.vars section, also add the values there for convenience:
+env.vars section, also add the canonical values there for convenience:
 ```json
 {
   "env": {
     "vars": {
-      "GHL_API_KEY": "token-value-here",
-      "GHL_LOCATION_ID": "location-id-here"
+      "GOHIGHLEVEL_API_KEY": "token-value-here",
+      "GOHIGHLEVEL_LOCATION_ID": "location-id-here"
     }
   }
 }
 ```
+On a VPS/Docker box, if you instead apply this with `openclaw config set`, run it
+inside the container as user node (e.g. `docker exec -u node ...`) — config
+writes as root can freeze the gateway.
 
 NOTE: ~/.openclaw/secrets/.env is the authoritative source. openclaw.json is
 a secondary mirror only. All runtime code should read from secrets/.env.
@@ -240,9 +252,9 @@ a secondary mirror only. All runtime code should read from secrets/.env.
 
 The agent must understand and enforce that every single request to the GHL API requires two specific headers:
 
-1. **Authorization:** Bearer {GHL_API_KEY}
+1. **Authorization:** Bearer {GOHIGHLEVEL_API_KEY}
    - This proves the agent has permission to access the API
-   - The token must be the exact value from the config
+   - The value is the Private Integration Token (PIT) — the exact value from secrets/.env
 
 2. **Version:** 2021-07-28
    - This tells GHL which API version the agent is using
@@ -257,15 +269,15 @@ The agent must include both headers in every GHL API call. No exceptions.
 The agent must run all four tests sequentially and report results:
 
 **Test 1 - Verify credentials are loaded:**
-Execute: `echo "API Key: $(echo $GHL_API_KEY | head -c 10)..." && echo "Location ID: $GHL_LOCATION_ID"`
+Execute: `echo "API Key: $(echo $GOHIGHLEVEL_API_KEY | head -c 10)..." && echo "Location ID: $GOHIGHLEVEL_LOCATION_ID"`
 Expected: First 10 characters of API key and full Location ID displayed
 Failure: Credentials not found in environment
 
 **Test 2 - Test API connection (get location info):**
 Execute:
 ```
-curl -s -X GET "https://services.leadconnectorhq.com/locations/$GHL_LOCATION_ID" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+curl -s -X GET "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-07-28"
 ```
 Expected: JSON response containing location name, address, and details
@@ -274,8 +286,8 @@ Failure: Error response indicates authentication or permission issue
 **Test 3 - Test contact search:**
 Execute:
 ```
-curl -s -X GET "https://services.leadconnectorhq.com/contacts/?locationId=$GHL_LOCATION_ID&limit=1" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+curl -s -X GET "https://services.leadconnectorhq.com/contacts/?locationId=$GOHIGHLEVEL_LOCATION_ID&limit=1" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-07-28"
 ```
 Expected: JSON response with contacts list (may be empty if no contacts exist, but must be valid JSON)
@@ -284,8 +296,8 @@ Failure: Error response indicates permission or API issue
 **Test 4 - Test media library access:**
 Execute:
 ```
-curl -s -X GET "https://services.leadconnectorhq.com/medias/?locationId=$GHL_LOCATION_ID&limit=1" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+curl -s -X GET "https://services.leadconnectorhq.com/medias/?locationId=$GOHIGHLEVEL_LOCATION_ID&limit=1" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-07-28"
 ```
 Expected: JSON response with media files list
@@ -325,14 +337,26 @@ Content to add: Brief summary + path reference to this document
 
 The agent must verify all of these conditions are true:
 
-- [ ] API key is saved in config file (env.vars.GHL_API_KEY exists and is not empty)
-- [ ] Location ID is saved in config file (env.vars.GHL_LOCATION_ID exists and is not empty)
+- [ ] PIT is saved (GOHIGHLEVEL_API_KEY in secrets/.env is present and not empty)
+- [ ] Location ID is saved (GOHIGHLEVEL_LOCATION_ID in secrets/.env is present and not empty)
+- [ ] Legacy aliases also written (GHL_API_KEY / GHL_LOCATION_ID) for back-compat
+- [ ] secrets/.env is chmod 600
 - [ ] Network connectivity to services.leadconnectorhq.com confirmed
 - [ ] Location info retrieval successful (Test 2 passed)
 - [ ] Contact search successful (Test 3 passed)
 - [ ] Version header is being sent with all requests (no 400 errors)
 - [ ] Media library access confirmed (Test 4 passed)
 - [ ] Core .md files updated with references
+
+**Client-verifiable receipt:** After the tests pass, write a short receipt the
+client can independently confirm in their own Convert and Flow (GHL) UI. Save it
+to the workspace (NOT into chat, and never the full token). Include:
+- masked PIT prefix only (e.g. first 8 chars + "...")
+- the location's business name returned by Test 2
+- the location ID
+- a UTC timestamp
+The client can match the business name against their GHL sub-account to confirm
+the agent is wired to THEIR location and no one else's.
 
 Tell the user exactly this:
   "GHL setup is complete. Your AI agent can now:
@@ -342,7 +366,7 @@ Tell the user exactly this:
    - Access media library files
    - Execute all GHL-integrated workflows
    
-   All credentials are securely stored in ~/.openclaw/openclaw.json and
+   All credentials are securely stored in ~/.openclaw/secrets/.env (chmod 600) and
    all API requests include the required authentication and version headers."
 
 Do NOT report completion until ALL verification items are confirmed.

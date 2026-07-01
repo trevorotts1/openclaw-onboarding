@@ -3,6 +3,11 @@
 # Idempotent. Prints STATUS: lines. NEVER logs secret values.
 set -euo pipefail
 
+# Fail-soft: a skill-root installer must NEVER abort the fleet update run with a
+# non-zero exit. Any unexpected error logs a STATUS line and we still exit 0 — the
+# M4 credential-name mirror is best-effort and a hiccup must not stop other skills.
+trap 'rc=$?; if [ "$rc" -ne 0 ]; then echo "STATUS: skill-35 wire.sh non-fatal error (rc=$rc) — exiting 0 (fail-soft)"; fi; exit 0' EXIT
+
 SKILL_VERSION="v2.7.0"
 ISO=$(date -u +%Y%m%dT%H%M%SZ)
 SECRETS_ENV="${HOME}/.openclaw/secrets/.env"

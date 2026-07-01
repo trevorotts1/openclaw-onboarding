@@ -129,6 +129,18 @@ Max 5 retry loops per gate (N6). Loop 6 → escalate to owner via Telegram.
 
 ---
 
+## Command Center (Kanban) — operator visibility
+
+`run-publishing-cycle.sh` advances a single Command Center card so operators can watch each run move across the board (HTTP API only — never the `.db`):
+
+- **Cycle start** → the script creates one task (with a description so the Triad gate accepts it out of backlog) and PATCHes it to **in_progress** (`updated_by_agent_id=skill35-cycle`).
+- **Hand-off to the orchestrator** → the script PATCHes the same task to **review**.
+- **review → done** is promoted by the independent QC auto-scorer / department QC agent, NOT by this script. The builder never self-grades (the QC gate, N5) — the script never sets `done`.
+
+Every Command Center call is **fail-soft**: if `MC_API_TOKEN` is unset or the board (`${MISSION_CONTROL_URL:-http://localhost:4000}`) is unreachable, the run logs `Command Center skipped` and finishes exactly as before (manifest + hand-off file, exit 0). The token is read from `$MC_API_TOKEN` or `~/command-center/app/.env.local`, and is never printed. This board update is operator-only — never client-facing chatter.
+
+---
+
 ## How to trigger this skill
 
 ### Single-topic cycle:
@@ -210,18 +222,28 @@ When reporting connection status, run this live query and use ONLY its output. T
 
 **If Skill 44 (Tier 0 CLI) is installed (PRIMARY):**
 ```bash
-# List connected Social Planner accounts via the Convert and Flow CLI (Tier 0)
-caf social accounts --json
-# Schedule a post directly: caf social create-post --account-id <id> --text '...' [--media-url <u>] [--schedule <iso8601>]
+# List connected Social Planner accounts via the Convert and Flow CLI (Tier 0).
+# NOTE: --json is a GROUP-level flag and MUST precede the subcommand
+# (caf reads --json on the top-level group; "caf social accounts --json" errors).
+caf --json social accounts
+# Schedule a post (Tier 0). caf's safety gate REFUSES every write unless an
+# approval token is present, so scope an approval token to THIS social-post call:
+#   CAF_APPROVAL_TOKEN="skill35-social-approved" \
+#     caf social create-post --account-id <id> --text '...' [--media-url <u>] [--schedule <iso8601>]
+# Preview without sending: caf --dry-run social create-post --account-id <id> --text '...'
 ```
 
 **If Skill 44 is absent but Skill 36 (GHL MCP) is installed (`ROUTING_MODE=mcp-first`):**
 ```bash
-# Query all connected Social Planner accounts via MCP
+# Query connected Social Planner accounts via the community MCP. The MCP HTTP
+# transport speaks JSON-RPC ("tools/call"), NOT a flat {"name","arguments"} body,
+# and the account tool is get_social_accounts. Confirm the exact tool name and
+# endpoint path against your installed community MCP manifest before relying on it.
 MCP_URL=$(openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null | tr -d '\n' | sed 's|/$||')
-curl -sS -m 15 -X POST "$MCP_URL/execute" \
+curl -sS -m 15 -X POST "$MCP_URL" \
   -H "Content-Type: application/json" \
-  -d '{"name":"get_platform_accounts","arguments":{"limit":50}}' | python3 -m json.tool
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_social_accounts","arguments":{}}}' \
+  | python3 -m json.tool
 ```
 
 **If Skill 36 is NOT installed (`ROUTING_MODE=direct-api`):**

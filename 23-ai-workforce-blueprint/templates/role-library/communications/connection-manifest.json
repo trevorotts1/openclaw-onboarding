@@ -6,13 +6,15 @@
     {
       "name": "ghl-api-key",
       "description": "GoHighLevel API key for the Communications department to manage outbound messaging, email, and SMS automations.",
-      "cfg_key": "env.vars.GHL_API_KEY",
+      "cfg_key": "env.vars.GOHIGHLEVEL_API_KEY",
+      "cfg_key_aliases": ["env.vars.GHL_API_KEY"],
       "required": true
     },
     {
       "name": "ghl-location-id",
       "description": "GHL location ID for the Communications department's messaging sub-account.",
-      "cfg_key": "env.vars.GHL_LOCATION_ID",
+      "cfg_key": "env.vars.GOHIGHLEVEL_LOCATION_ID",
+      "cfg_key_aliases": ["env.vars.GHL_LOCATION_ID"],
       "required": true
     }
   ]

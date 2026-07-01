@@ -4,6 +4,43 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v6.6.2] - 2026-06-30 — Credential canonicalization, fail-loud preflight, hardened QC
+
+### Why
+The credential env-var name was fractured across five names; the primary runtime examples used
+`$GHL_API_KEY` / `$GHL_LOCATION_ID` / `$PRIVATE_INTEGRATION_TOKEN`, which are unset on a correctly
+provisioned box (canonical is `GOHIGHLEVEL_API_KEY` / `GOHIGHLEVEL_LOCATION_ID`), so most
+copy-paste calls fired an empty Bearer and 401'd. QC normalized to a different name than the
+examples, giving false-green. CORE_UPDATES.md also told the agent to load the 430K master
+reference — contradicting SKILL.md and poisoning TOOLS.md/MEMORY.md. (Also reconciles the
+skill-version.txt v6.6.1 / CHANGELOG v6.6.0 gap: v6.6.1 shipped with no changelog entry.)
+
+### Changes
+- CANONICAL CREDS: every runnable example now uses `$GOHIGHLEVEL_API_KEY` /
+  `$GOHIGHLEVEL_LOCATION_ID` (SKILL.md, INSTRUCTIONS.md incl. substitution rules, INSTALL.md,
+  EXAMPLES.md, ghl-convert-and-flow-full.md, references/opportunities.md + locations.md). The
+  other references' Auth header lines now name the canonical var; cURL templates keep the
+  `<PRIVATE_INTEGRATION_TOKEN>` placeholder with a substitute-and-double-quote note.
+- ONE RESOLVER: shipped a single fail-loud resolver (sources `~/.openclaw/secrets/.env`, maps
+  legacy aliases GHL_API_KEY / GHL_PRIVATE_INTEGRATION_TOKEN / PRIVATE_INTEGRATION_TOKEN /
+  GHL_PRIVATE_TOKEN → canonical, blocks with the exact var+file+how-to, never an empty Bearer).
+  Replaced the EXAMPLES.md robust pattern that tested the wrong var and false-blocked a box.
+- ONE SECRETS PATH: `~/.openclaw/secrets/.env` everywhere; dropped `~/clawd/secrets/.env` wording
+  (kept the VPS container-env + alias fallback). Core-file workspace path `~/clawd/` left intact.
+- CORE_UPDATES.md: removed the "open the master reference before a GHL call" directive; re-pointed
+  to Tier-0-first routing (CLI skill 44 → MCP → Tier 3); canonical creds; never-load-master.
+- HARDENED qc-ghl-convert-and-flow.sh: canonical+alias resolver; live network-gated
+  GET /locations/{id} (200 PASS / 401 FAIL incl. agency-PIT signal; Version 2021-07-28 doubles as
+  the media-scope pre-check); FAIL if any shipped example references a legacy `$VAR`; self-locating.
+- QC.md: env loaders resolve to the canonical names QC actually tests (kills the false-confidence
+  gap); dropped the legacy clawd path.
+- INSTALL.md: token example corrected from a stale JWT to the real `pit-...` format; smoke test
+  now sources and guards credentials.
+- Added verify-in-CF-UI pointers (SKILL.md table + inline on key writes) and documented the
+  Skill 32 Command Center Kanban caller-contract (this library owns no board).
+- Version header: left the 2021-04-15 default intact; documented that media uses 2021-07-28 —
+  confirm per-endpoint, not a blanket change.
+
 ## [v6.6.0] - 2026-06-10 — Skill 44 era: header Tier 0 sentence + medias.md carve + modules.md pointer
 
 ### Why

@@ -101,13 +101,14 @@ OPERATOR_FIXTURE_LOCATION_ID = (
 ALLOWED_LOCATIONS_ENV = "CAF_ALLOWED_LOCATION_IDS"
 
 # Env names that may carry the LOCATION Private Integration Token (Bearer) for
-# the services.* ecosystem REST. First non-empty wins. (The Skill-44 wrapper
-# maps these onto GHL_API_KEY; we accept either the canonical or the engine
-# name so the pre-flight passes whether invoked via the wrapper or directly.)
+# the services.* ecosystem REST. First non-empty wins; the CANONICAL
+# GOHIGHLEVEL_API_KEY is preferred (matches ghl_media.py + openclaw.json), with
+# the legacy GHL_API_KEY and the Skill-44 engine name CAF_API_KEY accepted as
+# aliases so the pre-flight passes whether invoked via the wrapper or directly.
 PIT_ENV_CANDIDATES = (
+    "GOHIGHLEVEL_API_KEY",
     "GHL_API_KEY",
     "CAF_API_KEY",
-    "GOHIGHLEVEL_API_KEY",
 )
 
 # Tags the opt-in test lead must carry — the form->CRM proof asserts BOTH are

@@ -68,7 +68,7 @@ done
 
 ### Canonical storage locations
 - **macOS:** `~/.openclaw/secrets/.env`
-- **VPS:** `~/.openclaw/secrets/.env`
+- **VPS (Hostinger Docker):** `/data/.openclaw/secrets/.env` — resolve from the presence of `/data/.openclaw`; `~/.openclaw/secrets/.env` only equals this when `$HOME=/data` inside the container, so do NOT assume `~`.
 - **Secondary mirror:** `openclaw.json` `env.vars` (gateway reads here at runtime)
 
 ### Required env-var names (DO NOT rename — Skill 36 and Skill 05 use these)
@@ -109,7 +109,8 @@ The Private Integration Token must have these scopes (matches Skill 36's recomme
 
 ```bash
 ffmpeg -version | head -1     # must be ≥4.0
-convert -version | head -1    # ImageMagick
+# ImageMagick 7 ships the `magick` command; ImageMagick 6 ships `convert`. Accept either.
+( command -v magick >/dev/null && magick -version || convert -version ) | head -1
 python3 --version             # ≥3.8
 ```
 
@@ -249,9 +250,12 @@ Pick Facebook as the smoke test. Use whichever tier matches `ROUTING_MODE`.
 
 **MCP-first (Skill 36 installed):**
 ```bash
-curl -sS -X POST "$GHL_COMMUNITY_MCP_URL/execute" \
+# Community MCP speaks JSON-RPC (tools/call); the account tool is get_social_accounts.
+# Confirm the exact tool name + endpoint path against your installed community MCP manifest.
+curl -sS -X POST "$GHL_COMMUNITY_MCP_URL" \
   -H "Content-Type: application/json" \
-  -d '{"name":"get_platform_accounts","arguments":{"limit":1}}' | python3 -m json.tool | head -20
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_social_accounts","arguments":{}}}' \
+  | python3 -m json.tool | head -20
 ```
 
 **Direct API (Skill 36 NOT installed):**
@@ -270,7 +274,9 @@ Expected: JSON with at least one connected account. If you get 403, the PIT is m
 
 ```bash
 ffmpeg -version | head -1 || { echo "FFmpeg missing — install: brew install ffmpeg"; exit 1; }
-convert -version | head -1 || { echo "ImageMagick missing — install: brew install imagemagick"; exit 1; }
+# ImageMagick 7 ships `magick`; older installs ship `convert`. Accept either.
+( command -v magick >/dev/null && magick -version || convert -version ) | head -1 \
+  || { echo "ImageMagick missing — install: brew install imagemagick"; exit 1; }
 ```
 
 ### Step 7: Run First-Run Protocol (references/playbook.md Section 0)
@@ -499,7 +505,7 @@ Send the client this exact summary:
 ## What v2.0.0 changed (May 13, 2026)
 
 - **Replaced `GHL_PRIVATE_TOKEN` with `GOHIGHLEVEL_API_KEY`** everywhere — eliminates the "auto-fix during install" bug where the agent had to remap names every time.
-- **Migrated all credential paths** from `~/clawd/secrets/.env` (deprecated) to `~/.openclaw/secrets/.env` (Mac) / `~/.openclaw/secrets/.env` (VPS).
+- **Migrated all credential paths** from `~/clawd/secrets/.env` (deprecated) to `~/.openclaw/secrets/.env` (Mac) / `/data/.openclaw/secrets/.env` (VPS Docker).
 - **Expanded required PIT scope list** to match the full set Skill 36 uses, plus the two social-media-specific scopes this skill needs.
 - **Added MCP-first routing detection in Step 4** — when Skill 36 is installed, this skill prefers MCP tools. Direct API only as fallback.
 - **Made the install order explicitly numbered** with Step 0 (contract check) at the top. Steps are no longer reorderable.

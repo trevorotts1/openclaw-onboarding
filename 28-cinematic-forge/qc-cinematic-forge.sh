@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 # Skill 28 — Cinematic Forge — Install QC
 set -u
+set -o pipefail
 PASS=0; FAIL=0; WARN=0
 SKILL_DIR="$(dirname "$0")"
 LIB="$SKILL_DIR/../lib-shared.sh"; [ -f "$LIB" ] && source "$LIB"
 if ! command -v resolve_platform_paths >/dev/null 2>&1; then
-  resolve_platform_paths() { export SECRETS_ENV="$HOME/.openclaw/secrets/.env" WORKSPACE="$HOME/clawd" SKILLS_DIR_DEFAULT="$HOME/.openclaw/skills"; }
+  # VPS-aware fallback: presence of /data/.openclaw ⇒ headless VPS, else Mac.
+  resolve_platform_paths() {
+    if [ -d /data/.openclaw ]; then
+      export SECRETS_ENV="/data/.openclaw/secrets/.env" WORKSPACE="/data" SKILLS_DIR_DEFAULT="/data/.openclaw/skills"
+    else
+      export SECRETS_ENV="$HOME/.openclaw/secrets/.env" WORKSPACE="$HOME/clawd" SKILLS_DIR_DEFAULT="$HOME/.openclaw/skills"
+    fi
+  }
 fi
 resolve_platform_paths
 red(){ printf "\033[31m%s\033[0m\n" "$1"; }; green(){ printf "\033[32m%s\033[0m\n" "$1"; }; yellow(){ printf "\033[33m%s\033[0m\n" "$1"; }
@@ -20,8 +28,10 @@ echo "═══ Skill 28 — Cinematic Forge — Install QC ═══"
 echo ""
 assert "Skill 28 folder present" "[ -d \"$SKILLS_DIR_DEFAULT/28-cinematic-forge\" ]"
 assert "FFmpeg installed" "command -v ffmpeg"
-assert "FFmpeg supports x264/H.264" "ffmpeg -codecs 2>&1 | grep -qE 'libx264|h264'"
-assert "FFmpeg supports AAC" "ffmpeg -codecs 2>&1 | grep -qi 'aac'"
+# NOTE: grep WITHOUT -q so it drains ffmpeg's full output; with `set -o pipefail`,
+# `grep -q` would exit early, SIGPIPE ffmpeg, and report a false pipeline failure.
+assert "FFmpeg supports x264/H.264" "ffmpeg -codecs 2>&1 | grep -E 'libx264|h264'"
+assert "FFmpeg supports AAC" "ffmpeg -codecs 2>&1 | grep -i 'aac'"
 warn_only "Image hosting key present (imgBB or GHL)" "[ -n \"$IMGBB_API_KEY\" ] || [ -n \"$GOHIGHLEVEL_API_KEY\" ]"
 warn_only "ffprobe available" "command -v ffprobe"
 echo ""

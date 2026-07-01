@@ -37,29 +37,24 @@ python3 --version >/dev/null 2>&1 && echo "PASS: python3 found" || echo "FAIL: p
 which jq >/dev/null 2>&1 && echo "PASS: jq found" || echo "INFO: jq not installed (recommended)"
 ```
 
-Required environment values:
-- `GHL_API_KEY` (Trevor naming for the Private Integration Token / PIT)
-- `GHL_LOCATION_ID`
+Required environment values (canonical names — the same ones the runnable examples use):
+- `GOHIGHLEVEL_API_KEY` (the LOCATION-scoped Private Integration Token / PIT)
+- `GOHIGHLEVEL_LOCATION_ID`
 
 ```bash
-# Platform-aware env load. Hostinger Docker VPS already has these as
-# container env vars (no .env file exists). Mac stores them in
-# ~/.openclaw/secrets/.env (canonical) or ~/clawd/secrets/.env (legacy).
-# Also normalize naming: VPS uses GHL_PRIVATE_INTEGRATION_TOKEN; map to GHL_API_KEY.
-for env_file in ~/.openclaw/secrets/.env "$HOME/.openclaw/secrets/.env" "$HOME/clawd/secrets/.env"; do
-  [ -f "$env_file" ] && set -a && . "$env_file" && set +a && break
-done
-[ -z "${GHL_API_KEY:-}" ] && [ -n "${GHL_PRIVATE_INTEGRATION_TOKEN:-}" ] && export GHL_API_KEY="$GHL_PRIVATE_INTEGRATION_TOKEN"
-[ -z "${GHL_API_KEY:-}" ] && [ -n "${GOHIGHLEVEL_API_KEY:-}" ] && export GHL_API_KEY="$GOHIGHLEVEL_API_KEY"
-[ -z "${GHL_LOCATION_ID:-}" ] && [ -n "${GOHIGHLEVEL_LOCATION_ID:-}" ] && export GHL_LOCATION_ID="$GOHIGHLEVEL_LOCATION_ID"
-for var in GHL_API_KEY GHL_LOCATION_ID; do
-  [ -n "$(printenv "$var" 2>/dev/null)" ] \
-    && echo "PASS: $var set" \
-    || echo "FAIL: $var missing"
-done
+# Platform-aware env load. Hostinger Docker VPS already has these as container env
+# vars (no .env file exists, so the [ -f ] guard simply skips). Mac stores them in
+# ~/.openclaw/secrets/.env (canonical). Canonical names = GOHIGHLEVEL_API_KEY /
+# GOHIGHLEVEL_LOCATION_ID — the SAME names the runnable examples use, so QC tests what
+# the agent actually runs. Legacy aliases are mapped onto the canonical names.
+[ -f ~/.openclaw/secrets/.env ] && { set -a; . ~/.openclaw/secrets/.env; set +a; }
+: "${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-}}}}}"
+: "${GOHIGHLEVEL_LOCATION_ID:=${GHL_LOCATION_ID:-}}"
+[ -n "${GOHIGHLEVEL_API_KEY:-}" ]     && echo "PASS: GOHIGHLEVEL_API_KEY set"     || echo "FAIL: GOHIGHLEVEL_API_KEY missing"
+[ -n "${GOHIGHLEVEL_LOCATION_ID:-}" ] && echo "PASS: GOHIGHLEVEL_LOCATION_ID set" || echo "FAIL: GOHIGHLEVEL_LOCATION_ID missing"
 
-echo "Token length: ${#GHL_API_KEY}"
-echo "Location ID: $GHL_LOCATION_ID"
+echo "Token length: ${#GOHIGHLEVEL_API_KEY}"
+echo "Location ID: $GOHIGHLEVEL_LOCATION_ID"
 ```
 
 **Pass criteria:** both env vars are present and non-placeholder.
@@ -107,24 +102,20 @@ echo "Location ID: $GHL_LOCATION_ID"
 ### 4.1 Location-read test
 
 ```bash
-# Platform-aware env load. Hostinger Docker VPS already has these as
-# container env vars (no .env file exists). Mac stores them in
-# ~/.openclaw/secrets/.env (canonical) or ~/clawd/secrets/.env (legacy).
-# Also normalize naming: VPS uses GHL_PRIVATE_INTEGRATION_TOKEN; map to GHL_API_KEY.
-for env_file in ~/.openclaw/secrets/.env "$HOME/.openclaw/secrets/.env" "$HOME/clawd/secrets/.env"; do
-  [ -f "$env_file" ] && set -a && . "$env_file" && set +a && break
-done
-[ -z "${GHL_API_KEY:-}" ] && [ -n "${GHL_PRIVATE_INTEGRATION_TOKEN:-}" ] && export GHL_API_KEY="$GHL_PRIVATE_INTEGRATION_TOKEN"
-[ -z "${GHL_API_KEY:-}" ] && [ -n "${GOHIGHLEVEL_API_KEY:-}" ] && export GHL_API_KEY="$GOHIGHLEVEL_API_KEY"
-[ -z "${GHL_LOCATION_ID:-}" ] && [ -n "${GOHIGHLEVEL_LOCATION_ID:-}" ] && export GHL_LOCATION_ID="$GOHIGHLEVEL_LOCATION_ID"
-
-HTTP_CODE=$(curl -s -o /tmp/ghl_qc_location.json -w "%{http_code}" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
-  -H "Version: 2021-04-15" \
-  "https://services.leadconnectorhq.com/locations/$GHL_LOCATION_ID")
-
-echo "HTTP: $HTTP_CODE"
-python3 -m json.tool /tmp/ghl_qc_location.json | head -20
+# Same canonical loader as section 2 (legacy aliases mapped; container env auto-detected).
+[ -f ~/.openclaw/secrets/.env ] && { set -a; . ~/.openclaw/secrets/.env; set +a; }
+: "${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-}}}}}"
+: "${GOHIGHLEVEL_LOCATION_ID:=${GHL_LOCATION_ID:-}}"
+if [ -z "${GOHIGHLEVEL_API_KEY:-}" ] || [ -z "${GOHIGHLEVEL_LOCATION_ID:-}" ]; then
+  echo "BLOCKED: set GOHIGHLEVEL_API_KEY + GOHIGHLEVEL_LOCATION_ID in ~/.openclaw/secrets/.env first." >&2
+else
+  HTTP_CODE=$(curl -s -o /tmp/ghl_qc_location.json -w "%{http_code}" \
+    -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
+    -H "Version: 2021-04-15" \
+    "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID")
+  echo "HTTP: $HTTP_CODE"
+  python3 -m json.tool /tmp/ghl_qc_location.json | head -20
+fi
 ```
 
 **Expected:** HTTP `200` and JSON showing the location record.
@@ -139,7 +130,7 @@ Verify the agent:
 - reads `references/contacts.md` only
 - uses `contacts.readonly`
 - includes `Version: 2021-04-15`
-- uses `$GHL_API_KEY` and `$GHL_LOCATION_ID`
+- uses `$GOHIGHLEVEL_API_KEY` and `$GOHIGHLEVEL_LOCATION_ID`
 - does not open all reference files up front
 
 **Pass criteria:** All six checks pass.

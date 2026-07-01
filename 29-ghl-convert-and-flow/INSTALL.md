@@ -27,12 +27,12 @@ Read these files in sequence before doing any GHL API work:
 
 | Variable | Purpose | Example |
 |----------|---------|---------|
-| `GHL_API_KEY` | Your Private Integration Token | `eyJhbGciOiJSUzI1NiIsInR5cCI6...` |
-| `GHL_LOCATION_ID` | Your sub-account (location) ID | `abc123XYZlocationId` |
+| `GOHIGHLEVEL_API_KEY` | Your LOCATION-scoped Private Integration Token | `pit-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
+| `GOHIGHLEVEL_LOCATION_ID` | Your sub-account (location) ID | `abc123XYZlocationId` |
 
 ### Where to Find These Values
 
-**GHL_API_KEY (Private Integration Token):**
+**GOHIGHLEVEL_API_KEY (Private Integration Token):**
 
 1. Open your browser and go to: `https://app.gohighlevel.com` (or your white-label URL)
 2. Log in to your agency account
@@ -46,9 +46,9 @@ Read these files in sequence before doing any GHL API work:
    - Select the permission scopes you need (see scope requirements in each reference file)
    - Click **Create**
    - Copy the token that appears - it will only show once
-8. This token is your `GHL_API_KEY`
+8. This token is your `GOHIGHLEVEL_API_KEY`
 
-**GHL_LOCATION_ID (Sub-Account ID):**
+**GOHIGHLEVEL_LOCATION_ID (Sub-Account ID):**
 
 1. In GHL, click on the sub-account (location) you want to work with
 2. Look at the URL in your browser - it will look like: `https://app.gohighlevel.com/location/abc123XYZlocationId/...`
@@ -65,8 +65,8 @@ Add these to your shell profile or OpenClaw secrets file:
 
 ```bash
 # Add to ~/.zshrc or ~/.bash_profile
-export GHL_API_KEY="your_private_integration_token_here"
-export GHL_LOCATION_ID="your_location_id_here"
+export GOHIGHLEVEL_API_KEY="your_private_integration_token_here"
+export GOHIGHLEVEL_LOCATION_ID="your_location_id_here"
 ```
 
 Then reload: `source ~/.zshrc`
@@ -74,16 +74,16 @@ Then reload: `source ~/.zshrc`
 ### Option B: OpenClaw secrets file (recommended for agent access)
 
 ```bash
-# Add to ~/clawd/secrets/.env
-GHL_API_KEY=your_private_integration_token_here
-GHL_LOCATION_ID=your_location_id_here
+# Add to ~/.openclaw/secrets/.env
+GOHIGHLEVEL_API_KEY=your_private_integration_token_here
+GOHIGHLEVEL_LOCATION_ID=your_location_id_here
 ```
 
 ### Option C: Per-session export (temporary, for testing)
 
 ```bash
-export GHL_API_KEY="your_private_integration_token_here"
-export GHL_LOCATION_ID="your_location_id_here"
+export GOHIGHLEVEL_API_KEY="your_private_integration_token_here"
+export GOHIGHLEVEL_LOCATION_ID="your_location_id_here"
 ```
 
 ---
@@ -93,10 +93,18 @@ export GHL_LOCATION_ID="your_location_id_here"
 Run this command to confirm your credentials work. It should return JSON describing your location/sub-account.
 
 ```bash
-curl -s \
-  -H "Authorization: Bearer $GHL_API_KEY" \
-  -H "Version: 2021-04-15" \
-  "https://services.leadconnectorhq.com/locations/$GHL_LOCATION_ID" | python3 -m json.tool
+# Load creds (resolver: maps legacy aliases, blocks loudly if unset — see SKILL.md "Credentials")
+[ -f ~/.openclaw/secrets/.env ] && { set -a; . ~/.openclaw/secrets/.env; set +a; }
+: "${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-}}}}}"
+: "${GOHIGHLEVEL_LOCATION_ID:=${GHL_LOCATION_ID:-}}"
+if [ -z "${GOHIGHLEVEL_API_KEY:-}" ] || [ -z "${GOHIGHLEVEL_LOCATION_ID:-}" ]; then
+  echo "BLOCKED: set GOHIGHLEVEL_API_KEY + GOHIGHLEVEL_LOCATION_ID in ~/.openclaw/secrets/.env (chmod 600) first." >&2
+else
+  curl -s \
+    -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
+    -H "Version: 2021-04-15" \
+    "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID" | python3 -m json.tool
+fi
 ```
 
 **Expected result:** JSON object with `id`, `name`, `email`, `address`, and other location fields.
@@ -113,7 +121,7 @@ curl -s \
 - Save and retry
 
 **If you see a 404 error:**
-- Your `GHL_LOCATION_ID` is wrong
+- Your `GOHIGHLEVEL_LOCATION_ID` is wrong
 - Double-check the location ID from the URL or Settings page
 
 ---
@@ -136,9 +144,9 @@ brew install jq
 
 # Usage example - get just the location name
 curl -s \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-04-15" \
-  "https://services.leadconnectorhq.com/locations/$GHL_LOCATION_ID" | jq '.name'
+  "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID" | jq '.name'
 ```
 
 ---
@@ -158,7 +166,7 @@ After confirming the smoke test works:
 
 The agent does NOT need to keep all reference files loaded. At runtime:
 
-1. Check if `GHL_API_KEY` and `GHL_LOCATION_ID` are set in environment or secrets
+1. Check if `GOHIGHLEVEL_API_KEY` and `GOHIGHLEVEL_LOCATION_ID` are set in environment or secrets
 2. Read the trigger map in `SKILL.md` to identify the right domain file
 3. Read only the specific `references/*.md` file needed
 4. Build the API call from the template in that file

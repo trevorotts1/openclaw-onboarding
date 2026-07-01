@@ -135,13 +135,32 @@ All GHL API response parsing in shell scripts MUST use `python3 -m json.tool`,
 
 Before executing a contact lookup (any tier), run the fail-fast preflight in this order:
 
-1. **Credential check:** verify `$GOHIGHLEVEL_API_KEY` and `$GOHIGHLEVEL_LOCATION_ID`
-   are set and non-empty.
+1. **Credential check:** verify `$GOHIGHLEVEL_API_KEY` (the Location PIT) and
+   `$GOHIGHLEVEL_LOCATION_ID` are set and non-empty.
+
+   In a SHELL SCRIPT, fail fast (operator-facing):
 
    ```bash
    [[ -z "$GOHIGHLEVEL_API_KEY" ]] && { echo "PREFLIGHT FAIL: GOHIGHLEVEL_API_KEY not set"; exit 1; }
    [[ -z "$GOHIGHLEVEL_LOCATION_ID" ]] && { echo "PREFLIGHT FAIL: GOHIGHLEVEL_LOCATION_ID not set"; exit 1; }
    ```
+
+   **RUNTIME missing-credential grace (agent answering a request — NOT a script).**
+   When the agent itself hits an empty `GOHIGHLEVEL_API_KEY` or `GOHIGHLEVEL_LOCATION_ID`
+   while trying to serve a GHL request, it MUST **BLOCK and ask** — never silently no-op,
+   never invent data, never claim the platform is "down." Name exactly what is missing and
+   how to supply it (mirror the Firebase-token nudge in CORE_UPDATES.md). Say to the owner:
+
+   > "I can't reach your GoHighLevel account yet — I'm missing your **[Private Integration
+   > Token / Location ID — name whichever is empty]**. To add it: GHL → Settings →
+   > Integrations → Private Integrations → create one named 'MCP Server Integration' with
+   > the GHL scopes, copy the token (starts with `pit-`); and your Location ID from
+   > Settings → Company → Locations (22 characters). Send both and I'll wire them in and
+   > retry. Until then I can't run this request."
+
+   This is the same discipline as the missing-Firebase-token case: **a missing credential
+   BLOCKS with a named, actionable remediation — never a silent failure.** (A 429 is
+   different: on a 429 you STOP and surface the reset time; you do NOT ask for credentials.)
 
 2. **Rate-limit probe (before bulk ops only):** if the lookup is part of a batch or
    bulk operation, make ONE cheap probe call and read `X-RateLimit-Daily-Remaining`.
@@ -203,9 +222,10 @@ UI-only flows and workflow-build backstops only.
 
 The public API at `services.leadconnectorhq.com/workflows/` is **GET-only** — there is
 no `POST` endpoint to create or edit a workflow via the public REST API or any MCP.
-The community MCP advertises `ghl_create_workflow` / `ghl_update_workflow_actions`, but
-those likely wrap an undocumented internal endpoint that may produce empty or
-non-functional shells. Do NOT rely on community MCP workflow tools as a build path.
+The community MCP DOES ship `ghl_create_workflow` / `ghl_update_workflow_actions`
+(confirmed in the fork at `src/tools/workflow-builder-tools.ts` + `workflow-builder-client.ts`),
+but they wrap an undocumented internal endpoint and are **unverified — likely produce empty
+or non-functional shells**. Do NOT rely on community MCP workflow tools as a build path.
 
 The ONLY verified programmatic workflow build path is Skill 44's internal Build API
 (`backend.leadconnectorhq.com`, authed with a Firebase ID token derived from the

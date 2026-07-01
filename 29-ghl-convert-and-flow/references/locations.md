@@ -1,7 +1,7 @@
 # locations.md - Locations Module Reference (29 Endpoints)
 
 Base URL: `https://services.leadconnectorhq.com`
-Required on all calls: `Authorization: Bearer $PRIVATE_INTEGRATION_TOKEN` and `Version: 2021-04-15`
+Required on all calls: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` and `Version: 2021-04-15`
 
 > In GHL v2, "Location" = "Sub-Account". These terms are interchangeable.
 
@@ -235,30 +235,30 @@ Returns list of valid timezone strings for the location's region.
 ## Common Setup Workflow
 
 ```bash
-source ~/clawd/secrets/.env
+source ~/.openclaw/secrets/.env
 
 # 1. Find all accessible locations (sub-accounts)
 curl -s \
   "https://services.leadconnectorhq.com/locations/search" \
-  -H "Authorization: Bearer $PRIVATE_INTEGRATION_TOKEN" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-04-15" | jq '.locations[] | {id, name}'
 
 # 2. Get full details of a specific location
 curl -s \
-  "https://services.leadconnectorhq.com/locations/$GHL_LOCATION_ID" \
-  -H "Authorization: Bearer $PRIVATE_INTEGRATION_TOKEN" \
+  "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-04-15" | jq .
 
 # 3. Get all custom fields for the location
 curl -s \
-  "https://services.leadconnectorhq.com/locations/$GHL_LOCATION_ID/customFields" \
-  -H "Authorization: Bearer $PRIVATE_INTEGRATION_TOKEN" \
+  "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID/customFields" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-04-15" | jq '.customFields[] | {id, name, fieldKey, dataType}'
 
 # 4. Get all tags
 curl -s \
-  "https://services.leadconnectorhq.com/locations/$GHL_LOCATION_ID/tags" \
-  -H "Authorization: Bearer $PRIVATE_INTEGRATION_TOKEN" \
+  "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID/tags" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-04-15" | jq .
 ```
 

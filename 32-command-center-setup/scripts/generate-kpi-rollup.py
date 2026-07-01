@@ -60,7 +60,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 HOME = Path.home()
@@ -225,7 +225,7 @@ def main():
     rollup = {
         "company": company_cfg.get("name", "Company"),
         "slug": company_cfg.get("slug", company_dir.name),
-        "generated": datetime.utcnow().isoformat() + "Z",
+        "generated": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "company_kpis": rollup_company_kpis,
         "department_grades": dept_grades,
         "schema_version": "1.0",

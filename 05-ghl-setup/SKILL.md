@@ -40,7 +40,7 @@ These are the most common mistakes AI agents make with GHL. Read these carefully
 3. **The base URL for all GHL API calls is:** https://services.leadconnectorhq.com
 
 4. **Your agent should check two places for credentials:**
-   - ~/clawd/secrets/.env (look for GHL_PIT or GOHIGHLEVEL_API_KEY)
+   - ~/.openclaw/secrets/.env (look for GOHIGHLEVEL_API_KEY; legacy aliases GHL_API_KEY / GHL_PIT)
    - ~/.openclaw/openclaw.json under env.vars
 
 ## What This Skill Covers

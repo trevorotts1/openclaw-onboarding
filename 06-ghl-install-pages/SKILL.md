@@ -9,7 +9,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "14.28.1"
+  version: "16.2.9"
   priority: HIGH
 ---
 
@@ -381,3 +381,21 @@ MUST be real (status:201, re-GET 200 in `ecosystem/`); a `status:"PLANNED"` stub
 is a hard FAIL.
 
 This table supersedes any prior description of Vercel as a "manual last resort."
+
+> **VERCEL_EMBED IS A DIRECT API UPLOAD — NOT GitHub.** `tools/ghl_vercel.py`
+> base64-encodes the generated files and POSTs them straight to the Vercel
+> deployments API (no git, no GitHub repo, no PR). Do not add a GitHub step.
+>
+> **Run evidence lives OUTSIDE the skill dir.** Ledgers, routing receipts,
+> scorecards, and screenshots are written to a run-evidence root
+> (`skill6-fix/v2-<RUN_ID>/` or `/tmp`), never inside `06-ghl-install-pages/`,
+> so a skill UPDATE (which overlays the whole skill dir) can never wipe a build's
+> history. Any new tool MUST keep durable run state out of the skill dir.
+>
+> **Cross-repo board contract.** The board PRODUCER (`tools/cc_board.py`,
+> `update_status`/`ingest_task`) and the Command Center CONSUMER (the
+> `/api/tasks/*` routes + `TaskStatus` enum in
+> `trevorotts1/blackceo-command-center`, `>= v4.52.0`) are coupled by a
+> hand-maintained contract. Keep the CC repo at or above that version; if its
+> enum, route path, or auth changes, `cc_board.py` fail-softs (the card just never
+> lands / never moves) and the build continues unregistered.

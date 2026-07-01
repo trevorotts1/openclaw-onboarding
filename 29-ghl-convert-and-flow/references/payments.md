@@ -3,7 +3,7 @@
 > **Scope of this file:** Invoices module (41 endpoints) and Payments module (24 endpoints).
 > Covers: invoices, invoice items, schedules, templates, orders, order fulfillments, transactions, subscriptions, coupons, custom provider integrations, payment integrations.
 > Base URL: `https://services.leadconnectorhq.com`
-> Auth: `Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>`
+> Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.
 > Version header: `Version: 2021-04-15` (required on all calls)
 
 ---

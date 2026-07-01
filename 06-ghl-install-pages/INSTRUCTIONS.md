@@ -229,6 +229,15 @@ When to use the iframe method:
 
 The full iframe snippet code and setup instructions are in the ghl-install-pages-full.md file, Section 9.
 
+> **HOW THE VERCEL PATH ACTUALLY WORKS (no GitHub).** When this skill uses Vercel
+> (the `VERCEL_EMBED` method), it does NOT push to GitHub. `tools/ghl_vercel.py`
+> generates the page locally, base64-encodes the files, and uploads them DIRECTLY
+> to the Vercel deployments API, then disables SSO and asserts the URL is
+> embeddable before splicing the iframe. There is no git repo, no GitHub-sourced
+> Vercel build, no PR/merge. Do NOT wire a GitHub step — the pipeline neither
+> needs nor supports one. "Host externally" above means Vercel hosts the deployed
+> page; its public, SSO-disabled URL is the iframe `src`.
+
 
 ## Publishing (ONLY When User Approves)
 

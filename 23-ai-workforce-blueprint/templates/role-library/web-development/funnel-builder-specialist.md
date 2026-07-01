@@ -262,7 +262,7 @@ This role contributes to the company revenue cascade by: **architecting and opti
 **Prerequisites (state assumed already true; if not, STOP):**
 - Skills 01 (Teach-Yourself), 02 (Backup), 03 (agent-browser installed), and 05 (GoHighLevel account exists) are complete. Skill 08 (Vercel) only matters for Mode-2 iframe embeds.
 - You are operating on the CLIENT's box with the CLIENT's own funded credentials and the CLIENT's own captured refresh token. The operator's keys must NEVER appear here.
-- Model discipline: run the build loop on **Sonnet** (snapshot -> pick-ref -> act -> verify). Escalate to **Opus** ONLY for a live-selector ambiguity / unseen UI variant / recovery that needs reasoning. Use **Haiku** for mechanical work only (ledger/manifest/verify, file reads, URL checks) — never for live UI. Declare the exact agent count + each agent's model up front with a hard cap. Long live runs fire DETACHED; the agent EXITS and resumes from the ledger (Step 16).
+- Model discipline: run the build loop on **MiniMax 3** (browser control + tool calls: snapshot -> pick-ref -> act -> verify; Ollama Cloud preferred, OpenRouter backup, thinking=HIGH). Escalate to **DeepSeek v4 pro** (or GLM 5.2) ONLY for a live-selector ambiguity / unseen UI variant / recovery that needs reasoning. Use a **fast-tier model** for mechanical work only (ledger/manifest/verify, file reads, URL checks) — never for live UI. Declare the exact agent count + each agent's model up front with a hard cap. Long live runs fire DETACHED; the agent EXITS and resumes from the ledger (Step 16).
 
 **Steps (numbered — each has ACTION, VERIFY, and FAILURE/ABORT). Resolve every `runtime` gate by a fresh live snapshot before acting; never hardcode invented CSS.**
 

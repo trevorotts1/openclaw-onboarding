@@ -447,17 +447,37 @@ except Exception as e:
     print(f"[materialize] WARN: could not load lib-trio-quad-rows.py: {e}", file=sys.stderr)
     sys.exit(0)
 
-# Resolve mission-control.db (mirror add-department.sh candidate list)
-db_candidates = [
-    os.path.join(OC_ROOT, "workspaces", "command-center", "mission-control.db"),
-    os.path.join(OC_ROOT, "workspace", "mission-control.db"),
-    os.path.join(OC_ROOT, "data", "mission-control.db"),
-]
+# Resolve mission-control.db via the single shared resolver (PRD 1.3) so the
+# trio/quad rows land in the SAME db the dashboard + add-department.sh write to
+# (Mac ~/projects/command-center first, then VPS /data/projects/command-center).
+# The previous $OC_ROOT/workspaces/command-center candidate list was WRONG: the
+# dashboard never creates the DB there, so install-time DA/QC/Healer rows were
+# silently skipped. Falls back to add-department.sh's actual candidate list if
+# the shared resolver cannot be imported.
 db_path = None
-for c in db_candidates:
-    if os.path.isfile(c):
-        db_path = c
-        break
+try:
+    _shared = os.path.join(SCRIPTS_DIR, "..", "..", "shared-utils")
+    if _shared not in sys.path:
+        sys.path.insert(0, _shared)
+    from resolve_db import find_dashboard_db, is_db_found  # type: ignore
+    _p = find_dashboard_db()
+    if is_db_found(_p):
+        db_path = str(_p)
+except Exception as e:
+    print(f"[materialize] WARN: shared resolve_db import failed ({e}); using fallback list", file=sys.stderr)
+
+if not db_path:
+    # Fallback mirrors add-department.sh:115-126 (Mac first), the db this skill writes to.
+    for c in [
+        os.path.join(os.path.expanduser("~"), "projects", "command-center", "mission-control.db"),
+        os.path.join(os.path.expanduser("~"), "projects", "mission-control", "mission-control.db"),
+        "/opt/mission-control/mission-control.db",
+        "/app/mission-control.db",
+        "/data/projects/command-center/mission-control.db",
+    ]:
+        if os.path.isfile(c):
+            db_path = c
+            break
 
 if not db_path:
     print("[materialize] WARN: mission-control.db not found - skipping trio/quad row pass")

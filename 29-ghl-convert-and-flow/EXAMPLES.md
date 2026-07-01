@@ -1,12 +1,16 @@
 # GHL API Skill - Real-World Examples
 
-> All examples use environment variables `$GHL_API_KEY` and `$GHL_LOCATION_ID`.
+> All examples use environment variables `$GOHIGHLEVEL_API_KEY` and `$GOHIGHLEVEL_LOCATION_ID`.
 > Carved from the Convert and Flow GoHighLevel API v2 Master Reference.
-> Do NOT hardcode credentials. Set env vars before running any example.
+> Do NOT hardcode credentials. Load them with the resolver in SKILL.md "Credentials"
+> (it sources `~/.openclaw/secrets/.env`, maps legacy aliases, and fails loud if unset —
+> so you never send an empty `Authorization: Bearer `).
+> After any write, point the client to the verify table in SKILL.md "Caller Contract".
 
 ```bash
-export GHL_API_KEY="your_private_integration_token"
-export GHL_LOCATION_ID="your_location_id"
+# Canonical names (match ~/.openclaw/secrets/.env). For ad-hoc testing you may export directly:
+export GOHIGHLEVEL_API_KEY="pit-your-location-scoped-token"
+export GOHIGHLEVEL_LOCATION_ID="your_location_id"
 ```
 
 ---
@@ -17,7 +21,7 @@ export GHL_LOCATION_ID="your_location_id"
 
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/' \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
   -H 'Content-Type: application/json' \
   -d "{
@@ -25,13 +29,14 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/' \
     \"lastName\": \"Smith\",
     \"email\": \"jane@example.com\",
     \"phone\": \"+15555551234\",
-    \"locationId\": \"$GHL_LOCATION_ID\",
+    \"locationId\": \"$GOHIGHLEVEL_LOCATION_ID\",
     \"tags\": [\"lead\", \"website\"]
   }"
 ```
 
 Required scope: `contacts.write`
 Returns: Contact object with `id` field - save this for follow-up calls.
+Verify in CF UI: Contacts → the new record appears with the tags/notes you set.
 
 ---
 
@@ -39,9 +44,9 @@ Returns: Contact object with `id` field - save this for follow-up calls.
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
-  "https://services.leadconnectorhq.com/contacts/?locationId=$GHL_LOCATION_ID&email=jane%40example.com"
+  "https://services.leadconnectorhq.com/contacts/?locationId=$GOHIGHLEVEL_LOCATION_ID&email=jane%40example.com"
 ```
 
 Required scope: `contacts.readonly`
@@ -54,7 +59,7 @@ Returns: Array of matching contacts with full contact objects.
 ```bash
 # Replace tags entirely
 curl --request PUT "https://services.leadconnectorhq.com/contacts/CONTACT_ID_HERE" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
   -H 'Content-Type: application/json' \
   -d '{"tags": ["hot-lead", "called", "interested"]}'
@@ -69,7 +74,7 @@ Replace `CONTACT_ID_HERE` with the actual contact ID from a prior lookup.
 
 ```bash
 curl --request POST "https://services.leadconnectorhq.com/contacts/CONTACT_ID_HERE/notes" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
   -H 'Content-Type: application/json' \
   -d "{
@@ -86,7 +91,7 @@ Required scope: `contacts/notes.write`
 
 ```bash
 curl --request POST "https://services.leadconnectorhq.com/contacts/CONTACT_ID_HERE/tasks" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
   -H 'Content-Type: application/json' \
   -d "{
@@ -108,9 +113,9 @@ Required scope: `contacts/tasks.write`
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
-  "https://services.leadconnectorhq.com/conversations/?locationId=$GHL_LOCATION_ID&limit=20&skip=0"
+  "https://services.leadconnectorhq.com/conversations/?locationId=$GOHIGHLEVEL_LOCATION_ID&limit=20&skip=0"
 ```
 
 Required scope: `conversations.readonly`
@@ -121,7 +126,7 @@ Required scope: `conversations.readonly`
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
   "https://services.leadconnectorhq.com/conversations/CONVERSATION_ID_HERE/messages"
 ```
@@ -134,18 +139,19 @@ Required scope: `conversations/message.readonly`
 
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/conversations/messages' \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
   -H 'Content-Type: application/json' \
   -d "{
     \"type\": \"SMS\",
     \"contactId\": \"CONTACT_ID_HERE\",
-    \"locationId\": \"$GHL_LOCATION_ID\",
+    \"locationId\": \"$GOHIGHLEVEL_LOCATION_ID\",
     \"message\": \"Hi Jane, just following up on our call today. Let me know if you have questions!\"
   }"
 ```
 
 Required scope: `conversations/message.write`
+Verify in CF UI: the contact's Conversation thread shows the outbound SMS.
 
 ---
 
@@ -155,9 +161,9 @@ Required scope: `conversations/message.write`
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
-  "https://services.leadconnectorhq.com/opportunities/search?location_id=$GHL_LOCATION_ID&limit=20"
+  "https://services.leadconnectorhq.com/opportunities/search?location_id=$GOHIGHLEVEL_LOCATION_ID&limit=20"
 ```
 
 Required scope: `opportunities.readonly`
@@ -168,12 +174,12 @@ Required scope: `opportunities.readonly`
 
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/opportunities/' \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
   -H 'Content-Type: application/json' \
   -d "{
     \"pipelineId\": \"PIPELINE_ID_HERE\",
-    \"locationId\": \"$GHL_LOCATION_ID\",
+    \"locationId\": \"$GOHIGHLEVEL_LOCATION_ID\",
     \"name\": \"Jane Smith - Gold Package\",
     \"pipelineStageId\": \"STAGE_ID_HERE\",
     \"status\": \"open\",
@@ -190,7 +196,7 @@ Required scope: `opportunities.write`
 
 ```bash
 curl --request PUT "https://services.leadconnectorhq.com/opportunities/OPPORTUNITY_ID_HERE" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
   -H 'Content-Type: application/json' \
   -d "{
@@ -209,9 +215,9 @@ Required scope: `opportunities.write`
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
-  "https://services.leadconnectorhq.com/calendars/?locationId=$GHL_LOCATION_ID"
+  "https://services.leadconnectorhq.com/calendars/?locationId=$GOHIGHLEVEL_LOCATION_ID"
 ```
 
 Required scope: `calendars.readonly`
@@ -222,7 +228,7 @@ Required scope: `calendars.readonly`
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
   "https://services.leadconnectorhq.com/calendars/CALENDAR_ID_HERE/free-slots?startDate=2024-02-01&endDate=2024-02-07&timezone=America/New_York"
 ```
@@ -235,12 +241,12 @@ Required scope: `calendars/events.readonly`
 
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/calendars/events/appointments' \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
   -H 'Content-Type: application/json' \
   -d "{
     \"calendarId\": \"CALENDAR_ID_HERE\",
-    \"locationId\": \"$GHL_LOCATION_ID\",
+    \"locationId\": \"$GOHIGHLEVEL_LOCATION_ID\",
     \"contactId\": \"CONTACT_ID_HERE\",
     \"startTime\": \"2024-02-05T14:00:00-05:00\",
     \"endTime\": \"2024-02-05T14:30:00-05:00\",
@@ -259,9 +265,9 @@ Required scope: `calendars/events.write`
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
-  "https://services.leadconnectorhq.com/locations/$GHL_LOCATION_ID"
+  "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID"
 ```
 
 Required scope: `locations.readonly`
@@ -272,9 +278,9 @@ Required scope: `locations.readonly`
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
-  "https://services.leadconnectorhq.com/locations/$GHL_LOCATION_ID/tags"
+  "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID/tags"
 ```
 
 Required scope: `tags.readonly`
@@ -287,11 +293,11 @@ Required scope: `tags.readonly`
 
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/' \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
   -H 'Content-Type: application/json' \
   -d "{
-    \"altId\": \"$GHL_LOCATION_ID\",
+    \"altId\": \"$GOHIGHLEVEL_LOCATION_ID\",
     \"altType\": \"location\",
     \"name\": \"Gold Package - Month 1\",
     \"contactDetails\": {
@@ -319,11 +325,11 @@ Required scope: `invoices.write`
 
 ```bash
 curl --request POST "https://services.leadconnectorhq.com/invoices/INVOICE_ID_HERE/send" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
   -H 'Content-Type: application/json' \
   -d "{
-    \"altId\": \"$GHL_LOCATION_ID\",
+    \"altId\": \"$GOHIGHLEVEL_LOCATION_ID\",
     \"altType\": \"location\",
     \"action\": \"send_now\"
   }"
@@ -339,9 +345,9 @@ Required scope: `invoices.write`
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
-  "https://services.leadconnectorhq.com/users/?locationId=$GHL_LOCATION_ID"
+  "https://services.leadconnectorhq.com/users/?locationId=$GOHIGHLEVEL_LOCATION_ID"
 ```
 
 Required scope: `users.readonly`
@@ -352,7 +358,7 @@ Required scope: `users.readonly`
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
   "https://services.leadconnectorhq.com/users/USER_ID_HERE"
 ```
@@ -367,9 +373,9 @@ Required scope: `users.readonly`
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
-  "https://services.leadconnectorhq.com/workflows/?locationId=$GHL_LOCATION_ID"
+  "https://services.leadconnectorhq.com/workflows/?locationId=$GOHIGHLEVEL_LOCATION_ID"
 ```
 
 Required scope: `workflows.readonly`
@@ -383,24 +389,29 @@ Required scope: `workflows.readonly`
 ```bash
 #!/bin/bash
 
-# Check that env vars are set before running anything
-if [ -z "$GHL_API_KEY" ] || [ -z "$GHL_LOCATION_ID" ]; then
-  echo "ERROR: GHL_API_KEY and GHL_LOCATION_ID must be set."
-  echo "Add them to ~/clawd/secrets/.env or export them in your shell."
+# Resolve creds (canonical names; legacy aliases mapped) and FAIL LOUD if unset —
+# never fire an empty "Authorization: Bearer ". See SKILL.md "Credentials".
+[ -f ~/.openclaw/secrets/.env ] && { set -a; . ~/.openclaw/secrets/.env; set +a; }
+: "${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-}}}}}"
+: "${GOHIGHLEVEL_LOCATION_ID:=${GHL_LOCATION_ID:-}}"
+if [ -z "${GOHIGHLEVEL_API_KEY:-}" ] || [ -z "${GOHIGHLEVEL_LOCATION_ID:-}" ]; then
+  echo "BLOCKED: GOHIGHLEVEL_API_KEY and GOHIGHLEVEL_LOCATION_ID must be set." >&2
+  echo "Add them to ~/.openclaw/secrets/.env (chmod 600), or export them in your shell." >&2
+  echo "Media uploads require a LOCATION-scoped PIT (an agency PIT 401s on media)." >&2
   exit 1
 fi
 
 # Make the call and capture HTTP status code separately
 HTTP_CODE=$(curl -s -o /tmp/ghl_response.json -w "%{http_code}" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
-  "https://services.leadconnectorhq.com/locations/$GHL_LOCATION_ID")
+  "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID")
 
 if [ "$HTTP_CODE" = "200" ]; then
   echo "Success:"
   cat /tmp/ghl_response.json | python3 -m json.tool
 elif [ "$HTTP_CODE" = "401" ]; then
-  echo "ERROR 401: Invalid or expired token. Check GHL_API_KEY."
+  echo "ERROR 401: Invalid or expired token. Check GOHIGHLEVEL_API_KEY (must be a valid LOCATION PIT)."
 elif [ "$HTTP_CODE" = "403" ]; then
   echo "ERROR 403: Missing scope. Check the required scope in the reference file."
   cat /tmp/ghl_response.json

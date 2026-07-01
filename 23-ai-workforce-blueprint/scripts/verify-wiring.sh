@@ -719,6 +719,29 @@ PYEOF
       echo "  [PRESENTATIONS]  WARN: presentations scripts dir not found — skipping process-integrity script checks" >&2
     fi
 
+    # (e4) SKILL-48 canonical GHL-media dependency (the presentations media path SHARES it).
+    # templates/role-library/presentations/scripts/ghl_media.py RE-EXPORTS
+    # 48-facebook-ad-generator/tools/ghl_media.py (the single, verified-working source of the
+    # GHL media folder-create + upload REST calls) and raises FileNotFoundError at import time
+    # if the sibling skill is absent. Surface that dependency HERE, at wiring/QC time, so a
+    # missing Skill 48 is caught before a live deck upload instead of mid-deck. Advisory
+    # (does not fail the dept): the dept can be scaffolded without the sibling, but media
+    # upload cannot run until Skill 48 is installed.
+    _GHL_CANON_FOUND=""
+    _anc="$SKILL_DIR"
+    while [[ -n "$_anc" && "$_anc" != "/" ]]; do
+      _anc="$(dirname "$_anc")"
+      if [[ -f "$_anc/48-facebook-ad-generator/tools/ghl_media.py" ]]; then
+        _GHL_CANON_FOUND="$_anc/48-facebook-ad-generator/tools/ghl_media.py"
+        break
+      fi
+    done
+    if [[ -n "$_GHL_CANON_FOUND" ]]; then
+      echo "  [PRESENTATIONS]  OK:   Skill-48 canonical ghl_media.py present ($_GHL_CANON_FOUND) — presentations media re-export will resolve"
+    else
+      echo "  [PRESENTATIONS]  WARN: Skill-48 canonical module 48-facebook-ad-generator/tools/ghl_media.py NOT found in any ancestor of $SKILL_DIR. The presentations media tool (templates/role-library/presentations/scripts/ghl_media.py) RE-EXPORTS it and will raise FileNotFoundError at import — GHL media upload (slide PNGs + deck) will fail mid-deck. Install Skill 48 (48-facebook-ad-generator) before running a Presentations media/delivery job." >&2
+    fi
+
     if [[ $PRES_FAIL -eq 1 ]]; then
       DEPT_FAIL=1
     fi

@@ -2,8 +2,8 @@
 
 Covers the three subcommands added for the ecosystem build:
   * caf calendars create        -> POST /calendars/        (Version 2021-04-15)
-  * caf payments create-product -> POST /payments/products (Version 2021-07-28)
-  * caf payments create-price   -> POST /payments/products/{id}/prices
+  * caf payments create-product -> POST /products/          (Version 2021-07-28)
+  * caf payments create-price   -> POST /products/{id}/price (singular)
 
 Every test uses mocks/fixtures — NO live CRM is contacted. Two layers are
 exercised:
@@ -130,7 +130,7 @@ class TestCalendarsCreate(_PatchedApiBase):
 # ── payments create-product / create-price ────────────────────────────────────
 
 class TestPaymentsCreateProduct(_PatchedApiBase):
-    def test_posts_to_products_with_alt_keys(self):
+    def test_posts_to_products_with_location_id(self):
         result, mock_post = self._invoke(
             ["--json", "--location-id", LOC,
              "payments", "create-product",
@@ -142,16 +142,19 @@ class TestPaymentsCreateProduct(_PatchedApiBase):
         self.assertEqual(result.exit_code, 0, f"Output: {result.output}")
         path = mock_post.call_args.args[0]
         body = mock_post.call_args.kwargs["data"]
-        self.assertEqual(path, "/payments/products")
+        # GHL Products API: create product is POST /products/ with locationId
+        # (NOT /payments/products, and NOT the payments-API altId/altType keys).
+        self.assertEqual(path, "/products/")
         self.assertEqual(body["name"], "ZHC Workshop Seat")
         self.assertEqual(body["productType"], "SERVICE")
-        self.assertEqual(body["altId"], LOC)
-        self.assertEqual(body["altType"], "location")
+        self.assertEqual(body["locationId"], LOC)
+        self.assertNotIn("altId", body)
+        self.assertNotIn("altType", body)
         self.assertEqual(body["image"], "https://storage.googleapis.com/msgsndr/x.png")
 
 
 class TestPaymentsCreatePrice(_PatchedApiBase):
-    def test_posts_to_product_prices_with_amount_cents(self):
+    def test_posts_to_product_price_with_amount_cents(self):
         result, mock_post = self._invoke(
             ["--json", "--location-id", LOC,
              "payments", "create-price",
@@ -164,10 +167,16 @@ class TestPaymentsCreatePrice(_PatchedApiBase):
         self.assertEqual(result.exit_code, 0, f"Output: {result.output}")
         path = mock_post.call_args.args[0]
         body = mock_post.call_args.kwargs["data"]
-        self.assertEqual(path, "/payments/products/PROD_NEW/prices")
+        # GHL Products API: create price is POST /products/{id}/price (SINGULAR)
+        # with locationId + product; no altId/altType.
+        self.assertEqual(path, "/products/PROD_NEW/price")
+        self.assertEqual(body["locationId"], LOC)
+        self.assertEqual(body["product"], "PROD_NEW")
         self.assertEqual(body["amount"], 4900)
         self.assertEqual(body["currency"], "USD")
         self.assertEqual(body["type"], "one_time")
+        self.assertNotIn("altId", body)
+        self.assertNotIn("altType", body)
 
 
 # ── Safety gate fires (lowest-layer requests patched; gate must refuse first) ─

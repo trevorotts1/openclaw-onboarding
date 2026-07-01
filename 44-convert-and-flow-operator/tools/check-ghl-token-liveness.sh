@@ -82,6 +82,7 @@ mkdir -p "$STATE_DIR"
 
 TODAY=$(date -u +%Y-%m-%d)
 PASS_STAMP="${STATE_DIR}/ghl-token-liveness-${TODAY}.ok"
+NOTIFIED_STAMP="${STATE_DIR}/ghl-token-liveness-${TODAY}.notified"
 
 _log() { echo "[ghl-token-liveness] $*"; }
 
@@ -91,6 +92,17 @@ _log() { echo "[ghl-token-liveness] $*"; }
 if [[ -f "$PASS_STAMP" ]]; then
   _log "PASS already confirmed today (${TODAY}) — skipping. Delete ${PASS_STAMP} to force recheck."
   exit 0
+fi
+
+# INVALID-token idempotency (symmetry with the PASS guard above): if today's
+# check already found the token dead AND the client was already notified today,
+# do NOT re-send. A second run the same day (double-fire cron, manual run, or
+# fleet auto-redispatch) must not spam the client — this honours the "at most
+# once per calendar day" contract on the INVALID branch too. Still exit 1 to
+# signal the token is unhealthy. Delete the .notified stamp to force a re-notify.
+if [[ -f "$NOTIFIED_STAMP" ]]; then
+  _log "INVALID already detected today (${TODAY}) and client already notified — not re-sending (idempotent). Delete ${NOTIFIED_STAMP} to force re-notify."
+  exit 1
 fi
 
 # ---------------------------------------------------------------------------
@@ -344,7 +356,8 @@ _log "Sending token-expired notification to client chat ${CLIENT_CHAT_ID}..."
 if openclaw message send --channel telegram --target "$CLIENT_CHAT_ID" --message "$NOTIFICATION_MSG" >/dev/null 2>&1; then
   _log "DONE notification sent to client chat ${CLIENT_CHAT_ID}."
   # Write a per-day FAIL stamp so we do not spam the same notification again today.
-  touch "${STATE_DIR}/ghl-token-liveness-${TODAY}.notified"
+  # The top-of-script guard reads this to short-circuit any later run today.
+  touch "$NOTIFIED_STAMP"
 else
   _log "WARN openclaw message send failed — client was NOT notified. Check Telegram config."
 fi

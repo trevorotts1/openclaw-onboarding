@@ -117,8 +117,8 @@ GHL uses a PRIVATE INTEGRATION TOKEN (PIT), NOT an API key. If your AI ever says
 
 📋 WHERE TO CHECK FOR CREDENTIALS:
 Your AI should check BOTH of these locations:
-1. ~/clawd/secrets/.env (look for GOHIGHLEVEL_API_KEY or GHL_PIT)
-2. ~/.openclaw/openclaw.json under env.vars (look for GOHIGHLEVEL_API_KEY)
+1. ~/.openclaw/secrets/.env (authoritative; look for GOHIGHLEVEL_API_KEY, legacy aliases GHL_API_KEY / GHL_PIT)
+2. ~/.openclaw/openclaw.json under env.vars (secondary mirror; look for GOHIGHLEVEL_API_KEY)
 New AI setups will NOT know to check both unless explicitly told.
 
 🎯 PRIORITY SCOPES (Test These First):
@@ -132,36 +132,48 @@ Complete guide to setting up GoHighLevel API integration.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-📋 STEP 1: Get Your API Credentials
+📋 STEP 1: Get Your Credentials (Private Integration Token, NOT an API key)
 
 1. Log into your GHL account
 2. Go to Settings > Business Info
 3. Copy your Location ID
-4. Go to Settings > API Keys
-5. Create a new API key (or use existing)
+4. Go to Settings > Integrations > Private Integrations
+5. Create (or copy) a Private Integration Token (PIT). GHL has no "API keys" — do not look for an API Keys page.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-📋 STEP 2: Add to OpenClaw Config
+📋 STEP 2: Store Your Credentials
 
-nano ~/.openclaw/openclaw.json
+PRIMARY (authoritative) — ~/.openclaw/secrets/.env (chmod 600). Write the
+canonical names AND the legacy aliases so every skill (36/44 read
+GOHIGHLEVEL_*, older skill 29 reads GHL_*) resolves:
 
-Add under "env" section:
+  GOHIGHLEVEL_API_KEY=<your Private Integration Token>
+  GOHIGHLEVEL_LOCATION_ID=<your location id>
+  # legacy aliases (back-compat) — same values
+  GHL_API_KEY=<your Private Integration Token>
+  GHL_LOCATION_ID=<your location id>
+
+Then: chmod 600 ~/.openclaw/secrets/.env
+
+SECONDARY (optional mirror) — only if ~/.openclaw/openclaw.json already has an
+env.vars section, mirror the same values there for convenience:
 {
   "env": {
     "vars": {
-      "GHL_API_KEY": "your-api-key-here",
-      "GHL_LOCATION_ID": "your-location-id-here"
+      "GOHIGHLEVEL_API_KEY": "your-private-integration-token-here",
+      "GOHIGHLEVEL_LOCATION_ID": "your-location-id-here"
     }
   }
 }
+secrets/.env is always the source of truth; openclaw.json is a mirror only.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🔴 CRITICAL: Required Headers
 
 EVERY GHL API request needs these headers:
-• Authorization: Bearer YOUR_API_KEY
+• Authorization: Bearer <your Private Integration Token> (the value in GOHIGHLEVEL_API_KEY)
 • Version: 2021-07-28
 
 Without the Version header, requests WILL FAIL!
@@ -199,12 +211,12 @@ OPPORTUNITIES:
 
 # Search for contact
 curl -X GET "https://services.leadconnectorhq.com/contacts/search?query=john@email.com" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-07-28"
 
 # Send SMS
 curl -X POST "https://services.leadconnectorhq.com/conversations/messages" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-07-28" \
   -H "Content-Type: application/json" \
   -d '{
@@ -238,20 +250,20 @@ AGENTS.md - Add rule to always include Version header
 After setup, the AI should run these tests automatically:
 
 TEST 1: Verify Credentials Exist
-echo "API Key: $(echo $GHL_API_KEY | head -c 10)..."
-echo "Location ID: $GHL_LOCATION_ID"
+echo "API Key: $(echo $GOHIGHLEVEL_API_KEY | head -c 10)..."
+echo "Location ID: $GOHIGHLEVEL_LOCATION_ID"
 # Should show first 10 chars of key and full location ID
 
 TEST 2: Test API Connection (Get Location Info)
-curl -s -X GET "https://services.leadconnectorhq.com/locations/$GHL_LOCATION_ID" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+curl -s -X GET "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-07-28"
 
 EXPECTED: JSON with location name, address, etc.
 
 TEST 3: Test Contact Search
-curl -s -X GET "https://services.leadconnectorhq.com/contacts/?locationId=$GHL_LOCATION_ID&limit=1" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+curl -s -X GET "https://services.leadconnectorhq.com/contacts/?locationId=$GOHIGHLEVEL_LOCATION_ID&limit=1" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-07-28"
 
 EXPECTED: JSON with contacts array (even if empty)
@@ -261,7 +273,7 @@ TEST 4: Verify Version Header Works
 
 TEST 5: Test Send SMS
 curl -s -X POST "https://services.leadconnectorhq.com/conversations/messages" \
--H "Authorization: Bearer $GHL_API_KEY" \
+-H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
 -H "Version: 2021-07-28" \
 -H "Content-Type: application/json" \
 -d '{"type": "SMS", "contactId": "REPLACE_WITH_CONTACT_ID", "message": "Test SMS from AI assistant"}'
@@ -269,15 +281,15 @@ EXPECTED: JSON with messageId confirming delivery
 
 TEST 6: Test Send Email
 curl -s -X POST "https://services.leadconnectorhq.com/conversations/messages" \
--H "Authorization: Bearer $GHL_API_KEY" \
+-H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
 -H "Version: 2021-07-28" \
 -H "Content-Type: application/json" \
 -d '{"type": "Email", "contactId": "REPLACE_WITH_CONTACT_ID", "subject": "Test Email from AI", "html": "<p>This is a test email from your AI assistant.</p>"}'
 EXPECTED: JSON with messageId confirming delivery
 
 TEST 7: Test Media Library Access
-curl -s -X GET "https://services.leadconnectorhq.com/medias/?locationId=$GHL_LOCATION_ID&limit=1" \
--H "Authorization: Bearer $GHL_API_KEY" \
+curl -s -X GET "https://services.leadconnectorhq.com/medias/?locationId=$GOHIGHLEVEL_LOCATION_ID&limit=1" \
+-H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
 -H "Version: 2021-07-28"
 EXPECTED: JSON with media files array (proves media library scope works)
 
@@ -288,8 +300,8 @@ EXPECTED: JSON with media files array (proves media library scope works)
 
 After setting up GHL, automatically verify:
 
-□ API key is in config (check env.vars.GHL_API_KEY)
-□ Location ID is in config (check env.vars.GHL_LOCATION_ID)
+□ PIT is stored (check GOHIGHLEVEL_API_KEY in secrets/.env; mirror env.vars.GOHIGHLEVEL_API_KEY)
+□ Location ID is stored (check GOHIGHLEVEL_LOCATION_ID in secrets/.env; mirror env.vars.GOHIGHLEVEL_LOCATION_ID)
 □ Can reach services.leadconnectorhq.com
 □ Can get location info (proves auth works)
 □ Can search contacts (proves permissions work)

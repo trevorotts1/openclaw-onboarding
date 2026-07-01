@@ -4,6 +4,31 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.2.6] - 2026-06-30 — Tier 2 fork pinned to a verified commit SHA; QC script bug-fixes; stale full-doc/QC.md reconciled; runtime missing-cred grace; disclosure scoped operator-only; Command Center hooks
+
+### Fixed (qc-ghl-mcp-setup.sh)
+- **BUG-1:** `$URL` was used by the Tier 2 `/tools` assert one line BEFORE its own assignment → `URL: unbound variable` under `set -u` → spurious Section D FAIL every run. URL is now resolved at the top of Section D, before any use.
+- **BUG-2:** the URL capture was `URL=$(command -v openclaw && openclaw config get ...)`, which prepended the `openclaw` binary path onto the URL → all Tier 2 probes hit a broken URL → spurious FAIL. `openclaw` presence is now guarded by a separate `command -v` test.
+- **BUG-3 / D5-ii:** the VPS service check was `systemctl is-active ghl-mcp` only, which FAILS on a Hostinger Docker VPS (no systemd) even when pm2 correctly runs the server. Now checks `pm2 jlist | grep ghl-community-mcp` first, systemd as fallback.
+- Tool-count asserts are now range-based: Tier 1 `>= 36` (was exact `= 36`), Tier 2 `>= 500` — so a single GHL tool add/remove no longer trips QC.
+
+### Changed (pin the Tier 2 community fork — reproducibility / drift protection)
+- `INSTALL.md` §5.2 and `ghl-mcp-setup-full.md` §6.2 now clone the BusyBee3333 fork and `git checkout` a **pinned commit** (`GHL_MCP_PIN_SHA=3dd9006ac5242762612e6d22b9a51a0a17aeca79`, 2026-05-15) instead of tracking `main`. That commit is the state this skill was verified against (`package.json main=dist/main.js`, `src/main.ts:55` PORT-before-MCP_SERVER_PORT precedence, `GET /health`+`GET /tools`+`POST /execute`). `main` HEAD (2026-06-11+) adds `mcp-apps` / an "easy setup" flow / a curated tool-profile that changes the default `/tools` surface; a re-run now re-pins instead of drifting. Bumping the pin requires re-running the QC script.
+- Verified `ghl_create_workflow` / `ghl_update_workflow_actions` DO exist in the fork (`src/tools/workflow-builder-tools.ts` + `workflow-builder-client.ts`) but wrap an undocumented internal endpoint and remain unverified/likely non-functional — hardened the Tier 2 Workflows row (INSTRUCTIONS.md) and GHL-LOOKUP-SOP.md RULE 6 so they are never mistaken for a build path (build stays Tier 0 / Skill 44 Build API).
+
+### Fixed (reconcile the stale long-form reference to the post-v1.1.0 canonical model)
+- `ghl-mcp-setup-full.md`: §6.7 no longer instructs `openclaw mcp set ghl-community-mcp` — Tier 2 is documented as ON-DEMAND curl (not registered in `mcp.servers`), matching INSTALL.md §5.7, wire.sh M2, and qc.sh. §8.1 flipped to "SOUL.md — NO UPDATE NEEDED" (the Tier Escalation Protocol lives in AGENTS.md); §8.2 tier order gains Tier 0, marks Tier 2 on-demand, and Tier 4 = agent-browser-first; §8.4 MEMORY.md, the master checklist, and §11.A QC items flipped off the "Tier 2 registered" / "add to SOUL.md" / exact-count claims.
+- `QC.md`: file manifest corrected to the real 14 package files (was "10"); "ghl-community-mcp registered" → "NOT registered (on-demand)"; "SOUL.md contains the protocol" → "AGENTS.md contains it; SOUL.md unchanged"; platform detection and VPS supervisor descriptions corrected (uname; pm2-first).
+- `ghl-mcp-setup-full.md` §6.5 launchd plist + §6.6 systemd unit now pin BOTH `PORT` and `MCP_SERVER_PORT` (the supervision fix already in INSTALL.md); §6.6 notes pm2 is the canonical VPS supervisor.
+
+### Fixed (D5-i — quoted-tilde platform detection in the full doc)
+- Replaced `if [ -d "~/.openclaw" ]` (tilde does not expand inside quotes → always "desktop") with `uname -s` detection at all four sites, and switched the broken quoted-`"~/..."` path assignments to `$HOME/...`. Removed two dead quoted-tilde entries from the master-files locator ROOTS array.
+
+### Added (runtime grace + silence + Command Center)
+- **Runtime missing-credential grace** (GHL-LOOKUP-SOP.md RULE 5 + CORE_UPDATES.md token-routing): an empty `GOHIGHLEVEL_API_KEY` / `GOHIGHLEVEL_LOCATION_ID` at runtime now BLOCKS with a named, client-facing remediation (how to create the PIT + find the Location ID), mirroring the Firebase-token nudge — never a silent no-op. (A 429 still STOPs and surfaces the reset time; it does not ask for credentials.)
+- **Disclosure header scoped OPERATOR-CHANNEL ONLY** (INSTRUCTIONS.md + CORE_UPDATES.md): the `[GHL tier used: N — tool]` header is the operator's audit trail and MUST be stripped from client-facing replies (WE MOVE IN SILENCE).
+- **Command Center hooks** (INSTRUCTIONS.md): skill 36 emits status to Skill 32's existing board ingestion at install start/complete and on tier incidents (429 lockout, missing credential) — best-effort, operator-only, no parallel board (uses Skill 32's documented ingestion; skipped if Skill 32 absent).
+
 ## [v1.2.5] - 2026-06-21 — Tier 4 realigned to agent-browser-first; page/funnel building delegated to Skill 06 (no parallel path)
 
 ### Changed

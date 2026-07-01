@@ -51,7 +51,7 @@ human-readable companion checklist. All items below are machine-asserted by the 
 - [ ] Platform overlay frontmatter `name: convert-and-flow-operator` matches SKILL.md
 - [ ] Mac overlay: auto-re-grab recipe present in platform/mac/recipes/
 
-## Section H: QC scope flags (document for Opus QC)
+## Section H: QC scope flags (document for QC review)
 
 - Criterion 8 grep for old Rule 16 wording EXCLUDES historical CHANGELOG.md entries.
 - Criterion 13/17 skill-35 grep EXCLUDES intentional deprecated-name guardrails in INSTALL.md/QC.md/qc-*.sh.

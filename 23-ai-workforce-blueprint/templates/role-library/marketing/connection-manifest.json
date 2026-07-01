@@ -6,13 +6,15 @@
     {
       "name": "ghl-api-key",
       "description": "GoHighLevel API key for the Marketing department to manage campaigns, automations, and contacts.",
-      "cfg_key": "env.vars.GHL_API_KEY",
+      "cfg_key": "env.vars.GOHIGHLEVEL_API_KEY",
+      "cfg_key_aliases": ["env.vars.GHL_API_KEY"],
       "required": true
     },
     {
       "name": "ghl-location-id",
       "description": "GHL location ID for targeting the correct Marketing sub-account.",
-      "cfg_key": "env.vars.GHL_LOCATION_ID",
+      "cfg_key": "env.vars.GOHIGHLEVEL_LOCATION_ID",
+      "cfg_key_aliases": ["env.vars.GHL_LOCATION_ID"],
       "required": true
     }
   ]

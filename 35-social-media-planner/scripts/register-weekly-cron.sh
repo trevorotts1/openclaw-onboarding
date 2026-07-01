@@ -79,7 +79,7 @@ fi
 if [ "$_existing_count" -ge 1 ]; then
   # Delete ALL existing entries for this cron name (handles duplicates + erroring entries).
   # `openclaw cron delete --name` removes by name; if that flag is unavailable, use --all-named.
-  echo "Removing $(_existing_count) existing '$CRON_NAME' cron entries before clean registration..." >&2
+  echo "Removing ${_existing_count} existing '$CRON_NAME' cron entries before clean registration..." >&2
 
   # Try by-name deletion first (preferred, leaves other crons intact)
   if openclaw cron delete --name "$CRON_NAME" 2>/dev/null; then

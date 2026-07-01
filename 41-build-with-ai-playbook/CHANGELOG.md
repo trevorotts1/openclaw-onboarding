@@ -1,3 +1,49 @@
+## [1.5.2] - 2026-06-30 — Command Center Kanban reflection, dependency-creation.sh durability hardening, jsonl-sink + update self-heal
+
+### Why
+The GHL dependency review found the skill does real multi-step work (creates
+GHL tags/fields/values, builds + verifies a workflow) but never moved a Command Center Kanban
+card, so the operator board showed no progress (P0). It also flagged that dependency-creation.sh
+under-implemented its own protocol (no timeouts, no retry/backoff, no HTTP-status capture, no
+GET-back verify) (P1), that a version bump that wipes-and-recopies the skill re-ran no install
+steps because no root wire.sh existed (P1), and that append_jsonl could silently drop events if
+MASTER_FILES_DIR was missing (#7).
+
+### Added
+- **scripts/lib-command-center.sh** — best-effort, health-gated Command Center reflection.
+  `cc_url` / `cc_available` / `cc_move_task <id> <status> <agent_id>`. Moves a Kanban card via
+  `PATCH /api/tasks/{id}` (HTTP only — never writes the CC database) with the bearer token sent
+  ONLY in the Authorization header (never logged). Fail-soft: empty id -> no-op; invalid column ->
+  rc 2; `done` refused (review->done is owned by the CC QC scorer, not the builder) -> rc 3; CC
+  unreachable -> silent no-op rc 0; PATCH/transport error -> operator-only stderr WARNING, rc 0.
+- **wire.sh (skill root)** — idempotent, fail-soft post-update self-heal that re-runs install
+  steps 03->06 (each guarded; always exits 0) so a version-bump wipe-and-recopy re-applies the
+  jsonl sinks, core-file blocks, executor-model config, and agent-browser preflight.
+
+### Changed
+- **dependency-creation.sh durability (P1)** — new `ghl_request` helper wraps every GHL REST call
+  with `--connect-timeout`/`--max-time`, exponential-backoff retry on transport errors / HTTP 429 /
+  HTTP 5xx, and HTTP-status capture via `curl -w` (stops immediately on a non-retryable 4xx). All
+  three creators now POST through it and run a **GET-back verification** (retry once after 2s, then
+  surface a non-fatal operator WARNING) per dependency-creation-protocol.md. Existing injection
+  safety (jq-built bodies), paginated existence checks, ZHC-/ZHC_ prefix enforcement, and the
+  jsonl schema are unchanged.
+- **lib-master-files.sh append_jsonl (#7)** — `mkdir -p` the resolved sink dir and guard the
+  append; a missing/read-only MASTER_FILES_DIR now surfaces a loud operator WARNING and returns 0
+  instead of silently dropping the event or aborting a `set -e` caller mid-create.
+- **INSTRUCTIONS.md** — new "Command Center reflection (best-effort, silent when absent)" section
+  plus one best-effort transition line each at Steps 1/5/6/7 (brainstorm->planning,
+  build_initiated->in_progress, build_completed->review, verification_failed->blocked). Both build
+  paths and the jsonl schema are explicitly unchanged.
+
+### Meta
+- `skill-version.txt` bumped 1.5.1 -> 1.5.2.
+- SKILL.md / INSTALL.md file inventories updated for the two new scripts.
+- Executor model unchanged: it remains MiniMax M3 (Ollama Cloud primary / OpenRouter fallback),
+  the correct stack for browser-control / tool-call execution. The model fallback ladder stays
+  Ollama Cloud -> OpenRouter; no other model provider is recommended, defaulted, or introduced
+  anywhere in this skill.
+
 ## [1.5.0] - 2026-06-11 — CAF-first (Option 1 primary), GHL_AI_LAYERS cross-reference, human=final-verifier explicit
 
 ### Why

@@ -1010,16 +1010,16 @@ Not all AI models are equal. Some are better at writing. Some are better at anal
 
 | Task Type | Recommended Model | Why |
 |-----------|------------------|-----|
-| Quick lookups and simple responses | GPT-5 Nano or Haiku | Cheapest, fastest |
-| Writing client-facing content | Opus or Sonnet | Quality matters |
-| Data processing and CRM updates | MiniMax M2.5 | Good with tools, cheap |
+| Quick lookups and simple responses | GPT-5 Nano or DeepSeek-flash | Cheapest, fastest |
+| Writing client-facing content | GLM 5.2 (Ollama Cloud) | Quality matters |
+| Data processing and CRM updates | MiniMax 3 | Good with tools, cheap |
 | Research and web search | Perplexity Sonar Pro | Built for search |
-| Image creation | MiniMax (calls KIE.ai) | Just calls the tool |
-| Complex analysis or strategy | Opus | Best reasoning |
+| Image creation | MiniMax 3 (calls KIE.ai) | Just calls the tool |
+| Complex analysis or strategy | DeepSeek v4 pro (Ollama Cloud) | Best reasoning |
 
 ## Cost Awareness
 - Track which models are being used
-- If Opus is doing grunt work, that is a problem
+- If a heavy reasoning model is doing grunt work, that is a problem
 - Target: 80%+ of routine tasks on cheaper models
 - Escalate to premium models only when quality demands it
 
