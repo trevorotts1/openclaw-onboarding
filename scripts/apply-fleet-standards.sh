@@ -515,6 +515,58 @@ fi
 echo ""
 echo "[apply-fleet-standards] config standards applied"
 
+# ─── 4a-SOVEREIGNTY. Model-sovereignty strip/repair (FAIL-OPEN) ───────────────
+# v16.2.17: the onboarding GENERATOR is Anthropic-free/preview-free/Ollama-first,
+# but LEGACY boxes remediated earlier can still carry a lingering Anthropic
+# provider/plugin block, `-preview`/free slugs in fallback[] chains, or runaway
+# cascades. scripts/repair-model-sovereignty.sh is an idempotent, backup-before-
+# edit, box-user, no-restart remediation that strips exactly those (keying ONLY
+# off FORBIDDEN_PREFIXES + `-preview` + free-sentinels — it never touches a
+# client's own OpenAI/OpenRouter/Gemini providers/chains). It was never invoked
+# by install/update; wire it here so BOTH install.sh and update-skills.sh run it
+# on every pass. FAIL-OPEN: any non-zero (offenders remain / needs owner input /
+# missing tool) logs a warning and CONTINUES — it must NEVER abort the run. NO
+# gateway reload here (apply-fleet-standards / the caller reloads downstream).
+_FS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPAIR_MS_SCRIPT=""
+for _cand in \
+  "$_FS_SCRIPT_DIR/repair-model-sovereignty.sh" \
+  "$OC_ROOT/scripts/repair-model-sovereignty.sh" \
+  "$HOME/.openclaw/scripts/repair-model-sovereignty.sh"; do
+  [ -f "$_cand" ] && REPAIR_MS_SCRIPT="$_cand" && break
+done
+REPAIR_MS_SU=""
+for _su in \
+  "$OC_ROOT/skills/shared-utils" \
+  "$_FS_SCRIPT_DIR/../shared-utils" \
+  "$HOME/.openclaw/skills/shared-utils"; do
+  if [ -f "$_su/select_model.py" ] && [ -f "$_su/assert_model_sovereignty.py" ]; then
+    REPAIR_MS_SU="$_su"; break
+  fi
+done
+if [ -n "$REPAIR_MS_SCRIPT" ]; then
+  echo "[apply-fleet-standards] running model-sovereignty strip/repair (fail-open): $REPAIR_MS_SCRIPT"
+  _ms_args=(--apply --config "$OC_CONFIG" --box "$(hostname -s 2>/dev/null || echo box)")
+  [ -n "$REPAIR_MS_SU" ] && _ms_args+=(--shared-utils "$REPAIR_MS_SU")
+  if bash "$REPAIR_MS_SCRIPT" "${_ms_args[@]}"; then
+    echo "[apply-fleet-standards] model-sovereignty repair: clean"
+  else
+    _ms_rc=$?
+    echo "[apply-fleet-standards] WARNING: model-sovereignty repair exited $_ms_rc (offenders may remain / needs owner input) — CONTINUING (fail-open)" >&2
+  fi
+  # VPS: keep the config + any sweep backups owned by the runtime user (mirrors
+  # the chown after the canonical merge above). Never freeze the gateway with a
+  # root-owned config.
+  if [ "$OC_ROOT" = "/data/.openclaw" ]; then
+    chown "$OC_USER:$OC_USER" "$OC_CONFIG" 2>/dev/null || true
+    for _b in "$OC_CONFIG".bak-model-sweep-*; do
+      [ -e "$_b" ] && chown "$OC_USER:$OC_USER" "$_b" 2>/dev/null || true
+    done
+  fi
+else
+  echo "[apply-fleet-standards] WARNING: repair-model-sovereignty.sh not found (checked script dir, \$OC_ROOT/scripts, ~/.openclaw/scripts) — SKIPPING model-sovereignty repair (fail-open)" >&2
+fi
+
 # ─── 5a. Inject ROLE DISCIPLINE into the agent's active AGENTS.md (PR2) ────────
 # This is the role-scoped governance block from CANONICAL-ORCHESTRATOR-RULE.md.
 # It is injected at the TOP of AGENTS.md (before existing content) so every
@@ -737,6 +789,16 @@ fi
 #   the CEO board. So we only stamp when presentations is present/unknown, and we
 #   REMOVE any previously-stamped block when presentations is affirmatively absent.
 #
+# PA-BOX GUARD (v16.2.17, PR #459): even before the dept check, a DEFINITIVE
+#   personal-assistant-only box — one whose DEFAULT agent is NOT a router (no CEO /
+#   master-orchestrator, so no Presentations dept and no Command Center on :4000) —
+#   is skipped: the reflex would make the PA POST to a 404 on every deck/slide
+#   message. We REUSE the exact router signal the tool-gate layers use (is_master /
+#   role=="router" / id in ROUTER_IDS) — NOT dept-dir existence (the presentations
+#   dept is seeded in a LATER layer, so a dir check would be stamp-order-dependent).
+#   The two guards are UNIFIED below into one path: PA-box → skip/remove reflex;
+#   else presentations-dept ABSENT → skip/remove reflex; else (PRESENT/UNKNOWN) →
+#   stamp the signed helper + V2.
 # The block MUST sit ABOVE ROLE_DISCIPLINE_V1 + CEO_ROUTING_NO_LOOPHOLES_V1 (both
 # already stamped at the top by 5a + 4b above): it is stamped LAST as an
 # absolute-top prepend and becomes the file's first block. Every later block
@@ -850,10 +912,55 @@ open(p, "w", encoding="utf-8").write(c)
 PRESSTRIP_PY
 }
 
+# (c) PA-box detection (v16.2.17, PR #459): reuse the tool-gate router signal so a
+#     DEFINITIVE personal-assistant-only box never stamps a reflex that would 404.
+#     is_master / role=="router" / id in ROUTER_IDS → ROUTER; a non-router default
+#     agent → PA (skipped); no-default / unparseable → treated as non-PA (stamps).
+_REFLEX_BOXTYPE="$(OC_JSON="$OC_CONFIG" python3 - <<'PYBT'
+import json, os
+ROUTER_IDS = {  # keep IN SYNC with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS
+    "main", "ceo", "dept-ceo",
+    "master-orchestrator", "dept-master-orchestrator",
+    "dept-executive-office",
+}
+def _is_router(a):
+    if not isinstance(a, dict):
+        return False
+    if a.get("is_master") is True:
+        return True
+    if isinstance(a.get("role"), str) and a.get("role").strip().lower() == "router":
+        return True
+    return a.get("id") in ROUTER_IDS
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+    agents = cfg.get("agents", {}).get("list", []) or []
+    da = next((a for a in agents if isinstance(a, dict) and a.get("default") is True), None)
+    if da is None:
+        da = next((a for a in agents if isinstance(a, dict) and a.get("id") == "main"), None)
+    if da is None:
+        print("NO_DEFAULT")
+    else:
+        print("ROUTER" if _is_router(da) else "PA")
+except Exception:
+    print("UNKNOWN")
+PYBT
+)" || _REFLEX_BOXTYPE="UNKNOWN"
+
 PRES_DEPT_STATUS="$(_pres_dept_status 2>/dev/null || echo UNKNOWN)"
 echo "[apply-fleet-standards] presentations department check: $PRES_DEPT_STATUS"
+echo "[apply-fleet-standards] reflex box-type check: $_REFLEX_BOXTYPE"
 
-if [ "$PRES_DEPT_STATUS" = "ABSENT" ]; then
+if [ "$_REFLEX_BOXTYPE" = "PA" ]; then
+  # PA-only box (default agent is a personal-assistant / non-router): no Presentations
+  # dept and no Command Center on :4000 — the reflex would POST to a 404. Remove any
+  # previously-stamped block and skip.
+  if grep -qE 'PRESENTATION_ROUTING_REFLEX_V[12]' "$AGENTS_FILE_EARLY" 2>/dev/null; then
+    _strip_pres_reflex "$AGENTS_FILE_EARLY"
+    echo "[apply-fleet-standards] PA-only box (non-router default agent) — REMOVED previously-stamped reflex block from $AGENTS_FILE_EARLY (would POST to a 404)"
+  else
+    echo "[apply-fleet-standards] PA-only box (non-router default agent) — NOT stamping reflex block (would POST to a 404)"
+  fi
+elif [ "$PRES_DEPT_STATUS" = "ABSENT" ]; then
   # P2-1: owner declined presentations — never stamp (decks would strand on the
   # CEO board). Remove any previously-stamped block and skip.
   if grep -qE 'PRESENTATION_ROUTING_REFLEX_V[12]' "$AGENTS_FILE_EARLY" 2>/dev/null; then

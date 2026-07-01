@@ -1,4 +1,4 @@
-## [v16.2.17]  -  2026-07-01  -  fix(repo-review): repo-review fix sprint — interview decline provenance, presentation-routing REFLEX V2 (signed), telegram-offset-healthcheck rewrite, companySlug persistence, and eight smaller correctness/consistency fixes
+## [v16.2.18]  -  2026-07-01  -  fix(repo-review): repo-review fix sprint — interview decline provenance, presentation-routing REFLEX V2 (signed), telegram-offset-healthcheck rewrite, companySlug persistence, and eight smaller correctness/consistency fixes
 
 ### Risk: low — every change is additive or fail-closed (a missing signal now fails the relevant gate instead of defaulting to pass); no credential values, plists, or client-specific content touched. No client names.
 
@@ -37,9 +37,31 @@ New `23-ai-workforce-blueprint/scripts/record-dept-decision.sh` helper records a
 - `scripts/deprecated-models.json` — free Ollama replacement
 - `scripts/bump-version.sh` — 11th marker (23-ai-workforce-blueprint/SKILL.md frontmatter)
 - `23-ai-workforce-blueprint/templates/role-library/_index.json`, `23-ai-workforce-blueprint/templates/role-library/_qc-summary.md` — role/department/SOP counts corrected to 420/34/121
-- `version`, `install.sh`, `update-skills.sh`, `README.md` (×2), `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `cc-compat.json`, `23-ai-workforce-blueprint/skill-version.txt`, `23-ai-workforce-blueprint/SKILL.md`, `23-ai-workforce-blueprint/templates/role-library/_index.json`, `23-ai-workforce-blueprint/templates/role-library/_qc-summary.md` — rolled to v16.2.17 via `bump-version.sh` (11 markers)
+- `version`, `install.sh`, `update-skills.sh`, `README.md` (×2), `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `cc-compat.json`, `23-ai-workforce-blueprint/skill-version.txt`, `23-ai-workforce-blueprint/SKILL.md`, `23-ai-workforce-blueprint/templates/role-library/_index.json`, `23-ai-workforce-blueprint/templates/role-library/_qc-summary.md` — rolled to v16.2.18 via `bump-version.sh` (11 markers)
 
 ---
+
+## [v16.2.17]  -  2026-07-01  -  feat(fleet-sovereignty): auto strip-on-update guard — repair-model-sovereignty.sh wired into every install + update to strip Anthropic provider/plugin, scrub -preview/forbidden fallbacks, cap runaway cascades; PA-only boxes skip the presentation REFLEX gate
+
+### Why
+An audit found 23/32 client boxes carrying LEGACY Anthropic providers + paid `-preview` slugs + runaway (up to 33-deep) fallback cascades — a money-bleed + sovereignty violation. The current onboarding GENERATOR is already clean (Anthropic-free, preview-free, Ollama-first, fail-closed), so new boxes are safe; the gap was that nothing actively re-stripped legacy config on update. This makes the one-off fleet remediation permanent + automatic.
+
+### What
+- **`scripts/repair-model-sovereignty.sh` extended** — beyond re-resolving offending agent primaries it now: (a) deletes the `models.providers.anthropic` block + any anthropic `plugins.entries.*` + removes "anthropic" from `plugins.allow`; (b) scrubs every `-preview`, forbidden (`anthropic/`, `claude-*`), and free-sentinel slug from `fallbacks[]` even when the primary is valid; (c) caps fallback depth to ≤3; (d) scans `agents.defaults.model` + `agents.defaults.subagents.model` in addition to `agents.list[*]`. Replacement primaries are drawn ONLY from the box's OWN inventory (`select_model.resolve_dept_default_model`), then promote-own-fallback, then owner-input — a client with OpenAI/OpenRouter/Gemini and zero Ollama keeps ALL their own providers/chains and only loses Anthropic/preview (never force-Ollama'd). Idempotent; timestamped backup + `openclaw config validate` with restore-on-failure; runs as box-user; no gateway restart.
+- **Wired into `scripts/apply-fleet-standards.sh`** (step 4a-SOVEREIGNTY), which runs on BOTH `install.sh` and `update-skills.sh` — so every box auto-remediates on its next update. The call is **fail-open**: a repair error logs a warning and continues; it can never abort an install/update. `repair-model-sovereignty.sh` is added to the `update-skills.sh` persistent-scripts copy loop so it resolves after the temp-clone is cleaned.
+- **PA-box guard for the REFLEX gate** — the `PRESENTATION_ROUTING_REFLEX_V1` injection in BOTH stampers (`apply-fleet-standards.sh` 4b-REFLEX + `apply-routing-fix.sh` LAYER 1) is now gated behind a box-type check that reuses the existing tool-gate router signal (`is_master` / `role==router` / id ∈ ROUTER_IDS). A definitive personal-assistant-only box (no Presentations dept / no Command Center) is skipped so it can't POST a presentation trigger to a 404. Fail-safe toward injection (router / ambiguous / error all still inject); reliable regardless of stamp order.
+
+### Files changed
+- `scripts/repair-model-sovereignty.sh` — provider/plugin strip + fallback scrub + depth cap + defaults scan + inventory-only replacements
+- `scripts/apply-fleet-standards.sh` — step 4a-SOVEREIGNTY (fail-open repair invocation) + 4b-REFLEX PA-guard
+- `scripts/apply-routing-fix.sh` — LAYER 1 REFLEX PA-guard (byte-identical box-type detection)
+- `update-skills.sh` — persist `repair-model-sovereignty.sh` into `~/.openclaw/scripts`
+
+### Verification
+3-lens adversarial QC (correctness / sovereignty-preservation / safety-runtime), each live-tested against fixtures: legacy box → Anthropic+preview stripped, depth-capped, Ollama-first; opted-out-style zero-Ollama box → own providers/chains preserved, NOT force-Ollama'd, null-primary promoted the client's OWN fallback; already-clean box → byte-for-byte no-op. Backup→validate→restore proven; fail-open wiring proven; no secrets printed. **0 blockers, 0 majors.**
+
+### Note
+`scripts/deprecated-models.json` left unchanged — the strip logic does not consult it (only `update-skills.sh` reads it, for an informational warning). Its `gemini-3.1-flash-lite-preview → google/gemini-3-flash-preview` (preview→preview) line is a latent cosmetic inconsistency in that warning, out of scope here.
 
 ## [v16.2.16]  -  2026-07-01  -  feat(fleet-routing): canonicalize the proven presentation-routing REFLEX gate into the two fleet doctrine stampers — every CEO's workspace AGENTS.md gets a trigger-before-thinking route-first-and-stop gate for presentation requests
 

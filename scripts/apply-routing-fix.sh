@@ -299,6 +299,16 @@ fi
 #   the CEO board. So we only stamp when presentations is present/unknown, and we
 #   REMOVE any previously-stamped block when presentations is affirmatively absent.
 #
+# PA-BOX GUARD (v16.2.17, PR #459): even before the dept check, a DEFINITIVE
+#   personal-assistant-only box — one whose DEFAULT agent is NOT a router (no CEO /
+#   master-orchestrator, so no Presentations dept and no Command Center on :4000) —
+#   is skipped: the reflex would make the PA POST to a 404 on every deck/slide
+#   message. We REUSE the exact router signal L2/L5 use (is_master / role=="router" /
+#   id in ROUTER_IDS) — NOT dept-dir existence (LAYER 4 seeds the presentations dept
+#   LATER, so a dir check would be stamp-order-dependent). The two guards are UNIFIED
+#   below into one path: PA-box → skip/remove reflex; else presentations-dept ABSENT
+#   → skip/remove reflex; else (PRESENT/UNKNOWN) → stamp the signed helper + V2.
+#
 # Idempotent: V2 marker guard; V1 auto-migrated. The route helper is (re)written
 # every run so fixes propagate.
 # KEEP IN SYNC with the twin stamper in scripts/apply-fleet-standards.sh
@@ -407,14 +417,62 @@ open(p, "w", encoding="utf-8").write(c)
 PRESSTRIP_PY
 }
 
+# (c) PA-box detection (v16.2.17, PR #459): reuse the tool-gate router signal so a
+#     DEFINITIVE personal-assistant-only box never stamps a reflex that would 404.
+#     is_master / role=="router" / id in ROUTER_IDS → ROUTER; a non-router default
+#     agent → PA (skipped); no-default / unparseable → treated as non-PA (stamps).
+_REFLEX_BOXTYPE="$(OC_JSON="$OC_CONFIG" python3 - <<'PYBT'
+import json, os
+ROUTER_IDS = {  # keep IN SYNC with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS
+    "main", "ceo", "dept-ceo",
+    "master-orchestrator", "dept-master-orchestrator",
+    "dept-executive-office",
+}
+def _is_router(a):
+    if not isinstance(a, dict):
+        return False
+    if a.get("is_master") is True:
+        return True
+    if isinstance(a.get("role"), str) and a.get("role").strip().lower() == "router":
+        return True
+    return a.get("id") in ROUTER_IDS
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+    agents = cfg.get("agents", {}).get("list", []) or []
+    da = next((a for a in agents if isinstance(a, dict) and a.get("default") is True), None)
+    if da is None:
+        da = next((a for a in agents if isinstance(a, dict) and a.get("id") == "main"), None)
+    if da is None:
+        print("NO_DEFAULT")
+    else:
+        print("ROUTER" if _is_router(da) else "PA")
+except Exception:
+    print("UNKNOWN")
+PYBT
+)" || _REFLEX_BOXTYPE="UNKNOWN"
+
 PRES_DEPT_STATUS="$(_pres_dept_status 2>/dev/null || echo UNKNOWN)"
 _log "L1: presentations department check: $PRES_DEPT_STATUS"
+_log "L1: reflex box-type check: $_REFLEX_BOXTYPE"
 
 if [ "$DRY_RUN" = "1" ]; then
-  if [ "$PRES_DEPT_STATUS" = "ABSENT" ]; then
+  if [ "$_REFLEX_BOXTYPE" = "PA" ]; then
+    _dry "L1: PA-only box (non-router default agent) — would REMOVE any previously-stamped reflex block and NOT stamp (would POST to a 404)"
+  elif [ "$PRES_DEPT_STATUS" = "ABSENT" ]; then
     _dry "L1: presentations dept ABSENT — would REMOVE any previously-stamped reflex block and NOT stamp (P2-1)"
   else
     _dry "L1: would (re)stamp signed route helper → $PRES_REFLEX_HELPER_PATH and PRESENTATION_ROUTING_REFLEX_V2 at absolute top of $AGENTS_FILE (V1 auto-migrated)"
+  fi
+elif [ "$_REFLEX_BOXTYPE" = "PA" ]; then
+  # PA-only box (default agent is a personal-assistant / non-router): no Presentations
+  # dept and no Command Center on :4000 — the reflex would POST to a 404. Remove any
+  # previously-stamped block and skip.
+  touch "$AGENTS_FILE"
+  if grep -qE 'PRESENTATION_ROUTING_REFLEX_V[12]' "$AGENTS_FILE" 2>/dev/null; then
+    _strip_pres_reflex "$AGENTS_FILE"
+    _log "L1: PA-only box (non-router default agent) — REMOVED previously-stamped reflex block from $AGENTS_FILE (would POST to a 404)"
+  else
+    _log "L1: PA-only box (non-router default agent) — NOT stamping reflex block (would POST to a 404)"
   fi
 elif [ "$PRES_DEPT_STATUS" = "ABSENT" ]; then
   # P2-1: owner declined presentations — never stamp (decks would strand on the
