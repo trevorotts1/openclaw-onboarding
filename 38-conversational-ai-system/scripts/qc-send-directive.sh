@@ -46,7 +46,7 @@
 # LADDER block in AGENTS.md / scripts/05-update-agents-md.sh). This gate ALREADY
 # accepts a caf-first directive UNCHANGED: element 2 (_has_api) is satisfied by
 # the retained "conversations/messages" reference that the raw-REST fallback
-# keeps — so a template reading "SEND via caf conversations send-message (or POST
+# keeps — so a template reading "SEND via caf conversations send (or POST
 # conversations/messages)" passes. The gate deliberately does NOT *require* caf
 # (that would break caf-less boxes) and is NOT weakened: raw REST must remain the
 # documented fallback, which keeps element 2 present. No logic change needed.

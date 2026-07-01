@@ -1,3 +1,5 @@
+## [v16.2.10]  -  2026-07-01  -  GHL v16.2.10: correct caf command docs, payment endpoints, scrub real PII/credential/attribution
+
 ## [v16.2.9]  -  2026-07-01  -  GHL bulletproofing: client-model policy (Ollama Cloud/GLM5.2/DeepSeek/MiniMax), caf hardening, reliability across 14 skills
 
 ## [v16.2.8]  -  2026-06-30  -  feat(self-heal): gateway-health watchdog (box-aware HTTP probe + self-heal) filling the dangling remediate.sh hook

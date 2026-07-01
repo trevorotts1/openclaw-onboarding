@@ -98,7 +98,7 @@ class TestRepoSourceHygiene:
         securetoken Firebase API key either (that lives only in seed-ghl-auth.py)."""
         for f in _NEW_SOURCE:
             txt = f.read_text(encoding="utf-8")
-            assert "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE" not in txt
+            assert "AIzaSy-FAKE-EXAMPLE-KEY-DO-NOT-USE-000000" not in txt
 
     def test_no_operator_path_in_source(self):
         """No operator machine path literal in the new modules' CODE.
