@@ -275,6 +275,95 @@ else
   fi
 fi
 
+# --- AGENTS.md: PRESENTATION_ROUTING_REFLEX_V1 (absolute-top pre-response gate) ---
+# Proven end-to-end on a live box, then canonicalized here so EVERY CEO gets the
+# presentation-routing reflex — not just one box. TRIGGER-BEFORE-THINKING gate:
+# on a presentation / deck / PowerPoint / slide / keynote request the CEO's VERY
+# FIRST tool call must be the POST to /api/tasks/ingest (department_slug=
+# presentations) on 127.0.0.1:4000 — no reads, no sessions_list, no verifying the
+# department, no intake questions. It MUST sit ABOVE ROLE_DISCIPLINE_V1 +
+# CEO_ROUTING_NO_LOOPHOLES_V1 (both stamped at the top above), so it is stamped
+# LAST here as an absolute-top prepend and becomes the file's first block.
+# CC ingest port 4000 is uniform fleet-wide, so the endpoint is hardcoded to
+# 127.0.0.1:4000 exactly as proven. Idempotent: guarded by the marker.
+# KEEP IN SYNC with the twin stamper in scripts/apply-fleet-standards.sh (4b-REFLEX).
+PRESENTATION_REFLEX_MARKER="<!-- PRESENTATION_ROUTING_REFLEX_V1 -->"
+if grep -qF "$PRESENTATION_REFLEX_MARKER" "$AGENTS_FILE" 2>/dev/null; then
+  _log "L1: PRESENTATION_ROUTING_REFLEX_V1 already present in $AGENTS_FILE — no-op"
+else
+  if [ "$DRY_RUN" = "1" ]; then
+    _dry "would inject PRESENTATION_ROUTING_REFLEX_V1 at absolute top of $AGENTS_FILE"
+  else
+    touch "$AGENTS_FILE"
+    ORIGINAL_REFLEX_CONTENT=$(cat "$AGENTS_FILE" 2>/dev/null || true)
+    {
+      cat <<'REFEOF'
+<!-- PRESENTATION_ROUTING_REFLEX_V1 -->
+# ⛔ REFLEX 0 — PRESENTATION REQUESTS: ROUTE BEFORE YOU THINK (this block runs FIRST)
+
+This is a TRIGGER-BEFORE-THINKING rule. It fires BEFORE every other section of this file,
+BEFORE you reason, BEFORE you read any SOP, BEFORE you write one word of reply.
+It is not a "remember to route" reminder — it is a hard gate on your first action.
+
+TRIGGER (case-insensitive) — the incoming owner message contains ANY of:
+  presentation · present · deck · slide · slides · slide deck · pitch deck · webinar deck ·
+  powerpoint · power point · ppt · .pptx · keynote · "make me a deck/ppt" · "build a deck" ·
+  "put together slides" · "some slides" · "a talk/webinar with slides"
+
+WHEN TRIGGERED your FIRST and ONLY action is EXACTLY these two steps, in order — nothing before them:
+
+  ‼ Your VERY FIRST tool call is the STEP 1 POST below — literally the first thing you do.
+  Do NOT read any file, do NOT run sessions_list, do NOT "check" or "verify the department
+  exists" (the `presentations` department ALWAYS exists on this box), do NOT deliberate, do NOT
+  message another session. POST first. Then ack. Then stop. Any tool call before the POST is a
+  reflex violation.
+
+  STEP 1 — Route the task NOW, before any other output. Use this EXACT endpoint.
+  ⚠ PORT: the Command Center on THIS box listens on PORT 4000 at IPv4 127.0.0.1 — NOT 3000,
+  NOT 8080, NOT any remembered default. Do NOT guess or substitute the port. POST to this URL
+  exactly, whether you use curl or a fetch tool:
+
+      POST  http://127.0.0.1:4000/api/tasks/ingest   (Content-Type: application/json)
+
+      curl -s -X POST http://127.0.0.1:4000/api/tasks/ingest \
+        -H 'Content-Type: application/json' \
+        -d '{"title":"<owner request, <=120 chars>","description":"<owner message, verbatim>","department_slug":"presentations","source":"telegram","priority":"medium"}'
+
+      SUCCESS = HTTP 201 with {"ok":true,"task_id":"…","workspace_id":"presentations"}.
+      If you get connection-refused or 404, you used the wrong host/port — retry with
+      127.0.0.1:4000 EXACTLY. Do not fall back to asking the owner questions.
+
+  STEP 2 — Send ONE short acknowledgement to the owner, e.g.:
+      "On it — routing this to your Presentations department now. The Brainstorming Buddy will pick it up and start the interview."
+
+  Then STOP. Your turn is over. The Presentations department owns everything after this.
+
+HARD BANS while this reflex is active — EACH is a routing VIOLATION, no exceptions:
+  ✗ Asking the owner ANY intake question (topic, title, audience, goal, existing content, length…)
+  ✗ Reading, quoting, or "checking" department SOPs / IDENTITY / SOUL / BUILDER-PROMPT
+  ✗ Writing intake.json, slides_copy.md, slides.json, or ANY working file
+  ✗ Calling build_deck.py or presentation-canonical-entry.sh
+  ✗ Spawning a sub-agent to do any of the above (spawning to execute = the same violation)
+  ✗ Reading ANY file, running sessions_list, or verifying the department BEFORE the POST fires
+  ✗ Escalating, deliberating, or asking the owner anything because you "weren't sure" — you POST first
+
+PRE-EMIT SELF-CHECK — before you send text, ask: "Am I about to ask a question or describe the deck?"
+  → If YES, you have ALREADY broken the reflex. Discard that draft. Do STEP 1 (the POST) FIRST.
+
+WHY (do not re-litigate): the Brainstorming Buddy (ROLE-17) — NOT the CEO — runs intake, one
+question at a time, and captures the six mandatory fields REPRESENTATION_MIX, AUDIENCE_COMPOSITION,
+GROUNDED_CONTENT, VISUAL_MIX, DARK_OK, HOOK_SEED. If the CEO improvises intake, those fields are
+lost and the build fails the representation gate. The CEO's entire job for a presentation request
+is three words: route, ack, stop.
+<!-- END PRESENTATION_ROUTING_REFLEX_V1 -->
+
+REFEOF
+      printf '%s' "$ORIGINAL_REFLEX_CONTENT"
+    } > "$AGENTS_FILE"
+    _log "L1: PRESENTATION_ROUTING_REFLEX_V1 injected at absolute top of $AGENTS_FILE"
+  fi
+fi
+
 # --- SOUL.md: PRIME DIRECTIVE ---
 if grep -qF "$CEO_ORCH_V2_MARKER" "$SOUL_FILE" 2>/dev/null; then
   _log "L1: PRIME DIRECTIVE already present in $SOUL_FILE — no-op"
