@@ -49,7 +49,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v16.2.12"
+ONBOARDING_VERSION="v16.2.13"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -232,7 +232,11 @@ write_update_pending_flag() {
   # the flag" bug. Falls back to the canonical default only.
   local WORKSPACE_DIR=""
   if command -v obs_resolve_workspace >/dev/null 2>&1; then
-    WORKSPACE_DIR="$(obs_resolve_workspace)"
+    # v16.2.13: guard the substitution (mirror the guarded call at ~L1175) so a
+    # non-zero from obs_resolve_workspace cannot abort the updater under
+    # `set -euo pipefail` (this runs on the always-executed normal path via
+    # write_update_pending_flag); the empty fallback below already handles it.
+    WORKSPACE_DIR="$(obs_resolve_workspace 2>/dev/null || true)"
   fi
   [ -z "$WORKSPACE_DIR" ] && WORKSPACE_DIR="$HOME/.openclaw/workspace"
   mkdir -p "$WORKSPACE_DIR"
@@ -452,7 +456,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v16.2.12 - safe_json_edit
+# v16.2.13 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -906,7 +910,11 @@ main() {
     if [ -d "$TEMP_EXTRACT/openclaw-onboarding-main" ]; then
       EXTRACTED_DIR="$TEMP_EXTRACT/openclaw-onboarding-main"
     else
-      EXTRACTED_DIR=$(find "$TEMP_EXTRACT" -maxdepth 1 -mindepth 1 -type d | head -1)
+      # v16.2.13: `| head -1` closes the pipe early → `find` can die with SIGPIPE
+      # (rc 141) which `pipefail` promotes to the pipeline status; `|| true` keeps
+      # the plain assignment from aborting the updater under `set -e` (the first
+      # dir is still captured before the SIGPIPE).
+      EXTRACTED_DIR=$(find "$TEMP_EXTRACT" -maxdepth 1 -mindepth 1 -type d | head -1 || true)
     fi
     # A2: zip fallback — no git SHA available; content-set hash still works
     SRC_GIT_SHA="zip-fallback-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -2374,7 +2382,12 @@ PYEOF
     elif [ "$OC_PLATFORM" = "vps" ]; then
       docker restart openclaw >/dev/null 2>&1         && echo "  ✓ Gateway restarted via docker (routing config now live)"         || echo "  ⚠ docker restart failed — restart manually: openclaw gateway restart"
     else
-      GW_LABEL="$(launchctl list 2>/dev/null | awk '/openclaw.*gateway/{print $3; exit}')"
+      # v16.2.13: `awk '...exit'` closes the pipe on the first match → `launchctl
+      # list` (hundreds of lines) dies with SIGPIPE (rc 141) → `pipefail` promotes
+      # it → the plain assignment would abort the updater under `set -e` (same
+      # SIGPIPE class as the persona-index reconcile bug). `|| true` neutralizes it;
+      # the empty fallback on the next line already supplies the default label.
+      GW_LABEL="$(launchctl list 2>/dev/null | awk '/openclaw.*gateway/{print $3; exit}' || true)"
       [ -z "$GW_LABEL" ] && GW_LABEL="ai.openclaw.gateway"
       launchctl kickstart -k "gui/$(id -u)/$GW_LABEL" >/dev/null 2>&1 \
         && echo "  ✓ Gateway restarted via launchctl (routing config now live)" \
