@@ -107,7 +107,7 @@ read_secret() {
 }
 
 # ─── Full 11-alias PIT resolver (first match wins; covers all legacy alias names) ─
-_resolve_any_pit() { for _v in GOHIGHLEVEL_API_KEY GHL_API_KEY GHL_PIT GHL_TOKEN GHL_PRIVATE_INTEGRATION_TOKEN PRIVATE_INTEGRATION_TOKEN GHL_PRIVATE_TOKEN PIT_TOKEN GHL_PIT_TOKEN GOHIGHLEVEL_LOCATION_PIT GHL_LOCATION_PIT; do local _val="${!_v:-}"; [ -z "$_val" ] && _val="$(read_secret "$_v")"; [ -n "$_val" ] && printf '%s' "$_val" && return; done; }
+_resolve_any_pit() { for _v in GOHIGHLEVEL_API_KEY GHL_API_KEY GHL_PIT GHL_TOKEN GHL_PRIVATE_INTEGRATION_TOKEN PRIVATE_INTEGRATION_TOKEN GHL_PRIVATE_TOKEN PIT_TOKEN GHL_PIT_TOKEN GOHIGHLEVEL_LOCATION_PIT GHL_LOCATION_PIT; do local _val="${!_v:-}"; [ -z "$_val" ] && _val="$(read_secret "$_v")"; [ -n "$_val" ] && printf '%s' "$_val" && return; done; return 0; }
 
 API_KEY="${GOHIGHLEVEL_API_KEY:-$(read_secret GOHIGHLEVEL_API_KEY)}"
 [ -z "$API_KEY" ] && API_KEY="$(_resolve_any_pit)"
