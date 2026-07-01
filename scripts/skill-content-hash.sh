@@ -123,6 +123,35 @@ _should_exclude() {
     # */node_modules/* above.  Genuine shipped skill content (.md/.py/.sh) is
     # never placed in a working/ dir, so this exclusion does not weaken the gate.
     */working/*) return 0 ;;
+    # A3 CROSS-SKILL EXTENSION FIX (v16.2.11): Skill 39 (Real-Estate Playbook)
+    # installs an ADDITIVE extension file INTO Skill 38's installed protocols/ dir at
+    # install time — 39-real-estate-playbook/scripts/05-install-sales-brain-extension.sh
+    # copies references/sales-brain-real-estate-extension.md →
+    # 38-conversational-ai-system/protocols/sales-best-practices-real-estate-extension.md
+    # (additive; it NEVER overwrites Skill 38's own sales-best-practices-protocol.md and
+    # verifies that file is byte-unchanged). That injected file is ABSENT from the clean
+    # source tree, so the DEST digest of Skill 38 always differed from the SRC digest,
+    # causing A3 to FAIL on 38-conversational-ai-system and the version stamp to never
+    # write — this deterministically BLOCKED the fleet update on every box where Skill 39
+    # is wired. The extension's canonical shipped content is STILL fully hashed under
+    # Skill 39 (references/sales-brain-real-estate-extension.md), and every one of Skill
+    # 38's OWN protocol files (including sales-best-practices-protocol.md) remains in
+    # scope, so excluding ONLY this exact injected path — on BOTH the SRC and DEST sides
+    # — restores A3 determinism without weakening tamper-detection. Same rationale and
+    # scope as the */OpenMontage/*, */node_modules/*, and */working/* exclusions above.
+    */38-conversational-ai-system/protocols/sales-best-practices-real-estate-extension.md) return 0 ;;
+    # A3 CROSS-SKILL MARKER FIX (v16.2.11, blast-radius item 3): Skill 32's
+    # add-department.sh mark_persona_stale() writes a transient marker file
+    # `.persona-index-stale` INTO Skill 23's installed dir using CANONICAL skills-dir
+    # candidates (~/.openclaw/skills/23-… and /data/.openclaw/skills/23-…), so it DOES
+    # land in the A3-hashed tree. It is a single ephemeral dotfile (a "rebuild the
+    # cached dept-tag→persona map" signal for persona-selector-v2.py), ABSENT from the
+    # clean source tree and never shipped. If present at hash time it would diverge
+    # Skill 23's DEST digest from SRC and block the update. Exclude ONLY this exact
+    # dotfile at ONLY this path, on BOTH sides — every one of Skill 23's real role/SOP/
+    # persona/template files (including all healer-*.md role files) stays in scope, so
+    # tamper-detection is unchanged. Same class as the */38-…/…-extension.md exclusion.
+    */23-ai-workforce-blueprint/.persona-index-stale) return 0 ;;
   esac
   case "$base" in
     # Python compiled/optimised bytecode files — same rationale as __pycache__

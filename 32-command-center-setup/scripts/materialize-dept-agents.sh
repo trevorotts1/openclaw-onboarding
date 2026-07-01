@@ -609,6 +609,27 @@ if not os.path.isdir(role_lib):
     print(f"[materialize] Phase 4: role-library not found at {role_lib} -- skipping")
     sys.exit(0)
 
+# A3-SAFETY GUARD (v16.2.11, blast-radius item 2): NEVER materialize generated
+# healer-<dept>.md files into the A3-gated CANONICAL skill tree
+# (~/.openclaw/skills or /data/.openclaw/skills). Those healer files are shipped,
+# content-manifest-tracked TEMPLATE content; writing generated copies (or new
+# custom-dept healer files) there would diverge Skill 23's installed (DEST) digest
+# from the pristine-source (SRC) digest and block the fleet update-skills A3 gate.
+# By design this script targets the workspace ".openclaw-skills" mirror only (its
+# SKILLS_CANDIDATES never include the canonical hashed dir), so this guard is pure
+# defense-in-depth: it does not change current behaviour, it only makes the "never
+# write into the hashed skill dir" invariant explicit and enforced.
+_canon_roots = [
+    os.path.realpath(os.path.join(os.path.expanduser("~"), ".openclaw", "skills")),
+    os.path.realpath(os.path.join("/data", ".openclaw", "skills")),
+]
+_role_lib_real = os.path.realpath(role_lib)
+if any(_role_lib_real == r or _role_lib_real.startswith(r + os.sep) for r in _canon_roots):
+    print("[materialize] Phase 4: role-library resolves under the A3-gated canonical "
+          "skills tree -- skipping healer materialization (A3 safety; use the "
+          "workspace .openclaw-skills mirror instead)")
+    sys.exit(0)
+
 with open(healer_template) as f:
     template_content = f.read()
 

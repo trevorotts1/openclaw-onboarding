@@ -138,6 +138,110 @@ else
   trap - EXIT
 fi
 
+# ─── A6b: Skill-39 → Skill-38 cross-skill injection exclusion ─────────────────
+# Regression guard for the v16.2.11 A3 fix. Skill 39's installer copies an
+# ADDITIVE extension file INTO Skill 38's installed protocols/ dir
+# (sales-best-practices-real-estate-extension.md), which is absent from the clean
+# source tree. Before the fix that made Skill 38's DEST digest != SRC digest,
+# failing A3 and blocking the fleet update on every box where Skill 39 is wired.
+# The exclusion must (1) make the injected file invisible to the digest so the
+# gate PASSES, while (2) still detecting tampering of Skill 38's OWN protocol.
+_section "A6b — Skill-39 injected extension excluded, tamper still detected"
+
+if [ ! -f "$HASH_SCRIPT" ]; then
+  _fail "A6b: skill-content-hash.sh not found at $HASH_SCRIPT"
+else
+  _SB=$(mktemp -d)
+  trap 'rm -rf "$_SB"' EXIT
+  _S38P="$_SB/38-conversational-ai-system/protocols"
+  mkdir -p "$_S38P"
+  echo "Skill 38 own sales protocol" > "$_S38P/sales-best-practices-protocol.md"
+  echo "some other protocol"         > "$_S38P/geo-qualification-protocol.md"
+
+  # Baseline: clean Skill 38 (no injected file) — this mirrors the SRC manifest.
+  _D_BASE=$(bash "$HASH_SCRIPT" "$_SB" 2>/dev/null | grep "^38-conversational-ai-system|" | cut -d'|' -f2 | head -1)
+
+  # Skill 39 injects its extension as a NEW file — mirrors the DEST manifest.
+  echo "RE objection patterns / SPICED-RE" > "$_S38P/sales-best-practices-real-estate-extension.md"
+  _D_INJ=$(bash "$HASH_SCRIPT" "$_SB" 2>/dev/null | grep "^38-conversational-ai-system|" | cut -d'|' -f2 | head -1)
+
+  if [ "$_D_BASE" = "$_D_INJ" ]; then
+    _pass "A6b: Skill 39's injected extension is excluded — Skill 38 digest unchanged (A3 gate PASSES)"
+  else
+    _fail "A6b: injected extension changed Skill 38 digest — A3 would block the fleet update"
+  fi
+
+  # Tamper the OWN protocol (with the injected file still present): must be caught.
+  printf '\ntampered line\n' >> "$_S38P/sales-best-practices-protocol.md"
+  _D_TAMPER=$(bash "$HASH_SCRIPT" "$_SB" 2>/dev/null | grep "^38-conversational-ai-system|" | cut -d'|' -f2 | head -1)
+
+  if [ "$_D_INJ" != "$_D_TAMPER" ]; then
+    _pass "A6b: tampering Skill 38's own protocol still changes the digest (tamper-detection intact)"
+  else
+    _fail "A6b: tampering NOT detected — exclusion is too broad and neutered the gate"
+  fi
+
+  rm -rf "$_SB"
+  trap - EXIT
+fi
+
+# ─── A6c: Skill-32 → Skill-23 .persona-index-stale marker excluded ────────────
+# Regression guard for blast-radius item 3 (v16.2.11). Skill 32's add-department.sh
+# writes a transient `.persona-index-stale` marker into Skill 23's dir via canonical
+# candidates. It must be excluded from the A3 hash (so it can't block the update),
+# while tampering Skill 23's OWN real content (a role/template file) is still caught.
+_section "A6c — Skill-32 .persona-index-stale marker excluded, tamper still detected"
+
+if [ ! -f "$HASH_SCRIPT" ]; then
+  _fail "A6c: skill-content-hash.sh not found at $HASH_SCRIPT"
+else
+  _SC=$(mktemp -d)
+  trap 'rm -rf "$_SC"' EXIT
+  _S23="$_SC/23-ai-workforce-blueprint/templates/role-library/sales"
+  mkdir -p "$_S23"
+  echo "real sales role template content" > "$_S23/qc-specialist.md"
+  echo "healer template content"          > "$_S23/healer-sales.md"
+
+  _C_BASE=$(bash "$HASH_SCRIPT" "$_SC" 2>/dev/null | grep "^23-ai-workforce-blueprint|" | cut -d'|' -f2 | head -1)
+
+  # Skill 32 drops the transient marker into Skill 23's dir (canonical-path write).
+  echo "2026-07-01T00:00:00Z" > "$_SC/23-ai-workforce-blueprint/.persona-index-stale"
+  _C_MARK=$(bash "$HASH_SCRIPT" "$_SC" 2>/dev/null | grep "^23-ai-workforce-blueprint|" | cut -d'|' -f2 | head -1)
+
+  if [ "$_C_BASE" = "$_C_MARK" ]; then
+    _pass "A6c: .persona-index-stale marker is excluded — Skill 23 digest unchanged (A3 gate PASSES)"
+  else
+    _fail "A6c: marker changed Skill 23 digest — A3 would block the fleet update"
+  fi
+
+  # Tamper a REAL Skill 23 role file (marker still present): must be caught.
+  printf '\ntampered\n' >> "$_S23/qc-specialist.md"
+  _C_TAMP=$(bash "$HASH_SCRIPT" "$_SC" 2>/dev/null | grep "^23-ai-workforce-blueprint|" | cut -d'|' -f2 | head -1)
+
+  if [ "$_C_MARK" != "$_C_TAMP" ]; then
+    _pass "A6c: tampering Skill 23's own role file still changes the digest (tamper-detection intact)"
+  else
+    _fail "A6c: tampering NOT detected — exclusion too broad"
+  fi
+
+  # A6d (blast-radius item 2 SAFETY): the shipped healer-<dept>.md role files are
+  # REAL, content-manifest-tracked template content and must NOT be excluded — the
+  # v16.2.11 fix uses a SOURCE guard in materialize-dept-agents.sh, NOT a hash
+  # exclusion, precisely so these stay tamper-detectable. Prove corruption of a
+  # shipped healer file STILL changes Skill 23's digest.
+  printf '\ntampered healer\n' >> "$_S23/healer-sales.md"
+  _C_HEAL=$(bash "$HASH_SCRIPT" "$_SC" 2>/dev/null | grep "^23-ai-workforce-blueprint|" | cut -d'|' -f2 | head -1)
+
+  if [ "$_C_TAMP" != "$_C_HEAL" ]; then
+    _pass "A6d: shipped healer-<dept>.md files remain in scope — tampering them is still caught (NOT excluded)"
+  else
+    _fail "A6d: a healer-*.md file was excluded from the hash — real template tamper-detection NEUTERED"
+  fi
+
+  rm -rf "$_SC"
+  trap - EXIT
+fi
+
 # ─── B7: Registration-fatal Acceptance Test ───────────────────────────────────
 _section "B7 — Registration-fatal acceptance test (syntax/logic check only)"
 
