@@ -287,8 +287,50 @@ fi
 # CC ingest port 4000 is uniform fleet-wide, so the endpoint is hardcoded to
 # 127.0.0.1:4000 exactly as proven. Idempotent: guarded by the marker.
 # KEEP IN SYNC with the twin stamper in scripts/apply-fleet-standards.sh (4b-REFLEX).
+#
+# v16.2.17 PA-BOX GUARD: only inject the reflex on a FULL-WORKFORCE box — one
+# whose DEFAULT agent is a ROUTER (the CEO / master-orchestrator). Those boxes
+# have a Presentations department + a Command Center on 127.0.0.1:4000. A
+# PERSONAL-ASSISTANT-only box has no presentations dept and no CC, so the reflex
+# would make the PA POST to a 404 on every deck/slide message. We REUSE the exact
+# router signal L2/L5 use — is_master / role=="router" / id in ROUTER_IDS — NOT
+# dept-dir existence (LAYER 4 seeds the presentations dept LATER, so a dir check
+# would be stamp-order-dependent). Only a DEFINITIVE personal-assistant default
+# agent is skipped; a router / no-default / unparseable box keeps the inject.
+_REFLEX_BOXTYPE="$(OC_JSON="$OC_CONFIG" python3 - <<'PYBT'
+import json, os
+ROUTER_IDS = {  # keep IN SYNC with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS
+    "main", "ceo", "dept-ceo",
+    "master-orchestrator", "dept-master-orchestrator",
+    "dept-executive-office",
+}
+def _is_router(a):
+    if not isinstance(a, dict):
+        return False
+    if a.get("is_master") is True:
+        return True
+    if isinstance(a.get("role"), str) and a.get("role").strip().lower() == "router":
+        return True
+    return a.get("id") in ROUTER_IDS
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+    agents = cfg.get("agents", {}).get("list", []) or []
+    da = next((a for a in agents if isinstance(a, dict) and a.get("default") is True), None)
+    if da is None:
+        da = next((a for a in agents if isinstance(a, dict) and a.get("id") == "main"), None)
+    if da is None:
+        print("NO_DEFAULT")
+    else:
+        print("ROUTER" if _is_router(da) else "PA")
+except Exception:
+    print("UNKNOWN")
+PYBT
+)" || _REFLEX_BOXTYPE="UNKNOWN"
+
 PRESENTATION_REFLEX_MARKER="<!-- PRESENTATION_ROUTING_REFLEX_V1 -->"
-if grep -qF "$PRESENTATION_REFLEX_MARKER" "$AGENTS_FILE" 2>/dev/null; then
+if [ "$_REFLEX_BOXTYPE" = "PA" ]; then
+  _log "L1: default agent is a PERSONAL-ASSISTANT/non-router — PA-only box (no Presentations dept / no Command Center on :4000) — SKIPPING PRESENTATION_ROUTING_REFLEX_V1 (would POST to a 404)"
+elif grep -qF "$PRESENTATION_REFLEX_MARKER" "$AGENTS_FILE" 2>/dev/null; then
   _log "L1: PRESENTATION_ROUTING_REFLEX_V1 already present in $AGENTS_FILE — no-op"
 else
   if [ "$DRY_RUN" = "1" ]; then
