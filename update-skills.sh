@@ -1,4 +1,11 @@
+#!/usr/bin/env bash
 #  PRD 2.1 -- unified repo (trevorotts1/openclaw-onboarding)
+#
+#  NOTE: this script REQUIRES bash (uses process substitution `< <(...)`, `[[ ]]`,
+#  and bash arrays). Without the shebang above `./update-skills.sh` was executed by
+#  the caller's login shell (sh/zsh on some boxes), where `< <(...)` is a syntax
+#  error, forcing agents to fall back to `bash update-skills.sh`. The shebang makes
+#  a direct `./update-skills.sh` invocation always run under bash. (v16.2.12)
 #
 #  Platform auto-detected via OPENCLAW_PLATFORM env var or presence of /data/.openclaw.
 #  VPS: sources platform/vps/bootstrap.sh for container re-exec + path setup.
@@ -42,7 +49,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v16.2.11"
+ONBOARDING_VERSION="v16.2.12"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -445,7 +452,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v16.2.11 - safe_json_edit
+# v16.2.12 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can

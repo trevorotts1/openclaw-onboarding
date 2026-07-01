@@ -1,5 +1,8 @@
+#!/usr/bin/env bash
 #  OpenClaw Onboarding Installer — Unified (Mac + VPS)
 #  PRD 2.1 — unified repo (trevorotts1/openclaw-onboarding)
+#  Requires bash (uses `< <(...)`, `[[ ]]`, arrays). Shebang added v16.2.12 so a
+#  direct `./install.sh` runs under bash even when the caller's shell is sh/zsh.
 #  Branch: prd-2.1-unified-repo
 #
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
@@ -23,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v16.2.11"
+ONBOARDING_VERSION="v16.2.12"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)

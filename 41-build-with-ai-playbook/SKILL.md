@@ -128,14 +128,14 @@ All GHL API calls use the operator's Private Integration Token (PIT) -- never sh
 | CORE_UPDATES.md | Lines appended to AGENTS.md / MEMORY.md / TOOLS.md |
 | EXAMPLES.md | Worked example flows (UNIVERSAL placeholders) |
 | CHANGELOG.md | Version history |
-| skill-version.txt | Currently 1.5.2 |
+| skill-version.txt | Currently 1.5.3 |
 | wire.sh | Idempotent, fail-soft post-update self-heal: re-runs install steps 03--06 after a version-bump wipe-and-recopy (always exits 0) |
 | scripts/00-verify-prerequisites.sh | Verifies jq, curl, GHL PIT, locationId; reports env state |
 | scripts/01-locate-master-files-folder.sh | Resolves + persists MASTER_FILES_DIR |
 | scripts/02-seed-playbook-doc.sh | Creates the canonical build-with-ai-playbook.md in master files |
 | scripts/03-init-jsonl-sinks.sh | Creates build-with-ai-events.jsonl + .schema.json sidecar |
 | scripts/04-update-core-files.sh | Appends AGENTS.md / MEMORY.md / TOOLS.md pointers (idempotent markers) |
-| scripts/05-configure-executor-model.sh | Executor-model preflight: configures agents.defaults.subagents.executorModel for MiniMax M3 (Ollama Cloud primary / OpenRouter fallback) (gap #4) |
+| scripts/05-configure-executor-model.sh | Executor-model preflight: seeds agents.defaults.subagents.model with MiniMax M3 (Ollama Cloud primary / OpenRouter fallback) when no sub-agent primary is set; validate-before-commit (gap #4) |
 | scripts/06-verify-agent-browser.sh | Agent Browser preflight: Node/npm check, conditional install, headless Chrome CDP probe, vault check, writes preflight result record (gap #5) |
 | scripts/12-run-browser-harness.sh | L1-L5 live browser-execution harness runner; tallies results, computes publish decision, emits f52 qc_result (gap #6) |
 | scripts/12-run-browser-harness.test.sh | Negative self-test: proves the runner ESCALATES (publish=false) on a sabotaged Big-Brother core (gap #6) |
