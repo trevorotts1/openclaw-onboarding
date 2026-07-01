@@ -444,7 +444,7 @@ INDEPENDENT MiniMax model (independent = a DIFFERENT model than the build agent,
 inherit the builder's own hallucinations).
 
 **Model resolution (in order):**
-1. Prefer `minimax/minimax-2.7` via OpenRouter (the repo's established MiniMax extraction model,
+1. Prefer `minimax/minimax-m3` via OpenRouter (the repo's established MiniMax extraction model,
    per skill 38 Step 9.24).
 2. Or `minimax-m3:cloud` if an Ollama-Cloud MiniMax slug is configured.
 3. VERIFY the MiniMax model is actually configured + reachable before spawning (per

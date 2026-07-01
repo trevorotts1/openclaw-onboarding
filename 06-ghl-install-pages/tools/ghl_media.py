@@ -149,11 +149,19 @@ _KIE_GENERATE_RELPATH = os.path.join(
 # short alias; GOHIGHLEVEL_LOCATION_PIT / GHL_LOCATION_PIT are explicit names for
 # the same LOCATION token.
 _PIT_ENV_NAMES = (
-    "GOHIGHLEVEL_API_KEY",       # preferred — the LOCATION PIT (medias.write); matches openclaw.json + upload-ghl-media.sh
-    "GHL_API_KEY",               # legacy short alias for the same LOCATION PIT
-    "GOHIGHLEVEL_LOCATION_PIT",  # explicit LOCATION-PIT name (future-proof alias)
-    "GHL_LOCATION_PIT",          # explicit LOCATION-PIT short alias
+    "GOHIGHLEVEL_API_KEY",             # preferred — the LOCATION PIT (medias.write); matches openclaw.json + upload-ghl-media.sh
+    "GHL_API_KEY",                     # legacy short alias for the same LOCATION PIT
+    "GHL_PIT",                         # canonical short alias
+    "GHL_TOKEN",                       # alternate alias
+    "GHL_PRIVATE_INTEGRATION_TOKEN",   # explicit full-name alias
+    "PRIVATE_INTEGRATION_TOKEN",       # bare PIT alias (some client envs use this)
+    "GHL_PRIVATE_TOKEN",               # shortened private-token alias
+    "PIT_TOKEN",                       # short PIT alias
+    "GHL_PIT_TOKEN",                   # combined PIT alias
+    "GOHIGHLEVEL_LOCATION_PIT",        # explicit LOCATION-PIT name (future-proof alias)
+    "GHL_LOCATION_PIT",                # explicit LOCATION-PIT short alias
 )
+# GHL PIT aliases: see TERMINOLOGY.md for the canonical alias set and backend-equivalence notes.
 
 # AGENCY-class names — NEVER used for media (they 401). Listed only so the
 # fail-loud message can distinguish "no token at all" from "only an agency token".

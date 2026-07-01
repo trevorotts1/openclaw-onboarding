@@ -6,7 +6,7 @@ After setup is complete, your AI agent can search contacts, send SMS and email m
 
 > **Tiering — prefer MCP / caf over raw curl:** For routine GHL work, prefer the Official GHL MCP and Community GHL MCP (install **skill 36**, `36-ghl-mcp-setup`) and build workflows with caf (**skill 44**). Drop to the raw curl shown below only when no MCP/caf tool covers the operation. This skill's direct REST is the foundation/fallback tier — required to bootstrap credentials and prove connectivity, not the preferred path for day-to-day bulk operations.
 
-> **Credential variable names:** All commands read the canonical `$GOHIGHLEVEL_API_KEY` (a Private Integration Token) and `$GOHIGHLEVEL_LOCATION_ID`. The installer also writes legacy aliases `GHL_API_KEY` / `GHL_LOCATION_ID`, so either name resolves.
+> **Credential variable names:** All commands read `$GOHIGHLEVEL_API_KEY` (preferred) and `$GOHIGHLEVEL_LOCATION_ID`. The full canonical LOCATION-PIT alias set (11 names) is listed in **`TERMINOLOGY.md`** — any of those names holds the same `pit-` token. See TERMINOLOGY.md for backend-equivalence notes (Convert & Flow / leadconnectorhq.com = one platform).
 
 
 ## The Base URL
@@ -172,7 +172,7 @@ Before any GHL call at runtime, resolve credentials and fail loudly if they are 
 # ---- ghl_preflight: resolve creds + fail loud (never a silent 401) ----
 ghl_preflight() {
   # Resolve token (canonical first, then legacy aliases) and location
-  GHL_TOKEN="${GOHIGHLEVEL_API_KEY:-${GHL_API_KEY:-${GHL_PIT:-}}}"
+  GHL_TOKEN="${GOHIGHLEVEL_API_KEY:-${GHL_API_KEY:-${GHL_PIT:-${GHL_TOKEN:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-${PIT_TOKEN:-${GHL_PIT_TOKEN:-${GOHIGHLEVEL_LOCATION_PIT:-${GHL_LOCATION_PIT:-}}}}}}}}}}}"
   GHL_LOC="${GOHIGHLEVEL_LOCATION_ID:-${GHL_LOCATION_ID:-}}"
 
   # Token missing -> BLOCK with the exact fix; do not proceed to a 401

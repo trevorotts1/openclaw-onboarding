@@ -14,11 +14,11 @@ Enables browser-based deployment of finished HTML pages into Convert and Flow / 
 - [ ] TYP, BYUP, and GHL setup (skill 05) are already complete.
 - [ ] Python 3 and Playwright are installed: `python3 -c "from playwright.sync_api import sync_playwright"` succeeds.
 - [ ] Chromium is installed for Playwright: `playwright install chromium` completed successfully.
-- [ ] Stored GHL login credentials exist in `~/clawd/secrets/.env` or a persistent browser session exists at `~/.openclaw/playwright-data/ghl-install-pages`.
+- [ ] A valid `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` exists in `~/.openclaw/secrets/.env` (canonical path — `~/clawd/secrets/.env` is retired and must not be used), OR a persistent browser session exists at `~/.openclaw/playwright-data/ghl-install-pages` (Playwright fallback only). GHL email/password credentials are not used by this skill.
 - [ ] Finished HTML is available, self-contained, and ready to paste.
 
 ## 4. Key Detection
-- [ ] Search all standard locations for `GHL_EMAIL` and `GHL_PASSWORD`, while also allowing the documented skip path if SSO or manual login is used.
+- [ ] Confirm `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` is present at `~/.openclaw/secrets/.env` (canonical path); this skill is token-only — `GHL_EMAIL` and `GHL_PASSWORD` are not used and must not appear in any agent-accessible credential path.
 - [ ] Also search for existing persistent session data at `~/.openclaw/playwright-data/ghl-install-pages` before declaring credentials missing.
 - [ ] Recognize broader GHL credential aliases from setup skill if needed for account context: `GHL_API_KEY`, `GHL_PIT`, `GOHIGHLEVEL_API_KEY`, and `GHL_LOCATION_ID`.
 - [ ] QC fails if the agent hardcodes credentials into a script or ignores an existing reusable session.

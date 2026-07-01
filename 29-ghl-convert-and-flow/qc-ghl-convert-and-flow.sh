@@ -16,7 +16,7 @@ warn_only(){ if eval "$2" >/dev/null 2>&1; then green "  ✓ PASS — $1"; PASS=
 #     the SAME names the runnable examples use. Legacy aliases are mapped on so old setups pass.
 #     Container/VPS already has the vars in env (the [ -f ] guard just skips the file load). ---
 if [ -f "$SECRETS_ENV" ]; then set +u; set -a; . "$SECRETS_ENV" 2>/dev/null || true; set +a; set -u; fi
-: "${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-}}}}}"
+: "${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-${GHL_PIT:-${GHL_TOKEN:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-${PIT_TOKEN:-${GHL_PIT_TOKEN:-${GOHIGHLEVEL_LOCATION_PIT:-${GHL_LOCATION_PIT:-}}}}}}}}}}}}"
 : "${GOHIGHLEVEL_LOCATION_ID:=${GHL_LOCATION_ID:-}}"
 
 # Self-locate the skill dir (works in both repo and installed layouts).
@@ -34,7 +34,7 @@ assert "Token has pit- prefix (documented PIT format)" "[[ \"$GOHIGHLEVEL_API_KE
 
 # --- No shipped example may reference an unset LEGACY \$VAR (it would fire an empty Bearer).
 #     Matches '\$NAME' usage only; the resolver's '\${NAME:-...}' alias form is NOT flagged. ---
-LEGACY_RE='\$(GHL_API_KEY|GHL_LOCATION_ID|PRIVATE_INTEGRATION_TOKEN|GHL_PRIVATE_INTEGRATION_TOKEN|GHL_PRIVATE_TOKEN)'
+LEGACY_RE='\$(GHL_API_KEY|GHL_PIT|GHL_TOKEN|GHL_LOCATION_ID|PRIVATE_INTEGRATION_TOKEN|GHL_PRIVATE_INTEGRATION_TOKEN|GHL_PRIVATE_TOKEN|PIT_TOKEN|GHL_PIT_TOKEN|GOHIGHLEVEL_LOCATION_PIT|GHL_LOCATION_PIT)'
 # CHANGELOG.md legitimately names the old vars when describing the fix — exclude it.
 if grep -rEl "$LEGACY_RE" "$S29" --include='*.md' --exclude='CHANGELOG.md' >/dev/null 2>&1; then
   red "  ✗ FAIL — a shipped example uses a legacy \$VAR (canonical: \$GOHIGHLEVEL_API_KEY / \$GOHIGHLEVEL_LOCATION_ID):"

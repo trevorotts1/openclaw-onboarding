@@ -22,13 +22,15 @@ warn_only(){ if eval "$2" >/dev/null 2>&1; then green "  ✓ PASS — $1"; PASS=
 
 if [ -f "$SECRETS_ENV" ]; then set +u; set -a; . "$SECRETS_ENV" 2>/dev/null || true; set +a; set -u; fi
 : "${GOHIGHLEVEL_API_KEY:=}"; : "${GOHIGHLEVEL_LOCATION_ID:=}"
+# 11-alias fallback resolver — passes on pre-v12 boxes where the PIT is stored under a legacy name
+RESOLVED_PIT="${GOHIGHLEVEL_API_KEY:-${GHL_API_KEY:-${GHL_PIT:-${GHL_TOKEN:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-${PIT_TOKEN:-${GHL_PIT_TOKEN:-${GOHIGHLEVEL_LOCATION_PIT:-${GHL_LOCATION_PIT:-}}}}}}}}}}}"
 
 echo ""
 echo "═══ Skill 05 — GHL Setup — Install QC ═══"
 echo ""
 assert "Skill 05 folder present" "[ -d \"$SKILLS_DIR_DEFAULT/05-ghl-setup\" ]"
-assert "GOHIGHLEVEL_API_KEY (PIT) set"            "[ -n \"$GOHIGHLEVEL_API_KEY\" ]"
-warn_only "Value starts with pit- (PIT convention)" "[[ \"$GOHIGHLEVEL_API_KEY\" == pit-* ]]"
+assert "GHL PIT set (any canonical alias)"        "[ -n \"$RESOLVED_PIT\" ]"
+warn_only "Value starts with pit- (PIT convention)" "[[ \"$RESOLVED_PIT\" == pit-* ]]"
 assert "GOHIGHLEVEL_LOCATION_ID set"              "[ -n \"$GOHIGHLEVEL_LOCATION_ID\" ]"
 assert "Location ID 18-24 chars"                  "[ \"\${#GOHIGHLEVEL_LOCATION_ID}\" -ge 18 ] && [ \"\${#GOHIGHLEVEL_LOCATION_ID}\" -le 24 ]"
 assert "Secrets file chmod 600"                   "[ \"\$(stat -f %A \"$SECRETS_ENV\" 2>/dev/null || stat -c %a \"$SECRETS_ENV\" 2>/dev/null)\" = '600' ]"

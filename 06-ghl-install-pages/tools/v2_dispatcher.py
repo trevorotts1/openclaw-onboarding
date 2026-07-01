@@ -78,6 +78,36 @@ try:
 except Exception:  # noqa: BLE001
     _fabart = None  # type: ignore[assignment]
 
+# ── INTEGRATION: ghl_survey_builder ──────────────────────────────────────────
+# Registered as the injected builder for job_type in {survey, form, quiz}.
+# NOT imported at module load time — ghl_survey_builder imports RateGovernor /
+# SessionKeepalive from this module, so a top-level import would be circular.
+# Instead, _resolve_builder_for_task() does a lazy import at call time (by which
+# point v2_dispatcher is fully initialized and the circular reference is safe).
+
+# ── INTEGRATION: intake_interview ─────────────────────────────────────────────
+# Wires Wiring-Map Step 1 (Request → Intake) at the dispatch ENTRY so intake
+# runs before step0, feeding persona matching and the THINK phase.
+try:
+    import intake_interview as _intake  # noqa: E402
+    _INTAKE_AVAILABLE = True
+except Exception:  # noqa: BLE001
+    _intake = None  # type: ignore[assignment]
+    _INTAKE_AVAILABLE = False
+
+# ── INTEGRATION: model_router ─────────────────────────────────────────────────
+# Wires Wiring-Map Step 3 (THINK → model_router): role-keyed client-owned
+# model selection for execution / reasoning / content / html / qc phases.
+try:
+    import model_router as _model_router  # noqa: E402
+    _MODEL_ROUTER_AVAILABLE = True
+except Exception:  # noqa: BLE001
+    _model_router = None  # type: ignore[assignment]
+    _MODEL_ROUTER_AVAILABLE = False
+
+# Job types that auto-resolve to ghl_survey_builder.build_survey.
+_SURVEY_JOB_TYPES: frozenset = frozenset({"survey", "form", "quiz"})
+
 
 def _emit_fab_artifact(evidence_root: str, task: dict, build: dict) -> dict:
     """Producer: emit build/fab-artifact.json from the REAL build so the FAB-QC gate FIRES.
@@ -177,6 +207,136 @@ def _resolve_step0(
                 )
             return _auto_step0
     return None
+
+
+# ---------------------------------------------------------------------------
+# Builder auto-registration (survey / form / quiz  →  ghl_survey_builder)
+# ---------------------------------------------------------------------------
+
+def _resolve_builder_for_task(task: dict) -> "Callable[[dict, str], dict] | None":
+    """Return the auto-registered builder for this task's job_type, or None.
+
+    Registration mapping (Wiring-Map §4 / PRD §5.B):
+      job_type in {survey, form, quiz}  →  ghl_survey_builder.build_survey
+      any other job_type                →  None  (caller must inject the builder)
+
+    Mirrors the _resolve_step0 pattern: optional, lazy, never blocks a build.
+    Uses a lazy (deferred) import of ghl_survey_builder to avoid the circular
+    import that arises at module-load time (ghl_survey_builder itself imports
+    RateGovernor / SessionKeepalive from this module). By call time v2_dispatcher
+    is fully initialized and the import resolves cleanly.
+    A result of None propagates to a STATE_FAILED in dispatch_one only when
+    the caller also provided builder=None.
+    """
+    job_type = (
+        task.get("job_type") or task.get("build_type") or task.get("type") or ""
+    ).lower().strip()
+    if job_type not in _SURVEY_JOB_TYPES:
+        return None
+    try:
+        import ghl_survey_builder as _gsb_lazy  # lazy — safe post-init  # noqa: PLC0415
+        return _gsb_lazy.build_survey
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Intake interview (Wiring-Map Step 1)
+# ---------------------------------------------------------------------------
+
+def _run_intake(task: dict, evidence_root: str, executor: "Any | None" = None) -> dict:
+    """Run the shared adaptive intake interview before a survey / page / funnel build.
+
+    Wires Wiring-Map Step 1 (Request → Intake) into the dispatch entry point.
+    Called BEFORE step0 so its structured answers feed persona matching and the
+    THINK phase. Skips cleanly when the task is already fully specified because
+    intake_interview automatically skips any question whose answer is already
+    present in the task dict.
+
+    When task['_ask_fn'] is set, it is used as the interactive IO callable
+    (e.g. a Telegram send/receive pair). Otherwise a silent ask_fn is used that
+    returns empty strings, causing inference-only mode (no user prompt required).
+
+    Persists the result to evidence_root/routing/intake-receipt.json.
+    Never raises — a failed or missing intake returns {skipped: True}.
+    """
+    if not _INTAKE_AVAILABLE:
+        return {"skipped": True, "reason": "intake_interview unavailable"}
+
+    ask_fn = task.get("_ask_fn")
+    if ask_fn is None:
+        def ask_fn(q: "Any") -> str:  # type: ignore[misc]
+            return ""   # empty → inference-only, never prompts the user
+
+    try:
+        result = _intake.run_interview(task, ask_fn, executor=executor, env=None)  # type: ignore[union-attr]
+        # Thread structured answers into the task so builder and step0 see them.
+        if isinstance(result.get("answers"), dict) and result["answers"]:
+            task.setdefault("intake_answers", {}).update(result["answers"])
+        if result.get("proposed_structure") and "proposed_structure" not in task:
+            task["proposed_structure"] = result["proposed_structure"]
+        if result.get("build_type") and "build_type" not in task:
+            task["build_type"] = result["build_type"]
+        # Persist receipt so the board, QC, and notify phases can audit it.
+        receipt_dir = os.path.join(evidence_root, "routing")
+        os.makedirs(receipt_dir, exist_ok=True)
+        with open(os.path.join(receipt_dir, "intake-receipt.json"),
+                  "w", encoding="utf-8") as _f:
+            json.dump(result, _f, indent=2)
+        return result
+    except Exception as exc:  # noqa: BLE001 — intake never blocks a build
+        return {"skipped": True, "reason": f"{type(exc).__name__}: {exc}"}
+
+
+# ---------------------------------------------------------------------------
+# Model routing (Wiring-Map Step 3 — role-keyed model selection)
+# ---------------------------------------------------------------------------
+
+def _select_and_thread_models(task: dict, evidence_root: str) -> dict:
+    """Call model_router.select for each runtime role; persist receipts + thread into task.
+
+    Wires Wiring-Map Step 3 (THINK → model_router) at dispatch entry so every
+    downstream phase — builder, verifier, QC — can read the client-owned model
+    chosen for its role from ``task['<role>_model_receipt']``.
+
+    Five roles resolved (PRD §5.A.4):
+      execution  → browser-control / tool-calls   (v2_dispatcher build loop)
+      reasoning  → funnel / survey THINK phase    (structure + slide planning)
+      content    → page copy / welcome-slide      (copy generation)
+      html       → code-block fix-loop            (ghl_verify HTML repair seam)
+      qc         → vision QC on screenshots + DOM (ghl_verify QC pass)
+
+    Uses make_stub_executor() (offline, deterministic, no network). The executing
+    agent substitutes a real executor when dispatching to the chosen model.
+    Writes routing/model-<role>-receipt.json per role.
+    Never raises — a per-role failure is captured as {error: …} without blocking.
+
+    Returns {role: receipt_dict}.
+    """
+    if not _MODEL_ROUTER_AVAILABLE:
+        return {}
+
+    routing_dir = os.path.join(evidence_root, "routing")
+    os.makedirs(routing_dir, exist_ok=True)
+    stub = _model_router.make_stub_executor()  # type: ignore[union-attr]
+    receipts: dict = {}
+
+    for role in ("execution", "reasoning", "content", "html", "qc"):
+        try:
+            receipt = _model_router.select(  # type: ignore[union-attr]
+                stub, role=role, sleep=lambda *_: None,
+            )
+            receipts[role] = receipt
+            # Persist per-role receipt to evidence (readable by executor + QC).
+            with open(os.path.join(routing_dir, f"model-{role}-receipt.json"),
+                      "w", encoding="utf-8") as _f:
+                json.dump(receipt, _f, indent=2)
+            # Thread onto task — builder reads task['execution_model_receipt'] etc.
+            task.setdefault(f"{role}_model_receipt", receipt)
+        except Exception as exc:  # noqa: BLE001 — routing never blocks the build
+            receipts[role] = {"error": f"{type(exc).__name__}: {exc}"}
+
+    return receipts
 
 
 # The bounded-dispatcher state machine (SOP §1). These are the ONLY task states.
@@ -366,7 +526,7 @@ def dispatch_one(
     task: dict,
     evidence_root: str,
     *,
-    builder: Callable[[dict, str], dict],
+    builder: "Callable[[dict, str], dict] | None" = None,
     verifier: Callable[..., dict] | None = None,
     telemetry_glob: list[str] | None = None,
     max_inflight: int = DEFAULT_MAX_INFLIGHT,
@@ -383,7 +543,9 @@ def dispatch_one(
     Args:
         task: ``{id, brand, brief, location_id, pages?}`` — the board task.
         evidence_root: ``skill6-fix/v2-<RUN_ID>/`` (never /tmp).
-        builder: INJECTED callable ``(task, evidence_root) -> build_result``. The
+        builder: INJECTED callable ``(task, evidence_root) -> build_result``, or
+            None to auto-resolve from ``task['job_type']`` (survey/form/quiz →
+            ``ghl_survey_builder.build_survey``; any other type → FAILED). The
             dept agent supplies the real builder (seed/activate + REST autosave +
             images + ecosystem per the SOP). It MUST return a dict with at least
             ``{"pages": [...], "location_gate_ok": bool, "duration_s": float}``
@@ -436,6 +598,41 @@ def dispatch_one(
                          "task left in backlog (never a second concurrent build)"}
         rp = _rec_write(rec)
         return DispatchResult(task_id, STATE_BACKLOG, rec["reason"],
+                              evidence_root=evidence_root, record_path=rp)
+
+    # ── DISPATCH ENTRY — Wiring-Map Steps 1 & 3 ──────────────────────────────
+    #
+    # Step 1 (Intake): run intake_interview BEFORE step0 and the builder so its
+    # structured answers feed persona matching (step0) and the THINK phase.
+    # Skips cleanly when the task is already fully specified.
+    # survey/page/funnel jobs all pass through this seam; ask_fn defaults to
+    # silent inference when task['_ask_fn'] is absent.
+    _run_intake(task, evidence_root)
+
+    # Step 3 (Model routing): produce role-keyed model receipts for all five
+    # phases (execution / reasoning / content / html / qc) and thread them onto
+    # the task dict AND write routing/model-<role>-receipt.json so the executing
+    # agent knows which client-owned model to use for each phase.
+    _select_and_thread_models(task, evidence_root)
+
+    # Builder auto-resolution: if no builder was injected by the caller, attempt
+    # to resolve from task job_type (survey/form/quiz → ghl_survey_builder).
+    # Follows the _resolve_step0 registration pattern.
+    if builder is None:
+        builder = _resolve_builder_for_task(task)
+    if builder is None:
+        rec = {
+            "task_id": task_id, "state": STATE_FAILED,
+            "reason": (
+                "No builder injected and none auto-resolved for "
+                f"job_type={task.get('job_type')!r} / "
+                f"build_type={task.get('build_type')!r}. "
+                "Pass builder= to dispatch_one, or set task['job_type'] to one "
+                "of {survey, form, quiz} to use the registered survey builder."
+            ),
+        }
+        rp = _rec_write(rec)
+        return DispatchResult(task_id, STATE_FAILED, rec["reason"],
                               evidence_root=evidence_root, record_path=rp)
 
     # ── STEP 0 — template-first funnel matcher (advisory, never blocks) ──────

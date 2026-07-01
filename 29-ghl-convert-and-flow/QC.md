@@ -48,7 +48,7 @@ Required environment values (canonical names — the same ones the runnable exam
 # GOHIGHLEVEL_LOCATION_ID — the SAME names the runnable examples use, so QC tests what
 # the agent actually runs. Legacy aliases are mapped onto the canonical names.
 [ -f ~/.openclaw/secrets/.env ] && { set -a; . ~/.openclaw/secrets/.env; set +a; }
-: "${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-}}}}}"
+: "${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-${GHL_PIT:-${GHL_TOKEN:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-${PIT_TOKEN:-${GHL_PIT_TOKEN:-${GOHIGHLEVEL_LOCATION_PIT:-${GHL_LOCATION_PIT:-}}}}}}}}}}}}"
 : "${GOHIGHLEVEL_LOCATION_ID:=${GHL_LOCATION_ID:-}}"
 [ -n "${GOHIGHLEVEL_API_KEY:-}" ]     && echo "PASS: GOHIGHLEVEL_API_KEY set"     || echo "FAIL: GOHIGHLEVEL_API_KEY missing"
 [ -n "${GOHIGHLEVEL_LOCATION_ID:-}" ] && echo "PASS: GOHIGHLEVEL_LOCATION_ID set" || echo "FAIL: GOHIGHLEVEL_LOCATION_ID missing"
@@ -104,7 +104,7 @@ echo "Location ID: $GOHIGHLEVEL_LOCATION_ID"
 ```bash
 # Same canonical loader as section 2 (legacy aliases mapped; container env auto-detected).
 [ -f ~/.openclaw/secrets/.env ] && { set -a; . ~/.openclaw/secrets/.env; set +a; }
-: "${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-}}}}}"
+: "${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-${GHL_PIT:-${GHL_TOKEN:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-${PIT_TOKEN:-${GHL_PIT_TOKEN:-${GOHIGHLEVEL_LOCATION_PIT:-${GHL_LOCATION_PIT:-}}}}}}}}}}}}"
 : "${GOHIGHLEVEL_LOCATION_ID:=${GHL_LOCATION_ID:-}}"
 if [ -z "${GOHIGHLEVEL_API_KEY:-}" ] || [ -z "${GOHIGHLEVEL_LOCATION_ID:-}" ]; then
   echo "BLOCKED: set GOHIGHLEVEL_API_KEY + GOHIGHLEVEL_LOCATION_ID in ~/.openclaw/secrets/.env first." >&2

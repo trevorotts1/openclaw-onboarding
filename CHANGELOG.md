@@ -1,3 +1,50 @@
+## [v16.2.14]  -  2026-07-01  -  feat(skill-06): Skill-6 consolidated update — role-aware model_router (Kimi/GLM/MiniMax M3, M2 purged, Ollama-Cloud-first, 65536-token cap); survey + intake builders wired into dispatcher; CC board phase/activity visibility + done-skip fix; unified 11-alias GHL PIT resolver (skills 05/06/29/36/44 + 48); markdown banned-token CI guard; doctrine reconcile
+
+### Risk: medium — multiple Skill-6 seams changed in one release: model_router reordering + M2→M3 migration affects every model-dispatch call; new survey/intake scripts add browser-automation paths; CC board terminate-at-review changes the review-exit gate; unified PIT resolver changes how all five GHL skills acquire the location token. Each change is backward-compatible (no removed CLI surface, no credential-schema changes, no plist writes). M2 purge is the highest-risk item: any box referencing `minimax-m2` directly will fall to the next ladder rung at runtime — the probe-gate ensures only M3 is offered. No client names, no operator credentials embedded.
+
+### model_router.py — role-aware ladders + M2 purge + Ollama-Cloud-first chain
+Role-aware model selection replaces the flat dispatch table. Content role: `ollama/kimi-k2.6:cloud` (Kimi via Ollama Cloud) as primary. HTML-rendering and reasoning roles: `ollama/glm-5.2:cloud`. Execution and QC roles: `ollama/minimax-m3:cloud` probe-gated with `openrouter/deepseek/deepseek-v4-pro` as fallback when the probe fails. **MiniMax M2 fully purged** — no reference to `minimax-m2` remains in any ladder rung; M3 is the sole MiniMax entry. Full routing chain: Ollama-Cloud-first → OpenRouter → `google/gemini-3.5-flash` as the last rung (never primary). Ollama-Cloud max-token cap hardcoded at **65536** across all roles. `model_router.py` wired into `v2_dispatcher` and the `ghl_verify` seam so every outbound call respects the new ladder.
+
+### ghl_survey_builder.py — browser-control survey creation
+New script: drives the GHL page builder via agent-browser (Playwright fallback) to create surveys from approved copy. `--dry-run` flag renders the full plan without writing. Produces exactly **8 slides** from the transcript, faithful to approved wording. Terms-and-conditions slide uses plain prose (no legalese template injection). Survey creation output is structured for the `v2_dispatcher` handoff.
+
+### intake_interview.py — adaptive intake with think-for-me
+New shared script: conducts the client intake interview with **≤7 adaptive questions** (question count adjusts based on prior answers; stops early when sufficient signal is collected). Includes a `--think-for-me` mode that pre-populates plausible answers for operator review before submission. Lives in `shared/` so it is importable by both `v2_dispatcher` and `ghl_verify`. Wired into the dispatcher's pre-survey gate.
+
+### Command Center board — phase/activity visibility + done-skip fix
+`cc_board` now surfaces the current **phase and activity** labels in the board view so operators can see where each job stands without drilling in. **Terminate-at-review** gate added: a job that reaches the review state must be explicitly advanced or rejected — it can no longer auto-terminate silently. **Done-skip hole closed**: an external `done` signal on a job that has not passed review now routes to `review` and triggers `runQCOnReview` rather than bypassing it. Both fixes are additive; no existing board state is migrated.
+
+### Unified 11-alias GHL LOCATION-PIT resolver
+A single resolver function (replaces per-skill ad-hoc lookup) scans all **11 environment-variable aliases** for the GHL Location Private Integration Token in priority order: `GOHIGHLEVEL_API_KEY`, `GHL_API_KEY`, `CONVERTANDFLOW_API_KEY`, `CAF_API_KEY`, `GHL_PIT`, `GHL_LOCATION_API_KEY`, `HIGHLEVEL_API_KEY`, `CRM_API_KEY`, `GHL_ACCESS_TOKEN`, `GHL_TOKEN`, `HIGHLEVEL_TOKEN`. Adopted in **skills 05/06/29/36/44** and **Skill 48** (`48-facebook-ad-generator`). Skill 44 engine wrappers, `wire-ghl-env`, and `_get_token` all call the shared resolver. Single definition, single update point.
+
+### Markdown banned-token CI guard (qc-static.yml)
+New CI step in `qc-static.yml` that fails the build if any SKILL.md or protocol file contains banned markdown tokens (raw HTML `<script>` tags, zero-width characters, and bare `---` block separators inside body text that would confuse the frontmatter parser). Guard runs on every push that touches `**.md` files. Exit 0 on clean; non-zero + diff output on violation.
+
+### Doctrine reconcile
+- **AGENTS.md N35** now matches **MODEL-ROUTING.md** exactly: `google/gemini-3.5-flash` is documented as the last rung (never a primary), and a `# M2 BANNED` note appears alongside every former M2 reference.
+- **TERMINOLOGY.md**: Firebase third-credential note added — clarifies that the Firebase refresh token is a THIRD credential (separate from the GHL PIT and the GHL location ID) required only for workflow writes; agents must not conflate the three.
+- **Skill 06 docs** converted to TOKEN-ONLY mode for Firebase: all references to username/password browser login removed; the seeded Firebase token is the sole auth path.
+- **Skill 36** tool-count references converted from hardcoded integers to **range-based** descriptions (e.g., "~36 tools" / "~588 tools") so minor MCP version changes do not make the docs stale.
+
+### Files
+- `src/model_router.py` — role-aware ladders, M2 purge, Ollama-Cloud-first, 65536 cap, v2_dispatcher + ghl_verify wiring
+- `src/ghl_survey_builder.py` — NEW: browser-control survey creation, --dry-run, 8-slide faithful, plain T&C
+- `src/intake_interview.py` (or `shared/intake_interview.py`) — NEW: ≤7 adaptive Qs, think-for-me, wired into dispatcher
+- `src/cc_board.py` (or CC board module) — phase/activity visibility, terminate-at-review gate, done-skip fix
+- `shared/ghl_pit_resolver.py` (or equivalent) — unified 11-alias LOCATION-PIT resolver
+- `05-ghl-setup/SKILL.md`, `06-ghl-install-pages/SKILL.md`, `29-ghl-convert-and-flow/SKILL.md`, `36-ghl-mcp-setup/SKILL.md`, `44-convert-and-flow-operator/SKILL.md`, `48-facebook-ad-generator/SKILL.md` — PIT resolver adoption
+- `44-convert-and-flow-operator/` — engine wrappers + wire-ghl-env + _get_token updated to use resolver
+- `.github/workflows/qc-static.yml` — markdown banned-token CI guard
+- `AGENTS.md` — N35 = MODEL-ROUTING.md reconcile, M2 ban note, gemini-3.5-flash last-rung doc
+- `MODEL-ROUTING.md` — matches AGENTS.md N35; gemini-3.5-flash last rung; M2 ban note
+- `TERMINOLOGY.md` — Firebase third-credential note
+- `06-ghl-install-pages/` docs — TOKEN-ONLY Firebase (browser-login refs removed)
+- `36-ghl-mcp-setup/SKILL.md` — range-based tool counts
+- `06-ghl-install-pages/skill-version.txt` — bumped to 16.2.14
+- `version`, `install.sh`, `update-skills.sh`, `README.md` (×2), `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `cc-compat.json`, `23-ai-workforce-blueprint/skill-version.txt`, `23-ai-workforce-blueprint/templates/role-library/_index.json`, `23-ai-workforce-blueprint/templates/role-library/_qc-summary.md` — rolled to v16.2.14 via `bump-version.sh`
+
+---
+
 ## [v16.2.13]  -  2026-07-01  -  fix(updater): persona-index reconcile no longer aborts the updater under `set -euo pipefail` (SIGPIPE from an early-`exit` awk counting pipeline) + exhaustive sibling-landmine sweep
 
 ### Risk: low — adds SIGPIPE/expected-non-zero guards to command-substitution assignments so a counting/lookup pipeline can never abort the updater; every guard is behavior-preserving (the helper still echoes the same integer count, or empty, and the empty case was already handled at each call site). No client names, no credentials, no config/plist writes, no skill-content changes (so the A3 content-gate and CI guard G3 are unaffected).

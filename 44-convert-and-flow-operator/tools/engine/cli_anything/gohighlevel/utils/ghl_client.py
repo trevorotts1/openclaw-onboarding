@@ -41,18 +41,43 @@ def _version_for_path(path: str) -> str:
     return DEFAULT_VERSION
 
 
+# Canonical LOCATION-PIT alias set — all mean the same credential (prefix pit-).
+# First non-empty value wins. AGENCY PITs are intentionally excluded (they 401 on media).
+# GHL PIT aliases: see TERMINOLOGY.md for the full canonical alias set.
+_LOCATION_PIT_ENV_NAMES = (
+    "GOHIGHLEVEL_API_KEY",             # preferred — matches openclaw.json + wire-ghl-env.sh
+    "GHL_API_KEY",                     # legacy short alias
+    "GHL_PIT",                         # canonical short alias
+    "GHL_TOKEN",                       # alternate alias
+    "GHL_PRIVATE_INTEGRATION_TOKEN",   # explicit full-name alias
+    "PRIVATE_INTEGRATION_TOKEN",       # bare PIT alias
+    "GHL_PRIVATE_TOKEN",               # shortened private-token alias
+    "PIT_TOKEN",                       # short PIT alias
+    "GHL_PIT_TOKEN",                   # combined PIT alias
+    "GOHIGHLEVEL_LOCATION_PIT",        # explicit LOCATION-PIT name
+    "GHL_LOCATION_PIT",                # explicit LOCATION-PIT short alias
+)
+
+
 def _get_token() -> str:
-    """Get bearer token from GHL_API_KEY env var."""
-    token = os.environ.get("GHL_API_KEY", "").strip()
-    if not token:
-        print(
-            "Error: GHL_API_KEY environment variable is not set.\n"
-            "Set it with: export GOHIGHLEVEL_API_KEY='your-api-key-here'\n"
-            "(The caf/ghl wrapper maps GOHIGHLEVEL_API_KEY -> GHL_API_KEY for the engine.)",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    return token
+    """Scan the full canonical LOCATION-PIT alias set and return the first non-empty hit.
+
+    The engine previously read ONLY GHL_API_KEY, which caused a 401 crash-loop when the
+    client's token was stored under GOHIGHLEVEL_API_KEY or another canonical alias.
+    This resolver closes that gap (root cause: a client-box GHL-MCP crash-loop, 2026-06).
+    """
+    for name in _LOCATION_PIT_ENV_NAMES:
+        token = os.environ.get(name, "").strip()
+        if token:
+            return token
+    print(
+        "Error: GHL location PIT not found in any canonical env-var name.\n"
+        "Set one of these in ~/.openclaw/secrets/.env (or as an env var):\n"
+        "  " + ", ".join(_LOCATION_PIT_ENV_NAMES) + "\n"
+        "Example: GOHIGHLEVEL_API_KEY=pit-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 
 def _get_location_id() -> str:

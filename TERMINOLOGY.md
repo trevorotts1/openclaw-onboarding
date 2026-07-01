@@ -6,31 +6,48 @@ This file defines terms that are used across the entire onboarding system. Read 
 
 ## GHL / Convert and Flow / GoHighLevel
 
-These three names refer to the SAME platform:
+These names all refer to the SAME platform:
 - **GHL** = GoHighLevel (abbreviation)
 - **Convert and Flow** = Trevor's white-labeled version of GoHighLevel (client-facing name)
 - **GoHighLevel** = the underlying platform
 
+**Backend equivalence:** `app.convertandflow.com`, `app.gohighlevel.com`, and `leadconnectorhq.com` are the same platform regardless of white-label domain. The API host is `https://services.leadconnectorhq.com`; the SPA shell host is `https://app.convertandflow.com` (or the client's own white-label origin). GHL = Convert & Flow = Go High Level — one credential, one platform.
+
 **CRITICAL: GHL does NOT use API keys. It uses Private Integration Tokens (PITs).**
 
-When you see any of these in config files, env vars, or instructions, they ALL mean the same thing — a Private Integration Token:
-- `GHL_API_KEY`
-- `GOHIGHLEVEL_API_KEY`
-- `GHL_TOKEN`
-- `GHL_PIT`
-- `PRIVATE_INTEGRATION_TOKEN`
-- `PIT_TOKEN`
-- `GOHIGHLEVEL_AGENCY_PIT`
+When you see any of these in config files, env vars, or instructions, they ALL mean the same thing — the **LOCATION** Private Integration Token (prefix `pit-`):
 
-There are TWO types of PIT:
-1. **Location PIT** (`GOHIGHLEVEL_API_KEY` / `GHL_API_KEY`) — used for day-to-day work within a specific location (contacts, media uploads, etc.)
-2. **Agency PIT** (`GOHIGHLEVEL_AGENCY_PIT`) — used for agency-wide operations across all sub-accounts
+| Env-var name | Notes |
+|---|---|
+| `GOHIGHLEVEL_API_KEY` | **Preferred** — matches `openclaw.json`, `wire-ghl-env.sh`, `ghl_media.py` |
+| `GHL_API_KEY` | Legacy short alias |
+| `GHL_PIT` | Canonical short alias |
+| `GHL_TOKEN` | Alternate alias |
+| `GHL_PRIVATE_INTEGRATION_TOKEN` | Explicit full-name alias |
+| `PRIVATE_INTEGRATION_TOKEN` | Bare PIT alias |
+| `GHL_PRIVATE_TOKEN` | Shortened private-token alias |
+| `PIT_TOKEN` | Short PIT alias |
+| `GHL_PIT_TOKEN` | Combined PIT alias |
+| `GOHIGHLEVEL_LOCATION_PIT` | Explicit LOCATION-PIT name |
+| `GHL_LOCATION_PIT` | Explicit LOCATION-PIT short alias |
+
+These are one credential. Every resolver (Python `_PIT_ENV_NAMES`, bash `${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-...}}` chains, `wire-ghl-env.sh`) must scan all 11 in the order above (first non-empty wins). **Never conflate with Agency PITs.**
+
+There are TWO types of PIT — keep them SEPARATE:
+
+| Type | Env-var names | Use |
+|---|---|---|
+| **Location PIT** (the canonical set above) | `GOHIGHLEVEL_API_KEY`, `GHL_API_KEY`, … (11 aliases) | Day-to-day work within a specific location: contacts, media uploads, surveys, funnels, etc. Media uploads **require** the Location PIT. |
+| **Agency PIT** | `GOHIGHLEVEL_AGENCY_PIT`, `GOHIGHLEVEL_AGENCY_API_KEY`, `GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT`, `GHL_AGENCY_PIT` | Agency-wide operations across all sub-accounts. **An Agency PIT 401s on media and location-scoped calls — never merge it into the Location set.** |
+
+**Firebase Refresh Token** — `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` — is a THIRD, separate GoHighLevel credential. It is NOT a PIT and is never part of the 11-alias Location PIT set. It is used exclusively for browser-session authentication in Skill 06 and Skill 44 (the builder mints a Firebase `id_token` from this refresh token to reconstruct the SPA session without a UI login). Keep it in its own env-var slot; never merge it into the Location or Agency PIT sets and never confuse it with either.
 
 **Rules:**
 - When talking to clients, ALWAYS say "Convert and Flow." Never say "GoHighLevel."
 - When talking to agents or in technical docs, "GHL" is acceptable shorthand.
 - Never tell a client they need an "API key" for GHL. The correct term is "Private Integration Token" or "PIT."
 - Media uploads require the Location PIT, not the Agency PIT.
+- The "API key" in GHL settings IS the `pit-` Private Integration Token — one credential, many alias names.
 
 ---
 

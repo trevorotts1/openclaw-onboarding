@@ -106,10 +106,20 @@ ALLOWED_LOCATIONS_ENV = "CAF_ALLOWED_LOCATION_IDS"
 # the legacy GHL_API_KEY and the Skill-44 engine name CAF_API_KEY accepted as
 # aliases so the pre-flight passes whether invoked via the wrapper or directly.
 PIT_ENV_CANDIDATES = (
-    "GOHIGHLEVEL_API_KEY",
-    "GHL_API_KEY",
-    "CAF_API_KEY",
+    "GOHIGHLEVEL_API_KEY",             # preferred — matches openclaw.json + ghl_media.py
+    "GHL_API_KEY",                     # legacy short alias
+    "GHL_PIT",                         # canonical short alias
+    "GHL_TOKEN",                       # alternate alias
+    "GHL_PRIVATE_INTEGRATION_TOKEN",   # explicit full-name alias
+    "PRIVATE_INTEGRATION_TOKEN",       # bare PIT alias
+    "GHL_PRIVATE_TOKEN",               # shortened private-token alias
+    "PIT_TOKEN",                       # short PIT alias
+    "GHL_PIT_TOKEN",                   # combined PIT alias
+    "GOHIGHLEVEL_LOCATION_PIT",        # explicit LOCATION-PIT name
+    "GHL_LOCATION_PIT",                # explicit LOCATION-PIT short alias
+    "CAF_API_KEY",                     # Skill-44 engine alias — retained for backward compat
 )
+# GHL PIT aliases: see TERMINOLOGY.md for the canonical alias set and backend-equivalence notes.
 
 # Tags the opt-in test lead must carry — the form->CRM proof asserts BOTH are
 # present on the created contact (a contact with neither tag does not prove the

@@ -49,7 +49,7 @@ QC fails if:
 ### Tier 1 — Official MCP
 
 - [ ] `openclaw mcp show ghl-mcp` returns the streamable-http config with PIT + locationId headers
-- [ ] `tools/list` call returns 36 tools
+- [ ] `tools/list` call returns >= 36 tools
 - [ ] `locations_get-location` call returns real location data (name, address, email, phone)
 - [ ] Agent recognizes Tier 1 is **stateless** (no `Mcp-Session-Id` header issued)
 

@@ -90,7 +90,7 @@ GHL_BACKEND_ORIGIN = "https://backend.leadconnectorhq.com"
 # The GHL SPA origin the agent-browser session must be navigated onto BEFORE any
 # of these calls run, so the request inherits Cloudflare clearance. The exact
 # agency host is a per-run parameter; this default mirrors the SPA app host.
-GHL_SPA_ORIGIN_DEFAULT = "https://app.gohighlevel.com/"
+GHL_SPA_ORIGIN_DEFAULT = os.environ.get("GHL_AGENCY_URL", "https://app.convertandflow.com")
 
 # The canonical SPA XHR headers. ``token-id`` is the minted Firebase id_token.
 # ``Authorization: Bearer <id_token>`` is the WRONG scheme here (401) — the SPA

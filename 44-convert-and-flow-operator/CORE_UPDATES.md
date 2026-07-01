@@ -43,7 +43,7 @@ After building a workflow, do NOT say "done." STEPS:
      I'm running an independent QC agent to verify it against the checklist item-by-item.
      One moment." (via openclaw message send --channel telegram)
   2. Spawn an independent MiniMax QC sub-agent (via sessions_send, verify model available
-     first — prefer minimax/minimax-2.7 via OpenRouter or minimax-m3:cloud; fall back to
+     first — prefer minimax/minimax-m3 via OpenRouter or minimax-m3:cloud; fall back to
      next independent high-reasoning model and record which was used).
   3. QC sub-agent runs caf workflows export <id> + qc-built-workflow.sh <id> item-by-item
      (WF-1..WF-21). Returns explicit PASS/FAIL + observed vs expected value per item.

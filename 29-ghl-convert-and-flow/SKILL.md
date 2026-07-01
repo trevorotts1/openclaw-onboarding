@@ -3,6 +3,8 @@ name: ghl-convert-and-flow
 description: Domain-specific reference files for the GoHighLevel (Convert and Flow) API v2 — Tier 3 direct REST API access covering contacts, conversations, pipelines, calendars, payments, and more. Use after Tier 0 (Convert and Flow CLI, skill 44) and the Tier 1/2 MCPs per skill 36's 6-tier escalation rules.
 ---
 
+> **GHL PIT aliases:** `GOHIGHLEVEL_API_KEY` is the preferred name; 10 additional aliases resolve the same LOCATION PIT. See **`TERMINOLOGY.md`** (repo root) for the canonical alias set and backend-equivalence notes (Convert & Flow / leadconnectorhq.com = one platform).
+
 # GHL API Skill - GoHighLevel / Convert and Flow API v2
 
 > **TYP Note:** This skill pack replaces direct use of the 430K master reference.
@@ -15,7 +17,7 @@ description: Domain-specific reference files for the GoHighLevel (Convert and Fl
 
 ## What Is This Skill?
 
-GoHighLevel (GHL) - also branded as **Convert and Flow** for white-label deployments - is an all-in-one CRM, marketing automation, and sales platform. The GHL API v2 gives programmatic access to contacts, conversations, pipelines, calendars, payments, users, and more.
+**GHL = Convert & Flow = Go High Level** — one white-label platform. The default app URL is `app.convertandflow.com`; the underlying API backend is `services.leadconnectorhq.com`. The "API key" IS the Private Integration Token (`pit-` prefix) — there are no separate legacy API keys; that term is retired. The GHL API v2 gives programmatic access to contacts, conversations, pipelines, calendars, payments, users, and more.
 
 This skill pack provides:
 - Domain-specific reference files carved from the 413-endpoint master reference
@@ -38,8 +40,7 @@ This skill pack provides:
 | Version header | `Version: 2021-04-15` (required on most calls) |
 | Content-Type | `application/json` |
 | Total endpoints | 413 across 35 modules |
-| API key type | Private Integration Token (OAuth2 Bearer) |
-| Deprecated | API keys are deprecated - use Private Integration Tokens only |
+| API key | IS the Private Integration Token (`pit-` prefix); no separate "API key" type exists |
 
 ### Rate Limits
 
@@ -60,8 +61,7 @@ Content-Type: application/json
 
 ## Credentials (canonical names + resolver)
 
-This skill reads the **location** Private Integration Token. The canonical env-var names
-(matching `~/.openclaw/secrets/.env`, `PREREQS.json`, and the bundled QC script):
+This skill reads the **location** Private Integration Token (the "API key" IS the PIT, `pit-` prefix). The unified **11-alias GHL LOCATION-PIT resolver** below maps the canonical name plus 10 legacy aliases to a single value — agency PITs and the Firebase-refresh path are separate and not included in this set. Canonical env-var names (matching `~/.openclaw/secrets/.env`, `PREREQS.json`, and the bundled QC script):
 
 | Variable | Purpose |
 |----------|---------|
@@ -75,7 +75,7 @@ resolver. It accepts legacy aliases so older setups keep working:
 ```bash
 # Canonical GHL credential resolver — source secrets, map legacy aliases, fail loud.
 [ -f ~/.openclaw/secrets/.env ] && { set -a; . ~/.openclaw/secrets/.env; set +a; }   # VPS/container: vars already in env
-: "${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-}}}}}"
+: "${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-${GHL_PIT:-${GHL_TOKEN:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-${PIT_TOKEN:-${GHL_PIT_TOKEN:-${GOHIGHLEVEL_LOCATION_PIT:-${GHL_LOCATION_PIT:-}}}}}}}}}}}}"
 : "${GOHIGHLEVEL_LOCATION_ID:=${GHL_LOCATION_ID:-}}"
 __miss=""
 [ -z "${GOHIGHLEVEL_API_KEY:-}" ]     && __miss="$__miss GOHIGHLEVEL_API_KEY"

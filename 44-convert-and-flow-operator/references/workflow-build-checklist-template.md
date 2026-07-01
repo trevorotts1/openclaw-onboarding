@@ -23,7 +23,7 @@ Copy this template for each new workflow build. Fill all `[...]` placeholders.
 | GHL Location ID | `[FILL: location id]` |
 | Build Date | `[FILL: YYYY-MM-DD]` |
 | Build Agent | `[FILL: agent name + model]` |
-| QC Agent | `[FILL: MiniMax model slug used for QC, e.g. minimax/minimax-2.7]` |
+| QC Agent | `[FILL: MiniMax model slug used for QC, e.g. minimax/minimax-m3]` |
 | Client PUBLISH decision | `[FILL: DRAFT / LIVE — from gating question 1 answer]` |
 | Client RE-ENTRY decision | `[FILL: ONCE / ALLOW-MULTIPLE — from gating question 2 answer]` |
 | Snapshot path | `[FILL: ~/.openclaw/tools/convert-and-flow-cli/data/snapshots/<loc>/<wf-id>/<ts>.json]` |
