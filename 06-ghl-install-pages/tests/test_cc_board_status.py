@@ -36,6 +36,11 @@ class TestStatusGuards:
         # None task id / None status must not raise (fail-soft contract).
         assert cc_board.update_status(None, None, env=ENV) is False  # type: ignore[arg-type]
 
+    def test_update_status_done_is_blocked(self):
+        # DoD5 parity (v16.2.15): update_status must mirror move_task's 'done'
+        # hard-block — no caller can bypass the QC gate via this legacy path.
+        assert cc_board.update_status("t1", "done", env=ENV) is False
+
 
 class TestStateMapping:
     def test_dispatch_state_table_matches_area6_spec(self):
@@ -100,7 +105,8 @@ class TestTransport:
 
         monkeypatch.setattr(cc_board, "_post_json", boom)
         # Must swallow and return False, never raise.
-        assert cc_board.update_status("abc", "done", env=ENV) is False
+        # Use 'blocked' (not 'done' — done is hard-blocked before the network call).
+        assert cc_board.update_status("abc", "blocked", env=ENV) is False
 
     def test_full_lifecycle_backlog_to_review(self, monkeypatch):
         """backlog -> in_progress -> review, the way v2_dispatcher drives it."""

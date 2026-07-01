@@ -4,6 +4,28 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v16.2.15] - 2026-07-01 — fix(skill6): DoD4+DoD5 hardening — intake think-for-me branch activated; update_status 'done' parity guard
+
+### Fixed — DoD4: intake think-for-me branch now receives an executor (`tools/v2_dispatcher.py`)
+`dispatch_one` called `_run_intake(task, evidence_root)` with no `executor` argument. `_run_think_for_me_branch` inside `intake_interview` exits immediately with `_skip_reason="no_executor"` when `executor is None`, silently skipping the proposed-structure path for every UNSURE / HANDS_OFF user. A `make_stub_executor()` instance (offline, deterministic, model-sovereign — no Anthropic) is now created from `_model_router` at dispatch entry and passed as `executor=_intake_executor` to `_run_intake`, threading through `run_interview` → `_run_think_for_me_branch` → `model_router.select(executor, role="reasoning", …)`. Normal ≤7-question path behavior is unchanged.
+
+### Fixed — DoD5: `update_status('done')` parity guard (`tools/cc_board.py`)
+`move_task()` hard-blocked `status=='done'` but the legacy `update_status()` listed 'done' in `_CC_STATUS_VALUES` with no matching guard, leaving a QC-bypass hole. An identical HARD-BLOCK is now added immediately after the enum-validation check in `update_status()`. Any call with `status_norm=='done'` logs the "producer must never post 'done' directly" message and returns `False`. `_status_selftest()` gains check #8 asserting this offline.
+
+### Tests
+- `TestIntakeExecutorWiring` (3 tests, `tests/test_v2_dispatcher.py`): verifies `dispatch_one` passes non-None executor; baseline no-executor skip; stub-executor non-skip with receipt.
+- `test_update_status_done_is_blocked` (`tests/test_cc_board_status.py`): parity guard returns `False`.
+- `test_network_error_fail_soft` adjusted to use 'blocked' (not 'done') to continue testing actual network-error fail-soft.
+
+### Files changed
+- `tools/v2_dispatcher.py`
+- `tools/cc_board.py`
+- `tests/test_v2_dispatcher.py`
+- `tests/test_cc_board_status.py`
+- `skill-version.txt` → v16.2.15 (rolled by bump-version.sh)
+
+---
+
 ## [v16.2.14] - 2026-07-01 — feat(skill6): model_router wired end-to-end, ghl_survey_builder + intake_interview shipped, Command Center step-visibility + done-skip fix, 11-alias terminology unification, version-drift reconcile
 
 ### Fixed — version-drift triple-equality reconcile

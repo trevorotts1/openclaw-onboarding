@@ -1,3 +1,21 @@
+## [v16.2.15]  -  2026-07-01  -  fix(skill-06): DoD4+DoD5 hardening — intake think-for-me branch activated (stub executor threaded through dispatcher); update_status 'done' parity guard closes legacy QC-bypass hole
+
+### Fixed — DoD4: intake think-for-me branch now receives an executor (v2_dispatcher.py)
+- `dispatch_one` was invoking `_run_intake(task, evidence_root)` with no `executor` argument. `_run_think_for_me_branch` inside `intake_interview` immediately exits with `_skip_reason="no_executor"` when `executor is None`, silently skipping the proposed-structure path for all UNSURE/HANDS_OFF users.
+- Fix: at the dispatch entry (Wiring-Map Step 1), a `make_stub_executor()` instance (offline, deterministic, model-sovereign) is now built from `_model_router` and passed as `executor=_intake_executor` to `_run_intake`, which threads it through `run_interview` → `_run_think_for_me_branch` → `model_router.select(executor, role="reasoning", …)`. No Anthropic model can be selected — `assert_model_sovereignty` runs on every slug inside `select()`.
+- Existing behavior when the think-for-me branch is NOT triggered (normal ≤7-question path) is unchanged.
+
+### Fixed — DoD5: update_status 'done' parity guard (cc_board.py)
+- `move_task()` hard-blocks `status=='done'` at lines 519-530, but the legacy sibling `update_status()` listed 'done' in `_CC_STATUS_VALUES` with no corresponding guard, leaving a bypass hole any future caller could exploit.
+- Fix: identical HARD-BLOCK guard added to `update_status()` immediately after the existing enum-validation check. Any call with `status_norm=='done'` logs the same "producer must never post 'done' directly … review→done only via the QC gate" message and returns `False`. No caller can reach `done` via either public API without passing through `runQCOnReview` (PASS ≥ 8.5).
+- `_status_selftest()` updated with check #8 to assert this invariant offline.
+
+### Files changed
+- `06-ghl-install-pages/tools/v2_dispatcher.py` — DoD4: pass `_intake_executor` to `_run_intake`
+- `06-ghl-install-pages/tools/cc_board.py` — DoD5: 'done' parity guard in `update_status()`; selftest check #8
+- `06-ghl-install-pages/tests/test_v2_dispatcher.py` — `TestIntakeExecutorWiring` (3 tests)
+- `06-ghl-install-pages/tests/test_cc_board_status.py` — `test_update_status_done_is_blocked`; `test_network_error_fail_soft` updated to use 'blocked' (not 'done')
+
 ## [v16.2.14]  -  2026-07-01  -  feat(skill-06): Skill-6 consolidated update — role-aware model_router (Kimi/GLM/MiniMax M3, M2 purged, Ollama-Cloud-first, 65536-token cap); survey + intake builders wired into dispatcher; CC board phase/activity visibility + done-skip fix; unified 11-alias GHL PIT resolver (skills 05/06/29/36/44 + 48); markdown banned-token CI guard; doctrine reconcile
 
 ### Risk: medium — multiple Skill-6 seams changed in one release: model_router reordering + M2→M3 migration affects every model-dispatch call; new survey/intake scripts add browser-automation paths; CC board terminate-at-review changes the review-exit gate; unified PIT resolver changes how all five GHL skills acquire the location token. Each change is backward-compatible (no removed CLI surface, no credential-schema changes, no plist writes). M2 purge is the highest-risk item: any box referencing `minimax-m2` directly will fall to the next ladder rung at runtime — the probe-gate ensures only M3 is offered. No client names, no operator credentials embedded.
