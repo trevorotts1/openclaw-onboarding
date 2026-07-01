@@ -1,3 +1,23 @@
+## [v16.2.16]  -  2026-07-01  -  feat(fleet-routing): canonicalize the proven presentation-routing REFLEX gate into the two fleet doctrine stampers — every CEO's workspace AGENTS.md gets a trigger-before-thinking route-first-and-stop gate for presentation requests
+
+### Why
+The main-agent (CEO) was self-executing presentation intake instead of routing to the Presentations department — dumping intake questions, reading department SOPs, and attempting build_deck.py directly, which loses the six mandatory representation fields that only the Brainstorming Buddy (ROLE-17) captures and fails the representation gate. Fixed and proven end-to-end on one box (a real task landed on the presentations board with zero intake questions, no SOP reads, no premature build) before canonicalization.
+
+### What — PRESENTATION_ROUTING_REFLEX_V1 stamped at the top of the resolved workspace AGENTS.md
+- New idempotent, marker-guarded (`<!-- PRESENTATION_ROUTING_REFLEX_V1 -->`) doctrine block prepended ABOVE ROLE_DISCIPLINE_V1 / CEO_ROUTING_NO_LOOPHOLES_V1 in both twin stampers (final order: REFLEX → ROLE_DISCIPLINE → CEO_ROUTING → body). Re-run safe (second run is a no-op).
+- Behavior on a presentation-trigger message: the CEO's VERY FIRST tool call is the ingest POST (then a one-line ack, then STOP). Hard bans on asking intake questions, reading dept SOPs, writing working files, calling build_deck.py, or doing ANY read/verify before the POST fires.
+- CC ingest endpoint pinned to `127.0.0.1:4000/api/tasks/ingest` (fleet-uniform IPv4) with an explicit "PORT 4000, NOT 3000" guard — agents were otherwise guessing the framework's :3000 default and failing.
+
+### Files changed
+- `scripts/apply-fleet-standards.sh` — new step 4b-REFLEX (immediately after the CEO_ROUTING injection)
+- `scripts/apply-routing-fix.sh` — new PRESENTATION_ROUTING_REFLEX_V1 stamper in LAYER 1 (dry-run aware); KEEP-IN-SYNC twin of the above
+
+### Propagation
+Both stampers already run on every `install.sh` (fresh-box onboarding) and every `update-skills.sh` (fleet update), version-independent — so the gate lands on new boxes at install and back-fills existing boxes on their next update. The workspace AGENTS.md is symlinked to every department agent, so all agents see the gate; it is addressed to the router (CEO).
+
+### Known follow-up (v16.2.17)
+The doctrine injection has no personal-assistant-only-box skip: a presentation trigger on a PA-only box (no Presentations department / no Command Center) would POST to a 404 — the same exposure the existing routing doctrine already carries. A Presentations-department existence guard is scheduled for v16.2.17 alongside the provisioning-template model-chain hardening.
+
 ## [v16.2.15]  -  2026-07-01  -  fix(skill-06): DoD4+DoD5 hardening — intake think-for-me branch activated (stub executor threaded through dispatcher); update_status 'done' parity guard closes legacy QC-bypass hole
 
 ### Fixed — DoD4: intake think-for-me branch now receives an executor (v2_dispatcher.py)
