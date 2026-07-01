@@ -63,7 +63,6 @@ def _resolve_crm_platform(client_slug: str) -> str:
         Path("/data/projects/command-center/config/company-config.json"),
         Path.home() / "projects/command-center/config/company-config.json",
         Path("/data/.openclaw/workspace/zero-human-company") / client_slug / "company-config.json",
-        Path.home() / "clawd/zero-human-company" / client_slug / "company-config.json",
     ):
         try:
             if not cfg_path.is_file():
