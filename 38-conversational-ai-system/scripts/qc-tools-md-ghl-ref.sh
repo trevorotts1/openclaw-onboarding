@@ -191,7 +191,12 @@ LINE_BUDGET = 120
 # Version 2021-07-28) — a required new API surface, kept to a 2-row table + one
 # note. Same rationale as the 6000->6500 bump; the 120-line guard (90 lines used)
 # remains the real anti-bloat gate.
-CHAR_BUDGET = 7000
+# 7500 (was 7000): v1.7.8 added the ONE-blockquote RUNTIME TIER LADDER pointer
+# (prefer Skill 44 caf Tier 0; this raw REST is the Tier-3 fallback; on 401/non-2xx
+# never claim "sent" -> escalate + client PIT-refresh). Routing guidance, not new
+# API surface — a single blockquote (~370 chars, 91/120 lines used). The 120-line
+# guard remains the real anti-bloat gate.
+CHAR_BUDGET = 7500
 nlines = text.count("\n") + 1
 nchars = len(text)
 if nlines > LINE_BUDGET:

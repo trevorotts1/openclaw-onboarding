@@ -6,15 +6,23 @@ After setup, your agent can route GHL requests through Tier 0 Convert and Flow C
 
 ## The Cardinal Rule
 
-**Try each tier in numerical order. Do NOT skip tiers.** This rule lives in SOUL.md as a 🔴 cardinal protocol. Violating it is a documented past failure. The rule is binding.
+**Try each tier in numerical order. Do NOT skip tiers.** This rule lives in the shared **AGENTS.md** as a 🔴 cardinal protocol (so every agent, including sub-agents, inherits it). Violating it is a documented past failure. The rule is binding.
 
-## Disclosure Header Format
+## Disclosure Header Format — OPERATOR CHANNEL ONLY
 
-Every reply that surfaces GHL / GoHighLevel / Convert and Flow / LeadConnector data MUST begin with this header on its own line:
+This header is an internal audit trail for the OPERATOR. Every reply that surfaces
+GHL / GoHighLevel / Convert and Flow / LeadConnector data **on the operator channel** MUST
+begin with this header on its own line:
 
 ```
 [GHL tier used: N — tool_name]
 ```
+
+> **WE MOVE IN SILENCE — strip this header from CLIENT-FACING replies.** When the answer
+> goes to a client (their Telegram, a coaching-persona reply, any customer-facing surface),
+> do NOT emit the tier header — it leaks internal tier/tool/fallback plumbing the client
+> should never see. Give the client just the result. The header is mandatory for the
+> operator's audit and forbidden on the client's screen.
 
 Examples:
 - `[GHL tier used: 0 — convertandflow contacts list]`
@@ -61,7 +69,7 @@ Use when Tier 1 lacks the needed tool. Domains:
 | Voice AI | `create_voice_ai_agent`, `update_voice_ai_agent`, `list_voice_ai_agents`, `get_voice_ai_call_log` |
 | Phone System | `ghl_buy_phone_number`, `ghl_list_phone_numbers`, `update_phone_number`, `ghl_get_call_recording`, `update_call_forwarding` |
 | Agent Studio | `ghl_create_agent`, `ghl_update_agent`, `ghl_deploy_agent`, `ghl_list_agents` |
-| Workflows | `ghl_list_workflows`, `ghl_get_workflow`, `ghl_create_workflow`, `ghl_clone_workflow`, `ghl_trigger_workflow`, `ghl_publish_workflow` |
+| Workflows (escalation/read only) | `ghl_list_workflows`, `ghl_get_workflow`, `ghl_trigger_workflow`, `ghl_publish_workflow`. **Workflow BUILD/EDIT is Tier 0 (Skill 44 Build API), NOT here** — `ghl_create_workflow` / `ghl_update_workflow_actions` exist in the fork (`src/tools/workflow-builder-tools.ts`) but wrap an undocumented internal endpoint and are unverified / likely produce non-functional shells. Do not build via MCP. |
 
 **Total: 588 tools.** For anything not in this table, run live discovery:
 ```bash
@@ -113,7 +121,7 @@ When a tier returns 404 / 502 / connection refused / "not found":
 3. If health passes, the server is fine — your call shape is wrong. Fix and retry.
 4. If health fails, attempt recovery:
    - Tier 2 macOS: `launchctl kickstart gui/$(id -u)/com.clawd.ghl-mcp`
-   - Tier 2 Linux: `sudo systemctl restart ghl-mcp`
+   - Tier 2 VPS: `pm2 restart ghl-community-mcp` (Docker/Hostinger canonical) — or `sudo systemctl restart ghl-mcp` on a non-container systemd box
 5. Only after recovery fails, fall through to the next tier. The disclosure header must reflect the actual reason.
 
 ## 🔴 Rate-Limit Protocol — 429 is NOT a fallthrough trigger
@@ -264,10 +272,39 @@ curl -sS -m 5 $GHL_COMMUNITY_MCP_URL/health
 # Tier 2 service status
 # macOS:
 launchctl print gui/$(id -u)/com.clawd.ghl-mcp | grep -E "state|pid"
-# Linux:
+# VPS (pm2 canonical):
+pm2 describe ghl-community-mcp
+# Non-container Linux (systemd fallback):
 systemctl status ghl-mcp
 ```
 
+## Command Center hooks (Skill 32 board — operator visibility)
+
+Skill 32 is the Command Center host; other skills DRIVE its board. Skill 36 emits status to
+**Skill 32's existing board ingestion** — it does NOT build a parallel board, a second card
+store, or its own UI.
+
+Emit a card / status update at these moments:
+
+- **Install start** — open/append a card: "GHL MCP setup — started (box, platform)".
+- **Install complete** — move that card to done with the QC result (e.g. "qc-ghl-mcp-setup.sh
+  exit 0; Tier 1 >=36 tools, Tier 2 >=500 on-demand").
+- **Tier incident — 429 lockout** — status card: "GHL rate-limit lockout; daily reset ~HH:MM
+  ET; all tiers share one bucket — paused" (matches the Rate-Limit Protocol above).
+- **Tier incident — missing credential** — status card: "GHL blocked: missing PIT / Location
+  ID (or Firebase token for builds) — owner asked to supply it" (matches the missing-cred
+  grace in GHL-LOOKUP-SOP.md RULE 5 + CORE_UPDATES.md).
+
+**How to emit (anti-fabrication — do NOT invent an endpoint):** use the ingestion mechanism
+Skill 32 documents in `32-*/INSTALL.md` (its board ingestion / card API). Read that skill's
+own docs for the exact call on this box; if Skill 32 is not installed, skip the hook (these
+status emits are best-effort operator visibility, never a blocker for the GHL operation
+itself). These cards are OPERATOR-facing only — like the tier header, they are not
+client-facing (WE MOVE IN SILENCE).
+
 ## When Setup Is Done and Things Just Work
 
-The disclosure header is your audit trail. Every response with a tier header that matches the task domain is a passing case. Anything missing the header, or showing tier 3 when tier 1 or 2 should have served the request, is a failure to investigate.
+The disclosure header is your operator-channel audit trail. Every operator-channel response
+with a tier header that matches the task domain is a passing case. Anything missing the
+header (on the operator channel), or showing tier 3 when tier 0/1/2 should have served the
+request, is a failure to investigate. (Client-facing replies carry no header by design.)

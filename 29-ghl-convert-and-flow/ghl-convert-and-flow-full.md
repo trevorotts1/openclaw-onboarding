@@ -47,7 +47,7 @@ The standard authentication method for this skill is a **Bearer token** using a 
 Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>
 ```
 
-In practice, this token is usually stored in the environment as `GHL_API_KEY`.
+In practice, this token is usually stored in the environment as `GOHIGHLEVEL_API_KEY`.
 
 ### Required Version Header
 
@@ -72,7 +72,7 @@ Content-Type: application/json
 A typical request looks like this:
 
 ```http
-Authorization: Bearer <GHL_API_KEY>
+Authorization: Bearer <GOHIGHLEVEL_API_KEY>
 Version: 2021-04-15
 Content-Type: application/json
 ```
@@ -84,19 +84,19 @@ Content-Type: application/json
 For this skill, the environment variable to use is:
 
 ```bash
-GHL_API_KEY
+GOHIGHLEVEL_API_KEY
 ```
 
 Store it in your local environment file:
 
 ```bash
-~/clawd/secrets/.env
+~/.openclaw/secrets/.env
 ```
 
 ### Example .env Entry
 
 ```bash
-GHL_API_KEY=pit-xxxxxxxxxxxxxxxxxxxxxxxx
+GOHIGHLEVEL_API_KEY=pit-xxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 Do not paste real secrets into chat, docs, tickets, or screenshots.
@@ -107,7 +107,7 @@ If you are working in a shell session and need to load the value:
 
 ```bash
 set -a
-source ~/clawd/secrets/.env
+source ~/.openclaw/secrets/.env
 set +a
 ```
 
@@ -118,7 +118,7 @@ You can confirm the variable is loaded without printing the whole key:
 ```bash
 python3 - <<'PY'
 import os
-key = os.getenv('GHL_API_KEY', '')
+key = os.getenv('GOHIGHLEVEL_API_KEY', '')
 print('loaded' if key else 'missing')
 print(f'length={len(key)}')
 PY
@@ -753,7 +753,7 @@ The whole point of this skill is to avoid that.
 
 That includes:
 
-- `GHL_API_KEY`
+- `GOHIGHLEVEL_API_KEY`
 - Private Integration Tokens
 - OAuth tokens
 - webhook signatures if applicable in your integration design
@@ -840,7 +840,7 @@ These are general patterns, not substitutes for reading the domain file.
 
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/example-path' \
-  -H 'Authorization: Bearer '$GHL_API_KEY \
+  -H 'Authorization: Bearer '$GOHIGHLEVEL_API_KEY \
   -H 'Version: 2021-04-15' \
   -H 'Content-Type: application/json'
 ```
@@ -849,7 +849,7 @@ curl --request GET 'https://services.leadconnectorhq.com/example-path' \
 
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/example-path' \
-  -H 'Authorization: Bearer '$GHL_API_KEY \
+  -H 'Authorization: Bearer '$GOHIGHLEVEL_API_KEY \
   -H 'Version: 2021-04-15' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
@@ -877,7 +877,7 @@ OpenClaw should:
 1. Read `references/contacts.md`
 2. Find the create contact endpoint
 3. Confirm required fields
-4. Use `GHL_API_KEY`
+4. Use `GOHIGHLEVEL_API_KEY`
 5. Execute the request
 6. Return the created contact details clearly
 
@@ -919,8 +919,8 @@ When in doubt, start with `modules.md`, then go narrower.
 ## Final Reminders
 
 1. The base URL is `https://services.leadconnectorhq.com`
-2. Auth uses a Bearer token, usually from `GHL_API_KEY`
-3. Store the token in `~/clawd/secrets/.env`
+2. Auth uses a Bearer token, usually from `GOHIGHLEVEL_API_KEY`
+3. Store the token in `~/.openclaw/secrets/.env`
 4. Read the matching `references/*.md` file before acting
 5. Never paste the 430K master reference into context
 6. Slow down for billing, phone number, and destructive operations

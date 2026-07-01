@@ -1,3 +1,73 @@
+## [v16.2.10] - 2026-06-30 - fix(presentations): migrate the presenter speech-build harness off the hardcoded Anthropic HTTP transport to the client's OpenAI-compatible provider (Ollama Cloud primary, OpenRouter fallback)
+
+Client model sovereignty / runtime portability: the speech-build harness POSTed directly to the
+Anthropic Messages API (x-api-key + anthropic-version headers, required ANTHROPIC_API_KEY, parsed
+content[0].text). A client box has no Anthropic key, so a REAL speech build could only ever FAIL.
+Migrated the transport to be provider-configurable and OpenAI-compatible, with ZERO change to the
+resilience layer.
+
+templates/role-library/presentations/scripts/speech_build_harness.py:
+- Transport: default endpoint is now Ollama Cloud's OpenAI-compatible chat/completions
+  (override via SPEECH_LLM_BASE_URL / OPENAI_BASE_URL; a bare /v1 root is normalized). Auth is
+  Authorization: Bearer <key>, key resolved OLLAMA_API_KEY -> OPENROUTER_API_KEY (with generic
+  SPEECH_LLM_API_KEY / OPENAI_API_KEY overrides) — never ANTHROPIC_API_KEY. Request body is the
+  OpenAI chat/completions shape ({model, messages, max_tokens, temperature}); response parsed as
+  choices[0].message.content. Renamed _anthropic_generate_once -> _llm_generate_once. OpenRouter
+  documented as the fallback base.
+- Model default: primary -> glm-5.2:cloud (content-writing policy), fallback -> minimax-m3:cloud;
+  both non-Anthropic Ollama Cloud ids, verified to resolve and return budget-hitting content.
+- Reasoning-model correctness: Ollama Cloud content models (GLM/minimax/deepseek) emit a large
+  chain-of-thought into message.reasoning BEFORE message.content, so the old max_tokens
+  (word_budget*2) starved them and content returned EMPTY. Added REASONING_HEADROOM_TOKENS and
+  sized max_tokens to cover reasoning + content; added an empty-content guard that treats blank
+  message.content as a permanent bad-shape error (fail fast / fall back) rather than silently
+  writing an empty speech.
+- PRESERVED verbatim: retry/backoff/jitter (429/500/502/503/529 + overloaded/rate-limit body; 502
+  added for OpenAI-compat gateways), per-slide checkpoint + ledger resume, up-front word-budget
+  math, auto-expand loop, and --dry-run. Optional SPEECH_LLM_REASONING_EFFORT passthrough, OFF by
+  default for this content-writing role.
+LEFT INTACT: the sibling guards (canonical_render_guard.py / qc_generator_guard.py /
+build_teleprompter.py) carry NO Anthropic transport — they reference the harness only by basename
+in allow-lists — so none needed changes; the 'never ANTHROPIC_API_KEY' guard note is kept.
+
+## [v16.2.9] - 2026-06-30 - chore(model-policy + ghl): scrub client-facing Anthropic-model recommendations; surface Skill-48 dependency at wiring; canonicalize GHL credential guidance; reconcile version markers
+
+Client model sovereignty: NONE of the client-facing model recommendations/defaults may point at
+Anthropic (clients run their own Ollama Cloud / OpenRouter providers). Replaced genuine
+client-runtime recommendations BY ROLE JOB TYPE — content/HTML writing -> GLM 5.2; high-reasoning
+/ strategy / code-review -> DeepSeek v4 pro (or GLM 5.2); browser-control / tool-calls / QC ->
+MiniMax 3 (Ollama Cloud preferred, OpenRouter backup, thinking=HIGH):
+- ai-workforce-blueprint-full.md intelligent-routing template table (content -> GLM 5.2; strategy
+  -> DeepSeek v4 pro; quick/simple -> GPT-5 Nano or DeepSeek-flash; CRM/tool + image -> MiniMax 3).
+- QC-ROLES-MASTER.md code-review + legal/HR/compliance QC notes -> DeepSeek v4 pro (GPT-5.4 kept).
+- scripts/build-workforce.py build-agent model requirement -> DeepSeek v4 pro / GLM 5.2 (MiMo,
+  Gemini, GPT kept).
+- scripts/create_role_workspaces.py SCRIPT_ANALYSIS_TOOL default -> GLM 5.2 (Ollama Cloud).
+- openclaw-maintenance/sops/sop-model-overkill-daily.md tier vocabulary re-based onto the clean
+  client-model tiers used by its authoritative source role file (fast/mid/pro-tier: deepseek-flash
+  / minimax-m3 / deepseek-v4-pro / GLM 5.2).
+- web-development/funnel-builder-specialist.md build-loop model discipline (browser loop ->
+  MiniMax 3; reasoning escalation -> DeepSeek v4 pro / GLM 5.2; mechanical -> fast-tier).
+- crm/automation-workflow-specialist.md workflow-build model pre-flight -> GLM 5.2 (and dropped the
+  redundant light-model detection keyword).
+- presentations SOP-SLIDE-00 vision-QC note + test_preflight.py fixtures -> the dept vision-QC
+  model qwen3-vl:235b-cloud, consistent with the director-of-presentations routing.
+- openclaw-maintenance/deep-research-role--openclaw-maintenance.md flash-assessment EXAMPLE:
+  completed the already-started vendor genericization by removing the residual model token.
+LEFT INTACT (not model recommendations): every 'never Anthropic'/'FORBIDDEN'/no_anthropic policy
+guard and the defensive provider-string selector filters; framework 'mcp__claude_ai_*' tool
+namespaces; OpusClip (product); 'autopush' + the audio codec (substrings); docs.anthropic.com and
+multi-provider knowledge references; operator-authored bylines.
+
+GHL: surfaced the Skill-48 sibling dependency in scripts/verify-wiring.sh (presentations dept) —
+the presentations ghl_media.py re-exports 48-facebook-ad-generator/tools/ghl_media.py and raises
+FileNotFoundError at import if absent; wiring now warns at QC time instead of failing mid-deck.
+Canonicalized the GHL credential guidance in create_role_workspaces.py (name GOHIGHLEVEL_LOCATION_ID
+/ GOHIGHLEVEL_API_KEY and WHERE to set them: ~/.openclaw/secrets/.env via Skill 05, or openclaw.json).
+Version markers reconciled: skill-version.txt 16.2.8 -> 16.2.9 and SKILL.md frontmatter version
+2.1.0 -> 16.2.9 (single source of truth). No functional gate changed (delivery_gate, GHL_UPLOAD_GATE,
+owner_skip_approval, persona_grounding_gate, fail-soft CC all intact).
+
 ## [v14.23.3] - 2026-06-27 - fix(persona-selector): enforce the anti-staleness flag (sticky cache no longer "goes deaf") + protect the craft specialist from variety
 
 Root cause (live regression, operator box): the persona-selector picked `sinek-start-with-why`

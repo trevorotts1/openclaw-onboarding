@@ -81,6 +81,22 @@ from typing import Optional
 
 _DEFAULT_TIMEOUT = 8
 
+# Valid CC TaskStatus enum values the server accepts (the 10-value enum noted in
+# the module docstring, minus the route-ignored ones). update_status() refuses
+# anything outside this set so a typo can never be POSTed to the board.
+_CC_STATUS_VALUES = ("backlog", "assigned", "in_progress", "review", "blocked", "done")
+
+# Dispatcher state -> CC board status (Area-6 board status updater). The
+# v2_dispatcher state machine (backlog -> dispatched -> building -> verified |
+# FAILED) maps onto the Kanban columns so a running build no longer sits at
+# 'backlog'. 'verified' lands at 'review' (operator/QC signs off to 'done').
+DISPATCH_STATE_TO_CC = {
+    "dispatched": "in_progress",
+    "building": "in_progress",
+    "verified": "review",
+    "FAILED": "blocked",
+}
+
 
 # ---------------------------------------------------------------------------
 # Config — read from the environment; absent base URL => board disabled.
@@ -119,8 +135,9 @@ def _sign(secret: str, raw_body: bytes) -> Optional[str]:
     return hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
 
 
-def _post_json(url: str, payload: dict, cfg: dict):
-    """One signed JSON POST. Returns (status_code, parsed_json_or_None).
+def _post_json(url: str, payload: dict, cfg: dict, method: str = "POST"):
+    """One signed JSON request (``method`` defaults to POST so existing callers
+    are unchanged). Returns (status_code, parsed_json_or_None).
     Raises only urllib/OS errors — the public caller catches (fail-soft)."""
     raw_body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
@@ -129,7 +146,7 @@ def _post_json(url: str, payload: dict, cfg: dict):
     sig = _sign(cfg["secret"], raw_body)
     if sig is not None:
         headers["x-webhook-signature"] = sig
-    req = urllib.request.Request(url, data=raw_body, headers=headers, method="POST")
+    req = urllib.request.Request(url, data=raw_body, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=cfg["timeout"]) as resp:
             body = resp.read().decode("utf-8", "replace")
@@ -236,6 +253,114 @@ def ingest_task(
 
 
 # ---------------------------------------------------------------------------
+# PUBLIC API — update_status moves a card across the Kanban (Area-6 fix).
+# ---------------------------------------------------------------------------
+def update_status(
+    task_id: str,
+    status: str,
+    *,
+    note: str = "",
+    env: Optional[dict] = None,
+) -> bool:
+    """Transition a board card to ``status`` so a running build no longer sits
+    stuck at 'backlog' (Area-6: backlog/assigned/in_progress/review/blocked/done).
+
+    PRODUCER HALF ONLY.
+
+    *** CROSS-REPO CONTRACT — CONFIRM/ADD THE CONSUMER ROUTE. ***
+    The exact status-transition endpoint lives in the SEPARATE command-center
+    repo (``trevorotts1/blackceo-command-center``). ``ingest_task`` targets the
+    CONFIRMED ``POST /api/tasks/ingest`` route; the per-task status route is NOT
+    yet confirmed there. This caller therefore defaults to
+    ``POST /api/tasks/{id}/status`` — inside the documented ``/api/tasks/<id>/...``
+    route family (cf. ``POST /api/tasks/<id>/dispatch`` in
+    v2-autonomous-build-sop.md) — and lets the operator override BOTH the method
+    and the path template via env WITHOUT a code change, so it can be pointed at
+    the real route the moment it is confirmed:
+        CC_STATUS_METHOD         HTTP method (default 'POST'; e.g. 'PATCH').
+        CC_STATUS_PATH_TEMPLATE  path containing a literal '{id}' (default
+                                 '/api/tasks/{id}/status'; e.g. '/api/tasks/{id}'
+                                 for a PATCH-the-resource style API).
+    Until the CC route is confirmed/added, a 404 is caught and FAIL-SOFTS (the
+    card simply does not move; the build is unaffected).
+
+    Returns True on a 2xx transition, else False. FAIL-SOFT: never raises; a
+    board outage NEVER blocks the build (mirrors ingest_task).
+
+    Args:
+        task_id:  CC task UUID returned by ingest_task (e.g. read from
+                  routing/intake-receipt.json). Empty => no-op (returns False).
+        status:   One of the CC TaskStatus enum values (see _CC_STATUS_VALUES).
+        note:     Optional human-readable transition note (markdown OK).
+        env:      Override os.environ (for testing).
+    """
+    cfg = board_config(env)
+    if cfg is None:
+        _log("MISSION_CONTROL_URL unset — board disabled (no-op); status not pushed.")
+        return False
+
+    tid = (task_id or "").strip()
+    if not tid:
+        _log("update_status skipped — empty task_id.")
+        return False
+
+    status_norm = (status or "").strip().lower()
+    if status_norm not in _CC_STATUS_VALUES:
+        _log(
+            f"update_status skipped — invalid status {status!r} "
+            f"(allowed: {', '.join(_CC_STATUS_VALUES)})."
+        )
+        return False
+
+    env_map = env if env is not None else os.environ
+    method = (env_map.get("CC_STATUS_METHOD") or "POST").strip().upper() or "POST"
+    path_tmpl = (env_map.get("CC_STATUS_PATH_TEMPLATE") or "/api/tasks/{id}/status").strip()
+    if "{id}" not in path_tmpl:
+        _log(f"update_status skipped — CC_STATUS_PATH_TEMPLATE missing '{{id}}': {path_tmpl!r}.")
+        return False
+
+    payload: dict = {"status": status_norm}
+    if note and note.strip():
+        payload["note"] = note.strip()
+
+    url = f"{cfg['base_url']}{path_tmpl.format(id=tid)}"
+    try:
+        http_status, body = _post_json(url, payload, cfg, method=method)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        _log(f"{method} {url} failed ({type(exc).__name__}: {exc}); card not moved; build continues.")
+        return False
+
+    if 200 <= http_status < 300:
+        _log(f"task {tid} -> {status_norm} (HTTP {http_status}, {method}).")
+        return True
+
+    _log(
+        f"{method} status non-2xx (HTTP {http_status}) for task {tid} -> {status_norm}: "
+        f"{body}; card not moved; build continues. "
+        "If 404, CONFIRM the status route in blackceo-command-center."
+    )
+    return False
+
+
+def update_status_for_state(
+    task_id: str,
+    dispatch_state: str,
+    *,
+    note: str = "",
+    env: Optional[dict] = None,
+) -> bool:
+    """Convenience wrapper for v2_dispatcher: map a dispatcher state name
+    (dispatched/building/verified/FAILED) onto its CC status and push it.
+
+    Returns False (no-op, never raises) for unmapped states (e.g. the initial
+    'backlog', which the ingest route already created the card at)."""
+    cc_status = DISPATCH_STATE_TO_CC.get(dispatch_state)
+    if not cc_status:
+        return False
+    return update_status(task_id, cc_status, note=note, env=env)
+
+
+# ---------------------------------------------------------------------------
 # CLI — selftest + live demo
 # ---------------------------------------------------------------------------
 def _selftest() -> int:
@@ -312,6 +437,73 @@ def _selftest() -> int:
     return 0
 
 
+def _status_selftest() -> int:
+    """update_status / update_status_for_state self-test — no network. Returns 0
+    on pass. Satisfies the Area-6 DoD: card move backlog -> in_progress -> review
+    (-> blocked) is exercised via the state mapping, and every guard fail-softs."""
+    errors: list[str] = []
+
+    # 1. No MISSION_CONTROL_URL => False, no raise (board disabled).
+    try:
+        if update_status("abc", "in_progress", env={}) is not False:
+            errors.append("update_status with no MISSION_CONTROL_URL should return False")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"update_status(no url) raised unexpectedly: {exc}")
+
+    base_env = {"MISSION_CONTROL_URL": "https://x.example.com"}
+
+    # 2. Empty task_id => False.
+    try:
+        if update_status("", "review", env=base_env) is not False:
+            errors.append("update_status with empty task_id should return False")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"update_status(empty id) raised unexpectedly: {exc}")
+
+    # 3. Invalid status => False (never sends a bad enum value).
+    try:
+        if update_status("t1", "not-a-status", env=base_env) is not False:
+            errors.append("update_status with invalid status should return False")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"update_status(bad status) raised unexpectedly: {exc}")
+
+    # 4. Path template missing '{id}' => False (guard).
+    bad_tmpl_env = dict(base_env, CC_STATUS_PATH_TEMPLATE="/api/tasks/status")
+    try:
+        if update_status("t1", "blocked", env=bad_tmpl_env) is not False:
+            errors.append("update_status with no '{id}' in CC_STATUS_PATH_TEMPLATE should return False")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"update_status(bad template) raised unexpectedly: {exc}")
+
+    # 5. Dispatcher-state mapping is the documented Area-6 table.
+    expected = {"dispatched": "in_progress", "building": "in_progress",
+                "verified": "review", "FAILED": "blocked"}
+    if DISPATCH_STATE_TO_CC != expected:
+        errors.append(f"DISPATCH_STATE_TO_CC drifted from Area-6 spec: {DISPATCH_STATE_TO_CC}")
+
+    # 6. Every mapped CC status is a valid server enum value.
+    for st in DISPATCH_STATE_TO_CC.values():
+        if st not in _CC_STATUS_VALUES:
+            errors.append(f"mapped status {st!r} not in _CC_STATUS_VALUES")
+
+    # 7. update_status_for_state: a backlog/unknown state is a no-op (False, no
+    #    raise); a known state with no board configured is also a fail-soft False.
+    try:
+        if update_status_for_state("t1", "backlog", env=base_env) is not False:
+            errors.append("update_status_for_state('backlog') should be a no-op (False)")
+        if update_status_for_state("t1", "verified", env={}) is not False:
+            errors.append("update_status_for_state('verified') with no board should be False")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"update_status_for_state raised unexpectedly: {exc}")
+
+    if errors:
+        for e in errors:
+            print(f"  FAIL: {e}", file=sys.stderr)
+        print(f"[status-selftest] FAIL — {len(errors)} error(s)", file=sys.stderr)
+        return 1
+    print("[status-selftest] PASS — all checks passed (no network required)")
+    return 0
+
+
 def _demo(env: Optional[dict] = None) -> int:
     """Live demo — POST a test task to the board and print the result."""
     cfg = board_config(env)
@@ -347,7 +539,8 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Skill-6 Command Center board producer")
-    parser.add_argument("--selftest", action="store_true", help="Run unit tests (no network)")
+    parser.add_argument("--selftest", action="store_true", help="Run ALL unit tests — ingest + status (no network)")
+    parser.add_argument("--status-selftest", action="store_true", help="Run update_status unit tests only (no network)")
     parser.add_argument("--demo", action="store_true", help="POST a live demo card to the board")
     parser.add_argument("--title", default="", help="Task title for --demo override")
     parser.add_argument(
@@ -359,7 +552,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.selftest:
-        sys.exit(_selftest())
+        rc_ingest = _selftest()
+        rc_status = _status_selftest()
+        sys.exit(0 if (rc_ingest == 0 and rc_status == 0) else 1)
+    elif args.status_selftest:
+        sys.exit(_status_selftest())
     elif args.demo:
         sys.exit(_demo())
     else:

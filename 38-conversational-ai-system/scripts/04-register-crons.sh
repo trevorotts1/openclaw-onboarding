@@ -11,6 +11,7 @@
 # This script no longer touches openclaw.json at all.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROUTING_AGENT_ID="${ROUTING_AGENT_ID:-main}"
 
 # Resolve the batch model the Model Wizard (15-configure-hooks-mappings.sh) saved to
@@ -47,6 +48,49 @@ register_cron() {
   else
     echo "ERROR: 'openclaw cron add $name' failed — register it manually (cron.jobs JSON is invalid on 2026.5.27)" >&2
     return 1
+  fi
+}
+
+# Register a COMMAND-style cron that runs a bash SCRIPT (not an agent message),
+# in a CLI-portable way — mirrors ~/.openclaw/scripts/ensure-pipeline-crons.sh:
+#   * 2026.6.x+ `openclaw cron add` supports `--command "<shell>"` (native).
+#   * 2026.5.x has NO --command → fall back to an AGENT MESSAGE job that runs the
+#     SAME script via the shell. Both register a cron under the same name, so the
+#     `openclaw cron list | grep <name>` idempotency check passes either way.
+# Idempotent by name. Args: <name> <cron-expr> <absolute-script-path>
+_cli_supports_command() {
+  local help
+  help="$(openclaw cron add --help 2>&1 || true)"
+  printf '%s' "$help" | grep -qE '^[[:space:]]*--command[[:space:]<]'
+}
+register_command_cron() {
+  local name="$1" cron_expr="$2" script="$3"
+  if openclaw cron list 2>/dev/null | grep -q "$name"; then
+    echo "cron $name already registered — skipping" >&2
+    return 0
+  fi
+  if [ ! -f "$script" ]; then
+    echo "ERROR: $name — script not found at $script; skipping registration" >&2
+    return 1
+  fi
+  if _cli_supports_command; then
+    if openclaw cron add --name "$name" --cron "$cron_expr" --command "bash $script" >&2; then
+      echo "registered command-cron: $name ($cron_expr) -> bash $script" >&2
+    else
+      echo "ERROR: 'openclaw cron add $name --command' failed — register it manually" >&2
+      return 1
+    fi
+  else
+    # 2026.5.x: no --command. Run the SAME script via a silent agent-message job.
+    local msg="[SKILL38-CRON $name] Run this exact shell command now and report only on failure: bash $script"
+    if openclaw cron add --name "$name" --cron "$cron_expr" \
+        --agent "$ROUTING_AGENT_ID" --light-context --best-effort-deliver \
+        --message "$msg" >&2; then
+      echo "registered agent-message cron (5.x fallback): $name ($cron_expr) -> bash $script" >&2
+    else
+      echo "ERROR: 'openclaw cron add $name' (agent-message fallback) failed — register it manually" >&2
+      return 1
+    fi
   fi
 }
 
@@ -89,4 +133,16 @@ register_cron "proactive-suggestions-scan" "0 23 * * 6" \
 register_cron "system-health-heartbeat" "0 9 1 * *" \
   "Run the Monthly Comprehensive Review per protocols/monthly-comprehensive-review-protocol.md — 30-day audit across (1) all Conversation Playbooks (performance, outdated refs, scope overlap, retirement candidates), (2) all GHL workflows (firing volume, webhook health, split candidates), (3) Typed Knowledge Bases (last updated, hit rate, stale sources, Dreaming consolidation pace), (4) model configurations (latency trends, fallback hit rates, cost), (5) accumulated weekly tune-ups (acceptance follow-through, deferred items ready, ignored-but-recurring patterns), (6) bug log (recurring failures, new error types). Save report to <MASTER_FILES_DIR>/tune-ups/comprehensive-review.md. Notify operator per notification-routing-protocol.md. Operator approves YES/DEFER/IGNORE per item."
 
-echo "OK: 5 crons registered via 'openclaw cron add' (conversation-log-summarizer, analytics-weekly-digest, weekly-tune-up, proactive-suggestions-scan, system-health-heartbeat)." >&2
+# -----------------------------------------------------------------------------
+# Cron 6 — ghl-pit-liveness  (daily 8:15 AM)  [runtime credential fallback]
+# The RUNTIME-PIT twin of Skill 44's `ghl-token-liveness` (which watches the
+# Firebase BUILD token). Runs scripts/check-ghl-pit-liveness.sh: probes the
+# location PIT via the skill's own in-scope READ; on a clean 401 it notifies the
+# CLIENT's own Telegram (never operator IDs) with plain-English refresh steps,
+# idempotent once-per-day. Distinct name from Skill 44's cron — no collision.
+# -----------------------------------------------------------------------------
+register_command_cron "ghl-pit-liveness" "15 8 * * *" \
+  "$SCRIPT_DIR/check-ghl-pit-liveness.sh" || \
+  echo "WARN: ghl-pit-liveness cron not registered — register it manually (bash $SCRIPT_DIR/check-ghl-pit-liveness.sh, daily)." >&2
+
+echo "OK: crons registered via 'openclaw cron add' — 5 agent-message crons (conversation-log-summarizer, analytics-weekly-digest, weekly-tune-up, proactive-suggestions-scan, system-health-heartbeat) + 1 command-cron (ghl-pit-liveness runtime credential watcher)." >&2

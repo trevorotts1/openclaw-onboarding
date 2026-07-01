@@ -4,6 +4,37 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v16.2.9] - 2026-06-30 — fix(skill6): version-drift reconcile, NON-ANTHROPIC model doctrine + probe-gated ladder, Kanban status transitions, GoHighLevel cred canonicalization, no-GitHub docs
+
+### Fixed — version-drift triple-equality (P0-1)
+- Reconciled the single version of record to **v16.2.9** across `skill-version.txt`, `SKILL.md` frontmatter, and this CHANGELOG top (was v16.2.8 / 14.28.1 / v14.28.1 — the QC `check-version-drift.py` gate was RED). `tools/browser_manager.sh` + `tools/browser_manager.py` version markers rolled to v16.2.9 in lockstep (the B1 gate only checks the headless-lock floor, so the bump is safe).
+
+### Changed — CLIENT-PROVIDER model doctrine, NEVER Anthropic (scrub)
+- `ghl-browser-builder-full.md` §1.3 rewritten off the Anthropic Opus/Sonnet/Haiku fleet doctrine onto the binding client-provider policy: **browser-control + tool-calls + QC → MiniMax 3** (PRIMARY, probe-gated), **reasoning → DeepSeek v4 pro / GLM 5.2**, **page/HTML content → GLM 5.2**; **Ollama Cloud preferred, OpenRouter backup; thinking = HIGH; NEVER Anthropic** on a client box. Mechanical glue is now described as model-agnostic.
+- `tools/ghl_builder.py` docstring: "Haiku-class mechanical work" → "mechanical-tier work (model-agnostic, client's configured/default model)". (`ghl-install-pages-full.md` §10 STEP 3 already pointed at `ollama/deepseek-v4-pro:cloud` / OpenRouter "never Anthropic" — left as the compliant defensive guard.)
+
+### Added — probe-gated NON-ANTHROPIC model fallback ladder (`tools/model_router.py`, P0-2)
+- New self-contained `model_router.py`: a 6-rung ladder — (1) MiniMax M3→M2 / (2) DeepSeek v4 pro / (3) GLM 5.2 via **Ollama Cloud**, then (4-6) the same three via **OpenRouter** (provider failover). Rung 1/4 are PROBE-GATED (the probe DEMANDS a real tool-call/JSON return — catches MiniMax's plausible-non-tool text). On a runtime fail: one backoff retry then advance; 429/timeout = advance. HARD GUARD `assert_no_anthropic` refuses any Anthropic id; `assert_ollama_cloud_ready` enforces the `:cloud` + `ollama.com` baseUrl trap. `--selftest` is offline (stub executor); live calls only via an injected executor. Receipt (`routing/model-ladder.json`) is written OUTSIDE the skill dir.
+- NOTE: only the DeepSeek slug is repo-documented; MiniMax/GLM provider slugs follow the documented conventions, carry `slug_confidence:"confirm"`, are env-overridable (`MODEL_ROUTER_*`), and FAIL-SAFE through the probe-gate. Wiring the router into `ghl_verify`'s fix-loop / selector-recovery is the remaining enforcement step (flagged, not done here).
+
+### Added — Kanban status transitions (`tools/cc_board.py` + `tools/v2_dispatcher.py`, P0-3 producer half)
+- `cc_board.update_status(task_id, status, *, note)` + `update_status_for_state(task_id, dispatch_state)` move a card across the board (in_progress / review / blocked / done). Same FAIL-SOFT + Bearer + HMAC parity as `ingest_task`; status validated against the CC `TaskStatus` enum. The exact CC route is NOT yet confirmed in `trevorotts1/blackceo-command-center`, so the caller defaults to `POST /api/tasks/{id}/status` (documented `/api/tasks/<id>/...` family) and is overridable via `CC_STATUS_METHOD` / `CC_STATUS_PATH_TEMPLATE` — a 404 fail-softs. **CONSUMER ENDPOINT MUST BE CONFIRMED/ADDED IN THE COMMAND-CENTER REPO.**
+- `v2_dispatcher.dispatch_one` now mirrors every state write to the board (fail-soft, guard-imported): dispatched/building → in_progress, verified → review, FAILED → blocked. A board outage never blocks the build; `--selftest` still prints SELFTEST PASS.
+
+### Changed — GoHighLevel credential canonicalization
+- `tools/ghl_auth_fallback.py` multi-location selection now prefers the canonical `GOHIGHLEVEL_LOCATION_ID` and falls back to the legacy `GHL_LOCATION_ID` (operator error strings updated to surface the canonical name).
+- `tools/ghl_ecosystem.py` `PIT_ENV_CANDIDATES` reordered to prefer the canonical `GOHIGHLEVEL_API_KEY` over the legacy `GHL_API_KEY` / engine `CAF_API_KEY` — now consistent with `ghl_media.py`. The `ghl_media.py` PIT + location paths already preferred the canonical names.
+- (The `browser_manager` session/breaker namespace deliberately keeps `GHL_LOCATION_ID` — it is a session LABEL, not an auth credential, and is covered by the python↔shell singleton-naming contract test.)
+
+### Fixed — docs (P1-3 / P2-3)
+- `SKILL.md` + `INSTRUCTIONS.md`: state plainly that the VERCEL_EMBED path is a **DIRECT Vercel API upload — NOT GitHub** (`ghl_vercel.py` base64-uploads straight to the deployments API; no git/PR). Added the "run evidence lives OUTSIDE the skill dir" rule and the cross-repo board contract version note.
+- `tools/ghl_method.py` docstring: stale "defaultSettings.colors" → "general.general.colors" (the key that actually exists; prevents re-introducing the HTTP-500).
+
+### Tests
+- New `tests/test_cc_board_status.py` (update_status guards, state mapping, transport via monkeypatched POST, full backlog→in_progress→review lifecycle) and `tests/test_model_router.py` (ladder shape, no-Anthropic guard, Ollama Cloud invariants, probe-gate + failover). All green.
+
+---
+
 ## [v14.28.1] - 2026-06-28 — chore(skill6): version bump in lockstep with listings fix (no skill6 changes)
 
 No functional changes to this skill. Version bumped in lockstep with the repo

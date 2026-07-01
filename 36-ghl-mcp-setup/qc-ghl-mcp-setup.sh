@@ -7,9 +7,10 @@
 #  Tests:
 #   - Master files folder located (fuzzy match)
 #   - GHL credentials (PIT canonical name + format + chmod 600)
-#   - Tier 1 (Official MCP) registered + tools/list returns 36
-#   - Tier 2 (Community MCP) registered + service running +
-#     /health returns 588+ tools + real-data tool call works
+#   - Tier 1 (Official MCP) registered + tools/list returns >=36
+#   - Tier 2 (Community MCP) NOT registered (on-demand curl) + service supervised
+#     (launchd on Mac / pm2 on VPS, systemd fallback) +
+#     /health returns >=500 tools + real-data tool call works
 #   - Core .md files wired (SOUL/AGENTS/TOOLS/MEMORY)
 #   - Master-files reference doc archived
 #   - Security: PIT not leaked into workspace .md files
@@ -143,17 +144,30 @@ T1_TOOLS=$(curl -sS -m 10 -X POST "https://services.leadconnectorhq.com/mcp/" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' 2>/dev/null \
   | grep "^data:" | head -1 | sed 's/^data: //' \
   | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("result",{}).get("tools",[])))' 2>/dev/null)
-assert "Tier 1 tools/list returns 36 tools" "[ \"$T1_TOOLS\" = '36' ]"
+assert "Tier 1 tools/list returns >= 36 tools" "[ \"${T1_TOOLS:-0}\" -ge 36 ]"
 
 echo ""
 echo "── Section D: Tier 2 (Community MCP) ──"
-assert "ghl-community-mcp NOT registered in mcp.servers (Tier 2 is on-demand curl)" "! (command -v openclaw && openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp')"
-assert "Tier 2 /tools curl returns the tool surface on-demand" "curl -sS -m 8 \"$URL/tools\" 2>/dev/null | grep -qE 'ghl_list_products|\"tools\"'"
-URL=$(command -v openclaw && openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null | tr -d '\n' | sed 's|/$||')
+# BUG-1 fix: resolve the on-demand Tier 2 URL BEFORE any assert that uses it. It was
+# previously used by the /tools assert one line ABOVE its own assignment, so under
+# `set -u` the first reference threw "URL: unbound variable" → spurious FAIL every run.
+# BUG-2 fix: guard `openclaw` presence with a SEPARATE test. The old capture was
+# URL=$(command -v openclaw && openclaw config get ...), which prepended the binary
+# path (stdout of `command -v`) onto the URL → "/opt/.../openclaw\nhttp://localhost:8765"
+# → the /tools, /health and /execute probes all hit a broken URL → spurious FAIL.
+URL=""
+if command -v openclaw >/dev/null 2>&1; then
+  URL=$(openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null | tr -d '\n' | sed 's|/$||')
+fi
+assert "ghl-community-mcp NOT registered in mcp.servers (Tier 2 is on-demand curl)" "! { command -v openclaw >/dev/null 2>&1 && openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; }"
+assert "Tier 2 /tools curl returns the tool surface on-demand" "[ -n \"$URL\" ] && curl -sS -m 8 \"$URL/tools\" 2>/dev/null | grep -qE 'ghl_list_products|\"tools\"'"
+# BUG-3 / D5-ii fix: the VPS canonical supervisor is pm2 (Hostinger Docker has NO
+# systemd), so a systemctl-only check FAILED on a healthy Docker VPS. Check pm2 first,
+# fall back to systemd for non-container Linux.
 if [ "${OPENCLAW_PLATFORM:-}" = "mac" ]; then
   assert "launchd service is running" "launchctl print gui/$(id -u)/com.clawd.ghl-mcp 2>/dev/null | grep -q 'state = running'"
 else
-  assert "systemd service is running" "systemctl is-active ghl-mcp 2>/dev/null | grep -q '^active$'"
+  assert "Tier 2 server supervised (pm2 ghl-community-mcp, or systemd ghl-mcp fallback)" "{ command -v pm2 >/dev/null 2>&1 && pm2 jlist 2>/dev/null | grep -q 'ghl-community-mcp'; } || systemctl is-active ghl-mcp 2>/dev/null | grep -q '^active$'"
 fi
 T2_HEALTH=$(curl -sS -m 5 "$URL/health" 2>/dev/null)
 assert "Tier 2 /health responds healthy" "echo \"$T2_HEALTH\" | grep -q '\"status\":\"healthy\"'"

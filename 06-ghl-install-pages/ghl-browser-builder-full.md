@@ -166,12 +166,26 @@ Both engines may point at **Browserbase** as a remote CDP backend (`-p
 browserbase`) for fully detached/offloaded runs — that is the cloud tier, not a
 different engine.
 
-### 1.3 Model (fleet doctrine: Opus=think, Sonnet=build, Haiku=mechanical)
-- **PRIMARY: Sonnet** — the snapshot→pick-ref→act→verify build loop.
-- **ESCALATION: Opus** — only for a NEEDS-LIVE-SELECTOR ambiguity / unseen UI
-  variant / recovery pause that needs reasoning over the raw snapshot.
-- **Haiku: mechanical only** — `ghl_builder.py` ledger/manifest/verify, file
-  reads, URL/string checks. NEVER live UI navigation.
+### 1.3 Model (client-provider doctrine — Ollama Cloud preferred, OpenRouter backup; thinking=HIGH; NEVER Anthropic)
+- **PRIMARY (browser control + tool calls + QC): MiniMax 3** — the
+  snapshot→pick-ref→act→verify build loop and every tool/REST call. Ollama Cloud
+  preferred (`…:cloud`, baseUrl `ollama.com`), OpenRouter as backup. The build
+  loop is deterministic Python (REST canvas + gates), so the model only has to
+  drive tool calls reliably — MiniMax 3 is the tool-calling primary, PROBE-GATED
+  by `tools/model_router.py` because MiniMax priors are flagged-suspect (probe =
+  a tiny task that REQUIRES a tool-call/JSON return).
+- **ESCALATION (reasoning over the raw snapshot): DeepSeek v4 pro or GLM 5.2** —
+  only for a NEEDS-LIVE-SELECTOR ambiguity / unseen UI variant / recovery pause.
+  Ollama Cloud preferred (`ollama/deepseek-v4-pro:cloud`), OpenRouter backup
+  (`openrouter/deepseek/deepseek-v4-pro`). thinking/reasoning effort = HIGH.
+- **Page/HTML content writing or a broken-code fix: GLM 5.2** — Ollama Cloud
+  preferred, OpenRouter backup (matches the install-pages doc §10 STEP 3).
+- **Mechanical only — model-agnostic (client's configured/default model):**
+  `ghl_builder.py` ledger/manifest/verify, file reads, URL/string checks. NEVER
+  live UI navigation.
+- **NEVER Anthropic on a client box.** Clients run their OWN providers (Ollama
+  Cloud / OpenRouter / MiniMax / DeepSeek / GLM); `tools/model_router.py` is the
+  probe-gated fallback ladder and HARD-GUARDS against any Anthropic id.
 - Every dispatch NAMES its model in the agent name; declare the agent count up
   front with a hard cap.
 

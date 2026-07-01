@@ -15,6 +15,8 @@ Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>
 
 **Token format:** Starts with `pit-`
 
+**Environment variable:** `$GOHIGHLEVEL_API_KEY`, stored in `~/.openclaw/secrets/.env` (chmod 600). The resolver in SKILL.md "Credentials" maps legacy aliases (`GHL_API_KEY`, `GHL_PRIVATE_INTEGRATION_TOKEN`, `PRIVATE_INTEGRATION_TOKEN`, `GHL_PRIVATE_TOKEN`) onto it and fails loud if unset. Use a **LOCATION-scoped** token — an agency PIT 401s on media.
+
 **Where to create:** GHL > Settings > Integrations > Private Integrations > + Add Integration
 
 **Scopes:** You select which scopes to grant at creation time. The token only has access to what you selected. You can add scopes later by editing the integration.
@@ -55,6 +57,8 @@ Version: 2021-04-15
 ```
 
 Always include this header. Missing it causes 400 errors on many endpoints.
+
+Media Library upload (`references/medias.md`) uses `Version: 2021-07-28`. Confirm the exact Version per-endpoint against the reference file; do not blanket-change it.
 
 ---
 

@@ -24,12 +24,28 @@ REPO="trevorotts1/openclaw-onboarding"
 ASSET="sops-library-v2.jsonl.gz"
 URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
 
-DB="/data/projects/command-center/mission-control.db"
+# Resolve mission-control.db (mirror add-department.sh:115-126, Mac FIRST) so this
+# "Mac mini variant" actually resolves on a Mac. The old hardcoded VPS-only
+# /data/projects path made this script exit 2 on every Mac. $MISSION_CONTROL_DB
+# overrides for non-standard boxes.
+DB=""
+if [ -n "${MISSION_CONTROL_DB:-}" ] && [ -f "${MISSION_CONTROL_DB}" ]; then
+  DB="${MISSION_CONTROL_DB}"
+else
+  for _cand in \
+    "$HOME/projects/command-center/mission-control.db" \
+    "$HOME/projects/mission-control/mission-control.db" \
+    "/opt/mission-control/mission-control.db" \
+    "/app/mission-control.db" \
+    "/data/projects/command-center/mission-control.db"; do
+    if [ -f "$_cand" ]; then DB="$_cand"; break; fi
+  done
+fi
 WORK="$(mktemp -d -t sop-library-XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 
-if [ ! -f "$DB" ]; then
-  echo "[sop-library] mission-control.db not found at $DB — Skill 32 dashboard must be installed first."
+if [ -z "$DB" ] || [ ! -f "$DB" ]; then
+  echo "[sop-library] mission-control.db not found (checked \$MISSION_CONTROL_DB, Mac ~/projects/command-center, VPS /data/projects/command-center) — Skill 32 dashboard must be installed first."
   exit 2
 fi
 

@@ -769,7 +769,7 @@ def fill_tokens(content, role_name, dept_name, is_ceo, role_entry=None):
         "MOTION_GRAPHICS_TOOL": "After Effects",
         "COLOR_GRADING_TOOL": "DaVinci Resolve",
         "AI_CLIP_TOOL": "OpusClip",
-        "SCRIPT_ANALYSIS_TOOL": "Claude",
+        "SCRIPT_ANALYSIS_TOOL": "GLM 5.2 (Ollama Cloud)",
         "ANALYTICS_PLATFORM": "Google Analytics 4",
         "PRODUCT_ANALYTICS_TOOL": "PostHog",
         "REPORT_DELIVERY_CHANNEL": "Slack",
@@ -792,9 +792,9 @@ def fill_tokens(content, role_name, dept_name, is_ceo, role_entry=None):
         "REPO_ADMIN_PANEL": "github.com/" + (company_slug or "company") + "/admin",
         "FULFILLMENT_TRACKER_PLATFORM": "ShipStation",
         "VENDOR_PORTAL": "vendor-portal." + (company_slug or "company") + ".com",
-        # GHL specifics
-        "GHL_LOCATION_ID": "(set in openclaw.json → ghl.locationId)",
-        "GHL_TOKEN": "(set in openclaw.json → ghl.apiKey)",
+        # GHL specifics (canonical env var first; set during Skill 05 GoHighLevel setup)
+        "GHL_LOCATION_ID": "(set GOHIGHLEVEL_LOCATION_ID in ~/.openclaw/secrets/.env via Skill 05 GoHighLevel setup, or openclaw.json → ghl.locationId)",
+        "GHL_TOKEN": "(set GOHIGHLEVEL_API_KEY in ~/.openclaw/secrets/.env via Skill 05 GoHighLevel setup, or openclaw.json → ghl.apiKey)",
         # KPI / metric defaults (realistic operational numbers)
         "ROLE_REV_PERCENT": "5",
         "BLENDED_ROAS_TARGET": "3.0",

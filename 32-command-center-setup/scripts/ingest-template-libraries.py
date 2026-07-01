@@ -29,7 +29,36 @@ import sqlite3
 import sys
 from datetime import datetime, timezone
 
-_DEFAULT_DB = "/data/projects/command-center/mission-control.db"
+def _resolve_default_db() -> str:
+    """PRD 1.3: resolve mission-control.db via the single shared resolver (Mac
+    ~/projects/command-center first, then VPS /data/projects/command-center) so a
+    no-arg run finds the DB on a Mac too — the old VPS-only literal broke Mac.
+    Falls back to add-department.sh's candidate list, then the legacy VPS literal."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    shared = os.path.normpath(os.path.join(here, "..", "..", "shared-utils"))
+    if shared not in sys.path:
+        sys.path.insert(0, shared)
+    try:
+        from resolve_db import find_dashboard_db, is_db_found  # type: ignore
+        p = find_dashboard_db()
+        if is_db_found(p):
+            return str(p)
+    except ImportError:
+        pass
+    home = os.path.expanduser("~")
+    for c in (
+        os.path.join(home, "projects", "command-center", "mission-control.db"),
+        os.path.join(home, "projects", "mission-control", "mission-control.db"),
+        "/opt/mission-control/mission-control.db",
+        "/app/mission-control.db",
+        "/data/projects/command-center/mission-control.db",
+    ):
+        if os.path.isfile(c):
+            return c
+    return "/data/projects/command-center/mission-control.db"
+
+
+_DEFAULT_DB = _resolve_default_db()
 
 
 def _resolve_skills_root(explicit: str | None) -> str:

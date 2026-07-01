@@ -65,7 +65,7 @@ These are the most common mistakes agents make with the MCP setup. Read them car
 
 3. **Every GHL response must disclose the tier used.** Format: `[GHL tier used: N — tool_name]`. If the agent fell through tiers, the header must show the chain: `[GHL tier used: 2 (Tier 1 lacked tool: products) — ghl_list_products]`. Missing disclosure = protocol violation.
 
-4. **"It looked broken earlier" is not an excuse for skipping.** If a tier crashed in earlier session work, attempt it fresh. Recover with `launchctl kickstart` (Mac) or `systemctl restart` (Linux) before falling through.
+4. **"It looked broken earlier" is not an excuse for skipping.** If a tier crashed in earlier session work, attempt it fresh. Recover with `launchctl kickstart` (Mac) or `pm2 restart ghl-community-mcp` (VPS; `systemctl restart ghl-mcp` on systemd boxes) before falling through.
 
 5. **Same Private Integration Token used for both tiers.** Tier 1 sends the PIT as `Authorization: Bearer ...` header. Tier 2 reads it from `~/mcp-servers/ghl-community-mcp/.env` as `GHL_API_KEY`. Both reference the same canonical secrets file (`~/.openclaw/secrets/.env` on Mac, `~/.openclaw/secrets/.env` on VPS).
 
@@ -95,8 +95,8 @@ These are the most common mistakes agents make with the MCP setup. Read them car
 - How to register the Official GHL MCP (Tier 1) with `openclaw mcp set`
 - How to clone, build, and deploy the Community GHL MCP (Tier 2 — BusyBee3333 2026 fork, 588 tools)
 - How to wire `$GHL_COMMUNITY_MCP_URL` env var so agents never hardcode ports
-- How to install launchd plist (macOS) OR systemd unit (Linux/VPS) — no Docker dependency
-- How to add cardinal rules to SOUL.md, AGENTS.md, TOOLS.md, MEMORY.md
+- How to install launchd plist (macOS) OR pm2 supervision (VPS; systemd fallback) — no Docker dependency
+- How to add cardinal rules to AGENTS.md, TOOLS.md, MEMORY.md (SOUL.md stays unchanged — the Tier Escalation Protocol lives in AGENTS.md)
 - A 20-point QC script that runs end-to-end verification
 - 5 test prompts to confirm the agent routes correctly after install
 
@@ -107,7 +107,7 @@ These are the most common mistakes agents make with the MCP setup. Read them car
 3. **INSTRUCTIONS.md** — How to USE the MCPs day-to-day after install.
 4. **EXAMPLES.md** — Real working curl examples for both MCPs, the fall-through pattern, and sub-agent-safe lookup examples.
 5. **GHL-LOOKUP-SOP.md** — Authoritative SOP for contact lookups and two-axis READ/BUILD routing. Covers: orchestrator-vs-sub-agent MCP rules, dual Accept header contract, no `grep -P`, fail-fast preflight, model selection, and per-path decision table.
-6. **CORE_UPDATES.md** — Exact text to add to SOUL.md, AGENTS.md, TOOLS.md, MEMORY.md.
+6. **CORE_UPDATES.md** — Exact text to add to AGENTS.md, TOOLS.md, MEMORY.md (SOUL.md is left unchanged — the Tier Escalation Protocol lives in AGENTS.md).
 7. **QC.md** — 7-section quality control checklist. The QC script itself ships separately as `qc-ghl-mcp-setup.sh` in this folder (do not extract from QC.md — the standalone is the single source of truth).
 8. **ghl-mcp-setup-full.md** — Long-form complete reference with troubleshooting cheat sheet.
 9. **CHANGELOG.md** — Skill version history.

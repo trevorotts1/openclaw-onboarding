@@ -50,6 +50,11 @@ import ghl_verify  # noqa: E402
 import ghl_gate  # noqa: E402
 import scrub_turn_telemetry as scrub  # noqa: E402
 
+try:
+    import cc_board as _cc_board  # noqa: E402 — Kanban board producer (fail-soft, optional)
+except Exception:  # noqa: BLE001 — board mirror is best-effort; never block the build
+    _cc_board = None
+
 # FAB-QC library-aware build-quality gate (shared scorer). Optional/best-effort: when the
 # build evidence carries a match-decision receipt + fab-artifact, the dispatcher refuses to
 # mark `verified` below 8.5. When that evidence is ABSENT (advisory not wired for this build),
@@ -337,6 +342,26 @@ def _write_record(evidence_root: str, record: dict) -> str:
     return path
 
 
+def _board_push(task: dict, state: str) -> None:
+    """Fail-soft Kanban transition mirror (Area-6). Maps a dispatcher state onto
+    the Command Center board status and pushes it so a running build no longer
+    sits stuck at 'backlog'. ANY failure (module absent, board unconfigured,
+    network, bad id) is swallowed — a board outage NEVER blocks the build.
+
+    The board task id is threaded from routing/intake-receipt.json as
+    ``task['board_task_id']``; it falls back to ``task['id']`` (the dispatcher id
+    already equals the board id when the task was pulled off the board)."""
+    if _cc_board is None:
+        return
+    try:
+        board_id = (task.get("board_task_id") or task.get("id") or "").strip()
+        if not board_id:
+            return
+        _cc_board.update_status_for_state(board_id, state)
+    except Exception:  # noqa: BLE001 — best-effort mirror, never fatal
+        return
+
+
 def dispatch_one(
     task: dict,
     evidence_root: str,
@@ -396,12 +421,20 @@ def dispatch_one(
     clock = clock or time.monotonic
     task_id = task.get("id") or "task"
 
+    def _rec_write(r: dict) -> str:
+        # Write the local audit record, THEN (fail-soft) mirror the transition to
+        # the Command Center Kanban (Area-6). The board mirror is best-effort and
+        # never blocks the build; 'backlog'/unknown states are a no-op.
+        p = _write_record(evidence_root, r)
+        _board_push(task, r.get("state", ""))
+        return p
+
     # ── HARD max-inflight gate (one build at a time over the fixture) ─────────
     if inflight_now >= max_inflight:
         rec = {"task_id": task_id, "state": STATE_BACKLOG,
                "reason": f"max_inflight={max_inflight} reached (inflight={inflight_now}); "
                          "task left in backlog (never a second concurrent build)"}
-        rp = _write_record(evidence_root, rec)
+        rp = _rec_write(rec)
         return DispatchResult(task_id, STATE_BACKLOG, rec["reason"],
                               evidence_root=evidence_root, record_path=rp)
 
@@ -425,17 +458,17 @@ def dispatch_one(
     rec = {"task_id": task_id, "state": STATE_DISPATCHED, "claimed_at": _ts(),
            "max_inflight": max_inflight, "wallclock_cap_s": wallclock_cap_s,
            "brand": task.get("brand"), "location_id": task.get("location_id")}
-    rp = _write_record(evidence_root, rec)
+    rp = _rec_write(rec)
 
     # ── dispatched -> building (run the injected builder, bounded) ────────────
     rec["state"] = STATE_BUILDING
-    _write_record(evidence_root, rec)
+    _rec_write(rec)
     try:
         build = builder(task, evidence_root)
     except Exception as exc:  # noqa: BLE001 — a crashed build = FAILED, partial kept
         rec.update({"state": STATE_FAILED,
                     "reason": f"builder raised: {type(exc).__name__}: {exc}"})
-        rp = _write_record(evidence_root, rec)
+        rp = _rec_write(rec)
         return DispatchResult(task_id, STATE_FAILED, rec["reason"],
                               evidence_root=evidence_root, record_path=rp)
 
@@ -446,7 +479,7 @@ def dispatch_one(
         rec.update({"state": STATE_FAILED, "build_duration_s": duration,
                     "reason": f"dispatch timeout: build ran {duration:.0f}s > cap "
                               f"{wallclock_cap_s}s (the HTTP-000 hang fix)"})
-        rp = _write_record(evidence_root, rec)
+        rp = _rec_write(rec)
         return DispatchResult(task_id, STATE_FAILED, rec["reason"],
                               evidence_root=evidence_root, record_path=rp)
 
@@ -455,7 +488,7 @@ def dispatch_one(
         rec.update({"state": STATE_FAILED, "build_duration_s": duration,
                     "reason": "sub-account location gate did NOT pass in the build "
                               "(NO-COMINGLING hard stop)"})
-        rp = _write_record(evidence_root, rec)
+        rp = _rec_write(rec)
         return DispatchResult(task_id, STATE_FAILED, rec["reason"],
                               evidence_root=evidence_root, record_path=rp)
 
@@ -467,7 +500,7 @@ def dispatch_one(
                 if not scrub.is_clean(f.read()):
                     rec.update({"state": STATE_FAILED,
                                 "reason": f"telemetry still leaked after scrub: {p}"})
-                    rp = _write_record(evidence_root, rec)
+                    rp = _rec_write(rec)
                     return DispatchResult(task_id, STATE_FAILED, rec["reason"],
                                           evidence_root=evidence_root, record_path=rp)
 
@@ -490,7 +523,7 @@ def dispatch_one(
         except (ghl_verify.SealedGateViolation, ghl_verify.VerifyContradiction) as exc:
             rec.update({"state": STATE_FAILED,
                         "reason": f"verify_all integrity failure: {type(exc).__name__}: {exc}"})
-            rp = _write_record(evidence_root, rec)
+            rp = _rec_write(rec)
             return DispatchResult(task_id, STATE_FAILED, rec["reason"],
                                   evidence_root=evidence_root, record_path=rp)
     else:
@@ -504,7 +537,7 @@ def dispatch_one(
         except Exception as exc:  # noqa: BLE001
             rec.update({"state": STATE_FAILED,
                         "reason": f"verifier raised: {type(exc).__name__}: {exc}"})
-            rp = _write_record(evidence_root, rec)
+            rp = _rec_write(rec)
             return DispatchResult(task_id, STATE_FAILED, rec["reason"],
                                   evidence_root=evidence_root, record_path=rp)
 
@@ -528,7 +561,7 @@ def dispatch_one(
                         "reason": f"ghl_gate.require_pass returned rc={gate_rc} — "
                                   "the written scorecard failed re-validation "
                                   "(not the in-memory dict).  Build is FAILED."})
-            rp = _write_record(evidence_root, rec)
+            rp = _rec_write(rec)
             return DispatchResult(task_id, STATE_FAILED, rec["reason"],
                                   evidence_root=evidence_root, record_path=rp)
 
@@ -546,7 +579,7 @@ def dispatch_one(
                     "reason": "MOCK VERDICT DOWNGRADE: the production verifier "
                               "returned trust='MOCK'.  A mock verdict cannot be "
                               "accepted as a shippable build pass — task is FAILED."})
-        rp = _write_record(evidence_root, rec)
+        rp = _rec_write(rec)
         return DispatchResult(task_id, STATE_FAILED, rec["reason"],
                               evidence_root=evidence_root, record_path=rp)
 
@@ -569,7 +602,7 @@ def dispatch_one(
                     "reason": f"FAB-QC GATE: build scored {_fab.get('score')} < 8.5 "
                               f"(lowest: {_fab.get('lowest_dimension')}; "
                               f"hard_misses: {_fab.get('hard_misses')}). Not done."})
-        rp = _write_record(evidence_root, rec)
+        rp = _rec_write(rec)
         return DispatchResult(task_id, STATE_FAILED, rec["reason"],
                               evidence_root=evidence_root, record_path=rp)
 
@@ -588,7 +621,7 @@ def dispatch_one(
         "reason": "verified (overall_pass recorded honestly — "
                   "FAIL is reported, never massaged)",
     })
-    rp = _write_record(evidence_root, rec)
+    rp = _rec_write(rec)
 
     # ── COMPLETE-FUNNEL HANDOFF (P4->P5) ──────────────────────────────────────
     # The funnel pages verified. If STEP 0 attached linked follow-up automations

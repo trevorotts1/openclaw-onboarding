@@ -5,8 +5,14 @@
 # Governed by Sub-Agent Handoff and Mandatory QC Protocol (see ../../QC-PROTOCOL.md):
 #   - Part 3 Rules 10-15: Cloudflare API key check (must come FIRST)
 #   - Category 10 = 10 rubric: presence + version + functional state checks
-#                              for skills 05, 10, 19, 29; halt with clear error
-#                              naming the failure; never auto-update skill 10
+#                              for skills 05, 10, 19, 29 (hard prereqs); halt with
+#                              a clear error naming the failure; never auto-update
+#                              skill 10.
+#   - STEP F (non-fatal): Skill 44 (convert-and-flow-operator) is the Tier-0
+#     "caf-direct" workflow BUILD path (Option 1). We PREFLIGHT caf + the Firebase
+#     token and REPORT the active build path (Option 1 caf-direct vs Option 2
+#     manual Build-with-AI paste). Skill 44 is required for Option 1 but is NOT a
+#     hard prereq — Skill 29 (the runtime GHL connection) is.
 #
 # Idempotent (read-only; never writes). Safe to re-run. OS-aware Darwin + Linux.
 
@@ -232,28 +238,94 @@ if [ ! -f "$S29_DIR/SKILL.md" ]; then
   exit 1
 fi
 
+# Accept the CANONICAL cred names (GOHIGHLEVEL_API_KEY / GOHIGHLEVEL_LOCATION_ID)
+# AND the legacy/PIT aliases so a box that has drifted to either naming passes.
+# Key = the GHL API key or Private Integration Token; Loc = the sub-account id.
+GHL_KEY_NAMES="GOHIGHLEVEL_API_KEY GHL_PRIVATE_INTEGRATION_TOKEN GHL_API_KEY GOHIGHLEVEL_AGENCY_PIT GHL_PIT_TOKEN"
+GHL_LOC_NAMES="GOHIGHLEVEL_LOCATION_ID GHL_LOCATION_ID"
+
+# 0 if the file defines ANY of the given var names as KEY=... (export-aware).
+_file_has_any() {
+  local f="$1"; shift
+  local n
+  for n in $1; do
+    grep -qE "^[[:space:]]*(export[[:space:]]+)?${n}[[:space:]]*=" "$f" 2>/dev/null && return 0
+  done
+  return 1
+}
+
 ghl_ok=""
-# Look for GHL_LOCATION_ID + GHL_API_KEY in same locations + shell env
-for f in "$HOME/.openclaw/.env" "$HOME/.openclaw/secrets.env" "$HOME/.openclaw/openclaw.env" "$MFD/.env" "$MFD/secrets.env"; do
+# Search the canonical secrets stores too (secrets/.env subdir, VPS /data path).
+for f in "$HOME/.openclaw/secrets/.env" "$HOME/.openclaw/.env" "$HOME/.openclaw/secrets.env" "$HOME/.openclaw/openclaw.env" "$MFD/.env" "$MFD/secrets.env" "/data/.openclaw/secrets/.env"; do
   [ -f "$f" ] || continue
-  if grep -qE '^[[:space:]]*(export[[:space:]]+)?GHL_API_KEY[[:space:]]*=' "$f" 2>/dev/null && \
-     grep -qE '^[[:space:]]*(export[[:space:]]+)?GHL_LOCATION_ID[[:space:]]*=' "$f" 2>/dev/null; then
+  if _file_has_any "$f" "$GHL_KEY_NAMES" && _file_has_any "$f" "$GHL_LOC_NAMES"; then
     ghl_ok="$f"; break
   fi
 done
-if [ -z "$ghl_ok" ] && [ -n "${GHL_API_KEY:-}" ] && [ -n "${GHL_LOCATION_ID:-}" ]; then
-  ghl_ok="shell environment"
+if [ -z "$ghl_ok" ]; then
+  key_env=""; loc_env=""
+  for n in $GHL_KEY_NAMES; do [ -n "${!n:-}" ] && { key_env=1; break; }; done
+  for n in $GHL_LOC_NAMES; do [ -n "${!n:-}" ] && { loc_env=1; break; }; done
+  [ -n "$key_env" ] && [ -n "$loc_env" ] && ghl_ok="shell environment"
 fi
 if [ -z "$ghl_ok" ]; then
-  echo "$PASS_PREFIX BLOCKED: skill 29 (GHL Convert and Flow) is installed but Convert and Flow is not connected (GHL_API_KEY + GHL_LOCATION_ID not found in any env file or shell)."
+  echo "$PASS_PREFIX BLOCKED: skill 29 (GHL Convert and Flow) is installed but Convert and Flow is not connected."
+  echo "  Need a GHL API key/PIT (GOHIGHLEVEL_API_KEY or GHL_PRIVATE_INTEGRATION_TOKEN or GHL_API_KEY) AND a location id (GOHIGHLEVEL_LOCATION_ID or GHL_LOCATION_ID) in an env file or the shell."
   echo "  Re-run skill 29 to connect your GHL location, then re-run this prereq check."
   exit 1
 fi
 echo "$PASS_PREFIX skill 29 connectivity OK ($ghl_ok)"
 
 # ----------------------------------------------------------------------------
+# STEP F — Skill 44 (caf) build-path preflight + ACTIVE BUILD PATH report
+# ----------------------------------------------------------------------------
+# NON-FATAL / informational. Skill 44 (convert-and-flow-operator) is the Tier-0
+# "caf-direct" workflow BUILD path (Option 1). When caf + a Firebase refresh
+# token are present, builds run through Skill 44 directly; otherwise builds fall
+# back to the manual Build-with-AI paste (Option 2). This NEVER blocks — Skill 29
+# (the runtime GHL connection, STEP E) is the hard prerequisite. We only REPORT
+# which build path is active so a client is never SILENTLY stuck on Option 2.
+FIREBASE_TOKEN_NAMES="GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN CAF_FIREBASE_REFRESH_TOKEN GHL_FIREBASE_REFRESH_TOKEN"
+
+caf_present=""
+if command -v caf >/dev/null 2>&1; then
+  caf_present="caf on PATH"
+elif [ -x "$HOME/.openclaw/tools/convert-and-flow-cli/caf" ]; then
+  caf_present="$HOME/.openclaw/tools/convert-and-flow-cli/caf"
+elif [ -d "$SKILLS_DIR/44-convert-and-flow-operator" ]; then
+  caf_present="skill 44 installed ($SKILLS_DIR/44-convert-and-flow-operator)"
+fi
+
+fb_present=""
+for f in "$HOME/.openclaw/secrets/.env" "$HOME/.openclaw/.env" "$HOME/.openclaw/secrets.env" "$HOME/.openclaw/openclaw.env" "$MFD/.env" "$MFD/secrets.env" "/data/.openclaw/secrets/.env"; do
+  [ -f "$f" ] || continue
+  if _file_has_any "$f" "$FIREBASE_TOKEN_NAMES"; then fb_present="$f"; break; fi
+done
+if [ -z "$fb_present" ]; then
+  for n in $FIREBASE_TOKEN_NAMES; do [ -n "${!n:-}" ] && { fb_present="shell environment"; break; }; done
+fi
+
+if [ -n "$caf_present" ] && [ -n "$fb_present" ]; then
+  echo "$PASS_PREFIX BUILD PATH = Option 1 (caf-direct, Skill 44 Tier 0) ACTIVE — caf found ($caf_present) + Firebase token present ($fb_present). Workflow builds run through Skill 44 directly."
+elif [ -n "$caf_present" ]; then
+  echo "$PASS_PREFIX BUILD PATH = Option 2 (manual Build-with-AI paste) — caf found ($caf_present) but NO Firebase refresh token (checked GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN). Grab the Convert-and-Flow token to enable the reliable caf-direct Option 1."
+else
+  echo "$PASS_PREFIX BUILD PATH = Option 2 (manual Build-with-AI paste) — Skill 44 (caf) not detected. Builds use the manual paste path. Install Skill 44 (convert-and-flow-operator) + grab the Firebase token for the reliable caf-direct Option 1."
+fi
+# NOTE: runtime conversational I/O (send/read/calendars) uses the location PIT
+# regardless of the BUILD path above — the daily watcher is
+# scripts/check-ghl-pit-liveness.sh (cron ghl-pit-liveness, registered by 04).
+
+# ----------------------------------------------------------------------------
 # DONE
 # ----------------------------------------------------------------------------
 echo
 echo "$PASS_PREFIX ALL PREREQUISITES PASS — proceeding to install Phase 0."
+
+# Command Center Kanban: create-or-reuse the install task and move it to
+# in_progress (install is starting). FAIL-SOFT — cc-task.sh always exits 0 and
+# the `|| true` guarantees it can NEVER change this script's exit code. No-ops
+# silently when the Command Center is absent.
+bash "$(dirname "$0")/cc-task.sh" start || true
+
 exit 0

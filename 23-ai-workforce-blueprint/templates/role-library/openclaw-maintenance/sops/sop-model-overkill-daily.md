@@ -24,11 +24,11 @@
 **Steps:**
 1. Read every `agents[id].model` entry in `openclaw.json`. Build a list: agent_id -> current_model -> task_type (mechanical/search/build/converse/summarize).
 2. For each agent, classify the task type based on the agent's playbook or role file description:
-   - **Mechanical / administrative / poll / notify:** Haiku-class (cheapest). Any Opus or Sonnet here is overkill.
-   - **Build / code generation / structured output:** Sonnet-class appropriate.
-   - **Strategic think / complex analysis:** Opus-class appropriate only when explicitly designed.
-3. Flag any agent where the assigned model class EXCEEDS the task type by >= 1 tier (e.g., Opus doing mechanical polling = definite overkill; Sonnet doing a heartbeat cron ping = overkill).
-4. Flag any agent using a paid-API model when a free-tier equivalent is available on this box for the same task class (e.g., using OpenRouter paid Sonnet when Ollama Cloud deepseek-v4-pro:cloud can do the same mechanical task).
+   - **Mechanical / administrative / poll / notify:** fast-tier / cheapest (e.g. `deepseek-flash:cloud`, or a MiniMax tool model). Any pro-tier reasoning model here is overkill.
+   - **Build / code generation / structured output:** mid-tier appropriate (e.g. `minimax-m3:cloud`).
+   - **Strategic think / complex analysis:** pro-tier appropriate (e.g. `deepseek-v4-pro:cloud` / GLM 5.2) only when explicitly designed.
+3. Flag any agent where the assigned model class EXCEEDS the task type by >= 1 tier (e.g., a pro-tier reasoning model doing mechanical polling = definite overkill; a mid-tier model doing a heartbeat cron ping = overkill).
+4. Flag any agent using a paid-API model when a free-tier equivalent is available on this box for the same task class (e.g., using a paid OpenRouter mid-tier model when an Ollama Cloud model can do the same mechanical task).
 5. Check for by-design free-tier primaries (per memory `feedback-no-fable-token-furnace.md` and `ollama-cloud-is-valid-provider-id.md`): NEVER flag these as overkill even if they appear "high-tier" -- the design intent is free. Preserve free-tier primaries.
 6. If NO overkill findings: log a clean-sweep entry and exit silently.
 7. If findings: proceed to SOP 9.2.
@@ -52,7 +52,7 @@
 1. For each flagged agent, identify the cheapest model already available on this box that can handle the task. NEVER propose a model the box is not already credentialed for -- no new provider keys, no new subscriptions.
 2. Write a proposed swap: `{ agent_id, current_model, proposed_model, task_type, reason, savings_estimate }`.
 3. Determine the tier of the change per SOP-MAINT-PROACTIVE-FIX-GUARDRAIL (S6):
-   - Tier 1 (auto-apply): model swap that is clearly mechanical and the replacement is free-tier / same-capability (e.g., a heartbeat cron from Sonnet to Haiku).
+   - Tier 1 (auto-apply): model swap that is clearly mechanical and the replacement is free-tier / same-capability (e.g., a heartbeat cron from a mid-tier model to a fast-tier model).
    - Tier 2 (apply + notify): any swap involving a non-trivial agent where the replacement has been doc-verified.
    - Tier 3 (propose + hold): any swap touching the main agent persona, a by-design free-tier primary, or a model the operator explicitly configured.
 4. Apply Tier 1/2 swaps using `openclaw config set agents.<id>.model <new_model>` OR a JSON deep-merge (per the 8-layer memory activation pattern in memory: `openclaw-memory-activation-pattern.md`).

@@ -22,6 +22,12 @@ done
   && echo "PASS: cinematic-forge.skill present" \
   || echo "INFO: cinematic-forge.skill not present in installed copy"
 
+for s in qc-cinematic-forge.sh qc-output.sh; do
+  [ -f "$SKILL_DIR/$s" ] \
+    && echo "PASS: $s present" \
+    || echo "FAIL: $s missing"
+done
+
 [ -f "$SKILL_DIR/skill-version.txt" ] && echo "Installed version: $(cat "$SKILL_DIR/skill-version.txt")"
 ```
 
@@ -53,12 +59,12 @@ fi
 
 **Expected env vars / credentials:**
 - `KIE_API_KEY` for KIE.ai generation
-- GHL / Convert and Flow Private Integration Token for uploads (`GHL_API_KEY` in Trevor's environment naming)
-- Optional fallback: `IMGBB_API_KEY`
-- Optional for reference-video analysis: one of `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
+- GHL / Convert and Flow Private Integration Token for uploads: `GOHIGHLEVEL_API_KEY` (a PIT) + `GOHIGHLEVEL_LOCATION_ID`
+- Optional fallback (reference images only): `IMGBB_API_KEY`
+- Optional for reference-video analysis: one of `GEMINI_API_KEY` or `OPENAI_API_KEY`
 
 ```bash
-for var in KIE_API_KEY GHL_API_KEY IMGBB_API_KEY GEMINI_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY; do
+for var in KIE_API_KEY GOHIGHLEVEL_API_KEY GOHIGHLEVEL_LOCATION_ID IMGBB_API_KEY GEMINI_API_KEY OPENAI_API_KEY; do
   [ -n "$(printenv "$var" 2>/dev/null)" ] \
     && echo "PASS: $var set" \
     || echo "INFO: $var not set"
@@ -167,6 +173,28 @@ ffprobe -v error -show_entries stream=width,height -of csv=p=0 "$PROJECT_DIR/fin
 
 **Expected:** merged file exists and reports `1080,1920`.
 
+### 4.4 Output-QC gate self-test (`qc-output.sh`)
+
+This verifies the delivery gate actually enforces the rules. It spends no credits.
+
+```bash
+SKILL_DIR="$HOME/.openclaw/skills/cinematic-forge"
+[ -d "$SKILL_DIR" ] || SKILL_DIR="$HOME/.openclaw/skills/28-cinematic-forge"
+[ -d /data/.openclaw/skills/28-cinematic-forge ] && SKILL_DIR="/data/.openclaw/skills/28-cinematic-forge"
+QC="$SKILL_DIR/qc-output.sh"
+
+# A) 1080x1920, 2s, SILENT black clip (no audio stream) -> must FAIL (exit 1)
+ffmpeg -y -f lavfi -i "color=c=black:size=1080x1920:rate=30" -t 2 /tmp/qc_silent.mp4 >/dev/null 2>&1
+bash "$QC" /tmp/qc_silent.mp4 2 1080x1920; echo "silent clip exit=$?  (expected 1)"
+
+# B) 1080x1920, 2s, with a sine tone -> must PASS (exit 0)
+ffmpeg -y -f lavfi -i "color=c=black:size=1080x1920:rate=30" -f lavfi -i "sine=frequency=440:duration=2" \
+  -t 2 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest /tmp/qc_tone.mp4 >/dev/null 2>&1
+bash "$QC" /tmp/qc_tone.mp4 2 1080x1920; echo "tone clip exit=$?  (expected 0)"
+```
+
+**Pass criteria:** the silent clip exits **1**, the tone clip exits **0**. The agent must see `qc-output.sh` exit 0 on the real deliverable before sending any link (enforced in Phase 4 and Phase 6).
+
 ---
 
 ## Section 5: Optional Live API Checks
@@ -186,9 +214,9 @@ curl -s "https://api.kie.ai/api/v1/user/credits" \
 
 ```bash
 curl -s \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-07-28" \
-  "https://services.leadconnectorhq.com/locations/$GHL_LOCATION_ID" | python3 -m json.tool | head -20
+  "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID" | python3 -m json.tool | head -20
 ```
 
 **Expected:** Valid JSON for the location. If GHL is unavailable, imgBB may be used as fallback instead.
@@ -208,6 +236,7 @@ Fail the skill if any of these happen:
 - Agent puts logos or on-screen text inside VEO instead of post-production
 - Agent upscales with Topaz before draft approval
 - Agent fails to maintain `project-state.json` after each completed step
+- Agent delivers the final video without `qc-output.sh` exiting 0 (the output-QC gate is mandatory)
 
 **Pass criteria:** Zero anti-patterns triggered.
 
@@ -224,7 +253,7 @@ After install, score yourself honestly against this rubric. **Pass gate: 8.5/10 
 | Prerequisites + INSTALL-CONTRACT.md acknowledged | 1.0 | INSTALL-CONTRACT.md was read this session AND acknowledged in your work log for this specific skill. All prerequisite skills installed. |
 | All skill .md files read before any execution | 1.0 | SKILL.md, INSTALL.md, CORE_UPDATES.md, QC.md (this file), any referenced `references/*.md`. Reading happened BEFORE any command was run. |
 | INSTALL.md steps executed in order | 1.5 | No skipping, no reordering, no improvising. If a step was skipped, owner consent is documented. |
-| Credentials at canonical paths with canonical names | 1.5 | `~/.openclaw/secrets/.env` (Mac) / `~/.openclaw/secrets/.env` (VPS), chmod 600. Canonical env-var names used (not deprecated ones). For GHL: `GOHIGHLEVEL_API_KEY` (a PIT, not an API key) + `GOHIGHLEVEL_LOCATION_ID`. |
+| Credentials at canonical paths with canonical names | 1.5 | `~/.openclaw/secrets/.env` (Mac) / `/data/.openclaw/secrets/.env` (VPS), chmod 600. Canonical env-var names used (not deprecated ones). For GHL: `GOHIGHLEVEL_API_KEY` (a PIT, not an API key) + `GOHIGHLEVEL_LOCATION_ID`. |
 | Functional checks pass | 1.5 | The skill's specific smoke tests (API reachability, software present, etc.) all return expected results. No 4xx/5xx unhandled. |
 | CORE_UPDATES.md applied surgically | 1.0 | Only labeled sections added to labeled core files. No SOUL.md / IDENTITY.md / USER.md / HEARTBEAT.md touched unless this skill's CORE_UPDATES.md explicitly labels them. |
 | Skill-specific QC items above all checked | 1.5 | Every checkbox in the skill-specific sections of THIS QC.md is ticked. |

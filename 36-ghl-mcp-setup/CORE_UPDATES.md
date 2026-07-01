@@ -50,8 +50,8 @@ Add this section. Adapt aliases to client white-label brand:
 | MCP endpoint | `$GHL_COMMUNITY_MCP_URL/mcp` (streamable-http) |
 | REST execute (debug) | `POST $GHL_COMMUNITY_MCP_URL/execute` with `{"name":"tool","arguments":{...}}` |
 | Live tool discovery | `curl $GHL_COMMUNITY_MCP_URL/tools` |
-| Lifecycle | macOS: launchd `~/Library/LaunchAgents/com.clawd.ghl-mcp.plist`. Linux: systemd `ghl-mcp.service`. |
-| Restart | macOS: `launchctl kickstart gui/$(id -u)/com.clawd.ghl-mcp`. Linux: `sudo systemctl restart ghl-mcp`. |
+| Lifecycle | macOS: launchd `~/Library/LaunchAgents/com.clawd.ghl-mcp.plist`. VPS: pm2 `ghl-community-mcp` (systemd `ghl-mcp.service` fallback on non-container Linux). |
+| Restart | macOS: `launchctl kickstart gui/$(id -u)/com.clawd.ghl-mcp`. VPS: `pm2 restart ghl-community-mcp` (or `sudo systemctl restart ghl-mcp` on systemd boxes). |
 | Credentials | `~/.openclaw/secrets/.env` (Mac) / `~/.openclaw/secrets/.env` (VPS). Env vars: `GOHIGHLEVEL_API_KEY` (PIT), `GOHIGHLEVEL_LOCATION_ID`. |
 | Tier 0 CLI | `caf` / `convertandflow` / `ghl` wrapper at `~/.openclaw/tools/convert-and-flow-cli/`; health = `caf doctor`. Owned by SKILL 44. |
 
@@ -65,15 +65,22 @@ When asked to do anything involving GHL / GoHighLevel / Convert and Flow / LeadC
 
 3. **Session memory is not authoritative — the canonical state block in AGENTS.md is.** Before declaring a tier dead, re-read the canonical state block and verify your actual call matches. If you get 404 / connection refused, first hypothesis is "I used the wrong URL," not "the server is broken."
 
-4. **Required disclosure on every GHL response:** prefix your final answer with `[GHL tier used: N — tool_name]`. If you fell through tiers, include the chain. Missing disclosure = protocol violation.
+4. **Required disclosure — OPERATOR CHANNEL ONLY:** on the operator channel, prefix your final answer with `[GHL tier used: N — tool_name]` (include the chain if you fell through). Missing disclosure on the operator channel = protocol violation. **On any CLIENT-FACING reply, STRIP this header** (WE MOVE IN SILENCE) — it leaks internal tier/tool plumbing; the client sees only the result. See "Mandatory disclosure format" below.
 
-5. **"It looked broken earlier" is not an excuse.** If a tier crashed in earlier session work, attempt it fresh. Recover with `launchctl kickstart gui/$(id -u)/com.clawd.ghl-mcp` (Mac) or `sudo systemctl restart ghl-mcp` (Linux) before falling through.
+5. **"It looked broken earlier" is not an excuse.** If a tier crashed in earlier session work, attempt it fresh. Recover with `launchctl kickstart gui/$(id -u)/com.clawd.ghl-mcp` (Mac) or `pm2 restart ghl-community-mcp` (VPS; `sudo systemctl restart ghl-mcp` on systemd boxes) before falling through.
 
 Full reference: [MASTER_FILES_FOLDER]/36-ghl-mcp-setup/ghl-mcp-setup-full.md
 
 ### Token-aware routing (skill 44 / Tier 0)
 
 - Standard operations need only the PIT every client has — they ALWAYS run Tier 0.
+- **Missing PIT or Location ID (GOHIGHLEVEL_API_KEY / GOHIGHLEVEL_LOCATION_ID empty) at
+  runtime -> BLOCK, do not silently no-op.** Name which one is missing and tell the owner
+  exactly how to supply it: "I'm missing your GoHighLevel Private Integration Token /
+  Location ID — Settings > Integrations > Private Integrations to create the PIT (starts
+  with `pit-`), and Settings > Company > Locations for the 22-char Location ID. Send both
+  and I'll wire them in and retry." Never invent data, never claim the platform is down.
+  (Same discipline as the Firebase case below.)
 - Workflow create/edit needs the Firebase refresh token:
   - present + healthy -> Tier 0 builds the workflow directly.
   - missing or dead -> reads/enrolls fall through Tiers 1-3; the BUILD falls to
@@ -132,9 +139,19 @@ Rules: Tier 0 first for covered ops. Media never routes to Tier 0. On 429: stop 
 Full ref: [MASTER_FILES_FOLDER]/36-ghl-mcp-setup/GHL-LOOKUP-SOP.md
 ```
 
-### Mandatory disclosure format
+### Mandatory disclosure format — OPERATOR CHANNEL ONLY
 
-Every GHL response prefix: `[GHL tier used: N — tool_name]`. If fell through: include chain. Tier 0 format: `[GHL tier used: 0 — convertandflow <command>]`; on fall-through show the chain, e.g. `[GHL tier used: 4 (Tier 0 build blocked: no Firebase token) — agent-browser]`.
+The `[GHL tier used: N — tool_name]` header is an internal audit trail for the OPERATOR.
+Prefix every GHL response **in the operator channel** with it. If you fell through tiers,
+include the chain. Tier 0 format: `[GHL tier used: 0 — convertandflow <command>]`; on
+fall-through show the chain, e.g. `[GHL tier used: 4 (Tier 0 build blocked: no Firebase
+token) — agent-browser]`. Missing disclosure on the operator channel = protocol violation.
+
+**WE MOVE IN SILENCE — strip this header from CLIENT-FACING replies.** When the reply goes
+to a client (their Telegram, a coaching-persona reply, any customer-facing surface), do NOT
+emit the tier header — it leaks internal plumbing (which tier/tool/fallback) the client
+should never see. Answer with just the result. The header is for the operator's audit, not
+the client's screen.
 
 Full reference: [MASTER_FILES_FOLDER]/36-ghl-mcp-setup/ghl-mcp-setup-full.md
 ```

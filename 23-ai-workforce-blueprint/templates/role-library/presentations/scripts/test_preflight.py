@@ -456,7 +456,7 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
         _img_qc_base = json.loads(_qc("Phase Image-QC", "slide-image-creator",
                                       "qc-specialist-image-presentations"))
         _img_qc_base.update({
-            "vision_model": "claude-opus-4",
+            "vision_model": "qwen3-vl:235b-cloud",
             "slides": [
                 {"slide": i, "visual_subject": "kie.ai gpt-image-2 baked render",
                  "description": "pixel vision read — photographic composition confirmed",
@@ -4419,7 +4419,7 @@ def test_image_qc_report_gate_ordering():
             "qc_independence": {"graded_by": "qc-specialist-image-presentations",
                                 "independent": True, "builder": "slide-image-creator",
                                 "self_graded": False},
-            "vision_model": "claude-opus-4",
+            "vision_model": "qwen3-vl:235b-cloud",
             "slides": [{"slide": 1, "visual_subject": "kie.ai gpt-image-2 baked render",
                         "description": "pixel vision read — photographic composition confirmed",
                         "baked": True, "pass": True}]})

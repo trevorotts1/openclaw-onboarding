@@ -18,7 +18,7 @@
 ## Keys (client's own — operator keys NEVER appear on the client box)
 - `KIE_API_KEY` — image generation.
 - `GOHIGHLEVEL_API_KEY` / `GHL_API_KEY` (LOCATION Private Integration Token, `medias.write`)
-  + `GHL_LOCATION_ID` — image hosting.
+  + `GOHIGHLEVEL_LOCATION_ID` / `GHL_LOCATION_ID` — image hosting.
 
 ## Command Center board (OPTIONAL — all three absent ⇒ clean no-op)
 The producer-side board caller `scripts/cc_board.py` (stdlib `urllib`, zero third-party

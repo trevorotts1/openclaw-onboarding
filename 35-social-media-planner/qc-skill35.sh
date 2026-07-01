@@ -110,10 +110,12 @@ if command -v openclaw >/dev/null 2>&1; then
 fi
 if [ -n "$MCP_URL" ] && curl -sS -m 5 "$MCP_URL/health" 2>/dev/null | grep -q "healthy"; then
   assert "Tier 2 (community MCP) reachable" "curl -sS -m 5 \"$MCP_URL/health\" | grep -q healthy"
-  TEST=$(curl -sS -m 10 -X POST "$MCP_URL/execute" -H "Content-Type: application/json" \
-    -d '{"name":"get_platform_accounts","arguments":{"limit":1}}' 2>/dev/null)
-  warn_only "MCP get_platform_accounts returns data (any platform connected in GHL Social Planner)" \
-    "echo \"$TEST\" | grep -qE '\"success\":\\s*true|\"accounts\":\\s*\\['"
+  # Community MCP HTTP transport speaks JSON-RPC (tools/call); the account tool is
+  # get_social_accounts (NOT the flat /execute + get_platform_accounts shape).
+  TEST=$(curl -sS -m 10 -X POST "$MCP_URL" -H "Content-Type: application/json" \
+    -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_social_accounts","arguments":{}}}' 2>/dev/null)
+  warn_only "MCP get_social_accounts returns data (any platform connected in GHL Social Planner)" \
+    "echo \"$TEST\" | grep -qE '\"result\"|\"accounts\"|\"success\"'"
 else
   RESP=$(curl -sS -m 10 \
     -H "Authorization: Bearer ${GOHIGHLEVEL_API_KEY:-}" \
@@ -153,7 +155,7 @@ echo "── Section H: Security ──"
 assert "PIT not present in any workspace .md file" "! grep -rE 'pit-[a-f0-9]{8}-[a-f0-9]{4}' \"$WORKSPACE\"/*.md 2>/dev/null | grep -v 'pit-XXX\\|pit-xxx\\|pit-x'"
 
 echo ""
-echo "── Section I: Fix assertions (v2.3.0) ──"
+echo "── Section I: Fix assertions (v2.9.4) ──"
 SKILL35_DIR="$HOME/.openclaw/skills/35-social-media-planner"
 [ ! -d "$SKILL35_DIR" ] && SKILL35_DIR="$(dirname "$0")"
 
@@ -169,9 +171,14 @@ assert "INSTRUCTIONS.md contains skill35-weekly-theme cron registration (Fix #2 
 warn_only "INSTRUCTIONS.md explicitly warns against heartbeat-only weekly trigger (Fix #2 — enforcement note present)" \
   "grep -qiE 'not.*heartbeat|CRON.*not.*heartbeat|heartbeat.*drift|silently skips' \"$SKILL35_DIR/INSTRUCTIONS.md\" 2>/dev/null"
 
-# FIX #2 delivery: --announce present in cron registration (ensures delivery fires, not just best-effort)
-assert "skill35-weekly-theme cron uses --announce delivery (Fix #2 — delivery enforcement)" \
-  "grep -A5 'skill35-weekly-theme' \"$SKILL35_DIR/INSTRUCTIONS.md\" 2>/dev/null | grep -q -- '--announce'"
+# FIX #2 delivery (CORRECTED v2.9.4): the weekly cron registers on sessionTarget=main.
+# Do NOT assert that --announce is PRESENT — the gateway REJECTS --announce --channel on
+# main-target crons (confirmed on a client box 2026-06-15), so the old assert hard-failed
+# install-QC on the (correct) current skill every run. Assert the real invariant instead.
+assert "skill35-weekly-theme cron registers on the main session target (Fix #2 — correct delivery)" \
+  "grep -qE 'session-target +main|sessionTarget=main|--agent +main' \"$SKILL35_DIR/INSTRUCTIONS.md\" 2>/dev/null"
+warn_only "INSTRUCTIONS.md documents the gateway --announce/--channel rejection on main-target crons (Fix #2 — guard note)" \
+  "grep -qiE 'gateway rejects|rejects channel-delivery|--announce.*reject|reject.*--announce' \"$SKILL35_DIR/INSTRUCTIONS.md\" 2>/dev/null"
 
 # FIX #3 (v12.14.0 furnace-fix): INSTALL.md must NOT contain the ungated Saturday HEARTBEAT.md prose block.
 # This is a HARD FAIL — any re-introduction of the ungated block is a furnace regression.

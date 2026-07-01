@@ -5,7 +5,7 @@ speech_build_harness.py — Resilient speech-build harness for the Presentations
 WHAT THIS SOLVES
 ----------------
 Two failure modes hit production on 2026-06-16:
-  1. Anthropic HTTP 529 "overloaded" killed the build mid-slide, losing all work.
+  1. An upstream HTTP 529 "overloaded" killed the build mid-slide, losing all work.
   2. The word-count gate fired AFTER writing, requiring manual expansion and re-runs.
 
 This harness fixes both and adds:
@@ -21,7 +21,7 @@ This harness fixes both and adds:
      re-prompted to hit budget, up to K=3 rounds. The existing length gate becomes a backstop
      that should now pass on the first try.
 
-USAGE (REAL MODE — requires ANTHROPIC_API_KEY)
+USAGE (REAL MODE — requires OLLAMA_API_KEY, or OPENROUTER_API_KEY)
 ------
   python3 speech_build_harness.py \
       --intake  working/copy/intake.json \
@@ -29,7 +29,7 @@ USAGE (REAL MODE — requires ANTHROPIC_API_KEY)
       --arc     working/copy/arc_allocation.json \
       --out     working/presenter-speech/speech.md \
       --workdir working/speech \
-      [--model minimax-m3:cloud] [--fallback-model minimax-m3:cloud] \
+      [--model glm-5.2:cloud] [--fallback-model minimax-m3:cloud] \
       [--wpm 130] [--max-expand-rounds 3] [--dry-run]
 
 USAGE (DRY-RUN — no API key needed, proves all 4 mechanisms)
@@ -43,12 +43,16 @@ USAGE (DRY-RUN — no API key needed, proves all 4 mechanisms)
 
 DESIGN PRINCIPLES
 -----------------
+- Provider transport is OpenAI-compatible and CLIENT-PORTABLE: default endpoint is Ollama
+  Cloud (https://ollama.com/v1/chat/completions, Bearer OLLAMA_API_KEY); override the base via
+  SPEECH_LLM_BASE_URL / OPENAI_BASE_URL and the key via OLLAMA_API_KEY -> OPENROUTER_API_KEY.
+  OpenRouter fallback base: https://openrouter.ai/api/v1/chat/completions. NEVER Anthropic.
 - This file does NOT touch build_deck.py, sync_check.py, or PIPELINE-MANIFEST.json.
 - Word budget math is the same formula as SOP 9.1: net_spoken_sec = (DURATION_MIN*60) - pause_budget_sec;
   target_words = net_spoken_sec * (WPM/60); per-slide = target_words * slide_type_weight.
 - The length gate at the end is unchanged — it is a backstop, not the primary control.
-- Retryable status codes: 429, 500, 503, 529 (Anthropic overload), and any body containing
-  "overloaded_error" or "overloaded".
+- Retryable status codes: 429, 500, 502, 503, 529 (upstream overload / gateway), and any body
+  containing "overloaded_error", "overloaded", or "rate_limit".
 """
 
 import argparse
@@ -76,7 +80,7 @@ DEFAULT_PAUSE_MISC_SEC: float = 2.0
 DEFAULT_MAX_EXPAND_ROUNDS: int = 3
 DEFAULT_EXPAND_TOLERANCE: float = 0.90  # slide must reach >= 90 % of its budget
 
-RETRYABLE_STATUS_CODES = {429, 500, 503, 529}
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 529}  # 502 added for OpenAI-compat gateways (OpenRouter/Ollama)
 MAX_RETRIES: int = 5
 BACKOFF_BASE_SEC: float = 2.0
 BACKOFF_CAP_SEC: float = 60.0
@@ -112,8 +116,58 @@ STAGE_RUNTIME_SHARES: dict[str, float] = {
     "RECAP":       0.04,
 }
 
-ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
-ANTHROPIC_API_VERSION = "2023-06-01"
+# ---------------------------------------------------------------------------
+# LLM provider transport (OpenAI-compatible chat/completions) — CLIENT-PORTABLE.
+# Default = Ollama Cloud; override via env for OpenRouter / any OpenAI-compatible
+# base. NEVER Anthropic — client boxes run their own providers.
+#   Ollama Cloud (default): https://ollama.com/v1/chat/completions  (Bearer OLLAMA_API_KEY)
+#   OpenRouter (fallback base): https://openrouter.ai/api/v1/chat/completions (Bearer OPENROUTER_API_KEY)
+# ---------------------------------------------------------------------------
+DEFAULT_LLM_BASE_URL = "https://ollama.com/v1/chat/completions"
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"  # documented fallback base
+DEFAULT_TEMPERATURE: float = 0.7
+# Optional reasoning/thinking effort (OpenAI-compat "reasoning_effort"). Default OFF:
+# this is a CONTENT-WRITING role, and forcing high reasoning makes some thinking models
+# (e.g. GLM 5.2) spend the whole token budget on chain-of-thought and return EMPTY
+# content. Set SPEECH_LLM_REASONING_EFFORT=high|medium|low to enable per client box.
+DEFAULT_REASONING_EFFORT = ""
+# Ollama Cloud content models (GLM 5.2 / minimax / deepseek) are REASONING models: on the
+# OpenAI-compatible endpoint they emit ~1500-2500 tokens of chain-of-thought into
+# message.reasoning BEFORE emitting message.content. max_tokens must therefore cover
+# reasoning + content, or content returns EMPTY (verified 2026-06-30: glm-5.2:cloud and
+# minimax-m3:cloud return full, budget-hitting content at ~4000 tokens for a 40-word slide,
+# but EMPTY at <=1500). Non-thinking OpenAI-compatible providers simply stop at content, so
+# the extra ceiling is harmless there.
+REASONING_HEADROOM_TOKENS: int = 4096
+
+
+def resolve_base_url() -> str:
+    """Full chat/completions endpoint. Env override wins (SPEECH_LLM_BASE_URL, then
+    OPENAI_BASE_URL); a bare '.../v1' root is normalized by appending
+    '/chat/completions' so OpenAI-style base roots also work."""
+    url = (
+        os.environ.get("SPEECH_LLM_BASE_URL")
+        or os.environ.get("OPENAI_BASE_URL")
+        or DEFAULT_LLM_BASE_URL
+    ).strip()
+    if url.endswith("/chat/completions"):
+        return url
+    return url.rstrip("/") + "/chat/completions"
+
+
+def resolve_api_key() -> str:
+    """Bearer key from env: Ollama Cloud primary, OpenRouter fallback (generic
+    SPEECH_LLM_API_KEY / OPENAI_API_KEY overrides at the ends). NEVER ANTHROPIC_API_KEY."""
+    for name in ("SPEECH_LLM_API_KEY", "OLLAMA_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY"):
+        v = os.environ.get(name, "").strip()
+        if v:
+            return v
+    return ""
+
+
+def resolve_reasoning_effort() -> str:
+    """Optional OpenAI-compat 'reasoning_effort' (empty = do not send the field)."""
+    return os.environ.get("SPEECH_LLM_REASONING_EFFORT", DEFAULT_REASONING_EFFORT).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -335,33 +389,46 @@ def call_with_retry(
 
 
 # ---------------------------------------------------------------------------
-# Anthropic API call (real mode)
+# LLM API call (real mode) — OpenAI-compatible chat/completions transport.
+# Provider-portable (Ollama Cloud default / OpenRouter / any OpenAI-compatible
+# base). NEVER Anthropic — client boxes run their own providers.
 # ---------------------------------------------------------------------------
 
-def _anthropic_generate_once(
+def _llm_generate_once(
     prompt: str,
     model: str,
     api_key: str,
     max_tokens: int = 1024,
+    base_url: Optional[str] = None,
+    temperature: float = DEFAULT_TEMPERATURE,
 ) -> str:
     """
-    Single call to Anthropic Messages API. Returns the assistant content string.
-    Raises RetryableError on 429/500/503/529 or overloaded body.
-    Raises HardAPIError on 4xx that are not retryable.
+    Single call to an OpenAI-compatible chat/completions endpoint. Returns the
+    assistant content string. Provider-portable: Ollama Cloud (default) / OpenRouter
+    / any OpenAI-compatible base — NEVER Anthropic.
+    Raises RetryableError on 429/500/502/503/529 or overloaded/rate-limit body.
+    Raises HardAPIError on 4xx that are not retryable, or a malformed/empty 200.
     """
-    body = json.dumps({
+    url = base_url or resolve_base_url()
+    payload = {
         "model": model,
-        "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}],
-    }).encode("utf-8")
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    # Optional reasoning/thinking effort (OpenAI-compat passthrough). OFF by default for
+    # this content-writing role — see resolve_reasoning_effort() / DEFAULT_REASONING_EFFORT.
+    effort = resolve_reasoning_effort()
+    if effort:
+        payload["reasoning_effort"] = effort
+    body = json.dumps(payload).encode("utf-8")
 
     req = urllib.request.Request(
-        ANTHROPIC_API_URL,
+        url,
         data=body,
         method="POST",
         headers={
-            "x-api-key": api_key,
-            "anthropic-version": ANTHROPIC_API_VERSION,
+            "Authorization": f"Bearer {api_key}",
             "content-type": "application/json",
         },
     )
@@ -385,33 +452,47 @@ def _anthropic_generate_once(
         # successful 200 is NOT swallowed here and misclassified as retryable.
         raise RetryableError(str(exc))
 
-    # M2: defensively parse a SUCCESSFUL (HTTP 200) response. A malformed 200 — bad
-    # JSON, no "content" key, an EMPTY content list ("content": []), or a content[0]
-    # with no "text" — is a PERMANENT bad-shape error, NOT a transient one. The old
-    # code did `data["content"][0]["text"]` inside the urlopen try, so an IndexError
-    # / KeyError on a malformed 200 fell into the broad `except Exception` above and
-    # was re-raised as RetryableError — burning the whole retry budget on a response
-    # that will never improve. Raise HardAPIError so the caller fails fast (or falls
-    # back to the secondary model) instead of pointlessly retrying.
+    # M2: defensively parse a SUCCESSFUL (HTTP 200) response in the OpenAI
+    # chat/completions shape: data["choices"][0]["message"]["content"]. A malformed
+    # 200 — bad JSON, no "choices", an EMPTY choices list, a choice with no "message",
+    # a non-string content, or an EMPTY content string — is a PERMANENT bad-shape
+    # error, NOT a transient one. (Parsing inside the urlopen try would let an
+    # IndexError / KeyError fall into the broad `except Exception` above and be
+    # re-raised as RetryableError — burning the whole retry budget on a response that
+    # never improves.) Raise HardAPIError so the caller fails fast (or falls back to
+    # the secondary model) instead of pointlessly retrying.
     try:
         data = json.loads(raw)
     except (ValueError, TypeError) as exc:
         raise HardAPIError(
             f"200 OK but response body is not valid JSON ({exc}). Body[:200]: {raw[:200]!r}"
         )
-    content = data.get("content") if isinstance(data, dict) else None
-    if not isinstance(content, list) or not content:
+    choices = data.get("choices") if isinstance(data, dict) else None
+    if not isinstance(choices, list) or not choices:
         raise HardAPIError(
-            f"200 OK but 'content' is missing/empty (got {content!r}). "
+            f"200 OK but 'choices' is missing/empty (got {choices!r}). "
             f"Body[:200]: {raw[:200]!r}. A malformed 200 is a permanent bad-shape "
             f"error, not a retryable one."
         )
-    first = content[0]
-    text = first.get("text") if isinstance(first, dict) else None
+    first = choices[0]
+    message = first.get("message") if isinstance(first, dict) else None
+    text = message.get("content") if isinstance(message, dict) else None
     if not isinstance(text, str):
         raise HardAPIError(
-            f"200 OK but content[0].text is missing/not a string (got {text!r}). "
+            f"200 OK but choices[0].message.content is missing/not a string (got {text!r}). "
             f"Body[:200]: {raw[:200]!r}."
+        )
+    if not text.strip():
+        # A reasoning-heavy model (e.g. GLM 5.2) can emit its chain-of-thought into
+        # message.reasoning and leave message.content EMPTY when the token budget is
+        # exhausted by thinking (finish_reason=length). An empty spoken block is never
+        # a valid slide — treat it as a PERMANENT bad-shape error so the caller fails
+        # fast / falls back to the secondary model instead of silently writing an
+        # empty speech (which would then burn every auto-expand round for nothing).
+        raise HardAPIError(
+            f"200 OK but choices[0].message.content is EMPTY (finish_reason="
+            f"{first.get('finish_reason')!r}). Reasoning-only output with empty content is a "
+            f"permanent bad-shape error for a content-writing call. Body[:200]: {raw[:200]!r}."
         )
     return text
 
@@ -425,7 +506,7 @@ def generate_slide_text(
     is_expand: bool = False,
 ) -> str:
     """
-    Call the Anthropic API to write (or expand) a single slide's spoken text.
+    Call the LLM (OpenAI-compatible endpoint) to write (or expand) a single slide's spoken text.
     Falls back to fallback_model on HardAPIError from primary.
     Returns the generated spoken text.
     """
@@ -445,10 +526,14 @@ def generate_slide_text(
         f"ACTION: {action} the spoken block to hit the word budget of {slide.word_budget} words. "
         f"Return ONLY the spoken text, no headers, no markdown.\n"
     )
-    max_tok = max(256, slide.word_budget * 2)
+    # Content needs ~1.6 tokens/word; reasoning models (GLM/minimax/deepseek on Ollama Cloud)
+    # ALSO emit a large chain-of-thought into message.reasoning BEFORE any content, so add
+    # REASONING_HEADROOM_TOKENS or content comes back EMPTY. (Non-thinking providers just stop
+    # at content, so the extra ceiling is harmless.)
+    max_tok = max(512, slide.word_budget * 2) + REASONING_HEADROOM_TOKENS
 
     def _call_primary():
-        return _anthropic_generate_once(prompt, model, api_key, max_tokens=max_tok)
+        return _llm_generate_once(prompt, model, api_key, max_tokens=max_tok)
 
     try:
         return call_with_retry(_call_primary, label=f"slide-{slide.slide_no}-{action.lower()}")
@@ -459,7 +544,7 @@ def generate_slide_text(
                 f"  Switching to fallback model: {fallback_model}"
             )
             def _call_fallback():
-                return _anthropic_generate_once(prompt, fallback_model, api_key, max_tokens=max_tok)
+                return _llm_generate_once(prompt, fallback_model, api_key, max_tokens=max_tok)
             return call_with_retry(
                 _call_fallback, label=f"slide-{slide.slide_no}-{action.lower()}-fallback"
             )
@@ -834,10 +919,18 @@ def main():
     ap.add_argument("--arc",      required=True, help="Path to working/copy/arc_allocation.json")
     ap.add_argument("--out",      required=True, help="Output path for speech.md")
     ap.add_argument("--workdir",  required=True, help="Working directory for per-slide checkpoints")
-    ap.add_argument("--model",    default="minimax-m3:cloud",
-                    help="Primary generation model (default minimax-m3:cloud)")
+    # Default primary = glm-5.2:cloud. Trevor's policy routes CONTENT WRITING to GLM 5.2, and
+    # it is VERIFIED (2026-06-30, Ollama Cloud) to resolve and return full, budget-hitting
+    # content on the OpenAI-compatible endpoint. IMPORTANT: GLM/minimax/deepseek on Ollama Cloud
+    # are reasoning models — they emit ~1500-2500 tokens of chain-of-thought into
+    # message.reasoning BEFORE message.content, so max_tokens MUST include reasoning headroom
+    # (see REASONING_HEADROOM_TOKENS); at too-small budgets content returns EMPTY. Fallback =
+    # minimax-m3:cloud (also verified, non-Anthropic, different family for resilience).
+    ap.add_argument("--model",    default="glm-5.2:cloud",
+                    help="Primary generation (content) model, Ollama Cloud OpenAI-compat id "
+                         "(default glm-5.2:cloud, per content-writing policy)")
     ap.add_argument("--fallback-model", default="minimax-m3:cloud",
-                    help="Fallback model on exhaustion (default minimax-m3:cloud)")
+                    help="Fallback model on primary exhaustion (default minimax-m3:cloud)")
     ap.add_argument("--wpm",      type=int, default=DEFAULT_WPM,
                     help=f"Words per minute for budget math (default {DEFAULT_WPM})")
     ap.add_argument("--max-expand-rounds", type=int, default=DEFAULT_MAX_EXPAND_ROUNDS,
@@ -885,9 +978,12 @@ def main():
         sys.exit(0 if all_pass else 1)
 
     # Real run
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = resolve_api_key()
     if not api_key:
-        sys.exit("FAIL: ANTHROPIC_API_KEY not set. Run with --dry-run to test without a key.")
+        sys.exit(
+            "FAIL: no LLM API key set. Set OLLAMA_API_KEY (Ollama Cloud, default endpoint) "
+            "or OPENROUTER_API_KEY (OpenRouter). Run with --dry-run to test without a key."
+        )
 
     run_build(
         intake=intake,

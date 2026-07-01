@@ -154,7 +154,10 @@ echo "  Resolution: ${WIDTH_HEIGHT}  (target: 1080x1920)"
 echo "  Codec:      ${CODEC}  (target: h264)"
 
 PASS=true
-if (( $(echo "$DURATION < $TARGET_MIN" | bc -l) )) || (( $(echo "$DURATION > $TARGET_MAX" | bc -l) )); then
+# Use awk (already required by this script) for the float comparison so the QC gate
+# does not depend on `bc`, which is absent on minimal VPS images.
+DUR_OOB=$(awk -v d="$DURATION" -v lo="$TARGET_MIN" -v hi="$TARGET_MAX" 'BEGIN{print (d<lo||d>hi)?1:0}')
+if [ "$DUR_OOB" = "1" ]; then
   echo "  [FAIL] Duration ${DURATION}s is outside target window ${TARGET_MIN}-${TARGET_MAX}s"
   PASS=false
 fi

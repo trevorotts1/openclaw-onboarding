@@ -34,6 +34,7 @@ SCHEDULE="auto"
 DRY_RUN=0
 WORKDIR=""
 SHOW_HELP=0
+VERIFY_RECEIPTS=""
 
 print_help() {
   cat <<EOF
@@ -56,6 +57,11 @@ OPTIONAL
                               spawning agents. Useful from cron.
   --workdir <path>            Override the per-cycle workdir
                               (default: \$HOME/.openclaw/data/skill-35/runs/<run-id>).
+  --verify-receipts <path>    Post-cycle QC gate (deterministic). Reads
+                              publish-receipts.json (file or workdir) and HARD-FAILS
+                              (exit 6) when accounts are connected but 0 posts were
+                              created, or posts were planned but 0 created. Run this
+                              after the orchestrator finishes posting.
   --help, -h                  Show this help and exit.
 
 PIPELINE (5 phases, 15 producers + 6 QC agents)
@@ -95,6 +101,7 @@ while [ $# -gt 0 ]; do
     --schedule)   SCHEDULE="${2:-auto}"; shift 2;;
     --dry-run)    DRY_RUN=1; shift;;
     --workdir)    WORKDIR="${2:-}"; shift 2;;
+    --verify-receipts) VERIFY_RECEIPTS="${2:-}"; shift 2;;
     --help|-h)    SHOW_HELP=1; shift;;
     *)
       echo "ERROR: unknown argument: $1" >&2
@@ -104,13 +111,14 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ "$SHOW_HELP" -eq 1 ] || [ $# -lt 0 ]; then
+if [ "$SHOW_HELP" -eq 1 ]; then
   print_help
   exit 0
 fi
 
 # When called with no arguments, print help (don't fail noisily).
-if [ -z "$TOPIC" ] && [ -z "$PLATFORMS" ] && [ "$DRY_RUN" -eq 0 ]; then
+# (--verify-receipts is a standalone QC mode and must not be swallowed here.)
+if [ -z "$TOPIC" ] && [ -z "$PLATFORMS" ] && [ "$DRY_RUN" -eq 0 ] && [ -z "$VERIFY_RECEIPTS" ]; then
   print_help
   exit 0
 fi
@@ -121,7 +129,90 @@ log()  { printf '[%s] [Skill35] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 warn() { printf '[%s] [Skill35][WARN] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
 err()  { printf '[%s] [Skill35][ERR ] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
 
+# ---------- Command Center (Kanban) helpers — fail-soft, operator-only ----------
+# Every Command Center call is best-effort: a missing token or an unreachable
+# board logs a warning and returns 0. Publishing MUST finish exactly as it would
+# with no board at all. Never print the token. HTTP only — never touch the .db.
+CC_BASE="${MISSION_CONTROL_URL:-http://localhost:4000}"
+CC_TOKEN="${MC_API_TOKEN:-}"
+CC_TASK_ID=""
+CC_AGENT_ID="skill35-cycle"
+
+_cc_resolve_token() {
+  # Prefer the env token; else read MC_API_TOKEN from the Command Center env file.
+  [ -n "$CC_TOKEN" ] && return 0
+  local envfile="$HOME_DIR/command-center/app/.env.local"
+  [ -f "$envfile" ] || return 0
+  CC_TOKEN="$(grep -E '^MC_API_TOKEN=' "$envfile" 2>/dev/null | head -1 \
+    | sed -E 's/^MC_API_TOKEN=//; s/^"//; s/"$//; s/\r$//')"
+}
+
+# cc_call <METHOD> <path> [json-body] -> echoes 2xx response body; ALWAYS returns 0.
+cc_call() {
+  local method="$1" path="$2" payload="${3:-}" resp http out
+  _cc_resolve_token
+  if [ -z "$CC_TOKEN" ]; then
+    warn "Command Center skipped — MC_API_TOKEN not set (board update is optional; continuing)."
+    return 0
+  fi
+  command -v curl >/dev/null 2>&1 || { warn "Command Center skipped — curl not available."; return 0; }
+  if [ -n "$payload" ]; then
+    resp="$(curl -sS -m 10 -w $'\n%{http_code}' -X "$method" "$CC_BASE$path" \
+      -H "Authorization: Bearer $CC_TOKEN" -H "Content-Type: application/json" \
+      -d "$payload" 2>/dev/null)" || { warn "Command Center $method $path unreachable — continuing."; return 0; }
+  else
+    resp="$(curl -sS -m 10 -w $'\n%{http_code}' -X "$method" "$CC_BASE$path" \
+      -H "Authorization: Bearer $CC_TOKEN" 2>/dev/null)" || { warn "Command Center $method $path unreachable — continuing."; return 0; }
+  fi
+  http="$(printf '%s' "$resp" | tail -n1)"
+  out="$(printf '%s' "$resp" | sed '$d')"
+  case "$http" in
+    2*) printf '%s' "$out"; return 0;;
+    *)  warn "Command Center $method $path returned HTTP $http — continuing (board update is optional)."; return 0;;
+  esac
+}
+
+# ---------- post-cycle receipts QC (deterministic 0-posts-as-error gate) ----------
+# Reads publish-receipts.json and HARD-FAILS when accounts are connected but no
+# posts were created, or posts were planned but none created. The posting step
+# (master orchestrator, Phase 5) MUST emit publish-receipts.json with at least:
+#   {"connected_accounts": N, "planned_posts": N, "created_posts": N,
+#    "posts": [{"platform": "...", "post_id": "...", "url": "...", "tier": N}]}
+verify_receipts() {
+  local rfile="$1"
+  [ -d "$rfile" ] && rfile="$rfile/publish-receipts.json"
+  if [ ! -f "$rfile" ]; then
+    err "publish-receipts.json not found at: $rfile"
+    err "0 posts is an ERROR, not silent success — the posting step did not emit receipts."
+    return 6
+  fi
+  python3 - "$rfile" <<'PYEOF'
+import json, sys
+p = sys.argv[1]
+try:
+    d = json.load(open(p))
+except Exception as e:
+    sys.stderr.write(f"[Skill35] receipts unreadable: {e}\n"); sys.exit(6)
+connected = int(d.get("connected_accounts", 0) or 0)
+planned   = int(d.get("planned_posts", 0) or 0)
+created   = int(d.get("created_posts", 0) or 0)
+if connected > 0 and created <= 0:
+    sys.stderr.write(f"[Skill35] QC FAIL: {connected} account(s) connected but 0 posts created.\n"); sys.exit(6)
+if planned > 0 and created <= 0:
+    sys.stderr.write(f"[Skill35] QC FAIL: {planned} post(s) planned but 0 created.\n"); sys.exit(6)
+if created < planned:
+    sys.stderr.write(f"[Skill35] QC WARN: created {created} < planned {planned} (partial publish).\n")
+print(f"[Skill35] receipts OK: planned={planned} created={created} connected={connected}")
+PYEOF
+}
+
 log "$SCRIPT_NAME $SCRIPT_VERSION starting run-id=$RUN_ID"
+
+# ---------- verify-receipts mode (post-cycle QC gate; runs and exits) ----------
+if [ -n "$VERIFY_RECEIPTS" ]; then
+  verify_receipts "$VERIFY_RECEIPTS"
+  exit $?
+fi
 
 # ---------- validate required args ----------
 if [ -z "$TOPIC" ]; then
@@ -192,6 +283,58 @@ for f in "$IMAGE_MODEL_JSON" "$VIDEO_SPECS_JSON" "$SOCIAL_CADENCE_JSON"; do
     warn "config not present: $f — phases that need it will be skipped"
   fi
 done
+
+# ---------- GHL credential preflight (runtime HARD-STOP) ----------
+# A publishing cycle cannot post without the GoHighLevel Private Integration
+# Token (GOHIGHLEVEL_API_KEY) and the Location ID. Missing creds => STOP with a
+# plain-English, operator-facing reason (never a silent no-op). Canonical names
+# match Skill 36 / Skill 44 (caf). These are also exported for downstream phases.
+if [ -f "$SECRETS_ENV" ]; then
+  set +u; set -a; . "$SECRETS_ENV" 2>/dev/null || true; set +a; set -u
+fi
+: "${GOHIGHLEVEL_API_KEY:=}"
+: "${GOHIGHLEVEL_LOCATION_ID:=}"
+[ -n "$GOHIGHLEVEL_API_KEY" ]     || note_missing "GOHIGHLEVEL_API_KEY (GHL Private Integration Token) — required to publish; add it to $SECRETS_ENV"
+[ -n "$GOHIGHLEVEL_LOCATION_ID" ] || note_missing "GOHIGHLEVEL_LOCATION_ID — required to publish (prevents cross-location posting); add it to $SECRETS_ENV"
+
+# Optional live connection probe (OPT-IN: set SKILL35_LIVE_PREFLIGHT=1). When
+# enabled it HARD-STOPS the batch if the PIT is rejected (401/403) or zero social
+# accounts are connected — no rung can fix an un-connected OAuth account. A
+# transient network error only WARNS (never false-blocks the cycle).
+if [ "${SKILL35_LIVE_PREFLIGHT:-0}" = "1" ] && [ -n "$GOHIGHLEVEL_API_KEY" ] && [ -n "$GOHIGHLEVEL_LOCATION_ID" ] && command -v curl >/dev/null 2>&1; then
+  log "live preflight: querying connected GHL social accounts (GET /social-media-posting/{loc}/accounts)"
+  _probe="$(curl -sS -m 15 -w $'\n%{http_code}' \
+    -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
+    -H "Version: 2021-07-28" \
+    "https://services.leadconnectorhq.com/social-media-posting/$GOHIGHLEVEL_LOCATION_ID/accounts" 2>/dev/null || true)"
+  _phttp="$(printf '%s' "$_probe" | tail -n1)"
+  _pbody="$(printf '%s' "$_probe" | sed '$d')"
+  case "$_phttp" in
+    401|403)
+      err "GHL rejected the Private Integration Token (HTTP $_phttp). The PIT is expired/revoked or missing the social-media-posting scope."
+      err "CLIENT MESSAGE: \"Your GoHighLevel Private Integration Token needs attention. In GHL go to Settings > Integrations > Private Integrations, regenerate the token with the social-media-posting.read/write scope, and send it to me. I will not post until this is fixed.\""
+      exit 3
+      ;;
+    2*)
+      _acct_count="$(printf '%s' "$_pbody" | python3 -c "import sys,json
+try:
+    d=json.load(sys.stdin)
+    a=d.get('accounts') if isinstance(d,dict) else d
+    print(len(a) if isinstance(a,list) else 0)
+except Exception:
+    print(-1)" 2>/dev/null || echo -1)"
+      if [ "$_acct_count" = "0" ]; then
+        err "GHL returned 0 connected social accounts for this location — there is nothing to publish to."
+        err "CLIENT MESSAGE: \"I could not find any social accounts connected in your GoHighLevel Social Planner. Please connect at least one channel (Settings > Social Planner) and tell me when it is done. I will not post until a channel is connected.\""
+        exit 3
+      fi
+      log "live preflight OK: connected account count = $_acct_count"
+      ;;
+    *)
+      warn "live preflight inconclusive (HTTP '$_phttp') — transient/unknown; NOT blocking. Posting step will retry per playbook."
+      ;;
+  esac
+fi
 
 # Required prerequisite skills (per INSTALL.md)
 SKILLS_DIR=""
@@ -422,6 +565,54 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
+# ---------- Command Center: create-or-reuse card + mark in_progress ----------
+# Operators see every run move across the board. Fail-soft: with the board down
+# OR MC_API_TOKEN unset, this logs a skip, creates NO task, and the cycle finishes
+# exactly as before (manifest + hand-off file, exit 0). QC promotes review->done;
+# this script NEVER sets status=done.
+CC_TASK_FILE="$WORKDIR/cc-task-id"
+cc_create_body="$(python3 - "$TOPIC" "$PLATFORMS_NORM" "$RUN_ID" "$CC_AGENT_ID" <<'PYEOF'
+import json, sys
+topic, platforms, run_id, agent = sys.argv[1:5]
+print(json.dumps({
+    "title": ("Social cycle: " + topic)[:120],
+    "description": (f"Skill 35 weekly publishing cycle (run {run_id}) for platforms: {platforms}. "
+                    "Staged by run-publishing-cycle.sh in the Marketing/Content workspace; "
+                    "QC promotes review->done."),
+    "status": "backlog",
+    "created_by_agent_id": agent,
+    "updated_by_agent_id": agent,
+}))
+PYEOF
+)"
+cc_resp="$(cc_call POST /api/tasks "$cc_create_body")"
+if [ -n "$cc_resp" ]; then
+  CC_TASK_ID="$(printf '%s' "$cc_resp" | python3 -c "import sys,json
+try:
+    d=json.load(sys.stdin)
+    print(d.get('id') or (d.get('task') or {}).get('id') or '')
+except Exception:
+    print('')" 2>/dev/null || true)"
+fi
+if [ -n "$CC_TASK_ID" ]; then
+  printf '%s\n' "$CC_TASK_ID" > "$CC_TASK_FILE"
+  # Record the id in the manifest too (fail-soft).
+  python3 - "$MANIFEST" "$CC_TASK_ID" <<'PYEOF' 2>/dev/null || true
+import json, sys
+p, tid = sys.argv[1], sys.argv[2]
+try:
+    d = json.load(open(p)); d["cc_task_id"] = tid
+    json.dump(d, open(p, "w"), indent=2)
+except Exception:
+    pass
+PYEOF
+  cc_call PATCH "/api/tasks/$CC_TASK_ID" \
+    "{\"status\":\"in_progress\",\"updated_by_agent_id\":\"$CC_AGENT_ID\"}" >/dev/null
+  log "Command Center: task $CC_TASK_ID created and moved to in_progress."
+else
+  log "Command Center: no task id captured (board optional) — continuing without a card."
+fi
+
 # ---------- phase execution ----------
 # The actual sub-agent spawn is performed by the master orchestrator that
 # invokes this script (per N5 + Skill 23's L255-L267 convention). This
@@ -476,5 +667,15 @@ continuously for 7 days post-publish per INSTRUCTIONS.md Phase 5.
 EOF
 
 log "Cycle $RUN_ID prepared. Hand-off file: $HANDOFF"
+
+# ---------- Command Center: hand-off -> review (QC promotes review->done) ----------
+# The builder may NOT self-grade (QC gate): this script moves the card to 'review'
+# and STOPS. The independent QC auto-scorer / dept QC agent promotes review->done.
+if [ -n "$CC_TASK_ID" ]; then
+  cc_call PATCH "/api/tasks/$CC_TASK_ID" \
+    "{\"status\":\"review\",\"updated_by_agent_id\":\"$CC_AGENT_ID\"}" >/dev/null
+  log "Command Center: task $CC_TASK_ID moved to review (QC promotes review->done; this script never sets done)."
+fi
+
 log "$SCRIPT_NAME complete."
 exit 0

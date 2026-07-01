@@ -68,16 +68,20 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/' \
 
 # Substituted (ready to run)
 curl --request POST 'https://services.leadconnectorhq.com/contacts/' \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
   -H 'Content-Type: application/json' \
-  -d "{\"firstName\": \"John\", \"lastName\": \"Smith\", \"locationId\": \"$GHL_LOCATION_ID\"}"
+  -d "{\"firstName\": \"John\", \"lastName\": \"Smith\", \"locationId\": \"$GOHIGHLEVEL_LOCATION_ID\"}"
 ```
 
 Substitution rules:
-- `<PRIVATE_INTEGRATION_TOKEN>` becomes `$GHL_API_KEY`
-- `<locationId>` or similar becomes `$GHL_LOCATION_ID`
+- `<PRIVATE_INTEGRATION_TOKEN>` becomes `$GOHIGHLEVEL_API_KEY`
+- `<locationId>` or similar becomes `$GOHIGHLEVEL_LOCATION_ID`
 - Path params like `{contactId}` are substituted with the actual ID from a previous lookup
+
+Before running any call, load credentials with the resolver in SKILL.md "Credentials"
+(it sources `~/.openclaw/secrets/.env`, maps legacy aliases to the canonical names, and
+fails loud if a credential is unresolved — so you never send an empty Bearer token).
 
 ---
 
@@ -87,11 +91,11 @@ Execute the call and capture the response:
 
 ```bash
 RESPONSE=$(curl -s \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
   -H 'Content-Type: application/json' \
   --request POST 'https://services.leadconnectorhq.com/contacts/' \
-  -d "{\"firstName\": \"John\", \"lastName\": \"Smith\", \"locationId\": \"$GHL_LOCATION_ID\"}")
+  -d "{\"firstName\": \"John\", \"lastName\": \"Smith\", \"locationId\": \"$GOHIGHLEVEL_LOCATION_ID\"}")
 
 echo "$RESPONSE" | python3 -m json.tool
 ```
@@ -99,7 +103,7 @@ echo "$RESPONSE" | python3 -m json.tool
 **Response handling:**
 - 200/201: Success - extract the `id` field if needed for chaining calls
 - 400: Bad request - check required fields in the reference file
-- 401: Auth problem - verify GHL_API_KEY is set and not expired
+- 401: Auth problem - run the credential resolver (SKILL.md "Credentials"); confirm `$GOHIGHLEVEL_API_KEY` resolved to a valid, non-expired LOCATION PIT. Never fire an empty `Authorization: Bearer `
 - 403: Wrong scope - check the scope listed in the reference file, add it to your Private Integration
 - 404: Record not found - verify the ID you passed is correct
 - 429: Rate limited - wait and retry with backoff
@@ -115,9 +119,9 @@ Many GHL tasks require chaining multiple API calls. Always capture IDs from earl
 ```bash
 # Step 1: Find the contact by email
 CONTACT=$(curl -s \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
-  "https://services.leadconnectorhq.com/contacts/?locationId=$GHL_LOCATION_ID&email=jane@example.com")
+  "https://services.leadconnectorhq.com/contacts/?locationId=$GOHIGHLEVEL_LOCATION_ID&email=jane@example.com")
 
 CONTACT_ID=$(echo "$CONTACT" | python3 -c "import sys,json; data=json.load(sys.stdin); print(data['contacts'][0]['id'])" 2>/dev/null)
 
@@ -159,12 +163,12 @@ Most GHL list endpoints return paginated results. Pattern:
 ```bash
 # First page (skip=0, limit=20)
 curl -s \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H 'Version: 2021-04-15' \
-  "https://services.leadconnectorhq.com/contacts/?locationId=$GHL_LOCATION_ID&limit=20&skip=0"
+  "https://services.leadconnectorhq.com/contacts/?locationId=$GOHIGHLEVEL_LOCATION_ID&limit=20&skip=0"
 
 # Next page (skip=20)
-"https://services.leadconnectorhq.com/contacts/?locationId=$GHL_LOCATION_ID&limit=20&skip=20"
+"https://services.leadconnectorhq.com/contacts/?locationId=$GOHIGHLEVEL_LOCATION_ID&limit=20&skip=20"
 ```
 
 Use the `total` count in the response to calculate how many pages exist.
@@ -189,7 +193,7 @@ Never hardcode the API key in scripts or documents.
 
 Good:
 ```bash
-curl -H "Authorization: Bearer $GHL_API_KEY" ...
+curl -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" ...
 ```
 
 Bad:
@@ -197,4 +201,4 @@ Bad:
 curl -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6..." ...
 ```
 
-Store the key in `~/clawd/secrets/.env` or as a shell environment variable only.
+Store the key in `~/.openclaw/secrets/.env` (chmod 600) as `GOHIGHLEVEL_API_KEY`, or as a shell environment variable only.

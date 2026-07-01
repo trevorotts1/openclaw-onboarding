@@ -60,8 +60,11 @@ GMAIL_MAILBOX_KEY = "GHL_GMAIL_CLIENT_MAILBOX"
 GMAIL_OAUTH_KEY = "GHL_GMAIL_OAUTH_JSON"
 # 2FA method hint (GATE C optional pre-check).
 TWOFA_METHOD_KEY = "GHL_2FA_METHOD"
-# Multi-location target.
-LOCATION_ID_KEY = "GHL_LOCATION_ID"
+# Multi-location target. Canonical name is GOHIGHLEVEL_LOCATION_ID (matches
+# openclaw.json + ~/.openclaw/secrets/.env); GHL_LOCATION_ID is the accepted
+# legacy short alias.
+LOCATION_ID_KEY = "GHL_LOCATION_ID"                    # legacy short alias (accepted)
+LOCATION_ID_KEY_CANONICAL = "GOHIGHLEVEL_LOCATION_ID"  # preferred canonical name
 # Login origin (reuse inject's default).
 AGENCY_URL_KEY = "GHL_AGENCY_URL"
 
@@ -180,7 +183,9 @@ class SecretStore:
 
     @property
     def location_id(self) -> str:
-        return self.read_secret(LOCATION_ID_KEY)
+        # Prefer the canonical GOHIGHLEVEL_LOCATION_ID; fall back to the legacy
+        # GHL_LOCATION_ID alias so existing client boxes keep working.
+        return self.read_secret(LOCATION_ID_KEY_CANONICAL) or self.read_secret(LOCATION_ID_KEY)
 
     def write_secret(self, key: str, value: str) -> bool:
         """Persist a secret to the CLIENT store (atomic, mode 0600). NEVER prints
@@ -371,15 +376,16 @@ def select_location(driver: Any, store: SecretStore) -> GateResult:
         return GateResult(
             False, "LOC",
             "multiple locations and none configured",
-            "Your agency exposes multiple locations. Set GHL_LOCATION_ID to the "
-            "one this box should build in, then re-run.",
+            "Your agency exposes multiple locations. Set GOHIGHLEVEL_LOCATION_ID "
+            "(or the legacy GHL_LOCATION_ID) to the one this box should build in, "
+            "then re-run.",
         )
     if configured not in locations:
         return GateResult(
             False, "LOC",
             "configured location id not found in agency",
             "The configured location was not found under this agency. Verify "
-            "GHL_LOCATION_ID, then re-run.",
+            "GOHIGHLEVEL_LOCATION_ID (or the legacy GHL_LOCATION_ID), then re-run.",
         )
     if driver.select_location(configured):
         return GateResult(True, "LOC", "configured location selected", "")

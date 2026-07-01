@@ -1,5 +1,61 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.3.2] - 2026-06-30 — fix: add `caf doctor` (probe entrypoint) + correct products/prices endpoints + remove-tag body + token-liveness idempotency + client-model scrub
+
+### Fixed (correctness — proven bug)
+- **`caf doctor` now EXISTS.** It was documented (INSTALL.md Action 6), asserted by the live
+  install-QC (`qc-convert-and-flow.sh:277 "caf doctor exits green"`), and named as the probe
+  entrypoint in `internal/probe.py`, but the command did not exist — so the `--live` QC failed on
+  every provisioned box AND the contract-probe → auto-degrade subsystem had no runtime trigger.
+  Added a read-only `@cli.command("doctor")` that runs `run_contract_probe(adapter)` (no
+  `allow_write_probe`): PASS → exit 0; token absent/dead → WARN exit 0 (INSTALL.md "WARN not
+  FAIL"); contract drift → exit 1. Missing-credential SystemExit/AdapterError are caught → WARN
+  exit 0 (never a traceback). Issues NO writes.
+- **`payments create-product` / `create-price` used an unverified path.** Corrected to the GHL
+  Products API (confirmed against marketplace.gohighlevel.com/docs + the GHL "create a product with
+  price" help article): create-product now POSTs `/products/` (not `/payments/products`) and
+  create-price POSTs `/products/{id}/price` (SINGULAR, not `/payments/products/{id}/prices`).
+  Dropped the payments-API `altId`/`altType` keys from both bodies; the products API takes
+  `locationId` (+ `product` on the price). Test assertions updated in lockstep
+  (`tests/test_ecosystem_cli.py`).
+- **`contacts remove-tag` never sent the tags.** `ghl_client.delete()` had no body parameter, so
+  the computed tag list was discarded and GHL's `DELETE /contacts/{id}/tags` (which reads the tags
+  from the request body) could not remove them. `delete()` now takes an optional `body`; remove-tag
+  passes `{"tags": [...]}` (symmetric with add-tag). Omitted body preserves every other DELETE
+  caller's behaviour.
+- **Token-liveness notification idempotency was one-sided (client-spam risk).**
+  `check-ghl-token-liveness.sh` short-circuited on the `.ok` (VALID) stamp but never read the
+  `.notified` (INVALID) stamp, so a second run on a dead-token day (double-fire cron / manual run /
+  auto-redispatch) re-sent the client notification. Added a top-of-script `.notified` guard that
+  short-circuits (exit 1, NO re-send) — honouring "at most once per calendar day" on the INVALID
+  branch too (collided with the silent-updates / no-client-spam directive).
+
+### Changed
+- Build parallelism now honours `CAF_INTERNAL_MAX_WORKERS` (default 3, matching the internal
+  adapter's burst-reduced cap) instead of a hard-coded 10 — bounds a single multi-workflow build's
+  concurrent pipelines at the shared GHL rate bucket (`workflow_builder.py`).
+- `caf`/`ghl`/`convertandflow` wrappers now `exec "$VENV_PYTHON"` (the absolute venv interpreter)
+  rather than relying on `python3` resolving via PATH after `source activate` — strictly more
+  robust; identical behaviour when the venv exists.
+- **CAF_APPROVAL_TOKEN provisioning:** the wrappers now map canonical
+  `GOHIGHLEVEL_APPROVAL_TOKEN → CAF_APPROVAL_TOKEN` (fallback to a direct `CAF_APPROVAL_TOKEN`),
+  the same GOHIGHLEVEL_* → CAF_* pattern already used for allowed-locations/draft-only/dry-run.
+  Previously the write-approval token had no canonical alias, so an operator who set the canonical
+  `GOHIGHLEVEL_APPROVAL_TOKEN` still had surgical update/patch writes refused. Kept in secrets/.env
+  (never wired into openclaw.json env.vars); empty when unset = the gate stays fail-closed (safe).
+- `ghl_client._get_token()` now points the operator at the canonical `GOHIGHLEVEL_API_KEY` (the
+  wrapper maps it to the engine-internal `GHL_API_KEY`), matching `_get_location_id()`'s guidance.
+  Added an explicit `/products/` → `2021-07-28` VERSION_MAP entry.
+
+### Client-model policy (client boxes run their OWN providers — NEVER Anthropic)
+- Scrubbed genuine client-runtime model recommendations of Anthropic model names: INSTRUCTIONS.md
+  Step 0 and the Step 9 hallucination-escalation now recommend DeepSeek v4 pro or GLM 5.2 (Ollama
+  Cloud preferred, OpenRouter backup; thinking=HIGH) in place of "Opus-tier"; removed `haiku` from
+  the "lighter model" examples; QC.md Section H header de-branded; the generated email-sequences
+  doc now says "tell your assistant" (clients do not run Claude). Left untouched (framework/agent
+  names, not model choices): upstream-engine "Claude Code" product-name mentions, the
+  architecture-diagram label, and the historical CHANGELOG attribution.
+
 ## [1.3.1] - 2026-06-30 — fix: rebuild `caf` on every update (skill-root wire.sh) + drift stamp
 
 ### Fixed (root cause — proven drift)

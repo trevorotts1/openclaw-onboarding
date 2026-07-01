@@ -2,6 +2,10 @@
 
 This document shows real examples of using the GHL API through your AI agent. Each example includes the exact command, what you should expect to see, and what to do if something goes wrong.
 
+> **Prefer MCP / caf first (tiering):** For day-to-day GHL operations, prefer the Official GHL MCP (skill 36, 36 tools) and the Community GHL MCP (skill 36, Tier 2), and build workflows with caf (skill 44, Tier 0). Use the raw curl examples below only when an MCP/caf tool for the operation is unavailable. The raw REST shown here is the foundation/fallback tier — it is required for credential bootstrap and connectivity proof, not for routine bulk operations.
+
+> **Credential variable names:** Examples read the canonical `$GOHIGHLEVEL_API_KEY` (a Private Integration Token, not an API key) and `$GOHIGHLEVEL_LOCATION_ID`. The installer also writes the legacy aliases `GHL_API_KEY` / `GHL_LOCATION_ID` for back-compat, so either name resolves at runtime.
+
 
 ## Example 1: Search for a Contact and Send Them an SMS
 
@@ -11,7 +15,7 @@ This is the most common workflow - find someone in your contacts, then send them
 
 ```bash
 curl -X GET "https://services.leadconnectorhq.com/contacts/search?query=john@email.com" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-07-28"
 ```
 
@@ -35,7 +39,7 @@ curl -X GET "https://services.leadconnectorhq.com/contacts/search?query=john@ema
 
 ```bash
 curl -X POST "https://services.leadconnectorhq.com/conversations/messages" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-07-28" \
   -H "Content-Type: application/json" \
   -d '{
@@ -66,7 +70,7 @@ Replace "abc123def456" with the actual contact ID you received in Step 1.
 
 ```bash
 curl -X POST "https://services.leadconnectorhq.com/conversations/messages" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-07-28" \
   -H "Content-Type: application/json" \
   -d '{
@@ -97,16 +101,16 @@ Here is a complete test sequence you can run to verify everything is connected p
 
 **Test 1 - Check that credentials exist:**
 ```bash
-echo "API Key: $(echo $GHL_API_KEY | head -c 10)..."
-echo "Location ID: $GHL_LOCATION_ID"
+echo "API Key: $(echo $GOHIGHLEVEL_API_KEY | head -c 10)..."
+echo "Location ID: $GOHIGHLEVEL_LOCATION_ID"
 ```
 
 Expected output: You should see the first 10 characters of your API key and your full Location ID. If either is blank, your credentials are not loaded. Go back to INSTALL.md Step 2.
 
 **Test 2 - Test API connection:**
 ```bash
-curl -s -X GET "https://services.leadconnectorhq.com/locations/$GHL_LOCATION_ID" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+curl -s -X GET "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-07-28"
 ```
 
@@ -114,8 +118,8 @@ Expected output: A JSON object with your location name, address, phone number, a
 
 **Test 3 - Test contact search:**
 ```bash
-curl -s -X GET "https://services.leadconnectorhq.com/contacts/?locationId=$GHL_LOCATION_ID&limit=1" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+curl -s -X GET "https://services.leadconnectorhq.com/contacts/?locationId=$GOHIGHLEVEL_LOCATION_ID&limit=1" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-07-28"
 ```
 
@@ -123,8 +127,8 @@ Expected output: A JSON object with a "contacts" array. The array might be empty
 
 **Test 4 - Test media library:**
 ```bash
-curl -s -X GET "https://services.leadconnectorhq.com/medias/?locationId=$GHL_LOCATION_ID&limit=1" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+curl -s -X GET "https://services.leadconnectorhq.com/medias/?locationId=$GOHIGHLEVEL_LOCATION_ID&limit=1" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-07-28"
 ```
 
@@ -135,7 +139,7 @@ Expected output: A JSON object with a media files list. This proves your media l
 
 ```bash
 curl -X POST "https://services.leadconnectorhq.com/contacts/" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-07-28" \
   -H "Content-Type: application/json" \
   -d '{
@@ -170,7 +174,7 @@ Let us say you need to update Jane Doe's phone number:
 
 ```bash
 curl -X PUT "https://services.leadconnectorhq.com/contacts/new_contact_id_here" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-07-28" \
   -H "Content-Type: application/json" \
   -d '{
@@ -191,16 +195,16 @@ This is the most common mistake. Here is what it looks like:
 
 **Wrong (missing Version header):**
 ```bash
-curl -X GET "https://services.leadconnectorhq.com/contacts/?locationId=$GHL_LOCATION_ID&limit=1" \
-  -H "Authorization: Bearer $GHL_API_KEY"
+curl -X GET "https://services.leadconnectorhq.com/contacts/?locationId=$GOHIGHLEVEL_LOCATION_ID&limit=1" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY"
 ```
 
 **What you will see:** A 400 Bad Request error. The error message may be confusing and not clearly tell you that the Version header is missing.
 
 **Correct (with Version header):**
 ```bash
-curl -X GET "https://services.leadconnectorhq.com/contacts/?locationId=$GHL_LOCATION_ID&limit=1" \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+curl -X GET "https://services.leadconnectorhq.com/contacts/?locationId=$GOHIGHLEVEL_LOCATION_ID&limit=1" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-07-28"
 ```
 
@@ -237,3 +241,32 @@ Body: {
 4. Confirm to the user: "Done. SMS sent to Jane Smith at her number on file. Message ID: msg_xyz123."
 
 The AI agent should never ask the user for the contact's phone number or email if it is already in GHL. It should search for the contact and use the information that is already there.
+
+
+## Example 8: Upload a File to the Media Library
+
+Listing media is a simple GET. Uploading is a multipart/form-data POST to a different endpoint.
+
+**Important:** Media uploads must use the **Location** Private Integration Token (`$GOHIGHLEVEL_API_KEY`), not an Agency PIT. With an Agency PIT the upload is rejected.
+
+**Upload a local file:**
+
+```bash
+curl -X POST "https://services.leadconnectorhq.com/medias/upload-file" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
+  -H "Version: 2021-07-28" \
+  -F "file=@/path/to/local/image.png" \
+  -F "name=image.png"
+```
+
+Notes:
+- Do NOT set `Content-Type` by hand. `curl -F` sends `multipart/form-data` with the correct boundary automatically.
+- Size limits: up to 25 MB for regular files, up to 500 MB for video.
+- To register a file already hosted at a URL instead of uploading bytes, send `-F "hosted=true" -F "fileUrl=https://..."` in place of the `file` field.
+
+**What you should see:** A JSON response containing the new media object's `fileId`/`id` and its hosted `url`.
+
+**What to do if it fails:**
+- 401: You are likely using an Agency PIT. Switch to the Location PIT in `$GOHIGHLEVEL_API_KEY`.
+- 400: Confirm the Version header is `2021-07-28` and that you sent either `file` (upload) or `hosted=true` + `fileUrl` (link), not both.
+- 413 / size error: The file exceeds the 25 MB (non-video) limit.

@@ -37,6 +37,13 @@ append_jsonl() {
   shift 2
   local master_dir
   master_dir="$(resolve_master_files_dir)"
+  # Durability guard: ensure the sink dir exists + is writable. A missing or read-only
+  # MASTER_FILES_DIR must surface a loud operator WARNING, never silently drop the event
+  # (and must not abort a `set -e` caller mid-create).
+  if [[ ! -d "$master_dir" ]] && ! mkdir -p "$master_dir" 2>/dev/null; then
+    echo "[skill 41] WARNING: cannot create MASTER_FILES_DIR '$master_dir' -- event '$event_type' NOT logged" >&2
+    return 0
+  fi
   local events_file="$master_dir/build-with-ai-events.jsonl"
   local ts
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -57,7 +64,10 @@ append_jsonl() {
     --arg session_ref "$session_ref" \
     "$@" \
     "{ts:\$ts,skill:\"41-build-with-ai-playbook\",event:\$event_type,session_ref:\$session_ref,source:\"script\"} + ($jq_expr)")"
-  echo "$line" >> "$events_file"
+  if ! printf '%s\n' "$line" >> "$events_file" 2>/dev/null; then
+    echo "[skill 41] WARNING: cannot write '$events_file' -- event '$event_type' NOT logged" >&2
+    return 0
+  fi
 }
 
 backup_core_files() {

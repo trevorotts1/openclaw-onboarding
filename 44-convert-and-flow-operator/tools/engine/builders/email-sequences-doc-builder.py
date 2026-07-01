@@ -84,7 +84,7 @@ HOW_TO = [
     "call-to-action buttons; the URL follows in parentheses. {{contact.first_name}} "
     "and similar are merge tags - leave them as literal text.",
     "To flag something without changing it, use a Google Docs comment.",
-    'When you are done, tell Claude "sync the email doc" and the edits flow '
+    'When you are done, tell your assistant "sync the email doc" and the edits flow '
     "back into the source files and the GHL drafts.",
 ]
 

@@ -12,6 +12,12 @@
 # Skips gracefully -- exits 0 with a log line -- when GHL is absent or the PIT
 # does not resolve / verify. Never blocks closeout.
 #
+# IDEMPOTENT + RETRIED: re-running on a resume is a no-op once .ghlMediaUploaded
+# is true (no duplicate media-library entries / no orphaned URLs), and each
+# per-file upload POST is retried up to GHL_UPLOAD_MAX_ATTEMPTS with exponential
+# backoff so a transient 5xx/429/network blip no longer silently drops the
+# durable GHL link (knobs: ZHC_GHL_UPLOAD_MAX_ATTEMPTS / ZHC_GHL_UPLOAD_RETRY_BACKOFF_BASE).
+#
 # CONVENTIONS (verified against ~/clawd/TOOLS.md "Convert and Flow (GHL)" +
 # docs: marketplace.gohighlevel.com/docs/ghl/medias/upload-media-content):
 #   - Auth: Authorization: Bearer <LOCATION PIT>   (PIT, not a deprecated key)
@@ -58,6 +64,19 @@ now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 if [[ ! -f "$STATE_FILE" ]]; then
   log "WARN" "ghl-media: no state file -- skipping"
+  exit 0
+fi
+
+# ---- idempotency guard: never re-upload on a resume / re-fire ----
+# run-closeout.sh Step 5.5 invokes this script on EVERY run/resume. If a prior
+# run already uploaded successfully (.ghlMediaUploaded == true), re-running would
+# create DUPLICATE media-library entries and mint fresh public URLs, orphaning
+# the durable links already written to state + posted to Telegram. So skip
+# cleanly once the upload is genuinely done. NOTE: only the boolean `true` is a
+# success; the "skipped-*"/"failed-*" string markers are NOT, so an earlier skip
+# or transient failure is still retried on the next resume.
+if [[ "$(state_get '.ghlMediaUploaded')" == "true" ]]; then
+  log "INFO" "ghl-media: .ghlMediaUploaded already true -- skipping (idempotent; not re-uploading)"
   exit 0
 fi
 
@@ -134,6 +153,15 @@ fi
 GHL_FOLDER_ID="${GHL_MEDIA_FOLDER_ID:-}"
 [[ -n "$GHL_FOLDER_ID" ]] && log "INFO" "ghl-media: uploading into pre-created folder parentId=$GHL_FOLDER_ID"
 
+# ---- upload retry / backoff knobs ----
+# Each upload is a SINGLE multipart POST; a transient 5xx / 429 / network blip
+# would otherwise silently drop the durable GHL link (best-effort, never blocks
+# closeout). Retry up to N attempts with exponential backoff, mirroring
+# wire-n8n-closeout.sh and generate-celebration-video.sh. The backoff base is
+# overridable so the test harness can run with no real waits.
+GHL_UPLOAD_MAX_ATTEMPTS="${ZHC_GHL_UPLOAD_MAX_ATTEMPTS:-3}"
+GHL_UPLOAD_RETRY_BACKOFF_BASE="${ZHC_GHL_UPLOAD_RETRY_BACKOFF_BASE:-2}"
+
 uploaded=0
 declare -a UPLOADED_IDS=()
 declare -a UPLOADED_URLS=()
@@ -149,21 +177,39 @@ for entry in "${TO_UPLOAD[@]}"; do
   # A clean, human-readable media-library name: "<Company> -- <Label>.<ext>"
   ext="${fname##*.}"; [[ "$ext" == "$fname" ]] && ext=""
   nice_name="$COMPANY_NAME -- $label"; [[ -n "$ext" ]] && nice_name="$nice_name.$ext"
-  log "INFO" "ghl-media: uploading '$nice_name' ($fname) -> $GHL_BASE/medias/upload-file (location $GHL_LOC)"
   _folder_arg=()
   # Documented folder field is `parentId` (NOT `folderId`).
   [[ -n "$GHL_FOLDER_ID" ]] && _folder_arg=(-F "parentId=$GHL_FOLDER_ID")
-  resp=$(curl -s --max-time 300 \
-    -H "Authorization: Bearer $GHL_PIT" \
-    -H "Version: $GHL_VERSION" \
-    -F "file=@$f" \
-    -F "locationId=$GHL_LOC" \
-    -F "name=$nice_name" \
-    -F "hosted=false" \
-    "${_folder_arg[@]}" \
-    "$GHL_BASE/medias/upload-file" 2>>"$LOG_FILE") || resp=""
-  file_id=$(printf '%s' "$resp" | jq -r '.fileId // .id // empty' 2>/dev/null)
-  file_url=$(printf '%s' "$resp" | jq -r '.url // .fileUrl // empty' 2>/dev/null)
+
+  # Retry the upload POST up to GHL_UPLOAD_MAX_ATTEMPTS with exponential backoff.
+  # Break the instant a fileId comes back; a transient curl failure or a non-
+  # fileId body (5xx/429) re-tries instead of silently dropping the durable link.
+  file_id=""
+  file_url=""
+  resp=""
+  attempt=0
+  while (( attempt < GHL_UPLOAD_MAX_ATTEMPTS )); do
+    attempt=$((attempt + 1))
+    log "INFO" "ghl-media: uploading '$nice_name' ($fname) attempt $attempt/$GHL_UPLOAD_MAX_ATTEMPTS -> $GHL_BASE/medias/upload-file (location $GHL_LOC)"
+    resp=$(curl -s --max-time 300 \
+      -H "Authorization: Bearer $GHL_PIT" \
+      -H "Version: $GHL_VERSION" \
+      -F "file=@$f" \
+      -F "locationId=$GHL_LOC" \
+      -F "name=$nice_name" \
+      -F "hosted=false" \
+      "${_folder_arg[@]}" \
+      "$GHL_BASE/medias/upload-file" 2>>"$LOG_FILE") || resp=""
+    file_id=$(printf '%s' "$resp" | jq -r '.fileId // .id // empty' 2>/dev/null)
+    file_url=$(printf '%s' "$resp" | jq -r '.url // .fileUrl // empty' 2>/dev/null)
+    [[ -n "$file_id" ]] && break
+    if (( attempt < GHL_UPLOAD_MAX_ATTEMPTS )); then
+      _backoff=$(( GHL_UPLOAD_RETRY_BACKOFF_BASE ** attempt ))
+      log "WARN" "ghl-media: upload of '$nice_name' attempt $attempt/$GHL_UPLOAD_MAX_ATTEMPTS returned no fileId (resp: $(printf '%s' "$resp" | head -c 200)) -- retrying in ${_backoff}s"
+      sleep "$_backoff"
+    fi
+  done
+
   if [[ -n "$file_id" ]]; then
     uploaded=$((uploaded + 1))
     UPLOADED_IDS+=("$file_id")
@@ -175,9 +221,9 @@ for entry in "${TO_UPLOAD[@]}"; do
         infographic2)     GHL_INF2_PUBLIC_URL="$file_url" ;;
       esac
     fi
-    log "INFO" "ghl-media: uploaded '$nice_name' -> fileId=$file_id publicUrl=${file_url:-<none>}"
+    log "INFO" "ghl-media: uploaded '$nice_name' -> fileId=$file_id publicUrl=${file_url:-<none>} (attempt $attempt/$GHL_UPLOAD_MAX_ATTEMPTS)"
   else
-    log "WARN" "ghl-media: upload of '$nice_name' did not return a fileId (resp: $(printf '%s' "$resp" | head -c 200))"
+    log "WARN" "ghl-media: upload of '$nice_name' FAILED after $GHL_UPLOAD_MAX_ATTEMPTS attempts (last resp: $(printf '%s' "$resp" | head -c 200))"
   fi
 done
 

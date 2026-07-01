@@ -27,7 +27,11 @@ CALENDAR_JSON="$OPENCLAW_DIR/config/content-calendar.json"
 EXAMPLE_TEMPLATE="$SKILL_DIR/scripts/content-calendar.example.json"
 CYCLE_SCRIPT="$SCRIPT_DIR/run-publishing-cycle.sh"
 
-LOG_FILE="/tmp/skill-35-weekly-$(date +%Y%m%d).log"
+# Persistent log dir — NOT /tmp (which is cleared on reboot; the skill's own cron
+# doc requires persistence). Fall back to /tmp only if the dir cannot be created.
+LOG_DIR="$OPENCLAW_DIR/data/skill35/logs"
+mkdir -p "$LOG_DIR" 2>/dev/null || LOG_DIR="/tmp"
+LOG_FILE="$LOG_DIR/skill-35-weekly-$(date +%Y%m%d).log"
 
 log()  { printf '[%s] [Skill35-batch] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$LOG_FILE"; }
 warn() { printf '[%s] [Skill35-batch][WARN] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$LOG_FILE" >&2; }

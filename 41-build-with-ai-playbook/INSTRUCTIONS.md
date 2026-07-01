@@ -13,6 +13,37 @@ This is the operator-facing runtime guide. It assumes the install scripts (00--0
 
 ## The master protocol: brainstorm --> dependencies --> build --> verify
 
+### Command Center reflection (best-effort, silent when absent)
+
+As the build moves through the steps below, reflect progress on the operator's Command Center
+Kanban so the board mirrors real work (this skill otherwise only appends to
+build-with-ai-events.jsonl, leaving the board static). This is **best-effort and fail-soft**:
+when no Command Center is running (e.g. a client VPS without mission-control) every call is a
+silent no-op and the build proceeds unchanged. It uses HTTP only (never writes the Command
+Center database), never blocks a build, and logs to the operator's stderr only -- no
+client-facing chatter.
+
+Source the helper once at the start of a build session, then move the card per transition.
+`$TASK_ID` and `$AGENT_ID` are supplied by the orchestrator when a Kanban card exists; if they
+are unset the calls are harmless no-ops.
+
+```bash
+# Mac: $HOME/.openclaw ; VPS: /data/.openclaw
+source "$HOME/.openclaw/skills/41-build-with-ai-playbook/scripts/lib-command-center.sh"
+```
+
+| Build transition | Column | Call |
+|---|---|---|
+| Step 1 brainstorm starts | planning | `cc_move_task "${TASK_ID:-}" planning "${AGENT_ID:-}"` |
+| Step 5 build initiated | in_progress | `cc_move_task "${TASK_ID:-}" in_progress "${AGENT_ID:-}"` |
+| Step 6 build completed (verified) | review | `cc_move_task "${TASK_ID:-}" review "${AGENT_ID:-}"` |
+| Step 6 verification failed | blocked | `cc_move_task "${TASK_ID:-}" blocked "${AGENT_ID:-}"` (or return to orchestrator) |
+
+`review -> done` is owned by the Command Center's QC scorer, NOT this builder: `cc_move_task`
+refuses a `done` move on purpose (the builder must not self-grade to done). Requires
+`MC_API_TOKEN` (sent only in the Authorization header, never logged) and optionally
+`MISSION_CONTROL_URL` (default `http://localhost:4000`).
+
 ### Step 1: Brainstorm flow (friendly, concise)
 
 When the operator asks to build a workflow, do NOT dump 50 questions. USE what you already know (business, products, services, calendars, who they are, habits -- from Typed Knowledge Bases + USER.md + MEMORY.md) and ask ONLY the smart gaps.
@@ -24,6 +55,8 @@ When the operator asks to build a workflow, do NOT dump 50 questions. USE what y
    - What should happen if they don't respond? (wait + follow-up, or exit)
    - Any external system involved? (webhook to another tool)
 3. **Confirm with YES** before proceeding. Never build on a guess.
+
+> Best-effort Command Center: `cc_move_task "${TASK_ID:-}" planning "${AGENT_ID:-}"` (silent no-op if no Command Center / no card).
 
 ### Step 2: Dependency audit (what must exist FIRST)
 
@@ -112,6 +145,8 @@ Every prompt MUST follow the 8-section template at templates/build-with-ai-promp
 
 ### Step 5: Build the workflow — Option 1 (CAF direct) or Option 2 (manual paste)
 
+> Best-effort Command Center: on build start, `cc_move_task "${TASK_ID:-}" in_progress "${AGENT_ID:-}"` (silent no-op if absent). Build paths and event logging are unchanged by this.
+
 > **3-layer architecture reference:** `38-conversational-ai-system/references/GHL_AI_LAYERS.md`
 > is the canonical doc for the Layer 0 compile-time build-path decision (CAF vs Build-with-AI),
 > Layer 1 (Workflow AI step prompt), and Layer 2 (OpenClaw playbook). Cross-read it before any
@@ -165,9 +200,11 @@ Run protocols/verification-checklist.md after every build:
 
 **If any checklist item fails:** note the failure, suggest the fix, and re-verify.
 
+> Best-effort Command Center: on a clean pass, `cc_move_task "${TASK_ID:-}" review "${AGENT_ID:-}"` (let the Command Center QC scorer promote review->done -- never self-promote). On a failure that cannot be fixed in-line, `cc_move_task "${TASK_ID:-}" blocked "${AGENT_ID:-}"` and return to the orchestrator. Silent no-op if no Command Center.
+
 ### Step 7: Log to build-with-ai-events.jsonl
 
-Append one line per build session to MASTER_FILES_DIR/build-with-ai-events.jsonl. Schema in references/f52-data-contract.md.
+Append one line per build session to MASTER_FILES_DIR/build-with-ai-events.jsonl. Schema in references/f52-data-contract.md. The jsonl log is the canonical record and is written on every path; the Command Center reflection above is an additional best-effort mirror, never a substitute. After Step 6 the card rests in `review` for the Command Center QC scorer to promote -- this builder never moves a card to `done`.
 
 ## Webhook configuration deep-dive
 

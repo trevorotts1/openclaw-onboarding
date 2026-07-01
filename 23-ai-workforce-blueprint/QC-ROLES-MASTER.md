@@ -148,10 +148,10 @@ python3 "$MASTER_FILES_DIR/../shared-utils/select_model.py" --skill ai-workforce
 If you need to visually review images or video frames, your QC agent must receive the actual image file as an attachment, not just a description of the image. A language model reading text about an image cannot spot visual problems. Use a vision-capable model and pass the actual image.
 
 **Note on Coding Models:**
-Code review requires a model that can read and understand code, not just plain language. Both Claude Opus and GPT-5.4 (via `openai-codex/` prefix) are strong at code review. Never use a lightweight model for code QC on production deployments.
+Code review requires a model that can read and understand code, not just plain language. Both DeepSeek v4 pro (Ollama Cloud preferred, OpenRouter backup, thinking=HIGH) and GPT-5.4 (via `openai-codex/` prefix) are strong at code review. Never use a lightweight model for code QC on production deployments.
 
 **Note on Legal / HR / Compliance:**
-These departments benefit from the most thorough model available (Opus 4.6 or GPT-5.4) because the cost of a missed error in a contract, policy, or compliance document is high. Do not cut costs here.
+These departments benefit from the most thorough model available (DeepSeek v4 pro or GPT-5.4; Ollama Cloud preferred, OpenRouter backup, thinking=HIGH) because the cost of a missed error in a contract, policy, or compliance document is high. Do not cut costs here.
 
 ---
 

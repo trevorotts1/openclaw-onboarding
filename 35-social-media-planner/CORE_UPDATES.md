@@ -100,7 +100,7 @@ The agent produces every podcast episode end-to-end. It NEVER asks the client to
 
 6. **On failure: diagnose and retry** — the script diagnoses common causes (invalid API key, invalid voice ID, network error, rate limit, model unavailable) and retries up to 3x. After 3 failures: notify operator via Telegram with diagnostic output, then (only then) offer client the self-record fallback.
 
-7. **Generate 1,400x1,400 cover JPEG** via kie.ai Nano Banana 2 (2K resolution required for Podbean minimum). JPEG only — never WebP (Apple Podcasts rejects it). If over 500 KB: `convert input.png -resize 1400x1400 -quality 85 output.jpg`.
+7. **Generate 1,400x1,400 cover JPEG** via kie.ai Nano Banana 2 (2K resolution required for Podbean minimum). JPEG only — never WebP (Apple Podcasts rejects it). If over 500 KB, resize with ImageMagick (`magick` on IM7, `convert` on IM6): `IM="$(command -v magick || command -v convert)"; "$IM" input.png -resize 1400x1400 -quality 85 output.jpg`.
 
 8. **Upload audio + cover to GHL Media Library** — NEVER send Fish Audio URLs directly to the webhook.
 
@@ -137,7 +137,7 @@ The agent produces every podcast episode end-to-end. It NEVER asks the client to
 
 | Tool | Purpose | Credentials |
 |------|---------|-------------|
-| GoHighLevel Social Planner API | Post scheduling, commenting, media attachment across all 6 platforms | GOHIGHLEVEL_API_KEY + GOHIGHLEVEL_LOCATION_ID |
+| GoHighLevel Social Planner API | Post scheduling, commenting, media attachment across every channel connected in GHL (live-queried — not a fixed list) | GOHIGHLEVEL_API_KEY + GOHIGHLEVEL_LOCATION_ID |
 | kie.ai API | Image generation (Nano Banana 2) at 4:5, 2:3, 9:16, 16:9, 1:1 ratios. Video generation (Veo 3.1 Lite) | KIE_API_KEY |
 | Fish Audio S2 API | Podcast TTS with inline [emotion] tags (depends on Skill 30) | FISH_AUDIO_API_KEY + FISH_AUDIO_VOICE_ID |
 | Google Sheets API | Content logging across 19 worksheets with inline image previews | **Sheet created automatically via n8n webhook** - no client credentials needed |

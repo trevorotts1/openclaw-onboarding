@@ -21,9 +21,11 @@
         "lead_route",
         "open_house",
         "pre_foreclosure_touch",
-        "sales_brain_extension_installed"
+        "sales_brain_extension_installed",
+        "ghl_sync"
       ]
     },
+    "action": { "type": "string", "description": "ghl_sync sub-action: tag | opportunity | book | cc_move" },
     "lead_ref": { "type": "string", "description": "Opaque local lead handle (NOT PII)" },
     "source": { "type": "string", "description": "Data origin: provider slug, 'operator', 'census', or 'none'" },
 

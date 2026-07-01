@@ -1,7 +1,7 @@
 # opportunities.md - Opportunities Module Reference (10 Endpoints)
 
 Base URL: `https://services.leadconnectorhq.com`
-Required on all calls: `Authorization: Bearer $PRIVATE_INTEGRATION_TOKEN` and `Version: 2021-04-15`
+Required on all calls: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` and `Version: 2021-04-15`
 
 ---
 
@@ -137,12 +137,12 @@ Body: { followers: ["userId1"] }
 ## Common Workflow
 
 ```bash
-source ~/clawd/secrets/.env
+source ~/.openclaw/secrets/.env
 
 # 1. Get pipelines and stages
 curl -s \
-  "https://services.leadconnectorhq.com/opportunities/pipelines?locationId=$GHL_LOCATION_ID" \
-  -H "Authorization: Bearer $PRIVATE_INTEGRATION_TOKEN" \
+  "https://services.leadconnectorhq.com/opportunities/pipelines?locationId=$GOHIGHLEVEL_LOCATION_ID" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-04-15" | jq '.pipelines[] | {id, name, stages: [.stages[] | {id, name}]}'
 
 # 2. Create an opportunity
@@ -153,12 +153,12 @@ CONTACT_ID="your_contact_id"
 curl -s \
   "https://services.leadconnectorhq.com/opportunities/" \
   -X POST \
-  -H "Authorization: Bearer $PRIVATE_INTEGRATION_TOKEN" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-04-15" \
   -H "Content-Type: application/json" \
   -d '{
     "pipelineId": "'"$PIPELINE_ID"'",
-    "locationId": "'"$GHL_LOCATION_ID"'",
+    "locationId": "'"$GOHIGHLEVEL_LOCATION_ID"'",
     "name": "Jane Doe - Consulting Package",
     "pipelineStageId": "'"$STAGE_ID"'",
     "status": "open",
@@ -173,7 +173,7 @@ NEXT_STAGE_ID="next_stage_id"
 curl -s \
   "https://services.leadconnectorhq.com/opportunities/$OPP_ID" \
   -X PUT \
-  -H "Authorization: Bearer $PRIVATE_INTEGRATION_TOKEN" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-04-15" \
   -H "Content-Type: application/json" \
   -d '{"pipelineStageId": "'"$NEXT_STAGE_ID"'"}' | jq .
@@ -182,7 +182,7 @@ curl -s \
 curl -s \
   "https://services.leadconnectorhq.com/opportunities/$OPP_ID/status" \
   -X PUT \
-  -H "Authorization: Bearer $PRIVATE_INTEGRATION_TOKEN" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
   -H "Version: 2021-04-15" \
   -H "Content-Type: application/json" \
   -d '{"status": "won"}' | jq .

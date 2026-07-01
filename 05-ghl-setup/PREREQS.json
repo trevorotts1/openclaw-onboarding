@@ -7,7 +7,7 @@
       "label": "GoHighLevel Private Integration Token (PIT)",
       "check": { "envVar": "GOHIGHLEVEL_API_KEY" },
       "severity": "required",
-      "satisfy": "Add GOHIGHLEVEL_API_KEY=<your PIT> to ~/.openclaw/secrets/.env (chmod 600), then run: openclaw config set env.vars.GOHIGHLEVEL_API_KEY \"$GOHIGHLEVEL_API_KEY\". Get the PIT from GHL Settings > Integrations > Private Integrations."
+      "satisfy": "Add GOHIGHLEVEL_API_KEY=<your PIT> to ~/.openclaw/secrets/.env (chmod 600), then run: openclaw config set env.vars.GOHIGHLEVEL_API_KEY \"$GOHIGHLEVEL_API_KEY\". Get the PIT from GHL Settings > Integrations > Private Integrations. On a VPS/Docker box, run the config set inside the container as user node (docker exec -u node ...) since root config writes can freeze the gateway, and use /data/.openclaw/secrets/.env."
     },
     {
       "id": "ghl-location",
@@ -15,7 +15,7 @@
       "label": "GoHighLevel Location ID",
       "check": { "envVar": "GOHIGHLEVEL_LOCATION_ID" },
       "severity": "required",
-      "satisfy": "Add GOHIGHLEVEL_LOCATION_ID=<your location id> to ~/.openclaw/secrets/.env, then: openclaw config set env.vars.GOHIGHLEVEL_LOCATION_ID \"$GOHIGHLEVEL_LOCATION_ID\"."
+      "satisfy": "Add GOHIGHLEVEL_LOCATION_ID=<your location id> to ~/.openclaw/secrets/.env, then: openclaw config set env.vars.GOHIGHLEVEL_LOCATION_ID \"$GOHIGHLEVEL_LOCATION_ID\". On a VPS/Docker box, run the config set inside the container as user node (docker exec -u node ...) and use /data/.openclaw/secrets/.env."
     }
   ]
 }

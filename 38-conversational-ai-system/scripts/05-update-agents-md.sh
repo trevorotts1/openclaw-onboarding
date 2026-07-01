@@ -182,6 +182,69 @@ send call and confirm a messageId/conversationId before ending the turn.
 BLOCK_A2
 
 # -----------------------------------------------------------------------------
+# (a2b) SKILL38_RUNTIME_GHL_TIER_LADDER — HOW to reach GHL at runtime, and what
+#       to do when the credential is dead. caf (Skill 44, Tier 0) is PRIMARY;
+#       raw REST stays as the documented Tier-3 fallback (nothing removed). The
+#       401/no-credential clause is the honesty-floor extension: never claim a
+#       reply was "sent" on a non-2xx. Pointer-style; exact caf flags come from
+#       `caf --help` (never guessed) — the caf command GROUPS below are the
+#       Tier-0 surface documented in Skill 44 (contacts/conversations/calendars/
+#       payments/locations).
+# -----------------------------------------------------------------------------
+append_block "SKILL38_RUNTIME_GHL_TIER_LADDER" <<'BLOCK_A2B'
+
+## GHL runtime access — TIER LADDER (caf first, raw REST as the fallback)
+
+When you SEND a reply, READ a thread, check calendars, book/reschedule an
+appointment, create/send an invoice, write a contact field, or tag a contact,
+use this order (degrade DOWN one tier on failure — never end the turn silently):
+
+- **Tier 0 — caf (Skill 44 `convert-and-flow-operator`), PRIMARY.** The caf CLI
+  is a subprocess, so it works in the orchestrator AND in sub-agents (MCP does
+  NOT inject into sub-agents). Use the documented caf command groups:
+  `caf conversations` (send message + read threads), `caf calendars` (list/free-
+  slots + create/update bookings), `caf contacts` (update / tag / untag),
+  `caf payments` (create + send invoice), `caf locations` (list custom fields).
+  Run `caf --help` (and `caf <group> --help`) for the EXACT subcommand + flags —
+  do NOT guess flag names.
+- **Tier 1 — official GHL MCP (`ghl-mcp__*`).** Orchestrator session ONLY (never
+  in a sub-agent). Use if caf is absent/`caf doctor` fails and you are the
+  orchestrator.
+- **Tier 2 — community MCP.** Only for billing / products / subscriptions / Voice
+  that the official MCP lacks.
+- **Tier 3 — raw REST to `services.leadconnectorhq.com`.** The documented
+  LAST-RESORT fallback — the exact curl shapes are in TOOLS.md
+  (`SKILL38: GHL_API_QUICK_REFERENCE`). Keep using it whenever caf/MCP are
+  unavailable (e.g. a caf-less box). **Media upload stays Tier 3** (`POST
+  /medias/upload-file`; caf has no media command).
+
+The inbound entry is UNCHANGED regardless of tier: GHL Custom Webhook → OpenClaw
+hook, the FLAT 23-key raw body, the `hooks.mappings` server template, and
+`deliver:false` (the agent sends the reply itself) all stay exactly as installed.
+
+### No-credential / 401 fault handling (honesty-floor extension)
+
+If a GHL send or read returns **401 / 403 / any non-2xx** (the PIT is missing,
+expired, or wrong-scope), you have NOT delivered the reply. Do the following —
+NEVER report the reply as "sent":
+
+1. **Escalate to the OPERATOR** (log + notify per notification-routing-protocol.md)
+   with the failing op and status code.
+2. **Tell the CLIENT in plain English** (their own channel) that their GoHighLevel
+   / Convert-and-Flow connection needs a quick refresh — name the credential
+   (`GHL_PRIVATE_INTEGRATION_TOKEN`, and/or the location id
+   `GOHIGHLEVEL_LOCATION_ID` / `GHL_LOCATION_ID`), where it lives (the secrets env
+   file, `secrets/.env` on Mac), and the re-issue steps. Mirror the Skill 44
+   token-refresh wording (short, friendly, numbered).
+
+A daily runtime-PIT liveness check (`scripts/check-ghl-pit-liveness.sh`, cron
+`ghl-pit-liveness`) catches a dead PIT proactively and sends the same
+client-facing refresh message once per day — but the per-turn rule above still
+applies on any live failure.
+
+BLOCK_A2B
+
+# -----------------------------------------------------------------------------
 # (a3) CONVERSATION_MEMORY_PROTOCOL — standing base rule. GHL inbound hook
 #      sessions are SINGLE-TURN / stateless; the agent's only cross-message
 #      memory is the per-contact conversation log. READ before replying, APPEND

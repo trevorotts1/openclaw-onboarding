@@ -41,6 +41,16 @@
 #   7. READ-BY-search — to read prior thread history, GET conversations/search
 #      (find the thread by contact) is referenced.
 #
+# caf-FIRST NOTE: the runtime tier ladder prefers Skill 44 `caf` (Tier 0) with
+# raw REST as the documented Tier-3 fallback (see the SKILL38_RUNTIME_GHL_TIER_
+# LADDER block in AGENTS.md / scripts/05-update-agents-md.sh). This gate ALREADY
+# accepts a caf-first directive UNCHANGED: element 2 (_has_api) is satisfied by
+# the retained "conversations/messages" reference that the raw-REST fallback
+# keeps — so a template reading "SEND via caf conversations send-message (or POST
+# conversations/messages)" passes. The gate deliberately does NOT *require* caf
+# (that would break caf-less boxes) and is NOT weakened: raw REST must remain the
+# documented fallback, which keeps element 2 present. No logic change needed.
+#
 # Exit codes: 0 = all GHL inbound server templates carry the directive;
 #             1 = one or more are missing element(s);
 #             2 = no GHL inbound server templates found (scan target moved —

@@ -7,7 +7,7 @@ Three native methods exist for landing content on a GoHighLevel page:
 
   (a) DIRECT — HTML fragment (NOT a full document) written into a single
       GoHighLevel native customCode element, inside a complete section →
-      row → column → element blob with a populated ``defaultSettings.colors``
+      row → column → element blob with a populated ``general.general.colors``
       theme object. Covers ~90% of pages. B1's ``new_page_blob`` produces
       the blob; this module routes to it by default.
 
