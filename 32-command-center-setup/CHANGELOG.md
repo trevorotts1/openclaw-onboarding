@@ -1,5 +1,37 @@
 # Changelog — 32-command-center-setup
 
+## v12.9.23 — 2026-07-01 — Dept-scan dedup-priority fix, interview multi-signal corroboration gate, jq-injection-safe state writes, tunnel phase-letter dedup
+
+- **P2-4 — Dept-scan dedup-priority fix.** `materialize-dept-agents.sh` `DEPT_SCAN_ROOTS` was
+  scanned legacy-first / canonical-last while the Python discovery loop uses first-wins
+  `setdefault()` — so a stale leftover folder under the legacy `workspace/departments/` path
+  could silently shadow the current, correct `build-workforce.py` output for the same slug.
+  Reordered to most-authoritative-first: canonical master-files ZHC tree, then the Skill 32
+  `workspaces/command-center` alt path, then the legacy `workspace/departments` path last, so
+  first-wins `setdefault()` actually picks the canonical copy.
+- **P2-7 — Interview multi-signal corroboration gate (binding, SKILL.md).** `run-full-install.sh`
+  no longer scaffolds a Command Center off the bare `interviewComplete` flag alone. After the
+  fast pre-check passes, it now shells out to `23-ai-workforce-blueprint/scripts/qc-interview-completion.py`
+  (question count, forbidden jargon, mandatory fields, nudge wiring, no-fabrication) and only
+  proceeds on a PASS (rc=0). A missing qc script fails **closed** (exit 1, `commandCenterStatus =
+  "interview-qc-unverified"`) rather than silently passing; a non-PASS QC result gates the CC and
+  exits clean (`commandCenterStatus = "interview-pending"`) so the interview resume/nudge loop can
+  drive it to PASS.
+- **P3-2 — jq-injection-safe state writes.** New `state_set_arg` helper writes any free-form or
+  user-derived string (failure reasons, GHL missing-cred lists, tunnel URLs) via `jq --arg`
+  instead of interpolating it into the jq program text, so a reason containing a quote or newline
+  can no longer corrupt `openclaw-state.json` or inject jq. Applied to `fail_install`, the GHL
+  credential-preflight missing-cred record, and the tunnel-success URL write.
+- **P3-2 — Tunnel phase-letter collision fixed.** The tunnel phase in `run-full-install.sh` was
+  mislabeled "PHASE 6b", colliding with the workspace-seed phase (also 6b). Renamed to the next
+  free letter, 6h (6b–6g are seed/sync/md-sync/dashboard-content/kpi/ghl-preflight). The state key
+  renamed `commandCenterPhase6bStatus` → `commandCenterPhase6hStatus`, with a backward-compat read
+  fallback to the old key so the duplicate-CC re-POST guard keeps working on boxes whose state
+  predates the rename.
+- **P1-3 — `--update-only` client-slug resolution.** Now reads `companySlug` (canonical, written
+  by `build-workforce.py`) via `state_get`, falling back to the legacy `clientSlug` alias, instead
+  of a raw one-off `python3 -c` read that only checked `clientSlug`.
+
 ## v12.9.21 — 2026-06-30 — DB-path reconciliation, GHL preflight, orphan wiring, Done-Gate enforcement
 
 - **P0 — One DB resolver everywhere.** Reconciled every `mission-control.db` lookup to
