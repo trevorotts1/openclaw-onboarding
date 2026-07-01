@@ -3,7 +3,7 @@
 # stuck BEFORE the closeout sweep can reach them.
 #
 # This is the MISSING SCREEN that answers "who is one step from their ZHC and
-# stuck?" — the thing that was missing when Beverly sat for 9 days after Q22.
+# stuck?" — the thing that was missing when a client sat for 9 days after Q22.
 #
 # fleet-sweep-closeouts.sh only checks clients whose buildCompletedAt is set.
 # This script surfaces clients who NEVER MAKE IT that far: stalled interviews,
@@ -21,7 +21,7 @@
 # OUTPUT:
 #   Table:
 #     BOX            STAGE                 IDLE   QC      BLOCKERS
-#     beverly        mid-interview(21/30)  9d     -       STUCK_MID_INTERVIEW
+#     <client>       mid-interview(21/30)  9d     -       STUCK_MID_INTERVIEW
 #
 # EXIT CODES:
 #   0  no stuck clients

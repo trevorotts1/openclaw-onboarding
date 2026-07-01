@@ -1,5 +1,13 @@
 # Changelog - Skill 37: ZHC Closeout
 
+## [1.3.4] - 2026-07-01 - v12.14.11: client-name redaction (fleet privacy invariant)
+
+- `scripts/fleet-stuck-clients.sh`: redacted real client first name from header comment and example output table to generic `<client>` placeholder.
+- `scripts/generate-infographics.sh`: redacted client name from shape-tolerant dept-enumeration comment to "a 22-dept client box".
+- `scripts/test-closeout-watchdog.sh`: replaced real client first name in two companyName test fixtures (generic "Acme Corp"); updated T8b grep pattern accordingly.
+- `scripts/run-closeout.sh`: redacted real client first name from two inline comments to "a client".
+- No logic changes. All test assertions remain equivalent; T8b now matches "Acme" which matches the updated fixture.
+
 ## [1.3.3] - 2026-06-30 - v12.14.10: GHL media upload retry/backoff + idempotency (durable link no longer silently dropped or duplicated)
 
 - `scripts/upload-ghl-media.sh`: the per-file media upload was a SINGLE multipart POST with no retry — unlike `wire-n8n-closeout.sh` and `generate-celebration-video.sh`, which both retry — so a transient 5xx / 429 / network blip silently dropped the durable GHL public link (best-effort, never blocked closeout, but the "Open it directly" link was lost). Each upload POST is now wrapped in a retry loop: up to `GHL_UPLOAD_MAX_ATTEMPTS` attempts (default 3) with exponential backoff (`GHL_UPLOAD_RETRY_BACKOFF_BASE ** attempt`, default base 2 → 2s, 4s between attempts), breaking the instant a `fileId` comes back. New env knobs `ZHC_GHL_UPLOAD_MAX_ATTEMPTS` / `ZHC_GHL_UPLOAD_RETRY_BACKOFF_BASE` (the base override lets the test harness run with no real waits, mirroring `ZHC_VIDEO_RETRY_BACKOFF_BASE`).

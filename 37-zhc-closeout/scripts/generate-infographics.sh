@@ -99,7 +99,7 @@ BRAND_COLOR=$(state_get '.brandColor')
 
 # ---- shape-tolerant department enumeration ----
 # Schema declares .departments as an array, but production state files (e.g.
-# Maria's 22-dept box) have it as a keyed object. Normalize into a uniform
+# a 22-dept client box) have it as a keyed object. Normalize into a uniform
 # [{slug, name, roles, emoji}] list.
 DEPT_TYPE=$(jq -r '.departments | type' "$STATE_FILE" 2>/dev/null)
 case "$DEPT_TYPE" in

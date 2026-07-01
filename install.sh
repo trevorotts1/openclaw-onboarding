@@ -2829,7 +2829,7 @@ mkdir -p "$TEMP_EXTRACT"
 # Contabo Debian Bookworm container also ships WITHOUT `unzip` (INSTALL-GOTCHAS
 # #1). The previous code fell through `ditto`→`unzip` and, if `unzip` was also
 # absent, silently produced no extract dir → "Unexpected archive structure"
-# abort (this broke Beverly's Contabo onboarding). FIX: branch on $OC_PLATFORM,
+# abort (this broke a client's Contabo onboarding). FIX: branch on $OC_PLATFORM,
 # and on Linux fall back to `python3` zipfile — python3 is ALWAYS present (the
 # platform bootstrap hard-requires it). All three methods are tested-equivalent
 # for the GitHub-archive zip we download.
@@ -3110,7 +3110,7 @@ fi
 # `extension_registry` key and `agents.defaults.tools.*` — see CHANGELOG
 # v13.1.3 / register-routing-dept.py fix). `browser.agentBrowser` is an
 # UNKNOWN sub-key under the `browser` object, so on a fresh 2026.6.8 container
-# the gateway refuses to start → CRASH-LOOP (this took Beverly's Contabo box
+# the gateway refuses to start → CRASH-LOOP (this took a client's Contabo box
 # down). The block's own comment admitted it was ADVISORY-ONLY: agent-browser
 # ignores it natively; the REAL session/process caps live in browser_manager.sh
 # + agent-browser-reaper.sh (env-overridable). So writing it gained nothing and

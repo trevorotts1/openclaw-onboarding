@@ -1,5 +1,17 @@
 # Skill 42 — Personal Assistant Library — Changelog
 
+## 1.0.2 — 2026-07-01
+
+Client-name redaction (fleet privacy invariant).
+
+- `specialists/25-imposter-syndrome/how-to.md`: replaced real client account name in example coaching dialogue with generic "Meridian" placeholder.
+- `specialists/16-motivation-momentum/IDENTITY.md`: replaced real client account name in core-principle example with "a major deal".
+- No behavior change; all `{{TOKEN}}` template placeholders and SOP logic unchanged.
+
+## 1.0.1
+
+(internal patch — no changelog entry at time of release)
+
 ## 1.0.0 — 2026-06-03
 
 Initial release. Ships the Personal Assistant Library as standalone Skill 42.
