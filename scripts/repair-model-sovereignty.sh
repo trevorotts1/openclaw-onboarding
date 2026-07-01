@@ -211,13 +211,27 @@ def _scrub_fallbacks(fb, location):
     return kept, removed
 
 
-def _process_model_field(holder, key, location, dept_hint):
+def _process_model_field(holder, key, location, dept_hint,
+                         agent_id=None, null_is_offense=False):
     """Strip/scrub/cap/re-resolve one model field at holder[key] (mutates in place
     only when APPLY). Handles PRIMARY (offender → re-resolve from the box's own
-    inventory) and fallbacks[] (scrub forbidden/preview/free, then cap depth)."""
+    inventory) and fallbacks[] (scrub forbidden/preview/free, then cap depth).
+
+    `agent_id` is the BARE receipt identity that the original sweep + the CI
+    smoke-test key on (e.g. `dept-graphics`); the full JSON path is kept
+    SEPARATELY in the receipt's `location` field.
+
+    `null_is_offense` — when True, a null/missing model field is ITSELF the
+    NULL_MODEL offender: a real agent in agents.list[*] MUST carry a resolved
+    model (the gate flags a null one), so it is re-resolved via the resolver.
+    When False (agents.defaults / any subagents block, where an absent model
+    legitimately inherits and the gate does not flag it), a missing field is a
+    no-op."""
     global changed
+    if agent_id is None:
+        agent_id = location
     mf = holder.get(key)
-    if mf is None:
+    if mf is None and not null_is_offense:
         return
 
     primary = primary_of(mf)
@@ -253,7 +267,7 @@ def _process_model_field(holder, key, location, dept_hint):
             needs_owner = True
             resolution = "needs_owner_input"
         rec = {
-            "agent": location, "location": location, "department": dept_hint,
+            "agent": agent_id, "location": location, "department": dept_hint,
             "old": primary, "offense": code,
             "new": (None if needs_owner else new_primary),
             "resolution": resolution,
@@ -358,21 +372,34 @@ agents = cfg.setdefault("agents", {})
 if isinstance(agents, dict):
     defaults = agents.get("defaults")
     if isinstance(defaults, dict):
-        _process_model_field(defaults, "model", "agents.defaults.model", "")
+        # defaults + subagents: an ABSENT model legitimately inherits, and the
+        # gate only scans a TRUTHY defaults.model — so a null there is NOT an
+        # offender (null_is_offense stays False). fallback scrub/cap still apply.
+        _process_model_field(defaults, "model", "agents.defaults.model", "",
+                             agent_id="agents.defaults")
         _sub = defaults.get("subagents")
         if isinstance(_sub, dict):
-            _process_model_field(_sub, "model", "agents.defaults.subagents.model", "")
+            _process_model_field(_sub, "model", "agents.defaults.subagents.model", "",
+                                 agent_id="agents.defaults.subagents")
     alist = agents.get("list")
     if isinstance(alist, list):
         for a in alist:
             if not isinstance(a, dict):
                 continue
             aid = a.get("id", "?")
-            _process_model_field(a, "model", f"agents.list[{aid}].model", dept_of_agent(aid))
+            # A real department agent MUST carry a resolved model — a null/missing
+            # model on a list agent IS the NULL_MODEL offender (matches both the
+            # gate and the original sweep), re-resolved to a modality-correct
+            # dept default. Its own subagents inherit, so a null there is skipped.
+            _process_model_field(a, "model", f"agents.list[{aid}].model",
+                                 dept_of_agent(aid), agent_id=aid,
+                                 null_is_offense=True)
             _sub = a.get("subagents")
             if isinstance(_sub, dict):
                 _process_model_field(_sub, "model",
-                                     f"agents.list[{aid}].subagents.model", dept_of_agent(aid))
+                                     f"agents.list[{aid}].subagents.model",
+                                     dept_of_agent(aid),
+                                     agent_id=f"{aid}.subagents")
 
 wrote = False
 if APPLY and changed:
