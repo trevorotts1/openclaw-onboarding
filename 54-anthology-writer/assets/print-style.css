@@ -1,0 +1,10 @@
+/* Skill 54 — Anthology Writer :: deterministic print stylesheet.
+ * Applied by aw_render_pdf (deterministic Python), NOT by any LLM. The retired
+ * source HTML-formatter LLM calls are replaced by this fixed stylesheet so the
+ * chapter's visual envelope is reproducible and model-free. Chapter breaks fall
+ * on new pages; nothing here is client- or provider-specific. */
+@page { margin: 1in; }
+h1 { page-break-before: always; font-size: 20pt; }
+h2 { font-size: 15pt; }
+body { font-family: Georgia, "Times New Roman", serif; font-size: 12pt; line-height: 1.5; }
+.chapter { page-break-after: always; }

@@ -739,7 +739,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 5 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/55-... (48 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/55-... (49 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -4670,7 +4670,7 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 48 active skills install in 5 dependency-aware waves, not by number order.
+The 49 active skills install in 5 dependency-aware waves, not by number order.
 Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
 A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
@@ -6704,6 +6704,50 @@ install_skill_52_avatar_intelligence() {
 }
 
 install_skill_52_avatar_intelligence
+
+# ----------------------------------------------------------
+# Skill 54: Anthology Writer (multi-contributor chapter factory + gates)
+# ----------------------------------------------------------
+# Self-contained: this template install copies the Skill 54 folder (SKILL.md,
+# MASTERDOC.md, ANTHOLOGY-MANIFEST.json, the five BAKED sha256-pinned authoring IP
+# prompts, a lockstep copy of the shared tone core 04..08 + verify_tone_core_sync.py,
+# the intake gate + schema, the model-map template, the fail-closed model-free
+# provers, the no-skip orchestrator, and the canonical fail-closed entry). NO
+# external clone. Skill 54 owns the IP + the gates: it turns ONE contributor intake
+# into a finished 2,000-3,500-word anthology chapter (+ tone doc, locked title,
+# blurb, outline) on the CLIENT's own model providers — never the operator's, never
+# Anthropic model ids (the NON-Anthropic build-fix resolves every source tier to the
+# client's strongest NON-Anthropic model). Every SACRED floor is MEASURED by a
+# model-free prover (self-reported counts are ignored). Delivery is a labeled
+# ~/Downloads bundle; it touches no n8n / Airtable / Drive / Slack / Gmail at
+# runtime. SEPARATE skill, sibling of Skill 53 Book Writer, sharing the ONE tone
+# core (shared-utils/tone-writing-core) — never merged.
+install_skill_54_anthology_writer() {
+    local SKILL_SRC="$ONBOARDING_DIR/54-anthology-writer"
+    local SKILL_DEST="$SKILLS_DIR/54-anthology-writer"
+
+    if [ ! -d "$SKILL_SRC" ]; then
+        warn "Skill 54 source dir not found at $SKILL_SRC — skipping (older onboarding bundle?)"
+        return 0
+    fi
+
+    mkdir -p "$SKILL_DEST"
+    cp -R "$SKILL_SRC/." "$SKILL_DEST/" 2>>"$LOG_FILE" || {
+        warn "Failed to copy Skill 54 from $SKILL_SRC -> $SKILL_DEST"
+        return 0
+    }
+    chmod +x "$SKILL_DEST/anthology-entry.sh" "$SKILL_DEST/run_anthology.py" \
+             "$SKILL_DEST/verify.sh" "$SKILL_DEST/verify-deps.sh" \
+             "$SKILL_DEST/preflight.sh" 2>/dev/null || true
+    chmod +x "$SKILL_DEST/scripts/"*.py 2>/dev/null || true
+
+    success "Skill 54 (Anthology Writer) installed -> $SKILL_DEST"
+    note "Skill 54 is the methodology + enforcement layer for a multi-contributor anthology: one finished chapter per contributor (2,000-3,500 stripped words, ONE per contributor) in that contributor's blended signature voice, plus the supporting blended tone doc (4 influence analyses, >=3,000 words), locked title/subtitle, blurb, and outline. It bakes five sha256-pinned authoring prompts and references the shared tone core (04..08) in lockstep, gating every SACRED floor with fail-closed model-free provers that MEASURE the stripped text (self-reported counts are ignored)."
+    note "It runs P0 INTAKE -> P1 FIDELITY -> P2 TONE -> P3 TONE-QC -> P4 TITLE-LOCK -> P5 CHAPTER -> P6 CHAPTER-QC -> P7 DELIVER through one canonical entry (anthology-entry.sh) with a deps/bypass-scan/hash-pin/nonce fail-closed gate, then delivers a labeled ~/Downloads bundle + a signed PROCESS-CERTIFICATE. Client runtime is NEVER Anthropic: every source tier resolves to the client's strongest NON-Anthropic model (aw_build_check.py G-NOANTHROPIC hard-fails any /anthropic|claude/i id). No n8n / Airtable / Drive / Slack / Gmail at runtime. SEPARATE skill, sibling of Skill 53 Book Writer, sharing the ONE tone core — never merged."
+    return 0
+}
+
+install_skill_54_anthology_writer
 
 # ----------------------------------------------------------
 # Skill 55: Product Bio Engine (master-brain product bio methodology + gates)

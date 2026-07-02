@@ -1,0 +1,10 @@
+{
+  "skill": "anthology-writer",
+  "contributor": "Marcus Bell",
+  "rewrite_count": 3,
+  "note": "SEEDED DEFECT — a third rewrite over the bounded budget of 2. aw_build_check.py must fail AF-AW-REWRITE-BUDGET. All model ids remain NON-Anthropic.",
+  "stages": [
+    {"stage_id": "aw-09-write-chapter", "tier": "HEAVY-WRITER", "model": "ollama-cloud/qwen2.5:72b-instruct"},
+    {"stage_id": "aw-10-chapter-rewrite", "tier": "HEAVY-WRITER", "model": "ollama-cloud/qwen2.5:72b-instruct"}
+  ]
+}

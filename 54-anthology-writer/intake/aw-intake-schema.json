@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/anthology-writer/intake.schema.json",
+  "title": "Anthology Writer Intake (one contributor / one chapter)",
+  "description": "The locked intake contract for Skill 54. The four required fields are the inputs the pipeline consumes before any authoring (PRD §3.3). prove_aw_intake.py enforces required-field presence AND rejects credential-shaped keys fail-closed (D7): client provider keys are resolved per box from the client's own config, never taken through intake.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["anthology_title", "first_name", "last_name", "chapter_premise"],
+  "properties": {
+    "anthology_title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The book this chapter belongs to (for tonal + title fit)."
+    },
+    "first_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Contributor first name. Names 'The {First} {Last} Tone' + labels the deliverable."
+    },
+    "last_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Contributor last name."
+    },
+    "chapter_premise": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The spine of this contributor's chapter — what it is about and the turn it makes."
+    },
+    "personal_stories": {
+      "description": "Real lived anchors to place in the outline AND chapter. An array of short distinctive phrases (or objects with an 'anchor'/'summary'), OR the literal string 'N/A' when the contributor has none. Non-N/A anchors are provably placed.",
+      "oneOf": [
+        {"type": "string"},
+        {"type": "array", "items": {"type": ["string", "object"]}}
+      ]
+    },
+    "subtitle_hint": {"type": "string", "description": "Optional steer for the subtitle (may be 'N/A')."},
+    "target_reader": {"type": "string", "description": "Optional reader description, for tone fit."},
+    "tone_influences": {
+      "type": "array",
+      "description": "Optional: up to 4 named public figures whose tone the blended voice draws on. 'N/A' slots are auto-picked from the avatar answers (tone-core R3).",
+      "items": {"type": "string"}
+    },
+    "client_folder_name": {"type": "string", "description": "Optional deliverable-folder label override."},
+    "email": {"type": "string", "description": "Optional; captured for handoff parity only (dormant in the LLM path)."},
+    "phone": {"type": "string", "description": "Optional; captured for handoff parity only."}
+  },
+  "note_credentials_forbidden": "Any key whose NAME looks like a secret (api_key, apikey, token, secret, bearer, password, openrouter, anthropic, openai, access_key, private_key, credential, auth_token) is REJECTED by prove_aw_intake.py (AF-AW-INTAKE-CREDENTIAL). Provider keys never ride intake."
+}

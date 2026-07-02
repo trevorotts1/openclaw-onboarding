@@ -1,0 +1,102 @@
+{
+  "intake_missing": {
+    "prover": "prove_aw_intake.py",
+    "expected_code": "AF-AW-INTAKE-MISSING",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_aw_intake\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-AW-INTAKE-MISSING\",\n      \"message\": \"required field 'last_name' is missing/empty/whitespace\"\n    }\n  ],\n  \"notes\": []\n}"
+  },
+  "intake_credential": {
+    "prover": "prove_aw_intake.py",
+    "expected_code": "AF-AW-INTAKE-CREDENTIAL",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_aw_intake\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-AW-INTAKE-CREDENTIAL\",\n      \"message\": \"credential-shaped intake key 'openrouter_api_key' is forbidden \\u2014 client provider keys are resolved per box from the client's own config, never via intake\"\n    }\n  ],\n  \"notes\": []\n}"
+  },
+  "prompt_drift": {
+    "prover": "prove_aw_fidelity.py",
+    "expected_code": "AF-AW-PROMPT-DRIFT",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_aw_fidelity\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-AW-PROMPT-DRIFT\",\n      \"message\": \"prompt asset missing: 06-suggested-titles.md\"\n    },\n    {\n      \"code\": \"AF-AW-PROMPT-DRIFT\",\n      \"message\": \"prompt asset missing: 07-book-blurb.md\"\n    },\n    {\n      \"code\": \"AF-AW-PROMPT-DRIFT\",\n      \"message\": \"prompt asset missing: 08-create-outline.md\"\n    },\n    {\n      \"code\": \"AF-AW-PROMPT-DRIFT\",\n      \"message\": \"09-write-chapter.md sha256 drift: got 3b63b01ee985\\u2026 expected 340fd1be45a5\\u2026\"\n    },\n    {\n      \"code\": \"AF-AW-PROMPT-DRIFT\",\n  "
+  },
+  "tone_three_influences": {
+    "prover": "prove_aw_tone.py",
+    "expected_code": "AF-AW-TONE-4",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_aw_tone\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-AW-TONE-4\",\n      \"message\": \"blended tone references influence analyses [1, 2, 3], require exactly {1,2,3,4} (4 distinct tone-style influences)\"\n    }\n  ],\n  \"notes\": [\n    \"measured stripped word count 3063 meets the 3000 floor\"\n  ]\n}"
+  },
+  "tone_short": {
+    "prover": "prove_aw_tone.py",
+    "expected_code": "AF-AW-TONE-FLOOR",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_aw_tone\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-AW-TONE-FLOOR\",\n      \"message\": \"measured stripped word count 121 below the 3000 floor (self-reported counts are ignored; padding is inert)\"\n    }\n  ],\n  \"notes\": [\n    \"all 4 tone-style influence analyses present (indices 1-4)\"\n  ]\n}"
+  },
+  "chapter_short": {
+    "prover": "prove_aw_chapter.py",
+    "expected_code": "AF-AW-CHAP-LEN",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_aw_chapter\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-AW-CHAP-LEN\",\n      \"message\": \"measured stripped word count 194 outside 2000-3500 (self-reported counts are ignored; padding is inert)\"\n    }\n  ],\n  \"notes\": [\n    \"'COMPLETION VERIFICATION' block present\",\n    \"no unresolved placeholders\",\n    \"locked title carried into the chapter\",\n    \"locked subtitle carried into the chapter\"\n  ]\n}"
+  },
+  "chapter_whitespace_pad": {
+    "prover": "prove_aw_chapter.py",
+    "expected_code": "AF-AW-CHAP-LEN",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_aw_chapter\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-AW-CHAP-LEN\",\n      \"message\": \"measured stripped word count 194 outside 2000-3500 (self-reported counts are ignored; padding is inert)\"\n    }\n  ],\n  \"notes\": [\n    \"'COMPLETION VERIFICATION' block present\",\n    \"no unresolved placeholders\",\n    \"locked title carried into the chapter\",\n    \"locked subtitle carried into the chapter\"\n  ]\n}"
+  },
+  "chapter_verify_missing": {
+    "prover": "prove_aw_chapter.py",
+    "expected_code": "AF-AW-VERIFY-BLOCK",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_aw_chapter\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-AW-VERIFY-BLOCK\",\n      \"message\": \"mandatory 'COMPLETION VERIFICATION' block absent\"\n    }\n  ],\n  \"notes\": [\n    \"measured stripped word count 2069 within 2000-3500\",\n    \"no unresolved placeholders\",\n    \"locked title carried into the chapter\",\n    \"locked subtitle carried into the chapter\"\n  ]\n}"
+  },
+  "chapter_subtitle_changed": {
+    "prover": "prove_aw_chapter.py",
+    "expected_code": "AF-AW-TITLE-LOCK",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_aw_chapter\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-AW-TITLE-LOCK\",\n      \"message\": \"locked subtitle 'What a Locked Door Taught Me About Letting Go' not carried byte-exact in the chapter\"\n    }\n  ],\n  \"notes\": [\n    \"measured stripped word count 2110 within 2000-3500\",\n    \"'COMPLETION VERIFICATION' block present\",\n    \"no unresolved placeholders\",\n    \"locked title carried into the chapter\"\n  ]\n}"
+  },
+  "chapter_story_dropped": {
+    "prover": "prove_aw_chapter.py",
+    "expected_code": "AF-AW-STORIES",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_aw_chapter\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-AW-STORIES\",\n      \"message\": \"personal-story anchor 'the blue Igloo cooler' is not placed in the chapter\"\n    }\n  ],\n  \"notes\": [\n    \"measured stripped word count 2122 within 2000-3500\",\n    \"'COMPLETION VERIFICATION' block present\",\n    \"no unresolved placeholders\",\n    \"locked title carried into the chapter\",\n    \"locked subtitle carried into the chapter\"\n  ]\n}"
+  },
+  "chapter_placeholder": {
+    "prover": "prove_aw_chapter.py",
+    "expected_code": "AF-AW-PLACEHOLDER",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_aw_chapter\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-AW-PLACEHOLDER\",\n      \"message\": \"unresolved placeholder(s) in the finalized artifact: {{intake.first_name}}, {{intake.last_name}}\"\n    }\n  ],\n  \"notes\": [\n    \"measured stripped word count 2120 within 2000-3500\",\n    \"'COMPLETION VERIFICATION' block present\",\n    \"locked title carried into the chapter\",\n    \"locked subtitle carried into the chapter\"\n  ]\n}"
+  },
+  "ledger_anthropic": {
+    "prover": "aw_build_check.py",
+    "expected_code": "AF-AW-ANTHROPIC",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"aw_build_check\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-AW-ANTHROPIC\",\n      \"message\": \"stage aw-09-write-chapter resolved to an Anthropic model id 'anthropic/claude-opus-4' \\u2014 client runtime must use the client's strongest NON-Anthropic model\"\n    }\n  ],\n  \"notes\": [\n    \"rewrite_count 0 within budget (<=2)\"\n  ]\n}"
+  },
+  "ledger_rewrite_over_budget": {
+    "prover": "aw_build_check.py",
+    "expected_code": "AF-AW-REWRITE-BUDGET",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"aw_build_check\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-AW-REWRITE-BUDGET\",\n      \"message\": \"rewrite_count 3 exceeds the max 2 (bounded rework loop)\"\n    }\n  ],\n  \"notes\": [\n    \"2 resolved model id(s), none Anthropic\"\n  ]\n}"
+  },
+  "E2E_no_certificate": {
+    "runner": "anthology-entry.sh -> run_anthology.py",
+    "seeded_defect": "working/chapter.md replaced by a ~180-word chapter (below the 2,000 floor)",
+    "expected": "P6-CHAPTER-QC fails closed; run BLOCKED; NO certificate issued",
+    "rc": 2,
+    "certificate_refused": true,
+    "certificate_file_exists": false,
+    "gate_code": "AF-AW-CHAP-LEN"
+  }
+}

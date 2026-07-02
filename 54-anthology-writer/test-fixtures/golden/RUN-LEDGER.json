@@ -1,0 +1,14 @@
+{
+  "skill": "anthology-writer",
+  "anthology_title": "Unbroken Ground: Voices from the Second Start",
+  "contributor": "Marcus Bell",
+  "rewrite_count": 0,
+  "note": "Resolved per box against the CLIENT's own providers — every model id is NON-Anthropic (build-fix). aw_build_check.py hard-fails any /anthropic|claude/i id here.",
+  "stages": [
+    {"stage_id": "aw-05-blended-tone", "tier": "MID-WRITER", "model": "openrouter/google/gemini-2.5-pro"},
+    {"stage_id": "aw-06-suggested-titles", "tier": "MID-WRITER", "model": "openrouter/google/gemini-2.5-pro"},
+    {"stage_id": "aw-07-book-blurb", "tier": "MID-WRITER", "model": "openrouter/google/gemini-2.5-pro"},
+    {"stage_id": "aw-08-create-outline", "tier": "MID-WRITER", "model": "openrouter/google/gemini-2.5-pro"},
+    {"stage_id": "aw-09-write-chapter", "tier": "HEAVY-WRITER", "model": "ollama-cloud/qwen2.5:72b-instruct"}
+  ]
+}

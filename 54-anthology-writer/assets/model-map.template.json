@@ -1,0 +1,36 @@
+{
+  "$schema_note": "CLIENT-PATH model map TEMPLATE for Skill 54 (Anthology Writer) — resolved per box at install by preflight.sh against the CLIENT's OWN configured providers/keys. The source workflow pinned every extracted call to Anthropic model ids 'as shipped in source'; those are capability TIERS, not prescriptions. At client runtime each tier resolves to the client's strongest NON-Anthropic model. NEVER an Anthropic / claude-* id here; NEVER the operator's keys. verify.sh runs a no-Anthropic scan (AF-AW-ANTHROPIC) over the shipped skill + the resolved map, and aw_build_check.py hard-fails any Anthropic id that reaches RUN-LEDGER.json. Never substitute a client's expressed model choice.",
+  "skill": "anthology-writer",
+  "resolved_per_box": true,
+  "tiers": {
+    "HEAVY-WRITER": {
+      "role": "long-form chapter authoring + rewrite (aw-09, aw-10)",
+      "provider": "<CLIENT_PROVIDER_ID>",
+      "model": "<CLIENT_STRONGEST_LONGFORM_MODEL>",
+      "maxTokens": 65536,
+      "notes": "Must sustain a 2,000-3,500-word single chapter with tone fidelity. Example client configs: their OpenRouter primary long-form model, or an ollama-cloud large model (ollama-cloud REQUIRES maxTokens 65536 + baseUrl). NEVER claude-*/anthropic/*."
+    },
+    "MID-WRITER": {
+      "role": "titles / blurb / outline / avatar / cover-prompt (aw-01..08, aw-11, aw-12)",
+      "provider": "<CLIENT_PROVIDER_ID>",
+      "model": "<CLIENT_MID_MODEL>",
+      "maxTokens": 16384,
+      "notes": "A capable mid tier of the SAME client chain. NEVER claude-*/anthropic/*."
+    },
+    "RESEARCHER": {
+      "role": "optional web research for premise grounding",
+      "provider": "<CLIENT_SEARCH_TOOL>",
+      "model": "<CLIENT_SEARCH_MODEL_OR_TOOL>",
+      "notes": "The client's own configured web-search tool. If absent, the run records a degraded:search receipt and continues (no external fabrication)."
+    },
+    "IMAGE": {
+      "role": "optional cover-image generation from the aw-12 cover prompt",
+      "provider": "<CLIENT_IMAGE_PROVIDER>",
+      "model": "<CLIENT_IMAGE_MODEL>",
+      "notes": "The client's own image provider/key. If absent, the run records a degraded:image receipt and ships the cover PROMPT doc only."
+    }
+  },
+  "no_formatter_tier": "All formatting is deterministic Python (the 5 source HTML-formatter LLM calls are retired) — there is NO formatter model tier.",
+  "banned_model_id_prefixes": ["claude-", "anthropic/", "us.anthropic."],
+  "client_sovereignty": "The client's expressed model choice always wins and is never floored, capped, or substituted. This template is filled with the client's own provider ids/keys at install; it is never shipped with operator credentials."
+}
