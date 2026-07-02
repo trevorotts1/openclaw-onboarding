@@ -71,8 +71,10 @@ Every funnel deliverable (copy doc, image prompt, PNG, HTML fragment, preview) i
 
 `stage ∈ {main, checkout, upsell1, downsell1, upsell2, downsell2, thankyou}`;
 `type ∈ {copy, prompt, image, html, preview}`; `vNN` is a zero-padded version (`v01`, `v02`, …).
-This grammar is pinned reciprocally in `49-signature-funnel/MASTERDOC.md` §8 and — when it lands —
-in Skill **56** (Sales-Page-Assets). Do not diverge the two.
+This grammar is pinned reciprocally in `49-signature-funnel/MASTERDOC.md` §8 and in Skill **56**
+(Sales-Page-Assets), which has LANDED and OWNS the grammar (`56-sales-page-assets/structure/labeling-grammar.json`);
+its `universal-sops/sales-page-craft/` cluster EXTENDS this funnel-craft cluster for the Direct-Response
+asset stack. Do not diverge the two.
 
 ## Flexibility = guide-not-rule
 

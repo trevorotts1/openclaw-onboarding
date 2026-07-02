@@ -1,0 +1,56 @@
+{
+  "A_out_of_band_section": {
+    "prover": "prove_sp_main_structure.py",
+    "rc": 2,
+    "rejected": true,
+    "expected_code": "AF-SP56-MAIN-SECTION-ORDER",
+    "code_present": true,
+    "out_tail": "== Sales Page Assets :: MAIN 8-section structure ==\nsource: 56-sales-page-assets/examples/golden-momentum/broken-variants/A_out_of_band_section/copy_ledger.json\nRESULT: FAIL (fail-closed) \u2014 1 violation(s):\n  [AF-SP56-MAIN-SECTION-ORDER] variant b: sections not in canonical order (got ['header', 'hero', 'benefits', 'problem-solution', 'product-details', 'credibility', 'final-cta', 'footer'])"
+  },
+  "B_high_ticket_word_floor": {
+    "prover": "prove_sp_highticket_band.py",
+    "rc": 2,
+    "rejected": true,
+    "expected_code": "AF-SP56-HIGHTICKET-FLOOR",
+    "code_present": true,
+    "out_tail": "== Sales Page Assets :: HIGH-TICKET word band [6500, 7100] ==\nsource: 56-sales-page-assets/examples/golden-momentum/broken-variants/B_high_ticket_word_floor/copy_ledger.json\nRESULT: FAIL (fail-closed) \u2014 1 violation(s):\n  [AF-SP56-HIGHTICKET-FLOOR] marcus-vale__momentum-engine__high-ticket__page__v01: 896 stripped words < floor 6500"
+  },
+  "C_bump_out_of_band": {
+    "prover": "prove_sp_bump_band.py",
+    "rc": 2,
+    "rejected": true,
+    "expected_code": "AF-SP56-BUMP-FLOOR",
+    "code_present": true,
+    "out_tail": "== Sales Page Assets :: BUMP band [40, 80] words + checkbox close ==\nsource: 56-sales-page-assets/examples/golden-momentum/broken-variants/C_bump_out_of_band/copy_ledger.json\nRESULT: FAIL (fail-closed) \u2014 1 violation(s):\n  [AF-SP56-BUMP-FLOOR] marcus-vale__momentum-engine__bump__copy__v01: 8 body words < floor 40"
+  },
+  "D_image_slice": {
+    "prover": "prove_sp_image_plan.py",
+    "rc": 2,
+    "rejected": true,
+    "expected_code": "AF-SP56-IMGPLAN-SLICE-EMPTY",
+    "code_present": true,
+    "out_tail": "RESULT: FAIL (fail-closed) \u2014 3 violation(s):\n  [AF-SP56-IMGPLAN-SLICE-EMPTY] stage 'upsell-1' has 0 images \u2014 slice empty (legacy slice bug). Raise image_prompt_count (>=12) or reassign.\n  [AF-SP56-IMGPLAN-SLICE-EMPTY] stage 'downsell-1' has 0 images \u2014 slice empty (legacy slice bug). Raise image_prompt_count (>=12) or reassign.\n  [AF-SP56-IMGPLAN-SLICE-EMPTY] stage 'high-ticket' has 0 images \u2014 slice empty (legacy slice bug). Raise image_prompt_count (>=12) or reassign."
+  },
+  "F_unapproved": {
+    "prover": "prove_sp_intake.py",
+    "rc": 2,
+    "rejected": true,
+    "expected_code": "AF-SP56-INTAKE-UNLOCKED",
+    "code_present": true,
+    "out_tail": "== Sales Page Assets :: intake gate ==\nsource: 56-sales-page-assets/examples/golden-momentum/broken-variants/F_unapproved/brief.json\nRESULT: FAIL (fail-closed) \u2014 1 violation(s):\n  [AF-SP56-INTAKE-UNLOCKED] brief is not locked (provenance-gated) \u2014 generation must not start",
+    "e2e_orchestrator_rc": 2,
+    "e2e_no_certificate": true,
+    "e2e_marker": "AF-SP56-INTAKE-UNLOCKED",
+    "e2e_marker_present": true
+  },
+  "E_missing_provenance": {
+    "e2e_orchestrator_rc": 2,
+    "e2e_no_certificate": true,
+    "e2e_marker": "media_ledger.json absent",
+    "e2e_marker_present": true,
+    "prover": "run_sales_page_assets.py (P2 seam)",
+    "rejected": true,
+    "expected_code": "P2-IMAGES delegation seam (media_ledger.json absent)",
+    "out_tail": "  [PASS] P0-INTAKE      (prove_sp_intake.py) :: prove_sp_intake.py rc=0 :: RESULT: PASS \u2014 locked brief satisfies the intake gate; generation may unlock.\n  [PASS] P1-IMAGE-PLAN  (prove_sp_image_plan.py) :: prove_sp_image_plan.py rc=0 :: RESULT: PASS \u2014 contiguous prompt set; every stage slice has >=1 image.\n  [FAIL] P2-IMAGES      (kie_image.py) :: delegated artifact media_ledger.json absent (expected for: Skill 47 kie_image.py OR the client's own image provider)\nABORT: phase P2-IMAGES failed its fail-closed gate. NO certificate issued (a later phase can never run before an earlier one passes)."
+  }
+}

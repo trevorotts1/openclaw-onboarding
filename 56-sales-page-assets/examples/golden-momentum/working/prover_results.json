@@ -1,0 +1,51 @@
+{
+  "prove_sp_intake.py": {
+    "rc": 0,
+    "pass": true,
+    "tail": [
+      "RESULT: PASS \u2014 locked brief satisfies the intake gate; generation may unlock."
+    ]
+  },
+  "prove_sp_image_plan.py": {
+    "rc": 0,
+    "pass": true,
+    "tail": [
+      "RESULT: PASS \u2014 contiguous prompt set; every stage slice has >=1 image."
+    ]
+  },
+  "prove_sp_main_structure.py": {
+    "rc": 0,
+    "pass": true,
+    "tail": [
+      "RESULT: PASS \u2014 both variants carry the 8 canonical sections in order + countdown timer."
+    ]
+  },
+  "prove_sp_upsell_structure.py": {
+    "rc": 0,
+    "pass": true,
+    "tail": [
+      "RESULT: PASS \u2014 both variants carry the 9 Trevor Otts sections in order."
+    ]
+  },
+  "prove_sp_highticket_band.py": {
+    "rc": 0,
+    "pass": true,
+    "tail": [
+      "RESULT: PASS \u2014 high-ticket long-form page is within the Sovereign Architect band."
+    ]
+  },
+  "prove_sp_bump_band.py": {
+    "rc": 0,
+    "pass": true,
+    "tail": [
+      "RESULT: PASS \u2014 bump copy is in band and ends with the checkbox close line."
+    ]
+  },
+  "prove_sp_bundle.py": {
+    "rc": 0,
+    "pass": true,
+    "tail": [
+      "RESULT: PASS \u2014 labels parse the grammar; the funnel-manifest satisfies the Skill 6 contract."
+    ]
+  }
+}

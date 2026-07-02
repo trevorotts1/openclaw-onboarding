@@ -1,7 +1,7 @@
 {
   "schema": "funnel-engine-registry/v1",
   "description": "Shared STEP-0 funnel-BUILD engine selector registry for Skill 6 (06-ghl-install-pages). This is the ONE place a 'build me a funnel' request is routed to the specialist AUTHORING engine that owns that funnel's copy + image IP. Skill 6 remains the ONE GHL delivery rail: every engine below AUTHORS copy/images inside its own fail-closed pipeline, then DELEGATES the GHL media folder + upload + funnel/page build BACK to Skill 6 (ghl_media.py + ghl_rest_canvas.py / ghl_builder.py). The selector never builds anything itself and never blocks a build.",
-  "how_to_register_a_second_entry": "Append one object to engines[] with a unique id, the skill dir, the canonical fail-closed entry shell, a priority, and a match block (names/keywords/signals/anti_signals). No selector code change is required. See funnel-engines/README.md. Skill 56 (Sales-Page-Assets) is the planned second entry (direct-response sales page / VSL family).",
+  "how_to_register_a_second_entry": "Append one object to engines[] with a unique id, the skill dir, the canonical fail-closed entry shell, a priority, and a match block (names/keywords/signals/anti_signals). No selector code change is required. See funnel-engines/README.md. Skill 56 (Sales-Page-Assets) is now REGISTERED as the second entry (direct-response sales page / VSL family) — the pattern below is the template for any third engine.",
   "default_engine": null,
   "default_behavior": "When NO engine clears its confidence threshold, the selector returns decision=NO_ENGINE_MATCH and the caller FALLS THROUGH to the existing template-first funnel matcher (tools/funnel_matcher.py step0_match) and the generic Skill-6 build path. A below-threshold score never prevents a build.",
   "engines": [
@@ -62,6 +62,68 @@
         ]
       },
       "notes": "Client runtime uses the CLIENT's own configured providers (never Anthropic, never operator keys); the fail-closed provers are deterministic and model-free. Publish is human-approved (preview URLs + labeled ~/Downloads bundle only)."
+    },
+    {
+      "id": "sales-page-assets",
+      "skill": "56-sales-page-assets",
+      "name": "Trevor Otts Sales Page Assets (Direct-Response)",
+      "summary": "The Direct-Response asset stack (the DR sibling of Skill 49): the 8-section main sales page (A/B + countdown timer), the Trevor Otts 9-section upsell (A/B personas), a downsell recovery page, the Sovereign Architect high-ticket long-form page (6,500-7,100 words), 40-80-word order-bump copy with a checkbox close, and a slice-covered image plan — from one 'Ultimate AI Sales Page Writer' survey.",
+      "entry": "56-sales-page-assets/sales-page-assets-entry.sh",
+      "entry_contract": "NOTHING generates copy/image-prompts, calls an image provider, touches GHL, writes Docs, sends mail, or mints a certificate except THROUGH sales-page-assets-entry.sh (deps -> version -> hash-pin -> bypass-scan -> run-scoped 0600 nonce). A direct orchestrator call without the front-door nonce dies AF-SP56-FRONT-DOOR; a hand-rolled GHL REST / ImgBB / raw image createTask / mail sender in the run dir dies AF-SP56-CANONICAL-BYPASS.",
+      "delivery_rail": "06-ghl-install-pages",
+      "delivery_delegation": "P4 media folder + upload -> Skill 6 ghl_media.py; P9 funnel/step/page build + HTML injection -> Skill 6 ghl_rest_canvas.py / ghl_builder.py; the order-bump copy routes to the Skill 44 order-bump seam. Skill 56 authors + gates; Skill 6 delivers; Skill 47 (or the client's own image provider) renders images.",
+      "priority": 9,
+      "confidence_threshold": 0.55,
+      "match": {
+        "names": [
+          "sales page assets",
+          "sales page writer",
+          "ultimate ai sales page writer",
+          "direct response sales page",
+          "direct-response funnel",
+          "vsl sales page",
+          "high ticket sales page",
+          "order bump copy",
+          "trevor otts sales page"
+        ],
+        "keywords": [
+          "sales page assets",
+          "direct response",
+          "direct-response",
+          "vsl",
+          "video sales letter",
+          "order bump",
+          "bump sell",
+          "high-ticket long form",
+          "sovereign architect",
+          "downsell recovery",
+          "8-section main page",
+          "9-section upsell",
+          "countdown timer",
+          "a/b sales page"
+        ],
+        "signals": [
+          "order bump",
+          "bump",
+          "checkbox close",
+          "downsell",
+          "high-ticket",
+          "long-form sales letter",
+          "countdown timer",
+          "8 sections",
+          "9-section upsell",
+          "sales page a/b"
+        ],
+        "anti_signals": [
+          "signature funnel",
+          "signature landing page",
+          "12-section hero",
+          "12 sections",
+          "3/5/7 step funnel",
+          "signature look"
+        ]
+      },
+      "notes": "Direct-Response sibling of Skill 49 sharing the same labeling grammar (56 OWNS it) and the same STEP-0 selector + delivery rail. Client runtime uses the CLIENT's own configured providers (never Anthropic, never operator keys); the eight fail-closed provers are deterministic and model-free. A/B variants come from two client models OR two persona prompts on one client model. Publish is human-approved (preview URLs + labeled ~/Downloads bundle only)."
     }
   ]
 }

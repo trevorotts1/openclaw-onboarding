@@ -232,10 +232,13 @@ labeled with the fixed grammar:
 Double-underscore (`__`) is the field separator so single tokens may contain single hyphens. Example:
 `acme__reclaim-your-mornings__upsell1__prompt__v03`.
 
-**Reciprocal pin (forward-ref TODO — Skill 56 does not exist yet):** this grammar is SHARED with Skill
-**56 (Sales-Page-Assets)**, the direct-response sibling of Skill 49. When Skill 56 lands it MUST adopt
-this identical grammar (same field order, same `stage`/`type` enums extended as needed) and pin it
-reciprocally back to this section, so a client's funnel and sales-page assets share one labeling
-namespace. Tracked in the STEP-0 registry note (`06-ghl-install-pages/funnel-engines/README.md`) and the
-funnel-craft manifest (`universal-sops/funnel-craft/FUNNEL-PIPELINE-MANIFEST.json` → `labeling_grammar`).
-Do not diverge the two grammars.
+**Reciprocal pin (LIVE — Skill 56 has landed):** this grammar is SHARED with **Skill 56
+(Sales-Page-Assets)**, the direct-response sibling of Skill 49. Skill 56 now OWNS the shared grammar and
+pins it in `56-sales-page-assets/structure/labeling-grammar.json` + `MASTERDOC.md` §8; it adopts this
+identical field order and extends the `stage`/`type` enums as needed (adds `bump` · `high-ticket` stages
+and `img`/`funnel`/`brief`/`manifest`/`cert` types), so a client's funnel and sales-page assets share one
+labeling namespace. Skill 56 is the SECOND registered STEP-0 engine
+(`06-ghl-install-pages/funnel-engines/registry.json`). Tracked in the STEP-0 registry note
+(`06-ghl-install-pages/funnel-engines/README.md`) and the funnel-craft manifest
+(`universal-sops/funnel-craft/FUNNEL-PIPELINE-MANIFEST.json` → `labeling_grammar`). Do not diverge the two
+grammars.

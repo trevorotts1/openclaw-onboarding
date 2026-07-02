@@ -1,0 +1,50 @@
+{
+  "$schema": "https://openclaw.ai/schemas/spa-funnel-manifest/v1",
+  "schema": "spa-funnel-manifest",
+  "schema_version": "1.0.0",
+  "skill": "56-sales-page-assets",
+  "title": "The Track-2 build-bundle handoff artifact Skill 6 reads (PRD §5.2)",
+  "description": "The funnel-manifest.json contract. Skill 56 authors it; Skill 6 consumes it. Validated fail-closed by prove_sp_bundle.py. Every asset key follows the labeling grammar (structure/labeling-grammar.json); NO model names in any label (rule R1).",
+
+  "required": ["funnel_name", "steps", "seo"],
+  "one_of_location": ["location_id", "sub_account", "subaccount_id"],
+
+  "fields": {
+    "funnel_manifest": "constant 'sales-page-assets'",
+    "run_id": "<client>__<funnel>__run-<YYYYMMDD>-<seq> (labeling grammar run_id form)",
+    "location_id": "GHL sub-account / location id — Skill 6 sub-account gate REFUSES on mismatch",
+    "funnel_name": "ZHC <client> <funnel> v<NN>  (ZHC UPPERCASE — ghl_builder.ensure_zhc_prefix)",
+    "seo": {
+      "founder_name": "first_name + last_name — validate_founder_name HALTs the build if absent",
+      "keywords": ">= 3 researched keywords (assert_keywords_in_copy hard-fails meta-only keywords)",
+      "description": "meta description",
+      "canonical": "canonical URL",
+      "language": "must be 'en'"
+    },
+    "media": {
+      "folder": "<client>__<funnel> (ghl_media.ensure_funnel_media_folders)",
+      "cdn_map": "asset_key -> GHL media CDN URL (every <img> must resolve to the GHL media host — assert_images_are_ghl_media, ghl_rest_canvas.py:603)"
+    },
+    "steps": "ordered step graph; each step:"
+  },
+
+  "step_shape": {
+    "order": "1-based install order",
+    "stage": "one of the labeling stage vocabulary (main/upsell-1/downsell-1/high-ticket/bump/thank-you/...)",
+    "variant": "'a' | 'b' | '' (A/B twins only)",
+    "step_name": "ZHC <funnel> <stage> v<NN><variant>",
+    "asset_key": "<client>__<funnel>__<stage>__<type>__v<NN><variant> (parses the grammar; no model names)",
+    "fragment_path": "pages/<asset key>.fragment.html — REQUIRED for PAGE steps (naked fragment; a full <!DOCTYPE html> renders blank). NOT required for the bump step.",
+    "method_decision": "Phase-5 classifier inputs -> {classification, route}; route in {DIRECT, VERCEL_EMBED, SKILL44_WIDGET}. REQUIRED for PAGE steps.",
+    "copy_tokens": "per-page approved-phrase list (ghl_verify.verify_page fidelity) — this OR copy_md_path",
+    "copy_md_path": "copy/<asset key>.md — this OR copy_tokens",
+    "route": "for the bump step: SKILL44_WIDGET (order-bump element on a GHL order form; Skill 44 creates the product/order-form object first)"
+  },
+
+  "notes": {
+    "bump": "The bump step is COPY, not a page — route SKILL44_WIDGET; no fragment_path. The P4->P5 board handoff (page_ids + form_ids + funnel_template_id + linked_automations) hands the built funnel to Skill 44 for workflow wiring.",
+    "thank_you": "A thank-you step is MANDATORY (every funnel Skill 6 builds terminates on a thank-you page). No offer CTA; utility buttons only.",
+    "ab_variants": "Both a/b variants of main + upsell-1 ship in the bundle; the manifest marks which installs (the twin stays available for a split test).",
+    "publish": "Delivery is preview-only; publish happens ONLY after explicit human approval."
+  }
+}

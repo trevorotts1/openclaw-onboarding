@@ -1,0 +1,28 @@
+{
+  "funnel_type": "sales_page_assets",
+  "locked": false,
+  "client_slug": "marcus-vale",
+  "funnel_slug": "momentum-engine",
+  "offer_token_ledger": [
+    "The Momentum Engine",
+    "The 10-Minute Momentum Reset",
+    "The Momentum Accelerator",
+    "Momentum Accelerator Recordings Vault",
+    "The Sovereign Operator Mentorship"
+  ],
+  "run_id": "marcus-vale__momentum-engine__run-20260702-01",
+  "answers": {
+    "brand_info": "The Momentum Engine by Marcus Vale. A calm, direct, no-hype operating-system brand for solo operators who are done confusing motion with progress. Voice: plain, grounded, quietly confident. Method attribution: the Trevor Otts Direct-Response method.",
+    "product_info": "The Momentum Engine, a self-paced operating-system course, $197. CTA https://example.com/momentum/checkout . Thirty short lessons + twelve operating templates + a weekly cadence.",
+    "primary_brand_color": "#12332B",
+    "brand_logo": "https://cdn.example.com/momentum-engine/logo.png",
+    "image_prompt_count": 12,
+    "upsell_desc": "The Momentum Accelerator, a done-with-you 30-day guided-install sprint, $497.",
+    "downsell_desc": "The Momentum Accelerator Recordings Vault, self-paced recordings, $147.",
+    "bump_desc": "The 10-Minute Momentum Reset, a pocket audio pack, $27.",
+    "high_ticket_desc": "The Sovereign Operator Mentorship, one-to-one operating-structure rebuild, $12,000.",
+    "first_name": "Marcus",
+    "last_name": "Vale",
+    "email": "marcus@example.com"
+  }
+}

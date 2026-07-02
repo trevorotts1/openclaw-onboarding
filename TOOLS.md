@@ -52,7 +52,7 @@ Skills are shared. Your setup is yours. Keeping them apart means you can update 
 
 ---
 
-## Funnel + Automation + Email Template Libraries (Skill 06 / Skill 44 / Skill 49 / Skill 50) — template-first / reuse-before-reinvent
+## Funnel + Automation + Email Template Libraries (Skill 06 / Skill 44 / Skill 49 / Skill 50 / Skill 56) — template-first / reuse-before-reinvent
 
 - **Funnel template library (38 templates)** — `06-ghl-install-pages/funnel-templates/` by category
   (buyer, event, lead, retention-followup, traffic-advanced). Each carries `pageStructure`,
@@ -76,11 +76,24 @@ Skills are shared. Your setup is yours. Keeping them apart means you can update 
   Hero funnel (configurable 3/5/7-step: Main → Checkout → Upsell → Downsell → Upsell-2 → Downsell-2 →
   Thank-You). Routed by the **shared STEP-0 funnel-engine selector** `06-ghl-install-pages/funnel-engines/registry.json`
   + `tools/funnel_engine_selector.py --match "<request>"` (a "signature funnel" request routes here;
-  `NO_ENGINE_MATCH` falls through to the template matcher; Skill 56 registers a 2nd entry later).
+  `NO_ENGINE_MATCH` falls through to the template matcher; Skill 56, the Direct-Response sibling, is now the 2nd registered entry).
   Built through the ONE canonical entry `49-signature-funnel/signature-funnel-entry.sh` under
   fail-closed provers (`scripts/prove_sf_*.py`); it AUTHORS copy + image prompts, delegates image
   generation to Skill 47 and ALL GHL media + build to Skill 6 (the ONE GHL delivery rail), and issues a
   signed certificate only on a full pass. Shared SOP cluster: `universal-sops/funnel-craft/`.
+- **Sales Page Assets engine (Skill 56)** — `56-sales-page-assets/`, the Direct-Response sibling of
+  Skill 49: the Trevor Otts DR asset stack (8-section main A/B + countdown timer, Trevor Otts 9-section
+  upsell A/B, downsell, Sovereign Architect 6,500–7,100-word high-ticket, 40–80-word order-bump with a
+  checkbox close, slice-covered image plan). Routed by the **shared STEP-0 funnel-engine selector**
+  `06-ghl-install-pages/funnel-engines/registry.json` + `tools/funnel_engine_selector.py --match "<request>"`
+  as the **SECOND registered engine** (a "sales page assets" / "direct-response sales page" / VSL /
+  upsell-downsell A/B request routes here; `NO_ENGINE_MATCH` falls through to the template matcher).
+  Built through the ONE canonical entry `56-sales-page-assets/sales-page-assets-entry.sh` under eight
+  fail-closed provers (`scripts/prove_sp_*.py`); it AUTHORS copy + image plan, delegates image generation
+  to Skill 47 (or the client's own image provider) and ALL GHL media + build to Skill 6 (the ONE GHL
+  delivery rail), routes the order-bump to Skill 44, and issues a signed certificate only on a full pass.
+  OWNS the `<client>__<funnel>__<stage>__<type>__vNN` labeling grammar (reciprocal with Skill 49). Owned
+  SOP cluster: `universal-sops/sales-page-craft/` (extends `universal-sops/funnel-craft/`).
 - **Funnel→automation link map** — `44-.../automation-templates/_links/funnel-to-automation.json`
   (canonical v2; `…-link-map.json` is the DEPRECATED v1). Maps each funnel to its recommended
   follow-up automations; keyed by `funnel_template_id`.

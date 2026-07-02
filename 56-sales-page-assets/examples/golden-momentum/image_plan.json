@@ -1,0 +1,66 @@
+{
+  "funnel_type": "sales_page_assets",
+  "image_prompt_count": 12,
+  "prompts": [
+    {
+      "index": 0,
+      "stage": "main",
+      "prompt_text": "A calm dawn-lit home office from a low three-quarter angle, one clean desk with a single open notebook and a cooling cup of coffee, deep evergreen and warm brass accents, soft morning light raking across the wall, a sense of quiet order and one clear first move for the day."
+    },
+    {
+      "index": 1,
+      "stage": "main",
+      "prompt_text": "A close overhead shot of two hands closing a laptop with visible ease, the screen showing a single simple weekly rhythm rather than a cluttered inbox, muted evergreen tones, shallow depth of field, communicating relief and control instead of overwhelm."
+    },
+    {
+      "index": 2,
+      "stage": "main",
+      "prompt_text": "A minimalist flat-lay of the Engine toolkit: a slim workbook, a set of labeled operating template cards fanned out, and a brass paperweight, arranged on warm oak, top-down studio light, premium and uncluttered, conveying a system you can actually hold and use today."
+    },
+    {
+      "index": 3,
+      "stage": "main",
+      "prompt_text": "A wide, aspirational shot of a solo operator standing at a large window at golden hour looking out over a quiet city, shoulders relaxed, a faint reflection of an orderly workspace behind him, evergreen and amber palette, the mood of a founder finally ahead of the day."
+    },
+    {
+      "index": 4,
+      "stage": "upsell-1",
+      "prompt_text": "A dynamic side-lit portrait of a build partner and an operator reviewing a single template on a shared screen, both leaning in with focus, warm task lighting, motion and traction in the body language, the visual language of a guided thirty-day sprint underway."
+    },
+    {
+      "index": 5,
+      "stage": "upsell-1",
+      "prompt_text": "A tight macro of a checklist where the first several items are firmly checked and one glows as the active step, deep green ink on cream paper, dramatic directional light, communicating momentum being installed step by deliberate step rather than all at once."
+    },
+    {
+      "index": 6,
+      "stage": "upsell-1",
+      "prompt_text": "An energetic split-composition showing a stalled idle gear on the dim left and the same gear turning brightly on the right, brass and evergreen, subtle motion blur on the moving side, a clean metaphor for an Engine going from parked to running with help."
+    },
+    {
+      "index": 7,
+      "stage": "upsell-1",
+      "prompt_text": "A confident three-quarter portrait of a founder mid-decision at a standing desk, sleeves rolled, one hand on a printed cadence map, warm and purposeful lighting, the quiet certainty of someone no longer guessing at what moves the needle."
+    },
+    {
+      "index": 8,
+      "stage": "downsell-1",
+      "prompt_text": "A soft, empathetic still of an open door with warm light spilling through onto a single pair of headphones and a printed session guide on a low table, muted evergreen, gentle and unhurried mood, the feeling of a smaller door held open without pressure."
+    },
+    {
+      "index": 9,
+      "stage": "downsell-1",
+      "prompt_text": "A calm evening scene of one person listening to a recorded session on a couch with a notebook, a single lamp, self-paced and private, warm low light, communicating the same road walked patiently at one's own clock rather than a live schedule."
+    },
+    {
+      "index": 10,
+      "stage": "high-ticket",
+      "prompt_text": "A cinematic, editorial wide shot of an architect's table at dusk holding a large blueprint of an interlocking machine, a single figure studying it from above with quiet authority, deep evergreen and brass, volumetric light, the visual thesis of an operator who has stopped being the engine and become the architect of the whole system."
+    },
+    {
+      "index": 11,
+      "stage": "high-ticket",
+      "prompt_text": "A striking two-road composition seen from behind a lone figure at a fork: one path worn and dim leading back into busy fog, the other rising into clean gold light and open sky, evergreen foreground, epic and decisive tone, the closing metaphor of the sovereign choice between another year as the machine and a company that finally runs itself."
+    }
+  ]
+}

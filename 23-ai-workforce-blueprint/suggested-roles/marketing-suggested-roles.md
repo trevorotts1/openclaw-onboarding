@@ -1,6 +1,6 @@
 # Suggested Roles — marketing-dept
 **Version:** 2.3.0 | 2026-06-21
-**Status:** v12.1.0 + Brainstorming Buddy (Step -1, new in v12.1.0) + Conversion Copywriter (new in v2.3.0) + Signature Funnel Specialist (Skill 49 door, new in v16.5.0); 20 roles
+**Status:** v12.1.0 + Brainstorming Buddy (Step -1, new in v12.1.0) + Conversion Copywriter (new in v2.3.0) + Signature Funnel Specialist (Skill 49 door, new in v16.5.0) + Sales Page Assets Specialist (Skill 56 Direct-Response door, new in v16.8.0); 21 roles
 
 ## Department Purpose
 Generate awareness, attract leads, develop the company's unique selling and value propositions, manage brand positioning, and nurture prospects into sales-ready opportunities. Coordinates with Communications (PR), Social Media (organic), Paid Advertisement (paid), CRM (email/SMS execution), Graphics, Video, and Audio.
@@ -208,3 +208,17 @@ Added in v10.5.2 to bring Marketing to Fortune-500 operational depth: Influencer
 - 03-Certify-and-Publish-Approval.md
 - 04-Ten-Email-Follow-Up-Handoff.md
 **Persona Trait Suggestions:** SACRED-method fidelity, truth-gate discipline (no fabricated scarcity), offer-ladder strategy, delegation discipline (never authors around the provers), certificate-gated definition of done.
+
+---
+
+## New Roles Added in v16.8.0 (Sales Page Assets -- Skill 56, the Direct-Response sibling of Skill 49)
+
+### 21. Sales Page Assets Specialist
+**Slug:** sales-page-assets-specialist
+**What it does:** The marketing door onto the Trevor Otts Direct-Response Sales Page Assets engine (Skill 56), the DR sibling of Skill 49: the 8-section main sales page (A/B + countdown timer), the Trevor Otts 9-section upsell (A/B personas), a downsell recovery page, the Sovereign Architect high-ticket long-form page (6,500-7,100 words), 40-80-word order-bump copy with a checkbox close, and a slice-covered image plan, from one "Ultimate AI Sales Page Writer" survey. Frames the offer/campaign and the 10-email follow-up, confirms the intake (no fabricated scarcity), then drives the build through the ONE sanctioned entry 56-sales-page-assets/sales-page-assets-entry.sh as the SECOND registered STEP-0 engine. Never authors or fixes the copy or the image prompts (the engine's eight fail-closed provers do); delegates image generation to Skill 47 (or the client's own image provider) and ALL GHL media + build to Skill 6 (the ONE GHL delivery rail); routes the order-bump to Skill 44; coordinates the 10-email follow-up with the Email Campaign Strategist / Email Engine (Skill 50). Ships only on a signed certificate; publish is human-approved.
+**Core SOPs to build:**
+- 01-Intake-and-Offer-Ladder-in-One-Block.md
+- 02-Drive-the-Canonical-Engine.md
+- 03-Certify-and-Publish-Approval.md
+- 04-Ten-Email-Follow-Up-Handoff.md
+**Persona Trait Suggestions:** direct-response method fidelity, no-fabricated-scarcity discipline, offer-ladder strategy, delegation discipline (never authors around the provers), certificate-gated definition of done.

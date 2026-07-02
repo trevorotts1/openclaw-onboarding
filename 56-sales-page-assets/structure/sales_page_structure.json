@@ -1,0 +1,79 @@
+{
+  "$schema": "https://openclaw.ai/schemas/sales-page-assets-structure/v1",
+  "structure": "direct-response-sales-page-assets",
+  "structure_version": "1.0.0",
+  "skill": "56-sales-page-assets",
+  "note": "The SACRED Direct-Response frameworks the Skill 56 provers load. Section names, section order, and numeric bands are extracted verbatim from the 'All In One Sales Page Assets' engine ('Advanced Sales Page Creation Instructions' 8-section main + the Trevor Otts 9-Section upsell framework + the Sovereign Architect high-ticket band + the bump-sale band). Provers measure STRIPPED text and IGNORE any self-reported count. Method attribution 'Trevor Otts' kept; no client/brand content.",
+
+  "main": {
+    "stage": "main",
+    "framework": "Advanced Sales Page Creation Instructions (8-section)",
+    "variants_required": ["a", "b"],
+    "requires_countdown_timer": true,
+    "section_count": 8,
+    "sections": [
+      {"order": 1, "id": "header",           "aliases": ["attention-grabbing header", "notification banner", "header", "banner"]},
+      {"order": 2, "id": "hero",             "aliases": ["hero", "hero section", "above the fold"]},
+      {"order": 3, "id": "problem-solution", "aliases": ["problem & solution", "problem and solution", "problem/solution", "problem solution"]},
+      {"order": 4, "id": "benefits",         "aliases": ["benefits", "benefits section", "core benefits"]},
+      {"order": 5, "id": "product-details",  "aliases": ["product details", "product detail", "what it is", "product details section"]},
+      {"order": 6, "id": "credibility",      "aliases": ["credibility", "credibility section", "social proof", "testimonials"]},
+      {"order": 7, "id": "final-cta",        "aliases": ["final call to action", "final cta", "final call-to-action", "closing cta"]},
+      {"order": 8, "id": "footer",           "aliases": ["footer"]}
+    ]
+  },
+
+  "upsell-1": {
+    "stage": "upsell-1",
+    "framework": "Trevor Otts 9-Section Upsell Framework",
+    "variants_required": ["a", "b"],
+    "personas": {"a": "conversion copywriter + web developer", "b": "Emotional Hijacking Expert"},
+    "section_count": 9,
+    "sections": [
+      {"order": 1, "id": "hook",                  "aliases": ["hook", "hook acknowledging purchase", "acknowledge purchase", "upgrade opportunity"]},
+      {"order": 2, "id": "pain-1",                "aliases": ["pain 1", "first pain point", "pain point one", "pain one", "big bold pain one"]},
+      {"order": 3, "id": "pain-2",                "aliases": ["pain 2", "second pain point", "pain point two", "pain two", "big bold pain two"]},
+      {"order": 4, "id": "pain-3",                "aliases": ["pain 3", "third pain point", "pain point three", "pain three", "big bold pain three"]},
+      {"order": 5, "id": "hope",                  "aliases": ["hope", "hope introduction", "hope intro"]},
+      {"order": 6, "id": "solution",              "aliases": ["solution", "solution positioning", "the solution"]},
+      {"order": 7, "id": "value-stack",           "aliases": ["value stack", "value stacking", "value stacking presentation", "the big bold what"]},
+      {"order": 8, "id": "logical-justification", "aliases": ["logical justification", "logical justification with founder credibility", "founder credibility", "justification"]},
+      {"order": 9, "id": "identity-challenge",    "aliases": ["identity challenge", "identity challenge close", "identity-based close", "the powerful question moment"]}
+    ]
+  },
+
+  "downsell-1": {
+    "stage": "downsell-1",
+    "framework": "post-rejection emotional-recovery page (empathetic, typography-first, minimalist personal letter)",
+    "variants_required": ["a", "b"],
+    "section_count": 9,
+    "reuses_sections_from": "upsell-1",
+    "frame": "graceful-concession: honor the no, reduce the barrier"
+  },
+
+  "high-ticket": {
+    "stage": "high-ticket",
+    "framework": "The Sovereign Architect long-form system (~22 sections)",
+    "variants_required": [],
+    "word_band": {"min": 6500, "max": 7100},
+    "for_offers": "$1,000 - $25,000+",
+    "must_include": ["paradigm-shift open", "3 case studies", "objection destruction", "bonus stack", "P.S. pattern interrupt"]
+  },
+
+  "bump": {
+    "stage": "bump",
+    "framework": "order-bump / bump-sale copy",
+    "variants_required": [],
+    "word_band": {"min": 40, "max": 80},
+    "must_end_with_checkbox": true,
+    "checkbox_pattern": "^\\s*\\[[ xX]\\]\\s+.*",
+    "psychological_order": ["pattern interrupt", "social proof", "emotional gut punch", "scarcity/urgency", "no-brainer close"]
+  },
+
+  "thank-you": {
+    "stage": "thank-you",
+    "framework": "post-purchase confirmation (gap closed vs the legacy engine)",
+    "note": "Every funnel Skill 6 builds terminates at a thank-you step. No offer CTA; utility buttons only.",
+    "source_option": "new profile OR borrow Skill 49 v2 Part 5 thank-you profile (PRD O-4)"
+  }
+}

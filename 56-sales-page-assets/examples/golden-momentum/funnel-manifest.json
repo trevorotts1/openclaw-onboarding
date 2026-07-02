@@ -1,0 +1,166 @@
+{
+  "funnel_manifest": "sales-page-assets",
+  "run_id": "marcus-vale__momentum-engine__run-20260702-01",
+  "location_id": "loc_MOMENTUM_EXAMPLE",
+  "funnel_name": "ZHC marcus-vale momentum-engine v01",
+  "seo": {
+    "founder_name": "Marcus Vale",
+    "keywords": [
+      "momentum engine",
+      "operating system for founders",
+      "solo operator systems",
+      "direct response funnel"
+    ],
+    "description": "The Momentum Engine direct-response sales funnel by Marcus Vale.",
+    "canonical": "https://example.com/momentum-engine",
+    "language": "en"
+  },
+  "media": {
+    "folder": "marcus-vale__momentum-engine",
+    "cdn_map": {
+      "marcus-vale__momentum-engine__main__img-01__v01": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/main/img-01.png",
+      "marcus-vale__momentum-engine__main__img-02__v01": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/main/img-02.png",
+      "marcus-vale__momentum-engine__main__img-03__v01": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/main/img-03.png",
+      "marcus-vale__momentum-engine__main__img-04__v01": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/main/img-04.png",
+      "marcus-vale__momentum-engine__upsell-1__img-05__v01": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/upsell-1/img-05.png",
+      "marcus-vale__momentum-engine__upsell-1__img-06__v01": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/upsell-1/img-06.png",
+      "marcus-vale__momentum-engine__upsell-1__img-07__v01": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/upsell-1/img-07.png",
+      "marcus-vale__momentum-engine__upsell-1__img-08__v01": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/upsell-1/img-08.png",
+      "marcus-vale__momentum-engine__downsell-1__img-09__v01": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/downsell-1/img-09.png",
+      "marcus-vale__momentum-engine__downsell-1__img-10__v01": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/downsell-1/img-10.png",
+      "marcus-vale__momentum-engine__high-ticket__img-11__v01": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/high-ticket/img-11.png",
+      "marcus-vale__momentum-engine__high-ticket__img-12__v01": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/high-ticket/img-12.png"
+    }
+  },
+  "steps": [
+    {
+      "order": 1,
+      "stage": "main",
+      "variant": "a",
+      "step_name": "ZHC momentum-engine main v01a",
+      "asset_key": "marcus-vale__momentum-engine__main__page__v01a",
+      "fragment_path": "pages/marcus-vale__momentum-engine__main__page__v01a.fragment.html",
+      "method_decision": {
+        "classification": "SIMPLE",
+        "route": "DIRECT"
+      },
+      "copy_md_path": "copy/marcus-vale__momentum-engine__main__page__v01a.md",
+      "copy_tokens": [
+        "headline",
+        "primary-cta",
+        "proof-line"
+      ]
+    },
+    {
+      "order": 2,
+      "stage": "main",
+      "variant": "b",
+      "step_name": "ZHC momentum-engine main v01b",
+      "asset_key": "marcus-vale__momentum-engine__main__page__v01b",
+      "fragment_path": "pages/marcus-vale__momentum-engine__main__page__v01b.fragment.html",
+      "method_decision": {
+        "classification": "SIMPLE",
+        "route": "DIRECT"
+      },
+      "copy_md_path": "copy/marcus-vale__momentum-engine__main__page__v01b.md",
+      "copy_tokens": [
+        "headline",
+        "primary-cta",
+        "proof-line"
+      ]
+    },
+    {
+      "order": 3,
+      "stage": "upsell-1",
+      "variant": "a",
+      "step_name": "ZHC momentum-engine upsell-1 v01a",
+      "asset_key": "marcus-vale__momentum-engine__upsell-1__page__v01a",
+      "fragment_path": "pages/marcus-vale__momentum-engine__upsell-1__page__v01a.fragment.html",
+      "method_decision": {
+        "classification": "SIMPLE",
+        "route": "DIRECT"
+      },
+      "copy_md_path": "copy/marcus-vale__momentum-engine__upsell-1__page__v01a.md",
+      "copy_tokens": [
+        "headline",
+        "primary-cta",
+        "proof-line"
+      ]
+    },
+    {
+      "order": 4,
+      "stage": "upsell-1",
+      "variant": "b",
+      "step_name": "ZHC momentum-engine upsell-1 v01b",
+      "asset_key": "marcus-vale__momentum-engine__upsell-1__page__v01b",
+      "fragment_path": "pages/marcus-vale__momentum-engine__upsell-1__page__v01b.fragment.html",
+      "method_decision": {
+        "classification": "SIMPLE",
+        "route": "DIRECT"
+      },
+      "copy_md_path": "copy/marcus-vale__momentum-engine__upsell-1__page__v01b.md",
+      "copy_tokens": [
+        "headline",
+        "primary-cta",
+        "proof-line"
+      ]
+    },
+    {
+      "order": 5,
+      "stage": "downsell-1",
+      "variant": "",
+      "step_name": "ZHC momentum-engine downsell-1 v01",
+      "asset_key": "marcus-vale__momentum-engine__downsell-1__page__v01",
+      "fragment_path": "pages/marcus-vale__momentum-engine__downsell-1__page__v01.fragment.html",
+      "method_decision": {
+        "classification": "SIMPLE",
+        "route": "DIRECT"
+      },
+      "copy_md_path": "copy/marcus-vale__momentum-engine__downsell-1__page__v01.md",
+      "copy_tokens": [
+        "headline",
+        "primary-cta",
+        "proof-line"
+      ]
+    },
+    {
+      "order": 6,
+      "stage": "high-ticket",
+      "variant": "",
+      "step_name": "ZHC momentum-engine high-ticket v01",
+      "asset_key": "marcus-vale__momentum-engine__high-ticket__page__v01",
+      "fragment_path": "pages/marcus-vale__momentum-engine__high-ticket__page__v01.fragment.html",
+      "method_decision": {
+        "classification": "SIMPLE",
+        "route": "DIRECT"
+      },
+      "copy_md_path": "copy/marcus-vale__momentum-engine__high-ticket__page__v01.md",
+      "copy_tokens": [
+        "headline",
+        "primary-cta",
+        "proof-line"
+      ]
+    },
+    {
+      "order": 7,
+      "stage": "bump",
+      "step_name": "ZHC momentum-engine bump v01",
+      "asset_key": "marcus-vale__momentum-engine__bump__copy__v01",
+      "route": "SKILL44_WIDGET",
+      "copy_md_path": "copy/marcus-vale__momentum-engine__bump__copy__v01.md"
+    },
+    {
+      "order": 8,
+      "stage": "thank-you",
+      "variant": "",
+      "step_name": "ZHC momentum-engine thank-you v01",
+      "asset_key": "marcus-vale__momentum-engine__thank-you__page__v01",
+      "fragment_path": "pages/marcus-vale__momentum-engine__thank-you__page__v01.fragment.html",
+      "method_decision": {
+        "classification": "SIMPLE",
+        "route": "DIRECT"
+      },
+      "copy_md_path": "copy/thank-you.md"
+    }
+  ]
+}
