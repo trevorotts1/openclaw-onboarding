@@ -1,0 +1,12 @@
+{
+  "gate": "G-LINKS",
+  "stage": "02-avatar-questions-31-32",
+  "status": "degraded:search",
+  "total_links": 0,
+  "verified": 0,
+  "degraded": 0,
+  "offline": true,
+  "checked_utc": "2026-07-02T18:17:04Z",
+  "rule": "every link verifies or degraded:search (fail-soft, PRD 7 / O4)",
+  "details": []
+}

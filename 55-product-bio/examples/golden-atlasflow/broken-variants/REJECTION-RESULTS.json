@@ -1,0 +1,95 @@
+{
+  "intake_missing": {
+    "prover": "prove_pb_intake.py",
+    "expected_code": "AF-PB-INTAKE-MISSING",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_pb_intake\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-PB-INTAKE-MISSING\",\n      \"message\": \"required field 'last_name' is missing/empty/whitespace\"\n    }\n  ],\n  \"notes\": []\n}"
+  },
+  "prompt_sha_mismatch": {
+    "prover": "prove_pb_fidelity.py",
+    "expected_code": "AF-PB-PROMPT-DRIFT",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_pb_fidelity\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-PB-PROMPT-DRIFT\",\n      \"message\": \"01-product-bio-writer.md sha256 drift: got 2bcf554fe9fe\\u2026 expected 82b52e015963\\u2026\"\n    }\n  ],\n  \"notes\": [\n    \"02-google-doc-html-writer.md pinned OK (f015392af7d4\\u2026)\"\n  ]\n}"
+  },
+  "wordcount_short": {
+    "prover": "prove_pb_wordcount.py",
+    "expected_code": "AF-PB-WORDCOUNT",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_pb_wordcount\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-PB-WORDCOUNT\",\n      \"message\": \"measured stripped word count 2684 outside 6000-7000 (self-reported counts are ignored)\"\n    },\n    {\n      \"code\": \"AF-PB-VERIFY-BLOCK\",\n      \"message\": \"mandatory 'COMPLETION VERIFICATION' block absent\"\n    }\n  ],\n  \"notes\": []\n}"
+  },
+  "wordcount_whitespace_pad": {
+    "prover": "prove_pb_wordcount.py",
+    "expected_code": "AF-PB-WORDCOUNT",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_pb_wordcount\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-PB-WORDCOUNT\",\n      \"message\": \"measured stripped word count 2684 outside 6000-7000 (self-reported counts are ignored)\"\n    },\n    {\n      \"code\": \"AF-PB-VERIFY-BLOCK\",\n      \"message\": \"mandatory 'COMPLETION VERIFICATION' block absent\"\n    }\n  ],\n  \"notes\": []\n}"
+  },
+  "verify_block_missing": {
+    "prover": "prove_pb_wordcount.py",
+    "expected_code": "AF-PB-VERIFY-BLOCK",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_pb_wordcount\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-PB-VERIFY-BLOCK\",\n      \"message\": \"mandatory 'COMPLETION VERIFICATION' block absent\"\n    }\n  ],\n  \"notes\": [\n    \"measured stripped word count 6765 within 6000-7000\"\n  ]\n}"
+  },
+  "section_missing": {
+    "prover": "prove_pb_sections.py",
+    "expected_code": "AF-PB-SECTION",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_pb_sections\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-PB-SECTION\",\n      \"message\": \"missing section(s): faqs\"\n    },\n    {\n      \"code\": \"AF-PB-COUNTS\",\n      \"message\": \"faqs has 0 enumerated items, require 10-12\"\n    }\n  ],\n  \"notes\": [\n    \"all 24 signature-close styles present\"\n  ]\n}"
+  },
+  "closes_23": {
+    "prover": "prove_pb_sections.py",
+    "expected_code": "AF-PB-CLOSES",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_pb_sections\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-PB-CLOSES\",\n      \"message\": \"found 23 distinct signature-close styles, require 24 (missing: Challenger)\"\n    }\n  ],\n  \"notes\": [\n    \"all 10 sections present and in order\",\n    \"per-section count floors met + all 7 StoryBrand beats present\"\n  ]\n}"
+  },
+  "counts_short": {
+    "prover": "prove_pb_sections.py",
+    "expected_code": "AF-PB-COUNTS",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_pb_sections\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-PB-COUNTS\",\n      \"message\": \"objections has 5 enumerated items, require 8-10\"\n    }\n  ],\n  \"notes\": [\n    \"all 10 sections present and in order\",\n    \"all 24 signature-close styles present\"\n  ]\n}"
+  },
+  "html_envelope": {
+    "prover": "prove_pb_html.py",
+    "expected_code": "AF-PB-HTML-ENVELOPE",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_pb_html\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-PB-HTML-ENVELOPE\",\n      \"message\": \"output does not start EXACTLY with '<!DOCTYPE html>'\"\n    }\n  ],\n  \"notes\": [\n    \"exactly one <h1>\",\n    \"no CSS beyond page-break-after\",\n    \"content-loss check skipped (no --source-bio supplied)\"\n  ]\n}"
+  },
+  "html_two_h1": {
+    "prover": "prove_pb_html.py",
+    "expected_code": "AF-PB-HTML-H1",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_pb_html\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-PB-HTML-H1\",\n      \"message\": \"found 2 <h1> elements, require exactly 1\"\n    }\n  ],\n  \"notes\": [\n    \"strict envelope OK (starts <!DOCTYPE html>, ends </html>)\",\n    \"no CSS beyond page-break-after\",\n    \"content-loss check skipped (no --source-bio supplied)\"\n  ]\n}"
+  },
+  "html_css": {
+    "prover": "prove_pb_html.py",
+    "expected_code": "AF-PB-HTML-CSS",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_pb_html\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-PB-HTML-CSS\",\n      \"message\": \"a <style> block is present (only page-break-after is permitted)\"\n    }\n  ],\n  \"notes\": [\n    \"strict envelope OK (starts <!DOCTYPE html>, ends </html>)\",\n    \"exactly one <h1>\",\n    \"content-loss check skipped (no --source-bio supplied)\"\n  ]\n}"
+  },
+  "html_loss": {
+    "prover": "prove_pb_html.py",
+    "expected_code": "AF-PB-HTML-LOSS",
+    "rc": 2,
+    "rejected": true,
+    "out_excerpt": "{\n  \"prover\": \"prove_pb_html\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-PB-HTML-LOSS\",\n      \"message\": \"content coverage 49.6% < 90% tolerance vs source bio (content lost in conversion)\"\n    }\n  ],\n  \"notes\": [\n    \"strict envelope OK (starts <!DOCTYPE html>, ends </html>)\",\n    \"exactly one <h1>\",\n    \"no CSS beyond page-break-after\"\n  ]\n}"
+  },
+  "E2E_no_certificate": {
+    "runner": "product-bio-entry.sh -> run_product_bio.py",
+    "seeded_defect": "working/product-bio.md is a 2,684-word bio (below the 6,000 floor)",
+    "expected": "P3-BIO-QC fails closed; run BLOCKED; NO certificate issued",
+    "rc": 2,
+    "certificate_refused": true,
+    "certificate_file_exists": false,
+    "out_excerpt": "=== PHASE P0-INTAKE \u2014 Intake (the 4 required fields, one block, turn-gated) ===\n   [OK] _chk_intake: intake PASS\n=== PHASE P1-FIDELITY \u2014 Prompt fidelity (the baked IP has not drifted) ===\n   [OK] _chk_fidelity: prompt fidelity PASS\n=== PHASE P2-BIO-AUTHOR \u2014 Bio authoring (ONE call, system = prompt 01 verbatim, client model) ===\n   [OK] _chk_bio_authored: product-bio.md present\n=== PHASE P3-BIO-QC \u2014 Bio QC (fail-closed floor provers over the authored bio) ===\n   [FAIL] _chk_bio_qc: bio QC FAILED (wordcount exit 2, sections exit 2)"
+  }
+}

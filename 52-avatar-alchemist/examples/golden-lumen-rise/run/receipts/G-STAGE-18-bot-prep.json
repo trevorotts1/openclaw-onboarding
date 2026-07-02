@@ -1,0 +1,7 @@
+{
+  "stage": "18-bot-prep",
+  "sha256": "fdfca18a4f7e77923c82890dfa09f36a434fcbf6febf5d9ba9294141ea4f9043",
+  "attested_by": "foreman",
+  "model": "ollama-cloud/qwen3-235b",
+  "words": 753
+}

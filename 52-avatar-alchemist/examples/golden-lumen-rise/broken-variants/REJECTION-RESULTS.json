@@ -1,0 +1,53 @@
+{
+  "01_missing_generator": {
+    "prover": "aa_build_check.py",
+    "expected_code": "AF-AV-STAGE-MISSING",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-AV-STAGE-MISSING"
+    ],
+    "out": "VIOLATION [AF-AV-STAGE-MISSING] stage '16-brand-bio' produced no non-empty artifact"
+  },
+  "02_out_of_band_copy": {
+    "prover": "aa_build_check.py",
+    "expected_code": "AF-AV-ADSET-CAT",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-AV-ADSET-CAT"
+    ],
+    "out": "VIOLATION [AF-AV-ADSET-CAT] stage '28-ad-set-7': artifact does not name its restored category 'category 5' (the 'category 2' drift repair did not hold)"
+  },
+  "03_image_prompt_too_short": {
+    "prover": "aa_build_check.py",
+    "expected_code": "AF-AV-IMG-BAND",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-AV-IMG-BAND"
+    ],
+    "out": "VIOLATION [AF-AV-IMG-BAND] stage '40-landing-image-prompts': 49 stripped chars outside image-prompt band [5000,19000]"
+  },
+  "04_book_version_not_routed": {
+    "prover": "aa_intake_gate.py",
+    "expected_code": "AF-AV-BOOK-SKILL-MISSING",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-AV-BOOK-SKILL-MISSING"
+    ],
+    "out": "VIOLATION [AF-AV-BOOK-SKILL-MISSING] version=book with no resolvable Book-skill route \u2014 parks fail-closed 'book-skill-not-available' (NEVER silently served by the brand pipeline)"
+  },
+  "05_missing_provenance": {
+    "prover": "aa_delivery_gate.py",
+    "expected_code": "AF-AV-PROVENANCE",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-AV-DELIVER-INCOMPLETE",
+      "AF-AV-PROVENANCE"
+    ],
+    "out": "VIOLATION [AF-AV-PROVENANCE] stage '16-brand-bio': receipt sha256 7ae0b982220e.. != artifact sha256 498b52a781da.. (fabrication / tamper \u2014 receipt does not attest THIS artifact)\nVIOLATION [AF-AV-DELIVER-INCOMPLETE] 39/40 stages attested \u2014 delivery blocked (never deliver below 40/40)"
+  }
+}

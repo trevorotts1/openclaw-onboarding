@@ -1,0 +1,32 @@
+{
+  "prove_pb_intake": {
+    "rc": 0,
+    "passed": true,
+    "cmd": "python3 scripts/prove_pb_intake.py examples/golden-atlasflow/working/intake.json",
+    "output": "PASS [prove_pb_intake]: all rules satisfied.\n  - all 4 required intake fields present: product_name, product_description, first_name, last_name\n  - optional client_folder_name captured (handoff parity only)\n  - optional email captured (handoff parity only)\n  - optional phone captured (handoff parity only)"
+  },
+  "prove_pb_fidelity": {
+    "rc": 0,
+    "passed": true,
+    "cmd": "python3 scripts/prove_pb_fidelity.py",
+    "output": "PASS [prove_pb_fidelity]: all rules satisfied.\n  - 01-product-bio-writer.md pinned OK (82b52e015963\u2026)\n  - 02-google-doc-html-writer.md pinned OK (f015392af7d4\u2026)"
+  },
+  "prove_pb_wordcount": {
+    "rc": 0,
+    "passed": true,
+    "cmd": "python3 scripts/prove_pb_wordcount.py examples/golden-atlasflow/working/product-bio.md",
+    "output": "PASS [prove_pb_wordcount]: all rules satisfied.\n  - measured stripped word count 6105 within 6000-7000\n  - 'COMPLETION VERIFICATION' block present"
+  },
+  "prove_pb_sections": {
+    "rc": 0,
+    "passed": true,
+    "cmd": "python3 scripts/prove_pb_sections.py examples/golden-atlasflow/working/product-bio.md",
+    "output": "PASS [prove_pb_sections]: all rules satisfied.\n  - all 10 sections present and in order\n  - all 24 signature-close styles present\n  - per-section count floors met + all 7 StoryBrand beats present"
+  },
+  "prove_pb_html": {
+    "rc": 0,
+    "passed": true,
+    "cmd": "python3 scripts/prove_pb_html.py examples/golden-atlasflow/working/product-bio.html --source-bio examples/golden-atlasflow/working/product-bio.md",
+    "output": "PASS [prove_pb_html]: all rules satisfied.\n  - strict envelope OK (starts <!DOCTYPE html>, ends </html>)\n  - exactly one <h1>\n  - no CSS beyond page-break-after\n  - content coverage 100.0% >= 90% tolerance"
+  }
+}
