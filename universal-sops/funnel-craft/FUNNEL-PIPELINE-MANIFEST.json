@@ -1,0 +1,125 @@
+{
+  "manifest_version": 1,
+  "$schema_note": "SHARED cross-department SOP manifest for the Signature Funnel engine (Skill 49). This is the universal-sops face of the capability: it is how ANY department (web-development / marketing / crm / sales / social-media) discovers and drives the end-to-end funnel pipeline. It does NOT re-implement the engine. The authoritative machine spine lives in the skill: 49-signature-funnel/FUNNEL-MANIFEST.json (phase order P0..P10 + AF codes), 49-signature-funnel/scripts/prove_sf_*.py (the five fail-closed floor provers), 49-signature-funnel/run_signature_funnel.py (the deterministic orchestrator, front-door-nonce gated by signature-funnel-entry.sh), and the SACRED IP in 49-signature-funnel/MASTERDOC.md + structure/funnel_structure.json. This file mirrors the email-craft / fb-ad-craft / presentation-slide-craft enforcement-spine pattern so a department reads ONE manifest to know the phases, the owning roles, the SOP for each phase, and the gate codes. SOP-LOCKED: any added/changed SOP, section band, or gate MUST stay in lockstep with 49-signature-funnel/FUNNEL-MANIFEST.json and the provers.",
+  "authoritative_engine": {
+    "skill": "49-signature-funnel",
+    "engine_manifest": "49-signature-funnel/FUNNEL-MANIFEST.json",
+    "floor_provers": [
+      "49-signature-funnel/scripts/prove_sf_intake.py",
+      "49-signature-funnel/scripts/prove_sf_copy.py",
+      "49-signature-funnel/scripts/prove_sf_prompt_floor.py",
+      "49-signature-funnel/scripts/prove_sf_no_pitch.py",
+      "49-signature-funnel/scripts/prove_sf_cert.py"
+    ],
+    "orchestrator": "49-signature-funnel/run_signature_funnel.py",
+    "sanctioned_entry": "49-signature-funnel/signature-funnel-entry.sh",
+    "masterdoc": "49-signature-funnel/MASTERDOC.md",
+    "sacred_structure": "49-signature-funnel/structure/funnel_structure.json"
+  },
+  "step0_engine_selector": {
+    "registry": "06-ghl-install-pages/funnel-engines/registry.json",
+    "selector": "06-ghl-install-pages/tools/funnel_engine_selector.py",
+    "note": "Requests route to this engine via the shared STEP-0 funnel-engine selector. NO_ENGINE_MATCH falls through to the template-first funnel matcher. Skill 56 (Sales-Page-Assets) registers the 2nd entry later."
+  },
+  "delivery_rail": {
+    "owner": "06-ghl-install-pages",
+    "rule": "Skill 6 is the ONE GHL delivery rail. Skill 49 AUTHORS copy+images, then DELEGATES: P4 media folder + upload -> ghl_media.py; P7 funnel/step/page build + HTML injection -> ghl_rest_canvas.py / ghl_builder.py."
+  },
+  "phases": [
+    {
+      "id": "P0-INTAKE",
+      "name": "Lock the brief in ONE block",
+      "sop": "SOP-FUNNEL-01-INTAKE.md",
+      "owning_role": "signature-funnel-specialist (web-development) / signature-funnel-specialist (marketing)",
+      "produces": "working/copy/brief.json",
+      "prover": "49-signature-funnel/scripts/prove_sf_intake.py",
+      "gates": ["AF-FUN-INTAKE-TYPE", "AF-FUN-INTAKE-MISSING", "AF-FUN-INTAKE-SIZE", "AF-FUN-INTAKE-OFFER", "AF-FUN-INTAKE-REPRESENTATION", "AF-FUN-INTAKE-TRUTHGATE", "AF-FUN-INTAKE-UNLOCKED"]
+    },
+    {
+      "id": "P1-COPY",
+      "name": "SACRED 12-section copy (all six page profiles)",
+      "sop": "SOP-FUNNEL-02-COPY.md",
+      "owning_role": "signature-funnel-specialist",
+      "produces": "working/copy/copy_ledger.json",
+      "prover": "49-signature-funnel/scripts/prove_sf_copy.py",
+      "gates": ["AF-FUN-PROFILE-UNKNOWN", "AF-FUN-SECTION-MISSING", "AF-FUN-SECTION-EXTRA", "AF-FUN-SECTION-ORDER", "AF-FUN-SEC1-CHARBAND", "AF-FUN-SEC1-TITLE", "AF-FUN-SEC1-CTA", "AF-FUN-PAIN-CHARBAND", "AF-FUN-PAIN-QUESTION", "AF-FUN-PAIN-2ND-PERSON", "AF-FUN-PAIN-CTA", "AF-FUN-SEC5-WORDS", "AF-FUN-SEC5-LEAD", "AF-FUN-SEC5-CTA", "AF-FUN-SEC6-WORDS", "AF-FUN-SEC6-PERSONAS", "AF-FUN-SEC6-NO-CTA", "AF-FUN-SEC7-WORDS", "AF-FUN-SEC7-BULLETS", "AF-FUN-BENEFIT-WORDS", "AF-FUN-BENEFIT-NO-CTA", "AF-FUN-SEC10-CTA", "AF-FUN-SEC11-WORDS", "AF-FUN-SEC11-NO-CTA-BUTTON", "AF-FUN-SEC11-STEPS", "AF-FUN-SEC11-STEPBAND", "AF-FUN-SEC11-STEP7", "AF-FUN-SEC11-REQUIRED-STEPS", "AF-FUN-SEC12-WORDS", "AF-FUN-SEC12-PARTS", "AF-FUN-SEC12-STRUGGLE", "AF-FUN-SEC8REPL-NAME", "AF-FUN-SEC8REPL-COUNT", "AF-FUN-TY1-CHARBAND", "AF-FUN-TY1-TITLE", "AF-FUN-TY2-STEPS", "AF-FUN-TY2-STEPBAND", "AF-FUN-TY3-CHARBAND"]
+    },
+    {
+      "id": "P2-PROMPTS",
+      "name": "Image prompts (5,000–19,000 chars, 8-block, Signature Grade Block)",
+      "sop": "SOP-FUNNEL-03-PROMPTS-IMAGES.md",
+      "owning_role": "signature-funnel-specialist",
+      "produces": "working/copy/prompt_ledger.json",
+      "prover": "49-signature-funnel/scripts/prove_sf_prompt_floor.py",
+      "gates": ["AF-FUN-PROMPT-FLOOR", "AF-FUN-PROMPT-CEILING", "AF-FUN-PROMPT-DENSITY", "AF-FUN-PROMPT-GRADE", "AF-FUN-PROMPT-NEGATIVE", "AF-FUN-PROMPT-EMDASH", "AF-FUN-PROMPT-TYPO"]
+    },
+    {
+      "id": "P3-IMAGES",
+      "name": "Image generation (DELEGATED to Skill 47) + provenance",
+      "sop": "SOP-FUNNEL-03-PROMPTS-IMAGES.md",
+      "owning_role": "signature-funnel-specialist",
+      "delegated_to": "47-movie-producer / kie_image.py",
+      "produces": "working/media/media_ledger.json (image records)",
+      "gates": ["AF-FUN-IMG-PROVENANCE", "AF-FUN-IMG-EMPTY"]
+    },
+    {
+      "id": "P4-MEDIA",
+      "name": "GHL media folder + upload (DELEGATED to Skill 6)",
+      "sop": "SOP-FUNNEL-04-BUILD.md",
+      "delegated_to": "06-ghl-install-pages / ghl_media.py",
+      "produces": "working/media/media_ledger.json (GHL media URLs)",
+      "gates": ["AF-FUN-IMG-HOST"]
+    },
+    {
+      "id": "P5-HTML",
+      "name": "Per-page HTML fragment assembly",
+      "sop": "SOP-FUNNEL-04-BUILD.md",
+      "owning_role": "signature-funnel-specialist",
+      "produces": "working/html fragments"
+    },
+    {
+      "id": "P6-COMPOSE",
+      "name": "3/5/7 funnel step graph + accept/decline branching",
+      "sop": "SOP-FUNNEL-04-BUILD.md",
+      "owning_role": "signature-funnel-specialist"
+    },
+    {
+      "id": "P7-BUILD",
+      "name": "GHL funnel/page build (DELEGATED to Skill 6); QC >= 8.5",
+      "sop": "SOP-FUNNEL-04-BUILD.md",
+      "delegated_to": "06-ghl-install-pages / ghl_rest_canvas.py + ghl_builder.py",
+      "produces": "GHL funnel + preview URLs"
+    },
+    {
+      "id": "P8-DERIVE",
+      "name": "Derived pages loop (U1/D1/U2/D2/TY)",
+      "sop": "SOP-FUNNEL-02-COPY.md",
+      "owning_role": "signature-funnel-specialist"
+    },
+    {
+      "id": "P9-CERTIFY",
+      "name": "No-pitch (clean Thank-You) + signed PROCESS-CERTIFICATE",
+      "sop": "SOP-FUNNEL-05-CERTIFY.md",
+      "prover": "49-signature-funnel/scripts/prove_sf_no_pitch.py + prove_sf_cert.py",
+      "produces": "PROCESS-CERTIFICATE.json",
+      "gates": ["AF-FUN-TY-PITCH", "AF-FUN-TY-PRICE", "AF-FUN-TY-CTA", "AF-FUN-TY-MISSING", "AF-FUN-OFFER-LEDGER-MISSING", "AF-FUN-CERT-MISSING", "AF-FUN-CERT-PHASE-GAP", "AF-FUN-CERT-PHASE-FAIL", "AF-FUN-CERT-SIGNATURE", "AF-FUN-PROCESS-INTEGRITY"]
+    },
+    {
+      "id": "P10-EMAIL",
+      "name": "Optional 10 landing-page promo emails (handoff)",
+      "sop": "SOP-FUNNEL-05-CERTIFY.md",
+      "delegated_to": "50-email-engine (universal-sops/email-craft/)",
+      "note": "After the downsell is approved: offer the 10 promo emails; on yes, hand the locked brief + final copy to the Email Engine."
+    }
+  ],
+  "front_door_guards": ["deps", "version", "hash-pin", "bypass-scan", "run-scoped-0600-nonce"],
+  "front_door_gates": ["AF-FUN-FRONT-DOOR", "AF-FUN-CANONICAL-BYPASS", "AF-FUN-HASH-PIN"],
+  "labeling_grammar": {
+    "pattern": "<client>__<funnel>__<stage>__<type>__vNN",
+    "stage_enum": ["main", "checkout", "upsell1", "downsell1", "upsell2", "downsell2", "thankyou"],
+    "type_enum": ["copy", "prompt", "image", "html", "preview"],
+    "reciprocal_pin": "49-signature-funnel/MASTERDOC.md §8 + Skill 56 (Sales-Page-Assets), forward-ref"
+  },
+  "client_runtime_rule": "On a client box the engine uses the CLIENT's OWN configured providers + keys (strongest -> copy + QC verify; mid -> image prompts / HTML / JSON; cheapest -> catalog / poll). NEVER Anthropic / claude-* / operator keys. The provers are deterministic and model-free.",
+  "flexibility": "guide-not-rule: honor an explicit owner choice about funnel size + offers; but the SACRED section bands + image-prompt band are prover-enforced hard AF codes, not opinions."
+}

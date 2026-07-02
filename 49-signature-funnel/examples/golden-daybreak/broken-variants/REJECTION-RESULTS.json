@@ -1,0 +1,49 @@
+{
+  "A_wrong_section_count": {
+    "prover": "prove_sf_copy.py",
+    "rc": 2,
+    "rejected": true,
+    "expected_code": "AF-FUN-SECTION-MISSING",
+    "code_present": true,
+    "why": "main page is missing SACRED Section 3 (Pain 2)",
+    "out_tail": "NOTE: page 'checkout': microcopy-only profile \u2014 12-section gate not applied\nFAIL: 1 copy violation(s) \u2014 funnel is NOT run, NOT rendered, NOT built.\n  VIOLATION [AF-FUN-SECTION-MISSING] page 'main': required Section 3 is absent"
+  },
+  "B_out_of_band_copy": {
+    "prover": "prove_sf_copy.py",
+    "rc": 2,
+    "rejected": true,
+    "expected_code": "AF-FUN-SEC1-CHARBAND",
+    "code_present": true,
+    "why": "Section 1 is 20 stripped chars, under the 180 floor",
+    "out_tail": "NOTE: page 'checkout': microcopy-only profile \u2014 12-section gate not applied\nFAIL: 2 copy violation(s) \u2014 funnel is NOT run, NOT rendered, NOT built.\n  VIOLATION [AF-FUN-SEC1-CHARBAND] page 'main' Section 1 (The Big Bold Claim): 20 stripped chars, outside the sacred band [180, 225]\n  VIOLATION [AF-FUN-SEC1-TITLE] page 'main' Section 1 (The Big Bold Claim): does not contain the product title 'The Daybreak Method'"
+  },
+  "C_image_prompt_too_short": {
+    "prover": "prove_sf_prompt_floor.py",
+    "rc": 2,
+    "rejected": true,
+    "expected_code": "AF-FUN-PROMPT-FLOOR",
+    "code_present": true,
+    "why": "prompt is far under the 5,000-char floor -> never sent to Kie",
+    "out_tail": "  VIOLATION [AF-FUN-PROMPT-FLOOR] page 'main' section 1: 43 stripped chars, under the 5000 floor \u2014 a prompt this short cannot carry the signature specificity; NOT sent to Kie\n  VIOLATION [AF-FUN-PROMPT-DENSITY] page 'main' section 1: only 8 distinct words (< 220) \u2014 reads as repetition padding, not a genuinely rich prompt\n  VIOLATION [AF-FUN-PROMPT-GRADE] page 'main' section 1: the SIGNATURE GRADE BLOCK is not embedded (none of ['140 percent', 'signature color', 'melanin-true', 'signature aesthetic', 'signature grade'] present)\n  VIOLATION [AF-FUN-PROMPT-NEGATIVE] page 'main' section 1: no negative block ('Do not ...' imperative) in the prompt"
+  },
+  "D_missing_provenance": {
+    "prover": "prove_sf_no_pitch.py",
+    "rc": 2,
+    "rejected": true,
+    "expected_code": "AF-FUN-IMG-PROVENANCE",
+    "code_present": true,
+    "why": "an image carries a placeholder Kie taskId (not proven Kie-rendered)",
+    "out_tail": "VIOLATION: no-pitch/provenance gate failed (1 finding(s)):\n  [AF-FUN-IMG-PROVENANCE] page 'main' section 1: missing/placeholder Kie taskId ('placeholder') \u2014 the image was not proven Kie-rendered"
+  },
+  "E_unapproved": {
+    "prover": "prove_sf_intake.py",
+    "rc": 2,
+    "rejected": true,
+    "expected_code": "AF-FUN-INTAKE-UNLOCKED",
+    "code_present": true,
+    "why": "brief is unlocked/unapproved -> generation must not start (P0 abort, no cert)",
+    "out_tail": "== Signature Funnel :: intake gate ==\nsource: broken-variants/E_unapproved/brief.json\nRESULT: FAIL (fail-closed) \u2014 1 violation(s):\n  [AF-FUN-INTAKE-UNLOCKED] brief is not locked (provenance-gated) \u2014 generation must not start",
+    "e2e_orchestrator_rc": 2,
+    "e2e_no_certificate": true
+  }
+}

@@ -1,0 +1,450 @@
+{
+  "funnel_type": "signature_funnel",
+  "funnel_size": 7,
+  "product_title": "The Daybreak Method",
+  "offer_token_ledger": [
+    "The Daybreak Method",
+    "The Fast Track Sprint",
+    "The Daybreak Field Notes",
+    "The Founders Table Retreat",
+    "The Single Day Pass"
+  ],
+  "pages": [
+    {
+      "page_type": "main",
+      "sections": [
+        {
+          "section": 1,
+          "name": "The Big Bold Claim",
+          "copy": "The Daybreak Method rebuilds your first ninety minutes so you wake calm, clear, and already ahead, trading the frantic scramble for one steady sunrise routine that quietly runs your whole day on your own terms.",
+          "cta": "CTA: Claim My Daybreak"
+        },
+        {
+          "section": 2,
+          "name": "The Big Bold Pain 1",
+          "copy": "You wake to a blaring alarm already behind, thumbing snooze in the dark while the day stacks up against you, and by the time your bare feet hit the cold floor the morning has quietly taken the wheel from you.",
+          "cta": "CTA: Claim My Daybreak"
+        },
+        {
+          "section": 3,
+          "name": "The Big Bold Pain 2",
+          "copy": "You made yourself a quiet promise that tomorrow would finally be different, that you would rise early and move with intention, and you have broken that private vow so many mornings that you barely believe it anymore.",
+          "cta": "CTA: Claim My Daybreak"
+        },
+        {
+          "section": 4,
+          "name": "The Big Bold Pain 3",
+          "copy": "Your kids stand in the doorway and watch you drag yourself up late, tired and short before coffee, and somewhere underneath you can feel them quietly learning that a frantic, depleted morning is simply how life works.",
+          "cta": "CTA: Claim My Daybreak"
+        },
+        {
+          "section": 5,
+          "name": "The Big Bold Why",
+          "copy": "That's the reason why you deserve mornings that belong to you, a calm start that compounds into a life finally moving forward on your own terms.",
+          "cta": "CTA: Claim My Daybreak"
+        },
+        {
+          "section": 6,
+          "name": "The Big Bold Who",
+          "copy": "Founders who need clear focus, parents who crave a calm start, creators chasing steady output, and leaders who want dependable energy every day.",
+          "personas": [
+            "founders",
+            "parents",
+            "creators",
+            "leaders"
+          ]
+        },
+        {
+          "section": 7,
+          "name": "The Big Bold What",
+          "copy": "Inside The Daybreak Method you get a complete, do-it-with-you morning system that carries you from the first alarm to your opening block of deep, focused work without friction, guesswork, or raw willpower, so the routine still runs on the hard mornings when staying under the warm blanket feels far easier than starting.",
+          "bullets": [
+            "thirty guided daily audio rituals you can begin half asleep",
+            "four live monthly momentum calls hosted by the founder",
+            "a printable ninety day commitment tracker and wall map",
+            "the five minute reset for the mornings you oversleep",
+            "a private community of early risers who keep you honest",
+            "a personal founder text on your very first hard morning"
+          ]
+        },
+        {
+          "section": 8,
+          "name": "The Big Bold Benefit 1",
+          "copy": "You feel the weight lift within the first week as your quiet mornings return, calm, unhurried, and unmistakably your own again."
+        },
+        {
+          "section": 9,
+          "name": "The Big Bold Benefit 2",
+          "copy": "You watch the numbers move this quarter as steady, protected focus turns into finished projects, shipped work, and results you can actually measure."
+        },
+        {
+          "section": 10,
+          "name": "The Big Bold Benefit 3",
+          "copy": "You become the grounded, unhurried, unstoppable person your future has been quietly waiting on, one deliberate sunrise at a time.",
+          "has_cta_button": true,
+          "cta": "CTA: Claim My Daybreak"
+        },
+        {
+          "section": 11,
+          "name": "The Big How To",
+          "steps": [
+            "Share this reset with one friend who keeps starting over, because momentum grows when you rise together.",
+            "Check your inbox for the welcome email and the five minute reset bonus we send the moment you join.",
+            "Watch your phone for a personal text from the founder on your first hard morning, and answer it honestly.",
+            "Join the private community today, introduce yourself to the members, and name the one morning you want back.",
+            "Open module one now and complete your first guided daybreak ritual before the sun clears the low horizon.",
+            "Write your ninety day commitment down and pin it where your tired morning eyes cannot possibly miss it.",
+            "This is your morning and your one life, so rise now, press play on day one, and let the daybreak carry you all the way forward."
+          ]
+        },
+        {
+          "section": 12,
+          "name": "The Big Bold Heartfelt Message",
+          "parts": [
+            {
+              "label": "The Big Bold Heartfelt Message",
+              "text": "This is far more than a course to me, it is the exact turn that quietly handed me back my mornings and my whole life."
+            },
+            {
+              "label": "The Big Struggle",
+              "text": "I used to be just like you, exhausted before dawn and ashamed of every small promise I kept breaking to myself."
+            },
+            {
+              "label": "The Big Decision",
+              "text": "So one gray, ordinary morning I decided the snooze button would no longer get to write the entire story of my day."
+            },
+            {
+              "label": "The Big Reason",
+              "text": "I built this for the tired builder who still quietly believes their best work and their best years are still ahead."
+            },
+            {
+              "label": "The Big Invite",
+              "text": "Come rise with us, take the first small daybreak step today, and let these quiet mornings slowly rebuild everything you touch."
+            },
+            {
+              "label": "The Big Passionate Close",
+              "text": "Your next chapter begins before sunrise, and I will be right here cheering the morning your first alarm finally means go."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "page_type": "checkout",
+      "microcopy": {
+        "headline": "Confirm your daybreak",
+        "button": "Complete Secure Order"
+      }
+    },
+    {
+      "page_type": "upsell",
+      "sections": [
+        {
+          "section": 1,
+          "name": "The Big Bold Claim",
+          "copy": "You just claimed your daybreak, and right now you can bolt on the Fast Track Sprint, the done-with-you week that installs the whole routine while your motivation is still hot instead of leaving it to quietly fade.",
+          "cta": "CTA: Yes Add The Fast Track"
+        },
+        {
+          "section": 2,
+          "name": "The Big Bold Pain 1",
+          "copy": "You already know the quiet gap between the mornings you just paid for and the mornings you actually want, and you know a brand new plan on its own has slipped through your fingers more than once before.",
+          "cta": "CTA: Yes Add The Fast Track"
+        },
+        {
+          "section": 3,
+          "name": "The Big Bold Pain 2",
+          "copy": "You have felt momentum drain away right after the excitement of a clean start wore off, leaving you staring at a plan you fully believed in on Sunday night but somehow never once managed to truly begin.",
+          "cta": "CTA: Yes Add The Fast Track"
+        },
+        {
+          "section": 4,
+          "name": "The Big Bold Pain 3",
+          "copy": "You have watched other people pull cleanly ahead while you kept restarting the very same first week, and part of you is quietly tired of always being the one who is still just about to finally get going.",
+          "cta": "CTA: Yes Add The Fast Track"
+        },
+        {
+          "section": 5,
+          "name": "The Big Bold Why",
+          "copy": "That's the reason why you add the Fast Track now, while the door is open and a guide can walk that fragile first week right beside you.",
+          "cta": "CTA: Yes Add The Fast Track"
+        },
+        {
+          "section": 6,
+          "name": "The Big Bold Who",
+          "copy": "Doers who want speed, builders who want proximity, and leaders who want the shortest honest path to a result that finally sticks.",
+          "personas": [
+            "founders",
+            "operators",
+            "leaders"
+          ]
+        },
+        {
+          "section": 7,
+          "name": "The Big Bold What",
+          "copy": "The Fast Track Sprint stacks straight onto your daybreak and pulls the entire ninety day result forward, so instead of walking the slow road alone you move through a tighter loop, with faster feedback and real support on the exact mornings that used to end your streak.",
+          "bullets": [
+            "a done-with-you accelerated onboarding sprint",
+            "priority answers waiting inside the private community",
+            "one extra live working session every single week",
+            "the advanced reset built for high pressure travel days",
+            "a second personal founder check-in at day thirty",
+            "a shareable win card so you can bring a friend"
+          ]
+        },
+        {
+          "section": 8,
+          "name": "7 Reasons To Commit To Your Unstoppable Future",
+          "items": [
+            "Reason one: you install the entire routine in seven days instead of guessing at it alone for months.",
+            "Reason two: a guide watches your first week and catches the exact spot where you usually quit.",
+            "Reason three: faster feedback means a small stumble never grows into another abandoned restart.",
+            "Reason four: the accelerated pace locks the habit in while your motivation is still burning hot.",
+            "Reason five: priority answers mean you never lose a whole morning waiting on help you needed at dawn.",
+            "Reason six: you finish the ninety day arc weeks early and start compounding the results far sooner.",
+            "Reason seven: you become the person who follows through, and that identity quietly changes everything."
+          ],
+          "cta": "CTA: Yes Add The Fast Track"
+        }
+      ]
+    },
+    {
+      "page_type": "downsell",
+      "sections": [
+        {
+          "section": 1,
+          "name": "The Big Bold Claim",
+          "copy": "If the full sprint is not for you today, keep the Daybreak Field Notes instead, the recordings-only tier that hands you every ritual and lesson to replay on your own schedule for a fraction of the full commitment.",
+          "cta": "CTA: Keep The Field Notes"
+        },
+        {
+          "section": 2,
+          "name": "The Big Bold Pain 1",
+          "copy": "You still want the calm mornings, you just do not want another live schedule you might fall behind on, and you know an empty calendar reminder has guilted you more than it has ever actually moved you.",
+          "cta": "CTA: Keep The Field Notes"
+        },
+        {
+          "section": 3,
+          "name": "The Big Bold Pain 2",
+          "copy": "You have bought good material before and let it sit unopened, and quietly you worry that walking away now means walking away from the one small door that could still gently pull you back on track.",
+          "cta": "CTA: Keep The Field Notes"
+        },
+        {
+          "section": 4,
+          "name": "The Big Bold Pain 3",
+          "copy": "You have felt the sting of watching a helpful thing expire while you waited for a better moment, and part of you does not want to hand back the calm start you can already picture yourself finally living.",
+          "cta": "CTA: Keep The Field Notes"
+        },
+        {
+          "section": 5,
+          "name": "The Big Bold Why",
+          "copy": "That's the reason why you keep the Field Notes now, a light and forgiving door that stays open on the mornings your willpower does not.",
+          "cta": "CTA: Keep The Field Notes"
+        },
+        {
+          "section": 6,
+          "name": "The Big Bold Who",
+          "copy": "Self-pacers who want freedom, budget-minded starters who want a real on-ramp, and quiet learners who move best entirely on their own.",
+          "personas": [
+            "self-pacers",
+            "starters",
+            "quiet learners"
+          ]
+        },
+        {
+          "section": 7,
+          "name": "The Big Bold What",
+          "copy": "The Daybreak Field Notes give you the recorded backbone of the whole method to revisit whenever a morning goes sideways, so even without the live rooms you always have the calm voice, the exact steps, and the reset waiting the moment you are ready to lean back in.",
+          "bullets": [
+            "the full recordings library of every daily ritual",
+            "searchable field notes you can scan in seconds",
+            "quick reference cards for the mornings you feel lost",
+            "the five minute reset audio saved for oversleeps",
+            "lifetime replay access on your own private schedule",
+            "a gentle weekly nudge to open the next lesson"
+          ]
+        },
+        {
+          "section": 8,
+          "name": "When Time Runs Out",
+          "items": [
+            "When time runs out you lose the recordings library that lets you relearn any ritual on demand.",
+            "When time runs out the searchable field notes vanish and you are back to scattered memory alone.",
+            "When time runs out you forfeit the quick reference cards built for the mornings you feel lost.",
+            "When time runs out this low, forgiving door closes and the same lessons cost far more later on.",
+            "When time runs out you keep only raw willpower, the single tool that has already failed you before.",
+            "When time runs out you lose the calm voice in your ear on every hard and unforgiving morning.",
+            "When time runs out you walk away with good intentions and nothing durable to actually hold onto."
+          ],
+          "cta": "CTA: Keep The Field Notes"
+        }
+      ]
+    },
+    {
+      "page_type": "upsell-2",
+      "sections": [
+        {
+          "section": 1,
+          "name": "The Big Bold Claim",
+          "copy": "There is one thing a screen can never give you, and that is the room, so reserve a seat at the Founders Table Retreat, a categorically different in-person weekend where the method stops being a plan and becomes a place.",
+          "cta": "CTA: Reserve My Retreat Seat"
+        },
+        {
+          "section": 2,
+          "name": "The Big Bold Pain 1",
+          "copy": "You already sense that everything you learn alone eventually hits a ceiling, and you know that no video, however good, has ever quite matched the pull of being physically in the same warm room as the work.",
+          "cta": "CTA: Reserve My Retreat Seat"
+        },
+        {
+          "section": 3,
+          "name": "The Big Bold Pain 2",
+          "copy": "You have promised yourself for years that one day you would step into a room like this, and quietly that one day keeps sliding forward while the version of you who belongs there waits patiently to be met.",
+          "cta": "CTA: Reserve My Retreat Seat"
+        },
+        {
+          "section": 4,
+          "name": "The Big Bold Pain 3",
+          "copy": "You have watched people you admire credit a single weekend for changing their whole trajectory, and some honest part of you is tired of always hearing that story from the outside instead of finally living it yourself.",
+          "cta": "CTA: Reserve My Retreat Seat"
+        },
+        {
+          "section": 5,
+          "name": "The Big Bold Why",
+          "copy": "That's the reason why you reserve your retreat seat now, while a small in-person room and a founder-led weekend are still genuinely within reach.",
+          "cta": "CTA: Reserve My Retreat Seat"
+        },
+        {
+          "section": 6,
+          "name": "The Big Bold Who",
+          "copy": "Committed builders who want depth, quiet leaders who want a real peer circle, and doers ready to finally trade screens for a room.",
+          "personas": [
+            "builders",
+            "leaders",
+            "doers"
+          ]
+        },
+        {
+          "section": 7,
+          "name": "The Big Bold What",
+          "copy": "The Founders Table Retreat is a weekend built face to face, so instead of one more login you walk into a small room, sit at the table with the founder and a tight circle of peers, and rebuild your ninety day plan out loud with people who will actually hold you to it.",
+          "bullets": [
+            "a full founder-led in-person morning intensive",
+            "a table of twenty committed peers, not a crowd",
+            "a live rebuild of your personal ninety day plan",
+            "quiet, unhurried hours to think without a screen",
+            "relationships that keep carrying you long after",
+            "a printed weekend playbook you take home for good"
+          ]
+        },
+        {
+          "section": 8,
+          "name": "7 Reasons To Commit To Your Founders Future",
+          "items": [
+            "Reason one: you spend a full weekend in the room with the founder and a small circle of peers.",
+            "Reason two: proximity rewires belief faster than any lesson, because you watch it lived up close.",
+            "Reason three: you leave with relationships that keep quietly carrying you long after the weekend ends.",
+            "Reason four: an in-person reset breaks the online plateau that silently caps most people for years.",
+            "Reason five: only twenty seats means real attention on your specific mornings and your real blockers.",
+            "Reason six: you build the ninety day plan face to face and walk out already committed to living it.",
+            "Reason seven: you become a founder who invests in the room, and that decision compounds for years."
+          ],
+          "cta": "CTA: Reserve My Retreat Seat"
+        }
+      ]
+    },
+    {
+      "page_type": "downsell-2",
+      "sections": [
+        {
+          "section": 1,
+          "name": "The Big Bold Claim",
+          "copy": "If a whole weekend away is too much right now, grab the Single Day Pass instead, one full retreat day that still puts you physically in the room for the founder-led morning before the doors quietly close for the season.",
+          "cta": "CTA: Grab The Day Pass"
+        },
+        {
+          "section": 2,
+          "name": "The Big Bold Pain 1",
+          "copy": "You want the room, you just cannot clear an entire weekend yet, and you know that holding out for the perfect open calendar has quietly cost you every in-person moment you told yourself you would eventually take.",
+          "cta": "CTA: Grab The Day Pass"
+        },
+        {
+          "section": 3,
+          "name": "The Big Bold Pain 2",
+          "copy": "You have said next time to yourself more times than you can count, and some part of you already knows that one small yes today does far more for you than another flawless plan you never actually begin.",
+          "cta": "CTA: Grab The Day Pass"
+        },
+        {
+          "section": 4,
+          "name": "The Big Bold Pain 3",
+          "copy": "You have felt what it is like to watch a door close while you waited for a braver version of yourself to show up, and you do not want to spend one more season admiring this room only from the hallway.",
+          "cta": "CTA: Grab The Day Pass"
+        },
+        {
+          "section": 5,
+          "name": "The Big Bold Why",
+          "copy": "That's the reason why you grab the day pass now, the smallest honest yes that still gets your whole body into the room for one morning.",
+          "cta": "CTA: Grab The Day Pass"
+        },
+        {
+          "section": 6,
+          "name": "The Big Bold Who",
+          "copy": "First-timers who want a taste, careful spenders who want the smallest real step, and busy doers who can only give a single day.",
+          "personas": [
+            "first-timers",
+            "careful spenders",
+            "busy doers"
+          ]
+        },
+        {
+          "section": 7,
+          "name": "The Big Bold What",
+          "copy": "The Single Day Pass is the smallest true yes in the whole method, one live retreat morning that can reset an entire quarter, so instead of waiting for a season you never seem to reach you simply show up once, sit in the room, and let a single day quietly move you.",
+          "bullets": [
+            "one full founder-led retreat morning in person",
+            "a seat in the same room, not another livestream",
+            "a focused reset you can feel by the same afternoon",
+            "a small circle to meet before you ever commit more",
+            "a take-home one page plan for the next thirty days",
+            "the smallest step that still changes where you stand"
+          ]
+        },
+        {
+          "section": 8,
+          "name": "When Time Runs Out",
+          "items": [
+            "When time runs out the single retreat day closes and the in-person room is gone for this season.",
+            "When time runs out you miss the one live day that can reset a whole quarter in a few short hours.",
+            "When time runs out you lose the smallest yes that still puts your whole body physically in the room.",
+            "When time runs out the founder-led morning passes and you watch it, again, only from the outside.",
+            "When time runs out you forfeit the single day of proximity that online lessons can never replace.",
+            "When time runs out you keep waiting for the perfect moment that has honestly never once arrived.",
+            "When time runs out you stay exactly where you are, and next season feels just as far away as ever."
+          ],
+          "cta": "CTA: Grab The Day Pass"
+        }
+      ]
+    },
+    {
+      "page_type": "thank-you",
+      "sections": [
+        {
+          "section": "TY-1",
+          "copy": "It is official, The Daybreak Method is yours, and the decision most people keep postponing for years you just made this morning."
+        },
+        {
+          "section": "TY-2",
+          "steps": [
+            "Check your email for your receipt and the welcome bonus we already sent straight to your inbox.",
+            "Watch your phone for a warm personal text from the founder, and reply so we know you are really in.",
+            "Join the private community below and introduce yourself to the members who rise early right alongside you.",
+            "Open your very first daybreak ritual tonight and set one gentle alarm for the calm morning ahead of you."
+          ]
+        },
+        {
+          "section": "TY-3",
+          "copy": "You made a choice most people only talk about, and everything you need is already on its way. Welcome to your next chapter."
+        }
+      ]
+    }
+  ]
+}

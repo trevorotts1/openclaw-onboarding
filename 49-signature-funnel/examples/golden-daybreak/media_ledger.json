@@ -1,0 +1,74 @@
+{
+  "funnel_type": "signature_funnel",
+  "product_title": "The Daybreak Method",
+  "offer_token_ledger": [
+    "The Daybreak Method",
+    "The Fast Track Sprint",
+    "The Daybreak Field Notes",
+    "The Founders Table Retreat",
+    "The Single Day Pass"
+  ],
+  "pages": [
+    {
+      "page_type": "main",
+      "sections": [
+        {
+          "section": 1,
+          "copy": "Wake calm, clear, and already ahead. Claim your sunrise routine now for the launch price and own your first ninety minutes."
+        }
+      ]
+    },
+    {
+      "page_type": "thank-you",
+      "buttons": [
+        "Join The Community",
+        "Share With A Friend",
+        "Add To Calendar"
+      ],
+      "sections": [
+        {
+          "section": "TY-1",
+          "copy": "It is official, your seat is confirmed, and everything you need is already on its way to your inbox right now."
+        },
+        {
+          "section": "TY-2",
+          "steps": [
+            "Check your inbox for the welcome bonus and save it somewhere you will see it every single morning.",
+            "Watch your phone for a warm personal text from the founder and reply so we know you are truly here.",
+            "Open your very first ritual tonight and set one gentle alarm for the calm morning waiting ahead of you."
+          ]
+        },
+        {
+          "section": "TY-3",
+          "copy": "Welcome to your next chapter. We take that decision seriously, and starting tomorrow, so will you."
+        }
+      ]
+    }
+  ],
+  "images": [
+    {
+      "page_type": "main",
+      "section": 1,
+      "kie_task_id": "kie_db_hero_9f3a1",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/hero.png"
+    },
+    {
+      "page_type": "main",
+      "section": 5,
+      "kie_task_id": "kie_db_why_2c7b8",
+      "media_url": "https://msgsndr.com/media/daybreak/why.png"
+    },
+    {
+      "page_type": "main",
+      "section": 11,
+      "kie_task_id": "kie_db_type_5e1d0",
+      "media_url": "https://storage.gohighlevel.com/loc/daybreak/manifesto.png"
+    },
+    {
+      "page_type": "upsell",
+      "section": 1,
+      "kie_task_id": "kie_db_oto1_a41c2",
+      "media_url": "https://storage.leadconnectorhq.com/loc/daybreak/oto1.png"
+    }
+  ]
+}

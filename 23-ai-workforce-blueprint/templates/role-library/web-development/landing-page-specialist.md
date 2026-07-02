@@ -169,6 +169,7 @@ This role contributes to the company revenue cascade by: **building and optimizi
 | Figma (view access) | Review landing page designs from Web Designer | Web app | Read access to design files for implementation reference |
 | Screaming Frog / Sitebulb | Landing page crawl for SEO health, broken links, redirect checking | Desktop tool | Weekly crawl of all live landing pages |
 | **Email Engine + superlibrary (Skill 50)** | Trigger the landing-page 10-promo email set after the Downsell page (Skill 49 hook) | `50-email-engine/` -- `tools/email_matcher_cli.py --match` selects framework/buyer-type/objective/persona/sequence; `tools/prove-email.py` QCs (fail-closed); draft-only deploy via Skill 44 | Client runtime uses the CLIENT's own provider (never Anthropic); the deterministic gates (email_matcher.py, prove-email.py) are provider-neutral; nothing sends without human approval. |
+| **Signature Funnel engine (Skill 49)** | The canonical engine for a Trevor Otts "signature landing page" / signature funnel -- it ORIGINATES the SACRED 12-section copy + images (this role does NOT originate that copy) | `49-signature-funnel/signature-funnel-entry.sh` (canonical fail-closed entry), routed via `06-ghl-install-pages/tools/funnel_engine_selector.py`; SOPs `universal-sops/funnel-craft/` | Delegation contract: intake JSON only; canonical entry only; the engine authors, Skill 47 renders, Skill 6 delivers; no signed certificate = not done; never waive an engine floor. Client runtime uses the CLIENT's own provider (never Anthropic). |
 
 ---
 

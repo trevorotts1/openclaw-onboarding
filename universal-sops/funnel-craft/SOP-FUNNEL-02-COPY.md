@@ -1,0 +1,67 @@
+# SOP-FUNNEL-02: AUTHOR THE SACRED 12-SECTION COPY
+
+**Cluster:** Funnel-Craft Rules (`universal-sops/funnel-craft/`)
+**Master authority:** `49-signature-funnel/MASTERDOC.md` §1–2 + `structure/funnel_structure.json`
+**Owning role:** Signature Funnel Specialist
+**Stage:** P1-COPY (+ P8-DERIVE for the derived pages)
+**Produces:** `working/copy/copy_ledger.json`
+**Prover:** `49-signature-funnel/scripts/prove_sf_copy.py`
+
+---
+
+## 0. WHY THIS SOP EXISTS
+
+The 12 section names and every char/word band are the SACRED IP. "Never change the name of my page
+sections." A section that is renamed, reordered, over-length, or missing its required CTA discipline is
+a hard `AF-FUN-*` auto-fail. The prover measures STRIPPED text — whitespace never satisfies a floor and
+a self-reported count is never trusted.
+
+## 1. THE MAIN PAGE — 12 SECTIONS (verbatim bands)
+
+| Sec | Name | Band | Rule |
+|---|---|---|---|
+| 1 | The Big Bold Claim / Promise | 180–225 chars | product title present; labeled CTA |
+| 2–4 | The Big Bold Pain 1/2/3 | 180–225 chars each | 2nd person; NO questions; labeled CTA; three DIFFERENT pains (circumstantial / private / witnessed) |
+| 5 | The Big Bold Why | ≤30 words | starts "That's the reason why…"; CTA |
+| 6 | The Big Bold Who | ≤30 words | 3–6 personas; **NO CTA** |
+| 7 | The Big Bold What | 70–120 words | 5–10 specific bullets |
+| 8–9 | The Big Bold Benefit 1/2 | ≤30 words | **NO CTA button** |
+| 10 | The Big Bold Benefit 3 | ≤30 words | inspirational CTA button (peak-end) |
+| 11 | The Big How To | 100–150 words; **NO button** | 5–10 steps; steps 1–6 each 89–116 chars; step 7 ≤170; MUST include share / email-bonus / founder-text / community steps |
+| 12 | The Big Bold Heartfelt Message | 100–150 words | 6 labeled parts; part 2 starts "I used to be just like you…" |
+
+## 2. GENERATION CRAFT (governs the writer; the bands are the machine bar)
+
+- **Harmony Chain** — the 12 sections are ONE escalating argument; carry a word/image/idea from
+  section N−1 into N; never reset the topic.
+- **One CTA Voice** — ONE first-person possession/transformation CTA phrase per page (`Start My ___`,
+  `Claim My ___`, `Reserve My Seat`), labeled `CTA: <phrase>` in every CTA-bearing section.
+- **Pain Ladder** — Sec 2 circumstantial, Sec 3 private, Sec 4 witnessed; 2nd person, present tense,
+  never a question.
+- **Benefit Ladder** — Sec 8 felt, Sec 9 measured, Sec 10 become; peak-end CTA on Sec 10.
+- **Specificity Laws + truth gate** — numbers beat adjectives; every bonus / founder-text / community
+  confirmed real at intake; no fabricated urgency.
+
+## 3. THE DERIVED PAGES (P8-DERIVE)
+
+Author against the six profiles: `main`, `upsell`, `downsell`, `upsell-2`, `downsell-2`, `thank-you`
+(+ `checkout` microcopy for 7-step). Derived pages **exclude Sections 8–11** and **replace Section 12**
+with the renumbered **Section 8**:
+
+- **Upsell / Upsell-2:** "7 Reasons To Commit To Your ____ Future" — exactly **7** numbered reasons
+  (AF-FUN-SEC8REPL-COUNT). Upsell-2's blank-fill MUST differ from OTO1; Upsell-2 is a categorically
+  different offer (change KIND, not size).
+- **Downsell / Downsell-2:** "When Time Runs Out" — the **7** things they'll miss. CTA every section.
+- **Thank-You:** the three labeled parts (TY-1 120–180 chars / TY-2 4–6 steps each 89–116 chars /
+  TY-3 ≤170 chars). **NO offer CTAs** — utility buttons only. **After Downsell 2 the funnel never
+  pitches again.**
+
+## 4. VERIFY BEFORE ADVANCING
+
+```
+python3 49-signature-funnel/scripts/prove_sf_copy.py working/copy/copy_ledger.json
+```
+
+Exit 0 = every profile cleared its SACRED bands and P2-PROMPTS may begin. A failing section re-authors
+ONLY itself under the bounded retry cap; copy cannot advance to image prompts until all sections pass.
+Never floor, cap, or rename a section to make a gate pass — escalate instead.

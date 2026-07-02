@@ -1,0 +1,67 @@
+{
+  "schema": "funnel-engine-registry/v1",
+  "description": "Shared STEP-0 funnel-BUILD engine selector registry for Skill 6 (06-ghl-install-pages). This is the ONE place a 'build me a funnel' request is routed to the specialist AUTHORING engine that owns that funnel's copy + image IP. Skill 6 remains the ONE GHL delivery rail: every engine below AUTHORS copy/images inside its own fail-closed pipeline, then DELEGATES the GHL media folder + upload + funnel/page build BACK to Skill 6 (ghl_media.py + ghl_rest_canvas.py / ghl_builder.py). The selector never builds anything itself and never blocks a build.",
+  "how_to_register_a_second_entry": "Append one object to engines[] with a unique id, the skill dir, the canonical fail-closed entry shell, a priority, and a match block (names/keywords/signals/anti_signals). No selector code change is required. See funnel-engines/README.md. Skill 56 (Sales-Page-Assets) is the planned second entry (direct-response sales page / VSL family).",
+  "default_engine": null,
+  "default_behavior": "When NO engine clears its confidence threshold, the selector returns decision=NO_ENGINE_MATCH and the caller FALLS THROUGH to the existing template-first funnel matcher (tools/funnel_matcher.py step0_match) and the generic Skill-6 build path. A below-threshold score never prevents a build.",
+  "engines": [
+    {
+      "id": "signature-funnel",
+      "skill": "49-signature-funnel",
+      "name": "Trevor Otts Signature Funnel",
+      "summary": "The SACRED 12-section Hero copy system + 5,000-19,000-char gpt-image-2 prompts, built as a configurable 3/5/7-step GHL funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching).",
+      "entry": "49-signature-funnel/signature-funnel-entry.sh",
+      "entry_contract": "NOTHING generates copy/prompts, calls Kie, touches GHL, or mints a certificate except THROUGH signature-funnel-entry.sh (deps -> version -> hash-pin -> bypass-scan -> run-scoped 0600 nonce). A direct orchestrator call without the front-door nonce dies AF-FUN-FRONT-DOOR.",
+      "delivery_rail": "06-ghl-install-pages",
+      "delivery_delegation": "P4 media folder + upload -> Skill 6 ghl_media.py; P7 funnel/step/page build + HTML injection -> Skill 6 ghl_rest_canvas.py / ghl_builder.py. Skill 49 authors; Skill 6 delivers.",
+      "priority": 10,
+      "confidence_threshold": 0.55,
+      "match": {
+        "names": [
+          "signature funnel",
+          "signature landing page",
+          "signature sales funnel",
+          "trevor otts funnel",
+          "trevor otts signature funnel",
+          "12-section funnel",
+          "12 section funnel"
+        ],
+        "keywords": [
+          "signature funnel",
+          "signature landing page",
+          "12-section hero",
+          "12 section hero",
+          "big bold claim",
+          "big bold promise",
+          "big bold pain",
+          "signature look",
+          "signature aesthetic",
+          "oversaturated",
+          "3/5/7 step funnel",
+          "3 5 7 step",
+          "upsell downsell funnel",
+          "hero copy funnel"
+        ],
+        "signals": [
+          "upsell",
+          "downsell",
+          "oto",
+          "oto2",
+          "thank-you page",
+          "one-click upsell",
+          "accept decline branching",
+          "gpt-image-2",
+          "kie image",
+          "12 sections"
+        ],
+        "anti_signals": [
+          "vsl only",
+          "plain sales letter",
+          "no images",
+          "webinar registration only"
+        ]
+      },
+      "notes": "Client runtime uses the CLIENT's own configured providers (never Anthropic, never operator keys); the fail-closed provers are deterministic and model-free. Publish is human-approved (preview URLs + labeled ~/Downloads bundle only)."
+    }
+  ]
+}

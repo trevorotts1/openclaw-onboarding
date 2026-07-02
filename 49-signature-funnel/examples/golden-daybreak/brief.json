@@ -1,0 +1,36 @@
+{
+  "funnel_type": "signature_funnel",
+  "one_question_per_turn": true,
+  "locked": true,
+  "funnel_size": 7,
+  "answers": {
+    "q1_offer": "The Daybreak Method \u2014 a 30-day morning-discipline course",
+    "q2_price_promise": "$149; calm, owned mornings and a first deep-work block within 30 days",
+    "q3_pains": "waking already behind; a privately broken promise to rise; kids learning the snooze",
+    "q4_people": "founders, parents, creators, and leaders who want calm and output",
+    "q5_goods": "30 daily audio rituals, 4 live calls, a tracker, a private community, a founder text",
+    "q6_founder_story": "burned out and always behind; decided one gray dawn; built it for tired builders",
+    "q7_brand_colors": "deep indigo and warm sunrise amber",
+    "q8_representation": "60% Black women, 20% Black men, 15% mixed, 5% other",
+    "q9_voice": "bold, warm, plainspoken, street-smart",
+    "q10_funnel_length": "7-step",
+    "q11_oto1": "The Fast Track Sprint, done-with-you accelerated onboarding, $197, 40 seats",
+    "q12_downsell1": "The Daybreak Field Notes, recordings-only tier, $47",
+    "q13_oto2": "The Founders Table Retreat, categorically different in-person weekend, $997, 20 seats",
+    "q14_downsell2": "The Single Day Pass, one retreat day, $297",
+    "q15_reference_images": "signature only",
+    "q16_truth_gate": {
+      "community_url": "https://community.example.com/daybreak",
+      "bonus": "the five-minute morning reset audio",
+      "founder_text_confirmed": true
+    },
+    "q17_confirmation": "approved"
+  },
+  "offer_token_ledger": [
+    "The Daybreak Method",
+    "The Fast Track Sprint",
+    "The Daybreak Field Notes",
+    "The Founders Table Retreat",
+    "The Single Day Pass"
+  ]
+}

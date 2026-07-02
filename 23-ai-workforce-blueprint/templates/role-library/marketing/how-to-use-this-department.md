@@ -82,6 +82,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Marketing Analytics Specialist** | Owns measurement and attribution for marketing. |
 | **Webinar Event Marketing Specialist** | Plans and promotes webinars, virtual events, and in-person events. |
 | **Conversion Copywriter** | You own the words - every word - on every funnel page, landing page, website page, and checkout flow that deploys. |
+| **Signature Funnel Specialist** | The marketing door onto the Trevor Otts Signature Funnel engine (Skill 49). |
 
 ### What each specialist is for, with an example request
 
@@ -144,6 +145,11 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* You own the words - every word - on every funnel page, landing page, website page, and checkout flow that deploys.
 - *Example request:* "Have the Conversion Copywriter take this on: You own the words - every word - on every funnel page, landing page, website page."
+
+**Signature Funnel Specialist**
+
+- *What it is for:* The marketing door onto the Trevor Otts Signature Funnel engine (Skill 49).
+- *Example request:* "Have the Signature Funnel Specialist take this on: The marketing door onto the Trevor Otts Signature Funnel engine (Skill 49)."
 
 
 ---
@@ -208,6 +214,7 @@ This department does NOT design funnels or follow-up sequences from scratch ever
 - Funnel template library - 38 proven funnel templates by category (buyer, event, lead, retention-followup, traffic-advanced) at `06-ghl-install-pages/funnel-templates/`, selected via `tools/funnel_matcher_cli.py --match` (runs as STEP 0 in the autonomous build).
 - Automation template library - 28 proven email / SMS / multichannel sequences at `44-convert-and-flow-operator/automation-templates/`, selected via `_matcher/cli.py --match` (Soap Opera, Seinfeld, indoctrination, and funnel-specific follow-up skeletons).
 - Email superlibrary - 13 marketing-email frameworks + 4 buyer-types + 4 objectives + 12 persona styles + 3 named sequences (landing-page-10, high-ticket-12, buyer-type-12) at `50-email-engine/email-library/`, selected via `50-email-engine/tools/email_matcher_cli.py --match`. Every generated email/sequence is QC'd by the fail-closed `50-email-engine/tools/prove-email.py` floor prover (SACRED word/subject/CTA/signature bands) before any draft-only GHL deploy. Shared procedure: `universal-sops/email-craft/`.
+- Signature Funnel engine (Skill 49) - the SACRED Trevor Otts 12-section Hero funnel (3/5/7-step: Main / Checkout / Upsell / Downsell / Upsell-2 / Downsell-2 / Thank-You) at `49-signature-funnel/`, routed by the STEP-0 funnel-engine selector `06-ghl-install-pages/tools/funnel_engine_selector.py`. It AUTHORS the 12-section copy + the 5,000-19,000-char image prompts under fail-closed provers (`49-signature-funnel/scripts/prove_sf_*.py`), delegates image generation to Skill 47 and ALL GHL media + build to Skill 6 (the ONE delivery rail), and issues a signed certificate only on a full pass. Shared procedure: `universal-sops/funnel-craft/`.
 - Funnel-to-automation link map - `44-convert-and-flow-operator/automation-templates/_links/funnel-to-automation.json` pairs each funnel with its recommended follow-up automations (keyed by funnel_template_id).
 - Personas - `22-book-to-persona-coaching-leadership-system/` grounds the copy voice; each template persona resolves to a real persona via the shared persona crosswalk.
 

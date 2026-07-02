@@ -1,6 +1,6 @@
 # Suggested Roles — web-development-dept
 **Version:** 2.2.0 | 2026-06-12
-**Status:** v12.1.0 + Brainstorming Buddy (Step -1, new in v12.1.0); 18 roles
+**Status:** v12.1.0 + Brainstorming Buddy (Step -1, new in v12.1.0) + Signature Funnel Specialist (Skill 49 door, new in v16.5.0); 19 roles
 
 ## Department Purpose
 Own the company's web presence — website, funnels, landing pages, SEO, technical infrastructure, member areas, security. Coordinate with Graphics (visuals), CRM (forms/lead capture), Paid Ads (landing pages), App Development (web-to-app handoff).
@@ -98,4 +98,19 @@ Added Member Area Specialist, Web Accessibility (A11y) Specialist, Web Security 
 **Slug:** brainstorming-buddy-web-development
 **What it does:** The department Step -1 (runs BEFORE the Head of Web Development). When the owner says "I want a website or app", this role brainstorms with them BEFORE the build: asks 1-2 opening framing questions, offers a SIMPLE interview (7 questions or fewer) or an EXTENSIVE interview (10 to 20 questions, back-and-forth), confirms what it learned with the owner (read-back + explicit sign-off), writes the binding brief.json at working/brainstorm/web-development/<slug>/brief.json, and kicks off the build by handing the locked brief to the Head of Web Development.
 **Core SOPs:** 9.1 Simple Interview (7 Qs or fewer) | 9.2 Extensive Interview (10-20 Qs) | 9.3 Confirm-and-Lock | 9.4 Kickoff/Handoff
+**Role type:** specialist
+
+---
+
+## New Roles Added in v16.5.0 (Signature Funnel -- Skill 49)
+
+### 19. Signature Funnel Specialist
+**Slug:** signature-funnel-specialist
+**What it does:** The web-development door onto the Trevor Otts Signature Funnel engine (Skill 49): the SACRED 12-section Hero copy system, per-section 5,000-19,000-char gpt-image-2 prompts, and a configurable 3/5/7-step GHL funnel (Main / Checkout / Upsell-1 / Downsell-1 / Upsell-2 / Downsell-2 / Thank-You with accept/decline branching). A "signature funnel" / "signature landing page" request is routed here by the shared STEP-0 funnel-engine selector (06-ghl-install-pages/funnel-engines/registry.json). This role drives the build from intake to certified preview through the ONE sanctioned entry 49-signature-funnel/signature-funnel-entry.sh; it never authors or fixes copy/prompts (the engine's fail-closed provers do), delegates image generation to Skill 47 and ALL GHL media + build to Skill 6 (the ONE GHL delivery rail), and ships only on a signed certificate. Owns the human publish approval.
+**Core SOPs to build:**
+- 01-Intake-Lock-the-Brief-in-One-Block.md
+- 02-Drive-the-Canonical-Engine.md
+- 03-Delivery-Hand-Back-to-Skill-6.md
+- 04-Certify-and-Publish-Approval.md
+- 05-Ten-Email-Follow-Up-Offer.md
 **Role type:** specialist

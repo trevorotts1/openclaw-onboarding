@@ -1,6 +1,6 @@
 # Suggested Roles — marketing-dept
 **Version:** 2.3.0 | 2026-06-21
-**Status:** v12.1.0 + Brainstorming Buddy (Step -1, new in v12.1.0) + Conversion Copywriter (new in v2.3.0); 19 roles
+**Status:** v12.1.0 + Brainstorming Buddy (Step -1, new in v12.1.0) + Conversion Copywriter (new in v2.3.0) + Signature Funnel Specialist (Skill 49 door, new in v16.5.0); 20 roles
 
 ## Department Purpose
 Generate awareness, attract leads, develop the company's unique selling and value propositions, manage brand positioning, and nurture prospects into sales-ready opportunities. Coordinates with Communications (PR), Social Media (organic), Paid Advertisement (paid), CRM (email/SMS execution), Graphics, Video, and Audio.
@@ -194,3 +194,17 @@ Added in v10.5.2 to bring Marketing to Fortune-500 operational depth: Influencer
 **What it does:** The department Step -1 (runs BEFORE the Chief Marketing Officer). When the owner says "I want to run a campaign", this role brainstorms with them BEFORE the build: asks 1-2 opening framing questions, offers a SIMPLE interview (7 questions or fewer) or an EXTENSIVE interview (10 to 20 questions, back-and-forth), confirms what it learned with the owner (read-back + explicit sign-off), writes the binding brief.json at working/brainstorm/marketing/<slug>/brief.json, and kicks off the build by handing the locked brief to the Chief Marketing Officer.
 **Core SOPs:** 9.1 Simple Interview (7 Qs or fewer) | 9.2 Extensive Interview (10-20 Qs) | 9.3 Confirm-and-Lock | 9.4 Kickoff/Handoff
 **Role type:** specialist
+
+---
+
+## New Roles Added in v16.5.0 (Signature Funnel -- Skill 49)
+
+### 20. Signature Funnel Specialist
+**Slug:** signature-funnel-specialist
+**What it does:** The marketing door onto the Trevor Otts Signature Funnel engine (Skill 49): the SACRED 12-section Hero copy system and a configurable 3/5/7-step GHL funnel (Main / Checkout / Upsell-1 / Downsell-1 / Upsell-2 / Downsell-2 / Thank-You). Frames the offer ladder (Main, OTO1, Downsell-1, OTO2, Downsell-2) and the 10-email follow-up, confirms the intake truth gate (no fabricated scarcity), then drives the build through the ONE sanctioned entry 49-signature-funnel/signature-funnel-entry.sh. Never authors or fixes the 12-section copy or the image prompts (the engine's fail-closed provers do); delegates image generation to Skill 47 and ALL GHL media + build to Skill 6 (the ONE GHL delivery rail); coordinates the 10-email follow-up with the Email Campaign Strategist / Email Engine (Skill 50). Ships only on a signed certificate; publish is human-approved.
+**Core SOPs to build:**
+- 01-Intake-and-Offer-Ladder-in-One-Block.md
+- 02-Drive-the-Canonical-Engine.md
+- 03-Certify-and-Publish-Approval.md
+- 04-Ten-Email-Follow-Up-Handoff.md
+**Persona Trait Suggestions:** SACRED-method fidelity, truth-gate discipline (no fabricated scarcity), offer-ladder strategy, delegation discipline (never authors around the provers), certificate-gated definition of done.
