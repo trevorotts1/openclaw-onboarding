@@ -8,6 +8,8 @@
 
 ## 9. Standard Operating Procedures (Numbered)
 
+> Signature Presentations (Skill 51) cross-reference: for a deck with `deck_type: signature_presentation`, the AF-SP-* battery (AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED / AF-SP-SLIDE-FLOOR / AF-SP-PHASE-RANGE / AF-SP-PHASE-ORDER / AF-SP-PHASE-LABEL / AF-SP-IMG-SUGGESTION / AF-SP-CASESTUDY-CAP / AF-SP-TEACH-STEPS / AF-SP-HOOK / AF-SP-QUADRANT / AF-SP-P3-PITCH) is enforced fail-closed by the manifest phases P-SP-INTAKE / P-SP-STRUCTURE / P-SP-P3-HYGIENE (`build_deck._chk_sp_intake` / `_chk_sp_structure` / `_chk_sp_no_pitch`, which DEFER for every non-signature deck). The semantic layer is owned by `qc-specialist-signature-presentations.md`. Treat any AF-SP-* code as a first-class auto-fail; non-signature decks are unaffected.
+
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### AUTO-FAIL RULE: an auto-fail condition forces FAIL for that item regardless of any average. Auto-fails are checked FIRST, before scoring.

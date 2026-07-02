@@ -6167,6 +6167,111 @@ def _chk_priority_shift_ledger(run_dir: Path, slides_path: Optional[Path] = None
     return ""
 
 
+# ---------------------------------------------------------------------------
+# SIGNATURE PRESENTATION (Skill 51) — defer-unless-signature preflight wrappers.
+# The ONLY signature-presentation additions to build_deck.py: three thin wrappers
+# that DELEGATE to the Skill-51 provers (never re-implementing a rule) and, above all,
+# DEFER (return "") unless intake.json records deck_type == "signature_presentation".
+# Every OTHER deck type executes the identical pre-existing code path — the binding
+# minimal/additive, defer-unless-signature guarantee. The switch mirrors
+# _doctrine_active() (the priority-shift no-regression switch).
+# ---------------------------------------------------------------------------
+_SP_PROVER_CACHE = {}
+
+
+def _sp_active(run_dir: Path) -> bool:
+    """Signature-Presentation switch: the SP gates engage ONLY when intake.json records
+    deck_type == 'signature_presentation'. Every other deck type takes the identical
+    pre-existing code path (defer-unless-signature). Mirror of _doctrine_active()."""
+    obj = _read_intake_obj(run_dir)
+    return isinstance(obj, dict) and obj.get("deck_type") == "signature_presentation"
+
+
+def _sp_prover(mod_name: str):
+    """Lazily import a Skill-51 prover module by name, searching build_deck's own scripts
+    dir (deployed: install copies the provers here) and the sibling
+    51-signature-presentation/scripts/ (repo/worktree layout). Cached. Returns the module,
+    or None when it cannot be located/imported. Only reached for a signature deck (the
+    wrappers defer first via _sp_active)."""
+    if mod_name in _SP_PROVER_CACHE:
+        return _SP_PROVER_CACHE[mod_name]
+    import importlib.util
+    here = Path(__file__).resolve().parent
+    cands = [here / (mod_name + ".py")]
+    cands += [anc / "51-signature-presentation" / "scripts" / (mod_name + ".py")
+              for anc in here.parents]
+    mod = None
+    for cand in cands:
+        if cand.exists():
+            try:
+                spec = importlib.util.spec_from_file_location(mod_name, cand)
+                m = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(m)
+                mod = m
+                break
+            except Exception:  # noqa: BLE001 — a broken import must not crash preflight
+                continue
+    _SP_PROVER_CACHE[mod_name] = mod
+    return mod
+
+
+def _sp_delegate(kind: str, run_dir: Path) -> str:
+    """Shared engine for the _chk_sp_* thin wrappers: import the Skill-51 prover for
+    `kind` and run it against the run dir's SP artifacts, normalized to the preflight
+    convention ("" on PASS, a non-empty AF reason on fail). Only reached for a signature
+    deck. Fail-closed: a genuinely missing prover, unreadable artifact, or unexpected
+    prover error is a non-empty (blocking) reason — the sacred gate is never silently
+    skipped for a signature deck."""
+    mod = _sp_prover({"intake": "prove_sp_intake",
+                      "structure": "prove_sp_structure",
+                      "no_pitch": "prove_sp_no_pitch"}[kind])
+    if mod is None:
+        return ("signature_presentation deck but the Skill-51 " + kind + " prover could "
+                "not be imported (install the 51-signature-presentation scripts next to "
+                "build_deck.py). Fail-closed — the sacred gate cannot be skipped.")
+    try:
+        if kind == "intake":
+            obj = _read_json(run_dir / "working" / "copy" / "sp_intake.json")
+            if not isinstance(obj, dict) or "__parse_error__" in obj:
+                return "AF-SP-8Q-MISSING: working/copy/sp_intake.json is missing or unreadable."
+            fails = mod.evaluate(obj)
+            return "" if not fails else "; ".join(str(c) + ": " + str(m) for c, m in fails)
+        if kind == "structure":
+            deck = _read_json(run_dir / "working" / "copy" / "sp_structure.json")
+            if not isinstance(deck, dict) or "__parse_error__" in deck:
+                return "AF-SP-PHASE-ORDER: working/copy/sp_structure.json is missing or unreadable."
+            violations, _notes = mod.verify(mod._load_structure(None), deck)
+            return "" if not violations else "; ".join(str(c) + ": " + str(m) for c, m in violations)
+        # no_pitch — the Phase-3 teaching-band hygiene gate.
+        code, msgs = mod.evaluate_paths(run_dir / "working" / "copy" / "sp_intake.json",
+                                        run_dir / "working" / "copy" / "sp_structure.json", None)
+        return "" if code == 0 else "AF-SP-P3-PITCH: " + " | ".join(str(m) for m in msgs)
+    except Exception as exc:  # noqa: BLE001 — fail-closed, never crash preflight
+        return ("signature_presentation " + kind + " prover raised " + repr(exc)
+                + " — fail-closed (the sacred gate cannot be skipped).")
+
+
+def _chk_sp_intake(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """P-SP-INTAKE — Signature-Presentation intake gate. DEFERS unless signature_presentation."""
+    if not _sp_active(run_dir):
+        return ""
+    return _sp_delegate("intake", run_dir)
+
+
+def _chk_sp_structure(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """P-SP-STRUCTURE — SACRED 4-phase structure contract. DEFERS unless signature_presentation."""
+    if not _sp_active(run_dir):
+        return ""
+    return _sp_delegate("structure", run_dir)
+
+
+def _chk_sp_no_pitch(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """P-SP-P3-HYGIENE — Phase-3 teaching no-pitch hygiene. DEFERS unless signature_presentation."""
+    if not _sp_active(run_dir):
+        return ""
+    return _sp_delegate("no_pitch", run_dir)
+
+
 PREFLIGHT_REQUIRED = [
     ("working/copy/intake.json",
      "intake.json (interview_confirmed:true, presentation_mode one-person|general)",
@@ -6587,6 +6692,31 @@ PREFLIGHT_REQUIRED = [
      "coexist) all PASS; item 0 is the North Star (AF-PRIORITY-SHIFT)",
      "Phase 7.5 — QC Specialist (SOP-INTEGRATION-00, P161/P155, AF-PRIORITY-SHIFT)",
      _chk_priority_shift_ledger),
+    # Signature-Presentation (P-SP-INTAKE 0.15) — 8-Questions-in-ONE-block intake gate.
+    (None,
+     "signature-presentation intake gate — the 8 Questions delivered in ONE block + a set "
+     "frame + q7 offer declared (AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / "
+     "AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED). DEFERS (no-op) unless intake.json "
+     "deck_type == signature_presentation — non-signature decks behave exactly as before.",
+     "Phase 0.15 — Signature Presentation Architect (P-SP-INTAKE, prove_sp_intake)",
+     _chk_sp_intake),
+    # Signature-Presentation (P-SP-STRUCTURE 4.1) — the SACRED 4-phase structure contract.
+    (None,
+     "signature-presentation structure gate — >=100 slides, 4-phase floors in contiguous "
+     "order with phase labels, a suggested_image per slide, <=2 case studies, 3-7 teaching "
+     "steps, central + 4 section hooks, N.E.E.I.T./4-Quadrant markers (AF-SP-SLIDE-FLOOR / "
+     "AF-SP-PHASE-RANGE / AF-SP-PHASE-ORDER / AF-SP-PHASE-LABEL / AF-SP-IMG-SUGGESTION / "
+     "AF-SP-CASESTUDY-CAP / AF-SP-TEACH-STEPS / AF-SP-HOOK / AF-SP-QUADRANT). DEFERS (no-op) "
+     "unless intake.json deck_type == signature_presentation.",
+     "Phase 4.1 — Signature Presentation Architect (P-SP-STRUCTURE, prove_sp_structure)",
+     _chk_sp_structure),
+    # AF-SP-P3-PITCH (P-SP-P3-HYGIENE 4.15) — Phase-3 teaching-band no-pitch hygiene.
+    (None,
+     "signature-presentation Phase-3 no-pitch hygiene — no offer name / price / CTA in the "
+     "teaching band and a contiguous Phase-3->Phase-4 bridge (AF-SP-P3-PITCH). DEFERS (no-op) "
+     "unless intake.json deck_type == signature_presentation.",
+     "Phase 4.15 — QC Specialist (Signature Presentations) (P-SP-P3-HYGIENE, prove_sp_no_pitch)",
+     _chk_sp_no_pitch),
 ]
 
 

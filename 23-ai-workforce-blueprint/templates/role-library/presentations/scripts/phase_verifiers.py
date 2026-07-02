@@ -383,7 +383,40 @@ def _verify_text_artifact(pattern: str, min_bytes: int = 50):
 
 
 # ---------------------------------------------------------------------------
-# PHASE_VERIFIERS registry — keyed by manifest phase id (PIPELINE-MANIFEST.json v20)
+# Signature Presentation (Skill 51) substance verifiers. Each DELEGATES to the
+# build_deck _chk_sp_* wrapper (single source of truth), which itself DEFERS
+# (returns "") for any non-signature deck — so these pass for non-signature decks
+# exactly as before. Falls back to a filesystem check when build_deck is unavailable.
+# ---------------------------------------------------------------------------
+def _verify_sp_intake(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-SP-INTAKE: the 8-Questions-in-ONE-block intake gate (via _chk_sp_intake)."""
+    fn = _bd_fn("_chk_sp_intake")
+    if fn is None:
+        return _check_json_nonempty(run_dir, "working/copy/sp_intake.json")
+    result = fn(run_dir)
+    return (True, []) if _checker_pass(result) else (False, [str(result)])
+
+
+def _verify_sp_structure(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-SP-STRUCTURE: the SACRED 4-phase structure contract (via _chk_sp_structure)."""
+    fn = _bd_fn("_chk_sp_structure")
+    if fn is None:
+        return _check_json_nonempty(run_dir, "working/copy/sp_structure.json", ("slides",))
+    result = fn(run_dir)
+    return (True, []) if _checker_pass(result) else (False, [str(result)])
+
+
+def _verify_sp_no_pitch(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-SP-P3-HYGIENE: Phase-3 (teaching) no-pitch hygiene (via _chk_sp_no_pitch)."""
+    fn = _bd_fn("_chk_sp_no_pitch")
+    if fn is None:
+        return _check_json_nonempty(run_dir, "working/copy/sp_structure.json", ("slides",))
+    result = fn(run_dir)
+    return (True, []) if _checker_pass(result) else (False, [str(result)])
+
+
+# ---------------------------------------------------------------------------
+# PHASE_VERIFIERS registry — keyed by manifest phase id (PIPELINE-MANIFEST.json v22)
 # ---------------------------------------------------------------------------
 PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase -1    Content-to-Presentation Conversion
@@ -426,6 +459,12 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P-SPEECH-QC":        _verify_json_artifact("working/qc/speech_qc_report.json"),
     # Phase 9     Delivery
     "P9-DELIVER":         _verify_delivery,
+    # Phase 0.15  Signature-Presentation Intake Gate (Skill 51)
+    "P-SP-INTAKE":        _verify_sp_intake,
+    # Phase 4.1   Signature-Presentation SACRED Structure (Skill 51)
+    "P-SP-STRUCTURE":     _verify_sp_structure,
+    # Phase 4.15  Signature-Presentation Phase-3 No-Pitch Hygiene (Skill 51)
+    "P-SP-P3-HYGIENE":    _verify_sp_no_pitch,
 }
 
 
