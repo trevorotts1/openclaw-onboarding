@@ -1,9 +1,29 @@
+## [v16.8.0]  -  2026-07-02  -  feat(skill-56): Sales Page Assets — Direct-Response funnel-asset engine (sibling of Signature Funnel 49)
+
+### Risk: low — net-new additive skill `56-sales-page-assets/` (the SECOND STEP-0 funnel engine) plus its dept/role/SOP wiring; no existing skill's runtime changed. Ships a fail-closed direct-response sales-page asset generator: 14 baked provider-agnostic prompts, 8 fail-closed provers (`prove_sp_*`) + `SPA-PROVER-PIN.sha256`, a no-skip orchestrator + canonical entry, the labeling-grammar + sales-page structure JSON, a golden example with a signed PROCESS-CERTIFICATE + broken-variant rejection fixtures, and `universal-sops/sales-page-craft/`. Client-providers-only / never-Anthropic enforced (G-NOANTHROPIC). GHL delivery rides Skill 6; no new Command Center endpoint / no schema change. Merged after catching up to main v16.7.2 (Skill-52 owner docs); all version markers roll to v16.8.0.
+
+### Files
+- `56-sales-page-assets/` — NEW skill (SKILL.md, MASTERDOC, SALESPAGE-MANIFEST.json, intake schema, structure + labeling-grammar JSON, 14 baked prompts, 8 provers + pin, orchestrator, entry, verify.sh, golden example + broken variants)
+- `universal-sops/sales-page-craft/` — NEW shared SOP cluster
+- `23-ai-workforce-blueprint/templates/role-library/{marketing,web-development}/sales-page-assets-specialist.md` — 2 NEW role specialists (registered in `_index.json`, 426 roles)
+- `06-ghl-install-pages/tools/SELECTORS-LIVE-{funnel,page,survey}.md` — GHL builder selector captures (funnel/page/survey)
+- 11 version markers → v16.8.0 via `bump-version.sh`; content-manifest re-stamped
+
+## [v16.7.2]  -  2026-07-02  -  docs(skill-52): add owner-facing HOW-TO-USE + INTAKE-QUESTIONS to the merged Avatar Alchemist skill
+
+### Risk: none — additive documentation only, zero functional/runtime change. Two owner-facing docs land inside the already-shipped `52-avatar-alchemist/` skill: `HOW-TO-USE.md` (front-door command, Book-vs-Brand version selector, what the 40-stage brand pipeline produces, where output lands, the client-providers-only/never-Anthropic rule, and how `version=book` routes out to Skill 53) and `intake/INTAKE-QUESTIONS.md` (the human-readable intake question list derived from the intake schema/template: version selector + shared questions + per-version delta). `52-avatar-alchemist/verify.sh` still PASSES under bash + zsh; client-name + repo-consistency gates green. An independent content-authenticity re-grade of the golden example (verifier != author) was recorded as INTERNAL QC evidence in the PRD folder (NOT shipped in the skill) — it grades the golden below the finalize bar and is tracked as a follow-up quality item; it does not affect the skill's machinery, which remains fully enforced.
+
+### Files
+- `52-avatar-alchemist/HOW-TO-USE.md` — NEW owner-facing usage doc
+- `52-avatar-alchemist/intake/INTAKE-QUESTIONS.md` — NEW intake-questions reference
+- 11 version markers → v16.7.2 via `bump-version.sh`
+
 ## [v16.7.1]  -  2026-07-02  -  chore(skill-52): rename skill directory `52-avatar-intelligence` → `52-avatar-alchemist` (the locked product name) + retire a false-positive first-name pattern in the client-name scanner
 
 ### Risk: low — pure rename + reference migration, zero functional change. The full skill directory moves to `52-avatar-alchemist/` (255 files; old dir deleted; zero old-path references remain) and the 8 dependent root/shared files (README.md, install.sh, TOOLS.md, Start Here.md, cc-compat.json, CHANGELOG.md, shared-utils/tone-writing-core/tone-core-manifest.json, universal-sops/avatar-craft/) re-point to the new path. `52-avatar-alchemist/verify.sh` PASSES under bash AND zsh post-rename (9/9 prover self-tests, golden BRAND run 40/40 attested, 5/5 attack rejects, book-routes-out both branches, hygiene clean). Skill's own `skill-version.txt` stays `1.0.0`.
 
 ### QC scanner: `scripts/qc-assert-no-client-names.sh`
-Retired the bare `\bBeverly\b` first-name pattern per the script's own distinctiveness rule — it false-positives on the geographic term "Beverly Hills" (e.g. the Facebook interest "Montage Beverly Hills" inside the skill-52 luxury-audience prompt, which is verbatim source-methodology content and remains untouched). Client protection is preserved via the two client full-name patterns (one newly added) plus a newly-added distinctive-surname pattern — both retained in the scanner's denylist, not quoted here.
+Retired a bare first-name pattern per the script's own distinctiveness rule — it false-positived on a well-known California city name appearing inside a verbatim Facebook-interest list in the skill-52 luxury-audience prompt (untouched source methodology). Client protection is preserved by the existing full-name denylist entries plus a newly-added distinctive-surname pattern for the same client; the actual names are intentionally not spelled in this changelog so the file itself stays clean under the scanner.
 
 ### Files
 - `52-avatar-intelligence/` → `52-avatar-alchemist/` — full directory rename (255 files)
