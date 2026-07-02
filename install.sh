@@ -6659,7 +6659,7 @@ install_skill_51_signature_presentation() {
 install_skill_51_signature_presentation
 
 # ----------------------------------------------------------
-# Skill 52: Avatar Intelligence (Avatar Alchemist brand-intelligence engine + gates)
+# Skill 52: Avatar Alchemist (Avatar Alchemist brand-intelligence engine + gates)
 # ----------------------------------------------------------
 # Self-contained: this template install copies the Skill 52 folder (SKILL.md,
 # MASTERDOC.md, AA-PIPELINE-MANIFEST.json, AVATAR-MANIFEST.json, the 40 baked
@@ -6679,8 +6679,8 @@ install_skill_51_signature_presentation
 # Slack / Gmail at runtime. Cross-linked with (never merged into) Skill 55 Product Bio.
 # The tone subsystem is a lockstep copy of the shared shared-utils/tone-writing-core/.
 install_skill_52_avatar_intelligence() {
-    local SKILL_SRC="$ONBOARDING_DIR/52-avatar-intelligence"
-    local SKILL_DEST="$SKILLS_DIR/52-avatar-intelligence"
+    local SKILL_SRC="$ONBOARDING_DIR/52-avatar-alchemist"
+    local SKILL_DEST="$SKILLS_DIR/52-avatar-alchemist"
 
     if [ ! -d "$SKILL_SRC" ]; then
         warn "Skill 52 source dir not found at $SKILL_SRC — skipping (older onboarding bundle?)"
@@ -6694,10 +6694,10 @@ install_skill_52_avatar_intelligence() {
     }
     chmod +x "$SKILL_DEST/entry.sh" "$SKILL_DEST/preflight.sh" \
              "$SKILL_DEST/verify.sh" "$SKILL_DEST/verify-deps.sh" \
-             "$SKILL_DEST/qc-avatar-intelligence.sh" "$SKILL_DEST/install.sh" 2>/dev/null || true
+             "$SKILL_DEST/qc-avatar-alchemist.sh" "$SKILL_DEST/install.sh" 2>/dev/null || true
     chmod +x "$SKILL_DEST/scripts/"*.py 2>/dev/null || true
 
-    success "Skill 52 (Avatar Intelligence) installed -> $SKILL_DEST"
+    success "Skill 52 (Avatar Alchemist) installed -> $SKILL_DEST"
     note "Skill 52 is the methodology + enforcement layer for the Trevor Otts Avatar Alchemist brand-intelligence package: it turns ONE completed brand-intake interview into 40 generators across 7 subsystems (Avatar Core, Awareness, Bios, Tone, a 13-set Facebook Ad system, Booking Bots, Landing/Hero) -> 16 named deliverables (37 documents). A Book/Brand version selector runs FIRST (version=brand runs the 40-stage pipeline; version=book routes to Skill 53 or parks fail-closed 'book-skill-not-available', never the brand pipeline). Every SACRED count/floor is MEASURED by fail-closed, model-free provers (self-reported counts are ignored)."
     note "It runs through the ONE sanctioned front door (entry.sh: deps -> bypass-scan -> hash-pin -> nonce) then the foreman scripts/aa_director.py, which schedules the 40 stages in dependency waves on the CLIENT's own model providers — never the operator's, never Anthropic model ids (G-NOANTHROPIC hard-fails any run whose resolved model id matches /anthropic|claude/i). Delivery is a labeled ~/Downloads bundle with a signed provenance certificate on a full 40/40 pass; it replaces the retired 233-node n8n / Airtable / Google Drive / Slack / Gmail workflow with a LOCAL-ONLY pipeline (no n8n / Airtable / Drive / Slack / Gmail at runtime). Cross-linked with (never merged into) Skill 55 Product Bio. Standalone — no prerequisite skill."
     return 0

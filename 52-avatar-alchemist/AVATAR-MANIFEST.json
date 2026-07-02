@@ -1,0 +1,164 @@
+{
+  "$schema": "https://openclaw.ai/schemas/avatar-alchemist-enforcement/v1",
+  "contract": "avatar-alchemist-enforcement",
+  "manifest_version": "1.0.0",
+  "skill": "52-avatar-alchemist",
+  "description": "Fail-closed enforcement phases (P-*) + auto-fail codes (AF-AV-*) for the Avatar-Alchemist brand pipeline. Every phase maps to a stdlib prover; every AF code has a negative fixture in test_aa_preflight.py. A gate without a failing test does not ship.",
+  "phases": [
+    {
+      "id": "P-AV-INTAKE",
+      "gate": "G0-INTAKE",
+      "prover": "aa_intake_gate.py",
+      "af": [
+        "AF-AV-INTAKE-INCOMPLETE"
+      ],
+      "desc": "schema-complete, non-boilerplate intake before any dispatch"
+    },
+    {
+      "id": "P-AV-VERSION",
+      "gate": "G0-VERSION",
+      "prover": "aa_intake_gate.py",
+      "af": [
+        "AF-AV-VERSION-UNSET",
+        "AF-AV-VERSION-MISMATCH",
+        "AF-AV-BOOK-SKILL-MISSING"
+      ],
+      "desc": "version in {book,brand} explicitly set; question set matches version; book routes to skill 53 or parks book-skill-not-available. No default, no inference, no cross-version fallback."
+    },
+    {
+      "id": "P-AV-GENERATE",
+      "gate": "G-STAGE",
+      "prover": "aa_build_check.py",
+      "af": [
+        "AF-AV-STAGE-MISSING"
+      ],
+      "desc": "generation-completeness: all required brand generators ran -> their output artifacts exist, non-empty, sha256 recorded."
+    },
+    {
+      "id": "P-AV-FLOORS",
+      "gate": "G-FLOOR",
+      "prover": "aa_build_check.py",
+      "af": [
+        "AF-AV-FLOOR"
+      ],
+      "desc": "stripped-length word floors (>=3000 avatar-q1-30 & blended tone, >=1500 each awareness pt1, >=5000 booking bot). Padding cannot fake it."
+    },
+    {
+      "id": "P-AV-COUNTS",
+      "gate": "G-COUNT",
+      "prover": "aa_build_check.py",
+      "af": [
+        "AF-AV-COUNT-39",
+        "AF-AV-COUNT-HEADLINE",
+        "AF-AV-ADCOUNT"
+      ],
+      "desc": "exactly 39 image prompts; Top-39 = 3x13; headline doc = 12+12+12; each ad set = 10 ads."
+    },
+    {
+      "id": "P-AV-IMG-BAND",
+      "gate": "G-IMG-BAND",
+      "prover": "aa_build_check.py",
+      "af": [
+        "AF-AV-IMG-BAND",
+        "AF-AV-UNIQUE-ARTIST"
+      ],
+      "desc": "image-prompt artifacts stripped-char band [5000,19000]; no repeated artist/photographer/producer token."
+    },
+    {
+      "id": "P-AV-ADSET-CAT",
+      "gate": "G-ADSET-CAT",
+      "prover": "aa_build_check.py",
+      "af": [
+        "AF-AV-ADSET-CAT"
+      ],
+      "desc": "REPAIR-GATED (R4): enforced ONLY when the run set apply_repairs=true (--apply-repairs). Each of the 13 ad-set artifacts must then match its restored R4 category signature (proves the 'category 2' drift repair holds). In the DEFAULT (faithful-to-live) run this invariant is not enforced (live behavior froze on 'category 2')."
+    },
+    {
+      "id": "P-AV-LINKS",
+      "gate": "G-LINKS",
+      "prover": "aa_links_gate.py",
+      "af": [
+        "AF-AV-LINKS-MISSING"
+      ],
+      "desc": "FAIL-SOFT (PRD 7 / O4): stage 02 (avatar-questions-31-32) emits 10 podcasts + 10 TED talks with links. aa_links_gate.py does a bounded HTTP check (timeout + one retry) per link; every link either verifies or the stage is stamped 'degraded:search' in a G-LINKS receipt. Offline/unreachable degrades (never blocks). Fail-CLOSED only when the stage-02 artifact is empty/absent (AF-AV-LINKS-MISSING)."
+    },
+    {
+      "id": "P-AV-BOTDOC",
+      "gate": "G-BOTDOC",
+      "prover": "aa_build_check.py",
+      "af": [
+        "AF-AV-BOTDOC"
+      ],
+      "desc": "bot docs carry H1 '# ... Section' skeleton + XML-style labels + {{contact.*}} merge tags (the one whitelisted placeholder class)."
+    },
+    {
+      "id": "P-AV-HERO",
+      "gate": "G-HERO-12",
+      "prover": "aa_build_check.py",
+      "af": [
+        "AF-AV-HERO-12"
+      ],
+      "desc": "hero page contains the 12 Hero Landing Page System sections."
+    },
+    {
+      "id": "P-AV-PLACEHOLDER",
+      "gate": "G-PLACEHOLDER",
+      "prover": "aa_build_check.py",
+      "af": [
+        "AF-AV-PLACEHOLDER"
+      ],
+      "desc": "no unresolved {{...}} / $('...') / Make.com tokens in any artifact (whitelist: {{contact.*}} merge tags in bot docs)."
+    },
+    {
+      "id": "P-AV-NOANTHROPIC",
+      "gate": "G-NOANTHROPIC",
+      "prover": "aa_build_check.py",
+      "af": [
+        "AF-AV-NOANTHROPIC"
+      ],
+      "desc": "every resolved model id in the run ledger fails /anthropic|claude/i; no operator credential names in the run env."
+    },
+    {
+      "id": "P-AV-PROVENANCE",
+      "gate": "G-DELIVER",
+      "prover": "aa_delivery_gate.py",
+      "af": [
+        "AF-AV-PROVENANCE",
+        "AF-AV-DELIVER-INCOMPLETE"
+      ],
+      "desc": "provenance/no-fabrication: 40/40 foreman-attested receipts whose sha256 matches the artifact bytes; refuse ~/Downloads write below 40/40; emit signed certificate. 'Done' only with the certificate path."
+    }
+  ],
+  "af_codes": {
+    "AF-AV-INTAKE-INCOMPLETE": "required intake field missing/empty/boilerplate",
+    "AF-AV-VERSION-UNSET": "version unset/empty or not exactly book|brand",
+    "AF-AV-VERSION-MISMATCH": "answered question set mismatches the selected version",
+    "AF-AV-BOOK-SKILL-MISSING": "version=book with no resolvable Book-skill route (parks book-skill-not-available)",
+    "AF-AV-STAGE-MISSING": "a required brand-pipeline stage produced no non-empty artifact / receipt",
+    "AF-AV-FLOOR": "an artifact is under its stripped-word floor",
+    "AF-AV-COUNT-39": "image-prompt / top-39 artifact does not carry exactly 39 numbered items (3x13)",
+    "AF-AV-COUNT-HEADLINE": "headline doc is not 12 headlines + 12 short-form + 12 long-form",
+    "AF-AV-ADCOUNT": "an ad set does not carry 10 ads",
+    "AF-AV-IMG-BAND": "image-prompt artifact outside the stripped-char band [5000,19000]",
+    "AF-AV-UNIQUE-ARTIST": "a repeated artist/photographer/producer token across image prompts",
+    "AF-AV-ADSET-CAT": "REPAIR-GATED (R4, --apply-repairs only): an ad-set artifact does not match its restored R4 category signature ('category 2' drift). Not enforced in the default faithful-to-live run.",
+    "AF-AV-LINKS-MISSING": "stage 02 (avatar-questions-31-32) produced no non-empty artifact for the podcast/TED link check (G-LINKS fail-closed). Unverifiable-but-present links degrade to 'degraded:search', they do not fail.",
+    "AF-AV-BOTDOC": "a bot doc is missing the H1 section skeleton / XML labels / merge-tag rules",
+    "AF-AV-HERO-12": "hero page missing one or more of the 12 Hero Landing Page System sections",
+    "AF-AV-PLACEHOLDER": "an unresolved template/Make.com token leaked into an artifact",
+    "AF-AV-NOANTHROPIC": "a resolved model id matches /anthropic|claude/i, or an operator credential name is present",
+    "AF-AV-PROVENANCE": "a receipt sha256 does not match its artifact bytes (fabrication / tamper)",
+    "AF-AV-DELIVER-INCOMPLETE": "delivery attempted below 40/40 attested receipts"
+  },
+  "gate_integrity": {
+    "pinned_files": [
+      "AA-PIPELINE-MANIFEST.json",
+      "AVATAR-MANIFEST.json",
+      "scripts/aa_intake_gate.py",
+      "scripts/aa_build_check.py",
+      "scripts/aa_delivery_gate.py"
+    ],
+    "prover": "aa_gate_integrity_check.py",
+    "note": "manifest + prover sha256 pinned in AA-GATE-HASHES.json; the foreman refuses to run against modified gates (anti-lie LIVE-gate)."
+  }
+}

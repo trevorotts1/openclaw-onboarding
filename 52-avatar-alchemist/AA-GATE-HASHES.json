@@ -1,0 +1,9 @@
+{
+  "pinned": {
+    "AA-PIPELINE-MANIFEST.json": "9dfee0364047dce918afed82541e427e1f708863a75fdb7c8baad1d4a221522d",
+    "AVATAR-MANIFEST.json": "0048007465754cd9d70f2f0b43be792f4bc6b7a4a5a322ef0e364a527a94e043",
+    "scripts/aa_intake_gate.py": "f4635d3bad812a586fb61f1fb2717da6928db32f3fe0b9366123b63a6b2e5d7b",
+    "scripts/aa_build_check.py": "2127d93a5ea06627930d1fb648434677c35ae9cea155b31e5ed71a7bfa64e368",
+    "scripts/aa_delivery_gate.py": "6c76c0d931c8d0eebeb6f13608b5491c8c462c41186a0469400434656d1ca43d"
+  }
+}

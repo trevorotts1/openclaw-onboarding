@@ -1,10 +1,10 @@
 # SOP-AVATAR-01: BUILD THE BRAND-INTELLIGENCE PACKAGE
 
 **Cluster:** Avatar-Craft Rules (`universal-sops/avatar-craft/`)
-**Master authority:** `52-avatar-intelligence/AVATAR-MANIFEST.json` (`P-AV-*` phases + the `AF-AV-*` table) + `52-avatar-intelligence/AA-PIPELINE-MANIFEST.json` (the 40-stage DAG) + `52-avatar-intelligence/MASTERDOC.md` (the SACRED IP)
+**Master authority:** `52-avatar-alchemist/AVATAR-MANIFEST.json` (`P-AV-*` phases + the `AF-AV-*` table) + `52-avatar-alchemist/AA-PIPELINE-MANIFEST.json` (the 40-stage DAG) + `52-avatar-alchemist/MASTERDOC.md` (the SACRED IP)
 **Owning department:** Marketing
 **Owning roles:** Brand Positioning Specialist (drives the front door), routed by the Chief Marketing Officer
-**Canonical entry:** `52-avatar-intelligence/entry.sh` (then the foreman `scripts/aa_director.py`)
+**Canonical entry:** `52-avatar-alchemist/entry.sh` (then the foreman `scripts/aa_director.py`)
 **Gates this SOP satisfies:** AF-AV-INTAKE-INCOMPLETE, AF-AV-VERSION-UNSET, AF-AV-VERSION-MISMATCH, AF-AV-BOOK-SKILL-MISSING, AF-AV-STAGE-MISSING, AF-AV-FLOOR, AF-AV-COUNT-39, AF-AV-COUNT-HEADLINE, AF-AV-ADCOUNT, AF-AV-IMG-BAND, AF-AV-UNIQUE-ARTIST, AF-AV-ADSET-CAT, AF-AV-BOTDOC, AF-AV-HERO-12, AF-AV-PLACEHOLDER, AF-AV-NOANTHROPIC, AF-AV-PROVENANCE, AF-AV-DELIVER-INCOMPLETE
 
 ---
@@ -53,7 +53,7 @@ Book or Brand.** The selected version determines which question set is answered:
 `AF-AV-INTAKE-INCOMPLETE`; a version that is unset or not exactly `book|brand` is `AF-AV-VERSION-UNSET`;
 an answered question set that mismatches the selected version is `AF-AV-VERSION-MISMATCH`. Never
 fabricate an intake answer — client words only; return the gap list and STOP if a required field is
-missing. The intake spec + both question sets are `52-avatar-intelligence/intake/intake-schema.json` +
+missing. The intake spec + both question sets are `52-avatar-alchemist/intake/intake-schema.json` +
 `INTAKE-TEMPLATE.md`. A self-attested "intake complete" flag is never trusted: the gate reads the actual
 fields.
 
@@ -87,8 +87,8 @@ attempts, hard-escalate to the operator — never silent-pass.
 ## 4. RUN IT — THROUGH THE ONE FRONT DOOR
 
 ```
-bash 52-avatar-intelligence/entry.sh <RUN_DIR>
-python3 52-avatar-intelligence/scripts/aa_director.py --run-dir <RUN_DIR> --nonce <RUN_DIR>/.entry-nonce
+bash 52-avatar-alchemist/entry.sh <RUN_DIR>
+python3 52-avatar-alchemist/scripts/aa_director.py --run-dir <RUN_DIR> --nonce <RUN_DIR>/.entry-nonce
 ```
 
 The front door runs four fail-closed legs (DEPS -> BYPASS-SCAN -> HASH-PIN -> NONCE) and mints a
@@ -115,7 +115,7 @@ End-to-end proof is from the CLIENT outcome, not the builder's claim: the bundle
 is present and on-band, and the certificate chain is intact. Self-verify the skill with:
 
 ```
-bash 52-avatar-intelligence/verify.sh
+bash 52-avatar-alchemist/verify.sh
 ```
 
 It runs each prover's `--self-test`, exercises the front door + foreman plan, reproduces the golden
