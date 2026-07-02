@@ -182,6 +182,7 @@ This role contributes to the company revenue cascade by: **architecting and oper
 | Project Management (Notion, Asana, ClickUp, Monday.com) | Campaign planning, content calendar, team task management, marketing request intake |
 | Business Intelligence / Data Visualization (Looker, Tableau, Google Looker Studio, Power BI) | Marketing dashboard, cross-channel reporting, executive presentations, budget tracking |
 | **Email Engine + superlibrary (Skill 50)** | Dept-head awareness of the email authoring + QC engine that feeds the CRM deploy lane. Select via `50-email-engine/tools/email_matcher_cli.py`, QC via `prove-email.py` (fail-closed), draft-only deploy via Skill 44. |
+| **Product Bio Engine (Skill 55)** | Dept-head awareness + routing of the master-brain Product Bio engine (the 6,000-7,000-word, 10-section sales knowledge base + Google-Docs-ready HTML that powers AI chatbots and human sales teams). Route a "product bio" request to the Conversion Copywriter, who drives the ONE canonical entry `55-product-bio/product-bio-entry.sh` from a 4-field intake; SACRED counts are MEASURED by fail-closed provers; no signed certificate = not done; delivery is a labeled LOCAL bundle. Disambiguation: standalone master-brain bio -> Skill 55; a full brand-intelligence package -> Skill 52 (its embedded bio ships with it). Shared SOP `universal-sops/product-bio-craft/`. |
 
 ---
 

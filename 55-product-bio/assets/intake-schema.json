@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/product-bio/intake.schema.json",
+  "title": "Product Bio Intake",
+  "description": "The locked intake contract for the Product Bio Engine (Skill 55). The four required fields are the only inputs the baked IP consumes (PRD §2.1/§3.3). prove_pb_intake.py enforces required-field presence fail-closed.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["product_name", "product_description", "first_name", "last_name"],
+  "properties": {
+    "product_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Exact product name (+ optional tagline/positioning). Consumed by chain 1."
+    },
+    "product_description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What the product is/does + the transformation. Consumed by chain 1."
+    },
+    "first_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Founder/owner first name. Consumed by chain 1 + deliverable label."
+    },
+    "last_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Founder/owner last name. Consumed by chain 1 + deliverable label."
+    },
+    "client_folder_name": {
+      "type": "string",
+      "description": "Optional deliverable-folder label override."
+    },
+    "email": {
+      "type": "string",
+      "description": "Optional; captured for handoff parity only (dormant in the LLM path)."
+    },
+    "phone": {
+      "type": "string",
+      "description": "Optional; captured for handoff parity only (dormant in the LLM path)."
+    }
+  }
+}

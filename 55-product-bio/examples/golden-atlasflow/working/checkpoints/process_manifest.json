@@ -1,0 +1,35 @@
+{
+  "skill": "product-bio",
+  "run_dir": "examples/golden-atlasflow",
+  "phases": [
+    {
+      "id": "P0-INTAKE",
+      "passed": true
+    },
+    {
+      "id": "P1-FIDELITY",
+      "passed": true
+    },
+    {
+      "id": "P2-BIO-AUTHOR",
+      "passed": true
+    },
+    {
+      "id": "P3-BIO-QC",
+      "passed": true
+    },
+    {
+      "id": "P4-HTML-AUTHOR",
+      "passed": true
+    },
+    {
+      "id": "P5-HTML-QC",
+      "passed": true
+    },
+    {
+      "id": "P6-DELIVER",
+      "passed": true
+    }
+  ],
+  "failed_phase": null
+}

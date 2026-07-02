@@ -828,6 +828,17 @@ It AUTHORS the 12-section copy + the 5,000-19,000-char image prompts under fail-
 (`49-signature-funnel/scripts/prove_sf_*.py`), delegates image generation to Skill 47 and ALL GHL \
 media + build to Skill 6 (the ONE delivery rail), and issues a signed certificate only on a full \
 pass. Shared procedure: `universal-sops/funnel-craft/`.
+- Product Bio Engine (Skill 55) - the master-brain Product Bio: a 6,000-7,000-word, 10-section \
+sales knowledge base (10 intros, 15-20 power adjectives, ICP, product description, positioning, \
+8-10 objections, 10-12 FAQs, 8-10 social proof, StoryBrand 2.0, 24 named signature closes + a \
+completion-verification block) AND its Google-Docs-importable HTML, at `55-product-bio/`. Built \
+through the ONE canonical entry `55-product-bio/product-bio-entry.sh` from a 4-field intake \
+(product_name / product_description / first_name / last_name); every SACRED count is MEASURED on \
+the stripped text by fail-closed, model-free provers (`55-product-bio/scripts/prove_pb_*.py`) - \
+the model's self-reported counts are IGNORED - and a signed certificate is issued only on a full \
+P0->P6 pass. Delivery is a labeled LOCAL bundle in `~/Downloads/` (no n8n / Google Drive / Slack / \
+Gmail). Cross-linked with, but NEVER merged into, Skill 52 (Avatar Alchemist carries a different \
+"Product Bio" prompt). Shared procedure: `universal-sops/product-bio-craft/`.
 - Funnel-to-automation link map - \
 `44-convert-and-flow-operator/automation-templates/_links/funnel-to-automation.json` pairs \
 each funnel with its recommended follow-up automations (keyed by funnel_template_id).

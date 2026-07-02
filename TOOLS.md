@@ -52,7 +52,7 @@ Skills are shared. Your setup is yours. Keeping them apart means you can update 
 
 ---
 
-## Funnel + Automation + Email Template Libraries (Skill 06 / Skill 44 / Skill 49 / Skill 50) — template-first / reuse-before-reinvent
+## Funnel + Automation + Email Template Libraries (Skill 06 / Skill 44 / Skill 49 / Skill 50 / Skill 55) — template-first / reuse-before-reinvent
 
 - **Funnel template library (38 templates)** — `06-ghl-install-pages/funnel-templates/` by category
   (buyer, event, lead, retention-followup, traffic-advanced). Each carries `pageStructure`,
@@ -81,6 +81,20 @@ Skills are shared. Your setup is yours. Keeping them apart means you can update 
   fail-closed provers (`scripts/prove_sf_*.py`); it AUTHORS copy + image prompts, delegates image
   generation to Skill 47 and ALL GHL media + build to Skill 6 (the ONE GHL delivery rail), and issues a
   signed certificate only on a full pass. Shared SOP cluster: `universal-sops/funnel-craft/`.
+- **Product Bio Engine (Skill 55)** — `55-product-bio/`, the master-brain **Product Bio**: a
+  6,000–7,000-word, 10-section sales knowledge base (10 intros, 15–20 power adjectives, ICP,
+  description, positioning, 8–10 objections, 10–12 FAQs, 8–10 social proof, StoryBrand 2.0, 24 named
+  signature closes + a completion-verification block) + its Google-Docs-importable HTML. Built through
+  the ONE canonical entry `55-product-bio/product-bio-entry.sh` from a 4-field intake
+  (`product_name`/`product_description`/`first_name`/`last_name`); the two verbatim system prompts are
+  sha256-pinned and every SACRED count is MEASURED by fail-closed, model-free provers
+  (`55-product-bio/scripts/prove_pb_*.py`) — self-reported counts ignored — with a signed certificate
+  only on a full P0→P6 pass. Delivery is a labeled LOCAL bundle in `~/Downloads/` (no n8n / Google
+  Drive / Slack / Gmail / Airtable). Cross-linked with, NEVER merged into, Skill 52 (routing: standalone
+  master-brain bio → 55; brand-intelligence package → 52). Shared SOP cluster:
+  `universal-sops/product-bio-craft/`. The Command Center `sops` row (`product-bio-master-brain-bio`,
+  marketing dept) is added by the operator at CC install/update time (the mission-control repo is a
+  separate submodule); no schema change (a job is a `tasks` row).
 - **Funnel→automation link map** — `44-.../automation-templates/_links/funnel-to-automation.json`
   (canonical v2; `…-link-map.json` is the DEPRECATED v1). Maps each funnel to its recommended
   follow-up automations; keyed by `funnel_template_id`.

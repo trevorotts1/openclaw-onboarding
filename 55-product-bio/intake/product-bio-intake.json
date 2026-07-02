@@ -1,0 +1,77 @@
+{
+  "$schema": "https://openclaw.ai/schemas/interview-section/v1",
+  "section": "product-bio-intake",
+  "version": "1.0.0",
+  "skill": "product-bio",
+  "description": "The intake gate for the Product Bio Engine. The four required questions are asked ALL AT ONE TIME, in a single message block, BEFORE any bio is written (the source webhook normalized 7 fields but the IP consumes only these four — PRD §2.1/§3.3). Once answered, the locked intake (working/intake.json) is written against this contract and P0-INTAKE unlocks. prove_pb_intake.py enforces it fail-closed; a self-attested completeness flag is NEVER trusted. No interview fabrication — client words only.",
+  "delivery": {
+    "mode": "one_block",
+    "asked_all_at_once": true,
+    "one_question_per_turn": false,
+    "rule": "Emit the four required questions (plus the three optional ones) as ONE message-block turn. The four required fields are the only inputs the baked IP consumes.",
+    "front_door": "any marketing/copywriting department role that needs a master-brain product bio (Command Center task ingest, a Skill 38 request, a direct operator ask)",
+    "blocks_until_answered": ["P0-INTAKE", "P2-BIO-AUTHOR", "all bio authoring"]
+  },
+  "questions": [
+    {
+      "id": "product_name",
+      "order": 1,
+      "prompt": "What is the exact product name (with any tagline or positioning statement)?",
+      "kind": "text",
+      "required": true,
+      "storeOn": "product_name"
+    },
+    {
+      "id": "product_description",
+      "order": 2,
+      "prompt": "Describe the product: what it is, what it does, who it helps, and the transformation it delivers.",
+      "kind": "text",
+      "required": true,
+      "storeOn": "product_description"
+    },
+    {
+      "id": "first_name",
+      "order": 3,
+      "prompt": "Founder / owner first name (used for the deliverable label and handoff).",
+      "kind": "text",
+      "required": true,
+      "storeOn": "first_name"
+    },
+    {
+      "id": "last_name",
+      "order": 4,
+      "prompt": "Founder / owner last name (used for the deliverable label and handoff).",
+      "kind": "text",
+      "required": true,
+      "storeOn": "last_name"
+    },
+    {
+      "id": "client_folder_name",
+      "order": 5,
+      "prompt": "(Optional) A label for the deliverable folder. Defaults to the product slug + date.",
+      "kind": "text",
+      "required": false,
+      "storeOn": "client_folder_name"
+    },
+    {
+      "id": "email",
+      "order": 6,
+      "prompt": "(Optional) Contact email — captured for handoff parity only; the bio IP does not use it.",
+      "kind": "text",
+      "required": false,
+      "storeOn": "email"
+    },
+    {
+      "id": "phone",
+      "order": 7,
+      "prompt": "(Optional) Contact phone — captured for handoff parity only (dormant in the source LLM path).",
+      "kind": "text",
+      "required": false,
+      "storeOn": "phone"
+    }
+  ],
+  "runtime_intake_contract": {
+    "required": ["product_name", "product_description", "first_name", "last_name"],
+    "optional": ["client_folder_name", "email", "phone"]
+  }
+}

@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v16.5.0"
+ONBOARDING_VERSION="v16.6.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -739,7 +739,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 5 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/51-... (46 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/55-... (47 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -4670,7 +4670,7 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 46 active skills install in 5 dependency-aware waves, not by number order.
+The 47 active skills install in 5 dependency-aware waves, not by number order.
 Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
 A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
@@ -6657,6 +6657,48 @@ install_skill_51_signature_presentation() {
 }
 
 install_skill_51_signature_presentation
+
+# ----------------------------------------------------------
+# Skill 55: Product Bio Engine (master-brain product bio methodology + gates)
+# ----------------------------------------------------------
+# Self-contained: this template install copies the Skill 55 folder (SKILL.md,
+# MASTERDOC.md, PRODUCT-BIO-MANIFEST.json, the two BAKED sha256-pinned IP prompts,
+# the intake gate + schema, the model-map template, the five fail-closed model-free
+# provers, the no-skip orchestrator, and the canonical fail-closed entry). NO
+# external clone. Skill 55 owns the IP + the gates: it turns a 4-field intake into
+# the 6,000-7,000-word, 10-section master-brain product bio + its Google-Docs-
+# importable HTML, replacing the retired 25-node n8n / Google Drive / Slack / Gmail
+# workflow with a LOCAL-ONLY pipeline on the CLIENT's own model providers — never
+# the operator's, never Anthropic model ids. Every SACRED count is MEASURED by a
+# model-free prover (self-reported counts are ignored). Delivery is a labeled
+# ~/Downloads bundle; it touches no n8n / Drive / Slack / Gmail / Airtable at
+# runtime. Standalone — no prerequisite skill. Cross-linked with (never merged
+# into) Skill 52 Avatar Alchemist.
+install_skill_55_product_bio() {
+    local SKILL_SRC="$ONBOARDING_DIR/55-product-bio"
+    local SKILL_DEST="$SKILLS_DIR/55-product-bio"
+
+    if [ ! -d "$SKILL_SRC" ]; then
+        warn "Skill 55 source dir not found at $SKILL_SRC — skipping (older onboarding bundle?)"
+        return 0
+    fi
+
+    mkdir -p "$SKILL_DEST"
+    cp -R "$SKILL_SRC/." "$SKILL_DEST/" 2>>"$LOG_FILE" || {
+        warn "Failed to copy Skill 55 from $SKILL_SRC -> $SKILL_DEST"
+        return 0
+    }
+    chmod +x "$SKILL_DEST/product-bio-entry.sh" "$SKILL_DEST/run_product_bio.py" \
+             "$SKILL_DEST/verify.sh" 2>/dev/null || true
+    chmod +x "$SKILL_DEST/scripts/"*.py 2>/dev/null || true
+
+    success "Skill 55 (Product Bio Engine) installed -> $SKILL_DEST"
+    note "Skill 55 is the methodology + enforcement layer for the Trevor Otts master-brain product bio: a 6,000-7,000-word, 10-section sales knowledge base (10 intros, 15-20 power adjectives, ICP, description, positioning, 8-10 objections, 10-12 FAQs, 8-10 social proof, StoryBrand 2.0, 24 named signature closes + a completion-verification block) AND its Google-Docs-importable HTML, from a 4-field intake. It bakes two verbatim sha256-pinned IP prompts and gates every SACRED count with five fail-closed model-free provers that MEASURE the stripped text (self-reported counts are ignored)."
+    note "It runs P0 INTAKE -> P1 FIDELITY -> P2 BIO -> P3 BIO-QC -> P4 HTML -> P5 HTML-QC -> P6 DELIVER through one canonical entry (product-bio-entry.sh) with a deps/bypass-scan/hash-pin/nonce fail-closed gate, then delivers a labeled ~/Downloads bundle + a signed PROCESS-CERTIFICATE. It replaces the retired 25-node n8n / Google Drive / Slack / Gmail workflow with a LOCAL-ONLY pipeline on the CLIENT's own model providers — never the operator's, never Anthropic model ids; no n8n / Drive / Slack / Gmail / Airtable at runtime. Standalone — no prerequisite skill."
+    return 0
+}
+
+install_skill_55_product_bio
 
 # ----------------------------------------------------------
 # Step 15: Register Skill 32's materialize-dept-agents.sh (v10.13.18)
