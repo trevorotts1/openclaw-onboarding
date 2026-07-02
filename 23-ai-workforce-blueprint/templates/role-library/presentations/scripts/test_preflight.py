@@ -2830,6 +2830,121 @@ def test_doctrine_gates_fire_and_pass():
     return fails
 
 
+# ---------------------------------------------------------------------------
+# Skill 51 — Signature Presentation gate fixtures (shared by test_sp_wrappers +
+# emit_af_coverage). The valid fixtures come from the Skill-51 provers themselves
+# (via build_deck's loader), so the tests exercise the SAME contract the wrappers do.
+# ---------------------------------------------------------------------------
+def _sp_provers():
+    """Return (intake, structure, no_pitch) Skill-51 prover modules, or (None,None,None)."""
+    return (build_deck._sp_prover("prove_sp_intake"),
+            build_deck._sp_prover("prove_sp_structure"),
+            build_deck._sp_prover("prove_sp_no_pitch"))
+
+
+def _sp_run_dir(*, signature=True, sp_intake=None, sp_structure=None):
+    """Temp run dir. intake.json carries deck_type=signature_presentation when
+    signature=True (else omitted, so the _chk_sp_* wrappers DEFER)."""
+    rd = Path(tempfile.mkdtemp(prefix="deck_sp_test_"))
+    (rd / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    intake = {"deck_type": "signature_presentation"} if signature else {"interview_confirmed": True}
+    (rd / "working" / "copy" / "intake.json").write_text(json.dumps(intake))
+    if sp_intake is not None:
+        (rd / "working" / "copy" / "sp_intake.json").write_text(json.dumps(sp_intake))
+    if sp_structure is not None:
+        (rd / "working" / "copy" / "sp_structure.json").write_text(json.dumps(sp_structure))
+    return rd
+
+
+def _sp_by_num(deck):
+    return {s["slide"]: s for s in deck["slides"]}
+
+
+def _sp_adversarial_cases(spi, sps, spn):
+    """Return [(af_code, wrapper_name, run_dir), ...]: one deliberately-failing signature
+    fixture per registered AF-SP code, each surfacing that code through its build_deck
+    wrapper. Golden fixtures come from the provers; each is mutated with ONE defect."""
+    cases = []
+    # INTAKE (via _chk_sp_intake) — only sp_intake.json is read.
+    f = spi._valid_runtime_fixture(); del f["answers"]["q7"]
+    cases.append(("AF-SP-8Q-MISSING", "_chk_sp_intake", _sp_run_dir(sp_intake=f)))
+    f = spi._valid_runtime_fixture(); f["asked_all_at_once"] = False
+    cases.append(("AF-SP-8Q-SPLIT", "_chk_sp_intake", _sp_run_dir(sp_intake=f)))
+    f = spi._valid_runtime_fixture(); del f["signature_frame"]
+    cases.append(("AF-SP-FRAME-UNSET", "_chk_sp_intake", _sp_run_dir(sp_intake=f)))
+    f = spi._valid_runtime_fixture(); f["deck_type"] = "webinar_deck"
+    cases.append(("AF-SP-TYPE-MISMATCH", "_chk_sp_intake", _sp_run_dir(sp_intake=f)))
+    f = spi._valid_runtime_fixture(); f["offer_token_ledger"] = []
+    cases.append(("AF-SP-OFFER-UNDECLARED", "_chk_sp_intake", _sp_run_dir(sp_intake=f)))
+    # STRUCTURE (via _chk_sp_structure) — only sp_structure.json is read (contract is loaded).
+    d = sps._valid_fixture(); d["slides"] = [s for s in d["slides"] if s["slide"] != 100]
+    cases.append(("AF-SP-SLIDE-FLOOR", "_chk_sp_structure", _sp_run_dir(sp_structure=d)))
+    d = sps._valid_fixture(); _sp_by_num(d)[24]["phase"] = "teaching"
+    cases.append(("AF-SP-PHASE-RANGE", "_chk_sp_structure", _sp_run_dir(sp_structure=d)))
+    d = sps._valid_fixture(); _sp_by_num(d)[50]["phase"] = "avatar"
+    cases.append(("AF-SP-PHASE-ORDER", "_chk_sp_structure", _sp_run_dir(sp_structure=d)))
+    d = sps._valid_fixture(); _sp_by_num(d)[12]["label_slide"] = False
+    cases.append(("AF-SP-PHASE-LABEL", "_chk_sp_structure", _sp_run_dir(sp_structure=d)))
+    d = sps._valid_fixture(); _sp_by_num(d)[50]["suggested_image"] = "   \n "
+    cases.append(("AF-SP-IMG-SUGGESTION", "_chk_sp_structure", _sp_run_dir(sp_structure=d)))
+    d = sps._valid_fixture()
+    for n in (90, 91, 92):
+        _sp_by_num(d)[n]["tags"].append("CASE_STUDY")
+    cases.append(("AF-SP-CASESTUDY-CAP", "_chk_sp_structure", _sp_run_dir(sp_structure=d)))
+    d = sps._valid_fixture(); d["teaching_steps"] = 2
+    cases.append(("AF-SP-TEACH-STEPS", "_chk_sp_structure", _sp_run_dir(sp_structure=d)))
+    d = sps._valid_fixture(); d["hook_package"]["central_hook"] = "   "
+    cases.append(("AF-SP-HOOK", "_chk_sp_structure", _sp_run_dir(sp_structure=d)))
+    d = sps._valid_fixture()
+    _sp_by_num(d)[12]["tags"] = [t for t in _sp_by_num(d)[12]["tags"] if t != "N.E.E.I.T."]
+    cases.append(("AF-SP-QUADRANT", "_chk_sp_structure", _sp_run_dir(sp_structure=d)))
+    # HYGIENE (via _chk_sp_no_pitch) — needs the offer ledger + a teaching-band price leak.
+    cases.append(("AF-SP-P3-PITCH", "_chk_sp_no_pitch",
+                  _sp_run_dir(sp_intake=spn._fixture_intake(True),
+                              sp_structure=spn._fixture_ledger("price_in_teach"))))
+    return cases
+
+
+def test_sp_wrappers():
+    """SOP-SLIDE-06 step iv — Signature Presentation gates. (a) a GOLDEN signature deck
+    (>=100 slides, 8Q one-block, frame set, <=2 case studies, suggested_image per slide,
+    no teaching-band pitch) PASSES all three _chk_sp_* wrappers; (b) a NON-signature deck
+    (deck_type absent) DEFERS — all three wrappers return "" — the binding
+    defer-unless-signature regression guard so non-signature decks behave EXACTLY as
+    before; (c) one deliberately-failing fixture per AF-SP code trips its wrapper."""
+    fails = []
+    spi, sps, spn = _sp_provers()
+    if not (spi and sps and spn):
+        fails.append("SP: could not import the Skill-51 provers (prove_sp_*.py)")
+        print("SP wrappers -> FAIL (provers not importable)")
+        return fails
+
+    # (a) GOLDEN signature deck — all three wrappers PASS ("").
+    gold = _sp_run_dir(sp_intake=spi._valid_runtime_fixture(), sp_structure=sps._valid_fixture())
+    for name in ("_chk_sp_intake", "_chk_sp_structure", "_chk_sp_no_pitch"):
+        r = getattr(build_deck, name)(gold)
+        if r != "":
+            fails.append(f"SP-GOLDEN: {name} should PASS a valid signature deck, got: {r!r}")
+
+    # (b) DEFER — a NON-signature deck is a no-op for all three wrappers even with garbage
+    #     SP artifacts present (they are never read; the deck_type switch defers first).
+    nonsig = _sp_run_dir(signature=False, sp_intake={"garbage": True},
+                         sp_structure={"garbage": True})
+    for name in ("_chk_sp_intake", "_chk_sp_structure", "_chk_sp_no_pitch"):
+        r = getattr(build_deck, name)(nonsig)
+        if r != "":
+            fails.append(f"SP-DEFER: {name} must DEFER (return '') for a non-signature deck, got: {r!r}")
+
+    # (c) ADVERSARIAL — one deliberately-failing fixture per AF-SP code.
+    for code, name, rd in _sp_adversarial_cases(spi, sps, spn):
+        r = getattr(build_deck, name)(rd)
+        if code not in _af_codes_in(r):
+            fails.append(f"SP-ADV: {name} on the {code} fixture should surface {code}, got: {r!r}")
+
+    print(f"SP wrappers (golden + defer + 15 adversarial) -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
 def emit_af_coverage():
     """Drive every build_deck-enforced gate to FAILURE and record which AF codes
     a deliberately-failing fixture actually triggers. Writes working/af-coverage.json
@@ -3485,6 +3600,13 @@ def emit_af_coverage():
     _cc_reason = build_deck._chk_cc_registered(_cc_root, "probe-deck")
     record("AF-CC-UNREGISTERED", _cc_reason)
 
+    # Skill 51 — AF-SP-* Signature-Presentation gates. One deliberately-failing signature
+    # fixture per code trips its build_deck._chk_sp_* wrapper (Guard-A negative coverage).
+    _spi, _sps, _spn = _sp_provers()
+    if _spi and _sps and _spn:
+        for _code, _name, _rd in _sp_adversarial_cases(_spi, _sps, _spn):
+            record(_code, getattr(build_deck, _name)(_rd))
+
     triggered_sorted = sorted(triggered)
     AF_COVERAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
     AF_COVERAGE_PATH.write_text(json.dumps(
@@ -4061,6 +4183,11 @@ def main():
     # v16.0.1 (FIX-2) — positive-fire + clean-pass assertions for the v18 priority-shift
     # doctrine gates (each gate FIRES on a tripping fixture, PASSES on a clean deck).
     failures += test_doctrine_gates_fire_and_pass()
+
+    # Skill 51 SOP-SLIDE-06 step iv — Signature Presentation gates: a golden signature
+    # deck PASSES all three _chk_sp_* wrappers; a NON-signature deck DEFERS (the binding
+    # defer-unless-signature regression guard); one adversarial FAIL per AF-SP code trips.
+    failures += test_sp_wrappers()
 
     # GUARD A — emit working/af-coverage.json listing every build_deck-enforced AF
     # code a deliberately-failing fixture actually triggered. gate_integrity_check.py

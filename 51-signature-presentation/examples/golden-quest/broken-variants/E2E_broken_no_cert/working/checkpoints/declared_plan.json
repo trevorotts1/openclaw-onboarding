@@ -1,0 +1,38 @@
+{
+  "deck_slug": "golden-quest",
+  "declared_at": "2026-07-02T09:00:00+00:00",
+  "steps": [
+    {
+      "order": 0.1,
+      "id": "P0A-INTAKE",
+      "name": "Deck Intake",
+      "owning_role": "brainstorming-buddy-presentations"
+    },
+    {
+      "order": 0.15,
+      "id": "P-SP-INTAKE",
+      "name": "Signature Intake Gate (prove_sp_intake)",
+      "owning_role": "signature-presentation-architect"
+    },
+    {
+      "order": 4.0,
+      "id": "P4-COPY",
+      "name": "Slide Copy",
+      "owning_role": "slide-copywriter"
+    },
+    {
+      "order": 4.1,
+      "id": "P-SP-STRUCTURE",
+      "name": "Signature Structure Gate (prove_sp_structure)",
+      "owning_role": "qc-specialist-signature-presentations"
+    },
+    {
+      "order": 4.15,
+      "id": "P-SP-P3-HYGIENE",
+      "name": "Signature Phase-3 No-Pitch Gate (prove_sp_no_pitch)",
+      "owning_role": "qc-specialist-signature-presentations"
+    }
+  ],
+  "total": 5,
+  "step_declaration_msg_id": "golden-quest-plan-0001"
+}

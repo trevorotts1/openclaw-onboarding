@@ -1,0 +1,1368 @@
+{
+  "deck_type": "signature_presentation",
+  "deck_slug": "golden-quest",
+  "signature_frame": "quest",
+  "title": "CALLED: Find the Work Only You Can Do",
+  "client_overrode_slide_floor": false,
+  "teaching_steps": 5,
+  "hook_package": {
+    "central_hook": "The world is waiting on the one thing only you can do.",
+    "section_hooks": [
+      "You are not stuck — you are unclaimed.",
+      "I answered the call the day I stopped auditioning for my own life.",
+      "A calling is not found. It is followed, one step at a time.",
+      "The door is open — all that is left is your name on the other side."
+    ]
+  },
+  "neeit_coverage": {
+    "framework": [
+      "Name",
+      "Explain",
+      "Example",
+      "Instructions",
+      "Tone"
+    ],
+    "rule": "N.E.E.I.T. (Name/Explain/Example/Instructions/Tone) coverage is recorded per teaching step (quadrant) as the slide(s) that deliver each element, so it is slide-verifiable rather than only a phase-label tag. Every element is covered by >=1 real content slide in every step; a guided-visualization slide can satisfy both Example and Instructions.",
+    "phase_markers": {
+      "avatar": 1,
+      "story": 12,
+      "pitch": 61
+    },
+    "teaching_steps": [
+      {
+        "step": 1,
+        "quest": "Purpose",
+        "name": [
+          29
+        ],
+        "explain": [
+          32
+        ],
+        "example": [
+          31
+        ],
+        "instructions": [
+          30,
+          33
+        ],
+        "tone": [
+          34
+        ]
+      },
+      {
+        "step": 2,
+        "quest": "Purpose",
+        "name": [
+          35
+        ],
+        "explain": [
+          38
+        ],
+        "example": [
+          36,
+          39
+        ],
+        "instructions": [
+          37
+        ],
+        "tone": [
+          40
+        ]
+      },
+      {
+        "step": 3,
+        "quest": "Confidence",
+        "name": [
+          42
+        ],
+        "explain": [
+          45
+        ],
+        "example": [
+          44
+        ],
+        "instructions": [
+          43,
+          46
+        ],
+        "tone": [
+          47
+        ]
+      },
+      {
+        "step": 4,
+        "quest": "Confidence",
+        "name": [
+          48
+        ],
+        "explain": [
+          50
+        ],
+        "example": [
+          49,
+          51
+        ],
+        "instructions": [
+          52
+        ],
+        "tone": [
+          53
+        ]
+      },
+      {
+        "step": 5,
+        "quest": "Value",
+        "name": [
+          55
+        ],
+        "explain": [
+          56,
+          58
+        ],
+        "example": [
+          57
+        ],
+        "instructions": [
+          57
+        ],
+        "tone": [
+          59
+        ]
+      }
+    ]
+  },
+  "slides": [
+    {
+      "slide": 1,
+      "phase": "avatar",
+      "label_slide": true,
+      "title": "Phase 1 — The Avatar Section",
+      "body": "Purpose: before I tell you who I am, I tell you who YOU are. First we tell their story, then we tell ours. #StillCalled",
+      "suggested_image": "Full-bleed dawn horizon over a quiet city; a single lit window; cinematic, hopeful, typographic title lockup in warm gold.",
+      "tags": [
+        "PHASE-LABEL",
+        "N.E.E.I.T.",
+        "4-Quadrant",
+        "MOVEMENT",
+        "MOTIF"
+      ]
+    },
+    {
+      "slide": 2,
+      "phase": "avatar",
+      "label_slide": false,
+      "title": "The Chorus",
+      "body": "The world is waiting on the one thing only you can do.",
+      "suggested_image": "Pure-typography slide, deep indigo field, the single line set large and centered; no imagery, let the words breathe.",
+      "tags": [
+        "CENTRAL-HOOK",
+        "HOOK"
+      ]
+    },
+    {
+      "slide": 3,
+      "phase": "avatar",
+      "label_slide": false,
+      "title": "Their Current State",
+      "body": "#StillCalled — and still standing in the very same spot. You have done everything right and somehow you are still waiting for your life to begin.",
+      "suggested_image": "A capable professional at a stoplight at dusk, hands on the wheel, staring at a green light they haven't driven through yet.",
+      "tags": [
+        "MOTIF",
+        "AVATAR-PAIN"
+      ]
+    },
+    {
+      "slide": 4,
+      "phase": "avatar",
+      "label_slide": false,
+      "title": "The Ache",
+      "body": "\"Is my time ever going to come?\" You watch louder, lesser people get chosen, and the quiet question won't leave you alone.",
+      "suggested_image": "Close portrait, half in shadow, of someone watching applause across a room they are not standing in.",
+      "tags": [
+        "AVATAR-PAIN",
+        "QUESTION"
+      ]
+    },
+    {
+      "slide": 5,
+      "phase": "avatar",
+      "label_slide": false,
+      "title": "Not Stuck — Unclaimed",
+      "body": "You are not stuck — you are unclaimed. Stuck says the road is blocked. Unclaimed says the road is wide open and no one has said your name yet.",
+      "suggested_image": "A packed suitcase by an open door, morning light spilling in; the person just out of frame, deciding.",
+      "tags": [
+        "SECTION-HOOK",
+        "AVATAR-PAIN"
+      ]
+    },
+    {
+      "slide": 6,
+      "phase": "avatar",
+      "label_slide": false,
+      "title": "The Exhaustion of Proving",
+      "body": "\"I am so tired of auditioning for a life that is already mine.\" Competence became a costume. You perform 'fine' so well that no one asks if you are.",
+      "suggested_image": "A person removing a stage mask backstage, shoulders finally dropping, exhaustion and relief on the same face.",
+      "tags": [
+        "AVATAR-PAIN",
+        "EMOTIONAL"
+      ]
+    },
+    {
+      "slide": 7,
+      "phase": "avatar",
+      "label_slide": false,
+      "title": "A Riddle",
+      "body": "Who am I? I am the room's quiet engine. I make everyone else look ready. I am trusted with everything except the spotlight. Who am I? ... You. And that ends today.",
+      "suggested_image": "A hand-lettered riddle card on a table beside a single unlit candle and a match.",
+      "tags": [
+        "RIDDLE",
+        "DEVICE"
+      ]
+    },
+    {
+      "slide": 8,
+      "phase": "avatar",
+      "label_slide": false,
+      "title": "The Aspirational Avatar",
+      "body": "Now imagine waking already chosen — not chasing permission, but doing the work only you can do, and being paid, seen, and thanked for exactly that.",
+      "suggested_image": "The same person from the pain slides, now on a sunlit path mid-stride, head up, moving with certainty.",
+      "tags": [
+        "AVATAR-ASPIRATION",
+        "VISUALIZATION"
+      ]
+    },
+    {
+      "slide": 9,
+      "phase": "avatar",
+      "label_slide": false,
+      "title": "What Answering Looks Like",
+      "body": "It sounds like your own voice, unhedged. It looks like a calendar you actually chose. It feels like Monday stops being a sentence you serve.",
+      "suggested_image": "Split-frame: Monday-as-dread on the left, Monday-as-purpose on the right, same person, different posture.",
+      "tags": [
+        "AVATAR-ASPIRATION",
+        "MEDIA"
+      ]
+    },
+    {
+      "slide": 10,
+      "phase": "avatar",
+      "label_slide": false,
+      "title": "The Whole Picture",
+      "body": "Problem, aspiration, and the road between them — this is your story, told back to you so accurately that you lean in. Because I have lived it too.",
+      "suggested_image": "A wide watercolor map with a 'you are here' marker and a distant lighthouse.",
+      "tags": [
+        "AVATAR-QUADRANT",
+        "SUMMARY"
+      ]
+    },
+    {
+      "slide": 11,
+      "phase": "avatar",
+      "label_slide": false,
+      "title": "Your Story, Then Mine",
+      "body": "You have a story. So do I — and I only get to tell mine because I have already lived yours. So let me show you where the ache in your chest first found its voice.",
+      "suggested_image": "A storyteller stepping from shadow into a warm spotlight, turning to face the room.",
+      "tags": [
+        "BRIDGE",
+        "TRANSITION"
+      ]
+    },
+    {
+      "slide": 12,
+      "phase": "story",
+      "label_slide": true,
+      "title": "Phase 2 — Your Signature Story",
+      "body": "Purpose: so that you know that I know exactly where you are standing. Not a resume — a journey. #StillCalled",
+      "suggested_image": "Sepia-to-color transition of an old family photograph coming alive at the edges.",
+      "tags": [
+        "PHASE-LABEL",
+        "N.E.E.I.T.",
+        "4-Quadrant",
+        "MESSAGE",
+        "SECTION-HOOK"
+      ]
+    },
+    {
+      "slide": 13,
+      "phase": "story",
+      "label_slide": false,
+      "title": "The Section Hook",
+      "body": "I answered the call the day I stopped auditioning for my own life.",
+      "suggested_image": "A theatre seat, empty, spotlight fading on an unused stage — the day the auditioning stopped.",
+      "tags": [
+        "HOOK"
+      ]
+    },
+    {
+      "slide": 14,
+      "phase": "story",
+      "label_slide": false,
+      "title": "Before the Titles",
+      "body": "Before the titles, I was a kid who narrated the sky — certain I was here to say something only I could say.",
+      "suggested_image": "A child on a rooftop at dusk, arms wide, narrating to the clouds.",
+      "tags": [
+        "STORY",
+        "RELATABILITY"
+      ]
+    },
+    {
+      "slide": 15,
+      "phase": "story",
+      "label_slide": false,
+      "title": "People Who Look Like Me",
+      "body": "In every hall I walked, I counted the room. \"People who look like me\" was a refrain I whispered before I learned to say it out loud.",
+      "suggested_image": "A lone student in a vast lecture hall, scanning rows of faces, notebook untouched.",
+      "tags": [
+        "STORY",
+        "REFRAIN"
+      ]
+    },
+    {
+      "slide": 16,
+      "phase": "story",
+      "label_slide": false,
+      "title": "First in the Family",
+      "body": "I was the first — the first degree, the first office with a door, the first to be 'set for life.' And the first to feel a life set can also be a life stuck.",
+      "suggested_image": "Hands framing a diploma on a wall beside a family photo; pride and quiet unease.",
+      "tags": [
+        "STORY",
+        "MILESTONE"
+      ]
+    },
+    {
+      "slide": 17,
+      "phase": "story",
+      "label_slide": false,
+      "title": "The Golden Handcuffs",
+      "body": "The career was real, respected, and safe. That was the trap: it was good enough to keep me from the thing I was actually for.",
+      "suggested_image": "A polished corner office at night, a beautiful cage of glass and city lights.",
+      "tags": [
+        "STORY",
+        "VULNERABILITY"
+      ]
+    },
+    {
+      "slide": 18,
+      "phase": "story",
+      "label_slide": false,
+      "title": "The Whisper",
+      "body": "#StillCalled — the whisper I kept turning down. Every promotion turned the volume up, not down.",
+      "suggested_image": "A person turning down a radio dial that keeps glowing brighter no matter how low it goes.",
+      "tags": [
+        "MOTIF",
+        "REFRAIN"
+      ]
+    },
+    {
+      "slide": 19,
+      "phase": "story",
+      "label_slide": false,
+      "title": "The Leap",
+      "body": "So I traded the title for the calling. I let the old identity go before I had a new one to hold. I told myself the refrain until my feet believed it: I was built for this.",
+      "suggested_image": "A figure stepping off a lit dock into fog, one foot already gone, the other lifting.",
+      "tags": [
+        "STORY",
+        "PIVOT",
+        "REFRAIN"
+      ]
+    },
+    {
+      "slide": 20,
+      "phase": "story",
+      "label_slide": false,
+      "title": "The Unedited Version",
+      "body": "Nobody believes a perfect hero. So here is the unedited version: I doubted, I under-charged, I cried in a parked car. The power of vulnerability is relatability.",
+      "suggested_image": "A candid, unposed portrait, tears and a small laugh at once, no retouching.",
+      "tags": [
+        "VULNERABILITY",
+        "EMOTIONAL"
+      ]
+    },
+    {
+      "slide": 21,
+      "phase": "story",
+      "label_slide": false,
+      "title": "Scars Into Map",
+      "body": "Then the reframe that changed everything: my scars were not damage. They were the map. Every place I got lost is a place I can now guide you through.",
+      "suggested_image": "Old scars on a hand slowly rendered as topographic map lines and trail markers.",
+      "tags": [
+        "STORY",
+        "PAIN-TO-PURPOSE"
+      ]
+    },
+    {
+      "slide": 22,
+      "phase": "story",
+      "label_slide": false,
+      "title": "I Deserve To Win",
+      "body": "I stopped asking permission to matter. \"I Deserve To Win\" — not at anyone's expense, but at last on my own terms.",
+      "suggested_image": "A runner at a finish line drawn in chalk that they clearly drew themselves.",
+      "tags": [
+        "STORY",
+        "DECLARATION"
+      ]
+    },
+    {
+      "slide": 23,
+      "phase": "story",
+      "label_slide": false,
+      "title": "The Road Not Taken",
+      "body": "\"Two roads diverged in a wood, and I— / I took the one less traveled by, / And that has made all the difference.\" — Robert Frost. The safe road is crowded for a reason.",
+      "suggested_image": "A forked forest trail, one path worn and busy, one mossy and quiet and lit.",
+      "tags": [
+        "LITERARY",
+        "DEVICE",
+        "QUOTE"
+      ]
+    },
+    {
+      "slide": 24,
+      "phase": "story",
+      "label_slide": false,
+      "title": "The Gripping Why",
+      "body": "Here is my why, full voice: I build because someone out there is one honest word away from staying — staying in their life, their gift, their calling. That someone is you.",
+      "suggested_image": "A single porch light left on against a dark street; someone almost walked away, but didn't.",
+      "tags": [
+        "STORY",
+        "WHY",
+        "TRANSITION"
+      ]
+    },
+    {
+      "slide": 25,
+      "phase": "teaching",
+      "label_slide": true,
+      "title": "Phase 3 — Transformational Teaching",
+      "body": "Purpose: to hand you the map, one step at a time, so a calling stops feeling like a mystery and starts feeling like a method. #StillCalled",
+      "suggested_image": "A large blueprint unrolled on a wooden table, weighted at the corners, a compass on top.",
+      "tags": [
+        "PHASE-LABEL",
+        "METHODOLOGY",
+        "SECTION-HOOK",
+        "MOTIF"
+      ]
+    },
+    {
+      "slide": 26,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "The Wayfinder Blueprint",
+      "body": "A calling is not found. It is followed, one step at a time. The Wayfinder Blueprint is 3 Quests across 5 steps. How do you walk an entire calling? The same way you eat an elephant — bite by bite.",
+      "suggested_image": "An elegant hand-drawn blueprint titled 'The Wayfinder Blueprint' with three quest banners and five numbered waypoints.",
+      "tags": [
+        "HOOK",
+        "OVERVIEW"
+      ]
+    },
+    {
+      "slide": 27,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "A Definition Pair",
+      "body": "Morning vs mourning. You have been spending your mourning — grieving the life you think you missed — in the exact hours meant for your morning. We are going to trade them back.",
+      "suggested_image": "Two near-identical dawn windows side by side, one grey with rain, one gold with sun.",
+      "tags": [
+        "DEFINITION",
+        "DEVICE"
+      ]
+    },
+    {
+      "slide": 28,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Quest I — The Purpose Quest",
+      "body": "The first Quest answers the oldest question: what is the work only you can do? Its affirmation is Openness — you cannot receive a calling with clenched hands.",
+      "suggested_image": "A quest banner reading 'The Purpose Quest' staked at the trailhead of a mountain path.",
+      "tags": [
+        "QUEST",
+        "AFFIRMATION-INTRO"
+      ]
+    },
+    {
+      "slide": 29,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 1 — Name the Ache",
+      "body": "Step One. The ache is not a malfunction — it is a compass. Where it hurts to stay small is exactly where you are meant to grow large. First we name it precisely.",
+      "suggested_image": "A compass whose needle points not north but toward a glowing figure of the reader.",
+      "tags": [
+        "STEP1",
+        "STEP-TITLE"
+      ]
+    },
+    {
+      "slide": 30,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 1 — The Question",
+      "body": "A thought-provoking question: what did you love before the world told you it wasn't practical? Write the first true answer, not the acceptable one.",
+      "suggested_image": "A journal open to a blank page, a pen resting, morning coffee steaming beside it.",
+      "tags": [
+        "STEP1",
+        "QUESTION"
+      ]
+    },
+    {
+      "slide": 31,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 1 — A Story in Three Beats",
+      "body": "Picture someone who insists she 'just organizes things.' Beat one: the team falls apart without her. Beat two: she rebuilds it in a week. Beat three: she still calls it 'nothing special.' This is not one client — it is a pattern you have watched, and maybe lived.",
+      "suggested_image": "A three-panel comic strip of the same calm figure holding chaos together.",
+      "tags": [
+        "STEP1",
+        "ANECDOTE",
+        "STORY"
+      ]
+    },
+    {
+      "slide": 32,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 1 — Core Teaching",
+      "body": "Your ache always points at a gift you have been giving away for free. Naming the ache is naming the gift. Unnamed, it leaks. Named, it leads.",
+      "suggested_image": "A leaking cupped hand of light beside a lantern that has caught and contained the same light.",
+      "tags": [
+        "STEP1",
+        "CORE-TEACHING"
+      ]
+    },
+    {
+      "slide": 33,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 1 — Do This",
+      "body": "Action steps: 1) List three moments you were thanked and shrugged it off. 2) Circle the skill underneath each. 3) The one that repeats is your ache, wearing work clothes.",
+      "suggested_image": "A checklist card with three hand-drawn boxes, the third circled in gold.",
+      "tags": [
+        "STEP1",
+        "ACTION"
+      ]
+    },
+    {
+      "slide": 34,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 1 — Affirmation: Openness",
+      "body": "Say it: 'I open my hands. What I am for is allowed to be bigger than what I have settled for.' Openness is the affirmation of the Purpose Quest. #StillCalled",
+      "suggested_image": "Two open palms lifted into a shaft of light, a small seed resting in them.",
+      "tags": [
+        "STEP1",
+        "AFFIRMATION",
+        "MOTIF"
+      ]
+    },
+    {
+      "slide": 35,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 2 — Read the Map You Already Carry",
+      "body": "Step Two. You are not missing a map. You are ignoring one. Your history, your wounds, your unreasonable joys — together they are the most detailed map you will ever own.",
+      "suggested_image": "A worn map tattooed faintly across an open hand, trails matching old scars.",
+      "tags": [
+        "STEP2",
+        "STEP-TITLE"
+      ]
+    },
+    {
+      "slide": 36,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 2 — A Media Moment",
+      "body": "Play the ninety-second clip here: a child learning to whistle — the frustration, the accidental first note, the face. That face is what following your map feels like.",
+      "suggested_image": "A film-strip frame of a delighted child mid-whistle, breath visible in cold air.",
+      "tags": [
+        "STEP2",
+        "MEDIA"
+      ]
+    },
+    {
+      "slide": 37,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 2 — One-Liner",
+      "body": "Write this one down: minimizing yourself is putting yourself on sale. Every time you shrink, someone learns your true value from your discount.",
+      "suggested_image": "A luxury item mislabeled with a scrawled clearance sticker, being peeled off.",
+      "tags": [
+        "STEP2",
+        "ONE-LINER"
+      ]
+    },
+    {
+      "slide": 38,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 2 — A Simple Formula",
+      "body": "The clarity formula: Clarity = Attention x Honesty. Most people have neither the attention to look nor the honesty to admit what they see. You will have both.",
+      "suggested_image": "A clean chalkboard with 'Clarity = Attention x Honesty' written in confident script.",
+      "tags": [
+        "STEP2",
+        "FORMULA"
+      ]
+    },
+    {
+      "slide": 39,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 2 — A Life Re-Read",
+      "body": "One learner mapped her 'wasted' years as a caretaker and found the exact empathy her new practice was built on. Nothing was wasted; it was all reconnaissance for the calling.",
+      "suggested_image": "A woman tracing a long winding trail on a map and smiling at where it finally leads.",
+      "tags": [
+        "STEP2",
+        "CASE_STUDY"
+      ]
+    },
+    {
+      "slide": 40,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 2 — Affirmation: Authenticity",
+      "body": "Say it: 'I read the map I already carry. My real history is my qualification.' Authenticity is the closing affirmation of the Purpose Quest.",
+      "suggested_image": "A hand pressing a wax seal marked 'true' onto a rolled map.",
+      "tags": [
+        "STEP2",
+        "AFFIRMATION"
+      ]
+    },
+    {
+      "slide": 41,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Quest II — The Confidence Quest",
+      "body": "The second Quest is not about feeling ready — it is about moving while unready. Its affirmation is Revelation: confidence is revealed in motion, never in the mirror.",
+      "suggested_image": "A quest banner reading 'The Confidence Quest' planted at a foggy ridge crossing.",
+      "tags": [
+        "QUEST",
+        "AFFIRMATION-INTRO"
+      ]
+    },
+    {
+      "slide": 42,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 3 — Silence the Auditor",
+      "body": "Step Three. There is a voice that audits every move before you make it — tallying risks, rehearsing the failure. It is not wisdom. It is fear with a clipboard.",
+      "suggested_image": "A shadowy figure with a clipboard shrinking as the reader turns on a light.",
+      "tags": [
+        "STEP3",
+        "STEP-TITLE"
+      ]
+    },
+    {
+      "slide": 43,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 3 — The Question",
+      "body": "Powerful question: whose voice is the auditor using? Nine times out of ten it is borrowed. Name the lender, and you can start returning the debt.",
+      "suggested_image": "An audio waveform slowly resolving into a familiar silhouette from someone's past.",
+      "tags": [
+        "STEP3",
+        "QUESTION"
+      ]
+    },
+    {
+      "slide": 44,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 3 — A Story",
+      "body": "I once let the auditor talk me out of a talk I was born to give. I sat in the parking lot. Someone else gave a worse version to my exact audience. Never again.",
+      "suggested_image": "An empty parking space beside a lit venue, a ticket stub on the ground.",
+      "tags": [
+        "STEP3",
+        "STORY"
+      ]
+    },
+    {
+      "slide": 45,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 3 — Core Teaching",
+      "body": "You do not silence the auditor by winning the argument. You silence it by moving before the argument ends. Action is the only mute button that has ever worked.",
+      "suggested_image": "A hand pressing a large glowing 'GO' button while alarms fade to grey.",
+      "tags": [
+        "STEP3",
+        "CORE-TEACHING"
+      ]
+    },
+    {
+      "slide": 46,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 3 — Take This With You",
+      "body": "Downloadable: the Auditor Rebuttal Card — three sentences to say aloud the next time the clipboard comes out. Keep it in your wallet next to your nerve.",
+      "suggested_image": "A pocket-sized printed card titled 'Auditor Rebuttal' tucked into a worn wallet.",
+      "tags": [
+        "STEP3",
+        "DOWNLOADABLE"
+      ]
+    },
+    {
+      "slide": 47,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 3 — Affirmation: Revelation",
+      "body": "Say it: 'I do not wait to feel ready. I move, and my courage is revealed to me on the way.' Revelation is the opening affirmation of the Confidence Quest. #StillCalled",
+      "suggested_image": "A path lighting up one stone at a time only as a foot lands on each.",
+      "tags": [
+        "STEP3",
+        "AFFIRMATION",
+        "MOTIF"
+      ]
+    },
+    {
+      "slide": 48,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 4 — Walk Before You're Ready",
+      "body": "Step Four. Readiness is a story you tell to delay the walk. The path reveals itself to those already walking it — never to those still studying the trailhead.",
+      "suggested_image": "A hiker three steps onto a path that visibly extends only as far as they've walked.",
+      "tags": [
+        "STEP4",
+        "STEP-TITLE"
+      ]
+    },
+    {
+      "slide": 49,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 4 — An Anecdote",
+      "body": "The learners who transform are not the most prepared. They are the ones who booked the room, made the offer, and hit publish while their hands were still shaking.",
+      "suggested_image": "A trembling hand hovering over a 'publish' key, then pressing it, motion-blurred.",
+      "tags": [
+        "STEP4",
+        "ANECDOTE"
+      ]
+    },
+    {
+      "slide": 50,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 4 — Borrowed Authority",
+      "body": "\"Do the thing and you will have the power.\" — Ralph Waldo Emerson. Power follows the doing. It has never once arrived in advance to reward the hesitant.",
+      "suggested_image": "An old library portrait of Emerson beside his quote, gilt frame, warm reading lamp.",
+      "tags": [
+        "STEP4",
+        "QUOTE"
+      ]
+    },
+    {
+      "slide": 51,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 4 — A Life Changed",
+      "body": "A soft-spoken analyst ran one imperfect workshop for six people. Two of them wept. He later said the walk before he felt ready was the readiest he had ever felt.",
+      "suggested_image": "Six chairs in a small circle, a nervous facilitator standing, the room leaning in.",
+      "tags": [
+        "STEP4",
+        "CASE_STUDY"
+      ]
+    },
+    {
+      "slide": 52,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 4 — Do This",
+      "body": "Action steps: 1) Pick the smallest real version of the scary thing. 2) Give it a date this week. 3) Tell one witness. Motion plus a witness beats motivation every time.",
+      "suggested_image": "A calendar with this week circled and a single name written in the margin.",
+      "tags": [
+        "STEP4",
+        "ACTION"
+      ]
+    },
+    {
+      "slide": 53,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 4 — Affirmation: Confidence",
+      "body": "Say it: 'I walk before I am ready, and the road rises to meet me.' Confidence is the closing affirmation of the Confidence Quest.",
+      "suggested_image": "A road subtly tilting upward to meet a walker's next step, dawn ahead.",
+      "tags": [
+        "STEP4",
+        "AFFIRMATION"
+      ]
+    },
+    {
+      "slide": 54,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Quest III — The Value Quest",
+      "body": "The final Quest turns your calling outward. Its affirmation is Love — because value, in the end, is love made useful to someone else. #StillCalled",
+      "suggested_image": "A quest banner reading 'The Value Quest' at a summit overlooking a valley of lights.",
+      "tags": [
+        "QUEST",
+        "AFFIRMATION-INTRO",
+        "MOTIF"
+      ]
+    },
+    {
+      "slide": 55,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 5 — Give the Gift Only You Can Give",
+      "body": "Step Five. A calling is not a possession; it is a delivery. The last step is to hand your gift to the exact people who have been waiting for your particular hands.",
+      "suggested_image": "A wrapped gift being placed into outstretched hands lit by a single warm lamp.",
+      "tags": [
+        "STEP5",
+        "STEP-TITLE"
+      ]
+    },
+    {
+      "slide": 56,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 5 — Core Teaching",
+      "body": "Your gift is not the skill — it is the transformation the skill makes possible. Sell the crossing, not the boat. People do not want the map; they want to arrive.",
+      "suggested_image": "A ferryman's hand pointing not at the boat but at the far, glowing shore.",
+      "tags": [
+        "STEP5",
+        "CORE-TEACHING"
+      ]
+    },
+    {
+      "slide": 57,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 5 — Visualization",
+      "body": "Close your eyes. See the one person your work is for. Watch their face the moment they understand they were never broken — only unclaimed. Hold that face. That is the point.",
+      "suggested_image": "A soft-focus face lighting up with relief and recognition, eyes brimming.",
+      "tags": [
+        "STEP5",
+        "VISUALIZATION"
+      ]
+    },
+    {
+      "slide": 58,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 5 — Reinforcing Quote",
+      "body": "\"We make a living by what we get, but we make a life by what we give.\" The Value Quest is where a living and a life finally become the same act.",
+      "suggested_image": "Two cupped hands passing a small flame between them without either being burned.",
+      "tags": [
+        "STEP5",
+        "QUOTE"
+      ]
+    },
+    {
+      "slide": 59,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "Step 5 — Affirmation: Love",
+      "body": "Say it: 'I give the gift only I can give, and in the giving I become who I was called to be.' Love is the crowning affirmation of the Value Quest.",
+      "suggested_image": "A single candle lighting a dozen others, its own flame undiminished.",
+      "tags": [
+        "STEP5",
+        "AFFIRMATION"
+      ]
+    },
+    {
+      "slide": 60,
+      "phase": "teaching",
+      "label_slide": false,
+      "title": "The Bridge",
+      "body": "So there is the whole map: name the ache, read your map, silence the auditor, walk unready, give your gift. You already have everything you need. What most people miss next is not information — it is company for the walk. In a moment, I will show you exactly what walking it together looks like. #StillCalled",
+      "suggested_image": "A trailhead at golden hour where a single path splits into many footprints walking forward side by side.",
+      "tags": [
+        "BRIDGE",
+        "SUMMARY",
+        "TRANSITION",
+        "MOTIF"
+      ]
+    },
+    {
+      "slide": 61,
+      "phase": "pitch",
+      "label_slide": true,
+      "title": "Phase 4 — The Purpose Pitch",
+      "body": "Purpose: to open a door, not to close a sale. A purpose pitch, never a profit pitch. #StillCalled",
+      "suggested_image": "A tall lit doorway standing alone in an open field at dusk, path leading to it.",
+      "tags": [
+        "PHASE-LABEL",
+        "N.E.E.I.T.",
+        "4-Quadrant",
+        "SECTION-HOOK"
+      ]
+    },
+    {
+      "slide": 62,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "The Section Hook",
+      "body": "The door is open — all that is left is your name on the other side.",
+      "suggested_image": "A door ajar with warm light spilling out; a name plate that is blank, waiting.",
+      "tags": [
+        "HOOK"
+      ]
+    },
+    {
+      "slide": 63,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "The Chorus, Reprised",
+      "body": "The world is waiting on the one thing only you can do.",
+      "suggested_image": "Return to the pure-typography chorus slide, deep indigo field, the single line centered; the same words as the opening, held a beat longer.",
+      "tags": [
+        "CENTRAL-HOOK",
+        "HOOK",
+        "CALLBACK"
+      ]
+    },
+    {
+      "slide": 64,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Setting the Stage",
+      "body": "You did not come this far to only come this far. The title of what comes next is not a program name — it is a transformation: from unclaimed to unmistakably called.",
+      "suggested_image": "A theatre curtain parting on a bright, empty, welcoming stage.",
+      "tags": [
+        "PITCH-STAGE",
+        "EMOTIONAL"
+      ]
+    },
+    {
+      "slide": 65,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Break Free",
+      "body": "Break free of the loop: prove, exhaust, doubt, repeat. There is a door out of the loop, and it has been unlocked this whole time.",
+      "suggested_image": "A person stepping out of a spinning revolving door into open air.",
+      "tags": [
+        "PITCH-STAGE"
+      ]
+    },
+    {
+      "slide": 66,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Introducing The Called Collective",
+      "body": "So here it is, with zero ambiguity — because people buy clarity. The Called Collective is a 12-week guided journey where you walk the entire Wayfinder Blueprint with a small cohort of the quietly capable, and come out claimed.",
+      "suggested_image": "A warm circle of chairs around a glowing hearth, a banner reading 'The Called Collective'.",
+      "tags": [
+        "OFFER",
+        "CLARITY"
+      ]
+    },
+    {
+      "slide": 67,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "The Mechanism",
+      "body": "The engine is the Wayfinder Blueprint plus weekly Quest sessions, a walking-partner accountability pair, and monthly 'answered' checkpoints. Mindset, action, and a mechanism that makes the walk inevitable.",
+      "suggested_image": "A clean three-gear diagram labeled Mindset, Action, Accountability turning as one.",
+      "tags": [
+        "OFFER",
+        "MECHANISM"
+      ]
+    },
+    {
+      "slide": 68,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Benefit — Clarity at Last",
+      "body": "You will name your calling in plain words you can say without flinching — and know exactly who it is for.",
+      "suggested_image": "A foggy sign resolving into crisp, readable letters.",
+      "tags": [
+        "BENEFIT"
+      ]
+    },
+    {
+      "slide": 69,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Benefit — The Auditor, Quiet",
+      "body": "The clipboard voice loses its authority. You will move before it finishes its sentence.",
+      "suggested_image": "A clipboard closed and set down on a windowsill, sunlight taking the room.",
+      "tags": [
+        "BENEFIT"
+      ]
+    },
+    {
+      "slide": 70,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Benefit — A Room That Sees You",
+      "body": "A cohort of people who recognize your gift on sight — the room you have been the quiet engine of, finally pointed back at you.",
+      "suggested_image": "A circle of faces turned toward one person, warm and attentive.",
+      "tags": [
+        "BENEFIT"
+      ]
+    },
+    {
+      "slide": 71,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Benefit — An Offer You Can Make",
+      "body": "You will craft and deliver the gift only you can give — and practice giving it before the stakes are real.",
+      "suggested_image": "A gift being rehearsed in a mirror, then handed to a real pair of hands.",
+      "tags": [
+        "BENEFIT"
+      ]
+    },
+    {
+      "slide": 72,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Benefit — Motion Over Motivation",
+      "body": "A weekly walk that does not depend on how you feel — a structure that carries you on the days willpower won't.",
+      "suggested_image": "A moving walkway carrying a calm figure forward past a stalled crowd.",
+      "tags": [
+        "BENEFIT"
+      ]
+    },
+    {
+      "slide": 73,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Benefit — Proof You Can Feel",
+      "body": "Monthly 'answered' checkpoints where you see, in writing, how far you have actually come — the receipts your doubt keeps hiding.",
+      "suggested_image": "A progress journal with checkmarks accumulating down the page.",
+      "tags": [
+        "BENEFIT"
+      ]
+    },
+    {
+      "slide": 74,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Benefit — A Calling That Pays",
+      "body": "Value built so relentlessly that price becomes a non-issue — because price only matters in the absence of value.",
+      "suggested_image": "A scale with 'value' heavy on one side and a small feather labeled 'price' rising.",
+      "tags": [
+        "BENEFIT"
+      ]
+    },
+    {
+      "slide": 75,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Not Just Self-Help",
+      "body": "This is not another shelf of self-help you will feel guilty for not finishing. It is a guided crossing with a map, a guide, and company — designed so you actually arrive.",
+      "suggested_image": "A dusty stack of unread books beside a single open trail map with a lantern.",
+      "tags": [
+        "REFRAME"
+      ]
+    },
+    {
+      "slide": 76,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "A Proven Framework",
+      "body": "The Wayfinder Blueprint has walked hundreds of quietly capable people from 'is my time coming?' to 'my time is here.' The path is proven; only your footprints are missing.",
+      "suggested_image": "Countless faint footprints along a trail, one fresh set beginning at the front.",
+      "tags": [
+        "PROOF",
+        "SOCIAL-PROOF"
+      ]
+    },
+    {
+      "slide": 77,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "In Their Words",
+      "body": "\"I spent years being indispensable to everyone but myself. Twelve weeks in, I made the offer I had been swallowing for a decade — and someone said yes.\" — a graduate of the journey, anonymized.",
+      "suggested_image": "A handwritten testimonial card pinned to a corkboard among many others.",
+      "tags": [
+        "PROOF",
+        "TESTIMONIAL"
+      ]
+    },
+    {
+      "slide": 78,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Future-Pace",
+      "body": "Picture ninety days from now: the ache named, the auditor quiet, the offer live. Same you. Different Monday. The only variable is whether you start.",
+      "suggested_image": "A calendar flipping forward 90 days to a date circled and glowing.",
+      "tags": [
+        "FUTURE-PACE"
+      ]
+    },
+    {
+      "slide": 79,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "For a Deeper Crossing — The Wayfinder VIP Intensive",
+      "body": "For those who want the fast, private version, The Wayfinder VIP Intensive is a single focused day, one-to-one, where we build your entire calling map and your first real offer in one sitting.",
+      "suggested_image": "A private study with two chairs, a whiteboard mid-map, and a 'do not disturb' sign.",
+      "tags": [
+        "OFFER",
+        "VIP"
+      ]
+    },
+    {
+      "slide": 80,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Everything You Receive",
+      "body": "To be perfectly clear: The Called Collective — 12 weekly Quest sessions, a walking-partner pair, the full Blueprint toolkit, monthly checkpoints; and the option of The Wayfinder VIP Intensive for a private, accelerated crossing.",
+      "suggested_image": "A neatly laid-out flat-lay of everything included, labeled like a field kit.",
+      "tags": [
+        "OFFER",
+        "CLARITY",
+        "SUMMARY"
+      ]
+    },
+    {
+      "slide": 81,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "The Best Version of You",
+      "body": "This is how you become the best version of you — not a new person, the true one, finally unhidden and put to work.",
+      "suggested_image": "A double exposure of a hesitant self dissolving into a confident self.",
+      "tags": [
+        "EMOTIONAL"
+      ]
+    },
+    {
+      "slide": 82,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Transformation by Choice",
+      "body": "Transformation is not something that happens to you. It is something you choose, on a specific day, at a specific fork. You are standing at that fork right now.",
+      "suggested_image": "A single figure at a lit crossroads at dusk, both paths visible.",
+      "tags": [
+        "CROSSROADS"
+      ]
+    },
+    {
+      "slide": 83,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "The Founding Cohort",
+      "body": "Honest scarcity, no fabrication: the first cohort is capped at 20 walking partners so every one is truly seen, and founding members join at the founding rate of $1,500 before it moves to $2,400. When the 20 seats are filled, enrollment closes.",
+      "suggested_image": "Twenty lanterns on a wall, several already lit, a few still dark.",
+      "tags": [
+        "SCARCITY",
+        "PRICE"
+      ]
+    },
+    {
+      "slide": 84,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "A Community Bonus",
+      "body": "Founding members also receive lifetime access to the Called Collective alumni circle — the room stays yours long after the 12 weeks end.",
+      "suggested_image": "A warm alumni gathering years later, the same faces, older and lit up.",
+      "tags": [
+        "BONUS"
+      ]
+    },
+    {
+      "slide": 85,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Lifetime Access",
+      "body": "Every Quest session is recorded and yours to keep for life. The map does not expire, and neither does your seat at the fire.",
+      "suggested_image": "A library shelf of labeled session recordings glowing softly.",
+      "tags": [
+        "BONUS"
+      ]
+    },
+    {
+      "slide": 86,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "A Real Guarantee",
+      "body": "And the risk is mine, not yours: walk the first three weeks, do the work, and if the map has not already moved you, ask and receive a full, no-friction, money-back guarantee. You cannot lose what you were built to find.",
+      "suggested_image": "A handshake over a document titled 'Our Promise', warm and unhurried.",
+      "tags": [
+        "GUARANTEE"
+      ]
+    },
+    {
+      "slide": 87,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Your Two Roads",
+      "body": "So, two roads: the crowded safe one where the ache stays and next year looks like this one — or the quiet lit one, walked with company, toward a calling you finally answer out loud.",
+      "suggested_image": "The forest fork again, now with a lantern lit on the less-traveled path.",
+      "tags": [
+        "CROSSROADS",
+        "CALLBACK"
+      ]
+    },
+    {
+      "slide": 88,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Your Chance to Break Free",
+      "body": "This is your chance to break free of the loop for good — not someday, not once things settle, but in the next 12 weeks, on purpose.",
+      "suggested_image": "A bird lifting off from an open cage door into a bright sky.",
+      "tags": [
+        "EMOTIONAL"
+      ]
+    },
+    {
+      "slide": 89,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Answer the Call",
+      "body": "If your chest tightened even once tonight, that was not nerves — that was recognition. Enroll now in the Called Collective and answer the call while it is still ringing.",
+      "suggested_image": "A hand reaching for a ringing old telephone glowing on a table.",
+      "tags": [
+        "CTA"
+      ]
+    },
+    {
+      "slide": 90,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Your Future Is Waiting",
+      "body": "Your future is not far away. It is standing at the door you have already found, holding it open, wondering what took you so long.",
+      "suggested_image": "A figure in a lit doorway, hand extended toward the viewer.",
+      "tags": [
+        "EMOTIONAL"
+      ]
+    },
+    {
+      "slide": 91,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "You Are Worthy of This",
+      "body": "Hear this plainly: you were always worthy of the calling. Worthiness was never the gate. Willingness is.",
+      "suggested_image": "A mirror reflecting the reader haloed in soft, deserving light.",
+      "tags": [
+        "EMOTIONAL",
+        "WORTHINESS"
+      ]
+    },
+    {
+      "slide": 92,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Join the Movement",
+      "body": "This is bigger than a program. It is a quiet movement of the capable refusing to stay unclaimed. Join us, and add your footprints to the path. #StillCalled",
+      "suggested_image": "A long line of diverse people walking a lit trail together toward dawn.",
+      "tags": [
+        "MOVEMENT-BEAT",
+        "MOTIF"
+      ]
+    },
+    {
+      "slide": 93,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "The Chorus, Rising",
+      "body": "The world is waiting on the one thing only you can do.",
+      "suggested_image": "Pure-typography chorus slide once more, indigo warming toward first light at the edges; the single line, unhurried, sure.",
+      "tags": [
+        "CENTRAL-HOOK",
+        "HOOK",
+        "CALLBACK"
+      ]
+    },
+    {
+      "slide": 94,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "This Is Your Moment",
+      "body": "Not next quarter. Not when the kids are older. This — this ordinary, extraordinary night — is your moment. Moments do not wait; they pass.",
+      "suggested_image": "A single spotlight finding one face in a crowd, holding on it.",
+      "tags": [
+        "EMOTIONAL"
+      ]
+    },
+    {
+      "slide": 95,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Shatter the Ceiling You Built",
+      "body": "The only ceiling over you is the one you plastered yourself. Reach up. It was always made of paper.",
+      "suggested_image": "A hand punching easily through a paper 'ceiling' into open sky.",
+      "tags": [
+        "EMOTIONAL"
+      ]
+    },
+    {
+      "slide": 96,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Pride, at Last",
+      "body": "Imagine the pride — not borrowed from a title, but earned from finally answering the calling that has been quietly yours all along, for the people who have been waiting for exactly it.",
+      "suggested_image": "A quiet, private smile of someone reading a thank-you note alone.",
+      "tags": [
+        "EMOTIONAL"
+      ]
+    },
+    {
+      "slide": 97,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "The Journey Starts Today",
+      "body": "The journey does not start when you feel ready. It starts the day you decide — and that day can be today.",
+      "suggested_image": "A sunrise breaking exactly at a trailhead sign reading 'Day One'.",
+      "tags": [
+        "EMOTIONAL"
+      ]
+    },
+    {
+      "slide": 98,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Take Your Seat",
+      "body": "Claim your seat in the founding cohort now, before the twenty lanterns are all lit. Say yes, and let the crossing begin.",
+      "suggested_image": "A single empty chair in the warm circle with a soft reserved glow.",
+      "tags": [
+        "CTA"
+      ]
+    },
+    {
+      "slide": 99,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Thank You",
+      "body": "Whatever you choose tonight: thank you for letting me tell your story back to you, and for trusting me with mine.",
+      "suggested_image": "A speaker with hand on heart, bowing slightly to a warm, blurred audience.",
+      "tags": [
+        "GRATITUDE"
+      ]
+    },
+    {
+      "slide": 100,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "The Chorus, One Last Time",
+      "body": "The world is waiting on the one thing only you can do.",
+      "suggested_image": "Return to the pure-typography chorus slide, indigo field, the single line, now with a faint doorway of light behind the words.",
+      "tags": [
+        "CENTRAL-HOOK",
+        "HOOK",
+        "CALLBACK"
+      ]
+    },
+    {
+      "slide": 101,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "A Manifesto — Part I",
+      "body": "You were not made to be manageable. You were made to be met. You were not born to blend — you were born to be the one thing a room did not know it was missing.",
+      "suggested_image": "Hand-lettered manifesto text over a slow dawn, each line appearing as if spoken.",
+      "tags": [
+        "MANIFESTO"
+      ]
+    },
+    {
+      "slide": 102,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "A Manifesto — Part II",
+      "body": "So rise, quietly capable one. Read your map. Silence the auditor. Walk before you are ready. Give the gift that is yours to give. The dawn has waited long enough — and now it belongs to you.",
+      "suggested_image": "The dawn now fully broken, the lettering blazing gold, a path leading into light.",
+      "tags": [
+        "MANIFESTO"
+      ]
+    },
+    {
+      "slide": 103,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "Finish It in Your Own Words",
+      "body": "Say it with me, and finish the last line yourself, out loud: I AM CALLED. I AM CAPABLE. I AM ______.",
+      "suggested_image": "Full-bleed golden field, the affirmation set huge, the final blank a shining underscore for the audience to fill.",
+      "tags": [
+        "MANIFESTO",
+        "FILL-IN-THE-BLANK",
+        "CENTRAL-HOOK"
+      ]
+    }
+  ]
+}

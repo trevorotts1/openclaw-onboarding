@@ -1,0 +1,25 @@
+{
+  "A_99_slides": {
+    "rc": 2,
+    "rejected": true,
+    "total_slides": 99,
+    "out": "FAIL: 2 structure violation(s) \u2014 deck is NOT run, NOT rendered, NOT updated.\n  VIOLATION [AF-SP-PHASE-RANGE] phase 'pitch' has 39 slides, under its floor of 40\n  VIOLATION [AF-SP-SLIDE-FLOOR] deck has 99 slides, under the 100-slide floor and no logged client-exact override"
+  },
+  "B_three_case_studies": {
+    "rc": 2,
+    "rejected": true,
+    "case_studies": 3,
+    "out": "FAIL: 1 structure violation(s) \u2014 deck is NOT run, NOT rendered, NOT updated.\n  VIOLATION [AF-SP-CASESTUDY-CAP] 3 CASE_STUDY-tagged slides exceed the cap of 2 (Directive 12)"
+  },
+  "C_pitch_in_teaching": {
+    "rc": 2,
+    "rejected": true,
+    "out": "VIOLATION: Phase-3 no-pitch prover failed:\n  - AF-SP-PITCH-IN-TEACH: Phase-3 ('teaching') slide 32 names the offer/product 'the called collective'. Phase 3 is NO-PITCH \u2014 the q7 offer name(s) are forbidden here and belong only in the Phase-4 pitch.\n  - AF-SP-PRICE-IN-TEACH: Phase-3 ('teaching') slide 32 contains a price token '$1,997'. Phase 3 must teach, not sell \u2014 no price/monetary tokens are allowed.\n  - AF-SP-CTA-IN-TEACH: Phase-3 ('teaching') slide 32 contains sale/enroll CTA language 'enroll now'. Phase 3 forbids offer/enroll/scarcity calls-to-action."
+  },
+  "E2E_no_certificate": {
+    "rc": 9,
+    "certificate_refused": true,
+    "certificate_file_exists": false,
+    "out": "AF-PROCESS-INTEGRITY: 1 of 5 declared step(s) failed process-integrity checks.\n\n  FAIL  [4.1] 'P-SP-STRUCTURE' (Signature Structure Gate (prove_sp_structure))\n        (a) No attestation record for phase 'P-SP-STRUCTURE' \u2014 phase was either never run or the runner exited without attesting it."
+  }
+}

@@ -90,6 +90,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Typography Architect** | Runs as a Phase-0.7/1.5 gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json. |
 | **Prompt Author** | You write each slide's rich image prompt to the 9,000-to-18,000-character density standard (hard floor 9,000. |
 | **Attention Content Strategist** | Attention Content Strategist for  -  the Priority-Shift Architect and Content Provocateur. |
+| **Signature Presentation Architect** | Owns the Signature Presentation deck type end to end (Skill 51). |
 
 ### What each specialist is for, with an example request
 
@@ -192,6 +193,11 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* Attention Content Strategist for  -  the Priority-Shift Architect and Content Provocateur.
 - *Example request:* "Have the Attention Content Strategist take this on: Attention Content Strategist for  -  the Priority-Shift Architect and Content Provocateur."
+
+**Signature Presentation Architect**
+
+- *What it is for:* Owns the Signature Presentation deck type end to end (Skill 51).
+- *Example request:* "Have the Signature Presentation Architect take this on: Owns the Signature Presentation deck type end to end (Skill 51)."
 
 
 ---

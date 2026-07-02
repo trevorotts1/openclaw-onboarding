@@ -1,8 +1,8 @@
 # Suggested Roles -- presentations-dept
-**Version:** 1.8 | 2026-06-17
-**Status:** v12.20.0 canonical reconciliation -- roster, role-library `_index.json`, and dept-scoped instantiation now agree on **24 roles**. Every role header is CLEAN (no `(NEW)`, no `-- vX.Y`, no `renamed from ...`, no `&`/`+`/`'` decorations) and carries an explicit `**Slug:**` that matches its role-library `.md` file exactly. The slug is the canonical key for folder naming (`NN-<slug>/`) and role-library lookup.
+**Version:** 1.9 | 2026-07-02
+**Status:** The v12.20.0 canonical 24-role roster is extended with the **2 Skill-51 Signature-Presentation methodology roles** (`signature-presentation-architect`, `qc-specialist-signature-presentations`) -> **26 roster roles**. Every roster role resolves to a role-library `_index.json` entry (verified green by `qc-assert-repo-consistency.py --only consistency` and `register-library-additions.py --check`). Every role header is CLEAN (no `(NEW)`, no `-- vX.Y`, no `renamed from ...`, no `&`/`+`/`'` decorations) and carries an explicit `**Slug:**` that matches its role-library `.md` file exactly. The slug is the canonical key for folder naming (`NN-<slug>/`) and role-library lookup.
 
-## Canonical Role Count: 24
+## Canonical Role Count: 26
 The canonical set is one role per role-library `.md` file under
 `templates/role-library/presentations/` (excluding the `00-START-HERE.md` meta
 doc, `BUILDER-PROMPT.md`, `how-to-use-this-department.md`, `IDENTITY.md`,
@@ -259,6 +259,27 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 - 03-Teaching-Arc-and-Device-Selection.md
 - 04-Micro-vs-Full-Decision-and-Brief-Handoff.md
 **Role type:** specialist
+
+### 24. Signature Presentation Architect
+**Slug:** signature-presentation-architect
+**What it does:** Owns the Signature Presentation deck type end to end (Skill 51): the 4-phase methodology (Avatar 1-11 -> Signature Story 12-24 -> Transformational Teaching 25-60 -> Purpose Pitch 61-100, expanding to >=100 slides), the 8-Questions-in-ONE-block intake, frame selection (rulebook | vault | quest | original), and the structure ledger. Sets `deck_type: signature_presentation` in `working/copy/intake.json` (the single switch that activates every SP gate), builds `sp_intake.json` + `sp_structure.json`, then dispatches the four phase-authors and hands off to the existing pipeline. Never renders, assembles, or delivers; never floors/caps/reinterprets the SACRED law. The methodology is machine-enforced by three fail-closed provers (`prove_sp_intake.py`, `prove_sp_structure.py`, `prove_sp_no_pitch.py`) wired as manifest phases P-SP-INTAKE / P-SP-STRUCTURE / P-SP-P3-HYGIENE.
+**Core SOPs to build:**
+- 01-The-8-Questions-Asked-All-at-Once.md
+- 02-Frame-Selection-and-Template-Load.md
+- 03-Four-Phase-Arc-and-Labels.md
+- 04-Expansion-to-100-Math.md
+- 05-Handoff-to-Copywriter-Hook-Lab-Phase-Authors.md
+**Role type:** specialist
+
+### 25. QC Specialist - Signature Presentations
+**Slug:** qc-specialist-signature-presentations
+**What it does:** The INDEPENDENT grader for the Signature Presentation deck type (Skill 51). Clones the department QC pattern: AUTO-FAIL battery first (the AF-SP-* codes, re-verified semantically on top of the deterministic provers), then scored average >= 8.5 on a 10.0 scale with a 7.0 per-item floor. Carries the mandatory `qc_independence` provenance block (a self-graded / builder-graded report is refused), loops back automatically for up to 3 attempts, escalates on the 4th. Adds the semantic layer on top of the provers: does the copy actually teach (not pitch) in Phase 3, does the frame tone ladder hold, is Movement+Message+Methodology present, does the close land manifesto-grade. Never authors, never waives an auto-fail, never grades its own work.
+**Core SOPs to build:**
+- 01-Intake-QC-P-SP-INTAKE.md
+- 02-Structure-QC-P-SP-STRUCTURE.md
+- 03-Phase-3-No-Pitch-QC-P-SP-P3-HYGIENE.md
+- 04-Rework-Loop-and-Escalation.md
+**Role type:** qc
 
 ---
 

@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v16.2.19"
+ONBOARDING_VERSION="v16.3.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -739,7 +739,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 5 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/48-... (43 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/51-... (44 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -4670,7 +4670,7 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 43 active skills install in 5 dependency-aware waves, not by number order.
+The 44 active skills install in 5 dependency-aware waves, not by number order.
 Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
 A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
@@ -6542,6 +6542,40 @@ install_skill_48_facebook_ad_generator() {
 }
 
 install_skill_48_facebook_ad_generator
+
+# ----------------------------------------------------------
+# Skill 51: Signature Presentation (methodology layer for the presentations dept)
+# ----------------------------------------------------------
+# Self-contained: this template install copies the Skill 51 folder (MASTERDOC.md,
+# the 8-Questions intake gate, the four teaching frames, the sacred-structure
+# ledger, and the three fail-closed provers). NO external clone. Skill 51 is a
+# governed DECK TYPE (deck_type: signature_presentation) that runs THROUGH the
+# Presentations department engine (skill 23's build_deck.py) — it never forks the
+# render path. Its provers wire into the department's scripts/ at wire time.
+# Skill 23 (Presentations department engine) is the prerequisite.
+install_skill_51_signature_presentation() {
+    local SKILL_SRC="$ONBOARDING_DIR/51-signature-presentation"
+    local SKILL_DEST="$SKILLS_DIR/51-signature-presentation"
+
+    if [ ! -d "$SKILL_SRC" ]; then
+        warn "Skill 51 source dir not found at $SKILL_SRC — skipping (older onboarding bundle?)"
+        return 0
+    fi
+
+    mkdir -p "$SKILL_DEST"
+    cp -R "$SKILL_SRC/." "$SKILL_DEST/" 2>>"$LOG_FILE" || {
+        warn "Failed to copy Skill 51 from $SKILL_SRC -> $SKILL_DEST"
+        return 0
+    }
+    chmod +x "$SKILL_DEST/scripts/"*.py 2>/dev/null || true
+
+    success "Skill 51 (Signature Presentation) installed -> $SKILL_DEST"
+    note "Skill 51 adds the signature_presentation deck type to the Presentations department: the 4-phase, minimum-100-slide signature-talk methodology (Avatar -> Signature Story -> Transformational Teaching -> Purpose Pitch), gated by three fail-closed provers (8-Questions intake, sacred-structure ledger, Phase-3 no-pitch hygiene) and four teaching frames (The Rulebook, The Vault, The Quest, The Original)."
+    note "It never forks build_deck.py — the department engine (skill 23) does all rendering, assembly, delivery, and Kanban. Skill 23 is the prerequisite."
+    return 0
+}
+
+install_skill_51_signature_presentation
 
 # ----------------------------------------------------------
 # Step 15: Register Skill 32's materialize-dept-agents.sh (v10.13.18)

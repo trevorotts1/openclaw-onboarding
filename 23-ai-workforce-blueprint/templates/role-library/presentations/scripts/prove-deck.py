@@ -458,24 +458,42 @@ def _selftest() -> None:
             json.dumps(obj), encoding="utf-8"
         )
 
+    # Skill 51 — the three Signature-Presentation phases are woven into the declared
+    # plan (P-SP-INTAKE at 0.15, P-SP-STRUCTURE at 4.1, P-SP-P3-HYGIENE at 4.15) so a
+    # signature deck cannot reach the certificate without attesting all three provers.
     declared_steps = [
         {"order": 0.1, "id": "P0A-INTAKE", "name": "Intake"},
+        {"order": 0.15, "id": "P-SP-INTAKE", "name": "Signature Intake Gate"},
         {"order": 4.0, "id": "P4-COPY", "name": "Slide Copy"},
+        {"order": 4.1, "id": "P-SP-STRUCTURE", "name": "Signature Structure"},
+        {"order": 4.15, "id": "P-SP-P3-HYGIENE", "name": "Signature Phase-3 Hygiene"},
     ]
     good_manifest = {
         "phase_attestations": [
             {"phase_id": "P0A-INTAKE", "substance_verified": True,
              "attested_at": "2026-06-29T10:00:00+00:00"},
+            {"phase_id": "P-SP-INTAKE", "substance_verified": True,
+             "attested_at": "2026-06-29T10:15:00+00:00"},
             {"phase_id": "P4-COPY", "substance_verified": True,
              "attested_at": "2026-06-29T11:00:00+00:00"},
+            {"phase_id": "P-SP-STRUCTURE", "substance_verified": True,
+             "attested_at": "2026-06-29T11:10:00+00:00"},
+            {"phase_id": "P-SP-P3-HYGIENE", "substance_verified": True,
+             "attested_at": "2026-06-29T11:15:00+00:00"},
         ],
         "owner_skip_approvals": [],
     }
     good_reports = [
         {"phase_id": "P0A-INTAKE", "kind": "start", "gateway_msg_id": "msg-1"},
         {"phase_id": "P0A-INTAKE", "kind": "done",  "gateway_msg_id": "msg-2"},
+        {"phase_id": "P-SP-INTAKE", "kind": "start", "gateway_msg_id": "msg-1a"},
+        {"phase_id": "P-SP-INTAKE", "kind": "done",  "gateway_msg_id": "msg-1b"},
         {"phase_id": "P4-COPY",    "kind": "start", "gateway_msg_id": "msg-3"},
         {"phase_id": "P4-COPY",    "kind": "done",  "gateway_msg_id": "msg-4"},
+        {"phase_id": "P-SP-STRUCTURE", "kind": "start", "gateway_msg_id": "msg-5a"},
+        {"phase_id": "P-SP-STRUCTURE", "kind": "done",  "gateway_msg_id": "msg-5b"},
+        {"phase_id": "P-SP-P3-HYGIENE", "kind": "start", "gateway_msg_id": "msg-6a"},
+        {"phase_id": "P-SP-P3-HYGIENE", "kind": "done",  "gateway_msg_id": "msg-6b"},
     ]
 
     # T1: All good → pass.
@@ -569,6 +587,12 @@ def _selftest() -> None:
             "phase_attestations": [
                 {"phase_id": "P0A-INTAKE", "substance_verified": True,
                  "attested_at": "2026-06-29T10:00:00+00:00"},
+                {"phase_id": "P-SP-INTAKE", "substance_verified": True,
+                 "attested_at": "2026-06-29T10:15:00+00:00"},
+                {"phase_id": "P-SP-STRUCTURE", "substance_verified": True,
+                 "attested_at": "2026-06-29T11:10:00+00:00"},
+                {"phase_id": "P-SP-P3-HYGIENE", "substance_verified": True,
+                 "attested_at": "2026-06-29T11:15:00+00:00"},
             ],
             "owner_skip_approvals": [
                 {
@@ -620,6 +644,23 @@ def _selftest() -> None:
             cert = json.loads(cert_path.read_text())
             if "certificate_sha" not in cert:
                 test_fails.append("T9: certificate_sha missing from certificate")
+
+    # T10: SP-chain coverage — an SP phase (P-SP-STRUCTURE) with NO attestation FAILS.
+    # A signature deck cannot reach the certificate without the three SP provers attested.
+    with tempfile.TemporaryDirectory(prefix="pd_t10_") as tmp:
+        m_no_sp = {
+            "phase_attestations": [a for a in good_manifest["phase_attestations"]
+                                   if a["phase_id"] != "P-SP-STRUCTURE"],
+            "owner_skip_approvals": [],
+        }
+        attest_idx = _build_attestation_index(m_no_sp)
+        report_idx = _build_report_index(good_reports)
+        skip_idx = _build_skip_index(m_no_sp)
+        results = check_all_steps(declared_steps, attest_idx, report_idx, skip_idx)
+        sp_r = next((r for r in results if r.phase_id == "P-SP-STRUCTURE"), None)
+        if sp_r is None or sp_r.ok:
+            test_fails.append("T10: missing P-SP-STRUCTURE attestation should fail "
+                              "(a signature deck must not reach the cert without the SP provers)")
 
     if test_fails:
         for f in test_fails:

@@ -1,5 +1,5 @@
 {
-  "manifest_version": 21,
+  "manifest_version": 22,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -770,6 +770,84 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      }
+    },
+    {
+      "id": "P-SP-INTAKE",
+      "order": 0.15,
+      "name": "Signature-Presentation Intake Gate (8 Questions in ONE block + frame)",
+      "owning_role": "signature-presentation-architect",
+      "sop_refs": [
+        "signature-presentation-architect-sops.md"
+      ],
+      "produces_artifact": "working/copy/sp_intake.json",
+      "gate_codes": [
+        "AF-SP-8Q-MISSING",
+        "AF-SP-8Q-SPLIT",
+        "AF-SP-FRAME-UNSET",
+        "AF-SP-TYPE-MISMATCH",
+        "AF-SP-OFFER-UNDECLARED"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_sp_intake",
+        "label": "signature-presentation intake gate (AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED): the 8 Questions delivered in ONE block + a set frame (rulebook|vault|quest|original) + the q7 offer(s) declared into the offer-token ledger. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before (mirror of the _chk_style_preview defer switch)."
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      }
+    },
+    {
+      "id": "P-SP-STRUCTURE",
+      "order": 4.1,
+      "name": "Signature-Presentation SACRED Structure (4-phase arc + phase labels)",
+      "owning_role": "signature-presentation-architect",
+      "sop_refs": [
+        "signature-presentation-architect-sops.md"
+      ],
+      "produces_artifact": "working/copy/sp_structure.json",
+      "gate_codes": [
+        "AF-SP-SLIDE-FLOOR",
+        "AF-SP-PHASE-RANGE",
+        "AF-SP-PHASE-ORDER",
+        "AF-SP-PHASE-LABEL",
+        "AF-SP-IMG-SUGGESTION",
+        "AF-SP-CASESTUDY-CAP",
+        "AF-SP-TEACH-STEPS",
+        "AF-SP-HOOK",
+        "AF-SP-QUADRANT"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_sp_structure",
+        "label": "signature-presentation structure gate (AF-SP-SLIDE-FLOOR / AF-SP-PHASE-RANGE / AF-SP-PHASE-ORDER / AF-SP-PHASE-LABEL / AF-SP-IMG-SUGGESTION / AF-SP-CASESTUDY-CAP / AF-SP-TEACH-STEPS / AF-SP-HOOK / AF-SP-QUADRANT): 100-slide floor unless a logged client-exact override, the 4 phase floors (avatar 11 / story 13 / teaching 36 / pitch 40) contiguous and in order with each phase's label slide, a non-empty suggested_image on every slide, at most 2 case studies, 3 to 7 teaching steps, one central hook + four distinct section hooks, and the N.E.E.I.T. + 4-Quadrant markers. DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      }
+    },
+    {
+      "id": "P-SP-P3-HYGIENE",
+      "order": 4.15,
+      "name": "Signature-Presentation Phase-3 (Teaching) No-Pitch Hygiene",
+      "owning_role": "qc-specialist-signature-presentations",
+      "sop_refs": [
+        "qc-specialist-signature-presentations-sops.md"
+      ],
+      "produces_artifact": "working/copy/sp_structure.json",
+      "gate_codes": [
+        "AF-SP-P3-PITCH"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_sp_no_pitch",
+        "label": "signature-presentation Phase-3 no-pitch hygiene (AF-SP-P3-PITCH): no q7 offer/product name, no price/monetary token, and no enroll/buy/scarcity CTA on any teaching-band slide, and a contiguous Phase-3 to Phase-4 bridge (the final teaching step may promise what comes next but may NOT name a price or product). DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
       }
     }
   ],
@@ -2199,6 +2277,141 @@
       "trigger": "closeout with no CC task_id and no logged deliverable-register attempt (fail-closed on never-attempted; fail-soft on transport)",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_cc_registered"
+    },
+    {
+      "code": "AF-SP-8Q-MISSING",
+      "stage": "Intake",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Signature Presentation intake: any of the 8 Questions (q1..q8, especially q7 the offer question) is missing or empty. DEFERS unless deck_type==signature_presentation.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_sp_intake"
+    },
+    {
+      "code": "AF-SP-8Q-SPLIT",
+      "stage": "Intake",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Signature Presentation intake: the 8 Questions + the frame-selection question were not delivered as ONE message block (asked one-per-turn / multiple block ids). DEFERS unless deck_type==signature_presentation.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_sp_intake"
+    },
+    {
+      "code": "AF-SP-FRAME-UNSET",
+      "stage": "Intake",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Signature Presentation intake: no frame-selection question, or signature_frame not one of rulebook|vault|quest|original. DEFERS unless deck_type==signature_presentation.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_sp_intake"
+    },
+    {
+      "code": "AF-SP-TYPE-MISMATCH",
+      "stage": "Intake",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Signature Presentation intake: the sp_intake record declares a deck_type other than signature_presentation. DEFERS unless deck_type==signature_presentation.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_sp_intake"
+    },
+    {
+      "code": "AF-SP-OFFER-UNDECLARED",
+      "stage": "Intake",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Signature Presentation intake: q7's exact offer/product name(s) were not carried into the offer_token_ledger (the ledger the Phase-3 no-pitch prover reads). DEFERS unless deck_type==signature_presentation.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_sp_intake"
+    },
+    {
+      "code": "AF-SP-SLIDE-FLOOR",
+      "stage": "Structure",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Signature Presentation structure: fewer than 100 slides with no logged client-exact override (client_overrode_slide_floor + client_exact_slide_count honored exactly). DEFERS unless deck_type==signature_presentation.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_sp_structure"
+    },
+    {
+      "code": "AF-SP-PHASE-RANGE",
+      "stage": "Structure",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Signature Presentation structure: a phase is under its slide floor (avatar 11 / story 13 / teaching 36 / pitch 40). DEFERS unless deck_type==signature_presentation.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_sp_structure"
+    },
+    {
+      "code": "AF-SP-PHASE-ORDER",
+      "stage": "Structure",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Signature Presentation structure: the 4 phases are not contiguous-from-slide-1 in the order avatar->story->teaching->pitch (or a slide has an invalid/missing phase or slide number). DEFERS unless deck_type==signature_presentation.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_sp_structure"
+    },
+    {
+      "code": "AF-SP-PHASE-LABEL",
+      "stage": "Structure",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Signature Presentation structure: a phase carries no label slide (its name + purpose). DEFERS unless deck_type==signature_presentation.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_sp_structure"
+    },
+    {
+      "code": "AF-SP-IMG-SUGGESTION",
+      "stage": "Structure",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "Signature Presentation structure: a slide has an empty / whitespace-only suggested_image (every slide must carry a non-empty suggested_image seed). DEFERS unless deck_type==signature_presentation.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_sp_structure"
+    },
+    {
+      "code": "AF-SP-CASESTUDY-CAP",
+      "stage": "Structure",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Signature Presentation structure: more than 2 CASE_STUDY-tagged slides (cap 2, floor 1), or a slide is missing its tags array so the cap cannot be dodged. DEFERS unless deck_type==signature_presentation.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_sp_structure"
+    },
+    {
+      "code": "AF-SP-TEACH-STEPS",
+      "stage": "Structure",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Signature Presentation structure: the teaching phase does not carry 3 to 7 teaching steps. DEFERS unless deck_type==signature_presentation.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_sp_structure"
+    },
+    {
+      "code": "AF-SP-HOOK",
+      "stage": "Structure",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Signature Presentation structure: the hook package is missing the central hook or the four DISTINCT section hooks (one per phase, none verbatim-equal to the central hook). DEFERS unless deck_type==signature_presentation.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_sp_structure"
+    },
+    {
+      "code": "AF-SP-QUADRANT",
+      "stage": "Structure",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Signature Presentation structure: a required phase (avatar/story/pitch) is missing the N.E.E.I.T. or the 4-Quadrant marker. DEFERS unless deck_type==signature_presentation.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_sp_structure"
+    },
+    {
+      "code": "AF-SP-P3-PITCH",
+      "stage": "Phase-3",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "Signature Presentation Phase-3 (Teaching) hygiene: a q7 offer/product name, a price/monetary token, or an enroll/buy/scarcity CTA appears on a teaching-band slide, or the Phase-3->Phase-4 bridge is not contiguous. DEFERS unless deck_type==signature_presentation.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_sp_no_pitch"
     }
   ],
   "roles": [
@@ -2361,6 +2574,14 @@
     },
     {
       "id": "TOOLS",
+      "owns_phase": null
+    },
+    {
+      "id": "signature-presentation-architect",
+      "owns_phase": "P-SP-INTAKE"
+    },
+    {
+      "id": "qc-specialist-signature-presentations",
       "owns_phase": null
     }
   ]

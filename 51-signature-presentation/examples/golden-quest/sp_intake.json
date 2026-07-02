@@ -1,0 +1,26 @@
+{
+  "deck_type": "signature_presentation",
+  "asked_all_at_once": true,
+  "one_question_per_turn": false,
+  "question_block_msg_id": "blk_golden_quest_0001",
+  "answers": {
+    "q1": "CALLED: Find the Work Only You Can Do",
+    "q2": "yes — offer 2-3 alternates (e.g. \"Answered\", \"The Unclaimed Life\", \"The Work Only You Can Do\") before writing.",
+    "q3": "the quietly capable mid-career professional: competent and credentialed but unseen; the ache of 'is my time ever going to come?'; exhaustion from auditioning for a life that is already theirs; feeling unclaimed, not stuck.",
+    "q4": "left a credentialed, established career to build the coaching practice; a first-in-family milestone; a long-ignored whisper; the leap that traded the old identity for the calling; scars that became the map; a gripping 'why'.",
+    "q5": "The Wayfinder Blueprint — a named Blueprint organized as 3 Quests (the Purpose Quest, the Confidence Quest, the Value Quest) across 5 steps: 1) Name the Ache, 2) Read the Map You Already Carry, 3) Silence the Auditor, 4) Walk Before You're Ready, 5) Give the Gift Only You Can Give.",
+    "q6": "yes — alternates like \"The Calling Map\" or \"The Wayfinder's Path\" are fine.",
+    "q7": "The Called Collective (a 12-week group mastermind) and The Wayfinder VIP Intensive (a 1-day private intensive).",
+    "q8": "carry the recurring motif hashtag #StillCalled through every phase; land the Quest-frame poetic fill-in-the-blank manifesto ending; keep it a purpose pitch, not a profit pitch; write in harmony with a warm, literary, conviction-forward brand voice."
+  },
+  "signature_frame": "quest",
+  "offer_token_ledger": [
+    "The Called Collective",
+    "The Wayfinder VIP Intensive"
+  ],
+  "q7_offer_products": [
+    "The Called Collective",
+    "The Wayfinder VIP Intensive"
+  ],
+  "client_overrode_slide_floor": false
+}

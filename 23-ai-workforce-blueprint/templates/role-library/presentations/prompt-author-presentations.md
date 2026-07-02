@@ -143,6 +143,7 @@ Re-read the master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md) and the PROMP
 - presentation-design-system/04-SOP-variable-layout-anti-template.md (archetype specs)
 - presentation-design-system/05-SOP-logo-consistency.md (logo image-to-image spec)
 - SOP-CAST-01 (casting ledger -- no hardcoded demographic splits)
+- `working/copy/sp_structure.json` (read -- for `deck_type: signature_presentation`: the per-slide suggested-image seed from the **Signature Presentation Architect** (`signature-presentation-architect.md`); expand each seed to the 15-element rich prompt, NEVER below the 9,000-char floor). Frame templates: `51-signature-presentation/frame-templates/the-{rulebook,vault,quest,original}.md`. Signature decks are graded by the **QC Specialist (Signature Presentations)** (`qc-specialist-signature-presentations.md`). Additive: non-signature decks author prompts exactly as above.
 
 ---
 

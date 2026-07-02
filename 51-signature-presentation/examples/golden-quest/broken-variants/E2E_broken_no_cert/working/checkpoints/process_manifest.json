@@ -1,0 +1,46 @@
+{
+  "deck_slug": "golden-quest",
+  "step_declaration_msg_id": "golden-quest-plan-0001",
+  "phase_attestations": [
+    {
+      "phase_id": "P0A-INTAKE",
+      "owning_role": "brainstorming-buddy-presentations",
+      "status": "attested",
+      "artifact_sha": "8dc22b29dbdc23f2c645346c7e7a1bb16374008b5da1d2baa769288b81a8d5d3",
+      "substance_verified": true,
+      "attested_at": "2026-07-02T09:05:00+00:00"
+    },
+    {
+      "phase_id": "P-SP-INTAKE",
+      "owning_role": "signature-presentation-architect",
+      "status": "attested",
+      "artifact_sha": "8dc22b29dbdc23f2c645346c7e7a1bb16374008b5da1d2baa769288b81a8d5d3",
+      "substance_verified": true,
+      "attested_at": "2026-07-02T09:15:00+00:00"
+    },
+    {
+      "phase_id": "P4-COPY",
+      "owning_role": "slide-copywriter",
+      "status": "attested",
+      "artifact_sha": "88555d718d1c386c17c52e4eba48059602927c48ed902c82a7d6b733c53c031e",
+      "substance_verified": true,
+      "attested_at": "2026-07-02T09:25:00+00:00"
+    },
+    {
+      "phase_id": "P-SP-P3-HYGIENE",
+      "owning_role": "qc-specialist-signature-presentations",
+      "status": "attested",
+      "artifact_sha": "88555d718d1c386c17c52e4eba48059602927c48ed902c82a7d6b733c53c031e",
+      "substance_verified": true,
+      "attested_at": "2026-07-02T09:45:00+00:00"
+    }
+  ],
+  "owner_skip_approvals": [],
+  "signature_presentation_gates": {
+    "P-SP-STRUCTURE": {
+      "passed": false,
+      "rc": 2,
+      "note": "structure prover FAILED on broken deck; phase not attested"
+    }
+  }
+}

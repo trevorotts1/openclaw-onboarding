@@ -125,6 +125,7 @@ Audit the price_ladder.json outputs from the past quarter. Identify any patterns
 - Offer stack components (extracted from intake.json)
 - master SOP Section 4.2 (proven flow / ladder choreography), Section 5.5 (the price sequence, both modes), and Section 4.3 (18-point Pitch Doctrine, especially rules 3, 5, 6)
 - SP-EXPERT principle (signature-presentation theory, file 06): expertise over charisma; entry-product = buy-in signal; ascension ladder (entry -> core offer -> VIP)
+- **Signature Presentation Purpose Pitch (Skill 51).** For `deck_type: signature_presentation`, the offer ladder / re-pitch beats live ONLY inside the Purpose Pitch band (slides 61+), framed as purpose-vs-profit; Phase 3 (Transformational Teaching) is FORBIDDEN to pitch (AF-SP-P3-PITCH). Structure owned by the **Signature Presentation Architect** (`signature-presentation-architect.md`) and graded by the **QC Specialist (Signature Presentations)** (`qc-specialist-signature-presentations.md`). Additive: non-signature decks price exactly as above.
 
 ---
 

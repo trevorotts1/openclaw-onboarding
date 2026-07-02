@@ -1,0 +1,82 @@
+[
+  {
+    "phase_id": "P0A-INTAKE",
+    "kind": "start",
+    "gateway_msg_id": "",
+    "sent": false,
+    "text": "P0A-INTAKE \u2014 starting",
+    "ts": "2026-07-02T09:04:00+00:00"
+  },
+  {
+    "phase_id": "P0A-INTAKE",
+    "kind": "done",
+    "gateway_msg_id": "",
+    "sent": false,
+    "text": "P0A-INTAKE \u2014 complete",
+    "ts": "2026-07-02T09:05:00+00:00"
+  },
+  {
+    "phase_id": "P-SP-INTAKE",
+    "kind": "start",
+    "gateway_msg_id": "",
+    "sent": false,
+    "text": "P-SP-INTAKE \u2014 starting",
+    "ts": "2026-07-02T09:14:00+00:00"
+  },
+  {
+    "phase_id": "P-SP-INTAKE",
+    "kind": "done",
+    "gateway_msg_id": "",
+    "sent": false,
+    "text": "P-SP-INTAKE \u2014 complete",
+    "ts": "2026-07-02T09:15:00+00:00"
+  },
+  {
+    "phase_id": "P4-COPY",
+    "kind": "start",
+    "gateway_msg_id": "",
+    "sent": false,
+    "text": "P4-COPY \u2014 starting",
+    "ts": "2026-07-02T09:24:00+00:00"
+  },
+  {
+    "phase_id": "P4-COPY",
+    "kind": "done",
+    "gateway_msg_id": "",
+    "sent": false,
+    "text": "P4-COPY \u2014 complete",
+    "ts": "2026-07-02T09:25:00+00:00"
+  },
+  {
+    "phase_id": "P-SP-STRUCTURE",
+    "kind": "start",
+    "gateway_msg_id": "",
+    "sent": false,
+    "text": "P-SP-STRUCTURE \u2014 starting",
+    "ts": "2026-07-02T09:34:00+00:00"
+  },
+  {
+    "phase_id": "P-SP-STRUCTURE",
+    "kind": "done",
+    "gateway_msg_id": "",
+    "sent": false,
+    "text": "P-SP-STRUCTURE \u2014 complete",
+    "ts": "2026-07-02T09:35:00+00:00"
+  },
+  {
+    "phase_id": "P-SP-P3-HYGIENE",
+    "kind": "start",
+    "gateway_msg_id": "",
+    "sent": false,
+    "text": "P-SP-P3-HYGIENE \u2014 starting",
+    "ts": "2026-07-02T09:44:00+00:00"
+  },
+  {
+    "phase_id": "P-SP-P3-HYGIENE",
+    "kind": "done",
+    "gateway_msg_id": "",
+    "sent": false,
+    "text": "P-SP-P3-HYGIENE \u2014 complete",
+    "ts": "2026-07-02T09:45:00+00:00"
+  }
+]
