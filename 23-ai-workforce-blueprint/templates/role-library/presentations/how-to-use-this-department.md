@@ -30,7 +30,6 @@ figures out who handles it and routes it for you.
 
 Reach for this department when you want any of the following:
 
-- **Build my Trevor Otts Signature Presentation** -- the 4-phase, >= 100-slide signature talk (Avatar -> Signature Story -> Transformational Teaching -> Purpose Pitch) with your choice of The Rulebook / The Vault / The Quest / The Original frame (Skill 51). See "Requesting a Signature Presentation" in Section 3.
 - Turns the QC-passed Presenters Speech into a marketable AUDIO DEMO.
 - Creates and owns the STYLE BLOCK (800-1,500 characters).
 - Capacity and Reliability Engineer for the company, the specialist responsible for ensuring every deck run.
@@ -62,21 +61,6 @@ is for**, **when you need it**, and any **must-haves or limits**. You do not hav
 to provide all of that. If something important is missing, the department will
 ask you one or two quick questions before it starts rather than guess.
 
-### Requesting a Signature Presentation (the Trevor Otts 4-phase signature talk, Skill 51)
-
-If you want the **Signature Presentation** deck type -- the Trevor Otts methodology, not the standard webinar deck -- just say so ("build my signature presentation" / "I want a signature talk"). Here is how it runs:
-
-- **You are asked one branch question up front:** standard webinar deck, or a **Signature Presentation**? Choose the Signature Presentation and the department switches on the SACRED 4-phase build (`deck_type: signature_presentation`), owned by the Signature Presentation Architect.
-- **The 8 Questions, asked all at once.** Instead of one-question-at-a-time, the Signature Presentation Architect (via the Brainstorming Buddy) sends you the eight sacred questions in ONE message block -- title, alternate titles, avatar pain points, story elements, teaching topic ("7 Secrets to ___", "The ___ Blueprint..."), alternate teaching titles, the product(s) you offer at the end, and anything else. Answer them together; nothing is written until they are all answered.
-- **You pick a frame** (asked in that same block) -- the frame governs HOW your Transformational Teaching is taught:
-  - **The Rulebook** -- numbered, non-negotiable Rules, each with an affirmation and a 3-step action plan, capped with a recap and a teased bonus Rule.
-  - **The Vault** -- numbered Secrets unlocked one at a time, each paired with a famous quote and its own affirmation, tied together by one running metaphor.
-  - **The Quest** -- a named Blueprint organized as Quests with steps and affirmations, closing on a poetic manifesto you finish in your own words.
-  - **The Original** -- a from-scratch frame designed around your own methodology.
-  (Not sure? Say "show me" and you'll get your teaching topic sketched in the frames, one line each, before you pick.)
-- **Length: >= 100 slides by default.** The signature arc runs Avatar (>= 11) -> Signature Story (>= 13) -> Transformational Teaching (>= 36, taught in 3-7 steps, with NO pitching) -> Purpose Pitch (>= 40), for 100+ slides total. **If you ask for an EXACT slide count, your number wins** -- the exact count is honored precisely and the deviation is logged on the process certificate; otherwise the 100-slide floor governs.
-- Everything else -- the visual style branch, the 3-variant style preview, image generation, PPTX assembly, speech/guide/audio, and verified delivery -- runs exactly as it does for any deck in this department. When the deck reaches QC, the independent QC Specialist (Signature Presentations) grades it against the SACRED law before it can be delivered.
-
 ---
 
 ## 4. The Specialists Inside This Department
@@ -106,8 +90,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Typography Architect** | Runs as a Phase-0.7/1.5 gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json. |
 | **Prompt Author** | You write each slide's rich image prompt to the 9,000-to-18,000-character density standard (hard floor 9,000. |
 | **Attention Content Strategist** | Attention Content Strategist for  -  the Priority-Shift Architect and Content Provocateur. |
-| **Signature Presentation Architect** | Owns the Trevor Otts Signature Presentation deck type end to end -- the SACRED 4-phase, >= 100-slide methodology, the 8-Questions intake, and the frame selection (Skill 51). |
-| **QC Specialist (Signature Presentations)** | The independent grader for a Signature Presentation -- runs the AF-SP-* auto-fail battery and the 8.5 semantic score, never self-grades (Skill 51). |
+| **Signature Presentation Architect** | Owns the Signature Presentation deck type end to end (Skill 51). |
 
 ### What each specialist is for, with an example request
 
@@ -213,13 +196,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **Signature Presentation Architect**
 
-- *What it is for:* Owns the Trevor Otts Signature Presentation deck type end to end -- the SACRED 4-phase, >= 100-slide methodology (Avatar -> Signature Story -> Transformational Teaching -> Purpose Pitch), the 8-Questions-in-one-block intake, and the frame selection (The Rulebook / The Vault / The Quest / The Original).
-- *Example request:* "Have the Signature Presentation Architect build my signature talk -- the 4-phase, 100-slide Trevor Otts presentation in The Quest frame."
-
-**QC Specialist (Signature Presentations)**
-
-- *What it is for:* The independent quality-control grader for a Signature Presentation -- runs the AF-SP-* auto-fail battery plus the 8.5 semantic score (frame fidelity, no-pitch-in-Phase-3, Movement+Message+Methodology), and never grades its own or the producer's work.
-- *Example request:* "Have the QC Specialist (Signature Presentations) grade this signature deck before delivery."
+- *What it is for:* Owns the Signature Presentation deck type end to end (Skill 51).
+- *Example request:* "Have the Signature Presentation Architect take this on: Owns the Signature Presentation deck type end to end (Skill 51)."
 
 
 ---
