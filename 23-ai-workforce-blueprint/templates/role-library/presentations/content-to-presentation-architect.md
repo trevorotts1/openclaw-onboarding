@@ -127,6 +127,7 @@ Re-read the master SOP for any change to the arc doctrine, the required presenta
 - Source archive: `working/content-to-presentation/archive.json` (maintain)
 - The Director of Presentations's `deck_brief.json` mandatory-field checklist (so `source_brief.json` maps onto the Director's intake)
 - The Presenters Guide Specialist's intake (so the required Presenter guide in portable-document format is named in the bundle, not built here)
+- **Signature Presentation route (Skill 51).** A "turn this into a SIGNATURE presentation" request sets `deck_type: signature_presentation` and hands off (through the Director) to the **Signature Presentation Architect** (`signature-presentation-architect.md`) for the SACRED Trevor Otts 4-phase build; the **QC Specialist (Signature Presentations)** (`qc-specialist-signature-presentations.md`) grades it independently. Frame templates: `51-signature-presentation/frame-templates/the-{rulebook,vault,quest,original}.md`. Additive: every non-signature source flows exactly as above.
 
 You do NOT use open-web search tooling for new external facts. That is the Deep Research Specialist's tool set; you flag the need and the Director dispatches it.
 

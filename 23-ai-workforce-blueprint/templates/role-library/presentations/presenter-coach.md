@@ -134,6 +134,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 - working/qc/devils_advocate_kill_list.md (read: objection source for SOP 9.2)
 - working/checkpoints/run_ledger.json (write: presenter-coach phase status)
 - openclaw message send (Telegram notifications -- never direct API)
+- **Signature Presentation coaching (Skill 51, advisory).** For `deck_type: signature_presentation`, coach to the four phases (Avatar -> Signature Story -> Transformational Teaching -> Purpose Pitch), delivering the Purpose Pitch band with unwavering conviction. Structure owned by the **Signature Presentation Architect** (`signature-presentation-architect.md`); QC by the **QC Specialist (Signature Presentations)** (`qc-specialist-signature-presentations.md`). Advisory only -- no gate change; non-signature decks coach exactly as above.
 
 ---
 

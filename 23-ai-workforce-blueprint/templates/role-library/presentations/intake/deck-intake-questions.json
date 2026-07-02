@@ -1,9 +1,10 @@
 {
   "$schema": "https://openclaw.ai/schemas/interview-section/v1",
   "section": "deck-intake",
-  "version": "1.0.0",
-  "description": "Single source of truth for the Presentations deck-intake interview. Encodes SOP 9.0 mandatory fields in canonical order. The deck-intake-driver.py reads this file at runtime and enforces one-question-per-turn ordering. Do not hardcode these question prompts elsewhere — edit here.",
+  "version": "1.1.0",
+  "description": "Single source of truth for the Presentations deck-intake interview. Encodes SOP 9.0 mandatory fields in canonical order. The deck-intake-driver.py reads this file at runtime and enforces one-question-per-turn ordering. Do not hardcode these question prompts elsewhere — edit here. The first question (order 0) captures deck_type (standard webinar vs Trevor Otts signature_presentation, Skill 51); on signature_presentation the driver switches to SIGNATURE mode and emits the SACRED 8 Questions + frame-selection question as ONE block per 51-signature-presentation/intake/sp-8-questions.json — the standard per-turn capture below still runs first.",
   "storeTarget": {
+    "DECK_TYPE": "pre_presentation_capture.DECK_TYPE",
     "REPRESENTATION_MIX": "pre_presentation_capture.REPRESENTATION_MIX",
     "AUDIENCE_COMPOSITION_NOTE": "pre_presentation_capture.AUDIENCE_COMPOSITION_NOTE",
     "GROUNDED_CONTENT": "pre_presentation_capture.GROUNDED_CONTENT",
@@ -20,6 +21,24 @@
     "max_minutes": 20
   },
   "questions": [
+    {
+      "id": "deck_type",
+      "section": "deck-intake",
+      "order": 0,
+      "prompt": "Which kind of deck do you want -- a standard webinar/slide deck, or a Trevor Otts SIGNATURE PRESENTATION (the SACRED 4-phase, 100+-slide signature talk)?",
+      "help": "Standard = the proven webinar arc (hook, story, teach, proof, offer ladder, close), Mode-A capped at 90 slides. Signature Presentation = the Trevor Otts 4-phase methodology (Avatar -> Signature Story -> Transformational Teaching -> Purpose Pitch, >= 100 slides) taught through a chosen frame (The Rulebook / The Vault / The Quest / The Original). Default if no preference: standard webinar deck.",
+      "kind": "enum",
+      "storeOn": "DECK_TYPE",
+      "allowed_values": ["webinar", "signature_presentation"],
+      "value_labels": {
+        "webinar": "Standard webinar / slide deck",
+        "signature_presentation": "Trevor Otts Signature Presentation"
+      },
+      "required": true,
+      "block_gate": false,
+      "default": "webinar",
+      "resolverHint": "Default if owner says 'no preference' or does not answer: 'webinar' (mark deck_type_defaulted:true). On 'signature_presentation': set deck_type:signature_presentation in working/copy/intake.json and route to the Signature Presentation Architect / brainstorming-buddy-presentations SIGNATURE mode, which then emits the SACRED 8 Questions + the frame-selection question as ONE message block per 51-signature-presentation/intake/sp-8-questions.json (deck-intake-driver.py signature mode). The frame is captured THERE as signature_frame (rulebook|vault|quest|original), not here. This branch question runs BEFORE the standard one-question-per-turn capture below; on 'webinar' every question below behaves exactly as today."
+    },
     {
       "id": "representation_mix",
       "section": "deck-intake",

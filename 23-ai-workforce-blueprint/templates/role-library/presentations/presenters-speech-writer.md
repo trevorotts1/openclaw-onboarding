@@ -158,6 +158,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 - fish-audio/FISH-AUDIO-TAGS-MASTER.md and fish-audio/FISH-AUDIO-STRATEGIC-PLAN.md (the source-verified expression-tag catalog and tagging strategy)
 - Notion (box integration); reportlab PDF toolchain
 - openclaw message send (owner and Director notifications, never raw API)
+- **Signature Presentation pacing (Skill 51, advisory).** For `deck_type: signature_presentation`, pace the script to the four phases (Avatar -> Signature Story -> Transformational Teaching -> Purpose Pitch) and deliver the Purpose Pitch band with unwavering conviction per the locked frame template `51-signature-presentation/frame-templates/the-{rulebook,vault,quest,original}.md`. Structure owned by the **Signature Presentation Architect** (`signature-presentation-architect.md`); QC by the **QC Specialist (Signature Presentations)** (`qc-specialist-signature-presentations.md`). Advisory only -- no gate change; non-signature decks pace exactly as above.
 
 ---
 

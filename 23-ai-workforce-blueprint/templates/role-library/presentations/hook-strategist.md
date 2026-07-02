@@ -113,6 +113,7 @@ Re-read the master SOP Section 4.3 rule 1 (the Hook Doctrine), Section 6.1 crite
 - working/copy/slides_copy.md (read for the post-deck audit; the Copywriter writes it, you only count and verify against it)
 - working/copy/hook_package.json (write: your primary output)
 - master SOP Section 4.3 rule 1 (the Hook Doctrine / Purple Rain rule) and Section 6.1 (the AF-HOOK ceiling + anti-footer battery)
+- **Signature Presentation hook mode (Skill 51).** For `deck_type: signature_presentation`, `working/copy/hook_package.json` carries one `central_hook` (the sacred chorus on its 3-4 dedicated slides) plus four DISTINCT `section_hooks` (one per phase, laddering up to the central hook), under the **Signature Presentation Architect** (`signature-presentation-architect.md`); the **QC Specialist (Signature Presentations)** (`qc-specialist-signature-presentations.md`) verifies it (AF-SP-HOOK). Frame templates: `51-signature-presentation/frame-templates/the-{rulebook,vault,quest,original}.md`. Additive: non-signature decks use the standard hook doctrine above.
 
 ---
 

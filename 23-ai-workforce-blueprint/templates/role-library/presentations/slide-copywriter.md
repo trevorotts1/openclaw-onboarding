@@ -130,6 +130,7 @@ Read the master SOP for any updates to the slide copy format, hook mechanics, or
 - working/copy/mode_b_proposals.json (write -- Mode B only: proposed improvements + flagged typo fixes, SOP 9.4)
 - STYLE BLOCK from Brand Steward (read for brand voice and copy tone)
 - master SOP Section 4 (Hormozi pitch mechanics) and Section 4.3 (18-point Pitch Doctrine, applied at writing time per SOP 9.7)
+- **Signature Presentation authoring (Skill 51).** For `deck_type: signature_presentation`, write to the locked frame template `51-signature-presentation/frame-templates/the-{rulebook,vault,quest,original}.md` under the **Signature Presentation Architect** (`signature-presentation-architect.md`): phase label slide first, N.E.E.I.T. / 4-Quadrant beats, the frame's teaching devices, `CASE_STUDY` tags (<= 2), and a `SUGGESTED_IMAGE` field per slide recorded in `working/copy/sp_structure.json`; Phase 3 (Transformational Teaching) is FORBIDDEN to pitch. The **QC Specialist (Signature Presentations)** (`qc-specialist-signature-presentations.md`) grades it. Additive: non-signature decks author exactly as above.
 
 ---
 

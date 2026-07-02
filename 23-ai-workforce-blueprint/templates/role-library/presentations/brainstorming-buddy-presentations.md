@@ -160,6 +160,7 @@ it governs only when no persona is assigned. In all cases honor the company miss
 - Pre-presentation mandatory-field checklist (six hard-required fields that gate handoff:
   REPRESENTATION_MIX with percentages, AUDIENCE-COMPOSITION NOTE, GROUNDED-CONTENT,
   VISUAL_MIX, DARK_OK, HOOK SEED)
+- **Signature Presentation intake (Skill 51).** When the owner asks for a "Signature Presentation" / "signature talk", capture `deck_type: signature_presentation` and route to the **Signature Presentation Architect** (`signature-presentation-architect.md`), which runs the SACRED 8-Questions block **asked all at once** plus the frame-selection question (The Rulebook / The Vault / The Quest / The Original) per `51-signature-presentation/intake/sp-8-questions.json`. The **QC Specialist (Signature Presentations)** (`qc-specialist-signature-presentations.md`) owns its independent semantic QC. Additive to the standard one-question-per-turn capture; every non-signature request behaves exactly as above.
 
 ---
 

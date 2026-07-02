@@ -124,6 +124,7 @@ Audit the QC criteria themselves. Are all criteria still relevant? Has the maste
 - (Decision 5C) NO pptx_text_overlays.json — native overlays are eliminated. The QC instead asserts NO native on-slide text run exists on any delivered slide (every slide is a composed gpt-image-2 image; AF-OVERLAY-DELIVERED). A present pptx_text_overlays.json is itself AF-OVERLAY-DELIVERED.
 - soffice --headless (PPTX->PDF render) and pdftoppm -png (PDF->PNG); python-pptx (read shape geometry) -- the assembled-slide assert toolchain
 - qwen3-vl:235b-cloud (primary scoring model, independent from the producer — no self-grading), DeepSeek v4 Flash (fallback)
+- **Signature Presentation QC hand-off (Skill 51).** For `deck_type: signature_presentation`, the SACRED Trevor Otts 4-phase methodology is authored by the **Signature Presentation Architect** (`signature-presentation-architect.md`) and graded SEMANTICALLY by the **QC Specialist (Signature Presentations)** (`qc-specialist-signature-presentations.md`); you do not re-grade those decks, but you treat any AF-SP-* code (see the Skill 51 cross-reference in this role's overview and the AF-SP-* rows in `MASTER-QC-AUTOFAIL-RULESET.md` Section 5) as a first-class auto-fail that vetoes scoring. Additive: non-signature decks are graded exactly as above.
 
 ---
 
