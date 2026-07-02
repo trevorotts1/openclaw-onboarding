@@ -1,0 +1,43 @@
+{
+  "id": "persona-style-dan-pink",
+  "type": "persona-style",
+  "name": "Dan Pink Style (\"Drive\")",
+  "tags": [
+    "persona-style",
+    "research-backed",
+    "counterintuitive",
+    "autonomy-mastery-purpose",
+    "intrinsic-motivation",
+    "challenge-conventional-wisdom",
+    "evidence",
+    "behavioral-science",
+    "high-ticket",
+    "upsell-2",
+    "methodical",
+    "smart-skeptics",
+    "carrots-and-sticks"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "upsell",
+    "high-ticket",
+    "methodical",
+    "analytical-audiences",
+    "b2b",
+    "science-respecting-buyers"
+  ],
+  "file": "persona-style-dan-pink.md",
+  "rules": {
+    "kind": "persona-style",
+    "persona_style_id": "dan-pink",
+    "scope": "high-ticket / Upsell-2",
+    "never_named_or_quoted": true,
+    "no_repeat_within_campaign": true,
+    "acknowledge_prior_purchases": true,
+    "cohesive_across_sequence": true,
+    "af_codes": [
+      "AF-EMAIL-PERSONA-INVALID",
+      "AF-EMAIL-PERSONA-NAMED"
+    ]
+  }
+}

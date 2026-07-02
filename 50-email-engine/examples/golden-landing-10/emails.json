@@ -1,0 +1,193 @@
+{
+  "sequence_type": "landing_page_10",
+  "sequence_id": "sequence-landing-page-10-promo",
+  "objective": "promotional",
+  "founder_name": "Jordan Marsh",
+  "offer": "The Momentum Method",
+  "deploy_requested": true,
+  "process_certificate": {
+    "signed": true,
+    "signed_by": "Jordan Marsh (founder)",
+    "ts": "2026-07-02T00:00:00Z",
+    "note": "Signed after P1-P3 passed; authorizes the DRAFT-ONLY Skill-44 handoff only. Nothing sends without explicit human approval at P4."
+  },
+  "emails": [
+    {
+      "e_slot": 1,
+      "framework": "pastor-solutions",
+      "objective": "promotional",
+      "subjects": [
+        "{{contact.first_name}}, your effort was never really the problem here",
+        "Someone profits from you staying stuck and it is not you"
+      ],
+      "previews": [
+        "The real reason effort stopped moving the needle, and what will.",
+        "Somebody quietly profits from you staying stuck. It is not you."
+      ],
+      "ctas": [
+        "[Start The Momentum Method ->]",
+        "[See the member results ->]",
+        "[Claim your spot before Thursday ->]"
+      ],
+      "body": "{{contact.first_name}},\n\nThere is a specific kind of tired that comes from doing everything right and still watching the needle refuse to move.\n\nMore hours, more posts, more effort, and the same flat number at the end of every month.\n\nLeft alone, that gap does not stay still, it compounds, and another full year of maximum effort quietly buys you minimum traction.\n\nReady to close it now?\n\n[Start The Momentum Method ->]\n\nOne of our members hit this exact wall. Inside the program she found the real problem was never her effort, it was her architecture.\n\nShe rebuilt around one repeatable system, and the same work ethic she always had started returning triple.\n\n\"I replaced my income in ninety days and finally took a real break,\" she told us three months later.\n\n[See the member results ->]\n\nWe built The Momentum Method on one conviction, that the people who work the hardest should never be the ones rewarded the least.\n\nDoors close Thursday, so reply READY or claim your place while it is open.\n\n[Claim your spot before Thursday ->]\n\nYour effort was never the problem, {{contact.first_name}}. Point it at the right system.\n\nJordan Marsh"
+    },
+    {
+      "e_slot": 2,
+      "framework": "pastor-solutions",
+      "objective": "promotional",
+      "subjects": [
+        "{{contact.first_name}}, the second reason your results keep stalling out",
+        "You do not have a talent gap you have a system gap"
+      ],
+      "previews": [
+        "It is not effort and it is not ideas. It is this.",
+        "Every week starts from zero until you fix this one thing."
+      ],
+      "ctas": [
+        "[Get the system now ->]",
+        "[Read his full story ->]",
+        "[Reserve your place today ->]"
+      ],
+      "body": "{{contact.first_name}},\n\nHere is the second reason the needle keeps sticking, and almost nobody names it out loud.\n\nYou are not short on effort or ideas, you are short on a system that turns them into predictable results.\n\nWithout one, every week starts from zero, every win is a scramble, and nothing you learn ever compounds into something you can rely on.\n\nWant the system instead of the scramble?\n\n[Get the system now ->]\n\nA member came to us with twelve half-built funnels and zero peace of mind. We handed him one clear path and asked him to run only that for thirty days.\n\nBy week three the guesswork was gone, and for the first time his calendar and his revenue finally agreed with each other.\n\n\"One system beat every hack I ever bought,\" he said afterward.\n\n[Read his full story ->]\n\nWe built The Momentum Method because talented people deserve a repeatable path, not another shelf of scattered tactics.\n\nThe window closes Thursday, so do not let another quarter run on guesswork.\n\n[Reserve your place today ->]\n\nTrade the scramble for a system, {{contact.first_name}}.\n\nJordan Marsh"
+    },
+    {
+      "e_slot": 3,
+      "framework": "pastor-solutions",
+      "objective": "promotional",
+      "subjects": [
+        "{{contact.first_name}}, doing it alone is quietly costing you the most",
+        "The lonely founder tax nobody warned you about is real"
+      ],
+      "previews": [
+        "The quietest problem is the one that wears people down most.",
+        "You were never actually meant to build this in silence."
+      ],
+      "ctas": [
+        "[Join the room now ->]",
+        "[Meet the community ->]",
+        "[Claim your seat before Thursday ->]"
+      ],
+      "body": "{{contact.first_name}},\n\nThe third problem is the quietest one, and it is the one that wears people down the most.\n\nDoing this alone, with no room where someone gets it, no one to check your thinking, and no hand on your shoulder when a hard week hits.\n\nLeft unsolved, isolation does not just slow you down, it convinces you the wall you hit is permanent, when it is only unfamiliar.\n\nYou do not have to build in silence anymore.\n\n[Join the room now ->]\n\nOne member told us she almost quit the month before she joined. What changed was not a tactic, it was a table of people building the same thing beside her.\n\nNinety days later she launched the offer she had been sitting on for two full years.\n\n\"I stopped feeling crazy and started feeling backed,\" she wrote.\n\n[Meet the community ->]\n\nWe built The Momentum Method because nobody should ever have to choose between ambition and belonging.\n\nDoors close Thursday, and the room only opens a few times a year.\n\n[Claim your seat before Thursday ->]\n\nYou were never meant to do this alone, {{contact.first_name}}.\n\nJordan Marsh"
+    },
+    {
+      "e_slot": 4,
+      "framework": "features-to-benefit",
+      "objective": "promotional",
+      "subjects": [
+        "{{contact.first_name}}, here is exactly what you get inside the method",
+        "Every feature maps to a result you can actually measure"
+      ],
+      "previews": [
+        "Not a feature list. What each piece actually does for you.",
+        "Every part of the method earns its place. Here is how."
+      ],
+      "ctas": [
+        "[See everything inside ->]"
+      ],
+      "body": "{{contact.first_name}},\n\nLet me show you exactly what is inside The Momentum Method, and more importantly, what each piece actually does for you.\n\nThe weekly system map means you always know the one thing to work on, which frees you from the paralysis of a hundred open tabs.\n\nThe plug-and-play launch templates mean you skip the blank page, which lets you ship in days instead of stalling for months.\n\nThe private builder community means you are never guessing alone, which turns every hard decision into a two-minute question.\n\nThe live monthly strategy calls mean your plan gets pressure-tested by people ahead of you, so small mistakes never grow into wasted quarters.\n\nThe results tracker means you can finally see momentum building, which is the fuel that keeps you moving on the days motivation dips.\n\nPut together, that is the whole point, a system that converts your effort into outcomes you can measure and repeat.\n\n[See everything inside ->]\n\nIf that is the year you want, {{contact.first_name}}, this is the door.\n\nJordan Marsh"
+    },
+    {
+      "e_slot": 5,
+      "framework": "six-ws",
+      "objective": "promotional",
+      "subjects": [
+        "{{contact.first_name}}, who this is for and why it works",
+        "Who what why when where and how in one email"
+      ],
+      "previews": [
+        "Everything you need to decide, in six quick answers.",
+        "No fine print. Six answers and a clear next step."
+      ],
+      "ctas": [
+        "[Start The Momentum Method ->]"
+      ],
+      "body": "{{contact.first_name}},\n\nEverything you need to decide, in six quick answers.\n\nWho it is for: builders who have real effort and good ideas but no system tying them together.\n\nWhat it is: The Momentum Method, a guided thirty-day path with a system map, templates, tracking, and a builder community.\n\nWhy it works: it removes guesswork and gives your effort one clear place to land, so your results finally start to compound.\n\nWhen it runs: the next cohort opens now and doors close Thursday, then the room shuts until the following season.\n\nWhere it happens: entirely online, in a private space you can reach from your phone between meetings.\n\nHow you start: you click the button below, answer three short questions about where you are stuck right now, and get your first personalized system map the very same day.\n\nThat is the whole picture, {{contact.first_name}}, with no fine print, no upsell maze, and no hidden catch anywhere.\n\n[Start The Momentum Method ->]\n\nJordan Marsh"
+    },
+    {
+      "e_slot": 6,
+      "framework": "before-after-bridge",
+      "objective": "promotional",
+      "subjects": [
+        "{{contact.first_name}}, picture your business ninety days from right now",
+        "From flat and scattered to focused and finally moving forward"
+      ],
+      "previews": [
+        "Two versions of the next ninety days. You choose.",
+        "The bridge between them is not more hustle. It is this."
+      ],
+      "ctas": [
+        "[Cross the bridge now ->]"
+      ],
+      "body": "{{contact.first_name}},\n\nPicture two versions of the next ninety days.\n\nBefore: another quarter of scattered effort, a calendar full of busywork, and that low hum of knowing you are capable of far more than your results show.\n\nIn that version the wins stay random, the momentum never quite holds, and December arrives looking a lot like last December.\n\nAfter: one clear system, a short list of things that actually matter, and a number that finally moves in the direction of the work you put in.\n\nIn that version you wake up knowing the plan, you close the laptop knowing it worked, and the progress stops depending on your mood.\n\nThe bridge between those two versions is not more hustle, it is a system built to carry the effort you are already spending.\n\nThat system is The Momentum Method, and the next cohort closes Thursday.\n\n[Cross the bridge now ->]\n\nWhich version of ninety days do you want, {{contact.first_name}}?\n\nJordan Marsh"
+    },
+    {
+      "e_slot": 7,
+      "framework": "three-b-plan",
+      "objective": "promotional",
+      "subjects": [
+        "{{contact.first_name}}, short one, doors close Thursday, decide now",
+        "Read this in ten seconds then choose, no fluff"
+      ],
+      "previews": [
+        "The blunt version, in ten seconds, then you choose.",
+        "No marathon sales page. Just the decision."
+      ],
+      "ctas": [
+        "[Grab your spot before Thursday ->]"
+      ],
+      "body": "{{contact.first_name}}, quick one.\n\nThe Momentum Method closes Thursday.\n\nIf you have been on the fence, here is the blunt version.\n\nYou have the effort, you are missing the system, and this fixes that in thirty days.\n\nNo fluff, no marathon sales page, just a clear path and a room of people building right beside you.\n\nIf that is what you want, move now, because the doors do not reopen for months.\n\n[Grab your spot before Thursday ->]\n\nTalk soon,\n\nJordan Marsh"
+    },
+    {
+      "e_slot": 8,
+      "framework": "million-dollar-sales",
+      "objective": "promotional",
+      "subjects": [
+        "{{contact.first_name}}, this is not for everyone and that matters",
+        "Read this only if you are done making excuses"
+      ],
+      "previews": [
+        "Not for everyone. Here is who it is actually for.",
+        "Structure beats hustle. Every single time. Here is why."
+      ],
+      "ctas": [
+        "[Start The Momentum Method ->]",
+        "[Claim your place before Thursday ->]"
+      ],
+      "body": "{{contact.first_name}},\n\nStop for a second, because this one is honestly not for everyone.\n\nIf you are looking for a magic button that works without you, close this now, we will both be happier.\n\nStill here? Good, that already tells me something about you.\n\nWe have spent the last six years helping builders turn scattered effort into repeatable systems, and the pattern never changes, structure beats hustle every time.\n\nHere is what that structure gives you, a clear plan, templates that remove the blank page, a community that keeps you honest, and momentum you can actually measure.\n\n[Start The Momentum Method ->]\n\nOne member put it plainly, \"I had tried everything, the difference here was finally having a system instead of a to-do list.\"\n\nThis is the part where most people wait, and waiting is exactly what has kept the result out of reach.\n\nThe doors close Thursday and the room reopens only a few times each year.\n\n[Claim your place before Thursday ->]\n\nP.S. Worst case, you finally get organized and blame me for the extra free time.\n\nJordan Marsh"
+    },
+    {
+      "e_slot": 9,
+      "framework": "aida",
+      "objective": "promotional",
+      "subjects": [
+        "{{contact.first_name}}, the window on this is about to close",
+        "Attention: the doors close tonight and will not reopen soon"
+      ],
+      "previews": [
+        "Quick and clear, because the window is closing.",
+        "A decision and a date. That is the only difference."
+      ],
+      "ctas": [
+        "[Join before the doors close ->]"
+      ],
+      "body": "{{contact.first_name}},\n\nThe window on this is about to close, so let me be quick and clear.\n\nAttention: the next cohort of The Momentum Method locks on Thursday, and the room does not reopen for months.\n\nHere is what has people leaning in, it is not another course to half-finish, it is a guided system with templates, tracking, and a room of builders moving right alongside you.\n\nImagine ending the next ninety days with a written plan that actually held together, a number that actually moved in the right direction, and momentum you did not have to force yourself into each morning.\n\nThat is what the members who started last season are living right now, and the only difference between them and you is a decision and a date.\n\nThe date is Thursday, the decision is yours, and the door is open for only a few more hours of your attention.\n\n[Join before the doors close ->]\n\nMove now, {{contact.first_name}}, before the window shuts.\n\nJordan Marsh"
+    },
+    {
+      "e_slot": 10,
+      "framework": "pas",
+      "objective": "promotional",
+      "subjects": [
+        "{{contact.first_name}}, the quiet cost of putting this off again",
+        "A month from now this is solved or bigger"
+      ],
+      "previews": [
+        "It does not stay the same size while you wait.",
+        "Solved or bigger. A month from now you choose which."
+      ],
+      "ctas": [
+        "[Start your reset now ->]"
+      ],
+      "body": "{{contact.first_name}},\n\nThere is a project you keep meaning to fix, the one that leaks a little time, a little money, and a little confidence every single week.\n\nIf you have ever ended a Friday wondering where the whole week actually went, you know the exact one I mean.\n\nHere is the uncomfortable part, it is not staying the same size, and every month it goes unsolved it costs you more, in missed chances, redone work, and energy you never get back.\n\nWorse, it quietly trains you to expect less from yourself, which is the real tax, not the lost hours but the shrinking of what you believe is possible.\n\nIt does not have to work this way.\n\nThe Momentum Method was built for exactly this, a guided thirty-day reset that isolates the leak, installs the fix, and hands you back your week.\n\nA month from now this problem is either solved or bigger, and you get to choose which one it becomes.\n\n[Start your reset now ->]\n\nChoose solved, {{contact.first_name}}.\n\nJordan Marsh"
+    }
+  ]
+}

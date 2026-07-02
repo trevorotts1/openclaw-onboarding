@@ -173,6 +173,7 @@ This role contributes to the company revenue cascade by: **converting engaged au
 | Google Sheets / Airtable | Message sequence inventory, template tracking, A/B test log, compliance audit log | Shared drive access | Maintain the Messaging Sequence Registry — all active sequences documented with purpose, audience, triggers, and status |
 | Postscript / Klaviyo SMS / Attentive (if e-commerce) | E-commerce-specific SMS platform with cart abandonment, browse abandonment, and purchase follow-up flows | Platform login in TOOLS.md | Integration with {{CRM_PLATFORM_NAME}} for contact sync |
 | Meta Ads Manager (for click-to-WhatsApp/click-to-Messenger ads) | Manage click-to-messaging ads that initiate DM conversations | Ads Manager login in TOOLS.md | Coordinate with Paid Ads team on ad-to-messaging handoff experience |
+| **Email Engine + superlibrary (Skill 50)** | Request matching email copy to pair with an SMS / WhatsApp / DM sequence | `50-email-engine/` -- `tools/email_matcher_cli.py --match` selects framework/buyer-type/objective/persona/sequence; `tools/prove-email.py` QCs (fail-closed); draft-only deploy via Skill 44 | Client runtime uses the CLIENT's own provider (never Anthropic); the deterministic gates (email_matcher.py, prove-email.py) are provider-neutral; nothing sends without human approval. |
 
 ---
 

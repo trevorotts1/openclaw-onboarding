@@ -1,0 +1,55 @@
+{
+  "id": "buyer-type-methodical",
+  "type": "buyer-type",
+  "name": "Methodical Buyer",
+  "tags": [
+    "buyer-psychology",
+    "analytical-buyer",
+    "evidence",
+    "details",
+    "logic",
+    "risk-averse",
+    "deliberate-decision",
+    "emails-3-6",
+    "features-to-benefit",
+    "six-ws",
+    "acca",
+    "pastor-solutions",
+    "subject-line-guidance",
+    "guarantees",
+    "specifics"
+  ],
+  "length": "300+",
+  "best_for": [
+    "features-to-benefit",
+    "six-ws",
+    "acca",
+    "pastor-solutions",
+    "complex-offers",
+    "high-ticket"
+  ],
+  "file": "buyer-type-methodical.md",
+  "rules": {
+    "kind": "buyer-type",
+    "buyer_type_id": "methodical",
+    "email_slots": [
+      3,
+      4,
+      5,
+      6
+    ],
+    "frameworks": [
+      "features-to-benefit",
+      "six-ws",
+      "acca",
+      "pastor-solutions"
+    ],
+    "applies_to": [
+      "convert_and_flow buyer_type_12",
+      "high_ticket_12"
+    ],
+    "af_codes": [
+      "AF-EMAIL-BUYERTYPE-MAP"
+    ]
+  }
+}

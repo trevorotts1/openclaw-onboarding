@@ -181,6 +181,7 @@ This role contributes to the company revenue cascade by: **directly generating 1
 | Document Management (e.g., DocuSign, PandaDoc) | Contract generation, e-signature, document tracking | Web login | Templates pre-loaded with standard terms. Any non-standard term triggers legal review. |
 | Commission/Compensation Tool (e.g., Spiff, Xactly) | Commission calculation, rep visibility into earnings | API integration | Updated within 5 business days of month-end. Reps see real-time commission estimates. |
 | Slack/Teams | Internal communication, deal alerts, forecast updates | Web/desktop | Channels: #sales-ops (daily operations), #deals (big deal alerts), #revenue (cross-dept sync). |
+| **Email Engine + superlibrary (Skill 50)** | Dept-head awareness of the sales follow-up email sequences the engine produces | `50-email-engine/` -- `tools/email_matcher_cli.py --match` selects framework/buyer-type/objective/persona/sequence; `tools/prove-email.py` QCs (fail-closed); draft-only deploy via Skill 44 | Client runtime uses the CLIENT's own provider (never Anthropic); the deterministic gates (email_matcher.py, prove-email.py) are provider-neutral; nothing sends without human approval. |
 
 ---
 

@@ -1,0 +1,48 @@
+{
+  "id": "buyer-type-spontaneous",
+  "type": "buyer-type",
+  "name": "Spontaneous Buyer",
+  "tags": [
+    "buyer-psychology",
+    "fast-decision",
+    "gut-feel",
+    "urgency",
+    "novelty",
+    "low-friction",
+    "impulse",
+    "emails-1-2",
+    "three-b-plan",
+    "star-chain-hook",
+    "subject-line-guidance",
+    "mobile-first",
+    "excitement"
+  ],
+  "length": "<150",
+  "best_for": [
+    "three-b-plan",
+    "star-chain-hook",
+    "flash-sales",
+    "abandoned-cart-first-touch",
+    "promotional"
+  ],
+  "file": "buyer-type-spontaneous.md",
+  "rules": {
+    "kind": "buyer-type",
+    "buyer_type_id": "spontaneous",
+    "email_slots": [
+      1,
+      2
+    ],
+    "frameworks": [
+      "three-b-plan",
+      "star-chain-hook"
+    ],
+    "applies_to": [
+      "convert_and_flow buyer_type_12",
+      "high_ticket_12"
+    ],
+    "af_codes": [
+      "AF-EMAIL-BUYERTYPE-MAP"
+    ]
+  }
+}

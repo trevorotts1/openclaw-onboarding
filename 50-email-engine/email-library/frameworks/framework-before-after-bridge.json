@@ -1,0 +1,48 @@
+{
+  "id": "framework-before-after-bridge",
+  "type": "framework",
+  "name": "Before-After-Bridge (BAB)",
+  "tags": [
+    "contrast-principle",
+    "visualization",
+    "future-pacing",
+    "transformation",
+    "before-after",
+    "competitive-buyer",
+    "short-copy",
+    "cart-recovery",
+    "downsell",
+    "sequence-closer",
+    "vivid-imagery",
+    "landing-page-email-6"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "competitive",
+    "abandoned-cart",
+    "downsell",
+    "promotional",
+    "landing-page-10-promo-email-6",
+    "sequence-closers"
+  ],
+  "file": "framework-before-after-bridge.md",
+  "rules": {
+    "kind": "framework",
+    "framework_id": "before-after-bridge",
+    "structure": [
+      "Before",
+      "After",
+      "Bridge"
+    ],
+    "enforced_part_count": 3,
+    "word_band": [
+      150,
+      300
+    ],
+    "cta_min": 1,
+    "af_codes": [
+      "AF-EMAIL-FRAMEWORK-UNKNOWN",
+      "AF-EMAIL-FRAMEWORK-INCOMPLETE"
+    ]
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "manifest_version": 1,
+  "$schema_note": "SHARED cross-department SOP manifest for the Email Engine (Skill 50). This is the universal-sops face of the capability: it is how ANY department (marketing / crm / sales / web-development / social-media / personal-assistant) discovers and drives the end-to-end email pipeline. It does NOT re-implement the engine. The authoritative machine spine lives in the skill: 50-email-engine/EMAIL-MANIFEST.json (phase order + AF codes), 50-email-engine/tools/prove-email.py (the fail-closed floor prover), 50-email-engine/run_email_engine.py (the deterministic orchestrator, front-door-nonce gated by email-engine-entry.sh), and the Email Superlibrary 50-email-engine/email-library/ (13 frameworks + 4 buyer-types + 4 objectives + 12 persona-styles + 3 sequences) selected by 50-email-engine/tools/email_matcher_cli.py. This file mirrors the fb-ad-craft / presentation-slide-craft enforcement-spine pattern so a department reads ONE manifest to know the phases, the owning roles, the SOP for each phase, and the gate codes. SOP-LOCKED: any added/changed SOP, framework rule, or gate MUST stay in lockstep with 50-email-engine/EMAIL-MANIFEST.json and prove-email.py.",
+  "authoritative_engine": {
+    "skill": "50-email-engine",
+    "engine_manifest": "50-email-engine/EMAIL-MANIFEST.json",
+    "floor_prover": "50-email-engine/tools/prove-email.py",
+    "orchestrator": "50-email-engine/run_email_engine.py",
+    "sanctioned_entry": "50-email-engine/email-engine-entry.sh",
+    "superlibrary": "50-email-engine/email-library/",
+    "matcher": "50-email-engine/tools/email_matcher_cli.py",
+    "deploy_engine": "44-convert-and-flow-operator (caf) — DRAFT-ONLY workflow email steps"
+  },
+  "design_law": "Enforcement, not description. The word/subject/CTA/format bands are SACRED (SOURCE-EMAIL-CORPUS.md): 150-300 words per email EXCEPT the 3-B Plan (< 150); exactly 2 A/B subject lines; preview count is sequence-declared (Convert&Flow master = 1, high-ticket = 2); the founder's real name signs every email (never a placeholder); a persona style is adopted for TONE ONLY and the person is NEVER named or quoted. A logged client-exact override wins over a default band and is recorded on the process certificate. Client runtime uses the CLIENT's OWN provider chain — NEVER Anthropic / claude-* ids or operator keys. Every deterministic gate (email_matcher.py, prove-email.py) is provider-neutral Python that runs identically on every box.",
+  "human_gate_phases": ["P5-APPROVE"],
+  "phases": [
+    {
+      "id": "P0-INTAKE",
+      "order": 1,
+      "name": "Intake — lock the brief in ONE block (objective, buyer type, offer, brand voice, sequence position, founder name, high-ticket?)",
+      "owning_role": "email-campaign-strategist",
+      "sop_refs": ["SOP-EMAIL-01-INTAKE.md"],
+      "produces_artifact": "working/copy/brief.json",
+      "gate_codes": ["AF-EMAIL-TYPE-MISMATCH", "AF-EMAIL-INTAKE-SPLIT", "AF-EMAIL-BRIEF-INCOMPLETE"],
+      "gate": "prove-email.py --kind intake: skill==email-engine, asked_all_at_once:true, one_question_per_turn:false, all six required brief fields present. A self-attested completeness flag is NEVER trusted."
+    },
+    {
+      "id": "P1-SELECT",
+      "order": 2,
+      "name": "Select — route the brief to a framework + buyer-type modifiers + objective tactics + (high-ticket) persona style + sequence",
+      "owning_role": "email-campaign-strategist",
+      "sop_refs": ["SOP-EMAIL-02-SELECT.md"],
+      "produces_artifact": "working/routing/email-match.json",
+      "gate_codes": ["AF-EMAIL-FRAMEWORK-UNKNOWN", "AF-EMAIL-OBJECTIVE-INVALID", "AF-EMAIL-PERSONA-INVALID"],
+      "gate": "email_matcher_cli.py --match resolves to a canonical id; explicit user spec is always honored (flex mode); the match rationale + runners-up are logged."
+    },
+    {
+      "id": "P2-GENERATE",
+      "order": 3,
+      "name": "Generate — author corpus-faithful copy against the selected structure, in brand voice, at the correct sequence position",
+      "owning_role": "conversion-copywriter",
+      "sop_refs": ["SOP-EMAIL-03-GENERATE.md"],
+      "produces_artifact": "working/copy/emails.json",
+      "gate_codes": ["AF-EMAIL-FRAMEWORK-INCOMPLETE"],
+      "gate": "every slot carries subjects[2] + previews + body + framework + objective + ctas[]; a supplied sections[] matches the framework's declared part count (PASTOR = 6, Million Dollar Sales = 12)."
+    },
+    {
+      "id": "P3-QC",
+      "order": 4,
+      "name": "QC — fail-closed floor prover over the authored copy",
+      "owning_role": "qc-specialist--marketing",
+      "sop_refs": ["SOP-EMAIL-04-QC.md", "MASTER-EMAIL-QC-AUTOFAIL-RULESET.md"],
+      "produces_artifact": "working/qc/email_qc_report.json",
+      "gate_codes": [
+        "AF-EMAIL-FRAMEWORK-UNKNOWN", "AF-EMAIL-FRAMEWORK-INCOMPLETE", "AF-EMAIL-BUYERTYPE-MAP",
+        "AF-EMAIL-SEQUENCE-MAP", "AF-EMAIL-SEQUENCE-LENGTH", "AF-EMAIL-OBJECTIVE-INVALID",
+        "AF-EMAIL-PERSONA-INVALID", "AF-EMAIL-PERSONA-NAMED", "AF-EMAIL-SUBJECT-COUNT",
+        "AF-EMAIL-PREVIEW-COUNT", "AF-EMAIL-WORDBAND", "AF-EMAIL-CTA-COUNT",
+        "AF-EMAIL-SUBJECT-CHARBAND", "AF-EMAIL-FIRSTNAME-PLACEMENT", "AF-EMAIL-FORMAT",
+        "AF-EMAIL-SIGNATURE-PLACEHOLDER", "AF-EMAIL-DISRUPTIVE-MISSING"
+      ],
+      "gate": "prove-email.py PASS (exit 0) over working/copy/emails.json. ANY AF-EMAIL-* violation blocks advance to P4; the failing email re-authors ONLY the failing item (bounded retry). A measurer, not an agent self-score."
+    },
+    {
+      "id": "P4-DEPLOY",
+      "order": 5,
+      "name": "Deploy — DRAFT-ONLY Skill-44 build plan (workflow email steps); nothing sends",
+      "owning_role": "automation-workflow-specialist",
+      "sop_refs": ["SOP-EMAIL-05-DEPLOY.md"],
+      "produces_artifact": "working/deploy/build-plan.json",
+      "gate_codes": ["AF-PROCESS-INTEGRITY", "AF-EMAIL-DEPLOY-UNAPPROVED", "AF-EMAIL-SEND-BYPASS"],
+      "gate": "a signed process certificate is required (signed:true + signed_by) before deploy; the emitted GHL workflow is a DRAFT built by caf (44-convert-and-flow-operator); a hand-rolled sender in the run dir is refused. Skill 44's qc-built-workflow.sh >= 8.5 runs on the deployed draft."
+    },
+    {
+      "id": "P5-APPROVE",
+      "order": 6,
+      "human_gate": true,
+      "name": "Approve — the ONE human pause: a person approves before any send; the process certificate is issued on a full P1->P4 pass",
+      "owning_role": "email-campaign-strategist",
+      "sop_refs": ["SOP-EMAIL-05-DEPLOY.md"],
+      "produces_artifact": "working/deploy/approval.json + delivery/PROCESS-CERTIFICATE.json",
+      "gate_codes": ["AF-EMAIL-DEPLOY-UNAPPROVED"],
+      "gate": "approval.json approved:true + approved_by; run_email_engine.py issues the delivery PROCESS-CERTIFICATE only after a full P1->P4 pass (no phase skips, all_phases_pass:true). The certificate attests the governed pipeline ran in order; it never authorizes a send."
+    }
+  ],
+  "owning_roles": {
+    "note": "Existing role-library seats gain the Email Engine as a Section-8 tool; no new department is required. See 23-ai-workforce-blueprint/templates/role-library/.",
+    "marketing": ["email-campaign-strategist", "conversion-copywriter", "funnel-strategist", "customer-journey-architect", "webinar-event-marketing-specialist", "lead-magnet-specialist", "chief-marketing-officer", "qc-specialist--marketing"],
+    "crm": ["automation-workflow-specialist", "email-deliverability-optimization-specialist", "sms--whatsapp--dm-sequence-specialist", "tag--segmentation-specialist", "director-of-crm"],
+    "sales": ["follow-up-sequence-specialist", "chief-sales-officer"],
+    "web-development": ["funnel-builder-specialist", "landing-page-specialist"],
+    "social-media": ["director-of-social-media", "community-manager"],
+    "personal-assistant": ["inbox-manager (Skill 42 specialists/01-inbox-manager/)"]
+  }
+}

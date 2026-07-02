@@ -1,0 +1,39 @@
+{
+  "id": "objective-downsell",
+  "type": "objective",
+  "name": "Downsell",
+  "tags": [
+    "objective",
+    "risk-reduction",
+    "foot-in-door",
+    "incremental-commitment",
+    "value-recalibration",
+    "future-opportunity",
+    "face-saving",
+    "declined-offer",
+    "second-chance",
+    "entry-point",
+    "budget-objection",
+    "per-buyer-type-tactics"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "spontaneous",
+    "methodical",
+    "humanistic",
+    "competitive",
+    "post-decline",
+    "cart-closers",
+    "entry-offers"
+  ],
+  "file": "objective-downsell.md",
+  "rules": {
+    "kind": "objective",
+    "objective_id": "downsell",
+    "one_objective_per_email": true,
+    "per_buyer_type_tactics": true,
+    "af_codes": [
+      "AF-EMAIL-OBJECTIVE-INVALID"
+    ]
+  }
+}

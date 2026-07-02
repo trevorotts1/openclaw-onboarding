@@ -1,0 +1,47 @@
+{
+  "id": "framework-star-chain-hook",
+  "type": "framework",
+  "name": "Star-Chain-Hook",
+  "tags": [
+    "big-idea",
+    "proof-stacking",
+    "credibility",
+    "evidence-chain",
+    "cold",
+    "outreach",
+    "b2b",
+    "spontaneous-buyer",
+    "second-touch",
+    "facts",
+    "sources",
+    "skeptical-audiences"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "spontaneous",
+    "promotional",
+    "cold-outreach",
+    "skeptical-audiences",
+    "second-email-in-sequence"
+  ],
+  "file": "framework-star-chain-hook.md",
+  "rules": {
+    "kind": "framework",
+    "framework_id": "star-chain-hook",
+    "structure": [
+      "Star",
+      "Chain",
+      "Hook"
+    ],
+    "enforced_part_count": 3,
+    "word_band": [
+      150,
+      300
+    ],
+    "cta_min": 1,
+    "af_codes": [
+      "AF-EMAIL-FRAMEWORK-UNKNOWN",
+      "AF-EMAIL-FRAMEWORK-INCOMPLETE"
+    ]
+  }
+}

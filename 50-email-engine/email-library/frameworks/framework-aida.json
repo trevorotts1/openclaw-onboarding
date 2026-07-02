@@ -1,0 +1,50 @@
+{
+  "id": "framework-aida",
+  "type": "framework",
+  "name": "AIDA (Attention-Interest-Desire-Action)",
+  "tags": [
+    "attention",
+    "curiosity",
+    "desire-building",
+    "momentum",
+    "classic-formula",
+    "competitive-buyer",
+    "promotional",
+    "launch",
+    "warm",
+    "cold",
+    "cta",
+    "pattern-interrupt",
+    "future-pacing",
+    "landing-page-email-9"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "competitive",
+    "promotional",
+    "launches",
+    "landing-page-10-promo-email-9",
+    "upsell"
+  ],
+  "file": "framework-aida.md",
+  "rules": {
+    "kind": "framework",
+    "framework_id": "aida",
+    "structure": [
+      "Attention",
+      "Interest",
+      "Desire",
+      "Action"
+    ],
+    "enforced_part_count": 4,
+    "word_band": [
+      150,
+      300
+    ],
+    "cta_min": 1,
+    "af_codes": [
+      "AF-EMAIL-FRAMEWORK-UNKNOWN",
+      "AF-EMAIL-FRAMEWORK-INCOMPLETE"
+    ]
+  }
+}

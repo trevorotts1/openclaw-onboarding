@@ -1,0 +1,46 @@
+{
+  "id": "framework-star-story-solution",
+  "type": "framework",
+  "name": "Star-Story-Solution",
+  "tags": [
+    "storytelling",
+    "narrative-transportation",
+    "case-study",
+    "relatable-hero",
+    "humanistic-buyer",
+    "social-proof",
+    "character-driven",
+    "cold",
+    "outreach",
+    "transformation-story",
+    "identification"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "humanistic",
+    "promotional",
+    "upsell",
+    "cold-outreach",
+    "case-study-emails"
+  ],
+  "file": "framework-star-story-solution.md",
+  "rules": {
+    "kind": "framework",
+    "framework_id": "star-story-solution",
+    "structure": [
+      "Star",
+      "Story",
+      "Solution"
+    ],
+    "enforced_part_count": 3,
+    "word_band": [
+      150,
+      300
+    ],
+    "cta_min": 1,
+    "af_codes": [
+      "AF-EMAIL-FRAMEWORK-UNKNOWN",
+      "AF-EMAIL-FRAMEWORK-INCOMPLETE"
+    ]
+  }
+}

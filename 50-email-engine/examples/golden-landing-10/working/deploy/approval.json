@@ -1,0 +1,7 @@
+{
+  "approved": true,
+  "approved_by": "Jordan Marsh (founder)",
+  "approved_at": "2026-07-02T00:05:00Z",
+  "scope": "DRAFT-ONLY Skill-44 build plan for sequence-landing-page-10-promo",
+  "note": "Founder reviewed all 10 emails after the P3 prove-email PASS and approves emitting the GHL DRAFT workflow. This approval does NOT authorize any send; a human publishes the draft separately after the Skill-44 qc-built-workflow.sh (>=8.5) gate."
+}

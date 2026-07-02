@@ -1,0 +1,52 @@
+{
+  "id": "framework-features-to-benefit",
+  "type": "framework",
+  "name": "Features-to-Benefit",
+  "tags": [
+    "feature-translation",
+    "benefit-stacking",
+    "so-what-test",
+    "product-education",
+    "value-demonstration",
+    "logical-persuasion",
+    "analytical-buyer",
+    "methodical-buyer",
+    "saas",
+    "ecommerce",
+    "course-launch",
+    "warm",
+    "promotional",
+    "upsell",
+    "landing-page-email-4",
+    "deliverables",
+    "offer-stack"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "methodical",
+    "promotional",
+    "upsell",
+    "landing-page-10-promo-email-4",
+    "offers-with-strong-deliverables"
+  ],
+  "file": "framework-features-to-benefit.md",
+  "rules": {
+    "kind": "framework",
+    "framework_id": "features-to-benefit",
+    "structure": [
+      "Intro",
+      "Feature->Benefit pairs",
+      "Summary",
+      "CTA"
+    ],
+    "enforced_part_count": null,
+    "word_band": [
+      150,
+      300
+    ],
+    "cta_min": 1,
+    "af_codes": [
+      "AF-EMAIL-FRAMEWORK-UNKNOWN"
+    ]
+  }
+}

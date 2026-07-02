@@ -177,6 +177,7 @@ This role contributes to the company revenue cascade by: **increasing pipeline v
 | LinkedIn Sales Navigator | Prospect research for personalization, InMail sequencing | Web login | Use for pre-sequence research. Do not use for manual outreach — that's rep territory. |
 | SMS Platform (if separate from sales engagement platform) | SMS follow-up automations | API key in TOOLS.md | Ensure opt-in compliance. SMS sequences only for prospects who have explicitly opted in to SMS communication. |
 | Slack/Teams | AE collaboration, sequence alerts, CSO reporting | Web/desktop | Channels: #sales-ops (AE collaboration), #deals (big deal sequence alerts). |
+| **Email Engine + superlibrary (Skill 50)** | Own the email / SMS follow-up sequences authored + QC'd by the engine | `50-email-engine/` -- `tools/email_matcher_cli.py --match` selects framework/buyer-type/objective/persona/sequence; `tools/prove-email.py` QCs (fail-closed); draft-only deploy via Skill 44 | Client runtime uses the CLIENT's own provider (never Anthropic); the deterministic gates (email_matcher.py, prove-email.py) are provider-neutral; nothing sends without human approval. |
 
 ---
 

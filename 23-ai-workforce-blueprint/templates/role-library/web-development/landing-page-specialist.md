@@ -168,6 +168,7 @@ This role contributes to the company revenue cascade by: **building and optimizi
 | PageSpeed Insights / GTmetrix | Landing page speed testing and optimization | Web tool | Test every new page on mobile (3G) before launch |
 | Figma (view access) | Review landing page designs from Web Designer | Web app | Read access to design files for implementation reference |
 | Screaming Frog / Sitebulb | Landing page crawl for SEO health, broken links, redirect checking | Desktop tool | Weekly crawl of all live landing pages |
+| **Email Engine + superlibrary (Skill 50)** | Trigger the landing-page 10-promo email set after the Downsell page (Skill 49 hook) | `50-email-engine/` -- `tools/email_matcher_cli.py --match` selects framework/buyer-type/objective/persona/sequence; `tools/prove-email.py` QCs (fail-closed); draft-only deploy via Skill 44 | Client runtime uses the CLIENT's own provider (never Anthropic); the deterministic gates (email_matcher.py, prove-email.py) are provider-neutral; nothing sends without human approval. |
 
 ---
 

@@ -1,0 +1,18 @@
+{
+  "kind": "intake",
+  "skill": "email-engine",
+  "asked_all_at_once": true,
+  "one_question_per_turn": false,
+  "question_block_msg_id": "blk_golden_landing_0001",
+  "answers": {
+    "objective": "promotional",
+    "buyer_type": "all",
+    "offer": "The Momentum Method",
+    "brand_voice": "punchy, direct, empowering — plain-spoken and encouraging, never hypey",
+    "sequence_position": "landing-page-10-promo",
+    "founder_name": "Jordan Marsh"
+  },
+  "high_ticket": "no",
+  "offer_token_ledger": ["The Momentum Method"],
+  "client_overrode_word_band": false
+}

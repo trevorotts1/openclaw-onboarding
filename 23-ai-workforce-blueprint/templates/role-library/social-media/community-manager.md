@@ -168,6 +168,7 @@ This role contributes to the company revenue cascade by: **building the relation
 | Notion / Airtable | Advocate tracking database, sentiment log, moderation log, community member CRM | Web | Track advocates, sentiment trends, and community member interactions |
 | {{CRM_PLATFORM_NAME}} | Lead tracking for community-sourced leads, member-to-customer conversion | Web login | Tag community-sourced leads and referrals |
 | Google Alerts / Mention | Brand mention monitoring across the web (supplementary to platform-native monitoring) | Web | Catch mentions on platforms you don't actively manage |
+| **Email Engine + superlibrary (Skill 50)** | Request nurture email copy for community onboarding | `50-email-engine/` -- `tools/email_matcher_cli.py --match` selects framework/buyer-type/objective/persona/sequence; `tools/prove-email.py` QCs (fail-closed); draft-only deploy via Skill 44 | Client runtime uses the CLIENT's own provider (never Anthropic); the deterministic gates (email_matcher.py, prove-email.py) are provider-neutral; nothing sends without human approval. |
 
 ---
 

@@ -127,6 +127,7 @@ This role contributes to company revenue by **ensuring {{OWNER_NAME}} never miss
 | {{TASK_TOOL}} | Follow-up tracking -- every sent email needing a response gets a tracked task |
 | {{CRM_TOOL}} | Contact context -- who is this person, what is their relationship to {{COMPANY_NAME}}? Read-only. |
 | {{CALENDAR_TOOL}} | Scheduling context -- flag meeting requests, coordinate with Calendar Manager. Read-only. |
+| **Email Engine + superlibrary (Skill 50)** | Draft/QC reply + newsletter email copy from the SACRED frameworks + persona styles (source engine: `50-email-engine`; PA usage detailed in `42-personal-assistant-library/specialists/01-inbox-manager/`). Select via `email_matcher_cli.py`, QC via the fail-closed `prove-email.py`; nothing sends without owner approval. |
 
 ---
 

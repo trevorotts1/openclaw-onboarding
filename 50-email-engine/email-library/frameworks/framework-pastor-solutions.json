@@ -1,0 +1,53 @@
+{
+  "id": "framework-pastor-solutions",
+  "type": "framework",
+  "name": "P.A.S.T.O.R. V1 (Solutions Version)",
+  "tags": [
+    "long-form",
+    "trust-building",
+    "testimonials",
+    "transformation",
+    "comprehensive",
+    "ray-edwards",
+    "methodical-buyer",
+    "high-ticket",
+    "landing-page-emails-1-3",
+    "pain-points",
+    "multiple-cta",
+    "big-bold-why",
+    "amplify",
+    "offer-presentation",
+    "response"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "methodical",
+    "promotional",
+    "high-ticket",
+    "landing-page-10-promo-emails-1-2-3",
+    "considered-purchases"
+  ],
+  "file": "framework-pastor-solutions.md",
+  "rules": {
+    "kind": "framework",
+    "framework_id": "pastor-solutions",
+    "structure": [
+      "Problem",
+      "Amplify",
+      "Story & Solution",
+      "Transformation & Testimony",
+      "Offer",
+      "Response"
+    ],
+    "enforced_part_count": 6,
+    "word_band": [
+      150,
+      300
+    ],
+    "cta_min": 1,
+    "af_codes": [
+      "AF-EMAIL-FRAMEWORK-UNKNOWN",
+      "AF-EMAIL-FRAMEWORK-INCOMPLETE"
+    ]
+  }
+}

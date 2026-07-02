@@ -1,0 +1,422 @@
+{
+  "folder": "The Momentum Method — Promo Drafts",
+  "sequence-landing-page-10-promo": {
+    "name": "sequence-landing-page-10-promo (DRAFT)",
+    "tag": "email-engine:sequence-landing-page-10-promo",
+    "status": "draft",
+    "templates": [
+      {
+        "id": "email-sequence-landing-page-10-promo-e01",
+        "type": "email",
+        "name": "Email: E1 pastor-solutions",
+        "order": 0,
+        "attributes": {
+          "subject": "{{contact.first_name}}, your effort was never really the problem here",
+          "body": "<p>{{contact.first_name}},</p>\n<p>There is a specific kind of tired that comes from doing everything right and still watching the needle refuse to move.</p>\n<p>More hours, more posts, more effort, and the same flat number at the end of every month.</p>\n<p>Left alone, that gap does not stay still, it compounds, and another full year of maximum effort quietly buys you minimum traction.</p>\n<p>Ready to close it now?</p>\n<p>[Start The Momentum Method ->]</p>\n<p>One of our members hit this exact wall. Inside the program she found the real problem was never her effort, it was her architecture.</p>\n<p>She rebuilt around one repeatable system, and the same work ethic she always had started returning triple.</p>\n<p>\"I replaced my income in ninety days and finally took a real break,\" she told us three months later.</p>\n<p>[See the member results ->]</p>\n<p>We built The Momentum Method on one conviction, that the people who work the hardest should never be the ones rewarded the least.</p>\n<p>Doors close Thursday, so reply READY or claim your place while it is open.</p>\n<p>[Claim your spot before Thursday ->]</p>\n<p>Your effort was never the problem, {{contact.first_name}}. Point it at the right system.</p>\n<p>Jordan Marsh</p>",
+          "html": "<p>{{contact.first_name}},</p>\n<p>There is a specific kind of tired that comes from doing everything right and still watching the needle refuse to move.</p>\n<p>More hours, more posts, more effort, and the same flat number at the end of every month.</p>\n<p>Left alone, that gap does not stay still, it compounds, and another full year of maximum effort quietly buys you minimum traction.</p>\n<p>Ready to close it now?</p>\n<p>[Start The Momentum Method ->]</p>\n<p>One of our members hit this exact wall. Inside the program she found the real problem was never her effort, it was her architecture.</p>\n<p>She rebuilt around one repeatable system, and the same work ethic she always had started returning triple.</p>\n<p>\"I replaced my income in ninety days and finally took a real break,\" she told us three months later.</p>\n<p>[See the member results ->]</p>\n<p>We built The Momentum Method on one conviction, that the people who work the hardest should never be the ones rewarded the least.</p>\n<p>Doors close Thursday, so reply READY or claim your place while it is open.</p>\n<p>[Claim your spot before Thursday ->]</p>\n<p>Your effort was never the problem, {{contact.first_name}}. Point it at the right system.</p>\n<p>Jordan Marsh</p>",
+          "fromName": "Jordan Marsh",
+          "attachments": [],
+          "conditions": [],
+          "trackingOptions": {
+            "hasTrackingLinks": false,
+            "hasUtmTracking": false,
+            "hasTags": false
+          }
+        },
+        "ab": {
+          "subject_b": "Someone profits from you staying stuck and it is not you",
+          "preview_text": [
+            "The real reason effort stopped moving the needle, and what will.",
+            "Somebody quietly profits from you staying stuck. It is not you."
+          ]
+        }
+      },
+      {
+        "id": "wait-sequence-landing-page-10-promo-01",
+        "type": "wait",
+        "name": "Wait 1 Days",
+        "order": 1,
+        "attributes": {
+          "type": "time",
+          "startAfter": {
+            "type": "days",
+            "value": 1,
+            "when": "after"
+          },
+          "name": "Wait 1 Days",
+          "cat": ""
+        }
+      },
+      {
+        "id": "email-sequence-landing-page-10-promo-e02",
+        "type": "email",
+        "name": "Email: E2 pastor-solutions",
+        "order": 2,
+        "attributes": {
+          "subject": "{{contact.first_name}}, the second reason your results keep stalling out",
+          "body": "<p>{{contact.first_name}},</p>\n<p>Here is the second reason the needle keeps sticking, and almost nobody names it out loud.</p>\n<p>You are not short on effort or ideas, you are short on a system that turns them into predictable results.</p>\n<p>Without one, every week starts from zero, every win is a scramble, and nothing you learn ever compounds into something you can rely on.</p>\n<p>Want the system instead of the scramble?</p>\n<p>[Get the system now ->]</p>\n<p>A member came to us with twelve half-built funnels and zero peace of mind. We handed him one clear path and asked him to run only that for thirty days.</p>\n<p>By week three the guesswork was gone, and for the first time his calendar and his revenue finally agreed with each other.</p>\n<p>\"One system beat every hack I ever bought,\" he said afterward.</p>\n<p>[Read his full story ->]</p>\n<p>We built The Momentum Method because talented people deserve a repeatable path, not another shelf of scattered tactics.</p>\n<p>The window closes Thursday, so do not let another quarter run on guesswork.</p>\n<p>[Reserve your place today ->]</p>\n<p>Trade the scramble for a system, {{contact.first_name}}.</p>\n<p>Jordan Marsh</p>",
+          "html": "<p>{{contact.first_name}},</p>\n<p>Here is the second reason the needle keeps sticking, and almost nobody names it out loud.</p>\n<p>You are not short on effort or ideas, you are short on a system that turns them into predictable results.</p>\n<p>Without one, every week starts from zero, every win is a scramble, and nothing you learn ever compounds into something you can rely on.</p>\n<p>Want the system instead of the scramble?</p>\n<p>[Get the system now ->]</p>\n<p>A member came to us with twelve half-built funnels and zero peace of mind. We handed him one clear path and asked him to run only that for thirty days.</p>\n<p>By week three the guesswork was gone, and for the first time his calendar and his revenue finally agreed with each other.</p>\n<p>\"One system beat every hack I ever bought,\" he said afterward.</p>\n<p>[Read his full story ->]</p>\n<p>We built The Momentum Method because talented people deserve a repeatable path, not another shelf of scattered tactics.</p>\n<p>The window closes Thursday, so do not let another quarter run on guesswork.</p>\n<p>[Reserve your place today ->]</p>\n<p>Trade the scramble for a system, {{contact.first_name}}.</p>\n<p>Jordan Marsh</p>",
+          "fromName": "Jordan Marsh",
+          "attachments": [],
+          "conditions": [],
+          "trackingOptions": {
+            "hasTrackingLinks": false,
+            "hasUtmTracking": false,
+            "hasTags": false
+          }
+        },
+        "ab": {
+          "subject_b": "You do not have a talent gap you have a system gap",
+          "preview_text": [
+            "It is not effort and it is not ideas. It is this.",
+            "Every week starts from zero until you fix this one thing."
+          ]
+        }
+      },
+      {
+        "id": "wait-sequence-landing-page-10-promo-02",
+        "type": "wait",
+        "name": "Wait 1 Days",
+        "order": 3,
+        "attributes": {
+          "type": "time",
+          "startAfter": {
+            "type": "days",
+            "value": 1,
+            "when": "after"
+          },
+          "name": "Wait 1 Days",
+          "cat": ""
+        }
+      },
+      {
+        "id": "email-sequence-landing-page-10-promo-e03",
+        "type": "email",
+        "name": "Email: E3 pastor-solutions",
+        "order": 4,
+        "attributes": {
+          "subject": "{{contact.first_name}}, doing it alone is quietly costing you the most",
+          "body": "<p>{{contact.first_name}},</p>\n<p>The third problem is the quietest one, and it is the one that wears people down the most.</p>\n<p>Doing this alone, with no room where someone gets it, no one to check your thinking, and no hand on your shoulder when a hard week hits.</p>\n<p>Left unsolved, isolation does not just slow you down, it convinces you the wall you hit is permanent, when it is only unfamiliar.</p>\n<p>You do not have to build in silence anymore.</p>\n<p>[Join the room now ->]</p>\n<p>One member told us she almost quit the month before she joined. What changed was not a tactic, it was a table of people building the same thing beside her.</p>\n<p>Ninety days later she launched the offer she had been sitting on for two full years.</p>\n<p>\"I stopped feeling crazy and started feeling backed,\" she wrote.</p>\n<p>[Meet the community ->]</p>\n<p>We built The Momentum Method because nobody should ever have to choose between ambition and belonging.</p>\n<p>Doors close Thursday, and the room only opens a few times a year.</p>\n<p>[Claim your seat before Thursday ->]</p>\n<p>You were never meant to do this alone, {{contact.first_name}}.</p>\n<p>Jordan Marsh</p>",
+          "html": "<p>{{contact.first_name}},</p>\n<p>The third problem is the quietest one, and it is the one that wears people down the most.</p>\n<p>Doing this alone, with no room where someone gets it, no one to check your thinking, and no hand on your shoulder when a hard week hits.</p>\n<p>Left unsolved, isolation does not just slow you down, it convinces you the wall you hit is permanent, when it is only unfamiliar.</p>\n<p>You do not have to build in silence anymore.</p>\n<p>[Join the room now ->]</p>\n<p>One member told us she almost quit the month before she joined. What changed was not a tactic, it was a table of people building the same thing beside her.</p>\n<p>Ninety days later she launched the offer she had been sitting on for two full years.</p>\n<p>\"I stopped feeling crazy and started feeling backed,\" she wrote.</p>\n<p>[Meet the community ->]</p>\n<p>We built The Momentum Method because nobody should ever have to choose between ambition and belonging.</p>\n<p>Doors close Thursday, and the room only opens a few times a year.</p>\n<p>[Claim your seat before Thursday ->]</p>\n<p>You were never meant to do this alone, {{contact.first_name}}.</p>\n<p>Jordan Marsh</p>",
+          "fromName": "Jordan Marsh",
+          "attachments": [],
+          "conditions": [],
+          "trackingOptions": {
+            "hasTrackingLinks": false,
+            "hasUtmTracking": false,
+            "hasTags": false
+          }
+        },
+        "ab": {
+          "subject_b": "The lonely founder tax nobody warned you about is real",
+          "preview_text": [
+            "The quietest problem is the one that wears people down most.",
+            "You were never actually meant to build this in silence."
+          ]
+        }
+      },
+      {
+        "id": "wait-sequence-landing-page-10-promo-03",
+        "type": "wait",
+        "name": "Wait 1 Days",
+        "order": 5,
+        "attributes": {
+          "type": "time",
+          "startAfter": {
+            "type": "days",
+            "value": 1,
+            "when": "after"
+          },
+          "name": "Wait 1 Days",
+          "cat": ""
+        }
+      },
+      {
+        "id": "email-sequence-landing-page-10-promo-e04",
+        "type": "email",
+        "name": "Email: E4 features-to-benefit",
+        "order": 6,
+        "attributes": {
+          "subject": "{{contact.first_name}}, here is exactly what you get inside the method",
+          "body": "<p>{{contact.first_name}},</p>\n<p>Let me show you exactly what is inside The Momentum Method, and more importantly, what each piece actually does for you.</p>\n<p>The weekly system map means you always know the one thing to work on, which frees you from the paralysis of a hundred open tabs.</p>\n<p>The plug-and-play launch templates mean you skip the blank page, which lets you ship in days instead of stalling for months.</p>\n<p>The private builder community means you are never guessing alone, which turns every hard decision into a two-minute question.</p>\n<p>The live monthly strategy calls mean your plan gets pressure-tested by people ahead of you, so small mistakes never grow into wasted quarters.</p>\n<p>The results tracker means you can finally see momentum building, which is the fuel that keeps you moving on the days motivation dips.</p>\n<p>Put together, that is the whole point, a system that converts your effort into outcomes you can measure and repeat.</p>\n<p>[See everything inside ->]</p>\n<p>If that is the year you want, {{contact.first_name}}, this is the door.</p>\n<p>Jordan Marsh</p>",
+          "html": "<p>{{contact.first_name}},</p>\n<p>Let me show you exactly what is inside The Momentum Method, and more importantly, what each piece actually does for you.</p>\n<p>The weekly system map means you always know the one thing to work on, which frees you from the paralysis of a hundred open tabs.</p>\n<p>The plug-and-play launch templates mean you skip the blank page, which lets you ship in days instead of stalling for months.</p>\n<p>The private builder community means you are never guessing alone, which turns every hard decision into a two-minute question.</p>\n<p>The live monthly strategy calls mean your plan gets pressure-tested by people ahead of you, so small mistakes never grow into wasted quarters.</p>\n<p>The results tracker means you can finally see momentum building, which is the fuel that keeps you moving on the days motivation dips.</p>\n<p>Put together, that is the whole point, a system that converts your effort into outcomes you can measure and repeat.</p>\n<p>[See everything inside ->]</p>\n<p>If that is the year you want, {{contact.first_name}}, this is the door.</p>\n<p>Jordan Marsh</p>",
+          "fromName": "Jordan Marsh",
+          "attachments": [],
+          "conditions": [],
+          "trackingOptions": {
+            "hasTrackingLinks": false,
+            "hasUtmTracking": false,
+            "hasTags": false
+          }
+        },
+        "ab": {
+          "subject_b": "Every feature maps to a result you can actually measure",
+          "preview_text": [
+            "Not a feature list. What each piece actually does for you.",
+            "Every part of the method earns its place. Here is how."
+          ]
+        }
+      },
+      {
+        "id": "wait-sequence-landing-page-10-promo-04",
+        "type": "wait",
+        "name": "Wait 1 Days",
+        "order": 7,
+        "attributes": {
+          "type": "time",
+          "startAfter": {
+            "type": "days",
+            "value": 1,
+            "when": "after"
+          },
+          "name": "Wait 1 Days",
+          "cat": ""
+        }
+      },
+      {
+        "id": "email-sequence-landing-page-10-promo-e05",
+        "type": "email",
+        "name": "Email: E5 six-ws",
+        "order": 8,
+        "attributes": {
+          "subject": "{{contact.first_name}}, who this is for and why it works",
+          "body": "<p>{{contact.first_name}},</p>\n<p>Everything you need to decide, in six quick answers.</p>\n<p>Who it is for: builders who have real effort and good ideas but no system tying them together.</p>\n<p>What it is: The Momentum Method, a guided thirty-day path with a system map, templates, tracking, and a builder community.</p>\n<p>Why it works: it removes guesswork and gives your effort one clear place to land, so your results finally start to compound.</p>\n<p>When it runs: the next cohort opens now and doors close Thursday, then the room shuts until the following season.</p>\n<p>Where it happens: entirely online, in a private space you can reach from your phone between meetings.</p>\n<p>How you start: you click the button below, answer three short questions about where you are stuck right now, and get your first personalized system map the very same day.</p>\n<p>That is the whole picture, {{contact.first_name}}, with no fine print, no upsell maze, and no hidden catch anywhere.</p>\n<p>[Start The Momentum Method ->]</p>\n<p>Jordan Marsh</p>",
+          "html": "<p>{{contact.first_name}},</p>\n<p>Everything you need to decide, in six quick answers.</p>\n<p>Who it is for: builders who have real effort and good ideas but no system tying them together.</p>\n<p>What it is: The Momentum Method, a guided thirty-day path with a system map, templates, tracking, and a builder community.</p>\n<p>Why it works: it removes guesswork and gives your effort one clear place to land, so your results finally start to compound.</p>\n<p>When it runs: the next cohort opens now and doors close Thursday, then the room shuts until the following season.</p>\n<p>Where it happens: entirely online, in a private space you can reach from your phone between meetings.</p>\n<p>How you start: you click the button below, answer three short questions about where you are stuck right now, and get your first personalized system map the very same day.</p>\n<p>That is the whole picture, {{contact.first_name}}, with no fine print, no upsell maze, and no hidden catch anywhere.</p>\n<p>[Start The Momentum Method ->]</p>\n<p>Jordan Marsh</p>",
+          "fromName": "Jordan Marsh",
+          "attachments": [],
+          "conditions": [],
+          "trackingOptions": {
+            "hasTrackingLinks": false,
+            "hasUtmTracking": false,
+            "hasTags": false
+          }
+        },
+        "ab": {
+          "subject_b": "Who what why when where and how in one email",
+          "preview_text": [
+            "Everything you need to decide, in six quick answers.",
+            "No fine print. Six answers and a clear next step."
+          ]
+        }
+      },
+      {
+        "id": "wait-sequence-landing-page-10-promo-05",
+        "type": "wait",
+        "name": "Wait 1 Days",
+        "order": 9,
+        "attributes": {
+          "type": "time",
+          "startAfter": {
+            "type": "days",
+            "value": 1,
+            "when": "after"
+          },
+          "name": "Wait 1 Days",
+          "cat": ""
+        }
+      },
+      {
+        "id": "email-sequence-landing-page-10-promo-e06",
+        "type": "email",
+        "name": "Email: E6 before-after-bridge",
+        "order": 10,
+        "attributes": {
+          "subject": "{{contact.first_name}}, picture your business ninety days from right now",
+          "body": "<p>{{contact.first_name}},</p>\n<p>Picture two versions of the next ninety days.</p>\n<p>Before: another quarter of scattered effort, a calendar full of busywork, and that low hum of knowing you are capable of far more than your results show.</p>\n<p>In that version the wins stay random, the momentum never quite holds, and December arrives looking a lot like last December.</p>\n<p>After: one clear system, a short list of things that actually matter, and a number that finally moves in the direction of the work you put in.</p>\n<p>In that version you wake up knowing the plan, you close the laptop knowing it worked, and the progress stops depending on your mood.</p>\n<p>The bridge between those two versions is not more hustle, it is a system built to carry the effort you are already spending.</p>\n<p>That system is The Momentum Method, and the next cohort closes Thursday.</p>\n<p>[Cross the bridge now ->]</p>\n<p>Which version of ninety days do you want, {{contact.first_name}}?</p>\n<p>Jordan Marsh</p>",
+          "html": "<p>{{contact.first_name}},</p>\n<p>Picture two versions of the next ninety days.</p>\n<p>Before: another quarter of scattered effort, a calendar full of busywork, and that low hum of knowing you are capable of far more than your results show.</p>\n<p>In that version the wins stay random, the momentum never quite holds, and December arrives looking a lot like last December.</p>\n<p>After: one clear system, a short list of things that actually matter, and a number that finally moves in the direction of the work you put in.</p>\n<p>In that version you wake up knowing the plan, you close the laptop knowing it worked, and the progress stops depending on your mood.</p>\n<p>The bridge between those two versions is not more hustle, it is a system built to carry the effort you are already spending.</p>\n<p>That system is The Momentum Method, and the next cohort closes Thursday.</p>\n<p>[Cross the bridge now ->]</p>\n<p>Which version of ninety days do you want, {{contact.first_name}}?</p>\n<p>Jordan Marsh</p>",
+          "fromName": "Jordan Marsh",
+          "attachments": [],
+          "conditions": [],
+          "trackingOptions": {
+            "hasTrackingLinks": false,
+            "hasUtmTracking": false,
+            "hasTags": false
+          }
+        },
+        "ab": {
+          "subject_b": "From flat and scattered to focused and finally moving forward",
+          "preview_text": [
+            "Two versions of the next ninety days. You choose.",
+            "The bridge between them is not more hustle. It is this."
+          ]
+        }
+      },
+      {
+        "id": "wait-sequence-landing-page-10-promo-06",
+        "type": "wait",
+        "name": "Wait 1 Days",
+        "order": 11,
+        "attributes": {
+          "type": "time",
+          "startAfter": {
+            "type": "days",
+            "value": 1,
+            "when": "after"
+          },
+          "name": "Wait 1 Days",
+          "cat": ""
+        }
+      },
+      {
+        "id": "email-sequence-landing-page-10-promo-e07",
+        "type": "email",
+        "name": "Email: E7 three-b-plan",
+        "order": 12,
+        "attributes": {
+          "subject": "{{contact.first_name}}, short one, doors close Thursday, decide now",
+          "body": "<p>{{contact.first_name}}, quick one.</p>\n<p>The Momentum Method closes Thursday.</p>\n<p>If you have been on the fence, here is the blunt version.</p>\n<p>You have the effort, you are missing the system, and this fixes that in thirty days.</p>\n<p>No fluff, no marathon sales page, just a clear path and a room of people building right beside you.</p>\n<p>If that is what you want, move now, because the doors do not reopen for months.</p>\n<p>[Grab your spot before Thursday ->]</p>\n<p>Talk soon,</p>\n<p>Jordan Marsh</p>",
+          "html": "<p>{{contact.first_name}}, quick one.</p>\n<p>The Momentum Method closes Thursday.</p>\n<p>If you have been on the fence, here is the blunt version.</p>\n<p>You have the effort, you are missing the system, and this fixes that in thirty days.</p>\n<p>No fluff, no marathon sales page, just a clear path and a room of people building right beside you.</p>\n<p>If that is what you want, move now, because the doors do not reopen for months.</p>\n<p>[Grab your spot before Thursday ->]</p>\n<p>Talk soon,</p>\n<p>Jordan Marsh</p>",
+          "fromName": "Jordan Marsh",
+          "attachments": [],
+          "conditions": [],
+          "trackingOptions": {
+            "hasTrackingLinks": false,
+            "hasUtmTracking": false,
+            "hasTags": false
+          }
+        },
+        "ab": {
+          "subject_b": "Read this in ten seconds then choose, no fluff",
+          "preview_text": [
+            "The blunt version, in ten seconds, then you choose.",
+            "No marathon sales page. Just the decision."
+          ]
+        }
+      },
+      {
+        "id": "wait-sequence-landing-page-10-promo-07",
+        "type": "wait",
+        "name": "Wait 1 Days",
+        "order": 13,
+        "attributes": {
+          "type": "time",
+          "startAfter": {
+            "type": "days",
+            "value": 1,
+            "when": "after"
+          },
+          "name": "Wait 1 Days",
+          "cat": ""
+        }
+      },
+      {
+        "id": "email-sequence-landing-page-10-promo-e08",
+        "type": "email",
+        "name": "Email: E8 million-dollar-sales",
+        "order": 14,
+        "attributes": {
+          "subject": "{{contact.first_name}}, this is not for everyone and that matters",
+          "body": "<p>{{contact.first_name}},</p>\n<p>Stop for a second, because this one is honestly not for everyone.</p>\n<p>If you are looking for a magic button that works without you, close this now, we will both be happier.</p>\n<p>Still here? Good, that already tells me something about you.</p>\n<p>We have spent the last six years helping builders turn scattered effort into repeatable systems, and the pattern never changes, structure beats hustle every time.</p>\n<p>Here is what that structure gives you, a clear plan, templates that remove the blank page, a community that keeps you honest, and momentum you can actually measure.</p>\n<p>[Start The Momentum Method ->]</p>\n<p>One member put it plainly, \"I had tried everything, the difference here was finally having a system instead of a to-do list.\"</p>\n<p>This is the part where most people wait, and waiting is exactly what has kept the result out of reach.</p>\n<p>The doors close Thursday and the room reopens only a few times each year.</p>\n<p>[Claim your place before Thursday ->]</p>\n<p>P.S. Worst case, you finally get organized and blame me for the extra free time.</p>\n<p>Jordan Marsh</p>",
+          "html": "<p>{{contact.first_name}},</p>\n<p>Stop for a second, because this one is honestly not for everyone.</p>\n<p>If you are looking for a magic button that works without you, close this now, we will both be happier.</p>\n<p>Still here? Good, that already tells me something about you.</p>\n<p>We have spent the last six years helping builders turn scattered effort into repeatable systems, and the pattern never changes, structure beats hustle every time.</p>\n<p>Here is what that structure gives you, a clear plan, templates that remove the blank page, a community that keeps you honest, and momentum you can actually measure.</p>\n<p>[Start The Momentum Method ->]</p>\n<p>One member put it plainly, \"I had tried everything, the difference here was finally having a system instead of a to-do list.\"</p>\n<p>This is the part where most people wait, and waiting is exactly what has kept the result out of reach.</p>\n<p>The doors close Thursday and the room reopens only a few times each year.</p>\n<p>[Claim your place before Thursday ->]</p>\n<p>P.S. Worst case, you finally get organized and blame me for the extra free time.</p>\n<p>Jordan Marsh</p>",
+          "fromName": "Jordan Marsh",
+          "attachments": [],
+          "conditions": [],
+          "trackingOptions": {
+            "hasTrackingLinks": false,
+            "hasUtmTracking": false,
+            "hasTags": false
+          }
+        },
+        "ab": {
+          "subject_b": "Read this only if you are done making excuses",
+          "preview_text": [
+            "Not for everyone. Here is who it is actually for.",
+            "Structure beats hustle. Every single time. Here is why."
+          ]
+        }
+      },
+      {
+        "id": "wait-sequence-landing-page-10-promo-08",
+        "type": "wait",
+        "name": "Wait 1 Days",
+        "order": 15,
+        "attributes": {
+          "type": "time",
+          "startAfter": {
+            "type": "days",
+            "value": 1,
+            "when": "after"
+          },
+          "name": "Wait 1 Days",
+          "cat": ""
+        }
+      },
+      {
+        "id": "email-sequence-landing-page-10-promo-e09",
+        "type": "email",
+        "name": "Email: E9 aida",
+        "order": 16,
+        "attributes": {
+          "subject": "{{contact.first_name}}, the window on this is about to close",
+          "body": "<p>{{contact.first_name}},</p>\n<p>The window on this is about to close, so let me be quick and clear.</p>\n<p>Attention: the next cohort of The Momentum Method locks on Thursday, and the room does not reopen for months.</p>\n<p>Here is what has people leaning in, it is not another course to half-finish, it is a guided system with templates, tracking, and a room of builders moving right alongside you.</p>\n<p>Imagine ending the next ninety days with a written plan that actually held together, a number that actually moved in the right direction, and momentum you did not have to force yourself into each morning.</p>\n<p>That is what the members who started last season are living right now, and the only difference between them and you is a decision and a date.</p>\n<p>The date is Thursday, the decision is yours, and the door is open for only a few more hours of your attention.</p>\n<p>[Join before the doors close ->]</p>\n<p>Move now, {{contact.first_name}}, before the window shuts.</p>\n<p>Jordan Marsh</p>",
+          "html": "<p>{{contact.first_name}},</p>\n<p>The window on this is about to close, so let me be quick and clear.</p>\n<p>Attention: the next cohort of The Momentum Method locks on Thursday, and the room does not reopen for months.</p>\n<p>Here is what has people leaning in, it is not another course to half-finish, it is a guided system with templates, tracking, and a room of builders moving right alongside you.</p>\n<p>Imagine ending the next ninety days with a written plan that actually held together, a number that actually moved in the right direction, and momentum you did not have to force yourself into each morning.</p>\n<p>That is what the members who started last season are living right now, and the only difference between them and you is a decision and a date.</p>\n<p>The date is Thursday, the decision is yours, and the door is open for only a few more hours of your attention.</p>\n<p>[Join before the doors close ->]</p>\n<p>Move now, {{contact.first_name}}, before the window shuts.</p>\n<p>Jordan Marsh</p>",
+          "fromName": "Jordan Marsh",
+          "attachments": [],
+          "conditions": [],
+          "trackingOptions": {
+            "hasTrackingLinks": false,
+            "hasUtmTracking": false,
+            "hasTags": false
+          }
+        },
+        "ab": {
+          "subject_b": "Attention: the doors close tonight and will not reopen soon",
+          "preview_text": [
+            "Quick and clear, because the window is closing.",
+            "A decision and a date. That is the only difference."
+          ]
+        }
+      },
+      {
+        "id": "wait-sequence-landing-page-10-promo-09",
+        "type": "wait",
+        "name": "Wait 1 Days",
+        "order": 17,
+        "attributes": {
+          "type": "time",
+          "startAfter": {
+            "type": "days",
+            "value": 1,
+            "when": "after"
+          },
+          "name": "Wait 1 Days",
+          "cat": ""
+        }
+      },
+      {
+        "id": "email-sequence-landing-page-10-promo-e10",
+        "type": "email",
+        "name": "Email: E10 pas",
+        "order": 18,
+        "attributes": {
+          "subject": "{{contact.first_name}}, the quiet cost of putting this off again",
+          "body": "<p>{{contact.first_name}},</p>\n<p>There is a project you keep meaning to fix, the one that leaks a little time, a little money, and a little confidence every single week.</p>\n<p>If you have ever ended a Friday wondering where the whole week actually went, you know the exact one I mean.</p>\n<p>Here is the uncomfortable part, it is not staying the same size, and every month it goes unsolved it costs you more, in missed chances, redone work, and energy you never get back.</p>\n<p>Worse, it quietly trains you to expect less from yourself, which is the real tax, not the lost hours but the shrinking of what you believe is possible.</p>\n<p>It does not have to work this way.</p>\n<p>The Momentum Method was built for exactly this, a guided thirty-day reset that isolates the leak, installs the fix, and hands you back your week.</p>\n<p>A month from now this problem is either solved or bigger, and you get to choose which one it becomes.</p>\n<p>[Start your reset now ->]</p>\n<p>Choose solved, {{contact.first_name}}.</p>\n<p>Jordan Marsh</p>",
+          "html": "<p>{{contact.first_name}},</p>\n<p>There is a project you keep meaning to fix, the one that leaks a little time, a little money, and a little confidence every single week.</p>\n<p>If you have ever ended a Friday wondering where the whole week actually went, you know the exact one I mean.</p>\n<p>Here is the uncomfortable part, it is not staying the same size, and every month it goes unsolved it costs you more, in missed chances, redone work, and energy you never get back.</p>\n<p>Worse, it quietly trains you to expect less from yourself, which is the real tax, not the lost hours but the shrinking of what you believe is possible.</p>\n<p>It does not have to work this way.</p>\n<p>The Momentum Method was built for exactly this, a guided thirty-day reset that isolates the leak, installs the fix, and hands you back your week.</p>\n<p>A month from now this problem is either solved or bigger, and you get to choose which one it becomes.</p>\n<p>[Start your reset now ->]</p>\n<p>Choose solved, {{contact.first_name}}.</p>\n<p>Jordan Marsh</p>",
+          "fromName": "Jordan Marsh",
+          "attachments": [],
+          "conditions": [],
+          "trackingOptions": {
+            "hasTrackingLinks": false,
+            "hasUtmTracking": false,
+            "hasTags": false
+          }
+        },
+        "ab": {
+          "subject_b": "A month from now this is solved or bigger",
+          "preview_text": [
+            "It does not stay the same size while you wait.",
+            "Solved or bigger. A month from now you choose which."
+          ]
+        }
+      }
+    ]
+  },
+  "_meta": {
+    "deploy_mode": "draft-only",
+    "generator": "50-email-engine/tools/emit_build_plan.py",
+    "sequence_id": "sequence-landing-page-10-promo",
+    "objective": "promotional",
+    "email_count": 10,
+    "note": "DRAFT-ONLY. Nothing sends. Human approval + Skill-44 qc-built-workflow.sh (>=8.5) precede any publish. Scope: workflow email steps only."
+  }
+}

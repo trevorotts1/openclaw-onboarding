@@ -1,0 +1,31 @@
+{
+  "index_name": "email-superlibrary",
+  "model": "gemini-embedding-2",
+  "dims": 3072,
+  "provider": "gemini",
+  "corpus": "50-email-engine/email-library/**/*.md",
+  "file_count": 36,
+  "chunk_count": 0,
+  "sha256": "",
+  "build_date": "",
+  "release_tag": "email-index-v1.0.0",
+  "asset_url": "https://github.com/trevorotts1/openclaw-onboarding/releases/download/email-index-v1.0.0/email-index.sqlite.gz",
+  "gz_size_bytes": 0,
+  "source_db_bytes": 0,
+  "corpus_md5": "faf17d83ce5951393d2099a9d83f8f96",
+  "manifest_last_updated": "2026-07-02",
+  "asset_rebuild_required": true,
+  "separate_from_persona_index": true,
+  "separation_note": "This is a SEPARATE asset from the shared persona index (shared-utils/prebuilt-index/INDEX-MANIFEST.json). Different corpus (the 36 email-library entries), different release tag (email-index-v*), different sqlite. The two indexes are never merged and never share a release asset.",
+  "model_pin_note": "Model + dims are PINNED against the gemini-embedding-001 EOL risk. gemini-embedding-2 @ 3072 is the GA model; a client box downloads the computed vectors and NEVER re-embeds, so the pin protects every box from the EOL model swap.",
+  "embed_once_note": "EMBED ONCE on the operator box (index/build-and-publish.sh — needs gh auth + a client-supplied Google/Gemini key for the DELTA only). Client boxes provision via index/provision-email-index.sh -> provision_email_index(): download the sha256-verified vectors, NEVER re-embed per box (furnace-safe). Retrieval = tags[] (lexical, email_matcher.py) UNION embeddings (semantic, EmbeddingReranker).",
+  "asset_pending_note": "chunk_count / sha256 / build_date / gz_size_bytes are populated by the FIRST operator-box build-and-publish.sh run; asset_rebuild_required flips to false once the email-index-v1.0.0 asset is published. Until then client boxes keyword-degrade to the lexical catalog (email_matcher.py) — never a per-box re-embed.",
+  "schema": {
+    "columns_required": [
+      "entry_id",
+      "entry_type",
+      "framework_id"
+    ],
+    "columns_note": "Email rows carry entry_id (catalog id), entry_type (framework|buyer-type|objective|persona-style|sequence), and framework_id where applicable, so retrieval can filter by type/framework without a full scan."
+  }
+}

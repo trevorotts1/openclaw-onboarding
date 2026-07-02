@@ -1,0 +1,51 @@
+{
+  "id": "framework-six-ws",
+  "type": "framework",
+  "name": "The 6 W's",
+  "tags": [
+    "comprehensive",
+    "information-complete",
+    "methodical-buyer",
+    "analytical-buyer",
+    "event-promotion",
+    "webinar",
+    "logistics",
+    "clarity",
+    "objection-prevention",
+    "decision-support",
+    "who-what-why-when-where-how",
+    "landing-page-email-5"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "methodical",
+    "promotional",
+    "events",
+    "webinars",
+    "landing-page-10-promo-email-5",
+    "complex-offers-needing-clarity"
+  ],
+  "file": "framework-six-ws.md",
+  "rules": {
+    "kind": "framework",
+    "framework_id": "six-ws",
+    "structure": [
+      "Who",
+      "What",
+      "Why",
+      "When",
+      "Where",
+      "hoW"
+    ],
+    "enforced_part_count": 6,
+    "word_band": [
+      150,
+      300
+    ],
+    "cta_min": 1,
+    "af_codes": [
+      "AF-EMAIL-FRAMEWORK-UNKNOWN",
+      "AF-EMAIL-FRAMEWORK-INCOMPLETE"
+    ]
+  }
+}

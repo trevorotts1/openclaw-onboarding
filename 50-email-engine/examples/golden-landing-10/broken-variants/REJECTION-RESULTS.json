@@ -1,0 +1,67 @@
+{
+  "gate": "email-engine-broken-variant-rejection",
+  "note": "Each variant is deliberately broken to trip exactly ONE distinct AF code through tools/prove-email.py (fail-closed, exit 2). This proves the floor prover REJECTS, not just that the golden passes.",
+  "all_rejected": true,
+  "variants": [
+    {
+      "variant": "wrong_length",
+      "file": "wrong_length/emails.json",
+      "kind": "sequence",
+      "expected_af": "AF-EMAIL-SEQUENCE-LENGTH",
+      "reason": "landing sequence has 9 emails, needs exactly 10",
+      "prover_exit": 2,
+      "rejected": true,
+      "codes_returned": [
+        "AF-EMAIL-SEQUENCE-LENGTH"
+      ]
+    },
+    {
+      "variant": "framework_incomplete",
+      "file": "framework_incomplete/email.json",
+      "kind": "email",
+      "expected_af": "AF-EMAIL-FRAMEWORK-INCOMPLETE",
+      "reason": "pastor-solutions declares 4 sections, needs exactly 6",
+      "prover_exit": 2,
+      "rejected": true,
+      "codes_returned": [
+        "AF-EMAIL-FRAMEWORK-INCOMPLETE"
+      ]
+    },
+    {
+      "variant": "persona_named",
+      "file": "persona_named/email.json",
+      "kind": "email",
+      "expected_af": "AF-EMAIL-PERSONA-NAMED",
+      "reason": "a persona person is named/quoted in the copy",
+      "prover_exit": 2,
+      "rejected": true,
+      "codes_returned": [
+        "AF-EMAIL-PERSONA-NAMED"
+      ]
+    },
+    {
+      "variant": "missing_subject",
+      "file": "missing_subject/email.json",
+      "kind": "email",
+      "expected_af": "AF-EMAIL-SUBJECT-COUNT",
+      "reason": "needs exactly 2 non-empty subject lines (A/B)",
+      "prover_exit": 2,
+      "rejected": true,
+      "codes_returned": [
+        "AF-EMAIL-SUBJECT-COUNT"
+      ]
+    },
+    {
+      "variant": "unapproved_deploy",
+      "file": "unapproved_deploy/emails.json",
+      "kind": "sequence",
+      "expected_af": "AF-PROCESS-INTEGRITY",
+      "reason": "deploy_requested but no signed process certificate",
+      "prover_exit": 2,
+      "rejected": true,
+      "codes_returned": [
+        "AF-PROCESS-INTEGRITY"
+      ]
+    }
+  ]
+}

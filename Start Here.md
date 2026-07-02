@@ -365,6 +365,12 @@ Skill 22 (Book-to-Persona Coaching Leadership System) → Skill 23 (AI Workforce
 
 Skills 33 (Department Heads) and 34 (Intelligent Staffing) are ARCHIVED. Their logic has been merged into Skill 23. Skill 23 is now the single skill that builds the entire AI company.
 
+### Reusable capability engines (discoverability)
+
+Some skills are not stand-alone deliverables but REUSABLE engines the departments call into. Any department discovers them via each role's Section-8 "Tools You Use" table, the department's `how-to-use-this-department.md` "Reusable libraries" section, `TOOLS.md`, and the shared SOP cluster in `universal-sops/`:
+
+- **Email Engine + superlibrary (Skill 50)** — `50-email-engine/`. Marketing, CRM, Sales, Web-Development, Social-Media, and the Personal Assistant author + QC marketing email (single emails or the landing-page-10 / high-ticket-12 / buyer-type-12 sequences) from the Email Superlibrary (13 frameworks, 4 buyer-types, 4 objectives, 12 persona styles). Select via `50-email-engine/tools/email_matcher_cli.py --match`; every email is gated by the fail-closed `50-email-engine/tools/prove-email.py` floor prover before a DRAFT-ONLY Skill-44 deploy. Shared procedure: `universal-sops/email-craft/`.
+
 ### The Act As If Protocol
 
 When a persona is assigned to an agent for a task, the instruction is: "Act as if you are [persona name] executing this task."

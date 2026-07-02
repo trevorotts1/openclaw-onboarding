@@ -1,0 +1,114 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/email-engine/email.schema.json",
+  "title": "Email Engine — per-email input contract",
+  "description": "The contract for a single email record consumed by prove-email.py and emitted to the Skill-44 draft build plan. A sequence ledger (emails.json) is an object with a top-level emails[] array of these records plus sequence-level fields (sequence_id, sequence_type, founder_name, process_certificate). SACRED framework/objective/persona-style/buyer-type value sets are frozen here and re-enforced by the prover.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["subjects", "previews", "body", "framework", "objective", "ctas"],
+  "properties": {
+    "e_slot": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 12,
+      "description": "1-based position in the sequence (1..10 or 1..12). Omitted for a standalone single email."
+    },
+    "sequence_id": {
+      "type": "string",
+      "description": "The catalog sequence id this email belongs to (e.g. sequence-landing-page-10-promo)."
+    },
+    "framework": {
+      "type": "string",
+      "description": "One of the 13 canonical framework ids (SACRED).",
+      "enum": [
+        "features-to-benefit",
+        "pas",
+        "aida",
+        "pastor-solutions",
+        "pastor-story",
+        "million-dollar-sales",
+        "before-after-bridge",
+        "six-ws",
+        "star-chain-hook",
+        "star-story-solution",
+        "three-b-plan",
+        "acca",
+        "cold-outreach-variants"
+      ]
+    },
+    "objective": {
+      "type": "string",
+      "description": "Exactly one of the 4 sequence objectives (SACRED).",
+      "enum": ["promotional", "abandoned-cart", "upsell", "downsell"]
+    },
+    "buyer_type": {
+      "type": "string",
+      "description": "The buyer band this slot serves (required for 12-email buyer-type / high-ticket sequences).",
+      "enum": ["spontaneous", "methodical", "humanistic", "competitive"]
+    },
+    "persona_style": {
+      "type": "string",
+      "description": "Optional persona STYLE (tone only; the person is NEVER named/quoted). One of the 12 canonical styles.",
+      "enum": [
+        "les-brown",
+        "lisa-nichols",
+        "brene-brown-gifts",
+        "brene-brown-daring",
+        "simon-sinek",
+        "david-goggins",
+        "dan-pink",
+        "malcolm-gladwell",
+        "michelle-obama",
+        "iyanla-vanzant",
+        "td-jakes",
+        "tony-robbins"
+      ]
+    },
+    "subjects": {
+      "type": "array",
+      "description": "Exactly two A/B subject lines, both non-empty.",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "previews": {
+      "type": "array",
+      "description": "Preview text lines. Convert&Flow master = 1 line; high-ticket = 2 A/B lines.",
+      "minItems": 1,
+      "maxItems": 2,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "body": {
+      "type": "string",
+      "description": "The email body copy. 150-300 words (< 150 for the 3-B Plan). Contains {{contact.first_name}}, the CTA on its own line, and closes with the founder's actual name.",
+      "minLength": 1
+    },
+    "ctas": {
+      "type": "array",
+      "description": "Call-to-action lines. >=1 per email; >=3 for the landing-page PASTOR emails (E1-3).",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "disruptive_elements": {
+      "type": "array",
+      "description": "High-ticket only: >=1 named disruptive element (Consultation Value Inversion, Strategic Clarity Paradox, ...).",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "sections": {
+      "type": "array",
+      "description": "Optional structured framework parts. When present, count must match the framework's declared part count (e.g. PASTOR = 6).",
+      "items": { "type": "string" }
+    },
+    "founder_name": {
+      "type": "string",
+      "description": "The founder's actual name (also carried at the sequence level). Must appear in the body close; no placeholder token."
+    },
+    "word_band_override": {
+      "type": "array",
+      "description": "Client-exact override [min, max] word band. Honored verbatim over the 150-300 default and logged on the certificate.",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "type": "integer", "minimum": 1 }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "gate": "email-engine-floor-prover",
+  "source": "examples/golden-landing-10/emails.json",
+  "kind": "sequence",
+  "pass": true,
+  "failures": []
+}

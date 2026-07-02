@@ -1,0 +1,42 @@
+{
+  "id": "persona-style-les-brown",
+  "type": "persona-style",
+  "name": "Les Brown Style (Motivational)",
+  "tags": [
+    "persona-style",
+    "motivational",
+    "passionate",
+    "personal-storytelling",
+    "call-and-response",
+    "empowerment",
+    "you-have-the-power",
+    "challenges-as-temporary",
+    "high-ticket",
+    "upsell-2",
+    "emotional-crescendo",
+    "hunger",
+    "greatness"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "upsell",
+    "high-ticket",
+    "humanistic",
+    "audiences-facing-self-doubt",
+    "re-motivation-sends"
+  ],
+  "file": "persona-style-les-brown.md",
+  "rules": {
+    "kind": "persona-style",
+    "persona_style_id": "les-brown",
+    "scope": "high-ticket / Upsell-2",
+    "never_named_or_quoted": true,
+    "no_repeat_within_campaign": true,
+    "acknowledge_prior_purchases": true,
+    "cohesive_across_sequence": true,
+    "af_codes": [
+      "AF-EMAIL-PERSONA-INVALID",
+      "AF-EMAIL-PERSONA-NAMED"
+    ]
+  }
+}

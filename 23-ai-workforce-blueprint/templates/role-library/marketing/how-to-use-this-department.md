@@ -207,6 +207,7 @@ This department does NOT design funnels or follow-up sequences from scratch ever
 
 - Funnel template library - 38 proven funnel templates by category (buyer, event, lead, retention-followup, traffic-advanced) at `06-ghl-install-pages/funnel-templates/`, selected via `tools/funnel_matcher_cli.py --match` (runs as STEP 0 in the autonomous build).
 - Automation template library - 28 proven email / SMS / multichannel sequences at `44-convert-and-flow-operator/automation-templates/`, selected via `_matcher/cli.py --match` (Soap Opera, Seinfeld, indoctrination, and funnel-specific follow-up skeletons).
+- Email superlibrary - 13 marketing-email frameworks + 4 buyer-types + 4 objectives + 12 persona styles + 3 named sequences (landing-page-10, high-ticket-12, buyer-type-12) at `50-email-engine/email-library/`, selected via `50-email-engine/tools/email_matcher_cli.py --match`. Every generated email/sequence is QC'd by the fail-closed `50-email-engine/tools/prove-email.py` floor prover (SACRED word/subject/CTA/signature bands) before any draft-only GHL deploy. Shared procedure: `universal-sops/email-craft/`.
 - Funnel-to-automation link map - `44-convert-and-flow-operator/automation-templates/_links/funnel-to-automation.json` pairs each funnel with its recommended follow-up automations (keyed by funnel_template_id).
 - Personas - `22-book-to-persona-coaching-leadership-system/` grounds the copy voice; each template persona resolves to a real persona via the shared persona crosswalk.
 

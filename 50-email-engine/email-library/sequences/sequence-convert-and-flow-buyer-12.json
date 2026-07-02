@@ -1,0 +1,85 @@
+{
+  "id": "sequence-convert-and-flow-buyer-12",
+  "type": "sequence",
+  "name": "Convert & Flow Buyer-Type 12-Email Sequence",
+  "tags": [
+    "sequence",
+    "convert-and-flow",
+    "buyer-type-mapping",
+    "twelve-emails",
+    "spontaneous",
+    "methodical",
+    "humanistic",
+    "competitive",
+    "three-b-plan",
+    "star-chain-hook",
+    "features-to-benefit",
+    "six-ws",
+    "acca",
+    "pastor-solutions",
+    "pastor-story",
+    "star-story-solution",
+    "pas",
+    "aida",
+    "million-dollar-sales",
+    "before-after-bridge",
+    "harmony-continuity",
+    "go-high-level",
+    "one-preview-line"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "promotional",
+    "upsell",
+    "downsell",
+    "abandoned-cart",
+    "warm-lists",
+    "buyer-type-segmented-lists"
+  ],
+  "file": "sequence-convert-and-flow-buyer-12.md",
+  "rules": {
+    "kind": "sequence",
+    "sequence_type": "buyer_type_12",
+    "length": 12,
+    "preview_count": 1,
+    "subject_mode": "convert_and_flow",
+    "framework_map": {
+      "1": "three-b-plan",
+      "2": "star-chain-hook",
+      "3": "features-to-benefit",
+      "4": "six-ws",
+      "5": "acca",
+      "6": "pastor-solutions",
+      "7": "pastor-story",
+      "8": "star-story-solution",
+      "9": "pas",
+      "10": "aida",
+      "11": "million-dollar-sales",
+      "12": "before-after-bridge"
+    },
+    "buyer_band": {
+      "1": "spontaneous",
+      "2": "spontaneous",
+      "3": "methodical",
+      "4": "methodical",
+      "5": "methodical",
+      "6": "methodical",
+      "7": "humanistic",
+      "8": "humanistic",
+      "9": "humanistic",
+      "10": "competitive",
+      "11": "competitive",
+      "12": "competitive"
+    },
+    "cta_rules": {
+      "default": 1
+    },
+    "disruptive_required": false,
+    "harmony_rule": "every email harmonizes with all previous (except #1)",
+    "af_codes": [
+      "AF-EMAIL-SEQUENCE-LENGTH",
+      "AF-EMAIL-BUYERTYPE-MAP",
+      "AF-EMAIL-PREVIEW-COUNT"
+    ]
+  }
+}

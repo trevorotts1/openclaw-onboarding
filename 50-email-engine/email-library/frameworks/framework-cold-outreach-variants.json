@@ -1,0 +1,46 @@
+{
+  "id": "framework-cold-outreach-variants",
+  "type": "framework",
+  "name": "Cold-Outreach Variants (Star-Chain-Hook / Star-Story-Solution)",
+  "tags": [
+    "cold",
+    "outreach",
+    "prospecting",
+    "first-touch",
+    "b2b",
+    "permission",
+    "no-list",
+    "stranger-audiences",
+    "star-chain-hook",
+    "star-story-solution",
+    "deliverability",
+    "reply-goal",
+    "personalization"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "cold-outreach",
+    "prospecting",
+    "b2b",
+    "spontaneous",
+    "humanistic"
+  ],
+  "file": "framework-cold-outreach-variants.md",
+  "rules": {
+    "kind": "framework",
+    "framework_id": "cold-outreach-variants",
+    "structure": [
+      "Star-Chain-Hook cold variant",
+      "Star-Story-Solution cold variant"
+    ],
+    "enforced_part_count": null,
+    "word_band": [
+      150,
+      300
+    ],
+    "cta_min": 1,
+    "af_codes": [
+      "AF-EMAIL-FRAMEWORK-UNKNOWN"
+    ]
+  }
+}

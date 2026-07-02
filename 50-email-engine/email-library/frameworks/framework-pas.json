@@ -1,0 +1,50 @@
+{
+  "id": "framework-pas",
+  "type": "framework",
+  "name": "PAS (Problem-Agitate-Solution)",
+  "tags": [
+    "pain-point",
+    "agitation",
+    "problem-aware",
+    "pain-avoidance",
+    "emotional-persuasion",
+    "urgency",
+    "humanistic-buyer",
+    "cart-recovery",
+    "cold",
+    "warm",
+    "short-copy",
+    "conversion",
+    "empathy",
+    "voice-of-customer",
+    "landing-page-email-10"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "humanistic",
+    "abandoned-cart",
+    "promotional",
+    "problem-aware-audiences",
+    "landing-page-10-promo-email-10"
+  ],
+  "file": "framework-pas.md",
+  "rules": {
+    "kind": "framework",
+    "framework_id": "pas",
+    "structure": [
+      "Problem",
+      "Agitate",
+      "Solution"
+    ],
+    "enforced_part_count": 3,
+    "word_band": [
+      150,
+      300
+    ],
+    "cta_min": 1,
+    "af_codes": [
+      "AF-EMAIL-FRAMEWORK-UNKNOWN",
+      "AF-EMAIL-FRAMEWORK-INCOMPLETE"
+    ]
+  }
+}

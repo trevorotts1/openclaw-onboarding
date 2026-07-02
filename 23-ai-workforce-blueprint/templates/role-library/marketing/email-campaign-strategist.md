@@ -148,6 +148,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 | **Google Analytics / UTM Builder** | Campaign attribution, conversion tracking | {{COMPANY_NAME}} GA account | Every email link must have UTM parameters: utm_source=email, utm_medium=email, utm_campaign=[campaign-name], utm_content=[variant]. |
 | **Grammarly or Hemingway** | Subject line and body copy clarity check | Free/team plan | Run every subject line through a readability check. Target: Grade 6-8 reading level for B2C, Grade 8-10 for B2B. |
 | **Canva / Figma** | Email template mockups and visual direction for Graphics department | {{COMPANY_NAME}} workspace | Produce wireframe-level mockups showing content blocks, image placement, and CTA hierarchy. The Graphics department produces final pixel-perfect designs. |
+| **Email Engine + superlibrary (Skill 50)** | Author + QC marketing email campaigns and sequences from the Email Superlibrary (13 frameworks, buyer-type map, 12 persona styles) before any deploy | `50-email-engine/` -- `tools/email_matcher_cli.py --match` selects framework/buyer-type/objective/persona/sequence; `tools/prove-email.py` QCs (fail-closed); draft-only deploy via Skill 44 | Client runtime uses the CLIENT's own provider (never Anthropic); the deterministic gates (email_matcher.py, prove-email.py) are provider-neutral; nothing sends without human approval. |
 
 ---
 
@@ -160,6 +161,8 @@ This file is your fallback identity. It governs only when no persona is assigned
 **Frequency:** Per campaign (weekly multiple times).
 
 **Inputs:** Campaign brief (goal, target segment, key message, offer/deadline if applicable).
+
+**Reusable engine (generate + QC):** for any framework-driven campaign or multi-email sequence, drive it through the **Email Engine (Skill 50)** as the generate + QC engine that feeds deployment. Select the framework/buyer-type/objective/persona/sequence via `50-email-engine/tools/email_matcher_cli.py --match`, author to the SACRED bands, and gate on the fail-closed `50-email-engine/tools/prove-email.py` (a measurer, not a self-score) BEFORE handing the APPROVED copy to the Automation Workflow Specialist for DRAFT-ONLY Skill-44 deployment. Shared procedure: `universal-sops/email-craft/`.
 
 **Steps:**
 

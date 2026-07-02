@@ -12,6 +12,8 @@
 
 {{OWNER_NAME}} requests a reply, or triage identifies an email that needs a response {{OWNER_NAME}} would normally send.
 
+> **Reusable library:** for a reply that is really a marketing/nurture email (a promo, a follow-up sequence, a re-engagement note), draft it through the **Email Engine (Skill 50)** rather than free-hand: select a framework/persona style via `50-email-engine/tools/email_matcher_cli.py --match`, author to the SACRED bands, and QC with the fail-closed `50-email-engine/tools/prove-email.py` before it goes to {{OWNER_NAME}} for approval. A one-off personal reply stays free-hand.
+
 **Frequency:** On-demand, typically 5-15 times daily.
 
 **Inputs:** The original email thread, {{OWNER_NAME}}'s voice reference (previous sent emails), and any context or instructions from {{OWNER_NAME}}.

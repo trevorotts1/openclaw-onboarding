@@ -1,0 +1,50 @@
+{
+  "id": "framework-three-b-plan",
+  "type": "framework",
+  "name": "The 3-B Plan (Brevity, Bluntness, Basic)",
+  "tags": [
+    "short-copy",
+    "blunt",
+    "direct",
+    "brevity",
+    "spontaneous-buyer",
+    "flash-sale",
+    "urgency",
+    "first-touch",
+    "mobile-first",
+    "busy-readers",
+    "incentive-forward",
+    "under-150-words",
+    "landing-page-email-7",
+    "sequence-opener"
+  ],
+  "length": "<150",
+  "best_for": [
+    "spontaneous",
+    "promotional",
+    "abandoned-cart",
+    "flash-sales",
+    "landing-page-10-promo-email-7",
+    "sequence-openers"
+  ],
+  "file": "framework-three-b-plan.md",
+  "rules": {
+    "kind": "framework",
+    "framework_id": "three-b-plan",
+    "structure": [
+      "Brevity",
+      "Bluntness",
+      "Basic"
+    ],
+    "enforced_part_count": null,
+    "word_band": [
+      1,
+      149
+    ],
+    "cta_min": 1,
+    "af_codes": [
+      "AF-EMAIL-FRAMEWORK-UNKNOWN",
+      "AF-EMAIL-WORDBAND"
+    ]
+  }
+}

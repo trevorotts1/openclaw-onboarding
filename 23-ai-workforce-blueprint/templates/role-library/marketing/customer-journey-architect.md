@@ -173,6 +173,7 @@ This role contributes to the company revenue cascade by: **designing the custome
 | Session Recording / Heatmaps (Hotjar, Microsoft Clarity, FullStory) | Observe actual customer behavior on digital touchpoints, identify UX friction, validate journey map assumptions | JavaScript snippet on site/app | Recordings reviewed for key journey conversion points |
 | Customer Success Platform (Gainsight, ChurnZero, PlanHat, or native CRM features) | Post-purchase journey monitoring, health scoring, adoption tracking, churn risk identification | Admin access | Health scores aligned to journey stages |
 | Data Visualization / Reporting (Google Looker Studio, Tableau, Power BI) | Journey health dashboards, stage performance visualization, cross-functional journey reporting | Account access | Journey dashboards shared with marketing, sales, product, and CS teams |
+| **Email Engine + superlibrary (Skill 50)** | Map lifecycle email objectives (promotional / abandoned-cart / upsell / downsell) to journey stages | `50-email-engine/` -- `tools/email_matcher_cli.py --match` selects framework/buyer-type/objective/persona/sequence; `tools/prove-email.py` QCs (fail-closed); draft-only deploy via Skill 44 | Client runtime uses the CLIENT's own provider (never Anthropic); the deterministic gates (email_matcher.py, prove-email.py) are provider-neutral; nothing sends without human approval. |
 
 ---
 

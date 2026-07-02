@@ -178,6 +178,7 @@ This role contributes to the company revenue cascade by: **writing the words tha
 | Copyhackers (copyhackers.com) | Conversion copywriting frameworks, CTA optimization, voice-of-customer methodology | Web | Primary reference for headline formulas, copy structure, and conversion psychology. |
 | Swiped.co / Funnel swipe files | Swipe file of high-converting copy patterns across industries | Web | Competitive inspiration; never copy verbatim — use as structural pattern reference only. |
 | CXL (cxl.com) | Conversion optimization research, A/B test result libraries, persuasion techniques | Web | Evidence-based copy decisions; reference when A/B variant hypotheses are needed. |
+| **Email Engine + superlibrary (Skill 50)** | Pull the SACRED email frameworks + persona styles to write on-band A/B subject lines and email body copy | `50-email-engine/` -- `tools/email_matcher_cli.py --match` selects framework/buyer-type/objective/persona/sequence; `tools/prove-email.py` QCs (fail-closed); draft-only deploy via Skill 44 | Client runtime uses the CLIENT's own provider (never Anthropic); the deterministic gates (email_matcher.py, prove-email.py) are provider-neutral; nothing sends without human approval. |
 
 ---
 

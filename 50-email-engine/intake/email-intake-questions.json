@@ -1,0 +1,110 @@
+{
+  "$schema": "https://openclaw.ai/schemas/interview-section/v1",
+  "section": "email-engine-intake",
+  "version": "1.0.0",
+  "skill": "email-engine",
+  "description": "The intake gate for the Email Engine. The questions are asked ALL AT ONE TIME, in a single message block, BEFORE any email is written. Once answered, the locked brief (working/copy/brief.json) is written against this contract and P1 SELECT unlocks. This file is the authoritative spec that prove-email.py loads for the intake gate. The runtime answers are recorded against runtime_intake_contract; a self-attested completeness flag is NEVER trusted — the brief must come from this turn-gated ledger.",
+  "delivery": {
+    "mode": "one_block",
+    "asked_all_at_once": true,
+    "one_question_per_turn": false,
+    "rule": "Emit all six required questions (plus the two optional branch questions) as ONE message-block turn. Splitting them across turns fails AF-EMAIL-INTAKE-SPLIT.",
+    "front_door": "any department/role that needs an email or sequence (Skill 38 request, Skill 49 post-Downsell trigger, Command Center task ingest)",
+    "blocks_until_answered": ["P1-SELECT", "P2-GENERATE", "all email authoring"]
+  },
+  "questions": [
+    {
+      "id": "objective",
+      "order": 1,
+      "prompt": "What is the objective of this email / sequence? (promotional, abandoned-cart, upsell, or downsell)",
+      "kind": "enum",
+      "required": true,
+      "allowed_values": ["promotional", "abandoned-cart", "upsell", "downsell"],
+      "storeOn": "objective"
+    },
+    {
+      "id": "buyer_type",
+      "order": 2,
+      "prompt": "Who is the buyer? (spontaneous, methodical, humanistic, or competitive) — for a full 12-email sequence say 'all' and we map each buyer band to its frameworks.",
+      "kind": "text",
+      "required": true,
+      "storeOn": "buyer_type",
+      "note": "Allowed single values: spontaneous | methodical | humanistic | competitive | all. Drives the buyer-type -> email# -> framework map for 12-email sequences."
+    },
+    {
+      "id": "offer",
+      "order": 3,
+      "prompt": "What is the exact offer / product / event being promoted? (the exact name(s) become the offer-token ledger)",
+      "kind": "text",
+      "required": true,
+      "storeOn": "offer"
+    },
+    {
+      "id": "brand_voice",
+      "order": 4,
+      "prompt": "What is the brand voice / tone to continue? (paste a sample or describe it — punchy, warm, authoritative, etc.)",
+      "kind": "text",
+      "required": true,
+      "storeOn": "brand_voice"
+    },
+    {
+      "id": "sequence_position",
+      "order": 5,
+      "prompt": "Where does this live? A single email, or a full sequence? (single | landing-page-10-promo | high-ticket-appointment | convert-and-flow-buyer-12). For a single email, which slot/framework?",
+      "kind": "text",
+      "required": true,
+      "storeOn": "sequence_position",
+      "note": "Resolves to sequence_type: single | landing_page_10 | high_ticket_12 | buyer_type_12. Declares the expected preview count and subject char-band mode the prover reads."
+    },
+    {
+      "id": "founder_name",
+      "order": 6,
+      "prompt": "What is the founder's ACTUAL name for the closing signature? (no placeholder — this exact name must appear in the close)",
+      "kind": "text",
+      "required": true,
+      "storeOn": "founder_name"
+    },
+    {
+      "id": "high_ticket",
+      "order": 7,
+      "prompt": "Is this a high-ticket appointment-booking sequence? (yes / no) — high-ticket uses two preview lines and the 80-87-char emoji subject band.",
+      "kind": "enum",
+      "required": false,
+      "allowed_values": ["yes", "no"],
+      "storeOn": "high_ticket"
+    },
+    {
+      "id": "persona_style",
+      "order": 8,
+      "prompt": "Optional: adopt a persona STYLE for high-ticket / Upsell-2 emails? (one of the 12 styles, tone only — the person is NEVER named or quoted). Leave blank to skip.",
+      "kind": "enum",
+      "required": false,
+      "allowed_values": [
+        "les-brown", "lisa-nichols", "brene-brown-gifts", "brene-brown-daring",
+        "simon-sinek", "david-goggins", "dan-pink", "malcolm-gladwell",
+        "michelle-obama", "iyanla-vanzant", "td-jakes", "tony-robbins"
+      ],
+      "storeOn": "persona_style"
+    }
+  ],
+  "runtime_intake_contract": {
+    "note": "Shape of working/copy/brief.json that prove-email.py validates in intake mode. Any violation is a nonzero exit, fail-closed.",
+    "required_fields": {
+      "skill": "must equal \"email-engine\" (else AF-EMAIL-TYPE-MISMATCH)",
+      "asked_all_at_once": "must be true (else AF-EMAIL-INTAKE-SPLIT)",
+      "question_block_msg_id": "single non-empty id proving the questions were emitted in ONE block (else AF-EMAIL-INTAKE-SPLIT)",
+      "answers": "object carrying non-empty objective, buyer_type, offer, brand_voice, sequence_position, founder_name (any missing/empty -> AF-EMAIL-BRIEF-INCOMPLETE); objective must be a valid objective value"
+    },
+    "optional_fields": {
+      "high_ticket": "yes|no",
+      "persona_style": "one of the 12 canonical style ids",
+      "offer_token_ledger": "array of the exact offer name(s) from the offer answer",
+      "client_overrode_word_band": "boolean — set true ONLY when the client states an exact per-email length that overrides the 150-300 default; surfaced on the process certificate"
+    },
+    "autofail_codes": {
+      "AF-EMAIL-TYPE-MISMATCH": "skill != email-engine, or an unknown sequence_type",
+      "AF-EMAIL-INTAKE-SPLIT": "the questions were not delivered as ONE block (asked_all_at_once not true / one_question_per_turn true / multiple block ids)",
+      "AF-EMAIL-BRIEF-INCOMPLETE": "any of the six required brief fields missing or empty, or an invalid objective value"
+    }
+  }
+}
