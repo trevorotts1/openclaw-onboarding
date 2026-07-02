@@ -1,6 +1,6 @@
 # Suggested Roles — web-development-dept
 **Version:** 2.2.0 | 2026-06-12
-**Status:** v12.1.0 + Brainstorming Buddy (Step -1, new in v12.1.0) + Signature Funnel Specialist (Skill 49 door, new in v16.5.0); 19 roles
+**Status:** v12.1.0 + Brainstorming Buddy (Step -1, new in v12.1.0) + Signature Funnel Specialist (Skill 49 door, new in v16.5.0) + Sales Page Assets Specialist (Skill 56 Direct-Response door, new in v16.8.0); 20 roles
 
 ## Department Purpose
 Own the company's web presence — website, funnels, landing pages, SEO, technical infrastructure, member areas, security. Coordinate with Graphics (visuals), CRM (forms/lead capture), Paid Ads (landing pages), App Development (web-to-app handoff).
@@ -111,6 +111,21 @@ Added Member Area Specialist, Web Accessibility (A11y) Specialist, Web Security 
 - 01-Intake-Lock-the-Brief-in-One-Block.md
 - 02-Drive-the-Canonical-Engine.md
 - 03-Delivery-Hand-Back-to-Skill-6.md
+- 04-Certify-and-Publish-Approval.md
+- 05-Ten-Email-Follow-Up-Offer.md
+**Role type:** specialist
+
+---
+
+## New Roles Added in v16.8.0 (Sales Page Assets -- Skill 56, the Direct-Response sibling of Skill 49)
+
+### 20. Sales Page Assets Specialist
+**Slug:** sales-page-assets-specialist
+**What it does:** The web-development door onto the Trevor Otts Direct-Response Sales Page Assets engine (Skill 56), the DR sibling of Skill 49: the 8-section main sales page (A/B + countdown timer), the Trevor Otts 9-section upsell (A/B personas), a downsell recovery page, the Sovereign Architect high-ticket long-form page (6,500-7,100 words), 40-80-word order-bump copy with a checkbox close, and a slice-covered image plan, from one "Ultimate AI Sales Page Writer" survey. A "sales page assets" / "direct-response sales page" / VSL / upsell-downsell A/B request is routed here as the SECOND registered engine by the shared STEP-0 funnel-engine selector (06-ghl-install-pages/funnel-engines/registry.json). This role drives the build from intake to certified preview through the ONE sanctioned entry 56-sales-page-assets/sales-page-assets-entry.sh; it never authors or fixes copy/prompts (the engine's eight fail-closed provers do), delegates image generation to Skill 47 (or the client's own image provider) and ALL GHL media + build to Skill 6 (the ONE GHL delivery rail), routes the order-bump to Skill 44, and ships only on a signed certificate. Owns the human publish approval.
+**Core SOPs to build:**
+- 01-Intake-Lock-the-12-Field-Brief.md
+- 02-Drive-the-Canonical-Engine.md
+- 03-Delivery-Hand-Back-to-Skill-6-and-Bump-to-Skill-44.md
 - 04-Certify-and-Publish-Approval.md
 - 05-Ten-Email-Follow-Up-Offer.md
 **Role type:** specialist

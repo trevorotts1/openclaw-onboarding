@@ -1,0 +1,50 @@
+{
+  "$schema": "https://openclaw.ai/schemas/spa-intake/v1",
+  "schema": "spa-intake",
+  "schema_version": "1.0.0",
+  "skill": "56-sales-page-assets",
+  "title": "Ultimate AI Sales Page Writer — intake contract (fleet-clean)",
+  "funnel_type": "sales_page_assets",
+  "description": "The 12-field intake contract recovered from the 'All In One Sales Page Assets' engine (ANALYSIS §3), with the brittle field keys carrying literal embedded spaces REPAIRED to sane keys. NOTE O-3: the two legacy GHL keys with embedded spaces ('Sales_Page_Writer_Product _Info', 'upsellOneProductDescription ') must be renamed on the GHL side and the consumer side TOGETHER at cutover; the sane keys below are the target. The prover reads either this spec (a 'fields' contract) OR a runtime brief (an 'answers' object, provenance-gated + locked).",
+
+  "fields": [
+    {"key": "brand_info",           "legacy_key": "Sales_Page_Writer_Brand_Info",          "type": "string", "required": true,  "asks": "Brand name, description, audience, voice/personality."},
+    {"key": "product_info",         "legacy_key": "Sales_Page_Writer_Product _Info",       "type": "string", "required": true,  "asks": "Front-end (main) product/offer description incl. price + CTA link.", "legacy_key_had_embedded_space": true},
+    {"key": "primary_brand_color",  "legacy_key": "Sales_Page_Writer_Primary_Brand_Color", "type": "string", "required": true,  "asks": "Primary brand color (HEX)."},
+    {"key": "brand_logo",           "legacy_key": "Sales_Page_Writer_Brand_Logo",          "type": "string", "required": true,  "asks": "Brand logo URL."},
+    {"key": "image_prompt_count",   "legacy_key": "Sales_Page_Writer_Prompt_Count",        "type": "integer","required": true,  "min": 1, "max": 20, "default": 12, "asks": "How many AI images to generate. Default RAISED to 12 so every stage slice is non-empty (ANALYSIS §7.4; PRD O-6)."},
+    {"key": "upsell_desc",          "legacy_key": "upsellOneProductDescription ",          "type": "string", "required": true,  "asks": "Upsell (OTO1) offer description.", "legacy_key_had_embedded_space": true},
+    {"key": "downsell_desc",        "legacy_key": "downSellOneProductDescription",         "type": "string", "required": true,  "asks": "Downsell offer description."},
+    {"key": "bump_desc",            "legacy_key": "bumpSaleProductDescription",            "type": "string", "required": true,  "asks": "Order-bump offer description."},
+    {"key": "high_ticket_desc",     "legacy_key": "highTicketProductDescription",          "type": "string", "required": true,  "asks": "High-ticket offer description ($1k-$25k+ positioning)."},
+    {"key": "first_name",           "legacy_key": "first_name",                            "type": "string", "required": true,  "asks": "Contact first name."},
+    {"key": "last_name",            "legacy_key": "last_name",                             "type": "string", "required": true,  "asks": "Contact last name."},
+    {"key": "email",                "legacy_key": "email",                                 "type": "string", "required": true,  "asks": "Contact email (delivery)."}
+  ],
+
+  "derived_runtime": {
+    "client_slug":  "kebab slug from the GHL location/contact (RUNTIME ONLY — never in repo).",
+    "funnel_slug":  "kebab slug from the offer title.",
+    "offer_token_ledger": "the exact offer name(s) from product_info/upsell/downsell/high-ticket — the provenance seed the bundle + delivery gates depend on.",
+    "founder_name": "first_name + last_name — SEO founder-name that Skill 6 validate_founder_name requires."
+  },
+
+  "image_slice_map": {
+    "note": "How image_prompt_count allocates across stages (fixed for count>=12; proportional otherwise, prover-checked).",
+    "main":        "[0:4]",
+    "upsell-1":    "[4:8]",
+    "downsell-1":  "[8:10]",
+    "high-ticket": "[10:]"
+  },
+
+  "provider_rule": "CLIENT runtime uses the client's OWN configured providers/keys for text + images — NEVER Anthropic, NEVER the operator's accounts. A/B variants come from two client models OR two persona prompts on one client model (never an Anthropic/Gemini split as in the legacy engine).",
+
+  "runtime_brief_contract": {
+    "funnel_type": "sales_page_assets (else P0 defers)",
+    "locked": "true (provenance-gated) before generation unlocks",
+    "answers": "an object keyed by the sane field keys above",
+    "offer_token_ledger": "non-empty list of the declared offer name(s)",
+    "client_slug": "non-empty kebab slug",
+    "funnel_slug": "non-empty kebab slug"
+  }
+}

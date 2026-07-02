@@ -1,0 +1,1 @@
+Missing-provenance variant: this run-dir intentionally OMITS media_ledger.json (the image provenance artifact produced by the image provider + Skill 6 media upload). Driven through the orchestrator it fails closed at P2-IMAGES ('delegated artifact media_ledger.json absent') and mints NO certificate.

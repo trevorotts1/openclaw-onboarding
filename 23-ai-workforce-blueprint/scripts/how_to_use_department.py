@@ -828,6 +828,15 @@ It AUTHORS the 12-section copy + the 5,000-19,000-char image prompts under fail-
 (`49-signature-funnel/scripts/prove_sf_*.py`), delegates image generation to Skill 47 and ALL GHL \
 media + build to Skill 6 (the ONE delivery rail), and issues a signed certificate only on a full \
 pass. Shared procedure: `universal-sops/funnel-craft/`.
+- Sales Page Assets engine (Skill 56) - the Direct-Response sibling of Skill 49: the Trevor Otts \
+sales-page asset stack (8-section main page A/B + countdown timer, 9-section upsell A/B, downsell, the \
+Sovereign Architect 6,500-7,100-word high-ticket long-form, 40-80-word order-bump with a checkbox close, \
+and a slice-covered image plan) at `56-sales-page-assets/`, the SECOND registered engine on the same \
+STEP-0 funnel-engine selector `06-ghl-install-pages/tools/funnel_engine_selector.py`. It AUTHORS the copy \
++ image plan under eight fail-closed provers (`56-sales-page-assets/scripts/prove_sp_*.py`), delegates \
+image generation to Skill 47 (or the client's own image provider) and ALL GHL media + build to Skill 6 \
+(the ONE delivery rail), routes the order-bump to Skill 44, and issues a signed certificate only on a \
+full pass. Owned SOP cluster: `universal-sops/sales-page-craft/` (56 OWNS it; extends `universal-sops/funnel-craft/`).
 - Product Bio Engine (Skill 55) - the master-brain Product Bio: a 6,000-7,000-word, 10-section \
 sales knowledge base (10 intros, 15-20 power adjectives, ICP, product description, positioning, \
 8-10 objections, 10-12 FAQs, 8-10 social proof, StoryBrand 2.0, 24 named signature closes + a \

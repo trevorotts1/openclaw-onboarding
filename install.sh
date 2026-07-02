@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v16.7.2"
+ONBOARDING_VERSION="v16.8.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -739,7 +739,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 5 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/55-... (48 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/55-..., plus 56-sales-page-assets (49 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -4670,7 +4670,7 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 48 active skills install in 5 dependency-aware waves, not by number order.
+The 49 active skills install in 5 dependency-aware waves, not by number order.
 Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
 A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
@@ -6746,6 +6746,53 @@ install_skill_55_product_bio() {
 }
 
 install_skill_55_product_bio
+
+# ----------------------------------------------------------
+# Skill 56: Sales Page Assets (Direct-Response methodology + gates)
+# ----------------------------------------------------------
+# Self-contained: this template install copies the Skill 56 folder (SKILL.md,
+# MASTERDOC.md, SALESPAGE-MANIFEST.json, the 12-field intake gate + schema, the
+# BAKED provider-agnostic copy/image prompts, the labeling grammar + structure,
+# the eight fail-closed model-free provers, the no-skip orchestrator, and the
+# canonical fail-closed entry). NO external clone. Skill 56 is the DIRECT-RESPONSE
+# sibling of Skill 49 (Signature Funnel): it AUTHORS the 8-section main sales page
+# (A/B + countdown timer), the Trevor Otts 9-section upsell (A/B), a downsell
+# recovery page, the Sovereign Architect 6,500-7,100-word high-ticket long-form,
+# 40-80-word order-bump copy with a checkbox close, and a slice-covered image plan,
+# from one "Ultimate AI Sales Page Writer" survey. Every SACRED count/band is
+# MEASURED by a model-free prover (self-reported counts are ignored). It registers
+# as the SECOND STEP-0 funnel engine in Skill 6's registry, then DELEGATES image
+# generation to Skill 47 (or the client's OWN image provider) and ALL GoHighLevel
+# media + funnel/page build to Skill 6 (the ONE GHL delivery rail); the order-bump
+# routes to Skill 44. It OWNS the <client>__<funnel>__<stage>__<type>__vNN labeling
+# grammar (reciprocal with Skill 49). On a client box it uses the CLIENT's own model
+# providers — never the operator's, never Anthropic model ids. Skill 6, Skill 47,
+# and Skill 44 are prerequisites.
+install_skill_56_sales_page_assets() {
+    local SKILL_SRC="$ONBOARDING_DIR/56-sales-page-assets"
+    local SKILL_DEST="$SKILLS_DIR/56-sales-page-assets"
+
+    if [ ! -d "$SKILL_SRC" ]; then
+        warn "Skill 56 source dir not found at $SKILL_SRC — skipping (older onboarding bundle?)"
+        return 0
+    fi
+
+    mkdir -p "$SKILL_DEST"
+    cp -R "$SKILL_SRC/." "$SKILL_DEST/" 2>>"$LOG_FILE" || {
+        warn "Failed to copy Skill 56 from $SKILL_SRC -> $SKILL_DEST"
+        return 0
+    }
+    chmod +x "$SKILL_DEST/sales-page-assets-entry.sh" "$SKILL_DEST/run_sales_page_assets.py" \
+             "$SKILL_DEST/verify.sh" 2>/dev/null || true
+    chmod +x "$SKILL_DEST/scripts/"*.py 2>/dev/null || true
+
+    success "Skill 56 (Sales Page Assets) installed -> $SKILL_DEST"
+    note "Skill 56 is the methodology + enforcement layer for the Trevor Otts Direct-Response sales-page asset stack (the DR sibling of Skill 49): the 8-section main sales page (A/B + countdown timer), the Trevor Otts 9-section upsell (A/B personas), a downsell recovery page, the Sovereign Architect 6,500-7,100-word high-ticket long-form page, 40-80-word order-bump copy with a checkbox close, and a slice-covered image plan, from one 'Ultimate AI Sales Page Writer' survey. It bakes provider-agnostic copy/image prompts and gates every SACRED count/band with eight fail-closed model-free provers (prove_sp_intake / image_plan / main_structure / upsell_structure / highticket_band / bump_band / bundle / cert) that MEASURE the stripped text (self-reported counts are ignored)."
+    note "It runs P0 INTAKE -> P1 IMAGE-PLAN -> P2 IMAGES -> P3 COPY x7 -> P4 MEDIA -> P5 FRAGMENTS -> P6 DOCS -> P7 BUNDLE -> P8 DELIVER -> P9 HANDOFF through one canonical entry (sales-page-assets-entry.sh) with a deps/version/hash-pin/bypass-scan/0600-nonce fail-closed gate, then issues a signed PROCESS-CERTIFICATE only on all-phases-pass. It registers as the SECOND STEP-0 funnel engine in Skill 6's registry, delegates image generation to Skill 47 (or the client's OWN image provider) and ALL GHL media + funnel/page build to Skill 6 (the ONE GHL delivery rail), and routes the order-bump to Skill 44. It OWNS the <client>__<funnel>__<stage>__<type>__vNN labeling grammar (reciprocal with Skill 49). Client runtime uses the CLIENT's own model providers — never the operator's, never Anthropic model ids. Skill 6, Skill 47, and Skill 44 are prerequisites."
+    return 0
+}
+
+install_skill_56_sales_page_assets
 
 # ----------------------------------------------------------
 # Step 15: Register Skill 32's materialize-dept-agents.sh (v10.13.18)

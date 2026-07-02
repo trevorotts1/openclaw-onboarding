@@ -19,7 +19,16 @@
   "step0_engine_selector": {
     "registry": "06-ghl-install-pages/funnel-engines/registry.json",
     "selector": "06-ghl-install-pages/tools/funnel_engine_selector.py",
-    "note": "Requests route to this engine via the shared STEP-0 funnel-engine selector. NO_ENGINE_MATCH falls through to the template-first funnel matcher. Skill 56 (Sales-Page-Assets) registers the 2nd entry later."
+    "note": "Requests route to an engine via the shared STEP-0 funnel-engine selector. NO_ENGINE_MATCH falls through to the template-first funnel matcher. Skill 56 (Sales-Page-Assets) is now the 2nd registered engine (the Direct-Response sibling) — see direct_response_sibling below."
+  },
+  "direct_response_sibling": {
+    "skill": "56-sales-page-assets",
+    "engine_id": "sales-page-assets",
+    "engine_manifest": "56-sales-page-assets/SALESPAGE-MANIFEST.json",
+    "sanctioned_entry": "56-sales-page-assets/sales-page-assets-entry.sh",
+    "masterdoc": "56-sales-page-assets/MASTERDOC.md",
+    "sacred_structure": "56-sales-page-assets/structure/sales_page_structure.json",
+    "note": "The Direct-Response sibling of Skill 49 (the DR sales-page / VSL family): the 8-section main A/B + countdown, the Trevor Otts 9-section upsell A/B, the downsell, the Sovereign Architect high-ticket long-form (6,500-7,100 words), the 40-80-word bump copy, and the slice-covered image plan — its own eight fail-closed model-free provers (prove_sp_*.py) and its own P0..P9 spine. It SHARES this funnel-craft SOP cluster and the ONE labeling grammar (56 OWNS it), rides the SAME STEP-0 selector, and DELEGATES all GHL media + build to Skill 6 (the ONE delivery rail) + the bump to Skill 44. Do NOT drive the DR stack through the Skill-49 provers; use 56-sales-page-assets/sales-page-assets-entry.sh."
   },
   "delivery_rail": {
     "owner": "06-ghl-install-pages",
@@ -118,7 +127,7 @@
     "pattern": "<client>__<funnel>__<stage>__<type>__vNN",
     "stage_enum": ["main", "checkout", "upsell1", "downsell1", "upsell2", "downsell2", "thankyou"],
     "type_enum": ["copy", "prompt", "image", "html", "preview"],
-    "reciprocal_pin": "49-signature-funnel/MASTERDOC.md §8 + Skill 56 (Sales-Page-Assets), forward-ref"
+    "reciprocal_pin": "49-signature-funnel/MASTERDOC.md §8 <-> 56-sales-page-assets/structure/labeling-grammar.json (Skill 56 OWNS the shared grammar; both engines share stage/type vocabulary, DR extends stage with bump/high-ticket and type with img/funnel/brief/manifest/cert)"
   },
   "client_runtime_rule": "On a client box the engine uses the CLIENT's OWN configured providers + keys (strongest -> copy + QC verify; mid -> image prompts / HTML / JSON; cheapest -> catalog / poll). NEVER Anthropic / claude-* / operator keys. The provers are deterministic and model-free.",
   "flexibility": "guide-not-rule: honor an explicit owner choice about funnel size + offers; but the SACRED section bands + image-prompt band are prover-enforced hard AF codes, not opinions."

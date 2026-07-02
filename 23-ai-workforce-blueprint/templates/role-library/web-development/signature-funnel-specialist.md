@@ -103,7 +103,8 @@ this role) if the SACRED law changes. Never change the law to make a gate pass.
   (AF-FUN-SEC*/AF-FUN-TY*), `prove_sf_prompt_floor.py` (AF-FUN-PROMPT-*), `prove_sf_no_pitch.py`
   (AF-FUN-TY-PITCH/-PRICE/-CTA, AF-FUN-IMG-*), `prove_sf_cert.py` (AF-FUN-CERT-*).
 - The shared STEP-0 funnel-engine selector: `06-ghl-install-pages/funnel-engines/registry.json` +
-  `tools/funnel_engine_selector.py` (routes the request here; Skill 56 registers a 2nd entry later).
+  `tools/funnel_engine_selector.py` (routes the request here; Skill 56, the Direct-Response sibling, is
+  now the 2nd registered entry — see `../web-development/sales-page-assets-specialist.md`).
 - The delivery rail (DELEGATED): Skill 6 `ghl_media.py` (media folder + upload) and
   `ghl_rest_canvas.py` / `ghl_builder.py` (funnel/page build + HTML injection). Images: Skill 47
   `kie_image.py`.

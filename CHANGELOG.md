@@ -1,3 +1,14 @@
+## [v16.8.0]  -  2026-07-02  -  feat(skill-56): Sales Page Assets — Direct-Response funnel-asset engine (sibling of Signature Funnel 49)
+
+### Risk: low — net-new additive skill `56-sales-page-assets/` (the SECOND STEP-0 funnel engine) plus its dept/role/SOP wiring; no existing skill's runtime changed. Ships a fail-closed direct-response sales-page asset generator: 14 baked provider-agnostic prompts, 8 fail-closed provers (`prove_sp_*`) + `SPA-PROVER-PIN.sha256`, a no-skip orchestrator + canonical entry, the labeling-grammar + sales-page structure JSON, a golden example with a signed PROCESS-CERTIFICATE + broken-variant rejection fixtures, and `universal-sops/sales-page-craft/`. Client-providers-only / never-Anthropic enforced (G-NOANTHROPIC). GHL delivery rides Skill 6; no new Command Center endpoint / no schema change. Merged after catching up to main v16.7.2 (Skill-52 owner docs); all version markers roll to v16.8.0.
+
+### Files
+- `56-sales-page-assets/` — NEW skill (SKILL.md, MASTERDOC, SALESPAGE-MANIFEST.json, intake schema, structure + labeling-grammar JSON, 14 baked prompts, 8 provers + pin, orchestrator, entry, verify.sh, golden example + broken variants)
+- `universal-sops/sales-page-craft/` — NEW shared SOP cluster
+- `23-ai-workforce-blueprint/templates/role-library/{marketing,web-development}/sales-page-assets-specialist.md` — 2 NEW role specialists (registered in `_index.json`, 426 roles)
+- `06-ghl-install-pages/tools/SELECTORS-LIVE-{funnel,page,survey}.md` — GHL builder selector captures (funnel/page/survey)
+- 11 version markers → v16.8.0 via `bump-version.sh`; content-manifest re-stamped
+
 ## [v16.7.2]  -  2026-07-02  -  docs(skill-52): add owner-facing HOW-TO-USE + INTAKE-QUESTIONS to the merged Avatar Alchemist skill
 
 ### Risk: none — additive documentation only, zero functional/runtime change. Two owner-facing docs land inside the already-shipped `52-avatar-alchemist/` skill: `HOW-TO-USE.md` (front-door command, Book-vs-Brand version selector, what the 40-stage brand pipeline produces, where output lands, the client-providers-only/never-Anthropic rule, and how `version=book` routes out to Skill 53) and `intake/INTAKE-QUESTIONS.md` (the human-readable intake question list derived from the intake schema/template: version selector + shared questions + per-version delta). `52-avatar-alchemist/verify.sh` still PASSES under bash + zsh; client-name + repo-consistency gates green. An independent content-authenticity re-grade of the golden example (verifier != author) was recorded as INTERNAL QC evidence in the PRD folder (NOT shipped in the skill) — it grades the golden below the finalize bar and is tracked as a follow-up quality item; it does not affect the skill's machinery, which remains fully enforced.

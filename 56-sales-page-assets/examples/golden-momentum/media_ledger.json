@@ -1,0 +1,90 @@
+{
+  "funnel_type": "sales_page_assets",
+  "media_folder": "marcus-vale__momentum-engine",
+  "images": [
+    {
+      "asset_key": "marcus-vale__momentum-engine__main__img-01__v01",
+      "stage": "main",
+      "task_id": "kie-momentum-01-20260702",
+      "ghl_media_url": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/main/img-01.png",
+      "provider": "client_image_provider"
+    },
+    {
+      "asset_key": "marcus-vale__momentum-engine__main__img-02__v01",
+      "stage": "main",
+      "task_id": "kie-momentum-02-20260702",
+      "ghl_media_url": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/main/img-02.png",
+      "provider": "client_image_provider"
+    },
+    {
+      "asset_key": "marcus-vale__momentum-engine__main__img-03__v01",
+      "stage": "main",
+      "task_id": "kie-momentum-03-20260702",
+      "ghl_media_url": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/main/img-03.png",
+      "provider": "client_image_provider"
+    },
+    {
+      "asset_key": "marcus-vale__momentum-engine__main__img-04__v01",
+      "stage": "main",
+      "task_id": "kie-momentum-04-20260702",
+      "ghl_media_url": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/main/img-04.png",
+      "provider": "client_image_provider"
+    },
+    {
+      "asset_key": "marcus-vale__momentum-engine__upsell-1__img-05__v01",
+      "stage": "upsell-1",
+      "task_id": "kie-momentum-05-20260702",
+      "ghl_media_url": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/upsell-1/img-05.png",
+      "provider": "client_image_provider"
+    },
+    {
+      "asset_key": "marcus-vale__momentum-engine__upsell-1__img-06__v01",
+      "stage": "upsell-1",
+      "task_id": "kie-momentum-06-20260702",
+      "ghl_media_url": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/upsell-1/img-06.png",
+      "provider": "client_image_provider"
+    },
+    {
+      "asset_key": "marcus-vale__momentum-engine__upsell-1__img-07__v01",
+      "stage": "upsell-1",
+      "task_id": "kie-momentum-07-20260702",
+      "ghl_media_url": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/upsell-1/img-07.png",
+      "provider": "client_image_provider"
+    },
+    {
+      "asset_key": "marcus-vale__momentum-engine__upsell-1__img-08__v01",
+      "stage": "upsell-1",
+      "task_id": "kie-momentum-08-20260702",
+      "ghl_media_url": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/upsell-1/img-08.png",
+      "provider": "client_image_provider"
+    },
+    {
+      "asset_key": "marcus-vale__momentum-engine__downsell-1__img-09__v01",
+      "stage": "downsell-1",
+      "task_id": "kie-momentum-09-20260702",
+      "ghl_media_url": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/downsell-1/img-09.png",
+      "provider": "client_image_provider"
+    },
+    {
+      "asset_key": "marcus-vale__momentum-engine__downsell-1__img-10__v01",
+      "stage": "downsell-1",
+      "task_id": "kie-momentum-10-20260702",
+      "ghl_media_url": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/downsell-1/img-10.png",
+      "provider": "client_image_provider"
+    },
+    {
+      "asset_key": "marcus-vale__momentum-engine__high-ticket__img-11__v01",
+      "stage": "high-ticket",
+      "task_id": "kie-momentum-11-20260702",
+      "ghl_media_url": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/high-ticket/img-11.png",
+      "provider": "client_image_provider"
+    },
+    {
+      "asset_key": "marcus-vale__momentum-engine__high-ticket__img-12__v01",
+      "stage": "high-ticket",
+      "task_id": "kie-momentum-12-20260702",
+      "ghl_media_url": "https://storage.example-msgsndr-media.test/marcus-vale__momentum-engine/high-ticket/img-12.png",
+      "provider": "client_image_provider"
+    }
+  ]
+}

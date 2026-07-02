@@ -1,0 +1,59 @@
+{
+  "$schema": "https://openclaw.ai/schemas/funnel-labeling-grammar/v1",
+  "grammar": "funnel-asset-labeling-grammar",
+  "grammar_version": "1.0.0",
+  "owner": "56-sales-page-assets",
+  "owner_note": "Skill 56 OWNS this labeling grammar. Skill 49 (Signature Funnel) pins the reciprocal forward-ref in its MASTERDOC.md §8 ('Reciprocal with Skill 56'). One grammar, both engines, shared stage vocabulary, so a mixed pipeline (signature main + direct-response high-ticket) labels coherently.",
+
+  "pattern": "<client>__<funnel>__<stage>__<type>__v<NN><variant>",
+  "field_separator": "__",
+  "inner_case": "kebab-case",
+  "regex": "^(?P<client>[a-z0-9][a-z0-9-]*)__(?P<funnel>[a-z0-9][a-z0-9-]*)__(?P<stage>[a-z0-9][a-z0-9-]*)__(?P<type>[a-z0-9][a-z0-9-]*)__v(?P<version>[0-9]{2})(?P<variant>[a-z]?)$",
+
+  "fields": {
+    "client":  "kebab slug of the client (from GHL location/contact). RUNTIME DATA ONLY (rule R5) — never in this fleet-wide repo.",
+    "funnel":  "kebab slug of the OFFER (not the product line).",
+    "stage":   "fixed vocabulary shared with Skill 49's 3/5/7 matrix.",
+    "type":    "what the asset IS — never the model that wrote it (rule R1).",
+    "version": "2-digit version, bumped per regeneration run (v01, v02, ...).",
+    "variant": "lowercase letter, ONLY for true A/B twins of the same stage (v01a / v01b). Absent when single-variant."
+  },
+
+  "stage_vocabulary": ["main", "checkout", "bump", "upsell-1", "downsell-1", "upsell-2", "downsell-2", "high-ticket", "thank-you"],
+  "type_vocabulary": ["copy", "page", "img", "funnel", "email", "brief", "manifest", "cert"],
+  "type_index_forms": {
+    "img":   "img-NN (2-digit index, e.g. img-03)",
+    "email": "email-NN (2-digit index, e.g. email-07)"
+  },
+
+  "surfaces": {
+    "drive_client_folder": "<client>__<funnel>/",
+    "google_doc_title":    "<full asset key>",
+    "html_fragment_file":  "<asset key>.fragment.html",
+    "image_file":          "<asset key>.png",
+    "ghl_media_folders":   "<client>__<funnel>/ -> main/, upsell-1/, ...",
+    "ghl_funnel_name":     "ZHC <client> <funnel> v<NN>  (ZHC UPPERCASE — Skill 6 mandate, rule R4)",
+    "ghl_step_name":       "ZHC <funnel> <stage> v<NN><variant>",
+    "run_id":              "<client>__<funnel>__run-<YYYYMMDD>-<seq>",
+    "process_certificate": "<client>__<funnel>__manifest__cert__v01",
+    "email_subject":       "Your <funnel> sales page assets are ready"
+  },
+
+  "binding_rules": {
+    "R1": "NO model names in labels, ever. 'Claude File'/'Gemini File' become ...__main__copy__v01a / ...__main__copy__v01b. Model provenance lives in funnel-manifest.json metadata only.",
+    "R2": "version vs variant. Rerun = version bump (v02). Two deliberate twins of one stage in one run = variant letters (v01a/v01b). Never encode a rerun as a new variant.",
+    "R3": "one key, every surface. The same asset key threads the Drive doc, fragment file, GHL media path, step name, board card, ledger, and certificate.",
+    "R4": "ZHC prefix on every GHL container (funnel/website/step), UPPERCASE, via ghl_builder.ensure_zhc_prefix — Skill 6 hard rule.",
+    "R5": "client slugs are RUNTIME data — NEVER in the fleet-wide repo, its templates, prompts, or examples. Repo examples use fictional slugs (jane-doe, glow-method).",
+    "R6": "stages are the shared vocabulary across BOTH engines (Signature + Direct-Response)."
+  },
+
+  "run_id_regex": "^(?P<client>[a-z0-9][a-z0-9-]*)__(?P<funnel>[a-z0-9][a-z0-9-]*)__run-(?P<date>[0-9]{8})-(?P<seq>[0-9]{2})$",
+  "fictional_examples": [
+    "jane-doe__glow-method__main__page__v01a.fragment.html",
+    "jane-doe__glow-method__upsell-1__copy__v01b",
+    "jane-doe__glow-method__main__img-03__v01.png",
+    "jane-doe__glow-method__manifest__cert__v01",
+    "jane-doe__glow-method__run-20260702-01"
+  ]
+}

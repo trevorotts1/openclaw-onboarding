@@ -1,0 +1,86 @@
+{
+  "certificate": "sales-page-assets-process-certificate",
+  "version": "1.0.0",
+  "run_id": "marcus-vale__momentum-engine__run-20260702-01",
+  "funnel_type": "sales_page_assets",
+  "skill_version": "1.0.0",
+  "issued_at": "2026-07-02T14:06:00Z",
+  "nonce_fingerprint": "0894b0ef7e30310c",
+  "ledger_hashes": {
+    "brief.json": "4368001aa242e46d8677893670fe4a259ec851942756eb343ef5378ff3b8b70e",
+    "image_plan.json": "071129039b09bf35540789e1ca1b3ddea68d9b066d637fb15d3023750eea3ff4",
+    "copy_ledger.json": "e2a3969c08d4d4878c42573daef8a5aa6a916779812ad53195f3eca08007f5bb",
+    "media_ledger.json": "fac92f3c563598d0c1868a92f8c8ea7d4e385879401ae362d3b4589f810e430b",
+    "funnel-manifest.json": "321302502d1cb261cab2e37ffb16c510ae9b959d8891d297c0f4919145a57e5c"
+  },
+  "phases": [
+    {
+      "id": "P0-INTAKE",
+      "prover": "prove_sp_intake.py",
+      "status": "pass",
+      "order": 0
+    },
+    {
+      "id": "P1-IMAGE-PLAN",
+      "prover": "prove_sp_image_plan.py",
+      "status": "pass",
+      "order": 1
+    },
+    {
+      "id": "P2-IMAGES",
+      "prover": "kie_image.py",
+      "status": "pass",
+      "order": 2
+    },
+    {
+      "id": "P3-COPY",
+      "prover": "prove_sp_copy_suite",
+      "status": "pass",
+      "order": 3
+    },
+    {
+      "id": "P4-MEDIA",
+      "prover": "ghl_media.py",
+      "status": "pass",
+      "order": 4
+    },
+    {
+      "id": "P5-FRAGMENTS",
+      "prover": "fragment_strip",
+      "status": "pass",
+      "order": 5
+    },
+    {
+      "id": "P6-DOCS",
+      "prover": "drive_docs",
+      "status": "pass",
+      "order": 6
+    },
+    {
+      "id": "P7-BUNDLE",
+      "prover": "prove_sp_bundle.py",
+      "status": "pass",
+      "order": 7
+    },
+    {
+      "id": "P8-DELIVER",
+      "prover": "delivery_email",
+      "status": "pass",
+      "order": 8
+    },
+    {
+      "id": "P9-HANDOFF",
+      "prover": "ghl_rest_canvas.py",
+      "status": "pass",
+      "order": 9
+    }
+  ],
+  "all_phases_pass": true,
+  "delivery": {
+    "publish": "human-approval-required",
+    "preview_only": true,
+    "two_track": "Track 1 client Docs (editable) + Track 2 build bundle (Skill 6)",
+    "bump_seam": "Skill 44 order-bump widget (P4->P5 board handoff)"
+  },
+  "signature": "7a258c2243f02b4b6debb5afe73d1d3d46b9c81bbd46e8a0ffab2fc6db91dc80"
+}
