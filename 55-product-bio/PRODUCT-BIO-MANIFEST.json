@@ -1,0 +1,116 @@
+{
+  "manifest_version": 1,
+  "skill": "product-bio",
+  "skill_number": 55,
+  "skill_version": "1.0.0",
+  "$schema_note": "SINGLE SOURCE OF TRUTH for the Product Bio pipeline. The deterministic orchestrator run_product_bio.py walks these phases IN ORDER (P0->P6) with NO phase skips. Each phase declares its produces_artifact, its _chk_* preflight symbol, and its AF-PB-* gate codes. Every AF-PB-* code below is enforced by a fail-closed, model-free, stdlib-only prover in scripts/; py_symbol names the function that decides it. Editing this file is step (i) of any Product Bio change: add the gate, add the AF code here with its trigger, add the checker, add the golden+attack fixture.",
+  "design_law": "Enforcement, not description. Bands and counts are measured on the STRIPPED text of the artifact; a model's self-reported word count / close count is NEVER trusted. Client runtime uses the CLIENT's own provider chain (model-map.template.json) — NEVER Anthropic/claude-* ids or operator keys. The deterministic gates are provider-neutral Python that run identically everywhere. A client-exact override (e.g. an exact word target) wins over the default band and is recorded on the certificate.",
+  "source_prompt_pins": {
+    "assets/prompts/01-product-bio-writer.md": "82b52e015963353c476c9999c22290305e0afda1982411c2a6f8a6b70a8ed0d8",
+    "assets/prompts/02-google-doc-html-writer.md": "f015392af7d415e112d1ca2cc2838cf6ce7a19ad34f90e611c0226833543b8fa"
+  },
+  "phases": [
+    {
+      "id": "P0-INTAKE",
+      "order": 0,
+      "name": "Intake (the 4 required fields, one block, turn-gated)",
+      "produces_artifact": "working/intake.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_intake",
+        "label": "working/intake.json present and prove_pb_intake.py PASS — product_name / product_description / first_name / last_name all present and non-whitespace. A self-attested completeness flag is never trusted."
+      },
+      "gate_codes": ["AF-PB-INTAKE-MISSING"]
+    },
+    {
+      "id": "P1-FIDELITY",
+      "order": 1,
+      "name": "Prompt fidelity (the baked IP has not drifted)",
+      "produces_artifact": "assets/prompts/*.md (pinned)",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_fidelity",
+        "label": "prove_pb_fidelity.py PASS — sha256 of the two baked prompt assets equals the recorded source pins. The IP cannot silently drift."
+      },
+      "gate_codes": ["AF-PB-PROMPT-DRIFT"]
+    },
+    {
+      "id": "P2-BIO-AUTHOR",
+      "order": 2,
+      "name": "Bio authoring (ONE call, system = prompt 01 verbatim, client model)",
+      "produces_artifact": "working/product-bio.md",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_bio_authored",
+        "label": "working/product-bio.md present (the 6,000-7,000-word, 10-section master-brain bio authored on the client's own long-output tier)."
+      },
+      "gate_codes": []
+    },
+    {
+      "id": "P3-BIO-QC",
+      "order": 3,
+      "name": "Bio QC (fail-closed floor provers over the authored bio)",
+      "produces_artifact": "working/qc/bio_qc_report.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_bio_qc",
+        "label": "prove_pb_wordcount.py PASS + prove_pb_sections.py PASS over working/product-bio.md. ANY AF-PB-* violation blocks advance; a bounded rework loop (<=3, verifier != author) re-authors then re-proves."
+      },
+      "gate_codes": ["AF-PB-WORDCOUNT", "AF-PB-VERIFY-BLOCK", "AF-PB-SECTION", "AF-PB-CLOSES", "AF-PB-COUNTS"]
+    },
+    {
+      "id": "P4-HTML-AUTHOR",
+      "order": 4,
+      "name": "HTML conversion (ONE call, system = prompt 02 verbatim, client model)",
+      "produces_artifact": "working/product-bio.html",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_html_authored",
+        "label": "working/product-bio.html present (the Google-Docs-importable HTML). Envelope auto-trim is the ONLY permitted repair and is logged."
+      },
+      "gate_codes": []
+    },
+    {
+      "id": "P5-HTML-QC",
+      "order": 5,
+      "name": "HTML QC (strict envelope battery)",
+      "produces_artifact": "working/qc/html_qc_report.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_html_qc",
+        "label": "prove_pb_html.py PASS over working/product-bio.html (--source-bio working/product-bio.md). Strict envelope, exactly one h1, no CSS beyond page-break-after, content-loss within tolerance."
+      },
+      "gate_codes": ["AF-PB-HTML-ENVELOPE", "AF-PB-HTML-H1", "AF-PB-HTML-CSS", "AF-PB-HTML-LOSS"]
+    },
+    {
+      "id": "P6-DELIVER",
+      "order": 6,
+      "name": "Deliver (labeled local bundle + handoff; certificate issued on a full pass)",
+      "produces_artifact": "delivery/PROCESS-CERTIFICATE.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_deliver",
+        "label": "the labeled deliverable bundle is assembled locally (~/Downloads/Product-Bio-<slug>-<MM-DD-YYYY>/); NO n8n / Google Drive / Slack / Gmail. A signed process certificate is issued only after a full P0->P5 pass. No hardcoded delivery channels; any push is per-client config through the client's own gateway, client-silent by default."
+      },
+      "gate_codes": ["AF-PB-STAGE-SKIPPED", "AF-PB-PROCESS-INTEGRITY"]
+    }
+  ],
+  "autofails": [
+    {"code": "AF-PB-INTAKE-MISSING", "stage": "P0", "level": "intake", "trigger": "any of the 4 required fields (product_name / product_description / first_name / last_name) missing, empty, or whitespace", "enforced_by": "prove_pb_intake", "py_symbol": "evaluate"},
+    {"code": "AF-PB-PROMPT-DRIFT", "stage": "P1", "level": "assets", "trigger": "sha256 of a baked prompt asset != its recorded source pin, an asset is missing, or an unpinned prompt file appeared", "enforced_by": "prove_pb_fidelity", "py_symbol": "evaluate"},
+    {"code": "AF-PB-WORDCOUNT", "stage": "P3", "level": "bio", "trigger": "measured stripped word count outside 6,000-7,000 (self-reported count ignored; whitespace padding is inert)", "enforced_by": "prove_pb_wordcount", "py_symbol": "evaluate"},
+    {"code": "AF-PB-VERIFY-BLOCK", "stage": "P3", "level": "bio", "trigger": "the mandatory COMPLETION VERIFICATION block is absent", "enforced_by": "prove_pb_wordcount", "py_symbol": "evaluate"},
+    {"code": "AF-PB-SECTION", "stage": "P3", "level": "bio", "trigger": "any of the 10 mandatory sections absent or out of order (matched on header lines only)", "enforced_by": "prove_pb_sections", "py_symbol": "_check_sections"},
+    {"code": "AF-PB-CLOSES", "stage": "P3", "level": "bio", "trigger": "signature-close styles != 24 distinct named styles (PRD O3 enforces the tracker's 24, not the 20 taught)", "enforced_by": "prove_pb_sections", "py_symbol": "_check_closes"},
+    {"code": "AF-PB-COUNTS", "stage": "P3", "level": "bio", "trigger": "a per-section floor missed: 10 intros / 15-20 adjectives / 8-10 objections / 10-12 FAQs / 8-10 social-proof / a missing StoryBrand beat", "enforced_by": "prove_pb_sections", "py_symbol": "_check_counts"},
+    {"code": "AF-PB-HTML-ENVELOPE", "stage": "P5", "level": "html", "trigger": "output does not start EXACTLY '<!DOCTYPE html>' or end EXACTLY '</html>' (after the one permitted auto-trim)", "enforced_by": "prove_pb_html", "py_symbol": "_check_envelope"},
+    {"code": "AF-PB-HTML-H1", "stage": "P5", "level": "html", "trigger": "the document does not contain exactly one <h1>", "enforced_by": "prove_pb_html", "py_symbol": "_check_h1"},
+    {"code": "AF-PB-HTML-CSS", "stage": "P5", "level": "html", "trigger": "any CSS beyond page-break-after (a <style> block, or an inline style with any other property)", "enforced_by": "prove_pb_html", "py_symbol": "_check_css"},
+    {"code": "AF-PB-HTML-LOSS", "stage": "P5", "level": "html", "trigger": "content coverage vs the source bio below the 90% token tolerance (content lost in conversion)", "enforced_by": "prove_pb_html", "py_symbol": "_check_loss"},
+    {"code": "AF-PB-STAGE-SKIPPED", "stage": "orchestrator", "level": "run", "trigger": "a phase was attempted out of order or the certificate chain is broken", "enforced_by": "run_product_bio", "py_symbol": "run"},
+    {"code": "AF-PB-PROCESS-INTEGRITY", "stage": "P6", "level": "run", "trigger": "a certificate was requested without a full P0->P5 pass", "enforced_by": "run_product_bio", "py_symbol": "_write_certificate"},
+    {"code": "AF-PB-ENTRY-BYPASS", "stage": "entry", "level": "run-dir", "trigger": "a hand-rolled uploader/notifier (Google Drive / Slack / Gmail / n8n webhook) is present in the run directory, bypassing the local-labeled-deliverable handoff", "enforced_by": "product-bio-entry", "py_symbol": "bypass_scan"},
+    {"code": "AF-PB-HASH-PIN", "stage": "entry", "level": "enforcement", "trigger": "the enforcement-pair hash does not match the pinned head (ENGINE-PIN.sha256)", "enforced_by": "product-bio-entry", "py_symbol": "version_hash_pin"},
+    {"code": "AF-PB-ANTHROPIC", "stage": "verify", "level": "skill", "trigger": "a claude-* / anthropic model id appears in the shipped skill or the resolved client-path model map", "enforced_by": "verify.sh", "py_symbol": "no_anthropic_scan"}
+  ]
+}

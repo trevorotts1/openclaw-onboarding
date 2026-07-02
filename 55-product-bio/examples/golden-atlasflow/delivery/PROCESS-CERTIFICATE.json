@@ -1,0 +1,58 @@
+{
+  "schema": "product-bio-process-certificate-v1",
+  "product_name": "AtlasFlow",
+  "product_slug": "atlasflow",
+  "measured_word_count": 6105,
+  "measured_signature_closes": 24,
+  "declared_phases": [
+    "P0-INTAKE",
+    "P1-FIDELITY",
+    "P2-BIO-AUTHOR",
+    "P3-BIO-QC",
+    "P4-HTML-AUTHOR",
+    "P5-HTML-QC",
+    "P6-DELIVER"
+  ],
+  "verified_phases": 7,
+  "all_phases_pass": true,
+  "runtime": "local-only (no n8n / Google Drive / Slack / Gmail)",
+  "steps": [
+    {
+      "phase_id": "P0-INTAKE",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P1-FIDELITY",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P2-BIO-AUTHOR",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P3-BIO-QC",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P4-HTML-AUTHOR",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P5-HTML-QC",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P6-DELIVER",
+      "disposition": "verified",
+      "ok": true
+    }
+  ],
+  "certificate_sha": "5311779354e4febb6b4d1d242e258561386c9db163ae260d5e01f7478f4b8470",
+  "certified_at": "2026-07-02T13:38:02.704295+00:00"
+}

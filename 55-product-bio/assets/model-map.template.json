@@ -1,0 +1,23 @@
+{
+  "$schema_note": "CLIENT-PATH model map TEMPLATE — resolved per box at install against the CLIENT's OWN configured providers/keys. Chain 1 (bio authoring) needs a long-output-capable tier (~7,000 words => 10k+ output tokens; set maxTokens accordingly, e.g. 65536 on ollama-cloud). Chain 2 (HTML formatting) is mechanical and may ride a cheaper tier of the SAME client chain. NEVER an Anthropic / claude-* id here; NEVER the operator's keys. verify.sh runs a no-Anthropic scan (AF-PB-ANTHROPIC) over the shipped skill + the resolved map. The source workflow pinned both chains to google/gemini-2.5-pro via OpenRouter (already non-Anthropic) — kept ONLY if the client configured that provider/key; otherwise the client's own capability-tested tier is used. Never substitute a client's expressed model choice.",
+  "skill": "product-bio",
+  "resolved_per_box": true,
+  "stages": {
+    "S1_bio_author": {
+      "role": "long-output authoring (chain 1, system = prompt 01 verbatim)",
+      "provider": "<CLIENT_PROVIDER_ID>",
+      "model": "<CLIENT_LONG_OUTPUT_MODEL>",
+      "maxTokens": 65536,
+      "notes": "Must sustain a 6,000-7,000-word single output. Example client configs: their OpenRouter key with google/gemini-2.5-pro (if configured), or their ollama-cloud long-output tier. NEVER claude-*/anthropic/*."
+    },
+    "S3_html_convert": {
+      "role": "mechanical HTML formatting (chain 2, system = prompt 02 verbatim)",
+      "provider": "<CLIENT_PROVIDER_ID>",
+      "model": "<CLIENT_MECHANICAL_MODEL>",
+      "maxTokens": 32768,
+      "notes": "May ride a cheaper tier of the SAME client chain. NEVER claude-*/anthropic/*."
+    }
+  },
+  "banned_model_id_prefixes": ["claude-", "anthropic/", "us.anthropic."],
+  "client_sovereignty": "The client's expressed model choice always wins and is never floored, capped, or substituted. This template is filled with the client's own provider ids/keys at install; it is never shipped with operator credentials."
+}
