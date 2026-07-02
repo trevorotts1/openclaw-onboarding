@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "stable_path": "shared-utils/tone-writing-core",
   "description": "Canonical, provider-agnostic tone/writing core shared by the BlackCEO writing skills (52 brand, 53 book, 54 anthology). Blended tone + four tone-style analyzers + shared writing rails. ZERO Anthropic model ids; the client's own TIER models resolve these at runtime.",
-  "consumers": ["52-avatar-intelligence", "53-book-writer", "54-anthology-writer"],
+  "consumers": ["52-avatar-alchemist", "53-book-writer", "54-anthology-writer"],
   "writing_rails": "writing-rails.md",
   "tone_stages": [
     {"stage_id": "04-tone-style-1", "prompt_dir": "prompts/04-tone-style-1", "tier": "B", "depends_on": ["01-avatar-questions-1-30", "02-avatar-questions-31-32"], "role": "tone analyzer (figure #1)", "na_autopick": true, "internal_feeder": true},

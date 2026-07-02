@@ -95,12 +95,12 @@ Skills are shared. Your setup is yours. Keeping them apart means you can update 
   `universal-sops/product-bio-craft/`. The Command Center `sops` row (`product-bio-master-brain-bio`,
   marketing dept) is added by the operator at CC install/update time (the mission-control repo is a
   separate submodule); no schema change (a job is a `tasks` row).
-- **Avatar Intelligence Engine (Skill 52)** — `52-avatar-intelligence/`, the Avatar Alchemist
+- **Avatar Alchemist Engine (Skill 52)** — `52-avatar-alchemist/`, the Avatar Alchemist
   brand-intelligence engine: ONE completed brand-intake interview → 40 generators across 7 subsystems
   (Avatar Core, Awareness, Bios, Tone, a 13-set Facebook Ad system, Booking Bots, Landing/Hero) → 16
   named deliverables (37 documents). A Book/Brand version selector runs FIRST (`version=brand` runs the
   40-stage pipeline; `version=book` routes to Skill 53 or parks fail-closed). Built through the ONE
-  sanctioned front door `52-avatar-intelligence/entry.sh` (deps → bypass-scan → hash-pin → nonce) then
+  sanctioned front door `52-avatar-alchemist/entry.sh` (deps → bypass-scan → hash-pin → nonce) then
   the foreman `scripts/aa_director.py`; every SACRED count/floor is MEASURED by fail-closed, model-free
   provers (`scripts/aa_*.py`) — self-reported counts ignored — with a signed provenance certificate only
   on a full 40/40 pass. Delivery is a labeled LOCAL bundle in `~/Downloads/` (no n8n / Airtable / Drive /

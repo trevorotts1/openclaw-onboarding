@@ -1,32 +1,32 @@
 # Avatar-Craft SOP Cluster (`universal-sops/avatar-craft/`)
 
-The SHARED, cross-department procedure for how any department discovers and drives the **Avatar
-Intelligence Engine (Skill 52 — Avatar Alchemist)** end to end: one completed brand-intake interview
+The SHARED, cross-department procedure for how any department discovers and drives the **Avatar Alchemist
+Engine (Skill 52 — Avatar Alchemist)** end to end: one completed brand-intake interview
 -> a Book/Brand version selector -> 40 generators across 7 subsystems -> 16 named deliverables (37
 documents) -> a labeled local delivery bundle + a signed provenance certificate.
 
 This cluster is the `universal-sops` face of the capability. It does NOT re-implement the engine. The
 authoritative machine spine lives in the skill:
 
-- `52-avatar-intelligence/AA-PIPELINE-MANIFEST.json` — the digest-verified 40-stage DAG (waves, deps,
+- `52-avatar-alchemist/AA-PIPELINE-MANIFEST.json` — the digest-verified 40-stage DAG (waves, deps,
   floors, deliverables) — the SINGLE SOURCE OF TRUTH for the foreman and the content prover.
-- `52-avatar-intelligence/AVATAR-MANIFEST.json` — the fail-closed enforcement phases (`P-AV-*`) + the
+- `52-avatar-alchemist/AVATAR-MANIFEST.json` — the fail-closed enforcement phases (`P-AV-*`) + the
   `AF-AV-*` auto-fail table; every code has a negative fixture in `scripts/test_aa_preflight.py`.
-- `52-avatar-intelligence/scripts/aa_intake_gate.py`, `aa_build_check.py`, `aa_delivery_gate.py`,
+- `52-avatar-alchemist/scripts/aa_intake_gate.py`, `aa_build_check.py`, `aa_delivery_gate.py`,
   `aa_gate_integrity_check.py`, `test_aa_preflight.py` — the fail-closed, model-free, stdlib-only
   provers (each with a built-in `--self-test` + golden/attack fixtures). They MEASURE the stripped
   text and the artifact bytes; a model's self-reported count is NEVER trusted.
-- `52-avatar-intelligence/scripts/aa_director.py` — the deterministic foreman: it walks the 40-stage
+- `52-avatar-alchemist/scripts/aa_director.py` — the deterministic foreman: it walks the 40-stage
   DAG in dependency waves, dispatches one sub-agent per stage with ONLY its 3 prompt files + resolved
   deps, and runs the content + delivery gates. It refuses to run without the one-time nonce minted by
   the front door.
-- `52-avatar-intelligence/entry.sh` — the ONE sanctioned front door (DEPS -> BYPASS-SCAN -> HASH-PIN
+- `52-avatar-alchemist/entry.sh` — the ONE sanctioned front door (DEPS -> BYPASS-SCAN -> HASH-PIN
   -> NONCE), fail-closed.
-- `52-avatar-intelligence/MASTERDOC.md` — the SACRED IP (the 7 subsystems, all 40 generators, the
+- `52-avatar-alchemist/MASTERDOC.md` — the SACRED IP (the 7 subsystems, all 40 generators, the
   per-artifact bands, the 13 restored ad-set categories, and the Book/Brand selector).
-- `52-avatar-intelligence/prompts/<40 stage dirs>/{system.md, methodology.md, user.md}` — the 40 baked
+- `52-avatar-alchemist/prompts/<40 stage dirs>/{system.md, methodology.md, user.md}` — the 40 baked
   generators, provider-agnostic, grouped by subsystem, each mapped to its deliverable.
-- `52-avatar-intelligence/intake/{intake-schema.json, INTAKE-TEMPLATE.md}` — the version selector
+- `52-avatar-alchemist/intake/{intake-schema.json, INTAKE-TEMPLATE.md}` — the version selector
   (question 0) + both question sets.
 
 ## The ONE way in
@@ -35,8 +35,8 @@ A brand-intelligence package is built by running, and ONLY by running, the canon
 door, which mints the one-time nonce the foreman requires:
 
 ```
-bash 52-avatar-intelligence/entry.sh <RUN_DIR>            # deps -> bypass-scan -> hash-pin -> nonce
-python3 52-avatar-intelligence/scripts/aa_director.py \   # foreman: waves -> sub-agents -> gates
+bash 52-avatar-alchemist/entry.sh <RUN_DIR>            # deps -> bypass-scan -> hash-pin -> nonce
+python3 52-avatar-alchemist/scripts/aa_director.py \   # foreman: waves -> sub-agents -> gates
         --run-dir <RUN_DIR> --nonce <RUN_DIR>/.entry-nonce
 ```
 
@@ -53,11 +53,11 @@ manifest or prover (anti-lie LIVE-gate).
 | `SOP-AVATAR-01-BRAND-INTELLIGENCE-PACKAGE.md` | What the brand-intelligence package is, when to build it, the Book/Brand selector + the two intake sets, and the full gate contract (`P-AV-*` phases + every `AF-AV-*` code). |
 
 The auto-fail ruleset and phase manifest are NOT duplicated here — they live authoritatively in
-`52-avatar-intelligence/AVATAR-MANIFEST.json` (the `P-AV-*` phases + the `AF-AV-*` table) and
-`52-avatar-intelligence/AA-PIPELINE-MANIFEST.json` (the 40-stage DAG). This SOP points at them so there
+`52-avatar-alchemist/AVATAR-MANIFEST.json` (the `P-AV-*` phases + the `AF-AV-*` table) and
+`52-avatar-alchemist/AA-PIPELINE-MANIFEST.json` (the 40-stage DAG). This SOP points at them so there
 is exactly one source of truth.
 
-## SACRED law (from `52-avatar-intelligence/MASTERDOC.md`)
+## SACRED law (from `52-avatar-alchemist/MASTERDOC.md`)
 
 - The 7 subsystems, all 40 generators, their ORDER, the per-artifact bands, and the 13 restored ad-set
   categories are SACRED — never floored, reordered, or reinterpreted. Every rule is machine-enforced by
@@ -116,7 +116,7 @@ provers and are not opinions — a violation is a hard, named `AF-AV-*` auto-fai
 ## Client-runtime rule (binding)
 
 The shipped engine on a client box NEVER uses Anthropic / `claude-*` models or operator keys. The 40 LLM
-stages run on the CLIENT's own configured provider chain (`52-avatar-intelligence/preflight.sh` probes
+stages run on the CLIENT's own configured provider chain (`52-avatar-alchemist/preflight.sh` probes
 the box and writes `model-map.json`: TIER-A deep authoring / TIER-B structured / SEARCH for stage 02).
 The deterministic gates (`aa_*.py`) are provider-neutral Python and run identically everywhere;
 `G-NOANTHROPIC` (`AF-AV-NOANTHROPIC`) hard-fails any run whose resolved model id matches
