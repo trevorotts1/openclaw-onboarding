@@ -1,0 +1,122 @@
+{
+  "$schema": "https://openclaw.ai/schemas/interview-section/v1",
+  "section": "signature-presentation-intake",
+  "version": "1.0.0",
+  "deck_type": "signature_presentation",
+  "description": "The SACRED 8-Questions gate for a Trevor Otts Signature Presentation, plus the frame-selection question. Prime Directives 6 & 7: the questions are asked ALL AT ONE TIME, in a single message block, BEFORE any slide is written; once answered, all slides are written at one time (Directive 8). This file is the authoritative spec that prove_sp_intake.py loads. The runtime answers are recorded in working/copy/sp_intake.json against this contract.",
+  "delivery": {
+    "mode": "one_block",
+    "asked_all_at_once": true,
+    "one_question_per_turn": false,
+    "rule": "Directive 7 wins for this deck type: emit all 8 Questions AND the frame-selection question as ONE message-block turn. The standard per-turn deck-intake capture (representation mix, grounded content, visual style branch, etc.) still runs one-question-per-turn BEFORE this block; this block is the signature-method gate that unlocks writing.",
+    "front_door": "brainstorming-buddy-presentations (signature mode) via deck-intake-driver.py signature mode",
+    "blocks_until_answered": ["P4-COPY", "all slide authoring"]
+  },
+  "questions": [
+    {
+      "id": "q1",
+      "order": 1,
+      "prompt": "What is the title of your Signature Presentation?",
+      "kind": "text",
+      "required": true,
+      "storeOn": "q1_title"
+    },
+    {
+      "id": "q2",
+      "order": 2,
+      "prompt": "Do you want me to provide other possible titles before I start writing?",
+      "kind": "text",
+      "required": true,
+      "storeOn": "q2_alt_titles"
+    },
+    {
+      "id": "q3",
+      "order": 3,
+      "prompt": "Any specific pain points to address in the avatar section?",
+      "kind": "text",
+      "required": true,
+      "storeOn": "q3_avatar_pain_points"
+    },
+    {
+      "id": "q4",
+      "order": 4,
+      "prompt": "Key elements of your story to consider before crafting the personal-story section?",
+      "kind": "text",
+      "required": true,
+      "storeOn": "q4_story_elements"
+    },
+    {
+      "id": "q5",
+      "order": 5,
+      "prompt": "What do you want to teach in the transformational-teaching section? (e.g., \"7 Secrets to ___\", \"5 Ways to ___\", \"Mastering the ___ Protocol\", \"The ___ Blueprint to ___\")",
+      "kind": "text",
+      "required": true,
+      "storeOn": "q5_teaching_topic"
+    },
+    {
+      "id": "q6",
+      "order": 6,
+      "prompt": "Do you want other possible titles for the transformational-teaching section?",
+      "kind": "text",
+      "required": true,
+      "storeOn": "q6_alt_teaching_titles"
+    },
+    {
+      "id": "q7",
+      "order": 7,
+      "prompt": "What product(s) will you offer at the end?",
+      "kind": "text",
+      "required": true,
+      "storeOn": "q7_offer_products",
+      "note": "The EXACT product/offer name(s) captured here become the offer-token ledger. They are FORBIDDEN in Phase 3 (prove_sp_no_pitch.py) and REQUIRED to appear in the Phase-4 pitch. A named product here that is absent from the pitch-token ledger fails AF-SP-OFFER-UNDECLARED."
+    },
+    {
+      "id": "q8",
+      "order": 8,
+      "prompt": "Anything else to consider before I start writing?",
+      "kind": "text",
+      "required": true,
+      "storeOn": "q8_anything_else"
+    }
+  ],
+  "frame_selection_question": {
+    "id": "frame_selection",
+    "order": 9,
+    "asked_in_same_block": true,
+    "additive_to_the_8": true,
+    "prompt": "Which Signature frame should carry your Transformational Teaching? (A) The Rulebook — you teach through numbered, non-negotiable Rules, each with an affirmation and a 3-step action plan, capped with a recap and a teased bonus Rule. (B) The Vault — you unlock numbered Secrets, each paired with a famous quote and its own affirmation, tied together by one running metaphor. (C) The Quest — you hand them a named Blueprint organized as Quests with steps and affirmations, closing on a poetic manifesto they finish in their own words. (D) The Original — we design a from-scratch frame around your own methodology. Not sure? Say 'show me' and I'll sketch your teaching topic in all three frames (one line each) before you pick.",
+    "kind": "enum",
+    "required": true,
+    "storeOn": "signature_frame",
+    "allowed_values": ["rulebook", "vault", "quest", "original"],
+    "value_labels": {
+      "rulebook": "The Rulebook",
+      "vault": "The Vault",
+      "quest": "The Quest",
+      "original": "The Original"
+    },
+    "orthogonal_to": "STYLE_SOURCE (the visual match/analyze/create branch) — the frame governs the NARRATIVE, not the visual style; a signature deck still answers the visual branch and still gets the 3-variant style preview."
+  },
+  "runtime_intake_contract": {
+    "note": "Shape of working/copy/sp_intake.json that prove_sp_intake.py validates. Any violation is exit 2, fail-closed.",
+    "required_fields": {
+      "deck_type": "must equal \"signature_presentation\" (else AF-SP-TYPE-MISMATCH)",
+      "asked_all_at_once": "must be true (else AF-SP-8Q-SPLIT)",
+      "question_block_msg_id": "single non-empty id proving the 8 + frame question were emitted in ONE block (else AF-SP-8Q-SPLIT)",
+      "answers": "object carrying non-empty q1..q8 (any missing/empty → AF-SP-8Q-MISSING)",
+      "signature_frame": "one of rulebook|vault|quest|original (else AF-SP-FRAME-UNSET)",
+      "offer_token_ledger": "array of the exact product/offer names from q7 (must be non-empty; each must also be present in the Phase-4 pitch tokens or AF-SP-OFFER-UNDECLARED)"
+    },
+    "optional_fields": {
+      "client_overrode_slide_floor": "boolean — set true ONLY when the client states an exact slide count that overrides the ≥100 floor; consumed by prove_sp_structure.py and surfaced on the process certificate",
+      "client_exact_slide_count": "integer — the client's explicit count when client_overrode_slide_floor is true"
+    },
+    "autofail_codes": {
+      "AF-SP-8Q-MISSING": "any of q1..q8 missing or empty (Directive 6)",
+      "AF-SP-8Q-SPLIT": "the 8 + frame question were not delivered as one block (Directive 7)",
+      "AF-SP-FRAME-UNSET": "signature_frame not one of the four allowed values (frame gate)",
+      "AF-SP-TYPE-MISMATCH": "deck_type != signature_presentation vs the run manifest",
+      "AF-SP-OFFER-UNDECLARED": "a product named in q7 is absent from the pitch-token ledger"
+    }
+  }
+}

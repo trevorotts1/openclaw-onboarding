@@ -1,0 +1,145 @@
+{
+  "$schema": "https://openclaw.ai/schemas/signature-presentation-structure/v1",
+  "contract": "sacred-structure-ledger",
+  "version": "1.0.0",
+  "deck_type": "signature_presentation",
+  "description": "The SACRED-structure contract that prove_sp_structure.py loads and enforces against a deck's copy ledger (working/copy/sp_structure.json emitted by the Signature Presentation Architect / Slide Copywriter) plus slides_copy.md. Every rule here is fail-closed: a violation is sys.exit(2) with the named AF code — a violating artifact is NOT run, NOT rendered, NOT updated. Derived verbatim from MASTERDOC Prime Directives; never floored or reinterpreted.",
+
+  "phases": [
+    {
+      "order": 1,
+      "id": "avatar",
+      "name": "Avatar Section",
+      "purpose": "Mastering the Audience Avatar — first you tell THEIR story, then you tell yours.",
+      "slide_range_default": [1, 11],
+      "min_slides": 11,
+      "requires_neeit": true,
+      "requires_quadrant": true,
+      "requires_label_slide": true,
+      "requires_section_hook": true
+    },
+    {
+      "order": 2,
+      "id": "story",
+      "name": "Signature Story",
+      "purpose": "Crafting Your Personal Story — tell your story so the audience sees themselves in it; end on a gripping why.",
+      "slide_range_default": [12, 24],
+      "min_slides": 13,
+      "requires_neeit": true,
+      "requires_quadrant": true,
+      "requires_label_slide": true,
+      "requires_section_hook": true
+    },
+    {
+      "order": 3,
+      "id": "teaching",
+      "name": "Transformational Teaching",
+      "purpose": "Teach your methodology in 3-7 steps; the final step bridges to the offer. NO PITCHING in this phase.",
+      "slide_range_default": [25, 60],
+      "min_slides": 36,
+      "requires_neeit": false,
+      "requires_quadrant": false,
+      "requires_label_slide": true,
+      "requires_section_hook": true,
+      "no_pitch": true,
+      "teaching_steps": { "min": 3, "max": 7 },
+      "bridge_slide": "final teaching step; may promise what comes next; may NOT name a price or product"
+    },
+    {
+      "order": 4,
+      "id": "pitch",
+      "name": "Purpose Pitch",
+      "purpose": "The Purpose Pitch (not profit pitch) — offer, proof, honest scarcity, guarantee, conviction close.",
+      "slide_range_default": [61, 100],
+      "min_slides": 40,
+      "requires_neeit": true,
+      "requires_quadrant": true,
+      "requires_label_slide": true,
+      "requires_section_hook": true,
+      "pitch_included": true
+    }
+  ],
+
+  "phase_ordering": {
+    "must_be_contiguous_from_slide_1": true,
+    "must_be_in_order": ["avatar", "story", "teaching", "pitch"],
+    "reading": "Per-phase floors (11 / 13 / 36 / 40), contiguous, in order. When a phase expands past its default band to reach the >=100 floor (Directive 11), later phases shift by the same amount but stay contiguous and in order."
+  },
+
+  "slide_floor": {
+    "default_minimum": 100,
+    "client_exact_override": {
+      "allowed": true,
+      "flag": "client_overrode_slide_floor",
+      "count_field": "client_exact_slide_count",
+      "source": "working/copy/sp_intake.json",
+      "rule": "The >=100 floor is the DEFAULT. If the client states an EXACT slide count, the client's number wins (fleet-wide client-exact law): AF-SP-SLIDE-FLOOR is skipped ONLY when client_overrode_slide_floor is true, the exact count is honored, the override is logged, and it is surfaced on the process certificate. Phase min_slides floors still apply proportionally in order."
+    }
+  },
+
+  "case_studies": {
+    "cap": 2,
+    "floor": 1,
+    "band": [1, 2],
+    "tag": "CASE_STUDY",
+    "rule": "<=2 CASE_STUDY-tagged slides (Prime Directive 12); floor of 1 from the department proof battery. A missing tags section is itself a FAIL so the cap cannot be dodged by not tagging."
+  },
+
+  "suggested_image": {
+    "required_every_slide": true,
+    "field": "suggested_image",
+    "rule": "Every slide must carry a non-empty suggested_image (Prime Directive 4) — the authoring seed the Prompt Author expands to the 9,000-18,000-char rich prompt. The seed never replaces the prompt floor."
+  },
+
+  "hooks": {
+    "source": "working/copy/hook_package.json",
+    "central_hook_required": true,
+    "section_hooks_required": true,
+    "section_hooks_count": 4,
+    "section_hooks_distinct_from_central": true,
+    "rule": "One central hook repeated like a chorus (its 3-4 dedicated pure-typography slides) + four section hooks (one per phase) that ladder up to it. Section hooks must be DISTINCT lines from the central hook (so they never trip the verbatim-hook-elsewhere battery)."
+  },
+
+  "neeit_quadrant": {
+    "neeit": ["Name", "Explain", "Example", "Instructions", "Tone"],
+    "quadrant_count": 4,
+    "quadrant_share_each": 0.25,
+    "required_in_phases": ["avatar", "story", "pitch"],
+    "rule": "N.E.E.I.T. + the 4-Quadrant method (4 quadrants @ 25%) structure Phases 1, 2, and 4. Markers must be present in those phase sections."
+  },
+
+  "movement_message_methodology": {
+    "required_markers": ["movement", "message", "methodology"],
+    "rule": "Movement + Message + Methodology = Manifestation — all three must be present (deterministic marker check here; semantic check in the qc-specialist-signature battery)."
+  },
+
+  "frames": {
+    "allowed": ["rulebook", "vault", "quest", "original"],
+    "source_field": "signature_frame (working/copy/sp_intake.json)",
+    "note": "Frame governs teaching devices / refrains / close only; the 4-phase skeleton and every rule above are identical across frames."
+  },
+
+  "slide_ledger_schema": {
+    "note": "Shape of each entry in the deck's copy ledger the prover reads. A missing required field is a FAIL.",
+    "required_per_slide": ["slide", "phase", "suggested_image", "tags"],
+    "fields": {
+      "slide": "integer, 1-based, unique, contiguous from 1",
+      "phase": "one of avatar|story|teaching|pitch",
+      "label_slide": "boolean, true on the slide that carries the phase name + purpose (Directive 10)",
+      "suggested_image": "non-empty string (Directive 4)",
+      "tags": "array; may include CASE_STUDY, and phase/step markers; a missing tags key is a FAIL"
+    }
+  },
+
+  "autofail_codes": {
+    "AF-SP-SLIDE-FLOOR": "total slides < 100 with no logged client-exact override",
+    "AF-SP-PHASE-RANGE": "a phase below its min_slides floor",
+    "AF-SP-PHASE-ORDER": "phases not contiguous-from-1 or out of order",
+    "AF-SP-PHASE-LABEL": "a phase missing its label slide carrying name + purpose (Directive 10)",
+    "AF-SP-IMG-SUGGESTION": "any slide with an empty suggested_image (Directive 4)",
+    "AF-SP-CASESTUDY-CAP": "more than 2 CASE_STUDY-tagged slides, or a missing tags section (Directive 12)",
+    "AF-SP-TEACH-STEPS": "teaching steps outside 3-7",
+    "AF-SP-HOOK": "hook_package.json missing central_hook or 4 distinct section_hooks",
+    "AF-SP-QUADRANT": "N.E.E.I.T./4-Quadrant markers absent in Phases 1/2/4"
+  }
+}
