@@ -75,6 +75,7 @@ CLIENT_NAMES=(
   "Lyric Hawkins"
   "Coach Kaz"
   "Beverly Sanders"
+  "Beverly Grandison"
   "Angela Tennison"
   "Cassandra Henriquez"
   "Jill Bulluck"
@@ -103,7 +104,11 @@ CLIENT_NAMES=(
   "\bCassandra\b"
   "\bJocelyn\b"
   "\bChristy\b"
-  "\bBeverly\b"
+  # "\bBeverly\b" retired per the distinctiveness rule above: false-positives on
+  # "Beverly Hills" (e.g. the Facebook interest "Montage Beverly Hills" in the
+  # skill-52 luxury-audience prompt). Client protection preserved via the full
+  # names ("Beverly Sanders", "Beverly Grandison") + the distinctive surname:
+  "\bGrandison\b"
   "\bAnderson\b"
 
   # Operator machine path (must not appear in committed files)
