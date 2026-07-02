@@ -8,6 +8,7 @@ MOCKS ONLY — no real GHL, no real Gmail, no browser, no network.
 """
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -120,3 +121,68 @@ class TestRepoSourceHygiene:
         # The guard scans the whole repo; the new files must not introduce a hit.
         assert res.returncode == 0, (
             f"no-client-names guard FAILED (a new file may carry a client id):\n{res.stdout}")
+
+
+class TestFirebaseApiKeySync:
+    """P3-2 (final-review Point 1 fix 2): the GoHighLevel/Convert-and-Flow
+    Firebase Web API key is intentionally hardcoded (NOT a secret — a public,
+    server-side-restricted Google key) in THREE places with zero runtime
+    cross-file dependency: 06-ghl-install-pages/tools/seed-ghl-auth.py, Skill 44
+    transport.py, and Skill 44 ghl_internal_client.py.
+    gates.json::firebase_api_key_registry.canonical_value is the documented
+    06-side single source of record. These tests prove the three physical
+    literals — and the registry itself — never silently drift apart. A Google
+    key rotation applied to only one copy would otherwise surface later as a
+    confusing securetoken-exchange auth failure instead of failing CI loudly
+    here."""
+
+    _KEY_RE = re.compile(r'FIREBASE_API_KEY\s*=\s*["\']([^"\']+)["\']')
+
+    @staticmethod
+    def _extract_key(path: Path) -> str:
+        text = path.read_text(encoding="utf-8")
+        m = TestFirebaseApiKeySync._KEY_RE.search(text)
+        assert m, f"FIREBASE_API_KEY literal not found in {path}"
+        return m.group(1)
+
+    def test_seed_ghl_auth_matches_gates_json_registry(self):
+        seed_key = self._extract_key(_TOOLS_DIR / "seed-ghl-auth.py")
+        gates = json.loads((_TOOLS_DIR / "gates.json").read_text(encoding="utf-8"))
+        registry_key = gates["firebase_api_key_registry"]["canonical_value"]
+        assert seed_key == registry_key, (
+            f"seed-ghl-auth.py FIREBASE_API_KEY ({seed_key!r}) != "
+            f"gates.json firebase_api_key_registry.canonical_value "
+            f"({registry_key!r}) — update BOTH together on a key rotation."
+        )
+
+    def test_seed_ghl_auth_matches_skill44_transport(self):
+        transport_py = (
+            _REPO_ROOT / "44-convert-and-flow-operator" / "tools" / "engine"
+            / "cli_anything" / "gohighlevel" / "internal" / "transport.py"
+        )
+        if not transport_py.exists():
+            pytest.skip("Skill 44 not present in this checkout (partial-bundle box)")
+        seed_key = self._extract_key(_TOOLS_DIR / "seed-ghl-auth.py")
+        transport_key = self._extract_key(transport_py)
+        assert seed_key == transport_key, (
+            f"FIREBASE_API_KEY drifted between seed-ghl-auth.py ({seed_key!r}) "
+            f"and Skill 44 transport.py ({transport_key!r}) — a Google key "
+            "rotation was applied to only one copy. Update BOTH plus "
+            "gates.json::firebase_api_key_registry.canonical_value."
+        )
+
+    def test_seed_ghl_auth_matches_skill44_internal_client(self):
+        client_py = (
+            _REPO_ROOT / "44-convert-and-flow-operator" / "tools" / "engine"
+            / "cli_anything" / "gohighlevel" / "utils" / "ghl_internal_client.py"
+        )
+        if not client_py.exists():
+            pytest.skip("Skill 44 not present in this checkout (partial-bundle box)")
+        seed_key = self._extract_key(_TOOLS_DIR / "seed-ghl-auth.py")
+        client_key = self._extract_key(client_py)
+        assert seed_key == client_key, (
+            f"FIREBASE_API_KEY drifted between seed-ghl-auth.py ({seed_key!r}) "
+            f"and Skill 44 ghl_internal_client.py ({client_key!r}) — a Google "
+            "key rotation was applied to only one copy. Update BOTH plus "
+            "gates.json::firebase_api_key_registry.canonical_value."
+        )

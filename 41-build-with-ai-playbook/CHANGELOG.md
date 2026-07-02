@@ -1,3 +1,14 @@
+## [1.5.4] - 2026-07-01 — docs: pipeline diagram Step 5 shows CAF-direct (Option 1, PRIMARY) vs manual paste (Option 2, fallback)
+
+### Changed
+- `SKILL.md` "How Skill 41 fits in the pipeline" diagram: Step 5 rewritten from a single "operator pastes into
+  GHL Workflow AI Builder" line into a branching Option 1 — CAF direct (PRIMARY): Skill 44
+  (convert-and-flow-operator) receives this skill's 8-section structure and `caf workflows build` sends it to
+  the GHL internal Build API directly / Option 2 — manual paste (FALLBACK): operator pastes the generated
+  prompt into GHL Workflow AI Builder, used only when the Firebase token is absent or expired. Wording matches
+  `INSTRUCTIONS.md` lines 155-178 exactly; added cross-reference lines to `INSTRUCTIONS.md` and
+  `GHL_AI_LAYERS.md`.
+
 ## [1.5.3] - 2026-07-01 — executor-model SHAPE-BUG fix: write the REAL key, heal fabricated keys, validate-before-commit
 
 ### Why (fleet-critical)

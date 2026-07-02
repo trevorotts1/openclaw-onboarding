@@ -1,5 +1,7 @@
 # Weekly Conversation AI Tune-up Protocol
 
+> **BUILD path:** caf-direct (Skill 44, Option 1 — PRIMARY) when the Firebase token is present; else Build-with-AI paste (Option 2). See references/GHL_AI_LAYERS.md.
+
 Runs every Sunday at 2:00 AM (operator-configurable). Analyzes the past
 7 days, identifies adjustment opportunities, presents them for operator
 approval.

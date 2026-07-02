@@ -1,5 +1,7 @@
 # Prompt Injection Protection Protocol
 
+> **BUILD path:** caf-direct (Skill 44, Option 1 — PRIMARY) when the Firebase token is present; else Build-with-AI paste (Option 2). See references/GHL_AI_LAYERS.md.
+
 The agent applies an allow-list architecture: there is a fixed list of
 actions the agent can perform. Any customer message that requests an
 action outside the allow-list is refused, regardless of how the

@@ -299,7 +299,7 @@
         "session_cookie_required": false,
         "auth_header": "token-id: <id_token> (NOT Authorization:Bearer — Bearer returns 401); version: 2021-07-28",
         "localStorage": "deviceId, proxyLoginCount, debug_sentry, locale (NO token; not auth-bearing — do NOT need to seed)",
-        "firebase_api_key": "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE (hardcoded in Skill 44 transport.py; not an env var)"
+        "firebase_api_key": "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE — see firebase_api_key_registry (below) for the canonical single-source record; hardcoded (not an env var, not a secret) identically in 06-ghl-install-pages/tools/seed-ghl-auth.py, Skill 44 transport.py, and Skill 44 ghl_internal_client.py — kept in sync by tests/test_ghl_secret_hygiene.py::TestFirebaseApiKeySync"
       },
       "note": "CORRECTS the GOAL spec §2.4 which assumed localStorage. Auth is in IndexedDB. The Firebase refresh token ALONE logs the SPA in: seed-ghl-auth.py mints a fresh id_token from the refresh token and emits the FULL User record above; inject-ghl-auth.sh writes it (and reads it back to confirm). ROOT-CAUSE FIX (auth/internal-error): the record now ALWAYS carries emailVerified:false + isAnonymous:false (the SDK asserts both as booleans; omitting them threw INTERNAL_ERROR and bounced the SPA to the login form). NO app-token and NO session cookie are required — the id_token validates directly via the token-id header. HARD RULE: TOKEN-SEED IS THE ONLY AUTH PATH — there is NO automatic UI-login / two-factor fallback. If the seed fails to log in, the builder STOPS and reports (non-zero); the operator re-grabs a fresh refresh token (Token Grabber) and retries. GHL_AGENCY_EMAIL/PASSWORD is a documented MANUAL last resort only, never auto-invoked."
     },
@@ -494,5 +494,17 @@
     "enforced_in": "tools/inject-ghl-auth.sh (version-pin guard, runs before the seed) + tools/browser_manager.py assert_agent_browser_version() (called at browser_session() entry — fires before any render_check command is emitted)",
     "override_env": "GHL_AB_ALLOW_VERSION_DRIFT=1 (warn instead of refuse); GHL_AB_PINNED_VERSION to re-pin after a deliberate re-capture",
     "on_drift": "REFUSE (exit 70 / RuntimeError). Re-capture the gates against the new version, then re-pin pinned_version + GHL_AB_PINNED_VERSION."
+  },
+
+  "firebase_api_key_registry": {
+    "_doc": "P3-2 (final-review Point 1 fix 2) — single documented 06-side record of the GoHighLevel / Convert-and-Flow Firebase Web API key. This value is NOT a secret (a public Firebase Web API key restricted server-side by Google; see gate 27 auth_storage_keys.firebase_api_key) and is intentionally hardcoded as a Python constant, with ZERO runtime dependency on this file, in THREE places: 06-ghl-install-pages/tools/seed-ghl-auth.py (FIREBASE_API_KEY), 44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/transport.py (FIREBASE_API_KEY), and 44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/ghl_internal_client.py (FIREBASE_API_KEY). This registry's canonical_value is the value 06 asserts against at QC time so a Google key rotation applied to one copy but missed in another is caught immediately (a stale/mismatched key would silently break the securetoken exchange) instead of surfacing later as a confusing auth failure.",
+    "canonical_value": "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE",
+    "duplicated_in": [
+      "06-ghl-install-pages/tools/seed-ghl-auth.py::FIREBASE_API_KEY",
+      "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/transport.py::FIREBASE_API_KEY",
+      "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/ghl_internal_client.py::FIREBASE_API_KEY"
+    ],
+    "checked_by": "06-ghl-install-pages/tests/test_ghl_secret_hygiene.py::TestFirebaseApiKeySync — reads every literal directly from source (and this registry's canonical_value) and fails CI on any mismatch.",
+    "not_a_secret": "Public Firebase Web API key, restricted server-side by Google (see gate 27 auth_storage_keys note); safe to ship in source under the existing D7 token-only doctrine."
   }
 }

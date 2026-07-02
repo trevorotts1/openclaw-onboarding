@@ -1259,14 +1259,21 @@ def main():
         print_plan(run_dir, phases)
         sys.exit(0)
 
-    # FRONT-DOOR ENFORCEMENT (CONTRACT #8): run_signature_deck.py MUST be invoked via
-    # presentation-canonical-entry.sh, which exports OC_DECK_CANONICAL_ENTRY=1 right
-    # before exec'ing this script. Direct `python3 run_signature_deck.py` is structurally
-    # denied. --plan is exempt (read-only inspection).
-    if os.environ.get("OC_DECK_CANONICAL_ENTRY") != "1":
+    # FRONT-DOOR NONCE HANDSHAKE (CONTRACT #8): run_signature_deck.py MUST be invoked
+    # via presentation-canonical-entry.sh, which mints a per-run random nonce (exports
+    # OC_DECK_ENTRY_NONCE and writes the matching 0600 file
+    # <run-dir>/working/checkpoints/.canonical-entry-nonce). This SUPERSEDES the retired
+    # OC_DECK_CANONICAL_ENTRY env marker, which shipped in box-visible comments and was
+    # forgeable by any model that read the repo. Direct `python3 run_signature_deck.py`
+    # — or a guessed/stale nonce — is structurally denied. --plan is exempt (handled
+    # above, read-only inspection). The nonce check is the single source of truth
+    # (build_deck._verify_entry_nonce) shared with the render subprocess.
+    if not bd._verify_entry_nonce(run_dir):
         print(
-            "FATAL: must be invoked via presentation-canonical-entry.sh — "
-            "direct invocation is denied (front-door enforcement).",
+            "FATAL: must be invoked via presentation-canonical-entry.sh — the per-run "
+            "front-door nonce (OC_DECK_ENTRY_NONCE) is missing or does not match "
+            "<run-dir>/working/checkpoints/.canonical-entry-nonce. Direct invocation is "
+            "denied (front-door enforcement; retired marker: OC_DECK_CANONICAL_ENTRY).",
             file=sys.stderr,
         )
         sys.exit(2)

@@ -22,6 +22,33 @@ _pidx_md5() {
 }
 
 # ---------------------------------------------------------------------------
+# _pidx_skip_warn <reason>
+#
+# P11-1 (FINAL-REVIEW-2026-07-01 Point 11 fix 1). Every "skip because the
+# helper/bundle is missing" path in this file previously used a plain
+# `echo "  note: ..."` / `echo "  warn: ..."` line — cosmetic text that never
+# matched install.sh's print_install_summary() log-grep (warn_pat='^  ⚠️',
+# scanned against the tee'd $LOG_FILE) and was never read back by
+# update-skills.sh either. A box that skipped provisioning therefore
+# keyword-degraded SILENTLY until the next full install — invisible to the
+# install/update completion report the operator actually reads.
+#
+# This helper (a) emits the SAME "  ⚠️  " prefix install.sh's own warn()
+# function produces, so install.sh's existing log-grep completion report
+# picks it up with ZERO additional install.sh wiring (its whole stdout is
+# already tee'd to $LOG_FILE), and (b) accumulates every reason into
+# _PIDX_SKIP_WARNINGS (exported, semicolon-joined) so a caller without a
+# tee'd log (update-skills.sh) can read it back after calling into this file
+# and fold it into its own completion report explicitly.
+# ---------------------------------------------------------------------------
+_pidx_skip_warn() {
+    local _reason="$1"
+    echo "  ⚠️  Persona-index provisioning SKIPPED: $_reason"
+    _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }$_reason"
+    export _PIDX_SKIP_WARNINGS
+}
+
+# ---------------------------------------------------------------------------
 # provision_persona_index <manifest_path> <coaching_db_dir>
 #
 # CANONICAL IDEMPOTENCY GATE (v14.27.2).
@@ -66,7 +93,7 @@ provision_persona_index() {
     local PERSONAS_DIR="$COACHING_DB_DIR/personas"
 
     if [ ! -f "$MANIFEST_PATH" ]; then
-        echo "  note: Persona-index manifest not found ($MANIFEST_PATH) — skipping prebuilt index provisioning (additive)"
+        _pidx_skip_warn "manifest not found ($MANIFEST_PATH) — skipping prebuilt index provisioning (additive)"
         return 0
     fi
 
@@ -170,7 +197,7 @@ except Exception:
     # ── Download + verify + install ──────────────────────────────────────────
     if [ "$_PIDX_HAVE" -eq 0 ]; then
         if [ -z "$_PIDX_ASSET_URL" ] || [ -z "$_PIDX_SHA" ]; then
-            echo "  warn: Persona index manifest missing asset_url/sha256 — skipping prebuilt provisioning (additive)"
+            _pidx_skip_warn "manifest missing asset_url/sha256 (partial bundle) — skipping prebuilt provisioning (additive)"
             return 0
         fi
 
@@ -236,7 +263,7 @@ reconcile_persona_assets() {
     local _SRC_PERSONAS="$_SK22/personas"
 
     if [ ! -f "$_SRC_CATS" ] || [ ! -d "$_SRC_PERSONAS" ]; then
-        echo "  note: Skill-22 persona source not found at $_SK22 — skipping persona reconcile (additive)"
+        _pidx_skip_warn "Skill-22 persona source not found at $_SK22 — skipping persona reconcile (additive)"
         return 0
     fi
 

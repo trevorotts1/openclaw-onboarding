@@ -35,7 +35,9 @@ _bad()  { printf '[test-ceo-tool-gate] FAIL  %s\n' "$*" >&2; FAILS=$((FAILS+1));
 
 # Canonical expected sets (the single source of truth this test enforces).
 EXPECT_DENY="apply_patch browser canvas edit ghl-community-mcp__* ghl-mcp__* image process write"
-EXPECT_ALLOW="discord exec message read sessions_history sessions_list sessions_send slack telegram web_fetch web_search"
+# mc-route__route_task = the SHIPPED routing tool (scripts/mc-route.sh impl).
+# Its presence is what lets verify-routing.sh G7 clear the INTERIM-exec warning.
+EXPECT_ALLOW="discord exec mc-route__route_task message read sessions_history sessions_list sessions_send slack telegram web_fetch web_search"
 EXPECT_MCP="ghl-community-mcp ghl-mcp"
 
 # ── 1. lib-ceo-tool-gate.sh is the reference; extract its canonical sets ───────

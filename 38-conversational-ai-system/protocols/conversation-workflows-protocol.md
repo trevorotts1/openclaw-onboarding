@@ -502,6 +502,11 @@ check EACH item below. If any item is wrong, the fix is listed right there.
 
 ## End-to-end test
 
+**If this workflow was built via caf (Skill 44, Option 1 — PRIMARY):** before asking the human to
+verify, run `44-convert-and-flow-operator/qc-built-workflow.sh <workflow-id> --json` and attach its JSON
+output here. That covers the mechanical items above (trigger, actions, webhook wiring) programmatically —
+the human only needs to confirm the end-to-end test below, not re-click through every field.
+
 - [ ] Trigger the workflow manually (e.g., reply to your test SMS)
 - [ ] Watch the workflow execution log in Convert and Flow — should
        show "Webhook sent successfully" with a 2xx status
@@ -512,11 +517,22 @@ If end-to-end test passes, the workflow is fully wired and live.
 
 If end-to-end test fails, copy the error from the Convert and Flow
 execution log and bring it back to the agent.
+
+**Record the result.** Once the end-to-end test returns a result (pass or fail), write it back to this
+workflow's row in `conversation-workflows/registry.md` under the `Verification completed` column (see
+Section F) as the `verification_completed` marker — so the monthly review (`monthly-comprehensive-review-protocol.md`)
+can surface workflows that were delivered (registered, Trinity-complete) but never actually verified end-to-end.
 ```
 
 Each verification item is generated from the same source-of-truth as the prompt — so they're guaranteed to match.
 
 ### E. Layer 2 — OpenClaw Side (always built)
+
+> **caf-path verify mandate.** If Layer 1 was built via caf (Skill 44, Option 1 — PRIMARY), the End-to-end
+> test step of D.3's verification checklist requires running `44-convert-and-flow-operator/qc-built-workflow.sh
+> <workflow-id> --json` and attaching its JSON output BEFORE asking the human to verify. The returned result
+> is then recorded as the `verification_completed` marker on this workflow's registry row (Section F) — see
+> D.3 "End-to-end test" and the standalone `templates/workflow-verification-checklist-template.md`.
 
 After Layer 1 is done (or skipped per Layer 0), the agent builds the conversation playbook itself at `<MASTER_FILES_DIR>/conversation-workflows/<workflow-id>.md`. This is the **communications playbook** leg of the TRINITY — it MUST satisfy the must-appear checklist and storage rules in `references/communications-playbook-standard.md` (slug/id, owner agent id, channel, trigger phrases/intent, goal, step-by-step flow, the GHL Conversations-API reply mechanism per TOOLS.md, cross-playbook transition rules, edge cases incl. frustration/refund/legal escalation, on-success/tagging, tone, honesty floor). Save the FILE under `conversation-workflows/`, register it in `registry.md`, AND place a human-readable copy in the CLIENT's account in the order **Notion → Google Docs → plain text** (Section 4 of that standard). The template below is the canonical shape:
 
@@ -616,16 +632,24 @@ The agent maintains a registry at `<MASTER_FILES_DIR>/conversation-workflows/reg
 ```markdown
 # Conversation Workflows Registry
 
-| ID | Name | Trigger summary | Layer 1? | OpenClaw playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) |
-|---|---|---|---|---|---|---|---|
-| pricing-inquiry | New lead asks about pricing | "price", "cost", "how much" | No (uses existing inbound) | pricing-inquiry.md | n/a | n/a | https://www.notion.so/client/pricing-inquiry-abc123 |
-| webinar-followup | Lead from Tuesday webinar | New tag `webinar-attendee` | Yes | webinar-followup.md | webinar-followup--workflow-ai-prompt.md | webinar-followup--verification-checklist.md | https://docs.google.com/document/d/xyz/edit |
-| ... | ... | ... | ... | ... | ... | ... | ... |
+| ID | Name | Trigger summary | Layer 1? | OpenClaw playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) | Verification completed |
+|---|---|---|---|---|---|---|---|---|
+| pricing-inquiry | New lead asks about pricing | "price", "cost", "how much" | No (uses existing inbound) | pricing-inquiry.md | n/a | n/a | https://www.notion.so/client/pricing-inquiry-abc123 | n/a (Layer 1 not built) |
+| webinar-followup | Lead from Tuesday webinar | New tag `webinar-attendee` | Yes | webinar-followup.md | webinar-followup--workflow-ai-prompt.md | webinar-followup--verification-checklist.md | https://docs.google.com/document/d/xyz/edit | Yes — end-to-end pass (2026-05-30, caf qc-built-workflow.sh JSON attached) |
+| ... | ... | ... | ... | ... | ... | ... | ... | ... |
 ```
 
 The registry is the single source of truth the agent reads on every reply turn (via AGENTS.md Step 1.75)
 to decide which workflow (if any) applies. AGENTS.md **Step 1.85** (see Section A + Section J) recognizes
 the operator-side workflow-builder trigger phrases and starts the builder flow.
+
+**The `Verification completed` column is the `verification_completed` marker** for every Layer-1 workflow
+(a Layer-1 "No" row is legitimately `n/a (Layer 1 not built)` — there is nothing to verify). It records the
+RETURNED end-to-end test result from D.3's "End-to-end test" step: `Yes — end-to-end pass (<date>[, caf
+qc-built-workflow.sh JSON attached])`, `No — not yet verified` (delivered but the human hasn't returned a
+result), or `FAILED (<date>) — <short error>` if the end-to-end test came back failing. Leaving this column
+`No — not yet verified` past a reasonable window is exactly what `monthly-comprehensive-review-protocol.md`
+scans for to surface workflows that were delivered but never actually verified.
 
 **The `Doc (Notion/Docs/text)` column is MANDATORY and machine-enforced.** Every registered playbook MUST
 carry a recorded human-facing doc — a Notion URL, a Google Docs URL, or a `.md`/`.txt` path the client can

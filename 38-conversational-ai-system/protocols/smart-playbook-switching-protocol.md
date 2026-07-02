@@ -9,6 +9,8 @@
 > state, runs a short sub-flow, and RETURNS to exactly where it left off. F33
 > changes the destination; F44 takes a detour and comes back. They are distinct
 > and both ship.
+>
+> **BUILD path:** caf-direct (Skill 44, Option 1 — PRIMARY) when the Firebase token is present; else Build-with-AI paste (Option 2). See references/GHL_AI_LAYERS.md.
 
 ## The model — an always-listening layer parallel to the active workflow
 

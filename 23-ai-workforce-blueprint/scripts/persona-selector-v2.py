@@ -271,12 +271,29 @@ ANTI_STALENESS_THRESHOLD = 5  # 5+ consecutive same persona → flag for review
 # Trevor's complaint, 2026-05-24: "the system did not properly assign persona
 # to the task and some time i just keep using the same on over and over again
 # without any consideration." Fix: recency penalty + top-N weighted sample.
-VARIETY_WINDOW_HOURS = 24      # look-back window for recent-use counts
+VARIETY_WINDOW_HOURS = 24      # look-back window for recent-use counts (GLOBAL fallback — see variety_window_hours_for_department())
 VARIETY_PENALTY_PER_USE = 0.08 # 8% score reduction per recent use
 VARIETY_PENALTY_CAP_USES = 5   # penalty saturates at 5 uses (= 40% cap)
 VARIETY_DOMINANCE_RATIO = 1.5  # top-1 must be ≥1.5x top-3 to skip sampling
 VARIETY_SAMPLE_TOP_N = 3       # weighted-sample pool size when sampling
 VARIETY_SAMPLE_SEED_ENV = "PERSONA_VARIETY_SEED"  # set for deterministic tests
+
+# ─── P9-2: per-department variety window scoping (FINAL-REVIEW-2026-07-01) ──
+# read_recent_use_counts() already scopes the recent-use COUNT to a single
+# department (WHERE department_id = ?) — but VARIETY_WINDOW_HOURS itself was
+# one GLOBAL constant (24h) applied to EVERY department's look-back SPAN. A
+# low-volume department (few tasks/day) almost never accumulates a recent use
+# inside a fixed 24h span (variety never engages there), while a high-volume
+# department can rack up VARIETY_PENALTY_CAP_USES within a fraction of that
+# same 24h span and over-penalize a genuinely best-fit persona. Scoping the
+# SPAN to each department's own recent task velocity (below) fixes both
+# symptoms with one mechanism. Unknown/empty department -> unchanged global
+# VARIETY_WINDOW_HOURS (existing behaviour preserved exactly).
+DEPT_VARIETY_LOOKBACK_DAYS = 7        # velocity sample window (read-only, cheap)
+DEPT_VARIETY_WIDEN_MAX = 4.0          # low-volume dept: widen up to 4x (96h)
+DEPT_VARIETY_NARROW_MIN = 0.25        # high-volume dept: narrow down to 1/4 (6h)
+DEPT_VARIETY_LOW_VOLUME_PER_DAY = 1.0   # < 1 selection/day -> widen
+DEPT_VARIETY_HIGH_VOLUME_PER_DAY = 6.0  # > 6 selections/day -> narrow
 
 # ─── G13: Stage-D fan-out backstop (token-furnace guard) ───────────────────
 # On a FRESH box (no governing-personas.md, no domain-tag coverage) the funnel
@@ -541,6 +558,46 @@ def craft_domain_bonus(persona_domains, primary_domains, task_fit) -> float:
     frac = len(overlap) / len(prim)
     tf = max(0.0, min(float(task_fit), 1.0))
     return round(min(cap * frac * tf, cap), 4)
+
+
+# ── Appendix-completeness preference bonus (P13-1, FINAL-REVIEW-2026-07-01) ──
+# Personas whose PLAYBOOK-APPENDIX.md is MISSING or COMPLETE_WITH_WARNINGS ship
+# with a thinner (or absent) reusable copy/funnel asset library than a persona
+# whose appendix is COMPLETE — see Phase 3b / run_playbook_appendix() in
+# 22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py,
+# which now writes that state into this same persona's `appendixStatus` field
+# in persona-categories.json (_append_persona_to_categories). On an
+# asset-heavy task — the SAME CRAFT_PRIMARY_DOMAINS categories that gate
+# craft_domain_bonus (design/video-edit/video-script/content-write/
+# social-post/email-outreach), i.e. tasks that actually consume the
+# appendix's swipe file/formulas/scripts — a persona with a COMPLETE appendix
+# should be mildly preferred over an otherwise-similar peer that lacks one, so
+# the matched specialist actually HAS the assets the task needs.
+#   • GATED to CRAFT_PRIMARY_DOMAINS categories -> 0.0 on every non-asset-heavy
+#     task (strategy/finance/etc), provably unchanged there.
+#   • ADDITIVE & NEVER-TO-ZERO: MISSING / FAILED / COMPLETE_WITH_WARNINGS / an
+#     absent field (every persona shipped before this fix) all earn +0.0 —
+#     never a penalty. Mirrors perspective_bonus()/craft_domain_bonus().
+def _appendix_completeness_bonus_max() -> float:
+    """Hard cap of the appendix-completeness preference bonus (env-tunable)."""
+    try:
+        v = float(os.environ.get("APPENDIX_COMPLETE_BONUS", "0.06"))
+    except (TypeError, ValueError):
+        v = 0.06
+    return max(0.0, min(v, 0.2))
+
+
+def appendix_completeness_bonus(appendix_status, task_category: str) -> float:
+    """Additive-only, never-to-zero preference bonus for a COMPLETE
+    PLAYBOOK-APPENDIX.md on an asset-heavy task category. Returns 0.0 for any
+    non-asset-heavy category or any status other than the literal 'COMPLETE'
+    string (MISSING / FAILED / COMPLETE_WITH_WARNINGS / None all -> 0.0, so a
+    persona shipped before this field existed is never penalised)."""
+    if task_category not in CRAFT_PRIMARY_DOMAINS:
+        return 0.0
+    if appendix_status == "COMPLETE":
+        return _appendix_completeness_bonus_max()
+    return 0.0
 
 
 # ── Specialty (custom-tag) specialist routing — DEPARTMENT-AGNOSTIC (v14.22.0) ──
@@ -994,6 +1051,51 @@ def read_recent_use_counts(department_id: str, task_category: str,
         print(f"[persona-selector] WARN: recent_use_counts read failed: {e}",
               file=sys.stderr)
         return {}
+
+
+def variety_window_hours_for_department(department_id: str, db_path: Path) -> int:
+    """P9-2: return the variety look-back window (hours) scoped to
+    department_id's own recent task velocity, instead of the single global
+    VARIETY_WINDOW_HOURS constant every department previously shared.
+
+    Falls back to the global VARIETY_WINDOW_HOURS constant, UNCHANGED, when
+    department_id is falsy (unknown department) or the DB is unavailable /
+    unreadable — so a caller that doesn't know its department (or a box with
+    no DB yet) behaves EXACTLY as before this fix. Preserves existing
+    behaviour by construction: this function only ever WIDENS or NARROWS the
+    span for a KNOWN department; read_recent_use_counts()'s own
+    department_id scoping of the count itself is unchanged.
+
+    Velocity is sampled cheaply (a single COUNT(*) over the last
+    DEPT_VARIETY_LOOKBACK_DAYS days) — no new tables, no embeddings.
+    """
+    if not department_id or not db_path or not db_path.exists():
+        return VARIETY_WINDOW_HOURS
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM persona_selection_log
+            WHERE department_id = ?
+              AND selected_at >= datetime('now', ?)
+            """,
+            (department_id, f"-{int(DEPT_VARIETY_LOOKBACK_DAYS)} days"),
+        )
+        row = cur.fetchone()
+        conn.close()
+        count = int(row[0]) if row and row[0] is not None else 0
+    except sqlite3.Error as e:
+        print(f"[persona-selector] WARN: variety_window_hours_for_department "
+              f"read failed: {e}", file=sys.stderr)
+        return VARIETY_WINDOW_HOURS
+
+    per_day = count / float(DEPT_VARIETY_LOOKBACK_DAYS)
+    if per_day < DEPT_VARIETY_LOW_VOLUME_PER_DAY:
+        return int(VARIETY_WINDOW_HOURS * DEPT_VARIETY_WIDEN_MAX)
+    if per_day > DEPT_VARIETY_HIGH_VOLUME_PER_DAY:
+        return max(1, int(VARIETY_WINDOW_HOURS * DEPT_VARIETY_NARROW_MIN))
+    return VARIETY_WINDOW_HOURS
 
 
 def variety_penalty_factor(recent_use_count: int) -> float:
@@ -1672,7 +1774,10 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
     With `variety=True` (default), apply the v10.14.28 anti-repetition logic:
       1. Compute base 5-layer scores for funnel survivors only.
       2. Read recent-use counts from persona_selection_log scoped to
-         (department, task_category) within VARIETY_WINDOW_HOURS.
+         (department, task_category) within a look-back span that is itself
+         scoped to the department's own recent task velocity (P9-2; see
+         variety_window_hours_for_department() — falls back to the global
+         VARIETY_WINDOW_HOURS when department is unknown).
       3. Multiply each persona's score by variety_penalty_factor(uses).
       4. If top-1's adjusted score dominates top-3 by ≥VARIETY_DOMINANCE_RATIO
          pick top-1 (clear winner). Otherwise weighted-sample from top-N.
@@ -1791,6 +1896,17 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
                     s["base_score"] = round(s["base_score"] + cbonus, 4)
                     s["score"] = round(s["score"] + cbonus, 4)
 
+            # P13-1: appendix-completeness preference (same personas_meta_cd
+            # already loaded above for craft_domain_bonus — no extra file
+            # read). Asset-heavy categories only; additive, never-to-zero.
+            for s in scored:
+                pinfo = personas_meta_cd.get(s["persona_id"], {})
+                abonus = appendix_completeness_bonus(pinfo.get("appendixStatus"), task_category)
+                if abonus > 0.0:
+                    s["appendix_completeness_bonus"] = round(abonus, 4)
+                    s["base_score"] = round(s["base_score"] + abonus, 4)
+                    s["score"] = round(s["score"] + abonus, 4)
+
     # ── Specialty (custom-tag) specialist bonus — DEPARTMENT-AGNOSTIC, additive-only ──
     # Reward the persona whose DISTINCTIVE custom[] specialty tags the task explicitly
     # names (brunson-network-marketing-secrets: mlm/network-marketing/recruiting/
@@ -1819,8 +1935,12 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
                     s["score"] = round(s["score"] + sbonus, 4)
 
     if variety:
+        # P9-2: scope the look-back SPAN to this department's own recent task
+        # velocity (falls back to the unchanged global VARIETY_WINDOW_HOURS
+        # when department is falsy/unknown or the DB is unreadable).
+        _variety_window = variety_window_hours_for_department(department, db_path)
         recent_uses = read_recent_use_counts(department, task_category,
-                                              VARIETY_WINDOW_HOURS, db_path)
+                                              _variety_window, db_path)
         # ── Craft/specialty specialist protection (v14.23.3) ──────────────────
         # On a GENUINE craft/specialty task the true specialist must win, every
         # time — that is the entire purpose of the v14.15 craft-domain bonus and
@@ -1861,6 +1981,7 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
         picked_idx = 0
         was_sampled = False
         variety_applied = False
+        _variety_window = VARIETY_WINDOW_HOURS  # variety disabled — report the global default
 
     top = picked  # selected persona (may not be score-rank #1 if sampled)
 
@@ -1881,7 +2002,8 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
             "enabled": variety_applied,
             "was_sampled": was_sampled,
             "picked_rank": picked_idx + 1,
-            "window_hours": VARIETY_WINDOW_HOURS,
+            "window_hours": _variety_window,
+            "window_hours_global_default": VARIETY_WINDOW_HOURS,
             "penalty_per_use": VARIETY_PENALTY_PER_USE,
             "dominance_ratio": VARIETY_DOMINANCE_RATIO,
             "sample_top_n": VARIETY_SAMPLE_TOP_N,
@@ -1924,6 +2046,54 @@ def _load_decompose_module():
             _DECOMPOSE_MOD_CACHE = mod
             return mod
     return None
+
+
+def _assert_persona_categories_canonical(paths: dict) -> None:
+    """P9-1 (FINAL-REVIEW-2026-07-01 Point 9 fix 1): canonical-path assertion.
+
+    persona-categories.json has two candidate locations: the WORKSPACE
+    canonical copy (paths["coaching_personas"]/persona-categories.json —
+    PRD 2.7, the only write target) and the shipped, READ-ONLY skill-folder
+    seed (paths["skills"]/22-book-to-persona-coaching-leadership-system/
+    persona-categories.json — copied into the canonical dir on first Skill-22
+    run / reconcile_persona_assets in shared-utils/provision-persona-index.sh).
+    detect_platform.resolve_persona_categories() falls back to the seed when
+    the canonical copy is missing (e.g. install/update Step 6b/U6b never ran
+    or the reconcile step failed) — the selector would then silently score
+    every task against a possibly-stale, un-reconciled seed instead of the
+    box's live categories, with no signal to the operator.
+
+    Logs the resolved path on every run (startup visibility), and WARNs
+    loudly — matching this file's existing "[persona-selector] WARN:"
+    convention (see e.g. line ~250, ~1388) — when it resolved to the seed
+    instead of the canonical copy. Never raises; the selector still runs
+    (a stale-but-present seed is strictly better than no file at all).
+    """
+    _pc_resolved = paths.get("persona_categories")
+    try:
+        _pc_canonical = paths["coaching_personas"] / "persona-categories.json"
+        _pc_seed = (paths["skills"] / "22-book-to-persona-coaching-leadership-system"
+                    / "persona-categories.json")
+    except KeyError:
+        return  # paths dict shape unexpected — nothing to assert against.
+
+    print(f"[persona-selector] persona-categories.json resolved -> {_pc_resolved}",
+          file=sys.stderr)
+
+    if _pc_resolved is None:
+        return
+    _pc_resolved = Path(_pc_resolved)
+    if _pc_resolved == _pc_seed and _pc_resolved != _pc_canonical:
+        print(
+            f"[persona-selector] WARN: persona-categories.json resolved to the "
+            f"READ-ONLY skill-folder seed ({_pc_seed}) instead of the workspace "
+            f"canonical copy ({_pc_canonical}) — reconcile_persona_assets likely "
+            f"never ran on this box (install.sh Step 6b / update-skills.sh Step "
+            f"U6b). Stage-B category filtering may be scoring against a stale, "
+            f"un-reconciled seed. Re-run install.sh or update-skills.sh to "
+            f"reconcile.",
+            file=sys.stderr,
+        )
 
 
 def main():
@@ -1986,6 +2156,7 @@ def main():
             return 1
 
     paths = get_openclaw_paths()
+    _assert_persona_categories_canonical(paths)
     db_path = find_dashboard_db()
     # PRD 1.3: expose resolved DB path in every JSON response so a missing DB
     # is visible on every selection, never a silent no-op.

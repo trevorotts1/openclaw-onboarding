@@ -49,7 +49,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v16.2.18"
+ONBOARDING_VERSION="v16.2.19"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -456,7 +456,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v16.2.18 - safe_json_edit
+# v16.2.19 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -966,7 +966,10 @@ main() {
     # "# Cleanup" rm -rf below). The cron-backfill block runs AFTER that cleanup,
     # so it must NOT depend on $ONBOARDING_DIR (the wiped clone) — it reads the
     # persistent copy instead. Same reason apply-fleet-standards.sh is here.
-    for _s in onboarding-state.sh ghl-mcp-autostart.sh configure-operator-telegram.sh heal-config-shapes.py resume-onboarding.sh apply-fleet-standards.sh apply-routing-fix.sh repair-model-sovereignty.sh install-hardening.sh ensure-heartbeat-defaults.sh ensure-pipeline-crons.sh diagnose-telegram-config.sh index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh agent-browser-reaper.sh; do
+    # install-ceo-intent-gate.sh + verify-routing.sh are persisted here (v16.2.19)
+    # so the intent-gate wire + post-stamp verification below can resolve them after
+    # the temp-clone cleanup, same as apply-routing-fix.sh / apply-fleet-standards.sh.
+    for _s in onboarding-state.sh ghl-mcp-autostart.sh configure-operator-telegram.sh heal-config-shapes.py resume-onboarding.sh apply-fleet-standards.sh apply-routing-fix.sh install-ceo-intent-gate.sh verify-routing.sh repair-model-sovereignty.sh install-hardening.sh ensure-heartbeat-defaults.sh ensure-pipeline-crons.sh diagnose-telegram-config.sh index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh agent-browser-reaper.sh; do
       [ -f "$ONBOARDING_DIR/scripts/$_s" ] && cp -f "$ONBOARDING_DIR/scripts/$_s" "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
       [ -f "$_OC_SCRIPTS_DEST/$_s" ] && chmod +x "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
     done
@@ -1149,7 +1152,14 @@ main() {
     fi
     wire_ghl_funnel_catalog "$SKILLS_DIR" "$_U6B_OC_SECRETS_ENV" "$_U6B_OC_JSON"
   else
-    echo "  note: Persona-index manifest or provision helper not found — skipping Step U6b (additive)"
+    # P11-1: this is the "helper/bundle missing" skip at the CALLER level (the
+    # file itself is absent, so provision-persona-index.sh's own
+    # _pidx_skip_warn accumulator was never sourced). Feed the same
+    # _PIDX_SKIP_WARNINGS accumulator directly so this box's completion report
+    # (built below from ONBOARDING_GATE_SUMMARY/QC_STATUS_LINE) surfaces it
+    # too, instead of a plain log line an operator would never see.
+    _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }persona-index manifest or provision helper not found — Step U6b did not run"
+    echo "  ⚠️  Persona-index provisioning SKIPPED: manifest or provision helper not found — Step U6b did not run"
   fi
 
   # ----------------------------------------------------------
@@ -2267,6 +2277,57 @@ PYEOF
   fi
 
   # ----------------------------------------------------------
+  # CEO PreToolUse intent-gate — WIRE THE RUNTIME BRAKE (v16.2.19).
+  # apply-routing-fix.sh (above) stamps the presentation reflex + the SIGNED
+  # route-presentation.sh helper, but that reflex is only ENFORCED at runtime by
+  # the PreToolUse intent-gate hook (hooks/ceo-intent-gate.sh): the hook denies a
+  # raw `python3 build_deck.py` on the router/CEO and redirects it to route. The
+  # hook + its installer shipped but were NEVER invoked, so the brake stayed OFF
+  # on every box. Wire it here, mirroring the apply-routing-fix.sh pattern: prefer
+  # the persistent copy (survives the temp-clone cleanup); the installer reads its
+  # hook+lib source from the persisted ~/.openclaw/hooks/ library staged above.
+  # Idempotent (self-skips when already wired), self-skips on PA-default boxes,
+  # box-user (never root), non-fatal (a wiring error is a loud warning, NOT an
+  # update abort — same convention as the other verify/stamp steps here).
+  # ----------------------------------------------------------
+  echo ""
+  echo "  Wiring CEO PreToolUse intent-gate (runtime brake for the presentation reflex)..."
+  INTENT_GATE_INSTALLER="$_PERSIST_SCRIPTS/install-ceo-intent-gate.sh"
+  [ -f "$INTENT_GATE_INSTALLER" ] || INTENT_GATE_INSTALLER="$ONBOARDING_DIR/scripts/install-ceo-intent-gate.sh"
+  if [ -f "$INTENT_GATE_INSTALLER" ]; then
+    if bash "$INTENT_GATE_INSTALLER" 2>&1; then
+      echo "  ✓ CEO intent-gate wired (or already wired / PA-box skip)"
+    else
+      echo "  ⚠ install-ceo-intent-gate.sh reported errors (update continues — re-run install-ceo-intent-gate.sh)"
+    fi
+  else
+    echo "  ⚠ install-ceo-intent-gate.sh not found (skipping intent-gate wire)"
+  fi
+
+  # ----------------------------------------------------------
+  # Post-stamp verification: verify-routing.sh static gates G1–G8 (v16.2.19).
+  # The updater applied the 4-layer routing fix + wired the intent-gate above but
+  # never VERIFIED them, so a box that silently failed a layer went unflagged. Run
+  # the gate now and surface per-gate PASS/FAIL. LOUD WARNING on failure — NOT a
+  # hard update abort (matches the non-fatal convention of the other steps here;
+  # the gate is read-only/static G1–G8, no --probe).
+  # ----------------------------------------------------------
+  VERIFY_ROUTING="$_PERSIST_SCRIPTS/verify-routing.sh"
+  [ -f "$VERIFY_ROUTING" ] || VERIFY_ROUTING="$ONBOARDING_DIR/scripts/verify-routing.sh"
+  if [ -f "$VERIFY_ROUTING" ]; then
+    echo ""
+    echo "  Verifying routing wiring (verify-routing.sh static gates G1–G8)..."
+    if bash "$VERIFY_ROUTING" 2>&1; then
+      echo "  ✓ verify-routing: all static gates PASS"
+    else
+      echo "  ⚠ verify-routing: one or more gates FAILED — routing/intent-gate wiring incomplete on this box."
+      echo "  ⚠ Update continues; re-run apply-routing-fix.sh + install-ceo-intent-gate.sh, then 'bash scripts/verify-routing.sh' to see which gate."
+    fi
+  else
+    echo "  ⚠ verify-routing.sh not found (skipping post-stamp routing verification)"
+  fi
+
+  # ----------------------------------------------------------
   # Dept-agent registration: turn built workspace folders into REAL agents in
   # openclaw.json. Runs after apply-routing-fix.sh so the routing config
   # (tools.sessions.visibility / agentToAgent) is set before agents are registered.
@@ -2452,6 +2513,8 @@ The onboarding-resume cron will keep re-firing wiring + QC until every skill pas
 New skills (need activation): ${NEW_SKILLS_CSV:-none -- updates only}.
 
 Workforce QC: ${QC_STATUS_LINE:-not run} (exit ${QC_COMPLETENESS_RC:-?})
+
+Persona-index provisioning: ${_PIDX_SKIP_WARNINGS:+⚠️ SKIPPED — }${_PIDX_SKIP_WARNINGS:-OK (no skip warnings)}
 
 Paste this to your agent:
 

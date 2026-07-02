@@ -135,6 +135,27 @@ Exit codes: 0 = seed minted; 2 = no usable refresh token (STOP — do NOT auto-o
 the login form; operator must supply a fresh token); 3 = refresh token present
 but REVOKED/expired (STOP — re-grab via the Token Grabber). A non-zero exit means
 the builder STOPS and reports; it NEVER triggers an automatic UI login.
+
+CALLER HYGIENE (P3-4, final-review Point 1 fix 4): this module never chooses
+its own --out location and never deletes what it writes (it is a one-shot
+process — any cleanup trap it installed would die with it before the seed file
+is consumed downstream). The SHELL caller that decides an --out path owns
+cleanup. inject-ghl-auth.sh's own re-mint call (the bounded 401 recovery retry,
+see D7/P2-1 below) is the reference pattern: it writes into a `mktemp -d`
+session tempdir and relies on a trap chained onto browser_manager.sh's
+teardown trap to rm -rf it on exit. Prefer that pattern over a bare
+caller-chosen /tmp/<session>/ path with no guaranteed cleanup; --out remains a
+plain, un-opinionated override for callers that already manage their own
+tempdir lifecycle.
+
+FIREBASE_API_KEY SINGLE-SOURCE (P3-2, final-review Point 1 fix 2): the literal
+below is documented as the canonical value in
+06-ghl-install-pages/tools/gates.json::firebase_api_key_registry.canonical_value
+and cross-checked against every physical copy (this file + the two Skill 44
+modules that also hardcode it) by
+06-ghl-install-pages/tests/test_ghl_secret_hygiene.py::TestFirebaseApiKeySync.
+Update all three copies AND the gates.json registry together if Google ever
+rotates this key.
 """
 
 from __future__ import annotations
@@ -153,7 +174,9 @@ import urllib.request
 # PRESERVED EXACTLY from Skill 44 transport.py — same key, same endpoint.
 # This is the GoHighLevel/Convert-and-Flow Firebase web API key (hardcoded in
 # transport.py; verified accepted by Google in the live-capture pass). It is NOT
-# a secret and NOT an env var.
+# a secret and NOT an env var. Canonical single-source record + duplication list:
+# gates.json::firebase_api_key_registry (kept in sync by
+# tests/test_ghl_secret_hygiene.py::TestFirebaseApiKeySync — see module docstring).
 FIREBASE_API_KEY = "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE"
 FIREBASE_TOKEN_URL = f"https://securetoken.googleapis.com/v1/token?key={FIREBASE_API_KEY}"
 

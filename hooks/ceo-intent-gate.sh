@@ -206,6 +206,36 @@ PYEOF
      && printf '%s' "$_CMD" | grep -qiE '\b(curl|wget|http)\b'; then
     exit 0
   fi
+  # Presentation-route helper carve-out (REFLEX V2 STEP 1). For any deck / slide /
+  # presentation request the CEO's MANDATED first action is the SIGNED route
+  # helper stamped by apply-routing-fix.sh / apply-fleet-standards.sh at the
+  # canonical <OC_ROOT>/scripts/route-presentation.sh path (OC_ROOT = /data/.openclaw
+  # on VPS, $HOME/.openclaw / ~ on Mac). That helper POSTs to /api/tasks/ingest with
+  # a Bearer+HMAC signature — it IS the routing action, not self-execution. Without
+  # this carve-out the gate would DENY the exact command the reflex orders first,
+  # forcing every deck request to escalate to the operator.
+  #
+  # ANCHORED (not a loose substring): the match is pinned to the START of the
+  # command — optionally through a leading `bash`/`sh` — with the helper's canonical
+  # '/.openclaw/scripts/route-presentation.sh' path as the command being invoked
+  # (path must begin with '/' or '~'). A look-alike merely MENTIONED mid-command
+  # (e.g. `echo …/route-presentation.sh; python3 build_deck.py`) does NOT match, so
+  # every non-route command — including a raw build_deck.py — stays denied.
+  if printf '%s' "$_CMD" | grep -qE '^[[:space:]]*((bash|sh)[[:space:]]+)?[~/][^[:space:]]*/\.openclaw/scripts/route-presentation\.sh([[:space:]]|$)'; then
+    exit 0
+  fi
+  # General route helper carve-out (mc-route.sh — docs/MC-ROUTE.md). The
+  # generalized route-presentation.sh: same runtime secret resolution + Bearer+HMAC
+  # signing, department passed as the first argument, stamped at the same canonical
+  # <OC_ROOT>/scripts/ location. It IS the routing action for ANY department, not
+  # self-execution. Same anchor class as the entry above (start-of-command,
+  # optionally through a leading `bash`/`sh`, canonical '/.openclaw/scripts/' path
+  # starting with '/' or '~') — a look-alike merely MENTIONED mid-command (e.g.
+  # `echo mc-route.sh; python3 build_deck.py`) does NOT match; everything
+  # non-route stays denied.
+  if printf '%s' "$_CMD" | grep -qE '^[[:space:]]*((bash|sh)[[:space:]]+)?[~/][^[:space:]]*/\.openclaw/scripts/mc-route\.sh([[:space:]]|$)'; then
+    exit 0
+  fi
 fi
 
 # ─── Consent check (the single shared flag) ───────────────────────────────────

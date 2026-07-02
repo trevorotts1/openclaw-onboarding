@@ -219,7 +219,11 @@ if [ -f "$GUARD" ]; then
     # Pass the canonical-entry command so the guard can extract --run-dir and
     # check the intake ledger, while recognizing this is the sanctioned route.
     GUARD_RC=0
-    OPENCLAW_EXEC_CMD="bash $SELF_DIR/presentation-canonical-entry.sh --run-dir $RUN_DIR" \
+    # Pass --plan through so the guard exempts read-only plan inspection from the
+    # fail-closed intake-ledger requirement (a real build must have a complete ledger).
+    _GUARD_CMD="bash $SELF_DIR/presentation-canonical-entry.sh --run-dir $RUN_DIR"
+    [ "$PLAN" -eq 1 ] && _GUARD_CMD="$_GUARD_CMD --plan"
+    OPENCLAW_EXEC_CMD="$_GUARD_CMD" \
         bash "$GUARD" 2>&1 || GUARD_RC=$?
     if [ "$GUARD_RC" -ne 0 ]; then
         echo "FATAL [$PROG]: GATE 0 — deck-build-guard.sh denied this run (exit $GUARD_RC)." >&2
@@ -426,10 +430,46 @@ else
 fi
 [ -n "$PLATFORM" ] && cmd+=(--platform "$PLATFORM")
 [ "$ADHOC" -eq 1 ] && cmd+=(--adhoc)
-note "exec: ${cmd[*]}"
-# FRONT-DOOR MARKER — required by run_signature_deck.py and build_deck.py.
-# They both exit 2 if this env var is absent (direct python3 invocations are
-# denied). The marker MUST be set immediately before exec so it is present in
-# the runner's process environment from the very first instruction.
+note "run: ${cmd[*]}"
+
+# ===========================================================================
+# FRONT-DOOR NONCE HANDSHAKE — required by run_signature_deck.py and build_deck.py.
+# They both exit 2 unless the exported OC_DECK_ENTRY_NONCE matches the run-scoped
+# 0600 file this script mints below. This SUPERSEDES the retired
+# OC_DECK_CANONICAL_ENTRY / OC_DECK_ALLOW_DIRECT env markers, which shipped in
+# box-visible comments and were forgeable by any model that read the repo. A random
+# per-run nonce cannot be conjured from shipped source; it is consumed (deleted)
+# after the run so a stale env value can never be replayed.
+# ===========================================================================
+NONCE_DIR="$RUN_DIR/working/checkpoints"
+NONCE_FILE="$NONCE_DIR/.canonical-entry-nonce"
+mkdir -p "$NONCE_DIR"
+
+_mint_nonce() {
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c 'import secrets; print(secrets.token_hex(32))' 2>/dev/null && return 0
+    fi
+    if command -v openssl >/dev/null 2>&1; then
+        openssl rand -hex 32 2>/dev/null && return 0
+    fi
+    LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom 2>/dev/null | head -c 64
+    echo
+}
+OC_DECK_ENTRY_NONCE="$(_mint_nonce)"
+[ -n "$OC_DECK_ENTRY_NONCE" ] || die "could not mint the front-door nonce (no python3/openssl/urandom available). Refusing to build."
+
+# Write 0600 BEFORE exporting (umask 077 guarantees no group/other bits on create).
+( umask 077; printf '%s' "$OC_DECK_ENTRY_NONCE" > "$NONCE_FILE" )
+chmod 600 "$NONCE_FILE" 2>/dev/null || true
+export OC_DECK_ENTRY_NONCE
+# Legacy marker kept for informational/back-compat wiring only — it is NO LONGER
+# sufficient on its own; the nonce above is the real gate.
 export OC_DECK_CANONICAL_ENTRY=1
-exec "${cmd[@]}"
+
+# Consume/rotate the nonce on ANY exit (normal or signal) so it can never be replayed.
+trap 'rm -f "$NONCE_FILE" 2>/dev/null || true' EXIT INT TERM HUP
+
+"${cmd[@]}"
+_rc=$?
+rm -f "$NONCE_FILE" 2>/dev/null || true
+exit "$_rc"

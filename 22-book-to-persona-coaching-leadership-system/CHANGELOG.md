@@ -4,6 +4,32 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v6.13.1 - 2026-07-01 - fix(pipeline-hardening): full-rebuild guard + persona-categories schema-lint + appendix status surfacing
+
+Final-review Points 12 and 13 fixes for `pipeline/gemini-indexer.py` and `pipeline/orchestrator.py`
+(`23-ai-workforce-blueprint/scripts/persona-selector-v2.py` consumes the same field but tracks the repo
+version, so its half of the change is logged there, not here).
+
+- **`gemini-indexer.py` full-rebuild guard**: the wrapper now inspects `sys.argv` before delegating to
+  `embedding_engine._indexer_main()`. If `--rebuild` (FULL rebuild) is requested, `--status` is not also
+  present, and `--force-full-rebuild` was not passed, it resolves the `coaching_personas` dir and checks for
+  the `.prebuilt-index-version` sentinel; if present, it REFUSES (stderr message, exit 3) without calling
+  `main()`, protecting the canonical sha256-verified ship-don't-re-embed index. `--force-full-rebuild`
+  (operator-only, never for client-facing docs) is stripped from argv and lets `--rebuild` through.
+  Incremental/delta runs (no `--rebuild`) are unaffected.
+- **`orchestrator.py` schema-lint gate**: added `PersonaCategoriesSchemaError`, `_lint_tag_list()`, and
+  `_lint_persona_categories_write()` — a hard-fail schema-lint validating every `domain[]`/`perspective[]`
+  tag on a new persona entry is a well-formed lowercase-kebab-case string that matches or well-formed-extends
+  the existing `domainTags[]`/`perspectiveTags[]` vocab. Wired into `_append_persona_to_categories()`
+  immediately before the `json.dump` write; a malformed tag raises naming the offending key and the file on
+  disk is left byte-for-byte unchanged.
+- **`orchestrator.py` appendix status surfacing**: `_append_persona_to_categories()` now stamps an
+  `appendixStatus` field (`COMPLETE`/`COMPLETE_WITH_WARNINGS`/`FAILED`/`MISSING`) on every new persona entry —
+  prefers the caller's `pipeline-status.json` phase3b verdict (passed from `process_book`'s Phase 6 call
+  site), falls back to a `PLAYBOOK-APPENDIX.md` file-existence check when no status is supplied.
+
+---
+
 ## v6.11.1 - 2026-06-27 - fix(task-mode-wiring): Persona Reflex now mandatory + explicit, and its body actually merges
 
 The Persona Reflex in CORE_UPDATES.md is rewritten from "load returned persona's Task Mode" to a MANDATORY

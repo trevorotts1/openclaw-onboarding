@@ -1,3 +1,16 @@
+## [1.7.10] - 2026-07-01 — docs: caf-first banners on 7 automation-proposing protocols + caf-path verify mandate + qc-built-workflow.sh gate in monthly-review cron
+
+### Added (caf-first banner — final-review Points 2/3/7-fix7)
+- Added an identical caf-first banner (`BUILD path:** caf-direct...`) to the 7 protocol files that propose creating or altering a GHL automation: `protocols/business-logic-workflow-suggestions-protocol.md`, `protocols/intelligent-routing-protocol.md`, `protocols/smart-playbook-switching-protocol.md`, `protocols/proactive-suggestions-protocol.md`, `protocols/monthly-comprehensive-review-protocol.md`, `protocols/weekly-tune-up-protocol.md`, `protocols/prompt-injection-protection-protocol.md`. Read all 45 protocol files in full (not just grepped) to find this set; excluded operator-owned, third-party, and read/route/tag-only protocols after reading each.
+
+### Changed (caf-path verify mandate)
+- `protocols/conversation-workflows-protocol.md`: added a Section E caf-path verify mandate (cross-referencing the D.3 End-to-end test subsection) requiring `44-convert-and-flow-operator/qc-built-workflow.sh <workflow-id> --json` before asking the human to verify a caf-built workflow; added a "Verification completed" column to the Section F registry table (Yes-pass / No-not-yet-verified / FAILED) so monthly review can surface delivered-but-never-verified workflows.
+- `templates/workflow-verification-checklist-template.md`: mirrored the caf-QC mandate + verification_completed recording instruction in its own End-to-end test section.
+- `scripts/04-register-crons.sh`: extended cron 5 (system-health-heartbeat) prompt text so the GHL-workflow audit clause runs `qc-built-workflow.sh --json` per built workflow and folds the PASS/FAIL result into the audit, instead of relying on agent prose alone.
+
+### Notes
+- Bumped from 1.7.9 (which shipped with no CHANGELOG entry, mirroring the 1.7.7→1.7.8 gap below) → 1.7.10.
+
 ## [1.7.8] - 2026-06-30 — feat: runtime GHL tier ladder (caf-first) + runtime-PIT liveness + 401 credential fallback; caf build-path preflight; GHL cred canonicalization; Command Center Kanban lifecycle
 
 ### Added (runtime GHL fallback — deep-dive P0/P1)

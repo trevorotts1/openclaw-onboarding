@@ -15,6 +15,19 @@
 #      -> activates via $store.dispatch('auth/get') + $router.push — NO page reload)
 #   4. snapshot -> confirm dashboard (NOT the login form).
 #
+# BOUNDED MID-BUILD 401 RECOVERY (P2-1, final-review Point 1 fix 1): the id_token
+# seed-ghl-auth.py mints is short-lived (~60min). A long build that crosses that
+# window while the Firebase Web SDK's silent renew is blocked (network blip) used
+# to abort hard on the FIRST 401/user_not_logged_in-class failure. This script now
+# retries EXACTLY ONCE: on a detected 401/user_not_logged_in-class failure during
+# or right after injection/activation, it re-runs `seed-ghl-auth.py --print-seed`
+# ONE time, re-seeds with the fresh token, and re-verifies. Only a SECOND
+# consecutive failure (or a re-mint that itself hits seed-ghl-auth.py's own
+# exit-2/exit-3 STOP doctrine) falls through to the hard STOP below. This is
+# strictly a re-mint-and-reseed of the SAME token-only path — it NEVER opens the
+# Sign-in form and NEVER triggers two-factor. See _seed_and_activate_once /
+# _looks_like_401_class / the retry driver near the bottom of this file.
+#
 # WHY BOTH COOKIES *AND* INDEXEDDB (bundle-verified chunk.DOYVEcZH.js):
 #   * COOKIES are the SPA's authoritative logged-in signal. The `An` getter reads
 #     cookie `a` (= btoa(JSON.stringify({apiKey,userId,companyId}))) and THROWS
@@ -35,10 +48,11 @@
 #
 # HARD RULE — NO AUTOMATIC UI-LOGIN / 2FA FALLBACK:
 #   This script NEVER drives the Sign-in form and NEVER triggers two-factor. If
-#   any step fails (mint/login-current/cookie-write/verify) it exits NON-ZERO and
-#   the builder MUST STOP and report. A revoked/expired token => operator
-#   re-grabs a fresh refresh token (Token Grabber); it does NOT cause an automatic
-#   UI login. GHL_AGENCY_EMAIL/PASSWORD is a documented MANUAL last resort only.
+#   any step fails (mint/login-current/cookie-write/verify) — including after the
+#   ONE bounded re-mint+re-seed above — it exits NON-ZERO and the builder MUST
+#   STOP and report. A revoked/expired token => operator re-grabs a fresh refresh
+#   token (Token Grabber); it does NOT cause an automatic UI login.
+#   GHL_AGENCY_EMAIL/PASSWORD is a documented MANUAL last resort only.
 #
 # PRIMARY ENGINE: agent-browser (Vercel Labs), headless, isolated --session.
 # It must already have navigated to the GoHighLevel origin once (so cookies bind
@@ -88,6 +102,7 @@ esac
 # shellcheck source=browser_manager.sh
 source "$(dirname "$0")/browser_manager.sh"
 
+TOOLS_DIR="$(dirname "$0")"
 SESSION="${1:-}"
 SEED_FILE="${2:-}"
 ORIGIN="${GHL_AGENCY_URL:-https://app.convertandflow.com}"
@@ -110,9 +125,39 @@ fi
 # (login bounce) but are really an engine drift. We FAIL LOUD on drift here —
 # before opening the browser — rather than mis-diagnose it downstream. Override
 # (operator-acknowledged) with GHL_AB_ALLOW_VERSION_DRIFT=1; re-pin with
-# GHL_AB_PINNED_VERSION after a deliberate re-capture. Mirrors
-# gates.json::agent_browser_version_pin.
-GHL_AB_PINNED_VERSION="${GHL_AB_PINNED_VERSION:-0.27.0}"
+# GHL_AB_PINNED_VERSION after a deliberate re-capture.
+#
+# SINGLE-SOURCE (P3-3, final-review Point 1 fix 3): the pin value used to be a
+# bare inline "0.27.0" default HERE, independent of gates.json — a second place
+# that could drift from the gate registry / from browser_manager.py's own
+# assert_agent_browser_version() (which already reads gates.json). Precedence now
+# mirrors browser_manager.py::_read_pinned_agent_browser_version() exactly, so
+# the shell and Python sides share ONE source of truth:
+#   1. GHL_AB_PINNED_VERSION env var (operator override after a deliberate
+#      re-capture) — unchanged, highest precedence.
+#   2. gates.json::agent_browser_version_pin.pinned_version (the single source
+#      of record).
+#   3. Hard-coded fallback "0.27.0" — ONLY if gates.json is missing/unreadable
+#      (matches gates.json at ship time; python3 is already a hard dependency of
+#      this flow, see the ACTIVATE_TARGET_JSON encoding below).
+if [ -n "${GHL_AB_PINNED_VERSION:-}" ]; then
+  : # operator override — highest precedence, nothing to resolve.
+else
+  GATES_JSON_PATH="$TOOLS_DIR/gates.json"
+  GHL_AB_PINNED_VERSION="$(python3 - "$GATES_JSON_PATH" <<'PY' 2>/dev/null
+import json, sys
+path = sys.argv[1]
+try:
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    v = data.get("agent_browser_version_pin", {}).get("pinned_version", "")
+    print(v.strip() if isinstance(v, str) and v.strip() else "0.27.0")
+except Exception:
+    print("0.27.0")
+PY
+)"
+  [ -n "$GHL_AB_PINNED_VERSION" ] || GHL_AB_PINNED_VERSION="0.27.0"
+fi
 AB_VERSION_RAW="$("$AB_BIN" --version 2>/dev/null | head -n1 | tr -d '[:space:]' || true)"
 # Extract a semver token (e.g. 0.27.0) from whatever the CLI prints.
 AB_VERSION="$(printf '%s' "$AB_VERSION_RAW" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)"
@@ -141,9 +186,33 @@ SESSION="$(bm_session_name)"
 
 # Acquire the box-wide lock, write the lease, start the TTL self-kill timer, open
 # the canonical session, and INSTALL the EXIT/INT/TERM/HUP teardown trap — BEFORE
-# the first open. Every exit below (including the 4 non-zero REFUSE aborts) now
+# the first open. Every exit below (including the non-zero REFUSE aborts) now
 # guarantees teardown (close + state clear) through this trap.
 bm_ensure
+
+# ── P3-4: SESSION-SCOPED TEMPDIR + CHAINED CLEANUP TRAP (final-review Point 1
+# fix 4) ─────────────────────────────────────────────────────────────────────
+# Anything THIS script writes to disk (the bounded re-mint's fresh seed file, the
+# per-attempt stderr diagnostics used to classify a 401/user_not_logged_in
+# failure) goes under a `mktemp -d` session tempdir instead of a caller-chosen
+# /tmp path that is not guaranteed to be swept. The explicit --out override on
+# seed-ghl-auth.py itself still works unchanged for external callers (Step 1 in
+# the header above) — this only hardens the seed file THIS script mints
+# internally during the bounded 401 recovery retry.
+#
+# CRITICAL — DO NOT clobber bm_ensure's teardown trap: bm_ensure (just above)
+# already installed `trap _bm_teardown EXIT INT TERM HUP` — the guaranteed
+# browser-session close/state-clear that closes the 22-orphan-engine leak this
+# file documents at the top. A naive `trap 'rm -rf ...' EXIT` here would REPLACE
+# that trap and silently reintroduce the orphan leak. Instead we install a
+# combined teardown that does our rm -rf FIRST, then explicitly calls the same
+# _bm_teardown the gateway guarantees, so neither cleanup is ever skipped.
+GHL_INJECT_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/ghl-inject-auth.XXXXXX")"
+_ghl_inject_teardown() {
+  rm -rf "$GHL_INJECT_TMPDIR" 2>/dev/null || true
+  _bm_teardown
+}
+trap _ghl_inject_teardown EXIT INT TERM HUP
 
 # Ensure the origin is open + the SPA is MOUNTED before we seed: activation drives
 # the SPA's own store + router (#app.__vue_app__), which only exists once the app
@@ -166,8 +235,6 @@ fi
 # verbatim `An` setter template (cookie `a` = btoa({apiKey,userId,companyId}) is
 # the authoritative logged-in signal). Reads the seed from window.__GHL_SEED__ to
 # avoid shell-escaping a large JSON blob.
-export GHL_SEED_JSON="$(cat "$SEED_FILE")"
-
 read -r -d '' INJECT_JS <<'JS' || true
 (async () => {
   const seed = __SEED__;
@@ -350,39 +417,6 @@ JS
 # the object on window first, then substitute __SEED__ -> window.__GHL_SEED__.
 INJECT_JS="${INJECT_JS/__SEED__/window.__GHL_SEED__}"
 
-# Stage the seed object on window first (small eval), then run the injector.
-AB --session "$SESSION" eval --stdin <<EOF >/dev/null
-window.__GHL_SEED__ = ${GHL_SEED_JSON};
-EOF
-
-# Run the injector. If the JS throws (invalid seed / login-current failure /
-# cookie-write failure) the eval exits non-zero and `set -e` aborts this script —
-# the builder STOPS and reports. There is NO automatic fall-back to the UI login
-# form / two-factor here.
-if ! RESULT="$(AB --session "$SESSION" eval --stdin <<EOF
-${INJECT_JS}
-EOF
-)"; then
-  echo "REFUSE: auth seed failed (Firebase IndexedDB / login-current fetch / cookie write). Token-seed is the ONLY auth path. Do NOT open the Sign-in form. Re-grab a fresh refresh token (Token Grabber) and retry. STOP." >&2
-  exit 1
-fi
-
-# Guard: the injector returns "seeded:<key>" on success and throws otherwise.
-# agent-browser 0.27.0 `eval` returns the JS return value JSON-ENCODED, so a
-# string result arrives wrapped in literal double quotes
-# (e.g. `"seeded:firebase:authUser:...:[DEFAULT]"`). Strip a single layer of
-# surrounding double quotes before matching so a SUCCESSFUL seed is not wrongly
-# REFUSEd. (Trailing CR/whitespace is also trimmed.)
-RESULT="${RESULT%$'\r'}"
-RESULT="${RESULT#\"}"
-RESULT="${RESULT%\"}"
-case "$RESULT" in
-  seeded:*) : ;;
-  *) echo "REFUSE: seed did not confirm (got: '${RESULT}'). Token-seed is the ONLY auth path — do NOT auto-open the login form. STOP." >&2; exit 1 ;;
-esac
-
-echo "$RESULT"
-
 # ── DO NOT RELOAD ─────────────────────────────────────────────────────────────
 # A full page reload re-runs the agency whitelabel boot gate (the "[redirectIIFE]
 # post-ready check" IIFE), which calls firebase signOut() and WIPES the seeded
@@ -393,12 +427,15 @@ echo "$RESULT"
 # then $router.push() to the post-login surface. No full navigation, so the boot
 # IIFE never re-runs. The injector already verified cookie `a` decodes; here we
 # confirm the store accepts it (auth/get returns a user) and land on the app.
+# NEVER `reload` after seeding, including on the bounded re-mint retry below —
+# re-seeding reuses this SAME session via eval only, never a navigate/open/reload.
 ACTIVATE_TARGET="${GHL_ACTIVATE_PATH:-/}"
 # Pre-encode the target path as a JS/JSON string literal, then plain-interpolate
 # it below (same SAFE pattern as window.__GHL_SEED__ = ${GHL_SEED_JSON}). NOTE:
 # macOS ships /bin/bash 3.2.57 which has NO ${VAR@Q} operator (bad substitution),
 # so @Q must not be used here. python3 is already a hard dependency of this flow.
 ACTIVATE_TARGET_JSON="$(printf '%s' "$ACTIVATE_TARGET" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
+
 read -r -d '' ACTIVATE_JS <<'AJS' || true
 (async () => {
   // ── LAYER-2 HARDENING: bounded retry around store/router activation ─────────
@@ -462,27 +499,185 @@ read -r -d '' ACTIVATE_JS <<'AJS' || true
 })()
 AJS
 
-AB --session "$SESSION" eval --stdin <<EOF >/dev/null
+# ── STAGE + INJECT + ACTIVATE, as reusable functions (P2-1 hardening) ─────────
+# The original one-shot script inlined this as straight-line code. It is now
+# wrapped in functions ONLY so the bounded re-mint retry below can re-run the
+# exact same seed+activate sequence a second time (with a freshly minted seed)
+# without duplicating the JS payloads above. Nothing about WHAT is sent to the
+# browser changes — same eval calls, same heredoc JS, same no-reload discipline.
+
+# _stage_and_inject <seed-file>
+#   Sets INJECT_RESULT ("seeded:..." on success) and INJECT_ERR (stderr
+#   diagnostic text, always). Returns 0 on a confirmed "seeded:" result, 1
+#   otherwise (including a nonzero eval exit).
+_stage_and_inject() {
+  local seed_file="$1"
+  local err_file="$GHL_INJECT_TMPDIR/inject-stderr.log"
+  : > "$err_file"
+
+  export GHL_SEED_JSON="$(cat "$seed_file")"
+
+  if ! AB --session "$SESSION" eval --stdin <<EOF >/dev/null 2>"$err_file"
+window.__GHL_SEED__ = ${GHL_SEED_JSON};
+EOF
+  then
+    INJECT_ERR="$(cat "$err_file" 2>/dev/null || true)"
+    INJECT_RESULT=""
+    return 1
+  fi
+
+  local result
+  if ! result="$(AB --session "$SESSION" eval --stdin <<EOF 2>"$err_file"
+${INJECT_JS}
+EOF
+)"; then
+    INJECT_ERR="$(cat "$err_file" 2>/dev/null || true)"
+    INJECT_RESULT="$result"
+    return 1
+  fi
+  INJECT_ERR="$(cat "$err_file" 2>/dev/null || true)"
+
+  # agent-browser 0.27.0 `eval` returns the JS return value JSON-ENCODED, so a
+  # string result arrives wrapped in literal double quotes. Strip a single layer
+  # of surrounding double quotes (+ trailing CR) before matching.
+  result="${result%$'\r'}"
+  result="${result#\"}"
+  result="${result%\"}"
+  INJECT_RESULT="$result"
+  case "$INJECT_RESULT" in
+    seeded:*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# _stage_and_activate
+#   Uses the already-computed ACTIVATE_TARGET_JSON (global, seed-independent).
+#   Sets ACTIVATE_RESULT ("activated:..." on success) and ACTIVATE_ERR (stderr
+#   diagnostic text, always). Returns 0 on a confirmed "activated:" result, 1
+#   otherwise.
+_stage_and_activate() {
+  local err_file="$GHL_INJECT_TMPDIR/activate-stderr.log"
+  : > "$err_file"
+
+  if ! AB --session "$SESSION" eval --stdin <<EOF >/dev/null 2>"$err_file"
 window.__GHL_ACTIVATE_TARGET__ = ${ACTIVATE_TARGET_JSON};
 EOF
+  then
+    ACTIVATE_ERR="$(cat "$err_file" 2>/dev/null || true)"
+    ACTIVATE_RESULT=""
+    return 1
+  fi
 
-if ! ARESULT="$(AB --session "$SESSION" eval --stdin <<EOF
+  local aresult
+  if ! aresult="$(AB --session "$SESSION" eval --stdin <<EOF 2>"$err_file"
 ${ACTIVATE_JS}
 EOF
 )"; then
-  echo "REFUSE: session activation failed (store/router rejected the seeded auth). Token-seed is the ONLY auth path — do NOT open the Sign-in form. Re-grab a fresh refresh token (Token Grabber) and retry. STOP." >&2
-  exit 1
+    ACTIVATE_ERR="$(cat "$err_file" 2>/dev/null || true)"
+    ACTIVATE_RESULT="$aresult"
+    return 1
+  fi
+  ACTIVATE_ERR="$(cat "$err_file" 2>/dev/null || true)"
+
+  aresult="${aresult%$'\r'}"
+  aresult="${aresult#\"}"
+  aresult="${aresult%\"}"
+  ACTIVATE_RESULT="$aresult"
+  case "$ACTIVATE_RESULT" in
+    activated:*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# _seed_and_activate_once <seed-file>
+#   The full seed+activate sequence against ONE seed file. Returns 0 only if
+#   BOTH steps confirmed. This is called twice at most: once with the original
+#   seed, and — ONLY on a detected 401/user_not_logged_in-class failure — once
+#   more with a freshly re-minted seed (never a third time; see the driver).
+_seed_and_activate_once() {
+  local seed_file="$1"
+  _stage_and_inject "$seed_file" || return 1
+  _stage_and_activate || return 1
+  return 0
+}
+
+# _looks_like_401_class <diagnostic-text>
+#   Classifies a failure as "re-mintable" — i.e. the token-id the browser is
+#   holding was rejected as unauthenticated (401-class) rather than the seed
+#   being structurally malformed, the SPA never mounting, or some other
+#   non-token failure a re-mint cannot fix. Matched ONLY against the specific
+#   error signatures the JS above already throws (LOGIN-CURRENT-401/403/
+#   NONAUTH, the explicit "user_not_logged_in" doc string on a cookie-`a`
+#   readback failure, and the activation-side BOUNCED-TO-LOGIN / AUTHGET-*
+#   signatures). Deliberately does NOT match SEED-INVALID, SEED-READBACK-FAILED,
+#   or ACTIVATE-NO-STORE-ROUTER — those are not token problems and a re-mint
+#   would not fix them (re-minting would just burn the one bounded retry on a
+#   failure mode it cannot recover).
+_looks_like_401_class() {
+  case "$1" in
+    *LOGIN-CURRENT-401*|*LOGIN-CURRENT-403*|*LOGIN-CURRENT-NONAUTH*|*user_not_logged_in*|*COOKIE-A-READBACK-FAILED*|*BOUNCED-TO-LOGIN*|*AUTHGET-REJECT*|*AUTHGET-NOUSER*|*"Not authenticated"*)
+      return 0 ;;
+    *)
+      return 1 ;;
+  esac
+}
+
+# ── THE RETRY DRIVER (P2-1) ────────────────────────────────────────────────────
+# 1st attempt with the seed file the caller passed in. On failure, classify: if
+# (and ONLY if) the failure signature is 401/user_not_logged_in-class AND no
+# re-mint has been attempted yet this run, do ONE bounded re-mint (re-run
+# seed-ghl-auth.py --print-seed into the session tempdir) + ONE re-seed attempt.
+# Any other outcome — a non-401-class failure, OR a second consecutive failure
+# after the re-mint, OR the re-mint itself hitting seed-ghl-auth.py's own
+# exit-2/exit-3 STOP doctrine — falls through to a hard STOP. There is NO third
+# attempt and NO UI-login/2FA path; this is strictly "re-mint the same
+# token-only seed once, then STOP" per D7.
+CURRENT_SEED_FILE="$SEED_FILE"
+REMINT_ATTEMPTED=0
+
+if ! _seed_and_activate_once "$CURRENT_SEED_FILE"; then
+  DIAG="${INJECT_ERR:-}${INJECT_RESULT:-}${ACTIVATE_ERR:-}${ACTIVATE_RESULT:-}"
+
+  if [ "$REMINT_ATTEMPTED" = "0" ] && _looks_like_401_class "$DIAG"; then
+    REMINT_ATTEMPTED=1
+    echo "WARN: detected a 401/user_not_logged_in-class auth failure (id_token likely crossed its ~60min window while the SDK's silent renew was blocked). D7 token-only doctrine: attempting ONE bounded re-mint + re-seed on the SAME session before any hard STOP. No UI-login/2FA path exists or will be added." >&2
+
+    REMINT_SEED_FILE="$GHL_INJECT_TMPDIR/ghl-auth-reseed.json"
+    # Capture seed-ghl-auth.py's REAL exit code (2=no token, 3=revoked/expired) —
+    # NOT the negated status `if ! cmd` would give — so its own STOP doctrine
+    # propagates faithfully. Bracket with set +e/-e rather than `if !`.
+    set +e
+    python3 "$TOOLS_DIR/seed-ghl-auth.py" --print-seed --out "$REMINT_SEED_FILE"
+    REMINT_RC=$?
+    set -e
+    if [ "$REMINT_RC" != "0" ]; then
+      echo "REFUSE: bounded re-mint failed — seed-ghl-auth.py's own STOP doctrine applies (exit 2 = no usable refresh token; exit 3 = refresh token present but revoked/expired, re-grab via the Token Grabber). Token-seed remains the ONLY auth path; do NOT open the Sign-in form. STOP." >&2
+      exit "$REMINT_RC"
+    fi
+
+    CURRENT_SEED_FILE="$REMINT_SEED_FILE"
+    if ! _seed_and_activate_once "$CURRENT_SEED_FILE"; then
+      RETRY_DIAG="${INJECT_ERR:-}${INJECT_RESULT:-}${ACTIVATE_ERR:-}${ACTIVATE_RESULT:-}"
+      echo "REFUSE: auth failed AGAIN after the one bounded re-mint + re-seed (no loop — D7 token-only doctrine). Token-seed is the ONLY auth path; do NOT open the Sign-in form or trigger two-factor. Re-grab a fresh refresh token (Token Grabber) and retry. STOP." >&2
+      echo "         diagnostic: ${RETRY_DIAG:0:400}" >&2
+      exit 3
+    fi
+  else
+    echo "REFUSE: auth seed failed (Firebase IndexedDB / login-current fetch / cookie write / activation) and does not match a recoverable 401/user_not_logged_in signature (or a re-mint was already attempted this run). Token-seed is the ONLY auth path. Do NOT open the Sign-in form. Re-grab a fresh refresh token (Token Grabber) and retry. STOP." >&2
+    echo "         diagnostic: ${DIAG:0:400}" >&2
+    exit 1
+  fi
 fi
-ARESULT="${ARESULT%$'\r'}"; ARESULT="${ARESULT#\"}"; ARESULT="${ARESULT%\"}"
-case "$ARESULT" in
-  activated:*) echo "$ARESULT" ;;
-  *) echo "REFUSE: activation did not confirm (got: '${ARESULT}'). The SPA still rejected the seeded session — do NOT auto-open the login form. STOP + report." >&2; exit 1 ;;
-esac
+
+echo "$INJECT_RESULT"
+echo "$ACTIVATE_RESULT"
 
 # Caller may now snapshot and confirm the app surface (NOT the login form). See A1.3.
 # Every agent-browser call carries --headed false (D6). HARD RULE: if the SPA ever
 # shows the Sign-in form (token revoked), the builder STOPS and reports — it MUST
 # NOT auto-fill the form or trigger two-factor. The operator re-grabs a fresh
-# refresh token and retries this token-seed path. NEVER `reload` after seeding —
-# that re-runs the boot gate and logs the seeded session out.
+# refresh token and retries this token-seed path (this script already attempts
+# ONE bounded re-mint+re-seed internally before giving up — see the retry driver
+# above). NEVER `reload` after seeding — that re-runs the boot gate and logs the
+# seeded session out.
 echo "NEXT: agent-browser --headed false --session ${SESSION} snapshot -i  # expect the app (NOT login). Navigate via the SPA's own router (\$router.push) — do NOT reload."

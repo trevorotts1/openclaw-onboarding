@@ -1595,6 +1595,147 @@ def _read_json(path: Path):
 AUDIENCE_MODES = ("STANDARD", "PERSONAL", "GENERAL")
 
 
+# The SIX mandatory Brainstorming-Buddy fields captured under
+# intake.json -> pre_presentation_capture (SOP 9.0 / deck-intake-questions.json
+# storeTarget). Each maps to the turn-gated interview question id and, where the SOP
+# allows a captured DECLINE, the sanctioned flag that waives a non-empty value.
+# DARK_OK is a boolean (false is a legitimate captured answer, NOT "empty").
+# GROUNDED_CONTENT has NO decline waiver — the SOP forbids a blank grounded content.
+_INTAKE_MANDATORY_FIELDS = (
+    # (canonical field key, accepted aliases, ledger question id, decline-flag(s), is_bool)
+    ("REPRESENTATION_MIX", (), "representation_mix",
+     ("representation_uncaptured",), False),
+    ("AUDIENCE_COMPOSITION", ("AUDIENCE_COMPOSITION_NOTE",), "audience_composition_note",
+     ("audience_composition_uncaptured", "representation_uncaptured"), False),
+    ("GROUNDED_CONTENT", (), "grounded_content",
+     (), False),
+    ("VISUAL_MIX", (), "visual_mix",
+     ("visual_mix_defaulted",), False),
+    ("DARK_OK", (), "dark_ok",
+     (), True),
+    ("HOOK_SEED", (), "hook_seed",
+     ("hook_seed_missing",), False),
+)
+
+
+def _intake_run_dir(intake_path: Path) -> Optional[Path]:
+    """Resolve the deck run dir from the intake.json path: the nearest ancestor that
+    contains a working/ subtree (intake.json canonically lives at
+    <run_dir>/working/copy/intake.json)."""
+    try:
+        cur = intake_path.resolve().parent
+    except OSError:
+        return None
+    for _ in range(8):
+        if (cur / "working").is_dir():
+            return cur
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    return None
+
+
+def _flag_true(v) -> bool:
+    if v is True:
+        return True
+    if isinstance(v, str):
+        return v.strip().lower() in ("true", "yes", "1", "y")
+    return False
+
+
+def _intake_provenance_gate(obj: dict, intake_path: Path) -> str:
+    """FAIL-CLOSED intake provenance gate (P1-C). Beyond the self-attested
+    intake.json flags, this asserts:
+      (1) all SIX mandatory pre_presentation_capture fields exist with non-empty /
+          non-default values (or a sanctioned captured-decline flag), AND
+      (2) intake.json is CONSISTENT with a COMPLETED, turn-gated
+          working/interview/intake_ledger.json (the Brainstorming-Buddy record) —
+          the ledger must exist, be marked complete, and carry the interview's
+          captured answers. An absent/incomplete ledger means the interview was
+          skipped → DENY.
+    Owner override: a logged owner_skip_approval for gate INTAKE-INTERVIEW in
+    working/checkpoints/process_manifest.json waives this battery (bypass only when
+    the human explicitly says so). Returns "" on pass, or a reason string naming the
+    exact missing field(s) / ledger problem on fail."""
+    run_dir = _intake_run_dir(intake_path)
+
+    # Owner/founder override — honored exactly like the FIX-2 gates.
+    if run_dir is not None and _owner_skip_approved(run_dir, "INTAKE-INTERVIEW"):
+        return ""
+
+    problems = []
+
+    # (1) SIX mandatory pre_presentation_capture fields.
+    cap = obj.get("pre_presentation_capture")
+    if not isinstance(cap, dict):
+        cap = {}
+    for field, aliases, _qid, decline_flags, is_bool in _INTAKE_MANDATORY_FIELDS:
+        keys = (field,) + tuple(aliases)
+        present_key = next((k for k in keys if k in cap), None)
+        val = cap.get(present_key) if present_key is not None else None
+        declined = any(_flag_true(obj.get(f)) or _flag_true(cap.get(f)) for f in decline_flags)
+        if is_bool:
+            # DARK_OK: a real boolean (true OR false) is a captured answer; a string
+            # yes/no/true/false is tolerated. Missing/other → not captured.
+            ok = isinstance(val, bool) or (
+                isinstance(val, str) and val.strip().lower() in ("true", "false", "yes", "no"))
+            if not ok:
+                problems.append(f"{field} (missing — must be an explicit true/false from the interview)")
+        else:
+            non_empty = isinstance(val, str) and val.strip() != "" or \
+                (val is not None and not isinstance(val, str) and str(val).strip() != "")
+            if not non_empty and not declined:
+                problems.append(
+                    f"{field} (missing/empty in pre_presentation_capture and no sanctioned decline flag set)")
+
+    # (2) Turn-gated ledger provenance.
+    if run_dir is None:
+        problems.append(
+            "intake_ledger.json could not be located (no working/ run dir resolved from intake.json)")
+    else:
+        ledger_path = run_dir / "working" / "interview" / "intake_ledger.json"
+        if not ledger_path.is_file():
+            problems.append(
+                "working/interview/intake_ledger.json is ABSENT — the Brainstorming Buddy "
+                "deck-intake interview was never run (run deck-intake-driver.py --next/"
+                "--answer/--complete)")
+        else:
+            led = _read_json(ledger_path)
+            if not isinstance(led, dict) or "__parse_error__" in led:
+                problems.append("working/interview/intake_ledger.json is not valid JSON")
+            else:
+                status = str(led.get("status", "")).strip().lower()
+                complete = status == "complete" or led.get("complete") is True \
+                    or str(led.get("complete", "")).strip().lower() == "true"
+                if not complete:
+                    problems.append(
+                        f"intake_ledger.json is not complete (status={status or 'unset'!r}) — "
+                        "finish the interview with deck-intake-driver.py --complete")
+                else:
+                    entries = led.get("entries") if isinstance(led.get("entries"), dict) else {}
+                    # Consistency: every mandatory field either has a validated/circled-back
+                    # ledger entry for its question, OR a sanctioned captured-decline flag in
+                    # intake.json. A field claimed in intake.json with neither is unprovenanced.
+                    for field, aliases, qid, decline_flags, _is_bool in _INTAKE_MANDATORY_FIELDS:
+                        e = entries.get(qid) if isinstance(entries.get(qid), dict) else {}
+                        captured = bool(e.get("validated")) or bool(e.get("circled_back"))
+                        declined = any(_flag_true(obj.get(f)) or _flag_true(cap.get(f))
+                                       for f in decline_flags)
+                        if not captured and not declined:
+                            problems.append(
+                                f"{field}: intake.json is inconsistent with the ledger — no "
+                                f"validated interview answer for '{qid}' and no sanctioned decline flag")
+
+    if problems:
+        return ("brainstorm intake incomplete / not provenanced — the Brainstorming Buddy "
+                "interview must be run and its six mandatory fields captured. Missing/"
+                "inconsistent: " + "; ".join(problems) + ". "
+                "Owner override: log an owner_skip_approval for gate INTAKE-INTERVIEW "
+                "(owner_approved:true, approved_by, reason, timestamp) in "
+                "working/checkpoints/process_manifest.json.")
+    return ""
+
+
 def _chk_intake(path: Optional[Path]) -> str:
     if path is None:
         return "file absent"
@@ -1641,6 +1782,13 @@ def _chk_intake(path: Optional[Path]) -> str:
             return (f"client_requested_slide_count, when present, must be a positive "
                     f"integer — the client's EXACT requested slide count, honored "
                     f"verbatim (got {rc!r}).")
+    # FAIL-CLOSED brainstorm provenance (P1-C): the self-attested flags above are NOT
+    # sufficient. Assert the six mandatory pre_presentation_capture fields AND a
+    # completed, turn-gated intake_ledger.json consistent with them (or a logged owner
+    # override). This stops a hand-written thin intake.json from skipping the interview.
+    prov = _intake_provenance_gate(obj, path)
+    if prov:
+        return prov
     return ""
 
 
@@ -6459,6 +6607,66 @@ def find_run_dir(explicit: Optional[str], slides_path: Path, out_path: Path) -> 
     return slides_path.resolve().parent
 
 
+# ===========================================================================
+# FRONT-DOOR NONCE HANDSHAKE (Contract #8 — supersedes the retired
+# OC_DECK_CANONICAL_ENTRY / OC_DECK_ALLOW_DIRECT env markers).
+#
+# The old markers were plain env vars documented in box-visible comments/SOPs, so
+# any model that read the repo could set OC_DECK_CANONICAL_ENTRY=1 (or the CI escape
+# OC_DECK_ALLOW_DIRECT=1) and invoke the renderer directly, bypassing the canonical
+# entry gate chain. They are replaced by a per-run random nonce:
+#   presentation-canonical-entry.sh mints a random nonce, writes it 0600 to
+#   <run-dir>/working/checkpoints/.canonical-entry-nonce, and exports
+#   OC_DECK_ENTRY_NONCE. The renderer admits the run ONLY when the exported nonce
+#   matches that run-scoped file (constant-time compare); the entry script consumes
+#   (deletes) the file after the run so a stale env value cannot be replayed.
+# A model that merely READ the shipped source cannot conjure a valid value.
+# ===========================================================================
+ENTRY_NONCE_REL = Path("working") / "checkpoints" / ".canonical-entry-nonce"
+
+
+def _entry_nonce_file(run_dir) -> Path:
+    """Run-scoped path of the front-door nonce file (derived from run_dir, NOT env)."""
+    return Path(run_dir) / ENTRY_NONCE_REL
+
+
+def _verify_entry_nonce(run_dir) -> bool:
+    """True iff OC_DECK_ENTRY_NONCE is set AND equals the content of the run-scoped
+    nonce file <run-dir>/working/checkpoints/.canonical-entry-nonce. The path is
+    derived from run_dir (never from an attacker-controllable env var) so a model
+    cannot point it at a file it wrote elsewhere. A missing env var, a missing file,
+    or any mismatch → False (fail-closed)."""
+    import hmac
+    env_nonce = (os.environ.get("OC_DECK_ENTRY_NONCE") or "").strip()
+    if len(env_nonce) < 16:
+        return False
+    nf = _entry_nonce_file(run_dir)
+    try:
+        if not nf.is_file():
+            return False
+        file_nonce = nf.read_text(errors="replace").strip()
+    except OSError:
+        return False
+    if len(file_nonce) < 16:
+        return False
+    return hmac.compare_digest(env_nonce, file_nonce)
+
+
+def _resolve_run_dir_for_guard(run_dir_arg: Optional[str], positional: list) -> Path:
+    """Best-effort run_dir resolution for the front-door nonce guard, computed at the
+    top of main() (before the full find_run_dir call). Mirrors find_run_dir's inputs."""
+    try:
+        if run_dir_arg:
+            return Path(run_dir_arg).resolve()
+        if len(positional) >= 2:
+            return find_run_dir(None, Path(positional[0]), Path(positional[1]))
+        if len(positional) == 1:
+            return find_run_dir(None, Path(positional[0]), Path(positional[0]))
+    except Exception:  # noqa: BLE001 — never let resolution errors open the gate
+        pass
+    return Path.cwd()
+
+
 def resolve_logo_path(logo_arg: Optional[str], run_dir: Path) -> Optional[Path]:
     """Resolve the official logo PNG. Priority:
         1. --logo <png> flag (wins over everything).
@@ -7820,21 +8028,25 @@ def main():
             positional.append(tok)
         i += 1
 
-    # FRONT-DOOR MARKER GUARD — Contract #8: at the render/CLI main() entry,
-    # require OC_DECK_CANONICAL_ENTRY=1 (exported by presentation-canonical-entry.sh
-    # right before `exec "${cmd[@]}"`) OR the CI/test escape valve
-    # OC_DECK_ALLOW_DIRECT=1. Module imports and unit-test paths that call
-    # build_deck functions directly are unaffected — this guard fires only when
-    # main() is reached via the CLI (i.e. `python3 build_deck.py ...`).
+    # FRONT-DOOR NONCE HANDSHAKE — Contract #8: at the render/CLI main() entry,
+    # require a valid per-run nonce (OC_DECK_ENTRY_NONCE matching the run-scoped
+    # <run-dir>/working/checkpoints/.canonical-entry-nonce file that
+    # presentation-canonical-entry.sh minted for this run). This SUPERSEDES the
+    # retired OC_DECK_CANONICAL_ENTRY / OC_DECK_ALLOW_DIRECT env markers, which
+    # shipped in box-visible comments and were therefore forgeable by any model that
+    # read the repo — setting either of those names is now DENIED. Module imports and
+    # unit-test paths that call build_deck functions directly are unaffected — this
+    # guard fires only when main() is reached via the CLI (`python3 build_deck.py ...`).
     # References: AF-CANONICAL-RENDER-BYPASS, shared CONTRACT.md §FRONT-DOOR MARKER.
-    if (os.environ.get("OC_DECK_CANONICAL_ENTRY") != "1"
-            and os.environ.get("OC_DECK_ALLOW_DIRECT") != "1"):
+    _nonce_run_dir = _resolve_run_dir_for_guard(run_dir_arg, positional)
+    if not _verify_entry_nonce(_nonce_run_dir):
         print(
             "FATAL [AF-CANONICAL-RENDER-BYPASS]: build_deck.py must be invoked via "
-            "presentation-canonical-entry.sh (which exports OC_DECK_CANONICAL_ENTRY=1 "
-            "before exec'ing the runner). Direct invocation is blocked by the "
-            "front-door render guard. "
-            "For CI/test use only: set OC_DECK_ALLOW_DIRECT=1.",
+            "presentation-canonical-entry.sh, which mints the per-run front-door nonce "
+            "(exports OC_DECK_ENTRY_NONCE and writes the matching 0600 file "
+            "<run-dir>/working/checkpoints/.canonical-entry-nonce). Direct invocation — "
+            "or a guessed/stale nonce, or the retired OC_DECK_CANONICAL_ENTRY / "
+            "OC_DECK_ALLOW_DIRECT env markers — is denied by the front-door handshake.",
             file=sys.stderr,
         )
         sys.exit(2)
