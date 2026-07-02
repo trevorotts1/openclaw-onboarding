@@ -1,3 +1,39 @@
+## [v16.3.0]  -  2026-07-02  -  feat(skill-51): Signature Presentation deck type — Trevor Otts 4-phase signature-talk methodology shipped as a governed deck TYPE that runs THROUGH the existing Presentations engine (3 fail-closed provers, 4 teaching frames, SOP-SLIDE-06 lockstep, 2 new roles, golden Quest regression sample)
+
+### Risk: low — net-new skill added as an additive, fail-closed methodology + gate layer. It never forks the render path; the department's canonical entry (`build_deck.py`) still does all rendering, assembly, delivery, and Kanban. The three new provers DEFER unless `deck_type == "signature_presentation"`, so no existing deck build changes behavior. New skill starts at its OWN `1.0.0` (independent of the repo version). No credential values, plists, or client-specific content touched. No client names.
+
+### New skill: 51-signature-presentation (Signature Presentation deck type)
+Adds the Trevor Otts **"How To Create A Signature Presentation"** — the 4-phase, minimum-100-slide signature-talk methodology (Avatar → Signature Story → Transformational Teaching → Purpose Pitch) — to the Presentations department as a new governed **deck type** (`deck_type: signature_presentation`). The skill owns the *IP and the gates*; the department engine owns *execution*. It ships `MASTERDOC.md` (the anonymized canonical methodology — Prime Directives, the 8 Questions, the four phases, N.E.E.I.T., the 4-Quadrant method, the hook doctrine), `intake/sp-8-questions.json`, `structure/sp_structure.json` (the sacred-structure ledger contract), the four frame templates, and the three provers.
+
+### Three fail-closed provers (`scripts/prove_sp_*.py`)
+- **`prove_sp_intake.py`** — the 8-Questions-in-one-block intake gate: all eight verbatim `q1..q8` plus the frame-selection question must be asked in ONE block before any slide is written (Prime Directives 6–7).
+- **`prove_sp_structure.py`** — the sacred-structure ledger: contiguous per-phase floors starting at slide 1, the ≥100-slide default floor WITH client-exact override (`client_overrode_slide_floor: true`, noted on the process certificate), ≤2 case studies, 3–7 teaching steps, suggested-image-per-slide, one central hook repeated as a chorus + four section hooks, and N.E.E.I.T./4-Quadrant markers in Phases 1/2/4.
+- **`prove_sp_no_pitch.py`** — Phase-3 no-pitch hygiene: no price, offer name, or enroll/scarcity/guarantee language in the transformational-teaching slides (25–60); the final step bridges to the offer as a transition, not a pitch.
+Each installs into the department's `scripts/` as a manifest phase (`P-SP-INTAKE` / `P-SP-STRUCTURE` / `P-SP-P3-HYGIENE`) with a thin `_chk_sp_*` preflight wrapper that DEFERS unless the deck type is signature_presentation. All three carry built-in `--self-test` VALID + VIOLATION fixtures.
+
+### Four client-facing teaching frames
+`frame-templates/the-rulebook.md`, `the-vault.md`, `the-quest.md`, `the-original.md` — each runs the identical 4-phase skeleton; only the teaching devices, refrains, and close change (The Quest's fill-in-the-blank manifesto close is singled out by Directive 13). A frame-selection question is asked in the SAME intake block, additive to the 8 Questions.
+
+### SOP-SLIDE-06 lockstep into the shared engine (no second build path)
+Wired via the **SOP-SLIDE-06 extension-and-sync lockstep** so `sync_check.py` stays green: the three SP phases + `AF-SP-*` autofail rows + a `manifest_version` bump in `PIPELINE-MANIFEST.json`; three ≤6-line `_chk_sp_*` wrappers appended to `build_deck.py`'s `PREFLIGHT_REQUIRED`; declared steps in `phase_verifiers.py` and `prove-deck.py`; golden + adversarial cases in `test_preflight.py`; and the matching `SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md` Section-5 rows. Writing/running a per-deck driver remains the FORBIDDEN ungoverned path (`AF-CANONICAL-RENDER-BYPASS` / `AF-LOCAL-CANVAS`).
+
+### Two new Presentations-department roles + golden Quest regression sample
+- `signature-presentation-architect` (Signature Presentation Architect) and `qc-specialist-signature-presentations` (QC Specialist (Signature Presentations)) registered in `role-library/_index.json` (verified by `register-library-additions.py --check`).
+- A golden **Quest** frame regression sample ships under `51-signature-presentation/examples/` so the structure + no-pitch provers have a known-good end-to-end fixture.
+Command Center gets one keyword (`signature presentation`) + one `sops` row — no schema change, no new lane, no new persona table. Verification: `bash 51-signature-presentation/verify.sh` (read-only, idempotent) runs the three provers in `--self-test` and the library-register `--check`.
+
+### Client-provider rule (binding)
+On a client box the skill uses the **client's own configured providers and keys** — never the operator's, never Anthropic model ids. It is provider-neutral by construction; role files and SOPs name client-provider tiers only.
+
+### Files
+- `51-signature-presentation/` — NEW skill: `SKILL.md` (with `version: 1.0.0` frontmatter), `skill-version.txt` (`1.0.0`), `MASTERDOC.md`, `intake/sp-8-questions.json`, `structure/sp_structure.json`, `frame-templates/{the-rulebook,the-vault,the-quest,the-original}.md`, `scripts/{prove_sp_intake,prove_sp_structure,prove_sp_no_pitch}.py`, `examples/` (golden Quest sample), `verify.sh`
+- `install.sh` — `install_skill_51_signature_presentation()` (copies the skill, marks provers executable; skill 23 is the prerequisite engine)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/` — SOP-SLIDE-06 lockstep: `PIPELINE-MANIFEST.json` (3 SP phases + `AF-SP-*` rows + manifest_version bump), `scripts/build_deck.py` (`_chk_sp_*` wrappers), `scripts/phase_verifiers.py`, `scripts/prove-deck.py`, `scripts/test_preflight.py`, `SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md`, `universal-sops/presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md`
+- `23-ai-workforce-blueprint/templates/role-library/_index.json` — two new SP roles registered + content-manifest restamped
+- `version`, `install.sh`, `update-skills.sh`, `README.md` (×2), `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `cc-compat.json`, `23-ai-workforce-blueprint/skill-version.txt`, `23-ai-workforce-blueprint/SKILL.md`, `06-ghl-install-pages/skill-version.txt`, `23-ai-workforce-blueprint/templates/role-library/_qc-summary.md` — rolled to v16.3.0 via `bump-version.sh` (11 markers)
+
+---
+
 ## [v16.2.19]  -  2026-07-01  -  fix(final-review): CEO intent-gate wired live (presentation runtime brake ON), intake fail-closed with per-run nonce, mc-route general signed router shipped, Skill-6 GHL 401 re-mint, Skill-38 caf-first verify mandate, persona-index hardening
 
 ### Risk: low — every change is additive, fail-closed, or an anchored allow-list carve-out (a missing/ambiguous signal now denies or escalates instead of defaulting to allow); no credential values, plists, or client-specific content touched. No client names.
