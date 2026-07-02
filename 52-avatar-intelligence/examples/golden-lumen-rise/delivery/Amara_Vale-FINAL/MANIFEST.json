@@ -1,0 +1,138 @@
+{
+  "package": "avatar-alchemist-brand-intelligence",
+  "client_label": "Amara_Vale",
+  "deliverable_count": 16,
+  "files": {
+    "Avatar_Intelligence-Amara_Vale.md": {
+      "sha256": "7023b38e4c7dbd7cee95da2e7f73608fba423abcc6f87ae288290f5e9083d5bb",
+      "words": 7094,
+      "constituents": [
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32"
+      ]
+    },
+    "Tone_Doc-Amara_Vale.md": {
+      "sha256": "f35433b63f6129d20314d2bf8ee8169839e9a6f729ad568825eb325823e1f415",
+      "words": 4840,
+      "constituents": [
+        "08-blended-tone"
+      ]
+    },
+    "Marketing_Intelligence-Amara_Vale.md": {
+      "sha256": "b3284779aa988cd4f346adc247e3b135674b7608fb83d0d692bf14a8f9309cae",
+      "words": 10074,
+      "constituents": [
+        "09-problem-aware",
+        "10-problem-aware-pt2",
+        "11-solution-aware",
+        "12-solution-aware-pt2",
+        "13-product-aware",
+        "14-product-aware-pt2"
+      ]
+    },
+    "Facebook_Targeting_Intelligence-Amara_Vale.md": {
+      "sha256": "c3d5e88bd61aa0d37d4efa27f8071acfd709f230e8a4af8d8a03c5ffe6a9ccb4",
+      "words": 1255,
+      "constituents": [
+        "15-facebook-audiences"
+      ]
+    },
+    "Brand_Bio_Intelligence-Amara_Vale.md": {
+      "sha256": "d73843331a6841a86db56449daddcdf140dcc7889ec4ccb97f9d7eef7b9fc394",
+      "words": 1088,
+      "constituents": [
+        "16-brand-bio"
+      ]
+    },
+    "Product_Bio_Intelligence-Amara_Vale.md": {
+      "sha256": "25c4be63caf1b785afd9b18dce59c583fec30a114046e031197d22acd0534fac",
+      "words": 763,
+      "constituents": [
+        "17-product-bio"
+      ]
+    },
+    "AI_Bot_Prep_Doc_Intelligence-Amara_Vale.md": {
+      "sha256": "a59c36ace5f600aeeaea921d92fc6113457ce07de6f1882db6cc6c32814ba0a5",
+      "words": 763,
+      "constituents": [
+        "18-bot-prep"
+      ]
+    },
+    "AI_Booking_Bot_Intelligence-Amara_Vale.md": {
+      "sha256": "b898b7d0fe92a794e0cb896833dd6d07d13ab2fb6f06e5103f119026620d238e",
+      "words": 7933,
+      "constituents": [
+        "19-booking-bot"
+      ]
+    },
+    "AI_Post_Booking_Bot_Intelligence-Amara_Vale.md": {
+      "sha256": "f414c8b82b35f736b36ee2bb80c9d09e1c806bae7c2029edd557384e502876fb",
+      "words": 811,
+      "constituents": [
+        "20-post-booking-bot"
+      ]
+    },
+    "Rescheduling_Booking_Bot_Intelligence-Amara_Vale.md": {
+      "sha256": "f3d6458da305fdea93fc6833f370c954200b457f813a961ea6bcfc813c030cd7",
+      "words": 872,
+      "constituents": [
+        "21-rescheduling-bot"
+      ]
+    },
+    "Visual_Display_Ads-Amara_Vale.md": {
+      "sha256": "0a774152679d9f695d229b5674f33498733ae05547585fc174cd4f3ff74744ff",
+      "words": 5783,
+      "constituents": [
+        "22-ad-set-1",
+        "23-ad-set-2",
+        "24-ad-set-3",
+        "25-ad-set-4",
+        "26-ad-set-5",
+        "27-ad-set-6",
+        "28-ad-set-7",
+        "29-ad-set-8",
+        "30-ad-set-9",
+        "31-ad-set-10",
+        "32-ad-set-11",
+        "33-ad-set-12",
+        "34-ad-set-13"
+      ]
+    },
+    "Top_39_Suggested_Ad_Angles-Amara_Vale.md": {
+      "sha256": "0f9851607a988fc7e4fb1ba98e595da4e026d8baff73eba5e8db2168015aac28",
+      "words": 1270,
+      "constituents": [
+        "35-top-39"
+      ]
+    },
+    "Top_39_Suggested_Image_Prompts-Amara_Vale.md": {
+      "sha256": "daeb403a43a5faa4d03212e710a8515dbd9524291aab53148a00258d015a8e33",
+      "words": 2357,
+      "constituents": [
+        "36-image-prompts-39"
+      ]
+    },
+    "Facebook_Headline_and_Primary_Text_Ad_Copy_Writer-Amara_Vale.md": {
+      "sha256": "e94d4d031bfc02a8d4e812e2350422b4a27d3ffdce04d49e3951a1183890a7da",
+      "words": 2763,
+      "constituents": [
+        "37-fb-headline-copy"
+      ]
+    },
+    "Landing_Page-Amara_Vale.md": {
+      "sha256": "d70eecfc4938ac7b16cda5c2da73f6389efac1c5abe96a42979e8055e3ef7204",
+      "words": 2616,
+      "constituents": [
+        "39-hero-page"
+      ]
+    },
+    "Landing_Page_Image_Prompts-Amara_Vale.md": {
+      "sha256": "519d6abc6a285eb4f2aee2d4d219b1c759b65364949d06e1b9cae59be9e02fe8",
+      "words": 1452,
+      "constituents": [
+        "40-landing-image-prompts"
+      ]
+    }
+  }
+}

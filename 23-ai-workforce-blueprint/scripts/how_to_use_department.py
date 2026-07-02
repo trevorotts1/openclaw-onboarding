@@ -839,6 +839,18 @@ the model's self-reported counts are IGNORED - and a signed certificate is issue
 P0->P6 pass. Delivery is a labeled LOCAL bundle in `~/Downloads/` (no n8n / Google Drive / Slack / \
 Gmail). Cross-linked with, but NEVER merged into, Skill 52 (Avatar Alchemist carries a different \
 "Product Bio" prompt). Shared procedure: `universal-sops/product-bio-craft/`.
+- Avatar Intelligence Engine (Skill 52) - the Avatar Alchemist brand-intelligence engine: ONE \
+completed brand-intake interview -> 40 generators across 7 subsystems (Avatar Core, Awareness, Bios, \
+Tone, a 13-set Facebook Ad system, Booking Bots, Landing/Hero) -> 16 named deliverables (37 documents), \
+at `52-avatar-intelligence/`. A Book/Brand version selector runs FIRST (version=brand runs the 40-stage \
+pipeline; version=book routes to Skill 53 or parks fail-closed). Built through the ONE sanctioned front \
+door `52-avatar-intelligence/entry.sh` (deps -> bypass-scan -> hash-pin -> nonce) then the foreman \
+`scripts/aa_director.py`; every SACRED count/floor is MEASURED by fail-closed, model-free provers \
+(`52-avatar-intelligence/scripts/aa_*.py`) - self-reported counts IGNORED - and a signed provenance \
+certificate is issued only on a full 40/40 pass (no certificate = not done). Delivery is a labeled LOCAL \
+bundle in `~/Downloads/` (no n8n / Airtable / Google Drive / Slack / Gmail). Cross-linked with, but \
+NEVER merged into, Skill 55 (routing: standalone master-brain bio -> 55; full brand-intelligence \
+package -> 52). Shared procedure: `universal-sops/avatar-craft/`.
 - Funnel-to-automation link map - \
 `44-convert-and-flow-operator/automation-templates/_links/funnel-to-automation.json` pairs \
 each funnel with its recommended follow-up automations (keyed by funnel_template_id).

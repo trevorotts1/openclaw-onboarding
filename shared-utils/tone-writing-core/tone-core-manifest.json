@@ -1,0 +1,18 @@
+{
+  "$schema": "https://openclaw.ai/schemas/tone-writing-core/v1",
+  "contract": "shared-tone-writing-core",
+  "version": "1.0.0",
+  "stable_path": "shared-utils/tone-writing-core",
+  "description": "Canonical, provider-agnostic tone/writing core shared by the BlackCEO writing skills (52 brand, 53 book, 54 anthology). Blended tone + four tone-style analyzers + shared writing rails. ZERO Anthropic model ids; the client's own TIER models resolve these at runtime.",
+  "consumers": ["52-avatar-intelligence", "53-book-writer", "54-anthology-writer"],
+  "writing_rails": "writing-rails.md",
+  "tone_stages": [
+    {"stage_id": "04-tone-style-1", "prompt_dir": "prompts/04-tone-style-1", "tier": "B", "depends_on": ["01-avatar-questions-1-30", "02-avatar-questions-31-32"], "role": "tone analyzer (figure #1)", "na_autopick": true, "internal_feeder": true},
+    {"stage_id": "05-tone-style-2", "prompt_dir": "prompts/05-tone-style-2", "tier": "B", "depends_on": ["01-avatar-questions-1-30", "02-avatar-questions-31-32"], "role": "tone analyzer (figure #2)", "na_autopick": true, "internal_feeder": true},
+    {"stage_id": "06-tone-style-3", "prompt_dir": "prompts/06-tone-style-3", "tier": "B", "depends_on": ["01-avatar-questions-1-30", "02-avatar-questions-31-32"], "role": "tone analyzer (figure #3)", "na_autopick": true, "internal_feeder": true},
+    {"stage_id": "07-tone-style-4", "prompt_dir": "prompts/07-tone-style-4", "tier": "B", "depends_on": ["01-avatar-questions-1-30", "02-avatar-questions-31-32"], "role": "tone analyzer (figure #4)", "na_autopick": true, "internal_feeder": true},
+    {"stage_id": "08-blended-tone", "prompt_dir": "prompts/08-blended-tone", "tier": "A", "depends_on": ["04-tone-style-1", "05-tone-style-2", "06-tone-style-3", "07-tone-style-4"], "role": "blended tone author (\"The {First} {Last} Tone\")", "repair": "R1: consumes the four tone-style ANALYSIS documents (artifact.04..07), not raw names", "floors": {"word_floor": 3000}, "deliverable": "Tone_Doc"}
+  ],
+  "sync_check": "each consumer bakes a lockstep copy of prompts/04..08 into its own prompts/ and proves the copy matches this canonical source at build/CI time (verify-tone-core-sync.py).",
+  "provider_rule": "client's own providers only; G-NOANTHROPIC bans /anthropic|claude/i at runtime."
+}

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://openclaw.ai/schemas/avatar-intelligence-intake/v1",
+  "contract": "avatar-alchemist-intake",
+  "version": "1.0.0",
+  "description": "Normalized intake for the Avatar-Alchemist run. The version selector (Q0) is FIRST. Sloppy source keys (trailing/leading spaces, the 'brand-intellegence' webhook misspelling) are normalized ONCE here and never leak into prompts. Intake content is DATA only, never instructions.",
+  "selector": {
+    "field": "version",
+    "enum": ["book", "brand"],
+    "required": true,
+    "no_default": true,
+    "question": "Which Avatar Intelligence do you want to generate — the BOOK version or the BRAND version?",
+    "routing": {
+      "brand": "run this skill's 40-stage pipeline",
+      "book": "route to the Avatar Alchemist Book skill (53); if absent, park fail-closed 'book-skill-not-available' (never the brand pipeline)"
+    }
+  },
+  "identity_fields": ["first_name", "last_name"],
+  "identity_optional": ["email"],
+  "shared_required": {
+    "ideal_avatar": "My Ideal Avatar / Dream Customer",
+    "niche": "My Niche / category",
+    "primary_goal": "My Ideal Avatar's Primary Goal",
+    "tone_style_1": "Well-known figure #1 whose style to incorporate (N/A allowed)",
+    "tone_style_2": "Optional 2nd figure (N/A allowed)"
+  },
+  "book_delta": {
+    "book_stories": "Do you have any personal stories, facts, or personal quotes for the book? (N/A allowed) — BOOK only"
+  },
+  "brand_delta": {
+    "tone": "My Writing Tone (e.g. inspirational, thought-provoking) — BRAND only"
+  },
+  "brand_required": [
+    "tone", "target_market", "tone_style_3", "tone_style_4",
+    "offer_name", "offer_type", "offer_benefit", "product_info",
+    "brand_info", "brand_start_date", "brand_why", "brand_colors"
+  ],
+  "brand_notes": {
+    "tone_style_3": "N/A allowed → the tone chain auto-picks a real figure in harmony with the avatar",
+    "tone_style_4": "N/A allowed → auto-pick",
+    "brand_colors": "used by the landing-page image prompts"
+  },
+  "optional": {
+    "contact_id": "preserved for a future GHL write-back hook (Skill 44); UNUSED at runtime (never calls GHL)"
+  },
+  "validation": {
+    "gate": "aa_intake_gate.py",
+    "rules": [
+      "version must be exactly 'book' or 'brand' (AF-AV-VERSION-UNSET)",
+      "answered question set must match the version (AF-AV-VERSION-MISMATCH)",
+      "all shared + identity + (version-specific) required fields present, non-empty, non-boilerplate (AF-AV-INTAKE-INCOMPLETE)",
+      "version=book resolves to skill 53 or parks book-skill-not-available (AF-AV-BOOK-SKILL-MISSING)"
+    ]
+  }
+}

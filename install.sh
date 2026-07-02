@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v16.6.0"
+ONBOARDING_VERSION="v16.7.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -739,7 +739,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 5 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/55-... (47 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/55-... (48 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -4670,7 +4670,7 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 47 active skills install in 5 dependency-aware waves, not by number order.
+The 48 active skills install in 5 dependency-aware waves, not by number order.
 Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
 A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
@@ -6657,6 +6657,53 @@ install_skill_51_signature_presentation() {
 }
 
 install_skill_51_signature_presentation
+
+# ----------------------------------------------------------
+# Skill 52: Avatar Intelligence (Avatar Alchemist brand-intelligence engine + gates)
+# ----------------------------------------------------------
+# Self-contained: this template install copies the Skill 52 folder (SKILL.md,
+# MASTERDOC.md, AA-PIPELINE-MANIFEST.json, AVATAR-MANIFEST.json, the 40 baked
+# provider-agnostic generator prompt dirs, the intake + Book/Brand version selector,
+# the foreman aa_director.py, the fail-closed model-free provers, the packager, and
+# the canonical fail-closed entry). NO external clone. Skill 52 owns the IP + the
+# gates: it turns ONE completed brand-intake interview into the full brand-intelligence
+# package — 40 generators across 7 subsystems (Avatar Core, Awareness, Bios, Tone,
+# a 13-set Facebook Ad system, Booking Bots, Landing/Hero) → 16 named deliverables
+# (37 documents), replacing the retired 233-node n8n / Airtable / Google Drive / Slack /
+# Gmail workflow with a LOCAL-ONLY pipeline on the CLIENT's own model providers — never
+# the operator's, never Anthropic model ids. A Book/Brand version selector runs FIRST
+# (version=brand runs the 40-stage pipeline; version=book routes to Skill 53 or parks
+# fail-closed "book-skill-not-available"). Every SACRED count/floor is MEASURED by a
+# model-free prover (self-reported counts are ignored). Delivery is a labeled ~/Downloads
+# bundle with a signed provenance certificate; it touches no n8n / Airtable / Drive /
+# Slack / Gmail at runtime. Cross-linked with (never merged into) Skill 55 Product Bio.
+# The tone subsystem is a lockstep copy of the shared shared-utils/tone-writing-core/.
+install_skill_52_avatar_intelligence() {
+    local SKILL_SRC="$ONBOARDING_DIR/52-avatar-intelligence"
+    local SKILL_DEST="$SKILLS_DIR/52-avatar-intelligence"
+
+    if [ ! -d "$SKILL_SRC" ]; then
+        warn "Skill 52 source dir not found at $SKILL_SRC — skipping (older onboarding bundle?)"
+        return 0
+    fi
+
+    mkdir -p "$SKILL_DEST"
+    cp -R "$SKILL_SRC/." "$SKILL_DEST/" 2>>"$LOG_FILE" || {
+        warn "Failed to copy Skill 52 from $SKILL_SRC -> $SKILL_DEST"
+        return 0
+    }
+    chmod +x "$SKILL_DEST/entry.sh" "$SKILL_DEST/preflight.sh" \
+             "$SKILL_DEST/verify.sh" "$SKILL_DEST/verify-deps.sh" \
+             "$SKILL_DEST/qc-avatar-intelligence.sh" "$SKILL_DEST/install.sh" 2>/dev/null || true
+    chmod +x "$SKILL_DEST/scripts/"*.py 2>/dev/null || true
+
+    success "Skill 52 (Avatar Intelligence) installed -> $SKILL_DEST"
+    note "Skill 52 is the methodology + enforcement layer for the Trevor Otts Avatar Alchemist brand-intelligence package: it turns ONE completed brand-intake interview into 40 generators across 7 subsystems (Avatar Core, Awareness, Bios, Tone, a 13-set Facebook Ad system, Booking Bots, Landing/Hero) -> 16 named deliverables (37 documents). A Book/Brand version selector runs FIRST (version=brand runs the 40-stage pipeline; version=book routes to Skill 53 or parks fail-closed 'book-skill-not-available', never the brand pipeline). Every SACRED count/floor is MEASURED by fail-closed, model-free provers (self-reported counts are ignored)."
+    note "It runs through the ONE sanctioned front door (entry.sh: deps -> bypass-scan -> hash-pin -> nonce) then the foreman scripts/aa_director.py, which schedules the 40 stages in dependency waves on the CLIENT's own model providers — never the operator's, never Anthropic model ids (G-NOANTHROPIC hard-fails any run whose resolved model id matches /anthropic|claude/i). Delivery is a labeled ~/Downloads bundle with a signed provenance certificate on a full 40/40 pass; it replaces the retired 233-node n8n / Airtable / Google Drive / Slack / Gmail workflow with a LOCAL-ONLY pipeline (no n8n / Airtable / Drive / Slack / Gmail at runtime). Cross-linked with (never merged into) Skill 55 Product Bio. Standalone — no prerequisite skill."
+    return 0
+}
+
+install_skill_52_avatar_intelligence
 
 # ----------------------------------------------------------
 # Skill 55: Product Bio Engine (master-brain product bio methodology + gates)

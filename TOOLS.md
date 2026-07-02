@@ -52,7 +52,7 @@ Skills are shared. Your setup is yours. Keeping them apart means you can update 
 
 ---
 
-## Funnel + Automation + Email Template Libraries (Skill 06 / Skill 44 / Skill 49 / Skill 50 / Skill 55) — template-first / reuse-before-reinvent
+## Funnel + Automation + Email Template Libraries (Skill 06 / Skill 44 / Skill 49 / Skill 50 / Skill 52 / Skill 55) — template-first / reuse-before-reinvent
 
 - **Funnel template library (38 templates)** — `06-ghl-install-pages/funnel-templates/` by category
   (buyer, event, lead, retention-followup, traffic-advanced). Each carries `pageStructure`,
@@ -95,6 +95,25 @@ Skills are shared. Your setup is yours. Keeping them apart means you can update 
   `universal-sops/product-bio-craft/`. The Command Center `sops` row (`product-bio-master-brain-bio`,
   marketing dept) is added by the operator at CC install/update time (the mission-control repo is a
   separate submodule); no schema change (a job is a `tasks` row).
+- **Avatar Intelligence Engine (Skill 52)** — `52-avatar-intelligence/`, the Avatar Alchemist
+  brand-intelligence engine: ONE completed brand-intake interview → 40 generators across 7 subsystems
+  (Avatar Core, Awareness, Bios, Tone, a 13-set Facebook Ad system, Booking Bots, Landing/Hero) → 16
+  named deliverables (37 documents). A Book/Brand version selector runs FIRST (`version=brand` runs the
+  40-stage pipeline; `version=book` routes to Skill 53 or parks fail-closed). Built through the ONE
+  sanctioned front door `52-avatar-intelligence/entry.sh` (deps → bypass-scan → hash-pin → nonce) then
+  the foreman `scripts/aa_director.py`; every SACRED count/floor is MEASURED by fail-closed, model-free
+  provers (`scripts/aa_*.py`) — self-reported counts ignored — with a signed provenance certificate only
+  on a full 40/40 pass. Delivery is a labeled LOCAL bundle in `~/Downloads/` (no n8n / Airtable / Drive /
+  Slack / Gmail). Cross-linked with, NEVER merged into, Skill 55 (routing: standalone master-brain bio →
+  55; full brand-intelligence package → 52). Shared SOP cluster: `universal-sops/avatar-craft/`. The
+  Command Center `sops` row (`avatar-brand-intelligence-package`, marketing dept) is added by the
+  operator at CC install/update time; no schema change (a job is a `tasks` row).
+- **Shared tone / writing core** — `shared-utils/tone-writing-core/`, the provider-neutral SHARED module
+  (blended-tone author + 4 tone-style analyzers + writing rails) referenced by the writing skills **52
+  (brand)**, **53 (book)**, and **54 (anthology)**. Each consumer bakes a lockstep copy of the five tone
+  prompt dirs and proves it against this canonical source at build/CI time (`verify_tone_core_sync.py`).
+  Contract: `shared-utils/tone-writing-core/tone-core-manifest.json` (ZERO Anthropic ids — the client's
+  own TIER models resolve them at runtime). See its `README.md` for how a new writing skill imports it.
 - **Funnel→automation link map** — `44-.../automation-templates/_links/funnel-to-automation.json`
   (canonical v2; `…-link-map.json` is the DEPRECATED v1). Maps each funnel to its recommended
   follow-up automations; keyed by `funnel_template_id`.
