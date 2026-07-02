@@ -1,0 +1,14 @@
+# Ad Set — category 4C: Pain-Point If-You-Have-Never Ads (Lumen Rise Collective)
+
+Restored R4 category signature: category 4C. Positioned to round out the full thirteen-set system.
+
+1. Pain-Point If-You-Have-Never Ads 1 — For the expert still hiding behind free value: With proof that outlasts the trend, our ideal client craves an instant yes. Once she becomes the cited name, a seasoned practitioner no longer hides behind free value.
+2. Pain-Point If-You-Have-Never Ads 2 — When you are ready to be the obvious choice: The authority narrative carries our under-booked pro toward an end to the chase. The buyer arrives already sold; suddenly an unhurried expert owns instant legibility.
+3. Pain-Point If-You-Have-Never Ads 3 — To the expert whose depth deserves a real audience: The right people self-select, so the woman we serve finally rests in a full, willing pipeline. Our best-kept secret has outcomes that compound; still she keeps the proposal unsent.
+4. Pain-Point If-You-Have-Never Ads 4 — If your work is better than your visibility: Behind the pricing talk she dreads waits one studied founder, hungry for proof that converts. Once the accelerator makes her legible, our quiet powerhouse no longer underquotes her worth.
+5. Pain-Point If-You-Have-Never Ads 5 — For the woman whose calendar should already be full: Even with depth her peers respect, this service-business owner believes loud always means shallow. From captions half-written at midnight toward a name insiders trade, one capable founder craves a legacy, not a launch.
+6. Pain-Point If-You-Have-Never Ads 6 — For the practitioner who is finally ready to be seen: This steady operator has trust she has already built; still she studies the competition. Once a meticulous founder drops the doubt, reputation arrives before she does.
+7. Pain-Point If-You-Have-Never Ads 7 — For the founder who keeps rewriting the same bio: Amid launches that almost worked, a seasoned practitioner still chases the next tactic. What if her craft becomes unmistakable, yet this proven operator lands an instant yes?
+8. Pain-Point If-You-Have-Never Ads 8 — To the owner who undercharges out of pure habit: An unhurried expert craves a reputation that travels, yet she hides behind free value. Authority compounds week over week; this trusted advisor breathes easier about an end to the chase.
+9. Pain-Point If-You-Have-Never Ads 9 — To the founder who keeps posting into the silence: Once our best-kept secret drops the doubt, the market learns her name. A mastered professional keeps chasing a bookable message, yet wants a full, willing pipeline.
+10. Pain-Point If-You-Have-Never Ads 10 — If your reputation should travel ahead of you: Our quiet powerhouse chases the accelerator's rails, so finds the obvious-choice slot. A practiced expert swallows her best ideas, yet she avoids the bold offer.

@@ -1,0 +1,1115 @@
+{
+  "$schema": "https://openclaw.ai/schemas/avatar-intelligence-pipeline/v1",
+  "contract": "avatar-alchemist-pipeline",
+  "manifest_version": "1.0.0",
+  "skill": "52-avatar-intelligence",
+  "description": "Digest-verified DAG of the 40 Avatar-Alchemist generators across 7 subsystems. Single source of truth for aa_director.py (waves, throttle, park/resume) and aa_build_check.py (floors/counts/bands). depends_on is the authoritative dependency wiring (NOT the legacy Make.com module numbering). CLIENT runtime resolves TIER-A/B/SEARCH to the client's OWN providers; ZERO Anthropic ids (G-NOANTHROPIC / AF-AV-NOANTHROPIC).",
+  "subsystems": [
+    "avatar-core",
+    "awareness",
+    "bios",
+    "tone",
+    "facebook-ads",
+    "booking-bots",
+    "landing-hero"
+  ],
+  "branches": {
+    "brand": {
+      "pipeline": [
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32",
+        "03-rewrite-avatar",
+        "04-tone-style-1",
+        "05-tone-style-2",
+        "06-tone-style-3",
+        "07-tone-style-4",
+        "08-blended-tone",
+        "09-problem-aware",
+        "10-problem-aware-pt2",
+        "11-solution-aware",
+        "12-solution-aware-pt2",
+        "13-product-aware",
+        "14-product-aware-pt2",
+        "15-facebook-audiences",
+        "16-brand-bio",
+        "17-product-bio",
+        "18-bot-prep",
+        "19-booking-bot",
+        "20-post-booking-bot",
+        "21-rescheduling-bot",
+        "22-ad-set-1",
+        "23-ad-set-2",
+        "24-ad-set-3",
+        "25-ad-set-4",
+        "26-ad-set-5",
+        "27-ad-set-6",
+        "28-ad-set-7",
+        "29-ad-set-8",
+        "30-ad-set-9",
+        "31-ad-set-10",
+        "32-ad-set-11",
+        "33-ad-set-12",
+        "34-ad-set-13",
+        "35-top-39",
+        "36-image-prompts-39",
+        "37-fb-headline-copy",
+        "38-landing-questionnaire",
+        "39-hero-page",
+        "40-landing-image-prompts"
+      ],
+      "count": 40
+    },
+    "book": {
+      "route": "avatar-alchemist-book",
+      "skill_number": 53,
+      "on_absent": "park",
+      "park_error": "book-skill-not-available",
+      "note": "version=book performs ZERO generation here; routes to the separate Book skill or parks fail-closed. Never served by the brand pipeline."
+    }
+  },
+  "internal_only_feeders": [
+    "04-tone-style-1",
+    "05-tone-style-2",
+    "06-tone-style-3",
+    "07-tone-style-4",
+    "38-landing-questionnaire"
+  ],
+  "shared_tone_core": "shared-utils/tone-writing-core",
+  "image_prompt_band": {
+    "stages": [
+      "36-image-prompts-39",
+      "40-landing-image-prompts"
+    ],
+    "min_chars": 5000,
+    "max_chars": 19000,
+    "measure": "stripped",
+    "note": "self-reported counts ignored; measured on markdown/whitespace-stripped text."
+  },
+  "deliverables": {
+    "Avatar_Intelligence": [
+      "03-rewrite-avatar",
+      "01-avatar-questions-1-30",
+      "02-avatar-questions-31-32"
+    ],
+    "Tone_Doc": [
+      "08-blended-tone"
+    ],
+    "Marketing_Intelligence": [
+      "09-problem-aware",
+      "10-problem-aware-pt2",
+      "11-solution-aware",
+      "12-solution-aware-pt2",
+      "13-product-aware",
+      "14-product-aware-pt2"
+    ],
+    "Facebook_Targeting_Intelligence": [
+      "15-facebook-audiences"
+    ],
+    "Brand_Bio_Intelligence": [
+      "16-brand-bio"
+    ],
+    "Product_Bio_Intelligence": [
+      "17-product-bio"
+    ],
+    "AI_Bot_Prep_Doc_Intelligence": [
+      "18-bot-prep"
+    ],
+    "AI_Booking_Bot_Intelligence": [
+      "19-booking-bot"
+    ],
+    "AI_Post_Booking_Bot_Intelligence": [
+      "20-post-booking-bot"
+    ],
+    "Rescheduling_Booking_Bot_Intelligence": [
+      "21-rescheduling-bot"
+    ],
+    "Visual_Display_Ads": [
+      "22-ad-set-1",
+      "23-ad-set-2",
+      "24-ad-set-3",
+      "25-ad-set-4",
+      "26-ad-set-5",
+      "27-ad-set-6",
+      "28-ad-set-7",
+      "29-ad-set-8",
+      "30-ad-set-9",
+      "31-ad-set-10",
+      "32-ad-set-11",
+      "33-ad-set-12",
+      "34-ad-set-13"
+    ],
+    "Top_39_Suggested_Ad_Angles": [
+      "35-top-39"
+    ],
+    "Top_39_Suggested_Image_Prompts": [
+      "36-image-prompts-39"
+    ],
+    "Facebook_Headline_and_Primary_Text_Ad_Copy_Writer": [
+      "37-fb-headline-copy"
+    ],
+    "Landing_Page": [
+      "39-hero-page"
+    ],
+    "Landing_Page_Image_Prompts": [
+      "40-landing-image-prompts"
+    ]
+  },
+  "adset_category_signatures": {
+    "22-ad-set-1": "category 1",
+    "23-ad-set-2": "category 2",
+    "24-ad-set-3": "category 3",
+    "25-ad-set-4": "category 4A",
+    "26-ad-set-5": "category 4B",
+    "27-ad-set-6": "category 4C",
+    "28-ad-set-7": "category 5",
+    "29-ad-set-8": "category 6",
+    "30-ad-set-9": "category 7",
+    "31-ad-set-10": "category 8",
+    "32-ad-set-11": "category 9",
+    "33-ad-set-12": "category 10",
+    "34-ad-set-13": "category 11"
+  },
+  "wave_map": {
+    "1": [
+      "01-avatar-questions-1-30",
+      "02-avatar-questions-31-32"
+    ],
+    "2": [
+      "03-rewrite-avatar",
+      "04-tone-style-1",
+      "05-tone-style-2",
+      "06-tone-style-3",
+      "07-tone-style-4"
+    ],
+    "3": [
+      "08-blended-tone",
+      "09-problem-aware",
+      "11-solution-aware",
+      "13-product-aware",
+      "15-facebook-audiences"
+    ],
+    "4": [
+      "10-problem-aware-pt2",
+      "12-solution-aware-pt2",
+      "14-product-aware-pt2",
+      "16-brand-bio"
+    ],
+    "5": [
+      "17-product-bio",
+      "18-bot-prep"
+    ],
+    "6": [
+      "19-booking-bot",
+      "22-ad-set-1",
+      "38-landing-questionnaire"
+    ],
+    "7": [
+      "20-post-booking-bot",
+      "21-rescheduling-bot",
+      "23-ad-set-2",
+      "39-hero-page"
+    ],
+    "8": [
+      "24-ad-set-3",
+      "40-landing-image-prompts"
+    ],
+    "9": [
+      "25-ad-set-4"
+    ],
+    "10": [
+      "26-ad-set-5"
+    ],
+    "11": [
+      "27-ad-set-6"
+    ],
+    "12": [
+      "28-ad-set-7"
+    ],
+    "13": [
+      "29-ad-set-8"
+    ],
+    "14": [
+      "30-ad-set-9"
+    ],
+    "15": [
+      "31-ad-set-10"
+    ],
+    "16": [
+      "32-ad-set-11"
+    ],
+    "17": [
+      "33-ad-set-12"
+    ],
+    "18": [
+      "34-ad-set-13"
+    ],
+    "19": [
+      "35-top-39",
+      "37-fb-headline-copy"
+    ],
+    "20": [
+      "36-image-prompts-39"
+    ]
+  },
+  "stages": [
+    {
+      "stage_id": "01-avatar-questions-1-30",
+      "prompt_dir": "prompts/01-avatar-questions-1-30",
+      "source_record": "source/airtable-prompts/13-avatar-questions-1-30.md",
+      "subsystem": "avatar-core",
+      "tier": "A",
+      "wave": 1,
+      "depends_on": [],
+      "floors": {
+        "word_floor": 3000
+      },
+      "deliverable": "Avatar_Intelligence",
+      "gate": "G-STAGE-01-avatar-questions-1-30",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "02-avatar-questions-31-32",
+      "prompt_dir": "prompts/02-avatar-questions-31-32",
+      "source_record": "source/airtable-prompts/15-avatar-questions-31-32.md",
+      "subsystem": "avatar-core",
+      "tier": "SEARCH",
+      "wave": 1,
+      "depends_on": [],
+      "floors": {
+        "links_verify": true
+      },
+      "deliverable": "Avatar_Intelligence",
+      "gate": "G-STAGE-02-avatar-questions-31-32",
+      "recovery": "park",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "03-rewrite-avatar",
+      "prompt_dir": "prompts/03-rewrite-avatar",
+      "source_record": "source/airtable-prompts/29-rewrite-avatar-niche-and-primary-goal.md",
+      "subsystem": "avatar-core",
+      "tier": "A",
+      "wave": 2,
+      "depends_on": [
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32"
+      ],
+      "floors": {},
+      "deliverable": "Avatar_Intelligence",
+      "gate": "G-STAGE-03-rewrite-avatar",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "04-tone-style-1",
+      "prompt_dir": "prompts/04-tone-style-1",
+      "source_record": "source/airtable-prompts/06-write-tone-style-1.md",
+      "subsystem": "tone",
+      "tier": "B",
+      "wave": 2,
+      "depends_on": [
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32"
+      ],
+      "floors": {},
+      "deliverable": "_internal",
+      "gate": "G-STAGE-04-tone-style-1",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "05-tone-style-2",
+      "prompt_dir": "prompts/05-tone-style-2",
+      "source_record": "source/airtable-prompts/38-write-tone-style-2.md",
+      "subsystem": "tone",
+      "tier": "B",
+      "wave": 2,
+      "depends_on": [
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32"
+      ],
+      "floors": {},
+      "deliverable": "_internal",
+      "gate": "G-STAGE-05-tone-style-2",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "06-tone-style-3",
+      "prompt_dir": "prompts/06-tone-style-3",
+      "source_record": "source/airtable-prompts/21-write-tone-style-3.md",
+      "subsystem": "tone",
+      "tier": "B",
+      "wave": 2,
+      "depends_on": [
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32"
+      ],
+      "floors": {},
+      "deliverable": "_internal",
+      "gate": "G-STAGE-06-tone-style-3",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "07-tone-style-4",
+      "prompt_dir": "prompts/07-tone-style-4",
+      "source_record": "source/airtable-prompts/30-write-tone-style-4.md",
+      "subsystem": "tone",
+      "tier": "B",
+      "wave": 2,
+      "depends_on": [
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32"
+      ],
+      "floors": {},
+      "deliverable": "_internal",
+      "gate": "G-STAGE-07-tone-style-4",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "08-blended-tone",
+      "prompt_dir": "prompts/08-blended-tone",
+      "source_record": "source/airtable-prompts/11-write-blended-tone.md",
+      "subsystem": "tone",
+      "tier": "A",
+      "wave": 3,
+      "depends_on": [
+        "04-tone-style-1",
+        "05-tone-style-2",
+        "06-tone-style-3",
+        "07-tone-style-4"
+      ],
+      "floors": {
+        "word_floor": 3000
+      },
+      "deliverable": "Tone_Doc",
+      "gate": "G-STAGE-08-blended-tone",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "09-problem-aware",
+      "prompt_dir": "prompts/09-problem-aware",
+      "source_record": "source/airtable-prompts/25-problem-aware.md",
+      "subsystem": "awareness",
+      "tier": "A",
+      "wave": 3,
+      "depends_on": [
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32"
+      ],
+      "floors": {
+        "word_floor": 1500
+      },
+      "deliverable": "Marketing_Intelligence",
+      "gate": "G-STAGE-09-problem-aware",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "10-problem-aware-pt2",
+      "prompt_dir": "prompts/10-problem-aware-pt2",
+      "source_record": "source/airtable-prompts/35-problem-aware-pt2-shopping-behavior.md",
+      "subsystem": "awareness",
+      "tier": "B",
+      "wave": 4,
+      "depends_on": [
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32",
+        "09-problem-aware"
+      ],
+      "floors": {},
+      "deliverable": "Marketing_Intelligence",
+      "gate": "G-STAGE-10-problem-aware-pt2",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "11-solution-aware",
+      "prompt_dir": "prompts/11-solution-aware",
+      "source_record": "source/airtable-prompts/26-solution-aware.md",
+      "subsystem": "awareness",
+      "tier": "A",
+      "wave": 3,
+      "depends_on": [
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32"
+      ],
+      "floors": {
+        "word_floor": 1500
+      },
+      "deliverable": "Marketing_Intelligence",
+      "gate": "G-STAGE-11-solution-aware",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "12-solution-aware-pt2",
+      "prompt_dir": "prompts/12-solution-aware-pt2",
+      "source_record": "source/airtable-prompts/33-solution-aware-pt2-shopping-behavior.md",
+      "subsystem": "awareness",
+      "tier": "B",
+      "wave": 4,
+      "depends_on": [
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32",
+        "11-solution-aware"
+      ],
+      "floors": {},
+      "deliverable": "Marketing_Intelligence",
+      "gate": "G-STAGE-12-solution-aware-pt2",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "13-product-aware",
+      "prompt_dir": "prompts/13-product-aware",
+      "source_record": "source/airtable-prompts/40-product-aware.md",
+      "subsystem": "awareness",
+      "tier": "A",
+      "wave": 3,
+      "depends_on": [
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32"
+      ],
+      "floors": {
+        "word_floor": 1500
+      },
+      "deliverable": "Marketing_Intelligence",
+      "gate": "G-STAGE-13-product-aware",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "14-product-aware-pt2",
+      "prompt_dir": "prompts/14-product-aware-pt2",
+      "source_record": "source/airtable-prompts/18-product-aware-pt2-shopping-behavior.md",
+      "subsystem": "awareness",
+      "tier": "B",
+      "wave": 4,
+      "depends_on": [
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32",
+        "13-product-aware"
+      ],
+      "floors": {},
+      "deliverable": "Marketing_Intelligence",
+      "gate": "G-STAGE-14-product-aware-pt2",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "15-facebook-audiences",
+      "prompt_dir": "prompts/15-facebook-audiences",
+      "source_record": "source/airtable-prompts/34-facebook-audience-generator.md",
+      "subsystem": "facebook-ads",
+      "tier": "A",
+      "wave": 3,
+      "depends_on": [
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32"
+      ],
+      "floors": {},
+      "deliverable": "Facebook_Targeting_Intelligence",
+      "gate": "G-STAGE-15-facebook-audiences",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "16-brand-bio",
+      "prompt_dir": "prompts/16-brand-bio",
+      "source_record": "source/airtable-prompts/10-brand-bio.md",
+      "subsystem": "bios",
+      "tier": "A",
+      "wave": 4,
+      "depends_on": [
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32",
+        "08-blended-tone"
+      ],
+      "floors": {},
+      "deliverable": "Brand_Bio_Intelligence",
+      "gate": "G-STAGE-16-brand-bio",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "17-product-bio",
+      "prompt_dir": "prompts/17-product-bio",
+      "source_record": "source/airtable-prompts/19-product-bio.md",
+      "subsystem": "bios",
+      "tier": "A",
+      "wave": 5,
+      "depends_on": [
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32",
+        "08-blended-tone",
+        "16-brand-bio"
+      ],
+      "floors": {},
+      "deliverable": "Product_Bio_Intelligence",
+      "gate": "G-STAGE-17-product-bio",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "18-bot-prep",
+      "prompt_dir": "prompts/18-bot-prep",
+      "source_record": "source/airtable-prompts/39-ai-bot-prep-document.md",
+      "subsystem": "booking-bots",
+      "tier": "A",
+      "wave": 5,
+      "depends_on": [
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32",
+        "08-blended-tone",
+        "16-brand-bio"
+      ],
+      "floors": {
+        "botdoc": true
+      },
+      "deliverable": "AI_Bot_Prep_Doc_Intelligence",
+      "gate": "G-STAGE-18-bot-prep",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "19-booking-bot",
+      "prompt_dir": "prompts/19-booking-bot",
+      "source_record": "source/airtable-prompts/12-create-booking-bot.md",
+      "subsystem": "booking-bots",
+      "tier": "A",
+      "wave": 6,
+      "depends_on": [
+        "18-bot-prep",
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32",
+        "08-blended-tone",
+        "16-brand-bio"
+      ],
+      "floors": {
+        "word_floor": 5000,
+        "botdoc": true
+      },
+      "deliverable": "AI_Booking_Bot_Intelligence",
+      "gate": "G-STAGE-19-booking-bot",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "20-post-booking-bot",
+      "prompt_dir": "prompts/20-post-booking-bot",
+      "source_record": "source/airtable-prompts/03-create-post-booking-bot.md",
+      "subsystem": "booking-bots",
+      "tier": "A",
+      "wave": 7,
+      "depends_on": [
+        "19-booking-bot",
+        "18-bot-prep"
+      ],
+      "floors": {
+        "botdoc": true
+      },
+      "deliverable": "AI_Post_Booking_Bot_Intelligence",
+      "gate": "G-STAGE-20-post-booking-bot",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "21-rescheduling-bot",
+      "prompt_dir": "prompts/21-rescheduling-bot",
+      "source_record": "source/airtable-prompts/27-rescheduling-booking-bot.md",
+      "subsystem": "booking-bots",
+      "tier": "A",
+      "wave": 7,
+      "depends_on": [
+        "19-booking-bot",
+        "18-bot-prep"
+      ],
+      "floors": {
+        "botdoc": true
+      },
+      "deliverable": "Rescheduling_Booking_Bot_Intelligence",
+      "gate": "G-STAGE-21-rescheduling-bot",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "22-ad-set-1",
+      "prompt_dir": "prompts/22-ad-set-1",
+      "source_record": "source/airtable-prompts/24-ad-set-1.md",
+      "subsystem": "facebook-ads",
+      "tier": "A",
+      "wave": 6,
+      "depends_on": [
+        "16-brand-bio",
+        "17-product-bio",
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30"
+      ],
+      "floors": {
+        "adset_category": "category 1",
+        "ad_count": 10
+      },
+      "deliverable": "Visual_Display_Ads",
+      "gate": "G-STAGE-22-ad-set-1",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "23-ad-set-2",
+      "prompt_dir": "prompts/23-ad-set-2",
+      "source_record": "source/airtable-prompts/04-ad-set-2.md",
+      "subsystem": "facebook-ads",
+      "tier": "A",
+      "wave": 7,
+      "depends_on": [
+        "16-brand-bio",
+        "17-product-bio",
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "22-ad-set-1"
+      ],
+      "floors": {
+        "adset_category": "category 2",
+        "ad_count": 10
+      },
+      "deliverable": "Visual_Display_Ads",
+      "gate": "G-STAGE-23-ad-set-2",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "24-ad-set-3",
+      "prompt_dir": "prompts/24-ad-set-3",
+      "source_record": "source/airtable-prompts/05-ad-set-3.md",
+      "subsystem": "facebook-ads",
+      "tier": "A",
+      "wave": 8,
+      "depends_on": [
+        "16-brand-bio",
+        "17-product-bio",
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "22-ad-set-1",
+        "23-ad-set-2"
+      ],
+      "floors": {
+        "adset_category": "category 3",
+        "ad_count": 10
+      },
+      "deliverable": "Visual_Display_Ads",
+      "gate": "G-STAGE-24-ad-set-3",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "25-ad-set-4",
+      "prompt_dir": "prompts/25-ad-set-4",
+      "source_record": "source/airtable-prompts/01-ad-set-4.md",
+      "subsystem": "facebook-ads",
+      "tier": "A",
+      "wave": 9,
+      "depends_on": [
+        "16-brand-bio",
+        "17-product-bio",
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "24-ad-set-3"
+      ],
+      "floors": {
+        "adset_category": "category 4A",
+        "ad_count": 10
+      },
+      "deliverable": "Visual_Display_Ads",
+      "gate": "G-STAGE-25-ad-set-4",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "26-ad-set-5",
+      "prompt_dir": "prompts/26-ad-set-5",
+      "source_record": "source/airtable-prompts/36-ad-set-5.md",
+      "subsystem": "facebook-ads",
+      "tier": "A",
+      "wave": 10,
+      "depends_on": [
+        "16-brand-bio",
+        "17-product-bio",
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "25-ad-set-4"
+      ],
+      "floors": {
+        "adset_category": "category 4B",
+        "ad_count": 10
+      },
+      "deliverable": "Visual_Display_Ads",
+      "gate": "G-STAGE-26-ad-set-5",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "27-ad-set-6",
+      "prompt_dir": "prompts/27-ad-set-6",
+      "source_record": "source/airtable-prompts/14-ad-set-6.md",
+      "subsystem": "facebook-ads",
+      "tier": "A",
+      "wave": 11,
+      "depends_on": [
+        "16-brand-bio",
+        "17-product-bio",
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "26-ad-set-5"
+      ],
+      "floors": {
+        "adset_category": "category 4C",
+        "ad_count": 10
+      },
+      "deliverable": "Visual_Display_Ads",
+      "gate": "G-STAGE-27-ad-set-6",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "28-ad-set-7",
+      "prompt_dir": "prompts/28-ad-set-7",
+      "source_record": "source/airtable-prompts/02-ad-set-7.md",
+      "subsystem": "facebook-ads",
+      "tier": "A",
+      "wave": 12,
+      "depends_on": [
+        "16-brand-bio",
+        "17-product-bio",
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "27-ad-set-6"
+      ],
+      "floors": {
+        "adset_category": "category 5",
+        "ad_count": 10
+      },
+      "deliverable": "Visual_Display_Ads",
+      "gate": "G-STAGE-28-ad-set-7",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "29-ad-set-8",
+      "prompt_dir": "prompts/29-ad-set-8",
+      "source_record": "source/airtable-prompts/32-ad-set-8.md",
+      "subsystem": "facebook-ads",
+      "tier": "A",
+      "wave": 13,
+      "depends_on": [
+        "16-brand-bio",
+        "17-product-bio",
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "28-ad-set-7"
+      ],
+      "floors": {
+        "adset_category": "category 6",
+        "ad_count": 10
+      },
+      "deliverable": "Visual_Display_Ads",
+      "gate": "G-STAGE-29-ad-set-8",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "30-ad-set-9",
+      "prompt_dir": "prompts/30-ad-set-9",
+      "source_record": "source/airtable-prompts/17-ad-set-9.md",
+      "subsystem": "facebook-ads",
+      "tier": "A",
+      "wave": 14,
+      "depends_on": [
+        "16-brand-bio",
+        "17-product-bio",
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "29-ad-set-8"
+      ],
+      "floors": {
+        "adset_category": "category 7",
+        "ad_count": 10
+      },
+      "deliverable": "Visual_Display_Ads",
+      "gate": "G-STAGE-30-ad-set-9",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "31-ad-set-10",
+      "prompt_dir": "prompts/31-ad-set-10",
+      "source_record": "source/airtable-prompts/37-ad-set-10.md",
+      "subsystem": "facebook-ads",
+      "tier": "A",
+      "wave": 15,
+      "depends_on": [
+        "16-brand-bio",
+        "17-product-bio",
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "30-ad-set-9"
+      ],
+      "floors": {
+        "adset_category": "category 8",
+        "ad_count": 10
+      },
+      "deliverable": "Visual_Display_Ads",
+      "gate": "G-STAGE-31-ad-set-10",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "32-ad-set-11",
+      "prompt_dir": "prompts/32-ad-set-11",
+      "source_record": "source/airtable-prompts/28-ad-set-11.md",
+      "subsystem": "facebook-ads",
+      "tier": "A",
+      "wave": 16,
+      "depends_on": [
+        "16-brand-bio",
+        "17-product-bio",
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "31-ad-set-10"
+      ],
+      "floors": {
+        "adset_category": "category 9",
+        "ad_count": 10
+      },
+      "deliverable": "Visual_Display_Ads",
+      "gate": "G-STAGE-32-ad-set-11",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "33-ad-set-12",
+      "prompt_dir": "prompts/33-ad-set-12",
+      "source_record": "source/airtable-prompts/31-ad-set-12.md",
+      "subsystem": "facebook-ads",
+      "tier": "A",
+      "wave": 17,
+      "depends_on": [
+        "16-brand-bio",
+        "17-product-bio",
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "32-ad-set-11"
+      ],
+      "floors": {
+        "adset_category": "category 10",
+        "ad_count": 10
+      },
+      "deliverable": "Visual_Display_Ads",
+      "gate": "G-STAGE-33-ad-set-12",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "34-ad-set-13",
+      "prompt_dir": "prompts/34-ad-set-13",
+      "source_record": "source/airtable-prompts/23-ad-set-13.md",
+      "subsystem": "facebook-ads",
+      "tier": "A",
+      "wave": 18,
+      "depends_on": [
+        "16-brand-bio",
+        "17-product-bio",
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "33-ad-set-12"
+      ],
+      "floors": {
+        "adset_category": "category 11",
+        "ad_count": 10
+      },
+      "deliverable": "Visual_Display_Ads",
+      "gate": "G-STAGE-34-ad-set-13",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "35-top-39",
+      "prompt_dir": "prompts/35-top-39",
+      "source_record": "source/airtable-prompts/07-top-39-selected-in-each-ad-set.md",
+      "subsystem": "facebook-ads",
+      "tier": "A",
+      "wave": 19,
+      "depends_on": [
+        "22-ad-set-1",
+        "23-ad-set-2",
+        "24-ad-set-3",
+        "25-ad-set-4",
+        "26-ad-set-5",
+        "27-ad-set-6",
+        "28-ad-set-7",
+        "29-ad-set-8",
+        "30-ad-set-9",
+        "31-ad-set-10",
+        "32-ad-set-11",
+        "33-ad-set-12",
+        "34-ad-set-13",
+        "16-brand-bio",
+        "17-product-bio",
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30"
+      ],
+      "floors": {
+        "count_39": true
+      },
+      "deliverable": "Top_39_Suggested_Ad_Angles",
+      "gate": "G-STAGE-35-top-39",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "36-image-prompts-39",
+      "prompt_dir": "prompts/36-image-prompts-39",
+      "source_record": "source/airtable-prompts/20-image-prompt-writer.md",
+      "subsystem": "landing-hero",
+      "tier": "B",
+      "wave": 20,
+      "depends_on": [
+        "35-top-39",
+        "17-product-bio",
+        "16-brand-bio"
+      ],
+      "floors": {
+        "count_39": true,
+        "char_band": [
+          5000,
+          19000
+        ],
+        "unique_artist": true
+      },
+      "deliverable": "Top_39_Suggested_Image_Prompts",
+      "gate": "G-STAGE-36-image-prompts-39",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "37-fb-headline-copy",
+      "prompt_dir": "prompts/37-fb-headline-copy",
+      "source_record": "source/airtable-prompts/22-facebook-headline-and-primary-textwriter.md",
+      "subsystem": "facebook-ads",
+      "tier": "A",
+      "wave": 19,
+      "depends_on": [
+        "22-ad-set-1",
+        "23-ad-set-2",
+        "24-ad-set-3",
+        "25-ad-set-4",
+        "26-ad-set-5",
+        "27-ad-set-6",
+        "28-ad-set-7",
+        "29-ad-set-8",
+        "30-ad-set-9",
+        "31-ad-set-10",
+        "32-ad-set-11",
+        "33-ad-set-12",
+        "34-ad-set-13",
+        "09-problem-aware",
+        "10-problem-aware-pt2",
+        "11-solution-aware",
+        "12-solution-aware-pt2",
+        "13-product-aware",
+        "14-product-aware-pt2",
+        "16-brand-bio",
+        "17-product-bio"
+      ],
+      "floors": {
+        "headline_counts": [
+          12,
+          12,
+          12
+        ]
+      },
+      "deliverable": "Facebook_Headline_and_Primary_Text_Ad_Copy_Writer",
+      "gate": "G-STAGE-37-fb-headline-copy",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "38-landing-questionnaire",
+      "prompt_dir": "prompts/38-landing-questionnaire",
+      "source_record": "source/airtable-prompts/16-answer-9-questions.md",
+      "subsystem": "avatar-core",
+      "tier": "B",
+      "wave": 6,
+      "depends_on": [
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "16-brand-bio",
+        "17-product-bio",
+        "08-blended-tone"
+      ],
+      "floors": {},
+      "deliverable": "_internal",
+      "gate": "G-STAGE-38-landing-questionnaire",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "39-hero-page",
+      "prompt_dir": "prompts/39-hero-page",
+      "source_record": "source/airtable-prompts/09-write-the-hero-page.md",
+      "subsystem": "landing-hero",
+      "tier": "A",
+      "wave": 7,
+      "depends_on": [
+        "03-rewrite-avatar",
+        "01-avatar-questions-1-30",
+        "16-brand-bio",
+        "17-product-bio",
+        "08-blended-tone",
+        "38-landing-questionnaire"
+      ],
+      "floors": {
+        "hero_sections": 12
+      },
+      "deliverable": "Landing_Page",
+      "gate": "G-STAGE-39-hero-page",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    },
+    {
+      "stage_id": "40-landing-image-prompts",
+      "prompt_dir": "prompts/40-landing-image-prompts",
+      "source_record": "source/airtable-prompts/08-write-image-prompts-for-landing-page.md",
+      "subsystem": "landing-hero",
+      "tier": "B",
+      "wave": 8,
+      "depends_on": [
+        "39-hero-page",
+        "17-product-bio",
+        "16-brand-bio"
+      ],
+      "floors": {
+        "char_band": [
+          5000,
+          19000
+        ]
+      },
+      "deliverable": "Landing_Page_Image_Prompts",
+      "gate": "G-STAGE-40-landing-image-prompts",
+      "recovery": "auto",
+      "max_fix_attempts": 2
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "stage": "10-problem-aware-pt2",
+  "sha256": "76eb10644df351839fea35f0bdf2b01585ed4ab49b13e1117a2bf8d23781db5a",
+  "attested_by": "foreman",
+  "model": "openrouter/deepseek-chat-v3-0324",
+  "words": 800
+}

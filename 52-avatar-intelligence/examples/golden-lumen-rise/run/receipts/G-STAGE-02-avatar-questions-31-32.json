@@ -1,0 +1,7 @@
+{
+  "stage": "02-avatar-questions-31-32",
+  "sha256": "5ca2db03951d49c6833959f4df3002eb6409811a6c9b664f0ab1e9870bb2a966",
+  "attested_by": "foreman",
+  "model": "openrouter/perplexity-sonar",
+  "words": 718
+}

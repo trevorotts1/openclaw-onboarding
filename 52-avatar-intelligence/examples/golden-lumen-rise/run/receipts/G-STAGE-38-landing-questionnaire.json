@@ -1,0 +1,7 @@
+{
+  "stage": "38-landing-questionnaire",
+  "sha256": "f1c010cf2a9026069e4b7605c0cc41adab609a0c09d05e335fb9d4b7a79ebc6e",
+  "attested_by": "foreman",
+  "model": "openrouter/deepseek-chat-v3-0324",
+  "words": 2109
+}
