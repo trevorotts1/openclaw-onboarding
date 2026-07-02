@@ -14,6 +14,123 @@
       "The door is open — all that is left is your name on the other side."
     ]
   },
+  "neeit_coverage": {
+    "framework": [
+      "Name",
+      "Explain",
+      "Example",
+      "Instructions",
+      "Tone"
+    ],
+    "rule": "N.E.E.I.T. (Name/Explain/Example/Instructions/Tone) coverage is recorded per teaching step (quadrant) as the slide(s) that deliver each element, so it is slide-verifiable rather than only a phase-label tag. Every element is covered by >=1 real content slide in every step; a guided-visualization slide can satisfy both Example and Instructions.",
+    "phase_markers": {
+      "avatar": 1,
+      "story": 12,
+      "pitch": 61
+    },
+    "teaching_steps": [
+      {
+        "step": 1,
+        "quest": "Purpose",
+        "name": [
+          29
+        ],
+        "explain": [
+          32
+        ],
+        "example": [
+          31
+        ],
+        "instructions": [
+          30,
+          33
+        ],
+        "tone": [
+          34
+        ]
+      },
+      {
+        "step": 2,
+        "quest": "Purpose",
+        "name": [
+          35
+        ],
+        "explain": [
+          38
+        ],
+        "example": [
+          36,
+          39
+        ],
+        "instructions": [
+          37
+        ],
+        "tone": [
+          40
+        ]
+      },
+      {
+        "step": 3,
+        "quest": "Confidence",
+        "name": [
+          42
+        ],
+        "explain": [
+          45
+        ],
+        "example": [
+          44
+        ],
+        "instructions": [
+          43,
+          46
+        ],
+        "tone": [
+          47
+        ]
+      },
+      {
+        "step": 4,
+        "quest": "Confidence",
+        "name": [
+          48
+        ],
+        "explain": [
+          50
+        ],
+        "example": [
+          49,
+          51
+        ],
+        "instructions": [
+          52
+        ],
+        "tone": [
+          53
+        ]
+      },
+      {
+        "step": 5,
+        "quest": "Value",
+        "name": [
+          55
+        ],
+        "explain": [
+          56,
+          58
+        ],
+        "example": [
+          57
+        ],
+        "instructions": [
+          57
+        ],
+        "tone": [
+          59
+        ]
+      }
+    ]
+  },
   "slides": [
     {
       "slide": 1,
@@ -316,12 +433,13 @@
       "phase": "teaching",
       "label_slide": true,
       "title": "Phase 3 — Transformational Teaching",
-      "body": "Purpose: to hand you the map, one step at a time, so a calling stops feeling like a mystery and starts feeling like a method.",
+      "body": "Purpose: to hand you the map, one step at a time, so a calling stops feeling like a mystery and starts feeling like a method. #StillCalled",
       "suggested_image": "A large blueprint unrolled on a wooden table, weighted at the corners, a compass on top.",
       "tags": [
         "PHASE-LABEL",
         "METHODOLOGY",
-        "SECTION-HOOK"
+        "SECTION-HOOK",
+        "MOTIF"
       ]
     },
     {
@@ -389,7 +507,7 @@
       "phase": "teaching",
       "label_slide": false,
       "title": "Step 1 — A Story in Three Beats",
-      "body": "A woman told me she 'just organizes things.' Beat one: her team fell apart without her. Beat two: she rebuilt it in a week. Beat three: she still called it 'nothing special.'",
+      "body": "Picture someone who insists she 'just organizes things.' Beat one: the team falls apart without her. Beat two: she rebuilds it in a week. Beat three: she still calls it 'nothing special.' This is not one client — it is a pattern you have watched, and maybe lived.",
       "suggested_image": "A three-panel comic strip of the same calm figure holding chaos together.",
       "tags": [
         "STEP1",
@@ -426,11 +544,12 @@
       "phase": "teaching",
       "label_slide": false,
       "title": "Step 1 — Affirmation: Openness",
-      "body": "Say it: 'I open my hands. What I am for is allowed to be bigger than what I have settled for.' Openness is the affirmation of the Purpose Quest.",
+      "body": "Say it: 'I open my hands. What I am for is allowed to be bigger than what I have settled for.' Openness is the affirmation of the Purpose Quest. #StillCalled",
       "suggested_image": "Two open palms lifted into a shaft of light, a small seed resting in them.",
       "tags": [
         "STEP1",
-        "AFFIRMATION"
+        "AFFIRMATION",
+        "MOTIF"
       ]
     },
     {
@@ -582,11 +701,12 @@
       "phase": "teaching",
       "label_slide": false,
       "title": "Step 3 — Affirmation: Revelation",
-      "body": "Say it: 'I do not wait to feel ready. I move, and my courage is revealed to me on the way.' Revelation is the opening affirmation of the Confidence Quest.",
+      "body": "Say it: 'I do not wait to feel ready. I move, and my courage is revealed to me on the way.' Revelation is the opening affirmation of the Confidence Quest. #StillCalled",
       "suggested_image": "A path lighting up one stone at a time only as a foot lands on each.",
       "tags": [
         "STEP3",
-        "AFFIRMATION"
+        "AFFIRMATION",
+        "MOTIF"
       ]
     },
     {
@@ -666,11 +786,12 @@
       "phase": "teaching",
       "label_slide": false,
       "title": "Quest III — The Value Quest",
-      "body": "The final Quest turns your calling outward. Its affirmation is Love — because value, in the end, is love made useful to someone else.",
+      "body": "The final Quest turns your calling outward. Its affirmation is Love — because value, in the end, is love made useful to someone else. #StillCalled",
       "suggested_image": "A quest banner reading 'The Value Quest' at a summit overlooking a valley of lights.",
       "tags": [
         "QUEST",
-        "AFFIRMATION-INTRO"
+        "AFFIRMATION-INTRO",
+        "MOTIF"
       ]
     },
     {
@@ -738,12 +859,13 @@
       "phase": "teaching",
       "label_slide": false,
       "title": "The Bridge",
-      "body": "So there is the whole map: name the ache, read your map, silence the auditor, walk unready, give your gift. You already have everything you need. What most people miss next is not information — it is company for the walk. In a moment, I will show you exactly what walking it together looks like.",
+      "body": "So there is the whole map: name the ache, read your map, silence the auditor, walk unready, give your gift. You already have everything you need. What most people miss next is not information — it is company for the walk. In a moment, I will show you exactly what walking it together looks like. #StillCalled",
       "suggested_image": "A trailhead at golden hour where a single path splits into many footprints walking forward side by side.",
       "tags": [
         "BRIDGE",
         "SUMMARY",
-        "TRANSITION"
+        "TRANSITION",
+        "MOTIF"
       ]
     },
     {
@@ -775,6 +897,19 @@
       "slide": 63,
       "phase": "pitch",
       "label_slide": false,
+      "title": "The Chorus, Reprised",
+      "body": "The world is waiting on the one thing only you can do.",
+      "suggested_image": "Return to the pure-typography chorus slide, deep indigo field, the single line centered; the same words as the opening, held a beat longer.",
+      "tags": [
+        "CENTRAL-HOOK",
+        "HOOK",
+        "CALLBACK"
+      ]
+    },
+    {
+      "slide": 64,
+      "phase": "pitch",
+      "label_slide": false,
       "title": "Setting the Stage",
       "body": "You did not come this far to only come this far. The title of what comes next is not a program name — it is a transformation: from unclaimed to unmistakably called.",
       "suggested_image": "A theatre curtain parting on a bright, empty, welcoming stage.",
@@ -784,7 +919,7 @@
       ]
     },
     {
-      "slide": 64,
+      "slide": 65,
       "phase": "pitch",
       "label_slide": false,
       "title": "Break Free",
@@ -795,7 +930,7 @@
       ]
     },
     {
-      "slide": 65,
+      "slide": 66,
       "phase": "pitch",
       "label_slide": false,
       "title": "Introducing The Called Collective",
@@ -807,7 +942,7 @@
       ]
     },
     {
-      "slide": 66,
+      "slide": 67,
       "phase": "pitch",
       "label_slide": false,
       "title": "The Mechanism",
@@ -819,7 +954,7 @@
       ]
     },
     {
-      "slide": 67,
+      "slide": 68,
       "phase": "pitch",
       "label_slide": false,
       "title": "Benefit — Clarity at Last",
@@ -830,7 +965,7 @@
       ]
     },
     {
-      "slide": 68,
+      "slide": 69,
       "phase": "pitch",
       "label_slide": false,
       "title": "Benefit — The Auditor, Quiet",
@@ -841,7 +976,7 @@
       ]
     },
     {
-      "slide": 69,
+      "slide": 70,
       "phase": "pitch",
       "label_slide": false,
       "title": "Benefit — A Room That Sees You",
@@ -852,7 +987,7 @@
       ]
     },
     {
-      "slide": 70,
+      "slide": 71,
       "phase": "pitch",
       "label_slide": false,
       "title": "Benefit — An Offer You Can Make",
@@ -863,7 +998,7 @@
       ]
     },
     {
-      "slide": 71,
+      "slide": 72,
       "phase": "pitch",
       "label_slide": false,
       "title": "Benefit — Motion Over Motivation",
@@ -874,7 +1009,7 @@
       ]
     },
     {
-      "slide": 72,
+      "slide": 73,
       "phase": "pitch",
       "label_slide": false,
       "title": "Benefit — Proof You Can Feel",
@@ -885,7 +1020,7 @@
       ]
     },
     {
-      "slide": 73,
+      "slide": 74,
       "phase": "pitch",
       "label_slide": false,
       "title": "Benefit — A Calling That Pays",
@@ -896,7 +1031,7 @@
       ]
     },
     {
-      "slide": 74,
+      "slide": 75,
       "phase": "pitch",
       "label_slide": false,
       "title": "Not Just Self-Help",
@@ -907,7 +1042,7 @@
       ]
     },
     {
-      "slide": 75,
+      "slide": 76,
       "phase": "pitch",
       "label_slide": false,
       "title": "A Proven Framework",
@@ -919,7 +1054,7 @@
       ]
     },
     {
-      "slide": 76,
+      "slide": 77,
       "phase": "pitch",
       "label_slide": false,
       "title": "In Their Words",
@@ -931,7 +1066,7 @@
       ]
     },
     {
-      "slide": 77,
+      "slide": 78,
       "phase": "pitch",
       "label_slide": false,
       "title": "Future-Pace",
@@ -942,7 +1077,7 @@
       ]
     },
     {
-      "slide": 78,
+      "slide": 79,
       "phase": "pitch",
       "label_slide": false,
       "title": "For a Deeper Crossing — The Wayfinder VIP Intensive",
@@ -954,11 +1089,11 @@
       ]
     },
     {
-      "slide": 79,
+      "slide": 80,
       "phase": "pitch",
       "label_slide": false,
       "title": "Everything You Receive",
-      "body": "To be perfectly clear: The Called Collective — 12 weekly Quest sessions, a walking-partner pair, the full Blueprint toolkit, monthly checkpoints; and the option of {OFFER_2} for a private, accelerated crossing.",
+      "body": "To be perfectly clear: The Called Collective — 12 weekly Quest sessions, a walking-partner pair, the full Blueprint toolkit, monthly checkpoints; and the option of The Wayfinder VIP Intensive for a private, accelerated crossing.",
       "suggested_image": "A neatly laid-out flat-lay of everything included, labeled like a field kit.",
       "tags": [
         "OFFER",
@@ -967,7 +1102,7 @@
       ]
     },
     {
-      "slide": 80,
+      "slide": 81,
       "phase": "pitch",
       "label_slide": false,
       "title": "The Best Version of You",
@@ -978,7 +1113,7 @@
       ]
     },
     {
-      "slide": 81,
+      "slide": 82,
       "phase": "pitch",
       "label_slide": false,
       "title": "Transformation by Choice",
@@ -989,7 +1124,7 @@
       ]
     },
     {
-      "slide": 82,
+      "slide": 83,
       "phase": "pitch",
       "label_slide": false,
       "title": "The Founding Cohort",
@@ -1001,7 +1136,7 @@
       ]
     },
     {
-      "slide": 83,
+      "slide": 84,
       "phase": "pitch",
       "label_slide": false,
       "title": "A Community Bonus",
@@ -1012,7 +1147,7 @@
       ]
     },
     {
-      "slide": 84,
+      "slide": 85,
       "phase": "pitch",
       "label_slide": false,
       "title": "Lifetime Access",
@@ -1023,7 +1158,7 @@
       ]
     },
     {
-      "slide": 85,
+      "slide": 86,
       "phase": "pitch",
       "label_slide": false,
       "title": "A Real Guarantee",
@@ -1034,11 +1169,11 @@
       ]
     },
     {
-      "slide": 86,
+      "slide": 87,
       "phase": "pitch",
       "label_slide": false,
       "title": "Your Two Roads",
-      "body": "So, two roads: the crowded safe one where the ache stays and next year looks like this one — or the quiet lit one, walked with company, toward the work only you can do.",
+      "body": "So, two roads: the crowded safe one where the ache stays and next year looks like this one — or the quiet lit one, walked with company, toward a calling you finally answer out loud.",
       "suggested_image": "The forest fork again, now with a lantern lit on the less-traveled path.",
       "tags": [
         "CROSSROADS",
@@ -1046,7 +1181,7 @@
       ]
     },
     {
-      "slide": 87,
+      "slide": 88,
       "phase": "pitch",
       "label_slide": false,
       "title": "Your Chance to Break Free",
@@ -1057,7 +1192,7 @@
       ]
     },
     {
-      "slide": 88,
+      "slide": 89,
       "phase": "pitch",
       "label_slide": false,
       "title": "Answer the Call",
@@ -1068,7 +1203,7 @@
       ]
     },
     {
-      "slide": 89,
+      "slide": 90,
       "phase": "pitch",
       "label_slide": false,
       "title": "Your Future Is Waiting",
@@ -1079,7 +1214,7 @@
       ]
     },
     {
-      "slide": 90,
+      "slide": 91,
       "phase": "pitch",
       "label_slide": false,
       "title": "You Are Worthy of This",
@@ -1091,18 +1226,32 @@
       ]
     },
     {
-      "slide": 91,
+      "slide": 92,
       "phase": "pitch",
       "label_slide": false,
       "title": "Join the Movement",
-      "body": "This is bigger than a program. It is a quiet movement of the capable refusing to stay unclaimed. Join us, and add your footprints to the path.",
+      "body": "This is bigger than a program. It is a quiet movement of the capable refusing to stay unclaimed. Join us, and add your footprints to the path. #StillCalled",
       "suggested_image": "A long line of diverse people walking a lit trail together toward dawn.",
       "tags": [
-        "MOVEMENT-BEAT"
+        "MOVEMENT-BEAT",
+        "MOTIF"
       ]
     },
     {
-      "slide": 92,
+      "slide": 93,
+      "phase": "pitch",
+      "label_slide": false,
+      "title": "The Chorus, Rising",
+      "body": "The world is waiting on the one thing only you can do.",
+      "suggested_image": "Pure-typography chorus slide once more, indigo warming toward first light at the edges; the single line, unhurried, sure.",
+      "tags": [
+        "CENTRAL-HOOK",
+        "HOOK",
+        "CALLBACK"
+      ]
+    },
+    {
+      "slide": 94,
       "phase": "pitch",
       "label_slide": false,
       "title": "This Is Your Moment",
@@ -1113,7 +1262,7 @@
       ]
     },
     {
-      "slide": 93,
+      "slide": 95,
       "phase": "pitch",
       "label_slide": false,
       "title": "Shatter the Ceiling You Built",
@@ -1124,18 +1273,18 @@
       ]
     },
     {
-      "slide": 94,
+      "slide": 96,
       "phase": "pitch",
       "label_slide": false,
       "title": "Pride, at Last",
-      "body": "Imagine the pride — not borrowed from a title, but earned from finally doing the work only you can do, for the people only you can reach.",
+      "body": "Imagine the pride — not borrowed from a title, but earned from finally answering the calling that has been quietly yours all along, for the people who have been waiting for exactly it.",
       "suggested_image": "A quiet, private smile of someone reading a thank-you note alone.",
       "tags": [
         "EMOTIONAL"
       ]
     },
     {
-      "slide": 95,
+      "slide": 97,
       "phase": "pitch",
       "label_slide": false,
       "title": "The Journey Starts Today",
@@ -1146,7 +1295,7 @@
       ]
     },
     {
-      "slide": 96,
+      "slide": 98,
       "phase": "pitch",
       "label_slide": false,
       "title": "Take Your Seat",
@@ -1157,7 +1306,7 @@
       ]
     },
     {
-      "slide": 97,
+      "slide": 99,
       "phase": "pitch",
       "label_slide": false,
       "title": "Thank You",
@@ -1168,7 +1317,7 @@
       ]
     },
     {
-      "slide": 98,
+      "slide": 100,
       "phase": "pitch",
       "label_slide": false,
       "title": "The Chorus, One Last Time",
@@ -1181,7 +1330,7 @@
       ]
     },
     {
-      "slide": 99,
+      "slide": 101,
       "phase": "pitch",
       "label_slide": false,
       "title": "A Manifesto — Part I",
@@ -1192,18 +1341,18 @@
       ]
     },
     {
-      "slide": 100,
+      "slide": 102,
       "phase": "pitch",
       "label_slide": false,
       "title": "A Manifesto — Part II",
-      "body": "So rise, quietly capable one. Read your map. Silence the auditor. Walk before you are ready. Give the gift only you can give. The world is waiting — and it has waited long enough.",
+      "body": "So rise, quietly capable one. Read your map. Silence the auditor. Walk before you are ready. Give the gift that is yours to give. The dawn has waited long enough — and now it belongs to you.",
       "suggested_image": "The dawn now fully broken, the lettering blazing gold, a path leading into light.",
       "tags": [
         "MANIFESTO"
       ]
     },
     {
-      "slide": 101,
+      "slide": 103,
       "phase": "pitch",
       "label_slide": false,
       "title": "Finish It in Your Own Words",

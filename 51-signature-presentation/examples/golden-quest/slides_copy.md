@@ -1,6 +1,6 @@
 # Golden Quest — Signature Presentation (copy ledger)
 
-- Frame: **The Quest**  |  Slides: **101**  |  Teaching steps: **5** (3 Quests)
+- Frame: **The Quest**  |  Slides: **103**  |  Teaching steps: **5** (3 Quests)
 - Central hook: *The world is waiting on the one thing only you can do.*
 - Offer(s): The Called Collective; The Wayfinder VIP Intensive
 - Fictional subject: **The Wayfinder** — a purpose & identity coach archetype
@@ -31,7 +31,7 @@
 | 22 | story | I Deserve To Win | STORY, DECLARATION |
 | 23 | story | The Road Not Taken | LITERARY, DEVICE, QUOTE |
 | 24 | story | The Gripping Why | STORY, WHY, TRANSITION |
-| 25 | teaching | Phase 3 — Transformational Teaching | PHASE-LABEL, METHODOLOGY, SECTION-HOOK |
+| 25 | teaching | Phase 3 — Transformational Teaching | PHASE-LABEL, METHODOLOGY, SECTION-HOOK, MOTIF |
 | 26 | teaching | The Wayfinder Blueprint | HOOK, OVERVIEW |
 | 27 | teaching | A Definition Pair | DEFINITION, DEVICE |
 | 28 | teaching | Quest I — The Purpose Quest | QUEST, AFFIRMATION-INTRO |
@@ -40,7 +40,7 @@
 | 31 | teaching | Step 1 — A Story in Three Beats | STEP1, ANECDOTE, STORY |
 | 32 | teaching | Step 1 — Core Teaching | STEP1, CORE-TEACHING |
 | 33 | teaching | Step 1 — Do This | STEP1, ACTION |
-| 34 | teaching | Step 1 — Affirmation: Openness | STEP1, AFFIRMATION |
+| 34 | teaching | Step 1 — Affirmation: Openness | STEP1, AFFIRMATION, MOTIF |
 | 35 | teaching | Step 2 — Read the Map You Already Carry | STEP2, STEP-TITLE |
 | 36 | teaching | Step 2 — A Media Moment | STEP2, MEDIA |
 | 37 | teaching | Step 2 — One-Liner | STEP2, ONE-LINER |
@@ -53,61 +53,63 @@
 | 44 | teaching | Step 3 — A Story | STEP3, STORY |
 | 45 | teaching | Step 3 — Core Teaching | STEP3, CORE-TEACHING |
 | 46 | teaching | Step 3 — Take This With You | STEP3, DOWNLOADABLE |
-| 47 | teaching | Step 3 — Affirmation: Revelation | STEP3, AFFIRMATION |
+| 47 | teaching | Step 3 — Affirmation: Revelation | STEP3, AFFIRMATION, MOTIF |
 | 48 | teaching | Step 4 — Walk Before You're Ready | STEP4, STEP-TITLE |
 | 49 | teaching | Step 4 — An Anecdote | STEP4, ANECDOTE |
 | 50 | teaching | Step 4 — Borrowed Authority | STEP4, QUOTE |
 | 51 | teaching | Step 4 — A Life Changed | STEP4, CASE_STUDY |
 | 52 | teaching | Step 4 — Do This | STEP4, ACTION |
 | 53 | teaching | Step 4 — Affirmation: Confidence | STEP4, AFFIRMATION |
-| 54 | teaching | Quest III — The Value Quest | QUEST, AFFIRMATION-INTRO |
+| 54 | teaching | Quest III — The Value Quest | QUEST, AFFIRMATION-INTRO, MOTIF |
 | 55 | teaching | Step 5 — Give the Gift Only You Can Give | STEP5, STEP-TITLE |
 | 56 | teaching | Step 5 — Core Teaching | STEP5, CORE-TEACHING |
 | 57 | teaching | Step 5 — Visualization | STEP5, VISUALIZATION |
 | 58 | teaching | Step 5 — Reinforcing Quote | STEP5, QUOTE |
 | 59 | teaching | Step 5 — Affirmation: Love | STEP5, AFFIRMATION |
-| 60 | teaching | The Bridge | BRIDGE, SUMMARY, TRANSITION |
+| 60 | teaching | The Bridge | BRIDGE, SUMMARY, TRANSITION, MOTIF |
 | 61 | pitch | Phase 4 — The Purpose Pitch | PHASE-LABEL, N.E.E.I.T., 4-Quadrant, SECTION-HOOK |
 | 62 | pitch | The Section Hook | HOOK |
-| 63 | pitch | Setting the Stage | PITCH-STAGE, EMOTIONAL |
-| 64 | pitch | Break Free | PITCH-STAGE |
-| 65 | pitch | Introducing The Called Collective | OFFER, CLARITY |
-| 66 | pitch | The Mechanism | OFFER, MECHANISM |
-| 67 | pitch | Benefit — Clarity at Last | BENEFIT |
-| 68 | pitch | Benefit — The Auditor, Quiet | BENEFIT |
-| 69 | pitch | Benefit — A Room That Sees You | BENEFIT |
-| 70 | pitch | Benefit — An Offer You Can Make | BENEFIT |
-| 71 | pitch | Benefit — Motion Over Motivation | BENEFIT |
-| 72 | pitch | Benefit — Proof You Can Feel | BENEFIT |
-| 73 | pitch | Benefit — A Calling That Pays | BENEFIT |
-| 74 | pitch | Not Just Self-Help | REFRAME |
-| 75 | pitch | A Proven Framework | PROOF, SOCIAL-PROOF |
-| 76 | pitch | In Their Words | PROOF, TESTIMONIAL |
-| 77 | pitch | Future-Pace | FUTURE-PACE |
-| 78 | pitch | For a Deeper Crossing — The Wayfinder VIP Intensive | OFFER, VIP |
-| 79 | pitch | Everything You Receive | OFFER, CLARITY, SUMMARY |
-| 80 | pitch | The Best Version of You | EMOTIONAL |
-| 81 | pitch | Transformation by Choice | CROSSROADS |
-| 82 | pitch | The Founding Cohort | SCARCITY, PRICE |
-| 83 | pitch | A Community Bonus | BONUS |
-| 84 | pitch | Lifetime Access | BONUS |
-| 85 | pitch | A Real Guarantee | GUARANTEE |
-| 86 | pitch | Your Two Roads | CROSSROADS, CALLBACK |
-| 87 | pitch | Your Chance to Break Free | EMOTIONAL |
-| 88 | pitch | Answer the Call | CTA |
-| 89 | pitch | Your Future Is Waiting | EMOTIONAL |
-| 90 | pitch | You Are Worthy of This | EMOTIONAL, WORTHINESS |
-| 91 | pitch | Join the Movement | MOVEMENT-BEAT |
-| 92 | pitch | This Is Your Moment | EMOTIONAL |
-| 93 | pitch | Shatter the Ceiling You Built | EMOTIONAL |
-| 94 | pitch | Pride, at Last | EMOTIONAL |
-| 95 | pitch | The Journey Starts Today | EMOTIONAL |
-| 96 | pitch | Take Your Seat | CTA |
-| 97 | pitch | Thank You | GRATITUDE |
-| 98 | pitch | The Chorus, One Last Time | CENTRAL-HOOK, HOOK, CALLBACK |
-| 99 | pitch | A Manifesto — Part I | MANIFESTO |
-| 100 | pitch | A Manifesto — Part II | MANIFESTO |
-| 101 | pitch | Finish It in Your Own Words | MANIFESTO, FILL-IN-THE-BLANK, CENTRAL-HOOK |
+| 63 | pitch | The Chorus, Reprised | CENTRAL-HOOK, HOOK, CALLBACK |
+| 64 | pitch | Setting the Stage | PITCH-STAGE, EMOTIONAL |
+| 65 | pitch | Break Free | PITCH-STAGE |
+| 66 | pitch | Introducing The Called Collective | OFFER, CLARITY |
+| 67 | pitch | The Mechanism | OFFER, MECHANISM |
+| 68 | pitch | Benefit — Clarity at Last | BENEFIT |
+| 69 | pitch | Benefit — The Auditor, Quiet | BENEFIT |
+| 70 | pitch | Benefit — A Room That Sees You | BENEFIT |
+| 71 | pitch | Benefit — An Offer You Can Make | BENEFIT |
+| 72 | pitch | Benefit — Motion Over Motivation | BENEFIT |
+| 73 | pitch | Benefit — Proof You Can Feel | BENEFIT |
+| 74 | pitch | Benefit — A Calling That Pays | BENEFIT |
+| 75 | pitch | Not Just Self-Help | REFRAME |
+| 76 | pitch | A Proven Framework | PROOF, SOCIAL-PROOF |
+| 77 | pitch | In Their Words | PROOF, TESTIMONIAL |
+| 78 | pitch | Future-Pace | FUTURE-PACE |
+| 79 | pitch | For a Deeper Crossing — The Wayfinder VIP Intensive | OFFER, VIP |
+| 80 | pitch | Everything You Receive | OFFER, CLARITY, SUMMARY |
+| 81 | pitch | The Best Version of You | EMOTIONAL |
+| 82 | pitch | Transformation by Choice | CROSSROADS |
+| 83 | pitch | The Founding Cohort | SCARCITY, PRICE |
+| 84 | pitch | A Community Bonus | BONUS |
+| 85 | pitch | Lifetime Access | BONUS |
+| 86 | pitch | A Real Guarantee | GUARANTEE |
+| 87 | pitch | Your Two Roads | CROSSROADS, CALLBACK |
+| 88 | pitch | Your Chance to Break Free | EMOTIONAL |
+| 89 | pitch | Answer the Call | CTA |
+| 90 | pitch | Your Future Is Waiting | EMOTIONAL |
+| 91 | pitch | You Are Worthy of This | EMOTIONAL, WORTHINESS |
+| 92 | pitch | Join the Movement | MOVEMENT-BEAT, MOTIF |
+| 93 | pitch | The Chorus, Rising | CENTRAL-HOOK, HOOK, CALLBACK |
+| 94 | pitch | This Is Your Moment | EMOTIONAL |
+| 95 | pitch | Shatter the Ceiling You Built | EMOTIONAL |
+| 96 | pitch | Pride, at Last | EMOTIONAL |
+| 97 | pitch | The Journey Starts Today | EMOTIONAL |
+| 98 | pitch | Take Your Seat | CTA |
+| 99 | pitch | Thank You | GRATITUDE |
+| 100 | pitch | The Chorus, One Last Time | CENTRAL-HOOK, HOOK, CALLBACK |
+| 101 | pitch | A Manifesto — Part I | MANIFESTO |
+| 102 | pitch | A Manifesto — Part II | MANIFESTO |
+| 103 | pitch | Finish It in Your Own Words | MANIFESTO, FILL-IN-THE-BLANK, CENTRAL-HOOK |
 
 ### Slide 1 — AVATAR — Phase 1 — The Avatar Section
 *(phase label slide — carries name + purpose)*
@@ -258,7 +260,7 @@ Here is my why, full voice: I build because someone out there is one honest word
 ### Slide 25 — TEACHING — Phase 3 — Transformational Teaching
 *(phase label slide — carries name + purpose)*
 
-Purpose: to hand you the map, one step at a time, so a calling stops feeling like a mystery and starts feeling like a method.
+Purpose: to hand you the map, one step at a time, so a calling stops feeling like a mystery and starts feeling like a method. #StillCalled
 
 > Suggested image: A large blueprint unrolled on a wooden table, weighted at the corners, a compass on top.
 
@@ -294,7 +296,7 @@ A thought-provoking question: what did you love before the world told you it was
 
 ### Slide 31 — TEACHING — Step 1 — A Story in Three Beats
 
-A woman told me she 'just organizes things.' Beat one: her team fell apart without her. Beat two: she rebuilt it in a week. Beat three: she still called it 'nothing special.'
+Picture someone who insists she 'just organizes things.' Beat one: the team falls apart without her. Beat two: she rebuilds it in a week. Beat three: she still calls it 'nothing special.' This is not one client — it is a pattern you have watched, and maybe lived.
 
 > Suggested image: A three-panel comic strip of the same calm figure holding chaos together.
 
@@ -312,7 +314,7 @@ Action steps: 1) List three moments you were thanked and shrugged it off. 2) Cir
 
 ### Slide 34 — TEACHING — Step 1 — Affirmation: Openness
 
-Say it: 'I open my hands. What I am for is allowed to be bigger than what I have settled for.' Openness is the affirmation of the Purpose Quest.
+Say it: 'I open my hands. What I am for is allowed to be bigger than what I have settled for.' Openness is the affirmation of the Purpose Quest. #StillCalled
 
 > Suggested image: Two open palms lifted into a shaft of light, a small seed resting in them.
 
@@ -390,7 +392,7 @@ Downloadable: the Auditor Rebuttal Card — three sentences to say aloud the nex
 
 ### Slide 47 — TEACHING — Step 3 — Affirmation: Revelation
 
-Say it: 'I do not wait to feel ready. I move, and my courage is revealed to me on the way.' Revelation is the opening affirmation of the Confidence Quest.
+Say it: 'I do not wait to feel ready. I move, and my courage is revealed to me on the way.' Revelation is the opening affirmation of the Confidence Quest. #StillCalled
 
 > Suggested image: A path lighting up one stone at a time only as a foot lands on each.
 
@@ -432,7 +434,7 @@ Say it: 'I walk before I am ready, and the road rises to meet me.' Confidence is
 
 ### Slide 54 — TEACHING — Quest III — The Value Quest
 
-The final Quest turns your calling outward. Its affirmation is Love — because value, in the end, is love made useful to someone else.
+The final Quest turns your calling outward. Its affirmation is Love — because value, in the end, is love made useful to someone else. #StillCalled
 
 > Suggested image: A quest banner reading 'The Value Quest' at a summit overlooking a valley of lights.
 
@@ -468,7 +470,7 @@ Say it: 'I give the gift only I can give, and in the giving I become who I was c
 
 ### Slide 60 — TEACHING — The Bridge
 
-So there is the whole map: name the ache, read your map, silence the auditor, walk unready, give your gift. You already have everything you need. What most people miss next is not information — it is company for the walk. In a moment, I will show you exactly what walking it together looks like.
+So there is the whole map: name the ache, read your map, silence the auditor, walk unready, give your gift. You already have everything you need. What most people miss next is not information — it is company for the walk. In a moment, I will show you exactly what walking it together looks like. #StillCalled
 
 > Suggested image: A trailhead at golden hour where a single path splits into many footprints walking forward side by side.
 
@@ -485,235 +487,247 @@ The door is open — all that is left is your name on the other side.
 
 > Suggested image: A door ajar with warm light spilling out; a name plate that is blank, waiting.
 
-### Slide 63 — PITCH — Setting the Stage
+### Slide 63 — PITCH — The Chorus, Reprised
+
+The world is waiting on the one thing only you can do.
+
+> Suggested image: Return to the pure-typography chorus slide, deep indigo field, the single line centered; the same words as the opening, held a beat longer.
+
+### Slide 64 — PITCH — Setting the Stage
 
 You did not come this far to only come this far. The title of what comes next is not a program name — it is a transformation: from unclaimed to unmistakably called.
 
 > Suggested image: A theatre curtain parting on a bright, empty, welcoming stage.
 
-### Slide 64 — PITCH — Break Free
+### Slide 65 — PITCH — Break Free
 
 Break free of the loop: prove, exhaust, doubt, repeat. There is a door out of the loop, and it has been unlocked this whole time.
 
 > Suggested image: A person stepping out of a spinning revolving door into open air.
 
-### Slide 65 — PITCH — Introducing The Called Collective
+### Slide 66 — PITCH — Introducing The Called Collective
 
 So here it is, with zero ambiguity — because people buy clarity. The Called Collective is a 12-week guided journey where you walk the entire Wayfinder Blueprint with a small cohort of the quietly capable, and come out claimed.
 
 > Suggested image: A warm circle of chairs around a glowing hearth, a banner reading 'The Called Collective'.
 
-### Slide 66 — PITCH — The Mechanism
+### Slide 67 — PITCH — The Mechanism
 
 The engine is the Wayfinder Blueprint plus weekly Quest sessions, a walking-partner accountability pair, and monthly 'answered' checkpoints. Mindset, action, and a mechanism that makes the walk inevitable.
 
 > Suggested image: A clean three-gear diagram labeled Mindset, Action, Accountability turning as one.
 
-### Slide 67 — PITCH — Benefit — Clarity at Last
+### Slide 68 — PITCH — Benefit — Clarity at Last
 
 You will name your calling in plain words you can say without flinching — and know exactly who it is for.
 
 > Suggested image: A foggy sign resolving into crisp, readable letters.
 
-### Slide 68 — PITCH — Benefit — The Auditor, Quiet
+### Slide 69 — PITCH — Benefit — The Auditor, Quiet
 
 The clipboard voice loses its authority. You will move before it finishes its sentence.
 
 > Suggested image: A clipboard closed and set down on a windowsill, sunlight taking the room.
 
-### Slide 69 — PITCH — Benefit — A Room That Sees You
+### Slide 70 — PITCH — Benefit — A Room That Sees You
 
 A cohort of people who recognize your gift on sight — the room you have been the quiet engine of, finally pointed back at you.
 
 > Suggested image: A circle of faces turned toward one person, warm and attentive.
 
-### Slide 70 — PITCH — Benefit — An Offer You Can Make
+### Slide 71 — PITCH — Benefit — An Offer You Can Make
 
 You will craft and deliver the gift only you can give — and practice giving it before the stakes are real.
 
 > Suggested image: A gift being rehearsed in a mirror, then handed to a real pair of hands.
 
-### Slide 71 — PITCH — Benefit — Motion Over Motivation
+### Slide 72 — PITCH — Benefit — Motion Over Motivation
 
 A weekly walk that does not depend on how you feel — a structure that carries you on the days willpower won't.
 
 > Suggested image: A moving walkway carrying a calm figure forward past a stalled crowd.
 
-### Slide 72 — PITCH — Benefit — Proof You Can Feel
+### Slide 73 — PITCH — Benefit — Proof You Can Feel
 
 Monthly 'answered' checkpoints where you see, in writing, how far you have actually come — the receipts your doubt keeps hiding.
 
 > Suggested image: A progress journal with checkmarks accumulating down the page.
 
-### Slide 73 — PITCH — Benefit — A Calling That Pays
+### Slide 74 — PITCH — Benefit — A Calling That Pays
 
 Value built so relentlessly that price becomes a non-issue — because price only matters in the absence of value.
 
 > Suggested image: A scale with 'value' heavy on one side and a small feather labeled 'price' rising.
 
-### Slide 74 — PITCH — Not Just Self-Help
+### Slide 75 — PITCH — Not Just Self-Help
 
 This is not another shelf of self-help you will feel guilty for not finishing. It is a guided crossing with a map, a guide, and company — designed so you actually arrive.
 
 > Suggested image: A dusty stack of unread books beside a single open trail map with a lantern.
 
-### Slide 75 — PITCH — A Proven Framework
+### Slide 76 — PITCH — A Proven Framework
 
 The Wayfinder Blueprint has walked hundreds of quietly capable people from 'is my time coming?' to 'my time is here.' The path is proven; only your footprints are missing.
 
 > Suggested image: Countless faint footprints along a trail, one fresh set beginning at the front.
 
-### Slide 76 — PITCH — In Their Words
+### Slide 77 — PITCH — In Their Words
 
 "I spent years being indispensable to everyone but myself. Twelve weeks in, I made the offer I had been swallowing for a decade — and someone said yes." — a graduate of the journey, anonymized.
 
 > Suggested image: A handwritten testimonial card pinned to a corkboard among many others.
 
-### Slide 77 — PITCH — Future-Pace
+### Slide 78 — PITCH — Future-Pace
 
 Picture ninety days from now: the ache named, the auditor quiet, the offer live. Same you. Different Monday. The only variable is whether you start.
 
 > Suggested image: A calendar flipping forward 90 days to a date circled and glowing.
 
-### Slide 78 — PITCH — For a Deeper Crossing — The Wayfinder VIP Intensive
+### Slide 79 — PITCH — For a Deeper Crossing — The Wayfinder VIP Intensive
 
 For those who want the fast, private version, The Wayfinder VIP Intensive is a single focused day, one-to-one, where we build your entire calling map and your first real offer in one sitting.
 
 > Suggested image: A private study with two chairs, a whiteboard mid-map, and a 'do not disturb' sign.
 
-### Slide 79 — PITCH — Everything You Receive
+### Slide 80 — PITCH — Everything You Receive
 
-To be perfectly clear: The Called Collective — 12 weekly Quest sessions, a walking-partner pair, the full Blueprint toolkit, monthly checkpoints; and the option of {OFFER_2} for a private, accelerated crossing.
+To be perfectly clear: The Called Collective — 12 weekly Quest sessions, a walking-partner pair, the full Blueprint toolkit, monthly checkpoints; and the option of The Wayfinder VIP Intensive for a private, accelerated crossing.
 
 > Suggested image: A neatly laid-out flat-lay of everything included, labeled like a field kit.
 
-### Slide 80 — PITCH — The Best Version of You
+### Slide 81 — PITCH — The Best Version of You
 
 This is how you become the best version of you — not a new person, the true one, finally unhidden and put to work.
 
 > Suggested image: A double exposure of a hesitant self dissolving into a confident self.
 
-### Slide 81 — PITCH — Transformation by Choice
+### Slide 82 — PITCH — Transformation by Choice
 
 Transformation is not something that happens to you. It is something you choose, on a specific day, at a specific fork. You are standing at that fork right now.
 
 > Suggested image: A single figure at a lit crossroads at dusk, both paths visible.
 
-### Slide 82 — PITCH — The Founding Cohort
+### Slide 83 — PITCH — The Founding Cohort
 
 Honest scarcity, no fabrication: the first cohort is capped at 20 walking partners so every one is truly seen, and founding members join at the founding rate of $1,500 before it moves to $2,400. When the 20 seats are filled, enrollment closes.
 
 > Suggested image: Twenty lanterns on a wall, several already lit, a few still dark.
 
-### Slide 83 — PITCH — A Community Bonus
+### Slide 84 — PITCH — A Community Bonus
 
 Founding members also receive lifetime access to the Called Collective alumni circle — the room stays yours long after the 12 weeks end.
 
 > Suggested image: A warm alumni gathering years later, the same faces, older and lit up.
 
-### Slide 84 — PITCH — Lifetime Access
+### Slide 85 — PITCH — Lifetime Access
 
 Every Quest session is recorded and yours to keep for life. The map does not expire, and neither does your seat at the fire.
 
 > Suggested image: A library shelf of labeled session recordings glowing softly.
 
-### Slide 85 — PITCH — A Real Guarantee
+### Slide 86 — PITCH — A Real Guarantee
 
 And the risk is mine, not yours: walk the first three weeks, do the work, and if the map has not already moved you, ask and receive a full, no-friction, money-back guarantee. You cannot lose what you were built to find.
 
 > Suggested image: A handshake over a document titled 'Our Promise', warm and unhurried.
 
-### Slide 86 — PITCH — Your Two Roads
+### Slide 87 — PITCH — Your Two Roads
 
-So, two roads: the crowded safe one where the ache stays and next year looks like this one — or the quiet lit one, walked with company, toward the work only you can do.
+So, two roads: the crowded safe one where the ache stays and next year looks like this one — or the quiet lit one, walked with company, toward a calling you finally answer out loud.
 
 > Suggested image: The forest fork again, now with a lantern lit on the less-traveled path.
 
-### Slide 87 — PITCH — Your Chance to Break Free
+### Slide 88 — PITCH — Your Chance to Break Free
 
 This is your chance to break free of the loop for good — not someday, not once things settle, but in the next 12 weeks, on purpose.
 
 > Suggested image: A bird lifting off from an open cage door into a bright sky.
 
-### Slide 88 — PITCH — Answer the Call
+### Slide 89 — PITCH — Answer the Call
 
 If your chest tightened even once tonight, that was not nerves — that was recognition. Enroll now in the Called Collective and answer the call while it is still ringing.
 
 > Suggested image: A hand reaching for a ringing old telephone glowing on a table.
 
-### Slide 89 — PITCH — Your Future Is Waiting
+### Slide 90 — PITCH — Your Future Is Waiting
 
 Your future is not far away. It is standing at the door you have already found, holding it open, wondering what took you so long.
 
 > Suggested image: A figure in a lit doorway, hand extended toward the viewer.
 
-### Slide 90 — PITCH — You Are Worthy of This
+### Slide 91 — PITCH — You Are Worthy of This
 
 Hear this plainly: you were always worthy of the calling. Worthiness was never the gate. Willingness is.
 
 > Suggested image: A mirror reflecting the reader haloed in soft, deserving light.
 
-### Slide 91 — PITCH — Join the Movement
+### Slide 92 — PITCH — Join the Movement
 
-This is bigger than a program. It is a quiet movement of the capable refusing to stay unclaimed. Join us, and add your footprints to the path.
+This is bigger than a program. It is a quiet movement of the capable refusing to stay unclaimed. Join us, and add your footprints to the path. #StillCalled
 
 > Suggested image: A long line of diverse people walking a lit trail together toward dawn.
 
-### Slide 92 — PITCH — This Is Your Moment
+### Slide 93 — PITCH — The Chorus, Rising
+
+The world is waiting on the one thing only you can do.
+
+> Suggested image: Pure-typography chorus slide once more, indigo warming toward first light at the edges; the single line, unhurried, sure.
+
+### Slide 94 — PITCH — This Is Your Moment
 
 Not next quarter. Not when the kids are older. This — this ordinary, extraordinary night — is your moment. Moments do not wait; they pass.
 
 > Suggested image: A single spotlight finding one face in a crowd, holding on it.
 
-### Slide 93 — PITCH — Shatter the Ceiling You Built
+### Slide 95 — PITCH — Shatter the Ceiling You Built
 
 The only ceiling over you is the one you plastered yourself. Reach up. It was always made of paper.
 
 > Suggested image: A hand punching easily through a paper 'ceiling' into open sky.
 
-### Slide 94 — PITCH — Pride, at Last
+### Slide 96 — PITCH — Pride, at Last
 
-Imagine the pride — not borrowed from a title, but earned from finally doing the work only you can do, for the people only you can reach.
+Imagine the pride — not borrowed from a title, but earned from finally answering the calling that has been quietly yours all along, for the people who have been waiting for exactly it.
 
 > Suggested image: A quiet, private smile of someone reading a thank-you note alone.
 
-### Slide 95 — PITCH — The Journey Starts Today
+### Slide 97 — PITCH — The Journey Starts Today
 
 The journey does not start when you feel ready. It starts the day you decide — and that day can be today.
 
 > Suggested image: A sunrise breaking exactly at a trailhead sign reading 'Day One'.
 
-### Slide 96 — PITCH — Take Your Seat
+### Slide 98 — PITCH — Take Your Seat
 
 Claim your seat in the founding cohort now, before the twenty lanterns are all lit. Say yes, and let the crossing begin.
 
 > Suggested image: A single empty chair in the warm circle with a soft reserved glow.
 
-### Slide 97 — PITCH — Thank You
+### Slide 99 — PITCH — Thank You
 
 Whatever you choose tonight: thank you for letting me tell your story back to you, and for trusting me with mine.
 
 > Suggested image: A speaker with hand on heart, bowing slightly to a warm, blurred audience.
 
-### Slide 98 — PITCH — The Chorus, One Last Time
+### Slide 100 — PITCH — The Chorus, One Last Time
 
 The world is waiting on the one thing only you can do.
 
 > Suggested image: Return to the pure-typography chorus slide, indigo field, the single line, now with a faint doorway of light behind the words.
 
-### Slide 99 — PITCH — A Manifesto — Part I
+### Slide 101 — PITCH — A Manifesto — Part I
 
 You were not made to be manageable. You were made to be met. You were not born to blend — you were born to be the one thing a room did not know it was missing.
 
 > Suggested image: Hand-lettered manifesto text over a slow dawn, each line appearing as if spoken.
 
-### Slide 100 — PITCH — A Manifesto — Part II
+### Slide 102 — PITCH — A Manifesto — Part II
 
-So rise, quietly capable one. Read your map. Silence the auditor. Walk before you are ready. Give the gift only you can give. The world is waiting — and it has waited long enough.
+So rise, quietly capable one. Read your map. Silence the auditor. Walk before you are ready. Give the gift that is yours to give. The dawn has waited long enough — and now it belongs to you.
 
 > Suggested image: The dawn now fully broken, the lettering blazing gold, a path leading into light.
 
-### Slide 101 — PITCH — Finish It in Your Own Words
+### Slide 103 — PITCH — Finish It in Your Own Words
 
 Say it with me, and finish the last line yourself, out loud: I AM CALLED. I AM CAPABLE. I AM ______.
 

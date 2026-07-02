@@ -11,12 +11,12 @@ three SP provers and drives `prove-deck.py` to a process certificate.
   recurring motif hashtag (`#StillCalled`), riddle + definition-pair (*morning vs
   mourning*) + literary passage (Frost) devices, and the Directive-13 poetic
   **fill-in-the-blank manifesto** close (`I AM CALLED. I AM CAPABLE. I AM ______.`).
-- **Slides:** 101 (≥100 floor; no client-exact override).
-  - Avatar 1–11 (11) · Story 12–24 (13) · Teaching 25–60 (36) · Pitch 61–101 (41)
+- **Slides:** 103 (≥100 floor; no client-exact override).
+  - Avatar 1–11 (11) · Story 12–24 (13) · Teaching 25–60 (36) · Pitch 61–103 (43)
   - Contiguous, in order; bridge is contiguous (last teaching 60 → first pitch 61).
 - **Teaching:** the *Wayfinder Blueprint* — 3 Quests, **5 steps** (within 3–7).
 - **Case studies:** exactly **2** (slides 39, 51), within the ≤2 cap.
-- **Hooks:** 1 central chorus + 4 distinct section hooks (one per phase).
+- **Hooks:** 1 central chorus (on 4 dedicated pure-typography slides: 2, 63, 93, 100) + 4 distinct section hooks (one per phase).
 - **Markers:** N.E.E.I.T. + 4-Quadrant on Avatar/Story/Pitch; Movement + Message +
   Methodology present.
 - **Offer (q7):** *The Called Collective* + *The Wayfinder VIP Intensive* — named
@@ -27,7 +27,7 @@ three SP provers and drives `prove-deck.py` to a process certificate.
 | File | Purpose |
 |---|---|
 | `sp_intake.json` | Runtime intake record (8 Questions in one block + Quest frame + offer ledger) |
-| `sp_structure.json` | Deck copy ledger (101 slides: slide/phase/label_slide/title/body/suggested_image/tags) |
+| `sp_structure.json` | Deck copy ledger (103 slides: slide/phase/label_slide/title/body/suggested_image/tags) |
 | `slides_copy.md` | Human-readable copy ledger |
 | `working/copy/*.json` | Run-dir mirrors consumed by the provers (`--run-dir`) |
 | `working/checkpoints/*.json` | Declared plan + attestations + client reports (governed run) |

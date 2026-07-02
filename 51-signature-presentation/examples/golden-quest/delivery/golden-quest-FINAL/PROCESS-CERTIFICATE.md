@@ -6,11 +6,11 @@
 |---|---|
 | Deck slug | `golden-quest` |
 | Declared at | 2026-07-02T09:00:00+00:00 |
-| Certified at | 2026-07-02T06:37:47+00:00 |
+| Certified at | 2026-07-02T07:46:51+00:00 |
 | Declared steps | 5 |
 | Verified steps | 5 |
 | Owner-approved skips | 0 |
-| Certificate SHA | `a2d93fc40a0ab9b9ddc24b6fef80cf874ac45cb27b793c3a206fdb4561637cac` |
+| Certificate SHA | `9d8aa1e1610bae81f170ce11dcf2514d16e240905a849f46dd1d35bc3df8b71a` |
 
 ## Step Detail
 

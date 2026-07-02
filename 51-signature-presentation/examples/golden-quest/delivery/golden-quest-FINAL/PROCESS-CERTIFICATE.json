@@ -2,7 +2,7 @@
   "schema": "process-certificate-v1",
   "deck_slug": "golden-quest",
   "declared_at": "2026-07-02T09:00:00+00:00",
-  "certified_at": "2026-07-02T06:37:47+00:00",
+  "certified_at": "2026-07-02T07:46:51+00:00",
   "declared_steps": 5,
   "verified_steps": 5,
   "skipped_with_approval": 0,
@@ -59,5 +59,5 @@
       ]
     }
   ],
-  "certificate_sha": "a2d93fc40a0ab9b9ddc24b6fef80cf874ac45cb27b793c3a206fdb4561637cac"
+  "certificate_sha": "9d8aa1e1610bae81f170ce11dcf2514d16e240905a849f46dd1d35bc3df8b71a"
 }
