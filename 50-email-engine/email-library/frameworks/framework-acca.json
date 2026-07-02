@@ -1,0 +1,47 @@
+{
+  "id": "framework-acca",
+  "type": "framework",
+  "name": "ACCA (Awareness-Comprehension-Conviction-Action)",
+  "tags": [
+    "clarity",
+    "education",
+    "conviction",
+    "certainty",
+    "methodical-buyer",
+    "logical-persuasion",
+    "problem-aware",
+    "understanding",
+    "teaching-sell",
+    "complex-problems",
+    "trust-through-clarity"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "methodical",
+    "promotional",
+    "downsell",
+    "complex-offers",
+    "education-first-audiences"
+  ],
+  "file": "framework-acca.md",
+  "rules": {
+    "kind": "framework",
+    "framework_id": "acca",
+    "structure": [
+      "Awareness",
+      "Comprehension",
+      "Conviction",
+      "Action"
+    ],
+    "enforced_part_count": 4,
+    "word_band": [
+      150,
+      300
+    ],
+    "cta_min": 1,
+    "af_codes": [
+      "AF-EMAIL-FRAMEWORK-UNKNOWN",
+      "AF-EMAIL-FRAMEWORK-INCOMPLETE"
+    ]
+  }
+}

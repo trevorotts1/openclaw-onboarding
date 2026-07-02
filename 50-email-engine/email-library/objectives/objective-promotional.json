@@ -1,0 +1,41 @@
+{
+  "id": "objective-promotional",
+  "type": "objective",
+  "name": "Promotional",
+  "tags": [
+    "objective",
+    "warm-audience",
+    "scarcity",
+    "fomo",
+    "exclusivity",
+    "belonging",
+    "social-proof",
+    "anticipation",
+    "curiosity",
+    "value-driven-desire",
+    "launch",
+    "campaign",
+    "singular-focus",
+    "per-buyer-type-tactics"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "spontaneous",
+    "methodical",
+    "humanistic",
+    "competitive",
+    "launches",
+    "warm-lists",
+    "all-13-frameworks"
+  ],
+  "file": "objective-promotional.md",
+  "rules": {
+    "kind": "objective",
+    "objective_id": "promotional",
+    "one_objective_per_email": true,
+    "per_buyer_type_tactics": true,
+    "af_codes": [
+      "AF-EMAIL-OBJECTIVE-INVALID"
+    ]
+  }
+}

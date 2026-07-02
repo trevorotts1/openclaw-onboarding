@@ -170,6 +170,7 @@ This role contributes to the company revenue cascade by: **creating the conversi
 | Design Tools (Canva, Figma, Adobe Creative Suite) | Lead magnet layout and design; PDF creation; visual asset development for landing pages | Account or team license | Template library for consistent lead magnet branding |
 | Analytics (Google Analytics 4, CRM analytics) | Landing page performance; conversion tracking; user behavior on landing pages; attribution | Admin access | Event tracking for form submissions and file downloads |
 | Heatmap / Session Recording (Hotjar, Microsoft Clarity) | Landing page user behavior analysis; form interaction patterns; conversion friction identification | JavaScript snippet | Review heatmaps for top lead magnet landing pages monthly |
+| **Email Engine + superlibrary (Skill 50)** | Generate the post-opt-in nurture email sequence for a lead magnet | `50-email-engine/` -- `tools/email_matcher_cli.py --match` selects framework/buyer-type/objective/persona/sequence; `tools/prove-email.py` QCs (fail-closed); draft-only deploy via Skill 44 | Client runtime uses the CLIENT's own provider (never Anthropic); the deterministic gates (email_matcher.py, prove-email.py) are provider-neutral; nothing sends without human approval. |
 
 ---
 

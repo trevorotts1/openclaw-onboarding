@@ -12,6 +12,8 @@
 
 Morning sweep — after inbox triage, before the daily briefing to {{OWNER_NAME}}.
 
+> **Reusable library:** when the digest becomes an outbound newsletter/broadcast (not just an internal summary), author it through the **Email Engine (Skill 50)** — pick a framework via `50-email-engine/tools/email_matcher_cli.py --match`, write to the SACRED word/subject bands, and QC with the fail-closed `50-email-engine/tools/prove-email.py` before send. Nothing sends without {{OWNER_NAME}}'s approval.
+
 **Frequency:** Daily (weekdays).
 
 **Inputs:** All newsletters and industry publications received in the last 24 hours that {{OWNER_NAME}} is actively subscribed to.

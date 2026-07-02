@@ -52,7 +52,7 @@ Skills are shared. Your setup is yours. Keeping them apart means you can update 
 
 ---
 
-## Funnel + Automation Template Libraries (Skill 06 / Skill 44) — template-first / reuse-before-reinvent
+## Funnel + Automation + Email Template Libraries (Skill 06 / Skill 44 / Skill 50) — template-first / reuse-before-reinvent
 
 - **Funnel template library (38 templates)** — `06-ghl-install-pages/funnel-templates/` by category
   (buyer, event, lead, retention-followup, traffic-advanced). Each carries `pageStructure`,
@@ -65,6 +65,13 @@ Skills are shared. Your setup is yours. Keeping them apart means you can update 
   multichannel-automation). Match with
   `python3 44-convert-and-flow-operator/automation-templates/_matcher/cli.py --match "<outcome>" --json`
   (Skill-44 INSTRUCTIONS Step 0.4). Shared matcher core: `_matcher/flex.py`.
+- **Email superlibrary (36 entries)** — `50-email-engine/email-library/` (13 marketing-email frameworks,
+  4 buyer-types, 4 objectives, 12 persona styles, 3 named sequences: landing-page-10 / high-ticket-12 /
+  buyer-type-12). Match with `python3 50-email-engine/tools/email_matcher_cli.py --match "<request>" --json`
+  (reads the committed `email-library/catalog-index.json`; rebuild via `--build-index`). Every generated
+  email/sequence is QC'd by the fail-closed `50-email-engine/tools/prove-email.py` floor prover (SACRED
+  word/subject/CTA/signature bands) before a DRAFT-ONLY Skill-44 workflow deploy. Shared SOP cluster:
+  `universal-sops/email-craft/`.
 - **Funnel→automation link map** — `44-.../automation-templates/_links/funnel-to-automation.json`
   (canonical v2; `…-link-map.json` is the DEPRECATED v1). Maps each funnel to its recommended
   follow-up automations; keyed by `funnel_template_id`.

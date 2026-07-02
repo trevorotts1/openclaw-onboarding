@@ -1,0 +1,50 @@
+{
+  "id": "framework-pastor-story",
+  "type": "framework",
+  "name": "P.A.S.T.O.R. V2 (Story Version)",
+  "tags": [
+    "storytelling",
+    "narrative-led",
+    "emotional-connection",
+    "testimonials",
+    "social-proof",
+    "humanistic-buyer",
+    "long-form",
+    "transformation",
+    "ray-edwards",
+    "high-ticket",
+    "identification",
+    "story-arc"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "humanistic",
+    "promotional",
+    "upsell",
+    "high-ticket",
+    "audiences-fatigued-by-pitches"
+  ],
+  "file": "framework-pastor-story.md",
+  "rules": {
+    "kind": "framework",
+    "framework_id": "pastor-story",
+    "structure": [
+      "Problem",
+      "Amplify",
+      "Story & Solution",
+      "Transformation & Testimony",
+      "Offer",
+      "Response"
+    ],
+    "enforced_part_count": 6,
+    "word_band": [
+      150,
+      300
+    ],
+    "cta_min": 1,
+    "af_codes": [
+      "AF-EMAIL-FRAMEWORK-UNKNOWN",
+      "AF-EMAIL-FRAMEWORK-INCOMPLETE"
+    ]
+  }
+}

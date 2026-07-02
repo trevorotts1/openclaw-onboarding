@@ -1,0 +1,16 @@
+{
+  "framework": "pas",
+  "objective": "promotional",
+  "founder_name": "Jordan Marsh",
+  "subjects": [
+    "{{contact.first_name}}, the quiet cost of putting this off again",
+    "A month from now this is solved or bigger"
+  ],
+  "previews": [
+    "It does not stay the same size while you wait."
+  ],
+  "ctas": [
+    "[Start your reset now ->]"
+  ],
+  "body": "{{contact.first_name}},\n\nThere is a project you keep meaning to fix, the one that leaks a little time, a little money, and a little confidence every single week.\n\nIf you have ever ended a Friday wondering where the whole week actually went, you know the exact one I mean.\n\nHere is the uncomfortable part, it is not staying the same size, and every month it goes unsolved it costs you more, in missed chances, redone work, and energy you never get back.\n\nWorse, it quietly trains you to expect less from yourself, which is the real tax, not the lost hours but the shrinking of what you believe is possible.\n\nAs Tony Robbins says, it does not have to work this way.\n\nThe Momentum Method was built for exactly this, a guided thirty-day reset that isolates the leak, installs the fix, and hands you back your week.\n\nA month from now this problem is either solved or bigger, and you get to choose which one it becomes.\n\n[Start your reset now ->]\n\nChoose solved, {{contact.first_name}}.\n\nJordan Marsh"
+}

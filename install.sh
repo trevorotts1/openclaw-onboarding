@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v16.3.0"
+ONBOARDING_VERSION="v16.4.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -739,7 +739,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 5 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/51-... (44 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/51-... (45 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -4670,7 +4670,7 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 44 active skills install in 5 dependency-aware waves, not by number order.
+The 45 active skills install in 5 dependency-aware waves, not by number order.
 Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
 A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
@@ -6542,6 +6542,44 @@ install_skill_48_facebook_ad_generator() {
 }
 
 install_skill_48_facebook_ad_generator
+
+# ----------------------------------------------------------
+# Skill 50: Email Engine (governed email skill + Email Superlibrary)
+# ----------------------------------------------------------
+# Self-contained: this template install copies the Skill 50 folder (SKILL.md,
+# EMAIL-MANIFEST.json, the intake gate, the email-library catalog + prebuilt index,
+# the email_matcher, the model-free floor prover prove-email.py, and the draft-only
+# build-plan emitter). NO external clone. Skill 50 owns the IP + the gates: it
+# SELECTS a framework, GENERATES corpus-faithful copy, QCs it against prove-email.py,
+# and hands a DRAFT-ONLY deploy plan to the Convert & Flow (GoHighLevel) operator
+# (Skill 44) — nothing is ever sent without explicit human approval. It never forks
+# the sender. On a client box it uses the CLIENT's own configured providers/keys —
+# never the operator's, never Anthropic model ids. Skill 44 is the deploy prerequisite.
+install_skill_50_email_engine() {
+    local SKILL_SRC="$ONBOARDING_DIR/50-email-engine"
+    local SKILL_DEST="$SKILLS_DIR/50-email-engine"
+
+    if [ ! -d "$SKILL_SRC" ]; then
+        warn "Skill 50 source dir not found at $SKILL_SRC — skipping (older onboarding bundle?)"
+        return 0
+    fi
+
+    mkdir -p "$SKILL_DEST"
+    cp -R "$SKILL_SRC/." "$SKILL_DEST/" 2>>"$LOG_FILE" || {
+        warn "Failed to copy Skill 50 from $SKILL_SRC -> $SKILL_DEST"
+        return 0
+    }
+    chmod +x "$SKILL_DEST/email-engine-entry.sh" "$SKILL_DEST/run_email_engine.py" \
+             "$SKILL_DEST/verify.sh" 2>/dev/null || true
+    chmod +x "$SKILL_DEST/tools/"*.py 2>/dev/null || true
+
+    success "Skill 50 (Email Engine) installed -> $SKILL_DEST"
+    note "Skill 50 is the governed email skill + Email Superlibrary for the marketing/CRM/sales seats: 13 frameworks, 12 persona styles, the buyer-type -> email# -> framework map, the 4 sequence objectives, the 10-email landing-page promo sequence and the 12-email buyer-type/high-ticket-appointment sequences, each gated as a SACRED structure by the deterministic model-free floor prover prove-email.py."
+    note "It runs P1 SELECT -> P2 GENERATE -> P3 QC -> P4 DEPLOY through one canonical entry (email-engine-entry.sh) with a deps/bypass/hash-pin/nonce fail-closed gate, then hands a DRAFT-ONLY build plan to the Convert & Flow operator (Skill 44) for deploy. Nothing is ever sent without explicit human approval. Skill 44 is the deploy prerequisite."
+    return 0
+}
+
+install_skill_50_email_engine
 
 # ----------------------------------------------------------
 # Skill 51: Signature Presentation (methodology layer for the presentations dept)

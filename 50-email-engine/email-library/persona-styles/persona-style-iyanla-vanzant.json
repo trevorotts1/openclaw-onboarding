@@ -1,0 +1,45 @@
+{
+  "id": "persona-style-iyanla-vanzant",
+  "type": "persona-style",
+  "name": "Iyanla Vanzant Style (Affirmations / Meditation)",
+  "tags": [
+    "persona-style",
+    "spiritual",
+    "rhythmic",
+    "poetic",
+    "beloved",
+    "dear-one",
+    "worthiness",
+    "ceremonial",
+    "affirmations",
+    "healing",
+    "inner-work",
+    "high-ticket",
+    "upsell-2",
+    "humanistic",
+    "sacred-framing",
+    "blessing"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "upsell",
+    "high-ticket",
+    "humanistic",
+    "healing-transformation-offers",
+    "spiritual-adjacent-audiences"
+  ],
+  "file": "persona-style-iyanla-vanzant.md",
+  "rules": {
+    "kind": "persona-style",
+    "persona_style_id": "iyanla-vanzant",
+    "scope": "high-ticket / Upsell-2",
+    "never_named_or_quoted": true,
+    "no_repeat_within_campaign": true,
+    "acknowledge_prior_purchases": true,
+    "cohesive_across_sequence": true,
+    "af_codes": [
+      "AF-EMAIL-PERSONA-INVALID",
+      "AF-EMAIL-PERSONA-NAMED"
+    ]
+  }
+}

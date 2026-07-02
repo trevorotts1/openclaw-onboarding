@@ -1,0 +1,58 @@
+{
+  "id": "framework-million-dollar-sales",
+  "type": "framework",
+  "name": "Million Dollar Sales",
+  "tags": [
+    "long-form",
+    "twelve-part",
+    "disqualification",
+    "credibility",
+    "multiple-cta",
+    "humorous-ps",
+    "competitive-buyer",
+    "launch",
+    "relationship-building",
+    "intention-callout",
+    "exclusivity",
+    "self-selection",
+    "landing-page-email-8"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "competitive",
+    "promotional",
+    "upsell",
+    "launches",
+    "landing-page-10-promo-email-8",
+    "offers-with-strong-proof"
+  ],
+  "file": "framework-million-dollar-sales.md",
+  "rules": {
+    "kind": "framework",
+    "framework_id": "million-dollar-sales",
+    "structure": [
+      "Attention Grabber",
+      "Intention Call-Out",
+      "Disqualifier",
+      "Credibility",
+      "Context",
+      "CTA#1",
+      "Benefits",
+      "Testimonial",
+      "CTA#2",
+      "Final Intention Call-Out",
+      "Final CTA#3",
+      "Humorous P.S."
+    ],
+    "enforced_part_count": 12,
+    "word_band": [
+      150,
+      300
+    ],
+    "cta_min": 1,
+    "af_codes": [
+      "AF-EMAIL-FRAMEWORK-UNKNOWN",
+      "AF-EMAIL-FRAMEWORK-INCOMPLETE"
+    ]
+  }
+}

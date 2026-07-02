@@ -1,0 +1,53 @@
+{
+  "id": "buyer-type-competitive",
+  "type": "buyer-type",
+  "name": "Competitive Buyer",
+  "tags": [
+    "buyer-psychology",
+    "results-driven",
+    "status",
+    "achievement",
+    "edge",
+    "winning",
+    "control",
+    "skeptical-of-fluff",
+    "emails-10-12",
+    "aida",
+    "million-dollar-sales",
+    "before-after-bridge",
+    "subject-line-guidance",
+    "exclusivity",
+    "bold-claims"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "aida",
+    "million-dollar-sales",
+    "before-after-bridge",
+    "high-ticket",
+    "premium-tiers",
+    "performance-offers"
+  ],
+  "file": "buyer-type-competitive.md",
+  "rules": {
+    "kind": "buyer-type",
+    "buyer_type_id": "competitive",
+    "email_slots": [
+      10,
+      11,
+      12
+    ],
+    "frameworks": [
+      "aida",
+      "million-dollar-sales",
+      "before-after-bridge"
+    ],
+    "applies_to": [
+      "convert_and_flow buyer_type_12",
+      "high_ticket_12"
+    ],
+    "af_codes": [
+      "AF-EMAIL-BUYERTYPE-MAP"
+    ]
+  }
+}

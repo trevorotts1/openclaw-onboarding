@@ -1,0 +1,40 @@
+{
+  "id": "objective-upsell",
+  "type": "objective",
+  "name": "Upsell",
+  "tags": [
+    "objective",
+    "upgrade",
+    "commitment-consistency",
+    "perceived-value-multiplication",
+    "status-aspiration",
+    "fear-of-suboptimal",
+    "convenience-efficiency",
+    "existing-customers",
+    "ascension",
+    "premium-tier",
+    "post-purchase",
+    "per-buyer-type-tactics",
+    "persona-styles"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "spontaneous",
+    "methodical",
+    "humanistic",
+    "competitive",
+    "existing-customers",
+    "premium-tiers",
+    "persona-style-emails"
+  ],
+  "file": "objective-upsell.md",
+  "rules": {
+    "kind": "objective",
+    "objective_id": "upsell",
+    "one_objective_per_email": true,
+    "per_buyer_type_tactics": true,
+    "af_codes": [
+      "AF-EMAIL-OBJECTIVE-INVALID"
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "id": "persona-style-david-goggins",
+  "type": "persona-style",
+  "name": "David Goggins Style (No-Excuses — No Cursing)",
+  "tags": [
+    "persona-style",
+    "no-excuses",
+    "mental-toughness",
+    "forty-percent-rule",
+    "comfort-zone",
+    "accountability",
+    "discipline",
+    "hard-truth",
+    "callus-the-mind",
+    "high-ticket",
+    "upsell-2",
+    "competitive",
+    "self-confrontation",
+    "no-cursing"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "upsell",
+    "high-ticket",
+    "competitive",
+    "discipline-offers",
+    "plateau-breaking",
+    "accountability-programs"
+  ],
+  "file": "persona-style-david-goggins.md",
+  "rules": {
+    "kind": "persona-style",
+    "persona_style_id": "david-goggins",
+    "scope": "high-ticket / Upsell-2",
+    "never_named_or_quoted": true,
+    "no_repeat_within_campaign": true,
+    "acknowledge_prior_purchases": true,
+    "cohesive_across_sequence": true,
+    "af_codes": [
+      "AF-EMAIL-PERSONA-INVALID",
+      "AF-EMAIL-PERSONA-NAMED"
+    ]
+  }
+}

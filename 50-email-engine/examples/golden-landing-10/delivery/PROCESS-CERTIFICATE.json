@@ -1,0 +1,44 @@
+{
+  "schema": "email-process-certificate-v1",
+  "sequence_id": "sequence-landing-page-10-promo",
+  "sequence_type": "landing_page_10",
+  "email_count": 10,
+  "founder_name": "Jordan Marsh",
+  "declared_phases": [
+    "P1-SELECT",
+    "P2-GENERATE",
+    "P3-QC",
+    "P4-DEPLOY"
+  ],
+  "verified_phases": 4,
+  "all_phases_pass": true,
+  "deploy_mode": "draft-only",
+  "steps": [
+    {
+      "phase_id": "P1-SELECT",
+      "name": "Select",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P2-GENERATE",
+      "name": "Generate",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P3-QC",
+      "name": "QC (fail-closed floor prover)",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P4-DEPLOY",
+      "name": "Deploy (DRAFT-ONLY)",
+      "disposition": "verified",
+      "ok": true
+    }
+  ],
+  "certificate_sha": "6f9a350763e582616264c796dc122bc10636ba0423a2ffc17f9dac541d463f57",
+  "certified_at": "2026-07-02T08:58:53.132577+00:00"
+}

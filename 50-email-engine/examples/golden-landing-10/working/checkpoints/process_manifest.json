@@ -1,0 +1,23 @@
+{
+  "skill": "email-engine",
+  "run_dir": "examples/golden-landing-10",
+  "phases": [
+    {
+      "id": "P1-SELECT",
+      "passed": true
+    },
+    {
+      "id": "P2-GENERATE",
+      "passed": true
+    },
+    {
+      "id": "P3-QC",
+      "passed": true
+    },
+    {
+      "id": "P4-DEPLOY",
+      "passed": true
+    }
+  ],
+  "failed_phase": null
+}

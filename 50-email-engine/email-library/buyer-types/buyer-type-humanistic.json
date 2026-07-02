@@ -1,0 +1,52 @@
+{
+  "id": "buyer-type-humanistic",
+  "type": "buyer-type",
+  "name": "Humanistic Buyer",
+  "tags": [
+    "buyer-psychology",
+    "relationship-driven",
+    "story-driven",
+    "emotional-connection",
+    "people-first",
+    "community",
+    "trust",
+    "emails-7-9",
+    "pastor-story",
+    "star-story-solution",
+    "pas",
+    "subject-line-guidance",
+    "warmth",
+    "belonging"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "pastor-story",
+    "star-story-solution",
+    "pas",
+    "community-offers",
+    "coaching",
+    "service-businesses"
+  ],
+  "file": "buyer-type-humanistic.md",
+  "rules": {
+    "kind": "buyer-type",
+    "buyer_type_id": "humanistic",
+    "email_slots": [
+      7,
+      8,
+      9
+    ],
+    "frameworks": [
+      "pastor-story",
+      "star-story-solution",
+      "pas"
+    ],
+    "applies_to": [
+      "convert_and_flow buyer_type_12",
+      "high_ticket_12"
+    ],
+    "af_codes": [
+      "AF-EMAIL-BUYERTYPE-MAP"
+    ]
+  }
+}

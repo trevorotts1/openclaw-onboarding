@@ -1,3 +1,32 @@
+## [v16.4.0]  -  2026-07-02  -  feat(skill-50): Email Engine — governed email skill + Email Superlibrary that SELECTS a framework, GENERATES corpus-faithful copy, QCs it against a deterministic model-free floor prover, and hands a DRAFT-ONLY deploy plan to the Convert & Flow (GoHighLevel) operator (nothing sent without explicit human approval)
+
+### Risk: low — net-new skill added as an additive, fail-closed methodology + gate layer. It authors copy + a build plan and hands off; it never sends an email itself and never forks the sender. On a client box it uses the CLIENT's own configured providers/keys — never the operator's, never Anthropic model ids. No new Command Center endpoint and no mission-control.db schema change (email jobs ride the existing marketing Kanban lane, fail-soft), so cc-compat `minVersion` + `pinnedTag` are UNCHANGED (v4.56.1). New skill starts at its OWN `1.0.0` (independent of the repo version). No credential values, plists, or client-specific content touched. No client names.
+
+### New skill: 50-email-engine (Email Engine + Email Superlibrary)
+Adds the Trevor Otts email system — the methodology + enforcement layer that owns the reusable **IP and the gates**. It ships `MASTERDOC.md` (the anonymized canonical structures, counts, names, and rules — SACRED, machine-enforced not advisory), `EMAIL-MANIFEST.json` (the P1 SELECT → P2 GENERATE → P3 QC → P4 DEPLOY phase machine), `schema/` + `intake/` (fail-closed intake), and the `email-library/` Email Superlibrary: **13 email frameworks, 12 persona styles**, the buyer-type → email# → framework map, the **4 sequence objectives**, the 10-email landing-page promo sequence, and the 12-email buyer-type / high-ticket-appointment sequences — each gated as a SACRED structure.
+
+### Deterministic model-free floor prover + one canonical entry
+- **`tools/prove-email.py`** — the fail-closed floor prover: subject-line char-band + first-name placement, A/B subject/preview counts, disruptive-element presence for high-ticket, sequence harmony / no-persona-named, and the sacred per-objective structure floors. Model-free and deterministic (no LLM in the gate).
+- **`email-engine-entry.sh`** — the single canonical entry with a deps / bypass / hash-pin / nonce fail-closed gate (clone of the presentation canonical-entry pattern); `run_email_engine.py` drives the phase machine. Writing/running an ungoverned per-job driver is the FORBIDDEN path.
+
+### Library + matcher (mirrors Skill 6's proven pattern)
+`email-library/catalog-index.json` + the prebuilt `catalog-built-index.json`, retrieved hybrid via a lexical `tools/email_matcher.py` (+ `email_matcher_cli.py`, cloned from Skill 6's `funnel_matcher.py`) plus a shared Gemini embedding index (embed once, ship computed vectors). `tools/emit_build_plan.py` emits the DRAFT-ONLY build plan handed to Skill 44 (`caf workflows build --from-plan`, draft-only, human-approval gate).
+
+### Department / role / SOP wiring (discoverability)
+Existing marketing / CRM / sales / web-development / social-media seats and the PA inbox specialist (Skill 42) gain `50-email-engine` as a numbered-path Section-8 tool + a "Reusable libraries" bullet in each department's how-to (§E.2–E.7); the shared `universal-sops/email-craft/` SOP set carries the intake → select → generate → QC → deploy pipeline. No new departments or personas required — existing seats gain a tool; the role-library content-manifest was re-stamped (`hash-content-manifest.py`) and passes `qc-assert-repo-consistency.py` (SKILLS-COUNT + CONTENT-HASH + VERSION-MARKERS all green).
+
+### Client-provider rule (binding)
+On a client box the skill uses the **client's own configured providers and keys** — never the operator's, never Anthropic model ids. It is provider-neutral by construction; role files and SOPs name client-provider tiers only.
+
+### Files
+- `50-email-engine/` — NEW skill: `SKILL.md` (with `version: 1.0.0` frontmatter), `skill-version.txt` (`1.0.0`), `MASTERDOC.md`, `EMAIL-MANIFEST.json`, `schema/`, `intake/`, `email-engine-entry.sh`, `run_email_engine.py`, `verify.sh`, `tools/{prove-email.py,email_matcher.py,email_matcher_cli.py,emit_build_plan.py}`, `email-library/` (README + `catalog-index.json` + prebuilt `catalog-built-index.json` + `frameworks/`, `persona-styles/`, `objectives/`, `sequences/`, `buyer-types/` paired `.json`/`.md` entries), `index/`, `examples/`
+- `install.sh` — `install_skill_50_email_engine()` (copies the skill, marks the entry scripts + tools executable; Skill 44 is the deploy prerequisite) + active-skill prose count 44 → 45
+- `README.md` — skill-count prose (×2): 49 → 50 folders, 44 → 45 active; new `50-email-engine` inventory-table row
+- `cc-compat.json` — `notes` registers Skill 50 (fail-soft board hookup on the existing marketing lane; NO endpoint / schema change; `minVersion` + `pinnedTag` deliberately UNCHANGED at v4.56.1)
+- `version`, `install.sh`, `update-skills.sh`, `README.md` (×2), `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `cc-compat.json`, `23-ai-workforce-blueprint/skill-version.txt`, `23-ai-workforce-blueprint/SKILL.md`, `06-ghl-install-pages/skill-version.txt`, `23-ai-workforce-blueprint/templates/role-library/_index.json`, `23-ai-workforce-blueprint/templates/role-library/_qc-summary.md` — rolled to v16.4.0 via `bump-version.sh` (11 markers). Skill 50's own `skill-version.txt` stays `1.0.0`; the independently-versioned skills (35/42/43/45/47/48) are untouched.
+
+---
+
 ## [v16.3.0]  -  2026-07-02  -  feat(skill-51): Signature Presentation deck type — Trevor Otts 4-phase signature-talk methodology shipped as a governed deck TYPE that runs THROUGH the existing Presentations engine (3 fail-closed provers, 4 teaching frames, SOP-SLIDE-06 lockstep, 2 new roles, golden Quest regression sample)
 
 ### Risk: low — net-new skill added as an additive, fail-closed methodology + gate layer. It never forks the render path; the department's canonical entry (`build_deck.py`) still does all rendering, assembly, delivery, and Kanban. The three new provers DEFER unless `deck_type == "signature_presentation"`, so no existing deck build changes behavior. New skill starts at its OWN `1.0.0` (independent of the repo version). No credential values, plists, or client-specific content touched. No client names.

@@ -168,6 +168,7 @@ This role contributes to the company revenue cascade by: **architecting and opti
 | Stripe / Payment Gateway Dashboard | Transaction monitoring, decline rate analysis, payment method analytics | Web app | Daily review for transaction issues |
 | Hotjar / Microsoft Clarity | Funnel page heatmaps and session recordings — identify where users hesitate or abandon | Web app | Review weekly for optimization insights |
 | Zapier / Make / n8n | Workflow automation — connecting funnel events to CRM, email, fulfillment, and notification systems | Web app | Automation that bridges funnel platform with external systems |
+| **Email Engine + superlibrary (Skill 50)** | Attach the promo email set to a built funnel | `50-email-engine/` -- `tools/email_matcher_cli.py --match` selects framework/buyer-type/objective/persona/sequence; `tools/prove-email.py` QCs (fail-closed); draft-only deploy via Skill 44 | Client runtime uses the CLIENT's own provider (never Anthropic); the deterministic gates (email_matcher.py, prove-email.py) are provider-neutral; nothing sends without human approval. |
 
 ---
 

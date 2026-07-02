@@ -161,6 +161,7 @@ This role contributes to the company revenue cascade by: **enabling precise audi
 | Spreadsheet Tool (Excel/Google Sheets) | RFM calculation workbooks, segment migration tracking, tag taxonomy documentation | Desktop | Standardized RFM workbook template. Tag taxonomy maintained as a living document. |
 | Data Visualization (Looker Studio, Tableau) | Segment migration visualizations, segment overlap analysis | Web login | Sankey diagrams for migration flows. Venn diagrams for segment overlap analysis. |
 | Slack/Teams | Campaign Specialist collaboration, segment request management, Director communication | Web/desktop | #crm-segments channel for segment-related discussions. |
+| **Email Engine + superlibrary (Skill 50)** | Trigger the right email objective per segment (promotional / abandoned-cart / upsell / downsell) | `50-email-engine/` -- `tools/email_matcher_cli.py --match` selects framework/buyer-type/objective/persona/sequence; `tools/prove-email.py` QCs (fail-closed); draft-only deploy via Skill 44 | Client runtime uses the CLIENT's own provider (never Anthropic); the deterministic gates (email_matcher.py, prove-email.py) are provider-neutral; nothing sends without human approval. |
 
 ---
 

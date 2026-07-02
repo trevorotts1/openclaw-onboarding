@@ -1,0 +1,88 @@
+{
+  "id": "sequence-high-ticket-appointment",
+  "type": "sequence",
+  "name": "High-Ticket Appointment 12-Email System",
+  "tags": [
+    "sequence",
+    "high-ticket",
+    "appointment-booking",
+    "strategy-session",
+    "twelve-emails",
+    "buyer-type-mapping",
+    "exclusive-access",
+    "diagnostic-positioning",
+    "future-self",
+    "opportunity-cost",
+    "risk-reversal",
+    "disruptive-elements",
+    "thirty-subject-styles",
+    "consultation",
+    "1-on-1",
+    "emoji-subject-lines",
+    "dual-preview-text",
+    "continuity-arc",
+    "convert-and-flow"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "high-ticket",
+    "consultations",
+    "strategy-sessions",
+    "spontaneous",
+    "methodical",
+    "humanistic",
+    "competitive"
+  ],
+  "file": "sequence-high-ticket-appointment.md",
+  "rules": {
+    "kind": "sequence",
+    "sequence_type": "high_ticket_12",
+    "length": 12,
+    "preview_count": 2,
+    "subject_mode": "high_ticket",
+    "framework_map": {
+      "1": "three-b-plan",
+      "2": "star-chain-hook",
+      "3": "features-to-benefit",
+      "4": "six-ws",
+      "5": "acca",
+      "6": "pastor-solutions",
+      "7": "pastor-story",
+      "8": "star-story-solution",
+      "9": "pas",
+      "10": "aida",
+      "11": "million-dollar-sales",
+      "12": "before-after-bridge"
+    },
+    "buyer_band": {
+      "1": "spontaneous",
+      "2": "spontaneous",
+      "3": "methodical",
+      "4": "methodical",
+      "5": "methodical",
+      "6": "methodical",
+      "7": "humanistic",
+      "8": "humanistic",
+      "9": "humanistic",
+      "10": "competitive",
+      "11": "competitive",
+      "12": "competitive"
+    },
+    "cta_rules": {
+      "default": 1
+    },
+    "disruptive_required": true,
+    "subject_char_band": [
+      80,
+      87
+    ],
+    "subject_emoji_count": 1,
+    "af_codes": [
+      "AF-EMAIL-SEQUENCE-LENGTH",
+      "AF-EMAIL-BUYERTYPE-MAP",
+      "AF-EMAIL-DISRUPTIVE-MISSING",
+      "AF-EMAIL-SUBJECT-CHARBAND",
+      "AF-EMAIL-PREVIEW-COUNT"
+    ]
+  }
+}

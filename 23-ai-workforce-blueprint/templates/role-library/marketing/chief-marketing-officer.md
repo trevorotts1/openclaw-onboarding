@@ -181,6 +181,7 @@ This role contributes to the company revenue cascade by: **architecting and oper
 | Competitive Intelligence (SimilarWeb, SpyFu, Meta Ad Library, TikTok Ad Library, LinkedIn Ad Library) | Competitor traffic estimation, ad strategy reverse-engineering, positioning and messaging monitoring |
 | Project Management (Notion, Asana, ClickUp, Monday.com) | Campaign planning, content calendar, team task management, marketing request intake |
 | Business Intelligence / Data Visualization (Looker, Tableau, Google Looker Studio, Power BI) | Marketing dashboard, cross-channel reporting, executive presentations, budget tracking |
+| **Email Engine + superlibrary (Skill 50)** | Dept-head awareness of the email authoring + QC engine that feeds the CRM deploy lane. Select via `50-email-engine/tools/email_matcher_cli.py`, QC via `prove-email.py` (fail-closed), draft-only deploy via Skill 44. |
 
 ---
 

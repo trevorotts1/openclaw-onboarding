@@ -150,6 +150,7 @@ This role contributes to the company revenue cascade by: **protecting {{OWNER_NA
 | {{DOCS_TOOL}} | Attachment filing and document storage | API key in TOOLS.md | Organized by: client, project, date. Every attachment saved with a clear, searchable filename. |
 | {{CRM_TOOL}} | Contact context — sender relationship, history, value tier | API key in TOOLS.md | Read-only. Used to classify sender priority during triage. |
 | {{CALENDAR_TOOL}} | Scheduling context for time-sensitive emails | API key in TOOLS.md | Read-only. Coordinate with Calendar & Scheduling Manager. |
+| **Email Engine + superlibrary (Skill 50)** | Draft on-brand replies + newsletter/digest email copy against the SACRED frameworks and persona styles, then QC before send | `50-email-engine/` -- `tools/email_matcher_cli.py --match` + `tools/prove-email.py` (fail-closed) | Client runtime uses the CLIENT's own provider (never Anthropic); the deterministic gates are provider-neutral; nothing sends without {{OWNER_NAME}}'s approval. |
 
 ---
 

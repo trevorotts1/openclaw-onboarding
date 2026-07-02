@@ -1,0 +1,44 @@
+{
+  "id": "persona-style-tony-robbins",
+  "type": "persona-style",
+  "name": "Tony Robbins Style (\"Awaken the Giant\")",
+  "tags": [
+    "persona-style",
+    "high-energy",
+    "strategic-all-caps",
+    "powerful-questions",
+    "immediate-action",
+    "limitless-possibility",
+    "state-change",
+    "decision",
+    "massive-action",
+    "high-ticket",
+    "upsell-2",
+    "spontaneous",
+    "competitive",
+    "intensity"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "upsell",
+    "high-ticket",
+    "spontaneous",
+    "competitive",
+    "deadline-emails",
+    "action-blocked-readers"
+  ],
+  "file": "persona-style-tony-robbins.md",
+  "rules": {
+    "kind": "persona-style",
+    "persona_style_id": "tony-robbins",
+    "scope": "high-ticket / Upsell-2",
+    "never_named_or_quoted": true,
+    "no_repeat_within_campaign": true,
+    "acknowledge_prior_purchases": true,
+    "cohesive_across_sequence": true,
+    "af_codes": [
+      "AF-EMAIL-PERSONA-INVALID",
+      "AF-EMAIL-PERSONA-NAMED"
+    ]
+  }
+}

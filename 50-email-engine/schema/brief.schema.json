@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/email-engine/brief.schema.json",
+  "title": "Email Engine — locked intake brief (brief.json)",
+  "description": "The P0 output contract. The brief is written from the turn-gated ONE-block intake ledger (intake/email-intake-questions.json) and validated by prove-email.py in intake mode. A self-attested completeness flag is NEVER trusted — the brief must prove it came from a single question block. Any violation is a nonzero, fail-closed exit.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["skill", "asked_all_at_once", "question_block_msg_id", "answers"],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": ["intake", "brief"],
+      "description": "Optional explicit kind hint for the prover's auto-detect."
+    },
+    "skill": {
+      "type": "string",
+      "const": "email-engine",
+      "description": "Must equal 'email-engine' (else AF-EMAIL-TYPE-MISMATCH)."
+    },
+    "asked_all_at_once": {
+      "type": "boolean",
+      "const": true,
+      "description": "The six required questions were emitted as ONE message block (else AF-EMAIL-INTAKE-SPLIT)."
+    },
+    "one_question_per_turn": {
+      "type": "boolean",
+      "enum": [false],
+      "description": "If present must be false — a true value proves the brief was split across turns (AF-EMAIL-INTAKE-SPLIT)."
+    },
+    "question_block_msg_id": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "array", "minItems": 1, "maxItems": 1, "items": { "type": "string", "minLength": 1 } }
+      ],
+      "description": "A single non-empty id proving the questions were emitted in exactly ONE block (else AF-EMAIL-INTAKE-SPLIT)."
+    },
+    "answers": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["objective", "buyer_type", "offer", "brand_voice", "sequence_position", "founder_name"],
+      "properties": {
+        "objective": {
+          "type": "string",
+          "enum": ["promotional", "abandoned-cart", "upsell", "downsell"],
+          "description": "Exactly one of the 4 objectives (else AF-EMAIL-BRIEF-INCOMPLETE)."
+        },
+        "buyer_type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "spontaneous | methodical | humanistic | competitive | all (all = a full 12-email buyer-type sequence)."
+        },
+        "offer": { "type": "string", "minLength": 1, "description": "The exact offer / product / event name(s)." },
+        "brand_voice": { "type": "string", "minLength": 1, "description": "The brand voice / tone to continue." },
+        "sequence_position": {
+          "type": "string",
+          "minLength": 1,
+          "description": "single | landing-page-10-promo | high-ticket-appointment | convert-and-flow-buyer-12 (resolves sequence_type + preview count + subject mode)."
+        },
+        "founder_name": { "type": "string", "minLength": 1, "description": "The founder's ACTUAL name for the close (no placeholder)." }
+      }
+    },
+    "high_ticket": { "type": "string", "enum": ["yes", "no"], "description": "Optional; high-ticket uses two previews + the 80-87-char emoji subject band." },
+    "persona_style": {
+      "type": "string",
+      "enum": ["les-brown", "lisa-nichols", "brene-brown-gifts", "brene-brown-daring", "simon-sinek", "david-goggins", "dan-pink", "malcolm-gladwell", "michelle-obama", "iyanla-vanzant", "td-jakes", "tony-robbins"],
+      "description": "Optional persona STYLE (tone only; the person is NEVER named/quoted)."
+    },
+    "offer_token_ledger": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "The exact offer name(s) from the offer answer."
+    },
+    "client_overrode_word_band": {
+      "type": "boolean",
+      "description": "true ONLY when the client stated an exact per-email length that overrides the 150-300 default; surfaced on the process certificate. Client-exact wins."
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "id": "persona-style-brene-brown-gifts-of-imperfection",
+  "type": "persona-style",
+  "name": "Brené Brown Style — \"Gifts of Imperfection\" Register",
+  "tags": [
+    "persona-style",
+    "research-backed",
+    "vulnerability",
+    "normalize-struggle",
+    "weakness-as-strength",
+    "permission-giving",
+    "wholehearted",
+    "perfectionism",
+    "shame-resilience",
+    "high-ticket",
+    "upsell-2",
+    "gentle-authority",
+    "self-compassion"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "upsell",
+    "high-ticket",
+    "methodical",
+    "humanistic",
+    "perfectionist-audiences",
+    "imposter-syndrome-blocks"
+  ],
+  "file": "persona-style-brene-brown-gifts-of-imperfection.md",
+  "rules": {
+    "kind": "persona-style",
+    "persona_style_id": "brene-brown-gifts",
+    "scope": "high-ticket / Upsell-2",
+    "never_named_or_quoted": true,
+    "no_repeat_within_campaign": true,
+    "acknowledge_prior_purchases": true,
+    "cohesive_across_sequence": true,
+    "af_codes": [
+      "AF-EMAIL-PERSONA-INVALID",
+      "AF-EMAIL-PERSONA-NAMED"
+    ]
+  }
+}

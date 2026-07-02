@@ -1,0 +1,43 @@
+{
+  "id": "persona-style-lisa-nichols",
+  "type": "persona-style",
+  "name": "Lisa Nichols Style (\"No Matter What!\")",
+  "tags": [
+    "persona-style",
+    "vulnerable",
+    "nurturing",
+    "self-worth",
+    "confidence-muscle",
+    "tough-love",
+    "compassion",
+    "resilience",
+    "no-matter-what",
+    "high-ticket",
+    "upsell-2",
+    "transformation",
+    "permission",
+    "inner-work"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "upsell",
+    "high-ticket",
+    "humanistic",
+    "audiences-with-worthiness-blocks",
+    "transformation-offers"
+  ],
+  "file": "persona-style-lisa-nichols.md",
+  "rules": {
+    "kind": "persona-style",
+    "persona_style_id": "lisa-nichols",
+    "scope": "high-ticket / Upsell-2",
+    "never_named_or_quoted": true,
+    "no_repeat_within_campaign": true,
+    "acknowledge_prior_purchases": true,
+    "cohesive_across_sequence": true,
+    "af_codes": [
+      "AF-EMAIL-PERSONA-INVALID",
+      "AF-EMAIL-PERSONA-NAMED"
+    ]
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "id": "sequence-landing-page-10-promo",
+  "type": "sequence",
+  "name": "Landing-Page 10-Email Promo Sequence",
+  "tags": [
+    "sequence",
+    "landing-page",
+    "promo",
+    "ten-emails",
+    "pastor-solutions",
+    "pain-points",
+    "big-bold-who",
+    "big-bold-why",
+    "features-to-benefit",
+    "six-ws",
+    "before-after-bridge",
+    "three-b-plan",
+    "million-dollar-sales",
+    "aida",
+    "pas",
+    "ab-split-test",
+    "disruptive-subject-lines",
+    "founder-signature",
+    "downsell-page-trigger",
+    "signature-landing-page"
+  ],
+  "length": "150-300 words",
+  "best_for": [
+    "promotional",
+    "signature-landing-page-clients",
+    "warm-lists",
+    "full-campaign-builds"
+  ],
+  "file": "sequence-landing-page-10-promo.md",
+  "rules": {
+    "kind": "sequence",
+    "sequence_type": "landing_page_10",
+    "length": 10,
+    "preview_count": 2,
+    "subject_mode": "convert_and_flow",
+    "framework_map": {
+      "1": "pastor-solutions",
+      "2": "pastor-solutions",
+      "3": "pastor-solutions",
+      "4": "features-to-benefit",
+      "5": "six-ws",
+      "6": "before-after-bridge",
+      "7": "three-b-plan",
+      "8": "million-dollar-sales",
+      "9": "aida",
+      "10": "pas"
+    },
+    "cta_rules": {
+      "1": 3,
+      "2": 3,
+      "3": 3,
+      "default": 1
+    },
+    "disruptive_required": false,
+    "trigger": "appended after the Skill-49 Downsell Page is written",
+    "af_codes": [
+      "AF-EMAIL-SEQUENCE-LENGTH",
+      "AF-EMAIL-SEQUENCE-MAP",
+      "AF-EMAIL-CTA-COUNT",
+      "AF-EMAIL-PREVIEW-COUNT"
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "id": "objective-abandoned-cart",
+  "type": "objective",
+  "name": "Abandoned Cart",
+  "tags": [
+    "objective",
+    "cart-recovery",
+    "loss-aversion",
+    "cognitive-dissonance",
+    "zeigarnik-effect",
+    "unfinished-business",
+    "trust",
+    "risk-reduction",
+    "reciprocity",
+    "timing",
+    "1-3-hours",
+    "checkout",
+    "recovery-sequence",
+    "per-buyer-type-tactics"
+  ],
+  "length": "<150",
+  "best_for": [
+    "spontaneous",
+    "methodical",
+    "humanistic",
+    "competitive",
+    "ecommerce",
+    "checkout-recovery",
+    "three-b-plan",
+    "pas",
+    "before-after-bridge"
+  ],
+  "file": "objective-abandoned-cart.md",
+  "rules": {
+    "kind": "objective",
+    "objective_id": "abandoned-cart",
+    "one_objective_per_email": true,
+    "per_buyer_type_tactics": true,
+    "af_codes": [
+      "AF-EMAIL-OBJECTIVE-INVALID"
+    ],
+    "timing": "first send within 1-3 hours"
+  }
+}

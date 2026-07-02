@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/email-engine/build-plan.schema.json",
+  "title": "Email Engine — Skill-44 (Convert & Flow / GoHighLevel) DRAFT-ONLY deploy build plan",
+  "description": "The P4 handoff contract emitted by tools/emit_build_plan.py and consumed by `caf workflows build --from-plan`. Scope is workflow EMAIL steps only (NOT GHL Campaigns/Broadcasts or reusable Email Builder templates). Every workflow is built as a DRAFT; nothing sends until a human approves. Shape mirrors 44-.../utils/workflow_builder.py email_step() + validate_campaign().",
+  "type": "object",
+  "required": ["folder"],
+  "additionalProperties": {
+    "$ref": "#/$defs/workflow"
+  },
+  "properties": {
+    "folder": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The GHL folder the draft workflow(s) land in."
+    },
+    "_meta": {
+      "type": "object",
+      "description": "Optional provenance: source brief/sequence ids, deploy_mode='draft-only', generated_at, generator.",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "workflow": {
+      "type": "object",
+      "required": ["name", "templates"],
+      "additionalProperties": true,
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "description": "Draft workflow name." },
+        "tag": { "type": "string", "description": "Enrollment / segmentation tag." },
+        "status": {
+          "type": "string",
+          "enum": ["draft"],
+          "description": "Always 'draft' — Skill 50 NEVER emits a published workflow. Human approval + Skill-44 qc-built-workflow.sh (>=8.5) precede any publish."
+        },
+        "templates": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Ordered workflow steps (email + wait). Each carries a unique id, a type, and a name.",
+          "items": { "$ref": "#/$defs/step" }
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": ["id", "type", "name"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "enum": ["email", "wait"] },
+        "name": { "type": "string", "minLength": 1 },
+        "order": { "type": "integer", "minimum": 0 },
+        "attributes": { "type": "object" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "email" } } },
+          "then": {
+            "properties": {
+              "attributes": {
+                "type": "object",
+                "required": ["subject", "body", "html", "fromName"],
+                "properties": {
+                  "subject": { "type": "string", "minLength": 1 },
+                  "body": { "type": "string", "minLength": 1, "description": "HTML body." },
+                  "html": { "type": "string", "minLength": 1 },
+                  "fromName": { "type": "string" },
+                  "attachments": { "type": "array" },
+                  "conditions": { "type": "array" },
+                  "trackingOptions": {
+                    "type": "object",
+                    "properties": {
+                      "hasTrackingLinks": { "type": "boolean" },
+                      "hasUtmTracking": { "type": "boolean" },
+                      "hasTags": { "type": "boolean" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "wait" } } },
+          "then": {
+            "properties": {
+              "attributes": {
+                "type": "object",
+                "required": ["type", "startAfter"],
+                "properties": {
+                  "type": { "type": "string" },
+                  "startAfter": {
+                    "type": "object",
+                    "required": ["type", "value", "when"],
+                    "properties": {
+                      "type": { "type": "string" },
+                      "value": { "type": "integer", "minimum": 0 },
+                      "when": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
