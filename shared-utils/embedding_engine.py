@@ -1029,6 +1029,48 @@ def cmd_index(rebuild: bool = False, db_path: str = None,
 # CLI entrypoints (for direct invocation of the module)
 # ---------------------------------------------------------------------------
 
+def _refuse_full_rebuild_if_prebuilt(force_full_rebuild: bool) -> None:
+    """
+    P12-1 (FINAL-REVIEW-2026-07-01 Point 12 fix 1): refuse a FULL rebuild
+    (--rebuild, which DROPS every existing embedding — see cmd_index()) when
+    the prebuilt-index sentinel (.prebuilt-index-version, written by
+    shared-utils/provision-persona-index.sh on a canonical install) is
+    present. A full rebuild on a box that already carries the sha256-verified,
+    ship-don't-re-embed prebuilt index would discard those canonical vectors
+    and pay the full per-box re-embed cost this pipeline exists to avoid.
+    Incremental indexing (no --rebuild) is ALWAYS allowed — callers only
+    reach this guard when --rebuild was requested. An OPERATOR can still
+    force a genuine full rebuild (e.g. after a real embedding-model
+    migration) via --force-full-rebuild; that flag is OPERATOR-ONLY — never
+    surface it in any client-facing doc/reflex.
+
+    CLI-only guard: only _indexer_main() (the argv entrypoint every wrapper
+    delegates to) calls this. Direct callers of cmd_index(rebuild=True) —
+    e.g. tests — are intentionally unaffected, matching the previous
+    wrapper-level guard's scope exactly.
+    """
+    if force_full_rebuild:
+        return
+    try:
+        sentinel = _paths["coaching_personas"] / ".prebuilt-index-version"
+    except Exception:
+        return
+    if not sentinel.exists():
+        return
+    sys.stderr.write(
+        "[embedding-engine] REFUSED: --rebuild (FULL rebuild) requested but "
+        "the prebuilt-index sentinel is present (%s) -- this box carries "
+        "the canonical, sha256-verified ship-don't-re-embed index. A full "
+        "rebuild would discard it and pay the full re-embed cost. "
+        "Incremental indexing (no flag) runs normally. If you are an "
+        "OPERATOR performing a genuine embedding-model migration, pass "
+        "--force-full-rebuild alongside --rebuild to override "
+        "(operator-only -- never surface this to a client box).\n"
+        % sentinel
+    )
+    sys.exit(3)
+
+
 def _indexer_main():
     parser = argparse.ArgumentParser(
         prog="embedding-engine (indexer)",
@@ -1038,9 +1080,16 @@ def _indexer_main():
                         help="Report DB stats and embedder readiness.")
     parser.add_argument("--rebuild", action="store_true",
                         help="Drop all embeddings and re-index from scratch.")
+    parser.add_argument("--force-full-rebuild", action="store_true",
+                        help=argparse.SUPPRESS)  # operator-only; see _refuse_full_rebuild_if_prebuilt
     args = parser.parse_args()
     if args.status:
         sys.exit(cmd_status())
+    # --status short-circuits above regardless of --rebuild, so the guard
+    # only ever runs for a real (non-status) invocation — same precedence
+    # the previous wrapper-level guard had.
+    if args.rebuild:
+        _refuse_full_rebuild_if_prebuilt(args.force_full_rebuild)
     sys.exit(cmd_index(rebuild=args.rebuild))
 
 
