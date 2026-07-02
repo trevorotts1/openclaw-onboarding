@@ -59,6 +59,25 @@ Skill 44. CLI: `python3 tools/funnel_matcher_cli.py --match "<offer summary>" --
 is held to the FAB-QC ≥ 8.5 build-quality gate (`qc-built-funnel.sh`; rubric in
 `universal-sops/funnel-automation-build-quality-rubric.md`).
 
+## Specialist funnel engines (shared STEP-0 engine selector)
+
+Some funnels are not generic page-plans but a **specific IP product** with their own SACRED copy/image
+contract and their own fail-closed pipeline. These register in the shared **funnel-engine selector**
+(`funnel-engines/registry.json` + `tools/funnel_engine_selector.py`), which runs BEFORE the
+template-first matcher above:
+
+- `ROUTE_TO_ENGINE` → the request is routed to that engine's canonical fail-closed entry shell; the
+  engine authors copy + images, then **delegates the GHL media + funnel/page build back to this skill**
+  (`ghl_media.py` + `ghl_rest_canvas.py` / `ghl_builder.py`). **Skill 6 stays the ONE GHL delivery rail.**
+- `NO_ENGINE_MATCH` → fall through to `funnel_matcher.py` (the 38 templates) + the generic build. Never
+  blocks a build.
+
+Registered engine: **`signature-funnel`** (Skill 49 — the Trevor Otts 12-section Hero + 3/5/7 funnel;
+entry `49-signature-funnel/signature-funnel-entry.sh`). A second entry (Skill 56 Sales-Page-Assets) is
+added by appending one object to `engines[]` — no selector code change. CLI:
+`python3 tools/funnel_engine_selector.py --match "<request>"` / `--list` / `--self-test`. See
+`funnel-engines/README.md`.
+
 ## Full-Funnel Pipeline Integration (Skill 44 seam)
 
 When this skill runs as part of a full-funnel build (SOP-07 P4 stage), after page

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://openclaw.ai/schemas/interview-section/v1",
+  "section": "signature-funnel-intake",
+  "version": "1.0.0",
+  "funnel_type": "signature_funnel",
+  "description": "The Signature Funnel intake interview (IMPROVED-FRAMEWORK-v2 Part 8). ONE question per turn -> a locked, provenance-gated brief.json that unlocks generation. Rough notes always welcome ('I don't need perfect sentences or spelling'). Checkpoint-gated between pages (Q11 after main draft; Q12/Q13 for 5/7-step; Q14 for 7-step). This file is the authoritative spec prove_sf_intake.py loads; runtime answers are recorded in brief.json against runtime_intake_contract below.",
+  "delivery": {
+    "mode": "one_question_per_turn",
+    "one_question_per_turn": true,
+    "rule": "Unlike the presentations 8-Questions block, the funnel intake is conversational, one question per turn, with checkpoint gates between pages. The brief is LOCKED (provenance-gated) before any generation.",
+    "blocks_until_locked": ["P1-COPY", "all generation"]
+  },
+  "questions": [
+    {"id": "q1", "order": 1, "storeOn": "q1_offer", "required": true, "kind": "text",
+     "prompt": "What's the exact name of your offer, the title as it should appear on the page? And in one line, what is it (event, course, service, product)?",
+     "note": "The exact offer name(s) become the offer_token_ledger (provenance seed). Required in Section 1 + forbidden on the thank-you page."},
+    {"id": "q2", "order": 2, "storeOn": "q2_price_promise", "required": true, "kind": "text",
+     "prompt": "What does it cost, and finish this sentence in your own words: 'When someone buys this and uses it, their life or business looks like ___ within ___.'"},
+    {"id": "q3", "order": 3, "storeOn": "q3_pains", "required": true, "kind": "text",
+     "prompt": "What are the three heaviest frustrations your buyer lives with right now? One about their daily circumstances, one about how they privately feel about themselves, one about who is watching them stay stuck. (Pain Ladder: circumstantial / private / witnessed.)"},
+    {"id": "q4", "order": 4, "storeOn": "q4_people", "required": true, "kind": "text",
+     "prompt": "Who exactly is this for? List 3 to 6 types of people, and for each: what do they WANT, the end result, not the process?"},
+    {"id": "q5", "order": 5, "storeOn": "q5_goods", "required": true, "kind": "text",
+     "prompt": "List everything they get when they buy, every deliverable, bonus, call, template, session. Numbers help ('12 modules', '4 calls'). I'll turn these into the What section."},
+    {"id": "q6", "order": 6, "storeOn": "q6_founder_story", "required": true, "kind": "text",
+     "prompt": "Now the personal letter. Three short answers: (a) ONE specific low moment from your own struggle, a scene, not a summary. (b) The moment you DECIDED things would change. (c) Who did you build this for?"},
+    {"id": "q7", "order": 7, "storeOn": "q7_brand_colors", "required": true, "kind": "text",
+     "prompt": "What are your brand colors? Hex codes if you have them, plain names if you don't."},
+    {"id": "q8", "order": 8, "storeOn": "q8_representation", "required": true, "kind": "text",
+     "prompt": "Who should appear in the images, and how should the people break down? Give me percentages, for example 70% Black women, 20% mixed, 10% men. Or 100% women, diverse. Or no people at all. I never assume a default.",
+     "note": "Representation is NEVER assumed (AF-FUN-INTAKE-REPRESENTATION). Feeds the image-prompt SUBJECT block exactly as given."},
+    {"id": "q9", "order": 9, "storeOn": "q9_voice", "required": true, "kind": "text",
+     "prompt": "How do you talk? Give me 2 to 3 words (e.g. 'bold, warm, street-smart'), or paste a paragraph you've written that sounds like you and I'll match it."},
+    {"id": "q10", "order": 10, "storeOn": "q10_funnel_length", "required": true, "kind": "enum",
+     "allowed_values": ["3-step", "5-step", "7-step"],
+     "prompt": "How big do you want this funnel: 3-step (page + one upsell + thank-you), 5-step (adds a downsell and a second upsell), or 7-step (the full machine: checkout page, two upsells, two downsells, thank-you)?",
+     "note": "Resolves funnel_size in {3,5,7} (AF-FUN-INTAKE-SIZE). Drives the matrix + which of Q12-Q14 are required."},
+    {"id": "q11", "order": 11, "storeOn": "q11_oto1", "required": true, "kind": "text", "checkpoint": "after-main-draft",
+     "prompt": "Any changes you want on the landing page? If approved, tell me about your upsell offer: what is it, what does it cost, why is it the natural next step, and what is genuinely scarce about it? (True scarcity only.)"},
+    {"id": "q12", "order": 12, "storeOn": "q12_downsell1", "required_for": ["5-step", "7-step"], "kind": "text", "checkpoint": "after-upsell",
+     "prompt": "Your upsell page is complete, any changes? If approved: when someone passes on the upsell, what is the smaller yes, a lighter version, split-pay, a starter piece? And its price?"},
+    {"id": "q13", "order": 13, "storeOn": "q13_oto2", "required_for": ["5-step", "7-step"], "kind": "text",
+     "prompt": "Is there a second, bigger-league offer for buyers who want maximum speed or proximity, done-for-you, a mastermind, an event, a VIP tier? How is it different in KIND from the first upsell? Real price, real scarcity, and fill this blank in your voice: '7 Reasons To Commit To Your ____ Future' (different phrase than the first upsell)."},
+    {"id": "q14", "order": 14, "storeOn": "q14_downsell2", "required_for": ["7-step"], "kind": "text",
+     "prompt": "If someone passes on the second upsell, what is the smallest true yes, a starter tier, split-pay, one seat, recordings only? What do they permanently miss by leaving with only the original purchase (name up to 7 real things)? Price and deadline, both real."},
+    {"id": "q15", "order": 15, "storeOn": "q15_reference_images", "required": true, "kind": "text", "default": "signature only",
+     "prompt": "For the image style: by default I generate everything from your brand colors in the Signature look. You can also upload brand photos or founder portraits for me to reference, send them now, or say 'signature only.'",
+     "note": "Maps to the reference_images hook (mode: none|signature_set|client_uploads). Default 'signature only' = mode none (pure text-to-image)."},
+    {"id": "q16", "order": 16, "storeOn": "q16_truth_gate", "required": true, "kind": "object",
+     "prompt": "The how-to section and thank-you page promise four things: a bonus email, a personal text from you, a community to join, and a share link. Give me: the community URL, what the bonus is, and confirm the personal text will really happen. I only write promises you'll keep.",
+     "object_fields": {"community_url": "string (real URL)", "bonus": "string (what the bonus is)", "founder_text_confirmed": "boolean (must be true)"},
+     "note": "The TRUTH GATE (AF-FUN-INTAKE-TRUTHGATE). Section 11 always promises share/email-bonus/founder-text/community; each must be confirmed real here."},
+    {"id": "q17", "order": 17, "storeOn": "q17_confirmation", "required": true, "kind": "text",
+     "prompt": "Playback of the brief (offer, price, length, colors, representation, scarcity claims) for a one-word approval before generation begins.",
+     "note": "On approval the brief is LOCKED (provenance-gated); generation may start. The email offer follows the downsell approval (P10)."}
+  ],
+  "runtime_intake_contract": {
+    "note": "Shape of brief.json that prove_sf_intake.py validates. Any violation is exit 2, fail-closed.",
+    "required_fields": {
+      "funnel_type": "must equal \"signature_funnel\" (else AF-FUN-INTAKE-TYPE)",
+      "locked": "must be true before generation (else AF-FUN-INTAKE-UNLOCKED)",
+      "funnel_size": "one of 3 | 5 | 7 (else AF-FUN-INTAKE-SIZE)",
+      "answers": "object carrying the required q*_* keys for the chosen size (else AF-FUN-INTAKE-MISSING)",
+      "answers.q8_representation": "explicit representation, never assumed (else AF-FUN-INTAKE-REPRESENTATION)",
+      "answers.q16_truth_gate": "object {community_url, bonus, founder_text_confirmed:true} (else AF-FUN-INTAKE-TRUTHGATE)",
+      "offer_token_ledger": "non-empty array of the exact offer name(s) from Q1 (else AF-FUN-INTAKE-OFFER)"
+    },
+    "required_answer_keys": {
+      "always": ["q1_offer", "q2_price_promise", "q3_pains", "q4_people", "q5_goods", "q6_founder_story", "q7_brand_colors", "q8_representation", "q9_voice", "q10_funnel_length", "q11_oto1", "q15_reference_images", "q16_truth_gate", "q17_confirmation"],
+      "5-step_and_7-step": ["q12_downsell1", "q13_oto2"],
+      "7-step_only": ["q14_downsell2"]
+    },
+    "autofail_codes": {
+      "AF-FUN-INTAKE-TYPE": "funnel_type != signature_funnel",
+      "AF-FUN-INTAKE-MISSING": "a required answer (by size) missing/empty",
+      "AF-FUN-INTAKE-SIZE": "funnel_size not in {3,5,7}",
+      "AF-FUN-INTAKE-OFFER": "offer_token_ledger missing/empty",
+      "AF-FUN-INTAKE-REPRESENTATION": "representation not explicitly provided",
+      "AF-FUN-INTAKE-TRUTHGATE": "community URL / bonus / founder-text unconfirmed",
+      "AF-FUN-INTAKE-UNLOCKED": "brief not locked before generation"
+    }
+  }
+}

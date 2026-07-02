@@ -169,6 +169,7 @@ This role contributes to the company revenue cascade by: **architecting and opti
 | Hotjar / Microsoft Clarity | Funnel page heatmaps and session recordings — identify where users hesitate or abandon | Web app | Review weekly for optimization insights |
 | Zapier / Make / n8n | Workflow automation — connecting funnel events to CRM, email, fulfillment, and notification systems | Web app | Automation that bridges funnel platform with external systems |
 | **Email Engine + superlibrary (Skill 50)** | Attach the promo email set to a built funnel | `50-email-engine/` -- `tools/email_matcher_cli.py --match` selects framework/buyer-type/objective/persona/sequence; `tools/prove-email.py` QCs (fail-closed); draft-only deploy via Skill 44 | Client runtime uses the CLIENT's own provider (never Anthropic); the deterministic gates (email_matcher.py, prove-email.py) are provider-neutral; nothing sends without human approval. |
+| **Signature Funnel engine (Skill 49)** -- the funnels door | When a request is a Trevor Otts "signature funnel" the STEP-0 funnel-engine selector routes it here; you delegate the build to the engine and own only the generic (template-first) funnels | `49-signature-funnel/signature-funnel-entry.sh`; selector `06-ghl-install-pages/tools/funnel_engine_selector.py` + registry `funnel-engines/registry.json`; SOPs `universal-sops/funnel-craft/` | Delegation contract: intake JSON only; canonical entry only (never author/fix copy/prompts); Skill 6 remains the ONE GHL delivery rail; no certificate = not done; never waive an engine floor. |
 
 ---
 

@@ -1,0 +1,30 @@
+{
+  "prove_sf_intake.py": {
+    "rc": 0,
+    "pass": true,
+    "tail": [
+      "RESULT: PASS \u2014 locked brief satisfies the intake gate; generation may unlock."
+    ]
+  },
+  "prove_sf_copy.py": {
+    "rc": 0,
+    "pass": true,
+    "tail": [
+      "PASS: funnel copy clears every rule in the SACRED 12-section contract."
+    ]
+  },
+  "prove_sf_prompt_floor.py": {
+    "rc": 0,
+    "pass": true,
+    "tail": [
+      "PASS: every image prompt clears the two-floor gate (5000-19000)."
+    ]
+  },
+  "prove_sf_no_pitch.py": {
+    "rc": 0,
+    "pass": true,
+    "tail": [
+      "PASS: thank-you page carries no pitch, and every image has Kie taskId + GHL-host provenance."
+    ]
+  }
+}

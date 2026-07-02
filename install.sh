@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v16.4.0"
+ONBOARDING_VERSION="v16.5.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -739,7 +739,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 5 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/51-... (45 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/51-... (46 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -4670,7 +4670,7 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 45 active skills install in 5 dependency-aware waves, not by number order.
+The 46 active skills install in 5 dependency-aware waves, not by number order.
 Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
 A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
@@ -6542,6 +6542,49 @@ install_skill_48_facebook_ad_generator() {
 }
 
 install_skill_48_facebook_ad_generator
+
+# ----------------------------------------------------------
+# Skill 49: Signature Funnel (SACRED 12-section funnel methodology + gates)
+# ----------------------------------------------------------
+# Self-contained: this template install copies the Skill 49 folder (SKILL.md,
+# MASTERDOC.md, FUNNEL-MANIFEST.json, structure/funnel_structure.json, the intake
+# gate, the BAKED provider-agnostic copy + image prompts, the five fail-closed
+# deterministic model-free provers, the no-skip orchestrator, and the canonical
+# fail-closed entry). NO external clone. Skill 49 owns the IP + the gates: it
+# AUTHORS the SACRED 12-section Hero copy + the per-section 5,000-19,000-char
+# gpt-image-2 prompts inside its own fail-closed pipeline, then DELEGATES image
+# generation to Skill 47 (kie_image.py) and ALL GoHighLevel media + funnel/page
+# build to Skill 6 (the ONE GHL delivery rail). It never forks a Kie call or a GHL
+# REST call. A "signature funnel" request routes here through the shared STEP-0
+# funnel-engine selector in Skill 6 (06-ghl-install-pages/funnel-engines/registry.json
+# — this is the first registered engine). On a client box it uses the CLIENT's own
+# configured providers/keys — never the operator's, never Anthropic model ids. Skill
+# 6, Skill 47, and Skill 07 (Kie.ai setup) are prerequisites.
+install_skill_49_signature_funnel() {
+    local SKILL_SRC="$ONBOARDING_DIR/49-signature-funnel"
+    local SKILL_DEST="$SKILLS_DIR/49-signature-funnel"
+
+    if [ ! -d "$SKILL_SRC" ]; then
+        warn "Skill 49 source dir not found at $SKILL_SRC — skipping (older onboarding bundle?)"
+        return 0
+    fi
+
+    mkdir -p "$SKILL_DEST"
+    cp -R "$SKILL_SRC/." "$SKILL_DEST/" 2>>"$LOG_FILE" || {
+        warn "Failed to copy Skill 49 from $SKILL_SRC -> $SKILL_DEST"
+        return 0
+    }
+    chmod +x "$SKILL_DEST/signature-funnel-entry.sh" "$SKILL_DEST/run_signature_funnel.py" \
+             "$SKILL_DEST/verify.sh" 2>/dev/null || true
+    chmod +x "$SKILL_DEST/scripts/"*.py 2>/dev/null || true
+
+    success "Skill 49 (Signature Funnel) installed -> $SKILL_DEST"
+    note "Skill 49 is the methodology + enforcement layer for the Trevor Otts Signature Funnel: the SACRED 12-section Hero copy system, per-section 5,000-19,000-char gpt-image-2 prompts, and a configurable 3/5/7-step GHL funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching), each gated as a SACRED structure by five fail-closed deterministic model-free provers (intake, 12-section copy contract, image-prompt two-floor gate, no-pitch thank-you + image-provenance, signed certificate)."
+    note "It runs P0..P10 through one canonical entry (signature-funnel-entry.sh) with a deps/bypass-scan/hash-pin/nonce fail-closed gate, then delegates image generation to Skill 47 (kie_image.py) and ALL GHL media + funnel/page build to Skill 6 (the ONE GHL delivery rail). A 'signature funnel' request routes here via the shared STEP-0 funnel-engine selector in Skill 6. Nothing is published without explicit human approval. Skill 6, Skill 47, and Skill 07 (Kie.ai) are prerequisites."
+    return 0
+}
+
+install_skill_49_signature_funnel
 
 # ----------------------------------------------------------
 # Skill 50: Email Engine (governed email skill + Email Superlibrary)

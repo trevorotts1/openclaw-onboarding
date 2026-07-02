@@ -821,6 +821,13 @@ persona styles + 3 named sequences (landing-page-10, high-ticket-12, buyer-type-
 Every generated email/sequence is QC'd by the fail-closed `50-email-engine/tools/prove-email.py` \
 floor prover (SACRED word/subject/CTA/signature bands) before any draft-only GHL deploy. Shared \
 procedure: `universal-sops/email-craft/`.
+- Signature Funnel engine (Skill 49) - the SACRED Trevor Otts 12-section Hero funnel (3/5/7-step: \
+Main / Checkout / Upsell / Downsell / Upsell-2 / Downsell-2 / Thank-You) at `49-signature-funnel/`, \
+routed by the STEP-0 funnel-engine selector `06-ghl-install-pages/tools/funnel_engine_selector.py`. \
+It AUTHORS the 12-section copy + the 5,000-19,000-char image prompts under fail-closed provers \
+(`49-signature-funnel/scripts/prove_sf_*.py`), delegates image generation to Skill 47 and ALL GHL \
+media + build to Skill 6 (the ONE delivery rail), and issues a signed certificate only on a full \
+pass. Shared procedure: `universal-sops/funnel-craft/`.
 - Funnel-to-automation link map - \
 `44-convert-and-flow-operator/automation-templates/_links/funnel-to-automation.json` pairs \
 each funnel with its recommended follow-up automations (keyed by funnel_template_id).

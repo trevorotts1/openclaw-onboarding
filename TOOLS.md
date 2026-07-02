@@ -52,7 +52,7 @@ Skills are shared. Your setup is yours. Keeping them apart means you can update 
 
 ---
 
-## Funnel + Automation + Email Template Libraries (Skill 06 / Skill 44 / Skill 50) — template-first / reuse-before-reinvent
+## Funnel + Automation + Email Template Libraries (Skill 06 / Skill 44 / Skill 49 / Skill 50) — template-first / reuse-before-reinvent
 
 - **Funnel template library (38 templates)** — `06-ghl-install-pages/funnel-templates/` by category
   (buyer, event, lead, retention-followup, traffic-advanced). Each carries `pageStructure`,
@@ -72,6 +72,15 @@ Skills are shared. Your setup is yours. Keeping them apart means you can update 
   email/sequence is QC'd by the fail-closed `50-email-engine/tools/prove-email.py` floor prover (SACRED
   word/subject/CTA/signature bands) before a DRAFT-ONLY Skill-44 workflow deploy. Shared SOP cluster:
   `universal-sops/email-craft/`.
+- **Signature Funnel engine (Skill 49)** — `49-signature-funnel/`, the SACRED Trevor Otts 12-section
+  Hero funnel (configurable 3/5/7-step: Main → Checkout → Upsell → Downsell → Upsell-2 → Downsell-2 →
+  Thank-You). Routed by the **shared STEP-0 funnel-engine selector** `06-ghl-install-pages/funnel-engines/registry.json`
+  + `tools/funnel_engine_selector.py --match "<request>"` (a "signature funnel" request routes here;
+  `NO_ENGINE_MATCH` falls through to the template matcher; Skill 56 registers a 2nd entry later).
+  Built through the ONE canonical entry `49-signature-funnel/signature-funnel-entry.sh` under
+  fail-closed provers (`scripts/prove_sf_*.py`); it AUTHORS copy + image prompts, delegates image
+  generation to Skill 47 and ALL GHL media + build to Skill 6 (the ONE GHL delivery rail), and issues a
+  signed certificate only on a full pass. Shared SOP cluster: `universal-sops/funnel-craft/`.
 - **Funnel→automation link map** — `44-.../automation-templates/_links/funnel-to-automation.json`
   (canonical v2; `…-link-map.json` is the DEPRECATED v1). Maps each funnel to its recommended
   follow-up automations; keyed by `funnel_template_id`.

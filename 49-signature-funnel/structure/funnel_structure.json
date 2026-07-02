@@ -1,0 +1,249 @@
+{
+  "$schema": "https://openclaw.ai/schemas/signature-funnel-structure/v1",
+  "contract": "sacred-funnel-structure-ledger",
+  "version": "1.0.0",
+  "funnel_type": "signature_funnel",
+  "description": "The SACRED 12-section Trevor Otts Hero funnel contract that prove_sf_copy.py loads and enforces against a funnel COPY ledger (per-page sections emitted by the Signature Funnel copywriter). Every rule here is fail-closed: a violation is sys.exit(2) with the named AF-FUN-* code — a violating page is NOT run, NOT rendered, NOT built. Section names + every char/word band are reproduced VERBATIM from SOURCE-FRAMEWORK.md (the 12-section IP) and IMPROVED-FRAMEWORK-v2.md Part 5 (Thank-You bands). Never floored, reordered, or reinterpreted. The prover measures STRIPPED text and IGNORES any self-reported count field.",
+
+  "sections": {
+    "1": {
+      "name": "The Big Bold Claim",
+      "char_min": 180,
+      "char_max": 225,
+      "requires_title": true,
+      "requires_cta": true,
+      "rule": "180-225 chars. Must include the product title. Must carry a labeled CTA. The single most important section."
+    },
+    "2": {
+      "name": "The Big Bold Pain 1",
+      "char_min": 180,
+      "char_max": 225,
+      "second_person": true,
+      "forbid_question": true,
+      "requires_cta": true,
+      "rule": "180-225 chars. 2nd person. NO question format. Labeled CTA. Circumstantial pain (Pain Ladder rung 1)."
+    },
+    "3": {
+      "name": "The Big Bold Pain 2",
+      "char_min": 180,
+      "char_max": 225,
+      "second_person": true,
+      "forbid_question": true,
+      "requires_cta": true,
+      "rule": "180-225 chars. 2nd person. NO question format. Labeled CTA. Private pain (Pain Ladder rung 2)."
+    },
+    "4": {
+      "name": "The Big Bold Pain 3",
+      "char_min": 180,
+      "char_max": 225,
+      "second_person": true,
+      "forbid_question": true,
+      "requires_cta": true,
+      "rule": "180-225 chars. 2nd person. NO question format. Labeled CTA. Witnessed pain (Pain Ladder rung 3)."
+    },
+    "5": {
+      "name": "The Big Bold Why",
+      "word_max": 30,
+      "lead_phrase": "that's the reason why",
+      "requires_cta": true,
+      "rule": "<=30 words. Starts 'That's the reason why...'. Ends with a motivational CTA."
+    },
+    "6": {
+      "name": "The Big Bold Who",
+      "word_max": 30,
+      "personas_min": 3,
+      "personas_max": 6,
+      "forbid_cta": true,
+      "rule": "<=30 words. 3-6 personas, each with what they seek. NO CTA button and NO CTA in this section."
+    },
+    "7": {
+      "name": "The Big Bold What",
+      "word_min": 70,
+      "word_max": 120,
+      "bullets_min": 5,
+      "bullets_max": 10,
+      "rule": "70-120 words. 5-10 specific bullets, each naming exactly what the buyer gets."
+    },
+    "8": {
+      "name": "The Big Bold Benefit 1",
+      "word_max": 30,
+      "forbid_cta": true,
+      "rule": "<=30 words. Felt benefit (this week). NO CTA button."
+    },
+    "9": {
+      "name": "The Big Bold Benefit 2",
+      "word_max": 30,
+      "forbid_cta": true,
+      "rule": "<=30 words. Measured benefit (this quarter). NO CTA button."
+    },
+    "10": {
+      "name": "The Big Bold Benefit 3",
+      "word_max": 30,
+      "requires_cta_button": true,
+      "rule": "<=30 words. Become benefit (this life). Carries the inspirational CTA button (peak-end)."
+    },
+    "11": {
+      "name": "The Big How To",
+      "word_min": 100,
+      "word_max": 150,
+      "forbid_cta_button": true,
+      "steps_min": 5,
+      "steps_max": 10,
+      "step_char_min": 89,
+      "step_char_max": 116,
+      "step7_char_max": 170,
+      "required_step_kinds": ["share", "email_bonus", "founder_text", "community"],
+      "rule": "100-150 words. NO CTA button. 5-10 steps (ideal 7). Steps 1-6 each 89-116 chars; step 7 <=170 chars. MUST include a share-with-a-friend, a check-email-for-a-bonus, a founder-personal-text, and a join-the-community step. The final step is the in-copy motivational CTA."
+    },
+    "12": {
+      "name": "The Big Bold Heartfelt Message",
+      "word_min": 100,
+      "word_max": 150,
+      "parts_count": 6,
+      "part2_lead": "i used to be just like you",
+      "rule": "100-150 words. 6 labeled parts. Part 2 (The Big Struggle) starts 'I used to be just like you...'."
+    }
+  },
+
+  "section8_replacements": {
+    "upsell": {
+      "name_pattern": "seven_reasons",
+      "display_name": "7 Reasons To Commit To Your ____ Future",
+      "item_kind": "reasons",
+      "item_count": 7,
+      "rule": "Upsell (OTO1) replaces Section 12 with '7 Reasons To Commit To Your ____ Future' renumbered to Section 8; exactly 7 numbered reasons; CTA in every section; true scarcity only."
+    },
+    "downsell": {
+      "name_pattern": "when_time_runs_out",
+      "display_name": "When Time Runs Out",
+      "item_kind": "misses",
+      "item_count": 7,
+      "rule": "Downsell replaces Section 12 with 'When Time Runs Out' renumbered to Section 8; exactly 7 things they'll miss; CTA in every section."
+    },
+    "upsell-2": {
+      "name_pattern": "seven_reasons",
+      "display_name": "7 Reasons To Commit To Your ____ Future",
+      "item_kind": "reasons",
+      "item_count": 7,
+      "rule": "OTO2 replaces Section 12 with '7 Reasons To Commit To Your ____ Future' (blank-fill MUST differ from OTO1); exactly 7 numbered reasons; categorically different offer."
+    },
+    "downsell-2": {
+      "name_pattern": "when_time_runs_out",
+      "display_name": "When Time Runs Out",
+      "item_kind": "misses",
+      "item_count": 7,
+      "rule": "Downsell-2 replaces Section 12 with 'When Time Runs Out' (final-door misses) renumbered to Section 8; exactly 7 things they'll miss; the smallest true yes; after this the funnel never pitches again."
+    }
+  },
+
+  "thank_you": {
+    "TY-1": {
+      "name": "The Big Bold Welcome",
+      "char_min": 120,
+      "char_max": 180,
+      "requires_title": true,
+      "rule": "120-180 chars. Celebrate the decision + name the product title. Second person, celebratory, zero selling."
+    },
+    "TY-2": {
+      "name": "What Happens Next",
+      "steps_min": 4,
+      "steps_max": 6,
+      "step_char_min": 89,
+      "step_char_max": 116,
+      "rule": "4-6 numbered steps, each 89-116 chars (Section 11 step discipline). Momentum-ordered; every step starts with a verb and names its payoff."
+    },
+    "TY-3": {
+      "name": "The Big Empowering Close",
+      "char_max": 170,
+      "rule": "<=170 chars (Section 11 step-7 cap). Destiny register, signed by the founder. NO offer CTA."
+    }
+  },
+
+  "profiles": {
+    "main": {
+      "sections": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "rule": "The full 12-section hero. Every section name + band SACRED."
+    },
+    "upsell": {
+      "sections": [1, 2, 3, 4, 5, 6, 7, 8],
+      "section8_replacement": "upsell",
+      "cta_every_section": true,
+      "rule": "OTO1: Sections 1-7 (same names/bands) + replacement Section 8. Sections 8-11 (benefits/how-to) and the founder letter (Section 12) are EXCLUDED; the replacement occupies Section 8."
+    },
+    "downsell": {
+      "sections": [1, 2, 3, 4, 5, 6, 7, 8],
+      "section8_replacement": "downsell",
+      "cta_every_section": true,
+      "rule": "OTO1-decline: Sections 1-7 + replacement Section 8 ('When Time Runs Out')."
+    },
+    "upsell-2": {
+      "sections": [1, 2, 3, 4, 5, 6, 7, 8],
+      "section8_replacement": "upsell-2",
+      "cta_every_section": true,
+      "rule": "OTO2: Sections 1-7 + replacement Section 8 ('7 Reasons...', different blank-fill from OTO1)."
+    },
+    "downsell-2": {
+      "sections": [1, 2, 3, 4, 5, 6, 7, 8],
+      "section8_replacement": "downsell-2",
+      "cta_every_section": true,
+      "rule": "OTO2-decline: Sections 1-7 + replacement Section 8 ('When Time Runs Out', final-door)."
+    },
+    "thank-you": {
+      "thank_you": true,
+      "no_offer_cta": true,
+      "rule": "TY-1/TY-2/TY-3. NO offer CTAs anywhere; utility buttons only. Enforced by prove_sf_no_pitch.py."
+    },
+    "checkout": {
+      "microcopy_only": true,
+      "rule": "7-step only: dedicated signature-styled order page, minimal microcopy; no 12-section gate."
+    }
+  },
+
+  "funnel_matrix": {
+    "3": ["main", "upsell", "thank-you"],
+    "5": ["main", "upsell", "downsell", "upsell-2", "thank-you"],
+    "7": ["main", "checkout", "upsell", "downsell", "upsell-2", "downsell-2", "thank-you"],
+    "rule": "Configurable step count chosen at intake (Q10). Every path terminates at Thank-You; after Downsell-2 the funnel never pitches again."
+  },
+
+  "autofail_codes": {
+    "AF-FUN-PROFILE-UNKNOWN": "a page carries a page_type not in the profiles map",
+    "AF-FUN-SECTION-MISSING": "a required section for the page profile is absent",
+    "AF-FUN-SECTION-EXTRA": "a page carries a section not allowed by its profile",
+    "AF-FUN-SECTION-ORDER": "sections are not contiguous/in order for the profile",
+    "AF-FUN-SEC1-CHARBAND": "Section 1 outside 180-225 stripped chars",
+    "AF-FUN-SEC1-TITLE": "Section 1 does not contain the product title",
+    "AF-FUN-SEC1-CTA": "Section 1 missing a labeled CTA",
+    "AF-FUN-PAIN-CHARBAND": "a pain section (2/3/4) outside 180-225 stripped chars",
+    "AF-FUN-PAIN-QUESTION": "a pain section (2/3/4) is written in question format",
+    "AF-FUN-PAIN-2ND-PERSON": "a pain section (2/3/4) is not written in 2nd person (no you/your)",
+    "AF-FUN-PAIN-CTA": "a pain section (2/3/4) missing a labeled CTA",
+    "AF-FUN-SEC5-WORDS": "Section 5 exceeds 30 words",
+    "AF-FUN-SEC5-LEAD": "Section 5 does not start 'That's the reason why...'",
+    "AF-FUN-SEC5-CTA": "Section 5 missing its motivational CTA",
+    "AF-FUN-SEC6-WORDS": "Section 6 exceeds 30 words",
+    "AF-FUN-SEC6-PERSONAS": "Section 6 outside 3-6 personas",
+    "AF-FUN-SEC6-NO-CTA": "Section 6 carries a CTA (forbidden)",
+    "AF-FUN-SEC7-WORDS": "Section 7 outside 70-120 words",
+    "AF-FUN-SEC7-BULLETS": "Section 7 outside 5-10 bullets",
+    "AF-FUN-BENEFIT-WORDS": "a benefit section (8/9/10) exceeds 30 words",
+    "AF-FUN-BENEFIT-NO-CTA": "a benefit section (8/9) carries a CTA (forbidden)",
+    "AF-FUN-SEC10-CTA": "Section 10 missing its inspirational CTA button",
+    "AF-FUN-SEC11-WORDS": "Section 11 outside 100-150 words",
+    "AF-FUN-SEC11-NO-CTA-BUTTON": "Section 11 carries a CTA button (forbidden; step 7 is the in-copy CTA)",
+    "AF-FUN-SEC11-STEPS": "Section 11 outside 5-10 steps",
+    "AF-FUN-SEC11-STEPBAND": "a Section 11 step 1-6 outside 89-116 stripped chars",
+    "AF-FUN-SEC11-STEP7": "Section 11 step 7 exceeds 170 chars",
+    "AF-FUN-SEC11-REQUIRED-STEPS": "Section 11 missing a share/email-bonus/founder-text/community step",
+    "AF-FUN-SEC12-WORDS": "Section 12 outside 100-150 words",
+    "AF-FUN-SEC12-PARTS": "Section 12 does not carry 6 labeled parts",
+    "AF-FUN-SEC12-STRUGGLE": "Section 12 part 2 does not start 'I used to be just like you...'",
+    "AF-FUN-SEC8REPL-NAME": "the replacement Section 8 name does not match the page profile",
+    "AF-FUN-SEC8REPL-COUNT": "the replacement Section 8 does not carry exactly 7 items",
+    "AF-FUN-TY1-CHARBAND": "Thank-You TY-1 outside 120-180 stripped chars",
+    "AF-FUN-TY1-TITLE": "Thank-You TY-1 does not name the product title",
+    "AF-FUN-TY2-STEPS": "Thank-You TY-2 outside 4-6 steps",
+    "AF-FUN-TY2-STEPBAND": "a Thank-You TY-2 step outside 89-116 stripped chars",
+    "AF-FUN-TY3-CHARBAND": "Thank-You TY-3 exceeds 170 stripped chars"
+  }
+}
