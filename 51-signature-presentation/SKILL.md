@@ -114,6 +114,26 @@ as manifest phases + thin `_chk_sp_*` preflight wrappers that DEFER unless
 - Command Center — one keyword (`signature presentation`) + one `sops` row; no schema change, no new
   lane, no new persona table.
 
+## Install / Wire / Verify
+
+This skill does **not** ship its own `install.sh` or `wire.sh` — it installs via the main installer
+and wires via the department lockstep. The three legs:
+
+- **Install** — the main `install.sh` function `install_skill_51_signature_presentation()` copies
+  this skill into the box (`$SKILLS_DIR/51-signature-presentation`) and marks the provers executable.
+  Skill 23 (the Presentations engine) is the prerequisite and installs alongside it.
+- **Wire** — the **SOP-SLIDE-06 lockstep** (`universal-sops/presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
+  It installs the three SP manifest phases (`P-SP-INTAKE` / `P-SP-STRUCTURE` / `P-SP-P3-HYGIENE`),
+  the `AF-SP-*` autofail rows, and the ≤6-line `_chk_sp_*` preflight wrappers into the department
+  engine (`build_deck.py`, `phase_verifiers.py`, `prove-deck.py`, `PIPELINE-MANIFEST.json`,
+  `test_preflight.py`, the MASTER QC ruleset). The wiring is already in the engine; `sync_check.py`
+  stays green. There is **no** separate `wire.sh` — re-running the lockstep is how the wiring is
+  changed, per SOP-SLIDE-06.
+- **Verify** — `51-signature-presentation/verify.sh` (idempotent, read-only): runs the three
+  fail-closed provers in `--self-test` mode and the `register-library-additions.py --check` sanity
+  (both SP roles registered in `role-library/_index.json`). Exits nonzero on any failure, so it can
+  gate a merge / CI / a post-install check. Run it with `bash 51-signature-presentation/verify.sh`.
+
 ## Prerequisites
 
 - Skill 07 (Kie.ai setup) — the render provider for the canonical pipeline.

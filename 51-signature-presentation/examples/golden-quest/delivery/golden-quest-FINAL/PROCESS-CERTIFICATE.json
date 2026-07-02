@@ -1,0 +1,63 @@
+{
+  "schema": "process-certificate-v1",
+  "deck_slug": "golden-quest",
+  "declared_at": "2026-07-02T09:00:00+00:00",
+  "certified_at": "2026-07-02T06:37:47+00:00",
+  "declared_steps": 5,
+  "verified_steps": 5,
+  "skipped_with_approval": 0,
+  "all_steps_pass": true,
+  "steps": [
+    {
+      "order": 0.1,
+      "phase_id": "P0A-INTAKE",
+      "name": "Deck Intake",
+      "disposition": "attested",
+      "ok": true,
+      "findings": [
+        "substance_verified=True; start+done client reports confirmed; attested in order."
+      ]
+    },
+    {
+      "order": 0.15,
+      "phase_id": "P-SP-INTAKE",
+      "name": "Signature Intake Gate (prove_sp_intake)",
+      "disposition": "attested",
+      "ok": true,
+      "findings": [
+        "substance_verified=True; start+done client reports confirmed; attested in order."
+      ]
+    },
+    {
+      "order": 4.0,
+      "phase_id": "P4-COPY",
+      "name": "Slide Copy",
+      "disposition": "attested",
+      "ok": true,
+      "findings": [
+        "substance_verified=True; start+done client reports confirmed; attested in order."
+      ]
+    },
+    {
+      "order": 4.1,
+      "phase_id": "P-SP-STRUCTURE",
+      "name": "Signature Structure Gate (prove_sp_structure)",
+      "disposition": "attested",
+      "ok": true,
+      "findings": [
+        "substance_verified=True; start+done client reports confirmed; attested in order."
+      ]
+    },
+    {
+      "order": 4.15,
+      "phase_id": "P-SP-P3-HYGIENE",
+      "name": "Signature Phase-3 No-Pitch Gate (prove_sp_no_pitch)",
+      "disposition": "attested",
+      "ok": true,
+      "findings": [
+        "substance_verified=True; start+done client reports confirmed; attested in order."
+      ]
+    }
+  ],
+  "certificate_sha": "a2d93fc40a0ab9b9ddc24b6fef80cf874ac45cb27b793c3a206fdb4561637cac"
+}

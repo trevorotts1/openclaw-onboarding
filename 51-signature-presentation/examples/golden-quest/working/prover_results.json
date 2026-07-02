@@ -1,0 +1,20 @@
+{
+  "P-SP-INTAKE": {
+    "rc": 0,
+    "passed": true,
+    "cmd": "python3 $REPO/51-signature-presentation/scripts/prove_sp_intake.py $REPO/51-signature-presentation/examples/golden-quest/working/copy/sp_intake.json",
+    "output": "== Signature Presentation :: 8-Questions-in-ONE-block intake gate ==\nsource: $REPO/51-signature-presentation/examples/golden-quest/working/copy/sp_intake.json\nRESULT: PASS \u2014 all 8 Questions + frame question delivered as ONE block; frame set."
+  },
+  "P-SP-STRUCTURE": {
+    "rc": 0,
+    "passed": true,
+    "cmd": "python3 $REPO/51-signature-presentation/scripts/prove_sp_structure.py --deck $REPO/51-signature-presentation/examples/golden-quest/working/copy/sp_structure.json",
+    "output": "PASS: deck clears every rule in the SACRED signature-presentation structure contract."
+  },
+  "P-SP-P3-HYGIENE": {
+    "rc": 0,
+    "passed": true,
+    "cmd": "python3 $REPO/51-signature-presentation/scripts/prove_sp_no_pitch.py --run-dir $REPO/51-signature-presentation/examples/golden-quest",
+    "output": "PASS: Phase-3 (teaching) no-pitch hygiene verified \u2014 no offer name, price, or CTA in Phase 3, and the Phase-3->Phase-4 bridge is contiguous."
+  }
+}
