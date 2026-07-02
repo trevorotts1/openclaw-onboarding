@@ -85,10 +85,69 @@ deny() {
     exit 2
 }
 
-# is_canonical: true when the command invokes presentation-canonical-entry.sh
+# is_canonical: true ONLY when the command's PROGRAM (argv[0], after unwrapping a
+# leading interpreter / env / VAR=val assignments) is presentation-canonical-entry.sh.
+# A substring match is bypassable — e.g. `echo presentation-canonical-entry.sh; python3
+# …/build_deck.py` contains the name but is NOT the sanctioned route. We therefore
+# reject any compound/pipeline/substitution command outright and anchor to the program.
 is_canonical() {
+    if command -v python3 >/dev/null 2>&1; then
+        OPENCLAW_EXEC_CMD="$CMD" python3 - <<'PY'
+import os, re, shlex, sys
+cmd = os.environ.get("OPENCLAW_EXEC_CMD", "")
+# Reject compound commands / pipelines / substitutions — a canonical build is a
+# single simple command. This kills the "substring hidden in a compound" bypass.
+for bad in (";", "&&", "||", "|", "`", "$(", "\n", "&"):
+    if bad in cmd:
+        sys.exit(1)
+try:
+    toks = shlex.split(cmd)
+except Exception:
+    sys.exit(1)
+if not toks:
+    sys.exit(1)
+ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+INTERP = {"bash", "sh", "zsh", "dash"}
+idx = 0
+while idx < len(toks) and ASSIGN.match(toks[idx]):   # strip leading VAR=val
+    idx += 1
+if idx >= len(toks):
+    sys.exit(1)
+prog = toks[idx]
+base = os.path.basename(prog)
+if base == "env":
+    idx += 1
+    while idx < len(toks) and (ASSIGN.match(toks[idx]) or toks[idx].startswith("-")):
+        idx += 1
+    prog = toks[idx] if idx < len(toks) else ""
+    base = os.path.basename(prog)
+elif base in INTERP:
+    idx += 1
+    while idx < len(toks) and toks[idx].startswith("-"):
+        idx += 1
+    prog = toks[idx] if idx < len(toks) else ""
+    base = os.path.basename(prog)
+sys.exit(0 if base == "presentation-canonical-entry.sh" else 1)
+PY
+        return $?
+    fi
+    # python3 absent — conservative fallback: reject compound commands, then anchor
+    # to the first program token (unwrapping a leading interpreter).
     case "$CMD" in
-        *presentation-canonical-entry.sh*) return 0 ;;
+        *";"*|*"&&"*|*"||"*|*"|"*|*'`'*|*'$('*|*"&"*) return 1 ;;
+    esac
+    # shellcheck disable=SC2086
+    set -- $CMD
+    _prog="${1:-}"
+    case "$(basename "$_prog" 2>/dev/null)" in
+        bash|sh|zsh|dash)
+            shift
+            while [ $# -gt 0 ]; do case "$1" in -*) shift ;; *) break ;; esac; done
+            _prog="${1:-}"
+            ;;
+    esac
+    case "$(basename "$_prog" 2>/dev/null)" in
+        presentation-canonical-entry.sh) return 0 ;;
     esac
     return 1
 }
@@ -110,38 +169,87 @@ print(m.group(1) if m else '')
 " 2>/dev/null || true
 }
 
-# check_intake_ledger: returns 0 if intake is complete or ledger absent,
-#                      exits 2 (deny) if ledger exists and status != complete
+# owner_skip_intake: returns 0 iff a logged owner approval waives the intake-interview
+# gate (gate code INTAKE-INTERVIEW or *), read from process_manifest.json. This is
+# the sanctioned "human explicitly said so" override — never an agent self-skip.
+# (Non-'AF-' token by design: this is a preflight/front-door refusal, not a QC board
+# autofail in the PIPELINE-MANIFEST taxonomy.)
+owner_skip_intake() {
+    local run_dir="$1"
+    local pm="$run_dir/working/checkpoints/process_manifest.json"
+    [ -f "$pm" ] || return 1
+    command -v python3 >/dev/null 2>&1 || return 1
+    PM="$pm" python3 - <<'PY'
+import json, os, sys
+try:
+    obj = json.load(open(os.environ["PM"]))
+except Exception:
+    sys.exit(1)
+recs = []
+for key in ("owner_skip_approvals", "owner_skip_approval"):
+    v = obj.get(key) if isinstance(obj, dict) else None
+    if isinstance(v, list):
+        recs += v
+    elif isinstance(v, dict):
+        recs.append(v)
+WANT = {"INTAKE-INTERVIEW", "AF-INTAKE-INTERVIEW", "*"}
+for r in recs:
+    if not isinstance(r, dict):
+        continue
+    code = str(r.get("gate") or r.get("gate_code") or r.get("code") or r.get("af_code") or "").strip().upper()
+    if code not in WANT:
+        continue
+    if (r.get("approved") is True or r.get("owner_approved") is True) \
+       and str(r.get("approved_by", "")).strip() and str(r.get("reason", "")).strip():
+        sys.exit(0)
+sys.exit(1)
+PY
+}
+
+# check_intake_ledger: FAIL-CLOSED. Denies a real (non---plan) build when the intake
+# ledger is ABSENT or its status is not complete — an absent ledger means the
+# Brainstorming Buddy interview was skipped. Read-only --plan inspection is exempt.
+# The ONLY waiver is a logged owner_skip_approval (AF-INTAKE-INTERVIEW).
 check_intake_ledger() {
     local run_dir="$1"
     [ -n "$run_dir" ] || return 0
+    # --plan inspection is read-only; never blocked on the interview.
+    case "$CMD" in
+        *" --plan "*|*" --plan") return 0 ;;
+    esac
     local ledger="$run_dir/working/interview/intake_ledger.json"
-    [ -f "$ledger" ] || return 0  # no ledger = not started = allow (intake not yet begun)
+    if [ ! -f "$ledger" ]; then
+        if owner_skip_intake "$run_dir"; then
+            echo "!! [deck-build-guard] intake ledger ABSENT but an OWNER-APPROVED skip is logged (INTAKE-INTERVIEW); proceeding under owner authority." >&2
+            return 0
+        fi
+        deny "intake ledger missing ($ledger) — run the Brainstorming Buddy interview (deck-intake-driver.py --next/--answer/--complete) before building. Owner override: log an owner_skip_approval for gate INTAKE-INTERVIEW (approved:true, approved_by, reason) in working/checkpoints/process_manifest.json."
+    fi
     if command -v python3 >/dev/null 2>&1; then
-        local status complete
-        status="$(python3 -c "
-import json, sys
-try:
-    d = json.load(open('$ledger'))
-    print(d.get('status',''))
-except Exception:
-    print('')
-" 2>/dev/null || true)"
+        local complete
         complete="$(python3 -c "
 import json, sys
 try:
     d = json.load(open('$ledger'))
-    print('true' if d.get('complete') is True or d.get('complete') == 'true' else '')
+    print('yes' if (d.get('status') == 'complete' or d.get('complete') is True or str(d.get('complete','')).strip().lower() == 'true') else '')
 except Exception:
     print('')
 " 2>/dev/null || true)"
-        if [ "$status" != "complete" ] && [ -z "$complete" ]; then
-            deny "intake interview not complete (working/interview/intake_ledger.json status='$status'). Complete the deck-intake interview with deck-intake-driver.py before building."
+        if [ -z "$complete" ]; then
+            if owner_skip_intake "$run_dir"; then
+                echo "!! [deck-build-guard] intake ledger INCOMPLETE but an OWNER-APPROVED skip is logged (INTAKE-INTERVIEW); proceeding." >&2
+                return 0
+            fi
+            deny "intake interview not complete ($ledger status is not 'complete'). Finish the deck-intake interview with deck-intake-driver.py --complete before building. Owner override: owner_skip_approval gate INTAKE-INTERVIEW in working/checkpoints/process_manifest.json."
         fi
     else
         # python3 absent: parse crudely with grep
-        if ! grep -qE '"status"\s*:\s*"complete"' "$ledger" 2>/dev/null; then
-            deny "intake interview not complete (working/interview/intake_ledger.json). Complete the deck-intake interview with deck-intake-driver.py before building."
+        if ! grep -qE '"status"[[:space:]]*:[[:space:]]*"complete"|"complete"[[:space:]]*:[[:space:]]*true' "$ledger" 2>/dev/null; then
+            if owner_skip_intake "$run_dir"; then
+                echo "!! [deck-build-guard] intake ledger incomplete but OWNER-APPROVED skip logged; proceeding." >&2
+                return 0
+            fi
+            deny "intake interview not complete ($ledger). Complete the deck-intake interview with deck-intake-driver.py --complete before building."
         fi
     fi
     return 0

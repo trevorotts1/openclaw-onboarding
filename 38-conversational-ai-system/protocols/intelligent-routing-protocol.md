@@ -5,6 +5,8 @@
 > Playbook Builder** (`conversation-workflows-protocol.md`). The **Step 9.34 — Proactive Features Suite**
 > (`proactive-suggestions-protocol.md`) proposes NEW playbooks the builder then creates, which immediately
 > become routable destinations here. See Step 9.20 Section K for the full triangle.
+>
+> **BUILD path:** caf-direct (Skill 44, Option 1 — PRIMARY) when the Firebase token is present; else Build-with-AI paste (Option 2). See references/GHL_AI_LAYERS.md.
 
 The agent re-evaluates workflow match after EVERY customer message,
 not just at conversation start. Routes to a different workflow when

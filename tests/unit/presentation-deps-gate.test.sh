@@ -226,9 +226,24 @@ assert_file_has "how-to-use forbids python3 working/*.py"     "$HOWTO" 'python3 
 assert_file_has "00-START-HERE names the canonical command"   "$START_HERE" 'presentation-canonical-entry\.sh'
 assert_file_has "00-START-HERE forbids python3 working/*.py"  "$START_HERE" 'python3 working/\*\.py'
 
+# write_complete_ledger DIR — mint a completed deck-intake ledger so GATE-0
+# (deck-build-guard fail-closed intake check) passes and the test can exercise the
+# LATER gates (bypass-scan / clean-pass) without being pre-empted by the intake gate.
+write_complete_ledger() {
+    mkdir -p "$1/working/interview"
+    cat > "$1/working/interview/intake_ledger.json" <<'LEDGER'
+{ "status": "complete", "complete": true, "turns": 6,
+  "entries": {
+    "representation_mix": {"validated": true, "answer": "no people at all"},
+    "grounded_content": {"validated": true, "answer": "the Momentum Method"}
+  } }
+LEDGER
+}
+
 # Functional: bypass-scan TRIPS (exit 5) on a hand-rolled renderer in the run dir.
 SCAN_RUN="$TMPDIR_TEST/scan-run"
 mkdir -p "$SCAN_RUN/working/checkpoints"
+write_complete_ledger "$SCAN_RUN"
 echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$SCAN_RUN/slides.json"
 cat > "$SCAN_RUN/working/phase6_assemble.py" <<'PYBAD'
 from PIL import Image
@@ -271,6 +286,7 @@ fi
 # Functional: a CLEAN run dir does NOT trip the scan (exit code is not 5).
 CLEAN_RUN="$TMPDIR_TEST/clean-run"
 mkdir -p "$CLEAN_RUN/working/checkpoints"
+write_complete_ledger "$CLEAN_RUN"
 echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$CLEAN_RUN/slides.json"
 ENTRY_RC=0
 QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$CLEAN_RUN" \

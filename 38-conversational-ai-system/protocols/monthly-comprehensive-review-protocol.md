@@ -1,5 +1,7 @@
 # Monthly Comprehensive Playbook Review Protocol
 
+> **BUILD path:** caf-direct (Skill 44, Option 1 — PRIMARY) when the Firebase token is present; else Build-with-AI paste (Option 2). See references/GHL_AI_LAYERS.md.
+
 Runs 1st of each month at 9:00 AM (operator-configurable). Performs a
 deep audit of the entire system based on a full month of conversation
 data, weekly tune-up history, and outcome metrics.

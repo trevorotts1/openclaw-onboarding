@@ -46,6 +46,7 @@ v6.6.0 additions:
 import argparse
 import os
 import json
+import re
 import sys
 import time
 import asyncio
@@ -457,7 +458,100 @@ def _auto_classify_persona_tags(folder: str, book: dict,
     return domain_tags, perspective_tags
 
 
-def _append_persona_to_categories(book: dict, folder: str) -> None:
+# ─── P13-2: persona-categories.json schema-lint gate (FINAL-REVIEW-2026-07-01) ──
+# PERSONA-ROUTER.md / persona-categories.README.md DOCUMENT the rule that every
+# personas[*].domain / .perspective value must come from the top-level
+# domainTags[]/perspectiveTags[] controlled vocab (or extend it with a
+# well-formed new tag) — nothing MACHINE-ENFORCED it before this gate. A
+# malformed append (wrong type, empty string, stray whitespace, a value that
+# neither matches the vocab nor is a well-formed new tag) would silently write
+# into persona-categories.json and orphan that persona from persona-selector-v2.py
+# Stage-B category filtering (build_candidate_pool's dept-scope filter matches
+# literal tag membership). This gate runs immediately before every write in
+# _append_persona_to_categories and HARD FAILS — raising
+# PersonaCategoriesSchemaError naming the offending key — rather than writing
+# a malformed entry. The caller (process_book, Phase 6) already wraps this
+# call in try/except and logs the failure per the pipeline's existing
+# non-fatal-to-the-book convention (mirrors Phase 6b's handling below it) —
+# the persona-categories.json FILE itself is simply never written when this
+# gate fires, so a malformed entry can never land on disk.
+_TAG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+
+class PersonaCategoriesSchemaError(ValueError):
+    """Raised when a persona-categories.json append does not conform to the
+    documented schema (well-formed domainTags[]/perspectiveTags[] membership
+    or well-formed extension). The message always names the offending key."""
+
+
+def _lint_tag_list(entry_key: str, tags, vocab: list) -> list:
+    """Validate `tags` (a persona entry's domain[] or perspective[] list)
+    against `vocab` (the top-level domainTags[]/perspectiveTags[] controlled
+    vocab). Every tag must be a well-formed lowercase kebab-case string, and
+    must EITHER already exist in `vocab` OR be appended to it here (a
+    well-formed extension — the documented, allowed way to introduce a new
+    tag). Anything else (wrong type, empty, malformed characters) is a hard
+    fail naming the offending key ('<entry_key>[<index>]') so the caller can
+    never write a malformed entry.
+
+    Returns the (possibly-extended) vocab list; does not mutate the input.
+    """
+    if tags is None:
+        return list(vocab)
+    if not isinstance(tags, list):
+        raise PersonaCategoriesSchemaError(
+            f"persona-categories.json schema-lint: '{entry_key}' must be a "
+            f"list, got {type(tags).__name__}"
+        )
+    new_vocab = list(vocab)
+    for i, tag in enumerate(tags):
+        offending_key = f"{entry_key}[{i}]"
+        if not isinstance(tag, str) or not tag.strip():
+            raise PersonaCategoriesSchemaError(
+                f"persona-categories.json schema-lint: malformed tag at "
+                f"'{offending_key}' (must be a non-empty string, got {tag!r})"
+            )
+        if not _TAG_RE.match(tag):
+            raise PersonaCategoriesSchemaError(
+                f"persona-categories.json schema-lint: malformed tag at "
+                f"'{offending_key}' = {tag!r} (must be lowercase kebab-case, "
+                f"e.g. 'sales-persuasion' — does not match {_TAG_RE.pattern!r})"
+            )
+        if tag not in new_vocab:
+            # Well-formed NEW tag — the documented-allowed way to extend the
+            # controlled vocab.
+            new_vocab.append(tag)
+    return new_vocab
+
+
+def _lint_persona_categories_write(data: dict, folder: str) -> None:
+    """Hard-fail schema-lint gate for a persona-categories.json write.
+
+    Validates the about-to-be-written entry at data["personas"][folder]
+    against domainTags[]/perspectiveTags[], extending those controlled-vocab
+    arrays IN PLACE (on `data`) when a new tag is well-formed, and raising
+    PersonaCategoriesSchemaError (naming the offending key) on anything
+    malformed. Call immediately before every json.dump in
+    _append_persona_to_categories — never after.
+    """
+    entry = data.get("personas", {}).get(folder)
+    if not isinstance(entry, dict):
+        raise PersonaCategoriesSchemaError(
+            f"persona-categories.json schema-lint: 'personas.{folder}' must "
+            f"be an object, got {type(entry).__name__}"
+        )
+    data["domainTags"] = _lint_tag_list(
+        f"personas.{folder}.domain", entry.get("domain"),
+        data.get("domainTags", []) or [],
+    )
+    data["perspectiveTags"] = _lint_tag_list(
+        f"personas.{folder}.perspective", entry.get("perspective"),
+        data.get("perspectiveTags", []) or [],
+    )
+
+
+def _append_persona_to_categories(book: dict, folder: str,
+                                  appendix_status: str = None) -> None:
     """Append a new persona entry to persona-categories.json (idempotent).
 
     PRD 2.7: always writes to the canonical path returned by _persona_categories_path()
@@ -470,6 +564,20 @@ def _append_persona_to_categories(book: dict, folder: str) -> None:
     that (a) the persona becomes visible to v2 selector's list_available_personas
     (b) the operator gets a clear "no tags yet" signal to fill in domain +
     perspective tags before the dept-scope filter will include this persona.
+
+    P13-1 (FINAL-REVIEW-2026-07-01 Point 13 fix 1): also stamps
+    `appendixStatus` (COMPLETE / COMPLETE_WITH_WARNINGS / FAILED / MISSING) so
+    persona-selector-v2.py's appendix_completeness_bonus() can prefer a
+    persona with a full-fidelity PLAYBOOK-APPENDIX.md for asset-heavy tasks.
+    `appendix_status` should be the caller's pipeline-status.json
+    `status[folder]["phase3b"]` value (process_book, Phase 6, already has
+    `status` in scope) — falls back to a disk check when not supplied (e.g. a
+    legacy/manual call path) so the field is never silently omitted.
+
+    P13-2: before writing, every domain[]/perspective[] value on the new
+    entry is run through the schema-lint gate (_lint_persona_categories_write)
+    — a malformed append (wrong type, empty, not kebab-case) HARD FAILS,
+    raising PersonaCategoriesSchemaError, and the file is never written.
     """
     import shutil
     cat_path = _persona_categories_path()
@@ -512,6 +620,20 @@ def _append_persona_to_categories(book: dict, folder: str) -> None:
         data.get("domainTags", []),
         data.get("perspectiveTags", []),
     )
+
+    # P13-1: resolve the appendix-completeness field. Prefer the caller's
+    # pipeline-status.json phase3b state (authoritative — the on-disk file's
+    # own header never carries the real COMPLETE/COMPLETE_WITH_WARNINGS/FAILED
+    # verdict, only a static "QC_PENDING" placeholder). Fall back to a plain
+    # file-existence check for a caller that has no status dict in scope.
+    appendix_path = PERSONAS_DIR / folder / "PLAYBOOK-APPENDIX.md"
+    if appendix_status:
+        resolved_appendix_status = appendix_status
+    elif appendix_path.exists():
+        resolved_appendix_status = "COMPLETE"
+    else:
+        resolved_appendix_status = "MISSING"
+
     data["personas"][folder] = {
         "author": book.get("author", "unknown"),
         "book": book.get("title", folder),
@@ -519,12 +641,20 @@ def _append_persona_to_categories(book: dict, folder: str) -> None:
         "perspective": perspective_tags,
         "custom": [],
         "autoTagged": True,    # set by orchestrator auto-classifier; operator may refine
+        "appendixStatus": resolved_appendix_status,  # P13-1: COMPLETE / COMPLETE_WITH_WARNINGS / FAILED / MISSING
         "added": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
+
+    # P13-2: hard-fail schema-lint gate — raises PersonaCategoriesSchemaError
+    # (naming the offending key) BEFORE any write if domain[]/perspective[]
+    # is malformed. The file on disk is left untouched when this raises.
+    _lint_persona_categories_write(data, folder)
+
     with open(cat_path, "w") as f:
         json.dump(data, f, indent=2)
     print(f"[orchestrator] Appended {folder} to {cat_path} "
-          f"(auto-tagged domain={domain_tags} perspective={perspective_tags}; operator may refine).")
+          f"(auto-tagged domain={domain_tags} perspective={perspective_tags}; "
+          f"appendixStatus={resolved_appendix_status}; operator may refine).")
 
 
 # ─── LOGGING ──────────────────────────────────────────────────────────────────
@@ -1799,7 +1929,11 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
         # this — direct orchestrator calls (e.g. orchestrator.py --single-book)
         # left the persona invisible to the v2 selector.
         try:
-            _append_persona_to_categories(book, folder)
+            # P13-1: pass the Phase 3b appendix verdict (COMPLETE /
+            # COMPLETE_WITH_WARNINGS / FAILED) already recorded in `status` a
+            # few lines above (run_playbook_appendix -> mark_phase(..., "3b", ...)).
+            _append_persona_to_categories(book, folder,
+                                          appendix_status=status.get(folder, {}).get("phase3b"))
         except Exception as e:
             log(f"  Warning: failed to append {folder} to persona-categories.json: {e}")
 

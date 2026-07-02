@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v16.2.18"
+ONBOARDING_VERSION="v16.2.19"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -3063,6 +3063,15 @@ if [ -f "$_PROVISION_HELPER" ]; then
     fi
 else
     warn "provision-persona-index.sh not found — skipping prebuilt index provisioning (additive)"
+fi
+# P11-1: belt-and-suspenders QC-visible surfacing. provision-persona-index.sh's
+# own skip paths already print a "  ⚠️  " line (matching warn()'s own output),
+# which print_install_summary() picks up automatically since this whole
+# script's stdout is tee'd to $LOG_FILE — but decouple the completion report
+# from that internal formatting detail by also re-asserting through warn()
+# itself here, keyed off the exported _PIDX_SKIP_WARNINGS accumulator.
+if [ -n "${_PIDX_SKIP_WARNINGS:-}" ]; then
+    warn "Persona-index provisioning had skip warnings: $_PIDX_SKIP_WARNINGS"
 fi
 
 # Step 6b-catalog: Wire GHL funnel catalog path vars (GHL_FUNNEL_CATALOG + GHL_FUNNEL_INDEX)
@@ -7315,6 +7324,50 @@ if [ -f "$ONBOARDING_DIR/scripts/apply-routing-fix.sh" ]; then
     success "Routing fix applied"
 else
     warn "apply-routing-fix.sh not found at $ONBOARDING_DIR/scripts/apply-routing-fix.sh"
+fi
+echo ""
+
+# ----------------------------------------------------------
+# CEO PreToolUse intent-gate — WIRE THE RUNTIME BRAKE (v16.2.19).
+# apply-routing-fix.sh (above) stamps the presentation reflex + the SIGNED
+# route-presentation.sh helper, but that reflex is only ENFORCED at runtime by the
+# PreToolUse intent-gate hook (hooks/ceo-intent-gate.sh): the hook denies a raw
+# `python3 build_deck.py` on the router/CEO and redirects it to route. The hook +
+# its installer shipped but were never invoked, so the brake stayed OFF on every
+# box. Wire it here on the fresh-install path (mirror of update-skills.sh), right
+# after the routing fix so the reflex/helper and openclaw.json topology exist.
+# The installer is idempotent (self-skips when already wired), self-skips on
+# PA-default boxes, runs as the box owner (never root), and is non-fatal
+# (a wiring error is a warning — install continues, mirroring apply-routing-fix.sh).
+# ----------------------------------------------------------
+note "Wiring CEO PreToolUse intent-gate (runtime brake for the presentation reflex)..."
+if [ -f "$ONBOARDING_DIR/scripts/install-ceo-intent-gate.sh" ]; then
+    bash "$ONBOARDING_DIR/scripts/install-ceo-intent-gate.sh" || warn "install-ceo-intent-gate.sh reported errors (install continues — re-run scripts/install-ceo-intent-gate.sh)"
+    success "CEO intent-gate wired (or already wired / PA-box skip)"
+else
+    warn "install-ceo-intent-gate.sh not found at $ONBOARDING_DIR/scripts/install-ceo-intent-gate.sh"
+fi
+echo ""
+
+# ----------------------------------------------------------
+# Post-stamp verification: verify-routing.sh static gates G1–G8 (v16.2.19).
+# The install applied the 4-layer routing fix + wired the intent-gate above but
+# never VERIFIED them, so a box that silently failed a layer went unflagged.
+# Run the gate now and surface per-gate PASS/FAIL. LOUD WARNING on failure —
+# NOT a hard install abort (mirrors the update-skills.sh post-stamp block and
+# the non-fatal convention of the surrounding steps). Read-only static gates
+# G1–G8 only (no --probe: the Command Center may not be live yet at this phase).
+# ----------------------------------------------------------
+note "Verifying routing wiring (verify-routing.sh static gates G1–G8)..."
+if [ -f "$ONBOARDING_DIR/scripts/verify-routing.sh" ]; then
+    if bash "$ONBOARDING_DIR/scripts/verify-routing.sh"; then
+        success "verify-routing: all static gates PASS"
+    else
+        warn "verify-routing: one or more gates FAILED — routing/intent-gate wiring incomplete on this box."
+        warn "Install continues; re-run apply-routing-fix.sh + install-ceo-intent-gate.sh, then 'bash scripts/verify-routing.sh' to see which gate."
+    fi
+else
+    warn "verify-routing.sh not found at $ONBOARDING_DIR/scripts/verify-routing.sh (skipping post-stamp routing verification)"
 fi
 echo ""
 

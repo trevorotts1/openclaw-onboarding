@@ -6,6 +6,8 @@
 > (`conversation-workflows-protocol.md`) into `conversation-workflows/drafts/`. Once built, those playbooks
 > become routable destinations for **Step 9.33 — Intelligent Playbook Routing**
 > (`intelligent-routing-protocol.md`). See Step 9.20 Section K for the full triangle.
+>
+> **BUILD path:** caf-direct (Skill 44, Option 1 — PRIMARY) when the Firebase token is present; else Build-with-AI paste (Option 2). See references/GHL_AI_LAYERS.md.
 
 Seven proactive capabilities, each independently triggerable. Each
 analyzes recent conversation logs / workflow outcomes / escalation

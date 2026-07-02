@@ -6051,8 +6051,13 @@ def add_agent_to_config(config, dept_id, dept_info):
         "sessions_send",
         "sessions_list",
         "sessions_history",
-        # INTERIM: exec stays allowed only so the CEO can curl the ingest route.
-        # Replace with "mc-route__route_task" once the route-task MCP tool ships.
+        # mc-route__route_task = the SHIPPED signed routing tool (scripts/mc-route.sh);
+        # the CEO routes by CALLING it (structured tool call, no shell) — that presence
+        # is what clears verify-routing.sh G7. exec is RETAINED (per G1's decision in
+        # hooks/lib-ceo-tool-gate.sh), NOT removed: it stays ONLY as the exec channel for
+        # the two anchored helpers (route-presentation.sh + mc-route.sh); the intent-gate
+        # default-denies every other exec. KEEP IN SYNC with hooks/lib-ceo-tool-gate.sh.
+        "mc-route__route_task",
         "exec",
     ]
     # GHL MCP is registered under BOTH ids on live boxes: ghl-community-mcp AND

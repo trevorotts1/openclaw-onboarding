@@ -61,12 +61,22 @@ Skill 41 Build With AI Playbook Generator
    |-- Step 2: Dependency audit (what tags/fields/values must exist FIRST)
    |-- Step 3: Create dependencies via GHL API (ZHC- prefixed tags, ZHC_ prefixed fields)
    |-- Step 4: Generate standardized Build With AI prompt (8 sections)
-   |-- Step 5: Operator pastes into GHL Workflow AI Builder (Automations > Build using AI)
-   |-- Step 6: Post-build verification (12-point checklist)
+   |-- Step 5: Build the workflow -- Option 1 (CAF direct) or Option 2 (manual paste)
+   |     |-- Option 1 -- CAF direct (PRIMARY): Skill 44 (convert-and-flow-operator) receives
+   |     |    this skill's 8-section structure and `caf workflows build` sends it to the GHL
+   |     |    internal Build API directly -- used when the client has Skill 44 installed AND a
+   |     |    healthy GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN
+   |     |-- Option 2 -- Manual paste (FALLBACK): operator pastes the generated prompt into GHL
+   |          Workflow AI Builder (Automations > Build using AI) -- used when the Firebase token
+   |          is absent or expired
+   |-- Step 6: Post-build verification (12-point checklist -- path-agnostic, required on BOTH paths, do not skip even on a successful CAF build)
    |-- Step 7: Log to build-with-ai-events.jsonl (F52 contract)
    v
 Working GHL workflow published + conversation playbook registered (if applicable)
 ```
+
+See `INSTRUCTIONS.md` Step 5 (lines ~146-178) for the full Option 1 / Option 2 walkthrough, and
+`38-conversational-ai-system/references/GHL_AI_LAYERS.md` for the canonical Layer 0/1/2 build-path reference.
 
 ## The standardized output template (8 sections)
 

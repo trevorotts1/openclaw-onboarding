@@ -247,6 +247,45 @@ def _write_intake(root: Path):
         "pitch_included": True,
         "named_methodology": "Three-Move Pipeline System",
         "time_to_result": "8 weeks",
+        # P1-C: the six mandatory Brainstorming-Buddy fields captured under
+        # pre_presentation_capture (asserted by _chk_intake_provenance).
+        "pre_presentation_capture": {
+            "REPRESENTATION_MIX": "70% African-American women, 20% mixed race, 10% men",
+            "AUDIENCE_COMPOSITION_NOTE": "multicultural women-led professional audience",
+            "GROUNDED_CONTENT": "Three-Move Pipeline System — a 3-step revenue method",
+            "VISUAL_MIX": "mix",
+            "DARK_OK": False,
+            "HOOK_SEED": "Momentum compounds when you make the next move",
+        },
+    }))
+    # P1-C: a COMPLETED, turn-gated intake_ledger.json consistent with the six fields
+    # (the Brainstorming-Buddy provenance record). Without it, _chk_intake fails closed.
+    _write_complete_intake_ledger(root)
+
+
+def _write_complete_intake_ledger(root: Path):
+    """Write a completed working/interview/intake_ledger.json with validated entries
+    for the six mandatory deck-intake questions (mirrors deck-intake-driver.py output)."""
+    interview = root / "working" / "interview"
+    interview.mkdir(parents=True, exist_ok=True)
+    def _entry(ans):
+        return {"asked_at": "2026-07-01T00:00:00", "answer": ans,
+                "validated": True, "validated_at": "2026-07-01T00:00:01"}
+    (interview / "intake_ledger.json").write_text(json.dumps({
+        "status": "complete",
+        "complete": True,
+        "started_at": "2026-07-01T00:00:00",
+        "completed_at": "2026-07-01T00:05:00",
+        "turns": 6,
+        "budget_overrun": False,
+        "entries": {
+            "representation_mix": _entry("70% African-American women, 20% mixed race, 10% men"),
+            "audience_composition_note": _entry("multicultural women-led professional audience"),
+            "grounded_content": _entry("Three-Move Pipeline System — a 3-step revenue method"),
+            "visual_mix": _entry("mix"),
+            "dark_ok": _entry("no"),
+            "hook_seed": _entry("Momentum compounds when you make the next move"),
+        },
     }))
 
 
@@ -492,6 +531,24 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
     return root
 
 
+def _arm_entry_nonce(root: Path, env: dict) -> None:
+    """Mimic presentation-canonical-entry.sh's front-door handshake: mint a per-run
+    nonce, write it 0600 to the run-scoped file, and export OC_DECK_ENTRY_NONCE so the
+    renderer's front-door guard admits this CI/test invocation. Replaces the retired
+    (forgeable) OC_DECK_ALLOW_DIRECT / OC_DECK_CANONICAL_ENTRY env-marker escape."""
+    import secrets
+    nonce = secrets.token_hex(32)
+    nd = root / "working" / "checkpoints"
+    nd.mkdir(parents=True, exist_ok=True)
+    nf = nd / ".canonical-entry-nonce"
+    nf.write_text(nonce)
+    try:
+        os.chmod(nf, 0o600)
+    except OSError:
+        pass
+    env["OC_DECK_ENTRY_NONCE"] = nonce
+
+
 def run(root: Path, extra=None):
     cmd = [sys.executable, str(BUILD),
            str(root / "slides.json"), str(root / "out.pptx")]
@@ -499,12 +556,9 @@ def run(root: Path, extra=None):
         cmd += extra
     # Strip KIE key so a passed preflight cleanly halts at the config stage
     # instead of hitting the network.
-    # OC_DECK_ALLOW_DIRECT=1: CI/test escape valve for the front-door marker guard
-    # (build_deck.main() requires OC_DECK_CANONICAL_ENTRY=1 or OC_DECK_ALLOW_DIRECT=1
-    # to prevent direct invocations from bypassing the canonical entry gate).
     env = dict(os.environ)
     env.pop("KIE_API_KEY", None)
-    env["OC_DECK_ALLOW_DIRECT"] = "1"
+    _arm_entry_nonce(root, env)  # front-door nonce handshake (front-door marker guard)
     return subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=60)
 
 
@@ -4109,7 +4163,7 @@ def main():
     cmd = [sys.executable, str(BUILD), str(root / "slides.json"), str(root / "out.pptx")]
     env = dict(os.environ)
     env.pop("KIE_API_KEY", None)
-    env["OC_DECK_ALLOW_DIRECT"] = "1"  # CI/test escape valve for front-door marker guard
+    _arm_entry_nonce(root, env)  # front-door nonce handshake (front-door marker guard)
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, env=env)
     try:
@@ -4145,7 +4199,7 @@ def main():
            str(root / "out.pptx"), "--adhoc-no-process"]
     env = dict(os.environ)
     env.pop("KIE_API_KEY", None)
-    env["OC_DECK_ALLOW_DIRECT"] = "1"  # CI/test escape valve for front-door marker guard
+    _arm_entry_nonce(root, env)  # front-door nonce handshake (front-door marker guard)
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, env=env)
     try:

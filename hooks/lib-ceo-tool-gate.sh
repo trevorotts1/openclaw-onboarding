@@ -23,6 +23,15 @@
 #     origin; keep the two in sync (one test asserts they match — see
 #     scripts/test-ceo-tool-gate.sh).
 #
+#   SYNC NOTE (mc-route ship): CEO_GATE_ALLOW_TOOLS now carries the shipped
+#   `mc-route__route_task` routing tool (below). This canonical source LEADS; the
+#   write-sites that actually stamp the config onto boxes — build-workforce.py and
+#   scripts/apply-routing-fix.sh / scripts/apply-fleet-standards.sh (whose inline
+#   allow lists still read `"exec"  # INTERIM — replace with mc-route__route_task
+#   once that MCP tool ships`) — must be re-synced by their owners to add
+#   mc-route__route_task so a real box's G7 clears. Until then boxes stay in the
+#   PRE-EXISTING INTERIM state (no regression). See docs/MC-ROUTE.md.
+#
 # The HARD CONSTRAINT this satisfies: never strip the CEO's abilities outright.
 # GATED is a gate, not a removal — CONSENTED restores everything.
 
@@ -39,13 +48,31 @@ CEO_GATE_DENY_TOOLS=(
 )
 
 # Tools the CEO keeps in BOTH postures so it can route + converse.
-# NOTE: `exec` is INTERIM — kept so the CEO can curl POST /api/tasks/ingest until
-# the dedicated route-task MCP tool ships fleet-wide (verify-routing.sh G7
-# FAIL-WARNs while exec is present so a box is never falsely marked clean).
+#
+# `mc-route__route_task` is the SHIPPED routing tool (scripts/mc-route.sh is its
+# signed implementation — the general form of route-presentation.sh: signs Bearer
+# + HMAC, POSTs /api/tasks/ingest for ANY <department_slug>). The CEO routes by
+# CALLING this tool — a structured tool call, no shell — so routing NO LONGER
+# depends on `exec`. Its presence CLEARS the verify-routing.sh G7 INTERIM
+# classification: G7 treats exec-in-allow as a hole ONLY when NO `*__route_task`
+# tool is present (verify-routing.sh:500-503).
+#
+# `exec` is RETAINED (not removed) ONLY as the execution channel for the two
+# ANCHORED, intent-gate-carved sanctioned shell helpers — route-presentation.sh
+# (REFLEX V2 STEP 1) and mc-route.sh — NOT as a general routing path. OpenClaw's
+# config-layer exec policy is {security,ask} and CANNOT command-allowlist, so the
+# command-level "only the sanctioned helpers" restriction is enforced by the
+# PreToolUse intent-gate (hooks/ceo-intent-gate.sh), which default-DENIES every
+# other exec. Dropping exec HERE would deny the CEO the route-presentation.sh
+# helper the reflex mandates (a documented flow), because a config-layer deny is
+# restrict-only and cannot be un-denied by the hook. exec is retired outright ONLY
+# once the reflex migrates route-presentation.sh onto mc-route__route_task
+# (AGENTS.md + apply-*.sh — see docs/MC-ROUTE.md "Follow-ups for other owners").
 CEO_GATE_ALLOW_TOOLS=(
   "read" "web_fetch" "web_search"
   "message" "telegram" "slack" "discord"
   "sessions_send" "sessions_list" "sessions_history"
+  "mc-route__route_task"
   "exec"
 )
 

@@ -1,5 +1,7 @@
 # Business-Logic Workflow Suggestions Protocol
 
+> **BUILD path:** caf-direct (Skill 44, Option 1 — PRIMARY) when the Firebase token is present; else Build-with-AI paste (Option 2). See references/GHL_AI_LAYERS.md.
+
 The agent detects gaps between the operator's existing Conversation
 Workflows and the complete customer journey for their business type
 (per journey-templates/). When it finds gaps, it proposes the missing

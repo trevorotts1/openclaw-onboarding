@@ -194,6 +194,11 @@ If any item is wrong, the fix is listed right there.
 
 ## End-to-end test
 
+**If this workflow was built via caf (Skill 44, Option 1 — PRIMARY):** before asking the human to
+verify, run `44-convert-and-flow-operator/qc-built-workflow.sh <workflow-id> --json` and attach its JSON
+output here. That covers the mechanical items above (trigger, actions, webhook wiring) programmatically —
+the human only needs to confirm the end-to-end test below, not re-click through every field.
+
 - [ ] Trigger the workflow manually (e.g., reply to your test SMS)
 - [ ] Watch the workflow execution log in Convert and Flow — should
        show "Webhook sent successfully" with a 2xx status
@@ -204,6 +209,12 @@ If end-to-end test passes, the workflow is fully wired and live.
 
 If end-to-end test fails, copy the error from the Convert and Flow
 execution log and bring it back to the agent.
+
+**Record the result.** Once the end-to-end test returns a result (pass or fail), write it back to this
+workflow's row in `conversation-workflows/registry.md` under the `Verification completed` column (the
+`verification_completed` marker — see `protocols/conversation-workflows-protocol.md` §F) so the monthly
+review (`protocols/monthly-comprehensive-review-protocol.md`) can surface workflows that were delivered
+but never actually verified end-to-end.
 ```
 
 Each verification item is generated from the same source-of-truth as the prompt — so they're guaranteed to match.
