@@ -16,8 +16,9 @@
 #                         SES send, or a direct GoHighLevel/LeadConnector message
 #                         send outside the sanctioned DRAFT-ONLY Skill-44 handoff
 #                         (exit 5, AF-EMAIL-SEND-BYPASS). Nothing sends from here.
-#   3. VERSION/HASH PIN — content hash of prove-email.py + run_email_engine.py; if a
-#                         pin file is present the hash MUST match (exit 7).
+#   3. VERSION/HASH PIN — content hash of prove-email.py + run_email_engine.py +
+#                         EMAIL-MANIFEST.json (ENGINE-PIN.sha256); the hash MUST
+#                         match when the pin file is present (exit 7).
 #
 # A gate may be skipped ONLY by an explicit, LOGGED owner approval token in
 # <run-dir>/working/checkpoints/process_manifest.json ("owner_skip_approval(s)":
@@ -76,8 +77,10 @@ done
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROVER="$SELF_DIR/tools/prove-email.py"
 RUNNER="$SELF_DIR/run_email_engine.py"
+MANIFEST="$SELF_DIR/EMAIL-MANIFEST.json"
 [ -f "$PROVER" ] || die "prove-email.py not found at $PROVER"
 [ -f "$RUNNER" ] || die "run_email_engine.py not found at $RUNNER"
+[ -f "$MANIFEST" ] || die "EMAIL-MANIFEST.json not found at $MANIFEST"
 
 if [ "$PLAN" -eq 0 ]; then
     [ -n "$RUN_DIR" ] || usage
@@ -201,19 +204,22 @@ else
 fi
 
 # ===========================================================================
-# GATE 3 — VERSION/HASH PIN (content hash of the enforcement pair)
+# GATE 3 — VERSION/HASH PIN (content hash of the enforcement set)
+# The pinned set is the prover + orchestrator + the manifest that DRIVES the
+# phases/checkers — pinning EMAIL-MANIFEST.json stops a silent edit that drops the
+# declared-required P1 selection gate (_chk_email_match) from disabling it.
 # ===========================================================================
-note "GATE 3/3 — VERSION/HASH PIN (prove-email.py + run_email_engine.py)"
+note "GATE 3/3 — VERSION/HASH PIN (prove-email.py + run_email_engine.py + EMAIL-MANIFEST.json)"
 version_hash_pin() {
     local computed=""
     if command -v sha256sum >/dev/null 2>&1; then
-        computed="$(cat "$PROVER" "$RUNNER" | sha256sum | awk '{print $1}')"
+        computed="$(cat "$PROVER" "$RUNNER" "$MANIFEST" | sha256sum | awk '{print $1}')"
     elif command -v shasum >/dev/null 2>&1; then
-        computed="$(cat "$PROVER" "$RUNNER" | shasum -a 256 | awk '{print $1}')"
+        computed="$(cat "$PROVER" "$RUNNER" "$MANIFEST" | shasum -a 256 | awk '{print $1}')"
     else
         echo "  (no sha256 tool; hash pin skipped)"; return 0
     fi
-    echo "  enforcement hash (sha256 of prove-email.py+run_email_engine.py): $computed"
+    echo "  enforcement hash (sha256 of prove-email.py+run_email_engine.py+EMAIL-MANIFEST.json): $computed"
     local pin="$SELF_DIR/ENGINE-PIN.sha256"
     if [ -f "$pin" ]; then
         local expected; expected="$(tr -d ' \t\n' < "$pin")"

@@ -36,6 +36,7 @@ EXIT_NONCE = 4
 _SKILL_DIR = Path(__file__).resolve().parent
 MANIFEST = _SKILL_DIR / "EMAIL-MANIFEST.json"
 PROVER = _SKILL_DIR / "tools" / "prove-email.py"
+CATALOG = _SKILL_DIR / "email-library" / "catalog-index.json"
 
 # produces_artifact -> the run-dir-relative path the phase drops.
 PHASE_ORDER = ["P1-SELECT", "P2-GENERATE", "P3-QC", "P4-DEPLOY"]
@@ -119,8 +120,120 @@ def _chk_deploy_approval(run_dir: Path) -> tuple[bool, str]:
     return False, "approval.json present but not approved (approved:true + approved_by required)"
 
 
+def _canonical_ids():
+    """Load the committed Superlibrary catalog and return {type: set(ids)}.
+    Fail-closed: an unreadable/absent catalog yields empty sets, so every id then
+    reads as non-canonical and the P1 selection gate BLOCKS — never a silent pass."""
+    try:
+        rows = json.loads(CATALOG.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if isinstance(rows, dict):
+        rows = rows.get("entries", [])
+    by_type: dict[str, set] = {}
+    for r in rows:
+        if isinstance(r, dict) and r.get("id") and r.get("type"):
+            by_type.setdefault(r["type"], set()).add(r["id"])
+    return by_type
+
+
+def _email_match_violations(match: dict, brief: dict) -> list[tuple[str, str]]:
+    """PURE P1-SELECT gate: the resolved selection (working/routing/email-match.json)
+    must (a) resolve the brief to CANONICAL Superlibrary ids and (b) stay consistent
+    with the brief it claims to route. Returns [(AF_CODE, message)]; [] == PASS.
+    Fail-closed — this is the declared-required gate the manifest names."""
+    ids = _canonical_ids()
+    frameworks = ids.get("framework", set())
+    objectives = ids.get("objective", set())
+    personas = ids.get("persona-style", set())
+    sequences = ids.get("sequence", set())
+    buyertypes = ids.get("buyer-type", set())
+
+    if not isinstance(match, dict):
+        return [("AF-EMAIL-TYPE-MISMATCH", "email-match.json root is not a JSON object")]
+    fails = []
+    if match.get("skill") not in (None, "email-engine"):
+        fails.append(("AF-EMAIL-TYPE-MISMATCH",
+                      "email-match.json skill is %r, expected 'email-engine'" % match.get("skill")))
+    resolved = match.get("resolved")
+    if not isinstance(resolved, dict):
+        return fails + [("AF-EMAIL-TYPE-MISMATCH",
+                         "email-match.json carries no resolved{} selection object")]
+
+    seq_id = resolved.get("sequence_id")
+    obj_id = resolved.get("objective_id")
+    bt_id = resolved.get("buyer_type_id")
+    persona_id = resolved.get("persona_style_id")
+    fw_ids = resolved.get("framework_ids") or []
+
+    # --- canonical membership (the matched ids must be real library entries) ---
+    if seq_id not in sequences:
+        fails.append(("AF-EMAIL-TYPE-MISMATCH",
+                      "resolved.sequence_id %r is not a canonical sequence id" % seq_id))
+    if obj_id not in objectives:
+        fails.append(("AF-EMAIL-OBJECTIVE-INVALID",
+                      "resolved.objective_id %r is not a canonical objective id" % obj_id))
+    if not isinstance(fw_ids, list) or not fw_ids:
+        fails.append(("AF-EMAIL-FRAMEWORK-UNKNOWN",
+                      "resolved.framework_ids is empty — no framework was selected"))
+    else:
+        for fid in fw_ids:
+            if fid not in frameworks:
+                fails.append(("AF-EMAIL-FRAMEWORK-UNKNOWN",
+                              "resolved framework %r is not a canonical framework id" % fid))
+    if persona_id not in (None, "") and persona_id not in personas:
+        fails.append(("AF-EMAIL-PERSONA-INVALID",
+                      "resolved.persona_style_id %r is not a canonical persona-style id" % persona_id))
+    if bt_id not in (None, "", "all") and bt_id not in buyertypes:
+        fails.append(("AF-EMAIL-BUYERTYPE-MAP",
+                      "resolved.buyer_type_id %r is not a canonical buyer-type id" % bt_id))
+
+    # --- consistency with the brief (the selection must resolve THIS brief) ---
+    answers = brief.get("answers") if isinstance(brief, dict) else None
+    if isinstance(answers, dict):
+        b_obj = str(answers.get("objective", "")).strip()
+        if b_obj and obj_id and obj_id != ("objective-" + b_obj):
+            fails.append(("AF-EMAIL-TYPE-MISMATCH",
+                          "resolved.objective_id %r does not match the brief objective %r"
+                          % (obj_id, b_obj)))
+        b_seq = str(answers.get("sequence_position", "")).strip()
+        if b_seq and seq_id and seq_id != ("sequence-" + b_seq):
+            fails.append(("AF-EMAIL-TYPE-MISMATCH",
+                          "resolved.sequence_id %r does not match the brief sequence_position %r"
+                          % (seq_id, b_seq)))
+    return fails
+
+
+def _chk_email_match(run_dir: Path) -> tuple[bool, str]:
+    """P1-SELECT additional preflight (declared required in EMAIL-MANIFEST.json).
+    Proves email_matcher resolved the brief to a canonical framework/buyer-type/
+    objective/sequence and produced working/routing/email-match.json. Was a silent
+    no-op before (unmapped -> soft-pass); now a real fail-closed gate."""
+    match_path = run_dir / "working" / "routing" / "email-match.json"
+    if not match_path.is_file():
+        return False, ("AF-EMAIL-TYPE-MISMATCH: missing working/routing/email-match.json "
+                       "(P1 selection not resolved — run email_matcher_cli.py and record the "
+                       "resolved ids)")
+    try:
+        match = json.loads(match_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return False, "AF-EMAIL-TYPE-MISMATCH: email-match.json unreadable: %s" % exc
+    brief = {}
+    brief_path = run_dir / "working" / "copy" / "brief.json"
+    if brief_path.is_file():
+        try:
+            brief = json.loads(brief_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            brief = {}
+    fails = _email_match_violations(match, brief)
+    if fails:
+        return False, "; ".join("%s: %s" % (c, m) for c, m in fails)
+    return True, "selection resolved to canonical Superlibrary entries (consistent with the brief)"
+
+
 _CHECKERS = {
     "_chk_email_brief": _chk_email_brief,
+    "_chk_email_match": _chk_email_match,
     "_chk_emails_authored": _chk_emails_authored,
     "_chk_prove_email": _chk_prove_email,
     "_chk_deploy_approval": _chk_deploy_approval,
@@ -140,8 +253,12 @@ def _run_prover(path: Path, kind: str | None = None) -> int:
 def _run_checker(name, run_dir: Path) -> tuple[bool, str]:
     fn = _CHECKERS.get(name)
     if fn is None:
-        # An unmapped checker is treated as a soft presence check on produces_artifact.
-        return True, "checker %s not mapped (soft-pass)" % name
+        # Fail-closed: a required checker named in the manifest but not mapped here is
+        # a DISABLED gate, not a pass. The Email Engine's design law is enforcement,
+        # not description — an unmapped gate BLOCKS (never a silent soft-pass, which
+        # would let a manifest/checker-name drift disable a gate invisibly).
+        return False, ("checker %s is not mapped — fail-closed (a required gate cannot "
+                       "be a silent no-op)" % name)
     return fn(run_dir)
 
 
@@ -284,12 +401,100 @@ def _write_certificate(run_dir: Path, proc: dict):
         return None
 
 
+def self_test() -> int:
+    """Built-in gate self-test — proves the P1 selection gate (_chk_email_match)
+    and the fail-closed unmapped-checker actually BITE. VALID golden fixture passes;
+    each adversarial fixture trips its distinct AF code. No nonce/run needed."""
+    import tempfile
+    ok = True
+
+    def _ck(label, cond):
+        nonlocal ok
+        cond = bool(cond)
+        ok = ok and cond
+        print("  [%s] %s" % ("PASS" if cond else "MISS", label))
+
+    ids = _canonical_ids()
+    _ck("catalog canonical ids load (framework/objective/sequence non-empty)",
+        ids.get("framework") and ids.get("objective") and ids.get("sequence"))
+
+    golden_brief = {
+        "kind": "intake", "skill": "email-engine",
+        "answers": {"objective": "promotional", "sequence_position": "landing-page-10-promo"},
+    }
+    golden_match = {
+        "skill": "email-engine",
+        "resolved": {
+            "sequence_id": "sequence-landing-page-10-promo",
+            "objective_id": "objective-promotional",
+            "buyer_type_id": "all",
+            "framework_ids": ["framework-pastor-solutions", "framework-pas"],
+            "persona_style_id": None,
+        },
+    }
+    _ck("VALID golden match -> no violations",
+        _email_match_violations(golden_match, golden_brief) == [])
+
+    def _codes(mut):
+        m = json.loads(json.dumps(golden_match))
+        mut(m)
+        return [c for c, _ in _email_match_violations(m, golden_brief)]
+
+    _ck("VIOLATION framework-unknown -> AF-EMAIL-FRAMEWORK-UNKNOWN",
+        "AF-EMAIL-FRAMEWORK-UNKNOWN" in _codes(
+            lambda m: m["resolved"].__setitem__("framework_ids", ["framework-webinar"])))
+    _ck("VIOLATION objective-invalid -> AF-EMAIL-OBJECTIVE-INVALID",
+        "AF-EMAIL-OBJECTIVE-INVALID" in _codes(
+            lambda m: m["resolved"].__setitem__("objective_id", "objective-newsletter")))
+    _ck("VIOLATION persona-invalid -> AF-EMAIL-PERSONA-INVALID",
+        "AF-EMAIL-PERSONA-INVALID" in _codes(
+            lambda m: m["resolved"].__setitem__("persona_style_id", "persona-style-oprah")))
+    _ck("VIOLATION brief-mismatch objective -> AF-EMAIL-TYPE-MISMATCH",
+        "AF-EMAIL-TYPE-MISMATCH" in _codes(
+            lambda m: m["resolved"].__setitem__("objective_id", "objective-upsell")))
+    _ck("VIOLATION brief-mismatch sequence -> AF-EMAIL-TYPE-MISMATCH",
+        "AF-EMAIL-TYPE-MISMATCH" in _codes(
+            lambda m: m["resolved"].__setitem__("sequence_id", "sequence-high-ticket-appointment")))
+
+    # unmapped checker must be fail-closed (was a silent soft-pass).
+    with tempfile.TemporaryDirectory() as td:
+        good, _ = _run_checker("_chk_does_not_exist", Path(td))
+        _ck("unmapped checker -> fail-closed (not soft-pass)", good is False)
+
+    # _chk_email_match end-to-end against a temp run dir.
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td)
+        (rd / "working" / "routing").mkdir(parents=True)
+        (rd / "working" / "copy").mkdir(parents=True)
+        good, _ = _chk_email_match(rd)
+        _ck("_chk_email_match missing file -> FAIL", good is False)
+        (rd / "working" / "copy" / "brief.json").write_text(json.dumps(golden_brief), encoding="utf-8")
+        (rd / "working" / "routing" / "email-match.json").write_text(
+            json.dumps(golden_match), encoding="utf-8")
+        good, _ = _chk_email_match(rd)
+        _ck("_chk_email_match golden -> PASS", good is True)
+        (rd / "working" / "routing" / "email-match.json").write_text(json.dumps(
+            {"skill": "email-engine", "resolved": {
+                "sequence_id": "sequence-nope", "objective_id": "objective-promotional",
+                "framework_ids": ["framework-pas"]}}), encoding="utf-8")
+        good, _ = _chk_email_match(rd)
+        _ck("_chk_email_match non-canonical sequence -> FAIL", good is False)
+
+    print("== run_email_engine self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
+    return EXIT_PASS if ok else 1
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Deterministic Email Engine orchestrator (Skill 50).")
     ap.add_argument("--run-dir", help="the email run directory (contains working/)")
     ap.add_argument("--upto", choices=PHASE_ORDER, help="run through this phase only")
     ap.add_argument("--plan", action="store_true", help="print the canonical phase plan and exit")
+    ap.add_argument("--self-test", dest="self_test", action="store_true",
+                    help="run built-in gate self-tests (P1 selection + unmapped-checker) and exit")
     args = ap.parse_args(argv)
+
+    if args.self_test:
+        return self_test()
 
     manifest = _load_manifest()
     if args.plan:

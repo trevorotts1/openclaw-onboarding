@@ -55,6 +55,7 @@ expect_reject() {
 echo "== Skill 50 (Email Engine) :: verify.sh =="
 
 run "prove-email.py --self-test"        "$PY" "$TOOLS/prove-email.py" --self-test
+run "run_email_engine.py --self-test"   "$PY" "$SKILL_DIR/run_email_engine.py" --self-test
 run "email_matcher_cli.py --selftest"   "$PY" "$TOOLS/email_matcher_cli.py" --selftest
 run "emit_build_plan.py --selftest"     "$PY" "$TOOLS/emit_build_plan.py" --selftest
 run "email-library/register.py --check" "$PY" "$LIB/register.py" --check

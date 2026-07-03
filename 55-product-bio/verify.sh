@@ -58,7 +58,7 @@ expect_reject() {
 
 echo "== Skill 55 (Product Bio Engine) :: verify.sh =="
 
-# 1) the five provers --self-test.
+# 1) the five provers --self-test + the orchestrator gate self-test.
 for p in prove_pb_intake prove_pb_fidelity prove_pb_wordcount prove_pb_sections prove_pb_html; do
     if [ -f "$SCRIPTS/$p.py" ]; then
         run "$p.py --self-test" "$PY" "$SCRIPTS/$p.py" --self-test
@@ -66,6 +66,7 @@ for p in prove_pb_intake prove_pb_fidelity prove_pb_wordcount prove_pb_sections 
         printf '  [FAIL] %s.py missing at %s\n' "$p" "$SCRIPTS"; fails=$((fails + 1))
     fi
 done
+run "run_product_bio.py --self-test" "$PY" "$SKILL_DIR/run_product_bio.py" --self-test
 
 # 2) golden reproduce — each prover PASSes the golden bundle.
 run "golden intake PASS"   "$PY" "$SCRIPTS/prove_pb_intake.py"   "$GOLD/intake.json"

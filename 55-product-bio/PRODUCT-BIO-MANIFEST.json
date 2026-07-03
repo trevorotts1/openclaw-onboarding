@@ -90,9 +90,9 @@
       "preflight": {
         "required": true,
         "checker": "_chk_deliver",
-        "label": "the labeled deliverable bundle is assembled locally (~/Downloads/Product-Bio-<slug>-<MM-DD-YYYY>/); NO n8n / Google Drive / Slack / Gmail. A signed process certificate is issued only after a full P0->P5 pass. No hardcoded delivery channels; any push is per-client config through the client's own gateway, client-silent by default."
+        "label": "the labeled deliverable bundle is ASSEMBLED from the QC'd working copies and byte-verified: delivery/product-bio-<slug>.md + .html must equal the P3/P5-proven working/product-bio.md + .html (a pre-existing delivery artifact that disagrees is refused — AF-PB-DELIVER-MISMATCH; missing QC'd copies are AF-PB-STAGE-SKIPPED). Local-only (~/Downloads/Product-Bio-<slug>-<MM-DD-YYYY>/); NO n8n / Google Drive / Slack / Gmail. A signed process certificate is issued only after a full P0->P5 pass. No hardcoded delivery channels; any push is per-client config through the client's own gateway, client-silent by default."
       },
-      "gate_codes": ["AF-PB-STAGE-SKIPPED", "AF-PB-PROCESS-INTEGRITY"]
+      "gate_codes": ["AF-PB-STAGE-SKIPPED", "AF-PB-DELIVER-MISMATCH", "AF-PB-PROCESS-INTEGRITY"]
     }
   ],
   "autofails": [
@@ -107,7 +107,8 @@
     {"code": "AF-PB-HTML-H1", "stage": "P5", "level": "html", "trigger": "the document does not contain exactly one <h1>", "enforced_by": "prove_pb_html", "py_symbol": "_check_h1"},
     {"code": "AF-PB-HTML-CSS", "stage": "P5", "level": "html", "trigger": "any CSS beyond page-break-after (a <style> block, or an inline style with any other property)", "enforced_by": "prove_pb_html", "py_symbol": "_check_css"},
     {"code": "AF-PB-HTML-LOSS", "stage": "P5", "level": "html", "trigger": "content coverage vs the source bio below the 90% token tolerance (content lost in conversion)", "enforced_by": "prove_pb_html", "py_symbol": "_check_loss"},
-    {"code": "AF-PB-STAGE-SKIPPED", "stage": "orchestrator", "level": "run", "trigger": "a phase was attempted out of order or the certificate chain is broken", "enforced_by": "run_product_bio", "py_symbol": "run"},
+    {"code": "AF-PB-STAGE-SKIPPED", "stage": "orchestrator", "level": "run", "trigger": "a phase was attempted out of order or the certificate chain is broken; at P6, the QC'd working/product-bio.md or .html is missing so no bundle can be assembled", "enforced_by": "run_product_bio", "py_symbol": "run"},
+    {"code": "AF-PB-DELIVER-MISMATCH", "stage": "P6", "level": "delivery", "trigger": "a pre-existing delivery/product-bio-<slug>.md/.html disagrees byte-for-byte with the QC'd working copy (a swap-after-QC / planted deliverable), or the assembled bundle did not round-trip byte-identical", "enforced_by": "run_product_bio", "py_symbol": "_chk_deliver"},
     {"code": "AF-PB-PROCESS-INTEGRITY", "stage": "P6", "level": "run", "trigger": "a certificate was requested without a full P0->P5 pass", "enforced_by": "run_product_bio", "py_symbol": "_write_certificate"},
     {"code": "AF-PB-ENTRY-BYPASS", "stage": "entry", "level": "run-dir", "trigger": "a hand-rolled uploader/notifier (Google Drive / Slack / Gmail / n8n webhook) is present in the run directory, bypassing the local-labeled-deliverable handoff", "enforced_by": "product-bio-entry", "py_symbol": "bypass_scan"},
     {"code": "AF-PB-HASH-PIN", "stage": "entry", "level": "enforcement", "trigger": "the enforcement-pair hash does not match the pinned head (ENGINE-PIN.sha256)", "enforced_by": "product-bio-entry", "py_symbol": "version_hash_pin"},
