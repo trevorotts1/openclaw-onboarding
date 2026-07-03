@@ -3,12 +3,21 @@
   "section": "signature-presentation-intake",
   "version": "1.0.0",
   "deck_type": "signature_presentation",
-  "description": "The SACRED 8-Questions gate for a Trevor Otts Signature Presentation, plus the frame-selection question. Prime Directives 6 & 7: the questions are asked ALL AT ONE TIME, in a single message block, BEFORE any slide is written; once answered, all slides are written at one time (Directive 8). This file is the authoritative spec that prove_sp_intake.py loads. The runtime answers are recorded in working/copy/sp_intake.json against this contract.",
+  "description": "The SACRED 8-Questions gate for a Trevor Otts Signature Presentation, plus the frame-selection question. DOCTRINE (Trevor's ruling -- one-question-at-a-time wins): the owner CONVERSATION is choice-first (offer a QUICK vs IN-DEPTH interview) and then asks ONE question at a time, never a wall of questions (AF-INTAKE-BATCH). The eight answers plus the chosen frame are then assembled into ONE atomic machine RECORD (working/copy/sp_intake.json) -- that assembled record is what prove_sp_intake.py validates (asked_all_at_once / mode=one_block describe the RECORD ledger being committed as one atomic block, NOT a batch of questions dumped at the owner). Prime Directive 8 is unchanged: once every answer is locked, all slides are written at one time. This file is the authoritative spec that prove_sp_intake.py loads.",
   "delivery": {
     "mode": "one_block",
     "asked_all_at_once": true,
     "one_question_per_turn": false,
-    "rule": "Directive 7 wins for this deck type: emit all 8 Questions AND the frame-selection question as ONE message-block turn. The standard per-turn deck-intake capture (representation mix, grounded content, visual style branch, etc.) still runs one-question-per-turn BEFORE this block; this block is the signature-method gate that unlocks writing.",
+    "rule": "TWO LAYERS, kept distinct so they never conflict -- the 8 Questions are ASKED one at a time and RECORDED as one block. (1) CONVERSATION LAYER (Trevor's ruling -- one-question-at-a-time wins): the front-door agent FIRST offers the quick-vs-in-depth CHOICE, then asks exactly ONE question at a time and waits for the owner's answer before sending the next -- never a batch. Dumping two or more of the 8 Questions in a single turn, or opening with no quick-vs-in-depth choice, is AF-INTAKE-BATCH (intake-conversation scoped; enforced_by qc_check; it NEVER inspects, runs inside, or gates build_deck.py / run_signature_deck.py). (2) RECORD LAYER: once the answers are gathered one at a time, they are committed as ONE atomic intake ledger -- asked_all_at_once=true / mode=one_block / one_question_per_turn=false describe THAT assembled record (the 8Q block as the machine RECORD), which prove_sp_intake.py validates before slide authoring unlocks.",
+    "conversation_contract": {
+      "choice_first": true,
+      "interview_choices": ["quick", "in-depth"],
+      "one_question_per_message": true,
+      "never_a_wall_of_questions": true,
+      "choice_question": "Love this -- let's shape it together and you set the pace. I can do this two ways: a QUICK interview (about 5 key questions, one at a time) or a more IN-DEPTH one (we go a little deeper, still one question at a time). Which would you like, quick or in-depth? You can switch or stop whenever you want.",
+      "af_on_violation": "AF-INTAKE-BATCH",
+      "banned_batch_anti_pattern": "A single message that enumerates the 8 Questions (title + alternate titles + avatar pain + story + teaching topic + teaching titles + offer + anything-else) together, or the screenshot phrase 'give me whatever you have got and I will get moving.' That message offers no choice and dumps the whole batch at once -- the canonical AF-INTAKE-BATCH failure."
+    },
     "front_door": "brainstorming-buddy-presentations (signature mode) via deck-intake-driver.py signature mode",
     "blocks_until_answered": ["P4-COPY", "all slide authoring"]
   },
@@ -101,8 +110,8 @@
     "note": "Shape of working/copy/sp_intake.json that prove_sp_intake.py validates. Any violation is exit 2, fail-closed.",
     "required_fields": {
       "deck_type": "must equal \"signature_presentation\" (else AF-SP-TYPE-MISMATCH)",
-      "asked_all_at_once": "must be true (else AF-SP-8Q-SPLIT)",
-      "question_block_msg_id": "single non-empty id proving the 8 + frame question were emitted in ONE block (else AF-SP-8Q-SPLIT)",
+      "asked_all_at_once": "must be true -- a RECORD-integrity field: the assembled intake ledger was committed as ONE atomic block after the one-at-a-time conversation (else AF-SP-8Q-SPLIT). It is NOT a licence to dump the 8 Questions at the owner; the CONVERSATION is choice-first and one question at a time (see delivery.conversation_contract / AF-INTAKE-BATCH).",
+      "question_block_msg_id": "single non-empty id for the atomic intake-record commit (else AF-SP-8Q-SPLIT)",
       "answers": "object carrying non-empty q1..q8 (any missing/empty → AF-SP-8Q-MISSING)",
       "signature_frame": "one of rulebook|vault|quest|original (else AF-SP-FRAME-UNSET)",
       "offer_token_ledger": "array of the exact product/offer names from q7 (must be non-empty; each must also be present in the Phase-4 pitch tokens or AF-SP-OFFER-UNDECLARED)"
@@ -113,7 +122,8 @@
     },
     "autofail_codes": {
       "AF-SP-8Q-MISSING": "any of q1..q8 missing or empty (Directive 6)",
-      "AF-SP-8Q-SPLIT": "the 8 + frame question were not delivered as one block (Directive 7)",
+      "AF-SP-8Q-SPLIT": "RECORD layer (deterministic, prove_sp_intake.py): the assembled intake ledger was not committed as ONE atomic block -- asked_all_at_once!=true, one_question_per_turn==true on the RECORD, or more than one record-commit id. This gates the machine RECORD, not the conversation.",
+      "AF-INTAKE-BATCH": "CONVERSATION layer (enforced_by qc_check -- the QC/Healer intake-trace scan; NEVER gates build_deck.py / run_signature_deck.py): the intake conversation dumped a batch -- two or more of the 8 Questions in a single assistant turn before the owner answered, OR it opened with no quick-vs-in-depth CHOICE first. Doctrine: delivery.conversation_contract. The banned reference anti-pattern is one message enumerating all 8 Questions together with 'give me whatever you have got and I will get moving.'",
       "AF-SP-FRAME-UNSET": "signature_frame not one of the four allowed values (frame gate)",
       "AF-SP-TYPE-MISMATCH": "deck_type != signature_presentation vs the run manifest",
       "AF-SP-OFFER-UNDECLARED": "a product named in q7 is absent from the pitch-token ledger"
