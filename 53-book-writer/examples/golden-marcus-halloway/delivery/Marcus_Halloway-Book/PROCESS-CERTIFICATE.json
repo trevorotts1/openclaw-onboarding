@@ -1,0 +1,92 @@
+{
+  "schema": "book-writer-process-certificate-v1",
+  "skill": "book-writer",
+  "manifest_version": 1,
+  "author": "Marcus Halloway",
+  "book_slug": "marcus-halloway",
+  "mode": "full",
+  "locked_title": "The Quiet Authority",
+  "locked_subtitle": "How the Best New Leaders Trade Control for Trust",
+  "measured_chapter_count": 12,
+  "measured_chapter_word_counts": {
+    "1": 2313,
+    "2": 2345,
+    "3": 2341,
+    "4": 2414,
+    "5": 2365,
+    "6": 2438,
+    "7": 2497,
+    "8": 2440,
+    "9": 2512,
+    "10": 2359,
+    "11": 2322,
+    "12": 2329
+  },
+  "measured_tone_word_count": 3775,
+  "measured_challenge_sections": 30,
+  "title_lock_ok": true,
+  "stories_placed": 2,
+  "declared_phases": [
+    "P0-INTAKE",
+    "P1-AVATAR",
+    "P2-TONE",
+    "P3-TITLES-GATE",
+    "P4-OUTLINE-GATE",
+    "P5-CHAPTERS",
+    "P6-PACKAGE",
+    "P7-QC",
+    "P8-DELIVER"
+  ],
+  "verified_phases": 9,
+  "all_phases_pass": true,
+  "runtime": "local-only (no n8n / Airtable / Google / Gmail / Slack / GHL)",
+  "steps": [
+    {
+      "phase_id": "P0-INTAKE",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P1-AVATAR",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P2-TONE",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P3-TITLES-GATE",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P4-OUTLINE-GATE",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P5-CHAPTERS",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P6-PACKAGE",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P7-QC",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P8-DELIVER",
+      "disposition": "verified",
+      "ok": true
+    }
+  ],
+  "certificate_sha": "691733c859f6c18121ce700f6d795a76b4340bf166ac125d176d4ddb43549165",
+  "certified_at": "2026-07-02T23:01:57.145761+00:00"
+}

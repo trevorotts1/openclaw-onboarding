@@ -1,0 +1,63 @@
+{
+  "schema": "book-writer-run-ledger-v1",
+  "book_slug": "marcus-halloway",
+  "mode": "full",
+  "note": "model ids are the client's OWN providers only (never operator or proprietary vendor APIs).",
+  "stages": [
+    {
+      "stage": "00-intake",
+      "status": "pass",
+      "model": "ollama-cloud/gpt-oss-120b"
+    },
+    {
+      "stage": "01-avatar",
+      "status": "pass",
+      "model": "ollama-cloud/gpt-oss-120b"
+    },
+    {
+      "stage": "08-blended-tone",
+      "status": "pass",
+      "model": "openrouter/qwen-2.5-72b-instruct"
+    },
+    {
+      "stage": "10-suggested-titles",
+      "status": "pass",
+      "resolved_model": "ollama-cloud/gpt-oss-120b"
+    },
+    {
+      "stage": "13-create-outline",
+      "status": "pass",
+      "model": "openrouter/qwen-2.5-72b-instruct"
+    },
+    {
+      "stage": "15-write-chapters-b1",
+      "status": "pass",
+      "model": "openrouter/qwen-2.5-72b-instruct"
+    },
+    {
+      "stage": "16-write-chapters-b2",
+      "status": "pass",
+      "model": "openrouter/qwen-2.5-72b-instruct"
+    },
+    {
+      "stage": "17-write-chapters-b3",
+      "status": "pass",
+      "model": "openrouter/qwen-2.5-72b-instruct"
+    },
+    {
+      "stage": "18-write-chapters-b4",
+      "status": "pass",
+      "model": "openrouter/qwen-2.5-72b-instruct"
+    },
+    {
+      "stage": "21-30day-challenge",
+      "status": "pass",
+      "model": "ollama-cloud/gpt-oss-120b"
+    },
+    {
+      "stage": "22-cover-prompt",
+      "status": "pass",
+      "model": "ollama-cloud/gpt-oss-120b"
+    }
+  ]
+}

@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v16.9.0"
+ONBOARDING_VERSION="v16.10.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -739,7 +739,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 5 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/57-... (50 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/57-... (52 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -4685,7 +4685,7 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 50 active skills install in 5 dependency-aware waves, not by number order.
+The 52 active skills install in 5 dependency-aware waves, not by number order.
 Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
 A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
@@ -6719,6 +6719,111 @@ install_skill_52_avatar_intelligence() {
 }
 
 install_skill_52_avatar_intelligence
+
+# ----------------------------------------------------------
+# Skill 53: Book Writer (Avatar Alchemist, BOOK version — ghostwriting engine + gates)
+# ----------------------------------------------------------
+# Self-contained: this template install copies the Skill 53 folder (SKILL.md,
+# MASTERDOC.md, GOLDEN-BOOK-BIBLE.md, BOOK-WRITER-MANIFEST.json, the baked
+# provider-agnostic prompt dirs — stages 04-08 are a lockstep copy of the shared
+# shared-utils/tone-writing-core — the Book/Brand selector intake, the twelve
+# fail-closed model-free provers, the deterministic assembler/certifier, the
+# canonical fail-closed entry, the 7 dispatchable role SOPs, and the worked
+# golden-Marcus-Halloway example). NO external clone. Skill 53 is the BOOK
+# version of the Avatar Alchemist (Skill 52 is the BRAND version): the shared
+# Book/Brand selector (Q0) routes version=book here and version=brand to Skill
+# 52 — an explicit, receipted hand-off, never a silent cross-version fallback.
+# It turns ONE completed book-intake interview into a tone-matched 12-chapter
+# nonfiction book plus companion assets (avatar dossier, the blended "The
+# {First} {Last} Tone", locked title/subtitle + approved outline, print-ready
+# manuscript, a 30-Day Challenge, an AI cover prompt, plus 4x3x3 offer-book
+# extras handed to Skill 51), replacing the retired 8-workflow n8n ghostwriting
+# factory (the 153-node "Book Writer" + the 121-node "4x3x3 w Book Writer") with
+# a LOCAL-ONLY pipeline on the CLIENT's own model providers — never the
+# operator's, never Anthropic model ids. Every SACRED count/floor is MEASURED by
+# a model-free prover (self-reported counts are ignored); a run cannot claim
+# "done" without a signed PROCESS-CERTIFICATE. Cross-linked with (never merged
+# into) Skill 54 Anthology Writer; both bake a lockstep copy of the shared
+# shared-utils/tone-writing-core/. Standalone — no prerequisite skill.
+install_skill_53_book_writer() {
+    local SKILL_SRC="$ONBOARDING_DIR/53-book-writer"
+    local SKILL_DEST="$SKILLS_DIR/53-book-writer"
+
+    if [ ! -d "$SKILL_SRC" ]; then
+        warn "Skill 53 source dir not found at $SKILL_SRC — skipping (older onboarding bundle?)"
+        return 0
+    fi
+
+    mkdir -p "$SKILL_DEST"
+    cp -R "$SKILL_SRC/." "$SKILL_DEST/" 2>>"$LOG_FILE" || {
+        warn "Failed to copy Skill 53 from $SKILL_SRC -> $SKILL_DEST"
+        return 0
+    }
+    chmod +x "$SKILL_DEST/book-writer-entry.sh" "$SKILL_DEST/run_book_writer.py" \
+             "$SKILL_DEST/verify.sh" "$SKILL_DEST/verify-deps.sh" \
+             "$SKILL_DEST/preflight.sh" "$SKILL_DEST/qc-book-writer.sh" \
+             "$SKILL_DEST/install.sh" 2>/dev/null || true
+    chmod +x "$SKILL_DEST/scripts/"*.py 2>/dev/null || true
+    chmod +x "$SKILL_DEST/examples/golden-marcus-halloway/broken-variants/make_broken.py" 2>/dev/null || true
+
+    success "Skill 53 (Book Writer) installed -> $SKILL_DEST"
+    note "Skill 53 is the BOOK version of the Avatar Alchemist (Skill 52 is the BRAND version): it turns ONE completed book-intake interview into a tone-matched 12-chapter nonfiction book plus companion assets — avatar dossier, the blended 'The {First} {Last} Tone', locked title/subtitle + approved outline, print-ready manuscript, a 30-Day Challenge, and an AI cover prompt — delivered as labeled files in ~/Downloads. Modes full (flagship 12-chapter book) and 4x3x3 (offer book: 30 titles / 4 Transformational Outcomes / KP doc / 433_Deck_Data.json handed to Skill 51). The shared Book/Brand selector (Q0) routes version=book here and version=brand to Skill 52 — an explicit, receipted hand-off, never a silent cross-version fallback."
+    note "It runs through the ONE sanctioned front door (book-writer-entry.sh: deps -> bypass-scan -> hash-pin -> nonce) then run_book_writer.py, the deterministic assembler/certifier, which walks phases P0->P8 in order with NO skips (intake -> avatar -> tone -> titles-gate -> outline-gate -> four STRICTLY-SEQUENTIAL chapter batches with proven continuity -> package -> QC -> deliver), with in-chat checkpoint approvals (GATE-1 titles / GATE-2 outline / GATE-3 approval / GATE-4 second revision). Twelve fail-closed provers MEASURE the stripped text (12 chapters exactly, 2000-3500 stripped words each, batch continuity, blended tone >= 3000 stripped words, 30-Day Challenge exactly 30 days, 4x3x3 counts, title lock byte-exact everywhere, no placeholders, no Anthropic model ids, anonymization); a full pass mints a signed PROCESS-CERTIFICATE ('done' is claimed only with the certificate path). Runs on the CLIENT's own model providers — never the operator's, never Anthropic model ids. Cross-linked with (never merged into) Skill 54 Anthology Writer; both share a lockstep copy of shared-utils/tone-writing-core/. Standalone — no prerequisite skill."
+    return 0
+}
+
+install_skill_53_book_writer
+
+# ----------------------------------------------------------
+# Skill 54: Anthology Writer (multi-contributor anthology chapter engine + gates)
+# ----------------------------------------------------------
+# Self-contained: this template install copies the Skill 54 folder (SKILL.md,
+# MASTERDOC.md, ANTHOLOGY-MANIFEST.json, the baked provider-agnostic authoring
+# prompts (06 suggested-titles / 07 book-blurb / 08 create-outline / 09
+# write-chapter / 10 chapter-rewrite) plus a lockstep copy of the shared tone
+# stages 04-08, the locked intake schema, the fail-closed model-free provers,
+# the deterministic state machine, the canonical fail-closed entry, and the
+# worked golden-unbroken-ground example). NO external clone. Skill 54 is the
+# SEPARATE sibling of Skill 53 (Book Writer) — Trevor's standing decision, never
+# consolidated — sharing the ONE shared-utils/tone-writing-core: the anthology
+# is many contributors, one chapter each; the book is one author, many chapters.
+# It turns ONE contributor intake (anthology title, contributor name, chapter
+# premise, real personal stories) into a finished, gated anthology chapter
+# (2,000-3,500 words) in that contributor's blended signature voice, plus the
+# supporting blended tone doc, locked title/subtitle, blurb, and outline,
+# delivered as a labeled LOCAL bundle, replacing the source n8n / Airtable /
+# Google Docs / Slack / Gmail workflow with a LOCAL-ONLY pipeline on the
+# CLIENT's own model providers — never the operator's, never Anthropic model
+# ids. Every SACRED floor is MEASURED by a model-free prover (self-reported
+# counts are ignored); a run cannot claim "done" without a signed
+# PROCESS-CERTIFICATE. Cross-linked with (never merged into) Skill 53 Book
+# Writer. Standalone — no prerequisite skill.
+install_skill_54_anthology_writer() {
+    local SKILL_SRC="$ONBOARDING_DIR/54-anthology-writer"
+    local SKILL_DEST="$SKILLS_DIR/54-anthology-writer"
+
+    if [ ! -d "$SKILL_SRC" ]; then
+        warn "Skill 54 source dir not found at $SKILL_SRC — skipping (older onboarding bundle?)"
+        return 0
+    fi
+
+    mkdir -p "$SKILL_DEST"
+    cp -R "$SKILL_SRC/." "$SKILL_DEST/" 2>>"$LOG_FILE" || {
+        warn "Failed to copy Skill 54 from $SKILL_SRC -> $SKILL_DEST"
+        return 0
+    }
+    chmod +x "$SKILL_DEST/anthology-entry.sh" "$SKILL_DEST/run_anthology.py" \
+             "$SKILL_DEST/verify.sh" "$SKILL_DEST/verify-deps.sh" \
+             "$SKILL_DEST/preflight.sh" 2>/dev/null || true
+    chmod +x "$SKILL_DEST/scripts/"*.py 2>/dev/null || true
+
+    success "Skill 54 (Anthology Writer) installed -> $SKILL_DEST"
+    note "Skill 54 is the methodology + enforcement layer for a multi-contributor anthology: one finished chapter per contributor, authored in that contributor's blended signature voice, gated so nothing ships that missed a SACRED floor. It turns ONE contributor intake (anthology title, contributor name, chapter premise, real personal stories) into a gated 2,000-3,500-word chapter plus its supporting tone doc, locked title/subtitle, blurb, and outline — delivered as a labeled LOCAL bundle in ~/Downloads. Skill 54 (Anthology Writer) and Skill 53 (Book Writer) are SEPARATE skills (Trevor's standing decision, never consolidated) that share the ONE shared-utils/tone-writing-core: the anthology is many contributors, one chapter each; the book is one author, many chapters."
+    note "It runs through the ONE sanctioned front door (anthology-entry.sh: deps -> bypass-scan -> hash-pin -> nonce) then run_anthology.py, the deterministic state machine, which walks phases P0 INTAKE -> P1 FIDELITY -> P2 TONE -> P3 TONE-QC -> P4 TITLE-LOCK -> P5 CHAPTER -> P6 CHAPTER-QC -> P7 DELIVER with NO phase skips, one contributor at a time. Fail-closed model-free provers MEASURE the stripped text (intake completeness + no credential-shaped fields, prompt-fidelity sha256 pins, tone-core lockstep, exactly 4 blended tone influences, tone floor >= 3,000 stripped words, chapter band 2,000-3,500 stripped words, completion-verification block, no placeholders, title lock + story placement byte-exact, no Anthropic model ids, a 2-rewrite budget per contributor); a full pass mints a signed PROCESS-CERTIFICATE ('done' is claimed only with the certificate path). Runs on the CLIENT's own model providers — never the operator's, never Anthropic model ids (aw_build_check.py / G-NOANTHROPIC hard-fails any run whose ledger shows an /anthropic|claude/i id). Cross-linked with (never merged into) Skill 53 Book Writer. Standalone — no prerequisite skill."
+    return 0
+}
+
+install_skill_54_anthology_writer
 
 # ----------------------------------------------------------
 # Skill 55: Product Bio Engine (master-brain product bio methodology + gates)
