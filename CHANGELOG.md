@@ -1,3 +1,24 @@
+## [v17.0.0]  -  2026-07-03  -  CAPSTONE: the full productized-skill suite (49–57) + the Skill-6 GHL Form Builder, consolidated
+
+### The v17.0.0 capstone
+This major release consolidates the entire overnight/multi-day skill-build campaign into one coordinated version. Every skill below shipped as its own v16.x minor with fail-closed provers, a signed PROCESS-CERTIFICATE, zero-Anthropic client-path enforcement, and independent QC >= 8.5 (verifier != author):
+
+- **49 Signature Funnel** (v16.5.0) — SACRED 12-section direct-response funnel engine
+- **50 Email Engine + Superlibrary** (v16.4.0)
+- **51 Signature Presentation** (v16.3.0) — >=100-slide 4-phase signature decks
+- **52 Avatar Alchemist** (v16.7.x) — brand-intelligence engine; trust-core HARDENED (QC 6.0 -> 9.x, real HMAC certificate, egress prover, fail-closed G-NOANTHROPIC, version=book code-coupled, strong content floors)
+- **53 Book Writer** + **54 Anthology Writer** (v16.10.0) — the tone-writing-core sibling family
+- **55 Product Bio** (v16.6.0)
+- **56 Sales Page Assets** (v16.8.0) — direct-response sibling of 49
+- **57 Social Media in a Box** (v16.9.0) — folds + retires Skill 35 (per-client migration PARKED on GO)
+- **Skill 6 GHL Form Builder capability** (v16.12.0) — browser-control forms/surveys, in-browser REST-canvas funnels/pages, Skill-44 API for zhc_ fields/tags; F5/F6 in-iframe field-placement fully implemented
+
+### Scope + posture
+Repo-only. NO fleet rollout — every skill is merged/tagged in the repo; deploying to client boxes remains a separate, explicit, operator-authorized action (HELD). The old n8n Avatar workflow stays running until an explicit decommission go. Shared tone-writing-core + universal-sops craft clusters (email/funnel/sales-page/avatar/social-media/form/book-writer) all present.
+
+### Files
+- 11 version markers rolled to v17.0.0 via bump-version.sh (repo VERSION + install.sh + update-skills.sh + README x2 + DIRECT-TO-AGENT + cc-compat onboardingVersion + 23-blueprint skill-version.txt + SKILL.md frontmatter + _index.json + _qc-summary.md). Individual skills keep their own skill-version.txt.
+
 ## [v16.12.0]  -  2026-07-03  -  feat(skill-6): GHL Form Builder — the FORMS door on the ONE GHL delivery rail (browser-clicker, never a REST bypass)
 
 ### Risk: low — additive capability on the EXISTING Skill 6 (`06-ghl-install-pages/`) plus its §6 role-door wiring; no new skill, no new department, no new role, no Command Center endpoint, no `mission-control.db` schema change. The five OFF-LIMITS core builder tools (`ghl_builder.py`, `ghl_rest_canvas.py`, `ghl_survey_builder.py`, `ghl_method.py`, `ghl_ecosystem.py`) are BYTE-IDENTICAL to `origin/main` (verified `git diff` empty). The new executor is the SMART GLUE, not a REST short-circuit: it plans + pre-creates dependencies, then the DUMB browser operator (agent-browser) builds the form by real clicks/drags against the LOCKED live selector map — it never invents a CSS selector and never REST-writes the form body. Client runtime uses the CLIENT's own providers (browser operator often MiniMax-M3, never Anthropic); nothing publishes without human approval. No client names, credential values, or plists touched (fictional `ZHC …` test objects only; all created scratch objects were deleted + verified gone during the live selector lock).
