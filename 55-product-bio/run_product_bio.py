@@ -139,9 +139,52 @@ def _chk_html_qc(run_dir: Path):
 
 
 def _chk_deliver(run_dir: Path):
-    # Delivery is a local labeled bundle; the certificate is issued by this
-    # orchestrator on a full pass. Nothing external is contacted here.
-    return True, "local delivery bundle assembled (no n8n/Drive/Slack/Gmail)"
+    """P6 delivery gate — assemble the slug-labeled LOCAL bundle from the QC'd
+    working copies and verify it byte-for-byte. Fail-closed: the bio + html that
+    passed P3/P5 MUST be present (else AF-PB-STAGE-SKIPPED); a pre-existing
+    delivery artifact that DISAGREES with the QC'd working copy is refused
+    (a swap-after-QC / planted deliverable, AF-PB-DELIVER-MISMATCH). The
+    orchestrator is the SOLE writer of the bundle. Was an unconditional
+    `return True` before — an evidence-free no-op that let P6 pass (and certify)
+    with no deliverable on disk."""
+    import hashlib
+    work = {
+        "product-bio.md": run_dir / "working" / "product-bio.md",
+        "product-bio.html": run_dir / "working" / "product-bio.html",
+    }
+    missing = [name for name, p in work.items() if not p.is_file()]
+    if missing:
+        return False, ("AF-PB-STAGE-SKIPPED: delivery requires the QC'd working copies; "
+                       "missing working/%s" % ", working/".join(missing))
+    intake = {}
+    ipath = run_dir / "working" / "intake.json"
+    if ipath.is_file():
+        try:
+            intake = json.loads(ipath.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            intake = {}
+    slug = _slug(intake)
+    out_dir = run_dir / "delivery"
+    labeled = {
+        "product-bio-%s.md" % slug: work["product-bio.md"],
+        "product-bio-%s.html" % slug: work["product-bio.html"],
+    }
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for label, src in labeled.items():
+            src_bytes = src.read_bytes()
+            dst = out_dir / label
+            if dst.is_file() and dst.read_bytes() != src_bytes:
+                return False, ("AF-PB-DELIVER-MISMATCH: delivery/%s disagrees with the QC'd "
+                               "working copy (swap-after-QC / planted deliverable)" % label)
+            dst.write_bytes(src_bytes)
+            if hashlib.sha256(dst.read_bytes()).hexdigest() != hashlib.sha256(src_bytes).hexdigest():
+                return False, ("AF-PB-DELIVER-MISMATCH: delivery/%s did not round-trip "
+                               "byte-identical to the working copy" % label)
+    except OSError as exc:
+        return False, "AF-PB-STAGE-SKIPPED: could not assemble the delivery bundle: %s" % exc
+    return True, ("labeled delivery bundle assembled + byte-verified against the QC'd "
+                  "working copies (product-bio-%s.md/.html)" % slug)
 
 
 _CHECKERS = {
@@ -158,7 +201,11 @@ _CHECKERS = {
 def _run_checker(name, run_dir: Path):
     fn = _CHECKERS.get(name)
     if fn is None:
-        return True, "checker %s not mapped (soft-pass)" % name
+        # Fail-closed: an unmapped required checker is a DISABLED gate, not a pass —
+        # enforcement, not description. A manifest/checker-name drift must BLOCK,
+        # never silently soft-pass a required phase.
+        return False, ("checker %s is not mapped — fail-closed (a required gate cannot "
+                       "be a silent no-op)" % name)
     return fn(run_dir)
 
 
@@ -317,12 +364,76 @@ def _write_certificate(run_dir: Path, proc: dict):
         return None
 
 
+def self_test() -> int:
+    """Built-in gate self-test — proves the P6 delivery gate (_chk_deliver) and the
+    fail-closed unmapped-checker actually BITE. VALID fixture assembles + verifies
+    the labeled bundle; adversarial fixtures trip their AF codes. No nonce/run needed."""
+    import tempfile
+    ok = True
+
+    def _ck(label, cond):
+        nonlocal ok
+        cond = bool(cond)
+        ok = ok and cond
+        print("  [%s] %s" % ("PASS" if cond else "MISS", label))
+
+    # unmapped checker must be fail-closed (was a silent soft-pass).
+    with tempfile.TemporaryDirectory() as td:
+        good, _ = _run_checker("_chk_does_not_exist", Path(td))
+        _ck("unmapped checker -> fail-closed (not soft-pass)", good is False)
+
+    intake = {"product_name": "AtlasFlow", "product_description": "x",
+              "first_name": "A", "last_name": "B"}
+    slug = _slug(intake)
+
+    # missing working QC artifacts -> FAIL (no evidence-free pass).
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td); (rd / "working").mkdir()
+        (rd / "working" / "intake.json").write_text(json.dumps(intake), encoding="utf-8")
+        good, _ = _chk_deliver(rd)
+        _ck("_chk_deliver missing bio/html -> FAIL", good is False)
+
+    # golden -> assembles + byte-verifies the labeled bundle.
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td); (rd / "working").mkdir()
+        (rd / "working" / "intake.json").write_text(json.dumps(intake), encoding="utf-8")
+        (rd / "working" / "product-bio.md").write_text("# AtlasFlow\nQC'd bio body\n", encoding="utf-8")
+        (rd / "working" / "product-bio.html").write_text(
+            "<!DOCTYPE html>\n<h1>AtlasFlow</h1>\n</html>", encoding="utf-8")
+        good, _ = _chk_deliver(rd)
+        _ck("_chk_deliver golden -> PASS", good is True)
+        _ck("_chk_deliver assembled the labeled bundle",
+            (rd / "delivery" / ("product-bio-%s.md" % slug)).is_file()
+            and (rd / "delivery" / ("product-bio-%s.html" % slug)).is_file())
+
+    # planted mismatch -> AF-PB-DELIVER-MISMATCH (swap-after-QC / stale deliverable).
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td); (rd / "working").mkdir(); (rd / "delivery").mkdir()
+        (rd / "working" / "intake.json").write_text(json.dumps(intake), encoding="utf-8")
+        (rd / "working" / "product-bio.md").write_text("# AtlasFlow\nthe real QC'd bio\n", encoding="utf-8")
+        (rd / "working" / "product-bio.html").write_text(
+            "<!DOCTYPE html>\n<h1>AtlasFlow</h1>\n</html>", encoding="utf-8")
+        (rd / "delivery" / ("product-bio-%s.md" % slug)).write_text(
+            "planted different bytes\n", encoding="utf-8")
+        good, msg = _chk_deliver(rd)
+        _ck("_chk_deliver planted-mismatch -> FAIL (AF-PB-DELIVER-MISMATCH)",
+            good is False and "AF-PB-DELIVER-MISMATCH" in msg)
+
+    print("== run_product_bio self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
+    return EXIT_PASS if ok else 1
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Deterministic Product Bio orchestrator (Skill 55).")
     ap.add_argument("--run-dir", help="the product-bio run directory (contains working/)")
     ap.add_argument("--upto", choices=PHASE_ORDER, help="run through this phase only")
     ap.add_argument("--plan", action="store_true", help="print the canonical phase plan and exit")
+    ap.add_argument("--self-test", dest="self_test", action="store_true",
+                    help="run built-in gate self-tests (P6 delivery + unmapped-checker) and exit")
     args = ap.parse_args(argv)
+
+    if args.self_test:
+        return self_test()
 
     manifest = _load_manifest()
     if args.plan:

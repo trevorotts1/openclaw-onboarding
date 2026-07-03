@@ -108,10 +108,11 @@ pipeline. This skill (55) is the STANDALONE master-brain generator (10 sections 
 A change to either product-bio prompt MUST flag the sibling skill for review.
 Routing disambiguation: a standalone master-brain bio → **Skill 55**; a
 brand-intelligence package (its embedded bio ships with it) → **Skill 52**.
-(PRD §5, G6, O8.) **Reciprocal cross-ref = forward-ref TODO:** Skill 52 (Avatar
-Alchemist) is not yet on `main`; the matching "never merge; a change to either
-product-bio prompt flags the sibling" note MUST be added to `52-*/SKILL.md` when
-Skill 52 lands, so a fleet update to one can never silently strand the other.
+(PRD §5, G6, O8.) **Reciprocal cross-ref (LIVE):** Skill 52 (Avatar Alchemist) is
+on `main`, and its `52-avatar-alchemist/SKILL.md` carries the matching "never
+merge; a change to either product-bio prompt flags the sibling" note ("Relationship
+to Product Bio (Skill 55) — cross-linked, NEVER merged"). The cross-ref is now
+two-way, so a fleet update to one can never silently strand the other.
 
 ## Client-provider rule (binding)
 

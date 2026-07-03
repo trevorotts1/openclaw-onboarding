@@ -18,8 +18,9 @@
 #                         labeled bundle in ~/Downloads (exit 5,
 #                         AF-PB-ENTRY-BYPASS). Nothing leaves the box from here.
 #   3. VERSION/HASH PIN — content hash of the enforcement set (run_product_bio.py
-#                         + the five provers + _pb_common.py); if ENGINE-PIN.sha256
-#                         is present the hash MUST match (exit 7, AF-PB-HASH-PIN).
+#                         + the five provers + _pb_common.py + PRODUCT-BIO-MANIFEST.json);
+#                         if ENGINE-PIN.sha256 is present the hash MUST match
+#                         (exit 7, AF-PB-HASH-PIN).
 #
 # A gate may be skipped ONLY by an explicit, LOGGED owner approval token in
 # <run-dir>/working/checkpoints/process_manifest.json ("owner_skip_approval(s)":
@@ -208,7 +209,10 @@ fi
 # ===========================================================================
 # GATE 3 — VERSION/HASH PIN (content hash of the enforcement set)
 # ===========================================================================
-note "GATE 3/3 — VERSION/HASH PIN (orchestrator + provers + common)"
+note "GATE 3/3 — VERSION/HASH PIN (orchestrator + provers + common + manifest)"
+# The pinned set includes PRODUCT-BIO-MANIFEST.json — the manifest DRIVES the phase
+# order + the _chk_* checkers, so pinning it stops a silent edit that drops/relaxes a
+# required phase (or renames a checker to an unmapped no-op) from disabling a gate.
 ENFORCE_FILES=(
     "$RUNNER"
     "$SCRIPTS/_pb_common.py"
@@ -217,6 +221,7 @@ ENFORCE_FILES=(
     "$SCRIPTS/prove_pb_wordcount.py"
     "$SCRIPTS/prove_pb_sections.py"
     "$SCRIPTS/prove_pb_html.py"
+    "$SELF_DIR/PRODUCT-BIO-MANIFEST.json"
 )
 version_hash_pin() {
     local computed=""
