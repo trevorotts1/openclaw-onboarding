@@ -8121,6 +8121,46 @@ def run_style_preview_samples(slides_path: Path, run_dir: Path,
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Command Center board — phase-transition hookup (FAIL-SOFT). This is the missing
+# half of the presentations cc_board wiring: run-begin ingest_deck_task CREATES
+# the deck's single Kanban card, and these calls MOVE it through its phase
+# boundaries (P4-RENDER in_progress -> done -> P8-ASSEMBLE done -> P9-DELIVER
+# delivered) so a running deck no longer looks frozen on the board.
+#
+# Mirrors Skill-48's ad_director._board_move contract verbatim: EVERY call is
+# best-effort. A board outage, a missing token, an import error, or any patch
+# failure is caught and logged, NEVER fatal — the deck build's exit code is
+# independent of the board (the card is a VIEW; the offline AF-CC-UNREGISTERED
+# gate is already satisfied by the run-begin ingest's cc_register_attempted flag).
+# ---------------------------------------------------------------------------
+def _board_patch_phase(run_dir, task_id, phase_id, status, note=""):
+    """Advance the deck's CC card to (phase_id, status), FAIL-SOFT.
+
+    task_id is the id returned by cc_board.ingest_deck_task at run-begin; when it
+    is falsy (board disabled, or a transport-failed ingest) we recover it from
+    working/checkpoints/process_manifest.json (stamped by ingest on success). A
+    missing task_id or a disabled board is a clean no-op. Never raises — the board
+    is a convenience, never a gate."""
+    try:
+        import cc_board as _cc_board
+        tid = task_id
+        if not tid and run_dir is not None:
+            try:
+                _pm = Path(run_dir) / "working" / "checkpoints" / "process_manifest.json"
+                if _pm.exists():
+                    tid = (json.loads(_pm.read_text()) or {}).get("cc_task_id")
+            except Exception:  # noqa: BLE001 — a bad manifest read is never fatal
+                tid = task_id
+        if not tid:
+            return
+        _cc_board.patch_phase(run_dir, tid, phase_id, status, note=note)
+    except Exception as _cc_exc:  # noqa: BLE001 — the board is a view, never a gate
+        print(f"[cc_board] patch_phase {phase_id}->{status} raised ({_cc_exc}) — "
+              "run continues; the board update is best-effort.",
+              file=sys.stderr, flush=True)
+
+
 def main():
     argv = sys.argv[1:]
 
@@ -8316,6 +8356,9 @@ def main():
     # stamps cc_register_attempted=True BEFORE the HTTP call, so the postflight
     # gate (_chk_cc_registered) is satisfied even on transport failure.
     # Skipped in --adhoc mode (ad-hoc runs are not CC-tracked deliverables).
+    # _cc_task_id is hoisted here so the later phase-boundary card moves
+    # (_board_patch_phase) can thread it through the rest of main().
+    _cc_task_id = None
     if not adhoc:
         try:
             import cc_board as _cc_board
@@ -8410,6 +8453,11 @@ def main():
     # inside render_slide; we just run the slides concurrently.
     workers = min(_render_workers(), len(ordered))
     print(f"=== rendering {len(ordered)} slides with {workers} parallel workers ===\n", flush=True)
+    # BOARD: the render phase is now the one being worked (fail-soft; no-op when
+    # the board is disabled / the ingest never returned a task_id).
+    if not adhoc:
+        _board_patch_phase(run_dir, _cc_task_id, "P4-RENDER", "in_progress",
+                           note=f"rendering {len(ordered)} slides")
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         future_to_slide = {
             pool.submit(render_slide, slide, api_key, renders_dir, run_dir,
@@ -8442,6 +8490,11 @@ def main():
         print("\n=== SUMMARY (FAILED) ===", file=sys.stderr)
         print(json.dumps(summary, indent=2))
         sys.exit(1)
+
+    # BOARD: every slide rendered cleanly — close the render phase (fail-soft).
+    if not adhoc:
+        _board_patch_phase(run_dir, _cc_task_id, "P4-RENDER", "done",
+                           note=f"{len(rendered)} slides rendered")
 
     # PER-SLIDE SPEAKER NOTES: auto-discover + parse the presenter speech (if it
     # exists yet) so the assembled deck carries word-for-word notes per slide. This
@@ -8489,6 +8542,11 @@ def main():
     # will check their actual presence on disk.
     pptx_size = out_path.stat().st_size if out_path.exists() else 0
     update_deliverable_status(ledger_path, "deck_pptx", "built", size=pptx_size)
+
+    # BOARD: the PPTX assembled — advance the assemble phase (fail-soft).
+    if not adhoc:
+        _board_patch_phase(run_dir, _cc_task_id, "P8-ASSEMBLE", "done",
+                           note="deck PPTX assembled")
 
     # If the out_path is not inside bundle_dir, copy the pptx into bundle_dir so the
     # postflight gate finds it at its expected location.
@@ -8554,6 +8612,15 @@ def main():
     run_postflight_gate(bundle_dir, ledger_path, deck_slug,
                          skip_teleprompter_gate=(skip_teleprompter_gate or adhoc),
                          run_dir=run_dir, slides_path=slides_path)
+
+    # BOARD: the postflight completeness gate passed — the bundle is complete, so
+    # mark the deck DELIVERED. patch_phase auto-attaches the PROCESS-CERTIFICATE
+    # sha when prove-deck.py has already written it (closing the CC done-gate);
+    # when the cert is produced later in the runner flow it is simply omitted.
+    # Fail-soft: a board problem never changes this run's exit code.
+    if not adhoc:
+        _board_patch_phase(run_dir, _cc_task_id, "P9-DELIVER", "delivered",
+                           note="bundle complete — deck delivered")
     sys.exit(0)
 
 

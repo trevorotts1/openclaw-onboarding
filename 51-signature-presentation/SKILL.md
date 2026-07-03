@@ -1,7 +1,7 @@
 ---
 name: signature-presentation
 description: Builds a Trevor Otts Signature Presentation — the 4-phase, minimum-100-slide signature-talk methodology (Avatar → Signature Story → Transformational Teaching → Purpose Pitch) — as a governed deck TYPE that runs THROUGH the existing Presentations department engine. Gates the sacred method with three fail-closed provers: the 8-Questions-in-one-block intake gate, the sacred-structure ledger (phase ranges, ≥100 floor with client-exact override, ≤2 case studies, 3–7 teaching steps, suggested-image-per-slide, central-hook + section-hooks, N.E.E.I.T./4-Quadrant), and Phase-3 no-pitch hygiene. Ships four client-facing teaching frames — The Rulebook, The Vault, The Quest, The Original. Never forks the render path; the department's canonical entry (build_deck.py) does all rendering, assembly, delivery, and Kanban.
-version: 1.0.2
+version: 1.0.3
 ---
 
 # Signature Presentation (Skill 51)
@@ -19,7 +19,10 @@ gates*; the department engine owns *execution*. It never builds a deck itself an
 
 - `MASTERDOC.md` — the anonymized canonical methodology (Prime Directives, the 8 Questions,
   the four phases, N.E.E.I.T., the 4-Quadrant method, the hook doctrine).
-- `intake/sp-8-questions.json` — the 8-Questions + frame-selection spec, delivered as ONE block.
+- `intake/sp-8-questions.json` — the 8-Questions + frame-selection spec. The owner CONVERSATION is
+  choice-first (a QUICK vs IN-DEPTH interview) and asks **one question at a time**, never a wall of
+  questions (dumping the batch is **AF-INTAKE-BATCH**); the answers are then recorded as ONE atomic
+  machine block that the intake prover validates before slide authoring unlocks.
 - `frame-templates/the-rulebook.md`, `the-vault.md`, `the-quest.md`, `the-original.md` — the four
   client-facing teaching frames, each mapped to the 4 phases and slide ranges.
 - `structure/sp_structure.json` — the sacred-structure ledger CONTRACT the structure prover loads.
@@ -28,8 +31,14 @@ gates*; the department engine owns *execution*. It never builds a deck itself an
 
 ## The methodology in one screen
 
-**Ask the 8 Questions — all at one time — before writing anything** (Prime Directives 6–7).
-Once answered, write all slides at one time (Directive 8). The eight, verbatim ids `q1..q8`:
+**Gather the 8 Questions choice-first, ONE at a time — before writing anything** (Prime Directives
+6–7, under Trevor's ruling that one-question-at-a-time wins). Open by offering the owner a QUICK vs
+IN-DEPTH interview, then ask exactly **one question at a time** and wait for each answer — never a
+wall of questions (dumping the batch, or opening with no quick-vs-in-depth choice, is
+**AF-INTAKE-BATCH**, an intake-conversation autofail enforced by the QC/Healer scan that NEVER gates
+`build_deck.py`). The answers are then assembled into ONE atomic machine RECORD
+(`working/copy/sp_intake.json`) — that assembled block is what the intake prover validates. Once
+every answer is locked, write all slides at one time (Directive 8). The eight, verbatim ids `q1..q8`:
 
 1. Title of the Signature Presentation
 2. Do you want alternate titles proposed first?
@@ -40,8 +49,8 @@ Once answered, write all slides at one time (Directive 8). The eight, verbatim i
 7. What product(s) will you offer at the end?
 8. Anything else to consider before writing?
 
-A **frame-selection question** is asked in the SAME block (additive to the 8, never replacing
-one): The Rulebook / The Vault / The Quest / The Original.
+A **frame-selection question** is asked as its own turn in the same one-at-a-time flow (additive to
+the 8, never replacing one): The Rulebook / The Vault / The Quest / The Original.
 
 ### The four phases (labeled with name + purpose before each phase's slides — Directive 10)
 
