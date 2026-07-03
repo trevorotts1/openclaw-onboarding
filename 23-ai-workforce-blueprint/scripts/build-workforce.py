@@ -59,6 +59,23 @@ import subprocess  # v10.15.25: module-level so bare subprocess.run / subprocess
 from datetime import datetime
 from pathlib import Path
 
+# ── SHARED DECLINE READER (Issue #2 / Bulletproofing a) ──────────────────────
+# The provenance-gated decline model + the ONE normalizer live in the sibling
+# canonical_decline.py so build-workforce.py, department-floor.py and
+# qc-interview-completion.py can never drift again (the drift that caused the
+# residual over-provision bug (decline-normalization drift)). Add this script's own dir to sys.path so
+# the import resolves whether this file is run as a script OR loaded via
+# importlib.util.spec_from_file_location (the CI test harnesses).
+_BW_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _BW_SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _BW_SCRIPTS_DIR)
+from canonical_decline import (  # noqa: E402
+    norm as _decline_norm,
+    analyze as _decline_analyze,
+    canonical_decline_set as _shared_canonical_decline_set,
+    decision_coverage as _shared_decision_coverage,
+)
+
 # ── WS-2: import the role-library instantiation helpers from the sibling
 # create_role_workspaces module so the PRIMARY build INSTANTIATES the 121
 # pre-written SOPs (copy + token-personalize) instead of writing empty
@@ -743,62 +760,15 @@ def _canonical_decline_set(build_state):
     written ad hoc by the closeout/finisher agent) silently shrank the floor
     because this reader imposed ZERO provenance requirement. Fix: fail-safe to
     the LARGER floor when provenance is absent.
+
+    Issue #2 fix: this now DELEGATES to the shared canonical_decline.py reader so
+    the ids returned are NORMALIZED (norm(): lowercase, strip non-alphanumerics)
+    in the SAME space department-floor.py uses. Callers MUST therefore compare
+    with _decline_norm(cid) — a raw 'billing-finance' will NOT match the
+    normalized 'billingfinance' key. The provenance rule is unchanged; only the
+    id space (now normalized, single source of truth) is.
     """
-    declined = set()
-    bs = build_state or {}
-    recon = bs.get("canonicalReconciliation", {})
-    if not isinstance(recon, dict):
-        recon = {}
-
-    # Check the block-level owner-confirmed gate (backward-compat fast path).
-    owner_confirmed = bool(recon.get("ownerDeclineConfirmed"))
-
-    decisions = recon.get("decisions", {}) if isinstance(recon, dict) else {}
-    if isinstance(decisions, dict):
-        for cid, decision in decisions.items():
-            _cid = str(cid).strip()
-            if isinstance(decision, dict):
-                # Full provenance form: requires decision/source/decidedAt/decidedBy.
-                required = ("decision", "source", "decidedAt", "decidedBy")
-                has_provenance = all(decision.get(k) for k in required)
-                if decision.get("decision", "").strip().lower() == "no":
-                    if has_provenance:
-                        declined.add(_cid)
-                    else:
-                        print(
-                            f"[DECLINE REJECTED] '{_cid}' decisions entry is missing provenance "
-                            f"fields (need decision/source/decidedAt/decidedBy). "
-                            f"Decline IGNORED — dept stays in floor (fail-safe). "
-                            f"Provide owner-interview attribution to honor this decline.",
-                            file=sys.stderr)
-            elif str(decision).strip().lower() == "no":
-                # Bare string "no" — only honored when block is owner-confirmed.
-                if owner_confirmed:
-                    declined.add(_cid)
-                else:
-                    print(
-                        f"[DECLINE REJECTED] '{_cid}' has bare string decision='no' without "
-                        f"ownerDeclineConfirmed=true on the canonicalReconciliation block. "
-                        f"Decline IGNORED — dept stays in floor (fail-safe). "
-                        f"Set ownerDeclineConfirmed=true or use object-form provenance.",
-                        file=sys.stderr)
-
-    # declinedDepartments[] flat list: only honored with block-level owner gate.
-    flat_list = bs.get("declinedDepartments", []) or []
-    if flat_list:
-        if owner_confirmed:
-            for cid in flat_list:
-                declined.add(str(cid).strip())
-        else:
-            print(
-                f"[DECLINE REJECTED] declinedDepartments[] has {len(flat_list)} entr(ies) "
-                f"but canonicalReconciliation.ownerDeclineConfirmed is not true. "
-                f"ALL entries IGNORED — depts stay in floor (fail-safe). "
-                f"Set ownerDeclineConfirmed=true on the canonicalReconciliation block "
-                f"to honor a flat decline list.",
-                file=sys.stderr)
-
-    return declined
+    return _shared_canonical_decline_set(build_state)
 
 
 def _build_state_path():
@@ -846,6 +816,14 @@ NON_INTERACTIVE_ANSWERS_HEADER = "# Workforce Interview Answers (Non-Interactive
 # Exit code emitted when the build is refused for missing owner consent. Distinct
 # from the generic exit(1) so callers / CI can branch on "interview pending".
 EXIT_INTERVIEW_PENDING = 87
+
+# Exit code emitted when the build is refused because the Phase 5.5 per-department
+# decision map is INCOMPLETE (Issue #3). Distinct from EXIT_INTERVIEW_PENDING so
+# callers / CI can branch on "reconciliation pending" (interview happened but not
+# every canonical/custom dept has a provenanced yes/no/later decision — the
+# structural under-recorded-interview scenario where an under-recorded interview silently unions the
+# full floor).
+EXIT_RECONCILIATION_PENDING = 88
 
 # Decision tokens that count as an EXPLICIT owner opt-in to a self-setup / fast
 # (decline-the-interview) build. Anything else is rejected.
@@ -999,6 +977,372 @@ def _refuse_interview_pending(reason, option):
         print(f"[FABRICATION-GUARD] Could not record interviewBuildStatus: {e}", file=sys.stderr)
 
     sys.exit(EXIT_INTERVIEW_PENDING)
+
+
+def _universal_primary_ids():
+    """
+    Return the list of universal-primary vertical-pack department ids — one per
+    pack that EXPLICITLY marks a dept universal_primary=true. Mirrors
+    department-floor.universal_primary_vertical_departments and
+    list-canonical-departments.get_universal_primaries so all callers agree.
+    NO depts[0] fallback (v2.6.1): a pack with no flagged dept contributes none.
+    """
+    packs = _load_vertical_packs()
+    ids = []
+    seen = set()
+    for _pack_id, pack in (packs or {}).items():
+        if not isinstance(pack, dict):
+            continue
+        for dept in pack.get("auto_add_departments", []) or []:
+            if isinstance(dept, dict) and dept.get("universal_primary"):
+                did = dept.get("id")
+                if did and did not in seen:
+                    seen.add(did)
+                    ids.append(did)
+                break
+    return ids
+
+
+def _expected_decision_ids(departments_config):
+    """
+    Issue #3: the full set of department ids that MUST carry a provenanced
+    yes/no/later decision before the canonical floor is unioned in:
+        mandatory canonical + universal-primary verticals + client customs.
+    Returns a list of raw ids (the caller normalizes for comparison).
+    """
+    floor = load_canonical_floor()
+    mandatory = list(floor.keys())
+    universals = _universal_primary_ids()
+    # Customs = enabled departments_config entries that are NOT a canonical id
+    # (under id/alias/variant). Customs are included here for the audit/receipt
+    # picture; the coverage GATE treats a configured custom as implicit-yes (owner
+    # intent) and only hard-requires recorded decisions for the auto-unioned
+    # canonical/universal floor — see _enforce_decision_coverage_or_refuse.
+    canonical_norm = {_decline_norm(c) for c in mandatory}
+    for c in mandatory:
+        canonical_norm.add(_decline_norm(CANONICAL_ID_ALIASES.get(c, c)))
+        for v in CANONICAL_VARIANT_SLUGS.get(c, []):
+            canonical_norm.add(_decline_norm(v))
+    for u in universals:
+        canonical_norm.add(_decline_norm(u))
+    customs = [
+        did for did, dcfg in (departments_config or {}).items()
+        if (dcfg or {}).get("enabled", True) and _decline_norm(did) not in canonical_norm
+    ]
+    # De-dup preserving order.
+    out = []
+    seen = set()
+    for did in mandatory + universals + customs:
+        n = _decline_norm(did)
+        if n not in seen:
+            seen.add(n)
+            out.append(did)
+    return out
+
+
+def _refuse_reconciliation_pending(missing_ids, rejections=None):
+    """
+    Issue #3 fail-closed: the Phase 5.5 decision map is INCOMPLETE (one or more
+    canonical/universal/custom depts have no provenanced yes/no/later decision).
+    REFUSE the build rather than silently union the full floor (the structural under-recorded-interview scenario).
+
+    Mirrors _refuse_interview_pending: writes a RECONCILIATION_PENDING handoff,
+    ledgers the coverage gap + any rejected declines into build-state (additive;
+    NEVER stamps interviewComplete/buildCompletedAt), and exits with a distinct
+    code so callers/CI can branch on it.
+    """
+    rejections = rejections or []
+    missing_ids = sorted(set(missing_ids))
+    msg = (
+        "[DECISION-COVERAGE] REFUSING build: the per-department decision map is "
+        "INCOMPLETE. Every mandatory canonical, universal-primary vertical, and "
+        "custom department must carry a provenanced yes/no/later decision (recorded "
+        "via scripts/record-dept-decision.sh) BEFORE the canonical floor is built. "
+        "Building now would silently union the full floor against the owner's intent "
+        "(the silent over-provision scenario).\n"
+        f"  Missing decisions ({len(missing_ids)}): {', '.join(missing_ids)}"
+    )
+    if rejections:
+        msg += (
+            f"\n  Rejected (un-provenanced) declines ({len(rejections)}): "
+            + ", ".join(f"{r.get('id')} [{r.get('reason')}]" for r in rejections)
+        )
+    print(msg, file=sys.stderr)
+    print(
+        "RECONCILIATION_NOT_COMPLETE: build refused — per-department decisions "
+        "incomplete (record every dept's yes/no/later, then re-run).",
+        file=sys.stderr,
+    )
+
+    # RECONCILIATION_PENDING handoff (best-effort; the non-zero exit is the guarantee).
+    try:
+        discovery_dir = _ensure_company_discovery_dir()
+    except Exception:  # noqa: BLE001
+        discovery_dir = None
+    if not discovery_dir:
+        try:
+            discovery_dir = os.path.dirname(_build_state_path())
+            os.makedirs(discovery_dir, exist_ok=True)
+        except Exception:  # noqa: BLE001
+            discovery_dir = None
+    if discovery_dir:
+        try:
+            handoff_path = os.path.join(discovery_dir, "interview-handoff.md")
+            with open(handoff_path, "w") as f:
+                f.write("# Interview Handoff\n")
+                f.write(f"## Last Updated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}\n\n")
+                f.write("status: RECONCILIATION_PENDING\n\n")
+                f.write("## Build refused (decision-coverage gate):\n")
+                f.write(f"Missing provenanced decisions for: {', '.join(missing_ids)}\n\n")
+                if rejections:
+                    f.write("Rejected (un-provenanced) declines:\n")
+                    for r in rejections:
+                        f.write(f"- {r.get('id')} — {r.get('reason')}\n")
+                    f.write("\n")
+                f.write("Record each missing decision with "
+                        "`scripts/record-dept-decision.sh --dept <id> --decision yes|no|later "
+                        "--source owner-interview --by <ownerId> --session <sessionId>`, then "
+                        "re-run the build.\n")
+            print(f"[DECISION-COVERAGE] Wrote status:RECONCILIATION_PENDING -> {handoff_path}",
+                  file=sys.stderr)
+        except OSError as e:
+            print(f"[DECISION-COVERAGE] Could not write handoff: {e}", file=sys.stderr)
+
+    # Ledger the coverage gap + rejected declines into build-state (Bulletproofing b;
+    # additive; NEVER sets interviewComplete / buildCompletedAt).
+    try:
+        path = _build_state_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        state = _load_build_state()
+        state["reconciliationBuildStatus"] = "RECONCILIATION_PENDING"
+        state["decisionCoverage"] = {
+            "complete": False,
+            "missing": missing_ids,
+            "refusedAt": datetime.now().isoformat(),
+        }
+        if rejections:
+            state["declineRejections"] = rejections
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2)
+    except OSError as e:
+        print(f"[DECISION-COVERAGE] Could not record decisionCoverage: {e}", file=sys.stderr)
+
+    sys.exit(EXIT_RECONCILIATION_PENDING)
+
+
+def _enforce_decision_coverage_or_refuse(config, departments_config):
+    """
+    Issue #3 gate. In the GENUINE-INTERVIEW path (not the ownerConsent self-setup/
+    fast opt-in, which by design skips the per-dept pitch), require a provenanced
+    yes/no/later decision for EVERY expected department id before the floor is
+    unioned in. On any gap, REFUSE fail-closed. Fast-mode / self-setup builds are
+    exempt (the owner opted out of the interview). Also ledgers rejected declines.
+    """
+    build_state = _load_build_state()
+    # Fast-mode / self-setup: owner explicitly opted out of the per-dept interview.
+    consent_ok, _reason, _consent = _validate_owner_consent(config, build_state)
+    if consent_ok:
+        print("[DECISION-COVERAGE] ownerConsent self-setup/fast build — per-dept "
+              "decision-coverage gate SKIPPED (owner opted out of the interview).",
+              file=sys.stderr)
+        return
+    expected = _expected_decision_ids(departments_config)
+    missing, _covered = _shared_decision_coverage(build_state, expected)
+    # A custom department the owner EXPLICITLY placed in departments_config is
+    # itself the owner's recorded intent to build it (implicit YES) — it is never
+    # silently auto-unioned like a canonical dept, so it does not need a separate
+    # decision record to be "covered". The over-provision hole this gate closes is the
+    # AUTO-UNIONED canonical/universal floor being under-recorded; keep the gate
+    # focused there and let #8's decline filter handle a declined custom.
+    _configured = {_decline_norm(d) for d in (departments_config or {})}
+    missing = [m for m in missing if _decline_norm(m) not in _configured]
+    rejections = _decline_analyze(build_state, quiet=True)["rejections"]
+    if missing or rejections:
+        _refuse_reconciliation_pending(missing, rejections=rejections)
+    # Coverage complete — ledger the clean verdict (additive).
+    try:
+        path = _build_state_path()
+        state = _load_build_state()
+        state["decisionCoverage"] = {
+            "complete": True,
+            "missing": [],
+            "checkedAt": datetime.now().isoformat(),
+            "expectedCount": len(expected),
+        }
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2)
+    except OSError as e:
+        print(f"[DECISION-COVERAGE] Could not record clean decisionCoverage: {e}", file=sys.stderr)
+    print(f"[DECISION-COVERAGE] PASS — all {len(expected)} expected departments carry a "
+          f"provenanced yes/no/later decision.", file=sys.stderr)
+
+
+def _collapse_to_canonical(did):
+    """Map a department id to its canonical id if it is a known alias/variant slug,
+    else return it unchanged. Used so the provisioning receipt compares expected vs
+    built in one canonical space (e.g. 'legal-compliance' -> 'legal')."""
+    n = _decline_norm(did)
+    for c in load_canonical_floor().keys():
+        if _decline_norm(c) == n:
+            return c
+        if _decline_norm(CANONICAL_ID_ALIASES.get(c, c)) == n:
+            return c
+        for v in CANONICAL_VARIANT_SLUGS.get(c, []):
+            if _decline_norm(v) == n:
+                return c
+    return did
+
+
+def _write_provisioning_receipt(company_name, selected_departments, config, core_answers):
+    """
+    Bulletproofing (c): write provisioning-receipt.json with an EXPECTED-SET
+    EQUALITY invariant so BOTH over- and under-provisioning fail a gate — not just
+    the "at least the floor" checks every existing gate uses.
+
+    EXPECTED = mandatory canonical + universal-primary verticals + keyword vertical
+    extras that were actually added + accepted customs + 'later's (build-now),
+    MINUS provenance-declines MINUS merged-away customs.
+    BUILT    = the department set actually assembled (selected_departments).
+
+    equalityOk is TRUE only when EXPECTED == BUILT (in one canonical space), which
+    means: no declined dept was built (the residual over-provision bug), no floor dept
+    was dropped, customs were honored, and merged customs did not duplicate.
+    prove-zhe.py asserts this equality; prove-handover.sh gates handover on it.
+    Best-effort: never raises (a receipt-write failure must not fail the build).
+    """
+    try:
+        build_state = _load_build_state()
+        view = _decline_analyze(build_state, quiet=True)
+        declined = view["declined"]          # normalized
+        later = view["later"]                # normalized (informational — build-now)
+
+        mandatory = list(load_canonical_floor().keys())
+        universals = _universal_primary_ids()
+
+        # Vertical additions actually made (universal + keyword extras), already
+        # declined-filtered by apply_vertical_packs.
+        vpacks = build_state.get("verticalPacks", {}) or {}
+        added_vertical_ids = [d.get("id") for d in (vpacks.get("addedDepartments") or [])
+                              if isinstance(d, dict) and d.get("id")]
+
+        # Merged-away customs (folded into a canonical survivor by apply_semantic_merges).
+        recon = build_state.get("canonicalReconciliation", {}) or {}
+        merged = recon.get("semanticMerges", {}) or {}
+        merged_away = {_decline_norm(m.get("custom_id"))
+                       for m in (merged.get("merged") or [])
+                       if isinstance(m, dict) and m.get("custom_id")}
+
+        departments_config = config.get("departments", {}) or {}
+        canonical_norm = set()
+        for c in mandatory:
+            canonical_norm.add(_decline_norm(c))
+            canonical_norm.add(_decline_norm(CANONICAL_ID_ALIASES.get(c, c)))
+            for v in CANONICAL_VARIANT_SLUGS.get(c, []):
+                canonical_norm.add(_decline_norm(v))
+        for u in universals:
+            canonical_norm.add(_decline_norm(u))
+        accepted_customs = [
+            did for did, dcfg in departments_config.items()
+            if (dcfg or {}).get("enabled", True)
+            and _decline_norm(did) not in canonical_norm
+            and _decline_norm(did) not in declined
+            and _decline_norm(did) not in merged_away
+        ]
+
+        def _cnorm(x):
+            return _decline_norm(_collapse_to_canonical(x))
+
+        expected = set()
+        for x in mandatory + universals + added_vertical_ids:
+            if _cnorm(x) not in declined:
+                expected.add(_cnorm(x))
+        for x in accepted_customs:
+            expected.add(_cnorm(x))
+
+        built = {_cnorm(d) for d in selected_departments}
+
+        missing_from_built = sorted(expected - built)         # under-provision
+        declined_but_built = sorted(built & declined)          # OVER-provision (declined-but-built)
+        extra_beyond_expected = sorted(built - expected)       # unexplained extras
+        equality_ok = not (missing_from_built or declined_but_built or extra_beyond_expected)
+
+        reason = "built department set == expected set (mandatory + universal-primary + " \
+                 "vertical extras + accepted customs + laters, minus declines/merges)"
+        if not equality_ok:
+            bits = []
+            if declined_but_built:
+                bits.append("OVER-PROVISION: declined depts built: " + ", ".join(declined_but_built))
+            if missing_from_built:
+                bits.append("UNDER-PROVISION: expected depts missing: " + ", ".join(missing_from_built))
+            if extra_beyond_expected:
+                bits.append("UNEXPECTED extras: " + ", ".join(extra_beyond_expected))
+            reason = " | ".join(bits)
+
+        receipt = {
+            "schema": "provisioning-receipt/v1",
+            "company": company_name,
+            "generatedAt": datetime.now().isoformat(),
+            "declined": sorted(declined),
+            "later": sorted(later),
+            "acceptedCustoms": sorted({_cnorm(c) for c in accepted_customs}),
+            "mergedAwayCustoms": sorted(merged_away),
+            "verticalAdded": sorted({_cnorm(v) for v in added_vertical_ids}),
+            "expectedSet": sorted(expected),
+            "builtSet": sorted(built),
+            "expectedCount": len(expected),
+            "builtCount": len(built),
+            "missingFromBuilt": missing_from_built,
+            "declinedButBuilt": declined_but_built,
+            "extraBeyondExpected": extra_beyond_expected,
+            "equalityOk": equality_ok,
+            "reason": reason,
+        }
+
+        # Write to the ZHC company folder (canonical) AND, when resolvable, to the
+        # workspace root so the receipt-backed gates (prove-zhe / prove-handover)
+        # find it next to the on-disk departments dir.
+        targets = []
+        if COMPANY_DIR:
+            targets.append(os.path.join(COMPANY_DIR, "provisioning-receipt.json"))
+        try:
+            _ws = os.path.join(WORKSPACE_ROOT, "provisioning-receipt.json")
+            if os.path.isdir(WORKSPACE_ROOT):
+                targets.append(_ws)
+        except Exception:  # noqa: BLE001
+            pass
+        for t in targets:
+            try:
+                tmp = t + ".tmp"
+                with open(tmp, "w") as f:
+                    json.dump(receipt, f, indent=2)
+                os.replace(tmp, t)
+                print(f"[PROVISIONING-RECEIPT] wrote {t} (equalityOk={equality_ok})", file=sys.stderr)
+            except OSError as e:
+                print(f"[PROVISIONING-RECEIPT] could not write {t}: {e}", file=sys.stderr)
+
+        # Ledger the verdict into build-state (additive).
+        try:
+            path = _build_state_path()
+            state = _load_build_state()
+            state["provisioningReceipt"] = {
+                "equalityOk": equality_ok,
+                "expectedCount": len(expected),
+                "builtCount": len(built),
+                "declinedButBuilt": declined_but_built,
+                "missingFromBuilt": missing_from_built,
+                "generatedAt": receipt["generatedAt"],
+            }
+            with open(path, "w") as f:
+                json.dump(state, f, indent=2)
+        except OSError as e:
+            print(f"[PROVISIONING-RECEIPT] could not ledger verdict: {e}", file=sys.stderr)
+
+        if not equality_ok:
+            print(f"[PROVISIONING-RECEIPT] EQUALITY FAILED — {reason}", file=sys.stderr)
+        return receipt
+    except Exception as e:  # noqa: BLE001 — a receipt failure must NEVER fail the build
+        print(f"[PROVISIONING-RECEIPT] WARN: receipt generation failed: {e}", file=sys.stderr)
+        return None
 
 
 def _enforce_consent_or_refuse(config):
@@ -1413,7 +1757,10 @@ def reconcile_canonical_floor(selected_departments, core_answers, departments_co
 
     auto_included = []
     for cid, info in floor.items():
-        if cid in declined:
+        # Issue #2: `declined` is now a NORMALIZED set (shared reader). Compare in
+        # the same normalized space so a decline keyed "Video"/"billing_finance"
+        # (from a display name / underscore variant) is HONORED, not force-built.
+        if _decline_norm(cid) in declined:
             print(f"[CANONICAL] Skipping '{cid}' -- client explicitly declined.", file=sys.stderr)
             continue
         if _canonical_present(cid, selected_departments):
@@ -2162,6 +2509,27 @@ def build_from_config(config):
                     "description": dept_config.get("activities", ""),
                 }
 
+    # Issue #3 (decision-completeness gate): in the genuine-interview path, REFUSE
+    # the build fail-closed unless EVERY mandatory canonical, universal-primary
+    # vertical, and custom department carries a provenanced yes/no/later decision.
+    # This makes the structural over-provision scenario (an under-recorded Phase 5.5 silently
+    # unioning the full floor) impossible. Fast-mode / self-setup (ownerConsent)
+    # builds are exempt by design. Runs BEFORE reconcile so no floor is unioned
+    # in when decisions are incomplete.
+    _enforce_decision_coverage_or_refuse(config, departments_config)
+
+    # Issue #8 (custom-department declines): filter any CUSTOM (non-canonical) dept
+    # the owner PROVENANCE-DECLINED out of selected_departments BEFORE reconcile.
+    # reconcile_canonical_floor honors canonical declines but never inspected the
+    # client's own custom entries, so a declined custom used to ship anyway. Uses
+    # the same normalized shared decline set as every other enforcer.
+    _declined_norm = _shared_canonical_decline_set(_load_build_state())
+    if _declined_norm:
+        for _did in [d for d in list(selected_departments) if _decline_norm(d) in _declined_norm]:
+            selected_departments.pop(_did, None)
+            print(f"[CUSTOM-DECLINE] Dropped provenance-declined department '{_did}' "
+                  f"(owner opted out in Phase 5.5).", file=sys.stderr)
+
     # v10.x - Enforce the canonical department floor (standard-unless-declined).
     # Builds all canonical depts (21 in v2.5.0; minus any the client explicitly
     # declined in build-state) UNION the client's customs, then writes an auditable
@@ -2659,6 +3027,11 @@ def build_from_config(config):
     # populate the _ARTIFACT_PROVENANCE accumulator) have completed by now, so this
     # is the authoritative roll-up detect-stale-artifacts.py reads as the fast path.
     _flush_artifact_provenance_to_state()
+
+    # Bulletproofing (c): write the provisioning receipt with the EXPECTED-SET
+    # EQUALITY invariant (over- AND under-provisioning both fail). prove-zhe.py and
+    # prove-handover.sh read this receipt. Best-effort — never fails the build.
+    _write_provisioning_receipt(company_name, selected_departments, config, core_answers)
 
     print(f"\n[NON-INTERACTIVE] {_build_complete_msg}", file=sys.stderr)
     print(f"[NON-INTERACTIVE] Company: {company_name}", file=sys.stderr)

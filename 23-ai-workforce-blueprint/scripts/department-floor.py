@@ -81,6 +81,19 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR.parent
 NAMING_MAP = SKILL_DIR / "department-naming-map.json"
 
+# ── SHARED DECLINE READER (Issue #2 / Bulletproofing a) ──────────────────────
+# Import the ONE normalizer + provenance-gated decline reader so this floor
+# checker and build-workforce.py compare declines in the SAME normalized space
+# (the drift that caused the residual over-provision bug). Add this script's
+# own dir to sys.path so the import resolves whether run as a script or loaded
+# via importlib in the CI test harnesses.
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+from canonical_decline import (  # noqa: E402
+    norm as _shared_norm,
+    canonical_decline_set as _shared_canonical_decline_set,
+)
+
 # Hardcoded mandatory fallback - IDENTICAL to build-workforce.load_canonical_floor()
 # so the floor is still enforced on a broken install that lost the naming map.
 # v11.1.0: added general-task + project-architecture-office, floor 24→26.
@@ -120,8 +133,10 @@ CANONICAL_VARIANT_SLUGS = {
 
 
 def _norm(s):
-    """Normalize a slug for membership comparison: lowercase, strip hyphens."""
-    return re.sub(r"[^a-z0-9]", "", str(s).lower())
+    """Normalize a slug for membership comparison: lowercase, strip non-alphanumerics.
+    DELEGATES to the shared canonical_decline.norm so this checker and
+    build-workforce.py can never normalize differently (Issue #2)."""
+    return _shared_norm(s)
 
 
 def load_naming_map():
@@ -265,49 +280,13 @@ def declined_set(build_state):
     WHY: closes the fabrication vector where a bare string 'no' or flat
     declinedDepartments[] entry (written ad hoc by a non-owner actor) could
     silently shrink the floor with no audit trail.
+
+    Issue #2 fix: DELEGATES to the shared canonical_decline.canonical_decline_set
+    so the builder (build-workforce.py) and this on-disk floor checker read the
+    EXACT same normalized, provenance-gated decline set. No lockstep drift is
+    possible when there is only one reader.
     """
-    declined = set()
-    bs = build_state or {}
-    recon = bs.get("canonicalReconciliation", {}) or {}
-    if not isinstance(recon, dict):
-        recon = {}
-
-    owner_confirmed = bool(recon.get("ownerDeclineConfirmed"))
-
-    for cid, dec in (recon.get("decisions", {}) or {}).items():
-        _cid = _norm(cid)
-        if isinstance(dec, dict):
-            required = ("decision", "source", "decidedAt", "decidedBy")
-            has_provenance = all(dec.get(k) for k in required)
-            if str(dec.get("decision", "")).strip().lower() == "no":
-                if has_provenance:
-                    declined.add(_cid)
-                else:
-                    print(
-                        f"[DECLINE REJECTED] '{cid}' missing provenance fields "
-                        f"(need decision/source/decidedAt/decidedBy). "
-                        f"Dept stays in floor (fail-safe).",
-                        file=sys.stderr)
-        elif str(dec).strip().lower() == "no":
-            if owner_confirmed:
-                declined.add(_cid)
-            else:
-                print(
-                    f"[DECLINE REJECTED] '{cid}' bare string 'no' without "
-                    f"ownerDeclineConfirmed=true. Dept stays in floor (fail-safe).",
-                    file=sys.stderr)
-
-    for cid in (bs.get("declinedDepartments", []) or []):
-        if owner_confirmed:
-            declined.add(_norm(cid))
-        else:
-            print(
-                f"[DECLINE REJECTED] declinedDepartments[] entry '{cid}' without "
-                f"ownerDeclineConfirmed=true. Dept stays in floor (fail-safe).",
-                file=sys.stderr)
-            break  # warn once; the outer caller already sees the list count
-
-    return declined
+    return _shared_canonical_decline_set(build_state)
 
 
 def resolve_departments_dir():
