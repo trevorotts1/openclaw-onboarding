@@ -19,6 +19,7 @@ run "egress-gate --self-test"   python3 "$HERE/scripts/aa_egress_gate.py" --self
 run "qc-cert --self-test"       python3 "$HERE/scripts/aa_qc_cert.py" --self-test
 run "director --self-test"      python3 "$HERE/scripts/aa_director.py" --self-test
 run "package --self-test"       python3 "$HERE/scripts/aa_package.py" --self-test
+run "handoff --self-test"       python3 "$HERE/scripts/aa_handoff.py" --self-test
 
 echo "== negative suite (every gate fails its bad fixture) =="
 run "test_aa_preflight"         python3 "$HERE/scripts/test_aa_preflight.py"

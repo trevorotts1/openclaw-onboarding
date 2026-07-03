@@ -92,6 +92,22 @@ minted only by `entry.sh`, never embedded in the certificate). **"Done" is claim
 certificate that PASSES `aa_delivery_gate.py --verify-cert`** (no-false-done rule; presence of the
 `signature` field alone is NOT sufficient — it must independently re-verify).
 
+## 6. Downstream handoff manifest (auto, post-certification)
+
+Once the package is delivered AND `--verify-cert` passes, emit the next-step routing INTO the
+delivery folder:
+```
+python3 scripts/aa_handoff.py --deliver-dir <deliver-dir>
+```
+`aa_handoff.py` reads the certified `MANIFEST.json`, resolves the documented Downstream-handoff
+routing (below) to the exact shipped files — each bound to its `MANIFEST.json` sha256 — and writes
+`HANDOFF.json` (machine-readable next-step targets) + `HANDOFF.md` (human checklist). It is
+stdlib-only, no LLM, no network, and it NEVER re-signs or re-issues the certificate: it REQUIRES a
+`PROCESS-CERTIFICATE.json` to already be present (so a handoff is never minted for an
+uncertified/undelivered folder) and fails closed (`AF-AV-HANDOFF-INCOMPLETE`) if any routed
+deliverable is absent. Because it runs strictly after certification it is bound by the certificate,
+not binding it, and cannot affect `--verify-cert`.
+
 ## Delivery contract (we move in silence)
 
 The skill's final answer = the deliverable folder path + the `00-INDEX.md` doc list + the
@@ -100,6 +116,9 @@ department how-to wires the box's own OpenClaw gateway channel — never raw Sla
 operator credentials.
 
 ## Downstream handoffs
+
+`aa_handoff.py` (step 6) emits this exact routing as `HANDOFF.json` / `HANDOFF.md` in the delivery
+folder — an orchestrator triggers the next step from that artifact rather than re-deriving it:
 
 - 3 bot docs → **Skill 38** (conversational-ai-system) playbook input.
 - `Top_39_Suggested_Ad_Angles` + `Facebook_Headline_…` + `Facebook_Targeting_Intelligence` →

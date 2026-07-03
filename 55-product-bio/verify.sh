@@ -9,10 +9,12 @@
 #
 #   1. the five provers --self-test            (built-in golden + attack fixtures)
 #   2. golden reproduce                        (each prover PASSes the golden bundle)
+#      2b. extra golden bundles reproduce      (SERVICE + PHYSICAL-PRODUCT goldens)
 #   3. broken-variants reject                  (each attack fixture trips its AF, exit 2)
 #   4. prompt-fidelity pins                    (baked assets match recorded sha256)
 #   5. no-Anthropic scan                       (AF-PB-ANTHROPIC: no claude-*/anthropic/* id)
 #   6. end-to-end golden pilot through the entry (a full pass issues a certificate)
+#      6b. extra golden bundle pilots          (SERVICE + PHYSICAL-PRODUCT end-to-end)
 #
 # Usage:  bash 55-product-bio/verify.sh
 # Exit:   0 = all checks passed;  nonzero = at least one check failed.
@@ -25,6 +27,8 @@ GOLD="$SKILL_DIR/test-fixtures/golden"
 ATK="$SKILL_DIR/test-fixtures/attack"
 EX="$SKILL_DIR/examples/golden-atlasflow"        # shipped worked example
 EBV="$EX/broken-variants"
+GSVC="$GOLD/service"                             # extra golden: a SERVICE-type bio
+GPHY="$GOLD/physical"                            # extra golden: a PHYSICAL-PRODUCT bio
 PY="${PYTHON:-python3}"
 
 fails=0
@@ -56,6 +60,39 @@ expect_reject() {
     fi
 }
 
+# golden_bundle_reproduce "<label>" <dir> — a golden bundle (intake.json +
+# product-bio.md + product-bio.html) PASSes every applicable fail-closed prover,
+# exactly like the primary golden bundle. Prompt-fidelity is skill-wide (prompt
+# assets, not per-bundle) so it is proven once in step 4, not per bundle.
+golden_bundle_reproduce() {
+    local label="$1" dir="$2"
+    [ -d "$dir" ] || { printf '  [WARN] golden[%s] dir absent (%s) — skipping\n' "$label" "$dir"; return 0; }
+    run "golden[$label] intake PASS"    "$PY" "$SCRIPTS/prove_pb_intake.py"    "$dir/intake.json"
+    run "golden[$label] wordcount PASS" "$PY" "$SCRIPTS/prove_pb_wordcount.py" "$dir/product-bio.md"
+    run "golden[$label] sections PASS"  "$PY" "$SCRIPTS/prove_pb_sections.py"  "$dir/product-bio.md"
+    run "golden[$label] html PASS"      "$PY" "$SCRIPTS/prove_pb_html.py"      "$dir/product-bio.html" --source-bio "$dir/product-bio.md"
+}
+
+# golden_bundle_pilot "<label>" <dir> — drive a golden bundle end-to-end through
+# the ONE sanctioned entry in a THROWAWAY temp run-dir (read-only w.r.t. the
+# skill tree). A full P0->P6 pass must issue a process certificate.
+golden_bundle_pilot() {
+    local label="$1" dir="$2"
+    [ -d "$dir" ] || return 0
+    local tmp; tmp="$(mktemp -d)"
+    mkdir -p "$tmp/working"
+    cp "$dir/intake.json"      "$tmp/working/intake.json"
+    cp "$dir/product-bio.md"   "$tmp/working/product-bio.md"
+    cp "$dir/product-bio.html" "$tmp/working/product-bio.html"
+    if bash "$SKILL_DIR/product-bio-entry.sh" --run-dir "$tmp" >/dev/null 2>&1 \
+       && [ -f "$tmp/delivery/PROCESS-CERTIFICATE.json" ]; then
+        printf '  [PASS] golden[%s] pilot issues a process certificate\n' "$label"
+    else
+        printf '  [FAIL] golden[%s] pilot did not issue a certificate\n' "$label"; fails=$((fails + 1))
+    fi
+    rm -rf "$tmp"
+}
+
 echo "== Skill 55 (Product Bio Engine) :: verify.sh =="
 
 # 1) the five provers --self-test + the orchestrator gate self-test.
@@ -74,6 +111,12 @@ run "golden fidelity PASS" "$PY" "$SCRIPTS/prove_pb_fidelity.py"
 run "golden wordcount PASS" "$PY" "$SCRIPTS/prove_pb_wordcount.py" "$GOLD/product-bio.md"
 run "golden sections PASS" "$PY" "$SCRIPTS/prove_pb_sections.py"  "$GOLD/product-bio.md"
 run "golden html PASS"     "$PY" "$SCRIPTS/prove_pb_html.py"      "$GOLD/product-bio.html" --source-bio "$GOLD/product-bio.md"
+
+# 2b) extra golden bundles reproduce — a SERVICE-type bio and a PHYSICAL-PRODUCT
+#     bio, each conforming to the same golden contract as the primary bundle.
+echo "  -- extra golden bundles (service + physical) reproduce --"
+golden_bundle_reproduce "service"  "$GSVC"
+golden_bundle_reproduce "physical" "$GPHY"
 
 # 3) broken-variants reject — each attack fixture trips its distinct AF (fail-closed proof).
 expect_reject "intake-missing"       prove_pb_intake.py   "AF-PB-INTAKE-MISSING"  "$ATK/intake_missing.json"
@@ -145,6 +188,12 @@ if bash "$SKILL_DIR/product-bio-entry.sh" --run-dir "$TMP" >/dev/null 2>&1 \
 else
     printf '  [FAIL] golden pilot did not issue a certificate\n'; fails=$((fails + 1))
 fi
+
+# 6b) extra golden bundle pilots — the SERVICE + PHYSICAL-PRODUCT goldens each
+#     drive a full P0->P6 pass end-to-end and issue a certificate.
+echo "  -- extra golden bundle pilots (service + physical) --"
+golden_bundle_pilot "service"  "$GSVC"
+golden_bundle_pilot "physical" "$GPHY"
 
 # 7) shipped worked example (examples/golden-atlasflow) — regression-guard it in a
 #    THROWAWAY temp run-dir (read-only w.r.t. the skill tree). A full pass must (a)

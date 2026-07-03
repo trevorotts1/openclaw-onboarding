@@ -9,6 +9,11 @@
 - **Client tier:** MID-WRITER (all five). NEVER an Anthropic/`claude-*` id.
 - **Permitted inputs:** the avatar dossier (`artifacts/01-avatar.md`) + the intake `tone_style_1..4`.
   On `N/A` a style stage MUST auto-pick a real, well-known figure in harmony with the avatar's answers.
+- **Optional persona palette (`PERSONAS.json`, skill root):** when a client leaves an influence at `N/A`
+  and prefers a fully fictional voice, the analyst MAY adopt a named house persona from `PERSONAS.json`
+  (matched by its `best_for` to the avatar) instead of a real figure. The file is DATA only; it never
+  overrides a client's express `tone_style`, and the blend is still named **The {First} {Last} Tone**
+  and still clears `AF-BK-TONE-LEN` (≥3000 stripped words).
 - **Required artifacts:** `run/artifacts/08-blended-tone.md` (named exactly **The {First} {Last} Tone**).
 - **Floors:** blended tone **≥ 3000 stripped words** (`AF-BK-TONE-LEN`); grade-level analysis + mimic-
   without-plagiarizing per the shared writing rails.

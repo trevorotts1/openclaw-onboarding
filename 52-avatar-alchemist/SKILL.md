@@ -119,6 +119,8 @@ is never substituted. This skill is provider-neutral by construction.
 3 bot docs → **Skill 38** (conversational-ai-system); `Top_39_*` + `Facebook_Headline_*` +
 `Facebook_Targeting_Intelligence` → **Skill 48** (facebook-ad-generator); images →
 **Skill 47** (movie-producer); GHL delivery → **Skill 6**; `version=book` → **Skill 53** (Book).
+Post-certification, `scripts/aa_handoff.py` auto-emits this routing as `HANDOFF.json` +
+`HANDOFF.md` in the delivery folder (fail-closed; never re-signs the certificate).
 
 ## Relationship to Product Bio (Skill 55) — cross-linked, NEVER merged
 

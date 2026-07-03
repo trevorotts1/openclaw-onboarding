@@ -94,6 +94,7 @@ run "aa_egress_gate.py --self-test"          "$PY" "$S/aa_egress_gate.py" --self
 run "aa_qc_cert.py --self-test"              "$PY" "$S/aa_qc_cert.py" --self-test
 run "aa_gate_integrity_check.py --self-test" "$PY" "$S/aa_gate_integrity_check.py" --self-test
 run "aa_package.py --self-test"              "$PY" "$S/aa_package.py" --self-test
+run "aa_handoff.py --self-test"              "$PY" "$S/aa_handoff.py" --self-test
 run "aa_gate_integrity_check.py --check"     "$PY" "$S/aa_gate_integrity_check.py" --check
 run "verify_tone_core_sync.py"               "$PY" "$S/verify_tone_core_sync.py"
 run "test_aa_preflight.py (negative suite, incl. declared-subset-of-tested AF coverage)" \
@@ -243,6 +244,24 @@ run "aa_delivery_gate.py --verify-cert (the SHIPPED cert genuinely verifies agai
 # exactly 16 named deliverables + index + manifest + certificate
 NDLV="$(ls "$GDELIV" | grep -c '^.*-Amara_Vale\.md$')"
 if [ "$NDLV" -eq 16 ]; then pass "16 named deliverables assembled"; else fail "expected 16 deliverables, got $NDLV"; fi
+# downstream handoff auto-generated from the CERTIFIED delivery (post-cert; never re-signs)
+run "aa_handoff.py --deliver-dir (emits HANDOFF.json/HANDOFF.md into the certified delivery)" \
+    "$PY" "$S/aa_handoff.py" --deliver-dir "$GDELIV"
+if "$PY" - "$GDELIV/HANDOFF.json" <<'PYHAND'
+import json, sys
+h = json.load(open(sys.argv[1]))
+assert h["handoff"] == "avatar-alchemist-downstream", h.get("handoff")
+skills = {t["skill_number"] for t in h["targets"]}
+assert skills == {38, 48, 47, 6}, skills
+for t in h["targets"]:
+    assert t["inputs"], f"skill {t['skill_number']} has no resolved inputs"
+    for i in t["inputs"]:
+        assert len(i["sha256"]) == 64, i
+assert h.get("source_certificate_sha256"), "handoff not bound to the delivery certificate"
+print("HANDOFF.json ok: 4 next-step targets (38/48/47/6), every input sha256-bound to the cert")
+PYHAND
+then pass "HANDOFF.json routes the 4 documented downstream skills with sha256-bound inputs"
+else fail "HANDOFF.json structural assertion"; fi
 
 echo ""
 echo "-- 3b) REPRO+BLOCK: the exact QC-reported hand-forged certificate ---------"
