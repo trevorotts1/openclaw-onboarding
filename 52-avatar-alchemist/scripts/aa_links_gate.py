@@ -36,6 +36,10 @@ GATE = "G-LINKS"
 DEGRADED = "degraded:search"
 VERIFIED = "verified"
 
+# AF-AV-* codes this module's own --self-test proves REJECTS a bad fixture
+# (used by test_aa_preflight.py's "declared subset-of tested" meta-check).
+TESTED_AF_CODES = {"AF-AV-LINKS-MISSING"}
+
 _URL_RE = re.compile(r"https?://[^\s)<>\]}\"']+", re.IGNORECASE)
 
 

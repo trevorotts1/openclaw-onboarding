@@ -57,25 +57,33 @@ There is a single sanctioned way in. Do not hand-roll a second build path.
 bash 52-avatar-alchemist/entry.sh <RUN_DIR>
 ```
 
-`entry.sh` runs the fail-closed sequence **deps → bypass-scan → hash-pin → nonce**:
-python3 + stdlib-only check, a scan proving zero Anthropic/claude ids in the prompts
-or manifests, a gate-integrity hash-pin (modified gates are refused), and it mints a
-one-time run nonce. It prints the `<RUN_DIR>` and the exact foreman command to run
-next. Nothing dispatches a model until all four legs pass.
+`entry.sh` runs the fail-closed sequence **deps → bypass-scan → egress-scan →
+env-credential-name scan → hash-pin → nonce + foreman signing key**:
+python3 + stdlib-only check, a scan proving zero Anthropic/claude ids AND zero
+ungoverned egress paths (n8n/Airtable/Slack/Drive/Gmail/urllib-POST — `aa_egress_gate.py`,
+`AF-AV-EGRESS`) in the prompts/scripts/manifests, a scan for operator/anthropic-named
+credential env vars (names only, never values), a gate-integrity hash-pin (modified
+gates are refused), and it mints a one-time run nonce PLUS a per-run HMAC signing key
+(`.foreman-key`, used later to sign the process certificate — never embedded in it).
+It prints the `<RUN_DIR>` and the exact foreman command to run next.
 
-Then dispatch the foreman:
+Place `intake.json` in `<RUN_DIR>` (the version/intake gate needs it — see below), then
+dispatch the foreman:
 
 ```
 python3 52-avatar-alchemist/scripts/aa_director.py --run-dir <RUN_DIR> --nonce <RUN_DIR>/.entry-nonce --plan
 python3 52-avatar-alchemist/scripts/aa_director.py --run-dir <RUN_DIR> --nonce <RUN_DIR>/.entry-nonce
 ```
 
-The foreman schedules the 40 stages in 20 dependency waves (peak 5 simultaneous
-authors), throttled to `min(slots, provider_cap)`, dispatching one sub-agent per
-stage with ONLY its 3 prompt files + resolved dependency artifacts. `--resume`
-re-enters at the exact incomplete stage. Source repairs **R1–R6 are OFF by default**
-(faithful to the live workflow); pass **`--apply-repairs`** to opt in (see
-`REPAIRS.md`). **R7 — the Anthropic ban — is always on and is not a repair.**
+A real dispatch does NOT trust that `entry.sh` ran or that the nonce is genuine — it
+RE-VERIFIES deps/bypass-scan/egress-scan/hash-pin in-process, unconditionally, and it
+loads `<RUN_DIR>/intake.json` and refuses in code (exit 4) to dispatch the brand
+pipeline for `version=book`. The foreman schedules the 40 stages in 20 dependency
+waves (peak 5 simultaneous authors), throttled to `min(slots, provider_cap)`,
+dispatching one sub-agent per stage with ONLY its 3 prompt files + resolved dependency
+artifacts. `--resume` re-enters at the exact incomplete stage. Source repairs
+**R1–R6 are OFF by default** (faithful to the live workflow); pass **`--apply-repairs`**
+to opt in (see `REPAIRS.md`). **R7 — the Anthropic ban — is always on and is not a repair.**
 
 ## What the 40-stage brand pipeline produces
 
@@ -114,11 +122,17 @@ The packager writes a labeled bundle to `~/Downloads`, never leaving intermediat
 ```
 
 containing the **16 deliverables + `00-INDEX.md` + `MANIFEST.json`** (files, sha256,
-word counts) **+ a signed `PROCESS-CERTIFICATE`**. Working files stay in the run dir
-under the workspace. The delivery gate refuses to write below **40/40 receipts whose
-sha256 match the artifact bytes**, requires independent QC **≥ 8.5** (verifier ≠
-author), and only then issues the certificate. **"Done" is claimed only with the
-certificate path** (no-false-done rule).
+word counts) **+ an HMAC-SHA256-signed `PROCESS-CERTIFICATE`**. Working files stay in
+the run dir under the workspace. The delivery gate refuses to write below **40/40
+receipts+artifacts loaded FROM DISK** (never a caller-supplied dict — a receipt and
+its artifact are two independent files), re-runs the content prover itself against
+the on-disk run, requires a **detached QC certificate** (`aa_qc_cert.py` — a separate
+program from the generator, `verifier ≠ author`) scoring **≥ 8.5**, requires + consumes
+the one-time front-door nonce, and re-checks gate-integrity live at issuance. The
+signature is keyed by the per-run `.foreman-key` (minted only by `entry.sh`, never
+embedded in the certificate). **"Done" is claimed only with a certificate that PASSES
+`aa_delivery_gate.py --verify-cert`** — the certificate path alone, or the presence of
+a `signature` field, is NOT sufficient (no-false-done rule).
 
 ## Client-provider rule (binding)
 

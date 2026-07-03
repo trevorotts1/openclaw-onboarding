@@ -1,14 +1,14 @@
-# Ad Set — category 4B: Pain-Point When-You Ads (Lumen Rise Collective)
+# Ad Set 5: Pain-Point: When-You Ads (Lumen Rise Collective)
 
-Restored R4 category signature: category 4B. Angled to widen coverage across the ad account.
+Framework category: Category 4B.
 
-1. Pain-Point When-You Ads 1 — When competence is not the problem but recognition is: With mastery the algorithm ignored, this steady operator craves premium buyers, not bargain-hunters. A meticulous founder has a shelf of testimonials, yet feels passed over.
-2. Pain-Point When-You Ads 2 — To every founder tired of shrinking her price: A seasoned practitioner could hold instant legibility, but she underquotes her worth. Her craft becomes unmistakable, and this proven operator finally rests in an audience that leans in.
-3. Pain-Point When-You Ads 3 — To the quiet expert with unmistakably loud results: An unhurried expert deserves referrals she can predict, yet she keeps the win private. This trusted advisor has results clients rave about; still she polishes instead of publishing.
-4. Pain-Point When-You Ads 4 — If you are ready to stop chasing cold leads: Our best-kept secret whispers a category of her own while she shrinks the ask. Positioning does the persuading, and a mastered professional finally rests in a calendar that fills itself.
-5. Pain-Point When-You Ads 5 — If your waitlist should be longer than your worry: The accelerator makes her legible, yet our quiet powerhouse finally rests in a legacy, not a launch. A practiced expert shrinks inside her own bio, since she believes proof should be enough.
-6. Pain-Point When-You Ads 6 — For the woman who is done waiting to be picked: The accelerator hands one capable founder the visibility system. The founder in question chases buyer-first copy, and finds a message that lands first.
-7. Pain-Point When-You Ads 7 — For the founder ready to finally own her category: A meticulous founder earned proof that outlasts the trend, yet feels stuck at capable. Once her voice gets an address, our under-recognized pro no longer rehearses without shipping.
-8. Pain-Point When-You Ads 8 — To the expert the algorithm keeps overlooking: Amid a folder of good ideas, this proven operator still avoids the bold offer. Even with a standard she never lowers, our reader believes the gatekeepers must approve first.
-9. Pain-Point When-You Ads 9 — If you have the results but not the reputation: A signature message carries this trusted advisor toward a full, willing pipeline. Beneath it one grounded founder believes modesty is the safer brand.
-10. Pain-Point When-You Ads 10 — If proof alone were enough, you would be booked solid: A bookable message carries a mastered professional toward proof that converts. What if the offer explains itself, and this careful builder lands a category of her own?
+1. When you see a peer with half your results get twice your bookings, it isn't a talent gap — it's a visibility gap.
+2. When you introduce yourself and watch it not quite land, that's the moment your message is costing you clients you'd have kept.
+3. When a dream client says "I didn't know you did that," you've just heard the sound of being overlooked — and it's fixable.
+4. When your calendar goes quiet and you're not sure why, it's rarely the work. It's that too few people can remember what you offer.
+5. When you lower your price to feel safer closing, you're paying the tax of being unknown. Visibility is what lets you stop.
+6. When someone else gets credited for an idea you've taught for years, that sting is the cost of being a best-kept secret.
+7. When you refresh your inbox hoping for the inquiry that fills the month, you're living without a pipeline. Let's build you one.
+8. When you realize your reputation doesn't travel to rooms you're not in, that's exactly the problem this cohort was built to solve.
+9. When "she's great, you should look her up" is as far as your name gets, your positioning is doing too little of the work.
+10. When you feel most invisible right after your best result, that ache is real — and it's the precise thing we resolve in 90 days.

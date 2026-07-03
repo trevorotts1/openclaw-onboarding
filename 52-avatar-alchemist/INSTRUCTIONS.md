@@ -32,7 +32,9 @@ python3 scripts/aa_intake_gate.py --intake <RUN_DIR>/intake.json [--book-skill-p
 ## 2. Front door + foreman
 
 ```
-bash 52-avatar-alchemist/entry.sh <RUN_DIR>          # deps → bypass-scan → hash-pin → nonce
+bash 52-avatar-alchemist/entry.sh <RUN_DIR>          # deps → bypass-scan (Anthropic ids + egress) →
+                                                      # env-credential-name scan → hash-pin → nonce + foreman-key
+cp <intake.json> <RUN_DIR>/intake.json               # required for a real dispatch (version gate reads it)
 python3 scripts/aa_director.py --run-dir <RUN_DIR> --nonce <RUN_DIR>/.entry-nonce --plan
 python3 scripts/aa_director.py --run-dir <RUN_DIR> --nonce <RUN_DIR>/.entry-nonce
 ```
@@ -44,6 +46,12 @@ missing. `--fast-ads` collapses the ad tail (documented fidelity trade-off, OFF 
 `--resume` re-enters at the exact incomplete stage. **Source repairs R1–R6 are OFF by default
 (faithful to the live workflow); `--apply-repairs` opts into them and turns on the R4 ad-set-category
 gate — see `REPAIRS.md`. R7 (the Anthropic ban) is always on.**
+
+A real dispatch does NOT trust that `entry.sh` actually ran or that the nonce is genuine: it
+RE-VERIFIES deps + bypass-scan + egress-scan + hash-pin in-process, unconditionally, before
+anything is scheduled — a hand-forged nonce cannot skip these. It also loads
+`<RUN_DIR>/intake.json` and REFUSES in code to run the 40-stage brand pipeline for
+`version=book` (exit 4, `route.json` written) — the version gate is code-coupled, not procedural.
 
 ## 3. Content gate
 
@@ -64,14 +72,25 @@ within `max_fix_attempts`, then park.
 ## 5. Delivery gate + certificate
 
 ```
-python3 scripts/aa_delivery_gate.py --state <RUN_DIR>/delivery-state.json --cert-out <RUN_DIR>/certificate.json
 python3 scripts/aa_package.py --run-dir <RUN_DIR> --first <First> --last <Last> \
         --out "$HOME/Downloads/<First>_<Last>-Brand-Intelligence/Avatar_Alchemist_<YYYY-MM-DD_HHMM>"
+python3 scripts/aa_qc_cert.py --run-dir <RUN_DIR> --key-file <RUN_DIR>/.foreman-key \
+        --out <RUN_DIR>/QC-CERTIFICATE.json
+python3 scripts/aa_delivery_gate.py --run-dir <RUN_DIR> \
+        --deliver-dir "$HOME/Downloads/<First>_<Last>-Brand-Intelligence/Avatar_Alchemist_<YYYY-MM-DD_HHMM>" \
+        --cert-out <deliver-dir>/PROCESS-CERTIFICATE.json
+# ANY "done" claim MUST re-verify, not just check field presence:
+python3 scripts/aa_delivery_gate.py --verify-cert <deliver-dir>/PROCESS-CERTIFICATE.json \
+        --key-file <RUN_DIR>/.foreman-key --run-dir <RUN_DIR> --deep
 ```
-The delivery gate refuses `~/Downloads` below 40/40 receipts whose sha256 match the artifact bytes,
-requires QC ≥ 8.5, and issues the signed provenance certificate. The packager writes the 16
-deliverables (+ `00-INDEX.md` + `MANIFEST.json`). **"Done" is claimed only with the certificate
-path** (no-false-done rule).
+The delivery gate refuses `~/Downloads` below 40/40 receipts+artifacts loaded FROM DISK (never a
+caller-supplied dict), re-runs the content prover itself against the on-disk run, requires a
+detached QC certificate (`aa_qc_cert.py` — a separate program, `verifier != author`) scoring
+`≥ 8.5`, requires + consumes the one-time front-door nonce, and re-checks gate-integrity live at
+issuance. The signature is HMAC-SHA256 keyed by the per-run foreman key (`<RUN_DIR>/.foreman-key`,
+minted only by `entry.sh`, never embedded in the certificate). **"Done" is claimed only with a
+certificate that PASSES `aa_delivery_gate.py --verify-cert`** (no-false-done rule; presence of the
+`signature` field alone is NOT sufficient — it must independently re-verify).
 
 ## Delivery contract (we move in silence)
 

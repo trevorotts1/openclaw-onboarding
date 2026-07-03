@@ -22,6 +22,10 @@ import aa_intake_gate as intake            # noqa: E402
 import aa_build_check as build             # noqa: E402
 import aa_delivery_gate as delivery        # noqa: E402
 import aa_links_gate as links              # noqa: E402
+import aa_egress_gate as egress            # noqa: E402
+import aa_qc_cert as qccert                # noqa: E402
+import aa_gate_integrity_check as gic      # noqa: E402
+import aa_director as director             # noqa: E402
 
 MANIFEST = json.loads((ROOT / "AA-PIPELINE-MANIFEST.json").read_text(encoding="utf-8"))
 
@@ -35,6 +39,14 @@ def main() -> int:
     rc_deliver = delivery.run_self_test(MANIFEST)
     print("\n=== stage-02 link gate (aa_links_gate.py, fail-soft + empty=fail-closed) ===")
     rc_links = links.run_self_test()
+    print("\n=== egress / entry-bypass gate (aa_egress_gate.py) ===")
+    rc_egress = egress.run_self_test()
+    print("\n=== detached QC certificate (aa_qc_cert.py) ===")
+    rc_qc = qccert.run_self_test(MANIFEST)
+    print("\n=== gate-integrity hash-pin (aa_gate_integrity_check.py) ===")
+    rc_gic = gic.run_self_test()
+    print("\n=== foreman: front-door re-verify + version-gate hard-stop (aa_director.py) ===")
+    rc_director = director.run_self_test(MANIFEST)
 
     # cross-check: manifest <-> prompts-dir lockstep (40/40) and AF-code coverage.
     print("\n=== manifest <-> prompts lockstep + AF-code coverage ===")
@@ -51,6 +63,7 @@ def main() -> int:
         for f in ("system.md", "methodology.md", "user.md"):
             if not (ROOT / "prompts" / sid / f).is_file():
                 ok = False; print(f"LOCKSTEP FAIL: {sid}/{f} missing")
+
     enf = json.loads((ROOT / "AVATAR-MANIFEST.json").read_text(encoding="utf-8"))
     declared = set(enf["af_codes"])
     used = set()
@@ -61,7 +74,30 @@ def main() -> int:
     else:
         print(f"AF ok: {len(declared)} AF-AV codes declared; every phase code is covered.")
 
-    total = rc_intake + rc_build + rc_deliver + rc_links + (0 if ok else 1)
+    # "declared subset-of tested": every declared AF-AV code must have an
+    # actual REJECTING fixture somewhere in the self-test suite above (a gate
+    # in the manifest with zero fixture coverage is exactly the QC finding
+    # 'AF-AV-ADCOUNT is a live gate with NO rejecting fixture — never proven
+    # to bite'). This used to only check the INVERSE (used-not-declared) and
+    # printed a false "every code covered" regardless of fixture coverage.
+    tested = set()
+    tested |= {expected for _name, expected, _mut in intake._violation_cases()}
+    tested |= {expected for _name, expected, _mut in build._violation_cases(MANIFEST)}
+    tested |= delivery.TESTED_AF_CODES
+    tested |= links.TESTED_AF_CODES
+    tested |= egress.TESTED_AF_CODES
+
+    untested = declared - tested
+    if untested:
+        ok = False
+        print(f"AF-COVERAGE FAIL: {len(untested)} declared AF-AV code(s) have NO rejecting fixture "
+              f"anywhere in the self-test suite (declared but never proven to bite): {sorted(untested)}")
+    else:
+        print(f"AF-COVERAGE ok: all {len(declared)} declared AF-AV codes have >=1 rejecting fixture "
+              f"(declared subset-of tested, not just the inverse).")
+
+    total = (rc_intake + rc_build + rc_deliver + rc_links + rc_egress + rc_qc + rc_gic
+             + rc_director + (0 if ok else 1))
     print("\nNEGATIVE-SUITE RESULT:", "PASS (exit 0)" if total == 0 else "FAIL (exit 1)")
     return 0 if total == 0 else 1
 
