@@ -1,0 +1,45 @@
+name: skill-frontmatter-version-guard
+
+# Fails the build if any skill directory's SKILL.md frontmatter `version:` field
+# disagrees with its sibling skill-version.txt. This closes the drift gap that
+# let 6 campaign skills (49,50,51,52,53,55) silently fall out of sync with
+# nothing catching it: CI G3 (version-consistency.yml) only bumps/enforces
+# skill-version.txt and never checks the SKILL.md frontmatter the skill loader
+# reads. Skills whose SKILL.md has no top-level `version:` field are skipped
+# (reported, not failed); a leading `v` is normalized (v1.0.2 == 1.0.2).
+# P1-4 / July-3-Fixes
+
+on:
+  push:
+    paths:
+      - '**/SKILL.md'
+      - '**/skill-version.txt'
+      - scripts/qc-assert-skill-frontmatter-version.sh
+      - .github/workflows/skill-frontmatter-version-guard.yml
+  pull_request:
+    paths:
+      - '**/SKILL.md'
+      - '**/skill-version.txt'
+      - scripts/qc-assert-skill-frontmatter-version.sh
+      - .github/workflows/skill-frontmatter-version-guard.yml
+
+jobs:
+  skill-frontmatter-version-guard:
+    name: SKILL.md frontmatter vs skill-version.txt drift guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax-check the gate script
+        run: bash -n scripts/qc-assert-skill-frontmatter-version.sh
+
+      - name: Self-test the gate (must fail on a mismatch fixture, pass on a match fixture)
+        run: |
+          chmod +x scripts/qc-assert-skill-frontmatter-version.sh
+          bash scripts/qc-assert-skill-frontmatter-version.sh --self-test
+
+      - name: Run frontmatter/skill-version drift gate (must pass)
+        run: |
+          chmod +x scripts/qc-assert-skill-frontmatter-version.sh
+          bash scripts/qc-assert-skill-frontmatter-version.sh
