@@ -1,5 +1,5 @@
 {
-  "manifest_version": 22,
+  "manifest_version": 23,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -770,6 +770,28 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      }
+    },
+    {
+      "id": "P-SP-CLAIM",
+      "order": 0.14,
+      "name": "Signature-Presentation Router / Claim Gate (deck_type must be declared)",
+      "owning_role": "signature-presentation-architect",
+      "sop_refs": [
+        "signature-presentation-architect-sops.md"
+      ],
+      "produces_artifact": "working/copy/intake.json",
+      "gate_codes": [
+        "AF-SP-TYPE-UNDECLARED"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_sp_claim",
+        "label": "signature-presentation routing/claim gate (AF-SP-TYPE-UNDECLARED): if the run carries signature-presentation signals (an sp_intake.json, a set Signature frame, a frame-selection question, or a 'signature presentation' request) but intake.json does NOT declare deck_type == signature_presentation, fail-closed. Runs for EVERY deck (does NOT defer, unlike the three P-SP gates that follow) via 51-signature-presentation/scripts/prove_sp_routing.evaluate_run_dir — closes the highest-severity skip where a signature presentation is built through the generic path by omitting the magic word (which would make every SP gate no-op). A non-signature deck with no SP signal passes untouched."
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
       }
     },
     {
@@ -2277,6 +2299,15 @@
       "trigger": "closeout with no CC task_id and no logged deliverable-register attempt (fail-closed on never-attempted; fail-soft on transport)",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_cc_registered"
+    },
+    {
+      "code": "AF-SP-TYPE-UNDECLARED",
+      "stage": "Intake",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Signature Presentation routing/claim gate: the run carries signature-presentation signals (an sp_intake.json, a set Signature frame, a frame-selection question, or a 'signature presentation' request) but intake.json does not DECLARE deck_type == signature_presentation. Runs for EVERY deck (does NOT defer) via prove_sp_routing.evaluate_run_dir so a signature presentation cannot be built through the generic path by omitting the magic word (which would make every deferring SP gate no-op).",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_sp_claim"
     },
     {
       "code": "AF-SP-8Q-MISSING",

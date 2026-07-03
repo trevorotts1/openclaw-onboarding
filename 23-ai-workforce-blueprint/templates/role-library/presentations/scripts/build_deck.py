@@ -6272,6 +6272,36 @@ def _chk_sp_no_pitch(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     return _sp_delegate("no_pitch", run_dir)
 
 
+def _chk_sp_claim(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """P-SP-CLAIM — the routing/claim gate. Runs for EVERY deck (does NOT defer,
+    unlike the three gates above): if the run carries signature-presentation signals
+    (an sp_intake.json, a set Signature frame, a frame-selection question, or a
+    'signature presentation' request) but intake.json does not DECLARE
+    deck_type == signature_presentation, fail-closed AF-SP-TYPE-UNDECLARED. Closes
+    the highest-severity skip of the audit — a signature presentation built through
+    the generic path by omitting the magic word (which makes _sp_active defer, so
+    every SP gate no-ops). A non-signature deck with no SP signal passes untouched."""
+    mod = _sp_prover("prove_sp_routing")
+    if mod is None:
+        # Routing prover not co-located: still block the unambiguous case we can
+        # detect without it, so the bypass cannot ride a missing prover.
+        obj = _read_intake_obj(run_dir)
+        declared = isinstance(obj, dict) and obj.get("deck_type") == "signature_presentation"
+        sp_present = (run_dir / "working" / "copy" / "sp_intake.json").is_file()
+        if sp_present and not declared:
+            return ("AF-SP-TYPE-UNDECLARED: working/copy/sp_intake.json is present but "
+                    "intake.json does not declare deck_type == signature_presentation "
+                    "(install 51-signature-presentation/scripts/prove_sp_routing.py next to "
+                    "build_deck.py for the full signal set). Fail-closed.")
+        return ""
+    try:
+        fails = mod.evaluate_run_dir(run_dir)
+        return "" if not fails else "; ".join(str(c) + ": " + str(m) for c, m in fails)
+    except Exception as exc:  # noqa: BLE001 — fail-closed, never crash preflight
+        return ("signature-presentation claim gate raised " + repr(exc)
+                + " — fail-closed (a signature deck cannot skip the claim gate).")
+
+
 PREFLIGHT_REQUIRED = [
     ("working/copy/intake.json",
      "intake.json (interview_confirmed:true, presentation_mode one-person|general)",
@@ -6692,6 +6722,18 @@ PREFLIGHT_REQUIRED = [
      "coexist) all PASS; item 0 is the North Star (AF-PRIORITY-SHIFT)",
      "Phase 7.5 — QC Specialist (SOP-INTEGRATION-00, P161/P155, AF-PRIORITY-SHIFT)",
      _chk_priority_shift_ledger),
+    # Signature-Presentation (P-SP-CLAIM 0.14) — the routing/claim gate. Runs for EVERY deck
+    # (does NOT defer): a run carrying SP signals MUST declare intake.json deck_type ==
+    # signature_presentation (AF-SP-TYPE-UNDECLARED). Closes the "omit the magic word to skip
+    # every SP gate" bypass — the single highest-severity skip of the audit. A non-signature
+    # deck with no signal is untouched.
+    (None,
+     "signature-presentation claim gate — a run carrying SP signals (working/copy/sp_intake.json / "
+     "a set Signature frame / a frame-selection question / a 'signature presentation' request) MUST "
+     "declare intake.json deck_type == signature_presentation (AF-SP-TYPE-UNDECLARED). Runs for every "
+     "deck; non-signature decks with no signal pass untouched.",
+     "Phase 0.14 — Signature Presentation Router (P-SP-CLAIM, prove_sp_routing)",
+     _chk_sp_claim),
     # Signature-Presentation (P-SP-INTAKE 0.15) — 8-Questions-in-ONE-block intake gate.
     (None,
      "signature-presentation intake gate — the 8 Questions delivered in ONE block + a set "

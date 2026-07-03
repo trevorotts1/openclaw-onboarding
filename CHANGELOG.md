@@ -1,3 +1,32 @@
+## [v17.0.1]  -  2026-07-03  -  fix(skill-51): claim/routing gate closes the "omit deck_type to skip every SP gate" bypass + E1/E2 doc-honesty reconcile
+
+### Risk: low — additive fail-closed gate on `51-signature-presentation/` + `23-ai-workforce-blueprint/` engine wiring, plus documentation-only skill-count and Command-Center board-note corrections. No new skill, no new department/role, no Command Center endpoint, no `mission-control.db` schema change, no fleet rollout (repo-only). Client runtime unchanged (the gate runs inside the existing Skill-23 presentations engine on the CLIENT's own providers, never Anthropic). No client names, credential values, or plists touched.
+
+### The gap this closes (highest-severity audit skip)
+The entire SACRED Signature Presentation method was opt-in via ONE self-declared field: the engine's three SP gates (`_chk_sp_intake` / `_chk_sp_structure` / `_chk_sp_no_pitch`) all DEFER (no-op) unless `intake.json` records `deck_type == "signature_presentation"`, and `prove_sp_intake` only tripped `AF-SP-TYPE-MISMATCH` when `deck_type` was PRESENT-and-different — a MISSING `deck_type` tripped nothing. So a client could ask for a "signature presentation", the authoring agent could omit `deck_type` (or write `"webinar_deck"`), every SP gate would defer, and the deck would build through the generic path with NO 8-Questions-one-block gate, NO structure contract, NO Phase-3 no-pitch check — and still earn a green certificate.
+
+### New: the claim/routing gate (`AF-SP-TYPE-UNDECLARED`)
+- `51-signature-presentation/scripts/prove_sp_routing.py` (NEW) — deterministic, no-AI, fail-closed (stdlib only). If a run carries signature-presentation SIGNALS (a `working/copy/sp_intake.json`, a set Signature frame `rulebook|vault|quest|original`, a frame-selection question, or a "signature presentation" request/brief/topic) but `intake.json`'s `deck_type` is not declared `signature_presentation`, it fails `AF-SP-TYPE-UNDECLARED`. A non-signature deck with NO signal PASSES untouched. Ships `--self-test` (VALID + VIOLATION fixtures), `--check-wiring`, `--run-dir`, and `--json`.
+- `51-signature-presentation/verify.sh` — now runs FOUR provers (`prove_sp_routing` added ahead of the three) in `--self-test`, and adds an ENGINE WIRE-PRESENCE check: when the Skill-23 engine is co-located it FAILS (not warns) unless `build_deck.py` DEFINES + REGISTERS all four `_chk_sp_*` wrappers (`prove_sp_routing.py --check-wiring`), so a stale skill-23 copy can never pass verify while zero SP enforcement exists at runtime.
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py` — adds `_chk_sp_claim` (runs for EVERY deck, does NOT defer; degrades to a fail-closed unambiguous-case check if the routing prover is not co-located) and registers it as **Phase 0.14 — P-SP-CLAIM** in `PREFLIGHT_REQUIRED`, ahead of P-SP-INTAKE (0.15).
+- `51-signature-presentation/skill-version.txt` → `1.0.1`.
+
+### E1 — skill-count doc-honesty reconcile (recount on true main)
+Recounted on this tree: 57 numbered skill folders − 5 archived (11/13/21/33/34) = **52 active skills**. Corrected the stale skill-count prose (was drifted to 41/40/36/32/30/39 across docs):
+- `Start Here.md` — 21 count references reconciled to 52 (and the completion-verify line now lists all 5 archived: 11, 13, 21, 33, 34).
+- `ONBOARDING-TRIGGERS.md` — "52-skill package", "57 numbered skill folders (52 active, 5 archived)", "all 52 skills", and example success/progress messages reconciled. (The paste-template 5-wave range internals were left as-is — a wave-rebalance is a separate structural change, not a count fix.)
+- `install.sh` — the internal onboarding-work comment corrected to "read 52 skills"; the "52 active skills" wave headline was already current.
+
+### E2 — Command Center board-note honesty (`cc-compat.json`)
+Made the Skill 49/50/52/55 board notes honest: each now states it **ships NO board caller** of its own and is **board-visible only when carded onto the existing Kanban lane via mc-route** (fail-soft), instead of implying the skill itself lands/rides/is a Kanban card. Valid JSON preserved.
+
+### Files
+- `51-signature-presentation/scripts/prove_sp_routing.py` (new), `51-signature-presentation/verify.sh`, `51-signature-presentation/skill-version.txt` (→1.0.1).
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py` (`_chk_sp_claim` + Phase-0.14 registration).
+- `Start Here.md`, `ONBOARDING-TRIGGERS.md`, `install.sh` (E1), `cc-compat.json` (E2).
+- 11 version markers rolled to v17.0.1 via `bump-version.sh` (`--check` agrees); `23-ai-workforce-blueprint/skill-version.txt` rides the bump (G3 lockstep for the `build_deck.py` change under the 23 skill dir); `06-ghl-install-pages/skill-version.txt` rolled in lockstep with the browser-manager markers.
+- Verification: `51-signature-presentation/verify.sh` exit 0 (bash + zsh); `build_deck.py` `ast.parse` OK; `bump-version.sh --check` all v17.0.1; `qc-assert-repo-consistency.py` PASS; `qc-assert-no-client-names.sh` PASS; `cc-compat.json` valid JSON.
+
 ## [v17.0.0]  -  2026-07-03  -  CAPSTONE: the full productized-skill suite (49–57) + the Skill-6 GHL Form Builder, consolidated
 
 ### The v17.0.0 capstone

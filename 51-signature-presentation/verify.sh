@@ -46,8 +46,10 @@ run() {
 
 echo "== Skill 51 (Signature Presentation) :: verify.sh =="
 
-# 1) The three fail-closed SP provers — built-in self-test fixtures.
-for p in prove_sp_intake prove_sp_structure prove_sp_no_pitch; do
+# 1) The four fail-closed SP provers — built-in self-test fixtures.
+#    prove_sp_routing is the claim/routing gate (AF-SP-TYPE-UNDECLARED) that closes
+#    the "omit deck_type to skip every SP gate" bypass.
+for p in prove_sp_routing prove_sp_intake prove_sp_structure prove_sp_no_pitch; do
     if [ -f "$SP_SCRIPTS/$p.py" ]; then
         run "$p.py --self-test" "$PY" "$SP_SCRIPTS/$p.py" --self-test
     else
@@ -55,6 +57,21 @@ for p in prove_sp_intake prove_sp_structure prove_sp_no_pitch; do
         fails=$((fails + 1))
     fi
 done
+
+# 1b) ENGINE WIRE-PRESENCE — Skill 51 has NO build path of its own; its gates only
+#     bite when the Skill-23 presentations engine (build_deck.py) DEFINES + REGISTERS
+#     the four _chk_sp_* wrappers (the claim gate + the three sacred gates). When the
+#     engine is co-located, assert the wiring landed — FAIL (not warn) if it did not
+#     (a stale skill-23 copy / a box where the SOP-SLIDE-06 lockstep never ran would
+#     otherwise pass verify.sh while ZERO SP enforcement exists at runtime).
+ENGINE="$SKILL_DIR/../23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py"
+if [ -f "$ENGINE" ]; then
+    run "engine wire-presence (P-SP gates wired into build_deck.py)" \
+        "$PY" "$SP_SCRIPTS/prove_sp_routing.py" --check-wiring "$ENGINE"
+else
+    printf '  [WARN] engine build_deck.py not co-located at %s — ' "$ENGINE"
+    printf 'skipping the wire-presence check (skill 23 engine not installed here)\n'
+fi
 
 # 2) library-register --check sanity: both SP roles are registered in _index.json.
 if [ -f "$REGISTER" ]; then

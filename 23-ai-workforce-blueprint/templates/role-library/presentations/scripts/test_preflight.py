@@ -2902,6 +2902,12 @@ def _sp_adversarial_cases(spi, sps, spn):
     cases.append(("AF-SP-P3-PITCH", "_chk_sp_no_pitch",
                   _sp_run_dir(sp_intake=spn._fixture_intake(True),
                               sp_structure=spn._fixture_ledger("price_in_teach"))))
+    # ROUTING/CLAIM (via _chk_sp_claim) — the ONE wrapper that runs for EVERY deck (does
+    # NOT defer): an sp_intake.json is present (an SP signal) but intake.json does NOT
+    # declare deck_type==signature_presentation, so the deck is being built through the
+    # generic path by omitting the magic word -> AF-SP-TYPE-UNDECLARED (fail-closed).
+    cases.append(("AF-SP-TYPE-UNDECLARED", "_chk_sp_claim",
+                  _sp_run_dir(signature=False, sp_intake=spi._valid_runtime_fixture())))
     return cases
 
 
@@ -2941,7 +2947,7 @@ def test_sp_wrappers():
         if code not in _af_codes_in(r):
             fails.append(f"SP-ADV: {name} on the {code} fixture should surface {code}, got: {r!r}")
 
-    print(f"SP wrappers (golden + defer + 15 adversarial) -> {'PASS' if not fails else 'FAIL'}")
+    print(f"SP wrappers (golden + defer + 16 adversarial) -> {'PASS' if not fails else 'FAIL'}")
     return fails
 
 
@@ -3853,6 +3859,53 @@ def test_speech_name_lockstep() -> list:
     return failures
 
 
+def test_sp_claim_lockstep() -> list:
+    """SOP-SLIDE-06 lockstep — the P-SP-CLAIM routing/claim phase and its AF-SP-TYPE-UNDECLARED
+    autofail must be DECLARED in PIPELINE-MANIFEST.json in lockstep with build_deck.py's
+    _chk_sp_claim checker (which cites AF-SP-TYPE-UNDECLARED). This is the manifest-presence
+    twin of test_sp_wrappers' adversarial fixture: the wrapper proves the code FIRES; this
+    proves the manifest DECLARES the phase + code (the pair sync_check.py's B1/B2 enforce).
+    Mirrors test_speech_name_lockstep's manifest-load pattern."""
+    failures = []
+    repo_root = HERE
+    for _ in range(12):
+        if (repo_root / "universal-sops").is_dir():
+            break
+        repo_root = repo_root.parent
+    mpath = repo_root / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
+    if not mpath.exists():
+        failures.append(f"SP-CLAIM-LOCKSTEP: PIPELINE-MANIFEST.json not found at {mpath}")
+        print("SP-CLAIM lockstep            -> FAIL (manifest not found)")
+        return failures
+    man = json.loads(mpath.read_text())
+    # (a) the P-SP-CLAIM phase is declared with preflight.checker == _chk_sp_claim.
+    claim_phase = next((p for p in man.get("phases", []) if p.get("id") == "P-SP-CLAIM"), None)
+    if claim_phase is None:
+        failures.append("SP-CLAIM-LOCKSTEP-A: manifest declares no phase with id 'P-SP-CLAIM'")
+    elif (claim_phase.get("preflight") or {}).get("checker") != "_chk_sp_claim":
+        failures.append(
+            "SP-CLAIM-LOCKSTEP-A: P-SP-CLAIM preflight.checker is "
+            f"{(claim_phase.get('preflight') or {}).get('checker')!r}, expected '_chk_sp_claim'")
+    # (b) AF-SP-TYPE-UNDECLARED is registered in autofails, build_deck-enforced via _chk_sp_claim.
+    af = next((a for a in man.get("autofails", []) if a.get("code") == "AF-SP-TYPE-UNDECLARED"), None)
+    if af is None:
+        failures.append("SP-CLAIM-LOCKSTEP-B: manifest autofails has no 'AF-SP-TYPE-UNDECLARED' entry")
+    else:
+        if af.get("enforced_by") != "build_deck":
+            failures.append(
+                f"SP-CLAIM-LOCKSTEP-B: AF-SP-TYPE-UNDECLARED enforced_by is {af.get('enforced_by')!r}, "
+                "expected 'build_deck'")
+        if af.get("py_symbol") != "_chk_sp_claim":
+            failures.append(
+                f"SP-CLAIM-LOCKSTEP-B: AF-SP-TYPE-UNDECLARED py_symbol is {af.get('py_symbol')!r}, "
+                "expected '_chk_sp_claim'")
+    # (c) build_deck.py actually defines the checker and cites the code (the code side of lockstep).
+    if not hasattr(build_deck, "_chk_sp_claim"):
+        failures.append("SP-CLAIM-LOCKSTEP-C: build_deck.py defines no _chk_sp_claim")
+    print(f"SP-CLAIM lockstep            -> {'PASS' if not failures else 'FAIL'}")
+    return failures
+
+
 def test_delivery_gate() -> list:
     """R9-F9: the mechanical last-mile gate (scripts/delivery_gate.py) actually BITES.
     Delegates to its built-in fixtures (defer / clean-pass / extra-md AF-DH1 fail /
@@ -4060,6 +4113,10 @@ def main():
     failures += test_structural_block_gate()
     failures += test_dark_ok_alias()
     failures += test_speech_name_lockstep()
+    # Skill 51 — P-SP-CLAIM routing phase + AF-SP-TYPE-UNDECLARED declared in the manifest
+    # in lockstep with build_deck._chk_sp_claim (the manifest-presence twin of the
+    # AF-SP-TYPE-UNDECLARED adversarial fixture in test_sp_wrappers / af-coverage).
+    failures += test_sp_claim_lockstep()
 
     # R9-F9 — mechanical last-mile delivery gate (AF-DH1 5-file whitelist + GHL
     # upload record + SOP 9.4 ground-truth) actually rejects a dirty/partial package.
