@@ -107,16 +107,26 @@ Each prover ships a `--self-test` with VALID + VIOLATION fixtures; run everythin
 - **Routing (STEP-0):** a "signature funnel" / "signature landing page" request routes here through the
   shared **STEP-0 funnel-engine selector** in Skill 6 — `06-ghl-install-pages/funnel-engines/registry.json`
   (this skill is the first registered engine) + `tools/funnel_engine_selector.py`. `NO_ENGINE_MATCH`
-  falls through to the template-first funnel matcher. Skill 56 (Sales-Page-Assets) registers a 2nd
-  entry later. Skill 6 remains the ONE GHL delivery rail.
+  falls through to the template-first funnel matcher. Skill 56 (Sales-Page-Assets) is the 2nd
+  registered entry (the Direct-Response sibling). Skill 6 remains the ONE GHL delivery rail.
 - **Doors (roles):** the web-development and marketing **Signature Funnel Specialist** roles, plus
   Section-8 tool rows on the funnel-strategist / funnel-builder / landing-page specialists. Shared
   procedure cluster: `universal-sops/funnel-craft/`.
 - **Deliverable labeling grammar (reciprocal with Skill 56):** every copy doc / prompt / PNG / HTML
   fragment / preview is labeled `<client>__<funnel>__<stage>__<type>__vNN`
   (`stage ∈ {main,checkout,upsell1,downsell1,upsell2,downsell2,thankyou}`,
-  `type ∈ {copy,prompt,image,html,preview}`). Pinned in `MASTERDOC.md` §8; Skill 56 adopts it
-  reciprocally (forward-ref TODO — 56 does not exist yet).
+  `type ∈ {copy,prompt,image,html,preview}`). Pinned in `MASTERDOC.md` §8; **Skill 56 has landed** and
+  now OWNS the shared grammar, adopting this identical field order and extending the `stage`/`type` enums
+  (see `MASTERDOC.md` §8).
+- **Direct-Response sibling (Skill 56):** `56-sales-page-assets/` is the live **Direct-Response sibling**
+  of this skill — the DR sales-page / VSL asset stack (8-section main A/B + countdown, the 9-section
+  upsell, the downsell, the Sovereign Architect high-ticket long-form, the bump copy, and the
+  slice-covered image plan), with its own eight fail-closed model-free provers and its own P0..P9 spine.
+  It rides the SAME STEP-0 selector, the SAME ONE GHL delivery rail (Skill 6), and the SAME labeling
+  grammar (56 OWNS it); its `universal-sops/sales-page-craft/` cluster EXTENDS this skill's
+  `universal-sops/funnel-craft/` without forking it. Route a SACRED 12-section funnel here; route a
+  direct-response A/B sales-page stack to Skill 56 — do NOT drive the DR stack through the Skill-49
+  provers.
 
 ## Client-provider rule (binding)
 

@@ -150,6 +150,10 @@ Slack/Gmail, never operator credentials.
 
 ## Downstream handoffs
 
+After certification, `scripts/aa_handoff.py --deliver-dir <deliver-dir>` auto-writes
+`HANDOFF.json` + `HANDOFF.md` into the delivery folder encoding this routing (each
+target's inputs bound to their `MANIFEST.json` sha256):
+
 - 3 bot docs → **Skill 38** (conversational-ai-system).
 - `Top_39_Suggested_Ad_Angles` + `Facebook_Headline_…` + `Facebook_Targeting_Intelligence` → **Skill 48** (facebook-ad-generator).
 - Image generation from the two image-prompt docs → **Skill 47** (movie-producer).
