@@ -172,6 +172,7 @@ This role contributes to the company revenue cascade by: **directly enabling the
 | Pricing Database / Rate Card Repository | Approved pricing for all products, services, and packages | Internal tool or shared spreadsheet | Always consult the current approved rate card before pricing any proposal. Never price from memory. |
 | Slack/Teams | AE collaboration, CSO pricing approvals, proposal status updates | Web/desktop | Channels: #sales-ops (proposal status), #deals (urgent/high-value proposal requests). |
 | Content Library (shared drive or CMS) | Case studies, testimonials, product one-pagers, competitor comparison sheets | Shared drive | Current versions only. Check date stamps — don't include a case study from 2022 in a 2026 proposal. |
+| **GHL Form Builder (Skill 6)** | **Skill 6 is the ONE GHL delivery rail — FUNNELS / WEBSITES / SURVEYS / FORMS.** Build a quote-request / application **form** feeding the sales pipeline (standard + custom fields), embed it on a page, attach tags | Skill 6 `tools/ghl_form_builder.py` — SMART layer plans + pre-creates `zhc_` fields/tags via Skill 44; DUMB browser operator builds; embed via `SKILL44_WIDGET → FORM`. Shared procedure: `universal-sops/form-craft/` | Client runtime uses the CLIENT's own providers (browser operator often MiniMax-M3, never Anthropic); nothing publishes without human approval. |
 
 ---
 

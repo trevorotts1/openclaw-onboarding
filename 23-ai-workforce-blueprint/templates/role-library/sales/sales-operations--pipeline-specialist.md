@@ -177,6 +177,7 @@ This role contributes to the company revenue cascade by: **ensuring every dollar
 | Data Enrichment Tool (ZoomInfo, Clearbit, Apollo) | Contact and account data enrichment, duplicate detection | API key in TOOLS.md | Use for monthly data hygiene runs. Never use for prospecting — that's SDR territory. |
 | Slack/Teams | Internal communication, #sales-ops channel, report distribution, CSO alerts | Web/desktop | Channels: #sales-ops (pipeline alerts, data quality flags), #deals (big deal movement notifications), #revenue (cross-dept data sync). |
 | LinkedIn Sales Navigator | Territory account mapping, account ownership verification | Web login | Use for territory planning, not prospecting. Verify account assignments and parent-child relationships. |
+| **GHL Form Builder (Skill 6)** | **Skill 6 is the ONE GHL delivery rail — FUNNELS / WEBSITES / SURVEYS / FORMS.** Ensure a prospect-intake **form**'s fields + tags map to pipeline stages + lead scoring (standard + custom fields), embed it on a page, attach tags | Skill 6 `tools/ghl_form_builder.py` — SMART layer plans + pre-creates `zhc_` fields/tags via Skill 44; DUMB browser operator builds; embed via `SKILL44_WIDGET → FORM`. Shared procedure: `universal-sops/form-craft/` | Client runtime uses the CLIENT's own providers (browser operator often MiniMax-M3, never Anthropic); nothing publishes without human approval. |
 
 ---
 

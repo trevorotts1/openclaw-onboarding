@@ -1,0 +1,93 @@
+{
+  "manifest_version": 1,
+  "$schema_note": "SHARED cross-department SOP manifest for the GHL (Convert and Flow = Go High Level) native FORM engine. This is the universal-sops face of the capability: it is how ANY department (web-development / crm / marketing / sales / customer-support) discovers and drives the end-to-end form pipeline. It does NOT re-implement the engine. The authoritative machine spine lives in Skill 6: 06-ghl-install-pages/tools/ghl_form_builder.py (the THINK layer _resolve_fields / plan_dependencies / _tag_attachment_plan / _build_form_plan / _emit_click_list phases F1..F13 / _run_preflight checks F-P1..F-P8), the live builder rail 06-ghl-install-pages/references/forms-playbook.md, and the locked selectors 06-ghl-install-pages/tools/SELECTORS-LIVE-form.md. The tool is GLUE, not the clicker: it emits ordered agent-browser commands and owns only its ledgers; it never mutates GHL state directly. This file mirrors universal-sops/funnel-craft/FUNNEL-PIPELINE-MANIFEST.json's enforcement-spine pattern so a department reads ONE manifest to know the phases, the owning roles, the SOP for each phase, and the AF-FORM-* gate codes. SOP-LOCKED: any added/changed SOP, field rule, or gate MUST stay in lockstep with ghl_form_builder.py (_run_preflight F-P1..F-P8 + the F1..F13 click list) and qc-built-form.sh.",
+  "authoritative_engine": {
+    "skill": "06-ghl-install-pages",
+    "engine_tool": "06-ghl-install-pages/tools/ghl_form_builder.py",
+    "engine_note": "THINK/DO two-layer split. SMART/THINK (this Python, run under a client reasoning model) decides WHAT form to build, resolves every field property, pre-plans the zhc_ dependencies, and emits a fully-explicit click list. DUMB/DO (agent-browser, MiniMax M3 probe-gated) executes the click list verbatim and makes NO decisions.",
+    "think_layer": [
+      "_resolve_fields",
+      "plan_dependencies",
+      "_tag_attachment_plan",
+      "_build_form_plan",
+      "_emit_click_list",
+      "_run_preflight"
+    ],
+    "click_list_phases": "F1..F13 (F1 nav->Forms, F2 create, F3 rename to ZHC name, F4 trim defaults, F5 standard fields via Quick Add, F6 custom fields via Add Object Fields, F7 save draft, F8 style + Custom CSS, F9 preview, F10 Integrate capture embed snippet + form link, F11 embed splice into a GHL page verbatim, F12 tag-attach workflow handoff, F13 verify)",
+    "preflight_checks": "F-P1 location_id, F-P2 location_gate (no co-mingling), F-P3 spec_present, F-P4 zhc_field_keys, F-P5 zhc_tags, F-P6 zhc_form_name, F-P7 custom_via_object_fields, F-P8 headless_guard",
+    "auth_seed": "06-ghl-install-pages/tools/seed-ghl-auth.py",
+    "playbook": "06-ghl-install-pages/references/forms-playbook.md",
+    "selectors_live": "06-ghl-install-pages/tools/SELECTORS-LIVE-form.md",
+    "qc_script": "06-ghl-install-pages/qc-built-form.sh"
+  },
+  "dispatcher": {
+    "verb": "build_form",
+    "file": "06-ghl-install-pages/tools/v2_dispatcher.py",
+    "note": "Requests route to the form engine via the build_form dispatcher verb (next to build_survey / build_funnel). The dispatcher owns the seeded token-only browser session and the location gate; the tool never logs in."
+  },
+  "delivery_rail": {
+    "owner": "06-ghl-install-pages",
+    "rule": "Skill 6 is the ONE GHL delivery rail for FUNNELS / WEBSITES / SURVEYS / FORMS. ghl_form_builder.py is GLUE not the clicker: it emits agent-browser commands and owns only its own ledgers; embed splice -> ghl_rest_canvas code element (the SKILL44_WIDGET -> FORM path, VERBATIM no SRI); render verify -> ghl_verify.render_check. A hand-rolled GHL REST call is the ungoverned path and is refused."
+  },
+  "dependency_rail": {
+    "owner": "44-convert-and-flow-operator",
+    "cli": "caf (PIT-authenticated LOCATION operator)",
+    "rule": "The grocery-shopping rule: Skill 44 PRE-CREATES every custom field + tag (each carrying the lowercase zhc_ marker) idempotently (GET-then-reuse-or-create) BEFORE any browser step, and refuses to build against missing dependencies. Custom-field create-on-the-fly in the browser is DISALLOWED. Custom fields reach the form ONLY by dragging the pre-created field from Add Object Fields (name + key LOCKED)."
+  },
+  "phases": [
+    {
+      "id": "P0-INTAKE",
+      "name": "Lock the form brief in ONE block",
+      "sop": "SOP-FORM-01-INTAKE.md",
+      "owning_role": "GHL form-build operator (web-development / crm / marketing) — Skill 6 THINK layer",
+      "produces": "the locked form brief (task spec: standard + custom fields, tags, embed target, styling/custom-CSS, keep/delete defaults, form NAME) -> seeds routing/form-plan.json",
+      "engine_hooks": ["_build_form_plan", "_run_preflight F-P1/F-P2/F-P3"],
+      "gates": ["AF-FORM-INTAKE-TYPE", "AF-FORM-INTAKE-LOCATION", "AF-FORM-INTAKE-SPEC", "AF-FORM-INTAKE-EMBED-TARGET", "AF-FORM-INTAKE-TRUTHGATE", "AF-FORM-INTAKE-UNLOCKED"]
+    },
+    {
+      "id": "P1-FIELDS",
+      "name": "Field resolution (standard via Quick Add / custom via Add Object Fields)",
+      "sop": "SOP-FORM-02-FIELDS.md",
+      "owning_role": "Skill 6 THINK layer",
+      "produces": "routing/form-plan.json (fully-specified field list: label / query_key / field-width / required-XOR-hidden / zhc_ field_key)",
+      "engine_hooks": ["_resolve_fields", "zhc_field_key", "_run_preflight F-P4/F-P6/F-P7"],
+      "gates": ["AF-FORM-ZHC-KEY", "AF-FORM-REQ-HIDDEN-EXCL", "AF-FORM-CUSTOM-VIA-OBJECT-FIELDS", "AF-FORM-QUERYKEY-SLUG", "AF-FORM-FIELD-MISSING"]
+    },
+    {
+      "id": "P2-DEPENDENCIES",
+      "name": "zhc_ custom fields + tags pre-created by Skill 44 (the grocery-shopping rule)",
+      "sop": "SOP-FORM-03-DEPENDENCIES.md",
+      "owning_role": "Skill 6 THINK layer emits the plan -> Skill 44 (caf) executes it BEFORE the browser build",
+      "produces": "routing/form-dependency-plan.json (custom_fields[] + tags[] each stamped action=create|reuse) -> created IDs written to the run ledger",
+      "engine_hooks": ["plan_dependencies", "_tag_attachment_plan", "zhc_tag", "_run_preflight F-P5"],
+      "gates": ["AF-FORM-DEP-UNCREATED", "AF-FORM-TAG-ZHC", "AF-FORM-DEP-DUP", "AF-FORM-DEP-LEDGER-MISSING"]
+    },
+    {
+      "id": "P3-BUILD",
+      "name": "The DUMB browser build (F1..F13) + embed splice",
+      "sop": "SOP-FORM-04-BUILD.md",
+      "owning_role": "Skill 6 THINK layer emits the click list -> DUMB browser operator (agent-browser) executes -> embed splice via ghl_rest_canvas",
+      "produces": "routing/form-click-list.json (F1..F13) -> form-operator-report.json + captured embed snippet + parsed form id + share/preview link + shots/NNN-<phase>.png",
+      "engine_hooks": ["_emit_click_list (F1..F13)", "seed-ghl-auth.py", "ghl_rest_canvas SKILL44_WIDGET->FORM"],
+      "gates": ["AF-FORM-AUTH-SEED", "AF-FORM-BUILD-DRAFT", "AF-FORM-EMBED-VERBATIM", "AF-FORM-INVENTED-SELECTOR", "AF-FORM-NAME-ZHC"]
+    },
+    {
+      "id": "P4-CERTIFY",
+      "name": "render_check 200 + marker in DOM + tag workflow + preview/approve + QC >= 8.5",
+      "sop": "SOP-FORM-05-CERTIFY.md",
+      "owning_role": "Skill 6 QC (qc-built-form.sh) + Skill 44 tag workflow -> owner (human approval)",
+      "produces": "qc-built-form.sh PASS (QC-F1..F11), render_check 200, the Form Submitted -> Add Contact Tag workflow, preview URL, a labeled downloads bundle",
+      "engine_hooks": ["ghl_verify.render_check", "44-convert-and-flow-operator workflow (WF-1..21, rubric >= 8.5)"],
+      "gates": ["AF-FORM-RENDER-200", "AF-FORM-MARKER-DOM", "AF-FORM-TAG-WORKFLOW", "AF-FORM-CERT-MISSING", "AF-FORM-PROCESS-INTEGRITY"]
+    }
+  ],
+  "front_door_guards": ["location_id", "location_gate_no_comingle", "spec_present", "zhc_keys", "zhc_tags", "zhc_form_name", "custom_via_object_fields", "headless_guard"],
+  "front_door_gates": ["AF-FORM-PREFLIGHT", "AF-FORM-CANONICAL-BYPASS", "AF-FORM-LOCATION-COMINGLE"],
+  "labeling_grammar": {
+    "pattern": "<client>__<form>__<type>__vNN",
+    "type_enum": ["brief", "fields", "deps", "embed", "preview"],
+    "note": "Every form deliverable (locked brief, resolved field list, dependency plan, embed snippet + host-page splice, preview) is labeled; vNN is a zero-padded version (v01, v02, ...). Mirrors the funnel-craft grammar shape."
+  },
+  "client_runtime_rule": "On a client box the engine uses the CLIENT's OWN configured providers + keys. NEVER Anthropic / claude-* models or operator keys. The deterministic gates (_run_preflight, qc-built-form.sh, render_check) are provider-neutral stdlib Python and run identically everywhere. Browser control + vision QC use MiniMax M3 (probe-gated) -> DeepSeek v4 pro; reasoning uses Ollama-Cloud -> OpenRouter -> Gemini last-resort; MiniMax M2 is BANNED. Publishing is human-approved.",
+  "flexibility": "guide-not-rule: honor an explicit owner choice about fields / tags / styling / embed target. But the zhc_ marker, required-XOR-hidden exclusivity, custom-via-object-fields, embed-verbatim (no SRI), and render-200 + marker-in-DOM are prover/QC-enforced hard AF-FORM-* auto-fails, not opinions."
+}

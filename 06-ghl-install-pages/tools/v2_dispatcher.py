@@ -78,12 +78,13 @@ try:
 except Exception:  # noqa: BLE001
     _fabart = None  # type: ignore[assignment]
 
-# ── INTEGRATION: ghl_survey_builder ──────────────────────────────────────────
-# Registered as the injected builder for job_type in {survey, form, quiz}.
-# NOT imported at module load time — ghl_survey_builder imports RateGovernor /
-# SessionKeepalive from this module, so a top-level import would be circular.
-# Instead, _resolve_builder_for_task() does a lazy import at call time (by which
-# point v2_dispatcher is fully initialized and the circular reference is safe).
+# ── INTEGRATION: ghl_survey_builder / ghl_form_builder ────────────────────────
+# Registered as the injected builders: job_type in {survey, quiz} → build_survey;
+# job_type == 'form' → ghl_form_builder.build_form (native GHL forms, NOT the
+# survey/Slides wrapper). NEITHER is imported at module load time — both import
+# RateGovernor / SessionKeepalive from this module, so a top-level import would be
+# circular. Instead, _resolve_builder_for_task() does a lazy import at call time
+# (by which point v2_dispatcher is fully initialized and the reference is safe).
 
 # ── INTEGRATION: intake_interview ─────────────────────────────────────────────
 # Wires Wiring-Map Step 1 (Request → Intake) at the dispatch ENTRY so intake
@@ -106,7 +107,12 @@ except Exception:  # noqa: BLE001
     _MODEL_ROUTER_AVAILABLE = False
 
 # Job types that auto-resolve to ghl_survey_builder.build_survey.
-_SURVEY_JOB_TYPES: frozenset = frozenset({"survey", "form", "quiz"})
+_SURVEY_JOB_TYPES: frozenset = frozenset({"survey", "quiz"})
+# Job types that auto-resolve to ghl_form_builder.build_form. 'form' was moved out
+# of _SURVEY_JOB_TYPES so a native-form request routes to the dedicated two-layer
+# form builder (SMART plan + Skill-44 zhc_ deps → DUMB browser operator), not the
+# survey/Slides wrapper.
+_FORM_JOB_TYPES: frozenset = frozenset({"form"})
 
 
 def _emit_fab_artifact(evidence_root: str, task: dict, build: dict) -> dict:
@@ -210,15 +216,17 @@ def _resolve_step0(
 
 
 # ---------------------------------------------------------------------------
-# Builder auto-registration (survey / form / quiz  →  ghl_survey_builder)
+# Builder auto-registration
+#   survey / quiz → ghl_survey_builder ;  form → ghl_form_builder
 # ---------------------------------------------------------------------------
 
 def _resolve_builder_for_task(task: dict) -> "Callable[[dict, str], dict] | None":
     """Return the auto-registered builder for this task's job_type, or None.
 
     Registration mapping (Wiring-Map §4 / PRD §5.B):
-      job_type in {survey, form, quiz}  →  ghl_survey_builder.build_survey
-      any other job_type                →  None  (caller must inject the builder)
+      job_type in {survey, quiz}  →  ghl_survey_builder.build_survey
+      job_type == 'form'          →  ghl_form_builder.build_form
+      any other job_type          →  None  (caller must inject the builder)
 
     Mirrors the _resolve_step0 pattern: optional, lazy, never blocks a build.
     Uses a lazy (deferred) import of ghl_survey_builder to avoid the circular
@@ -231,6 +239,12 @@ def _resolve_builder_for_task(task: dict) -> "Callable[[dict, str], dict] | None
     job_type = (
         task.get("job_type") or task.get("build_type") or task.get("type") or ""
     ).lower().strip()
+    if job_type in _FORM_JOB_TYPES:
+        try:
+            import ghl_form_builder as _gfb_lazy  # lazy — safe post-init  # noqa: PLC0415
+            return _gfb_lazy.build_form
+        except Exception:  # noqa: BLE001
+            return None
     if job_type not in _SURVEY_JOB_TYPES:
         return None
     try:
@@ -544,8 +558,9 @@ def dispatch_one(
         task: ``{id, brand, brief, location_id, pages?}`` — the board task.
         evidence_root: ``skill6-fix/v2-<RUN_ID>/`` (never /tmp).
         builder: INJECTED callable ``(task, evidence_root) -> build_result``, or
-            None to auto-resolve from ``task['job_type']`` (survey/form/quiz →
-            ``ghl_survey_builder.build_survey``; any other type → FAILED). The
+            None to auto-resolve from ``task['job_type']`` (survey/quiz →
+            ``ghl_survey_builder.build_survey``; form → ``ghl_form_builder.build_form``;
+            any other type → FAILED). The
             dept agent supplies the real builder (seed/activate + REST autosave +
             images + ecosystem per the SOP). It MUST return a dict with at least
             ``{"pages": [...], "location_gate_ok": bool, "duration_s": float}``
@@ -628,8 +643,8 @@ def dispatch_one(
     _select_and_thread_models(task, evidence_root)
 
     # Builder auto-resolution: if no builder was injected by the caller, attempt
-    # to resolve from task job_type (survey/form/quiz → ghl_survey_builder).
-    # Follows the _resolve_step0 registration pattern.
+    # to resolve from task job_type (survey/quiz → ghl_survey_builder;
+    # form → ghl_form_builder). Follows the _resolve_step0 registration pattern.
     if builder is None:
         builder = _resolve_builder_for_task(task)
     if builder is None:
@@ -640,7 +655,7 @@ def dispatch_one(
                 f"job_type={task.get('job_type')!r} / "
                 f"build_type={task.get('build_type')!r}. "
                 "Pass builder= to dispatch_one, or set task['job_type'] to one "
-                "of {survey, form, quiz} to use the registered survey builder."
+                "of {survey, quiz} (survey builder) or 'form' (form builder)."
             ),
         }
         rp = _rec_write(rec)

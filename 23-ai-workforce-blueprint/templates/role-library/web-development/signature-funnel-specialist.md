@@ -109,6 +109,8 @@ this role) if the SACRED law changes. Never change the law to make a gate pass.
   `ghl_rest_canvas.py` / `ghl_builder.py` (funnel/page build + HTML injection). Images: Skill 47
   `kie_image.py`.
 - Shared procedure: `universal-sops/funnel-craft/` (SOP-FUNNEL-01..05 + the AF-code ruleset).
+- **Skill 6 is the ONE GHL delivery rail — it builds FUNNELS, WEBSITES, SURVEYS, and FORMS.** A lead-capture **form** can be embedded inside a Signature Funnel page: Skill 6 `tools/ghl_form_builder.py` (SMART plan + Skill-44 `zhc_` deps → DUMB browser operator) builds the form and returns the embed snippet, spliced VERBATIM (no SRI) into the funnel page via `SKILL44_WIDGET → FORM` and verified with `ghl_verify.render_check`. Single-step capture → form; multi-step / branching → the Skill-6 survey builder.
+- Shared form procedure: `universal-sops/form-craft/` (SOP-FORM-01..05 + the QC-autofail ruleset). Client runtime uses the CLIENT's own providers (never Anthropic); nothing publishes without human approval.
 
 ## 9. Standard Operating Procedures (Numbered)
 

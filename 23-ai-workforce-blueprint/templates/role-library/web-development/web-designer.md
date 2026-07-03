@@ -164,6 +164,7 @@ This role contributes to the company revenue cascade by: **creating the visual e
 | Loom / CloudApp | Quick video walkthroughs of designs for async stakeholder review | Desktop app | Record 2-3 minute design walkthroughs for stakeholders who can't attend live reviews |
 | Notion / Confluence | Design documentation, design system docs | Web app | All design decisions documented with rationale |
 | Browser DevTools | Inspect implemented designs, compare to Figma | Built into browsers | Use for design QA — inspect computed styles, overlay Figma design on live page |
+| **GHL Form Builder (Skill 6)** | **Skill 6 is the ONE GHL delivery rail — FUNNELS / WEBSITES / SURVEYS / FORMS.** Style an embedded GHL **form** with Custom CSS so it matches the brand (the Custom CSS box overrides Styles + Themes) | Skill 6 `tools/ghl_form_builder.py` (two-layer: SMART plan + Skill-44 `zhc_` deps → DUMB browser operator) → `ghl_rest_canvas` `SKILL44_WIDGET → FORM` embed (VERBATIM, no SRI) → `ghl_verify.render_check`. Custom CSS in the form's Styles box + host-page wrapper; must hold up on mobile (50% pairs stack). Shared procedure: `universal-sops/form-craft/` | Seeded token-only session; draft/preview by default; nothing publishes without human approval. |
 
 ---
 

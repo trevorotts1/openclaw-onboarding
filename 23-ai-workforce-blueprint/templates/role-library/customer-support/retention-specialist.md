@@ -167,6 +167,7 @@ This role contributes to the company revenue cascade by: **directly preventing r
 | Spreadsheet / Analysis Tool | Churn reason tracking, save offer analysis, win-back campaign performance tracking | Web/desktop | Maintain a running churn tracker that feeds the monthly churn intelligence report |
 | Internal Communication (Slack or equivalent) | Coordinating save offers that require approval, flagging competitive intelligence from save conversations | Desktop app | Dedicated channel for: retention-alerts (high-value cancellation requests) |
 | Billing / Subscription Management | Verifying account status, processing save offer adjustments (discounts, credits, plan changes) | Web access (part of billing platform) | Understand how to apply discounts and credits correctly — a billing error after a save conversation destroys the trust you just rebuilt |
+| **GHL Form Builder (Skill 6)** | **Skill 6 is the ONE GHL delivery rail — FUNNELS / WEBSITES / SURVEYS / FORMS.** Capture win-back / cancellation-reason **feedback** (CSAT / NPS / testimonial) as a GHL form (standard + custom fields), embed it on a page, attach tags | Skill 6 `tools/ghl_form_builder.py` — SMART layer plans + pre-creates `zhc_` fields/tags via Skill 44; DUMB browser operator builds; embed via `SKILL44_WIDGET → FORM`. Shared procedure: `universal-sops/form-craft/` | Client runtime uses the CLIENT's own providers (browser operator often MiniMax-M3, never Anthropic); nothing publishes without human approval. |
 
 ---
 

@@ -30,6 +30,7 @@ Add:
   The canonical auth entry point is the orchestrator tools/ghl_auth.py (a 3-tier ladder). Tier 1 (token-only, above) stays PRIMARY. Tier 2 is a GATED, audited, one-time email-2FA bootstrap that runs ONLY when there is no valid refresh token AND four gates pass (A recorded client authorization, B Gmail-access PROVEN by a live read BEFORE any login, C email is the selected 2FA method, D agency creds in the client store). On success it SELF-HEALS a fresh refresh token to the client store so the next run is Tier 1. Bounded (<=3 attempts, backoff, hard-stop on lockout/captcha). Any gate fail / lockout -> Tier 3: fail loud, non-zero exit, precise client instruction. ALL login/2FA code lives in tools/ghl_auth_fallback.py + tools/ghl_login_browser.py; CI guard scripts/guard-ghl-auth-fallback.sh.
 - Always verify the correct sub-account before building (refuse on mismatch).
 - Credentials: ~/.openclaw/secrets/.env — GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN (canonical; CLIENT key only). Never the operator's keys on a client box.
+- Surveys + Forms are the SAME ONE GHL rail: tools/ghl_survey_builder.py (surveys) and tools/ghl_form_builder.py (forms). Two-layer split — a reasoning layer PRE-CREATES every custom field + tag via Skill 44 (`caf`, LOCATION PIT) with a `zhc_` marker + idempotent create-vs-reuse; a dumb browser operator runs the locked click list (a11y-ref-first selectors, visible-text fallback, explicit waits), captures the Copy-Embed-Code snippet, and splices it VERBATIM (no SRI) into the host page via the SKILL44_WIDGET→FORM path; tags attach on submit via a Skill-44 "Form Submitted → Add Contact Tag" workflow. Custom fields NEVER created on the fly in the browser. Per-build gate: qc-built-form.sh (render_check 200 + marker in the RENDERED DOM). Locked selectors: tools/SELECTORS-LIVE-{funnel,page,survey,form}.md.
 ```
 
 ---
@@ -63,6 +64,7 @@ Add:
 - Viewport minimum: 1440x900. Builder loads inside nested iframes — use get_builder_frame().
 - Default to Funnels over Websites. Every funnel/website/step name carries the `zhc` prefix.
 - Verify every save/preview/publish with a payload marker string (not "no error"). NEVER publish without explicit approval. Generate a deployment report after every deployment.
+- Survey builder `tools/ghl_survey_builder.py` + Form builder `tools/ghl_form_builder.py` share the rail. Reasoning layer pre-creates custom fields + tags via Skill 44 (`caf`, LOCATION PIT; `zhc_` key/tag marker, lowercase; container NAME carries UPPERCASE `ZHC `; idempotent GET-first reuse). Browser layer only DRAGS pre-created fields via **Add Object Fields** (never create-on-the-fly), then captures the embed snippet and splices it VERBATIM (no SRI) via SKILL44_WIDGET→FORM. `--dry-run` (default) + `--selftest` need no network/browser; live build gated by qc-built-form.sh (render_check 200 + marker in RENDERED DOM). Each builder names its locked selector doc: tools/SELECTORS-LIVE-{funnel,page,survey,form}.md.
 ```
 
 ---

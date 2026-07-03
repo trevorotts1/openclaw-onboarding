@@ -165,6 +165,7 @@ This role contributes to the company revenue cascade by: **systematically improv
 | CRO Calculation Tools (Evan Miller, CXL AB Test Calculator) | Sample size calculation, test duration estimation, statistical significance calculation | Web tool | Used to plan tests before launch |
 | FullStory / LogRocket (in addition to Hotjar) | Advanced session replay, frustration detection (rage clicks, dead clicks), conversion funnel analysis | Web app | Deeper session analysis when Hotjar isn't sufficient |
 | Data Visualization (Google Looker Studio, Tableau) | CRO dashboards, test result visualization, stakeholder reporting | Web app | Monthly CRO report |
+| **GHL Form Builder (Skill 6)** | **Skill 6 is the ONE GHL delivery rail — FUNNELS / WEBSITES / SURVEYS / FORMS.** Own the field-count / friction / A-B decisions on a GHL **form** (minimum viable ask; fewest fields for cold traffic), then build + embed it | Skill 6 `tools/ghl_form_builder.py` (two-layer: SMART plan + Skill-44 `zhc_` deps → DUMB browser operator) → `ghl_rest_canvas` `SKILL44_WIDGET → FORM` embed (VERBATIM, no SRI) → `ghl_verify.render_check`. Shared procedure: `universal-sops/form-craft/` | Seeded token-only session; draft/preview by default; nothing publishes without human approval. |
 
 ---
 

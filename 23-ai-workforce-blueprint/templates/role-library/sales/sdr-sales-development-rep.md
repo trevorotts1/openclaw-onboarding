@@ -160,6 +160,7 @@ This role contributes to the company revenue cascade by: **sourcing qualified pi
 | Video Conferencing (e.g., Zoom, Google Meet) | Prospect meetings you booked (attending to hand off to AE) | Web login | Join the first 5 minutes of every meeting you book to introduce the AE and confirm the agenda. Then drop off. |
 | CRM-integrated Dialer | Outbound calling with auto-logging, local presence numbers | CRM integration | Used during daily calling block. Local presence numbers improve answer rates by 30-40%. |
 | Slack/Teams | Internal communication, AE coordination, CSO coaching | Web/desktop | Channel #sdr-squad for peer tips and motivation. Channel #sales-ops for handoff coordination. |
+| **GHL Form Builder (Skill 6)** | **Skill 6 is the ONE GHL delivery rail — FUNNELS / WEBSITES / SURVEYS / FORMS.** Build an inbound-lead qualification **form** feeding the sales pipeline (standard + custom fields), embed it on a page, attach tags | Skill 6 `tools/ghl_form_builder.py` — SMART layer plans + pre-creates `zhc_` fields/tags via Skill 44; DUMB browser operator builds; embed via `SKILL44_WIDGET → FORM`. Shared procedure: `universal-sops/form-craft/` | Client runtime uses the CLIENT's own providers (browser operator often MiniMax-M3, never Anthropic); nothing publishes without human approval. |
 
 ---
 

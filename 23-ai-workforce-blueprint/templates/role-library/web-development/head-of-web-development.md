@@ -173,6 +173,7 @@ This role contributes to the company revenue cascade by: **building and maintain
 | Performance Testing (Lighthouse, WebPageTest, Sitespeed.io) | Core Web Vitals measurement, page speed analysis, performance regression detection |
 | Security Scanning (Snyk, Dependabot, OWASP ZAP) | Dependency vulnerability scanning, security testing, SSL monitoring |
 | Project Management (Jira, Linear, GitHub Projects) | Sprint planning, task tracking, bug tracking, roadmap management |
+| **GHL Form Builder (Skill 6)** | Dept-head awareness + routing of the FORMS capability — Web-Development is the execution owner for every GHL form build (Skill 6 is the ONE GHL delivery rail: FUNNELS / WEBSITES / SURVEYS / FORMS). The Funnel Builder / Landing Page Specialist builds the form via `06-ghl-install-pages/tools/ghl_form_builder.py` (two-layer: SMART plan + Skill-44 `zhc_` deps -> DUMB browser operator), retrieves the embed snippet, and splices it VERBATIM (no SRI) into a funnel/website/landing page (`SKILL44_WIDGET -> FORM`), styled with Custom CSS and verified via `ghl_verify.render_check`. CRM pre-creates the `zhc_` fields/tags + the on-submit Add-Tag workflow (Skill 44). Shared SOP `universal-sops/form-craft/`. Seeded token-only session; nothing publishes without human approval. |
 
 ---
 

@@ -228,6 +228,24 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
     (via a `getattr` guard) for its survey build flow. Every board call is
     fail-soft (never raises, never blocks the build) so a build proceeds even
     against an older `cc_board.py`.
+15. **Form creation — `tools/ghl_form_builder.py`** — Browser-controlled form
+    pipeline with a strict TWO-LAYER split: a SMART reasoning layer decides WHAT
+    form to build and pre-creates every CUSTOM FIELD + TAG through the GHL-API
+    operator (Skill 44 / `caf`, LOCATION PIT) with a `zhc_` marker and an
+    idempotent create-vs-reuse plan; a DUMB browser operator then
+    executes an explicit, ordered click list (stable a11y-ref-first selectors +
+    visible-text fallbacks + explicit waits) to create the form, drag standard
+    fields via Quick Add and custom fields via **Add Object Fields** (never
+    create-on-the-fly), style it (incl. Custom CSS), and retrieve the **embed /
+    JavaScript snippet**. The snippet is embedded into a GHL page/funnel/website
+    via the existing `SKILL44_WIDGET → FORM` path (verbatim, no SRI) and verified
+    in the RENDERED DOM (`ghl_verify.render_check`); tags are attached on submit
+    via a Skill-44 "Form Submitted → Add Contact Tag" workflow. Locked selectors:
+    `tools/SELECTORS-LIVE-form.md`. `--dry-run` writes plan + dependency plan +
+    click list without touching GHL. Operator docs live in `references/`
+    (`forms-playbook.md`, `form-creation-checklist.md`, `form-reasoning-layer.md`,
+    `form-browser-operator-instructions.md`, `form-click-map.md`,
+    `form-builder-spec.md`); per-build gate is `qc-built-form.sh`.
 
 ## Files in This Folder (Reading Order)
 
@@ -277,6 +295,17 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
      Add-Object-Fields, wires conditional logic, enforces required fields, and
      handles Quick Add + plain T&C blocks. Accepts `--dry-run` for structural
      validation without GHL writes.
+   - `ghl_form_builder.py` - two-layer browser-controlled FORM builder. THINK
+     layer emits `routing/form-plan.json`, `routing/form-dependency-plan.json`
+     (the Skill-44 custom-field + tag handoff), and `routing/form-click-list.json`;
+     the browser layer executes the click list. Custom fields + tags are
+     PRE-CREATED via Skill 44 (never in-browser create-on-the-fly). `--dry-run`
+     (default) and `--selftest` need no network/browser.
+   - **Locked selector docs (one per browser builder).** Each browser builder
+     names its LOCKED, runtime-snapshot-gated selector reference: funnel →
+     `tools/SELECTORS-LIVE-funnel.md`, page → `tools/SELECTORS-LIVE-page.md`,
+     survey → `tools/SELECTORS-LIVE-survey.md`, form →
+     `tools/SELECTORS-LIVE-form.md`.
    - `intake_interview.py` - adaptive ≤7-question intake; "think for me" branch
      generates recommended answers on request, then confirms before proceeding;
      output written to the task manifest before build starts.
@@ -367,6 +396,28 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
   builder UI. Fail-soft: if the plan has no folder endpoint, the wrapper groups
   by `media_folder_name_prefix` instead (still findable). "Grocery-shopping"
   rule: pre-build forms/calendars/tags/workflows (Skill 44) BEFORE the page.
+- **FORMS = same ONE rail.** Forms are built by `tools/ghl_form_builder.py` under
+  the same doctrine as funnels/websites/surveys: seeded token-only session,
+  correct sub-account, singleton pooled browser, snapshot-gated selectors,
+  draft-by-default, run-evidence outside the skill dir.
+- **Custom fields + tags for a form are PRE-BUILT via Skill 44 (grocery-shopping
+  rule), NEVER by the browser.** The form-builder emits a dependency plan; Skill
+  44 (`caf`, LOCATION PIT) creates/looks-up the objects; the browser only DRAGS
+  the pre-created fields in via **Add Object Fields**. Create-on-the-fly (random
+  unique-key suffix) is DISALLOWED for agent builds.
+- **ZHC marker on agent-created fields/tags.** Custom-field unique key =
+  `zhc_<snake_slug>` (lowercase, no spaces → `{{contact.zhc_<slug>}}`); tag =
+  `zhc_<snake_slug>` (GHL lowercases tags). The form's own NAME still uses the
+  fleet UPPERCASE `ZHC ` prefix (`ghl_builder.ensure_zhc_prefix`). BEFORE
+  creating, GET existing fields/tags and REUSE any matching `zhc_…` — never
+  duplicate (idempotent).
+- **Form embed = the existing `SKILL44_WIDGET → FORM` path.** Retrieve the
+  "Copy Embed Code" JS snippet at Integrate, embed it VERBATIM (no SRI) into a
+  `ghl_rest_canvas` code element on the host page, add optional CSS polish, and
+  verify the snippet tag in the RENDERED DOM via `ghl_verify.render_check`.
+- **Tag attachment ≠ tag creation.** GHL's form builder has no native add-tag
+  control; attach on submit via a Skill-44 "Form Submitted → Add Contact Tag"
+  workflow (built after the form id exists), or a hidden Tags object-field.
 - **SEO / AI-search "Content" panel is a REQUIRED build phase, not optional**
   (transcript §2). After the two saves, populate it: description/metadata,
   **researched** keywords (≥3 distinct, no placeholders) **that each actually

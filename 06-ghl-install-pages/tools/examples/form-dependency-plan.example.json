@@ -1,0 +1,68 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-07-02T14:11:19Z",
+  "owner_skill": "44-convert-and-flow-operator",
+  "cli": "caf (PIT-authenticated)",
+  "idempotency": {
+    "live_get_required": false,
+    "rule": "GET existing custom fields + tags; REUSE any matching zhc_ key/name; only CREATE the remainder. Never duplicate."
+  },
+  "custom_fields": [
+    {
+      "field_key": "zhc_podcast_rating",
+      "custom_field_name": "zhc_podcast_rating",
+      "label": "Podcast Rating",
+      "data_type": "rating",
+      "options": [],
+      "settings": {
+        "icon": "thumbs_up",
+        "icon_alignment": "left",
+        "count": 5,
+        "store_as": "absolute"
+      },
+      "merge_token": "{{contact.zhc_podcast_rating}}",
+      "action": "create"
+    },
+    {
+      "field_key": "zhc_facebook_url",
+      "custom_field_name": "zhc_facebook_url",
+      "label": "Personal Facebook URL",
+      "data_type": "single_line",
+      "options": [],
+      "settings": {},
+      "merge_token": "{{contact.zhc_facebook_url}}",
+      "action": "reuse"
+    }
+  ],
+  "tags": [
+    {
+      "tag": "zhc_podcast_lead",
+      "action": "create"
+    },
+    {
+      "tag": "zhc_newsletter",
+      "action": "create"
+    }
+  ],
+  "tag_attachment": {
+    "method": "workflow",
+    "workflow": {
+      "owner_skill": "44-convert-and-flow-operator",
+      "trigger": "Form Submitted",
+      "filter": {
+        "form": "<this form>"
+      },
+      "action": "Add Contact Tag",
+      "tags": [
+        "zhc_podcast_lead",
+        "zhc_newsletter"
+      ],
+      "note": "Built AFTER the form exists (needs the form id). Skill 44 PLAN-MODE + QC gate (WF-1..21, rubric >= 8.5) applies."
+    },
+    "hidden_field_alt": {
+      "how": "Add the built-in Tags object-field as a HIDDEN field with a preset value; submission writes the tag to the contact.",
+      "when": "Only if no workflow is desired; workflow is preferred/testable."
+    }
+  },
+  "note": "Skill 44 creates/looks-up these on the location BEFORE the browser build. The browser then only DRAGS the pre-created zhc_ fields in via Add Object Fields. Custom-field create-on-the-fly is DISALLOWED."
+}

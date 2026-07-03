@@ -1,0 +1,504 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-07-02T14:11:19Z",
+  "form_name": "ZHC Podcast Signup",
+  "total_steps": 54,
+  "dry_run": true,
+  "selector_strategy": [
+    "1. a11y ref first: `snapshot -i` \u2192 pick the @eN ref for the target's visible text/role.",
+    "2. visible-text fallback: click the exact `target` string (labels below are verbatim).",
+    "3. documented CSS only as a last resort; NEVER ship invented CSS as fact.",
+    "4. wait on a visible-text condition before AND after each material step (no fixed sleeps).",
+    "5. screenshot after every material step to shots/NNN-<phase>.png.",
+    "6. one action per command; the browser decides NOTHING \u2014 every target is pre-specified."
+  ],
+  "operator_note": "DUMB-BROWSER SCRIPT \u2014 execute verbatim. Every target is pre-specified; make no decisions. Transcript is canonical; video_ts cites the moment. Custom fields + tags are pre-created by Skill 44 BEFORE this runs.",
+  "steps": [
+    {
+      "n": 1,
+      "phase": "F1",
+      "action": "navigate",
+      "target": "https://app.convertandflow.com/v2/location/EXAMPLELOC123/dashboard",
+      "wait_for": "Dashboard",
+      "note": "Open app shell (seeded session).",
+      "video_ts": "00:05"
+    },
+    {
+      "n": 2,
+      "phase": "F1",
+      "action": "click",
+      "target": "Sites",
+      "wait_for": "Funnels",
+      "note": "Far-left nav \u2192 Funnels page loads.",
+      "video_ts": "00:29"
+    },
+    {
+      "n": 3,
+      "phase": "F1",
+      "action": "click",
+      "target": "Forms",
+      "wait_for": "Create Form",
+      "note": "Top secondary-nav tab (~3/4 across).",
+      "video_ts": "00:47"
+    },
+    {
+      "n": 4,
+      "phase": "F2",
+      "action": "click",
+      "target": "Create Form",
+      "wait_for": "Start from scratch",
+      "note": "Blue button, top-right. Fallback label: 'Add Form'.",
+      "video_ts": "00:56"
+    },
+    {
+      "n": 5,
+      "phase": "F2",
+      "action": "confirm",
+      "target": "Start from scratch",
+      "wait_for": "",
+      "note": "Leave selected (default).",
+      "video_ts": "01:13"
+    },
+    {
+      "n": 6,
+      "phase": "F2",
+      "action": "click",
+      "target": "Create",
+      "wait_for": "Form Elements",
+      "note": "Blue Create button at bottom of pop-up \u2192 form builder.",
+      "video_ts": "01:27"
+    },
+    {
+      "n": 7,
+      "phase": "F3",
+      "action": "click",
+      "target": "Form 1",
+      "wait_for": "",
+      "note": "Default name at top ('Form' + number).",
+      "video_ts": "04:22"
+    },
+    {
+      "n": 8,
+      "phase": "F3",
+      "action": "type",
+      "target": "ZHC Podcast Signup",
+      "wait_for": "",
+      "note": "Type the ZHC-prefixed form name.",
+      "video_ts": "04:37"
+    },
+    {
+      "n": 9,
+      "phase": "F3",
+      "action": "press",
+      "target": "Enter",
+      "wait_for": "ZHC Podcast Signup",
+      "note": "Commit the form name.",
+      "video_ts": "04:50"
+    },
+    {
+      "n": 10,
+      "phase": "F4",
+      "action": "delete_field",
+      "target": "Phone",
+      "wait_for": "",
+      "note": "Remove unneeded default field (hover \u2192 trash).",
+      "video_ts": "02:00"
+    },
+    {
+      "n": 11,
+      "phase": "F4",
+      "action": "delete_field",
+      "target": "Terms & Conditions",
+      "wait_for": "",
+      "note": "Remove unneeded default field (hover \u2192 trash).",
+      "video_ts": "02:00"
+    },
+    {
+      "n": 12,
+      "phase": "F5",
+      "action": "drag",
+      "target": "First Name  [Form Elements \u25b8 Personal Info]  \u2192  form canvas",
+      "wait_for": "First Name",
+      "note": "Drag the First Name tile onto the form at its position.",
+      "video_ts": "05:29"
+    },
+    {
+      "n": 13,
+      "phase": "F5",
+      "action": "fill",
+      "target": "Query Key = 'first_name'",
+      "wait_for": "",
+      "note": "URL param \u2014 lowercase, no spaces/special.",
+      "video_ts": "06:32"
+    },
+    {
+      "n": 14,
+      "phase": "F5",
+      "action": "check",
+      "target": "Required",
+      "wait_for": "",
+      "note": "Right panel checkbox.",
+      "video_ts": "06:08"
+    },
+    {
+      "n": 15,
+      "phase": "F5",
+      "action": "drag",
+      "target": "Last Name  [Form Elements \u25b8 Personal Info]  \u2192  form canvas",
+      "wait_for": "Last Name",
+      "note": "Drag the Last Name tile onto the form at its position.",
+      "video_ts": "05:29"
+    },
+    {
+      "n": 16,
+      "phase": "F5",
+      "action": "fill",
+      "target": "Query Key = 'last_name'",
+      "wait_for": "",
+      "note": "URL param \u2014 lowercase, no spaces/special.",
+      "video_ts": "06:32"
+    },
+    {
+      "n": 17,
+      "phase": "F5",
+      "action": "check",
+      "target": "Required",
+      "wait_for": "",
+      "note": "Right panel checkbox.",
+      "video_ts": "06:08"
+    },
+    {
+      "n": 18,
+      "phase": "F5",
+      "action": "drag",
+      "target": "Email  [Form Elements \u25b8 Personal Info]  \u2192  form canvas",
+      "wait_for": "Email",
+      "note": "Drag the Email tile onto the form at its position.",
+      "video_ts": "05:29"
+    },
+    {
+      "n": 19,
+      "phase": "F5",
+      "action": "fill",
+      "target": "Query Key = 'email'",
+      "wait_for": "",
+      "note": "URL param \u2014 lowercase, no spaces/special.",
+      "video_ts": "06:32"
+    },
+    {
+      "n": 20,
+      "phase": "F5",
+      "action": "check",
+      "target": "Required",
+      "wait_for": "",
+      "note": "Right panel checkbox.",
+      "video_ts": "06:08"
+    },
+    {
+      "n": 21,
+      "phase": "F5",
+      "action": "drag",
+      "target": "City  [Form Elements \u25b8 Address]  \u2192  form canvas",
+      "wait_for": "City",
+      "note": "Drag the City tile onto the form at its position.",
+      "video_ts": "05:29"
+    },
+    {
+      "n": 22,
+      "phase": "F5",
+      "action": "set",
+      "target": "Field Width = 50%",
+      "wait_for": "",
+      "note": "Two 50% fields share one row.",
+      "video_ts": "06:08"
+    },
+    {
+      "n": 23,
+      "phase": "F5",
+      "action": "fill",
+      "target": "Query Key = 'city'",
+      "wait_for": "",
+      "note": "URL param \u2014 lowercase, no spaces/special.",
+      "video_ts": "06:32"
+    },
+    {
+      "n": 24,
+      "phase": "F5",
+      "action": "check",
+      "target": "Required",
+      "wait_for": "",
+      "note": "Right panel checkbox.",
+      "video_ts": "06:08"
+    },
+    {
+      "n": 25,
+      "phase": "F5",
+      "action": "drag",
+      "target": "State  [Form Elements \u25b8 Address]  \u2192  form canvas",
+      "wait_for": "State",
+      "note": "Drag the State tile onto the form at its position.",
+      "video_ts": "05:29"
+    },
+    {
+      "n": 26,
+      "phase": "F5",
+      "action": "set",
+      "target": "Field Width = 50%",
+      "wait_for": "",
+      "note": "Two 50% fields share one row.",
+      "video_ts": "06:08"
+    },
+    {
+      "n": 27,
+      "phase": "F5",
+      "action": "fill",
+      "target": "Query Key = 'state'",
+      "wait_for": "",
+      "note": "URL param \u2014 lowercase, no spaces/special.",
+      "video_ts": "06:32"
+    },
+    {
+      "n": 28,
+      "phase": "F5",
+      "action": "check",
+      "target": "Required",
+      "wait_for": "",
+      "note": "Right panel checkbox.",
+      "video_ts": "06:08"
+    },
+    {
+      "n": 29,
+      "phase": "F6",
+      "action": "click",
+      "target": "Add Object Fields",
+      "wait_for": "Search by Name",
+      "note": "SECOND left-panel tab \u2014 NOT Quick Add. Object dropdown must read Contact.",
+      "video_ts": "12:15"
+    },
+    {
+      "n": 30,
+      "phase": "F6",
+      "action": "fill",
+      "target": "Search by Name = 'zhc_podcast_rating'",
+      "wait_for": "",
+      "note": "Locate the pre-created zhc_ field (created by Skill 44).",
+      "video_ts": "12:47"
+    },
+    {
+      "n": 31,
+      "phase": "F6",
+      "action": "drag",
+      "target": "Podcast Rating [zhc_podcast_rating]  \u2192  form canvas",
+      "wait_for": "Podcast Rating",
+      "note": "Drag the pre-created custom field in. Unique key + custom-field name are LOCKED; only Label is editable.",
+      "video_ts": "12:56"
+    },
+    {
+      "n": 32,
+      "phase": "F6",
+      "action": "fill",
+      "target": "Label = 'Podcast Rating'",
+      "wait_for": "",
+      "note": "Right panel \u2192 Label (client-facing).",
+      "video_ts": "13:30"
+    },
+    {
+      "n": 33,
+      "phase": "F6",
+      "action": "set",
+      "target": "rating settings: icon = 'thumbs_up'",
+      "wait_for": "",
+      "note": "Field-type-specific setting (e.g. Rating icon/count/store-as).",
+      "video_ts": "10:45"
+    },
+    {
+      "n": 34,
+      "phase": "F6",
+      "action": "set",
+      "target": "rating settings: icon_alignment = 'left'",
+      "wait_for": "",
+      "note": "Field-type-specific setting (e.g. Rating icon/count/store-as).",
+      "video_ts": "10:45"
+    },
+    {
+      "n": 35,
+      "phase": "F6",
+      "action": "set",
+      "target": "rating settings: count = 5",
+      "wait_for": "",
+      "note": "Field-type-specific setting (e.g. Rating icon/count/store-as).",
+      "video_ts": "10:45"
+    },
+    {
+      "n": 36,
+      "phase": "F6",
+      "action": "set",
+      "target": "rating settings: store_as = 'absolute'",
+      "wait_for": "",
+      "note": "Field-type-specific setting (e.g. Rating icon/count/store-as).",
+      "video_ts": "10:45"
+    },
+    {
+      "n": 37,
+      "phase": "F6",
+      "action": "check",
+      "target": "Required",
+      "wait_for": "",
+      "note": "Right panel (not with Hidden).",
+      "video_ts": "13:36"
+    },
+    {
+      "n": 38,
+      "phase": "F6",
+      "action": "fill",
+      "target": "Search by Name = 'zhc_facebook_url'",
+      "wait_for": "",
+      "note": "Locate the pre-created zhc_ field (created by Skill 44).",
+      "video_ts": "12:47"
+    },
+    {
+      "n": 39,
+      "phase": "F6",
+      "action": "drag",
+      "target": "Personal Facebook URL [zhc_facebook_url]  \u2192  form canvas",
+      "wait_for": "Personal Facebook URL",
+      "note": "Drag the pre-created custom field in. Unique key + custom-field name are LOCKED; only Label is editable.",
+      "video_ts": "12:56"
+    },
+    {
+      "n": 40,
+      "phase": "F6",
+      "action": "fill",
+      "target": "Label = 'Personal Facebook URL'",
+      "wait_for": "",
+      "note": "Right panel \u2192 Label (client-facing).",
+      "video_ts": "13:30"
+    },
+    {
+      "n": 41,
+      "phase": "F7",
+      "action": "click",
+      "target": "Save",
+      "wait_for": "Saved",
+      "note": "Blue Save, top-right \u2192 draft saved.",
+      "video_ts": "14:16"
+    },
+    {
+      "n": 42,
+      "phase": "F8",
+      "action": "click",
+      "target": "Styles and Options",
+      "wait_for": "Themes",
+      "note": "Selector directly under Save.",
+      "video_ts": "14:26"
+    },
+    {
+      "n": 43,
+      "phase": "F8",
+      "action": "click",
+      "target": "Theme = 'Clean'",
+      "wait_for": "",
+      "note": "Themes tab.",
+      "video_ts": "16:19"
+    },
+    {
+      "n": 44,
+      "phase": "F8",
+      "action": "click",
+      "target": "Options",
+      "wait_for": "",
+      "note": "Deselect any field \u2192 form-level Options.",
+      "video_ts": "14:57"
+    },
+    {
+      "n": 45,
+      "phase": "F8",
+      "action": "click",
+      "target": "Advanced",
+      "wait_for": "",
+      "note": "Advanced \u2192 Custom CSS box.",
+      "video_ts": "15:13"
+    },
+    {
+      "n": 46,
+      "phase": "F8",
+      "action": "fill",
+      "target": "Custom CSS = <plan.styling.custom_css>",
+      "wait_for": "",
+      "note": "Custom CSS OVERRIDES form styling + themes (15:55).",
+      "video_ts": "15:55"
+    },
+    {
+      "n": 47,
+      "phase": "F8",
+      "action": "click",
+      "target": "Save",
+      "wait_for": "",
+      "note": "Save style options.",
+      "video_ts": "16:46"
+    },
+    {
+      "n": 48,
+      "phase": "F9",
+      "action": "click",
+      "target": "Preview",
+      "wait_for": "",
+      "note": "Top-right \u2192 shows how the form displays.",
+      "video_ts": "18:14"
+    },
+    {
+      "n": 49,
+      "phase": "F10",
+      "action": "click",
+      "target": "Integrate",
+      "wait_for": "Copy Embed Code",
+      "note": "Top-right \u2192 embed/share/email panel.",
+      "video_ts": "18:26"
+    },
+    {
+      "n": 50,
+      "phase": "F10",
+      "action": "read",
+      "target": "Copy Embed Code",
+      "wait_for": "",
+      "note": "Capture the JavaScript embed snippet (blue Copy Embed Code).",
+      "video_ts": "18:34"
+    },
+    {
+      "n": 51,
+      "phase": "F10",
+      "action": "read",
+      "target": "form link",
+      "wait_for": "",
+      "note": "Also capture the shareable form link.",
+      "video_ts": "18:44"
+    },
+    {
+      "n": 52,
+      "phase": "F11",
+      "action": "handoff",
+      "target": "embed snippet \u2192 funnel PAGE123",
+      "wait_for": "",
+      "note": "ghl_rest_canvas code element: paste snippet VERBATIM (no SRI). Optional CSS wrapper for visual polish. Then ghl_verify.render_check.",
+      "video_ts": ""
+    },
+    {
+      "n": 53,
+      "phase": "F12",
+      "action": "handoff",
+      "target": "tags \u2192 Skill 44 'Form Submitted \u2192 Add Contact Tag' workflow",
+      "wait_for": "",
+      "note": "Tags already created (zhc_). Skill 44 builds the attach workflow using this form's id. Alt: hidden Tags object-field.",
+      "video_ts": ""
+    },
+    {
+      "n": 54,
+      "phase": "F13",
+      "action": "verify",
+      "target": "form in Forms list under ZHC name + embed renders",
+      "wait_for": "",
+      "note": "render_check 200 + snippet marker in DOM; custom fields/tags re-GET 200.",
+      "video_ts": ""
+    }
+  ]
+}
