@@ -398,7 +398,7 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
       && log "INFO" "phase=6: npm install done" \
       || log "WARN" "phase=6: npm install reported errors (continuing)"
     ( cd "$DASHBOARD_DIR" && npm run db:push >>"$LOG_FILE" 2>&1 ) \
-      && log "INFO" "phase=6: db:push done (idempotent drizzle migrations; no data wipe)" \
+      && log "INFO" "phase=6: db:push done (runs migrations via getDb(); no demo seeding on client boxes)" \
       || log "WARN" "phase=6: db:push reported errors (continuing)"
     # IDEMPOTENT + RECONCILING (v16.1.7): delete every non-canonical CC alias
     # (mission-control, command-center), then restart the canonical
@@ -436,12 +436,14 @@ else
     fail_install "phase=6: npm install failed in $DASHBOARD_DIR"
   fi
 
-  log "INFO" "phase=6: npm run db:push"
+  log "INFO" "phase=6: npm run db:push (runs migrations via getDb())"
   if ! ( cd "$DASHBOARD_DIR" && npm run db:push >>"$LOG_FILE" 2>&1 ); then
     fail_install "phase=6: npm run db:push failed"
   fi
 
-  log "INFO" "phase=6: npm run db:seed"
+  # db:seed initializes structural rows only; demo seeding is disabled by default
+  # (DEMO_SEED is left unset, so seed.ts uses the no-demo default on client boxes)
+  log "INFO" "phase=6: npm run db:seed (no demo content injected)"
   if ! ( cd "$DASHBOARD_DIR" && npm run db:seed >>"$LOG_FILE" 2>&1 ); then
     log "WARN" "phase=6: npm run db:seed failed — dashboard will still start but workspace selector may be empty"
   fi
