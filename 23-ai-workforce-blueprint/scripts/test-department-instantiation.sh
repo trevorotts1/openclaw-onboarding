@@ -7,8 +7,9 @@
 # not any stale ~/.openclaw install.
 #
 # Guarantees asserted (the canary's defects, now fixed):
-#   T1. CANONICAL ROLE SET: all 24 canonical roles present as NN-<clean-slug>/
-#       folders, numbered 00..23, slugs matching the role-library exactly.
+#   T1. CANONICAL ROLE SET: all canonical roles present as NN-<clean-slug>/
+#       folders, numbered 00..(N-1), slugs matching the role-library exactly.
+#       N is read LIVE from templates/role-library/_index.json — never hardcoded.
 #   T2. CLEAN SLUGS: NO folder slug carries a decoration (+, ', "new", "vX.Y",
 #       "(...)", em/en dash). (defect #1)
 #   T3. LIBRARY-FILLED HOW-TOs: every role's how-to.md is real library content
@@ -20,7 +21,7 @@
 #   T6. ADDITIVE / ZERO SIBLING WRITES: a pre-existing sibling department is
 #       byte-for-byte untouched. (defect #4)
 #   T7. COUNT AGREEMENT: roster slug count == role-library _index.json
-#       presentations count == folders instantiated == 24. (defect #2)
+#       presentations count == folders instantiated (== N, read live). (defect #2)
 #   T8. BUILD-STATE HONESTY: refresh-build-state-from-index.py records rolesDone
 #       = roles ON DISK and never status:"done" with 0 roles. (defect #5)
 #   T9. GATE ENFORCES GOVERNING-PERSONAS: a department directory that is otherwise
@@ -78,15 +79,18 @@ print('\n'.join(d['departments']['presentations']['roles']))
 CANON_COUNT="$(printf '%s\n' "$CANON_SLUGS" | grep -c .)"
 
 # --- T7 first (count agreement) so the canonical N is established up front ----
-echo "=== T7: count agreement (roster == index == folders == 24) ==="
+# CANON_COUNT is derived LIVE from the role-library _index.json (the disk-truth
+# source), never hardcoded — the presentations dept grows over time, so the test
+# must track the index, not a frozen literal.
+echo "=== T7: count agreement (roster == index == folders == $CANON_COUNT) ==="
 ROSTER_SLUGS="$(grep -E '^\*\*Slug:\*\*' "$ROSTER" | sed 's/\*\*Slug:\*\* *//' | sort)"
 ROSTER_COUNT="$(printf '%s\n' "$ROSTER_SLUGS" | grep -c .)"
 FOLDER_SLUGS="$(for d in "$P"/[0-9][0-9]-*/; do basename "$d" | sed -E 's/^[0-9][0-9]-//'; done | sort)"
 FOLDER_COUNT="$(printf '%s\n' "$FOLDER_SLUGS" | grep -c .)"
-if [ "$ROSTER_COUNT" = "24" ] && [ "$CANON_COUNT" = "24" ] && [ "$FOLDER_COUNT" = "24" ]; then
-  ok "canonical role count = 24 across roster / _index.json / instantiated folders"
+if [ "$ROSTER_COUNT" = "$CANON_COUNT" ] && [ "$FOLDER_COUNT" = "$CANON_COUNT" ]; then
+  ok "canonical role count = $CANON_COUNT across roster / _index.json / instantiated folders"
 else
-  bad "count mismatch: roster=$ROSTER_COUNT index=$CANON_COUNT folders=$FOLDER_COUNT (want 24/24/24)"
+  bad "count mismatch: roster=$ROSTER_COUNT index=$CANON_COUNT folders=$FOLDER_COUNT (want $CANON_COUNT/$CANON_COUNT/$CANON_COUNT)"
 fi
 if [ "$ROSTER_SLUGS" = "$CANON_SLUGS" ]; then
   ok "roster **Slug:** set == role-library _index.json slug set (exact)"
@@ -103,11 +107,12 @@ for slug in $CANON_SLUGS; do
     bad "missing folder for canonical role: $slug"; miss=1
   fi
 done
-[ "$miss" -eq 0 ] && ok "all 24 canonical roles present as NN-<slug>/ folders"
-# numbering 00..23 contiguous
+[ "$miss" -eq 0 ] && ok "all $CANON_COUNT canonical roles present as NN-<slug>/ folders"
+# numbering 00..(N-1) contiguous
+LAST_NUM="$(printf '%02d' "$((CANON_COUNT-1))")"
 NUMS="$(for d in "$P"/[0-9][0-9]-*/; do basename "$d" | cut -c1-2; done | sort)"
-EXPECT_NUMS="$(python3 -c "print('\n'.join('%02d'%i for i in range(24)))" | sort)"
-if [ "$NUMS" = "$EXPECT_NUMS" ]; then ok "folder numbers contiguous 00..23"; else bad "folder numbers not 00..23"; fi
+EXPECT_NUMS="$(python3 -c "print('\n'.join('%02d'%i for i in range($CANON_COUNT)))" | sort)"
+if [ "$NUMS" = "$EXPECT_NUMS" ]; then ok "folder numbers contiguous 00..$LAST_NUM"; else bad "folder numbers not 00..$LAST_NUM"; fi
 
 # --- T2: clean slugs (no decorations) -----------------------------------------
 echo "=== T2: folder slugs carry NO decorations ==="
@@ -129,7 +134,7 @@ for d in "$P"/[0-9][0-9]-*/; do
   if [ "$sz" -lt 3072 ]; then bad "$(basename "$d")/how-to.md only $sz bytes (<3072)"; htfail=1; fi
   if grep -q "PENDING — FILL FROM LIBRARY" "$ht"; then bad "$(basename "$d")/how-to.md is a PENDING stub"; htfail=1; fi
 done
-[ "$htfail" -eq 0 ] && ok "all 24 how-to.md library-filled (smallest: $minname = $minsz bytes)"
+[ "$htfail" -eq 0 ] && ok "all $CANON_COUNT how-to.md library-filled (smallest: $minname = $minsz bytes)"
 
 # --- T4: role identity files --------------------------------------------------
 echo "=== T4: every role folder has IDENTITY.md + SOUL.md ==="
@@ -183,7 +188,7 @@ PYEOF
 )"
 FULL_N="$(printf '%s' "$HONEST" | python3 -c "import sys,json;print(json.load(sys.stdin)['full'])")"
 EMPTY_N="$(printf '%s' "$HONEST" | python3 -c "import sys,json;print(json.load(sys.stdin)['empty'])")"
-if [ "$FULL_N" = "24" ]; then ok "count_roles_on_disk reports 24 for the fully-built dept (disk truth)"; else bad "count_roles_on_disk=$FULL_N for full dept (want 24)"; fi
+if [ "$FULL_N" = "$CANON_COUNT" ]; then ok "count_roles_on_disk reports $CANON_COUNT for the fully-built dept (disk truth)"; else bad "count_roles_on_disk=$FULL_N for full dept (want $CANON_COUNT)"; fi
 if [ "$EMPTY_N" = "0" ]; then ok "count_roles_on_disk reports 0 for an empty dept (no fiction)"; else bad "count_roles_on_disk=$EMPTY_N for empty dept (want 0)"; fi
 
 # --- T9: gate enforces governing-personas.md (FIX 3, 2026-06-17) ---------------

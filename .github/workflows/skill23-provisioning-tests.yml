@@ -1,0 +1,95 @@
+name: Skill-23 provisioning tests
+
+# Wires the five HERMETIC Skill-23 (AI Workforce Blueprint) provisioning tests
+# into CI. These tests prove the department/role provisioning pipeline is correct
+# and drift-free BEFORE a client box is ever built:
+#
+#   1. test-department-floor.sh          — the canonical department floor is
+#                                           computed from disk truth, seeded-fiction
+#                                           bypass closed.
+#   2. test-decline-provenance-guard.sh  — a decline is honored ONLY when provenanced;
+#                                           builder + floor checker stay in lockstep.
+#   3. test-reconciliation-engine.sh     — merge-on-owner-decision only; custom
+#                                           roles/SOPs materialized; SOP boundary honored.
+#   4. test-ws4-departments.sh           — CEO dept emitted first, vertical packs
+#                                           resolve, canonical floor preserved, cross-pack de-dup.
+#   5. test-department-instantiation.sh  — a COMPLETE department (presentations)
+#                                           instantiates every canonical role; the
+#                                           roster == _index.json == folders count
+#                                           agreement is asserted LIVE (this is the
+#                                           test that caught the 26/32 role drop).
+#
+# All five are hermetic: each builds its own mktemp sandbox and pins
+# ROLE_LIBRARY_PATH to the in-repo skill dir, so they exercise the REPO (the
+# source of truth), never a stale ~/.openclaw install, and touch nothing outside
+# their sandbox. They depend only on python3 + shasum (both present on
+# ubuntu-latest) — no git, no jq, no network.
+#
+# Runs on every push to main and on any PR that touches 23-ai-workforce-blueprint/**.
+# Any suite exiting non-zero fails this job and blocks the merge — so a role-library
+# / roster / floor / decline drift can never rot unnoticed again.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/**"
+      - ".github/workflows/skill23-provisioning-tests.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/**"
+      - ".github/workflows/skill23-provisioning-tests.yml"
+
+jobs:
+  skill23-provisioning-tests:
+    name: Skill-23 provisioning tests (5 hermetic suites)
+    runs-on: ubuntu-latest
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run the five provisioning suites (each exit 0 required)
+        shell: bash
+        run: |
+          set -uo pipefail
+          SCRIPTS="23-ai-workforce-blueprint/scripts"
+          SUITES=(
+            test-department-floor.sh
+            test-decline-provenance-guard.sh
+            test-reconciliation-engine.sh
+            test-ws4-departments.sh
+            test-department-instantiation.sh
+          )
+          rc=0
+          for s in "${SUITES[@]}"; do
+            path="$SCRIPTS/$s"
+            echo "======================================================================"
+            echo "RUN: $s"
+            echo "======================================================================"
+            if [ ! -f "$path" ]; then
+              echo "FATAL: $path not found" >&2
+              rc=1
+              continue
+            fi
+            if bash "$path"; then
+              echo "PASS: $s"
+            else
+              echo "FAIL: $s exited non-zero" >&2
+              rc=1
+            fi
+          done
+          echo "======================================================================"
+          if [ "$rc" -eq 0 ]; then
+            echo "ALL 5 SKILL-23 PROVISIONING SUITES PASSED"
+          else
+            echo "ONE OR MORE SKILL-23 PROVISIONING SUITES FAILED" >&2
+          fi
+          exit "$rc"

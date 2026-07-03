@@ -91,7 +91,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Slide Submitter** | Submits all prompts to Kie.ai GPT Image 2 (Phase 4). |
 | **Typography Architect** | Runs as a Phase-0.7/1.5 gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json. |
 | **Prompt Author** | You write each slide's rich image prompt to the 9,000-to-18,000-character density standard (hard floor 9,000. |
-| **Attention Content Strategist** | Attention Content Strategist for  -  the Priority-Shift Architect and Content Provocateur. |
+| **Attention Content Strategist** | Owns the strategic CONTENT SPINE of every deck at Phase P0B-PRIORITY (order 0.2), between intake and the arc. |
 | **Signature Presentation Architect** | Owns the Signature Presentation deck type end to end (Skill 51). |
 
 ### What each specialist is for, with an example request
@@ -193,8 +193,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **Attention Content Strategist**
 
-- *What it is for:* Attention Content Strategist for  -  the Priority-Shift Architect and Content Provocateur.
-- *Example request:* "Have the Attention Content Strategist take this on: Attention Content Strategist for  -  the Priority-Shift Architect and Content Provocateur."
+- *What it is for:* Owns the strategic CONTENT SPINE of every deck at Phase P0B-PRIORITY (order 0.2), between intake and the arc.
+- *Example request:* "Have the Attention Content Strategist take this on: Owns the strategic CONTENT SPINE of every deck at Phase P0B-PRIORITY (order 0.2)."
 
 **Signature Presentation Architect**
 

@@ -742,13 +742,14 @@ fi
 # An interview that did NOT complete is EXEMPT (prover passes, exit 0). A missing
 # prover is a WARN (recorded, never silently green).
 #
-# RED-FIRST CONTRACT (plan §6 / spec §1): the prover only goes fully green once
-# W5/W6/W7 stamp the persona-reflex / full-context-handoff / reporting /
-# platform-facts markers into AGENTS.md. Until then it reports FAIL loud and
-# records the verdict, but only HARD-FAILS the install when ZHE_ENFORCE=1 — so the
-# gate is wired now and becomes blocking by flipping one env var at the "flip green"
-# milestone, without breaking in-flight builds. A hard fail marks the install
-# failed so the resume cron re-proves on the next update (auto-repair).
+# BLOCKING BY DEFAULT (Issue #6, v17.0.11): the RED-first precondition has landed
+# (apply-fleet-standards.sh stamps the persona-reflex / full-context-handoff /
+# reporting / platform-facts markers into AGENTS.md), so this gate now HARD-FAILS
+# the install by default when the prover reports FAIL. The default is safe for
+# fresh builds because an interview that did NOT complete is EXEMPT (prover exits
+# 0). An explicit ZHE_ENFORCE=0 escape hatch is retained to unblock a box while a
+# genuine prover regression is triaged. A hard fail marks the install failed so the
+# resume cron re-proves on the next update (auto-repair).
 log "INFO" "phase=7z zhe-gate: starting"
 ZHE_PROVER=""
 for _cand in \
@@ -770,25 +771,69 @@ else
     log "ERROR" "phase=7z zhe-gate: FAIL — a ZHE step did not land (prove-zhe rc=$ZHE_RC)"
     printf '%s\n' "$ZHE_OUT" | grep -E '\[FAIL\]|OVERALL' | sed 's/^/  [zhe] /'
     [[ -f "$STATE_FILE" ]] && state_set ".zheGateStatus = \"failed\" | .zheGateRc = $ZHE_RC | .zheGateCheckedAt = \"$(now_iso)\""
-    if [[ "${ZHE_ENFORCE:-0}" == "1" ]]; then
-      fail_install "phase=7z: ZERO HUMAN EXPERIENCE acceptance gate failed (ZHE_ENFORCE=1, prove-zhe rc=$ZHE_RC)"
+    # Blocking BY DEFAULT (Issue #6): ZHE_ENFORCE unset behaves as =1. The only way
+    # to reach the FINAL block with a failed ZHE gate is the explicit ZHE_ENFORCE=0
+    # escape hatch — the FINAL fail-closed stamp then surfaces it as done-degraded.
+    if [[ "${ZHE_ENFORCE:-1}" == "1" ]]; then
+      fail_install "phase=7z: ZERO HUMAN EXPERIENCE acceptance gate failed (ZHE_ENFORCE=1 default, prove-zhe rc=$ZHE_RC)"
     else
-      log "WARN" "phase=7z zhe-gate: NOT blocking install (ZHE_ENFORCE!=1, RED-first); resume cron re-proves on next update"
+      log "WARN" "phase=7z zhe-gate: NOT blocking install (ZHE_ENFORCE=0 escape hatch); resume cron re-proves on next update"
     fi
   fi
 fi
 
 # ----------------------------------------------------------------------
-# FINAL — Mark commandCenterStatus = done (always set on reaching here)
+# FINAL — Mark commandCenterStatus (FAIL-CLOSED: done only when the board built)
 # ----------------------------------------------------------------------
-# Even if remote verification failed, we mark done because the dashboard is
-# locally up and the cron resume layer will retry the tunnel + verification.
-# The state captures exactly what worked so the next pass is informed.
+# Issue #6 fail-closed stamping: a remote-verification miss is still "done"
+# (dashboard is locally up; the cron resume layer retries the tunnel). BUT a box
+# whose REQUIRED board-provisioning sub-phases did not land must NOT report "done"
+# — that is the "no false done" violation. Required sub-phases each record
+# true | false | "script-missing":
+#   6b .commandCenterWorkspacesSeeded       (empty board otherwise)
+#   6c .commandCenterDepartmentsSynced      (dashboard shows stale/empty depts)
+#   6d .commandCenterMdContentSynced        (agents.*_md columns stay NULL)
+#   6e .commandCenterDashboardContentSeeded (Kanban renders empty columns)
+# 6f (kpi rollup) is DELIBERATELY EXCLUDED: rc 1/2 is EXPECTED on minimal boxes
+# (WARN-only by design), so it must never withhold "done". We also fold in a
+# FAILED ZHE acceptance gate (only reachable here via the ZHE_ENFORCE=0 escape
+# hatch — the default hard-fails at Phase 7z). When any required sub-phase did not
+# reach true we stamp commandCenterStatus="done-degraded" (never a hard install
+# fail — exit 0, board is locally up) so the resume cron revisits it: run-closeout
+# step 1 only skips when status == "done", so done-degraded re-invokes
+# run-full-install on the next pass (idempotent auto-repair) instead of falsely
+# reporting done.
+FINAL_STATUS="done"
 if [[ -f "$STATE_FILE" ]]; then
   if [[ -z "$(state_get '.commandCenterUrl')" || "$(state_get '.commandCenterUrl')" == "null" ]]; then
     state_set ".commandCenterUrl = \"http://127.0.0.1:$DASHBOARD_PORT/\""
   fi
-  state_set ".commandCenterStatus = \"done\" | .commandCenterCompletedAt = \"$(now_iso)\""
+  # A required sub-phase counts as degraded only when its key is PRESENT and not
+  # `true` (false or "script-missing"). An absent key (older state) is not treated
+  # as a regression. jq's `//` collapses false→empty, so this membership test is
+  # done in one jq pass rather than via state_get.
+  DEGRADED_PHASES="$(jq -r '
+    [ {k:"workspacesSeeded(6b)",       v:.commandCenterWorkspacesSeeded},
+      {k:"departmentsSynced(6c)",      v:.commandCenterDepartmentsSynced},
+      {k:"mdContentSynced(6d)",        v:.commandCenterMdContentSynced},
+      {k:"dashboardContentSeeded(6e)", v:.commandCenterDashboardContentSeeded} ]
+    | map(select(.v != null and .v != true) | .k) | join(", ")
+  ' "$STATE_FILE" 2>/dev/null || echo "")"
+  if [[ "$(state_get '.zheGateStatus')" == "failed" ]]; then
+    DEGRADED_PHASES="${DEGRADED_PHASES:+$DEGRADED_PHASES, }zheGate(failed)"
+  fi
+
+  if [[ -n "$DEGRADED_PHASES" ]]; then
+    FINAL_STATUS="done-degraded"
+    # Operator-only surface (WE MOVE IN SILENCE — never client). The board is up but
+    # incomplete; do not claim done.
+    log "WARN" "FINAL: Command Center provisioning DEGRADED — withholding 'done'. Incomplete/failed required sub-phases: $DEGRADED_PHASES. Stamping commandCenterStatus=done-degraded so the resume cron revisits (dashboard is locally up on :$DASHBOARD_PORT)."
+    # now_iso() is a fixed-format literal (safe to interpolate); the free-form phase
+    # list is bound via --arg (state_set_arg) so it can never corrupt/inject state.
+    state_set_arg ".commandCenterStatus = \"done-degraded\" | .commandCenterDegradedPhases = \$val | .commandCenterCompletedAt = \"$(now_iso)\"" "$DEGRADED_PHASES"
+  else
+    state_set ".commandCenterStatus = \"done\" | .commandCenterDegradedPhases = null | .commandCenterCompletedAt = \"$(now_iso)\""
+  fi
 fi
-log "INFO" "run-full-install complete: update_only=$UPDATE_ONLY commandCenterStatus=done local=$LOCAL_OK remote=$REMOTE_OK"
+log "INFO" "run-full-install complete: update_only=$UPDATE_ONLY commandCenterStatus=$FINAL_STATUS local=$LOCAL_OK remote=$REMOTE_OK"
 exit 0
