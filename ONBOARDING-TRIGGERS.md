@@ -40,10 +40,10 @@ Pick the one block below that matches your exact situation. Each block is self-c
 | VPS / Hostinger / cloud server | Update | Terminal | [Block 7](#block-7--vps-update-via-terminal) |
 | VPS / Hostinger / cloud server | Update | Telegram | [Block 8](#block-8--vps-update-via-telegram) |
 
-⭐ = Standard path. Every client arrives with a baseline OpenClaw + Telegram agent already configured; Block 2 (Mac) or Block 4 (VPS) is what lifts that baseline to the full 36-skill package. Terminal blocks (1, 3) are for self-service or bootstrap scenarios.
+⭐ = Standard path. Every client arrives with a baseline OpenClaw + Telegram agent already configured; Block 2 (Mac) or Block 4 (VPS) is what lifts that baseline to the full 52-skill package. Terminal blocks (1, 3) are for self-service or bootstrap scenarios.
 
 **Not sure if it's a full onboarding or an update?**
-- If this is a new client being lifted from the baseline OpenClaw + Telegram setup to the full 36-skill onboarding package, it's a **full onboarding** (Blocks 1–4).
+- If this is a new client being lifted from the baseline OpenClaw + Telegram setup to the full 52-skill onboarding package, it's a **full onboarding** (Blocks 1–4).
 - If they already have the full package and you just want the latest skills + bug fixes, it's an **update** (Blocks 5–8).
 
 **Not sure if your machine is a Mac or a VPS?**
@@ -54,7 +54,7 @@ Pick the one block below that matches your exact situation. Each block is self-c
 
 ## What actually gets installed
 
-A fresh install lays down **44 numbered skill folders** (41 active, 3 archived) plus the agent runtime, memory architecture, and persona system. The headline pieces:
+A fresh install lays down **57 numbered skill folders** (52 active, 5 archived) plus the agent runtime, memory architecture, and persona system. The headline pieces:
 
 - **Skill 01 — Teach Yourself Protocol** — governs how the agent stores new knowledge
 - **Skill 02 — Back Yourself Up Protocol** — config + secret backups before any change
@@ -87,7 +87,7 @@ If you trigger a fresh install or update while your daily quota is nearly burned
 ## BLOCK 1 — Mac, Full Onboarding, via Terminal
 
 ### What this does
-Installs the full OpenClaw onboarding package on your Mac: all 36 skills, your agent setup, memory architecture, persona system, GHL MCPs — everything. About 5–15 minutes depending on internet speed.
+Installs the full OpenClaw onboarding package on your Mac: all 52 skills, your agent setup, memory architecture, persona system, GHL MCPs — everything. About 5–15 minutes depending on internet speed.
 
 ### Before you start
 - Make sure your Mac is connected to the internet
@@ -175,7 +175,7 @@ interrupted install finishes itself. To see the live truth, ask your agent:
 ## BLOCK 2 — Mac, Full Onboarding, via Telegram
 
 ### What this does
-Tells your existing OpenClaw Telegram agent to run the full onboarding package install on your Mac for you. You don't open Terminal yourself — the agent does it via its shell-exec capability. End result: all 36 skills, the full memory architecture, personas, and tooling are deployed on top of your baseline OpenClaw + Telegram setup. This is the **standard onboarding path** — clients arrive with a minimal OpenClaw + Telegram bot already configured, and this block lifts them to the full package.
+Tells your existing OpenClaw Telegram agent to run the full onboarding package install on your Mac for you. You don't open Terminal yourself — the agent does it via its shell-exec capability. End result: all 52 skills, the full memory architecture, personas, and tooling are deployed on top of your baseline OpenClaw + Telegram setup. This is the **standard onboarding path** — clients arrive with a minimal OpenClaw + Telegram bot already configured, and this block lifts them to the full package.
 
 ### Before you start
 - You have an existing OpenClaw + Telegram agent you currently chat with (the standard pre-onboarding baseline)
@@ -258,14 +258,14 @@ RULE 22 — Confirm you understand by replying with "Got it — starting your in
 ### What you'll see while it runs
 
 - Your agent will reply confirming it understands. It will say "Got it — starting your install" and a short summary.
-- Every few minutes you'll get a progress update: *"5 of 36 skills installed,"* *"Phase A complete, moving to Phase B,"* *"Running QC on Skill 31,"* etc.
+- Every few minutes you'll get a progress update: *"5 of 52 skills installed,"* *"Phase A complete, moving to Phase B,"* *"Running QC on Skill 31,"* etc.
 - If the agent has a question for you (per RULE 16), it will stop and ask in plain English. Answer the question — the agent will not move on until you respond.
 
 ### Success looks like this
 
 A final summary message from your agent that looks roughly like:
 
-> *"Install complete. 33 skills active (3 archived skills skipped as expected). Memory: 8 layers verified. Personas: 40 available. Anything that needs my attention: nothing — everything passed QC."*
+> *"Install complete. 52 skills active (5 archived skills skipped as expected). Memory: 8 layers verified. Personas: 40 available. Anything that needs my attention: nothing — everything passed QC."*
 
 ### If something looks wrong
 
@@ -343,7 +343,7 @@ In Telegram, ask:
 ## BLOCK 4 — VPS, Full Onboarding, via Telegram
 
 ### What this does
-Your VPS's own OpenClaw agent receives a Telegram message from you and runs the full onboarding package install locally on the VPS. You never SSH in. End result: all 36 skills, the full memory architecture, personas, and tooling are deployed on top of your VPS's baseline OpenClaw + Telegram setup. This is the **standard onboarding path for VPS clients**.
+Your VPS's own OpenClaw agent receives a Telegram message from you and runs the full onboarding package install locally on the VPS. You never SSH in. End result: all 52 skills, the full memory architecture, personas, and tooling are deployed on top of your VPS's baseline OpenClaw + Telegram setup. This is the **standard onboarding path for VPS clients**.
 
 ### Before you start
 - Your VPS has the baseline OpenClaw + Telegram agent already running (standard pre-onboarding baseline)

@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v17.0.0"
+ONBOARDING_VERSION="v17.0.1"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -2960,7 +2960,7 @@ done
 
 # v10.10.0 P0-007: Trigger agent execution of Start Here.md, not just copy.
 # The bash install.sh has done its bootstrap. The actual onboarding work
-# (read 39 skills, wave-install, run interview, build ZHC, etc.) is the
+# (read 52 skills, wave-install, run interview, build ZHC, etc.) is the
 # agent's job — driven by Start Here.md. We've copied the file; we now
 # need to MAKE SURE the agent reads it. Three independent channels (the
 # triple-fire in fire_install_kickoff_triplet at end of install.sh) all
