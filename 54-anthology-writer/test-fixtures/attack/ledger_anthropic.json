@@ -1,0 +1,10 @@
+{
+  "skill": "anthology-writer",
+  "contributor": "Marcus Bell",
+  "rewrite_count": 0,
+  "note": "SEEDED DEFECT — the HEAVY-WRITER tier resolved to an Anthropic id. aw_build_check.py must hard-fail this (AF-AW-ANTHROPIC). This fixture is deliberately excluded from verify.sh's static no-Anthropic tree scan.",
+  "stages": [
+    {"stage_id": "aw-08-create-outline", "tier": "MID-WRITER", "model": "openrouter/google/gemini-2.5-pro"},
+    {"stage_id": "aw-09-write-chapter", "tier": "HEAVY-WRITER", "model": "anthropic/claude-opus-4"}
+  ]
+}

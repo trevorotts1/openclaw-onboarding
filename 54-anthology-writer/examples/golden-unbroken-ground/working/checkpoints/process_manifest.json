@@ -1,0 +1,39 @@
+{
+  "skill": "anthology-writer",
+  "run_dir": "examples/golden-unbroken-ground",
+  "phases": [
+    {
+      "id": "P0-INTAKE",
+      "passed": true
+    },
+    {
+      "id": "P1-FIDELITY",
+      "passed": true
+    },
+    {
+      "id": "P2-TONE-AUTHOR",
+      "passed": true
+    },
+    {
+      "id": "P3-TONE-QC",
+      "passed": true
+    },
+    {
+      "id": "P4-TITLE-LOCK",
+      "passed": true
+    },
+    {
+      "id": "P5-CHAPTER-AUTHOR",
+      "passed": true
+    },
+    {
+      "id": "P6-CHAPTER-QC",
+      "passed": true
+    },
+    {
+      "id": "P7-DELIVER",
+      "passed": true
+    }
+  ],
+  "failed_phase": null
+}

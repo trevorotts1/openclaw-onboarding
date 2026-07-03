@@ -1,0 +1,56 @@
+/* ============================================================================
+ * 53-book-writer/assets/print-style.css
+ * The pinned print stylesheet for the Book Writer manuscript + 30-Day Challenge.
+ * Extracts the source "Senior Document Formatting Specialist" 50+-readability
+ * mandate (ANALYSIS §1.3) into enforceable CSS so the readability contract
+ * survives as code instead of a per-run LLM call. Deterministic: same input ->
+ * same layout. Referenced by the PDF renderer (pandoc + weasyprint toolchain).
+ * ========================================================================== */
+
+@page {
+  size: 6in 9in;              /* trade paperback trim */
+  margin: 0.85in 0.8in;
+  @bottom-center { content: counter(page); font-size: 11pt; color: #444; }
+}
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  font-family: "Georgia", "Iowan Old Style", "Palatino Linotype", serif;
+  font-size: 16px;           /* >= 16px base — 50+ readability floor */
+  line-height: 1.8;          /* generous leading */
+  color: #1a1a1a;
+  max-width: 40em;
+  margin: 0 auto;
+  hyphens: auto;
+  text-rendering: optimizeLegibility;
+}
+
+/* clear hierarchy */
+h1 { font-size: 2.1em; line-height: 1.25; margin: 2.2em 0 0.6em; page-break-before: always; }
+h1.title-page { page-break-before: avoid; text-align: center; margin-top: 3em; }
+h2 { font-size: 1.5em; line-height: 1.3; margin: 1.8em 0 0.5em; }
+h3 { font-size: 1.2em; margin: 1.4em 0 0.4em; }
+h1 + .subtitle { text-align: center; font-size: 1.2em; color: #555; font-style: italic; }
+
+/* body text — roomy, unhurried */
+p { margin: 0 0 1.1em; text-align: justify; orphans: 2; widows: 2; }
+p + p { text-indent: 1.4em; margin-top: -0.2em; }   /* book-style paragraph indents */
+
+/* each chapter starts on a fresh page */
+.chapter { page-break-before: always; }
+
+/* lists + callouts with breathing room */
+ul, ol { margin: 0 0 1.1em 1.6em; }
+li { margin-bottom: 0.5em; }
+blockquote {
+  margin: 1.4em 1.2em; padding: 0.2em 1em;
+  border-left: 3px solid #bbb; color: #333; font-style: italic;
+}
+
+/* 30-Day Challenge day-sections — scannable */
+.day-section { page-break-inside: avoid; margin-bottom: 1.6em; }
+.day-section h2 { color: #2a2a2a; border-bottom: 1px solid #e2e2e2; padding-bottom: 0.2em; }
+
+/* never let a heading dangle at the foot of a page */
+h1, h2, h3 { page-break-after: avoid; }

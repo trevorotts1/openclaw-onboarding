@@ -1,0 +1,19 @@
+{
+  "ProductName": "The Quiet Authority System",
+  "BrandName": "Marcus Halloway",
+  "ShortMDM": "A 30-day method that turns a first-time technical manager from the team bottleneck into a leader who multiplies everyone around them.",
+  "BookTitle": "The Quiet Authority",
+  "BookSubtitle": "How the Best New Leaders Trade Control for Trust",
+  "outcomes": [
+    "From Star Performer to Team Multiplier",
+    "Trust That Runs the Team When You're Not in the Room",
+    "A Feedback Culture Without Fear",
+    "A Self-Sustaining System That Grows Leaders"
+  ],
+  "phases": [
+    {"title": "Unlearn the Star", "outcome": "From Star Performer to Team Multiplier", "chapters": ["The Promotion That Broke You", "Why Your Old Superpower Now Fails", "The Myth of the Indispensable Leader"]},
+    {"title": "Lead Through Others", "outcome": "Trust That Runs the Team When You're Not in the Room", "chapters": ["Listening Louder Than You Speak", "Delegation Is Not Abandonment", "The Trust Equation"]},
+    {"title": "Build the System", "outcome": "A Feedback Culture Without Fear", "chapters": ["Feedback Without Fear", "Running Meetings People Don't Dread", "Protecting Your Team's Focus"]},
+    {"title": "Multiply Yourself", "outcome": "A Self-Sustaining System That Grows Leaders", "chapters": ["When to Step In, When to Step Back", "Growing Leaders, Not Followers", "The Legacy of Quiet Authority"]}
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "schema": "anthology-writer-process-certificate-v1",
+  "anthology_title": "Unbroken Ground: Voices from the Second Start",
+  "contributor": "Marcus Bell",
+  "slug": "unbroken-ground-voices-from-the-second-start-marcus-bell",
+  "measured_chapter_words": 2118,
+  "measured_tone_words": 3058,
+  "declared_phases": [
+    "P0-INTAKE",
+    "P1-FIDELITY",
+    "P2-TONE-AUTHOR",
+    "P3-TONE-QC",
+    "P4-TITLE-LOCK",
+    "P5-CHAPTER-AUTHOR",
+    "P6-CHAPTER-QC",
+    "P7-DELIVER"
+  ],
+  "verified_phases": 8,
+  "all_phases_pass": true,
+  "runtime": "local-only (no n8n / Airtable / Google Drive / Slack / Gmail); client's own NON-Anthropic providers",
+  "steps": [
+    {
+      "phase_id": "P0-INTAKE",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P1-FIDELITY",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P2-TONE-AUTHOR",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P3-TONE-QC",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P4-TITLE-LOCK",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P5-CHAPTER-AUTHOR",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P6-CHAPTER-QC",
+      "disposition": "verified",
+      "ok": true
+    },
+    {
+      "phase_id": "P7-DELIVER",
+      "disposition": "verified",
+      "ok": true
+    }
+  ],
+  "certificate_sha": "6a274963d75c04ae50d6e15c1d4395cab667cca58403c7e01cc7ad0e5dae5f70",
+  "certified_at": "2026-07-02T18:37:22.074805+00:00"
+}

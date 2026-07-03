@@ -1,0 +1,109 @@
+{
+  "manifest_version": 1,
+  "skill": "anthology-writer",
+  "skill_number": 54,
+  "skill_version": "1.0.0",
+  "shared_tone_core": "shared-utils/tone-writing-core",
+  "$schema_note": "SINGLE SOURCE OF TRUTH for the Anthology Writer pipeline. The deterministic orchestrator run_anthology.py walks these phases IN ORDER (P0->P7) with NO phase skips, one contributor at a time. Each phase declares its produces_artifact, its _chk_* preflight symbol, and its AF-AW-* gate codes. Every AF-AW-* code below is enforced by a fail-closed, model-free, stdlib-only prover in scripts/; py_symbol names the function that decides it. Editing this file is step (i) of any Anthology change: add the gate, add the AF code here with its trigger, add the checker, add the golden+attack fixture.",
+  "design_law": "Enforcement, not description. Bands and counts are measured on the STRIPPED text of the artifact; a model's self-reported word count is NEVER trusted. Client runtime uses the CLIENT's own provider chain (assets/model-map.template.json) resolved to the strongest NON-Anthropic model per tier — NEVER Anthropic/claude-* ids or operator keys (build-fix: everywhere the source said 'OpenRouter primary'/anthropic-* is implemented as 'the client's strongest NON-Anthropic model'). The deterministic gates are provider-neutral Python that run identically everywhere. A client-exact override wins over a default band and is recorded on the certificate.",
+  "shared_tone_core_contract": "This skill bakes a lockstep copy of shared-utils/tone-writing-core/prompts/04..08 into prompts/ and proves it with scripts/verify_tone_core_sync.py at build/CI time. 54 is a SEPARATE skill sharing the ONE tone core (Trevor's standing decision), sibling of 53-book-writer.",
+  "source_prompt_pins": {
+    "assets/prompts/06-suggested-titles.md": "8961cfe40719301c9002ce98ad2a79b3475be9609dad92a337a61fb55bdf1bfc",
+    "assets/prompts/07-book-blurb.md": "9179eb1866d2e565e5052ed225dd6dd42d28f40481ddd1a5b715770dd9df411f",
+    "assets/prompts/08-create-outline.md": "5a944eafea3c9d0dca504f05077ccfe9c1cc1664a8af226ffbb351a077c2335d",
+    "assets/prompts/09-write-chapter.md": "340fd1be45a529529142f80123c8d18201bdff9b04ff80671d9efa6096af6cc7",
+    "assets/prompts/10-chapter-rewrite.md": "56c4bf76d09a7169775f1123e043df7b5b420ccddc78c164adfc2eba11983a89"
+  },
+  "tiers": {
+    "HEAVY-WRITER": "aw-09 chapter + aw-10 rewrite (client's strongest NON-Anthropic long-form model)",
+    "MID-WRITER": "aw-01..08 tone/title/blurb/outline (client's mid NON-Anthropic model)",
+    "RESEARCHER": "optional client web-search tool (degraded:search receipt if absent)",
+    "IMAGE": "optional client image provider (degraded:image receipt if absent)"
+  },
+  "phases": [
+    {
+      "id": "P0-INTAKE",
+      "order": 0,
+      "name": "Intake (4 required fields, no credential-shaped keys)",
+      "produces_artifact": "working/intake.json",
+      "preflight": {"required": true, "checker": "_chk_intake", "label": "working/intake.json present and prove_aw_intake.py PASS — anthology_title / first_name / last_name / chapter_premise all present and non-whitespace; no credential-shaped intake key."},
+      "gate_codes": ["AF-AW-INTAKE-MISSING", "AF-AW-INTAKE-CREDENTIAL"]
+    },
+    {
+      "id": "P1-FIDELITY",
+      "order": 1,
+      "name": "Prompt fidelity + tone-core lockstep",
+      "produces_artifact": "assets/prompts/*.md (pinned) + prompts/04..08 (tone-core lockstep)",
+      "preflight": {"required": true, "checker": "_chk_fidelity", "label": "prove_aw_fidelity.py PASS (sha256 of the 5 baked authoring prompts == manifest pins) AND verify_tone_core_sync.py PASS (baked tone stages byte-identical to shared-utils/tone-writing-core)."},
+      "gate_codes": ["AF-AW-PROMPT-DRIFT", "AF-AW-TONE-DRIFT"]
+    },
+    {
+      "id": "P2-TONE-AUTHOR",
+      "order": 2,
+      "name": "Blended tone authoring (aw-01..05, MID-WRITER)",
+      "produces_artifact": "working/tone-doc.md",
+      "preflight": {"required": true, "checker": "_chk_tone_authored", "label": "working/tone-doc.md present — 'The {First} {Last} Tone' synthesized from 4 tone-style influence analyses on the client's MID-WRITER tier."},
+      "gate_codes": []
+    },
+    {
+      "id": "P3-TONE-QC",
+      "order": 3,
+      "name": "Tone QC (4 influences + stripped-word floor)",
+      "produces_artifact": "working/qc/tone_qc_report.json",
+      "preflight": {"required": true, "checker": "_chk_tone_qc", "label": "prove_aw_tone.py PASS over working/tone-doc.md — exactly 4 influence analyses AND >= 3,000 stripped words (tone-core R7)."},
+      "gate_codes": ["AF-AW-TONE-4", "AF-AW-TONE-FLOOR"]
+    },
+    {
+      "id": "P4-TITLE-LOCK",
+      "order": 4,
+      "name": "Title/subtitle lock (aw-06, MID-WRITER)",
+      "produces_artifact": "working/title.json",
+      "preflight": {"required": true, "checker": "_chk_title_locked", "label": "working/title.json present with non-empty title + subtitle — the contributor-LOCKED identity carried byte-exact downstream."},
+      "gate_codes": ["AF-AW-TITLE-MISSING"]
+    },
+    {
+      "id": "P5-CHAPTER-AUTHOR",
+      "order": 5,
+      "name": "Outline + chapter authoring (aw-08 outline, aw-09 chapter, HEAVY-WRITER)",
+      "produces_artifact": "working/chapter.md (+ working/outline.md)",
+      "preflight": {"required": true, "checker": "_chk_chapter_authored", "label": "working/outline.md AND working/chapter.md present (the one 2,000-3,500-word chapter for this contributor, authored on the client's HEAVY-WRITER tier)."},
+      "gate_codes": []
+    },
+    {
+      "id": "P6-CHAPTER-QC",
+      "order": 6,
+      "name": "Chapter QC (band + block + placeholder + title-lock + story placement + no-Anthropic)",
+      "produces_artifact": "working/qc/chapter_qc_report.json",
+      "preflight": {"required": true, "checker": "_chk_chapter_qc", "label": "prove_aw_chapter.py PASS over working/chapter.md (--mode chapter) AND working/outline.md (--mode outline) with --title + --intake, AND aw_build_check.py PASS over working/RUN-LEDGER.json. ANY AF-AW-* violation blocks advance; a bounded rework loop (<=2, verifier != author) re-authors then re-proves."},
+      "gate_codes": ["AF-AW-CHAP-LEN", "AF-AW-VERIFY-BLOCK", "AF-AW-PLACEHOLDER", "AF-AW-TITLE-LOCK", "AF-AW-STORIES", "AF-AW-ANTHROPIC", "AF-AW-REWRITE-BUDGET"]
+    },
+    {
+      "id": "P7-DELIVER",
+      "order": 7,
+      "name": "Deliver (labeled local bundle + certificate on a full pass)",
+      "produces_artifact": "delivery/PROCESS-CERTIFICATE.json",
+      "preflight": {"required": true, "checker": "_chk_deliver", "label": "the labeled deliverable bundle is assembled locally (~/Downloads/Anthology-<slug>-<MM-DD-YYYY>/); NO n8n / Airtable / Google Drive / Slack / Gmail. A signed process certificate is issued only after a full P0->P6 pass. Any push is per-client config through the client's own gateway, client-silent by default."},
+      "gate_codes": ["AF-AW-STAGE-SKIPPED", "AF-AW-PROCESS-INTEGRITY"]
+    }
+  ],
+  "autofails": [
+    {"code": "AF-AW-INTAKE-MISSING", "stage": "P0", "level": "intake", "trigger": "any of the 4 required fields (anthology_title / first_name / last_name / chapter_premise) missing, empty, or whitespace", "enforced_by": "prove_aw_intake", "py_symbol": "evaluate"},
+    {"code": "AF-AW-INTAKE-CREDENTIAL", "stage": "P0", "level": "intake", "trigger": "an intake key looks like a secret (api_key, token, openrouter, anthropic, password, ...) — provider keys never ride intake", "enforced_by": "prove_aw_intake", "py_symbol": "evaluate"},
+    {"code": "AF-AW-PROMPT-DRIFT", "stage": "P1", "level": "assets", "trigger": "sha256 of a baked authoring prompt != its manifest pin, an asset is missing, or an unpinned prompt file appeared", "enforced_by": "prove_aw_fidelity", "py_symbol": "evaluate"},
+    {"code": "AF-AW-TONE-DRIFT", "stage": "P1", "level": "assets", "trigger": "a baked tone stage (prompts/04..08) drifts from shared-utils/tone-writing-core", "enforced_by": "verify_tone_core_sync", "py_symbol": "main"},
+    {"code": "AF-AW-TONE-4", "stage": "P3", "level": "tone", "trigger": "the blended tone doc does not reference exactly 4 distinct tone-style influence analyses (indices 1..4)", "enforced_by": "prove_aw_tone", "py_symbol": "evaluate"},
+    {"code": "AF-AW-TONE-FLOOR", "stage": "P3", "level": "tone", "trigger": "measured stripped word count of the tone doc below the 3,000 floor (tone-core R7; padding inert)", "enforced_by": "prove_aw_tone", "py_symbol": "evaluate"},
+    {"code": "AF-AW-TITLE-MISSING", "stage": "P4", "level": "title", "trigger": "working/title.json missing or its title/subtitle empty", "enforced_by": "run_anthology", "py_symbol": "_chk_title_locked"},
+    {"code": "AF-AW-CHAP-LEN", "stage": "P6", "level": "chapter", "trigger": "measured stripped word count of the chapter outside 2,000-3,500 (self-report ignored; whitespace padding inert)", "enforced_by": "prove_aw_chapter", "py_symbol": "evaluate"},
+    {"code": "AF-AW-VERIFY-BLOCK", "stage": "P6", "level": "chapter", "trigger": "the mandatory COMPLETION VERIFICATION block is absent from the chapter", "enforced_by": "prove_aw_chapter", "py_symbol": "evaluate"},
+    {"code": "AF-AW-PLACEHOLDER", "stage": "P6", "level": "chapter", "trigger": "an unresolved {{..}} / [[..]] / <ALLCAPS> placeholder survived into a finalized artifact", "enforced_by": "prove_aw_chapter", "py_symbol": "evaluate"},
+    {"code": "AF-AW-TITLE-LOCK", "stage": "P6", "level": "chapter", "trigger": "the locked title and/or subtitle is not carried byte-exact into the outline and chapter", "enforced_by": "prove_aw_chapter", "py_symbol": "evaluate"},
+    {"code": "AF-AW-STORIES", "stage": "P6", "level": "chapter", "trigger": "a non-N/A personal-story anchor is not placed in the outline and chapter", "enforced_by": "prove_aw_chapter", "py_symbol": "evaluate"},
+    {"code": "AF-AW-ANTHROPIC", "stage": "P6", "level": "run", "trigger": "a model id in RUN-LEDGER.json matches /anthropic|claude/i, or an operator credential name is present in the run env (G-NOANTHROPIC build-fix)", "enforced_by": "aw_build_check", "py_symbol": "evaluate"},
+    {"code": "AF-AW-REWRITE-BUDGET", "stage": "P6", "level": "run", "trigger": "rewrite_count exceeds the max (2) — runaway rework", "enforced_by": "aw_build_check", "py_symbol": "evaluate"},
+    {"code": "AF-AW-STAGE-SKIPPED", "stage": "orchestrator", "level": "run", "trigger": "a phase was attempted out of order or the certificate chain is broken", "enforced_by": "run_anthology", "py_symbol": "run"},
+    {"code": "AF-AW-PROCESS-INTEGRITY", "stage": "P7", "level": "run", "trigger": "a certificate was requested without a full P0->P6 pass", "enforced_by": "run_anthology", "py_symbol": "_write_certificate"},
+    {"code": "AF-AW-ENTRY-BYPASS", "stage": "entry", "level": "run-dir", "trigger": "a hand-rolled uploader/notifier (Google Drive / Slack / Gmail / n8n webhook / Airtable) is present in the run directory, bypassing the local-labeled-deliverable handoff", "enforced_by": "anthology-entry", "py_symbol": "bypass_scan"},
+    {"code": "AF-AW-HASH-PIN", "stage": "entry", "level": "enforcement", "trigger": "the enforcement-set content hash does not match the pinned head (ENGINE-PIN.sha256, when present)", "enforced_by": "anthology-entry", "py_symbol": "version_hash_pin"}
+  ]
+}

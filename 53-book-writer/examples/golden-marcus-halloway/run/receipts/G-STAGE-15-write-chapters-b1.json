@@ -1,0 +1,10 @@
+{
+  "stage": "15-write-chapters-b1",
+  "batch": 1,
+  "chapters_written": [
+    1,
+    2,
+    3
+  ],
+  "prior_chapters_embedded": {}
+}

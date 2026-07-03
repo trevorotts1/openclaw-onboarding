@@ -98,7 +98,10 @@ CLIENT_NAMES=(
   "\bKofi\b"
   "\bEvelyn\b"
   "\bSheila\b"
-  "\bLyric\b"
+  # "\bLyric\b" retired per the distinctiveness rule above: false-positives on the
+  # common noun "lyric" (e.g. Skill 54's "working-class lyric" / "Springsteen's lyric
+  # language" tone-influence fixtures). Client protection preserved via the full name
+  # "Lyric Hawkins" (line ~75).
   "\bSonatta\b"
   "\bTalaya\b"
   "\bCassandra\b"
