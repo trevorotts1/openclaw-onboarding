@@ -359,6 +359,42 @@ DEPT_DOMAIN_TAGS = {
     "personal-assistant": ["communication", "productivity-systems", "operations"],
     "general-task": ["leadership", "strategy-innovation", "productivity-systems"],
     "project-architecture-office": ["strategy-innovation", "leadership", "operations"],
+    # ── CANONICAL-SLUG COVERAGE SYNC (2026-07-03) ───────────────────────────
+    # DEPT_DOMAIN_TAGS is looked up with the CANONICAL dept slug: main() runs
+    # args.department through canonical_dept_slug() BEFORE Stage B does
+    # `raw_dept_tags = DEPT_DOMAIN_TAGS.get(department, [])`. The 34 live
+    # departments in templates/role-library/_index.json canonicalise to 33
+    # slugs; the entries ABOVE covered only 15 of them, so 18 live depts —
+    # INCLUDING presentations + social-media, the exact depts Skills 51/57 route
+    # to — fell to raw_dept_tags=[] and Stage B lost dept pre-qualification.
+    # The tag lists below MIRROR build-workforce.py generate_persona_matrix /
+    # create_governing_personas_md `dept_to_domains` EXACTLY (keyed on the
+    # canonical slug), so the matrix (pool authoring) and this selector (Stage B
+    # filter) pre-qualify the SAME persona pool per slug — the mirror invariant
+    # in the "engineering" note above. The FIVE depts build-workforce.py does
+    # NOT key (client-experience-booking, founding-member-concierge,
+    # launch-operations, master-orchestrator, product-production) mirror
+    # build-workforce's OWN dept_to_domains.get(dept, ["leadership"]) fallback;
+    # to enrich them, add them to build-workforce.py dept_to_domains FIRST, then
+    # mirror here, so the two sides never re-diverge.
+    "account-management": ["communication", "coaching", "strategy-innovation"],
+    "billing-finance": ["finance", "operations"],
+    "bugs": ["productivity-systems", "strategy-innovation", "operations"],
+    "client-experience-booking": ["leadership"],
+    "crm": ["sales", "communication", "operations"],
+    "founding-member-concierge": ["leadership"],
+    "healer": ["coaching", "personal-development", "mindset"],
+    "launch-operations": ["leadership"],
+    "listings": ["marketing", "sales", "copywriting"],
+    "logistics-fulfillment": ["operations", "productivity-systems"],
+    "master-orchestrator": ["leadership"],
+    "openclaw-maintenance": ["productivity-systems", "strategy-innovation", "operations"],
+    "podcast": ["copywriting", "communication", "marketing"],
+    "presentations": ["copywriting", "marketing", "communication"],
+    "product-production": ["leadership"],
+    "quality-control": ["productivity-systems", "operations", "strategy-innovation"],
+    "scheduling-dispatch": ["operations", "productivity-systems", "leadership"],
+    "social-media": ["marketing", "communication", "copywriting"],
 }
 
 # Maps infer-task-category.py category slugs → set of persona domain tags.
@@ -2134,8 +2170,11 @@ def main():
                         help="(--combined) force deterministic heuristic "
                              "decomposition (no LLM call).")
     parser.add_argument("--no-record", action="store_true",
-                        help="(--combined) do not write per-sub-task selections "
-                             "or the task_subtask_persona rows.")
+                        help="Dry-run / no-persist: skip ALL DB + selection-log writes "
+                             "(persona_assignment, persona_selection_log, and the "
+                             "selection-log .md) for this run. Applies to the single-"
+                             "select (fresh/sticky/hybrid) paths AND --combined. Use for "
+                             "hermetic QC so a test run never mutates a live persona DB.")
     # record-completion mode args
     parser.add_argument("--task-id", help="(record-completion) task identifier")
     parser.add_argument("--persona-id", help="(record-completion) persona that governed the task")
@@ -2287,10 +2326,20 @@ def main():
             "score": sticky["last_score"],
             "interaction_mode": sticky["persona_mode"] or mode,
             "task_category": task_category,
+            # OUTPUT CONTRACT (PRD 1.2 §3): every selection path MUST emit "funnel"
+            # with the canonical pool/category/semantic keys. A sticky pick bypasses
+            # the pre-scoring funnel entirely (the assignment was resolved from the
+            # persona_assignment table, not re-scored), so the three stage counts are
+            # 0 and "sticky": True marks WHY they are zero. Without this key the
+            # sticky path violated the documented contract and turned test-persona-
+            # selector.sh RED (A6 FAIL: "Non-numeric funnel count") on every live box.
+            "funnel": {"pool": 0, "category": 0, "semantic": 0, "sticky": True},
+            "sticky": True,
             "breakdown": {"stickiness": True},
             "db": db_field,  # PRD 1.3: visible on every response
         }
-        record_selection(out, args.task, args.department, db_path)
+        if not args.no_record:
+            record_selection(out, args.task, args.department, db_path)
         print(json.dumps(out, indent=2) if args.format == "json" else f"STICKY: {out['persona_name']} ({out['score']:.2f})")
         return 0
 
@@ -2315,6 +2364,13 @@ def main():
             "secondary_persona_score": coach["score"],
             "weights_used": weights,
             "layers": leader.get("layers", {}),
+            # OUTPUT CONTRACT (PRD 1.2 §3): the hybrid path assembles its own dict
+            # from TWO select_persona() calls, so it must forward the funnel too.
+            # We surface the LEADER's funnel (the primary persona the hybrid pick
+            # leads with); select_persona() always emits "funnel", so the fallback
+            # here is defensive only. Without this key the hybrid path violated the
+            # documented contract exactly like the sticky path.
+            "funnel": leader.get("funnel", {"pool": 0, "category": 0, "semantic": 0}),
         }
     else:
         out = select_persona(args.task, args.department, mode, weights, paths, db_path, variety=variety_enabled)
@@ -2322,7 +2378,8 @@ def main():
     # PRD 1.3: inject db path so every selection response shows whether the DB was found.
     out["db"] = db_field
 
-    record_selection(out, args.task, args.department, db_path)
+    if not args.no_record:
+        record_selection(out, args.task, args.department, db_path)
     print(json.dumps(out, indent=2) if args.format == "json" else f"{out.get('persona_name','(none)')} ({out.get('score',0):.2f})")
     return 0
 
