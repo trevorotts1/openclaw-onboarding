@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 # bump-version.sh — atomically bump the OpenClaw version across ALL files.
 #
-# The problem this solves: "the version" is encoded in 9 separate markers
-# (across 8 files — README.md carries 2). Drift is mathematically guaranteed
+# The problem this solves: "the version" is encoded in 11 separate markers
+# (across 10 files — README.md carries 2). Drift is mathematically guaranteed
 # unless one tool updates all of them in one shot.
+#
+# SINGLE SOURCE OF TRUTH: the drift-checked marker SET is enumerated ONCE in
+# scripts/version-markers.json. That manifest is ALSO read by the repo-consistency
+# gate (23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py, VERSION-MARKERS
+# dimension) so the two tools can never disagree on which/how-many markers track
+# /version. This script fails loudly at startup (see the guard below) if its own
+# checked-marker count ever diverges from that manifest. The per-marker READ/WRITE
+# logic still lives here (each marker needs bespoke rewrite handling), but the
+# COUNT/SET is owned by the manifest.
 #
 # Coverage history:
 #   v10.14.0 and earlier: 5 files (version, install.sh, skill-version.txt,
@@ -56,7 +65,25 @@ if [ ! -f "$REPO_ROOT/version" ] || [ ! -f "$REPO_ROOT/install.sh" ]; then
   exit 1
 fi
 
+# ─── SSOT GUARD — this script vs scripts/version-markers.json ────────────────
+# BUMP_CHECKED_MARKERS = the number of markers check_drift() physically compares
+# (and that the roll steps below rewrite). It MUST equal the marker count in the
+# shared SSOT manifest, which the repo-consistency gate also reads. If someone
+# adds/removes a marker in one place but not the other, this guard aborts before
+# any file is touched, so the manifest and this script can never silently diverge.
+BUMP_CHECKED_MARKERS=11
+MARKERS_MANIFEST="$SCRIPT_DIR/version-markers.json"
+if [ -f "$MARKERS_MANIFEST" ]; then
+  MANIFEST_MARKER_COUNT=$(python3 -c "import json,sys; print(len(json.load(open(sys.argv[1]))['markers']))" "$MARKERS_MANIFEST" 2>/dev/null || echo "")
+  if [ -n "$MANIFEST_MARKER_COUNT" ] && [ "$MANIFEST_MARKER_COUNT" != "$BUMP_CHECKED_MARKERS" ]; then
+    echo "ERROR: version-marker SSOT drift — $MARKERS_MANIFEST lists $MANIFEST_MARKER_COUNT markers" >&2
+    echo "       but bump-version.sh checks $BUMP_CHECKED_MARKERS. Reconcile the two (edit the manifest AND this script)." >&2
+    exit 1
+  fi
+fi
+
 # ─── The 11 version-marker locations (relative to repo root) ─────────────────
+#     (enumerated as the SSOT in scripts/version-markers.json — keep in lockstep)
 F_VERSION="$REPO_ROOT/version"
 F_INSTALL="$REPO_ROOT/install.sh"
 F_SKILL_VERSION="$REPO_ROOT/23-ai-workforce-blueprint/skill-version.txt"
@@ -192,7 +219,7 @@ if [ "${1:-}" = "--check" ]; then
   print_state
   if check_drift; then
     echo ""
-    echo "All 11 version markers agree."
+    echo "All $BUMP_CHECKED_MARKERS version markers agree."
     exit 0
   else
     echo ""
@@ -436,7 +463,7 @@ if ! check_drift; then
 fi
 
 echo ""
-echo "All 11 version markers agree at $TARGET"
+echo "All $BUMP_CHECKED_MARKERS version markers agree at $TARGET"
 
 # ─── Optional: tag + push ───────────────────────────────────────────────────
 if [ "${2:-}" = "--tag" ] || [ "${3:-}" = "--tag" ]; then

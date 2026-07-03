@@ -631,8 +631,9 @@ def evaluate(skill_dir):
 #                 and the canonical 7-file enumeration names all seven.
 #   SKILLS-COUNT  install.sh active-skill count == README count == actual skill
 #                 dir tree (the recurring install.sh/README/tree drift).
-#   VERSION       every version marker across the repo agrees (the bump-version
-#                 9-marker set + cc-compat.json onboardingVersion).
+#   VERSION       every version marker across the repo agrees. The marker SET is
+#                 the shared SSOT scripts/version-markers.json (currently 11
+#                 markers), the SAME manifest bump-version.sh rolls + drift-checks.
 #
 # DESIGN — mirror the build, never re-derive it. ORG-CHART / ROUTING / CC / DREAMING
 # are all DERIVED at build time by iterating `selected_departments`. There is no
@@ -668,6 +669,98 @@ _REQUIRED_GENERATOR_CALLS = [
     "write_universal_routing_map(",
     "generate_departments_json(",
 ]
+
+
+# ─── VERSION-MARKER SSOT (shared with scripts/bump-version.sh) ────────────────
+# The repo-wide version markers that must ALL equal /version are enumerated ONCE,
+# in scripts/version-markers.json. bump-version.sh rolls + drift-checks that exact
+# set; this gate's VERSION-MARKERS dimension reads the SAME manifest so the two can
+# never disagree on which markers (or how many) track the repo version.
+
+def _load_version_markers_manifest(repo_root):
+    """Return the SSOT marker list from scripts/version-markers.json, or None if the
+    manifest is absent/unreadable."""
+    path = Path(repo_root) / "scripts" / "version-markers.json"
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("markers")
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# INLINE FALLBACK marker set — the dimension's PRIOR (pre-SSOT) inline behavior,
+# used ONLY when scripts/version-markers.json is absent/unreadable (e.g. the
+# minimal sandbox in test-artifact-versioning.sh copies the marker SOURCE files
+# but NOT the repo-root scripts/ dir / the SSOT manifest). Kept byte-for-byte in
+# sync with version-markers.json so the missing-manifest case evaluates the SAME
+# markers the SSOT would, exactly as this dimension did before the SSOT change —
+# rather than hard-failing (which no other repo-root-dependent dimension does for
+# a missing input). The real repo / CI always ships the manifest, so the SSOT path
+# below is authoritative there and real-drift detection is unchanged.
+_VERSION_MARKERS_FALLBACK = [
+    {"id": "/version", "file": "version", "type": "plainfile"},
+    {"id": "install.sh ONBOARDING_VERSION", "file": "install.sh", "type": "regex",
+     "pattern": "^ONBOARDING_VERSION=\"?(v?[0-9.]+)\"?"},
+    {"id": "update-skills.sh ONBOARDING_VERSION", "file": "update-skills.sh", "type": "regex",
+     "pattern": "^ONBOARDING_VERSION=\"?(v?[0-9.]+)\"?"},
+    {"id": "23-ai-workforce-blueprint/skill-version.txt",
+     "file": "23-ai-workforce-blueprint/skill-version.txt", "type": "plainfile"},
+    {"id": "_index.json version",
+     "file": "23-ai-workforce-blueprint/templates/role-library/_index.json",
+     "type": "json", "key": "version"},
+    {"id": "_qc-summary.md",
+     "file": "23-ai-workforce-blueprint/templates/role-library/_qc-summary.md",
+     "type": "regex", "pattern": "Role Library v([0-9]+\\.[0-9]+\\.[0-9]+)"},
+    {"id": "README this-repo-at", "file": "README.md", "type": "regex",
+     "pattern": "this repo at v([0-9]+\\.[0-9]+\\.[0-9]+)"},
+    {"id": "README Current-Version", "file": "README.md", "type": "regex",
+     "pattern": "Current Version: v([0-9]+\\.[0-9]+\\.[0-9]+)"},
+    {"id": "DIRECT-TO-AGENT **vX.Y.Z**", "file": "DIRECT-TO-AGENT-UPDATE-MESSAGE.md",
+     "type": "regex", "pattern": "\\*\\*v([0-9]+\\.[0-9]+\\.[0-9]+)\\*\\*"},
+    {"id": "cc-compat onboardingVersion", "file": "cc-compat.json", "type": "json",
+     "key": "onboardingVersion"},
+    {"id": "23-ai-workforce-blueprint/SKILL.md [version:]",
+     "file": "23-ai-workforce-blueprint/SKILL.md", "type": "yaml_frontmatter"},
+]
+
+
+def _extract_marker_value(repo_root, marker):
+    """Extract the raw (un-normalized) version string for one SSOT marker, or None
+    if the file/pattern is not found. Extraction mirrors bump-version.sh
+    read_current() so both tools read each marker identically.
+
+    Marker types:
+      plainfile         first non-empty line is the version.
+      regex             re.search(pattern, MULTILINE); group(1) is the version.
+      json              JSON object; value at key.
+      yaml_frontmatter  first `version:` line inside the leading `---`…`---` block.
+    """
+    path = Path(repo_root) / marker["file"]
+    if not path.is_file():
+        return None
+    mtype = marker.get("type")
+    if mtype == "plainfile":
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        return lines[0].strip() if lines else None
+    if mtype == "regex":
+        mm = re.search(marker["pattern"],
+                       path.read_text(encoding="utf-8", errors="replace"),
+                       re.MULTILINE)
+        return mm.group(1) if mm else None
+    if mtype == "json":
+        try:
+            val = json.loads(path.read_text(encoding="utf-8")).get(marker["key"])
+        except Exception:  # noqa: BLE001
+            return "UNREADABLE"
+        return str(val) if val is not None else None
+    if mtype == "yaml_frontmatter":
+        txt = path.read_text(encoding="utf-8", errors="replace")
+        fm = re.match(r"^---\s*\n(.*?)\n---\s*\n", txt, re.DOTALL)
+        block = fm.group(1) if fm else ""
+        vm = re.search(r"^version:\s*(\S+)", block, re.MULTILINE)
+        return vm.group(1) if vm else None
+    return None
 
 
 def _synthesize_full_floor_departments(repo):
@@ -1021,48 +1114,38 @@ def evaluate_artifact_coverage(skill_dir):
         add_row("SKILLS-COUNT", False, f"skills-count check raised: {e}")
 
     # ── DIMENSION: VERSION-MARKERS ────────────────────────────────────────────
-    # Every place a repo-wide version lives must agree with /version. This is the
-    # 9-marker bump-version.sh set + cc-compat.json onboardingVersion, promoted
-    # from CI-only into the gate so a build refuses to run against a drifted repo.
+    # Every place a repo-wide version lives must agree with /version. The marker
+    # SET is defined ONCE, in scripts/version-markers.json — the SINGLE SOURCE OF
+    # TRUTH shared with scripts/bump-version.sh, which rolls + drift-checks the
+    # SAME set. Both consumers read that manifest, so this gate and the bump tool
+    # can never disagree on which markers (or how many) must equal /version. The
+    # per-marker extraction here mirrors bump-version.sh read_current().
     try:
         root = repo.repo_root
 
         def _norm_v(v):
             return (v or "").strip().lstrip("v")
 
-        ver_path = root / "version"
-        v_root = _norm_v(ver_path.read_text(encoding="utf-8").splitlines()[0]) if ver_path.is_file() else None
-        markers = {}  # label -> value
-        markers["/version"] = v_root
-
-        def _grep1(path, pat, group=1):
-            if not path.is_file():
-                return None
-            mm = re.search(pat, path.read_text(encoding="utf-8", errors="replace"), re.MULTILINE)
-            return _norm_v(mm.group(group)) if mm else None
-
-        markers["install.sh ONBOARDING_VERSION"] = _grep1(
-            root / "install.sh", r'^ONBOARDING_VERSION="?(v?[0-9.]+)"?')
-        markers["update-skills.sh ONBOARDING_VERSION"] = _grep1(
-            root / "update-skills.sh", r'^ONBOARDING_VERSION="?(v?[0-9.]+)"?')
-        skv = root / "23-ai-workforce-blueprint" / "skill-version.txt"
-        markers["skill-version.txt"] = _norm_v(skv.read_text(encoding="utf-8").splitlines()[0]) if skv.is_file() else None
-        markers["_index.json version"] = _norm_v(str(repo.index.get("version")))
-        _SEMVER = r"([0-9]+\.[0-9]+\.[0-9]+)"  # anchored: no trailing punctuation
-        markers["_qc-summary.md"] = _grep1(
-            root / "23-ai-workforce-blueprint" / "templates" / "role-library" / "_qc-summary.md",
-            r"Role Library v" + _SEMVER)
-        markers["README this-repo-at"] = _grep1(root / "README.md", r"this repo at v" + _SEMVER)
-        markers["README Current-Version"] = _grep1(root / "README.md", r"Current Version: v" + _SEMVER)
-        markers["DIRECT-TO-AGENT **vX.Y.Z**"] = _grep1(
-            root / "DIRECT-TO-AGENT-UPDATE-MESSAGE.md", r"\*\*v" + _SEMVER + r"\*\*")
-        cc = root / "cc-compat.json"
-        if cc.is_file():
-            try:
-                markers["cc-compat onboardingVersion"] = _norm_v(
-                    json.loads(cc.read_text(encoding="utf-8")).get("onboardingVersion"))
-            except Exception:
-                markers["cc-compat onboardingVersion"] = "UNREADABLE"
+        manifest_markers = _load_version_markers_manifest(root)
+        marker_source = "scripts/version-markers.json (SSOT)"
+        if manifest_markers is None:
+            # GRACEFUL DEGRADATION (not a hard fail): the SSOT manifest is absent —
+            # e.g. the minimal sandbox in test-artifact-versioning.sh copies the
+            # marker SOURCE files but not the repo-root scripts/ dir. Fall back to the
+            # dimension's PRIOR inline marker set and evaluate it exactly as before the
+            # SSOT change, mirroring how DREAMING/BOOTSTRAP/SKILLS-COUNT tolerate a
+            # missing input instead of reporting DRIFT. The real repo/CI always ships
+            # the manifest, so the SSOT set + real-drift detection are unchanged there.
+            manifest_markers = _VERSION_MARKERS_FALLBACK
+            marker_source = "inline fallback (SSOT manifest absent)"
+        markers = {}  # label -> normalized value
+        v_root = None
+        for m in manifest_markers:
+            raw = _extract_marker_value(root, m)
+            val = raw if raw in (None, "UNREADABLE") else _norm_v(raw)
+            markers[m["id"]] = val
+            if m.get("file") == "version":
+                v_root = val
         ver_problems = []
         if not v_root:
             ver_problems.append("/version unreadable")
@@ -1074,10 +1157,11 @@ def evaluate_artifact_coverage(skill_dir):
                     ver_problems.append(f"{label}={val or 'MISSING'} (want {v_root})")
         if ver_problems:
             add_row("VERSION-MARKERS", False,
-                    f"version drift vs /version={v_root}: " + "; ".join(ver_problems))
+                    f"version drift vs /version={v_root} [{marker_source}]: "
+                    + "; ".join(ver_problems))
         else:
             add_row("VERSION-MARKERS", True,
-                    f"all {len(markers)} version markers agree at v{v_root}")
+                    f"all {len(markers)} version markers agree at v{v_root} [{marker_source}]")
     except Exception as e:  # noqa: BLE001
         add_row("VERSION-MARKERS", False, f"version-marker check raised: {e}")
 

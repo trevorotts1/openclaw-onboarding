@@ -13,7 +13,15 @@ seam that would touch ``agent-browser``) is monkeypatched with a faithful Python
 re-implementation of ``_FORM_ID_CAPTURE_JS`` evaluated against a fixture DOM, so the
 iframe-first / top-frame-fallback / no-match branches are all exercised without a
 browser. ``_ensure_agent_browser_path`` is a pure env-dict transform and is tested
-directly. Style, imports, and sys.path handling mirror
+directly.
+
+HARDENING (v17.0.6): ``_capture_form_id`` now RE-VALIDATES the captured id's SHAPE
+server-side against the GHL form-id shape (``[A-Za-z0-9]{15,30}``, fullmatch) before
+returning it — a malformed / oversized / punctuation-bearing capture is rejected to
+'' so it can't poison the downstream delete/verify targeting. The fixture ids below
+are realistic ~15-20 char alphanumeric GHL form ids (e.g. ``cuPqQhLbk0GKeguEbGYW``)
+so they clear the shape gate, and a dedicated case proves the gate rejects bad ids.
+Style, imports, and sys.path handling mirror
 ``test_ghl_secret_hygiene.py`` / ``test_browser_manager_singleton.py`` so this runs
 under the same ``ghl-auth-fallback-guard`` / pytest CI.
 """
@@ -84,6 +92,15 @@ class TestCaptureJsShape:
         assert "[^/?#]" in js, "the id regex must stop at / ? and #"
         assert "querySelectorAll('iframe')" in js, "must enumerate iframes by DOM"
 
+    def test_form_id_shape_gate_is_the_expected_conservative_regex(self):
+        """Lock the exact server-side shape gate: 15-30 chars, [A-Za-z0-9] only.
+        A drift here (e.g. widening to allow punctuation) is a regression."""
+        assert fb._FORM_ID_SHAPE_RE.pattern == r"[A-Za-z0-9]{15,30}"
+        # fullmatch semantics: whole-string, alphanumeric, bounded length.
+        assert fb._FORM_ID_SHAPE_RE.fullmatch("cuPqQhLbk0GKeguEbGYW")  # 20-char sample
+        assert not fb._FORM_ID_SHAPE_RE.fullmatch("short")
+        assert not fb._FORM_ID_SHAPE_RE.fullmatch("has_underscore_1234567")
+
 
 # ---------------------------------------------------------------------------
 # _capture_form_id — the three id-source branches
@@ -91,33 +108,36 @@ class TestCaptureJsShape:
 class TestCaptureFormId:
     def test_returns_id_from_iframe_src(self, monkeypatch):
         """Case 1: the id comes from the builder IFRAME's .src match; the
-        trailing ?query is excluded by the [^/?#]+ boundary."""
+        trailing ?query is excluded by the [^/?#]+ boundary. The id is a
+        realistic ~20-char alphanumeric GHL form id so it clears the shape gate."""
         calls = []
         _install_fake_eval(
             monkeypatch,
             iframe_srcs=[
                 "https://app.leadconnectorhq.com/v2/location/L/forms",
                 "https://leadgen-apps-form-survey-builder.leadconnectorhq.com/"
-                "form-builder-v2/abc123DEF456?embed=1#top",
+                "form-builder-v2/abc123DEF456ghi789JK?embed=1#top",
             ],
             top_frame="/v2/location/L/form-builder",  # no id here
             calls=calls,
         )
-        assert fb._capture_form_id("sess-1") == "abc123DEF456"
+        assert fb._capture_form_id("sess-1") == "abc123DEF456ghi789JK"
         # proves it actually evaluated the capture JS via _eval
         assert calls and calls[0]["js"] == fb._FORM_ID_CAPTURE_JS
 
     def test_first_matching_iframe_wins_over_top_frame(self, monkeypatch):
-        """The iframe src is preferred over any top-frame match (fix intent)."""
+        """The iframe src is preferred over any top-frame match (fix intent).
+        BOTH ids are valid-shaped, so preference (not the shape gate) is what
+        decides the winner."""
         _install_fake_eval(
             monkeypatch,
             iframe_srcs=[
-                "https://x.leadconnectorhq.com/form-builder-v2/IFRAME_ID_9",
+                "https://x.leadconnectorhq.com/form-builder-v2/IFRAMEid9abcDEF12",
             ],
-            top_frame="/form-builder-v2/TOPFRAME_ID_0",
+            top_frame="/form-builder-v2/TOPFRAMEid0ghiJKL",
             calls=[],
         )
-        assert fb._capture_form_id("sess-2") == "IFRAME_ID_9"
+        assert fb._capture_form_id("sess-2") == "IFRAMEid9abcDEF12"
 
     def test_top_frame_fallback_when_no_iframe_match(self, monkeypatch):
         """Case 2: no iframe carries the id -> fall back to the top-frame
@@ -128,10 +148,10 @@ class TestCaptureFormId:
                 "https://app.leadconnectorhq.com/some-other-iframe",
                 "about:blank",
             ],
-            top_frame="/v2/location/L/form-builder-v2/topFrameId789#tab",
+            top_frame="/v2/location/L/form-builder-v2/topFrameId789abcd#tab",
             calls=[],
         )
-        assert fb._capture_form_id("sess-3") == "topFrameId789"
+        assert fb._capture_form_id("sess-3") == "topFrameId789abcd"
 
     def test_returns_empty_when_neither_yields_id(self, monkeypatch):
         """Case 3: neither an iframe src nor the top frame matches -> ''."""
@@ -147,14 +167,45 @@ class TestCaptureFormId:
         assert fb._capture_form_id("sess-4") == ""
 
     def test_result_is_stripped(self, monkeypatch):
-        """_capture_form_id defensively .strip()s the _eval transport result."""
-        monkeypatch.setattr(fb, "_eval", lambda session, js, timeout=20: "  padded_id  ")
-        assert fb._capture_form_id("sess-5") == "padded_id"
+        """_capture_form_id defensively .strip()s the _eval transport result
+        (before the shape gate), so a valid-shaped id padded with whitespace
+        still passes."""
+        monkeypatch.setattr(fb, "_eval",
+                            lambda session, js, timeout=20: "  paddedId12345678  ")
+        assert fb._capture_form_id("sess-5") == "paddedId12345678"
 
     def test_none_result_becomes_empty_string(self, monkeypatch):
-        """A None from _eval must not raise; (got or '').strip() -> ''."""
+        """A None from _eval must not raise; (got or '').strip() -> '' -> ''."""
         monkeypatch.setattr(fb, "_eval", lambda session, js, timeout=20: None)
         assert fb._capture_form_id("sess-6") == ""
+
+    def test_accepts_realistic_ghl_form_id_shape(self, monkeypatch):
+        """A realistic ~20-char alphanumeric GHL form id (like the ones GHL
+        actually mints, e.g. ``cuPqQhLbk0GKeguEbGYW``) clears the shape gate."""
+        monkeypatch.setattr(fb, "_eval",
+                            lambda session, js, timeout=20: "cuPqQhLbk0GKeguEbGYW")
+        assert fb._capture_form_id("sess-ok") == "cuPqQhLbk0GKeguEbGYW"
+
+    @pytest.mark.parametrize("bad", [
+        "abc123",                                # too short (< 15 chars)
+        "x" * 14,                                # one char under the floor
+        "x" * 31,                                # oversized (> 30 chars)
+        "y" * 200,                               # grossly oversized DOM blob
+        "has-a-dash-1234567",                    # punctuation (dash)
+        "has_underscore_12345",                  # punctuation (underscore)
+        "has.a.dot.1234567890",                  # punctuation (dot)
+        "/v2/location/L/form-builder",           # a stray path segment (slashes)
+        "<script>alert(1)</script>evilpayload",  # junk / injection-y blob
+        "  spaced out id here  ",                # inner spaces survive .strip()
+    ])
+    def test_rejects_malformed_or_oversized_id(self, monkeypatch, bad):
+        """SERVER-SIDE SHAPE RE-VALIDATION: a captured value that does NOT match
+        the GHL form-id shape (``[A-Za-z0-9]{15,30}`` fullmatch) is rejected to ''
+        — raw eval output is never trusted as an id. Covers too-short, oversized,
+        punctuation, path segments, and injection-y blobs."""
+        monkeypatch.setattr(fb, "_eval",
+                            lambda session, js, timeout=20: bad)
+        assert fb._capture_form_id("sess-bad") == "", f"should reject {bad!r}"
 
 
 # ---------------------------------------------------------------------------

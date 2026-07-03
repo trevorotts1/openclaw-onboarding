@@ -22,7 +22,7 @@ The method captured in the MASTERDOC is SACRED. Every rule below is machine-enfo
 
 | # | Phase | Slide band (per-phase FLOOR) | Doctrine doc |
 |---|---|---|---|
-| Intake | 8 Questions + frame, ONE block | before any slide is written | **SOP-SIGPRES-01** |
+| Intake | 8 Questions + frame — asked ONE at a time, recorded as ONE atomic block | before any slide is written | **SOP-SIGPRES-01** |
 | 1 | **Avatar Section** — "Mastering the Audience Avatar" | 1–11 (≥ 11) | **SOP-SIGPRES-02** |
 | 2 | **Signature Story** — "Crafting Your Personal Story" | 12–24 (≥ 13) | **SOP-SIGPRES-03** |
 | 3 | **Transformational Teaching** — NO PITCHING | 25–60 (≥ 36) | **SOP-SIGPRES-04** |

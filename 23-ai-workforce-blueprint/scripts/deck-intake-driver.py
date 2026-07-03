@@ -616,15 +616,26 @@ def cmd_selftest() -> None:
 # ---------------------------------------------------------------------------
 # SIGNATURE MODE (Skill 51 — Signature Presentation, Prime Directive O4/6/7)
 #
-# The standard interview above is one-question-per-turn. A Signature
-# Presentation intake is the EXACT OPPOSITE by SACRED law: the 8 Questions AND
-# the frame-selection question are asked ALL AT ONE TIME, in a SINGLE message
-# block, before any slide is written (MASTERDOC Prime Directives 6 & 7). This
-# mode emits that ONE block turn and, on --record, assembles the runtime intake
-# record and WIRES it straight to the fail-closed AF-SP-8Q-SPLIT prover
-# (51-signature-presentation/scripts/prove_sp_intake.py) so a split/one-per-turn
-# intake can never pass. The prover is the source of truth; this driver only
-# emits the block and hands the assembled record to it.
+# TWO LAYERS, kept distinct so they never conflict (Trevor's ruling — one-
+# question-at-a-time wins): the 8 Questions are ASKED one at a time and RECORDED
+# as one block.
+#   (1) CONVERSATION LAYER — the front-door agent FIRST offers the owner a
+#       quick-vs-in-depth interview CHOICE, then asks exactly ONE of the 8
+#       Questions (plus the frame question) per message and waits for the answer;
+#       never a wall of questions. Dumping the batch, or opening with no choice,
+#       is AF-INTAKE-BATCH (a QC/Healer intake-trace autofail; it NEVER gates
+#       build_deck.py / run_signature_deck.py). This mode emits that intake plan
+#       (the choice-first conversation_contract + the 8 Questions + the frame
+#       question) for the agent to run one turn at a time.
+#   (2) RECORD LAYER — on --record, the answers gathered one at a time are
+#       assembled into ONE atomic intake record and WIRED straight to the fail-
+#       closed AF-SP-8Q-SPLIT prover
+#       (51-signature-presentation/scripts/prove_sp_intake.py). Here
+#       asked_all_at_once / mode=one_block / one_question_per_turn=False describe
+#       the assembled RECORD being committed as one atomic block (NOT a batch of
+#       questions dumped at the owner), so a record that was not committed
+#       atomically can never pass. The prover is the source of truth; this driver
+#       emits the plan and hands the assembled record to it.
 # ---------------------------------------------------------------------------
 SP_SPEC_REL = pathlib.Path("intake") / "sp-8-questions.json"
 SP_PROVER_REL = pathlib.Path("scripts") / "prove_sp_intake.py"
@@ -682,28 +693,44 @@ def _sp_block_msg_id() -> str:
 
 
 def build_signature_block(spec: dict, block_msg_id: str) -> dict:
-    """Assemble the ONE-block turn: all 8 Questions + the frame-selection question.
+    """Assemble the intake PLAN: the choice-first conversation contract + all 8
+    Questions + the frame-selection question.
 
-    This is the literal message payload the agent posts as a SINGLE block —
-    never one-per-turn. Shape is verified by prove_sp_intake.py's spec branch
-    (delivery.mode == one_block, all 8 prompts present, frame question present).
+    TWO LAYERS (Trevor's ruling — one-question-at-a-time wins): the agent RUNS the
+    conversation one question at a time (the `conversation_contract` below —
+    offer QUICK vs IN-DEPTH first, then ONE question per message; a batch is
+    AF-INTAKE-BATCH), and later COMMITS the answers as one atomic record. The
+    `delivery` block carries the RECORD contract (mode == one_block,
+    asked_all_at_once) that prove_sp_intake.py validates on that assembled record
+    — it is NOT a licence to dump the questions at the owner.
     """
     questions = spec.get("questions") or []
     frame_q = spec.get("frame_selection_question") or {}
+    spec_delivery = spec.get("delivery") or {}
+    conversation_contract = spec_delivery.get("conversation_contract") or {}
     return {
-        "status": "signature_block",
+        "status": "signature_intake_plan",
         "deck_type": spec.get("deck_type", "signature_presentation"),
+        # delivery describes the RECORD layer (the assembled ledger committed as
+        # one atomic block) — NOT the conversation. mode==one_block is asserted by
+        # prove_sp_intake.py on the assembled record and by this driver's selftest.
         "delivery": {
             "mode": "one_block",
             "asked_all_at_once": True,
             "one_question_per_turn": False,
         },
+        # conversation_contract describes the CONVERSATION layer: choice-first,
+        # one question at a time; a batch trips AF-INTAKE-BATCH (never gates build).
+        "conversation_contract": conversation_contract,
         "question_block_msg_id": block_msg_id,
         "instruction": (
-            "SIGNATURE PRESENTATION INTAKE (SACRED, Directives 6 & 7): post ALL of "
-            "the following — the 8 Questions AND the frame-selection question — as ONE "
-            "message block. Do NOT ask one-per-turn. Capture the answers, then call "
-            "--signature --record <answers.json> to assemble and verify the intake."
+            "SIGNATURE PRESENTATION INTAKE (choice-first, ONE question at a time — "
+            "Trevor's ruling): FIRST offer the owner the QUICK vs IN-DEPTH interview "
+            "choice, then ask exactly ONE of the following — the 8 Questions and the "
+            "frame-selection question — per message and WAIT for each answer. Do NOT "
+            "dump the batch (that is AF-INTAKE-BATCH). Once every answer is gathered "
+            "one at a time, call --signature --record <answers.json> to assemble them "
+            "into ONE atomic record and verify it via prove_sp_intake.py."
         ),
         "questions": questions,
         "frame_selection_question": frame_q,
@@ -771,7 +798,9 @@ def _run_sp_prover(intake_path: pathlib.Path) -> Tuple[int, str]:
 
 
 def cmd_signature(args) -> None:
-    """--signature: emit the ONE-block turn (default) or assemble+verify a record."""
+    """--signature: emit the intake plan — the choice-first, one-question-at-a-time
+    conversation contract + the 8 Questions + frame question (default) — or, with
+    --record, assemble the answers into one atomic record and verify it."""
     run_dir = pathlib.Path(args.run_dir).expanduser().resolve() if args.run_dir else None
 
     try:
@@ -821,7 +850,8 @@ def cmd_signature(args) -> None:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         sys.exit(0 if passed else 2)
 
-    # --- default: emit the ONE-block turn (the 8 Questions + frame question) ---
+    # --- default: emit the intake PLAN (choice-first conversation contract + the
+    #     8 Questions + frame question) for the agent to run ONE question at a time ---
     block = build_signature_block(spec, block_msg_id)
     if run_dir is not None:
         marker = run_dir / "working" / "interview" / "sp_intake_block.json"
@@ -932,9 +962,11 @@ def main() -> None:
     parser.add_argument("--selftest", action="store_true",
                         help="Run offline self-test in a temp directory")
     parser.add_argument("--signature", action="store_true",
-                        help="Signature Presentation intake (Skill 51): emit the 8 Questions "
-                             "+ frame question as ONE block (default), or with --record assemble "
-                             "the runtime intake and verify it via the AF-SP-8Q-SPLIT prover")
+                        help="Signature Presentation intake (Skill 51): emit the intake plan "
+                             "— the choice-first (quick vs in-depth), one-question-at-a-time "
+                             "conversation contract + the 8 Questions + frame question (default); "
+                             "or with --record assemble the answers into ONE atomic record and "
+                             "verify it via the AF-SP-8Q-SPLIT prover")
     parser.add_argument("--record", metavar="FILE",
                         help="(signature mode) JSON answers file (q1..q8 + signature_frame + "
                              "offer_token_ledger); assembles working/copy/sp_intake.json and "

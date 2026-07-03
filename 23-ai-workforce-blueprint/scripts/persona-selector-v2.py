@@ -327,19 +327,30 @@ STAGE_D_LLM_FINALIST_CAP = max(1, int(os.environ.get("STAGE_D_LLM_FINALIST_CAP",
 # Department → domain tags. Values use the SAME canonical form as
 # persona-categories.json `domain` values: lowercase, hyphenated.
 # Both sides are routed through _norm_tag() before comparison (Defect 2 guard).
+#
+# KEY CONTRACT (dead-key reconciliation, 2026-07-03): every key here is a
+# CANONICAL dept slug. main() runs args.department through canonical_dept_slug()
+# BEFORE Stage B does `raw_dept_tags = DEPT_DOMAIN_TAGS.get(department, [])`, so a
+# lookup key is ONLY ever a canonical slug. The pre-canonical legacy keys that used
+# to sit here — billing, operations, creative, hr, it, app-development, ceo, com —
+# were provably DEAD: canonical_dept_slug() rewrites the raw form to a DIFFERENT
+# canonical slug that already has its own key (billing→billing-finance,
+# ceo/com→master-orchestrator, app-development→engineering) or to a slug that no
+# live templates/role-library/_index.json department produces (operations, creative,
+# hr, it), so none of the eight was ever the target of a lookup. None of the eight
+# is an alias TARGET in canonical_slug.ALIAS_MAP either, so removing them cannot
+# strand a live department. They are removed; each live department is reached only
+# through its canonical slug. scripts/test-dept-domain-mirror.py LOCKS this: it fails
+# if any key is not a canonical slug of a live _index.json department, if any live
+# department is left uncovered, or if these tags silently NARROW the build-workforce.py
+# dept_to_domains matrix pool (the persona↔matrix mirror invariant).
 DEPT_DOMAIN_TAGS = {
     "marketing": ["marketing", "copywriting", "communication", "sales", "strategy-innovation"],
     "paid-advertisement": ["marketing", "copywriting", "strategy-innovation"],
     "sales": ["sales", "communication", "strategy-innovation", "marketing"],
-    "billing": ["finance", "operations"],
     "customer-support": ["communication", "operations", "coaching"],
-    "operations": ["operations", "productivity-systems", "leadership", "strategy-innovation"],
-    "creative": ["copywriting", "communication", "personal-development", "marketing"],
-    "hr": ["leadership", "communication", "personal-development", "coaching"],
     "legal": ["operations", "strategy-innovation", "leadership"],
-    "it": ["operations", "productivity-systems"],
     "web-development": ["marketing", "sales", "copywriting", "strategy-innovation", "operations"],
-    "app-development": ["operations", "productivity-systems"],
     # W6/W2.2: 'engineering' is the renamed software/app/web/backend/cloud dept.
     # Tags MUST mirror build-workforce.py generate_persona_matrix dept_to_domains
     # ("engineering": ["productivity-systems","strategy-innovation","operations"])
@@ -354,8 +365,6 @@ DEPT_DOMAIN_TAGS = {
     "audio": ["copywriting", "communication", "marketing"],
     "research": ["strategy-innovation", "productivity-systems", "operations"],
     "communications": ["communication", "copywriting", "marketing"],
-    "ceo": ["leadership", "strategy-innovation", "mindset", "operations"],
-    "com": ["leadership", "strategy-innovation", "mindset"],
     "personal-assistant": ["communication", "productivity-systems", "operations"],
     "general-task": ["leadership", "strategy-innovation", "productivity-systems"],
     "project-architecture-office": ["strategy-innovation", "leadership", "operations"],

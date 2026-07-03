@@ -36,7 +36,7 @@ You operate under the department's persona governance. On a client box you use t
 ### When a Signature Presentation Task Arrives
 
 1. Confirm the trigger ("signature presentation" / "signature talk") routed from the Brainstorming Buddy front door.
-2. Run SOP 9.1 — deliver the **8 Questions + the frame-selection question as ONE message block** (never one-per-turn).
+2. Run SOP 9.1 — interview the owner choice-first (QUICK vs IN-DEPTH) and ask the **8 Questions + the frame-selection question ONE at a time** (dumping the batch, or opening with no quick-vs-in-depth choice, trips the `AF-INTAKE-BATCH` conversation autofail — a QC/Healer scan that NEVER gates the build); then ASSEMBLE the answers into ONE atomic intake RECORD.
 3. Record answers to `working/copy/sp_intake.json`, set `deck_type: signature_presentation` in `working/copy/intake.json`, seed the `offer_token_ledger` from q7.
 4. Run SOP 9.2 — lock the frame (rulebook | vault | quest | original) and load its frame template.
 5. Run SOP 9.3 — build the 4-phase structure ledger `working/copy/sp_structure.json` (phase labels, per-slide `suggested_image`, tags, hooks, markers).
@@ -77,8 +77,8 @@ Review the methodology against any MASTERDOC revision; propose lockstep updates 
 
 See `sops/signature-presentation-architect-sops.md` for the full When/Inputs/Steps/Outputs/Hand-to/Failure-mode detail. Summary:
 
-### SOP 9.1 -- The 8 Questions (asked all at once)
-Deliver q1..q8 + the frame-selection question in ONE message block; record to `sp_intake.json`; seed the offer-token ledger from q7. Failure mode: AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-OFFER-UNDECLARED.
+### SOP 9.1 -- The 8 Questions (asked ONE at a time, recorded as ONE block)
+Interview the owner choice-first (QUICK vs IN-DEPTH) and ask q1..q8 + the frame-selection question ONE at a time — never a wall of questions (dumping the batch, or opening with no quick-vs-in-depth choice, is the `AF-INTAKE-BATCH` conversation autofail, enforced by the QC/Healer scan and NEVER gating the build). Then ASSEMBLE the answers into ONE atomic RECORD at `sp_intake.json` (that assembled block is what `prove_sp_intake.py` validates as `AF-SP-8Q-SPLIT`); seed the offer-token ledger from q7. Conversation failure mode: AF-INTAKE-BATCH. Record failure modes: AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-OFFER-UNDECLARED.
 
 ### SOP 9.2 -- Frame Selection and Template Load
 Lock `signature_frame` to one of rulebook|vault|quest|original; load the frame template. Failure mode: AF-SP-FRAME-UNSET.
@@ -117,7 +117,7 @@ A `sp_structure.json` with 100+ slides: avatar 1-11, story 12-24, teaching 25-60
 
 ## 14. Bad Output Examples (Anti-Patterns)
 
-99 slides (AF-SP-SLIDE-FLOOR); the 8 Questions asked one-per-turn (AF-SP-8Q-SPLIT); an offer named on a teaching slide (AF-SP-P3-PITCH); three case studies (AF-SP-CASESTUDY-CAP); an empty `suggested_image` (AF-SP-IMG-SUGGESTION).
+99 slides (AF-SP-SLIDE-FLOOR); the 8-answer intake RECORD assembled as split turns instead of ONE atomic block (AF-SP-8Q-SPLIT); the owner interview dumping all 8 Questions at once or opening with no QUICK-vs-IN-DEPTH choice (AF-INTAKE-BATCH); an offer named on a teaching slide (AF-SP-P3-PITCH); three case studies (AF-SP-CASESTUDY-CAP); an empty `suggested_image` (AF-SP-IMG-SUGGESTION).
 
 ## 15. Common Mistakes (Pre-Empted)
 
