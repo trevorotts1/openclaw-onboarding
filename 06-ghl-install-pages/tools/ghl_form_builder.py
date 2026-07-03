@@ -733,6 +733,23 @@ def _canonical_session(location_id: str) -> str:
     return re.sub(r"-{2,}", "-", raw).strip("-")
 
 
+# ── PATH resilience so `agent-browser` is always found ───────────────────────
+def _ensure_agent_browser_path(env: dict) -> dict:
+    """Guarantee `~/.npm-global/bin` (where the `agent-browser` CLI lives) is on
+    `env['PATH']`, at the FRONT, prepending ONLY if it is missing.
+
+    On the operator box, sourcing `~/.openclaw/secrets/.env` can clobber PATH and
+    drop `~/.npm-global/bin`, so spawning a browser subprocess fails with
+    'command not found'. This is purely defensive — it NEVER reads or touches the
+    secrets file; it only repairs the PATH of the env dict handed to a spawn."""
+    bindir = os.path.expanduser("~/.npm-global/bin")
+    path = env.get("PATH") or os.environ.get("PATH") or os.defpath
+    parts = [p for p in path.split(os.pathsep) if p]
+    if bindir not in parts:
+        env["PATH"] = os.pathsep.join([bindir, *parts]) if parts else bindir
+    return env
+
+
 # ── agent-browser command glue (mirrors ghl_survey_builder._run_cmd) ─────────
 def _ab(session: str, *args: str, timeout: int = 30, stdin: Optional[str] = None
         ) -> subprocess.CompletedProcess:
@@ -740,9 +757,10 @@ def _ab(session: str, *args: str, timeout: int = 30, stdin: Optional[str] = None
     Returns CompletedProcess; never raises (callers inspect returncode/stdout)."""
     cmd_str = ghl_builder.browser_cmd("--session", session, *args)  # type: ignore[union-attr]
     _log(f"[ab] {cmd_str}")
+    env = _ensure_agent_browser_path(dict(os.environ))
     try:
         return subprocess.run(shlex.split(cmd_str), input=stdin, capture_output=True,
-                              text=True, timeout=timeout)
+                              text=True, timeout=timeout, env=env)
     except Exception as exc:  # noqa: BLE001
         return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr=str(exc))
 
@@ -852,7 +870,7 @@ def _seed_and_land(session: str, location_id: str, evidence_root: str) -> dict:
     os.makedirs(seed_dir, exist_ok=True)
     seed_file = os.path.join(seed_dir, "ghl-auth-seed.json")
 
-    env = dict(os.environ)
+    env = _ensure_agent_browser_path(dict(os.environ))
     env["GHL_LOCATION_ID"] = location_id            # canonical session-name driver
     env["GHL_INJECT_KEEP_SESSION"] = "1"            # leave the seeded session OPEN
     env["GHL_ACTIVATE_PATH"] = _dashboard_route(location_id)
@@ -888,7 +906,7 @@ def _close_session(location_id: str) -> None:
     """Close + state-clear the canonical session (browser_manager.sh teardown verb) —
     no orphan Chromium/engine, no residual seeded state."""
     tools_dir = os.path.dirname(os.path.abspath(__file__))
-    env = dict(os.environ)
+    env = _ensure_agent_browser_path(dict(os.environ))
     env["GHL_LOCATION_ID"] = location_id
     try:
         subprocess.run(["bash", os.path.join(tools_dir, "browser_manager.sh"), "teardown"],
@@ -898,10 +916,39 @@ def _close_session(location_id: str) -> None:
 
 
 # ── in-builder captures ──────────────────────────────────────────────────────
+# The GHL form builder renders inside a CROSS-ORIGIN iframe at
+# `leadgen-apps-form-survey-builder.leadconnectorhq.com/form-builder-v2/<formId>`
+# (GHL_FORM_BUILDER_HOST above; SELECTORS-LIVE-form.md §5/§7). An iframe's `.src`
+# ATTRIBUTE is readable from the parent even cross-origin — only `contentWindow`/
+# `contentDocument` are blocked by same-origin policy — so the form id lives THERE,
+# NOT in the top-frame `location.pathname`. Enumerate iframes by DOM (never an
+# invented selector), match the first `/form-builder-v2/<id>` src, then FALL BACK to
+# the top-frame path/hash/search (preserves the prior behavior).
+_FORM_ID_CAPTURE_JS = (
+    "(() => {"
+    "  const RE = /\\/form-builder-v2\\/([^/?#]+)/;"
+    "  for (const f of document.querySelectorAll('iframe')) {"
+    "    const src = f.src || f.getAttribute('src') || '';"
+    "    const m = src.match(RE);"
+    "    if (m) return m[1];"
+    "  }"
+    "  const top = (location.pathname || '') + (location.hash || '') + (location.search || '');"
+    "  const tm = top.match(RE);"
+    "  return tm ? tm[1] : '';"
+    "})()"
+)
+
+
 def _capture_form_id(session: str) -> str:
-    path = _eval(session, "location.pathname", timeout=10)
-    m = re.search(r"/form-builder-v2/([^/?#]+)", path or "")
-    return m.group(1) if m else ""
+    """Capture the built form's id from the builder IFRAME's `.src` attribute.
+
+    Reads the form id out of the cross-origin `/form-builder-v2/<formId>` iframe src
+    (parent-readable), falling back to the top-frame `location.pathname + hash +
+    search` match; returns '' if neither yields an id. Fixes the prior top-frame-only
+    read that always returned '' (the top frame carries no form id), which left the
+    id uncaptured so downstream delete/verify could not target the form."""
+    got = _eval(session, _FORM_ID_CAPTURE_JS, timeout=12)
+    return (got or "").strip()
 
 
 _EMBED_CAPTURE_JS = (
