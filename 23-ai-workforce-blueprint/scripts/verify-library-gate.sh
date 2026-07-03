@@ -68,7 +68,7 @@
 #        6  = TRIO GATE FAIL — at least one dept is missing QC, research, or DA
 #        7  = BOUNDARY GATE FAIL — canonical dept(s) found in SOP authoring manifest
 #        9  = ZHE GATE FAIL — the full ZERO HUMAN EXPERIENCE did not land for an
-#             interview-completed box (only blocks under ZHE_ENFORCE=1; RED-first.
+#             interview-completed box (blocks BY DEFAULT; ZHE_ENFORCE=0 escape hatch.
 #             zheStatus + plan W1.2; doctrine: ZERO-HUMAN-EXPERIENCE.md)
 #
 # The master orchestrator MUST run this BEFORE writing buildCompletedAt /
@@ -405,11 +405,13 @@ fi
 # reporting + platform-facts doctrine. A not-completed interview is EXEMPT (the
 # prover passes). Doctrine: 23-ai-workforce-blueprint/ZERO-HUMAN-EXPERIENCE.md.
 #
-# RED-FIRST CONTRACT (plan §6): the prover only goes green once W5/W6/W7 stamp the
-# persona/handoff/reporting/platform-facts markers. This gate ALWAYS records
-# zheStatus and prints the verdict loud, but only forces a hard exit (rc 9, above
-# all other verdicts) under ZHE_ENFORCE=1 — so the gate is wired now and becomes a
-# blocking acceptance gate by flipping one env var, without breaking in-flight builds.
+# BLOCKING BY DEFAULT (Issue #6, v17.0.11): the RED-first precondition has landed
+# (apply-fleet-standards.sh stamps the persona/handoff/reporting/platform-facts
+# markers), so this gate now forces a hard exit (rc 9, above all other verdicts) by
+# default when the prover FAILs. It ALWAYS records zheStatus and prints the verdict
+# loud. An explicit ZHE_ENFORCE=0 escape hatch is retained to unblock while a
+# genuine prover regression is triaged. A not-completed interview is EXEMPT (the
+# prover exits 0), so the default is safe for fresh/in-flight builds.
 ZHE_STATUS="skipped"
 ZHE_PROVER="$SCRIPT_DIR/prove-zhe.py"
 if [ -d /data/.openclaw ]; then ZHE_OC_ROOT="/data/.openclaw"; else ZHE_OC_ROOT="$HOME/.openclaw"; fi
@@ -493,10 +495,11 @@ if [ "$BOUNDARY_STATUS" = "done" ] && [ "$TRIO_STATUS" = "done" ] && \
 fi
 
 # ---- exit code = the gate verdict ----
-# ZHE acceptance failure (rc 9) takes priority over ALL other verdicts, but only
-# blocks under ZHE_ENFORCE=1 (RED-first wiring; see the ZHE GATE block above).
+# ZHE acceptance failure (rc 9) takes priority over ALL other verdicts, and blocks
+# BY DEFAULT (ZHE_ENFORCE unset behaves as =1; see the ZHE GATE block above). The
+# explicit ZHE_ENFORCE=0 escape hatch downgrades it to non-blocking.
 # Otherwise boundary failure (rc 7) takes priority.
-if [ "$ZHE_STATUS" = "failed" ] && [ "${ZHE_ENFORCE:-0}" = "1" ]; then
+if [ "$ZHE_STATUS" = "failed" ] && [ "${ZHE_ENFORCE:-1}" = "1" ]; then
   exit 9
 elif [ "$BOUNDARY_STATUS" != "done" ]; then
   exit 7

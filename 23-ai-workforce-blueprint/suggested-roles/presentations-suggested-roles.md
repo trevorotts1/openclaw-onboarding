@@ -1,8 +1,8 @@
 # Suggested Roles -- presentations-dept
-**Version:** 1.9 | 2026-07-02
-**Status:** The v12.20.0 canonical 24-role roster is extended with the **2 Skill-51 Signature-Presentation methodology roles** (`signature-presentation-architect`, `qc-specialist-signature-presentations`) -> **26 roster roles**. Every roster role resolves to a role-library `_index.json` entry (verified green by `qc-assert-repo-consistency.py --only consistency` and `register-library-additions.py --check`). Every role header is CLEAN (no `(NEW)`, no `-- vX.Y`, no `renamed from ...`, no `&`/`+`/`'` decorations) and carries an explicit `**Slug:**` that matches its role-library `.md` file exactly. The slug is the canonical key for folder naming (`NN-<slug>/`) and role-library lookup.
+**Version:** 2.0 | 2026-07-03
+**Status:** The v12.20.0 canonical 24-role roster is extended with the **2 Skill-51 Signature-Presentation methodology roles** (`signature-presentation-architect`, `qc-specialist-signature-presentations`) and the **6 attention-strategy + prompt-authoring + specialist-QC roles** (`attention-content-strategist`, `prompt-author-presentations`, `qc-specialist-prompt-presentations`, `qc-specialist-image-presentations`, `qc-specialist-typography-presentations`, `qc-specialist-speech-presentations`) -> **32 roster roles**. Every roster role resolves to a role-library `_index.json` entry (verified green by `qc-assert-repo-consistency.py --only consistency` and `register-library-additions.py --check`). Every role header is CLEAN (no `(NEW)`, no `-- vX.Y`, no `renamed from ...`, no `&`/`+`/`'` decorations) and carries an explicit `**Slug:**` that matches its role-library `.md` file exactly. The slug is the canonical key for folder naming (`NN-<slug>/`) and role-library lookup.
 
-## Canonical Role Count: 26
+## Canonical Role Count: 32
 The canonical set is one role per role-library `.md` file under
 `templates/role-library/presentations/` (excluding the `00-START-HERE.md` meta
 doc, `BUILDER-PROMPT.md`, `how-to-use-this-department.md`, `IDENTITY.md`,
@@ -278,6 +278,68 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 - 01-Intake-QC-P-SP-INTAKE.md
 - 02-Structure-QC-P-SP-STRUCTURE.md
 - 03-Phase-3-No-Pitch-QC-P-SP-P3-HYGIENE.md
+- 04-Rework-Loop-and-Escalation.md
+**Role type:** qc
+
+### 26. Attention Content Strategist
+**Slug:** attention-content-strategist
+**What it does:** Owns the strategic CONTENT SPINE of every deck at Phase P0B-PRIORITY (order 0.2), between intake and the arc. Names the PRIORITY SHIFT (re-ranking the owner's offer to the top of the audience's priority stack), runs the seven-P diagnosis, decides the creation mode, and authors the eight-move build sequence plus the norm-challenging Proclamations. Guards the CROWN law: holding attention for the full duration is the #1 job, above clarity and completeness. Its single canonical output is `working/copy/priority_shift_spec.json`, which the arc allocator, copywriter, price strategist, hook strategist, and QC composite gate all read from. Never fabricates a client claim; flags gaps to the owner.
+**Core SOPs to build:**
+- 01-Attention-Is-the-Product-Northstar.md
+- 02-Seven-P-Model-and-Diagnostic.md
+- 03-Three-Creation-Modes.md
+- 04-Eight-Move-Build-Sequence.md
+- 05-Dare-to-Challenge-the-Norm-Proclamations.md
+**Role type:** strategist
+
+### 27. Prompt Author - Presentations
+**Slug:** prompt-author-presentations
+**What it does:** Writes each slide's rich image prompt to the 9,000-to-18,000-character density band (hard floor 9,000, ceiling 18,000) that the renderer (`build_deck.py`) sends to the image model verbatim. Sits after the Typography Architect and before the deterministic render. Encodes the 15-element structural specification per prompt: archetype declaration, scene, every line of verbatim copy with per-line weight and point size, the three-engine facial intelligence with explicit REPRESENTATION_MIX, composition grid, lighting, color/brand palette, the eight-class NEGATIVE BLOCK, per-string spelling-locks, and the image-to-image logo directive. Spends the expanded budget only on defect-preventing specificity, never padding. Output is graded by the independent Prompt QC Specialist; never grades its own prompts.
+**Core SOPs to build:**
+- 01-Fifteen-Element-Prompt-Structure.md
+- 02-Creative-Typography-Guide.md
+- 03-Pure-Typography-Hook-Slides.md
+- 04-Variable-Layout-Anti-Template.md
+- 05-Logo-Consistency.md
+**Role type:** specialist
+
+### 28. Prompt QC Specialist - Presentations
+**Slug:** qc-specialist-prompt-presentations
+**What it does:** The INDEPENDENT reviewer of every per-slide image prompt the Prompt Author wrote, sequencing after Prompt-Authoring (Phase P-PROMPT-QC). Grades each prompt file (`working/prompts/slide-NN.txt`) against the written prompt-standard rubric and writes `working/qc/prompt_qc_report.json`. Gate AF-PROMPT-QC blocks the renderer unless the report gates "Phase Prompt-QC", averages >= 8.5, has zero triggered auto-fails, marks `pass: true`, and carries an independent-reviewer provenance block. Auto-fail first: a prompt below the char floor, missing the NEGATIVE BLOCK, or encoding a demographic default cannot average out to a pass. Grades prompt specifications only, not rendered images or copy; never grades prompts it authored.
+**Core SOPs to build:**
+- 01-Prompt-QC-Gate-Phase-Prompt-QC.md
+- 02-Char-Floor-and-Structure-Battery.md
+- 03-Independence-and-Provenance-Block.md
+- 04-Rework-Loop-and-Escalation.md
+**Role type:** qc
+
+### 29. Image QC Specialist - Presentations
+**Slug:** qc-specialist-image-presentations
+**What it does:** The INDEPENDENT multimodal reviewer of every rendered slide image produced by the Slide Image Creator, sequencing after Render (Phase P-IMAGE-QC). Performs a real vision pass on the pixel content of each render, grades against the image-QC rubric, and writes `working/qc/image_qc_report.json` with a per-slide `vision_api_response` provenance record. Gate AF-IMAGE-QC blocks assembly. Enforces the mandatory vision read (AF-IMAGE-QC-VISION), every-slide scope with no exclusions, and pixel auto-fails: AF-LOCAL-CANVAS (flat cream card), AF-OVERLAY-DELIVERED (double-printed words), under-byte renders below the 51,200-byte kie-bake floor, and AF-CANONICAL-RENDER-BYPASS. Auto-fail first; never grades renders it produced.
+**Core SOPs to build:**
+- 01-Image-QC-Gate-Phase-Image-QC-Vision-Read.md
+- 02-Pixel-Auto-Fail-Battery.md
+- 03-Every-Slide-Scope-No-Exclusions.md
+- 04-Independence-and-Provenance-Block.md
+**Role type:** qc
+
+### 30. Typography QC Specialist - Presentations
+**Slug:** qc-specialist-typography-presentations
+**What it does:** The INDEPENDENT reviewer of the design system the Typography Architect produced, sequencing after Design (Phase P-TYPO-QC). Grades the design system against the typography rubric and writes `working/qc/typography_qc_report.json`. Gate AF-TYPOGRAPHY-QC blocks prompt authoring unless the report gates "Phase Typography-QC", averages >= 8.5, has zero triggered auto-fails, marks `pass: true`, and carries an independent-reviewer provenance block. Co-owns AF-CREATIVITY (the anti-template auto-fail): rejects any design system where a single layout archetype dominates more than 60% of slides (ARCHETYPE_DOMINANCE_CEILING). Auto-fail first; never grades a design system it built.
+**Core SOPs to build:**
+- 01-Typography-QC-Gate-Phase-Typo-QC.md
+- 02-Anti-Template-Archetype-Dominance-Ceiling.md
+- 03-Creative-Typography-Rubric.md
+- 04-Independence-and-Provenance-Block.md
+**Role type:** qc
+
+### 31. Speech QC Specialist - Presentations
+**Slug:** qc-specialist-speech-presentations
+**What it does:** The INDEPENDENT reviewer of the presenter speech the Presenters Speech Writer authored, sequencing after Speech (Phase P-SPEECH-QC). Grades the speech manuscript (`working/presenter-speech/presenters_speech.md`) against the speech rubric and writes `working/qc/speech_qc_report.json`. Gate AF-SPEECH-QC is conditional: it defers until the report exists, then enforces that it gates "Phase Speech-QC", averages >= 8.5, has zero triggered auto-fails, marks `pass: true`, and carries an independent-reviewer provenance block. Grades the speech's craft, coverage, pacing, and audience-facing voice; the mechanical word-count floor (AF-SPEECH-SHORT) is a separate pipeline gate. Auto-fail first; never grades a speech it wrote.
+**Core SOPs to build:**
+- 01-Speech-QC-Gate-Phase-Speech-QC.md
+- 02-Craft-Coverage-and-Pacing-Rubric.md
+- 03-Independence-and-Provenance-Block.md
 - 04-Rework-Loop-and-Escalation.md
 **Role type:** qc
 

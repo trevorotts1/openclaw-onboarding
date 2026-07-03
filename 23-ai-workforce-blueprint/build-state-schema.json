@@ -424,9 +424,17 @@
         "pending",
         "building",
         "done",
+        "done-degraded",
         "failed"
       ],
-      "description": "Skill 32 Command Center setup status (tracked by Skill 37 Step 1)"
+      "description": "Skill 32 Command Center setup status (tracked by Skill 37 Step 1). 'done-degraded' (Issue #6 fail-closed) means the dashboard is locally up but one or more required board-provisioning sub-phases (6b workspaces / 6c departments / 6d md-content / 6e dashboard-content) did not reach true, or the ZHE acceptance gate failed under the ZHE_ENFORCE=0 escape hatch; the resume cron revisits it because it is not 'done'."
+    },
+    "commandCenterDegradedPhases": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Issue #6: comma-joined list of the required Command Center sub-phases that did not reach true on the last run-full-install pass (empty/null when commandCenterStatus=done). Operator-facing surface for the resume cron."
     },
     "commandCenterUrl": {
       "type": [

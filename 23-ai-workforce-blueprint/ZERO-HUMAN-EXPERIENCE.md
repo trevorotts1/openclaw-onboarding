@@ -66,14 +66,16 @@ pure-code gate (no LLM is ever in the counting or the verdict):
   verdict** (rc 9), alongside the canonical-authoring / role / SOP / trio / boundary gates;
   records `zheStatus`.
 
-**RED-FIRST CONTRACT (plan §6):** the prover is authored RED before everything so each
-ZHE step is built to turn it green. The routing marker passes today; the
-persona-reflex / full-context-handoff / reporting / platform-facts assertions stay RED
-until W5/W6/W7 stamp them via `apply-fleet-standards.sh`. The two gates above therefore
-**record + print loud** today but only **hard-fail** the build under `ZHE_ENFORCE=1`,
-so they become blocking acceptance gates by flipping one env var at the "flip green"
-milestone — without breaking in-flight builds. A hard fail marks the install failed so
-the resume cron re-proves on the next update (fail-loud + auto-repair).
+**BLOCKING BY DEFAULT (plan §6; Issue #6, v17.0.11):** the prover was authored RED
+before everything so each ZHE step was built to turn it green. The routing,
+persona-reflex, full-context-handoff, reporting and platform-facts markers are now
+stamped via `apply-fleet-standards.sh`, so the RED-first precondition has landed. The
+two gates above therefore **hard-fail the build BY DEFAULT** (`ZHE_ENFORCE` unset
+behaves as `=1`); an explicit `ZHE_ENFORCE=0` escape hatch is retained to unblock a box
+while a genuine prover regression is triaged. The default is safe for fresh/in-flight
+builds because a box that did NOT complete the interview is **EXEMPT** (prover exits 0).
+A hard fail marks the install failed so the resume cron re-proves on the next update
+(fail-loud + auto-repair).
 
 ---
 
