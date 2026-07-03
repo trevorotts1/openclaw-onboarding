@@ -1,0 +1,69 @@
+{
+  "_comment": "SINGLE SOURCE OF TRUTH for the repo-wide version markers that must ALL equal /version. Read by BOTH scripts/bump-version.sh (--check drift guard) and 23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py (VERSION-MARKERS dimension) so the two can never disagree on WHICH markers, or HOW MANY, track the repo version. To add or remove a marker, edit THIS file (and mirror the same change in bump-version.sh's roll logic + BUMP_CHECKED_MARKERS); bump-version.sh fails loudly at startup if its checked-marker count ever diverges from this manifest's count. Paths are relative to the repo root. Only markers that track /version in LOCKSTEP belong here; markers that track an INDEPENDENT skill version (e.g. other skills' SKILL.md version:, or per-skill skill-version.txt files) are deliberately excluded.",
+  "count": 11,
+  "markers": [
+    {
+      "id": "/version",
+      "file": "version",
+      "type": "plainfile"
+    },
+    {
+      "id": "install.sh ONBOARDING_VERSION",
+      "file": "install.sh",
+      "type": "regex",
+      "pattern": "^ONBOARDING_VERSION=\"?(v?[0-9.]+)\"?"
+    },
+    {
+      "id": "update-skills.sh ONBOARDING_VERSION",
+      "file": "update-skills.sh",
+      "type": "regex",
+      "pattern": "^ONBOARDING_VERSION=\"?(v?[0-9.]+)\"?"
+    },
+    {
+      "id": "23-ai-workforce-blueprint/skill-version.txt",
+      "file": "23-ai-workforce-blueprint/skill-version.txt",
+      "type": "plainfile"
+    },
+    {
+      "id": "_index.json version",
+      "file": "23-ai-workforce-blueprint/templates/role-library/_index.json",
+      "type": "json",
+      "key": "version"
+    },
+    {
+      "id": "_qc-summary.md",
+      "file": "23-ai-workforce-blueprint/templates/role-library/_qc-summary.md",
+      "type": "regex",
+      "pattern": "Role Library v([0-9]+\\.[0-9]+\\.[0-9]+)"
+    },
+    {
+      "id": "README this-repo-at",
+      "file": "README.md",
+      "type": "regex",
+      "pattern": "this repo at v([0-9]+\\.[0-9]+\\.[0-9]+)"
+    },
+    {
+      "id": "README Current-Version",
+      "file": "README.md",
+      "type": "regex",
+      "pattern": "Current Version: v([0-9]+\\.[0-9]+\\.[0-9]+)"
+    },
+    {
+      "id": "DIRECT-TO-AGENT **vX.Y.Z**",
+      "file": "DIRECT-TO-AGENT-UPDATE-MESSAGE.md",
+      "type": "regex",
+      "pattern": "\\*\\*v([0-9]+\\.[0-9]+\\.[0-9]+)\\*\\*"
+    },
+    {
+      "id": "cc-compat onboardingVersion",
+      "file": "cc-compat.json",
+      "type": "json",
+      "key": "onboardingVersion"
+    },
+    {
+      "id": "23-ai-workforce-blueprint/SKILL.md [version:]",
+      "file": "23-ai-workforce-blueprint/SKILL.md",
+      "type": "yaml_frontmatter"
+    }
+  ]
+}

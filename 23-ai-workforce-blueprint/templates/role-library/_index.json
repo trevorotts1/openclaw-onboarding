@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-06-28T00:00:00Z",
-  "version": "17.0.6",
+  "version": "17.0.7",
   "total_roles": 426,
   "total_departments": 34,
   "departments": {
@@ -5129,9 +5129,9 @@
       "path": "templates/role-library/presentations/brainstorming-buddy-presentations.md",
       "capability_class": "CONVERSATIONAL",
       "vision_flag": false,
-      "content_sha": "sha256:5e3271731624918ecb2f71f1e22859ef1ab863d0b09d32652ae1e904a8ddca2e",
+      "content_sha": "sha256:f65aeb9c1931632e7aa1eafcf09e1ef9a94e81fe93504ffba44772adb157e151",
       "render_sha": "sha256:e03e7ac574156a534ee187c227e044df98b1e2430605df95fe6a686150d98e00",
-      "content_version": "1.0.5",
+      "content_version": "1.0.6",
       "content_hashed_at": "2026-07-03T13:18:47.268650+00:00"
     },
     {
@@ -7417,9 +7417,9 @@
       "path": "templates/role-library/presentations/signature-presentation-architect.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:38a585a7308d08c972abc9e0e6001b0388b6135e6bedfd673470293dd9bcc1f6",
+      "content_sha": "sha256:4f160aa46af87132b76e8a9a0261c865b6ce5d58bfb5ed9e3ef2a8e75d358320",
       "render_sha": "sha256:38a585a7308d08c972abc9e0e6001b0388b6135e6bedfd673470293dd9bcc1f6",
-      "content_version": "1.0.1",
+      "content_version": "1.0.2",
       "content_hashed_at": "2026-07-03T13:18:47.268650+00:00"
     },
     {
@@ -8092,17 +8092,17 @@
       "slug": "SOP-SIGPRES-00-THE-SIGNATURE-PRESENTATION-LAW",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/SOP-SIGPRES-00-THE-SIGNATURE-PRESENTATION-LAW.md",
-      "content_sha": "sha256:13eaa73012041126c9306927ab3fbfb06f3f81217459e20a79c0edc0ccdfd39b",
-      "content_version": "1.0.0",
+      "content_sha": "sha256:014363e06103f0d9420b14a8fd2fe71442bacbc7e31e7957a88487bf3f8e2b56",
+      "content_version": "1.0.1",
       "content_hashed_at": "2026-07-03T13:18:47.268650+00:00"
     },
     {
       "slug": "SOP-SIGPRES-01-EIGHT-QUESTIONS-ONE-BLOCK-AND-FRAME-SELECTION",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/SOP-SIGPRES-01-EIGHT-QUESTIONS-ONE-BLOCK-AND-FRAME-SELECTION.md",
-      "content_sha": "sha256:b694343fc7891959641f0a2efb626cd577cdd7d1d1aba0d0ab18eec96b1e8b8f",
-      "content_version": "1.0.0",
-      "content_hashed_at": "2026-07-03T13:18:47.268650+00:00"
+      "content_sha": "sha256:eed2732ff91f43e09a527ddd70bf501f678b0f4313b10c8b0f740f45c3d2ad16",
+      "content_version": "1.0.1",
+      "content_hashed_at": "2026-07-03T17:51:04.670743+00:00"
     },
     {
       "slug": "SOP-SIGPRES-02-PHASE-1-AVATAR-SECTION",

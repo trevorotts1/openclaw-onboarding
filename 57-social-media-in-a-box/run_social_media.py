@@ -368,6 +368,36 @@ def run(manifest, mode, run_dir: Path):
     return EXIT_PASS
 
 
+# ---------------------------------------------------------------------------
+# Command Center board card (FAIL-SOFT). Mirrors Skill-48 (ad_director) and the
+# presentations build_deck._board_patch_phase pattern via the shared mc_board
+# helper: land ONE mc-route card per run and advance it. A disabled board
+# (no COMMAND_CENTER_URL) is a clean no-op; ANY failure is swallowed — the board
+# is a VIEW, never a gate, and can never affect this orchestrator's exit code.
+# ---------------------------------------------------------------------------
+def _mc_board_begin(run_dir, mode):
+    try:
+        sys.path.insert(0, str(SCRIPTS))
+        import mc_board
+        return mc_board.begin_run(
+            run_dir, slug=run_dir.name,
+            title="Social Media in a Box (%s) — %s" % (mode, run_dir.name),
+            department="social-media", persona="Social Media in a Box",
+            source="social-media")
+    except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
+        print("[mc_board] begin best-effort skip (%s)" % exc, file=sys.stderr)
+        return None
+
+
+def _mc_board_done(run_dir, task_id):
+    try:
+        sys.path.insert(0, str(SCRIPTS))
+        import mc_board
+        mc_board.complete_run(run_dir, task_id, note="certified + delivered")
+    except Exception as exc:  # noqa: BLE001
+        print("[mc_board] done best-effort skip (%s)" % exc, file=sys.stderr)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Deterministic Social Media in a Box orchestrator (Skill 57).")
     ap.add_argument("--mode", required=True, choices=MODES)
@@ -392,7 +422,11 @@ def main(argv=None):
         return EXIT_NONCE
     if _defer_check(args.mode, args, run_dir):
         return EXIT_GATE
-    return run(manifest, args.mode, run_dir)
+    _mc_task = _mc_board_begin(run_dir, args.mode)
+    rc = run(manifest, args.mode, run_dir)
+    if rc == EXIT_PASS:
+        _mc_board_done(run_dir, _mc_task)
+    return rc
 
 
 if __name__ == "__main__":

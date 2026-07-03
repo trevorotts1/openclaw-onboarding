@@ -804,8 +804,10 @@ def _screenshot(session: str, path: str) -> None:
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         _ab(session, "screenshot", path, timeout=20)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        # Best-effort still (control flow unchanged) — but LOG so a missing
+        # evidence screenshot is explainable instead of silently vanishing.
+        _log(f"screenshot best-effort failed for {path!r}: {exc}")
 
 
 def _shot(evidence_root: str, n: List[int], phase: str) -> str:
@@ -939,6 +941,13 @@ _FORM_ID_CAPTURE_JS = (
 )
 
 
+# SERVER-SIDE SHAPE GATE for a captured form id. A real GHL form id is an opaque
+# ~20-char alphanumeric token (e.g. "cuPqQhLbk0GKeguEbGYW"). We NEVER trust raw eval
+# output as an id: a stray path segment, an oversized DOM blob, or any punctuation is
+# not a form id. Conservative bound: 15-30 chars, [A-Za-z0-9] only (fullmatch).
+_FORM_ID_SHAPE_RE = re.compile(r"[A-Za-z0-9]{15,30}")
+
+
 def _capture_form_id(session: str) -> str:
     """Capture the built form's id from the builder IFRAME's `.src` attribute.
 
@@ -946,9 +955,19 @@ def _capture_form_id(session: str) -> str:
     (parent-readable), falling back to the top-frame `location.pathname + hash +
     search` match; returns '' if neither yields an id. Fixes the prior top-frame-only
     read that always returned '' (the top frame carries no form id), which left the
-    id uncaptured so downstream delete/verify could not target the form."""
+    id uncaptured so downstream delete/verify could not target the form.
+
+    HARDENING: the raw `_eval` result is re-validated SERVER-SIDE against the GHL
+    form-id shape (``[A-Za-z0-9]{15,30}``) before being returned. A value that does
+    not match that shape is rejected (returns '') — never trust raw eval output as an
+    id, so a malformed / oversized / punctuation-bearing capture can't poison the
+    downstream delete/verify targeting."""
     got = _eval(session, _FORM_ID_CAPTURE_JS, timeout=12)
-    return (got or "").strip()
+    form_id = (got or "").strip()
+    # Re-validate the captured id's SHAPE before trusting it downstream.
+    if not _FORM_ID_SHAPE_RE.fullmatch(form_id):
+        return ""
+    return form_id
 
 
 _EMBED_CAPTURE_JS = (

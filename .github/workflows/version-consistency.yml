@@ -1,21 +1,17 @@
 name: Version consistency
 
-# Fails the build if any of the 9 version markers disagree.
+# Fails the build if version markers disagree (authoritative gate: scripts/bump-version.sh --check).
 # Triggered on every push to main and every PR targeting main.
 #
-# Markers checked (5 -> 8 in v10.14.35; 8 -> 9 in v10.15.16, matching bump-version.sh):
-#   1. /version
-#   2. /install.sh ONBOARDING_VERSION=
-#   3. /update-skills.sh ONBOARDING_VERSION=
-#   4. /23-ai-workforce-blueprint/skill-version.txt
-#   5. /23-ai-workforce-blueprint/templates/role-library/_index.json
-#   6. /23-ai-workforce-blueprint/templates/role-library/_qc-summary.md
-#   7. /README.md (this repo at vX.Y.Z)
-#   8. /DIRECT-TO-AGENT-UPDATE-MESSAGE.md (**vX.Y.Z**)
-#   9. /README.md (Current Version: vX.Y.Z) — added v10.15.16. A SECOND marker
-#      in README.md, separate from #7. It drifted to v10.15.15 (one patch behind
-#      /version) because nothing rolled or checked it. Now both rolled by
-#      bump-version.sh and gated here.
+# The authoritative version marker source is scripts/version-markers.json (11 markers total),
+# verified by scripts/bump-version.sh --check. This workflow delegates to that gate and no longer
+# re-implements its own marker logic.
+#
+# For reference, the 11 markers include:
+#   /version, /install.sh ONBOARDING_VERSION=, /update-skills.sh ONBOARDING_VERSION=,
+#   /23-ai-workforce-blueprint/skill-version.txt, /_index.json [version],
+#   /_qc-summary.md heading, /README.md markers (2), /DIRECT-TO-AGENT-UPDATE-MESSAGE.md,
+#   and others as defined in scripts/version-markers.json.
 #
 # PRD 2.2 retro-tag guards (added v11.7.0):
 #  G1 (version-without-tag): on push to main, the current /version must have
@@ -42,7 +38,7 @@ on:
 
 jobs:
   check-version-drift:
-    name: Verify all 9 version markers agree
+    name: "Verify all version markers agree (scripts/bump-version.sh --check)"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -53,112 +49,15 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Verify version consistency
+      - name: "Verify version consistency (authoritative: scripts/bump-version.sh --check)"
         shell: bash
         run: |
           set -euo pipefail
-          echo "Reading 8 version locations..."
 
-          # Loc 1: /version (with v prefix)
-          V_ROOT=$(head -1 version | tr -d '[:space:]')
-
-          # Loc 2: /install.sh ONBOARDING_VERSION=
-          V_INSTALL=$(grep -E '^ONBOARDING_VERSION=' install.sh | head -1 \
-            | sed -E 's/^ONBOARDING_VERSION="?([^"]*)"?.*/\1/')
-
-          # Loc 3: /update-skills.sh ONBOARDING_VERSION=
-          if [ -f update-skills.sh ]; then
-            V_UPDATE_SKILLS=$(grep -E '^ONBOARDING_VERSION=' update-skills.sh | head -1 \
-              | sed -E 's/^ONBOARDING_VERSION="?([^"]*)"?.*/\1/')
-          else
-            V_UPDATE_SKILLS="MISSING"
-          fi
-
-          # Loc 4: /23-ai-workforce-blueprint/skill-version.txt (no v prefix)
-          V_SKILL=$(head -1 23-ai-workforce-blueprint/skill-version.txt | tr -d '[:space:]')
-
-          # Loc 5: /23-ai-workforce-blueprint/templates/role-library/_index.json
-          V_INDEX=$(python3 -c "
-          import json
-          d = json.load(open('23-ai-workforce-blueprint/templates/role-library/_index.json'))
-          print(d.get('version', 'MISSING'))
-          ")
-
-          # Loc 6: /23-ai-workforce-blueprint/templates/role-library/_qc-summary.md
-          V_QC=$(grep -oE 'Role Library v[0-9]+\.[0-9]+\.[0-9]+' \
-            23-ai-workforce-blueprint/templates/role-library/_qc-summary.md \
-            | head -1 | sed 's/Role Library //')
-
-          # Loc 7: /README.md "this repo at vX.Y.Z" marker
-          if [ -f README.md ]; then
-            V_README=$(grep -oE 'this repo at v[0-9]+\.[0-9]+\.[0-9]+' README.md \
-              | head -1 | sed 's/this repo at //' || true)
-            [ -z "$V_README" ] && V_README="MISSING"
-            # Loc 9: /README.md "Current Version: vX.Y.Z" marker (added v10.15.16)
-            V_README_CURRENT=$(grep -oE 'Current Version: v[0-9]+\.[0-9]+\.[0-9]+' README.md \
-              | head -1 | sed 's/Current Version: //' || true)
-            [ -z "$V_README_CURRENT" ] && V_README_CURRENT="MISSING"
-          else
-            V_README="MISSING"
-            V_README_CURRENT="MISSING"
-          fi
-
-          # Loc 8: /DIRECT-TO-AGENT-UPDATE-MESSAGE.md "**vX.Y.Z**" boldface
-          if [ -f DIRECT-TO-AGENT-UPDATE-MESSAGE.md ]; then
-            V_DIRECT=$(grep -oE '\*\*v[0-9]+\.[0-9]+\.[0-9]+\*\*' DIRECT-TO-AGENT-UPDATE-MESSAGE.md \
-              | head -1 | tr -d '*' || true)
-            [ -z "$V_DIRECT" ] && V_DIRECT="MISSING"
-          else
-            V_DIRECT="MISSING"
-          fi
-
-          # Normalize (strip leading v)
-          norm() { echo "${1#v}"; }
-          N_ROOT=$(norm "$V_ROOT")
-          N_INSTALL=$(norm "$V_INSTALL")
-          N_UPDATE_SKILLS=$(norm "$V_UPDATE_SKILLS")
-          N_SKILL=$(norm "$V_SKILL")
-          N_INDEX=$(norm "$V_INDEX")
-          N_QC=$(norm "$V_QC")
-          N_README=$(norm "$V_README")
-          N_README_CURRENT=$(norm "$V_README_CURRENT")
-          N_DIRECT=$(norm "$V_DIRECT")
-
-          echo ""
-          echo "Version state:"
-          printf "  %-55s %s\n" "/version"                                                "$V_ROOT"
-          printf "  %-55s %s\n" "/install.sh ONBOARDING_VERSION"                          "$V_INSTALL"
-          printf "  %-55s %s\n" "/update-skills.sh ONBOARDING_VERSION"                    "$V_UPDATE_SKILLS"
-          printf "  %-55s %s\n" "/23-ai-workforce-blueprint/skill-version.txt"            "$V_SKILL"
-          printf "  %-55s %s\n" "/.../templates/role-library/_index.json [version]"       "$V_INDEX"
-          printf "  %-55s %s\n" "/.../templates/role-library/_qc-summary.md heading"      "$V_QC"
-          printf "  %-55s %s\n" "/README.md (this repo at vX.Y.Z)"                        "$V_README"
-          printf "  %-55s %s\n" "/README.md (Current Version: vX.Y.Z)"                    "$V_README_CURRENT"
-          printf "  %-55s %s\n" "/DIRECT-TO-AGENT-UPDATE-MESSAGE.md (**vX.Y.Z**)"         "$V_DIRECT"
-          echo ""
-
-          # Compare normalized values
-          FAIL=""
-          [ "$N_ROOT" = "$N_INSTALL"        ] || FAIL="$FAIL install.sh($N_INSTALL)"
-          [ "$N_ROOT" = "$N_UPDATE_SKILLS"  ] || FAIL="$FAIL update-skills.sh($N_UPDATE_SKILLS)"
-          [ "$N_ROOT" = "$N_SKILL"          ] || FAIL="$FAIL skill-version.txt($N_SKILL)"
-          [ "$N_ROOT" = "$N_INDEX"          ] || FAIL="$FAIL _index.json($N_INDEX)"
-          [ "$N_ROOT" = "$N_QC"             ] || FAIL="$FAIL _qc-summary.md($N_QC)"
-          [ "$N_ROOT" = "$N_README"         ] || FAIL="$FAIL README.md:this-repo-at($N_README)"
-          [ "$N_ROOT" = "$N_README_CURRENT" ] || FAIL="$FAIL README.md:Current-Version($N_README_CURRENT)"
-          [ "$N_ROOT" = "$N_DIRECT"         ] || FAIL="$FAIL DIRECT-TO-AGENT-UPDATE-MESSAGE.md($N_DIRECT)"
-
-          if [ -n "$FAIL" ]; then
-            echo "VERSION DRIFT DETECTED"
-            echo "   /version says: $N_ROOT"
-            echo "   Disagrees with:$FAIL"
-            echo ""
-            echo "FIX: run ./scripts/bump-version.sh v$N_ROOT (or your intended version)"
-            echo "     to rewrite all 8 files atomically, then commit + push."
-            exit 1
-          fi
-
-          echo "All 9 version markers agree at $V_ROOT"
+          # Delegate to the authoritative version marker gate.
+          # scripts/bump-version.sh --check reads scripts/version-markers.json (11 markers)
+          # and exits non-zero if any markers disagree.
+          bash scripts/bump-version.sh --check
 
           # ── PRD 1.11: cc-compat.json integrity check ─────────────────────────
           # cc-compat.json.onboardingVersion must equal /version.

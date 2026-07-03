@@ -423,6 +423,35 @@ def self_test() -> int:
     return EXIT_PASS if ok else 1
 
 
+# ---------------------------------------------------------------------------
+# Command Center board card (FAIL-SOFT). Mirrors Skill-48 (ad_director) and the
+# presentations build_deck._board_patch_phase pattern via the shared mc_board
+# helper: land ONE mc-route card per run and advance it. A disabled board
+# (no COMMAND_CENTER_URL) is a clean no-op; ANY failure is swallowed — the board
+# is a VIEW, never a gate, and can never affect this orchestrator's exit code.
+# ---------------------------------------------------------------------------
+def _mc_board_begin(run_dir):
+    try:
+        sys.path.insert(0, str(SCRIPTS))
+        import mc_board
+        return mc_board.begin_run(
+            run_dir, slug=run_dir.name,
+            title="Product Bio — %s" % run_dir.name,
+            department="product-bio", persona="Product Bio", source="product-bio")
+    except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
+        print("[mc_board] begin best-effort skip (%s)" % exc, file=sys.stderr)
+        return None
+
+
+def _mc_board_done(run_dir, task_id):
+    try:
+        sys.path.insert(0, str(SCRIPTS))
+        import mc_board
+        mc_board.complete_run(run_dir, task_id, note="certified + delivered")
+    except Exception as exc:  # noqa: BLE001
+        print("[mc_board] done best-effort skip (%s)" % exc, file=sys.stderr)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Deterministic Product Bio orchestrator (Skill 55).")
     ap.add_argument("--run-dir", help="the product-bio run directory (contains working/)")
@@ -449,7 +478,11 @@ def main(argv=None):
               "(the ONE sanctioned entry); do not call this orchestrator directly.",
               file=sys.stderr)
         return EXIT_NONCE
-    return run(manifest, run_dir, args.upto)
+    _mc_task = _mc_board_begin(run_dir)
+    rc = run(manifest, run_dir, args.upto)
+    if rc == EXIT_PASS and not args.upto:
+        _mc_board_done(run_dir, _mc_task)
+    return rc
 
 
 if __name__ == "__main__":

@@ -284,6 +284,34 @@ def self_test() -> int:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ---------------------------------------------------------------------------
+# Command Center board card (FAIL-SOFT). Mirrors Skill-48 (ad_director) and the
+# presentations build_deck._board_patch_phase pattern via the shared mc_board
+# helper: land ONE mc-route card per run and advance it. A disabled board
+# (no COMMAND_CENTER_URL) is a clean no-op; ANY failure is swallowed — the board
+# is a VIEW, never a gate, and can never affect this orchestrator's exit code.
+# ---------------------------------------------------------------------------
+def _mc_board_begin(run_dir: Path) -> Optional[str]:
+    try:
+        import mc_board
+        return mc_board.begin_run(
+            run_dir, slug=run_dir.name,
+            title=f"Sales Page Assets — {run_dir.name}",
+            department="sales-pages", persona="Sales Page Assets",
+            source="sales-page-assets")
+    except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
+        print(f"[mc_board] begin best-effort skip ({exc})", file=sys.stderr)
+        return None
+
+
+def _mc_board_done(run_dir: Path, task_id: Optional[str]) -> None:
+    try:
+        import mc_board
+        mc_board.complete_run(run_dir, task_id, note="certified + delivered")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[mc_board] done best-effort skip ({exc})", file=sys.stderr)
+
+
 def main(argv: List[str]) -> int:
     ap = argparse.ArgumentParser(
         description="Deterministic no-skip Sales Page Assets orchestrator. Requires the "
@@ -311,7 +339,10 @@ def main(argv: List[str]) -> int:
         print(resolved)
         return EXIT_FRONT_DOOR
 
+    _mc_task = _mc_board_begin(run_dir)
     code, _ = orchestrate(run_dir, resolved)
+    if code == EXIT_OK:
+        _mc_board_done(run_dir, _mc_task)
     return code
 
 
