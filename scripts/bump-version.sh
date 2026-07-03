@@ -397,6 +397,34 @@ if [ -f "$F_06_SKILL_VERSION" ]; then
   echo "$TARGET" > "$F_06_SKILL_VERSION"
 fi
 
+# 12. 06 SKILL.md nested `metadata: version:` (v17.0.4 — July-3 audit finding P1-4).
+#     06-ghl-install-pages/SKILL.md carries a version under `metadata:` that ALSO
+#     tracks the repo /version (like 06's skill-version.txt above), but nothing
+#     rolled it, so it silently drifted (found stale at 16.2.14). It is indented,
+#     quoted, and nested under `metadata:` (NOT a top-level frontmatter field like
+#     23's), so the frontmatter-version CI gate deliberately skips it — roll it
+#     HERE, in lockstep, so it can never drift again. Rewrite the first `version:`
+#     line inside the leading `---`…`---` block, preserving its quoting.
+F_06_SKILL_MD="$REPO_ROOT/06-ghl-install-pages/SKILL.md"
+if [ -f "$F_06_SKILL_MD" ]; then
+  python3 - "$F_06_SKILL_MD" "$TARGET" <<'PYEOF'
+import re, sys
+path, target = sys.argv[1], sys.argv[2]
+content = open(path).read()
+m = re.match(r'^(---\s*\n.*?\n---\s*\n)', content, re.DOTALL)
+if m:
+    head = m.group(1); rest = content[m.end():]
+    new_head, n = re.subn(r'(?m)^(\s*version:\s*)(["\']?)[^"\'\n]*(["\']?)\s*$',
+                          lambda mo: f'{mo.group(1)}{mo.group(2)}{target}{mo.group(3)}',
+                          head, count=1)
+    if n == 0:
+        print(f"WARN: no version: field in {path} frontmatter", file=sys.stderr)
+    open(path, "w").write(new_head + rest)
+else:
+    print(f"WARN: no YAML frontmatter in {path}", file=sys.stderr)
+PYEOF
+fi
+
 echo ""
 echo "Result:"
 print_state

@@ -9,7 +9,7 @@ triggers:
   - "set up inbox manager"
   - "set up my coach"
   - "personal assistant"
-version: 1.0.0
+version: 1.0.4
 ---
 
 # Skill 42: Personal Assistant Library
