@@ -10,7 +10,12 @@ Covers the contract that matters:
   * AUTH PARITY: Bearer CC_API_TOKEN + x-webhook-signature = HMAC-SHA256(
     WEBHOOK_SECRET, EXACT rawBody) hex — recomputed the way the route handler
     verifies it.
-  * REQUEST CONTRACT: POST /api/tasks/ingest body shape; PATCH /api/tasks/{id} shape.
+  * REQUEST CONTRACT: POST /api/tasks/ingest body shape; PATCH /api/tasks/{id} shape;
+    POST /api/tasks/{id}/activities body shape.
+  * STATUS ENFORCEMENT: the fake server MIRRORS the CC UpdateTaskSchema — a PATCH
+    whose status is not one of the 10 authoritative TaskStatus values is REJECTED
+    with HTTP 400, exactly as the live gate does. (The retired 'delivered' literal
+    is rejected; the mock previously accepted it and hid the P9-DELIVER 400 bug.)
   * FAIL-SOFT on transport errors (URLError / HTTPError / timeout) => None/False,
     but cc_register_attempted=True is always stamped.
   * stamp_task_id merges cc_task_id into process_manifest.json without clobbering.
@@ -28,6 +33,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cc_board  # noqa: E402
+
+# The 10 authoritative Command Center TaskStatus values (UpdateTaskSchema in the CC
+# repo src/lib/validation.ts). The fake server below rejects a PATCH status outside
+# this set with HTTP 400, mirroring the live Zod gate.
+VALID_CC_STATUSES = frozenset({
+    "backlog", "inbox", "planning", "in_progress", "assigned",
+    "review", "testing", "blocked", "pending_dispatch", "done",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -66,13 +79,32 @@ class _Recorder:
         self.responses.append(exc)
 
     def __call__(self, req, timeout=None):
+        body_str = req.data.decode("utf-8") if req.data else ""
         self.requests.append({
             "method": req.get_method(),
             "url": req.full_url,
             "headers": {k.lower(): v for k, v in req.header_items()},
-            "body": req.data.decode("utf-8") if req.data else "",
+            "body": body_str,
             "timeout": timeout,
         })
+        # SERVER-SIDE STATUS ENFORCEMENT (mirror of CC UpdateTaskSchema): a task PATCH
+        # carrying a status outside the 10 authoritative values is a 400 — the same
+        # way the live Zod validator rejects it — so an unknown literal like the
+        # retired 'delivered' can never masquerade as a successful advance.
+        if req.get_method() == "PATCH" and "/api/tasks/" in req.full_url \
+                and not req.full_url.endswith("/activities"):
+            try:
+                _status = json.loads(body_str).get("status") if body_str else None
+            except (json.JSONDecodeError, ValueError):
+                _status = None
+            if _status is not None and _status not in VALID_CC_STATUSES:
+                raise urllib.error.HTTPError(
+                    req.full_url, 400, "Validation failed", {},
+                    io.BytesIO(json.dumps({
+                        "error": "Validation failed",
+                        "details": [{"path": ["status"], "message":
+                                     f"Invalid enum value. Received '{_status}'"}],
+                    }).encode()))
         if not self.responses:
             raise AssertionError("no scripted response queued")
         nxt = self.responses.pop(0)
@@ -211,6 +243,67 @@ class AuthAndContractTest(unittest.TestCase):
         ok = cc_board.patch_phase(None, "task-xyz", "P0A-INTAKE", "done", env={})
         self.assertFalse(ok)
         self.assertEqual(self.rec.requests, [])
+
+    def test_patch_unknown_status_is_rejected(self):
+        # REGRESSION for the P9-DELIVER bug: 'delivered' is NOT a CC TaskStatus, so
+        # the server (mock, mirroring UpdateTaskSchema) rejects it with 400 and
+        # patch_phase returns False. The request WAS attempted (proving the mock's
+        # rejection — not a client shortcut — produced the False).
+        with tempfile.TemporaryDirectory() as d:
+            rd = Path(d)
+            ok = cc_board.patch_phase(rd, "task-xyz", "P9-DELIVER", "delivered",
+                                      note="bundle complete — deck delivered", env=ENV)
+            self.assertFalse(ok)
+            req = self.rec.requests[-1]
+            self.assertEqual(req["method"], "PATCH")
+            self.assertEqual(json.loads(req["body"])["status"], "delivered")
+            # The failed advance is VISIBLE in the movement receipt (HTTP 400, not ok).
+            receipt = json.loads(
+                (rd / "working" / "checkpoints" / "cc-board.json").read_text())
+            self.assertEqual(receipt["successful_advances"], 0)
+            self.assertEqual(receipt["movements"][-1]["http_status"], 400)
+            self.assertFalse(receipt["movements"][-1]["ok"])
+            self.assertFalse(cc_board.assert_min_one_advance(rd))
+
+    def test_terminal_done_attaches_process_certificate(self):
+        # The terminal close of a completed deck: status='done' + the minted
+        # PROCESS-CERTIFICATE sha (read from delivery/*-FINAL/). 'done' is a valid
+        # status, so the mock accepts it (200) and the advance is recorded OK.
+        with tempfile.TemporaryDirectory() as d:
+            rd = Path(d)
+            cert_dir = rd / "delivery" / "mydeck-FINAL"
+            cert_dir.mkdir(parents=True)
+            (cert_dir / "PROCESS-CERTIFICATE.json").write_text(
+                json.dumps({"certificate_sha": "abc123def456"}))
+            self.rec.queue(200, {"task": {"status": "done"}})
+            ok = cc_board.patch_phase(rd, "task-xyz", "P9-DELIVER", "done",
+                                      note="bundle complete — deck delivered", env=ENV)
+            self.assertTrue(ok)
+            body = json.loads(self.rec.requests[-1]["body"])
+            self.assertEqual(body["status"], "done")
+            self.assertEqual(body["process_certificate_sha"], "abc123def456")
+            self.assertIn("delivered", body["note"])
+            self.assertTrue(cc_board.assert_min_one_advance(rd))
+
+    def test_post_activity_uses_activities_endpoint(self):
+        # Mid-run phase progress is an ACTIVITY (POST /activities), never a status
+        # change — so it carries NO status field and cannot trip the cert done-gate.
+        with tempfile.TemporaryDirectory() as d:
+            rd = Path(d)
+            self.rec.queue(201, {"id": "act-1", "activity_type": "updated"})
+            ok = cc_board.post_activity(rd, "task-xyz", "P4-RENDER",
+                                        "12 slides rendered", env=ENV)
+            self.assertTrue(ok)
+            req = self.rec.requests[-1]
+            self.assertEqual(req["method"], "POST")
+            self.assertEqual(req["url"],
+                             "https://cc.example.test/api/tasks/task-xyz/activities")
+            body = json.loads(req["body"])
+            self.assertEqual(body["activity_type"], "updated")
+            self.assertNotIn("status", body)
+            self.assertIn("P4-RENDER", body["message"])
+            self.assertIn("12 slides rendered", body["message"])
+            self.assertTrue(cc_board.assert_min_one_advance(rd))
 
 
 class StampTest(unittest.TestCase):

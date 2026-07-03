@@ -44,9 +44,27 @@ REQUEST CONTRACT (matched to the live /api/tasks/ingest endpoint):
             external_session_id, idempotency_key:sha256(source_ref+title)}
     return: {ok, task_id, deduped}
 
-  PATCH    PATCH {base}/api/tasks/{task_id}
+  PATCH    PATCH {base}/api/tasks/{task_id}   (task-level STATUS change)
     body:  {phase_id, status, note?, process_certificate_sha?}
     return: 200 -> {task}
+    status vocabulary is the authoritative CC TaskStatus enum (UpdateTaskSchema in
+    src/lib/validation.ts): backlog | inbox | planning | in_progress | assigned |
+    review | testing | blocked | pending_dispatch | done. There is NO 'delivered'
+    status — a COMPLETED deck closes with status='done' + process_certificate_sha
+    (the minted PROCESS-CERTIFICATE sha); the word "delivered" belongs in the note.
+
+  ACTIVITY POST {base}/api/tasks/{task_id}/activities   (mid-run phase PROGRESS)
+    body:  {activity_type:"updated", message}
+    return: 201 -> {activity}
+    Mid-run phase boundaries (P4-RENDER complete, P8-ASSEMBLE complete) are logged
+    as ACTIVITIES, never as task-level status changes: a mid-run status='done'
+    422s the presentations cert done-gate (no PROCESS-CERTIFICATE exists yet) and
+    would wrongly close a non-presentation card.
+
+MOVEMENT RECEIPT — every advance ATTEMPT (status change or activity post) plus its
+HTTP status / body is appended to working/checkpoints/cc-board.json (mirroring the
+campaign skills' mc-board.json receipt) so a failed advance is VISIBLE on disk.
+Recording is fail-soft; it never raises and never blocks the deck build.
 
 The task_id AND cc_register_attempted=True are written into
 ``working/checkpoints/process_manifest.json`` so the offline AF-CC-UNREGISTERED
@@ -60,7 +78,12 @@ PUBLIC API
   ingest_deck_task(run_dir, deck_slug, title, description, priority="medium")
       -> task_id str | None
   patch_phase(run_dir, task_id, phase_id, status, note="") -> bool
+      # task-level STATUS change; on status='done' auto-attaches the cert sha.
+  post_activity(run_dir, task_id, phase_id, note, activity_type="updated") -> bool
+      # mid-run phase PROGRESS via the /activities endpoint (NOT a status change).
   stamp_task_id(run_dir, task_id) -> bool
+  count_successful_advances(run_dir) -> int
+  assert_min_one_advance(run_dir) -> bool
 """
 
 from __future__ import annotations
@@ -70,6 +93,7 @@ import hmac
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -78,6 +102,24 @@ from typing import Optional
 _DEFAULT_TIMEOUT = 8
 _DEPARTMENT_SLUG = "presentations"
 _PERSONA = "Director of Presentations"
+
+# Authoritative Command Center TaskStatus enum — the 10 values of UpdateTaskSchema
+# in the CC repo src/lib/validation.ts. Kept here as the single source of truth on
+# the producer side; the contract test (test_cc_contract.py) fails if this drifts
+# from the CC enum or if build_deck.py / this module emit a status outside it.
+# NB: there is NO 'delivered' status — a completed deck closes with 'done'.
+CC_TASK_STATUSES = frozenset({
+    "backlog",
+    "inbox",
+    "planning",
+    "in_progress",
+    "assigned",
+    "review",
+    "testing",
+    "blocked",
+    "pending_dispatch",
+    "done",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -186,6 +228,87 @@ def _merge_manifest(run_dir, updates: dict) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# MOVEMENT RECEIPT — working/checkpoints/cc-board.json. Mirrors the campaign
+# skills' mc-board.json pattern: every board advance ATTEMPT (a task-level status
+# change or an activity post) is appended with its HTTP status/body so a failed
+# advance is VISIBLE on disk. successful_advances is recomputed on every append.
+# Recording is fail-soft — it never raises and never blocks the deck build.
+# ---------------------------------------------------------------------------
+def _movements_path(run_dir) -> Path:
+    return Path(run_dir) / "working" / "checkpoints" / "cc-board.json"
+
+
+def _now() -> str:
+    try:
+        return time.strftime("%Y-%m-%dT%H:%M:%S%z") or time.strftime("%Y-%m-%dT%H:%M:%S")
+    except Exception:  # noqa: BLE001 — a clock hiccup must not break a receipt
+        return ""
+
+
+def _record_movement(run_dir, entry: dict) -> None:
+    """Append one advance-attempt receipt to working/checkpoints/cc-board.json.
+    Never raises. A no-op when run_dir is None."""
+    if run_dir is None:
+        return
+    p = _movements_path(run_dir)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        data: dict = {}
+        if p.exists():
+            try:
+                loaded = json.loads(p.read_text())
+                if isinstance(loaded, dict):
+                    data = loaded
+            except (json.JSONDecodeError, OSError):
+                data = {}
+        movements = data.get("movements")
+        if not isinstance(movements, list):
+            movements = []
+        record = {"ts": _now()}
+        record.update(entry)
+        movements.append(record)
+        data["movements"] = movements
+        data["successful_advances"] = sum(
+            1 for m in movements if isinstance(m, dict) and m.get("ok")
+        )
+        tmp = p.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(data, indent=2))
+        os.replace(tmp, p)
+    except OSError as exc:
+        _log(f"movement receipt write failed ({exc}).")
+
+
+def count_successful_advances(run_dir) -> int:
+    """Number of board advances that returned OK for this run (0 when the receipt
+    is absent / unreadable / board disabled). Never raises."""
+    if run_dir is None:
+        return 0
+    p = _movements_path(run_dir)
+    if not p.exists():
+        return 0
+    try:
+        data = json.loads(p.read_text())
+    except (json.JSONDecodeError, OSError):
+        return 0
+    if not isinstance(data, dict):
+        return 0
+    got = data.get("successful_advances")
+    if isinstance(got, int):
+        return got
+    movements = data.get("movements")
+    if isinstance(movements, list):
+        return sum(1 for m in movements if isinstance(m, dict) and m.get("ok"))
+    return 0
+
+
+def assert_min_one_advance(run_dir) -> bool:
+    """Lightweight gate: a completed run should have recorded >= 1 SUCCESSFUL board
+    advance. Returns True/False; NEVER raises and never blocks — the caller decides
+    whether to warn (a disabled board legitimately records none)."""
+    return count_successful_advances(run_dir) >= 1
+
+
+# ---------------------------------------------------------------------------
 # CREATE — POST /api/tasks/ingest (idempotent on idempotency_key server-side)
 # ---------------------------------------------------------------------------
 def ingest_deck_task(
@@ -277,20 +400,38 @@ def patch_phase(
     note: str = "",
     env: Optional[dict] = None,
 ) -> bool:
-    """PATCH the CC task card for a phase boundary.
+    """PATCH the CC task card to a task-level STATUS at a phase boundary.
 
-    On status 'done' or 'delivered': automatically reads
-    delivery/*-FINAL/PROCESS-CERTIFICATE.json (if it exists in run_dir) and
-    includes its certificate_sha as process_certificate_sha in the PATCH body,
-    closing the CC done-gate contract (Fix 2b from the spec).
+    Use this for real status transitions only: the P4-RENDER START
+    (backlog->in_progress) and the TERMINAL close of a completed deck
+    (status='done'). Mid-run phase PROGRESS must go through post_activity()
+    instead — a mid-run status='done' 422s the presentations cert done-gate.
 
-    FAIL-SOFT: returns False (never raises) on any board problem; the deck
-    build is never blocked by this function."""
+    On status 'done': automatically reads delivery/*-FINAL/PROCESS-CERTIFICATE.json
+    (the sha prove-deck.py minted) and includes it as process_certificate_sha in the
+    PATCH body, satisfying the CC presentations no-skip done-gate. The word
+    "delivered" is NOT a status — pass it in `note`, never as `status`.
+
+    Every attempt (disabled board, missing id, transport error, non-200, 200) is
+    recorded to the movement receipt (working/checkpoints/cc-board.json) so a failed
+    advance is visible. FAIL-SOFT: returns False (never raises); the deck build is
+    never blocked by this function."""
+    endpoint = "PATCH /api/tasks/{id}"
     cfg = board_config(env)
     if cfg is None:
+        _record_movement(run_dir, {
+            "phase_id": phase_id, "kind": "status", "target": status,
+            "endpoint": endpoint, "http_status": None, "ok": False,
+            "detail": "board disabled (COMMAND_CENTER_URL/MISSION_CONTROL_URL unset)",
+        })
         return False
     if not task_id:
         _log("patch_phase skipped — task_id missing.")
+        _record_movement(run_dir, {
+            "phase_id": phase_id, "kind": "status", "target": status,
+            "endpoint": endpoint, "http_status": None, "ok": False,
+            "detail": "task_id missing",
+        })
         return False
 
     payload: dict = {
@@ -300,9 +441,9 @@ def patch_phase(
     if note:
         payload["note"] = note
 
-    # On done/delivered: attach the process certificate SHA if prove-deck.py
-    # has written the PROCESS-CERTIFICATE.json (Fix 2a / Fix 2b).
-    if status in ("done", "delivered") and run_dir is not None:
+    # On the terminal 'done' close: attach the process certificate SHA if
+    # prove-deck.py has written the PROCESS-CERTIFICATE.json (Fix 2a / Fix 2b).
+    if status == "done" and run_dir is not None:
         cert_sha = _read_certificate_sha(run_dir)
         if cert_sha:
             payload["process_certificate_sha"] = cert_sha
@@ -313,13 +454,91 @@ def patch_phase(
         st, body = _request("PATCH", url, payload, cfg)
     except (urllib.error.URLError, OSError, ValueError) as exc:
         _log(f"patch_phase {phase_id}->{status} failed ({type(exc).__name__}: {exc}).")
+        _record_movement(run_dir, {
+            "phase_id": phase_id, "kind": "status", "target": status,
+            "endpoint": endpoint, "http_status": None, "ok": False,
+            "detail": f"{type(exc).__name__}: {exc}",
+        })
         return False
 
-    if st == 200:
+    ok = st == 200
+    _record_movement(run_dir, {
+        "phase_id": phase_id, "kind": "status", "target": status,
+        "endpoint": endpoint, "http_status": st, "ok": ok,
+        "detail": "OK" if ok else str(body)[:300],
+    })
+    if ok:
         _log(f"patch_phase {phase_id}->{status} OK (task_id={task_id}).")
         return True
 
     _log(f"patch_phase {phase_id}->{status} non-OK (HTTP {st}): {body}.")
+    return False
+
+
+def post_activity(
+    run_dir,
+    task_id: str,
+    phase_id: str,
+    note: str,
+    activity_type: str = "updated",
+    env: Optional[dict] = None,
+) -> bool:
+    """POST a mid-run phase-PROGRESS activity to /api/tasks/{task_id}/activities.
+
+    This is how P4-RENDER-complete and P8-ASSEMBLE-complete are recorded — as
+    ACTIVITIES, NOT task-level status changes. A mid-run status='done' would 422 the
+    presentations cert done-gate (no PROCESS-CERTIFICATE exists mid-run) and would
+    wrongly close a non-presentation card; an activity carries the phase in its
+    message without touching the card's column.
+
+    Body matches the CC CreateActivitySchema: activity_type in
+    {spawned,updated,completed,file_created,status_changed} + a non-empty message
+    (the phase id is embedded in the message). Every attempt is recorded to the
+    movement receipt. FAIL-SOFT: returns False (never raises)."""
+    endpoint = "POST /api/tasks/{id}/activities"
+    cfg = board_config(env)
+    if cfg is None:
+        _record_movement(run_dir, {
+            "phase_id": phase_id, "kind": "activity", "target": activity_type,
+            "endpoint": endpoint, "http_status": None, "ok": False,
+            "detail": "board disabled (COMMAND_CENTER_URL/MISSION_CONTROL_URL unset)",
+        })
+        return False
+    if not task_id:
+        _log("post_activity skipped — task_id missing.")
+        _record_movement(run_dir, {
+            "phase_id": phase_id, "kind": "activity", "target": activity_type,
+            "endpoint": endpoint, "http_status": None, "ok": False,
+            "detail": "task_id missing",
+        })
+        return False
+
+    message = (f"[{phase_id}] {note}".strip() if note else f"[{phase_id}]")
+    payload: dict = {"activity_type": activity_type, "message": message}
+
+    url = f"{cfg['base_url']}/api/tasks/{task_id}/activities"
+    try:
+        st, body = _request("POST", url, payload, cfg)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        _log(f"post_activity {phase_id} failed ({type(exc).__name__}: {exc}).")
+        _record_movement(run_dir, {
+            "phase_id": phase_id, "kind": "activity", "target": activity_type,
+            "endpoint": endpoint, "http_status": None, "ok": False,
+            "detail": f"{type(exc).__name__}: {exc}",
+        })
+        return False
+
+    ok = st in (200, 201)
+    _record_movement(run_dir, {
+        "phase_id": phase_id, "kind": "activity", "target": activity_type,
+        "endpoint": endpoint, "http_status": st, "ok": ok,
+        "detail": "OK" if ok else str(body)[:300],
+    })
+    if ok:
+        _log(f"post_activity {phase_id} OK (task_id={task_id}).")
+        return True
+
+    _log(f"post_activity {phase_id} non-OK (HTTP {st}): {body}.")
     return False
 
 

@@ -16,14 +16,18 @@
 #       "asked in the SAME block" conversation framing, and
 #   (E) the deterministic RECORD gate (prove_sp_intake.py --self-test) still
 #       passes -- the record layer (asked_all_at_once / one_block) is UNCHANGED;
-#       only the CONVERSATION doctrine is added.
+#       only the CONVERSATION doctrine is added, and
+#   (F) the client-facing WORDING never regresses: the banned quick-questions
+#       phrases ("ask a few quick questions" / "ask you one or two quick
+#       questions") appear NOWHERE in the presentations welcome script, the
+#       how-to-use-this-department template, or any generated department how-to
+#       (the PR-440 remainder -- the doctrine must reach the copy the OWNER reads).
 #
-# SCOPE: this guards the Skill-51 INTAKE CONVERSATION ONLY. It touches NO build
-# phase -- the image-prompt floor, build_deck.py, and run_signature_deck.py are
-# out of scope. The AF-SP-8Q-* RECORD gate is deliberately left intact (it gates
-# the assembled machine record, not the conversation). The department-wide
-# CLIENT-WEBINAR-DECK-SOP section 0.5 + welcome/how-to reconstruction is a
-# SEPARATE change (the #440 department reconstruction) and is not asserted here.
+# SCOPE: this guards the Skill-51 INTAKE CONVERSATION plus the client-facing
+# wording that carries the same doctrine. It touches NO build phase -- the
+# image-prompt floor, build_deck.py, and run_signature_deck.py are out of scope.
+# The AF-SP-8Q-* RECORD gate is deliberately left intact (it gates the assembled
+# machine record, not the conversation).
 #
 # EXIT CODES: 0 all pass; 1 one or more assertions failed.
 
@@ -122,6 +126,38 @@ if [ -f "$PROVER" ]; then
   fi
 else
   bad "prove_sp_intake.py missing at $PROVER"
+fi
+
+# ---- (F) client-facing WORDING never regresses to the banned quick-questions phrasing ----
+# PR-440 remainder: the one-question-at-a-time doctrine must reach the CLIENT-FACING copy,
+# not only the guard/record layers. These two phrases are BANNED and must appear NOWHERE in
+# the welcome script, the how-to template, or any generated how-to-use-this-department.md.
+echo "--- client-facing wording: banned quick-questions phrases absent ---"
+BLUEPRINT="$ROOT/23-ai-workforce-blueprint"
+WELCOME_SCRIPT="$BLUEPRINT/scripts/send-presentation-dept-welcome.sh"
+HOWTO_TEMPLATE="$BLUEPRINT/templates/how-to-use-this-department.template.md"
+BANNED_A="ask a few quick questions"
+BANNED_B="ask you one or two quick questions"
+
+check_banned() {  # $1=file  $2=human-label
+  local f="$1" lbl="$2"
+  if [ ! -f "$f" ]; then bad "$lbl: file missing ($f)"; return; fi
+  absent "$f" "$BANNED_A" "$lbl: no '$BANNED_A'"
+  absent "$f" "$BANNED_B" "$lbl: no '$BANNED_B'"
+}
+
+check_banned "$WELCOME_SCRIPT" "welcome script"
+check_banned "$HOWTO_TEMPLATE" "how-to template"
+
+HOWTO_DOCS="$(find "$BLUEPRINT/templates/role-library" -name how-to-use-this-department.md 2>/dev/null | sort)"
+if [ -z "$HOWTO_DOCS" ]; then
+  bad "generated how-to docs: none found under role-library"
+else
+  while IFS= read -r doc; do
+    [ -n "$doc" ] || continue
+    dept="$(basename "$(dirname "$doc")")"
+    check_banned "$doc" "how-to[$dept]"
+  done <<< "$HOWTO_DOCS"
 fi
 
 echo "===================================================================="

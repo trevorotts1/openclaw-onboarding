@@ -170,6 +170,11 @@ assert_contains "T5 message body: Presenter's Guide" "$OUTPUT" "Presenter's Guid
 assert_contains "T5 message body: speech" "$OUTPUT" "word-for-word speech"
 assert_contains "T5 message body: audio demo" "$OUTPUT" "audio demonstration"
 assert_contains "T5 message body: PowerPoint" "$OUTPUT" "PowerPoint and PDF"
+# Intake doctrine: choice-first (quick vs in-depth) + ONE question at a time.
+assert_contains "T5 intake: choice-first path" "$OUTPUT" "quick or an in-depth path"
+assert_contains "T5 intake: one at a time" "$OUTPUT" "one question at a time"
+# Banned drift phrase must NEVER reappear in the client-facing welcome (PR-440).
+assert_not_contains "T5 no banned 'few quick questions'" "$OUTPUT" "ask a few quick questions"
 assert_contains "T5 dry-run label" "$OUTPUT" "DRY-RUN complete"
 echo ""
 

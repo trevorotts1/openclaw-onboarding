@@ -58,8 +58,10 @@ You have three ways to put this department to work. All of them are fine.
 
 A good request includes, where it applies: **what** you want, **who or what it
 is for**, **when you need it**, and any **must-haves or limits**. You do not have
-to provide all of that. If something important is missing, the department will
-ask you one or two quick questions before it starts rather than guess.
+to provide all of that. If something important is missing, the department first offers you a quick or an
+in-depth path, then asks one focused question at a time (never a wall of
+questions) and waits for each answer. It gathers what you tell it into a single
+brief before the work starts, rather than guessing.
 
 ---
 
@@ -159,7 +161,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 When you ask this department for something, here is the normal flow:
 
 1. **Acknowledgment.** Director of Web Development confirms the request landed and, if
-   anything important is unclear, asks you one or two quick questions.
+   anything important is unclear, asks one focused question at a time (never a wall of questions).
 2. **Routing.** The work is matched to the right specialist and the relevant
    procedure (its SOP). Nobody guesses; if there is no procedure for your
    request, one is written before the work starts.
