@@ -1,0 +1,43 @@
+{
+  "kind": "engage_report",
+  "brand": "Northwind Bakehouse",
+  "readonly": true,
+  "period": "2026-06-29 to 2026-07-05",
+  "generatedAt": "2026-07-06T06:00:00-04:00",
+  "notifyChannel": "telegram",
+  "platforms": {
+    "facebook": {"posts": 7, "impressions": 18420, "likes": 612, "comments": 44, "shares": 71, "avgEngagementRate": 0.039},
+    "instagram": {"posts": 7, "impressions": 21030, "likes": 1180, "comments": 96, "saves": 214, "avgEngagementRate": 0.071},
+    "linkedin": {"posts": 7, "impressions": 9240, "reactions": 331, "comments": 58, "reposts": 22, "avgEngagementRate": 0.045}
+  },
+  "weekOverWeek": {
+    "impressions": "+12%",
+    "engagementRate": "+31%",
+    "comments": "+58%"
+  },
+  "anomalies": [
+    {
+      "severity": "positive",
+      "platform": "instagram",
+      "post": "Day 4 - They Are Not A Stepping Stone",
+      "metric": "saves",
+      "observed": 214,
+      "baseline": 46,
+      "note": "Saves ran 4.6x the trailing-8-week median. The over-the-shoulder 'greeted by name' image drove saves, not likes - readers filing it to act on later. Recommend a Day-4-style creative in next week's plan."
+    },
+    {
+      "severity": "watch",
+      "platform": "linkedin",
+      "post": "Day 2 - We Chased Scale And Almost Broke",
+      "metric": "impressions",
+      "observed": 640,
+      "baseline": 1320,
+      "note": "Impressions ran about half the trailing median. Likely a low-traffic Tuesday 8am slot, not a content issue (engagement rate on the impressions it did get was normal). No action; monitoring only."
+    }
+  ],
+  "summary": "Strongest engagement week of the quarter. The 'first 100 customers' theme outperformed the trailing 8-week average on every platform, led by Instagram saves. Read-only report - no posting was performed and no publish run was blocked.",
+  "actionSuggestions": [
+    "Repeat the Day-4 'named regular' visual angle; it drove the week's only strong-positive anomaly.",
+    "Test an earlier LinkedIn slot (7am ET) to recover Tuesday reach."
+  ]
+}

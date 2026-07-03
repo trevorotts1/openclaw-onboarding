@@ -1,3 +1,22 @@
+## [v16.9.0]  -  2026-07-03  -  feat(skill-57): Social Media in a Box v0.2.0 — enforcement-first social engine that folds Skill 35 (Social Media Planner)
+
+### Risk: low — net-new additive skill `57-social-media-in-a-box/` plus its §6 dept/role/SOP wiring; no existing skill's runtime changed. Ships the enforcement-first social engine (QC 9.3 / golden 9.2): C1–C7 capability folds of Skill 35, the creative layer, the ported weekly-theme cron, fail-closed provers + signed certificate, client-providers-only / never-Anthropic (`G-NOANTHROPIC`). GHL delivery rides Skill 6; no new Command Center endpoint / no schema change.
+
+### §6 fleet wiring (all five insertion-point kinds)
+- 20 role-library Section-8 tool rows (social-media / marketing / podcast / graphics / crm)
+- `universal-sops/social-media-craft/` — 5 SOPs (SOP-SOCIAL-01..05) + `SOCIAL-PIPELINE-MANIFEST.json` + `MASTER-SOCIAL-QC-AUTOFAIL-RULESET.md`
+- `Start Here.md` engine bullet · `_index.json` SOP registration · AC-14 scripts (`scripts/wire-social-media.sh`, `scripts/verify-social-media.sh`) · C7 stories-caption golden fixture (`AF-SM-STORIES-CAPTION`)
+
+### Folds Skill 35 (per MERGE-INTEGRATION-PLAN)
+Unifies Skill 35 (Social Media Planner) into Skill 57 v0.2.0. Retire-35 + the per-client migration runbook are DESIGNED but PARKED — they require an explicit Trevor GO (no client box touched by this repo change).
+
+### Files
+- `57-social-media-in-a-box/` — NEW skill (engine, provers, prompts, golden example + certificate, verify.sh)
+- `universal-sops/social-media-craft/` — NEW shared SOP cluster
+- `23-ai-workforce-blueprint/templates/role-library/{social-media,marketing,podcast,graphics,crm}/*` — 20 Section-8 rows + `social-media/sops/` cluster index
+- `scripts/wire-social-media.sh`, `scripts/verify-social-media.sh` — NEW AC-14 scripts
+- `Start Here.md`, `install.sh`, `README.md`, `TOOLS.md`, `cc-compat.json`, `_index.json` — wiring + 11 version markers rolled to v16.9.0
+
 ## [v16.8.0]  -  2026-07-02  -  feat(skill-56): Sales Page Assets — Direct-Response funnel-asset engine (sibling of Signature Funnel 49)
 
 ### Risk: low — net-new additive skill `56-sales-page-assets/` (the SECOND STEP-0 funnel engine) plus its dept/role/SOP wiring; no existing skill's runtime changed. Ships a fail-closed direct-response sales-page asset generator: 14 baked provider-agnostic prompts, 8 fail-closed provers (`prove_sp_*`) + `SPA-PROVER-PIN.sha256`, a no-skip orchestrator + canonical entry, the labeling-grammar + sales-page structure JSON, a golden example with a signed PROCESS-CERTIFICATE + broken-variant rejection fixtures, and `universal-sops/sales-page-craft/`. Client-providers-only / never-Anthropic enforced (G-NOANTHROPIC). GHL delivery rides Skill 6; no new Command Center endpoint / no schema change. Merged after catching up to main v16.7.2 (Skill-52 owner docs); all version markers roll to v16.8.0.

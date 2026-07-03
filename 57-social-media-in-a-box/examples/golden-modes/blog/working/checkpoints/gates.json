@@ -1,0 +1,14 @@
+{
+  "P0-PREFLIGHT": {
+    "passed": true
+  },
+  "P10-BLOG": {
+    "passed": true
+  },
+  "P5-SCRUB": {
+    "passed": true
+  },
+  "P6-MANIFEST": {
+    "passed": true
+  }
+}

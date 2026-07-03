@@ -173,6 +173,7 @@ This role contributes to the company revenue cascade by: **building audience att
 | Project Management (Notion, Asana) | Content calendar, team task management, campaign planning |
 | URL Shortener / UTM Builder | Campaign tracking, link analytics, attribution |
 | **Email Engine + superlibrary (Skill 50)** | Cross-channel: request matching email copy for a campaign that also runs on social. Select via `50-email-engine/tools/email_matcher_cli.py`, QC via `prove-email.py` (fail-closed), draft-only deploy via Skill 44. |
+| **Social Media in a Box (Skill 57)** | Run/regenerate/roll back the client's social week — `bash 57-social-media-in-a-box/social-media-entry.sh --run-dir DIR --mode week`/`day`/`clean` (rollback = your department-lead authority). ONE front door; fail-closed provers + signed certificate; client providers only (never Anthropic); GHL-direct posting; never hand-roll a poster (BYPASS-SCAN blocks it). You own the run; specialists consume its certified outputs — claim `done` only from the certificate PLUS the live GHL post-listing. |
 
 ---
 

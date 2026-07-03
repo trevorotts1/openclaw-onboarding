@@ -1,0 +1,27 @@
+{
+  "kind": "reformat",
+  "platform": "twitter",
+  "day": 4,
+  "requestedPlatforms": [
+    "twitter"
+  ],
+  "coreTheme": "Why your first 100 customers matter more than your next 10,000",
+  "twitter": {
+    "format": "thread",
+    "thread": [
+      "Everyone told us to chase scale. Buy ads. Flood the feed. Hit 10,000 followers and the money follows. So for one quarter we did exactly that at our little bakery. It nearly closed the doors. Here is what actually saved us. A thread.",
+      "The follower graph climbed and it felt like winning. What the graph never showed: trays of pastries going stale every afternoon because the regulars stopped coming. We traded 100 relationships for 1,000 impressions. Impressions do not eat bread.",
+      "The turn came on an ordinary Tuesday. A regular walked in, we said her name before she reached the counter, and reached for her usual dark-crust loaf. She laughed the way you only laugh somewhere that feels like yours. That moment does not scale. It IS the business.",
+      "So we did the heretical thing in a season obsessed with growth: we stopped optimizing for reach and started remembering names. A worn notebook on the counter. First names. Favorite orders. We answered every message like a person, because it was one.",
+      "Here is the quiet payoff. When 100 people feel genuinely seen, they do the marketing you could never afford. They tell their sister. They tag their book club. They leave the review a stranger reads at midnight before deciding to try you for the first time.",
+      "Growth is not a volume problem. It is a memory problem. We spent zero extra dollars on ads that season. We just spent our attention differently. You cannot outspend the big competitor, but you can out-remember them. Remembering is free.",
+      "Do this today, not next quarter: name the people who would notice if you vanished. Do one unscalable thing for one of them. Measure return, not reach. Your real growth is already standing at your counter. Go learn a name."
+    ],
+    "tweetCount": 7,
+    "hashtags": [
+      "#smallbusiness",
+      "#buildinpublic"
+    ],
+    "leadWithHook": true
+  }
+}

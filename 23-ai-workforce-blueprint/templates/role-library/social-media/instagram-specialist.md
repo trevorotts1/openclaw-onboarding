@@ -174,6 +174,7 @@ This role contributes to the company revenue cascade by: **building a visual bra
 | {{CRM_PLATFORM_NAME}} | Lead attribution from Instagram, social-sourced lead tracking | Web login | Tag Instagram-sourced leads; use UTM parameters on all bio links |
 | Google Analytics | Track Instagram-driven website traffic and conversions | Web login | Monitor traffic source = Instagram; verify UTM parameters working |
 | Instagram Insights (native) | Primary analytics — post performance, audience demographics, activity times | Instagram app | Check daily for pulse; weekly for reporting |
+| **Social Media in a Box (Skill 57)** | When your platform's weekly series, 10-slide carousel, or Stories captions (C7) ship — consume the certified `content.json` output; request a `day` re-run instead of editing published bytes. | `bash 57-social-media-in-a-box/social-media-entry.sh --run-dir DIR --mode <mode>` — the ONE front door (same DEPS/BYPASS-SCAN/HASH-PIN gates + run-scoped nonce) | Fail-closed provers + signed certificate; client providers only (never Anthropic); GHL-direct posting; never hand-roll a poster (BYPASS-SCAN blocks it). |
 
 ---
 

@@ -1,0 +1,36 @@
+{
+  "$schema_note": "SACRED character/count bands for Social Media in a Box (Skill 57). SINGLE SOURCE OF TRUTH — scripts/prove_bands.py reads THIS file (never hardcodes the numbers) and measures stripped lengths deterministically. Every band is transcribed verbatim from the canonical super-prompts baked in prompts/ (09 FB/IG carousel, 10 LinkedIn carousel, 15 7-part series, 16 reformatter, 08 Sora storyboard). Bands are the DEFAULT floor; a logged client-exact override wins and is recorded on the process certificate (client gets EXACTLY what they ask for — never floored). max:null means an open upper bound (a MINIMUM floor).",
+  "version": "1.0.0",
+  "bands": {
+    "caption_fb_ig": {"min": 1500, "max": 1800, "unit": "chars", "field": "carouselCaption", "applies": ["facebook", "instagram"], "prompt": "09", "af": "AF-SM-CAPTION-BAND"},
+    "caption_linkedin": {"min": 1500, "max": 1900, "unit": "chars", "field": "carouselCaption", "applies": ["linkedin"], "prompt": "10", "af": "AF-SM-CAPTION-BAND"},
+    "image_prompt_carousel": {"min": 1000, "max": 1700, "unit": "chars", "field": "prompt", "prompt": "09/10/12", "af": "AF-SM-IMGPROMPT-BAND"},
+    "image_prompt_series": {"min": 1800, "max": null, "unit": "chars", "field": "imageprompt", "prompt": "15", "af": "AF-SM-IMGPROMPT-BAND"},
+    "post_body_words": {"min": 300, "max": null, "unit": "words", "field": "body", "prompt": "15", "af": "AF-SM-POSTBODY-WORDS"},
+    "followup_series": {"min": 0, "max": 600, "unit": "chars", "field": "followupcomment", "prompt": "15", "af": "AF-SM-FOLLOWUP-BAND"},
+    "followup_reformatter": {"min": 0, "max": 500, "unit": "chars", "field": "followUpComment", "prompt": "16", "af": "AF-SM-FOLLOWUP-BAND"},
+    "pdf_title": {"min": 0, "max": 100, "unit": "chars", "field": "pdfTitle", "prompt": "10", "af": "AF-SM-PDFTITLE-BAND"},
+    "headline_words": {"min": 0, "max": 8, "unit": "words", "field": "textOnImage", "prompt": "09/10", "af": "AF-SM-HEADLINE-WORDS"},
+    "hashtags_fb_ig": {"min": 5, "max": 7, "unit": "count", "applies": ["facebook", "instagram"], "prompt": "09", "af": "AF-SM-HASHTAG-COUNT"},
+    "hashtags_linkedin": {"exact": 3, "unit": "count", "applies": ["linkedin"], "prompt": "10", "af": "AF-SM-HASHTAG-COUNT"},
+    "hashtags_ig_reformat": {"min": 5, "max": 15, "unit": "count", "applies": ["instagram_reformat"], "prompt": "16", "af": "AF-SM-HASHTAG-COUNT"},
+    "storyboard_scenes": {"min": 3, "max": 7, "unit": "count", "prompt": "08", "af": "AF-SM-STORYBOARD"},
+    "storyboard_seconds": {"exact": 25.0, "unit": "seconds", "tolerance": 0.0, "prompt": "08", "af": "AF-SM-STORYBOARD"},
+    "carousel_slides_fb_ig": {"exact": 10, "unit": "count", "applies": ["facebook", "instagram"], "prompt": "09", "af": "AF-SM-CAROUSEL-SLIDES"},
+    "carousel_slides_linkedin": {"exact": 9, "unit": "count", "applies": ["linkedin"], "prompt": "10", "af": "AF-SM-CAROUSEL-SLIDES"},
+    "carousel_assemble_floor": {"min": 2, "unit": "count", "prompt": "part5/part7", "af": "AF-SM-CAROUSEL-FLOOR"},
+
+    "$fold_bands_note": "v0.2.0 FOLD bands (merge plan C3-C7 / §2.4). Measured deterministically from the fold artifact's declared numeric fields (mirrors how carousel uses images_ready): the podcast mode records durationSeconds/bitrateKbps from ffprobe and coverWidth/coverHeight from the cover; the newsletter/blog modes record character/word counts. Each is a DEFAULT floor; a logged client-exact override wins and is recorded on the certificate.",
+    "podcast_script_words": {"min": 1500, "max": 2000, "unit": "words", "field": "scriptWords", "prompt": "17", "af": "AF-SM-PODCAST-SCRIPT"},
+    "podcast_tag_density": {"min": 1, "max": null, "unit": "count", "field": "minTagsPerParagraph", "prompt": "17", "af": "AF-SM-PODCAST-SCRIPT"},
+    "podcast_duration_seconds": {"min": 600, "max": 900, "unit": "seconds", "field": "durationSeconds", "prompt": "17", "af": "AF-SM-PODCAST-DURATION"},
+    "podcast_bitrate_kbps": {"min": 128, "max": null, "unit": "kbps", "field": "bitrateKbps", "prompt": "17", "af": "AF-SM-PODCAST-DURATION"},
+    "podcast_cover_px": {"exact": 1400, "unit": "pixels", "field": "coverWidth/coverHeight", "prompt": "14", "af": "AF-SM-PODCAST-COVER"},
+    "email_subject": {"min": 1, "max": 60, "unit": "chars", "field": "subject", "prompt": "18", "af": "AF-SM-EMAIL-SUBJECT"},
+    "email_preview": {"min": 0, "max": 120, "unit": "chars", "field": "preview", "prompt": "18", "af": "AF-SM-EMAIL-PREVIEW"},
+    "blog_title": {"min": 1, "max": 80, "unit": "chars", "field": "title", "prompt": "19", "af": "AF-SM-BLOG-TITLE"},
+    "blog_meta": {"min": 0, "max": 160, "unit": "chars", "field": "metaDescription", "prompt": "19", "af": "AF-SM-BLOG-META"},
+    "blog_body_words": {"min": 700, "max": null, "unit": "words", "field": "body", "prompt": "19", "af": "AF-SM-BLOG-BODY"},
+    "stories_caption": {"min": 0, "max": 250, "unit": "chars", "field": "storiesCaption", "prompt": "16", "af": "AF-SM-STORIES-CAPTION"}
+  }
+}

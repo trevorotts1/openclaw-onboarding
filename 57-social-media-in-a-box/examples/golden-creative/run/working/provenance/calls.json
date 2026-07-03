@@ -1,0 +1,27 @@
+[
+  {
+    "step": "core-concept",
+    "provider": "openrouter",
+    "model": "google/gemini-2.0-flash-001"
+  },
+  {
+    "step": "7part-series",
+    "provider": "openrouter",
+    "model": "meta-llama/llama-3.1-70b-instruct"
+  },
+  {
+    "step": "visual-architect",
+    "provider": "openrouter",
+    "model": "google/gemini-2.0-flash-001"
+  },
+  {
+    "step": "grid-judge",
+    "provider": "google",
+    "model": "gemini-2.0-flash"
+  },
+  {
+    "step": "image-gen",
+    "provider": "kie",
+    "model": "nano-banana-pro"
+  }
+]

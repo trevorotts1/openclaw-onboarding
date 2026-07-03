@@ -174,6 +174,7 @@ This role contributes to the company revenue cascade by: **building and nurturin
 | {{CRM_PLATFORM_NAME}} | Lead attribution from Facebook, social-sourced lead tracking | Web login | Tag Facebook-sourced leads; use Facebook-specific UTMs |
 | Google Analytics | Traffic and conversion tracking from Facebook | Web login | Monitor traffic source = Facebook; segment Page vs. Group traffic |
 | Facebook Events Manager | Event creation, management, guest communication | Facebook native | Schedule Events; use for webinars, live sessions, product launches |
+| **Social Media in a Box (Skill 57)** | When your platform's weekly series, 10-slide carousel, or Stories captions (C7) ship — consume the certified `content.json` output; request a `day` re-run instead of editing published bytes. | `bash 57-social-media-in-a-box/social-media-entry.sh --run-dir DIR --mode <mode>` — the ONE front door (same DEPS/BYPASS-SCAN/HASH-PIN gates + run-scoped nonce) | Fail-closed provers + signed certificate; client providers only (never Anthropic); GHL-direct posting; never hand-roll a poster (BYPASS-SCAN blocks it). |
 
 ---
 

@@ -1,0 +1,23 @@
+[
+  {
+    "platform": "facebook",
+    "success": true,
+    "totalPosts": 7,
+    "processedAccounts": 1,
+    "errors": []
+  },
+  {
+    "platform": "instagram",
+    "success": true,
+    "totalPosts": 7,
+    "processedAccounts": 1,
+    "errors": []
+  },
+  {
+    "platform": "linkedin",
+    "success": true,
+    "totalPosts": 7,
+    "processedAccounts": 1,
+    "errors": []
+  }
+]

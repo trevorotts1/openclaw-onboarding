@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v16.8.0"
+ONBOARDING_VERSION="v16.9.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -739,7 +739,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 5 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/55-..., plus 56-sales-page-assets (49 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/57-... (50 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -2996,6 +2996,21 @@ if [ -d "$ONBOARDING_DIR/universal-sops" ]; then
     cp -r "$ONBOARDING_DIR/universal-sops/." "$SKILLS_DIR/universal-sops/"
     success "universal-sops installed to $SKILLS_DIR/universal-sops"
 fi
+
+# v0.2.0 (AC-14): Wire Social Media in a Box (Skill 57). Idempotent + non-fatal —
+# ensures the shared universal-sops/social-media-craft/ SOP cluster + the 57
+# engine tree are present under the skills root (belt-and-suspenders atop the
+# wholesale copies above). Cron registration is deliberately left to the operator
+# via `scripts/wire-social-media.sh --apply` (the engine's registrar dedups). A
+# wiring hiccup must NEVER abort the install.
+if [ -f "$ONBOARDING_DIR/scripts/wire-social-media.sh" ]; then
+    if ONBOARDING_DIR="$ONBOARDING_DIR" SKILLS_DIR="$SKILLS_DIR" \
+        bash "$ONBOARDING_DIR/scripts/wire-social-media.sh" >/dev/null 2>&1; then
+        success "Social Media in a Box (Skill 57) wired (social-media-craft + engine)"
+    else
+        warn "Social Media in a Box wiring reported an issue (non-fatal); run scripts/wire-social-media.sh --apply manually"
+    fi
+fi
 send_telegram_progress "✓ Skills + helpers installed. Setting up your AI engines next…"
 
 # ----------------------------------------------------------
@@ -4670,7 +4685,7 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 49 active skills install in 5 dependency-aware waves, not by number order.
+The 50 active skills install in 5 dependency-aware waves, not by number order.
 Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
 A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
@@ -6793,6 +6808,50 @@ install_skill_56_sales_page_assets() {
 }
 
 install_skill_56_sales_page_assets
+
+# ----------------------------------------------------------
+# Skill 57: Social Media in a Box (unified organic social engine; supersedes Skill 35)
+# ----------------------------------------------------------
+# Self-contained: this template install copies the Skill 57 folder (SKILL.md,
+# SOCIAL-MANIFEST.json, the baked prompts/, config/bands.json, the fail-closed
+# model-free provers scripts/*.py, the deterministic orchestrator run_social_media.py,
+# the front-door-nonce entry social-media-entry.sh, the read-only verify.sh, the
+# weekly-theme cron registrar, and the golden fixtures). NO external clone, NO n8n,
+# NO Airtable at runtime. Skill 57 is the ONE governed ORGANIC social engine for the
+# social-media / marketing / podcast / graphics / crm seats: it runs the weekly
+# 7-part cliffhanger, carousels, Sora video, podcast, newsletter, blog, engagement
+# report and the client-driven creative modes through ONE canonical entry, mints a
+# signed PROCESS-CERTIFICATE proving ZERO Anthropic per run (CLIENT providers only —
+# the client's own OpenRouter model + fallbacks / Gemini vision QC / Kie.ai media and
+# the client's own GoHighLevel PIT + accounts), and posts GHL-direct to the client's
+# own location. It never hand-rolls a poster (BYPASS-SCAN refuses one). The shared
+# cross-department procedure ships in universal-sops/social-media-craft/ (delivered
+# with the universal-sops tree copied above). Skill 35 retirement is PARKED.
+install_skill_57_social_media_in_a_box() {
+    local SKILL_SRC="$ONBOARDING_DIR/57-social-media-in-a-box"
+    local SKILL_DEST="$SKILLS_DIR/57-social-media-in-a-box"
+
+    if [ ! -d "$SKILL_SRC" ]; then
+        warn "Skill 57 source dir not found at $SKILL_SRC — skipping (older onboarding bundle?)"
+        return 0
+    fi
+
+    mkdir -p "$SKILL_DEST"
+    cp -R "$SKILL_SRC/." "$SKILL_DEST/" 2>>"$LOG_FILE" || {
+        warn "Failed to copy Skill 57 from $SKILL_SRC -> $SKILL_DEST"
+        return 0
+    }
+    chmod +x "$SKILL_DEST/social-media-entry.sh" "$SKILL_DEST/run_social_media.py" \
+             "$SKILL_DEST/verify.sh" 2>/dev/null || true
+    chmod +x "$SKILL_DEST/scripts/"*.py "$SKILL_DEST/scripts/"*.sh 2>/dev/null || true
+
+    success "Skill 57 (Social Media in a Box) installed -> $SKILL_DEST"
+    note "Skill 57 is the ONE governed ORGANIC social engine for the social-media / marketing / podcast / graphics / crm seats: the weekly 7-part cliffhanger, carousels, Sora video, podcast (audio + 1400x1400 cover), newsletter, blog, read-only engagement report, and the client-driven creative modes (brief / campaign / client-copy / reactive) plus the twitter publisher sub-mode — all through ONE canonical entry (social-media-entry.sh) with a deps / BYPASS-SCAN / hash-pin / nonce fail-closed gate and a no-phase-skip machine."
+    note "Every run mints a signed PROCESS-CERTIFICATE proving ZERO Anthropic per run (CLIENT providers only: OpenRouter model + 2 fallbacks / Gemini vision QC / Kie.ai media) and the client's OWN GoHighLevel PIT + accounts, posts GHL-direct, and claims done only from the certificate PLUS a live GHL post-listing. NO n8n / NO Airtable at runtime. Shared procedure: universal-sops/social-media-craft/. Supersedes Skill 35 (per-client retirement is PARKED pending an explicit go)."
+    return 0
+}
+
+install_skill_57_social_media_in_a_box
 
 # ----------------------------------------------------------
 # Step 15: Register Skill 32's materialize-dept-agents.sh (v10.13.18)

@@ -1,0 +1,43 @@
+{
+  "skill": "social-media-in-a-box",
+  "skill_number": 57,
+  "version": "0.2.0",
+  "supersedes": "35-social-media-planner",
+  "supersede_note": "Skill 57 is the canonical weekly-social engine (see BOUNDARY-35-vs-57.md). v0.2.0 IS the 35<->57 merge target (MERGE-INTEGRATION-PLAN.md, QC 9.2 APPROVED): the seven Skill-35 extras are FOLDED IN (twitter parity C1, live discovery C2, podcast audio C3, newsletter C4, blog C5, engage C6, thumbnails+stories C7) and four honestly DEFER to named versions (narrated Reels v0.3.0, syndicate v0.4.0, persona+memory adapters v0.5.0) via fail-closed stubs. 35 -> ARCHIVED per-client only after 57 proves parity end-to-end. During coexistence: 35 delegates the core to 57; 57 NEVER delegates to 35. The per-client 35->57 migration (archive 35, remove the skill35-weekly-theme Saturday cron, re-point state, prevent double-posting) is a FLEET operation requiring operator direction — NOT rolled from this build.",
+  "entry": "social-media-entry.sh",
+  "orchestrator": "run_social_media.py",
+  "manifest": "SOCIAL-MANIFEST.json",
+  "bands": "config/bands.json",
+  "modes": ["week", "day", "carousel", "video", "podcast-cover", "plan", "clean",
+            "podcast", "newsletter", "blog", "engage",
+            "brief", "campaign", "client-copy", "reactive"],
+  "modes_deferred": {"syndicate": "0.4.0", "video --narrated": "0.3.0"},
+  "platforms": ["facebook", "instagram", "linkedin", "youtube", "tiktok", "pinterest", "google-business", "twitter"],
+  "provers": ["preflight_gate.py", "prove_bands.py", "validate_contract.py", "scrub_gate.py", "ledger.py", "build_manifest.py", "label_deliverables.py", "defer_stub.py"],
+  "creative_layer": {
+    "client_modes": ["brief", "campaign", "client-copy", "reactive"],
+    "injection_points": 12,
+    "override_logging": "AF-SM-OVERRIDE-UNLOGGED (a silent deviation is the only forbidden deviation)",
+    "client_copy_verbatim": "AF-SM-CLIENT-COPY-MUTATED",
+    "no_double_post": "AF-SM-DOUBLE-POST"
+  },
+  "runtime_dependencies": {
+    "n8n": false,
+    "airtable": false,
+    "google_drive_required": false,
+    "sqlite_ledger": true,
+    "prompts_baked": 19
+  },
+  "provider_rules": {
+    "client_providers_only": true,
+    "anthropic_in_client_runtime": false,
+    "text": "client OpenRouter model + 2 fallbacks (route:fallback)",
+    "vision_qc": "client Gemini",
+    "media": "client Kie.ai",
+    "podcast_tts": "client Fish-Audio (unconfigured -> PODCAST_DEFERRED labeled skip)",
+    "posting": "client GHL Private Integration Token + locationId + connected social accounts"
+  },
+  "cron": {"name": "social-media-weekly-theme", "schedule": "0 8 * * 6", "registrar": "scripts/register-social-cron.sh", "invariant": "exactly one weekly-theme cron per box; legacy skill35-weekly-theme/weekly-batch retired"},
+  "deliverables_root": "~/Downloads/Social-Media-in-a-Box/<brand-slug>/<YYYY-Www>/",
+  "capability_gated": ["media modes require client Kie.ai + Gemini keys; preflight blocks gracefully with a labeled report", "podcast requires client Fish-Audio + Podbean; unconfigured -> PODCAST_DEFERRED labeled skip, never a failure"]
+}

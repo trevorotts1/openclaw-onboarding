@@ -1,0 +1,15 @@
+{
+  "kind": "reformat",
+  "requestedPlatforms": [
+    "instagram",
+    "linkedin"
+  ],
+  "instagram": {
+    "post": "clean ig post",
+    "followUpComment": "cta"
+  },
+  "linkedin": {
+    "post": "clean li post",
+    "followUpComment": "cta"
+  }
+}

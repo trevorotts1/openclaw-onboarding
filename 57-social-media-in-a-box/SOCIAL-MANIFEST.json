@@ -1,0 +1,316 @@
+{
+  "manifest_version": 1,
+  "skill": "social-media-in-a-box",
+  "skill_number": 57,
+  "$schema_note": "SINGLE SOURCE OF TRUTH for the Social Media in a Box pipeline (Skill 57). The deterministic orchestrator run_social_media.py walks these phases IN ORDER (P0->P8) with NO phase skips. Each phase declares its produces_artifact, its _chk_* preflight symbol(s), and its AF-SM-* gate codes. Every AF-SM-* code below is enforced by a fail-closed, model-free, stdlib-only prover (scripts/*.py); py_symbol names the function that decides it. Editing this file is step (i) of any change: add the gate, add the AF code here with its trigger, add the checker, add the self-test fixture. Cloned in shape from 50-email-engine/EMAIL-MANIFEST.json.",
+  "design_law": "Enforcement, not description. SACRED bands (config/bands.json) are the DEFAULT floor; a logged client-exact override wins and is recorded on the certificate. CLIENT runtime uses the CLIENT's OWN provider chain (OpenRouter model + 2 fallbacks / client Gemini vision QC / client Kie.ai media) and the CLIENT's OWN GHL PIT + social accounts — NEVER Anthropic/claude-* ids, NEVER operator keys. There is NO n8n and NO Airtable at runtime: prompts are baked, state is a local SQLite ledger, deliverables are local + labeled. The publisher physically cannot run without a complete signed manifest that proves ZERO Anthropic per run.",
+  "$modes_note": "v0.2.0 (merge plan §3). Engine-driven modes (week/day/carousel/video/podcast-cover/plan/clean) unchanged from v0.1.0. FOLD modes (podcast C3 / newsletter C4 / blog C5 / engage C6) each land as a first-class standalone mode under the SAME entry+nonce+prover spine; when their config toggle is set the weekly cadence runs them as additional certified runs (the config schema $fold_note: 'each is also its own standalone mode'). CREATIVE modes (brief M1 / campaign M2 / client-copy M3 / reactive M4) are client-driven content lanes (P2-BRIEF / P2-INGEST) that keep the identical P3->P8 gate chain. syndicate (C9) is a fail-closed DEFER stub (v0.4.0). Every mode still runs ONLY through social-media-entry.sh (nonce) with no phase skips.",
+  "modes": {
+    "week": ["P0-PREFLIGHT", "P1-PLAN", "P2-CONTENT", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P6-MANIFEST", "P7-PUBLISH", "P8-PLANNER-WRITEBACK"],
+    "day": ["P0-PREFLIGHT", "P2-CONTENT", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P6-MANIFEST", "P7-PUBLISH"],
+    "carousel": ["P0-PREFLIGHT", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P6-MANIFEST", "P7-PUBLISH"],
+    "video": ["P0-PREFLIGHT", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P6-MANIFEST", "P7-PUBLISH"],
+    "podcast-cover": ["P0-PREFLIGHT", "P4-MEDIA", "P5-SCRUB", "P6-MANIFEST"],
+    "plan": ["P0-PREFLIGHT", "P1-PLAN", "P8-PLANNER-WRITEBACK"],
+    "clean": ["P0-PREFLIGHT", "P7-PUBLISH"],
+    "podcast": ["P0-PREFLIGHT", "P11-PODCAST", "P5-SCRUB", "P6-MANIFEST"],
+    "newsletter": ["P0-PREFLIGHT", "P9-NEWSLETTER", "P5-SCRUB", "P6-MANIFEST"],
+    "blog": ["P0-PREFLIGHT", "P10-BLOG", "P5-SCRUB", "P6-MANIFEST"],
+    "engage": ["P0-PREFLIGHT", "P12-ENGAGE"],
+    "brief": ["P0-PREFLIGHT", "P1-PLAN", "P2-BRIEF", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P6-MANIFEST", "P7-PUBLISH", "P8-PLANNER-WRITEBACK"],
+    "campaign": ["P0-PREFLIGHT", "P2-BRIEF", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P6-MANIFEST", "P7-PUBLISH", "P8-PLANNER-WRITEBACK"],
+    "client-copy": ["P0-PREFLIGHT", "P2-INGEST", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P6-MANIFEST", "P7-PUBLISH"],
+    "reactive": ["P0-PREFLIGHT", "P2-BRIEF", "P3-CONTRACT", "P4-MEDIA", "P5-SCRUB", "P6-MANIFEST", "P7-PUBLISH"],
+    "syndicate": ["P0-PREFLIGHT", "P-SYNDICATE-DEFER"]
+  },
+  "phases": [
+    {
+      "id": "P0-PREFLIGHT",
+      "order": 0,
+      "name": "Preflight (fail-closed readiness gate)",
+      "module": "0-preflight",
+      "owning_role": "social-media-manager",
+      "produces_artifact": "working/preflight/preflight_report.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_preflight",
+        "label": "preflight_gate.py PASS: Kie.ai credits >= 200, OpenRouter balance >= $5, GHL PIT valid against GET /locations/{locationId}, all required config fields present, status == Paid, AND the C2 live connected-accounts discovery reconcile (config platforms enum vs GET /social-media-posting/oauth/{locationId}/accounts — both drift directions BLOCK; a deliberate exclusion is honored only via the LOGGED platformsExcluded list; Owner Q&A answers publish scope from this live reconcile, never a memorized list). FAIL -> labeled failure report + configured notification; run blocked (sys.exit 2). AF-SM-PREFLIGHT-* / AF-SM-DISCOVERY-DRIFT."
+      },
+      "gate_codes": ["AF-SM-PREFLIGHT-CREDITS", "AF-SM-PREFLIGHT-BALANCE", "AF-SM-PREFLIGHT-TOKEN", "AF-SM-PREFLIGHT-CONFIG", "AF-SM-PREFLIGHT-STATUS", "AF-SM-DISCOVERY-DRIFT"]
+    },
+    {
+      "id": "P1-PLAN",
+      "order": 1,
+      "name": "Planner (content-calendar sheet create + theme-of-week sync)",
+      "module": "1-planner",
+      "owning_role": "content-strategist",
+      "produces_artifact": "working/plan/plan.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_plan",
+        "label": "plan.json present with a non-empty themeOfWeek and a plannerSheetId (sheet created from the master template, LOCAL replacement for the social-planner-* n8n webhooks). AF-SM-PLAN-INCOMPLETE."
+      },
+      "gate_codes": ["AF-SM-PLAN-INCOMPLETE"]
+    },
+    {
+      "id": "P2-CONTENT",
+      "order": 2,
+      "name": "Content engine (7-part cliffhanger series + platform reformatter)",
+      "module": "2-content-engine",
+      "owning_role": "social-media-manager",
+      "produces_artifact": "working/content/content.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_content_authored",
+        "label": "content.json authored (days[] / carousel / storyboard etc.), baked prompts 01-04,15-16 used; provider chain is the client's OpenRouter model + 2 fallbacks (NEVER anthropic). AF-SM-CONTENT-MISSING."
+      },
+      "gate_codes": ["AF-SM-CONTENT-MISSING"]
+    },
+    {
+      "id": "P3-CONTRACT",
+      "order": 3,
+      "name": "Contract + bands (validate_contract.py + prove_bands.py, fail-closed)",
+      "module": "2-content-engine",
+      "owning_role": "social-media-qc-specialist",
+      "produces_artifact": "working/qc/band_report.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_contract_and_bands",
+        "label": "validate_contract.py PASS (valid JSON, per-platform required keys, em-dash ban, single-digit grid, JSON-safe QC) AND prove_bands.py PASS (every SACRED band in config/bands.json). ANY violation blocks advance to P4. AF-SM-CONTRACT-* / AF-SM-*-BAND / AF-SM-*-WORDS / AF-SM-HASHTAG-COUNT / AF-SM-STORYBOARD / AF-SM-CAROUSEL-*."
+      },
+      "gate_codes": [
+        "AF-SM-CONTRACT-JSON", "AF-SM-CONTRACT-SCHEMA", "AF-SM-CONTRACT-EMDASH", "AF-SM-GRID-DIGIT", "AF-SM-QC-JSON",
+        "AF-SM-CAPTION-BAND", "AF-SM-IMGPROMPT-BAND", "AF-SM-FOLLOWUP-BAND", "AF-SM-PDFTITLE-BAND",
+        "AF-SM-HEADLINE-WORDS", "AF-SM-HASHTAG-COUNT", "AF-SM-POSTBODY-WORDS", "AF-SM-STORYBOARD",
+        "AF-SM-CAROUSEL-SLIDES", "AF-SM-CAROUSEL-FLOOR"
+      ]
+    },
+    {
+      "id": "P4-MEDIA",
+      "order": 4,
+      "name": "Media core (image grid+judge / Sora 25s video / carousel QC loop / podcast cover) via local SQLite ledger",
+      "module": "3-media-core",
+      "owning_role": "brand-designer",
+      "produces_artifact": "working/media/media_ledger.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_media_ledger",
+        "label": "ledger.py drove the media jobs (Nano-Banana generate -> Gemini QC -> SeedDream edit -> QC2 -> strip-text fallback; >=2-image assembly floor honored). NO n8n data table; local SQLite only. Every fail/timeout branch alerted the configured channel. AF-SM-MEDIA-LEDGER / AF-SM-CAROUSEL-FLOOR."
+      },
+      "gate_codes": ["AF-SM-MEDIA-LEDGER", "AF-SM-CAROUSEL-FLOOR"]
+    },
+    {
+      "id": "P5-SCRUB",
+      "order": 5,
+      "name": "Scrub gate (client-name + secret + pinData + zero-Anthropic output screen)",
+      "module": "2-content-engine",
+      "owning_role": "social-media-qc-specialist",
+      "produces_artifact": "working/qc/scrub_report.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_scrub",
+        "label": "scrub_gate.py PASS over generated content AND shipped bytes: ZERO client-name tokens, ZERO secret-pattern hits (sk-or-v1-/pit-/Kie/bearer/accessToken), ZERO pinData blocks, ZERO anthropic/claude-* identifiers (G-NOANTHROPIC). AF-SM-CLIENT-NAME / AF-SM-SECRET / AF-SM-PINDATA / AF-SM-NOANTHROPIC."
+      },
+      "gate_codes": ["AF-SM-CLIENT-NAME", "AF-SM-SECRET", "AF-SM-PINDATA", "AF-SM-NOANTHROPIC"]
+    },
+    {
+      "id": "P6-MANIFEST",
+      "order": 6,
+      "name": "Build manifest (signed process certificate; proves zero-Anthropic per run; prompt-hash pin)",
+      "module": "4-publisher",
+      "owning_role": "department-lead",
+      "produces_artifact": "delivery/PROCESS-CERTIFICATE.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_manifest",
+        "label": "build_manifest.py records config hash (secrets excluded), prompt-file hashes vs canonical, every gate PASS certificate, a per-call provenance record MUST exist (a zero-Anthropic proof is a lie without it), model/provider used per call (MUST show ZERO Anthropic), artifact checksums. Publisher refuses to run without a complete manifest. AF-SM-PROCESS-INTEGRITY / AF-SM-PROMPT-HASH / AF-SM-PROVENANCE-MISSING / AF-SM-NOANTHROPIC / AF-SM-AGENCY-SHARED-PIT."
+      },
+      "gate_codes": ["AF-SM-PROCESS-INTEGRITY", "AF-SM-PROMPT-HASH", "AF-SM-PROVENANCE-MISSING", "AF-SM-NOANTHROPIC", "AF-SM-AGENCY-SHARED-PIT"]
+    },
+    {
+      "id": "P7-PUBLISH",
+      "order": 7,
+      "name": "Publisher (GHL-direct per-platform sub-modes + carousel assembly + clean rollback)",
+      "module": "4-publisher",
+      "owning_role": "social-media-manager",
+      "produces_artifact": "working/publish/publish_results.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_publish",
+        "label": "each sub-mode posts via services.leadconnectorhq.com/social-media-posting/{locationId}/posts with the CLIENT's own PIT and returns the normalized {platform, success, totalPosts, processedAccounts, errors}. done is claimed ONLY from the manifest + a live GHL post-listing verify (independent, not the poster's own return). AF-SM-PUBLISH-RESULT / AF-SM-PUBLISH-UNPROVEN."
+      },
+      "gate_codes": ["AF-SM-PUBLISH-RESULT", "AF-SM-PUBLISH-UNPROVEN"]
+    },
+    {
+      "id": "P8-PLANNER-WRITEBACK",
+      "order": 8,
+      "name": "Planner write-back (20-column weekly row append)",
+      "module": "1-planner",
+      "owning_role": "content-strategist",
+      "produces_artifact": "working/plan/row_appended.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_writeback",
+        "label": "the normalized 20-column weekly row appended to the planner sheet (Week Of, Theme, Research, Core Content, Images, Videos, Facebook, Instagram, LinkedIn, YouTube, TikTok, Pinterest, Carousels, Blog, Podcast, Email, QC, Scheduled, Overall, Notes). AF-SM-WRITEBACK-COLUMNS."
+      },
+      "gate_codes": ["AF-SM-WRITEBACK-COLUMNS"]
+    },
+    {
+      "id": "P2-BRIEF",
+      "order": 2,
+      "name": "Content engine (creative-brief lane — M1 brief / M2 campaign / M4 reactive)",
+      "module": "2-content-engine",
+      "owning_role": "content-marketing-strategist",
+      "produces_artifact": "working/content/content.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_content_authored",
+        "label": "content authored through the un-hashed CREATIVE BRIEF user-message slots (working/creative/brief.json steers theme/hooks/angles/arc). A content-lane VARIANT of P2, NOT new gate topology: it keeps _chk_content_authored (an artifact must exist) and feeds the identical P3 gate. The brief text is unproven creative payload; only the finished output is banded. AF-SM-CONTENT-MISSING."
+      },
+      "gate_codes": ["AF-SM-CONTENT-MISSING"]
+    },
+    {
+      "id": "P2-INGEST",
+      "order": 2,
+      "name": "Client-copy ingest lane (M3 — package the client's VERBATIM copy, never author)",
+      "module": "2-content-engine",
+      "owning_role": "conversion-copywriter",
+      "produces_artifact": "working/creative/client-copy/*.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_client_copy",
+        "label": "the client's finished copy/media staged at working/creative/client-copy/*.json; the engine PACKAGES, de-dupes, certifies and posts but NEVER authors. The byte-for-byte verbatim guarantee is proven at P6 (AF-SM-CLIENT-COPY-MUTATED). No generation happens in this lane. AF-SM-CONTENT-MISSING."
+      },
+      "gate_codes": ["AF-SM-CONTENT-MISSING", "AF-SM-CLIENT-COPY-MUTATED"]
+    },
+    {
+      "id": "P9-NEWSLETTER",
+      "order": 9,
+      "name": "Newsletter fold (C4 — weekly social-week digest email via GHL Campaigns)",
+      "module": "2-content-engine",
+      "owning_role": "email-campaign-strategist",
+      "produces_artifact": "working/content/newsletter.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_newsletter",
+        "label": "prompt 18 authored the digest; validate_contract.py (kind newsletter: subject+preview+html) AND prove_bands.py (subject <=60 / preview <=120, client-overridable logged) PASS. GHL Campaigns transport, Tue 9 AM client-timezone. AF-SM-EMAIL-SUBJECT / AF-SM-EMAIL-PREVIEW / AF-SM-EMAIL-HTML."
+      },
+      "gate_codes": ["AF-SM-EMAIL-SUBJECT", "AF-SM-EMAIL-PREVIEW", "AF-SM-EMAIL-HTML"]
+    },
+    {
+      "id": "P10-BLOG",
+      "order": 10,
+      "name": "Blog fold (C5 — Day-7 long-form via GHL blog / LeadConnector blogs.write)",
+      "module": "2-content-engine",
+      "owning_role": "content-marketing-strategist",
+      "produces_artifact": "working/content/blog.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_blog",
+        "label": "prompt 19 authored the post; validate_contract.py (kind blog: title+body+metaDescription) AND prove_bands.py (title <=80 / meta <=160 / body 700+ words, client-overridable logged) PASS. GHL blog via LeadConnector (blogs.write); WordPress target routes via syndicate C9 (v0.4.0). AF-SM-BLOG-TITLE / AF-SM-BLOG-META / AF-SM-BLOG-BODY."
+      },
+      "gate_codes": ["AF-SM-BLOG-TITLE", "AF-SM-BLOG-META", "AF-SM-BLOG-BODY"]
+    },
+    {
+      "id": "P11-PODCAST",
+      "order": 11,
+      "name": "Podcast fold (C3 — Fish-Audio S2 audio + bands + Podbean transport + cover)",
+      "module": "3-media-core",
+      "owning_role": "director-of-podcast",
+      "produces_artifact": "working/media/podcast.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_podcast",
+        "label": "prompt 17 wrote the 1,500-2,000-word [emotion]-tagged script; Fish-Audio S2-Pro TTS; ffprobe 600-900 s / >=128 kbps; 1400x1400 JPEG cover (prompt 14). prove_bands.py (kind podcast) PASS. Unconfigured Fish-Audio/Podbean -> {\"deferred\":true} = PODCAST_DEFERRED labeled skip, NEVER a band failure. Podbean = local API call (no n8n). AF-SM-PODCAST-SCRIPT / AF-SM-PODCAST-DURATION / AF-SM-PODCAST-COVER."
+      },
+      "gate_codes": ["AF-SM-PODCAST-SCRIPT", "AF-SM-PODCAST-DURATION", "AF-SM-PODCAST-COVER"]
+    },
+    {
+      "id": "P12-ENGAGE",
+      "order": 12,
+      "name": "Engage fold (C6 — read-only 7-day metrics poll -> anomaly report)",
+      "module": "4-publisher",
+      "owning_role": "community-manager",
+      "produces_artifact": "working/qc/engage_report.json",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_engage",
+        "label": "read-only poll of likes/views over the last 7 days -> anomaly report routed to notifyChannel. NO posting -> no BYPASS-SCAN concern; NEVER blocks a publish run (own light cron or week P12 tail). AF-SM-ENGAGE-REPORT asserts the artifact when the mode runs."
+      },
+      "gate_codes": ["AF-SM-ENGAGE-REPORT"]
+    },
+    {
+      "id": "P-SYNDICATE-DEFER",
+      "order": 99,
+      "name": "Syndicate DEFER stub (C9 — non-GHL add-on channels, v0.4.0)",
+      "module": "4-publisher",
+      "owning_role": "director-of-social-media",
+      "defer_to": "0.4.0",
+      "produces_artifact": null,
+      "preflight": {
+        "required": true,
+        "checker": "_chk_deferred",
+        "label": "syndicate (WordPress / Medium / Substack / YouTube-direct) is the ONLY sanctioned non-GHL poster family and is DEFERRED to v0.4.0. This phase fails CLOSED with a clear 'deferred to v0.4.0' message rather than silently no-op. Off-by-default means no client is blocked meanwhile. AF-SM-DEFERRED."
+      },
+      "gate_codes": ["AF-SM-DEFERRED"]
+    }
+  ],
+  "autofails": [
+    {"code": "AF-SM-PREFLIGHT-CREDITS", "stage": "P0", "level": "run", "trigger": "Kie.ai credits < 200", "enforced_by": "preflight_gate", "py_symbol": "check_kie_credits"},
+    {"code": "AF-SM-PREFLIGHT-BALANCE", "stage": "P0", "level": "run", "trigger": "OpenRouter balance < $5", "enforced_by": "preflight_gate", "py_symbol": "check_openrouter_balance"},
+    {"code": "AF-SM-PREFLIGHT-TOKEN", "stage": "P0", "level": "run", "trigger": "GHL Private Integration Token invalid against GET /locations/{locationId}", "enforced_by": "preflight_gate", "py_symbol": "check_ghl_token"},
+    {"code": "AF-SM-PREFLIGHT-CONFIG", "stage": "P0", "level": "run", "trigger": "a required client-config field is missing/empty", "enforced_by": "preflight_gate", "py_symbol": "check_required_fields"},
+    {"code": "AF-SM-PREFLIGHT-STATUS", "stage": "P0", "level": "run", "trigger": "client status != Paid", "enforced_by": "preflight_gate", "py_symbol": "check_status"},
+    {"code": "AF-SM-DISCOVERY-DRIFT", "stage": "P0", "level": "run", "trigger": "C2 live connected-accounts reconcile drift: a configured platform has NO live-connected GHL account (posting would silently fail), OR a live-connected platform is MISSING from the config enum without a logged platformsExcluded entry (the BANNED silent-miss), OR the live listing is unconfirmable in --live mode (fail-closed)", "enforced_by": "preflight_gate", "py_symbol": "check_connected_accounts"},
+    {"code": "AF-SM-PLAN-INCOMPLETE", "stage": "P1", "level": "run", "trigger": "plan.json missing themeOfWeek or plannerSheetId", "enforced_by": "run_social_media", "py_symbol": "_chk_plan"},
+    {"code": "AF-SM-CONTENT-MISSING", "stage": "P2", "level": "run", "trigger": "content.json not authored", "enforced_by": "run_social_media", "py_symbol": "_chk_content_authored"},
+    {"code": "AF-SM-CONTRACT-JSON", "stage": "P3", "level": "asset", "trigger": "an LLM output is not valid JSON / not the declared object", "enforced_by": "validate_contract", "py_symbol": "evaluate_contract"},
+    {"code": "AF-SM-CONTRACT-SCHEMA", "stage": "P3", "level": "asset", "trigger": "a per-platform required key is missing (e.g. LinkedIn PDF carousel needs pdfTitle + postAsPdf:true; carousel needs slides[])", "enforced_by": "validate_contract", "py_symbol": "evaluate_contract"},
+    {"code": "AF-SM-CONTRACT-EMDASH", "stage": "P3", "level": "asset", "trigger": "an em-dash (or other banned smart character) is present in JSON-safe output (QC/caption)", "enforced_by": "validate_contract", "py_symbol": "_has_emdash"},
+    {"code": "AF-SM-GRID-DIGIT", "stage": "P3", "level": "asset", "trigger": "the Gemini 4-grid selector output is not a single digit 0-3", "enforced_by": "validate_contract", "py_symbol": "evaluate_grid"},
+    {"code": "AF-SM-QC-JSON", "stage": "P3", "level": "asset", "trigger": "the QC bot output is neither the literal 'Good' nor the exact fix_type/edit_instructions/negative_prompt_additions/issue_summary field set, or is not JSON-safe for SeedDream re-injection", "enforced_by": "validate_contract", "py_symbol": "evaluate_qc"},
+    {"code": "AF-SM-CAPTION-BAND", "stage": "P3", "level": "asset", "trigger": "carouselCaption outside 1500-1800 (FB/IG) or 1500-1900 (LinkedIn) chars", "enforced_by": "prove_bands", "py_symbol": "_measure_chars"},
+    {"code": "AF-SM-IMGPROMPT-BAND", "stage": "P3", "level": "asset", "trigger": "a carousel slide image prompt outside 1000-1700 chars, or a 7-part series image prompt under 1800 chars", "enforced_by": "prove_bands", "py_symbol": "_measure_chars"},
+    {"code": "AF-SM-FOLLOWUP-BAND", "stage": "P3", "level": "asset", "trigger": "followUpComment over 600 chars (series) / over 500 chars (reformatter)", "enforced_by": "prove_bands", "py_symbol": "_measure_chars"},
+    {"code": "AF-SM-PDFTITLE-BAND", "stage": "P3", "level": "asset", "trigger": "LinkedIn pdfTitle over 100 chars", "enforced_by": "prove_bands", "py_symbol": "_measure_chars"},
+    {"code": "AF-SM-HEADLINE-WORDS", "stage": "P3", "level": "asset", "trigger": "a slide textOnImage headline over 8 words", "enforced_by": "prove_bands", "py_symbol": "_measure_words"},
+    {"code": "AF-SM-HASHTAG-COUNT", "stage": "P3", "level": "asset", "trigger": "hashtags outside 5-7 (FB/IG) / not exactly 3 (LinkedIn) / outside 5-15 (IG reformat)", "enforced_by": "prove_bands", "py_symbol": "_count_hashtags"},
+    {"code": "AF-SM-POSTBODY-WORDS", "stage": "P3", "level": "asset", "trigger": "a main post body under 300 words", "enforced_by": "prove_bands", "py_symbol": "_measure_words"},
+    {"code": "AF-SM-STORYBOARD", "stage": "P3", "level": "asset", "trigger": "storyboard not 3-7 scenes, or scene durations do not sum to EXACTLY 25.0s", "enforced_by": "prove_bands", "py_symbol": "_measure_storyboard"},
+    {"code": "AF-SM-CAROUSEL-SLIDES", "stage": "P3", "level": "asset", "trigger": "carousel not exactly 10 slides (FB/IG) / 9 slides (LinkedIn)", "enforced_by": "prove_bands", "py_symbol": "_measure_carousel"},
+    {"code": "AF-SM-CAROUSEL-FLOOR", "stage": "P3/P4", "level": "asset", "trigger": "carousel assembly attempted with fewer than 2 completed images", "enforced_by": "prove_bands / ledger", "py_symbol": "_measure_carousel"},
+    {"code": "AF-SM-MEDIA-LEDGER", "stage": "P4", "level": "run", "trigger": "media_ledger.json absent/incomplete (a job never reached a terminal state) or an unhandled fail/timeout branch did not alert", "enforced_by": "ledger", "py_symbol": "summarize"},
+    {"code": "AF-SM-CLIENT-NAME", "stage": "P5/build", "level": "bytes", "trigger": "a client-name token from the build-private scrub list is present (list is env-supplied, NEVER shipped)", "enforced_by": "scrub_gate", "py_symbol": "scan_client_names"},
+    {"code": "AF-SM-SECRET", "stage": "P5/build", "level": "bytes", "trigger": "a secret pattern is present (sk-or-v1-, pit-, Kie key, bearer/JWT, webhook accessToken)", "enforced_by": "scrub_gate", "py_symbol": "scan_secrets"},
+    {"code": "AF-SM-PINDATA", "stage": "P5/build", "level": "bytes", "trigger": "an n8n pinData block is present in a shipped/generated artifact", "enforced_by": "scrub_gate", "py_symbol": "scan_pindata"},
+    {"code": "AF-SM-NOANTHROPIC", "stage": "P5/P6/build", "level": "bytes", "trigger": "an anthropic/claude-* model identifier is present in any client-path file or run manifest (G-NOANTHROPIC)", "enforced_by": "scrub_gate / build_manifest", "py_symbol": "scan_anthropic"},
+    {"code": "AF-SM-PROCESS-INTEGRITY", "stage": "P6", "level": "run", "trigger": "deploy/publish requested without a signed process certificate, or a phase was skipped", "enforced_by": "build_manifest / run_social_media", "py_symbol": "build"},
+    {"code": "AF-SM-PROMPT-HASH", "stage": "P6/build", "level": "bytes", "trigger": "a shipped prompt file hash does not match the canonical source/prompts hash", "enforced_by": "build_manifest", "py_symbol": "check_prompt_hashes"},
+    {"code": "AF-SM-PROVENANCE-MISSING", "stage": "P6", "level": "run", "trigger": "the certificate is requested with no per-call provenance record (working/provenance/calls.json absent/empty); a zero-Anthropic proof cannot be made without it", "enforced_by": "build_manifest", "py_symbol": "check_provenance"},
+    {"code": "AF-SM-AGENCY-SHARED-PIT", "stage": "P6", "level": "run", "trigger": "agency mode: two roster entries share a pit or locationId (co-mingled credentials)", "enforced_by": "build_manifest", "py_symbol": "check_agency_isolation"},
+    {"code": "AF-SM-PUBLISH-RESULT", "stage": "P7", "level": "run", "trigger": "a sub-mode result does not carry the normalized {platform, success, totalPosts, processedAccounts, errors} contract", "enforced_by": "run_social_media", "py_symbol": "_chk_publish"},
+    {"code": "AF-SM-PUBLISH-UNPROVEN", "stage": "P7", "level": "run", "trigger": "the publisher was invoked without a complete upstream manifest/certificate", "enforced_by": "run_social_media", "py_symbol": "_chk_publish"},
+    {"code": "AF-SM-WRITEBACK-COLUMNS", "stage": "P8", "level": "run", "trigger": "the planner write-back row is not the normalized 20-column shape", "enforced_by": "run_social_media", "py_symbol": "_chk_writeback"},
+
+    {"code": "AF-SM-POST-BYPASS", "stage": "entry", "level": "run", "trigger": "a hand-rolled social poster (direct Facebook/Instagram/LinkedIn/TikTok/YouTube/Pinterest API send) exists in the run directory outside the sanctioned GHL-direct handoff", "enforced_by": "social-media-entry.sh", "py_symbol": "BYPASS-SCAN"},
+    {"code": "AF-SM-ENGINE-HASH-PIN", "stage": "entry", "level": "run", "trigger": "the sha256 of run_social_media.py + the provers does not match ENGINE-PIN.sha256", "enforced_by": "social-media-entry.sh", "py_symbol": "version_hash_pin"},
+
+    {"code": "AF-SM-OVERRIDE-UNLOGGED", "stage": "P6", "level": "run", "trigger": "a band override was APPLIED during proving (working/creative/applied.json) without a matching logged entry in working/creative/overrides.json (who asked, verbatim ask, scope). A silent deviation is the ONLY forbidden deviation; deviation itself is free (client gets EXACTLY what they ask for, never floored/capped).", "enforced_by": "build_manifest", "py_symbol": "check_overrides_logged"},
+    {"code": "AF-SM-CLIENT-COPY-MUTATED", "stage": "P6/P7", "level": "bytes", "trigger": "in client-copy mode, the published bytes do not match the client's supplied copy (modulo a programmatic ctaLink append). The engine may NEVER edit the client's words; scrub may BLOCK a secret/name leak but never silently edit.", "enforced_by": "build_manifest", "py_symbol": "check_client_copy"},
+    {"code": "AF-SM-DOUBLE-POST", "stage": "P7", "level": "run", "trigger": "same (platform, content_sha256) already posted/scheduled within the lookback window, OR same (platform, scheduled_slot) already occupied by another run, reconciled against the LIVE GHL post-listing. Cleared ONLY by a logged owner-approved re-post token (recorded on the certificate).", "enforced_by": "ledger / run_social_media", "py_symbol": "check_dedup_snapshot"},
+    {"code": "AF-SM-ENGAGE-REPORT", "stage": "P12", "level": "run", "trigger": "engage mode ran but the read-only anomaly report artifact (working/qc/engage_report.json) is absent/malformed", "enforced_by": "run_social_media", "py_symbol": "_chk_engage"},
+
+    {"code": "AF-SM-EMAIL-SUBJECT", "stage": "P9", "level": "asset", "trigger": "newsletter subject outside 1-60 chars (client-overridable, logged)", "enforced_by": "prove_bands", "py_symbol": "evaluate_newsletter"},
+    {"code": "AF-SM-EMAIL-PREVIEW", "stage": "P9", "level": "asset", "trigger": "newsletter preview over 120 chars (client-overridable, logged)", "enforced_by": "prove_bands", "py_symbol": "evaluate_newsletter"},
+    {"code": "AF-SM-EMAIL-HTML", "stage": "P9", "level": "asset", "trigger": "newsletter missing the table-based inline-CSS html body", "enforced_by": "prove_bands / validate_contract", "py_symbol": "evaluate_newsletter"},
+    {"code": "AF-SM-BLOG-TITLE", "stage": "P10", "level": "asset", "trigger": "blog title outside 1-80 chars (client-overridable, logged)", "enforced_by": "prove_bands", "py_symbol": "evaluate_blog"},
+    {"code": "AF-SM-BLOG-META", "stage": "P10", "level": "asset", "trigger": "blog metaDescription over 160 chars (client-overridable, logged)", "enforced_by": "prove_bands", "py_symbol": "evaluate_blog"},
+    {"code": "AF-SM-BLOG-BODY", "stage": "P10", "level": "asset", "trigger": "blog body under 700 words (client-overridable, logged)", "enforced_by": "prove_bands", "py_symbol": "evaluate_blog"},
+    {"code": "AF-SM-PODCAST-SCRIPT", "stage": "P11", "level": "asset", "trigger": "podcast script outside 1,500-2,000 words or < 1 [emotion] tag per paragraph", "enforced_by": "prove_bands", "py_symbol": "evaluate_podcast"},
+    {"code": "AF-SM-PODCAST-DURATION", "stage": "P11", "level": "asset", "trigger": "podcast audio outside 600-900 s or under 128 kbps (ffprobe)", "enforced_by": "prove_bands", "py_symbol": "evaluate_podcast"},
+    {"code": "AF-SM-PODCAST-COVER", "stage": "P11", "level": "asset", "trigger": "podcast cover not 1400x1400 JPEG", "enforced_by": "prove_bands", "py_symbol": "evaluate_podcast"},
+    {"code": "AF-SM-STORIES-CAPTION", "stage": "P3", "level": "asset", "trigger": "FB/IG Stories caption over 250 chars (C7 content-completeness fold; client-overridable, logged)", "enforced_by": "prove_bands", "py_symbol": "evaluate_reformat"},
+
+    {"code": "AF-SM-DEFERRED", "stage": "defer", "level": "run", "trigger": "a capability deferred to a named later version was requested (syndicate C9 v0.4.0 / narrated-video C8 v0.3.0 / persona-adapter C10 v0.5.0 / memory-adapter C11 v0.5.0). The stub fails CLOSED with a clear 'deferred to vX.Y.Z' message; baseline config-carried behavior is never blocked meanwhile.", "enforced_by": "defer_stub / run_social_media", "py_symbol": "_chk_deferred"}
+  ]
+}

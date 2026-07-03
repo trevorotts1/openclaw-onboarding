@@ -1,0 +1,20 @@
+{
+  "existing": [
+    {
+      "platform": "facebook",
+      "content_sha256": "aaa111",
+      "scheduled_slot": "2026-W27-Sun-10:00",
+      "run_id": "r1",
+      "age_days": 3
+    }
+  ],
+  "outgoing": [
+    {
+      "platform": "facebook",
+      "content_sha256": "aaa111",
+      "scheduled_slot": "2026-W27-Mon-10:00",
+      "run_id": "r2"
+    }
+  ],
+  "lookback_days": 90
+}

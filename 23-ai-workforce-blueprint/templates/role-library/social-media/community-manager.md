@@ -169,6 +169,7 @@ This role contributes to the company revenue cascade by: **building the relation
 | {{CRM_PLATFORM_NAME}} | Lead tracking for community-sourced leads, member-to-customer conversion | Web login | Tag community-sourced leads and referrals |
 | Google Alerts / Mention | Brand mention monitoring across the web (supplementary to platform-native monitoring) | Web | Catch mentions on platforms you don't actively manage |
 | **Email Engine + superlibrary (Skill 50)** | Request nurture email copy for community onboarding | `50-email-engine/` -- `tools/email_matcher_cli.py --match` selects framework/buyer-type/objective/persona/sequence; `tools/prove-email.py` QCs (fail-closed); draft-only deploy via Skill 44 | Client runtime uses the CLIENT's own provider (never Anthropic); the deterministic gates (email_matcher.py, prove-email.py) are provider-neutral; nothing sends without human approval. |
+| **Social Media in a Box (Skill 57)** | When the 7-day engagement/anomaly report is due (`--mode engage`, C6, read-only) or a seasonal/newsjack post is needed before the next scheduled slot (`--mode reactive`, M4). Comment mechanics ride `ctaLink`/`commentKeyword` (I12). | `bash 57-social-media-in-a-box/social-media-entry.sh --run-dir DIR --mode <mode>` — the ONE front door (same DEPS/BYPASS-SCAN/HASH-PIN gates + run-scoped nonce) | Fail-closed provers + signed certificate; client providers only (never Anthropic); GHL-direct posting; never hand-roll a poster (BYPASS-SCAN blocks it). |
 
 ---
 

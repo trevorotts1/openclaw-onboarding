@@ -1,0 +1,17 @@
+[
+  {
+    "step": "script-writer",
+    "provider": "openrouter",
+    "model": "meta-llama/llama-3.1-70b-instruct"
+  },
+  {
+    "step": "tts",
+    "provider": "fish-audio",
+    "model": "s2-pro"
+  },
+  {
+    "step": "cover-art",
+    "provider": "kie",
+    "model": "nano-banana-pro"
+  }
+]

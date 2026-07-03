@@ -162,6 +162,7 @@ This role contributes to the company revenue cascade by: **enabling precise audi
 | Data Visualization (Looker Studio, Tableau) | Segment migration visualizations, segment overlap analysis | Web login | Sankey diagrams for migration flows. Venn diagrams for segment overlap analysis. |
 | Slack/Teams | Campaign Specialist collaboration, segment request management, Director communication | Web/desktop | #crm-segments channel for segment-related discussions. |
 | **Email Engine + superlibrary (Skill 50)** | Trigger the right email objective per segment (promotional / abandoned-cart / upsell / downsell) | `50-email-engine/` -- `tools/email_matcher_cli.py --match` selects framework/buyer-type/objective/persona/sequence; `tools/prove-email.py` QCs (fail-closed); draft-only deploy via Skill 44 | Client runtime uses the CLIENT's own provider (never Anthropic); the deterministic gates (email_matcher.py, prove-email.py) are provider-neutral; nothing sends without human approval. |
+| **Social Media in a Box (Skill 57)** | When social-sourced leads need tags/custom fields — key segments off the engine's `commentKeyword` captures and newsletter audience; the planner sheet is the state of record. | `bash 57-social-media-in-a-box/social-media-entry.sh --run-dir DIR --mode <mode>` — the ONE front door (same DEPS/BYPASS-SCAN/HASH-PIN gates + run-scoped nonce) | Fail-closed provers + signed certificate; client providers only (never Anthropic); GHL-direct posting; never hand-roll a poster (BYPASS-SCAN blocks it). |
 
 ---
 

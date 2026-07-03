@@ -1,0 +1,21 @@
+{
+  "kind": "storyboard",
+  "scenes": [
+    {
+      "Scene": "Drone establishment gliding over a quiet main street at sunrise, settling on a single lit bakery window.",
+      "duration": 5.0
+    },
+    {
+      "Scene": "Tracking shot following a warm loaf from the oven to a paper bag as a name is written on it.",
+      "duration": 7.0
+    },
+    {
+      "Scene": "Rack focus from a phone showing a follower graph to a regular customer laughing at the counter.",
+      "duration": 6.5
+    },
+    {
+      "Scene": "Slow push-in on a hand extending the loaf toward the lens, warm light, looping back to the opening street.",
+      "duration": 6.5
+    }
+  ]
+}

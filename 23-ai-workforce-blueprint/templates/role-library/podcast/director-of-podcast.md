@@ -169,6 +169,7 @@ This role contributes to the company revenue cascade by: **building the highest-
 | Apple Podcasts Connect | Episode submission, metadata management, ratings and review monitoring, analytics | Apple ID in TOOLS.md | Primary review platform. Monitor weekly. |
 | Spotify for Podcasters | Spotify episode management, enhanced analytics (listener behavior, drop-off points, streaming data) | Login credentials in TOOLS.md | Spotify's listener retention curve is the best available tool for episode pacing diagnostics. |
 | Canva / Adobe Express | Podcast cover art, episode promotional graphics, social media clip covers | API key in TOOLS.md / direct web login | Podcast cover art must conform to Apple Podcasts specification: 3000x3000px, RGB, JPEG or PNG, <=500KB. |
+| **Social Media in a Box (Skill 57)** | When the weekly episode ships (`--mode podcast`, C3): script → Fish-Audio S2 → ffprobe 600–900 s / ≥128 kbps → Podbean + 1400×1400 cover. Unconfigured Fish-Audio/Podbean = `PODCAST_DEFERRED` labeled skip, never a failure. | `bash 57-social-media-in-a-box/social-media-entry.sh --run-dir DIR --mode <mode>` — the ONE front door (same DEPS/BYPASS-SCAN/HASH-PIN gates + run-scoped nonce) | Fail-closed provers + signed certificate; client providers only (never Anthropic); GHL-direct posting; never hand-roll a poster (BYPASS-SCAN blocks it). |
 
 ---
 

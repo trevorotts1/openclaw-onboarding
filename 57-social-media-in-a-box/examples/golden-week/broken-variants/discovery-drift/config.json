@@ -1,0 +1,22 @@
+{
+  "$broken_variant": "C2 discovery drift — the live GHL connected-accounts listing shows a twitter account the client connected, but the config platforms enum does not carry it and no platformsExcluded entry logs a deliberate skip. This is the BANNED silent-miss (a channel the client actually connected must never be silently skipped): preflight_gate.py must BLOCK with AF-SM-DISCOVERY-DRIFT. Everything else is green so the drift is the ONLY failure.",
+  "brandName": "Northwind Bakehouse",
+  "pit": "pit-set",
+  "locationId": "loc-fixture",
+  "userId": "user-fixture",
+  "openrouterKey": "set",
+  "openrouterModel": "google/gemini-2.0-flash-001",
+  "openrouterFallbacks": ["meta-llama/llama-3.1-70b", "mistralai/mistral-large"],
+  "kieKey": "set",
+  "geminiKey": "set",
+  "platforms": ["facebook", "instagram"],
+  "postTypes": ["post"],
+  "timezone": "America/New_York",
+  "status": "Paid",
+  "probes": {
+    "kieCredits": 500,
+    "openrouterBalance": 25.0,
+    "ghlTokenValid": true,
+    "connectedAccounts": ["facebook", "instagram", "twitter"]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "P0-PREFLIGHT": {
+    "passed": true
+  },
+  "P1-PLAN": {
+    "passed": true
+  },
+  "P2-CONTENT": {
+    "passed": true
+  },
+  "P3-CONTRACT": {
+    "passed": true
+  },
+  "P4-MEDIA": {
+    "passed": true
+  },
+  "P5-SCRUB": {
+    "passed": true
+  }
+}

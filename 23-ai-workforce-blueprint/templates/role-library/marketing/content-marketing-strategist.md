@@ -179,6 +179,7 @@ This role contributes to the company revenue cascade by: **building the owned me
 | Heatmap / User Behavior Tool (Hotjar, Microsoft Clarity, Crazy Egg) | Scroll depth analysis, click heatmaps, user session recordings on key content pages | JavaScript snippet on site | Use to optimize content layout, CTA placement, and readability |
 | Social Listening / Content Research (BuzzSumo, SparkToro, AnswerThePublic) | Content topic discovery, trending content analysis, audience question mining, influencer identification for content collaboration | Account subscription | Weekly scan for content ideas and format trends |
 | Email Marketing Platform (integrated with CRM — {{CRM_PLATFORM_NAME}} or dedicated ESP) | Content newsletter distribution, content upgrade delivery, content lead nurture sequences | API key or admin access | Ensure content links use UTM parameters for attribution |
+| **Social Media in a Box (Skill 57)** | When themes are fed (`--mode plan`: `themeOfWeek`, `themeQueue`, wildcard I1/I2), a creative brief steers the week (`--mode brief`, M1, or `week --brief FILE`), or the Day-7 blog ships (`--mode blog`, C5). | `bash 57-social-media-in-a-box/social-media-entry.sh --run-dir DIR --mode <mode>` — the ONE front door (same DEPS/BYPASS-SCAN/HASH-PIN gates + run-scoped nonce) | Fail-closed provers + signed certificate; client providers only (never Anthropic); GHL-direct posting; never hand-roll a poster (BYPASS-SCAN blocks it). |
 
 ---
 

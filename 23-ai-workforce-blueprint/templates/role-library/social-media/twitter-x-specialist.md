@@ -169,6 +169,7 @@ This role contributes to the company revenue cascade by: **building a real-time 
 | Buffer / Hootsuite | Post scheduling for standard tweets (not threads — threads should be composed in thread-specific tools) | Web login | Use for scheduling tweets when you cannot post manually; avoid over-reliance on scheduling at the expense of real-time presence |
 | {{CRM_PLATFORM_NAME}} | Lead attribution from X, social-sourced lead tracking | Web login | Tag X-sourced leads; use X-specific UTMs |
 | Google Analytics | Traffic and conversion tracking from X | Web login | Monitor Source/Medium = t.co / twitter / x |
+| **Social Media in a Box (Skill 57)** | When X/Twitter content ships — the `twitter` publisher sub-mode (C1) posts through the client's own GHL Private Integration Token. Never post by hand; if GHL's X channel is unavailable, escalate (Q2), don't work around. | `bash 57-social-media-in-a-box/social-media-entry.sh --run-dir DIR --mode <mode>` — the ONE front door (same DEPS/BYPASS-SCAN/HASH-PIN gates + run-scoped nonce) | Fail-closed provers + signed certificate; client providers only (never Anthropic); GHL-direct posting; never hand-roll a poster (BYPASS-SCAN blocks it). |
 
 ---
 
