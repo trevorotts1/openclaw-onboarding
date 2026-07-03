@@ -1,0 +1,16 @@
+[
+  {
+    "platform": "facebook",
+    "success": true,
+    "totalPosts": 3,
+    "processedAccounts": 1,
+    "errors": []
+  },
+  {
+    "platform": "linkedin",
+    "success": true,
+    "totalPosts": 1,
+    "processedAccounts": 1,
+    "errors": []
+  }
+]

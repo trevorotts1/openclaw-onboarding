@@ -1,0 +1,19 @@
+{
+  "caption_fb_ig": {
+    "applied": [
+      2000,
+      2400
+    ],
+    "scope": "run",
+    "asked_by": "owner",
+    "verbatim": "make the caption run long this week, about 2,200 characters, like a real letter"
+  },
+  "carousel_slides_fb_ig": {
+    "applied": {
+      "exact": 3
+    },
+    "scope": "run",
+    "asked_by": "owner",
+    "verbatim": "just a short 3-slide teaser carousel this week"
+  }
+}

@@ -1,0 +1,139 @@
+{
+  "note": "Fail-closed rejection proofs for the golden-week fixture. Each variant is a DISTINCT AF-SM-* trip, executed for real by verify.sh (step 4) which asserts the exact exit code + code and leaves every source fixture read-only. 'materialized' variants are built into a temp file at test time so no secret/anthropic literal is ever shipped into scanned bytes.",
+  "run_all": "bash ../../../verify.sh   # step 4 executes every variant below",
+  "variants": [
+    {
+      "name": "out-of-band-caption",
+      "fixture": "out-of-band-caption/fb-carousel.json",
+      "injected": "authentic golden carousel with the caption truncated to 926 chars (below the 1500-1800 FB/IG band); 6 hashtags + 10 slides otherwise valid so only the caption band trips",
+      "prover": "scripts/prove_bands.py out-of-band-caption/fb-carousel.json",
+      "blocked_at": "P3-CONTRACT",
+      "exit": 2,
+      "code": "AF-SM-CAPTION-BAND",
+      "certificate_issued": false,
+      "publisher_ran": false
+    },
+    {
+      "name": "bad-hashtag-count",
+      "fixture": "bad-hashtag-count/fb-carousel.json",
+      "injected": "authentic golden carousel with only 2 hashtags (FB/IG requires 5-7); caption 1564 chars in-band + 10 slides valid so only the hashtag count trips",
+      "prover": "scripts/prove_bands.py bad-hashtag-count/fb-carousel.json",
+      "blocked_at": "P3-CONTRACT",
+      "exit": 2,
+      "code": "AF-SM-HASHTAG-COUNT",
+      "certificate_issued": false,
+      "publisher_ran": false
+    },
+    {
+      "name": "stories-caption",
+      "fixture": "stories-caption/reformat.json",
+      "injected": "v0.2.0 C7 content-completeness fold: an authentic golden reformat record with a FB/IG storiesCaption of 290 chars (over the 250-char stories_caption band); ig/li hashtags + followUps otherwise in-band so ONLY the Stories caption band trips",
+      "prover": "scripts/prove_bands.py stories-caption/reformat.json",
+      "blocked_at": "P3-CONTRACT",
+      "exit": 2,
+      "code": "AF-SM-STORIES-CAPTION",
+      "certificate_issued": false,
+      "publisher_ran": false
+    },
+    {
+      "name": "missing-provenance",
+      "fixture": "missing-provenance/run",
+      "injected": "a certificate build where every gate passed but working/provenance/calls.json is empty; a zero-Anthropic proof cannot be made without a per-call model/provider record",
+      "prover": "scripts/build_manifest.py --run-dir missing-provenance/run",
+      "blocked_at": "P6-MANIFEST",
+      "exit": 2,
+      "code": "AF-SM-PROVENANCE-MISSING",
+      "certificate_issued": false,
+      "publisher_ran": false
+    },
+    {
+      "name": "client-key-leak",
+      "fixture": "client-key-leak/ (materialized to temp at test time)",
+      "injected": "a generated artifact containing a fabricated OpenRouter key of the shape sk-or-v1-<40+ chars>; value confirmed present and forbidden, never printed",
+      "prover": "scripts/scrub_gate.py <temp-leak-file>",
+      "blocked_at": "P5-SCRUB",
+      "exit": 2,
+      "code": "AF-SM-SECRET",
+      "certificate_issued": false,
+      "publisher_ran": false
+    },
+    {
+      "name": "unapproved-phase-skip",
+      "fixture": "unapproved-phase-skip/run",
+      "injected": "a certificate build where the P3-CONTRACT QC gate is passed:false (a phase advanced without approval); provenance present so ONLY the process-integrity gate trips",
+      "prover": "scripts/build_manifest.py --run-dir unapproved-phase-skip/run",
+      "blocked_at": "P6-MANIFEST",
+      "exit": 2,
+      "code": "AF-SM-PROCESS-INTEGRITY",
+      "certificate_issued": false,
+      "publisher_ran": false
+    },
+    {
+      "name": "anthropic-call",
+      "fixture": "anthropic-call/ (materialized to temp at test time)",
+      "injected": "a provenance call naming an Anthropic claude-<variant> model id; client runtime is G-NOANTHROPIC",
+      "prover": "scripts/scrub_gate.py <temp-calls-file>",
+      "blocked_at": "P5-SCRUB",
+      "exit": 2,
+      "code": "AF-SM-NOANTHROPIC",
+      "defense_in_depth": "build_manifest.py also refuses to sign the same id at P6 (AF-SM-NOANTHROPIC)",
+      "certificate_issued": false,
+      "publisher_ran": false
+    },
+    {
+      "name": "duplicate-post",
+      "fixture": "duplicate-post/dedup.json",
+      "injected": "v0.2.0 §4.4: an outgoing post carries the SAME (platform, content_sha256) already posted within the 90-day lookback window; clearable only by a logged owner re-post token",
+      "prover": "scripts/ledger.py dedup-snapshot --input duplicate-post/dedup.json",
+      "blocked_at": "P7-PUBLISH",
+      "exit": 2,
+      "code": "AF-SM-DOUBLE-POST",
+      "certificate_issued": false,
+      "publisher_ran": false
+    },
+    {
+      "name": "unlogged-override",
+      "fixture": "unlogged-override/run",
+      "injected": "v0.2.0 creative layer: a caption band was OVERRIDDEN during proving (working/creative/applied.json) with NO matching logged entry in working/creative/overrides.json; deviation is free but a SILENT deviation is forbidden",
+      "prover": "scripts/build_manifest.py --run-dir unlogged-override/run",
+      "blocked_at": "P6-MANIFEST",
+      "exit": 2,
+      "code": "AF-SM-OVERRIDE-UNLOGGED",
+      "certificate_issued": false,
+      "publisher_ran": false
+    },
+    {
+      "name": "mutated-client-copy",
+      "fixture": "mutated-client-copy/run",
+      "injected": "v0.2.0 M3: in client-copy mode the engine EDITED the client's words instead of only appending the ctaLink; the client's copy is verbatim-guaranteed",
+      "prover": "scripts/build_manifest.py --run-dir mutated-client-copy/run",
+      "blocked_at": "P6-MANIFEST",
+      "exit": 2,
+      "code": "AF-SM-CLIENT-COPY-MUTATED",
+      "certificate_issued": false,
+      "publisher_ran": false
+    },
+    {
+      "name": "syndicate-deferred",
+      "fixture": "(defer_stub.py)",
+      "injected": "v0.2.0 C9: requesting the deferred syndicate capability must fail CLOSED with a clear 'deferred to v0.4.0' message, never a silent no-op",
+      "prover": "scripts/defer_stub.py --capability syndicate",
+      "blocked_at": "P-SYNDICATE-DEFER / defer",
+      "exit": 2,
+      "code": "AF-SM-DEFERRED",
+      "certificate_issued": false,
+      "publisher_ran": false
+    },
+    {
+      "name": "direct-orchestrator-no-nonce",
+      "fixture": "(the golden run-dir itself)",
+      "injected": "call run_social_media.py directly, bypassing social-media-entry.sh, so no front-door nonce is present",
+      "prover": "python3 run_social_media.py --mode week --run-dir <golden>",
+      "blocked_at": "front-door",
+      "exit": 4,
+      "code": "front-door-nonce-mismatch",
+      "certificate_issued": false,
+      "publisher_ran": false
+    }
+  ]
+}

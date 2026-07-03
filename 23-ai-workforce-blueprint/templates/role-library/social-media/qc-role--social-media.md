@@ -151,6 +151,7 @@ This role contributes to the company revenue cascade by: **preventing brand-dama
 | Slack / Teams | Real-time communication with specialists for revision requests | Web/desktop app | Keep all QC feedback in writing for audit trail |
 | Fact-checking tools (Google Fact Check Explorer, Snopes) | Verify factual claims in content before approval | Web | Use for any post containing statistics, news references, or health/legal claims |
 | Loom / screen recording | Record QC feedback for complex visual revisions | Desktop app | Use when written feedback would be unclear — show, don't just tell |
+| **Social Media in a Box (Skill 57)** | When a run finishes: verify the signed `PROCESS-CERTIFICATE` + live GHL post-listing; triage the ADVISORY `voice_report.json` (warn, never block). You read provers' verdicts — you never re-judge content (C12: provers are the QC of record). | `bash 57-social-media-in-a-box/social-media-entry.sh --run-dir DIR --mode <mode>` — the ONE front door (same DEPS/BYPASS-SCAN/HASH-PIN gates + run-scoped nonce) | Fail-closed provers + signed certificate; client providers only (never Anthropic); GHL-direct posting; never hand-roll a poster (BYPASS-SCAN blocks it). |
 
 ---
 

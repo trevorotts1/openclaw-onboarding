@@ -1,0 +1,99 @@
+{
+  "schema": "social-media-process-certificate-v1",
+  "skill": "social-media-in-a-box",
+  "skill_number": 57,
+  "brand_slug": "northwind-bakehouse",
+  "mode": "single-brand",
+  "config_hash": "52fed7bd0705339c1912f22a59011d227006f1d798ce7354ddb188a2d59e2300",
+  "prompt_hashes": {
+    "01-content-generator-multiplatform.md": "3966d03d68505822bb826fe42d88aa3fd7ba936337fdfea99bbdafd6ef780c84",
+    "02-core-concept-agent.md": "d2883c2ac65a200e33e969d885b3023a6f94acddad4b6e21a80ffac851d48f19",
+    "03-platform-strategy-injections.md": "e8849aefe7f64dc3036c9c853820a5a09b69801f7112f8bdef9fb59042b783ca",
+    "04-platform-reformatter-agent.md": "4af2c113ad3ae89404dc9233f289f5595d767cd2ada8d462e09585cf58f9c827",
+    "05-visual-prompt-architect.md": "6736de6b108fcd72d70317bded2a03d2da2d35203eeec01ac59c1a97669d77d3",
+    "06-prompt-doctor.md": "25d58b81218e814a33cc3cf4c4d59cff21db78e7b9835ad7ce277646d7ae3618",
+    "07-image-grid-selector-gemini.md": "957e6c13f153fbacdcb33ab340ce62015124927aea15899c9256bc0603adcfe1",
+    "08-storyboard-architect-sora.md": "b385a7fbb6005fe126132cb601934aeb96e49615d3b28dc41f23a3df3a71563d",
+    "09-fbig-carousel-super-prompt.md": "0b8ec917461f0a3571b97a4fef224628eb429675da0d07992591fbd461ce4a07",
+    "10-linkedin-carousel-super-prompt.md": "e42aaf4d67ca95708a9d1fe53b77ae21ad986f2cca349ee19ab80dc74eb127a5",
+    "11-carousel-image-qc-gemini.md": "3bea9079799211734fcd1d774b2b276b6e91591f58e5118d3324cb6c8cb252e0",
+    "12-carousel-image-generation-nano-banana.md": "3368982d2388ddf44a5b62ef4802e750542c55f12f58408129c292031ef1f2f7",
+    "13-carousel-image-edit-seedream.md": "40eec6b58ef689d43bc820110ca788c9f2007465ac37b251c559885c15f073e9",
+    "14-podcast-cover-nano-banana.md": "60b390b923ab3c5cec570df9d3610b9324479f0a7fc2aa16d060c522547d804c",
+    "15-weekly-7part-content-writer.md": "b9917175a7fa9ec2cf3d87abe2a11dca896ca700f83e8dddf63461c33f173302",
+    "16-multi-platform-reformatter.md": "dfd7cc6acbb7fc7f380e0b01d70e684122ecd22023334f9daaf5662783501ea7",
+    "17-podcast-script-writer.md": "43ce01fc46763a6058fe59ec0e0c03ee485aca372f318e9a955db921f232686a",
+    "18-newsletter-writer.md": "5f6a5b71aca530b5cb6c1b75a8ebc9d30ab05ee2a037a53edb124d79e5289751",
+    "19-blog-writer.md": "4e7f6efab072183fe92e52452b8b7a77205838730c57eefbe8616e201ea2f8a8"
+  },
+  "prompt_hashes_ok": true,
+  "gates": {
+    "P0-PREFLIGHT": {
+      "passed": true
+    },
+    "P1-PLAN": {
+      "passed": true
+    },
+    "P2-BRIEF": {
+      "passed": true
+    },
+    "P3-CONTRACT": {
+      "passed": true
+    },
+    "P4-MEDIA": {
+      "passed": true
+    },
+    "P5-SCRUB": {
+      "passed": true
+    }
+  },
+  "models_used": [
+    "google/gemini-2.0-flash-001",
+    "meta-llama/llama-3.1-70b-instruct",
+    "google/gemini-2.0-flash-001",
+    "gemini-2.0-flash",
+    "nano-banana-pro"
+  ],
+  "zero_anthropic": true,
+  "agency_isolation_ok": true,
+  "all_gates_pass": true,
+  "creative": {
+    "mode": "brief",
+    "theme_source": "wildcard",
+    "brief_sha": "dbc3f6a85b03e5419337332c1f39a8b504a0dc856b95f9826d770ddd63f99f5e",
+    "overrides": {
+      "caption_fb_ig": {
+        "applied": [
+          2000,
+          2400
+        ],
+        "scope": "run",
+        "asked_by": "owner",
+        "verbatim": "make the caption run long this week, about 2,200 characters, like a real letter"
+      },
+      "carousel_slides_fb_ig": {
+        "applied": {
+          "exact": 3
+        },
+        "scope": "run",
+        "asked_by": "owner",
+        "verbatim": "just a short 3-slide teaser carousel this week"
+      }
+    },
+    "client_copy_shas": [
+      "f2974eb6d2d1904282c68acb408becc8654cab21a991f2b6e1364c682ca0c462"
+    ],
+    "persona_source": "config",
+    "em_dash_policy": "allow-content",
+    "series_length": 5,
+    "arc_template": "custom",
+    "style_pick": "editorial-mono"
+  },
+  "overrides_logged_ok": true,
+  "client_copy_verbatim_ok": true,
+  "signer": "social-media-in-a-box",
+  "deploy_mode": "publish-on-cert",
+  "failures": [],
+  "pass": true,
+  "certificate_sha": "9144ac33c0572f1bdb4c6bdf2bc5e78738f61f9c07055cb732ddafe521f929b5"
+}

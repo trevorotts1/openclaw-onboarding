@@ -169,6 +169,7 @@ This role contributes to the company revenue cascade by: **building a visual sea
 | Google Analytics | Website traffic and conversion tracking from Pinterest | Web login | Monitor Source/Medium = pinterest.com; analyze on-site behavior of Pinterest traffic |
 | {{CRM_PLATFORM_NAME}} | Lead attribution from Pinterest | Web login | Tag Pinterest-sourced leads; use Pinterest-specific UTMs |
 | Website Open Graph Plugins (Yoast, RankMath) | Ensure correct metadata for Rich Pins | Website CMS | Verify Open Graph tags are set correctly on all pages you pin from |
+| **Social Media in a Box (Skill 57)** | When Pinterest content ships through the weekly run (enum platform; no side pipeline). | `bash 57-social-media-in-a-box/social-media-entry.sh --run-dir DIR --mode <mode>` — the ONE front door (same DEPS/BYPASS-SCAN/HASH-PIN gates + run-scoped nonce) | Fail-closed provers + signed certificate; client providers only (never Anthropic); GHL-direct posting; never hand-roll a poster (BYPASS-SCAN blocks it). |
 
 ---
 

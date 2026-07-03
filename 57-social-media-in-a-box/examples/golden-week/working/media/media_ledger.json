@@ -1,0 +1,10 @@
+{
+  "run": "northwind-bakehouse_2026-W28",
+  "total": 10,
+  "complete": 10,
+  "images_ready": 10,
+  "pending": 0,
+  "all_terminal": true,
+  "assemble_ok": true,
+  "is_carousel": true
+}

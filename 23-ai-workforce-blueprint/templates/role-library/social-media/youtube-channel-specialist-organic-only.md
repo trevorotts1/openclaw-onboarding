@@ -174,6 +174,7 @@ This role contributes to the company revenue cascade by: **building a long-form 
 | YouTube Audio Library | Royalty-free music and sound effects | Native in YouTube Studio | Always use royalty-free or properly licensed music to avoid copyright claims |
 | {{CRM_PLATFORM_NAME}} | Lead attribution from YouTube | Web login | Tag YouTube-sourced leads; use YouTube-specific UTMs |
 | Google Analytics | Traffic and conversion tracking from YouTube | Web login | Monitor traffic source = YouTube; track goals/conversions from YouTube traffic |
+| **Social Media in a Box (Skill 57)** | When YouTube ships via GHL in the weekly run; YouTube-DIRECT upload stays deferred to `syndicate` v0.4.0 (C9) — do not build one. | `bash 57-social-media-in-a-box/social-media-entry.sh --run-dir DIR --mode <mode>` — the ONE front door (same DEPS/BYPASS-SCAN/HASH-PIN gates + run-scoped nonce) | Fail-closed provers + signed certificate; client providers only (never Anthropic); GHL-direct posting; never hand-roll a poster (BYPASS-SCAN blocks it). |
 
 ---
 

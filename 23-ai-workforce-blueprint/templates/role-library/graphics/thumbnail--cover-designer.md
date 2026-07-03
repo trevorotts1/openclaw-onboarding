@@ -159,6 +159,7 @@ This role contributes to the company revenue cascade by: **driving the click-thr
 | **Canva / Placeit** | Quick thumbnail mockups, template-based designs for lower-priority content, 3D mockup generation. | License via TOOLS.md | For content that does not warrant full custom design. |
 | **Digital Asset Management - DAM** | Storage and retrieval of brand photography, channel logos, creator headshots, and previous thumbnail archive. | Web login via TOOLS.md | Source for all photography and brand elements used in thumbnails. |
 | **TubeBuddy / VidIQ** | YouTube-specific tools for thumbnail A/B testing, competitor thumbnail analysis, and keyword research that informs visual strategy. | License via TOOLS.md | For competitive research and testing. |
+| **Social Media in a Box (Skill 57)** | When thumbnails (C7) or the podcast cover ship — media-core sub-steps; never a side pipeline. | `bash 57-social-media-in-a-box/social-media-entry.sh --run-dir DIR --mode <mode>` — the ONE front door (same DEPS/BYPASS-SCAN/HASH-PIN gates + run-scoped nonce) | Fail-closed provers + signed certificate; client providers only (never Anthropic); GHL-direct posting; never hand-roll a poster (BYPASS-SCAN blocks it). |
 
 ---
 

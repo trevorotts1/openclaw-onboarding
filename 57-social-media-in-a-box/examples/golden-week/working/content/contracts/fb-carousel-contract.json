@@ -1,0 +1,47 @@
+{
+  "kind": "carousel",
+  "platform": "facebook",
+  "carouselCaption": "hook and value copy here",
+  "slides": [
+    {
+      "textOnImage": "Line 1",
+      "prompt": "scene 1"
+    },
+    {
+      "textOnImage": "Line 2",
+      "prompt": "scene 2"
+    },
+    {
+      "textOnImage": "Line 3",
+      "prompt": "scene 3"
+    },
+    {
+      "textOnImage": "Line 4",
+      "prompt": "scene 4"
+    },
+    {
+      "textOnImage": "Line 5",
+      "prompt": "scene 5"
+    },
+    {
+      "textOnImage": "Line 6",
+      "prompt": "scene 6"
+    },
+    {
+      "textOnImage": "Line 7",
+      "prompt": "scene 7"
+    },
+    {
+      "textOnImage": "Line 8",
+      "prompt": "scene 8"
+    },
+    {
+      "textOnImage": "Line 9",
+      "prompt": "scene 9"
+    },
+    {
+      "textOnImage": "Line 10",
+      "prompt": "scene 10"
+    }
+  ]
+}

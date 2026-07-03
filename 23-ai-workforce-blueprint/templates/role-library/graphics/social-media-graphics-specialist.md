@@ -160,6 +160,7 @@ This role contributes to the company revenue cascade by: **driving audience enga
 | **Social Media Scheduling Platform (Later / Buffer / Hootsuite / Sprout Social)** | Previewing graphics in-context on each platform before final export; checking how graphics render in-feed | Web login via TOOLS.md | Use preview functionality to catch rendering issues (cropping, text truncation, color shifts) before delivery. |
 | **Adobe After Effects / Premiere Pro** | Motion graphics for animated social posts, Reel/Story animations, video thumbnail extraction | Enterprise license via TOOLS.md | For animated social content only; primary video editing is handled by the video team. |
 | **Platform Analytics Dashboards (Meta Business Suite, LinkedIn Analytics, etc.)** | Reviewing graphic performance data to inform design decisions | Web login via TOOLS.md | Weekly performance review; ad-hoc checks to inform design strategy. |
+| **Social Media in a Box (Skill 57)** | When social visuals ship through media core (P4) — supply `artDirection`/`stylePick`/`brandColors`/`brandFonts` (I9); the Gemini grid/QC loop repairs within the client's direction, never taste-gates. | `bash 57-social-media-in-a-box/social-media-entry.sh --run-dir DIR --mode <mode>` — the ONE front door (same DEPS/BYPASS-SCAN/HASH-PIN gates + run-scoped nonce) | Fail-closed provers + signed certificate; client providers only (never Anthropic); GHL-direct posting; never hand-roll a poster (BYPASS-SCAN blocks it). |
 
 ---
 

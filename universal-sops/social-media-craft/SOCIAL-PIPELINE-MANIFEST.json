@@ -1,0 +1,95 @@
+{
+  "manifest_version": 1,
+  "$schema_note": "SHARED cross-department SOP manifest for the Social Media in a Box engine (Skill 57). This is the universal-sops face of the capability: it is how ANY department (social-media / marketing / podcast / graphics / crm) discovers and drives the end-to-end social pipeline. It does NOT re-implement the engine. The authoritative machine spine lives in the skill: 57-social-media-in-a-box/SOCIAL-MANIFEST.json (the phase machine P0->P8 + fold/creative/defer phases + every AF-SM-* code), scripts/prove_bands.py + scripts/validate_contract.py + scripts/preflight_gate.py + scripts/scrub_gate.py + scripts/build_manifest.py + scripts/ledger.py (the fail-closed, model-free provers), run_social_media.py (the deterministic orchestrator, front-door-nonce gated by social-media-entry.sh), and config/bands.json (the SACRED bands). This file mirrors the email-craft / fb-ad-craft enforcement-spine pattern so a department reads ONE manifest to know the SOP phases, the owning roles, the SOP for each phase, and the gate codes. SOP-LOCKED: any added/changed SOP, band, or gate MUST stay in lockstep with 57-social-media-in-a-box/SOCIAL-MANIFEST.json and the provers. Supersedes 35-social-media-planner.",
+  "authoritative_engine": {
+    "skill": "57-social-media-in-a-box",
+    "engine_manifest": "57-social-media-in-a-box/SOCIAL-MANIFEST.json",
+    "bands": "57-social-media-in-a-box/config/bands.json",
+    "floor_prover": "57-social-media-in-a-box/scripts/prove_bands.py",
+    "contract_gate": "57-social-media-in-a-box/scripts/validate_contract.py",
+    "preflight_gate": "57-social-media-in-a-box/scripts/preflight_gate.py",
+    "scrub_gate": "57-social-media-in-a-box/scripts/scrub_gate.py",
+    "manifest_builder": "57-social-media-in-a-box/scripts/build_manifest.py",
+    "ledger": "57-social-media-in-a-box/scripts/ledger.py",
+    "orchestrator": "57-social-media-in-a-box/run_social_media.py",
+    "sanctioned_entry": "57-social-media-in-a-box/social-media-entry.sh",
+    "modes": "57-social-media-in-a-box/modes.md",
+    "cron_registrar": "57-social-media-in-a-box/scripts/register-social-cron.sh (social-media-weekly-theme, 0 8 * * 6)",
+    "poster": "GHL Social Planner (services.leadconnectorhq.com/social-media-posting/{locationId}/posts) — GHL-direct only, one poster per location"
+  },
+  "design_law": "Enforcement, not description. Provers freeze the FRAME, never the PICTURE. SACRED bands (config/bands.json) are the DEFAULT floor; a logged client-exact override wins over a default band and is recorded on the process certificate (client gets EXACTLY what they ask for — NEVER floored or capped). The publisher physically cannot run without a complete signed manifest that proves ZERO Anthropic for that run; done is claimed ONLY from the certificate PLUS a live GHL post-listing verify (never the poster's own return). GHL-direct is the only sanctioned posting path; a hand-rolled poster in a run dir is AF-SM-POST-BYPASS (BYPASS-SCAN). A SILENT deviation is the only forbidden deviation. Client runtime uses the CLIENT's OWN provider chain + OWN GHL PIT + social accounts — NEVER Anthropic / claude-* ids or operator keys. There is NO n8n and NO Airtable at runtime (baked prompts, local SQLite ledger, local labeled deliverables). Every deterministic gate is provider-neutral Python that runs identically on every box.",
+  "human_gate_phases": [],
+  "phases": [
+    {
+      "id": "S0-INTAKE",
+      "order": 0,
+      "name": "Intake — normalize the owner's ask (theme / brief / client-exact override / client-copy) into the right slot; never negotiate, never floor/cap a stated number",
+      "owning_role": "content-marketing-strategist",
+      "sop_refs": ["SOP-SOCIAL-01-INTAKE.md"],
+      "produces_artifact": "working/plan/plan.json (+ working/creative/brief.json / overrides.json / client-copy/*.json when the client steers)",
+      "engine_phases": ["P1-PLAN", "P2-BRIEF", "P2-INGEST"],
+      "gate_codes": ["AF-SM-PLAN-INCOMPLETE", "AF-SM-OVERRIDE-UNLOGGED", "AF-SM-CLIENT-COPY-MUTATED"],
+      "gate": "plan.json carries a non-empty themeOfWeek (+ plannerSheetId for a full week). A client-exact number is logged in working/creative/overrides.json (who asked / verbatim ask / scope) or the certificate is refused downstream. A self-attested 'captured' flag is NEVER trusted."
+    },
+    {
+      "id": "S1-RUN",
+      "order": 1,
+      "name": "Run — the ONE front door walks the mode's phase subset IN ORDER with no skips; fail-closed preflight + engine hash-pin + BYPASS-SCAN",
+      "owning_role": "director-of-social-media",
+      "sop_refs": ["SOP-SOCIAL-02-RUN.md"],
+      "produces_artifact": "delivery/PROCESS-CERTIFICATE.json (+ the mode's working artifacts)",
+      "engine_phases": ["P0-PREFLIGHT", "P2-CONTENT", "P4-MEDIA", "P8-PLANNER-WRITEBACK"],
+      "gate_codes": ["AF-SM-PREFLIGHT-CREDITS", "AF-SM-PREFLIGHT-BALANCE", "AF-SM-PREFLIGHT-TOKEN", "AF-SM-PREFLIGHT-CONFIG", "AF-SM-PREFLIGHT-STATUS", "AF-SM-DISCOVERY-DRIFT", "AF-SM-ENGINE-HASH-PIN", "AF-SM-POST-BYPASS", "AF-SM-CONTENT-MISSING", "AF-SM-MEDIA-LEDGER", "AF-SM-WRITEBACK-COLUMNS"],
+      "gate": "preflight_gate.py PASS (credits/balance/PIT/config/status + C2 live connected-accounts reconcile) before anything; a direct orchestrator call bypassing social-media-entry.sh exits 4; the engine sha must match ENGINE-PIN.sha256; no hand-rolled poster in the run dir."
+    },
+    {
+      "id": "S2-CREATIVE",
+      "order": 2,
+      "name": "Creative interjection — the M1-M4 lanes + I1-I12 injection points; provers gate FORM only; every applied override is logged",
+      "owning_role": "content-marketing-strategist",
+      "sop_refs": ["SOP-SOCIAL-03-CREATIVE-INTERJECTION.md"],
+      "produces_artifact": "working/creative/brief.json + overrides.json + applied.json + client-copy/*.json; the certificate 'creative' block",
+      "engine_phases": ["P3-CONTRACT", "P2-BRIEF", "P2-INGEST"],
+      "gate_codes": ["AF-SM-CONTRACT-JSON", "AF-SM-CONTRACT-SCHEMA", "AF-SM-CONTRACT-EMDASH", "AF-SM-GRID-DIGIT", "AF-SM-QC-JSON", "AF-SM-CAPTION-BAND", "AF-SM-IMGPROMPT-BAND", "AF-SM-FOLLOWUP-BAND", "AF-SM-PDFTITLE-BAND", "AF-SM-HEADLINE-WORDS", "AF-SM-HASHTAG-COUNT", "AF-SM-POSTBODY-WORDS", "AF-SM-STORYBOARD", "AF-SM-CAROUSEL-SLIDES", "AF-SM-CAROUSEL-FLOOR", "AF-SM-STORIES-CAPTION", "AF-SM-OVERRIDE-UNLOGGED", "AF-SM-CLIENT-COPY-MUTATED"],
+      "gate": "validate_contract.py PASS (valid JSON, per-platform required keys, em-dash ban, single-digit grid, JSON-safe QC) AND prove_bands.py PASS (every SACRED band, or a logged client-exact override). An applied band that differs from bands.json with no matching logged override refuses the certificate. In client-copy mode the published bytes hash-match the supplied copy."
+    },
+    {
+      "id": "S3-VERIFY",
+      "order": 3,
+      "name": "Verify — scrub screen, the signed process certificate, and GHL-direct publish proven by a LIVE post-listing; verifier != author",
+      "owning_role": "qc-role--social-media",
+      "sop_refs": ["SOP-SOCIAL-04-VERIFY.md", "MASTER-SOCIAL-QC-AUTOFAIL-RULESET.md"],
+      "produces_artifact": "working/qc/scrub_report.json + delivery/PROCESS-CERTIFICATE.json + working/publish/publish_results.json",
+      "engine_phases": ["P5-SCRUB", "P6-MANIFEST", "P7-PUBLISH"],
+      "gate_codes": ["AF-SM-CLIENT-NAME", "AF-SM-SECRET", "AF-SM-PINDATA", "AF-SM-NOANTHROPIC", "AF-SM-PROCESS-INTEGRITY", "AF-SM-PROMPT-HASH", "AF-SM-PROVENANCE-MISSING", "AF-SM-AGENCY-SHARED-PIT", "AF-SM-PUBLISH-RESULT", "AF-SM-PUBLISH-UNPROVEN", "AF-SM-DOUBLE-POST"],
+      "gate": "scrub_gate.py PASS (zero client-name / secret / pinData / Anthropic) over content AND shipped bytes; build_manifest.py mints the certificate ONLY on a full-pass with a per-call provenance record proving ZERO Anthropic and prompt hashes matching the pin; the publisher returns the normalized {platform, success, totalPosts, processedAccounts, errors}; done is proven against a LIVE GHL post-listing. De-dup AF-SM-DOUBLE-POST clears ONLY by a logged owner re-post token."
+    },
+    {
+      "id": "S4-ENGAGE",
+      "order": 4,
+      "name": "Engage — the read-only 7-day metrics poll -> anomaly report (mints NO certificate; NEVER blocks a publish run)",
+      "owning_role": "community-manager",
+      "sop_refs": ["SOP-SOCIAL-05-ENGAGE-REPORT.md"],
+      "produces_artifact": "working/qc/engage_report.json",
+      "engine_phases": ["P12-ENGAGE"],
+      "gate_codes": ["AF-SM-ENGAGE-REPORT"],
+      "gate": "read-only poll of likes/views over the last 7 days -> anomaly report routed to notifyChannel. No posting -> no BYPASS-SCAN concern; mints no certificate by design. The (v0.5.0) memory-core Dreaming feed is a deferred output adapter riding this report (C11)."
+    }
+  ],
+  "fold_and_defer_notes": {
+    "$note": "The FOLD modes each land as a first-class standalone mode under the SAME entry+nonce+prover spine and, when their config toggle is set, run as additional certified runs inside the weekly cadence. Their band codes are enforced by prove_bands.py and belong to S2-CREATIVE/S1-RUN in SOP terms.",
+    "podcast_C3": ["AF-SM-PODCAST-SCRIPT", "AF-SM-PODCAST-DURATION", "AF-SM-PODCAST-COVER"],
+    "newsletter_C4": ["AF-SM-EMAIL-SUBJECT", "AF-SM-EMAIL-PREVIEW", "AF-SM-EMAIL-HTML"],
+    "blog_C5": ["AF-SM-BLOG-TITLE", "AF-SM-BLOG-META", "AF-SM-BLOG-BODY"],
+    "stories_caption_C7": ["AF-SM-STORIES-CAPTION"],
+    "deferred": {"code": "AF-SM-DEFERRED", "$note": "syndicate C9 (v0.4.0), narrated-video C8 (v0.3.0), persona-adapter C10 (v0.5.0), memory-adapter C11 (v0.5.0) each fail CLOSED with a clear 'deferred to vX.Y.Z' message; baseline config-carried behavior is never blocked meanwhile."}
+  },
+  "owning_roles": {
+    "note": "Existing role-library seats gain the Social Media in a Box engine as a Section-8 tool; no new department is required. See 23-ai-workforce-blueprint/templates/role-library/. Deferred platform specialists (threads / bluesky / reddit / quora / discord) are wired only when syndicate C9 lands in v0.4.0.",
+    "social-media": ["director-of-social-media", "twitter-x-specialist", "facebook-specialist", "instagram-specialist", "linkedin-specialist", "tiktok-specialist", "pinterest-specialist", "youtube-channel-specialist-organic-only", "community-manager", "qc-role--social-media"],
+    "marketing": ["chief-marketing-officer", "content-marketing-strategist", "email-campaign-strategist", "conversion-copywriter"],
+    "podcast": ["director-of-podcast", "audio-post-producer"],
+    "graphics": ["social-media-graphics-specialist", "thumbnail--cover-designer"],
+    "crm": ["tag--segmentation-specialist", "automation-workflow-specialist"]
+  }
+}

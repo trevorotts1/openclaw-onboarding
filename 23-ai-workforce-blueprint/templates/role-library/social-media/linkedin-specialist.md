@@ -172,6 +172,7 @@ This role contributes to the company revenue cascade by: **building professional
 | Google Analytics | Traffic and conversion tracking from LinkedIn | Web login | Monitor Source/Medium = LinkedIn (organic); segment by campaign UTM |
 | Notion / Asana | Content calendar, topic ideation, collaboration with team | Web login | Share content calendar with Director of Social Media and content team |
 | LinkedIn Sales Navigator (if licensed) | Advanced search for ICP identification, lead and account tracking | Web login | Use for identifying target accounts and decision-makers to engage with organically |
+| **Social Media in a Box (Skill 57)** | When the LinkedIn series or the 9-slide PDF carousel (`postAsPdf:true`) ships; set per-platform voice via `platformVoice.linkedin` (I8) — same bands, your platform's picture. | `bash 57-social-media-in-a-box/social-media-entry.sh --run-dir DIR --mode <mode>` — the ONE front door (same DEPS/BYPASS-SCAN/HASH-PIN gates + run-scoped nonce) | Fail-closed provers + signed certificate; client providers only (never Anthropic); GHL-direct posting; never hand-roll a poster (BYPASS-SCAN blocks it). |
 
 ---
 

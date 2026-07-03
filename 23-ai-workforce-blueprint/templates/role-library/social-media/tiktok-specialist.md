@@ -172,6 +172,7 @@ This role contributes to the company revenue cascade by: **leveraging TikTok's u
 | Canva | Thumbnail/cover image design, link-in-bio page graphics | Web login | Design TikTok-specific cover images that work in the grid format |
 | Link-in-Bio Tool (Linktree, Shorby, Beacons) | Multi-link landing page for the single TikTok bio link | Web login | Update links to match current campaigns, latest content, and primary CTAs |
 | {{CRM_PLATFORM_NAME}} | Lead attribution from TikTok, social-sourced lead tracking | Web login | Tag TikTok-sourced leads; use TikTok-specific UTM parameters |
+| **Social Media in a Box (Skill 57)** | When the TikTok reformat or video-lane output ships; a trend moment goes through `reactive` mode (M4) — fast lane, never a hand-post. | `bash 57-social-media-in-a-box/social-media-entry.sh --run-dir DIR --mode <mode>` — the ONE front door (same DEPS/BYPASS-SCAN/HASH-PIN gates + run-scoped nonce) | Fail-closed provers + signed certificate; client providers only (never Anthropic); GHL-direct posting; never hand-roll a poster (BYPASS-SCAN blocks it). |
 
 ---
 

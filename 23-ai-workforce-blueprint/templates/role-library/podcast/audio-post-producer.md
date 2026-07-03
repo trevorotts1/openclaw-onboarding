@@ -154,6 +154,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 | Hindenburg Journalist / Auphonic | Automated audio normalization, speech volume leveling, and chapter metadata embedding | API key in TOOLS.md | For consistent leveling across tracks with varying recording environments (home vs. professional vs. phone quality). |
 | Cloud Storage (Google Drive / Dropbox / AWS S3) | Archiving raw recordings, first cuts, and final masters | Access credentials in TOOLS.md | Folder structure: `/episodes/EP-[number]-[guest-slug]/01-raw / 02-first-cut / 03-final-master` |
 | Episode production dashboard (Airtable / Notion) | Track edit status, delivery timestamps, revision log, archive status | Web login in TOOLS.md | Updated after every milestone: markup received, editing started, first cut delivered, revisions complete, final master delivered |
+| **Social Media in a Box (Skill 57)** | When episode audio needs production — the podcast media sub-step's duration/bitrate/tag-density bands are provers, not taste; creative delivery is yours. | `bash 57-social-media-in-a-box/social-media-entry.sh --run-dir DIR --mode <mode>` — the ONE front door (same DEPS/BYPASS-SCAN/HASH-PIN gates + run-scoped nonce) | Fail-closed provers + signed certificate; client providers only (never Anthropic); GHL-direct posting; never hand-roll a poster (BYPASS-SCAN blocks it). |
 
 ---
 

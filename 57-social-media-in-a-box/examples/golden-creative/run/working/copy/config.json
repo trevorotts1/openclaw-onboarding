@@ -1,0 +1,46 @@
+{
+  "brandName": "Northwind Bakehouse",
+  "pit": "pit-REFERENCED-FROM-ENV",
+  "locationId": "loc-northwind",
+  "userId": "user-northwind",
+  "openrouterKey": "REFERENCED-FROM-ENV",
+  "openrouterModel": "google/gemini-2.0-flash-001",
+  "openrouterFallbacks": [
+    "meta-llama/llama-3.1-70b-instruct",
+    "mistralai/mistral-large"
+  ],
+  "kieKey": "REFERENCED-FROM-ENV",
+  "geminiKey": "REFERENCED-FROM-ENV",
+  "plannerSheetId": "sheet-northwind-planner",
+  "platforms": [
+    "facebook",
+    "instagram",
+    "linkedin"
+  ],
+  "postTypes": [
+    "post",
+    "carousel"
+  ],
+  "timezone": "America/New_York",
+  "status": "Paid",
+  "mode": "single-brand",
+  "notifyChannel": "telegram",
+  "ctaLink": "\n\nJoin free: https://example.test/join",
+  "themeQueue": [
+    "The craft that hides in a Tuesday",
+    "Why your first 100 customers matter more than your next 10,000",
+    "The season we stopped chasing reach"
+  ],
+  "wildcard": true,
+  "personaSource": "config",
+  "emDashPolicy": "allow-content",
+  "seriesLength": 5,
+  "arcTemplate": "custom",
+  "stylePick": "editorial-mono",
+  "themeOfWeek": "Why your first 100 customers matter more than your next 10,000",
+  "probes": {
+    "kieCredits": 800,
+    "openrouterBalance": 42.0,
+    "ghlTokenValid": true
+  }
+}
