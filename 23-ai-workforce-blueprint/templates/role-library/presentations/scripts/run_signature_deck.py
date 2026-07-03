@@ -1232,6 +1232,59 @@ def pre_assembly_harmony_checkpoint(run_dir: Path) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Command Center board — TERMINAL delivery close (FAIL-SOFT). Ownership note:
+# build_deck.py runs the RENDER phase and drives the card's in-run motion — the
+# P4-RENDER START (backlog->in_progress) and the P4/P8 render/assemble PROGRESS
+# ACTIVITY posts — but it CANNOT close the card: the terminal close is a task-level
+# status='done' whose process_certificate_sha the CC presentations no-skip done-gate
+# REQUIRES, and that certificate does not exist until prove-deck.py mints
+# delivery/<SLUG>-FINAL/PROCESS-CERTIFICATE.json here in the P9-DELIVER phase. So the
+# RUNNER owns the terminal close and fires it right after prove-deck PASS. The move
+# receipt (working/checkpoints/cc-board.json) is the SAME run dir build_deck wrote to,
+# so the render-phase activities and this close land on one consistent ledger.
+# ---------------------------------------------------------------------------
+def _board_close_delivery(run_dir) -> None:
+    """Fire the TERMINAL Command Center card close for a delivered deck, FAIL-SOFT.
+
+    Precondition: called ONLY after prove-deck.py has minted the run's
+    PROCESS-CERTIFICATE, so cc_board.patch_phase(status='done') can read and attach
+    its process_certificate_sha (satisfying the CC presentations done-gate). The
+    task_id is recovered from working/checkpoints/process_manifest.json (stamped at
+    run-begin by build_deck's ingest). A disabled board or a missing id is a clean
+    no-op. NEVER raises — the board is a view, never a gate."""
+    try:
+        import cc_board
+        tid = None
+        try:
+            _pm = Path(run_dir) / "working" / "checkpoints" / "process_manifest.json"
+            if _pm.exists():
+                tid = (json.loads(_pm.read_text()) or {}).get("cc_task_id")
+        except Exception:  # noqa: BLE001 — a bad manifest read is never fatal
+            tid = None
+        if not tid:
+            return
+        cc_board.patch_phase(run_dir, tid, DELIVERY_PHASE_ID, "done",
+                             note="bundle complete — deck delivered")
+    except Exception as exc:  # noqa: BLE001 — the board is a view, never a gate
+        print(f"[cc_board] terminal delivery close raised ({exc}) — run continues; "
+              "the board update is best-effort.", file=sys.stderr, flush=True)
+
+
+def _board_assert_advanced(run_dir) -> None:
+    """VISIBILITY-ONLY, at the runner's true end: note when a completed run recorded
+    ZERO successful board advances (board disabled, or every advance failed — the
+    detail is in working/checkpoints/cc-board.json). NEVER blocks and NEVER raises."""
+    try:
+        import cc_board
+        if not cc_board.assert_min_one_advance(run_dir):
+            print("[cc_board] NOTE: no successful board advance recorded for this run "
+                  "(board disabled, or every advance failed — see "
+                  "working/checkpoints/cc-board.json).", file=sys.stderr, flush=True)
+    except Exception:  # noqa: BLE001 — the visibility check is best-effort
+        pass
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 def main():
@@ -1456,6 +1509,14 @@ def main():
                 )
                 sys.exit(EXIT_GUARD_BLOCK)
 
+            # BOARD (terminal close): prove-deck just minted the run's
+            # PROCESS-CERTIFICATE, so this is the ONLY correct moment to close the CC
+            # card — a task-level status='done' whose process_certificate_sha cc_board
+            # reads from that freshly-minted cert (satisfying the presentations no-skip
+            # done-gate). build_deck ran the RENDER phase before any cert existed and
+            # therefore never emits this close. FAIL-SOFT: never raises, never blocks.
+            _board_close_delivery(run_dir)
+
         # Non-render phase: verify the artifact landed + run substance verifier +
         # emit done-report + compute sha + attest.
         _art_spec = target.get("produces_artifact", "") if target else ""
@@ -1498,6 +1559,10 @@ def main():
                 f"substance verified, sha={_sha[:16]}…) ===",
                 flush=True,
             )
+            # RUNNER TRUE END: for the terminal delivery phase, surface (never block)
+            # a run that closed with zero successful board advances.
+            if args.phase == DELIVERY_PHASE_ID:
+                _board_assert_advanced(run_dir)
             sys.exit(0)
         print(
             f"FATAL: phase {args.phase} produces_artifact "

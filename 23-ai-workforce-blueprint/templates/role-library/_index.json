@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-06-28T00:00:00Z",
-  "version": "17.0.7",
+  "version": "17.0.8",
   "total_roles": 426,
   "total_departments": 34,
   "departments": {
@@ -5241,9 +5241,9 @@
       "path": "templates/role-library/presentations/director-of-presentations.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:e6d2bc15705d44ff9c355725a51776eb1b6b442bad08005ffaec99f0ded8ebe3",
+      "content_sha": "sha256:7cee1309a62b402d936d442cac17567e2af71113f8835603366b11692cf536dc",
       "render_sha": "sha256:5a3202fe145b05b3282612d07456efee13752af90d03b70dab5efbe032c32594",
-      "content_version": "1.0.11",
+      "content_version": "1.0.12",
       "content_hashed_at": "2026-07-03T13:18:47.268650+00:00"
     },
     {

@@ -79,8 +79,10 @@ You have three ways to put this department to work. All of them are fine.
 
 A good request includes, where it applies: **what** broke, **when** it started,
 **how often** it happens, and any **error messages or symptoms** you saw. You do
-not have to provide all of that. If something important is missing, the department
-will ask you one or two quick questions before it starts rather than guess.
+not have to provide all of that. If something important is missing, the department first offers you a quick or an
+in-depth path, then asks one focused question at a time (never a wall of
+questions) and waits for each answer. It gathers what you tell it into a single
+brief before the work starts, rather than guessing.
 
 ---
 
@@ -126,7 +128,7 @@ Advocate tell us what could go wrong."
 When you ask this department for something, here is the normal flow:
 
 1. **Acknowledgment.** The Chief Healer confirms the request landed and, if
-   anything important is unclear, asks you one or two quick questions.
+   anything important is unclear, asks one focused question at a time (never a wall of questions).
 2. **Diagnosis.** The root cause is identified on evidence -- not assumption.
    The Deep Research Specialist is called in when the fix is not obvious.
 3. **The fix.** Applied at the right authority tier: mechanical fixes go in

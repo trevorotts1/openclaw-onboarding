@@ -8124,9 +8124,25 @@ def run_style_preview_samples(slides_path: Path, run_dir: Path,
 # ---------------------------------------------------------------------------
 # Command Center board — phase-transition hookup (FAIL-SOFT). This is the missing
 # half of the presentations cc_board wiring: run-begin ingest_deck_task CREATES
-# the deck's single Kanban card, and these calls MOVE it through its phase
-# boundaries (P4-RENDER in_progress -> done -> P8-ASSEMBLE done -> P9-DELIVER
-# delivered) so a running deck no longer looks frozen on the board.
+# the deck's single Kanban card, and these calls move it as the run progresses:
+#
+#   P4-RENDER START     -> STATUS  backlog -> in_progress   (_board_patch_phase)
+#   P4-RENDER complete  -> ACTIVITY progress post           (_board_post_activity)
+#   P8-ASSEMBLE complete-> ACTIVITY progress post           (_board_post_activity)
+#   run-end (bundle OK) -> STATUS  -> done + process_certificate_sha, but ONLY when
+#                          the PROCESS-CERTIFICATE already exists on disk
+#                          (_process_certificate_present guard); otherwise the close
+#                          is DEFERRED to the runner (run_signature_deck.py) which
+#                          fires it right after prove-deck mints the cert.
+#
+# Mid-run phase progress is an ACTIVITY, NOT a task-level status change: a mid-run
+# status='done' 422s the presentations cert done-gate (the PROCESS-CERTIFICATE is
+# minted at delivery, not mid-run) and would wrongly close a non-presentation card.
+# The COMPLETED deck closes with status='done' (there is NO 'delivered' status in
+# the CC UpdateTaskSchema enum — "delivered" belongs in the note only). build_deck
+# runs the RENDER phase BEFORE the cert exists, so in the normal runner flow the
+# terminal close is the RUNNER's job; build_deck only closes here in a standalone
+# full build where prove-deck already minted the cert.
 #
 # Mirrors Skill-48's ad_director._board_move contract verbatim: EVERY call is
 # best-effort. A board outage, a missing token, an import error, or any patch
@@ -8159,6 +8175,57 @@ def _board_patch_phase(run_dir, task_id, phase_id, status, note=""):
         print(f"[cc_board] patch_phase {phase_id}->{status} raised ({_cc_exc}) — "
               "run continues; the board update is best-effort.",
               file=sys.stderr, flush=True)
+
+
+def _board_post_activity(run_dir, task_id, phase_id, note=""):
+    """Log a mid-run phase-PROGRESS activity on the deck's CC card, FAIL-SOFT.
+
+    Phase progress (P4-RENDER complete, P8-ASSEMBLE complete) is an ACTIVITY, not a
+    task-level status change: a mid-run status='done' 422s the presentations cert
+    done-gate (the PROCESS-CERTIFICATE is minted at delivery) and would wrongly
+    close a non-presentation card. Recovers the task_id from process_manifest.json
+    when not supplied; a missing task_id or a disabled board is a clean no-op. Never
+    raises — the board is a convenience, never a gate."""
+    try:
+        import cc_board as _cc_board
+        tid = task_id
+        if not tid and run_dir is not None:
+            try:
+                _pm = Path(run_dir) / "working" / "checkpoints" / "process_manifest.json"
+                if _pm.exists():
+                    tid = (json.loads(_pm.read_text()) or {}).get("cc_task_id")
+            except Exception:  # noqa: BLE001 — a bad manifest read is never fatal
+                tid = task_id
+        if not tid:
+            return
+        _cc_board.post_activity(run_dir, tid, phase_id, note)
+    except Exception as _cc_exc:  # noqa: BLE001 — the board is a view, never a gate
+        print(f"[cc_board] post_activity {phase_id} raised ({_cc_exc}) — "
+              "run continues; the board update is best-effort.",
+              file=sys.stderr, flush=True)
+
+
+def _process_certificate_present(run_dir) -> bool:
+    """True when prove-deck.py has already minted a
+    delivery/<SLUG>-FINAL/PROCESS-CERTIFICATE.json for this run. GUARDS build_deck's
+    terminal P9-DELIVER board close so it only fires when the certificate the CC
+    presentations done-gate REQUIRES actually exists on disk. In the runner flow
+    build_deck runs the RENDER phase BEFORE prove-deck mints the cert, so this returns
+    False and the terminal close is DEFERRED to the runner (which closes the card
+    right after prove-deck). A standalone full build where the cert is already present
+    still closes here. Never raises."""
+    try:
+        if run_dir is None:
+            return False
+        delivery = Path(run_dir) / "delivery"
+        if not delivery.is_dir():
+            return False
+        for cert in delivery.glob("*-FINAL/PROCESS-CERTIFICATE.json"):
+            if cert.is_file():
+                return True
+    except OSError:
+        pass
+    return False
 
 
 def main():
@@ -8491,10 +8558,12 @@ def main():
         print(json.dumps(summary, indent=2))
         sys.exit(1)
 
-    # BOARD: every slide rendered cleanly — close the render phase (fail-soft).
+    # BOARD: every slide rendered cleanly — log render-phase PROGRESS as an ACTIVITY
+    # (NOT a task-level 'done': mid-run status changes 422 the cert done-gate and
+    # would wrongly close a non-presentation card). Fail-soft.
     if not adhoc:
-        _board_patch_phase(run_dir, _cc_task_id, "P4-RENDER", "done",
-                           note=f"{len(rendered)} slides rendered")
+        _board_post_activity(run_dir, _cc_task_id, "P4-RENDER",
+                             note=f"{len(rendered)} slides rendered")
 
     # PER-SLIDE SPEAKER NOTES: auto-discover + parse the presenter speech (if it
     # exists yet) so the assembled deck carries word-for-word notes per slide. This
@@ -8543,10 +8612,11 @@ def main():
     pptx_size = out_path.stat().st_size if out_path.exists() else 0
     update_deliverable_status(ledger_path, "deck_pptx", "built", size=pptx_size)
 
-    # BOARD: the PPTX assembled — advance the assemble phase (fail-soft).
+    # BOARD: the PPTX assembled — log assemble-phase PROGRESS as an ACTIVITY (NOT a
+    # task-level 'done'; see the P4-RENDER note above). Fail-soft.
     if not adhoc:
-        _board_patch_phase(run_dir, _cc_task_id, "P8-ASSEMBLE", "done",
-                           note="deck PPTX assembled")
+        _board_post_activity(run_dir, _cc_task_id, "P8-ASSEMBLE",
+                             note="deck PPTX assembled")
 
     # If the out_path is not inside bundle_dir, copy the pptx into bundle_dir so the
     # postflight gate finds it at its expected location.
@@ -8613,14 +8683,38 @@ def main():
                          skip_teleprompter_gate=(skip_teleprompter_gate or adhoc),
                          run_dir=run_dir, slides_path=slides_path)
 
-    # BOARD: the postflight completeness gate passed — the bundle is complete, so
-    # mark the deck DELIVERED. patch_phase auto-attaches the PROCESS-CERTIFICATE
-    # sha when prove-deck.py has already written it (closing the CC done-gate);
-    # when the cert is produced later in the runner flow it is simply omitted.
-    # Fail-soft: a board problem never changes this run's exit code.
+    # BOARD (terminal close) — GUARDED on the PROCESS-CERTIFICATE existing on disk.
+    # The completed deck closes with the TERMINAL status 'done' (there is NO
+    # 'delivered' status in the CC UpdateTaskSchema enum — "delivered" goes in the note
+    # only), and that close carries the process_certificate_sha the presentations
+    # no-skip done-gate REQUIRES. In the RUNNER flow build_deck runs the RENDER phase
+    # BEFORE prove-deck mints the cert, so the cert is ABSENT here and the terminal
+    # close is DEFERRED to the runner (run_signature_deck.py fires it right after
+    # prove-deck). Emitting a terminal 'done' without the cert would 422 the done-gate,
+    # so the guard prevents a doomed premature close. In a standalone full build where
+    # the cert is already present, close here. Fail-soft either way — a board problem
+    # never changes this run's exit code.
     if not adhoc:
-        _board_patch_phase(run_dir, _cc_task_id, "P9-DELIVER", "delivered",
-                           note="bundle complete — deck delivered")
+        if _process_certificate_present(run_dir):
+            _board_patch_phase(run_dir, _cc_task_id, "P9-DELIVER", "done",
+                               note="bundle complete — deck delivered")
+            # Lightweight VISIBILITY gate: a completed run should have recorded >= 1
+            # SUCCESSFUL board advance. This only DIAGNOSES (never blocks) — a disabled
+            # board legitimately records none; the detail is on disk in cc-board.json.
+            try:
+                import cc_board as _cc_board
+                if not _cc_board.assert_min_one_advance(run_dir):
+                    print("[cc_board] NOTE: no successful board advance recorded for this "
+                          "run (board disabled, or every advance failed — see "
+                          "working/checkpoints/cc-board.json).",
+                          file=sys.stderr, flush=True)
+            except Exception:  # noqa: BLE001 — the visibility gate is best-effort
+                pass
+        else:
+            print("[cc_board] P9-DELIVER terminal close DEFERRED — no PROCESS-CERTIFICATE "
+                  "on disk yet; the runner closes the card with status='done'+cert after "
+                  "prove-deck mints it. Render-phase progress is already on the board.",
+                  file=sys.stderr, flush=True)
     sys.exit(0)
 
 

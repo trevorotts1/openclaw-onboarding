@@ -98,6 +98,42 @@ SOP/engine stack in §§3–7 below.
 
 ---
 
+## 0.5. THE INTAKE DOCTRINE — CHOICE-FIRST, ONE QUESTION AT A TIME, RECORDED AS ONE BLOCK (read before §1)
+
+> **No deck is written until the brief is gathered the RIGHT way.** Before any `slides.json`
+> is authored, the owner conversation runs in TWO layers, kept distinct so they never
+> conflict — the intake questions are **ASKED one at a time** and **RECORDED as one atomic
+> block**. This mirrors the Signature-Presentation intake law (SOP-SIGPRES-01) and applies as
+> the standard of courtesy to EVERY deck type.
+
+1. **CONVERSATION LAYER (choice-first, one question at a time).** The front-door agent
+   (Brainstorming Buddy / Content-to-Presentation Architect) FIRST offers the owner a
+   **QUICK vs IN-DEPTH** interview, then asks **exactly one question per message** and waits
+   for the owner's answer before sending the next — **never a wall of questions**. Opening
+   with no quick-vs-in-depth choice, or dumping the whole batch of questions in a single turn,
+   is the banned anti-pattern (**AF-INTAKE-BATCH** for the Signature deck type; the same
+   one-at-a-time courtesy is the standard for every deck type). The canonical banned message
+   enumerates every question at once and closes with "give me whatever you have got and I will
+   get moving."
+
+2. **RECORD LAYER (one atomic block).** Once the answers are gathered one at a time, they are
+   **assembled into ONE atomic intake RECORD** (`working/copy/intake.json`; for the Signature
+   deck type, `working/copy/sp_intake.json`). The record's one-block fields
+   (`asked_all_at_once` / `mode: one_block`) describe **that assembled ledger being committed
+   as a single block** — they are NOT a licence to dump the questions at the owner. For
+   `deck_type: signature_presentation` this assembled record is exactly what `prove_sp_intake.py`
+   validates before any slide authoring unlocks.
+
+**Why this sits between §0 and §1.** §0 makes attention the product; this section makes the
+BRIEF that earns that attention be gathered without overwhelming the owner. A deck built from
+a batch-dumped, un-assembled intake has already failed the owner experience — no matter how
+good the render is. Doctrine home:
+`23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-SIGPRES-01-EIGHT-QUESTIONS-ONE-BLOCK-AND-FRAME-SELECTION.md`
+and `51-signature-presentation/intake/sp-8-questions.json` (`delivery.conversation_contract`:
+`choice_first` + `one_question_per_message` + `af_on_violation: AF-INTAKE-BATCH`).
+
+---
+
 ## 1. PURPOSE
 
 Produce a complete, branded, webinar-ready slide deck with ZERO ad-hoc image generation.
