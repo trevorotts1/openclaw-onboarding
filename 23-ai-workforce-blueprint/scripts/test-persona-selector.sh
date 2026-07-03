@@ -26,6 +26,13 @@
 # is functioning. Quality of selection still requires human review of the
 # top-3 candidates per task.
 #
+# HERMETIC + DETERMINISTIC (2026-07-03): the suite is now non-mutating and
+# reproducible. Every selector call runs with --skip-stickiness --no-variety
+# --no-record and against a throwaway $DASHBOARD_DB_PATH, so a QC run NEVER
+# reads a box's sticky rows nor writes to any live persona DB (PRD §8), and the
+# funnel is always exercised on the fresh-selection path so A5/A6 are stable
+# regardless of a box's persona_assignment state (PRD §2).
+#
 # USAGE:
 #   bash test-persona-selector.sh
 #   bash test-persona-selector.sh --verbose   # prints full JSON per call
@@ -81,6 +88,26 @@ if [ ! -f "$SELECTOR" ]; then
   exit 1
 fi
 
+# ─── HERMETIC QC ─────────────────────────────────────────────────────────────
+# This suite must NEVER read or mutate a live persona DB (PRD §8). Two guards,
+# belt-and-suspenders:
+#   1. Every selector call passes --no-record (skips ALL DB + selection-log
+#      writes) and --skip-stickiness (no read of the box's persona_assignment
+#      rows). This alone makes the run non-mutating.
+#   2. We also point $DASHBOARD_DB_PATH at a throwaway scratch DB and pre-create
+#      it (find_dashboard_db picks the FIRST *existing* candidate, so an existing
+#      scratch file wins over ~/projects/command-center/mission-control.db). Even
+#      if a future code path tried to write, it would land in the scratch dir,
+#      never the operator/client DB. Cleaned up on exit.
+# NOTE: we deliberately do NOT override $HOME — the selector must still READ the
+# real (read-only) persona-categories.json + governing pools to select personas.
+_HERMETIC_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/persona-qc.XXXXXX")"
+export DASHBOARD_DB_PATH="$_HERMETIC_SCRATCH/mission-control.db"
+: > "$DASHBOARD_DB_PATH"   # empty file so it wins DB resolution; --no-record keeps it empty
+cleanup_hermetic() { [ -n "${_HERMETIC_SCRATCH:-}" ] && rm -rf "$_HERMETIC_SCRATCH"; }
+trap cleanup_hermetic EXIT
+echo "Hermetic scratch DB: $DASHBOARD_DB_PATH (throwaway; QC never touches the live DB)"
+
 # Locate persona-categories.json for A4 tag-intersection assertion
 # PRD 2.7: canonical = workspace/data/coaching-personas/persona-categories.json.
 # Skill-folder copy is shipped seed (READ-ONLY); only used as final fallback here.
@@ -132,7 +159,13 @@ for entry in "${TASKS[@]}"; do
 
   echo -n "  Task: [$dept] $task ... "
 
-  output=$(SCORING_MODE=heuristic python3 "$SELECTOR" --department "$dept" --task "$task" --format json 2>/dev/null)
+  # --skip-stickiness --no-variety : deterministic QC — force the fresh-selection
+  #   funnel path (so A5/A6 assert the real funnel, never a box's sticky rows) and
+  #   disable the anti-repetition sampler so the pick is reproducible run-to-run.
+  # --no-record : hermetic QC — the selector writes NOTHING (no persona_assignment,
+  #   no persona_selection_log, no selection-log .md). Combined with the scratch
+  #   $DASHBOARD_DB_PATH set above, a QC run can never mutate any live persona DB.
+  output=$(SCORING_MODE=heuristic python3 "$SELECTOR" --department "$dept" --task "$task" --format json --skip-stickiness --no-variety --no-record 2>/dev/null)
   rc=$?
 
   if [ -z "$output" ] || [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
@@ -280,12 +313,26 @@ else
 fi
 
 # A5: funnel key present in output (PRD item 1.2 canonical keys: pool/category/semantic)
-funnel_present=$(printf '%s\n' "${results[@]}" | grep "^PASS" | grep -v '|\?|' | wc -l | tr -d ' ')
+# Count PASS rows whose three funnel fields are all present AND numeric. Parse per
+# row exactly like A6 does.
+# FIX (2026-07-03): the old one-liner `grep -v '|\?|'` used a BRE that BOTH BSD and
+# GNU grep read as an optional-pipe quantifier (\? makes the preceding literal '|'
+# optional), so it matched EVERY row and A5 was permanently WARN even when the funnel
+# WAS present (this is the A5 WARN the PRD saw on live boxes). Per-row numeric parse
+# is unambiguous.
+funnel_present=0
+for row in "${results[@]}"; do
+  [[ "$row" != PASS* ]] && continue
+  IFS='|' read -r _s _d _t _p _sc fp fc fs <<< "$row"
+  if [[ "$fp" =~ ^[0-9]+$ ]] && [[ "$fc" =~ ^[0-9]+$ ]] && [[ "$fs" =~ ^[0-9]+$ ]]; then
+    funnel_present=$((funnel_present + 1))
+  fi
+done
 if [ "$total" -gt 0 ] && [ "$funnel_present" -ge "$total" ]; then
-  green "  ✓ A5  Funnel counts present in all output JSON (pool→category→semantic)"
+  green "  ✓ A5  Funnel counts present in all $total output JSON (pool→category→semantic)"
   A5=PASS
 elif [ "$total" -gt 0 ]; then
-  yellow "  ⚠ A5  Funnel counts missing from some outputs — check persona-selector-v2.py version"
+  yellow "  ⚠ A5  Funnel counts present in only $funnel_present/$total outputs — check persona-selector-v2.py version"
   A5=WARN
 else
   A5=SKIP

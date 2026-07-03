@@ -1,3 +1,16 @@
+## [v17.0.5]  -  2026-07-03  -  fix(audit): persona-selector funnel key on all paths + 18 dept-domain tags + hermetic QC (July-3 audit P1-2/P1-3)
+
+### Risk: low — three fixes inside `23-ai-workforce-blueprint/scripts/persona-selector-v2.py` + `test-persona-selector.sh`, additive/behavior-preserving. No new skill/department/role, no Command Center endpoint, no `mission-control.db` schema change, no fleet rollout (repo-only). No client names, credential values, or plists. Independently re-verified: `test-persona-selector.sh` exit 0 (A1–A8 all PASS incl. A5/A6), live `mission-control.db` proven byte-identical before/after, frontmatter gate + G1 + no-client-names PASS.
+
+### P1-2 — persona-selector QC was RED on live boxes
+The sticky and hybrid selection paths omitted the documented `funnel` key, so `test-persona-selector.sh` A6 failed (exit 3). Both paths now emit it (sticky picks record `{pool:0,category:0,semantic:0,sticky:true}` since they bypass pre-scoring; hybrid emits the leader persona's real funnel). Bonus: repaired the A5 grep-quantifier bug (`grep -v '|\?|'` matched every row) that kept A5 permanently WARN.
+
+### P1-3 — 17/34 departments unmapped in DEPT_DOMAIN_TAGS
+Added 18 canonical dept entries (incl. `presentations` + `social-media`, the Skill 51/57 routing targets) mirroring `build-workforce.py` `dept_to_domains` exactly — all 34 live `_index.json` departments now resolve to non-empty tags. The 5 depts build-workforce doesn't key fall back to `[leadership]`, matching its own `.get(dept, ["leadership"])`, so the matrix and selector stay in lockstep. No tags invented.
+
+### Hermetic QC (audit §8)
+The QC self-test previously wrote selections + a `needs_review` flag into the live persona DB. `--no-record` is now a global no-persist flag and the suite targets a throwaway `$DASHBOARD_DB_PATH` (HOME left intact so the selector can still READ the real library), so running QC never mutates any live DB.
+
 ## [v17.0.4]  -  2026-07-03  -  fix(audit): close SKILL.md frontmatter-version drift on 10 skills + add a repo-wide frontmatter gate + Skill-6 iframe regression test (July-3 audit P1-4/P1-5)
 
 ### Risk: low — version-marker hygiene + additive CI guard + a new hermetic test. No behavioral change to any shipped pipeline, no new skill/department/role, no Command Center endpoint, no `mission-control.db` schema change, no fleet rollout (repo-only). No off-limits/pinned enforcement file touched (each skill's ENGINE-PIN / HMAC-cert / prover set is byte-identical; the only per-skill edits are the `SKILL.md` frontmatter `version:` line + `skill-version.txt`). No client names, credential values, or plists. Independently re-verified: `bump-version.sh --check` PASS, the new gate PASS tree-wide, `qc-assert-no-client-names.sh` PASS, Skill-6 capture test 11/11, and each affected skill's own `verify.sh` re-run green.
