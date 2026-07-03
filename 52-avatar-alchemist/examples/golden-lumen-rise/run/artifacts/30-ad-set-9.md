@@ -1,14 +1,14 @@
-# Ad Set — category 7: Response-Driven If-You-Agree Ads (Lumen Rise Collective)
+# Ad Set 9: Objection-Handling Ads (Lumen Rise Collective)
 
-Restored R4 category signature: category 7. Framed to add a fresh angle the prior sets missed.
+Framework category: Category 7.
 
-1. Response-Driven If-You-Agree Ads 1 — When competence is not the problem but recognition is: With case studies worth quoting, this careful builder craves a market that finds her. Once one accomplished owner drops the doubt, she trades hustle for position.
-2. Response-Driven If-You-Agree Ads 2 — To every founder tired of shrinking her price: This thoughtful maker trades the hustle for a repeatable launch. Silence turns into signal; our avatar breathes easier about attention she has stopped chasing.
-3. Response-Driven If-You-Agree Ads 3 — To the quiet expert with unmistakably loud results: When a veteran maker treads water at capable, quiet expertise turns magnetic. What if depth reads at a glance, yet a diligent founder lands a brand people quote?
-4. Response-Driven If-You-Agree Ads 4 — If you are ready to stop chasing cold leads: Where coffee cooling by nine lingered, visibility becomes quiet service. The accelerator hands an overlooked expert a repeatable narrative.
-5. Response-Driven If-You-Agree Ads 5 — If your waitlist should be longer than your worry: Even with a track record earned, our target buyer believes recognition comes to the lucky. The message carries the weight; suddenly our woman founder owns a signature people repeat.
-6. Response-Driven If-You-Agree Ads 6 — For the woman who is done waiting to be picked: This founder has outcomes that speak, yet second-guesses every post. Amid a deep draft folder, this quiet expert still postpones the raise.
-7. Response-Driven If-You-Agree Ads 7 — For the founder ready to finally own her category: She has proof she rarely shows, so one accomplished owner still settles for almost. The work finally reads true; suddenly this working expert owns a market that finds her.
-8. Response-Driven If-You-Agree Ads 8 — To the expert the algorithm keeps overlooking: A demand system finally gives our avatar demand without the begging. Positioning outperforms volume, yet one under-seen founder finally rests in trust before the first call.
-9. Response-Driven If-You-Agree Ads 9 — If you have the results but not the reputation: Depth reads at a glance; suddenly a diligent founder owns an audience that leans in. A deep practitioner has work that overdelivers, yet keeps her genius offstage.
-10. Response-Driven If-You-Agree Ads 10 — If proof alone were enough, you would be booked solid: Competence learns to travel; suddenly an overlooked expert owns buyers who already believe. Our ideal client deserves a waitlist, not a discount, yet she rewrites her bio again.
+1. "I don't have time to be visible." Good — because this isn't more posting. It's a sharper message said in fewer, better places.
+2. "I've tried getting seen before and it didn't take." Most visibility advice is louder, not clearer. We build the clear kind that lasts.
+3. "My niche is too crowded." Crowded rooms reward the legible, not the loud. Precision is exactly how you stop blending in.
+4. "I'm not comfortable self-promoting." Neither are we. Quiet authority isn't bragging — it's being understood, and it suits you better anyway.
+5. "I don't have a big audience." You don't need one. You need the few right people to remember you clearly. That's a smaller, solvable problem.
+6. "I've done coaching programs before." This one hands you positioning and message templates you keep — not motivation that evaporates by Friday.
+7. "Isn't 90 days too fast?" It's twelve focused weeks of building one thing well: a message that finally travels without you pushing it.
+8. "I'm already busy — I can't add more." Then let's remove the chasing. A practice that fills itself gives time back, it doesn't take it.
+9. "What if I'm just bad at marketing?" You're not. You've been handed the wrong tools. Legibility is a skill, and it's teachable.
+10. "I've been overlooked so long it feels permanent." It isn't. Being unknown is a position, not a personality — and positions can move.

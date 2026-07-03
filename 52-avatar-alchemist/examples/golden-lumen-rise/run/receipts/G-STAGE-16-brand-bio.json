@@ -1,7 +1,7 @@
 {
   "stage": "16-brand-bio",
-  "sha256": "f90f5b2bfd4fe4ca056dd10396e8c8c1e6ce36e9624eac71be884b416a3050b5",
+  "sha256": "1d42c7d72e320c4f9d7cc3f88182fec57268740efc5060df7f1c5508e36d62b3",
   "attested_by": "foreman",
   "model": "ollama-cloud/qwen3-235b",
-  "words": 1080
+  "words": 353
 }

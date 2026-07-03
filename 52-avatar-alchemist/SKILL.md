@@ -30,7 +30,9 @@ on the **client's own providers** (the disconnected `o3` orphan is dropped).
 - `intake/{intake-schema.json, INTAKE-TEMPLATE.md}` — the version selector (question 0) +
   both question sets.
 - `scripts/` — the foreman (`aa_director.py`), the provers, the packager, the negative suite.
-- `entry.sh` — the ONLY sanctioned front door (deps → bypass-scan → hash-pin → nonce).
+- `entry.sh` — the ONLY sanctioned front door (deps → bypass-scan incl. egress-scan →
+  env-credential-name scan → hash-pin → nonce + per-run foreman signing key). `aa_director.py`
+  RE-VERIFIES all of this in-process at dispatch regardless of the nonce's provenance.
 
 ## The 7 subsystems / 40 generators (see MASTERDOC.md for the full spec)
 
@@ -51,10 +53,14 @@ reference. This skill bakes a lockstep copy and proves it with `verify_tone_core
 ## How it runs — one governed path, never a second build path
 
 ```
-bash 52-avatar-alchemist/entry.sh <RUN_DIR>            # deps → bypass-scan → hash-pin → nonce
+bash 52-avatar-alchemist/entry.sh <RUN_DIR>            # deps → bypass-scan → egress-scan →
+                                                        # env-cred-scan → hash-pin → nonce + key
+cp <intake.json> <RUN_DIR>/intake.json                 # required: the version gate reads this
 python3 52-avatar-alchemist/scripts/aa_director.py \    # foreman: waves → sub-agents → gates
         --run-dir <RUN_DIR> --nonce <RUN_DIR>/.entry-nonce   # add --apply-repairs to opt into R1–R6
 ```
+`aa_director.py` refuses in code (exit 4) to dispatch the brand pipeline for `version=book` —
+the version gate is code-coupled to `<RUN_DIR>/intake.json`, not a documented convention.
 
 1. **Gate 0** — `aa_intake_gate.py` proves the intake + the Book/Brand version selector.
    `version=book` routes to skill 53 or parks `book-skill-not-available` (never the brand pipeline).

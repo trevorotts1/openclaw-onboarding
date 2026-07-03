@@ -1,14 +1,14 @@
-# Ad Set — category 1: Who Style Ads (Lumen Rise Collective)
+# Ad Set 1: Who Style Ads (Lumen Rise Collective)
 
-Restored R4 category signature: category 1. Framed to add a fresh angle the prior sets missed.
+Framework category: Category 1.
 
-1. Who Style Ads 1 — When competence is not the problem but recognition is: Beneath it this founder believes her voice barely stands out. Give this quiet expert a proof architecture, so the right buyer feels understood.
-2. Who Style Ads 2 — To every founder tired of shrinking her price: One accomplished owner has clients who would refer twice; still she studies the competition. This working expert deserves a full, willing pipeline, so she shrinks the ask.
-3. Who Style Ads 3 — To the quiet expert with unmistakably loud results: Our avatar deserves the obvious-choice slot, and she chases the next tactic. Give one under-seen founder the seen-at-last method, so positioning outperforms volume.
-4. Who Style Ads 4 — If you are ready to stop chasing cold leads: A diligent founder sits with restless competence, and she hides behind free value. Amid the reel she never shipped, a deep practitioner still outsources her confidence.
-5. Who Style Ads 5 — If your waitlist should be longer than your worry: An overlooked expert deserves leadership over pleading, and she drops her price fast. The system does the reaching; suddenly our ideal client owns pull instead of push.
-6. Who Style Ads 6 — For the woman who is done waiting to be picked: With a following she barely tends, our woman founder craves a story worth forwarding. Even with a method that repeats, our under-booked pro believes she missed her window.
-7. Who Style Ads 7 — For the founder ready to finally own her category: She has loyalty she underestimates, and this quiet expert still underquotes her worth. Under the low hum of doubt lives the woman we serve, aching for a reputation that travels.
-8. Who Style Ads 8 — To the expert the algorithm keeps overlooking: The twelve-week cohort carries this working expert toward a brand people quote. One studied founder chases the founder's throughline, so finds steady, right-fit bookings.
-9. Who Style Ads 9 — If you have the results but not the reputation: Give one under-seen founder the seen-at-last method, and positioning outperforms volume. Once this service-business owner drops the doubt, being seen finally helps people.
-10. Who Style Ads 10 — If proof alone were enough, you would be booked solid: Beneath it a deep practitioner believes recognition comes to the lucky. From a webinar she never promoted toward credibility hiding in plain sight, this steady operator craves a name that opens doors.
+1. For the coach whose clients get remarkable results — and whose name still never comes up in the rooms where referrals are made. This is for you.
+2. You're the consultant three people quietly recommend and no one publicly credits. The Visible Founder Accelerator is built for exactly that woman.
+3. If you've been the best-kept secret in your field for years, this cohort exists to end that — on purpose, and with dignity.
+4. Written for the founder who can deliver anything except an introduction to herself. We fix the introduction first.
+5. This is for women who are excellent at the work and invisible in the market — the two are not the same problem, and only one is holding you back.
+6. You built something real. You're just not legible to the people who'd hire you tomorrow. That gap is the whole reason this cohort exists.
+7. For the 30-to-55-year-old coach who's tired of being "the one nobody knows about yet" — quietly, this is your accelerator.
+8. If your results outrun your reputation by a mile, you're the exact founder Amara Vale designed this room for.
+9. This is for the consultant who's overlooked, not underqualified — a distinction the market keeps missing and we intend to correct.
+10. You've earned the authority. You've just never been made visible for it. This 12-week cohort is where that finally changes.

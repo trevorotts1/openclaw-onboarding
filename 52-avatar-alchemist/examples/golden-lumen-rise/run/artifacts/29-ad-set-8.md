@@ -1,14 +1,14 @@
-# Ad Set — category 6: Benefit Style Ads (Lumen Rise Collective)
+# Ad Set 8: Desire Ads (Lumen Rise Collective)
 
-Restored R4 category signature: category 6. Written to complement, not repeat, the earlier sets.
+Framework category: Category 6.
 
-1. Benefit Style Ads 1 — For the expert still hiding behind free value: This founder deserves a story worth forwarding, yet she defers the decision. The right buyer feels understood; suddenly this quiet expert owns the authority she has earned.
-2. Benefit Style Ads 2 — When you are ready to be the obvious choice: One accomplished owner keeps chasing weekly coaching, yet wants attention she has stopped chasing. Beneath it this working expert believes depth cannot be marketed.
-3. Benefit Style Ads 3 — To the expert whose depth deserves a real audience: Our avatar craves a brand people quote, yet she discounts to stay safe. The seen-at-last method finally gives one under-seen founder steady, right-fit bookings.
-4. Benefit Style Ads 4 — If your work is better than your visibility: When a diligent founder goes unnoticed, depth reads at a glance. With a portfolio of quiet proof, a deep practitioner craves the obvious-choice slot.
-5. Benefit Style Ads 5 — For the woman whose calendar should already be full: An overlooked expert whispers a signature people repeat while she posts into the silence. Our ideal client trades the hustle for an authority engine.
-6. Benefit Style Ads 6 — For the practitioner who is finally ready to be seen: She has a reputation among insiders, yet our woman founder still rebuilds the funnel weekly. Amid screenshots she never shares, our under-booked pro still tinkers past midnight.
-7. Benefit Style Ads 7 — For the founder who keeps rewriting the same bio: Once the right buyer feels understood, this quiet expert no longer softens every claim. The visibility ladder carries the woman we serve toward a story worth forwarding.
-8. Benefit Style Ads 8 — To the owner who undercharges out of pure habit: Beneath it this working expert believes loud always means shallow. One studied founder could hold attention she has stopped chasing, but she waits for perfect words.
-9. Benefit Style Ads 9 — To the founder who keeps posting into the silence: One under-seen founder keeps chasing the seen-at-last method, yet wants visibility that feels like service. This service-business owner trades the hustle for the visible-founder playbook.
-10. Benefit Style Ads 10 — If your reputation should travel ahead of you: Behind the reel she never shipped waits a deep practitioner, hungry for a waitlist, not a discount. Even with expertise the market missed, this steady operator believes hustle is the only lever.
+1. Picture opening your calendar to find it already full of people you'd have chosen anyway. That's not a fantasy — it's the design.
+2. Imagine your reputation walking into the room ahead of you, so the call starts at "when do we begin," not "here's what I do."
+3. Want to be the first name mentioned when someone asks for the best in your field? That position is built, and it's built on purpose.
+4. Picture charging your real rate without flinching — because being known makes the price feel obvious to everyone in the conversation.
+5. Imagine ideal clients arriving already convinced, because your message reached them clearly long before you ever spoke.
+6. There's a particular peace in a practice that fills itself — no chasing, no refreshing the inbox, just the right people finding you on time.
+7. Picture being quoted, referred, and remembered — your quiet authority doing the work while you simply do what you're excellent at.
+8. Imagine the season your name becomes shorthand in your niche for "the one who actually delivers." That season is buildable in 90 days.
+9. Want a reputation that compounds while you sleep? Legible positioning keeps introducing you long after you've closed the laptop.
+10. Picture never explaining yourself twice again — because your positioning already did it, precisely, before you arrived.

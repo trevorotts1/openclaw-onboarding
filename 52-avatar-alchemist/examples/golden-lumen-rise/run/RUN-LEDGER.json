@@ -10,315 +10,315 @@
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "ddb1c8ff329b6b89755ee38ab866d0dab65ab33408f49f3d144715344eb93031",
+      "sha256": "1669a05616964b2636892fa1c17e30c796c69aacee4f20b46edaadf65a9f3d6c",
       "receipt": true,
-      "words": 5705
+      "words": 2922
     },
     "02-avatar-questions-31-32": {
       "status": "attested",
       "attempts": 1,
       "model": "openrouter/perplexity-sonar",
       "tokens": null,
-      "sha256": "5ca2db03951d49c6833959f4df3002eb6409811a6c9b664f0ab1e9870bb2a966",
+      "sha256": "9492d40df7c19a9309c7754f3468bcc8eb14d2e68b3a02550d4818c6e5d6fcf1",
       "receipt": true,
-      "words": 718
+      "words": 411
     },
     "03-rewrite-avatar": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "06c9e9729b9319783f581cc2e5d8f009f874216f23fb7f8a57557c6087f6ab8a",
+      "sha256": "dca22a5124d4ee7a97cdaa5b5064fcbb7a078ab09ab4f8943bfc92239c99ac38",
       "receipt": true,
-      "words": 637
+      "words": 323
     },
     "04-tone-style-1": {
       "status": "attested",
       "attempts": 1,
       "model": "openrouter/deepseek-chat-v3-0324",
       "tokens": null,
-      "sha256": "037b0cbfd3b89348ce545457b2a3380e8231d0c9a78d27bdd2f973e77e89e15a",
+      "sha256": "bd72c5112ded88490dd14941e296b92af96d69f7ace5628c8039fd03682ddb8a",
       "receipt": true,
-      "words": 684
+      "words": 419
     },
     "05-tone-style-2": {
       "status": "attested",
       "attempts": 1,
       "model": "openrouter/deepseek-chat-v3-0324",
       "tokens": null,
-      "sha256": "68e0c71f5ce36d6e65c63d42614fe2218e0fa43239762dd9ff041f34f7e9e1e9",
+      "sha256": "f9bdb9c6ca6d5fa9fa1f0367ac5ef6469380e79936d8543b51680a18b845e659",
       "receipt": true,
-      "words": 680
+      "words": 415
     },
     "06-tone-style-3": {
       "status": "attested",
       "attempts": 1,
       "model": "openrouter/deepseek-chat-v3-0324",
       "tokens": null,
-      "sha256": "46f6e6f1074ebfff3331b2fda2647d5544ab8a38149a838c9876074e247f5730",
+      "sha256": "a984bf45c6677e4224d61eacecce90d5e8ec3e0a8953f03fa084901b4cd242c6",
       "receipt": true,
-      "words": 682
+      "words": 431
     },
     "07-tone-style-4": {
       "status": "attested",
       "attempts": 1,
       "model": "openrouter/deepseek-chat-v3-0324",
       "tokens": null,
-      "sha256": "4442d6734c3d0361b0de6cd1732ca1fab1eb365f756282d8d56a1ff38f69018f",
+      "sha256": "85f7ba0ac29d124b18cd0bc5f905637a357fe348b5f8afdf87de1b0f2998593c",
       "receipt": true,
-      "words": 686
+      "words": 430
     },
     "08-blended-tone": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "faca2c0599c303615d9806e209fa8a75dabfcd0690acdfe37cebc643315f264b",
+      "sha256": "b10cf8fe1165137726c84349022d74e380e86abdd43665f9f3db1587dec27574",
       "receipt": true,
-      "words": 4826
+      "words": 1555
     },
     "09-problem-aware": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "1452c3a3a1f81bda77bf3181065b9af4d128b25a348fbabe572a72962ae69c04",
+      "sha256": "60842331a329f4cd7f484e9d994f11a56ab56f5179775ba721dc48de14472659",
       "receipt": true,
-      "words": 2543
+      "words": 1121
     },
     "10-problem-aware-pt2": {
       "status": "attested",
       "attempts": 1,
       "model": "openrouter/deepseek-chat-v3-0324",
       "tokens": null,
-      "sha256": "76eb10644df351839fea35f0bdf2b01585ed4ab49b13e1117a2bf8d23781db5a",
+      "sha256": "24bd8f93d02bb54ff9c4ee381f39f30e10edd24dc8a6dc0db833f9619113c449",
       "receipt": true,
-      "words": 800
+      "words": 203
     },
     "11-solution-aware": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "2bd123a67f4e290b00f85213b5af85ac449855131c5f32e1421b27d02073d4c3",
+      "sha256": "e9a7685109f3791b435c8c8a9209544c707d72af0624b62ee464db5aa15dda32",
       "receipt": true,
-      "words": 2558
+      "words": 1183
     },
     "12-solution-aware-pt2": {
       "status": "attested",
       "attempts": 1,
       "model": "openrouter/deepseek-chat-v3-0324",
       "tokens": null,
-      "sha256": "7a2668a2d20e39523c5e88ee8a141abe3471de30318e8675ad6cd8105fa686c1",
+      "sha256": "7c6edcfb0706c86efd224da09a9aca48cae229eb9d7bb9569431a7d0070b53cd",
       "receipt": true,
-      "words": 783
+      "words": 185
     },
     "13-product-aware": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "6ae2adb7f61b4a4c205d55fcf62ea51753effa01b790892a5119131016d46978",
+      "sha256": "a15026f7efdc4c15b8fb89cc5472ed753e4b1fd65db008447847b98efbc39af8",
       "receipt": true,
-      "words": 2553
+      "words": 1228
     },
     "14-product-aware-pt2": {
       "status": "attested",
       "attempts": 1,
       "model": "openrouter/deepseek-chat-v3-0324",
       "tokens": null,
-      "sha256": "bf7c2dc74337094dd4d662868158d72e2d9e8d199921a49eed7e5a6276f0391e",
+      "sha256": "1a2e086a85255d1c70b1e4fd7c4591978b6b01845289b7ce21b1d8ad9f56aebd",
       "receipt": true,
-      "words": 784
+      "words": 183
     },
     "15-facebook-audiences": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "b83ec2de67f3db64bb696664525edae3edb63fcd446d29cc1db15e0137c6739b",
+      "sha256": "c7b525b07d4d3be56ab174a3eb46179204d9e98e772a6a98723ac78a8dabef14",
       "receipt": true,
-      "words": 1240
+      "words": 271
     },
     "16-brand-bio": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "f90f5b2bfd4fe4ca056dd10396e8c8c1e6ce36e9624eac71be884b416a3050b5",
+      "sha256": "1d42c7d72e320c4f9d7cc3f88182fec57268740efc5060df7f1c5508e36d62b3",
       "receipt": true,
-      "words": 1080
+      "words": 353
     },
     "17-product-bio": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "868e3ec01c305f139fa4d57b1be38b1d5241b8e277a9a47c0edd0db03d0868ed",
+      "sha256": "c6f6f30d57f4c4a8ee86ab83cb1c37ca269c0493fffc2af38d15a32ec13702c5",
       "receipt": true,
-      "words": 755
+      "words": 216
     },
     "18-bot-prep": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "fdfca18a4f7e77923c82890dfa09f36a434fcbf6febf5d9ba9294141ea4f9043",
+      "sha256": "1f693a5cba4de0c961a7186b09dc62c01feaf9c4266ec8168cba98301475f752",
       "receipt": true,
-      "words": 753
+      "words": 243
     },
     "19-booking-bot": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "f0f150ab2edd11ca4183b40b2c89e3cb31f2093b06a177722cd31c07c42b6ae4",
+      "sha256": "561e7e0a5a905156a4cfed9126efdc45ccee90dae1b2fa4d99aaebdab9da83b4",
       "receipt": true,
-      "words": 7922
+      "words": 4436
     },
     "20-post-booking-bot": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "16ebd0d6ed3e2b5dea54c9e3d3e03b66cbe76045195cfc4da811213be0448550",
+      "sha256": "d2bcb0e16eed941eaebd2186ac89590e1d338de935327810e360ef305262a6b8",
       "receipt": true,
-      "words": 799
+      "words": 199
     },
     "21-rescheduling-bot": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "24291c14faefb66566ed9a85abb76077d80c28b7cf46c50e22d2ce69d70a39a9",
+      "sha256": "a4705e74af5ca5f5d83dc6c3f90a962c49777a2d351c94eb597d784a1b896596",
       "receipt": true,
-      "words": 860
+      "words": 274
     },
     "22-ad-set-1": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "ebfb1a9f3b58a36b4fcfbcead793e049406f2050eb6638de15ffa246e70c8d28",
+      "sha256": "08b7b9370fc2f16138aa752c476e3adf63cf5f80be65d2456a388a929655b1c6",
       "receipt": true,
-      "words": 428
+      "words": 237
     },
     "23-ad-set-2": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "44187f7d2e0312c2915f360f500a9d315135cb5c7d47eb47ffae47eb2304fc17",
+      "sha256": "21f918dab5bcfe88055a9148d0e91c9fd4092322a231d0335fdca512915bacdf",
       "receipt": true,
-      "words": 425
+      "words": 218
     },
     "24-ad-set-3": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "624570a5404e08cbfd979ecabb7c681d06520244f47173745676e6498378a089",
+      "sha256": "b3d5e74383b1bf6f7880c3124795cc4be990946077135458187894835628221a",
       "receipt": true,
-      "words": 431
+      "words": 234
     },
     "25-ad-set-4": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "c4e8741f436c89adb23b4746ce18201e38cb66986a8c5b63e72b9b9c45399edb",
+      "sha256": "0c334d444e1785c4704d4c0ab8ed42924e0f91094a7e158ebf139df20ed7c3a6",
       "receipt": true,
-      "words": 423
+      "words": 229
     },
     "26-ad-set-5": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "bf813aec9b0213ab3f3654d2fac72d68524e444bd80e019a237b41c72385af47",
+      "sha256": "3cca4b192e231083553d0686eee8b8ecb73a41fc572ad6d9413ebba048d57d25",
       "receipt": true,
-      "words": 436
+      "words": 242
     },
     "27-ad-set-6": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "20de309ac4bedf8f8a78070704412b8dfc6dd9d70650f0f24c656c547b7ce2cc",
+      "sha256": "ae5c355d2459512d361a32482612cd61190552d9733073ec2f28c127c437ad2c",
       "receipt": true,
-      "words": 441
+      "words": 237
     },
     "28-ad-set-7": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "2b31d0a8a8e26b4b93797fa0c4649ede633e09b84db2b32d48581c044e8a038a",
+      "sha256": "a53755950310df8677cb397787e9f7d22f20d09940f9283f35c1a8be1651b0c8",
       "receipt": true,
-      "words": 435
+      "words": 254
     },
     "29-ad-set-8": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "29ff0034816d49c5620ca317577bcc1b407319d162742c218c8cabb1984e02a5",
+      "sha256": "a93a2df5245c39ab87649d85af76e0a6fbe9ee7b631c248f4ad49daece172a5b",
       "receipt": true,
-      "words": 423
+      "words": 227
     },
     "30-ad-set-9": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "78a7e74e0b557545636bc5d41409fa6b044a03ff6612963c42036c409d34d1e4",
+      "sha256": "4987e3784186719fe3a809ec5e84f6ede989126b940e9ef64458a31ecb0b1b6b",
       "receipt": true,
-      "words": 423
+      "words": 240
     },
     "31-ad-set-10": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "5abae6fa1f1edd24ee1ca9f7e08c27aa652fa705129ae50f5d08f1e7b6b4fa99",
+      "sha256": "870317d6102b845350b06043e75e7cf9359d5de455ff6b6626f7ef339899e57d",
       "receipt": true,
-      "words": 434
+      "words": 249
     },
     "32-ad-set-11": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "8c2b59e9c48290c90303649c3ae3f82f7c9d003d74fe851ff3ace6b229948f3c",
+      "sha256": "663fdc3e6972cf4920240b7711cb4d19e85e5ab96fd53b00d1061e4b05481455",
       "receipt": true,
-      "words": 422
+      "words": 238
     },
     "33-ad-set-12": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "e869bfc8542a37d045d25c65f8f4411b75f8cd3f8a397008496a5e0b082c8258",
+      "sha256": "293eded14b388aaf32b2907964993ac8267713549d75b9fc462892a244cc975d",
       "receipt": true,
-      "words": 435
+      "words": 243
     },
     "34-ad-set-13": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "07404f692c065d061dcdc81effd09b59b070ef3cef5582b4d4f512e51bf7b3ca",
+      "sha256": "e159cff25df9dc1f6b60ec0461ca5e16c807e572f9344853f57fe9809823f571",
       "receipt": true,
-      "words": 429
+      "words": 239
     },
     "35-top-39": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "d37c89c32201bcd63bd1cb301f2efbd9218c4c47c560102b0160758c93eedc2e",
+      "sha256": "c9239e666f585f52e2f3aeabb6168650afe48a61c537432cda9d763bae483442",
       "receipt": true,
-      "words": 1208
+      "words": 1715
     },
     "36-image-prompts-39": {
       "status": "attested",
@@ -334,36 +334,36 @@
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "53f74ea13e3eb76dd63ae380f085c615d45bd282b566490f810036b821c686e6",
+      "sha256": "92f9e986083f13736ec1c0beb4c24f81354ab07873f88b700c089f48e8fde4a4",
       "receipt": true,
-      "words": 2711
+      "words": 1095
     },
     "38-landing-questionnaire": {
       "status": "attested",
       "attempts": 1,
       "model": "openrouter/deepseek-chat-v3-0324",
       "tokens": null,
-      "sha256": "f1c010cf2a9026069e4b7605c0cc41adab609a0c09d05e335fb9d4b7a79ebc6e",
+      "sha256": "dd1213e7b715deb05129bf9119b4e01341649b9b494dba4f28d49e60741619f7",
       "receipt": true,
-      "words": 2109
+      "words": 1081
     },
     "39-hero-page": {
       "status": "attested",
       "attempts": 1,
       "model": "ollama-cloud/qwen3-235b",
       "tokens": null,
-      "sha256": "f7a7c0fb4c65dec17d3a4a486a181ef81eab359a0be01483e312e62c2d6da07b",
+      "sha256": "109de524e61c2ea03f81c5dcda9862cc89dfc460ab4db3e3375a20278c079b56",
       "receipt": true,
-      "words": 2597
+      "words": 905
     },
     "40-landing-image-prompts": {
       "status": "attested",
       "attempts": 1,
       "model": "openrouter/deepseek-chat-v3-0324",
       "tokens": null,
-      "sha256": "e8d70c545f8b8bf0e3f777ea462e579d75d75dbdd2c3f5983bc845bd36b84d5c",
+      "sha256": "6bfa0c1f8d6645719ee145376af8b9d480cd9b0cd661276efe3f8b6de19c4619",
       "receipt": true,
-      "words": 1431
+      "words": 1341
     }
   }
 }

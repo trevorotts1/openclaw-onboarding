@@ -6,7 +6,7 @@
   "verified": 0,
   "degraded": 0,
   "offline": true,
-  "checked_utc": "2026-07-02T18:17:04Z",
+  "checked_utc": "2026-07-03T12:25:52Z",
   "rule": "every link verifies or degraded:search (fail-soft, PRD 7 / O4)",
   "details": []
 }

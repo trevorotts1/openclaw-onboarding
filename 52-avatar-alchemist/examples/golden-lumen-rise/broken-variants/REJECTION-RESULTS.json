@@ -45,9 +45,10 @@
     "rc": 2,
     "rejected": true,
     "got_codes": [
+      "AF-AV-CERT-NO-FRONT-DOOR",
       "AF-AV-DELIVER-INCOMPLETE",
       "AF-AV-PROVENANCE"
     ],
-    "out": "VIOLATION [AF-AV-PROVENANCE] stage '16-brand-bio': receipt sha256 7ae0b982220e.. != artifact sha256 498b52a781da.. (fabrication / tamper \u2014 receipt does not attest THIS artifact)\nVIOLATION [AF-AV-DELIVER-INCOMPLETE] 39/40 stages attested \u2014 delivery blocked (never deliver below 40/40)"
+    "out": "VIOLATION [AF-AV-CERT-NO-FRONT-DOOR] no front-door nonce file at the given path \u2014 a certificate cannot be minted outside a run entry.sh actually started\nVIOLATION [AF-AV-PROVENANCE] stage '16-brand-bio': on-disk receipt sha256 1d42c7d72e32.. != on-disk artifact sha256 536f2c783cd6.. (fabrication / tamper \u2014 receipt does not attest THIS file on disk)\nVIOLATION [AF-AV-DELIVER-INCOMPLETE] 39/40 stages attested on disk \u2014 delivery blocked (never deliver below 40/40)"
   }
 }

@@ -15,6 +15,8 @@ run "intake-gate --self-test"   python3 "$HERE/scripts/aa_intake_gate.py" --self
 run "build-check --self-test"   python3 "$HERE/scripts/aa_build_check.py" --self-test
 run "delivery-gate --self-test" python3 "$HERE/scripts/aa_delivery_gate.py" --self-test
 run "links-gate --self-test"    python3 "$HERE/scripts/aa_links_gate.py" --self-test
+run "egress-gate --self-test"   python3 "$HERE/scripts/aa_egress_gate.py" --self-test
+run "qc-cert --self-test"       python3 "$HERE/scripts/aa_qc_cert.py" --self-test
 run "director --self-test"      python3 "$HERE/scripts/aa_director.py" --self-test
 run "package --self-test"       python3 "$HERE/scripts/aa_package.py" --self-test
 

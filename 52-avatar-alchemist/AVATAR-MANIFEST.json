@@ -41,7 +41,7 @@
       "af": [
         "AF-AV-FLOOR"
       ],
-      "desc": "stripped-length word floors (>=3000 avatar-q1-30 & blended tone, >=1500 each awareness pt1, >=5000 booking bot). Padding cannot fake it."
+      "desc": "stripped-length word floors (per-stage minimums in AA-PIPELINE-MANIFEST.json, e.g. >=1300 avatar-q1-30, >=850 blended tone, >=550 each awareness, >=1600 booking bot). Measured on whitespace/markdown-stripped text so padding cannot fake it. Floors are MINIMUMS a real client LLM run naturally exceeds; they were lowered from an earlier inflated set that forced the golden fixture to pad — the deliverables are now majority hand-authored, header-answering content."
     },
     {
       "id": "P-AV-COUNTS",
@@ -96,9 +96,28 @@
       "gate": "G-HERO-12",
       "prover": "aa_build_check.py",
       "af": [
-        "AF-AV-HERO-12"
+        "AF-AV-HERO-12",
+        "AF-AV-HERO-BAND"
       ],
-      "desc": "hero page contains the 12 Hero Landing Page System sections."
+      "desc": "hero page contains the 12 EXACTLY-NAMED, IN-ORDER 'Trevor Otts Hero Page System' sections (name/order/count enforced, no any-heading fallback), each inside its char/word band."
+    },
+    {
+      "id": "P-AV-RELEVANCE",
+      "gate": "G-RELEVANCE",
+      "prover": "aa_build_check.py",
+      "af": [
+        "AF-AV-SECTION-RELEVANCE"
+      ],
+      "desc": "deterministic section-header/body relevance: the 13 named Avatar Q1-30 questions and the 'Five Core Values'/'Five Personality Traits' marketing sections must actually answer their header (keyword classes present / >=5 distinctly named items), not generic on-topic prose that ignores the specific ask."
+    },
+    {
+      "id": "P-AV-EGRESS",
+      "gate": "G-EGRESS",
+      "prover": "aa_egress_gate.py",
+      "af": [
+        "AF-AV-EGRESS"
+      ],
+      "desc": "fail-closed egress/entry-bypass ban: no prover may import an egress-capable module (urllib.request, http.client, socket, smtplib, requests, httpx, aiohttp, ...) unless on the narrow read-only-link-check allowlist, and even then never a POST-shaped call; no reference to a known third-party webhook/API host (n8n/Airtable/Slack/Drive/Gmail); no subprocess curl/wget/nc. Wired into entry.sh (front door), aa_director.py (in-process re-verify at dispatch), and test_aa_preflight.py."
     },
     {
       "id": "P-AV-PLACEHOLDER",
@@ -124,9 +143,14 @@
       "prover": "aa_delivery_gate.py",
       "af": [
         "AF-AV-PROVENANCE",
-        "AF-AV-DELIVER-INCOMPLETE"
+        "AF-AV-DELIVER-INCOMPLETE",
+        "AF-AV-CERT-NO-FRONT-DOOR",
+        "AF-AV-CERT-GATE-DRIFT",
+        "AF-AV-CERT-UNSIGNED",
+        "AF-AV-CERT-QC-INVALID",
+        "AF-AV-DELIVERY-MISMATCH"
       ],
-      "desc": "provenance/no-fabrication: 40/40 foreman-attested receipts whose sha256 matches the artifact bytes; refuse ~/Downloads write below 40/40; emit signed certificate. 'Done' only with the certificate path."
+      "desc": "provenance/no-fabrication: 40/40 foreman-attested receipts LOADED FROM DISK whose sha256 matches artifact bytes READ FROM DISK; content prover re-run by the gate itself against the on-disk run; a detached HMAC-signed QC certificate (aa_qc_cert.py, verifier != author) bound to this run_id with score >= 8.5; a required + consumed front-door nonce; a live gate-integrity re-check; the delivered folder's per-file sha256 bound into the cert. Certificate signature is HMAC-SHA256 keyed by the per-run foreman key (entry.sh-minted, never embedded in the cert). 'Done' only with a certificate that PASSES `aa_delivery_gate.py --verify-cert`."
     }
   ],
   "af_codes": {
@@ -144,11 +168,19 @@
     "AF-AV-ADSET-CAT": "REPAIR-GATED (R4, --apply-repairs only): an ad-set artifact does not match its restored R4 category signature ('category 2' drift). Not enforced in the default faithful-to-live run.",
     "AF-AV-LINKS-MISSING": "stage 02 (avatar-questions-31-32) produced no non-empty artifact for the podcast/TED link check (G-LINKS fail-closed). Unverifiable-but-present links degrade to 'degraded:search', they do not fail.",
     "AF-AV-BOTDOC": "a bot doc is missing the H1 section skeleton / XML labels / merge-tag rules",
-    "AF-AV-HERO-12": "hero page missing one or more of the 12 Hero Landing Page System sections",
+    "AF-AV-HERO-12": "hero page is missing/misnamed/out-of-order/miscounted vs the 12 EXACTLY-NAMED Trevor Otts Hero Page System sections (no any-heading fallback)",
+    "AF-AV-HERO-BAND": "a present, correctly-named hero section is outside its char/word band",
+    "AF-AV-SECTION-RELEVANCE": "a section body does not answer its own header (generic on-topic prose standing in for a factual/named-list answer) — Avatar Q1-30's 13 questions or a 'Five Core Values'/'Five Personality Traits' list with <5 named items",
+    "AF-AV-EGRESS": "an ungoverned egress path: a prover imports a networking module outside the narrow read-only allowlist, contains a POST-shaped call, references a known third-party webhook/API host (n8n/Airtable/Slack/Drive/Gmail), or shells out to curl/wget/nc",
     "AF-AV-PLACEHOLDER": "an unresolved template/Make.com token leaked into an artifact",
-    "AF-AV-NOANTHROPIC": "a resolved model id matches /anthropic|claude/i, or an operator credential name is present",
-    "AF-AV-PROVENANCE": "a receipt sha256 does not match its artifact bytes (fabrication / tamper)",
-    "AF-AV-DELIVER-INCOMPLETE": "delivery attempted below 40/40 attested receipts"
+    "AF-AV-NOANTHROPIC": "a resolved model id matches /anthropic|claude/i, OR a manifest stage has NO resolved model id at all (fail-closed on omission — a ledger cannot pass by leaving a stage's model id out), or an operator credential name is present",
+    "AF-AV-PROVENANCE": "a receipt sha256 (loaded from disk) does not match its artifact bytes (loaded from disk) — fabrication / tamper",
+    "AF-AV-DELIVER-INCOMPLETE": "delivery attempted below 40/40 on-disk attested receipts, or the content prover (re-run by the gate) failed",
+    "AF-AV-CERT-NO-FRONT-DOOR": "no valid front-door nonce for this run — a certificate cannot be minted outside a run entry.sh actually started",
+    "AF-AV-CERT-GATE-DRIFT": "the live gate-integrity re-check failed at certificate-issuance time (a pinned gate is currently modified)",
+    "AF-AV-CERT-UNSIGNED": "no valid per-run foreman signing key (.foreman-key, minted only by entry.sh) — a certificate cannot be HMAC-signed",
+    "AF-AV-CERT-QC-INVALID": "the detached QC-CERTIFICATE.json (aa_qc_cert.py) is missing, its signature does not verify, its run_id does not bind to this run, its content_gate_pass is false, or its score is below the 8.5 floor",
+    "AF-AV-DELIVERY-MISMATCH": "a shipped deliverable file's on-disk sha256 does not match aa_package.py's own MANIFEST.json claim (swapped/tampered deliverable)"
   },
   "gate_integrity": {
     "pinned_files": [
@@ -156,9 +188,14 @@
       "AVATAR-MANIFEST.json",
       "scripts/aa_intake_gate.py",
       "scripts/aa_build_check.py",
-      "scripts/aa_delivery_gate.py"
+      "scripts/aa_delivery_gate.py",
+      "scripts/aa_qc_cert.py",
+      "scripts/aa_egress_gate.py",
+      "scripts/aa_links_gate.py",
+      "scripts/aa_director.py",
+      "entry.sh"
     ],
     "prover": "aa_gate_integrity_check.py",
-    "note": "manifest + prover sha256 pinned in AA-GATE-HASHES.json; the foreman refuses to run against modified gates (anti-lie LIVE-gate)."
+    "note": "manifest + prover sha256 pinned in AA-GATE-HASHES.json; both aa_director.py (at dispatch) and aa_delivery_gate.py (at cert issuance) call the check IN-PROCESS, right now, regardless of the caller-supplied nonce — modified gates are refused, not merely 'checked once by entry.sh'."
   }
 }

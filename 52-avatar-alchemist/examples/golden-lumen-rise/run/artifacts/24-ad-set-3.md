@@ -1,14 +1,14 @@
-# Ad Set — category 3: General Purpose Ads (Lumen Rise Collective)
+# Ad Set 3: General-Purpose Belief Ads (Lumen Rise Collective)
 
-Restored R4 category signature: category 3. Tuned to sit in harmony with every prior set.
+Framework category: Category 3.
 
-1. General Purpose Ads 1 — When competence is not the problem but recognition is: Once clarity turns browsers into believers, a practiced expert no longer posts into the silence. From mornings before the house wakes toward loyalty she underestimates, this thoughtful maker craves attention she has stopped chasing.
-2. General Purpose Ads 2 — To every founder tired of shrinking her price: The founder in question trades the hustle for buyer-first copy. A veteran maker has wins she downplays; still she tinkers past midnight.
-3. General Purpose Ads 3 — To the quiet expert with unmistakably loud results: Our under-recognized pro outworks and under-earns, since she believes visibility is just vanity. The founder tires of being unheard, yet she buries the lead.
-4. General Purpose Ads 4 — If you are ready to stop chasing cold leads: Behind kind words left on read waits our reader, hungry for a clear first read. When our target buyer mutes her own announcements, her expertise finds its words.
-5. General Purpose Ads 5 — If your waitlist should be longer than your worry: A legibility method finally gives one grounded founder an unmistakable position. This founder chases a clarity protocol, yet finds the room to raise rates.
-6. General Purpose Ads 6 — For the woman who is done waiting to be picked: The offer explains itself, so this careful builder finally rests in words that pre-sell her. From receipts of overdelivery toward case studies worth quoting, one accomplished owner craves a market that finds her.
-7. General Purpose Ads 7 — For the founder ready to finally own her category: Behind mornings before the house wakes waits this thoughtful maker, hungry for demand without the begging. What if silence turns into signal, yet our avatar lands trust before the first call?
-8. General Purpose Ads 8 — To the expert the algorithm keeps overlooking: With quiet, consistent transformations, a veteran maker craves an audience that leans in. A diligent founder has work that overdelivers, yet aches to be understood.
-9. General Purpose Ads 9 — If you have the results but not the reputation: Positioning frameworks finally gives the founder buyers who already believe. The accelerator hands an overlooked expert a repeatable narrative.
-10. General Purpose Ads 10 — If proof alone were enough, you would be booked solid: Once our target buyer drops the doubt, her expertise finds its words. Our woman founder fears competence is not enough, because she believes her niche is saturated.
+1. Visibility isn't louder — it's clearer. The Visible Founder Accelerator makes your work legible to the people already looking for it.
+2. Most founders don't have a delivery problem. They have a "nobody can find or remember me" problem. That's a solvable one.
+3. A reputation that arrives before you do isn't luck. It's a message, repeated with precision, until the right people can quote you back to themselves.
+4. In 90 days, you can move from best-kept secret to first name mentioned — with a calendar that reflects it. That's what this cohort is for.
+5. Being good at your work is table stakes. Being remembered for it is the whole game — and it can be built on purpose.
+6. Your practice fills itself when your positioning does the introducing for you. We build that positioning, together, in 12 weeks.
+7. Quiet authority beats loud marketing every time — because it lasts. This cohort teaches the quiet kind that compounds.
+8. You don't need to be everywhere. You need to be legible in the few places your ideal clients already are.
+9. The gap between excellent and known is smaller than it feels — and closing it is a skill, not a personality trait.
+10. A visible practice isn't built on more effort. It's built on a clearer message, said consistently, until it becomes the room's default answer.

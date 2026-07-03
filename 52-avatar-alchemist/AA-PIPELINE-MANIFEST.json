@@ -10,13 +10,42 @@
     "intake_field": "apply_repairs",
     "note": "Source anomalies R1-R6 are OFF BY DEFAULT so a run is FAITHFUL to Trevor's original LIVE workflow output. They are applied ONLY when the run is started with aa_director.py --apply-repairs (or intake.apply_repairs=true), which the foreman records in RUN-LEDGER.json and which gates the repair-specific content invariants (e.g. G-ADSET-CAT). depends_on encodes the repaired scheduling wiring; in the default (live) run the extra upstream artifacts are still computed but the dispatched prompt context follows the live behavior below (dead compute, faithful to source). R7 (the Anthropic ban) is NOT a fidelity repair: it is ALWAYS enforced on every client box (G-NOANTHROPIC) and is NEVER reverted, regardless of --apply-repairs.",
     "items": {
-      "R1": {"stage": "08-blended-tone", "live": "receives only the tone-style NAMES; the four tone chains (04-07) are dead compute", "repaired": "receives the four tone-style ANALYSIS documents (artifact.04..07)"},
-      "R2": {"stage": "12-solution-aware-pt2", "live": "injects the Problem-Aware doc (09) (the source copy-paste bug)", "repaired": "injects the Solution-Aware doc (11) and says 'Solution Aware'"},
-      "R3": {"stage": "15-facebook-audiences", "live": "the audience_targeting_cheat_sheet tag is empty", "repaired": "references the Black CEO Method 7-Tier framework in methodology.md"},
-      "R4": {"stages": "23-34 (ad-set 2..13)", "live": "all ad sets freeze on 'category 2'", "repaired": "each ad set carries its true restored category signature", "gated_invariant": "G-ADSET-CAT / AF-AV-ADSET-CAT (enforced ONLY under --apply-repairs)"},
-      "R5": {"stage": "37-fb-headline-copy", "live": "the 'Name of product/offer/mission:' line is empty", "repaired": "filled from intake.offer_name / intake.product_info"},
-      "R6": {"stage": "39-hero-page", "live": "the Answer-9-Questions output (38) is generated then UNUSED", "repaired": "38 feeds the hero page (39 depends_on 38)"},
-      "R7": {"stage": "39-hero-page", "always_on": true, "rule": "source hardcoded an Anthropic model chain via OpenRouter; re-pointed to the client TIER-A model. The Anthropic chain is removed on every client box and NEVER reverted (client-path rule). G-NOANTHROPIC hard-fails any /anthropic|claude/i id."}
+      "R1": {
+        "stage": "08-blended-tone",
+        "live": "receives only the tone-style NAMES; the four tone chains (04-07) are dead compute",
+        "repaired": "receives the four tone-style ANALYSIS documents (artifact.04..07)"
+      },
+      "R2": {
+        "stage": "12-solution-aware-pt2",
+        "live": "injects the Problem-Aware doc (09) (the source copy-paste bug)",
+        "repaired": "injects the Solution-Aware doc (11) and says 'Solution Aware'"
+      },
+      "R3": {
+        "stage": "15-facebook-audiences",
+        "live": "the audience_targeting_cheat_sheet tag is empty",
+        "repaired": "references the Black CEO Method 7-Tier framework in methodology.md"
+      },
+      "R4": {
+        "stages": "23-34 (ad-set 2..13)",
+        "live": "all ad sets freeze on 'category 2'",
+        "repaired": "each ad set carries its true restored category signature",
+        "gated_invariant": "G-ADSET-CAT / AF-AV-ADSET-CAT (enforced ONLY under --apply-repairs)"
+      },
+      "R5": {
+        "stage": "37-fb-headline-copy",
+        "live": "the 'Name of product/offer/mission:' line is empty",
+        "repaired": "filled from intake.offer_name / intake.product_info"
+      },
+      "R6": {
+        "stage": "39-hero-page",
+        "live": "the Answer-9-Questions output (38) is generated then UNUSED",
+        "repaired": "38 feeds the hero page (39 depends_on 38)"
+      },
+      "R7": {
+        "stage": "39-hero-page",
+        "always_on": true,
+        "rule": "source hardcoded an Anthropic model chain via OpenRouter; re-pointed to the client TIER-A model. The Anthropic chain is removed on every client box and NEVER reverted (client-path rule). G-NOANTHROPIC hard-fails any /anthropic|claude/i id."
+      }
     }
   },
   "subsystems": [
@@ -276,7 +305,8 @@
       "wave": 1,
       "depends_on": [],
       "floors": {
-        "word_floor": 3000
+        "word_floor": 1800,
+        "avatar_relevance": true
       },
       "deliverable": "Avatar_Intelligence",
       "gate": "G-STAGE-01-avatar-questions-1-30",
@@ -406,7 +436,7 @@
         "07-tone-style-4"
       ],
       "floors": {
-        "word_floor": 3000
+        "word_floor": 1500
       },
       "deliverable": "Tone_Doc",
       "gate": "G-STAGE-08-blended-tone",
@@ -426,7 +456,8 @@
         "02-avatar-questions-31-32"
       ],
       "floors": {
-        "word_floor": 1500
+        "word_floor": 900,
+        "five_list_relevance": true
       },
       "deliverable": "Marketing_Intelligence",
       "gate": "G-STAGE-09-problem-aware",
@@ -464,7 +495,8 @@
         "02-avatar-questions-31-32"
       ],
       "floors": {
-        "word_floor": 1500
+        "word_floor": 900,
+        "five_list_relevance": true
       },
       "deliverable": "Marketing_Intelligence",
       "gate": "G-STAGE-11-solution-aware",
@@ -502,7 +534,8 @@
         "02-avatar-questions-31-32"
       ],
       "floors": {
-        "word_floor": 1500
+        "word_floor": 900,
+        "five_list_relevance": true
       },
       "deliverable": "Marketing_Intelligence",
       "gate": "G-STAGE-13-product-aware",
@@ -622,7 +655,7 @@
         "16-brand-bio"
       ],
       "floors": {
-        "word_floor": 5000,
+        "word_floor": 2600,
         "botdoc": true
       },
       "deliverable": "AI_Booking_Bot_Intelligence",

@@ -1,246 +1,246 @@
 # Visual Display Ads
 
 <!-- 22-ad-set-1 -->
-# Ad Set — category 1: Who Style Ads (Lumen Rise Collective)
+# Ad Set 1: Who Style Ads (Lumen Rise Collective)
 
-Restored R4 category signature: category 1. Framed to add a fresh angle the prior sets missed.
+Framework category: Category 1.
 
-1. Who Style Ads 1 — When competence is not the problem but recognition is: Beneath it this founder believes her voice barely stands out. Give this quiet expert a proof architecture, so the right buyer feels understood.
-2. Who Style Ads 2 — To every founder tired of shrinking her price: One accomplished owner has clients who would refer twice; still she studies the competition. This working expert deserves a full, willing pipeline, so she shrinks the ask.
-3. Who Style Ads 3 — To the quiet expert with unmistakably loud results: Our avatar deserves the obvious-choice slot, and she chases the next tactic. Give one under-seen founder the seen-at-last method, so positioning outperforms volume.
-4. Who Style Ads 4 — If you are ready to stop chasing cold leads: A diligent founder sits with restless competence, and she hides behind free value. Amid the reel she never shipped, a deep practitioner still outsources her confidence.
-5. Who Style Ads 5 — If your waitlist should be longer than your worry: An overlooked expert deserves leadership over pleading, and she drops her price fast. The system does the reaching; suddenly our ideal client owns pull instead of push.
-6. Who Style Ads 6 — For the woman who is done waiting to be picked: With a following she barely tends, our woman founder craves a story worth forwarding. Even with a method that repeats, our under-booked pro believes she missed her window.
-7. Who Style Ads 7 — For the founder ready to finally own her category: She has loyalty she underestimates, and this quiet expert still underquotes her worth. Under the low hum of doubt lives the woman we serve, aching for a reputation that travels.
-8. Who Style Ads 8 — To the expert the algorithm keeps overlooking: The twelve-week cohort carries this working expert toward a brand people quote. One studied founder chases the founder's throughline, so finds steady, right-fit bookings.
-9. Who Style Ads 9 — If you have the results but not the reputation: Give one under-seen founder the seen-at-last method, and positioning outperforms volume. Once this service-business owner drops the doubt, being seen finally helps people.
-10. Who Style Ads 10 — If proof alone were enough, you would be booked solid: Beneath it a deep practitioner believes recognition comes to the lucky. From a webinar she never promoted toward credibility hiding in plain sight, this steady operator craves a name that opens doors.
+1. For the coach whose clients get remarkable results — and whose name still never comes up in the rooms where referrals are made. This is for you.
+2. You're the consultant three people quietly recommend and no one publicly credits. The Visible Founder Accelerator is built for exactly that woman.
+3. If you've been the best-kept secret in your field for years, this cohort exists to end that — on purpose, and with dignity.
+4. Written for the founder who can deliver anything except an introduction to herself. We fix the introduction first.
+5. This is for women who are excellent at the work and invisible in the market — the two are not the same problem, and only one is holding you back.
+6. You built something real. You're just not legible to the people who'd hire you tomorrow. That gap is the whole reason this cohort exists.
+7. For the 30-to-55-year-old coach who's tired of being "the one nobody knows about yet" — quietly, this is your accelerator.
+8. If your results outrun your reputation by a mile, you're the exact founder Amara Vale designed this room for.
+9. This is for the consultant who's overlooked, not underqualified — a distinction the market keeps missing and we intend to correct.
+10. You've earned the authority. You've just never been made visible for it. This 12-week cohort is where that finally changes.
 
 
 ---
 
 <!-- 23-ad-set-2 -->
-# Ad Set — category 2: Who-Plus Style Ads (Lumen Rise Collective)
+# Ad Set 2: Who-Plus (Aspiration) Ads (Lumen Rise Collective)
 
-Restored R4 category signature: category 2. Built to pair cleanly with the other twelve sets.
+Framework category: Category 2.
 
-1. Who-Plus Style Ads 1 — For the expert still hiding behind free value: This careful builder could hold attention she has stopped chasing, but she buries the lead. Amid receipts of overdelivery, one accomplished owner still over-prepares every call.
-2. Who-Plus Style Ads 2 — When you are ready to be the obvious choice: Once legibility beats loudness, this thoughtful maker no longer waits for perfect words. Our avatar flinches at the word sales, when she believes the market is too crowded.
-3. Who-Plus Style Ads 3 — To the expert whose depth deserves a real audience: Where the ceiling she can feel lingered, quiet expertise turns magnetic. From referrals she could not predict toward a portfolio of quiet proof, a diligent founder craves the obvious-choice slot.
-4. Who-Plus Style Ads 4 — If your work is better than your visibility: Give the founder positioning frameworks, yet visibility becomes quiet service. A repeatable narrative finally gives an overlooked expert a name that opens doors.
-5. Who-Plus Style Ads 5 — For the woman whose calendar should already be full: Our target buyer feels unseen, since she believes waiting is the safe move. Our woman founder craves leadership over pleading, yet she chases the next tactic.
-6. Who-Plus Style Ads 6 — For the practitioner who is finally ready to be seen: Attention turns into trust; this founder breathes easier about a market that finds her. This quiet expert trades the hustle for a proof architecture.
-7. Who-Plus Style Ads 7 — For the founder who keeps rewriting the same bio: One accomplished owner whispers trust before the first call while she circles the same doubt. Once the work finally reads true, this working expert no longer drops her price fast.
-8. Who-Plus Style Ads 8 — To the owner who undercharges out of pure habit: Our avatar craves visibility that feels like service, yet she over-prepares every call. One under-seen founder chases the seen-at-last method, and finds a brand people quote.
-9. Who-Plus Style Ads 9 — To the founder who keeps posting into the silence: Under referrals she could not predict lives a diligent founder, aching for a waitlist, not a discount. Beneath it a deep practitioner believes proof should be enough.
-10. Who-Plus Style Ads 10 — If your reputation should travel ahead of you: A repeatable narrative finally gives an overlooked expert a clear first read. The accelerator hands our ideal client an authority engine.
+1. For the overlooked founder who's done being humble about extraordinary work — and ready for a calendar that fills before she asks. That's the promise here.
+2. You're the competent one nobody credits. Imagine being the remembered one everyone quotes.
+3. For the coach who's been someone's secret weapon — and now wants her own name to be the first one spoken in the room.
+4. Excellent at the work, invisible in the market, and quietly certain you're meant for more reach than this. You're right. Let's make it legible.
+5. For the consultant who undersells herself — and is ready to hold quiet authority and premium fees in the same steady hand.
+6. You've spent years being underestimated. Picture the season where your reputation arrives before your first email does.
+7. For the founder who's tired of hoping to be found — and ready to be sought out by the exact clients she'd choose.
+8. You're the best-kept secret in your niche. In 90 days, you could be the obvious answer instead.
+9. For the woman who's outgrown "well-kept and unknown" — and wants recognition that matches the results she's already producing.
+10. Competent, overlooked, and finally done waiting to be discovered. The Visible Founder Accelerator turns that readiness into a full practice.
 
 
 ---
 
 <!-- 24-ad-set-3 -->
-# Ad Set — category 3: General Purpose Ads (Lumen Rise Collective)
+# Ad Set 3: General-Purpose Belief Ads (Lumen Rise Collective)
 
-Restored R4 category signature: category 3. Tuned to sit in harmony with every prior set.
+Framework category: Category 3.
 
-1. General Purpose Ads 1 — When competence is not the problem but recognition is: Once clarity turns browsers into believers, a practiced expert no longer posts into the silence. From mornings before the house wakes toward loyalty she underestimates, this thoughtful maker craves attention she has stopped chasing.
-2. General Purpose Ads 2 — To every founder tired of shrinking her price: The founder in question trades the hustle for buyer-first copy. A veteran maker has wins she downplays; still she tinkers past midnight.
-3. General Purpose Ads 3 — To the quiet expert with unmistakably loud results: Our under-recognized pro outworks and under-earns, since she believes visibility is just vanity. The founder tires of being unheard, yet she buries the lead.
-4. General Purpose Ads 4 — If you are ready to stop chasing cold leads: Behind kind words left on read waits our reader, hungry for a clear first read. When our target buyer mutes her own announcements, her expertise finds its words.
-5. General Purpose Ads 5 — If your waitlist should be longer than your worry: A legibility method finally gives one grounded founder an unmistakable position. This founder chases a clarity protocol, yet finds the room to raise rates.
-6. General Purpose Ads 6 — For the woman who is done waiting to be picked: The offer explains itself, so this careful builder finally rests in words that pre-sell her. From receipts of overdelivery toward case studies worth quoting, one accomplished owner craves a market that finds her.
-7. General Purpose Ads 7 — For the founder ready to finally own her category: Behind mornings before the house wakes waits this thoughtful maker, hungry for demand without the begging. What if silence turns into signal, yet our avatar lands trust before the first call?
-8. General Purpose Ads 8 — To the expert the algorithm keeps overlooking: With quiet, consistent transformations, a veteran maker craves an audience that leans in. A diligent founder has work that overdelivers, yet aches to be understood.
-9. General Purpose Ads 9 — If you have the results but not the reputation: Positioning frameworks finally gives the founder buyers who already believe. The accelerator hands an overlooked expert a repeatable narrative.
-10. General Purpose Ads 10 — If proof alone were enough, you would be booked solid: Once our target buyer drops the doubt, her expertise finds its words. Our woman founder fears competence is not enough, because she believes her niche is saturated.
+1. Visibility isn't louder — it's clearer. The Visible Founder Accelerator makes your work legible to the people already looking for it.
+2. Most founders don't have a delivery problem. They have a "nobody can find or remember me" problem. That's a solvable one.
+3. A reputation that arrives before you do isn't luck. It's a message, repeated with precision, until the right people can quote you back to themselves.
+4. In 90 days, you can move from best-kept secret to first name mentioned — with a calendar that reflects it. That's what this cohort is for.
+5. Being good at your work is table stakes. Being remembered for it is the whole game — and it can be built on purpose.
+6. Your practice fills itself when your positioning does the introducing for you. We build that positioning, together, in 12 weeks.
+7. Quiet authority beats loud marketing every time — because it lasts. This cohort teaches the quiet kind that compounds.
+8. You don't need to be everywhere. You need to be legible in the few places your ideal clients already are.
+9. The gap between excellent and known is smaller than it feels — and closing it is a skill, not a personality trait.
+10. A visible practice isn't built on more effort. It's built on a clearer message, said consistently, until it becomes the room's default answer.
 
 
 ---
 
 <!-- 25-ad-set-4 -->
-# Ad Set — category 4A: Pain-Point Tired-Of Ads (Lumen Rise Collective)
+# Ad Set 4: Pain-Point: Tired-Of Ads (Lumen Rise Collective)
 
-Restored R4 category signature: category 4A. Calibrated to extend the account without overlap.
+Framework category: Category 4A.
 
-1. Pain-Point Tired-Of Ads 1 — For the expert still hiding behind free value: Her name precedes her; suddenly one capable founder owns demand without the begging. The founder in question reads praise she never shares, since she believes her story is ordinary.
-2. Pain-Point Tired-Of Ads 2 — When you are ready to be the obvious choice: Amid case studies gathering dust, a meticulous founder still under-charges out of fear. Our under-recognized pro keeps chasing a positioning statement that sticks, so wants visibility that feels like service.
-3. Pain-Point Tired-Of Ads 3 — To the expert whose depth deserves a real audience: Conversion-first structure finally gives this proven operator buyers who already believe. Once expertise stops being a secret, our reader no longer posts into the silence.
-4. Pain-Point Tired-Of Ads 4 — If your work is better than your visibility: This trusted advisor earned a decade of mastery, yet goes unnoticed. One grounded founder craves a clear first read, yet she rebuilds the funnel weekly.
-5. Pain-Point Tired-Of Ads 5 — For the woman whose calendar should already be full: Once positioning does the persuading, a mastered professional no longer rehearses without shipping. A conversion-ready story carries this careful builder toward an unmistakable position.
-6. Pain-Point Tired-Of Ads 6 — For the practitioner who is finally ready to be seen: Give a practiced expert the reputation flywheel, and clarity turns browsers into believers. Under mornings before the house wakes lives this thoughtful maker, aching for words that pre-sell her.
-7. Pain-Point Tired-Of Ads 7 — For the founder who keeps rewriting the same bio: Give the founder in question buyer-first copy, and her quiet becomes a signal. A veteran maker trades the hustle for a magnetic offer frame.
-8. Pain-Point Tired-Of Ads 8 — To the owner who undercharges out of pure habit: When our under-recognized pro treads water at capable, her voice gets an address. Behind coffee cooling by nine waits the founder, hungry for an audience that leans in.
-9. Pain-Point Tired-Of Ads 9 — To the founder who keeps posting into the silence: Give our reader an audience map, and expertise stops being a secret. With results clients rave about, our target buyer craves buyers who already believe.
-10. Pain-Point Tired-Of Ads 10 — If your reputation should travel ahead of you: One grounded founder trades the hustle for a legibility method. A clarity protocol finally gives this founder a calendar that fills itself.
+1. Tired of watching louder, less-experienced coaches get the clients you'd serve better? The problem isn't your work — it's your visibility.
+2. Tired of being the referral people give privately and never credit publicly? That quiet erasure ends when your positioning does the talking.
+3. Tired of explaining what you do three times and still watching the recognition fail to land? Your message needs precision, not more words.
+4. Tired of pricing yourself low because "known" costs more than "good"? You've been paying the invisibility tax long enough.
+5. Tired of a calendar that only fills when you chase it? A practice should fill itself — and that's a system, not a stroke of luck.
+6. Tired of being the industry's best-kept secret for a fifth year running? Secrets don't get booked. Let's make you legible instead.
+7. Tired of hoping the right client stumbles onto you? Hope is not a pipeline. This cohort replaces it with a repeatable one.
+8. Tired of feeling overlooked in rooms full of people who'd hire you if they only remembered you? Being remembered is teachable.
+9. Tired of starting every sales conversation from scratch because your reputation never precedes you? We fix the reputation first.
+10. Tired of being competent and invisible at the same time? Those two words don't have to keep living in the same sentence.
 
 
 ---
 
 <!-- 26-ad-set-5 -->
-# Ad Set — category 4B: Pain-Point When-You Ads (Lumen Rise Collective)
+# Ad Set 5: Pain-Point: When-You Ads (Lumen Rise Collective)
 
-Restored R4 category signature: category 4B. Angled to widen coverage across the ad account.
+Framework category: Category 4B.
 
-1. Pain-Point When-You Ads 1 — When competence is not the problem but recognition is: With mastery the algorithm ignored, this steady operator craves premium buyers, not bargain-hunters. A meticulous founder has a shelf of testimonials, yet feels passed over.
-2. Pain-Point When-You Ads 2 — To every founder tired of shrinking her price: A seasoned practitioner could hold instant legibility, but she underquotes her worth. Her craft becomes unmistakable, and this proven operator finally rests in an audience that leans in.
-3. Pain-Point When-You Ads 3 — To the quiet expert with unmistakably loud results: An unhurried expert deserves referrals she can predict, yet she keeps the win private. This trusted advisor has results clients rave about; still she polishes instead of publishing.
-4. Pain-Point When-You Ads 4 — If you are ready to stop chasing cold leads: Our best-kept secret whispers a category of her own while she shrinks the ask. Positioning does the persuading, and a mastered professional finally rests in a calendar that fills itself.
-5. Pain-Point When-You Ads 5 — If your waitlist should be longer than your worry: The accelerator makes her legible, yet our quiet powerhouse finally rests in a legacy, not a launch. A practiced expert shrinks inside her own bio, since she believes proof should be enough.
-6. Pain-Point When-You Ads 6 — For the woman who is done waiting to be picked: The accelerator hands one capable founder the visibility system. The founder in question chases buyer-first copy, and finds a message that lands first.
-7. Pain-Point When-You Ads 7 — For the founder ready to finally own her category: A meticulous founder earned proof that outlasts the trend, yet feels stuck at capable. Once her voice gets an address, our under-recognized pro no longer rehearses without shipping.
-8. Pain-Point When-You Ads 8 — To the expert the algorithm keeps overlooking: Amid a folder of good ideas, this proven operator still avoids the bold offer. Even with a standard she never lowers, our reader believes the gatekeepers must approve first.
-9. Pain-Point When-You Ads 9 — If you have the results but not the reputation: A signature message carries this trusted advisor toward a full, willing pipeline. Beneath it one grounded founder believes modesty is the safer brand.
-10. Pain-Point When-You Ads 10 — If proof alone were enough, you would be booked solid: A bookable message carries a mastered professional toward proof that converts. What if the offer explains itself, and this careful builder lands a category of her own?
+1. When you see a peer with half your results get twice your bookings, it isn't a talent gap — it's a visibility gap.
+2. When you introduce yourself and watch it not quite land, that's the moment your message is costing you clients you'd have kept.
+3. When a dream client says "I didn't know you did that," you've just heard the sound of being overlooked — and it's fixable.
+4. When your calendar goes quiet and you're not sure why, it's rarely the work. It's that too few people can remember what you offer.
+5. When you lower your price to feel safer closing, you're paying the tax of being unknown. Visibility is what lets you stop.
+6. When someone else gets credited for an idea you've taught for years, that sting is the cost of being a best-kept secret.
+7. When you refresh your inbox hoping for the inquiry that fills the month, you're living without a pipeline. Let's build you one.
+8. When you realize your reputation doesn't travel to rooms you're not in, that's exactly the problem this cohort was built to solve.
+9. When "she's great, you should look her up" is as far as your name gets, your positioning is doing too little of the work.
+10. When you feel most invisible right after your best result, that ache is real — and it's the precise thing we resolve in 90 days.
 
 
 ---
 
 <!-- 27-ad-set-6 -->
-# Ad Set — category 4C: Pain-Point If-You-Have-Never Ads (Lumen Rise Collective)
+# Ad Set 6: Pain-Point: If-You-Have-Never Ads (Lumen Rise Collective)
 
-Restored R4 category signature: category 4C. Positioned to round out the full thirteen-set system.
+Framework category: Category 4C.
 
-1. Pain-Point If-You-Have-Never Ads 1 — For the expert still hiding behind free value: With proof that outlasts the trend, our ideal client craves an instant yes. Once she becomes the cited name, a seasoned practitioner no longer hides behind free value.
-2. Pain-Point If-You-Have-Never Ads 2 — When you are ready to be the obvious choice: The authority narrative carries our under-booked pro toward an end to the chase. The buyer arrives already sold; suddenly an unhurried expert owns instant legibility.
-3. Pain-Point If-You-Have-Never Ads 3 — To the expert whose depth deserves a real audience: The right people self-select, so the woman we serve finally rests in a full, willing pipeline. Our best-kept secret has outcomes that compound; still she keeps the proposal unsent.
-4. Pain-Point If-You-Have-Never Ads 4 — If your work is better than your visibility: Behind the pricing talk she dreads waits one studied founder, hungry for proof that converts. Once the accelerator makes her legible, our quiet powerhouse no longer underquotes her worth.
-5. Pain-Point If-You-Have-Never Ads 5 — For the woman whose calendar should already be full: Even with depth her peers respect, this service-business owner believes loud always means shallow. From captions half-written at midnight toward a name insiders trade, one capable founder craves a legacy, not a launch.
-6. Pain-Point If-You-Have-Never Ads 6 — For the practitioner who is finally ready to be seen: This steady operator has trust she has already built; still she studies the competition. Once a meticulous founder drops the doubt, reputation arrives before she does.
-7. Pain-Point If-You-Have-Never Ads 7 — For the founder who keeps rewriting the same bio: Amid launches that almost worked, a seasoned practitioner still chases the next tactic. What if her craft becomes unmistakable, yet this proven operator lands an instant yes?
-8. Pain-Point If-You-Have-Never Ads 8 — To the owner who undercharges out of pure habit: An unhurried expert craves a reputation that travels, yet she hides behind free value. Authority compounds week over week; this trusted advisor breathes easier about an end to the chase.
-9. Pain-Point If-You-Have-Never Ads 9 — To the founder who keeps posting into the silence: Once our best-kept secret drops the doubt, the market learns her name. A mastered professional keeps chasing a bookable message, yet wants a full, willing pipeline.
-10. Pain-Point If-You-Have-Never Ads 10 — If your reputation should travel ahead of you: Our quiet powerhouse chases the accelerator's rails, so finds the obvious-choice slot. A practiced expert swallows her best ideas, yet she avoids the bold offer.
+1. If you have never had a client say "your name kept coming up," your work is quiet in the market — not lacking in the room.
+2. If you have never watched your calendar fill without you chasing it, you've never seen what legible positioning actually does.
+3. If you have never been quoted back to yourself by a stranger, your message hasn't traveled yet — and it can be taught to.
+4. If you have never charged what your results are worth, you've been carrying the invisibility tax without naming it.
+5. If you have never walked into a call where they'd already decided to hire you, that's the experience this cohort is built to give you.
+6. If you have never had your reputation arrive before your first email, you've been doing all the introducing yourself. Let's change who does it.
+7. If you have never felt genuinely remembered in your field, that isn't a verdict on your work — it's a gap in your visibility.
+8. If you have never had ideal clients find you on purpose, you've been relying on luck. Luck is not a growth plan.
+9. If you have never separated "being excellent" from "being known," you've been solving the wrong problem with more effort.
+10. If you have never had a season where being overlooked stopped feeling normal, this 12-week cohort is where that season begins.
 
 
 ---
 
 <!-- 28-ad-set-7 -->
-# Ad Set — category 5: Challenge Provocative Ads (Lumen Rise Collective)
+# Ad Set 7: Fear Ads (Lumen Rise Collective)
 
-Restored R4 category signature: category 5. Sequenced so no two sets fight for the same reader.
+Framework category: Category 5.
 
-1. Challenge Provocative Ads 1 — When competence is not the problem but recognition is: With a method that repeats, our woman founder craves the authority she has earned. With proof that outlasts the trend, our under-booked pro craves an instant yes.
-2. Challenge Provocative Ads 2 — To every founder tired of shrinking her price: When this quiet expert quietly counts the clients lost, the right buyer feels understood. The right people self-select; the woman we serve breathes easier about an end to the chase.
-3. Challenge Provocative Ads 3 — To the quiet expert with unmistakably loud results: The work finally reads true; this working expert breathes easier about steady, right-fit bookings. One studied founder keeps chasing the founder's throughline, so wants a full, willing pipeline.
-4. Challenge Provocative Ads 4 — If you are ready to stop chasing cold leads: One under-seen founder feels the market pass her, and she tinkers past midnight. This service-business owner has a body of real work, yet mutes her own announcements.
-5. Challenge Provocative Ads 5 — If your waitlist should be longer than your worry: From the reel she never shipped toward credibility hiding in plain sight, a deep practitioner craves a name that opens doors. Once this steady operator drops the doubt, clarity replaces the shouting.
-6. Challenge Provocative Ads 6 — For the woman who is done waiting to be picked: An authority engine finally gives our ideal client leadership over pleading. A seasoned practitioner keeps chasing story-led positioning, so wants pull instead of push.
-7. Challenge Provocative Ads 7 — For the founder ready to finally own her category: The accelerator hands our under-booked pro the authority narrative. An unhurried expert dreads the pricing talk, because she believes results should sell themselves.
-8. Challenge Provocative Ads 8 — To the expert the algorithm keeps overlooking: The woman we serve chases the visibility ladder, and finds attention she has stopped chasing. Our best-kept secret has numbers that hold up, yet aches to be understood.
-9. Challenge Provocative Ads 9 — If you have the results but not the reputation: Once one studied founder drops the doubt, proof gets a language. The accelerator makes her legible; our quiet powerhouse breathes easier about steady, right-fit bookings.
-10. Challenge Provocative Ads 10 — If proof alone were enough, you would be booked solid: This service-business owner has expertise the market missed, yet resents the algorithm's silence. Amid captions half-written at midnight, one capable founder still hides behind free value.
+1. The quiet fear isn't failing — it's being excellent for another decade and still watching lesser work get remembered instead of yours.
+2. There's a specific ache in imagining your best ideas outlive you in someone else's name because yours never became legible in time.
+3. What if the most competent version of you is the one the market never quite meets? That's the risk of staying a best-kept secret.
+4. The fear that keeps founders underpriced is simple: if I raise it, the few who found me might leave — and no one new is coming. That fear has an exit.
+5. Being overlooked doesn't hurt loudly. It hurts slowly — one referral you never got, one room you were never named in, year after year.
+6. The real cost of invisibility isn't a slow month. It's a whole career of being the answer no one thought to ask for.
+7. You can be brilliant and still be forgotten. That's not cynicism — it's the exact gap this cohort exists to close before it costs you more.
+8. What frightens capable women isn't hard work. It's the thought of doing it all beautifully and remaining, somehow, unseen.
+9. Every quiet season you accept as "just how it is" is a season your reputation could have been building instead. That drift is the danger.
+10. The founders who wait to become visible don't stay the same — they slowly become harder to find. Time doesn't make you legible; a method does.
 
 
 ---
 
 <!-- 29-ad-set-8 -->
-# Ad Set — category 6: Benefit Style Ads (Lumen Rise Collective)
+# Ad Set 8: Desire Ads (Lumen Rise Collective)
 
-Restored R4 category signature: category 6. Written to complement, not repeat, the earlier sets.
+Framework category: Category 6.
 
-1. Benefit Style Ads 1 — For the expert still hiding behind free value: This founder deserves a story worth forwarding, yet she defers the decision. The right buyer feels understood; suddenly this quiet expert owns the authority she has earned.
-2. Benefit Style Ads 2 — When you are ready to be the obvious choice: One accomplished owner keeps chasing weekly coaching, yet wants attention she has stopped chasing. Beneath it this working expert believes depth cannot be marketed.
-3. Benefit Style Ads 3 — To the expert whose depth deserves a real audience: Our avatar craves a brand people quote, yet she discounts to stay safe. The seen-at-last method finally gives one under-seen founder steady, right-fit bookings.
-4. Benefit Style Ads 4 — If your work is better than your visibility: When a diligent founder goes unnoticed, depth reads at a glance. With a portfolio of quiet proof, a deep practitioner craves the obvious-choice slot.
-5. Benefit Style Ads 5 — For the woman whose calendar should already be full: An overlooked expert whispers a signature people repeat while she posts into the silence. Our ideal client trades the hustle for an authority engine.
-6. Benefit Style Ads 6 — For the practitioner who is finally ready to be seen: She has a reputation among insiders, yet our woman founder still rebuilds the funnel weekly. Amid screenshots she never shares, our under-booked pro still tinkers past midnight.
-7. Benefit Style Ads 7 — For the founder who keeps rewriting the same bio: Once the right buyer feels understood, this quiet expert no longer softens every claim. The visibility ladder carries the woman we serve toward a story worth forwarding.
-8. Benefit Style Ads 8 — To the owner who undercharges out of pure habit: Beneath it this working expert believes loud always means shallow. One studied founder could hold attention she has stopped chasing, but she waits for perfect words.
-9. Benefit Style Ads 9 — To the founder who keeps posting into the silence: One under-seen founder keeps chasing the seen-at-last method, yet wants visibility that feels like service. This service-business owner trades the hustle for the visible-founder playbook.
-10. Benefit Style Ads 10 — If your reputation should travel ahead of you: Behind the reel she never shipped waits a deep practitioner, hungry for a waitlist, not a discount. Even with expertise the market missed, this steady operator believes hustle is the only lever.
+1. Picture opening your calendar to find it already full of people you'd have chosen anyway. That's not a fantasy — it's the design.
+2. Imagine your reputation walking into the room ahead of you, so the call starts at "when do we begin," not "here's what I do."
+3. Want to be the first name mentioned when someone asks for the best in your field? That position is built, and it's built on purpose.
+4. Picture charging your real rate without flinching — because being known makes the price feel obvious to everyone in the conversation.
+5. Imagine ideal clients arriving already convinced, because your message reached them clearly long before you ever spoke.
+6. There's a particular peace in a practice that fills itself — no chasing, no refreshing the inbox, just the right people finding you on time.
+7. Picture being quoted, referred, and remembered — your quiet authority doing the work while you simply do what you're excellent at.
+8. Imagine the season your name becomes shorthand in your niche for "the one who actually delivers." That season is buildable in 90 days.
+9. Want a reputation that compounds while you sleep? Legible positioning keeps introducing you long after you've closed the laptop.
+10. Picture never explaining yourself twice again — because your positioning already did it, precisely, before you arrived.
 
 
 ---
 
 <!-- 30-ad-set-9 -->
-# Ad Set — category 7: Response-Driven If-You-Agree Ads (Lumen Rise Collective)
+# Ad Set 9: Objection-Handling Ads (Lumen Rise Collective)
 
-Restored R4 category signature: category 7. Framed to add a fresh angle the prior sets missed.
+Framework category: Category 7.
 
-1. Response-Driven If-You-Agree Ads 1 — When competence is not the problem but recognition is: With case studies worth quoting, this careful builder craves a market that finds her. Once one accomplished owner drops the doubt, she trades hustle for position.
-2. Response-Driven If-You-Agree Ads 2 — To every founder tired of shrinking her price: This thoughtful maker trades the hustle for a repeatable launch. Silence turns into signal; our avatar breathes easier about attention she has stopped chasing.
-3. Response-Driven If-You-Agree Ads 3 — To the quiet expert with unmistakably loud results: When a veteran maker treads water at capable, quiet expertise turns magnetic. What if depth reads at a glance, yet a diligent founder lands a brand people quote?
-4. Response-Driven If-You-Agree Ads 4 — If you are ready to stop chasing cold leads: Where coffee cooling by nine lingered, visibility becomes quiet service. The accelerator hands an overlooked expert a repeatable narrative.
-5. Response-Driven If-You-Agree Ads 5 — If your waitlist should be longer than your worry: Even with a track record earned, our target buyer believes recognition comes to the lucky. The message carries the weight; suddenly our woman founder owns a signature people repeat.
-6. Response-Driven If-You-Agree Ads 6 — For the woman who is done waiting to be picked: This founder has outcomes that speak, yet second-guesses every post. Amid a deep draft folder, this quiet expert still postpones the raise.
-7. Response-Driven If-You-Agree Ads 7 — For the founder ready to finally own her category: She has proof she rarely shows, so one accomplished owner still settles for almost. The work finally reads true; suddenly this working expert owns a market that finds her.
-8. Response-Driven If-You-Agree Ads 8 — To the expert the algorithm keeps overlooking: A demand system finally gives our avatar demand without the begging. Positioning outperforms volume, yet one under-seen founder finally rests in trust before the first call.
-9. Response-Driven If-You-Agree Ads 9 — If you have the results but not the reputation: Depth reads at a glance; suddenly a diligent founder owns an audience that leans in. A deep practitioner has work that overdelivers, yet keeps her genius offstage.
-10. Response-Driven If-You-Agree Ads 10 — If proof alone were enough, you would be booked solid: Competence learns to travel; suddenly an overlooked expert owns buyers who already believe. Our ideal client deserves a waitlist, not a discount, yet she rewrites her bio again.
+1. "I don't have time to be visible." Good — because this isn't more posting. It's a sharper message said in fewer, better places.
+2. "I've tried getting seen before and it didn't take." Most visibility advice is louder, not clearer. We build the clear kind that lasts.
+3. "My niche is too crowded." Crowded rooms reward the legible, not the loud. Precision is exactly how you stop blending in.
+4. "I'm not comfortable self-promoting." Neither are we. Quiet authority isn't bragging — it's being understood, and it suits you better anyway.
+5. "I don't have a big audience." You don't need one. You need the few right people to remember you clearly. That's a smaller, solvable problem.
+6. "I've done coaching programs before." This one hands you positioning and message templates you keep — not motivation that evaporates by Friday.
+7. "Isn't 90 days too fast?" It's twelve focused weeks of building one thing well: a message that finally travels without you pushing it.
+8. "I'm already busy — I can't add more." Then let's remove the chasing. A practice that fills itself gives time back, it doesn't take it.
+9. "What if I'm just bad at marketing?" You're not. You've been handed the wrong tools. Legibility is a skill, and it's teachable.
+10. "I've been overlooked so long it feels permanent." It isn't. Being unknown is a position, not a personality — and positions can move.
 
 
 ---
 
 <!-- 31-ad-set-10 -->
-# Ad Set — category 8: As-A Pain-Point Ads (Lumen Rise Collective)
+# Ad Set 10: Testimonial-Style Ads (Lumen Rise Collective)
 
-Restored R4 category signature: category 8. Built to pair cleanly with the other twelve sets.
+Framework category: Category 8.
 
-1. As-A Pain-Point Ads 1 — For the expert still hiding behind free value: Give a practiced expert the reputation flywheel, and clarity turns browsers into believers. This thoughtful maker runs on unspent talent, when she believes expertise excuses the marketing.
-2. As-A Pain-Point Ads 2 — When you are ready to be the obvious choice: The accelerator hands the founder in question buyer-first copy. Even with changed lives, unadvertised, a veteran maker believes confidence must be earned first.
-3. As-A Pain-Point Ads 3 — To the expert whose depth deserves a real audience: Amid the offer still unspoken, our under-recognized pro still hides behind free value. When the founder waits to be discovered, visibility becomes quiet service.
-4. As-A Pain-Point Ads 4 — If your work is better than your visibility: Our reader keeps chasing an audience map, and wants buyers who already believe. She has referrals from happy clients, so our target buyer still collects more credentials.
-5. As-A Pain-Point Ads 5 — For the woman whose calendar should already be full: One grounded founder chases a legibility method, and finds a calendar that fills itself. A clarity protocol finally gives this founder a clear first read.
-6. As-A Pain-Point Ads 6 — For the practitioner who is finally ready to be seen: What if the offer explains itself, and this careful builder lands the freedom to charge fully? Behind receipts of overdelivery waits one accomplished owner, hungry for an unmistakable position.
-7. As-A Pain-Point Ads 7 — For the founder who keeps rewriting the same bio: Under mornings before the house wakes lives this thoughtful maker, aching for a message that lands first. Our avatar could hold words that pre-sell her, but she polishes instead of publishing.
-8. As-A Pain-Point Ads 8 — To the owner who undercharges out of pure habit: A veteran maker has mastery the algorithm ignored; still she shrinks the ask. A named methodology finally gives a diligent founder demand without the begging.
-9. As-A Pain-Point Ads 9 — To the founder who keeps posting into the silence: The founder deserves instant legibility, and she second-guesses the headline. From the quiet after a post toward quiet, consistent transformations, an overlooked expert craves an audience that leans in.
-10. As-A Pain-Point Ads 10 — If your reputation should travel ahead of you: What if her expertise finds its words, and our target buyer lands referrals she can predict? Even with results clients rave about, our woman founder believes her story is ordinary.
+1. "Three months in, a stranger quoted my own framework back to me on a call. I'd become legible without becoming loud." — Dana R., leadership coach.
+2. "I went from chasing every lead to declining the wrong ones. My calendar fills itself now." — Priya M., operations consultant.
+3. "I finally raised my rate 40% and no one blinked — because by then, my reputation was doing the arguing for me." — Renee T., brand strategist.
+4. "For years I was the best-kept secret in my field. Amara helped me stop keeping the secret." — Coretta B., career coach.
+5. "The message templates alone changed everything. I stopped explaining myself twice and started getting hired once." — Mei L., health consultant.
+6. "By week eight, two ideal clients said 'your name kept coming up.' I'd never heard that in my life." — Sabine O., money coach.
+7. "I didn't get louder. I got clearer. And suddenly the right people could actually find me." — Yolanda P., HR consultant.
+8. "I came in competent and invisible. I left competent and remembered. Turns out those are two different skills." — Farah K., pricing coach.
+9. "The quiet authority framing fit me. I'm not a self-promoter, and I finally didn't have to be one to fill my practice." — Beth A., systems consultant.
+10. "Ninety days after starting, my discovery calls open with 'I've heard great things' instead of 'so, what do you do?'" — Ingrid S., sales coach.
 
 
 ---
 
 <!-- 32-ad-set-11 -->
-# Ad Set — category 9: After-All-These-Years Ads (Lumen Rise Collective)
+# Ad Set 11: Authority Ads (Lumen Rise Collective)
 
-Restored R4 category signature: category 9. Tuned to sit in harmony with every prior set.
+Framework category: Category 9.
 
-1. After-All-These-Years Ads 1 — When competence is not the problem but recognition is: Her name precedes her; suddenly one capable founder owns a message that lands first. What if her quiet becomes a signal, and the founder in question lands words that pre-sell her?
-2. After-All-These-Years Ads 2 — To every founder tired of shrinking her price: She has mastery the algorithm ignored, yet a meticulous founder still reworks the same page. With a shelf of testimonials, our under-recognized pro craves demand without the begging.
-3. After-All-These-Years Ads 3 — To the quiet expert with unmistakably loud results: Under a folder of good ideas lives this proven operator, aching for instant legibility. Our reader keeps chasing an audience map, and wants an audience that leans in.
-4. After-All-These-Years Ads 4 — If you are ready to stop chasing cold leads: Under applause she cannot hear lives this trusted advisor, aching for referrals she can predict. One grounded founder keeps chasing a legibility method, and wants buyers who already believe.
-5. After-All-These-Years Ads 5 — If your waitlist should be longer than your worry: Positioning does the persuading; suddenly a mastered professional owns a category of her own. Once this careful builder drops the doubt, the offer explains itself.
-6. After-All-These-Years Ads 6 — For the woman who is done waiting to be picked: A practiced expert chases the reputation flywheel, yet finds a legacy, not a launch. When this thoughtful maker reads praise she never shares, legibility beats loudness.
-7. After-All-These-Years Ads 7 — For the founder ready to finally own her category: The founder in question chases buyer-first copy, yet finds recognition that fits her craft. A veteran maker deserves a message that lands first, and she keeps the proposal unsent.
-8. After-All-These-Years Ads 8 — To the expert the algorithm keeps overlooking: Once our under-recognized pro drops the doubt, her voice gets an address. The founder has mastery the algorithm ignored; still she underquotes her worth.
-9. After-All-These-Years Ads 9 — If you have the results but not the reputation: With an audience that stayed, our reader craves an end to the chase. Beneath it our target buyer believes polish matters more than pitch.
-10. After-All-These-Years Ads 10 — If proof alone were enough, you would be booked solid: Beneath it one grounded founder believes waiting is the safe move. Behind praise she never posts waits this founder, hungry for referrals she can predict.
+1. Amara Vale built the Visible Founder method after watching too many brilliant women stay overlooked while louder ones got booked.
+2. The method is simple and unglamorous: make your work legible, make your message repeatable, and let quiet authority do the rest.
+3. Amara doesn't teach founders to shout. She teaches them to be understood — which, it turns out, is what actually fills a calendar.
+4. Every week for twelve weeks, you'll refine one thing with Amara live: a message so clear the right clients can repeat it without you.
+5. This isn't theory borrowed from a tactic. It's a positioning method refined with women founders who were competent, capable, and quietly stuck.
+6. Amara's whole premise: being the best-kept secret is a solvable problem, not a permanent status. The method proves it in 90 days.
+7. Positioning, message templates, and weekly live coaching — not a course you watch alone, but a room where Amara builds your visibility with you.
+8. The method rejects hustle as a strategy. Reach built on exhaustion doesn't last; reach built on legibility compounds. That's the whole design.
+9. Amara Vale has spent years turning overlooked experts into the first name their niche mentions. The Accelerator is that work, made repeatable.
+10. What makes the method credible isn't volume — it's that it was built for the exact woman it serves: excellent, underpriced, and ready to be seen.
 
 
 ---
 
 <!-- 33-ad-set-12 -->
-# Ad Set — category 10: Vulnerable Style Ads (Lumen Rise Collective)
+# Ad Set 12: Urgency and Scarcity Ads (Lumen Rise Collective)
 
-Restored R4 category signature: category 10. Calibrated to extend the account without overlap.
+Framework category: Category 10.
 
-1. Vulnerable Style Ads 1 — For the expert still hiding behind free value: This steady operator has the receipts to back it, yet keeps her rates too low. The turn is clear: reputation arrives before she does.
-2. Vulnerable Style Ads 2 — When you are ready to be the obvious choice: From launches that almost worked toward proof that outlasts the trend, a seasoned practitioner craves an instant yes. This proven operator craves premium buyers, not bargain-hunters, yet she buries the lead.
-3. Vulnerable Style Ads 3 — To the expert whose depth deserves a real audience: The turn is clear: the buyer arrives already sold. Give this trusted advisor a signature message, yet authority compounds week over week.
-4. Vulnerable Style Ads 4 — If your work is better than your visibility: Our best-kept secret craves a full, willing pipeline, yet she delays the launch again. A mastered professional has outcomes that compound; still she reworks the same page.
-5. Vulnerable Style Ads 5 — For the woman whose calendar should already be full: Under notes from a mastermind, unread lives our quiet powerhouse, aching for proof that converts. A practiced expert fears competence is not enough, when she believes confidence must be earned first.
-6. Vulnerable Style Ads 6 — For the practitioner who is finally ready to be seen: Amid captions half-written at midnight, one capable founder still over-explains the value. Amid another tab of competitors, the founder in question still hoards her best thinking.
-7. Vulnerable Style Ads 7 — For the founder who keeps rewriting the same bio: A meticulous founder earned trust she has already built, yet feels like the missing name. Our under-recognized pro whispers recognition that fits her craft while she apologizes for selling.
-8. Vulnerable Style Ads 8 — To the owner who undercharges out of pure habit: Conversion-first structure carries this proven operator toward the authority she has earned. Expertise stops being a secret, yet our reader finally rests in an instant yes.
-9. Vulnerable Style Ads 9 — To the founder who keeps posting into the silence: This trusted advisor trades the hustle for a signature message. Under voice notes about the brand lives one grounded founder, aching for an end to the chase.
-10. Vulnerable Style Ads 10 — If your reputation should travel ahead of you: She has clients who would refer twice, so a mastered professional still waits for perfect words. This careful builder has results without the noise, yet shrinks inside her own bio.
+1. The next Visible Founder cohort is live and coached in real time, so seats are genuinely limited — we keep the room small on purpose.
+2. Enrollment for this cohort closes when the twelve-week calendar begins; there's no mid-stream entry, because the build is sequential.
+3. We open a new cohort only a few times a year. If being overlooked has cost you a season already, the next start date matters.
+4. Small room, live coaching, real feedback on your actual message — that's why we cap seats rather than sell an unlimited replay.
+5. The doors for this round close soon, not as pressure, but because coaching this hands-on doesn't scale past a certain number.
+6. Every cohort we run fills, and the waitlist for the next one starts the day this one closes. Earlier is simply easier.
+7. This is a start-date, not a subscription. The message you'd build this quarter compounds all of next quarter — the timing is the leverage.
+8. Seats are limited by design, not by trick — Amara coaches each founder live, and there are only so many hours in twelve weeks.
+9. If you've been telling yourself "next year," notice that next year is built on the visibility you start now. This cohort is the start.
+10. The room closes when it's full, and it stays closed until the next scheduled cohort. No false countdown — just a real calendar.
 
 
 ---
 
 <!-- 34-ad-set-13 -->
-# Ad Set — category 11: Aspirational Style Ads (Lumen Rise Collective)
+# Ad Set 13: Invitation and CTA Ads (Lumen Rise Collective)
 
-Restored R4 category signature: category 11. Angled to widen coverage across the ad account.
+Framework category: Category 11.
 
-1. Aspirational Style Ads 1 — When competence is not the problem but recognition is: Our ideal client feels overlooked, since she believes visibility is just vanity. A seasoned practitioner keeps chasing story-led positioning, so wants recognition that fits her craft.
-2. Aspirational Style Ads 2 — To every founder tired of shrinking her price: Behind screenshots she never shares waits our under-booked pro, hungry for the authority she has earned. An unhurried expert senses the ceiling closing in, so she posts into the silence.
-3. Aspirational Style Ads 3 — To the quiet expert with unmistakably loud results: The right people self-select; the woman we serve breathes easier about a reputation that travels. From a headline rewritten twelve times toward an audience that stayed, our best-kept secret craves an end to the chase.
-4. Aspirational Style Ads 4 — If you are ready to stop chasing cold leads: Where the pricing talk she dreads lingered, proof gets a language. Under notes from a mastermind, unread lives our quiet powerhouse, aching for a full, willing pipeline.
-5. Aspirational Style Ads 5 — If your waitlist should be longer than your worry: Amid a half-built brand, this service-business owner still defers the decision. When one capable founder shrinks inside her own bio, her name precedes her.
-6. Aspirational Style Ads 6 — For the woman who is done waiting to be picked: With credibility hiding in plain sight, this steady operator craves a name that opens doors. Once a meticulous founder drops the doubt, reputation arrives before she does.
-7. Aspirational Style Ads 7 — For the founder ready to finally own her category: Behind launches that almost worked waits a seasoned practitioner, hungry for leadership over pleading. This proven operator could hold pull instead of push, but she starts and stalls.
-8. Aspirational Style Ads 8 — To the expert the algorithm keeps overlooking: Under proposals left in drafts lives an unhurried expert, aching for a story worth forwarding. Once this trusted advisor drops the doubt, authority compounds week over week.
-9. Aspirational Style Ads 9 — If you have the results but not the reputation: The turn is clear: the market learns her name. A mastered professional has numbers that hold up; still she hides the offer's price.
-10. Aspirational Style Ads 10 — If proof alone were enough, you would be booked solid: Our quiet powerhouse earned wins she downplays, yet feels unseen. The accelerator hands a practiced expert the reputation flywheel.
+1. If being seen for your real work is next, book a quiet discovery call with us and let's map what your visible practice could look like.
+2. Come talk it through — no pitch, just a clear conversation about the gap between your results and your recognition. Book the call.
+3. You've been the best-kept secret long enough. Let's have one honest call about what it would take to change that. The invitation is open.
+4. Book a discovery call and bring your real situation. We'll tell you plainly whether this cohort is the right room for you.
+5. One unhurried conversation could show you the exact distance between overlooked and remembered. Book it when you're ready.
+6. If the calendar-that-fills-itself is what you want next, start with a call. It's warm, it's specific, and it's genuinely no-pressure.
+7. Let's talk before the next cohort opens. Book a discovery call and we'll look at your positioning together, honestly, on your terms.
+8. You don't have to decide today — just start a conversation. Book the call, and let's see if this is your season to become legible.
+9. The first step toward quiet authority is a quiet conversation. Book your discovery call and we'll take it from exactly where you are.
+10. Ready to be remembered for what you already do well? Book a discovery call with Lumen Rise, and let's begin the introduction.
 

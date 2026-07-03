@@ -27,7 +27,9 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -38,6 +40,7 @@ sys.path.insert(0, str(SKILL_ROOT / "scripts"))
 import aa_build_check as build             # noqa: E402
 import aa_intake_gate as intake            # noqa: E402
 import aa_delivery_gate as delivery        # noqa: E402
+import aa_gate_integrity_check as gic      # noqa: E402
 
 MANIFEST = json.loads((SKILL_ROOT / "AA-PIPELINE-MANIFEST.json").read_text(encoding="utf-8"))
 
@@ -47,15 +50,15 @@ def _load_golden_build_state() -> Dict[str, Any]:
     return build.load_run(str(GOLDEN / "run"))
 
 
-def _load_golden_delivery_state() -> Dict[str, Any]:
-    """Reconstructed from the run-dir artifacts (receipt sha256 == artifact bytes),
-    so no large duplicate state file is checked into the fleet repo."""
-    import hashlib
-    art = {p.stem: p.read_text(encoding="utf-8") for p in (GOLDEN / "run" / "artifacts").glob("*.md")}
-    return {"artifacts": art,
-            "receipts": {sid: {"sha256": hashlib.sha256(t.encode("utf-8")).hexdigest(), "attested_by": "foreman"}
-                         for sid, t in art.items()},
-            "content_pass": True, "qc_score": 9.2}
+def _copy_golden_run_to_temp() -> Path:
+    """A REAL, writable, on-disk copy of the checked-in golden run/ dir
+    (artifacts/, receipts/, .entry-nonce, .foreman-key, QC-CERTIFICATE.json —
+    everything aa_delivery_gate.py now loads from disk). The checked-in tree
+    itself is never mutated (read-only per this module's contract)."""
+    tmp = Path(tempfile.mkdtemp(prefix="aa-broken-v5-"))
+    dst = tmp / "run"
+    shutil.copytree(GOLDEN / "run", dst)
+    return dst
 
 
 def _book_intake() -> Dict[str, Any]:
@@ -84,7 +87,7 @@ def v1_missing_generator() -> Tuple[int, List[str], str]:
 
 def v2_out_of_band_copy() -> Tuple[int, List[str], str]:
     st = copy.deepcopy(_load_golden_build_state())
-    st["artifacts"]["28-ad-set-7"] = st["artifacts"]["28-ad-set-7"].replace("category 5", "category 2")
+    st["artifacts"]["28-ad-set-7"] = st["artifacts"]["28-ad-set-7"].replace("Category 5", "Category 2").replace("category 5", "category 2")
     vio, _ = build.verify(MANIFEST, st)
     return (2 if vio else 0), sorted({c for c, _ in vio}), _fmt(vio)
 
@@ -102,10 +105,18 @@ def v4_book_not_routed() -> Tuple[int, List[str], str]:
 
 
 def v5_missing_provenance() -> Tuple[int, List[str], str]:
-    st = copy.deepcopy(_load_golden_delivery_state())
-    # edit the artifact bytes AFTER the receipt sha256 was recorded (tamper)
-    st["artifacts"]["16-brand-bio"] = st["artifacts"]["16-brand-bio"] + "\nSECRETLY EDITED after attestation.\n"
-    vio, _, cert = delivery.verify(MANIFEST, st)
+    # (REPRO+BLOCK, non-tautological): a REAL on-disk artifact file is edited
+    # AFTER its receipt sha256 was independently recorded on disk — this is
+    # the exact scenario A3 of the QC review found impossible to catch (the
+    # old gate recomputed receipts from the same in-memory dict it attested).
+    run_dir = _copy_golden_run_to_temp()
+    art_path = run_dir / "artifacts" / "16-brand-bio.md"
+    art_path.write_text(art_path.read_text(encoding="utf-8") + "\nSECRETLY EDITED after attestation.\n",
+                         encoding="utf-8")
+    vio, _, cert = delivery.verify(
+        MANIFEST, run_dir=run_dir, run_id="golden-lumen-rise", deliver_dir=None,
+        nonce_path=run_dir / ".entry-nonce", key_path=run_dir / ".foreman-key", gate_check_fn=gic.check)
+    shutil.rmtree(run_dir.parent, ignore_errors=True)
     out = _fmt(vio) + ("" if not cert else "  [!] certificate unexpectedly issued")
     return (2 if vio else 0), sorted({c for c, _ in vio}), out
 

@@ -1,3 +1,19 @@
+## [v16.11.0]  -  2026-07-03  -  fix(skill-52): Avatar Alchemist trust-core hardening — make the enforcement REAL (QC 6.0 → independently re-graded 9.3)
+
+### Risk: low — changes confined entirely to `52-avatar-alchemist/` (125 files); no other skill touched. A 20-agent adversarial QC found the shipped skill's "fail-closed" enforcement was largely forgeable (keyless certificate, hardcoded qc_score, skippable nonce, fail-open no-Anthropic, uncoupled version gate, hollow golden). This makes every one of those guarantees real and machine-enforced, then proves each prior forgery is now blocked.
+
+### The trust-core fixes
+- **Unforgeable certificate** — `aa_delivery_gate.py` rewritten: HMAC-SHA256 keyed by a per-run foreman key (minted only by `entry.sh`, never embedded), with a `--verify-cert` mode. `content_pass`/`qc_score` are no longer caller scalars — the gate re-runs `aa_build_check` and requires a detached signed QC certificate (`aa_qc_cert.py`, new).
+- **Unforgeable front door** — `entry.sh` mints a CSPRNG nonce + 256-bit signing key; `aa_director.py` re-runs deps + Anthropic-bypass-scan + egress-scan + hash-pin at every dispatch.
+- **Egress prover** — `aa_egress_gate.py` (new) + `AF-AV-EGRESS`: AST-based, fail-closed; rejects any ungoverned uploader.
+- **G-NOANTHROPIC fail-closed** — a ledger omitting a stage's model id now FAILS.
+- **version=book code-coupled** — refuses (exit 4) to run the brand pipeline for `version=book`.
+- **Golden re-authored** — genuine content replacing the hollow golden; hero page enforces 12 named sections + hard char bands. Independent re-grade: **9.3/10**.
+- **Hygiene** — negative fixtures for every AF code; removed `.pyc` operator-path leaks; 10 hash-pins.
+
+### Files
+- `52-avatar-alchemist/` — 125 files (rewritten `aa_delivery_gate.py`, new `aa_qc_cert.py`/`aa_egress_gate.py`, hardened `entry.sh`/`aa_director.py`/`aa_build_check.py`, regenerated golden); 11 version markers → v16.11.0; skill's own `skill-version.txt` stays `1.0.0`
+
 ## [v16.10.0]  -  2026-07-03  -  feat(skill-53,skill-54): Book Writer + Anthology Writer — combined train, the writing-family siblings of Avatar Alchemist (Skill 52), sharing ONE tone core
 
 ### Risk: low — two net-new additive skills (`53-book-writer/`, `54-anthology-writer/`) shipped as a combined train; no existing skill's runtime changed. Both already verify green internally (Skill 53 golden certificate_sha `691733c8…`, Skill 54 golden certificate_sha `6a274963…`) — this change is REPO WIRING ONLY (install.sh, README.md, cc-compat.json, version markers, content-manifest re-stamp), not a rebuild of either skill. Both are STANDALONE: neither ships a role-library entry, a new department/persona, or a `universal-sops/` cluster, so no `_index.json` role/SOP registration was needed (confirmed by a clean `hash-content-manifest.py` re-stamp: 0 content_versions bumped). Both ride the existing tasks / marketing Kanban lane — NO new Command Center endpoint and NO mission-control.db schema change — so cc-compat `minVersion` + `pinnedTag` are UNCHANGED (v4.56.1). Each skill starts at its OWN `1.0.0` (independent of the repo version). No credential values, plists, or client-specific content touched. No client names (fictional golden personas Marcus Halloway — Skill 53 — and Marcus Bell — Skill 54 — are invented regression-sample authors, not clients).
