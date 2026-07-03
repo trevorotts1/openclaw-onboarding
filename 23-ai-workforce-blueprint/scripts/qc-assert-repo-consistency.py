@@ -1290,6 +1290,47 @@ def _print_table(verdict):
               f"with drift, {s['failure_count']} broken relationship(s) (rc={verdict['rc']})")
 
 
+# Issue #7: LATER = BUILD-NOW. The interview doc must NEVER promise a deferral
+# ("ask me again in 90 days") or reference a 90-day-reassessment artifact — those
+# imply a defer path that does not (and must not) exist. This guard fails if the
+# deferral phrasing reappears in the interviewer-executed docs.
+_FORBIDDEN_DEFERRAL_LITERALS = [
+    "ask me again in 90 days",
+    "90-day-reassessment",
+    "90-day reassessment",
+    "90 day reassessment",
+    "reassessment.md",
+]
+
+
+def evaluate_forbidden_literals(skill_dir):
+    """Scan the interviewer-executed markdown for forbidden LATER-deferral phrasing
+    (Issue #7). Returns {"rc": 0|7, "violations": [(file, line_no, literal, text)]}."""
+    root = Path(skill_dir)
+    violations = []
+    # The interviewer executes INSTRUCTIONS.md verbatim; scan it plus any sibling
+    # interview/phase docs so a copy-paste of the deferral promise is also caught.
+    candidates = [root / "INSTRUCTIONS.md"]
+    candidates += sorted(root.glob("*INTERVIEW*.md")) + sorted(root.glob("*interview*.md"))
+    seen = set()
+    for path in candidates:
+        if not path.is_file() or path in seen:
+            continue
+        seen.add(path)
+        try:
+            lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except OSError:
+            continue
+        for i, line in enumerate(lines, 1):
+            low = line.lower()
+            for lit in _FORBIDDEN_DEFERRAL_LITERALS:
+                if lit in low:
+                    violations.append((str(path.relative_to(root.parent)
+                                           if root.parent in path.parents else path),
+                                       i, lit, line.strip()[:120]))
+    return {"rc": 7 if violations else 0, "violations": violations}
+
+
 def main(argv):
     parser = argparse.ArgumentParser(
         description="Cross-check floor x roster x library x SOP x persona, plus "
@@ -1313,6 +1354,8 @@ def main(argv):
 
     v_consistency = evaluate(skill_dir) if run_consistency else None
     v_artifact = evaluate_artifact_coverage(skill_dir) if run_artifact else None
+    # Forbidden-literal guard runs with the consistency gate (Issue #7).
+    v_forbidden = evaluate_forbidden_literals(skill_dir) if run_consistency else None
 
     if args.json:
         out = {}
@@ -1320,6 +1363,8 @@ def main(argv):
             out["consistency"] = v_consistency
         if v_artifact is not None:
             out["artifact"] = v_artifact
+        if v_forbidden is not None:
+            out["forbiddenLiterals"] = v_forbidden
         print(json.dumps(out, indent=2))
     else:
         if v_consistency is not None:
@@ -1335,9 +1380,15 @@ def main(argv):
             else:
                 _print_artifact_table(v_artifact)
 
+        if v_forbidden is not None and v_forbidden["violations"]:
+            print("\nFORBIDDEN-LITERAL DRIFT (Issue #7 — LATER = build-now, no deferral):",
+                  file=sys.stderr)
+            for f, ln, lit, text in v_forbidden["violations"]:
+                print(f"  {f}:{ln}: forbidden '{lit}' -> {text}", file=sys.stderr)
+
     # Combined exit code (most-severe wins). Fatal (2) > consistency drift (5) >
-    # artifact drift (6) > clean (0). A fatal/load error from either gate is the
-    # loudest signal that the gate could not be trusted to pass.
+    # artifact drift (6) > forbidden-literal drift (7) > clean (0). A fatal/load
+    # error from either gate is the loudest signal that the gate could not be trusted.
     rcs = [v for v in (v_consistency, v_artifact) if v is not None]
     if any(v["rc"] == 2 for v in rcs):
         return 2
@@ -1345,6 +1396,8 @@ def main(argv):
         return 5
     if any(v["rc"] == 6 for v in rcs):
         return 6
+    if v_forbidden is not None and v_forbidden["rc"] == 7:
+        return 7
     return 0
 
 

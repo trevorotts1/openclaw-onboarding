@@ -623,6 +623,88 @@ def check_agents_md_doctrine(fs, ws, oc_root):
 
 
 # ---------------------------------------------------------------------------
+# CHECK (e): provisioning receipt — EXPECTED-SET EQUALITY (Bulletproofing c)
+# ---------------------------------------------------------------------------
+
+def check_provisioning_receipt(fs, oc_root, ws, dept_slugs):
+    """
+    Assert the EXPECTED-SET EQUALITY invariant written by build-workforce.py at
+    build end (provisioning-receipt.json). Unlike every other gate — which only
+    checks "at least the floor" — this fails on OVER-provisioning too: if a
+    provenance-declined department was built (the residual over-provision bug), the receipt's
+    equalityOk is false and/or the declined dept is still on disk now.
+
+    A box built BEFORE receipts existed has no receipt; that is non-blocking here
+    (receipt_present=false, pass) so this check never regresses an already-green
+    legacy box. Once a build writes the receipt, over/under-provision FAILS.
+    """
+    candidates = [
+        os.path.join(ws, "provisioning-receipt.json"),
+        os.path.join(oc_root, "workspace", "provisioning-receipt.json"),
+    ]
+    txt = None
+    found = None
+    for c in candidates:
+        t = fs.read_text(c)
+        if t:
+            txt, found = t, c
+            break
+    if txt is None:
+        return {
+            "pass": True, "receipt_present": False,
+            "detail": ("provisioning-receipt.json absent (pre-receipt build) — "
+                       "expected-set equality not asserted (non-blocking)"),
+        }
+    try:
+        rec = json.loads(txt)
+    except ValueError:
+        return {"pass": False, "receipt_present": True, "receipt_path": found,
+                "detail": f"provisioning-receipt.json at {found} is unparseable"}
+
+    equality_ok = bool(rec.get("equalityOk"))
+    declined_but_built = rec.get("declinedButBuilt") or []
+    missing_from_built = rec.get("missingFromBuilt") or []
+
+    # Re-verify against CURRENT on-disk departments: no provenance-declined dept
+    # may still be present (catches drift/over-build after the build stamped it).
+    def _n(s):
+        return re.sub(r"[^a-z0-9]", "", str(s).lower())
+    declined_norm = {_n(x) for x in (rec.get("declined") or [])}
+    on_disk_norm = {_n(s) for s in dept_slugs}
+    declined_on_disk_now = sorted(on_disk_norm & declined_norm)
+
+    ok = equality_ok and not declined_on_disk_now
+    if ok:
+        detail = (f"expected-set equality holds "
+                  f"(expected={rec.get('expectedCount')} built={rec.get('builtCount')}, "
+                  f"0 declined depts built)")
+    else:
+        bits = []
+        if declined_but_built:
+            bits.append(f"receipt records OVER-provision (declined built): {declined_but_built}")
+        if declined_on_disk_now:
+            bits.append(f"declined dept(s) present on disk NOW: {declined_on_disk_now}")
+        if missing_from_built:
+            bits.append(f"UNDER-provision (expected missing): {missing_from_built}")
+        if not equality_ok and not bits:
+            bits.append(f"equalityOk=false ({rec.get('reason')})")
+        detail = " | ".join(bits)
+
+    return {
+        "pass": bool(ok),
+        "receipt_present": True,
+        "receipt_path": found,
+        "equality_ok": equality_ok,
+        "declined_but_built": declined_but_built,
+        "declined_on_disk_now": declined_on_disk_now,
+        "missing_from_built": missing_from_built,
+        "expected_count": rec.get("expectedCount"),
+        "built_count": rec.get("builtCount"),
+        "detail": detail,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Optional sibling sub-provers (additive; absent => skipped, never a FAIL)
 # ---------------------------------------------------------------------------
 
@@ -703,6 +785,9 @@ def prove(box_id, client, fs, local_root=None, with_subprovers=False):
     receipt["checks"]["personas_canonical"] = check_personas_canonical(fs, ws)
     receipt["checks"]["command_center_board"] = check_command_center(fs, oc_root, dept_slugs)
     receipt["checks"]["agents_md_doctrine"] = check_agents_md_doctrine(fs, ws, oc_root)
+    # Bulletproofing (c): expected-set equality (over- AND under-provision fail).
+    receipt["checks"]["provisioning_receipt_equality"] = check_provisioning_receipt(
+        fs, oc_root, ws, dept_slugs)
 
     if with_subprovers:
         receipt["subprovers"] = run_subprovers(box_id, local_root)

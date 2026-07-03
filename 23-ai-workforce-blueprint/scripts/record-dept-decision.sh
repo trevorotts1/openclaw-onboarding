@@ -93,6 +93,65 @@ if [ ! -f "$STATE" ]; then
   exit 1
 fi
 
+# ── Validate --dept against the canonical id list + recorded customs ──────────
+# Issue #2: a decline keyed by a display name ("Video") or an underscore variant
+# ("billing_finance") used to be stored raw and then IGNORED by the builder (which
+# tested a raw `cid in declined`), silently over-provisioning the box. The shared
+# normalizer closes that at read time, but we ALSO reject an unknown / misspelled
+# dept id here so a decline can never be recorded against a non-existent department
+# and vanish. Accepted ids: the live canonical floor (mandatory + universal-primary
+# from list-canonical-departments.py) + any custom dept already recorded in the
+# build-state (customKeeps / clientCustoms) + any dept already carrying a decision
+# (so re-recording is always allowed). Comparison is normalization-insensitive.
+SCRIPT_DIR_RD="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPT_VALIDATION="$(python3 - "$SCRIPT_DIR_RD" "$STATE" "$DEPT" 2>/dev/null <<'PYVAL'
+import sys, os, json, re, subprocess
+scripts_dir, state_path, dept = sys.argv[1], sys.argv[2], sys.argv[3]
+norm = lambda s: re.sub(r"[^a-z0-9]", "", str(s).lower())
+ids = set()
+try:
+    out = subprocess.run(
+        ["python3", os.path.join(scripts_dir, "list-canonical-departments.py"), "--json"],
+        capture_output=True, text=True, timeout=30)
+    d = json.loads(out.stdout)
+    for x in d.get("mandatory", []) or []:
+        ids.add(norm(x.get("id")))
+    for x in d.get("universal_primary_vertical", []) or []:
+        ids.add(norm(x.get("id")))
+except Exception:
+    pass
+# If the canonical list could not be loaded at all, do NOT block recording.
+if not ids:
+    print("SKIP")
+    sys.exit(0)
+try:
+    st = json.load(open(state_path))
+    recon = st.get("canonicalReconciliation", {}) or {}
+    for key in ("customKeeps", "clientCustoms", "covered"):
+        for c in recon.get(key, []) or []:
+            ids.add(norm(c))
+    for c in st.get("customKeeps", []) or []:
+        ids.add(norm(c))
+    for c in (recon.get("decisions", {}) or {}):
+        ids.add(norm(c))
+except Exception:
+    pass
+if norm(dept) in ids:
+    print("OK")
+else:
+    print("NOMATCH")
+    sys.stderr.write("known dept ids: " + ", ".join(sorted(x for x in ids if x)) + "\n")
+PYVAL
+)"
+case "$DEPT_VALIDATION" in
+  OK|SKIP) : ;;
+  *)
+    echo "ERROR: --dept '$DEPT' is not a known canonical or recorded-custom department id." >&2
+    echo "       Recording a decline against an unknown/misspelled dept would silently vanish (over-build)." >&2
+    echo "       Run: python3 $SCRIPT_DIR_RD/list-canonical-departments.py   to see valid ids." >&2
+    exit 1 ;;
+esac
+
 # ── Write the provenanced decision object atomically ─────────────────────────
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 TMP="$STATE.tmp.$$"

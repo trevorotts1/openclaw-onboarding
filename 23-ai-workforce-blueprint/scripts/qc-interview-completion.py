@@ -83,6 +83,19 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+# ── SHARED DECLINE READER (Issue #2/#3 / Bulletproofing a) ───────────────────
+# This gate mirrors the enforcer's REJECT branches; importing the ONE shared
+# reader guarantees it and build-workforce.py / department-floor.py can never
+# drift. Add this script's dir to sys.path so the import resolves under importlib
+# too. Falls back gracefully if the module is unavailable (defensive).
+_QC_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _QC_SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _QC_SCRIPTS_DIR)
+try:
+    from canonical_decline import decline_rejections as _shared_decline_rejections
+except Exception:  # noqa: BLE001
+    _shared_decline_rejections = None
+
 # ── Path resolution (no tildes; mirrors detect_platform.py pattern) ──────────
 def _resolve_openclaw_root() -> Path:
     """Resolve OpenClaw root: VPS=/data/.openclaw, Mac=$HOME/.openclaw."""
@@ -989,6 +1002,17 @@ def build_verdict(
         "nudgeIssues": nudge_result.get("issues", []),
         "fabricationViolations": fabrication_violations,
         "declineProvenanceViolations": decline_violations,
+        # Issue #3: decisionCoverage verdict so the run-full-install interview gate
+        # surfaces un-honorable declines (which the build enforcer would silently
+        # drop -> over-build) alongside the other checks. A non-empty list is a
+        # HARD FAIL above; this field is the machine-readable summary.
+        "decisionCoverage": {
+            "clean": not decline_violations,
+            "declineProvenanceViolationCount": len(decline_violations),
+            "rejectedDeclines": (
+                _shared_decline_rejections(state) if _shared_decline_rejections and state else []
+            ),
+        },
         "hardFailures": hard_failures,
         "softFailures": soft_failures,
         "warnings": warnings,

@@ -456,7 +456,7 @@ For EACH `MISSING_MANDATORY` dept, send a single message with:
 - The dept's `display_name` and `emoji`
 - The dept's `one_liner` (already written for non-technical owners)
 - A 1-2 sentence concrete example pitch grounded in the owner's actual business (NOT generic). Use what you learned in Phases 1-4 to make it specific.
-- Three explicit options: **YES, add it** / **NO, skip it** / **LATER, ask me again in 90 days**
+- Three explicit options: **YES, add it** / **NO, skip it** / **LATER (I'll build it now so it's ready, and you can retire it later if you never use it)**. There is NO deferral: a LATER department is BUILT NOW and counted in the final set, exactly like a YES. Only a NO removes a department.
 
 Example for a coaching client missing Video:
 
@@ -525,7 +525,7 @@ For each department, ask whether the owner has a SPECIFIC procedure they run tha
 1. **NEVER skip Step 2.** Even if the owner already named every department by hand, show the full canonical list (run `scripts/list-canonical-departments.py` for the current count - 22 mandatory + 7 universal-primary = 29) and confirm coverage one by one. The point is to surface blind spots  -  you cannot surface a blind spot the owner doesn't know exists.
 2. **NEVER auto-decide for the owner.** If they say *"whatever you think is best"*, respond: *"I'll bias toward YES on the whole canonical list  -  but I need you to say it. Want me to add all the missing ones, or do you want to skip something?"*
 3. **NEVER advance to Phase 6 with `MISSING_MANDATORY` items still in `pending` state, or with a flagged semantic overlap (Step 3.5) still un-decided.** Every canonical dept must have a recorded `yes` / `no` / `later` decision and every overlap a `merge` / `keep` decision before final review.
-4. **The canonical departments (minus NOs) + the owner's CUSTOM_KEEPS (minus merged/declined) + their YES decisions + any custom roles/SOPs they asked for** are the final department set passed to the post-interview build. NOs and merged customs are excluded. LATERs are written to `90-day-reassessment.md` for a follow-up nudge.
+4. **The canonical departments (minus NOs) + the owner's CUSTOM_KEEPS (minus merged/declined) + their YES *and* LATER decisions + any custom roles/SOPs they asked for** are the final department set passed to the post-interview build. Only NOs and merged customs are excluded. **LATER = BUILD NOW**: a LATER department is provisioned in this build and counted in the department set exactly like a YES — there is no deferral, no follow-up cron, and no reassessment file. The owner can retire an unused department later; the build never withholds one it was told LATER.
 
 #### Step 5  -  Telegram-friendly chunking
 

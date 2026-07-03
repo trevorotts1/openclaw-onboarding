@@ -157,6 +157,42 @@ check(len(declined_in_decisions) == 0,
 check("declinedDepartments" not in state,
       "T3b: _write_canonical_reconciliation did NOT write a declinedDepartments key")
 
+# ── Test 5: normalization lockstep — a decline keyed by DISPLAY / UNDERSCORE ───
+#            variant ("Video" / "billing_finance") is HONORED by BOTH the builder
+#            and the floor checker, AND the dept is NOT built. (Issue #2, PROVEN
+#            residual over-provision vector.) Before the fix the builder stored raw ids and
+#            tested `cid in declined` — 'video' != 'Video' — so it FORCE-BUILT the
+#            declined dept while the floor gate (which normalized) passed the
+#            over-built box. This asserts the lockstep is now closed.
+print("== T5: normalization lockstep — 'Video'/'billing_finance' decline honored by builder AND floor ==")
+
+# Object-form provenanced declines keyed by a display-name / underscore variant.
+_prov = {"source": "owner-interview", "decidedAt": "2026-07-03T00:00:00Z", "decidedBy": "owner"}
+bs_variant = {"canonicalReconciliation": {"decisions": {
+    "Video":           {"decision": "no", **_prov},
+    "billing_finance": {"decision": "no", **_prov},
+}}}
+
+# 5a: builder decline set — normalized, both honored.
+bw_declined = bw._canonical_decline_set(bs_variant)
+check(bw._decline_norm("video") in bw_declined and bw._decline_norm("billing-finance") in bw_declined,
+      "T5a: builder honors 'Video'/'billing_finance' (normalized 'video'/'billingfinance' in declined set)")
+
+# 5b: floor checker decline set — IDENTICAL normalized set (lockstep).
+df_declined = df.declined_set(bs_variant)
+check(bw_declined == df_declined,
+      f"T5b: builder and floor declined sets are IDENTICAL (lockstep): {sorted(bw_declined)} == {sorted(df_declined)}")
+
+# 5c: reconcile_canonical_floor does NOT build the declined depts (no over-build).
+bw._build_state_path = lambda: _state_path
+with open(_state_path, "w") as f:
+    json.dump(bs_variant, f)
+sel = bw.reconcile_canonical_floor({}, {"industry": "coaching", "company_name": "Acme"}, {})
+check("video" not in sel and "billing-finance" not in sel,
+      "T5c: reconcile SKIPS declined 'video' + 'billing-finance' (dept NOT force-built)")
+check("marketing" in sel and "sales" in sel,
+      "T5d: reconcile still builds the non-declined canonical floor (marketing, sales present)")
+
 print()
 if fail:
     print("RESULT: FAIL")
