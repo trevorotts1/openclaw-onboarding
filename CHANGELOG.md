@@ -1,3 +1,15 @@
+## [v17.0.2]  -  2026-07-03  -  fix(skill-6): capture GHL form id from the cross-origin builder iframe (was top-frame-only, always empty) + agent-browser PATH resilience
+
+### Risk: low — a two-line behavioral fix inside `06-ghl-install-pages/tools/ghl_form_builder.py` (form-id capture + subprocess PATH), additive only. No new skill, no new department/role, no Command Center endpoint, no `mission-control.db` schema change, no fleet rollout (repo-only). The MIX architecture is unchanged (forms/surveys = browser-clicker; funnels/pages = in-browser REST canvas; custom-fields/tags = public GHL API) — no HTTP conversion, no off-limits core tool touched (`ghl_builder.py` / `ghl_rest_canvas.py` / `ghl_survey_builder.py` / `ghl_method.py` / `ghl_ecosystem.py` byte-identical). Client runtime unchanged; the tool runs on the CLIENT's own seeded GHL session, never Anthropic. No client names, credential values, or plists touched; the PATH helper never reads the secrets file.
+
+### The bug this fixes
+`_capture_form_id` read the TOP-frame `location.pathname` and matched `/form-builder-v2/<id>`, but the GHL form builder renders inside a CROSS-ORIGIN iframe at `leadgen-apps-form-survey-builder.leadconnectorhq.com/form-builder-v2/<formId>` (SELECTORS-LIVE-form.md §5/§7). The top frame carries no form id, so the capture always returned `""` — the built form's id was never recorded, so downstream delete/verify could not target it.
+
+### The fix
+- `_capture_form_id` now runs `_FORM_ID_CAPTURE_JS`, which enumerates `document.querySelectorAll('iframe')` (DOM only — never an invented selector), reads each iframe's `.src` attribute (parent-readable even cross-origin; only `contentWindow`/`contentDocument` are same-origin-blocked), and returns the first `/form-builder-v2/<id>` capture. It FALLS BACK to the top-frame `pathname + hash + search` match (prior behavior), then `""`. Node-verified across all four branches.
+- Added `_ensure_agent_browser_path(env)` — prepends `~/.npm-global/bin` (where `agent-browser` lives) to `env['PATH']` only if missing, so a PATH clobbered by sourcing `~/.openclaw/secrets/.env` can't make the browser spawn fail with "command not found". Wired into the 3 subprocess-spawn sites (`_ab`, `_seed_session`, `_close_session`). It never reads or touches the secrets file.
+- `06-ghl-install-pages/skill-version.txt` → `v17.0.2`.
+
 ## [v17.0.1]  -  2026-07-03  -  fix(skill-51): claim/routing gate closes the "omit deck_type to skip every SP gate" bypass + E1/E2 doc-honesty reconcile
 
 ### Risk: low — additive fail-closed gate on `51-signature-presentation/` + `23-ai-workforce-blueprint/` engine wiring, plus documentation-only skill-count and Command-Center board-note corrections. No new skill, no new department/role, no Command Center endpoint, no `mission-control.db` schema change, no fleet rollout (repo-only). Client runtime unchanged (the gate runs inside the existing Skill-23 presentations engine on the CLIENT's own providers, never Anthropic). No client names, credential values, or plists touched.
