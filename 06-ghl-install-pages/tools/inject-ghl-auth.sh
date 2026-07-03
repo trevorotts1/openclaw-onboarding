@@ -210,6 +210,22 @@ bm_ensure
 GHL_INJECT_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/ghl-inject-auth.XXXXXX")"
 _ghl_inject_teardown() {
   rm -rf "$GHL_INJECT_TMPDIR" 2>/dev/null || true
+  # COMPOSABLE SEEDER MODE (GHL_INJECT_KEEP_SESSION=1): when a builder wants to
+  # SEED-then-DRIVE the SAME authenticated session in one flow (e.g.
+  # ghl_form_builder.py's live executor), a normal _bm_teardown here would `close`
+  # + `state clear` the session the instant this seeder exits — wiping the login it
+  # just established. In keep-session mode we release ONLY the box lock + lease +
+  # TTL timer (so the caller can drive agent-browser freely) but LEAVE the seeded
+  # session OPEN. The CALLER then owns closing it (D6 headless + the 22-orphan leak
+  # doctrine still apply — the caller MUST close/state-clear when the build ends).
+  if [ "${GHL_INJECT_KEEP_SESSION:-0}" = "1" ]; then
+    [ -n "${_TTL_PID:-}" ] && kill "$_TTL_PID" 2>/dev/null || true
+    flock -u 9 2>/dev/null || true
+    if [ "${_BM_LOCK_MODE:-}" = "mkdir" ]; then rmdir "$LOCKDIR/ab.lock.d" 2>/dev/null || true; fi
+    rm -f "$LOCKDIR/leases/${_BM_SESSION:-}.lease" 2>/dev/null || true
+    _BM_LOCK_HELD=0
+    return 0
+  fi
   _bm_teardown
 }
 trap _ghl_inject_teardown EXIT INT TERM HUP

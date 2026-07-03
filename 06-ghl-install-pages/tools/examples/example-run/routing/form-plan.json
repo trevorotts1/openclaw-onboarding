@@ -1,0 +1,328 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-07-02T14:11:19Z",
+  "builder_version": "v0.1.0-draft",
+  "status": "DRAFT / PENDING-LIVE-RUN (runtime snapshot-gated selectors)",
+  "location_id": "EXAMPLELOC123",
+  "form_name": "ZHC Podcast Signup",
+  "start_from": "scratch",
+  "default_fields_keep": [
+    "First Name",
+    "Last Name",
+    "Email"
+  ],
+  "default_fields_delete": [
+    "Phone",
+    "Terms & Conditions"
+  ],
+  "fields": [
+    {
+      "source": "standard",
+      "element": "First Name",
+      "label": "First Name",
+      "field_type": "single_line",
+      "quick_add_category": "Personal Info",
+      "width_pct": 100,
+      "required": true,
+      "hidden": false,
+      "placeholder": "",
+      "options": [],
+      "settings": {},
+      "query_key": "first_name"
+    },
+    {
+      "source": "standard",
+      "element": "Last Name",
+      "label": "Last Name",
+      "field_type": "single_line",
+      "quick_add_category": "Personal Info",
+      "width_pct": 100,
+      "required": true,
+      "hidden": false,
+      "placeholder": "",
+      "options": [],
+      "settings": {},
+      "query_key": "last_name"
+    },
+    {
+      "source": "standard",
+      "element": "Email",
+      "label": "Email",
+      "field_type": "single_line",
+      "quick_add_category": "Personal Info",
+      "width_pct": 100,
+      "required": true,
+      "hidden": false,
+      "placeholder": "",
+      "options": [],
+      "settings": {},
+      "query_key": "email"
+    },
+    {
+      "source": "standard",
+      "element": "City",
+      "label": "City",
+      "field_type": "single_line",
+      "quick_add_category": "Address",
+      "width_pct": 50,
+      "required": true,
+      "hidden": false,
+      "placeholder": "",
+      "options": [],
+      "settings": {},
+      "query_key": "city"
+    },
+    {
+      "source": "standard",
+      "element": "State",
+      "label": "State",
+      "field_type": "single_line",
+      "quick_add_category": "Address",
+      "width_pct": 50,
+      "required": true,
+      "hidden": false,
+      "placeholder": "",
+      "options": [],
+      "settings": {},
+      "query_key": "state"
+    },
+    {
+      "source": "custom",
+      "element": "Rating",
+      "label": "Podcast Rating",
+      "field_type": "rating",
+      "quick_add_category": null,
+      "width_pct": 100,
+      "required": true,
+      "hidden": false,
+      "placeholder": "",
+      "options": [],
+      "settings": {
+        "icon": "thumbs_up",
+        "icon_alignment": "left",
+        "count": 5,
+        "store_as": "absolute"
+      },
+      "field_key": "zhc_podcast_rating",
+      "merge_token": "{{contact.zhc_podcast_rating}}",
+      "add_via": "add_object_fields"
+    },
+    {
+      "source": "custom",
+      "element": "Single Line",
+      "label": "Personal Facebook URL",
+      "field_type": "single_line",
+      "quick_add_category": null,
+      "width_pct": 100,
+      "required": false,
+      "hidden": false,
+      "placeholder": "",
+      "options": [],
+      "settings": {},
+      "field_key": "zhc_facebook_url",
+      "merge_token": "{{contact.zhc_facebook_url}}",
+      "add_via": "add_object_fields"
+    }
+  ],
+  "dependency_plan": {
+    "schema_version": "1.0",
+    "generated_at": "2026-07-02T14:11:19Z",
+    "owner_skill": "44-convert-and-flow-operator",
+    "cli": "caf (PIT-authenticated)",
+    "idempotency": {
+      "live_get_required": false,
+      "rule": "GET existing custom fields + tags; REUSE any matching zhc_ key/name; only CREATE the remainder. Never duplicate."
+    },
+    "custom_fields": [
+      {
+        "field_key": "zhc_podcast_rating",
+        "custom_field_name": "zhc_podcast_rating",
+        "label": "Podcast Rating",
+        "data_type": "rating",
+        "options": [],
+        "settings": {
+          "icon": "thumbs_up",
+          "icon_alignment": "left",
+          "count": 5,
+          "store_as": "absolute"
+        },
+        "merge_token": "{{contact.zhc_podcast_rating}}",
+        "action": "create"
+      },
+      {
+        "field_key": "zhc_facebook_url",
+        "custom_field_name": "zhc_facebook_url",
+        "label": "Personal Facebook URL",
+        "data_type": "single_line",
+        "options": [],
+        "settings": {},
+        "merge_token": "{{contact.zhc_facebook_url}}",
+        "action": "reuse"
+      }
+    ],
+    "tags": [
+      {
+        "tag": "zhc_podcast_lead",
+        "action": "create"
+      },
+      {
+        "tag": "zhc_newsletter",
+        "action": "create"
+      }
+    ],
+    "tag_attachment": {
+      "method": "workflow",
+      "workflow": {
+        "owner_skill": "44-convert-and-flow-operator",
+        "trigger": "Form Submitted",
+        "filter": {
+          "form": "<this form>"
+        },
+        "action": "Add Contact Tag",
+        "tags": [
+          "zhc_podcast_lead",
+          "zhc_newsletter"
+        ],
+        "note": "Built AFTER the form exists (needs the form id). Skill 44 PLAN-MODE + QC gate (WF-1..21, rubric >= 8.5) applies."
+      },
+      "hidden_field_alt": {
+        "how": "Add the built-in Tags object-field as a HIDDEN field with a preset value; submission writes the tag to the contact.",
+        "when": "Only if no workflow is desired; workflow is preferred/testable."
+      }
+    },
+    "note": "Skill 44 creates/looks-up these on the location BEFORE the browser build. The browser then only DRAGS the pre-created zhc_ fields in via Add Object Fields. Custom-field create-on-the-fly is DISALLOWED."
+  },
+  "styling": {
+    "themes": "Clean",
+    "custom_css": ".hl-form{border-radius:12px;box-shadow:0 4px 14px rgba(0,0,0,.08)}",
+    "note": "Custom CSS takes precedence over form styling + themes (15:55)."
+  },
+  "embed": {
+    "capture": [
+      "embed_code_js",
+      "form_link"
+    ],
+    "target": {
+      "type": "funnel",
+      "page_id": "PAGE123"
+    },
+    "verify": "render_check 200 + snippet tag present in RENDERED DOM (ghl_verify.render_check); embed VERBATIM, NO SRI attrs."
+  },
+  "model_ladders": {
+    "think": [
+      {
+        "rung": 1,
+        "provider": "ollama-cloud",
+        "model": "glm-5.2:cloud",
+        "role": "reasoning",
+        "thinking": "high"
+      },
+      {
+        "rung": 2,
+        "provider": "ollama-cloud",
+        "model": "kimi-k2.6:cloud",
+        "role": "reasoning",
+        "thinking": "high"
+      },
+      {
+        "rung": 3,
+        "provider": "ollama-cloud",
+        "model": "deepseek-v4-pro:cloud",
+        "role": "reasoning",
+        "thinking": "high"
+      },
+      {
+        "rung": 4,
+        "provider": "openrouter",
+        "model": "z-ai/glm-5.2",
+        "role": "reasoning",
+        "thinking": "high"
+      },
+      {
+        "rung": 5,
+        "provider": "openrouter",
+        "model": "deepseek/deepseek-v4-pro",
+        "role": "reasoning",
+        "thinking": "high"
+      },
+      {
+        "rung": 6,
+        "provider": "openrouter",
+        "model": "google/gemini-3.5-flash-lite",
+        "role": "last-resort",
+        "thinking": "high",
+        "gate": "only_if_live_and_credited"
+      }
+    ],
+    "execute": [
+      {
+        "rung": 1,
+        "provider": "ollama-cloud",
+        "model": "minimax-m3:cloud",
+        "role": "browser-control",
+        "thinking": "high",
+        "probe_gated": true
+      },
+      {
+        "rung": 2,
+        "provider": "openrouter",
+        "model": "minimax/minimax-m3",
+        "role": "browser-control",
+        "thinking": "high",
+        "probe_gated": true
+      },
+      {
+        "rung": 3,
+        "provider": "ollama-cloud",
+        "model": "deepseek-v4-pro:cloud",
+        "role": "browser-control",
+        "thinking": "high"
+      },
+      {
+        "rung": 4,
+        "provider": "openrouter",
+        "model": "deepseek/deepseek-v4-pro",
+        "role": "browser-control",
+        "thinking": "high"
+      },
+      {
+        "rung": 5,
+        "provider": "openrouter",
+        "model": "google/gemini-3.5-flash-lite",
+        "role": "last-resort",
+        "thinking": "high",
+        "gate": "only_if_live_and_credited"
+      }
+    ],
+    "qc": [
+      {
+        "rung": 1,
+        "provider": "ollama-cloud",
+        "model": "minimax-m3:cloud",
+        "role": "qc+vision",
+        "thinking": "high",
+        "probe_gated": true
+      },
+      {
+        "rung": 2,
+        "provider": "openrouter",
+        "model": "minimax/minimax-m3",
+        "role": "qc+vision",
+        "thinking": "high",
+        "probe_gated": true
+      },
+      {
+        "rung": 3,
+        "provider": "openrouter",
+        "model": "google/gemini-3.5-flash-lite",
+        "role": "last-resort",
+        "thinking": "high",
+        "gate": "only_if_live_and_credited"
+      }
+    ]
+  },
+  "real_domains": {
+    "app_shell": "https://app.convertandflow.com",
+    "form_builder": "https://leadgen-apps-form-survey-builder.leadconnectorhq.com/form-builder-v2/<formId> (RUNTIME SNAPSHOT-GATED \u2014 confirm on first live run)"
+  }
+}

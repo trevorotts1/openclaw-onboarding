@@ -27,7 +27,7 @@ import pathlib
 import sys
 import tempfile
 import time
-from typing import Optional
+from typing import Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Path constants
@@ -602,8 +602,313 @@ def cmd_selftest() -> None:
         assert ledger.get("complete") is True, "Ledger complete flag should be True"
         print("[selftest] Test 8 PASS: --complete succeeds when all block_gate questions answered")
 
+    # Signature-mode coverage runs through the SAME --selftest entrypoint so any
+    # CI / verify path that exercises the driver also exercises the SP one-block
+    # gate wiring. It self-skips when skill 51 is not co-located.
+    if not signature_selftest():
+        print("[deck-intake-driver] --selftest: FAILED (signature mode)", file=sys.stderr)
+        sys.exit(1)
+
     print("[deck-intake-driver] --selftest: ALL PASS")
     sys.exit(0)
+
+
+# ---------------------------------------------------------------------------
+# SIGNATURE MODE (Skill 51 — Signature Presentation, Prime Directive O4/6/7)
+#
+# The standard interview above is one-question-per-turn. A Signature
+# Presentation intake is the EXACT OPPOSITE by SACRED law: the 8 Questions AND
+# the frame-selection question are asked ALL AT ONE TIME, in a SINGLE message
+# block, before any slide is written (MASTERDOC Prime Directives 6 & 7). This
+# mode emits that ONE block turn and, on --record, assembles the runtime intake
+# record and WIRES it straight to the fail-closed AF-SP-8Q-SPLIT prover
+# (51-signature-presentation/scripts/prove_sp_intake.py) so a split/one-per-turn
+# intake can never pass. The prover is the source of truth; this driver only
+# emits the block and hands the assembled record to it.
+# ---------------------------------------------------------------------------
+SP_SPEC_REL = pathlib.Path("intake") / "sp-8-questions.json"
+SP_PROVER_REL = pathlib.Path("scripts") / "prove_sp_intake.py"
+SP_ALLOWED_FRAMES = ("rulebook", "vault", "quest", "original")
+SP_REQUIRED_QUESTIONS = ("q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8")
+
+
+def _sp_skill_roots() -> list:
+    """Candidate directories that hold the 51-signature-presentation skill.
+
+    On an installed box skill 51 is a SIBLING of skill 23 in SKILLS_DIR; in the
+    repo it is a sibling at the repo root. This driver lives at
+    23-ai-workforce-blueprint/scripts/, so ``parent.parent.parent`` is the
+    directory that contains BOTH skills (SKILLS_DIR / repo root)."""
+    here = pathlib.Path(__file__).resolve()
+    siblings_dir = here.parent.parent.parent  # <SKILLS_DIR or repo>/
+    roots = [
+        siblings_dir / "51-signature-presentation",
+        # tolerate a rename to a bare skill dir on some boxes
+        siblings_dir / "signature-presentation",
+    ]
+    return [r for r in roots if r.exists()]
+
+
+def find_sp_spec(explicit: Optional[str] = None) -> pathlib.Path:
+    """Locate the SACRED 8-Questions spec (sp-8-questions.json)."""
+    if explicit:
+        p = pathlib.Path(explicit).expanduser()
+        if p.exists():
+            return p
+        raise FileNotFoundError(f"--sp-spec not found: {p}")
+    for root in _sp_skill_roots():
+        cand = root / SP_SPEC_REL
+        if cand.exists():
+            return cand
+    raise FileNotFoundError(
+        "sp-8-questions.json not found. Searched: "
+        f"{[str(r / SP_SPEC_REL) for r in _sp_skill_roots()] or '(no skill-51 dir beside skill 23)'}. "
+        "Pass --sp-spec PATH explicitly."
+    )
+
+
+def find_sp_prover() -> Optional[pathlib.Path]:
+    """Locate prove_sp_intake.py (the AF-SP-8Q-SPLIT gate). None if absent."""
+    for root in _sp_skill_roots():
+        cand = root / SP_PROVER_REL
+        if cand.exists():
+            return cand
+    return None
+
+
+def _sp_block_msg_id() -> str:
+    """A single opaque id proving the 8 + frame question went out as ONE block."""
+    return "blk_sp_" + datetime.datetime.now().strftime("%Y%m%dT%H%M%S%f")
+
+
+def build_signature_block(spec: dict, block_msg_id: str) -> dict:
+    """Assemble the ONE-block turn: all 8 Questions + the frame-selection question.
+
+    This is the literal message payload the agent posts as a SINGLE block —
+    never one-per-turn. Shape is verified by prove_sp_intake.py's spec branch
+    (delivery.mode == one_block, all 8 prompts present, frame question present).
+    """
+    questions = spec.get("questions") or []
+    frame_q = spec.get("frame_selection_question") or {}
+    return {
+        "status": "signature_block",
+        "deck_type": spec.get("deck_type", "signature_presentation"),
+        "delivery": {
+            "mode": "one_block",
+            "asked_all_at_once": True,
+            "one_question_per_turn": False,
+        },
+        "question_block_msg_id": block_msg_id,
+        "instruction": (
+            "SIGNATURE PRESENTATION INTAKE (SACRED, Directives 6 & 7): post ALL of "
+            "the following — the 8 Questions AND the frame-selection question — as ONE "
+            "message block. Do NOT ask one-per-turn. Capture the answers, then call "
+            "--signature --record <answers.json> to assemble and verify the intake."
+        ),
+        "questions": questions,
+        "frame_selection_question": frame_q,
+    }
+
+
+def _sp_extract_answers(record: dict) -> dict:
+    """Pull q1..q8 out of a flat or {answers:{...}} record."""
+    src = record.get("answers") if isinstance(record.get("answers"), dict) else record
+    return {q: src.get(q) for q in SP_REQUIRED_QUESTIONS if src.get(q) is not None}
+
+
+def _sp_offer_ledger(record: dict) -> list:
+    led = record.get("offer_token_ledger")
+    if isinstance(led, list) and led:
+        return [x for x in led if isinstance(x, str) and x.strip()]
+    q7 = record.get("q7_offer_products")
+    if isinstance(q7, list):
+        return [x for x in q7 if isinstance(x, str) and x.strip()]
+    return []
+
+
+def assemble_sp_intake(answers_record: dict, block_msg_id: str) -> dict:
+    """Assemble the runtime intake record (working/copy/sp_intake.json shape) the
+    AF-SP-8Q-SPLIT prover validates. The one-block delivery facts are stamped
+    HERE, from the emitted block, so a caller cannot silently mark a split intake
+    as one-block — the prover still re-checks every field."""
+    answers = _sp_extract_answers(answers_record)
+    frame = answers_record.get("signature_frame")
+    if isinstance(frame, str):
+        frame = frame.strip().lower()
+    ledger = _sp_offer_ledger(answers_record)
+    out = {
+        "deck_type": "signature_presentation",
+        "asked_all_at_once": bool(answers_record.get("asked_all_at_once", True)),
+        "one_question_per_turn": bool(answers_record.get("one_question_per_turn", False)),
+        "question_block_msg_id": answers_record.get("question_block_msg_id") or block_msg_id,
+        "answers": answers,
+        "signature_frame": frame,
+        "offer_token_ledger": ledger,
+        "q7_offer_products": ledger,
+        "client_overrode_slide_floor": bool(answers_record.get("client_overrode_slide_floor", False)),
+    }
+    if answers_record.get("client_overrode_slide_floor") and answers_record.get("client_exact_slide_count") is not None:
+        out["client_exact_slide_count"] = answers_record.get("client_exact_slide_count")
+    return out
+
+
+def _run_sp_prover(intake_path: pathlib.Path) -> Tuple[int, str]:
+    """Run prove_sp_intake.py against an assembled record. Returns (rc, output).
+
+    rc is the prover's own exit code (0 PASS, 2 AF-SP-* violation, 3 usage/IO).
+    A missing prover is a hard fail-closed (rc 3) — a signature intake must never
+    be treated as verified when its gate cannot be run."""
+    prover = find_sp_prover()
+    if prover is None:
+        return 3, ("AF-SP-PROVER-MISSING: prove_sp_intake.py not found beside skill 51 — "
+                   "cannot verify the 8-Questions-in-ONE-block gate; fail-closed.")
+    import subprocess
+    proc = subprocess.run(
+        [sys.executable, str(prover), str(intake_path)],
+        capture_output=True, text=True,
+    )
+    return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+
+
+def cmd_signature(args) -> None:
+    """--signature: emit the ONE-block turn (default) or assemble+verify a record."""
+    run_dir = pathlib.Path(args.run_dir).expanduser().resolve() if args.run_dir else None
+
+    try:
+        spec = json.loads(find_sp_spec(args.sp_spec).read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
+        print(json.dumps({"status": "error", "message": f"cannot load SP spec: {exc}"}))
+        sys.exit(3)
+
+    block_msg_id = _sp_block_msg_id()
+
+    # --- --record: assemble the runtime intake record and WIRE it to the prover ---
+    if args.record:
+        rec_path = pathlib.Path(args.record).expanduser()
+        try:
+            answers_record = json.loads(rec_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            print(json.dumps({"status": "error", "message": f"cannot read --record JSON: {exc}"}))
+            sys.exit(3)
+
+        intake = assemble_sp_intake(answers_record, block_msg_id)
+
+        # Persist to the run dir (working/copy/sp_intake.json) when one is given.
+        if run_dir is not None:
+            out_path = run_dir / "working" / "copy" / "sp_intake.json"
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            out_path = pathlib.Path(tempfile.mkstemp(prefix="sp_intake_", suffix=".json")[1])
+        out_path.write_text(json.dumps(intake, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        rc, prover_out = _run_sp_prover(out_path)
+        passed = rc == 0
+        payload = {
+            "status": "signature_intake_verified" if passed else "signature_intake_rejected",
+            "passed": passed,
+            "prover_rc": rc,
+            "gate": "AF-SP-8Q-SPLIT (prove_sp_intake.py)",
+            "intake_path": str(out_path),
+            "signature_frame": intake.get("signature_frame"),
+            "prover_output": prover_out.strip(),
+        }
+        # Clean up the throwaway temp record when there was no run dir.
+        if run_dir is None:
+            try:
+                out_path.unlink()
+            except OSError:
+                pass
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        sys.exit(0 if passed else 2)
+
+    # --- default: emit the ONE-block turn (the 8 Questions + frame question) ---
+    block = build_signature_block(spec, block_msg_id)
+    if run_dir is not None:
+        marker = run_dir / "working" / "interview" / "sp_intake_block.json"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(json.dumps(block, indent=2, ensure_ascii=False), encoding="utf-8")
+        block["block_marker"] = str(marker)
+    print(json.dumps(block, indent=2, ensure_ascii=False))
+    sys.exit(0)
+
+
+def signature_selftest() -> bool:
+    """Offline self-test for signature mode. Returns True on pass.
+
+    Asserts: (1) the emitted block carries all 8 Questions + the frame question
+    as ONE block; (2) an assembled VALID record clears the AF-SP-8Q-SPLIT prover
+    (exit 0); (3) a one-per-turn/split record is REJECTED (exit 2, AF-SP-8Q-SPLIT);
+    (4) a record missing q7 is REJECTED (AF-SP-8Q-MISSING). Steps 2-4 run the
+    REAL prover subprocess, proving the driver is wired to it."""
+    print("[deck-intake-driver] --signature --selftest: starting...")
+    try:
+        spec = json.loads(find_sp_spec(None).read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        print(f"[sig-selftest] SKIP: SP spec not found ({exc}); skill 51 not co-located.",
+              file=sys.stderr)
+        print("[deck-intake-driver] --signature --selftest: PASS (spec absent; skipped)")
+        return True
+
+    ok = True
+
+    # (1) emitted block shape.
+    block = build_signature_block(spec, _sp_block_msg_id())
+    q_ids = {q.get("id") for q in block.get("questions", []) if isinstance(q, dict)}
+    have_8 = all(q in q_ids for q in SP_REQUIRED_QUESTIONS)
+    have_frame_q = bool(block.get("frame_selection_question"))
+    one_block = block.get("delivery", {}).get("mode") == "one_block"
+    step1 = have_8 and have_frame_q and one_block
+    ok = ok and step1
+    print(f"[sig-selftest] Test 1 {'PASS' if step1 else 'FAIL'}: block carries q1..q8 "
+          f"({sorted(q_ids)}) + frame question ({have_frame_q}), one_block={one_block}")
+
+    prover = find_sp_prover()
+    if prover is None:
+        print("[sig-selftest] SKIP: prove_sp_intake.py not co-located; wiring tests skipped.",
+              file=sys.stderr)
+        print(f"[deck-intake-driver] --signature --selftest: {'PASS' if ok else 'FAIL'}")
+        return ok
+
+    def _assemble_and_prove(record: dict) -> Tuple[int, str]:
+        with tempfile.TemporaryDirectory() as td:
+            intake = assemble_sp_intake(record, "blk_sig_selftest")
+            p = pathlib.Path(td) / "sp_intake.json"
+            p.write_text(json.dumps(intake), encoding="utf-8")
+            return _run_sp_prover(p)
+
+    valid = {
+        "answers": {
+            "q1": "The Signature Talk", "q2": "yes, propose two alternates",
+            "q3": "the overlooked mid-career expert who feels unseen",
+            "q4": "left a secure post to build the practice; a first-in-family milestone",
+            "q5": "The 5-Step Signature Method", "q6": "no, the working title is fine",
+            "q7": "The Signature Intensive", "q8": "keep the tone warm and direct",
+        },
+        "signature_frame": "rulebook",
+        "offer_token_ledger": ["The Signature Intensive"],
+    }
+
+    rc, out = _assemble_and_prove(valid)
+    step2 = rc == 0
+    ok = ok and step2
+    print(f"[sig-selftest] Test 2 {'PASS' if step2 else 'FAIL'}: VALID record -> prover exit {rc} (want 0)")
+
+    split = dict(valid); split = {**valid, "one_question_per_turn": True, "asked_all_at_once": False}
+    rc, out = _assemble_and_prove(split)
+    step3 = rc == 2 and "AF-SP-8Q-SPLIT" in out
+    ok = ok and step3
+    print(f"[sig-selftest] Test 3 {'PASS' if step3 else 'FAIL'}: SPLIT record -> prover exit {rc} "
+          f"(want 2, AF-SP-8Q-SPLIT present={('AF-SP-8Q-SPLIT' in out)})")
+
+    missing_q7 = {**valid, "answers": {k: v for k, v in valid["answers"].items() if k != "q7"}}
+    rc, out = _assemble_and_prove(missing_q7)
+    step4 = rc == 2 and "AF-SP-8Q-MISSING" in out
+    ok = ok and step4
+    print(f"[sig-selftest] Test 4 {'PASS' if step4 else 'FAIL'}: MISSING-q7 record -> prover exit {rc} "
+          f"(want 2, AF-SP-8Q-MISSING present={('AF-SP-8Q-MISSING' in out)})")
+
+    print(f"[deck-intake-driver] --signature --selftest: {'ALL PASS' if ok else 'FAILED'}")
+    return ok
 
 
 # ---------------------------------------------------------------------------
@@ -626,12 +931,32 @@ def main() -> None:
                         help="Check if intake is complete and mark it so")
     parser.add_argument("--selftest", action="store_true",
                         help="Run offline self-test in a temp directory")
+    parser.add_argument("--signature", action="store_true",
+                        help="Signature Presentation intake (Skill 51): emit the 8 Questions "
+                             "+ frame question as ONE block (default), or with --record assemble "
+                             "the runtime intake and verify it via the AF-SP-8Q-SPLIT prover")
+    parser.add_argument("--record", metavar="FILE",
+                        help="(signature mode) JSON answers file (q1..q8 + signature_frame + "
+                             "offer_token_ledger); assembles working/copy/sp_intake.json and "
+                             "runs prove_sp_intake.py against it (fail-closed)")
+    parser.add_argument("--sp-spec", metavar="FILE",
+                        help="(signature mode) explicit path to sp-8-questions.json "
+                             "(default: auto-resolve beside skill 51)")
 
     args = parser.parse_args()
 
-    if args.selftest:
+    if args.selftest and not args.signature:
         cmd_selftest()
         return  # cmd_selftest exits internally
+
+    # Signature mode is self-contained: emit-block needs no run dir; --record and
+    # the SP self-test resolve everything themselves. Route it BEFORE the generic
+    # per-turn --run-dir requirement below.
+    if args.signature:
+        if args.selftest:
+            sys.exit(0 if signature_selftest() else 1)
+        cmd_signature(args)
+        return  # cmd_signature exits internally
 
     # All other commands require --run-dir
     if not args.run_dir:

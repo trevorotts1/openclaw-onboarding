@@ -1,0 +1,46 @@
+{
+  "pass": true,
+  "checks": [
+    {
+      "check": "F-P1:location_id",
+      "pass": true,
+      "detail": "location_id='EXAMPLELOC123'"
+    },
+    {
+      "check": "F-P2:location_gate",
+      "pass": true,
+      "detail": "delegated to dispatcher (no co-mingling)"
+    },
+    {
+      "check": "F-P3:spec_present",
+      "pass": true,
+      "detail": "form_fields or title/form_name present"
+    },
+    {
+      "check": "F-P4:zhc_field_keys",
+      "pass": true,
+      "detail": "non-zhc keys: []"
+    },
+    {
+      "check": "F-P5:zhc_tags",
+      "pass": true,
+      "detail": "non-zhc tags: []"
+    },
+    {
+      "check": "F-P6:zhc_form_name",
+      "pass": true,
+      "detail": "form name carries 'ZHC ' prefix"
+    },
+    {
+      "check": "F-P7:custom_via_object_fields",
+      "pass": true,
+      "detail": "all custom fields routed via Add Object Fields"
+    },
+    {
+      "check": "F-P8:headless_guard",
+      "pass": true,
+      "detail": "skill module absent (dry-run/review) \u2014 deferred to live"
+    }
+  ],
+  "ts": "2026-07-02T14:11:19Z"
+}

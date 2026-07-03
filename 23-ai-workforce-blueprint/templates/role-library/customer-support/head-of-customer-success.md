@@ -172,6 +172,7 @@ This role contributes to the company revenue cascade by: **protecting and growin
 | Analytics / Product Analytics (Mixpanel, Amplitude, Pendo) | Customer product usage data, feature adoption, engagement tracking |
 | Communication Platform (Slack, email, in-app messaging) | Customer communication, internal team coordination |
 | Video Conferencing (Zoom, Google Meet) | QBRs, customer check-ins, escalation calls, team meetings |
+| **GHL Form Builder (Skill 6)** | Dept-head awareness + routing of the FORMS capability on the ONE GHL delivery rail (Skill 6 builds FUNNELS / WEBSITES / SURVEYS / FORMS). Route a customer-feedback (CSAT / NPS / testimonial), support-intake, or onboarding-questionnaire **form** to the owning specialist (Retention / Churn-Prevention / Onboarding / Knowledge-Base) for purpose + copy; Web-Development builds + embeds it via `06-ghl-install-pages/tools/ghl_form_builder.py` and CRM pre-creates the `zhc_` fields/tags via Skill 44. Single-step capture -> form; a long branching satisfaction study -> the Skill-6 survey builder. Shared SOP `universal-sops/form-craft/`. Client runtime uses the CLIENT's own providers (never Anthropic); nothing publishes without human approval. |
 
 ---
 
