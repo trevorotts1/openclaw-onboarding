@@ -1,5 +1,26 @@
 # Changelog — 32-command-center-setup
 
+## v12.9.26 — 2026-07-03 — OQ-1: locked interview-mode CC is BY DESIGN (docs + gating comments)
+
+- **OQ-1 (ratified 2026-07-03) — Locked interview-mode Command Center.** The CC now ships
+  FIRST but LOCKED to the `/interview` surface: the client sees only the interview (and its
+  `/onboarding` progress screen) until closeout, when the full dashboard is revealed. The CC
+  middleware (P0-5) 302-redirects every non-`/interview`, non-`/onboarding` page to `/interview`
+  while build-state `interviewComplete` is `false`, and unlocks the full dashboard once
+  `buildCompletedAt` is set. This is documentation + gating clarity ONLY — no provisioning
+  behavior changed in this skill.
+- **Clarified what the interview-complete gate protects.** `SKILL.md`, `INSTALL.md`,
+  `PREREQS.json`, and the `run-full-install.sh` interview-gate comments now state explicitly that
+  the `interviewComplete` gate protects the seeding/materialization of the client's REAL
+  zero-human workforce (departments, roles, agents) — NOT the shipping of the locked CC shell.
+  The interview-only view in front of an empty board before closeout is the intended experience,
+  BY DESIGN, and must not be "unlocked" or treated as a rogue/stale board.
+- **No invented env names.** The lock is STATE-DRIVEN off the canonical build-state fields
+  `interviewComplete` / `buildCompletedAt` that this installer already reads/writes; there is no
+  separate CC "unlock" env var and provisioning must not introduce one. Enforcement of the lock
+  itself lives in the CC middleware (P0-5), a separate deliverable in the blackceo-command-center
+  repo.
+
 ## v12.9.23 — 2026-07-01 — Dept-scan dedup-priority fix, interview multi-signal corroboration gate, jq-injection-safe state writes, tunnel phase-letter dedup
 
 - **P2-4 — Dept-scan dedup-priority fix.** `materialize-dept-agents.sh` `DEPT_SCAN_ROOTS` was

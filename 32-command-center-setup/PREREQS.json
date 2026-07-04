@@ -20,14 +20,14 @@
     {
       "id": "interview-complete",
       "type": "state",
-      "label": "AI Workforce interview complete",
+      "label": "AI Workforce interview complete (gates REAL-workforce materialization; the CC shell itself ships locked to /interview first)",
       "check": {
         "stateFile": "$OC_ROOT/workspace/.workforce-build-state.json",
         "field": "interviewComplete",
         "equals": true
       },
       "severity": "required",
-      "satisfy": "Complete the AI Workforce interview (Skill 23) first. The Command Center is the output of interview -> workforce build; building it before the interview yields a default-floor board under company 'default'. If not complete, the installer REPORTS 'interview not completed yet' and exits without scaffolding."
+      "satisfy": "Complete the AI Workforce interview (Skill 23) first. Ratified 2026-07-03 (OQ-1): the CC ships FIRST but LOCKED to /interview (the CC middleware / P0-5 302s non-/interview, non-/onboarding pages to /interview while interviewComplete is false, and unlocks the full dashboard at buildCompletedAt). That locked interview-shell is BY DESIGN, not a bug. This interviewComplete gate protects the REAL zero-human workforce (departments, roles, agents) — building it before the interview yields a default-floor board under company 'default'. If not complete, the installer REPORTS 'interview not completed yet' and exits without scaffolding the real workforce."
     }
   ]
 }

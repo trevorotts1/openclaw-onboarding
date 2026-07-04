@@ -22,22 +22,40 @@ Per N3 ("read before act"), do not skip any of the above. Per N4, follow steps i
 
 Each client gets their **OWN** Command Center: own deployment, own dashboard URL, own CF Access app, own Telegram bot/supergroup/topics, own data store. NEVER point a client's Command Center at another client's deployment, bot, or workspace, and NEVER reuse another client's URL/topic/bot as a placeholder. If a client's own resource does not exist yet, **STOP and WAIT** — do not substitute. See [`../NO-COMINGLING-RULE.md`](../NO-COMINGLING-RULE.md) and AGENTS.md N0. Co-mingling is a hard violation.
 
-## 🔴 INTERVIEW-COMPLETE PRECONDITION (binding)
+## 🔴 INTERVIEW-COMPLETE PRECONDITION + LOCKED INTERVIEW-MODE (binding)
 
-A client gets a Command Center + zero-human company (real departments, roles, and
-step-by-step instructions) **ONLY after their AI Workforce interview is COMPLETE.**
-The Command Center IS the output of interview → workforce build. Building it before
-the interview produces the DEFAULT department floor under company `default` (not the
-client's real answers) — the same broken state as a rogue/stale board, and handing
-it off is a FALSE deliverable.
+**Ratified 2026-07-03 (OQ-1). The Command Center now ships FIRST, but LOCKED to the
+`/interview` surface.** The client sees ONLY the interview (plus its `/onboarding`
+progress screen) until closeout; the full dashboard is revealed at build completion.
+This locked interview-shell is **BY DESIGN — it is NOT a rogue/stale board and NOT a
+bug to "fix."** Do not "unlock" it, strip the redirect, or treat the interview-only
+view as broken. See memory `feedback-cc-build-gated-on-ai-workforce-interview`.
+
+Two things are gated on DIFFERENT signals — keep them straight:
+
+1. **The locked CC shell (ships FIRST).** The CC deployment can go up before the
+   interview is complete. The CC middleware (P0-5) reads the client build-state and
+   **302-redirects every non-`/interview`, non-`/onboarding` page to `/interview`
+   while `interviewComplete` is `false`**, and **unlocks the full dashboard once
+   `buildCompletedAt` is set** (closeout). The lock is STATE-DRIVEN off the canonical
+   build-state fields `interviewComplete` / `buildCompletedAt` in
+   `$OC_ROOT/workspace/.workforce-build-state.json` — there is no separate CC "unlock"
+   env var to flip; provisioning does not invent one.
+
+2. **The REAL zero-human company (departments, roles, step-by-step instructions).**
+   This is the OUTPUT of interview → workforce build and is still gated on the
+   interview being COMPLETE. Materializing/seeding the real departments before the
+   interview would produce the DEFAULT department floor under company `default` (not
+   the client's real answers) — a FALSE deliverable. That gate stays.
 
 **Enforcement:** `run-full-install.sh` and `materialize-dept-agents.sh` check
 `interviewComplete == true` in `$OC_ROOT/workspace/.workforce-build-state.json`
-before any seeding/scaffolding. If it is not true they **REPORT "interview not
-completed yet" and exit clean** — they do NOT scaffold the default departments and
-do NOT hammer the box. Verify completion with MULTIPLE signals (the flag is
-necessary but not sufficient; corroborate with real Q/A content + a CC board whose
-`company_id != 'default'`). See memory `feedback-cc-build-gated-on-ai-workforce-interview`.
+before any **seeding/scaffolding of the real workforce**. If it is not true they
+**REPORT "interview not completed yet" and exit clean** — they do NOT scaffold the
+default departments and do NOT hammer the box. (The locked interview-mode CC shell in
+front of that empty board is the intended pre-closeout experience, not a failure.)
+Verify completion with MULTIPLE signals (the flag is necessary but not sufficient;
+corroborate with real Q/A content + a CC board whose `company_id != 'default'`).
 
 ## What This Skill Is About
 
