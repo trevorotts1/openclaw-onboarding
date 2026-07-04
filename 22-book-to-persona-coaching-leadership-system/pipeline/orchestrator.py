@@ -167,6 +167,47 @@ def _route_for(model_id: str) -> str:
     return "openrouter"
 
 
+# task-64 defect (b): the Ollama→OpenRouter FALLBACK used to build
+#   model.replace("ollama/", "openrouter/").replace(":cloud", "")
+# which produced e.g. 'openrouter/deepseek-v4-pro' and passed it to
+# call_openrouter WITHOUT stripping the route prefix -> OpenRouter 400
+# "not a valid model ID" (the DIRECT openrouter route strips the prefix; the
+# fallback did not). It also never inserted the vendor segment OpenRouter
+# requires (deepseek-v4-pro -> deepseek/deepseek-v4-pro). This helper is now
+# the ONLY sanctioned conversion for every call_openrouter model argument.
+# Vendor pairs mirror shared-utils/select_model.py's chain patterns
+# (DEEPSEEK_PRO_OPENROUTER / DEEPSEEK_FLASH_OPENROUTER / KIMI_OPENROUTER).
+_OLLAMA_OR_VENDOR_RULES = [
+    (re.compile(r"^deepseek-v[\d.]+-(?:pro|flash)$"), "deepseek"),
+    (re.compile(r"^kimi-k[\d.]+$"), "moonshotai"),
+    (re.compile(r"^minimax-m[\d.]+$"), "minimax"),
+]
+
+
+def _openrouter_fallback_model(model_id: str) -> str:
+    """
+    Convert any chain model id into the OpenRouter API model id.
+
+        openrouter/deepseek/deepseek-v4-pro -> deepseek/deepseek-v4-pro
+        ollama/deepseek-v4-pro:cloud        -> deepseek/deepseek-v4-pro
+        ollama/kimi-k2.6:cloud              -> moonshotai/kimi-k2.6
+        deepseek/deepseek-v4-pro            -> deepseek/deepseek-v4-pro (pass-through)
+    """
+    m = (model_id or "").strip()
+    if m.startswith("openrouter/"):
+        return m[len("openrouter/"):]
+    if m.startswith("ollama/"):
+        bare = m[len("ollama/"):].split(":", 1)[0]  # drop ':cloud' / any tag
+        for _pat, _vendor in _OLLAMA_OR_VENDOR_RULES:
+            if _pat.match(bare):
+                return f"{_vendor}/{bare}"
+        # Unknown family: return the bare name (never a malformed
+        # 'openrouter/...' route prefix). OpenRouter will reject it loudly
+        # with the actual name in the error instead of a prefix artifact.
+        return bare
+    return m
+
+
 def resolve_phase_model(phase: str, input_chars: int = None) -> tuple:
     """
     Resolve (model_id, route) for a given pipeline phase.
@@ -241,13 +282,40 @@ APPENDIX_MAX_RETRIES        = 1     # one stricter retry if the floor/targets ar
 
 # ─── API KEYS ─────────────────────────────────────────────────────────────────
 def get_keys():
-    env_path = Path.home() / "clawd/secrets/.env"
+    """Read provider keys from the canonical secret stores.
+
+    task-64 defect (a): values stored as KEY="..." (surrounding quotes) were
+    passed through verbatim, producing a malformed Authorization: Bearer
+    header -> OpenRouter 401 "Missing Authentication header". Values are now
+    defensively DEQUOTED (one pair of matching surrounding single/double
+    quotes stripped) and an optional leading `export ` is tolerated — the
+    same normalization shared-utils/embedding_engine._read_secret applies.
+    Also probes ALL canonical stores (legacy ~/clawd first for back-compat,
+    then Mac + VPS), first-found-wins per key.
+    """
+    env_paths = [
+        Path.home() / "clawd/secrets/.env",
+        Path.home() / ".openclaw/secrets/.env",
+        Path("/data/.openclaw/secrets/.env"),
+    ]
     keys = {}
-    if env_path.exists():
+    for env_path in env_paths:
+        if not env_path.exists():
+            continue
         for line in env_path.read_text().splitlines():
-            if "=" in line:
-                k, v = line.split("=", 1)
-                keys[k.strip()] = v.strip()
+            s = line.strip()
+            if s.startswith("export "):
+                s = s[len("export "):]
+            if "=" not in s or s.startswith("#"):
+                continue
+            k, v = s.split("=", 1)
+            k = k.strip()
+            v = v.strip()
+            # Defensive dequote: strip ONE pair of matching surrounding quotes.
+            if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
+                v = v[1:-1]
+            if k and k not in keys:
+                keys[k] = v
     return keys
 
 _KEYS = get_keys()
@@ -1411,7 +1479,7 @@ Here is the complete book text. Extract all 20 items as specified in your instru
         _ext_sys = _extraction_system()
         if folder in OPENROUTER_FALLBACK_FOLDERS:
             log(f"  Using OpenRouter fallback for {book['title']} (content filter)")
-            or_model = per_book_model.replace("ollama/", "").replace("openrouter/", "")
+            or_model = _openrouter_fallback_model(per_book_model)
             result = await call_openrouter(session, or_model, _ext_sys, user_prompt, max_tokens=16000)
         elif per_book_route == "ollama":
             # PRIMARY route — strip the "ollama/" prefix and call Ollama Cloud
@@ -1421,7 +1489,7 @@ Here is the complete book text. Extract all 20 items as specified in your instru
             except Exception as e:
                 # Ollama Cloud failed — fall back to OpenRouter same model
                 log(f"  Ollama Cloud call failed ({e}); falling back to OpenRouter same model")
-                fallback_model = per_book_model.replace("ollama/", "openrouter/").replace(":cloud", "")
+                fallback_model = _openrouter_fallback_model(per_book_model)
                 result = await call_openrouter(session, fallback_model, _ext_sys, user_prompt, max_tokens=16000)
         elif per_book_route == "openrouter":
             or_model = per_book_model.replace("openrouter/", "", 1)
@@ -1435,7 +1503,7 @@ Here is the complete book text. Extract all 20 items as specified in your instru
         else:
             # Unknown route — try OpenRouter as a safe default
             log(f"  WARN: unknown route '{per_book_route}' for model {per_book_model}; trying OpenRouter")
-            or_model = per_book_model.replace("ollama/", "openrouter/").replace(":cloud", "").replace("openrouter/", "", 1)
+            or_model = _openrouter_fallback_model(per_book_model)
             result = await call_openrouter(session, or_model, _ext_sys, user_prompt, max_tokens=16000)
 
         header = f"# EXTRACTION NOTES - {book['title']}\n**Author:** {book['author']}\n**Extracted:** {datetime.datetime.now().strftime('%B %-d at %-I:%M %p')}\n**Model:** {MODEL_EXTRACTION}\n\n---\n\n"
@@ -1507,7 +1575,7 @@ A final synthesis pass will combine all chunk analyses.
                         chunk_result = await call_ollama_cloud(session, ollama_model, _ana_sys, user_prompt, max_tokens=16000)
                     except Exception as e:
                         log(f"    Ollama Cloud chunk call failed ({e}); falling back to OpenRouter")
-                        fallback_model = per_chunk_model.replace("ollama/", "openrouter/").replace(":cloud", "")
+                        fallback_model = _openrouter_fallback_model(per_chunk_model)
                         chunk_result = await call_openrouter(session, fallback_model, _ana_sys, user_prompt, max_tokens=16000)
                 else:
                     or_model = per_chunk_model.replace("openrouter/", "", 1)
@@ -1546,7 +1614,7 @@ Produce the final structured analysis document.
                     result = await call_ollama_cloud(session, ollama_model, _ana_sys2, synthesis_prompt, max_tokens=16000)
                 except Exception as e:
                     log(f"  Ollama Cloud synthesis call failed ({e}); falling back to OpenRouter")
-                    fallback_model = synth_model.replace("ollama/", "openrouter/").replace(":cloud", "")
+                    fallback_model = _openrouter_fallback_model(synth_model)
                     result = await call_openrouter(session, fallback_model, _ana_sys2, synthesis_prompt, max_tokens=16000)
             else:
                 or_model = synth_model.replace("openrouter/", "", 1)
@@ -1579,7 +1647,7 @@ Analyze across all 12 analytical dimensions as specified.
                     result = await call_ollama_cloud(session, ollama_model, _ana_sys3, user_prompt, max_tokens=16000)
                 except Exception as e:
                     log(f"  Ollama Cloud single-pass call failed ({e}); falling back to OpenRouter")
-                    fallback_model = single_model.replace("ollama/", "openrouter/").replace(":cloud", "")
+                    fallback_model = _openrouter_fallback_model(single_model)
                     result = await call_openrouter(session, fallback_model, _ana_sys3, user_prompt, max_tokens=16000)
             else:
                 or_model = single_model.replace("openrouter/", "", 1)
@@ -1650,7 +1718,7 @@ async def _appendix_model_call(session: aiohttp.ClientSession, system_prompt: st
             return await call_ollama_cloud(session, ollama_model, system_prompt, user_prompt, max_tokens=120000)
         except Exception as e:
             log(f"  Ollama Cloud appendix call failed ({e}); falling back to OpenRouter same model")
-            fallback_model = model.replace("ollama/", "openrouter/").replace(":cloud", "")
+            fallback_model = _openrouter_fallback_model(model)
             return await call_openrouter(session, fallback_model, system_prompt, user_prompt, max_tokens=120000)
     else:
         or_model = model.replace("openrouter/", "", 1)
@@ -1831,7 +1899,7 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
                 result = await call_ollama_cloud(session, ollama_model, _syn_sys, user_prompt, max_tokens=120000)
             except Exception as e:
                 log(f"  Ollama Cloud call failed ({e}); falling back to OpenRouter same model")
-                fallback_model = phase3_model.replace("ollama/", "openrouter/").replace(":cloud", "")
+                fallback_model = _openrouter_fallback_model(phase3_model)
                 result = await call_openrouter(session, fallback_model, _syn_sys, user_prompt, max_tokens=120000)
         else:
             # OpenRouter route (e.g. OpenRouter Kimi / OpenRouter DeepSeek-pro)
@@ -1888,6 +1956,21 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
         # was swallowed) — that silent-success lie is the bug being fixed.
         # Now FAIL-LOUD: on non-zero exit we log stderr, mark Phase 5 FAILED in
         # pipeline-status.json, and DO NOT print "Re-indexing complete".
+        # EMBED-5: prefer the SECTION-level indexer (gemini-section-indexer.py,
+        # Skill 23) run per-persona. The canonical index is section-converged
+        # (one row per '## Section N', mode/section_number tagged — what the
+        # --mode leadership/coaching retrieval filters need); the chunk indexer
+        # would embed the new persona as untagged unit_type='chunk' rows. The
+        # chunk wrapper stays as FALLBACK when the section indexer isn't
+        # installed. Both fail LOUD on non-zero exit (the fake-768 silent
+        # fallback was removed from the section indexer — a missing
+        # GOOGLE_API_KEY now exits 4 and Phase 5 reports FAILED).
+        _sec_name = "gemini-section-indexer.py"
+        section_candidates = [
+            Path(__file__).resolve().parents[2] / "23-ai-workforce-blueprint" / "scripts" / _sec_name,
+            Path.home() / ".openclaw" / "skills" / "23-ai-workforce-blueprint" / "scripts" / _sec_name,
+            Path("/data/.openclaw/skills/23-ai-workforce-blueprint/scripts") / _sec_name,
+        ]
         indexer_candidates = [
             Path.home() / ".openclaw" / "scripts" / "gemini-indexer.py",
             Path("/data/.openclaw/scripts/gemini-indexer.py"),
@@ -1895,11 +1978,16 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
             Path("/data/.openclaw/workspace/scripts/gemini-indexer.py"),
             Path.home() / "clawd" / "scripts" / "gemini-indexer.py",  # legacy (deprioritized)
         ]
-        indexer_path = next((p for p in indexer_candidates if p.exists()), None)
+        section_path = next((p for p in section_candidates if p.exists()), None)
+        indexer_path = section_path or next((p for p in indexer_candidates if p.exists()), None)
         if indexer_path is not None:
-            log(f"Phase 5: Re-indexing persona in Gemini Engine ({indexer_path})...")
+            if section_path is not None:
+                indexer_cmd = [sys.executable, str(section_path), "--persona-id", folder]
+            else:
+                indexer_cmd = [sys.executable, str(indexer_path)]
+            log(f"Phase 5: Re-indexing persona in Gemini Engine ({' '.join(indexer_cmd[1:])})...")
             result_proc = subprocess.run(
-                [sys.executable, str(indexer_path)],
+                indexer_cmd,
                 capture_output=True,
                 text=True,
                 check=False
@@ -1918,10 +2006,11 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
                 mark_phase(status, folder, 5, "DONE")
                 log("Phase 5: Re-indexing complete.")
         else:
-            log(f"  [PHASE 5 FAILED] gemini-indexer.py not found in any of "
-                f"{[str(c) for c in indexer_candidates]} — persona NOT embedded")
+            _all_probed = [str(c) for c in section_candidates + indexer_candidates]
+            log(f"  [PHASE 5 FAILED] no indexer found in any of "
+                f"{_all_probed} — persona NOT embedded")
             mark_phase(status, folder, 5, "FAILED",
-                       f"indexer wrapper not found: {[str(c) for c in indexer_candidates]}")
+                       f"indexer wrapper not found: {_all_probed}")
 
         # Phase 6: Append new persona to persona-categories.json so the
         # selector's list_available_personas() can see it on the next run.

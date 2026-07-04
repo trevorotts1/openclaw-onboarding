@@ -114,7 +114,13 @@ def get_openclaw_paths() -> dict:
 
     # PRD 2.7: canonical coaching-personas dir is workspace/data/coaching-personas/
     coaching_personas = workspace / "data" / "coaching-personas"
-    gemini_index = workspace / "data" / "gemini-index.sqlite"
+    # EMBED-1: gemini_index is the SAME file embedding_engine.DB_PATH reads and
+    # provision-persona-index.sh installs — coaching-personas/gemini-index.sqlite.
+    # (Kept in lockstep with shared-utils/detect_platform.py; the old
+    # workspace/data/gemini-index.sqlite value routed indexer WRITES to a DB the
+    # search path never reads.)
+    gemini_index = coaching_personas / "gemini-index.sqlite"
+    legacy_gemini_index = workspace / "data" / "gemini-index.sqlite"  # detect-only; NEVER write
 
     company_dir = resolve_active_company_dir(company_root, extra_roots=legacy_company_roots)
     persona_categories = resolve_persona_categories(workspace, root, coaching_personas)
@@ -130,6 +136,7 @@ def get_openclaw_paths() -> dict:
         "company_dir": company_dir,
         "coaching_personas": coaching_personas,
         "gemini_index": gemini_index,
+        "legacy_gemini_index": legacy_gemini_index,
         "persona_categories": persona_categories,
         "departments_json": (company_dir / "departments.json") if company_dir else (workspace / "departments.json"),
         "company_config": (company_dir / "company-config.json") if company_dir else (workspace / "company-config.json"),

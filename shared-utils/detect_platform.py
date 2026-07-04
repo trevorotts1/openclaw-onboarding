@@ -136,7 +136,17 @@ def get_openclaw_paths() -> dict:
     # PRD 2.7: canonical coaching-personas dir is workspace/data/coaching-personas/
     # (next to the gemini index; aligns with orchestrator + embedding_engine paths).
     coaching_personas = workspace / "data" / "coaching-personas"
-    gemini_index = workspace / "data" / "gemini-index.sqlite"
+    # EMBED-1 (embedding-subsystem hardening): gemini_index is the SAME file the
+    # runtime search path reads — embedding_engine.DB_PATH and the prebuilt-index
+    # installer (provision-persona-index.sh) both use
+    # workspace/data/coaching-personas/gemini-index.sqlite. This key previously
+    # pointed at workspace/data/gemini-index.sqlite (no coaching-personas/
+    # segment), so gemini-section-indexer.py WROTE embeddings into a DB the
+    # search path never reads. One path authority, one DB. See docs/EMBEDDINGS.md.
+    gemini_index = coaching_personas / "gemini-index.sqlite"
+    # The old, wrong location — kept ONLY so writers can detect + warn about an
+    # orphaned DB left behind by pre-fix builds. NEVER write here.
+    legacy_gemini_index = workspace / "data" / "gemini-index.sqlite"
 
     # build_state: the workforce build-state JSON (written by build-workforce.py)
     build_state = workspace / ".workforce-build-state.json"
@@ -162,6 +172,7 @@ def get_openclaw_paths() -> dict:
         "company_dir": company_dir,
         "coaching_personas": coaching_personas,
         "gemini_index": gemini_index,
+        "legacy_gemini_index": legacy_gemini_index,
         "persona_categories": persona_categories,
         "departments_json": (
             company_dir / "departments.json"
@@ -183,6 +194,76 @@ def get_openclaw_paths() -> dict:
         # PRD 1.3: dashboard_db is None when not installed, Path object when found.
         "dashboard_db": dashboard_db,
     }
+
+
+def home_is_overridden() -> bool:
+    """
+    EMBED-2 (embedding-subsystem hardening): True when $HOME points somewhere
+    other than the OS account home directory — i.e. the process is running
+    under a SANDBOXED / faked HOME.
+
+    Why this exists: every path in get_openclaw_paths() is HOME-relative on
+    Mac, so a test harness that exports HOME=/tmp/sandbox silently redirects
+    EVERY read AND write (gemini index, persona-categories.json, blueprints)
+    into the sandbox. That is exactly how a full book-to-persona build once
+    embedded ~15 personas into a throwaway tree while the live index never
+    changed. Writers must treat an overridden HOME as sandbox-by-accident
+    unless the operator explicitly opts in (OPENCLAW_SANDBOX=1).
+    """
+    try:
+        import pwd
+        real_home = pwd.getpwuid(os.getuid()).pw_dir
+    except Exception:
+        return False  # non-POSIX / unresolvable — never block on uncertainty
+    env_home = os.environ.get("HOME", "")
+    if not env_home or not real_home:
+        return False
+    return os.path.realpath(env_home) != os.path.realpath(real_home)
+
+
+def assert_live_workspace_for_write(context: str, target_path) -> None:
+    """
+    EMBED-2 HARD GATE for write paths (indexers, persona builds, registration).
+
+    Contract:
+      - OPENCLAW_SANDBOX=1  -> sandbox is EXPLICIT: allowed, with a loud
+                               stderr banner naming the resolved target.
+      - HOME not overridden -> real box, real home: allowed silently.
+      - HOME overridden AND the resolved write target lives under that
+        overridden HOME -> SystemExit(4) with a clear message. A real build
+        must land in the live workspace; a sandbox must be opted into.
+
+    Read-only consumers must NOT call this — it is for writers only, so
+    existing read paths and CI static checks are unaffected.
+    """
+    target = str(target_path)
+    if os.environ.get("OPENCLAW_SANDBOX", "").strip() == "1":
+        print(
+            f"[detect-platform] SANDBOX MODE (OPENCLAW_SANDBOX=1): {context} "
+            f"will write under {target}",
+            file=sys.stderr,
+        )
+        return
+    if not home_is_overridden():
+        return
+    env_home = os.path.realpath(os.environ.get("HOME", ""))
+    if not os.path.realpath(target).startswith(env_home + os.sep):
+        # Write target is outside the overridden HOME (e.g. /data on VPS) —
+        # the HOME override cannot misroute this write.
+        return
+    print(
+        f"ERROR [detect-platform]: {context} resolved its write target to\n"
+        f"    {target}\n"
+        f"which lives under an OVERRIDDEN $HOME ({os.environ.get('HOME','')}) "
+        f"— this is a SANDBOX, not the live workspace.\n"
+        f"A real build/index run must write to the live workspace. Either:\n"
+        f"  - unset the HOME override to run for real, OR\n"
+        f"  - export OPENCLAW_SANDBOX=1 to run in the sandbox ON PURPOSE "
+        f"(tests only).\n"
+        f"Refusing to write. (embedding-subsystem hard gate EMBED-2)",
+        file=sys.stderr,
+    )
+    raise SystemExit(4)
 
 
 def get_legacy_company_roots() -> list:

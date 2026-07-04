@@ -458,10 +458,57 @@ def _read_memory_stamp(openclaw_root: Path) -> Optional[dict]:
 
 def _read_gemini_index_stamp(openclaw_root: Path) -> Optional[dict]:
     """
-    Read the gemini-index stamp from the persona embedding index.
-    Searches multiple candidate directories for meta.json / stamp.json.
-    Returns {provider, model, dim} or None.
+    Read the persona embedding index's provider/model/dim stamp.
+
+    EMBED-8: the AUTHORITATIVE source is the embeddings table of the actual
+    runtime DB (workspace/data/coaching-personas/gemini-index.sqlite — the
+    file embedding_engine.search() reads and provision-persona-index.sh
+    installs). The old stamp-file search probed gemini-index/ directories
+    that never exist on modern installs, so leg-b was a silent no-op for the
+    persona index. The stamp-file search is kept as a legacy fallback.
+    Returns {provider, model, dim} or None. Adds "fake_or_wrong_dim_rows"
+    when any row's vector blob disagrees with its stamped dim (fake-vector
+    detection).
     """
+    db_candidates = [
+        openclaw_root / "workspace" / "data" / "coaching-personas" / "gemini-index.sqlite",
+        Path("/data/.openclaw/workspace/data/coaching-personas/gemini-index.sqlite"),
+    ]
+    for db in db_candidates:
+        if not db.is_file():
+            continue
+        try:
+            con = sqlite3.connect(str(db), timeout=10)
+            cur = con.cursor()
+            cols = {r[1] for r in cur.execute("PRAGMA table_info(embeddings)")}
+            if not {"provider", "model", "dim"} <= cols:
+                con.close()
+                continue
+            rows = cur.execute(
+                "SELECT DISTINCT provider, model, dim FROM embeddings "
+                "WHERE provider IS NOT NULL AND provider != '' "
+                "AND provider != 'unknown'"
+            ).fetchall()
+            bad = cur.execute(
+                "SELECT COUNT(*) FROM embeddings "
+                "WHERE dim IS NOT NULL AND length(vector) != dim * 4"
+            ).fetchone()[0]
+            con.close()
+            if len(rows) == 1:
+                prov, mdl, dim = rows[0]
+                stamp = {"provider": prov, "model": mdl, "dim": dim,
+                         "source": str(db)}
+                if bad:
+                    stamp["fake_or_wrong_dim_rows"] = int(bad)
+                return stamp
+            if rows:
+                return {"provider": "mixed", "model": "mixed", "dim": 0,
+                        "source": str(db),
+                        "distinct": [list(r) for r in rows]}
+        except Exception:
+            continue
+
+    # Legacy fallback: stamp files in gemini-index/ dirs (old installs only).
     search_dirs = [
         openclaw_root / "gemini-index",
         openclaw_root / "workspace" / "gemini-index",
@@ -737,8 +784,23 @@ def check_persona_gemini_index(
         provider_mismatch = stamped_provider not in ("", "google", "gemini")
         model_ok = GEMINI_EMBED_MODEL.lower() in stamped_model if stamped_model else False
         dim_ok   = stamped_dim == str(GEMINI_EMBED_DIMS) if stamped_dim else True
+        fake_rows = int(stamp.get("fake_or_wrong_dim_rows", 0) or 0)
 
-        if provider_mismatch:
+        if fake_rows:
+            # EMBED-8: rows whose vector blob length disagrees with their
+            # stamped dim can only be fake/corrupt vectors. FLAG loudly.
+            res["needs_reindex"] = True
+            res["leg_b_stamp_match"] = False
+            msg = (
+                f"{LBL} leg-b FLAG RE-INDEX: {fake_rows} row(s) in the persona "
+                f"index carry vectors whose byte-length disagrees with their "
+                f"stamped dim — fake or corrupt vectors. Re-embed the "
+                f"offending personas (gemini-indexer --verify for details)."
+            )
+            res["errors"].append(msg)
+            res["leg_b_detail"] = f"fake_or_wrong_dim_rows={fake_rows}"
+            _err(msg)
+        elif provider_mismatch:
             res["needs_reindex"] = True
             res["leg_b_stamp_match"] = False
             msg = (

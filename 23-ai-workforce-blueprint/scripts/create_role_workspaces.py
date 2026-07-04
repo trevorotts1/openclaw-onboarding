@@ -560,7 +560,8 @@ def fill_tokens(content, role_name, dept_name, is_ceo, role_entry=None):
     company config + USER.md + role metadata.
 
     v12.17.2 FIX (token-map): extended from ~8 tokens to cover every distinct
-    {{TOKEN}} found across all 439 role-library files.  Two categories:
+    {{TOKEN}} found across the role-library files (count owned by _index.json total_roles;
+    do not hardcode it here).  Two categories:
       - Config/interview-sourced: pull from company-config.json when available.
       - Neutral literal defaults: sensible static strings for all domain-specific
         tokens (platform names, KPI thresholds, titles) so that ZERO {{...}}
@@ -687,7 +688,8 @@ def fill_tokens(content, role_name, dept_name, is_ceo, role_entry=None):
     }
 
     # ── NEUTRAL DEFAULTS for all domain-specific tokens ─────────────────────────
-    # These cover every remaining {{TOKEN}} in the 439 role-library files.
+    # These cover every remaining {{TOKEN}} in the role-library files
+    # (authoritative count = _index.json total_roles; never hardcode it).
     # Values are sensible operational defaults; overridden by post-build config
     # sync when the company provides real values.
     _defaults = {
