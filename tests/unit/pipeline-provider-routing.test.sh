@@ -43,6 +43,7 @@ cat > "$TMP/home/clawd/secrets/.env" <<'ENVEOF'
 OPENROUTER_API_KEY="sk-or-quoted-fake-value-not-a-real-key"
 export OLLAMA_API_KEY='dead-21char-placeholder'
 ENVEOF
+chmod 600 "$TMP/home/clawd/secrets/.env"   # secrets/.env hygiene (QC static gate)
 
 env -u OLLAMA_BASE_URL HOME="$TMP/home" OPENROUTER_API_KEY="sk-or-env-fake" \
     python3 - "$ORCH" <<'PY'
