@@ -25,6 +25,15 @@
 #   bash qc-completeness.sh                 # default: Telegram on != PASS
 #   bash qc-completeness.sh --quiet         # log-only, no Telegram even on FAIL
 #   bash qc-completeness.sh --no-telegram   # alias for --quiet
+#   bash qc-completeness.sh --no-notify     # alias for --quiet
+#
+# MAINTENANCE / SILENT-ROLL GUARD: exporting OPENCLAW_MAINTENANCE=1 forces quiet
+# mode (as if --quiet were passed) so the owner-chat Telegram alert below is
+# SUPPRESSED entirely (log-only). A fleet roll / skill update is inherently
+# maintenance; update-skills.sh runs this gate with OPENCLAW_MAINTENANCE=1 so the
+# embedded QC step can NEVER message a client owner during a roll. This gates only
+# whether QC NOTIFIES — never what it computes. Normal operation (flag unset and
+# OPENCLAW_MAINTENANCE unset) is UNCHANGED: alerts still fire on != PASS.
 #
 # Exit codes:
 #   0 = PASS  (>= 95% coverage on every dept across all metrics)
@@ -46,14 +55,26 @@
 set -uo pipefail
 
 QUIET=0
+MAINT=0
 for arg in "$@"; do
   case "$arg" in
-    --quiet|--no-telegram) QUIET=1 ;;
+    --quiet|--no-telegram|--no-notify) QUIET=1 ;;
     -h|--help)
       sed -n '1,25p' "$0"
       exit 0 ;;
   esac
 done
+
+# MAINTENANCE / SILENT-ROLL GUARD (silent-maintenance): a fleet roll / maintenance
+# run must NEVER message the client owner. When OPENCLAW_MAINTENANCE=1 is exported
+# (update-skills.sh sets it around the embedded QC call), force quiet mode so the
+# owner-chat Telegram alert is suppressed (log-only). NORMAL operation — flag unset
+# AND OPENCLAW_MAINTENANCE unset — is UNCHANGED: alerts still fire on != PASS. This
+# gates NOTIFICATION only; nothing about what QC computes changes.
+if [ "${OPENCLAW_MAINTENANCE:-0}" = "1" ]; then
+  QUIET=1
+  MAINT=1
+fi
 
 # Resolve the skill 23 directory robustly. Two known canonical install layouts:
 #   ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-completeness.sh   (Mac)
@@ -789,6 +810,19 @@ fi
 # Read final status from JSON
 STATUS="$(python3 -c "import json,sys; d=json.load(open('$JSON_FILE')); print(d.get('status','UNKNOWN'))" 2>>"$LOG_FILE")"
 log "Final status: ${STATUS}"
+
+# MAINTENANCE / QUIET suppression note (log-only). When quiet mode is active
+# (--quiet / --no-telegram / --no-notify OR OPENCLAW_MAINTENANCE=1) and QC did not
+# PASS, the owner-chat Telegram send below is skipped ENTIRELY. We emit an explicit
+# log line so operators can see the alert was intentionally suppressed during a
+# maintenance / fleet roll — the embedded QC step can never message a client owner.
+if [ "$QUIET" = "1" ] && [ "$STATUS" != "PASS" ] && [ "$STATUS" != "NO_WORKFORCE_FOUND" ]; then
+  if [ "$MAINT" = "1" ]; then
+    log "maintenance mode — owner alert suppressed (OPENCLAW_MAINTENANCE=1); STATUS=${STATUS} (log-only, NOT sent to any client chat)"
+  else
+    log "quiet mode — owner alert suppressed (--quiet/--no-telegram/--no-notify); STATUS=${STATUS} (log-only)"
+  fi
+fi
 
 # Telegram on != PASS (unless --quiet)
 if [ "$QUIET" = "0" ] && [ "$STATUS" != "PASS" ] && [ "$STATUS" != "NO_WORKFORCE_FOUND" ]; then

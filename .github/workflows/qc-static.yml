@@ -1125,6 +1125,13 @@ jobs:
           bash tests/unit/cc-done-degraded-retry-gate.test.sh
           echo "✓ cc-done-degraded-retry-gate.test.sh (Issue #12) all pass"
 
+      - name: "qc-completeness silent-maintenance guard regression lock (v17.0.18)"
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash tests/unit/qc-maintenance-quiet-guard.test.sh
+          echo "✓ qc-maintenance-quiet-guard.test.sh (owner-chat alert suppressed under OPENCLAW_MAINTENANCE=1 / --quiet) all pass"
+
       - name: Skill 41 L0 static QC checklist (composes every qc-*.sh gate)
         shell: bash
         run: |
