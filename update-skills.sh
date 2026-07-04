@@ -49,7 +49,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v17.0.17"
+ONBOARDING_VERSION="v17.0.18"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -456,7 +456,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v17.0.17 - safe_json_edit
+# v17.0.18 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -840,8 +840,16 @@ main() {
     echo "  ⚠️  UPDATE PENDING flag found at: $PENDING_FILE"
     echo "      Review this file before updating: cat $PENDING_FILE"
     echo ""
-    read -p "Continue with update? (y/N) " -n 1 -r
-    echo
+    # TTY GUARD (v17.0.18): only prompt when stdin is an interactive terminal.
+    # Non-interactive (cron / curl|bash / SSH pipe): auto-decline so the updater
+    # can never hang on stdin during a re-roll. Interactive behaviour is unchanged.
+    if [ -t 0 ]; then
+      read -p "Continue with update? (y/N) " -n 1 -r
+      echo
+    else
+      echo "  (non-interactive: no TTY — auto-declining the pending-flag prompt)"
+      REPLY="N"
+    fi
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
       echo "  Update cancelled."
       exit 0
@@ -855,8 +863,17 @@ main() {
     echo "  Latest version:  $ONBOARDING_VERSION"
     if [ "$CURRENT_VERSION" = "$ONBOARDING_VERSION" ]; then
       echo ""
-      read -p "Already up to date. Force re-install? (y/N) " -n 1 -r
-      echo
+      # TTY GUARD (v17.0.18): a re-roll at the SAME version always reaches this
+      # prompt. Only prompt on an interactive terminal; non-interactively
+      # auto-decline the force-reinstall and exit 0 (already up to date — a clean,
+      # idempotent no-op) instead of hanging on stdin.
+      if [ -t 0 ]; then
+        read -p "Already up to date. Force re-install? (y/N) " -n 1 -r
+        echo
+      else
+        echo "  (non-interactive: no TTY — already up to date, not forcing re-install)"
+        REPLY="N"
+      fi
       if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         echo "  Update cancelled."
         exit 0
@@ -2463,17 +2480,23 @@ PYEOF
 
   # ----------------------------------------------------------
   # v10.15.4: Post-pull qc-completeness check. Read-only. Runs against the live
-  # workforce after every successful skill pull. The script self-Telegrams the
-  # operator on != PASS, so we just append the human-readable STATUS line to
-  # the existing "update complete" Telegram for visibility.
+  # workforce after every successful skill pull.
+  #
+  # SILENT-MAINTENANCE (v17.0.18): a fleet roll / skill update is inherently
+  # MAINTENANCE, so this embedded QC call MUST run with OPENCLAW_MAINTENANCE=1.
+  # That forces qc-completeness.sh into quiet mode and SUPPRESSES its owner-chat
+  # Telegram alert entirely (log-only) — the embedded QC step can NEVER message a
+  # client owner during a roll. The operator still gets the workforce QC STATUS
+  # folded into the OPERATOR-ROUTED update note below (send_telegram_progress),
+  # so no visibility is lost — only the client-facing alert is suppressed.
   # ----------------------------------------------------------
   QC_COMPLETENESS_SCRIPT="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/qc-completeness.sh"
   QC_STATUS_LINE=""
   QC_COMPLETENESS_RC=0   # FIX 1: HONOR this exit code (was ignored). 0=PASS, 2=PARTIAL, 3=FAIL, 4=NO_WORKFORCE
   if [ -x "$QC_COMPLETENESS_SCRIPT" ]; then
     echo ""
-    echo "  Running qc-completeness.sh against live workforce..."
-    QC_OUTPUT="$(bash "$QC_COMPLETENESS_SCRIPT" 2>&1)" || QC_COMPLETENESS_RC=$?
+    echo "  Running qc-completeness.sh against live workforce (maintenance mode — owner alert suppressed)..."
+    QC_OUTPUT="$(OPENCLAW_MAINTENANCE=1 bash "$QC_COMPLETENESS_SCRIPT" 2>&1)" || QC_COMPLETENESS_RC=$?
     QC_STATUS_LINE="$(printf '%s\n' "$QC_OUTPUT" | grep -E '^STATUS:' | tail -1 || true)"
     echo "  ${QC_STATUS_LINE:-qc-completeness ran (no STATUS line captured)} (exit $QC_COMPLETENESS_RC)"
   fi
