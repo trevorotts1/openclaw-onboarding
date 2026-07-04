@@ -507,6 +507,10 @@ for _cron in weekly-onboarding-update workforce-build-resume onboarding-resume \
     assert_silent_cron "$REPO_ROOT/install.sh" "$_cron"
     assert_silent_cron "$REPO_ROOT/update-skills.sh" "$_cron"
     assert_silent_cron "$REPO_ROOT/scripts/ensure-pipeline-crons.sh" "$_cron"
+    # v17.0.21: install_onboarding_resume_cron() moved to a shared lib sourced by
+    # BOTH install.sh and update-skills.sh, so the onboarding-resume registration
+    # now lives here. Assert the SILENT invariant where the cron is actually built.
+    assert_silent_cron "$REPO_ROOT/lib-onboarding-resume-cron.sh" "$_cron"
 done
 
 # 6b: update-skills.sh send_telegram_progress must NOT target the client default

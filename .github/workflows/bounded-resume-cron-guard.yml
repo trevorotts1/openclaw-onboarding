@@ -9,17 +9,21 @@ on:
     paths:
       - install.sh
       - update-skills.sh
+      - lib-onboarding-resume-cron.sh
       - scripts/resume-onboarding.sh
       - scripts/resume-onboarding-prompt.txt
       - tests/unit/bounded-resume-cron.test.sh
+      - tests/unit/update-skills-resume-cron.test.sh
       - .github/workflows/bounded-resume-cron-guard.yml
   pull_request:
     paths:
       - install.sh
       - update-skills.sh
+      - lib-onboarding-resume-cron.sh
       - scripts/resume-onboarding.sh
       - scripts/resume-onboarding-prompt.txt
       - tests/unit/bounded-resume-cron.test.sh
+      - tests/unit/update-skills-resume-cron.test.sh
       - .github/workflows/bounded-resume-cron-guard.yml
 
 jobs:
@@ -34,3 +38,8 @@ jobs:
         run: |
           chmod +x tests/unit/bounded-resume-cron.test.sh
           bash tests/unit/bounded-resume-cron.test.sh
+
+      - name: Run update-skills resume-cron tests (idempotency + no-client-channel + seed arg-order)
+        run: |
+          chmod +x tests/unit/update-skills-resume-cron.test.sh
+          bash tests/unit/update-skills-resume-cron.test.sh
