@@ -9,6 +9,11 @@ Reads department-naming-map.json and prints:
      of industry; v2.6.1 dropped real-estate `listings`, which is now industry-gated).
   3. The computed floor = mandatory count + universal-primary count = 28.
 
+The 28-department FLOOR is the minimum every client gets; it is NOT the full
+shipped catalog. The full role-template catalog (far more roles than the 28-floor
+requires) is tracked separately in templates/role-library/_index.json - do not
+conflate its size with the 28 floor.
+
 This script IS the canonical count. The floor is computed at runtime from the
 live naming map (22 + 6 = 28 for naming map v2.6.1); the numbers in this
 docstring are descriptive of the live data, never a hardcoded gate. All docs
