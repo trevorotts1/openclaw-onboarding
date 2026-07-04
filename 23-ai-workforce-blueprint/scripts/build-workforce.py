@@ -2634,7 +2634,7 @@ def build_from_config(config):
     # + a stable documents_total (sum of each dept's suggested-role count) so the
     # onboarding page can render per-department progress bars and an overall %.
     _progress_departments = []
-    for _pid, _pinfo in selected_departments.items():
+    for _pid, _pinfo in list(selected_departments.items()):
         try:
             _roles_total = len(parse_suggested_roles(_pid))
         except Exception:  # noqa: BLE001 - counting is best-effort telemetry
