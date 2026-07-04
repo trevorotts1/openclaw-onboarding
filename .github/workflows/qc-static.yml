@@ -1028,6 +1028,21 @@ jobs:
           bash 23-ai-workforce-blueprint/scripts/test-interview-experience.sh
           echo "✓ PRD-2.15 interview experience T1-T13 all pass"
 
+      - name: Skill 23 WG-10c no-web-only-store assertion (files are the sole source of truth)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # WG-10c lock: the Command Center / dashboard (web/DB) store is a MIRROR of
+          # the canonical files, never a source. test-no-web-store.py exercises
+          # _qc_no_web_store.assert_no_web_only_store() non-vacuously: a faithful mirror
+          # PASSES, and every violation class (web-only decision, store-overrides-decision,
+          # web-only interview answer) HARD-FAILs. It is hermetic — reads only, builds
+          # every fixture in-memory or in a tempdir, and touches no live DB, network,
+          # or ~/.openclaw. A fresh runner has no HOME install to reach, so this is safe
+          # to invoke directly; exit 0 required.
+          python3 23-ai-workforce-blueprint/scripts/test-no-web-store.py
+          echo "✓ WG-10c no-web-only-store assertion is clean + non-vacuous"
+
       - name: Skill 23 PRD-2.15 static greps (schema + INSTRUCTIONS + build-workforce)
         shell: bash
         run: |
