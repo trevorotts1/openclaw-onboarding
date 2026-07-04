@@ -27,10 +27,10 @@
 #   JSON array of objects:
 #   [
 #     {
-#       "name": "karen-vaughn",
-#       "ssh_target": "karenvaughn@<host>",
+#       "name": "client-box-01",
+#       "ssh_target": "clientuser@<host>",
 #       "cf_tunnel_id": "bfbd47ae...",
-#       "cf_access_env_prefix": "CF_ACCESS_KAREN",
+#       "cf_access_env_prefix": "CF_ACCESS_CLIENT",
 #       "platform": "mac"
 #     },
 #     ...

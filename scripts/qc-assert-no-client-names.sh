@@ -12,10 +12,11 @@
 #   Company", "a Mac mini client box", etc.) instead.
 #
 # WHO IS A CLIENT (names scanned for — never commit these):
-#   The list below is the authoritative fleet roster of clients. Update it when
-#   new clients are onboarded. The AGENCY (Trevor Otts / BlackCEO / Convert and
-#   Flow / Zero Human Workforce) and operator team members (Spaulding, LeAnne)
-#   are NOT clients and are NOT in this list — they may legitimately appear.
+#   The authoritative fleet roster is EXTERNALIZED to an operator-local,
+#   gitignored file ($OPENCLAW_CLIENT_ROSTER or ~/.openclaw/client-roster.txt) so
+#   real names never ship in this repo. Update that file when new clients are
+#   onboarded. The AGENCY (the operating agency / brand) and operator team
+#   members are NOT clients and belong in NO roster — they may legitimately appear.
 #
 # PATTERN STRATEGY (v2.0):
 #   Full names:   matched as literal strings (case-insensitive).
@@ -48,75 +49,62 @@
 
 set -uo pipefail
 
-# ─── CLIENT NAME DENYLIST ─────────────────────────────────────────────────────
-# Full-name entries: matched as literal ERE strings (case-insensitive).
-# First-name-only entries: wrapped in \b word-boundary anchors.
-# To add a new client: append their full name AND a \bFirstName\b entry below.
+# ─── CLIENT NAME DENYLIST (EXTERNALIZED) ──────────────────────────────────────
+# The real client roster no longer lives in this file (or anywhere tracked). It
+# is loaded at runtime from an operator-local, gitignored roster file so that no
+# real client name, chat ID, or GHL location ID ever ships in the repo.
 #
-# FORMAT: one grep -E pattern per array entry.
-CLIENT_NAMES=(
-  # Full names (literal, case-insensitive)
-  "Maria Anderson"
-  "Marico Consulting"
-  "Evelyn Bethune"
-  "Sheila Reynolds"
-  "Dr\.? Tola"
-  "Temperance"
-  "Sir ?Jordan"
-  # Client GHL location IDs (opaque but client-identifying)
-  "mQeLerCLRJzGKzAQoY2Y"
-  "Av6hNUcfFQcctNlekVy4"
-  "Corey Sams"
-  "Stephanie Wall"
-  "Star Bobatoon"
-  "Karen Vaughn"
-  "Aurelia Gardner"
-  "Barret Matthews"
-  "Lyric Hawkins"
-  "Coach Kaz"
-  "Beverly Sanders"
-  "Beverly Grandison"
-  "Angela Tennison"
-  "Cassandra Henriquez"
-  "Jill Bulluck"
-  "Teresa Pelham"
-  "Jocelyn McClure"
-  "Christy Staples"
-  "Erin Garrett"
-  "Sonatta Camara"
-  "Talaya Kelley"
+#   Load order:  $OPENCLAW_CLIENT_ROSTER  →  ${HOME}/.openclaw/client-roster.txt
+#   Format:      one ERE pattern per line; blank lines and '#' comments ignored.
+#                Full names match literally; short first names use \bName\b;
+#                opaque IDs (chat IDs, GHL location IDs) go one-per-line.
+#   Template:    scripts/client-roster.example.txt (placeholders only, tracked).
+#
+# TWO MODES:
+#   FULL MODE (roster present) — scan every tracked file for the roster patterns
+#     PLUS the always-on tokens below. This is the authoritative check; it runs
+#     on operator boxes and in pre-commit where the roster exists.
+#   STRUCTURAL MODE (roster absent, e.g. CI) — the roster-specific scan is
+#     SKIPPED with a stderr WARNING, but the always-on tokens are STILL scanned,
+#     so the gate never fails open: a committed operator path or a leaked
+#     .example placeholder name still exits non-zero.
 
-  # First-name-only patterns (word-boundary anchored, same as qc-no-personal-data.sh BANNED list)
-  # Only include first names that are distinctive enough to not false-positive;
-  # common English words (e.g. "Maria" in fictional text) are flagged and must
-  # be genericized or moved to a comment explaining why they are acceptable.
-  "\bCorey\b"
-  "\bAurelia\b"
-  "\bBarret\b"
-  "\bAngeleen\b"
-  "\bMonique\b"
-  "\bKofi\b"
-  "\bEvelyn\b"
-  "\bSheila\b"
-  # "\bLyric\b" retired per the distinctiveness rule above: false-positives on the
-  # common noun "lyric" (e.g. Skill 54's "working-class lyric" / "Springsteen's lyric
-  # language" tone-influence fixtures). Client protection preserved via the full name
-  # "Lyric Hawkins" (line ~75).
-  "\bSonatta\b"
-  "\bTalaya\b"
-  "\bCassandra\b"
-  "\bJocelyn\b"
-  "\bChristy\b"
-  # "\bBeverly\b" retired per the distinctiveness rule above: false-positives on
-  # "Beverly Hills" (e.g. the Facebook interest "Montage Beverly Hills" in the
-  # skill-52 luxury-audience prompt). Client protection preserved via the full
-  # names ("Beverly Sanders", "Beverly Grandison") + the distinctive surname:
-  "\bGrandison\b"
-  "\bAnderson\b"
-
-  # Operator machine path (must not appear in committed files)
+# Always-on tokens scanned in BOTH modes (not client-roster data):
+#   - operator machine path (must never appear in committed files)
+#   - the obviously-fake placeholder names from client-roster.example.txt; if any
+#     of these appear in tracked content they are a template leak → hard fail.
+ALWAYS_ON_TOKENS=(
   "/Users/blackceomacmini"
+  "ExampleClientAlpha"
+  "ExampleClientBeta"
+  "PlaceholderCo"
+  "Testclient Sentinel"
 )
+
+# Resolve the roster path (env override wins; else operator-local default).
+_roster_path() {
+  if [ -n "${OPENCLAW_CLIENT_ROSTER:-}" ]; then
+    printf '%s\n' "$OPENCLAW_CLIENT_ROSTER"
+  else
+    printf '%s\n' "${HOME:-/root}/.openclaw/client-roster.txt"
+  fi
+}
+
+# Load roster patterns into CLIENT_NAMES (one per line, comments/blanks stripped).
+# Returns 0 and sets ROSTER_AVAILABLE=1 if a non-empty roster was read; else 1.
+CLIENT_NAMES=()
+ROSTER_AVAILABLE=0
+_load_roster() {
+  local f; f="$(_roster_path)"
+  [ -f "$f" ] || return 1
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|\#*) continue ;; esac
+    CLIENT_NAMES+=("$line")
+  done < "$f"
+  [ "${#CLIENT_NAMES[@]}" -gt 0 ] && ROSTER_AVAILABLE=1
+  [ "$ROSTER_AVAILABLE" = 1 ]
+}
 # ─────────────────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -133,8 +121,26 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# Build a single ERE alternation pattern from the denylist above.
-PATTERN=$(printf '%s\n' "${CLIENT_NAMES[@]}" | paste -sd'|' -)
+# Load the external roster (if present) and decide the mode.
+if _load_roster; then
+  MODE="full"
+else
+  MODE="structural"
+  echo "WARNING: client-name roster not found (looked in \$OPENCLAW_CLIENT_ROSTER," \
+       "then ${HOME:-/root}/.openclaw/client-roster.txt); SKIPPING the roster-specific" \
+       "client-name check. Always-on tokens (operator path + .example placeholders)" \
+       "are still enforced. Set OPENCLAW_CLIENT_ROSTER or create" \
+       "~/.openclaw/client-roster.txt (see scripts/client-roster.example.txt) to" \
+       "enable the full check." >&2
+fi
+
+# Build a single ERE alternation pattern: always-on tokens in both modes, plus
+# the external roster patterns when a roster is available.
+SCAN_TOKENS=("${ALWAYS_ON_TOKENS[@]}")
+if [ "$MODE" = "full" ]; then
+  SCAN_TOKENS+=("${CLIENT_NAMES[@]}")
+fi
+PATTERN=$(printf '%s\n' "${SCAN_TOKENS[@]}" | paste -sd'|' -)
 
 HITS=0
 OFFENDERS=()
@@ -183,6 +189,13 @@ _is_excluded() {
     */scripts/qc-no-personal-data.sh)              return 0 ;;
     *"/qc-assert-no-client-names.sh")              return 0 ;;
     *"/qc-no-personal-data.sh")                    return 0 ;;
+    # Roster template — placeholder names are its whole purpose (tracked template)
+    */scripts/client-roster.example.txt)           return 0 ;;
+    *"/client-roster.example.txt")                 return 0 ;;
+    # Planted self-test fixture + its harness — hold a placeholder sentinel as the
+    # DETECTION subject, not as leaked content
+    */tests/fixtures/no-client-names/planted-client-name.txt) return 0 ;;
+    */tests/fixtures/no-client-names/selftest-qc-assert.sh)   return 0 ;;
     # Anti-commingling test fixtures — the fixture SCANS for client names as the
     # test subject; the names are detection patterns, not leaked data
     */scripts/test-how-to-use-docs.sh)             return 0 ;;
@@ -228,7 +241,11 @@ if [ "${#FILES[@]}" -gt 0 ]; then
 fi
 
 if [ "$HITS" -eq 0 ]; then
-  echo "[qc-assert-no-client-names] PASS — no real client names found in tracked files."
+  if [ "$MODE" = "full" ]; then
+    echo "[qc-assert-no-client-names] PASS (full) — no roster client names, operator paths, or placeholder leaks in tracked files."
+  else
+    echo "[qc-assert-no-client-names] PASS (structural) — no operator paths or .example placeholder leaks in tracked files. NOTE: roster-specific client-name check was SKIPPED (no roster; see WARNING above)."
+  fi
   exit 0
 else
   echo "[qc-assert-no-client-names] INVARIANT VIOLATED — $HITS client-name hit(s) found in repo files:"

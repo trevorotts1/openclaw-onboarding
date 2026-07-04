@@ -19,10 +19,39 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# Banned REAL identifiers (ERE alternation). Same roster as Skill 38's gate.
-# NOTE: "Marico" uses a trailing word boundary so it catches the client
-# "Marico"/"Marico Consulting" but NOT the public entity "Maricopa County".
-BANNED='Trevor|Teresa|Keez|Christy|Corey|Angeleen|Beverly|Candace|Marico\b|Sir Jordan|Grants Boutique|Explore Growth|The Winning Formula Course|Winning Formula|thewinningformulacourse|growthriveprosper|blackceo|5252140759|trevelynotts|/Users/christy|/Users/blackceomacmini|/Users/client'
+# Banned identifiers (ERE alternation). The real client roster is EXTERNALIZED to
+# an operator-local, gitignored file ($OPENCLAW_CLIENT_ROSTER or
+# ~/.openclaw/client-roster.txt; template scripts/client-roster.example.txt) so no
+# real client name ships in this repo. Operator-static tokens (brand, chat id,
+# email handle, home paths) and the .example placeholders stay inline and are
+# ALWAYS scanned, so the gate never fails open when the roster is absent.
+# NOTE: keep a trailing word boundary on short client tokens (e.g. a "Foo\b"
+# pattern) in the roster so they catch the client but NOT a public entity that
+# merely starts with the same letters (e.g. "Foo\b" must not match "Fooville County").
+OPERATOR_BANNED='blackceo|5252140759|trevelynotts|Trevor|/Users/christy|/Users/blackceomacmini|/Users/client'
+PLACEHOLDER_BANNED='ExampleClientAlpha|ExampleClientBeta|PlaceholderCo|Testclient Sentinel'
+
+_roster_path() {
+  if [ -n "${OPENCLAW_CLIENT_ROSTER:-}" ]; then printf '%s\n' "$OPENCLAW_CLIENT_ROSTER"
+  else printf '%s\n' "${HOME:-/root}/.openclaw/client-roster.txt"; fi
+}
+_roster_regex() {
+  local f; f="$(_roster_path)"
+  [ -f "$f" ] || return 1
+  local out; out="$(grep -vE '^[[:space:]]*(#|$)' "$f" | paste -sd'|' -)"
+  [ -n "$out" ] || return 1
+  printf '%s\n' "$out"
+}
+
+BANNED="$OPERATOR_BANNED|$PLACEHOLDER_BANNED"
+if CLIENT_REGEX="$(_roster_regex)"; then
+  BANNED="$BANNED|$CLIENT_REGEX"
+else
+  echo "WARNING: client-name roster not found (looked in \$OPENCLAW_CLIENT_ROSTER," \
+       "then $(_roster_path)); SKIPPING the roster-specific client-name scan. Operator" \
+       "and .example placeholder tokens are still enforced. See" \
+       "scripts/client-roster.example.txt to enable the full check." >&2
+fi
 
 echo "=== qc-no-personal-data (Skill 40): UNIVERSAL-skill identifier gate ==="
 echo "skill dir : $SKILL_DIR"

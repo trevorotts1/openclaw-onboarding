@@ -373,15 +373,70 @@ class TestSourceFilesContainFix(unittest.TestCase):
             "create_role_workspaces.py must log the rejection when content is thin",
         )
 
-    def test_no_client_names_in_changed_files(self):
-        """Fleet-wide policy: no client names in repo files."""
-        FORBIDDEN = ["corey", "lyric", "kofi", "karen", "sheila", "aurelia",
-                     "beverly", "evelyn", "angela", "monique", "teresa", "jill",
-                     "barret", "cassandra", "maria", "coachcass"]
-        for rel in ("qc-completeness.sh", "build-workforce.py",
-                    "create_role_workspaces.py", "department-floor.py"):
+    # The client roster is EXTERNALIZED to an operator-local, gitignored file so
+    # no real client name is hardcoded in this test. Load order:
+    #   $OPENCLAW_CLIENT_ROSTER  →  ~/.openclaw/client-roster.txt
+    # Template (placeholders only, tracked): scripts/client-roster.example.txt.
+    _SCANNED_RELS = ("qc-completeness.sh", "build-workforce.py",
+                     "create_role_workspaces.py", "department-floor.py")
+    # Obviously-fake placeholders from the roster template. A hit means the
+    # template leaked into real source — always checked so this never fails open.
+    _PLACEHOLDER_NAMES = ("exampleclientalpha", "exampleclientbeta",
+                          "placeholderco", "testclient sentinel")
+
+    @staticmethod
+    def _roster_path() -> "Path | None":
+        env = os.environ.get("OPENCLAW_CLIENT_ROSTER")
+        if env:
+            return Path(env)
+        home = os.environ.get("HOME") or os.path.expanduser("~")
+        return Path(home) / ".openclaw" / "client-roster.txt"
+
+    @classmethod
+    def _load_forbidden_names(cls):
+        """Return a lowercased list of roster name-tokens, or None if absent.
+
+        Each roster line is an ERE pattern; for this substring check we strip the
+        \\b word-boundary anchors and lowercase. Blank/comment lines are ignored.
+        """
+        p = cls._roster_path()
+        if p is None or not p.is_file():
+            return None
+        names = []
+        for raw in p.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            names.append(line.replace(r"\b", "").lower())
+        return names or None
+
+    def test_no_placeholder_names_in_changed_files(self):
+        """Never-fail-open: the roster-template placeholders must not appear in
+        any scanned source file, regardless of whether the real roster exists."""
+        for rel in self._SCANNED_RELS:
             src = self._read(rel).lower()
-            for name in FORBIDDEN:
+            for name in self._PLACEHOLDER_NAMES:
+                self.assertNotIn(
+                    name, src,
+                    f"{rel} must not contain roster-template placeholder '{name}'",
+                )
+
+    def test_no_client_names_in_changed_files(self):
+        """Fleet-wide policy: no real client names in repo files. Uses the
+        externalized roster; skips (never silently passes) when it is absent."""
+        forbidden = self._load_forbidden_names()
+        if not forbidden:
+            sys.stderr.write(
+                "WARNING: client-name roster not found (looked in "
+                "$OPENCLAW_CLIENT_ROSTER, then ~/.openclaw/client-roster.txt); "
+                "SKIPPING the roster-specific client-name check. The placeholder "
+                "leak check still ran. See scripts/client-roster.example.txt.\n"
+            )
+            self.skipTest("client-name roster not present; see "
+                          "scripts/client-roster.example.txt")
+        for rel in self._SCANNED_RELS:
+            src = self._read(rel).lower()
+            for name in forbidden:
                 self.assertNotIn(
                     name, src,
                     f"{rel} must not contain client name '{name}'",

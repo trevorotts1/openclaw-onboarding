@@ -1,0 +1,12 @@
+// planted-client-name.txt — CI self-test fixture for qc-assert-no-client-names.sh
+//
+// This file deliberately contains a name that appears in the committed roster
+// template (scripts/client-roster.example.txt). It is a PLACEHOLDER sentinel,
+// NOT a real client. The self-test (selftest-qc-assert.sh, same directory)
+// copies this file into a throwaway temp repo and points the gate at the
+// .example roster to prove the detector exits non-zero on a known name and zero
+// on clean content — all without shipping a real client name.
+//
+// This path is self-excluded from the live repo scan (_is_excluded), so the
+// sentinel here does not trip the gate during a normal repo QC run.
+const owner = "Testclient Sentinel";
