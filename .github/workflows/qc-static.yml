@@ -2057,6 +2057,20 @@ jobs:
           # disagrees with the computed floor.
           python3 scripts/check-floor-count-drift.py
 
+      - name: "Skill 23 — canonical floor DOC/PROSE consistency guard (OQ-7)"
+        shell: bash
+        run: |
+          set -euo pipefail
+          # OQ-7 drift-guard (complements the department-floor.py guard above): no
+          # doc/comment may state a department-FLOOR count that disagrees with the
+          # count DERIVED LIVE from department-naming-map.json. The step above only
+          # checks department-floor.py's OWN output strings; this one DERIVES the floor
+          # fresh from the naming map and ASSERTS every registered doc/comment that
+          # quotes the floor (build-state-schema.json, qc-assert-repo-consistency.py,
+          # build-workforce.py, the CHANGELOG standing sentinel) equals it. Exits 5 on
+          # drift, 2 on registry rot (a reworded anchor), 0 when all agree.
+          python3 23-ai-workforce-blueprint/scripts/check-floor-count-consistency.py
+
       - name: "Skill 32 — register-routing-dept writes sidecar, NEVER openclaw.json root (2026.6.8 schema)"
         shell: bash
         run: |

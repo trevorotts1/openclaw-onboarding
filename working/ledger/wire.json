@@ -25,7 +25,7 @@
     {
       "path": "23-ai-workforce-blueprint/department-naming-map.json",
       "change": "Added bugs + healer to mandatory (floor 26->28). version 2.4.0->2.5.0 + description updated. THE switch that makes both depts standard for every future client (Fable C3).",
-      "verified": "JSON valid; mandatory=21; floor computes 28 (21 mandatory + 7 universal primaries)"
+      "verified": "JSON valid; floor computes 28 (22 mandatory + 6 universal-primary = 28)"
     },
     {
       "path": "23-ai-workforce-blueprint/scripts/department-floor.py",
