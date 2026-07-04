@@ -2416,6 +2416,60 @@ def capture_custom_sops(dept_id, dept_info, dept_config, interview_answers):
     return proc_path
 
 
+# ── Issue #9: onboarding "building" progress producer ─────────────────────────
+# The Command Center onboarding progress page (command-center
+# src/app/onboarding/building/page.tsx, fed by GET /api/onboarding/build-status)
+# renders live build progress from COMPANY_DIR/build-progress.json, but nothing
+# in this repo ever produced that file — the page sat idle forever. This is the
+# producer for that dead data contract (a hard dependency for the interview app).
+#
+# Contract (must match the page's BuildProgress interface exactly):
+#   {
+#     "stage": "idle|manifest|research|departments|roles|qc|assembly|complete",
+#     "message": str,
+#     "documents_total": int,
+#     "documents_complete": int,
+#     "departments": [{ "id", "name", "roles_total", "roles_complete", "status" }],
+#     "eta_minutes": int,
+#     "started_at"?: iso8601, "completed_at"?: iso8601, "updated_at": iso8601
+#   }
+# department.status is one of "pending" | "in_progress" | "complete".
+# Written atomically (tmp + os.replace), same pattern as the wiringStatus and
+# provisioning-receipt writes. Best-effort: NEVER raises into the build.
+def write_build_progress(stage, message, departments=None, documents_total=None,
+                         documents_complete=0, eta_minutes=0, started_at=None,
+                         completed_at=None):
+    """Emit COMPANY_DIR/build-progress.json for the onboarding 'building' page."""
+    if not COMPANY_DIR:
+        return
+    departments = departments or []
+    if documents_total is None:
+        documents_total = sum(int(d.get("roles_total", 0) or 0) for d in departments)
+    payload = {
+        "stage": stage,
+        "message": message,
+        "documents_total": int(documents_total),
+        "documents_complete": int(documents_complete),
+        "departments": departments,
+        "eta_minutes": int(eta_minutes),
+        "updated_at": datetime.now().isoformat(),
+    }
+    if started_at:
+        payload["started_at"] = started_at
+    if completed_at:
+        payload["completed_at"] = completed_at
+    try:
+        os.makedirs(COMPANY_DIR, exist_ok=True)
+        target = os.path.join(COMPANY_DIR, "build-progress.json")
+        tmp = target + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(payload, f, indent=2)
+        os.replace(tmp, target)
+    except Exception as _bp_e:  # noqa: BLE001 - progress is telemetry, never fatal
+        print(f"[BUILD-PROGRESS WARN] could not write build-progress.json: {_bp_e}",
+              file=sys.stderr)
+
+
 def build_from_config(config):
     """
     Build the full workforce from a non-interactive config JSON.
@@ -2492,6 +2546,15 @@ def build_from_config(config):
         # and finds the populated answers file, never the blank template.
         _write_interview_complete_to_state(answers_path=answers_path)
 
+    # Issue #9: emit the first build-progress.json so the onboarding "building"
+    # page leaves its "Connecting to build status..." null state immediately and
+    # the /api/onboarding/build-status route stops returning the idle fallback.
+    _build_started_at = datetime.now().isoformat()
+    write_build_progress(
+        "manifest", "Writing your workforce manifest...",
+        eta_minutes=8, started_at=_build_started_at,
+    )
+
     # Process departments
     departments_config = config.get("departments", {})
     selected_departments = {}
@@ -2567,10 +2630,49 @@ def build_from_config(config):
     # variance bug impossible - no department can silently ship with 0 roles/SOPs.
     assert_dept_map_resolves(list(selected_departments.keys()))
 
+    # Issue #9: now that the department set is final, publish the department roster
+    # + a stable documents_total (sum of each dept's suggested-role count) so the
+    # onboarding page can render per-department progress bars and an overall %.
+    _progress_departments = []
+    for _pid, _pinfo in list(selected_departments.items()):
+        try:
+            _roles_total = len(parse_suggested_roles(_pid))
+        except Exception:  # noqa: BLE001 - counting is best-effort telemetry
+            _roles_total = 0
+        _progress_departments.append({
+            "id": _pid,
+            "name": _pinfo.get("name", _pid.replace("-", " ").title()),
+            "roles_total": _roles_total,
+            "roles_complete": 0,
+            "status": "pending",
+        })
+    _prog_by_id = {d["id"]: d for d in _progress_departments}
+    _docs_total = sum(d["roles_total"] for d in _progress_departments)
+    _docs_done = 0
+    write_build_progress(
+        "departments", f"Building {len(_progress_departments)} departments...",
+        departments=_progress_departments, documents_total=_docs_total,
+        documents_complete=0, eta_minutes=max(1, _docs_total // 2),
+        started_at=_build_started_at,
+    )
+
     # Create department workspaces
     specialists_by_dept = {}
     for dept_id, dept_info in selected_departments.items():
         dept_config = departments_config.get(dept_id, {})
+
+        # Issue #9: mark this department in-progress before materializing its roles.
+        _pe = _prog_by_id.get(dept_id)
+        if _pe:
+            _pe["status"] = "in_progress"
+            write_build_progress(
+                "roles", f"Generating roles + how-to documents for {dept_info['name']}...",
+                departments=_progress_departments,
+                documents_total=max(_docs_total, _docs_done),
+                documents_complete=_docs_done,
+                eta_minutes=max(1, (_docs_total - _docs_done) // 2),
+                started_at=_build_started_at,
+            )
 
         # Build per-department interview answers
         dept_answers = {
@@ -2614,6 +2716,23 @@ def build_from_config(config):
         # Determine specialists
         specialists, decision_ctx = determine_specialists(dept_id, dept_info, dept_answers)
         specialists_by_dept[dept_id] = specialists
+
+        # Issue #9: this department's roles are materialized — mark it complete and
+        # advance the overall documents_complete counter so the page's bars fill.
+        if _pe:
+            _actual = len(role_folders)
+            _pe["roles_complete"] = _actual if _actual else _pe["roles_total"]
+            _pe["roles_total"] = max(_pe["roles_total"], _actual)
+            _pe["status"] = "complete"
+            _docs_done += _pe["roles_complete"]
+            write_build_progress(
+                "roles", f"Completed {dept_info['name']} ({_pe['roles_complete']} roles)",
+                departments=_progress_departments,
+                documents_total=max(_docs_total, _docs_done),
+                documents_complete=_docs_done,
+                eta_minutes=max(1, (max(_docs_total, _docs_done) - _docs_done) // 2 + 2),
+                started_at=_build_started_at,
+            )
 
     # WS-2: visible instantiated-from-library vs LLM-generated ratio. This is
     # the metric that proves the build is INSTANTIATING the pre-written library
@@ -2661,6 +2780,27 @@ def build_from_config(config):
     # company-root manifest so the orchestrator knows exactly what to fill - a
     # missing template is never a silent empty stub.
     write_pending_sops_manifest(selected_departments)
+
+    # Issue #9: all department roles are on disk; the org chart, rosters, routing
+    # map and persona matrix are being assembled.
+    write_build_progress(
+        "assembly", "Assembling org chart, rosters + persona matrix...",
+        departments=_progress_departments,
+        documents_total=max(_docs_total, _docs_done),
+        documents_complete=_docs_done, eta_minutes=3,
+        started_at=_build_started_at,
+    )
+
+    # Issue #9: the SOP research manifest + auto-population is the long pole
+    # (heavy sub-agents, up to ~60 min) — surface it as the QC stage so the page
+    # shows meaningful activity while every document is quality-reviewed.
+    write_build_progress(
+        "qc", "Quality reviewing every document...",
+        departments=_progress_departments,
+        documents_total=max(_docs_total, _docs_done),
+        documents_complete=_docs_done, eta_minutes=5,
+        started_at=_build_started_at,
+    )
 
     # v9.6.0: write the SOP research manifest so the AI agent can fan out
     # parallel sub-agents (one per department) to write real Lean Six Sigma
@@ -3077,6 +3217,33 @@ def build_from_config(config):
             print(f"[v10.15.8 WARN] verify-library-gate.sh invocation failed: {_e}", file=sys.stderr)
     else:
         print(f"[v10.15.8 WARN] verify-library-gate.sh not present at {_gate_script}", file=sys.stderr)
+
+    # Issue #9: terminal build-progress emit. Only signal "complete" when the
+    # structural build actually succeeded (all department agents wired —
+    # _build_progress == 100). If registration failed, leave the page in a
+    # non-terminal state with an honest message so it keeps polling rather than
+    # falsely showing "ready" (honors the "no false done" doctrine).
+    try:
+        _all_done = all(d["status"] == "complete" for d in _progress_departments)
+        if _build_progress >= 100 and _all_done:
+            write_build_progress(
+                "complete", "Your AI workforce is ready ✓",
+                departments=_progress_departments,
+                documents_total=max(_docs_total, _docs_done),
+                documents_complete=max(_docs_total, _docs_done),
+                eta_minutes=0, started_at=_build_started_at,
+                completed_at=datetime.now().isoformat(),
+            )
+        else:
+            write_build_progress(
+                "qc", _build_complete_msg,
+                departments=_progress_departments,
+                documents_total=max(_docs_total, _docs_done),
+                documents_complete=_docs_done, eta_minutes=5,
+                started_at=_build_started_at,
+            )
+    except Exception as _bp_final_e:  # noqa: BLE001
+        print(f"[BUILD-PROGRESS WARN] terminal emit failed: {_bp_final_e}", file=sys.stderr)
 
 
 # ============================================================
