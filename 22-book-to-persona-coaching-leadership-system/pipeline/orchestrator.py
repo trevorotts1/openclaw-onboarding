@@ -327,21 +327,91 @@ OPENROUTER_API_KEY  = _KEYS.get("OPENROUTER_API_KEY") or os.environ.get("OPENROU
 OPENAI_API_KEY      = _KEYS.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
 MOONSHOT_API_KEY    = _KEYS.get("MOONSHOT_API_KEY") or os.environ.get("MOONSHOT_API_KEY", "")  # deprecated, kept for back-compat only
 
-# No hard requirement on any single key — at least ONE provider key must
-# be present, but the selector decides which one to use. Crashing on a
-# missing MOONSHOT_API_KEY was the old (pre-v10.3.0) behavior and was wrong:
-# it forced clients with Ollama Cloud to also configure Moonshot, even
-# though the new chain never calls Moonshot direct anymore.
-if not (OLLAMA_API_KEY or OPENROUTER_API_KEY or OPENAI_API_KEY):
-    raise ValueError(
-        "No model provider API key found. Set at least one of: "
-        "OLLAMA_API_KEY (preferred), OPENROUTER_API_KEY (fallback), or OPENAI_API_KEY (last resort) "
-        "in secrets/.env or as a container env var."
-    )
-
-OLLAMA_BASE_URL     = "https://ollama.com/api"
+# task-64 bug 3 (Ollama auth routing): the Ollama route now defaults to the
+# LOCAL daemon (http://localhost:11434/api). The daemon is authenticated via
+# `ollama signin` (~/.ollama/id_ed25519) and transparently proxies `*:cloud`
+# models to Ollama Cloud — this WORKS on the operator box while the box's
+# 21-char OLLAMA_API_KEY is a DEAD placeholder that returns bare 401 on
+# ollama.com/api/chat. (Trap: ollama.com/api/tags is PUBLIC and returns 200
+# for ANY key, so a dead key masquerades as valid — never validate an Ollama
+# key against /api/tags.) An explicit OLLAMA_BASE_URL in secrets/.env or the
+# env overrides the default; only a NON-local base sends (and requires) the
+# bearer key.
+_OLLAMA_LOCAL_BASE = "http://localhost:11434/api"
+_ollama_base_cfg = (_KEYS.get("OLLAMA_BASE_URL") or os.environ.get("OLLAMA_BASE_URL") or "").strip().rstrip("/")
+if _ollama_base_cfg:
+    OLLAMA_BASE_URL = _ollama_base_cfg if _ollama_base_cfg.endswith("/api") else _ollama_base_cfg + "/api"
+else:
+    OLLAMA_BASE_URL = _OLLAMA_LOCAL_BASE
+OLLAMA_IS_LOCAL = ("localhost" in OLLAMA_BASE_URL) or ("127.0.0.1" in OLLAMA_BASE_URL)
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENAI_BASE_URL     = "https://api.openai.com/v1"
+
+
+def _local_ollama_reachable(timeout: float = 1.0) -> bool:
+    """Cheap TCP probe of the local Ollama daemon (no API call, no tokens)."""
+    if not OLLAMA_IS_LOCAL:
+        return False
+    try:
+        import socket
+        from urllib.parse import urlparse
+        u = urlparse(OLLAMA_BASE_URL)
+        with socket.create_connection((u.hostname or "localhost", u.port or 11434),
+                                      timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+# No hard requirement on any single key — at least ONE provider ROUTE must be
+# usable, but the selector decides which one to use. A signed-in LOCAL Ollama
+# daemon counts as a route (bug 3): it needs NO API key at all.
+if not (OLLAMA_API_KEY or OPENROUTER_API_KEY or OPENAI_API_KEY or _local_ollama_reachable()):
+    raise ValueError(
+        "No usable model provider route found. Either run `ollama signin` so the "
+        "local daemon (http://localhost:11434) can proxy *:cloud models, or set "
+        "at least one of: OPENROUTER_API_KEY (fallback), OLLAMA_API_KEY (direct "
+        "ollama.com — only needed with a non-local OLLAMA_BASE_URL), or "
+        "OPENAI_API_KEY (last resort) in secrets/.env or as a container env var."
+    )
+
+# task-64 bug 4 (max_tokens ceiling): Ollama Cloud hard-caps each model's
+# OUTPUT tokens; requesting more is a deterministic 400 ("max_tokens exceeds
+# model's maximum") even when authenticated. deepseek-v4-pro's confirmed
+# ceiling is 65536 — the pipeline asked for 120000 on Phase-3/single-book
+# synthesis. Requests are clamped to the model's known ceiling (default 65536
+# for unknown models, which is above every non-synthesis call here).
+_MODEL_MAX_OUTPUT_TOKENS = {
+    "deepseek-v4-pro": 65536,   # confirmed: Ollama Cloud 400s above this
+}
+_DEFAULT_MAX_OUTPUT_TOKENS = 65536
+
+
+def _clamp_max_tokens(model: str, requested: int) -> int:
+    base = (model or "").split(":", 1)[0]    # drop ':cloud' / tags
+    base = base.rsplit("/", 1)[-1]           # drop vendor/route prefixes
+    cap = _DEFAULT_MAX_OUTPUT_TOKENS
+    for fam, c in _MODEL_MAX_OUTPUT_TOKENS.items():
+        if base.startswith(fam):
+            cap = c
+            break
+    if requested > cap:
+        log(f"  max_tokens {requested} exceeds {model} output ceiling {cap} — clamping")
+        return cap
+    return requested
+
+
+# task-64 bug 5 (retry-storm guard): 400/401/403/404/422 are DETERMINISTIC
+# client errors — retrying them cannot succeed and previously fanned each
+# phase into 6-9 wasted calls (observed: ~1300 all-4xx requests in one day,
+# zero tokens produced). These abort the provider attempt immediately so the
+# caller's provider FALLBACK runs right away. 408/429/5xx/network keep the
+# normal backoff retries.
+_NO_RETRY_STATUSES = frozenset({400, 401, 403, 404, 422})
+
+
+class _DeterministicHTTPError(RuntimeError):
+    """A 4xx that will never succeed on retry — fail fast to the fallback."""
 
 # ─── BOOK REGISTRY ────────────────────────────────────────────────────────────
 BOOKS = [
@@ -1147,20 +1217,31 @@ def chunk_text(text: str, chunk_size: int = MAX_CHUNK_SIZE, overlap: int = 2000)
 
 async def call_ollama_cloud(session: aiohttp.ClientSession, model: str, system: str, user: str, max_tokens: int = 16000) -> str:
     """
-    Call Ollama Cloud (https://ollama.com/api/chat) for any ollama/* model.
-    v10.3.0: this is the PRIMARY route for heavy reasoning. Kimi 2.6+ and
-    DeepSeek V4-pro both run here at subscription-billed cost.
+    Call the Ollama route for any ollama/* model.
+
+    task-64 bug 3: the DEFAULT base is the LOCAL daemon
+    (http://localhost:11434/api), authenticated by `ollama signin` — NO bearer
+    key is sent or required; the daemon proxies `*:cloud` models to Ollama
+    Cloud itself. A bearer key is only used (and then REQUIRED) when
+    OLLAMA_BASE_URL points at a non-local base such as https://ollama.com/api.
 
     `model` arg must be an Ollama model id WITHOUT the "ollama/" prefix
-    (e.g. "kimi-k2.6:cloud" not "ollama/kimi-k2.6:cloud"). Caller strips it.
+    (e.g. "deepseek-v4-pro:cloud" not "ollama/deepseek-v4-pro:cloud").
+    max_tokens is clamped to the model's real output ceiling (bug 4) — a
+    request above it is a deterministic 400 on Ollama Cloud.
     """
-    if not OLLAMA_API_KEY:
-        raise RuntimeError("Ollama Cloud route requested but OLLAMA_API_KEY is not set")
+    headers = {"Content-Type": "application/json"}
+    if not OLLAMA_IS_LOCAL:
+        if not OLLAMA_API_KEY:
+            raise RuntimeError(
+                "Non-local OLLAMA_BASE_URL configured but OLLAMA_API_KEY is not "
+                "set — either unset OLLAMA_BASE_URL to use the signed-in local "
+                "daemon, or set a REAL key (never validate it via /api/tags; "
+                "that endpoint is public and returns 200 for any key)."
+            )
+        headers["Authorization"] = f"Bearer {OLLAMA_API_KEY}"
 
-    headers = {
-        "Authorization": f"Bearer {OLLAMA_API_KEY}",
-        "Content-Type": "application/json",
-    }
+    max_tokens = _clamp_max_tokens(model, max_tokens)
     payload = {
         "model": model,
         "messages": [
@@ -1185,26 +1266,34 @@ async def call_ollama_cloud(session: aiohttp.ClientSession, model: str, system: 
             ) as response:
                 if response.status == 200:
                     data = await response.json()
-                    # Ollama Cloud chat response shape: {"message": {"content": "..."}}
+                    # Ollama chat response shape: {"message": {"content": "..."}}
                     msg = data.get("message", {}) if isinstance(data, dict) else {}
                     content = msg.get("content", "") if isinstance(msg, dict) else ""
                     if content:
                         return content
-                    log(f"  Ollama Cloud returned empty content (attempt {attempt}/{MAX_RETRIES}); body preview: {json.dumps(data)[:200]}")
+                    log(f"  Ollama returned empty content (attempt {attempt}/{MAX_RETRIES}); body preview: {json.dumps(data)[:200]}")
                 else:
                     error_text = await response.text()
-                    log(f"  Ollama Cloud error {response.status}: {error_text[:200]}")
+                    log(f"  Ollama error {response.status}: {error_text[:200]}")
+                    if response.status in _NO_RETRY_STATUSES:
+                        # bug 5: deterministic 4xx — retrying burns calls for
+                        # nothing (the observed 401/400 retry-storm). Fail fast
+                        # so the caller's OpenRouter fallback runs immediately.
+                        raise _DeterministicHTTPError(
+                            f"Ollama {response.status} (deterministic — not retrying): {error_text[:300]}")
                 if attempt < MAX_RETRIES:
                     log(f"  Retrying in {RETRY_DELAY}s... (attempt {attempt}/{MAX_RETRIES})")
                     import asyncio as _asyncio
                     await _asyncio.sleep(RETRY_DELAY * attempt)
+        except _DeterministicHTTPError:
+            raise
         except Exception as e:
             log(f"  Exception on attempt {attempt}: {e}")
             if attempt < MAX_RETRIES:
                 import asyncio as _asyncio
                 await _asyncio.sleep(RETRY_DELAY * attempt)
 
-    raise RuntimeError(f"All {MAX_RETRIES} attempts failed for {model} via Ollama Cloud")
+    raise RuntimeError(f"All {MAX_RETRIES} attempts failed for {model} via Ollama ({OLLAMA_BASE_URL})")
 
 
 async def call_moonshot(session: aiohttp.ClientSession, system: str, user: str) -> str:
@@ -1264,6 +1353,11 @@ async def call_openrouter(session: aiohttp.ClientSession, model: str, system: st
         "HTTP-Referer": "https://blackceo.com",
         "X-Title": "BlackCEO Coaching Personas Matrix"
     }
+    # bug 4: clamp to the model's real output ceiling here too — the primary
+    # OpenRouter fallback (deepseek/deepseek-v4-pro) shares the 65536 cap, and
+    # no model in this pipeline's chain accepts the 120000 the synthesis phases
+    # request (so an over-ask is a deterministic 400 on every route).
+    max_tokens = _clamp_max_tokens(model, max_tokens)
     payload = {
         "model": model,
         "messages": [
@@ -1301,9 +1395,19 @@ async def call_openrouter(session: aiohttp.ClientSession, model: str, system: st
                 else:
                     error_text = await response.text()
                     log(f"  OpenRouter error {response.status}: {error_text[:200]}")
+                    if response.status in _NO_RETRY_STATUSES:
+                        # bug 5: deterministic 4xx (bad model id / auth / params)
+                        # — retrying cannot succeed. Fail fast; the caller has
+                        # no further provider fallback beyond OpenRouter, so the
+                        # phase is marked failed immediately instead of after
+                        # MAX_RETRIES wasted calls.
+                        raise _DeterministicHTTPError(
+                            f"OpenRouter {response.status} (deterministic — not retrying): {error_text[:300]}")
                     if attempt < MAX_RETRIES:
                         log(f"  Retrying in {RETRY_DELAY}s... (attempt {attempt}/{MAX_RETRIES})")
                         await asyncio.sleep(RETRY_DELAY * attempt)
+        except _DeterministicHTTPError:
+            raise
         except Exception as e:
             log(f"  Exception on attempt {attempt}: {e}")
             if attempt < MAX_RETRIES:
