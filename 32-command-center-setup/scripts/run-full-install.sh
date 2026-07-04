@@ -208,27 +208,40 @@ for cmd in jq curl git npm python3; do
 done
 
 # ─── INTERVIEW-COMPLETE PRECONDITION (binding) ────────────────────────────────
-# RULE: a client gets a Command Center + zero-human company ONLY after their AI
-# Workforce interview is COMPLETE. If it is not, REPORT "interview not completed
-# yet" and EXIT CLEAN — do NOT seed workspaces, materialize agents, or scaffold
-# the default department floor onto a 'default' company. (See SKILL.md
-# "Interview-Complete Precondition" + PREREQS.json interview-complete entry.)
+# RULE: a client's REAL zero-human company (departments, roles, step-by-step
+# instructions) is materialized ONLY after their AI Workforce interview is COMPLETE.
+# If it is not, REPORT "interview not completed yet" and EXIT CLEAN — do NOT seed
+# workspaces, materialize agents, or scaffold the default department floor onto a
+# 'default' company. (See SKILL.md "Interview-Complete Precondition + Locked
+# Interview-Mode" + PREREQS.json interview-complete entry.)
+#
+# ★ LOCKED INTERVIEW-MODE IS BY DESIGN (ratified 2026-07-03, OQ-1). ★
+# This gate protects the REAL-WORKFORCE SEEDING below — NOT the CC shell itself.
+# Under OQ-1 the CC now ships FIRST but LOCKED to the /interview surface: the CC
+# middleware (P0-5) 302s every non-/interview, non-/onboarding page to /interview
+# while build-state `interviewComplete` is false, and reveals the full dashboard
+# once `buildCompletedAt` is set at closeout. The lock is STATE-DRIVEN off the
+# canonical build-state fields (interviewComplete / buildCompletedAt) that this
+# installer already reads/writes — there is NO separate CC "unlock" env var to set,
+# and provisioning must NOT invent one. A future reader: the interview-only CC view
+# in front of an empty board pre-closeout is the intended experience, NOT a bug —
+# do not remove this gate or "unlock" the shell to make the board show early.
 #
 # --update-only is EXEMPT: it only refreshes an ALREADY-built CC (git pull / npm /
 # db:push) and must keep working for provisioned boxes whose flag predates this gate.
 if [[ "$UPDATE_ONLY" != "true" ]]; then
   if [[ ! -f "$STATE_FILE" ]]; then
-    log "INFO" "interview-gate: no .workforce-build-state.json — interview not started; REPORTING not-completed and exiting clean (no scaffolding)."
-    echo "INTERVIEW_NOT_COMPLETE: no workforce-build state on this box — AI Workforce interview not completed yet. Command Center NOT built." >&2
+    log "INFO" "interview-gate: no .workforce-build-state.json — interview not started; REPORTING not-completed and exiting clean (real workforce not seeded)."
+    echo "INTERVIEW_NOT_COMPLETE: no workforce-build state on this box — AI Workforce interview not completed yet. Real workforce NOT materialized (the CC stays in locked interview-mode by design until closeout)." >&2
     exit 0
   fi
   # FAST PRE-CHECK: the bare flag. Necessary but NOT sufficient (SKILL.md demands
   # multi-signal corroboration — the flag alone is set even on the fabricating path).
   INTERVIEW_COMPLETE=$(state_get '.interviewComplete')
   if [[ "$INTERVIEW_COMPLETE" != "true" ]]; then
-    log "INFO" "interview-gate: interviewComplete=${INTERVIEW_COMPLETE:-<unset>} — REPORTING 'interview not completed yet' and exiting clean. NOT seeding/scaffolding."
-    state_set '.commandCenterStatus = "interview-pending" | .commandCenterGateReason = "AI Workforce interview not completed (interviewComplete != true) — Command Center build is gated until the owner finishes their interview."'
-    echo "INTERVIEW_NOT_COMPLETE: interviewComplete != true — AI Workforce interview not completed yet. Command Center NOT built (this is expected, not an error)." >&2
+    log "INFO" "interview-gate: interviewComplete=${INTERVIEW_COMPLETE:-<unset>} — REPORTING 'interview not completed yet' and exiting clean. NOT seeding/scaffolding the real workforce."
+    state_set '.commandCenterStatus = "interview-pending" | .commandCenterGateReason = "AI Workforce interview not completed (interviewComplete != true) — real-workforce materialization is gated until the owner finishes their interview. The CC stays in locked interview-mode (P0-5 middleware 302s to /interview) by design until buildCompletedAt at closeout."'
+    echo "INTERVIEW_NOT_COMPLETE: interviewComplete != true — AI Workforce interview not completed yet. Real workforce NOT materialized (expected, not an error). CC remains in locked interview-mode by design until closeout." >&2
     exit 0
   fi
   log "INFO" "interview-gate: fast pre-check passed (interviewComplete=true) — now CORROBORATING with qc-interview-completion.py (multi-signal, per SKILL.md)."

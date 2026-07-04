@@ -9,6 +9,19 @@ This guide walks you through activating your AI workforce as a live Command Cent
 
 **Important:** This skill requires Skill 23 (AI Workforce Blueprint) to be complete first. The agent will check for this before proceeding.
 
+> **🔒 Locked interview-mode is BY DESIGN (ratified 2026-07-03, OQ-1).** The Command
+> Center ships to the client FIRST but LOCKED to the `/interview` surface. The CC
+> middleware (P0-5) 302-redirects every non-`/interview`, non-`/onboarding` page to
+> `/interview` while the client's build-state `interviewComplete` is `false`, and
+> reveals the full dashboard once `buildCompletedAt` is set at closeout. The lock is
+> STATE-DRIVEN off the canonical build-state fields (`interviewComplete` /
+> `buildCompletedAt`) — there is **no separate CC "unlock" env var** and provisioning
+> must not invent one. The interview-only view in front of an empty board before
+> closeout is the intended experience, **not a bug** — do not "unlock" it. What the
+> interview-complete gate below protects is the seeding/materialization of the
+> client's REAL zero-human workforce (departments, roles, agents), which must still
+> wait for the interview to be genuinely complete.
+
 ---
 
 ## Phase 1: Prerequisites Check
