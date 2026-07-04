@@ -34,6 +34,10 @@ RESUME_SH="$REPO_ROOT/scripts/resume-onboarding.sh"
 RESUME_PROMPT="$REPO_ROOT/scripts/resume-onboarding-prompt.txt"
 INSTALL_SH="$REPO_ROOT/install.sh"
 UPDATE_SH="$REPO_ROOT/update-skills.sh"
+# v17.0.21: install_onboarding_resume_cron() moved to a shared lib sourced by
+# BOTH install.sh and update-skills.sh, so the cron's registration (interval,
+# name) now lives here. The interval check (6) scans this file too.
+RESUME_CRON_LIB="$REPO_ROOT/lib-onboarding-resume-cron.sh"
 
 echo "=== bounded-resume-cron.test.sh ==="
 echo ""
@@ -175,20 +179,30 @@ fi
 echo ""
 echo "--- (6) CRON_INTERVAL: cron registered at */30 or longer ---"
 
-if [[ -f "$INSTALL_SH" ]]; then
-  interval_lines="$(grep "onboarding-resume" "$INSTALL_SH" | grep '\*/[0-9]' || true)"
+# Scan BOTH install.sh and the shared resume-cron lib (the cron registration
+# now lives in the lib; install.sh only sources+calls it). At least one file
+# must carry an onboarding-resume interval line, and every such line must be
+# */15 or slower.
+_interval_seen=0
+for _f in "$INSTALL_SH" "$RESUME_CRON_LIB"; do
+  [[ -f "$_f" ]] || continue
+  interval_lines="$(grep "onboarding-resume" "$_f" | grep '\*/[0-9]' || true)"
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
+    _interval_seen=1
     interval="$(echo "$line" | grep -o '\*/[0-9]*' | head -1 || true)"
     val="$(echo "$interval" | grep -o '[0-9]*' || true)"
     if [[ -z "$val" ]]; then
-      pass "6: could not parse interval from line; skipping: $line"
+      pass "6: could not parse interval from line ($(basename "$_f")); skipping: $line"
     elif (( val < 15 )); then
-      fail "6: onboarding-resume cron interval $interval is faster than */15 -- high-frequency furnace risk"
+      fail "6: onboarding-resume cron interval $interval in $(basename "$_f") is faster than */15 -- high-frequency furnace risk"
     else
-      pass "6: onboarding-resume cron interval $interval (>= */15, safe)"
+      pass "6: onboarding-resume cron interval $interval in $(basename "$_f") (>= */15, safe)"
     fi
   done <<< "$interval_lines"
+done
+if [[ "$_interval_seen" -eq 0 ]]; then
+  fail "6: no onboarding-resume interval line found in install.sh or lib-onboarding-resume-cron.sh -- cron registration missing?"
 fi
 
 # ---------------------------------------------------------------------------

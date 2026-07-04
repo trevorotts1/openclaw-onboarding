@@ -11,6 +11,7 @@ on:
     paths:
       - install.sh
       - update-skills.sh
+      - lib-onboarding-resume-cron.sh
       - force-update.sh
       - check-updates.sh
       - cron-prompt.txt
@@ -27,6 +28,7 @@ on:
     paths:
       - install.sh
       - update-skills.sh
+      - lib-onboarding-resume-cron.sh
       - force-update.sh
       - check-updates.sh
       - cron-prompt.txt

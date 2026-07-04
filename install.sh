@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v17.0.20"
+ONBOARDING_VERSION="v17.0.21"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -122,6 +122,21 @@ fi
 command -v oc_state_seed          >/dev/null 2>&1 || oc_state_seed()          { :; }
 command -v oc_onboarding_complete >/dev/null 2>&1 || oc_onboarding_complete() { return 1; }
 command -v oc_state_summary       >/dev/null 2>&1 || oc_state_summary()       { OC_VERIFIED=0; OC_TOTAL=0; OC_FAILED_LIST=""; OC_PENDING_LIST=""; OC_INTERVIEW_LIST=""; }
+
+# ----------------------------------------------------------
+# Shared onboarding-resume cron installer (v17.0.21). SINGLE canonical
+# definition of install_onboarding_resume_cron(), shared with update-skills.sh
+# so the roll/hot-patch path installs the SAME SILENT, bounded, self-removing
+# resume cron with no copy-paste drift. Best-effort source.
+# ----------------------------------------------------------
+_lib_resume_cron_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-onboarding-resume-cron.sh"
+if [ -f "$_lib_resume_cron_self" ]; then
+  # shellcheck source=/dev/null
+  source "$_lib_resume_cron_self"
+  export OPENCLAW_LIB_RESUME_CRON_SOURCED=1
+fi
+# No-op fallback so Step 13b never aborts if the lib is missing (older bundle).
+command -v install_onboarding_resume_cron >/dev/null 2>&1 || install_onboarding_resume_cron() { :; }
 
 # ----------------------------------------------------------
 # Path variables are already set by the platform bootstrap block above.
@@ -4608,7 +4623,12 @@ PYEOF
 # Canonical lib: lib-onboarding-state.sh (sourced at top of install.sh).
 # scripts/onboarding-state.sh is a compat shim that sources the canonical.
 if command -v oc_state_seed >/dev/null 2>&1; then
-    SKILLS_DIR="$SKILLS_DIR" oc_state_seed "$ONBOARDING_VERSION" "$SKILLS_DIR" \
+    # SIGNATURE: oc_state_seed <src_skills_dir> [version]  (lib-onboarding-state.sh).
+    # v17.0.21 FIX: args were REVERSED here — the version string ("v17.0.x") was
+    # passed as <src_skills_dir>, so the install-time seed pointed at a non-existent
+    # directory and discovered ZERO numbered skills (silent no-op; the roll-time
+    # obs_* seed + resume cron then had to do all the work). Correct order below.
+    SKILLS_DIR="$SKILLS_DIR" oc_state_seed "$SKILLS_DIR" "$ONBOARDING_VERSION" \
         && success "Onboarding state seeded → (every skill pending; gate drives to qc-passed)" \
         || warn "oc_state_seed reported an issue (install continues)"
 elif [ -f "$ONBOARDING_DIR/scripts/onboarding-state.sh" ]; then
@@ -5640,85 +5660,11 @@ install_workforce_resume_cron
 # Modeled on install_workforce_resume_cron; reuses max-runs + Rescue Rangers.
 step "Step 13b: Installing onboarding-resume cron (every 30 min — interview gate + backoff in script)"
 
-install_onboarding_resume_cron() {
-    if ! command -v openclaw >/dev/null 2>&1; then
-        warn "openclaw CLI not on PATH — skipping onboarding-resume cron. Re-run update-skills.sh later."
-        return 0
-    fi
-    if openclaw cron list 2>/dev/null | grep -qi "onboarding-resume"; then
-        success "onboarding-resume cron already installed"
-        return 0
-    fi
-
-    local RESUME_PROMPT_FILE="$ONBOARDING_DIR/scripts/resume-onboarding-prompt.txt"
-    if [ ! -f "$RESUME_PROMPT_FILE" ]; then
-        warn "resume-onboarding-prompt.txt not found at $RESUME_PROMPT_FILE — onboarding-resume cron skipped (older bundle?)"
-        return 0
-    fi
-    # Make the shell guard executable wherever it landed.
-    chmod +x "$ONBOARDING_DIR/scripts/resume-onboarding.sh" 2>/dev/null || true
-    chmod +x "$OC_CONFIG/scripts/resume-onboarding.sh" 2>/dev/null || true
-
-    # ── SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons) ──────────────
-    # onboarding-resume is a MAINTENANCE self-ping (re-run the onboarding
-    # activation + QC gate while any skill is still pending). The old form wired
-    # `--channel telegram --to $TG_TARGET`, auto-delivering the raw resume prompt
-    # to the CLIENT chat every 30 min. FIX: SILENT main-session agent-message
-    # cron (no --channel/--to/--announce). The gate runs in the agent's own
-    # context (log-only); the agent surfaces owner-facing status only via its own
-    # deliberate `message send`. No owner target needed → no operator-ID strand.
-    local CHANNEL_AGENT="main"
-    if [ -n "${TELEGRAM_DEFAULT_AGENT_CACHED:-}" ]; then
-        CHANNEL_AGENT="$TELEGRAM_DEFAULT_AGENT_CACHED"
-    fi
-
-    local PROMPT_CONTENT
-    PROMPT_CONTENT=$(cat "$RESUME_PROMPT_FILE")
-
-    local OUT="" RC=0
-    local BASE=(
-        --name "onboarding-resume"
-        --agent "$CHANNEL_AGENT"
-        --cron "*/30 * * * *"
-        --tz "America/New_York"
-        --session-target main
-        --light-context
-    )
-    OUT=$(openclaw cron create "${BASE[@]}" --message "$PROMPT_CONTENT" 2>&1) || RC=$?
-    echo "$OUT" >> "$LOG_FILE"
-    if [ "$RC" -eq 0 ]; then
-        success "onboarding-resume cron installed — every 30 min, SILENT main-session (no client auto-announce); interview gate + 2h backoff pre-interview in script"
-        return 0
-    fi
-
-    local BASE_NO_LC=(
-        --name "onboarding-resume"
-        --agent "$CHANNEL_AGENT"
-        --cron "*/30 * * * *"
-        --tz "America/New_York"
-        --session-target main
-    )
-    OUT=$(openclaw cron create "${BASE_NO_LC[@]}" --message "$PROMPT_CONTENT" 2>&1) || RC=$?
-    echo "$OUT" >> "$LOG_FILE"
-    if [ "$RC" -eq 0 ]; then
-        success "onboarding-resume cron installed (silent main-session, no-light-context fallback)"
-        return 0
-    fi
-
-    # v14.1.3: docs-canonical positional form (2026.6.8) — final attempt.
-    if _cron_create_positional "onboarding-resume" "$CHANNEL_AGENT" "*/30 * * * *" "America/New_York" "$PROMPT_CONTENT" "lc"; then
-        success "onboarding-resume cron installed (positional 2026.6.8 form)"
-        return 0
-    fi
-
-    warn "onboarding-resume cron creation failed. Manual install (SILENT — no client auto-announce):"
-    warn "  openclaw cron create --name onboarding-resume \\"
-    warn "    --agent $CHANNEL_AGENT --cron '*/30 * * * *' --tz America/New_York \\"
-    warn "    --session-target main --light-context \\"
-    warn "    --message \"\$(cat $RESUME_PROMPT_FILE)\""
-    return 0
-}
-
+# install_onboarding_resume_cron() is defined ONCE in lib-onboarding-resume-cron.sh
+# (sourced near the top of this script) so install.sh and update-skills.sh share
+# the SAME SILENT, idempotent, bounded, self-removing installer with no drift. It
+# registers a */30 main-session self-ping (no --channel/--to/--announce); all
+# boundedness lives in scripts/resume-onboarding.sh. See that lib for details.
 install_onboarding_resume_cron
 
 # ----------------------------------------------------------

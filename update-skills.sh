@@ -49,7 +49,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v17.0.20"
+ONBOARDING_VERSION="v17.0.21"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -456,7 +456,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v17.0.20 - safe_json_edit
+# v17.0.21 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -987,6 +987,18 @@ main() {
   if [ -n "$_OBS_SHIM" ]; then
     # shellcheck disable=SC1090
     source "$_OBS_SHIM"
+    # v17.0.21: source the SHARED onboarding-resume cron installer (repo-root lib)
+    # so the roll/hot-patch path can install the SAME SILENT, bounded, self-removing
+    # resume cron install.sh registers — no copy-paste drift. Sourced NOW (before the
+    # temp-clone cleanup below) so the function persists in-shell; the prompt file it
+    # reads is persisted to $OC_PERSISTENT_SCRIPTS_DIR just below.
+    for _rc_lib in "$ONBOARDING_DIR/lib-onboarding-resume-cron.sh" "${_SCRIPT_DIR:-}/lib-onboarding-resume-cron.sh"; do
+      if [ -n "$_rc_lib" ] && [ -f "$_rc_lib" ]; then
+        # shellcheck disable=SC1090
+        source "$_rc_lib"; break
+      fi
+    done
+    command -v install_onboarding_resume_cron >/dev/null 2>&1 || install_onboarding_resume_cron() { :; }
     if command -v obs_seed_state >/dev/null 2>&1; then
       obs_seed_state "$ONBOARDING_VERSION" "$EXTRACTED_DIR" || echo "  ⚠ onboarding-state seed reported an issue (continuing)"
     else
@@ -1009,6 +1021,12 @@ main() {
       [ -f "$ONBOARDING_DIR/scripts/$_s" ] && cp -f "$ONBOARDING_DIR/scripts/$_s" "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
       [ -f "$_OC_SCRIPTS_DEST/$_s" ] && chmod +x "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
     done
+    # v17.0.21: persist the onboarding-resume cron PROMPT (a .txt, NOT covered by
+    # the .sh loop above) so install_onboarding_resume_cron can resolve it AFTER
+    # the temp-clone cleanup wipes $ONBOARDING_DIR (same persistence rationale as
+    # resume-onboarding.sh). Resolved via $OC_PERSISTENT_SCRIPTS_DIR at cron time.
+    [ -f "$ONBOARDING_DIR/scripts/resume-onboarding-prompt.txt" ] && \
+      cp -f "$ONBOARDING_DIR/scripts/resume-onboarding-prompt.txt" "$_OC_SCRIPTS_DEST/resume-onboarding-prompt.txt" 2>/dev/null || true
     # Export the persistent scripts dir so the post-cleanup cron-backfill /
     # fleet-standards blocks can resolve these scripts after $ONBOARDING_DIR is gone.
     export OC_PERSISTENT_SCRIPTS_DIR="$_OC_SCRIPTS_DEST"
@@ -2526,6 +2544,30 @@ PYEOF
   echo ""
   echo "  Writing UPDATE PENDING flag for agent activation..."
   write_update_pending_flag "$ONBOARDING_VERSION" "$NEW_SKILLS_CSV"
+
+  # ----------------------------------------------------------
+  # v17.0.21: make roll-time activation SELF-HEALING. When this roll left work
+  # for the agent (new numbered skills copied, OR the verification gate did NOT
+  # pass), install the SAME SILENT, bounded, self-removing onboarding-resume cron
+  # that install.sh installs — so the activation flag we just wrote is actually
+  # driven to qc-passed autonomously instead of waiting on a human. CONDITIONAL:
+  # if there is NO pending activation (gate green AND no new skills) we install
+  # NOTHING. IDEMPOTENT: install_onboarding_resume_cron() leaves any existing
+  # cron in place. SILENT: the cron carries no --channel/--to/--announce (it is a
+  # main-session self-ping); it can never push to a client chat.
+  _RESUME_NEEDED="no"
+  [ "${ONBOARDING_GATE_OK:-unknown}" = "no" ] && _RESUME_NEEDED="yes"   # gate proved unverified skills remain
+  [ -n "${NEW_SKILLS_CSV:-}" ] && _RESUME_NEEDED="yes"                  # new numbered skills need activation
+  if [ "$_RESUME_NEEDED" = "yes" ]; then
+    echo "  Pending activation detected — ensuring the SILENT onboarding-resume cron (idempotent)..."
+    if command -v install_onboarding_resume_cron >/dev/null 2>&1; then
+      install_onboarding_resume_cron || echo "  ⚠ onboarding-resume cron install reported an issue (non-fatal; agent still has the flag)"
+    else
+      echo "  ⚠ install_onboarding_resume_cron unavailable (resume-cron lib not sourced) — skipping cron (agent still has the AGENTS.md flag)"
+    fi
+  else
+    echo "  ✓ No pending activation (gate green, no new skills) — onboarding-resume cron NOT installed (nothing to self-heal)."
+  fi
 
   echo "  Sending Telegram notification..."
   # ----------------------------------------------------------
