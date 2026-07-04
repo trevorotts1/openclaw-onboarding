@@ -149,8 +149,15 @@ nothing used to cross-check, so a department / role / SOP / persona could ship
 compared the floor against the rosters):
 
 1. **FLOOR** — `23-ai-workforce-blueprint/department-naming-map.json` `.mandatory`
-   (22) + the 7 universal-primary vertical-pack depts (enforced on-disk by
-   `scripts/department-floor.py`).
+   (22) + the 6 universal-primary vertical-pack depts = 28 (6 not 7 since
+   naming-map v2.6.1 reclassified `listings` to a real-estate-only vertical,
+   removing it from the universal_primary layer; enforced on-disk by
+   `scripts/department-floor.py`). Keep the three tiers distinct — never
+   re-conflate the floor with the total: **28** = guaranteed FLOOR (22 mandatory
+   + 6 universal-primary); **34** = built departments (`role-library/_index.json`);
+   **45** = full catalog union in `department-naming-map.json`. No client gets all
+   34/45 — each gets the 28 floor plus keyword-matched industry verticals minus
+   declines; always derive live, never restate a bare integer.
 2. **ROSTERS** — `suggested-roles/<dept>-suggested-roles.md` (the proposed
    specialist menu, parsed by `create_role_workspaces.parse_roster`).
 3. **ROLE LIBRARY** — `templates/role-library/_index.json` + the per-dept role

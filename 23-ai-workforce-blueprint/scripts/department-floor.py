@@ -94,15 +94,17 @@ from canonical_decline import (  # noqa: E402
     canonical_decline_set as _shared_canonical_decline_set,
 )
 
-# Hardcoded mandatory fallback - IDENTICAL to build-workforce.load_canonical_floor()
+# Hardcoded MANDATORY fallback - IDENTICAL to build-workforce.load_canonical_floor()
 # so the floor is still enforced on a broken install that lost the naming map.
-# v11.1.0: added general-task + project-architecture-office, floor 24→26.
-# Bugs + Healer (self-repair immune system) added as mandatory, floor 26→28.
-# Quality Control (owns and runs the system analyzer) added as mandatory, total 28→29
-# (when 7 universal primaries existed). v2.6.1: real-estate `listings` lost its
-# universal_primary flag (now industry-gated), dropping universal primaries 7→6 so
-# the live total floor is 22 mandatory + 6 universal = 28 again. Mandatory count (22)
-# is unchanged; only the universal-primary layer shrank.
+# CANONICAL FRAMING: the department floor is 22 mandatory + 6 universal-primary
+# = 28, all derived LIVE from department-naming-map.json (v2.6.1). This list is
+# ONLY the 22 mandatory ids; the 6 universal-primary ids live in
+# HARDCODED_UNIVERSAL_PRIMARY below. The full shipped role catalog (every role
+# template, far larger than the 28-department floor) is tracked separately in
+# templates/role-library/_index.json - do NOT conflate that catalog size with the
+# floor. (Historical note: earlier revisions carried stale floor arithmetic such
+# as 24/26/29 that mixed the mandatory count with the total and the old 7-universal
+# era; the ONLY authoritative numbers now are 22 + 6 = 28.)
 HARDCODED_MANDATORY = [
     "marketing", "sales", "billing-finance", "customer-support",
     "web-development", "app-development", "graphics", "video", "audio",
@@ -110,6 +112,22 @@ HARDCODED_MANDATORY = [
     "social-media", "paid-advertisement", "personal-assistant",
     "general-task", "project-architecture-office",
     "bugs", "healer", "quality-control",
+]
+
+# Hardcoded UNIVERSAL-PRIMARY fallback - the 6 universal-primary vertical-pack
+# department ids (one per pack that flags universal_primary=true in
+# department-naming-map.json v2.6.1). BROKEN-INSTALL SAFETY NET ONLY: consulted
+# solely when the live map yields NO universal primaries (map missing / unreadable
+# / corrupt) so a broken install still enforces the FULL 22 + 6 = 28 floor instead
+# of silently degrading to 22 and dropping every universal-primary vertical. MUST
+# stay in lockstep with the universal_primary=true depts in
+# department-naming-map.json and with build-workforce._HARDCODED_UNIVERSAL_PRIMARY.
+# On a healthy install the live derivation in universal_primary_vertical_departments()
+# returns the 6 real ids and this fallback is NEVER consulted (no gate behavior
+# changes on a healthy map).
+HARDCODED_UNIVERSAL_PRIMARY = [
+    "presentations", "scheduling-dispatch", "logistics-fulfillment",
+    "engineering", "account-management", "podcast",
 ]
 
 # Known legacy aliases + variant slugs a canonical dept can appear under on disk.
@@ -168,6 +186,12 @@ def universal_primary_vertical_departments(nm):
     gated (it now only appears via keyword match in matched_vertical_pack_departments)
     while explicitly-flagged primaries (e.g. saas/`engineering`) stay universal.
     A pack with no flagged dept contributes NOTHING to the universal floor.
+
+    BROKEN-INSTALL SAFETY NET: if the map is unreadable and this live derivation
+    comes back EMPTY, the return falls back to HARDCODED_UNIVERSAL_PRIMARY (the 6
+    ids) so the enforced floor stays 22 + 6 = 28, never silently 22. This is
+    distinct from the removed depts[0] auto-promotion above - it fires ONLY on a
+    broken/missing map, never on a healthy install.
     """
     packs = nm.get("vertical_packs") or {}
     primary_ids = []
@@ -190,7 +214,13 @@ def universal_primary_vertical_departments(nm):
             if did and did not in seen:
                 seen.add(did)
                 primary_ids.append(did)
-    return primary_ids
+    # BROKEN-INSTALL SAFETY NET: if the live map yielded NO universal primaries
+    # (map missing / unreadable / corrupt), fall back to the hardcoded 6 so the
+    # floor degrades to the FULL 28 (22 + 6), NOT 22. Mirrors mandatory_ids()'s
+    # `m or list(HARDCODED_MANDATORY)` fail-safe-to-the-larger-floor pattern. A
+    # healthy map always populates primary_ids with the 6 real ids above, so this
+    # fallback never fires on a good install (no healthy-path behavior change).
+    return primary_ids or list(HARDCODED_UNIVERSAL_PRIMARY)
 
 
 def matched_vertical_pack_departments(nm, core_answers):

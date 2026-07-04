@@ -701,8 +701,13 @@ def load_canonical_floor():
         print(f"[CANONICAL] Could not read {map_path}: {e}. Using hardcoded floor.", file=sys.stderr)
 
     # Fallback MUST stay in lockstep with department-floor.HARDCODED_MANDATORY
-    # (22 ids) so a broken install that lost the naming map still enforces the
-    # full mandatory floor instead of silently under-building at 16.
+    # (22 mandatory ids) so a broken install that lost the naming map still
+    # enforces the full MANDATORY floor. The 6 universal-primary verticals are NOT
+    # in this list - they carry their OWN broken-install fallback in
+    # _universal_primary_ids() (_HARDCODED_UNIVERSAL_PRIMARY), so the combined floor
+    # still degrades to the full 22 + 6 = 28, never to 22 (and never to the older
+    # stale 16). The full shipped role catalog is tracked separately in
+    # templates/role-library/_index.json - do not confuse it with the 28 floor.
     canonical_ids = list(mandatory.keys()) or [
         "marketing", "sales", "billing-finance", "customer-support",
         "web-development", "app-development", "graphics", "video", "audio",
@@ -979,6 +984,21 @@ def _refuse_interview_pending(reason, option):
     sys.exit(EXIT_INTERVIEW_PENDING)
 
 
+# Broken-install UNIVERSAL-PRIMARY fallback - the 6 universal-primary vertical-pack
+# department ids (one per pack flagged universal_primary=true in
+# department-naming-map.json v2.6.1). SAFETY NET ONLY: consulted solely when the
+# live map yields NO universal primaries (map missing / unreadable / corrupt) so a
+# broken install still expects the FULL 22 + 6 = 28 floor instead of silently
+# degrading to 22 and dropping every universal-primary vertical. MUST stay in
+# lockstep with department-naming-map.json and
+# department-floor.HARDCODED_UNIVERSAL_PRIMARY. On a healthy install the live
+# derivation in _universal_primary_ids() returns the 6 real ids and this is never used.
+_HARDCODED_UNIVERSAL_PRIMARY = [
+    "presentations", "scheduling-dispatch", "logistics-fulfillment",
+    "engineering", "account-management", "podcast",
+]
+
+
 def _universal_primary_ids():
     """
     Return the list of universal-primary vertical-pack department ids — one per
@@ -986,6 +1006,13 @@ def _universal_primary_ids():
     department-floor.universal_primary_vertical_departments and
     list-canonical-departments.get_universal_primaries so all callers agree.
     NO depts[0] fallback (v2.6.1): a pack with no flagged dept contributes none.
+
+    BROKEN-INSTALL SAFETY NET: if the live map is unreadable and this derivation
+    comes back EMPTY, the result falls back to _HARDCODED_UNIVERSAL_PRIMARY (the 6
+    ids) so the expected floor stays 22 + 6 = 28, never silently 22. This mirrors
+    load_canonical_floor()'s hardcoded-mandatory fallback and department-floor's
+    HARDCODED_UNIVERSAL_PRIMARY. Distinct from the removed depts[0] auto-promotion:
+    it triggers ONLY on a broken/missing map, never on a healthy install.
     """
     packs = _load_vertical_packs()
     ids = []
@@ -1000,7 +1027,8 @@ def _universal_primary_ids():
                     seen.add(did)
                     ids.append(did)
                 break
-    return ids
+    # Fail-safe to the LARGER floor: empty (map unreadable) -> hardcoded 6.
+    return ids or list(_HARDCODED_UNIVERSAL_PRIMARY)
 
 
 def _expected_decision_ids(departments_config):
@@ -3353,7 +3381,12 @@ INHERITED_FILES = ["TOOLS.md", "AGENTS.md", "USER.md"]
 # v12.3.4: expanded to all 6 core workspace .md files (added IDENTITY.md + SOUL.md).
 CONTEXT_FILES = ["USER.md", "MEMORY.md", "AGENTS.md", "TOOLS.md", "IDENTITY.md", "SOUL.md"]
 
-# Canonical 17 departments - N17 binding. This list MUST match the dashboard's
+# Legacy RECOMMENDED_DEPARTMENTS suggestion / display-metadata dict (N17 binding).
+# NOTE: this is NOT the canonical floor. The authoritative floor is 22 mandatory
+# + 6 universal-primary = 28, derived LIVE from department-naming-map.json (see
+# load_canonical_floor() + _universal_primary_ids()); the full shipped role catalog
+# is tracked in templates/role-library/_index.json. This legacy dict only supplies
+# display metadata (name/emoji/head/description) and MUST match the dashboard's
 # `config/departments.json` exactly. v10.13.0 sync: removed Operations / Creative
 # / HR / IT (none of these are produced by the AI Workforce Interview anymore;
 # they were pre-v10.7.0 leftovers). Added CRM, OpenClaw Maintenance, Social

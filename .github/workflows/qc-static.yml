@@ -1028,6 +1028,21 @@ jobs:
           bash 23-ai-workforce-blueprint/scripts/test-interview-experience.sh
           echo "✓ PRD-2.15 interview experience T1-T13 all pass"
 
+      - name: Skill 23 WG-10c no-web-only-store assertion (files are the sole source of truth)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # WG-10c lock: the Command Center / dashboard (web/DB) store is a MIRROR of
+          # the canonical files, never a source. test-no-web-store.py exercises
+          # _qc_no_web_store.assert_no_web_only_store() non-vacuously: a faithful mirror
+          # PASSES, and every violation class (web-only decision, store-overrides-decision,
+          # web-only interview answer) HARD-FAILs. It is hermetic — reads only, builds
+          # every fixture in-memory or in a tempdir, and touches no live DB, network,
+          # or ~/.openclaw. A fresh runner has no HOME install to reach, so this is safe
+          # to invoke directly; exit 0 required.
+          python3 23-ai-workforce-blueprint/scripts/test-no-web-store.py
+          echo "✓ WG-10c no-web-only-store assertion is clean + non-vacuous"
+
       - name: Skill 23 PRD-2.15 static greps (schema + INSTRUCTIONS + build-workforce)
         shell: bash
         run: |
@@ -2041,6 +2056,20 @@ jobs:
           # and (c) no string literal in the source contains "NN-department" where NN
           # disagrees with the computed floor.
           python3 scripts/check-floor-count-drift.py
+
+      - name: "Skill 23 — canonical floor DOC/PROSE consistency guard (OQ-7)"
+        shell: bash
+        run: |
+          set -euo pipefail
+          # OQ-7 drift-guard (complements the department-floor.py guard above): no
+          # doc/comment may state a department-FLOOR count that disagrees with the
+          # count DERIVED LIVE from department-naming-map.json. The step above only
+          # checks department-floor.py's OWN output strings; this one DERIVES the floor
+          # fresh from the naming map and ASSERTS every registered doc/comment that
+          # quotes the floor (build-state-schema.json, qc-assert-repo-consistency.py,
+          # build-workforce.py, the CHANGELOG standing sentinel) equals it. Exits 5 on
+          # drift, 2 on registry rot (a reworded anchor), 0 when all agree.
+          python3 23-ai-workforce-blueprint/scripts/check-floor-count-consistency.py
 
       - name: "Skill 32 — register-routing-dept writes sidecar, NEVER openclaw.json root (2026.6.8 schema)"
         shell: bash

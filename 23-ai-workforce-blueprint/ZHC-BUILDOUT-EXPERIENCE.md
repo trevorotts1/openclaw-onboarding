@@ -41,8 +41,11 @@ activities / KPIs / tools / challenges for each department the client confirms.
 reduced workforce.
 
 - **The canonical floor** (run `scripts/list-canonical-departments.py` for the current count)
-  of mandatory departments PLUS the 7 universal-primary vertical-pack departments
-  (one per pack — fires for EVERY client regardless of industry),
+  of mandatory departments PLUS the 6 universal-primary vertical-pack departments
+  (one from each pack whose primary dept is flagged `universal_primary` — fires for
+  EVERY client regardless of industry; naming-map v2.6.1 reclassified the real-estate
+  pack's `listings` dept to real-estate-only, so the universal layer is 6 not 7 and
+  the floor is 28),
   MINUS only departments the client explicitly declined. Industry keyword matching
   adds additional vertical extras on top of the floor but never reduces it.
   The floor is enforced on DISK by `department-floor.py` (build-state JSON is

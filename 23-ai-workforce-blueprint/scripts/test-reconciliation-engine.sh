@@ -6,7 +6,7 @@
 # These are the engine behaviors built into Skill 23 build-workforce.py +
 # department-floor.py:
 #
-#   R2.1  Floor is 22 mandatory + 7 universal-primary = 29, computed live; no
+#   R2.1  Floor is 22 mandatory + 6 universal-primary = 28, computed live; no
 #         stale 16/19/23/26 strings remain in the three scripts.
 #   R2.2  Capability 1 MERGE custom+floor still works (custom dept preserved).
 #   R2.3  Capability 2 semantic COMBINE/MERGE: a custom dept that semantically

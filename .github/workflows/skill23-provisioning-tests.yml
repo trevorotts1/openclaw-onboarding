@@ -18,8 +18,19 @@ name: Skill-23 provisioning tests
 #                                           roster == _index.json == folders count
 #                                           agreement is asserted LIVE (this is the
 #                                           test that caught the 26/32 role drop).
+#   6. prove-web-parity.sh               — WEB↔TELEGRAM build-parity self-test: a
+#                                           client onboarded through the web /interview
+#                                           path runs the SAME canonical build scripts
+#                                           as a Telegram-built one, so it clears the
+#                                           same Zero-Human-Experience gates AND lands
+#                                           an EQUAL provisioning receipt. Runs the
+#                                           shipped fixture non-vacuously (good build
+#                                           PASSES; every seeded shortcut FAILS). It
+#                                           materializes the fixture into a private
+#                                           mktemp dir and sandboxes HOME itself, so it
+#                                           writes NOTHING under ~/.openclaw or the repo.
 #
-# All five are hermetic: each builds its own mktemp sandbox and pins
+# All six are hermetic: each builds its own mktemp sandbox and pins
 # ROLE_LIBRARY_PATH to the in-repo skill dir, so they exercise the REPO (the
 # source of truth), never a stale ~/.openclaw install, and touch nothing outside
 # their sandbox. They depend only on python3 + shasum (both present on
@@ -43,7 +54,7 @@ on:
 
 jobs:
   skill23-provisioning-tests:
-    name: Skill-23 provisioning tests (5 hermetic suites)
+    name: Skill-23 provisioning tests (6 hermetic suites)
     runs-on: ubuntu-latest
     env:
       OPENCLAW_PLATFORM: mac
@@ -56,7 +67,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Run the five provisioning suites (each exit 0 required)
+      - name: Run the six provisioning suites (each exit 0 required)
         shell: bash
         run: |
           set -uo pipefail
@@ -67,6 +78,7 @@ jobs:
             test-reconciliation-engine.sh
             test-ws4-departments.sh
             test-department-instantiation.sh
+            prove-web-parity.sh
           )
           rc=0
           for s in "${SUITES[@]}"; do
@@ -88,7 +100,7 @@ jobs:
           done
           echo "======================================================================"
           if [ "$rc" -eq 0 ]; then
-            echo "ALL 5 SKILL-23 PROVISIONING SUITES PASSED"
+            echo "ALL 6 SKILL-23 PROVISIONING SUITES PASSED"
           else
             echo "ONE OR MORE SKILL-23 PROVISIONING SUITES FAILED" >&2
           fi

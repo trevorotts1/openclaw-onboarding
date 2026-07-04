@@ -975,11 +975,11 @@
     },
     "canonicalReconciliation": {
       "type": "object",
-      "description": "PRD R2.x (v12.5.x reconciliation engine): the auditable record of how the owner's department set was reconciled with the canonical floor (22 mandatory + 7 universal-primary = 29, computed live). Written by build-workforce.py reconcile_canonical_floor / apply_semantic_merges / materialize_custom_roles / capture_custom_sops and read by department-floor.py.",
+      "description": "PRD R2.x (v12.5.x reconciliation engine): the auditable record of how the owner's department set was reconciled with the canonical floor (22 mandatory + 6 universal-primary = 28, computed live). TIERS (never conflate the floor with the total): 28 = guaranteed FLOOR (22 mandatory + 6 universal-primary); 34 = built departments (role-library/_index.json); 45 = full catalog union in department-naming-map.json; no client gets all 34/45 — each gets the 28 floor plus keyword-matched industry verticals minus declines; always derive live, never restate a bare integer. Naming-map v2.6.1 reclassified listings to real-estate-only, removing it from the universal_primary layer and dropping the universal-primary count from 7 to 6 and the floor from 29 to 28 — the mandatory count of 22 is unchanged. Written by build-workforce.py reconcile_canonical_floor / apply_semantic_merges / materialize_custom_roles / capture_custom_sops and read by department-floor.py.",
       "properties": {
         "decisions": {
           "type": "object",
-          "description": "Per-dept opt-in/opt-out: id -> 'yes'|'no'|'later'. Covers mandatory canonical depts AND the 7 universal-primary vertical depts AND custom depts (R2.6 symmetric opt-out). A 'no' is the ONLY sanctioned way below the floor; honored by both build-workforce.py and department-floor.py.",
+          "description": "Per-dept opt-in/opt-out: id -> 'yes'|'no'|'later'. Covers mandatory canonical depts AND the 6 universal-primary vertical depts (naming-map v2.6.1: listings reclassified to real-estate-only) AND custom depts (R2.6 symmetric opt-out). A 'no' is the ONLY sanctioned way below the floor; honored by both build-workforce.py and department-floor.py.",
           "additionalProperties": true
         },
         "mergeDecisions": {
