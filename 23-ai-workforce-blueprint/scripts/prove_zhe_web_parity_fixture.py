@@ -174,7 +174,7 @@ def _build_state(source, shortcut):
         "interviewComplete": True,
         "interviewCompletedAt": "2026-07-04T12:05:00+00:00",
         "interviewVersion": "web-parity-fixture-v1",
-        "ownerChat": 5252140759,
+        "ownerChat": 1234567890,
         "ownerName": "Dana",
         "companyName": "Northwind Trading Co.",
         "companySlug": "northwind-trading",
