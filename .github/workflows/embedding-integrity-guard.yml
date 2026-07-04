@@ -31,6 +31,7 @@ on:
       - universal-sops/**
       - scripts/hash-universal-sops-manifest.py
       - tests/unit/embedding-hard-gate.test.sh
+      - tests/unit/pipeline-provider-routing.test.sh
       - .github/workflows/embedding-integrity-guard.yml
   pull_request:
     paths:
@@ -70,6 +71,11 @@ jobs:
         run: |
           chmod +x tests/unit/section-tagger-indexer-agreement.test.sh
           bash tests/unit/section-tagger-indexer-agreement.test.sh
+
+      - name: Book-pipeline provider routing (task-64 bugs 3/4/5 + 1/2 regression)
+        run: |
+          chmod +x tests/unit/pipeline-provider-routing.test.sh
+          bash tests/unit/pipeline-provider-routing.test.sh
 
   universal-sops:
     name: "universal-sops content manifest"
