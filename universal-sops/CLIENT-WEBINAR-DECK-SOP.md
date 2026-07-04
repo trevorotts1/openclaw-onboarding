@@ -221,8 +221,8 @@ wordmark, and an optional `layout` hint.
 {
   "slide": 1,
   "scene": "A confident founder in a sunlit modern office, soft window light, warm neutral palette, shallow depth of field, 85mm, editorial photography.",
-  "copy": ["Explore Growth", "Three moves that doubled our pipeline in 90 days"],
-  "logo": "EXPLORE GROWTH",
+  "copy": ["Acme Growth", "Three moves that doubled our pipeline in 90 days"],
+  "logo": "ACME GROWTH",
   "layout": "headline lower-left over a soft dark gradient, subhead beneath, logo wordmark top-right"
 }
 ```

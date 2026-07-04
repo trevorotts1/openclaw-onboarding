@@ -75,14 +75,14 @@ describe('checkNextPublicAppUrl', () => {
     expect(result.detail).toMatch(/CF-tunnel mode detected/i);
   });
 
-  it('Row 31a variant: NEXT_PUBLIC_APP_URL="" + CC_PUBLIC_URL=https://karen.zerohumanworkforce.com → pass=false', async () => {
-    setEnv('', 'https://karen.zerohumanworkforce.com');
+  it('Row 31a variant: NEXT_PUBLIC_APP_URL="" + CC_PUBLIC_URL=https://client-a.zerohumanworkforce.com → pass=false', async () => {
+    setEnv('', 'https://client-a.zerohumanworkforce.com');
     const result = await checkNextPublicAppUrl();
     expect(result.pass).toBe(false);
   });
 
-  it('Row 31a variant: CC_PUBLIC_URL=https://corey.zerohumanworkforce.com → detail mentions tunnel', async () => {
-    setEnv(undefined, 'https://corey.zerohumanworkforce.com');
+  it('Row 31a variant: CC_PUBLIC_URL=https://client-b.zerohumanworkforce.com → detail mentions tunnel', async () => {
+    setEnv(undefined, 'https://client-b.zerohumanworkforce.com');
     const result = await checkNextPublicAppUrl();
     expect(result.pass).toBe(false);
     expect(result.detail).toMatch(/tunnel/i);

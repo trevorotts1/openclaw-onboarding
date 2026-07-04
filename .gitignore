@@ -51,3 +51,16 @@ tmp/
 *-journal
 *-wal
 *-shm
+
+# ─── Operator-local client roster (real client names) — NEVER commit ──────────
+# The no-client-name gates (scripts/qc-assert-no-client-names.sh, the skill
+# 38/39/40 qc-no-personal-data.sh gates, 23-ai-workforce-blueprint's how-to and
+# presentation-dept-welcome tests, and tests/unit/library-gate-content.test.py)
+# load the real roster at runtime from $OPENCLAW_CLIENT_ROSTER or
+# ~/.openclaw/client-roster.txt. The real roster must live in NO tracked file.
+# Only the committed template (scripts/client-roster.example.txt) is tracked.
+client-roster.txt
+**/client-roster.txt
+.openclaw-client-roster.txt
+# Keep the placeholder-only template tracked.
+!scripts/client-roster.example.txt

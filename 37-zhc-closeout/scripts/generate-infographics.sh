@@ -323,7 +323,7 @@ while (( attempt < 3 )); do
     # nano-banana-2 availability is account/region-dependent on KIE. If the
     # primary slug is rejected as not-supported (422 "model name not
     # supported"), do not waste a second primary attempt; jump straight to the
-    # gpt-image-2-text-to-image safety net. (Teresa launch 2026-05-27.)
+    # gpt-image-2-text-to-image safety net. (Added for a client launch, 2026-05-27.)
     if [[ "$model" == "$PRIMARY_MODEL" && "$model" != "$FALLBACK_MODEL" ]] \
        && echo "$submit_err" | grep -qiE 'model name not supported|not supported|422'; then
       log "WARN" "attempt $attempt: primary model '$model' not supported on this KIE account; switching to fallback '$FALLBACK_MODEL'"

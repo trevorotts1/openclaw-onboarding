@@ -9,8 +9,8 @@
 #   3. The gate check correctly PASSES on a fully-passing state.
 #   4. Idempotency: a state with presentationDeptWelcomeSent=true triggers
 #      early-exit WITHOUT sending (exit 0, no message).
-#   5. No client name (aurelia/corey/lyric/maria/sheila/teresa/kofi/etc.)
-#      appears anywhere in the resolved message.
+#   5. No client name appears anywhere in the resolved message. The client roster
+#      is EXTERNALIZED (see Test 6) so no real name is hardcoded in this test.
 #   6. Fallback placeholders work when ownerName/companyName are blank.
 #   7. The message body exactly matches the canonical template in
 #      templates/role-library/presentations/first-time-onboarding-presentations.md
@@ -76,6 +76,10 @@ if [[ ! -f "$SEND_SCRIPT" ]]; then
 fi
 
 # ---- build a sample state dir in /tmp ----------------------------------------
+# Capture the operator's real HOME before it is redirected to the temp dir, so
+# Test 6 can still resolve ~/.openclaw/client-roster.txt (the externalized roster)
+# even after HOME is repointed for OC_ROOT resolution.
+REAL_HOME="${HOME:-}"
 TMPDIR_TEST="$(mktemp -d)"
 export HOME="$TMPDIR_TEST"   # redirect OC_ROOT resolution to the temp dir
 mkdir -p "$TMPDIR_TEST/.openclaw/workspace"
@@ -181,13 +185,37 @@ echo ""
 # ==============================================================================
 # TEST 6: Anti-commingling -- no hardcoded client names in resolved message
 # ==============================================================================
+# The client roster is EXTERNALIZED to an operator-local, gitignored file
+# ($OPENCLAW_CLIENT_ROSTER or ~/.openclaw/client-roster.txt; template
+# scripts/client-roster.example.txt) so no real client name is hardcoded here.
+# When the roster is absent (e.g. CI) the roster-specific loop is SKIPPED with a
+# WARNING, but the .example-placeholder assertions STILL run so the test never
+# fails open. NOTE: assert_not_contains resets HOME below via write_state's
+# `export HOME`, so resolve the roster path BEFORE that export changes HOME.
 echo "--- TEST 6: anti-commingling -- no hardcoded client names ---"
+_pres_roster_path() {
+  if [ -n "${OPENCLAW_CLIENT_ROSTER:-}" ]; then printf '%s\n' "$OPENCLAW_CLIENT_ROSTER"
+  else printf '%s\n' "${REAL_HOME:-${HOME:-/root}}/.openclaw/client-roster.txt"; fi
+}
 write_state "done" "true" "true" "false"
 OUTPUT=$(bash "$SEND_SCRIPT" --dry-run 2>&1)
-# Real client names that MUST NEVER appear in a generic fleet template
-for CLIENT_NAME in aurelia corey lyric maria sheila teresa kofi beverly evelyn monique karen angela barret cassandra; do
-  assert_not_contains "T6 no '$CLIENT_NAME'" "$OUTPUT" "$CLIENT_NAME"
+# Always-on: the obviously-fake roster-template placeholders must never render.
+for PLACEHOLDER in ExampleClientAlpha ExampleClientBeta PlaceholderCo "Testclient Sentinel"; do
+  assert_not_contains "T6 no placeholder '$PLACEHOLDER'" "$OUTPUT" "$PLACEHOLDER"
 done
+# Roster-specific: load real client names (if the roster is present) and assert
+# none leaked into the resolved message. Strip \b anchors for fixed-string match.
+_PRES_ROSTER="$(_pres_roster_path)"
+if [ -f "$_PRES_ROSTER" ]; then
+  while IFS= read -r _rline; do
+    case "$_rline" in ''|\#*) continue ;; esac
+    _needle="${_rline//\\b/}"
+    [ -n "$_needle" ] || continue
+    assert_not_contains "T6 no client '$_needle'" "$OUTPUT" "$_needle"
+  done < <(grep -vE '^[[:space:]]*(#|$)' "$_PRES_ROSTER")
+else
+  echo "  [WARN] client-name roster not found (looked in \$OPENCLAW_CLIENT_ROSTER, then $_PRES_ROSTER); SKIPPING the roster-specific anti-commingling check. Placeholder checks still ran. See scripts/client-roster.example.txt." >&2
+fi
 echo ""
 
 # ==============================================================================

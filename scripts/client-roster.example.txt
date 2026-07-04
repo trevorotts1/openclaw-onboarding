@@ -1,0 +1,26 @@
+# client-roster.example.txt — TEMPLATE ONLY (safe to commit).
+#
+# The REAL client roster must NEVER live in a tracked file or on GitHub. The
+# no-client-name gates load it at runtime from:
+#     1. $OPENCLAW_CLIENT_ROSTER   (env override, e.g. for a pre-commit hook)
+#     2. ${HOME}/.openclaw/client-roster.txt   (operator-local, gitignored)
+#
+# To enable the full roster-specific hygiene check on an operator box:
+#     cp scripts/client-roster.example.txt ~/.openclaw/client-roster.txt
+#     # then replace the placeholders below with the real roster.
+# NEVER commit the filled file.
+#
+# FORMAT: one entry per line. Blank lines and lines beginning with '#' are
+# ignored. Each line is an extended-regex (ERE) pattern:
+#   - Full names match literally, case-insensitive:      Jane Q Public
+#   - Short/common first names use word-boundary anchors: \bJane\b
+#   - Opaque client IDs (chat IDs, GHL location IDs) go one-per-line as literals.
+#
+# ─── PLACEHOLDERS (obviously fake) ────────────────────────────────────────────
+# The names below are used by the CI structural check and the qc-assert
+# self-test fixture. They are intentionally fake. Do NOT assign them to a real
+# client, and do NOT leave them in a real roster file.
+ExampleClientAlpha
+ExampleClientBeta
+PlaceholderCo
+Testclient Sentinel

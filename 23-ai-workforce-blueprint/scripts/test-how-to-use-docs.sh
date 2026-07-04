@@ -31,18 +31,40 @@ else
 fi
 
 # 2. Content hygiene across every committed guide.
-CLIENT_NAMES="corey|lyric|teresa|maria|kofi|beverly|evelyn|angeleen|monique|sheila|aurelia|karen|cassandra|barret|jill"
+#
+# The client-name denylist is EXTERNALIZED. It is loaded at runtime from the
+# operator-local, gitignored roster ($OPENCLAW_CLIENT_ROSTER or
+# ~/.openclaw/client-roster.txt; template scripts/client-roster.example.txt) so no
+# real client name ships in this test. When the roster is absent (e.g. CI) the
+# roster-specific name grep is SKIPPED with a WARNING, but the STRUCTURAL checks
+# (em/en dash, {{TOKEN}} tokenization, and .example-placeholder leak) STILL run,
+# so this gate never fails open.
+_roster_path() {
+  if [ -n "${OPENCLAW_CLIENT_ROSTER:-}" ]; then printf '%s\n' "$OPENCLAW_CLIENT_ROSTER"
+  else printf '%s\n' "${HOME:-/root}/.openclaw/client-roster.txt"; fi
+}
+CLIENT_NAMES=""
+NAMES_AVAILABLE=0
+if [ -f "$(_roster_path)" ]; then
+  CLIENT_NAMES="$(grep -vE '^[[:space:]]*(#|$)' "$(_roster_path)" | paste -sd'|' -)"
+  [ -n "$CLIENT_NAMES" ] && NAMES_AVAILABLE=1
+fi
+[ "$NAMES_AVAILABLE" = 1 ] || echo "WARNING: client-name roster not found (looked in \$OPENCLAW_CLIENT_ROSTER, then $(_roster_path)); SKIPPING the roster-specific client-name check on the guides. Structural checks (dashes, tokens, placeholder leak) still run. See scripts/client-roster.example.txt." >&2
+# Placeholder names from the committed roster template — a hit is a template leak;
+# always checked so the gate never fails open.
+PLACEHOLDER_NAMES="ExampleClientAlpha|ExampleClientBeta|PlaceholderCo|Testclient Sentinel"
 hygiene_fail=0
 while IFS= read -r doc; do
   [ -f "$doc" ] || continue
   if grep -qE "—|–" "$doc"; then red "em/en dash in $doc"; hygiene_fail=1; fi
-  if grep -qiE "\b($CLIENT_NAMES)\b" "$doc"; then red "client name in $doc"; hygiene_fail=1; fi
+  if [ "$NAMES_AVAILABLE" = 1 ] && grep -qiE "\b($CLIENT_NAMES)\b" "$doc"; then red "client name in $doc"; hygiene_fail=1; fi
+  if grep -qiE "($PLACEHOLDER_NAMES)" "$doc"; then red "roster-template placeholder name leaked into $doc"; hygiene_fail=1; fi
   # Any {{TOKEN}} other than the two intended company tokens is a fill failure.
   if grep -oE "\{\{[A-Z_]+\}\}" "$doc" | grep -vE "\{\{(COMPANY_NAME|GENERATION_DATE)\}\}" | grep -q .; then
     red "unfilled template token in $doc"; hygiene_fail=1
   fi
 done < <(find "$LIB" -maxdepth 2 -name "how-to-use-this-department.md")
-[ "$hygiene_fail" -eq 0 ] && ok "no client names, em dashes, or stray tokens in any committed guide"
+[ "$hygiene_fail" -eq 0 ] && ok "no client names, placeholder leaks, em dashes, or stray tokens in any committed guide"
 
 # 3. Build is wired to emit the guide per department.
 if grep -q "write_department_how_to_use" "$SKILL/scripts/build-workforce.py"; then

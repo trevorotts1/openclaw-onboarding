@@ -17,19 +17,25 @@
 #      reintroduces a name into generated output fails the build.
 #
 # BANNED IDENTIFIERS (case-insensitive, word-ish boundaries where it matters):
-#   real names ........ Trevor, Teresa, Keez, Christy, Corey, Maria, Angeleen,
-#                       Beverly, Evelyn, Monique, Lyric, Kofi, Pelham, Candace,
-#                       Marico, Sir Jordan
-#   businesses ........ Grants Boutique, Explore Growth, "The Winning Formula
-#                       Course", Winning Formula
-#   hostnames/domains . thewinningformulacourse, growthriveprosper, blackceo
-#   (NOTE: the client-domain token "zerohumanworkforce" is intentionally NOT in the
-#    BANNED list — it is a string that the qc-tools-md-ghl-ref.sh gate uses inside a
-#    leak-DETECTION regex, so banning it here would false-positive against our own
-#    tooling; the operator-domain space is already covered by blackceo/growthriveprosper.)
-#   operator chat id .. 5252140759
-#   operator emails ... trevelynotts
-#   real home paths ... /Users/christy, /Users/blackceomacmini, /Users/client
+#   client names/businesses ... EXTERNALIZED. The real client roster is loaded at
+#                       runtime from $OPENCLAW_CLIENT_ROSTER or
+#                       ~/.openclaw/client-roster.txt (gitignored; template at
+#                       scripts/client-roster.example.txt). No real client name is
+#                       hardcoded here anymore.
+#   operator-static tokens (NOT client data — kept inline, always scanned):
+#                       the operating brand token, the operator chat id, operator
+#                       email handle, and operator home paths.
+#   placeholder tokens (always scanned) ... the obviously-fake names from
+#                       client-roster.example.txt; if any appear in tracked
+#                       content they are a template leak → hard fail.
+#   (NOTE: the client-domain token "zerohumanworkforce" is intentionally NOT
+#    banned — it is used inside a leak-DETECTION regex in another gate, so banning
+#    it here would false-positive against our own tooling.)
+#
+# TWO MODES: with the roster present (operator box / pre-commit) the full client
+# roster is scanned; with it absent (e.g. CI) the roster-specific scan is SKIPPED
+# with a WARNING but the operator-static + placeholder tokens are STILL scanned,
+# so the gate never fails open.
 #
 # A generic placeholder (<CLIENT_BUSINESS_NAME>, <PUBLIC_HOSTNAME>, <HOOKS_TOKEN>,
 # <LOCATION_ID>, <OPERATOR_TELEGRAM_CHAT_ID>, "the operator", "your setup admin",
@@ -61,10 +67,36 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# The banned patterns. Kept as an ERE alternation. Each token here is a REAL
-# identifier that must never appear in a universal skill. (This file is excluded
-# from the scan, so naming them here is fine.)
-BANNED='Trevor|Teresa|Keez|Christy|Corey|Maria|Angeleen|Beverly|Evelyn|Monique|Lyric|Kofi|Pelham|Candace|Marico|Sir Jordan|Grants Boutique|Explore Growth|The Winning Formula Course|Winning Formula|thewinningformulacourse|growthriveprosper|blackceo|5252140759|trevelynotts|/Users/christy|/Users/blackceomacmini|/Users/client'
+# ─── Externalized client roster + always-on operator/placeholder tokens ───────
+# Operator-static tokens (NOT client data): the operating brand token, operator
+# chat id, operator email handle, operator home paths. Always scanned.
+OPERATOR_BANNED='blackceo|5252140759|trevelynotts|Trevor|/Users/christy|/Users/blackceomacmini|/Users/client'
+# Placeholder names from client-roster.example.txt — always scanned; a hit means
+# the tracked template leaked into real content.
+PLACEHOLDER_BANNED='ExampleClientAlpha|ExampleClientBeta|PlaceholderCo|Testclient Sentinel'
+
+_roster_path() {
+  if [ -n "${OPENCLAW_CLIENT_ROSTER:-}" ]; then printf '%s\n' "$OPENCLAW_CLIENT_ROSTER"
+  else printf '%s\n' "${HOME:-/root}/.openclaw/client-roster.txt"; fi
+}
+# Join the roster's non-comment lines with '|' into an ERE alternation.
+_roster_regex() {
+  local f; f="$(_roster_path)"
+  [ -f "$f" ] || return 1
+  local out; out="$(grep -vE '^[[:space:]]*(#|$)' "$f" | paste -sd'|' -)"
+  [ -n "$out" ] || return 1
+  printf '%s\n' "$out"
+}
+
+BANNED="$OPERATOR_BANNED|$PLACEHOLDER_BANNED"
+if CLIENT_REGEX="$(_roster_regex)"; then
+  BANNED="$BANNED|$CLIENT_REGEX"
+else
+  echo "WARNING: client-name roster not found (looked in \$OPENCLAW_CLIENT_ROSTER," \
+       "then $(_roster_path)); SKIPPING the roster-specific client-name scan. Operator" \
+       "and .example placeholder tokens are still enforced. See" \
+       "scripts/client-roster.example.txt to enable the full check." >&2
+fi
 
 HITS=0
 

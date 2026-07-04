@@ -5,7 +5,7 @@
   "timestamp": "2026-06-13",
   "disposition": "REWRITE",
   "priority": "P1",
-  "traces": ["GP-6", "GP-7", "GP-9", "06 SP-EXPERT", "Lyric §6", "change order §4.5", "TODO P1 ROLE-07"],
+  "traces": ["GP-6", "GP-7", "GP-9", "06 SP-EXPERT", "client-changeorder §6", "change order §4.5", "TODO P1 ROLE-07"],
   "checkpoints": [
     {
       "file": "23-ai-workforce-blueprint/templates/role-library/presentations/offer-price-strategist.md",

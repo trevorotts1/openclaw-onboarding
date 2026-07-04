@@ -1,3 +1,18 @@
+## [v17.0.13]  -  2026-07-03  -  chore(security): Big July 3rd Update — externalize client roster from anti-leak gates + scrub residual client names (client names 100% off GitHub)
+
+Externalized the client roster — the real client **names**, client **chat IDs**, and the **2 GHL location IDs** — out of the load-bearing anti-leak gates and into a gitignored, operator-local file so no client identifier lives in the tracked tree anymore. The gates read the roster from `$OPENCLAW_CLIENT_ROSTER` (else `~/.openclaw/client-roster.txt`) at runtime instead of embedding the names inline.
+
+### What changed
+- **Roster externalized** out of the gates that used to hardcode it: `scripts/qc-assert-no-client-names.sh`, the 3× `qc-no-personal-data.sh` (skills 38/39/40), `23-ai-workforce-blueprint/scripts/{test-how-to-use-docs.sh,test-presentation-dept-welcome.sh}`, and `tests/unit/library-gate-content.test.py`.
+- **Two run modes, never fail-open.** *Box mode* (roster present) → fail-closed on any real client name. *Structural / CI mode* (roster absent) → warn that full-name detection is skipped, but still fail-closed on placeholder leaks and operator-path leaks — CI never passes on a real leak.
+- **Placeholder-only example shipped:** `scripts/client-roster.example.txt` (no real data) documents the format; operators copy it to `~/.openclaw/client-roster.txt` per box.
+- **Residual scrubs:** removed leftover client names from script comments, one SOP's example copy, test hostnames, CHANGELOG prose, and one provenance JSON (`working/changeorder_ledger/ROLE-07.json`).
+- **Hermetic self-test:** `tests/fixtures/no-client-names/` — a planted-name fixture + `selftest-qc-assert.sh` prove the gate still bites without depending on any operator-local file.
+- Cross-repo consistent with **command-center v4.59.5**.
+
+### Operator follow-up
+Create `~/.openclaw/client-roster.txt` on each box from `scripts/client-roster.example.txt` to enable full-name detection (box mode). Absent that file, the gates run structural/CI mode and stay fail-closed on placeholder/operator-path leaks.
+
 ## [v17.0.12]  -  2026-07-03  -  fix(provisioning): Big July 3rd Update Wave 3 (part) — #9 build-progress producer→page contract + #10 stale canonical-floor INSTRUCTIONS + guard
 
 Wave 3 of The Big July 3rd Update (onboarding side, part). Two parallel Opus subagents on disjoint files (both under `23-ai-workforce-blueprint/`), independently verified by a fresh Opus agent: PASS — #9 and #10 each confirmed with file:line + live-execution evidence, no client-name leaks on any changed line. Both hermetic suites re-run green on the assembled release tree (contract test all checks PASS; `test-repo-consistency.sh` 8/8). Wave 3's remaining issues **#11** and **#13** ship in the Command Center repo (paired **command-center v4.59.4**) and **#12** is still **OPEN**.
@@ -284,7 +299,7 @@ Retired a bare first-name pattern per the script's own distinctiveness rule — 
 ### Files
 - `52-avatar-intelligence/` → `52-avatar-alchemist/` — full directory rename (255 files)
 - `install.sh`, `README.md`, `TOOLS.md`, `Start Here.md`, `cc-compat.json`, `shared-utils/tone-writing-core/tone-core-manifest.json`, `universal-sops/avatar-craft/{README.md,SOP-AVATAR-01-BRAND-INTELLIGENCE-PACKAGE.md}` — path/name re-pointing
-- `scripts/qc-assert-no-client-names.sh` — Beverly false-positive fix (above)
+- `scripts/qc-assert-no-client-names.sh` — city-name false-positive fix (above)
 - 11 version markers — rolled to v16.7.1 via `bump-version.sh`
 
 ## [v16.7.0]  -  2026-07-02  -  feat(skill-52): Avatar Alchemist — the Avatar Alchemist brand-intelligence engine (ONE completed brand-intake interview → 40 generators across 7 subsystems → 16 named deliverables / 37 documents) shipped as a governed, fail-closed skill that replaces the retired 233-node n8n / Airtable / Google Drive / Slack / Gmail workflow with a LOCAL-ONLY pipeline on the CLIENT's own model providers, gated by model-free provers that MEASURE the stripped text (self-reported counts ignored); also lands the SHARED tone/writing core module referenced by the writing family (52/53/54)
@@ -2865,7 +2880,7 @@ Goal B's institutionalization + automated-test layer lands. All authoring on Opu
 - **C3 — SOPs:** "Build & Deploy a GHL Funnel/Page via Skill-06" (SOP 9.5, Funnel Builder Specialist) and "Build a GHL Workflow via Skill-44" (SOP 9.6, CRM automation-workflow-specialist), placed inline per the repo add-process; lockstep + consistency gates pass at 416 roles.
 - **C1 — role owners + NEW role:** created **Conversion Copywriter** (`marketing/conversion-copywriter.md`) — the previously-dangling copy owner the web-dev builder roles hand off to — registered via the add-process; added owner/upstream/downstream handoffs for the GHL-build capability across web-development, crm, marketing, quality-control, and openclaw-maintenance roles.
 - **Part B — plain-language layer:** `06-ghl-install-pages/references/client-facing-phrasebook.md` — engineer→7th-grade term map + a plain-language delivery template (one-sentence reply, tappable link, bold draft-vs-live, no IDs); pointers wired from 06 SKILL.md + 44 INSTRUCTIONS.md.
-- **Hardening:** strengthened `scripts/qc-assert-no-client-names.sh` (period-optional Dr-Tola pattern, agent-name patterns, and two client GHL location IDs added to the banlist) — which then caught two real client location IDs a build agent had hardcoded into a test fixture; scrubbed to fabricated IDs.
+- **Hardening:** strengthened `scripts/qc-assert-no-client-names.sh` (period-optional honorific/name pattern, agent-name patterns, and two client GHL location IDs added to the banlist) — which then caught two real client location IDs a build agent had hardcoded into a test fixture; scrubbed to fabricated IDs.
 - **Versions:** skill-version 06 `v7.2.3`→`v7.2.4`, 44 `1.0.20`→`1.0.21`; 9 root markers + cc-compat → `v13.5.2`.
 
 ## v13.5.1 — 2026-06-21 — fix(hygiene): scrub 3 client-name leaks from the fleet template + strengthen the banlist + reconcile Skill 06 version
