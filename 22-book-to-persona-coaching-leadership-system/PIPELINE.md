@@ -342,4 +342,53 @@ python3 ~/.openclaw/scripts/gemini-indexer.py
 | Gemini Engine indexing | 1-2 min | ~2 min | ~5 min |
 | **Total** | | | **~1.5 hours** |
 
+---
+
+## Orphan-safe launching (NOTE v17.0.24) — never leave a detached build billing :cloud
+
+A book build is often launched DETACHED (an agent copies `orchestrator.py` to
+`orchestrator_<slug>.py` and runs it in the background). If the launching
+agent/workflow is stopped mid-run, the stop reaps the agent but **not** the
+detached Python child — it reparents to launchd/init and keeps making `:cloud`
+calls until it finishes, billing the client. `pipeline/orphan_guard.py` (linked
+by every orchestrator copy at `main()` startup) plus two helper scripts make
+that structurally impossible.
+
+**ALWAYS launch a detached/background build through the launcher** (never a bare
+`python3 orchestrator_<slug>.py &`):
+
+```bash
+# single persona (backgrounded, fully reapable):
+pipeline/run-orchestrator.sh --single-book --slug <slug> &
+# full batch:
+pipeline/run-orchestrator.sh &
+```
+
+The launcher runs the child in its OWN process group, writes a per-run liveness
+lockfile, tags the run (`OPENCLAW_RUN_ID`), and on exit/interrupt does a TARGETED
+reap of exactly that run's group. Even if the launcher itself is `kill -9`'d, the
+orchestrator's built-in watchdog self-terminates within one interval because its
+recorded parent pid is gone.
+
+**Stop hook / cleanup** — reap orphans without ever a blind `pkill`:
+
+```bash
+pipeline/reap-orchestrators.sh --sweep        # reap every run whose parent is DEAD (safe cron/stop-hook payload)
+pipeline/reap-orchestrators.sh --run RUN_ID   # reap exactly one run
+```
+
+Self-defense armed automatically by `orchestrator.py` (all honour env overrides):
+
+| Guard | Behaviour | Env override (default) |
+|-------|-----------|------------------------|
+| Parent-liveness | self-exit the instant `OPENCLAW_PARENT_PID` is gone | — |
+| Liveness lock | self-exit when `OPENCLAW_RUN_LOCKFILE` is removed | — |
+| Max runtime | hard wall-clock ceiling → self-exit | `OPENCLAW_MAX_RUNTIME_SEC` (6h) |
+| Watchdog cadence | liveness poll interval (a THREAD, fires even during a long provider await) | `OPENCLAW_WATCHDOG_INTERVAL_SEC` (30s) |
+| Process-group reap | child + its subprocesses (Phase-5 indexer) die as a unit | `OPENCLAW_ORCH_DETACH=1` (set by launcher) |
+| Single-run lock | a second orchestrator for the same slug is refused (exit 4) | — |
+
+Per-run pidfiles live under `<workspace>/data/coaching-personas/.pipeline-runs/`
+(or `OPENCLAW_RUN_DIR`). Regression lock: `tests/unit/orphan-process-prevention.test.sh`.
+
 With full 21 simultaneous: ~35-45 minutes total.
