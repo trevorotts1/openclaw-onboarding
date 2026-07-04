@@ -1,0 +1,87 @@
+name: embedding-integrity-guard
+
+# Embedding-subsystem hardening gates (see docs/EMBEDDINGS.md):
+#
+#   Job 1 (hard-gate): runs tests/unit/embedding-hard-gate.test.sh —
+#     - a keyless index run must FAIL LOUD (never silently write fake
+#       768-dim vectors, never stamp lying gemini/3072 metadata)
+#     - fake mode is explicit-only (--allow-fake-embeddings + --db) and
+#       truthfully stamped provider='fake'
+#     - embedding_engine --verify fails rc=4 on fake or lying-stamp rows
+#     - the sandbox write-guard blocks default-live-DB writes under an
+#       overridden $HOME without OPENCLAW_SANDBOX=1
+#     - detect_platform gemini_index == embedding_engine.DB_PATH (one DB path)
+#
+#   Job 2 (universal-sops): scripts/hash-universal-sops-manifest.py --check —
+#     any edit under universal-sops/ without a manifest re-stamp fails.
+#
+# Both jobs are offline (no embedding API calls, no downloads).
+
+on:
+  push:
+    paths:
+      - shared-utils/embedding_engine.py
+      - shared-utils/detect_platform.py
+      - shared-utils/semantic_task_fit.py
+      - shared-utils/embedding_health.py
+      - shared-utils/prebuilt-index/**
+      - 23-ai-workforce-blueprint/scripts/gemini-section-indexer.py
+      - 23-ai-workforce-blueprint/lib/detect_platform.py
+      - 22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py
+      - universal-sops/**
+      - scripts/hash-universal-sops-manifest.py
+      - tests/unit/embedding-hard-gate.test.sh
+      - .github/workflows/embedding-integrity-guard.yml
+  pull_request:
+    paths:
+      - shared-utils/embedding_engine.py
+      - shared-utils/detect_platform.py
+      - shared-utils/semantic_task_fit.py
+      - shared-utils/embedding_health.py
+      - shared-utils/prebuilt-index/**
+      - 23-ai-workforce-blueprint/scripts/gemini-section-indexer.py
+      - 23-ai-workforce-blueprint/lib/detect_platform.py
+      - 22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py
+      - universal-sops/**
+      - scripts/hash-universal-sops-manifest.py
+      - tests/unit/embedding-hard-gate.test.sh
+      - .github/workflows/embedding-integrity-guard.yml
+  workflow_dispatch:
+
+jobs:
+  hard-gate:
+    name: "Embedding hard gates (fake-768 / sandbox / one-DB-path)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run embedding-hard-gate tests
+        run: |
+          chmod +x tests/unit/embedding-hard-gate.test.sh
+          bash tests/unit/embedding-hard-gate.test.sh
+
+      - name: Section-tagger / indexer agreement (existing invariant)
+        run: |
+          chmod +x tests/unit/section-tagger-indexer-agreement.test.sh
+          bash tests/unit/section-tagger-indexer-agreement.test.sh
+
+  universal-sops:
+    name: "universal-sops content manifest"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check universal-sops content manifest
+        run: python3 scripts/hash-universal-sops-manifest.py --check

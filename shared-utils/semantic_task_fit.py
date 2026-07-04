@@ -135,6 +135,43 @@ def _cosine(v1, v2) -> float:
         return 0.0
 
 
+def _current_gemini_model() -> str:
+    """Model authority = shared-utils/embedding_engine.GEMINI_MODEL."""
+    try:
+        import sys as _sys, os as _os
+        _su = _os.path.dirname(__file__)
+        if _su not in _sys.path:
+            _sys.path.insert(0, _su)
+        from embedding_engine import GEMINI_MODEL as _M
+        return _M
+    except Exception:
+        return "gemini-embedding-2"
+
+
+def _provider_filter_sql(cur) -> str:
+    """
+    EMBED-7: exclude rows whose provider/model metadata is DEFINITELY not the
+    current gemini model (e.g. provider='fake' plumbing rows, retired preview
+    slugs, openai rows) from the selector's cosine pool. search() in
+    embedding_engine already refuses these; this closes the same hole on the
+    in-process selector path, which previously cosine-scored ANY row that
+    happened to match the query dimension. Legacy rows with NULL/'' provider
+    are still allowed (pre-PRD-1.8 indexes carry no metadata); the dimension
+    guard remains the backstop for those.
+    Returns '' when the index has no provider/model columns.
+    """
+    try:
+        cur.execute("PRAGMA table_info(embeddings)")
+        cols = {r[1] for r in cur.fetchall()}
+    except sqlite3.Error:
+        return ""
+    if not {"provider", "model"} <= cols:
+        return ""
+    model = _current_gemini_model().replace("'", "''")
+    return (" AND (provider IS NULL OR provider = '' "
+            f"OR (provider = 'gemini' AND model = '{model}'))")
+
+
 def _persona_embedding_from_index(persona_id: str, db_path: Path, top_k: int = None):
     """Pull the persona's representative embedding from gemini-index.sqlite.
 
@@ -160,7 +197,8 @@ def _persona_embedding_from_index(persona_id: str, db_path: Path, top_k: int = N
         # Order by chunk_index so the averaged set is deterministic across calls.
         cur.execute(
             "SELECT vector FROM embeddings WHERE file_path LIKE ? "
-            "ORDER BY chunk_index ASC LIMIT ?",
+            + _provider_filter_sql(cur) +
+            " ORDER BY chunk_index ASC LIMIT ?",
             (f"%{persona_id}%", int(top_k)),
         )
         rows = cur.fetchall()
@@ -322,6 +360,7 @@ def semantic_persona_ids(task_text: str, paths: dict, top_k: int = 10) -> "list 
         cur.execute(
             "SELECT file_path, vector FROM embeddings "
             "WHERE file_path LIKE '%coaching-personas/personas/%'"
+            + _provider_filter_sql(cur)
         )
         rows = cur.fetchall()
         conn.close()

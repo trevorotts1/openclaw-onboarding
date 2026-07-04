@@ -100,8 +100,11 @@ If none of these are available, **STOP** and ask the owner. Do not silently subs
 After Phase 3 writes the blueprint, **always** run:
 
 ```bash
-python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/gemini-indexer.py
-python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/gemini-indexer.py --status
+# Section-level index of the new persona (the canonical build path — EMBED-5):
+python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/gemini-section-indexer.py --persona-id <persona-folder-slug>
+# Then confirm counts + provider/model:
+python3 ~/.openclaw/skills/shared-utils/embedding_engine.py --status
+python3 ~/.openclaw/skills/shared-utils/embedding_engine.py --verify
 ```
 
 This populates the `coaching-personas` collection so the persona becomes searchable. **Skipping this step is the most common cause of "the new persona isn't surfacing in the dashboard."**
@@ -174,9 +177,10 @@ personas/<slug>/
 └── citations.md           # Page/timestamp references for any direct quotes
 ```
 
-After Gemini Engine indexing, the blueprint is also embedded in:
+After Gemini Engine indexing, the blueprint's section rows live in the ONE
+canonical index (see docs/EMBEDDINGS.md — never any other path):
 ```
-~/.openclaw/skills/23-ai-workforce-blueprint/data/coaching-personas/gemini-index.sqlite
+~/.openclaw/workspace/data/coaching-personas/gemini-index.sqlite
 ```
 
 `persona-categories.json` and `PERSONA-ROUTER.md` (skill root) are also updated atomically so the selector can route to the new persona without a restart.

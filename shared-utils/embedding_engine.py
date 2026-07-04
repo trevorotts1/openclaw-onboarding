@@ -277,6 +277,23 @@ def _is_quota_or_timeout(exc: Exception) -> bool:
             or "timeout" in msg)
 
 
+def _assert_vector_dim(vec, expected_dim: int, provider: str, model_id: str):
+    """
+    EMBED-3 HARD GATE: refuse to hand back a vector whose dimensionality does
+    not match the pinned contract (gemini-embedding-2 => 3072). A provider /
+    SDK regression that returns a differently-shaped vector (e.g. a default
+    768-dim embed because output_dimensionality was silently ignored) must
+    FAIL LOUD here — it must never be persisted and later cosine-compared.
+    """
+    if vec is None or getattr(vec, "shape", (0,))[0] != expected_dim:
+        got = 0 if vec is None else vec.shape[0]
+        raise RuntimeError(
+            f"[embedding-engine] HARD GATE: {provider}/{model_id} returned a "
+            f"{got}-dim vector, expected {expected_dim}-dim. Refusing to use it "
+            f"— a wrong-dimension vector must never be written to the index."
+        )
+
+
 def get_embedding(embedder, text, retries=5):
     """
     Embed text using the provided (provider, client, model_id) tuple.
@@ -307,10 +324,15 @@ def get_embedding(embedder, text, retries=5):
                         task_type="RETRIEVAL_DOCUMENT",
                         output_dimensionality=GEMINI_OUTPUT_DIM),
                 )
-                return np.array(response.embeddings[0].values, dtype=np.float32)
+                vec = np.array(response.embeddings[0].values, dtype=np.float32)
+                _assert_vector_dim(vec, GEMINI_OUTPUT_DIM, provider, model_id)
+                return vec
             elif provider == "openai":
                 response = client.embeddings.create(model=model_id, input=text)
-                return np.array(response.data[0].embedding, dtype=np.float32)
+                vec = np.array(response.data[0].embedding, dtype=np.float32)
+                _assert_vector_dim(vec, _DIM_BY_MODEL.get(model_id, vec.shape[0]),
+                                   provider, model_id)
+                return vec
             else:
                 raise ValueError(f"unknown provider: {provider!r}")
         except Exception as e:
@@ -357,10 +379,15 @@ def embed_query(embedder, query):
                         task_type="RETRIEVAL_QUERY",
                         output_dimensionality=GEMINI_OUTPUT_DIM),
                 )
-                return np.array(response.embeddings[0].values, dtype=np.float32)
+                vec = np.array(response.embeddings[0].values, dtype=np.float32)
+                _assert_vector_dim(vec, GEMINI_OUTPUT_DIM, provider, model_id)
+                return vec
             elif provider == "openai":
                 response = client.embeddings.create(model=model_id, input=query)
-                return np.array(response.data[0].embedding, dtype=np.float32)
+                vec = np.array(response.data[0].embedding, dtype=np.float32)
+                _assert_vector_dim(vec, _DIM_BY_MODEL.get(model_id, vec.shape[0]),
+                                   provider, model_id)
+                return vec
             else:
                 raise ValueError(f"unknown provider: {provider!r}")
         except Exception as e:
@@ -844,6 +871,106 @@ def search(query: str, limit: int = 3, db_path: str = None, mode: str = None) ->
 
 
 # ---------------------------------------------------------------------------
+# verify_index_integrity — EMBED-3 verifiable assertion over a built index
+# ---------------------------------------------------------------------------
+
+def verify_index_integrity(db_path: str = None,
+                           expect_provider: str = "gemini",
+                           expect_model: str = None,
+                           expect_dim: int = None,
+                           strict_provider: bool = True) -> int:
+    """
+    Assert every row in the embeddings table carries REAL vectors that match
+    the pinned contract. This is the machine-checkable gate that catches the
+    historical failure mode where a keyless indexer silently persisted fake
+    hash-derived 768-dim vectors (or stamped lying provider/model metadata).
+
+    Checks (per row):
+      1. vector blob length == dim * 4      (float32 self-consistency)
+      2. dim == expect_dim                  (default GEMINI_OUTPUT_DIM=3072)
+      3. provider == expect_provider AND model == expect_model
+         (skipped when strict_provider=False — used by cmd_index which may
+          legitimately run under the documented N18 OpenAI fallback)
+
+    Returns 0 = PASS, 4 = FAIL (violations found), 1 = cannot check
+    (missing DB / empty table). Prints a summary + up to 10 offending rows.
+    """
+    if db_path is None:
+        db_path = DB_PATH
+    if expect_model is None:
+        expect_model = GEMINI_MODEL
+    if expect_dim is None:
+        expect_dim = GEMINI_OUTPUT_DIM
+    if not os.path.exists(db_path):
+        print(f"ERROR [embedding-engine] verify: DB not found at {db_path}",
+              file=sys.stderr)
+        return 1
+    conn = sqlite3.connect(db_path, timeout=30.0)
+    cur = conn.cursor()
+    try:
+        total = cur.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
+    except sqlite3.OperationalError as e:
+        print(f"ERROR [embedding-engine] verify: {e}", file=sys.stderr)
+        conn.close()
+        return 1
+    if total == 0:
+        print("ERROR [embedding-engine] verify: embeddings table is EMPTY",
+              file=sys.stderr)
+        conn.close()
+        return 1
+
+    cols = _table_columns(cur)
+    has_meta = {"provider", "model", "dim"} <= cols
+
+    violations = []
+    # 1+2: blob-length / dim contract (works even without metadata columns)
+    if has_meta:
+        rows = cur.execute(
+            "SELECT id, provider, model, dim, length(vector) FROM embeddings"
+        ).fetchall()
+    else:
+        rows = [(r[0], None, None, None, r[1]) for r in cur.execute(
+            "SELECT id, length(vector) FROM embeddings").fetchall()]
+    for row_id, prov, mdl, dim, blob_len in rows:
+        actual_dim = (blob_len or 0) // 4
+        if actual_dim != expect_dim:
+            violations.append((row_id, f"vector is {actual_dim}-dim "
+                                       f"(blob {blob_len}B), expected {expect_dim}"))
+            continue
+        if has_meta:
+            if dim != expect_dim:
+                violations.append((row_id, f"dim column={dim}, expected {expect_dim}"))
+            elif (blob_len or 0) != dim * 4:
+                violations.append((row_id, f"blob {blob_len}B != dim*4 ({dim * 4})"))
+            elif strict_provider and (prov != expect_provider or mdl != expect_model):
+                violations.append(
+                    (row_id, f"provider/model={prov!r}/{mdl!r}, expected "
+                             f"{expect_provider!r}/{expect_model!r}"))
+    conn.close()
+
+    if violations:
+        print(
+            f"FAIL [embedding-engine] verify: {len(violations)}/{total} row(s) "
+            f"violate the embedding contract "
+            f"({expect_provider}/{expect_model} @ {expect_dim}-dim float32):",
+            file=sys.stderr,
+        )
+        for row_id, why in violations[:10]:
+            print(f"  - {row_id}: {why}", file=sys.stderr)
+        if len(violations) > 10:
+            print(f"  ... and {len(violations) - 10} more", file=sys.stderr)
+        print(
+            "  A fake / wrong-model / wrong-dim vector must NEVER be served. "
+            "Re-embed the offending personas (see docs/EMBEDDINGS.md).",
+            file=sys.stderr,
+        )
+        return 4
+    print(f"PASS [embedding-engine] verify: {total} rows, all "
+          f"{expect_provider}/{expect_model} @ {expect_dim}-dim float32")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # cmd_status — report without indexing
 # ---------------------------------------------------------------------------
 
@@ -976,6 +1103,15 @@ def cmd_index(rebuild: bool = False, db_path: str = None,
     files = list(Path(personas_dir).rglob("*.md"))
     print(f"[embedding-engine] Found {len(files)} markdown files.")
 
+    # EMBED-4 (converge/furnace guard): the canonical index is SECTION-level
+    # (gemini-section-indexer.py rows, id = <persona>__section_NN, carrying
+    # content_hash = md5 of the whole blueprint). This chunk indexer's old skip
+    # check only recognised its OWN id scheme ({file_hash}_N), so running it
+    # against a section-converged DB would re-embed EVERY blueprint as chunk
+    # rows — a full furnace + a mixed-unit index. Now a file whose md5 already
+    # exists as a section row is skipped too.
+    _has_content_hash = "content_hash" in _table_columns(cursor)
+
     total_chunks = 0
     skipped = 0
     errors = 0
@@ -990,7 +1126,15 @@ def cmd_index(rebuild: bool = False, db_path: str = None,
                 "SELECT id FROM embeddings WHERE id LIKE ? LIMIT 1",
                 (f"{file_hash}_%",),
             )
-            if cursor.fetchone() and not rebuild:
+            already = cursor.fetchone() is not None
+            if not already and _has_content_hash:
+                cursor.execute(
+                    "SELECT 1 FROM embeddings WHERE content_hash = ? "
+                    "AND unit_type = 'section' LIMIT 1",
+                    (file_hash,),
+                )
+                already = cursor.fetchone() is not None
+            if already and not rebuild:
                 skipped += 1
                 continue
             print(f"  Indexing: {file_path.name} ({len(chunks)} chunks)")
@@ -1015,7 +1159,26 @@ def cmd_index(rebuild: bool = False, db_path: str = None,
         except Exception as e:
             errors += 1
             print(f"  ERROR processing {file_path.name}: {e}", file=sys.stderr)
+
+    # EMBED-3 post-index shape check: no row may carry a vector whose blob
+    # length disagrees with a KNOWN model dimension (1536 openai / 3072 gemini).
+    # This is the belt-and-braces guard against fake / truncated vectors being
+    # persisted by ANY writer sharing this table.
+    bad = cursor.execute(
+        "SELECT id, length(vector) FROM embeddings "
+        "WHERE length(vector) NOT IN (?, ?) LIMIT 10",
+        (1536 * 4, GEMINI_OUTPUT_DIM * 4),
+    ).fetchall()
     conn.close()
+    if bad:
+        print(
+            f"ERROR [embedding-engine]: index INTEGRITY FAILURE — "
+            f"{len(bad)}+ row(s) carry vectors of unexpected size "
+            f"(first: {bad[0][0]} @ {bad[0][1]}B). Fake or corrupt vectors "
+            f"detected; run --verify for the full report and re-embed.",
+            file=sys.stderr,
+        )
+        return 4
     print(
         f"[embedding-engine] Indexing complete. "
         f"Added {total_chunks} new chunks across "
@@ -1071,6 +1234,20 @@ def _refuse_full_rebuild_if_prebuilt(force_full_rebuild: bool) -> None:
     sys.exit(3)
 
 
+def _assert_live_write_target(db_path: str) -> None:
+    """
+    EMBED-2: writers targeting the DEFAULT (live) DB must not silently land in
+    a sandboxed HOME. Explicit --db targets are exempt (the caller chose the
+    location deliberately — tests, build-and-publish staging). Falls back to a
+    no-op if detect_platform is unavailable (WORKSPACE_ROOT env fallback path).
+    """
+    try:
+        from detect_platform import assert_live_workspace_for_write
+    except ImportError:
+        return
+    assert_live_workspace_for_write("embedding-engine indexer", db_path)
+
+
 def _indexer_main():
     parser = argparse.ArgumentParser(
         prog="embedding-engine (indexer)",
@@ -1080,17 +1257,33 @@ def _indexer_main():
                         help="Report DB stats and embedder readiness.")
     parser.add_argument("--rebuild", action="store_true",
                         help="Drop all embeddings and re-index from scratch.")
+    parser.add_argument("--verify", action="store_true",
+                        help="EMBED-3: verify every row carries real vectors "
+                             "matching the pinned contract (gemini/3072). "
+                             "Exit 0 pass, 4 fail.")
+    parser.add_argument("--db", default=None,
+                        help="Explicit DB path (default: the canonical live "
+                             "coaching-personas index).")
+    parser.add_argument("--personas-dir", default=None,
+                        help="Explicit personas dir to scan (default: the "
+                             "canonical live personas dir).")
     parser.add_argument("--force-full-rebuild", action="store_true",
                         help=argparse.SUPPRESS)  # operator-only; see _refuse_full_rebuild_if_prebuilt
     args = parser.parse_args()
     if args.status:
-        sys.exit(cmd_status())
+        sys.exit(cmd_status(db_path=args.db))
+    if args.verify:
+        sys.exit(verify_index_integrity(db_path=args.db))
     # --status short-circuits above regardless of --rebuild, so the guard
     # only ever runs for a real (non-status) invocation — same precedence
     # the previous wrapper-level guard had.
     if args.rebuild:
         _refuse_full_rebuild_if_prebuilt(args.force_full_rebuild)
-    sys.exit(cmd_index(rebuild=args.rebuild))
+    if args.db is None:
+        # Writing to the DEFAULT live DB: a sandboxed HOME must be explicit.
+        _assert_live_write_target(DB_PATH)
+    sys.exit(cmd_index(rebuild=args.rebuild, db_path=args.db,
+                       personas_dir=args.personas_dir))
 
 
 def _search_main():

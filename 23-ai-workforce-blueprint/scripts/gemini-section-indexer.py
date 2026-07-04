@@ -42,13 +42,28 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared-utils"))
 from detect_platform import get_openclaw_paths  # type: ignore
 # PRD 1.8: GEMINI_MODEL is the single pinned constant in embedding_engine.py.
 # Import it here so a model change in one place propagates everywhere.
+# EMBED-3: get_embedder/get_embedding are the ONLY sanctioned embed path —
+# they read every canonical secret store (not just process env), pin
+# output_dimensionality=3072 + task_type=RETRIEVAL_DOCUMENT, retry on quota,
+# and HARD-FAIL on a wrong-dimension vector.
 from embedding_engine import (  # type: ignore
     GEMINI_MODEL,
     GEMINI_OUTPUT_DIM,
     LEADERSHIP_SECTION_NUMBER,
     COACHING_SECTION_NUMBER,
+    get_embedder,
+    get_embedding,
 )
 MIN_SECTION_WORDS = int(os.environ.get("OPENCLAW_MIN_SECTION_WORDS", "30"))
+
+# EMBED-3: metadata stamped on rows written in the EXPLICIT fake mode
+# (--allow-fake-embeddings, tests/plumbing only). The stamp is TRUTHFUL so no
+# downstream consumer can mistake a fake vector for a real Gemini one —
+# get_db_index_provider() will refuse to treat the DB as a clean gemini index
+# and `--verify` fails it.
+FAKE_PROVIDER = "fake"
+FAKE_MODEL = "deterministic-hash-768"
+FAKE_DIM = 768
 
 
 # ---- Mode mapping (mirrors what's in INSTRUCTIONS.md / PRD v1.1 Ch 2) ----
@@ -127,33 +142,54 @@ def parse_sections(content: str):
         yield section_num, section_name, body.strip()
 
 
-# ---- Embedding (deterministic fallback when no API key) ----
-def generate_embedding(text: str, dim: int = 768) -> bytes:
-    """
-    If GOOGLE_API_KEY is set and google-genai is installed, use real Gemini
-    embeddings. Else use a deterministic hash-based fallback that produces a
-    structurally valid vector — good for testing index plumbing.
-    """
-    if os.environ.get("GOOGLE_API_KEY"):
-        try:
-            from google import genai  # type: ignore
-            client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
-            resp = client.models.embed_content(
-                model=GEMINI_MODEL,
-                contents=text[:8000],
-            )
-            embedding = resp.embeddings[0].values
-            return struct.pack(f"{len(embedding)}f", *embedding)
-        except Exception as e:
-            print(f"  WARN: Gemini embed failed ({e}), using deterministic fallback")
+# ---- Embedding (EMBED-3 hard gate: real vectors or fail loud) ----
+#
+# HISTORY (the defect this replaces): the old generate_embedding() silently
+# fell back to a hash-derived FAKE 768-dim vector whenever GOOGLE_API_KEY was
+# missing from the process env (it never read secrets/.env) OR when ANY Gemini
+# exception occurred — and then stamped the row provider='gemini',
+# model=gemini-embedding-2, dim=3072 (lying metadata), so drift detection
+# could never catch it. It also bypassed output_dimensionality=3072,
+# task_type=RETRIEVAL_DOCUMENT, and the engine's retry/backoff.
+#
+# NOW: real embeds go through embedding_engine.get_embedding() (all secret
+# stores, pinned dims, retries, dim assertion). No key / no SDK => the run
+# FAILS LOUD (exit 4) unless the caller EXPLICITLY passed
+# --allow-fake-embeddings, in which case fake vectors are written with
+# TRUTHFUL metadata (provider='fake', model='deterministic-hash-768', dim=768)
+# and only into an explicitly-chosen --db (never the default live index).
 
-    # Deterministic fallback: hash-driven pseudo-embedding (NOT semantic, but valid shape)
+def resolve_real_embedder():
+    """Resolve the Gemini embedder via the engine, or None if unavailable."""
+    try:
+        return get_embedder(provider_hint="gemini")
+    except SystemExit:
+        return None
+
+
+def generate_fake_embedding(text: str, dim: int = FAKE_DIM) -> bytes:
+    """Deterministic hash-driven pseudo-embedding (NOT semantic, valid shape).
+    Only reachable via --allow-fake-embeddings; rows are stamped provider='fake'."""
     h = hashlib.sha256(text.encode("utf-8")).digest()
     floats = []
     for i in range(dim):
         b = h[i % len(h)]
         floats.append((b - 128) / 128.0)
     return struct.pack(f"{dim}f", *floats)
+
+
+def embed_section(embedder, text: str) -> bytes:
+    """
+    Real Gemini embed via the canonical engine. Raises / exits on failure —
+    NEVER silently degrades to a fake vector.
+    """
+    vec = get_embedding(embedder, text[:8000])
+    if vec is None or vec.shape[0] != GEMINI_OUTPUT_DIM:
+        raise RuntimeError(
+            f"embedding returned {'None' if vec is None else vec.shape[0]} "
+            f"instead of a {GEMINI_OUTPUT_DIM}-dim vector — refusing to write"
+        )
+    return vec.tobytes()
 
 
 # ---- Schema migration (idempotent) ----
@@ -217,9 +253,15 @@ def ensure_v2_1_schema(conn):
 
 
 # ---- Main indexing ----
-def index_blueprint(conn, blueprint_path: Path, dry_run: bool = False, force: bool = False) -> int:
+def index_blueprint(conn, blueprint_path: Path, embedder=None,
+                    allow_fake: bool = False,
+                    dry_run: bool = False, force: bool = False) -> int:
     """Returns the number of sections indexed, or -1 if the blueprint was
-    HASH-SKIPped (content byte-identical to what's already in the index)."""
+    HASH-SKIPped (content byte-identical to what's already in the index).
+
+    embedder: the (provider, client, model) tuple from resolve_real_embedder().
+    allow_fake: EXPLICIT opt-in — write deterministic fake vectors with
+    truthful provider='fake' metadata (tests/plumbing only)."""
     meta = parse_persona_metadata(blueprint_path)
     if not meta["persona_id"]:
         print(f"  SKIP {blueprint_path}: cannot parse persona_id from path")
@@ -250,11 +292,19 @@ def index_blueprint(conn, blueprint_path: Path, dry_run: bool = False, force: bo
             )
             return -1
 
-    # First, delete any existing CHUNK rows for this persona (we're replacing with section-level)
+    # First, delete any existing CHUNK rows for this persona (we're replacing
+    # with section-level). NOTE: `unit_type IN ('chunk', NULL)` never matched
+    # NULL (SQL semantics) — fixed to an explicit IS NULL clause.
     cur.execute(
-        "DELETE FROM embeddings WHERE persona_id = ? AND unit_type IN ('chunk', NULL)",
+        "DELETE FROM embeddings WHERE persona_id = ? "
+        "AND (unit_type = 'chunk' OR unit_type IS NULL)",
         (meta["persona_id"],),
     )
+
+    if allow_fake:
+        prov, mdl, dim = FAKE_PROVIDER, FAKE_MODEL, FAKE_DIM
+    else:
+        prov, mdl, dim = "gemini", GEMINI_MODEL, GEMINI_OUTPUT_DIM
 
     count = 0
     for section_num, section_name, body in parse_sections(content):
@@ -268,7 +318,11 @@ def index_blueprint(conn, blueprint_path: Path, dry_run: bool = False, force: bo
             count += 1
             continue
 
-        vector_bytes = generate_embedding(full_text)
+        if allow_fake:
+            vector_bytes = generate_fake_embedding(full_text)
+        else:
+            # Real embed or raise — never a silent fake (EMBED-3 hard gate).
+            vector_bytes = embed_section(embedder, full_text)
         cur.execute("""
             INSERT OR REPLACE INTO embeddings
               (id, file_path, chunk_index, content, vector, last_updated,
@@ -282,11 +336,29 @@ def index_blueprint(conn, blueprint_path: Path, dry_run: bool = False, force: bo
             meta["persona_id"], meta["author"], meta["book_title"], section_num, section_name,
             mode, meta["source_type"], meta["source_depth"], meta["confidence"],
             json.dumps({"word_count": word_count}), content_hash,
-            "gemini", GEMINI_MODEL, GEMINI_OUTPUT_DIM,
+            prov, mdl, dim,
         ))
         count += 1
         print(f"  indexed section {section_num:02d}: {section_name[:60]} ({word_count}w, {mode})")
     conn.commit()
+
+    # EMBED-3 post-write verification: every row just written for this persona
+    # must be self-consistent (blob length == stamped dim * 4 == the mode's
+    # contract dim). A violation aborts the whole run non-zero — it can only
+    # mean a fake/truncated vector nearly reached the index.
+    if not dry_run and count > 0:
+        bad = cur.execute(
+            "SELECT id, dim, length(vector) FROM embeddings "
+            "WHERE persona_id = ? AND unit_type = 'section' "
+            "AND (dim != ? OR length(vector) != ? OR provider != ? OR model != ?)",
+            (meta["persona_id"], dim, dim * 4, prov, mdl),
+        ).fetchall()
+        if bad:
+            raise RuntimeError(
+                f"post-write verification FAILED for {meta['persona_id']}: "
+                f"{len(bad)} row(s) violate the {prov}/{mdl}@{dim} contract "
+                f"(first: {bad[0]})"
+            )
     return count
 
 
@@ -298,16 +370,88 @@ def main():
     parser.add_argument("--force", action="store_true",
                         help="Bypass the md5 content-hash skip and re-embed every section, "
                              "even if the source blueprint is unchanged")
+    parser.add_argument("--db", default=None,
+                        help="Explicit DB path (default: the canonical live "
+                             "coaching-personas/gemini-index.sqlite). Used by "
+                             "build-and-publish.sh staging and by tests.")
+    parser.add_argument("--personas-root", default=None,
+                        help="Explicit personas root to scan (default: the "
+                             "canonical live coaching-personas/personas dir).")
+    parser.add_argument("--allow-fake-embeddings", action="store_true",
+                        help="EXPLICIT opt-in (tests/plumbing only): write "
+                             "deterministic fake vectors stamped provider='fake' "
+                             "dim=768. Requires --db or OPENCLAW_SANDBOX=1 — the "
+                             "default live index can never receive fake vectors.")
     args = parser.parse_args()
 
     paths = get_openclaw_paths()
-    db_path = paths["gemini_index"]
+    if args.db:
+        db_path = Path(args.db)
+    else:
+        # EMBED-1: paths["gemini_index"] is now the SAME file the search path
+        # reads (workspace/data/coaching-personas/gemini-index.sqlite).
+        db_path = Path(paths["gemini_index"])
+        # EMBED-2 sandbox hard gate: a build targeting the DEFAULT live DB
+        # must not silently land in a sandboxed HOME.
+        try:
+            from detect_platform import assert_live_workspace_for_write  # type: ignore
+            assert_live_workspace_for_write("gemini-section-indexer", db_path)
+        except ImportError:
+            pass
+        # Legacy-drift self-heal warning: pre-fix builds wrote to
+        # workspace/data/gemini-index.sqlite (a DB the search path never
+        # reads). If that orphan exists, say so loudly.
+        legacy = paths.get("legacy_gemini_index")
+        if legacy and Path(legacy).exists() and Path(legacy) != db_path:
+            print(
+                f"WARN: orphaned legacy index detected at {legacy} — rows "
+                f"written there by pre-fix builds are INVISIBLE to search. "
+                f"See docs/EMBEDDINGS.md ('Landing a delta') to converge, "
+                f"then delete the orphan.",
+                file=sys.stderr,
+            )
+
+    if args.allow_fake_embeddings and not args.db \
+            and os.environ.get("OPENCLAW_SANDBOX", "").strip() != "1":
+        print(
+            "ERROR: --allow-fake-embeddings targets the DEFAULT live index. "
+            "Fake vectors may only be written to an explicit --db target (or "
+            "under OPENCLAW_SANDBOX=1). Refusing.",
+            file=sys.stderr,
+        )
+        return 4
+
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    personas_root = paths["coaching_personas"] / "personas"
+    personas_root = Path(args.personas_root) if args.personas_root \
+        else (Path(paths["coaching_personas"]) / "personas")
 
     if not personas_root.exists():
         print(f"No personas directory at {personas_root}. Run Skill 22 first.")
         return 1
+
+    # EMBED-3: resolve the embedder UP FRONT — real vectors or fail loud.
+    embedder = None
+    if args.allow_fake_embeddings:
+        print(
+            "=" * 60 + "\n"
+            "!! FAKE-EMBEDDING MODE (--allow-fake-embeddings) !!\n"
+            "Vectors are deterministic hashes, NOT semantic. Rows are stamped\n"
+            f"provider='{FAKE_PROVIDER}' model='{FAKE_MODEL}' dim={FAKE_DIM} so\n"
+            "no consumer can mistake them for real Gemini vectors.\n" + "=" * 60
+        )
+    elif not args.dry_run:
+        embedder = resolve_real_embedder()
+        if embedder is None:
+            print(
+                "ERROR: no usable Gemini embedder (GOOGLE_API_KEY/GEMINI_API_KEY "
+                "not found in any canonical secret store, or google-genai not "
+                "installed). REFUSING to index — this tool never writes fake "
+                "vectors implicitly. Fix the key/SDK, or pass "
+                "--allow-fake-embeddings WITH --db for plumbing tests. "
+                "(embedding-subsystem hard gate EMBED-3)",
+                file=sys.stderr,
+            )
+            return 4
 
     conn = sqlite3.connect(str(db_path))
     ensure_v2_1_schema(conn)
@@ -330,21 +474,29 @@ def main():
 
     print(f"Indexing {len(targets)} persona blueprint(s) at section level")
     print(f"DB: {db_path}")
-    print(f"Embedding model: {GEMINI_MODEL}{' (real Gemini)' if os.environ.get('GOOGLE_API_KEY') else ' (deterministic fallback — set GOOGLE_API_KEY for real embeddings)'}")
+    print(f"Embedding model: "
+          f"{FAKE_MODEL + ' (FAKE — explicit opt-in)' if args.allow_fake_embeddings else GEMINI_MODEL + ' (real Gemini via embedding_engine)'}")
     print()
 
     total = 0
     skipped = 0
-    for bp in targets:
-        print(f"=== {bp.parent.name} ===")
-        n = index_blueprint(conn, bp, dry_run=args.dry_run, force=args.force)
-        if n < 0:
-            skipped += 1
-            print("  -> unchanged (hash-skip; no re-embed)")
-        else:
-            total += n
-            print(f"  -> {n} sections indexed")
-        print()
+    try:
+        for bp in targets:
+            print(f"=== {bp.parent.name} ===")
+            n = index_blueprint(conn, bp, embedder=embedder,
+                                allow_fake=args.allow_fake_embeddings,
+                                dry_run=args.dry_run, force=args.force)
+            if n < 0:
+                skipped += 1
+                print("  -> unchanged (hash-skip; no re-embed)")
+            else:
+                total += n
+                print(f"  -> {n} sections indexed")
+            print()
+    except Exception as e:
+        conn.close()
+        print(f"ERROR: indexing aborted — {e}", file=sys.stderr)
+        return 4
 
     conn.close()
 

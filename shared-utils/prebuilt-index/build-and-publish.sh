@@ -27,8 +27,10 @@
 #   --dry-run             do everything EXCEPT the gemini embed + the gh upload
 #                         (proves the count/manifest math without spending credits).
 #
-# Ordered steps: download current asset → reconcile blueprints → incremental
-# index → recompute counts/sha256/sizes → bump manifest → gh release upload.
+# Ordered steps (EMBED-6, fully HERMETIC — stages in a temp dir, never touches
+# the live workspace): download current asset → stage repo blueprints →
+# incremental index → REAL-VECTOR HARD GATE (every row gemini/3072) →
+# recompute counts/sha256/sizes → bump manifest → gh release upload.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -36,7 +38,6 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 MANIFEST="$SELF_DIR/INDEX-MANIFEST.json"
 INDEXER="$REPO_ROOT/23-ai-workforce-blueprint/scripts/gemini-section-indexer.py"
-PROVISION_HELPER="$REPO_ROOT/shared-utils/provision-persona-index.sh"
 SK22="$REPO_ROOT/22-book-to-persona-coaching-leadership-system"
 
 NEW_TAG=""
@@ -56,18 +57,38 @@ command -v python3 >/dev/null 2>&1 || { echo "python3 required" >&2; exit 1; }
 [ -f "$MANIFEST" ] || { echo "manifest not found: $MANIFEST" >&2; exit 1; }
 [ -f "$INDEXER" ]  || { echo "indexer not found: $INDEXER" >&2; exit 1; }
 
-# Resolve the live gemini index + canonical personas dir the indexer writes to.
-GEMINI_INDEX="$(python3 - "$REPO_ROOT" <<'PY'
+# EMBED-6: the build is fully HERMETIC — it stages the DB + a
+# coaching-personas/personas tree under a throwaway temp dir and NEVER touches
+# the operator's live workspace (the old flow resolved detect_platform paths
+# and gunzip'd the base asset OVER a live-workspace file, then reconciled
+# blueprints INTO the live coaching dir as a side effect). Blueprints come
+# straight from the repo's Skill-22 source of truth. The staged personas tree
+# keeps the '<...>/coaching-personas/personas/<slug>/' shape because
+# embedding_engine.search() filters rows on
+# file_path LIKE '%coaching-personas/personas/%'.
+BUILD_DIR="$(mktemp -d -t prebuilt-index-build.XXXXXX)"
+GEMINI_INDEX="$BUILD_DIR/gemini-index.sqlite"
+STAGED_PERSONAS="$BUILD_DIR/coaching-personas/personas"
+echo "→ hermetic build dir: $BUILD_DIR"
+echo "→ staged index:       $GEMINI_INDEX"
+
+# Preflight: a REAL Gemini key must resolve (any canonical store) before we
+# spend a download — a keyless run can no longer produce fake vectors (the
+# indexer hard-fails), but failing here is faster and clearer. Never prints
+# the value; SET/NOT-SET only.
+KEY_STATE="$(python3 - "$REPO_ROOT" <<'PY'
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(sys.argv[1]) / "shared-utils"))
-from detect_platform import get_openclaw_paths
-print(get_openclaw_paths()["gemini_index"])
+from embedding_engine import _read_secret
+print("SET" if (_read_secret("GOOGLE_API_KEY") or _read_secret("GEMINI_API_KEY")) else "NOT-SET")
 PY
 )"
-COACHING_DB_DIR="$(dirname "$GEMINI_INDEX")/coaching-personas"
-echo "→ gemini index: $GEMINI_INDEX"
-echo "→ coaching dir: $COACHING_DB_DIR"
+echo "→ GOOGLE_API_KEY/GEMINI_API_KEY: $KEY_STATE"
+if [ "$KEY_STATE" != "SET" ] && [ "$DRY_RUN" != "1" ]; then
+    echo "ERROR: no Gemini key resolves from any canonical secret store — the delta embed would fail. Set the key (by name) and re-run." >&2
+    exit 1
+fi
 
 # base_tag / base_sha decouple "what to download" from "what to publish" so the
 # manifest can be pre-staged with the next release_tag (e.g. v2.2.1) while still
@@ -80,13 +101,12 @@ CUR_SHA="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.ge
 # ── 1) Download the CURRENT published asset (NEVER start empty) ───────────────
 echo "→ [1/6] downloading current published asset ($CUR_TAG) so the indexer embeds only the DELTA"
 TMP_GZ="$(mktemp -t gemini-index.XXXXXX.gz)"
-trap 'rm -f "$TMP_GZ"' EXIT
+trap 'rm -f "$TMP_GZ"; rm -rf "$BUILD_DIR"' EXIT
 if curl -L --retry 3 --retry-delay 5 --fail -H "Accept: application/octet-stream" "$CUR_URL" -o "$TMP_GZ"; then
     if command -v sha256sum >/dev/null 2>&1; then GOT="$(sha256sum "$TMP_GZ" | awk '{print $1}')"; else GOT="$(shasum -a 256 "$TMP_GZ" | awk '{print $1}')"; fi
     [ "$GOT" = "$CUR_SHA" ] || { echo "WARN: downloaded asset sha256 mismatch ($GOT != $CUR_SHA) — refusing to build on a corrupt base" >&2; exit 1; }
-    mkdir -p "$COACHING_DB_DIR"
     gunzip -c "$TMP_GZ" > "$GEMINI_INDEX"
-    echo "  ✓ base asset in place + sha256 verified"
+    echo "  ✓ base asset staged + sha256 verified"
 else
     echo "WARN: could not download current asset — refusing to build (a build from empty would be a full furnace re-embed)" >&2
     exit 1
@@ -149,14 +169,12 @@ if flagged:
 print(f"  ✓ backstamped {updated} blank-provider row(s) from blob length — no re-embed")
 PY
 
-# ── 2) Reconcile canonical blueprints into the coaching dir ───────────────────
-echo "→ [2/6] reconciling canonical blueprints into $COACHING_DB_DIR"
-if [ -f "$PROVISION_HELPER" ]; then
-    # shellcheck source=/dev/null
-    source "$PROVISION_HELPER"
-    WS="$(dirname "$(dirname "$COACHING_DB_DIR")")"   # …/workspace
-    reconcile_persona_assets "$SK22" "$COACHING_DB_DIR" "$WS"
-fi
+# ── 2) Stage canonical blueprints from the repo Skill-22 source of truth ──────
+echo "→ [2/6] staging canonical blueprints from $SK22/personas into the hermetic build dir"
+[ -d "$SK22/personas" ] || { echo "ERROR: Skill-22 personas dir not found: $SK22/personas" >&2; exit 1; }
+mkdir -p "$STAGED_PERSONAS"
+cp -R "$SK22/personas/." "$STAGED_PERSONAS/"
+echo "  ✓ $(find "$STAGED_PERSONAS" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ') blueprint dirs staged"
 
 # ── 3) Incremental index (HASH-SKIP embeds ONLY new/changed personas) ─────────
 echo "→ [3/6] incremental index — HASH-SKIP guard embeds ONLY new/changed personas (NO full furnace)"
@@ -165,11 +183,30 @@ if [ "$DRY_RUN" = "1" ]; then
 elif [ "${#PERSONA_IDS[@]}" -gt 0 ]; then
     for _pid in "${PERSONA_IDS[@]}"; do
         echo "  indexing persona-id=$_pid"
-        python3 "$INDEXER" --persona-id "$_pid"
+        python3 "$INDEXER" --db "$GEMINI_INDEX" --personas-root "$STAGED_PERSONAS" --persona-id "$_pid"
     done
 else
-    python3 "$INDEXER" --reindex-all
+    python3 "$INDEXER" --db "$GEMINI_INDEX" --personas-root "$STAGED_PERSONAS" --reindex-all
 fi
+
+# ── 3.5) REAL-VECTOR HARD GATE (EMBED-3) ──────────────────────────────────────
+# Refuse to publish unless EVERY row is a real gemini-embedding-2 vector:
+# provider='gemini', model=GEMINI_MODEL, dim=3072, blob length = 3072*4 bytes.
+# This is the publish-side assertion that makes the historical failure mode
+# (fake hash-derived 768-dim vectors, or lying provider stamps) impossible to
+# ship fleet-wide. Runs in dry-run too (the base asset must already pass).
+echo "→ [3.5/6] real-vector hard gate — verifying every row is gemini/3072 float32"
+python3 - "$REPO_ROOT" "$GEMINI_INDEX" <<'PY'
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[1]) / "shared-utils"))
+from embedding_engine import verify_index_integrity
+rc = verify_index_integrity(db_path=sys.argv[2])
+if rc != 0:
+    print("REFUSING TO PUBLISH: the staged index failed the real-vector gate.",
+          file=sys.stderr)
+sys.exit(rc)
+PY
 
 # ── 4) Recompute counts / sizes / sha256 from the rebuilt DB ──────────────────
 echo "→ [4/6] recomputing counts + sha256"
@@ -178,13 +215,14 @@ gzip -c "$GEMINI_INDEX" > "$REBUILT_GZ"
 if command -v sha256sum >/dev/null 2>&1; then NEW_SHA="$(sha256sum "$REBUILT_GZ" | awk '{print $1}')"; else NEW_SHA="$(shasum -a 256 "$REBUILT_GZ" | awk '{print $1}')"; fi
 GZ_BYTES="$(wc -c < "$REBUILT_GZ" | tr -d ' ')"
 DB_BYTES="$(wc -c < "$GEMINI_INDEX" | tr -d ' ')"
-read -r CHUNKS PERSONAS <<EOF
+read -r CHUNKS PERSONAS FILES <<EOF
 $(python3 - "$GEMINI_INDEX" <<'PY'
 import sqlite3, sys
 c = sqlite3.connect(sys.argv[1])
 chunks = c.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
 personas = c.execute("SELECT COUNT(DISTINCT persona_id) FROM embeddings WHERE persona_id IS NOT NULL").fetchone()[0]
-print(chunks, personas)
+files = c.execute("SELECT COUNT(DISTINCT file_path) FROM embeddings").fetchone()[0]
+print(chunks, personas, files)
 PY
 )
 EOF
@@ -222,15 +260,16 @@ PY
     fi
 fi
 NEW_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/$NEW_TAG/gemini-index.sqlite.gz"
-echo "→ [5/6] bumping manifest → release_tag=$NEW_TAG persona_count=$DIR_PERSONAS chunk_count=$CHUNKS"
-python3 - "$MANIFEST" "$DIR_PERSONAS" "$CHUNKS" "$NEW_SHA" "$NEW_TAG" "$NEW_URL" "$GZ_BYTES" "$DB_BYTES" "$SET_MD5" "$DIR_PERSONAS" <<'PY'
+echo "→ [5/6] bumping manifest → release_tag=$NEW_TAG persona_count=$DIR_PERSONAS chunk_count=$CHUNKS file_count=$FILES"
+python3 - "$MANIFEST" "$DIR_PERSONAS" "$CHUNKS" "$NEW_SHA" "$NEW_TAG" "$NEW_URL" "$GZ_BYTES" "$DB_BYTES" "$SET_MD5" "$DIR_PERSONAS" "$FILES" <<'PY'
 import json, sys, datetime
-(mp, personas, chunks, sha, tag, url, gz, db, set_md5, canon) = sys.argv[1:12]
+(mp, personas, chunks, sha, tag, url, gz, db, set_md5, canon, files) = sys.argv[1:12]
 m = json.load(open(mp))
 today = datetime.date.today().isoformat()
 m["persona_count"] = int(personas)
 m["canonical_persona_count"] = int(canon)
 m["chunk_count"] = int(chunks)
+m["file_count"] = int(files)
 m["sha256"] = sha
 m["release_tag"] = tag
 m["asset_url"] = url
