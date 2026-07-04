@@ -3,9 +3,9 @@
 #
 # Proves the gate is real (a green gate that never fails is worthless):
 #
-#   T1. CLEAN REPO PASSES        — the committed repo exits 0 (all 29 floor
-#                                  departments consistent across floor / roster /
-#                                  library / SOP / persona).
+#   T1. CLEAN REPO PASSES        — the committed repo exits 0 (every floor
+#                                  department consistent across floor / roster /
+#                                  library / SOP / persona; no forbidden literals).
 #   T2. MISSING ROSTER FAILS     — delete a floor dept's roster in a sandbox
 #                                  copy → exit 5 (that dept can't materialize).
 #   T3. UNRESOLVABLE ROLE FAILS  — add a roster role with a slug that resolves to
@@ -18,6 +18,16 @@
 #                                  corruption into a role-library slug + filename
 #                                  in a sandbox → exit 5 (roster role no longer
 #                                  resolves).
+#   T6. STALE FLOOR LITERAL FAILS  — re-introduce the retired "7 universal-primary
+#                                  = 29" floor framing into INSTRUCTIONS.md in a
+#                                  sandbox → exit 7 (forbidden-literal guard, #10).
+#   T7. LISTINGS-AS-UNIVERSAL FAILS — pitch "Listings Management" on a
+#                                  universal-primary line in a sandbox → exit 7
+#                                  (contextual guard, #10). The legit Real-Estate
+#                                  Pack line stays clean — proven by T1.
+#   T8. LATER-DEFERRAL LITERAL FAILS — re-introduce the "ask me again in 90 days"
+#                                  deferral promise in a sandbox → exit 7
+#                                  (forbidden-literal guard, #7 regression).
 #
 # Each negative test breaks exactly ONE invariant in an isolated sandbox copy so
 # we know the gate bites on THAT specific drift, not on incidental noise.
@@ -34,9 +44,19 @@ PASS=0; FAIL=0
 ok()  { echo "  PASS: $*"; PASS=$((PASS+1)); }
 bad() { echo "  FAIL: $*"; FAIL=$((FAIL+1)); }
 
-run_gate() {  # run_gate <skill-dir> -> echoes rc
-  local sd="$1"
-  python3 "$GATE" --skill-dir "$sd" >/dev/null 2>&1
+run_gate() {  # run_gate <skill-dir> [only] -> echoes rc
+  # `only` (consistency|artifact) restricts the gate to one sub-gate. The
+  # forbidden-literal guard runs with the consistency sub-gate, so the
+  # forbidden-literal tests pass `consistency` to isolate rc=7 from the artifact
+  # sub-gate's rc=6 — the lightweight sandbox has no repo-root bootstrap files, so
+  # the artifact sub-gate always reports drift there and would mask the rc=7 the
+  # test is actually asserting (artifact rc=6 outranks forbidden rc=7).
+  local sd="$1"; local only="${2:-}"
+  if [ -n "$only" ]; then
+    python3 "$GATE" --skill-dir "$sd" --only "$only" >/dev/null 2>&1
+  else
+    python3 "$GATE" --skill-dir "$sd" >/dev/null 2>&1
+  fi
   echo $?
 }
 
@@ -134,6 +154,35 @@ PY
 else
   bad "T5 setup failed: clean qc-specialist-sales.md not present in sandbox"
 fi
+
+echo "=== T6: STALE CANONICAL-FLOOR LITERAL FAILS (Issue #10) ==="
+sb="$(make_sandbox | head -1)"
+# Re-introduce the retired "7 universal-primary = 29" floor framing (v2.6.1 floor
+# is 22 + 6 = 28). The forbidden-literal guard must bite -> combined rc 7.
+printf '\n> Canonical floor: 22 mandatory + 7 universal-primary = 29 departments.\n' \
+  >> "$sb/INSTRUCTIONS.md"
+rc="$(run_gate "$sb" consistency)"
+if [ "$rc" -eq 7 ]; then ok "stale '7 universal-primary / =29' floor literal -> exit 7"; else bad "stale floor literal should exit 7, got rc=$rc"; fi
+
+echo "=== T7: LISTINGS-MANAGEMENT-AS-UNIVERSAL-PRIMARY FAILS (Issue #10) ==="
+sb="$(make_sandbox | head -1)"
+# Pitch the industry-gated Listings Management dept as a universal-primary vertical
+# (the v2.6.1-retired bug). The CONTEXTUAL guard fires only because both
+# "Listings Management" and "universal-primary" are on the same line; the legit
+# Real-Estate-Pack "- Listings Management" line (no universal-primary co-text) is
+# untouched and T1 already proves the clean repo does NOT trip on it.
+printf '\nFor EACH universal-primary vertical department (Presentations, Listings Management, Podcast) that does NOT fit, offer YES / NO / LATER.\n' \
+  >> "$sb/INSTRUCTIONS.md"
+rc="$(run_gate "$sb" consistency)"
+if [ "$rc" -eq 7 ]; then ok "Listings Management pitched as universal-primary -> exit 7"; else bad "listings-as-universal-primary should exit 7, got rc=$rc"; fi
+
+echo "=== T8: LATER-DEFERRAL LITERAL FAILS (Issue #7 regression) ==="
+sb="$(make_sandbox | head -1)"
+# LATER = build-now; the doc must never promise a 90-day defer.
+printf '\n> If you say LATER, no problem — I will ask me again in 90 days.\n' \
+  >> "$sb/INSTRUCTIONS.md"
+rc="$(run_gate "$sb" consistency)"
+if [ "$rc" -eq 7 ]; then ok "'ask me again in 90 days' deferral literal -> exit 7"; else bad "deferral literal should exit 7, got rc=$rc"; fi
 
 echo
 echo "--------------------------------------------"

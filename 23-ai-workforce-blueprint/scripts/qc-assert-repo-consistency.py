@@ -153,7 +153,8 @@ class Repo:
 
     # ── FLOOR ────────────────────────────────────────────────────────────────
     def floor_dept_ids(self):
-        """The 29 floor dept ids: 22 mandatory + 7 universal-primary verticals.
+        """The floor dept ids: 22 mandatory + the universal-primary verticals
+        (currently 6 per naming-map v2.6.1 = 28; read live, never a frozen count).
 
         These are EXACTLY the dept_id keys that reach selected_departments in
         build-workforce.py (canonical ids, not legacy aliases), so they are the
@@ -1302,14 +1303,51 @@ _FORBIDDEN_DEFERRAL_LITERALS = [
     "reassessment.md",
 ]
 
+# Issue #10: STALE CANONICAL-FLOOR SIZE. The interviewer executes INSTRUCTIONS.md
+# verbatim, so a frozen floor number there makes the LLM pitch the WRONG department
+# set to a live client. The floor is computed at runtime by
+# scripts/list-canonical-departments.py (22 mandatory + the universal-primary
+# verticals; naming-map v2.6.1 = 22 + 6 = 28 after Listings Management was demoted
+# to an industry-gated real-estate vertical). The doc must DEFER to that script and
+# never hardcode the "7 universal-primary" / "= 29" framing. This guard fails if the
+# retired count reappears. Literals are matched case-insensitively as substrings, so
+# they must be phrasings that only ever occur in the stale framing.
+_FORBIDDEN_STALE_FLOOR_LITERALS = [
+    "7 universal-primary",
+    "7 universal primary",
+    "22 mandatory + 7",
+    "currently 29",
+    "primary = 29",
+]
+
+# Issue #10 (contextual): "Listings Management" is a LEGITIMATE industry-gated
+# real-estate-pack vertical, so it must NOT be forbidden outright — it appears
+# correctly in the Industry Vertical Packs section. It is stale ONLY when pitched as
+# a UNIVERSAL-PRIMARY department (the v2.6.1-retired bug where every client, not just
+# real-estate ones, was walked through it). Each rule is
+# (literal, required_co_literal); BOTH must appear on the SAME line to fire, so the
+# legit vertical-pack line (no "universal-primary" on it) never trips.
+_FORBIDDEN_STALE_FLOOR_CONTEXTUAL = [
+    ("listings management", "universal-primary"),
+    ("listings management", "universal primary"),
+]
+
 
 def evaluate_forbidden_literals(skill_dir):
-    """Scan the interviewer-executed markdown for forbidden LATER-deferral phrasing
-    (Issue #7). Returns {"rc": 0|7, "violations": [(file, line_no, literal, text)]}."""
+    """Scan the interviewer-executed markdown for forbidden phrasing:
+      - LATER-deferral promises (Issue #7): LATER = build-now, no 90-day defer.
+      - stale canonical-floor size (Issue #10): the retired "7 universal-primary" /
+        "= 29" framing, and Listings-Management-pitched-as-universal-primary.
+    Returns {"rc": 0|7, "violations": [(file, line_no, literal, text)]}."""
     root = Path(skill_dir)
     violations = []
+
+    def _rel(path):
+        return str(path.relative_to(root.parent)
+                   if root.parent in path.parents else path)
+
     # The interviewer executes INSTRUCTIONS.md verbatim; scan it plus any sibling
-    # interview/phase docs so a copy-paste of the deferral promise is also caught.
+    # interview/phase docs so a copy-paste of a forbidden promise is also caught.
     candidates = [root / "INSTRUCTIONS.md"]
     candidates += sorted(root.glob("*INTERVIEW*.md")) + sorted(root.glob("*interview*.md"))
     seen = set()
@@ -1325,9 +1363,14 @@ def evaluate_forbidden_literals(skill_dir):
             low = line.lower()
             for lit in _FORBIDDEN_DEFERRAL_LITERALS:
                 if lit in low:
-                    violations.append((str(path.relative_to(root.parent)
-                                           if root.parent in path.parents else path),
-                                       i, lit, line.strip()[:120]))
+                    violations.append((_rel(path), i, lit, line.strip()[:120]))
+            for lit in _FORBIDDEN_STALE_FLOOR_LITERALS:
+                if lit.lower() in low:
+                    violations.append((_rel(path), i, lit, line.strip()[:120]))
+            for lit, co in _FORBIDDEN_STALE_FLOOR_CONTEXTUAL:
+                if lit in low and co in low:
+                    violations.append((_rel(path), i, f"{lit} (as {co})",
+                                       line.strip()[:120]))
     return {"rc": 7 if violations else 0, "violations": violations}
 
 
@@ -1381,7 +1424,8 @@ def main(argv):
                 _print_artifact_table(v_artifact)
 
         if v_forbidden is not None and v_forbidden["violations"]:
-            print("\nFORBIDDEN-LITERAL DRIFT (Issue #7 — LATER = build-now, no deferral):",
+            print("\nFORBIDDEN-LITERAL DRIFT (Issue #7 LATER = build-now, no deferral; "
+                  "Issue #10 stale canonical-floor size / Listings-as-universal-primary):",
                   file=sys.stderr)
             for f, ln, lit, text in v_forbidden["violations"]:
                 print(f"  {f}:{ln}: forbidden '{lit}' -> {text}", file=sys.stderr)

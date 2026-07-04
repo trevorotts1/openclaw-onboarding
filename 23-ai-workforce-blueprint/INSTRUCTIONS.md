@@ -428,14 +428,14 @@ When in doubt: keep the canonical dept on the MISSING list. Better to over-ask t
 
 Send ONE message to the owner that does FOUR things in this order:
 
-1. Names the canonical recommendation: *"Before we close out departments, I want to walk you through our canonical recommendation list  -  the departments every zero-human company gets by default, no matter the industry."* (Use the live count from `scripts/list-canonical-departments.py`, currently 29: 22 mandatory + 7 universal-primary vertical. Never hardcode a stale number.)
+1. Names the canonical recommendation: *"Before we close out departments, I want to walk you through our canonical recommendation list  -  the departments every zero-human company gets by default, no matter the industry."* (Use the live count from `scripts/list-canonical-departments.py` — it prints the current mandatory + universal-primary floor and a ready-to-quote `floor_label`. Never hardcode a stale number; the floor changes as the naming map evolves.)
 2. Lists every canonical dept (`display_name` + `emoji` + `one_liner`), marking each as ALREADY-COVERED or NOT-YET-COVERED based on Step 1.
 3. Names the CUSTOM_KEEPS explicitly so the owner knows the agent isn't trying to delete them: *"You also asked for [Custom1], [Custom2]  -  those stay no matter what."*
 4. Closes with: *"Here are the [N] you do NOT have yet that I want you to consider. For each, I'll give you the one-sentence pitch. Ready to walk through them and decide what to add?"*
 
 The exact format (use real values, never the bracket placeholders):
 
-> *"Before we close out departments, here's our canonical recommendation list of the departments most zero-human companies need (run `scripts/list-canonical-departments.py` for the live list - 22 mandatory + 7 universal-primary). Some are already covered by what you told me. Others may be blind spots  -  things you didn't realize you'd want until I name them.*
+> *"Before we close out departments, here's our canonical recommendation list of the departments most zero-human companies need (run `scripts/list-canonical-departments.py` for the live list and count). Some are already covered by what you told me. Others may be blind spots  -  things you didn't realize you'd want until I name them.*
 >
 > *ALREADY COVERED by what you told me:*
 > *[for each COVERED: emoji DisplayName  -  one_liner]*
@@ -498,7 +498,7 @@ The helper writes the provenanced OBJECT form the enforcer accepts into `[ZHC]/[
 }
 ```
 
-The `decisions` map now also carries opt-out for the 7 universal-primary vertical departments (recorded via the same helper, e.g. `record-dept-decision.sh --dept scheduling-dispatch --decision no --source owner-interview --by <ownerId> --session <sessionId>`), not only the mandatory canonical depts. `mergeDecisions`, `customRoles`, and `customSops` are written by Steps 3.5-3.8 below.
+The `decisions` map now also carries opt-out for the universal-primary vertical departments (recorded via the same helper, e.g. `record-dept-decision.sh --dept scheduling-dispatch --decision no --source owner-interview --by <ownerId> --session <sessionId>`), not only the mandatory canonical depts. `mergeDecisions`, `customRoles`, and `customSops` are written by Steps 3.5-3.8 below.
 
 #### Step 3.5  -  Semantic merge decision (Capability 2)
 
@@ -508,9 +508,9 @@ The engine (`scripts/build-workforce.py` `detect_semantic_overlaps()`) flags any
 
 Record the answer in `canonicalReconciliation.mergeDecisions[<custom_id>]` as `"merge"` or `"keep"`. On `merge` the build folds the custom into the canonical survivor (its roles/SOPs layered in) and ships ONE department; on `keep` both ship. NEVER merge silently - an un-decided overlap stays standalone and is recorded as PENDING.
 
-#### Step 3.6  -  Opt-out for the 7 universal-primary verticals AND customs (Capability 5)
+#### Step 3.6  -  Opt-out for the universal-primary verticals AND customs (Capability 5)
 
-Phase 5 already mentions skipping verticals; this step makes it a recorded decision symmetric with the mandatory floor. For EACH of the 7 universal-primary vertical departments (Presentations, Listings Management, Scheduling & Dispatch, Logistics & Fulfillment, Engineering, Account Management, Podcast) that does NOT fit the owner's business, offer the same YES / NO / LATER and record the opt-out with `bash 23-ai-workforce-blueprint/scripts/record-dept-decision.sh --dept <vertical_id> --decision no --source owner-interview --by <ownerId> --session <sessionId>`. A provenanced `no` is honored by `apply_vertical_packs()` (the dept is skipped) exactly as a declined mandatory dept is. Custom departments are opt-out-able the same way (`--dept <custom_id> --decision no ...`) - opt-in is no longer the only option for a custom. NEVER hand-write a bare `decisions[<id>] = "no"`: without provenance the enforcer rejects the decline and force-adds the department back, silently over-building the workforce.
+Phase 5 already mentions skipping verticals; this step makes it a recorded decision symmetric with the mandatory floor. For EACH universal-primary vertical department that `scripts/list-canonical-departments.py` lists (currently Presentations, Scheduling & Dispatch, Logistics & Fulfillment, Engineering, Account Management, Podcast — always read the live list, never a frozen roster) that does NOT fit the owner's business, offer the same YES / NO / LATER and record the opt-out with `bash 23-ai-workforce-blueprint/scripts/record-dept-decision.sh --dept <vertical_id> --decision no --source owner-interview --by <ownerId> --session <sessionId>`. A provenanced `no` is honored by `apply_vertical_packs()` (the dept is skipped) exactly as a declined mandatory dept is. Custom departments are opt-out-able the same way (`--dept <custom_id> --decision no ...`) - opt-in is no longer the only option for a custom. NEVER hand-write a bare `decisions[<id>] = "no"`: without provenance the enforcer rejects the decline and force-adds the department back, silently over-building the workforce.
 
 #### Step 3.7  -  Per-dept custom ROLES (Capability 3)
 
@@ -522,7 +522,7 @@ For each department, ask whether the owner has a SPECIFIC procedure they run tha
 
 #### Step 4  -  Hard rules
 
-1. **NEVER skip Step 2.** Even if the owner already named every department by hand, show the full canonical list (run `scripts/list-canonical-departments.py` for the current count - 22 mandatory + 7 universal-primary = 29) and confirm coverage one by one. The point is to surface blind spots  -  you cannot surface a blind spot the owner doesn't know exists.
+1. **NEVER skip Step 2.** Even if the owner already named every department by hand, show the full canonical list (run `scripts/list-canonical-departments.py` for the current count and its `floor_label`) and confirm coverage one by one. The point is to surface blind spots  -  you cannot surface a blind spot the owner doesn't know exists.
 2. **NEVER auto-decide for the owner.** If they say *"whatever you think is best"*, respond: *"I'll bias toward YES on the whole canonical list  -  but I need you to say it. Want me to add all the missing ones, or do you want to skip something?"*
 3. **NEVER advance to Phase 6 with `MISSING_MANDATORY` items still in `pending` state, or with a flagged semantic overlap (Step 3.5) still un-decided.** Every canonical dept must have a recorded `yes` / `no` / `later` decision and every overlap a `merge` / `keep` decision before final review.
 4. **The canonical departments (minus NOs) + the owner's CUSTOM_KEEPS (minus merged/declined) + their YES *and* LATER decisions + any custom roles/SOPs they asked for** are the final department set passed to the post-interview build. Only NOs and merged customs are excluded. **LATER = BUILD NOW**: a LATER department is provisioned in this build and counted in the department set exactly like a YES — there is no deferral, no follow-up cron, and no reassessment file. The owner can retire an unused department later; the build never withholds one it was told LATER.
@@ -1063,7 +1063,7 @@ This ensures no progress is ever lost. If session dies, resume via Option C.
 ## What Gets Built After the Interview
 
 ### Department Workspaces
-For each of the canonical floor departments (see `scripts/list-canonical-departments.py` for the current list: mandatory + 7 universal-primary vertical-pack depts) + any keyword-matched extras, `create_department_workspace()` creates:
+For each of the canonical floor departments (see `scripts/list-canonical-departments.py` for the current list: mandatory + universal-primary vertical-pack depts) + any keyword-matched extras, `create_department_workspace()` creates:
 - SOUL.md (generated from interview, NOT a template - includes the deferral clause)
 - MEMORY.md (empty)
 - HEARTBEAT.md (department priorities)
