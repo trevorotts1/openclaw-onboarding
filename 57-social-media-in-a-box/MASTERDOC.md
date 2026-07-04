@@ -203,7 +203,11 @@ feed (C11) → v0.5.0. Baseline config-carried behavior is never blocked meanwhi
 ### 7.5 De-dup of shared surfaces (merge plan §5)
 
 ONE weekly-theme cron `social-media-weekly-theme` `0 8 * * 6` (`scripts/register-social-cron.sh`,
-idempotent, retires the legacy Skill-35 cron, QC-asserts exactly one) · one planner Sheet +
+idempotent, registered in the OpenClaw GATEWAY cron store — the same store the live Skill-35 cron
+uses, so the legacy `skill35-weekly-theme` is retired IN PLACE and confirmed gone before 57's cron
+is armed; QC-asserts exactly one across both stores) · the per-box 35→57 flip is mechanized by
+`scripts/migrate-35-to-57.sh` (atomic + idempotent + client-config-gated + receipted + rollback;
+operator-triggered, never auto-run by a fleet roll) · one planner Sheet +
 `themeOfWeek` · one GHL poster per location · `backend` flag defaults to `ghl-direct` fleet-wide.
 
 ### 7.6 Conscious DROPS (merge plan §2.3 — superseded, never silent)

@@ -1,0 +1,52 @@
+name: social-cron-migration-guard
+
+# Fails the build if the 35 -> 57 weekly-social cron migration can double-post,
+# half-migrate, or lose the weekly trigger. Runs the hermetic suite
+# tests/unit/social-cron-migration.test.sh (sandboxed HOME, stubbed openclaw +
+# crontab, store-mutation timeline) which proves:
+#   * config gate: a box without the client's own config is SKIPPED untouched
+#   * atomicity: no store snapshot ever has BOTH weekly triggers armed
+#   * idempotency: re-running --apply never duplicates or double-registers
+#   * invariant: exactly one weekly-theme cron, zero legacy, self-healing
+#   * rollback: --rollback re-arms Skill 35 without a double-armed moment
+# Triggered whenever the guarded files change.
+
+on:
+  push:
+    paths:
+      - 57-social-media-in-a-box/scripts/register-social-cron.sh
+      - 57-social-media-in-a-box/scripts/migrate-35-to-57.sh
+      - 57-social-media-in-a-box/scripts/preflight_gate.py
+      - 57-social-media-in-a-box/cc-compat.json
+      - 35-social-media-planner/scripts/register-weekly-cron.sh
+      - scripts/wire-social-media.sh
+      - tests/unit/social-cron-migration.test.sh
+      - .github/workflows/social-cron-migration-guard.yml
+  pull_request:
+    paths:
+      - 57-social-media-in-a-box/scripts/register-social-cron.sh
+      - 57-social-media-in-a-box/scripts/migrate-35-to-57.sh
+      - 57-social-media-in-a-box/scripts/preflight_gate.py
+      - 57-social-media-in-a-box/cc-compat.json
+      - 35-social-media-planner/scripts/register-weekly-cron.sh
+      - scripts/wire-social-media.sh
+      - tests/unit/social-cron-migration.test.sh
+      - .github/workflows/social-cron-migration-guard.yml
+
+jobs:
+  social-cron-migration-guard:
+    name: 35->57 cron migration guard (atomic, idempotent, config-gated)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run social-cron-migration tests
+        run: |
+          chmod +x tests/unit/social-cron-migration.test.sh
+          bash tests/unit/social-cron-migration.test.sh

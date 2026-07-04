@@ -1,9 +1,9 @@
 {
   "skill": "social-media-in-a-box",
   "skill_number": 57,
-  "version": "0.2.0",
+  "version": "0.2.2",
   "supersedes": "35-social-media-planner",
-  "supersede_note": "Skill 57 is the canonical weekly-social engine (see BOUNDARY-35-vs-57.md). v0.2.0 IS the 35<->57 merge target (MERGE-INTEGRATION-PLAN.md, QC 9.2 APPROVED): the seven Skill-35 extras are FOLDED IN (twitter parity C1, live discovery C2, podcast audio C3, newsletter C4, blog C5, engage C6, thumbnails+stories C7) and four honestly DEFER to named versions (narrated Reels v0.3.0, syndicate v0.4.0, persona+memory adapters v0.5.0) via fail-closed stubs. 35 -> ARCHIVED per-client only after 57 proves parity end-to-end. During coexistence: 35 delegates the core to 57; 57 NEVER delegates to 35. The per-client 35->57 migration (archive 35, remove the skill35-weekly-theme Saturday cron, re-point state, prevent double-posting) is a FLEET operation requiring operator direction — NOT rolled from this build.",
+  "supersede_note": "Skill 57 is the canonical weekly-social engine (see BOUNDARY-35-vs-57.md). v0.2.0 IS the 35<->57 merge target (MERGE-INTEGRATION-PLAN.md, QC 9.2 APPROVED): the seven Skill-35 extras are FOLDED IN (twitter parity C1, live discovery C2, podcast audio C3, newsletter C4, blog C5, engage C6, thumbnails+stories C7) and four honestly DEFER to named versions (narrated Reels v0.3.0, syndicate v0.4.0, persona+memory adapters v0.5.0) via fail-closed stubs. 35 -> ARCHIVED per-client only after 57 proves parity end-to-end. During coexistence: 35 delegates the core to 57; 57 NEVER delegates to 35. v0.2.2: the per-client 35->57 migration (retire the skill35-weekly-theme Saturday cron, re-point state, prevent double-posting) is now MECHANIZED as scripts/migrate-35-to-57.sh — atomic (retire-35-confirmed-then-register-57, never both armed), idempotent (re-run until exit 0), client-config-GATED (a box without the client's own GHL/OpenRouter/Kie/Gemini config is cleanly SKIPPED, exit 8, untouched), silent (never posts/probes/messages), with a machine receipt and --rollback. It remains an OPERATOR-TRIGGERED per-box step: fleet rolls only refresh files and NEVER run it; archiving the 35 directory stays a separate operator step after the independent live parity verify. The cron registrar itself (scripts/register-social-cron.sh) is v2: it registers in the OpenClaw GATEWAY cron store — the store the live skill35-weekly-theme cron actually lives in (the v1 crontab-only port could not retire it = the double-post hole; and fleet VPS containers have no cron daemon, so a crontab entry would never fire).",
   "entry": "social-media-entry.sh",
   "orchestrator": "run_social_media.py",
   "manifest": "SOCIAL-MANIFEST.json",
@@ -37,7 +37,7 @@
     "podcast_tts": "client Fish-Audio (unconfigured -> PODCAST_DEFERRED labeled skip)",
     "posting": "client GHL Private Integration Token + locationId + connected social accounts"
   },
-  "cron": {"name": "social-media-weekly-theme", "schedule": "0 8 * * 6", "registrar": "scripts/register-social-cron.sh", "invariant": "exactly one weekly-theme cron per box; legacy skill35-weekly-theme/weekly-batch retired"},
+  "cron": {"name": "social-media-weekly-theme", "schedule": "0 8 * * 6", "store": "openclaw-gateway", "registrar": "scripts/register-social-cron.sh", "migration": "scripts/migrate-35-to-57.sh", "config_gate": "client config required (preflight required-fields + secrets-SET) or the box is skipped untouched (exit 8)", "trigger": "operator-explicit per box; never auto-run by a fleet roll", "invariant": "exactly one weekly-theme cron per box across BOTH stores (gateway + crontab); legacy skill35-weekly-theme/weekly-batch retired and confirmed gone BEFORE 57 registers"},
   "deliverables_root": "~/Downloads/Social-Media-in-a-Box/<brand-slug>/<YYYY-Www>/",
   "capability_gated": ["media modes require client Kie.ai + Gemini keys; preflight blocks gracefully with a labeled report", "podcast requires client Fish-Audio + Podbean; unconfigured -> PODCAST_DEFERRED labeled skip, never a failure"]
 }

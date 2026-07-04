@@ -1,7 +1,7 @@
 ---
 name: social-media-in-a-box
 description: Run my social week end-to-end — the productionized weekly social-media engine. Takes a weekly theme and: validates readiness (Kie.ai credits / OpenRouter balance / GHL Private Integration Token / status), writes a week of platform-native content (7-part cliffhanger series + platform reformatter), generates media (Midjourney image with Gemini 4-grid judge, Sora 25s video, Nano-Banana carousel with a Gemini QC loop and SeedDream repair, podcast cover art), posts through the CLIENT's OWN Go High Level (Convert & Flow) location and connected social accounts, and writes the plan back to the content calendar. Modes week | day | carousel | video | podcast-cover | plan | clean across facebook / instagram / linkedin (+PDF) / youtube / tiktok / pinterest / google-business. Every SACRED character/count band and JSON contract is enforced by deterministic, fail-closed Python provers (not prose); the run mints a signed certificate proving ZERO Anthropic per run. NO n8n and NO Airtable at runtime — prompts are baked in, state is a local SQLite ledger, deliverables are local + labeled. Client runtime uses CLIENT providers ONLY, never Anthropic.
-version: 0.2.1
+version: 0.2.2
 ---
 
 # Social Media in a Box (Skill 57)
@@ -96,7 +96,8 @@ list, this file, or the config alone.
 - `build_manifest.py` — config hash (secrets excluded) + prompt-hash pin (19 prompts) + gate certificates + **per-run ZERO-Anthropic proof** + agency isolation + the **creative block** (`AF-SM-OVERRIDE-UNLOGGED` — a silent band deviation is the only forbidden one; `AF-SM-CLIENT-COPY-MUTATED` — the client's words are never edited) → the signed `PROCESS-CERTIFICATE`. The publisher physically cannot run without it.
 - `defer_stub.py` — fail-closed deferral stubs (`AF-SM-DEFERRED`): narrated-video v0.3.0 / syndicate v0.4.0 / persona-adapter + memory-adapter v0.5.0 — a clear "deferred to vX.Y.Z" message, never a silent no-op.
 - `label_deliverables.py` — local labeled deliverables → `~/Downloads/Social-Media-in-a-Box/<brand-slug>/<YYYY-Www>/`.
-- `register-social-cron.sh` — idempotent registrar for the ONE weekly-theme cron `social-media-weekly-theme` `0 8 * * 6` (dedup: exactly one per box; retires the legacy Skill-35 cron).
+- `register-social-cron.sh` — idempotent registrar for the ONE weekly-theme cron `social-media-weekly-theme` `0 8 * * 6` in the **OpenClaw gateway cron store** (the store the live Skill-35 cron actually lives in — fleet VPS containers have no cron daemon, so the system crontab is never used to fire). Client-config-GATED on `--apply` (no config = clean skip, exit 8, nothing touched); dedup: exactly one per box across BOTH stores; retires the legacy Skill-35 cron and CONFIRMS it gone before registering (never both armed); carries the Skill-35 weekISO marker so the transition week cannot run twice; Saturday 07:45-08:15 fire-window guard.
+- `migrate-35-to-57.sh` — THE operator-triggered per-box 35→57 migration (merge plan §8 steps 2–6, mechanized): config gate → snapshot → state re-point (weekISO marker, `themeOfWeek`, `plannerSheetId` adopt-existing) → retire-35-then-register-57 (atomic order, cross-store) → invariant assert → machine receipt (`~/.openclaw/data/skill57/migration-35-to-57.json`). Idempotent (re-run until exit 0), silent (never posts/probes/messages a client), `--check` and `--rollback` included. Fleet rolls only refresh files — they NEVER run this; activation is an explicit operator trigger per box.
 
 ## Provider & credential rules (BINDING)
 
