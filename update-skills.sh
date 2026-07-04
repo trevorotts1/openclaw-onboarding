@@ -49,7 +49,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v17.0.18"
+ONBOARDING_VERSION="v17.0.19"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -456,7 +456,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v17.0.18 - safe_json_edit
+# v17.0.19 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -969,10 +969,29 @@ main() {
   # Seed the state file with every non-archived skill at "pending" from the
   # freshly-pulled source. Statuses then advance downloaded -> wired -> qc-passed
   # as the run progresses; the "complete" report is GATED on these (below).
-  if [ -f "$ONBOARDING_DIR/scripts/onboarding-state.sh" ]; then
-    # shellcheck disable=SC1091
-    source "$ONBOARDING_DIR/scripts/onboarding-state.sh"
-    obs_seed_state "$ONBOARDING_VERSION" "$EXTRACTED_DIR" || echo "  ⚠ onboarding-state seed reported an issue (continuing)"
+  # v17.0.19 FIX: resolve + source the onboarding-state shim ROBUSTLY by absolute
+  # path — prefer the freshly-pulled tree ($ONBOARDING_DIR), fall back to this
+  # updater's own dir ($_SCRIPT_DIR) so the obs_* API stays reachable even if
+  # $ONBOARDING_DIR is somehow unset. The shim DEFINES the obs_* honesty
+  # state-machine + verification GATE (obs_seed_state / obs_verify_skill /
+  # obs_gate_summary / ...); sourcing the canonical oc_* lib ALONE does NOT define
+  # obs_*, which is why the seed printed "obs_seed_state: command not found" and the
+  # verification gate (command -v obs_verify_skill) degraded to file-sync-only on
+  # every roll. After sourcing we SELF-VERIFY obs_seed_state is actually defined
+  # before invoking it, so a bundle mismatch degrades LOUDLY (clear message)
+  # instead of emitting a raw "command not found".
+  _OBS_SHIM=""
+  for _obs_cand in "$ONBOARDING_DIR/scripts/onboarding-state.sh" "${_SCRIPT_DIR:-}/scripts/onboarding-state.sh"; do
+    if [ -n "$_obs_cand" ] && [ -f "$_obs_cand" ]; then _OBS_SHIM="$_obs_cand"; break; fi
+  done
+  if [ -n "$_OBS_SHIM" ]; then
+    # shellcheck disable=SC1090
+    source "$_OBS_SHIM"
+    if command -v obs_seed_state >/dev/null 2>&1; then
+      obs_seed_state "$ONBOARDING_VERSION" "$EXTRACTED_DIR" || echo "  ⚠ onboarding-state seed reported an issue (continuing)"
+    else
+      echo "  ⚠ onboarding-state.sh sourced ($_OBS_SHIM) but obs_seed_state is UNDEFINED -- honesty gate disabled for this run (bundle mismatch)."
+    fi
     # Make the gate library + helper scripts available to the running agent at
     # the canonical ~/.openclaw/scripts/ (where install.sh also lands them).
     _OC_SCRIPTS_DEST="$HOME/.openclaw/scripts"
