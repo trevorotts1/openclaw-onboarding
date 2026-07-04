@@ -1103,6 +1103,13 @@ jobs:
           bash tests/unit/cron-owner-chat-guard.test.sh
           echo "✓ cron-owner-chat-guard.test.sh (incl. section 5 command-mode) all pass"
 
+      - name: "Command Center done-degraded / retry gate regression lock (Issue #12)"
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash tests/unit/cc-done-degraded-retry-gate.test.sh
+          echo "✓ cc-done-degraded-retry-gate.test.sh (Issue #12) all pass"
+
       - name: Skill 41 L0 static QC checklist (composes every qc-*.sh gate)
         shell: bash
         run: |

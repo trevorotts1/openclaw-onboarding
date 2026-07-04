@@ -10,7 +10,8 @@ pattern on ~/clawd/fleet-prover/prove-floor.py (which this file does NOT edit).
 It proves, with receipts, the four ZHE wrappings the spec/plan name (spec §1 steps 4–7):
   (a) FLOOR DEPARTMENTS present AND registered as agents — built-as-files AND
       registered-as-agents in openclaw.json agents.list[] (not just folders on disk).
-  (b) PERSONAS CANONICAL — 54 canonical personas + canonical persona-categories.json
+  (b) PERSONAS CANONICAL — the full canonical persona roster (count DERIVED from the
+      persona-categories.json index, not a fixed literal) + canonical persona-categories.json
       + a section-tagged coaching-personas index (gemini-index.sqlite, ~4413 rows,
       section_number/mode tags applied, NOT default-only).
   (c) COMMAND CENTER board reachable — mission-control.db present, `workspaces` table
@@ -83,7 +84,7 @@ PROVER_VERSION = "1.0"
 # (see prove()) so each receipt records WHICH sequence version it asserted.
 ZHE_SEQUENCE_V1 = (
     "floor_depts_registered_as_agents",  # step 4: built-as-files AND registered as agents
-    "personas_canonical",                # step 5: 54 personas + section-tagged index
+    "personas_canonical",                # step 5: full derived persona roster + section-tagged index
     "command_center_board",              # step 6: Command Center board + Kanban ready
     "agents_md_doctrine",                # step 7: AGENTS.md routing/persona/handoff/reporting/platform-facts
 )
@@ -93,8 +94,13 @@ ZHE_SEQUENCE_V1 = (
 # (~/.clawdbot/workspace/data/coaching-personas/gemini-index.sqlite):
 #   table 'embeddings' present; rows=4413; cols include mode + section_number;
 #   persona dirs=54; section_number NOT NULL=3172; mode in (leadership,coaching)=944.
-# Magic numbers match the canonical box exactly — left as canonical, not re-read.
-EXPECTED_PERSONA_COUNT = 54          # canonical coaching/leadership persona library
+#
+# The persona library GROWS over time (Skill 22 shipped 54, now ships 65, more
+# later), so the *expected* persona count is DERIVED at runtime from the canonical
+# persona index (persona-categories.json roster) rather than pinned to a magic
+# number that rots. PERSONA_LIBRARY_FLOOR is only a hard sanity minimum: a roster
+# below this is definitely truncated/broken, independent of how large it grows.
+PERSONA_LIBRARY_FLOOR = 40           # hard sanity minimum; real expected count is derived
 EXPECTED_INDEX_ROWS = 4413           # section-tagged coaching-personas index size
 INDEX_ROW_FLOOR_RATIO = 0.90         # tolerate minor re-embed variance, never zero
 INDEX_ROW_FLOOR = int(EXPECTED_INDEX_ROWS * INDEX_ROW_FLOOR_RATIO)
@@ -391,7 +397,7 @@ def check_depts_registered(fs, oc_root, cfg):
 
 
 # ---------------------------------------------------------------------------
-# CHECK (b): personas canonical (54 + categories + section-tagged ~4413 index)
+# CHECK (b): personas canonical (roster DERIVED from index + categories + section-tagged ~4413 index)
 # ---------------------------------------------------------------------------
 
 def check_personas_canonical(fs, ws):
@@ -420,10 +426,18 @@ def check_personas_canonical(fs, ws):
             cat = json.loads(cat_txt)
             cat_persona_keys = len(cat.get("personas", {}) or {})
             domain_tags = len(cat.get("domainTags", []) or [])
-            # canonical = has the domain-tag vocabulary AND a real persona roster.
-            categories_ok = domain_tags > 0 and cat_persona_keys >= EXPECTED_PERSONA_COUNT
+            # canonical = has the domain-tag vocabulary AND a real persona roster
+            # (roster must clear the hard sanity floor; its exact size is derived).
+            categories_ok = domain_tags > 0 and cat_persona_keys >= PERSONA_LIBRARY_FLOOR
         except ValueError:
             categories_ok = False
+
+    # DERIVED expectation: the canonical roster size declared in the persona index
+    # (persona-categories.json). The on-disk persona dirs must match/exceed the
+    # index, so the check tracks the library automatically and can never rot to a
+    # stale literal. Guard with the hard floor so a missing/stub index can't make
+    # the expectation trivially satisfiable (empty index => cat_persona_keys 0).
+    expected_persona_count = max(cat_persona_keys, PERSONA_LIBRARY_FLOOR)
 
     # Section-tagged index — query the live sqlite inside the box, read-only.
     index_db = os.path.join(cp, "gemini-index.sqlite")
@@ -437,11 +451,16 @@ def check_personas_canonical(fs, ws):
         and idx_has_mode and idx_has_section and idx_tagged > 0
     )
 
-    personas_ok = persona_count >= EXPECTED_PERSONA_COUNT
+    personas_ok = persona_count >= expected_persona_count
     return {
         "pass": bool(personas_ok and categories_ok and index_ok),
         "personas_present": persona_count,
-        "personas_expected": EXPECTED_PERSONA_COUNT,
+        "personas_expected": expected_persona_count,
+        "personas_expected_source": (
+            "persona-categories.json roster" if cat_persona_keys >= PERSONA_LIBRARY_FLOOR
+            else f"sanity floor {PERSONA_LIBRARY_FLOOR}"
+        ),
+        "personas_library_floor": PERSONA_LIBRARY_FLOOR,
         "categories_path": cat_path,
         "categories_persona_keys": cat_persona_keys,
         "categories_domain_tags": domain_tags,
@@ -455,7 +474,7 @@ def check_personas_canonical(fs, ws):
         "index_has_section_col": idx_has_section,
         "index_error": idx.get("error"),
         "detail": (
-            f"personas {persona_count}/{EXPECTED_PERSONA_COUNT} "
+            f"personas {persona_count}/{expected_persona_count} "
             f"categories={'ok' if categories_ok else 'MISSING/NON-CANONICAL'} "
             f"index_rows={idx_rows}(floor {INDEX_ROW_FLOOR}) tagged={idx_tagged}"
         ),
