@@ -401,17 +401,133 @@ def _clamp_max_tokens(model: str, requested: int) -> int:
     return requested
 
 
-# task-64 bug 5 (retry-storm guard): 400/401/403/404/422 are DETERMINISTIC
-# client errors — retrying them cannot succeed and previously fanned each
-# phase into 6-9 wasted calls (observed: ~1300 all-4xx requests in one day,
-# zero tokens produced). These abort the provider attempt immediately so the
-# caller's provider FALLBACK runs right away. 408/429/5xx/network keep the
-# normal backoff retries.
-_NO_RETRY_STATUSES = frozenset({400, 401, 403, 404, 422})
+# ═════════════════════════════════════════════════════════════════════════════
+# STRUCTURAL STORM GUARDS — "I can't have a storm like this" (operator directive)
+# ─────────────────────────────────────────────────────────────────────────────
+# A provider retry-storm (observed: ~1300 all-4xx requests in one day, zero
+# tokens produced, ~10/15 books failed) is made STRUCTURALLY IMPOSSIBLE here —
+# not merely less likely. Five guardrails, any one of which alone caps the blast
+# radius:
+#
+#   G1 FAIL-FAST     retry ONLY 429 (rate-limit) and 5xx (server). EVERY other
+#                    status — all 4xx incl. 400/401/402/403/404/408/422 — is
+#                    non-transient and fails fast to the fallback. Hard cap of
+#                    PROVIDER_MAX_RETRIES retries (429/5xx only).
+#   G2 PREFLIGHT     before the build loop, ONE tiny probe per provider it will
+#                    use; a deterministic auth/credit/param failure ABORTS the
+#                    whole build before any phase runs (see preflight_providers).
+#   G3 CIRCUIT-BRK   if a provider's FIRST CIRCUIT_BREAKER_TRIP real calls all
+#                    fail with the SAME error class, the whole build aborts (no
+#                    churn through the remaining books/phases).
+#   G4 REQ BUDGET    a per-build HARD ceiling on total provider requests
+#                    (REQUEST_BUDGET_MULTIPLIER x expected). The counter is
+#                    module-global and shared by every concurrent book task, so
+#                    total requests can never exceed budget + in-flight
+#                    concurrency — a hard, finite bound regardless of how the
+#                    errors are distributed.
+#   G5 TOKEN CLAMP   _clamp_max_tokens (above) caps max_tokens to the model's
+#                    real output ceiling so an over-ask can never 400.
+#
+# G1: 402 is included (credits/quota exhausted — must fail fast, never retry).
+PROVIDER_MAX_RETRIES = 2                 # retry ONLY 429/5xx, at most twice
+CIRCUIT_BREAKER_TRIP = 3
+REQUEST_BUDGET_MULTIPLIER = 3
+# Generous per-book expected-call estimate (phases 1-3 + chunk analyses +
+# appendix + a couple of legit retries) so the GLOBAL budget is a true backstop
+# ceiling, not a hair-trigger — the circuit breaker (G3) is the FAST stop. Env
+# override lets an operator widen it for an unusually chunk-heavy batch.
+PER_BOOK_EXPECTED_CALLS = int(os.environ.get("OPENCLAW_BOOK_EXPECTED_CALLS", "12"))
+
+
+def _is_retryable_status(status: int) -> bool:
+    """G1: retry ONLY 429 (rate-limit) and 5xx (server). EVERY other status is
+    non-transient and MUST fail fast — a 4xx cannot be fixed by retrying, and a
+    402 (no credits) / 401 (bad key) retried across every fallback tier is
+    exactly what produced the storm."""
+    return status == 429 or 500 <= status <= 599
+
+
+# Retained for reference/back-compat; the live decision uses _is_retryable_status
+# (retry-allowlist) which is the structural inverse — everything not explicitly
+# retryable fails fast.
+_NO_RETRY_STATUSES = frozenset({400, 401, 402, 403, 404, 408, 422})
 
 
 class _DeterministicHTTPError(RuntimeError):
-    """A 4xx that will never succeed on retry — fail fast to the fallback."""
+    """A non-transient HTTP status that will never succeed on retry — fail fast
+    to the caller's provider fallback."""
+
+
+class _BuildAbort(BaseException):
+    """Abort the ENTIRE build immediately (budget / circuit-breaker / preflight).
+    Subclasses BaseException ON PURPOSE so the per-phase `except Exception`
+    handlers in run_extraction/analysis/synthesis cannot swallow it — it
+    propagates straight up to main(), which logs it and exits non-zero."""
+
+
+class _StormGuard:
+    """Per-build global request budget (G4) + per-provider circuit breaker (G3).
+
+    A single instance is created at build start (init_storm_guard) and consulted
+    by EVERY provider call. Because the counter is shared across all concurrent
+    book tasks, the total number of provider requests in a build can never exceed
+    ``budget + in-flight concurrency`` — a hard structural bound that makes a
+    storm impossible even if every call errors.
+    """
+
+    def __init__(self, budget: int):
+        self.budget = max(1, int(budget))
+        self.count = 0
+        self.aborted_reason = None
+        self._early = {}   # provider -> list[str] of the first few outcomes
+
+    def charge(self, provider: str) -> None:
+        self.count += 1
+        if self.count > self.budget:
+            self.aborted_reason = (
+                f"GLOBAL REQUEST BUDGET EXCEEDED: {self.count} > {self.budget} "
+                f"provider requests — aborting the build to prevent a request storm."
+            )
+            raise _BuildAbort(self.aborted_reason)
+
+    def record(self, provider: str, ok: bool, error_class: str = None) -> None:
+        e = self._early.setdefault(provider, [])
+        if len(e) >= CIRCUIT_BREAKER_TRIP:
+            return
+        e.append("ok" if ok else f"err:{error_class}")
+        if (not ok and len(e) == CIRCUIT_BREAKER_TRIP
+                and all(o == f"err:{error_class}" for o in e)):
+            self.aborted_reason = (
+                f"CIRCUIT BREAKER tripped for provider {provider!r}: the first "
+                f"{CIRCUIT_BREAKER_TRIP} calls ALL failed with {error_class!r} — "
+                f"aborting the build (no churn through the remaining books/phases)."
+            )
+            raise _BuildAbort(self.aborted_reason)
+
+
+_STORM = None  # set by init_storm_guard() at build start; None => guards inert
+
+
+def init_storm_guard(expected_requests: int):
+    """Create the per-build storm guard. Called once at build start."""
+    global _STORM
+    budget = REQUEST_BUDGET_MULTIPLIER * max(1, int(expected_requests))
+    _STORM = _StormGuard(budget)
+    log(f"  [storm-guard] global request budget = {budget} "
+        f"({REQUEST_BUDGET_MULTIPLIER}x expected {expected_requests}); "
+        f"circuit-breaker trips after {CIRCUIT_BREAKER_TRIP} same-class failures; "
+        f"retries only on 429/5xx (max {PROVIDER_MAX_RETRIES}).")
+    return _STORM
+
+
+def _storm_charge(provider: str) -> None:
+    if _STORM is not None:
+        _STORM.charge(provider)
+
+
+def _storm_record(provider: str, ok: bool, error_class: str = None) -> None:
+    if _STORM is not None:
+        _STORM.record(provider, ok, error_class)
 
 # ─── BOOK REGISTRY ────────────────────────────────────────────────────────────
 BOOKS = [
@@ -1256,8 +1372,10 @@ async def call_ollama_cloud(session: aiohttp.ClientSession, model: str, system: 
         },
     }
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    _attempts = min(MAX_RETRIES, PROVIDER_MAX_RETRIES + 1)  # G1: hard retry cap
+    for attempt in range(1, _attempts + 1):
         try:
+            _storm_charge("ollama")  # G4: counts toward the global request budget
             async with session.post(
                 f"{OLLAMA_BASE_URL}/chat",
                 headers=headers,
@@ -1270,30 +1388,33 @@ async def call_ollama_cloud(session: aiohttp.ClientSession, model: str, system: 
                     msg = data.get("message", {}) if isinstance(data, dict) else {}
                     content = msg.get("content", "") if isinstance(msg, dict) else ""
                     if content:
+                        _storm_record("ollama", True)  # G3: healthy call
                         return content
-                    log(f"  Ollama returned empty content (attempt {attempt}/{MAX_RETRIES}); body preview: {json.dumps(data)[:200]}")
+                    log(f"  Ollama returned empty content (attempt {attempt}/{_attempts}); body preview: {json.dumps(data)[:200]}")
                 else:
                     error_text = await response.text()
                     log(f"  Ollama error {response.status}: {error_text[:200]}")
-                    if response.status in _NO_RETRY_STATUSES:
-                        # bug 5: deterministic 4xx — retrying burns calls for
-                        # nothing (the observed 401/400 retry-storm). Fail fast
-                        # so the caller's OpenRouter fallback runs immediately.
+                    if not _is_retryable_status(response.status):
+                        # G1: non-transient (any 4xx incl. 401/402/403) — fail
+                        # fast so the caller's OpenRouter fallback runs at once.
+                        _storm_record("ollama", False, f"http_{response.status}")
                         raise _DeterministicHTTPError(
-                            f"Ollama {response.status} (deterministic — not retrying): {error_text[:300]}")
-                if attempt < MAX_RETRIES:
-                    log(f"  Retrying in {RETRY_DELAY}s... (attempt {attempt}/{MAX_RETRIES})")
+                            f"Ollama {response.status} (non-transient — not retrying): {error_text[:300]}")
+                    _storm_record("ollama", False, f"http_{response.status}")
+                if attempt < _attempts:
+                    log(f"  Retrying in {RETRY_DELAY}s... (attempt {attempt}/{_attempts})")
                     import asyncio as _asyncio
                     await _asyncio.sleep(RETRY_DELAY * attempt)
-        except _DeterministicHTTPError:
+        except (_DeterministicHTTPError, _BuildAbort):
             raise
         except Exception as e:
             log(f"  Exception on attempt {attempt}: {e}")
-            if attempt < MAX_RETRIES:
+            _storm_record("ollama", False, type(e).__name__)
+            if attempt < _attempts:
                 import asyncio as _asyncio
                 await _asyncio.sleep(RETRY_DELAY * attempt)
 
-    raise RuntimeError(f"All {MAX_RETRIES} attempts failed for {model} via Ollama ({OLLAMA_BASE_URL})")
+    raise RuntimeError(f"All {_attempts} attempts failed for {model} via Ollama ({OLLAMA_BASE_URL})")
 
 
 async def call_moonshot(session: aiohttp.ClientSession, system: str, user: str) -> str:
@@ -1369,8 +1490,10 @@ async def call_openrouter(session: aiohttp.ClientSession, model: str, system: st
         "reasoning": {"effort": "high"}  # Trevor 2026-06-01: thinking HIGH (OpenRouter reasoning effort)
     }
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    _attempts = min(MAX_RETRIES, PROVIDER_MAX_RETRIES + 1)  # G1: hard retry cap
+    for attempt in range(1, _attempts + 1):
         try:
+            _storm_charge("openrouter")  # G4: counts toward the global budget
             async with session.post(
                 f"{OPENROUTER_BASE_URL}/chat/completions",
                 headers=headers,
@@ -1385,35 +1508,37 @@ async def call_openrouter(session: aiohttp.ClientSession, model: str, system: st
                         reasoning = data["choices"][0]["message"].get("reasoning_content", "")
                         if reasoning:
                             log(f"  Warning: content was null, using reasoning_content ({len(reasoning):,} chars)")
+                            _storm_record("openrouter", True)
                             return reasoning
                         log(f"  Warning: content was null and no reasoning_content - retrying...")
-                        if attempt < MAX_RETRIES:
+                        if attempt < _attempts:
                             await asyncio.sleep(RETRY_DELAY * attempt)
                             continue
-                        raise RuntimeError(f"API returned null content after {MAX_RETRIES} attempts")
+                        raise RuntimeError(f"API returned null content after {_attempts} attempts")
+                    _storm_record("openrouter", True)  # G3: healthy call
                     return content
                 else:
                     error_text = await response.text()
                     log(f"  OpenRouter error {response.status}: {error_text[:200]}")
-                    if response.status in _NO_RETRY_STATUSES:
-                        # bug 5: deterministic 4xx (bad model id / auth / params)
-                        # — retrying cannot succeed. Fail fast; the caller has
-                        # no further provider fallback beyond OpenRouter, so the
-                        # phase is marked failed immediately instead of after
-                        # MAX_RETRIES wasted calls.
+                    if not _is_retryable_status(response.status):
+                        # G1: non-transient (bad model id / auth / no credits /
+                        # params) — retrying cannot succeed. Fail fast.
+                        _storm_record("openrouter", False, f"http_{response.status}")
                         raise _DeterministicHTTPError(
-                            f"OpenRouter {response.status} (deterministic — not retrying): {error_text[:300]}")
-                    if attempt < MAX_RETRIES:
-                        log(f"  Retrying in {RETRY_DELAY}s... (attempt {attempt}/{MAX_RETRIES})")
+                            f"OpenRouter {response.status} (non-transient — not retrying): {error_text[:300]}")
+                    _storm_record("openrouter", False, f"http_{response.status}")
+                    if attempt < _attempts:
+                        log(f"  Retrying in {RETRY_DELAY}s... (attempt {attempt}/{_attempts})")
                         await asyncio.sleep(RETRY_DELAY * attempt)
-        except _DeterministicHTTPError:
+        except (_DeterministicHTTPError, _BuildAbort):
             raise
         except Exception as e:
             log(f"  Exception on attempt {attempt}: {e}")
-            if attempt < MAX_RETRIES:
+            _storm_record("openrouter", False, type(e).__name__)
+            if attempt < _attempts:
                 await asyncio.sleep(RETRY_DELAY * attempt)
 
-    raise RuntimeError(f"All {MAX_RETRIES} attempts failed for {model} via OpenRouter")
+    raise RuntimeError(f"All {_attempts} attempts failed for {model} via OpenRouter")
 
 
 async def call_codex(session: aiohttp.ClientSession, user: str, max_tokens: int = 120000) -> str:
@@ -1434,8 +1559,12 @@ async def call_codex(session: aiohttp.ClientSession, user: str, max_tokens: int 
         "temperature": 1.0
     }
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    max_tokens = _clamp_max_tokens(MODEL_SYNTHESIS, max_tokens)  # G5
+    payload["max_output_tokens"] = max_tokens
+    _attempts = min(MAX_RETRIES, PROVIDER_MAX_RETRIES + 1)  # G1: hard retry cap
+    for attempt in range(1, _attempts + 1):
         try:
+            _storm_charge("openai")  # G4: counts toward the global budget
             async with session.post(
                 f"{OPENAI_BASE_URL}/responses",
                 headers=headers,
@@ -1449,20 +1578,92 @@ async def call_codex(session: aiohttp.ClientSession, user: str, max_tokens: int 
                         if item.get("type") == "message":
                             for content in item.get("content", []):
                                 if content.get("type") == "output_text":
+                                    _storm_record("openai", True)  # G3: healthy call
                                     return content["text"]
                     raise RuntimeError(f"Unexpected response format: {json.dumps(data)[:300]}")
                 else:
                     error_text = await response.text()
                     log(f"  OpenAI Codex error {response.status}: {error_text[:200]}")
-                    if attempt < MAX_RETRIES:
-                        log(f"  Retrying in {RETRY_DELAY}s... (attempt {attempt}/{MAX_RETRIES})")
+                    if not _is_retryable_status(response.status):
+                        # G1: non-transient — fail fast (no fallback beyond Codex).
+                        _storm_record("openai", False, f"http_{response.status}")
+                        raise _DeterministicHTTPError(
+                            f"OpenAI Codex {response.status} (non-transient — not retrying): {error_text[:300]}")
+                    _storm_record("openai", False, f"http_{response.status}")
+                    if attempt < _attempts:
+                        log(f"  Retrying in {RETRY_DELAY}s... (attempt {attempt}/{_attempts})")
                         await asyncio.sleep(RETRY_DELAY * attempt)
+        except (_DeterministicHTTPError, _BuildAbort):
+            raise
         except Exception as e:
             log(f"  Codex exception on attempt {attempt}: {e}")
-            if attempt < MAX_RETRIES:
+            _storm_record("openai", False, type(e).__name__)
+            if attempt < _attempts:
                 await asyncio.sleep(RETRY_DELAY * attempt)
 
-    raise RuntimeError(f"All {MAX_RETRIES} attempts failed for GPT-5.3 Codex")
+    raise RuntimeError(f"All {_attempts} attempts failed for GPT-5.3 Codex")
+
+
+# ─── G2: PREFLIGHT AUTH/CREDIT PROBE ──────────────────────────────────────────
+async def _preflight_probe_one(session, provider: str, model: str):
+    """ONE tiny probe call to a provider. Returns None on OK / transient blip,
+    or a reason string on a DETERMINISTIC auth/credit/param failure (4xx) that
+    would doom the whole build. Runs BEFORE the storm guard is armed, so it
+    never charges the budget."""
+    try:
+        if provider == "ollama":
+            await call_ollama_cloud(session, model, "ping", "ping", max_tokens=1)
+        elif provider == "openrouter":
+            await call_openrouter(session, model, "ping", "ping", max_tokens=1)
+        elif provider == "openai":
+            await call_codex(session, "ping", max_tokens=16)
+        return None
+    except _DeterministicHTTPError as e:
+        # Auth (401/403) / credits (402) / bad params (400/422) — the build
+        # cannot succeed. This is the abort trigger.
+        return f"{provider}/{model}: {e}"
+    except _BuildAbort:
+        raise
+    except Exception:
+        # Transient (429/5xx/network) or a probe-shape quirk — do NOT block the
+        # build on a blip; the real loop's guards still bound any storm.
+        return None
+
+
+async def preflight_providers(session, phase_models) -> None:
+    """G2: before the build loop runs, probe each DISTINCT (provider, model) the
+    build will use with ONE tiny call. A deterministic auth/credit/param failure
+    ABORTS the entire build (raise _BuildAbort) before any phase/chunk loop is
+    ever entered — so a dead key / no-credits box never enters the storm zone."""
+    seen = set()
+    problems = []
+    for model_id in phase_models:
+        if not model_id:
+            continue
+        route = _route_for(model_id)
+        provider = {"ollama": "ollama",
+                    "openrouter": "openrouter",
+                    "openai-responses": "openai"}.get(route, "openrouter")
+        if provider == "ollama":
+            probe_model = model_id.replace("ollama/", "", 1)
+        elif provider == "openrouter":
+            probe_model = _openrouter_fallback_model(model_id)
+        else:
+            probe_model = model_id
+        key = (provider, probe_model)
+        if key in seen:
+            continue
+        seen.add(key)
+        log(f"  [preflight] probing {provider} / {probe_model} …")
+        reason = await _preflight_probe_one(session, provider, probe_model)
+        if reason:
+            problems.append(reason)
+    if problems:
+        raise _BuildAbort(
+            "PREFLIGHT FAILED — aborting build before any phase runs "
+            "(fix auth/credits/params, then re-run):\n  - " + "\n  - ".join(problems))
+    log("  [preflight] all providers reachable — proceeding")
+
 
 # ─── LOAD PROMPTS ─────────────────────────────────────────────────────────────
 def load_prompt(filename: str) -> str:
@@ -2322,11 +2523,40 @@ async def main(args=None):
     if args is None:
         args = _parse_args()
 
+    # ── ORPHAN-PROCESS PREVENTION (fleet-wide) ────────────────────────────────
+    # Arm the shared self-defense so an interrupted/detached run can never leave
+    # this Python child making :cloud calls forever (see orphan_guard.py). Runs
+    # for BOTH modes; best-effort — a missing orphan_guard.py just warns.
+    _og = None
+    _og_run_dir = str(BASE / ".pipeline-runs")
+    try:
+        import orphan_guard as _og
+        # Honour OPENCLAW_RUN_DIR (set by run-orchestrator.sh) so the orchestrator,
+        # the launcher's trap, and reap-orchestrators.sh all agree on WHERE the
+        # per-run pidfile lives; fall back to the workspace-local dir otherwise.
+        _og_run_dir = _og.run_dir_path(_og_run_dir)
+        _og.arm(log_fn=log, run_dir=_og_run_dir)
+    except Exception as _og_e:
+        log(f"  [orphan-guard] WARN: not armed ({_og_e}) — running without "
+            f"orphan self-defense; use run-orchestrator.sh for the reapable path")
+
     # ── Single-book mode (--single-book --slug SLUG) ──────────────────────────
     if args.single_book:
         if not args.slug:
             print("ERROR: --single-book requires --slug SLUG", file=sys.stderr)
             sys.exit(1)
+
+        # SINGLE-RUN LOCK per slug — refuse a duplicate/overlapping orchestrator
+        # for the same persona (fix 4). The flock is held for the process
+        # lifetime and released automatically on exit.
+        if _og is not None:
+            _slug_lock = _og.acquire_slug_lock(_og_run_dir, args.slug)
+            if _slug_lock is None:
+                log(f"ERROR: another orchestrator run for slug '{args.slug}' is "
+                    f"already active (single-run lock held) — refusing to start "
+                    f"a duplicate. If that run is dead, remove its lock in "
+                    f"{_og_run_dir} or run reap-orchestrators.sh --sweep.")
+                sys.exit(4)
 
         log("\n" + "="*60)
         log(f"Skill 22 Pipeline — Single-book mode: {args.slug}")
@@ -2361,7 +2591,21 @@ async def main(args=None):
 
         connector = aiohttp.TCPConnector(limit=5)
         async with aiohttp.ClientSession(connector=connector) as session:
-            await process_book(session, book, status)
+            try:
+                # G2 preflight then G3/G4 storm guard (1 book) — see the
+                # STRUCTURAL STORM GUARDS block. A dead key / no-credits box
+                # aborts here BEFORE the phase loop.
+                await preflight_providers(
+                    session, [MODEL_EXTRACTION, MODEL_ANALYSIS, MODEL_SYNTHESIS])
+                init_storm_guard(PER_BOOK_EXPECTED_CALLS)
+                await process_book(session, book, status)
+            except _BuildAbort as e:
+                log("\n" + "="*60)
+                log(f"[BUILD ABORTED — STORM GUARD] {e}")
+                log(f"  Provider requests made before abort: "
+                    f"{_STORM.count if _STORM else 0}")
+                log("="*60)
+                sys.exit(2)
 
         final = status[book["folder"]]
         log("\n" + "="*60)
@@ -2408,20 +2652,38 @@ async def main(args=None):
     # Process in batches of PARALLEL_LIMIT
     connector = aiohttp.TCPConnector(limit=20)
     async with aiohttp.ClientSession(connector=connector) as session:
-        for i in range(0, len(pending), PARALLEL_LIMIT):
-            batch = pending[i:i + PARALLEL_LIMIT]
-            batch_num = (i // PARALLEL_LIMIT) + 1
-            total_batches = (len(pending) + PARALLEL_LIMIT - 1) // PARALLEL_LIMIT
+        try:
+            # G2 preflight (abort before any phase if a provider the build needs
+            # fails auth/credits/params) then arm the G3/G4 storm guard. The
+            # global request budget scales with the pending-book count, so no
+            # batch — however large — can produce an unbounded request storm.
+            await preflight_providers(
+                session, [MODEL_EXTRACTION, MODEL_ANALYSIS, MODEL_SYNTHESIS])
+            init_storm_guard(len(pending) * PER_BOOK_EXPECTED_CALLS)
 
-            log(f"\n--- BATCH {batch_num}/{total_batches} ---")
-            log(f"Books: {', '.join(b['title'] for b in batch)}\n")
+            for i in range(0, len(pending), PARALLEL_LIMIT):
+                batch = pending[i:i + PARALLEL_LIMIT]
+                batch_num = (i // PARALLEL_LIMIT) + 1
+                total_batches = (len(pending) + PARALLEL_LIMIT - 1) // PARALLEL_LIMIT
 
-            tasks = [process_book(session, book, status) for book in batch]
-            await asyncio.gather(*tasks)
+                log(f"\n--- BATCH {batch_num}/{total_batches} ---")
+                log(f"Books: {', '.join(b['title'] for b in batch)}\n")
 
-            # Progress report after each batch
-            done = sum(1 for b in BOOKS if status[b["folder"]]["phase3"] == "COMPLETE")
-            log(f"\n--- Batch {batch_num} complete. Total done: {done}/{len(BOOKS)} ---\n")
+                tasks = [process_book(session, book, status) for book in batch]
+                await asyncio.gather(*tasks)
+
+                # Progress report after each batch
+                done = sum(1 for b in BOOKS if status[b["folder"]]["phase3"] == "COMPLETE")
+                log(f"\n--- Batch {batch_num} complete. Total done: {done}/{len(BOOKS)} ---\n")
+        except _BuildAbort as e:
+            log("\n" + "="*60)
+            log(f"[BUILD ABORTED — STORM GUARD] {e}")
+            log(f"  Provider requests made before abort: "
+                f"{_STORM.count if _STORM else 0} "
+                f"(budget was {_STORM.budget if _STORM else 'n/a'})")
+            log("  No request storm occurred — the build stopped structurally.")
+            log("="*60)
+            sys.exit(2)
 
     # Final report
     log("\n" + "="*60)

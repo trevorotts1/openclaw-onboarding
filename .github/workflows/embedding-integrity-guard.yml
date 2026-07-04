@@ -32,6 +32,11 @@ on:
       - scripts/hash-universal-sops-manifest.py
       - tests/unit/embedding-hard-gate.test.sh
       - tests/unit/pipeline-provider-routing.test.sh
+      - tests/unit/storm-guard.test.sh
+      - tests/unit/orphan-process-prevention.test.sh
+      - 22-book-to-persona-coaching-leadership-system/pipeline/orphan_guard.py
+      - 22-book-to-persona-coaching-leadership-system/pipeline/run-orchestrator.sh
+      - 22-book-to-persona-coaching-leadership-system/pipeline/reap-orchestrators.sh
       - .github/workflows/embedding-integrity-guard.yml
   pull_request:
     paths:
@@ -46,6 +51,12 @@ on:
       - universal-sops/**
       - scripts/hash-universal-sops-manifest.py
       - tests/unit/embedding-hard-gate.test.sh
+      - tests/unit/pipeline-provider-routing.test.sh
+      - tests/unit/storm-guard.test.sh
+      - tests/unit/orphan-process-prevention.test.sh
+      - 22-book-to-persona-coaching-leadership-system/pipeline/orphan_guard.py
+      - 22-book-to-persona-coaching-leadership-system/pipeline/run-orchestrator.sh
+      - 22-book-to-persona-coaching-leadership-system/pipeline/reap-orchestrators.sh
       - .github/workflows/embedding-integrity-guard.yml
   workflow_dispatch:
 
@@ -76,6 +87,16 @@ jobs:
         run: |
           chmod +x tests/unit/pipeline-provider-routing.test.sh
           bash tests/unit/pipeline-provider-routing.test.sh
+
+      - name: Structural storm guards (fail-fast / preflight / circuit-breaker / budget)
+        run: |
+          chmod +x tests/unit/storm-guard.test.sh
+          bash tests/unit/storm-guard.test.sh
+
+      - name: Orphan-process prevention (parent-liveness / group-reap / targeted-reaper / slug-lock)
+        run: |
+          chmod +x tests/unit/orphan-process-prevention.test.sh
+          bash tests/unit/orphan-process-prevention.test.sh
 
   universal-sops:
     name: "universal-sops content manifest"
