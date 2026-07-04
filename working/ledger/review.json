@@ -5,7 +5,7 @@
   "reviewed_at": "2026-06-12",
   "status": "COMPLETE",
   "verdict": "6 of 7 PASS, 1 FAIL (em-dash). DO NOT COMMIT until the em-dash FAIL is fixed.",
-  "report": "/Users/blackceomacmini/Downloads/BUGS-HEALER-BUILD-REVIEW.md",
+  "report": "<redacted>/BUGS-HEALER-BUILD-REVIEW.md",
   "checks": {
     "1_dirs_19section_verbatim": {
       "result": "PASS",

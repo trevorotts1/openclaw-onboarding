@@ -113,7 +113,7 @@ JSON
   # sessions.json with a fake CEO session
   cat > "$SESSIONS_DIR/sessions.json" <<JSON
 {
-  "agent:main:telegram:direct:8959124298": {
+  "agent:main:telegram:direct:1234567890": {
     "systemSent": true,
     "lastActive": 1700000000
   }

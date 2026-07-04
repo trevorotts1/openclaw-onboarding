@@ -265,7 +265,7 @@ def _load_paths(shared_utils: Path) -> dict:
 def _resolve_ceo_session_key(paths: dict) -> Optional[str]:
     """
     Resolve the main-agent owner session key from sessions.json.
-    Returns e.g. "agent:main:telegram:direct:8959124298" or None.
+    Returns e.g. "agent:main:telegram:direct:1234567890" or None.
 
     Source of truth: agents/main/sessions/sessions.json
     (never docker logs or ownerAllowFrom — per memory rules).
