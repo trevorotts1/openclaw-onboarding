@@ -48,12 +48,27 @@ Two things are gated on DIFFERENT signals — keep them straight:
    interview would produce the DEFAULT department floor under company `default` (not
    the client's real answers) — a FALSE deliverable. That gate stays.
 
-**Enforcement:** `run-full-install.sh` and `materialize-dept-agents.sh` check
-`interviewComplete == true` in `$OC_ROOT/workspace/.workforce-build-state.json`
-before any **seeding/scaffolding of the real workforce**. If it is not true they
-**REPORT "interview not completed yet" and exit clean** — they do NOT scaffold the
-default departments and do NOT hammer the box. (The locked interview-mode CC shell in
-front of that empty board is the intended pre-closeout experience, not a failure.)
+**Enforcement (sequence — OQ-1 shell-first flip, v12.9.27):** `run-full-install.sh`
+now runs in two blocks around the interview gate:
+
+- **BLOCK A — the LOCKED CC shell deploys FIRST**, before the interview gate: Phase 1
+  prereqs → a **lock-assert** → Phase 6 dashboard deploy (pm2 on :4000) → Phase 6h
+  tunnel. The lock-assert enforces the **lock-before-reachable invariant**: it FAILS
+  CLOSED (full-install mode) if `$OC_ROOT/workspace/.workforce-build-state.json` — the
+  ONLY source the P0-5 middleware reads for lock state — is missing, so the installer
+  never starts a shell the middleware cannot lock. Because a fresh/in-progress
+  interview has `interviewComplete=false` and `buildCompletedAt` unset, the lock signal
+  is already on disk before the shell binds :4000 and before the tunnel exposes it, so
+  the shell serves LOCKED (302 → `/interview`) from its very first request. **There is
+  no window in which an empty, unlocked board is browsable.**
+- **BLOCK B — the REAL workforce stays gated.** After the gate, `run-full-install.sh`
+  (and `materialize-dept-agents.sh`, which keeps its own independent
+  `interviewComplete` check) only seed/scaffold departments, roles, agents and board
+  content once the interview is corroborated complete. If it is not, they **REPORT
+  "interview not completed yet" and exit clean** — leaving the client the already-up
+  locked `/interview` shell, scaffolding NO default departments and NOT hammering the
+  box.
+
 Verify completion with MULTIPLE signals (the flag is necessary but not sufficient;
 corroborate with real Q/A content + a CC board whose `company_id != 'default'`).
 

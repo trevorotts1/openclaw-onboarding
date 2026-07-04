@@ -21,6 +21,18 @@ This guide walks you through activating your AI workforce as a live Command Cent
 > interview-complete gate below protects is the seeding/materialization of the
 > client's REAL zero-human workforce (departments, roles, agents), which must still
 > wait for the interview to be genuinely complete.
+>
+> **Automated sequence (OQ-1 shell-first flip, v12.9.27).** `scripts/run-full-install.sh`
+> deploys the LOCKED CC shell FIRST, then gates the real workforce, in two blocks:
+> **BLOCK A** (Phase 1 prereqs → a **lock-assert** → Phase 6 dashboard deploy → Phase 6h
+> tunnel) brings up the locked `/interview` shell; **BLOCK B** (Phase 3/4/5 + Phase
+> 6b–6f seeding → Phase 7 verification → Phase 7z ZHE gate) runs only after the
+> interview-complete gate passes. The **lock-before-reachable** invariant is the safety
+> guarantee: the lock-assert FAILS CLOSED if the build-state file (the middleware's only
+> lock source) is missing, and because a pre-closeout build has `interviewComplete=false`
+> / `buildCompletedAt` unset, the shell serves LOCKED (302 → `/interview`) from its first
+> request — there is no unlocked-empty-board window. The manual phase walkthrough below
+> is unchanged in content; only the run-full-install orchestration order was flipped.
 
 ---
 

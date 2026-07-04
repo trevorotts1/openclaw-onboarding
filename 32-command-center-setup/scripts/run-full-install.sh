@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
-# run-full-install.sh — Skill 32 top-level orchestrator (v10.14.21).
+# run-full-install.sh — Skill 32 top-level orchestrator (v12.9.27).
+#
+# OQ-1 shell-first FLIP (v12.9.27): the LOCKED Command Center shell (BLOCK A —
+# Phase 1 prereqs → lock-assert → Phase 6 dashboard deploy → Phase 6h tunnel) now
+# deploys BEFORE the interview-complete gate, so the client immediately has a
+# /interview surface. The REAL zero-human workforce (BLOCK B — Phase 3/4/5/6b-6f
+# seeding, verification, ZHE gate) stays gated on interviewComplete. Safety rests on
+# the LOCK-BEFORE-REACHABLE invariant documented in the BLOCK A header: the P0-5
+# interview-mode middleware (command-center v4.60.0+) derives its lock purely from
+# the build-state file (interviewComplete / buildCompletedAt) this installer already
+# writes, so the shell serves LOCKED from its very first request — there is no
+# unlocked-empty-board window. Do NOT reorder BLOCK A after the gate.
 #
 # Why this exists:
 #   Skill 32 INSTALL.md describes an 8-phase Command Center activation
@@ -207,91 +218,6 @@ for cmd in jq curl git npm python3; do
   fi
 done
 
-# ─── INTERVIEW-COMPLETE PRECONDITION (binding) ────────────────────────────────
-# RULE: a client's REAL zero-human company (departments, roles, step-by-step
-# instructions) is materialized ONLY after their AI Workforce interview is COMPLETE.
-# If it is not, REPORT "interview not completed yet" and EXIT CLEAN — do NOT seed
-# workspaces, materialize agents, or scaffold the default department floor onto a
-# 'default' company. (See SKILL.md "Interview-Complete Precondition + Locked
-# Interview-Mode" + PREREQS.json interview-complete entry.)
-#
-# ★ LOCKED INTERVIEW-MODE IS BY DESIGN (ratified 2026-07-03, OQ-1). ★
-# This gate protects the REAL-WORKFORCE SEEDING below — NOT the CC shell itself.
-# Under OQ-1 the CC now ships FIRST but LOCKED to the /interview surface: the CC
-# middleware (P0-5) 302s every non-/interview, non-/onboarding page to /interview
-# while build-state `interviewComplete` is false, and reveals the full dashboard
-# once `buildCompletedAt` is set at closeout. The lock is STATE-DRIVEN off the
-# canonical build-state fields (interviewComplete / buildCompletedAt) that this
-# installer already reads/writes — there is NO separate CC "unlock" env var to set,
-# and provisioning must NOT invent one. A future reader: the interview-only CC view
-# in front of an empty board pre-closeout is the intended experience, NOT a bug —
-# do not remove this gate or "unlock" the shell to make the board show early.
-#
-# --update-only is EXEMPT: it only refreshes an ALREADY-built CC (git pull / npm /
-# db:push) and must keep working for provisioned boxes whose flag predates this gate.
-if [[ "$UPDATE_ONLY" != "true" ]]; then
-  if [[ ! -f "$STATE_FILE" ]]; then
-    log "INFO" "interview-gate: no .workforce-build-state.json — interview not started; REPORTING not-completed and exiting clean (real workforce not seeded)."
-    echo "INTERVIEW_NOT_COMPLETE: no workforce-build state on this box — AI Workforce interview not completed yet. Real workforce NOT materialized (the CC stays in locked interview-mode by design until closeout)." >&2
-    exit 0
-  fi
-  # FAST PRE-CHECK: the bare flag. Necessary but NOT sufficient (SKILL.md demands
-  # multi-signal corroboration — the flag alone is set even on the fabricating path).
-  INTERVIEW_COMPLETE=$(state_get '.interviewComplete')
-  if [[ "$INTERVIEW_COMPLETE" != "true" ]]; then
-    log "INFO" "interview-gate: interviewComplete=${INTERVIEW_COMPLETE:-<unset>} — REPORTING 'interview not completed yet' and exiting clean. NOT seeding/scaffolding the real workforce."
-    state_set '.commandCenterStatus = "interview-pending" | .commandCenterGateReason = "AI Workforce interview not completed (interviewComplete != true) — real-workforce materialization is gated until the owner finishes their interview. The CC stays in locked interview-mode (P0-5 middleware 302s to /interview) by design until buildCompletedAt at closeout."'
-    echo "INTERVIEW_NOT_COMPLETE: interviewComplete != true — AI Workforce interview not completed yet. Real workforce NOT materialized (expected, not an error). CC remains in locked interview-mode by design until closeout." >&2
-    exit 0
-  fi
-  log "INFO" "interview-gate: fast pre-check passed (interviewComplete=true) — now CORROBORATING with qc-interview-completion.py (multi-signal, per SKILL.md)."
-
-  # ── MULTI-SIGNAL CORROBORATION (binding, P2-7) ──────────────────────────────
-  # SKILL.md requires the interview to be corroborated by MORE than the bare flag.
-  # qc-interview-completion.py implements the real gate (question count, forbidden
-  # jargon, mandatory fields, nudge wiring, no-fabrication). We refuse to scaffold a
-  # whole zero-human company unless it returns PASS. Its exit codes:
-  #   0 = PASS   1 = error/unreadable   2 = needs-review (soft)   3 = hard-fail.
-  # A MISSING qc script fails CLOSED with an explicit error — never a silent pass.
-  QC_INTERVIEW=""
-  for _qc_cand in \
-    "$(dirname "$SKILL_DIR")/23-ai-workforce-blueprint/scripts/qc-interview-completion.py" \
-    "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-interview-completion.py" \
-    "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-interview-completion.py"; do
-    if [[ -f "$_qc_cand" ]]; then QC_INTERVIEW="$_qc_cand"; break; fi
-  done
-  if [[ -z "$QC_INTERVIEW" ]]; then
-    # FAIL CLOSED: cannot corroborate the flag ⇒ refuse to scaffold on a bare flag.
-    log "ERROR" "interview-gate: qc-interview-completion.py NOT FOUND in any skill-23 location — failing CLOSED (refusing to scaffold on an un-corroborated interviewComplete flag)."
-    state_set_arg '.commandCenterStatus = "interview-qc-unverified" | .commandCenterGateReason = $val' \
-      "qc-interview-completion.py missing in every skill-23 location — the interviewComplete flag could not be corroborated; Command Center scaffolding refused (fail-closed). Repair the Skill 23 install."
-    echo "INTERVIEW_QC_UNVERIFIED: qc-interview-completion.py not found — cannot corroborate the interviewComplete flag. Command Center NOT built (fail-closed; fix the Skill 23 install)." >&2
-    exit 1
-  fi
-  # Prefer the answers-file transcript build-workforce.py recorded (its default path
-  # differs); fall back to the qc script's own auto-resolution when unrecorded.
-  QC_ARGS=(--state "$STATE_FILE" --format human)
-  _qc_transcript=$(state_get '.interviewProgress.answersFilePath')
-  if [[ -n "$_qc_transcript" && -f "$_qc_transcript" ]]; then
-    QC_ARGS+=(--transcript "$_qc_transcript")
-  fi
-  QC_OUT="$(python3 "$QC_INTERVIEW" "${QC_ARGS[@]}" 2>&1)"; QC_RC=$?
-  printf '%s\n' "$QC_OUT" >> "$LOG_FILE"
-  if [[ "$QC_RC" -ne 0 ]]; then
-    # Flag says complete but QC disagrees ⇒ NOT corroborated. Gate the CC (do NOT
-    # scaffold); this is the expected "interview not genuinely done yet" hold, so we
-    # exit clean and let the interview resume/nudge loop drive it to PASS. The QC
-    # summary is carried via jq --arg (P3-2) — never interpolated into the program.
-    _qc_summary="$(printf '%s\n' "$QC_OUT" | grep -E 'Summary:|\[HARD\]|\[SOFT\]|Question count' | head -4 | tr '\n' ' ')"
-    log "ERROR" "interview-gate: qc-interview-completion.py rc=$QC_RC (not PASS) — interview NOT corroborated. Gating Command Center. ${_qc_summary}"
-    state_set_arg '.commandCenterStatus = "interview-pending" | .commandCenterGateReason = $val' \
-      "interviewComplete flag is set but qc-interview-completion.py returned rc=${QC_RC} (not PASS) — interview not corroborated complete; Command Center gated until it passes QC. ${_qc_summary}"
-    echo "INTERVIEW_PENDING: interviewComplete=true but qc-interview-completion.py rc=$QC_RC (not PASS) — interview not corroborated complete. Command Center NOT built (gated; expected until QC passes)." >&2
-    exit 0
-  fi
-  log "INFO" "interview-gate: qc-interview-completion.py PASS (rc=0) — interview corroborated. Proceeding with Command Center install."
-fi
-
 # ---- --update-only: read client metadata from state file when not passed on CLI ----
 if [[ "$UPDATE_ONLY" == "true" ]] && [[ -z "$CLIENT_SLUG" ]] && [[ -f "$STATE_FILE" ]]; then
   # P1-3: read companySlug (canonical, written by build-workforce.py) with a
@@ -307,6 +233,29 @@ log "INFO" "run-full-install starting: update_only=$UPDATE_ONLY slug=${CLIENT_SL
 if [[ -f "$STATE_FILE" ]]; then
   state_set '.commandCenterStatus = "building"'
 fi
+
+# ==============================================================================
+# BLOCK A - LOCKED CC SHELL (deploys FIRST; OQ-1 shell-first flip, v12.9.27)
+# ==============================================================================
+# ORDERING INVARIANT - LOCK BEFORE REACHABLE (read this before reordering anything):
+#   The Command Center shell is now deployed BEFORE the interview-complete gate so
+#   the client immediately has a /interview surface to use. Safety is guaranteed by
+#   the P0-5 interview-mode middleware (command-center v4.60.0+), which derives its
+#   lock PURELY from the canonical build-state file this installer already writes
+#   ($STATE_FILE == $OC_ROOT/workspace/.workforce-build-state.json):
+#     * interviewComplete != true          -> 302 every non-/interview, non-/onboarding
+#                                             request to /interview   (LOCKED)
+#     * buildCompletedAt set (at closeout) -> full dashboard revealed  (UNLOCKED)
+#   There is NO separate CC "unlock" env var; provisioning must not invent one.
+#
+#   Because a fresh / in-progress interview has interviewComplete=false and
+#   buildCompletedAt unset, the lock signal is ALREADY on disk (at the path the
+#   middleware reads) before Phase 6 binds :4000 and before Phase 6h exposes the
+#   tunnel - so the very first request the shell ever serves is already redirected
+#   to /interview. There is NO window in which an empty, unlocked board is
+#   browsable. lock_assert (below) FAILS CLOSED in full-install mode when that lock
+#   signal is absent, rather than start a shell the middleware cannot lock. Only the
+#   REAL-workforce materialization in BLOCK B stays gated on interviewComplete.
 
 # ----------------------------------------------------------------------
 # PHASE 1 — Prerequisites (pm2 + openclaw doctor --fix)
@@ -332,64 +281,25 @@ else
   log "INFO" "phase=1 prereqs: done"
 fi
 
-# ----------------------------------------------------------------------
-# PHASE 3 — Workspace department folders
-# ----------------------------------------------------------------------
-log "INFO" "phase=3 workspace-folders: starting"
+# ---- lock-assert: guarantee the P0-5 lock signal exists BEFORE the shell binds ----
+# See the BLOCK A ordering-invariant comment. Full-install mode FAILS CLOSED when the
+# build-state (the middleware's only lock source) is missing - never start a shell the
+# middleware cannot lock. --update-only refreshes an already-tracked CC, so it is exempt.
 if [[ "$UPDATE_ONLY" == "true" ]]; then
-  log "INFO" "phase=3 workspace-folders: --update-only mode — skipping (already done on prior run)"
-elif [[ "$(state_get '.commandCenterPhase3Done')" == "true" ]]; then
-  log "INFO" "phase=3 workspace-folders: already done — skipping"
+  log "INFO" "lock-assert: --update-only - refreshing an already-locked/unlocked CC; skipping fresh-deploy lock gate"
 else
-  CC_BASE="$OC_ROOT/workspaces/command-center"
-  mkdir -p "$CC_BASE"
-  DEPT_SRC="$OC_ROOT/workspace/departments"
-  if [[ -d "$DEPT_SRC" ]]; then
-    while IFS= read -r dept_path; do
-      [[ -z "$dept_path" ]] && continue
-      dept_slug="$(basename "$dept_path")"
-      target="$CC_BASE/$dept_slug"
-      mkdir -p "$target/memory"
-      log "INFO" "phase=3: ensured $target/"
-    done < <(find "$DEPT_SRC" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+  if [[ ! -f "$STATE_FILE" ]]; then
+    fail_install "lock-assert: no build-state at $STATE_FILE - refusing to deploy the CC shell (the P0-5 middleware would have no lock signal, risking an unlocked empty board). Complete the AI Workforce interview (Skill 23) first."
+  fi
+  _lock_ic="$(state_get '.interviewComplete')"
+  _lock_bc="$(state_get '.buildCompletedAt')"
+  if [[ -n "$_lock_bc" && "$_lock_bc" != "null" ]]; then
+    log "INFO" "lock-assert: buildCompletedAt=$_lock_bc present - completed box; CC serves UNLOCKED (real workforce already built). Proceeding."
+  elif [[ "$_lock_ic" == "true" ]]; then
+    log "INFO" "lock-assert: interviewComplete=true, buildCompletedAt unset - build in progress; CC serves LOCKED until closeout. Proceeding."
   else
-    log "WARN" "phase=3: $DEPT_SRC missing — no departments to materialize folders for"
+    log "INFO" "lock-assert: interviewComplete=${_lock_ic:-<unset>}, buildCompletedAt unset - CC will serve LOCKED (P0-5 302s to /interview). Deploying the locked shell first. Proceeding."
   fi
-  state_set '.commandCenterPhase3Done = true'
-  log "INFO" "phase=3 workspace-folders: done"
-fi
-
-# ----------------------------------------------------------------------
-# PHASE 4 — Materialize dept agents into agents.list[] (v10.14.19)
-# ----------------------------------------------------------------------
-log "INFO" "phase=4 materialize-agents: starting"
-if [[ "$UPDATE_ONLY" == "true" ]]; then
-  log "INFO" "phase=4 materialize-agents: --update-only mode — skipping (update-skills.sh already ran WIRING-ASSERT)"
-elif [[ "$(state_get '.commandCenterPhase4Done')" == "true" ]]; then
-  log "INFO" "phase=4 materialize-agents: already done — skipping"
-else
-  SKILL32_MATERIALIZE="$SKILL_DIR/scripts/materialize-dept-agents.sh"
-  if [[ ! -x "$SKILL32_MATERIALIZE" ]]; then
-    fail_install "phase=4: materialize-dept-agents.sh not executable at $SKILL32_MATERIALIZE"
-  fi
-  if ! bash "$SKILL32_MATERIALIZE" >>"$LOG_FILE" 2>&1; then
-    fail_install "phase=4: materialize-dept-agents.sh exited non-zero (see $LOG_FILE)"
-  fi
-  AGENT_COUNT=$(python3 -c "import json,sys; sys.stdout.write(str(len(json.load(open('$OC_ROOT/openclaw.json'))['agents']['list'])))" 2>>"$LOG_FILE" || echo "0")
-  if [[ -z "$AGENT_COUNT" || "$AGENT_COUNT" -lt 2 ]]; then
-    fail_install "phase=4: agents.list[] has only ${AGENT_COUNT:-0} entries after materialize"
-  fi
-  state_set ".agentsMaterializedCount = $AGENT_COUNT | .commandCenterPhase4Done = true"
-  log "INFO" "phase=4 materialize-agents: done (${AGENT_COUNT} agents in agents.list[])"
-fi
-
-# ----------------------------------------------------------------------
-# PHASE 5 — Telegram topic creation (MANUAL — requires owner's phone)
-# ----------------------------------------------------------------------
-log "INFO" "phase=5 telegram-topics: SKIPPED (manual step required)"
-log "INFO" "phase=5 TODO: owner must create topics in supergroup per INSTALL.md Phase 5, then bind each topic to its dept agent in openclaw.json (bindings[] array)"
-if [[ -f "$STATE_FILE" ]]; then
-  state_set '.commandCenterPhase5Status = "manual-todo"'
 fi
 
 # ----------------------------------------------------------------------
@@ -479,6 +389,229 @@ else
 
   state_set '.commandCenterPhase6Done = true'
   log "INFO" "phase=6 dashboard-deploy: done"
+fi
+
+# ----------------------------------------------------------------------
+# PHASE 6h — Tunnel (n8n webhook + cloudflared)
+# ----------------------------------------------------------------------
+# P3-2: this tunnel phase was previously mislabeled "PHASE 6b", colliding with the
+# workspace-seed phase (also "6b"). Renamed to the next free letter (6b–6g are taken
+# by seed/sync/md-sync/dashboard-content/kpi/ghl-preflight) so the log stream is
+# unambiguous. The STATE FIELD is renamed commandCenterPhase6bStatus →
+# commandCenterPhase6hStatus, but the READ falls back to the old key so the
+# duplicate-CC re-POST guard keeps working on boxes whose state predates this rename.
+log "INFO" "phase=6h tunnel: starting"
+if [[ "$UPDATE_ONLY" == "true" ]]; then
+  log "INFO" "phase=6h tunnel: --update-only mode — skipping (tunnel already established on prior run)"
+else
+  existing_url=$(state_get '.commandCenterUrl')
+  # Backward-compat read: prefer the new key, fall back to the legacy 6b key.
+  phase6h_status=$(state_get '.commandCenterPhase6hStatus // .commandCenterPhase6bStatus')
+  # Re-POST guard: once we have registered (success OR a webhook failure that may
+  # have already created a tunnel/notified Trevor), NEVER POST to the n8n
+  # registration webhook again on resume. The webhook is the duplicate-CC source;
+  # a failed POST can still have fired the Telegram/sheet side effects, so any
+  # terminal phase status blocks re-POST. Operators clear
+  # .commandCenterPhase6hStatus (or the legacy .commandCenterPhase6bStatus) to force
+  # a fresh registration.
+  if [[ "$phase6h_status" == "failed-webhook" || "$phase6h_status" == "done" \
+     || "$phase6h_status" == "done-no-subdomain-recorded" \
+     || "$phase6h_status" == "skipped-script-missing" ]]; then
+    log "INFO" "phase=6h tunnel: prior registration attempt recorded (status=$phase6h_status) — NOT re-POSTing webhook (duplicate-CC guard)"
+  elif [[ -n "$existing_url" && "$existing_url" != "null" && "$existing_url" != "http://127.0.0.1:4000/" ]]; then
+    log "INFO" "phase=6h tunnel: commandCenterUrl already set ($existing_url) — skipping"
+  else
+    TUNNEL_SCRIPT="$SKILL_DIR/scripts/create-tunnel.sh"
+    if [[ ! -x "$TUNNEL_SCRIPT" ]]; then
+      log "WARN" "phase=6h: create-tunnel.sh not executable at $TUNNEL_SCRIPT — marking tunnel as todo"
+      state_set '.commandCenterPhase6hStatus = "skipped-script-missing"'
+    else
+      log "INFO" "phase=6h: invoking create-tunnel.sh $CLIENT_SLUG $COMPANY_NAME $CONTACT_EMAIL"
+      if ! bash "$TUNNEL_SCRIPT" "$CLIENT_SLUG" "$COMPANY_NAME" "$CONTACT_EMAIL" >>"$LOG_FILE" 2>&1; then
+        log "WARN" "phase=6h: create-tunnel.sh exited non-zero — leaving commandCenterUrl unset, dashboard still reachable locally"
+        state_set '.commandCenterPhase6hStatus = "failed-webhook"'
+      else
+        # Try to recover the subdomain from the .env file the tunnel script wrote
+        SUBDOMAIN_HINT=""
+        if [[ -f "$OC_ROOT/.env" ]]; then
+          SUBDOMAIN_HINT="$CLIENT_SLUG.zerohumanworkforce.com"
+        fi
+        if [[ -n "$SUBDOMAIN_HINT" ]]; then
+          # P3-2: the URL carries the client slug — pass it via jq --arg, not interpolation.
+          state_set_arg '.commandCenterUrl = $val | .commandCenterPhase6hStatus = "done"' "https://$SUBDOMAIN_HINT"
+          log "INFO" "phase=6h tunnel: done — https://$SUBDOMAIN_HINT"
+        else
+          state_set '.commandCenterPhase6hStatus = "done-no-subdomain-recorded"'
+          log "INFO" "phase=6h tunnel: done (subdomain not recovered into state)"
+        fi
+      fi
+    fi
+  fi
+fi
+
+# ==============================================================================
+# INTERVIEW-COMPLETE GATE (protects REAL-workforce materialization ONLY)
+# ==============================================================================
+# The LOCKED CC shell + tunnel (BLOCK A) are already up by this point, so every exit
+# below leaves the client with a usable /interview surface - it just does NOT
+# materialize/seed the REAL zero-human workforce until the interview is genuinely
+# complete (corroborated). "interview not completed yet" here means "real workforce
+# deferred", never "no Command Center".
+# ─── INTERVIEW-COMPLETE PRECONDITION (binding) ────────────────────────────────
+# RULE: a client's REAL zero-human company (departments, roles, step-by-step
+# instructions) is materialized ONLY after their AI Workforce interview is COMPLETE.
+# If it is not, REPORT "interview not completed yet" and EXIT CLEAN — do NOT seed
+# workspaces, materialize agents, or scaffold the default department floor onto a
+# 'default' company. (See SKILL.md "Interview-Complete Precondition + Locked
+# Interview-Mode" + PREREQS.json interview-complete entry.)
+#
+# ★ LOCKED INTERVIEW-MODE IS BY DESIGN (ratified 2026-07-03, OQ-1). ★
+# This gate protects the REAL-WORKFORCE SEEDING below — NOT the CC shell itself.
+# By the time control reaches here the LOCKED CC shell + tunnel (BLOCK A) are ALREADY
+# deployed, so every exit below leaves the client a usable /interview surface; it only
+# defers the REAL zero-human workforce. Under OQ-1 the CC ships FIRST but LOCKED to the
+# /interview surface: the CC
+# middleware (P0-5) 302s every non-/interview, non-/onboarding page to /interview
+# while build-state `interviewComplete` is false, and reveals the full dashboard
+# once `buildCompletedAt` is set at closeout. The lock is STATE-DRIVEN off the
+# canonical build-state fields (interviewComplete / buildCompletedAt) that this
+# installer already reads/writes — there is NO separate CC "unlock" env var to set,
+# and provisioning must NOT invent one. A future reader: the interview-only CC view
+# in front of an empty board pre-closeout is the intended experience, NOT a bug —
+# do not remove this gate or "unlock" the shell to make the board show early.
+#
+# --update-only is EXEMPT: it only refreshes an ALREADY-built CC (git pull / npm /
+# db:push) and must keep working for provisioned boxes whose flag predates this gate.
+if [[ "$UPDATE_ONLY" != "true" ]]; then
+  if [[ ! -f "$STATE_FILE" ]]; then
+    log "INFO" "interview-gate: no .workforce-build-state.json — interview not started; REPORTING not-completed and exiting clean (real workforce not seeded)."
+    echo "INTERVIEW_NOT_COMPLETE: no workforce-build state on this box — AI Workforce interview not completed yet. The locked CC shell is already deployed (client can use /interview now); real workforce NOT materialized (the CC stays in locked interview-mode by design until closeout)." >&2
+    exit 0
+  fi
+  # FAST PRE-CHECK: the bare flag. Necessary but NOT sufficient (SKILL.md demands
+  # multi-signal corroboration — the flag alone is set even on the fabricating path).
+  INTERVIEW_COMPLETE=$(state_get '.interviewComplete')
+  if [[ "$INTERVIEW_COMPLETE" != "true" ]]; then
+    log "INFO" "interview-gate: interviewComplete=${INTERVIEW_COMPLETE:-<unset>} — REPORTING 'interview not completed yet' and exiting clean. NOT seeding/scaffolding the real workforce."
+    state_set '.commandCenterStatus = "interview-pending" | .commandCenterGateReason = "AI Workforce interview not completed (interviewComplete != true) — real-workforce materialization is gated until the owner finishes their interview. The CC stays in locked interview-mode (P0-5 middleware 302s to /interview) by design until buildCompletedAt at closeout."'
+    echo "INTERVIEW_NOT_COMPLETE: interviewComplete != true — AI Workforce interview not completed yet. Real workforce NOT materialized (expected, not an error). The locked CC shell is already deployed (client can use /interview now); it remains in locked interview-mode by design until closeout." >&2
+    exit 0
+  fi
+  log "INFO" "interview-gate: fast pre-check passed (interviewComplete=true) — now CORROBORATING with qc-interview-completion.py (multi-signal, per SKILL.md)."
+
+  # ── MULTI-SIGNAL CORROBORATION (binding, P2-7) ──────────────────────────────
+  # SKILL.md requires the interview to be corroborated by MORE than the bare flag.
+  # qc-interview-completion.py implements the real gate (question count, forbidden
+  # jargon, mandatory fields, nudge wiring, no-fabrication). We refuse to scaffold a
+  # whole zero-human company unless it returns PASS. Its exit codes:
+  #   0 = PASS   1 = error/unreadable   2 = needs-review (soft)   3 = hard-fail.
+  # A MISSING qc script fails CLOSED with an explicit error — never a silent pass.
+  QC_INTERVIEW=""
+  for _qc_cand in \
+    "$(dirname "$SKILL_DIR")/23-ai-workforce-blueprint/scripts/qc-interview-completion.py" \
+    "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-interview-completion.py" \
+    "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-interview-completion.py"; do
+    if [[ -f "$_qc_cand" ]]; then QC_INTERVIEW="$_qc_cand"; break; fi
+  done
+  if [[ -z "$QC_INTERVIEW" ]]; then
+    # FAIL CLOSED: cannot corroborate the flag ⇒ refuse to scaffold on a bare flag.
+    log "ERROR" "interview-gate: qc-interview-completion.py NOT FOUND in any skill-23 location — failing CLOSED (refusing to scaffold on an un-corroborated interviewComplete flag)."
+    state_set_arg '.commandCenterStatus = "interview-qc-unverified" | .commandCenterGateReason = $val' \
+      "qc-interview-completion.py missing in every skill-23 location — the interviewComplete flag could not be corroborated; Command Center scaffolding refused (fail-closed). Repair the Skill 23 install."
+    echo "INTERVIEW_QC_UNVERIFIED: qc-interview-completion.py not found — cannot corroborate the interviewComplete flag. Locked CC shell is up, but the REAL workforce is NOT materialized (fail-closed; fix the Skill 23 install)." >&2
+    exit 1
+  fi
+  # Prefer the answers-file transcript build-workforce.py recorded (its default path
+  # differs); fall back to the qc script's own auto-resolution when unrecorded.
+  QC_ARGS=(--state "$STATE_FILE" --format human)
+  _qc_transcript=$(state_get '.interviewProgress.answersFilePath')
+  if [[ -n "$_qc_transcript" && -f "$_qc_transcript" ]]; then
+    QC_ARGS+=(--transcript "$_qc_transcript")
+  fi
+  QC_OUT="$(python3 "$QC_INTERVIEW" "${QC_ARGS[@]}" 2>&1)"; QC_RC=$?
+  printf '%s\n' "$QC_OUT" >> "$LOG_FILE"
+  if [[ "$QC_RC" -ne 0 ]]; then
+    # Flag says complete but QC disagrees ⇒ NOT corroborated. Gate the CC (do NOT
+    # scaffold); this is the expected "interview not genuinely done yet" hold, so we
+    # exit clean and let the interview resume/nudge loop drive it to PASS. The QC
+    # summary is carried via jq --arg (P3-2) — never interpolated into the program.
+    _qc_summary="$(printf '%s\n' "$QC_OUT" | grep -E 'Summary:|\[HARD\]|\[SOFT\]|Question count' | head -4 | tr '\n' ' ')"
+    log "ERROR" "interview-gate: qc-interview-completion.py rc=$QC_RC (not PASS) — interview NOT corroborated. Gating Command Center. ${_qc_summary}"
+    state_set_arg '.commandCenterStatus = "interview-pending" | .commandCenterGateReason = $val' \
+      "interviewComplete flag is set but qc-interview-completion.py returned rc=${QC_RC} (not PASS) — interview not corroborated complete; Command Center gated until it passes QC. ${_qc_summary}"
+    echo "INTERVIEW_PENDING: interviewComplete=true but qc-interview-completion.py rc=$QC_RC (not PASS) — interview not corroborated complete. Locked CC shell is up; REAL workforce NOT materialized (gated; expected until QC passes)." >&2
+    exit 0
+  fi
+  log "INFO" "interview-gate: qc-interview-completion.py PASS (rc=0) — interview corroborated. Proceeding with Command Center install."
+fi
+
+# ==============================================================================
+# BLOCK B - REAL ZERO-HUMAN WORKFORCE (gated on interviewComplete, above)
+# ==============================================================================
+# Everything below only runs once the interview is corroborated complete: it
+# materializes the client's REAL departments/roles/agents and seeds the board's
+# real content. Building any of it pre-interview would produce the DEFAULT floor
+# under company 'default' - a false deliverable - which is exactly why it stays
+# behind the gate while the shell (BLOCK A) does not.
+
+# ----------------------------------------------------------------------
+# PHASE 3 — Workspace department folders
+# ----------------------------------------------------------------------
+log "INFO" "phase=3 workspace-folders: starting"
+if [[ "$UPDATE_ONLY" == "true" ]]; then
+  log "INFO" "phase=3 workspace-folders: --update-only mode — skipping (already done on prior run)"
+elif [[ "$(state_get '.commandCenterPhase3Done')" == "true" ]]; then
+  log "INFO" "phase=3 workspace-folders: already done — skipping"
+else
+  CC_BASE="$OC_ROOT/workspaces/command-center"
+  mkdir -p "$CC_BASE"
+  DEPT_SRC="$OC_ROOT/workspace/departments"
+  if [[ -d "$DEPT_SRC" ]]; then
+    while IFS= read -r dept_path; do
+      [[ -z "$dept_path" ]] && continue
+      dept_slug="$(basename "$dept_path")"
+      target="$CC_BASE/$dept_slug"
+      mkdir -p "$target/memory"
+      log "INFO" "phase=3: ensured $target/"
+    done < <(find "$DEPT_SRC" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+  else
+    log "WARN" "phase=3: $DEPT_SRC missing — no departments to materialize folders for"
+  fi
+  state_set '.commandCenterPhase3Done = true'
+  log "INFO" "phase=3 workspace-folders: done"
+fi
+
+# ----------------------------------------------------------------------
+# PHASE 4 — Materialize dept agents into agents.list[] (v10.14.19)
+# ----------------------------------------------------------------------
+log "INFO" "phase=4 materialize-agents: starting"
+if [[ "$UPDATE_ONLY" == "true" ]]; then
+  log "INFO" "phase=4 materialize-agents: --update-only mode — skipping (update-skills.sh already ran WIRING-ASSERT)"
+elif [[ "$(state_get '.commandCenterPhase4Done')" == "true" ]]; then
+  log "INFO" "phase=4 materialize-agents: already done — skipping"
+else
+  SKILL32_MATERIALIZE="$SKILL_DIR/scripts/materialize-dept-agents.sh"
+  if [[ ! -x "$SKILL32_MATERIALIZE" ]]; then
+    fail_install "phase=4: materialize-dept-agents.sh not executable at $SKILL32_MATERIALIZE"
+  fi
+  if ! bash "$SKILL32_MATERIALIZE" >>"$LOG_FILE" 2>&1; then
+    fail_install "phase=4: materialize-dept-agents.sh exited non-zero (see $LOG_FILE)"
+  fi
+  AGENT_COUNT=$(python3 -c "import json,sys; sys.stdout.write(str(len(json.load(open('$OC_ROOT/openclaw.json'))['agents']['list'])))" 2>>"$LOG_FILE" || echo "0")
+  if [[ -z "$AGENT_COUNT" || "$AGENT_COUNT" -lt 2 ]]; then
+    fail_install "phase=4: agents.list[] has only ${AGENT_COUNT:-0} entries after materialize"
+  fi
+  state_set ".agentsMaterializedCount = $AGENT_COUNT | .commandCenterPhase4Done = true"
+  log "INFO" "phase=4 materialize-agents: done (${AGENT_COUNT} agents in agents.list[])"
+fi
+
+# ----------------------------------------------------------------------
+# PHASE 5 — Telegram topic creation (MANUAL — requires owner's phone)
+# ----------------------------------------------------------------------
+log "INFO" "phase=5 telegram-topics: SKIPPED (manual step required)"
+log "INFO" "phase=5 TODO: owner must create topics in supergroup per INSTALL.md Phase 5, then bind each topic to its dept agent in openclaw.json (bindings[] array)"
+if [[ -f "$STATE_FILE" ]]; then
+  state_set '.commandCenterPhase5Status = "manual-todo"'
 fi
 
 # ----------------------------------------------------------------------
@@ -641,64 +774,6 @@ else
   log "WARN" "phase=6g ghl-preflight: MISSING $_ghl_missing in $GHL_SECRETS_ENV -- GHL funnel/automation templates are ingested but department agents CANNOT act on GHL until Skill 36 wires GOHIGHLEVEL_API_KEY (PIT) + GOHIGHLEVEL_LOCATION_ID into ~/.openclaw/secrets/.env. (Operator-only; CC + Kanban remain fully functional.)"
   # P3-2: carry the free-form missing-cred string via jq --arg, not interpolation.
   [[ -f "$STATE_FILE" ]] && state_set_arg '.commandCenterGhlCredPreflight = "missing" | .commandCenterGhlCredMissing = $val' "$_ghl_missing"
-fi
-
-# ----------------------------------------------------------------------
-# PHASE 6h — Tunnel (n8n webhook + cloudflared)
-# ----------------------------------------------------------------------
-# P3-2: this tunnel phase was previously mislabeled "PHASE 6b", colliding with the
-# workspace-seed phase (also "6b"). Renamed to the next free letter (6b–6g are taken
-# by seed/sync/md-sync/dashboard-content/kpi/ghl-preflight) so the log stream is
-# unambiguous. The STATE FIELD is renamed commandCenterPhase6bStatus →
-# commandCenterPhase6hStatus, but the READ falls back to the old key so the
-# duplicate-CC re-POST guard keeps working on boxes whose state predates this rename.
-log "INFO" "phase=6h tunnel: starting"
-if [[ "$UPDATE_ONLY" == "true" ]]; then
-  log "INFO" "phase=6h tunnel: --update-only mode — skipping (tunnel already established on prior run)"
-else
-  existing_url=$(state_get '.commandCenterUrl')
-  # Backward-compat read: prefer the new key, fall back to the legacy 6b key.
-  phase6h_status=$(state_get '.commandCenterPhase6hStatus // .commandCenterPhase6bStatus')
-  # Re-POST guard: once we have registered (success OR a webhook failure that may
-  # have already created a tunnel/notified Trevor), NEVER POST to the n8n
-  # registration webhook again on resume. The webhook is the duplicate-CC source;
-  # a failed POST can still have fired the Telegram/sheet side effects, so any
-  # terminal phase status blocks re-POST. Operators clear
-  # .commandCenterPhase6hStatus (or the legacy .commandCenterPhase6bStatus) to force
-  # a fresh registration.
-  if [[ "$phase6h_status" == "failed-webhook" || "$phase6h_status" == "done" \
-     || "$phase6h_status" == "done-no-subdomain-recorded" \
-     || "$phase6h_status" == "skipped-script-missing" ]]; then
-    log "INFO" "phase=6h tunnel: prior registration attempt recorded (status=$phase6h_status) — NOT re-POSTing webhook (duplicate-CC guard)"
-  elif [[ -n "$existing_url" && "$existing_url" != "null" && "$existing_url" != "http://127.0.0.1:4000/" ]]; then
-    log "INFO" "phase=6h tunnel: commandCenterUrl already set ($existing_url) — skipping"
-  else
-    TUNNEL_SCRIPT="$SKILL_DIR/scripts/create-tunnel.sh"
-    if [[ ! -x "$TUNNEL_SCRIPT" ]]; then
-      log "WARN" "phase=6h: create-tunnel.sh not executable at $TUNNEL_SCRIPT — marking tunnel as todo"
-      state_set '.commandCenterPhase6hStatus = "skipped-script-missing"'
-    else
-      log "INFO" "phase=6h: invoking create-tunnel.sh $CLIENT_SLUG $COMPANY_NAME $CONTACT_EMAIL"
-      if ! bash "$TUNNEL_SCRIPT" "$CLIENT_SLUG" "$COMPANY_NAME" "$CONTACT_EMAIL" >>"$LOG_FILE" 2>&1; then
-        log "WARN" "phase=6h: create-tunnel.sh exited non-zero — leaving commandCenterUrl unset, dashboard still reachable locally"
-        state_set '.commandCenterPhase6hStatus = "failed-webhook"'
-      else
-        # Try to recover the subdomain from the .env file the tunnel script wrote
-        SUBDOMAIN_HINT=""
-        if [[ -f "$OC_ROOT/.env" ]]; then
-          SUBDOMAIN_HINT="$CLIENT_SLUG.zerohumanworkforce.com"
-        fi
-        if [[ -n "$SUBDOMAIN_HINT" ]]; then
-          # P3-2: the URL carries the client slug — pass it via jq --arg, not interpolation.
-          state_set_arg '.commandCenterUrl = $val | .commandCenterPhase6hStatus = "done"' "https://$SUBDOMAIN_HINT"
-          log "INFO" "phase=6h tunnel: done — https://$SUBDOMAIN_HINT"
-        else
-          state_set '.commandCenterPhase6hStatus = "done-no-subdomain-recorded"'
-          log "INFO" "phase=6h tunnel: done (subdomain not recovered into state)"
-        fi
-      fi
-    fi
-  fi
 fi
 
 # ----------------------------------------------------------------------

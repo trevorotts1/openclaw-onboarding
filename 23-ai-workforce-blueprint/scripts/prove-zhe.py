@@ -65,6 +65,23 @@ Usage:
                                             if present; absent ones are recorded "skipped",
                                             never failing the gate.
 
+WEB↔TELEGRAM BUILD PARITY (WG-6) — proves a client built through the web
+/interview path is byte-equal (same gates + EQUAL provisioning receipt/
+expected-set) to a telegram-built one, with NO genuine-build shortcuts:
+  prove-zhe.py --web-parity            materialize the shipped fixture pair into a
+                                       sandbox temp dir and prove parity (good => 0)
+  prove-zhe.py --web-parity --web-root W --ref-root R
+                                       prove parity between two REAL OpenClaw roots
+  prove-zhe.py --web-parity --shortcut <k>
+                                       seed a shortcut into the fixture's WEB root
+                                       (missing-decision | synthetic-header |
+                                        unprovenanced-decline | receipt-divergence);
+                                       a good gate FAILS (exit 1) on any of them
+  prove-zhe.py --web-parity-selftest   NON-VACUOUS meta-gate: prove the mode PASSES
+                                       on the good fixture and FAILS on EVERY seeded
+                                       shortcut (exit 0 iff all expectations hold).
+                                       This is the entrypoint the CI wiring calls.
+
 Receipt: receipts/<box>-<UTCiso>.json   — {box, overall_pass, exempt, checks:{...}, ts, ...}
 Exit code: 0 iff overall_pass (or exempt) is true, else 1; 2 on bad invocation.
 """
@@ -115,6 +132,54 @@ SKIP_SLUGS = {
 # Sibling per-workstream provers folded in under --with-subprovers (plan: W1.3
 # "by delegating to the per-workstream provers"). Absent => skipped, never a FAIL.
 SUBPROVERS = ["prove-custom-dept-wiring.py", "prove-floor.py"]
+
+# --- WEB↔TELEGRAM build-parity constants (WG-6) --------------------------------
+# The exact banner build-workforce.build_from_config() stamps onto a
+# from-config (non-interactive) transcript — IDENTICAL to
+# qc-interview-completion.NON_INTERACTIVE_ANSWERS_HEADER. A transcript carrying
+# it WITHOUT an ownerConsent record is fabricated, not owner-authored.
+NON_INTERACTIVE_ANSWERS_HEADER = "# Workforce Interview Answers (Non-Interactive)"
+
+# Decision tokens that count as an EXPLICIT owner opt-in to a self-setup / fast
+# (from-config) build — mirrors qc-interview-completion._CONSENT_OPT_IN_DECISIONS.
+_CONSENT_OPT_IN_DECISIONS = frozenset({
+    "self-setup", "self_setup", "selfsetup",
+    "fast", "fast-mode", "fast_mode", "fastmode",
+    "decline-interview", "decline_interview", "skip-interview", "skip_interview",
+    "opt-in", "opt_in", "optin",
+})
+
+# The receipt fields that MUST be identical between a web-built and a
+# telegram-built client (canonical expected-set equality). generatedAt/company
+# are intentionally excluded — parity is about the department SET, not timestamps.
+PARITY_RECEIPT_FIELDS = (
+    "expectedSet", "builtSet", "declined", "later",
+    "acceptedCustoms", "verticalAdded", "equalityOk",
+)
+
+# Shared provenance reader (canonical_decline.py) — the SAME module
+# build-workforce.py / department-floor.py / qc-interview-completion.py use, so
+# the genuineness gate cannot drift from the real decline/coverage logic. Import
+# is defensive: if the shared reader is unavailable the genuineness gate FAILS
+# (cannot prove "no shortcuts" => not a pass), never silently green.
+try:
+    import canonical_decline as _decline  # noqa: E402  (HERE is on sys.path below)
+except Exception:  # pragma: no cover - import guarded, re-tried in _load_decline
+    _decline = None
+
+
+def _load_decline():
+    global _decline
+    if _decline is not None:
+        return _decline
+    try:
+        if HERE not in sys.path:
+            sys.path.insert(0, HERE)
+        import canonical_decline as _cd  # noqa: E402
+        _decline = _cd
+    except Exception:
+        _decline = None
+    return _decline
 
 
 # ---------------------------------------------------------------------------
@@ -724,6 +789,209 @@ def check_provisioning_receipt(fs, oc_root, ws, dept_slugs):
 
 
 # ---------------------------------------------------------------------------
+# WEB↔TELEGRAM build parity (WG-6): a web /interview-built client must clear the
+# SAME gates AND land an EQUAL provisioning receipt as a telegram-built one, with
+# NO genuine-build shortcuts. These add the two dimensions the five base gates do
+# NOT inspect — decision/transcript GENUINENESS and cross-path receipt EQUALITY.
+# ---------------------------------------------------------------------------
+
+def _consent_opt_in(state):
+    """True iff build-state carries a fully-provenanced self-setup/fast opt-in
+    ownerConsent record (mirrors qc-interview-completion._validate_owner_consent).
+    Such a record legitimizes a from-config (non-interactive) transcript."""
+    consent = (state or {}).get("ownerConsent")
+    if not isinstance(consent, dict):
+        return False
+    required = ("decision", "source", "decidedAt", "decidedBy", "sessionId")
+    if any(not consent.get(k) for k in required):
+        return False
+    return str(consent.get("decision", "")).strip().lower() in _CONSENT_OPT_IN_DECISIONS
+
+
+def check_web_build_genuineness(fs, ws):
+    """
+    Prove the WEB-built client was produced with NO genuine-build shortcut, using
+    the SAME shared reader (canonical_decline) the real build uses. Three vectors,
+    each an independent FAIL:
+
+      (1) SYNTHETIC TRANSCRIPT — the interview answers carry the from-config
+          Non-Interactive banner with no ownerConsent opt-in => fabricated.
+      (2) MISSING DECISION — a department in the receipt's expected/declined set
+          has NO provenanced yes/no/later decision (decision-coverage hole).
+      (3) UNPROVENANCED DECLINE — a "no" recorded without the required provenance
+          (the shared reader REJECTS it) => decline silently ignored.
+    """
+    decline = _load_decline()
+    if decline is None:
+        return {"pass": False, "detail": "canonical_decline shared reader unavailable — "
+                "cannot prove build genuineness (fail-closed)"}
+
+    # build-state (provenance) + transcript (genuineness banner).
+    state = {}
+    state_txt = fs.read_text(os.path.join(ws, ".workforce-build-state.json"))
+    if state_txt:
+        try:
+            state = json.loads(state_txt)
+        except ValueError:
+            return {"pass": False, "detail": ".workforce-build-state.json is unparseable"}
+    transcript = fs.read_text(os.path.join(ws, "workforce-interview-answers.md")) or ""
+
+    # Expected decision-coverage universe: everything the receipt says should be
+    # accounted for (built expected-set + provenance-declined). Derived from the
+    # receipt so the gate stays self-contained (no canonical-floor dependency).
+    rec = {}
+    rec_txt = None
+    for c in (os.path.join(ws, "provisioning-receipt.json"),):
+        rec_txt = fs.read_text(c)
+        if rec_txt:
+            break
+    if rec_txt:
+        try:
+            rec = json.loads(rec_txt)
+        except ValueError:
+            rec = {}
+    expected_ids = list(rec.get("expectedSet") or []) + list(rec.get("declined") or [])
+
+    # (1) synthetic transcript.
+    synthetic = (transcript.lstrip().startswith(NON_INTERACTIVE_ANSWERS_HEADER)
+                 and not _consent_opt_in(state))
+
+    # (2) missing decision (shared reader — provenanced coverage only).
+    missing, _covered = decline.decision_coverage(state, expected_ids)
+
+    # (3) unprovenanced declines rejected by the shared reader.
+    rejections = decline.analyze(state, quiet=True)["rejections"]
+    rejected_ids = [r.get("id") for r in rejections]
+
+    problems = []
+    if synthetic:
+        problems.append("SYNTHETIC transcript (Non-Interactive from-config banner, no "
+                        "ownerConsent opt-in) — fabricated, not owner-authored")
+    if missing:
+        problems.append(f"MISSING provenanced decision(s): {', '.join(missing)}")
+    if rejected_ids:
+        problems.append(f"UNPROVENANCED decline(s) rejected: {', '.join(rejected_ids)}")
+
+    return {
+        "pass": not problems,
+        "transcript_present": bool(transcript.strip()),
+        "transcript_synthetic": synthetic,
+        "decision_expected_count": len(set(_decline_norm_local(x) for x in expected_ids)),
+        "decision_missing": missing,
+        "unprovenanced_declines": rejected_ids,
+        "detail": ("web build genuine: authored transcript + full provenanced "
+                   "decision coverage + no unprovenanced declines"
+                   if not problems else " | ".join(problems)),
+    }
+
+
+def _decline_norm_local(s):
+    """Local mirror of canonical_decline.norm for counting only (never for a
+    verdict — the verdict path always calls the shared reader)."""
+    return re.sub(r"[^a-z0-9]", "", str(s).lower())
+
+
+def _load_receipt_fields(fs, ws):
+    txt = fs.read_text(os.path.join(ws, "provisioning-receipt.json"))
+    if not txt:
+        return None, "provisioning-receipt.json absent"
+    try:
+        rec = json.loads(txt)
+    except ValueError:
+        return None, "provisioning-receipt.json unparseable"
+    return rec, None
+
+
+def check_web_ref_parity(web_rec, ref_rec):
+    """EXPECTED-SET EQUALITY across the two build paths: every canonical receipt
+    field in PARITY_RECEIPT_FIELDS must be identical (normalized, order-insensitive
+    for the set fields). A single divergence FAILS — a web-built client that does
+    not match its telegram twin is not byte-equal."""
+    if web_rec is None or ref_rec is None:
+        return {"pass": False, "detail": "one or both provisioning receipts missing/unparseable"}
+
+    def _canon(v):
+        if isinstance(v, list):
+            return sorted(_decline_norm_local(x) for x in v)
+        return v
+
+    diffs = {}
+    for field in PARITY_RECEIPT_FIELDS:
+        w, r = _canon(web_rec.get(field)), _canon(ref_rec.get(field))
+        if w != r:
+            diffs[field] = {"web": w, "ref": r}
+    return {
+        "pass": not diffs,
+        "compared_fields": list(PARITY_RECEIPT_FIELDS),
+        "diverging_fields": sorted(diffs.keys()),
+        "diffs": diffs,
+        "detail": ("web receipt == telegram receipt across "
+                   f"{len(PARITY_RECEIPT_FIELDS)} canonical fields"
+                   if not diffs else "receipt DIVERGENCE on: "
+                   + ", ".join(f"{k}({v['web']} != {v['ref']})" for k, v in diffs.items())),
+    }
+
+
+def prove_web_parity(web_root, ref_root):
+    """Full web/telegram parity proof. Returns a parity receipt dict.
+
+    overall_pass is TRUE iff:
+      * the web root passes ALL five base ZHE gates, AND
+      * the reference (telegram) root passes ALL five base ZHE gates, AND
+      * the web build is GENUINE (no synthetic transcript / missing decision /
+        unprovenanced decline), AND
+      * the web receipt EQUALS the reference receipt (expected-set equality).
+    """
+    fs_web, fs_ref = LocalFS(web_root), LocalFS(ref_root)
+    r_web = prove("WEB-BUILD", "web-interview", fs_web, local_root=web_root)
+    r_ref = prove("REF-TELEGRAM", "telegram-interview", fs_ref, local_root=ref_root)
+
+    ws_web = r_web.get("workspace") or os.path.join(web_root, "workspace")
+    web_rec, web_rec_err = _load_receipt_fields(fs_web, ws_web)
+    ref_rec, _ref_rec_err = _load_receipt_fields(
+        fs_ref, r_ref.get("workspace") or os.path.join(ref_root, "workspace"))
+
+    genuineness = check_web_build_genuineness(fs_web, ws_web)
+    parity = check_web_ref_parity(web_rec, ref_rec)
+
+    web_ok = bool(r_web.get("overall_pass"))
+    ref_ok = bool(r_ref.get("overall_pass"))
+    overall = web_ok and ref_ok and genuineness["pass"] and parity["pass"]
+
+    return {
+        "mode": "web-telegram-parity",
+        "ts": utc_now_iso(),
+        "prover_version": PROVER_VERSION,
+        "web_root": web_root,
+        "ref_root": ref_root,
+        "gates": {
+            "web_base_zhe_pass": web_ok,
+            "ref_base_zhe_pass": ref_ok,
+            "web_build_genuine": genuineness,
+            "web_ref_receipt_parity": parity,
+        },
+        "web_base_receipt_error": web_rec_err,
+        "web_checks": r_web.get("checks", {}),
+        "ref_checks": r_ref.get("checks", {}),
+        "overall_pass": overall,
+    }
+
+
+def print_parity_summary(r):
+    print(f"=== WEB↔TELEGRAM PARITY PROOF ({r['mode']}) ===")
+    print(f"web_root={r['web_root']}")
+    print(f"ref_root={r['ref_root']}")
+    g = r["gates"]
+    print(f"  [{'PASS' if g['web_base_zhe_pass'] else 'FAIL'}] web base ZHE gates")
+    print(f"  [{'PASS' if g['ref_base_zhe_pass'] else 'FAIL'}] telegram base ZHE gates")
+    gen = g["web_build_genuine"]
+    print(f"  [{'PASS' if gen['pass'] else 'FAIL'}] web build genuine: {gen.get('detail','')}")
+    par = g["web_ref_receipt_parity"]
+    print(f"  [{'PASS' if par['pass'] else 'FAIL'}] receipt parity: {par.get('detail','')}")
+    print(f"OVERALL: {'PASS' if r['overall_pass'] else 'FAIL'}")
+
+
+# ---------------------------------------------------------------------------
 # Optional sibling sub-provers (additive; absent => skipped, never a FAIL)
 # ---------------------------------------------------------------------------
 
@@ -846,11 +1114,113 @@ def write_receipt(r):
     return path
 
 
+# ---------------------------------------------------------------------------
+# Self-contained web-parity entrypoints (the clean invocation the wiring step
+# calls). Materialize the shipped fixture into a sandbox temp dir, prove parity,
+# clean up. Writes NOTHING under ~/.openclaw or ~/.clawdbot.
+# ---------------------------------------------------------------------------
+
+def _load_fixture_builder():
+    if HERE not in sys.path:
+        sys.path.insert(0, HERE)
+    import prove_zhe_web_parity_fixture as _fx  # noqa: E402
+    return _fx
+
+
+def run_web_parity(web_root=None, ref_root=None, shortcut=None, write_dir=None):
+    """Prove web↔telegram parity. If roots are omitted, materialize the shipped
+    fixture (optionally seeding `shortcut`) into a private temp dir and prove
+    against THAT. Returns (parity_receipt, exit_code)."""
+    import tempfile, shutil
+    tmp = None
+    try:
+        if web_root is None or ref_root is None:
+            fx = _load_fixture_builder()
+            tmp = tempfile.mkdtemp(prefix="zhe-web-parity-")
+            web_root, ref_root = fx.build_pair(tmp, shortcut=shortcut)
+        r = prove_web_parity(web_root, ref_root)
+        r["seeded_shortcut"] = shortcut
+        print_parity_summary(r)
+        # Parity receipt goes into the fixture temp dir (or an explicit write_dir),
+        # NEVER the repo receipts/ dir or any home path.
+        out_dir = write_dir or tmp
+        if out_dir:
+            try:
+                os.makedirs(out_dir, exist_ok=True)
+                path = os.path.join(out_dir, "web-parity-receipt.json")
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(r, f, indent=2, ensure_ascii=False)
+                print(f"parity receipt: {path}")
+            except OSError:
+                pass
+        return r, (0 if r["overall_pass"] else 1)
+    finally:
+        if tmp and write_dir is None:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+def web_parity_selftest():
+    """NON-VACUOUS meta-gate: prove the parity mode PASSES on the good fixture and
+    FAILS on EVERY seeded shortcut. Exit 0 iff all expectations hold. This is the
+    invocation the CI wiring step should call — it proves the gate actually bites."""
+    fx = _load_fixture_builder()
+    results = []
+
+    print("── web-parity self-test: GOOD fixture must PASS ──")
+    _r, code = run_web_parity(shortcut=None)
+    good_ok = (code == 0)
+    results.append(("good", "PASS", "PASS" if good_ok else "FAIL", good_ok))
+
+    all_ok = good_ok
+    for shortcut in fx.VALID_SHORTCUTS:
+        print(f"\n── web-parity self-test: seeded '{shortcut}' must FAIL ──")
+        _r, code = run_web_parity(shortcut=shortcut)
+        expect_fail_ok = (code == 1)
+        results.append((shortcut, "FAIL", "FAIL" if expect_fail_ok else "PASS", expect_fail_ok))
+        all_ok = all_ok and expect_fail_ok
+
+    print("\n=== WEB-PARITY SELF-TEST MATRIX ===")
+    for name, expected, got, ok in results:
+        print(f"  [{'OK' if ok else 'XX'}] {name:<22} expected={expected} got={got}")
+    print(f"SELF-TEST: {'PASS (gate is non-vacuous)' if all_ok else 'FAIL'}")
+    return 0 if all_ok else 1
+
+
 def main(argv):
     args = argv[1:]
     if not args or args[0] in ("-h", "--help"):
         print(__doc__)
         sys.exit(2)
+
+    # ----- WEB↔TELEGRAM parity modes (self-contained; no box-registry) -----
+    if "--web-parity-selftest" in args:
+        sys.exit(web_parity_selftest())
+    if "--web-parity" in args:
+        rest = [a for a in args if a != "--web-parity"]
+        web_root = ref_root = shortcut = write_dir = None
+        while rest:
+            flag = rest.pop(0)
+            if flag == "--web-root":
+                web_root = rest.pop(0) if rest else die("--web-root requires a path")
+            elif flag == "--ref-root":
+                ref_root = rest.pop(0) if rest else die("--ref-root requires a path")
+            elif flag == "--shortcut":
+                shortcut = rest.pop(0) if rest else die("--shortcut requires a name")
+            elif flag == "--write-dir":
+                write_dir = rest.pop(0) if rest else die("--write-dir requires a path")
+            else:
+                die(f"unknown --web-parity flag: {flag}")
+        if (web_root is None) != (ref_root is None):
+            die("--web-root and --ref-root must be given together (or neither, to use the fixture)")
+        if shortcut is not None:
+            if web_root is not None:
+                die("--shortcut only applies to the shipped fixture (omit --web-root/--ref-root)")
+            _valid = _load_fixture_builder().VALID_SHORTCUTS
+            if shortcut not in _valid:
+                die(f"unknown --shortcut {shortcut!r}; valid: {', '.join(_valid)}")
+        _r, code = run_web_parity(web_root=web_root, ref_root=ref_root,
+                                  shortcut=shortcut, write_dir=write_dir)
+        sys.exit(code)
 
     with_subprovers = False
     if "--with-subprovers" in args:

@@ -96,6 +96,16 @@ try:
 except Exception:  # noqa: BLE001
     _shared_decline_rejections = None
 
+# ── WG-10c: no-web-only-store assertion (Check #7) ───────────────────────────
+# The Command Center / dashboard DB is ONLY a downstream mirror of the canonical
+# files. This sibling check proves the store never holds a department decision or an
+# interview answer the files do not (and never contradicts a decision value the files
+# own). Imported defensively so the rest of the gate still runs if it is unavailable.
+try:
+    from _qc_no_web_store import check_no_web_store as _check_no_web_store
+except Exception:  # noqa: BLE001
+    _check_no_web_store = None
+
 # ── Path resolution (no tildes; mirrors detect_platform.py pattern) ──────────
 def _resolve_openclaw_root() -> Path:
     """Resolve OpenClaw root: VPS=/data/.openclaw, Mac=$HOME/.openclaw."""
@@ -812,6 +822,7 @@ def build_verdict(
     legacy_result: dict | None = None,
     legacy_substance: dict | None = None,
     state: dict | None = None,
+    web_store_result: dict | None = None,
 ) -> tuple:
     """
     Returns (verdict_str, exit_code, details_dict).
@@ -968,6 +979,27 @@ def build_verdict(
             + "; ".join(decline_violations)
         )
 
+    # Check #7: No-web-only-store (WG-10c). The web/DB mirror must be a SUBSET/derivative
+    # of the canonical files — it may never hold a department decision or interview answer
+    # the files do not, nor contradict a decision value the files own. A store that adds
+    # authority is a HARD FAIL, so the files stay the sole source of truth. Skips (warning
+    # only) when no mirror store was supplied — a box with no dashboard yet has nothing to
+    # verify.
+    web_store_violations = []
+    if web_store_result and not web_store_result.get("skipped"):
+        web_store_violations = web_store_result.get("violations", [])
+        if web_store_violations:
+            hard_failures.append(
+                f"[web-only-store] {len(web_store_violations)} record(s) exist only in "
+                f"(or contradict) the canonical files via the web/DB mirror — the store is "
+                f"acting as a source of authority instead of a downstream mirror: "
+                + "; ".join(f"{v['kind']}:{v['key']}" for v in web_store_violations)
+            )
+        if web_store_result.get("note"):
+            warnings.append(f"[check-7] {web_store_result['note']}")
+    elif web_store_result and web_store_result.get("skipped"):
+        warnings.append(f"[check-7 skipped] {web_store_result.get('note','no mirror store supplied')}")
+
     # Determine verdict
     if hard_failures:
         verdict = "FAIL"
@@ -1002,6 +1034,13 @@ def build_verdict(
         "nudgeIssues": nudge_result.get("issues", []),
         "fabricationViolations": fabrication_violations,
         "declineProvenanceViolations": decline_violations,
+        # Check #7 (WG-10c): no-web-only-store. Machine-readable summary; a non-empty
+        # violations list is a HARD FAIL above.
+        "webStoreCheck": {
+            "skipped": bool(web_store_result.get("skipped")) if web_store_result else True,
+            "violations": web_store_violations,
+            "note": (web_store_result or {}).get("note", ""),
+        },
         # Issue #3: decisionCoverage verdict so the run-full-install interview gate
         # surfaces un-honorable declines (which the build enforcer would silently
         # drop -> over-build) alongside the other checks. A non-empty list is a
@@ -1148,6 +1187,25 @@ def main():
             "'<!-- LEGACY-INTERVIEW: pre-standard -->' marker in the transcript."
         ),
     )
+    parser.add_argument(
+        "--mirror-store",
+        help=(
+            "Path to a JSON mirror export of the web/DB store (check #7 no-web-only-store): "
+            '{"decisions": {dept: token}, "answers": {field: value}}. When supplied, the '
+            "store must be a SUBSET/derivative of the canonical files (no decision or answer "
+            "that lives only in the store; no store value that contradicts the files)."
+        ),
+        default=None,
+    )
+    parser.add_argument(
+        "--mirror-db",
+        help=(
+            "Path to a sqlite mission-control.db mirror (check #7). Reads department_decisions/"
+            "decisions and interview_answers/answers tables read-only; a missing table means "
+            "that datum is not mirrored yet (empty store)."
+        ),
+        default=None,
+    )
     args = parser.parse_args()
 
     # Resolve paths
@@ -1221,10 +1279,24 @@ def main():
         else None
     )
 
+    # Check #7 (WG-10c): no-web-only-store. Only runs when a mirror store is supplied;
+    # otherwise it skips (a box with no dashboard mirror yet has nothing to verify).
+    web_store_result = None
+    if _check_no_web_store is not None and (args.mirror_store or args.mirror_db):
+        mirror_json = None
+        if args.mirror_store:
+            mirror_json = load_json(Path(args.mirror_store), "mirror-store JSON")
+        web_store_result = _check_no_web_store(
+            state, transcript,
+            mirror=mirror_json,
+            mirror_db=Path(args.mirror_db) if args.mirror_db else None,
+        )
+
     # Assemble verdict
     verdict, exit_code, details = build_verdict(
         count_result, jargon_hits, field_result, nudge_result, fabrication_result,
         legacy_result, legacy_substance, state=state,
+        web_store_result=web_store_result,
     )
 
     # Output
@@ -1250,6 +1322,9 @@ def main():
         print(f"  No-fabrication : {'PASS' if not fab_violations else f'FAIL ({len(fab_violations)} violation(s))'}")
         decline_viol = details.get("declineProvenanceViolations", [])
         print(f"  Decline prov.  : {'PASS' if not decline_viol else f'FAIL ({len(decline_viol)} unprovenanced decline(s))'}")
+        _ws = details.get("webStoreCheck", {})
+        _ws_viol = _ws.get("violations", [])
+        print(f"  No-web-store   : {'SKIP' if _ws.get('skipped') else ('PASS' if not _ws_viol else f'FAIL ({len(_ws_viol)} web-only/override)')}")
 
         if details["warnings"]:
             print("\n  WARNINGS:")
