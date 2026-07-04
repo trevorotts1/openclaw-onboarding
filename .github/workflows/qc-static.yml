@@ -1132,6 +1132,13 @@ jobs:
           bash tests/unit/qc-maintenance-quiet-guard.test.sh
           echo "✓ qc-maintenance-quiet-guard.test.sh (owner-chat alert suppressed under OPENCLAW_MAINTENANCE=1 / --quiet) all pass"
 
+      - name: "onboarding-state obs_* API regression lock (v17.0.19)"
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash tests/unit/onboarding-state-obs-api.test.sh
+          echo "✓ onboarding-state-obs-api.test.sh (shim defines obs_seed_state/obs_verify_skill/obs_gate_summary; updater sources it robustly + gate reachable) all pass"
+
       - name: Skill 41 L0 static QC checklist (composes every qc-*.sh gate)
         shell: bash
         run: |
