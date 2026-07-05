@@ -4,6 +4,31 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.2.8] - 2026-07-05 — Command Center emit helper (fail-soft) + Tier-0 presence-check path fix
+
+### Added (FIX-S36-01)
+- `scripts/cc-task.sh` — a graceful-degrading Command Center Kanban helper (modeled byte-for-byte
+  on Skill 38's `scripts/cc-task.sh`) that IMPLEMENTS the previously doc-only "emit" moments in
+  INSTRUCTIONS.md. `start` creates-or-reuses the Skill-36 install card and moves it to
+  `in_progress`; `review` moves it to `review` on QC pass. It never self-grades review→done (the
+  independent CC auto-scorer is the only authority) and never fails the caller — with no
+  `MC_API_TOKEN` / unreachable board it prints one operator-only stderr note and exits 0.
+- Wired: `INSTALL.md` Autonomous Setup Execution (new Pre-Action 0.5) invokes
+  `cc-task.sh start … || true`; the `qc-ghl-mcp-setup.sh` PASS branch invokes
+  `cc-task.sh review || true`. INSTRUCTIONS.md's "Command Center hooks" section now names the
+  helper as the implementing mechanism (config: `MC_API_TOKEN`, `MISSION_CONTROL_URL`, optional
+  `MC_SKILL36_AGENT_ID` / `MC_SKILL36_SOP_ID`).
+
+### Fixed (FIX-S36-02 — qc-ghl-mcp-setup.sh)
+- Section H Tier-0 presence check no longer looks in a **sibling of** master-files
+  (`$(dirname "$MASTER_FILES_DIR")/44-…`), which never matched → the Tier-0 `caf` asserts
+  silently downgraded to warn-only on every real box. Now checks
+  `$MASTER_FILES_DIR/44-convert-and-flow-operator` **OR** `$SKILLS_DIR_DEFAULT/44-convert-and-flow-operator`
+  **OR** `~/.openclaw/tools/convert-and-flow-cli`, so an installed Skill 44 is actually detected and
+  the `caf` PATH / `caf doctor` checks assert (not warn) as intended.
+
+---
+
 ## [v1.2.7] - 2026-07-01 — docs: GHL PIT alias cross-ref + canonicalize-once guidance
 
 ### Changed
