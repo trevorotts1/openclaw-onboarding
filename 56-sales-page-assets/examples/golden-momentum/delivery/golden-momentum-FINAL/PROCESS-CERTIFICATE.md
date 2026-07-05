@@ -3,7 +3,7 @@
 - Certificate kind: `sales-page-assets-process-certificate`
 - Run id: `marcus-vale__momentum-engine__run-20260702-01`
 - Funnel type: `sales_page_assets`
-- Issued at: `2026-07-05T15:01:01Z`
+- Issued at: `2026-07-05T17:10:55Z`
 - Skill version: `1.1.0`
 - Example nonce (specimen, not a secret): `golden-momentum-nonce-v1`
 - All phases pass: **True**

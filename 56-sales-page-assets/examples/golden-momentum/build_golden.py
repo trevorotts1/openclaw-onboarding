@@ -939,6 +939,13 @@ def _run(cmd):
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
 
+def _sanitize_paths(text):
+    """Strip the absolute skill-root prefix from captured prover output so the
+    committed REJECTION-RESULTS.json carries repo-relative paths only — never an
+    operator-machine absolute path (fleet-wide privacy invariant / QC guard)."""
+    return text.replace(str(SKILL_DIR) + os.sep, "").replace(str(SKILL_DIR), ".")
+
+
 def write_ledgers():
     (HERE / "brief.json").write_text(json.dumps(build_brief(), indent=2), encoding="utf-8")
     (HERE / "image_plan.json").write_text(json.dumps(build_image_plan(), indent=2), encoding="utf-8")
@@ -1117,6 +1124,7 @@ def capture_rejections():
 
     def cap(name, script, args, expect):
         rc, out = _run([PY, str(SCRIPTS / script), *args])
+        out = _sanitize_paths(out)
         tail = "\n".join([l for l in out.strip().splitlines() if l.strip()][-4:])
         results[name] = {"prover": script, "rc": rc, "rejected": rc != 0,
                          "expected_code": expect, "code_present": expect in out,
@@ -1154,6 +1162,7 @@ def capture_rejections():
             nf.write_text("bad-run-nonce", encoding="utf-8")
             os.chmod(nf, 0o600)
             rc, out = _run([PY, str(ORCH), "--run-dir", str(rd), "--nonce", "bad-run-nonce"])
+            out = _sanitize_paths(out)
             no_cert = not (rd / "PROCESS-CERTIFICATE.json").exists()
             ent = results.setdefault(name, {})
             ent["e2e_orchestrator_rc"] = rc

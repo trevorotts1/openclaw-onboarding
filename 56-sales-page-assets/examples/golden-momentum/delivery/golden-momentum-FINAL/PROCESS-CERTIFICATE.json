@@ -4,7 +4,7 @@
   "run_id": "marcus-vale__momentum-engine__run-20260702-01",
   "funnel_type": "sales_page_assets",
   "skill_version": "1.1.0",
-  "issued_at": "2026-07-05T15:01:01Z",
+  "issued_at": "2026-07-05T17:10:55Z",
   "nonce_fingerprint": "0894b0ef7e30310c",
   "ledger_hashes": {
     "brief.json": "4368001aa242e46d8677893670fe4a259ec851942756eb343ef5378ff3b8b70e",
@@ -82,5 +82,5 @@
     "two_track": "Track 1 client Docs (editable) + Track 2 build bundle (Skill 6)",
     "bump_seam": "Skill 44 order-bump widget (P4->P5 board handoff)"
   },
-  "signature": "4fb2d84efb96cc234b90a9bb2afc8ec62319885041f31de2bb01b08783b994c8"
+  "signature": "f2fd0c726dbb5318dad5a5d07dfe70976795c676bf5491f9bf7febc5d5fecb33"
 }
