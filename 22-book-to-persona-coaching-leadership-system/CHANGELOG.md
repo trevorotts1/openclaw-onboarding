@@ -14,6 +14,8 @@ FOUNDATION train FDN-6, fix F2.1 (persona-matching-analysis-2026-07-05.md §2.2)
 
 `update-skills.sh` Step U6b surfaces the `.persona-local-reembed-queue` marker in the operator completion report (operator-visible only, never client-visible — silent-updates doctrine).
 
+Shared-gate RE-LAND: `.github/workflows/both-paths-delivery-guard.yml` step D12 hard-asserted the retired equality literal `chunk_count != manifest chunk_count`, which the SUPERSET semantics above removed — the stale assertion would have failed the repo-wide both-paths delivery guard. Updated D12 to assert the superset wording (`chunk_count >= manifest`) plus the `_HAS_LOCAL_DELTA` decision marker, so the guard now verifies the F2.1 superset gate rather than the removed equality string.
+
 New regression lock: `tests/unit/provision-preserves-local-personas.test.sh` (16 assertions: union-merge preservation + seed-wins + no-drift md5; superset index → skip/preserve; genuine subset → still re-provisions; export→re-insert round-trip).
 
 ## v6.14.0 - 2026-07-05 - feat(pipeline): ONE atomic "publish personas to the fleet" command + workspace↔repo divergence guards
