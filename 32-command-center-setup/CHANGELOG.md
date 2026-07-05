@@ -1,5 +1,14 @@
 # Changelog — 32-command-center-setup
 
+## v12.9.28 — 2026-07-05 — F4.5: align CORE_UPDATES persona wording with the matching protocol (doctrine only)
+
+- **F4.5 (DEP-9) — Department-Head Pattern wording corrected.** `CORE_UPDATES.md` previously said
+  departments get "Personas assigned from coaching-personas library", conflating a department's
+  `dept_label` (its department-head display name) with a coaching persona. Corrected to state that
+  coaching personas are matched **per task, at runtime** and are NOT assigned to departments, per
+  `23-ai-workforce-blueprint/persona-matching-protocol.md`. Added a terminology callout pointing to
+  `TERMINOLOGY.md` → "Persona — three distinct meanings". No provisioning/behavior change.
+
 ## v12.9.26 — 2026-07-03 — OQ-1: locked interview-mode CC is BY DESIGN (docs + gating comments)
 
 - **OQ-1 (ratified 2026-07-03) — Locked interview-mode Command Center.** The CC now ships

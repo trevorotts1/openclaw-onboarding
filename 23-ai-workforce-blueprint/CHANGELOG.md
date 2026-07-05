@@ -1,7 +1,32 @@
 <!-- canonical-floor: 28 -->
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (22 mandatory + 6 universal-primary = 28). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 
-## [v16.2.10] - 2026-06-30 - fix(presentations): migrate the presenter speech-build harness off the hardcoded Anthropic HTTP transport to the client's OpenAI-compatible provider (Ollama Cloud primary, OpenRouter fallback)
+## [v17.0.26] - 2026-07-05 - docs(persona): DEP-9 doctrine — no-naked degraded state (F3.3) + three-way persona terminology (F4.5)
+
+Persona doctrine surgery, no code/API change, shipped WITHIN the current v17.0.26 (skill 23's version is
+coupled to the repo-wide onboarding `/version` via `bump-version.sh --check`, so no isolated skill bump —
+per the DEP-9 instruction "do NOT do a repo-wide onboarding version bump"). Enforced by an extended CI guard.
+
+- **F3.3 — `persona-matching-protocol.md` "What if Skill 22 is not installed?" rewritten.** The old
+  wording ("No persona matching happens. The agent operates without persona guidance. **This is a valid
+  state.**") normalized persona-less operation, contradicting the no-naked-tasks invariant. It is now a
+  **DEGRADED** state (not a valid steady state) with two mandatory obligations: (1) attach the default
+  fallback persona (`blackceo-house-voice`, the `DEFAULT_PERSONA_FALLBACK` constant — excluded from
+  normal persona competition, surfaces only as a fallback; a purely mechanical task keeps its
+  `no_persona_required` flag but still carries `governance_persona_id` = the `GOVERNANCE_PERSONA_FALLBACK`
+  constant `covey-7-habits`), and (2) an operator-visible install nag (never client-facing). Added a
+  top-of-file note declaring this protocol governs the coaching persona (concept 2) ONLY.
+- **F3.3 regression guard.** `.github/workflows/persona-task-mode-wiring-guard.yml` header extended with
+  group **(B2)**, and `tests/unit/persona-task-mode-wiring.test.sh` gains a (B2) assertion: the
+  Skill-22-absent edge case must contain `DEGRADED` + `DEFAULT_PERSONA_FALLBACK` + a default-persona
+  attachment + "install nag", and must NOT contain the old "operates without persona guidance. This is a
+  valid state" wording — so the invariant cannot silently regress.
+- **F4.5 — terminology surgery (doctrine text only, no API break).** `SOP-00-Owner-Task-Routing.md`: the
+  ingest `persona` key is now documented as a `dept_label` / `workspace_hint` (a routing hint, NOT a
+  coaching persona; the coaching persona is matched per task at runtime inside `createTaskCore`). See the
+  repo-root `TERMINOLOGY.md` "Persona — three distinct meanings" section (concept 1 `dept_label`/
+  `workspace_hint` vs concept 2 coaching persona vs concept 3 buyer/customer avatar) and the aligned
+  wording in skill 32 `CORE_UPDATES.md` and skill 52 `SKILL.md`.
 
 Client model sovereignty / runtime portability: the speech-build harness POSTed directly to the
 Anthropic Messages API (x-api-key + anthropic-version headers, required ANTHROPIC_API_KEY, parsed

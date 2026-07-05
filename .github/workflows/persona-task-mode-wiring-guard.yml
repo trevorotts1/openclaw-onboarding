@@ -5,7 +5,9 @@ name: persona-task-mode-wiring-guard
 #   (A) skill-22's CORE_UPDATES.md no longer lands the Persona Reflex BODY through
 #       the real merger (a marker without an execution-path body),
 #   (B) persona-matching-protocol.md drops the mandatory "Load and Apply the Task
-#       Mode" step,
+#       Mode" step, OR (B2) its "Skill 22 not installed" edge case regresses from a
+#       DEGRADED state (mandatory DEFAULT_PERSONA_FALLBACK attachment + install nag)
+#       back to normalizing persona-less operation as a "valid state",
 #   (C) funnel_rubrics R-PERSONA-GROUNDING stops grading governance-application,
 #   (D) the embedding engine loses mode-aware (leadership) retrieval,
 #   (E) a role-library §2 ships without the concrete Task-Mode load step.

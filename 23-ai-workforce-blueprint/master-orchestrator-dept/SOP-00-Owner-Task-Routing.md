@@ -110,11 +110,13 @@ x-webhook-signature: {HMAC-SHA256 of body with WEBHOOK_SECRET}
   "source": "telegram",
   "source_ref": "telegram:msg:{message_id}",
   "department_slug": "<slug from Step 2>",
-  "persona": "<department head persona name>",
+  "persona": "<dept_label — the department-head display name; a WORKSPACE-RESOLUTION HINT, not a coaching persona>",
   "external_session_id": "{session_id}",
   "idempotency_key": "{sha256 of source_ref + title}"
 }
 ```
+
+> **The `persona` key here is a `dept_label` / `workspace_hint`, NOT a coaching persona.** It is only a routing hint the Command Center uses to resolve the target workspace by its department-head display name. It does **not** assign a coaching/leadership persona to the task. The actual coaching persona (from the 81-persona `coaching-personas` library) is matched **per task, at runtime** by the persona selector inside `createTaskCore` after ingest — never hardcoded here and never derived from a department. Sending this key is optional; the department is resolved from `department_slug`. See `persona-matching-protocol.md` (core principle: "Personas are NOT assigned to departments") and `TERMINOLOGY.md` → "Persona — three distinct meanings".
 
 **Priority mapping:**
 - Owner says "urgent", "ASAP", "right now", "emergency" → `critical`

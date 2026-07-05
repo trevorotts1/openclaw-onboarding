@@ -116,6 +116,26 @@ if [ "$B_OK" -eq 1 ]; then
 else
     fail "(B) protocol is missing the mandatory Task-Mode load step"
 fi
+
+# (B2) NO-NAKED DEGRADED-STATE INVARIANT — the "Skill 22 not installed" edge case
+# must NOT normalize persona-less operation. It must declare a DEGRADED state with a
+# mandatory default-persona attachment (DEFAULT_PERSONA_FALLBACK) + install nag, so a
+# future edit cannot silently regress it back to "valid state / operates without
+# persona guidance". (F3.3)
+B2_OK=1
+grep -qi "DEGRADED" "$PROTO" || B2_OK=0
+grep -qF "DEFAULT_PERSONA_FALLBACK" "$PROTO" || B2_OK=0
+grep -qi "default fallback persona\|default-persona attachment\|Mandatory default-persona" "$PROTO" || B2_OK=0
+grep -qi "install nag" "$PROTO" || B2_OK=0
+# The old normalizing wording must be GONE (regression tripwire).
+if grep -qi "operates without persona guidance. This is a valid state" "$PROTO"; then
+    B2_OK=0
+fi
+if [ "$B2_OK" -eq 1 ]; then
+    pass "(B2) Skill-22-absent edge case is a DEGRADED state with mandatory default-persona attachment + install nag"
+else
+    fail "(B2) protocol regressed: Skill-22-absent must be DEGRADED (default-persona + nag), not 'valid state'"
+fi
 echo ""
 
 # ---------------------------------------------------------------------------
