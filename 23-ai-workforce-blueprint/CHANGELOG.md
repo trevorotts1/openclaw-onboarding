@@ -1,6 +1,53 @@
 <!-- canonical-floor: 28 -->
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (22 mandatory + 6 universal-primary = 28). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 
+## [Unreleased — DEP-3, folds into the v17 persona-matching capstone] - 2026-07-05 - fix(persona-selector): F3.5 — category-level stickiness task-signal bypass (perspective/specialty deference)
+
+> Version markers are intentionally LEFT at v17.0.26. In this repo `skill-version.txt`
+> and `SKILL.md version:` are repo-wide lockstep markers (see
+> `scripts/version-markers.json` SSOT), so bumping them is a repo-wide onboarding
+> version bump — deliberately deferred to the capstone consolidation to avoid
+> per-train version collisions. This entry documents the change without rolling the
+> SSOT.
+
+Task-deference fix (DEP-3 / persona-matching overhaul). `check_sticky_assignment()`
+serves ONE cached persona for the whole `(department, task_category)` key once
+`last_score >= 0.5`, short-circuiting the funnel, the Layer-5 semantic stage, AND
+the perspective/specialty recall bonuses. With only ~17 coarse categories, two very
+different tasks collapse to the same key — e.g. "write a sales email to Black women
+founders" and "write a cold email to plumbing wholesalers" both infer
+`(marketing, email-outreach)` — so the second task's cached pick is served for the
+first, and a lived-experience or named specialist never gets a chance while the row
+is TRUSTED (anti-staleness only fires after `ANTI_STALENESS_THRESHOLD` identical
+picks in a row).
+
+`23-ai-workforce-blueprint/scripts/persona-selector-v2.py`:
+- New `task_signal_bypasses_stickiness(task_text, paths)`: before serving a sticky
+  row, run the two CHEAPEST task-signal detectors already in the module — both pure
+  Python, NO embedding, NO subprocess, NO network:
+    1. `infer_task_perspectives()` — pure-regex scan over `PERSPECTIVE_KEYWORDS`.
+    2. `find_specialists_by_custom_tags()` — substring probe of the task text against
+       personas' distinctive `custom[]` specialty tags.
+  If EITHER fires (the task explicitly invokes a perspective LENS or names a
+  distinctive specialty), stickiness is skipped for THIS task and the selector falls
+  through to a fresh full-funnel selection so perspective/specialty routing gets its
+  chance. The perspective probe short-circuits before the (still cheap)
+  `persona-categories.json` read for the common lens case; any load error fails OPEN
+  (returns False) so the check can never break the trusted fast path.
+- `main()` select path: when a trusted sticky row exists AND the bypass fires, the
+  sticky row is dropped and the fresh-selection response carries
+  `sticky_bypassed: "task-signal"` for audit. GENERIC tasks fire neither detector →
+  `breakdown.stickiness == True` fast path is UNCHANGED (added cost: one keyword scan).
+- Regression guard: `scripts/test-persona-selector-sticky-task-signal.sh` —
+  hermetic, heuristic, canonical persona-categories.json. Asserts (1) a generic
+  content-write task keeps the trusted sticky fast path, (2) a perspective task
+  ("Black women") in the SAME category is bypassed via `task-signal`, (3) a generic
+  email task keeps the fast path, (4) a named-specialty task ("network marketing") in
+  the SAME category is bypassed and surfaces the correct specialist.
+
+Matcher-only; no schema, dispatch, or command-center change. `Touches: matcher only`
+per the analysis. Behaviour on generic tasks is provably unchanged.
+
 ## [v16.2.10] - 2026-06-30 - fix(presentations): migrate the presenter speech-build harness off the hardcoded Anthropic HTTP transport to the client's OpenAI-compatible provider (Ollama Cloud primary, OpenRouter fallback)
 
 Client model sovereignty / runtime portability: the speech-build harness POSTed directly to the
