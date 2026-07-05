@@ -4,7 +4,7 @@ All notable changes to this skill are documented here.
 
 ---
 
-## [v1.2.8] - 2026-07-05 — fix: secret-printing greps → existence-only (FIX-XC-07); model prescription → cheapest non-metered on-box (FIX-XC-09g); Command Center card → review, never done (FIX-XC-01b)
+## [v1.2.9] - 2026-07-05 — fix: secret-printing greps → existence-only (FIX-XC-07); model prescription → cheapest non-metered on-box (FIX-XC-09g)
 
 ### Security (FIX-XC-07 — no secret VALUES in transcripts/logs)
 - `INSTALL.md` Pre-Action 2 credential hunt: every credential check is now EXISTENCE-ONLY.
@@ -26,6 +26,8 @@ All notable changes to this skill are documented here.
 ### Notes
 - Repo-level: a new deterministic shipped gate `scripts/qc-assert-no-secret-printing-grep.sh`
   (wired into `qc-static.yml`) fails any secret-pattern grep in the 36/38 SOPs that lacks `-q`/`-l`/`-L`.
+
+## [v1.2.8] - 2026-07-05 — docs: Command Center card moves to review, never done (board review-skip root fix)
 
 ### Changed (FIX-XC-01b — Command Center card moves to review, never done)
 - `INSTRUCTIONS.md` "Command Center hooks" — the **Install complete** hook now moves the card to
