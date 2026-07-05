@@ -326,6 +326,17 @@ echo "$PASS_PREFIX ALL PREREQUISITES PASS — proceeding to install Phase 0."
 # in_progress (install is starting). FAIL-SOFT — cc-task.sh always exits 0 and
 # the `|| true` guarantees it can NEVER change this script's exit code. No-ops
 # silently when the Command Center is absent.
+#
+# Report whether Command Center reporting is wired (FIX-S36-07): cc-task.sh no-ops
+# unless MC_API_TOKEN is set, so the install task silently never lands on the board
+# when it is missing. Print an explicit ACTIVE/INACTIVE line so the operator sees
+# the state instead of guessing. (MC_API_TOKEN + the optional MC_SKILL38_SOP_ID /
+# MC_SKILL38_AGENT_ID Triad are documented in INSTALL.md.)
+if [ -n "${MC_API_TOKEN:-}" ]; then
+  echo "$PASS_PREFIX Command Center reporting: ACTIVE (MC_API_TOKEN set — the install task will be carded to the board)."
+else
+  echo "$PASS_PREFIX Command Center reporting: INACTIVE (MC_API_TOKEN not set — install continues; set MC_API_TOKEN [+ MC_SKILL38_SOP_ID / MC_SKILL38_AGENT_ID] to card this install on the Command Center — see INSTALL.md)."
+fi
 bash "$(dirname "$0")/cc-task.sh" start || true
 
 exit 0
