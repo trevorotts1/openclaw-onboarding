@@ -2537,6 +2537,75 @@ PYEOF
   fi
 
   # ----------------------------------------------------------
+  # FIX-PRES-02: PRESENTATION DEPS CONVERGE (idempotent, fail-soft). A Mac box that
+  # predates install.sh Step 6.5 never receives the four presentation-pipeline
+  # runtime deps (soffice, pdftoppm, reportlab, python-pptx) from update-skills.sh,
+  # so it would forever refuse every deck build at GATE 1 even after pulling the
+  # latest skills. Converge them here exactly like install.sh Step 6.5's Mac branch
+  # (VPS is handled by the reassert script the same step writes), then hard-WARN if
+  # any dep is still missing. It never blocks the update; the following
+  # qc-completeness gate re-checks the same four deps.
+  # ----------------------------------------------------------
+  converge_presentation_deps() {
+    echo ""
+    echo "  Converging presentation-pipeline runtime deps (soffice, pdftoppm, reportlab, python-pptx)..."
+    if [ "${OPENCLAW_PLATFORM:-}" = "vps" ]; then
+      local _reassert="/data/.openclaw/scripts/reassert-presentation-deps.sh"
+      if [ -x "$_reassert" ]; then
+        echo "    VPS: running the idempotent reassert script ($_reassert)..."
+        bash "$_reassert" >/dev/null 2>&1 || echo "    ⚠ reassert script reported an issue (non-fatal)"
+      else
+        echo "    VPS: reassert script not present yet ($_reassert) — run install.sh Step 6.5 once to create it."
+      fi
+    else
+      # Mac: brew formula for poppler, NONINTERACTIVE cask for LibreOffice (loud
+      # warn on failure — a cask can need an admin password), pip --user for the
+      # two Python modules. NONINTERACTIVE + no `read` so a silent roll never hangs.
+      if command -v pdftoppm >/dev/null 2>&1; then
+        echo "    pdftoppm (poppler) already present"
+      elif command -v brew >/dev/null 2>&1; then
+        brew install poppler >/dev/null 2>&1 && echo "    poppler (pdftoppm) installed" \
+          || echo "    ⚠ brew install poppler failed — pdftoppm unavailable (Phase-6 QC PNG extraction will fail)"
+      else
+        echo "    ⚠ Homebrew not found — cannot install poppler (pdftoppm)"
+      fi
+      if command -v soffice >/dev/null 2>&1 || [ -x /Applications/LibreOffice.app/Contents/MacOS/soffice ]; then
+        echo "    soffice (LibreOffice) already present"
+      elif command -v brew >/dev/null 2>&1; then
+        echo "    Installing LibreOffice (soffice) via NONINTERACTIVE Homebrew cask..."
+        NONINTERACTIVE=1 brew install --cask libreoffice >/dev/null 2>&1 \
+          && echo "    LibreOffice cask install completed" \
+          || echo "    ⚠ NONINTERACTIVE LibreOffice cask install failed (may need an admin password). Run once interactively: brew install --cask libreoffice"
+      else
+        echo "    ⚠ Homebrew not found — cannot install LibreOffice (soffice)"
+      fi
+      if command -v python3 >/dev/null 2>&1; then
+        if python3 -c "import reportlab, pptx" >/dev/null 2>&1; then
+          echo "    reportlab + python-pptx already importable"
+        else
+          echo "    Installing reportlab + python-pptx (pip --user --break-system-packages)..."
+          python3 -m pip install --user --break-system-packages reportlab python-pptx >/dev/null 2>&1 \
+            && echo "    reportlab + python-pptx installed" \
+            || echo "    ⚠ pip install reportlab/python-pptx failed — deck assembly + presenter PDF will fail"
+        fi
+      fi
+    fi
+    # Hard end-of-converge WARNING when any of the four deps is STILL missing.
+    local _pres_missing=""
+    command -v soffice  >/dev/null 2>&1 || _pres_missing="${_pres_missing} soffice"
+    command -v pdftoppm >/dev/null 2>&1 || _pres_missing="${_pres_missing} pdftoppm"
+    if command -v python3 >/dev/null 2>&1; then
+      python3 -c "import reportlab, pptx" >/dev/null 2>&1 || _pres_missing="${_pres_missing} python(reportlab+python-pptx)"
+    fi
+    if [ -n "$_pres_missing" ]; then
+      echo "  ⚠⚠ PRESENTATION_DEPS_MISSING after converge:${_pres_missing}. The Skill 23 presentation pipeline will refuse every deck build at GATE 1 until these resolve. Mac: brew install poppler; brew install --cask libreoffice; python3 -m pip install --user --break-system-packages reportlab python-pptx. VPS: bash /data/.openclaw/scripts/reassert-presentation-deps.sh"
+    else
+      echo "  ✓ presentation deps converged: soffice + pdftoppm + reportlab + python-pptx all present"
+    fi
+  }
+  converge_presentation_deps
+
+  # ----------------------------------------------------------
   # v10.15.4: Post-pull qc-completeness check. Read-only. Runs against the live
   # workforce after every successful skill pull.
   #
