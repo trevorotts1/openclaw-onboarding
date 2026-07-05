@@ -44,7 +44,7 @@ Use the report to orient before answering "what matters most here?" questions.
 ## The two tiers at runtime (do not confuse them)
 
 - **AST hook (free, automatic):** runs on every git commit, keeps the STRUCTURAL graph current. You never trigger this manually — it just happens.
-- **Semantic re-map (owner-triggered):** when the owner wants a fresh semantic pass after big changes, run `/graphify .` (or `graphify extract . --backend ollama` with the client's Ollama). **Never** auto-run the semantic pass on a schedule or per-commit — it uses the client's model time and must be owner-triggered.
+- **Semantic re-map (owner-triggered):** when the owner wants a fresh semantic pass after big changes, run the **explicit** `graphify extract . --backend ollama` (with the client's own genuinely-local Ollama model and `OLLAMA_BASE_URL=…/v1`). **Always pin `--backend ollama`** — a bare `/graphify .` re-map lets graphify's `detect_backend()` auto-pick a resident API key and can silently route the client's corpus to a paid/Anthropic backend (a billing leak and a co-mingling/sovereignty violation). **Never** auto-run the semantic pass on a schedule or per-commit — it uses the client's model time and must be owner-triggered.
 
 ## The model + no-co-mingling rules at runtime
 

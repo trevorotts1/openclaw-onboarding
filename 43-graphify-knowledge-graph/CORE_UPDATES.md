@@ -23,9 +23,16 @@ Only grep or spawn explore agents if the graph cannot answer.
 
 TWO TIERS — do not confuse:
   • AST structure pass = FREE + AUTOMATIC on every git commit (graphify hook). Never run manually.
-  • Semantic re-map  = OWNER-TRIGGERED ONLY (/graphify .). Uses the CLIENT'S OWN model
+  • Semantic re-map  = OWNER-TRIGGERED ONLY. Uses the CLIENT'S OWN model
     (their Ollama / configured model — NEVER the operator's keys). Never schedule or
     auto-run the semantic pass; it costs the client's model time.
+
+BACKEND-PIN RULE (binding): a semantic re-map MUST be run as the explicit
+`graphify extract . --backend ollama` (with the client's own genuinely-local model). A BARE
+`/graphify .` re-map is a VIOLATION — graphify's detect_backend() then auto-picks whatever
+API key is resident on the box and can silently route THIS client's corpus to a paid/Anthropic
+backend (both a billing leak and a co-mingling/sovereignty breach). Always pin `--backend ollama`;
+never let the backend be auto-detected.
 
 NO CO-MINGLING: the graph is THIS client's. Never query/seed/share another client's
 graphify-out/. If the client's own model isn't available, STOP and surface it — never
@@ -38,9 +45,12 @@ and AGENTS.md N0.
 ```markdown
 ## Graphify (Skill 43)
 
-- Map ONCE with the client's own Ollama (free + private):
-    OLLAMA_BASE_URL=http://localhost:11434 OLLAMA_MODEL=deepseek-v4-pro:cloud \
+- Map ONCE with the client's own GENUINELY-LOCAL Ollama model (free + private):
+    OLLAMA_BASE_URL=http://localhost:11434/v1 OLLAMA_MODEL=<client-local-model> \
       graphify extract . --backend ollama
+  (OLLAMA_BASE_URL MUST end in /v1. Use a LOCAL model with NO ":cloud" suffix — ":cloud"
+   models run off-box on Ollama Cloud and BILL the client; owner opt-in only. Always pin
+   --backend ollama — a bare re-map can route to a resident paid/Anthropic key.)
 - Free auto-rebuild hook (AST only, no model cost): `graphify hook install`
 - Query: `/graphify query "..."` | `/graphify path A B` | `/graphify explain X`
 - Verify install: `bash ~/.openclaw/skills/43-graphify-knowledge-graph/scripts/verify-graphify-install.sh`

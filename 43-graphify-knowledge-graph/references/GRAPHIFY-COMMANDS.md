@@ -25,9 +25,19 @@ on the installed CLI. Load this when you need the precise flag/subcommand.
 
 | Command | What it does |
 |---|---|
-| `graphify . --backend ollama --model deepseek-v4-pro:cloud` | Full build/map of the current dir using the CLIENT'S OWN Ollama model. `--backend` accepts `gemini\|kimi\|claude\|openai\|deepseek\|ollama`; `--model` overrides the backend default. NEVER use an operator key here. |
+| `graphify extract . --backend ollama` | **The canonical map command this skill uses** (see INSTALL.md Step 3). Full semantic build/map of the current dir using the CLIENT'S OWN Ollama model, selected via the `OLLAMA_MODEL` env var (below). Always pin `--backend ollama` — never let the backend be auto-detected. |
+| `graphify . --backend ollama --model <client-local-model>` | Equivalent explicit form. `--backend` accepts `gemini\|kimi\|claude\|openai\|deepseek\|ollama`; `--model` overrides the backend default. Use a genuinely-local model (no `:cloud` suffix). NEVER use an operator key here. |
 | `graphify update .` | FREE structural (AST) re-extract of changed code — no LLM, no tokens. |
 | `graphify cluster-only .` | Re-run clustering on an existing graph.json. |
+
+### Environment variables (Ollama backend)
+
+The `--backend ollama` map is configured through env vars — set them inline before `graphify extract .`:
+
+| Env var | Value | Notes |
+|---|---|---|
+| `OLLAMA_BASE_URL` | `http://localhost:11434/v1` | **Must end in `/v1`.** graphify passes it verbatim as the OpenAI-style base_url; without `/v1` the `POST /chat/completions` 404s and every map fails. |
+| `OLLAMA_MODEL` | `<client-local-model>` (e.g. `qwen2.5-coder:7b`) | The client's own **genuinely-local** model. A `:cloud`-suffixed model runs off-box on Ollama Cloud and BILLS the client — owner opt-in only. |
 
 ## Query (read the graph — cheap, deterministic)
 

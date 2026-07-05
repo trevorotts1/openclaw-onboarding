@@ -19,6 +19,13 @@ GR_DIR="$SKILLS_DIR_DEFAULT/43-graphify-knowledge-graph"
 # When run from inside the repo (pre-deploy QC), fall back to the skill's own dir.
 [ -d "$GR_DIR" ] || GR_DIR="$SKILL_DIR_SELF"
 
+# Resolve the skill version dynamically (no hardcoded literal — a pinned literal went
+# stale at 1.0.0 while the file was 1.0.2 and made this gate always-red). The expected
+# version is read from SKILL.md frontmatter, the single source the skill loader reads;
+# skill-version.txt must be valid semver AND agree with it.
+GR_SKILL_VER="$(tr -d '[:space:]' < "$GR_DIR/skill-version.txt" 2>/dev/null)"
+GR_FM_VER="$(awk '/^---[[:space:]]*$/{n++; next} n==1 && /^version:/{sub(/^version:[[:space:]]*/,""); gsub(/[[:space:]]/,""); print; exit}' "$GR_DIR/SKILL.md" 2>/dev/null)"
+
 echo ""
 echo "═══ Skill 43 — Graphify Knowledge Graph — Install QC ═══"
 echo ""
@@ -30,7 +37,8 @@ assert "INSTALL.md present" "[ -f \"$GR_DIR/INSTALL.md\" ]"
 assert "INSTRUCTIONS.md present" "[ -f \"$GR_DIR/INSTRUCTIONS.md\" ]"
 assert "CORE_UPDATES.md present" "[ -f \"$GR_DIR/CORE_UPDATES.md\" ]"
 assert "CHANGELOG.md present" "[ -f \"$GR_DIR/CHANGELOG.md\" ]"
-assert "skill-version.txt present + 1.0.0" "[ \"\$(tr -d '[:space:]' < \"$GR_DIR/skill-version.txt\" 2>/dev/null)\" = '1.0.0' ]"
+assert "skill-version.txt present + valid semver (X.Y.Z)" "printf '%s' \"$GR_SKILL_VER\" | grep -qE '^[0-9]+\\.[0-9]+\\.[0-9]+$'"
+assert "skill-version.txt matches SKILL.md frontmatter version ($GR_FM_VER)" "[ -n \"$GR_SKILL_VER\" ] && [ \"$GR_SKILL_VER\" = \"$GR_FM_VER\" ]"
 assert "references/GRAPHIFY-COMMANDS.md present" "[ -f \"$GR_DIR/references/GRAPHIFY-COMMANDS.md\" ]"
 assert "verify-graphify-install.sh present" "[ -f \"$GR_DIR/scripts/verify-graphify-install.sh\" ]"
 
@@ -39,6 +47,14 @@ assert "INSTALL.md uses 'graphifyy[all]' install command" "grep -q 'graphifyy\\[
 assert "INSTALL.md registers claw skill (graphify install --platform claw)" "grep -q 'graphify install --platform claw' \"$GR_DIR/INSTALL.md\""
 assert "INSTALL.md installs the free AST hook (graphify hook install)" "grep -q 'graphify hook install' \"$GR_DIR/INSTALL.md\""
 assert "INSTALL.md maps with client's own Ollama (--backend ollama)" "grep -q -- '--backend ollama' \"$GR_DIR/INSTALL.md\""
+# OLLAMA_BASE_URL must carry the /v1 suffix (graphify passes it verbatim; a bare :11434 404s the semantic map).
+assert "INSTALL.md pins OLLAMA_BASE_URL to the /v1 form" "grep -qE 'OLLAMA_BASE_URL=\"?http://localhost:11434/v1' \"$GR_DIR/INSTALL.md\""
+assert "CORE_UPDATES.md pins OLLAMA_BASE_URL to the /v1 form" "grep -qE 'OLLAMA_BASE_URL=http://localhost:11434/v1' \"$GR_DIR/CORE_UPDATES.md\""
+assert "SKILL.md pins OLLAMA_BASE_URL to the /v1 form" "grep -q 'localhost:11434/v1' \"$GR_DIR/SKILL.md\""
+# No stale bare :11434 base URL may remain (would 404 the semantic map).
+assert "no bare OLLAMA_BASE_URL=...:11434 without /v1 (INSTALL/CORE_UPDATES/SKILL)" "! grep -rEn 'OLLAMA_BASE_URL=\"?http://localhost:11434([^/]|\$)' \"$GR_DIR/INSTALL.md\" \"$GR_DIR/CORE_UPDATES.md\" \"$GR_DIR/SKILL.md\""
+# Sovereignty: the bare-re-map violation rule must be documented (backend must be pinned to ollama).
+assert "CORE_UPDATES.md documents the bare-re-map backend-pin violation rule" "grep -qiE 'bare .*re-map|BACKEND-PIN' \"$GR_DIR/CORE_UPDATES.md\""
 assert "SKILL.md states semantic pass is owner-triggered / on-demand" "grep -qiE 'owner-triggered|on demand|on-demand' \"$GR_DIR/SKILL.md\""
 assert "SKILL.md states AST rebuild is free + automatic" "grep -qiE 'free.*automatic|automatic.*free|FREE — no model' \"$GR_DIR/SKILL.md\""
 assert "NEVER operator keys rule present (SKILL.md)" "grep -qiE 'NEVER.*operator|never the operator' \"$GR_DIR/SKILL.md\""
