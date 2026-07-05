@@ -131,15 +131,23 @@ def _request(method: str, url: str, payload: dict, cfg: dict):
 
 
 # ---------------------------------------------------------------------------
-# Receipt — atomic read / merge under <run_dir>/working/checkpoints/mc-board.json.
-# Only written when the board is ENABLED (a disabled run touches nothing).
+# Receipt — atomic read / merge under <run_dir>/<receipt_subdir>/mc-board.json.
+# The subdir is PARAMETERIZED (default working/checkpoints, the shared productized
+# layout) so a skill whose documented run layout differs can pin its own — Skill 53
+# passes ("run", "checkpoints") to keep the board receipt inside the SAME
+# run/checkpoints/ dir that holds the front-door nonce. Only written when the board
+# is ENABLED (a disabled run touches nothing).
 # ---------------------------------------------------------------------------
-def _receipt_path(run_dir) -> Path:
-    return Path(run_dir) / "working" / "checkpoints" / "mc-board.json"
+_DEFAULT_RECEIPT_SUBDIR = ("working", "checkpoints")
 
 
-def _read_receipt(run_dir) -> dict:
-    p = _receipt_path(run_dir)
+def _receipt_path(run_dir, receipt_subdir=None) -> Path:
+    parts = receipt_subdir or _DEFAULT_RECEIPT_SUBDIR
+    return Path(run_dir).joinpath(*parts) / "mc-board.json"
+
+
+def _read_receipt(run_dir, receipt_subdir=None) -> dict:
+    p = _receipt_path(run_dir, receipt_subdir)
     if not p.exists():
         return {}
     try:
@@ -149,9 +157,9 @@ def _read_receipt(run_dir) -> dict:
         return {}
 
 
-def _merge_receipt(run_dir, updates: dict) -> bool:
+def _merge_receipt(run_dir, updates: dict, receipt_subdir=None) -> bool:
     """Merge `updates` into the receipt atomically. Never raises."""
-    p = _receipt_path(run_dir)
+    p = _receipt_path(run_dir, receipt_subdir)
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         receipt = _read_receipt(run_dir)
@@ -179,13 +187,15 @@ def card_open(
     description: str = "",
     priority: str = "medium",
     env: Optional[dict] = None,
+    receipt_subdir=None,
 ) -> Optional[str]:
     """Open (or idempotently re-fetch) this run's board card. Returns the task_id
     string on success, else None. FAIL-SOFT — a None return never blocks the run.
 
     A disabled board (no COMMAND_CENTER_URL/MISSION_CONTROL_URL) is a clean no-op
     that writes NOTHING. When enabled, the task_id is stamped into the receipt so a
-    later advance can recover it and a re-open reuses it (no duplicate card)."""
+    later advance can recover it and a re-open reuses it (no duplicate card).
+    `receipt_subdir` pins the receipt location (default working/checkpoints)."""
     if run_dir is None:
         return None
     cfg = board_config(env)
@@ -194,12 +204,12 @@ def card_open(
         return None
 
     # Idempotent: reuse a task_id already recorded for this run dir.
-    existing = _read_receipt(run_dir).get("mc_task_id")
+    existing = _read_receipt(run_dir, receipt_subdir).get("mc_task_id")
     if existing:
         return str(existing)
 
     # Mark the attempt (receipt-backed) BEFORE the network call.
-    _merge_receipt(run_dir, {"mc_register_attempted": True, "slug": slug})
+    _merge_receipt(run_dir, {"mc_register_attempted": True, "slug": slug}, receipt_subdir)
 
     source_ref = slug or source or "run"
     idem_input = f"{source_ref}{title}".encode("utf-8")
@@ -229,7 +239,7 @@ def card_open(
         task_id = str(body["task_id"])
         deduped = body.get("deduped", False)
         _log(f"card {'deduped (reused)' if deduped else 'created'}: task_id={task_id} slug={slug}")
-        _merge_receipt(run_dir, {"mc_task_id": task_id})
+        _merge_receipt(run_dir, {"mc_task_id": task_id}, receipt_subdir)
         return task_id
 
     _log(f"ingest POST non-OK (HTTP {status}): {body}; run continues ungrouped.")
@@ -247,6 +257,7 @@ def card_advance(
     status: str,
     note: str = "",
     env: Optional[dict] = None,
+    receipt_subdir=None,
 ) -> bool:
     """Advance this run's card to (phase_id, status). FAIL-SOFT: returns False
     (never raises) on any board problem; the run is never blocked. task_id is
@@ -254,7 +265,7 @@ def card_advance(
     cfg = board_config(env)
     if cfg is None:
         return False
-    tid = task_id or _read_receipt(run_dir).get("mc_task_id")
+    tid = task_id or _read_receipt(run_dir, receipt_subdir).get("mc_task_id")
     if not tid:
         _log(f"advance {phase_id}->{status} skipped — no task_id (card never opened).")
         return False
@@ -290,6 +301,7 @@ def begin_run(
     persona: str = "",
     source: str = "",
     description: str = "",
+    receipt_subdir=None,
 ) -> Optional[str]:
     """Open the run's card and move it to in_progress. Returns the task_id or None.
     Never raises — the board is a view, never a gate."""
@@ -297,10 +309,11 @@ def begin_run(
         tid = card_open(
             run_dir, slug=slug, title=title, department=department,
             persona=persona, source=source, description=description,
+            receipt_subdir=receipt_subdir,
         )
         if tid:
             card_advance(run_dir, tid, phase_id="run", status="in_progress",
-                         note="run started")
+                         note="run started", receipt_subdir=receipt_subdir)
         return tid
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
         _log(f"begin_run best-effort skip ({type(exc).__name__}: {exc}).")
@@ -308,12 +321,12 @@ def begin_run(
 
 
 def complete_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "deliver",
-                 note: str = "") -> bool:
+                 note: str = "", receipt_subdir=None) -> bool:
     """Move the run's card to done. Recovers the task_id from the receipt when not
     supplied. Never raises — the board is a view, never a gate."""
     try:
         return card_advance(run_dir, task_id, phase_id=phase_id, status="done",
-                            note=note or "run delivered")
+                            note=note or "run delivered", receipt_subdir=receipt_subdir)
     except Exception as exc:  # noqa: BLE001
         _log(f"complete_run best-effort skip ({type(exc).__name__}: {exc}).")
         return False
