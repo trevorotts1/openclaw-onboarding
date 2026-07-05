@@ -2937,10 +2937,10 @@
       "path": "templates/role-library/graphics/deck-systems-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": true,
-      "content_sha": "sha256:fa2c9e669e28f945630ac9cfd4e200590aee8b7630a06f2f96b41b72753604e5",
+      "content_sha": "sha256:321cd9cfbd98c84176db2cf0dcf4674b795160069a31262b5ee2371e2882b57f",
       "render_sha": "sha256:51db31a6da55af664471812c29d685ec08a1be5130a308467d25d55cf8f31b9c",
-      "content_version": "1.0.2",
-      "content_hashed_at": "2026-07-03T13:18:47.268650+00:00"
+      "content_version": "1.0.3",
+      "content_hashed_at": "2026-07-05T15:32:47.262361+00:00"
     },
     {
       "slug": "deep-research-specialist--graphics",
@@ -7492,9 +7492,9 @@
       "slug": "SOP--chief-design-officer-sops",
       "dept": "graphics",
       "path": "templates/role-library/graphics/sops/SOP--chief-design-officer-sops.md",
-      "content_sha": "sha256:37566ec6c5426a89a74f030d0acee7d9b165797cc0cd65485328de23c33c50fc",
-      "content_version": "1.0.0",
-      "content_hashed_at": "2026-07-03T13:18:47.268650+00:00"
+      "content_sha": "sha256:88cf8e0a0069add0f2ff1b96ffc32e07b2ecb2f9f5efe9533e4682859301e439",
+      "content_version": "1.0.2",
+      "content_hashed_at": "2026-07-05T15:32:47.262361+00:00"
     },
     {
       "slug": "SOP--deck-systems-specialist-sops",
@@ -7628,9 +7628,9 @@
       "slug": "SOP-DIU-502",
       "dept": "graphics",
       "path": "templates/role-library/graphics/sops/SOP-DIU-502.md",
-      "content_sha": "sha256:2d0e025b5aa6f97b3dfde35e33d8cd4877e971d37e765a085c738d4d6dcbd0d3",
-      "content_version": "1.0.0",
-      "content_hashed_at": "2026-07-03T13:18:47.268650+00:00"
+      "content_sha": "sha256:9f351371ecb22c880214274dda5e41e3ddb2536275a49fb0b1f6a21f6e984660",
+      "content_version": "1.0.1",
+      "content_hashed_at": "2026-07-05T15:32:47.262361+00:00"
     },
     {
       "slug": "SOP-DIU-601",
@@ -7749,62 +7749,6 @@
       "dept": "graphics",
       "path": "templates/role-library/graphics/sops/SOP-DIU-615.md",
       "content_sha": "sha256:d7270e673aeb09f5294bfc87dfd13240e40490d21c560ad85683a12210c1c065",
-      "content_version": "1.0.0",
-      "content_hashed_at": "2026-07-03T13:18:47.268650+00:00"
-    },
-    {
-      "slug": "chief-design-officer-sops",
-      "dept": "graphics",
-      "path": "templates/role-library/graphics/sops/chief-design-officer-sops.md",
-      "content_sha": "sha256:37566ec6c5426a89a74f030d0acee7d9b165797cc0cd65485328de23c33c50fc",
-      "content_version": "1.0.0",
-      "content_hashed_at": "2026-07-03T13:18:47.268650+00:00"
-    },
-    {
-      "slug": "deck-systems-specialist-sops",
-      "dept": "graphics",
-      "path": "templates/role-library/graphics/sops/deck-systems-specialist-sops.md",
-      "content_sha": "sha256:4eb66f0cad8436a641c53429b574945d6a955ac236487197dbf1b3df778a4fdd",
-      "content_version": "1.0.0",
-      "content_hashed_at": "2026-07-03T13:18:47.268650+00:00"
-    },
-    {
-      "slug": "fidelity-tester-sops",
-      "dept": "graphics",
-      "path": "templates/role-library/graphics/sops/fidelity-tester-sops.md",
-      "content_sha": "sha256:90111133b9e945ce2cb260322cec59fd184bc22b9dff82dd9966203be1d7ed22",
-      "content_version": "1.0.0",
-      "content_hashed_at": "2026-07-03T13:18:47.268650+00:00"
-    },
-    {
-      "slug": "generation-operator-sops",
-      "dept": "graphics",
-      "path": "templates/role-library/graphics/sops/generation-operator-sops.md",
-      "content_sha": "sha256:959059a2b6d035ad70a614b059b3c8826b7d847040e70c1c526cd8a1a6a05164",
-      "content_version": "1.0.0",
-      "content_hashed_at": "2026-07-03T13:18:47.268650+00:00"
-    },
-    {
-      "slug": "healer-graphics-sops",
-      "dept": "graphics",
-      "path": "templates/role-library/graphics/sops/healer-graphics-sops.md",
-      "content_sha": "sha256:067559bcd5d21b7b80ccf78d34765c8ffa6158702f66f91dff2144e07b857f3c",
-      "content_version": "1.0.0",
-      "content_hashed_at": "2026-07-03T13:18:47.268650+00:00"
-    },
-    {
-      "slug": "photo-shoot-director-sops",
-      "dept": "graphics",
-      "path": "templates/role-library/graphics/sops/photo-shoot-director-sops.md",
-      "content_sha": "sha256:ccf120d7aaaadcdf92b323bf3bebf551383d4d96ab7e3d3cd2c3e5d38532c890",
-      "content_version": "1.0.0",
-      "content_hashed_at": "2026-07-03T13:18:47.268650+00:00"
-    },
-    {
-      "slug": "style-analyst-sops",
-      "dept": "graphics",
-      "path": "templates/role-library/graphics/sops/style-analyst-sops.md",
-      "content_sha": "sha256:40893b559c6ef13c3a7205fb4ebb656be71292c637a41547b2316961853d5d1c",
       "content_version": "1.0.0",
       "content_hashed_at": "2026-07-03T13:18:47.268650+00:00"
     },
@@ -8548,7 +8492,7 @@
     "neutral_config_sha": "sha256:e084d023d101ad89a8a1bda5f673fb3e997be2d56e09405afabd93ede944afe9",
     "neutral_date": "2000-01-01",
     "generator": "hash-content-manifest.py",
-    "generated_at": "2026-07-03T13:18:47.268650+00:00",
+    "generated_at": "2026-07-05T15:32:47.262361+00:00",
     "manifest_schema": "1.0"
   },
   "personas": [
