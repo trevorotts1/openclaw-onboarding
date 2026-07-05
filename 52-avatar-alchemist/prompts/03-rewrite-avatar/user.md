@@ -18,8 +18,8 @@ My Name = [{{intake.first_name}} {{intake.last_name}}]
 
 Tone= [{{intake.tone}}]
 
-here are 32 questions and answer to help you deeply understand my the avatar before you start your rewrite of only the sections i requested: [{{artifact.upstream}}
-{{artifact.upstream}}]
+here are 32 questions and answer to help you deeply understand my the avatar before you start your rewrite of only the sections i requested: [{{artifact.01-avatar-questions-1-30}}
+{{artifact.02-avatar-questions-31-32}}]
 
 ]
 

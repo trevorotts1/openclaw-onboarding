@@ -4,13 +4,13 @@
   "run_id": "run-golden-daybreak",
   "funnel_type": "signature_funnel",
   "funnel_size": 7,
-  "skill_version": "1.0.0",
-  "issued_at": "2026-07-02T12:39:25Z",
+  "skill_version": "1.0.5",
+  "issued_at": "2026-07-05T15:03:11Z",
   "nonce_fingerprint": "19dd9294004d6460",
   "ledger_hashes": {
     "brief.json": "50a363f7801774bdad6731da0c47526f73eb4ea957a7fa384d002227e27dc53f",
     "copy_ledger.json": "53556b9bee9168faf85fab05afab7975432476c60582711ee62fb0786c3c49cc",
-    "prompt_ledger.json": "7328735bea2c02f47101d3ba2e5e75393195f7fcaf999db471e954061941fc67",
+    "prompt_ledger.json": "91d9e0839273c32d048b08191277154ed31fca13ed8c8356e72d7d3e5683dfff",
     "media_ledger.json": "dbad38f312ce5128d5a1ced17b691de6d0b66b3271db546121b5d3e36b50c852"
   },
   "phases": [
@@ -46,25 +46,25 @@
     },
     {
       "id": "P5-HTML",
-      "prover": "html_assembly",
+      "prover": "html_fragments",
       "status": "pass",
       "order": 5
     },
     {
       "id": "P6-COMPOSE",
-      "prover": "funnel_graph",
+      "prover": "prove_sf_graph.py",
       "status": "pass",
       "order": 6
     },
     {
       "id": "P7-BUILD",
-      "prover": "ghl_rest_canvas.py",
+      "prover": "prove_sf_build.py",
       "status": "pass",
       "order": 7
     },
     {
       "id": "P8-DERIVE",
-      "prover": "derived_pages",
+      "prover": "derived_pages_ledger",
       "status": "pass",
       "order": 8
     },
@@ -81,5 +81,5 @@
     "preview_only": true,
     "email_offer": "P10 optional handoff to the Email Skill project after downsell approval"
   },
-  "signature": "e638428d45b76b66f0077bfec7a4ac246ab5f8faa83d8573bcea7e4820abdb50"
+  "signature": "f728de0482cfbc46b35e75c66c1036b1535e8b2eb58b88dd630d619231734cad"
 }

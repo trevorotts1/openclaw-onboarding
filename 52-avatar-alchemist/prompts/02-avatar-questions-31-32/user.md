@@ -6,7 +6,7 @@
 
 ## User prompt (token-normalized)
 
-I am providing with the following information which is the answers provided from question 1- 30 here they are:  [{{artifact.upstream}}]
+I am providing with the following information which is the answers provided from question 1- 30 here they are:  [{{artifact.01-avatar-questions-1-30}}]
 The answers that you are researching for questions 31 and 32 must be based upon this information that I'm sharing with you, which is the answers from questions 1 through 30. So, what I'm saying is that you must consider the answers from questions 1 through 30 in order for you to properly answer questions 31 and 32
 
 Additonal information for you to consider:

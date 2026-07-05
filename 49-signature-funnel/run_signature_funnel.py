@@ -44,6 +44,8 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 _SCRIPTS = _SCRIPT_DIR / "scripts"
 sys.path.insert(0, str(_SCRIPTS))
 import prove_sf_cert  # noqa: E402  (shared cert schema + HMAC signing; guarantees agreement)
+import prove_sf_graph  # noqa: E402  (P5/P8 page matrix + P6 graph gate; one source of truth)
+import prove_sf_build  # noqa: E402  (P7 build-receipt gate)
 
 EXIT_OK = 0
 EXIT_GATE_FAIL = 2
@@ -83,6 +85,73 @@ def _sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _brief_size(run_dir: Path) -> Optional[int]:
+    """Resolve the funnel size (3/5/7) from the locked brief, or None if unresolved."""
+    try:
+        size = json.loads((run_dir / "brief.json").read_text(encoding="utf-8")).get("funnel_size")
+        return size if isinstance(size, int) else None
+    except (ValueError, OSError):
+        return None
+
+
+def _gate_html_fragments(run_dir: Path) -> Tuple[bool, str]:
+    """P5-HTML (FIX-XC-03a): a non-empty pages/<profile>.fragment.html for EVERY page
+    in the brief's 3/5/7 matrix. No fragment set == no built pages == fail-closed."""
+    size = _brief_size(run_dir)
+    if size is None:
+        return False, "AF-FUN-HTML-FRAGMENT: brief funnel_size unresolved — cannot prove page fragments (fail-closed)"
+    try:
+        pages = prove_sf_graph.funnel_pages(size)
+    except (ValueError, OSError) as exc:
+        return False, f"AF-FUN-HTML-FRAGMENT: cannot resolve the {size}-step page matrix ({exc})"
+    missing: List[str] = []
+    for profile in pages:
+        frag = run_dir / "pages" / f"{profile}.fragment.html"
+        try:
+            body = frag.read_text(encoding="utf-8", errors="replace") if frag.exists() else ""
+        except OSError:
+            body = ""
+        if not body.strip():
+            missing.append(profile)
+    if missing:
+        return False, (f"AF-FUN-HTML-FRAGMENT: missing/empty pages/<profile>.fragment.html for "
+                       f"{missing} (expected one per {size}-step matrix page)")
+    return True, f"{len(pages)} page fragment(s) present + non-empty ({', '.join(pages)})"
+
+
+def _gate_derived_pages(run_dir: Path) -> Tuple[bool, str]:
+    """P8-DERIVE (FIX-XC-03a): a derived-page ledger (derived_pages.json) enumerating the
+    U1/D1/U2/D2/TY pages required by the brief size. Absent/mismatched == fail-closed."""
+    size = _brief_size(run_dir)
+    if size is None:
+        return False, "AF-FUN-DERIVE-LEDGER: brief funnel_size unresolved — cannot prove derived pages (fail-closed)"
+    try:
+        expected = prove_sf_graph.derived_pages(size)
+    except (ValueError, OSError) as exc:
+        return False, f"AF-FUN-DERIVE-LEDGER: cannot resolve the {size}-step derived set ({exc})"
+    p = run_dir / "derived_pages.json"
+    if not p.exists():
+        return False, "AF-FUN-DERIVE-LEDGER: derived_pages.json absent (fail-closed)"
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as exc:
+        return False, f"AF-FUN-DERIVE-LEDGER: derived_pages.json unreadable ({exc})"
+    entries = data.get("derived_pages") if isinstance(data, dict) else None
+    if not isinstance(entries, list) or not entries:
+        return False, "AF-FUN-DERIVE-LEDGER: derived_pages.json carries no non-empty 'derived_pages' array"
+    got_ids = [str(e.get("id", "")).strip() for e in entries if isinstance(e, dict)]
+    if sorted(got_ids) != sorted(expected):
+        return False, (f"AF-FUN-DERIVE-LEDGER: derived set {got_ids} != required {expected} "
+                       f"for the {size}-step funnel")
+    for e in entries:
+        want = prove_sf_graph.DERIVED_LABELS.get(str(e.get("id", "")).strip())
+        got = str(e.get("label", "")).strip().upper()
+        if want and got != want:
+            return False, (f"AF-FUN-DERIVE-LEDGER: page {e.get('id')!r} labeled {got!r}, "
+                           f"expected {want!r} (U1/D1/U2/D2/TY grammar)")
+    return True, f"derived-page ledger lists {expected} (labels U1/D1/U2/D2/TY as required)"
+
+
 # Phase spine — ids + order MUST match prove_sf_cert.EXPECTED_PHASES.
 def _phase_gates(run_dir: Path) -> List[Tuple[str, str, Callable[[], Tuple[bool, str]]]]:
     return [
@@ -96,14 +165,14 @@ def _phase_gates(run_dir: Path) -> List[Tuple[str, str, Callable[[], Tuple[bool,
          lambda: _delegation_seam(run_dir, "media_ledger.json", "Skill 47 kie_image.py (text-to-image + reference_images hook)")),
         ("P4-MEDIA", "ghl_media.py",
          lambda: _delegation_seam(run_dir, "media_ledger.json", "Skill 6 ghl_media.py (media folder + upload)")),
-        ("P5-HTML", "html_assembly",
-         lambda: _delegation_seam(run_dir, None, "per-page HTML fragment assembly")),
-        ("P6-COMPOSE", "funnel_graph",
-         lambda: _delegation_seam(run_dir, None, "3/5/7 funnel step graph + accept/decline branching")),
-        ("P7-BUILD", "ghl_rest_canvas.py",
-         lambda: _delegation_seam(run_dir, None, "Skill 6 ghl_rest_canvas.py (funnel/page build + QC >= 8.5)")),
-        ("P8-DERIVE", "derived_pages",
-         lambda: _delegation_seam(run_dir, None, "derived pages loop (U1/D1/U2/D2/TY)")),
+        ("P5-HTML", "html_fragments",
+         lambda: _gate_html_fragments(run_dir)),
+        ("P6-COMPOSE", "prove_sf_graph.py",
+         lambda: _shell_prover("prove_sf_graph.py", ["--graph", str(run_dir / "funnel_graph.json")])),
+        ("P7-BUILD", "prove_sf_build.py",
+         lambda: _shell_prover("prove_sf_build.py", ["--receipt", str(run_dir / "build_receipt.json")])),
+        ("P8-DERIVE", "derived_pages_ledger",
+         lambda: _gate_derived_pages(run_dir)),
         ("P9-CERTIFY", "prove_sf_no_pitch.py",
          lambda: _shell_prover("prove_sf_no_pitch.py", ["--ledger", str(run_dir / "media_ledger.json")])),
     ]
@@ -127,6 +196,7 @@ def orchestrate(run_dir: Path, nonce: str) -> Tuple[int, Dict]:
     gates = _phase_gates(run_dir)
     print(f"== Signature Funnel orchestrator :: run {run_dir} ==")
     for order, (pid, prover, gate) in enumerate(gates):
+        _mc_board_phase(run_dir, pid)  # per-phase board heartbeat (fail-soft, never a gate)
         ok, detail = gate()
         status = "pass" if ok else "fail"
         print(f"  [{status.upper():4s}] {pid:12s} ({prover}) :: {detail}")
@@ -187,12 +257,22 @@ def orchestrate(run_dir: Path, nonce: str) -> Tuple[int, Dict]:
 # state machine end-to-end, and assert the certificate is minted + validates; then
 # assert the front-door refusal and the no-skip abort.
 # ---------------------------------------------------------------------------
-def _write_valid_run(rd: Path, nonce: str) -> None:
+def _write_valid_run(rd: Path, nonce: str, size: int = 3) -> None:
     import prove_sf_intake, prove_sf_copy, prove_sf_prompt_floor, prove_sf_no_pitch  # noqa: E402
-    (rd / "brief.json").write_text(json.dumps(prove_sf_intake._valid_runtime(3)), encoding="utf-8")
+    (rd / "brief.json").write_text(json.dumps(prove_sf_intake._valid_runtime(size)), encoding="utf-8")
     (rd / "copy_ledger.json").write_text(json.dumps(prove_sf_copy._valid_ledger()), encoding="utf-8")
     (rd / "prompt_ledger.json").write_text(json.dumps(prove_sf_prompt_floor._valid_ledger()), encoding="utf-8")
     (rd / "media_ledger.json").write_text(json.dumps(prove_sf_no_pitch._valid_ledger()), encoding="utf-8")
+    # P5-HTML — a non-empty fragment per matrix page; P6 graph; P7 build receipt; P8 derived ledger.
+    pages = prove_sf_graph.funnel_pages(size)
+    (rd / "pages").mkdir(exist_ok=True)
+    for profile in pages:
+        (rd / "pages" / f"{profile}.fragment.html").write_text(
+            f"<section data-page=\"{profile}\"><h1>{profile} fragment</h1></section>\n", encoding="utf-8")
+    (rd / "funnel_graph.json").write_text(json.dumps(prove_sf_graph._valid_graph(size)), encoding="utf-8")
+    (rd / "build_receipt.json").write_text(json.dumps(prove_sf_build._valid_receipt(size)), encoding="utf-8")
+    (rd / "derived_pages.json").write_text(
+        json.dumps(prove_sf_graph._valid_derived_ledger(size)), encoding="utf-8")
     nf = rd / ".sf_run_nonce"
     nf.write_text(nonce, encoding="utf-8")
     os.chmod(nf, 0o600)
@@ -251,6 +331,28 @@ def self_test() -> int:
         else:
             ok = False; print(f"SELF-TEST FAIL: bad run still certified (code={code}).")
 
+        # (e) FIX-XC-03a — the once-no-op P5-HTML now fails closed: drop a page fragment.
+        rd3 = tmp / "run-nohtml"
+        rd3.mkdir()
+        _write_valid_run(rd3, nonce)
+        (rd3 / "pages" / "thank-you.fragment.html").unlink()
+        code, _ = orchestrate(rd3, nonce)
+        if code == EXIT_GATE_FAIL and not (rd3 / "PROCESS-CERTIFICATE.json").exists():
+            print("SELF-TEST ok: missing HTML fragment aborts at P5 with NO certificate (was a no-op).")
+        else:
+            ok = False; print(f"SELF-TEST FAIL: P5 no-op — run with a missing fragment still certified (code={code}).")
+
+        # (f) FIX-XC-03a — the once-no-op P6-COMPOSE now fails closed: remove funnel_graph.json.
+        rd4 = tmp / "run-nograph"
+        rd4.mkdir()
+        _write_valid_run(rd4, nonce)
+        (rd4 / "funnel_graph.json").unlink()
+        code, _ = orchestrate(rd4, nonce)
+        if code == EXIT_GATE_FAIL and not (rd4 / "PROCESS-CERTIFICATE.json").exists():
+            print("SELF-TEST ok: missing funnel_graph aborts at P6 with NO certificate (was a no-op).")
+        else:
+            ok = False; print(f"SELF-TEST FAIL: P6 no-op — run with no funnel graph still certified (code={code}).")
+
         print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
         return 0 if ok else 1
     finally:
@@ -278,10 +380,40 @@ def _mc_board_begin(run_dir: Path) -> Optional[str]:
         return None
 
 
-def _mc_board_done(run_dir: Path, task_id: Optional[str]) -> None:
+def _mc_board_phase(run_dir: Path, phase_id: str) -> None:
+    """Per-phase board heartbeat: advance this run's card to (phase_id, in_progress).
+    FAIL-SOFT — the board is a VIEW, never a gate; any failure is swallowed."""
     try:
         import mc_board
-        mc_board.complete_run(run_dir, task_id, note="certified + delivered")
+        mc_board.card_advance(run_dir, phase_id=phase_id, status="in_progress",
+                              note=f"phase {phase_id} running")
+    except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
+        print(f"[mc_board] phase {phase_id} best-effort skip ({exc})", file=sys.stderr)
+
+
+def _mc_deliverable_url(run_dir: Path) -> str:
+    """Best-effort deliverable link to register on the card: the first http(s) URL
+    found in the run's media ledger. Empty string when none — never raises."""
+    try:
+        led = run_dir / "media_ledger.json"
+        if led.exists():
+            import re
+            m = re.search(r"https?://[^\s\"']+", led.read_text(encoding="utf-8"))
+            if m:
+                return m.group(0)
+    except Exception:  # noqa: BLE001 — deliverable link is best-effort only.
+        pass
+    return ""
+
+
+def _mc_board_done(run_dir: Path, task_id: Optional[str]) -> None:
+    """Terminal producer move: card -> REVIEW (never done). review->done is owned by
+    the independent QC scorer. The deliverable link is registered on the card."""
+    try:
+        import mc_board
+        mc_board.complete_run(run_dir, task_id,
+                              note="certified — awaiting QC promotion",
+                              deliverable_url=_mc_deliverable_url(run_dir))
     except Exception as exc:  # noqa: BLE001
         print(f"[mc_board] done best-effort skip ({exc})", file=sys.stderr)
 
