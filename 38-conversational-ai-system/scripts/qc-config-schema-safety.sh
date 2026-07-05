@@ -13,6 +13,15 @@
 #      REJECTS the `;` top-level separator with a compile error, so the merge
 #      never runs and the hook config is never written.
 #
+# ALLOW-KNOWLEDGE (U-8, model fallback chain): the skill38.model_chain.primary and
+# skill38.model_chain.fallbacks keys are a SANCTIONED config shape. They are written
+# ONLY via the config-safe pattern (`openclaw config set skill38.model_chain.primary`
+# / `openclaw config set skill38.model_chain.fallbacks '[...]'` in
+# scripts/32-verify-model-failover-support.sh), NOT via a jq `//= ;` mutation, NOT as
+# a `.cron.jobs` block, and NOT as an `agents.defaults.async/.batch` key, so none of
+# the banned patterns below match them and this gate stays exit 0. This note documents
+# the shape so a future stricter check never mistakes model_chain for a violation.
+#
 # HOW IT CHECKS: static scan over the numbered install scripts (00–24) +
 # skill38-calendar-sync.sh, looking for the BAD PATTERNS *as jq/config code*
 # (jq mutation/read expressions), not the explanatory PROSE that documents why

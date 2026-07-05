@@ -8,7 +8,7 @@
 ## Step 9.20 — Conversation Playbook Builder (the system's differentiator)
 
 > **What this step is, in one line:** the recurring, bulletproof flow for when the operator says
-> "help me build a conversation playbook." It is ALWAYS a **3-PART build** (below). This is the system's
+> "help me build a conversation playbook." It is ALWAYS a **4-PART build** (below). This is the system's
 > USP: **communication-driven funnels / communication-driven automations** — the operator and the agent
 > BUILD by talking and brainstorming, NOT by clicking and dragging nodes. This is what beats CloseBot and
 > every visual-node competitor.
@@ -48,9 +48,15 @@ of three parts. They are inseparable — building or creating any one of them im
   **GHL workflow** it constructs.
 
 One implies the other two. A playbook with no workflow-AI prompt, or a workflow with no playbook, is an
-incomplete build — do not register it and do not declare it live. The TRINITY maps onto the 3-PART build
+incomplete build, do not register it and do not declare it live. The TRINITY maps onto the 4-PART build
 (below): Part 1 = the workflow-AI prompt (+ the GHL workflow it builds), Part 2 = the communications
 playbook. The physical link at runtime is the **hook path** (see Section F).
+
+**THE TRINITY PLUS ONE (U-11).** Part 4, THE VISUAL, travels with the trinity: building or patching
+any of the three legs (the GHL workflow, the communications playbook, or the workflow-AI prompt)
+regenerates Part 4 per the staleness rule. The truth diagram (a deterministic Mermaid flowchart) is
+mandatory and free and regenerates on every change; the Kie hero image is budget-capped and never
+blocks a build. Full design: `protocols/workflow-visual-protocol.md`.
 
 **Full standards for two of the three legs live in dedicated reference docs (keep them out of the core md
 files):**
@@ -75,17 +81,19 @@ likewise machine-enforced by `scripts/qc-23-key-bodies.sh`.
 > build the trinity for the appointment-booking starter + the department-matched scenario, then run
 > `qc-trinity-registry.sh`. See `23-ai-workforce-blueprint/INSTRUCTIONS.md → "Moment 3.8"`.
 
-### The 3-PART build — every time, no exceptions
+### The 4-PART build, every time, no exceptions
 
-Every "build me a conversation playbook" request produces all three of these. Do not skip a part; do not
-collapse them. They map onto the historical 3-layer architecture (Layer 0/1/2) but the operator-facing
-contract is the THREE PARTS below:
+Every "build me a conversation playbook" request produces all four of these. Do not skip a part; do not
+collapse them. Parts 1 through 3 map onto the historical 3-layer architecture (Layer 0/1/2); Part 4 (THE
+VISUAL) is generated deterministically from the finished playbook. The operator-facing contract is the
+FOUR PARTS below:
 
 | Part | Name | What it produces | Where it goes |
 |---|---|---|---|
 | **Part 1** | **Workflow AI instruction set** (the Build-with-AI prompt) | (a) the AI prompt, (b) a manual-build fallback, (c) a verification checklist | `conversation-workflows/<id>--workflow-ai-prompt.md` + `<id>--verification-checklist.md` |
 | **Part 2** | **The conversation playbook itself** (Layer 2 markdown) | the agent's behavior once the conversation lands | `conversation-workflows/<id>.md`, registered in `conversation-workflows/registry.md` |
 | **Part 3** | **The brainstorm trigger** | the trigger-word offer (first build) + the "I Do / You Do" overview + the friendly, proactive Q&A that KICKS OFF Parts 1 + 2 | runtime behavior wired into AGENTS.md Step 1.85 (see Section J) |
+| **Part 4** | **THE VISUAL** (U-11) | (a) a deterministic Mermaid truth diagram rendered to `diagram.png`, always and free, and (b) a budget-capped Kie hero image, never blocking | `conversation-workflows/<id>/diagram.png` + `hero.png`; recorded in the registry Visual column (see `protocols/workflow-visual-protocol.md`) |
 
 **Part 1 — Workflow AI instruction set (the Build-with-AI prompt).**
 PRIMARY JOB: get the **SHAPE** of the funnel right — trigger, if/else branches, tags, Custom Webhook
@@ -122,17 +130,19 @@ These are complementary, not redundant:
 
 When a Conversation Workflow fires, the agent uses its specific instructions for that scenario's phases, while still honoring the Communication Playbook's baseline tone/signature for the channel. Both inform every reply, but at different levels of specificity.
 
-### How the 3 PARTS map to the historical 3 layers
+### How the first 3 PARTS map to the historical 3 layers
 
-The 3 PARTS above are the operator-facing contract. Under the hood they are built with the 3-layer
-architecture below. The mapping:
+The first 3 PARTS are the operator-facing contract that maps onto the 3-layer architecture below (Part 4,
+THE VISUAL, is generated from the finished playbook and has no historical layer). The mapping:
 
 - **Part 1 (Workflow AI instruction set)** = **Layer 0 routing check** + **Layer 1 GHL side**. Layer 0
   decides whether a new GHL automation is even needed; if it is, Layer 1 produces the Build-with-AI prompt,
   the manual-build fallback, and the verification checklist.
-- **Part 2 (conversation playbook)** = **Layer 2 OpenClaw side** — always built.
+- **Part 2 (conversation playbook)** = **Layer 2 OpenClaw side**, always built.
 - **Part 3 (brainstorm trigger)** = the operator-invoked entry point (Section B + Section J) that produces
   Parts 1 and 2 in the first place.
+- **Part 4 (THE VISUAL, U-11)** = generated deterministically from the finished Layer 2 playbook after
+  Parts 1 through 3 land (see `protocols/workflow-visual-protocol.md`); it has no historical layer.
 
 ### Three layers per Conversation Workflow
 
@@ -747,6 +757,18 @@ tune-up surfaces. The full reference and the enum validation ship with the model
 fallback chain (`references/model-fallback-chain.md`, `qc-model-fallback.sh`); the
 line is documented here so playbooks are future-proof either way.
 
+### E.9 Part 4, the workflow visual (U-11)
+
+After the Layer 2 playbook is saved and registered, the build ENDS by generating Part 4, THE VISUAL,
+then uploading and recording it. `scripts/09-install-conversation-workflows.sh` invokes
+`scripts/31-generate-workflow-visual.sh <id>` for every on-disk playbook: it parses the playbook via the
+canonical engine, emits `diagram.mmd`, renders `diagram.png` via npx mermaid-cli (free, deterministic),
+generates a budget-capped Kie hero image (never blocking), uploads both to the client's OWN GHL media
+library, and records the Visual column in `registry.md` plus the run manifest. The truth diagram
+regenerates on every workflow change per the staleness rule, enforced by `scripts/qc-workflow-visual.sh`.
+This is an OPERATOR-ONLY surface: a customer asking for a diagram does NOTHING. Full design:
+`protocols/workflow-visual-protocol.md`.
+
 ### F. Registry and AGENTS.md insertion
 
 The agent maintains a registry at `<MASTER_FILES_DIR>/conversation-workflows/registry.md`:
@@ -1012,6 +1034,13 @@ it already knows about the business and asks ONLY the smart gaps:
 5. **Register it (with the recorded doc URL/path)** — add the row to `conversation-workflows/registry.md`
    (Section F) INCLUDING the `Doc (Notion/Docs/text)` cell from step 4, and add the hook-path entry to
    Reusable Tunnel Values (`references/GHL-INBOUND-AND-PLAYBOOKS.md` §6) if Part 1 created a new hook path.
+6. **Generate Part 4, THE VISUAL (U-11), then upload and record.** Run
+   `scripts/31-generate-workflow-visual.sh <id>`: it parses the finished playbook via the canonical
+   engine (`tools/playbook_engine.py`), emits `diagram.mmd`, renders `diagram.png` via npx mermaid-cli
+   (free), generates the Kie hero image (budget-capped, never blocking), UPLOADS both to the client's OWN
+   GHL media library (Tier 0 caf, Tier 3 medias upload fallback, CF Pages fallback), and RECORDS the
+   Visual column in `registry.md` plus the run manifest. The truth diagram regenerates on every workflow
+   change per the staleness rule. Full design: `protocols/workflow-visual-protocol.md`.
 
 ### J. AGENTS.md Step 1.85 — the runtime hook for Part 3
 
@@ -1021,9 +1050,10 @@ client's stored personal trigger word (I.1a)** and hands control to this protoco
 (Section I). On each operator turn it reads the stored trigger word (from `USER.md` / the
 `conversation-workflows/registry.md` `trigger-word` header) and, if the message matches it, kicks off the
 flow exactly as a Section I.1 phrase would. On a client's FIRST build it OFFERS the trigger word (I.1a) and
-presents the "I Do / You Do" overview (I.1b) before the brainstorm. Confirm the full 3-PART build completed
-— Part 1 (prompt + fallback + checklist), Part 2 (playbook + registry), Part 3 (trigger-word offer on first
-build → "I Do / You Do" overview → brainstorm → concise confirmation → human-facing doc) — before declaring
+presents the "I Do / You Do" overview (I.1b) before the brainstorm. Confirm the full 4-PART build completed
+(Part 1 = prompt + fallback + checklist, Part 2 = playbook + registry, Part 3 = trigger-word offer on first
+build then "I Do / You Do" overview then brainstorm then concise confirmation then human-facing doc, Part 4
+= the truth diagram + hero visual recorded in the registry Visual column) before declaring
 the playbook live. The human-facing doc (Notion → Google Docs → text, §I.3 step 4) is MANDATORY and
 machine-enforced by `scripts/qc-playbook-doc.sh`: a playbook with no recorded doc URL/path in its registry
 row is NOT live.

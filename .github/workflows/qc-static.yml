@@ -715,6 +715,52 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-notion-doc-standard.sh
           echo "✓ Skill 38 Notion client-doc standard codifies the ordered structure (1-12) + the generator matches it"
 
+      - name: Skill 38 Model fallback chain + model tier (U-8 + U-10)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the U-8 model fallback chain + U-10 per-workflow model tier:
+          # references/model-fallback-chain.md documents the skill38.model_chain.primary +
+          # skill38.model_chain.fallbacks config shape and the three model-tier enum values
+          # (realtime-light / realtime-standard / reasoning-max); scripts/32-verify-model-
+          # failover-support.sh (the Mode A vs Mode B preflight) is present; MEMORY Rule 38 is
+          # wired; the Saturday freshness cron reviews the WHOLE chain (not just the primary);
+          # and model-failover-events.jsonl is seeded by script 25. The gate shells out to the
+          # canonical engine (tools/playbook_engine.py) for the model-tier header. BASH core.
+          bash 38-conversational-ai-system/scripts/qc-model-fallback.sh
+          echo "✓ Skill 38 model fallback chain (U-8) + model tier (U-10) invariants hold"
+
+      - name: Skill 38 Model fallback gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-model-fallback.sh actually FAILS on an out-of-enum model-tier and PASSES a
+          # valid/absent tier (a green gate that never fails is worthless).
+          bash 38-conversational-ai-system/scripts/qc-model-fallback.test.sh
+          echo "✓ qc-model-fallback negative test passes (fails an out-of-enum model-tier)"
+
+      - name: Skill 38 Workflow visual, Part 4 truth diagram (U-11)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce U-11 Part 4, THE VISUAL: protocols/workflow-visual-protocol.md +
+          # scripts/31-generate-workflow-visual.sh (the generator) + MEMORY Rule 39 + the seeded
+          # kie-image-events.jsonl sink must all exist. When a conversation-workflows dir is
+          # present the gate also FAILS a registered playbook with no recorded diagram.png, FAILS
+          # a stale structure hash, and only WARNs on a missing hero.png (budget/Kie outage must
+          # never block handoff). Shells out to the canonical engine for the structure hash. BASH.
+          bash 38-conversational-ai-system/scripts/qc-workflow-visual.sh
+          echo "✓ Skill 38 workflow visual (U-11) invariants hold"
+
+      - name: Skill 38 Workflow visual gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-workflow-visual.sh actually FAILS on a missing diagram.png and on a STALE
+          # structure hash, and only WARNs (verdict PASS) on a missing hero.png.
+          bash 38-conversational-ai-system/scripts/qc-workflow-visual.test.sh
+          echo "✓ qc-workflow-visual negative test passes (fails on missing/stale truth diagram)"
+
       - name: Skill 37 Telegram delivery-confirmation gate (anti-faking)
         shell: bash
         run: |

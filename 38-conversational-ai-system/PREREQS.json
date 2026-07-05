@@ -34,6 +34,22 @@
       "satisfy": "Install Skill 29 (GHL Convert and Flow) first; it is in the same onboarding package. Re-run the installer or install Skill 29 on its own, then re-check prerequisites."
     },
     {
+      "id": "skill-07",
+      "type": "skill",
+      "label": "Skill 07 - Kie Setup",
+      "check": { "skill": "07-kie-setup" },
+      "severity": "required",
+      "satisfy": "Install Skill 07 (Kie Setup) first; it provides the Kie.ai image catalog + KIE_API_KEY used by the U-11 workflow hero visual. Re-run the installer or install Skill 07 on its own. Without it the build ships the free Mermaid truth diagram only (hero visual skipped)."
+    },
+    {
+      "id": "skill-46",
+      "type": "skill",
+      "label": "Skill 46 - Kie Callback Relay",
+      "check": { "skill": "46-kie-callback-relay" },
+      "severity": "recommended",
+      "satisfy": "Install Skill 46 (Kie Callback Relay) to route async Kie image jobs via callback instead of polling for the U-11 hero visual. Recommended, not required; without it the generator polls with a 120s timeout."
+    },
+    {
       "id": "cf-token",
       "type": "credential",
       "label": "Cloudflare API Token",
