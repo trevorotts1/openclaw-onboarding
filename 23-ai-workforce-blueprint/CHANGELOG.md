@@ -1,6 +1,37 @@
 <!-- canonical-floor: 28 -->
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (22 mandatory + 6 universal-primary = 28). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 
+## [v17.0.32] - 2026-07-05 - feat(persona-selector): add `--strict` degradation exit code (F3.2, DEP-8)
+
+Persona-matching-overhaul Phase-2 (DEP-8). Shell consumers (QC gates, fleet
+heartbeat probes) previously could not tell a genuine task-matched persona from a
+degraded selection without parsing the JSON — `main()` returned exit 0 for
+NO_PERSONAS_AVAILABLE, LOW_CONFIDENCE, and mechanical `no_persona_required` alike.
+
+scripts/persona-selector-v2.py:
+- New `--strict` flag (select mode). DEFAULT (non-strict) behaviour is UNCHANGED —
+  always exit 0 for any successful / mechanical / low-confidence result — so the
+  Command Center's spawn contract (spawn → read JSON only) is never broken. Under
+  `--strict`, the process exits 3 (STRICT_DEGRADED_EXIT) when the selection is
+  DEGRADED: `warning == NO_PERSONAS_AVAILABLE`, or a fallback tier was used
+  (top-level `fallback` set and/or `persona_mode == "fallback"`, forward-compatible
+  with the F3.1 fallback guarantee). Under `--combined`, a naked non-mechanical
+  sub-task (persona_id null, not `no_persona_required`) also trips exit 3.
+- Explicitly NOT degraded (stay exit 0): mechanical `no_persona_required` tasks
+  (a truthful contract, not a failure) and `LOW_CONFIDENCE_SELECTION` (a real, if
+  weak, match). The nested LLM-scoring provider fallback in `layers._llm_meta`
+  (Ollama→OpenRouter→Gemini) is a different concept and is deliberately not
+  consulted — a healthy match may score via OpenRouter.
+- stdout JSON is byte-for-byte identical between strict and non-strict; only the
+  exit code differs, so a `--strict` caller still parses the same payload.
+- Helpers `_selection_is_degraded` / `_combined_is_degraded` / `_strict_exit` are
+  the single source of the degradation verdict.
+
+scripts/test-persona-selector-strict.sh (new, hermetic; sandboxed empty HOME,
+public-author persona set, heuristic path):
+- Proves the 1↔0 / --strict↔3 matrix end-to-end (empty universe, mechanical task,
+  healthy match) and asserts the stdout payload is identical strict vs non-strict.
+
 ## [v17.0.27] - 2026-07-05 - fix(Presentation department — the gold-standard template): T-presentation-dept hardening pass (FIX-PRES-01..09)
 
 Nine hardening fixes to the presentation department (the gold-standard enforcement template) from the skills-analysis master fix-plan. No behavior change on a healthy governed run; every change closes a silent-bypass / stale-state / board-invisibility seam.
