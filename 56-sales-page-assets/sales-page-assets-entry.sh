@@ -43,6 +43,7 @@ PINNED_FILES=(
   "scripts/prove_sp_upsell_structure.py"
   "scripts/prove_sp_highticket_band.py"
   "scripts/prove_sp_bump_band.py"
+  "scripts/prove_sp_media.py"
   "scripts/prove_sp_bundle.py"
   "scripts/prove_sp_cert.py"
   "structure/sales_page_structure.json"
@@ -165,7 +166,7 @@ self_test() {
   step_version
   if [ -f "$PIN_FILE" ]; then step_hashpin; echo "  [PASS] hash-pin verified"; else echo "  [WARN] no pin file yet (mint with --write-pin)"; fi
   local fails=0
-  for p in prove_sp_intake prove_sp_image_plan prove_sp_prompt_floor prove_sp_main_structure prove_sp_upsell_structure prove_sp_highticket_band prove_sp_bump_band prove_sp_bundle prove_sp_cert; do
+  for p in prove_sp_intake prove_sp_image_plan prove_sp_prompt_floor prove_sp_main_structure prove_sp_upsell_structure prove_sp_highticket_band prove_sp_bump_band prove_sp_media prove_sp_bundle prove_sp_cert; do
     if "$PY" "$SCRIPTS_DIR/$p.py" --self-test >"/tmp/spa_$p.log" 2>&1; then
       echo "  [PASS] $p.py --self-test"
     else
