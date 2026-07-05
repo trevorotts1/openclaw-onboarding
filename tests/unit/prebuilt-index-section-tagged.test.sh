@@ -17,8 +17,12 @@
 #         * .prebuilt-index-version sentinel compare
 #
 #   (B) MANIFEST asserts (python3 json) — prove:
-#       - persona_count == 81
-#       - chunk_count == 1161 (v2.3.0 15-section format, 81 personas)
+#       - persona_count == 82 (DEP-6 STAGED: hunt-thomas-pragmatic-programmer added
+#         to the blueprint dirs + categories keys in the same change; the SET triad
+#         holds at 82. The published ASSET is still the 81-persona v2.3.0 base while
+#         asset_rebuild_required=true — see base_tag/base_sha256/base_asset_url.)
+#       - chunk_count == 1161 (still the v2.3.0 base asset; the +1 delta is embedded
+#         by the operator's atomic delta publish before the next release is cut)
 #       - asset_rebuild_required is false (published) OR base_tag/base_sha256/base_asset_url
 #         are present and valid (pre-release: a newer tag pre-staged over a published base)
 #       - section_tagged is true
@@ -175,7 +179,7 @@ live_tag = base_tag if rebuild_pending and base_tag else m.get("release_tag", ""
 live_sha = base_sha if rebuild_pending and base_sha else m.get("sha256", "")
 live_url = base_url if rebuild_pending and base_url else m.get("asset_url", "")
 
-check("B1: persona_count == 81", m.get("persona_count") == 81,
+check("B1: persona_count == 82 (DEP-6 staged; asset base still 81)", m.get("persona_count") == 82,
       f"got {m.get('persona_count')}")
 check("B2: chunk_count == 1161", m.get("chunk_count") == 1161,
       f"got {m.get('chunk_count')}")
@@ -199,8 +203,8 @@ check("B8: live asset_url ends with a known version path",
 check("B9: live sha256 is a verified hash (not a pending placeholder)",
       live_sha in KNOWN_SHAS.values(),
       f"got {live_sha!r}")
-check("B10: canonical_persona_count == 81",
-      m.get("canonical_persona_count") == 81,
+check("B10: canonical_persona_count == 82 (DEP-6 staged; asset base still 81)",
+      m.get("canonical_persona_count") == 82,
       f"got {m.get('canonical_persona_count')}")
 
 fails = [r for r in results if r[0] == "FAIL"]

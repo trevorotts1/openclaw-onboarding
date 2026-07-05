@@ -18,7 +18,8 @@
     "editing",
     "montage",
     "visual-storytelling",
-    "visual-communication"
+    "visual-communication",
+    "software-craft"
   ],
   "perspectiveTags": [
     "african-american-experience",
@@ -1340,7 +1341,12 @@
         "rebrand",
         "design-system",
         "prototyping",
-        "simplicity"
+        "simplicity",
+        "typography",
+        "imagery",
+        "form-and-composition",
+        "image-direction",
+        "visual-craft"
       ],
       "source_type": "pdf",
       "added": "2026-06-28",
@@ -1353,7 +1359,9 @@
       ],
       "appendix": null,
       "appendix_status": "NONE",
-      "needs_tags": false
+      "needs_tags": false,
+      "_craft_slot": "image",
+      "_craft_slot_note": "IMAGE-craft slot specialist (DEP-6): governs form/color/imagery/typography for image-generation and visual-identity tasks via the visual-communication + visual-storytelling domains. opara-color-works is unioned in via specialty (custom-tag) recall for color-heavy image tasks; no new source was added for the IMAGE slot."
     },
     "opara-color-works": {
       "author": "Eddie Opara & John Cantwell",
@@ -1410,8 +1418,79 @@
       "appendix": null,
       "appendix_status": "INLINED",
       "needs_tags": false,
+      "_craft_slot": "image-color-union",
+      "_craft_slot_note": "Unioned into the IMAGE-craft slot (DEP-6) via specialty (custom-tag) recall for COLOR-heavy image tasks; budelmann-brand-identity-essentials is the primary IMAGE-craft specialist. Surface/tag only — no new source added.",
       "summary": "Eddie Opara (Pentagram) & John Cantwell's Color Works Six-Lens System: Context to Foundation, 'color is a language to master, never the goal.' Coaches founders out of chromatophobia (fear of color) to reason in and defend color choices; governs Graphics/Brand/Presentations/Web-UI/Video/Research/Print-Production to a context-first, reason-per-color, dominant-before-accent, right-medium-spec standard grounded in Itten/Munsell color science.",
       "_domain_note": "Source-declared domains (color-theory, graphic-design, branding, visual-design, print-production) are not in the controlled domainTags vocabulary; mapped to visual-communication/visual-storytelling/communication/marketing/strategy-innovation for matcher Stage-B routing (design task-category + graphics/video depts), originals retained as custom[] specialist tags."
+    },
+    "hunt-thomas-pragmatic-programmer": {
+      "author": "Andrew Hunt & David Thomas",
+      "book": "The Pragmatic Programmer: Your Journey to Mastery (20th Anniversary Edition)",
+      "domain": [
+        "software-craft",
+        "productivity-systems",
+        "strategy-innovation",
+        "operations"
+      ],
+      "perspective": [],
+      "custom": [
+        "dry-principle",
+        "orthogonality",
+        "decoupling",
+        "tracer-bullets",
+        "prototyping",
+        "reversibility",
+        "etc-easier-to-change",
+        "software-entropy",
+        "broken-windows",
+        "good-enough-software",
+        "design-by-contract",
+        "assertive-programming",
+        "crash-early",
+        "pragmatic-paranoia",
+        "refactoring",
+        "test-to-break",
+        "rubber-duck-debugging",
+        "programming-by-coincidence",
+        "law-of-demeter",
+        "plain-text-power",
+        "version-control",
+        "shell-and-editor-fluency",
+        "knowledge-portfolio",
+        "requirements-digging",
+        "estimating",
+        "code-review",
+        "technical-debt",
+        "architecture",
+        "backend",
+        "frontend",
+        "web-development",
+        "api-design",
+        "software-engineering",
+        "sign-your-work"
+      ],
+      "source_type": "book",
+      "added": "2026-07-05",
+      "blueprint": "personas/hunt-thomas-pragmatic-programmer/persona-blueprint.md",
+      "two_sided": true,
+      "modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "interaction_modes": [
+        "coaching",
+        "leadership",
+        "hybrid"
+      ],
+      "coaching_mode": "BUILT",
+      "task_mode": "BUILT",
+      "appendix": null,
+      "appendix_status": "NONE",
+      "needs_tags": false,
+      "_craft_slot": "code",
+      "_craft_slot_note": "CODE-craft slot specialist (DEP-6): the first true software-craft persona in the library, added so slot-based work (website/app builds decomposed into a CODE sub-task) resolves to a real engineering specialist instead of a nearest-domain proxy (productivity-systems/strategy-innovation/operations). Carries the new controlled-vocab domain tag 'software-craft'.",
+      "summary": "Andrew Hunt & David Thomas's Pragmatic Programmer canon: software as a craft of continuous, careful change. Governs engineering work (backend, frontend, web, API, architecture, refactoring, debugging, testing) to a DRY, orthogonal, decoupled, ETC (Easier To Change) standard — no broken windows, no programming by coincidence, tracer-bullet delivery over big-bang, design by contract, crash early, pragmatic paranoia, and sign-your-work pride. Coaches developers and technical founders from cargo-cult coding to pragmatic mastery."
     },
     "walker-launch": {
       "author": "Jeff Walker",

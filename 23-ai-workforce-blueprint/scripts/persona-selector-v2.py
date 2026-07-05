@@ -353,13 +353,15 @@ DEPT_DOMAIN_TAGS = {
     "web-development": ["marketing", "sales", "copywriting", "strategy-innovation", "operations"],
     # W6/W2.2: 'engineering' is the renamed software/app/web/backend/cloud dept.
     # Tags MUST mirror build-workforce.py generate_persona_matrix dept_to_domains
-    # ("engineering": ["productivity-systems","strategy-innovation","operations"])
-    # so the matrix (pool authoring) and the selector (Stage B filter) pre-qualify
-    # the SAME persona pool for the slug. Software/app/web/backend/cloud craft has
-    # no literal domain in persona-categories.json; it lives in the build/ops/idea-
-    # framing domains (productivity-systems = build discipline, operations =
-    # ship/run, strategy-innovation = architecture/idea framing).
-    "engineering": ["productivity-systems", "strategy-innovation", "operations"],
+    # ("engineering": ["software-craft","productivity-systems","strategy-innovation",
+    # "operations"]) so the matrix (pool authoring) and the selector (Stage B filter)
+    # pre-qualify the SAME persona pool for the slug. DEP-6: software/app/web/backend/
+    # cloud craft NOW has a literal controlled-vocab domain — 'software-craft' — carried
+    # by the first true engineering-craft persona (hunt-thomas-pragmatic-programmer). It
+    # is listed FIRST as the craft-defining primary; the build/ops/idea-framing domains
+    # (productivity-systems = build discipline, operations = ship/run, strategy-innovation
+    # = architecture/idea framing) remain so pre-DEP-6 engineering personas still qualify.
+    "engineering": ["software-craft", "productivity-systems", "strategy-innovation", "operations"],
     "graphics": ["copywriting", "communication", "marketing"],
     "video": ["video", "editing", "montage", "visual-storytelling", "copywriting", "communication", "marketing"],
     "audio": ["copywriting", "communication", "marketing"],
@@ -431,6 +433,16 @@ _CATEGORY_DOMAINS: dict = {
     # visual-storytelling (sketchnote/visual-thinking family), communication
     # (message clarity), copywriting, strategy-innovation (idea framing).
     "design":           {"visual-storytelling", "communication", "copywriting", "strategy-innovation"},
+    # DEP-6: 'code' is the software-craft (backend/frontend/web/api/architecture)
+    # task category. Its PRIMARY craft domain is the new controlled-vocab tag
+    # 'software-craft' (see CRAFT_PRIMARY_DOMAINS); the build/ops/idea-framing
+    # domains are carried for Stage-B funnel recall so pre-DEP-6 engineering
+    # proxies still enter the pool (never-to-zero). infer-task-category.py does
+    # not (yet) emit 'code' — this key is reached when a caller forces the task
+    # category (F3.9 SOP CODE slot / DEP-4 slot-driven decomposition), so a CODE
+    # slot deterministically pins the craft floor + primary-domain bonus onto the
+    # real engineering specialist rather than a nearest-domain generalist.
+    "code":             {"software-craft", "productivity-systems", "strategy-innovation", "operations"},
     "ops":              {"operations", "productivity-systems"},
     "finance":          {"finance", "operations"},
     "legal":            {"leadership", "strategy-innovation"},
@@ -563,12 +575,25 @@ def perspective_bonus(persona_perspectives, task_perspectives) -> float:
 # communication/strategy-innovation for funnel recall). Only the defining domain
 # marks the specialist, so only it earns the bonus.
 CRAFT_PRIMARY_DOMAINS: dict = {
-    "design":         {"visual-storytelling"},
+    # DEP-6 (IMAGE slot): visual-communication joins visual-storytelling as a
+    # craft-defining domain for design/image work, so the IMAGE-craft specialists
+    # (budelmann-brand-identity-essentials — form/color/imagery/typography — and,
+    # via specialty recall on color-heavy tasks, opara-color-works) earn the full
+    # craft bonus on image-generation/visual-identity tasks. Purely additive and
+    # task_fit-coupled: a sketchnote/visual-thinking task (rohde) still wins on
+    # task_fit via its visual-storytelling match, so this does not displace the
+    # existing design specialist — it surfaces the image-generation specialist.
+    "design":         {"visual-storytelling", "visual-communication"},
     "video-edit":     {"video", "editing", "montage", "visual-storytelling"},
     "video-script":   {"copywriting"},
     "content-write":  {"copywriting"},
     "social-post":    {"copywriting"},
     "email-outreach": {"copywriting"},
+    # DEP-6 (CODE slot): 'software-craft' is the craft-defining primary for code
+    # work, so the engineering-craft specialist (hunt-thomas-pragmatic-programmer)
+    # earns the craft domain bonus on a CODE task/slot instead of a nearest-domain
+    # proxy. Reached via a forced task_category (F3.9 CODE slot / DEP-4).
+    "code":           {"software-craft"},
 }
 
 
