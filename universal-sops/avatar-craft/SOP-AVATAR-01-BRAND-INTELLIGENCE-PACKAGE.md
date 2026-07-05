@@ -109,7 +109,52 @@ bypassed), client-silent by default. **No signed provenance certificate = not do
 handoffs: 3 bot docs -> Skill 38; `Top_39_*` + `Facebook_Headline_*` + `Facebook_Targeting_Intelligence`
 -> Skill 48; image prompts -> Skill 47; GHL delivery -> Skill 6; `version=book` -> Skill 53.
 
-## 6. VERIFY BEFORE CLAIMING DONE
+## 6. MISSION-CONTROL CARDING CONTRACT (3-step, zero-egress-safe)
+
+The Avatar-Alchemist `scripts/` are deliberately **zero-egress** — no prover or the foreman ever
+calls the Command Center, an Airtable, a Slack, a Drive, or an n8n (any such call is `AF-AV-EGRESS`,
+refused). That egress ban is correct and stays. But a multi-hour, 40-stage deliverable must NOT be
+invisible to mission control and must NOT skip the QC `review` column. So carding is a **manual,
+compensating procedure the DRIVING ROLE performs** (the Brand Positioning Specialist, routed by the
+CMO) — never the zero-egress scripts. Three steps, in order:
+
+1. **Intake → open the card (`in_progress`).** The moment the brand-intake is accepted (version=brand,
+   `aa_intake_gate` clean) and BEFORE the foreman dispatches, open a Command Center card on the
+   **marketing** board:
+
+   ```
+   scripts/mc-route.sh marketing "Brand Intelligence — <First> <Last>"  "<run_id / brief link>"
+   ```
+
+   `mc-route.sh` is the signed fleet router (Bearer + `x-webhook-signature`, secrets resolved at
+   runtime; it never egresses from inside `scripts/`, it is invoked by the role). If it exits non-zero,
+   the CEO escalates to the operator — never self-intake, never proceed board-blind.
+
+2. **QC certificate issued → advance to `review` (NEVER straight to `done`).** When
+   `aa_delivery_gate.py` issues the signed `PROCESS-CERTIFICATE.json` (content gate PASS, 40/40
+   foreman-attested provenance, independent QC ≥ 8.5), move the card to the **`review`** column. The
+   independent QC sweep is the ONLY authority that promotes `review → done`; a producer that PATCHes a
+   card straight to `done` violates the shared board contract (`mc_board` legal-transition map:
+   `in_progress → review → done`). This SOP restates no numbers — the transition rules live in the
+   board contract.
+
+3. **`--verify-cert` PASS → `done`.** Move the card to **`done`** ONLY after an independent
+   re-verification of the certificate signature passes:
+
+   ```
+   python3 scripts/aa_delivery_gate.py --verify-cert <run_dir>/PROCESS-CERTIFICATE.json \
+       --key-file <run_dir>/.foreman-key [--deep --run-dir <run_dir>]
+   ```
+
+   A cert that does not pass `--verify-cert` can never justify `done` — "done" is claimable only with a
+   certificate that independently re-verifies. No signed, re-verified certificate = not done.
+
+**Verify card state by ROWS, never mtime.** Confirm which column a card is actually in by querying the
+Command Center **tasks rows** through `shared-utils/resolve_db.py` `find_dashboard_db()` — never by a
+file's modification time. The dashboard DB is WAL-mode, so mtime lags the committed rows and will lie;
+read the row's `status`/`phase_id`, not the file clock.
+
+## 7. VERIFY BEFORE CLAIMING DONE
 
 End-to-end proof is from the CLIENT outcome, not the builder's claim: the bundle opens, every deliverable
 is present and on-band, and the certificate chain is intact. Self-verify the skill with:

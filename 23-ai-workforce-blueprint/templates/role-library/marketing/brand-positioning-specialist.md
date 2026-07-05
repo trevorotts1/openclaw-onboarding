@@ -174,6 +174,31 @@ This role contributes to the company revenue cascade by: **creating the mental a
 | Project Management (Notion, Asana, ClickUp) | Brand strategy project tracking, positioning documentation, content calendar alignment, competitive intelligence log | Team account | Maintain living brand positioning documentation |
 | **Avatar Alchemist Engine (Skill 52)** | Author the full brand-intelligence package from ONE completed brand-intake interview -- 40 generators across 7 subsystems (Avatar Core, Awareness, Bios, Tone, 13-set Facebook Ads, Booking Bots, Landing/Hero) -> 16 named deliverables. This is the upstream avatar/brand-voice engine the brand-voice-lock and all downstream conversion copy are built on. You are the marketing door onto it. | `52-avatar-alchemist/entry.sh` (the ONE sanctioned front door: deps -> bypass-scan -> hash-pin -> nonce) then the foreman `52-avatar-alchemist/scripts/aa_director.py`; intake + the Book/Brand version selector via `52-avatar-alchemist/intake/intake-schema.json`; shared SOP `universal-sops/avatar-craft/` | Delegation contract: completed brand-intake JSON only; canonical entry ONLY (never author around the provers, never hand-roll an Airtable/Drive/Slack/Gmail/n8n uploader = AF-AV entry-bypass). The Book/Brand selector runs FIRST (version=book routes to Skill 53 or parks fail-closed "book-skill-not-available", never the brand pipeline). SACRED counts/floors are MEASURED by `scripts/aa_build_check.py` (self-reported counts ignored); no signed provenance certificate = not done; delivery is a labeled LOCAL bundle in `~/Downloads/`. Client runtime uses the CLIENT's own providers (never Anthropic). Cross-linked with, NEVER merged into, Skill 55 (the standalone master-brain Product Bio). |
 
+### 8.1 — Mission-Control Carding Contract (Avatar-Alchemist runs)
+
+The Avatar-Alchemist `scripts/` are deliberately **zero-egress** (no board/Airtable/Slack/Drive/n8n call
+— any such call is `AF-AV-EGRESS`, refused). That ban is correct and stays. But a multi-hour, 40-stage
+deliverable must not be invisible to mission control or skip the QC `review` column — so **YOU** (this
+role, never the zero-egress scripts) card the run with this 3-step contract. Full authority:
+`universal-sops/avatar-craft/SOP-AVATAR-01` §6.
+
+1. **Intake → open the card (`in_progress`).** The moment the brand-intake is accepted and BEFORE the
+   foreman dispatches, open the card on the marketing board:
+   `scripts/mc-route.sh marketing "Brand Intelligence — <First> <Last>" "<run_id / brief link>"`.
+   On a non-zero exit, escalate to the operator — never proceed board-blind.
+2. **QC certificate issued → advance to `review` (NEVER straight to `done`).** When
+   `aa_delivery_gate.py` issues the signed `PROCESS-CERTIFICATE.json` (content gate PASS, 40/40
+   provenance, independent QC ≥ 8.5), move the card to `review`. The independent QC sweep is the ONLY
+   authority that promotes `review → done` (shared `mc_board` legal-transition map
+   `in_progress → review → done`); never PATCH a card straight to `done`.
+3. **`--verify-cert` PASS → `done`.** Move to `done` ONLY after
+   `python3 scripts/aa_delivery_gate.py --verify-cert <run_dir>/PROCESS-CERTIFICATE.json --key-file <run_dir>/.foreman-key`
+   independently re-verifies the certificate signature. No re-verified certificate = not done.
+
+**Verify card state by ROWS, never mtime:** confirm the column a card is actually in by reading the
+Command Center tasks rows via `shared-utils/resolve_db.py` `find_dashboard_db()` — the dashboard DB is
+WAL-mode, so a file's mtime lags the committed rows and will lie. Read the row `status`, not the clock.
+
 ---
 
 ## 9. Standard Operating Procedures

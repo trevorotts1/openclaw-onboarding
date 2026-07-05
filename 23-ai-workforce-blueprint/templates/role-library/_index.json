@@ -354,8 +354,8 @@
         "sop-writer",
         "webinar-event-marketing-specialist"
       ],
-      "content_sha": "sha256:c6ebd879c03e1ba93aad69b127a167ef8606ce901fcbb15135c50c0aa9fdd950",
-      "content_hashed_at": "2026-07-05T20:40:34.629064+00:00"
+      "content_sha": "sha256:20fb581d0b1af8ee42bdf233dcc91454717b8b14b7cfa071bfed6dd323417e7b",
+      "content_hashed_at": "2026-07-05T23:49:33.682363+00:00"
     },
     "master-orchestrator": {
       "count": 2,
@@ -3897,10 +3897,10 @@
       "path": "templates/role-library/marketing/brand-positioning-specialist.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:b121de4f3f6c26c1bf229e4308f880f7cbaf4d3e73465a1d56feea6aa045fb38",
-      "render_sha": "sha256:ae601e5dc3e9b8b44f4e9db9d1994f1aa275a3be3382df9faf5aca0930d35761",
-      "content_version": "1.0.3",
-      "content_hashed_at": "2026-07-05T20:40:34.629064+00:00"
+      "content_sha": "sha256:7056327846ade9463175ddc25f28e1f2fa3e64af00e205199c903be64d166ed1",
+      "render_sha": "sha256:fa0a7390b6d1b6cba4553738be994daec60921c464703f1c1b2c3485713f2a04",
+      "content_version": "1.0.4",
+      "content_hashed_at": "2026-07-05T23:49:33.682363+00:00"
     },
     {
       "slug": "chief-marketing-officer",
