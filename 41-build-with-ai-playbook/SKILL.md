@@ -138,7 +138,7 @@ All GHL API calls use the operator's Private Integration Token (PIT) -- never sh
 | CORE_UPDATES.md | Lines appended to AGENTS.md / MEMORY.md / TOOLS.md |
 | EXAMPLES.md | Worked example flows (UNIVERSAL placeholders) |
 | CHANGELOG.md | Version history |
-| skill-version.txt | Currently 1.5.3 |
+| skill-version.txt | Currently 1.5.5 |
 | wire.sh | Idempotent, fail-soft post-update self-heal: re-runs install steps 03--06 after a version-bump wipe-and-recopy (always exits 0) |
 | scripts/00-verify-prerequisites.sh | Verifies jq, curl, GHL PIT, locationId; reports env state |
 | scripts/01-locate-master-files-folder.sh | Resolves + persists MASTER_FILES_DIR |
