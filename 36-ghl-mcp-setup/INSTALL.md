@@ -177,6 +177,26 @@ export WORKSPACE="$HOME/clawd"
 echo "Workspace: $WORKSPACE"
 ```
 
+### Pre-Action 0.5: Command Center — Report Install Start (fail-soft)
+
+Open (or reuse) the operator-visibility card and move it to `in_progress` so a
+stuck install is visible on the Command Center board. This is the implementing
+call for the "install start" emit moment documented in INSTRUCTIONS.md — it is
+**best-effort operator visibility, never a blocker**: with no `MC_API_TOKEN` (or
+no Command Center reachable) it prints one operator-only stderr note and exits 0.
+
+```bash
+SKILL36_DIR="$HOME/.openclaw/skills/36-ghl-mcp-setup"
+[ -x "$SKILL36_DIR/scripts/cc-task.sh" ] && bash "$SKILL36_DIR/scripts/cc-task.sh" start || true
+```
+
+The matching `review` transition fires automatically from the QC PASS branch of
+`qc-ghl-mcp-setup.sh` when the install passes (RULE 5). The independent Command
+Center auto-scorer — not this skill — promotes `review` to done. See the
+"Command Center hooks" section of INSTRUCTIONS.md for the four emit moments and
+the required config (`MC_API_TOKEN`, `MISSION_CONTROL_URL`, and the optional
+`MC_SKILL36_AGENT_ID` / `MC_SKILL36_SOP_ID` leave-backlog Triad ids).
+
 ### Pre-Action 1: Locate the openclaw-master-files Folder
 
 ```bash
