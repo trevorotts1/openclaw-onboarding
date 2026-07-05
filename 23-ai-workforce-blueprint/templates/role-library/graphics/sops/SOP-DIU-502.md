@@ -208,7 +208,7 @@ This SOP is event-driven. It does not run on a fixed schedule except for the qua
 This SOP describes the Registrar duty folded into the Style Analyst role per DEPARTMENT-BUILD-BRIEF §3 Role 6. The duty is dormant in the sense that it only fires on explicit triggers — there is no background polling or speculative governance. Once the INDEX.md production card count reaches >= 50, the CDO spins out the Library Registrar as a standalone role. At that point:
 
 1. Ownership of this SOP transfers to the Library Registrar.
-2. The Style Analyst's section-9 entry for SOP-DIU-502 in `style-analyst-sops.md` is updated to show "Owner transferred to Library Registrar."
+2. The Style Analyst's section-9 entry for SOP-DIU-502 in `SOP--style-analyst-sops.md` is updated to show "Owner transferred to Library Registrar."
 3. INDEX.md write authority is transferred — the Style Analyst no longer writes INDEX rows directly.
 
 Until that threshold is crossed, the Style Analyst executes this SOP in full.
