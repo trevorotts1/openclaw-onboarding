@@ -187,10 +187,11 @@ echo "-- 2/4) golden bundle + idempotency (prose-gated) --"
 SHIP_CERT="$(find "$EX/delivery" -maxdepth 2 -name PROCESS-CERTIFICATE.json 2>/dev/null | head -1)"
 if [ -f "$EX/run/chapters/ch12.md" ] && [ -n "$SHIP_CERT" ]; then
     TMP="$(mktemp -d)"
-    trap 'rm -rf "$TMP"' EXIT
+    DLROOT="$(mktemp -d)"   # keep the labeled ~/Downloads copy OUT of the real ~/Downloads
+    trap 'rm -rf "$TMP" "$DLROOT"' EXIT
     mkdir -p "$TMP/run"
     cp -R "$EX/run/." "$TMP/run/"
-    if bash "$SKILL_DIR/book-writer-entry.sh" --run-dir "$TMP" >/dev/null 2>&1; then
+    if BOOK_WRITER_DELIVERY_ROOT="$DLROOT" bash "$SKILL_DIR/book-writer-entry.sh" --run-dir "$TMP" >/dev/null 2>&1; then
         FRESH="$(find "$TMP/delivery" -maxdepth 2 -name PROCESS-CERTIFICATE.json 2>/dev/null | head -1)"
         if [ -n "$FRESH" ]; then
             FSHA="$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1]))["certificate_sha"])' "$FRESH")"
@@ -206,12 +207,18 @@ if [ -f "$EX/run/chapters/ch12.md" ] && [ -n "$SHIP_CERT" ]; then
     else
         printf '  [FAIL] golden pilot through the entry failed\n'; fails=$((fails + 1))
     fi
-    rm -rf "$TMP"; trap - EXIT
+    rm -rf "$TMP" "$DLROOT"; trap - EXIT
 else
     printf '  [TODO] golden prose / shipped certificate absent — Wave-2 authors prose, Agent D runs\n'
     printf '         run_book_writer.py to assemble the bundle + mint the certificate, then this\n'
     printf '         section lights up (golden-bundle PASS + certificate_sha idempotency).\n'
 fi
+
+# 9) role-SOP registry (content_sha re-stamp gate) — the 7 role SOPs are registered
+# in roles/_index.json with a canonical content_sha, the dispatcher is named, and no
+# stored sha is stale vs the file on disk.
+echo "-- 9) role-SOP registry (content_sha) --"
+run "roles/_index.json complete + not stale" "$PY" "$SCRIPTS/hash_role_index.py" --check
 
 echo "=================================================="
 if [ "$fails" -eq 0 ]; then

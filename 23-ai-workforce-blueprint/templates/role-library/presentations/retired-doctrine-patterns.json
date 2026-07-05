@@ -22,6 +22,12 @@
       "pattern": "(?:>=\\s*7x?|at\\s+least\\s+7|fewer\\s+than\\s+7|never\\s+fewer\\s+than\\s+7|below\\s+7|7\\s+times|seven\\s+times|occurrences\\s*>=\\s*7|AT\\s+LEAST\\s+7\\s+TIMES)",
       "near": "hook",
       "scope": "**/*.md"
+    },
+    {
+      "id": "prompt-floor-5000-char",
+      "why": "FIX-PRES-09(v): the presentations image-prompt floor was RAISED from 5,000 chars to 9,000 chars (current HARD floor 9,000, ceiling 18,000; build_deck.py PROMPT_CHAR_FLOOR=9000, AF-P1). The retired 5,000-char floor must never re-appear as a live instruction — a prompt authored to 5,000 chars is now sub-floor and is refused, not run.",
+      "pattern": "5[,.]?000[\\s-]*(?:char|character)",
+      "scope": "**/*.md"
     }
   ]
 }

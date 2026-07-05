@@ -73,6 +73,7 @@ AF_PROCESS = "AF-PROCESS-INTEGRITY"
 AF_TYPE_MISMATCH = "AF-EMAIL-TYPE-MISMATCH"
 AF_INTAKE_SPLIT = "AF-EMAIL-INTAKE-SPLIT"
 AF_BRIEF_INCOMPLETE = "AF-EMAIL-BRIEF-INCOMPLETE"
+AF_OVERRIDE_UNLOGGED = "AF-EMAIL-OVERRIDE-UNLOGGED"
 
 # ---- SACRED constants (preserved VERBATIM from the corpus) ------------------
 FRAMEWORKS = (
@@ -196,20 +197,60 @@ def _sequence_type(obj):
 
 
 def _subject_mode(seq_type, email):
-    m = email.get("subject_mode")
-    if _nonempty_str(m):
-        return m
+    """INFER the subject mode from the sequence type / high-ticket flag ONLY.
+
+    A caller-supplied ``subject_mode`` override on the authoring-written email is
+    NOT read here — it is gated against the LOCKED brief in evaluate_email
+    (FIX-XC-12a) so an unlogged override can never silently flip the subject
+    rules. This function is the SACRED default."""
     if seq_type == "high_ticket_12" or str(email.get("high_ticket", "")).lower() in ("yes", "true", "1"):
         return "high_ticket"
     return "convert_and_flow"
 
 
-def _expected_previews(seq_type, email):
-    if isinstance(email.get("expected_preview_count"), int):
-        return email["expected_preview_count"]
+def _expected_previews(seq_type, mode):
+    """The SACRED default preview count for a sequence/mode. A per-email
+    ``expected_preview_count`` override is NOT read here — it is gated against the
+    LOCKED brief in evaluate_email (FIX-XC-12a)."""
     if seq_type in PREVIEW_EXPECTED:
         return PREVIEW_EXPECTED[seq_type]
-    return 2 if _subject_mode(seq_type, email) == "high_ticket" else 1
+    return 2 if mode == "high_ticket" else 1
+
+
+def _locked_overrides(brief):
+    """The client-exact override channel carried by the LOCKED brief. Returns the
+    dict of authorized overrides (``word_band_override`` / ``expected_preview_count``
+    / ``subject_mode``) or ``{}``. An override is honored on an email ONLY when its
+    identical value is echoed here — never from the authoring-written email alone
+    (that would be self-authorization). ``brief is None`` -> ``{}`` (no override is
+    honored; the SACRED default stands)."""
+    if not isinstance(brief, dict):
+        return {}
+    lo = brief.get("locked_overrides")
+    if isinstance(lo, dict):
+        return lo
+    ans = brief.get("answers")
+    if isinstance(ans, dict) and isinstance(ans.get("locked_overrides"), dict):
+        return ans["locked_overrides"]
+    return {}
+
+
+def _override_honored(email, key, locked, tag, fails):
+    """FIX-XC-12a: a per-email SACRED-band override is honored ONLY when the
+    identical value is echoed in the LOCKED brief's override channel. An override
+    present on the (authoring-written) email but NOT logged in the locked brief is
+    REFUSED with AF-EMAIL-OVERRIDE-UNLOGGED and the SACRED default is enforced
+    instead — an unlogged override can never loosen a gate. Returns the honored
+    value, or ``None`` (no override, or refused)."""
+    if not isinstance(email, dict) or key not in email or email.get(key) is None:
+        return None
+    val = email.get(key)
+    if isinstance(locked, dict) and key in locked and locked.get(key) == val:
+        return val
+    fails.append((AF_OVERRIDE_UNLOGGED,
+                  "%s: %s %r is not echoed in the LOCKED brief override channel — "
+                  "override REFUSED, SACRED default enforced" % (tag, key, val)))
+    return None
 
 
 # ---- per-email evaluation ---------------------------------------------------
@@ -231,6 +272,14 @@ def evaluate_email(email, ctx):
     ctas = email.get("ctas")
     buyer_type = email.get("buyer_type")
     founder = email.get("founder_name") or ctx.get("founder_name") or ""
+
+    # --- client-exact overrides (FIX-XC-12a): honored ONLY when echoed in the
+    #     LOCKED brief; an unlogged override is refused (AF-EMAIL-OVERRIDE-UNLOGGED)
+    #     and the SACRED default is enforced. ---
+    locked = ctx.get("locked_overrides") or {}
+    smode_override = _override_honored(email, "subject_mode", locked, tag, fails)
+    mode = smode_override if _nonempty_str(smode_override) else _subject_mode(seq_type, email)
+    prev_override = _override_honored(email, "expected_preview_count", locked, tag, fails)
 
     # --- framework set (AF-EMAIL-FRAMEWORK-UNKNOWN) ---
     if framework not in FRAMEWORKS:
@@ -274,17 +323,18 @@ def evaluate_email(email, ctx):
         subjects = subjects if isinstance(subjects, list) else []
 
     # --- preview count (AF-EMAIL-PREVIEW-COUNT) ---
-    want_prev = _expected_previews(seq_type, email)
+    want_prev = prev_override if isinstance(prev_override, int) else _expected_previews(seq_type, mode)
     if not (isinstance(previews, list) and len(previews) == want_prev and all(_nonempty_str(p) for p in previews)):
         fails.append((AF_PREVIEW_COUNT,
                       "%s: needs exactly %d non-empty preview line(s) for this sequence" % (tag, want_prev)))
 
-    # --- word band (AF-EMAIL-WORDBAND) ---
+    # --- word band (AF-EMAIL-WORDBAND) — a client-exact override wins ONLY when
+    #     the SAME band is logged in the LOCKED brief (FIX-XC-12a). ---
     wc = len(_words(body))
-    override = email.get("word_band_override")
+    override = _override_honored(email, "word_band_override", locked, tag, fails)
     if isinstance(override, list) and len(override) == 2 and all(isinstance(x, int) for x in override):
         lo, hi = override[0], override[1]
-        band_note = "client-exact override %d-%d" % (lo, hi)
+        band_note = "client-exact override (logged) %d-%d" % (lo, hi)
     elif framework == "three-b-plan":
         lo, hi, band_note = 1, 149, "3-B Plan (< 150)"
     else:
@@ -300,7 +350,7 @@ def evaluate_email(email, ctx):
                       "%s: needs at least %d non-empty CTA(s)" % (tag, cta_min)))
 
     # --- subject char band (AF-EMAIL-SUBJECT-CHARBAND) ---
-    mode = _subject_mode(seq_type, email)
+    # `mode` was resolved above (gated subject_mode override or the SACRED default).
     for i, s in enumerate(subjects, 1):
         if not _nonempty_str(s):
             continue
@@ -361,8 +411,9 @@ def evaluate_email(email, ctx):
 
 
 # ---- sequence evaluation ----------------------------------------------------
-def evaluate_sequence(ledger):
+def evaluate_sequence(ledger, brief=None):
     fails = []
+    locked = _locked_overrides(brief)
     seq_type = _sequence_type(ledger)
     if seq_type not in SEQ_LENGTHS:
         fails.append((AF_TYPE_MISMATCH,
@@ -394,7 +445,7 @@ def evaluate_sequence(ledger):
         slot = e.get("e_slot", i) if isinstance(e, dict) else i
         ctx = {"tag": "E%d" % slot, "seq_type": seq_type,
                "founder_name": founder, "require_disruptive": require_disruptive,
-               "cta_min": 1}
+               "cta_min": 1, "locked_overrides": locked}
         # framework map + CTA floor per map
         if seq_type == "landing_page_10":
             want_fw = LANDING_MAP.get(slot)
@@ -429,6 +480,23 @@ def evaluate_sequence(ledger):
 
 
 # ---- intake / brief evaluation ----------------------------------------------
+def _ledger_oneblock(ledger):
+    """INDEPENDENT one-block verification (FIX-S36-47). Derives the one-block
+    property from an EXPORTED conversation ledger — the actual transcript, not a
+    self-attested boolean. Exactly ONE assistant turn may carry the intake question
+    block; more than one (or zero) means the brief was split across turns / never
+    asked as a block. Returns [(AF, msg)]."""
+    blocks = [t for t in ledger if isinstance(t, dict)
+              and str(t.get("role", "")).lower() in ("assistant", "agent", "bot")
+              and str(t.get("kind", t.get("type", ""))).lower()
+              in ("intake", "intake_questions", "questions", "question_block")]
+    if len(blocks) != 1:
+        return [(AF_INTAKE_SPLIT,
+                 "conversation_ledger shows %d intake question block(s) (INDEPENDENT "
+                 "transcript check) — the brief must be asked in exactly ONE block" % len(blocks))]
+    return []
+
+
 def evaluate_intake(rec):
     fails = []
     skill = rec.get("skill") or rec.get("skill_type")
@@ -441,17 +509,29 @@ def evaluate_intake(rec):
         if st not in SEQ_LENGTHS and st != "single":
             fails.append((AF_TYPE_MISMATCH, "sequence_position %r resolves to unknown type" % seq_pos))
 
-    # one-block delivery
-    if rec.get("asked_all_at_once") is not True:
-        fails.append((AF_INTAKE_SPLIT,
-                      "asked_all_at_once is not true (got %r)" % rec.get("asked_all_at_once")))
-    if rec.get("one_question_per_turn") is True:
-        fails.append((AF_INTAKE_SPLIT, "one_question_per_turn is true — brief was split across turns"))
-    msg = rec.get("question_block_msg_id")
-    if isinstance(msg, (list, tuple)):
-        real = [m for m in msg if _nonempty_str(m)]
-        if len(real) != 1:
-            fails.append((AF_INTAKE_SPLIT, "question_block_msg_id must reference exactly ONE block"))
+    # one-block delivery (FIX-S36-47) — when an INDEPENDENT conversation-ledger
+    # export is supplied it is AUTHORITATIVE (derived from the transcript, not a
+    # self-attested boolean); the self-attested flags are only a fallback and are
+    # explicitly labeled attestation-based when no ledger is present.
+    ledger = rec.get("conversation_ledger")
+    if isinstance(ledger, list) and ledger:
+        fails.extend(_ledger_oneblock(ledger))
+    else:
+        if rec.get("asked_all_at_once") is not True:
+            fails.append((AF_INTAKE_SPLIT,
+                          "asked_all_at_once is not true (got %r) [attestation-based: "
+                          "no conversation_ledger export supplied]" % rec.get("asked_all_at_once")))
+        if rec.get("one_question_per_turn") is True:
+            fails.append((AF_INTAKE_SPLIT,
+                          "one_question_per_turn is true — brief was split across turns "
+                          "[attestation-based]"))
+        msg = rec.get("question_block_msg_id")
+        if isinstance(msg, (list, tuple)):
+            real = [m for m in msg if _nonempty_str(m)]
+            if len(real) != 1:
+                fails.append((AF_INTAKE_SPLIT,
+                              "question_block_msg_id must reference exactly ONE block "
+                              "[attestation-based]"))
 
     # complete brief
     answers = rec.get("answers")
@@ -481,17 +561,20 @@ def _detect_kind(obj):
     return "email"
 
 
-def evaluate(obj, kind=None):
+def evaluate(obj, kind=None, brief=None):
     k = kind or _detect_kind(obj)
     if k == "sequence":
-        return evaluate_sequence(obj)
+        return evaluate_sequence(obj, brief=brief)
     if k == "intake":
         return evaluate_intake(obj)
-    # single email — build a standalone context
+    # single email — build a standalone context. Overrides are honored ONLY from a
+    # separately-supplied LOCKED brief (never from the authoring-written email
+    # itself — that would be self-authorization); brief is None -> no override.
     seq_type = _sequence_type(obj) if isinstance(obj, dict) else "single"
     ctx = {"tag": "email", "seq_type": seq_type,
            "founder_name": obj.get("founder_name", "") if isinstance(obj, dict) else "",
-           "require_disruptive": False, "cta_min": 1}
+           "require_disruptive": False, "cta_min": 1,
+           "locked_overrides": _locked_overrides(brief)}
     return evaluate_email(obj, ctx)
 
 
@@ -500,7 +583,7 @@ def decide_exit(failures):
 
 
 # ---- runner -----------------------------------------------------------------
-def prove(path, as_json=False, kind=None):
+def prove(path, as_json=False, kind=None, brief_path=None):
     p = Path(path)
     if not p.is_file():
         _emit(str(p), "?", [("USAGE", "file not found: %s" % p)], as_json)
@@ -510,8 +593,18 @@ def prove(path, as_json=False, kind=None):
     except (ValueError, OSError) as exc:
         _emit(str(p), "?", [("USAGE", "cannot read/parse JSON: %s" % exc)], as_json)
         return EXIT_USAGE
+    # The LOCKED brief (when supplied) is the ONLY source that can authorize a
+    # client-exact override on the authored emails (FIX-XC-12a).
+    brief = None
+    if brief_path:
+        bp = Path(brief_path)
+        if bp.is_file():
+            try:
+                brief = json.loads(bp.read_text(encoding="utf-8"))
+            except (ValueError, OSError):
+                brief = None
     k = kind or _detect_kind(obj)
-    failures = evaluate(obj, kind=k)
+    failures = evaluate(obj, kind=k, brief=brief)
     _emit(str(p), k, failures, as_json)
     return decide_exit(failures)
 
@@ -750,6 +843,49 @@ def self_test():
     it = _valid_intake(); it["skill"] = "deck-engine"
     check_fail("type-mismatch", it, AF_TYPE_MISMATCH)
 
+    # FIX-XC-12a — an override present on the email but NOT logged in the LOCKED
+    # brief is REFUSED (AF-EMAIL-OVERRIDE-UNLOGGED) and the SACRED band re-applies.
+    e = _valid_email(); e["body"] = _make_body(400); e["word_band_override"] = [350, 450]
+    check_fail("override-unlogged", e, AF_OVERRIDE_UNLOGGED)  # no brief -> refused
+    # same over-length band trips the SACRED wordband too (default 150-300 re-applied).
+    check_fail("override-unlogged-band", e, AF_WORDBAND)
+
+    def check_brief(name, fixture, brief, kind=None, expect_pass=True, expect_code=None):
+        nonlocal ok
+        fails = evaluate(fixture, kind=kind, brief=brief)
+        codes = [c for c, _ in fails]
+        good = (not fails) if expect_pass else (bool(fails) and expect_code in codes)
+        ok = ok and good
+        print("  [%s] BRIEF-GATED %-18s -> %s %s"
+              % ("PASS" if good else "MISS", name,
+                 ("no violations" if expect_pass else "has %s" % expect_code),
+                 "" if good else ("codes=%s" % codes)))
+
+    # honored ONLY when the identical band is echoed in the LOCKED brief.
+    e_ok = _valid_email(); e_ok["body"] = _make_body(400); e_ok["word_band_override"] = [350, 450]
+    good_brief = {"locked_overrides": {"word_band_override": [350, 450]}}
+    check_brief("override-logged", e_ok, good_brief, expect_pass=True)
+    wrong_brief = {"locked_overrides": {"word_band_override": [10, 20]}}
+    check_brief("override-mismatch", e_ok, wrong_brief, expect_pass=False,
+                expect_code=AF_OVERRIDE_UNLOGGED)
+
+    # FIX-S36-47 — an INDEPENDENT conversation-ledger export is authoritative.
+    it = _valid_intake()
+    it["conversation_ledger"] = [
+        {"role": "assistant", "kind": "intake_questions", "msg_id": "b1"},
+        {"role": "user", "kind": "answer", "msg_id": "u1"},
+        {"role": "assistant", "kind": "intake_questions", "msg_id": "b2"},
+    ]
+    check_fail("intake-ledger-split", it, AF_INTAKE_SPLIT)
+    # one real block in the ledger is AUTHORITATIVE even when a stale self-attested
+    # flag says otherwise.
+    it2 = _valid_intake(); it2["asked_all_at_once"] = False
+    it2["conversation_ledger"] = [
+        {"role": "assistant", "kind": "intake_questions", "msg_id": "b1"},
+        {"role": "user", "kind": "answer", "msg_id": "u1"},
+    ]
+    check_pass("intake-ledger-oneblock", it2)
+
     print("== self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
     return 0 if ok else 1
 
@@ -760,6 +896,10 @@ def main(argv=None):
     ap.add_argument("path", nargs="?", help="emails.json / email.json / brief.json to prove")
     ap.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     ap.add_argument("--kind", choices=("email", "sequence", "intake"), help="force the input kind")
+    ap.add_argument("--brief", dest="brief", default=None,
+                    help="path to the LOCKED brief.json — the ONLY source that can "
+                         "authorize a client-exact override (word_band_override / "
+                         "expected_preview_count / subject_mode) on the authored emails")
     ap.add_argument("--self-test", dest="self_test", action="store_true",
                     help="run built-in VALID + VIOLATION fixtures and exit")
     args = ap.parse_args(argv)
@@ -767,7 +907,7 @@ def main(argv=None):
         return self_test()
     if not args.path:
         ap.error("a path is required (or use --self-test)")
-    return prove(args.path, as_json=args.json, kind=args.kind)
+    return prove(args.path, as_json=args.json, kind=args.kind, brief_path=args.brief)
 
 
 if __name__ == "__main__":

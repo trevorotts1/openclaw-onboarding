@@ -94,9 +94,9 @@
       "name": "Assemble manuscript + 30-Day Challenge + cover prompt (+ optional revision rounds)",
       "produces_artifact": "delivery/<First>_<Last>-Book/",
       "stages": ["21-30day-challenge", "22-cover-prompt", "23-cover-image", "19-book-rewrite-1", "20-book-rewrite-2"],
-      "preflight": {"required": true, "checker": "_chk_package",
-        "label": "prove_bw_challenge.py PASS (exactly 30 day-sections) + prove_bw_placeholder.py PASS (no unresolved {{..}}/$('..') tokens in any artifact). Cover prompt always delivered; cover image may park degraded:image."},
-      "gate_codes": ["AF-BK-CHALLENGE", "AF-BK-PLACEHOLDER"]
+      "preflight": {"required": true, "checker": "check_package",
+        "label": "prove_bw_challenge.py PASS (exactly 30 day-sections) + prove_bw_placeholder.py PASS (no unresolved {{..}}/$('..') tokens) + prove_bw_anon.py PASS (no configured client-name token, run over the assembled staging bundle) + the conditional GATE-3/GATE-4 revision-round approval receipts (required only when the corresponding rewrite round ran). Cover prompt always delivered; cover image may park degraded:image."},
+      "gate_codes": ["AF-BK-CHALLENGE", "AF-BK-PLACEHOLDER", "AF-BK-ANON"]
     },
     {
       "id": "P7-QC",
@@ -104,9 +104,9 @@
       "name": "QC battery (no-Anthropic + anonymization + 4x3x3 when applicable)",
       "produces_artifact": "run/qc/book_qc_report.json",
       "stages": [],
-      "preflight": {"required": true, "checker": "_chk_qc",
-        "label": "prove_bw_noanthropic.py PASS (no /anthropic|claude/i model id in RUN-LEDGER.json; no operator credential name in run env) + prove_bw_anon.py PASS (no configured client-name token) + prove_bw_433.py PASS when mode=4x3x3."},
-      "gate_codes": ["AF-BK-ANTHROPIC", "AF-BK-ANON", "AF-BK-433-COUNTS", "AF-BK-433-MAP"]
+      "preflight": {"required": true, "checker": "check_qc",
+        "label": "prove_bw_noanthropic.py PASS — RUN-LEDGER.json is PRESENT and records at least one model id (fail-closed when absent or empty), no /anthropic|claude/i model id, and no operator credential name in the LIVE run env (scanned by NAME only) + prove_bw_433.py PASS when mode=4x3x3. Anonymization (AF-BK-ANON) is enforced at P6-PACKAGE over the assembled bundle."},
+      "gate_codes": ["AF-BK-ANTHROPIC", "AF-BK-433-COUNTS", "AF-BK-433-MAP"]
     },
     {
       "id": "P8-DELIVER",
@@ -114,8 +114,8 @@
       "name": "Deliver (labeled local bundle + signed process certificate)",
       "produces_artifact": "delivery/<First>_<Last>-Book/PROCESS-CERTIFICATE.json",
       "stages": [],
-      "preflight": {"required": true, "checker": "_chk_deliver",
-        "label": "the labeled deliverable bundle is assembled locally (~/Downloads/<First>_<Last>-Book/Book_Writer_<timestamp>/); NO n8n / Airtable / Google / Gmail / Slack / GHL. A signed process certificate is issued only after a full P0->P7 pass. 'Done' may only be claimed with the certificate path."},
+      "preflight": {"required": true, "checker": "check_deliver",
+        "label": "the certified staging bundle is promoted to delivery/ and copied to a labeled, timestamped ~/Downloads/<First>_<Last>-Book/Book_Writer_<timestamp>/ folder (root overridable via BOOK_WRITER_DELIVERY_ROOT), then EVERY file's sha256 is re-verified against MANIFEST.json (fail-closed on any missing/mismatched file); NO n8n / Airtable / Google / Gmail / Slack / GHL. An uncertified bundle is quarantined and never sits in delivery/. A signed process certificate is issued only after a full P0->P8 pass. 'Done' may only be claimed with the certificate path."},
       "gate_codes": ["AF-BK-STAGE-SKIPPED", "AF-BK-PROCESS-INTEGRITY"]
     }
   ],
@@ -133,7 +133,7 @@
     {"code": "AF-BK-433-MAP", "stage": "P7-QC", "level": "4x3x3", "trigger": "4x3x3 mode: the 12 chapters do not map into 4 phases x 3 chapters, or 433_Deck_Data.json is schema-invalid", "enforced_by": "prove_bw_433", "py_symbol": "evaluate"},
     {"code": "AF-BK-PLACEHOLDER", "stage": "P6-PACKAGE", "level": "run", "trigger": "an unresolved {{...}} or $('...') token remains in any artifact or deliverable", "enforced_by": "prove_bw_placeholder", "py_symbol": "evaluate"},
     {"code": "AF-BK-ANTHROPIC", "stage": "P7-QC", "level": "run", "trigger": "a model id in RUN-LEDGER.json matches /anthropic|claude/i, or an operator credential name appears in the run env", "enforced_by": "prove_bw_noanthropic", "py_symbol": "evaluate"},
-    {"code": "AF-BK-ANON", "stage": "P7-QC", "level": "skill", "trigger": "a configured client-name token appears in a shipped skill file or deliverable metadata (fixtures use fictional names only)", "enforced_by": "prove_bw_anon", "py_symbol": "evaluate"},
+    {"code": "AF-BK-ANON", "stage": "P6-PACKAGE", "level": "skill", "trigger": "a configured client-name token appears in the assembled deliverable bundle (or a shipped skill file); fixtures use fictional names only. Enforced at P6 over the staging bundle and by the verify.sh CI belt over the shipped tree.", "enforced_by": "prove_bw_anon", "py_symbol": "evaluate"},
     {"code": "AF-BK-STAGE-SKIPPED", "stage": "P8-DELIVER", "level": "run", "trigger": "a phase was attempted out of order or the certificate chain is broken", "enforced_by": "run_book_writer", "py_symbol": "run"},
     {"code": "AF-BK-PROCESS-INTEGRITY", "stage": "P8-DELIVER", "level": "run", "trigger": "a certificate was requested without a full P0->P7 pass", "enforced_by": "run_book_writer", "py_symbol": "_write_certificate"},
     {"code": "AF-BK-HASH-PIN", "stage": "entry", "level": "enforcement", "trigger": "the enforcement-set hash (orchestrator + provers + _bw_common) does not match the pinned head (ENGINE-PIN.sha256)", "enforced_by": "book-writer-entry", "py_symbol": "version_hash_pin"},
